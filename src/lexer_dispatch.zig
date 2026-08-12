@@ -1,6 +1,6 @@
 //! SH-03 production dispatch — the host consuming the Idol lexer's token stream.
 //!
-//! This is the seam `duo_lexer_bridge.tokenizeAuthority()` switches on. It binds
+//! This is the seam `lexer_bridge.tokenizeAuthority()` switches on. It binds
 //! `duo_lexer_tokenize_full` from the artifact built out of
 //! `lib/std/compiler/host.id` and rebuilds host `Token`s from the flat record
 //! buffer, so the compiler can tokenize through Idol instead of `src/lexer.zig`.
@@ -277,7 +277,7 @@ pub fn differential(allocator: std.mem.Allocator, src: [:0]const u8, file: [:0]c
     }
 }
 
-test "duo_lexer_dispatch: malformed generated records fail closed" {
+test "lexer_dispatch: malformed generated records fail closed" {
     const a = std.testing.allocator;
     const source: [:0]const u8 = "";
     const file: [:0]const u8 = "record.id";
@@ -403,7 +403,7 @@ test "duo_lexer_dispatch: malformed generated records fail closed" {
     );
 }
 
-test "duo_lexer_dispatch: production route rejects embedded NUL" {
+test "lexer_dispatch: production route rejects embedded NUL" {
     const a = std.testing.allocator;
     const source: []const u8 = "x\x00y";
     var lex = lexer.Lexer.init(source, "nul.id");
@@ -423,7 +423,7 @@ test "duo_lexer_dispatch: production route rejects embedded NUL" {
     try std.testing.expect(!file_lex.isDuoBacked());
 }
 
-test "duo_lexer_dispatch: Idol lexer drives a host token stream" {
+test "lexer_dispatch: Idol lexer drives a host token stream" {
     const a = std.testing.allocator;
     const toks = try tokenize(a, "fun add(a: i64): i64 = a + 1 end", "t.id");
     defer a.free(toks);
@@ -433,7 +433,7 @@ test "duo_lexer_dispatch: Idol lexer drives a host token stream" {
     try std.testing.expectEqual(@as(u32, 1), toks[0].loc.line);
 }
 
-test "duo_lexer_dispatch: production route fails closed on storage failure" {
+test "lexer_dispatch: production route fails closed on storage failure" {
     const src = "main: i64 = ()\n    0";
     for ([_]usize{ 0, 1, 2, 3 }) |fail_index| {
         var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{
@@ -451,7 +451,7 @@ test "duo_lexer_dispatch: production route fails closed on storage failure" {
     }
 }
 
-test "duo_lexer_dispatch: production route releases temporary source copies" {
+test "lexer_dispatch: production route releases temporary source copies" {
     const a = std.testing.allocator;
     const src: []const u8 = "main: i64 = ()\n    0";
     const file: []const u8 = "lexer.id";
@@ -465,7 +465,7 @@ test "duo_lexer_dispatch: production route releases temporary source copies" {
     try std.testing.expectEqual(@intFromPtr(file.ptr), @intFromPtr(toks[0].loc.file.ptr));
 }
 
-test "duo_lexer_dispatch: Idol owns exact token source spans" {
+test "lexer_dispatch: Idol owns exact token source spans" {
     const a = std.testing.allocator;
     const source: [:0]const u8 = "a a \"a\" [[a]]";
     const toks = try tokenize(a, source, "span.id");
@@ -479,7 +479,7 @@ test "duo_lexer_dispatch: Idol owns exact token source spans" {
     }
 }
 
-test "duo_lexer_dispatch: token streams agree field for field" {
+test "lexer_dispatch: token streams agree field for field" {
     const a = std.testing.allocator;
     const cases = [_][:0]const u8{
         "",
@@ -496,7 +496,7 @@ test "duo_lexer_dispatch: token streams agree field for field" {
 
 // The float case is the one that was silently wrong. Name it separately so a
 // regression breaks a test that says WHY, rather than shifting a count.
-test "duo_lexer_dispatch: float literals carry their value" {
+test "lexer_dispatch: float literals carry their value" {
     const a = std.testing.allocator;
     const toks = try tokenize(a, "1.5", "t.id");
     defer a.free(toks);
@@ -508,7 +508,7 @@ test "duo_lexer_dispatch: float literals carry their value" {
 // compiler could not be routed through this lexer at all: every malformed
 // source would have become a bare abort with no location instead of a
 // diagnostic. Each must now be a catchable error.
-test "duo_lexer_dispatch: malformed sources reject instead of aborting" {
+test "lexer_dispatch: malformed sources reject instead of aborting" {
     const a = std.testing.allocator;
     try std.testing.expectError(
         lexer.LexError.UnterminatedString,
@@ -520,7 +520,7 @@ test "duo_lexer_dispatch: malformed sources reject instead of aborting" {
     );
 }
 
-test "duo_lexer_dispatch: a rejection carries its line" {
+test "lexer_dispatch: a rejection carries its line" {
     try std.testing.expectEqual(@as(u32, 2), try errorLine("x = 1\ns = \"bad", "bad.duo"));
 }
 
@@ -528,7 +528,7 @@ test "duo_lexer_dispatch: a rejection carries its line" {
 // string literals, escapes included — tokenize identically? This compiles and
 // runs (the first attempt used std.fs.cwd(), which this Zig version lacks, so it
 // never built and its empty failure list read as a pass).
-test "duo_lexer_dispatch: corpus-data-as-literals tokenizes identically" {
+test "lexer_dispatch: corpus-data-as-literals tokenizes identically" {
     const a = std.testing.allocator;
     try differential(a, "corpus = { \"a == b ~= c\", \"-- line\\nfun\", \"\\\"hi\\\" 'there'\" }", "proof.id");
     try differential(a, "h = 0 s = \"a\\tb\\nc\\\\d\" n = #s", "proof.duo");
@@ -546,7 +546,7 @@ test "duo_lexer_dispatch: corpus-data-as-literals tokenizes identically" {
 //
 // These three are the literals actually in the tree, plus the boundary either
 // side of it. Field-for-field, so a wrong VALUE fails as loudly as an abort.
-test "duo_lexer_dispatch: gap[042] — hex literals at and above 2^63" {
+test "lexer_dispatch: gap[042] — hex literals at and above 2^63" {
     const a = std.testing.allocator;
     const cases = [_][:0]const u8{
         "h = 0xcbf29ce484222325",
@@ -561,7 +561,7 @@ test "duo_lexer_dispatch: gap[042] — hex literals at and above 2^63" {
 // The same literal, asserted by VALUE rather than by agreement, so a change
 // that broke BOTH lexers identically would still fail here. 0xcbf29ce484222325
 // is 14695981039346656037, which as an i64 bit pattern is -3750763034362895579.
-test "duo_lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
+test "lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
     const a = std.testing.allocator;
     const toks = try tokenize(a, "0xcbf29ce484222325", "hex.id");
     defer a.free(toks);
@@ -576,7 +576,7 @@ test "duo_lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
 //
 // Left failing on purpose — it is the only thing that makes the divergence
 // visible, and deleting it to keep a count green restores the blindness.
-test "duo_lexer_dispatch: GAP-024 — u64 literal above i64 max" {
+test "lexer_dispatch: GAP-024 — u64 literal above i64 max" {
     const a = std.testing.allocator;
     try differential(a, "fingerprint = 13636438360258349679", "u64.id");
 }

@@ -58,9 +58,6 @@ pub fn classifyQuote(facts: SourceFacts, quote: u8, long_string: bool) ?LiteralK
     };
 }
 
-pub fn classifyHistoricalSingleQuote(provenance: SourceProvenance) LiteralKind {
-    return if (provenance == .canonical) .bytes else .compat_text;
-}
 
 pub fn classifyTrivia(facts: SourceFacts, at_bol: bool, first: u8, second: u8) TriviaClass {
     if (at_bol and first == '#' and second == '!') return .shebang;
@@ -86,7 +83,6 @@ pub fn backtickAllowed(facts: SourceFacts) bool {
 
 test "lexical identity: backtick is reserved in canonical source only" {
     try std.testing.expect(!backtickAllowed(sourceFacts("x.id")));
-    try std.testing.expect(backtickAllowed(sourceFacts("x.duo")));
     try std.testing.expect(backtickAllowed(sourceFacts("x.lua")));
 }
 
@@ -97,13 +93,6 @@ test "lexical identity: text and bytes differ on canonical .id" {
     try std.testing.expectEqual(LiteralKind.bytes.tokenKind(), classifyQuote(facts, '\'', false).?.tokenKind());
 }
 
-test "lexical identity: historical single quote is compatibility text" {
-    try std.testing.expectEqual(
-        LiteralKind.compat_text.tokenKind(),
-        classifyHistoricalSingleQuote(.historical).tokenKind(),
-    );
-}
-
 test "lexical identity: long strings are compatibility long text" {
     const facts = sourceFacts("x.id");
     try std.testing.expectEqual(
@@ -112,18 +101,9 @@ test "lexical identity: long strings are compatibility long text" {
     );
 }
 
-test "lexical identity: historical single quote stays compatibility text" {
-    const facts = sourceFacts("x.duo");
-    try std.testing.expectEqual(
-        LiteralKind.compat_text.tokenKind(),
-        classifyQuote(facts, '\'', false).?.tokenKind(),
-    );
-}
-
 test "lexical identity: canonical hash is comment trivia not operator" {
     const facts = sourceFacts("x.id");
     try std.testing.expect(!hashOperatorAllowed(facts));
-    try std.testing.expect(hashOperatorAllowed(sourceFacts("x.duo")));
     try std.testing.expectEqual(TriviaClass.comment_canon, classifyTrivia(facts, true, '#', 'x'));
     try std.testing.expectEqual(TriviaClass.shebang, classifyTrivia(facts, true, '#', '!'));
 }

@@ -4,7 +4,7 @@
 //! Projections: compiler metadata, classifier, spelling, formatter, LSP, MCP, tests.
 const std = @import("std");
 const lexer = @import("lexer.zig");
-const duo_keyword_bridge = @import("keyword_bridge.zig");
+const keyword_bridge = @import("keyword_bridge.zig");
 const proof_carrying = @import("proof_carrying.zig");
 const realization = @import("realization.zig");
 const evidence_record = @import("evidence_record.zig");
@@ -222,7 +222,7 @@ pub fn classifyWith(id: ClassifierId, text: []const u8) ?lexer.TokenKind {
 /// Production entry — Duo-native classify (host branch_chain retained as differential oracle).
 pub fn lookupKeyword(text: []const u8) ?lexer.TokenKind {
     return switch (production_authority) {
-        .duo_classify => duo_keyword_bridge.lookupKeyword(text),
+        .duo_classify => keyword_bridge.lookupKeyword(text),
         .host_branch_chain => classifyWith(production_classifier, text),
     };
 }

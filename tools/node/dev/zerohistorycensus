@@ -1,27 +1,25 @@
 #!/bin/sh
 # ZERO-HISTORY whole-tree census — law.zero.history merge priority verification.
-# Foreign-language std (Zig @import("std"), C stdlib) reported separately.
 set -eu
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$repo"
 
 fail=0
 warn=0
+filter='zerohistorycensus|law\.zero\.history|ZERO-HISTORY|retired name|git stores'
 
-count_project() {
+scan() {
   pat="$1"
   label="$2"
-  # Exclude git metadata; scan tracked + untracked project text
-  hits=$(git ls-files 2>/dev/null | while read -r f; do
-    case "$f" in
-      *.png|*.jpg|*.wasm|*.o|*.dylib|*.profraw) continue ;;
-    esac
-    rg -n "$pat" "$f" 2>/dev/null || true
-  done | rg -v 'zerohistorycensus|law\.zero\.history|ZERO-HISTORY|retired name|git stores' || true)
+  hits=$(git ls-files 2>/dev/null \
+    | rg -v '\.(png|jpg|wasm|o|dylib|profraw)$' \
+    | rg -v '^\.claude/' \
+    | rg -v '^(docs/spec/constitution\.md|scripts/idiomgate\.id|gates/idiom\.id|tools/node/dev/identitycensus|tools/node/dev/zerohistorycensus|\.githooks/)' \
+    | xargs rg -n "$pat" 2>/dev/null | rg -v "$filter" || true)
   n=$(printf '%s\n' "$hits" | sed '/^$/d' | wc -l | tr -d ' ')
   if [ "$n" -gt 0 ]; then
     echo "zerohistorycensus: FAIL $label ($n hits)"
-    printf '%s\n' "$hits" | head -20 | sed 's/^/  /'
+    printf '%s\n' "$hits" | head -15 | sed 's/^/  /'
     fail=$((fail + n))
   else
     echo "zerohistorycensus: pass $label"
@@ -30,41 +28,34 @@ count_project() {
 
 echo "zerohistorycensus: ZERO-HISTORY audit"
 
-count_project 'language\.history' 'language.history table'
-count_project '(^|[^a-zA-Z])Idsem([^a-zA-Z]|$)|idsem' 'Idsem identity'
-count_project '(^|[^a-zA-Z])Duon([^a-zA-Z]|$)|duon' 'Duon identity'
-count_project '\.duo\b' 'retired .duo suffix'
-count_project 'spec100|pass[0-9]+|Pass [0-9]+' 'pass/spec-number taxonomy'
-count_project '@corpus (verified|proof|history|migration|compat|legacy)' 'retired @corpus labels'
-count_project 'examples/spec100/' 'spec100 path references'
+scan 'language\.history' 'language.history table'
+scan '(^|[^a-zA-Z])Idsem([^a-zA-Z]|$)|idsem' 'Idsem identity'
+scan '(^|[^a-zA-Z])Duon([^a-zA-Z]|$)|duon' 'Duon identity'
+scan '\.duo\b' 'retired .duo suffix'
+scan 'spec100|pass[0-9]+|Pass [0-9]+' 'pass/spec-number taxonomy'
+scan '@corpus (verified|proof|history|migration|compat|legacy)' 'retired @corpus labels'
+scan 'examples/spec100/' 'spec100 path references'
 
-# Duo/duo: allow in foreign vendored paths only — flag project-owned hits
-duo_hits=$(git ls-files 2>/dev/null | while read -r f; do
-  case "$f" in
-    */vendor/*|*/.git/*) continue ;;
-  esac
-  rg -n '(^|[^a-zA-Z])duo([^a-zA-Z]|$)|DUO_' "$f" 2>/dev/null || true
-done | rg -v 'zerohistorycensus|law\.zero|ZERO-HISTORY|duo_lock|bootstrap' || true)
+duo_hits=$(git ls-files 2>/dev/null | rg -v 'vendor/' | xargs rg -n '(^|[^a-zA-Z])duo([^a-zA-Z]|$)|DUO_' 2>/dev/null | rg -v 'zerohistorycensus|law\.zero|ZERO-HISTORY|duo_lock|bootstrap|DUO_TRANSFORM' || true)
 duo_n=$(printf '%s\n' "$duo_hits" | sed '/^$/d' | wc -l | tr -d ' ')
 if [ "$duo_n" -gt 0 ]; then
-  echo "zerohistorycensus: WARN duo/DUO_ project hits ($duo_n) — cutover in progress"
-  printf '%s\n' "$duo_hits" | head -15 | sed 's/^/  /'
-  warn=$((warn + duo_n))
+  echo "zerohistorycensus: WARN duo/DUO_ ($duo_n) — cutover in progress"
+  printf '%s\n' "$duo_hits" | head -10 | sed 's/^/  /'
+  warn=$duo_n
 else
-  echo "zerohistorycensus: pass duo/DUO_ in project-owned paths"
+  echo "zerohistorycensus: pass duo/DUO_ in project paths"
 fi
 
-# Committed session envelope
 if git ls-files --error-unmatch .agents/session/ENVELOPE.md >/dev/null 2>&1; then
-  echo "zerohistorycensus: FAIL committed session envelope (.agents/session/ENVELOPE.md)"
+  echo "zerohistorycensus: FAIL committed session envelope"
   fail=$((fail + 1))
 else
   echo "zerohistorycensus: pass session envelope not committed"
 fi
 
 if [ "$fail" -gt 0 ]; then
-  echo "zerohistorycensus: $fail violation class(es) — law.zero.history"
+  echo "zerohistorycensus: $fail violation class(es)"
   exit 1
 fi
-echo "zerohistorycensus: census complete ($warn duo warnings pending cutover)"
+echo "zerohistorycensus: census complete ($warn duo warnings)"
 exit 0

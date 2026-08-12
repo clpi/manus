@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 # compile_fail: io.read is namespace-method syntax — use io:read (docs/spec/world.md).
 
 main: i64 = ()

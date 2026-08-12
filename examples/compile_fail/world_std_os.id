@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 # compile_fail: std.os is not semantic authority (docs/spec/world.md, law.std.zero).
 
 main: i64 = ()

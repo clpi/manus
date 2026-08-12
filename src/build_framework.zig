@@ -6,23 +6,16 @@ const Sema = @import("sema.zig").Sema;
 const family = @import("lexer_bridge.zig");
 
 const canonical = family.CANONICAL_SOURCE_SUFFIX;
-const historical = family.HISTORICAL_SOURCE_SUFFIX;
 
 const build_source_candidates = [_][]const u8{
     "build" ++ canonical,
     "src/build" ++ canonical,
-    "build" ++ historical,
-    "src/build" ++ historical,
     "src/main" ++ canonical,
     "main" ++ canonical,
-    "src/main" ++ historical,
-    "main" ++ historical,
     "src/main.lua",
     "main.lua",
     "src/init" ++ canonical,
     "init" ++ canonical,
-    "src/init" ++ historical,
-    "init" ++ historical,
     "src/init.lua",
     "init.lua",
 };
@@ -30,14 +23,10 @@ const build_source_candidates = [_][]const u8{
 const entrypoint_candidates = [_][]const u8{
     "src/main" ++ canonical,
     "main" ++ canonical,
-    "src/main" ++ historical,
-    "main" ++ historical,
     "src/main.lua",
     "main.lua",
     "src/init" ++ canonical,
     "init" ++ canonical,
-    "src/init" ++ historical,
-    "init" ++ historical,
     "src/init.lua",
     "init.lua",
 };

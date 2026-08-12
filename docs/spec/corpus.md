@@ -71,7 +71,7 @@ foreign        examples/ffi
 foreign        examples/wasm/
 compatibility  examples/lua
 compatibility  examples/test_lua
-canonical      examples/spec100/
+canonical      examples/examples/
 canonical      examples/boring/
 canonical      examples/table/
 historical     examples/

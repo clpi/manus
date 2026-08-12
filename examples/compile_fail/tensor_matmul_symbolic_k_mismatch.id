@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 bad(a: Tensor[M, K, f32], b: Tensor[J, N, f32])
   return a @ b
 end

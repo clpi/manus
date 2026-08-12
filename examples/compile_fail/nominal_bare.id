@@ -1,6 +1,6 @@
-# @corpus proof
+# @corpus current
 # constitution §46 `law.nominal` — A NOMINAL DESCRIPTOR THAT ACCEPTS ANYTHING
-# IS NOT NOMINAL. The negative twin of `examples/spec100/nominal.id`.
+# IS NOT NOMINAL. The negative twin of `examples/nominal/measure.id`.
 #
 # `feet` and `f64` are the same double, and every PHYSICAL query in the
 # compiler now says so — `is_float`, `c_type` and the drop ladder all read

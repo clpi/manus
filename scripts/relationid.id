@@ -38,8 +38,8 @@
 # `zig build unit-test`.
 
 file = "src/relation.zig"
-fixture = "examples/spec100/relation.id"
-store = "examples/spec100/relation_store.id"
+fixture = "examples/conversion/relation.id"
+store = "examples/conversion/store.id"
 
 # The census line and the answer, both literal. `n=` is carried with the ratio
 # because a ratio without its universe is not a measurement: an identity split

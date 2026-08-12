@@ -3391,7 +3391,7 @@ pub const Sema = struct {
     /// GLUED spelling to the anchor — `at_is_glued_anchor` in `src/parser.zig`
     /// reads `p@x` as a SUFFIX beside `.field` and `[i]`, agreeing with
     /// `lib/std/compiler/parser.id`, pinned by value at 353 in
-    /// `examples/spec100/anchormove.id`.
+    /// `examples/anchor/move.id`.
     ///
     /// `infix_prec` still maps the `@` token to `.matmul`, so the SPACED
     /// spelling kept everything the glued one shed:
@@ -13636,7 +13636,7 @@ test "sema: tensor matmul infers output shape" {
 // The GLUED spelling never reaches here at all: after 3f6ec4e the parser reads
 // `p@x` as an anchor suffix, so it is a `field` node, not a binop. That is the
 // fourth row and it lives where it belongs, in
-// `examples/spec100/anchormove.id`, as a VALUE.
+// `examples/anchor/move.id`, as a VALUE.
 test "sema: duo mode infix @ over non-tensor operands is an error" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();

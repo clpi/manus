@@ -99,7 +99,7 @@ Normalized assessment — not claimed repository counters.
 |---|---|---|---|---|
 | Language/semantic closure | settle syntax/features | one semantic authority + closed source law | ~90% design / lower implementation | ↑↑ |
 | Naming convergence | lowercase/no snake/camel | one meaning → one native word; qualifiers → facts | strong ratchet, corpus incomplete | ↑↑ |
-| Canonical source | `.duo`, later `.id` | Idol command + `.id` suffix; constitution is semantic law | suffix migration largely landed | ↑↑ |
+| Canonical source | `.id` only | Idol command + `.id` suffix; constitution is semantic law | current | ↑↑ |
 | Canonicality gate quality | lexical grep / convention | fail-closed positive controls + semantic classifications | strong for **changed** lines | ↑↑ |
 | Canonical corpus debt | inferred from green gate | entire existing corpus satisfies current law | far from zero | ↑, lagging |
 | Semantic application authority | schema / call metadata | exact graph relation/subject/argument/result facts | substantial progress | ↑↑↑ |
@@ -120,16 +120,10 @@ Normalized assessment — not claimed repository counters.
 | Agent orientation | prompt discipline | repository-enforced authority + scoped projections | strong | ↑↑ |
 | Anti-drift durability | tell agents what not to do | forbidden semantic authority fail-closed | much better, incomplete | ↑↑ |
 
-## Identity naming epochs (closed)
+## Identity (current)
 
-1. Lowercase / no underscore / camel.
-2. NAME-ONE — one irreducible meaning, one word; qualifiers → facts.
-3. Project identity: Duo → Duon → **Idol** (`idol`, `.id`, constitution §67 algebra)
-   (command, repository, `.id`). Historical names are provenance only when
-   required (`clpi/duo`, `duo` bootstrap executable, `.duo` paths).
-
-Active durable rule: **one current project identity; historical names only for
-provenance.**
+Project identity: **Idol** (`idol`, `.id`, repository `idollang/idol`).
+Constitution §67 is sole semantic algebra authority. Git owns historical archive.
 
 ## What improved (objective inflections)
 

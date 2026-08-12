@@ -10,8 +10,7 @@ Cursor by `tools/node/dev/generate-configs`. Generated absolute-path client
 files are machine-local state, not additional manifest authority.
 
 Install the **`idol-dev`** agent skill with `./tools/node/dev/install-skills`.
-Do not use the retired `duon-development` skill name. Physical `duo-*` MCP
-server and tool names remain bootstrap aliases.
+MCP server and tool names remain bootstrap transport until cutover completes.
 
 Do not add host OS API calls or host-shaped wrappers to canonical source until
 `docs/spec/host.md` closure is implemented (`GAP-154`). Host APIs belong at

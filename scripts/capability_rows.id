@@ -99,7 +99,7 @@
 # corpus files rather than only over damaged copies.
 #
 # MEASURED CONTROL, 2026-08-08. Two corpus fixtures were deliberately broken
-# and the report caught both. `examples/spec100/offside.id`'s `bump` changed
+# and the report caught both. `examples/layout/offside.id`'s `bump` changed
 # from `n + 10` to `n + 11`: exit 3, "does not match its own `-- expect:`" —
 # it is the value control's baseline, so the report refused to run at all
 # rather than print a table whose C column it could no longer defend.
@@ -140,7 +140,7 @@ rows = {
       { "examples/native_differential/canon2_tail_record_return.id",
         "examples/native_differential/canon6_call_in_record_literal.id",
         "examples/native_differential/canon7_call_local_then_record.id",
-        "examples/spec100/offside.id" },
+        "examples/layout/offside.id" },
       {} },
     { "record return", "\"kind\":\"table_shape\"",
       { "examples/native_differential/canon1_lambda_record_return.id",
@@ -153,12 +153,12 @@ rows = {
         "examples/native_differential/s2_mutual.id" },
       {} },
     { "offside blocks", "-",
-      { "examples/spec100/offside.id" },
+      { "examples/layout/offside.id" },
       { "examples/compile_fail/offside_misindent.id",
         "examples/compile_fail/offside_end_column.id" } },
     { "p100 failure routing", "-",
-      { "examples/spec100/pack.id",
-        "examples/spec100/consume.id" },
+      { "examples/pack/merge.id",
+        "examples/pack/consume.id" },
       {} },
     # No fixture, deliberately — gap[059]. The two parsers in this tree
     # disagree about what `X@rel` MEANS: `lib/std/compiler/parser.id:1386`
@@ -187,18 +187,18 @@ rows = {
         "examples/native_differential/native_only/parser_token_stream.id" },
       {} },
     { "inline case-set", "\"kind\":\"enum_shape\"",
-      { "examples/spec100/caseset.id" }, {} },
-    { "relation edge (level)", "-", { "examples/spec100/edge.id" }, {} },
-    { "relation slot", "-", { "examples/spec100/slot.id" }, {} },
-    { "level application", "-", { "examples/spec100/level.id" }, {} },
-    { "binding-condition loop", "-", { "examples/spec100/consume.id" }, {} },
-    { "correlated guard chain", "-", { "examples/spec100/guard.id" }, {} },
-    { "glued compound assign", "-", { "examples/spec100/glued.id" }, {} },
+      { "examples/case/set.id" }, {} },
+    { "relation edge (level)", "-", { "examples/conversion/edge.id" }, {} },
+    { "relation slot", "-", { "examples/conversion/slot.id" }, {} },
+    { "level application", "-", { "examples/conversion/level.id" }, {} },
+    { "binding-condition loop", "-", { "examples/pack/consume.id" }, {} },
+    { "correlated guard chain", "-", { "examples/layout/guard.id" }, {} },
+    { "glued compound assign", "-", { "examples/layout/glued.id" }, {} },
     { "x8 field layout", "\"kind\":\"table_shape\"",
-      { "examples/spec100/x8.id" }, {} },
+      { "examples/pack/x8.id" }, {} },
     { "string interpolation", "-",
-      { "examples/spec100/offside.id",
-        "examples/spec100/edge.id" }, {} },
+      { "examples/layout/offside.id",
+        "examples/conversion/edge.id" }, {} },
     # `-`, not `"kind":"table_shape"`. These three fixtures are POSITIONAL
     # tables (`t = { 10, 20, 30 }`) and the graph's `table_shape` is lifted
     # from DESCRIPTORS only: `duo graph` on table_const_index.id emits two
@@ -504,7 +504,7 @@ main: i64 = ()
     # probe, damaged in three different places so they fail three different
     # columns. `ctlvalue` is derived from a fixture that DECLARES a value —
     # without one there is nothing to falsify and the control would be vacuous.
-    good = "examples/spec100/offside.id"
+    good = "examples/layout/offside.id"
     if !std.script.fs_exists(good)
         print("capability_rows: FAIL — the control source {good} is gone")
         return 3
@@ -610,7 +610,7 @@ main: i64 = ()
     end
     # H's control is that the column is NOT CONSTANT, not that a chosen pair
     # differs. The pair form was tried and was wrong: it compared the syntax
-    # control against examples/spec100/offside.id, which the self-hosted
+    # control against examples/layout/offside.id, which the self-hosted
     # parser ALREADY rejects (it has not learned offside layout), so two
     # correct rejections read as a broken probe. A column that answers the
     # same thing for everything is the failure worth catching, and this

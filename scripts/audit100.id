@@ -732,7 +732,7 @@ main: i64 = ()
     # it: §5 says "`return` = early exit or contract only", §20's leb128 block
     # writes `return nil, error.overflow` three times, and this regex —
     # `return[[:space:]]+[^[:space:]]` — cannot tell an early exit from a
-    # trailing one. `examples/spec100/pack.id` is the fixture for the result
+    # trailing one. `examples/pack/merge.id` is the fixture for the result
     # pack (B-12) and its two `return nil, err` / `return v, nil` lines ARE
     # the canonical PRODUCE spelling; writing them another way to keep the
     # number still would make the fixture stop testing what §20 writes.
@@ -873,7 +873,7 @@ main: i64 = ()
     # Pass 100 §5 (DEMAND-RETURN) does not deny `return`; it says "`return` =
     # EARLY EXIT or contract only". §1 denies the TRAILING one. The regex
     # cannot tell those two apart, so it convicts the licensed form. That is
-    # verbatim the finding recorded above for `examples/spec100/pack.id`,
+    # verbatim the finding recorded above for `examples/pack/merge.id`,
     # where the row was raised by 2 rather than have the §20 result-pack
     # fixture stop testing what §20 writes.
     #

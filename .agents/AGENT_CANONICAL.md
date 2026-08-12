@@ -51,13 +51,10 @@ historical corpus file is an authority.
    The `.id` lock entry is executed bootstrap transport, not self-hosting proof.
 7. Commit only explicit owned paths and release only your own claims.
 
-The language identity is **Idol** (`idol`, `.id`). Semantic law lives in
-`docs/spec/constitution.md` (C0). Branding is not ontology.
-Active development repository is `clpi/duo`. Future release repository is
-`idollang/idol`; do not migrate development there until
-`.agents/RELEASE_READINESS.md` authorizes release. The physical `duo` command
-and `duo-*` MCP names are bootstrap aliases. Historical Idol, Duo, Duon, and
-`.duo` paths are migration provenance.
+The language identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
+Semantic law lives in `docs/spec/constitution.md` (C0). Do not migrate to the
+release repository until `.agents/RELEASE_READINESS.md` authorizes release.
+MCP session and claim tool names remain bootstrap transport until cutover completes.
 
 No import or admission syntax in canonical source — reachability is scope and
 home projection (`docs/spec/source.md`, `GAP-153`).

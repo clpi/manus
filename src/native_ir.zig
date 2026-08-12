@@ -413,17 +413,17 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
     return true;
 }
 
-test "duo_native_ir: empty module not ready" {
+test "native_ir: empty module not ready" {
     const m = Module{ .functions = &.{} };
     try std.testing.expect(!moduleIsNativeDirectReady(m));
 }
 
-test "duo_native_ir: resident graph id stays dense" {
+test "native_ir: resident graph id stays dense" {
     try std.testing.expectEqual(@sizeOf(u32), @sizeOf(semantic_graph.id));
     try std.testing.expectEqual(@as(usize, 8), @sizeOf(?semantic_graph.id));
 }
 
-test "duo_native_ir: folded module constant uses one const realization" {
+test "native_ir: folded module constant uses one const realization" {
     const instruction = Instr{
         .op = .@"const",
         .result = 0,
@@ -438,7 +438,7 @@ test "duo_native_ir: folded module constant uses one const realization" {
     try std.testing.expectEqual(RT.i64, instruction.ty);
 }
 
-test "duo_native_ir: definition projects physical producers" {
+test "native_ir: definition projects physical producers" {
     const instructions = [_]Instr{
         .{ .op = .@"const", .result = 37 },
         .{ .op = .store_local, .result = 37 },
@@ -457,7 +457,7 @@ test "duo_native_ir: definition projects physical producers" {
     try std.testing.expectEqual(@as(?u32, null), definition(.{ .op = .binop }));
 }
 
-test "duo_native_ir: definition excludes ABI metadata and nonproducers" {
+test "native_ir: definition excludes ABI metadata and nonproducers" {
     const instructions = [_]Instr{
         .{ .op = .store_field, .result = 37 },
         .{ .op = .init_record, .result = 37 },
@@ -478,7 +478,7 @@ test "duo_native_ir: definition excludes ABI metadata and nonproducers" {
     }
 }
 
-test "duo_native_ir: single ret function ready" {
+test "native_ir: single ret function ready" {
     const blocks = [_]Block{
         .{ .instrs = &.{.{ .op = .ret, .lhs = .{ .i64 = 0 } }} },
     };
@@ -491,7 +491,7 @@ test "duo_native_ir: single ret function ready" {
     try std.testing.expect(moduleIsNativeDirectReady(m));
 }
 
-test "duo_native_ir: resident graph empty application census refuses direct call" {
+test "native_ir: resident graph empty application census refuses direct call" {
     var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
     defer graph.deinit();
     const blocks = [_]Block{
@@ -513,7 +513,7 @@ test "duo_native_ir: resident graph empty application census refuses direct call
     }));
 }
 
-test "duo_native_ir: branch condition and operand agree" {
+test "native_ir: branch condition and operand agree" {
     const bad_unconditional = [_]Block{
         .{ .instrs = &.{.{ .op = .br, .lhs = .{ .i64 = 1 } }} },
     };

@@ -6,9 +6,8 @@
 # Bootstrap shell ingress via gatecap (GAP-155) — not process.* namespace.
 # Uses grep for patterns containing '(' — gatecap strips rg regex escapes.
 #
-# Run:
+# Run from repository root:
 #   idol run scripts/infer_census.id
-#   CENSUS_ROOT=/path idol run scripts/infer_census.id
 #
 # Exit 0 always — this reports; graph gates own enforcement (law.gate.infer).
 
@@ -29,12 +28,12 @@ cap: str = (cmd: str)
 main: i64 = ()
     root = cap("git rev-parse --show-toplevel 2>/dev/null")
     if root == ""
-        print("infer_census: fail no root")
+        print("infer_census: fail no root — run from repository root")
         return 3
 
-    subj = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c ':to(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
-    nest = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -E -c 'to\\((str|i64|bytes)\\)\\(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
-    files = cap("cd '{root}' && git ls-files '*.id' | xargs grep -l -E ':to\\(|to\\((str|i64|bytes)\\)\\(' 2>/dev/null | wc -l | tr -d ' '")
+    subj = cap("git ls-files '*.id' | xargs grep -h -c ':to(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    nest = cap("git ls-files '*.id' | xargs grep -h -E -c 'to\\((str|i64|bytes)\\)\\(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    files = cap("git ls-files '*.id' | xargs grep -l ':to(' 2>/dev/null | wc -l | tr -d ' '")
 
     print("infer_census: explicit conversion spellings in tracked .id")
     print("  root {root}")
@@ -43,10 +42,10 @@ main: i64 = ()
     print("  nested to(T)( {nest}")
     print("")
     print("  by role prefix:")
-    print(cap("cd '{root}' && git ls-files '*.id' | xargs grep -l -E ':to\\(|to\\((str|i64|bytes)\\)\\(' 2>/dev/null | sed 's|^examples/spec100/|canonical-teaching |; s|^scripts/proof/|proof |; s|^gates/|gate |; s|^tools/mcp/|mcp-agent |; s|^lib/std/|std-migration |; s|^scripts/|script |; s|^examples/|example |; s|^tools/|tool |; s|^lib/|lib |; s|^|other |' | cut -d' ' -f1 | sort | uniq -c | sort -rn"))
+    print(cap("git ls-files '*.id' | xargs grep -l ':to(' 2>/dev/null | awk -F/ '{ if ($1==\"examples\" && ($2==\"conversion\" || $2==\"projection\" || $2==\"infer\" || $2==\"demand\" || $2==\"nominal\" || $2==\"layout\" || $2==\"pack\" || $2==\"anchor\" || $2==\"case\" || $2==\"read\")) print \"canonical-teaching\"; else if ($1==\"lib\" && $2==\"std\") print \"std-migration\"; else if ($1==\"scripts\") print \"script\"; else if ($1==\"gates\") print \"gate\"; else if ($1==\"tools\" && $2==\"mcp\") print \"mcp-agent\"; else if ($1==\"tools\") print \"tool\"; else if ($1==\"lib\") print \"lib\"; else if ($1==\"examples\") print \"example\"; else print \"other\" }' | sort | uniq -c | sort -rn"))
     print("")
     print("  top files (:to( count):")
-    print(cap("cd '{root}' && git ls-files '*.id' | xargs grep -c ':to(' 2>/dev/null | awk -F: '$2>0' | sort -t: -k2 -nr | head -25"))
+    print(cap("git ls-files '*.id' | xargs grep -c ':to(' 2>/dev/null | awk -F: '$2>0' | sort -t: -k2 -nr | head -25"))
     print("")
     print("  repair classes A–L (law.repair.infer) — classify each site before rewrite")
     print("  census only; graph proof required for removal (GAP-124 · GAP-165)")

@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 # compile_fail — hash-length comment erases the rest of the line.
 #
 # Positive control: idiomgate and the lexer treat `#` as comment start.

@@ -344,7 +344,7 @@ main: i64 = ()
     if ascount(cmd) != 0
         print("(semanticgate, control, namespace, convicted subject relation)")
         code = 3
-    cmd = "./zig-out/bin/idol run examples/spec100/result.id 2>/dev/null | tail -1 | tr -d '\\n'"
+    cmd = "./zig-out/bin/idol run examples/demand/result.id 2>/dev/null | tail -1 | tr -d '\\n'"
     if tail(cmd) != "42"
         print("(semanticgate, control, source, result proof broken)")
         code = 3

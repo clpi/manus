@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 # compile_fail: os.args is host ingress — not Idol semantics (docs/spec/host.md).
 
 main: i64 = ()

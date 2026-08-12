@@ -100,7 +100,7 @@ EOF
 | host debt | ${hostdebt} |
 | authority ledger | docs/bootstrap.md |
 | dominant metrics | docs/METRICS.md — authority, reconstruction, ftcftw evidence |
-| claims | duo_dev_claim_acquire / duo_dev_claim_files before editing |
+| claims | idol_dev_claim_acquire / idol_dev_claim_files before editing |
 | preflight | ./tools/node/dev/orient then ./tools/node/dev/doctor |
 
 ### executed authority (metric 1)

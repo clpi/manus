@@ -7,7 +7,7 @@
 # and future production parse → resolve → graph → verdict path.
 # Forbidden detector kingdoms (removed, do not reintroduce): codens, luahash,
 # opcast, readface, materialize, suffix. Callable result demand belongs to
-# gates/architecture.id staged census + examples/spec100/result.id + canon.id.
+# gates/architecture.id staged census + examples/demand/result.id + canon.id.
 #
 # String matching here is evidence for migration pressure only. It must never
 # decide namespace, length, cast, world, or relation identity verdicts.
@@ -87,7 +87,7 @@ hit(io) = (code: str)
 hit(os) = (code: str)
     peek("os.", code)
 
-edge: bool = (prefix: str, code: str)
+spot: bool = (prefix: str, code: str)
     n = code:len()
     m = prefix:len()
     i = 1
@@ -113,7 +113,7 @@ dot(os) = (code: str)
     hit(os)(code)
 
 dot(std) = (world: str, code: str)
-    edge("std.{world}.", code)
+    spot("std.{world}.", code)
 
 # Operation-first conversion projection at a call site — not declaration head.
 commentline: bool = (code: str)
@@ -205,9 +205,9 @@ admitted: bool = (name: str)
     false
 
 rules: i64 = (path: str, no: i64, code: str)
-    rules(false)(path, no, code)
+    rulesq(path, no, code, false)
 
-rules(quiet) = (path: str, no: i64, code: str)
+rulesq: i64 = (path: str, no: i64, code: str, quiet: bool)
     h = deny(path, no, code, quiet)
     h = h + edge(path, no, code, quiet)
     h = h + home(path, no, code, quiet)
@@ -772,13 +772,13 @@ seed: bool = ()
     true
 
 audit: i64 = (path: str, no: i64, line: str)
-    audit(false)(path, no, line)
+    auditq(path, no, line, false)
 
-audit(quiet: bool) = (path: str, no: i64, line: str)
+auditq: i64 = (path: str, no: i64, line: str, quiet: bool)
     code = strip(line)
     h = lex(path, no, code, line, quiet)
     h = h + face(path, no, code, quiet)
-    h = h + rules(quiet)(path, no, code)
+    h = h + rulesq(path, no, code, quiet)
     h = h + realm(path, no, code, quiet)
     h = h + walk(path, no, code, quiet)
     h
@@ -839,7 +839,7 @@ face: i64 = (path: str, no: i64, code: str, quiet: bool)
         hits += 1
     if code:has("setmetatable")
         if !quiet
-            print("{path}:{no}  setmetatable  [§1]  descriptors and protocols")
+            print("{path}:{no}  setmetatable  [§1]  descriptors and relation facts")
         hits += 1
     if token(code, "nil")
         if !quiet
@@ -963,7 +963,7 @@ scanq: i64 = (body: str, quiet: bool)
                         no = num(line, p + 1)
                     else
                         if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
-                            hits += audit(quiet)(path, no, line:sub(2, line:len()))
+                            hits += auditq(path, no, line:sub(2, line:len()), quiet)
                             no = no + 1
             line = ""
         else
@@ -1184,46 +1184,46 @@ control: bool = ()
     if "fs:exists(":has("fs_exists")
         print("control FAIL: fs_exists fired on canonical path:exists")
         ok = false
-    if rules(true)("control", 1, "text = router(x)") == 0
+    if rulesq("control", 1, "text = router(x)", true) == 0
         print("control FAIL: router bridge binding firewall did not fire")
         ok = false
-    if rules(true)("control", 1, "len: bool = (path: str, min: i64)") == 0
+    if rulesq("control", 1, "len: bool = (path: str, min: i64)", true) == 0
         print("control FAIL: flat len binding bridge rule did not fire")
         ok = false
-    if rules(true)("control", 1, "len(path) = (min: i64)") != 0
+    if rulesq("control", 1, "len(path) = (min: i64)", true) != 0
         print("control FAIL: flat len rule fired on canonical len(path) boundary curry")
         ok = false
-    if rules(true)("control", 1, "audit: bool = (path: str, pattern: str)") == 0
+    if rulesq("control", 1, "audit: bool = (path: str, pattern: str)", true) == 0
         print("control FAIL: flat audit binding bridge rule did not fire")
         ok = false
-    if rules(true)("control", 1, "audit(path) = (pattern: str)") != 0
+    if rulesq("control", 1, "audit(path) = (pattern: str)", true) != 0
         print("control FAIL: flat audit rule fired on canonical audit(path) boundary curry")
         ok = false
-    if rules(true)("control", 1, "hit: bool = (path: str, pattern: str)") == 0
+    if rulesq("control", 1, "hit: bool = (path: str, pattern: str)", true) == 0
         print("control FAIL: flat hit binding bridge rule did not fire")
         ok = false
-    if rules(true)("control", 1, "from(path) = (pattern: str)") == 0
+    if rulesq("control", 1, "from(path) = (pattern: str)", true) == 0
         print("control FAIL: from(path) mash bridge rule did not fire")
         ok = false
-    if rules(true)("control", 1, "hit(path) = (pattern: str)") != 0
+    if rulesq("control", 1, "hit(path) = (pattern: str)", true) != 0
         print("control FAIL: flat hit rule fired on canonical hit(path) boundary curry")
         ok = false
-    if rules(true)("control", 1, "if len(path, min)") == 0
+    if rulesq("control", 1, "if len(path, min)", true) == 0
         print("control FAIL: len(path, min) call bridge rule did not fire")
         ok = false
-    if rules(true)("control", 1, "if !len(path)(min)") != 0
+    if rulesq("control", 1, "if !len(path)(min)", true) != 0
         print("control FAIL: len(path)(min) rule fired on canonical len(path)(min)")
         ok = false
-    if rules(true)("control", 1, "if not bare") == 0
+    if rulesq("control", 1, "if not bare", true) == 0
         print("control FAIL: if not keyword bridge rule did not fire")
         ok = false
-    if rules(true)("control", 1, "if !bare") != 0
+    if rulesq("control", 1, "if !bare", true) != 0
         print("control FAIL: if not rule fired on canonical prefix !")
         ok = false
-    if rules(true)("control", 1, "text = path:read()") == 0
+    if rulesq("control", 1, "text = path:read()", true) == 0
         print("control FAIL: transitive read binding firewall did not fire")
         ok = false
-    if rules(true)("control", 1, "path:read():match(pattern)") != 0
+    if rulesq("control", 1, "path:read():match(pattern)", true) != 0
         print("control FAIL: read binding rule fired on canonical path:read():match chain")
         ok = false
     if !"relationid":has("relationid")

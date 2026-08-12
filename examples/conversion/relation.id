@@ -1,12 +1,7 @@
 # @corpus current
-# FROM-ZERO (law.from.zero): `from` normalizes to the same `to` edge — no second
-# relation universe. Canonical invocation is subject-first `value:to(target)`.
+# Conversion algebra: one relation `to`, hub derivation, enumerable trie.
+# FROM-ZERO: canonical invocation is subject-first `value:to(target)`.
 #
-#     to(micron)(inch) = stretch@lossless   # declaration projection — not call site
-#     for src, conv in to[micron]
-#     feet: f64 = 3.0:to(inch)              # was inch:from(foot)(3.0) — migration debt
-#
-# Six authored edges, six derived through micron hub. SER = 12/6 = 2.00 at N = 4.
 # expect: 189
 
 stretch: f64 = (v: f64)

@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 # compile_fail: environment is not a thing — use os.env table (docs/spec/world.md).
 
 main: i64 = ()

@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 # compile_fail: process.run namespace — run is a global relation, not process home dispatch.
 
 main: i64 = ()

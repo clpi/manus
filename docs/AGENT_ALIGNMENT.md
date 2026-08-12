@@ -37,10 +37,9 @@ current canonical `.id` source
 
 The destination is 100% self-hosted canonical Idol: public command identity
 `idol`, source suffix `.id`, and repository identity `idollang/idol`. A `.id`
-filename does not transfer authority. Historical Duo and Duon names,
-historical `.id` source, exact physical `duo` tools, generated projections,
-epoch-1 syntax, C-backed proofs, and Idol wrappers over Zig owners remain
-migration or bootstrap debt.
+filename does not transfer authority. Generated projections, epoch-1 syntax,
+C-backed proofs, and wrappers over host owners remain bootstrap debt until
+executed Idol replacements land.
 
 Idol and Lua are distinct lawsets hosted by one compiler. Idol is not a Lua
 superset, and Lua compatibility may not define Idol semantics or architecture.

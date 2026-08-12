@@ -1,7 +1,7 @@
 const std = @import("std");
 
 /// SH-02 + SH-03 production seam. These travel together: any module that
-/// reaches `duo_lexer_bridge` reaches both the keyword table and the Duo lexer
+/// reaches `lexer_bridge` reaches both the keyword table and the Duo lexer
 /// behind it, so linking them separately only produces undefined symbols later.
 ///
 /// The Duo lexer artifact also defines a STRONG `duo_keyword_classify`, which

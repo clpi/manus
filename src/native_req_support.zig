@@ -2,12 +2,11 @@
 const std = @import("std");
 const Io = std.Io;
 const ast = @import("ast.zig");
-const duo_module_names = @import("module_names.zig");
+const module_names = @import("module_names.zig");
 const source_family = @import("lexer_bridge.zig");
 
 const source_suffixes = [_][]const u8{
     source_family.CANONICAL_SOURCE_SUFFIX,
-    source_family.HISTORICAL_SOURCE_SUFFIX,
 };
 
 pub const ModuleMeta = struct {
@@ -74,7 +73,7 @@ pub const Context = struct {
         path: []const u8,
         field: []const u8,
     ) ?[]const u8 {
-        const mc = duo_module_names.moduleCName(alloc, path) catch return null;
+        const mc = module_names.moduleCName(alloc, path) catch return null;
         defer alloc.free(mc);
         const meta = self.modules.get(mc) orelse return null;
         return meta.exports.get(field);
@@ -200,7 +199,7 @@ fn collectReqBindingsFromBlock(
             ambient = true;
             break :blk p;
         };
-        const mod_cname = try duo_module_names.moduleCName(alloc, path);
+        const mod_cname = try module_names.moduleCName(alloc, path);
         // For the ambient spelling, require that the path actually names a
         // module FILE. `p.x` on a record local is also a dotted name, and
         // without this it would be recorded as a module binding — quietly
@@ -264,7 +263,7 @@ fn collectDottedCallee(alloc: std.mem.Allocator, ctx: *Context, callee: *const a
     if (std.mem.indexOfScalar(u8, buf.items, '.') == null) return; // single name: the alias path handles it
     var path = buf.items;
     while (true) {
-        const mod_cname = try duo_module_names.moduleCName(alloc, path);
+        const mod_cname = try module_names.moduleCName(alloc, path);
         if (ctx.modules.contains(mod_cname)) {
             alloc.free(mod_cname);
             return;
@@ -482,7 +481,7 @@ fn parseExportArg(raw: []const u8) ?[]const u8 {
 test "native_req_support: token constants" {
     const alloc = std.testing.allocator;
     const path = "std.compiler.token";
-    const mod_cname = try duo_module_names.moduleCName(alloc, path);
+    const mod_cname = try module_names.moduleCName(alloc, path);
     defer alloc.free(mod_cname);
     const meta = try loadModuleMeta(alloc, path, mod_cname);
     defer {
@@ -498,13 +497,12 @@ test "native_req_support: canonical source precedes historical source" {
     try std.testing.expectEqualStrings(".duo", source_suffixes[1]);
     try std.testing.expectEqual(source_family.SourceLaw.idol, source_family.sourceFacts("module.id").law);
     try std.testing.expectEqual(source_family.SourceProvenance.canonical, source_family.sourceFacts("module.id").provenance);
-    try std.testing.expectEqual(source_family.SourceProvenance.historical, source_family.sourceFacts("module.duo").provenance);
 }
 
 test "native_req_support: classify export" {
     const alloc = std.testing.allocator;
     const path = "std.token.classify";
-    const mod_cname = try duo_module_names.moduleCName(alloc, path);
+    const mod_cname = try module_names.moduleCName(alloc, path);
     defer alloc.free(mod_cname);
     const meta = try loadModuleMeta(alloc, path, mod_cname);
     defer {

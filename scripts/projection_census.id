@@ -5,7 +5,7 @@
 # Bootstrap shell ingress via gatecap (GAP-155) — not std.script / process.*.
 # Uses grep for patterns containing '(' — gatecap strips rg regex escapes.
 #
-# Run: idol run scripts/projection_census.id
+# Run from repository root: idol run scripts/projection_census.id
 
 chomp: str = (text: str)
     if text:len() == 0
@@ -24,16 +24,16 @@ cap: str = (cmd: str)
 main: i64 = ()
     root = cap("git rev-parse --show-toplevel 2>/dev/null")
     if root == ""
-        print("projection_census: fail no root")
+        print("projection_census: fail no root — run from repository root")
         return 3
 
-    subjto = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c ':to(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
-    fromface = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c ':from(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
-    nestto = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -E -c 'to\\((str|i64|bytes)\\)\\(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
-    stdref = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c 'std\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
-    libref = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c 'lib\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
-    procns = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -c 'process\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
-    adj = cap("cd '{root}' && git ls-files '*.id' | xargs grep -h -E -c ': (readable|writable|iterable|hashable|convertible)' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    subjto = cap("git ls-files '*.id' | xargs grep -h -c ':to(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    fromface = cap("git ls-files '*.id' | xargs grep -h -c ':from(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    nestto = cap("git ls-files '*.id' | xargs grep -h -E -c 'to\\((str|i64|bytes)\\)\\(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    stdref = cap("git ls-files '*.id' | xargs grep -h -c 'std\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    libref = cap("git ls-files '*.id' | xargs grep -h -c 'lib\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    procns = cap("git ls-files '*.id' | xargs grep -h -c 'process\\.' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
+    adj = cap("git ls-files '*.id' | xargs grep -h -E -c ': (readable|writable|iterable|hashable|convertible)' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
 
     print("projection_census: PROJECTION-ONE debt in tracked .id")
     print("  root {root}")

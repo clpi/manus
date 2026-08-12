@@ -2,8 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Io = std.Io;
 const Lexer = @import("lexer.zig").Lexer;
-const duo_lexer_bridge = @import("lexer_bridge.zig");
-const duo_lexer_dispatch = @import("lexer_dispatch.zig");
+const lexer_bridge = @import("lexer_bridge.zig");
+const lexer_dispatch = @import("lexer_dispatch.zig");
 const Parser = @import("parser.zig").Parser;
 const ast = @import("ast.zig");
 const Sema = @import("sema.zig").Sema;
@@ -2343,11 +2343,11 @@ const ParsedModule = struct {
 };
 
 fn is_lua_source_path(path: []const u8) bool {
-    return duo_lexer_bridge.isLuaSourcePath(path);
+    return lexer_bridge.isLuaSourcePath(path);
 }
 
 fn is_idol_source_path(path: []const u8) bool {
-    return duo_lexer_bridge.isIdolSourcePath(path);
+    return lexer_bridge.isIdolSourcePath(path);
 }
 
 fn module_has_macro_syntax(mod: *const ast.Module) bool {
@@ -2928,7 +2928,7 @@ fn contractScanModule(alloc: std.mem.Allocator, mod: *const ast.Module, sem: *co
 /// source through `lib/std/compiler/lexer.id` and drive the parser from that
 /// stream instead of the host scanner.
 ///
-/// The body moved to `duo_lexer_dispatch.route` so codegen's module-embed paths
+/// The body moved to `lexer_dispatch.route` so codegen's module-embed paths
 /// route through the SAME entry. While it lived here as a private helper the
 /// driver tokenized through Duo and codegen's embed paths did not, which meant
 /// one compilation ran two scanners.
@@ -2938,7 +2938,7 @@ fn routeThroughDuoLexer(
     src: []const u8,
     src_path: []const u8,
 ) !void {
-    return duo_lexer_dispatch.route(alloc, lex, src, src_path);
+    return lexer_dispatch.route(alloc, lex, src, src_path);
 }
 
 /// The 1-based `line`th line of `src`, without its terminator.
@@ -2962,7 +2962,7 @@ fn sourceLine(src: []const u8, line: u32) []const u8 {
 /// through the role taxonomy; a bare error name is not even plain string with a
 /// location.
 ///
-/// `duo_lexer_dispatch.route` already re-lexes on the cold path and leaves the
+/// `lexer_dispatch.route` already re-lexes on the cold path and leaves the
 /// LINE in `lex.last_error_loc`. The column is derived here rather than plumbed
 /// through the C ABI: adding a `duo_lexer_error_col` export would mean
 /// regenerating the tracked `src/lexer_tokenize.c`, and the derivation is

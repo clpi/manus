@@ -7,7 +7,7 @@
 # and future production parse → resolve → graph → verdict path.
 # Forbidden detector kingdoms (removed, do not reintroduce): codens, luahash,
 # opcast, readface, materialize, suffix. Callable result demand belongs to
-# scripts/semanticgate.id staged census + examples/spec100/result.id + canon.id.
+# scripts/semanticgate.id staged census + examples/demand/result.id + canon.id.
 #
 # Staged text gates are migration pressure until GAP-124 graph canonicalization
 # owns REDUNDANT-TO-ZERO and IMPLIED-PROJECTION-ZERO (law.gate.infer).

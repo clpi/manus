@@ -278,6 +278,8 @@ run_gate() {
 
 run_gate "identity projection census" "$repo/tools/node/dev/identitycensus"
 run_gate "corpus tag census" "$repo/tools/node/dev/corpuscensus"
+run_gate "zero-history census" "$repo/tools/node/dev/zerohistorycensus"
+run_gate "projection debt census" "$repo/tools/node/dev/projectioncensus"
 
 extra_gate="${IDOL_DOCTOR_EXTRA_GATE:-}"
 if [ "$extra_gate" != "" ]; then

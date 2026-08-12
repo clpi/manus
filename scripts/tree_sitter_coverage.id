@@ -157,7 +157,7 @@ main: i64 = ()
     # non-duon text as unrecognised duon does not measure the grammar, it
     # dilutes the metric with files nobody claimed it should parse. The duon
     # fixtures among them DO fail here, and that is a real signal — the same
-    # GAP-049 offside hole `examples/spec100/offside.id` already reports, so
+    # GAP-049 offside hole `examples/layout/offside.id` already reports, so
     # dropping them costs no information this gate was carrying.
     listfile = tmp .. "/corpus.txt"
     std.script.capture("git ls-files '*.id' | grep -v '^fixtures/highlight/' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")

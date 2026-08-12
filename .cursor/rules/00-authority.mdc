@@ -14,10 +14,9 @@ Start every substantive session at `AGENTS.md`, then read
 `.agents/AGENT_COORDINATION.md`, and `.agents/RELEASE_READINESS.md` are
 projections only.
 
-**Idol** (`idol`, `.id`) is the language and public command identity. Semantic
-law lives in `docs/spec/constitution.md` (C0). Active development is **`clpi/duo`**. **`idollang/idol`** is the future release repository only; do
-not migrate development there. Historical Duo, Duon, `.id`, and `duo`
-bootstrap names are provenance only.
+**Idol** (`idol`, `.id`, repository `idollang/idol`) is the language identity.
+Semantic law lives in `docs/spec/constitution.md` (C0). Do not migrate to the
+release repository until release-readiness authorization.
 
 Run `./tools/node/dev/generate-harness`, `./tools/node/dev/orient`, and
 `./tools/node/dev/doctor` before substantive work. Identify the semantic owner and bounded boundary before editing. Prefer

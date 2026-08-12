@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 point: i64 = (x: i64, y: i64)
     x + y
 

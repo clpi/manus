@@ -177,7 +177,7 @@ projection, the resolver records:
 
 Inference mints the same application record as step 4; it only populates
 `projectioninferred` and provenance when source omits `:to()` or `:to(T)`.
-See `examples/spec100/infer.id` and `law.infer.one`.
+See `examples/infer/direct.id` and `law.infer.one`.
 
 Blocked on GAP-124 resolver implementation. Debt census:
 `docs/spec/projection-debt.md`.

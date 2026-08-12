@@ -179,7 +179,7 @@ No evidence means unknown. Unknown does not mean pass.
 Apply before every substantive edit (`law.source.not.proof`, `law.repair.class`).
 
 **Repository source is not canonical proof.** Current `.id` that builds, lives
-under `spec100`, or was recently “canonicalized” is not evidence of canonical
+under semantic example homes, or was recently “canonicalized” is not evidence of canonical
 Idol. Resolve every touched construct against current C0 and owner directives.
 Unimplemented inference, fact ownership, world authority, relation identity, or
 demand-driven realization → classify spelling as **bootstrap/migration debt**,
@@ -778,7 +778,7 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 ### ZERO-HISTORY (law.zero.history)
 
 - the active tree is not a museum — current Idol, current foreign, bounded bridges only
-- no language.history table, no historical corpus states, no pass taxonomy
+- durable corpus states: `current` and `foreign` only — git owns archive
 - durable corpus states: current and foreign only — not historical, legacy, migration, compat
 - delete comments referencing formerly/was X/migration/legacy/retired/old path
 - resolved gaps are deleted; open gaps contain only current obligation
@@ -790,7 +790,7 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 - the generated C backend is bootstrap debt, not destination architecture
 - the direct native backend is the sole realization path
 - do not improve the C backend — invest in deleting it by advancing native coverage
-- duo_lexer_tokenize.c, duo codegen, all generated C: temporary bridges with deletion gates
+- generated C tokenizer and codegen artifacts: temporary bridges with deletion gates
 - deletion gate: native backend coverage of the compiler-critical basis
 
 ### FTCFTW
@@ -923,7 +923,7 @@ drift. They are mandatory pre-work checks, not advice.
 ### rule 1: current source is not canonical proof
 
 Never treat current repository source as proof of canonical Idol merely
-because it is `.id`, builds, appears under `spec100`, or was recently
+because it is `.id`, builds under a semantic example home, or was recently
 "canonicalized." Resolve every touched construct against current C0 plus
 current owner directives. If the shortest uniquely resolving form, semantic
 fact ownership, world authority, relation identity, or demand-driven

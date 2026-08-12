@@ -3,13 +3,12 @@
 //! lexical identity remains the GAP-145 frontier.
 const std = @import("std");
 const lexer = @import("lexer.zig");
-const duo_keyword_bridge = @import("keyword_bridge.zig");
+const keyword_bridge = @import("keyword_bridge.zig");
 
 /// Rebuilds bootstrap `Token` records from the generated lexer transport.
 pub const dispatch = @import("lexer_dispatch.zig");
 
 pub const CANONICAL_SOURCE_SUFFIX = ".id";
-pub const HISTORICAL_SOURCE_SUFFIX = ".duo";
 
 pub const SourceLaw = enum {
     idol,
@@ -19,7 +18,6 @@ pub const SourceLaw = enum {
 
 pub const SourceProvenance = enum {
     canonical,
-    historical,
     foreign,
     unknown,
 };
@@ -36,9 +34,6 @@ pub const SourceFacts = struct {
 pub fn sourceFacts(path: []const u8) SourceFacts {
     if (std.mem.endsWith(u8, path, CANONICAL_SOURCE_SUFFIX)) {
         return .{ .law = .idol, .provenance = .canonical };
-    }
-    if (std.mem.endsWith(u8, path, HISTORICAL_SOURCE_SUFFIX)) {
-        return .{ .law = .idol, .provenance = .historical };
     }
     if (std.mem.endsWith(u8, path, ".lua")) {
         return .{ .law = .lua, .provenance = .foreign };
@@ -67,7 +62,7 @@ pub fn tokenizeAuthority() TokenizeAuthority {
 
 /// Production keyword lookup through the generated Idol lexer projection.
 pub fn lookupKeyword(text: []const u8) ?lexer.TokenKind {
-    return duo_keyword_bridge.lookupKeyword(text);
+    return keyword_bridge.lookupKeyword(text);
 }
 
 test "lexer bridge: production split" {
@@ -82,7 +77,6 @@ test "lexer bridge: suffix changes provenance not language law" {
     try std.testing.expectEqual(SourceLaw.idol, canonical.law);
     try std.testing.expectEqual(SourceLaw.idol, historical.law);
     try std.testing.expectEqual(SourceProvenance.canonical, canonical.provenance);
-    try std.testing.expectEqual(SourceProvenance.historical, historical.provenance);
     try std.testing.expectEqual(SourceLaw.lua, sourceFacts("compiler.lua").law);
     try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("compiler.txt").law);
 }

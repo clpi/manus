@@ -34,13 +34,11 @@ second language specification. If it conflicts with C0 or `CLAUDE.md`, stop,
 report the conflict, and repair this projection. Repository history and the
 legacy corpus are migration evidence, never authority.
 
-The language and project identity is **Idol** (`idol`, `.id`). Active development
-happens in **`clpi/duo`**. The future release repository **`idollang/idol`** is
-untouched until explicit release-readiness authorization; see
-`.agents/RELEASE_READINESS.md`. Historical Duo, Duon, `.id`, and the
-`duo` bootstrap executable are development/migration provenance only. Cursor
-routers live in `.cursor/rules/`; executable canonicality lives under **`gates/`**
-(home hierarchy — not scattered `scripts/*gate*` paths).
+The language and project identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
+Active development remains in this repository until release-readiness authorization;
+see `.agents/RELEASE_READINESS.md`. Cursor routers live in `.cursor/rules/`;
+executable canonicality lives under **`gates/`** (home hierarchy — not scattered
+`scripts/*gate*` paths).
 
 ## Idol harness orientation
 
@@ -384,7 +382,7 @@ canonical one-word name, origin, and role. If decomposition is unclear, record
 Callable bindings use result demand on the binder: `name: descriptor = (args) body`.
 Never write suffix or header callable faces: `name = (): type`, `name = (args): type`,
 or `name(): type` — migratable debt ratcheted by `gates/architecture.id` staged
-census (callable.result.suffix), `examples/spec100/result.id`, and `scripts/canon.id`.
+census (callable.result.suffix), `examples/demand/result.id`, and `scripts/canon.id`.
 Do not reintroduce a `suffix()` substring detector or `if !suffix(` / `if not suffix(` gate controls.
 Length is subject-first: `value:len()` — never `size(x)`, `len(x)`, `rawlen(x)`,
 `string.len(x)`, or `std.string.len(x)` in new canonical source.
@@ -476,7 +474,7 @@ or algorithm family.
 - Production lexical authority is `lib/std/compiler/lexer.id` and `lib/std/compiler/token.id`; `src/duo_lexer_tokenize.c` is generated from `lib/std/compiler/host.id` — regenerate, never hand-edit; `src/lexer.zig` is a differential oracle only.
 - Executed SHC frontier is **S0** (lexer/token/span only); compiler B does not exist; next frontier is GAP-145 lexical identity → GAP-134 grammar roles.
 - Harness boot payload: `docs/spec/harness-projection.md` → `.agents/HARNESS.md` via `tools/node/dev/generate-harness` (`orient` regenerates).
-- Dev and coordination tooling lives under `tools/node/dev/` (not mashed `devnode` paths); Codex agent skill is `idol-dev` (`.codex/skills/idol-dev/`), not `duon-development`.
+- Dev and coordination tooling lives under `tools/node/dev/`; Codex agent skill is `idol-dev`.
 - Gate boundary relation descriptors live in `lib/semantic/gate.id` (`len`, `audit`, `hit`, `scan`, `dot` — curry slots, not world relations).
 - Reserved keyword `not` cannot be a table field name — census row is `debt.negation`, never `debt.not`.
 - Bit view edges registered in `lib/semantic/ingest.id` as curried `view(edges)` pipe (separate from world `edges`); reverse is `restore` not `unpack`.

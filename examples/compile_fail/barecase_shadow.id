@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 # constitution §41 `law.shadow` — A LEXICAL BINDING MAY NOT SILENTLY SHADOW AN
 # AMBIENT IDENTITY REFERENCED IN THE SAME SCOPE. gap[087] fix step 2, and it
 # lands WITH the resolution, not after.

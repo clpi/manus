@@ -1,16 +1,19 @@
 # @corpus current
-# law.paren.one / law.projection.head — relation projection is not curry.
+# law.projection.one / law.paren.one / law.projection.head — one projection algebra;
+# relation projection is not curry.
 #
-# `to(str) = (value)` declares relation to with projection target str and
-# subject value. `value:to(str)` invokes with subject first — not to(str)(value).
+# Declaration: `to(str) = (value)` → relation to, projection str, subject value.
+# Invocation ladder (shortest unique form): value:to(str) → value:to() → value
+# when graph proves each step (INFER-ONE).
 #
 # expect: 17
 
 to(str) = (value)
     value:to(str)
 
-read(number) = (lx, b)
-    lx:read(number)(b)
+# Declaration projection uses a concrete descriptor — not an adjective protocol.
+read(i64) = (lx, b)
+    lx:read(i64)(b)
 
 main: i64 = ()
     n: i64 = 17

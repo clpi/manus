@@ -6100,7 +6100,7 @@ pub const Parser = struct {
                     //
                     // ADJACENCY DECIDES, which is this parser's own precedent
                     // (`peek_glued_assign`: `>>=` is `>>` glued to `=`, and
-                    // "ADJACENCY is the whole rule"; `examples/spec100/glued.id`
+                    // "ADJACENCY is the whole rule"; `examples/layout/glued.id`
                     // is the fixture). Every `X@rel` in the spec is written
                     // glued — `p@x`, `backend@driver`, `shc@wire`,
                     // `ward@allocation_free`, `point@ordering` — and every

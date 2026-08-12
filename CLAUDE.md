@@ -17,11 +17,9 @@ shell/run/outcome, binding census, completion metrics). Do not mint artificial
 secondary language namespaces for graph, value, or relation. No independent algebra
 prompt is authority.
 
-The language and project ship as Idol. No production `idol` compiler binary
-exists yet. Historical Duo and Duon names and historical `.id` /
-`.duo` source are migration provenance. Exact `duo` executable, path, symbol,
-command, and MCP tool spellings are physical bootstrap aliases until their owned
-replacements execute; their presence does not rename Idol.
+The language and project ship as Idol (`idol`, `.id`, repository `idollang/idol`).
+No production `idol` compiler binary exists yet. Bounded bootstrap bridges may
+remain only while executed with known deletion conditions (`law.bridge.death`).
 
 **No `std` anywhere** in Idol source, agents, gates, or teaching examples.
 There is no `std` table, prelude, or namespace. Use layout-projected homes and

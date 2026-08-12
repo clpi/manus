@@ -2,7 +2,7 @@
 const std = @import("std");
 const lexer = @import("lexer.zig");
 const grammar_roles = @import("grammar_roles.zig");
-const duo_lexer_dispatch = @import("lexer_dispatch.zig");
+const lexer_dispatch = @import("lexer_dispatch.zig");
 
 pub const View = struct {
     tokens: []const lexer.Token,
@@ -45,7 +45,7 @@ pub fn fromDispatch(
     src: [:0]const u8,
     file: [:0]const u8,
 ) !View {
-    const tokens = try duo_lexer_dispatch.tokenize(allocator, src, file);
+    const tokens = try lexer_dispatch.tokenize(allocator, src, file);
     return .{ .tokens = tokens };
 }
 

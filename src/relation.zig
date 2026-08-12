@@ -1354,7 +1354,7 @@ test "law.identity.three: a redeclaration keeps the edge, moves content, bumps i
 }
 
 test "the hub shape derives six edges nobody wrote — SER 2.00 at N = 4" {
-    // The unit twin of `examples/spec100/relation.id`, which is what actually
+    // The unit twin of `examples/conversion/relation.id`, which is what actually
     // runs the compiler. This pins the STORE's numbers so a regression names
     // the store rather than the fixture.
     var store = Store{};
@@ -1397,7 +1397,7 @@ test "the SAME six edges narrowing derive NOTHING — the control for the six ab
 
 test "declFromAssign refuses an ordinary assignment" {
     // No AST needed here: the shape test is a recogniser, and the recogniser
-    // itself is exercised end-to-end by the spec100 relation fixtures through
+    // exercised end-to-end by examples/conversion/relation.id through
     // the compiler. What a unit test CAN pin cheaply is the null answer for a
     // plain two-name assignment, which must stay the overwhelming case.
     const target = ast.Expr{ .name = .{ .loc = .{ .file = "t", .line = 1, .col = 1 }, .ident = "x" } };

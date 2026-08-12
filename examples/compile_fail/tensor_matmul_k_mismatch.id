@@ -1,4 +1,4 @@
-# @corpus proof
+# @corpus current
 bad(x: Tensor[784, 256, f32], y: Tensor[128, 10, f32])
   return x @ y
 end

@@ -17,7 +17,7 @@ pub fn moduleFuncSymbol(alloc: std.mem.Allocator, mod_cname: []const u8, field: 
     return std.fmt.allocPrint(alloc, "{s}__{s}", .{ mod_cname, field });
 }
 
-test "duo_module_names: path to cname" {
+test "module_names: path to cname" {
     const a = std.testing.allocator;
     const c = try moduleCName(a, "std.token.classify");
     defer a.free(c);

@@ -192,7 +192,7 @@ No evidence means unknown. Unknown does not mean pass.
 Apply before every substantive edit (`law.source.not.proof`, `law.repair.class`).
 
 **Repository source is not canonical proof.** Current `.id` that builds, lives
-under `spec100`, or was recently “canonicalized” is not evidence of canonical
+under semantic example homes, or was recently “canonicalized” is not evidence of canonical
 Idol. Resolve every touched construct against current C0 and owner directives.
 Unimplemented inference, fact ownership, world authority, relation identity, or
 demand-driven realization → classify spelling as **bootstrap/migration debt**,
@@ -381,6 +381,9 @@ implicit relation + implicit projection
 - **HOME-PROJECTION** — hierarchy is reachability, not `compiler.parser.parse`
 - Protocol constraints are relation projections (`source: read`), not adjective traits
 - DNIR/parser must not recover projection from callee strings or namespace shape
+- **Application record** (repair step 4): `docs/spec/application-record.md` — resolver
+  mints one graph record per application with explicit/inferred projection pack facts
+- **Debt census** (classify, never bulk replace): `docs/spec/projection-debt.md`
 
 Gates: `law.gate.projection`, `law.gate.infer`, `law.gate.protocol`. Conversion
 derivation: `law.conversion.derive`, `law.conversion.decl`. **Do not implement**
@@ -693,6 +696,7 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 `law.coordination.fact`, `law.representation.demand`,
 `law.projection.one`, `law.from.zero`, `law.lib.zero`, `law.home.projection`,
 `law.shell.not.world`, `law.cross.one`, `law.conversion.derive`, `law.conversion.decl`,
+`law.zero.history`, `law.backend.c.zero`,
 `law.gate.convergence`. Adversarial controls: `law.gate.convergence`.
 
 **Before writing code, audit these seams.**
@@ -783,6 +787,24 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 - conversion declarations prefer home-based subject orientation, not operation-first
 - parser must not produce semantic AST kinds; DNIR must not reconstruct meaning from callee/path/text
 - projection wrappers (ProjectedCall, ConversionProjection, etc.) are forbidden as semantic kinds
+
+### ZERO-HISTORY (law.zero.history)
+
+- the active tree is not a museum — current Idol, current foreign, bounded bridges only
+- durable corpus states: `current` and `foreign` only — git owns archive
+- durable corpus states: current and foreign only — not historical, legacy, migration, compat
+- delete comments referencing formerly/was X/migration/legacy/retired/old path
+- resolved gaps are deleted; open gaps contain only current obligation
+- generated projections consume current C0 only — no old brands or committed session state
+- do not preserve old names/symbols/paths/env prefixes/artifacts as permanent residents
+
+### NO-C-BACKEND (law.backend.c.zero)
+
+- the generated C backend is bootstrap debt, not destination architecture
+- the direct native backend is the sole realization path
+- do not improve the C backend — invest in deleting it by advancing native coverage
+- generated C tokenizer and codegen artifacts: temporary bridges with deletion gates
+- deletion gate: native backend coverage of the compiler-critical basis
 
 ### FTCFTW
 
@@ -914,7 +936,7 @@ drift. They are mandatory pre-work checks, not advice.
 ### rule 1: current source is not canonical proof
 
 Never treat current repository source as proof of canonical Idol merely
-because it is `.id`, builds, appears under `spec100`, or was recently
+because it is `.id`, builds under a semantic example home, or was recently
 "canonicalized." Resolve every touched construct against current C0 plus
 current owner directives. If the shortest uniquely resolving form, semantic
 fact ownership, world authority, relation identity, or demand-driven

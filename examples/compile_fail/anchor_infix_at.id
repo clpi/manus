@@ -1,9 +1,9 @@
-# @corpus proof
+# @corpus current
 # Pass 100 §2 THE ANCHOR — the half of the `@` token that adjacency did NOT
 # reconcile, and that still has no meaning.
 #
 # GAP-059 row 2 was closed by giving the GLUED spelling to the anchor:
-# `p@x` is a suffix now, it retrieves, and `examples/spec100/anchormove.id`
+# `p@x` is a suffix now, it retrieves, and `examples/anchor/move.id`
 # pins it by value at 353. `infix_prec` still maps the `@` token to `.matmul`,
 # so the SPACED spelling kept everything the glued one shed:
 #

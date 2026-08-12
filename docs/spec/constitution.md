@@ -1246,11 +1246,11 @@ sourcenotproof = law{
     kind  = .invariant
     holds = .absolute
     binds = {
-        "current repository source is not proof of canonical Idol merely because it is id builds appears under spec100 or was recently canonicalized",
+        "current repository source is not proof of canonical Idol merely because it is id or builds",
         "resolve every touched construct against current C0 plus current owner directives",
-        "if shortest uniquely resolving form semantic fact ownership world authority relation identity or demand driven realization is not yet implemented classify existing spelling as bootstrap migration debt not the new pattern",
-        "spec100 and generated fixtures are verified projections only — fixture disagrees with C0 means fixture is wrong never preserve spec100 behavior against constitution",
-        "agent retrieval must exclude foreign compat history migration and generated corpus unless explicitly requested — corpus role must be machine visible",
+        "if shortest uniquely resolving form semantic fact ownership world authority relation identity or demand driven realization is not yet implemented classify existing spelling as bootstrap debt not the new pattern",
+        "current fixtures disagreeing with C0 are wrong — never preserve fixture behavior against constitution",
+        "agent retrieval must exclude foreign corpus unless explicitly requested — corpus role must be machine visible",
     }
     fails = "learning from bootstrap debt compatibility fixtures or stale canonicalization as if it were current law"
 }
@@ -1285,10 +1285,10 @@ identityprojection = law{
     kind  = .protocol
     holds = .current
     binds = {
-        "current language identity is Idol idol only — no language.history table exists in the active tree per law.zero.history",
-        "current agent projection documents must not use Idsem Duo Duon or any retired name as live language identity",
+        "current language identity is Idol idol only — per law.zero.history git is the sole historical archive",
+        "current agent projection documents must not use retired project or language names as live identity",
         "gate target current projection count of retired names as identity outside foreign provenance equals zero",
-        "retired names Duo Duon duo Idsem idsem are not preserved in the active tree — git stores their history",
+        "retired names are not preserved in the active tree",
     }
     fails = "retired name appearing as live identity in agent projections or active tree"
 }

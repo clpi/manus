@@ -1,7 +1,7 @@
 # constitution §46 `law.nominal` — "a nominal descriptor over a primitive
 # COSTS NO BOXING", measured on the emitted C rather than believed.
 #
-# WHY A SEPARATE GATE. `examples/spec100/nominal.id` prints 914436 and that
+# WHY A SEPARATE GATE. `examples/nominal/measure.id` prints 914436 and that
 # is a real proof of MEANING: the value could not come out right unless `d`
 # really carried `feet` and the trie really composed `feet -> micron -> inch`.
 # It is NOT a proof of COST. A boxed double adds exactly as correctly as an
@@ -34,7 +34,7 @@
 # predicate is broken and this gate reports FAIL and no verdict — never a pass.
 
 work = "/tmp/duo-nominal-zero-cost"
-fixture = "examples/spec100/nominal.id"
+fixture = "examples/nominal/measure.id"
 want = "914436"
 
 rows = ""

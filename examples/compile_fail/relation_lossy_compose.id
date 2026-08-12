@@ -1,7 +1,7 @@
-# @corpus proof
+# @corpus current
 # gap[082] — the composition law must REFUSE a silently-lossy derivation.
 #
-# The same four edges as `examples/spec100/relation.id`, over i64 instead of
+# The same four edges as `examples/conversion/relation.id`, over i64 instead of
 # f64. That one change makes each division NARROWING — 25401 micron is not a
 # whole inch — and the class lattice must therefore refuse `inch -> milli`,
 # which is a route it can plainly see.

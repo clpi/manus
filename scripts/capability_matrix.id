@@ -119,9 +119,28 @@ inversions = ""
 ninversions = 0
 shown = 0
 
-envor(name: str, fallback: str): str
-    std.script.getenv(name, fallback)
-end
+chomp: str = (text: str)
+    if text:len() == 0
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
+
+capture: str = (shellline: str)
+    gatecap(shellline)
+
+cap: str = (shellline: str)
+    chomp(gatecap(shellline))
+
+status: i64 = (cmd: str)
+    cap("( {cmd} ) >/dev/null 2>&1\necho $?"):to(i64)
+
+envor: str = (name: str, fallback: str)
+    os.env[name] or fallback
 
 # The per-file probe, written out as shell because measuring 348 programs
 # means ~1400 compiler and process invocations and Duo has no process pool.
@@ -158,7 +177,7 @@ end
 # If you ever make this sweep faster, re-run it twice and DIFF THE RECORDS
 # before believing either run. This class of fault does not announce itself;
 # it just reports a slightly worse compiler than you have.
-probetext(duo: str, tprefix: str): str
+probetext: str = (duo: str, tprefix: str)
     "f=\"$1\"\nd={duo}\nt={work}/w$$\nexport DUO_SEMANTIC_CACHE=0\n"
     .. "des=0\ngrep -q \"^--\" \"$f\" && des=1\n"
     .. "oc=$($d check \"$f\" 2>&1); cr=$?\npar=1\n"
@@ -176,40 +195,33 @@ probetext(duo: str, tprefix: str): str
     .. "  if [ $a -ne 124 ] && [ $b -ne 124 ] && [ $a -eq $b ] && cmp -s $t.co $t.do; then prv=1; fi\nfi\n"
     .. "printf \"%s%s%s%s%s%s%s\\t%s\\n\" $des $par $chk $cpa $nat $prv $ent \"$f\"\n"
     .. "rm -f $t.c $t.d $t.co $t.do\n"
-end
 
-flagat(rec: str, at: i64): bool
+flagat: bool = (rec: str, at: i64)
     rec:sub(at, at) == "1"
-end
 
-pathof(rec: str): str
+pathof: str = (rec: str)
     i: i64 = 1
     n: i64 = rec:len()
     while i <= n and rec:byte(i) != 9
         i += 1
-    end
     rec:sub(i + 1, n)
-end
 
 # A program is canonical when a regression in it fails a BLOCKING gate.
 # native_differential blocks on the corpus root and on native_only/; it prints
 # unsupported/ and known_divergent/ as frontier reporting and passes anyway.
-blocking(path: str): bool
-    incorpus = path:find("/native_differential/", 1, true) != nil
-    frontier = path:find("/unsupported/", 1, true) != nil
-        or path:find("/known_divergent/", 1, true) != nil
+blocking: bool = (path: str)
+    incorpus = path:find("/native_differential/", 1, true)
+    frontier = path:find("/unsupported/", 1, true)
+        or path:find("/known_divergent/", 1, true)
     incorpus and !frontier
-end
 
-note(path: str, why: str): void
-    ninversions = ninversions + 1
+note: void = (path: str, why: str)
+    ninversions += 1
     if shown < 40
-        shown = shown + 1
-        inversions = inversions .. "    {why}   {path}\n"
-    end
-end
+        shown += 1
+        inversions = "{inversions}    {why}   {path}\n"
 
-tally(rec: str): void
+tally: void = (rec: str)
     path = pathof(rec)
     des = flagat(rec, 1)
     par = flagat(rec, 2)
@@ -220,57 +232,47 @@ tally(rec: str): void
     ent = flagat(rec, 7)
     can = prv and blocking(path)
 
-    ntotal = ntotal + 1
+    ntotal += 1
     if des
-        ndescribed = ndescribed + 1
-    end
+        ndescribed += 1
     if par
-        nparsed = nparsed + 1
-    end
+        nparsed += 1
     if chk
-        nchecked = nchecked + 1
-    end
+        nchecked += 1
     if cpa
-        ncpath = ncpath + 1
-    end
+        ncpath += 1
     if nat
-        nnative = nnative + 1
-    end
+        nnative += 1
     if prv
-        nproven = nproven + 1
-    end
+        nproven += 1
     if can
-        ncanonical = ncanonical + 1
-    end
+        ncanonical += 1
     if ent
-        nnoentry = nnoentry + 1
-    end
+        nnoentry += 1
 
     # Highest rung reached. Each program lands in exactly one bucket, and the
     # C-path bucket is split because "compiles to C, nothing to link" and
     # "compiles to C, the direct backend bailed" are opposite facts about the
     # compiler that a single number would average into noise.
     if can
-        topcanon = topcanon + 1
-    elseif prv
-        topproven = topproven + 1
-    elseif nat
-        topnative = topnative + 1
-    elseif cpa
+        topcanon += 1
+    elif prv
+        topproven += 1
+    elif nat
+        topnative += 1
+    elif cpa
         if ent
-            topnoentry = topnoentry + 1
+            topnoentry += 1
         else
-            topbail = topbail + 1
-        end
-    elseif chk
-        topchecked = topchecked + 1
-    elseif par
-        topparsed = topparsed + 1
-    elseif des
-        topdescribed = topdescribed + 1
+            topbail += 1
+    elif chk
+        topchecked += 1
+    elif par
+        topparsed += 1
+    elif des
+        topdescribed += 1
     else
-        topnone = topnone + 1
-    end
+        topnone += 1
 
     # Inversions: a rung reached over a rung missed. These are the rows worth
     # reading, and folding them into the ladder would erase them.
@@ -282,28 +284,21 @@ tally(rec: str): void
     # reads to the bottom is an inversion list that has stopped working.
     if nat and !cpa
         note(path, "native, no C path  ")
-    end
     if cpa and !chk
         note(path, "C path, check fails")
-    end
     if nat and !chk
         note(path, "native, check fails")
-    end
     if chk and !des
-        nundescribed = nundescribed + 1
-    end
-end
+        nundescribed += 1
 
-rung(label: str, n: i64, total: i64): void
+rung: void = (label: str, n: i64, total: i64)
     v = n:to(str)
     t = total:to(str)
     print("    {label} {v} / {t}")
-end
 
-bucket(label: str, n: i64, tail: str): void
+bucket: void = (label: str, n: i64, tail: str)
     v = n:to(str)
     print("    {label} {v}   {tail}")
-end
 
 main: i64 = ()
     duo = envor("DUO", "./zig-out/bin/idol")

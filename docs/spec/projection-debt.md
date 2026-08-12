@@ -4,13 +4,13 @@ Live census snapshot for agent repair. **Classify each site — never bulk
 replace** (`law.repair.infer`, `law.repair.class`). Graph removal verdicts
 require GAP-124 application records.
 
-Regenerate counts:
+Regenerate counts (from repository root):
 
 ```bash
-repo="$(git rev-parse --show-toplevel)"
-git ls-files '*.id' | xargs rg -c ':to\(' 2>/dev/null | awk -F: '{s+=$2} END{print "explicit :to(", s+0")"}'
-git ls-files '*.id' | xargs rg -c ':from\(' 2>/dev/null | awk -F: '{s+=$2} END{print ":from(", s+0")"}'
-git ls-files '*.id' | xargs rg -c 'process\.' 2>/dev/null | awk -F: '{s+=$2} END{print "process.", s+0")"}'
+idol run scripts/projection_census.id
+idol run scripts/infer_census.id
+# or bundled:
+./tools/node/dev/projectioncensus
 ```
 
 Application record contract: `docs/spec/application-record.md`.
@@ -35,8 +35,8 @@ no live canonical conversion uses `:from(`:
 
 | file | role | action |
 |---|---|---|
-| `examples/spec100/relation.id` | migration comment | keep — documents FROM-ZERO |
-| `examples/spec100/nominal.id` | historical comment | keep — pre-nominal debt story |
+| `examples/conversion/relation.id` | migration comment | keep — documents FROM-ZERO |
+| `examples/nominal/measure.id` | historical comment | keep — pre-nominal debt story |
 | `examples/compile_fail/relation_lossy_compose.id` | comment only | keep — proof fixture uses `5:to(milli)` |
 | `scripts/idiomgate.id` | gate ratchet | keep until graph gate |
 | `gates/idiom.id` | gate ratchet | keep until graph gate |
@@ -55,7 +55,7 @@ debt**, not canonical teaching:
 | script/bench | `scripts/runtime_bench.id`, `scripts/audit100.id`, … | I — bootstrap measurement |
 | mcp-agent | `tools/mcp/shared.id` (~11 `:to(`) | J — GAP-159 process/run migration |
 | gate | `scripts/idiomgate.id`, `gates/idiom.id` | K — ratchet rules mentioning patterns |
-| canonical-teaching | `examples/spec100/*` | verified — must match C0 |
+| canonical-teaching | `examples/conversion/*`, `examples/projection/*`, … | verified — must match C0 |
 
 ## `process.*` namespace (GAP-159)
 
@@ -67,10 +67,10 @@ world witness. Do not bulk-edit `tools/mcp/shared.id` without per-call world pro
 
 | partition | tag | status |
 |---|---|---|
-| `examples/spec100/*` | `@corpus verified` | tagged |
-| `examples/compile_fail/*` | `@corpus proof` | tagged |
-| `examples/metatable_class_semantics.id` | `@corpus history` | tagged |
-| `examples/concept_introspect.id` | `@corpus history` | tagged |
+| `examples/conversion/*`, `examples/projection/*`, … | `@corpus current` | tagged |
+| `examples/compile_fail/*` | `@corpus current` | tagged |
+| retired `examples/concept_introspect.id` | removed | foreign corpus deleted |
+| retired `examples/metatable_class_semantics.id` | removed | foreign corpus deleted |
 
 Gate: `tools/node/dev/corpuscensus`.
 
@@ -78,7 +78,7 @@ Gate: `tools/node/dev/corpuscensus`.
 
 | step | work | blocked |
 |---|---|---|
-| 4 | application record in resolver | GAP-124 implementation (spec done) |
+| 4 | application record in resolver | GAP-124 implementation (spec + bootstrap catalog done) |
 | 5 | expected descriptor + result demand inference | GAP-124 |
 | 6 | semantic canonicalization for redundant `:to(` | GAP-124 + step 5 |
 | 11–12 | remove canonical std/lib source lookup | home reachability GAP-153 |
