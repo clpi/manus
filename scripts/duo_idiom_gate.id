@@ -3,20 +3,44 @@
 # The law lives in scripts/idiomgate.id and scans added lines from a unified
 # diff on stdin. Keep this file small so pre-commit and zig build use the same scanner.
 
-script = std.script
+chomp: str = (text: str)
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10
+            if c != 13
+                if c != 32
+                    break
+        n -= 1
+    text:sub(1, n)
+
+capture: str = (cmd: str)
+    f = io.popen(cmd, "r")
+    if f == nil
+        return ""
+    line = f:read("*a")
+    f:close()
+    if line == nil
+        ""
+    else
+        chomp(line)
+
+shellstatus: i64 = (cmd: str)
+    to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
 
 main: i64 = ()
-    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = capture("git rev-parse --show-toplevel 2>/dev/null")
     if root == ""
         print("duo_idiom_gate: fail no git root")
         return 3
 
-    bytes = script.chomp(script.capture("cd '{root}' && git diff -U0 --diff-filter=ACM -- '*.id' | wc -c"))
+    bytes = capture("cd '" .. root .. "' && git diff -U0 --diff-filter=ACM -- '*.id' | wc -c")
     if bytes == "" or bytes == "0"
         print("duo_idiom_gate: PASS no added duo diff")
         return 0
 
-    rc = script.run("cd '{root}' && git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run scripts/idiomgate.id")
+    duobin = root .. "/zig-out/bin/idol"
+    rc = shellstatus("cd '" .. root .. "' && git diff -U0 --diff-filter=ACM -- '*.id' | " .. duobin .. " run --backend=c scripts/idiomgate.id")
     if rc != 0
         return rc
     print("duo_idiom_gate: PASS")

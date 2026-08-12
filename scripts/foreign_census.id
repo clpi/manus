@@ -63,12 +63,43 @@
 
 space = " "
 
-sh(cmd: str): i64
-    std.script.run(cmd)
-end
+chomp: str = (text: str)
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10
+            if c != 13
+                if c != 32
+                    break
+        n -= 1
+    text:sub(1, n)
 
-cap(cmd: str): str
-    std.script.chomp(std.script.capture(cmd))
+capture: str = (cmd: str)
+    f = io.popen(cmd, "r")
+    if f == nil
+        return ""
+    line = f:read("*a")
+    f:close()
+    if line == nil
+        ""
+    else
+        chomp(line)
+
+cap: str = (cmd: str)
+    chomp(capture(cmd))
+
+shellstatus: i64 = (cmd: str)
+    to(i64)(cap("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
+
+envor: str = (name: str, fallback: str)
+    v = os.env[name]
+    if v == nil or v == ""
+        fallback
+    else
+        v
+
+sh(cmd: str): i64
+    shellstatus(cmd)
 end
 
 count(cmd: str): i64
@@ -250,12 +281,10 @@ main(): i64
             if unclassified > 0
                 print("")
                 print("  UNCLASSIFIED — authored source in another language with no bootstrap role and no oracle role:")
-                if std.script.getenv("FOREIGN_SHOW", "") == ""
-                    io.write(cap("head -10 {work}/restr | sed -e 's/^/    /'"))
-                end
-                if std.script.getenv("FOREIGN_SHOW", "") != ""
-                    io.write(cap("sed -e 's/^/    /' {work}/restr"))
-                end
+                if envor("FOREIGN_SHOW", "") == ""
+                    print(cap("head -10 {work}/restr | sed -e 's/^/    /'"))
+                if envor("FOREIGN_SHOW", "") != ""
+                    print(cap("sed -e 's/^/    /' {work}/restr"))
             end
 
             # The row no file census can see.
@@ -280,8 +309,8 @@ main(): i64
                 code = 3
             end
 
-            floor: i64 = to(i64)(std.script.getenv("FOREIGN_FLOOR", "2"))
-            embedfloor: i64 = to(i64)(std.script.getenv("FOREIGN_EMBED_FLOOR", "181"))
+            floor = to(i64)(envor("FOREIGN_FLOOR", "2"))
+            embedfloor = to(i64)(envor("FOREIGN_EMBED_FLOOR", "181"))
             over: i64 = 0
             if unclassified > floor
                 print("foreign_census: FAIL — {unclassified} unclassified foreign files, over the ratchet {floor}. Classify it as ledger with a termination condition, classify it as oracle with the authority that licenses it, or delete it.")

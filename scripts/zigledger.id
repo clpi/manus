@@ -25,7 +25,8 @@ starts: bool = (text: str, prefix: str)
     text:len() >= prefix:len() and text:sub(1, prefix:len()) == prefix
 
 has: bool = (text: str, part: str)
-    text:find(part, 1, true) != nil
+    pos = text:find(part, 1, true)
+    pos != nil and pos > 0
 
 bucket: str = (path: str)
     if path == "build.zig"

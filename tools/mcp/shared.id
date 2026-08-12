@@ -1075,12 +1075,12 @@ fun file_finding(kind: str, title: str, detail: str, priority: str, files: str):
         hpos = string.find(content, hdr, mpos, true)
         if hpos ~= nil then
             hlen = string.len(hdr)
-            content = "{string.sub(content, 1, hpos + hlen - 1)}\\n{row}{string.sub(content, hpos + hlen)}"
+            content = "{string.sub(content, 1, hpos + hlen - 1)}\n{row}{string.sub(content, hpos + hlen)}"
         else
-            content = "{content}\\n{row}\\n"
+            content = "{content}\n{row}\n"
         end
     else
-        content = "{content}\\n\\n{gapsmarker}\\n\\n{hdr}\\n| --- | --- | --- | --- | --- | --- | --- |\\n{row}\\n"
+        content = "{content}\n\n{gapsmarker}\n\n{hdr}\n| --- | --- | --- | --- | --- | --- | --- |\n{row}\n"
     end
     fs:write_file(coordpath, content)
     "ok: filed {id} ({kind})"
@@ -1361,7 +1361,7 @@ fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
             claim_write(key, own, wi)
             return json:encode({ granted = true, path = path, owner = own, reentrant = true })
         end
-        if m ~= nil and (os.time() - m.at) >= claimttl
+        if m ~= nil and (clock.now() - m.at) >= claimttl
             claim_drop(key)
             got = process.run("mkdir -p {claimsdir}/{key}")
         end
@@ -1412,15 +1412,17 @@ end
 
 fun dev_claim_files(): str
     rows = {}
+    now = clock.now()
     for _, key in fs:read_dir(claimsdir) or {}
         m = claim_meta(key)
         if m ~= nil
+            age = now - m.at
             rows[#rows + 1] = {
                 path = claim_unkey(key),
                 owner = m.owner,
                 work_item = m.work,
-                age = os.time() - m.at,
-                live = (os.time() - m.at) < claimttl,
+                age = age,
+                live = age < claimttl,
             }
         end
     end
@@ -1435,8 +1437,8 @@ fun agent_gaps_update(action: str, agent_id: str, gap_id: str, kind: str, title:
         -- that is the whole point.
         return gap_open(agent_id, kind, title, detail, priority, files)
     end
-    ts = os.date("!%Y-%m-%dT%H:%m:%SZ")
-    entry = "\\n| {ts} | {agent_id} | gap-{act} | {gap_id}: {detail} |"
+    ts = clock.utc()
+    entry = "\n| {ts} | {agent_id} | gap-{act} | {gap_id}: {detail} |"
     content = coordination_read()
     marker = "### Findings log (append-only, newest first)"
     table_marker = "| UTC | Agent | Action | Detail |\n| --- | --- | --- | --- |"
@@ -1470,6 +1472,9 @@ m.agent_smoke = agent_smoke
 m.build_run = build_run
 m.document = document
 m.bench_run = bench_run
+m.now = clock.now
+m.utc = clock.utc
+m.coord = clock.coord
 m.capture = runcapture
 m.semantic_snapshot_raw = semantic_snapshot_raw
 m.repo_tooling = repo_tooling

@@ -111,15 +111,47 @@
 # retiring a file lowers the ceiling, adding one fails. Exit 0 pass, 1 over a
 # ceiling, 3 the census could not run.
 
-tally(pattern: str): i64
-    home = std.script.getenv("DUO_ROOT", ".")
-    out = std.script.capture("cd {home} && git ls-files | grep -c -E '{pattern}' 2>/dev/null")
-    n: i64 = #out
-    while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
+chomp: str = (text: str)
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10
+            if c != 13
+                if c != 32
+                    break
         n -= 1
-    end
+    text:sub(1, n)
+
+capture: str = (cmd: str)
+    f = io.popen(cmd, "r")
+    if f == nil
+        return ""
+    line = f:read("*a")
+    f:close()
+    if line == nil
+        ""
+    else
+        chomp(line)
+
+envor: str = (name: str, fallback: str)
+    v = os.env[name]
+    if v == nil or v == ""
+        fallback
+    else
+        v
+
+tally: i64 = (pattern: str)
+    home = envor("DUO_ROOT", ".")
+    out = capture("cd '" .. home .. "' && git ls-files | grep -c -E '" .. pattern .. "' 2>/dev/null")
+    n = out:len()
+    while n > 0
+        c = out:byte(n)
+        if c != 10
+            if c != 13
+                if c != 32
+                    break
+        n -= 1
     to(i64)(out:sub(1, n))
-end
 
 ratchet: i64 = (cap: i64)
     if cap < 113
@@ -127,18 +159,17 @@ ratchet: i64 = (cap: i64)
     else
         113
 
-main(): i64
-    duo: i64 = tally("\\.id$")
+main: i64 = ()
+    duo = tally("\\.id$")
     if duo == 0
         print("language_census: FAIL — no .id files found; census did not run")
-        std.os.exit(3)
-    end
+        return 3
 
-    zig: i64 = tally("\\.zig$")
-    lua: i64 = tally("\\.lua$")
-    csrc: i64 = tally("\\.(c|h)$")
-    debt: i64 = tally("\\.(sh|py)$")
-    js: i64 = tally("\\.js$")
+    zig = tally("\\.zig$")
+    lua = tally("\\.lua$")
+    csrc = tally("\\.(c|h)$")
+    debt = tally("\\.(sh|py)$")
+    js = tally("\\.js$")
 
     print("language census (tracked files)")
     print("  duo         {duo}   authored source")
@@ -148,34 +179,21 @@ main(): i64
     print("  sh/py       {debt}   DEBT — the number that must reach zero")
     print("  js          {js}   DEBT — authored, none generated; gaps/GAP-049")
 
-    over: i64 = 0
-    # LOWERED 2 -> 1 -> 0. The half of a ratchet nobody remembers is lowering
-    # the budget when the count drops. One point of headroom is one script
-    # somebody adds unnoticed; zero is the only honest setting for a row whose
-    # stated target is zero and whose measured value IS zero.
-    ceiling: i64 = to(i64)(std.script.getenv("CENSUS_FLOOR", "0"))
+    over = 0
+    ceiling = to(i64)(envor("CENSUS_FLOOR", "0"))
     if debt > ceiling
         print("language_census: FAIL — sh/py debt {debt} exceeds the ratchet {ceiling}")
         over += 1
-    end
-    # Set to the count on the day .js was first counted, then lowered with each
-    # file retired. A ceiling with headroom is a licence to add one more.
-    jscap: i64 = to(i64)(std.script.getenv("CENSUS_JS_FLOOR", "2"))
+    jscap = to(i64)(envor("CENSUS_JS_FLOOR", "2"))
     if js > jscap
         print("language_census: FAIL — js debt {js} exceeds the ratchet {jscap}")
         over += 1
-    end
-    # The bootstrap ledger (G9). Licensed, with a termination condition — which
-    # is a reason to bound it, not a reason to leave it unbounded.
-    zigcap: i64 = to(i64)(std.script.getenv("CENSUS_ZIG_CEILING", "115"))
+    zigcap = to(i64)(envor("CENSUS_ZIG_CEILING", "115"))
     zigcap = ratchet(zigcap)
     if zig > zigcap
         print("language_census: FAIL — zig ledger {zig} files exceeds the ratchet {zigcap}")
         over += 1
-    end
     if over > 0
-        std.os.exit(1)
-    end
+        return 1
     print("language_census: PASS (sh/py {debt} <= {ceiling}, js {js} <= {jscap}, zig {zig} <= {zigcap})")
     0
-end
