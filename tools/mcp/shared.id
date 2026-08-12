@@ -772,8 +772,8 @@ fun exponential_evaluate(code: str, file_path: str): any
                 kind = "exponential_opportunity",
                 line = first,
                 construct = "@comp.map / @comp.derive",
-                rationale = "'{base}' is hand-monomorphized across {tostring(cnt)} types; one @comp.map emits all variants with zero lua_Value."
-                multiplier = "O({tostring(cnt)} decls <= 1 call)"
+                rationale = "'{base}' is hand-monomorphized across {cnt:to(str)} types; one @comp.map emits all variants with zero lua_Value."
+                multiplier = "O({cnt:to(str)} decls <= 1 call)"
             })
         end
     end
