@@ -495,7 +495,7 @@ fun foreign_entity_lookup(file_path: str, symbol: str): any
             end
         end
     end
-    { ok = false, symbol = symbol, source_file = file_path, error = "foreign entity not found in @c.import headers" }
+    { ok = false, symbol = symbol, source_file = file_path, error = "foreign entity not found in foreign import headers" }
 end
 
 # === Canonical index ===
