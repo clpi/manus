@@ -53,7 +53,7 @@
 # usually a broken gate, so every zero here is positive-controlled).
 #
 # AUDIT100_SHOW=<row>   print up to 20 offending lines for one row, with paths.
-# AUDIT100_LIST=<path>  where to write the canonical file list.
+# AUDIT100paths=<path>  where to write the canonical file list.
 #
 # NOT SAFE TO RUN CONCURRENTLY AT THE DEFAULT PATH, and that is why the
 # override above exists. The canonical list used to be written to a fixed
@@ -62,61 +62,54 @@
 # concurrent run in the main tree had rewritten the list underneath it — one
 # tree's banner over another tree's numbers, with no indication. A fixed path
 # in /tmp is a shared mutable surface. If you are measuring anything you
-# intend to write down, point AUDIT100_LIST somewhere private and confirm the
+# intend to write down, point AUDIT100paths somewhere private and confirm the
 # counts are stable across repeat runs.
 
-_SELF = "scripts/audit100.id"
+me = "scripts/audit100.id"
 # The constitution is excluded for the SAME reason audit100 excludes itself:
 # its text is DATA. `law.arch.relation` must be able to name `addnode` and
 # `add_node` as the spellings it forbids, and `law.fact.one` must show the
 # two-write anti-pattern it rules out. A deny-grep over the law convicts the
 # law for citing the law. Exclusion is NOT a budget: the file is canonical, it
 # passes `duo check`, and every rule it states is enforced on every other file.
-_LAW = "docs/spec/constitution.id"
-_LIST = std.script.getenv("AUDIT100_LIST", "/tmp/duo_audit100_canonical.list")
+law = "docs/spec/constitution.id"
+paths = os.env["AUDIT100paths"] or "/tmp/duo_audit100_canonical.list"
+process = lib.process
 
 # The string-body strip, as a shell fragment. Two passes, in this order:
 # drop escaped quotes (`\"`) so they cannot close a body early, then drop
 # every `"…"` body. Built from named pieces rather than one escaped literal
 # because the literal spelling is `s/\\"//g` and writing that through two
 # levels of quoting is how a gate ends up silently matching nothing.
-_Q = "'"
-_DQ = "\""
-_BSBS = "\\\\"
-_STRIP = " | sed -e " .. _Q .. "s/" .. _BSBS .. _DQ .. "//g" .. _Q
-    .. " -e " .. _Q .. "s/" .. _DQ .. "[^" .. _DQ .. "]*" .. _DQ .. "//g" .. _Q
+q = "'"
+dq = "\""
+bs = "\\\\"
+strip = " | sed -e {q}s/{bs}{dq}//g{q} -e {q}s/{dq}[^{dq}]*{dq}//g{q}"
 
-_lines(s: str): any
+split(s: str): any
     out = {}
-    n: i64 = #s
+    n: i64 = s:len()
     start: i64 = 1
     i: i64 = 1
     while i <= n
         if s:byte(i) == 10
             if i > start
-                out:insert(s:sub(start, i - 1))
-            end
+                out:push(s:sub(start, i - 1))
             start = i + 1
-        end
         i += 1
-    end
     if start <= n
-        out:insert(s:sub(start, n))
-    end
+        out:push(s:sub(start, n))
     out
-end
 
-_starts(s: str, prefix: str): bool
-    p: i64 = #prefix
-    if #s < p
+starts: bool = (s: str, prefix: str)
+    p: i64 = prefix:len()
+    if s:len() < p
         return false
-    end
     s:sub(1, p) == prefix
-end
 
 # Whitespace-separated field n (1-based) of a line, "" when absent.
-_field(line: str, want: i64): str
-    n: i64 = #line
+field: str = (line: str, want: i64)
+    n: i64 = line:len()
     i: i64 = 1
     seen: i64 = 0
     while i <= n
@@ -126,39 +119,26 @@ _field(line: str, want: i64): str
             start: i64 = i
             while i <= n and line:byte(i) != 32 and line:byte(i) != 9
                 i += 1
-            end
             if seen == want
                 return line:sub(start, i - 1)
-            end
         else
             i += 1
-        end
-    end
     ""
-end
 
-_is_class(c: str): bool
+known(c: str): bool
     c == "canonical" or c == "compatibility" or c == "foreign"
         or c == "negative" or c == "historical" or c == "generated"
-end
 
 # Count lines matching `pat` across the canonical list, comments always
 # stripped. `keep` is 1 for the rows whose subject IS a string literal; every
 # other row also has string BODIES stripped, so it measures Duo code rather
 # than payloads the compiler hands to a C compiler.
-_hits(pat: str, keep: i64): i64
-    q: str = "'"
-    strip: str = _STRIP
+hits: i64 = (pat: str, keep: i64)
+    s: str = strip
     if keep != 0
-        strip = ""
-    end
-    cmd: str = ("tr '\\n' '\\0' < " .. _LIST
-        .. " | xargs -0 cat 2>/dev/null"
-        .. " | grep -v -E " .. q .. "^[[:space:]]*--" .. q
-        .. strip
-        .. " | grep -c -E " .. q .. pat .. q)
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
-end
+        s = ""
+    cmd: str = "tr '\\n' '\\0' < {paths} | xargs -0 cat 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} {s} | grep -c -E {q}{pat}{q}"
+    process.chomp(process.capture(cmd)):to(i64)
 
 # Count lines matching `pat` in an ARBITRARY text source, through the two
 # filters every row uses. `src` is a shell fragment that writes the text to
@@ -166,116 +146,90 @@ end
 # (`cat p`) or at its HEAD blob (`git show HEAD:p`). That pair is the whole
 # delta report: `after - before` is what YOUR tree costs on that row.
 #
-# It is a separate function from `_hits` rather than a parameter on it because
-# `_hits` hard-codes the canonical list, and the delta report must be able to
+# It is a separate function from `hits` rather than a parameter on it because
+# `hits` hard-codes the canonical list, and the delta report must be able to
 # read a file that is not on that list yet — an UNTRACKED `.id` is invisible
 # to `git ls-files`, so its points are worth exactly zero until someone runs
 # `git add`, at which moment they are worth all of them at once. That is how
 # `examples/boring/` landed +6 on `trailret` with nobody holding it.
-_tally(pat: str, keep: i64, src: str): i64
-    q: str = "'"
-    strip: str = _STRIP
+tally: i64 = (pat: str, keep: i64, src: str)
+    s: str = strip
     if keep != 0
-        strip = ""
-    end
-    cmd: str = (src
-        .. " | grep -v -E " .. q .. "^[[:space:]]*--" .. q
-        .. strip
-        .. " | grep -c -E " .. q .. pat .. q)
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
-end
+        s = ""
+    cmd: str = "{src} | grep -v -E {q}^[[:space:]]*--{q} {s} | grep -c -E {q}{pat}{q}"
+    process.chomp(process.capture(cmd)):to(i64)
 
 # Does `f` fall in the canonical partition, by the same first-match-wins walk
 # the census does? The delta report needs this for files the census never
 # saw.
-_canon(rcls: any, rpre: any, f: str): bool
+canon: bool = (rcls: any, rpre: any, f: str)
     j: i64 = 1
-    while j <= #rpre
-        if _starts(f, rpre[j])
+    while j <= rpre:len()
+        if starts(f, rpre[j])
             return rcls[j] == "canonical"
-        end
         j += 1
-    end
     false
-end
 
 # Count matches of `pat` against ONE literal line, through the same grep the
 # rows use. This is the control surface: it asks whether a pattern still
 # recognises the text it was written for, without depending on the corpus
 # containing that text. A row whose residue legitimately reaches zero stays
 # controlled; a row whose regex rots is caught on the run that rots it.
-_probe(pat: str, line: str): i64
+probe: i64 = (pat: str, line: str)
     q: str = "'"
-    cmd: str = ("printf " .. q .. "%s\n" .. q .. " " .. q .. line .. q
-        .. " | grep -c -E " .. q .. pat .. q)
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
-end
+    cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
+    process.chomp(process.capture(cmd)):to(i64)
 
-_show(pat: str, keep: i64): void
+show: void = (pat: str, keep: i64)
     q: str = "'"
     # SHOW must agree with the count or it sends people to lines the ratchet
     # never saw. Both filters therefore run here too, applied AFTER the match
     # so the `path:line:` prefix survives — sed cannot damage it, there are no
     # quotes in a path — and then the pattern is re-checked against the
     # stripped text so anything that only matched inside a string body drops.
-    strip: str = _STRIP
+    s: str = strip
     if keep != 0
-        strip = ""
-    end
-    cmd: str = ("tr '\\n' '\\0' < " .. _LIST
-        .. " | xargs -0 grep -n -E " .. q .. pat .. q .. " 2>/dev/null"
-        .. " | grep -v -E " .. q .. ":[0-9][0-9]*:[[:space:]]*--" .. q
-        .. strip
-        .. " | grep -E " .. q .. pat .. q
-        .. " | head -20")
-    io.write(std.script.capture(cmd))
-end
+        s = ""
+    cmd: str = "tr '\\n' '\\0' < {paths} | xargs -0 grep -n -E {q}{pat}{q} 2>/dev/null | grep -v -E {q}:[0-9][0-9]*:[[:space:]]*--{q} {s} | grep -E {q}{pat}{q} | head -20"
+    print(process.capture(cmd))
 
-_pad(s: str, width: i64): str
+pad: str = (s: str, width: i64)
     out: str = s
-    while #out < width
-        out = out .. " "
-    end
+    while out:len() < width
+        out = "{out} "
     out
-end
 
-main(): i64
-    root: str = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+main: i64 = ()
+    root: str = process.chomp(process.capture("git rev-parse --show-toplevel 2>/dev/null"))
     if root == ""
         print("audit100: FAIL — not inside a git work tree; the corpus cannot be listed")
         return 3
-    end
     print("audit100 — CLAUDE.md §1 deny table, over the canonical partition")
-    print("  root      " .. root)
+    print(" root      {root}")
 
-    manifest: str = root .. "/docs/spec/corpus.md"
-    if !std.script.fs_exists(manifest)
-        print("audit100: FAIL — missing " .. manifest)
+    manifest: str = "{root}/docs/spec/corpus.md"
+    if !process.run("test -e {manifest}") == 0
+        print("audit100: FAIL — missing {manifest}")
         return 3
-    end
 
     # Rules: parallel arrays, first match wins, order as written.
     rcls = {}
     rpre = {}
-    for _i, line in _lines(std.script.fs_read(manifest))
-        c: str = _field(line, 1)
-        p: str = _field(line, 2)
-        if _is_class(c) and p != "" and _field(line, 3) == ""
-            rcls:insert(c)
-            rpre:insert(p)
-        end
-    end
-    if #rcls == 0
+    for i, line in split(process.capture("cat {manifest}"))
+        c: str = field(line, 1)
+        p: str = field(line, 2)
+        if known(c) and p != "" and field(line, 3) == ""
+            rcls.push(c)
+            rpre.push(p)
+    if rcls:len() == 0
         print("audit100: FAIL — docs/spec/corpus.md yielded 0 rules; the parse is broken")
         return 3
-    end
-    print("  rules     " .. to(str)(#rcls) .. " from docs/spec/corpus.md")
+    print(" rules     {rcls:len()} from docs/spec/corpus.md")
 
-    files = _lines(std.script.capture("cd " .. root .. " && git ls-files '*.id'"))
-    if #files == 0
+    files = split(process.capture("cd {root} && git ls-files '*.id'"))
+    if files:len() == 0
         print("audit100: FAIL — git ls-files found 0 .id files; the census did not run")
         return 3
-    end
 
     n_canon = 0
     n_compat = 0
@@ -285,81 +239,73 @@ main(): i64
     n_gen = 0
     n_none = 0
     written = 0
-    unclassified: str = ""
-    canon: str = ""
+    unclassified = ""
+    canon = ""
 
-    for _i, f in files
-        cls: str = ""
+    for i, f in files
+        cls = ""
         j: i64 = 1
-        while j <= #rpre and cls == ""
-            if _starts(f, rpre[j])
+        while j <= rpre:len() and cls == ""
+            if starts(f, rpre[j])
                 cls = rcls[j]
-            end
             j += 1
-        end
         if cls == "canonical"
             n_canon += 1
-            if f != _SELF and f != _LAW
+            if f != me and f != law
                 written += 1
-                canon = canon .. root .. "/" .. f .. "\n"
-            end
-        elseif cls == "compatibility"
+                canon += "{root}/{f}\n"
+        if cls == "compatibility"
             n_compat += 1
-        elseif cls == "foreign"
+        if cls == "foreign"
             n_foreign += 1
-        elseif cls == "negative"
+        if cls == "negative"
             n_neg += 1
-        elseif cls == "historical"
+        if cls == "historical"
             n_hist += 1
-        elseif cls == "generated"
+        if cls == "generated"
             n_gen += 1
-        else
-            n_none += 1
-            if n_none <= 10
-                unclassified = unclassified .. "    " .. f .. "\n"
-            end
-        end
-    end
+        if cls != "canonical"
+            if cls != "compatibility"
+                if cls != "foreign"
+                    if cls != "negative"
+                        if cls != "historical"
+                            if cls != "generated"
+                                n_none += 1
+                                if n_none <= 10
+                                    unclassified += "    {f}\n"
 
     print("")
-    print("corpus census (" .. to(str)(#files) .. " tracked .id files)")
-    print("  canonical      " .. to(str)(n_canon) .. "   deny table applies")
-    print("  compatibility  " .. to(str)(n_compat) .. "   Lua-superset input")
-    print("  foreign        " .. to(str)(n_foreign) .. "   embeds another language, or vendored")
-    print("  negative       " .. to(str)(n_neg) .. "   denied text IS the assertion")
-    print("  historical     " .. to(str)(n_hist) .. "   past-epoch evidence, unmaintained")
-    print("  generated      " .. to(str)(n_gen) .. "   fix the generator, not the file")
+    print("corpus census ({files:len()} tracked .id files)")
+    print(" canonical      {n_canon}   deny table applies")
+    print(" compatibility  {n_compat}   Lua-superset input")
+    print(" foreign        {n_foreign}   embeds another language, or vendored")
+    print(" negative       {n_neg}   denied text IS the assertion")
+    print(" historical     {n_hist}   past-epoch evidence, unmaintained")
+    print(" generated      {n_gen}   fix the generator, not the file")
 
     if n_none != 0
         print("")
-        print("audit100: FAIL — " .. to(str)(n_none)
-            .. " tracked .id files match no rule in docs/spec/corpus.md:")
-        io.write(unclassified)
-        print("  Classify them; there is deliberately no silent default.")
+        print("audit100: FAIL — {n_none} tracked .id files match no rule in docs/spec/corpus.md:")
+        print(unclassified)
+        print(" Classify them; there is deliberately no silent default.")
         return 1
-    end
 
     if n_canon == 0
         print("audit100: FAIL — canonical partition is empty; the rules cannot be right")
         return 3
-    end
 
-    std.script.fs_write(_LIST, canon)
-    listed: i64 = to(i64)(std.script.chomp(std.script.capture("wc -l < " .. _LIST)))
+    process.run("printf %s {canon} > {paths}")
+    listed: i64 = process.chomp(process.capture("wc -l < {paths}")):to(i64)
     if listed != written
-        print("audit100: FAIL — wrote " .. to(str)(written)
-            .. " canonical paths but the list holds " .. to(str)(listed))
+        print("audit100: FAIL — wrote {written} canonical paths but the list holds {listed}")
         return 3
-    end
 
     # Positive control: a pattern that MUST hit. If this reads 0, the pipeline
     # is broken and every other 0 in this report is a lie.
-    control: i64 = _hits("[a-zA-Z]", 1)
+    control: i64 = hits("[a-zA-Z]", 1)
     if control == 0
-        print("audit100: FAIL — control pattern matched 0 lines across "
-            .. to(str)(listed) .. " canonical files; the grep pipeline is broken")
+        print("audit100: FAIL — control pattern matched 0 lines across {listed} canonical files; the grep pipeline is broken")
         return 3
-    end
 
     # The SAME control, through the STRIPPED path — and it is a separate check
     # because the two paths are separate pipelines and only one of them was
@@ -375,34 +321,26 @@ main(): i64
     # `kept > razed` is satisfied HARDER by the worse failure than by the
     # lesser one. A confident zero is usually a broken gate (CLAUDE.md §3),
     # and this gate had sixteen of them one shell error away.
-    stripped: i64 = _hits("[a-zA-Z]", 0)
+    stripped: i64 = hits("[a-zA-Z]", 0)
     if stripped == 0
-        print("audit100: FAIL — control pattern matched 0 lines through the"
-            .. " STRIPPED path while reading " .. to(str)(control)
-            .. " unstripped; the strip pipeline is broken and every row that"
-            .. " uses it would read a confident 0")
+        print("audit100: FAIL — control pattern matched 0 lines through the STRIPPED path while reading {control} unstripped; the strip pipeline is broken and every row that uses it would read a confident 0")
         return 3
-    end
 
     # Positive control for the string-body strip itself. A sed that silently
     # matched nothing would leave every row's count unchanged and look like a
     # clean result. `..` beside a quote is the one thing the strip must be
     # able to delete, so kept and stripped MUST disagree here. If they agree,
     # the strip is a no-op and every stripped count below is unearned.
-    concat: str = "[" .. "\"" .. "][[:space:]]*\\.\\.|\\.\\.[[:space:]]*[" .. "\"" .. "]"
-    kept: i64 = _hits(concat, 1)
-    razed: i64 = _hits(concat, 0)
-    if kept <= razed
-        print("audit100: FAIL — string-body strip is a no-op: `..` beside a"
-            .. " quote reads " .. to(str)(kept) .. " kept and " .. to(str)(razed)
-            .. " stripped. Every stripped row below would be unearned.")
-        return 3
-    end
-
     q: str = "'"
+    dq: str = "\""
     brace: str = "\\{"
     brace_close: str = "\\}"
-    dq: str = "\""
+    concat: str = "[{dq}][[:space:]]*\\.\\.|\\.\\.[[:space:]]*[{dq}]"
+    kept: i64 = hits(concat, 1)
+    razed: i64 = hits(concat, 0)
+    if kept <= razed
+        print("audit100: FAIL — string-body strip is a no-op: `..` beside a quote reads {kept} kept and {razed} stripped. Every stripped row below would be unearned.")
+        return 3
 
     # The deny rows, as parallel arrays; `budget` is hoisted to the top of
     # main and must stay in this order.
@@ -416,7 +354,7 @@ main(): i64
     note = {
         "underscore inside an identifier",
         "uppercase identifier in bind/call/field position",
-        "uppercase name in DECLARATION position (Point: @" .. "{" .. "…" .. "}" .. ")",
+        "uppercase name in DECLARATION position (Point: @{{…}})",
         "_ prefix on a name",
         "companion *_kind / *_type",
         "get_ / set_ / compute_",
@@ -429,7 +367,7 @@ main(): i64
         "foreign declaration keyword",
         "-> => ?. ?: |>",
         "Lua library call",
-        "M = " .. "{" .. "}" .. " module wrapper",
+        "M = {{}} module wrapper",
         ".. beside a string literal",
         "end on a one-line block",
         "trailing return <expr>",
@@ -452,8 +390,8 @@ main(): i64
         "(^|[^A-Za-z0-9_.])(function|fn|def|let|const|var|class|impl|trait|interface|enum|match|switch|try|catch)([^A-Za-z0-9_]|$)",
         "(->|=>|\\?\\.|\\?:|\\|>)",
         "(^|[^A-Za-z0-9_.])(pairs|ipairs|pcall|tostring|tonumber|setmetatable|getmetatable|gmatch|gsub)\\(|_G([^A-Za-z0-9_]|$)",
-        "^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*" .. brace .. brace_close,
-        "[" .. dq .. "][[:space:]]*\\.\\.|\\.\\.[[:space:]]*[" .. dq .. "]",
+        "^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*{brace}{brace_close}",
+        "[{dq}][[:space:]]*\\.\\.|\\.\\.[[:space:]]*[{dq}]",
         "(^|[[:space:]])(if|for|while|elseif)[[:space:]].*[[:space:]]end[[:space:]]*$",
         "(^|[[:space:]])return[[:space:]]+[^[:space:]]",
         "(^|[^A-Za-z0-9_.])(try|catch|defer|goto|extends|private|await|async|macro|let)([^A-Za-z0-9_]|$)",
@@ -561,12 +499,12 @@ main(): i64
     # free() emitted at every `return` in the function — including the returns
     # that come textually before it, which is a C compile error.
     # REBASELINED 2026-08-08 (fourth time), measured at `9ef2e68` in a DETACHED
-    # WORKTREE, and with `_LIST` pointed at an isolated path — the first
+    # WORKTREE, and with `paths` pointed at an isolated path — the first
     # attempt at this measurement read `/tmp/duo_audit100_canonical.list`
     # while a concurrent session's run in the main tree was rewriting it, and
     # reported that tree's counts under this tree's `root` banner. That is the
     # same class as every other lesson here: a fixed path in /tmp is a shared
-    # mutable surface, and `_LIST` is one. Re-measure in isolation or the
+    # mutable surface, and `paths` is one. Re-measure in isolation or the
     # numbers are somebody else's.
     #
     # Seven rows were over. Every point attributes to exactly TWO sources, and
@@ -639,7 +577,7 @@ main(): i64
     # `trailret` 3417/3415 — and it was red AT THE REBASELINE COMMIT ITSELF,
     # not because of anything landed after it. Attributed per file, counting
     # at `1bb304f` and again at `a6e35e8` in two detached worktrees with
-    # AUDIT100_LIST pointed at private paths:
+    # AUDIT100paths pointed at private paths:
     #
     #   row        1bb304f   a6e35e8   all of it in
     #   oneline      2268      2258    scripts/capability_matrix.id  10 -> 0
@@ -698,7 +636,7 @@ main(): i64
     # No row moved that this diff did not touch: the other thirteen rows and
     # `nonduo` read EXACTLY their budgets both before and after, over the same
     # 450 canonical files, so LOWERING again had no work. Measured twice with
-    # `AUDIT100_LIST` pointed at a private path, same counts both runs.
+    # `AUDIT100paths` pointed at a private path, same counts both runs.
     #
     # 2026-08-08, ward's `call_indirect` jit arm. Five rows move, and every
     # point is attributed to one of TWO files. Measured the way the entries
@@ -762,7 +700,7 @@ main(): i64
     # literal. One file, one line, and the downward half of the ratchet is the
     # half that gets skipped. No other row moved: the remaining sixteen and
     # `nonduo` read EXACTLY their budgets over the same 450 canonical files
-    # before and after, measured twice with `AUDIT100_LIST` at a private path.
+    # before and after, measured twice with `AUDIT100paths` at a private path.
     # 2026-08-08, offside layout: `snake` 14153 -> 14154, MOVED UP by one, and
     # the arithmetic is +2 -1 so both halves are stated. The +2 is two new rows
     # in `scripts/run_compile_fail_tests.id` asserting that a mis-indent and a
@@ -979,7 +917,7 @@ main(): i64
     #      below is the check: it names the file before the commit exists.
     #
     # 2026-08-08, ONE ROW ADDED: `convert`, at 949. Pass 121 §9 makes
-    # `n:to(str)` canonical and `to(str)(n)` noncanonical, and gaps/GAP-081.md
+    # `n:to(str)` canonical and `(n):to(str)` noncanonical, and gaps/GAP-081.md
     # measured the tree at 1647 operation-first sites against ONE canonical
     # one. This row is that census turned into pressure. It is the ONLY number
     # this diff moves: no other budget is touched, in either direction.
@@ -1023,7 +961,7 @@ main(): i64
     # that these could not be spelled canonically at all until this same diff
     # fixed the conversion; the rewrite is deliberately held back a step so the
     # fixture can hold first. (2) `to(str)` over a subject richer than a name
-    # or a field walk — `to(str)(a + b)` needs `(a + b):to(str)`, and adding
+    # or a field walk — `(a + b):to(str)` needs `(a + b):to(str)`, and adding
     # that paren is a judgement about precedence, not a substitution.
     # 2026-08-09, `upperdecl` LANDS. §0.1 LAW-ONE has said "No uppercase EVER
     # (`point`, `error`, `json` — never `Point`, `Error`, `MAX_N`)" since epoch
@@ -1164,39 +1102,28 @@ main(): i64
     # these" and "these are impossible" look like the same fact.
     enforced: str = "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"
 
-    if _field(budgets, #id) == "" or _field(budgets, #id + 1) != ""
-        print("audit100: FAIL — the budget row does not have exactly "
-            .. to(str)(#id) .. " entries; the ratchet is out of step")
+    if field(budgets, id:len()) == "" or field(budgets, id:len() + 1) != ""
+        print("audit100: FAIL — the budget row does not have exactly {id:len()} entries; the ratchet is out of step")
         return 3
-    end
-    if _field(keeps, #id) == "" or _field(keeps, #id + 1) != ""
-        print("audit100: FAIL — the keeps row does not have exactly "
-            .. to(str)(#id) .. " entries; the strip is out of step")
+    if field(keeps, id:len()) == "" or field(keeps, id:len() + 1) != ""
+        print("audit100: FAIL — the keeps row does not have exactly {id:len()} entries; the strip is out of step")
         return 3
-    end
-    if _field(enforced, #id) == "" or _field(enforced, #id + 1) != ""
-        print("audit100: FAIL — the enforced row does not have exactly "
-            .. to(str)(#id) .. " entries; the ENFORCED column is out of step")
+    if field(enforced, id:len()) == "" or field(enforced, id:len() + 1) != ""
+        print("audit100: FAIL — the enforced row does not have exactly {id:len()} entries; the ENFORCED column is out of step")
         return 3
-    end
     # Positive control on the column itself. If nothing is marked ENFORCED the
     # column is dead weight that reads as "nothing is enforced" — which was
     # true before the dialect split and must never silently become true again
     # by someone deleting a row. CLAUDE.md §3: positive-control every zero.
     marked: i64 = 0
     j: i64 = 1
-    while j <= #id
-        if _field(enforced, j) == "1"
+    while j <= id:len()
+        if field(enforced, j) == "1"
             marked += 1
-        end
         j += 1
-    end
     if marked == 0
-        print("audit100: FAIL — no row is marked ENFORCED; the column would"
-            .. " report that the compiler refuses nothing, which is a claim"
-            .. " about the parser, not about this file")
+        print("audit100: FAIL — no row is marked ENFORCED; the column would report that the compiler refuses nothing, which is a claim about the parser, not about this file")
         return 3
-    end
 
     # POSITIVE CONTROL ON EVERY ENFORCED ROW. A ratchet only ever fails
     # UPWARD, so a row whose regex has rotted to match nothing reads 0, sits
@@ -1212,26 +1139,17 @@ main(): i64
     # corpus, so it is independent of what the corpus happens to contain — the
     # row would still be controlled on the day its residue reaches zero.
     j = 1
-    while j <= #id
-        if _field(enforced, j) == "1"
-            if _probe(pat[j], "  goto skip") == 0
-                print("audit100: FAIL — the ENFORCED row " .. id[j]
-                    .. " does not match its own spelling; its regex is broken"
-                    .. " and it would read 0, pass, and report that the"
-                    .. " compiler refuses something it no longer refuses")
+    while j <= id:len()
+        if field(enforced, j) == "1"
+            if probe(pat[j], "  goto skip") == 0
+                print("audit100: FAIL — the ENFORCED row {id[j]} does not match its own spelling; its regex is broken and it would read 0, pass, and report that the compiler refuses something it no longer refuses")
                 return 3
-            end
             # and the same pattern must DECLINE ordinary Duo, or the row is a
             # match-everything that would redden on any edit.
-            if _probe(pat[j], "  x = f(y) + 1") != 0
-                print("audit100: FAIL — the ENFORCED row " .. id[j]
-                    .. " matches ordinary Duo; its regex is too broad and its"
-                    .. " budget is measuring noise")
+            if probe(pat[j], "  x = f(y) + 1") != 0
+                print("audit100: FAIL — the ENFORCED row {id[j]} matches ordinary Duo; its regex is too broad and its budget is measuring noise")
                 return 3
-            end
-        end
         j += 1
-    end
 
     # POSITIVE CONTROL ON `upperdecl`. This row sits at 2 and both of those
     # points are string-body noise it cannot repair, so its count is nearly
@@ -1245,22 +1163,16 @@ main(): i64
     ubrace: str = "{"
     ubraceclose: str = "}"
     updecl: str = pat[3]
-    upat: i64 = _probe(updecl, "Point: @" .. ubrace .. " x: f64 " .. ubraceclose)
-    ubare: i64 = _probe(updecl, "ByteCursor: " .. ubrace)
-    ulower: i64 = _probe(updecl, "point: @" .. ubrace .. " x: f64 " .. ubraceclose)
-    ucase: i64 = _probe(updecl, "    kind: " .. ubrace .. " name, number, eof " .. ubraceclose)
-    uplain: i64 = _probe(updecl, "  x = f(y) + 1")
+    upat: i64 = probe(updecl, "Point: @{ubrace} x: f64 {ubraceclose}")
+    ubare: i64 = probe(updecl, "ByteCursor: {ubrace}")
+    ulower: i64 = probe(updecl, "point: @{ubrace} x: f64 {ubraceclose}")
+    ucase: i64 = probe(updecl, "    kind: {ubrace} name, number, eof {ubraceclose}")
+    uplain: i64 = probe(updecl, "  x = f(y) + 1")
     if upat == 0 or ubare == 0
-        print("audit100: FAIL — the upperdecl row does not see an uppercase"
-            .. " descriptor declaration (@-brace " .. upat:to(str)
-            .. ", bare brace " .. ubare:to(str) .. "); it would read 0 and pass")
+        print("audit100: FAIL — the upperdecl row does not see an uppercase descriptor declaration (@-brace {upat}, bare brace {ubare}); it would read 0 and pass")
         return 3
     if ulower != 0 or ucase != 0 or uplain != 0
-        print("audit100: FAIL — the upperdecl row convicts CANONICAL duon"
-            .. " (lowercase descriptor " .. ulower:to(str) .. ", inferred"
-            .. " case-set " .. ucase:to(str) .. ", ordinary line "
-            .. uplain:to(str) .. "); the ratchet would drive the repair"
-            .. " backwards")
+        print("audit100: FAIL — the upperdecl row convicts CANONICAL duon (lowercase descriptor {ulower}, inferred case-set {ucase}, ordinary line {uplain}); the ratchet would drive the repair backwards")
         return 3
 
     # POSITIVE CONTROL ON `self`. §0a SELF-ZERO — "a parameter named `self` is
@@ -1284,26 +1196,19 @@ main(): i64
     # doing real work: `self: any` is a typed parameter, `self:peek()` is an
     # invoke, and one space decides it.
     sp: i64 = 8
-    spat: i64 = _probe(pat[sp], "    scale = (self, k) @" .. ubrace .. " .x * k " .. ubraceclose)
-    sbare: i64 = _probe(pat[sp], "    len = (self): i64")
-    styped: i64 = _probe(pat[sp], "    fh.close = (self: any) nil")
-    ssecond: i64 = _probe(pat[sp], "    write = (fh, self) nil")
-    swalk: i64 = _probe(pat[sp], "    n = self.pos + 1")
-    sinvoke: i64 = _probe(pat[sp], "    n = self:peek() + 1")
-    scanon: i64 = _probe(pat[sp], "    scale = (k) @" .. ubrace .. " .x * k " .. ubraceclose)
-    sword: i64 = _probe(pat[sp], "    myself = (herself, itself) nil")
+    spat: i64 = probe(pat[sp], "    scale = (self, k) @{ubrace} .x * k {ubraceclose}")
+    sbare: i64 = probe(pat[sp], "    len = (self): i64")
+    styped: i64 = probe(pat[sp], "    fh.close = (self: any) nil")
+    ssecond: i64 = probe(pat[sp], "    write = (fh, self) nil")
+    swalk: i64 = probe(pat[sp], "    n = self.pos + 1")
+    sinvoke: i64 = probe(pat[sp], "    n = self:peek() + 1")
+    scanon: i64 = probe(pat[sp], "    scale = (k) @{ubrace} .x * k {ubraceclose}")
+    sword: i64 = probe(pat[sp], "    myself = (herself, itself) nil")
     if spat == 0 or sbare == 0 or styped == 0 or ssecond == 0
-        print("audit100: FAIL — the self row does not see a parameter named"
-            .. " self (bare " .. spat:to(str) .. ", sole " .. sbare:to(str)
-            .. ", typed " .. styped:to(str) .. ", second " .. ssecond:to(str)
-            .. "); it would read 0 and pass")
+        print("audit100: FAIL — the self row does not see a parameter named self (bare {spat}, sole {sbare}, typed {styped}, second {ssecond}); it would read 0 and pass")
         return 3
     if swalk != 0 or sinvoke != 0 or scanon != 0 or sword != 0
-        print("audit100: FAIL — the self row convicts something that is not a"
-            .. " parameter (field walk " .. swalk:to(str) .. ", invoke "
-            .. sinvoke:to(str) .. ", canonical lens " .. scanon:to(str)
-            .. ", word-boundary " .. sword:to(str) .. "); the count would"
-            .. " triple-count one defect and could never reach zero")
+        print("audit100: FAIL — the self row convicts something that is not a parameter (field walk {swalk}, invoke {sinvoke}, canonical lens {scanon}, word-boundary {sword}); the count would triple-count one defect and could never reach zero")
         return 3
 
     # POSITIVE CONTROL ON `convert`, the newest row and the only one whose
@@ -1314,64 +1219,52 @@ main(): i64
     # is the whole reason this is spelled out here — that gap opens with a
     # census someone could have acted on without ever checking that the
     # canonical form compiled.
-    if _probe(pat[#id], "    n: i64 = to(i64)(s)") == 0
-        print("audit100: FAIL — the convert row does not see an"
-            .. " operation-first conversion; it would read 0 and pass")
+    if probe(pat[id:len()], "    n: i64 = to(i64)(s)") == 0
+        print("audit100: FAIL — the convert row does not see an operation-first conversion; it would read 0 and pass")
         return 3
-    end
-    if _probe(pat[#id], "    n: i64 = s:to(i64)") != 0
-        print("audit100: FAIL — the convert row convicts the CANONICAL"
-            .. " subject-first form; the ratchet would drive the repair"
-            .. " backwards")
+    if probe(pat[id:len()], "    n: i64 = s:to(i64)") != 0
+        print("audit100: FAIL — the convert row convicts the CANONICAL subject-first form; the ratchet would drive the repair backwards")
         return 3
-    end
-    if _probe(pat[#id], "    xs:to(seq)(entry)") != 0
-        print("audit100: FAIL — the convert row convicts a LEVELED canonical"
-            .. " conversion; a subject-first call with a level group is"
-            .. " already the form this row is asking for")
+    if probe(pat[id:len()], "    xs:to(seq)(entry)") != 0
+        print("audit100: FAIL — the convert row convicts a LEVELED canonical conversion; a subject-first call with a level group is already the form this row is asking for")
         return 3
-    end
-    if _probe(pat[#id], "  x = f(y) + 1") != 0
+    if probe(pat[id:len()], "  x = f(y) + 1") != 0
         print("audit100: FAIL — the convert row matches ordinary Duo")
         return 3
-    end
 
-    show: str = std.script.getenv("AUDIT100_SHOW", "")
+    show: str = os.env["AUDIT100_SHOW"] or ""
 
     print("")
-    print("deny rows over " .. to(str)(listed) .. " canonical files ("
-        .. _SELF .. " self-excluded: its patterns are data)")
+    print("deny rows over {listed} canonical files ({me} self-excluded: its patterns are data)")
     print("  row            count   budget   E  what")
 
     over = 0
     total = 0
     counts: str = ""
     i: i64 = 1
-    while i <= #id
-        c: i64 = _hits(pat[i], to(i64)(_field(keeps, i)))
+    while i <= id:len()
+        c: i64 = hits(pat[i], field(keeps, i).to(i64))
         total += c
-        counts = counts .. to(str)(c) .. " "
+        counts += "{c} "
         flag: str = "  "
-        b: i64 = to(i64)(_field(budgets, i))
+        b: i64 = field(budgets, i).to(i64)
         if c > b
             flag = "!!"
             over += 1
-        end
         mark: str = " "
-        if _field(enforced, i) == "1"
+        if field(enforced, i) == "1"
             mark = "E"
-        end
-        print("  " .. flag .. " " .. _pad(id[i], 12) .. _pad(to(str)(c), 8)
-            .. _pad(to(str)(b), 9) .. _pad(mark, 3) .. note[i])
+        p_id: str = pad(id[i], 12)
+        p_c: str = pad(c.to(str), 8)
+        p_b: str = pad(b.to(str), 9)
+        p_mark: str = pad(mark, 3)
+        print("   {flag}{p_id}{p_c}{p_b}{p_mark}{note[i]}")
         if show == id[i]
-            _show(pat[i], to(i64)(_field(keeps, i)))
-        end
+            show(pat[i], field(keeps, i).to(i64))
         i += 1
-    end
 
     # The one §1 row that is about files, not lines.
-    nonduo: i64 = to(i64)(std.script.chomp(std.script.capture(
-        "cd " .. root .. " && git ls-files | grep -c -v -E " .. q .. "\\.(duo|md)$" .. q)))
+    nonduo: i64 = process.chomp(process.capture("cd {root} && git ls-files | grep -c -v -E {q}\\.(duo|md)${q}")):to(i64)
     # LOWERED 560 -> 536. The count fell on its own (546 -> 536) as tracked
     # non-.id files were deleted elsewhere, and "lower a budget whenever you
     # lower a count" is the half of the ratchet that nobody remembers to do —
@@ -1422,14 +1315,15 @@ main(): i64
     nonduo_budget = 537
     if nonduo > nonduo_budget
         over += 1
-        print("  !! " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)
-            .. _pad(to(str)(nonduo_budget), 9) .. _pad(" ", 3)
-            .. "tracked non-.id, non-.md files")
-    else
-        print("     " .. _pad("nonduo", 12) .. _pad(to(str)(nonduo), 8)
-            .. _pad(to(str)(nonduo_budget), 9) .. _pad(" ", 3)
-            .. "tracked non-.id, non-.md files")
-    end
+        p_n1 = pad("nonduo", 12)
+        p_n2 = pad(nonduo.to(str), 8)
+        p_n3 = pad(nonduo_budget.to(str), 9)
+        print(" !! {p_n1}{p_n2}{p_n3}   tracked non-.id, non-.md files")
+    if nonduo <= nonduo_budget
+        p_n1 = pad("nonduo", 12)
+        p_n2 = pad(nonduo.to(str), 8)
+        p_n3 = pad(nonduo_budget.to(str), 9)
+        print("     {p_n1}{p_n2}{p_n3}   tracked non-.id, non-.md files")
 
     # PER-DIFF DELTA — the headroom mechanism, and the reason it exists.
     #
@@ -1459,34 +1353,26 @@ main(): i64
     # It never changes the verdict. Blame is diagnosis; the budgets are the
     # judgement. A delta report that could fail the gate would just be a
     # nineteenth row.
-    chlist: str = _LIST .. ".changed"
+    chlist: str = "{paths}.changed"
     chall: str = ""
     chfresh: str = ""
     nch = 0
     nfresh = 0
-    for _i, f in _lines(std.script.capture("cd " .. root
-        .. " && git diff --name-only HEAD -- '*.id' 2>/dev/null"))
-        if f != _SELF and f != _LAW and _canon(rcls, rpre, f)
+    for i, f in split(process.capture("cd {root} && git diff --name-only HEAD -- '*.id' 2>/dev/null"))
+        if f != me and f != law and canon(rcls, rpre, f)
             nch += 1
-            chall = chall .. f .. "\n"
-        end
-    end
-    for _i, f in _lines(std.script.capture("cd " .. root
-        .. " && git ls-files -o --exclude-standard -- '*.id' 2>/dev/null"))
-        if f != _SELF and f != _LAW and _canon(rcls, rpre, f)
+            chall += "{f}\n"
+    for i, f in split(process.capture("cd {root} && git ls-files -o --exclude-standard -- '*.id' 2>/dev/null"))
+        if f != me and f != law and canon(rcls, rpre, f)
             nch += 1
             nfresh += 1
-            chall = chall .. f .. "\n"
-            chfresh = chfresh .. "      " .. f .. "\n"
-        end
-    end
+            chall += "{f}\n"
+            chfresh += "      {f}\n"
 
     if nch != 0
-        std.script.fs_write(chlist, chall)
-        after: str = ("cd " .. root .. " && tr '\\n' '\\0' < " .. chlist
-            .. " | xargs -0 cat 2>/dev/null")
-        before: str = ("cd " .. root
-            .. " && while read p; do git show HEAD:\"$p\" 2>/dev/null; done < " .. chlist)
+        process.run("printf %s {chall} > {chlist}")
+        after: str = "cd {root} && tr '\\n' '\\0' < {chlist} | xargs -0 cat 2>/dev/null"
+        before: str = "cd {root} && while read p; do git show HEAD:\"$p\" 2>/dev/null; done < {chlist}"
 
         # POSITIVE CONTROL, and it guards the direction that hurts. A broken
         # `after` pipeline reads 0 on every row, every delta comes out zero or
@@ -1495,65 +1381,54 @@ main(): i64
         # confident zero in the language of an alibi. A broken `before`
         # pipeline fails the other way — it blames you for everything — which
         # is safe, so it is not a hard failure.
-        if _tally("[a-zA-Z]", 1, after) == 0
-            print("audit100: FAIL — the delta report read 0 letters across "
-                .. to(str)(nch) .. " changed canonical file(s); its pipeline is"
-                .. " broken and it would report every red row as nobody's")
+        if tally("[a-zA-Z]", 1, after) == 0
+            print("audit100: FAIL — the delta report read 0 letters across {nch} changed canonical file(s); its pipeline is broken and it would report every red row as nobody's")
             return 3
-        end
 
         print("")
         print("PER-DIFF DELTA — what THIS working tree costs, against HEAD")
-        print("  " .. to(str)(nch) .. " changed canonical .id file(s) read, "
-            .. to(str)(nfresh) .. " of them UNTRACKED (!yet in the counts above)")
+        print("  {nch} changed canonical .id file(s) read, {nfresh} of them UNTRACKED (!yet in the counts above)")
         moved = 0
         i = 1
-        while i <= #id
-            k: i64 = to(i64)(_field(keeps, i))
-            d: i64 = _tally(pat[i], k, after) - _tally(pat[i], k, before)
+        while i <= id:len()
+            k: i64 = field(keeps, i).to(i64)
+            d: i64 = tally(pat[i], k, after) - tally(pat[i], k, before)
             if d != 0
                 moved += 1
-                c: i64 = to(i64)(_field(counts, i))
-                b: i64 = to(i64)(_field(budgets, i))
+                c: i64 = field(counts, i).to(i64)
+                b: i64 = field(budgets, i).to(i64)
                 sign: str = "+"
                 if d < 0
-                    sign = ""
-                end
+                    sign = " "
                 verdict: str = "row is at or under budget"
                 if c > b
-                    verdict = "ROW IS OVER BY " .. to(str)(c - b) .. " — pay it or budget it HERE"
-                end
-                print("  " .. _pad(id[i], 12) .. _pad(sign .. to(str)(d), 8) .. verdict)
+                    verdict = "ROW IS OVER BY {(c - b):to(str)} — pay it or budget it HERE"
+                p_id: str = pad(id[i], 12)
+                p_d: str = pad("{sign}{d}", 8)
+                print("  {p_id}{p_d}{verdict}")
                 # Per-file attribution, for the rows you must act on.
                 if c > b
-                    for _j, f in _lines(chall)
-                        fa: i64 = _tally(pat[i], k, "cd " .. root .. " && cat " .. f .. " 2>/dev/null")
-                        fb: i64 = _tally(pat[i], k, "cd " .. root .. " && git show HEAD:" .. f .. " 2>/dev/null")
+                    for j, f in split(chall)
+                        fa: i64 = tally(pat[i], k, "cd {root} && cat {f} 2>/dev/null")
+                        fb: i64 = tally(pat[i], k, "cd {root} && git show HEAD:{f} 2>/dev/null")
                         if fa != fb
                             fs: str = "+"
                             if fa < fb
-                                fs = ""
-                            end
-                            print("      " .. _pad(fs .. to(str)(fa - fb), 6) .. f)
-                        end
-                    end
-                end
-            end
-            i += 1
-        end
+                                fs = " "
+                            diff: str = "{fs}{(fa - fb):to(str)}"
+                            p_diff: str = pad(diff, 6)
+                            print("      {p_diff}{f}")
+                    i += 1
         if moved == 0
             print("  no row moved. Any red row above is NOT this tree's: find its")
             print("  owner with `git log -S` on the row's pattern rather than")
             print("  rebaselining it, which launders another session's debt.")
-        end
         if nfresh != 0
             print("")
             print("  UNTRACKED canonical files. Their points are counted in the")
             print("  deltas above but NOT in the count column, and they land in")
             print("  full the moment you `git add`:")
-            io.write(chfresh)
-        end
-    end
+            print(chfresh)
     # Said out loud rather than skipped in silence. "The section did not run"
     # and "the section ran and found nothing" print identically otherwise, and
     # this whole mechanism exists because those two were indistinguishable.
@@ -1561,14 +1436,11 @@ main(): i64
         print("")
         print("PER-DIFF DELTA — no changed canonical .id file in this tree, so")
         print("  no row above is attributable here. Every red row is HEAD's.")
-    end
 
     print("")
     print("E = ENFORCED: `duo check` REFUSES this in a .id file and names the")
     print("  canonical repair. Unmarked rows are COUNTED only — the text still")
-    print("  compiles and the budget is the only pressure on it. "
-        .. to(str)(marked) .. " of "
-        .. to(str)(#id) .. " rows are enforced.")
+    print("  compiles and the budget is the only pressure on it. {marked} of {id:len()} rows are enforced.")
 
     print("")
     print("UNMECHANIZED §1 rows — semantic, not greppable; still binding on review:")
@@ -1577,13 +1449,8 @@ main(): i64
 
     print("")
     if over != 0
-        print("audit100: FAIL — " .. to(str)(over)
-            .. " row(s) over budget. Fix the code, or if a budget is genuinely wrong,")
+        print("audit100: FAIL — {over} row(s) over budget. Fix the code, or if a budget is genuinely wrong,")
         print("  say why in the commit message and move the number in this file.")
         return 1
-    end
-    print("audit100: PASS — " .. to(str)(#id + 1) .. " rows at or under budget, "
-        .. to(str)(total) .. " deny lines total across "
-        .. to(str)(listed) .. " canonical files")
+    print("audit100: PASS — {(id:len() + 1):to(str)} rows at or under budget, {total} deny lines total across {listed} canonical files")
     0
-end

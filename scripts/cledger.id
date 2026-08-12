@@ -3,7 +3,7 @@
 # language_census counts these as sanctioned bootstrap or oracle files. This
 # prints the exact queue so foreign C can retire under duon-visible evidence.
 
-process = req "lib.process"
+process = lib.process
 
 lines: any = (text: str)
     out = {}

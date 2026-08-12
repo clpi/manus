@@ -3,7 +3,7 @@
 # language_census keeps the count bounded. This prints the exact tracked files
 # so the remaining non-duon debt is visible without re-reading prose.
 
-process = req "lib.process"
+process = lib.process
 
 lines: any = (text: str)
     out = {}

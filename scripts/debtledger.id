@@ -3,7 +3,7 @@
 # This is intentionally standalone evidence. It does not change any ratchet or
 # build step; it prints the current queues that must reach zero.
 
-process = req "lib.process"
+process = lib.process
 
 lines: any = (text: str)
     out = {}
@@ -27,7 +27,7 @@ num: i64 = (root: str, cmd: str)
     out = process.chomp(process.capture("cd '{root}' && {cmd}"))
     if out == ""
         return 0
-    to(i64)(out)
+    out:to(i64)
 
 starts: bool = (path: str, prefix: str)
     path:len() >= prefix:len() and path:sub(1, prefix:len()) == prefix

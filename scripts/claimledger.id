@@ -3,7 +3,7 @@
 # The durable coordination file points agents at `.agents/session/claims`.
 # This script turns those markdown claims into a concise duon-readable view.
 
-process = req "lib.process"
+process = lib.process
 
 lines: any = (text: str)
     out = {}

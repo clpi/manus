@@ -1,65 +1,64 @@
-# agent_dedup_check.id — check claim status before editing shared files.
+# agent dedup check — check claim status before editing shared files.
 #
 # Run BEFORE editing any shared file, to detect potential duplication.
 # Usage: idol run scripts/agent_dedup_check.id # [file1 file2 ...]
 #
 # Duo replacement for scripts/agent_dedup_check.sh (monoglot census).
 
-_COORD = ".agents/AGENT_COORDINATION.md"
-_CANONICAL = ".agents/AGENT_CANONICAL.md"
-_GAPS = "docs/AGENT_GAPS.md"
+process = lib.process
 
-_sh(cmd: str): str
-    std.script.chomp(std.script.capture(cmd))
-end
+coord = ".agents/AGENT_COORDINATION.md"
+canonical = ".agents/AGENT_CANONICAL.md"
+gaps = "docs/AGENT_GAPS.md"
+
+capture: str = (cmd: str)
+    process.chomp(process.capture(cmd))
 
 main: i64 = ()
     print("=== Duo Agent Dedup Check ===")
 
-    for _i, f in {_COORD, _CANONICAL, _GAPS}
-        if !std.script.fs_exists(f)
-            print("WARNING: " .. f .. " not found")
-        end
-    end
+    files = {coord, canonical, gaps}
+    for i = 1, files:len()
+        f = files[i]
+        if process.run("test -e '{f}'") != 0
+            print("WARNING: {f} not found")
 
-    if std.script.fs_exists(_COORD)
+    if process.run("test -e '{coord}'") == 0
         print("--- Active Claims ---")
-        rows = _sh("awk '/^## Active claims/,/^## /' " .. _COORD
-            .. " | grep -E '^\\|.*\\|.*\\|.*\\|.*\\|' | grep -v 'Area.*Agent' | head -20")
-        if rows != "" print(rows) end
-    end
+        rows = capture("awk '/^## Active claims/,/^## /' '{coord}' | grep -E '^\\|.*\\|.*\\|.*\\|.*\\|' | grep -v 'Area.*Agent' | head -20")
+        if rows != ""
+            print(rows)
 
-    if std.script.fs_exists(_GAPS)
+    if process.run("test -e '{gaps}'") == 0
         # `grep -c` exits 1 when the count is 0, which is why the shell version
         # needed `|| echo 0`. capture keeps the stdout either way.
-        n = _sh("grep -c '| P0 |' " .. _GAPS .. " 2>/dev/null")
-        if n == "" n = "0" end
-        print("--- Open P0 gaps: " .. n .. " ---")
-    end
+        n = capture("grep -c '| P0 |' '{gaps}' 2>/dev/null")
+        if n == ""
+            n = "0"
+        print("--- Open P0 gaps: {n} ---")
 
-    # `idol run script.id # a b` consumes the `--`; args are what follows.
-    args = std.os.args()
-    if #args > 0
+    # `idol run script.id arg1 arg2` — args are os.args[2..].
+    args = os.args
+    if args:len() > 1
         print("--- File claim check ---")
-        for _i, f in args
-            if std.script.fs_exists(f) and _sh("grep -l '" .. f .. "' " .. _COORD .. " 2>/dev/null") != ""
-                print("WARNING: " .. f .. " may be claimed by another agent (found in " .. _COORD .. ")")
-            end
-        end
-    end
+        for i = 2, args:len()
+            f = args[i]
+            if process.run("test -e '{f}'") == 0
+                hit = capture("grep -l '{f}' '{coord}' 2>/dev/null")
+                if hit != ""
+                    print("WARNING: {f} may be claimed by another agent (found in {coord})")
 
     # The shell version tested `[ -f /tmp/duo-build.lock ]` and read the path
     # as a FILE. The lock is a DIRECTORY holding an `owner` file (mkdir is what
     # makes it atomic), so that test was false whether or !the lock was
-    # held: it reported FREE every single time. Asked through std.script here,
-    # which owns the layout.
-    owner = _sh("cat " .. std.script.build_lock_owner() .. " 2>/dev/null")
+    # held: it reported FREE every single time. Asked through the filesystem
+    # projection here.
+    lockdir = os.env["DUO_BUILD_LOCK"] or "/tmp/duo-build.lock"
+    owner = capture("cat '{lockdir}/owner' 2>/dev/null")
     if owner != ""
-        print("--- Build lock held by: " .. owner .. " ---")
-    else
+        print("--- Build lock held by: {owner} ---")
+    if owner == ""
         print("--- Build lock: FREE ---")
-    end
 
     print("=== Done ===")
     0
-end

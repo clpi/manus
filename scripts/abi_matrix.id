@@ -30,18 +30,17 @@
 # ANY wrong answer fails it, and a future fix that lowers it further should do
 # so in the same commit — the mirror of how NATIVE_FLOOR ratchets up.
 
-_sh: str = (cmd: str)
-    root = std.script.getenv("DUO_ROOT", ".")
-    std.script.capture("cd {root} && {cmd}")
-end
+process = lib.process
 
-_num: i64 = (out: str)
-    n: i64 = #out
+sh: str = (cmd: str)
+    root = os.env["DUO_ROOT"] or "."
+    process.capture("cd '{root}' && {cmd}")
+
+tonum: i64 = (out: str)
+    n: i64 = out:len()
     while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
         n -= 1
-    end
-    to(i64)(out:sub(1, n))
-end
+    (out:sub(1, n)):to(i64)
 
 # One shell pass builds the grid, compiles each shape both ways, runs both, and
 # prints four counts. Duo parses numbers, not process output.
@@ -56,7 +55,7 @@ end
 # existing string BINDINGS, interpolation does the rest. A long bracket also
 # deletes a whole class of quoting bug, since the shell's own `"` and `$` need
 # no escaping inside one.
-_script = [[
+program = [[
 duo=./zig-out/bin/idol; d=/tmp/duo_abi_matrix; rm -rf $d; mkdir -p $d; i=0;
 for ps in 'a: i64|f(7)' 'a: f64|f(3.5)' 'a: i64, b: f64|f(7, 3.5)' \
           'a: f64, b: i64|f(3.5, 7)' 'a: f64, b: f64|f(3.5, 1.5)' \
@@ -77,24 +76,22 @@ done
 echo "$ok $wrong $bail $noc"
 ]]
 
-_sweep: str = ()
-    _sh(_script)
-end
+sweep: str = ()
+    sh(program)
 
-main(): i64
-    counts = _sweep()
-    if #counts == 0
+main: i64 = ()
+    counts = sweep()
+    if counts:len() == 0
         print("abi_matrix: FAIL — sweep produced no output; the grid did not run")
         return 3
-    end
 
-    ok: i64 = _num(counts:match("^%d+"))
+    ok: i64 = tonum(counts:match("^%d+"))
     r1 = counts:gsub("^%d+%s+", "")
-    wrong: i64 = _num(r1:match("^%d+"))
+    wrong: i64 = tonum(r1:match("^%d+"))
     r2 = r1:gsub("^%d+%s+", "")
-    bail: i64 = _num(r2:match("^%d+"))
+    bail: i64 = tonum(r2:match("^%d+"))
     r3 = r2:gsub("^%d+%s+", "")
-    noc: i64 = _num(r3:match("^%d+"))
+    noc: i64 = tonum(r3:match("^%d+"))
 
     total: i64 = ok + wrong + bail
     # Positive control. Every zero here is reported by a gate that could equally
@@ -102,7 +99,6 @@ main(): i64
     if total == 0
         print("abi_matrix: FAIL — 0 shapes were judged; the grid is broken, not clean")
         return 3
-    end
 
     okstr = ok:to(str)
     wrongstr = wrong:to(str)
@@ -116,20 +112,16 @@ main(): i64
 
     if wrong > 0
         print("")
-        print(_sh("cat /tmp/duo_abi_matrix/wrong.txt 2>/dev/null"))
-    end
+        print(sh("cat /tmp/duo_abi_matrix/wrong.txt 2>/dev/null"))
 
-    ceiling: i64 = to(i64)(std.script.getenv("MISCOMPILE_CEILING", "0"))
+    ceiling: i64 = (os.env["MISCOMPILE_CEILING"] or "0"):to(i64)
     if wrong > ceiling
         ceilstr = ceiling:to(str)
         print("abi_matrix: FAIL — {wrongstr} wrong answers exceeds the ceiling {ceilstr}")
         return 1
-    end
     if wrong < ceiling
-        ceilstr2 = ceiling:to(str)
-        print("abi_matrix: PASS — {wrongstr} wrong, BELOW the ceiling {ceilstr2}. Lower MISCOMPILE_CEILING in this commit.")
+        ceilstr = ceiling:to(str)
+        print("abi_matrix: PASS — {wrongstr} wrong, BELOW the ceiling {ceilstr}. Lower MISCOMPILE_CEILING in this commit.")
         return 0
-    end
     print("abi_matrix: PASS ({wrongstr} known wrong at the ceiling; see gap[056])")
     0
-end

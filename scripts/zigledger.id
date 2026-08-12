@@ -4,7 +4,7 @@
 # tracked bootstrap files, including build.zig, so the remaining queue is
 # inspectable from duon.
 
-process = req "lib.process"
+process = lib.process
 
 lines: any = (text: str)
     out = {}

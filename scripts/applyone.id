@@ -29,50 +29,31 @@
 # `duo_g_name` declaration and the C compiler refuses the file. That defect is
 # unrelated to APPLY-ONE and is recorded on gap[092]; this is the convention
 # that steps around it.
-s = script
+process = lib.process
 
-global duo: str = tostring(s.getenv_or("DUO"))
+global duo: str = os.env["DUO"] or ""
 if duo:len() == 0
     duo = "./zig-out/bin/idol"
-end
 
 global failures: i64 = 0
 
-report(ok: bool, what: str, detail: str): void
+report: void = (ok: bool, what: str, detail: str)
     if ok
-        s.echo("OK:   " .. what)
-    else
-        s.echo("FAIL: " .. what)
+        print("OK:   {what}")
+    if !ok
+        print("FAIL: {what}")
         if detail:len() > 0
-            s.echo("      " .. detail)
-        end
-        failures = failures + 1
-    end
-end
-
-tmpname(): str
-    t = tostring(s.fs_tmp())
-    if t:len() == 0
-        t = "/tmp/duo_applyone_" .. tostring(os.time())
-    end
-    return t:gsub("\n", "")
-end
+            print("      {detail}")
+        failures += 1
 
 # Run a file and hand back its combined output. Exit status is returned
 # SEPARATELY and never inferred from the text: `cmd | tail` reports the exit of
 # `tail`, and a gate built on that has already shipped a broken commit here.
-capture(cmd: str): str
-    t = tmpname()
-    s.run(cmd .. " > " .. t .. " 2>&1")
-    out = s.fs_read(t)
-    os.remove(t)
-    return out
+capture: str = (cmd: str)
+    process.chomp(process.capture("{cmd} 2>&1"))
 
-status(cmd: str): i64
-    t = tmpname()
-    rc = s.run(cmd .. " > " .. t .. " 2>&1")
-    os.remove(t)
-    return rc
+status: i64 = (cmd: str)
+    process.run("{cmd} > /dev/null 2>&1")
 
 # Literal substring test, as a VALUE EDGE. The rows added by gap[092] may not
 # reach for `string.find` (§0.8, a Lua module idiom); the older rows in this
@@ -87,7 +68,7 @@ has: bool = (hay: str, needle: str)
     while i + m - 1 <= n
         if hay:sub(i, i + m - 1) == needle
             return true
-        i = i + 1
+        i += 1
     false
 
 # How many lines of a file match a needle. `grep -c` prints `0` and exits
@@ -97,7 +78,7 @@ has: bool = (hay: str, needle: str)
 # the trailing newline in the shell, so the conversion never sees one and
 # `:to(i64)` never has to route.
 counted: i64 = (path: str, needle: str)
-    capture("grep -c " .. needle .. " " .. path .. " | tr -d '\n'"):to(i64)
+    capture("grep -c {needle} {path} | tr -d '\\n'"):to(i64)
 
 # How many heap tables the emitted C builds — the number `law.pack.shape` is
 # about.
@@ -107,21 +88,19 @@ allocs: i64 = (cpath: str)
 # A file written through `sh`. See ROW 7 for why this does not go through
 # `std.script`.
 put: void = (path: str, body: str)
-    s.run("printf '%s' '" .. body .. "' > " .. path)
+    process.run("printf '%s' '{body}' > '{path}'")
 
-main(): void
+main: void = ()
     # ROW 1 — the POSITIVE twin, by VALUE. Six prints, and the pair that must
     # agree is the third and fourth: the brace face and the paren face applied
     # to one callable. "It compiled" is not the assertion; the digits are.
     pos = "examples/apply_one_pack_proof.id"
-    out = capture(duo .. " run " .. pos)
+    out = capture("{duo} run {pos}")
     hasvalues = out:find("3", 1, true) != nil
     if out:find("7", 1, true) == nil
         hasvalues = false
-    end
     if out:find("9", 1, true) == nil
         hasvalues = false
-    end
     report(hasvalues, "positive twin answers by value (3 4 7 7 9 1)", out)
 
     # ROW 2 — the two faces AGREE. §44: "parenthesized, braced and string faces
@@ -135,12 +114,11 @@ main(): void
     # diagnostic, never a guess." Both halves are checked: nonzero status AND a
     # diagnostic. A silent nonzero would satisfy the first alone.
     neg = "examples/compile_fail/apply_one_neither.id"
-    negrc = status(duo .. " check " .. neg)
-    negout = capture(duo .. " check " .. neg)
+    negrc = status("{duo} check {neg}")
+    negout = capture("{duo} check {neg}")
     refused = negrc != 0
     if negout:find("nosuch", 1, true) == nil
         refused = false
-    end
     report(refused, "neither-case refuses, and names the subject", negout)
 
     # ROW 4 — the neither-case names BOTH HOMES. §43's third outcome is not
@@ -155,8 +133,8 @@ main(): void
     # ROW 5 — the DESCRIPTOR subject CONSTRUCTS, by value. This is the row that
     # was inverted; see the header.
     dpos = "examples/apply_one_descriptor_proof.id"
-    dout = capture(duo .. " run " .. dpos)
-    drc = status(duo .. " run " .. dpos)
+    dout = capture("{duo} run {dpos}")
+    drc = status("{duo} run {dpos}")
     dvalues = drc == 0 and has(dout, "3\n4\n21\n21\n0.75")
     report(dvalues, "descriptor subject constructs, by value (3 4 21 21 0.75)", dout)
 
@@ -166,8 +144,8 @@ main(): void
     # resolution could regress into building a table with `z` as a KEY: no
     # diagnostic, and a `point` carrying a field the descriptor never declared.
     lab = "examples/compile_fail/apply_one_label.id"
-    labrc = status(duo .. " check " .. lab)
-    labout = capture(duo .. " check " .. lab)
+    labrc = status("{duo} check {lab}")
+    labout = capture("{duo} check {lab}")
     labref = labrc != 0 and has(labout, "has no field") and has(labout, "'z'")
     report(labref, "a resolved descriptor refuses a label it has no field for", labout)
 
@@ -197,13 +175,13 @@ main(): void
     # a path that COLLIDES between concurrent runs — five sessions write this
     # branch, and two of them measuring the same name have compared one file to
     # itself before. The clock makes the stem this run's own.
-    stem = "applyoneshape" .. os.time():to(str)
-    fa = "/tmp/" .. stem .. "a.id"
-    fb = "/tmp/" .. stem .. "b.id"
-    fc = "/tmp/" .. stem .. "c.id"
-    ca = "/tmp/duo_" .. stem .. "a.c"
-    cb = "/tmp/duo_" .. stem .. "b.c"
-    cc = "/tmp/duo_" .. stem .. "c.c"
+    stem = "applyoneshape{os.time():to(str)}"
+    fa = "/tmp/{stem}a.id"
+    fb = "/tmp/{stem}b.id"
+    fc = "/tmp/{stem}c.id"
+    ca = "/tmp/duo_{stem}a.c"
+    cb = "/tmp/duo_{stem}b.c"
+    cc = "/tmp/duo_{stem}c.c"
     # Written through the SHELL, not through `std.script`. Its canonical
     # `s.write` / `s.read` aliases resolve and do NOTHING — measured
     # 2026-08-09: `s.write` leaves the file empty and `s.read` answers nil,
@@ -212,27 +190,23 @@ main(): void
     # defect in `lib/std/script.id`, reported and !repaired here. The
     # underscored spellings are the ones that work and LAW-ONE forbids them on
     # a new line, so these rows take the third road and let `sh` do it.
-    put(fa, "point: @{ x: f64, y: f64 }\nmain(): void\n    q = point{ x = 3.0, y = 4.0 }\n    print(q.x)\n")
-    put(fb, "point: @{ x: f64, y: f64 }\nmain(): void\n    q: point = { x = 3.0, y = 4.0 }\n    print(q.x)\n")
-    put(fc, "main(): void\n    q = { x = 3.0, y = 4.0 }\n    print(q.x)\n")
-    s.run(duo .. " run " .. fa .. " > /dev/null 2>&1")
-    s.run(duo .. " run " .. fb .. " > /dev/null 2>&1")
-    s.run(duo .. " run " .. fc .. " > /dev/null 2>&1")
+    put(fa, "point: @{ x: f64, y: f64 }\nmain(): void\n    q = point{ x = 3.0, y: 4.0 }\n    print(q.x)\n")
+    put(fb, "point: @{ x: f64, y: f64 }\nmain(): void\n    q: point = { x = 3.0, y: 4.0 }\n    print(q.x)\n")
+    put(fc, "main(): void\n    q = { x = 3.0, y: 4.0 }\n    print(q.x)\n")
+    process.run("{duo} run {fa} > /dev/null 2>&1")
+    process.run("{duo} run {fb} > /dev/null 2>&1")
+    process.run("{duo} run {fc} > /dev/null 2>&1")
     na = allocs(ca)
     nb = allocs(cb)
     nc = allocs(cc)
     lit = counted(ca, "'(duo_rec_'") > 0
-    os.remove(fa)
-    os.remove(fb)
-    os.remove(fc)
+    process.run("rm -f '{fa}' '{fb}' '{fc}'")
     shape = lit and na == nb and nc > nb
     report(shape, "law.pack.shape: the applied pack lands as FIELDS, not a table",
         "applied={na} typed-binding={nb} anonymous-pack={nc} compound-literal={lit}")
 
     if failures == 0
-        s.echo("apply-one: 7/7")
-    else
-        s.echo("apply-one: " .. tostring(failures) .. " row(s) drifted")
-        os.exit(1)
-    end
-end
+        print("apply-one: 7/7")
+    if failures != 0
+        print("apply-one: {failures:to(str)} row(s) drifted")
+        process.exit(1)
