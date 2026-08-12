@@ -17,7 +17,12 @@ capture: str = (shellline: str)
     out = ""
     line = stream:read()
     while line != nil
-        out = out .. line .. "\n"
+        out = "{out}{line}\n"
         line = stream:read()
     stream:close()
     out
+
+run: i64 = (shellline: str)
+    if os.execute(shellline)
+        return 0
+    1

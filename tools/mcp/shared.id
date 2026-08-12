@@ -3,44 +3,7 @@ m = {}
 # tools/mcp/shared.id — shared MCP implementations.
 # Import as shared = tools.mcp.shared at file scope.
 
-capture: str = (cmd: str)
-    f = @c.emit("lua_io_popen(cmd, lua_val_lit(\"r\"))")
-    if f == nil
-        return ""
-    out = ""
-    line = f:read()
-    while line != nil
-        out = "{out}{line}\n"
-        line = f:read()
-    out
-
-exec: i64 = (cmd: str)
-    rc = @c.emit("lua_os_execute(cmd)")
-    if rc == nil
-        return -1
-    rc
-
-# Clock ingress at bootstrap boundary — not os.time/os.date in MCP logic.
-epoch: i64 = ()
-    t = @c.emit("lua_os_time()")
-    if t == nil
-        return 0
-    t
-
-utcstamp: str = ()
-    s = @c.emit("lua_os_date(lua_val_lit(\"!%Y-%m-%dT%H:%m:%SZ\"))")
-    if s == nil
-        return ""
-    s
-
-coordstamp: str = ()
-    s = @c.emit("lua_os_date(lua_val_lit(\"%Y-%m-%d %H:%m:%S\"))")
-    if s == nil
-        return ""
-    s
-
-
-# Host env and filesystem work use os.env, fs:*, capture, and exec — no universal namespace.
+# Host env, fs, process, and clock homes — no @c.* and no universal namespace.
 root = os.env["DUO_ROOT"]
 if root == nil or root == ""
     root = os.env["PWD"]
@@ -86,7 +49,7 @@ fun coordination_read(): str
 end
 
 fun coordination_update(action: str, agent_id: str, detail: str, files: str)
-    timestamp = coordstamp()
+    timestamp = clock.coord()
     entry = "\n### [{timestamp}] {agent_id} — {action:upper()}\n"
     entry = "{entry}Detail: {detail}\n"
     if files ~= ""
@@ -106,7 +69,7 @@ fun coordination_update(action: str, agent_id: str, detail: str, files: str)
 end
 
 fun session_log(agent_id: str, summary: str, detail: str)
-    timestamp = utcstamp()
+    timestamp = clock.utc()
     entry = "\n| {timestamp} | {agent_id} | {summary} |"
     if detail ~= "" then entry = "{entry} {detail} |" else entry = "{entry} |" end
     content = fs:read_file(coordpath)
@@ -139,7 +102,7 @@ end
 
 fun exact_capture(cmd: str): any
     full = cmd
-    out = capture("{full} 2>&1; echo \"duoexit:$?\"")
+    out = process.capture("{full} 2>&1; echo \"duoexit:$?\"")
     mark = "duoexit:"
     status = -1
     clean = out
@@ -163,8 +126,8 @@ fun agent_smoke(timeout: int): any
         full = "{lockprefix}{smoke_cmd}"
     end
     cap = exact_capture(full)
-    revision = string.gsub(capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
-    dirty = capture("git status --short 2>/dev/null") or ""
+    revision = string.gsub(process.capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
+    dirty = process.capture("git status --short 2>/dev/null") or ""
     path = os.tmpname()
     fs:write_file(path, cap.output)
     { gate = "agent-smoke", command = full, inner_command = smoke_cmd, exit_code = cap.status, passed = cap.passed, revision = revision, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = path }
@@ -185,8 +148,8 @@ fun build_run(gate: str, timeout: int): any
         full = "{lockprefix}{cmd}"
     end
     cap = exact_capture(full)
-    revision = string.gsub(capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
-    dirty = capture("git status --short 2>/dev/null") or ""
+    revision = string.gsub(process.capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
+    dirty = process.capture("git status --short 2>/dev/null") or ""
     path = os.tmpname()
     fs:write_file(path, cap.output)
     { gate = gate, command = full, inner_command = cmd, exit_code = cap.status, passed = cap.passed, revision = revision, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = path }
@@ -210,8 +173,8 @@ fun bench_run(suite: str, timeout: int): any
         full = "{lockprefix}{cmd}"
     end
     cap = exact_capture(full)
-    revision = string.gsub(capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
-    dirty = capture("git status --short 2>/dev/null") or ""
+    revision = string.gsub(process.capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
+    dirty = process.capture("git status --short 2>/dev/null") or ""
     path = os.tmpname()
     fs:write_file(path, cap.output)
     { suite = suite, command = full, inner_command = cmd, exit_code = cap.status, passed = cap.passed, revision = revision, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = path }
@@ -224,7 +187,7 @@ runcapture: any = (cmd: str)
     if os.env["DUO_LOCK_HELD"] ~= "1"
         full = "{lockprefix}{cmd}"
     end
-    out = capture("{full} 2>&1; echo \"duoexit:$?\"")
+    out = process.capture("{full} 2>&1; echo \"duoexit:$?\"")
     mark = "duoexit:"
     raw = out
     at: i64 = 0
@@ -299,7 +262,7 @@ fun repo_tooling(script_name: str, args: str): any
         return { error = "script not found: {script_name}" }
     end
     if args ~= "" then full = "{full} {args}" end
-    rc = exec(full)
+    rc = process.run(full)
     { exit_code = rc, passed = rc == 0, script = script_name }
 end
 
@@ -309,7 +272,7 @@ fun dev_session_start(owner: str, work_item: str, client: str): str
     cmd = "{duobin} dev session start --owner {owner}"
     if client ~= "" then cmd = "{cmd} --client {client}" end
     if work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
-    capture("{cmd} 2>&1")
+    process.capture("{cmd} 2>&1")
 end
 
 # The compiler-side lease. It reports a claim; it does NOT arbitrate one —
@@ -321,62 +284,62 @@ fun dev_claim_note(owner: str, file: str, client: str, work_item: str): str
     cmd = "{duobin} dev claim acquire --owner {owner} --file {file}"
     if client ~= "" then cmd = "{cmd} --client {client}" end
     if work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
-    capture("{cmd} 2>&1")
+    process.capture("{cmd} 2>&1")
 end
 
 fun dev_claim_list(): str
-    capture("{duobin} dev claim list 2>&1")
+    process.capture("{duobin} dev claim list 2>&1")
 end
 
 fun dev_coordination_export(): str
-    capture("{duobin} dev coordination export 2>&1")
+    process.capture("{duobin} dev coordination export 2>&1")
 end
 
 fun dev_validate_plan(file: str, work_item: str): str
     cmd = "{duobin} dev validate plan"
     if file ~= "" then cmd = "{cmd} --file {file}"
     elseif work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
-    capture("{cmd} 2>&1")
+    process.capture("{cmd} 2>&1")
 end
 
 fun semantic_claims(): str
-    capture("{duobin} semantic claims 2>&1")
+    process.capture("{duobin} semantic claims 2>&1")
 end
 
 fun semantic_transaction_preview(classifier: str): str
     c = classifier
     if c == nil or c == "" then c = "classifier.sorted_lookup" end
-    capture("{duobin} semantic preview {c} 2>&1")
+    process.capture("{duobin} semantic preview {c} 2>&1")
 end
 
 fun semantic_transaction_validate(classifier: str): str
     c = classifier
     if c == nil or c == "" then c = "classifier.sorted_lookup" end
-    capture("{duobin} semantic validate {c} 2>&1")
+    process.capture("{duobin} semantic validate {c} 2>&1")
 end
 
 fun dev_integration_list(): str
-    capture("{duobin} dev integration list 2>&1")
+    process.capture("{duobin} dev integration list 2>&1")
 end
 
 fun dev_integration_submit(owner: str, work_item: str, claim_id: str): str
     cmd = "{duobin} dev integration submit --owner {owner} --work-item {work_item}"
     if claim_id ~= nil and claim_id ~= "" then cmd = "{cmd} --claim-id {claim_id}" end
-    capture("{cmd} 2>&1")
+    process.capture("{cmd} 2>&1")
 end
 
-fun dev_validate_run(file: str, work_item: str, execute: bool): str
+fun dev_validate_run(file: str, work_item: str, process.runute: bool): str
     cmd = "{duobin} dev validate run"
     if file ~= nil and file ~= "" then cmd = "{cmd} --file {file}"
     elseif work_item ~= nil and work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
-    if execute then cmd = "{cmd} --execute" end
-    capture("{cmd} 2>&1")
+    if process.runute then cmd = "{cmd} --process.runute" end
+    process.capture("{cmd} 2>&1")
 end
 
 # === Native boxing audit ===
 
 fun dump_c(file_path: str): str
-    capture("{duobin} dump-c {file_path} 2>&1")
+    process.capture("{duobin} dump-c {file_path} 2>&1")
 end
 
 fun audit_native_boxing(file_path: str): any
@@ -421,7 +384,7 @@ end
 # === Pass 5 semantic interchange (SIM) ===
 
 fun semantic_snapshot(file_path: str): any
-    output = capture("{duobin} sim {file_path} 2>&1")
+    output = process.capture("{duobin} sim {file_path} 2>&1")
     if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed") then
         return { ok = false, error = string.sub(output, 1, 4000), schema = "sim-v0" }
     end
@@ -440,7 +403,7 @@ fun semantic_snapshot(file_path: str): any
 end
 
 fun semantic_snapshot_raw(file_path: str): str
-    output = capture("{duobin} sim {file_path} 2>&1")
+    output = process.capture("{duobin} sim {file_path} 2>&1")
     -- Find the JSON start (skip any diagnostic lines)
     i = string.find(output, "{")
     if i == nil then
@@ -454,7 +417,7 @@ fun foreign_import_preview(header_path: str, source_dir: str): any
     if source_dir ~= "" and string.sub(header_path, 1, 1) ~= "/" then
         resolved = "{source_dir}/{header_path}"
     end
-    output = capture("{duobin} sim --import-c {resolved} 2>&1")
+    output = process.capture("{duobin} sim --import-c {resolved} 2>&1")
     if string.find(output, ": error:") or string.find(output, "failed") then
         return { ok = false, error = string.sub(output, 1, 4000), header = resolved }
     end
@@ -481,7 +444,7 @@ fun foreign_import_preview(header_path: str, source_dir: str): any
 end
 
 fun pass6_catalog(): any
-    output = capture("{duobin} catalog 2>&1")
+    output = process.capture("{duobin} catalog 2>&1")
     parsed = json:decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
@@ -494,7 +457,7 @@ fun pass6_catalog(): any
 end
 
 fun pass5_catalog(): any
-    output = capture("{duobin} catalog 2>&1")
+    output = process.capture("{duobin} catalog 2>&1")
     parsed = json:decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
@@ -1181,7 +1144,7 @@ gapsdir = "{root}/gaps"
 # old worktree-local ledger beats refusing to allocate: with no git there are
 # no sibling worktrees to collide with anyway.
 #
-# Line-oriented capture re-appends "\n" to each read line, so trim trailing newline before path use.
+# Line-oriented process.capture re-appends "\n" to each read line, so trim trailing newline before path use.
 # result always carries exactly one trailing newline even against `printf %s`
 # — the shell cannot hand back a bare string. Trimming it is not optional:
 # the un-trimmed value builds ".git\n/duon-gapalloc", a path with a newline
@@ -1190,12 +1153,12 @@ gapsdir = "{root}/gaps"
 # line-oriented grep over the gate's own output hides it perfectly.
 #
 # THE `: str` IS LOAD-BEARING — do not drop it to match the bindings above.
-# Without the annotation the capture result stays a BOXED value, and codegen
+# Without the annotation the process.capture result stays a BOXED value, and codegen
 # emits `lua_str_buf_len_i64` against the box, which answers 0. `:len() - 1`
 # is then -1, and `sub(1, -1)` is Lua for "the whole string" — so the trim
 # silently returns its input and there is no error anywhere. `str_trim` below
 # survives the same hazard for the same reason: its parameter is typed.
-gapraw: str = capture("g=$(git -C '{root}' rev-parse --path-format=absolute --git-common-dir 2>/dev/null); printf %s \"${g:-{root}/.agents/session}\"")
+gapraw: str = process.capture("g=$(git -C '{root}' rev-parse --path-format=absolute --git-common-dir 2>/dev/null); printf %s \"${g:-{root}/.agents/session}\"")
 gapledger = "{gapraw:sub(1, gapraw:len() - 1)}/duon-gapalloc"
 
 fun gappad(n: int): str
@@ -1222,7 +1185,7 @@ fun gaphigh(): int
     -- below can only raise it, so if the pipeline answers empty or garbage
     -- (`tonumber` yields 0 here, it does not fail) the allocator degrades to
     -- exactly its previous behaviour instead of handing out a low number.
-    hi = tonumber(capture("printf %s \"$(git -C '{root}' log --all --name-only --pretty=format: -- gaps/ 2>/dev/null | grep -oE 'GAP-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)\"")) or 0
+    hi = tonumber(process.capture("printf %s \"$(git -C '{root}' log --all --name-only --pretty=format: -- gaps/ 2>/dev/null | grep -oE 'GAP-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)\"")) or 0
     for _, name in fs:read_dir(gapsdir) or {}
         d = string.match(name, "^GAP%-(%d+)")
         if d ~= nil
@@ -1243,12 +1206,12 @@ end
 # Hand back a number nobody else can be holding. Returns -1 only if 512
 # consecutive numbers are all taken, which means something is very wrong.
 fun gapallocate(): int
-    exec("mkdir -p {gapledger}")
+    process.run("mkdir -p {gapledger}")
     n = gaphigh() + 1
     tries = 0
     while tries < 512
         -- THE ATOMIC STEP. Exactly one concurrent caller sees true here.
-        if exec("mkdir -p {gapledger}/GAP-{gappad(n)}")
+        if process.run("mkdir -p {gapledger}/GAP-{gappad(n)}")
             -- Won the reservation. If a gap file already occupies the number
             -- (filed by hand, before this allocator existed), keep the
             -- reservation so it is never handed out, and take the next.
@@ -1370,12 +1333,12 @@ end
 # the metadata is gone before reporting anything.
 fun claim_drop(key: str): bool
     dir = "{claimsdir}/{key}"
-    os.execute("rm -rf '{dir}'")
+    os.process.runute("rm -rf '{dir}'")
     claim_meta(key) == nil
 end
 
 fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
-    exec("mkdir -p {claimsdir}")
+    process.run("mkdir -p {claimsdir}")
     path = claim_norm(file)
     if path == ""
         return json:encode({ granted = false, reason = "empty file path" })
@@ -1385,7 +1348,7 @@ fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
     own = owner or "agent"
 
     -- THE ATOMIC STEP for the exact path.
-    got = exec("mkdir -p {claimsdir}/{key}")
+    got = process.run("mkdir -p {claimsdir}/{key}")
     if not got
         m = claim_meta(key)
         if m ~= nil and m.owner == own
@@ -1396,7 +1359,7 @@ fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
         end
         if m ~= nil and (os.time() - m.at) >= claimttl
             claim_drop(key)
-            got = exec("mkdir -p {claimsdir}/{key}")
+            got = process.run("mkdir -p {claimsdir}/{key}")
         end
         if not got
             holder = "unknown"
@@ -1503,7 +1466,7 @@ m.agent_smoke = agent_smoke
 m.build_run = build_run
 m.document = document
 m.bench_run = bench_run
-m.capture = runcapture
+m.process.capture = runcapture
 m.semantic_snapshot_raw = semantic_snapshot_raw
 m.repo_tooling = repo_tooling
 m.dump_c = dump_c

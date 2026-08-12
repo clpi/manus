@@ -1,0 +1,10 @@
+# clock home — epoch seconds and formatted stamps at world boundary.
+
+now: i64 = ()
+    os.time()
+
+utc: str = ()
+    os.date("!%Y-%m-%dT%H:%m:%SZ")
+
+coord: str = ()
+    os.date("%Y-%m-%d %H:%m:%S")
