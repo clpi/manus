@@ -3192,9 +3192,15 @@ fn stageConcatHoles(ctx: *LowerCtx, vals: []const dnir.Value) Error!void {
 /// live values drop to one per hole, and those ride the variadic tail, which
 /// Apple's ARM64 ABI passes in memory rather than in registers.
 ///
-/// `snprintf(nil, 0, fmt, …)` is the measurement — it writes nothing and
-/// answers the length the same format with the same arguments will produce, so
-/// the buffer cannot be the wrong size for the fill that follows.
+/// One fixed-capacity buffer plus a single fill — the same shape as `emitIntToStr`.
+/// A measure-then-fill pair (`snprintf(nil, 0, …)` then `malloc(len+1)` then
+/// fill) assembled and lowered, but the native backend then handed `print` a
+/// register that held snprintf's integer return instead of the malloc pointer:
+/// `p = "{world}"` compiled yet `print(p)` segfaulted while `print("{world}")`
+/// and `print(to(str)(42))` did not. Re-staging holes for a second snprintf
+/// also evaluates each operand twice, which is wrong when a hole carries effect.
+const concat_heap_cap: i64 = 4096;
+
 fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
     var parts: std.ArrayListUnmanaged(*const ast.Expr) = .empty;
     defer parts.deinit(ctx.alloc);
@@ -3205,33 +3211,15 @@ fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) 
     // Every part was a literal, so the chain IS its own answer.
     if (plan.count == 0) return .{ .str = plan.literal };
 
-    // Lower each hole ONCE. The values are staged twice — once to measure, once
-    // to fill — and re-lowering would evaluate the operand twice.
     var vals: [max_concat_holes]dnir.Value = undefined;
     for (plan.holes[0..plan.count], 0..) |h, i| vals[i] = try lowerExpr(ctx, h);
 
     try ensureExtern(ctx, "mem", "alloc", "malloc");
     try ensureExtern(ctx, "string", "format", "snprintf");
-
-    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .i64 = 0 } });
-    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = 0 } });
-    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = plan.fmt } });
-    try stageConcatHoles(ctx, vals[0..plan.count]);
-    const wide = ctx.freshTemp();
-    try ctx.emit(.{ .op = .call_extern, .result = wide, .callee = "snprintf" });
-
-    // snprintf answers an `int`, so only w0 is defined; the upper half of x0 is
-    // whatever the callee left there. Sign-extending garbage into a malloc size
-    // is not a hazard worth leaving to the platform's habits.
-    const len = ctx.freshTemp();
-    try ctx.emit(.{ .op = .binop, .result = len, .binop = .band, .lhs = .{ .temp = wide }, .rhs = .{ .i64 = 0xFFFFFFFF } });
-    const total = ctx.freshTemp();
-    try ctx.emit(.{ .op = .binop, .result = total, .binop = .add, .lhs = .{ .temp = len }, .rhs = .{ .i64 = 1 } });
     const buf = ctx.freshTemp();
-    try ctx.emit(.{ .op = .call_extern, .result = buf, .callee = "malloc", .lhs = .{ .temp = total } });
-
+    try ctx.emit(.{ .op = .call_extern, .result = buf, .callee = "malloc", .lhs = .{ .i64 = concat_heap_cap } });
     try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = buf } });
-    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .temp = total } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = concat_heap_cap } });
     try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = plan.fmt } });
     try stageConcatHoles(ctx, vals[0..plan.count]);
     try ctx.emit(.{ .op = .call_extern, .callee = "snprintf" });
