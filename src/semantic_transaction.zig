@@ -3,7 +3,6 @@
 //! Agents propose edits; Duo returns deterministic preview + obligation impact before apply.
 const std = @import("std");
 const token_semantic = @import("token_semantic.zig");
-const proof_carrying = @import("proof_carrying.zig");
 
 pub const SCHEMA_VERSION = "semantic-transaction-v0";
 
@@ -12,7 +11,6 @@ pub const MAX_FIELD_BYTES: usize = 64;
 
 pub const EditKind = enum {
     set_production_classifier,
-    set_keyword_spelling,
 
     pub fn name(self: EditKind) []const u8 {
         return @tagName(self);
@@ -32,16 +30,55 @@ pub const Violation = struct {
     message: []const u8,
 };
 
+pub const DifferentialOutcome = enum {
+    blocked,
+    passed,
+    classifier_mismatch,
+    false_positive,
+
+    pub fn name(self: DifferentialOutcome) []const u8 {
+        return @tagName(self);
+    }
+};
+
 pub const PreviewResult = struct {
     accepted: bool,
     edit_count: usize,
-    violations: []const Violation,
+    violation_storage: [MAX_EDITS + 4]Violation = undefined,
+    violation_count: usize = 0,
     obligations_before: usize,
     obligations_after: usize,
-    obligations_broken: []const []const u8,
-    production_classifier: []const u8,
-    differential_would_pass: bool,
+    broken_storage: [token_semantic.proof_obligations.len][]const u8 = undefined,
+    broken_count: usize = 0,
+    production_classifier: token_semantic.ClassifierId,
+    differential: DifferentialOutcome,
+
+    pub fn violations(self: *const PreviewResult) []const Violation {
+        return self.violation_storage[0..self.violation_count];
+    }
+
+    pub fn obligationsBroken(self: *const PreviewResult) []const []const u8 {
+        return self.broken_storage[0..self.broken_count];
+    }
+
+    fn addViolation(self: *PreviewResult, code: []const u8, message: []const u8) void {
+        std.debug.assert(self.violation_count < self.violation_storage.len);
+        self.violation_storage[self.violation_count] = .{ .code = code, .message = message };
+        self.violation_count += 1;
+    }
+
+    fn breakObligation(self: *PreviewResult, id: []const u8) void {
+        for (self.obligationsBroken()) |broken| {
+            if (std.mem.eql(u8, broken, id)) return;
+        }
+        std.debug.assert(self.broken_count < self.broken_storage.len);
+        self.broken_storage[self.broken_count] = id;
+        self.broken_count += 1;
+    }
 };
+
+const DifferentialError = error{ ClassifierMismatch, FalsePositive };
+const DifferentialValidator = *const fn () DifferentialError!void;
 
 fn validateEditBounds(edits: []const Edit) ?Violation {
     if (edits.len == 0) {
@@ -61,43 +98,33 @@ fn validateEditBounds(edits: []const Edit) ?Violation {
     return null;
 }
 
-fn isLegalClassifier(id: []const u8) bool {
+fn classifier(id: []const u8) ?token_semantic.ClassifierId {
     for (token_semantic.legal_classifiers) |c| {
-        if (std.mem.eql(u8, c.name(), id)) return true;
+        if (std.mem.eql(u8, c.name(), id)) return c;
     }
-    return false;
+    return null;
 }
 
 /// Deterministic preview — does not mutate compiler state.
 pub fn previewTransaction(edits: []const Edit) PreviewResult {
-    var violations_buf: [MAX_EDITS + 4]Violation = undefined;
-    var violation_count: usize = 0;
-    var broken_buf: [token_semantic.proof_obligations.len][]const u8 = undefined;
-    var broken_count: usize = 0;
+    return previewTransactionWithValidation(edits, token_semantic.differentialValidateClassifiers);
+}
 
-    const pushViolation = struct {
-        fn f(code: []const u8, message: []const u8, buf: *[MAX_EDITS + 4]Violation, count: *usize) void {
-            if (count.* >= buf.len) return;
-            buf[count.*] = .{ .code = code, .message = message };
-            count.* += 1;
-        }
-    }.f;
+fn previewTransactionWithValidation(edits: []const Edit, validate: DifferentialValidator) PreviewResult {
+    const obligations = token_semantic.proof_obligations.len;
+    var result = PreviewResult{
+        .accepted = false,
+        .edit_count = edits.len,
+        .obligations_before = obligations,
+        .obligations_after = obligations,
+        .production_classifier = token_semantic.production_classifier,
+        .differential = .blocked,
+    };
 
     if (validateEditBounds(edits)) |v| {
-        pushViolation(v.code, v.message, &violations_buf, &violation_count);
-        return .{
-            .accepted = false,
-            .edit_count = edits.len,
-            .violations = violations_buf[0..violation_count],
-            .obligations_before = token_semantic.proof_obligations.len,
-            .obligations_after = 0,
-            .obligations_broken = &.{},
-            .production_classifier = token_semantic.production_classifier.name(),
-            .differential_would_pass = false,
-        };
+        result.addViolation(v.code, v.message);
+        return result;
     }
-
-    var prod = token_semantic.production_classifier.name();
 
     for (edits) |e| {
         switch (e.kind) {
@@ -105,69 +132,70 @@ pub fn previewTransaction(edits: []const Edit) PreviewResult {
                 if (!std.mem.eql(u8, e.target, token_semantic.intent.subject_entity) and
                     !std.mem.eql(u8, e.target, "keyword_classifier"))
                 {
-                    pushViolation("TXN010", "classifier edit target must be duo:lexer:keyword_classifier", &violations_buf, &violation_count);
+                    result.addViolation("TXN010", "classifier edit target must be duo:lexer:keyword_classifier");
                     continue;
                 }
-                if (!isLegalClassifier(e.value)) {
-                    pushViolation("TXN011", "classifier candidate is not in legal set", &violations_buf, &violation_count);
-                    broken_buf[broken_count] = "obl.keyword.exact";
-                    broken_count += 1;
+                result.production_classifier = classifier(e.value) orelse {
+                    result.addViolation("TXN011", "classifier candidate is not in legal set");
+                    result.breakObligation("obl.keyword.exact");
                     continue;
-                }
-                prod = e.value;
-            },
-            .set_keyword_spelling => {
-                pushViolation("TXN020", "keyword spelling edits require descriptor reload (not in M1 preview)", &violations_buf, &violation_count);
-                broken_buf[broken_count] = "obl.keyword.exact";
-                broken_count += 1;
+                };
             },
         }
     }
 
-    const diff_ok = diff: {
-        token_semantic.differentialValidateClassifiers() catch break :diff false;
-        break :diff true;
+    const differential: DifferentialOutcome = if (result.violation_count != 0 or result.broken_count != 0)
+        .blocked
+    else blk: {
+        validate() catch |err| break :blk switch (err) {
+            error.ClassifierMismatch => .classifier_mismatch,
+            error.FalsePositive => .false_positive,
+        };
+        break :blk .passed;
     };
-    if (!diff_ok) {
-        pushViolation("TXN030", "differential validation would fail after edits", &violations_buf, &violation_count);
-        broken_buf[broken_count] = "obl.keyword.deterministic";
-        broken_count += 1;
+    switch (differential) {
+        .classifier_mismatch => {
+            result.addViolation("TXN030", "differential classification mismatch after edits");
+            result.breakObligation("obl.keyword.exact");
+        },
+        .false_positive => {
+            result.addViolation("TXN030", "differential false positive after edits");
+            result.breakObligation("obl.keyword.no_false_positive");
+        },
+        .blocked, .passed => {},
     }
 
-    const obligations_before = token_semantic.proof_obligations.len;
-    const obligations_after = if (violation_count == 0 and broken_count == 0) obligations_before else obligations_before - broken_count;
-
-    return .{
-        .accepted = violation_count == 0 and broken_count == 0,
-        .edit_count = edits.len,
-        .violations = violations_buf[0..violation_count],
-        .obligations_before = obligations_before,
-        .obligations_after = obligations_after,
-        .obligations_broken = broken_buf[0..broken_count],
-        .production_classifier = prod,
-        .differential_would_pass = diff_ok,
-    };
+    std.debug.assert(result.broken_count <= obligations);
+    result.obligations_after = obligations - result.broken_count;
+    result.accepted = result.violation_count == 0 and result.broken_count == 0;
+    result.differential = differential;
+    return result;
 }
 
 pub fn writePreviewJson(w: *std.Io.Writer, edits: []const Edit) !void {
     const r = previewTransaction(edits);
+    try writeResultJson(w, &r);
+}
+
+fn writeResultJson(w: *std.Io.Writer, r: *const PreviewResult) !void {
     try w.print("{{\"schema\":\"{s}\",\"accepted\":", .{SCHEMA_VERSION});
     try w.print("{s}", .{if (r.accepted) "true" else "false"});
-    try w.print(",\"edit_count\":{d},\"production_classifier\":\"{s}\",\"differential_would_pass\":", .{
+    try w.print(",\"edit_count\":{d},\"production_classifier\":\"{s}\",\"differential_outcome\":\"{s}\",\"differential_would_pass\":", .{
         r.edit_count,
-        r.production_classifier,
+        r.production_classifier.name(),
+        r.differential.name(),
     });
-    try w.print("{s}", .{if (r.differential_would_pass) "true" else "false"});
+    try w.print("{s}", .{if (r.differential == .passed) "true" else "false"});
     try w.print(",\"obligations\":{{\"before\":{d},\"after\":{d},\"broken\":[", .{
         r.obligations_before,
         r.obligations_after,
     });
-    for (r.obligations_broken, 0..) |oid, i| {
+    for (r.obligationsBroken(), 0..) |oid, i| {
         if (i > 0) try w.print(",", .{});
         try w.print("\"{s}\"", .{oid});
     }
     try w.print("]}},\"violations\":[", .{});
-    for (r.violations, 0..) |v, i| {
+    for (r.violations(), 0..) |v, i| {
         if (i > 0) try w.print(",", .{});
         try w.print("{{\"code\":\"{s}\",\"message\":\"", .{v.code});
         try jsonEscape(w, v.message);
@@ -196,28 +224,105 @@ test "semantic_transaction: rejects illegal classifier" {
     }};
     const r = previewTransaction(&edits);
     try std.testing.expect(!r.accepted);
-    try std.testing.expect(r.violations.len > 0);
+    try std.testing.expectEqual(DifferentialOutcome.blocked, r.differential);
+    try std.testing.expectEqual(@as(usize, 1), r.violations().len);
+    try std.testing.expectEqualStrings("TXN011", r.violations()[0].code);
+    try std.testing.expectEqual(@as(usize, 1), r.obligationsBroken().len);
+    try std.testing.expectEqualStrings("obl.keyword.exact", r.obligationsBroken()[0]);
+    try std.testing.expectEqual(token_semantic.proof_obligations.len, r.obligations_before);
+    try std.testing.expectEqual(r.obligations_before - 1, r.obligations_after);
+    try std.testing.expectEqual(token_semantic.production_classifier, r.production_classifier);
 }
 
 test "semantic_transaction: accepts legal classifier swap" {
+    var candidate = "classifier.sorted_lookup".*;
     const edits = [_]Edit{.{
         .kind = .set_production_classifier,
         .target = "keyword_classifier",
-        .value = "classifier.sorted_lookup",
+        .value = &candidate,
     }};
     const r = previewTransaction(&edits);
+    @memset(&candidate, 'x');
     try std.testing.expect(r.accepted);
-    try std.testing.expect(std.mem.eql(u8, r.production_classifier, "classifier.sorted_lookup"));
+    try std.testing.expectEqual(DifferentialOutcome.passed, r.differential);
+    try std.testing.expectEqual(token_semantic.ClassifierId.sorted_lookup, r.production_classifier);
+    try std.testing.expectEqual(r.obligations_before, r.obligations_after);
+    try std.testing.expectEqual(@as(usize, 0), r.obligationsBroken().len);
 }
 
-test "semantic_transaction: preview JSON schema" {
+test "semantic_transaction: repeated refusals retain one broken obligation" {
+    const edit = Edit{
+        .kind = .set_production_classifier,
+        .target = token_semantic.intent.subject_entity,
+        .value = "classifier.perfect_hash",
+    };
+    var edits: [MAX_EDITS]Edit = undefined;
+    for (&edits) |*candidate| candidate.* = edit;
+    const r = previewTransaction(&edits);
+    try std.testing.expect(!r.accepted);
+    try std.testing.expectEqual(DifferentialOutcome.blocked, r.differential);
+    try std.testing.expectEqual(MAX_EDITS, r.violations().len);
+    try std.testing.expectEqual(@as(usize, 1), r.obligationsBroken().len);
+    try std.testing.expectEqualStrings("obl.keyword.exact", r.obligationsBroken()[0]);
+    try std.testing.expectEqual(r.obligations_before - 1, r.obligations_after);
+}
+
+test "semantic_transaction: empty preview leaves obligations unchanged" {
+    const r = previewTransaction(&.{});
+    try std.testing.expect(!r.accepted);
+    try std.testing.expectEqual(DifferentialOutcome.blocked, r.differential);
+    try std.testing.expectEqual(@as(usize, 1), r.violations().len);
+    try std.testing.expectEqualStrings("TXN001", r.violations()[0].code);
+    try std.testing.expectEqual(r.obligations_before, r.obligations_after);
+    try std.testing.expectEqual(@as(usize, 0), r.obligationsBroken().len);
+}
+
+test "semantic_transaction: differential failures retain their exact case and obligation" {
+    const validators = struct {
+        fn mismatch() DifferentialError!void {
+            return error.ClassifierMismatch;
+        }
+
+        fn falsePositive() DifferentialError!void {
+            return error.FalsePositive;
+        }
+    };
     const edits = [_]Edit{.{
         .kind = .set_production_classifier,
-        .target = "duo:lexer:keyword_classifier",
-        .value = "classifier.length_bucket",
+        .target = token_semantic.intent.subject_entity,
+        .value = "classifier.sorted_lookup",
+    }};
+
+    const mismatch = previewTransactionWithValidation(&edits, validators.mismatch);
+    try std.testing.expect(!mismatch.accepted);
+    try std.testing.expectEqual(DifferentialOutcome.classifier_mismatch, mismatch.differential);
+    try std.testing.expectEqualStrings("TXN030", mismatch.violations()[0].code);
+    try std.testing.expectEqual(@as(usize, 1), mismatch.obligationsBroken().len);
+    try std.testing.expectEqualStrings("obl.keyword.exact", mismatch.obligationsBroken()[0]);
+    var mismatch_json: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer mismatch_json.deinit();
+    try writeResultJson(&mismatch_json.writer, &mismatch);
+    try std.testing.expect(std.mem.indexOf(u8, mismatch_json.written(), "\"differential_outcome\":\"classifier_mismatch\"") != null);
+
+    const false_positive = previewTransactionWithValidation(&edits, validators.falsePositive);
+    try std.testing.expect(!false_positive.accepted);
+    try std.testing.expectEqual(DifferentialOutcome.false_positive, false_positive.differential);
+    try std.testing.expectEqualStrings("TXN030", false_positive.violations()[0].code);
+    try std.testing.expectEqual(@as(usize, 1), false_positive.obligationsBroken().len);
+    try std.testing.expectEqualStrings("obl.keyword.no_false_positive", false_positive.obligationsBroken()[0]);
+}
+
+test "semantic_transaction: rejected preview JSON preserves the refusal" {
+    const edits = [_]Edit{.{
+        .kind = .set_production_classifier,
+        .target = token_semantic.intent.subject_entity,
+        .value = "classifier.perfect_hash",
     }};
     var buf: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer buf.deinit();
     try writePreviewJson(&buf.writer, &edits);
     try std.testing.expect(std.mem.indexOf(u8, buf.written(), "semantic-transaction-v0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "\"code\":\"TXN011\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "\"differential_outcome\":\"blocked\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "\"differential_would_pass\":false") != null);
 }
