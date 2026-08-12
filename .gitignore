@@ -127,6 +127,7 @@ scripts/_*.id
 /test2.id
 /test.zig
 /run_test.zig
+/tmp_dump_dnir.zig
 /error_test.id
 
 # Ad-hoc debug modules. Nothing in build.zig or src/ imports these.
