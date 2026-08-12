@@ -211,7 +211,6 @@ scan: i64 = (body: str)
     hits
 
 control: bool = ()
-    print("host: control enter")
     ok = true
     if audit("probe.id", 1, "x = os.args()") == 0
         print("control FAIL: host.args did not fire")
@@ -258,7 +257,6 @@ control: bool = ()
     ok
 
 main: i64 = ()
-    print("host: main enter")
     if !control()
         print("gates/host: POSITIVE CONTROL FAILED")
         return 3

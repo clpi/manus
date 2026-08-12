@@ -869,7 +869,7 @@ fun exponential_evaluate(code: str, file_path: str): any
             kind = "exponential_opportunity",
             line = type_line,
             construct = "@comp.derive.bundle",
-            rationale = "{tostring(type_defs)}{\" record types; @comp.derive.bundle generates shared trait impls for all in one annotation.\",}"
+            rationale = "{tostring(type_defs)} record types; @comp.derive.bundle generates shared trait impls for all in one annotation."
             multiplier = "O(types x traits <= 1 annotation)",
         })
     end
@@ -1059,7 +1059,7 @@ fun combinator_info(path: str): any
     }
     
     if path == "" or path == nil
-        return "{{ combinators = table.keys(result), info = \"Available combinators: \"}{table.concat(table.keys(result), \", \") }}"
+        return { combinators = table.keys(result), info = "Available combinators: {table.concat(table.keys(result), ", ")}" }
     end
     
     if result[path]
@@ -1162,7 +1162,7 @@ gapsdir = "{root}/gaps"
 # old worktree-local ledger beats refusing to allocate: with no git there are
 # no sibling worktrees to collide with anyway.
 #
-# `std.proc.capture` reads LINE BY LINE and re-appends "\n" to each, so its
+# Line-oriented capture re-appends "\n" to each read line, so trim trailing newline before path use.
 # result always carries exactly one trailing newline even against `printf %s`
 # — the shell cannot hand back a bare string. Trimming it is not optional:
 # the un-trimmed value builds ".git\n/duon-gapalloc", a path with a newline
@@ -1203,7 +1203,7 @@ fun gaphigh(): int
     -- below can only raise it, so if the pipeline answers empty or garbage
     -- (`tonumber` yields 0 here, it does not fail) the allocator degrades to
     -- exactly its previous behaviour instead of handing out a low number.
-    hi = "{tonumber(capture(\"printf %s \\\"$(git -C '\"}{root}{\"' log --all --name-only --pretty=format: -- gaps/ 2>/dev/null | grep -oE 'GAP-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)\\\"\")) or 0}"
+    hi = tonumber(capture("printf %s \"$(git -C '{root}' log --all --name-only --pretty=format: -- gaps/ 2>/dev/null | grep -oE 'GAP-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)\"")) or 0
     for _, name in fs:read_dir(gapsdir) or {}
         d = string.match(name, "^GAP%-(%d+)")
         if d ~= nil
