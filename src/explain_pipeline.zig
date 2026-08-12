@@ -64,7 +64,7 @@ pub fn runModuleCodegen(
     cg.src_path = src_path;
     cg.stdlib_root = compiler_lib_root;
     cg.target = target;
-    cg.duo_mode = sem.duo_mode;
+    cg.idol_mode = sem.idol_mode;
     cg.foreign_records = &sem.foreign_records;
     cg.foreign_functions = &sem.foreign_functions;
     cg.emit_module(mod) catch |e| switch (e) {
@@ -111,11 +111,11 @@ test "explain_pipeline: typed module completes codegen for provenance" {
     ;
     var lex = Lexer.init(src, "milestone.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&mod);
 
     transform_engine.deinitProvenance(alloc);

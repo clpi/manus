@@ -4278,11 +4278,11 @@ test "native backend: compact checked call preserves staged machine realization"
     ;
     var lexer = Lexer.init(source, "gp-inline.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -4377,11 +4377,11 @@ test "native backend: nested compact checked calls retain direct region use and 
     ;
     var lexer = Lexer.init(source, "nested-gp-inline.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -4482,11 +4482,11 @@ test "native backend: checked subject fact reaches object bytes" {
     ;
     var lexer = Lexer.init(source, "machine-lineage.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -4602,11 +4602,11 @@ test "native backend: removing checked facts refuses before machine emission" {
     ;
     var lexer = Lexer.init(source, "missing-lineage.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -4651,11 +4651,11 @@ test "native backend: graph coordinates stay in resident context" {
     ;
     var lexer = Lexer.init(source, "graph-context.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
 
     var graph_a = semantic_graph.SemanticGraph.init(alloc);
@@ -4751,7 +4751,7 @@ test "native backend: strict graph physical refusal stays unsupported" {
     const alloc = std.testing.allocator;
     var lexer = Lexer.init("", "empty.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -4778,7 +4778,7 @@ test "native backend: strict graph unresolved application stays semantic" {
     ;
     var lexer = Lexer.init(source, "unresolved.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -4804,7 +4804,7 @@ test "native backend: lowerer graph fact failure stays semantic" {
     ;
     var lexer = Lexer.init(source, "missing-function-fact.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
 
     // This resident graph deliberately has no declaration fact for `main`.
@@ -4830,11 +4830,11 @@ test "native backend: strict graph allocation failure stays allocation failure" 
     ;
     var lexer = Lexer.init(source, "allocation.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -4881,11 +4881,11 @@ test "native backend: checked graph preserves physical native entry" {
     ;
     var lexer = Lexer.init(source, "region-entry.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -4909,7 +4909,7 @@ test "native backend: caller diagnostics are isolated and observed attempts rese
     first.lowering.note_len = 1;
     var lexer = Lexer.init("", "diagnostic-reset.id");
     var parser = Parser.init(&lexer, std.testing.allocator);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
     defer graph.deinit();
@@ -4944,11 +4944,11 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
     ;
     var lexer = Lexer.init(source, "ordinary-lineage.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -5032,11 +5032,11 @@ test "native backend: checked record result keeps application lineage" {
     ;
     var lexer = Lexer.init(source, "record-lineage.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5114,11 +5114,11 @@ test "native backend: checked f64 record result refuses unstable ABI homes" {
     ;
     var lexer = Lexer.init(source, "record-f64-refusal.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5147,11 +5147,11 @@ test "native backend: callee spelling cannot redirect a checked application" {
     ;
     var lexer = Lexer.init(source, "callee-mismatch.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5287,11 +5287,11 @@ test "native backend: checked call result descriptor does not select argument AB
     ;
     var lexer = Lexer.init(source, "call-abi.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5343,11 +5343,11 @@ test "native backend: nested checked call machine ranges do not overlap" {
     ;
     var lexer = Lexer.init(source, "nested-lineage.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5403,11 +5403,11 @@ test "native backend: nested checked f64 results survive later operand calls" {
     ;
     var lexer = Lexer.init(source, "nested-f64-lineage.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5479,11 +5479,11 @@ test "native backend: discarded checked calls do not retain return registers" {
     ;
     var lexer = Lexer.init(source, "discarded-calls.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5517,11 +5517,11 @@ test "native backend refuses source f64 aggregate application absent operand ABI
         \\end
     , "pass4_native_milestone.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     try expectCheckedTestSemanticFailure(
@@ -5620,11 +5620,11 @@ test "native backend: no mandatory main — run() entry compiles" {
         \\end
     , "run.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5651,7 +5651,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\end
     , "entry.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     try std.testing.expectEqualStrings("entry", pickNativeEntrySymbol(&mod).?);
 
@@ -5661,7 +5661,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\end
     , "sole.id");
     var parser2 = Parser.init(&lex2, alloc);
-    parser2.duo_mode = true;
+    parser2.idol_mode = true;
     const mod2 = try parser2.parse_module();
     try std.testing.expectEqualStrings("run", pickNativeEntrySymbol(&mod2).?);
 
@@ -5674,7 +5674,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\end
     , "ambiguous.id");
     var parser3 = Parser.init(&lex3, alloc);
-    parser3.duo_mode = true;
+    parser3.idol_mode = true;
     const mod3 = try parser3.parse_module();
     try std.testing.expect(pickNativeEntrySymbol(&mod3) == null);
 
@@ -5687,7 +5687,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\end
     , "override.id");
     var parser4 = Parser.init(&lex4, alloc);
-    parser4.duo_mode = true;
+    parser4.idol_mode = true;
     const mod4 = try parser4.parse_module();
     try std.testing.expectEqualStrings("b", resolveNativeEntrySymbol(&mod4, "b").?);
     try std.testing.expect(resolveNativeEntrySymbol(&mod4, "missing") == null);
@@ -5698,7 +5698,7 @@ test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
         \\end
     , "f64_entry.id");
     var parser5 = Parser.init(&lex5, alloc);
-    parser5.duo_mode = true;
+    parser5.idol_mode = true;
     const mod5 = try parser5.parse_module();
     try std.testing.expectEqualStrings("run", pickNativeEntrySymbol(&mod5).?);
 }
@@ -5720,7 +5720,7 @@ test "native backend: sole-zero-arg entry is refused when a file-scope body exis
         \\end
     , "libshaped.id");
     var parser_lib = Parser.init(&lex_lib, alloc);
-    parser_lib.duo_mode = true;
+    parser_lib.idol_mode = true;
     const mod_lib = try parser_lib.parse_module();
     try std.testing.expectEqualStrings("w", pickNativeEntrySymbol(&mod_lib).?);
 
@@ -5733,7 +5733,7 @@ test "native backend: sole-zero-arg entry is refused when a file-scope body exis
         \\print(w())
     , "script.id");
     var parser_script = Parser.init(&lex_script, alloc);
-    parser_script.duo_mode = true;
+    parser_script.idol_mode = true;
     const mod_script = try parser_script.parse_module();
     try std.testing.expect(pickNativeEntrySymbol(&mod_script) == null);
 
@@ -5745,7 +5745,7 @@ test "native backend: sole-zero-arg entry is refused when a file-scope body exis
         \\print("side effect")
     , "declared_main.id");
     var parser_main = Parser.init(&lex_main, alloc);
-    parser_main.duo_mode = true;
+    parser_main.idol_mode = true;
     const mod_main = try parser_main.parse_module();
     try std.testing.expectEqualStrings("main", pickNativeEntrySymbol(&mod_main).?);
 
@@ -5766,11 +5766,11 @@ test "native backend: f64 process entry coerces d0 to x0 exit code" {
         \\end
     , "f64_run.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -5804,11 +5804,11 @@ test "native backend lowers sealed f64 record distance2 kernel" {
         \\end
     , "pass4_native_milestone.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -5839,7 +5839,7 @@ test "native backend emits arm64 Mach-O object for constant main" {
         \\end
     , "native.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
@@ -5875,11 +5875,11 @@ test "native backend refuses source length2 short-circuit absent physical loweri
     ;
     var lex = Lexer.init(source, "pass11_record_proof.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     try expectCheckedTestPhysicalRefusal(
@@ -5917,7 +5917,7 @@ test "native backend lowers locals and integer arithmetic" {
         \\end
     , "native.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
@@ -5981,11 +5981,11 @@ test "native backend refuses a qualified call absent graph application facts" {
         \\end
     , "math_add_multi.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -6080,11 +6080,11 @@ test "native backend refuses source conversion absent application facts and reta
         \\end
     , "to_str_vararg.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     try expectCheckedTestSemanticFailure(
@@ -6483,12 +6483,12 @@ test "native backend emits shared object input for exported function without mai
 
     var lex = Lexer.init(
         \\@export
-        \\fun duo_native_add(a: i64, b: i64): i64
+        \\fun native_add(a: i64, b: i64): i64
         \\    a + b
         \\end
     , "native.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
@@ -6505,7 +6505,7 @@ test "native backend emits shared object input for exported function without mai
         &diagnostic,
     );
     defer object.deinit(alloc);
-    try std.testing.expect(std.mem.indexOf(u8, object.bytes, "_duo_native_add") != null);
+    try std.testing.expect(std.mem.indexOf(u8, object.bytes, "_native_add") != null);
     try std.testing.expect(std.mem.indexOf(u8, object.bytes, "_main") == null);
 }
 
@@ -6854,11 +6854,11 @@ test "native backend refuses source sealed record application absent graph ident
         \\end
     , "pass11_record_proof.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     try expectCheckedTestSemanticFailure(
@@ -6893,11 +6893,11 @@ test "native backend refuses raw byte source absent graph byte facts" {
     ;
     var lex = Lexer.init(source, "pass11_wasm_blob_direct.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     try expectCheckedTestSemanticFailure(
@@ -6963,11 +6963,11 @@ test "WP-04: i64 record field assign with binop" {
     ;
     var lex = Lexer.init(source, "field_assign.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -7001,11 +7001,11 @@ test "native backend refuses unresolved byte call and retains branch-field physi
     ;
     var lex = Lexer.init(source, "pass11_wasm_blob_direct.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     try expectCheckedTestSemanticFailure(
@@ -7093,11 +7093,11 @@ test "unused immediate bindings do not demand register or stack places" {
     ;
     var lex = Lexer.init(source, "pass11_spill_proof.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -7123,11 +7123,11 @@ test "unused immediate bindings do not demand register or stack places" {
     ;
     var minimal_lex = Lexer.init(minimal_source, "unused-binding-minimal.id");
     var minimal_parser = Parser.init(&minimal_lex, alloc);
-    minimal_parser.duo_mode = true;
+    minimal_parser.idol_mode = true;
     var minimal_mod = try minimal_parser.parse_module();
     var minimal_sem = Sema.init(alloc);
     defer minimal_sem.deinit();
-    minimal_sem.duo_mode = true;
+    minimal_sem.idol_mode = true;
     try minimal_sem.check_module(&minimal_mod);
 
     var minimal_graph = semantic_graph.SemanticGraph.init(alloc);
@@ -7174,11 +7174,11 @@ test "more live integer values than registers refuses without aliasing owners" {
     ;
     var lex = Lexer.init(source, "live-register-pressure.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -7221,11 +7221,11 @@ test "record return wider than x0..x7 uses the AAPCS64 x8 indirect result" {
     ;
     var lex = Lexer.init(source, "indirect_ret.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -7283,11 +7283,11 @@ test "an eight-field record return still explodes into x0..x7" {
     ;
     var lex = Lexer.init(source, "explode8.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);

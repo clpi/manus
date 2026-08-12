@@ -10,7 +10,6 @@ const ast = @import("ast.zig");
 const Expr = ast.Expr;
 const types = @import("types.zig");
 const dnir = @import("native_ir.zig");
-const native_req_support = @import("native_req_support.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
@@ -313,8 +312,6 @@ fn lowerModuleFromGraph(
     diagnostic: *Diagnostic,
     require_graph_facts: bool,
 ) Error!dnir.Module {
-    var req = try native_req_support.collectFromModule(alloc, mod);
-    defer req.deinit(alloc);
 
     var module_consts = try collectModuleConsts(alloc, mod);
     defer module_consts.deinit(alloc);
@@ -458,7 +455,6 @@ fn lowerModuleFromGraph(
             occurrences,
             diagnostic,
             require_graph_facts,
-            &req,
             &externs,
             &func_record_returns,
             &fp_params,
@@ -831,7 +827,6 @@ pub const LowerCtx = struct {
     graph: *const semantic_graph.SemanticGraph,
     occurrences: *const OccurrenceBridge,
     require_graph_facts: bool,
-    req: *const native_req_support.Context,
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     /// GAP-056: per-callee ABI slot classes, so a caller marshals f64 arguments
@@ -954,7 +949,6 @@ fn lowerFunction(
     occurrences: *const OccurrenceBridge,
     diagnostic: *Diagnostic,
     require_graph_facts: bool,
-    req: *const native_req_support.Context,
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     fp_params: *const std.StringHashMapUnmanaged([]bool),
@@ -967,7 +961,6 @@ fn lowerFunction(
         .graph = graph,
         .occurrences = occurrences,
         .require_graph_facts = require_graph_facts,
-        .req = req,
         .externs = externs,
         .func_record_returns = func_record_returns,
         .fp_params = fp_params,
@@ -3619,17 +3612,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             var pbuf: std.ArrayList(u8) = .empty;
             defer pbuf.deinit(ctx.alloc);
             if (flattenNames(ctx.alloc, f.obj, &pbuf) catch false) {
-                if (ctx.req.exportSymbolByPath(ctx.alloc, pbuf.items, f.field)) |sym| {
-                    try ensureExtern(ctx, pbuf.items, f.field, sym);
-                    const arg0 = try scalarCallLhs(ctx, c.args, null);
-                    if (discard) {
-                        try ctx.emit(.{ .op = .call_direct, .callee = sym, .lhs = arg0 });
-                        return .void;
-                    }
-                    const t = ctx.freshTemp();
-                    try ctx.emit(.{ .op = .call_direct, .result = t, .callee = sym, .lhs = arg0 });
-                    return .{ .temp = t };
-                }
+                // native_req_support removed, no dotted callee path lookup
             }
         }
         if (f.obj.* == .name) {
@@ -3759,30 +3742,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 try ctx.emit(.{ .op = .call_extern, .callee = "exit", .lhs = arg });
                 return .void;
             }
-            if (ctx.req.exportSymbol(f.obj.name.ident, f.field)) |sym| {
-                try ensureExtern(ctx, f.obj.name.ident, f.field, sym);
-                // Marshal through scalarCallLhs like the static-module path
-                // below. Lowering only `c.args[0]` silently dropped every later
-                // argument, so `Lexer.new("fun", "proof.id")` reached the callee
-                // with one argument and garbage in x1.
-                const arg0 = try scalarCallLhs(ctx, c.args, null);
-                if (discard) {
-                    try ctx.emit(.{
-                        .op = .call_extern,
-                        .callee = sym,
-                        .lhs = arg0,
-                    });
-                    return .void;
-                }
-                const t = ctx.freshTemp();
-                try ctx.emit(.{
-                    .op = .call_extern,
-                    .result = t,
-                    .callee = sym,
-                    .lhs = arg0,
-                });
-                return .{ .temp = t };
-            }
+            // native_req_support removed, no module alias callee export lookup
             // `string.byte(s, i)` is a byte load from a `const char*`, not a
             // call. Lowering it as an indexed load keeps a tokenizer's inner
             // loop as plain native code with no runtime helper.
@@ -4062,18 +4022,7 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         defer ctx.alloc.free(mk);
         if (ctx.module_consts.ints.get(mk)) |mv| return .{ .i64 = mv };
         if (ctx.module_consts.strs.get(mk)) |sv| return .{ .str = sv };
-        if (ctx.req.constant(fld.obj.name.ident, fld.field)) |val| {
-            const t = ctx.freshTemp();
-            try ctx.emit(.{
-                .op = .@"const",
-                .result = t,
-                .req_alias = fld.obj.name.ident,
-                .field = fld.field,
-                .lhs = .{ .i64 = val },
-                .ty = .i64,
-            });
-            return .{ .temp = t };
-        }
+        // native_req_support removed, no constant fallback lookup
         const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ fld.obj.name.ident, fld.field });
         defer ctx.alloc.free(key);
         if (ctx.locals.get(key)) |slot| return .{ .local = slot };
@@ -4123,7 +4072,7 @@ test "dnir_lower: hardware direct module" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "hardware_direct.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     try std.testing.expect(m.hardware_tier == .scalar);
@@ -4148,7 +4097,7 @@ test "dnir_lower: hardware popcount" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "test.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     const ins = m.functions[0].blocks[0].instrs[0];
@@ -4171,7 +4120,7 @@ test "dnir_lower: f64 record kernel" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "dnir_kernel.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     try std.testing.expect(m.functions.len == 2);
@@ -4203,7 +4152,7 @@ test "dnir_lower: f64 kernel call with table literal" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "f64_call.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     try std.testing.expect(m.functions.len == 2);
@@ -4235,7 +4184,7 @@ test "dnir_lower: while loop" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "while.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_back_branch = false;
@@ -4260,7 +4209,7 @@ test "dnir_lower: numeric for" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "num_for.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_inc = false;
@@ -4288,7 +4237,7 @@ test "dnir_lower: f64 local in integer main" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "f64_local.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var main_fn: ?dnir.Function = null;
@@ -4318,7 +4267,7 @@ test "dnir_lower: multi-arg f64 kernel" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "add2.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var fp_movs: u32 = 0;
@@ -4345,7 +4294,7 @@ test "dnir_lower: multi-arg i64 call_direct uses mov_arg" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "math_add_call.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var mov_args: u32 = 0;
@@ -4376,7 +4325,7 @@ test "dnir_lower: to(str)(n) stages the value as a variadic tail argument" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "to_str.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var named: u32 = 0;
@@ -4410,7 +4359,7 @@ test "dnir_lower: to(str) declines a non-integer argument rather than mis-loweri
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "to_str_f64.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     // `"%lld"` is a constant the emitter assumes; an f64 there printed the
     // operand's ADDRESS. The whole program leaves the subset instead.
@@ -4435,7 +4384,7 @@ test "dnir_lower: f64 kernel call with record variable" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "record-variable.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var main_fn: ?dnir.Function = null;
@@ -4466,11 +4415,11 @@ test "dnir_lower: main returns f64 kernel tail" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "main-f64.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var checked = @import("sema.zig").Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -4506,11 +4455,11 @@ test "dnir_lower: checked aggregate operand requires graph ABI facts" {
     ;
     var lexer = @import("lexer.zig").Lexer.init(source, "aggregate-operand.id");
     var parser = @import("parser.zig").Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var checked = @import("sema.zig").Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -4541,11 +4490,11 @@ test "dnir_lower: checked aggregate result requires graph ABI facts" {
     ;
     var lexer = @import("lexer.zig").Lexer.init(source, "aggregate-result.id");
     var parser = @import("parser.zig").Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var checked = @import("sema.zig").Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -4570,7 +4519,7 @@ test "dnir_lower: no mandatory main — entry function lowers uniformly" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "run.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     try std.testing.expect(m.functions.len == 1);
@@ -4593,7 +4542,7 @@ test "dnir_lower: implicit f64 assign" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "implicit_f64.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var main_fn: ?dnir.Function = null;
@@ -4623,7 +4572,7 @@ test "dnir_lower: numeric for negative step" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "neg_for.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_geq = false;
@@ -4649,7 +4598,7 @@ test "dnir_lower: numeric for const step binding" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "const_step.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_geq = false;
@@ -4670,7 +4619,7 @@ test "dnir_lower: ret zero" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "test.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     try std.testing.expect(m.functions[0].blocks[0].instrs[m.functions[0].blocks[0].instrs.len - 1].op == .ret);
@@ -4695,7 +4644,7 @@ test "dnir_lower: f64 compare in integer main" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "f64_cmp.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_f64_eq = false;
@@ -4731,7 +4680,7 @@ test "dnir_lower: if elseif else chain" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "elseif.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var when_false: u32 = 0;
@@ -4756,7 +4705,7 @@ test "dnir_lower: numeric for runtime step parameter" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "runtime_step.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_step_local = false;
@@ -4783,7 +4732,7 @@ test "dnir_lower: lowerModuleWithGraph matches lowerModule" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "test.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m_direct = try lowerModule(alloc, &mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
@@ -4811,7 +4760,7 @@ test "dnir_lower: call census without application facts refuses" {
     ;
     var lexer = @import("lexer.zig").Lexer.init(source, "missing-application.id");
     var parser = @import("parser.zig").Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -4841,7 +4790,7 @@ test "dnir_lower: uncensused condition call refuses in graph mode" {
     ;
     var lexer = @import("lexer.zig").Lexer.init(source, "condition-application.id");
     var parser = @import("parser.zig").Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -4871,7 +4820,7 @@ test "dnir_lower: diagnostics are isolated and reset by their own run" {
     ;
     var application_lexer = @import("lexer.zig").Lexer.init(application_source, "application-failure.id");
     var application_parser = @import("parser.zig").Parser.init(&application_lexer, alloc);
-    application_parser.duo_mode = true;
+    application_parser.idol_mode = true;
     const application_module = try application_parser.parse_module();
     var application_graph = semantic_graph.SemanticGraph.init(alloc);
     defer application_graph.deinit();
@@ -4896,7 +4845,7 @@ test "dnir_lower: diagnostics are isolated and reset by their own run" {
     ;
     var name_lexer = @import("lexer.zig").Lexer.init(name_source, "name-failure.id");
     var name_parser = @import("parser.zig").Parser.init(&name_lexer, alloc);
-    name_parser.duo_mode = true;
+    name_parser.idol_mode = true;
     const name_module = try name_parser.parse_module();
     var name_graph = semantic_graph.SemanticGraph.init(alloc);
     defer name_graph.deinit();
@@ -4919,7 +4868,7 @@ test "dnir_lower: diagnostics are isolated and reset by their own run" {
     ;
     var success_lexer = @import("lexer.zig").Lexer.init(success_source, "success.id");
     var success_parser = @import("parser.zig").Parser.init(&success_lexer, alloc);
-    success_parser.duo_mode = true;
+    success_parser.idol_mode = true;
     const success_module = try success_parser.parse_module();
     var success_graph = semantic_graph.SemanticGraph.init(alloc);
     defer success_graph.deinit();
@@ -4948,7 +4897,7 @@ test "dnir_lower: graph module ownership is transactional on allocation failure"
     ;
     var lexer = @import("lexer.zig").Lexer.init(source, "allocation.id");
     var parser = @import("parser.zig").Parser.init(&lexer, arena.allocator());
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
     var graph = semantic_graph.SemanticGraph.init(arena.allocator());
     defer graph.deinit();
@@ -4985,11 +4934,11 @@ test "dnir_lower: call result class comes from graph descriptor" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "result_query.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var checked = @import("sema.zig").Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&mod);
     const m = try lowerModule(alloc, &mod);
 
@@ -5037,11 +4986,11 @@ test "dnir_lower: checked subject call retains semantic facts" {
     ;
     var lex = Lexer.init(src, "application.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -5098,11 +5047,11 @@ test "dnir_lower: applications share relation without sharing occurrence id" {
     ;
     var lex = Lexer.init(src, "application-occurrence.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5150,11 +5099,11 @@ test "dnir_lower: checked ordinary calls consume graph facts" {
     ;
     var lexer = Lexer.init(source, "ordinary-application.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5213,11 +5162,11 @@ test "dnir_lower: checked multi-operand call retains ABI staging" {
     ;
     var lexer = Lexer.init(source, "multi-application.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5266,11 +5215,11 @@ test "dnir_lower: checked scalar ABI boundaries retain staging" {
     ;
     var lexer = Lexer.init(source, "scalar-boundary.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5316,11 +5265,11 @@ test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
     ;
     var lexer = Lexer.init(source, "ordinary-f64-application.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var ast_module = try parser.parse_module();
     var checked = Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&ast_module);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
@@ -5359,7 +5308,7 @@ test "dnir_lower: bool result descriptor prevents integer interpolation" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "bool_result_query.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
 
     try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
@@ -5377,11 +5326,11 @@ test "dnir_lower: graph orders callees before callers" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "graph-order.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var checked = @import("sema.zig").Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();
@@ -5411,11 +5360,11 @@ test "dnir_lower: checked ids use graph coordinates" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "hash-free.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var checked = @import("sema.zig").Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();
@@ -5450,7 +5399,7 @@ test "dnir_lower: graphless convenience returns no orphan handles" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "graphless.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const module = try lowerModule(alloc, &mod);
 
@@ -5485,7 +5434,7 @@ test "dnir_lower: record-return tail and call assign emit init_record" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "rec.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_init_record = false;
@@ -5517,7 +5466,7 @@ test "dnir_lower: f64 record-return tail lowers ret_record" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "f64ret.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     try std.testing.expect(m.functions.len == 2);
@@ -5550,7 +5499,7 @@ test "dnir_lower: f64 kernel inline table emits init_record" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "f64tbl.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_init = false;
@@ -5580,7 +5529,7 @@ test "dnir_lower: discard call_stmt omits call result temp" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "discard.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_discard_call = false;
@@ -5608,7 +5557,7 @@ test "dnir_lower: trailing compound assign returns assigned local" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "trail.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     const f = m.functions[0];
@@ -5639,7 +5588,7 @@ test "dnir_lower: dot static member exports module.method" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "static.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     try std.testing.expectEqual(@as(usize, 2), m.functions.len);
@@ -5660,7 +5609,7 @@ test "dnir_lower: colon method compound field assign exports Type.method" {
     const src = "Vec: @{ x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
     var lex = @import("lexer.zig").Lexer.init(src, "method.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sema = @import("sema.zig").Sema.init(alloc);
     try sema.check_module(&mod);
@@ -5683,7 +5632,7 @@ test "dnir_lower: trailing compound field assign returns updated field slot" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "field.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     const f = m.functions[0];
@@ -5727,7 +5676,7 @@ test "dnir_lower: if binding assigns before branch" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "ifbind.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
     var saw_get_call = false;
@@ -5769,7 +5718,7 @@ test "dnir_lower: ret_record carries every field in DESCRIPTOR order" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "retorder.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
 
@@ -5803,7 +5752,7 @@ test "dnir_lower: a nine-field record return is eligible, a nine-field param is 
         const src = wide ++ "mk(): big\n    return " ++ lit ++ "\nend\nmain(): i64\n    0\nend\n";
         var lex = @import("lexer.zig").Lexer.init(src, "wideret.id");
         var parser = @import("parser.zig").Parser.init(&lex, alloc);
-        parser.duo_mode = true;
+        parser.idol_mode = true;
         const mod = try parser.parse_module();
         const m = try lowerModule(alloc, &mod);
         try std.testing.expectEqual(@as(usize, 2), m.functions.len);
@@ -5815,7 +5764,7 @@ test "dnir_lower: a nine-field record return is eligible, a nine-field param is 
         const src = wide ++ "take(v: big): i64\n    return v.a\nend\nmain(): i64\n    0\nend\n";
         var lex = @import("lexer.zig").Lexer.init(src, "wideparam.id");
         var parser = @import("parser.zig").Parser.init(&lex, alloc);
-        parser.duo_mode = true;
+        parser.idol_mode = true;
         const mod = try parser.parse_module();
         try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
     }

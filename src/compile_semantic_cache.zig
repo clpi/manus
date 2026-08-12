@@ -286,11 +286,11 @@ test "compile_semantic_cache: second refresh reuses entry" {
 
     var lex = Lexer.init(src, "point.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&mod);
 
     const cache_path = ".id/cache/semantic/state.json";

@@ -269,11 +269,11 @@ test "knowledge_snapshot: native Point record from graph lift" {
     ;
     var lex = Lexer.init(src, "point.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&mod);
 
     var graph = semantic_graph.SemanticGraph.init(alloc);

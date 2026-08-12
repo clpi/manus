@@ -6,44 +6,78 @@ cd "$repo"
 
 fail=0
 warn=0
-filter='zerohistorycensus|law\.zero\.history|ZERO-HISTORY|retired name|git stores'
+filter='zerohistorycensus|law\.zero\.history|ZERO-HISTORY|retired name|git stores|foreign provenance|Zig @import'
+
+# Project-owned paths (exclude constitution law text, census tools, idiom ratchets).
+owned_files() {
+  git ls-files 2>/dev/null \
+    | rg -v '\.(png|jpg|wasm|o|dylib|profraw)$' \
+    | rg -v '^\.claude/' \
+    | rg -v '^vendor/' \
+    | rg -v '^ext/' \
+    | rg -v '^docs/spec/constitution\.md$' \
+    | rg -v '^(scripts/idiomgate\.id|gates/idiom\.id|tools/node/dev/identitycensus|tools/node/dev/zerohistorycensus|\.githooks/)'
+}
 
 scan() {
   pat="$1"
   label="$2"
-  hits=$(git ls-files 2>/dev/null \
-    | rg -v '\.(png|jpg|wasm|o|dylib|profraw)$' \
-    | rg -v '^\.claude/' \
-    | rg -v '^(docs/spec/constitution\.md|scripts/idiomgate\.id|gates/idiom\.id|tools/node/dev/identitycensus|tools/node/dev/zerohistorycensus|\.githooks/)' \
-    | xargs rg -n "$pat" 2>/dev/null | rg -v "$filter" || true)
+  hits=$(owned_files | xargs rg -n "$pat" 2>/dev/null | rg -v "$filter" || true)
   n=$(printf '%s\n' "$hits" | sed '/^$/d' | wc -l | tr -d ' ')
   if [ "$n" -gt 0 ]; then
     echo "zerohistorycensus: FAIL $label ($n hits)"
-    printf '%s\n' "$hits" | head -15 | sed 's/^/  /'
+    printf '%s\n' "$hits" | head -12 | sed 's/^/  /'
     fail=$((fail + n))
   else
     echo "zerohistorycensus: pass $label"
   fi
 }
 
-echo "zerohistorycensus: ZERO-HISTORY audit"
+scan_id_files() {
+  pat="$1"
+  label="$2"
+  hits=$(git ls-files '*.id' 2>/dev/null \
+    | rg -v '^lib/std/' \
+    | rg -v '^scripts/ingress/' \
+    | xargs rg -n "$pat" 2>/dev/null | rg -v "$filter" || true)
+  n=$(printf '%s\n' "$hits" | sed '/^$/d' | wc -l | tr -d ' ')
+  if [ "$n" -gt 0 ]; then
+    echo "zerohistorycensus: FAIL $label ($n hits)"
+    printf '%s\n' "$hits" | head -12 | sed 's/^/  /'
+    fail=$((fail + n))
+  else
+    echo "zerohistorycensus: pass $label"
+  fi
+}
+
+echo "zerohistorycensus: ZERO-HISTORY audit (law.zero.history)"
 
 scan 'language\.history' 'language.history table'
 scan '(^|[^a-zA-Z])Idsem([^a-zA-Z]|$)|idsem' 'Idsem identity'
 scan '(^|[^a-zA-Z])Duon([^a-zA-Z]|$)|duon' 'Duon identity'
 scan '\.duo\b' 'retired .duo suffix'
 scan 'spec100|pass[0-9]+|Pass [0-9]+' 'pass/spec-number taxonomy'
-scan '@corpus (verified|proof|history|migration|compat|legacy)' 'retired @corpus labels'
+scan '@corpus (verified|proof|history|migration|compat|legacy|deprecated)' 'retired @corpus labels'
 scan 'examples/spec100/' 'spec100 path references'
+scan_id_files '\bstd\.' 'std. in canonical .id (excl lib/std migration)'
+scan_id_files '\blib\.' 'lib. in canonical .id'
+scan_id_files 'process\.' 'process. namespace in .id'
+scan_id_files ':from\(' ':from( inverse face in .id'
+scan_id_files ': (readable|writable|iterable|hashable|convertible)' 'adjective protocols in .id'
+scan_id_files '\b(req|require|import)\(' 'admission syntax in .id'
 
-duo_hits=$(git ls-files 2>/dev/null | rg -v 'vendor/' | xargs rg -n '(^|[^a-zA-Z])duo([^a-zA-Z]|$)|DUO_' 2>/dev/null | rg -v 'zerohistorycensus|law\.zero|ZERO-HISTORY|duo_lock|bootstrap|DUO_TRANSFORM' || true)
+# Active bridges allowlist — must carry deletion condition in bootstrap.md or gap.
+bridge_allow='duo_lock\.id|DUO_TRANSFORM|bootstrap.*duo|@import\("std"\)|tree-sitter-duo|vscode-duo'
+duo_hits=$(owned_files | xargs rg -n '(^|[^a-zA-Z])duo([^a-zA-Z]|$)|DUO_' 2>/dev/null \
+  | rg -v "$filter" \
+  | rg -v "$bridge_allow" || true)
 duo_n=$(printf '%s\n' "$duo_hits" | sed '/^$/d' | wc -l | tr -d ' ')
 if [ "$duo_n" -gt 0 ]; then
-  echo "zerohistorycensus: WARN duo/DUO_ ($duo_n) — cutover in progress"
-  printf '%s\n' "$duo_hits" | head -10 | sed 's/^/  /'
-  warn=$duo_n
+  echo "zerohistorycensus: FAIL duo/DUO_ identity debt ($duo_n hits)"
+  printf '%s\n' "$duo_hits" | head -12 | sed 's/^/  /'
+  fail=$((fail + duo_n))
 else
-  echo "zerohistorycensus: pass duo/DUO_ in project paths"
+  echo "zerohistorycensus: pass duo/DUO_ (bridges allowlisted)"
 fi
 
 if git ls-files --error-unmatch .agents/session/ENVELOPE.md >/dev/null 2>&1; then
@@ -53,9 +87,27 @@ else
   echo "zerohistorycensus: pass session envelope not committed"
 fi
 
+if git ls-files --error-unmatch .agents/harness.generated.md >/dev/null 2>&1; then
+  if rg -q 'generated at|dirty entries|open P0' .agents/harness.generated.md 2>/dev/null; then
+    echo "zerohistorycensus: WARN harness.generated.md may contain stale envelope"
+    warn=$((warn + 1))
+  fi
+fi
+
+# Positive control: census must detect forbidden class.
+probe=$(mktemp)
+printf '+++ b/probe.id\n@@ -0,0 +1 @@\n+x = Idsem\n' >"$probe"
+if DUOGATEDIFF="$probe" "$repo/zig-out/bin/idol" run "$repo/scripts/idiomgate.id" >/dev/null 2>&1; then
+  echo "zerohistorycensus: FAIL positive control (Idsem not convicted)"
+  fail=$((fail + 1))
+else
+  echo "zerohistorycensus: pass positive control (identity ratchet fires)"
+fi
+rm -f "$probe"
+
 if [ "$fail" -gt 0 ]; then
-  echo "zerohistorycensus: $fail violation class(es)"
+  echo "zerohistorycensus: $fail violation(s) ($warn bridge warnings)"
   exit 1
 fi
-echo "zerohistorycensus: census complete ($warn duo warnings)"
+echo "zerohistorycensus: census complete ($warn warnings)"
 exit 0

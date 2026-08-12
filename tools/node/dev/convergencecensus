@@ -1,0 +1,51 @@
+#!/bin/sh
+# TOTAL CONVERGENCE census — blocking contract verification (P0-A subset).
+set -eu
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo"
+
+fail=0
+
+scan() {
+  pat="$1"
+  label="$2"
+  ex="$3"
+  hits=$(git ls-files 'src/*.zig' 2>/dev/null | rg -v "$ex" | xargs rg -n "$pat" 2>/dev/null || true)
+  n=$(printf '%s\n' "$hits" | sed '/^$/d' | wc -l | tr -d ' ')
+  if [ "$n" -gt 0 ]; then
+    echo "convergencecensus: FAIL $label ($n)"
+    printf '%s\n' "$hits" | head -10 | sed 's/^/  /'
+    fail=$((fail + n))
+  else
+    echo "convergencecensus: pass $label"
+  fi
+}
+
+echo "convergencecensus: P0-A identity + source acceptance"
+
+scan 'duo_mode' 'duo_mode field' '^$'
+scan 'duo_native' 'duo_native authority tag' 'lexer_bridge\.zig'
+scan 'duo_classify' 'duo_classify authority' 'token_semantic\.zig'
+scan 'duo_type|duo_contextual' 'duo token categories' 'token_semantic\.zig'
+scan 'isEntrypointPath\(".*\.duo"\)|build\.duo' 'entrypoint .duo acceptance' 'build_framework\.zig'
+scan 'sourceFacts\(".*\.duo"\).*idol|\.duo.*canonical' 'idol law for .duo suffix' 'lexer_bridge\.zig'
+
+# .duo must not appear in source_suffixes array
+if rg -n '\.duo' src/native_req_support.zig 2>/dev/null | rg -v 'module\.duo.*unknown|test' | rg -q 'source_suffixes|endsWith.*\.duo'; then
+  echo "convergencecensus: FAIL .duo in native_req_support suffix list"
+  fail=$((fail + 1))
+else
+  echo "convergencecensus: pass native_req_support suffix list"
+fi
+
+if [ ! -f docs/spec/convergence-contract.md ]; then
+  echo "convergencecensus: FAIL missing convergence-contract.md"
+  fail=$((fail + 1))
+fi
+
+if [ "$fail" -gt 0 ]; then
+  echo "convergencecensus: $fail violation(s) — see docs/spec/convergence-contract.md"
+  exit 1
+fi
+echo "convergencecensus: P0-A subset pass"
+exit 0

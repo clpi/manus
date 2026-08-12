@@ -27,14 +27,10 @@ These files may organize or explain constitutional facts. They do not override
 the constitution. A contradiction is a projection defect: stop, report it, and
 repair the projection rather than choosing a convenient answer.
 
-## History
-
-Files named `pass*.md`, historical Idol/Duo/Duon prose, `.id` compatibility
-source, exact physical `duo` tool references, and repository history are
-migration or bootstrap evidence. They may explain provenance but must not train
-new implementation or decide current semantics. Exact historical paths,
-commands, symbols, gaps, and evidence keep their recorded spelling.
+## Current tree
 
 Do not add another architecture document or precedence layer. A genuinely new
 irreducible rule belongs in the constitution through its admitted change
-process; measurements and current status belong in their existing ledgers.
+process; measurements and current status belong in `docs/METRICS.md` and open
+`gaps/GAP-*.md` obligations only. Git stores history; active projections describe
+current Idol only (`law.zero.history`).

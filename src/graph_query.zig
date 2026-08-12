@@ -133,11 +133,11 @@ test "graph_query: calls and callees from lifted graph" {
     ;
     var lex = Lexer.init(src, "query.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var checked = @import("sema.zig").Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();

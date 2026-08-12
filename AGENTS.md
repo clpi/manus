@@ -31,8 +31,8 @@ this order:
 
 This file is only the agent workflow and mechanical preflight. It is not a
 second language specification. If it conflicts with C0 or `CLAUDE.md`, stop,
-report the conflict, and repair this projection. Repository history and the
-legacy corpus are migration evidence, never authority.
+report the conflict, and repair this projection. Git history is the sole
+historical archive; the active tree is current Idol only (`law.zero.history`).
 
 The language and project identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
 Active development remains in this repository until release-readiness authorization;

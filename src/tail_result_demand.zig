@@ -459,6 +459,6 @@ test "tail_result_demand: ambiguous pre-loop locals + effect loop returns null" 
 fn parseDuo(src: []const u8, arena: *std.heap.ArenaAllocator) !ast.Module {
     var lex = @import("lexer.zig").Lexer.init(src, "test.id");
     var parser = @import("parser.zig").Parser.init(&lex, arena.allocator());
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     return parser.parse_module();
 }

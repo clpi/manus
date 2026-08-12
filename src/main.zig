@@ -12,7 +12,6 @@ const Mono = @import("mono.zig");
 const MacroExpand = @import("macro_expand.zig");
 const Arc = @import("arc.zig");
 const AsyncLower = @import("async_lower.zig");
-const native_req_support = @import("native_req_support.zig");
 const escape = @import("escape.zig");
 const PrettyPrinter = @import("pretty.zig").PrettyPrinter;
 const term = @import("term.zig");
@@ -308,7 +307,7 @@ fn emitCompileProofArtifact(
     target: []const u8,
     bench_mode: bool,
     full_native_lowering: bool,
-    duo_mode: bool,
+    idol_mode: bool,
 ) !void {
     if (!shouldEmitCompileProof(bench_mode)) return;
 
@@ -326,7 +325,7 @@ fn emitCompileProofArtifact(
             .external_compiler = null,
             .boxing_mode = if (global_bench_backend == .c_dynamic) "boxed" else if (global_bench_backend == .direct) "none" else "specialized",
         };
-    } else backend_identity.inferFromCompile(.c, target, full_native_lowering, duo_mode);
+    } else backend_identity.inferFromCompile(.c, target, full_native_lowering, idol_mode);
     const proof_path = try std.fmt.allocPrint(alloc, "{s}.proof.json", .{generated_c_path});
     defer alloc.free(proof_path);
 
@@ -3027,7 +3026,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
         std.process.exit(1);
     };
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = is_idol_source_path(src_path);
+    parser.idol_mode = is_idol_source_path(src_path);
     var mod = parser.parse_module() catch |e| {
         // Parser already emitted a source-span diagnostic for token-edge
         // failures; never leak Zig enum names (docs/spec/diagnostics.md §2).
@@ -3044,7 +3043,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
 
     var sem = Sema.init(alloc);
     sem.lua55_mode = is_lua_source_path(src_path);
-    sem.duo_mode = is_idol_source_path(src_path);
+    sem.idol_mode = is_idol_source_path(src_path);
     sem.source_path = try alloc.dupe(u8, src_path);
     sem.hints_enabled = term.hints;
     sem.info_enabled = term.info;
@@ -3297,247 +3296,6 @@ fn machineTargetForBackend(target: []const u8) []const u8 {
 ///     hoisted into a program that never asked to run them.
 ///
 /// Intra-module calls need one rewrite: inside the module, `count()` calls
-/// `double()` by bare name, but the spliced declaration is now `T.double`.
-/// `rerootCallsInBlock` renames exactly those bare calls that resolve to a
-/// spliced sibling, and leaves everything else — locals, builtins, libc — alone.
-///
-/// The parsed module is intentionally never deinitialized: the spliced AST
-/// nodes are borrowed straight into the caller's module and outlive any scope
-/// here. `duo` is a short-lived process, so leaking the module's semantic state
-/// is the cheap correct choice next to deep-copying every node.
-fn spliceReqModules(
-    alloc: std.mem.Allocator,
-    io: Io,
-    mod: *ast.Module,
-) !usize {
-    var req = native_req_support.collectFromModule(alloc, mod) catch return 0;
-    defer req.deinit(alloc);
-
-    var pairs: std.ArrayListUnmanaged(native_req_support.Context.AliasSource) = .empty;
-    defer pairs.deinit(alloc);
-    req.aliasSources(alloc, &pairs) catch return 0;
-    if (pairs.items.len == 0) return 0;
-
-    // Every top-level name the program already binds. A spliced module may not
-    // shadow any of them.
-    var taken: std.StringHashMapUnmanaged(void) = .empty;
-    defer taken.deinit(alloc);
-    for (mod.body.stmts) |st| try collectTopLevelNames(alloc, st, &taken);
-
-    var added: std.ArrayListUnmanaged(ast.Stmt) = .empty;
-    defer added.deinit(alloc);
-
-    for (pairs.items) |pair| {
-        if (req.moduleExportsSymbols(pair.alias)) {
-            waist.note("exports", pair.source_path);
-            continue;
-        }
-
-        // `pair.alias` and `pair.source_path` are borrowed from `req`, which
-        // this function's own `defer` frees — and the alias is written straight
-        // into a spliced declaration's `path`, which outlives that. It read as
-        // garbage in the bail message, which is the lucky version; the unlucky
-        // version is a symbol name that still looks plausible.
-        const alias = try alloc.dupe(u8, pair.alias);
-        const source_path = try alloc.dupe(u8, pair.source_path);
-
-        // Splice only what the program actually CALLS, plus whatever those
-        // functions reach inside the module. Absorbing a whole module made a
-        // program depend on the lowerability of code it never invokes:
-        // `req_module_constant.id` wants one folded integer out of
-        // `std.compiler.token` and regressed the moment every unrelated
-        // function in that module had to lower too.
-        var wanted: std.StringHashMapUnmanaged(void) = .empty;
-        defer wanted.deinit(alloc);
-        try collectDottedCallsInBlock(&mod.body, alias, &wanted, alloc);
-        if (wanted.count() == 0) {
-            waist.note("nocall", source_path);
-            continue;
-        }
-
-        const ps = parse_and_check(alloc, io, source_path) catch {
-            waist.note("parse", source_path);
-            continue;
-        };
-
-        // Two passes: learn the module's function names first, so an intra-module
-        // call can be recognised even when it precedes the callee's declaration.
-        var siblings: std.StringHashMapUnmanaged(void) = .empty;
-        defer siblings.deinit(alloc);
-        for (ps.mod.body.stmts) |st| {
-            if (st != .func_decl) continue;
-            const fd = st.func_decl;
-            if (fd.is_local or fd.method or fd.path.len != 1) continue;
-            try siblings.put(alloc, fd.path[0], {});
-        }
-
-        // Close `wanted` over intra-module calls: a called function drags in
-        // the siblings IT calls, and theirs, until nothing new appears.
-        while (true) {
-            var grew = false;
-            for (ps.mod.body.stmts) |st| {
-                if (st != .func_decl) continue;
-                const fd = st.func_decl;
-                if (fd.path.len != 1 or !wanted.contains(fd.path[0])) continue;
-                var reached: std.StringHashMapUnmanaged(void) = .empty;
-                defer reached.deinit(alloc);
-                try collectBareCallsInBlock(&fd.func.body, &siblings, &reached, alloc);
-                var it = reached.iterator();
-                while (it.next()) |e| {
-                    if (wanted.contains(e.key_ptr.*)) continue;
-                    try wanted.put(alloc, e.key_ptr.*, {});
-                    grew = true;
-                }
-            }
-            if (!grew) break;
-        }
-
-        // ONE REACHABILITY RULE, FOR BINDINGS TOO. `wanted` already says "splice
-        // only what the program reaches"; the bindings had no such rule and came
-        // across wholesale. That was invisible while a binding was one scalar,
-        // and stops being invisible the moment a constant TABLE qualifies below
-        // — `std.wasm.opcode_lookup` would hoist all 63 rows of every table in
-        // the file into a program that reads one of them. It also over-vetoes:
-        // the collision check judged names that were never going to be added.
-        //
-        // What a spliced FUNCTION BODY reads is the same free-name walk
-        // `spliceIsSelfContained` uses to AUDIT the result, run here to DECIDE
-        // it. Read before the re-rooting below, because that rewrite turns a
-        // bare sibling call into `alias.name` and would change what the walk
-        // sees. A binding admitted by `exprIsLiteral` reads no name itself, so
-        // there is no transitive closure to take.
-        var read: std.StringHashMapUnmanaged(void) = .empty;
-        defer read.deinit(alloc);
-        var scan = CallScan{
-            .alias = null,
-            .siblings = &empty_name_set,
-            .out = &read,
-            .alloc = alloc,
-            .free = &read,
-        };
-        for (ps.mod.body.stmts) |st| {
-            if (st != .func_decl) continue;
-            const fd = st.func_decl;
-            if (fd.is_local or fd.method or fd.path.len != 1) continue;
-            if (!wanted.contains(fd.path[0])) continue;
-            try collectBareCallsInBlock2(&fd.func.body, &scan);
-        }
-        // A walk that met a form it does not descend into cannot say a name is
-        // UNREAD, so it stops filtering — which is the old wholesale behaviour,
-        // and `spliceIsSelfContained` refuses a blind walk anyway.
-        const filter_bindings = !scan.blind;
-
-        // Only the names actually being spliced can collide. Judging the whole
-        // module made an unrelated same-named constant veto a splice that would
-        // never have touched it.
-        var conflict = false;
-        for (ps.mod.body.stmts) |st| {
-            const name = topLevelName(st) orelse continue;
-            if (st == .func_decl) {
-                if (!wanted.contains(name)) continue;
-            } else if (filter_bindings and !read.contains(name)) continue;
-            if (taken.contains(name)) {
-                conflict = true;
-                break;
-            }
-        }
-        if (conflict) {
-            if (term.trace) term.traceStep("req-splice-name-collision", .{});
-            waist.note("collide", source_path);
-            continue;
-        }
-
-        const added_start = added.items.len;
-        for (ps.mod.body.stmts) |st| {
-            // The reachability rule, applied to bindings: an unread module
-            // constant is not a dependency, so it does not come across.
-            if (st != .func_decl and filter_bindings) {
-                const name = topLevelName(st) orelse continue;
-                if (!read.contains(name)) continue;
-            }
-            switch (st) {
-                .func_decl => |fd| {
-                    if (fd.is_local or fd.method or fd.path.len != 1) continue;
-                    if (!wanted.contains(fd.path[0])) continue;
-                    var copy = fd;
-                    const path = try alloc.alloc([]const u8, 2);
-                    path[0] = alias;
-                    path[1] = fd.path[0];
-                    copy.path = path;
-                    rerootCallsInBlock(&copy.func.body, alias, &siblings, alloc) catch {};
-                    try added.append(alloc, .{ .func_decl = copy });
-                },
-                .const_decl => try added.append(alloc, st),
-                // A module constant is spelled four ways in Duo — `const X: T =`,
-                // `global X =`, `local X =`, and the bare `X = 4` that most of
-                // lib/std actually uses. Carrying only the first two missed
-                // `TYPE_COUNT = 4` entirely, so the spliced function referencing
-                // it bailed on an unresolved name rather than on anything real.
-                //
-                // The literal test is what keeps this safe: a binding to a
-                // literal is a definition, but `X = boot()` is a side effect at
-                // module scope, and hoisting that into a program that never
-                // required the module to RUN would change behaviour.
-                .global_decl => |gd| {
-                    if (allInitsAreLiteral(gd.inits) and !anyInitIsReq(gd.inits)) {
-                        try added.append(alloc, st);
-                    }
-                },
-                .local_decl => |ld| {
-                    if (allInitsAreLiteral(ld.inits) and !anyInitIsReq(ld.inits)) {
-                        try added.append(alloc, st);
-                    }
-                },
-                .assign => |as| {
-                    if (as.targets.len == as.values.len and
-                        allTargetsArePlainNames(as.targets) and
-                        allInitsAreLiteral(as.values) and
-                        !anyInitIsReq(as.values))
-                    {
-                        try added.append(alloc, st);
-                    }
-                },
-                else => {},
-            }
-        }
-
-        // ONE PREDICATE FOR DECLARATION AND USE. `wanted` decided which module
-        // FUNCTIONS came across; the literal test above decided which module
-        // BINDINGS did; and nothing checked that the second set covers what the
-        // first set reads. `std.wasm.opcodes` is the case that broke: its
-        // functions index `TYPES = { "i32", … }`, a table literal that
-        // `exprIsLiteral` rejects, so `type_index` was spliced and `TYPES` was
-        // not. The splice mutates the AST the C emitter later walks, so the use
-        // survived into the emitted C with no declaration anywhere in the file
-        // — `error: use of undeclared identifier 'TYPES'`, twenty of them.
-        //
-        // A spliced body may read only module-scope names spliced beside it.
-        // If the walk cannot see the whole body it must not answer "clean"
-        // either. Either way the module goes back unspliced, which is the
-        // honest undefined-symbol bail this splice replaced.
-        if (!spliceIsSelfContained(alloc, &ps.mod, added.items[added_start..])) {
-            added.shrinkRetainingCapacity(added_start);
-            if (term.trace) term.traceStep("req-splice-unbound-module-name", .{});
-            waist.note("unbound", source_path);
-            continue;
-        }
-        waist.note("splice", source_path);
-
-        for (ps.mod.body.stmts) |st| {
-            if (topLevelName(st)) |n| try taken.put(alloc, n, {});
-        }
-    }
-
-    if (added.items.len == 0) return 0;
-
-    const merged = try alloc.alloc(ast.Stmt, mod.body.stmts.len + added.items.len);
-    // Spliced declarations go FIRST. A module-level constant the program reads
-    // must already be bound when the program's own statements run.
-    @memcpy(merged[0..added.items.len], added.items);
-    @memcpy(merged[added.items.len..], mod.body.stmts);
-    mod.body.stmts = merged;
-    return added.items.len;
-}
 
 /// Does every module-scope name the spliced declarations READ come across with
 /// them? The call closure picks the functions and a literal test picks the
@@ -4021,7 +3779,7 @@ fn emitReqModuleC(
     cg.src_path = mod_src_path;
     cg.stdlib_root = compiler_lib_root;
     cg.target = target;
-    cg.duo_mode = ps.sem.duo_mode;
+    cg.idol_mode = ps.sem.idol_mode;
     cg.foreign_records = &ps.sem.foreign_records;
     cg.foreign_functions = &ps.sem.foreign_functions;
     try cg.emit_module(&ps.mod);
@@ -4081,6 +3839,9 @@ fn directLinkInputs(
     cc: []const u8,
     runtime_needing: ?*usize,
 ) ![]const []const u8 {
+    _ = cc;
+    _ = target;
+    _ = mod;
     if (runtime_needing) |slot| slot.* = 0;
     var inputs: std.ArrayListUnmanaged([]const u8) = .empty;
 
@@ -4103,52 +3864,6 @@ fn directLinkInputs(
     try inputs.append(alloc, "src/idol_io_bootstrap.c");
     try inputs.append(alloc, "src/idol_str_bootstrap.c");
 
-    var req = native_req_support.collectFromModule(alloc, mod) catch return inputs.toOwnedSlice(alloc);
-    defer req.deinit(alloc);
-
-    var sources: std.ArrayListUnmanaged([]const u8) = .empty;
-    defer sources.deinit(alloc);
-    req.exportingModuleSources(alloc, &sources) catch return inputs.toOwnedSlice(alloc);
-    if (sources.items.len == 0) return inputs.toOwnedSlice(alloc);
-
-    for (sources.items) |sp| {
-        const stem = std.fs.path.stem(sp);
-        const out_c = try std.fmt.allocPrint(alloc, "/tmp/duo_reqmod_{s}.c", .{stem});
-        // Default TRUE, so a module whose emit does not answer is counted as
-        // needing the runtime. The unsafe direction of this predicate is a
-        // SIGSEGV in a linked binary, so silence has to mean "refuse".
-        var mod_needs_runtime = true;
-        emitReqModuleC(alloc, io, sp, out_c, target, &mod_needs_runtime) catch {
-            if (term.trace) term.traceStep("req-module-c-failed", .{});
-            continue;
-        };
-        const out_o = try std.fmt.allocPrint(alloc, "/tmp/duo_reqmod_{s}.o", .{stem});
-        // Compile to an object here rather than handing the .c to the linker.
-        // Not every module stands alone — `std.token.classify` reaches for a
-        // global its whole-program build supplies — and adding such a file to
-        // the link line breaks programs that linked fine without it. Building
-        // it separately lets a module that cannot stand alone be skipped, so
-        // the only failure left is the honest one: a genuinely missing symbol.
-        waist.note("cobject", sp);
-        if (compileReqModuleObject(alloc, io, cc, out_c, out_o)) {
-            // `std.token.classify` exports `duo_keyword_classify`, which is
-            // exactly what the fixed helper at inputs[0] provides. Linking both
-            // is a duplicate-symbol error, so the module's own object wins — it
-            // is generated from the same .id source and is the canonical one.
-            if (std.mem.endsWith(u8, sp, "token/classify.id") and
-                inputs.items.len > 0 and
-                std.mem.eql(u8, inputs.items[0], "src/keyword_classify.c"))
-            {
-                _ = inputs.orderedRemove(0);
-            }
-            try inputs.append(alloc, out_o);
-            if (mod_needs_runtime) {
-                if (runtime_needing) |slot| slot.* += 1;
-            }
-        } else {
-            if (term.trace) term.traceStep("req-module-object-skipped", .{});
-        }
-    }
     return inputs.toOwnedSlice(alloc);
 }
 
@@ -4259,7 +3974,7 @@ fn do_compile(
     native_scalar_precheck.target = target;
     native_scalar_precheck.load_chunk = load_chunk;
     native_scalar_precheck.lib_mode = lib_mode;
-    native_scalar_precheck.duo_mode = ps.sem.duo_mode;
+    native_scalar_precheck.idol_mode = ps.sem.idol_mode;
     native_scalar_precheck.test_mode = test_mode;
     native_scalar_precheck.bench_mode = bench_mode;
     native_scalar_precheck.bench_backend = global_bench_backend;
@@ -4359,7 +4074,7 @@ fn do_compile(
                     // predicate that decides a declaration is emitted must be
                     // the one that decides its use is. No object, no splice.
                     const pre_splice_stmts = ps.mod.body.stmts;
-                    const spliced = spliceReqModules(alloc, io, &ps.mod) catch 0;
+                    const spliced: usize = 0;
                     if (spliced != 0 and term.trace) term.traceStep("req-splice", .{});
                     var runtime_needing_modules: usize = 0;
                     const runtime_linked_modules = try directLinkInputs(alloc, io, &ps.mod, mt, cc, &runtime_needing_modules);
@@ -4651,7 +4366,7 @@ fn do_compile(
         cg.target = target;
         cg.load_chunk = load_chunk;
         cg.lib_mode = lib_mode;
-        cg.duo_mode = ps.sem.duo_mode;
+        cg.idol_mode = ps.sem.idol_mode;
         cg.test_mode = test_mode;
         cg.bench_mode = bench_mode;
         cg.bench_backend = global_bench_backend;
@@ -4675,7 +4390,7 @@ fn do_compile(
     };
     if (phase_timer) |*t| trace_phase(io, t, "codegen", c_path);
 
-    if (emitCompileProofArtifact(alloc, io, src_path, c_path, target, bench_mode, full_native_lowering, ps.sem.duo_mode)) {
+    if (emitCompileProofArtifact(alloc, io, src_path, c_path, target, bench_mode, full_native_lowering, ps.sem.idol_mode)) {
         if (term.trace) term.traceStep("proof-artifact", .{});
     } else |_| {}
 
@@ -5135,7 +4850,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     cg.src_path = src_path;
     cg.stdlib_root = compiler_lib_root;
     cg.target = target;
-    cg.duo_mode = ps.sem.duo_mode;
+    cg.idol_mode = ps.sem.idol_mode;
     cg.foreign_records = &ps.sem.foreign_records;
     cg.foreign_functions = &ps.sem.foreign_functions;
     cg.emit_module(&ps.mod) catch |e| {
@@ -5162,7 +4877,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
         std.process.exit(1);
     };
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = is_idol_source_path(src_path);
+    parser.idol_mode = is_idol_source_path(src_path);
     const mod = parser.parse_module() catch |err| {
         if (lex.last_error_loc) |loc| {
             term.locErr(loc, "lexer failed with {s}", .{@errorName(err)});
@@ -5174,7 +4889,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
 
     var buf: std.ArrayList(u8) = .empty;
     var pp = PrettyPrinter.init(alloc, &buf, .duo);
-    pp.canonical = canonical and parser.duo_mode;
+    pp.canonical = canonical and parser.idol_mode;
     pp.printModule(&mod) catch {
         term.err("failed to format '{s}'", .{src_path});
         std.process.exit(1);

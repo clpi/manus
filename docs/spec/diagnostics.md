@@ -1,10 +1,10 @@
-# duon 0.1 — Diagnostics (Pass 108)
+# Idol diagnostics projection
 
-**"Languages are judged in five minutes by one diagnostic"** (Pass 106 §1). Elm
-and Rust set the bar. To a newcomer, the first error message *is* the language —
-so this page is a language design document, not a formatting guide.
+**Languages are judged in five minutes by one diagnostic.** The first error
+message *is* the language — so this page is a language design document, not a
+formatting guide.
 
-Duo has machinery no incumbent has: facts with provenance, a repair ladder, a
+Idol has machinery no incumbent has: facts with provenance, a repair ladder, a
 canonicalizer that already knows the target form, and `why` as an ordinary
 compiler surface. A diagnostic that only *reports* is leaving all of that on the
 floor. Normative until the graph service hosts it.

@@ -112,9 +112,9 @@ pub fn inferFromCompile(
     backend: Backend,
     target: []const u8,
     native_scalar: bool,
-    duo_mode: bool,
+    idol_mode: bool,
 ) Manifest {
-    const repr: RepresentationProfile = if (!duo_mode)
+    const repr: RepresentationProfile = if (!idol_mode)
         .generic
     else if (native_scalar)
         .native
@@ -123,7 +123,7 @@ pub fn inferFromCompile(
 
     const runtime: RuntimeProfile = switch (backend) {
         .auto, .direct => .freestanding,
-        .c => if (native_scalar) .minimal else if (duo_mode) .dynamic else .full,
+        .c => if (native_scalar) .minimal else if (idol_mode) .dynamic else .full,
         .wasm => .minimal,
     };
 
@@ -133,7 +133,7 @@ pub fn inferFromCompile(
         .wasm => if (std.mem.eql(u8, target, "wasm32-wasi")) "wasm32-wasi" else "wasm",
     };
 
-    const boxing: []const u8 = if (native_scalar) "none" else if (duo_mode) "typed-mixed" else "full-dynamic";
+    const boxing: []const u8 = if (native_scalar) "none" else if (idol_mode) "typed-mixed" else "full-dynamic";
 
     return .{
         .backend = backend,

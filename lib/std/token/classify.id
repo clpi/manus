@@ -12,7 +12,7 @@ DESCRIPTOR_SCHEMA = "token-semantic-v0"
 KEYWORD_COUNT = 54
 PRODUCTION_CLASSIFIER = "classifier.branch_chain"
 
-# Categories: 1 = lua_keyword, 2 = duo_type, 3 = duo_contextual
+# Categories: 1 = lua_keyword, 2 = type_descriptor, 3 = contextual
 CATEGORY_LUA = 1
 CATEGORY_DUO_TYPE = 2
 CATEGORY_DUO_CONTEXTUAL = 3

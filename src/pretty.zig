@@ -562,7 +562,7 @@ pub const PrettyPrinter = struct {
             .call_stmt => |cs| try self.printExpr(cs.expr, 0),
             .expr_stmt => |es| try self.printExpr(es.expr, 0),
             .do_block => |db| {
-                if (self.mode == .duo and self.canonical) {
+                if (self.mode == .idol and self.canonical) {
                     for (db.body.stmts) |*s| {
                         try self.printStmt(s);
                         try self.nl();
@@ -601,7 +601,7 @@ pub const PrettyPrinter = struct {
                     try self.write(" ");
                 }
                 try self.printExpr(is.cond, 0);
-                if (self.mode == .lua or (self.mode == .duo and !self.canonical)) {
+                if (self.mode == .lua or (self.mode == .idol and !self.canonical)) {
                     try self.write(" then");
                 }
                 try self.printBlock(&is.then);
@@ -609,7 +609,7 @@ pub const PrettyPrinter = struct {
                     try self.nl();
                     try self.write("elseif ");
                     try self.printExpr(ei.cond, 0);
-                    if (self.mode == .lua or (self.mode == .duo and !self.canonical)) {
+                    if (self.mode == .lua or (self.mode == .idol and !self.canonical)) {
                         try self.write(" then");
                     }
                     try self.printBlock(&ei.body);
@@ -810,7 +810,7 @@ pub const PrettyPrinter = struct {
     pub fn printFuncBody(self: *PrettyPrinter, fb: *const ast.FuncBody) Error!void {
         // Reached ONLY from `.func_expr` — a lambda. A named declaration goes
         // through `printFuncDef`, so nothing here can move a `fun f() … end`.
-        if (self.mode == .duo) {
+        if (self.mode == .idol) {
             if (soleExpr(&fb.body)) |sole| {
                 // RE-SUGAR THE LENS. `parser.zig` desugars a leading `.name`
                 // into the lambda `(__proj_v) __proj_v.name` at PARSE time,
@@ -852,7 +852,7 @@ pub const PrettyPrinter = struct {
         // worse than the rejection it replaces. Keeping `fun` keeps the head
         // unambiguous, and it projects IDENTICALLY to the source for both the
         // sole-expression and the multi-statement body.
-        if (self.mode == .duo and !self.canonical) try self.write("fun");
+        if (self.mode == .idol and !self.canonical) try self.write("fun");
         try self.printFuncSig(fb);
         try self.printBlock(&fb.body);
         try self.nl();
@@ -1005,7 +1005,7 @@ pub const PrettyPrinter = struct {
     }
 
     fn printFuncSigParams(self: *PrettyPrinter, sig: *const ast.FuncSignature) !void {
-        if (!(self.mode == .duo and self.canonical)) try self.write("fun ");
+        if (!(self.mode == .idol and self.canonical)) try self.write("fun ");
         try self.write(sig.name);
         try self.write("(");
         for (sig.params, 0..) |param, i| {
@@ -1046,7 +1046,7 @@ pub fn prettyPrint(alloc: std.mem.Allocator, mod: *const Module, mode: Mode) ![]
 pub fn prettyPrintCanonical(alloc: std.mem.Allocator, mod: *const Module, mode: Mode, canonical: bool) ![]u8 {
     var buf = std.ArrayList(u8).empty;
     var pp = PrettyPrinter.init(alloc, &buf, mode);
-    pp.canonical = canonical and mode == .duo;
+    pp.canonical = canonical and mode == .idol;
     try pp.printModule(mod);
     return try buf.toOwnedSlice(alloc);
 }
@@ -1058,12 +1058,12 @@ pub fn formatJitClosureSource(alloc: std.mem.Allocator, fb: *const ast.FuncBody,
     var pp = PrettyPrinter.init(alloc, &buf, mode);
     if (fb.upvalues.len > 0) {
         try pp.write("return ");
-        if (mode == .duo) try pp.write("fun") else try pp.write("function");
+        if (mode == .idol) try pp.write("fun") else try pp.write("function");
         try pp.write("(");
         for (fb.upvalues, 0..) |uv, i| {
             if (i > 0) try pp.write(", ");
             try pp.write(uv.name);
-            if (mode == .duo) {
+            if (mode == .idol) {
                 if (uv.typ) |t| {
                     if (types.rt_to_type_name(t)) |nm| {
                         try pp.write(": ");
@@ -1077,7 +1077,7 @@ pub fn formatJitClosureSource(alloc: std.mem.Allocator, fb: *const ast.FuncBody,
     } else {
         try pp.write("return ");
     }
-    if (mode == .duo) try pp.write("fun") else try pp.write("function");
+    if (mode == .idol) try pp.write("fun") else try pp.write("function");
     try pp.printFuncSig(fb);
     try pp.printBlock(&fb.body);
     try pp.nl();
@@ -1101,7 +1101,7 @@ fn parseSource(alloc: std.mem.Allocator, src: []const u8) !Module {
 
 fn expectRoundTrip(alloc: std.mem.Allocator, src: []const u8) !void {
     const mod = try parseSource(alloc, src);
-    const out = try prettyPrint(alloc, &mod, .duo);
+    const out = try prettyPrint(alloc, &mod, .idol);
     defer alloc.free(out);
     if (!std.mem.eql(u8, src, out)) {
         std.debug.print("Round-trip mismatch:\n--- original ---\n{s}\n--- printed ---\n{s}\n", .{ src, out });
@@ -1204,7 +1204,7 @@ test "pretty: match normalizes legacy case arms" {
         \\end
         \\
     );
-    const out = try prettyPrint(alloc, &mod, .duo);
+    const out = try prettyPrint(alloc, &mod, .idol);
     defer alloc.free(out);
     try testing.expectEqualStrings(
         \\match x
@@ -1244,7 +1244,7 @@ test "pretty: canonical mode strips fun, then, and do/end wrapper" {
         \\end
         \\
     );
-    const out = try prettyPrintCanonical(alloc, &mod, .duo, true);
+    const out = try prettyPrintCanonical(alloc, &mod, .idol, true);
     defer alloc.free(out);
     try testing.expectEqualStrings(
         \\add(x: i64, y: i64) -> i64

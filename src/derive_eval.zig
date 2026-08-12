@@ -95,7 +95,7 @@ pub fn metadataFromFields(
 pub fn parseDeriveFunction(alloc: std.mem.Allocator, source: []const u8) !*const ast.FuncBody {
     var lex = lexer.Lexer.init(source, "<derive>");
     var p = parser.Parser.init(&lex, alloc);
-    p.duo_mode = true; // Enable Duo mode for derive macro syntax
+    p.idol_mode = true; // Enable Duo mode for derive macro syntax
     const module = try p.parse_module();
     for (module.body.stmts) |*stmt| {
         if (stmt.* == .func_decl) return &stmt.func_decl.func;

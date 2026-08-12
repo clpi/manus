@@ -110,18 +110,10 @@ identity and continuity boundary. Until the complete checked-fact comparison
 passes, suffix and path influence remain unclosed rather than being inferred
 from machine equality.
 
-The earlier Idol, Duo, and Duon names, the host names `duo_lexer_bridge` and
-`duo_mode`, the `.id` suffix, and the `duo` executable are historical or
-bootstrap provenance. These exact physical symbols and paths remain one
-implementation path, not a second language or command authority. Delete the
-bridge names when compiler B consumes the constitutional source fact directly;
-remove the executable alias after an `idol` entry invokes that same command
-authority in production. The generated runtime package search still spells
-`.id` in emitted C, and the current corpus, formatter, LSP, MCP, Tree-sitter,
-generators, and census enumerations still contain independent `.id`
-assumptions. Their deletion gate is a generated source-family projection
-consumed by each surface, with untracked `.id` candidates included and missing
-census input failing closed.
+Active bootstrap bridges (lock scripts, generated C lexer tables, physical tool
+aliases) remain only while `law.bridge.death` records owner, replacement, and
+deletion condition in `docs/bootstrap.md` or an open gap. Delete each bridge
+when its condition is met — do not relocate to legacy paths.
 
 The former synthetic bootstrap verifier was deleted. It had no production
 consumer, observed no compiler run, and modeled identity through three invented

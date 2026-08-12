@@ -390,7 +390,7 @@ pub const Sema = struct {
     module_globals: std.StringHashMapUnmanaged(RT) = .{},
     /// Module-scope Duo bindings retained after `check_module` (Pass 2 lattice queries).
     module_bindings: std.StringHashMapUnmanaged(Symbol) = .{},
-    /// Pass 34 L1 — req bindings treated as sealed-after-load unless mutated (duo_mode).
+    /// Pass 34 L1 — req bindings treated as sealed-after-load unless mutated (idol_mode).
     module_sealed: std.StringHashMapUnmanaged(void) = .{},
     /// Registry of declared enum types for exhaustiveness checking.
     enum_types: std.StringHashMapUnmanaged(RT) = .{},
@@ -449,7 +449,7 @@ pub const Sema = struct {
     /// When true, module scope starts with implicit `global *` (plain .lua files).
     lua55_mode: bool = false,
     /// When true, variables are local by default ( .id files).
-    duo_mode: bool = false,
+    idol_mode: bool = false,
     /// When type-checking a named top-level function body, its Duo name (for table field keys).
     current_func_name: ?[]const u8 = null,
     /// Active generic type parameters while checking a generic function body.
@@ -689,12 +689,12 @@ pub const Sema = struct {
     }
 
     fn noteModuleSealingFromInit(self: *Sema, name: []const u8, init_expr: *const ast.Expr) !void {
-        if (!self.duo_mode) return;
+        if (!self.idol_mode) return;
         if (reqInitPath(init_expr) != null) try self.markModuleSealed(name);
     }
 
     fn noteModuleSealingInvalidation(self: *Sema, tgt: *const ast.Expr, value: ?*const ast.Expr) void {
-        if (!self.duo_mode) return;
+        if (!self.idol_mode) return;
         switch (tgt.*) {
             .name => |n| {
                 if (self.module_sealed.contains(n.ident)) {
@@ -1031,7 +1031,7 @@ pub const Sema = struct {
                         self.err(n.loc, "attempt to modify read-only vararg table '{s}'", .{n.ident});
                     }
                 } else {
-                    if (self.duo_mode) {
+                    if (self.idol_mode) {
                         // In duo mode, undeclared variables are local by default
                         try self.scope.define(n.ident, .{
                             .typ = .any,
@@ -1766,7 +1766,7 @@ pub const Sema = struct {
                     };
                 },
                 .assign => |as| {
-                    if (self.duo_mode) for (as.targets) |tgt| {
+                    if (self.idol_mode) for (as.targets) |tgt| {
                         if (tgt.* == .name) {
                             self.scope.define(tgt.name.ident, .{ .typ = .any, .is_const = false }) catch {};
                         }
@@ -1777,7 +1777,7 @@ pub const Sema = struct {
         }
         try self.registerForeignScopeNames();
         try self.check_block(&mod.body);
-        if (self.duo_mode) try self.snapshotModuleBindings();
+        if (self.idol_mode) try self.snapshotModuleBindings();
         self.scope.pop();
     }
 
@@ -2249,7 +2249,7 @@ pub const Sema = struct {
                     if (i < ld.inits.len) {
                         try self.noteModuleSealingFromInit(lname.ident, ld.inits[i]);
                     }
-                    if (self.duo_mode and self.hints_enabled and lname.typ == .inferred and lname.attrib == null) {
+                    if (self.idol_mode and self.hints_enabled and lname.typ == .inferred and lname.attrib == null) {
                         if (t == .i64 or t == .f64 or t == .str or t == .bool) {
                             var tbuf: [32]u8 = undefined;
                             const tname = t.duo_name(&tbuf);
@@ -2353,7 +2353,7 @@ pub const Sema = struct {
                         try self.maybe_register_meta_concept(tgt.name.ident, as.values[i]);
                         // At module scope in duo mode, infer type from literal
                         // initializer and register as global for better codegen.
-                        if (self.duo_mode and self.scope.maps.items.len == 1) {
+                        if (self.idol_mode and self.scope.maps.items.len == 1) {
                             const inferred = self.infer_literal_type(as.values[i]);
                             if (inferred != .any) {
                                 try self.note_global(tgt.name.ident, inferred);
@@ -2759,7 +2759,7 @@ pub const Sema = struct {
                     }
                     return sym.typ;
                 }
-                if (self.duo_mode and !self.is_builtin_global(n.ident)) {
+                if (self.idol_mode and !self.is_builtin_global(n.ident)) {
                     // Implicit local: bare bindings and forward references are module/file locals.
                     try self.scope.define(n.ident, .{ .typ = .any, .is_const = false });
                     return .any;
@@ -3061,7 +3061,7 @@ pub const Sema = struct {
                         return .any;
                     }
                 }
-                if (self.duo_mode and c.func.* == .name) {
+                if (self.idol_mode and c.func.* == .name) {
                     const callee = c.func.name.ident;
                     if (self.foreign_functions.get(callee)) |ff| {
                         debug_trace.event(.sema, .foreign, "pass26 call boundary={s}", .{ff.boundary_id});
@@ -3418,7 +3418,7 @@ pub const Sema = struct {
     /// Returns true when the operands are both tensors (checking continues to
     /// the shape rules). Returns false after reporting, which is the honest
     /// answer for every other operand pair. `.lua` files are untouched: the
-    /// gate is `duo_mode`, the same switch `comptime` already errors through,
+    /// gate is `idol_mode`, the same switch `comptime` already errors through,
     /// and `examples/compile_fail/anchor_infix_at.lua` is the positive control
     /// that fails if that guard is ever dropped.
     ///
@@ -3446,7 +3446,7 @@ pub const Sema = struct {
         //
         // BEFORE either operand is checked, and that ordering is the whole
         // correctness argument. `check_expr` on an unbound name IMPLICITLY
-        // DEFINES it as an `any` local (the duo_mode arm of the `.name` case),
+        // DEFINES it as an `any` local (the idol_mode arm of the `.name` case),
         // so a resolver that ran afterwards would be resolving against a
         // binding it had just created — and `law.shadow` would then fire on
         // every bare case, blaming the reader for the checker's own side
@@ -3455,7 +3455,7 @@ pub const Sema = struct {
         const lt = try self.check_expr(lhs);
         const rt = try self.check_expr(rhs);
 
-        if (op == .matmul and self.duo_mode) {
+        if (op == .matmul and self.idol_mode) {
             if (!self.check_infix_at(loc, lt, rt)) return .any;
         }
 
@@ -3950,7 +3950,7 @@ pub const Sema = struct {
         if (contract_ret_expr(fb) == .inferred) all_typed = false;
         fb.is_typed = all_typed;
 
-        if (self.duo_mode and self.hints_enabled and !all_typed and fd.path.len >= 1) {
+        if (self.idol_mode and self.hints_enabled and !all_typed and fd.path.len >= 1) {
             self.hint_msg(fd.loc, "function '{s}' has untyped parameters or return; add types (e.g. i64, str) for faster native codegen", .{fd.path[0]});
         }
 
@@ -11513,10 +11513,10 @@ fn runIdolSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     const alloc = arena.allocator();
     var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     return s;
 }
@@ -11588,10 +11588,10 @@ test "sema: Pass25 loop-carried tail demand types factorial body" {
     ;
     var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
     const fd = mod.body.stmts[0].func_decl;
@@ -11615,10 +11615,10 @@ test "sema: loop body assignment is not implicit function return" {
     ;
     var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
@@ -11655,10 +11655,10 @@ test "sema: module_sealed lattice fact for req bindings (Pass 34 L1)" {
     ;
     var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
     try testing.expect(!s.moduleSealed("m"));
@@ -11727,7 +11727,7 @@ test "sema: Pass23 colon method assign infers native str signature" {
     const src = "Person:greet = (other) \"Hey \" .. other";
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
     try s.check_module(&mod);
@@ -11746,7 +11746,7 @@ test "sema: Pass23 string interpolation infers str return" {
     const src = "Person:greet = (other) \"Hey {other}\"";
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
     try s.check_module(&mod);
@@ -11763,7 +11763,7 @@ test "sema: Pass23 colon method compound field assign with descriptor" {
     const src = "Vec: @{ x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
     try s.check_module(&mod);
@@ -12347,7 +12347,7 @@ fn runSemaDuo(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     return s;
 }
@@ -12436,7 +12436,7 @@ test "sema: duo mode — global keyword creates module-scope binding" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
     // Verify the variable was registered as a module global
@@ -12455,7 +12455,7 @@ test "sema: duo mode — global binding is marked is_global" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
     try testing.expect(s.module_globals.get("myvar") != null);
@@ -12488,7 +12488,7 @@ test "sema: duo mode — both local and bare create local bindings" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
     // Neither a nor b should appear in module_globals
@@ -12508,7 +12508,7 @@ test "sema: duo mode — bare assignment does not create global" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
     // x should NOT be in module_globals since it was auto-local
@@ -13163,10 +13163,10 @@ test "sema: pass34 L1 module_sealed req binding" {
     ;
     var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expect(s.moduleSealed("m"));
     try testing.expect(!s.moduleSealed("x"));
@@ -13182,10 +13182,10 @@ test "sema: pass34 L1 module_sealed invalidated on reassignment" {
     ;
     var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expect(!s.moduleSealed("m"));
 }
@@ -13603,7 +13603,7 @@ test "sema: __constexpr is accepted as a compiler intrinsic in duo mode" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
@@ -13621,7 +13621,7 @@ test "sema: tensor matmul infers output shape" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
@@ -13631,7 +13631,7 @@ test "sema: tensor matmul infers output shape" {
 // refusal of a SPACED `@` over non-tensors, row 2 is `.lua` still holding the
 // operator, row 3 is the tensor product still legal in `.id` — asserted by
 // "sema: tensor matmul infers output shape" directly above, which runs with
-// duo_mode = true and expects zero errors.
+// idol_mode = true and expects zero errors.
 //
 // The GLUED spelling never reaches here at all: after 3f6ec4e the parser reads
 // `p@x` as an anchor suffix, so it is a `field` node, not a binop. That is the
@@ -13650,7 +13650,7 @@ test "sema: duo mode infix @ over non-tensor operands is an error" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expect(s.errors > 0);
 }
@@ -13668,7 +13668,7 @@ test "sema: lua mode infix @ over non-tensor operands is not an error" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = false;
+    s.idol_mode = false;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
@@ -13686,7 +13686,7 @@ test "sema: tensor matmul K mismatch emits error" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expect(s.errors > 0);
 }
@@ -13704,7 +13704,7 @@ test "sema: tensor matmul return type mismatch emits error" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expect(s.errors > 0);
 }
@@ -13722,7 +13722,7 @@ test "sema: tensor matmul symbolic K mismatch emits error" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expect(s.errors > 0);
 }
@@ -13740,7 +13740,7 @@ test "sema: tensor add broadcast infers output shape" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
@@ -13758,7 +13758,7 @@ test "sema: tensor add broadcast incompatible emits error" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.duo_mode = true;
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expect(s.errors > 0);
 }

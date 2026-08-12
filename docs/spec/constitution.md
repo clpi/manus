@@ -5976,13 +5976,17 @@ zerohistory = law{
     holds = .current
     binds = {
         "ZERO-HISTORY the active repository is not a museum — it contains current Idol current foreign interoperability and currently executed bounded bootstrap bridges and nothing else — git stores history current semantic law stores truth the graph stores meaning demand stores necessity realization stores physics",
+        "canonical identity language Idol source .id binary idol repository idollang/idol — delete current-tree references to former project or language names except when inspecting git history outside committed source",
         "no retired name source form module system pass taxonomy compatibility layer historical fixture migration document old edge vocabulary old identity wrapper or host shaped semantic subsystem receives permanent residence merely because deleting it would lose provenance — provenance already exists in git",
         "durable corpus states are current and foreign only — historical legacy migration compat deprecated old and pass number archive are not durable states and git owns those histories",
         "do not maintain language.history — the active tree represents current Idol only",
         "do not preserve old environment variable prefixes exported symbol prefixes package names artifact names or executable aliases",
         "delete comments of the form formerly historical was X migration legacy retired in old path previously unless the statement is required to operate a current external compatibility boundary",
         "every gap is either an open current obligation or resolved and deleted — an open gap contains only current missing fact evidence owner acceptance proof and deletion condition — no chronological archive no retired names no obsolete implementation narrative no pass references",
-        "generated projections consume only current C0 and current open obligations — no old gap titles old brands mutable session envelopes or committed stale state",
+        "generated stable harness projection contains no mutable runtime session envelope — current revision dirty state and claims are ephemeral at session start and never committed",
+        "verification census targets for current project-owned content retired project names zero retired source suffixes zero pass-number and spec-number architecture zero current std and lib semantic roots zero req import module semantic systems zero inverse conversion aliases zero adjective protocols zero committed stale session envelopes zero resolved gap archives",
+        "text census discovers debt — semantic invariants and adversarial controls convict equivalent architecture under different spelling",
+        "rename by semantic reduction never rebranding — duo_lexer to idol_lexer only when brand distinction is independently meaningful otherwise prefer lexer dispatch realization machine relation graph",
     }
     fails = "retired architecture preserved as permanent resident in the active tree when git already stores its history"
 }

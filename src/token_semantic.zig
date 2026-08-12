@@ -1,7 +1,4 @@
-//! Pass 12 M1 — canonical token/keyword semantic source (P12-WS6 / P12-M1).
-//!
-//! Single source of truth for reserved words. `lexer.zig` consumes `lookupKeyword`.
-//! Projections: compiler metadata, classifier, spelling, formatter, LSP, MCP, tests.
+//! Canonical token/keyword semantic source.
 const std = @import("std");
 const lexer = @import("lexer.zig");
 const keyword_bridge = @import("keyword_bridge.zig");
@@ -14,14 +11,14 @@ pub const SCHEMA_VERSION = "token-semantic-v0";
 
 pub const Category = enum {
     lua_keyword,
-    duo_type,
-    duo_contextual,
+    type_descriptor,
+    contextual,
 
     pub fn name(self: Category) []const u8 {
         return switch (self) {
             .lua_keyword => "lua_keyword",
-            .duo_type => "duo_type",
-            .duo_contextual => "duo_contextual",
+            .type_descriptor => "type_descriptor",
+            .contextual => "contextual",
         };
     }
 };
@@ -62,35 +59,35 @@ pub const keywords: []const KeywordEntry = &.{
     .{ .text = "true", .kind = .kw_true, .category = .lua_keyword, .diagnostic = "keyword 'true'" },
     .{ .text = "until", .kind = .kw_until, .category = .lua_keyword, .diagnostic = "keyword 'until'" },
     .{ .text = "while", .kind = .kw_while, .category = .lua_keyword, .diagnostic = "keyword 'while'" },
-    .{ .text = "const", .kind = .kw_const, .category = .duo_type, .diagnostic = "keyword 'const'" },
-    .{ .text = "enum", .kind = .kw_enum, .category = .duo_type, .diagnostic = "keyword 'enum'" },
-    .{ .text = "i8", .kind = .kw_i8, .category = .duo_type, .diagnostic = "type 'i8'" },
-    .{ .text = "i16", .kind = .kw_i16, .category = .duo_type, .diagnostic = "type 'i16'" },
-    .{ .text = "i32", .kind = .kw_i32, .category = .duo_type, .diagnostic = "type 'i32'" },
-    .{ .text = "i64", .kind = .kw_i64, .category = .duo_type, .diagnostic = "type 'i64'" },
-    .{ .text = "u8", .kind = .kw_u8, .category = .duo_type, .diagnostic = "type 'u8'" },
-    .{ .text = "u16", .kind = .kw_u16, .category = .duo_type, .diagnostic = "type 'u16'" },
-    .{ .text = "u32", .kind = .kw_u32, .category = .duo_type, .diagnostic = "type 'u32'" },
-    .{ .text = "u64", .kind = .kw_u64, .category = .duo_type, .diagnostic = "type 'u64'" },
-    .{ .text = "f32", .kind = .kw_f32, .category = .duo_type, .diagnostic = "type 'f32'" },
-    .{ .text = "f64", .kind = .kw_f64, .category = .duo_type, .diagnostic = "type 'f64'" },
-    .{ .text = "bool", .kind = .kw_bool, .category = .duo_type, .diagnostic = "type 'bool'" },
-    .{ .text = "void", .kind = .kw_void, .category = .duo_type, .diagnostic = "type 'void'" },
-    .{ .text = "str", .kind = .kw_str, .category = .duo_type, .diagnostic = "type 'str'" },
-    .{ .text = "match", .kind = .kw_match, .category = .duo_contextual, .diagnostic = "keyword 'match'" },
-    .{ .text = "try", .kind = .kw_try, .category = .duo_contextual, .diagnostic = "keyword 'try'" },
-    .{ .text = "catch", .kind = .kw_catch, .category = .duo_contextual, .diagnostic = "keyword 'catch'" },
-    .{ .text = "defer", .kind = .kw_defer, .category = .duo_contextual, .diagnostic = "keyword 'defer'" },
-    .{ .text = "async", .kind = .kw_async, .category = .duo_contextual, .diagnostic = "keyword 'async'" },
-    .{ .text = "await", .kind = .kw_await, .category = .duo_contextual, .diagnostic = "keyword 'await'" },
-    .{ .text = "concept", .kind = .kw_concept, .category = .duo_contextual, .diagnostic = "keyword 'concept'" },
-    .{ .text = "alias", .kind = .kw_alias, .category = .duo_contextual, .diagnostic = "keyword 'alias'" },
-    .{ .text = "private", .kind = .kw_private, .category = .duo_contextual, .diagnostic = "keyword 'private'" },
-    .{ .text = "extends", .kind = .kw_extends, .category = .duo_contextual, .diagnostic = "keyword 'extends'" },
-    .{ .text = "macro", .kind = .kw_macro, .category = .duo_contextual, .diagnostic = "keyword 'macro'" },
-    .{ .text = "comptime", .kind = .kw_comptime, .category = .duo_contextual, .diagnostic = "keyword 'comptime'" },
-    .{ .text = "by", .kind = .kw_by, .category = .duo_contextual, .diagnostic = "keyword 'by'" },
-    .{ .text = "let", .kind = .kw_let, .category = .duo_contextual, .diagnostic = "keyword 'let'" },
+    .{ .text = "const", .kind = .kw_const, .category = .type_descriptor, .diagnostic = "keyword 'const'" },
+    .{ .text = "enum", .kind = .kw_enum, .category = .type_descriptor, .diagnostic = "keyword 'enum'" },
+    .{ .text = "i8", .kind = .kw_i8, .category = .type_descriptor, .diagnostic = "type 'i8'" },
+    .{ .text = "i16", .kind = .kw_i16, .category = .type_descriptor, .diagnostic = "type 'i16'" },
+    .{ .text = "i32", .kind = .kw_i32, .category = .type_descriptor, .diagnostic = "type 'i32'" },
+    .{ .text = "i64", .kind = .kw_i64, .category = .type_descriptor, .diagnostic = "type 'i64'" },
+    .{ .text = "u8", .kind = .kw_u8, .category = .type_descriptor, .diagnostic = "type 'u8'" },
+    .{ .text = "u16", .kind = .kw_u16, .category = .type_descriptor, .diagnostic = "type 'u16'" },
+    .{ .text = "u32", .kind = .kw_u32, .category = .type_descriptor, .diagnostic = "type 'u32'" },
+    .{ .text = "u64", .kind = .kw_u64, .category = .type_descriptor, .diagnostic = "type 'u64'" },
+    .{ .text = "f32", .kind = .kw_f32, .category = .type_descriptor, .diagnostic = "type 'f32'" },
+    .{ .text = "f64", .kind = .kw_f64, .category = .type_descriptor, .diagnostic = "type 'f64'" },
+    .{ .text = "bool", .kind = .kw_bool, .category = .type_descriptor, .diagnostic = "type 'bool'" },
+    .{ .text = "void", .kind = .kw_void, .category = .type_descriptor, .diagnostic = "type 'void'" },
+    .{ .text = "str", .kind = .kw_str, .category = .type_descriptor, .diagnostic = "type 'str'" },
+    .{ .text = "match", .kind = .kw_match, .category = .contextual, .diagnostic = "keyword 'match'" },
+    .{ .text = "try", .kind = .kw_try, .category = .contextual, .diagnostic = "keyword 'try'" },
+    .{ .text = "catch", .kind = .kw_catch, .category = .contextual, .diagnostic = "keyword 'catch'" },
+    .{ .text = "defer", .kind = .kw_defer, .category = .contextual, .diagnostic = "keyword 'defer'" },
+    .{ .text = "async", .kind = .kw_async, .category = .contextual, .diagnostic = "keyword 'async'" },
+    .{ .text = "await", .kind = .kw_await, .category = .contextual, .diagnostic = "keyword 'await'" },
+    .{ .text = "concept", .kind = .kw_concept, .category = .contextual, .diagnostic = "keyword 'concept'" },
+    .{ .text = "alias", .kind = .kw_alias, .category = .contextual, .diagnostic = "keyword 'alias'" },
+    .{ .text = "private", .kind = .kw_private, .category = .contextual, .diagnostic = "keyword 'private'" },
+    .{ .text = "extends", .kind = .kw_extends, .category = .contextual, .diagnostic = "keyword 'extends'" },
+    .{ .text = "macro", .kind = .kw_macro, .category = .contextual, .diagnostic = "keyword 'macro'" },
+    .{ .text = "comptime", .kind = .kw_comptime, .category = .contextual, .diagnostic = "keyword 'comptime'" },
+    .{ .text = "by", .kind = .kw_by, .category = .contextual, .diagnostic = "keyword 'by'" },
+    .{ .text = "let", .kind = .kw_let, .category = .contextual, .diagnostic = "keyword 'let'" },
 };
 
 pub const intent: proof_carrying.IntentContract = .{
@@ -165,7 +162,7 @@ pub const ClassifierId = enum {
 pub const production_classifier: ClassifierId = .branch_chain;
 
 /// Production authority: Duo classify projection (P16-WS3 M1 integration).
-pub const production_authority: enum { duo_classify, host_branch_chain } = .duo_classify;
+pub const production_authority: enum { bridge_classify, host_branch_chain } = .bridge_classify;
 
 pub const LookupFn = *const fn ([]const u8) ?lexer.TokenKind;
 
@@ -222,7 +219,7 @@ pub fn classifyWith(id: ClassifierId, text: []const u8) ?lexer.TokenKind {
 /// Production entry — Duo-native classify (host branch_chain retained as differential oracle).
 pub fn lookupKeyword(text: []const u8) ?lexer.TokenKind {
     return switch (production_authority) {
-        .duo_classify => keyword_bridge.lookupKeyword(text),
+        .bridge_classify => keyword_bridge.lookupKeyword(text),
         .host_branch_chain => classifyWith(production_classifier, text),
     };
 }

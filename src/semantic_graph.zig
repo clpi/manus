@@ -2090,12 +2090,12 @@ pub const SemanticGraph = struct {
         try out.appendSlice(alloc, "]}");
     }
 
-    /// Relative sidecar path: `.duo/graph/<stem>.json`.
+    /// Relative sidecar path: `.idol/graph/<stem>.json`.
     pub fn sidecarRelPath(src_path: []const u8, buf: []u8) []const u8 {
         const base = std.fs.path.basename(src_path);
         const ext = std.fs.path.extension(base);
         const stem = if (ext.len > 0 and ext.len <= base.len) base[0 .. base.len - ext.len] else base;
-        return std.fmt.bufPrint(buf, ".duo/graph/{s}.json", .{stem}) catch ".duo/graph/module.json";
+        return std.fmt.bufPrint(buf, ".idol/graph/{s}.json", .{stem}) catch ".idol/graph/module.json";
     }
 
     /// Persist graph JSON sidecar invalidated by source hash (Phase 1 A1).
@@ -2245,14 +2245,14 @@ test "semantic_graph: function identities carry resolved result descriptors" {
         \\ready(): bool
         \\    true
     ;
-    var lex = Lexer.init(src, "results.duo");
+    var lex = Lexer.init(src, "results.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
 
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModule(&module, "results.duo");
+    _ = try g.liftModule(&module, "results.id");
 
     try std.testing.expectEqual(types.ResolvedType.f64, g.funcResultDescriptor("measure").?);
     try std.testing.expectEqual(types.ResolvedType.str, g.funcResultDescriptor("label").?);
@@ -2277,12 +2277,12 @@ test "semantic_graph: checked subject application retains relation and value ide
     ;
     var lex = Lexer.init(src, "application.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
 
     var checked = sema.Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
 
     var graph = SemanticGraph.init(alloc);
@@ -2400,11 +2400,11 @@ test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
     ;
     var lex = Lexer.init(src, "order.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var checked = sema.Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
 
     var g = SemanticGraph.init(alloc);
@@ -2465,11 +2465,11 @@ test "semantic_graph: moduleFunctionEmitOrder condenses recursive dependencies" 
     ;
     var lex = Lexer.init(src, "recursive.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var checked = sema.Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
 
     var g = SemanticGraph.init(alloc);
@@ -2514,13 +2514,13 @@ test "semantic_graph: liftAliasShapes records native storage class" {
         \\alias Point = { x: f64, y: f64 }
         \\function main()
         \\end
-    , "test.duo");
+    , "test.id");
     var parser = Parser.init(&lex, alloc);
     const module = try parser.parse_module();
 
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleFull(&module, "test.duo");
+    _ = try g.liftModuleFull(&module, "test.id");
     const point_id = g.findByName("Point") orelse return error.TestExpectedEqual;
     const node = g.get(point_id).?;
     try std.testing.expectEqual(.table_shape, node.kind);
@@ -2558,13 +2558,13 @@ test "semantic_graph: liftEnumShapes records enum variants" {
         \\end
         \\function main()
         \\end
-    , "test.duo");
+    , "test.id");
     var parser = Parser.init(&lex, alloc);
     const module = try parser.parse_module();
 
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleFull(&module, "test.duo");
+    _ = try g.liftModuleFull(&module, "test.id");
     const node = g.findEnumShape("Color") orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(.enum_shape, node.kind);
     try std.testing.expectEqual(@as(u16, 3), node.field_count);
@@ -2584,16 +2584,16 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
         \\end
         \\function main()
         \\end
-    , "test.duo");
+    , "test.id");
     var parser = Parser.init(&lex, alloc);
     const module = try parser.parse_module();
 
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleFull(&module, "test.duo");
+    _ = try g.liftModuleFull(&module, "test.id");
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
-    try g.writeJson(alloc, "test.duo", &json, null);
+    try g.writeJson(alloc, "test.id", &json, null);
     const s = json.items;
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, s, .{});
     defer parsed.deinit();
@@ -2873,11 +2873,11 @@ test "semantic_graph: checked occurrences keep distinct packed ranges" {
     ;
     var lexer = Lexer.init(source, "ranges.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var checked = sema.Sema.init(alloc);
     defer checked.deinit();
-    checked.duo_mode = true;
+    checked.idol_mode = true;
     try checked.check_module(&module);
 
     var probe = SemanticGraph.init(alloc);
@@ -2975,7 +2975,7 @@ test "semantic_graph: duplicate declaration provenance refuses" {
         \\    0
     , "duplicate-declaration.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
 
     var graph = SemanticGraph.init(alloc);
@@ -3012,7 +3012,7 @@ test "semantic_graph: liftFunctionBindings creates inline table_shape" {
         \\    0
     , "binding.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
 
     var g = SemanticGraph.init(alloc);
@@ -3042,13 +3042,13 @@ test "semantic_graph: native alias lift attaches shape transforms" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lex = Lexer.init("alias Point = { x: f64, y: f64 }", "test.duo");
+    var lex = Lexer.init("alias Point = { x: f64, y: f64 }", "test.id");
     var parser = Parser.init(&lex, alloc);
     const module = try parser.parse_module();
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
     const mod_id = try g.addNode(.{ .kind = .module, .span = .{ .file = "t", .start = 0, .end = 0 }, .name = "t" });
-    try g.liftAliasShapes(&module, "test.duo", mod_id);
+    try g.liftAliasShapes(&module, "test.id", mod_id);
     try std.testing.expect(countTransformApps(&g, "shape.lift") >= 1);
     try std.testing.expect(countTransformApps(&g, "shape.specialize") >= 1);
     const point = g.findTableShape("Point") orelse return error.TestExpectedEqual;
@@ -3066,13 +3066,13 @@ test "semantic_graph: alias extension builds descriptor composition" {
     var lex = Lexer.init(
         \\alias Named = { name: str }
         \\alias Colored = Named
-    , "test.duo");
+    , "test.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleFull(&module, "test.duo");
+    _ = try g.liftModuleFull(&module, "test.id");
     const colored = g.findTableShape("Colored") orelse return error.TestExpectedEqual;
     try std.testing.expect(colored.descriptor_label != null);
     try std.testing.expectEqualStrings("Named+Colored", colored.descriptor_label.?);
@@ -3102,13 +3102,13 @@ test "semantic_graph: descriptor lifecycle facts need no parallel identity" {
     var lex = Lexer.init(
         \\PairA: { first: i32, second: str }
         \\PairB: { first: i32, second: str }
-    , "test.duo");
+    , "test.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleFull(&module, "test.duo");
+    _ = try g.liftModuleFull(&module, "test.id");
     const pair_a = g.findTableShape("PairA") orelse return error.TestExpectedEqual;
     const pair_b = g.findTableShape("PairB") orelse return error.TestExpectedEqual;
     try std.testing.expect(pair_a.descriptor_state == .sealed);
@@ -3153,13 +3153,13 @@ test "semantic_graph: alias with derive builds transform descriptor label" {
     var lex = Lexer.init(
         \\@derive(Display, Eq)
         \\type Vec2 = { x: f64, y: f64 }
-    , "test.duo");
+    , "test.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleFull(&module, "test.duo");
+    _ = try g.liftModuleFull(&module, "test.id");
     const vec = g.findTableShape("Vec2") orelse return error.TestExpectedEqual;
     try std.testing.expect(vec.descriptor_label != null);
     try std.testing.expectEqualStrings("Vec2~Display~Eq", vec.descriptor_label.?);
@@ -3178,13 +3178,13 @@ test "semantic_graph: pipeline face normalizes to an iteration relation" {
         \\fun main()
         \\  x = 21 |> double
         \\end
-    , "test.duo");
+    , "test.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
     var g = SemanticGraph.init(alloc);
     defer g.deinit();
-    const mod_id = try g.liftModuleWithCalls(&module, "test.duo");
+    const mod_id = try g.liftModuleWithCalls(&module, "test.id");
     _ = mod_id;
     try std.testing.expectEqual(@as(usize, 1), g.countKind(.relation));
     for (g.nodes.items) |node| {
@@ -3193,7 +3193,7 @@ test "semantic_graph: pipeline face normalizes to an iteration relation" {
     }
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
-    try g.writeJson(alloc, "test.duo", &json, null);
+    try g.writeJson(alloc, "test.id", &json, null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"kind\":\"relation\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"relation\":\"map\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"kind\":\"pipeline\"") == null);
@@ -3226,7 +3226,7 @@ test "semantic_graph: identity lookup survives a param that shadows a function n
     ;
     var lex = Lexer.init(src, "shadow.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
 
     var g = SemanticGraph.init(alloc);
@@ -3253,7 +3253,7 @@ test "semantic_graph: same-named params in different functions get distinct ids"
     ;
     var lex = Lexer.init(src, "params.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
 
     var g = SemanticGraph.init(alloc);
@@ -3288,7 +3288,7 @@ test "semantic_graph: four calls to one callee in one body are four identities" 
     ;
     var lex = Lexer.init(src, "calls.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const module = try parser.parse_module();
 
     var g = SemanticGraph.init(alloc);

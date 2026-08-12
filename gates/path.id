@@ -81,9 +81,7 @@ foreign: bool = (path: str)
     path:len() >= 4 and path:sub(1, 4) == "ext/"
 
 historical: bool = (path: str)
-    path:len() >= 9 and path:sub(1, 9) == "examples/"
-    or path:len() >= 12 and path:sub(1, 12) == "benchmarks/"
-    or path:len() >= 5 and path:sub(1, 5) == ".duo/"
+    path:len() >= 12 and path:sub(1, 12) == "benchmarks/"
     or path:len() >= 7 and path:sub(1, 7) == "vendor/"
 
 owned: bool = (path: str)

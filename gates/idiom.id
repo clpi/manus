@@ -975,6 +975,9 @@ scanq: i64 = (body: str, quiet: bool)
 scan: i64 = (body: str)
     scanq(body, false)
 
+scanprobe: i64 = (body: str)
+    body:len()
+
 probescan: i64 = (body: str)
     scanq(body, true)
 

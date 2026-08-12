@@ -77,7 +77,7 @@ pub const Parser = struct {
     /// the start of the next arm is not greedily consumed as an index suffix.
     match_arm_depth: u32 = 0,
     /// When true (.id source), emit deprecation warnings for `then` and `local`.
-    duo_mode: bool = false,
+    idol_mode: bool = false,
     /// Nesting inside function bodies; bare `name()` func decls are module-scope only.
     func_body_depth: u32 = 0,
     /// Pass 108 R2/R1 and Pass 100 §2 THE ANCHOR — the two pieces of POSITION a
@@ -259,7 +259,7 @@ pub const Parser = struct {
         // of the benchmark's correctness oracle) failed to compile at HEAD
         // with "'end' at column 13 closes a block opened at column 9", so
         // `zig build bench` could not reach a single RESULT row.
-        if (!self.duo_mode) return f;
+        if (!self.idol_mode) return f;
         const o = open orelse return f;
         f.open_line = o.line;
         f.open_col = o.col;
@@ -341,7 +341,7 @@ pub const Parser = struct {
             return;
         }
         if (offside) return;
-        if (self.duo_mode) {
+        if (self.idol_mode) {
             const edge = try self.pk();
             term.locErr(edge.loc, "this block opened at column {d} is still open at the file edge", .{open.col});
             term.locHint(edge.loc, "outdent to close the block — `end` is deleted in .id source", .{});
@@ -480,7 +480,7 @@ pub const Parser = struct {
     fn expect(self: *Parser, kind: TK) ParseError!Token {
         const tok = try self.adv();
         if (tok.kind != kind) {
-            if (self.duo_mode and kind == .kw_end) {
+            if (self.idol_mode and kind == .kw_end) {
                 term.locErr(tok.loc, "this line continues a block that already closed by dedent", .{});
                 term.locHint(tok.loc, "remove `end` — .id blocks close by outdent only", .{});
             } else {
@@ -503,7 +503,7 @@ pub const Parser = struct {
     fn eat_deprecated(self: *Parser, kind: TK) ParseError!void {
         if ((try self.pk()).kind == kind) {
             const tok = try self.adv();
-            if (self.duo_mode) {
+            if (self.idol_mode) {
                 term.locHint(tok.loc, "'{s}' is optional in .id files and can be omitted", .{kind.spelling()});
             }
         }
@@ -1269,7 +1269,7 @@ pub const Parser = struct {
     /// This fires for `.id` input ONLY. Duo is a Lua superset and `.lua`
     /// input keeps today's behaviour unchanged; the dialect is selected from
     /// the file extension by `is_duo_source_path` in main.zig, which sets
-    /// `duo_mode`. That is the same switch `comptime` already rejects on, not
+    /// `idol_mode`. That is the same switch `comptime` already rejects on, not
     /// a new one. It is also the owner's scoping ruling made mechanical
     /// (2026-08-08): "lua backcompat should work native mode for lua files
     /// only" — `.lua` keeps the whole compatibility surface and lowers
@@ -1305,7 +1305,7 @@ pub const Parser = struct {
     /// `alias` 14, `const` 10, `enum` 9, `match` 8, `local` 0-in-corpus but
     /// alive in 17 Duo fixtures EMBEDDED IN ZIG (`src/codegen.zig`,
     /// `src/dnir_lower.zig`, `src/sema.zig`, `src/lua_superset_corpus.zig`)
-    /// that parse with `duo_mode = true` — one of which, "a function-body
+    /// that parse with `idol_mode = true` — one of which, "a function-body
     /// local outranks a module global of the same name", has `local` as its
     /// SUBJECT and needs the Lua dialect rather than a rewrite. Each needs a
     /// corpus migration before it can become an error; `string.` (175 files)
@@ -1316,7 +1316,7 @@ pub const Parser = struct {
             term.locHint(tok.loc, "metaprogramming is expressed through ordinary relations and compile-time facts", .{});
             return ParseError.UnexpectedToken;
         }
-        if (!self.duo_mode) return;
+        if (!self.idol_mode) return;
         const replacement: []const u8 = switch (tok.kind) {
             .kw_try, .kw_catch => "Pass 100 §0.5: bind the result and route it — `if v, err = f(x) use(v) else report(err)`",
             .kw_defer => "Pass 100 §15: scope exit is structural — hold the resource in a descriptor value whose release is its own, or route the failure with a result pack",
@@ -2392,7 +2392,7 @@ pub const Parser = struct {
         const result = try self.parse_func_decl_after_first(is_local, attrs, tok.loc);
         // Emit hint only in .id mode and only when the function has typed params
         // (bare syntax requires at least one typed param for disambiguation).
-        if (self.duo_mode) {
+        if (self.idol_mode) {
             if (result == .func_decl) {
                 const fb = result.func_decl.func;
                 var has_typed = false;
@@ -3764,7 +3764,7 @@ pub const Parser = struct {
         // form measured worse than the equivalent `if`/`elseif` chain, and a
         // named `const` used as a pattern silently becomes a catch-all binding
         // rather than a comparison.
-        if (self.duo_mode) {
+        if (self.idol_mode) {
             term.locWarn(l, "warning: 'match'/'case' are deprecated in .id; use if/elseif or table dispatch", .{});
         }
         const scrutinee = try self.parse_match_scrutinee();
@@ -3801,7 +3801,7 @@ pub const Parser = struct {
                 const operand = try self.parse_match_scrutinee_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
-                if (tok.kind == .kw_comptime and self.duo_mode) {
+                if (tok.kind == .kw_comptime and self.idol_mode) {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
                     return ParseError.UnexpectedToken;
                 }
@@ -3814,7 +3814,7 @@ pub const Parser = struct {
                     else => null,
                 };
                 if (op) |uop| {
-                    if (tok.kind == .kw_not and self.duo_mode)
+                    if (tok.kind == .kw_not and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
                     _ = try self.adv();
                     const operand = try self.parse_match_scrutinee_prec(20);
@@ -5000,7 +5000,7 @@ pub const Parser = struct {
                 const operand = try self.parse_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
-                if (tok.kind == .kw_comptime and self.duo_mode) {
+                if (tok.kind == .kw_comptime and self.idol_mode) {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
                     return ParseError.UnexpectedToken;
                 }
@@ -5013,7 +5013,7 @@ pub const Parser = struct {
                     else => null,
                 };
                 if (op) |uop| {
-                    if (tok.kind == .kw_not and self.duo_mode)
+                    if (tok.kind == .kw_not and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
                     _ = try self.adv();
                     const operand = try self.parse_prec(20);
@@ -5031,7 +5031,7 @@ pub const Parser = struct {
             if (tok.kind == .at and tok.loc.line > lhs.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
-            if (self.duo_mode) {
+            if (self.idol_mode) {
                 switch (inf.op) {
                     .pipeline => term.locWarn(
                         tok.loc,
@@ -5087,7 +5087,7 @@ pub const Parser = struct {
             const operand = try self.parse_prec(20);
             return self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
         }
-        if (tok.kind == .kw_comptime and self.duo_mode) {
+        if (tok.kind == .kw_comptime and self.idol_mode) {
             term.locErr(tok.loc, "'comptime' is not valid in .id files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
             return ParseError.UnexpectedToken;
         }
@@ -5100,7 +5100,7 @@ pub const Parser = struct {
             else => null,
         };
         if (op) |uop| {
-            if (tok.kind == .kw_not and self.duo_mode)
+            if (tok.kind == .kw_not and self.idol_mode)
                 term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
             _ = try self.adv();
             const operand = try self.parse_prec(20);
@@ -5230,9 +5230,9 @@ pub const Parser = struct {
         return expr;
     }
 
-    /// Pass 23 §9 — string interpolation holes desugar to `..` concat at parse time (duo_mode).
+    /// Pass 23 §9 — string interpolation holes desugar to `..` concat at parse time (idol_mode).
     fn desugar_string_interpolation(self: *Parser, loc: ast.Loc, s: []const u8) ParseError!*ast.Expr {
-        if (self.directive_arg_depth > 0 or !self.duo_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
+        if (self.directive_arg_depth > 0 or !self.idol_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
             return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = s } });
         }
         var parts: std.ArrayList(*ast.Expr) = .empty;
@@ -5862,7 +5862,7 @@ pub const Parser = struct {
             return self.new_expr(.{ .call = .{ .loc = l, .func = builtin_name, .args = args_slice } });
         }
         if (at_builtin_internal_name(self, qualified)) |internal| {
-            if (self.duo_mode) {
+            if (self.idol_mode) {
                 if (std.mem.eql(u8, qualified, "constexpr")) {
                     term.locErr(l, "@constexpr is not valid in .id files. Use @(expr) for comptime evaluation.", .{});
                     return ParseError.UnexpectedToken;
@@ -5899,7 +5899,7 @@ pub const Parser = struct {
 
     /// Pass 3 (P3-08): deprecation warnings for flat/legacy @-directive aliases in .id mode.
     fn warnDeprecatedAtQualified(self: *Parser, loc: ast.Loc, qualified: []const u8) void {
-        if (!self.duo_mode) return;
+        if (!self.idol_mode) return;
         if (std.mem.startsWith(u8, qualified, "meta.")) {
             term.locWarn(loc, "warning: @meta.* is deprecated, use @comp.{s} instead", .{qualified["meta.".len..]});
             return;
@@ -6566,7 +6566,7 @@ fn parseDuoSource(src: []const u8, arena: *std.heap.ArenaAllocator) ParseError!a
     const alloc = arena.allocator();
     var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
-    p.duo_mode = true;
+    p.idol_mode = true;
     return p.parse_module();
 }
 
@@ -6766,7 +6766,7 @@ test "parse: backtick rejection does not depend on token text" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var p = Parser.init(&lex, arena.allocator());
-    p.duo_mode = true;
+    p.idol_mode = true;
 
     try testing.expectError(ParseError.UnexpectedToken, p.parse_module());
     _ = try parseDuoSource("value = 1", &arena);

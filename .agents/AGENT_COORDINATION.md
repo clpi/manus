@@ -30,7 +30,7 @@ suffix-only `.id` rename is not canonicality or self-host transfer.
 | Lexer source and generated physical projection | `lib/std/compiler/lexer.id`, `src/duo_lexer_tokenize.c` |
 | Grammar and parser | `docs/spec/grammar.md`, `src/parser.zig`, `src/pass3*.zig` |
 | Binding and semantic production | `src/sema.zig`, `src/semantic_context.zig`, `src/semantic_graph.zig` |
-| Realization scheduling | `src/dnir_lower.zig`, `src/duo_native_ir.zig`, `src/region_graph.zig` |
+| Realization scheduling | `src/dnir_lower.zig`, `src/native_ir.zig`, `src/region_graph.zig` |
 | Direct machine and object emission | `src/native_backend.zig` |
 | Generated-C bootstrap backend | `src/codegen.zig` |
 | Token and Wasm generated projections | `src/token_classify_gen.zig`, `src/wasm_semantic_gen.zig` |

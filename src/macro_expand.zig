@@ -1041,7 +1041,7 @@ test "macro expansion: nn block assign clones without hang" {
     const alloc = arena.allocator();
     var lex = Lexer.init("model = nn { relu }\n", "test.id");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var expander = Expander.init(alloc);
     defer expander.deinit();

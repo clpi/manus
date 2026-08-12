@@ -1059,7 +1059,7 @@ fn parse_and_check_duo(alloc: std.mem.Allocator, src: []const u8) !Sema {
     var parser = Parser.init(&lex, alloc);
     var mod = try parser.parse_module();
     var sema = Sema.init(alloc);
-    sema.duo_mode = true;
+    sema.idol_mode = true;
     try sema.check_module(&mod);
     return sema;
 }

@@ -1,50 +1,17 @@
 # SOURCE-ZERO transition manifest
 
-This file is machine-read by the current bootstrap audit. It is a temporary
-deletion manifest, not source-family authority, a compatibility archive, or a
-pattern catalog.
+Temporary deletion manifest for tracked project-owned `.id` debt. Not semantic
+law — `docs/spec/constitution.md` owns classification. Git stores history;
+this file lists only **current** deletion actions (`law.zero.history`).
 
-Canonical project-owned Idol source uses `.id`. Historical Duo and Duon
-names and every tracked project-owned `.id` file are migration provenance and
-SOURCE-ZERO debt. Retained behavior must be reduced to current semantics,
-executed from canonical `.id`, proved, and followed by deletion of the old
-source. Obsolete behavior is deleted. Compatibility cases move to generated,
-structured, or external conformance material rather than an in-tree stale
-source library. Exact historical paths in the machine rules remain physical
-evidence; they do not rename the language or admit new `.id` source.
+Canonical project-owned source uses `.id` only. Retained behavior migrates to
+executed `.id`, proves, then deletes the old file. Obsolete behavior deletes.
+Compatibility cases become generated or external conformance material — not
+in-tree stale source libraries.
 
-The class words below are legacy input tokens consumed by
-`scripts/audit100.id`. Its `.id` suffix and the renamed `.id` paths below are
-physical migration spellings, not proof that their content is canonical or
-executed from an Idol semantic owner. The tokens authorize only the current
-audit action; no token authorizes a file to remain. Their deletion actions are:
-
-| reader token | required migration action |
-| --- | --- |
-| `canonical` | migrate retained project behavior to executed `.id`, then delete the old file |
-| `compatibility` | generate, structure, or externalize the compatibility case, then delete the stale source |
-| `foreign` | retain only genuinely foreign material outside the native pattern surface or externalize it |
-| `negative` | derive the rejection case from grammar/law facts or a machine-owned fixture, then delete the ordinary stale program |
-| `historical` | delete; Git already preserves history |
-| `generated` | fix the generator to emit canonical `.id`, regenerate, then delete the old output |
-
-Rules are ordered and first match wins because the existing reader uses prefix
-matching. A tracked `.id` path matching no rule currently fails that reader.
-That protects against silent omission but is not the final new-source ratchet:
-adding another rule can still admit a new file. SOURCE-ZERO therefore remains
-open until the exact-tree gate rejects every new `.id`, includes untracked
-files, and the tracked count reaches zero.
-
-No path in the rule block is an implementation example. Agents and generators
-must not open it as a pattern source. The rule block disappears with the reader
-after all retained behavior has moved and every tracked project-owned `.id`
-file has been deleted.
-
-The living law is [`constitution.md`](constitution.md). The complete source
-family, lexical identity, generated grammar-role, and compiler-B migration
-blockers remain recorded in `GAP-145`, `GAP-134`, and
-[`docs/bootstrap.md`](../bootstrap.md). This manifest must not invent a second
-classification authority to work around them.
+Machine rules are legacy input tokens for `scripts/audit100.id`. They
+authorize audit actions only; no token permits a file to remain. The rule block
+disappears when the reader deletes and tracked project-owned `.id` reaches zero.
 
 ## Machine rules
 
@@ -56,14 +23,9 @@ canonical      examples/native_differential/
 negative       fixtures/highlight/mixed/
 foreign        fixtures/highlight/surface/
 canonical      fixtures/highlight/
-generated      examples/pass12_m1_diff.id
 generated      lib/std/token/classify.id
 generated      lib/std/wasm/opcode_lookup.id
 generated      lib/std/wasm/ward_mvp_opcodes.id
-historical     examples/pass5/
-historical     examples/pass7/
-historical     examples/pass8/
-historical     examples/pass9/
 foreign        examples/bash_
 foreign        examples/c_emit
 foreign        examples/c_interop
@@ -71,17 +33,21 @@ foreign        examples/ffi
 foreign        examples/wasm/
 compatibility  examples/lua
 compatibility  examples/test_lua
-canonical      examples/examples/
+canonical      examples/conversion/
+canonical      examples/projection/
+canonical      examples/infer/
+canonical      examples/demand/
+canonical      examples/nominal/
+canonical      examples/layout/
+canonical      examples/pack/
+canonical      examples/anchor/
+canonical      examples/case/
+canonical      examples/read/
 canonical      examples/boring/
 canonical      examples/table/
-historical     examples/
 foreign        vendor/
-historical     test.id
-historical     test2.id
-canonical      benchmarks/
-canonical      ext/ward/
-canonical      lib/
-canonical      scripts/
-canonical      tests/
-canonical      tools/
+foreign        test.id
+foreign        test2.id
 ```
+
+Blockers: `GAP-145`, `GAP-134`, `docs/bootstrap.md`.

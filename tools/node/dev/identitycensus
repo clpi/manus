@@ -10,20 +10,24 @@ CLAUDE.md
 docs/orientation.md
 docs/AGENT_ALIGNMENT.md
 docs/METRICS.md
+docs/bootstrap.md
 .agents/AGENT_CANONICAL.md
 .agents/AGENT_COORDINATION.md
+.agents/AGENT_INTEGRATION.md
 .agents/HARNESS.md
 docs/spec/harness-projection.md
+docs/spec/README.md
+docs/spec/AUTHORITY.md
 .cursor/rules/00-authority.mdc
 .cursor/rules/10-language.mdc
 .cursor/rules/50-mcp-lsp.mdc
 "
 
-retired='Idsem|idsem|Duon|duon|\.duo\b|language\.history'
+retired='Idsem|idsem|Duon|duon|\.duo\b|language\.history|Historical Idol|Historical Duo|historical Idol/Duo'
 count=0
 for f in $paths; do
   [ -f "$f" ] || continue
-  hits=$(rg -n "$retired" "$f" 2>/dev/null | rg -v 'law\.zero|ZERO-HISTORY|retired name|git stores|zerohistorycensus' || true)
+  hits=$(rg -n "$retired" "$f" 2>/dev/null | rg -v 'law\.zero|ZERO-HISTORY|zerohistorycensus|identitycensus|git stores|retired name' || true)
   if [ -n "$hits" ]; then
     echo "identitycensus: FAIL $f"
     echo "$hits" | sed 's/^/  /'

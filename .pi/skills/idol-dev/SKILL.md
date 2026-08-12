@@ -31,8 +31,8 @@ authority, authority wins and this skill must be repaired.
 `docs/spec/grammar.md`, `docs/spec/diagnostics.md`, etc. are **projections**.
 They defer to C0. A projection never overrides C0.
 
-**Skill identity:** this skill is `idol-dev`. Do not use the retired
-`duon-development` skill name or Duon branding for current Idol work.
+**Skill identity:** this skill is `idol-dev`. Do not use retired skill names or
+former project branding for current Idol work.
 
 ## 2. Orient before every substantive change
 

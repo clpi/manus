@@ -392,7 +392,7 @@ test "region_transform: folds constants from physical coordinates and dependenci
     ;
     var lexer = Lexer.init(source, "region-transform.id");
     var parser = Parser.init(&lexer, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     const ast_module = try parser.parse_module();
     var module = try dnir_lower.lowerModule(alloc, &ast_module);
     const projection = try region_graph.buildModuleRegions(alloc, module);

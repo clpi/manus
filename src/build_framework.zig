@@ -769,11 +769,11 @@ test "build_framework: load targets from sema directives" {
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "build.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var project = try loadFromSema(alloc, "build.id", &sem);
@@ -863,11 +863,11 @@ test "build_framework: implicit entrypoint target" {
     const src = "main: i64 = ()\n    0\n";
     var lex = @import("lexer.zig").Lexer.init(src, "src/main.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
-    sem.duo_mode = true;
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
     var project = try loadFromSema(alloc, "src/main.id", &sem);
@@ -878,11 +878,11 @@ test "build_framework: implicit entrypoint target" {
     try std.testing.expectEqualStrings("src/main.id", project.targets[0].src.?);
 }
 
-test "build_framework: canonical entry precedes historical entry" {
+test "build_framework: canonical entry candidates" {
     try std.testing.expectEqualStrings("build.id", build_source_candidates[0]);
     try std.testing.expectEqualStrings("src/build.id", build_source_candidates[1]);
-    try std.testing.expectEqualStrings("build.duo", build_source_candidates[2]);
+    try std.testing.expectEqualStrings("src/main.id", build_source_candidates[2]);
     try std.testing.expectEqualStrings("src/main.id", entrypoint_candidates[0]);
     try std.testing.expect(isEntrypointPath("src/main.id"));
-    try std.testing.expect(isEntrypointPath("src/main.duo"));
+    try std.testing.expect(!isEntrypointPath("src/main.duo"));
 }

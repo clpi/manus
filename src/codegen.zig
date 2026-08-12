@@ -22,7 +22,6 @@ const comptime_eval = @import("comptime.zig");
 const directives = @import("directives.zig");
 const meta_directives = @import("meta_directives.zig");
 const sema_mod = @import("sema.zig");
-const native_req_support = @import("native_req_support.zig");
 const debug_trace = @import("debug_trace.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const jit = @import("jit.zig");
@@ -41,7 +40,7 @@ const lexer_bridge = @import("lexer_bridge.zig");
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
 /// driver uses.
 ///
-/// `lexer_bridge.tokenizeAuthority()` has been `.duo_native` since
+/// Production path uses `lexer_bridge.tokenizeAuthority()` `.generated_native`.
 /// 2026-08-07, but only `main.zig`'s driver consulted it. Every module-embed
 /// path below built its own `Lexer` and ran the host scanner, so a single
 /// compilation tokenized the entry point with `lib/std/compiler/lexer.duo` and
@@ -250,7 +249,7 @@ pub const CodeGen = struct {
     mandel_native: bool = false,
     load_chunk: bool = false,
     lib_mode: bool = false,
-    duo_mode: bool = false,
+    idol_mode: bool = false,
     native_scalar_mode: bool = false,
     /// First native-scalar refusal for this generator. Formatted evidence is
     /// copied here so concurrent or nested generators cannot alias it.
@@ -296,7 +295,6 @@ pub const CodeGen = struct {
     /// `req` alias -> module export symbols for the module being emitted, so a
     /// qualified call `Alias.fn(...)` can lower to a direct C call instead of a
     /// boxed table lookup. Null until `emit_module` collects it.
-    req_ctx: ?native_req_support.Context = null,
     current_module: ?*const ast.Module = null,
     emit_stmt_blocks_as_returns: bool = false,
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
@@ -3387,7 +3385,7 @@ pub const CodeGen = struct {
 
     pub fn can_emit_native_scalar_module(self: *CodeGen, mod: *const ast.Module) bool {
         self.resetNativeScalarReason();
-        if (native_diag) std.debug.print("[native-diag] CALLED duo_mode={} target={s} load={} lib={} test={} bench={}\n", .{ self.duo_mode, self.target, self.load_chunk, self.lib_mode, self.test_mode, self.bench_mode });
+        if (native_diag) std.debug.print("[native-diag] CALLED idol_mode={} target={s} load={} lib={} test={} bench={}\n", .{ self.idol_mode, self.target, self.load_chunk, self.lib_mode, self.test_mode, self.bench_mode });
         self.current_module = mod;
         self.collect_req_module_bindings(mod) catch {
             self.nativeDiagFail("module-bindings");
@@ -3427,7 +3425,7 @@ pub const CodeGen = struct {
             self.nativeDiagFail("guard-target");
             return self.nofit(@src());
         }
-        if (!self.duo_mode) {
+        if (!self.idol_mode) {
             self.nativeDiagFail("guard-duo");
             return self.nofit(@src());
         }
@@ -3688,7 +3686,7 @@ pub const CodeGen = struct {
     }
 
     fn compute_substrate_native_mode(self: *CodeGen, mod: *const ast.Module) bool {
-        if (!self.duo_mode or self.load_chunk or self.test_mode) return false;
+        if (!self.idol_mode or self.load_chunk or self.test_mode) return false;
         if (self.bench_mode and self.bench_backend != .c_specialized) return false;
         if (self.native_scalar_mode) return true;
         if (!self.mixed_scalar_mode) return false;
@@ -3790,7 +3788,7 @@ pub const CodeGen = struct {
             // directly but fails with "expected '<eof>', got 'end'" the moment it
             // is embedded — which is what stopped `std/script.duo` and
             // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
-            sub_parser.duo_mode = lexer_bridge.isIdolSourcePath(mod_path);
+            sub_parser.idol_mode = lexer_bridge.isIdolSourcePath(mod_path);
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -5755,13 +5753,9 @@ pub const CodeGen = struct {
         const old_module = self.current_module;
         self.current_module_cname = "";
         self.current_module = mod;
-        const old_req_ctx = self.req_ctx;
         // Collect `req` bindings so qualified calls can resolve to module
         // symbols. Failure is non-fatal: the boxed path still applies.
-        self.req_ctx = native_req_support.collectFromModule(self.alloc, mod) catch null;
         defer {
-            if (self.req_ctx) |*rc| rc.deinit(self.alloc);
-            self.req_ctx = old_req_ctx;
             self.current_module_cname = old_module_cname;
             self.current_module = old_module;
             // gap[082]: a refused composition has already reported itself at
@@ -5801,7 +5795,7 @@ pub const CodeGen = struct {
         if (self.native_scalar_mode and !self.req_deps_allow_full_native(mod)) {
             self.native_scalar_mode = false;
         }
-        if (!self.native_scalar_mode and self.duo_mode and (self.target.len == 0 or std.mem.eql(u8, self.target, "native"))) {
+        if (!self.native_scalar_mode and self.idol_mode and (self.target.len == 0 or std.mem.eql(u8, self.target, "native"))) {
             if (self.compute_native_scalar_funcs(mod)) {
                 self.mixed_scalar_mode = true;
             }
@@ -6543,8 +6537,8 @@ pub const CodeGen = struct {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
                 if (fd.is_local) continue;
-                // In duo_mode, single-name functions are local (handled below)
-                if (self.duo_mode and fd.path.len == 1 and !fd.method) continue;
+                // In idol_mode, single-name functions are local (handled below)
+                if (self.idol_mode and fd.path.len == 1 and !fd.method) continue;
                 // Dotted non-method functions (`Pt.__tostring = (self) ... end`,
                 // the canonical bare form for metamethods) also need a forward
                 // declaration: otherwise the call site sees an implicit
@@ -6576,7 +6570,7 @@ pub const CodeGen = struct {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .func_decl) try self.poison_assigned_in_block(&stmt.func_decl.func.body);
         }
-        if (self.duo_mode) {
+        if (self.idol_mode) {
             try self.emit_required_modules(mod);
         }
         if (self.moduleNeedsLuaRuntime()) {
@@ -6584,7 +6578,7 @@ pub const CodeGen = struct {
             try jit.emitClosureSourceTable(self, self.all_closures.items);
             try jit.emitUpvaluePackTable(self, self.all_closures.items);
             try jit.emitJitRuntime(self);
-            if (!self.duo_mode) {
+            if (!self.idol_mode) {
                 try self.emit_required_modules(mod);
             }
         }
@@ -6606,8 +6600,8 @@ pub const CodeGen = struct {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
                 if (fd.is_local) continue;
-                // In duo_mode, single-name functions are local (emitted below)
-                if (self.duo_mode and fd.path.len == 1 and !fd.method) continue;
+                // In idol_mode, single-name functions are local (emitted below)
+                if (self.idol_mode and fd.path.len == 1 and !fd.method) continue;
                 try self.emit_func_def(fd);
             }
         }
@@ -6842,9 +6836,9 @@ pub const CodeGen = struct {
             while (i < mod.body.stmts.len) {
                 switch (mod.body.stmts[i]) {
                     .func_decl => |fd| {
-                        // In duo_mode, treat single-name functions as local (file-scoped)
+                        // In idol_mode, treat single-name functions as local (file-scoped)
                         // unless they are multi-path (M.method) which are module exports.
-                        const effectively_local = fd.is_local or (self.duo_mode and fd.path.len == 1 and !fd.method);
+                        const effectively_local = fd.is_local or (self.idol_mode and fd.path.len == 1 and !fd.method);
                         if (effectively_local) {} else {
                             i += 1;
                             continue;
@@ -11591,7 +11585,7 @@ pub const CodeGen = struct {
         remaining: []const ast.Stmt,
         tail: ?*const ast.Expr,
     ) E!void {
-        if (!self.duo_mode) return;
+        if (!self.idol_mode) return;
         switch (stmt.*) {
             .if_stmt, .while_loop, .repeat_loop, .num_for, .gen_for, .do_block, .match_stmt, .try_stmt => {},
             else => return,
@@ -12546,7 +12540,7 @@ pub const CodeGen = struct {
                     if (i < ld.inits.len) {
                         if (req_path_from_expr(ld.inits[i])) |path| {
                             try self.try_register_req_binding(lname.ident, path);
-                            if (self.duo_mode and self.req_module_skips_lua_binding(path)) {
+                            if (self.idol_mode and self.req_module_skips_lua_binding(path)) {
                                 try self.mark_req_native_direct(lname.ident);
                                 try self.note_comptime_unavailable(lname.ident);
                                 const promoted_module_local = (self.current_module_cname.len > 0 or self.at_module_top_level) and
@@ -12744,7 +12738,7 @@ pub const CodeGen = struct {
                     self.ind();
                     self.pl("lua_mret_clear();", .{});
                     // Check if first target needs implicit local declaration
-                    const first_needs_decl = self.duo_mode and as.targets[0].* == .name and
+                    const first_needs_decl = self.idol_mode and as.targets[0].* == .name and
                         !self.is_local_name(as.targets[0].name.ident) and
                         !self.is_global_name(as.targets[0].name.ident);
                     if (first_needs_decl) {
@@ -12777,7 +12771,7 @@ pub const CodeGen = struct {
                         self.ind();
                         const tt = self.expr_type(tgt);
                         // Check if this target needs implicit local declaration
-                        const needs_decl = self.duo_mode and tgt.* == .name and
+                        const needs_decl = self.idol_mode and tgt.* == .name and
                             !self.is_local_name(tgt.name.ident) and
                             !self.is_global_name(tgt.name.ident);
                         if (needs_decl) {
@@ -12816,7 +12810,7 @@ pub const CodeGen = struct {
                     const tt = self.expr_type(tgt);
 
                     // In duo mode, automatically declare local variables for simple name assignments
-                    if (self.duo_mode and tgt.* == .name) {
+                    if (self.idol_mode and tgt.* == .name) {
                         const name = tgt.name.ident;
                         if (i < as.values.len) {
                             var pathbuf: [512]u8 = undefined;
@@ -13619,7 +13613,7 @@ pub const CodeGen = struct {
                         }
                     }
                 }
-                if (mode == .generic and self.duo_mode and gf.iters.len == 1) {
+                if (mode == .generic and self.idol_mode and gf.iters.len == 1) {
                     mode = .direct_table;
                     table_expr = gf.iters[0];
                 }
@@ -15212,37 +15206,6 @@ pub const CodeGen = struct {
         }
     }
 
-    /// Emit `Alias.fn(args)` as a direct call to the `req`'d module's symbol.
-    /// Returns false when the callee is not a resolvable module export, so the
-    /// caller can fall through to its existing handling.
-    fn emitReqQualifiedCall(self: *CodeGen, c: anytype) E!bool {
-        if (c.func.* != .field) return false;
-        const f = c.func.field;
-        if (f.obj.* != .name) return false;
-        const rc = self.req_ctx orelse return false;
-        // `@comp.c.export("name")` fixes the emitted C symbol, so it is used
-        // verbatim rather than mangled with the module prefix.
-        const sym = rc.exportSymbol(f.obj.name.ident, f.field) orelse return false;
-
-        self.p("{s}(", .{sym});
-        for (c.args, 0..) |arg, i| {
-            if (i > 0) self.p(", ", .{});
-            // A field access must go through the native path, which knows a
-            // record parameter passed by pointer needs `->`. Plain `emit_expr`
-            // always writes `.`, so `Str.sub(self.src, ...)` emitted
-            // `self.src` on a `self` that the same function was otherwise
-            // dereferencing as `self->pos` — clang rejected the whole module.
-            // The native helper falls back to `.` for non-pointer bases, so
-            // this is identical everywhere else.
-            if (arg.* == .field) {
-                try self.emit_native_field_access(arg.field.obj, arg.field.field);
-            } else {
-                try self.emit_expr(arg);
-            }
-        }
-        self.p(")", .{});
-        return true;
-    }
 
     fn emit_bound_field_call(self: *CodeGen, c: anytype) E!void {
         const f = c.func.field;
@@ -15589,7 +15552,7 @@ pub const CodeGen = struct {
                 // (`.encode`) then reads the module table as usual. Runs after
                 // the const fold so a folded symbol still wins, and only when the
                 // path resolves to a real module file, leaving `a.b` untouched.
-                if (self.duo_mode) {
+                if (self.idol_mode) {
                     var mbuf: [512]u8 = undefined;
                     if (ambient_dotted_path(expr, &mbuf)) |mod_path| {
                         if (std.mem.startsWith(u8, mod_path, "std.") and
@@ -16386,8 +16349,7 @@ pub const CodeGen = struct {
                         // qualified call and fell through to duo_fatal, which is
                         // what blocked a Duo code generator from calling stdlib
                         // primitives such as std.emit.
-                        if (try self.emitReqQualifiedCall(c)) return;
-                        self.p("duo_fatal(\"unlowered native call\")", .{});
+                                    self.p("duo_fatal(\"unlowered native call\")", .{});
                         return;
                     }
                     const invoke_result_rt = self.expr_type(expr);
@@ -22495,8 +22457,8 @@ pub const CodeGen = struct {
         for (block.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl => |*fd| {
-                    // In duo_mode, single-name bare functions are effectively local
-                    const effectively_local = fd.is_local or (self.duo_mode and fd.path.len == 1 and !fd.method);
+                    // In idol_mode, single-name bare functions are effectively local
+                    const effectively_local = fd.is_local or (self.idol_mode and fd.path.len == 1 and !fd.method);
                     if (effectively_local) try list.append(self.alloc, fd);
                     // Do NOT recurse into function bodies — nested local functions
                     // will be emitted when their parent's body is processed.
@@ -22976,7 +22938,7 @@ pub const CodeGen = struct {
                 var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path.?);
                 if (!routeEmbedThroughDuoLexer(self.alloc, &sub_lex, sub_src, mod_path.?)) continue;
                 var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
-                sub_parser.duo_mode = lexer_bridge.isIdolSourcePath(mod_path.?);
+                sub_parser.idol_mode = lexer_bridge.isIdolSourcePath(mod_path.?);
                 // The embed path must parse Idol modules in the same dialect the
                 // standalone path uses. Without this, duo-mode-only syntax (bare
                 // function declarations) parses fine when the file is compiled
@@ -23146,7 +23108,7 @@ pub const CodeGen = struct {
 
     /// True when a req target is a stdlib/user module that will embed to native C (compile-time).
     fn req_module_is_native_direct(self: *CodeGen, req_path: []const u8) bool {
-        if (!self.duo_mode) return false;
+        if (!self.idol_mode) return false;
         // If the module has already been embedded, trust how it was ACTUALLY
         // emitted rather than re-deciding. A table-exporting module is not
         // native-direct: its members live in a runtime lua table.
@@ -23220,7 +23182,7 @@ pub const CodeGen = struct {
         // bodies and typed bindings are rejected — the file then fails to embed
         // and its duo_mod_* thunk is never emitted, while the caller registers
         // it anyway ("use of undeclared identifier duo_mod_*").
-        parser.duo_mode = lexer_bridge.isIdolSourcePath(path);
+        parser.idol_mode = lexer_bridge.isIdolSourcePath(path);
         const submod = parser.parse_module() catch return false;
         if (module_ast_blocks_full_native_ast(&submod)) return false;
         // A dependency that materializes a table export is reached through
@@ -23272,7 +23234,7 @@ pub const CodeGen = struct {
             // directly but fails with "expected '<eof>', got 'end'" the moment it
             // is embedded — which is what stopped `std/script.duo` and
             // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
-            sub_parser.duo_mode = lexer_bridge.isIdolSourcePath(mod_path);
+            sub_parser.idol_mode = lexer_bridge.isIdolSourcePath(mod_path);
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -23377,7 +23339,7 @@ pub const CodeGen = struct {
                         const path = self.moduleBindingPath(ld.inits[i], &pathbuf) orelse continue;
                         try self.try_register_req_binding(ln.ident, path);
                         if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(ln.ident);
-                        if (self.duo_mode) try self.mark_module_sealed(ln.ident);
+                        if (self.idol_mode) try self.mark_module_sealed(ln.ident);
                     }
                 },
                 .assign => |*as| {
@@ -23386,7 +23348,7 @@ pub const CodeGen = struct {
                     const path = self.moduleBindingPath(as.values[0], &pathbuf) orelse continue;
                     try self.try_register_req_binding(as.targets[0].name.ident, path);
                     if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(as.targets[0].name.ident);
-                    if (self.duo_mode) try self.mark_module_sealed(as.targets[0].name.ident);
+                    if (self.idol_mode) try self.mark_module_sealed(as.targets[0].name.ident);
                 },
                 .global_decl => |*gd| {
                     for (gd.names, 0..) |*ln, i| {
@@ -23395,7 +23357,7 @@ pub const CodeGen = struct {
                         const path = self.moduleBindingPath(gd.inits[i], &pathbuf) orelse continue;
                         try self.try_register_req_binding(ln.ident, path);
                         if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(ln.ident);
-                        if (self.duo_mode) try self.mark_module_sealed(ln.ident);
+                        if (self.idol_mode) try self.mark_module_sealed(ln.ident);
                     }
                 },
                 else => {},
@@ -23488,7 +23450,7 @@ pub const CodeGen = struct {
     }
 
     fn collect_module_seal_invalidations(self: *CodeGen, mod: *const ast.Module) !void {
-        if (!self.duo_mode) return;
+        if (!self.idol_mode) return;
         self.collect_module_seal_invalidations_in_block(&mod.body);
     }
 
@@ -23678,7 +23640,7 @@ pub const CodeGen = struct {
     /// binding path already produces — so the canonical spelling stops being
     /// slower than the graveyard one.
     fn try_emit_ambient_module_const_field(self: *CodeGen, f_obj: *const ast.Expr, field: []const u8, result_rt: RT) E!bool {
-        if (!self.duo_mode) return false;
+        if (!self.idol_mode) return false;
         var pbuf: [512]u8 = undefined;
         const mod_path = ambient_dotted_path(f_obj, &pbuf) orelse return false;
         if (!std.mem.startsWith(u8, mod_path, "std.")) return false;
@@ -23867,7 +23829,7 @@ pub const CodeGen = struct {
         var lex = @import("lexer.zig").Lexer.init(source, module_path);
         if (!routeEmbedThroughDuoLexer(self.alloc, &lex, source, module_path)) return null;
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
-        parser.duo_mode = lexer_bridge.isIdolSourcePath(module_path);
+        parser.idol_mode = lexer_bridge.isIdolSourcePath(module_path);
         const module = parser.parse_module() catch return null;
 
         var declared = false;
@@ -23955,7 +23917,7 @@ pub const CodeGen = struct {
         defer if (amb_owned) |o| self.alloc.free(o);
         const mod_cname = blk: {
             if (f.obj.* == .name) break :blk self.req_module_bindings.get(f.obj.name.ident) orelse return null;
-            if (!self.duo_mode or f.obj.* != .field) return null;
+            if (!self.idol_mode or f.obj.* != .field) return null;
             const mod_path = ambient_dotted_path(f.obj, &amb_buf) orelse return null;
             if (!std.mem.startsWith(u8, mod_path, "std.")) return null;
             const mod_file = self.find_module_file_for_req(mod_path) orelse return null;
@@ -23995,7 +23957,7 @@ pub const CodeGen = struct {
                 if (self.req_module_bindings.get(f.obj.name.ident)) |c| break :blk c;
                 return false;
             }
-            if (!self.duo_mode) return false;
+            if (!self.idol_mode) return false;
             if (f.obj.* != .field) return false;
             const mod_path = ambient_dotted_path(f.obj, &amb_buf) orelse return false;
             if (!std.mem.startsWith(u8, mod_path, "std.")) return false;
@@ -24517,7 +24479,7 @@ pub const CodeGen = struct {
         // bodies and typed bindings are rejected — the file then fails to embed
         // and its duo_mod_* thunk is never emitted, while the caller registers
         // it anyway ("use of undeclared identifier duo_mod_*").
-        parser.duo_mode = lexer_bridge.isIdolSourcePath(path);
+        parser.idol_mode = lexer_bridge.isIdolSourcePath(path);
         var submod = parser.parse_module() catch |e| {
             term.err("emit_embedded_module: parse failed for {s}: {}", .{ path, e });
             return false;
@@ -24525,7 +24487,7 @@ pub const CodeGen = struct {
         var subsem = sema.Sema.init(self.alloc);
         defer subsem.deinit();
         subsem.lua55_mode = lexer_bridge.isLuaSourcePath(path);
-        subsem.duo_mode = lexer_bridge.isIdolSourcePath(path);
+        subsem.idol_mode = lexer_bridge.isIdolSourcePath(path);
         subsem.next_closure_id = self.next_closure_id;
         subsem.check_module(&submod) catch |e| {
             term.err("emit_embedded_module: sema failed for {s}: {}", .{ path, e });
@@ -24536,7 +24498,7 @@ pub const CodeGen = struct {
             return false;
         };
         self.next_closure_id = subsem.next_closure_id;
-        const old_duo_mode = self.duo_mode;
+        const old_idol_mode = self.idol_mode;
         const old_module_globals = self.module_globals;
         const old_module_cname = self.current_module_cname;
         const old_native_scalar = self.native_scalar_mode;
@@ -24546,7 +24508,7 @@ pub const CodeGen = struct {
         const old_module_knowledge = self.module_knowledge;
         const parent_full_native = self.moduleUsesFullNativeLowering();
         self.embed_parent_full_native = parent_full_native;
-        self.duo_mode = subsem.duo_mode;
+        self.idol_mode = subsem.idol_mode;
         self.module_globals = &subsem.module_globals;
         self.current_module_cname = cname;
         const old_req_bindings = self.req_module_bindings;
@@ -24562,7 +24524,7 @@ pub const CodeGen = struct {
             self.alias_defs = old_alias_defs;
             // record_aliases: submodule aliases remain merged in the parent map.
             self.req_module_bindings = old_req_bindings;
-            self.duo_mode = old_duo_mode;
+            self.idol_mode = old_idol_mode;
             self.module_globals = old_module_globals;
             self.current_module_cname = old_module_cname;
             self.native_scalar_mode = old_native_scalar;
@@ -24982,7 +24944,7 @@ pub const CodeGen = struct {
                 return false;
             };
             self.p(";\n", .{});
-        } else if (subsem.duo_mode) {
+        } else if (subsem.idol_mode) {
             self.emit_duo_module_return_table(&submod) catch |e| {
                 term.err("emit_embedded_module: auto module table emit failed: {}", .{e});
                 return false;
@@ -31915,17 +31877,17 @@ test "codegen: mixed native/boxed binops unbox only the dynamic side" {
         \\print(f())
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
     const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(void) {") orelse return error.TestExpectedEqual;
@@ -31954,17 +31916,17 @@ test "codegen: branch-first implicit locals hoist above the control statement" {
         \\print(pick(5))
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
     const fn_start = std.mem.indexOf(u8, output, "static inline int64_t pick(") orelse return error.TestExpectedEqual;
@@ -31994,17 +31956,17 @@ test "codegen: integer table index unboxes into numeric context" {
         \\print(f())
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
     const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(void) {") orelse return error.TestExpectedEqual;
@@ -32034,17 +31996,17 @@ test "codegen: any accumulator plus numeric table index unboxes both sides" {
         \\end
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
     const fn_start = std.mem.indexOf(u8, output, "static lua_Value sum_any(") orelse return error.TestExpectedEqual;
@@ -32884,13 +32846,13 @@ test "codegen: string.len uses byte length for char(0) (Wasm opcode 0x00)" {
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "strlen(lua_to_str(lua_str_char") == null);
@@ -33039,7 +33001,7 @@ test "codegen: descriptor composition merges parent record fields" {
         \\print(u.name, u.id)
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
@@ -33048,7 +33010,7 @@ test "codegen: descriptor composition merges parent record fields" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const user_rt = cg.record_aliases.get("User") orelse return error.TestExpectedEqual;
     try testing.expect(user_rt == .table_type);
@@ -33111,7 +33073,7 @@ test "codegen: __comptimeproduct folds concept cartesian product to native c str
         \\print(pairs)
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
@@ -33148,7 +33110,7 @@ test "codegen: comptime-only callback functions skip runtime emission" {
         \\print(pairs)
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
@@ -33979,17 +33941,17 @@ test "codegen: library projects ordinary root relations" {
         \\    42
     , "library.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     cg.lib_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
@@ -34260,11 +34222,11 @@ test "codegen: typed __emit bypasses lua_to_num on return and locals" {
         \\end
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -36042,17 +36004,17 @@ test "codegen: print uses int format for payload-free enum values" {
         \\end
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "printf(\"%d\\n\", (int)(duo_Color_Red))") != null or
@@ -36076,17 +36038,17 @@ test "codegen: native scalar str compare uses strcmp not lua_neq" {
         \\end
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "lua_neq") == null);
@@ -36109,17 +36071,17 @@ test "codegen: __origin reports shape_id for typed records" {
         \\end
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "storage_class=native;shape_id=") != null);
@@ -36142,17 +36104,17 @@ test "codegen: lua_num reads the double slot instead of recursing" {
         \\end
     , "test.duo");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();
-    semantic.duo_mode = true;
+    semantic.idol_mode = true;
     try semantic.check_module(&module);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.duo_mode = true;
+    cg.idol_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "return v.number_kind == 1 ? (double)v.as.ival : v.as.nval;") != null);
@@ -36182,7 +36144,7 @@ test "codegen: a function-body local outranks a module global of the same name" 
         \\end
     , "shadow");
     var parser = Parser.init(&lex, alloc);
-    parser.duo_mode = true;
+    parser.idol_mode = true;
     var module = try parser.parse_module();
     var semantic = sema.Sema.init(alloc);
     defer semantic.deinit();

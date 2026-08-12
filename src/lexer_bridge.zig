@@ -51,13 +51,12 @@ pub fn isLuaSourcePath(path: []const u8) bool {
 
 pub const TokenizeAuthority = enum {
     host_zig,
-    duo_native,
+    generated_native,
 };
 
-/// Physical routing state for the production compile driver. The historical
-/// enum tag is a bootstrap label, not language identity or authority.
+/// Physical routing state for the production compile driver.
 pub fn tokenizeAuthority() TokenizeAuthority {
-    return .duo_native;
+    return .generated_native;
 }
 
 /// Production keyword lookup through the generated Idol lexer projection.
@@ -66,17 +65,18 @@ pub fn lookupKeyword(text: []const u8) ?lexer.TokenKind {
 }
 
 test "lexer bridge: production split" {
-    try std.testing.expect(tokenizeAuthority() == .duo_native);
+    try std.testing.expect(tokenizeAuthority() == .generated_native);
     try std.testing.expectEqual(lexer.TokenKind.kw_fun, lookupKeyword("fun").?);
     try std.testing.expectEqual(@as(?lexer.TokenKind, null), lookupKeyword("notkw"));
 }
 
-test "lexer bridge: suffix changes provenance not language law" {
+test "lexer bridge: suffix classifies canonical and foreign only" {
     const canonical = sourceFacts("compiler.id");
-    const historical = sourceFacts("compiler.duo");
     try std.testing.expectEqual(SourceLaw.idol, canonical.law);
-    try std.testing.expectEqual(SourceLaw.idol, historical.law);
     try std.testing.expectEqual(SourceProvenance.canonical, canonical.provenance);
+    const retired = sourceFacts("compiler.duo");
+    try std.testing.expectEqual(SourceLaw.unknown, retired.law);
+    try std.testing.expectEqual(SourceProvenance.unknown, retired.provenance);
     try std.testing.expectEqual(SourceLaw.lua, sourceFacts("compiler.lua").law);
     try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("compiler.txt").law);
 }
