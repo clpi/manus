@@ -16,11 +16,9 @@ static inline int64_t pipeline_fused_sum(int64_t a, int64_t b, int64_t c) {
 
 scaled(x: i64): i64
     x * 2
-end
 
 total(): i64
     pipeline_fused_sum(10, 20, 30) + scaled(5) + 0
-end
 
 print("=== @comp.pipeline / @rewrite showcase ===")
 print("result = " .. to(str)(total()))

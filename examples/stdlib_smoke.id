@@ -4,8 +4,7 @@ total_passes = 0
 total_fails = 0
 
 count_result(p)
-    if p total_passes += 1 else total_fails += 1 end
-end
+    if p total_passes += 1 else total_fails += 1 
 
 log.info("duo stdlib smoke-test")
 

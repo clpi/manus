@@ -117,45 +117,36 @@ static int duo_close(int fd) {
 
 epoll_new(): any
     epoll_create(64)
-end
 
 epoll_create(max_events: i64): any
     fd = @ffi("duo_epoll_create", i64, {i64})(max_events)
     if fd < 0
         error("epoll_create failed: " .. fd:to(str))
-    end
     {
         fd = fd,
         max_events = max_events or 64,
     }
-end
 
 epoll_add(epoll: any, fd: i64, events: i64, data: any): any
     result = @ffi("duo_epoll_ctl", i64, {i64, i64, i64, i64})(epoll.fd, M.EPOLL_CTL_ADD, fd, events)
     if result < 0
         return {ok = false, error = "epoll_ctl ADD failed"}
-    end
     {ok = true}
-end
 
 epoll_mod(epoll: any, fd: i64, events: i64): any
     result = @ffi("duo_epoll_ctl", i64, {i64, i64, i64, i64})(epoll.fd, M.EPOLL_CTL_MOD, fd, events)
     if result < 0
         return {ok = false, error = "epoll_ctl MOD failed"}
-    end
     {ok = true}
-end
 
 epoll_del(epoll: any, fd: i64): any
     result = @ffi("duo_epoll_ctl", i64, {i64, i64, i64, i64})(epoll.fd, M.EPOLL_CTL_DEL, fd, 0)
     if result < 0
         return {ok = false, error = "epoll_ctl DEL failed"}
-    end
     {ok = true}
-end
 
 epoll_wait(epoll: any, timeout_ms: i64): any
-    if timeout_ms == nil timeout_ms = -1 end
+    if timeout_ms == nil timeout_ms = -1 
     # Allocate arrays for results
     fds = @ffi("calloc", any, {i64, i64})(epoll.max_events, 4)
     events_buf = @ffi("calloc", any, {i64, i64})(epoll.max_events, 4)
@@ -168,8 +159,6 @@ epoll_wait(epoll: any, timeout_ms: i64): any
             ev = @ffi("malloc_read_i32", i64, {any, i64})(events_buf, i * 4)
             result_events[result_events:len() + 1] = {fd = fd, events = ev}
             i += 1
-        end
-    end
     @ffi("free", void, {any})(fds)
     @ffi("free", void, {any})(events_buf)
     {
@@ -177,12 +166,10 @@ epoll_wait(epoll: any, timeout_ms: i64): any
         events = result_events,
         count = count,
     }
-end
 
 epoll_close(epoll: any): void
     @ffi("duo_close", i64, {i64})(epoll.fd)
     epoll.fd = -1
-end
 
 # ═══════════════════════════════════════════════════════════════
 # inotify
@@ -203,37 +190,30 @@ inotify_new(): any
     fd = @ffi("duo_inotify_init", i64, {i64})(0)
     if fd < 0
         error("inotify_init failed: " .. fd:to(str))
-    end
     {
         fd = fd,
         watches = {},
     }
-end
 
 inotify_add_watch(inotify: any, path: str, mask: i64): any
     watch_id = @ffi("duo_inotify_add_watch", i64, {i64, str, i64})(inotify.fd, path, mask)
     if watch_id < 0
         return {ok = false, error = "inotify_add_watch failed"}
-    end
     inotify.watches[watch_id] = {path = path, mask = mask}
     {ok = true, watch_id = watch_id}
-end
 
 inotify_rm_watch(inotify: any, watch_id: i64): any
     result = @ffi("duo_inotify_rm_watch", i64, {i64, i64})(inotify.fd, watch_id)
     if result < 0
         return {ok = false, error = "inotify_rm_watch failed"}
-    end
     inotify.watches[watch_id] = nil
     {ok = true}
-end
 
 inotify_read(inotify: any): any
     buf = 0:char():rep(4096)
     n = @ffi("duo_read", i64, {i64, str, i64})(inotify.fd, buf, 4096)
     if n < 0
         return {ok = false, events = {}, count = 0}
-    end
     events = {}
     pos = 1
     while pos + 15 < n
@@ -250,8 +230,7 @@ inotify_read(inotify: any): any
             name = buf:sub(pos + 16, pos + 15 + name_len)
             # Strip null terminator
             null_pos = name:find(0:char())
-            if null_pos name = name:sub(1, null_pos - 1) end
-        end
+            if null_pos name = name:sub(1, null_pos - 1) 
         events[events:len() + 1] = {
             watch_id = wd,
             cookie = cookie,
@@ -259,14 +238,11 @@ inotify_read(inotify: any): any
             name = name,
         }
         pos += 16 + name_len
-    end
     {ok = true, events = events, count = events:len()}
-end
 
 inotify_close(inotify: any): void
     @ffi("duo_close", i64, {i64})(inotify.fd)
     inotify.fd = -1
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Memory Mapping
@@ -280,17 +256,15 @@ M.PROT_EXEC = 0x4
 M.MS_SYNC = 0x04
 
 mmap_new(path: str, size: i64, flags: i64): any
-    if flags == nil flags = M.MAP_SHARED end
+    if flags == nil flags = M.MAP_SHARED 
     # Open file for reading/writing
     fd = @ffi("open", i64, {str, i64, i64})(path, 0x0002, 0x0644)  # O_RDWR | O_CREAT
     if fd < 0
         error("mmap: failed to open " .. path)
-    end
     ptr = @ffi("duo_mmap_create", any, {i64, i64, i64, i64, i64})(size, M.PROT_READ | M.PROT_WRITE, flags, fd, 0)
     if ptr == nil
         @ffi("duo_close", i64, {i64})(fd)
         error("mmap: failed to mmap " .. path)
-    end
     {
         path = path,
         size = size,
@@ -298,34 +272,27 @@ mmap_new(path: str, size: i64, flags: i64): any
         fd = fd,
         ptr = ptr,
     }
-end
 
 mmap_read(mmap: any, offset: i64, length: i64): any
     buf = 0:char():rep(length)
     @ffi("memcpy", void, {any, any, i64})(buf, mmap.ptr + offset, length)
     {ok = true, data = buf, size = length}
-end
 
 mmap_write(mmap: any, offset: i64, data: any): any
     @ffi("memcpy", void, {any, any, i64})(mmap.ptr + offset, data, data:len())
     {ok = true}
-end
 
 mmap_sync(mmap: any): any
     result = @ffi("duo_msync", i64, {any, i64, i64})(mmap.ptr, mmap.size, M.MS_SYNC)
     {ok = result == 0}
-end
 
 mmap_unmap(mmap: any): void
     if has(.ptr)(mmap)
         @ffi("duo_munmap", i64, {any, i64})(mmap.ptr, mmap.size)
         mmap.ptr = nil
-    end
     if mmap.fd >= 0
         @ffi("duo_close", i64, {i64})(mmap.fd)
         mmap.fd = -1
-    end
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Eventfd
@@ -336,14 +303,12 @@ M.EFD_NONBLOCK = 2048
 M.EFD_CLOEXEC = 2000000
 
 eventfd_new(initval: i64, flags: i64): any
-    if initval == nil initval = 0 end
-    if flags == nil flags = 0 end
+    if initval == nil initval = 0 
+    if flags == nil flags = 0 
     fd = @ffi("duo_eventfd_create", i64, {i64, i64})(initval, flags)
     if fd < 0
         error("eventfd_create failed")
-    end
     {fd = fd}
-end
 
 eventfd_write(eventfd: any, value: i64): any
     buf = 0:char():rep(8)
@@ -354,30 +319,24 @@ eventfd_write(eventfd: any, value: i64): any
         buf = buf:sub(1, i - 1) .. v & 0xFF:char() .. buf:sub(i + 1)
         v = v >> 8
         i += 1
-    end
     n = @ffi("duo_write", i64, {i64, str, i64})(eventfd.fd, buf, 8)
     {ok = n == 8}
-end
 
 eventfd_read(eventfd: any): any
     buf = 0:char():rep(8)
     n = @ffi("duo_read", i64, {i64, str, i64})(eventfd.fd, buf, 8)
     if n != 8
         return {ok = false, value = 0}
-    end
     value = 0
     i = 7
     while i >= 0
         value = (value << 8) | buf:byte(8 - i)
         i -= 1
-    end
     {ok = true, value = value}
-end
 
 eventfd_close(eventfd: any): void
     @ffi("duo_close", i64, {i64})(eventfd.fd)
     eventfd.fd = -1
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Timerfd
@@ -388,43 +347,36 @@ M.TFD_CLOEXEC = 0x800
 M.CLOCK_MONOTONIC = 1
 
 timerfd_new(clock_id: i64, flags: i64): any
-    if clock_id == nil clock_id = M.CLOCK_MONOTONIC end
-    if flags == nil flags = M.TFD_CLOEXEC end
+    if clock_id == nil clock_id = M.CLOCK_MONOTONIC 
+    if flags == nil flags = M.TFD_CLOEXEC 
     fd = @ffi("duo_timerfd_create", i64, {i64, i64})(clock_id, flags)
     if fd < 0
         error("timerfd_create failed")
-    end
     {fd = fd}
-end
 
 timerfd_settime(timerfd: any, initial: any, interval: any): any
-    if initial == nil initial = {sec = 0, nsec = 0} end
-    if interval == nil interval = {sec = 0, nsec = 0} end
+    if initial == nil initial = {sec = 0, nsec = 0} 
+    if interval == nil interval = {sec = 0, nsec = 0} 
     result = @ffi("duo_timerfd_settime", i64, {i64, i64, i64, i64, i64, i64})(
         timerfd.fd, 0, initial.sec, initial.nsec, interval.sec, interval.nsec
     )
     {ok = result == 0}
-end
 
 timerfd_read(timerfd: any): any
     buf = 0:char():rep(8)
     n = @ffi("duo_read", i64, {i64, str, i64})(timerfd.fd, buf, 8)
     if n != 8
         return {ok = false, expirations = 0}
-    end
     expirations = 0
     i = 7
     while i >= 0
         expirations = (expirations << 8) | buf:byte(8 - i)
         i -= 1
-    end
     {ok = true, expirations = expirations}
-end
 
 timerfd_close(timerfd: any): void
     @ffi("duo_close", i64, {i64})(timerfd.fd)
     timerfd.fd = -1
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Signalfd (stub - needs struct sigset_t)
@@ -435,18 +387,15 @@ signalfd_new(signals: any, flags: i64): any
         fd = -1,
         signals = signals or {},
     }
-end
 
 signalfd_read(signalfd: any): any
     {
         ok = true,
         signals = {},
     }
-end
 
 signalfd_close(signalfd: any): void
     signalfd.fd = -1
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Timer Wheel (pure Lua, no syscalls needed)
@@ -458,14 +407,12 @@ timer_wheel_new(slot_count: i64, resolution_ms: i64): any
     while i <= slot_count
         slots[i] = {}
         i += 1
-    end
     {
         slots = slots,
         slot_count = slot_count,
         resolution_ms = resolution_ms,
         current_slot = 1,
     }
-end
 
 timer_wheel_add(wheel: any, timeout_ms: i64, callback: any): any
     slots_forward = timeout_ms / wheel.resolution_ms:floor()
@@ -480,7 +427,6 @@ timer_wheel_add(wheel: any, timeout_ms: i64, callback: any): any
         ok = true,
         slot = target_slot,
     }
-end
 
 timer_wheel_advance(wheel: any, elapsed_ms: i64): any
     slots_to_advance = elapsed_ms / wheel.resolution_ms:floor()
@@ -491,17 +437,14 @@ timer_wheel_advance(wheel: any, elapsed_ms: i64): any
         wheel.current_slot = ((wheel.current_slot - 1) % wheel.slot_count) + 1
         for entry in wheel.slots[wheel.current_slot]
             fired[fired:len() + 1] = entry.callback
-        end
         wheel.slots[wheel.current_slot] = {}
         i += 1
-    end
 
     {
         ok = true,
         fired = fired,
         count = fired:len(),
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

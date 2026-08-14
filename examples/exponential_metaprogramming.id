@@ -4,9 +4,8 @@
 # With @cached, fib only computes each n once.
 @cached
 fib(n)
-  if n < 2 return 1 end
+  if n < 2 return 1 
   return fib(n - 1) + fib(n - 2)
-end
 
 const fib15 = @(fib(15))
 print("fib(15) = " .. fib15)
@@ -19,15 +18,11 @@ validate_numeric(type_args)
     if t == "str"
       print("validate_numeric error: 'str' is not numeric")
       return false
-    end
-  end
   return true
-end
 
 @modify(validate_numeric)
-fun add<T>(a: T, b: T) -> T
+add<T>(a: T, b: T) -> T
   return a + b
-end
 
 print("add(1, 2) = " .. add(1, 2))
 print("add(3.0, 4.0) = " .. add(3.0, 4.0))
@@ -43,7 +38,6 @@ print("add(3.0, 4.0) = " .. add(3.0, 4.0))
     code = code .. "(" .. meta.name .. "* self) {\n"
     code = code .. "  return self->" .. f.name .. ";\n"
     code = code .. "}\n"
-  end
   return code
 end)
 

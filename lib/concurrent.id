@@ -16,22 +16,17 @@ go(fn: any, ...args): any
             send(fut, {ok = true, val = result})
         else
             send(fut, {ok = false, err = result})
-        end
-    end
     sync.spawn(closure)
     fut
-end
 
 # Await a future (blocks/yields until result available).
 wait(fut: any): any
     r = recv(fut)
-    if r == nil return nil end
+    if r == nil return nil 
     if r.ok
         r.val
     else
         error(r.err, 2)
-    end
-end
 
 # Run N tasks concurrently; return table of results in order.
 all(tasks: any, ...args): any
@@ -44,18 +39,13 @@ all(tasks: any, ...args): any
         for _, t in tasks
             if type(t) == "function"
                 futs[futs:len() + 1] = go(t)
-            elseif type(t) == "table" and t[1]
+            else if type(t) == "table" and t[1]
                 futs[futs:len() + 1] = go(t[1], t:unpack(2))
-            end
-        end
-    end
     sync.run()
     results = {}
     for _, fut in futs
         results[results:len() + 1] = wait(fut)
-    end
     results
-end
 
 # Race: return the first completed future's result.
 race(futs: any): any
@@ -65,12 +55,9 @@ race(futs: any): any
             val = sync.recv(fut)
             sync.peek(winner)  # drain if already won
             send(winner, {idx = i, val = val})
-        end
         sync.spawn(clo)
-    end
     sync.run()
     sync.peek(winner)
-end
 
 # Select: poll channels round-robin until one has data.
 # cases = {{ch=channel, fn=handler}, ...}
@@ -80,24 +67,19 @@ select(cases: any): any
         for _, c in cases
             val = sync.peek(c.ch)
             if val != nil
-                if c.fn c.fn(val) end
+                if c.fn c.fn(val) 
                 return val, c.ch
-            end
-        end
         sync.yield()
-    end
-end
 
 # Semaphore: counting semaphore built on a buffered channel.
 semaphore(n: i64): any
     s = sync.channel(n)
-    for _ = 1, n send(s, true) end
+    for _ = 1, n send(s, true) 
     {
         acquire: any = ()sync.recv(s),
         release: void = ()send(s, true),
         probe: bool = ()sync.peek(s) != nil,
     }
-end
 
 # WaitGroup: wait for N tasks to complete.
 waitgroup(n: i64): any
@@ -105,10 +87,9 @@ waitgroup(n: i64): any
     return {
         done: void = ()send(ch, true),
         wait: void = ()
-            for _ = 1, n sync.recv(ch) end
+            for _ = 1, n sync.recv(ch) 
         end,
     }
-end
 
 # SCOPE: a module's top-level bindings ARE its surface, so these
 # self-assignments (`go = go`) published nothing that was not already public.

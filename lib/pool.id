@@ -2,7 +2,6 @@ clock = time
 new(factory: any, destroyer: any, opts: any): any
   if opts == nil
     opts = {}
-  end
   {
     factory = factory,
     destroyer = destroyer,
@@ -19,25 +18,21 @@ new(factory: any, destroyer: any, opts: any): any
     created = 0,
     destroyed = 0
   }
-end
 get(p: any): any
   while p.resources:len() > 0
     res = p.resources:remove()
     age = clock.now() - (p.used[res] or clock.now())
     if p.idle > 0 and age > p.idle
       destroy(p, res)
-    elseif has(.health)(p) and not p.health(res)
+    else if has(.health)(p) and not p.health(res)
       destroy(p, res)
     else
       p.busy[res] = true
       p.used[res] = clock.now()
       return res
-    end
-  end
   total = 0
   for _ in p.busy
     total = total + 1
-  end
   total = total + p.resources:len()
   if total < p.max
     res = p.factory()
@@ -46,7 +41,6 @@ get(p: any): any
     p.used[res] = clock.now()
     p.busy[res] = true
     return res
-  end
   slot = {
     val = nil,
     done = false
@@ -54,20 +48,16 @@ get(p: any): any
   p.waiters[p.waiters:len() + 1] = slot
   while not slot.done
     coroutine.yield()
-  end
   slot.val
-end
 put(p: any, res: any): void
   if res == nil
     return
-  end
   p.busy[res] = nil
   age = clock.now() - (p.born[res] or 0)
   if p.age > 0 and age > p.age
     destroy(p, res)
     wake(p)
     return
-  end
   if p.waiters:len() > 0
     slot = p.waiters:remove(1)
     slot.val = res
@@ -75,28 +65,23 @@ put(p: any, res: any): void
     p.busy[res] = true
     p.used[res] = clock.now()
     return
-  end
   p.resources[p.resources:len() + 1] = res
   p.used[res] = clock.now()
-end
 probe(p: any): any
   while p.resources:len() > 0
     res = p.resources:remove()
     age = clock.now() - (p.used[res] or clock.now())
     if p.idle > 0 and age > p.idle
       destroy(p, res)
-    elseif has(.health)(p) and not p.health(res)
+    else if has(.health)(p) and not p.health(res)
       destroy(p, res)
     else
       p.busy[res] = true
       p.used[res] = clock.now()
       return res
-    end
-  end
   total = 0
   for _ in p.busy
     total = total + 1
-  end
   total = total + p.resources:len()
   if total < p.max
     res = p.factory()
@@ -105,21 +90,16 @@ probe(p: any): any
     p.used[res] = clock.now()
     p.busy[res] = true
     return res
-  end
   nil
-end
 release(p: any, res: any): void
   put(p, res)
-end
 stats(p: any): any
   idle = 0
   for _ in p.resources
     idle = idle + 1
-  end
   active = 0
   for _ in p.busy
     active = active + 1
-  end
   waiting = p.waiters:len()
   {
     idle = idle,
@@ -131,34 +111,26 @@ stats(p: any): any
     created = p.created,
     destroyed = p.destroyed
   }
-end
 drain(p: any): void
   while p.resources:len() > 0
     destroy(p, p.resources:remove())
-  end
   i = 1
   while i <= p.waiters:len()
     p.waiters[i].done = true
     p.waiters[i].val = nil
     i = i + 1
-  end
   p.waiters = {}
-end
 rep: any, cap: i64:len(): void
   p.max = cap
-end
 destroy(p: any, res: any): void
   p.destroyed = p.destroyed + 1
   p.born[res] = nil
   p.used[res] = nil
   if p.destroyer
     p.destroyer(res)
-  end
-end
 wake(p: any): void
   if p.waiters:len() == 0
     return
-  end
   slot = p.waiters:remove(1)
   res = p.factory()
   p.created = p.created + 1
@@ -167,4 +139,3 @@ wake(p: any): void
   p.busy[res] = true
   slot.val = res
   slot.done = true
-end

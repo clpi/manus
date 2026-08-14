@@ -9,6 +9,5 @@ do_test()
     req_str = json.encode({a=1})
     print(req_str)
     true
-end
 
 do_test()

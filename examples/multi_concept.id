@@ -2,28 +2,22 @@
 
 concept Hashable
     hash(self) -> i64
-end
 
 concept Counter
     value(self) -> i64
-end
 
 Both = {}
 Both:hash() -> i64
     return 11
-end
 Both:value() -> i64
     return 3
-end
 
 Half = {}
 Half:hash() -> i64
     return 7
-end
 
-fun use_both<T: Hashable + Counter>(target: T): i64
+use_both<T: Hashable + Counter>(target: T): i64
     target:hash() + target:value()
-end
 
 @comp.assert(@satisfies(Both, "Hashable"), "Both is Hashable")
 @comp.assert(@satisfies(Both, "Counter"), "Both is Counter")

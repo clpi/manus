@@ -2,7 +2,7 @@
 # bash, including [[ ]] and a ; that the law denies in idol source. Inside
 # a long string they are bytes, and the lexer must not read them as idol.
 script = [=[
-if [[ -f "$file" ]]; then
+if [[ -f "$file" ]];
     echo "$file"
 fi
 ]=]

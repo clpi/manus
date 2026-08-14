@@ -4,7 +4,6 @@
 
 concept Has1
     x: i64
-end
 type T1 = { x: i64 }
 type T2 = { x: i64, y: i64 }
 
@@ -14,5 +13,4 @@ NESTED = @comp.map("q", fun(seed)
 end)
 parity(): str
     @comp.permute("Has1", fun(ordered) ordered.name .. "\n" end)
-end
 BLOCK = parity()

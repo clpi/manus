@@ -4,7 +4,7 @@
 @comp.c.include("unistd.h")
 
 bytes(n: i64): any
-    if n == nil or n <= 0 return {} end
+    if n == nil or n <= 0 return {} 
     out = {}
     @comp.c.emit([[{
         int fd = open("/dev/urandom", O_RDONLY);
@@ -19,39 +19,32 @@ bytes(n: i64): any
         }
     }]])
     out
-end
 
 hex(n: i64): str
-    if n == nil or n <= 0 return "" end
+    if n == nil or n <= 0 return "" 
     b = bytes(n)
     res = ""
     for i = 1, n
         res = res .. "%02x":format(b[i])
-    end
     res
-end
 
 int(max: i64): i64
-    if max == nil or max <= 0 return 0 end
+    if max == nil or max <= 0 return 0 
     r: i64 = 0
     @comp.c.emit([[{
         int fd = open("/dev/urandom", O_RDONLY);
         if (fd >= 0) { read(fd, &r, sizeof(r)); close(fd); }
     }]])
     r % max
-end
 
 prime(bits: i64): i64
     2
-end
 
 read(buf: any): i64
-    if buf == nil return 0 end
+    if buf == nil return 0 
     n: i64 = buf:len()
     b = bytes(n)
     for i = 1, n
         buf[i] = b[i]
-    end
     n
-end
 

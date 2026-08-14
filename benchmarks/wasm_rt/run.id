@@ -18,22 +18,18 @@ _HERE = "benchmarks/wasm_rt"
 
 _env_or(name: str, fallback: str): str
     v = std.script.getenv_or(name)
-    if v == "" return fallback end
+    if v == "" return fallback 
     v
-end
 
 _have(tool: str): bool
     std.script.chomp(std.script.capture("command -v " .. tool .. " 2>/dev/null")) != ""
-end
 
 # Fixed-width column, so the table lines up without printf templates.
 _pad(s: str, w: i64): str
     out = s
     while #out < w
         out = out .. " "
-    end
     out
-end
 
 # Seconds to 4 decimals, from integer ten-thousandths. `to(str)` on an f64
 # does not compile (it lowers to an undeclared `tostring`), so the fraction is
@@ -45,9 +41,7 @@ _secs(ns: i64): str
     fs = frac:to(str)
     while #fs < 4
         fs = "0" .. fs
-    end
     whole:to(str) .. "." .. fs
-end
 
 # One timed run. Returns ns; the OUTPUT is read separately by the caller,
 # because piping through `tail` would put the pipeline in the timing window.
@@ -55,11 +49,9 @@ _time_run(cmd: str): i64
     t0 = std.time.monotonic()
     std.script.run("timeout 900 " .. cmd .. " >/dev/null 2>&1")
     std.time.monotonic() - t0
-end
 
 _last_line(cmd: str): str
     std.script.chomp(std.script.capture("timeout 900 " .. cmd .. " 2>/dev/null | tail -1"))
-end
 
 # Best of N: the MINIMUM, not the mean. A benchmark's slow samples are noise
 # from the machine, not from the runtime.
@@ -74,22 +66,18 @@ _best_of(cmd: str, runs: i64): i64
         ns = _time_run(cmd)
         if best == 0 or ns < best
             best = ns
-        end
         i = i + 1
-    end
     best
-end
 
 main: i64 = ()
     ward = script.getenv_or("WARD_BIN")
     if ward == ""
         print("run: set WARD_BIN to the ward binary")
         return 1
-    end
 
     dir = _env_or("BENCH_DIR", _HERE .. "/scaled")
     runs = to(i64)(_env_or("RUNS", "3"))
-    if runs == nil or runs < 1 runs = 3 end
+    if runs == nil or runs < 1 runs = 3 
 
     # name and command are kept as parallel entries in one row so the table
     # header and the measurement loop cannot drift apart.
@@ -104,18 +92,14 @@ main: i64 = ()
     for _i, c in candidates
         if _have(c[1])
             runtimes[#runtimes + 1] = c
-        end
-    end
 
     if not _have("wasmtime")
         print("run: wasmtime is required as the reference runtime")
         return 1
-    end
 
     header = _pad("bench", 9) .. _pad("ward", 14)
     for _i, e in runtimes
         header = header .. _pad(e[1], 14)
-    end
     print(header)
 
     benches = _env_or("BENCHES", "loop_i32 loop_f64 memory calls fib brtable")
@@ -136,7 +120,6 @@ main: i64 = ()
                     row = row .. _pad(_secs(_best_of(wcmd, runs)) .. "s", 14)
                 else
                     row = row .. _pad("WRONG", 14)
-                end
 
                 for _j, e in runtimes
                     cmd = e[2] .. " " .. f
@@ -144,11 +127,5 @@ main: i64 = ()
                         row = row .. _pad(_secs(_best_of(cmd, runs)) .. "s", 14)
                     else
                         row = row .. _pad("WRONG", 14)
-                    end
-                end
                 print(row)
-            end
-        end
-    end
     0
-end

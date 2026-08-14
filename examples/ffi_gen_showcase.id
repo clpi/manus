@@ -6,7 +6,6 @@
 
 demo_s: str:len(): i64
   return @c.call("strlen", s)
-end
 
 print("=== @comp.ffi showcase ===")
 print("str'duo':len() = " .. to(str)(demo_"duo":len()))

@@ -10,7 +10,6 @@ ring_new(capacity: i64): any
     actual = 1
     while actual < capacity
         actual *= 2
-    end
     {
         buf = {},
         capacity = actual,
@@ -18,66 +17,55 @@ ring_new(capacity: i64): any
         read_pos = 0,
         write_pos = 0,
     }
-end
 
 ring_push(rb: any, value: any): bool
     wp = rb.write_pos
     rp = rb.read_pos
     # Check if full
-    if wp - rp >= rb.capacity return false end
+    if wp - rp >= rb.capacity return false 
     rb.buf[(wp & rb.mask) + 1] = value
     rb.write_pos = wp + 1
     true
-end
 
 ring_pop(rb: any): any
     rp = rb.read_pos
-    if rp >= rb.write_pos return nil end
+    if rp >= rb.write_pos return nil 
     val = rb.buf[(rp & rb.mask) + 1]
     rb.buf[(rp & rb.mask) + 1] = nil  # help GC
     rb.read_pos = rp + 1
     val
-end
 
 ring_peek(rb: any): any
     rp = rb.read_pos
-    if rp >= rb.write_pos return nil end
+    if rp >= rb.write_pos return nil 
     rb.buf[(rp & rb.mask) + 1]
-end
 
 ring_rb: any:len(): i64
     rb.write_pos - rb.read_pos
-end
 
 ring_free(rb: any): i64
     rb.capacity - (rb.write_pos - rb.read_pos)
-end
 
 ring_is_empty(rb: any): bool
     rb.write_pos == rb.read_pos
-end
 
 ring_is_full(rb: any): bool
     rb.write_pos - rb.read_pos >= rb.capacity
-end
 
 ring_drain(rb: any, max: i64): any
     out = {}
     count = 0
     while count < max
         val = ring_pop(rb)
-        if val == nil break end
+        if val == nil break 
         out[out:len() + 1] = val
         count += 1
-    end
     out
-end
 
 ring_clear(rb: any): void
     rb.buf = {}
     rb.read_pos = 0
     rb.write_pos = 0
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Double Buffer (swap between read/write buffers)
@@ -89,30 +77,23 @@ double_buffer_new(): any
         back = {},
         read_idx = 1,  # 1 = front, 2 = back
     }
-end
 
 double_buffer_swap(db: any): void
     if db.read_idx == 1
         db.read_idx = 2
     else
         db.read_idx = 1
-    end
-end
 
 double_buffer_write(db: any, data: any): void
     if db.read_idx == 1
         db.back = data
     else
         db.front = data
-    end
-end
 
 double_buffer_read(db: any): any
     if db.read_idx == 1
         return db.front
-    end
     db.back
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Memory Pool (pre-allocated fixed-size blocks)
@@ -124,7 +105,6 @@ mem_pool_new(block_size: i64, block_count: i64): any
     while i < block_count
         blocks[i + 1] = {data = {}, in_use = false, id = i}
         i += 1
-    end
     {
         block_size = block_size,
         block_count = block_count,
@@ -132,7 +112,6 @@ mem_pool_new(block_size: i64, block_count: i64): any
         free_count = block_count,
         alloc_count = 0,
     }
-end
 
 mem_pool_alloc(pool: any): any
     i = 1
@@ -142,19 +121,15 @@ mem_pool_alloc(pool: any): any
             pool.free_count -= 1
             pool.alloc_count += 1
             return pool.blocks[i]
-        end
         i += 1
-    end
     nil  # out of blocks
-end
 
 mem_pool_free(pool: any, block: any): void
-    if block == nil return end
+    if block == nil return 
     block.in_use = false
     block.data = {}
     pool.free_count += 1
     pool.alloc_count -= 1
-end
 
 mem_pool_stats(pool: any): any
     {
@@ -163,7 +138,6 @@ mem_pool_stats(pool: any): any
         allocated = pool.alloc_count,
         utilization = pool.alloc_count / pool.block_count,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Slab Allocator (size-segregated pools for different object sizes)
@@ -174,27 +148,21 @@ slab_allocator_new(): any
         slabs = {},
         total_allocated = 0,
     }
-end
 
 slab_alloc(sa: any, size_class: i64, count: i64): any
     if sa.slabs[size_class] == nil
         sa.slabs[size_class] = mem_pool_new(size_class, count)
-    end
     mem_pool_alloc(sa.slabs[size_class])
-end
 
 slab_free(sa: any, size_class: i64, block: any): void
-    if sa.slabs[size_class] == nil return end
+    if sa.slabs[size_class] == nil return 
     mem_pool_free(sa.slabs[size_class], block)
-end
 
 slab_stats(sa: any): any
     stats = {}
     for size_class, pool in sa.slabs
         stats[size_class] = mem_pool_stats(pool)
-    end
     stats
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Virtual Memory Arena (bump allocator with commit/decommit)
@@ -210,7 +178,6 @@ vmem_arena_new(initial_pages: i64, max_pages: i64): any
         pages = {},
         total_bytes = initial_pages * page_size,
     }
-end
 
 vmem_arena_alloc(arena: any, size: i64): any
     # Align to 8 bytes
@@ -222,18 +189,14 @@ vmem_arena_alloc(arena: any, size: i64): any
         arena.committed_pages = arena.committed_pages + needed
         if arena.committed_pages > arena.max_pages
             return nil
-        end
         arena.total_bytes = arena.committed_pages * arena.page_size
-    end
 
     offset = arena.used_bytes
     arena.used_bytes += aligned
     {offset = offset, size = aligned}
-end
 
 vmem_arena_reset(arena: any): void
     arena.used_bytes = 0
-end
 
 vmem_arena_stats(arena: any): any
     {
@@ -243,7 +206,6 @@ vmem_arena_stats(arena: any): any
         max_pages = arena.max_pages,
         utilization = arena.used_bytes / arena.total_bytes,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

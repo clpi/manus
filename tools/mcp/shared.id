@@ -15,13 +15,10 @@ capture = process.capture
 root = os.env["IDOL_ROOT"] or ""
 if root:len() == 0
     root = os.env["DUO_ROOT"] or ""
-end
 if root:len() == 0
     root = os.env["PWD"] or ""
-end
 if root:len() == 0
     root = "."
-end
 # Session state, NOT repository truth. These tools APPEND  -  five write sites
 # below  -  which is how .agents/AGENT_COORDINATION.md grew to 4619 tracked
 # lines and became a control plane. .agents/session/ is gitignored; the
@@ -32,10 +29,8 @@ canonpath = "{root}/.agents/AGENT_CANONICAL.md"
 idbin = os.env["IDOL_BIN"] or ""
 if idbin:len() == 0
     idbin = os.env["DUO_BIN"] or ""
-end
 if idbin:len() == 0
     idbin = "{root}/zig-out/bin/idol"
-end
 duobin = idbin
 
 # The build lock lives here so no shell-wrapper namespace is needed.
@@ -56,8 +51,6 @@ coordination_read: str = ()
         fs:read_file(coordpath)
     else
         "Coordination buffer not yet initialized."
-    end
-end
 
 coordination_update = (action: str, agent_id: str, detail: str, files: str)
     timestamp = clock.coord()
@@ -65,10 +58,9 @@ coordination_update = (action: str, agent_id: str, detail: str, files: str)
     entry = "{entry}Detail: {detail}\n"
     if files != ""
         entry = "{entry}Files: {files}\n"
-    end
     status = "ACTIVE"
     if action == "claim" then status = "LOCKED"
-    elseif action == "release" then status = "UNLOCKED" end
+    else if action == "release" then status = "UNLOCKED" 
     entry = "{entry}Status: {status}\n"
     prior = fs:read_file(coordpath)
     fs:write_file(coordpath, "{prior}{entry}")
@@ -77,7 +69,6 @@ coordination_update = (action: str, agent_id: str, detail: str, files: str)
     -- written, not what status the entry landed with.
     { kind = "coordination.update", action = action, agent = agent_id,
              status = status, path = coordpath, files = files }
-end
 
 session_log = (agent_id: str, summary: str, detail: str)
     timestamp = clock.utc()
@@ -86,7 +77,6 @@ session_log = (agent_id: str, summary: str, detail: str)
         entry = "{entry} {detail} |"
     else
         entry = "{entry} |"
-    end
     content = fs:read_file(coordpath)
     marker = "## Session log (newest first)"
     pos = string.find(content, marker)
@@ -97,23 +87,18 @@ session_log = (agent_id: str, summary: str, detail: str)
         table_pos = string.find(after, "| --- | --- | --- |")
         if table_pos
             after = string.sub(after, table_pos + 18)
-        end
         content = "{before}\n\n| UTC date | Agent | Summary |\n| --- | --- | --- |\n{entry}{after}"
     else
         content = "{content}\n\n## Session log (newest first)\n\n| UTC date | Agent | Summary |\n| --- | --- | --- |\n{entry}\n"
-    end
     fs:write_file(coordpath, content)
     { kind = "session.log", agent = agent_id, summary = summary, path = coordpath }
-end
 
 open_p0_gaps: any = ()
     content = coordination_read()
     gaps = {}
     for line in string.gmatch(content, "| G-[^|]+ |[^|]+ | P0 |[^|]+ |[^|]+ |")
         gaps[gaps:len() + 1] = line
-    end
     gaps
-end
 
 exact_capture: any = (cmd: str)
     full = cmd
@@ -121,16 +106,13 @@ exact_capture: any = (cmd: str)
     mark = "duoexit:"
     code = -1
     clean = out
-    for i = 1, out:len() do
-        if string.sub(out, i, i + mark:len() - 1) == mark then
+    for i = 1, out:len()
+        if string.sub(out, i, i + mark:len() - 1) == mark
             rest = string.sub(out, i + mark:len(), out:len())
             code = tonumber(string.gsub(rest, "%s+", "")) or -1
             clean = string.sub(out, 1, i - 1)
             break
-        end
-    end
     { outcome = process.verdict(code), status = code, output = clean }
-end
 
 # === Build gates ===
 
@@ -139,14 +121,12 @@ agent_smoke: any = (timeout: int)
     full = smoke_cmd
     if os.env["DUO_LOCK_HELD"] != "1"
         full = "{lockprefix}{smoke_cmd}"
-    end
     cap = exact_capture(full)
     rev = string.gsub(capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
     dirty = capture("git status --short 2>/dev/null") or ""
     dest = os.tmpname()
     fs:write_file(dest, cap.output)
     { gate = "agent-smoke", command = full, inner_command = smoke_cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status != 75, artifact = dest }
-end
 
 build_run: any = (kind: str, timeout: int)
     gates = {
@@ -157,18 +137,16 @@ build_run: any = (kind: str, timeout: int)
         ["agent-smoke"] = "{duobin} run scripts/agent_smoke.id",
     }
     cmd = gates[kind]
-    if cmd == nil then return { error = "unknown gate: {kind}" } end
+    if cmd == nil then return { error = "unknown gate: {kind}" } 
     full = cmd
     if os.env["DUO_LOCK_HELD"] != "1"
         full = "{lockprefix}{cmd}"
-    end
     cap = exact_capture(full)
     rev = string.gsub(capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
     dirty = capture("git status --short 2>/dev/null") or ""
     dest = os.tmpname()
     fs:write_file(dest, cap.output)
     { gate = kind, command = full, inner_command = cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status != 75, artifact = dest }
-end
 
 # Benchmark suites. An ALLOWLIST, not string interpolation: `suite`
 # arrives from an MCP client, and the old duo_bench.id handler pasted it
@@ -182,18 +160,16 @@ bench_run: any = (kind: str, timeout: int)
         ["wasm-bench"] = "zig build wasm-bench",
     }
     cmd = suites[kind]
-    if cmd == nil then return { error = "unknown bench suite: {kind}" } end
+    if cmd == nil then return { error = "unknown bench suite: {kind}" } 
     full = cmd
     if os.env["DUO_LOCK_HELD"] != "1"
         full = "{lockprefix}{cmd}"
-    end
     cap = exact_capture(full)
     rev = string.gsub(capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
     dirty = capture("git status --short 2>/dev/null") or ""
     dest = os.tmpname()
     fs:write_file(dest, cap.output)
     { suite = kind, command = full, inner_command = cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status != 75, artifact = dest }
-end
 
 # === DOCUMENT ENVELOPE (§0g / H-8 partial repair) ===
 #
@@ -221,7 +197,6 @@ document: any = (path: str, label: str, limit: int)
     if not fs:exists(path)
         return { kind = "document", label = label, path = path, exists = false,
                  bytes = 0, lines = 0, truncated = false, text = "" }
-    end
     raw = fs:read_file(path) or ""
     n = string.len(raw)
     body = raw
@@ -229,13 +204,11 @@ document: any = (path: str, label: str, limit: int)
     if limit > 0 and n > limit
         body = string.sub(raw, 1, limit)
         cut = true
-    end
     -- Line count by VALUE, not by a running counter: count the newlines that
     -- are actually there.
     nl = string.len(raw) - string.len(string.gsub(raw, "\n", ""))
     { kind = "document", label = label, path = path, exists = true,
              bytes = n, lines = nl + 1, truncated = cut, text = body }
-end
 
 # === Repo tooling ===
 
@@ -243,17 +216,15 @@ repo_tooling: any = (script_name: str, args: str)
     full = ""
     if fs:exists("scripts/{script_name}")
         full = "{duobin} run scripts/{script_name}"
-    elseif fs:exists(script_name)
+    else if fs:exists(script_name)
         full = "{duobin} run {script_name}"
-    elseif fs:exists("{root}/scripts/{script_name}")
+    else if fs:exists("{root}/scripts/{script_name}")
         full = "{duobin} run {root}/scripts/{script_name}"
     else
         return { error = "script not found: {script_name}" }
-    end
-    if args != "" then full = "{full} {args}" end
+    if args != "" then full = "{full} {args}" 
     rc = run(full)
     { exit_code = rc, outcome = process.verdict(rc), script = script_name }
-end
 
 # === INFER-ONE agent context (C0 law.infer.one  -  session bootstrap for all MCP agents) ===
 
@@ -274,10 +245,9 @@ harness_context: str = ()
 
 dev_session_start: str = (owner: str, work_item: str, client: str)
     cmd = "{duobin} dev session start --owner {owner}"
-    if client != "" then cmd = "{cmd} --client {client}" end
-    if work_item != "" then cmd = "{cmd} --work-item {work_item}" end
+    if client != "" then cmd = "{cmd} --client {client}" 
+    if work_item != "" then cmd = "{cmd} --work-item {work_item}" 
     capture("{cmd} 2>&1")
-end
 
 # The compiler-side lease. It reports a claim; it does NOT arbitrate one  - 
 # two callers both get an "acquired" line back. The arbitrating claim is
@@ -286,65 +256,54 @@ end
 # function once the real lock is held.
 dev_claim_note: str = (owner: str, file: str, client: str, work_item: str)
     cmd = "{duobin} dev claim acquire --owner {owner} --file {file}"
-    if client != "" then cmd = "{cmd} --client {client}" end
-    if work_item != "" then cmd = "{cmd} --work-item {work_item}" end
+    if client != "" then cmd = "{cmd} --client {client}" 
+    if work_item != "" then cmd = "{cmd} --work-item {work_item}" 
     capture("{cmd} 2>&1")
-end
 
 dev_claim_list: str = ()
     capture("{duobin} dev claim list 2>&1")
-end
 
 dev_coordination_export: str = ()
     capture("{duobin} dev coordination export 2>&1")
-end
 
 dev_validate_plan: str = (file: str, work_item: str)
     cmd = "{duobin} dev validate plan"
     if file != "" then cmd = "{cmd} --file {file}"
-    elseif work_item != "" then cmd = "{cmd} --work-item {work_item}" end
+    else if work_item != "" then cmd = "{cmd} --work-item {work_item}" 
     capture("{cmd} 2>&1")
-end
 
 semantic_claims: str = ()
     capture("{duobin} semantic claims 2>&1")
-end
 
 semantic_transaction_preview: str = (classifier: str)
     c = classifier
-    if c == nil or c == "" then c = "classifier.sorted_lookup" end
+    if c == nil or c == "" then c = "classifier.sorted_lookup" 
     capture("{duobin} semantic preview {c} 2>&1")
-end
 
 semantic_transaction_validate: str = (classifier: str)
     c = classifier
-    if c == nil or c == "" then c = "classifier.sorted_lookup" end
+    if c == nil or c == "" then c = "classifier.sorted_lookup" 
     capture("{duobin} semantic validate {c} 2>&1")
-end
 
 dev_integration_list: str = ()
     capture("{duobin} dev integration list 2>&1")
-end
 
 dev_integration_submit: str = (owner: str, work_item: str, claim_id: str)
     cmd = "{duobin} dev integration submit --owner {owner} --work-item {work_item}"
-    if claim_id != nil and claim_id != "" then cmd = "{cmd} --claim-id {claim_id}" end
+    if claim_id != nil and claim_id != "" then cmd = "{cmd} --claim-id {claim_id}" 
     capture("{cmd} 2>&1")
-end
 
 dev_validate_run: str = (file: str, work_item: str, execute: bool)
     cmd = "{duobin} dev validate run"
     if file != nil and file != "" then cmd = "{cmd} --file {file}"
-    elseif work_item != nil and work_item != "" then cmd = "{cmd} --work-item {work_item}" end
-    if execute then cmd = "{cmd} --execute" end
+    else if work_item != nil and work_item != "" then cmd = "{cmd} --work-item {work_item}" 
+    if execute then cmd = "{cmd} --execute" 
     capture("{cmd} 2>&1")
-end
 
 # === Native boxing audit ===
 
 dump_c: str = (file_path: str)
     capture("{duobin} dump-c {file_path} 2>&1")
-end
 
 audit_native_boxing: any = (file_path: str)
     c_code = dump_c(file_path)
@@ -352,32 +311,24 @@ audit_native_boxing: any = (file_path: str)
     for _, needle in {"lua_invoke(", "lua_table_get_str_lit(", "lua_Value ", "lua_table_new(", "lua_val_from_"}
         if string.find(c_code, needle)
             hits[hits:len() + 1] = needle
-        end
-    end
     -- Check comptime violations in main()
     main_pos = 0
     for i = c_code:len(), 1, -1
         if string.sub(c_code, i, i + 7) == "int main"
             main_pos = i
             break
-        end
-    end
     user = ""
     if main_pos > 0
         user = string.sub(c_code, main_pos)
     else
         user = string.sub(c_code, -4000)
-    end
     comptime_violations = {}
     for ident, rhs in string.gmatch(user, "const char%* (%w+) = ([^;]+);")
         if string.find(rhs, "lua_")
             comptime_violations[comptime_violations:len() + 1] = { binding = ident, rhs = string.sub(rhs, 1, 120) }
-        end
-    end
     const_count = 0
     for _ in string.gmatch(c_code, "const char%*")
         const_count += 1
-    end
     {
         file = file_path,
         boxing_hits = hits,
@@ -387,19 +338,16 @@ audit_native_boxing: any = (file_path: str)
         const_char_ptr_bindings = const_count,
         pass = comptime_violations:len() == 0,
     }
-end
 
 # === Semantic interchange (SIM) ===
 
 semantic_snapshot: any = (file_path: str)
     output = capture("{duobin} sim {file_path} 2>&1")
-    if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed") then
+    if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed")
         return { ok = false, error = string.sub(output, 1, 4000), schema = "sim-v0" }
-    end
     parsed = json:decode(output)
-    if parsed == nil then
+    if parsed == nil
         return { ok = false, error = "failed to parse SIM JSON", raw_output = string.sub(output, 1, 2000) }
-    end
     {
         ok = true,
         schema = parsed.schema or "sim-v0",
@@ -408,37 +356,30 @@ semantic_snapshot: any = (file_path: str)
         entities = parsed.entities or {},
         snapshot = parsed,
     }
-end
 
 semantic_snapshot_raw: str = (file_path: str)
     output = capture("{duobin} sim {file_path} 2>&1")
     -- Find the JSON start (skip any diagnostic lines)
     i = string.find(output, "{")
-    if i == nil then
+    if i == nil
         return "{\"ok\":false,\"error\":\"no JSON in output\",\"raw\":\"{string.sub(output, 1, 200)}\"}"
-    end
     string.sub(output, i)
-end
 
 foreign_import_preview: any = (header_path: str, source_dir: str)
     resolved = header_path
-    if source_dir != "" and string.sub(header_path, 1, 1) != "/" then
+    if source_dir != "" and string.sub(header_path, 1, 1) != "/"
         resolved = "{source_dir}/{header_path}"
-    end
     output = capture("{duobin} sim --import-c {resolved} 2>&1")
-    if string.find(output, ": error:") or string.find(output, "failed") then
+    if string.find(output, ": error:") or string.find(output, "failed")
         return { ok = false, error = string.sub(output, 1, 4000), header = resolved }
-    end
     parsed = json:decode(output)
-    if parsed == nil then
+    if parsed == nil
         return { ok = false, error = "failed to parse SIM JSON", header = resolved, raw_output = string.sub(output, 1, 2000) }
-    end
     records = {}
     functions = {}
     for _, ent in parsed.entities or {}
         if ent.kind == "record" then records[records:len() + 1] = ent
-        elseif ent.kind == "function" then functions[functions:len() + 1] = ent end
-    end
+        else if ent.kind == "function" then functions[functions:len() + 1] = ent 
     {
         ok = true,
         schema = parsed.schema or "sim-v0",
@@ -449,78 +390,58 @@ foreign_import_preview: any = (header_path: str, source_dir: str)
         entities = parsed.entities or {},
         snapshot = parsed,
     }
-end
 
 pass6_catalog: any = ()
     output = capture("{duobin} catalog 2>&1")
     parsed = json:decode(output)
-    if parsed == nil then
+    if parsed == nil
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
-    end
     p6 = parsed.pass6
-    if p6 == nil then
+    if p6 == nil
         return { ok = false, error = "catalog missing pass6 section" }
-    end
     { ok = true, pass6 = p6 }
-end
 
 pass5_catalog: any = ()
     output = capture("{duobin} catalog 2>&1")
     parsed = json:decode(output)
-    if parsed == nil then
+    if parsed == nil
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
-    end
     p5 = parsed.pass5
-    if p5 == nil then
+    if p5 == nil
         return { ok = false, error = "catalog missing pass5 section" }
-    end
     { ok = true, pass5 = p5 }
-end
 
 foreign_entity_lookup: any = (file_path: str, symbol: str)
     content = ""
-    if fs:exists(file_path) then content = fs:read_file(file_path) end
+    if fs:exists(file_path) then content = fs:read_file(file_path) 
     source_dir = file_path
     dir = string.match(file_path, "^(.*)/[^/]+$")
-    if dir then source_dir = dir end
+    if dir then source_dir = dir 
     for header in string.gmatch(content, '@c%.import%("([^"]+)"%)')
         preview = foreign_import_preview(header, source_dir)
-        if preview.ok then
+        if preview.ok
             for _, ent in preview.entities
-                if ent.name == symbol then
+                if ent.name == symbol
                     return { ok = true, symbol = symbol, entity = ent, header = header, source_file = file_path }
-                end
-            end
-        end
-    end
     for header in string.gmatch(content, "@c%.import%('([^']+)'%)")
         preview = foreign_import_preview(header, source_dir)
-        if preview.ok then
+        if preview.ok
             for _, ent in preview.entities
-                if ent.name == symbol then
+                if ent.name == symbol
                     return { ok = true, symbol = symbol, entity = ent, header = header, source_file = file_path }
-                end
-            end
-        end
-    end
     { ok = false, symbol = symbol, source_file = file_path, error = "foreign entity not found in foreign import headers" }
-end
 
 # === Canonical index ===
 
 canonical_index: str = ()
     if fs:exists(canonpath)
         return fs:read_file(canonpath)
-    end
     "Canonical index not found at {canonpath}"
-end
 
 perf_ledger: str = ()
     if fs:exists(perfpath)
         return string.sub(fs:read_file(perfpath), 1, 10000)
-    end
     "Performance ledger not found at {perfpath}"
-end
 # Gate-private bootstrap projection for GAP-119. The harness owns these
 # witnesses; this relation only projects its retained artifact into fields.
 observe: any = (proof: any, line: str)
@@ -590,38 +511,32 @@ perf_gaps: any = ()
     i = 1
     while i <= lines:len()
         ln = lines[i]
-        if string.sub(ln, 1, 4) == "| F-" then
+        if string.sub(ln, 1, 4) == "| F-"
             kind_match = false
-            if string.find(ln, "perf_gap", 1, true) != nil then kind_match = true end
-            if string.find(ln, "native_lowering", 1, true) != nil then kind_match = true end
-            if string.find(ln, "codegen_gap", 1, true) != nil then kind_match = true end
+            if string.find(ln, "perf_gap", 1, true) != nil then kind_match = true 
+            if string.find(ln, "native_lowering", 1, true) != nil then kind_match = true 
+            if string.find(ln, "codegen_gap", 1, true) != nil then kind_match = true 
             status_open = false
-            if string.find(ln, "| open |", 1, true) != nil then status_open = true end
+            if string.find(ln, "| open |", 1, true) != nil then status_open = true 
             if kind_match
-                if status_open then _ = gaps:push(ln) end
-            end
-        end
+                if status_open then _ = gaps:push(ln) 
         i += 1
-    end
     perf = ""
-    if fs:exists(perfpath) then
+    if fs:exists(perfpath)
         perf = string.sub(fs:read_file(perfpath), 1, 4000)
-    end
     {
         open_perf_gap_count = gaps:len(),
         gaps = gaps,
         perf_ledger_excerpt = perf,
     }
-end
 # === Codegen-pitfall audit ===
 # Detect the known silent-correctness codegen bugs (F-13813-2 call-as-tail
 # premature return; F-13813-3 nil-init void* inference) in a .id source file,
 # with the verified workaround for each. Protects every duo developer from
 # spending hours on these. Literal scans only (pattern engine is unreliable).
 audit_codegen_pitfalls: any = (file_path: str)
-    if not fs:exists(file_path) then
+    if not fs:exists(file_path)
         return { error = "file not found: {file_path}" }
-    end
     src = fs:read_file(file_path)
     lines = string.split(src, "\n")
     findings = {}
@@ -630,38 +545,35 @@ audit_codegen_pitfalls: any = (file_path: str)
         ln = lines[i]
         tr = str_trim(ln)
         -- F-13813-3: `= nil` init risks void* type inference
-        if string.find(tr, "= nil", 1, true) != nil then
+        if string.find(tr, "= nil", 1, true) != nil
             _ = findings:push({
                 line = i,
                 rule = "F-13813-3 nil-init",
                 risk = "sema infers void*; later typed assignment fails to compile or mis-codes",
                 fix = "initialize with a typed sentinel (\"\" / 0 / {} / false)",
             })
-        end
         -- F-13813-2: a bare call statement as the LAST statement of an if/for/while
-        -- block emits `return call(...)`, exiting the enclosing function early.
+        -- block emits `return call(...)`, exiting the enclosing early.
         is_tail = false
-        if i < lines:len() then
+        if i < lines:len()
             j = i + 1
             nxt = ""
             while j <= lines:len()
                 nxt = str_trim(lines[j])
-                if nxt:len() > 0 then break end
+                if nxt:len() > 0 then break 
                 j += 1
-            end
             -- Prefix checks via string.find (NUMBER result); string == is
             -- unreliable inside while loops (duo codegen bug).
-            if string.find(nxt, "end", 1, true) == 1 then is_tail = true end
-            if string.find(nxt, "else", 1, true) == 1 then is_tail = true end
-            if string.find(nxt, "elseif", 1, true) == 1 then is_tail = true end
-        end
-        if is_tail then
+            if string.find(nxt, "end", 1, true) == 1 then is_tail = true 
+            if string.find(nxt, "else", 1, true) == 1 then is_tail = true 
+            if string.find(nxt, "elseif", 1, true) == 1 then is_tail = true 
+        if is_tail
             bare_call = false
             has_assign = string.find(tr, " = ", 1, true) != nil
             starts_return = string.find(tr, "return ", 1, true) == 1
-            if (not has_assign) and (not starts_return) then
+            if (not has_assign) and (not starts_return)
                 paren = string.find(tr, "(", 1, true)
-                if paren != nil and paren > 1 then
+                if paren != nil and paren > 1
                     head = string.sub(tr, 1, paren - 1)
                     -- head must be a bare identifier/path; validate via string.byte
                     -- (number comparison  -  string == fails inside loops).
@@ -670,35 +582,28 @@ audit_codegen_pitfalls: any = (file_path: str)
                     while k <= head:len()
                         code = head:byte(k)
                         ok_c = false
-                        if code >= 48 and code <= 57 then ok_c = true end
-                        if code >= 65 and code <= 90 then ok_c = true end
-                        if code >= 97 and code <= 122 then ok_c = true end
-                        if code == 46 then ok_c = true end
-                        if code == 95 then ok_c = true end
-                        if not ok_c then head_ok = false end
+                        if code >= 48 and code <= 57 then ok_c = true 
+                        if code >= 65 and code <= 90 then ok_c = true 
+                        if code >= 97 and code <= 122 then ok_c = true 
+                        if code == 46 then ok_c = true 
+                        if code == 95 then ok_c = true 
+                        if not ok_c then head_ok = false 
                         k += 1
-                    end
-                    if head_ok then bare_call = true end
-                end
-            end
-            if bare_call then
+                    if head_ok then bare_call = true 
+            if bare_call
                 _ = findings:push({
                     line = i,
                     rule = "F-13813-2 call-as-tail",
                     risk = "codegen emits premature return; enclosing function exits here",
                     fix = "prefix with `_ = `  (e.g.  `_ = t:push(v)`)",
                 })
-            end
-        end
         i += 1
-    end
     {
         file = file_path,
         finding_count = findings:len(),
         findings = findings,
         summary = "Scanned {lines:len()} lines; {findings:len()} codegen-pitfall(s)."
     }
-end
 # === Exponential evaluator ===
 # Analyze Duo source for metaprogramming opportunities and emit @comp.* suggestions.
 # Pure-pattern detection; no lua_Value ever produced. Optionally audits native
@@ -713,16 +618,13 @@ str_trim: str = (s: str)
     b = s:len()
     while a <= b
         code = s:byte(a)
-        if code != 32 and code != 9 then break end
+        if code != 32 and code != 9 then break 
         a += 1
-    end
     while b >= a
         code = s:byte(b)
-        if code != 32 and code != 9 then break end
+        if code != 32 and code != 9 then break 
         b -= 1
-    end
     string.sub(s, a, b)
-end
 
 exponential_evaluate: any = (code: str, file_path: str)
     suggestions = {}
@@ -738,8 +640,6 @@ exponential_evaluate: any = (code: str, file_path: str)
             pp = string.find(t, "%(")
             if pp and pp > 5
                 nm = str_trim(string.sub(t, 5, pp - 1))
-            end
-        end
         if nm:len() > 0
             for si = 1, TYPE_SUFFIXES:len()
                 suf = TYPE_SUFFIXES[si]
@@ -748,17 +648,12 @@ exponential_evaluate: any = (code: str, file_path: str)
                     base = string.sub(nm, 1, nm:len() - slen)
                     bases[base] = bases[base] or {}
                     bases[base][suf] = i
-                end
-            end
-        end
-    end
     for base, tys in bases
         cnt = 0
         first = 0
         for ty, ln in tys
             cnt += 1
-            if first == 0 or ln < first then first = ln end
-        end
+            if first == 0 or ln < first then first = ln 
         if cnt >= 2
             _ = suggestions:push({
                 kind = "exponential_opportunity",
@@ -767,18 +662,14 @@ exponential_evaluate: any = (code: str, file_path: str)
                 rationale = "'{base}' is hand-monomorphized across {cnt:to(str)} types; one @comp.map emits all variants with zero lua_Value."
                 multiplier = "O({cnt:to(str)} decls <= 1 call)"
             })
-        end
-    end
 
-    -- Detector B: runtime type-string dispatch (if t == "i64" ... elseif "f64")
+    -- Detector B: runtime type-string dispatch (if t == "i64" ... else if "f64")
     dispatch_hits = 0
     dispatch_line = 0
     for i = 1, lines:len()
         if string.find(lines[i], '== "i64"') or string.find(lines[i], '== "f64"') or string.find(lines[i], '== "i32"') or string.find(lines[i], '== "f32"')
             dispatch_hits += 1
-            if dispatch_line == 0 then dispatch_line = i end
-        end
-    end
+            if dispatch_line == 0 then dispatch_line = i 
     if dispatch_hits >= 2
         _ = suggestions:push({
             kind = "exponential_opportunity",
@@ -787,7 +678,6 @@ exponential_evaluate: any = (code: str, file_path: str)
             rationale = "Runtime type-string branching ({dispatch_hits:to(str)} arms) collapses to a compile-time type dispatch."
             multiplier = "O(branches -> 0 runtime cost)",
         })
-    end
 
     -- Detector C: >=3 consecutive incrementing indexed writes (arr[1]=, arr[2]=, ...)
     run_len = 0
@@ -808,16 +698,12 @@ exponential_evaluate: any = (code: str, file_path: str)
                 else
                     run_len = 1
                     run_start = i
-                end
                 run_prev = idx
-                if run_len >= 3 and c_line == 0 then c_line = run_start end
+                if run_len >= 3 and c_line == 0 then c_line = run_start 
             else
                 run_len = 0
-            end
         else
             run_len = 0
-        end
-    end
     if c_line > 0
         _ = suggestions:push({
             kind = "exponential_opportunity",
@@ -826,7 +712,6 @@ exponential_evaluate: any = (code: str, file_path: str)
             rationale = "Sequential indexed writes form a bounded loop; @comp.compile.unroll expands it at compile time.",
             multiplier = "O(n statements -> 1 loop)",
         })
-    end
 
     -- Detector D: repeated record-type boilerplate (>=3 'type X = {')
     type_defs = 0
@@ -835,9 +720,7 @@ exponential_evaluate: any = (code: str, file_path: str)
         t = str_trim(lines[i])
         if string.sub(t, 1, 5) == "type " and string.find(t, "{") and string.find(t, "=")
             type_defs += 1
-            if type_line == 0 then type_line = i end
-        end
-    end
+            if type_line == 0 then type_line = i 
     if type_defs >= 3
         _ = suggestions:push({
             kind = "exponential_opportunity",
@@ -846,7 +729,6 @@ exponential_evaluate: any = (code: str, file_path: str)
             rationale = "{type_defs:to(str)} record types; @comp.derive.bundle generates shared trait impls for all in one annotation."
             multiplier = "O(types x traits <= 1 annotation)",
         })
-    end
 
     -- Detector E: comptime-foldable literal arithmetic (var = digits op digits, no vars)
     for i = 1, lines:len()
@@ -862,9 +744,6 @@ exponential_evaluate: any = (code: str, file_path: str)
                     rationale = "Constant arithmetic '{rhs}{\"' folds at compile time with @( ... ).\",}"
                     multiplier = "O(1 runtime -> 0)",
                 })
-            end
-        end
-    end
 
     -- Annotated preview: prepend a discovery header listing every opportunity.
     optimized = code
@@ -873,9 +752,7 @@ exponential_evaluate: any = (code: str, file_path: str)
         optimized = "# @comp exponential-eval: {scount:to(str)} opportunity(s)\n"
         for _, s in suggestions
             optimized = "{optimized}# [L{s.line:to(str)}] {s.construct}: {s.rationale}\n"
-        end
         optimized = "{optimized}{code}"
-    end
 
     result = {
         file = file_path or "<inline>",
@@ -885,9 +762,7 @@ exponential_evaluate: any = (code: str, file_path: str)
     }
     if file_path and file_path != "" and fs:exists(file_path)
         result.boxing = audit_native_boxing(file_path)
-    end
     result
-end
 
 # === Exponential mentoring: Onboarding guidance for metaprogramming ===
 
@@ -902,15 +777,11 @@ exponential_onboard: any = (question: str, code: str)
     }
     if question == "" or question == nil
         return { guidance = default, question = question }
-    end
     q_lower = string.lower(question)
     for key, val in questions
         if string.find(q_lower, string.lower(key), 1, true) != nil
             return { guidance = val, question = question, matched = key }
-        end
-    end
     { error = "Question not recognized. Try: what is exponential metaprogramming, when to use derive, how map differs from regular function" }
-end
 
 combinator_info: any = (path: str)
     result = {
@@ -946,14 +817,11 @@ combinator_info: any = (path: str)
     
     if path == "" or path == nil
         return { combinators = result:keys(), info = "Available combinators: {result:keys():join(", ")}" }
-    end
     
     if result[path]
         return result[path]
-    end
     
     { error = "Unknown combinator: {path}. Available: {result:keys():join(\", \")}" }
-end
 
 # ====================================
 
@@ -965,29 +833,26 @@ file_finding: str = (kind: str, title: str, detail: str, priority: str, files: s
     slot = clock.now() % 100000
     id = "F-{slot:to(str)}-{finding_seq:to(str)}"
     pr = priority
-    if pr == "" or pr == nil then pr = "P1" end
+    if pr == "" or pr == nil then pr = "P1" 
     row = "| {id} | {title} | {pr} | {kind} | {ts} | open | {detail} |"
-    if files != "" then row = "{row} Files: {files} |" end
+    if files != "" then row = "{row} Files: {files} |" 
     content = coordination_read()
     hdr = "| ID | Title | Priority | Kind | Logged | Status | Detail |"
     -- Use plain=true (literal) finds: the marker contains '-', the detail may
     -- contain '%', both of which are Lua-pattern metacharacters and would
     -- corrupt a pattern-based find/gsub.
     mpos = string.find(content, gapsmarker, 1, true)
-    if mpos != nil then
+    if mpos != nil
         hpos = string.find(content, hdr, mpos, true)
-        if hpos != nil then
+        if hpos != nil
             hlen = string.len(hdr)
             content = "{string.sub(content, 1, hpos + hlen - 1)}\n{row}{string.sub(content, hpos + hlen)}"
         else
             content = "{content}\n{row}\n"
-        end
     else
         content = "{content}\n\n{gapsmarker}\n\n{hdr}\n| --- | --- | --- | --- | --- | --- | --- |\n{row}\n"
-    end
     fs:write_file(coordpath, content)
     "ok: filed {id} ({kind})"
-end
 
 # === GAP NUMBER ALLOCATION ============================================
 #
@@ -1070,9 +935,7 @@ gappad: str = (n: int)
     s = n:to(str)
     while string.len(s) < 3
         s = "0{s}"
-    end
     s
-end
 
 # Highest number VISIBLE anywhere: filed gaps and prior reservations both
 # count. Seeding from the union is what stops the allocator from walking up
@@ -1095,18 +958,13 @@ gaphigh: int = ()
         d = string.match(name, "^GAP%-(%d+)")
         if d != nil
             v = tonumber(d) or 0
-            if v > hi then hi = v end
-        end
-    end
+            if v > hi then hi = v 
     for _, name in fs:read_dir(gapledger) or {}
         d = string.match(name, "^GAP%-(%d+)")
         if d != nil
             v = tonumber(d) or 0
-            if v > hi then hi = v end
-        end
-    end
+            if v > hi then hi = v 
     hi
-end
 
 # Hand back a number nobody else can be holding. Returns -1 only if 512
 # consecutive numbers are all taken, which means something is very wrong.
@@ -1122,32 +980,25 @@ gapallocate: int = ()
             -- reservation so it is never handed out, and take the next.
             if not fs:exists("{gapsdir}/GAP-{gappad(n)}.md")
                 return n
-            end
-        end
         n += 1
         tries += 1
-    end
     -1
-end
 
 gap_open: str = (agent_id: str, kind: str, title: str, detail: str, priority: str, files: str)
     n = gapallocate()
     if n < 0
         return json:encode({ allocated = false, error = "no free gap number in 512 tries" })
-    end
     id = "GAP-{gappad(n)}"
     ts = clock.utc()
     pr = priority
-    if pr == nil or pr == "" then pr = "P1" end
+    if pr == nil or pr == "" then pr = "P1" 
     body = "# {id}  -  {title}\n\n**Status:** OPEN · **Filed:** {ts}\n**Priority:** {pr} · **Kind:** {kind}\n**Filed by:** {agent_id}\n"
     if files != nil and files != ""
         body = "{body}**Files:** {files}\n"
-    end
     body = "{body}\n{detail}\n"
     fs:write_file("{gapsdir}/{id}.md", body)
     file_finding(kind, "{id}  -  {title}", detail, pr, files)
     json:encode({ allocated = true, gap_id = id, number = n, path = "gaps/{id}.md", priority = pr })
-end
 
 # === FILE-PATH CLAIMS =================================================
 #
@@ -1177,59 +1028,48 @@ claim_norm: str = (p: str)
     s = p or ""
     if string.sub(s, 1, string.len(root)) == root
         s = string.sub(s, string.len(root) + 1)
-    end
     while string.sub(s, 1, 1) == "/" or string.sub(s, 1, 2) == "./"
         if string.sub(s, 1, 1) == "/"
             s = string.sub(s, 2)
         else
             s = string.sub(s, 3)
-        end
-    end
     while string.len(s) > 1 and string.sub(s, string.len(s)) == "/"
         s = string.sub(s, 1, string.len(s) - 1)
-    end
     s
-end
 
 # "/" is not legal in a directory name; "~" is not legal in a repo path here.
 claim_key: str = (p: str)
     string.gsub(p, "/", "~")
-end
 
 claim_unkey: str = (k: str)
     string.gsub(k, "~", "/")
-end
 
 # Does one claim cover the other? Prefix comparison at a SEGMENT boundary:
 # "tools/mcp" covers "tools/mcp/x.id" but must not cover "tools/mcpx.id".
 claim_overlaps: bool = (a: str, b: str)
-    if a == b then return true end
-    if string.sub(b, 1, string.len(a) + 1) == "{a}/" then return true end
-    if string.sub(a, 1, string.len(b) + 1) == "{b}/" then return true end
+    if a == b then return true 
+    if string.sub(b, 1, string.len(a) + 1) == "{a}/" then return true 
+    if string.sub(a, 1, string.len(b) + 1) == "{b}/" then return true 
     false
-end
 
 claim_meta: any = (key: str)
     raw = fs:read_file("{claimsdir}/{key}/owner")
-    if raw == nil or raw == "" then return nil end
+    if raw == nil or raw == "" then return nil 
     owner = string.match(raw, "^([^\t]*)")
     tsv = string.match(raw, "^[^\t]*\t([^\t\n]*)")
     wi = string.match(raw, "^[^\t]*\t[^\t]*\t([^\t\n]*)")
     { owner = owner or "", at = tonumber(tsv) or 0, work = wi or "" }
-end
 
 claim_live: bool = (key: str)
     m = claim_meta(key)
-    if m == nil then return false end
+    if m == nil then return false 
     now = clock.now()
     (now - m.at) < claimttl
-end
 
 claim_write: void = (key: str, owner: str, work: str)
     now = clock.now()
     fs:write_file("{claimsdir}/{key}/owner",
         "{owner}\t{now:to(str)}\t{work}\n")
-end
 
 # Remove claim directories with shell rm and verify metadata is gone  -  host remove lied on success.
 # `os.remove(path) ~= nil`, and `false ~= nil` is TRUE, so it reports success
@@ -1242,14 +1082,12 @@ claim_drop: bool = (key: str)
     dir = "{claimsdir}/{key}"
     run("rm -rf '{dir}'")
     claim_meta(key) == nil
-end
 
 dev_claim_acquire: str = (owner: str, file: str, client: str, work_item: str)
     run("mkdir -p {claimsdir}")
     path = claim_norm(file)
     if path == ""
         return json:encode({ granted = false, reason = "empty file path" })
-    end
     key = claim_key(path)
     wi = work_item or ""
     own = owner or "agent"
@@ -1263,17 +1101,13 @@ dev_claim_acquire: str = (owner: str, file: str, client: str, work_item: str)
             -- against itself.
             claim_write(key, own, wi)
             return json:encode({ granted = true, path = path, owner = own, reentrant = true })
-        end
         if m != nil and (clock.now() - m.at) >= claimttl
             claim_drop(key)
             got = run("mkdir -p {claimsdir}/{key}")
-        end
         if not got
             holder = "unknown"
-            if m != nil then holder = m.owner end
+            if m != nil then holder = m.owner 
             return json:encode({ granted = false, path = path, held_by = holder, reason = "file already claimed" })
-        end
-    end
     claim_write(key, own, wi)
 
     -- ACQUIRE-THEN-VERIFY: now look for a live claim that covers, or is
@@ -1284,14 +1118,10 @@ dev_claim_acquire: str = (owner: str, file: str, client: str, work_item: str)
             if claim_overlaps(path, op) and claim_live(other)
                 om = claim_meta(other)
                 oo = "unknown"
-                if om != nil then oo = om.owner end
+                if om != nil then oo = om.owner 
                 claim_drop(key)
                 return json:encode({ granted = false, path = path, overlaps = op, held_by = oo, reason = "overlapping claim" })
-            end
-        end
-    end
     json:encode({ granted = true, path = path, owner = own, work_item = wi, ttl = claimttl })
-end
 
 dev_claim_release: str = (owner: str, file: str)
     path = claim_norm(file)
@@ -1299,19 +1129,15 @@ dev_claim_release: str = (owner: str, file: str)
     m = claim_meta(key)
     if m == nil
         return json:encode({ released = false, path = path, reason = "no such claim" })
-    end
     if m.owner != owner
         return json:encode({ released = false, path = path, held_by = m.owner, reason = "not the holder" })
-    end
     -- NOT `gone = claim_drop(key)` then encode: binding a bool-returning call
-    -- to a local inside a `: str` function makes the compiler report
+    -- to a local inside a `: str` makes the compiler report
     -- "return type mismatch: expected 'str', got 'bool'" and emit a module
     -- that dies on first call. Branch on the call instead.
     if claim_drop(key)
         return json:encode({ released = true, path = path })
-    end
     json:encode({ released = false, path = path, reason = "release did not clear the claim" })
-end
 
 dev_claim_files: str = ()
     rows = {}
@@ -1327,19 +1153,15 @@ dev_claim_files: str = ()
                 age = age,
                 live = age < claimttl,
             }
-        end
-    end
     json:encode({ claims = rows, count = rows:len(), ttl = claimttl })
-end
 
 agent_gaps_update: str = (action: str, agent_id: str, gap_id: str, kind: str, title: str, detail: str, priority: str, files: str)
     act = action
-    if act == nil or act == "" then act = "open" end
+    if act == nil or act == "" then act = "open" 
     if act == "open"
         -- `open` ALLOCATES. The caller does not supply gap_id and cannot;
         -- that is the whole point.
         return gap_open(agent_id, kind, title, detail, priority, files)
-    end
     ts = clock.utc()
     entry = "\n| {ts} | {agent_id} | gap-{act} | {gap_id}: {detail} |"
     content = coordination_read()
@@ -1352,13 +1174,10 @@ agent_gaps_update: str = (action: str, agent_id: str, gap_id: str, kind: str, ti
             content = "{string.sub(content, 1, hpos + string.len(table_marker) - 1)}{entry}{string.sub(content, hpos + string.len(table_marker))}"
         else
             content = "{content}{entry}\n"
-        end
     else
         content = "{content}\n\n{marker}\n\n{table_marker}{entry}\n"
-    end
     fs:write_file(coordpath, content)
     "ok: gap {act} {gap_id}"
-end
 
 
 m.root = root

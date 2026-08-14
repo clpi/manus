@@ -92,7 +92,6 @@ ind6 = "      "
 
 shell(cmd: str): str
     std.script.capture(cmd)
-end
 
 cut(s: str): any
     out = {}
@@ -103,36 +102,26 @@ cut(s: str): any
         if s:byte(i) == 10
             if i > start
                 out[out:len() + 1] = s:sub(start, i - 1)
-            end
             start = i + 1
-        end
         i += 1
-    end
     if start <= n
         out[out:len() + 1] = s:sub(start, n)
-    end
     out
-end
 
 pad(s: str, width: i64): str
     out: str = s
     while out:len() < width
         out = "{out} "
-    end
     out
-end
 
 lpad(s: str, width: i64): str
     out: str = s
     while out:len() < width
         out = " {out}"
-    end
     out
-end
 
 starts(s: str, prefix: str): bool
     #s >= #prefix and s:sub(1, #prefix) == prefix
-end
 
 # Seconds to four decimals from integer nanoseconds. `to(str)` on an f64 does
 # not compile in this tree (it lowers to an undeclared `tostring`), so the
@@ -145,10 +134,8 @@ secs(ns: i64): str
     fs: str = frac:to(str)
     while fs:len() < 4
         fs = "0{fs}"
-    end
     ws: str = whole:to(str)
     "{ws}.{fs}"
-end
 
 kib(n: i64): str
     tenths: i64 = to(i64)((n * 10 + 512) / 1024)
@@ -157,7 +144,6 @@ kib(n: i64): str
     ws: str = whole:to(str)
     fs: str = frac:to(str)
     "{ws}.{fs}K"
-end
 
 # `to(i64)` answers 0 for text that is not a number, so every numeric parse in
 # this file is guarded by this rather than by a nil check that never fires.
@@ -167,16 +153,12 @@ digits(s: str): bool
     if out and s:byte(1) == 45
         i = 2
         out = s:len() > 1
-    end
     while out and i <= s:len()
         b: i64 = s:byte(i)
         if b < 48 or b > 57
             out = false
-        end
         i += 1
-    end
     out
-end
 
 # The one tolerated difference: a 32-bit integer printed signed by one runtime
 # and unsigned by another. See the header.
@@ -187,13 +169,10 @@ wrapped(a: str, b: str): bool
         y: i64 = to(i64)(b)
         width: i64 = 4294967296
         out = x - y == width or y - x == width
-    end
     out
-end
 
 same(a: str, b: str): bool
     a == b or wrapped(a, b)
-end
 
 # ward appends `engine=`, `result=` and `seconds=` lines to stdout. The
 # module's own output is everything else. Newlines become spaces so a
@@ -209,11 +188,7 @@ answer(raw: str): str
                 out = piece
             else
                 out = "{out} {piece}"
-            end
-        end
-    end
     out
-end
 
 # ward's `result=` field, which is the answer for the invoke family: those
 # modules return a value rather than printing one.
@@ -223,10 +198,7 @@ field(raw: str, key: str): str
     for i, line in cut(raw)
         if starts(line, key)
             out = std.script.chomp(line:sub(n + 1, line:len()))
-        end
-    end
     out
-end
 
 # One timed run. stdout and stderr go to /dev/null so no pipe sits inside the
 # timing window. The exit status is deliberately not read here: correctness was
@@ -235,7 +207,6 @@ span(cmd: str): i64
     t0: i64 = std.time.monotonic()
     std.script.run("{cmd} >/dev/null 2>&1")
     std.time.monotonic() - t0
-end
 
 # N samples, answering the pair {fastest, slowest}.
 #
@@ -259,18 +230,13 @@ samples(cmd: str, runs: i64): any
         ns: i64 = span(cmd)
         if lo < 0 or ns < lo
             lo = ns
-        end
         if hi < 0 or ns > hi
             hi = ns
-        end
         i += 1
-    end
     { lo, hi }
-end
 
 fastest(cmd: str, runs: i64): i64
     samples(cmd, runs)[1]
-end
 
 # First run of digits in a string, or -1. Used for both `wc` and `time -l`
 # output, neither of which has a stable column position worth trusting.
@@ -283,17 +249,12 @@ number(s: str): i64
         if b >= 48 and b <= 57
             if start == 0
                 start = i
-            end
-        elseif start > 0
+        else if start > 0
             out = to(i64)(s:sub(start, i - 1))
-        end
         i += 1
-    end
     if start > 0 and out < 0
         out = to(i64)(s:sub(start, s:len()))
-    end
     out
-end
 
 # Peak resident set size in bytes. macOS `/usr/bin/time -l` reports bytes; GNU
 # `-v` reports kilobytes and is not what this parses, so a host without the
@@ -301,33 +262,27 @@ end
 peak(cmd: str): i64
     probe: str = "/usr/bin/time -l {cmd} 2>&1 >/dev/null | grep maximum"
     number(script.chomp(shell(probe)))
-end
 
 filepath: str:len(): i64
     probe: str = "wc -c < '{path}' 2>/dev/null"
     number(script.chomp(shell(probe)))
-end
 
 # Tracked source lines under a pathspec, counted through git so untracked
 # scratch and build output cannot inflate a runtime's size.
 loc(root: str, spec: str): i64
     probe: str = "cd '{root}' && git ls-files {spec} | tr '\\n' '\\0' | xargs -0 wc -l 2>/dev/null | tail -1"
     number(std.script.chomp(shell(probe)))
-end
 
 filecount(root: str, spec: str): i64
     probe: str = "cd '{root}' && git ls-files {spec} | wc -l"
     number(std.script.chomp(shell(probe)))
-end
 
 globcount(pattern: str): i64
     probe: str = "ls {pattern} 2>/dev/null | wc -l"
     out: i64 = number(std.script.chomp(shell(probe)))
     if out < 0
         out = 0
-    end
     out
-end
 
 # The command that runs `path` under runtime `rt`. Two entry conventions; see
 # the header. An unsupported pair answers "" and the caller prints `n/a` with
@@ -339,24 +294,18 @@ invocation(rt: str, bin: str, path: str, entry: str): str
             out = "WARD_WASM='{path}' WARD_INVOKE=_start '{bin}'"
         else
             out = "WARD_WASM='{path}' WARD_INVOKE=run '{bin}'"
-        end
-    elseif rt == "wart"
+    else if rt == "wart"
         if entry == "start"
             out = "'{bin}' run '{path}'"
-        end
-    elseif rt == "wasmtime"
+    else if rt == "wasmtime"
         if entry == "start"
             out = "'{bin}' '{path}'"
         else
             out = "'{bin}' --invoke run '{path}'"
-        end
-    elseif rt == "wasmer"
+    else if rt == "wasmer"
         if entry == "start"
             out = "'{bin}' run '{path}'"
-        end
-    end
     out
-end
 
 # What a runtime answers. ward's invoke answer is its `result=` field; every
 # other cell is stdout with ward's trailer removed.
@@ -366,9 +315,7 @@ observe(rt: str, cmd: str, entry: str): str
     out: str = answer(raw)
     if rt == "ward" and entry == "invoke"
         out = field(raw, "result=")
-    end
     out
-end
 
 # LAW-ONE one-word wrappers over the snake-cased corners of std.script.
 # `fs_exists`, `fs_read` and `getenv_or` are seven §1 `snake` points this file
@@ -378,17 +325,14 @@ end
 exists(path: str): bool
     probe: str = "test -e '{path}'"
     std.script.ok(probe)
-end
 
 slurp(path: str): str
     probe: str = "cat '{path}' 2>/dev/null"
     shell(probe)
-end
 
 which(tool: str): str
     probe: str = "command -v {tool} 2>/dev/null"
     std.script.chomp(shell(probe))
-end
 
 main(): i64
     root: str = std.script.chomp(shell("git rev-parse --show-toplevel 2>/dev/null"))
@@ -396,7 +340,6 @@ main(): i64
     if root == ""
         print("runtime bench: FAIL — not inside a git work tree")
         code = 3
-    end
 
     runs: i64 = 5
     slack: i64 = 40
@@ -412,11 +355,9 @@ main(): i64
         rawruns: str = std.script.getenv("BENCH_RUNS", "5")
         if digits(rawruns) and to(i64)(rawruns) > 0
             runs = to(i64)(rawruns)
-        end
         rawslack: str = std.script.getenv("BENCH_SLACK", "40")
         if digits(rawslack) and to(i64)(rawslack) >= 0
             slack = to(i64)(rawslack)
-        end
 
         wardbin = std.script.getenv("WARD_BIN", "{root}/zig-out/bin/ward")
         warttree = std.script.getenv("WART_ROOT", "{root}/../wart")
@@ -449,7 +390,6 @@ main(): i64
         wardsha: str = std.script.chomp(shell("cd '{root}' && git rev-parse --short HEAD 2>/dev/null"))
         if wartsha == ""
             wartsha = "UNKNOWN"
-        end
         print("  wart      {wartbin}")
         print("            rev {wartsha}, {wartdirty} file(s) dirty")
         print("  wasmtime  {timebin}")
@@ -459,18 +399,15 @@ main(): i64
             print("")
             print("  NOTE: wart's revision could not be read. Every wart cell below is")
             print("  then unattributable — record the revision or do not quote the row.")
-        end
         if wartdirty != "0"
             print("")
             print("  NOTE: wart's tree has {wartdirty} dirty file(s), so rev {wartsha} does")
             print("  NOT fully describe the binary measured here.")
-        end
         if wardsrc != "0"
             print("")
             print("  NOTE: {wardsrc} file(s) under tools/wasm/src are modified in the working")
             print("  tree. The binary above may predate them. Nothing here rebuilds ward,")
             print("  so this table describes the BINARY, not the source next to it.")
-        end
         print("")
 
         if !exists(wardbin)
@@ -479,25 +416,20 @@ main(): i64
             print("  a benchmark that builds its own subject reports the build, not the")
             print("  subject, and several sessions share this tree.")
             code = 3
-        end
         if code == 0 and !exists(wartbin)
             print("runtime bench: FAIL — no wart binary at {wartbin}")
             print("  wart is the reference implementation ward is measured against.")
             print("  Set WART_BIN or WART_ROOT.")
             code = 3
-        end
         if code == 0 and timebin == ""
             print("runtime bench: FAIL — wasmtime is not on PATH")
             print("  wasmtime is the ORACLE for every answer in this table, not merely")
             print("  another column. Without it nothing here can be verified, so nothing")
             print("  is printed.")
             code = 3
-        end
         if code == 0 and !exists(floor)
             print("runtime bench: FAIL — missing the floor module {floor}")
             code = 3
-        end
-    end
 
     # === CONTROLS ===
     #
@@ -517,8 +449,6 @@ main(): i64
             code = 3
         else
             print("  timer unit          0.25s sleep measured {us}s   OK")
-        end
-    end
 
     if code == 0
         # Every timed cell forks a shell, so this is the constant inside every
@@ -532,8 +462,6 @@ main(): i64
             code = 3
         else
             print("  harness floor       {os}s per spawn, INCLUDED in every cell below")
-        end
-    end
 
     if code == 0
         # The comparator discriminates, and the normalization fires exactly
@@ -549,8 +477,6 @@ main(): i64
         else
             print("  comparator          FAIL — the answer comparator does not discriminate")
             code = 3
-        end
-    end
 
     if code == 0
         # ward's trailer strip is real. Were it a no-op, every ward answer
@@ -567,9 +493,7 @@ main(): i64
         else
             print("  ward trailer strip  FAIL — the strip is a no-op or removed the answer")
             code = 3
-        end
         print("")
-    end
 
     # === INVENTORY ===
     #
@@ -597,7 +521,6 @@ main(): i64
         print("  tools/wasm/bench             {d}   3 measured; the rest are byte-scale JIT")
         print("                                  and opcode fixtures, 57-354 bytes each")
         print("")
-    end
 
     # === AXIS loc ===
 
@@ -641,9 +564,7 @@ main(): i64
             print("  runtime bench: FAIL — a loc row read zero. Both trees must be")
             print("    reachable; a zero here is a broken pathspec, not a small runtime.")
             code = 3
-        end
         print("")
-    end
 
     # === AXIS bytes ===
 
@@ -670,10 +591,7 @@ main(): i64
                 c2: str = lpad(sz:to(str), 14)
                 c3: str = lpad(kib(sz), 10)
                 print(ind .. c1 .. c2 .. c3)
-            end
-        end
         print("")
-    end
 
     # === AXES startup and rss ===
 
@@ -708,13 +626,9 @@ main(): i64
                 rss: str = "n/a"
                 if rs > 0
                     rss = kib(rs)
-                end
                 c4: str = lpad(rss, 12)
                 print(ind .. c1 .. c2 .. c3 .. c4)
-            end
-        end
         print("")
-    end
 
     # === WORKLOADS ===
     #
@@ -797,14 +711,8 @@ main(): i64
                         v: str = script.chomp(line:sub(tag:len() + 1, line:len()))
                         if digits(v)
                             baseline[j] = to(i64)(v)
-                        end
-                    end
-                end
-            end
             print("BASELINE overridden from {basefile}")
             print("")
-        end
-    end
 
     # === ANSWERS ===
     #
@@ -834,14 +742,12 @@ main(): i64
             if !exists(path)
                 print("  {nm}: MISSING {path}")
                 code = 3
-            end
             if code == 0
                 refcmd: str = invocation("wasmtime", timebin, path, entry)
                 ref: str = observe("wasmtime", refcmd, entry)
                 if ref == ""
                     print("  {nm}: the oracle produced no answer — FAIL")
                     code = 3
-                end
                 if code == 0
                     cells = {}
                     marks = {}
@@ -850,7 +756,6 @@ main(): i64
                         cmd: str = ""
                         if bin != ""
                             cmd = invocation(name, bin, path, entry)
-                        end
                         if cmd == ""
                             cells[j] = "n/a"
                             marks[j] = 0
@@ -859,7 +764,7 @@ main(): i64
                             if got == ref
                                 cells[j] = "ok"
                                 marks[j] = 1
-                            elseif wrapped(got, ref)
+                            else if wrapped(got, ref)
                                 cells[j] = "wrap"
                                 marks[j] = 1
                             else
@@ -867,9 +772,6 @@ main(): i64
                                 marks[j] = 0
                                 wrongs += 1
                                 print("      {nm} {name} answered `{got}` where the oracle answered `{ref}`")
-                            end
-                        end
-                    end
                     okward[i] = marks[1]
                     okwart[i] = marks[2]
                     oktime[i] = marks[3]
@@ -877,7 +779,6 @@ main(): i64
                     brief: str = ref
                     if brief:len() > 15
                         brief = brief:sub(1, 15)
-                    end
                     r1: str = pad(nm, 12)
                     r2: str = pad(entry, 8)
                     r3: str = pad(brief, 16)
@@ -886,16 +787,12 @@ main(): i64
                     r6: str = pad(cells[3], 10)
                     r7: str = cells[4]
                     print(ind .. r1 .. r2 .. r3 .. r4 .. r5 .. r6 .. r7)
-                end
-            end
-        end
         print("")
         print("  `n/a` is a runtime that CANNOT reach the entry point: wart's CLI has")
         print("  no invoke flag — it reads `--invoke` as the filename — and wasmer's")
         print("  --invoke exits 118 on these modules. Neither is a silent skip and")
         print("  neither counts as agreement.")
         print("")
-    end
 
     if code == 0 and wrongs > 0
         ws: str = wrongs:to(str)
@@ -903,7 +800,6 @@ main(): i64
         print("  No timing table is printed. Comparing the speed of runtimes that")
         print("  disagree about the answer is the exact failure CLAUDE.md §3 records.")
         code = 1
-    end
 
     # === EXECUTION ===
 
@@ -943,27 +839,20 @@ main(): i64
                 pair = samples(invocation("ward", wardbin, path, entry), runs)
                 nsward = pair[1]
                 wspread = pair[2] - pair[1]
-            end
             if okwart[i] == 1
                 nswart = fastest(invocation("wart", wartbin, path, entry), runs)
-            end
             if oktime[i] == 1
                 nstime = fastest(invocation("wasmtime", timebin, path, entry), runs)
-            end
             if okmer[i] == 1 and merbin != ""
                 nsmer = fastest(invocation("wasmer", merbin, path, entry), runs)
-            end
 
             rival: i64 = -1
             if nswart > 0
                 rival = nswart
-            end
             if nstime > 0 and (rival < 0 or nstime < rival)
                 rival = nstime
-            end
             if nsmer > 0 and (rival < 0 or nsmer < rival)
                 rival = nsmer
-            end
 
             # The verdict, on a FIXED five percent band.
             #
@@ -987,11 +876,8 @@ main(): i64
             if nsward > 0
                 if overhead * 4 > nsward
                     flags = " floor"
-                end
                 if wspread * 5 > nsward
                     flags = "{flags} noisy"
-                end
-            end
             if nsward > 0 and rival > 0
                 pct: i64 = to(i64)(nsward * 100 / rival)
                 ps: str = pct:to(str)
@@ -999,7 +885,7 @@ main(): i64
                 if pct >= 95 and pct <= 105
                     verdict = "tie"
                     ties += 1
-                elseif nsward < rival
+                else if nsward < rival
                     verdict = "win"
                     wins += 1
                 else
@@ -1007,26 +893,20 @@ main(): i64
                     losses += 1
                     lossname[lossname:len() + 1] = nm
                     lossvalue[lossvalue:len() + 1] = pct
-                end
-            end
             verdict = "{verdict}{flags}"
 
             cw: str = "n/a"
             if nsward > 0
                 cw = secs(nsward)
-            end
             cv: str = "n/a"
             if nswart > 0
                 cv = secs(nswart)
-            end
             ct: str = "n/a"
             if nstime > 0
                 ct = secs(nstime)
-            end
             ce: str = "n/a"
             if nsmer > 0
                 ce = secs(nsmer)
-            end
             f1: str = pad(nm, 12)
             f2: str = lpad(cw, 10)
             f3: str = lpad(cv, 10)
@@ -1054,7 +934,6 @@ main(): i64
                 clean: bool = flags == ""
                 if clean
                     eligible += 1
-                end
                 if nsward > limit
                     bs: str = secs(baseline[i])
                     ls: str = secs(limit)
@@ -1065,16 +944,11 @@ main(): i64
                     else
                         print(ind6 .. "over baseline {bs}s (limit {ls}s, measured {ms}s) — NOT")
                         print(ind6 .. "counted, the row is flagged and its number is not trusted")
-                    end
-                elseif clean and nsward * 100 < baseline[i] * 70
+                else if clean and nsward * 100 < baseline[i] * 70
                     bs: str = secs(baseline[i])
                     ms: str = secs(nsward)
                     print(ind6 .. "improved    baseline {bs}s, measured {ms}s — lower it here")
-                end
-            end
-        end
         print("")
-    end
 
     # === LOSSES ===
     #
@@ -1100,26 +974,20 @@ main(): i64
                         lossname[i] = lossname[j]
                         lossvalue[j] = tv
                         lossname[j] = tn
-                    end
                     j += 1
-                end
                 i += 1
-            end
             k: i64 = 1
             while k <= lossname:len()
                 nm: str = pad(lossname[k], 12)
                 pv: str = lpad(to(str)(lossvalue[k]), 6)
                 print(ind .. nm .. pv .. "%")
                 k += 1
-            end
-        end
         print("")
         wn: str = wins:to(str)
         ln: str = losses:to(str)
         tn: str = ties:to(str)
         print("  wins {wn} · losses {ln} · ties {tn} (within 5 percent either way)")
         print("")
-    end
 
     if code == 0
         rn: str = regressions:to(str)
@@ -1131,7 +999,7 @@ main(): i64
             print("  NOT fail this gate; only getting slower than ward's own recorded")
             print("  number does.")
             code = 1
-        elseif eligible == 0
+        else if eligible == 0
             print("runtime bench: INCONCLUSIVE — 0 of {total} rows were clean enough to")
             print("  ratchet. Every row carried a `floor` or `noisy` flag, which means")
             print("  this machine was too busy for the measurement to mean anything.")
@@ -1141,8 +1009,5 @@ main(): i64
             print("runtime bench: PASS — {en} of {total} rows were clean enough to ratchet")
             print("  and none regressed. The other rows were flagged and skipped.")
             print("  This is NOT a claim that ward is fastest. Read the loss list above.")
-        end
-    end
 
     code
-end

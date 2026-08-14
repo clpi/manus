@@ -21,29 +21,23 @@ _MASK32 = 0xFFFFFFFF
 
 _env_or(n: str, d: str): str
     v = std.script.getenv_or(n)
-    if v == "" return d end
+    if v == "" return d 
     v
-end
 
 _sh(c: str): str
     std.script.chomp(std.script.capture(c))
-end
 
 _pad(s: str, w: i64): str
     o = s
     while #o < w
         o = o .. " "
-    end
     o
-end
 
 _lpad(s: str, w: i64): str
     o = s
     while #o < w
         o = " " .. o
-    end
     o
-end
 
 # True when bit pattern n is a NaN in type t. The spec gives NaN symbolically
 # ("nan:canonical" / "nan:arithmetic"); ward returns the bit pattern, so the
@@ -51,13 +45,10 @@ end
 _is_nan_bits(t: str, n: i64): bool
     if t == "f32"
         return (n & 0x7F800000) == 0x7F800000 and (n & 0x007FFFFF) != 0
-    end
     if t == "f64"
         return (n & 0x7FF0000000000000) == 0x7FF0000000000000
             and (n & 0x000FFFFFFFFFFFFF) != 0
-    end
     false
-end
 
 # Spec values are UNSIGNED decimal strings; for f32/f64 they are IEEE bit
 # patterns. Comparing in the type's own width is what makes 4294967295 and -1
@@ -68,30 +59,25 @@ _norm(t: str, s: any): str
         parts = {}
         for _i, x in s
             parts[#parts + 1] = x:to(str)
-        end
         return "v128:" .. parts:concat(",")
-    end
-    if s == "nan:canonical" or s == "nan:arithmetic" return "nan" end
+    if s == "nan:canonical" or s == "nan:arithmetic" return "nan" 
     n = to(i64)(s)
-    if n == nil return s:to(str) end
-    if t == "i32" or t == "f32" return to(str)(n & _MASK32) end
+    if n == nil return s:to(str) 
+    if t == "i32" or t == "f32" return to(str)(n & _MASK32) 
     n:to(str)
-end
 
 # One argument as a scalar string. v128 lanes arrive as a list and are not
 # expressible through the env-var protocol; the caller reports those as
 # unrunnable rather than crashing or silently passing.
 _arg_str(v: any): str
-    if type(v) == "table" return "" end
+    if type(v) == "table" return "" 
     v:to(str)
-end
 
 main: i64 = ()
     ward = script.getenv_or("WARD")
     if ward == "" or not script.fs_exists(ward)
         print("set WARD=/path/to/ward binary")
         os.exit(1)
-    end
 
     suite = "../wart/third_party/testsuite"
     only = ""
@@ -108,11 +94,7 @@ main: i64 = ()
             else
                 if a != "--" and a:sub(1, 1) != "-"
                     suite = a
-                end
-            end
-        end
         i = i + 1
-    end
 
     td = "/tmp/duo_wasm_conform"
     script.run("rm -rf " .. td .. " && mkdir -p " .. td)
@@ -160,10 +142,8 @@ main: i64 = ()
                                 if act.args != nil
                                     for _a, arg in act.args
                                         s = _arg_str(arg.value)
-                                        if s == "" unrunnable = true end
+                                        if s == "" unrunnable = true 
                                         parts[#parts + 1] = s
-                                    end
-                                end
                                 if unrunnable
                                     skip = skip + 1
                                 else
@@ -180,8 +160,6 @@ main: i64 = ()
                                             if #fails < 25
                                                 fails[#fails + 1] = name .. " " .. act.field
                                                     .. " expected trap, got " .. out
-                                            end
-                                        end
                                     else
                                         exp = cmd.expected
                                         if exp == nil or #exp == 0
@@ -200,17 +178,14 @@ main: i64 = ()
                                             # original's 10. A missing answer
                                             # must never satisfy an assertion.
                                             n = nil
-                                            if out != "" n = to(i64)(out) end
+                                            if out != "" n = to(i64)(out) 
                                             if n != nil
                                                 if et == "i32" or et == "f32"
                                                     n = n & _MASK32
-                                                end
                                                 if want == "nan" and _is_nan_bits(et, n)
                                                     have = "nan"
                                                 else
                                                     have = n:to(str)
-                                                end
-                                            end
                                             if have == want
                                                 ok = ok + 1
                                             else
@@ -218,37 +193,23 @@ main: i64 = ()
                                                 if #fails < 25
                                                     fails[#fails + 1] = name .. " " .. act.field
                                                         .. " want=" .. want .. " got=" .. out
-                                                end
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
                     tot_ok = tot_ok + ok
                     tot_bad = tot_bad + bad
                     tot_skip = tot_skip + skip
                     if ok > 0 or bad > 0
                         rows[#rows + 1] = { name, ok, bad, skip }
-                    end
-                end
-            end
-        end
-    end
 
     print(_pad("suite", 24) .. _lpad("pass", 7) .. _lpad("fail", 7) .. _lpad("skip", 7))
     for _i, r in rows
         print(_pad(r[1], 24) .. _lpad(to(str)(r[2]), 7) .. _lpad(to(str)(r[3]), 7)
             .. _lpad(to(str)(r[4]), 7))
-    end
 
     executed = tot_ok + tot_bad
     pct = 0
     # Round, do not truncate: 10/374 is 2.673%, which the Python original
     # prints as 2.7%. Truncating would report 2.6% and look like a
     # divergence on every run.
-    if executed > 0 pct = (tot_ok * 1000 + executed / 2) / executed end
+    if executed > 0 pct = (tot_ok * 1000 + executed / 2) / executed 
     print("")
     print("executed " .. executed:to(str) .. " assertions: " .. tot_ok:to(str)
         .. " pass, " .. tot_bad:to(str) .. " fail (" .. to(str)(pct / 10) .. "."
@@ -260,11 +221,7 @@ main: i64 = ()
         print("first failures:")
         for _i, f in fails
             print("  " .. f)
-        end
-    end
 
     if tot_bad != 0
         os.exit(1)
-    end
     0
-end

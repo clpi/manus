@@ -7,7 +7,6 @@
 @hot
 fence(): void
     @comp.c.emit("__asm__ volatile(\"\" ::: \"memory\");")
-end
 
 # Spin loop hint: x86 `pause`, AArch64 `yield`
 @hot
@@ -17,6 +16,5 @@ spinwait(): void
     @comp.c.emit("elif:len() defined(__aarch64__)")
     @comp.c.emit("__asm__ volatile(\"yield\");")
     @comp.c.emit("endif:len()")
-end
 
 # Re-export ML device placement helpers (@device runtime table)

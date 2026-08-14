@@ -3,18 +3,15 @@
 
 concept Hashable
     hash(self) -> i64
-end
 
 Good = {}
 Good:hash() -> i64
     return 99
-end
 
 Bad = {}
 
-fun digest<T: Hashable>(value: T): i64
+digest<T: Hashable>(value: T): i64
     value:hash()
-end
 
 @comp.assert(@satisfies(Good, "Hashable"), "Good satisfies Hashable")
 @comp.assert(not @satisfies(Bad, "Hashable"), "Bad lacks hash")

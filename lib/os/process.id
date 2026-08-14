@@ -18,49 +18,39 @@ config_new(cmd: str): any
         uid = nil,
         gid = nil,
     }
-end
 
 config_arg(config: any, arg: str): any
     config.args[config:len().args + 1] = arg
     config
-end
 
 config_args(config: any, args: any): any
     for arg in args
         config.args[config:len().args + 1] = arg
-    end
     config
-end
 
 config_env(config: any, key: str, value: str): any
     config.env[key] = value
     config
-end
 
 config_cwd(config: any, cwd: str): any
     config.cwd = cwd
     config
-end
 
 config_stdin(config: any, mode: str): any
     config.stdin = mode  # "pipe", "inherit", "ignore", or file path
     config
-end
 
 config_stdout(config: any, mode: str): any
     config.stdout = mode
     config
-end
 
 config_stderr(config: any, mode: str): any
     config.stderr = mode
     config
-end
 
 config_detached(config: any, detached: bool): any
     config.detached = detached
     config
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Process Handle
@@ -76,20 +66,17 @@ new(): any
         running = false,
         killed = false,
     }
-end
 
 start(proc: any, config: any): any
     # Build command with arguments
     full_cmd = config.cmd
     for arg in config.args
         full_cmd = full_cmd .. " " .. arg:to(str)
-    end
 
     # Set environment variables for the child process
     env_prefix = ""
     for k, v in config.env
         env_prefix = env_prefix .. k .. "=" .. v:to(str) .. " "
-    end
 
     # Capture PID and run in background
     handle = io.popen(env_prefix .. full_cmd .. " 2>&1 & echo $!")
@@ -102,15 +89,11 @@ start(proc: any, config: any): any
             proc.exit_code = nil
             proc.config = config
             return {ok = true, pid = proc.pid}
-        end
-    end
     {ok = false, error = "Failed to start process"}
-end
 
 wait(proc: any): any
     if not proc.running
         return {exit_code = proc.exit_code}
-    end
 
     # Wait for process and capture exit code
     if proc.pid and proc.pid > 0
@@ -123,74 +106,57 @@ wait(proc: any): any
             proc.exit_code = code_str:to(i64) or 0
         else
             proc.exit_code = 0
-        end
     else
         proc.exit_code = 0
-    end
 
     proc.running = false
     {exit_code = proc.exit_code}
-end
 
 kill(proc: any, signal: i64): any
     if not proc.running
         return {error = "Process not running"}
-    end
 
     sig = signal or 15  # SIGTERM default
     if proc.pid and proc.pid > 0
         os.execute("kill -" .. sig:to(str) .. " " .. proc.pid:to(str) .. " 2>/dev/null")
-    end
     proc.killed = true
     proc.running = false
     proc.exit_code = -sig
     {ok = true}
-end
 
 write_stdin(proc: any, data: str): any
     if proc.stdin == nil
         return {error = "stdin not available"}
-    end
 
     # Write to the process's stdin pipe
     if type(proc.stdin) == "userdata"
         proc.stdin:write(data)
         proc.stdin:flush()
-    end
     {ok = true}
-end
 
 read_stdout(proc: any): any
     if proc.stdout == nil
         return {error = "stdout not available"}
-    end
 
     if type(proc.stdout) == "userdata"
         data = proc.stdout:read("*a") or ""
         return {data = data, eof = data:len() == 0}
-    end
     {data = "", eof = true}
-end
 
 read_stderr(proc: any): any
     if proc.stderr == nil
         return {error = "stderr not available"}
-    end
 
     if type(proc.stderr) == "userdata"
         data = proc.stderr:read("*a") or ""
         return {data = data, eof = data:len() == 0}
-    end
     {data = "", eof = true}
-end
 
 is_running(proc: any): bool
     proc.running
-end
 
 exit_code(proc: any): any
     proc.exit_code
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Command Execution Helpers
@@ -202,14 +168,11 @@ run(cmd: str, args: any): any
     if args
         for arg in args
             full_cmd = full_cmd .. " " .. arg:to(str)
-        end
-    end
 
     # Execute and capture output + exit code in one shot
     f = io.popen(full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
     if f == nil
         return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
-    end
     raw = f:read("*a") or ""
     f:close()
 
@@ -227,29 +190,24 @@ run(cmd: str, args: any): any
         stdout = raw:sub(1, last_nl - 1)
         exit_str = raw:sub(last_nl + 1)
         code = exit_str:match("%d+":to(i64)) or 0
-    end
 
     {
         exit_code = code,
         stdout = stdout,
         stderr = "",
     }
-end
 
 run_with_input(cmd: str, args: any, input: str): any
     full_cmd = cmd
     if args
         for arg in args
             full_cmd = full_cmd .. " " .. arg:to(str)
-        end
-    end
 
     # Pipe input to command and capture output + exit code
     escaped_input = input:gsub("'", "'\\''")
     f = io.popen("echo '" .. escaped_input .. "' | " .. full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
     if f == nil
         return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
-    end
     raw = f:read("*a") or ""
     f:close()
 
@@ -261,19 +219,16 @@ run_with_input(cmd: str, args: any, input: str): any
         stdout = raw:sub(1, last_nl - 1)
         exit_str = raw:sub(last_nl + 1)
         code = exit_str:match("%d+":to(i64)) or 0
-    end
 
     {
         exit_code = code,
         stdout = stdout,
         stderr = "",
     }
-end
 
 output(cmd: str, args: any): any
     result = run(cmd, args)
     result.stdout
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Pipe (inter-process communication)
@@ -285,26 +240,21 @@ pipe_new(): any
         write_end = nil,
         buffer = {},
     }
-end
 
 pipe_read(pipe: any): any
     if pipe:len().buffer == 0
         return {data = "", eof = true}
-    end
 
     data = pipe.buffer[1]
     pipe.buffer:remove(1)
     {data = data, eof = false}
-end
 
 pipe_write(pipe: any, data: str): any
     pipe.buffer[pipe:len().buffer + 1] = data
     {ok = true}
-end
 
 pipe_close(pipe: any): void
     pipe.buffer = {}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Environment Variables
@@ -312,7 +262,6 @@ end
 
 env_get(name: str): any
     os.getenv(name)
-end
 
 env_set(name: str, value: str): any
     # Use C setenv for persistent environment changes in the current process
@@ -320,18 +269,15 @@ env_set(name: str, value: str): any
     # Also update Lua's environment table
     os.setenv(name, value)
     {ok = true}
-end
 
 env_unset(name: str): any
     # Use C unsetenv for persistent environment changes
     @comp.c.emit("unsetenv(" .. name .. ")")
     os.setenv(name, nil)
     {ok = true}
-end
 
 env_list(): any
     os.getenv()
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

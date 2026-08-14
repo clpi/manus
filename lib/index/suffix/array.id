@@ -2,32 +2,28 @@
 # Home topology: index/suffix/array.id projects the array table for suffix search.
 
 build(data: str): any
-    if data == nil return {data = "", sa = {}} end
+    if data == nil return {data = "", sa = {}} 
     n = data:len()
     sa = {}
     for i = 1, n
         sa[i] = i
-    end
     # Sort suffixes using insertion sort (simple, adequate for small-medium data)
     for i = 1, n
         j = i
         while j > 1
             a = data:sub(sa[j - 1])
             b = data:sub(sa[j])
-            if a <= b break end
+            if a <= b break 
             sa[j - 1], sa[j] = sa[j], sa[j - 1]
             j -= 1
-        end
-    end
     {data = data, sa = sa}
-end
 
 lookup(store: any, pattern: str): any
     data = store.data
     sa = store.sa
     n = data:len()
     plen = pattern:len()
-    if plen == 0 or n == 0 return {} end
+    if plen == 0 or n == 0 return {} 
     results = {}
     # Binary search for first occurrence
     lo = 1
@@ -37,17 +33,14 @@ lookup(store: any, pattern: str): any
         suffix = data:sub(sa[mid])
         cmp = 0
         if suffix:len() < plen
-            if suffix < pattern cmp = -1 else cmp = 1 end
+            if suffix < pattern cmp = -1 else cmp = 1 
         else
             prefix = suffix:sub(1, plen)
-            if prefix < pattern cmp = -1 elseif prefix > pattern cmp = 1 end
-        end
+            if prefix < pattern cmp = -1 else if prefix > pattern cmp = 1 
         if cmp < 0
             lo = mid + 1
         else
             hi = mid - 1
-        end
-    end
     start = lo
     hi = n
     while lo <= hi
@@ -55,28 +48,21 @@ lookup(store: any, pattern: str): any
         suffix = data:sub(sa[mid])
         cmp = 0
         if suffix:len() < plen
-            if suffix > pattern cmp = 1 else cmp = -1 end
+            if suffix > pattern cmp = 1 else cmp = -1 
         else
             prefix = suffix:sub(1, plen)
-            if prefix > pattern cmp = 1 elseif prefix < pattern cmp = -1 end
-        end
+            if prefix > pattern cmp = 1 else if prefix < pattern cmp = -1 
         if cmp <= 0
             lo = mid + 1
         else
             hi = mid - 1
-        end
-    end
     endpos = lo - 1
     for i = start, endpos
         results[results:len() + 1] = sa[i] - 1
-    end
     results
-end
 
 findall(store: any, pattern: str): any
     lookup(store, pattern)
-end
 
 contains(store: any, pattern: str): bool
     lookup(store, pattern):len() > 0
-end

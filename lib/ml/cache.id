@@ -13,22 +13,18 @@ config_new(): any
         enable_hash_keys = true,
         compression = false,
     }
-end
 
 config_set_max_config: any, max_size: i64:len(): any
     config.max_size = max_size
     config
-end
 
 config_set_ttl(config: any, ttl: i64): any
     config.ttl = ttl
     config
-end
 
 config_set_eviction(config: any, policy: str): any
     config.eviction_policy = policy
     config
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Inference Cache
@@ -42,25 +38,21 @@ cache_new(config: any): any
         hit_count = 0,
         miss_count = 0,
     }
-end
 
 cache_key(model_name: str, input_hash: str): str
     model_name .. ":" .. input_hash
-end
 
 cache_get(cache: any, key: str): any
     entry = cache.entries[key]
     if entry == nil
         cache.miss_count = cache.miss_count + 1
         return nil
-    end
 
     # Check TTL
     if os.clock() - entry.timestamp > cache.config.ttl
         cache_evict(cache, key)
         cache.miss_count = cache.miss_count + 1
         return nil
-    end
 
     # Update access
     entry.access_count = entry.access_count + 1
@@ -72,12 +64,9 @@ cache_get(cache: any, key: str): any
         if k == key
             cache.access_order:remove(i)
             break
-        end
-    end
     cache.access_order:insert(1, key)
 
     entry.value
-end
 
 cache_set(cache: any, key: str, value: any): void
     # Check if already exists
@@ -86,12 +75,10 @@ cache_set(cache: any, key: str, value: any): void
         cache.entries[key].timestamp = os.clock()
         cache.entries[key].access_count = cache.entries[key].access_count + 1
         return
-    end
 
     # Evict if at capacity
     if cache:len().entries >= cache.config.max_size
         inference_cache_evict_oldest(cache)
-    end
 
     # Add new entry
     cache.entries[key] = {
@@ -101,7 +88,6 @@ cache_set(cache: any, key: str, value: any): void
         last_access = os.clock(),
     }
     cache.access_order:insert(1, key)
-end
 
 cache_evict(cache: any, key: str): void
     cache.entries[key] = nil
@@ -109,20 +95,15 @@ cache_evict(cache: any, key: str): void
         if k == key
             cache.access_order:remove(i)
             break
-        end
-    end
-end
 
 inference_cache_evict_oldest(cache: any): void
-    if cache:len().access_order == 0 return end
+    if cache:len().access_order == 0 return 
     key = cache.access_order[cache:len().access_order]
     cache_evict(cache, key)
-end
 
 cache_clear(cache: any): void
     cache.entries = {}
     cache.access_order = {}
-end
 
 cache_stats(cache: any): any
     total = cache.hit_count + cache.miss_count
@@ -133,7 +114,6 @@ cache_stats(cache: any): any
         miss_count = cache.miss_count,
         hit_rate = total > 0 and cache.hit_count / total or 0,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Attention Cache (for KV cache in transformers)
@@ -148,35 +128,29 @@ attention_cache_new(max_seq_len: i64, num_heads: i64, head_dim: i64): any
         values = {},
         current_len = 0,
     }
-end
 
 attention_cache_append(cache: any, layer_idx: i64, keys: any, values: any): void
     if cache.keys[layer_idx] == nil
         cache.keys[layer_idx] = {}
         cache.values[layer_idx] = {}
-    end
 
     cache.keys[layer_idx][cache:len().keys[layer_idx] + 1] = keys
     cache.values[layer_idx][cache:len().values[layer_idx] + 1] = values
     cache.current_len = cache.current_len + 1
-end
 
 attention_cache_get(cache: any, layer_idx: i64): any
     {
         keys = cache.keys[layer_idx] or {},
         values = cache.values[layer_idx] or {},
     }
-end
 
 attention_cache_reset(cache: any): void
     cache.keys = {}
     cache.values = {}
     cache.current_len = 0
-end
 
 attention_cache_is_full(cache: any): bool
     cache.current_len >= cache.max_seq_len
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Embedding Cache
@@ -188,50 +162,42 @@ embedding_cache_new(max_entries: i64): any
         embeddings = {},
         access_order = {},
     }
-end
 
 embedding_cache_get(cache: any, token_id: i64): any
     entry = cache.embeddings[token_id]
-    if entry == nil return nil end
+    if entry == nil return nil 
 
     # Update access order
     for i, id in cache.access_order
         if id == token_id
             cache.access_order:remove(i)
             break
-        end
-    end
     cache.access_order:insert(1, token_id)
 
     entry.embedding
-end
 
 embedding_cache_set(cache: any, token_id: i64, embedding: any): void
     if cache.embeddings[token_id]
         cache.embeddings[token_id].embedding = embedding
         return
-    end
 
     # Evict if full
     if cache:len().access_order >= cache.max_entries
         oldest = cache.access_order[cache:len().access_order]
         cache.embeddings[oldest] = nil
         cache.access_order:remove()
-    end
 
     cache.embeddings[token_id] = {
         embedding = embedding,
         timestamp = os.clock(),
     }
     cache.access_order:insert(1, token_id)
-end
 
 embedding_cache_stats(cache: any): any
     {
         size = cache:len().access_order,
         max_size = cache.max_entries,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Result Cache (for caching function results)
@@ -243,26 +209,22 @@ result_cache_new(max_size: i64, ttl: i64): any
         ttl = ttl or 60,
         results = {},
     }
-end
 
 result_cache_get(cache: any, key: str): any
     entry = cache.results[key]
-    if entry == nil return nil end
+    if entry == nil return nil 
 
     if os.clock() - entry.timestamp > cache.ttl
         cache.results[key] = nil
         return nil
-    end
 
     entry.value
-end
 
 result_cache_set(cache: any, key: str, value: any): void
     # Evict oldest if full
     count = 0
     for _ in cache.results
         count += 1
-    end
     if count >= cache.max_size
         oldest_key = nil
         oldest_time = 1e30
@@ -270,20 +232,15 @@ result_cache_set(cache: any, key: str, value: any): void
             if v.timestamp < oldest_time
                 oldest_time = v.timestamp
                 oldest_key = k
-            end
-        end
-        if oldest_key cache.results[oldest_key] = nil end
-    end
+        if oldest_key cache.results[oldest_key] = nil 
 
     cache.results[key] = {
         value = value,
         timestamp = os.clock(),
     }
-end
 
 result_cache_clear(cache: any): void
     cache.results = {}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

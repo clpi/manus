@@ -5,191 +5,161 @@
 # Returns one of: "nil", "boolean", "number", "string", "table", "function".
 typeof(v: any): str
     return type(v)
-end
 
 eq_str(a: str, b: str): bool
     a:find(b, 1, true) == 1 and a:len() == b:len()
-end
 
 # kind: return a more detailed kind string.
 kind(v: any): str
     t = type(v)
     if eq_str(t, "number")
-        if v == v:floor() return "int" end
+        if v == v:floor() return "int" 
         "float"
-    elseif eq_str(t, "table")
+    else if eq_str(t, "table")
         # check if it's an array (all integer keys 1..n)
         n = v:len()
         if n > 0
             count = 0
-            for _ in v do count += 1 end
-            if count == n return "array" end
-        end
+            for _ in v do count += 1 
+            if count == n return "array" 
         "map"
     else
         t
-    end
-end
 
 # size: return the "size" of a value (array length or map key count).
 v: any:len(): i64
-    if v == nil return 0 end
+    if v == nil return 0 
     t = type(v)
     if t == "table"
         n = v:len()
-        if n > 0 return n end
+        if n > 0 return n 
         count = 0
-        for _k, _v in v do count += 1 end
+        for _k, _v in v do count += 1 
         return count
-    end
-    if t == "string" return v:len() end
+    if t == "string" return v:len() 
     1
-end
 
 # is_nil: report whether v is nil.
 is_nil(v: any): bool
     v == nil
-end
 
 # is_valid: report whether v is not nil.
 is_valid(v: any): bool
     v != nil
-end
 
 # can_int: report whether v can be converted to an integer.
 can_int(v: any): bool
-    if type(v) == "number" return true end
+    if type(v) == "number" return true 
     if type(v) == "string"
         return v:to(i64) != nil
-    end
     false
-end
 
 # to_int: convert v to an integer, or nil if impossible.
 to_int(v: any): any
-    if type(v) == "number" return v:floor() end
+    if type(v) == "number" return v:floor() 
     if type(v) == "string"
         n = v:to(i64)
-        if n != nil return n:floor() end
-    end
+        if n != nil return n:floor() 
     nil
-end
 
 # to_float: convert v to a float, or nil.
 to_float(v: any): any
-    if type(v) == "number" return v end
-    if type(v) == "string" return v:to(i64) end
+    if type(v) == "number" return v 
+    if type(v) == "string" return v:to(i64) 
     nil
-end
 
 # to_string: convert v to a string.
 to_string(v: any): str
-    if v == nil return "" end
+    if v == nil return "" 
     v:to(str)
-end
 
 # to_bool: convert v to a boolean.
 to_bool(v: any): bool
-    if v == nil return false end
-    if type(v) == "boolean" return v end
-    if type(v) == "number" return v != 0 end
-    if type(v) == "string" return v != "" and v != "false" and v != "0" end
+    if v == nil return false 
+    if type(v) == "boolean" return v 
+    if type(v) == "number" return v != 0 
+    if type(v) == "string" return v != "" and v != "false" and v != "0" 
     true
-end
 
 # fields: return the key-value pairs of a table as an array of {key, value, type}.
 fields(v: any): any
-    if v == nil or type(v) != "table" return {} end
+    if v == nil or type(v) != "table" return {} 
     out = {}
     for k, val in v
         out[out:len() + 1] = {key = k, value = val, type = type(val)}
-    end
     out
-end
 
 # field_names: return the keys of a table as an array.
 field_names(v: any): any
-    if v == nil or type(v) != "table" return {} end
+    if v == nil or type(v) != "table" return {} 
     out = {}
-    for k, _ in v do out[out:len() + 1] = k end
+    for k, _ in v do out[out:len() + 1] = k 
     out
-end
 
 # field_by_name: look up a key in a table.
 field_by_name(v: any, name: str): any
-    if v == nil or type(v) != "table" return nil end
+    if v == nil or type(v) != "table" return nil 
     v[name]
-end
 
 # set_field: set a key in a table.
 set_field(v: any, name: str, value: any): void
-    if v == nil or type(v) != "table" return end
+    if v == nil or type(v) != "table" return 
     v[name] = value
-end
 
 # elem: if v is a table, return v[index]; for nil returns nil.
 elem(v: any, index: any): any
-    if v == nil return nil end
+    if v == nil return nil 
     v[index]
-end
 
 # len: return the length of an array or string.
 v: any:len(): i64
-    if v == nil return 0 end
-    if type(v) == "string" return v:len() end
-    if type(v) == "table" return v:len() end
+    if v == nil return 0 
+    if type(v) == "string" return v:len() 
+    if type(v) == "table" return v:len() 
     0
-end
 
 # deep_equal: structural deep equality for tables and primitives.
 deep_equal(a: any, b: any): bool
-    if a == b return true end
-    if a == nil or b == nil return false end
-    if type(a) != type(b) return false end
-    if type(a) != "table" return a == b end
+    if a == b return true 
+    if a == nil or b == nil return false 
+    if type(a) != type(b) return false 
+    if type(a) != "table" return a == b 
     # compare table key counts
     ca = 0
-    for _k, _v in a do ca += 1 end
+    for _k, _v in a do ca += 1 
     cb = 0
-    for _k, _v in b do cb += 1 end
-    if ca != cb return false end
+    for _k, _v in b do cb += 1 
+    if ca != cb return false 
     for k, va in a
         vb = b[k]
-        if not deep_equal(va, vb) return false end
-    end
+        if not deep_equal(va, vb) return false 
     true
-end
 
 # deep_copy: recursively copy a table.
 deep_copy(v: any): any
-    if v == nil return nil end
-    if type(v) != "table" return v end
+    if v == nil return nil 
+    if type(v) != "table" return v 
     out = {}
     for k, val in v
         out[k] = deep_copy(val)
-    end
     out
-end
 
 # map_keys: return all keys (both array and hash) as an array.
 map_keys(v: any): any
-    if v == nil or type(v) != "table" return {} end
+    if v == nil or type(v) != "table" return {} 
     out = {}
-    for k, _ in v do out[out:len() + 1] = k end
+    for k, _ in v do out[out:len() + 1] = k 
     out
-end
 
 # map_values: return all values as an array.
 map_values(v: any): any
-    if v == nil or type(v) != "table" return {} end
+    if v == nil or type(v) != "table" return {} 
     out = {}
-    for _, val in v do out[out:len() + 1] = val end
+    for _, val in v do out[out:len() + 1] = val 
     out
-end
 
 # call: call a function value with the given argument array.
 call(fn: any, args: any): any
-    if fn == nil or type(fn) != "function" return nil end
+    if fn == nil or type(fn) != "function" return nil 
     fn(args:unpack())
-end
 

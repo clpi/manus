@@ -2,7 +2,6 @@
 concept ContractShape
     id: i64
     hash(self, salt: i64): i64
-end
 
 @c.emit([[
 typedef struct UserAdapter {
@@ -35,9 +34,7 @@ adapter_hash: i64 = @c.emit("UserAdapter_hash(&duo_user_adapter, 2)")
 
 if adapter_id != 40
     error("concept adapter getter returned wrong id")
-end
 if adapter_hash != 42
     error("concept adapter method wrapper returned wrong hash")
-end
 
 print("RESULT concept_c_emit_adapter ok")

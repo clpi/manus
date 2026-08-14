@@ -2,22 +2,18 @@
 
 concept Hashable
     hash(self) -> i64
-end
 
 M: {}
 M:hash() -> i64
     return 42
-end
 
 S: {}
 S:hash() -> i64
     return 13
-end
 
 X: {}
 X:nope() -> i64
     return 0
-end
 
 @comp.assert(@satisfies(M, "Hashable"), "M is Hashable")
 @comp.assert(@satisfies(S, "Hashable"), "S is Hashable")

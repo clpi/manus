@@ -6,7 +6,6 @@
     for i = 1, meta:len().fields
         f = meta.fields[i]
         acc = acc .. "    " .. f.type .. " " .. f.name .. ";\n"
-    end
     acc .. "} " .. meta.name .. ";\n"
 end)
 
@@ -15,7 +14,6 @@ end)
     for i = 1, meta:len().fields
         f = meta.fields[i]
         acc = acc .. "static inline " .. f.type .. " " .. meta.name .. "_get_" .. f.name .. "(const " .. meta.name .. "* v) { return v->" .. f.name .. "; }\n"
-    end
     acc
 end)
 
@@ -27,13 +25,11 @@ Point: { x: f64, y: f64 }
 concept HasXY
     x: f64
     y: f64
-end
 
 Pair: { x: f64, y: f64 }
 
 type_mark(meta): str
     meta.name .. ";"
-end
 
 p: Point = { x = 3.0, y = 4.0 }
 

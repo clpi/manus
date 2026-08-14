@@ -14,8 +14,6 @@ check(desc, cond)
     else
         fail += 1
         io.write("  FAIL: " .. desc .. "\n")
-    end
-end
 
 # ── string ──────────────────────────────────────────────────────────
 

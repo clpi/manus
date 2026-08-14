@@ -5,7 +5,6 @@
 concept Drawable
     id: i64
     draw(self): str
-end
 
 shape = {
     id = 7,

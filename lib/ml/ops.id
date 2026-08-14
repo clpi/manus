@@ -3,50 +3,39 @@
 # Native kernels (zero-arg checksum benchmarks / fused paths)
 gemm(): f64
     return ml.matmul_256()
-end
 
 conv(): f64
     return ml.conv2d()
-end
 
 sm(): f64
     return ml.softmax_1k()
-end
 
 attn(): f64
     return ml.attention()
-end
 
 mlp(): f64
     return ml.mlp_forward()
-end
 
 gauss(): f64
     return ml.gelu_1k()
-end
 
 ln(): f64
     return ml.layernorm_1k()
-end
 
 inner(): f64
     return ml.dot_1m()
-end
 
 corr(): f64
     return ml.conv1d()
-end
 
 # User-facing tensor ops (stdlib path; compiler may fuse later)
 @hot
 matmul(a, b): any
     return ml.tensor.matmul(a, b)
-end
 
 @hot
 softmax(t): any
     return ml.tensor.softmax(t)
-end
 
 gelu(t): any
     result = ml.tensor.zeros(t.rows, t.cols)
@@ -54,34 +43,27 @@ gelu(t): any
         v = t.data[i]
         inner = 0.044715 * v * v * v + v
         result.data[i] = 0.5 * v * (1.0 + math.tanh(0.7978845608 * inner))
-    end
     return result
-end
 
 layernorm(t, eps): any
-    if eps == nil eps = 1e-5 end
+    if eps == nil eps = 1e-5 
     n = t.size
     mean = 0.0
-    for i = 1, n mean += t.data[i] end
+    for i = 1, n mean += t.data[i] 
     mean /= n
     var = 0.0
     for i = 1, n
         d = t.data[i] - mean
         var += d * d
-    end
     rstd = 1.0 / var / n + eps:sqrt()
     result = ml.tensor.zeros(t.rows, t.cols)
     for i = 1, n
         result.data[i] = (t.data[i] - mean) * rstd
-    end
     return result
-end
 
 dot(a, b): f64
     assert(a.size == b.size, "dot size mismatch")
     sum = 0.0
     for i = 1, a.size
         sum += a.data[i] * b.data[i]
-    end
     return sum
-end

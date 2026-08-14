@@ -9,6 +9,5 @@ run()
     req = json.encode({a=1})
     print(req)
     true
-end
 
 run()

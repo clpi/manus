@@ -3,7 +3,6 @@ std = std
 concept ContractShape
     id: i64
     hash(self, salt: i64): i64
-end
 
 shape_contract = contracts.concept_contract(
     "user",
@@ -13,37 +12,28 @@ shape_contract = contracts.concept_contract(
 CONCEPT_N = @comp.concepts.count("ContractShape")
 if CONCEPT_N != 2
     error("concept member count should be 2 (1 field + 1 method)")
-end
 if shape_contract.count != 2
     error("concept contract should include field and method checks")
-end
 if not shape_contract.expression:find("user.id")
     error("concept contract did not include field descriptor")
-end
 if not shape_contract.report:find("hash")
     error("concept contract did not include method descriptor")
-end
 
 member_contract = contracts.concept_member_contract("user", @comp.concepts.members("ContractShape"))
 if member_contract.count != shape_contract.count
     error("member contract should match split concept descriptors")
-end
 
 shape_docs = contracts.concept_markdown("ContractShape", @comp.concepts.members("ContractShape"))
 if not shape_docs:find("field id: i64")
     error("concept markdown should include field type")
-end
 if not shape_docs:find("method hash")
     error("concept markdown should include method signature")
-end
 
 wrapper_plan = contracts.concept_wrapper_plan("UserAdapter", "user", @comp.concepts.methods("ContractShape"))
 if wrapper_plan:len() != 1 or wrapper_plan[1].wrapper != "UserAdapter_hash"
     error("concept wrapper plan should derive stable wrapper names")
-end
 if wrapper_plan:len()[1].params != 2 or wrapper_plan[1].params[2] != "i64"
     error("concept wrapper plan should include parameter type vector")
-end
 
 target_report = contracts.concept_target_report(
     "ContractShape",
@@ -53,11 +43,9 @@ target_report = contracts.concept_target_report(
 )
 if target_report.contract.count != 2 or target_report:len().wrappers != 1
     error("concept target report should include contract and wrapper plan")
-end
 accessor_plan = contracts.concept_accessor_plan("UserAdapter", "user", @comp.concepts.members("ContractShape"))
 if accessor_plan:len() != 1 or accessor_plan[1].wrapper != "UserAdapter_get_id"
     error("concept accessor plan should derive stable accessor names")
-end
 
 signature_key = contracts.concept_specialization_key(
     "ContractShape",
@@ -66,13 +54,10 @@ signature_key = contracts.concept_specialization_key(
 )
 if not signature_key:find("UserAdapter::ContractShape")
     error("concept specialization key should include target and concept")
-end
 if not signature_key:find("method:hash")
     error("concept specialization key should include method signature")
-end
 if not signature_key:find("any, i64")
     error("concept specialization key should include parameter types")
-end
 
 c_report = contracts.concept_target_c_report(
     "ContractShape",
@@ -83,25 +68,18 @@ c_report = contracts.concept_target_c_report(
 )
 if not c_report.c_wrappers:find("static inline int64_t UserAdapter_hash")
     error("concept C report should generate typed static wrappers")
-end
 if not c_report.c_wrappers:find("void* self", 1, true)
     error("concept C report should lower any receiver to void*")
-end
 if not c_report.c_wrappers:find("int64_t arg1")
     error("concept C report should lower i64 parameters")
-end
 if not c_report.c_wrappers:find("hash(self, arg1)", 1, true)
     error("concept C report should call the target method slot")
-end
 if not c_report.c_accessors:find("static inline int64_t UserAdapter_get_id")
     error("concept C report should generate typed field accessors")
-end
 if not c_report.c_accessors:find("return ((UserAdapter*)self)->id;", 1, true)
     error("concept C report should access target struct fields")
-end
 if not c_report.c_source:find("UserAdapter_get_id") or not c_report.c_source:find("UserAdapter_hash")
     error("concept C source should include accessors and wrappers")
-end
 
 coverage_ok = contracts.concept_coverage(
     @comp.concepts.members("ContractShape"),
@@ -109,7 +87,6 @@ coverage_ok = contracts.concept_coverage(
 )
 if not coverage_ok.ok or coverage_ok.missing_count != 0
     error("concept coverage should accept matching descriptor rows")
-end
 
 coverage_bad = contracts.concept_coverage(
     @comp.concepts.members("ContractShape"),
@@ -117,10 +94,8 @@ coverage_bad = contracts.concept_coverage(
 )
 if coverage_bad.ok or coverage_bad.missing_count != 1
     error("concept coverage should report missing method rows")
-end
 if not contracts.coverage_report(coverage_bad):find("missing method:hash")
     error("concept coverage report should name missing method")
-end
 
 RuntimeShape = meta.make_concept("RuntimeShape", {
     fields = { { name = "id", type = "i64" } },
@@ -134,123 +109,95 @@ runtime_report = contracts.concept_target_report(
 )
 if runtime_report:len().wrappers[1].params != 2 or runtime_report.wrappers[1].ret != "i64"
     error("runtime meta concept should preserve method params and ret")
-end
 
 iter_count = 0
 for k, v in meta.derive_iter({ id = 7, score = 3 })
-    if k == "id" and v == 7 iter_count += 1 end
-    if k == "score" and v == 3 iter_count += 1 end
-end
+    if k == "id" and v == 7 iter_count += 1 
+    if k == "score" and v == 3 iter_count += 1 
 if iter_count != 2
     error("std.meta.derive_iter should support direct table iteration")
-end
 
 reflect_subject = { id = 7, profile = { score = 3 } }
 reflect_fields = reflect.fields(reflect_subject)
 if reflect_fields:len() != 2
     error("std.reflect.fields should list direct table fields")
-end
 reflect_copy = reflect.deep_copy(reflect_subject)
 reflect_copy.profile.score = 9
 if reflect_subject.profile.score != 3
     error("std.reflect.deep_copy should isolate nested tables")
-end
 if not reflect.deep_equal(reflect_subject, { id = 7, profile = { score = 3 } })
     error("std.reflect.deep_equal should compare nested tables")
-end
 if std:len().reflect.field_names(reflect_subject) != 2 or std:len().reflect.map_values(reflect_subject) != 2
     error("std.reflect direct iteration helpers should expose table keys and values")
-end
 if reflect.kind({ 1, 2, 3 }) != "array"
     error("std.reflect.kind should classify array-shaped tables")
-end
 if meta.derive_ord("alpha", "beta") != -1 or meta.derive_ord("beta", "alpha") != 1
     error("std.meta.derive_ord should compare string contents")
-end
 
 map_subject = { id = 7, score = 3 }
 map_clone = maps.clone(map_subject)
 if not maps.equal(map_subject, map_clone)
     error("std.maps.clone should preserve direct table entries")
-end
 map_copy_dst = { id = 1 }
 if maps.copy(map_copy_dst, map_subject) != 2 or map_copy_dst.score != 3
     error("std.maps.copy should copy direct table entries")
-end
 # A `fun` body must be on its own line; the single-line form never parses.
 map_eq = fun(a, b)
     a == b
-end
 if not maps.equal_func(map_subject, map_clone, map_eq)
     error("std.maps.equal_func should compare direct table entries")
-end
 if maps.size(map_subject) != 2 or std:len().maps.keys(map_subject) != 2
     error("std.maps size and keys should use direct table iteration")
-end
 if std:len().maps.values(map_subject) != 2 or std:len().maps.entries(map_subject) != 2
     error("std.maps value views should use direct table iteration")
-end
 map_merged = maps.merge({ id = 1 }, { id = 9, score = 3 })
 if map_merged.id != 1 or map_merged.score != 3
     error("std.maps.merge should keep existing keys and add missing keys")
-end
 map_overwrite = maps.merge_overwrite({ id = 1 }, { id = 9, score = 3 })
 if map_overwrite.id != 9 or map_overwrite.score != 3
     error("std.maps.merge_overwrite should replace direct table entries")
-end
 
 table_subject = { id = 7, score = 3 }
 table_clone = table.clone(table_subject)
 if table_clone.id != 7 or table_clone.score != 3
     error("std.table.clone should preserve direct table entries")
-end
 if table_subject:len():keys() != 2 or std:len().table.values(table_subject) != 2
     error("std.table key/value views should use direct table iteration")
-end
 table_merged = table.merge({ id = 1 }, { score = 3 })
 if table_merged.id != 1 or table_merged.score != 3
     error("std.table.merge should copy direct table entries")
-end
 if std:len().table.to_pairs(table_subject) != 2
     error("std.table.to_pairs should use direct table iteration")
-end
 table_omit = table.omit({ id = 7, score = 3, stale = 1 }, { "stale" })
 if table_omit.stale != nil or table_omit.id != 7 or table_omit.score != 3
     error("std.table.omit should preserve non-omitted direct table entries")
-end
 table_clear_subject = { id = 7, score = 3 }
 table.clear(table_clear_subject)
 if not table.is_empty(table_clear_subject)
     error("std.table.clear should remove direct table entries")
-end
 
 pipe_c = pipeline.fuse_map_reduce("items", "double", "sum_square", "square", "add", "0.0")
 if pipe_c:len() <= 0
     error("pipeline generator returned empty code")
-end
 
 zig_c = foreign.zig_to_c("fn add(a: i64, b: i64) i64 { return a + b; }")
 if not zig_c:find("int64_t")
     error("foreign Zig bridge did not map i64")
-end
 
 rewrite.clear()
 rewrite.register_algebraic()
 rules = rewrite.summary()
 if not rules:find("add_zero")
     error("rewrite bundle did not register algebraic rules")
-end
 
 old_user = { id = "i64", name = "str" }
 new_user = { id = "i64", name = "str", email = "str" }
 changes = type_diff.diff_types(old_user, new_user)
 if not changes.compatible or changes:len().added != 1
     error("type diff should treat additive schema change as compatible")
-end
 
 styled = term.bold("ok")
 if styled:len() <= 0
     error("terminal styling returned empty string")
-end
 
 print("RESULT std_meta_modules ok")

@@ -16,7 +16,6 @@ enum Color
     Red
     Green
     Blue
-end
 
 main()
     p: Point = { x = 3.0, y = 4.0 }
@@ -45,4 +44,3 @@ main()
     ok = ok and point_why:find("native C scalars") != nil and box_why:find("@sealed") != nil
     ok = ok and point_origin:find("shape_id=") != nil and red == 0
     print("ok=", ok, "\n")
-end

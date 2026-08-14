@@ -3,9 +3,8 @@
 
 @specialize({ fn = "twice", types = "i64, f64" })
 
-fun twice<T>(x: T): T
+twice<T>(x: T): T
     x
-end
 
 # Concrete call sites still monomorphize at use; batch ensures bodies exist early.
 print("=== @specialize batch showcase ===")

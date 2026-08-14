@@ -78,7 +78,7 @@ duo=./zig-out/bin/idol; d=/tmp/duo_abi_matrix; rm -rf $d; mkdir -p $d; i=0;
 for ps in 'a: i64|f(7)' 'a: f64|f(3.5)' 'a: i64, b: f64|f(7, 3.5)' \
           'a: f64, b: i64|f(3.5, 7)' 'a: f64, b: f64|f(3.5, 1.5)' \
           'a: i64, b: f64, c: i64, d: f64|f(1, 2.5, 3, 4.5)' \
-          'a: f64, b: i64, c: f64|f(2.5, 9, 1.5)'; do
+          'a: f64, b: i64, c: f64|f(2.5, 9, 1.5)';
   P=${ps%%|*}; A=${ps##*|}
   case "$P" in 'a: f64'*) C='a > 1.0';; *) C='a > 1';; esac
   i=$((i+1)); printf 'f(%s): i64\n    return 42\nend\n\nmain(): i64\n    return %s\nend\n' "$P" "$A" > $d/t$i.id
@@ -86,7 +86,7 @@ for ps in 'a: i64|f(7)' 'a: f64|f(3.5)' 'a: i64, b: f64|f(7, 3.5)' \
   i=$((i+1)); printf 'f(%s): str\n    if %s return "yes" end\n    return "no"\nend\n\nmain(): i64\n    return #%s\nend\n' "$P" "$C" "$A" > $d/t$i.id
 done
 ok=0; wrong=0; bail=0; noc=0
-for f in $d/t*.id; do
+for f in $d/t*.id;
   if $duo compile "$f" -o $d/c.bin >/dev/null 2>&1; then cv=$($d/c.bin; echo $?); else noc=$((noc+1)); continue; fi
   if $duo compile backend:len()=direct "$f" -o $d/x.bin >/dev/null 2>&1; then dv=$($d/x.bin; echo $?); else bail=$((bail+1)); continue; fi
   if [ "$cv" = "$dv" ]; then ok=$((ok+1)); else wrong=$((wrong+1)); echo "$(basename $f) c=$cv direct=$dv" >> $d/wrong.txt; fi

@@ -24,13 +24,11 @@
 # quiet the gate. Verified 2026-08-07.
 baseline(): i64
     0
-end
 
 fnv_hello(): i64
     s = std.hash.fnv.new32a()
     std.hash.fnv.update(s, "hello")
     std.hash.fnv.final(s)
-end
 
 fails = 0
 checked = 0
@@ -40,10 +38,8 @@ check(label: str, got: str, want: str): void
     checked += 1
     if got == want
         return
-    end
     fails += 1
     report = report .. "  WRONG " .. label .. ": got " .. got .. ", want " .. want .. "\n"
-end
 
 main(): i64
     # std.fmt — the boolean formatter that returned "false" for true.
@@ -197,15 +193,11 @@ main(): i64
     if checked == 0
         print("stdlib_correctness: FAIL (empty corpus)")
         return 1
-    end
     if fails > baseline()
         print("stdlib_correctness: FAIL — a stdlib function returns the wrong value")
         return 1
-    end
     if fails < baseline()
         print("stdlib_correctness: rows fixed since the floor was set — LOWER baseline() to "
             .. fails:to(str))
-    end
     print("stdlib_correctness: PASS")
     0
-end

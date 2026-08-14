@@ -8,11 +8,9 @@
 
 greet(name: str): str
     "Hello, " .. name
-end
 
-fun add<T>(a: T, b: T): T
+add<T>(a: T, b: T): T
     a + b
-end
 
 result: i64 = ##1 + 2
 global counter: i64 = 0
@@ -25,16 +23,12 @@ calculate(): void
         print("x is greater")
     else
         print("y is greater")
-    end
 
     while x < 100
         x += 1
-    end
 
     for i = 1, 10
         print(i)
-    end
-end
 
 print(greet("World"))
 print(add(5, 3))

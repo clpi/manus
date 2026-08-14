@@ -9,13 +9,13 @@ mul: i64 = (a: i64, b: i64)
 pick: i64 = (a: i64, b: i64, c: i64, value: i64)
   if a < b
     value
-  elseif b < c
+  else if b < c
     value * 2
   else
     value * 3
 
 run_smoke: i64 = ()
-  x = if 1 < 2 10 else if 2 < 3 20 else 30 end end
+  x = if 1 < 2 10 else if 2 < 3 20 else 30 end 
 add(1, 2) + mul(3, 4) + pick(1, 2, 3, 5) + x
 
 RESULT = run_smoke()

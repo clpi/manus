@@ -3,29 +3,23 @@
 
 # Helper: apply a function to each element
 each(t, f)
-    for i = 1, t:len() do
+    for i = 1, t:len()
         f(t[i])
-    end
-end
 
 # Helper: map applying a method to each element
 map_method(t, f)
     result = {}
-    for i = 1, t:len() do
+    for i = 1, t:len()
         result[i] = f(t[i])
-    end
     return result
-end
 
 # Test objects with methods (via metatables)
 Greeter = {}
 Greeter.__index = Greeter
 Greeter:greet()
     return "Hello, " .. self.name .. "!"
-end
 Greeter.new(name)
     return setmetatable({ name = name }, Greeter)
-end
 
 # Create instances
 greeters = {

@@ -3,67 +3,54 @@
 
 # 1. Recursive Fibonacci (lowered to iterative by the compiler)
 fib(n: i64)
-    if n <= 1 return n end
+    if n <= 1 return n 
     return fib(n - 1) + fib(n - 2)
-end
 
 # 2. Prime counting (trial division in source; Eratosthenes sieve in codegen)
 primes(limit: i64)
     count = 0
     n = 2
-    while n <= limit do
+    while n <= limit
         prime = true
         d = 2
-        while d * d <= n do
+        while d * d <= n
             if n % d == 0
                 prime = false
-            end
             d += 1
-        end
         if prime
             count += 1
-        end
         n += 1
-    end
     return count
-end
 
 # 3. Mandelbrot core iteration
 mandel(cx: f64, cy: f64): i64
     zx: f64 = 0.0
     zy: f64 = 0.0
     i: i64 = 0
-    while i < 10000 do
+    while i < 10000
         zx2: f64 = zx * zx
         zy2: f64 = zy * zy
         if zx2 + zy2 > 4.0
             return i
-        end
         zy = 2.0 * zx * zy + cy
         zx = zx2 - zy2 + cx
         i += 1
-    end
     return i
-end
 
 # 4. Spectral-norm style grid
 entry(i: i64, j: i64): f64
     return 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1)
-end
 
 grid(size: i64): f64
     total: f64 = 0.0
     i: i64 = 0
-    while i < size do
+    while i < size
         j: i64 = 0
-        while j < size do
+        while j < size
             total += entry(i, j)
             j += 1
-        end
         i += 1
-    end
     return total
-end
 
 # 5. N-body physics
 nbody(steps: i64): f64
@@ -84,7 +71,7 @@ nbody(steps: i64): f64
     m3: f64 = 1.0
     dt: f64 = 0.001
     i: i64 = 0
-    while i < steps do
+    while i < steps
         dx12: f64 = x2 - x1
         dy12: f64 = y2 - y1
         sq12: f64 = dx12 * dx12 + dy12 * dy12 + 0.001
@@ -110,9 +97,7 @@ nbody(steps: i64): f64
         x3 += vx3 * dt
         y3 += vy3 * dt
         i += 1
-    end
     return x1 + y1 + x2 + y2 + x3 + y3
-end
 
 # 6. String stdlib: rep + len + byte checksum
 bytes(n: i64)
@@ -120,52 +105,43 @@ bytes(n: i64)
     sum = 0
     i = 1
     last = s:len()
-    while i <= last do
+    while i <= last
         sum += s:byte(i)
         i += 1
-    end
     return sum
-end
 
 # 7. Table stdlib pattern: fill indexed table and sum (dense array lowering)
 array(n: i64)
     t = {}
     i = 1
-    while i <= n do
+    while i <= n
         t[i] = i
         i += 1
-    end
     sum = 0
     i = 1
-    while i <= n do
+    while i <= n
         sum += t[i]
         i += 1
-    end
     return sum
-end
 
 # 8. Math stdlib: sin/cos accumulation
 trig(n: i64)
     sum = 0.0
     i = 0
-    while i < n do
+    while i < n
         sum += i:sin() * i:cos()
         i += 1
-    end
     return sum
-end
 
 # 9. String stdlib chain: len + rep in a hot loop
 chain(n: i64): i64
     s = "a":rep(1000)
     total = 0
     i = 1
-    while i <= n do
+    while i <= n
         total += s:len() + "b":rep((i % 10) + 1):len()
         i += 1
-    end
     return total
-end
 
 # 10. Integer hash using string.byte on a long literal
 hash(n: i64)
@@ -173,152 +149,125 @@ hash(n: i64)
     h = 0
     i = 1
     lim = s:len()
-    while i <= lim do
+    while i <= lim
         h = (h * 31 + s:byte(i)) % 1000000007
         i += 1
-    end
     return h
-end
 
 # 11. Math stdlib mix: floor + max (common game / layout logic)
 mix(n: i64)
     acc = 0.0
     peak = 0.0
     i = 0
-    while i < n do
+    while i < n
         v = (i * 0.73) + 0.5:floor()
         acc += v
         peak = peak:max(v)
         i += 1
-    end
     return acc + peak
-end
 
 # 12. Dense table scan: max value (table-as-array pattern)
 maximum(n: i64)
     t = {}
     i = 1
-    while i <= n do
+    while i <= n
         t[i] = (i * 17) % 100003
         i += 1
-    end
     mx = 0
     i = 1
-    while i <= n do
+    while i <= n
         if t[i] > mx
             mx = t[i]
-        end
         i += 1
-    end
     return mx
-end
 
 # 13. Math stdlib: pow + sqrt accumulation
 power(n: i64)
     sum = 0.0
     i = 1
-    while i <= n do
+    while i <= n
         sum += i % 997:pow(0.25):sqrt()
         i += 1
-    end
     return sum
-end
 
 # 14. Sorted-array binary search (config lookup / game entity ID)
 search(n: i64)
     t = {}
     i = 1
-    while i <= n do
+    while i <= n
         t[i] = i
         i += 1
-    end
     hits = 0
     q = 1
-    while q <= 200000 do
+    while q <= 200000
         key = ((q * 7919) % n) + 1
         lo = 1
         hi = n
-        while lo <= hi do
+        while lo <= hi
             mid = (lo + hi) / 2:floor()
             if t[mid] < key
                 lo = mid + 1
-            elseif t[mid] > key
+            else if t[mid] > key
                 hi = mid - 1
             else
                 hits += 1
                 break
-            end
-        end
         q += 1
-    end
     return hits
-end
 
 # 15. Filter / predicate count (analytics, log filtering)
 filter(n: i64)
     count = 0
     i = 1
-    while i <= n do
+    while i <= n
         v = (i * 17) % 100003
         if v > 50000
             count += 1
-        end
         i += 1
-    end
     return count
-end
 
 # 16. Dot product of two vectors (ML features, physics, graphics)
 dot(n: i64)
     a = {}
     b = {}
     i = 1
-    while i <= n do
+    while i <= n
         a[i] = i
         b[i] = n - i + 1
         i += 1
-    end
     sum = 0
     i = 1
-    while i <= n do
+    while i <= n
         sum += a[i] * b[i]
         i += 1
-    end
     return sum
-end
 
 # 17. Clamp / saturate accumulation (color, audio, game stats)
 clamp(n: i64)
     sum = 0
     i = 0
-    while i < n do
+    while i < n
         sum += 255:min(0:max(i % 1000))
         i += 1
-    end
     return sum
-end
 
 # 18. Bucket / histogram key hash (sharding, metrics tags)
 bucket(n: i64)
     sum = 0
     i = 1
-    while i <= n do
+    while i <= n
         sum += (i * 31) % 256
         i += 1
-    end
     return sum
-end
 
 # 19. Exponential moving average (metrics, smoothing)
 ema(n: i64)
     avg = 0.0
     i = 0
-    while i < n do
+    while i < n
         avg = avg * 0.95 + (i % 100) * 0.05
         i += 1
-    end
     return avg
-end
 
 # 20. Token / word count (log parsing, CSV fields)
 token(n: i64)
@@ -326,14 +275,11 @@ token(n: i64)
     count = 0
     i = 1
     last = s:len()
-    while i <= last do
+    while i <= last
         if s:byte(i) == 32
             count += 1
-        end
         i += 1
-    end
     return count
-end
 
 # 21. Config / JSON-ish delimiter scan
 parse(n: i64)
@@ -341,50 +287,41 @@ parse(n: i64)
     sum = 0
     i = 1
     last = s:len()
-    while i <= last do
+    while i <= last
         c = s:byte(i)
         if c == 123 or c == 58 or c == 34
             sum += c
-        end
         i += 1
-    end
     return sum
-end
 
 # 22. Indexed table lookup accumulation (cache / entity table)
 lookup(n: i64)
     t = {}
     i = 1
-    while i <= n do
+    while i <= n
         t[i] = i * 3
         i += 1
-    end
     sum = 0
     q = 1
-    while q <= n do
+    while q <= n
         idx = (q * 7) % n + 1
         sum += t[idx]
         q += 1
-    end
     return sum
-end
 
 # 23. Table insert churn then aggregate (metrics buffers)
 churn(n: i64)
     t = {}
     i = 1
-    while i <= n do
+    while i <= n
         t[i] = (i * 13) % 997
         i += 1
-    end
     sum = 0
     i = 1
-    while i <= n do
+    while i <= n
         sum += t[i]
         i += 1
-    end
     return sum
-end
 
 # 24. Small matrix multiply (nested loop + indexed table access)
 matrix(n: i64): i64
@@ -393,288 +330,239 @@ matrix(n: i64): i64
     b = {}
     c = {}
     i: i64 = 1
-    while i <= size * size do
+    while i <= size * size
         a[i] = i % 100
         b[i] = (i * 7) % 100
         c[i] = 0
         i += 1
-    end
     rep: i64 = 0
-    while rep < n do
+    while rep < n
         i = 0
-        while i < size do
+        while i < size
             j: i64 = 0
-            while j < size do
+            while j < size
                 sum: i64 = 0
                 k: i64 = 0
-                while k < size do
+                while k < size
                     sum += a[i * size + k + 1] * b[k * size + j + 1]
                     k += 1
-                end
                 c[i * size + j + 1] = sum
                 j += 1
-            end
             i += 1
-        end
         rep += 1
-    end
     total: i64 = 0
     i = 1
-    while i <= size * size do
+    while i <= size * size
         total += c[i]
         i += 1
-    end
     return total
-end
 
 # 25. Prefix sum scan (serial scan pattern)
 prefix(n: i64)
     t = {}
     i = 1
-    while i <= n do
+    while i <= n
         t[i] = (i * 3) % 1000
         i += 1
-    end
     i = 2
-    while i <= n do
+    while i <= n
         t[i] = t[i] + t[i - 1]
         i += 1
-    end
     return t[n]
-end
 
 # 26. GCD reduction (Euclidean algorithm, branch-heavy)
 gcd(n: i64)
     sum = 0
     i = 1
-    while i <= n do
+    while i <= n
         a = i
         b = (i * 7 + 3) % 10000 + 1
-        while b != 0 do
+        while b != 0
             tmp = b
             b = a % b
             a = tmp
-        end
         sum += a
         i += 1
-    end
     return sum
-end
 
 # 27. Collatz chain length accumulation (unpredictable branching)
 collatz(n: i64): i64
     total: i64 = 0
     i: i64 = 1
-    while i <= n do
+    while i <= n
         x: i64 = i
         steps: i64 = 0
-        while x != 1 do
+        while x != 1
             if x % 2 == 0
                 x = x // 2
             else
                 x = 3 * x + 1
-            end
             steps += 1
-        end
         total += steps
         i += 1
-    end
     return total
-end
 
 # 28. XOR fold / bit manipulation reduction
 xor(n: i64)
     acc = 0
     i = 1
-    while i <= n do
+    while i <= n
         acc = acc ~ (i * 2654435761)
         i += 1
-    end
     return acc
-end
 
 # 29. Ring buffer write/read simulation (modulo indexing)
 ring(n: i64)
     size = 1024
     buf = {}
     i = 1
-    while i <= size do
+    while i <= size
         buf[i] = 0
         i += 1
-    end
     sum = 0
     i = 0
-    while i < n do
+    while i < n
         idx = (i % size) + 1
         buf[idx] = (i * 31) % 100000
         sum += buf[((i + size - 7) % size) + 1]
         i += 1
-    end
     return sum
-end
 
 # 30. Conditional swap reduce (sorting-kernel pattern)
 swap(n: i64)
     t = {}
     i = 1
-    while i <= n do
+    while i <= n
         t[i] = (i * 17) % 10007
         i += 1
-    end
     passes = 5
     p = 0
-    while p < passes do
+    while p < passes
         i = 1
-        while i < n do
+        while i < n
             if t[i] > t[i + 1]
                 tmp = t[i]
                 t[i] = t[i + 1]
                 t[i + 1] = tmp
-            end
             i += 1
-        end
         p += 1
-    end
     sum = 0
     i = 1
-    while i <= n do
+    while i <= n
         sum += t[i]
         i += 1
-    end
     return sum
-end
 
 # 31. Ackermann-like (bounded recursion stress)
 ack(m: any, n: any)
-    if m == 0 return n + 1 end
-    if n == 0 return ack(m - 1, 1) end
+    if m == 0 return n + 1 
+    if n == 0 return ack(m - 1, 1) 
     return ack(m - 1, ack(m, n - 1))
-end
 
 # 32. Levenshtein distance (2D DP table)
 leven(n: i64)
     sum = 0
     rep = 0
-    while rep < n do
+    while rep < n
         la = 12
         lb = 13
         prev = {}
         curr = {}
         j = 0
-        while j <= lb do
+        while j <= lb
             prev[j] = j
             j += 1
-        end
         i = 1
-        while i <= la do
+        while i <= la
             curr[0] = i
             j = 1
-            while j <= lb do
+            while j <= lb
                 ca = ((rep * 7 + i * 3) % 26)
                 cb = ((rep * 13 + j * 5) % 26)
                 cost = 0
-                if ca != cb cost = 1 end
+                if ca != cb cost = 1 
                 del = prev[j] + 1
                 ins = curr[j - 1] + 1
                 sub = prev[j - 1] + cost
                 mn = del
-                if ins < mn mn = ins end
-                if sub < mn mn = sub end
+                if ins < mn mn = ins 
+                if sub < mn mn = sub 
                 curr[j] = mn
                 j += 1
-            end
             tmp = prev
             prev = curr
             curr = tmp
             i += 1
-        end
         sum += prev[lb]
         rep += 1
-    end
     return sum
-end
 
 # 33. Sieve of Eratosthenes (boolean array)
 sieve(n: i64): i64
     prime = {}
     i: i64 = 0
-    while i <= n do
+    while i <= n
         prime[i] = true
         i += 1
-    end
     prime[0] = false
     prime[1] = false
     i = 2
-    while i * i <= n do
+    while i * i <= n
         if prime[i]
             j: i64 = i * i
-            while j <= n do
+            while j <= n
                 prime[j] = false
                 j += i
-            end
-        end
         i += 1
-    end
     count: i64 = 0
     i = 2
-    while i <= n do
-        if prime[i] count += 1 end
+    while i <= n
+        if prime[i] count += 1 
         i += 1
-    end
     return count
-end
 
 # 34. Fenwick tree (point update + prefix query)
 fenwick(size: i64): i64
     tree = {}
     i: i64 = 0
-    while i <= size do
+    while i <= size
         tree[i] = 0
         i += 1
-    end
     i = 1
-    while i <= size do
+    while i <= size
         val: i64 = (i * 3) % 1000
         idx: i64 = i
-        while idx <= size do
+        while idx <= size
             tree[idx] = tree[idx] + val
             idx += (idx & (-idx))
-        end
         i += 1
-    end
     sum: i64 = 0
     q: i64 = 1
-    while q <= size do
+    while q <= size
         idx: i64 = q
-        while idx > 0 do
+        while idx > 0
             sum += tree[idx]
             idx -= (idx & (-idx))
-        end
         q += 1
-    end
     return sum
-end
 
 # 35. Linear interpolation table lookup
 interp(n: i64)
     cap = 1024
     tbl = {}
     i = 0
-    while i < cap do
+    while i < cap
         tbl[i] = i * 0.01:sin()
         i += 1
-    end
     sum = 0.0
     i = 0
-    while i < n do
+    while i < n
         x = (i * 0.0073) % (cap - 1)
         idx = x:floor()
         frac = x - idx
         sum += tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
         i += 1
-    end
     return sum
-end
 
 # 36. Run-length encoding count (byte comparison)
 run_n: i64:len()
@@ -682,51 +570,42 @@ run_n: i64:len()
     count = 0
     i = 2
     last = s:len()
-    while i <= last do
+    while i <= last
         if s:byte(i) != s:byte(i - 1)
             count += 1
-        end
         i += 1
-    end
     return count + 1
-end
 
 # 37. Population count / Hamming weight reduction
 weight(n: i64): i64
     sum: i64 = 0
     i: i64 = 1
-    while i <= n do
+    while i <= n
         x: i64 = i
         c: i64 = 0
-        while x != 0 do
+        while x != 0
             c += (x & 1)
             x = x >> 1
-        end
         sum += c
         i += 1
-    end
     return sum
-end
 
 # 38. CORDIC-style sin approximation (shift+add, no math.sin)
 cordic(n: i64)
     sum = 0.0
     i = 0
-    while i < n do
+    while i < n
         angle = (i % 1000) * 0.001
         s = angle
         term = angle
         k = 1
-        while k <= 5 do
+        while k <= 5
             term = -term * angle * angle / ((2 * k) * (2 * k + 1))
             s += term
             k += 1
-        end
         sum += s
         i += 1
-    end
     return sum
-end
 
 # 39. Sparse vector dot (stride access pattern)
 sparse(n: i64)
@@ -735,27 +614,23 @@ sparse(n: i64)
     a = {}
     b = {}
     i = 1
-    while i <= len do
+    while i <= len
         a[i] = 0
         b[i] = 0
         i += 1
-    end
     i = 1
-    while i <= n do
+    while i <= n
         idx = (i - 1) * stride + 1
         a[idx] = i
         b[idx] = n - i + 1
         i += 1
-    end
     sum = 0
     i = 1
-    while i <= n do
+    while i <= n
         idx = (i - 1) * stride + 1
         sum += a[idx] * b[idx]
         i += 1
-    end
     return sum
-end
 
 # 40. Game of Life step (2D grid neighbor count)
 life(steps: i64)
@@ -764,41 +639,34 @@ life(steps: i64)
     grid = {}
     fresh = {}
     i = 0
-    while i < W * H do
+    while i < W * H
         grid[i] = (i * 31337) % 3 == 0 and 1 or 0
         fresh[i] = 0
         i += 1
-    end
     s = 0
-    while s < steps do
+    while s < steps
         y = 1
-        while y < H - 1 do
+        while y < H - 1
             x = 1
-            while x < W - 1 do
+            while x < W - 1
                 neighbors = grid[(y-1)*W + (x-1)] + grid[(y-1)*W + x] + grid[(y-1)*W + (x+1)] + grid[y*W + (x-1)] + grid[y*W + (x+1)] + grid[(y+1)*W + (x-1)] + grid[(y+1)*W + x] + grid[(y+1)*W + (x+1)]
                 cell = grid[y * W + x]
                 if cell == 1
                     fresh[y * W + x] = (neighbors == 2 or neighbors == 3) and 1 or 0
                 else
                     fresh[y * W + x] = neighbors == 3 and 1 or 0
-                end
                 x += 1
-            end
             y += 1
-        end
         tmp = grid
         grid = fresh
         fresh = tmp
         s += 1
-    end
     sum = 0
     i = 0
-    while i < W * H do
+    while i < W * H
         sum += grid[i]
         i += 1
-    end
     return sum
-end
 
 print("========================================")
 print("     COMPREHENSIVE BENCHMARK SUITE      ")
@@ -831,14 +699,12 @@ print("Running Mandelbrot iterations...")
 ts3 = os.clock()
 r3 = 0
 y = -100
-while y <= 100 do
+while y <= 100
     x = -100
-    while x <= 100 do
+    while x <= 100
         r3 += mandel(x / 100.0, y / 100.0)
         x += 1
-    end
     y += 1
-end
 te3 = os.clock()
 print("Mandel Iterations  ", r3)
 print("RESULT mandel", r3)

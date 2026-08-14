@@ -45,31 +45,24 @@
 
 sh(cmd: str): str
     std.script.chomp(std.script.capture(cmd))
-end
 
 pad(s: str, w: i64): str
     o = s
     while o:len() < w
         o = "{o} "
-    end
     o
-end
 
 lpad(s: str, w: i64): str
     o = s
     while o:len() < w
         o = " {o}"
-    end
     o
-end
 
 digits(n: i64, w: i64): str
     o = n:to(str)
     while o:len() < w
         o = "0{o}"
-    end
     o
-end
 
 # Seconds with six places, from integer nanoseconds. `to(str)` on an f64 does
 # not compile, and a float round trip would put the last digit at the mercy of
@@ -78,12 +71,10 @@ secs(ns: i64): str
     v: i64 = ns
     if v < 0
         v = 0
-    end
     micro: i64 = (v + 500) // 1000
     whole: i64 = micro // 1000000
     frac: str = digits(micro % 1000000, 6)
     "{whole}.{frac}"
-end
 
 # a / b to three places, half-up, entirely in i64. Reproduces awk's "%.3f" on
 # every value this benchmark has produced; checked against the shell run.
@@ -94,17 +85,13 @@ ratio(a: i64, b: i64): str
         whole: i64 = scaled // 1000
         frac: str = digits(scaled % 1000, 3)
         out = "{whole}.{frac}"
-    end
     out
-end
 
 sizeat(path: str): i64
     to(i64)(sh("stat -f%z '{path}' 2>/dev/null || stat -c%s '{path}'"))
-end
 
 linesat(path: str): i64
     to(i64)(sh("wc -l < '{path}' | tr -d ' '"))
-end
 
 field(line: str, want: i64): str
     n: i64 = line:len()
@@ -118,16 +105,11 @@ field(line: str, want: i64): str
             start: i64 = i
             while i <= n and line:byte(i) != 32 and line:byte(i) != 9
                 i += 1
-            end
             if seen == want and out == ""
                 out = line:sub(start, i - 1)
-            end
         else
             i += 1
-        end
-    end
     out
-end
 
 lines(text: str): any
     out = {}
@@ -138,24 +120,17 @@ lines(text: str): any
         if text:byte(i) == 10
             if i > start
                 out[out:len() + 1] = text:sub(start, i - 1)
-            end
             start = i + 1
-        end
         i += 1
-    end
     if start <= n
         out[out:len() + 1] = text:sub(start, n)
-    end
     out
-end
 
 absf(x: f64): f64
     o: f64 = x
     if o < 0.0
         o = 0.0 - o
-    end
     o
-end
 
 homedir = script.getenv("DUO_ROOT", ".")
 root = sh("cd '{homedir}' && pwd")
@@ -173,17 +148,13 @@ trimflag(): str
     o = "-Wl,--gc-sections"
     if uname == "Darwin"
         o = "-Wl,-dead_strip"
-    end
     o
-end
 
 stripflag(): str
     o = "--strip-all"
     if uname == "Darwin"
         o = "-x"
-    end
     o
-end
 
 trim = trimflag()
 stripmode = stripflag()
@@ -207,19 +178,14 @@ mintime(label: str, cmd: str, floor: i64): i64
             print("  command: {cmd}")
             print(sh("sed -n '1,40p' '{log}'"))
             os.exit(1)
-        end
         d: i64 = b - a
         if best == 0 or d < best
             best = d
-        end
         i += 1
-    end
     out: i64 = best - floor
     if out < 0
         out = 0
-    end
     out
-end
 
 spawnfloor(): i64
     best: i64 = 0
@@ -231,17 +197,13 @@ spawnfloor(): i64
         d: i64 = b - a
         if rc == 0 and (best == 0 or d < best)
             best = d
-        end
         i += 1
-    end
     best
-end
 
 strippedinput: str, out: str:len(): i64
     script.must("cp '{input}' '{out}'")
     script.run("'{stripbin}' {stripmode} '{out}' 2>/dev/null")
     sizeat(out)
-end
 
 duotyped(path: str): void
     f = io.open(path, "w")
@@ -270,7 +232,6 @@ duotyped(path: str): void
     f:write("\n")
     f:write("print(checksum(200000))\n")
     f:close()
-end
 
 ctyped(path: str): void
     f = io.open(path, "w")
@@ -301,7 +262,6 @@ ctyped(path: str): void
     f:write("    return 0;\n")
     f:write("}\n")
     f:close()
-end
 
 duochain(path: str, funcs: i64): void
     f = io.open(path, "w")
@@ -318,7 +278,6 @@ duochain(path: str, funcs: i64): void
         f:write("end\n")
         f:write("\n")
         i += 1
-    end
     f:write("fun checksum(n: i64): i64\n")
     f:write("    acc: i64 = 0\n")
     f:write("    i: i64 = 1\n")
@@ -328,7 +287,6 @@ duochain(path: str, funcs: i64): void
     while i < funcs
         f:write("        x = step_{i}(x)\n")
         i += 1
-    end
     f:write("        acc = (acc + x) % 1000000007\n")
     f:write("        i += 1\n")
     f:write("    end\n")
@@ -337,7 +295,6 @@ duochain(path: str, funcs: i64): void
     f:write("\n")
     f:write("print(checksum(2000))\n")
     f:close()
-end
 
 cchain(path: str, funcs: i64): void
     f = io.open(path, "w")
@@ -355,7 +312,6 @@ cchain(path: str, funcs: i64): void
         f:write("}\n")
         f:write("\n")
         i += 1
-    end
     f:write("static inline int64_t checksum(int64_t n) {\n")
     f:write("    int64_t acc = 0;\n")
     f:write("    for (int64_t i = 1; i <= n; ++i) {\n")
@@ -364,7 +320,6 @@ cchain(path: str, funcs: i64): void
     while i < funcs
         f:write("        x = step_{i}(x);\n")
         i += 1
-    end
     f:write("        acc = (acc + x) % 1000000007;\n")
     f:write("    }\n")
     f:write("    return acc;\n")
@@ -375,7 +330,6 @@ cchain(path: str, funcs: i64): void
     f:write("    return 0;\n")
     f:write("}\n")
     f:close()
-end
 
 head(): void
     a: str = pad("Workload", 22)
@@ -390,7 +344,6 @@ head(): void
     d = lpad("------------", 12)
     e = lpad("----------", 10)
     print("{a} {b} {c} {d} {e}")
-end
 
 row(name: str, metric: str, dv: str, cv: str, rv: str): void
     a: str = pad(name, 22)
@@ -399,7 +352,6 @@ row(name: str, metric: str, dv: str, cv: str, rv: str): void
     d: str = lpad(cv, 12)
     e: str = lpad(rv, 10)
     print("{a} {b} {c} {d} {e}x")
-end
 
 lone(name: str, metric: str, dv: str): void
     a: str = pad(name, 22)
@@ -408,12 +360,10 @@ lone(name: str, metric: str, dv: str): void
     d: str = lpad("-", 12)
     e: str = lpad("-", 10)
     print("{a} {b} {c} {d} {e}")
-end
 
 resultrow(name: str, value: str): void
     a: str = pad(name, 15)
     print("RESULT {a} {value}")
-end
 
 pairrows(name: str, idolsrc: str, csrc: str, idolout: str, cout: str,
     idolns: i64, cns: i64): void
@@ -430,7 +380,6 @@ pairrows(name: str, idolsrc: str, csrc: str, idolout: str, cout: str,
     row(name, "compile_s", secs(idolns), secs(cns), ratio(idolns, cns))
     row(name, "binary_bytes", idolsize:to(str), csize:to(str),
         ratio(idolsize, csize))
-end
 
 workload(name: str, idolsrc: str, csrc: str, idolout: str, cout: str,
     floor: i64): void
@@ -443,10 +392,8 @@ workload(name: str, idolsrc: str, csrc: str, idolout: str, cout: str,
     if duoanswer != canswer
         print("RESULT mismatch for {name}: Idol={duoanswer} C={canswer}")
         os.exit(1)
-    end
     pairrows(name, idolsrc, csrc, idolout, cout, idolns, cns)
     resultrow(name, duoanswer)
-end
 
 # Sorted RESULT rows, with the count checked against what the program is
 # supposed to emit. A capture that silently produced 0 rows would otherwise
@@ -460,8 +407,6 @@ capturerows(label: str, want: i64, bin: str, out: str): void
         print(sh("sed -n '1,40p' '{out}.err'"))
         print(sh("sed -n '1,40p' '{out}.raw'"))
         os.exit(1)
-    end
-end
 
 mlagree(duopath: str, cpath: str): void
     dl = lines(sh("cat '{duopath}'"))
@@ -471,7 +416,6 @@ mlagree(duopath: str, cpath: str): void
     if nd != nc
         print("RESULT count mismatch: Idol={nd} C={nc}")
         os.exit(1)
-    end
     i: i64 = 1
     while i <= nd
         a = dl[i]
@@ -481,20 +425,15 @@ mlagree(duopath: str, cpath: str): void
         if ida == "" or ida != idb
             print("RESULT id mismatch: Idol={a} C={b}")
             os.exit(1)
-        end
         d: f64 = to(f64)(field(a, 3))
         r: f64 = to(f64)(field(b, 3))
         denom: f64 = absf(r)
         if denom < 1.0
             denom = 1.0
-        end
         if absf(d - r) / denom >= 0.0001
             print("RESULT mismatch for {ida}: Idol={d} C={r}")
             os.exit(1)
-        end
         i += 1
-    end
-end
 
 mlbinary(floor: i64): void
     name = "ml_binary"
@@ -517,7 +456,6 @@ mlbinary(floor: i64): void
     row(name, "stripped_bytes", idolstrip:to(str), cstrip:to(str),
         ratio(idolstrip, cstrip))
     resultrow(name, "5_rows_match")
-end
 
 idolapp(name: str, idolsrc: str, sentinel: str, floor: i64): void
     idolout = "{work}/{name}_idol"
@@ -528,7 +466,6 @@ idolapp(name: str, idolsrc: str, sentinel: str, floor: i64): void
     if seen < 1
         print("RESULT mismatch for {name}: missing sentinel '{sentinel}'")
         os.exit(1)
-    end
     idollines: i64 = linesat(idolsrc)
     idolbytes: i64 = sizeat(idolsrc)
     idolsize: i64 = sizeat(idolout)
@@ -539,28 +476,22 @@ idolapp(name: str, idolsrc: str, sentinel: str, floor: i64): void
     lone(name, "binary_bytes", idolsize:to(str))
     lone(name, "stripped_bytes", idolstrip:to(str))
     resultrow(name, "sentinel_match")
-end
 
 main(): i64
     if sh("test -x '{duobin}' && echo yes") != "yes"
         script.must("cd '{root}' && '{zigbin}' build")
-    end
     if sh("test -x '{duobin}' && echo yes") != "yes"
         print("compile-size-bench: FAIL — no idol binary at {duobin}")
         os.exit(1)
-    end
     if work == ""
         print("compile-size-bench: FAIL — mktemp -d produced nothing")
         os.exit(1)
-    end
 
     sdk = script.getenv("SDKROOT", "")
     if sdk == ""
         sdk = sh("xcrun --sdk macosx --show-sdk-path 2>/dev/null")
-    end
     if sdk != ""
         os.setenv("SDKROOT", sdk, true)
-    end
 
     floor: i64 = spawnfloor()
     floortext: str = secs(floor)
@@ -605,4 +536,3 @@ main(): i64
     print("and a fixed metaprogramming app binary-size sample;")
     print("it does not fail when Idol is slower or larger than C.")
     0
-end

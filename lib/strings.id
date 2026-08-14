@@ -6,31 +6,27 @@
 # new_builder: create a string builder (a table of string parts).
 new_builder(): any
     {parts = {}, count = 0}
-end
 
 # builder_write: append a string to the builder.
 builder_write(b: any, s: any): void
-    if s == nil s = "nil" end
+    if s == nil s = "nil" 
     b.count = b.count + 1
     b.parts[b.count] = s
-end
 
 # builder_write_line: append a string and a newline.
 builder_write_line(b: any, s: any): void
     builder_write(b, s)
     builder_write(b, "\n")
-end
 
 # builder_write_fmt: append a formatted string (using tostring on args).
 builder_write_fmt(b: any, fmt: str, a1: any, a2: any, a3: any, a4: any, a5: any): void
     result = fmt
-    if a1 != nil result = result:gsub("{1}", a1:to(str)) end
-    if a2 != nil result = result:gsub("{2}", a2:to(str)) end
-    if a3 != nil result = result:gsub("{3}", a3:to(str)) end
-    if a4 != nil result = result:gsub("{4}", a4:to(str)) end
-    if a5 != nil result = result:gsub("{5}", a5:to(str)) end
+    if a1 != nil result = result:gsub("{1}", a1:to(str)) 
+    if a2 != nil result = result:gsub("{2}", a2:to(str)) 
+    if a3 != nil result = result:gsub("{3}", a3:to(str)) 
+    if a4 != nil result = result:gsub("{4}", a4:to(str)) 
+    if a5 != nil result = result:gsub("{5}", a5:to(str)) 
     builder_write(b, result)
-end
 
 # builder_len: return the total length of all parts.
 builder_b: any:len(): i64
@@ -39,64 +35,55 @@ builder_b: any:len(): i64
     while i <= b.count
         total += b.parts[i]:len()
         i += 1
-    end
     total
-end
 
 # builder_reset: clear the builder.
 builder_reset(b: any): void
     b.parts = {}
     b.count = 0
-end
 
 # builder_to_string: concatenate all parts into a single string.
 builder_to_string(b: any): str
     b.parts:concat()
-end
 
 # ---- Template Interpolation ----
 
 # interp: replace {name} placeholders in template with values from a table.
 # Example: interp("Hello {name}!", {name = "World"}) -> "Hello World!"
 interp(template: str, values: any): str
-    if values == nil return template end
+    if values == nil return template 
     result = template
     for key, val in values
         result = result:gsub("{" .. key:to(str) .. "}", val:to(str))
-    end
     result
-end
 
 # interp_indexed: replace {1}, {2}, ... placeholders with positional arguments.
 interp_indexed(template: str, a1: any, a2: any, a3: any, a4: any, a5: any): str
     result = template
-    if a1 != nil result = result:gsub("{1}", a1:to(str)) end
-    if a2 != nil result = result:gsub("{2}", a2:to(str)) end
-    if a3 != nil result = result:gsub("{3}", a3:to(str)) end
-    if a4 != nil result = result:gsub("{4}", a4:to(str)) end
-    if a5 != nil result = result:gsub("{5}", a5:to(str)) end
+    if a1 != nil result = result:gsub("{1}", a1:to(str)) 
+    if a2 != nil result = result:gsub("{2}", a2:to(str)) 
+    if a3 != nil result = result:gsub("{3}", a3:to(str)) 
+    if a4 != nil result = result:gsub("{4}", a4:to(str)) 
+    if a5 != nil result = result:gsub("{5}", a5:to(str)) 
     result
-end
 
 # ---- Case Conversion ----
 
 # is_upper_char: check if a single-char string is an uppercase letter.
 is_upper_char(c: any): bool
     result = "ABCDEFGHIJKLMNOPQRSTUVWXYZ":find(c, 1, true)
-    if result != nil return true end
+    if result != nil return true 
     false
-end
 
 # is_lower_char: check if a single-char string is a lowercase letter.
 is_lower_char(c: any): bool
     result = "abcdefghijklmnopqrstuvwxyz":find(c, 1, true)
-    if result != nil return true end
+    if result != nil return true 
     false
-end
 
 # to_snake: convert "CamelCase" or "camelCase" to "camel_case".
 to_snake(s: str): str
-    if s == nil return "" end
+    if s == nil return "" 
     len = s:len()
     result = ""
     i = 1
@@ -107,39 +94,31 @@ to_snake(s: str): str
             if i > 1
                 prev = s:sub(i - 1, i - 1)
                 is_sep = false
-                if prev == "_" or prev == " " or prev == "-" is_sep = true end
+                if prev == "_" or prev == " " or prev == "-" is_sep = true 
                 if not is_sep
                     next_char = ""
-                    if i < len next_char = s:sub(i + 1, i + 1) end
+                    if i < len next_char = s:sub(i + 1, i + 1) 
                     is_lower_prev = false
-                    if prev:lower() == prev and prev != prev:upper() is_lower_prev = true end
+                    if prev:lower() == prev and prev != prev:upper() is_lower_prev = true 
                     if is_lower_prev
                         result = result .. "_"
                     else
                         if next_char:len() > 0
                             is_lower_next = false
-                            if next_char:lower() == next_char and next_char != next_char:upper() is_lower_next = true end
+                            if next_char:lower() == next_char and next_char != next_char:upper() is_lower_next = true 
                             if is_lower_next
                                 result = result .. "_"
-                            end
-                        end
-                    end
-                end
-            end
             result = result .. c:lower()
-        elseif c == " " or c == "-"
+        else if c == " " or c == "-"
             result = result .. "_"
         else
             result = result .. c
-        end
         i += 1
-    end
     result
-end
 
 # to_camel: convert "snake_case" or "kebab-case" to "camelCase".
 to_camel(s: str): str
-    if s == nil return "" end
+    if s == nil return "" 
     result = ""
     capitalize_next = false
     len = s:len()
@@ -148,37 +127,32 @@ to_camel(s: str): str
         c = s:sub(i, i)
         if c == "_" or c == "-"
             capitalize_next = true
-        elseif capitalize_next
+        else if capitalize_next
             result = result .. c:upper()
             capitalize_next = false
         else
             result = result .. c
-        end
         i += 1
-    end
     result
-end
 
 # to_pascal: like to_camel but first letter is also capitalized.
 to_pascal(s: str): str
     camel = to_camel(s)
-    if camel:len() == 0 return "" end
+    if camel:len() == 0 return "" 
     first = camel:sub(1, 1):upper()
     first .. camel:sub(2)
-end
 
 # to_kebab: convert "camelCase" or "snake_case" to "kebab-case".
 to_kebab(s: str): str
     to_snake(s):gsub("_", "-")
-end
 
 # ---- Padding & Alignment ----
 
 # center: center a string in a field of given width, padded with fill character.
 center(s: str, width: i64, fill: str): str
-    if fill == nil fill = " " end
+    if fill == nil fill = " " 
     len = s:len()
-    if len >= width return s end
+    if len >= width return s 
     pad = width - len
     left = pad / 2:floor()
     right = pad - left
@@ -187,15 +161,12 @@ center(s: str, width: i64, fill: str): str
     while i < left
         result = result .. fill
         i += 1
-    end
     result = result .. s
     i = 0
     while i < right
         result = result .. fill
         i += 1
-    end
     result
-end
 
 # repeat_char: repeat a character n times.
 repeat_char(c: str, n: i64): str
@@ -204,16 +175,14 @@ repeat_char(c: str, n: i64): str
     while i < n
         result = result .. c
         i += 1
-    end
     result
-end
 
 # ---- Wrapping ----
 
 # word_wrap: wrap text at the given width, breaking at spaces.
 word_wrap(s: str, width: i64): str
-    if s == nil return "" end
-    if width <= 0 return s end
+    if s == nil return "" 
+    if width <= 0 return s 
     words = s:split(" ")
     result = ""
     line_len = 0
@@ -224,102 +193,89 @@ word_wrap(s: str, width: i64): str
         if line_len == 0
             result = result .. word
             line_len = wlen
-        elseif line_len + 1 + wlen <= width
+        else if line_len + 1 + wlen <= width
             result = result .. " " .. word
             line_len += 1 + wlen
         else
             result = result .. "\n" .. word
             line_len = wlen
-        end
         i += 1
-    end
     result
-end
 
 # truncate: truncate string to max_len, appending suffix if truncated.
 truncate(s: str, max_len: i64, suffix: str): str
-    if suffix == nil suffix = "..." end
-    if s == nil return "" end
-    if s:len() <= max_len return s end
+    if suffix == nil suffix = "..." 
+    if s == nil return "" 
+    if s:len() <= max_len return s 
     cut = max_len - suffix:len()
-    if cut < 0 cut = 0 end
+    if cut < 0 cut = 0 
     s:sub(1, cut) .. suffix
-end
 
 # ---- Encoding Helpers ----
 
 # is_empty: return true if the string is nil or has zero length.
 is_empty(s: str): bool
-    if s == nil return true end
+    if s == nil return true 
     s:len() == 0
-end
 
 # is_blank: return true if the string is nil or contains only whitespace.
 is_blank(s: str): bool
-    if s == nil return true end
+    if s == nil return true 
     trimmed = s:gsub("%s+", "")
     trimmed:len() == 0
-end
 
 # count_sub: count non-overlapping occurrences of substr in s.
 count_sub(s: str, substr: str): i64
-    if s == nil or substr == nil return 0 end
+    if s == nil or substr == nil return 0 
     count = 0
     pos = 1
     while true
         start_idx = s:find(substr, pos, true)
-        if start_idx == nil break end
+        if start_idx == nil break 
         count += 1
         pos = start_idx + substr:len()
-    end
     count
-end
 
 # has_prefix: return true if s starts with prefix.
 has_prefix(s: str, prefix: str): bool
-    if s == nil or prefix == nil return false end
+    if s == nil or prefix == nil return false 
     s:sub(1, prefix:len()) == prefix
-end
 
 # has_suffix: return true if s ends with suffix.
 has_suffix(s: str, suffix: str): bool
-    if s == nil or suffix == nil return false end
+    if s == nil or suffix == nil return false 
     slen = s:len()
     suffix_len = suffix:len()
-    if suffix_len > slen return false end
+    if suffix_len > slen return false 
     s:sub(slen - suffix_len + 1) == suffix
-end
 
 # ---- Quoting ----
 
 # quote: wrap string in double quotes, escaping special characters.
 quote(s: str): str
-    if s == nil return "\"\"" end
+    if s == nil return "\"\"" 
     escaped = s:gsub("\\", "\\\\")
     escaped = escaped:gsub("\"", "\\\"")
     escaped = escaped:gsub("\n", "\\n")
     escaped = escaped:gsub("\t", "\\t")
     escaped = escaped:gsub("\r", "\\r")
     "\"" .. escaped .. "\""
-end
 
 # single_quote: wrap string in single quotes, escaping as needed.
 single_quote(s: str): str
-    if s == nil return "''" end
+    if s == nil return "''" 
     escaped = s:gsub("\\", "\\\\")
     escaped = escaped:gsub("'", "\\'")
     "'" .. escaped .. "'"
-end
 
 # ---- Splitting ----
 
 # split_lines: split a string into lines (handles \n, \r\n, \r).
 split_lines(s: str): any
-    if s == nil return {} end
+    if s == nil return {} 
     normalized = s:gsub("\r\n", "\n")
     normalized = normalized:gsub("\r", "\n")
     normalized:split("\n")
-end
 
 # split_trimmed: split and trim each part.
 split_trimmed(s: str, sep: str): any
@@ -331,9 +287,6 @@ split_trimmed(s: str, sep: str): any
         trimmed = trimmed:gsub("%s+$", "")
         if trimmed:len() > 0
             out[out:len() + 1] = trimmed
-        end
         i += 1
-    end
     out
-end
 

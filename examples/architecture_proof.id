@@ -31,9 +31,8 @@ custom = { ..defaults, color = "red" }
 # Field projections (GP-001)
 map(t, f)
     result = {}
-    for i = 1, t:len() do result[i] = f(t[i]) end
+    for i = 1, t:len() do result[i] = f(t[i]) 
     return result
-end
 
 items = {
     { name = "alpha", score = 95 },
@@ -45,12 +44,11 @@ scores = map(items, .score)
 
 # Direct iteration (GP-008)
 total = 0
-for s in scores do
+for s in scores
     total = total + s
-end
 
 # If-expression (GS-003)
-grade = if total > 250 "excellent" else "good" end
+grade = if total > 250 "excellent" else "good" 
 
 # Newline-separated fields (GP-013) — no commas needed
 point = {

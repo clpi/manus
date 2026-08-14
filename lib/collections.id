@@ -2,170 +2,130 @@
 
 list_new(): any
     {}
-end
 
 list_push(list: any, value: any): void
     list:insert(value)
-end
 
 list_pop(list: any): any
     list:remove()
-end
 
 list_get(list: any, index: i64): any
     list[index]
-end
 
 list_list: any:len(): i64
     return list:len()
-end
 
 stack_new(): any
     {}
-end
 
 stack_push(stack: any, value: any): void
     stack:insert(value)
-end
 
 stack_pop(stack: any): any
     stack:remove()
-end
 
 queue_new(): any
     {}
-end
 
 queue_enqueue(q: any, value: any): void
     q:insert(value)
-end
 
 queue_dequeue(q: any): any
     n = q:len()
     if n == 0
         nil
-    end
     q:remove(1)
-end
 
 map_new(): any
     {}
-end
 
 map_set(m: any, key: any, value: any): void
     m[key] = value
-end
 
 map_get(m: any, key: any): any
     m[key]
-end
 
 map_has(m: any, key: any): bool
     m[key] != nil
-end
 
 set_new(): any
     {}
-end
 
 set_add(s: any, value: any): void
     s[value] = true
-end
 
 set_has(s: any, value: any): bool
     s[value] != nil
-end
 
 is_array(t: any): bool
-    if type(t) != "table" return false end
-    if t[1] == nil return true end
+    if type(t) != "table" return false 
+    if t[1] == nil return true 
     i = 2
-    while t[i] != nil i += 1 end
+    while t[i] != nil i += 1 
     for k, _ in t
-        if type(k) != "number" return false end
-        if k < 1 return false end
-    end
+        if type(k) != "number" return false 
+        if k < 1 return false 
     true
-end
 
 remove_at(list: any, index: i64): any
     list:remove(index)
-end
 
 list_insert(list: any, index: i64, value: any): void
     list:insert(index, value)
-end
 
 list_clear(list: any): void
-    if list == nil return end
+    if list == nil return 
     i = list:len()
     while i > 0
         list:remove(i)
         i -= 1
-    end
-end
 
 map_delete(m: any, key: any): void
-    if m == nil return end
+    if m == nil return 
     m[key] = nil
-end
 
 map_keys(m: any): any
     out = {}
-    if m == nil return out end
+    if m == nil return out 
     for k, _ in m
         out:insert(k)
-    end
     out
-end
 
 map_values(m: any): any
     out = {}
-    if m == nil return out end
+    if m == nil return out 
     for _, v in m
         out:insert(v)
-    end
     out
-end
 
 set_remove(s: any, value: any): void
-    if s == nil return end
+    if s == nil return 
     s[value] = nil
-end
 
 set_clear(s: any): void
-    if s == nil return end
+    if s == nil return 
     for k, _ in s
         s[k] = nil
-    end
-end
 
 set_union(s1: any, s2: any): any
     out = {}
     if s1 != nil
-        for k, _ in s1 out[k] = true end
-    end
+        for k, _ in s1 out[k] = true 
     if s2 != nil
-        for k, _ in s2 out[k] = true end
-    end
+        for k, _ in s2 out[k] = true 
     out
-end
 
 set_intersection(s1: any, s2: any): any
     out = {}
-    if s1 == nil or s2 == nil return out end
+    if s1 == nil or s2 == nil return out 
     for k, _ in s1
-        if s2[k] != nil out[k] = true end
-    end
+        if s2[k] != nil out[k] = true 
     out
-end
 
 set_difference(s1: any, s2: any): any
     out = {}
-    if s1 == nil return out end
+    if s1 == nil return out 
     for k, _ in s1
-        if s2 == nil or s2[k] == nil out[k] = true end
-    end
+        if s2 == nil or s2[k] == nil out[k] = true 
     out
-end
 

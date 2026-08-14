@@ -4,39 +4,31 @@
 concept Greeter
     greet(self, name: str): str
     lang(self): str
-end
 
 concept Counter
     value(self): i64
     increment(self): void
     decrement(self): void
-end
 
 # Simple function that matches Greeter behavior
 english_greet(name: str): str
     "Hello, " .. name .. "!"
-end
 
 # Module that satisfies Greeter via table (using : method syntax)
 english_greeter = {}
 english_greeter.greet = fun(self, name: str): str
     "Hello, " .. name .. "!"
-end
 english_greeter.lang = fun(self): str
     "en"
-end
 
 # Module that satisfies Counter
 tally = { _count = 0 }
 tally.value = fun(self): i64
     self._count
-end
 tally.increment = fun(self): void
     self._count = self._count + 1
-end
 tally.decrement = fun(self): void
     self._count = self._count - 1
-end
 
 # Use the concept implementations with : method syntax
 print(english_greeter:greet("Duo"))

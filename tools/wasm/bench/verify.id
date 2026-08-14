@@ -11,9 +11,8 @@
 #   DUO_WASM_ENGINE=jit duo run bench/verify.id
 
 numeric(s: str): bool
-    if s == "" return false end
+    if s == "" return false 
     s:match("^%-?%d+%.?%d*$") != nil
-end
 
 # wasmtime prints i32 signed, the engine prints it unsigned. Same 32-bit value, so
 # integral results fold to unsigned 32-bit before comparison.
@@ -26,7 +25,6 @@ _norm(s: str): str
     t = script.chomp(s)
     if not numeric(t)
         return t
-    end
     f: f64 = to(f64)(t)
     i: i64 = to(i64)(f)
     if to(f64)(i) == f
@@ -41,13 +39,10 @@ _norm(s: str): str
         u = i % 4294967296
         if u < 0
             u += 4294967296
-        end
         return u:to(str)
-    end
     # Non-integral: normalise through one f64 round trip so both sides print
     # with the same precision.
     f:to(str)
-end
 
 # A module whose real answer is what it PRINTS (via fd_write) is compared on
 # its emitted bytes, not on the numeric result of a void _start. Strip the engine's
@@ -61,39 +56,30 @@ _emitted(raw: str): str
     out = ""
     for _i, line in raw:split("\n")
         keep = true
-        if line:match("^engine=") != nil keep = false end
-        if line:match("^result=") != nil keep = false end
-        if line:match("^seconds=") != nil keep = false end
+        if line:match("^engine=") != nil keep = false 
+        if line:match("^result=") != nil keep = false 
+        if line:match("^seconds=") != nil keep = false 
         if keep
             out = out .. line
-        end
-    end
     out:trim()
-end
 
 _field(raw: str, key: str): str
     m = raw:match("\n" .. key .. "=([^\n]*)")
     if m == nil
         m = raw:match("^" .. key .. "=([^\n]*)")
-    end
     if m == nil
         return ""
-    end
     std.script.chomp(m)
-end
 
 _pad(s: str, w: i64): str
     out = s
     while out:len() < w
         out = out .. " "
-    end
     out
-end
 
 _row(name: str, ref: str, got: str, eng: str, verdict: str): void
     print(_pad(name, 30) .. " " .. _pad(ref, 20) .. " " .. _pad(got, 20) .. " "
         .. _pad(eng, 10) .. " " .. verdict)
-end
 
 _rule(): void
     line = ""
@@ -101,9 +87,7 @@ _rule(): void
     while i <= 96
         line = line .. "-"
         i += 1
-    end
     print(line)
-end
 
 main(): i64
     binary = std.script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
@@ -136,12 +120,8 @@ main(): i64
                     want = cand
                     ref = std.script.chomp(std.script.capture(
                         wasmtime .. " --invoke " .. cand .. " " .. m .. " 2>/dev/null | tail -1"))
-                end
-            end
-        end
         if want == ""
             want = "_start"
-        end
 
         # DUO_WASM_ENGINE selects the engine under test. It defaults to `interp`
         # because that is the path every module takes; run with
@@ -155,18 +135,14 @@ main(): i64
         eng = _field(raw, "engine")
         if eng == "jit-arm64"
             jitn += 1
-        end
         got = _field(raw, "result")
         if eng == ""
             eng = "?"
-        end
         # Text-answer modules: prefer the emitted bytes over the numeric field.
         if not numeric(ref)
             em = _emitted(raw)
             if em != ""
                 got = em
-            end
-        end
 
         if ref == ""
             # wasmtime invoked it successfully but it yields no observable
@@ -180,23 +156,20 @@ main(): i64
             voids += 1
             else
                 shown = got
-                if shown == "" shown = "none" end
+                if shown == "" shown = "none" 
                 _row(name, "<void>", shown, eng, "SKIP")
                 skip += 1
-            end
-        elseif got == "" or got == "-1"
+        else if got == "" or got == "-1"
             shown = got
-            if shown == "" shown = "none" end
+            if shown == "" shown = "none" 
             _row(name, ref, shown, eng, "UNSUPPORTED")
             fail += 1
-        elseif _norm(ref) == _norm(got)
+        else if _norm(ref) == _norm(got)
             _row(name, ref, got, eng, "PASS")
             pass += 1
         else
             _row(name, ref, got, eng, "*** DIFF ***")
             fail += 1
-        end
-    end
 
     _rule()
     print("the engine agrees with wasmtime on " .. pass:to(str) .. " module(s); "
@@ -218,11 +191,7 @@ main(): i64
             print("*** JIT COVERAGE REGRESSION: " .. jitn:to(str) .. " < " .. floor:to(str)
                 .. " -- the JIT is silently falling back ***")
             return 1
-        end
-    end
 
     if fail != 0
         return 1
-    end
     0
-end

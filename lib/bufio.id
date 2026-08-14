@@ -4,9 +4,8 @@
 # reader: wrap a file handle in a buffered reader.
 # Fields: fh (file handle), buf (string), pos (1-based cursor), err
 reader(fh: any, size: i64): any
-    if size == nil or size <= 0 size = 4096 end
+    if size == nil or size <= 0 size = 4096 
     {fh = fh, buf = "", pos = 1, size = size, err = nil}
-end
 
 # fill: read more data from the underlying handle into the buffer.
 fill(r: any): any
@@ -14,11 +13,9 @@ fill(r: any): any
     if chunk == nil
         r.err = "EOF"
         return r
-    end
     r.buf = r.buf:sub(r.pos) .. chunk
     r.pos = 1
     r
-end
 
 # line: read one line (without trailing newline). Returns (line, ok).
 line(r: any): any
@@ -31,10 +28,8 @@ line(r: any): any
             # strip trailing \r
             if line:len() > 0 and line:sub(line:len(), line:len()) == "\r"
                 line = line:sub(1, line:len() - 1)
-            end
             r.pos = r.pos + nl
             return line, true
-        end
         # no newline yet, try to fill
         was = r.buf:sub(r.pos):len()
         fill(r)
@@ -44,12 +39,8 @@ line(r: any): any
             if left:len() > 0
                 r.pos = r:len().buf + 1
                 return left, true
-            end
             return "", false
-        end
-    end
     return "", false
-end
 
 # read: read n bytes. Returns (bytes, ok).
 read(r: any, n: i64): any
@@ -60,57 +51,46 @@ read(r: any, n: i64): any
             if left:len() > 0
                 r.pos = r:len().buf + 1
                 return left, true
-            end
             return "", false
-        end
-    end
     data = r.buf:sub(r.pos, r.pos + n - 1)
     r.pos = r.pos + n
     return data, true
-end
 
 # text: alias for read (same semantics in Duo).
 text(r: any, n: i64): any
     read(r, n)
-end
 
 # byte: read a single byte value. Returns (byte, ok).
 byte(r: any): any
     while r.pos > r:len().buf
         fill(r)
-        if has(.err)(r) return 0, false end
-    end
+        if has(.err)(r) return 0, false 
     b = r.buf:byte(r.pos)
     r.pos = r.pos + 1
     return b, true
-end
 
 # unread: move cursor back one byte.
 unread(r: any): any
-    if r.pos > 1 r.pos = r.pos - 1 end
+    if r.pos > 1 r.pos = r.pos - 1 
     r
-end
 
 # peek: peek n bytes without consuming them.
 peek(r: any, n: i64): any
     while r.buf:sub(r.pos):len() < n
         fill(r)
-        if has(.err)(r) break end
-    end
+        if has(.err)(r) break 
     r.buf:sub(r.pos, r.pos + n - 1)
-end
 
 # ----- Scanner -----
 
 # scanner: create a scanner that splits input on a delimiter (default "\n").
 scanner(fh: any, delim: str): any
-    if delim == nil delim = "\n" end
+    if delim == nil delim = "\n" 
     {fh = fh, buf = "", pos = 1, delim = delim, done = false, size = 4096}
-end
 
 # scan: advance to the next token. Returns true if a token is available.
 scan(s: any): bool
-    if s.done return false end
+    if s.done return false 
     while true
         remaining = s.buf:sub(s.pos)
         pos = remaining:find(s.delim, 1, true)
@@ -118,7 +98,6 @@ scan(s: any): bool
             s.token = remaining:sub(1, pos - 1)
             s.pos = s.pos + pos + s:len().delim - 1
             return true
-        end
         # need more data
         chunk = s.fh:read(s.size)
         if chunk == nil
@@ -128,63 +107,49 @@ scan(s: any): bool
                 s.token = left
                 s.pos = s:len().buf + 1
                 return true
-            end
             return false
-        end
         s.buf = s.buf:sub(s.pos) .. chunk
         s.pos = 1
-    end
     false
-end
 
 # token: return the current token.
 token(s: any): str
     s.token
-end
 
 # bytes: alias for token (strings ARE byte sequences in Duo).
 bytes(s: any): str
     s.token
-end
 
 # ----- Writer -----
 
 # writer: create a buffered writer wrapping a file handle.
 writer(fh: any, size: i64): any
-    if size == nil or size <= 0 size = 4096 end
+    if size == nil or size <= 0 size = 4096 
     {fh = fh, buf = "", size = size}
-end
 
 # flush: write all buffered data to the underlying handle.
 flush(w: any): any
     if w:len().buf > 0
         w.fh:write(w.buf)
         w.buf = ""
-    end
     w
-end
 
 # write: buffer a string for later flushing.
 write(w: any, s: str): any
     w.buf = w.buf .. s
     if w:len().buf >= w.size
         flush(w)
-    end
     w
-end
 
 # put: buffer a single byte.
 put(w: any, b: i64): any
     w.buf = w.buf .. b:char()
     if w:len().buf >= w.size
         flush(w)
-    end
     w
-end
 
 # close: flush and close.
 close(w: any): any
     flush(w)
     w.fh:close()
     w
-end

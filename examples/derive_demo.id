@@ -3,7 +3,6 @@
 # Define a concept for equality
 concept Equatable
     eq(self, other): bool
-end
 
 # Create a point that satisfies Equatable
 point = {}
@@ -14,14 +13,11 @@ point.clone = fun(self)
     c.x = self.x
     c.y = self.y
     c
-end
 point.eq = fun(self, other): bool
-    if other == nil return false end
+    if other == nil return false 
     self.x == other.x and self.y == other.y
-end
 point.to_string = fun(self): str
     "Point(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
-end
 
 # Use derive patterns with : method syntax
 cloned = point:clone()
@@ -32,12 +28,10 @@ print("Eq:       " .. to(str)(point:eq(cloned)))
 # Reflection: inspect what methods a type has
 print("\nPoint fields:")
 fields = {}
-for k, _ in point do
+for k, _ in point
     fields[fields:len() + 1] = k
-end
-for _, name in fields do
+for _, name in fields
     print("  " .. name .. ": " .. type(point[name]))
-end
 
 # Type sizes (conceptual from meta.macros)
 print("\nType sizes (bytes):")

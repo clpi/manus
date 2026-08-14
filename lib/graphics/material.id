@@ -12,7 +12,6 @@ texture_new(width: i64, height: i64, channels: i64): any
     while i <= size
         data[i] = 0
         i += 1
-    end
     {
         width = width,
         height = height,
@@ -22,7 +21,6 @@ texture_new(width: i64, height: i64, channels: i64): any
         filter = "linear",
         wrap = "repeat",
     }
-end
 
 texture_from_data(data: any, width: i64, height: i64, channels: i64): any
     {
@@ -34,7 +32,6 @@ texture_from_data(data: any, width: i64, height: i64, channels: i64): any
         filter = "linear",
         wrap = "repeat",
     }
-end
 
 texture_get_pixel(tex: any, x: i64, y: i64): any
     x = x % tex.width
@@ -45,9 +42,7 @@ texture_get_pixel(tex: any, x: i64, y: i64): any
     while i <= tex.channels
         pixel[i] = tex.data[idx + i]
         i += 1
-    end
     pixel
-end
 
 texture_set_pixel(tex: any, x: i64, y: i64, pixel: any): void
     x = x % tex.width
@@ -57,14 +52,11 @@ texture_set_pixel(tex: any, x: i64, y: i64, pixel: any): void
     while i <= tex.channels
         tex.data[idx + i] = pixel[i]
         i += 1
-    end
-end
 
 texture_sample(tex: any, u: f64, v: f64): any
     x = u * tex.width:floor() % tex.width
     y = v * tex.height:floor() % tex.height
     texture_get_pixel(tex, x, y)
-end
 
 texture_retex: any, new_width: i64, new_height: i64:len(): any
     new_tex = texture_new(new_width, new_height, tex.channels)
@@ -80,11 +72,8 @@ texture_retex: any, new_width: i64, new_height: i64:len(): any
             pixel = texture_get_pixel(tex, src_x, src_y)
             texture_set_pixel(new_tex, x, y, pixel)
             x += 1
-        end
         y += 1
-    end
     new_tex
-end
 
 texture_flip_h(tex: any): any
     new_tex = texture_new(tex.width, tex.height, tex.channels)
@@ -95,11 +84,8 @@ texture_flip_h(tex: any): any
             pixel = texture_get_pixel(tex, tex.width - 1 - x, y)
             texture_set_pixel(new_tex, x, y, pixel)
             x += 1
-        end
         y += 1
-    end
     new_tex
-end
 
 texture_flip_v(tex: any): any
     new_tex = texture_new(tex.width, tex.height, tex.channels)
@@ -110,11 +96,8 @@ texture_flip_v(tex: any): any
             pixel = texture_get_pixel(tex, x, tex.height - 1 - y)
             texture_set_pixel(new_tex, x, y, pixel)
             x += 1
-        end
         y += 1
-    end
     new_tex
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Procedural Textures
@@ -131,13 +114,9 @@ texture_checkerboard(size: i64, square_size: i64): any
                 texture_set_pixel(tex, x, y, {255, 255, 255})
             else
                 texture_set_pixel(tex, x, y, {0, 0, 0})
-            end
             x += 1
-        end
         y += 1
-    end
     tex
-end
 
 texture_gradient(size: i64, color1: any, color2: any): any
     tex = texture_new(size, size, 3)
@@ -151,11 +130,8 @@ texture_gradient(size: i64, color1: any, color2: any): any
             b = color1[3] + (color2[3] - color1[3]) * t:floor()
             texture_set_pixel(tex, x, y, {r, g, b})
             x += 1
-        end
         y += 1
-    end
     tex
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Material
@@ -179,35 +155,29 @@ material_new(name: str): any
         alpha_mode = "opaque",  # "opaque", "mask", "blend"
         alpha_cutoff = 0.5,
     }
-end
 
 material_set_albedo(mat: any, r: f64, g: f64, b: f64): void
     mat.albedo = {r = r, g = g, b = b}
-end
 
 material_set_metallic(mat: any, metallic: f64, roughness: f64): void
     mat.metallic = metallic
     mat.roughness = roughness
-end
 
 material_set_emissive(mat: any, r: f64, g: f64, b: f64, strength: f64): void
     mat.emissive = {r = r, g = g, b = b}
     mat.emissive_strength = strength
-end
 
 material_set_texture(mat: any, texture_type: str, texture: any): void
     if texture_type == "albedo"
         mat.albedo_texture = texture
-    elseif texture_type == "metallic_roughness"
+    else if texture_type == "metallic_roughness"
         mat.metallic_roughness_texture = texture
-    elseif texture_type == "normal"
+    else if texture_type == "normal"
         mat.normal_texture = texture
-    elseif texture_type == "ao"
+    else if texture_type == "ao"
         mat.ao_texture = texture
-    elseif texture_type == "emissive"
+    else if texture_type == "emissive"
         mat.emissive_texture = texture
-    end
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Material Library
@@ -218,46 +188,37 @@ library_new(): any
         materials = {},
         default_materials = {},
     }
-end
 
 library_add(store: any, name: str, material: any): void
     store.materials[name] = material
-end
 
 library_get(store: any, name: str): any
     store.materials[name] or store.default_materials["default"]
-end
 
 library_remove(store: any, name: str): void
     store.materials[name] = nil
-end
 
 library_list(store: any): any
     names = {}
     for name in store.materials
         names[names:len() + 1] = name
-    end
     names
-end
 
 # Default materials
 default_white(): any
     mat = material_new("default_white")
     mat.albedo = {r = 1, g = 1, b = 1}
     mat
-end
 
 default_gray(): any
     mat = material_new("default_gray")
     mat.albedo = {r = 0.5, g = 0.5, b = 0.5}
     mat
-end
 
 default_black(): any
     mat = material_new("default_black")
     mat.albedo = {r = 0, g = 0, b = 0}
     mat
-end
 
 metal(color: any): any
     mat = material_new("metal")
@@ -265,7 +226,6 @@ metal(color: any): any
     mat.metallic = 1.0
     mat.roughness = 0.2
     mat
-end
 
 plastic(color: any): any
     mat = material_new("plastic")
@@ -273,7 +233,6 @@ plastic(color: any): any
     mat.metallic = 0.0
     mat.roughness = 0.5
     mat
-end
 
 rubber(color: any): any
     mat = material_new("rubber")
@@ -281,7 +240,6 @@ rubber(color: any): any
     mat.metallic = 0.0
     mat.roughness = 1.0
     mat
-end
 
 glass(): any
     mat = material_new("glass")
@@ -290,7 +248,6 @@ glass(): any
     mat.roughness = 0.0
     mat.alpha_mode = "blend"
     mat
-end
 
 emissive(color: any, strength: f64): any
     mat = material_new("emissive")
@@ -298,7 +255,6 @@ emissive(color: any, strength: f64): any
     mat.emissive = color or {r = 1, g = 1, b = 1}
     mat.emissive_strength = strength or 1.0
     mat
-end
 
 # ═══════════════════════════════════════════════════════════════
 # PBR Shading (simplified)
@@ -326,7 +282,6 @@ pbr_shade(material: any, normal: any, light_dir: any, view_dir: any): any
         half_dir.x = half_dir.x / len
         half_dir.y = half_dir.y / len
         half_dir.z = half_dir.z / len
-    end
 
     n_dot_h = 0:max(normal.x * half_dir.x + normal.y * half_dir.y + normal.z * half_dir.z)
     spec = n_dot_h:pow(32 * (1 - material.roughness))
@@ -343,7 +298,6 @@ pbr_shade(material: any, normal: any, light_dir: any, view_dir: any): any
         g = 1:min(diffuse.g + specular.g),
         b = 1:min(diffuse.b + specular.b),
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

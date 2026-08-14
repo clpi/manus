@@ -25,21 +25,17 @@ clock = req("lib.clock")
 
 tool: void = (name: str, desc: str, schema: any, handler: any)
     mcp.register_tool(string.gsub(name, "^duo_", "idol_"), desc, schema, handler)
-end
 
 -- DUO_ROOT as a VALUE at file scope, not a helper function: a named
--- file-scope function called from a handler lowers to an upvalue call Duo
+-- file-scope called from a handler lowers to an upvalue call Duo
 -- cannot make. `os.getenv` answers ""  -  never nil  -  for an unset name.
 root = os.getenv("IDOL_ROOT") or ""
 if root:len() == 0
     root = os.getenv("DUO_ROOT") or ""
-end
 if root:len() == 0
     root = os.getenv("PWD") or ""
-end
 if root:len() == 0
     root = "."
-end
 
 -- Static @comp.* catalog (from meta_module.zig, should be auto-generated).
 --
@@ -109,9 +105,8 @@ tool("duo_diagnostics", "Get compiler diagnostics for a Duo source file", {
             parts = {}
             for p in string.gmatch(line, "[^:]+")
                 parts[parts:len() + 1] = p
-            end
             severity = "warning"
-            if string.find(line, ": error:") then severity = "error" end
+            if string.find(line, ": error:") then severity = "error" 
             diag = {
                 file = parts[1] or "",
                 line = tonumber(parts[2]) or 0,
@@ -119,10 +114,8 @@ tool("duo_diagnostics", "Get compiler diagnostics for a Duo source file", {
                 severity = severity,
                 message = "",
             }
-            if parts:len() >= 4 then diag.message = parts[4] else diag.message = line end
+            if parts:len() >= 4 then diag.message = parts[4] else diag.message = line 
             diags[diags:len() + 1] = diag
-        end
-    end
     json.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
 end)
 
@@ -141,9 +134,8 @@ tool("duo_compile_check", "Run duo check and return parsed diagnostics", {
             parts = {}
             for p in string.gmatch(line, "[^:]+")
                 parts[parts:len() + 1] = p
-            end
             severity = "warning"
-            if string.find(line, ": error:") then severity = "error" end
+            if string.find(line, ": error:") then severity = "error" 
             diags[diags:len() + 1] = {
                 file = parts[1] or "",
                 line = tonumber(parts[2]) or 0,
@@ -151,8 +143,6 @@ tool("duo_compile_check", "Run duo check and return parsed diagnostics", {
                 severity = severity,
                 message = parts:len() >= 4 and parts[4] or line,
             }
-        end
-    end
     json.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
 end)
 
@@ -171,11 +161,9 @@ tool("duo_table_shapes", "Export table_shapes and enum_shapes from duo graph JSO
     output = "{std.proc.capture(shared.idbin} graph {args.file_path}{\" 2>&1\")}"
     if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed")
         return json.encode({ ok = false, error = string.sub(output, 1, 4000), table_shapes = {}, enum_shapes = {} })
-    end
     parsed = json.decode(output)
     if parsed == nil
         return json.encode({ ok = false, error = "failed to parse duo graph JSON", raw_output = string.sub(output, 1, 2000) })
-    end
     json.encode({
         ok = true,
         file = parsed.file,
@@ -206,12 +194,10 @@ tool("duo_meta_catalog", "List all @comp.* / @meta.* constructs", {
         agent_keys = { ["agent.catalog"] = true, ["agent.ladder"] = true, ["agent.hooks"] = true, ["agent.dedupe"] = true, ["agent.gaps"] = true, ["agent.grammar"] = true }
         for k, v in META_CATALOG
             if exp_keys[k] then groups.exponential_combinators[k] = v
-            elseif str_keys[k] then groups.string_ops[k] = v
-            elseif agent_keys[k] then groups.agent_hooks[k] = v
-            else groups.type_introspection[k] = v end
-        end
+            else if str_keys[k] then groups.string_ops[k] = v
+            else if agent_keys[k] then groups.agent_hooks[k] = v
+            else groups.type_introspection[k] = v 
         return json.encode(groups)
-    end
     json.encode(META_CATALOG)
 end)
 
@@ -319,7 +305,6 @@ tool("duo_grammar_spec_update", "Append a grammar rule changelog entry", {
     gpath = "docs/GRAMMAR_SPEC.md"
     if not fs.exists(gpath)
         return json.encode({ kind = "grammar.update", ok = false, path = gpath, reason = "grammar spec missing; create docs/GRAMMAR_SPEC.md first" })
-    end
     content = fs.read_file(gpath)
     date = clock.utc():sub(1, 10)
     entry = "| {date} | {args.rule_id} | {args.status}: {args.detail} |\n"
@@ -328,7 +313,6 @@ tool("duo_grammar_spec_update", "Append a grammar rule changelog entry", {
         content = "{string.gsub(content, marker, marker}{entry, 1)}"
     else
         content = "{content}\\n## Changelog\\n\\n| Date | Rule | Change |\\n| --- | --- | --- |\\n{entry}"
-    end
     fs.write_file(gpath, content)
     json.encode({ kind = "grammar.update", ok = true, path = gpath, rule = args.rule_id, status = args.status })
 end)
@@ -399,8 +383,7 @@ tool("duo_audit_metaprogramming_smokes", "Batch native-boxing audit on generativ
     for _, p in paths
         r = shared.audit_native_boxing(p)
         results[results:len() + 1] = r
-        if r.pass then passed += 1 else failed += 1 end
-    end
+        if r.pass then passed += 1 else failed += 1 
     json.encode({ total = paths:len(), passed = passed, failed = failed, results = results })
 end)
 
@@ -447,9 +430,8 @@ tool("duo_complexity", "Query complexity information for any @comp.* path (e.g.,
         -- Strip prefix
         core = path
         if string.find(path, "^comp.") then core = string.sub(path, 5)
-        elseif string.find(path, "^meta.") then core = string.sub(path, 5)
-        elseif string.find(path, "^compiler.") then core = string.sub(path, 10)
-        end
+        else if string.find(path, "^meta.") then core = string.sub(path, 5)
+        else if string.find(path, "^compiler.") then core = string.sub(path, 10)
         
         -- Look up in catalog
         entry = catalog[core] or catalog[path]
@@ -468,9 +450,7 @@ tool("duo_complexity", "Query complexity information for any @comp.* path (e.g.,
                         or "@comp.ladder() for full scaling hierarchy"
                 }
             })
-        end
         return "{std.json.encode({ error = \"Path not found in catalog: \"}{path, suggestion = \"Use duo_meta_catalog() to see all available paths\" })}"
-    end
     json.encode({ error = "Path must start with comp., meta., or compiler.: " .. path })
 end)
 
@@ -487,9 +467,8 @@ tool("duo_next_combinators", "Suggest next-level combinators for a given @comp.*
     -- Normalize
     core = path
     if string.find(path, "^comp.") then core = string.sub(path, 5)
-    elseif string.find(path, "^meta.") then core = string.sub(path, 5)
-    elseif string.find(path, "^compiler.") then core = string.sub(path, 10)
-    end
+    else if string.find(path, "^meta.") then core = string.sub(path, 5)
+    else if string.find(path, "^compiler.") then core = string.sub(path, 10)
     
     -- Next-level suggestions based on scaling ladder
     suggestions_map = {
@@ -561,7 +540,7 @@ tool("duo_multiplier_opportunities", "Analyze a .id file for places where metapr
         
         -- Check for multiple similar patterns
         fun_count = 0
-        for _ in string.gmatch(content, "fun[^(]*%([^)]*%)[^{]*%{") do fun_count += 1 end
+        for _ in string.gmatch(content, "fun[^(]*%([^)]*%)[^{]*%{") do fun_count += 1 
         if fun_count > 3
             opportunities:push({
                 type = "multiple_similar_functions",
@@ -570,11 +549,10 @@ tool("duo_multiplier_opportunities", "Analyze a .id file for places where metapr
                 suggestion = "Use @comp.derive.bundle or @comp.derive.all to generate boilerplate functions",
                 example = "@comp.derive.bundle(\"Numeric\"){\" would generate add, sub, mul, etc. for all numeric types\",}"
             })
-        end
         
         -- Check for type pairs
         type_pairs = 0
-        for _ in string.gmatch(content, "for[^;]*in[^;]*pairs?") do type_pairs += 1 end
+        for _ in string.gmatch(content, "for[^;]*in[^;]*pairs?") do type_pairs += 1 
         if type_pairs > 1
             opportunities:push({
                 type = "multiple_type_pairs",
@@ -583,11 +561,10 @@ tool("duo_multiplier_opportunities", "Analyze a .id file for places where metapr
                 suggestion = "Use @comp.product for cartesian product of type sets",
                 example = "@comp.product({A, B}, {X, Y}, fun(a, b) ... end)",
             })
-        end
         
         -- Check for repeated table structures
         table_count = 0
-        for _ in string.gmatch(content, "{[^}]+=[^}]+}") do table_count += 1 end
+        for _ in string.gmatch(content, "{[^}]+=[^}]+}") do table_count += 1 
         if table_count > 3
             opportunities:push({
                 type = "repeated_table_structures",
@@ -595,7 +572,6 @@ tool("duo_multiplier_opportunities", "Analyze a .id file for places where metapr
                 severity = "medium",
                 suggestion = "Use @comp.generate or @comp.expand for table generation",
             })
-        end
         
         -- Check for string concatenation in loops
         if string.find(content, "for") and string.find(content, "..")
@@ -604,7 +580,6 @@ tool("duo_multiplier_opportunities", "Analyze a .id file for places where metapr
                 severity = "low",
                 suggestion = "Consider @comp.template for compile-time string generation",
             })
-        end
         
     json.encode({
         file = args.file_path,
@@ -770,10 +745,9 @@ tool("duo_foreign_import_preview", "Preview C header import as SIM v0 entities w
     required = { "header_path" },
 }, fun(args)
     src_dir = args.source_dir or ""
-    if src_dir == "" then
+    if src_dir == ""
         dir = string.match(args.header_path, "^(.*)/[^/]+$")
-        if dir then src_dir = dir end
-    end
+        if dir then src_dir = dir 
     std.json.encode(shared.foreign_import_preview(args.header_path, src_dir))
 end)
 

@@ -20,9 +20,7 @@ Label: { tag: str }
         for i = 1, meta:len().fields
             f = meta.fields[i]
             acc = acc .. "static inline void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
-        end
         acc
-    end
 end)
 
 registry_line: str = (meta)

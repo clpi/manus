@@ -12,12 +12,10 @@ mcp_read_message(): any
     # completed a handshake. Blank lines are skipped; EOF (nil) terminates.
     while true
         line = io:read_line(io:input())
-        if line == nil return nil end
+        if line == nil return nil 
         line = line:gsub("[\r\n]", "")
-        if line != "" break end
-    end
+        if line != "" break 
     json:decode(line)
-end
 
 mcp_send_message(obj: any): void
     # MCP stdio: one compact JSON object per line. json.encode emits no
@@ -25,7 +23,6 @@ mcp_send_message(obj: any): void
     body = json:encode(obj)
     io:write_bytes(io:output(), body .. "\n")
     io:flush(io:output())
-end
 
 mcp_send_response(id: any, result: any): void
     mcp_send_message({
@@ -33,7 +30,6 @@ mcp_send_response(id: any, result: any): void
         id = id,
         result = result
     })
-end
 
 mcp_send_error(id: any, code: int, message: str): void
     mcp_send_message({
@@ -44,7 +40,6 @@ mcp_send_error(id: any, code: int, message: str): void
             message = message
         }
     })
-end
 
 mcp_handle_initialize(msg: any): void
     mcp_send_response(msg.id, {
@@ -59,7 +54,6 @@ mcp_handle_initialize(msg: any): void
             version = "0.1.0"
         }
     })
-end
 
 mcp_handle_tools_list(msg: any): void
     tools_list = {}
@@ -71,17 +65,14 @@ mcp_handle_tools_list(msg: any): void
         schema = tool.inputSchema
         if schema != nil and schema.properties != nil and next(schema.properties) == nil
             schema.properties = json:empty_object
-        end
         tools_list[tools_list:len() + 1] = {
             name = name,
             description = tool.description,
             inputSchema = schema
         }
-    end
     mcp_send_response(msg.id, {
         tools = tools_list
     })
-end
 
 mcp_handle_tools_call(msg: any): void
     params = msg.params
@@ -91,7 +82,6 @@ mcp_handle_tools_call(msg: any): void
     if tool == nil
         mcp_send_error(msg.id, -32601, "Tool not found: " .. name)
         return
-    end
     
     res = tool.handler(args)
     if type(res) == "string"
@@ -103,7 +93,7 @@ mcp_handle_tools_call(msg: any): void
                 }
             }
         })
-    elseif type(res) == "table" and res.isError
+    else if type(res) == "table" and res.isError
         mcp_send_response(msg.id, {
             isError = true,
             content = {
@@ -122,30 +112,24 @@ mcp_handle_tools_call(msg: any): void
                 }
             }
         })
-    end
-end
 
 mcp_serve(): void
     while true
         msg = mcp_read_message()
         if msg == nil
             break
-        end
         if msg.method == "initialize"
             mcp_handle_initialize(msg)
-        elseif msg.method == "tools/list"
+        else if msg.method == "tools/list"
             mcp_handle_tools_list(msg)
-        elseif msg.method == "tools/call"
+        else if msg.method == "tools/call"
             mcp_handle_tools_call(msg)
-        elseif msg.method == "notifications/initialized"
+        else if msg.method == "notifications/initialized"
             # nothing to do
-        elseif msg.method == "ping"
+        else if msg.method == "ping"
             mcp_send_response(msg.id, {})
-        elseif has(.id)(msg)
+        else if has(.id)(msg)
             mcp_send_error(msg.id, -32601, "Method not found: " .. msg.method:to(str))
-        end
-    end
-end
 
 mcp_register_tool(name: str, p2: any, p3: any, p4: any): void
     # Accept two calling conventions:
@@ -158,8 +142,6 @@ mcp_register_tool(name: str, p2: any, p3: any, p4: any): void
         M.tools[name] = { name = name, description = p2 or "", inputSchema = p3, handler = p4 }
     else
         M.tools[name] = { name = name, description = p2.description or "", inputSchema = p2, handler = p3 }
-    end
-end
 
 M.serve = mcp_serve
 M.register_tool = mcp_register_tool

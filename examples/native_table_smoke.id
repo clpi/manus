@@ -5,11 +5,9 @@ Point: { x: f64, y: f64 }
 
 make_point(x: f64, y: f64): Point
     { x = x, y = y }
-end
 
 add_points(a: Point, b: Point): Point
     { a.x + b.x, a.y + b.y }
-end
 
 main()
     p1: Point = make_point(3.0, 4.0)
@@ -19,4 +17,3 @@ main()
     print("p2 = {x=", p2.x, " y=", p2.y, "}\n")
     print("p3 = {x=", p3.x, " y=", p3.y, "}\n")
     RESULT p3.x == 4.0 and p3.y == 6.0
-end

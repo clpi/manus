@@ -4,7 +4,6 @@
 
 concept Has1
     x: i64
-end
 type T1 = { x: i64 }
 @comp.define.derive("Stub", fun generate(meta) -> str
     meta.name .. "\n"
@@ -16,5 +15,4 @@ NESTED = @comp.map("q", fun(seed)
 end)
 parity(): str
     @comp.derive.power("Has1", Stub)
-end
 BLOCK = parity()

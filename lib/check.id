@@ -6,183 +6,161 @@
 
 # assert: basic assertion with optional message.
 assert(condition: any, message: any): bool
-    if condition return true end
+    if condition return true 
     msg = "assertion failed"
-    if message != nil msg = msg .. ": " .. message:to(str) end
+    if message != nil msg = msg .. ": " .. message:to(str) 
     error(msg)
-end
 
 # assert_eq: assert two values are equal.
 assert_eq(actual: any, expected: any, message: any): bool
-    if actual == expected return true end
+    if actual == expected return true 
     msg = "expected " .. expected:to(str) .. ", got " .. actual:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_ne: assert two values are not equal.
 assert_ne(actual: any, expected: any, message: any): bool
-    if actual != expected return true end
+    if actual != expected return true 
     msg = "expected values to differ, both are " .. actual:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_true: assert value is truthy.
 assert_true(value: any, message: any): bool
-    if value != nil and value != false return true end
+    if value != nil and value != false return true 
     msg = "expected truthy value, got " .. value:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_false: assert value is falsy.
 assert_false(value: any, message: any): bool
-    if value == nil or value == false return true end
+    if value == nil or value == false return true 
     msg = "expected falsy value, got " .. value:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_nil: assert value is nil.
 assert_nil(value: any, message: any): bool
-    if value == nil return true end
+    if value == nil return true 
     msg = "expected nil, got " .. value:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_not_nil: assert value is not nil.
 assert_not_nil(value: any, message: any): bool
-    if value != nil return true end
+    if value != nil return true 
     msg = "expected non-nil value"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # ===== Numeric assertions =====
 
 # assert_gt: assert a > b.
 assert_gt(actual: any, expected: any, message: any): bool
-    if actual > expected return true end
+    if actual > expected return true 
     msg = "expected " .. actual:to(str) .. " > " .. expected:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_gte: assert a >= b.
 assert_gte(actual: any, expected: any, message: any): bool
-    if actual >= expected return true end
+    if actual >= expected return true 
     msg = "expected " .. actual:to(str) .. " >= " .. expected:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_lt: assert a < b.
 assert_lt(actual: any, expected: any, message: any): bool
-    if actual < expected return true end
+    if actual < expected return true 
     msg = "expected " .. actual:to(str) .. " < " .. expected:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_lte: assert a <= b.
 assert_lte(actual: any, expected: any, message: any): bool
-    if actual <= expected return true end
+    if actual <= expected return true 
     msg = "expected " .. actual:to(str) .. " <= " .. expected:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_in_range: assert value is within [lo, hi].
 assert_in_range(value: any, lo: any, hi: any, message: any): bool
-    if value >= lo and value <= hi return true end
+    if value >= lo and value <= hi return true 
     msg = "expected " .. value:to(str) .. " in [" .. lo:to(str) .. ", " .. hi:to(str) .. "]"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # ===== String assertions =====
 
 # assert_match: assert string matches a Lua pattern.
 assert_match(str_val: any, pattern: any, message: any): bool
-    if str_val == nil str_val = "" end
+    if str_val == nil str_val = "" 
     found = str_val:find(pattern, 1)
-    if found != nil return true end
+    if found != nil return true 
     msg = "expected string to match pattern '" .. pattern .. "', got '" .. str_val:to(str) .. "'"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_contains: assert string contains substring.
 assert_contains(haystack: any, needle: any, message: any): bool
-    if haystack == nil haystack = "" end
-    if haystack:find(needle, 1, true) != nil return true end
+    if haystack == nil haystack = "" 
+    if haystack:find(needle, 1, true) != nil return true 
     msg = "expected string to contain '" .. needle:to(str) .. "'"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_starts_with: assert string starts with prefix.
 assert_starts_with(str_val: any, prefix: any, message: any): bool
-    if str_val == nil str_val = "" end
-    if prefix == nil prefix = "" end
-    if str_val:sub(1, prefix:len()) == prefix return true end
+    if str_val == nil str_val = "" 
+    if prefix == nil prefix = "" 
+    if str_val:sub(1, prefix:len()) == prefix return true 
     msg = "expected string to start with '" .. prefix .. "'"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_ends_with: assert string ends with suffix.
 assert_ends_with(str_val: any, suffix: any, message: any): bool
-    if str_val == nil str_val = "" end
-    if suffix == nil suffix = "" end
+    if str_val == nil str_val = "" 
+    if suffix == nil suffix = "" 
     n = suffix:len()
-    if n == 0 return true end
-    if str_val:sub(-n) == suffix return true end
+    if n == 0 return true 
+    if str_val:sub(-n) == suffix return true 
     msg = "expected string to end with '" .. suffix .. "'"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # ===== Type assertions =====
 
 # assert_type: assert value has the expected Lua type.
 assert_type(value: any, expected_type: any, message: any): bool
     actual = type(value)
-    if actual == expected_type return true end
+    if actual == expected_type return true 
     msg = "expected type '" .. expected_type .. "', got '" .. actual .. "'"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_is_array: assert value is a table with consecutive integer keys.
 assert_is_array(value: any, message: any): bool
     if type(value) != "table"
         msg = "expected array, got " .. type(value)
-        if message != nil msg = message .. " — " .. msg end
+        if message != nil msg = message .. " — " .. msg 
         error(msg)
-    end
-    if value:len() == 0 return true end
+    if value:len() == 0 return true 
     i = 2
     while i <= value:len()
         if value[i] == nil
             msg = "expected array but found hole at index " .. i:to(str)
-            if message != nil msg = message .. " — " .. msg end
+            if message != nil msg = message .. " — " .. msg 
             error(msg)
-        end
         i += 1
-    end
     true
-end
 
 # assert_is_table: assert value is a table.
 assert_is_table(value: any, message: any): bool
-    if type(value) == "table" return true end
+    if type(value) == "table" return true 
     msg = "expected table, got " .. type(value)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # ===== Collection assertions =====
 
@@ -191,90 +169,76 @@ assert_value: any, expected_len: any, message: any:len(): bool
     actual = 0
     if type(value) == "string"
         actual = value:len()
-    elseif type(value) == "table"
+    else if type(value) == "table"
         actual = value:len()
-    end
-    if actual == expected_len return true end
+    if actual == expected_len return true 
     msg = "expected length " .. expected_len:to(str) .. ", got " .. actual:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_empty: assert a table or string is empty.
 assert_empty(value: any, message: any): bool
-    if value == nil return true end
+    if value == nil return true 
     if type(value) == "string"
-        if value:len() == 0 return true end
+        if value:len() == 0 return true 
         msg = "expected empty string, got length " .. to(str)(value:len())
-        if message != nil msg = message .. " — " .. msg end
+        if message != nil msg = message .. " — " .. msg 
         error(msg)
-    end
     if type(value) == "table"
-        if value:len() == 0 and next(value) == nil return true end
+        if value:len() == 0 and next(value) == nil return true 
         msg = "expected empty table"
-        if message != nil msg = message .. " — " .. msg end
+        if message != nil msg = message .. " — " .. msg 
         error(msg)
-    end
     true
-end
 
 # assert_not_empty: assert a table or string is not empty.
 assert_not_empty(value: any, message: any): bool
     if value == nil
         msg = "expected non-empty value, got nil"
-        if message != nil msg = message .. " — " .. msg end
+        if message != nil msg = message .. " — " .. msg 
         error(msg)
-    end
     if type(value) == "string"
-        if value:len() > 0 return true end
+        if value:len() > 0 return true 
         msg = "expected non-empty string"
-        if message != nil msg = message .. " — " .. msg end
+        if message != nil msg = message .. " — " .. msg 
         error(msg)
-    end
     if type(value) == "table"
-        if value:len() > 0 or next(value) != nil return true end
+        if value:len() > 0 or next(value) != nil return true 
         msg = "expected non-empty table"
-        if message != nil msg = message .. " — " .. msg end
+        if message != nil msg = message .. " — " .. msg 
         error(msg)
-    end
     true
-end
 
 # assert_in: assert a value exists in a list.
 assert_in(value: any, list: any, message: any): bool
     if list == nil
         error("assert_in called on nil list")
-    end
     i = 1
     while i <= list:len()
-        if list[i] == value return true end
+        if list[i] == value return true 
         i += 1
-    end
     msg = "expected " .. value:to(str) .. " to be in list"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # ===== Error assertions =====
 
 # assert_errors: assert that fn raises an error.
 assert_errors(fn_ref: any, message: any): any
     ok = pcall(fn_ref)
-    if not ok return true end
+    if not ok return true 
     msg = "expected fn to raise an error, but it returned"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_no_errors: assert that fn does not raise an error.
 assert_no_errors(fn_ref: any, message: any): any
     result = {pcall(fn_ref)}
     ok = result[1]
-    if ok return true end
+    if ok return true 
     msg = "expected fn to not raise an error: " .. to(str)(result[2])
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # assert_error_match: assert fn raises an error matching a pattern.
 assert_error_match(fn_ref: any, pattern: any, message: any): any
@@ -282,54 +246,46 @@ assert_error_match(fn_ref: any, pattern: any, message: any): any
     ok = result[1]
     if not ok
         found = to(str)(result[2]):find(pattern, 1)
-        if found != nil return true end
+        if found != nil return true 
         msg = "error did not match pattern '" .. pattern .. "': " .. to(str)(result[2])
-        if message != nil msg = message .. " — " .. msg end
+        if message != nil msg = message .. " — " .. msg 
         error(msg)
-    end
     msg = "expected fn to raise an error matching '" .. pattern .. "'"
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     error(msg)
-end
 
 # ===== Soft assertions (collect failures instead of throwing) =====
 
 # soft_new: create a soft assertion collector.
 soft_new(): any
     {failures = {}}
-end
 
 # soft_assert: record a failure instead of throwing.
 soft_assert(collector: any, condition: any, message: any): void
-    if condition return end
+    if condition return 
     msg = "assertion failed"
-    if message != nil msg = message end
+    if message != nil msg = message 
     collector.failures[collector.failures:len() + 1] = msg
-end
 
 # soft_assert_eq: record an equality failure.
 soft_assert_eq(collector: any, actual: any, expected: any, message: any): void
-    if actual == expected return end
+    if actual == expected return 
     msg = "expected " .. expected:to(str) .. ", got " .. actual:to(str)
-    if message != nil msg = message .. " — " .. msg end
+    if message != nil msg = message .. " — " .. msg 
     collector.failures[collector.failures:len() + 1] = msg
-end
 
 # soft_check: returns true if no failures, otherwise throws with all messages.
 soft_check(collector: any): bool
-    if collector.failures:len() == 0 return true end
+    if collector.failures:len() == 0 return true 
     msg = to(str)(collector.failures:len()) .. " assertion(s) failed:\n"
     i = 1
     while i <= collector.failures:len()
         msg = msg .. "  - " .. collector.failures[i] .. "\n"
         i += 1
-    end
     error(msg)
-end
 
 # soft_count: return the number of recorded failures.
 soft_count(collector: any): i64
-    if collector == nil return 0 end
+    if collector == nil return 0 
     collector.failures:len()
-end
 

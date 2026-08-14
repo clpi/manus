@@ -2,22 +2,20 @@
 
 # Test basic type introspection
 typeof_str(x): str
-    if x == nil return "nil" end
-    if type(x) != "table" return type(x) end
+    if x == nil return "nil" 
+    if type(x) != "table" return type(x) 
     mt = getmetatable(x)
-    if mt != nil and mt.type != nil return mt.type end
+    if mt != nil and mt.type != nil return mt.type 
     "table"
-end
 
-is_nil(x): bool    x == nil end
-is_bool(x): bool   type(x) == "boolean" end
-is_number(x): bool type(x) == "number" end
-is_str(x): bool    type(x) == "string" end
-is_table(x): bool  type(x) == "table" end
+is_nil(x): bool    x == nil 
+is_bool(x): bool   type(x) == "boolean" 
+is_number(x): bool type(x) == "number" 
+is_str(x): bool    type(x) == "string" 
+is_table(x): bool  type(x) == "table" 
 is_integer(x): bool
-    if type(x) != "number" return false end
+    if type(x) != "number" return false 
     x == x:floor()
-end
 
 # Test values
 print("typeof(nil): " .. typeof_str(nil))
@@ -49,23 +47,19 @@ print("has field 'email': " .. to(str)(person.email != nil))
 
 # Table utilities
 clone(t)
-    if type(t) != "table" return t end
+    if type(t) != "table" return t 
     c = {}
-    for k, v in t do c[k] = v end
+    for k, v in t do c[k] = v 
     c
-end
 
 shallow_eq(a, b): bool
-    if a == b return true end
-    if type(a) != "table" or type(b) != "table" return false end
-    for k, v in a do
-        if b[k] != v return false end
-    end
-    for k, _ in b do
-        if a[k] == nil return false end
-    end
+    if a == b return true 
+    if type(a) != "table" or type(b) != "table" return false 
+    for k, v in a
+        if b[k] != v return false 
+    for k, _ in b
+        if a[k] == nil return false 
     true
-end
 
 t = { a = 1, b = 2, c = 3 }
 print("\nTable utils:")

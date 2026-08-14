@@ -2,15 +2,13 @@
 # Prefer shell tools/node/dev/* and direct os.env / io:read / fs: homes.
 echo(msg: str): void
     print(msg)
-end
 
 run(cmd: str): i64
     rc = os:execute(cmd)
-    if rc == nil return -1 end
-    if rc == true return 0 end
-    if rc:to(str) == "0" return 0 end
+    if rc == nil return -1 
+    if rc == true return 0 
+    if rc:to(str) == "0" return 0 
     1
-end
 
 # The EXACT exit status, which `run` cannot give. os:execute collapses
 # every failure to 1 # `os:execute("exit 7")` returns 1, not 7 # so any
@@ -23,105 +21,82 @@ end
 # That reads as "everything succeeded", the worst possible failure mode here.
 status(cmd: str): i64
     to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
-end
 
 ok(cmd: str): bool
     run(cmd) == 0
-end
 
 must(cmd: str): void
     if not ok(cmd)
         echo("FAIL: " .. cmd)
         os:exit(1)
-    end
-end
 
 # Lock wrapper: `idol run scripts/idol_lock.id -- cmd` — the lock script consumes
 # the first `--` itself, so the wrapper never passes a separator through.
 lock_cmd(cmd: str): str
     idol_bin() .. " run scripts/idol_lock.id -- " .. cmd
-end
 
 lock_cmd_timeout(cmd: str, timeout: i64): str
     idol_bin() .. " run scripts/idol_lock.id -- --timeout " .. timeout:to(str) .. " -- " .. cmd
-end
 
 locked_run(cmd: str): i64
     if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
         return run(cmd)
-    end
     run(lock_cmd(cmd))
-end
 
 locked_ok(cmd: str): bool
     return locked_run(cmd) == 0
-end
 
 locked_must(cmd: str): void
     must(lock_cmd(cmd))
-end
 
 locked_must_timeout(cmd: str, timeout: i64): void
     must(lock_cmd_timeout(cmd, timeout))
-end
 
 # Native build mutex (mkdir + stale-PID reclaim). Used by scripts/idol_lock.id.
 build_lock_dir(): str
     getenv("IDOL_BUILD_LOCK", getenv("DUO_BUILD_LOCK", "/tmp/idol-lock"))
-end
 
 build_lock_owner(): str
     build_lock_dir() .. "/owner"
-end
 
 build_lock_try_acquire(): bool
     ld = build_lock_dir()
     ok("mkdir -p '" .. ld .. "'")
-end
 
 build_lock_write_owner(): void
     of = build_lock_owner()
     must("sh -c 'echo \"$(($$)) $(date +%s)\" > \"" .. of .. "\"'")
-end
 
 build_lock_stale(): bool
     of = build_lock_owner()
     pid_line = capture("cut -d' ' -f1 '" .. of .. "' 2>/dev/null | head -1")
-    if pid_line == "" return true end
+    if pid_line == "" return true 
     return run("kill -0 " .. pid_line:gsub("%s+", "") .. " 2>/dev/null") != 0
-end
 
 build_lock_release(): void
     ld = build_lock_dir()
     of = build_lock_owner()
     run("rm -f '" .. of .. "'")
     run("rmdir '" .. ld .. "' 2>/dev/null")
-end
 
 build_lock_acquire(timeout: i64): bool
     if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
         return true
-    end
     waited = 0
     while waited < timeout
         if build_lock_try_acquire()
             build_lock_write_owner()
             return true
-        end
         stale_now = build_lock_stale()
         ld = build_lock_dir()
         of = build_lock_owner()
         cmd = "sleep 2"
         if stale_now
             cmd = "rm -f '" .. of .. "' 2>/dev/null; rmdir '" .. ld .. "' 2>/dev/null"
-        end
         run(cmd)
         if not stale_now
             waited += 2
-        end
-    end
     false
-end
 
 capture(cmd: str): str
     path = "/tmp/duo-capture"
@@ -132,22 +107,17 @@ capture(cmd: str): str
     if body == nil
         return ""
     body
-end
 
 idol_bin(): str
     "./zig-out/bin/idol"
-end
 
 idol_run(path: str, bin: str): void
     echo("agent-smoke: idol run " .. path)
     must(bin .. " run " .. path)
-end
 
 idol_run_all(paths: any, bin: str): void
     for _, path in paths
         idol_run(path, bin)
-    end
-end
 
 zig_build(): void
     # When invoked via the build target the duo binary is already fresh; a second
@@ -155,13 +125,10 @@ zig_build(): void
     if os.env["DUO_ALREADY_BUILT"] == "1"
         echo("agent-smoke: zig build skipped (DUO_ALREADY_BUILT)")
         return
-    end
     must("zig build")
-end
 
 zig_test_file(path: str): void
     must("zig test " .. path)
-end
 
 # === Environment ===
 
@@ -177,16 +144,14 @@ end
 # wants a usable value, and os:getenv gives us no way to tell the two apart.
 getenv(name: str, fallback: str): str
     v = os.env[name]
-    if v == nil return fallback end
-    if v == "" return fallback end
+    if v == nil return fallback 
+    if v == "" return fallback 
     v
-end
 
 getenv_or(name: str): str
     v = os.env[name]
-    if v == nil return "" end
+    if v == nil return "" 
     v
-end
 
 # This SHELLED OUT (`must("export NAME='v'")`) and was therefore a silent
 # no-op: `export` runs in the child os:execute spawns, and a child cannot
@@ -204,19 +169,16 @@ end
 # os:setenv is the real call and already existed.
 env_set(name: str, value: str): void
     os.env[name] = value
-end
 
 # === Path manipulation (makes Duo ergonomic vs Python os.path) ===
 
 path_join(a: str, b: str): str
-    if a == "" return b end
-    if b == "" return a end
+    if a == "" return b 
+    if b == "" return a 
     sep = "/"
     if a:sub(-1) == sep
         return a .. b
-    end
     a .. sep .. b
-end
 
 path_basename(p: str): str
     # Find last /
@@ -225,11 +187,8 @@ path_basename(p: str): str
         if p:sub(i, i) == "/"
             pos = i
             break
-        end
-    end
-    if pos == 0 return p end
+    if pos == 0 return p 
     p:sub(pos + 1)
-end
 
 path_dirname(p: str): str
     pos = 0
@@ -237,12 +196,9 @@ path_dirname(p: str): str
         if p:sub(i, i) == "/"
             pos = i
             break
-        end
-    end
-    if pos == 0 return "." end
-    if pos == 1 return "/" end
+    if pos == 0 return "." 
+    if pos == 1 return "/" 
     p:sub(1, pos - 1)
-end
 
 path_ext(p: str): str
     base = path_basename(p)
@@ -251,47 +207,37 @@ path_ext(p: str): str
         if base:sub(i, i) == "."
             pos = i
             break
-        end
-    end
-    if pos == 0 return "" end
+    if pos == 0 return "" 
     base:sub(pos)
-end
 
 path_stem(p: str): str
     base = path_basename(p)
     ext = path_ext(base)
-    if ext == "" return base end
+    if ext == "" return base 
     base:sub(1, base:len() - ext:len())
-end
 
 # === File system ===
 
 fs_exists(p: str): bool
     ok("test -e '" .. p .. "'")
-end
 
 fs_is_file(p: str): bool
     ok("test -f '" .. p .. "'")
-end
 
 fs_is_dir(p: str): bool
     ok("test -d '" .. p .. "'")
-end
 
 fs_read(p: str): str
     body = io:read(p)
     if body == nil
         return ""
     body
-end
 
 fs_write(p: str, content: str): void
     must("printf '%s' '" .. content:gsub("'", "'\\''") .. "' > '" .. p .. "'")
-end
 
 fs_mkdir(p: str): void
     must("mkdir -p '" .. p .. "'")
-end
 
 fs_glob(pattern: str): any
     out = {}
@@ -314,19 +260,15 @@ fs_glob(pattern: str): any
             line = line .. text:sub(i, i)
         i += 1
     return out
-end
 
 fs_cp(src: str, dst: str): void
     must("cp -R '" .. src .. "' '" .. dst .. "'")
-end
 
 fs_mv(src: str, dst: str): void
     must("mv '" .. src .. "' '" .. dst .. "'")
-end
 
 fs_rm(path: str): void
     must("rm -rf '" .. path .. "'")
-end
 
 # Strip trailing newlines. `capture` terminates every line it reads, so a
 # single-line command's output is a value with a "\n" welded on -- fine to
@@ -335,9 +277,7 @@ chomp(s: str): str
     n = s:len()
     while n > 0 and s:byte(n) == 10
         n -= 1
-    end
     s:sub(1, n)
-end
 
 # Both of these returned the temp path WITH capture's trailing newline, so
 # `fs_tmpdir() .. "/x"` built "/var/.../tmp.ABC\n/x". Embedded in a shell
@@ -347,45 +287,37 @@ end
 # column concluded the columns AGREED.
 fs_tmp(): str
     chomp(capture("mktemp 2>/dev/null"))
-end
 
 fs_tmpdir(): str
     chomp(capture("mktemp -d 2>/dev/null"))
-end
 
 # === Process piping (makes Duo ergonomic vs bash pipes) ===
 
 pipe(cmd1: str, cmd2: str): str
     capture(cmd1 .. " | " .. cmd2)
-end
 
 pipe_ok(cmd1: str, cmd2: str): bool
     ok(cmd1 .. " | " .. cmd2)
-end
 
 # === CLI args (makes Duo ergonomic vs Python argparse for simple cases) ===
 
 args(): any
     os.args
-end
 
 arg(n: i64, fallback: str): str
     a = args()
-    if a == nil or n < 1 or n > a:len() return fallback end
+    if a == nil or n < 1 or n > a:len() return fallback 
     return a[n]
-end
 
 # === Quick JSON read (makes Duo ergonomic vs python -c 'import json') ===
 
 json_read_file(p: str): any
     json:decode(fs_read(p))
-end
 
 exec(cmd: str): any
     out = capture(cmd .. " 2>&1")
     code = status(cmd)
     { output = out, code = code }
-end
 
 M = {
     echo = echo,

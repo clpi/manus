@@ -5,7 +5,6 @@ enum Shape
     Rect(w: f64, h: f64)
     Triangle(base: f64, height: f64)
     Point
-end
 
 area(s: Shape): f64
     a: f64 = 0.0
@@ -14,9 +13,7 @@ area(s: Shape): f64
         Shape.Rect(w, h) a = w * h
         Shape.Triangle(b, h) a = 0.5 * b * h
         Shape.Point a = 0.0
-    end
     a
-end
 
 tag_of(s: Shape): i64
     tag: i64 = -1
@@ -25,27 +22,21 @@ tag_of(s: Shape): i64
         Shape.Rect(_, _) tag = 1
         Shape.Triangle(_, _) tag = 2
         Shape.Point tag = 3
-    end
     tag
-end
 
 is_unit_square(s: Shape): bool
     yes: bool = false
     match s
         Shape.Rect(1.0, 1.0) yes = true
         _ yes = false
-    end
     yes
-end
 
 sum3(nums: any): f64
     result: f64 = 0.0
     match nums
         [a, b, c] result = a + b + c
         _ result = -1.0
-    end
     result
-end
 
 head(xs: any): any
     h: any = nil
@@ -53,9 +44,7 @@ head(xs: any): any
         [first, _] h = first
         [only] h = only
         _ h = nil
-    end
     h
-end
 
 circ: Shape = Shape.Circle(2.0)
 rect: Shape = Shape.Rect(3.0, 4.0)

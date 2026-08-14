@@ -5,11 +5,9 @@ age: f32 = 29.0
 
 getAge = fun(self)
     self.age
-end
 
 setAge = fun(self, age: num)
     self.age = age
-end
 
 props = {
     hobbies: [string] = {
@@ -23,4 +21,3 @@ props = {
 
 incExp = fun(self)
     self.age += 0.1
-end

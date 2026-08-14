@@ -8,41 +8,32 @@
 
 identity(value)
     value
-end
 
 make_pair(first, second)
     { first = first, second = second }
-end
 
 swap(a, b): any
     return b, a
-end
 
 safe_div(a, b): any
     if b == 0
         return a
-    end
     a // b
-end
 
 map_list(xs, fn): any
     result = {}
-    for i = 1, xs:len() do
+    for i = 1, xs:len()
         result[i] = fn(xs[i])
-    end
     result
-end
 
 # ── Section 2: Concepts ─────────────────────────────────────────────────────
 
 concept Measurable
     measure(self, unit: str): f64
     label(self): str
-end
 
 concept Combinable
     combine(self, other): any
-end
 
 distance = {}
 distance.x = 3.0
@@ -51,12 +42,9 @@ distance.measure = fun(self, unit: str): f64
     mag = self.x * self.x + self.y * self.y:sqrt()
     if unit == "km"
         return mag / 1000.0
-    end
     mag
-end
 distance.label = fun(self): str
     "Distance(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
-end
 
 # ── Section 3: Meta Blocks (@ compile-time evaluation) ─────────────────────
 
@@ -68,41 +56,33 @@ IS_DEBUG = @(false)
 # ── Section 4: Derive helpers ──────────────────────────────────────────────
 
 derive_clone(val)
-    if type(val) != "table" return val end
+    if type(val) != "table" return val 
     c = {}
-    for k, v in val do c[k] = v end
+    for k, v in val do c[k] = v 
     c
-end
 
 derive_display(val): str
-    if val == nil return "nil" end
+    if val == nil return "nil" 
     if type(val) == "boolean"
-        if val return "true" else return "false" end
-    end
-    if type(val) == "number" return to(str)(val) end
-    if type(val) == "string" return val end
+        if val return "true" else return "false" 
+    if type(val) == "number" return to(str)(val) 
+    if type(val) == "string" return val 
     if type(val) == "table"
         parts = {}
-        for k, v in val do
+        for k, v in val
             if type(k) == "string"
                 parts[parts:len() + 1] = k .. ": " .. derive_display(v)
-            end
-        end
         return "{" .. parts:concat(", ") .. "}"
-    end
     to(str)(val)
-end
 
 # ── Section 5: Memory Allocators ───────────────────────────────────────────
 
 demo_arena(): void
     arena = { _bufs = {}, _offset = 0, _capacity = 4096, _total = 0 }
     print("Arena created, capacity: " .. to(str)(arena._capacity))
-end
 
 demo_pool(): void
     print("Pool created, block_size: 128, count: 64")
-end
 
 # ── Section 6: WASI Types ──────────────────────────────────────────────────
 
@@ -112,7 +92,6 @@ demo_wasi(): void
     print("WASI stderr fd: 2")
     print("WASI exit success: 0")
     print("WASI exit failure: 1")
-end
 
 # ── Section 7: Reflection ───────────────────────────────────────────────────
 
@@ -126,47 +105,34 @@ demo_reflection(val): void
 
     if type(val) == "table"
         count = 0
-        for _k, _v in val do count += 1 end
+        for _k, _v in val do count += 1 
         print("Field count: " .. to(str)(count))
-    end
-end
 
 # ── Section 8: Functions with/without return types ────────────────────────
 
 typed_add(a: i64, b: i64): i64
     a + b
-end
 
 untyped_add(a, b)
     a + b
-end
 
 classify(n: i64): str
     if n < 0
         return "negative"
-    end
     if n == 0
         return "zero"
-    end
     "positive"
-end
 
 validate_input(val): bool
     if val == nil
         if true
             return false
-        end
-    end
     if type(val) == "number"
         if val < 0
             return false
-        end
         if val > 1000
             return false
-        end
-    end
     true
-end
 
 # ── Main: run all demos ─────────────────────────────────────────────────────
 

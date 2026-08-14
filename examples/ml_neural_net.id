@@ -3,45 +3,35 @@
 # Tensor helpers
 zeros(rows, cols)
     t = { rows = rows, cols = cols, size = rows * cols, data = {} }
-    for i = 1, rows * cols t.data[i] = 0.0 end
+    for i = 1, rows * cols t.data[i] = 0.0 
     return t
-end
 
 rand_tensor(rows, cols)
     t = zeros(rows, cols)
-    for i = 1, t.size t.data[i] = math.random() * 0.1 - 0.05 end
+    for i = 1, t.size t.data[i] = math.random() * 0.1 - 0.05 
     return t
-end
 
 matmul(a, b)
     r = zeros(a.rows, b.cols)
     for i = 1, a.rows
         for j = 1, b.cols
             s = 0.0
-            for k = 1, a.cols s += a.data[(i-1)*a.cols+k] * b.data[(k-1)*b.cols+j] end
+            for k = 1, a.cols s += a.data[(i-1)*a.cols+k] * b.data[(k-1)*b.cols+j] 
             r.data[(i-1)*b.cols+j] = s
-        end
-    end
     return r
-end
 
 add_bias(t, bias)
     r = zeros(t.rows, t.cols)
     for i = 1, t.rows
         for j = 1, t.cols
             r.data[(i-1)*t.cols+j] = t.data[(i-1)*t.cols+j] + bias.data[j]
-        end
-    end
     return r
-end
 
 relu(t)
     r = zeros(t.rows, t.cols)
     for i = 1, t.size
-        if t.data[i] > 0 r.data[i] = t.data[i] end
-    end
+        if t.data[i] > 0 r.data[i] = t.data[i] 
     return r
-end
 
 softmax(t)
     r = zeros(t.rows, t.cols)
@@ -49,25 +39,19 @@ softmax(t)
         mx = t.data[(row-1)*t.cols+1]
         for i = 2, t.cols
             v = t.data[(row-1)*t.cols+i]
-            if v > mx mx = v end
-        end
+            if v > mx mx = v 
         sm = 0.0
         for i = 1, t.cols
             r.data[(row-1)*t.cols+i] = t.data[(row-1)*t.cols+i] - mx:exp()
             sm += r.data[(row-1)*t.cols+i]
-        end
         for i = 1, t.cols
             r.data[(row-1)*t.cols+i] = r.data[(row-1)*t.cols+i] / sm
-        end
-    end
     return r
-end
 
 # Network forward pass (defined as local function, captures nothing)
 nn_forward(x, w1, b1, w2, b2)
     h = relu(add_bias(matmul(x, w1), b1))
     return softmax(add_bias(matmul(h, w2), b2))
-end
 
 # Initialize and run
 math.randomseed(42)

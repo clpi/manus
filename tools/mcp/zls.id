@@ -24,7 +24,6 @@ mcp:register_tool("zig_diagnostics", "Get LSP diagnostics for a .zig file via zl
 }, fun(args)
     if not bridge.available()
         return json:encode({ error = "zls not installed or not on PATH" })
-    end
     "{uri = \"file://\"}{args.file_path}"
     content = bridge.read_source(args.file_path)
     opened = bridge.request("textDocument/didOpen", {

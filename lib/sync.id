@@ -10,34 +10,26 @@ spawn(fn: any, ...args): any
     co = co
   }
   return nil
-end
 yield(): void
   coroutine.yield()
-end
 run(): void
   while pending:len() > 0
     task = pending:remove(1)
     ok, err = coroutine.resume(task.co)
     if not ok
       io.write("sync: task error: " .. err:to(str) .. "\n")
-    elseif coroutine.status(task.co) == "suspended"
+    else if coroutine.status(task.co) == "suspended"
       pending[pending:len() + 1] = task
-    end
-  end
-end
 step(): bool
   if pending:len() == 0
     return false
-  end
   task = pending:remove(1)
   ok, err = coroutine.resume(task.co)
   if not ok
     io.write("sync: task error: " .. err:to(str) .. "\n")
-  elseif coroutine.status(task.co) == "suspended"
+  else if coroutine.status(task.co) == "suspended"
     pending[pending:len() + 1] = task
-  end
   return pending:len() > 0
-end
 channel(capacity: i64): any
   return {
     cap = capacity or 0,
@@ -46,21 +38,17 @@ channel(capacity: i64): any
     recvwait = {},
     closed = false
   }
-end
 send(ch: any, val: any): void
   if ch.closed
     error("send on closed channel")
-  end
   if ch:len().recvwait > 0
     w = ch.recvwait:remove(1)
     w.slot[1] = val
     w.slot[2] = true
     pending[pending:len() + 1] = w
-  end
   if ch.cap == 0 or ch:len().queue < ch.cap
     ch.queue[ch:len().queue + 1] = val
     return
-  end
   co = coroutine.running()
   entry = {
     co = co,
@@ -68,7 +56,6 @@ send(ch: any, val: any): void
   }
   ch.sendwait[ch:len().sendwait + 1] = entry
   coroutine.yield()
-end
 recv(ch: any): any
   if ch:len().queue > 0
     val = ch.queue:remove(1)
@@ -76,12 +63,9 @@ recv(ch: any): any
       w = ch.sendwait:remove(1)
       ch.queue[ch:len().queue + 1] = w.val
       pending[pending:len() + 1] = w
-    end
     return val
-  end
   if ch.closed
     return nil
-  end
   co = coroutine.running()
   slot = {
     val = nil
@@ -93,7 +77,6 @@ recv(ch: any): any
   ch.recvwait[ch:len().recvwait + 1] = entry
   coroutine.yield()
   return slot.val
-end
 peek(ch: any): any
   if ch:len().queue > 0
     val = ch.queue:remove(1)
@@ -101,71 +84,53 @@ peek(ch: any): any
       w = ch.sendwait:remove(1)
       ch.queue[ch:len().queue + 1] = w.val
       pending[pending:len() + 1] = w
-    end
     return val
-  end
   return nil
-end
 close(ch: any): void
   ch.closed = true
   for _, w in ch.recvwait
     w.slot[1] = nil
     w.slot[2] = true
     pending[pending:len() + 1] = w
-  end
   ch.recvwait = {}
-end
 drain(ch: any): any
   out = {}
   while ch:len().queue > 0
     out[out:len() + 1] = ch.queue:remove(1)
-  end
   return out
-end
 waitgroup(): any
   {
     count = 0,
     waiters = {}
   }
-end
 add(wg: any, n: i64): void
   if n == nil
     n = 1
-  end
   wg.count = wg.count + n
-end
 done(wg: any): void
   wg.count = wg.count - 1
   if wg.count <= 0
     for _, w in wg.waiters
       pending[pending:len() + 1] = w
-    end
     wg.waiters = {}
-  end
-end
 wait(wg: any): void
   if wg.count <= 0
     return
-  end
   co = coroutine.running()
   wg.waiters[wg:len().waiters + 1] = {
     co = co
   }
   coroutine.yield()
-end
 once(fn: any): any
   {
     fn = fn,
     done = false
   }
-end
 fire(o: any): void
   if o.done
     return
-  end
   o.fn()
   o.done = true
-end
 M = {}
 M.spawn = spawn
 M.yield = yield

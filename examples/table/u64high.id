@@ -7,4 +7,3 @@ main: i64 = ()
     b: u64 = 0xFFFFFFFFFFFFFFFF
     print("{a} {b}")
     0
-end

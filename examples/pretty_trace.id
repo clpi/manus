@@ -89,128 +89,101 @@ tty(): bool
     ok, val = pcall(os.getenv, "DUO_COLOR")
     if ok and val != nil and val != "" and val != "0"
         return true
-    end
     ok2, val2 = pcall(os.getenv, "NO_COLOR")
     if ok2 and val2 != nil and val2 != ""
         return false
-    end
     return true
-end
 
 # ─── Style wrappers ───────────────────────────────────────────────
 s(prefix: str, text: str, suffix: str): str
-    if prefix == nil prefix = "" end
-    if suffix == nil suffix = M.RESET end
+    if prefix == nil prefix = "" 
+    if suffix == nil suffix = M.RESET 
     if not tty()
         return to(str)(text)
-    end
     return prefix .. to(str)(text) .. suffix
-end
 
 bold(text: str): str
     return M.BOLD .. to(str)(text) .. M.RESET
-end
 
 dim(text: str): str
     return M.DIM .. to(str)(text) .. M.RESET
-end
 
 italic(text: str): str
     return M.ITALIC .. to(str)(text) .. M.RESET
-end
 
 underline(text: str): str
     return M.UNDERLINE .. to(str)(text) .. M.RESET
-end
 
 red(text: str): str
     return M.RED .. to(str)(text) .. M.RESET
-end
 
 green(text: str): str
     return M.GREEN .. to(str)(text) .. M.RESET
-end
 
 yellow(text: str): str
     return M.YELLOW .. to(str)(text) .. M.RESET
-end
 
 blue(text: str): str
     return M.BLUE .. to(str)(text) .. M.RESET
-end
 
 magenta(text: str): str
     return M.MAGENTA .. to(str)(text) .. M.RESET
-end
 
 cyan(text: str): str
     return M.CYAN .. to(str)(text) .. M.RESET
-end
 
 # ─── Value formatting ─────────────────────────────────────────────
 tbl_summary(t: any): str
-    if t == nil return "nil" end
+    if t == nil return "nil" 
     n = t:len()
     if n > 0
         return "array(" .. to(str)(n) .. ")"
-    end
     count = 0
     first = ""
     for k, _v in t
         count += 1
-        if count == 1 first = to(str)(k) end
-    end
-    if count == 0 return "{}" end
+        if count == 1 first = to(str)(k) 
+    if count == 0 return "{}" 
     if count <= 3
         return "{" .. first .. ", ...}"
-    end
     return "{" .. to(str)(count) .. " keys}"
-end
 
 pretty_val(value: any): str
     if value == nil
         return dim(italic("nil"))
-    end
     t = type(value)
     if t:find("string") == 1
         return green('"' .. to(str)(value) .. '"')
-    elseif t:find("number") == 1
+    else if t:find("number") == 1
         return yellow(to(str)(value))
-    elseif t:find("boolean") == 1
+    else if t:find("boolean") == 1
         return magenta(to(str)(value))
-    elseif t:find("function") == 1
+    else if t:find("function") == 1
         return cyan(italic("⟪fn⟫"))
-    elseif t:find("table") == 1
+    else if t:find("table") == 1
         n = value:len()
         if n > 0
             return cyan("⟦array " .. to(str)(n) .. "⟧")
-        end
         return cyan(italic("{" .. tbl_summary(value) .. "}"))
-    end
     return cyan(to(str)(value))
-end
 
 pretty_kv(k: str, v: any): str
     return underline(to(str)(k)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
-end
 
 # ─── Caller info ───────────────────────────────────────────────────
 caller(level: int): str
     info = debug.getinfo(level, "Snl")
-    if info == nil return "" end
+    if info == nil return "" 
     name_part = info.name
     if name_part == nil or name_part == ""
         name_part = "?"
-    end
     src = info.short_src
-    if src == nil src = info.source end
-    if src == nil src = "?" end
+    if src == nil src = info.source 
+    if src == nil src = "?" 
     loc = src
     if info.currentline and info.currentline > 0
         loc = src .. dim(":") .. yellow(to(str)(info.currentline))
-    end
     return magenta(italic(name_part)) .. dim(" " .. M.G_ARROW .. " ") .. underline(loc)
-end
 
 # ─── Timestamp ─────────────────────────────────────────────────────
 ts(): str
@@ -218,10 +191,8 @@ ts(): str
     ms = (os.clock() * 1000) % 1000:floor()
     frac = "." .. to(str)(ms)
     if ms < 10 frac = ".00" .. to(str)(ms)
-    elseif ms < 100 frac = ".0" .. to(str)(ms)
-    end
+    else if ms < 100 frac = ".0" .. to(str)(ms)
     return dim(os.date("%H:%M:%S", secs) .. frac)
-end
 
 # ─── Level tag ─────────────────────────────────────────────────────
 level_tag(level: int): str
@@ -230,63 +201,53 @@ level_tag(level: int): str
     if level == M.LV_DEBUG
         glyph = M.G_DEBUG
         tag = "debug"
-    elseif level == M.LV_INFO
+    else if level == M.LV_INFO
         glyph = M.G_INFO
         tag = " info"
-    elseif level == M.LV_WARN
+    else if level == M.LV_WARN
         glyph = M.G_WARN
         tag = " warn"
-    elseif level == M.LV_ERROR
+    else if level == M.LV_ERROR
         glyph = M.G_ERROR
         tag = "error"
-    elseif level == M.LV_FATAL
+    else if level == M.LV_FATAL
         glyph = M.G_FATAL
         tag = "fatal"
-    end
     body = glyph .. " " .. tag
-    if level == M.LV_TRACE return dim(body) end
-    if level == M.LV_DEBUG return blue(body) end
-    if level == M.LV_INFO return green(body) end
-    if level == M.LV_WARN return yellow(body) end
-    if level == M.LV_ERROR return red(bold(body)) end
-    if level == M.LV_FATAL return red(bold(underline(body))) end
+    if level == M.LV_TRACE return dim(body) 
+    if level == M.LV_DEBUG return blue(body) 
+    if level == M.LV_INFO return green(body) 
+    if level == M.LV_WARN return yellow(body) 
+    if level == M.LV_ERROR return red(bold(body)) 
+    if level == M.LV_FATAL return red(bold(underline(body))) 
     return body
-end
 
 # ─── Span indent ───────────────────────────────────────────────────
 span_indent(): str
     n = trace_spans:len()
-    if n <= 0 return "" end
+    if n <= 0 return "" 
     rep = M.G_PIPE .. " ":rep(n)
-    if rep == nil or rep == "" return "" end
+    if rep == nil or rep == "" return "" 
     return dim(rep)
-end
 
 # ─── Emit ──────────────────────────────────────────────────────────
 emit(level: int, msg: str, fields: any, skip: int): void
-    if level < trace_level return end
+    if level < trace_level return 
     parts = {}
     parts[parts:len() + 1] = level_tag(level)
     if trace_show_ts
         parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
-    end
     if trace_show_caller
         c = caller(skip + 1)
         if c != ""
             parts[parts:len() + 1] = dim("(") .. c .. dim(")")
-        end
-    end
     parts[parts:len() + 1] = span_indent()
     if msg != nil and msg != ""
         parts[parts:len() + 1] = bold(msg)
-    end
     if fields != nil and type(fields) == "table"
         for k, v in fields
             parts[parts:len() + 1] = pretty_kv(k, v)
-        end
-    end
     print(parts:concat(" "))
-end
 
 # ─── Public API ─────────────────────────────────────────────────
 set_level(level: any): void
@@ -294,51 +255,37 @@ set_level(level: any): void
         v = M.level_value[level:lower()]
         if v != nil
             trace_level = v
-        end
         return
-    end
     if type(level) == "number"
         if level >= M.LV_TRACE and level <= M.LV_FATAL
             trace_level = level
-        end
-    end
-end
 
 get_level(): str
     return M.level_name[trace_level] or "info"
-end
 
 show_caller(on: bool): void
     trace_show_caller = on and true or false
-end
 
 show_timestamp(on: bool): void
     trace_show_ts = on and true or false
-end
 
 trace(msg: str, fields: any): void
     emit(M.LV_TRACE, msg, fields, 2)
-end
 
 _debug(msg: str, fields: any): void
     emit(M.LV_DEBUG, msg, fields, 2)
-end
 
 info(msg: str, fields: any): void
     emit(M.LV_INFO, msg, fields, 2)
-end
 
 warn(msg: str, fields: any): void
     emit(M.LV_WARN, msg, fields, 2)
-end
 
 error(msg: str, fields: any): void
     emit(M.LV_ERROR, msg, fields, 2)
-end
 
 fatal(msg: str, fields: any): void
     emit(M.LV_FATAL, msg, fields, 2)
-end
 
 # ─── Spans ────────────────────────────────────────────────────────
 # Format a millisecond duration as a string like "12.34ms" without
@@ -347,9 +294,8 @@ _fmt_ms(ms: float): str
     whole = ms:floor()
     frac = (ms - whole) * 100:floor()
     frac_str = to(str)(frac)
-    if frac < 10 frac_str = "0" .. to(str)(frac) end
+    if frac < 10 frac_str = "0" .. to(str)(frac) 
     return to(str)(whole) .. "." .. frac_str .. "ms"
-end
 
 span(name: str, fields: any): any
     h = {
@@ -365,33 +311,25 @@ span(name: str, fields: any): any
     parts[parts:len() + 1] = dim(M.G_ARROW)
     if trace_show_ts
         parts[parts:len() + 1] = dim("[") .. ts() .. dim("]")
-    end
     if trace_show_caller
         c = caller(2)
         if c != ""
             parts[parts:len() + 1] = dim("(") .. c .. dim(")")
-        end
-    end
     parts[parts:len() + 1] = ind
     if fields != nil and type(fields) == "table"
         for k, v in fields
             parts[parts:len() + 1] = pretty_kv(k, v)
-        end
-    end
     print(parts:concat(" "))
     return h
-end
 
 span_end(h: any, fields: any): void
-    if h == nil return end
+    if h == nil return 
     n = trace_spans:len()
     while n > 0
         if trace_spans[n] == h
             trace_spans:remove(n)
             break
-        end
         n -= 1
-    end
     dur_s = os.clock() - h.start
     dur_ms = dur_s * 1000
     dur_str
@@ -399,7 +337,6 @@ span_end(h: any, fields: any): void
         dur_str = bold(yellow(_fmt_ms(dur_ms)))
     else
         dur_str = dim(_fmt_ms(dur_ms))
-    end
     ind = dim(M.G_PIPE .. " ":rep((h.depth - 1)))
     parts = {}
     parts[parts:len() + 1] = magenta(M.G_SPAN_END)
@@ -410,30 +347,22 @@ span_end(h: any, fields: any): void
     if fields != nil and type(fields) == "table"
         for k, v in fields
             parts[parts:len() + 1] = pretty_kv(k, v)
-        end
-    end
     print(parts:concat(" "))
-end
 
 # ─── Banner / divider / legend ────────────────────────────────────
 banner(title: str, subtitle: str): void
-    if title == nil title = "trace" end
+    if title == nil title = "trace" 
     if tty()
         print(cyan("╭─── " .. title .. " ") .. dim("─") .. dim("─":rep(40)))
         if subtitle != nil and subtitle != ""
             print(dim("│  " .. subtitle))
-        end
     else
         print("=== " .. title .. " ===")
         if subtitle != nil and subtitle != ""
             print("    " .. subtitle)
-        end
-    end
-end
 
 divider(): void
     print(span_indent() .. dim("─":rep(60)))
-end
 
 legend(): void
     print(bold(italic("trace legend:")))
@@ -451,44 +380,39 @@ legend(): void
           "color = severity + Lua type class")
     print("  " .. magenta(M.G_SPAN_BEGIN) .. "/" .. magenta(M.G_SPAN_END) ..
           " = span begin/end    " .. dim(M.G_DUR) .. " = measured duration")
-end
 
 # ─── Recursive pretty printer for dump() ───────────────────────────
 _seen(seen: any, value: any): bool
-    if seen == nil return false end
+    if seen == nil return false 
     i = 1
     n = seen:len()
     while i <= n
-        if seen[i] == value return true end
+        if seen[i] == value return true 
         i += 1
-    end
     return false
-end
 
 _seen_add(seen: any, value: any): void
     seen[seen:len() + 1] = value
-end
 
 pretty_repr(value: any, depth: int, seen: any): str
-    if depth == nil depth = 0 end
-    if seen == nil seen = {} end
-    if value == nil return "nil" end
+    if depth == nil depth = 0 
+    if seen == nil seen = {} 
+    if value == nil return "nil" 
     t = type(value)
     if t:find("string") == 1
         return '"' .. to(str)(value) .. '"'
-    elseif t:find("number") == 1
+    else if t:find("number") == 1
         return to(str)(value)
-    elseif t:find("boolean") == 1
+    else if t:find("boolean") == 1
         return to(str)(value)
-    elseif t:find("function") == 1
+    else if t:find("function") == 1
         return "<function>"
-    elseif t:find("table") != 1
+    else if t:find("table") != 1
         return to(str)(value)
-    end
     # table branch — use table identity (== by reference) stored in a
     # flat array, because the codegen's to(str)(table) always returns
     # the bare type name "table" regardless of which table.
-    if _seen(seen, value) return "<circular>" end
+    if _seen(seen, value) return "<circular>" 
     _seen_add(seen, value)
     n = value:len()
     parts = {}
@@ -498,24 +422,19 @@ pretty_repr(value: any, depth: int, seen: any): str
             parts[parts:len() + 1] = "  ":rep(depth + 1) ..
                 pretty_repr(value[i], depth + 1, seen)
             i += 1
-        end
         if parts:len() <= 3
             return "[" .. parts:concat(", ") .. "]"
-        end
         return "[\n" .. parts:concat(",\n") .. "\n" ..
             "  ":rep(depth) .. "]"
-    end
     for k, v in value
         parts[parts:len() + 1] = "  ":rep(depth + 1) ..
             to(str)(k) .. " = " .. pretty_repr(v, depth + 1, seen)
-    end
-    if parts:len() == 0 return "{}" end
+    if parts:len() == 0 return "{}" 
     return "{\n" .. parts:concat("\n") .. "\n" ..
         "  ":rep(depth) .. "}"
-end
 
 dump(label: str, value: any): void
-    if label == nil label = "dump" end
+    if label == nil label = "dump" 
     ind = span_indent()
     header = ind .. cyan(M.G_BULLET) .. " " .. bold(label) ..
         dim(" ⟜ ") .. pretty_val(value)
@@ -532,16 +451,10 @@ dump(label: str, value: any): void
                 seg = rendered:sub(line_start, i - 1)
                 if seg != ""
                     print(dim(M.G_PIPE .. " ") .. cyan(seg))
-                end
                 line_start = i + 1
-            end
             i += 1
-        end
         if line_start <= n
             print(dim(M.G_PIPE .. " ") .. cyan(rendered:sub(line_start)))
-        end
-    end
-end
 
 # ─── Exports ──────────────────────────────────────────────────────
 M.set_level = set_level
@@ -589,11 +502,11 @@ T.divider()
 
 h1 = T.span("compile_module", {module = "std.math.fft", size = 8192})
 h2 = T.span("parse", {tokens = 4096})
-for _x = 1, 2000 do end
+for _x = 1, 2000 do 
 T.span_end(h2)
 
 h3 = T.span("type_check", {fns = 24, errors = 0})
-for _y = 1, 5000 do end
+for _y = 1, 5000 do 
 T.span_end(h3, {note = "cleared all predicates"})
 T.span_end(h1, {emitted_bytes = 16384})
 
@@ -628,15 +541,13 @@ print(span_indent() .. "pure-pretty stack trace below:")
 i = 2
 while i < 12
     info = debug.getinfo(i, "Snl")
-    if info == nil break end
+    if info == nil break 
     fname = "?"
-    if info.name != nil fname = to(str)(info.name) end
+    if info.name != nil fname = to(str)(info.name) 
     src = "?"
-    if info.short_src != nil src = to(str)(info.short_src) end
+    if info.short_src != nil src = to(str)(info.short_src) 
     line = src
     if info.currentline != nil and tonumber(info.currentline) > 0
         line = src .. ":" .. to(str)(info.currentline)
-    end
     print("  " .. magenta(italic(fname .. "()")) .. "  " .. underline(line))
     i += 1
-end

@@ -13,7 +13,6 @@ config_new(): any
         antialiasing = "gray",  # "none", "gray", "lcd"
         hinting = "normal",  # "none", "slight", "normal"
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Glyph
@@ -31,7 +30,6 @@ glyph_new(char: str): any
         bearing_y = 0,
         bitmap = {},
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Font
@@ -46,11 +44,10 @@ font_new(config: any): any
         line_height = 0,
         loaded = false,
     }
-end
 
 font_load(font: any): any
     # Load font with proper metrics
-    if font.config.size == nil font.config.size = 16 end
+    if font.config.size == nil font.config.size = 16 
     
     # Standard font metrics (ascent/descent ratios)
     font.ascender = font.config.size * 0.8:floor()
@@ -65,16 +62,13 @@ font_load(font: any): any
         char = common_chars:sub(i, i)
         font_get_glyph(font, char)
         i += 1
-    end
     
     {ok = true}
-end
 
 font_get_glyph(font: any, char: str): any
     codepoint = char:byte()
     if font.glyphs[codepoint]
         return font.glyphs[codepoint]
-    end
 
     # Generate glyph with character-appropriate metrics
     glyph = glyph_new(char)
@@ -83,22 +77,21 @@ font_get_glyph(font: any, char: str): any
     if codepoint >= 65 and codepoint <= 90
         # Uppercase A-Z: wider
         glyph.width = font.config.size * 0.7:floor()
-    elseif codepoint >= 97 and codepoint <= 122
+    else if codepoint >= 97 and codepoint <= 122
         # Lowercase a-z: medium
         glyph.width = font.config.size * 0.55:floor()
-    elseif codepoint >= 48 and codepoint <= 57
+    else if codepoint >= 48 and codepoint <= 57
         # Digits 0-9: medium-wide
         glyph.width = font.config.size * 0.6:floor()
-    elseif codepoint == 32
+    else if codepoint == 32
         # Space: half width
         glyph.width = font.config.size * 0.3:floor()
-    elseif codepoint == 46 or codepoint == 44 or codepoint == 39
+    else if codepoint == 46 or codepoint == 44 or codepoint == 39
         # Punctuation: narrow
         glyph.width = font.config.size * 0.2:floor()
     else
         # Default: medium
         glyph.width = font.config.size * 0.5:floor()
-    end
     
     glyph.height = font.config.size
     glyph.advance_x = glyph.width + font.config.size * 0.1:floor()
@@ -114,23 +107,17 @@ font_get_glyph(font: any, char: str): any
             # Anti-alias edges
             if x == 1 or x == glyph.width
                 alpha = 200
-            end
             if y == 1 or y == glyph.height
                 alpha = 180
-            end
             # Corners
             if (x == 1 or x == glyph.width) and (y == 1 or y == glyph.height)
                 alpha = 128
-            end
             glyph.bitmap[(y - 1) * glyph.width + x] = alpha
             x += 1
-        end
         y += 1
-    end
 
     font.glyphs[codepoint] = glyph
     glyph
-end
 
 font_measure_text(font: any, text: str): any
     x = 0
@@ -143,15 +130,13 @@ font_measure_text(font: any, text: str): any
         char = text:sub(i, i)
         glyph = font_get_glyph(font, char)
         x += glyph.advance_x
-        if x > max_x max_x = x end
+        if x > max_x max_x = x 
         i += 1
-    end
 
     {
         width = max_x,
         height = max_y,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Text Layout
@@ -165,7 +150,6 @@ layout_new(font: any): any
         cursor_x = 0,
         cursor_y = 0,
     }
-end
 
 layout_add_text(layout: any, text: str): void
     i = 1
@@ -184,23 +168,16 @@ layout_add_text(layout: any, text: str): void
                 y = layout.cursor_y,
             }
             layout.cursor_x += glyph.advance_x
-        end
         i += 1
-    end
-end
 
 layout_get_glyphs(layout: any): any
     glyphs = {}
     for line in layout.lines
         for item in line
             glyphs[glyphs:len() + 1] = item
-        end
-    end
     for item in layout.current_line
         glyphs[glyphs:len() + 1] = item
-    end
     glyphs
-end
 
 layout_get_layout: any:len(): any
     max_x = 0
@@ -208,16 +185,13 @@ layout_get_layout: any:len(): any
         line_width = 0
         for item in line
             line_width += item.glyph.advance_x
-        end
-        if line_width > max_x max_x = line_width end
-    end
-    if layout.cursor_x > max_x max_x = layout.cursor_x end
+        if line_width > max_x max_x = line_width 
+    if layout.cursor_x > max_x max_x = layout.cursor_x 
 
     {
         width = max_x,
         height = layout.cursor_y + layout.font.line_height,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Text Rendering
@@ -235,13 +209,11 @@ render_text(font: any, text: str, x: f64, y: f64, color: any): any
             glyph = glyph.glyph,
             color = color,
         }
-    end
 
     {
         items = render_items,
         size = layout_get_layout:len(),
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

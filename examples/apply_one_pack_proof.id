@@ -103,4 +103,3 @@ main(): void
     # is not this work. Same class as the `duo_g__p` mangling noted above, and
     # it is recorded rather than stepped around silently: a fixture that quietly
     # avoids a defect hides it.
-end

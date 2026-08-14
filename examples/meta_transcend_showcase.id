@@ -19,16 +19,14 @@ Label: { tag: str, id: i64 }
 @comp.define.derive("TripleApi", generate(meta) -> str
     if meta.right != nil
         "/* tensor " .. meta.left.name .. " x " .. meta.mid.name .. " x " .. meta.right.name .. " */\n"
-    elseif meta.left != nil
+    else if meta.left != nil
         "/* pair " .. meta.left.name .. " x " .. meta.right.name .. " */\n"
     else
         acc = ""
         for i = 1, meta:len().fields
             f = meta.fields[i]
             acc = acc .. "static inline void duo_" .. meta.name .. "_mark_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
-        end
         acc
-    end
 end)
 
 @comp.transcend("HasXY", TripleApi, "HasTag", "HasId")

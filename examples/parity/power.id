@@ -4,11 +4,9 @@
 
 concept Has1
     x: i64
-end
 type T1 = { x: i64 }
 sig(t): str
     t.name .. "\n"
-end
 
 TOP = @comp.power("Has1", sig)
 NESTED = @comp.map("q", fun(seed)
@@ -16,5 +14,4 @@ NESTED = @comp.map("q", fun(seed)
 end)
 parity(): str
     @comp.power("Has1", sig)
-end
 BLOCK = parity()

@@ -1,123 +1,103 @@
 # maps — map (table) helper utilities (mirrors Go 1.21 maps package)
 
 clone(m: any): any
-    if m == nil return {} end
+    if m == nil return {} 
     out = {}
     for k, v in m
         out[k] = v
-    end
     out
-end
 
 copy(dst: any, src: any): i64
-    if dst == nil return 0 end
-    if src == nil return 0 end
+    if dst == nil return 0 
+    if src == nil return 0 
     count = 0
     for k, v in src
         dst[k] = v
         count += 1
-    end
     count
-end
 
 delete(m: any, k: any): any
-    if m == nil return nil end
+    if m == nil return nil 
     v = m[k]
     m[k] = nil
     v
-end
 
 equal(m1: any, m2: any): bool
-    if m1 == nil and m2 == nil return true end
-    if m1 == nil or m2 == nil return false end
+    if m1 == nil and m2 == nil return true 
+    if m1 == nil or m2 == nil return false 
     c1 = 0
-    for _k, _v in m1 do c1 += 1 end
+    for _k, _v in m1 do c1 += 1 
     c2 = 0
-    for _k, _v in m2 do c2 += 1 end
-    if c1 != c2 return false end
+    for _k, _v in m2 do c2 += 1 
+    if c1 != c2 return false 
     for k, v in m1
-        if m2[k] != v return false end
-    end
+        if m2[k] != v return false 
     true
-end
 
 equal_func(m1: any, m2: any, eq: any): bool
-    if m1 == nil and m2 == nil return true end
-    if m1 == nil or m2 == nil return false end
+    if m1 == nil and m2 == nil return true 
+    if m1 == nil or m2 == nil return false 
     c1 = 0
-    for _k, _v in m1 do c1 += 1 end
+    for _k, _v in m1 do c1 += 1 
     c2 = 0
-    for _k, _v in m2 do c2 += 1 end
-    if c1 != c2 return false end
+    for _k, _v in m2 do c2 += 1 
+    if c1 != c2 return false 
     for k, v in m1
         v2 = m2[k]
-        if v2 == nil return false end
-        if not eq(v, v2) return false end
-    end
+        if v2 == nil return false 
+        if not eq(v, v2) return false 
     true
-end
 
 keys(m: any): any
-    if m == nil return {} end
+    if m == nil return {} 
     out = {}
-    for k, _ in m do out[out:len() + 1] = k end
+    for k, _ in m do out[out:len() + 1] = k 
     out
-end
 
 values(m: any): any
-    if m == nil return {} end
+    if m == nil return {} 
     out = {}
-    for _, v in m do out[out:len() + 1] = v end
+    for _, v in m do out[out:len() + 1] = v 
     out
-end
 
 entries(m: any): any
-    if m == nil return {} end
+    if m == nil return {} 
     out = {}
-    for k, v in m do out[out:len() + 1] = {key = k, value = v} end
+    for k, v in m do out[out:len() + 1] = {key = k, value = v} 
     out
-end
 
 has(m: any, k: any): bool
-    if m == nil return false end
+    if m == nil return false 
     m[k] != nil
-end
 
 get(m: any, k: any, dflt: any): any
-    if m == nil return dflt end
+    if m == nil return dflt 
     v = m[k]
-    if v == nil return dflt end
+    if v == nil return dflt 
     v
-end
 
 set(m: any, k: any, v: any): any
-    if m == nil m = {} end
+    if m == nil m = {} 
     m[k] = v
     m
-end
 
 m: any:len(): i64
-    if m == nil return 0 end
+    if m == nil return 0 
     c = 0
-    for _k, _v in m do c += 1 end
+    for _k, _v in m do c += 1 
     c
-end
 
 merge(dst: any, src: any): any
-    if dst == nil dst = {} end
-    if src == nil return dst end
+    if dst == nil dst = {} 
+    if src == nil return dst 
     for k, v in src
-        if dst[k] == nil dst[k] = v end
-    end
+        if dst[k] == nil dst[k] = v 
     dst
-end
 
 merge_overwrite(dst: any, src: any): any
-    if dst == nil dst = {} end
-    if src == nil return dst end
+    if dst == nil dst = {} 
+    if src == nil return dst 
     for k, v in src
         dst[k] = v
-    end
     dst
-end
 

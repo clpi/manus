@@ -4,7 +4,7 @@
 
 # Internal: sort string array in-place.
 std_inspect_sort_strings(arr: any): void
-    if arr == nil return end
+    if arr == nil return 
     n = arr:len()
     i = 1
     while i <= n
@@ -14,21 +14,17 @@ std_inspect_sort_strings(arr: any): void
             arr[j] = arr[j - 1]
             arr[j - 1] = tmp
             j -= 1
-        end
         i += 1
-    end
-end
 
 # Internal: recursive deep hash.
 std_inspect_hash(value: any): str
-    if value == nil return "nil" end
+    if value == nil return "nil" 
     t = type(value)
-    if t != "table" return t .. ":" .. value:to(str) end
+    if t != "table" return t .. ":" .. value:to(str) 
     parts = {}
     ks = {}
     for k, v in value
         ks[ks:len() + 1] = k:to(str)
-    end
     std_inspect_sort_strings(ks)
     i = 1
     # `key`/`val`, not `k`/`v`: those two names are the LOOP VARIABLES of the
@@ -38,41 +34,34 @@ std_inspect_hash(value: any): str
     while i <= ks:len()
         key = ks[i]
         val = value[key:to(i64)]
-        if val == nil val = value[key] end
+        if val == nil val = value[key] 
         # `=` not `..`: this line was a concat EXPRESSION with no assignment,
         # so `parts` never grew and std_inspect_hash returned "{}" for every
         # input. It compiled, and it produced a plausible-looking empty table
         # rather than an error.
         parts[parts:len() + 1] = key .. "=" .. std_inspect_hash(val)
         i += 1
-    end
     "{" .. parts:concat(",") .. "}"
-end
 
 # Internal: recursive to_str with cycle detection.
 std_inspect_to_str(value: any, indent: any, seen: any): str
-    if indent == nil indent = 0 end
-    if seen == nil seen = {} end
-    if value == nil return "nil" end
+    if indent == nil indent = 0 
+    if seen == nil seen = {} 
+    if value == nil return "nil" 
     t = type(value)
     if t == "string"
         return '"' .. value .. '"'
-    end
     if t == "number"
         return value:to(str)
-    end
     if t == "boolean"
-        if value return "true" end
+        if value return "true" 
         return "false"
-    end
     if t == "function"
         return "<function>"
-    end
     if t != "table"
         return value:to(str)
-    end
     ptr = value:to(str)
-    if seen[ptr] != nil return "<circular>" end
+    if seen[ptr] != nil return "<circular>" 
     seen[ptr] = true
     n = value:len()
     if n > 0
@@ -81,19 +70,15 @@ std_inspect_to_str(value: any, indent: any, seen: any): str
         while i <= n
             parts[parts:len() + 1] = std_inspect_to_str(value[i], indent + 1, seen)
             i += 1
-        end
         prefix = "  ":rep(indent)
         inner_prefix = "  ":rep(indent + 1)
         if parts:len() <= 4 and indent < 2
             return "[" .. parts:concat(", ") .. "]"
-        end
         return "[\n" .. inner_prefix .. parts:concat(",\n" .. inner_prefix) .. "\n" .. prefix .. "]"
-    end
     pairs_list = {}
     for k, v in value
         pairs_list[pairs_list:len() + 1] = {k = k, v = v}
-    end
-    if pairs_list:len() == 0 return "{}" end
+    if pairs_list:len() == 0 return "{}" 
     parts = {}
     i = 1
     while i <= pairs_list:len()
@@ -101,114 +86,89 @@ std_inspect_to_str(value: any, indent: any, seen: any): str
         key_str = pair.k:to(str)
         if type(pair.k) == "string"
             key_str = pair.k
-        end
         val_str = std_inspect_to_str(pair.v, indent + 1, seen)
         parts[parts:len() + 1] = key_str .. " = " .. val_str
         i += 1
-    end
     prefix = "  ":rep(indent)
     inner_prefix = "  ":rep(indent + 1)
     if parts:len() <= 3 and indent < 2
         return "{" .. parts:concat(", ") .. "}"
-    end
     return "{\n" .. inner_prefix .. parts:concat(",\n" .. inner_prefix) .. "\n" .. prefix .. "}"
-end
 
 # Internal: recursive diff helper.
 std_inspect_diff(a: any, b: any, prefix: any, diffs: any): void
-    if a == nil and b == nil return end
+    if a == nil and b == nil return 
     if a == nil or b == nil
         if a == nil
             diffs[diffs:len() + 1] = {path = prefix, kind = "added", new = b}
         else
             diffs[diffs:len() + 1] = {path = prefix, kind = "removed", old = a}
-        end
         return
-    end
     if type(a) != type(b)
         diffs[diffs:len() + 1] = {path = prefix, kind = "changed", old = a, new = b}
         return
-    end
     if type(a) != "table"
         if a != b
             diffs[diffs:len() + 1] = {path = prefix, kind = "changed", old = a, new = b}
-        end
         return
-    end
     for k, v in a
         path = k
-        if prefix != "" path = prefix .. "." .. k:to(str) end
+        if prefix != "" path = prefix .. "." .. k:to(str) 
         if b[k] == nil
             diffs[diffs:len() + 1] = {path = path, kind = "removed", old = v}
         else
             std_inspect_diff(v, b[k], path, diffs)
-        end
-    end
     for k, v in b
         if a[k] == nil
             path = k
-            if prefix != "" path = prefix .. "." .. k:to(str) end
+            if prefix != "" path = prefix .. "." .. k:to(str) 
             diffs[diffs:len() + 1] = {path = path, kind = "added", new = v}
-        end
-    end
-end
 
 # to_str: deep-convert any value to a human-readable string.
 to_str(value: any, indent: any, seen: any): str
     std_inspect_to_str(value, indent, seen)
-end
 
 # deep_equal: recursively compare two values for structural equality.
 deep_equal(a: any, b: any): bool
-    if a == b return true end
-    if a == nil or b == nil return false end
-    if type(a) != type(b) return false end
-    if type(a) != "table" return false end
+    if a == b return true 
+    if a == nil or b == nil return false 
+    if type(a) != type(b) return false 
+    if type(a) != "table" return false 
     na = a:len()
     nb = b:len()
-    if na != nb return false end
+    if na != nb return false 
     if na > 0
         i = 1
         while i <= na
-            if not deep_equal(a[i], b[i]) return false end
+            if not deep_equal(a[i], b[i]) return false 
             i += 1
-        end
         for ka, _va in a
             if type(ka) != "number"
-                if not deep_equal(a[ka], b[ka]) return false end
-            end
-        end
+                if not deep_equal(a[ka], b[ka]) return false 
         for kb, _vb in b
-            if a[kb] == nil return false end
-        end
+            if a[kb] == nil return false 
         return true
-    end
     for kc, vc in a
-        if not deep_equal(vc, b[kc]) return false end
-    end
+        if not deep_equal(vc, b[kc]) return false 
     for kd, _vd in b
-        if a[kd] == nil return false end
-    end
+        if a[kd] == nil return false 
     true
-end
 
 # deep_hash: produce a consistent hash of any value.
 deep_hash(value: any): str
     std_inspect_hash(value)
-end
 
 # diff: compare two tables and return a list of differences.
 diff(a: any, b: any, prefix: any): any
-    if prefix == nil prefix = "" end
+    if prefix == nil prefix = "" 
     diffs = {}
     std_inspect_diff(a, b, prefix, diffs)
     diffs
-end
 
 # diff_summary: return a human-readable summary of differences.
 diff_summary(a: any, b: any): str
     diffs = diff(a, b)
-    if diffs:len() == 0 return "no differences" end
+    if diffs:len() == 0 return "no differences" 
     parts = {}
     i = 1
     while i <= diffs:len()
@@ -216,89 +176,74 @@ diff_summary(a: any, b: any): str
         line = d.kind .. " " .. d.path
         if d.kind == "changed"
             line = line .. ": " .. d.old:to(str) .. " -> " .. d.new:to(str)
-        elseif d.kind == "added"
+        else if d.kind == "added"
             line = line .. ": " .. d.new:to(str)
-        elseif d.kind == "removed"
+        else if d.kind == "removed"
             line = line .. ": " .. d.old:to(str)
-        end
         parts[parts:len() + 1] = line
         i += 1
-    end
     to(str)(diffs:len()) .. " difference(s):\n" .. parts:concat("\n")
-end
 
 # type_name: get a descriptive type name for a value.
 type_name(value: any): str
-    if value == nil return "nil" end
+    if value == nil return "nil" 
     t = type(value)
     if t == "table"
         n = value:len()
-        if n > 0 return "array[" .. n:to(str) .. "]" end
+        if n > 0 return "array[" .. n:to(str) .. "]" 
         count = 0
         for _ck, _cv in value
             count += 1
-        end
-        if count > 0 return "table[" .. count:to(str) .. "]" end
+        if count > 0 return "table[" .. count:to(str) .. "]" 
         return "table"
-    end
     return t
-end
 
 # size: return the "size" of a value.
 value: any:len(): i64
-    if value == nil return 0 end
+    if value == nil return 0 
     t = type(value)
-    if t == "string" return value:len() end
+    if t == "string" return value:len() 
     if t == "table"
         n = value:len()
-        if n > 0 return n end
+        if n > 0 return n 
         count = 0
         for _ck, _cv in value
             count += 1
-        end
         return count
-    end
     return 1
-end
 
 # keys_of: return sorted list of keys of a table.
 keys_of(t: any): any
     out = {}
-    if t == nil or type(t) != "table" return out end
+    if t == nil or type(t) != "table" return out 
     for kk, _kv in t
         out[out:len() + 1] = kk:to(str)
-    end
     std_inspect_sort_strings(out)
     out
-end
 
 # summary: return a compact summary of a value's structure.
 summary(value: any): str
-    if value == nil return "nil" end
+    if value == nil return "nil" 
     t = type(value)
-    if t != "table" return t .. ": " .. value:to(str) end
+    if t != "table" return t .. ": " .. value:to(str) 
     n = value:len()
     if n > 0
         return "array(" .. n:to(str) .. " elements)"
-    end
     count = 0
     first_key = nil
     for k, v in value
         count += 1
-        if first_key == nil first_key = k:to(str) end
-    end
-    if count == 0 return "empty table" end
+        if first_key == nil first_key = k:to(str) 
+    if count == 0 return "empty table" 
     if count <= 3
         return "table(" .. count:to(str) .. " keys: " .. first_key .. " ...)"
-    end
     return "table(" .. count:to(str) .. " keys)"
-end
 
 # caller_info: return info about the calling function.
 caller_info(level: any): any
-    if level == nil level = 2 end
+    if level == nil level = 2 
     info = debug.getinfo(level)
-    if info == nil return nil end
+    if info == nil return nil 
     {
         name = info.name,
         source = info.source,
@@ -306,15 +251,14 @@ caller_info(level: any): any
         currentline = info.currentline,
         what = info.what
     }
-end
 
 # stack_trace: return a formatted stack trace string.
 #   stack_trace(level?, max_depth?, pretty?)
 #   pretty = true => ANSI-colored, icon-signed frames (cyan-underlined
 #   locations, magenta-italic function names, dim caller meta).
 stack_trace(level: any, max_depth: any, pretty: any): str
-    if level == nil level = 2 end
-    if max_depth == nil max_depth = 20 end
+    if level == nil level = 2 
+    if max_depth == nil max_depth = 20 
     color_ok = false
     if pretty
         pcall_ok, env_val = pcall(os.getenv, "NO_COLOR")
@@ -322,8 +266,6 @@ stack_trace(level: any, max_depth: any, pretty: any): str
             color_ok = false
         else
             color_ok = true
-        end
-    end
     if color_ok
         C_RESET  = "\x1b[0m"
         C_DIM    = "\x1b[2m"
@@ -332,24 +274,22 @@ stack_trace(level: any, max_depth: any, pretty: any): str
         C_CYAN   = "\x1b[36m"
         C_MAGENTA= "\x1b[35m"
         C_YELLOW = "\x1b[33m"
-    end
     lines = {}
     i = level
     while i < level + max_depth
         info = debug.getinfo(i, "Snl")
-        if info == nil break end
+        if info == nil break 
         fname = info.name
-        if fname == nil or fname == "" fname = "?" end
+        if fname == nil or fname == "" fname = "?" 
         src = info.short_src
-        if src == nil src = info.source end
-        if src == nil src = "?" end
+        if src == nil src = info.source 
+        if src == nil src = "?" 
         if color_ok
             frame = "  " .. C_DIM .. "↳ " .. C_RESET ..
                     C_MAGENTA .. C_ITALIC .. fname .. "()" .. C_RESET
             loc = src
             if info.currentline and info.currentline > 0
                 loc = src .. C_DIM .. ":" .. C_RESET .. C_YELLOW .. info.currentline:to(str) .. C_RESET
-            end
             frame = frame .. "  " .. C_DIM .. "⟨" .. C_RESET ..
                     C_UNDER .. loc .. C_RESET .. C_DIM .. "⟩" .. C_RESET
         else
@@ -358,11 +298,7 @@ stack_trace(level: any, max_depth: any, pretty: any): str
                 frame = frame .. " [" .. src .. ":" .. info.currentline:to(str) .. "]"
             else
                 frame = frame .. " [" .. src .. "]"
-            end
-        end
         lines[lines:len() + 1] = frame
         i += 1
-    end
     lines:concat("\n")
-end
 

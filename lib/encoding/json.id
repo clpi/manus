@@ -26,15 +26,15 @@ marshal: str = (v: any)
       b = v:byte(i)
       if ch == "\""
         out[out:len() + 1] = "\\\""
-      elseif ch == "\\"
+      else if ch == "\\"
         out[out:len() + 1] = "\\\\"
-      elseif ch == "\n"
+      else if ch == "\n"
         out[out:len() + 1] = "\\n"
-      elseif ch == "\r"
+      else if ch == "\r"
         out[out:len() + 1] = "\\r"
-      elseif ch == "\t"
+      else if ch == "\t"
         out[out:len() + 1] = "\\t"
-      elseif b < 32
+      else if b < 32
         out[out:len() + 1] = "\\u%04x":format(b)
       else
         out[out:len() + 1] = ch
@@ -78,9 +78,9 @@ marshal: str = (v: any)
           b = k:byte(j)
           if ch == "\""
             key_out[key_out:len() + 1] = "\\\""
-          elseif ch == "\\"
+          else if ch == "\\"
             key_out[key_out:len() + 1] = "\\\\"
-          elseif b < 32
+          else if b < 32
             key_out[key_out:len() + 1] = "\\u%04x":format(b)
           else
             key_out[key_out:len() + 1] = ch
@@ -147,13 +147,13 @@ parse_value: any = (p: any)
           esc = p.s:sub(p.pos, p.pos)
           if esc == "n"
             key_out[key_out:len() + 1] = "\n"
-          elseif esc == "t"
+          else if esc == "t"
             key_out[key_out:len() + 1] = "\t"
-          elseif esc == "r"
+          else if esc == "r"
             key_out[key_out:len() + 1] = "\r"
-          elseif esc == "\""
+          else if esc == "\""
             key_out[key_out:len() + 1] = "\""
-          elseif esc == "\\"
+          else if esc == "\\"
             key_out[key_out:len() + 1] = "\\"
           else
             key_out[key_out:len() + 1] = esc
@@ -226,21 +226,21 @@ parse_value: any = (p: any)
         esc = p.s:sub(p.pos, p.pos)
         if esc == "n"
           out[out:len() + 1] = "\n"
-        elseif esc == "r"
+        else if esc == "r"
           out[out:len() + 1] = "\r"
-        elseif esc == "t"
+        else if esc == "t"
           out[out:len() + 1] = "\t"
-        elseif esc == "\""
+        else if esc == "\""
           out[out:len() + 1] = "\""
-        elseif esc == "\\"
+        else if esc == "\\"
           out[out:len() + 1] = "\\"
-        elseif esc == "/"
+        else if esc == "/"
           out[out:len() + 1] = "/"
-        elseif esc == "b"
+        else if esc == "b"
           out[out:len() + 1] = 8:char()
-        elseif esc == "f"
+        else if esc == "f"
           out[out:len() + 1] = 12:char()
-        elseif esc == "u"
+        else if esc == "u"
           hex = p.s:sub(p.pos + 1, p.pos + 4)
           code = tonumber(hex, 16)
           if code == nil
@@ -325,7 +325,7 @@ marshal_indent: str = (v: any, indent: str)
       if ch == "\\" and i < jstr:len()
         out[out:len() + 1] = jstr:sub(i + 1, i + 1)
         i = i + 2
-      elseif ch == "\""
+      else if ch == "\""
         in_string = false
         i = i + 1
       else
@@ -335,22 +335,22 @@ marshal_indent: str = (v: any, indent: str)
         in_string = true
         out[out:len() + 1] = ch
         i = i + 1
-      elseif ch == "{" or ch == "["
+      else if ch == "{" or ch == "["
         out[out:len() + 1] = ch
         depth = depth + 1
         out[out:len() + 1] = "\n" .. indent:rep(depth)
         i = i + 1
-      elseif ch == "}" or ch == "]"
+      else if ch == "}" or ch == "]"
         depth = depth - 1
         if depth < 0
           depth = 0
         out[out:len() + 1] = "\n" .. indent:rep(depth) .. ch
         i = i + 1
-      elseif ch == ","
+      else if ch == ","
         out[out:len() + 1] = ch
         out[out:len() + 1] = "\n" .. indent:rep(depth)
         i = i + 1
-      elseif ch == ":"
+      else if ch == ":"
         out[out:len() + 1] = ": "
         i = i + 1
       else

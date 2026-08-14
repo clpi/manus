@@ -85,9 +85,7 @@ slurp(path: str): str
     if f
         body = f:read("a")
         f:close()
-    end
     body
-end
 
 spill(path: str, body: str): bool
     f = io.open(path, "w")
@@ -96,9 +94,7 @@ spill(path: str, body: str): bool
         f:write(body)
         f:close()
         done = true
-    end
     done
-end
 
 # `n` copies of `s`. The long-string delimiters need exactly this: the number
 # of `=` signs IS the level.
@@ -108,9 +104,7 @@ tile(s: str, n: i64): str
     while i < n
         acc = "{acc}{s}"
         i += 1
-    end
     acc
-end
 
 lines(s: str): i64
     parts = s:split("\n")
@@ -119,10 +113,7 @@ lines(s: str): i64
         last: str = parts[n]
         if last == ""
             n -= 1
-        end
-    end
     n
-end
 
 # ── The head registry ────────────────────────────────────────────────────────
 
@@ -194,7 +185,6 @@ banner(count: i64): str
     b = "{b} * TSEMIT_CHECK=1 regeneration is byte-identical to the tracked file.\n"
     b = "{b} */\n"
     b
-end
 
 head(count: i64): str
     b: str = banner(count)
@@ -1319,10 +1309,8 @@ longlevel(lv: i64): str
         run: str = tile("=", k)
         body = "{body}, /\\]{run}[^=]/"
         k += 1
-    end
     body = "{body}, /\\]{eqs}[^\\]]/"
     "      seq('[{eqs}[', repeat(choice({body})), ']{eqs}]'),\n"
-end
 
 # One template, two quote characters. The escape class is the quote itself
 # plus the backslash, which is the only thing that differs between them.
@@ -1336,7 +1324,6 @@ quoted(rulename: str, quote: str, wrap: str): str
     b = "{b}      {wrap}{quote}{wrap},\n"
     b = "{b}    )),\n"
     b
-end
 
 tokens(): str
     dq: str = "\""
@@ -1394,7 +1381,6 @@ tokens(): str
         row: str = longlevel(lv)
         b = "{b}{row}"
         lv += 1
-    end
     b = "{b}    )),\n"
     b = "{b}\n"
     b = "{b}    vararg: $ => '{ell}',\n"
@@ -1403,7 +1389,6 @@ tokens(): str
     b = "{b}\n"
     b = "{b}    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,\n"
     b
-end
 
 # ── The operator table ───────────────────────────────────────────────────────
 #
@@ -1422,36 +1407,29 @@ end
 
 spell(): str
     "or and < > <= >= ~= != == in | & ~ << >> |> cat + - * / // % ^"
-end
 
 # Tree-sitter binding power. Tighter binds higher. §2 order, translated:
 # ^ 13 · unary 12 · * / // % 11 · + - 10 · << >> 9 · & 8 · ~ | 7 · cat 6 ·
 # comparisons and `in` 5 · and 4 · or 3 · |> 2.
 level(): str
     "3 4 5 5 5 5 5 5 5 5 7 8 7 9 9 2 6 10 10 11 11 11 11 13"
-end
 
 spec(): str
     "12 11 10 10 10 10 10 10 10 0 8 7 8 6 6 0 9 5 5 4 4 0 4 3"
-end
 
 assoc(): str
     "left left left left left left left left left left left left left left left left left left left left left left left right"
-end
 
 field(row: str, n: i64): str
     parts = row:split(" ")
     got: str = ""
     if n >= 1 and n <= parts:len()
         got = parts[n]
-    end
     got
-end
 
 width(row: str): i64
     parts = row:split(" ")
     #parts
-end
 
 # A note printed immediately above the row it explains.
 opnote(idx: i64): str
@@ -1460,22 +1438,17 @@ opnote(idx: i64): str
         b = "{b}      // `!=` is the SAME token as `~=` in src/lexer.zig (both lex to `.neq`),\n"
         b = "{b}      // and it is the spelling 271 tracked files actually use. Without it\n"
         b = "{b}      // `a != nil` lexed as an unwrap_expression `a!` followed by `= nil`.\n"
-    end
     if idx == 12
         b = "{b}      // `&` (amp) and binary `~` (xor) are in the lexer's token table and were\n"
         b = "{b}      // not in this one; `|` alone was.\n"
-    end
     b
-end
 
 rule(bar: str): str
     dot: str = "."
     out: str = bar
     if bar == "cat"
         out = "{dot}{dot}"
-    end
     out
-end
 
 operators(): str
     sp: str = spell()
@@ -1497,7 +1470,6 @@ operators(): str
         side: str = field(ac, i)
         b = "{b}      prec.{side}({pw}, seq($.expression, '{op}', $.expression)),\n"
         i += 1
-    end
     b = "{b}    ),\n"
     b = "{b}\n"
     ubar: str = tile(dash, 47)
@@ -1514,10 +1486,8 @@ operators(): str
         op: str = field(pre, i)
         b = "{b}      prec(12, seq('{op}', $.expression)),\n"
         i += 1
-    end
     b = "{b}    ),\n"
     b
-end
 
 # ── The tail registry ────────────────────────────────────────────────────────
 
@@ -1553,7 +1523,6 @@ tail(): str
     b = "{b}  return optional(seq(rule, repeat(seq(optional(','), rule)), optional(',')));\n"
     b = "{b}}\n"
     b
-end
 
 # ── The spec cross-check ─────────────────────────────────────────────────────
 #
@@ -1574,11 +1543,8 @@ specrows(body: str): i64
         digit = digit or one == "6" or one == "7" or one == "8" or one == "9"
         if digit and (two:sub(2, 2) == " " or two:sub(2, 2) == "0" or two:sub(2, 2) == "1" or two:sub(2, 2) == "2" or two:sub(2, 2) == "3" or two:sub(2, 2) == "4")
             seen += 1
-        end
         i += 1
-    end
     seen
-end
 
 report(): i64
     sp: str = spell()
@@ -1594,7 +1560,6 @@ report(): i64
         print("  wrong operator, which is the exact defect this table was written to")
         print("  catch. Refusing to emit.")
         bad = 3
-    end
 
     if bad == 0
         body: str = slurp(specpath)
@@ -1603,7 +1568,6 @@ report(): i64
             print("treesitter emit: FAIL — docs/spec/grammar.md yielded 0 precedence rows.")
             print("  The §2 reader is broken, and a broken reader reports agreement.")
             bad = 3
-        end
         if bad == 0
             nrows: str = rows:to(str)
             nops: str = n:to(str)
@@ -1628,19 +1592,12 @@ report(): i64
                             opb: str = field(sp, i + 1)
                             print("  DIVERGENCE  `{opa}` vs `{opb}` — tree-sitter and §2 disagree on which binds tighter")
                             flips += 1
-                        end
-                    end
-                end
                 i += 1
-            end
             nflips: str = flips:to(str)
             nunlisted: str = unlisted:to(str)
             print("  adjacent pairs where §2 and this table disagree: {nflips}")
             print("  adjacent pairs §2 does not list at all: {nunlisted}")
-        end
-    end
     bad
-end
 
 # ── Splice ───────────────────────────────────────────────────────────────────
 
@@ -1660,15 +1617,10 @@ carve(body: str): str
         else
             if inside
                 out = "{out}{row}\n"
-            end
             if at1 > 0
                 inside = true
-            end
-        end
         i += 1
-    end
     out
-end
 
 rulesonly(body: str): str
     rows = body:split("\n")
@@ -1693,7 +1645,7 @@ rulesonly(body: str): str
 envor(name: str, fallback: str): str
     v = os.getenv(name)
     s: str = v:to(str)
-    if s == "" fallback else s end
+    if s == "" fallback else s 
 
 main(): i64
     out: str = envor("TSEMIT_OUT", grammarpath)
@@ -1709,7 +1661,6 @@ main(): i64
     if residue == "" and seed != ""
         residue = slurp(seed)
         source = seed
-    end
     residue = rulesonly(residue)
 
     count: i64 = lines(residue)
@@ -1719,7 +1670,6 @@ main(): i64
     bad: i64 = report()
     if bad != 0
         os.exit(bad)
-    end
 
     body: str = head(count)
     cf: str = conflicts()
@@ -1772,7 +1722,6 @@ main(): i64
         print("  module export, or the residue's conflict list. The emitter is broken,")
         print("  not the grammar.")
         os.exit(3)
-    end
 
     if check == "1"
         onfile: str = slurp(out)
@@ -1787,7 +1736,6 @@ main(): i64
             print("  the file was not regenerated. Run:")
             print("      idol run scripts/treesitter_emit.id")
             os.exit(1)
-        end
     else
         done: bool = spill(out, body)
         if done
@@ -1795,7 +1743,4 @@ main(): i64
         else
             print("treesitter emit: FAIL — could not write {out}")
             os.exit(3)
-        end
-    end
     0
-end

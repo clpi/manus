@@ -4,7 +4,6 @@
 concept HasXY
     x: f64
     y: f64
-end
 
 Vec2: { x: f64, y: f64 }
 Vec3: { x: f64, y: f64, z: f64 }

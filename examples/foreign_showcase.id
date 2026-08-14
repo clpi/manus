@@ -7,7 +7,6 @@
 
 total(): i64
     add(10, 20) + mul(3, 4) + sub(100, 50)
-end
 
 print("=== @foreign showcase ===")
 print("result = " .. to(str)(total()))

@@ -21,14 +21,12 @@ bench_all(): f64
     s += ml.dot_1m()
     s += ml.conv1d()
     return s
-end
 
 @autodiff
 @device(.auto)
 loss_mnist(model, x, target): f64
     pred = NN.forward(model, x)
     return NN.cross_entropy(pred, target)
-end
 
 main()
     print("=== Duo ML Showcase (Mojo-class path) ===")
@@ -79,6 +77,5 @@ main()
 
     print("")
     print("PASS — showcase complete")
-end
 
 main()

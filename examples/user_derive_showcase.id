@@ -6,7 +6,6 @@
     for i = 1, meta:len().fields
         f = meta.fields[i]
         acc = acc .. "    " .. f.type .. " " .. f.name .. ";\n"
-    end
     acc = acc .. "} " .. meta.name .. ";\n"
     acc
 end)
@@ -16,7 +15,6 @@ end)
     for i = 1, meta:len().fields
         f = meta.fields[i]
         acc = acc .. "static inline " .. f.type .. " " .. meta.name .. "_get_" .. f.name .. "(const " .. meta.name .. "* v) { return v->" .. f.name .. "; }\n"
-    end
     acc
 end)
 

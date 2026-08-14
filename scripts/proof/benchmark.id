@@ -8,8 +8,6 @@ rowhash: str = (output: str)
         rid, val = line:match("^RESULT%s+(%S+)%s+(.*)$")
         if rid:len() > 0
             rows[rows:len() + 1] = rid .. " " .. val
-        end
-    end
     rows:sort()
     digest(rows:concat("\n"))
 
@@ -23,7 +21,6 @@ digest: str = (data: str)
     matched = cap:match("(%x+)")
     if matched:len() == 0
         return ""
-    end
     matched
 
 rowcount: i64 = (output: str)
@@ -31,22 +28,18 @@ rowcount: i64 = (output: str)
     for line in output:gmatch("[^\n]+")
         if line:match("^RESULT%s+") != ""
             n += 1
-        end
-    end
     n
 
 intfield: i64 = (text: str, key: str)
     _, _, val = text:find('"' .. key .. '":(%d+)')
     if val:len() == 0
         return 0
-    end
     tonumber(val)
 
 strfield: str = (text: str, key: str)
     _, _, val = text:find('"' .. key .. '":"([^"]+)"')
     if val:len() == 0
         return ""
-    end
     val
 
 emission: any = (path: str)
@@ -63,7 +56,6 @@ artifact: str = (stem: str, native: bool)
     cpath = "/tmp/idol" .. stem .. ".c.proof.json"
     if native and nativepath:exists()
         return nativepath
-    end
     cpath
 
 runout: str = (bin: str)
@@ -71,14 +63,12 @@ runout: str = (bin: str)
     if r.code != 0
         s.echo("run failed: " .. bin)
         os.exit(1)
-    end
     r.output
 
 compile: str = (idol: str, work: str, profile: str, mainpath: str, nativepath: str)
     src = mainpath
     if profile == "direct"
         src = nativepath
-    end
     out = work .. "/bench" .. profile .. ".out"
     s.env_set("BENCH_BACKEND", profile)
     s.env_set("DUO_BENCH_MANIFEST", "backend=" .. profile .. " representation=profile-selected runtime=dynamic")
@@ -86,19 +76,16 @@ compile: str = (idol: str, work: str, profile: str, mainpath: str, nativepath: s
     if !s.ok(cmd)
         s.echo("compile failed: " .. profile)
         os.exit(1)
-    end
     out
 
 copyartifact: str = (work: str, profile: str, mainstem: str, nativestem: str)
     stem = mainstem
     if profile == "direct"
         stem = nativestem
-    end
     src = artifact(stem, profile == "direct")
     if !src:exists()
         s.echo("missing proof artifact: " .. src)
         os.exit(1)
-    end
     dst = work .. "/bench" .. profile .. ".proof.json"
     src:copy(dst)
     dst
@@ -115,7 +102,6 @@ clean = 0
 if work == ""
     work = "/tmp/idolproofbench"
     clean = 1
-end
 mainstem = s.path_stem(mainpath)
 nativestem = s.path_stem(nativepath)
 
@@ -125,7 +111,6 @@ sdk = s.getenv("SDKROOT", s.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/n
 cflags = "-O3 -ffast-math -march=native -flto -lm"
 if sdk != ""
     cflags = cflags .. " -isysroot " .. sdk
-end
 
 s.echo("=== Benchmark proof matrix (Idol-native) ===")
 s.echo("source: " .. mainpath)
@@ -161,16 +146,13 @@ for i = 1, profiles:len()
             fail = 1
         else
             s.echo("OK direct native binary exit 0")
-        end
         hash = digest(proof:read())
         if em.evidenceclass != "direct-native-subset"
             s.echo("FAIL: direct profile must emit direct-native-subset")
             fail = 1
-        end
         if em.boxes != 0
             s.echo("FAIL: direct profile must have zero boxes")
             fail = 1
-        end
     else
         out = runout(bin)
         rc = rowcount(out)
@@ -178,7 +160,6 @@ for i = 1, profiles:len()
         if rc != prof.expect
             s.echo("FAIL: " .. pid .. " emitted " .. tostring(rc) .. " RESULT lines")
             fail = 1
-        end
         if canonical == ""
             canonical = hash
             baseline = pid
@@ -188,12 +169,8 @@ for i = 1, profiles:len()
                 fail = 1
             else
                 s.echo("OK cross-profile semantics match " .. baseline)
-            end
-        end
-    end
     s.echo("emission boxes=" .. tostring(em.boxes) .. " class=" .. em.evidenceclass)
     s.echo("correctness_hash=" .. hash)
-end
 
 summary = work .. "/proofmatrixsummary.json"
 sum = summary:open("w")
@@ -203,11 +180,8 @@ sum:close()
 if fail != 0
     if clean != 0
         work:remove()
-    end
     os.exit(1)
-end
 
 s.echo("PASS: canonical " .. canonical .. "; summary " .. summary)
 if clean != 0
     work:remove()
-end

@@ -4,11 +4,9 @@
 # Helper: simple map function
 map(t, f)
     result = {}
-    for i = 1, t:len() do
+    for i = 1, t:len()
         result[i] = f(t[i])
-    end
     return result
-end
 
 # Test data
 users = {

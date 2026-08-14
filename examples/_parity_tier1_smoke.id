@@ -12,8 +12,6 @@ pick(n: i64): str
     @comp.tabulate(2, fun(i) "x" end)
   else
     @comp.map("p q", fun(t) t end)
-  end
-end
 
 # nested_callback site (match inside tabulate callback chain)
 const grid = @comp.tabulate(2, fun(i)

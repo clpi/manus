@@ -3,7 +3,6 @@
 
 concept HasN
     n: i64
-end
 
 CounterA: { n: i64 }
 CounterB: { n: i64, tag: str }
@@ -24,7 +23,6 @@ end)
 
 registry_line(meta): str
     meta.name .. ";"
-end
 
 @c.emit(@comp.derive("HasN", CountApi))
 
@@ -33,7 +31,6 @@ DERIVED = @comp.derive("HasN", CountApi)
 
 total(): i64
     @c.call("sum_n")
-end
 
 print("=== exponential pipeline showcase ===")
 print("sum 1..100 = " .. to(str)(total()))

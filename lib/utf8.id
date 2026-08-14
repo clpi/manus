@@ -2,23 +2,18 @@
 
 char(codepoint: int): str
     utf8.char(codepoint)
-end
 
 codes(s: str): any
     utf8.codes(s)
-end
 
 codepoint(s: str, i: int, j: int): any
     utf8.codepoint(s, i, j)
-end
 
 s: str, i: int, j: int:len(): any
     utf8.len(s, i, j)
-end
 
 offset(s: str, n: int, i: int): any
     utf8.offset(s, n, i)
-end
 
 # The only export that was not already a top-level binding: an alias onto the
 # host's pattern constant.

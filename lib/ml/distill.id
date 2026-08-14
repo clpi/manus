@@ -15,30 +15,25 @@ distill_config_new(): any
         feature_layers = {},
         feature_weight = 0.5,
     }
-end
 
 distill_config_set_temperature(config: any, temperature: f64): any
     config.temperature = temperature
     config
-end
 
 distill_config_set_alpha(config: any, alpha: f64): any
     config.alpha = alpha
     config
-end
 
 distill_config_set_weights(config: any, soft_weight: f64, hard_weight: f64): any
     config.soft_label_weight = soft_weight
     config.hard_label_weight = hard_weight
     config
-end
 
 distill_config_set_feature_matching(config: any, enabled: bool, layers: any, weight: f64): any
     config.feature_matching = enabled
     config.feature_layers = layers or {}
     config.feature_weight = weight or 0.5
     config
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Distillation Loss
@@ -53,11 +48,8 @@ distill_soft_loss(student_logits: any, teacher_logits: any, temperature: f64): f
     for i = 1, student_probs:len()
         if teacher_probs[i] > 1e-10
             kl += teacher_probs[i] * teacher_probs[i] / student_probs[i]:log()
-        end
-    end
 
     kl * temperature * temperature
-end
 
 distill_hard_loss(student_logits: any, labels: any): f64
     # Cross-entropy loss
@@ -65,17 +57,13 @@ distill_hard_loss(student_logits: any, labels: any): f64
     for i = 1, student_logits:len()
         if labels[i] == 1
             loss -= student_logits[i]:max(1e-10):log()
-        end
-    end
     loss
-end
 
 distill_combined_loss(student_logits: any, teacher_logits: any, labels: any, config: any): f64
     soft_loss = distill_soft_loss(student_logits, teacher_logits, config.temperature)
     hard_loss = distill_hard_loss(student_logits, labels)
 
     config.soft_label_weight * soft_loss + config.hard_label_weight * hard_loss
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Feature Matching Loss
@@ -93,12 +81,8 @@ distill_feature_loss(student_features: any, teacher_features: any): f64
                 diff = student_feat[i] - teacher_feat[i]
                 loss += diff * diff
                 count += 1
-            end
-        end
-    end
 
-    if count > 0 loss / count else 0 end
-end
+    if count > 0 loss / count else 0 
 
 # ═══════════════════════════════════════════════════════════════
 # Attention Transfer
@@ -120,29 +104,22 @@ distill_attention_transfer(student_attention: any, teacher_attention: any): f64
                 diff = student_norm[i] - teacher_norm[i]
                 loss += diff * diff
                 count += 1
-            end
-        end
-    end
 
-    if count > 0 loss / count else 0 end
-end
+    if count > 0 loss / count else 0 
 
 normalize_attention(attention: any): any
     # Normalize attention map to unit norm
     norm = 0
     for v in attention
         norm += v * v
-    end
     norm = norm:sqrt()
 
-    if norm < 1e-10 return attention end
+    if norm < 1e-10 return attention 
 
     normalized = {}
     for i = 1, attention:len()
         normalized[i] = attention[i] / norm
-    end
     normalized
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Layer-wise Distillation
@@ -156,12 +133,10 @@ distill_layer_mapping(student_layers: i64, teacher_layers: i64): any
     i = 0
     while i < student_layers
         teacher_idx = i * ratio:floor() + 1
-        if teacher_idx > teacher_layers teacher_idx = teacher_layers end
+        if teacher_idx > teacher_layers teacher_idx = teacher_layers 
         mapping[i + 1] = teacher_idx
         i += 1
-    end
     mapping
-end
 
 distill_layer_loss(student_outputs: any, teacher_outputs: any, mapping: any): f64
     loss = 0
@@ -176,12 +151,8 @@ distill_layer_loss(student_outputs: any, teacher_outputs: any, mapping: any): f6
                 diff = student_out[i] - teacher_out[i]
                 loss += diff * diff
                 count += 1
-            end
-        end
-    end
 
-    if count > 0 loss / count else 0 end
-end
+    if count > 0 loss / count else 0 
 
 # ═══════════════════════════════════════════════════════════════
 # Self-Distillation
@@ -203,15 +174,11 @@ distill_self_distillation_loss(logits: any, labels: any, temperature: f64): f64
             # Weight by hard label probability (1 for correct class, 0 for others)
             if i == labels
                 soft_loss -= soft_probs[i]:log()
-            end
-        end
         i += 1
-    end
 
     # Combined loss: alpha * soft + (1-alpha) * hard
     alpha = 0.7
     alpha * soft_loss + (1 - alpha) * hard_loss
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Progressive Distillation
@@ -227,12 +194,10 @@ distill_progressive_config(stages: i64): any
         config = distill_config_set_temperature(config, temp)
         configs[i] = config
         i += 1
-    end
     {
         stages = stages,
         configs = configs,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Utility Functions
@@ -242,12 +207,10 @@ softmax_temperature(logits: any, temperature: f64): any
     scaled = {}
     for i = 1, logits:len()
         scaled[i] = logits[i] / temperature
-    end
 
     max_logit = -1e30
     for v in scaled
-        if v > max_logit max_logit = v end
-    end
+        if v > max_logit max_logit = v 
 
     exp_sum = 0
     probs = {}
@@ -255,13 +218,10 @@ softmax_temperature(logits: any, temperature: f64): any
         exp_val = scaled[i] - max_logit:exp()
         probs[i] = exp_val
         exp_sum += exp_val
-    end
 
     for i = 1, probs:len()
         probs[i] = probs[i] / exp_sum
-    end
     probs
-end
 
 distill_accuracy(student_logits: any, labels: any): f64
     correct = 0
@@ -275,17 +235,12 @@ distill_accuracy(student_logits: any, labels: any): f64
             if student_logits[i][j] > max_val
                 max_val = student_logits[i][j]
                 max_idx = j
-            end
             j += 1
-        end
         if labels[i] == max_idx
             correct += 1
-        end
         total += 1
-    end
 
     total > 0 and correct / total or 0
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

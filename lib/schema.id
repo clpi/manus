@@ -9,39 +9,30 @@
 
 any_type(): any
     {type = "any"}
-end
 
 string(): any
     {type = "string"}
-end
 
 integer(): any
     {type = "integer"}
-end
 
 number(): any
     {type = "number"}
-end
 
 boolean(): any
     {type = "boolean"}
-end
 
 array(item_schema: any): any
     {type = "array", items = item_schema}
-end
 
 map_(val_schema: any): any
     {type = "map", values = val_schema}
-end
 
 optional(inner: any): any
     {type = "optional", inner = inner}
-end
 
 one_of(...variants): any
     {type = "one_of", variants = variants}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Constraint modifiers
@@ -50,27 +41,22 @@ end
 min_length(s: any, n: i64): any
     s.min_length = n
     s
-end
 
 max_length(s: any, n: i64): any
     s.max_length = n
     s
-end
 
 pattern(s: any, pat: str): any
     s.pattern = pat
     s
-end
 
 min_val(s: any, v: any): any
     s.min_val = v
     s
-end
 
 max_val(s: any, v: any): any
     s.max_val = v
     s
-end
 
 enum_(...values): any
     vals = {}
@@ -78,13 +64,10 @@ enum_(...values): any
     while i <= values:len()
         vals[vals:len() + 1] = values[i]
         i += 1
-    end
     {type = "enum", values = vals}
-end
 
 shape(fields: any): any
     {type = "shape", fields = fields}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Validation engine
@@ -93,107 +76,81 @@ end
 validate(value: any, schema: any): any
     errors = {}
     ok = validate_into(value, schema, "", errors)
-    if ok return {ok = true, errors = {}} end
+    if ok return {ok = true, errors = {}} 
     {ok = false, errors = errors}
-end
 
 validate_into(value: any, schema: any, path: str, errors: any): bool
-    if schema == nil return true end
+    if schema == nil return true 
     t = schema.type
-    if t == "any" return true end
+    if t == "any" return true 
     if t == "optional"
-        if value == nil return true end
+        if value == nil return true 
         return validate_into(value, schema.inner, path, errors)
-    end
     if value == nil
         errors[errors:len() + 1] = {path = path, message = "required"}
         return false
-    end
     if t == "string"
         if type(value) != "string"
             errors[errors:len() + 1] = {path = path, message = "expected string, got " .. type(value)}
             return false
-        end
         return check_string_constraints(value, schema, path, errors)
-    end
     if t == "integer"
         if type(value) != "number" or value != value:floor()
             errors[errors:len() + 1] = {path = path, message = "expected integer"}
             return false
-        end
         return check_number_constraints(value, schema, path, errors)
-    end
     if t == "number"
         if type(value) != "number"
             errors[errors:len() + 1] = {path = path, message = "expected number"}
             return false
-        end
         return check_number_constraints(value, schema, path, errors)
-    end
     if t == "boolean"
         if type(value) != "boolean"
             errors[errors:len() + 1] = {path = path, message = "expected boolean"}
             return false
-        end
         return true
-    end
     if t == "enum"
         i = 1
         while i <= schema.values:len()
-            if value == schema.values[i] return true end
+            if value == schema.values[i] return true 
             i += 1
-        end
         errors[errors:len() + 1] = {path = path, message = "invalid enum value"}
         return false
-    end
     if t == "array"
         if type(value) != "table"
             errors[errors:len() + 1] = {path = path, message = "expected array"}
             return false
-        end
         ok = true
         i = 1
         while i <= value:len()
             if has(.items)(schema)
                 if not validate_into(value[i], schema.items, path .. "[" .. i:to(str) .. "]", errors)
                     ok = false
-                end
-            end
             i += 1
-        end
         return ok
-    end
     if t == "map"
         if type(value) != "table"
             errors[errors:len() + 1] = {path = path, message = "expected map"}
             return false
-        end
         if has(.values)(schema)
             ok = true
             for k, v in value
                 if not validate_into(v, schema.values, path .. "." .. k:to(str), errors)
                     ok = false
-                end
-            end
             return ok
-        end
         return true
-    end
     if t == "one_of"
         i = 1
         while i <= schema.variants:len()
             sub_errors = {}
-            if validate_into(value, schema.variants[i], path, sub_errors) return true end
+            if validate_into(value, schema.variants[i], path, sub_errors) return true 
             i += 1
-        end
         errors[errors:len() + 1] = {path = path, message = "no matching variant"}
         return false
-    end
     if t == "shape"
         if type(value) != "table"
             errors[errors:len() + 1] = {path = path, message = "expected object"}
             return false
-        end
         ok = true
         for fname, fschema in schema.fields
             fpath = path .. "." .. fname
@@ -201,53 +158,39 @@ validate_into(value: any, schema: any, path: str, errors: any): bool
             if fval == nil and not is_optional(fschema)
                 errors[errors:len() + 1] = {path = fpath, message = "required field missing"}
                 ok = false
-            elseif fval != nil
+            else if fval != nil
                 if not validate_into(fval, fschema, fpath, errors)
                     ok = false
-                end
-            end
-        end
         return ok
-    end
     true
-end
 
 is_optional(s: any): bool
-    if s == nil return false end
+    if s == nil return false 
     s.type == "optional"
-end
 
 check_string_constraints(v: str, s: any, path: str, errors: any): bool
     ok = true
     if has(.min_length)(s) and v:len() < s.min_length
         errors[errors:len() + 1] = {path = path, message = "min length " .. s.min_length:to(str)}
         ok = false
-    end
     if has(.max_length)(s) and v:len() > s.max_length
         errors[errors:len() + 1] = {path = path, message = "max length " .. s.max_length:to(str)}
         ok = false
-    end
     if has(.pattern)(s)
         if v:find(s.pattern, 1, true) == nil
             errors[errors:len() + 1] = {path = path, message = "pattern mismatch"}
             ok = false
-        end
-    end
     ok
-end
 
 check_number_constraints(v: any, s: any, path: str, errors: any): bool
     ok = true
     if has(.min_val)(s) and v < s.min_val
         errors[errors:len() + 1] = {path = path, message = "min value " .. s.min_val:to(str)}
         ok = false
-    end
     if has(.max_val)(s) and v > s.max_val
         errors[errors:len() + 1] = {path = path, message = "max value " .. s.max_val:to(str)}
         ok = false
-    end
     ok
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Convenience
@@ -255,32 +198,25 @@ end
 
 check(value: any, schema: any): bool
     validate(value, schema).ok
-end
 
 errors_str(result: any): str
-    if result.ok return "" end
+    if result.ok return "" 
     parts = {}
     i = 1
     while i <= result.errors:len()
         e = result.errors[i]
         msg = e.path
-        if msg != "" msg = msg .. ": " else msg = "" end
+        if msg != "" msg = msg .. ": " else msg = "" 
         parts[parts:len() + 1] = msg .. e.message
         i += 1
-    end
     parts:concat("; ")
-end
 
 merge(base: any, extension: any): any
     if base.type != "shape" or extension.type != "shape"
         return extension
-    end
     merged = {}
     for k, v in base.fields
         merged[k] = v
-    end
     for k, v in extension.fields
         merged[k] = v
-    end
     shape(merged)
-end

@@ -346,7 +346,6 @@ main: i64 = ()
     if wanted == 0
         print("capability_matrix: FAIL — no .id programs under {root}; the sweep is broken")
         return 3
-    end
 
     # The workers inherit this process's working directory — the repo root,
     # which `find {root}` above already depends on — so a relative compiler
@@ -361,21 +360,17 @@ main: i64 = ()
         rec = std.script.chomp(line)
         if rec:len() > 8
             tally(rec)
-        end
-    end
 
     got = ntotal:to(str)
     want = wanted:to(str)
     if ntotal == 0
         print("capability_matrix: FAIL — 0 records for {want} programs; the sweep is broken")
         return 3
-    end
     # A worker that dies mid-sweep drops its line and every population below it
     # shrinks silently. The denominator is known independently, so check it.
     if ntotal != wanted
         print("capability_matrix: FAIL — {got} records for {want} programs; the sweep lost files")
         return 3
-    end
 
     print("")
     print("  capability matrix over {root}/ (compile_fail excluded)")
@@ -418,7 +413,6 @@ main: i64 = ()
     print("  LADDER INVERSIONS — {inv} reached a rung while failing one below it")
     if inversions != ""
         io.write(inversions)
-    end
     print("")
 
     # Positive controls, one per rung this repo is known to reach. A rung that
@@ -427,23 +421,18 @@ main: i64 = ()
     if nparsed == 0
         print("capability_matrix: FAIL — 0 programs parsed; the parse probe is broken")
         return 3
-    end
     if ncpath == 0
         print("capability_matrix: FAIL — 0 programs took the C path; the probe is broken")
         return 3
-    end
     if nnative == 0
         print("capability_matrix: FAIL — 0 reached direct-native; the probe is broken")
         return 3
-    end
     if nproven == 0
         print("capability_matrix: FAIL — 0 differentially proven; the probe is broken")
         return 3
-    end
     if ncanonical == 0
         print("capability_matrix: FAIL — 0 canonical; the ladder is not wired")
         return 3
-    end
 
     # Ratchets on the two rungs nothing else guards. `native` is
     # native_census's ratchet and is deliberately not re-ratcheted here;
@@ -463,12 +452,9 @@ main: i64 = ()
     if nproven < provenfloor
         print("capability_matrix: FAIL — proven {pn} fell below the ratchet {pf}")
         return 1
-    end
     if nchecked < checkedfloor
         print("capability_matrix: FAIL — checked {cn} fell below the ratchet {cf}")
         return 1
-    end
 
     print("capability_matrix: PASS (proven {pn} >= {pf}, checked {cn} >= {cf})")
     0
-end

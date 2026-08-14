@@ -3,6 +3,5 @@
 block = [[alpha
 beta]]
 # long-string regression ]]
-if block != "alpha\nbeta" then
+if block != "alpha\nbeta"
     x = 1
-end

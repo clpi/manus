@@ -2,4 +2,3 @@ Point: { x: f64, y: f64 }
 main(): i64
     p = Point{ x = 3.0, y = 4.0 }
     return i64(p.x + p.y)
-end
