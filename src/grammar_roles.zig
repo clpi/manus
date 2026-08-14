@@ -97,7 +97,14 @@ pub const rows = blk: {
                 .precedence = 1,
                 .assoc = .right,
             }),
-            .kw_if, .kw_match, .kw_while, .kw_for => row(kind, .{ .kind = kind, .body_start = true }),
+            // `return`, `break`, `continue` and `do` open a body exactly as
+            // `if`/`while`/`for` do. Leaving `return` out made a relation whose
+            // whole body is one `return` fail to be recognised as having a body
+            // at all: `main: i64 = ()` over `return 7` fell through to the
+            // module-top statement path and refused with `mod-top-stmt:ret`,
+            // while the same body with any statement before the `return` was
+            // fine. No control word is more of a statement than another.
+            .kw_if, .kw_match, .kw_while, .kw_for, .kw_return, .kw_break, .kw_continue, .kw_do => row(kind, .{ .kind = kind, .body_start = true }),
             .kw_fun, .kw_function => row(kind, .{ .kind = kind, .compat_only = true, .body_start = true }),
             .kw_local, .kw_const, .kw_let => row(kind, .{ .kind = kind, .compat_only = true }),
             .backtick => row(kind, .{ .kind = kind, .compat_only = true }),
