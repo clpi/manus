@@ -1125,6 +1125,10 @@ pub const LowerCtx = struct {
     graph: *const semantic_graph.SemanticGraph,
     occurrences: *const OccurrenceBridge,
     require_graph_facts: bool,
+    /// Some table in this function is too wide for a select chain, so EVERY
+    /// positional table here is materialized into frame memory. See
+    /// `stmtsBindWideTable` for why the choice is per-function, not per-table.
+    tables_in_memory: bool = false,
     externs: *std.ArrayList(dnir.Extern),
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     /// GAP-056: per-callee ABI slot classes, so a caller marshals f64 arguments
@@ -1285,6 +1289,7 @@ fn lowerFunction(
         },
         .module_consts = module_consts,
         .ret_record = if (findRecordName(records, fd.func.ret_type)) |r| r.name else null,
+        .tables_in_memory = stmtsBindWideTable(fd.func.body.stmts),
     };
     defer ctx.deinit();
 
@@ -2275,6 +2280,67 @@ fn nameIsPositionalTable(ctx: *LowerCtx, name: []const u8) bool {
 }
 
 /// The slot holding a table base address, when `expr` names one.
+/// True when any positional table bound anywhere in `stmts` is wider than the
+/// select chain serves.
+///
+/// One table crossing the threshold decides the representation for EVERY table
+/// in the function, because the two representations must not be mixed. A loop
+/// that both loads from a memory-backed table and stores into a select-chain
+/// one reads a stale index — `x = w(i) ; r(i) = x` kept yielding `w(1)`. That
+/// is a real backend defect independent of this pass, but it was unreachable
+/// while wide tables simply refused to compile, and making them compile is what
+/// exposed it. Choosing one representation per function keeps this change to
+/// what it is meant to be: strictly more programs accepted, none altered.
+fn stmtsBindWideTable(stmts: []const ast.Stmt) bool {
+    for (stmts) |st| {
+        const wide = switch (st) {
+            .local_decl => |d| exprsBindWideTable(d.inits),
+            .global_decl => |d| exprsBindWideTable(d.inits),
+            .const_decl => |d| exprIsWideTable(d.val),
+            .assign => |a| exprsBindWideTable(a.values),
+            .do_block => |b| stmtsBindWideTable(b.body.stmts),
+            .while_loop => |w| stmtsBindWideTable(w.body.stmts),
+            .repeat_loop => |r| stmtsBindWideTable(r.body.stmts),
+            .num_for => |f| stmtsBindWideTable(f.body.stmts),
+            .gen_for => |f| stmtsBindWideTable(f.body.stmts),
+            .if_stmt => |f| blk: {
+                if (stmtsBindWideTable(f.then.stmts)) break :blk true;
+                for (f.elseifs) |ei| if (stmtsBindWideTable(ei.body.stmts)) break :blk true;
+                break :blk if (f.else_body) |eb| stmtsBindWideTable(eb.stmts) else false;
+            },
+            else => false,
+        };
+        if (wide) return true;
+    }
+    return false;
+}
+
+fn exprsBindWideTable(exprs: []const *ast.Expr) bool {
+    for (exprs) |e| if (exprIsWideTable(e)) return true;
+    return false;
+}
+
+fn exprIsWideTable(expr: *const ast.Expr) bool {
+    if (expr.* != .table) return false;
+    var n: i64 = 0;
+    for (expr.table.fields) |fld| {
+        if (fld != .positional) return false;
+        n += 1;
+    }
+    return n > select_chain_max;
+}
+
+/// Widest table whose variable-index access still lowers as a select chain.
+///
+/// A register-exploded table answers `t(i)` with one compare-and-select per
+/// element, so the chain is O(len) instructions for a single access. That is a
+/// win while the table is small — no memory traffic at all — and a loss once it
+/// is not. Past this width both access paths materialize the table into frame
+/// memory and issue one scaled load/store instead, which is also what lifts the
+/// old order-8 ceiling on `rec`: nothing about the recurrence needed 8, the
+/// coefficients simply had nowhere wider to live.
+const select_chain_max: i64 = 32;
+
 fn ptrSlotOf(ctx: *LowerCtx, expr: *const ast.Expr) ?u32 {
     if (expr.* != .name) return null;
     const slot = ctx.locals.get(expr.name.ident) orelse return null;
@@ -2691,6 +2757,7 @@ fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, a
 /// milestone. Constant indexing is the slice that fits the proven subset today.
 fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
     if (table.* != .table) return bail(ctx.diagnostic, @src());
+    if (ctx.tables_in_memory) return lowerPositionalTableIntoMemory(ctx, name, table);
     const t_slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), t_slot);
     var idx: usize = 1;
@@ -2714,6 +2781,63 @@ fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const as
     try ctx.locals.put(ctx.alloc, len_key, len_slot);
     try ctx.emit(.{ .op = .store_local, .result = len_slot, .lhs = .{ .i64 = @intCast(idx - 1) }, .ty = .any });
     try ctx.table_lens.put(ctx.alloc, len_slot, @intCast(idx - 1));
+
+    // Wider than the select chain pays for: move it to frame memory NOW, at the
+    // binding, so every access lowers to one scaled load/store.
+    //
+    // It has to happen here rather than at the first dynamic access, because
+    // materialization emits `alloc_slots` plus a copy from the element
+    // registers, and an access site is routinely inside a loop — emitting it
+    // there re-runs the copy every iteration and silently restores the table to
+    // its initial value, discarding all prior writes. That is exactly what a
+    // first attempt did: orders 17+ stopped bailing and started returning wrong
+    // answers. The binding executes once, so this placement cannot.
+}
+
+/// The same binding, built straight into frame memory.
+///
+/// Going through the element registers first and copying afterwards (what
+/// `materializeTableSlots` does for a table that only later turns out to need a
+/// base pointer) costs one live register per element. At the widths this path
+/// exists to serve that is hundreds of them, and the backend correctly refused
+/// with DNB003 register pressure. Here the element value is stored to its slot
+/// and dropped, so a table of any width costs a constant number of registers.
+fn lowerPositionalTableIntoMemory(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
+    var len: i64 = 0;
+    for (table.table.fields) |fld| {
+        if (fld != .positional) return bail(ctx.diagnostic, @src());
+        len += 1;
+    }
+    if (len <= 0 or len > 4096) return bail(ctx.diagnostic, @src());
+
+    const base = ctx.freshTemp();
+    try ctx.emit(.{ .op = .alloc_slots, .result = base, .lhs = .{ .i64 = len } });
+
+    var i: i64 = 1;
+    for (table.table.fields) |fld| {
+        const v = try lowerExpr(ctx, fld.positional);
+        try ctx.emit(.{
+            .op = .store_index,
+            .ty = .i64,
+            .lhs = .{ .temp = base },
+            .rhs = .{ .i64 = i },
+            .third = v,
+        });
+        i += 1;
+    }
+
+    // Bound after the initializers, so an element expression naming the table
+    // resolves to whatever it meant before this binding rather than to the
+    // half-filled region being built here.
+    try ctx.ptr_slots.put(ctx.alloc, base, {});
+    try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), base);
+
+    // `#t` still folds to a constant; the length never needs memory.
+    const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{name});
+    const len_slot = ctx.freshTemp();
+    try ctx.locals.put(ctx.alloc, len_key, len_slot);
+    try ctx.emit(.{ .op = .store_local, .result = len_slot, .lhs = .{ .i64 = len }, .ty = .any });
+    try ctx.table_lens.put(ctx.alloc, len_slot, len);
 }
 
 /// gap[063] — `abort()` when a dynamic index leaves a register-exploded table's
@@ -2805,7 +2929,9 @@ fn lowerIndexAssignTarget(
     defer ctx.alloc.free(len_key);
     const len_slot = ctx.locals.get(len_key) orelse return bail(ctx.diagnostic, @src());
     const len = ctx.table_lens.get(len_slot) orelse return bail(ctx.diagnostic, @src());
-    if (len == 0 or len > 32) return bail(ctx.diagnostic, @src());
+    // A table wider than this is materialized into memory at its BINDING, so it
+    // reaches the `ptrSlotOf` path above and never arrives here.
+    if (len == 0 or len > select_chain_max) return bail(ctx.diagnostic, @src());
 
     // Evaluate index and value once, before any store, so a select-chain cannot
     // re-run side effects per candidate slot.
@@ -2856,7 +2982,9 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
     defer ctx.alloc.free(len_key);
     const len_slot = ctx.locals.get(len_key) orelse return bail(ctx.diagnostic, @src());
     const len = ctx.table_lens.get(len_slot) orelse return bail(ctx.diagnostic, @src());
-    if (len == 0 or len > 32) return bail(ctx.diagnostic, @src());
+    // As on the write side: wide tables are memory-backed from their binding and
+    // resolve through `ptrSlotOf` before reaching this chain.
+    if (len == 0 or len > select_chain_max) return bail(ctx.diagnostic, @src());
 
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
