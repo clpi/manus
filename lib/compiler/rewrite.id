@@ -25,27 +25,18 @@ global C = compiler.comptime
 # The registry. One row per transformation; adding one is a table entry, not a
 # new pass and !a new call site in a driver.
 names: str = ()
-    "|fold_constants|"
-end
+  "|fold_constants|"
 
 describe: str = (name: str)
-    if name == "fold_constants"
-        return "replace a closed integer expression with its value; "
-            .. "requires: none; produces: literal; invalidates: nothing"
-    end
-    ""
-end
+  if name == "fold_constants"
+    return "replace a closed integer expression with its value; " .. "requires: none; produces: literal; invalidates: nothing"
+  ""
 
 _is_digit: bool = (c: i64)
-    c >= 48 and c <= 57
-end
+  c >= 48 and c <= 57
 
 _is_expr_byte: bool = (c: i64)
-    _is_digit(c) or c == 32 or c == 43 or c == 45 or c == 42 or c == 47
-        or c == 37 or c == 94 or c == 38 or c == 124 or c == 126
-        or c == 60 or c == 62 or c == 40 or c == 41 or c == 120 or c == 88
-        or (c >= 97 and c <= 102) or (c >= 65 and c <= 70)
-end
+  _is_digit(c) or c == 32 or c == 43 or c == 45 or c == 42 or c == 47 or c == 37 or c == 94 or c == 38 or c == 124 or c == 126 or c == 60 or c == 62 or c == 40 or c == 41 or c == 120 or c == 88 or c >= 97 and c <= 102 or c >= 65 and c <= 70
 
 # Constant folding over a source string.
 #
@@ -56,111 +47,93 @@ end
 # its value ONLY when the replacement folds to the same number — the rewrite's
 # own legality proof, checked per site rather than argued once.
 _fold_once: str = (src: str)
-    n: i64 = src:len()
-    out = ""
-    quote: i64 = 0
-    in_long = false
-    in_comment = false
-    i: i64 = 1
-    while i <= n
-        c: i64 = src:byte(i)
-        if in_comment
-            out = out .. src:sub(i, i)
-            if c == 10
-                in_comment = false
-            end
-            i += 1
-        elseif in_long
-            out = out .. src:sub(i, i)
-            if c == 93 and i + 1 <= n and src:byte(i + 1) == 93
-                out = out .. "]"
-                in_long = false
-                i += 1
-            end
-            i += 1
-        elseif quote != 0
-            out = out .. src:sub(i, i)
-            if c == 92 and i + 1 <= n
-                out = out .. src:sub(i + 1, i + 1)
-                i += 1
-            elseif c == quote
-                quote = 0
-            end
-            i += 1
-        elseif c == 45 and i + 1 <= n and src:byte(i + 1) == 45
-            in_comment = true
-            out = out .. "--"
-            i += 2
-        elseif c == 91 and i + 1 <= n and src:byte(i + 1) == 91
-            in_long = true
-            out = out .. "[["
-            i += 2
-        elseif c == 34 or c == 39
-            quote = c
-            out = out .. src:sub(i, i)
-            i += 1
-        else
-            prev_ok = true
-            if i > 1
-                p2: i64 = src:byte(i - 1)
-                if (p2 >= 97 and p2 <= 122) or (p2 >= 65 and p2 <= 90) or (p2 >= 48 and p2 <= 57) or p2 == 95 or p2 == 46
-                    prev_ok = false
-                end
-            end
-            # NARROWED, deliberately. A run is a candidate only when it is
-            # the whole right-hand side of an assignment: preceded by `= ` and
-            # ending at the newline. Anything looser kept corrupting
-            # lib/encoding/varint.id — the SAFE property caught it three
-            # times and I could not make the general scanner safe by argument.
-            # A transformation that is provably correct on a small shape beats
-            # one that is probably correct on a large one, and the registry and
-            # its proofs are the deliverable; the shape can widen behind them.
-            after_assign = false
-            if i > 2
-                if src:byte(i - 1) == 32 and src:byte(i - 2) == 61
-                    after_assign = true
-                end
-            end
-            starts = (_is_digit(c) or c == 40) and after_assign
-            folded = false
-            if starts and prev_ok
-                e: i64 = i
-                while e <= n and _is_expr_byte(src:byte(e))
-                    e += 1
-                end
-                e -= 1
-                while e > i and src:byte(e) == 32
-                    e -= 1
-                end
-                # and it must end the line, so the run cannot swallow a
-                # trailing comment or a continuation
-                tail_ok = false
-                if e + 1 > n
-                    tail_ok = true
-                elseif src:byte(e + 1) == 10
-                    tail_ok = true
-                end
-                if tail_ok and e > i
-                    cand = src:sub(i, e)
-                    if C.foldable(cand)
-                        v: i64 = C.fold(cand)
-                        rep = v:to(str)
-                        if C.foldable(rep) and C.fold(rep) == v
-                            out = out .. rep
-                            i = e + 1
-                            folded = true
-                        end
-                    end
-                end
-            end
-            if !folded
-                out = out .. src:sub(i, i)
-                i += 1
-            end
-        end
-    end
-    out
-end
+  n: i64 = src:len()
+  out = ""
+  quote: i64 = 0
+  in_long = false
+  in_comment = false
+  i: i64 = 1
+  while i <= n
+    c: i64 = src:byte(i)
+    if in_comment
+      out = out .. src:sub(i, i)
+      if c == 10
+        in_comment = false
+      i = i + 1
+    elseif in_long
+      out = out .. src:sub(i, i)
+      if c == 93 and i + 1 <= n and src:byte(i + 1) == 93
+        out = out .. "]"
+        in_long = false
+        i = i + 1
+      i = i + 1
+    elseif quote != 0
+      out = out .. src:sub(i, i)
+      if c == 92 and i + 1 <= n
+        out = out .. src:sub(i + 1, i + 1)
+        i = i + 1
+      elseif c == quote
+        quote = 0
+      i = i + 1
+    elseif c == 45 and i + 1 <= n and src:byte(i + 1) == 45
+      in_comment = true
+      out = out .. "--"
+      i = i + 2
+    elseif c == 91 and i + 1 <= n and src:byte(i + 1) == 91
+      in_long = true
+      out = out .. "[["
+      i = i + 2
+    elseif c == 34 or c == 39
+      quote = c
+      out = out .. src:sub(i, i)
+      i = i + 1
+    else
+      prev_ok = true
+      if i > 1
+        p2: i64 = src:byte(i - 1)
+        if p2 >= 97 and p2 <= 122 or p2 >= 65 and p2 <= 90 or p2 >= 48 and p2 <= 57 or p2 == 95 or p2 == 46
+          prev_ok = false
+      # NARROWED, deliberately. A run is a candidate only when it is
+      # the whole right-hand side of an assignment: preceded by `= ` and
+      # ending at the newline. Anything looser kept corrupting
+      # lib/encoding/varint.id — the SAFE property caught it three
+      # times and I could not make the general scanner safe by argument.
+      # A transformation that is provably correct on a small shape beats
+      # one that is probably correct on a large one, and the registry and
+      # its proofs are the deliverable; the shape can widen behind them.
+      after_assign = false
+      if i > 2
+        if src:byte(i - 1) == 32 and src:byte(i - 2) == 61
+          after_assign = true
+      starts = (_is_digit(c) or c == 40) and after_assign
+      folded = false
+      if starts and prev_ok
+        e: i64 = i
+        while e <= n and _is_expr_byte(src:byte(e))
+          e = e + 1
+        e = e - 1
+        while e > i and src:byte(e) == 32
+          e = e - 1
+        # and it must end the line, so the run cannot swallow a
+        # trailing comment or a continuation
+        tail_ok = false
+        if e + 1 > n
+          tail_ok = true
+        elseif src:byte(e + 1) == 10
+          tail_ok = true
+        if tail_ok and e > i
+          cand = src:sub(i, e)
+          if C.foldable(cand)
+            v: i64 = C.fold(cand)
+            rep = v:to(str)
+            if C.foldable(rep) and C.fold(rep) == v
+              out = out .. rep
+              i = e + 1
+              folded = true
+      if not folded
+        out = out .. src:sub(i, i)
+        i = i + 1
+  out
 
 # Run to a FIXED POINT. One pass is not idempotent, and the reason is
 # legitimate rather than a bug in the scanner: folding a sub-expression can
@@ -172,22 +145,17 @@ end
 # Bounded, so a transformation that oscillates terminates instead of hanging —
 # the same discipline as the parser's no-progress guard.
 fold_constants: str = (src: str)
-    cur = src
-    round: i64 = 0
-    while round < 8
-        nxt = _fold_once(cur)
-        if nxt == cur
-            return cur
-        end
-        cur = nxt
-        round += 1
-    end
-    cur
-end
+  cur = src
+  round: i64 = 0
+  while round < 8
+    nxt = _fold_once(cur)
+    if nxt == cur
+      return cur
+    cur = nxt
+    round = round + 1
+  cur
 
 apply: str = (name: str, src: str)
-    if name == "fold_constants"
-        return fold_constants(src)
-    end
-    src
-end
+  if name == "fold_constants"
+    return fold_constants(src)
+  src

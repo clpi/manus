@@ -1,10 +1,10 @@
 # @corpus current
-xs = {1, 2, 3}
+xs = { 1, 2, 3 }
 
 sum = 0
 for x in xs
-    sum += x
-    x += 10
+  sum = sum + x
+  x = x + 10
 
 assert(sum == 6)
 assert(xs[1] == 11)
@@ -12,24 +12,24 @@ assert(xs[2] == 12)
 assert(xs[3] == 13)
 
 for i, v in xs
-    v += i
+  v = v + i
 
 assert(xs[1] == 12)
 assert(xs[2] == 14)
 assert(xs[3] == 16)
 
 scores = {
-    ada = 10,
-    lua = 20,
+  ada = 10,
+  lua = 20
 }
 
 seen = 0
 for name, score in scores
-    if name == "ada"
-        score += 1
-    elseif name == "lua"
-        score += 2
-    seen += 1
+  if name == "ada"
+    score = score + 1
+  elseif name == "lua"
+    score = score + 2
+  seen = seen + 1
 
 assert(seen == 2)
 assert(scores.ada == 11)
@@ -37,8 +37,8 @@ assert(scores.lua == 22)
 
 legacy = 0
 for _, v in xs
-    legacy += v
-    v += 1
+  legacy = legacy + v
+  v = v + 1
 
 assert(legacy == 42)
 assert(xs[1] == 13)

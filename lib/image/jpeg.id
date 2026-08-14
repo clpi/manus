@@ -2,130 +2,119 @@
 # Parses JPEG headers for real dimensions, components, and quantization tables.
 # Pixel decoding uses a simplified IDCT approximation (not full ITU-T T.81).
 
-read_u16(s: str, off: i64): i64
-    (s:byte(off) * 256 + s:byte(off + 1)) % 65536
-end
+read_u16: i64 = (s: str, off: i64)
+  (s:byte(off) * 256 + s:byte(off + 1)) % 65536
 
-decode_header(data: str): any
-    if data == nil return nil end
-    if data:byte(1) != 0xFF or data:byte(2) != 0xD8
-        return nil
-    end
-    off = 3
-    info = {
-        width = 0, height = 0, components = 0, precision = 8,
-        quant_tables = {}, huff_tables = {}, sos_data = nil,
-        frame_marker = 0xC0,
-    }
-    while off + 1 <= data:len()
-        if data:byte(off) != 0xFF break end
-        marker = data:byte(off + 1)
-        if marker == 0xD9 break end
-        if marker == 0x00 or (marker >= 0xD0 and marker <= 0xD7)
-            off += 2
-        else
-            seg_len = read_u16(data, off + 2)
-            if marker == 0xC0 or marker == 0xC1 or marker == 0xC2
-                info.precision = data:byte(off + 4)
-                info.height = read_u16(data, off + 5)
-                info.width = read_u16(data, off + 7)
-                info.components = data:byte(off + 9)
-                info.frame_marker = marker
-            elseif marker == 0xDB
-                # Quantization table
-                table_id = data:byte(off + 4) & 0x0F
-                qt = {}
-                qi = 1
-                while qi <= 64
-                    qt[qi] = data:byte(off + 5 + qi - 1)
-                    qi += 1
-                end
-                info.quant_tables[table_id] = qt
-            elseif marker == 0xDA
-                # Start of scan — record offset for later decoding
-                info.sos_data = off + 4
-            end
-            off += 2 + seg_len
-        end
-    end
-    info
-end
+decode_header: any = (data: str)
+  if data == nil
+    return nil
+  if data:byte(1) != 255 or data:byte(2) != 216
+    return nil
+  off = 3
+  info = {
+    width = 0,
+    height = 0,
+    components = 0,
+    precision = 8,
+    quant_tables = {},
+    huff_tables = {},
+    sos_data = nil,
+    frame_marker = 192
+  }
+  while off + 1 <= data:len()
+    if data:byte(off) != 255
+      break
+    marker = data:byte(off + 1)
+    if marker == 217
+      break
+    if marker == 0 or marker >= 208 and marker <= 215
+      off = off + 2
+    else
+      seg_len = read_u16(data, off + 2)
+      if marker == 192 or marker == 193 or marker == 194
+        info.precision = data:byte(off + 4)
+        info.height = read_u16(data, off + 5)
+        info.width = read_u16(data, off + 7)
+        info.components = data:byte(off + 9)
+        info.frame_marker = marker
+      elseif marker == 219
+        # Quantization table
+        table_id = data:byte(off + 4) & 15
+        qt = {}
+        qi = 1
+        while qi <= 64
+          qt[qi] = data:byte(off + 5 + qi - 1)
+          qi = qi + 1
+        info.quant_tables[table_id] = qt
+      elseif marker == 218
+        # Start of scan — record offset for later decoding
+        info.sos_data = off + 4
+      off = off + 2 + seg_len
+  info
 
 # Minimal IDCT approximation for 8x8 block
-idct_8x8(block: any): any
-    # Simple DCT-II inverse using direct formula (not optimized)
-    result = {}
-    for y = 0, 7
-        for x = 0, 7
-            sum = 0.0
-            for u = 0, 7
-                cu = 1.0
-                if u == 0 cu = 1 / 2:sqrt() end
-                for v = 0, 7
-                    cv = 1.0
-                    if v == 0 cv = 1 / 2:sqrt() end
-                    val = block[u * 8 + v + 1] or 0
-                    sum += cu * cv * val *
-                        (2 * x + 1) * u * math.pi / 16:cos() *
-                        (2 * y + 1) * v * math.pi / 16:cos()
-                end
-            end
-            result[y * 8 + x + 1] = 0:max(255:min(sum / 4 + 128:floor()))
-        end
-    end
-    result
-end
+idct_8x8: any = (block: any)
+  # Simple DCT-II inverse using direct formula (not optimized)
+  result = {}
+  for y = 0, 7
+    for x = 0, 7
+      sum = 0.0
+      for u = 0, 7
+        cu = 1.0
+        if u == 0
+          cu = 1 / 2:sqrt()
+        for v = 0, 7
+          cv = 1.0
+          if v == 0
+            cv = 1 / 2:sqrt()
+          val = block[u * 8 + v + 1] or 0
+          sum = sum + cu * cv * val * (2 * x + 1) * u * math.pi / 16:cos() * (2 * y + 1) * v * math.pi / 16:cos()
+      result[y * 8 + x + 1] = 0:max(255:min(sum / 4 + 128:floor()))
+  result
 
-decode(data: str): any
-    info = decode_header(data)
-    if info == nil return nil end
-    if info.width == 0 or info.height == 0 return nil end
-    img = image.new_rgba(image.rect(0, 0, info.width, info.height))
-
-    # Decode MCU blocks using simplified approach
-    # For baseline JPEG: try to extract entropy-coded data after SOS marker
-    if info.sos_data and info.sos_data < data:len()
-        # Read entropy-coded segment (simplified: extract raw bytes as pseudo-pixels)
-        entropy_start = info.sos_data
-        entropy_len = data:len() - entropy_start - 2  # minus EOI
-        if entropy_len > 0
-            # Generate a procedural decode from the entropy data
-            # This is a visual approximation — not a correct JPEG decode
-            for y = 0, info.height - 1
-                for x = 0, info.width - 1
-                    byte_off = entropy_start + (y * info.width + x) % entropy_len
-                    r = data:byte(byte_off) or 128
-                    g = data:byte(byte_off + 1) or 128
-                    b = data:byte(byte_off + 2) or 128
-                    c = image.color.rgba(r * 257, g * 257, b * 257, 65535)
-                    image.img_set(img, x, y, c)
-                end
-            end
-        else
-            # No entropy data — fill with gray
-            for y = 0, info.height - 1
-                for x = 0, info.width - 1
-                    c = image.color.rgba(32768, 32768, 32768, 65335)
-                    image.img_set(img, x, y, c)
-                end
-            end
-        end
+decode: any = (data: str)
+  info = decode_header(data)
+  if info == nil
+    return nil
+  if info.width == 0 or info.height == 0
+    return nil
+  img = image.new_rgba(image.rect(0, 0, info.width, info.height))
+  
+# Decode MCU blocks using simplified approach
+  # For baseline JPEG: try to extract entropy-coded data after SOS marker
+  if info.sos_data and info.sos_data < data:len()
+    # Read entropy-coded segment (simplified: extract raw bytes as pseudo-pixels)
+    entropy_start = info.sos_data
+    # minus EOI
+    entropy_len = data:len() - entropy_start - 2
+    if entropy_len > 0
+      # Generate a procedural decode from the entropy data
+      # This is a visual approximation — not a correct JPEG decode
+      for y = 0, info.height - 1
+        for x = 0, info.width - 1
+          byte_off = entropy_start + (y * info.width + x) % entropy_len
+          r = data:byte(byte_off) or 128
+          g = data:byte(byte_off + 1) or 128
+          b = data:byte(byte_off + 2) or 128
+          c = image.color.rgba(r * 257, g * 257, b * 257, 65535)
+          image.img_set(img, x, y, c)
     else
-        # No SOS marker — fill with gray
-        for y = 0, info.height - 1
-            for x = 0, info.width - 1
-                c = image.color.rgba(32768, 32768, 32768, 65335)
-                image.img_set(img, x, y, c)
-            end
-        end
-    end
-
-    {
-        image = img,
-        width = info.width,
-        height = info.height,
-        components = info.components,
-        precision = info.precision,
-    }
-end
-
+      # No entropy data — fill with gray
+      for y = 0, info.height - 1
+        for x = 0, info.width - 1
+          c = image.color.rgba(32768, 32768, 32768, 65335)
+          image.img_set(img, x, y, c)
+  else
+    # No SOS marker — fill with gray
+    for y = 0, info.height - 1
+      for x = 0, info.width - 1
+        c = image.color.rgba(32768, 32768, 32768, 65335)
+        image.img_set(img, x, y, c)
+  
+{
+    image = img,
+    width = info.width,
+    height = info.height,
+    components = info.components,
+    precision = info.precision
+  }

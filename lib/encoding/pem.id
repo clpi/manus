@@ -3,48 +3,42 @@
 
 line_width = 64
 
-encode(b: any): str
-    data = b.bytes
-    typ = b.type
-    b64 = std.base64.encode(data)
-    lines = {}
-    lines[lines:len() + 1] = "-----BEGIN " .. typ .. "-----"
-    i = 1
-    while i <= b64:len()
-        chunk = b64:sub(i, i + line_width - 1)
-        lines[lines:len() + 1] = chunk
-        i += line_width
-    end
-    lines[lines:len() + 1] = "-----END " .. typ .. "-----"
-    lines:concat("\n")
-end
+encode: str = (b: any)
+  data = b.bytes
+  typ = b.type
+  b64 = std.base64.encode(data)
+  lines = {}
+  lines[lines:len() + 1] = "-----BEGIN " .. typ .. "-----"
+  i = 1
+  while i <= b64:len()
+    chunk = b64:sub(i, i + line_width - 1)
+    lines[lines:len() + 1] = chunk
+    i = i + line_width
+  lines[lines:len() + 1] = "-----END " .. typ .. "-----"
+  lines:concat("\n")
 
-decode(data: str): any
-    if data == nil return nil end
-    begin_marker = nil
-    end_marker = nil
-    typ = nil
-    b64_lines = {}
-    for line in data:gmatch("[^\n]+")
-        trimmed = line:trim()
-        if trimmed:sub(1, 11) == "-----BEGIN "
-            typ = trimmed:sub(12, trimmed:len() - 5)
-            begin_marker = trimmed
-        elseif trimmed:sub(1, 9) == "-----END "
-            end_marker = trimmed
-        elseif begin_marker != nil and end_marker == nil
-            if trimmed:len() > 0
-                b64_lines[b64_lines:len() + 1] = trimmed
-            end
-        end
-    end
-    if typ == nil return nil end
-    b64_data = b64_lines:concat()
-    bytes = std.base64.decode(b64_data)
-    return {type = typ, headers = {}, bytes = bytes}
-end
+decode: any = (data: str)
+  if data == nil
+    return nil
+  begin_marker = nil
+  end_marker = nil
+  typ = nil
+  b64_lines = {}
+  for line in data:gmatch("[^\n]+")
+    trimmed = line:trim()
+    if trimmed:sub(1, 11) == "-----BEGIN "
+      typ = trimmed:sub(12, trimmed:len() - 5)
+      begin_marker = trimmed
+    elseif trimmed:sub(1, 9) == "-----END "
+      end_marker = trimmed
+    elseif begin_marker != nil and end_marker == nil
+      if trimmed:len() > 0
+        b64_lines[b64_lines:len() + 1] = trimmed
+  if typ == nil
+    return nil
+  b64_data = b64_lines:concat()
+  bytes = std.base64.decode(b64_data)
+  return { type = typ, headers = {}, bytes = bytes }
 
-new(typ: str, data: str): any
-    {type = typ, headers = {}, bytes = data}
-end
-
+new: any = (typ: str, data: str)
+  { type = typ, headers = {}, bytes = data }

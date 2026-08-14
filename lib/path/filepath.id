@@ -7,80 +7,72 @@ separator = "/"
 list_separator = ":"
 
 # IsSeparator reports whether c is a directory separator.
-sep(c: str): bool
-    if c == "/" or c == "\\" return true end
-    false
-end
+sep: bool = (c: str)
+  if c == "/" or c == "\\"
+    return true
+  false
 
 # Clean returns the shortest path name equivalent of path.
-clean(path: str): str
-    if path == "" return "." end
-    # Normalize separators.
-    result = path:gsub("\\", "/")
-    # Handle . and ..
-    parts = {}
-    i = 1
-    len = result:len()
-    while i <= len
-        nxt = result:find("/", i, true)
-        if nxt == nil
-            part = result:sub(i)
-            parts[parts:len() + 1] = part
-            break
-        end
-        part = result:sub(i, nxt - 1)
-        parts[parts:len() + 1] = part
-        i = nxt + 1
-    end
-    stack = {}
-    for _, part in parts
-        if part == ".."
-            stack:remove()
-        elseif part != "." and part != ""
-            stack[stack:len() + 1] = part
-        end
-    end
-    if stack:len() == 0 return "." end
-    stack:concat("/")
-end
+clean: str = (path: str)
+  if path == ""
+    return "."
+  # Normalize separators.
+  result = path:gsub("\\", "/")
+  # Handle . and ..
+  parts = {}
+  i = 1
+  len = result:len()
+  while i <= len
+    nxt = result:find("/", i, true)
+    if nxt == nil
+      part = result:sub(i)
+      parts[parts:len() + 1] = part
+      break
+    part = result:sub(i, nxt - 1)
+    parts[parts:len() + 1] = part
+    i = nxt + 1
+  stack = {}
+  for _, part in parts
+    if part == ".."
+      stack:remove()
+    elseif part != "." and part != ""
+      stack[stack:len() + 1] = part
+  if stack:len() == 0
+    return "."
+  stack:concat("/")
 
 # Ext returns the file name extension.
-ext(path: str): str
-    dot = path:find("%.")
-    if dot == nil return "" end
-    path:sub(dot)
-end
+ext: str = (path: str)
+  dot = path:find("%.")
+  if dot == nil
+    return ""
+  path:sub(dot)
 
 # Base returns the last element of path.
-base(path: str): str
-    dot = path:len()
-    while dot > 1 and path:sub(dot, dot) == "/"
-        dot -= 1
-    end
-    last = dot
-    while dot > 1 and path:sub(dot - 1, dot - 1) != "/"
-        dot -= 1
-    end
-    path:sub(dot, last)
-end
+base: str = (path: str)
+  dot = path:len()
+  while dot > 1 and path:sub(dot, dot) == "/"
+    dot = dot - 1
+  last = dot
+  while dot > 1 and path:sub(dot - 1, dot - 1) != "/"
+    dot = dot - 1
+  path:sub(dot, last)
 
 # Dir returns the directory part of path.
-dir(path: str): str
-    dot = path:len()
-    while dot > 1 and path:sub(dot, dot) == "/"
-        dot -= 1
-    end
-    while dot > 1 and path:sub(dot - 1, dot - 1) != "/"
-        dot -= 1
-    end
-    if dot <= 1 return "." end
-    path:sub(1, dot - 1)
-end
+dir: str = (path: str)
+  dot = path:len()
+  while dot > 1 and path:sub(dot, dot) == "/"
+    dot = dot - 1
+  while dot > 1 and path:sub(dot - 1, dot - 1) != "/"
+    dot = dot - 1
+  if dot <= 1
+    return "."
+  path:sub(1, dot - 1)
 
 # IsAbs reports whether path is absolute.
-abs(path: str): bool
-    if path:sub(1, 1) == "/" return true end
-    if path:len() >= 2 and path:sub(2, 2) == ":" return true end
-    false
-end
-
+abs: bool = (path: str)
+  if path:sub(1, 1) == "/"
+    return true
+  if path:len() >= 2 and path:sub(2, 2) == ":"
+    return true
+  false

@@ -29,48 +29,42 @@
 # reported separately: nothing requires those files, so counting them would
 # inflate the denominator with code that does not ship.
 
-_is_code(line: str): bool
-    t = line:trim()
-    if t == "" return false end
-    if t:sub(1, 2) == "--" return false end
-    true
-end
+_is_code: bool = (line: str)
+  t = line:trim()
+  if t == ""
+    return false
+  if t:sub(1, 2) == "--"
+    return false
+  true
 
 # Returns "<code>|<derived>" for one file's text. Both counters walk the same
 # lines in the same pass so a marker can never be counted without its body.
-_scan(text: str): str
-    code = 0
-    derived = 0
-    inside = false
-    for _i, line in text:split("\n")
-        t = line:trim()
-        if t:match("^%-%- derived%(") != nil
-            inside = true
-        elseif t == "-- derived end"
-            inside = false
-        elseif _is_code(line)
-            code += 1
-            if inside
-                derived += 1
-            end
-        end
-    end
-    code:to(str) .. "|" .. derived:to(str)
-end
+_scan: str = (text: str)
+  code = 0
+  derived = 0
+  inside = false
+  for _i, line in text:split("\n")
+    t = line:trim()
+    if t:match("^%-%- derived%(") != nil
+      inside = true
+    elseif t == "-- derived end"
+      inside = false
+    elseif _is_code(line)
+      code = code + 1
+      if inside
+        derived = derived + 1
+  code:to(str) .. "|" .. derived:to(str)
 
-_part(s: str, n: i64): i64
-    i = s:find("|", 1, true)
-    if n == 1
-        return to(i64)(s:sub(1, i - 1))
-    end
-    to(i64)(s:sub(i + 1, s:len()))
-end
+_part: i64 = (s: str, n: i64)
+  i = s:find("|", 1, true)
+  if n == 1
+    return to(i64)(s:sub(1, i - 1))
+  to(i64)(s:sub(i + 1, s:len()))
 
 # A file's marker-free line count, used to report what the projection would
 # have to cover. Kept separate from _scan so the two can disagree loudly.
-_count(path: str): str
-    _scan(script.fs_read(path))
-end
+_count: str = (path: str)
+  _scan(script.fs_read(path))
 
 # Lines that hard-code a WASM-format fact the canonical descriptor table
 # already carries: an opcode number used as a dispatch predicate. This is the
@@ -94,121 +88,104 @@ end
 # exactly 0 would leave a detector that cannot be told apart from a broken
 # one. Those three are a live floor: see 3, and the scanner is still looking.
 # If this ever reports 0, suspect the scanner before celebrating.
-_format_facts(text: str): i64
-    n = 0
-    inside = false
-    for _i, line in text:split("\n")
-        t = line:trim()
-        if t:match("^%-%- derived%(") != nil
-            inside = true
-        elseif t == "-- derived end"
-            inside = false
-        elseif _is_code(line) and not inside
-            # `==` `>=` `<=` / `!=` / bare `<` `>`. Three alternatives rather
-            # than one because a single class would also admit the bare `=` of
-            # an assignment, which is the case being excluded.
-            if line:match("op%s*[=><]=%s*0?x?%x") != nil
-                n += 1
-            elseif line:match("op%s*!=%s*0?x?%x") != nil
-                n += 1
-            elseif line:match("op%s*[<>]%s*0?x?%x") != nil
-                n += 1
-            end
-        end
-    end
-    n
-end
+_format_facts: i64 = (text: str)
+  n = 0
+  inside = false
+  for _i, line in text:split("\n")
+    t = line:trim()
+    if t:match("^%-%- derived%(") != nil
+      inside = true
+    elseif t == "-- derived end"
+      inside = false
+    elseif _is_code(line) and not inside
+      # `==` `>=` `<=` / `!=` / bare `<` `>`. Three alternatives rather
+      # than one because a single class would also admit the bare `=` of
+      # an assignment, which is the case being excluded.
+      if line:match("op%s*[=><]=%s*0?x?%x") != nil
+        n = n + 1
+      elseif line:match("op%s*!=%s*0?x?%x") != nil
+        n = n + 1
+      elseif line:match("op%s*[<>]%s*0?x?%x") != nil
+        n = n + 1
+  n
 
 # The zero has to be earned. Same counter, a buffer that is KNOWN to contain
 # two derived code lines; anything else means the scanner stopped working and
 # the real reading is untrustworthy.
-_selfcheck(): bool
-    probe = "a = 1\n-- derived(probe.table) begin\nb = 2\nc = 3\n-- derived end\nd = 4\n"
-    r = _scan(probe)
-    if _part(r, 1) != 4
-        print("selfcheck: expected 4 code lines, got " .. to(str)(_part(r, 1)))
-        return false
-    end
-    if _part(r, 2) != 2
-        print("selfcheck: expected 2 derived lines, got " .. to(str)(_part(r, 2)))
-        return false
-    end
+_selfcheck: bool = ()
+  probe = "a = 1\n-- derived(probe.table) begin\nb = 2\nc = 3\n-- derived end\nd = 4\n"
+  r = _scan(probe)
+  if _part(r, 1) != 4
+    print("selfcheck: expected 4 code lines, got " .. to(str)(_part(r, 1)))
+    return false
+  if _part(r, 2) != 2
+    print("selfcheck: expected 2 derived lines, got " .. to(str)(_part(r, 2)))
+    return false
+  
+# The opcode-predicate counter gets the same treatment, and it needs it
+  # more: it was tightened after the projection landed, and a filter added
+  # to make a number go DOWN has to prove it still counts the thing it is
+  # for. Four lines, one of each verdict.
+  facts = "if op == 106\nfop = 0x3800\n-- derived(t) begin\nOP_nop = 1\n-- derived end\nif op >= 40\n"
+  f = _format_facts(facts)
+  if f != 2
+    print("selfcheck: expected 2 opcode predicates in the probe, got " .. f:to(str))
+    print("  (the probe holds one `==`, one `>=`, one assignment, one derived line)")
+    return false
+  true
 
-    # The opcode-predicate counter gets the same treatment, and it needs it
-    # more: it was tightened after the projection landed, and a filter added
-    # to make a number go DOWN has to prove it still counts the thing it is
-    # for. Four lines, one of each verdict.
-    facts = "if op == 106\nfop = 0x3800\n-- derived(t) begin\nOP_nop = 1\n-- derived end\nif op >= 40\n"
-    f = _format_facts(facts)
-    if f != 2
-        print("selfcheck: expected 2 opcode predicates in the probe, got " .. f:to(str))
-        print("  (the probe holds one `==`, one `>=`, one assignment, one derived line)")
-        return false
-    end
-    true
-end
+_pad: str = (s: str, w: i64)
+  out = s
+  while out:len() < w
+    out = out .. " "
+  out
 
-_pad(s: str, w: i64): str
-    out = s
-    while out:len() < w
-        out = out .. " "
-    end
-    out
-end
-
-main(): i64
-    if not _selfcheck()
-        print("*** derived-lines scanner is BROKEN; its 0 would not be evidence ***")
-        return 1
-    end
-    print("selfcheck OK (marker detection proved on a synthetic buffer)")
+main: i64 = ()
+  if not _selfcheck()
+    print("*** derived-lines scanner is BROKEN; its 0 would not be evidence ***")
+    return 1
+  print("selfcheck OK (marker detection proved on a synthetic buffer)")
+  print("")
+  
+built = "src/engine.id"
+  r = _count(built)
+  code = _part(r, 1)
+  derived = _part(r, 2)
+  
+print(_pad("FILE", 30) .. _pad("CODE", 8) .. _pad("DERIVED", 9) .. "SHIPS")
+  print(_pad(built, 30) .. _pad(code:to(str), 8) .. _pad(derived:to(str), 9) .. "yes")
+  
+# Everything under src/ that is NOT required by the built artifact. These
+  # are reported so the number cannot be flattered by counting dead trees
+  # (src/wasm/jit_arm64.id is 701 lines of a register-allocating JIT whose
+  # host modules # runtime.id, init.id # were deleted; it compiles and
+  # runs nowhere).
+  orphan = 0
+  for _i, f in script.fs_glob("src/wasm/*.id")
+    o = _count(f)
+    orphan = orphan + _part(o, 1)
+    print(_pad(f, 30) .. _pad(to(str)(_part(o, 1)), 8) .. _pad(to(str)(_part(o, 2)), 9) .. "no")
+  
+print("")
+  print("shipped code lines   " .. code:to(str))
+  print("derived code lines   " .. derived:to(str))
+  if code > 0
+    print("derived ratio        " .. to(str)(derived * 100 / code) .. "%   (target >= 80%)")
+  print("orphan code lines    " .. orphan:to(str) .. "  (in src/wasm/, required by nothing)")
+  
+facts = _format_facts(script.fs_read(built))
+  print("")
+  print("hand-encoded WASM opcode predicates in the shipped file: " .. facts:to(str))
+  print("  was 241 on 2026-08-08, before the dispatch was projected from")
+  print("  tools/opcodes.id. The residue is 3 known false positives on the")
+  print("  `f64op` width flag, kept as the scanner's floor -- see the comment")
+  print("  on _format_facts. A reading of 0 means the scanner broke.")
+  if facts < 3
+    print("*** opcode-predicate scanner reads below its known floor; it is broken ***")
+    return 1
+  
+if derived * 100 < code * 80
     print("")
-
-    built = "src/engine.id"
-    r = _count(built)
-    code = _part(r, 1)
-    derived = _part(r, 2)
-
-    print(_pad("FILE", 30) .. _pad("CODE", 8) .. _pad("DERIVED", 9) .. "SHIPS")
-    print(_pad(built, 30) .. _pad(code:to(str), 8) .. _pad(derived:to(str), 9) .. "yes")
-
-    # Everything under src/ that is NOT required by the built artifact. These
-    # are reported so the number cannot be flattered by counting dead trees
-    # (src/wasm/jit_arm64.id is 701 lines of a register-allocating JIT whose
-    # host modules # runtime.id, init.id # were deleted; it compiles and
-    # runs nowhere).
-    orphan = 0
-    for _i, f in script.fs_glob("src/wasm/*.id")
-        o = _count(f)
-        orphan += _part(o, 1)
-        print(_pad(f, 30) .. _pad(to(str)(_part(o, 1)), 8) .. _pad(to(str)(_part(o, 2)), 9) .. "no")
-    end
-
-    print("")
-    print("shipped code lines   " .. code:to(str))
-    print("derived code lines   " .. derived:to(str))
-    if code > 0
-        print("derived ratio        " .. to(str)(derived * 100 / code)
-            .. "%   (target >= 80%)")
-    end
-    print("orphan code lines    " .. orphan:to(str) .. "  (in src/wasm/, required by nothing)")
-
-    facts = _format_facts(script.fs_read(built))
-    print("")
-    print("hand-encoded WASM opcode predicates in the shipped file: " .. facts:to(str))
-    print("  was 241 on 2026-08-08, before the dispatch was projected from")
-    print("  tools/opcodes.id. The residue is 3 known false positives on the")
-    print("  `f64op` width flag, kept as the scanner's floor -- see the comment")
-    print("  on _format_facts. A reading of 0 means the scanner broke.")
-    if facts < 3
-        print("*** opcode-predicate scanner reads below its known floor; it is broken ***")
-        return 1
-    end
-
-    if derived * 100 < code * 80
-        print("")
-        print("*** PASS 101 §4 UNMET: derived/total is below 80% ***")
-        return 1
-    end
-    0
-end
+    print("*** PASS 101 §4 UNMET: derived/total is below 80% ***")
+    return 1
+  0

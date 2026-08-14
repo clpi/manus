@@ -5,230 +5,221 @@
 # ----- Number to string -----
 
 # format_int: format integer v as a string in the given base (2-36).
-format_int(v: any, base: any): str
-    if base == nil or base < 2 base = 10 end
-    if base > 36 base = 36 end
-    if v == 0 return "0" end
-    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
-    neg = false
-    n = v
-    if n < 0
-        neg = true
-        n = 0 - n
-    end
-    out = {}
-    while n > 0
-        out[out:len() + 1] = digits:sub((n % base) + 1, (n % base) + 1)
-        n = n / base:floor()
-    end
-    s = ""
-    i = out:len()
-    while i >= 1
-        s = s .. out[i]
-        i -= 1
-    end
-    if neg s = "-" .. s end
-    s
-end
+format_int: str = (v: any, base: any)
+  if base == nil or base < 2
+    base = 10
+  if base > 36
+    base = 36
+  if v == 0
+    return "0"
+  digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+  neg = false
+  n = v
+  if n < 0
+    neg = true
+    n = 0 - n
+  out = {}
+  while n > 0
+    out[out:len() + 1] = digits:sub(n % base + 1, n % base + 1)
+    n = n / base:floor()
+  s = ""
+  i = out:len()
+  while i >= 1
+    s = s .. out[i]
+    i = i - 1
+  if neg
+    s = "-" .. s
+  s
 
 # itoa: convenience for format_int(v, 10).
-itoa(v: any): str
-    format_int(v, 10)
-end
+itoa: str = (v: any)
+  format_int(v, 10)
 
 # format_float: format float v with 'g', 'f', or 'e' verb and precision.
-format_float(v: any, fmt: str, prec: any): str
-    if v == nil return "0" end
-    if fmt == nil fmt = "g" end
-    if prec == nil or prec < 0 prec = 0 - 1 end
-    if fmt == "e"
-        if prec < 0
-            "%e":format(v)
-        else
-            "%." .. prec:to(str) .. "e":format(v)
-        end
-    elseif fmt == "f"
-        if prec < 0
-            "%f":format(v)
-        else
-            "%." .. prec:to(str) .. "f":format(v)
-        end
+format_float: str = (v: any, fmt: str, prec: any)
+  if v == nil
+    return "0"
+  if fmt == nil
+    fmt = "g"
+  if prec == nil or prec < 0
+    prec = 0 - 1
+  if fmt == "e"
+    if prec < 0
+      "%e":format(v)
     else
-        # 'g' or default
-        if prec < 0
-            "%g":format(v)
-        else
-            "%." .. prec:to(str) .. "g":format(v)
-        end
-    end
-end
+      "%." .. prec:to(str) .. "e":format(v)
+  elseif fmt == "f"
+    if prec < 0
+      "%f":format(v)
+    else
+      "%." .. prec:to(str) .. "f":format(v)
+  else
+    # 'g' or default
+    if prec < 0
+      "%g":format(v)
+    else
+      "%." .. prec:to(str) .. "g":format(v)
 
 # ----- String to number -----
 
 # parse_int: interpret s as an integer in the given base. Returns (value, ok).
-parse_int(s: str, base: any): any
-    if s == nil or s == "" return 0, false end
-    s = s:gsub("^%s+", "")
-    s = s:gsub("%s+$", "")
-    neg = false
-    if s:sub(1, 1) == "-"
-        neg = true
-        s = s:sub(2)
-    elseif s:sub(1, 1) == "+"
-        s = s:sub(2)
-    end
-    if base == nil or base == 0
-        base = 10
-        if s:sub(1, 2) == "0x" or s:sub(1, 2) == "0X"
-            base = 16
-            s = s:sub(3)
-        elseif s:sub(1, 1) == "0" and s:len() > 1
-            base = 8
-            s = s:sub(2)
-        end
-    end
-    if base < 2 or base > 36 return 0, false end
-    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
-    val = 0
-    i = 1
-    while i <= s:len()
-        ch = s:sub(i, i):lower()
-        pos = digits:find(ch, 1, true)
-        if pos == nil return 0, false end
-        d = pos - 1
-        if d >= base return 0, false end
-        val = val * base + d
-        i += 1
-    end
-    if neg val = 0 - val end
-    return val, true
-end
+parse_int: any = (s: str, base: any)
+  if s == nil or s == ""
+    return 0, false
+  s = s:gsub("^%s+", "")
+  s = s:gsub("%s+$", "")
+  neg = false
+  if s:sub(1, 1) == "-"
+    neg = true
+    s = s:sub(2)
+  elseif s:sub(1, 1) == "+"
+    s = s:sub(2)
+  if base == nil or base == 0
+    base = 10
+    if s:sub(1, 2) == "0x" or s:sub(1, 2) == "0X"
+      base = 16
+      s = s:sub(3)
+    elseif s:sub(1, 1) == "0" and s:len() > 1
+      base = 8
+      s = s:sub(2)
+  if base < 2 or base > 36
+    return 0, false
+  digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+  val = 0
+  i = 1
+  while i <= s:len()
+    ch = s:sub(i, i):lower()
+    pos = digits:find(ch, 1, true)
+    if pos == nil
+      return 0, false
+    d = pos - 1
+    if d >= base
+      return 0, false
+    val = val * base + d
+    i = i + 1
+  if neg
+    val = 0 - val
+  return val, true
 
 # atoi: convenience for parse_int(s, 10).
-atoi(s: str): any
-    parse_int(s, 10)
-end
+atoi: any = (s: str)
+  parse_int(s, 10)
 
 # parse_float: interpret s as a floating-point number. Returns (value, ok).
-parse_float(s: str): any
-    if s == nil or s == "" return 0.0, false end
-    s = s:gsub("^%s+", "")
-    s = s:gsub("%s+$", "")
-    # accept optional sign
-    neg = false
-    if s:sub(1, 1) == "-"
-        neg = true
-        s = s:sub(2)
-    elseif s:sub(1, 1) == "+"
-        s = s:sub(2)
-    end
-    # match numeric pattern: digits . digits [eE [+-] digits]
-    # Use Lua pattern to validate
-    m = string["match"](s, "^(%d+%.?%d*[eE]?[+-]?%d*)$")
-    if m == nil
-        m = string["match"](s, "^(%d*%.%d+[eE]?[+-]?%d*)$")
-    end
-    if m == nil return 0.0, false end
-    v = s:to(i64)
-    if v == nil return 0.0, false end
-    if neg v = 0 - v end
-    return v, true
-end
+parse_float: any = (s: str)
+  if s == nil or s == ""
+    return 0.0, false
+  s = s:gsub("^%s+", "")
+  s = s:gsub("%s+$", "")
+  # accept optional sign
+  neg = false
+  if s:sub(1, 1) == "-"
+    neg = true
+    s = s:sub(2)
+  elseif s:sub(1, 1) == "+"
+    s = s:sub(2)
+  # match numeric pattern: digits . digits [eE [+-] digits]
+  # Use Lua pattern to validate
+  m = string["match"](s, "^(%d+%.?%d*[eE]?[+-]?%d*)$")
+  if m == nil
+    m = string["match"](s, "^(%d*%.%d+[eE]?[+-]?%d*)$")
+  if m == nil
+    return 0.0, false
+  v = s:to(i64)
+  if v == nil
+    return 0.0, false
+  if neg
+    v = 0 - v
+  return v, true
 
 # parse_bool: interpret s as a boolean. Returns (value, ok).
-parse_bool(s: str): any
-    if s == nil return false, false end
-    s = s:lower()
-    if s == "1" or s == "t" or s == "true" return true, true end
-    if s == "0" or s == "f" or s == "false" return false, true end
+parse_bool: any = (s: str)
+  if s == nil
     return false, false
-end
+  s = s:lower()
+  if s == "1" or s == "t" or s == "true"
+    return true, true
+  if s == "0" or s == "f" or s == "false"
+    return false, true
+  return false, false
 
 # ----- Quote / unquote -----
 
 # quote: return a double-quoted, safely-escaped string literal.
-quote(s: str): str
-    if s == nil return "\"\"" end
-    out = {"\""}
-    i = 1
-    while i <= s:len()
-        ch = s:sub(i, i)
-        b = s:byte(i)
-        if ch == "\\"
-            out[out:len() + 1] = "\\\\"
-        elseif ch == "\""
-            out[out:len() + 1] = "\\\""
-        elseif ch == "\n"
-            out[out:len() + 1] = "\\n"
-        elseif ch == "\r"
-            out[out:len() + 1] = "\\r"
-        elseif ch == "\t"
-            out[out:len() + 1] = "\\t"
-        elseif b < 32
-            out[out:len() + 1] = "\\x%02X":format(b)
-        else
-            out[out:len() + 1] = ch
-        end
-        i += 1
-    end
-    out[out:len() + 1] = "\""
-    out:concat()
-end
+quote: str = (s: str)
+  if s == nil
+    return "\"\""
+  out = { "\"" }
+  i = 1
+  while i <= s:len()
+    ch = s:sub(i, i)
+    b = s:byte(i)
+    if ch == "\\"
+      out[out:len() + 1] = "\\\\"
+    elseif ch == "\""
+      out[out:len() + 1] = "\\\""
+    elseif ch == "\n"
+      out[out:len() + 1] = "\\n"
+    elseif ch == "\r"
+      out[out:len() + 1] = "\\r"
+    elseif ch == "\t"
+      out[out:len() + 1] = "\\t"
+    elseif b < 32
+      out[out:len() + 1] = "\\x%02X":format(b)
+    else
+      out[out:len() + 1] = ch
+    i = i + 1
+  out[out:len() + 1] = "\""
+  out:concat()
 
 # unquote: remove surrounding quotes and interpret escape sequences.
-unquote(s: str): str
-    if s == nil return "" end
-    n = s:len()
-    if n < 2 return s end
-    first = s:sub(1, 1)
-    last = s:sub(n, n)
-    inner = s
-    if (first == "\"" and last == "\"") or (first == "'" and last == "'")
-        inner = s:sub(2, n - 1)
-    end
-    out = {}
-    i = 1
-    while i <= inner:len()
-        ch = inner:sub(i, i)
-        if ch == "\\" and i < inner:len()
-            nxt = inner:sub(i + 1, i + 1)
-            if nxt == "n"
-                out[out:len() + 1] = "\n"
-            elseif nxt == "t"
-                out[out:len() + 1] = "\t"
-            elseif nxt == "r"
-                out[out:len() + 1] = "\r"
-            elseif nxt == "\\"
-                out[out:len() + 1] = "\\"
-            elseif nxt == "\""
-                out[out:len() + 1] = "\""
-            elseif nxt == "'"
-                out[out:len() + 1] = "'"
-            elseif nxt == "0"
-                out[out:len() + 1] = 0:char()
-            else
-                out[out:len() + 1] = nxt
-            end
-            i += 2
-        else
-            out[out:len() + 1] = ch
-            i += 1
-        end
-    end
-    out:concat()
-end
+unquote: str = (s: str)
+  if s == nil
+    return ""
+  n = s:len()
+  if n < 2
+    return s
+  first = s:sub(1, 1)
+  last = s:sub(n, n)
+  inner = s
+  if first == "\"" and last == "\"" or first == "'" and last == "'"
+    inner = s:sub(2, n - 1)
+  out = {}
+  i = 1
+  while i <= inner:len()
+    ch = inner:sub(i, i)
+    if ch == "\\" and i < inner:len()
+      nxt = inner:sub(i + 1, i + 1)
+      if nxt == "n"
+        out[out:len() + 1] = "\n"
+      elseif nxt == "t"
+        out[out:len() + 1] = "\t"
+      elseif nxt == "r"
+        out[out:len() + 1] = "\r"
+      elseif nxt == "\\"
+        out[out:len() + 1] = "\\"
+      elseif nxt == "\""
+        out[out:len() + 1] = "\""
+      elseif nxt == "'"
+        out[out:len() + 1] = "'"
+      elseif nxt == "0"
+        out[out:len() + 1] = 0:char()
+      else
+        out[out:len() + 1] = nxt
+      i = i + 2
+    else
+      out[out:len() + 1] = ch
+      i = i + 1
+  out:concat()
 
 # append_bool: format a boolean as "true" or "false".
-format_bool(b: bool): str
-    # A guard, not `if b "true" else "false" end`. In the endless one-liner
-    # form the clause must be SELF-DELIMITED, and `b "true"`
-    # reads as PARENLESS APPLICATION # the emitted C was
-    # `b(lua_val_from_literal("true", ...))`, i.e. calling a bool
-    # ("called object type 'bool' is not a function"), which took the module
-    # down.
-    if b
-        return "true"
-    end
-    "false"
-end
-
+format_bool: str = (b: bool)
+  # A guard, not `if b "true" else "false" end`. In the endless one-liner
+  # form the clause must be SELF-DELIMITED, and `b "true"`
+  # reads as PARENLESS APPLICATION # the emitted C was
+  # `b(lua_val_from_literal("true", ...))`, i.e. calling a bool
+  # ("called object type 'bool' is not a function"), which took the module
+  # down.
+  if b
+    return "true"
+  "false"

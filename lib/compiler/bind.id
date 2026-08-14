@@ -32,35 +32,28 @@
 # Membership over a "|a|b|" set. str is `sub` and `len`, so this is spelled
 # out rather than borrowed.
 has: bool = (set: str, name: str)
-    hay = set
-    needle = "|" .. name .. "|"
-    hn: i64 = hay:len()
-    nn: i64 = needle:len()
-    i: i64 = 1
-    while i + nn - 1 <= hn
-        j: i64 = 0
-        hit = true
-        while j < nn
-            if hay:byte(i + j) != needle:byte(j + 1)
-                hit = false
-                j = nn
-            end
-            j += 1
-        end
-        if hit
-            return true
-        end
-        i += 1
-    end
-    false
-end
+  hay = set
+  needle = "|" .. name .. "|"
+  hn: i64 = hay:len()
+  nn: i64 = needle:len()
+  i: i64 = 1
+  while i + nn - 1 <= hn
+    j: i64 = 0
+    hit = true
+    while j < nn
+      if hay:byte(i + j) != needle:byte(j + 1)
+        hit = false
+        j = nn
+      j = j + 1
+    if hit
+      return true
+    i = i + 1
+  false
 
 add: str = (set: str, name: str)
-    if has(set, name)
-        return set
-    end
-    set .. name .. "|"
-end
+  if has(set, name)
+    return set
+  set .. name .. "|"
 
 # Ambient roots and the runtime surface. These are bound by the world, not by
 # the file, so a file that mentions them is not unresolved.
@@ -69,118 +62,91 @@ ambient = "|io|os|fs|json|process|string|table|math|coroutine|mem|req|print|erro
 # Names this file binds, and names it references but never binds.
 # Returns the unresolved count; `report` prints each.
 unresolved: i64 = (src: str, file: str, family: i64, report: bool)
-    lx: Lexer = lexer.new(src, file, family)
-    bound = ambient
-    refs = "|"
-    kind: i64 = 0
-    # A first scan over a fresh lexer collects bindings; a second collects references.
-    # Two passes because a name may be used before the line that binds it —
-    # mutual recursion between top-level declarations is the normal case.
-    while true
-        t = lexer.next(lx)
-        if t.kind == token.KIND_EOF
-            break
-        end
-        if t.kind == token.KIND_NAME
-            nxt = lexer.peek(lx)
-            binds = false
-            if nxt.kind == token.KIND_ASSIGN
+  lx: Lexer = lexer.new(src, file, family)
+  bound = ambient
+  refs = "|"
+  kind: i64 = 0
+  # A first scan over a fresh lexer collects bindings; a second collects references.
+  # Two passes because a name may be used before the line that binds it —
+  # mutual recursion between top-level declarations is the normal case.
+  while true
+    t = lexer.next(lx)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME
+      nxt = lexer.peek(lx)
+      binds = false
+      if nxt.kind == token.KIND_ASSIGN
+        binds = true
+      # Multiple assignment binds every name on the left:
+      # `ok, result = pcall(f)`. Walk the comma list and accept it only
+      # if it actually reaches `=`, so a call argument list is not
+      # mistaken for a binding site.
+      if nxt.kind == token.KIND_COMMA
+        st = lexer.save_state(lx)
+        walking = true
+        while walking
+          walking = false
+          a = lexer.next(lx)
+          if a.kind == token.KIND_COMMA
+            b = lexer.next(lx)
+            if b.kind == token.KIND_NAME
+              if lexer.peek(lx).kind == token.KIND_ASSIGN
                 binds = true
-            end
-            # Multiple assignment binds every name on the left:
-            # `ok, result = pcall(f)`. Walk the comma list and accept it only
-            # if it actually reaches `=`, so a call argument list is not
-            # mistaken for a binding site.
-            if nxt.kind == token.KIND_COMMA
-                st = lexer.save_state(lx)
+              elseif lexer.peek(lx).kind == token.KIND_COMMA
                 walking = true
-                while walking
-                    walking = false
-                    a = lexer.next(lx)
-                    if a.kind == token.KIND_COMMA
-                        b = lexer.next(lx)
-                        if b.kind == token.KIND_NAME
-                            if lexer.peek(lx).kind == token.KIND_ASSIGN
-                                binds = true
-                            elseif lexer.peek(lx).kind == token.KIND_COMMA
-                                walking = true
-                            end
-                        end
-                    end
-                end
-                lexer.restore_state(lx, st)
-            end
-            if nxt.kind == token.KIND_LPAREN and kind != token.KIND_DOT and kind != token.KIND_COLON
-                binds = true
-            end
-            # `span: { ... }` is a descriptor DECLARATION and binds the name.
-            # FF-22 retired `type X = { ... }` in favour of this shape axis
-            # form, and migrating lib/std to it made every such name unresolved
-            # until the binder learned the new spelling — the ratchet caught it
-            # in the same commit.
-            if nxt.kind == token.KIND_COLON and t.loc.col == 1
-                binds = true
-            end
-            # `n: i64 = 5` — a typed local binding, at any indentation. The
-            # column-1 rule above only covers descriptor declarations, so every
-            # typed local read as unresolved. Distinguished from a method call
-            # (`obj:m()`) by looking past the type for the `=`, which is the
-            # same discriminator proj_stmt uses.
-            if nxt.kind == token.KIND_COLON and t.loc.col != 1
-                cst = lexer.save_state(lx)
-                c = lexer.next(lx)
-                ty = lexer.next(lx)
-                if ty.kind == token.KIND_NAME or (ty.kind >= token.KIND_I8 and ty.kind <= token.KIND_STR)
-                    if lexer.peek(lx).kind == token.KIND_ASSIGN
-                        binds = true
-                    end
-                end
-                lexer.restore_state(lx, cst)
-            end
-            # `spawn(fn: any, ...args)` — a NAMED vararg parameter binds too.
-            if kind == token.KIND_DOTS
-                binds = true
-            end
-            if kind == token.KIND_FUN or kind == token.KIND_FUNCTION or kind == token.KIND_FOR
-                binds = true
-            end
-            # `concept Allocator ... end` declares the protocol's name.
-            if kind == token.KIND_CONCEPT
-                binds = true
-            end
-            if kind == token.KIND_LPAREN or kind == token.KIND_COMMA
-                binds = true
-            end
-            if binds
-                bound = add(bound, t.text)
-            end
-        end
-        kind = t.kind
-    end
-
-    lx2: Lexer = lexer.new(src, file, family)
-    kind = 0
-    count: i64 = 0
-    while true
-        t = lexer.next(lx2)
-        if t.kind == token.KIND_EOF
-            break
-        end
-        if t.kind == token.KIND_NAME
-            skip = kind == token.KIND_DOT or kind == token.KIND_COLON
-                or prev_kind == token.KIND_AT
-            if !skip
-                nxt = lexer.peek(lx2)
-                if nxt.kind != token.KIND_ASSIGN and !has(bound, t.text) and !has(refs, t.text)
-                    refs = add(refs, t.text)
-                    count += 1
-                    if report
-                        print("  unresolved " .. file .. ": " .. t.text)
-                    end
-                end
-            end
-        end
-        prev_kind = t.kind
-    end
-    count
-end
+        lexer.restore_state(lx, st)
+      if nxt.kind == token.KIND_LPAREN and kind != token.KIND_DOT and kind != token.KIND_COLON
+        binds = true
+      # `span: { ... }` is a descriptor DECLARATION and binds the name.
+      # FF-22 retired `type X = { ... }` in favour of this shape axis
+      # form, and migrating lib/std to it made every such name unresolved
+      # until the binder learned the new spelling — the ratchet caught it
+      # in the same commit.
+      if nxt.kind == token.KIND_COLON and t.loc.col == 1
+        binds = true
+      # `n: i64 = 5` — a typed local binding, at any indentation. The
+      # column-1 rule above only covers descriptor declarations, so every
+      # typed local read as unresolved. Distinguished from a method call
+      # (`obj:m()`) by looking past the type for the `=`, which is the
+      # same discriminator proj_stmt uses.
+      if nxt.kind == token.KIND_COLON and t.loc.col != 1
+        cst = lexer.save_state(lx)
+        c = lexer.next(lx)
+        ty = lexer.next(lx)
+        if ty.kind == token.KIND_NAME or ty.kind >= token.KIND_I8 and ty.kind <= token.KIND_STR
+          if lexer.peek(lx).kind == token.KIND_ASSIGN
+            binds = true
+        lexer.restore_state(lx, cst)
+      # `spawn(fn: any, ...args)` — a NAMED vararg parameter binds too.
+      if kind == token.KIND_DOTS
+        binds = true
+      if kind == token.KIND_FUN or kind == token.KIND_FUNCTION or kind == token.KIND_FOR
+        binds = true
+      # `concept Allocator ... end` declares the protocol's name.
+      if kind == token.KIND_CONCEPT
+        binds = true
+      if kind == token.KIND_LPAREN or kind == token.KIND_COMMA
+        binds = true
+      if binds
+        bound = add(bound, t.text)
+    kind = t.kind
+  
+lx2: Lexer = lexer.new(src, file, family)
+  kind = 0
+  count: i64 = 0
+  while true
+    t = lexer.next(lx2)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME
+      skip = kind == token.KIND_DOT or kind == token.KIND_COLON or prev_kind == token.KIND_AT
+      if not skip
+        nxt = lexer.peek(lx2)
+        if nxt.kind != token.KIND_ASSIGN and not has(bound, t.text) and not has(refs, t.text)
+          refs = add(refs, t.text)
+          count = count + 1
+          if report
+            print("  unresolved " .. file .. ": " .. t.text)
+    prev_kind = t.kind
+  count

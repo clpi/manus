@@ -4,58 +4,52 @@
 MapFS = {}
 MapFS.__index = MapFS
 
-new_mapfs(): any
-    {files = {}}
-end
+new_mapfs: any = ()
+  { files = {} }
 
-mapfs_add(fs: any, path: str, data: str): void
-    fs.files[path] = {data = data, mode = 0644}
-end
+mapfs_add: void = (fs: any, path: str, data: str)
+  fs.files[path] = { data = data, mode = 644 }
 
-mapfs_add_dir(fs: any, path: str): void
-    fs.files[path] = {data = nil, mode = 0755, is_dir = true}
-end
+mapfs_add_dir: void = (fs: any, path: str)
+  fs.files[path] = { data = nil, mode = 755, is_dir = true }
 
-mapfs_open(fs: any, path: str): any
-    entry = fs.files[path]
-    if entry == nil return nil end
-    {data = entry.data, pos = 1, mode = entry.mode, is_dir = entry.is_dir}
-end
+mapfs_open: any = (fs: any, path: str)
+  entry = fs.files[path]
+  if entry == nil
+    return nil
+  { data = entry.data, pos = 1, mode = entry.mode, is_dir = entry.is_dir }
 
-mapfs_read(f: any, n: i64): any
-    if f.data == nil return nil end
-    if f.pos > f.data:len() return nil end
-    chunk = f.data:sub(f.pos, f.pos + n - 1)
-    f.pos = f.pos + chunk:len()
-    chunk
-end
+mapfs_read: any = (f: any, n: i64)
+  if f.data == nil
+    return nil
+  if f.pos > f.data:len()
+    return nil
+  chunk = f.data:sub(f.pos, f.pos + n - 1)
+  f.pos = f.pos + chunk:len()
+  chunk
 
-mapfs_read_all(f: any): str
-    if f.data == nil return "" end
-    f.pos = f.data:len() + 1
-    f.data
-end
+mapfs_read_all: str = (f: any)
+  if f.data == nil
+    return ""
+  f.pos = f.data:len() + 1
+  f.data
 
-mapfs_seek(f: any, offset: i64, whence: i64): i64
-    if f.data == nil return 0 end
-    if whence == 0
-        f.pos = offset + 1
-    elseif whence == 1
-        f.pos = f.pos + offset
-    elseif whence == 2
-        f.pos = f.data:len() + offset + 1
-    end
-    if f.pos < 1 f.pos = 1 end
-    f.pos - 1
-end
+mapfs_seek: i64 = (f: any, offset: i64, whence: i64)
+  if f.data == nil
+    return 0
+  if whence == 0
+    f.pos = offset + 1
+  elseif whence == 1
+    f.pos = f.pos + offset
+  elseif whence == 2
+    f.pos = f.data:len() + offset + 1
+  if f.pos < 1
+    f.pos = 1
+  f.pos - 1
 
-mapfs_glob(fs: any, pattern: str): any
-    results = {}
-    for path, _ in fs.files
-        if path:find(pattern)
-            results[results:len() + 1] = path
-        end
-    end
-    results
-end
-
+mapfs_glob: any = (fs: any, pattern: str)
+  results = {}
+  for path, _ in fs.files
+    if path:find(pattern)
+      results[results:len() + 1] = path
+  results

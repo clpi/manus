@@ -2,7 +2,8 @@
 # GGUF is the standard format for quantized LLM weights (llama.cpp, etc.)
 
 # GGUF magic number
-GGUF_MAGIC = 0x46554747  # "GGUF" in little-endian
+# "GGUF" in little-endian
+GGUF_MAGIC = 1179993927
 GGUF_VERSION_3 = 3
 GGUF_VERSION_4 = 4
 
@@ -41,352 +42,349 @@ GGUF_QUANT_Q4_0_8_8 = 18
 # Binary reader
 # ═══════════════════════════════════════════════════════════════
 
-reader_new(data: any): any
-    {data = data, pos = 1, len = data:len()}
-end
+reader_new: any = (data: any)
+  { data = data, pos = 1, len = data:len() }
 
-reader_u8(r: any): any
-    if r.pos > r.len return nil end
-    b = r.data[r.pos]
-    r.pos += 1
-    b
-end
+reader_u8: any = (r: any)
+  if r.pos > r.len
+    return nil
+  b = r.data[r.pos]
+  r.pos = r.pos + 1
+  b
 
-reader_u32_le(r: any): any
-    b0 = reader_u8(r)
-    b1 = reader_u8(r)
-    b2 = reader_u8(r)
-    b3 = reader_u8(r)
-    if b0 == nil return nil end
-    b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-end
+reader_u32_le: any = (r: any)
+  b0 = reader_u8(r)
+  b1 = reader_u8(r)
+  b2 = reader_u8(r)
+  b3 = reader_u8(r)
+  if b0 == nil
+    return nil
+  b0 | b1 << 8 | b2 << 16 | b3 << 24
 
-reader_i32_le(r: any): any
-    result = reader_u32_le(r)
-    if result == nil return nil end
-    if result >= 0x80000000
-        result -= 0x100000000
-    end
-    result
-end
+reader_i32_le: any = (r: any)
+  result = reader_u32_le(r)
+  if result == nil
+    return nil
+  if result >= 2147483648
+    result = result - 4294967296
+  result
 
-reader_u64_le(r: any): any
-    b0 = reader_u8(r)
-    b1 = reader_u8(r)
-    b2 = reader_u8(r)
-    b3 = reader_u8(r)
-    b4 = reader_u8(r)
-    b5 = reader_u8(r)
-    b6 = reader_u8(r)
-    b7 = reader_u8(r)
-    if b0 == nil return nil end
-    b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) |
-    (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56)
-end
+reader_u64_le: any = (r: any)
+  b0 = reader_u8(r)
+  b1 = reader_u8(r)
+  b2 = reader_u8(r)
+  b3 = reader_u8(r)
+  b4 = reader_u8(r)
+  b5 = reader_u8(r)
+  b6 = reader_u8(r)
+  b7 = reader_u8(r)
+  if b0 == nil
+    return nil
+  b0 | b1 << 8 | b2 << 16 | b3 << 24 | b4 << 32 | b5 << 40 | b6 << 48 | b7 << 56
 
-reader_f32_le(r: any): f64
-    bits = reader_u32_le(r)
-    # Convert IEEE 754 bits to float (simplified)
-    if bits == nil return 0.0 end
-    sign = 1
-    if (bits & 0x80000000) != 0 sign = -1 end
-    exponent = (bits >> 23) & 0xFF
-    mantissa = bits & 0x7FFFFF
-    if exponent == 0
-        return sign * math.ldexp(mantissa / 0x800000, -126)
-    elseif exponent == 0xFF
-        if mantissa == 0 return sign * math.huge end
-        return 0 / 0
-    end
-    sign * math.ldexp(1 + mantissa / 0x800000, exponent - 127)
-end
+reader_f32_le: f64 = (r: any)
+  bits = reader_u32_le(r)
+  # Convert IEEE 754 bits to float (simplified)
+  if bits == nil
+    return 0.0
+  sign = 1
+  if bits & 2147483648 != 0
+    sign = -1
+  exponent = bits >> 23 & 255
+  mantissa = bits & 8388607
+  if exponent == 0
+    return sign * math.ldexp(mantissa / 8388608, -126)
+  elseif exponent == 255
+    if mantissa == 0
+      return sign * math.huge
+    return 0 / 0
+  sign * math.ldexp(1 + mantissa / 8388608, exponent - 127)
 
-reader_f64_le(r: any): f64
-    bits = reader_u64_le(r)
-    if bits == nil return 0.0 end
-    sign = 1
-    if (bits & 0x8000000000000000) != 0 sign = -1 end
-    exponent = (bits >> 52) & 0x7FF
-    mantissa = bits & 0xFFFFFFFFFFFFF
-    if exponent == 0
-        return sign * math.ldexp(mantissa / 0x10000000000000, -1022)
-    elseif exponent == 0x7FF
-        if mantissa == 0 return sign * math.huge end
-        return 0 / 0
-    end
-    sign * math.ldexp(1 + mantissa / 0x10000000000000, exponent - 1023)
-end
+reader_f64_le: f64 = (r: any)
+  bits = reader_u64_le(r)
+  if bits == nil
+    return 0.0
+  sign = 1
+  if bits & -9223372036854775808 != 0
+    sign = -1
+  exponent = bits >> 52 & 2047
+  mantissa = bits & 4503599627370495
+  if exponent == 0
+    return sign * math.ldexp(mantissa / 4503599627370496, -1022)
+  elseif exponent == 2047
+    if mantissa == 0
+      return sign * math.huge
+    return 0 / 0
+  sign * math.ldexp(1 + mantissa / 4503599627370496, exponent - 1023)
 
-reader_string_le(r: any): str
-    len = reader_u64_le(r)
-    if len == nil return "" end
-    bytes = {}
-    i = 0
-    while i < len
-        b = reader_u8(r)
-        if b == nil break end
-        bytes[bytes:len() + 1] = b
-        i += 1
-    end
-    parts = {}
-    i = 1
-    while i <= bytes:len()
-        parts[parts:len() + 1] = bytes[i]:char()
-        i += 1
-    end
-    parts:concat()
-end
+reader_string_le: str = (r: any)
+  len = reader_u64_le(r)
+  if len == nil
+    return ""
+  bytes = {}
+  i = 0
+  while i < len
+    b = reader_u8(r)
+    if b == nil
+      break
+    bytes[bytes:len() + 1] = b
+    i = i + 1
+  parts = {}
+  i = 1
+  while i <= bytes:len()
+    parts[parts:len() + 1] = bytes[i]:char()
+    i = i + 1
+  parts:concat()
 
-reader_bytes(r: any, n: i64): any
-    out = {}
-    i = 0
-    while i < n
-        b = reader_u8(r)
-        if b == nil return nil end
-        out[out:len() + 1] = b
-        i += 1
-    end
-    out
-end
+reader_bytes: any = (r: any, n: i64)
+  out = {}
+  i = 0
+  while i < n
+    b = reader_u8(r)
+    if b == nil
+      return nil
+    out[out:len() + 1] = b
+    i = i + 1
+  out
 
 # ═══════════════════════════════════════════════════════════════
 # GGUF Value reading
 # ═══════════════════════════════════════════════════════════════
 
-gguf_read_value(r: any, type_id: i64): any
-    if type_id == GGUF_TYPE_UINT8
-        return reader_u8(r)
-    elseif type_id == GGUF_TYPE_INT8
-        return reader_u8(r) - 128
-    elseif type_id == GGUF_TYPE_UINT16
-        b0 = reader_u8(r)
-        b1 = reader_u8(r)
-        return b0 | (b1 << 8)
-    elseif type_id == GGUF_TYPE_INT16
-        val = reader_u8(r) | (reader_u8(r) << 8)
-        if val >= 0x8000 val -= 0x10000 end
-        return val
-    elseif type_id == GGUF_TYPE_UINT32
-        return reader_u32_le(r)
-    elseif type_id == GGUF_TYPE_INT32
-        return reader_i32_le(r)
-    elseif type_id == GGUF_TYPE_FLOAT32
-        return reader_f32_le(r)
-    elseif type_id == GGUF_TYPE_BOOL
-        return reader_u8(r) != 0
-    elseif type_id == GGUF_TYPE_STRING
-        return reader_string_le(r)
-    elseif type_id == GGUF_TYPE_UINT64
-        return reader_u64_le(r)
-    elseif type_id == GGUF_TYPE_INT64
-        return reader_u64_le(r)  # simplified
-    elseif type_id == GGUF_TYPE_FLOAT64
-        return reader_f64_le(r)
-    elseif type_id == GGUF_TYPE_ARRAY
-        elem_type = reader_u32_le(r)
-        arr_len = reader_u64_le(r)
-        arr = {}
-        i = 0
-        while i < arr_len
-            arr[arr:len() + 1] = gguf_read_value(r, elem_type)
-            i += 1
-        end
-        return arr
-    end
-    nil
-end
+gguf_read_value: any = (r: any, type_id: i64)
+  if type_id == GGUF_TYPE_UINT8
+    return reader_u8(r)
+  elseif type_id == GGUF_TYPE_INT8
+    return reader_u8(r) - 128
+  elseif type_id == GGUF_TYPE_UINT16
+    b0 = reader_u8(r)
+    b1 = reader_u8(r)
+    return b0 | b1 << 8
+  elseif type_id == GGUF_TYPE_INT16
+    val = reader_u8(r) | reader_u8(r) << 8
+    if val >= 32768
+      val = val - 65536
+    return val
+  elseif type_id == GGUF_TYPE_UINT32
+    return reader_u32_le(r)
+  elseif type_id == GGUF_TYPE_INT32
+    return reader_i32_le(r)
+  elseif type_id == GGUF_TYPE_FLOAT32
+    return reader_f32_le(r)
+  elseif type_id == GGUF_TYPE_BOOL
+    return reader_u8(r) != 0
+  elseif type_id == GGUF_TYPE_STRING
+    return reader_string_le(r)
+  elseif type_id == GGUF_TYPE_UINT64
+    return reader_u64_le(r)
+  elseif type_id == GGUF_TYPE_INT64
+    # simplified
+    return reader_u64_le(r)
+  elseif type_id == GGUF_TYPE_FLOAT64
+    return reader_f64_le(r)
+  elseif type_id == GGUF_TYPE_ARRAY
+    elem_type = reader_u32_le(r)
+    arr_len = reader_u64_le(r)
+    arr = {}
+    i = 0
+    while i < arr_len
+      arr[arr:len() + 1] = gguf_read_value(r, elem_type)
+      i = i + 1
+    return arr
+  nil
 
 # ═══════════════════════════════════════════════════════════════
 # GGUF File parsing
 # ═══════════════════════════════════════════════════════════════
 
-gguf_load(data: any): any
-    r = reader_new(data)
-
-    # Read header
-    magic = reader_u32_le(r)
-    if magic != GGUF_MAGIC
-        return nil, "invalid GGUF magic"
-    end
-    version = reader_u32_le(r)
-    if version != GGUF_VERSION_3 and version != GGUF_VERSION_4
-        return nil, "unsupported GGUF version: " .. version:to(str)
-    end
-    n_tensors = reader_u64_le(r)
-    n_kv = reader_u64_le(r)
-
-    # Read metadata key-value pairs
-    metadata = {}
-    i = 0
-    while i < n_kv
-        key = reader_string_le(r)
-        type_id = reader_u32_le(r)
-        value = gguf_read_value(r, type_id)
-        metadata[key] = value
-        i += 1
-    end
-
-    # Read tensor info
-    tensors = {}
-    i = 0
-    while i < n_tensors
-        name = reader_string_le(r)
-        n_dims = reader_u32_le(r)
-        dims = {}
-        d = 0
-        while d < n_dims
-            dims[dims:len() + 1] = reader_u64_le(r)
-            d += 1
-        end
-        type_id = reader_u32_le(r)
-        offset = reader_u64_le(r)
-        tensors[tensors:len() + 1] = {
-            name = name,
-            dims = dims,
-            n_dims = n_dims,
-            type = type_id,
-            offset = offset,
-        }
-        i += 1
-    end
-
-    # Read weight data
-    for tensor in tensors
-        # Align to 32 bytes
-        padding = (32 - (r.pos % 32)) % 32
-        reader_bytes(r, padding)
-
-        # Calculate element count
-        n_elements = 1
-        for d in tensor.dims
-            n_elements *= d
-        end
-
-        # Read raw weight bytes
-        if tensor.type == GGUF_QUANT_F32
-            weight = {}
-            j = 0
-            while j < n_elements
-                weight[weight:len() + 1] = reader_f32_le(r)
-                j += 1
-            end
-            tensor.weight = weight
-        elseif tensor.type == GGUF_QUANT_F16
-            weight = {}
-            j = 0
-            while j < n_elements
-                # Read 16-bit float (simplified: treat as f32 approximation)
-                bits = reader_u32_le(r)
-                if bits == nil break end
-                b0 = bits & 0xFF
-                b1 = (bits >> 8) & 0xFF
-                weight[weight:len() + 1] = reader_f16_approx(b0 | (b1 << 8))
-                j += 1
-            end
-            tensor.weight = weight
-        elseif tensor.type == GGUF_QUANT_Q8_0
-            # Read quantized: scale (f32) + n int8 values
-            scale = reader_f32_le(r)
-            weight = {}
-            j = 0
-            while j < n_elements
-                b = reader_u8(r)
-                if b == nil break end
-                if b > 127 b -= 256 end
-                weight[weight:len() + 1] = b * scale
-                j += 1
-            end
-            tensor.weight = weight
-        elseif tensor.type == GGUF_QUANT_Q4_0
-            # Read quantized: scale (f32) + packed int4 values
-            scale = reader_f32_le(r)
-            n_bytes = n_elements / 2:ceil()
-            weight = {}
-            j = 0
-            while j < n_bytes
-                b = reader_u8(r)
-                if b == nil break end
-                lo = b & 0x0F
-                hi = (b >> 4) & 0x0F
-                if lo > 7 lo -= 16 end
-                if hi > 7 hi -= 16 end
-                weight[weight:len() + 1] = lo * scale
-                if weight:len() < n_elements
-                    weight[weight:len() + 1] = hi * scale
-                end
-                j += 1
-            end
-            tensor.weight = weight
-        else
-            # Unknown quantization, store raw bytes
-            tensor.weight = nil
-        end
-    end
-
-    {
-        version = version,
-        metadata = metadata,
-        tensors = tensors,
-        n_tensors = n_tensors,
-        n_kv = n_kv,
+gguf_load: any = (data: any)
+  r = reader_new(data)
+  
+# Read header
+  magic = reader_u32_le(r)
+  if magic != GGUF_MAGIC
+    return nil, "invalid GGUF magic"
+  version = reader_u32_le(r)
+  if version != GGUF_VERSION_3 and version != GGUF_VERSION_4
+    return nil, "unsupported GGUF version: " .. version:to(str)
+  n_tensors = reader_u64_le(r)
+  n_kv = reader_u64_le(r)
+  
+# Read metadata key-value pairs
+  metadata = {}
+  i = 0
+  while i < n_kv
+    key = reader_string_le(r)
+    type_id = reader_u32_le(r)
+    value = gguf_read_value(r, type_id)
+    metadata[key] = value
+    i = i + 1
+  
+# Read tensor info
+  tensors = {}
+  i = 0
+  while i < n_tensors
+    name = reader_string_le(r)
+    n_dims = reader_u32_le(r)
+    dims = {}
+    d = 0
+    while d < n_dims
+      dims[dims:len() + 1] = reader_u64_le(r)
+      d = d + 1
+    type_id = reader_u32_le(r)
+    offset = reader_u64_le(r)
+    tensors[tensors:len() + 1] = {
+      name = name,
+      dims = dims,
+      n_dims = n_dims,
+      type = type_id,
+      offset = offset
     }
-end
+    i = i + 1
+  
+# Read weight data
+  for tensor in tensors
+    # Align to 32 bytes
+    padding = (32 - r.pos % 32) % 32
+    reader_bytes(r, padding)
+    
+# Calculate element count
+    n_elements = 1
+    for d in tensor.dims
+      n_elements = n_elements * d
+    
+# Read raw weight bytes
+    if tensor.type == GGUF_QUANT_F32
+      weight = {}
+      j = 0
+      while j < n_elements
+        weight[weight:len() + 1] = reader_f32_le(r)
+        j = j + 1
+      tensor.weight = weight
+    elseif tensor.type == GGUF_QUANT_F16
+      weight = {}
+      j = 0
+      while j < n_elements
+        # Read 16-bit float (simplified: treat as f32 approximation)
+        bits = reader_u32_le(r)
+        if bits == nil
+          break
+        b0 = bits & 255
+        b1 = bits >> 8 & 255
+        weight[weight:len() + 1] = reader_f16_approx(b0 | b1 << 8)
+        j = j + 1
+      tensor.weight = weight
+    elseif tensor.type == GGUF_QUANT_Q8_0
+      # Read quantized: scale (f32) + n int8 values
+      scale = reader_f32_le(r)
+      weight = {}
+      j = 0
+      while j < n_elements
+        b = reader_u8(r)
+        if b == nil
+          break
+        if b > 127
+          b = b - 256
+        weight[weight:len() + 1] = b * scale
+        j = j + 1
+      tensor.weight = weight
+    elseif tensor.type == GGUF_QUANT_Q4_0
+      # Read quantized: scale (f32) + packed int4 values
+      scale = reader_f32_le(r)
+      n_bytes = n_elements / 2:ceil()
+      weight = {}
+      j = 0
+      while j < n_bytes
+        b = reader_u8(r)
+        if b == nil
+          break
+        lo = b & 15
+        hi = b >> 4 & 15
+        if lo > 7
+          lo = lo - 16
+        if hi > 7
+          hi = hi - 16
+        weight[weight:len() + 1] = lo * scale
+        if weight:len() < n_elements
+          weight[weight:len() + 1] = hi * scale
+        j = j + 1
+      tensor.weight = weight
+    else
+      # Unknown quantization, store raw bytes
+      tensor.weight = nil
+  
+{
+    version = version,
+    metadata = metadata,
+    tensors = tensors,
+    n_tensors = n_tensors,
+    n_kv = n_kv
+  }
 
 # Approximate f16 to f32
-reader_f16_approx(bits: i64): f64
-    sign = 1
-    if (bits & 0x8000) != 0 sign = -1 end
-    exponent = (bits >> 10) & 0x1F
-    mantissa = bits & 0x3FF
-    if exponent == 0
-        return sign * math.ldexp(mantissa / 1024, -14)
-    elseif exponent == 31
-        if mantissa == 0 return sign * math.huge end
-        return 0 / 0
-    end
-    sign * math.ldexp(1 + mantissa / 1024, exponent - 15)
-end
+reader_f16_approx: f64 = (bits: i64)
+  sign = 1
+  if bits & 32768 != 0
+    sign = -1
+  exponent = bits >> 10 & 31
+  mantissa = bits & 1023
+  if exponent == 0
+    return sign * math.ldexp(mantissa / 1024, -14)
+  elseif exponent == 31
+    if mantissa == 0
+      return sign * math.huge
+    return 0 / 0
+  sign * math.ldexp(1 + mantissa / 1024, exponent - 15)
 
 # ═══════════════════════════════════════════════════════════════
 # Model info helpers
 # ═══════════════════════════════════════════════════════════════
 
-gguf_get_metadata(model: any, key: str): any
-    if model == nil return nil end
-    model.metadata[key]
-end
+gguf_get_metadata: any = (model: any, key: str)
+  if model == nil
+    return nil
+  model.metadata[key]
 
-gguf_get_tensor(model: any, name: str): any
-    if model == nil return nil end
-    for t in model.tensors
-        if t.name == name return t end
-    end
-    nil
-end
+gguf_get_tensor: any = (model: any, name: str)
+  if model == nil
+    return nil
+  for t in model.tensors
+    if t.name == name
+      return t
+  nil
 
-gguf_tensor_names(model: any): any
-    names = {}
-    if model == nil return names end
-    for t in model.tensors
-        names[names:len() + 1] = t.name
-    end
-    names
-end
+gguf_tensor_names: any = (model: any)
+  names = {}
+  if model == nil
+    return names
+  for t in model.tensors
+    names[names:len() + 1] = t.name
+  names
 
-gguf_quantization_type_name(type_id: i64): str
-    if type_id == GGUF_QUANT_F32 return "f32" end
-    if type_id == GGUF_QUANT_F16 return "f16" end
-    if type_id == GGUF_QUANT_Q4_0 return "q4_0" end
-    if type_id == GGUF_QUANT_Q4_1 return "q4_1" end
-    if type_id == GGUF_QUANT_Q8_0 return "q8_0" end
-    if type_id == GGUF_QUANT_Q8_1 return "q8_1" end
-    if type_id == GGUF_QUANT_Q2_K return "q2_k" end
-    if type_id == GGUF_QUANT_Q3_K return "q3_k" end
-    if type_id == GGUF_QUANT_Q4_K return "q4_k" end
-    if type_id == GGUF_QUANT_Q5_K return "q5_k" end
-    if type_id == GGUF_QUANT_Q6_K return "q6_k" end
-    "unknown"
-end
+gguf_quantization_type_name: str = (type_id: i64)
+  if type_id == GGUF_QUANT_F32
+    return "f32"
+  if type_id == GGUF_QUANT_F16
+    return "f16"
+  if type_id == GGUF_QUANT_Q4_0
+    return "q4_0"
+  if type_id == GGUF_QUANT_Q4_1
+    return "q4_1"
+  if type_id == GGUF_QUANT_Q8_0
+    return "q8_0"
+  if type_id == GGUF_QUANT_Q8_1
+    return "q8_1"
+  if type_id == GGUF_QUANT_Q2_K
+    return "q2_k"
+  if type_id == GGUF_QUANT_Q3_K
+    return "q3_k"
+  if type_id == GGUF_QUANT_Q4_K
+    return "q4_k"
+  if type_id == GGUF_QUANT_Q5_K
+    return "q5_k"
+  if type_id == GGUF_QUANT_Q6_K
+    return "q6_k"
+  "unknown"
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports
@@ -402,16 +400,16 @@ M.MAGIC = GGUF_MAGIC
 M.VERSION_3 = GGUF_VERSION_3
 M.VERSION_4 = GGUF_VERSION_4
 M.QUANT = {
-    F32 = GGUF_QUANT_F32,
-    F16 = GGUF_QUANT_F16,
-    Q4_0 = GGUF_QUANT_Q4_0,
-    Q4_1 = GGUF_QUANT_Q4_1,
-    Q8_0 = GGUF_QUANT_Q8_0,
-    Q8_1 = GGUF_QUANT_Q8_1,
-    Q2_K = GGUF_QUANT_Q2_K,
-    Q3_K = GGUF_QUANT_Q3_K,
-    Q4_K = GGUF_QUANT_Q4_K,
-    Q5_K = GGUF_QUANT_Q5_K,
-    Q6_K = GGUF_QUANT_Q6_K,
+  F32 = GGUF_QUANT_F32,
+  F16 = GGUF_QUANT_F16,
+  Q4_0 = GGUF_QUANT_Q4_0,
+  Q4_1 = GGUF_QUANT_Q4_1,
+  Q8_0 = GGUF_QUANT_Q8_0,
+  Q8_1 = GGUF_QUANT_Q8_1,
+  Q2_K = GGUF_QUANT_Q2_K,
+  Q3_K = GGUF_QUANT_Q3_K,
+  Q4_K = GGUF_QUANT_Q4_K,
+  Q5_K = GGUF_QUANT_Q5_K,
+  Q6_K = GGUF_QUANT_Q6_K
 }
 M
