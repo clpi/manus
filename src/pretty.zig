@@ -19,6 +19,22 @@ const Error = error{OutOfMemory};
 
 pub const SourceComment = struct { line: u32, text: []const u8 };
 
+/// True when every field of a table literal began on the table's own line —
+/// i.e. the source wrote it inline.
+fn tableWasInline(t: anytype) bool {
+    for (t.fields) |fld| {
+        const v: *const Expr = switch (fld) {
+            .indexed => |x| x.val,
+            .named => |x| x.val,
+            .positional => |x| x,
+            .spread => |x| x,
+            .semantic => |x| x.val,
+        };
+        if (v.loc().line != t.loc.line) return false;
+    }
+    return true;
+}
+
 /// A statement's source line, for deciding which comments precede it.
 fn stmtLine(stmt: *const Stmt) u32 {
     return switch (stmt.*) {
@@ -46,6 +62,18 @@ pub const PrettyPrinter = struct {
     /// holds them with their locations. This is that stream, filtered.
     comments: []const SourceComment = &.{},
     comment_at: usize = 0,
+    /// Last source line emitted, so a BLANK LINE in the source survives.
+    ///
+    /// Blank lines are paragraph structure, not whitespace: reflowing a file
+    /// without them fuses every section into one wall.
+    last_src_line: u32 = 0,
+    /// The lines that are ACTUALLY blank in the source, ascending.
+    ///
+    /// Inferring them from a gap between statement lines is wrong, and wrongly
+    /// in a way that looks right: `return x` on line 3 and `return y` on line 5
+    /// are two apart because `else` sits on line 4, so a gap test invents a
+    /// blank line inside an if. Only the source knows which lines are empty.
+    blank_lines: []const u32 = &.{},
     indent_level: usize,
     indent_str: []const u8,
 
@@ -316,14 +344,21 @@ pub const PrettyPrinter = struct {
             },
             .func_expr => |f| try self.printFuncBody(f),
             .table => |x| {
+                // A table the writer put on ONE line stays on one line.
+                // Exploding `{ x = 3, y = 4 }` across four lines is not
+                // canonicalisation, it is churn — and across a whole tree it
+                // buries the changes that matter in reformatting noise.
+                const inline_src = tableWasInline(&x);
                 try self.write("{");
                 if (x.fields.len > 0) {
-                    self.indent();
-                    try self.nl();
+                    if (inline_src) try self.write(" ") else {
+                        self.indent();
+                        try self.nl();
+                    }
                     for (x.fields, 0..) |fld, i| {
                         if (i > 0) {
                             try self.write(",");
-                            try self.nl();
+                            if (inline_src) try self.write(" ") else try self.nl();
                         }
                         switch (fld) {
                             .indexed => |idx| {
@@ -349,8 +384,10 @@ pub const PrettyPrinter = struct {
                             },
                         }
                     }
-                    self.dedent();
-                    try self.nl();
+                    if (inline_src) try self.write(" ") else {
+                        self.dedent();
+                        try self.nl();
+                    }
                 }
                 try self.write("}");
             },
@@ -1102,9 +1139,27 @@ pub const PrettyPrinter = struct {
     fn flushCommentsBefore(self: *PrettyPrinter, line: u32) Error!void {
         while (self.comment_at < self.comments.len and self.comments[self.comment_at].line <= line) {
             const c = self.comments[self.comment_at];
+            try self.blankIfGap(c.line);
             self.comment_at += 1;
             try self.write(c.text);
             try self.nl();
+            self.last_src_line = c.line;
+        }
+        try self.blankIfGap(line);
+        if (line != 0) self.last_src_line = line;
+    }
+
+    /// One blank line when the source had at least one here. Collapsed to a
+    /// single blank however many there were, which is a formatting decision;
+    /// losing them entirely is not.
+    fn blankIfGap(self: *PrettyPrinter, line: u32) Error!void {
+        if (self.last_src_line == 0 or line == 0) return;
+        for (self.blank_lines) |b| {
+            if (b > self.last_src_line and b < line) {
+                try self.write("\n");
+                return;
+            }
+            if (b >= line) return;
         }
     }
 

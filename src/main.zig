@@ -5070,6 +5070,18 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
     var pp = PrettyPrinter.init(alloc, &buf, .idol);
     pp.canonical = canonical and parser.idol_mode;
     pp.comments = comments.items;
+    // Which lines are genuinely empty. Derived from the SOURCE, not inferred
+    // from gaps between statement lines — see `blank_lines`.
+    var blanks: std.ArrayList(u32) = .empty;
+    defer blanks.deinit(alloc);
+    {
+        var line: u32 = 1;
+        var it = std.mem.splitScalar(u8, src, '\n');
+        while (it.next()) |ln| : (line += 1) {
+            if (std.mem.trim(u8, ln, " \t\r").len == 0) try blanks.append(alloc, line);
+        }
+    }
+    pp.blank_lines = blanks.items;
     pp.printModule(&mod) catch {
         term.err("failed to format '{s}'", .{src_path});
         std.process.exit(1);
