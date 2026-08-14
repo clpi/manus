@@ -139,6 +139,22 @@ static inline char* duo_str_rep(const char* s, int64_t n) {
 
 static inline char* duo_str_sub_cstr(const char* str, int64_t start, int64_t end) {
     if (!str) str = "";
+    /* The length is only needed to clamp the requested range. Calling strlen on
+       `str` cost O(whole buffer) PER TOKEN, which made tokenizing O(n^2) all over
+       again once the peek_char/adv guards were fixed. For an ordinary forward
+       range, scanning just the range itself answers the same question in
+       O(sublen), and those sum to O(n) across the file. memchr stops at the first
+       NUL, so it never runs past the end of the string. */
+    if (start >= 1 && end >= start) {
+        const char *nul = (const char *)memchr(str + start - 1, 0, (size_t)(end - start + 1));
+        if (nul == NULL) {
+            int64_t sublen = end - start + 1;
+            char* out = (char*)malloc((size_t)sublen + 1);
+            if (!out) return (char*)str;
+            memcpy(out, str + start - 1, (size_t)sublen); out[sublen] = '\0';
+            return out;
+        }
+    }
     int64_t len = (int64_t)strlen(str);
     if (start < 0) start = len + start + 1;
     if (end < 0) end = len + end + 1;

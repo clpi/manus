@@ -380,6 +380,12 @@ pub const SemanticGraph = struct {
     module_path: ?[]const u8 = null,
     nodes: std.ArrayListUnmanaged(Node) = .empty,
     edges: std.ArrayListUnmanaged(Edge) = .empty,
+    /// from-id -> indices into `edges`. A PHYSICAL ACCELERATION INDEX ONLY
+    /// (law.md §19: indexes may accelerate queries but never establish meaning),
+    /// so every consumer re-checks `edge.from` and a stale bucket is harmless.
+    /// Without it the hot graph queries scanned ALL edges per lookup, making
+    /// lowering O(applications x edges).
+    out_edges: std.AutoHashMapUnmanaged(id, std.ArrayListUnmanaged(u32)) = .empty,
     application_facts: std.ArrayListUnmanaged(ApplicationFact) = .empty,
     application_values: std.ArrayListUnmanaged(id) = .empty,
     application_rows: std.ArrayListUnmanaged(u32) = .empty,
@@ -404,6 +410,11 @@ pub const SemanticGraph = struct {
         }
         self.nodes.deinit(self.alloc);
         self.edges.deinit(self.alloc);
+        {
+            var it = self.out_edges.valueIterator();
+            while (it.next()) |bucket| bucket.deinit(self.alloc);
+            self.out_edges.deinit(self.alloc);
+        }
         self.application_facts.deinit(self.alloc);
         self.application_values.deinit(self.alloc);
         self.application_rows.deinit(self.alloc);
@@ -466,13 +477,37 @@ pub const SemanticGraph = struct {
             self.forgetFunc(removed);
         }
         try self.appendEdge(.{ .from = parent, .to = entity, .kind = .contains });
-        errdefer _ = self.edges.pop();
+        errdefer self.popEdge();
         try self.nested.push(self.alloc, parent, entity);
         return entity;
     }
 
     fn appendEdge(self: *SemanticGraph, edge: Edge) !void {
+        const idx: u32 = @intCast(self.edges.items.len);
         try self.edges.append(self.alloc, edge);
+        // The index is required for query COMPLETENESS, so a failure to grow it
+        // must not leave the edge published — appendEdge stays transactional.
+        errdefer _ = self.edges.pop();
+        const gop = try self.out_edges.getOrPut(self.alloc, edge.from);
+        if (!gop.found_existing) gop.value_ptr.* = .empty;
+        try gop.value_ptr.append(self.alloc, idx);
+    }
+
+    /// Roll back the last appended edge AND its index entry together. Popping
+    /// only the edge would leave a stale bucket entry; if a later edge reused
+    /// that slot with the same `from` it would be visited twice, and a
+    /// uniqueness query would report false ambiguity.
+    fn popEdge(self: *SemanticGraph) void {
+        const edge = self.edges.pop() orelse return;
+        if (self.out_edges.getPtr(edge.from)) |bucket| {
+            if (bucket.items.len > 0) _ = bucket.pop();
+        }
+    }
+
+    /// Edge indices whose `from` is `n`, for O(out-degree) traversal (law.md §20).
+    fn outEdges(self: *const SemanticGraph, n: id) []const u32 {
+        const bucket = self.out_edges.getPtr(n) orelse return &[_]u32{};
+        return bucket.items;
     }
 
     pub fn addEdge(self: *SemanticGraph, edge: Edge) !void {
@@ -1070,7 +1105,9 @@ pub const SemanticGraph = struct {
 
     fn bindingRelation(self: *const SemanticGraph, occurrence: id) ?id {
         var match: ?id = null;
-        for (self.edges.items) |edge| {
+        for (self.outEdges(occurrence)) |ei| {
+            if (ei >= self.edges.items.len) continue;
+            const edge = self.edges.items[ei];
             if (edge.from != occurrence or edge.kind != .binding) continue;
             if (self.get(edge.to) == null) continue;
             if (!self.callable(edge.to)) continue;
@@ -1082,7 +1119,9 @@ pub const SemanticGraph = struct {
 
     fn uniqueSubjectProjection(self: *const SemanticGraph, occurrence: id) ?id {
         var match: ?id = null;
-        for (self.edges.items) |edge| {
+        for (self.outEdges(occurrence)) |ei| {
+            if (ei >= self.edges.items.len) continue;
+            const edge = self.edges.items[ei];
             if (edge.from != occurrence or edge.kind != .projection) continue;
             if (edge.position != application_subject_projection) continue;
             if (self.get(edge.to) == null) continue;
