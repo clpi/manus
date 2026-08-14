@@ -164,6 +164,10 @@ pub const Parser = struct {
     /// registry consulted by other subsystems — sema and codegen never read it,
     /// they read the resolved `field` node it produces.
     caseset_cases: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Descriptors declared in this module, mapped to their field names in
+    /// DECLARATION ORDER, so `point(3, 4)` can be resolved as descriptor
+    /// application — the same application grammar a relation call uses.
+    record_descriptors: std.StringHashMapUnmanaged([]const []const u8) = .empty,
 
     /// True when `parse_module` installed the producer pack on `alloc`.
     pack_owned: bool = false,
@@ -3557,7 +3561,15 @@ pub const Parser = struct {
                 },
                 .lparen => {
                     const callargs = try self.parse_call_args();
-                    e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs } });
+                    // DESCRIPTOR APPLICATION. `point(3, 4)` is the same
+                    // application grammar as any other call; what differs is
+                    // only what the callee resolves to. Applying a descriptor
+                    // fills its slots in declaration order.
+                    if (try self.descriptorApplication(tok.loc, e, callargs)) |built| {
+                        e = built;
+                    } else {
+                        e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs } });
+                    }
                 },
                 // Do NOT consume {, [, string_lit as suffixes in match scrutinee
                 else => break,
@@ -4200,6 +4212,7 @@ pub const Parser = struct {
             // different shape entirely, not a variant of them.
             if (try self.starts_offside_record(colon_tok)) {
                 const rec_typ = try self.parse_offside_record(colon_tok.loc);
+                try self.noteRecordDescriptor(first.name.ident, rec_typ);
                 return ast.Stmt{ .alias_def = .{
                     .loc = first.loc(),
                     .name = first.name.ident,
@@ -4255,6 +4268,7 @@ pub const Parser = struct {
             // Jai-like type definition: `Name: { fields }` with no initializer
             // becomes an alias_def (equivalent to `type Name = { fields }`)
             if (typ == .record and (try self.pk()).kind != .assign) {
+                try self.noteRecordDescriptor(first.name.ident, typ);
                 return ast.Stmt{ .alias_def = .{
                     .loc = first.loc(),
                     .name = first.name.ident,
@@ -5472,6 +5486,35 @@ pub const Parser = struct {
     /// assignment. Inside pack syntax `name =` at slot level IS a slot label;
     /// the parser already knows it is reading a pack, so this is contextual
     /// rather than ambiguous.
+    /// `point(3, 4)` where `point` is a declared descriptor: fill its slots in
+    /// declaration order. Returns null when the callee is not a descriptor, so
+    /// every ordinary call is untouched.
+    ///
+    /// There is deliberately no separate constructor syntax. A descriptor and a
+    /// relation cannot share a name, so after resolution the meaning is unique
+    /// and the two faces converge on one application architecture.
+    fn descriptorApplication(self: *Parser, l: ast.Loc, callee: *ast.Expr, args: []*ast.Expr) ParseError!?*ast.Expr {
+        if (callee.* != .name) return null;
+        const field_names = self.record_descriptors.get(callee.name.ident) orelse return null;
+        if (args.len != field_names.len) {
+            term.locErr(l, "`{s}` has {d} slot(s), applied to {d}", .{ callee.name.ident, field_names.len, args.len });
+            return error.UnexpectedToken;
+        }
+        var fields = try self.alloc.alloc(ast.TableField, args.len);
+        for (args, 0..) |a, i| fields[i] = .{ .named = .{ .key = field_names[i], .val = a } };
+        return try self.new_expr(.{ .table = .{ .loc = l, .fields = fields } });
+    }
+
+    /// Remember a descriptor's slot names so it can be applied later.
+    fn noteRecordDescriptor(self: *Parser, name: []const u8, typ: ast.TypeExpr) ParseError!void {
+        if (typ != .record) return;
+        const src_fields = typ.record.fields;
+        if (src_fields.len == 0) return;
+        var names = try self.alloc.alloc([]const u8, src_fields.len);
+        for (src_fields, 0..) |f, i| names[i] = f.name;
+        try self.record_descriptors.put(self.alloc, name, names);
+    }
+
     fn starts_paren_pack(self: *Parser) ParseError!bool {
         const first = try self.pk();
         if (first.kind != .name and !grammar_roles.isDescriptor(first.kind)) return false;
@@ -6420,6 +6463,14 @@ pub const Parser = struct {
                     // that is not a relation edge is left exactly as it was.
                     if (try self.relation_edge_of(e, callargs)) |sym| {
                         e = try self.new_expr(.{ .name = .{ .loc = tok.loc, .ident = sym } });
+                        continue;
+                    }
+                    // DESCRIPTOR APPLICATION: `point(3, 4)` fills a declared
+                    // descriptor's slots in declaration order. Same application
+                    // grammar as any call; only what the callee resolves to
+                    // differs, so there is no constructor syntax.
+                    if (try self.descriptorApplication(tok.loc, e, callargs)) |built| {
+                        e = built;
                         continue;
                     }
                     e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs, .form = .parenthesized } });
