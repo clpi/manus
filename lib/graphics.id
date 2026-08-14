@@ -5,354 +5,309 @@
 # Color
 # ═══════════════════════════════════════════════════════════════
 
-color_rgb(r: f64, g: f64, b: f64): any
-    {r = r, g = g, b = b, a = 1.0}
-end
+color_rgb: any = (r: f64, g: f64, b: f64)
+  { r = r, g = g, b = b, a = 1.0 }
 
-color_rgba(r: f64, g: f64, b: f64, a: f64): any
-    {r = r, g = g, b = b, a = a}
-end
+color_rgba: any = (r: f64, g: f64, b: f64, a: f64)
+  { r = r, g = g, b = b, a = a }
 
-color_hex(hex_str: str): any
-    s = hex_str
-    if s:sub(1, 1) == "#" s = s:sub(2) end
-    if s:len() == 6
-        r = tonumber(s:sub(1, 2), 16) / 255
-        g = tonumber(s:sub(3, 4), 16) / 255
-        b = tonumber(s:sub(5, 6), 16) / 255
-        return {r = r, g = g, b = b, a = 1.0}
-    end
-    if s:len() == 8
-        r = tonumber(s:sub(1, 2), 16) / 255
-        g = tonumber(s:sub(3, 4), 16) / 255
-        b = tonumber(s:sub(5, 6), 16) / 255
-        a = tonumber(s:sub(7, 8), 16) / 255
-        return {r = r, g = g, b = b, a = a}
-    end
-    {r = 0, g = 0, b = 0, a = 1.0}
-end
+color_hex: any = (hex_str: str)
+  s = hex_str
+  if s:sub(1, 1) == "#"
+    s = s:sub(2)
+  if s:len() == 6
+    r = tonumber(s:sub(1, 2), 16) / 255
+    g = tonumber(s:sub(3, 4), 16) / 255
+    b = tonumber(s:sub(5, 6), 16) / 255
+    return { r = r, g = g, b = b, a = 1.0 }
+  if s:len() == 8
+    r = tonumber(s:sub(1, 2), 16) / 255
+    g = tonumber(s:sub(3, 4), 16) / 255
+    b = tonumber(s:sub(5, 6), 16) / 255
+    a = tonumber(s:sub(7, 8), 16) / 255
+    return { r = r, g = g, b = b, a = a }
+  { r = 0, g = 0, b = 0, a = 1.0 }
 
-color_to_hex(c: any): str
-    ri = c.r * 255.0 + 0.5:floor()
-    gi = c.g * 255.0 + 0.5:floor()
-    bi = c.b * 255.0 + 0.5:floor()
-    return "#%02x%02x%02x":format(ri, gi, bi)
-end
+color_to_hex: str = (c: any)
+  ri = c.r * 255.0 + 0.5:floor()
+  gi = c.g * 255.0 + 0.5:floor()
+  bi = c.b * 255.0 + 0.5:floor()
+  return "#%02x%02x%02x":format(ri, gi, bi)
 
-color_lerp(a: any, b: any, t: f64): any
-    {
-        r = a.r + (b.r - a.r) * t,
-        g = a.g + (b.g - a.g) * t,
-        b = a.b + (b.b - a.b) * t,
-        a = a.a + (b.a - a.a) * t,
-    }
-end
+color_lerp: any = (a: any, b: any, t: f64)
+  {
+    r = a.r + (b.r - a.r) * t,
+    g = a.g + (b.g - a.g) * t,
+    b = a.b + (b.b - a.b) * t,
+    a = a.a + (b.a - a.a) * t
+  }
 
-color_mul(c: any, s: f64): any
-    {r = c.r * s, g = c.g * s, b = c.b * s, a = c.a * s}
-end
+color_mul: any = (c: any, s: f64)
+  { r = c.r * s, g = c.g * s, b = c.b * s, a = c.a * s }
 
-color_add(a: any, b: any): any
-    {r = a.r + b.r, g = a.g + b.g, b = a.b + b.b, a = a.a + b.a}
-end
+color_add: any = (a: any, b: any)
+  { r = a.r + b.r, g = a.g + b.g, b = a.b + b.b, a = a.a + b.a }
 
-color_clamp(c: any): any
-    {
-        r = math.clamp(c.r, 0, 1),
-        g = math.clamp(c.g, 0, 1),
-        b = math.clamp(c.b, 0, 1),
-        a = math.clamp(c.a, 0, 1),
-    }
-end
+color_clamp: any = (c: any)
+  {
+    r = math.clamp(c.r, 0, 1),
+    g = math.clamp(c.g, 0, 1),
+    b = math.clamp(c.b, 0, 1),
+    a = math.clamp(c.a, 0, 1)
+  }
 
 # Convert RGB to HSV
-color_to_hsv(c: any): any
-    r, g, b = c.r, c.g, c.b
-    max_val = r:max(g:max(b))
-    min_val = r:min(g:min(b))
-    d = max_val - min_val
-    h = 0
-    s = 0
-    v = max_val
-    if max_val != 0 s = d / max_val end
-    if d != 0
-        if max_val == r
-            h = (g - b) / d
-            if g < b h += 6 end
-        elseif max_val == g
-            h = (b - r) / d + 2
-        else
-            h = (r - g) / d + 4
-        end
-        h /= 6
-    end
-    {h = h, s = s, v = v}
-end
+color_to_hsv: any = (c: any)
+  r, g, b = c.r, c.g, c.b
+  max_val = r:max(g:max(b))
+  min_val = r:min(g:min(b))
+  d = max_val - min_val
+  h = 0
+  s = 0
+  v = max_val
+  if max_val != 0
+    s = d / max_val
+  if d != 0
+    if max_val == r
+      h = (g - b) / d
+      if g < b
+        h = h + 6
+    elseif max_val == g
+      h = (b - r) / d + 2
+    else
+      h = (r - g) / d + 4
+    h = h / 6
+  { h = h, s = s, v = v }
 
 # Convert HSV to RGB
-color_from_hsv(h: f64, s: f64, v: f64): any
-    i = h * 6:floor()
-    f = h * 6 - i
-    p = v * (1 - s)
-    q = v * (1 - f * s)
-    t = v * (1 - (1 - f) * s)
-    i = i % 6
-    if i == 0 return {r = v, g = t, b = p, a = 1.0} end
-    if i == 1 return {r = q, g = v, b = p, a = 1.0} end
-    if i == 2 return {r = p, g = v, b = t, a = 1.0} end
-    if i == 3 return {r = p, g = q, b = v, a = 1.0} end
-    if i == 4 return {r = t, g = p, b = v, a = 1.0} end
-    {r = v, g = p, b = q, a = 1.0}
-end
+color_from_hsv: any = (h: f64, s: f64, v: f64)
+  i = h * 6:floor()
+  f = h * 6 - i
+  p = v * (1 - s)
+  q = v * (1 - f * s)
+  t = v * (1 - (1 - f) * s)
+  i = i % 6
+  if i == 0
+    return { r = v, g = t, b = p, a = 1.0 }
+  if i == 1
+    return { r = q, g = v, b = p, a = 1.0 }
+  if i == 2
+    return { r = p, g = v, b = t, a = 1.0 }
+  if i == 3
+    return { r = p, g = q, b = v, a = 1.0 }
+  if i == 4
+    return { r = t, g = p, b = v, a = 1.0 }
+  { r = v, g = p, b = q, a = 1.0 }
 
 # Named colors
 COLORS = {
-    red = {r = 1, g = 0, b = 0, a = 1},
-    green = {r = 0, g = 1, b = 0, a = 1},
-    blue = {r = 0, g = 0, b = 1, a = 1},
-    white = {r = 1, g = 1, b = 1, a = 1},
-    black = {r = 0, g = 0, b = 0, a = 1},
-    yellow = {r = 1, g = 1, b = 0, a = 1},
-    cyan = {r = 0, g = 1, b = 1, a = 1},
-    magenta = {r = 1, g = 0, b = 1, a = 1},
-    orange = {r = 1, g = 0.5, b = 0, a = 1},
-    purple = {r = 0.5, g = 0, b = 0.5, a = 1},
-    gray = {r = 0.5, g = 0.5, b = 0.5, a = 1},
-    transparent = {r = 0, g = 0, b = 0, a = 0},
+  red = { r = 1, g = 0, b = 0, a = 1 },
+  green = { r = 0, g = 1, b = 0, a = 1 },
+  blue = { r = 0, g = 0, b = 1, a = 1 },
+  white = { r = 1, g = 1, b = 1, a = 1 },
+  black = { r = 0, g = 0, b = 0, a = 1 },
+  yellow = { r = 1, g = 1, b = 0, a = 1 },
+  cyan = { r = 0, g = 1, b = 1, a = 1 },
+  magenta = { r = 1, g = 0, b = 1, a = 1 },
+  orange = { r = 1, g = 0.5, b = 0, a = 1 },
+  purple = { r = 0.5, g = 0, b = 0.5, a = 1 },
+  gray = { r = 0.5, g = 0.5, b = 0.5, a = 1 },
+  transparent = { r = 0, g = 0, b = 0, a = 0 }
 }
 
 # ═══════════════════════════════════════════════════════════════
 # Geometry: 2D vectors and shapes
 # ═══════════════════════════════════════════════════════════════
 
-vec2(x: f64, y: f64): any
-    {x = x, y = y}
-end
+vec2: any = (x: f64, y: f64)
+  { x = x, y = y }
 
-vec2_add(a: any, b: any): any
-    {x = a.x + b.x, y = a.y + b.y}
-end
+vec2_add: any = (a: any, b: any)
+  { x = a.x + b.x, y = a.y + b.y }
 
-vec2_sub(a: any, b: any): any
-    {x = a.x - b.x, y = a.y - b.y}
-end
+vec2_sub: any = (a: any, b: any)
+  { x = a.x - b.x, y = a.y - b.y }
 
-vec2_mul(v: any, s: f64): any
-    {x = v.x * s, y = v.y * s}
-end
+vec2_mul: any = (v: any, s: f64)
+  { x = v.x * s, y = v.y * s }
 
-vec2_dot(a: any, b: any): f64
-    a.x * b.x + a.y * b.y
-end
+vec2_dot: f64 = (a: any, b: any)
+  a.x * b.x + a.y * b.y
 
-vec2_length(v: any): f64
-    v.x * v.x + v.y * v.y:sqrt()
-end
+vec2_length: f64 = (v: any)
+  v.x * v.x + v.y * v.y:sqrt()
 
-vec2_normalize(v: any): any
-    len = vec2_length(v)
-    if len < 1e-10 return {x = 0, y = 0} end
-    {x = v.x / len, y = v.y / len}
-end
+vec2_normalize: any = (v: any)
+  len = vec2_length(v)
+  if len < 0.0000000001
+    return { x = 0, y = 0 }
+  { x = v.x / len, y = v.y / len }
 
-vec2_distance(a: any, b: any): f64
-    vec2_length(vec2_sub(a, b))
-end
+vec2_distance: f64 = (a: any, b: any)
+  vec2_length(vec2_sub(a, b))
 
-vec2_lerp(a: any, b: any, t: f64): any
-    {x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t}
-end
+vec2_lerp: any = (a: any, b: any, t: f64)
+  { x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t }
 
 # 2D Rectangle
-rect(x: f64, y: f64, w: f64, h: f64): any
-    {x = x, y = y, w = w, h = h}
-end
+rect: any = (x: f64, y: f64, w: f64, h: f64)
+  { x = x, y = y, w = w, h = h }
 
-rect_contains(r: any, px: f64, py: f64): bool
-    px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h
-end
+rect_contains: bool = (r: any, px: f64, py: f64)
+  px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h
 
-rect_intersects(a: any, b: any): bool
-    a.x < b.x + b.w and a.x + a.w > b.x and a.y < b.y + b.h and a.y + a.h > b.y
-end
+rect_intersects: bool = (a: any, b: any)
+  a.x < b.x + b.w and a.x + a.w > b.x and a.y < b.y + b.h and a.y + a.h > b.y
 
-rect_area(r: any): f64
-    r.w * r.h
-end
+rect_area: f64 = (r: any)
+  r.w * r.h
 
-rect_center(r: any): any
-    {x = r.x + r.w / 2, y = r.y + r.h / 2}
-end
+rect_center: any = (r: any)
+  { x = r.x + r.w / 2, y = r.y + r.h / 2 }
 
 # Circle
-circle(cx: f64, cy: f64, r: f64): any
-    {cx = cx, cy = cy, r = r}
-end
+circle: any = (cx: f64, cy: f64, r: f64)
+  { cx = cx, cy = cy, r = r }
 
-circle_contains(c: any, px: f64, py: f64): bool
-    dx = px - c.cx
-    dy = py - c.cy
-    dx * dx + dy * dy <= c.r * c.r
-end
+circle_contains: bool = (c: any, px: f64, py: f64)
+  dx = px - c.cx
+  dy = py - c.cy
+  dx * dx + dy * dy <= c.r * c.r
 
-circle_area(c: any): f64
-    math.pi * c.r * c.r
-end
+circle_area: f64 = (c: any)
+  math.pi * c.r * c.r
 
-circle_perimeter(c: any): f64
-    2 * math.pi * c.r
-end
+circle_perimeter: f64 = (c: any)
+  2 * math.pi * c.r
 
 # ═══════════════════════════════════════════════════════════════
 # Transform (2D affine: translation + rotation + scale)
 # ═══════════════════════════════════════════════════════════════
 
-transform_new(): any
-    {tx = 0, ty = 0, sx = 1, sy = 1, rotation = 0}
-end
+transform_new: any = ()
+  { tx = 0, ty = 0, sx = 1, sy = 1, rotation = 0 }
 
-transform_translate(t: any, dx: f64, dy: f64): any
-    t.tx = t.tx + dx
-    t.ty = t.ty + dy
-    t
-end
+transform_translate: any = (t: any, dx: f64, dy: f64)
+  t.tx = t.tx + dx
+  t.ty = t.ty + dy
+  t
 
-transform_rotate(t: any, angle: f64): any
-    t.rotation = t.rotation + angle
-    t
-end
+transform_rotate: any = (t: any, angle: f64)
+  t.rotation = t.rotation + angle
+  t
 
-transform_scale(t: any, sx: f64, sy: f64): any
-    t.sx = t.sx * sx
-    t.sy = t.sy * sy
-    t
-end
+transform_scale: any = (t: any, sx: f64, sy: f64)
+  t.sx = t.sx * sx
+  t.sy = t.sy * sy
+  t
 
-transform_apply(t: any, px: f64, py: f64): any
-    cos_r = t.rotation:cos()
-    sin_r = t.rotation:sin()
-    rx = px * t.sx
-    ry = py * t.sy
-    {
-        x = rx * cos_r - ry * sin_r + t.tx,
-        y = rx * sin_r + ry * cos_r + t.ty,
-    }
-end
+transform_apply: any = (t: any, px: f64, py: f64)
+  cos_r = t.rotation:cos()
+  sin_r = t.rotation:sin()
+  rx = px * t.sx
+  ry = py * t.sy
+  {
+    x = rx * cos_r - ry * sin_r + t.tx,
+    y = rx * sin_r + ry * cos_r + t.ty
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Canvas (simple rasterizer for ML visualization / image gen)
 # ═══════════════════════════════════════════════════════════════
 
-canvas_new(width: i64, height: i64): any
-    pixels = {}
-    total = width * height
-    i = 1
-    while i <= total
-        pixels[i] = {r = 1, g = 1, b = 1, a = 1}
-        i += 1
-    end
-    {width = width, height = height, pixels = pixels}
-end
+canvas_new: any = (width: i64, height: i64)
+  pixels = {}
+  total = width * height
+  i = 1
+  while i <= total
+    pixels[i] = { r = 1, g = 1, b = 1, a = 1 }
+    i = i + 1
+  { width = width, height = height, pixels = pixels }
 
-canvas_clear(canvas: any, color: any): void
-    total = canvas.width * canvas.height
-    i = 1
-    while i <= total
-        canvas.pixels[i] = color
-        i += 1
-    end
-end
+canvas_clear: void = (canvas: any, color: any)
+  total = canvas.width * canvas.height
+  i = 1
+  while i <= total
+    canvas.pixels[i] = color
+    i = i + 1
 
-canvas_set_pixel(canvas: any, x: i64, y: i64, color: any): void
-    if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height return end
-    canvas.pixels[y * canvas.width + x + 1] = color
-end
+canvas_set_pixel: void = (canvas: any, x: i64, y: i64, color: any)
+  if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height
+    return
+  canvas.pixels[y * canvas.width + x + 1] = color
 
-canvas_get_pixel(canvas: any, x: i64, y: i64): any
-    if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height return nil end
-    canvas.pixels[y * canvas.width + x + 1]
-end
+canvas_get_pixel: any = (canvas: any, x: i64, y: i64)
+  if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height
+    return nil
+  canvas.pixels[y * canvas.width + x + 1]
 
 # Draw a filled rectangle
-canvas_fill_rect(canvas: any, x: i64, y: i64, w: i64, h: i64, color: any): void
-    dy = 0
-    while dy < h
-        dx = 0
-        while dx < w
-            canvas_set_pixel(canvas, x + dx, y + dy, color)
-            dx += 1
-        end
-        dy += 1
-    end
-end
+canvas_fill_rect: void = (canvas: any, x: i64, y: i64, w: i64, h: i64, color: any)
+  dy = 0
+  while dy < h
+    dx = 0
+    while dx < w
+      canvas_set_pixel(canvas, x + dx, y + dy, color)
+      dx = dx + 1
+    dy = dy + 1
 
 # Draw a line (Bresenham's algorithm)
-canvas_line(canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any): void
-    dx = x1 - x0:abs()
-    dy = -y1 - y0:abs()
-    sx = 1
-    if x0 > x1 sx = -1 end
-    sy = 1
-    if y0 > y1 sy = -1 end
-    err = dx + dy
-    x, y = x0, y0
-    while true
-        canvas_set_pixel(canvas, x, y, color)
-        if x == x1 and y == y1 break end
-        e2 = 2 * err
-        if e2 >= dy
-            err += dy
-            x += sx
-        end
-        if e2 <= dx
-            err += dx
-            y += sy
-        end
-    end
-end
+canvas_line: void = (canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any)
+  dx = x1 - x0:abs()
+  dy = -y1 - y0:abs()
+  sx = 1
+  if x0 > x1
+    sx = -1
+  sy = 1
+  if y0 > y1
+    sy = -1
+  err = dx + dy
+  x, y = x0, y0
+  while true
+    canvas_set_pixel(canvas, x, y, color)
+    if x == x1 and y == y1
+      break
+    e2 = 2 * err
+    if e2 >= dy
+      err = err + dy
+      x = x + sx
+    if e2 <= dx
+      err = err + dx
+      y = y + sy
 
 # Draw a circle (Midpoint circle algorithm)
-canvas_circle(canvas: any, cx: i64, cy: i64, r: i64, color: any): void
-    x = r
-    y = 0
-    err = 1 - r
-    while x >= y
-        canvas_set_pixel(canvas, cx + x, cy + y, color)
-        canvas_set_pixel(canvas, cx + y, cy + x, color)
-        canvas_set_pixel(canvas, cx - y, cy + x, color)
-        canvas_set_pixel(canvas, cx - x, cy + y, color)
-        canvas_set_pixel(canvas, cx - x, cy - y, color)
-        canvas_set_pixel(canvas, cx - y, cy - x, color)
-        canvas_set_pixel(canvas, cx + y, cy - x, color)
-        canvas_set_pixel(canvas, cx + x, cy - y, color)
-        y += 1
-        if err < 0
-            err += 2 * y + 1
-        else
-            x -= 1
-            err += 2 * (y - x) + 1
-        end
-    end
-end
+canvas_circle: void = (canvas: any, cx: i64, cy: i64, r: i64, color: any)
+  x = r
+  y = 0
+  err = 1 - r
+  while x >= y
+    canvas_set_pixel(canvas, cx + x, cy + y, color)
+    canvas_set_pixel(canvas, cx + y, cy + x, color)
+    canvas_set_pixel(canvas, cx - y, cy + x, color)
+    canvas_set_pixel(canvas, cx - x, cy + y, color)
+    canvas_set_pixel(canvas, cx - x, cy - y, color)
+    canvas_set_pixel(canvas, cx - y, cy - x, color)
+    canvas_set_pixel(canvas, cx + y, cy - x, color)
+    canvas_set_pixel(canvas, cx + x, cy - y, color)
+    y = y + 1
+    if err < 0
+      err = err + 2 * y + 1
+    else
+      x = x - 1
+      err = err + 2 * (y - x) + 1
 
 # Convert canvas to PPM format (for easy viewing)
-canvas_to_ppm(canvas: any): str
-    out = "P6\n" .. canvas.width:to(str) .. " " .. canvas.height:to(str) .. "\n255\n"
-    i = 1
-    while i <= canvas.width * canvas.height
-        c = canvas.pixels[i]
-        out = out .. c.r * 255:floor():char()
-            .. c.g * 255:floor():char()
-            .. c.b * 255:floor():char()
-        i += 1
-    end
-    out
-end
-
+canvas_to_ppm: str = (canvas: any)
+  out = "P6\n" .. canvas.width:to(str) .. " " .. canvas.height:to(str) .. "\n255\n"
+  i = 1
+  while i <= canvas.width * canvas.height
+    c = canvas.pixels[i]
+    out = out .. c.r * 255:floor():char() .. c.g * 255:floor():char() .. c.b * 255:floor():char()
+    i = i + 1
+  out
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Color
 # Vec2
 # Shapes

@@ -1,74 +1,53 @@
 # image — Image root module (mirrors Go's image)
 
+pt: any = (x: any, y: any)
+  { x = x, y = y, kind = "point" }
 
-pt(x: any, y: any): any
-    {x = x, y = y, kind = "point"}
-end
+rect: any = (x0: any, y0: any, x1: any, y1: any)
+  { min = pt(x0, y0), max = pt(x1, y1), kind = "rect" }
 
-rect(x0: any, y0: any, x1: any, y1: any): any
-    {min = pt(x0, y0), max = pt(x1, y1), kind = "rect"}
-end
+rect_dx: i64 = (r: any)
+  r.max.x - r.min.x
 
-rect_dx(r: any): i64
-    r.max.x - r.min.x
-end
+rect_dy: i64 = (r: any)
+  r.max.y - r.min.y
 
-rect_dy(r: any): i64
-    r.max.y - r.min.y
-end
+rect_empty: bool = (r: any)
+  r.min.x >= r.max.x or r.min.y >= r.max.y
 
-rect_empty(r: any): bool
-    r.min.x >= r.max.x or r.min.y >= r.max.y
-end
+rect_inset: any = (r: any, n: i64)
+  rect(r.min.x + n, r.min.y + n, r.max.x - n, r.max.y - n)
 
-rect_inset(r: any, n: i64): any
-    rect(r.min.x + n, r.min.y + n, r.max.x - n, r.max.y - n)
-end
+rect_union: any = (r1: any, r2: any)
+  rect(r1.min.x:min(r2.min.x), r1.min.y:min(r2.min.y), r1.max.x:max(r2.max.x), r1.max.y:max(r2.max.y))
 
-rect_union(r1: any, r2: any): any
-    rect(r1.min.x:min(r2.min.x), r1.min.y:min(r2.min.y),
-         r1.max.x:max(r2.max.x), r1.max.y:max(r2.max.y))
-end
+rect_intersect: any = (r1: any, r2: any)
+  rect(r1.min.x:max(r2.min.x), r1.min.y:max(r2.min.y), r1.max.x:min(r2.max.x), r1.max.y:min(r2.max.y))
 
-rect_intersect(r1: any, r2: any): any
-    rect(r1.min.x:max(r2.min.x), r1.min.y:max(r2.min.y),
-         r1.max.x:min(r2.max.x), r1.max.y:min(r2.max.y))
-end
+rect_overlaps: bool = (r1: any, r2: any)
+  if rect_empty(rect_intersect(r1, r2))
+    return false
+  true
 
-rect_overlaps(r1: any, r2: any): bool
-    if rect_empty(rect_intersect(r1, r2)) return false end
-    true
-end
+new_rgba: any = (r: any)
+  { rect = r, pix = {}, stride = rect_dx(r) * 4, kind = "rgba_img" }
 
-new_rgba(r: any): any
-    {rect = r, pix = {}, stride = rect_dx(r) * 4, kind = "rgba_img"}
-end
+new_gray: any = (r: any)
+  { rect = r, pix = {}, stride = rect_dx(r), kind = "gray_img" }
 
-new_gray(r: any): any
-    {rect = r, pix = {}, stride = rect_dx(r), kind = "gray_img"}
-end
+img_set: void = (img: any, x: i64, y: i64, c: any)
+  r = img.rect
+  if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y
+    return
+  off = (y - r.min.y) * img.stride + (x - r.min.x) * 4
+  img.pix[off + 1] = c.r / 257
+  img.pix[off + 2] = c.g / 257
+  img.pix[off + 3] = c.b / 257
+  img.pix[off + 4] = c.a / 257
 
-img_set(img: any, x: i64, y: i64, c: any): void
-    r = img.rect
-    if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y return end
-    off = (y - r.min.y) * img.stride + (x - r.min.x) * 4
-    img.pix[off + 1] = c.r / 257
-    img.pix[off + 2] = c.g / 257
-    img.pix[off + 3] = c.b / 257
-    img.pix[off + 4] = c.a / 257
-end
-
-img_at(img: any, x: i64, y: i64): any
-    r = img.rect
-    if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y
-        return color.rgba(0, 0, 0, 0)
-    end
-    off = (y - r.min.y) * img.stride + (x - r.min.x) * 4
-    color.rgba(
-        img.pix[off + 1] * 257,
-        img.pix[off + 2] * 257,
-        img.pix[off + 3] * 257,
-        img.pix[off + 4] * 257
-    )
-end
-
+img_at: any = (img: any, x: i64, y: i64)
+  r = img.rect
+  if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y
+    return color.rgba(0, 0, 0, 0)
+  off = (y - r.min.y) * img.stride + (x - r.min.x) * 4
+  color.rgba(img.pix[off + 1] * 257, img.pix[off + 2] * 257, img.pix[off + 3] * 257, img.pix[off + 4] * 257)

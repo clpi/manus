@@ -5,474 +5,394 @@
 # Database Configuration
 # ═══════════════════════════════════════════════════════════════
 
-config_new(driver: str): any
-    {
-        driver = driver,          # "sqlite", "postgres", "mysql"
-        host = "localhost",
-        port = 5432,
-        database = "",
-        username = "",
-        password = "",
-        max_connections = 10,
-        min_connections = 2,
-        connection_timeout = 30,
-        idle_timeout = 300,
-        schema = "public",
-        ssl_mode = "prefer",
-        options = {},
-    }
-end
+config_new: any = (driver: str)
+  {
+    driver = driver,
+    host = "localhost",
+    port = 5432,
+    database = "",
+    username = "",
+    password = "",
+    max_connections = 10,
+    min_connections = 2,
+    connection_timeout = 30,
+    idle_timeout = 300,
+    schema = "public",
+    ssl_mode = "prefer",
+    options = {}
+  }
+# "sqlite", "postgres", "mysql"
 
-config_set_host(config: any, host: str): any
-    config.host = host
-    config
-end
+config_set_host: any = (config: any, host: str)
+  config.host = host
+  config
 
-config_set_port(config: any, port: i64): any
-    config.port = port
-    config
-end
+config_set_port: any = (config: any, port: i64)
+  config.port = port
+  config
 
-config_set_database(config: any, database: str): any
-    config.database = database
-    config
-end
+config_set_database: any = (config: any, database: str)
+  config.database = database
+  config
 
-config_set_auth(config: any, username: str, password: str): any
-    config.username = username
-    config.password = password
-    config
-end
+config_set_auth: any = (config: any, username: str, password: str)
+  config.username = username
+  config.password = password
+  config
 
-config_set_pool(config: any, min: i64, max: i64): any
-    config.min_connections = min
-    config.max_connections = max
-    config
-end
+config_set_pool: any = (config: any, min: i64, max: i64)
+  config.min_connections = min
+  config.max_connections = max
+  config
 
 # ═══════════════════════════════════════════════════════════════
 # Connection Pool
 # ═══════════════════════════════════════════════════════════════
 
-pool_new(config: any): any
-    pool = {
-        config = config,
-        connections = {},
-        available = {},
-        in_use = 0,
-        total = 0,
-    }
-    # Pre-create minimum connections
-    i = 0
-    while i < config.min_connections
-        conn = connection_new(config)
-        if conn
-            pool.connections[pool:len().connections + 1] = conn
-            pool.available[pool:len().available + 1] = conn
-            pool.total += 1
-        end
-        i += 1
-    end
-    pool
-end
+pool_new: any = (config: any)
+  pool = {
+    config = config,
+    connections = {},
+    available = {},
+    in_use = 0,
+    total = 0
+  }
+  # Pre-create minimum connections
+  i = 0
+  while i < config.min_connections
+    conn = connection_new(config)
+    if conn
+      pool.connections[pool:len().connections + 1] = conn
+      pool.available[pool:len().available + 1] = conn
+      pool.total = pool.total + 1
+    i = i + 1
+  pool
 
-pool_acquire(pool: any): any
-    # Try to get an available connection
-    if pool:len().available > 0
-        conn = pool.available[pool:len().available]
-        pool.available[pool:len().available] = nil
-        pool.in_use += 1
-        return conn
-    end
+pool_acquire: any = (pool: any)
+  # Try to get an available connection
+  if pool:len().available > 0
+    conn = pool.available[pool:len().available]
+    pool.available[pool:len().available] = nil
+    pool.in_use = pool.in_use + 1
+    return conn
+  
+# Create new connection if under limit
+  if pool.total < pool.config.max_connections
+    conn = connection_new(pool.config)
+    if conn
+      pool.total = pool.total + 1
+      pool.in_use = pool.in_use + 1
+      return conn
+  
+# pool exhausted
+  nil
 
-    # Create new connection if under limit
-    if pool.total < pool.config.max_connections
-        conn = connection_new(pool.config)
-        if conn
-            pool.total += 1
-            pool.in_use += 1
-            return conn
-        end
-    end
+pool_release: void = (pool: any, conn: any)
+  if conn == nil
+    return
+  pool.in_use = pool.in_use - 1
+  pool.available[pool:len().available + 1] = conn
 
-    nil  # pool exhausted
-end
+pool_close: void = (pool: any)
+  for conn in pool.connections
+    connection_close(conn)
+  pool.connections = {}
+  pool.available = {}
+  pool.total = 0
+  pool.in_use = 0
 
-pool_release(pool: any, conn: any): void
-    if conn == nil return end
-    pool.in_use -= 1
-    pool.available[pool:len().available + 1] = conn
-end
-
-pool_close(pool: any): void
-    for conn in pool.connections
-        connection_close(conn)
-    end
-    pool.connections = {}
-    pool.available = {}
-    pool.total = 0
-    pool.in_use = 0
-end
-
-pool_stats(pool: any): any
-    {
-        total = pool.total,
-        available = pool:len().available,
-        in_use = pool.in_use,
-        max = pool.config.max_connections,
-        utilization = pool.total > 0 and pool.in_use / pool.total or 0,
-    }
-end
+pool_stats: any = (pool: any)
+  {
+    total = pool.total,
+    available = pool:len().available,
+    in_use = pool.in_use,
+    max = pool.config.max_connections,
+    utilization = pool.total > 0 and pool.in_use / pool.total or 0
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Database Connection (backed by real SQLite FFI)
 # ═══════════════════════════════════════════════════════════════
 
-connection_new(config: any): any
-    if config.driver == "sqlite"
-        db_path = config.database
-        if db_path == nil or db_path == ""
-            db_path = ":memory:"
-        end
-        handle = sqlite.open(db_path)
-        if handle == nil
-            return {error = "Failed to open SQLite database: " .. db_path}
-        end
-        {
-            config = config,
-            connected = true,
-            handle = handle,
-            driver = "sqlite",
-            transaction_active = false,
-        }
-    else
-        # Non-sqlite drivers not yet supported
-        {error = "Unsupported driver: " .. config.driver}
-    end
-end
+connection_new: any = (config: any)
+  if config.driver == "sqlite"
+    db_path = config.database
+    if db_path == nil or db_path == ""
+      db_path = ":memory:"
+    handle = sqlite.open(db_path)
+    if handle == nil
+      return { error = "Failed to open SQLite database: " .. db_path }
+    {
+      config = config,
+      connected = true,
+      handle = handle,
+      driver = "sqlite",
+      transaction_active = false
+    }
+  else
+    # Non-sqlite drivers not yet supported
+    { error = "Unsupported driver: " .. config.driver }
 
-connection_close(conn: any): void
-    if conn == nil return end
-    if has(.handle)(conn) and conn.connected
-        sqlite.close(conn.handle)
-        conn.handle = nil
-    end
-    conn.connected = false
-end
+connection_close: void = (conn: any)
+  if conn == nil
+    return
+  if has(.handle)(conn) and conn.connected
+    sqlite.close(conn.handle)
+    conn.handle = nil
+  conn.connected = false
 
-connection_ping(conn: any): bool
-    conn.connected and conn.handle != nil
-end
+connection_ping: bool = (conn: any)
+  conn.connected and conn.handle != nil
 
-connection_execute(conn: any, sql: str, params: any): any
-    if not conn.connected
-        return {error = "Connection closed"}
-    end
-    if conn.driver == "sqlite"
-        # Use sqlite.exec for DDL/DML without results
-        err = sqlite.execute(conn.handle, sql)
-        if err != ""
-            return {ok = false, error = err, rows_affected = 0, rows = {}, columns = {}}
-        end
-        affected = sqlite.changes(conn.handle)
-        return {ok = true, rows_affected = affected, rows = {}, columns = {}}
-    end
-    {error = "Unsupported driver"}
-end
+connection_execute: any = (conn: any, sql: str, params: any)
+  if not conn.connected
+    return { error = "Connection closed" }
+  if conn.driver == "sqlite"
+    # Use sqlite.exec for DDL/DML without results
+    err = sqlite.execute(conn.handle, sql)
+    if err != ""
+      return { ok = false, error = err, rows_affected = 0, rows = {}, columns = {} }
+    affected = sqlite.changes(conn.handle)
+    return { ok = true, rows_affected = affected, rows = {}, columns = {} }
+  { error = "Unsupported driver" }
 
-connection_query(conn: any, sql: str, params: any): any
-    if not conn.connected
-        return {error = "Connection closed"}
-    end
-    if conn.driver == "sqlite"
-        rows = sqlite.query(conn.handle, sql)
-        if rows == nil
-            return {ok = false, error = "Query failed", rows = {}, columns = {}}
-        end
-        # Extract column names from first row
-        columns = {}
-        if rows:len() > 0
-            for k, _ in rows[1]
-                columns[columns:len() + 1] = k
-            end
-        end
-        return {ok = true, rows_affected = 0, rows = rows, columns = columns}
-    end
-    {error = "Unsupported driver"}
-end
+connection_query: any = (conn: any, sql: str, params: any)
+  if not conn.connected
+    return { error = "Connection closed" }
+  if conn.driver == "sqlite"
+    rows = sqlite.query(conn.handle, sql)
+    if rows == nil
+      return { ok = false, error = "Query failed", rows = {}, columns = {} }
+    # Extract column names from first row
+    columns = {}
+    if rows:len() > 0
+      for k, _ in rows[1]
+        columns[columns:len() + 1] = k
+    return { ok = true, rows_affected = 0, rows = rows, columns = columns }
+  { error = "Unsupported driver" }
 
-connection_query_one(conn: any, sql: str, params: any): any
-    result = connection_query(conn, sql, params)
-    if result.error or not result.ok return result end
-    if result:len().rows > 0
-        return result.rows[1]
-    end
-    nil
-end
+connection_query_one: any = (conn: any, sql: str, params: any)
+  result = connection_query(conn, sql, params)
+  if result.error or not result.ok
+    return result
+  if result:len().rows > 0
+    return result.rows[1]
+  nil
 
-connection_begin(conn: any): any
-    if conn.transaction_active
-        return {error = "Transaction already active"}
-    end
-    if conn.driver == "sqlite"
-        err = sqlite.execute(conn.handle, "BEGIN TRANSACTION")
-        if err != ""
-            return {ok = false, error = err}
-        end
-    end
-    conn.transaction_active = true
-    {ok = true}
-end
+connection_begin: any = (conn: any)
+  if conn.transaction_active
+    return { error = "Transaction already active" }
+  if conn.driver == "sqlite"
+    err = sqlite.execute(conn.handle, "BEGIN TRANSACTION")
+    if err != ""
+      return { ok = false, error = err }
+  conn.transaction_active = true
+  { ok = true }
 
-connection_commit(conn: any): any
-    if not conn.transaction_active
-        return {error = "No active transaction"}
-    end
-    if conn.driver == "sqlite"
-        err = sqlite.execute(conn.handle, "COMMIT")
-        if err != ""
-            return {ok = false, error = err}
-        end
-    end
-    conn.transaction_active = false
-    {ok = true}
-end
+connection_commit: any = (conn: any)
+  if not conn.transaction_active
+    return { error = "No active transaction" }
+  if conn.driver == "sqlite"
+    err = sqlite.execute(conn.handle, "COMMIT")
+    if err != ""
+      return { ok = false, error = err }
+  conn.transaction_active = false
+  { ok = true }
 
-connection_rollback(conn: any): any
-    if not conn.transaction_active
-        return {error = "No active transaction"}
-    end
-    if conn.driver == "sqlite"
-        err = sqlite.execute(conn.handle, "ROLLBACK")
-        if err != ""
-            return {ok = false, error = err}
-        end
-    end
-    conn.transaction_active = false
-    {ok = true}
-end
+connection_rollback: any = (conn: any)
+  if not conn.transaction_active
+    return { error = "No active transaction" }
+  if conn.driver == "sqlite"
+    err = sqlite.execute(conn.handle, "ROLLBACK")
+    if err != ""
+      return { ok = false, error = err }
+  conn.transaction_active = false
+  { ok = true }
 
 # ═══════════════════════════════════════════════════════════════
 # Query Builder
 # ═══════════════════════════════════════════════════════════════
 
-query(): any
-    {
-        type = "select",
-        table = "",
-        columns = {},
-        where = {},
-        joins = {},
-        group_by = {},
-        having = {},
-        order_by = {},
-        limit = nil,
-        offset = nil,
-        params = {},
-    }
-end
-
-select(q: any, ...columns): any
-    q.type = "select"
-    args = {...}
-    for i = 1, args:len()
-        q.columns[q:len().columns + 1] = args[i]
-    end
-    q
-end
-
-from(q: any, table: str): any
-    q.table = table
-    q
-end
-
-where(q: any, condition: str, ...args): any
-    q.where[q:len().where + 1] = condition
-    vals = {...}
-    for i = 1, vals:len()
-        q.params[q:len().params + 1] = vals[i]
-    end
-    q
-end
-
-join(q: any, table: str, condition: str): any
-    q.joins[q:len().joins + 1] = {table = table, condition = condition, type = "INNER"}
-    q
-end
-
-left_join(q: any, table: str, condition: str): any
-    q.joins[q:len().joins + 1] = {table = table, condition = condition, type = "LEFT"}
-    q
-end
-
-group_by(q: any, ...columns): any
-    args = {...}
-    for i = 1, args:len()
-        q.group_by[q:len().group_by + 1] = args[i]
-    end
-    q
-end
-
-having(q: any, condition: str): any
-    q.having[q:len().having + 1] = condition
-    q
-end
-
-order_by(q: any, column: str, direction: str): any
-    if direction == nil direction = "ASC" end
-    q.order_by[q:len().order_by + 1] = {column = column, direction = direction}
-    q
-end
-
-limit(q: any, n: i64): any
-    q.limit = n
-    q
-end
-
-offset(q: any, n: i64): any
-    q.offset = n
-    q
-end
-
-insert(q: any, table: str, data: any): any
-    q.type = "insert"
-    q.table = table
-    q.data = data
-    q
-end
-
-update(q: any, table: str, data: any): any
-    q.type = "update"
-    q.table = table
-    q.data = data
-    q
-end
-
-delete(q: any, table: str): any
-    q.type = "delete"
-    q.table = table
-    q
-end
-
-build(q: any): any
-    parts = {}
+query: any = ()
+  {
+    type = "select",
+    table = "",
+    columns = {},
+    where = {},
+    joins = {},
+    group_by = {},
+    having = {},
+    order_by = {},
+    limit = nil,
+    offset = nil,
     params = {}
+  }
 
-    if q.type == "select"
-        # SELECT
-        if q:len().columns == 0
-            parts[parts:len() + 1] = "SELECT *"
-        else
-            parts[parts:len() + 1] = "SELECT " .. q.columns:concat(", ")
-        end
+select: any = (q: any, ...columns)
+  q.type = "select"
+  args = { ... }
+  for i = 1, args:len()
+    q.columns[q:len().columns + 1] = args[i]
+  q
 
-        # FROM
-        if q.table != ""
-            parts[parts:len() + 1] = "FROM " .. q.table
-        end
+from: any = (q: any, table: str)
+  q.table = table
+  q
 
-        # JOINs
-        for join in q.joins
-            parts[parts:len() + 1] = join.type .. " JOIN " .. join.table .. " ON " .. join.condition
-        end
+where: any = (q: any, condition: str, ...args)
+  q.where[q:len().where + 1] = condition
+  vals = { ... }
+  for i = 1, vals:len()
+    q.params[q:len().params + 1] = vals[i]
+  q
 
-        # WHERE
-        if q:len().where > 0
-            parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
-            for p in q.params
-                params[params:len() + 1] = p
-            end
-        end
+join: any = (q: any, table: str, condition: str)
+  q.joins[q:len().joins + 1] = { table = table, condition = condition, type = "INNER" }
+  q
 
-        # GROUP BY
-        if q:len().group_by > 0
-            parts[parts:len() + 1] = "GROUP BY " .. q.group_by:concat(", ")
-        end
+left_join: any = (q: any, table: str, condition: str)
+  q.joins[q:len().joins + 1] = { table = table, condition = condition, type = "LEFT" }
+  q
 
-        # HAVING
-        if q:len().having > 0
-            parts[parts:len() + 1] = "HAVING " .. q.having:concat(" AND ")
-        end
+group_by: any = (q: any, ...columns)
+  args = { ... }
+  for i = 1, args:len()
+    q.group_by[q:len().group_by + 1] = args[i]
+  q
 
-        # ORDER BY
-        if q:len().order_by > 0
-            order_parts = {}
-            for o in q.order_by
-                order_parts[order_parts:len() + 1] = o.column .. " " .. o.direction
-            end
-            parts[parts:len() + 1] = "ORDER BY " .. order_parts:concat(", ")
-        end
+having: any = (q: any, condition: str)
+  q.having[q:len().having + 1] = condition
+  q
 
-        # LIMIT
-        if has(.limit)(q)
-            parts[parts:len() + 1] = "LIMIT " .. q.limit:to(str)
-        end
+order_by: any = (q: any, column: str, direction: str)
+  if direction == nil
+    direction = "ASC"
+  q.order_by[q:len().order_by + 1] = { column = column, direction = direction }
+  q
 
-        # OFFSET
-        if has(.offset)(q)
-            parts[parts:len() + 1] = "OFFSET " .. q.offset:to(str)
-        end
+limit: any = (q: any, n: i64)
+  q.limit = n
+  q
 
-    elseif q.type == "insert"
-        # INSERT INTO
-        parts[parts:len() + 1] = "INSERT INTO " .. q.table
+offset: any = (q: any, n: i64)
+  q.offset = n
+  q
 
-        # Columns and values
-        columns = {}
-        values = {}
-        placeholders = {}
-        for col, val in q.data
-            columns[columns:len() + 1] = col
-            values[values:len() + 1] = val
-            placeholders[placeholders:len() + 1] = "$" .. to(str)(params:len() + 1)
-            params[params:len() + 1] = val
-        end
-        parts[parts:len() + 1] = "(" .. columns:concat(", ") .. ")"
-        parts[parts:len() + 1] = "VALUES (" .. placeholders:concat(", ") .. ")"
+insert: any = (q: any, table: str, data: any)
+  q.type = "insert"
+  q.table = table
+  q.data = data
+  q
 
-    elseif q.type == "update"
-        # UPDATE
-        parts[parts:len() + 1] = "UPDATE " .. q.table
+update: any = (q: any, table: str, data: any)
+  q.type = "update"
+  q.table = table
+  q.data = data
+  q
 
-        # SET
-        set_parts = {}
-        for col, val in q.data
-            set_parts[set_parts:len() + 1] = col .. " = $" .. to(str)(params:len() + 1)
-            params[params:len() + 1] = val
-        end
-        parts[parts:len() + 1] = "SET " .. set_parts:concat(", ")
+delete: any = (q: any, table: str)
+  q.type = "delete"
+  q.table = table
+  q
 
-        # WHERE
-        if q:len().where > 0
-            parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
-            for p in q.params
-                params[params:len() + 1] = p
-            end
-        end
-
-    elseif q.type == "delete"
-        # DELETE
-        parts[parts:len() + 1] = "DELETE FROM " .. q.table
-
-        # WHERE
-        if q:len().where > 0
-            parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
-            for p in q.params
-                params[params:len() + 1] = p
-            end
-        end
-    end
-
-    {
-        sql = parts:concat(" "),
-        params = params,
-    }
-end
-
+build: any = (q: any)
+  parts = {}
+  params = {}
+  
+if q.type == "select"
+    # SELECT
+    if q:len().columns == 0
+      parts[parts:len() + 1] = "SELECT *"
+    else
+      parts[parts:len() + 1] = "SELECT " .. q.columns:concat(", ")
+    
+# FROM
+    if q.table != ""
+      parts[parts:len() + 1] = "FROM " .. q.table
+    
+# JOINs
+    for join in q.joins
+      parts[parts:len() + 1] = join.type .. " JOIN " .. join.table .. " ON " .. join.condition
+    
+# WHERE
+    if q:len().where > 0
+      parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
+      for p in q.params
+        params[params:len() + 1] = p
+    
+# GROUP BY
+    if q:len().group_by > 0
+      parts[parts:len() + 1] = "GROUP BY " .. q.group_by:concat(", ")
+    
+# HAVING
+    if q:len().having > 0
+      parts[parts:len() + 1] = "HAVING " .. q.having:concat(" AND ")
+    
+# ORDER BY
+    if q:len().order_by > 0
+      order_parts = {}
+      for o in q.order_by
+        order_parts[order_parts:len() + 1] = o.column .. " " .. o.direction
+      parts[parts:len() + 1] = "ORDER BY " .. order_parts:concat(", ")
+    
+# LIMIT
+    if has(.limit)(q)
+      parts[parts:len() + 1] = "LIMIT " .. q.limit:to(str)
+    
+# OFFSET
+    if has(.offset)(q)
+      parts[parts:len() + 1] = "OFFSET " .. q.offset:to(str)
+  elseif q.type == "insert"
+    
+# INSERT INTO
+    parts[parts:len() + 1] = "INSERT INTO " .. q.table
+    
+# Columns and values
+    columns = {}
+    values = {}
+    placeholders = {}
+    for col, val in q.data
+      columns[columns:len() + 1] = col
+      values[values:len() + 1] = val
+      placeholders[placeholders:len() + 1] = "$" .. to(str)(params:len() + 1)
+      params[params:len() + 1] = val
+    parts[parts:len() + 1] = "(" .. columns:concat(", ") .. ")"
+    parts[parts:len() + 1] = "VALUES (" .. placeholders:concat(", ") .. ")"
+  elseif q.type == "update"
+    
+# UPDATE
+    parts[parts:len() + 1] = "UPDATE " .. q.table
+    
+# SET
+    set_parts = {}
+    for col, val in q.data
+      set_parts[set_parts:len() + 1] = col .. " = $" .. to(str)(params:len() + 1)
+      params[params:len() + 1] = val
+    parts[parts:len() + 1] = "SET " .. set_parts:concat(", ")
+    
+# WHERE
+    if q:len().where > 0
+      parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
+      for p in q.params
+        params[params:len() + 1] = p
+  elseif q.type == "delete"
+    
+# DELETE
+    parts[parts:len() + 1] = "DELETE FROM " .. q.table
+    
+# WHERE
+    if q:len().where > 0
+      parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
+      for p in q.params
+        params[params:len() + 1] = p
+  
+{
+    sql = parts:concat(" "),
+    params = params
+  }
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Config
 # Pool
 # Connection

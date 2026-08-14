@@ -5,253 +5,214 @@
 # UI Rect
 # ═══════════════════════════════════════════════════════════════
 
-rect_new(x: f64, y: f64, width: f64, height: f64): any
-    {
-        x = x,
-        y = y,
-        width = width,
-        height = height,
-    }
-end
+rect_new: any = (x: f64, y: f64, width: f64, height: f64)
+  {
+    x = x,
+    y = y,
+    width = width,
+    height = height
+  }
 
-rect_contains(rect: any, px: f64, py: f64): bool
-    px >= rect.x and px <= rect.x + rect.width and
-    py >= rect.y and py <= rect.y + rect.height
-end
+rect_contains: bool = (rect: any, px: f64, py: f64)
+  px >= rect.x and px <= rect.x + rect.width and py >= rect.y and py <= rect.y + rect.height
 
 # ═══════════════════════════════════════════════════════════════
 # UI Widget
 # ═══════════════════════════════════════════════════════════════
 
-widget_new(widget_type: str): any
-    {
-        type = widget_type,
-        id = "",
-        rect = rect_new(0, 0, 0, 0),
-        visible = true,
-        enabled = true,
-        parent = nil,
-        children = {},
-        background = {r = 0.2, g = 0.2, b = 0.2, a = 1},
-        foreground = {r = 1, g = 1, b = 1, a = 1},
-        border = {r = 0.4, g = 0.4, b = 0.4, a = 1},
-        border_width = 1,
-        padding = {top = 4, right = 4, bottom = 4, left = 4},
-        margin = {top = 0, right = 0, bottom = 0, left = 0},
-        cursor = "default",
-        hovered = false,
-        pressed = false,
-        focused = false,
-    }
-end
+widget_new: any = (widget_type: str)
+  {
+    type = widget_type,
+    id = "",
+    rect = rect_new(0, 0, 0, 0),
+    visible = true,
+    enabled = true,
+    parent = nil,
+    children = {},
+    background = { r = 0.2, g = 0.2, b = 0.2, a = 1 },
+    foreground = { r = 1, g = 1, b = 1, a = 1 },
+    border = { r = 0.4, g = 0.4, b = 0.4, a = 1 },
+    border_width = 1,
+    padding = { top = 4, right = 4, bottom = 4, left = 4 },
+    margin = { top = 0, right = 0, bottom = 0, left = 0 },
+    cursor = "default",
+    hovered = false,
+    pressed = false,
+    focused = false
+  }
 
-widget_add_child(parent: any, child: any): void
-    child.parent = parent
-    parent.children[parent:len().children + 1] = child
-end
+widget_add_child: void = (parent: any, child: any)
+  child.parent = parent
+  parent.children[parent:len().children + 1] = child
 
-widget_remove_child(parent: any, child: any): void
-    i = 1
-    while i <= parent:len().children
-        if parent.children[i] == child
-            parent.children:remove(i)
-            child.parent = nil
-            return
-        end
-        i += 1
-    end
-end
+widget_remove_child: void = (parent: any, child: any)
+  i = 1
+  while i <= parent:len().children
+    if parent.children[i] == child
+      parent.children:remove(i)
+      child.parent = nil
+      return
+    i = i + 1
 
-widget_set_rect(widget: any, x: f64, y: f64, width: f64, height: f64): void
-    widget.rect = rect_new(x, y, width, height)
-end
+widget_set_rect: void = (widget: any, x: f64, y: f64, width: f64, height: f64)
+  widget.rect = rect_new(x, y, width, height)
 
 # ═══════════════════════════════════════════════════════════════
 # Button Widget
 # ═══════════════════════════════════════════════════════════════
 
-button_new(label: str): any
-    widget = widget_new("button")
-    widget.label = label
-    widget.on_click = nil
-    widget
-end
+button_new: any = (label: str)
+  widget = widget_new("button")
+  widget.label = label
+  widget.on_click = nil
+  widget
 
-button_set_on_click(button: any, callback: any): void
-    button.on_click = callback
-end
+button_set_on_click: void = (button: any, callback: any)
+  button.on_click = callback
 
 # ═══════════════════════════════════════════════════════════════
 # Label Widget
 # ═══════════════════════════════════════════════════════════════
 
-label_new(text: str): any
-    widget = widget_new("label")
-    widget.text = text
-    widget.font_size = 14
-    widget
-end
+label_new: any = (text: str)
+  widget = widget_new("label")
+  widget.text = text
+  widget.font_size = 14
+  widget
 
-label_set_text(label: any, text: str): void
-    label.text = text
-end
+label_set_text: void = (label: any, text: str)
+  label.text = text
 
 # ═══════════════════════════════════════════════════════════════
 # Text Input Widget
 # ═══════════════════════════════════════════════════════════════
 
-text_input_new(placeholder: str): any
-    widget = widget_new("text_input")
-    widget.text = ""
-    widget.placeholder = placeholder or ""
-    widget.cursor_pos = 0
-    widget.selection_start = 0
-    widget.selection_end = 0
-    widget.multiline = false
-    widget.on_change = nil
-    widget
-end
+text_input_new: any = (placeholder: str)
+  widget = widget_new("text_input")
+  widget.text = ""
+  widget.placeholder = placeholder or ""
+  widget.cursor_pos = 0
+  widget.selection_start = 0
+  widget.selection_end = 0
+  widget.multiline = false
+  widget.on_change = nil
+  widget
 
-text_input_set_text(input: any, text: str): void
-    input.text = text
-    input.cursor_pos = text:len()
-end
+text_input_set_text: void = (input: any, text: str)
+  input.text = text
+  input.cursor_pos = text:len()
 
-text_input_get_text(input: any): str
-    input.text
-end
+text_input_get_text: str = (input: any)
+  input.text
 
-text_input_set_on_change(input: any, callback: any): void
-    input.on_change = callback
-end
+text_input_set_on_change: void = (input: any, callback: any)
+  input.on_change = callback
 
 # ═══════════════════════════════════════════════════════════════
 # Slider Widget
 # ═══════════════════════════════════════════════════════════════
 
-slider_new(min: f64, max: f64, value: f64): any
-    widget = widget_new("slider")
-    widget.min = min
-    widget.max = max
-    widget.value = value or min
-    widget.step = 0
-    widget.on_change = nil
-    widget
-end
+slider_new: any = (min: f64, max: f64, value: f64)
+  widget = widget_new("slider")
+  widget.min = min
+  widget.max = max
+  widget.value = value or min
+  widget.step = 0
+  widget.on_change = nil
+  widget
 
-slider_set_value(slider: any, value: f64): void
-    slider.value = slider.min:max(slider.max:min(value))
-end
+slider_set_value: void = (slider: any, value: f64)
+  slider.value = slider.min:max(slider.max:min(value))
 
-slider_get_value(slider: any): f64
-    slider.value
-end
+slider_get_value: f64 = (slider: any)
+  slider.value
 
 # ═══════════════════════════════════════════════════════════════
 # Checkbox Widget
 # ═══════════════════════════════════════════════════════════════
 
-checkbox_new(label: str, checked: bool): any
-    widget = widget_new("checkbox")
-    widget.label = label
-    widget.checked = checked or false
-    widget.on_change = nil
-    widget
-end
+checkbox_new: any = (label: str, checked: bool)
+  widget = widget_new("checkbox")
+  widget.label = label
+  widget.checked = checked or false
+  widget.on_change = nil
+  widget
 
-checkbox_set_checked(checkbox: any, checked: bool): void
-    checkbox.checked = checked
-end
+checkbox_set_checked: void = (checkbox: any, checked: bool)
+  checkbox.checked = checked
 
-checkbox_is_checked(checkbox: any): bool
-    checkbox.checked
-end
+checkbox_is_checked: bool = (checkbox: any)
+  checkbox.checked
 
 # ═══════════════════════════════════════════════════════════════
 # Panel Widget
 # ═══════════════════════════════════════════════════════════════
 
-panel_new(): any
-    widget = widget_new("panel")
-    widget.scroll_x = 0
-    widget.scroll_y = 0
-    widget.overflow = "hidden"
-    widget
-end
+panel_new: any = ()
+  widget = widget_new("panel")
+  widget.scroll_x = 0
+  widget.scroll_y = 0
+  widget.overflow = "hidden"
+  widget
 
 # ═══════════════════════════════════════════════════════════════
 # Layout
 # ═══════════════════════════════════════════════════════════════
 
-layout_vertical(container: any, x: f64, y: f64, spacing: f64): void
-    current_y = y
-    for child in container.children
-        child.rect.x = x
-        child.rect.y = current_y
-        current_y += child.rect.height + spacing
-    end
-end
+layout_vertical: void = (container: any, x: f64, y: f64, spacing: f64)
+  current_y = y
+  for child in container.children
+    child.rect.x = x
+    child.rect.y = current_y
+    current_y = current_y + child.rect.height + spacing
 
-layout_horizontal(container: any, x: f64, y: f64, spacing: f64): void
-    current_x = x
-    for child in container.children
-        child.rect.x = current_x
-        child.rect.y = y
-        current_x += child.rect.width + spacing
-    end
-end
+layout_horizontal: void = (container: any, x: f64, y: f64, spacing: f64)
+  current_x = x
+  for child in container.children
+    child.rect.x = current_x
+    child.rect.y = y
+    current_x = current_x + child.rect.width + spacing
 
-layout_grid(container: any, x: f64, y: f64, cols: i64, spacing: f64): void
-    current_x = x
-    current_y = y
-    col = 0
-    for child in container.children
-        child.rect.x = current_x
-        child.rect.y = current_y
-        col += 1
-        if col >= cols
-            col = 0
-            current_x = x
-            current_y += child.rect.height + spacing
-        else
-            current_x += child.rect.width + spacing
-        end
-    end
-end
+layout_grid: void = (container: any, x: f64, y: f64, cols: i64, spacing: f64)
+  current_x = x
+  current_y = y
+  col = 0
+  for child in container.children
+    child.rect.x = current_x
+    child.rect.y = current_y
+    col = col + 1
+    if col >= cols
+      col = 0
+      current_x = x
+      current_y = current_y + child.rect.height + spacing
+    else
+      current_x = current_x + child.rect.width + spacing
 
 # ═══════════════════════════════════════════════════════════════
 # Event Handling
 # ═══════════════════════════════════════════════════════════════
 
-event_mouse_move(widget: any, x: f64, y: f64): bool
-    widget.hovered = rect_contains(widget.rect, x, y)
-    widget.hovered
-end
+event_mouse_move: bool = (widget: any, x: f64, y: f64)
+  widget.hovered = rect_contains(widget.rect, x, y)
+  widget.hovered
 
-event_mouse_down(widget: any, x: f64, y: f64): bool
-    if widget.hovered and widget.enabled
-        widget.pressed = true
-        return true
-    end
-    false
-end
+event_mouse_down: bool = (widget: any, x: f64, y: f64)
+  if widget.hovered and widget.enabled
+    widget.pressed = true
+    return true
+  false
 
-event_mouse_up(widget: any, x: f64, y: f64): bool
-    if widget.pressed and widget.hovered
-        widget.pressed = false
-        if widget.type == "button" and widget.on_click
-            widget.on_click(widget)
-        end
-        return true
-    end
+event_mouse_up: bool = (widget: any, x: f64, y: f64)
+  if widget.pressed and widget.hovered
     widget.pressed = false
-    false
-end
-
+    if widget.type == "button" and widget.on_click
+      widget.on_click(widget)
+    return true
+  widget.pressed = false
+  false
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Rect
 # Widget
 # Button

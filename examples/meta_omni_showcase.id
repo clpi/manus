@@ -23,8 +23,8 @@ Label: { tag: str }
         acc
 end)
 
-registry_line: str = (meta)
-  meta.name .. ";"
+registry_line: str = meta
+meta.name .. ";"
 
 # Expression form: ceiling + sweep comment in one call
 __emit(@comp.omni("HasXY", PairApi, "HasTag", registry_line))

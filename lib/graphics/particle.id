@@ -5,334 +5,295 @@
 # Particle
 # ═══════════════════════════════════════════════════════════════
 
-particle_new(): any
-    {
-        position = {x = 0, y = 0, z = 0},
-        velocity = {x = 0, y = 0, z = 0},
-        acceleration = {x = 0, y = 0, z = 0},
-        color = {r = 1, g = 1, b = 1, a = 1},
-        size = 1,
-        rotation = 0,
-        angular_velocity = 0,
-        lifetime = 1,
-        age = 0,
-        alive = true,
-    }
-end
+particle_new: any = ()
+  {
+    position = { x = 0, y = 0, z = 0 },
+    velocity = { x = 0, y = 0, z = 0 },
+    acceleration = { x = 0, y = 0, z = 0 },
+    color = { r = 1, g = 1, b = 1, a = 1 },
+    size = 1,
+    rotation = 0,
+    angular_velocity = 0,
+    lifetime = 1,
+    age = 0,
+    alive = true
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Emitter Configuration
 # ═══════════════════════════════════════════════════════════════
 
-emitter_config_new(): any
-    {
-        position = {x = 0, y = 0, z = 0},
-        spread = {x = 1, y = 1, z = 1},
-        direction = {x = 0, y = 1, z = 0},
-        speed = {min = 5, max = 10},
-        lifetime = {min = 0.5, max = 2},
-        size = {min = 0.1, max = 0.5},
-        rotation = {min = 0, max = 360},
-        angular_velocity = {min = -90, max = 90},
-        colors = {
-            {r = 1, g = 0.8, b = 0, a = 1},
-            {r = 1, g = 0.3, b = 0, a = 0},
-        },
-        rate = 10,
-        burst = 0,
-        gravity = {x = 0, y = -9.8, z = 0},
-        drag = 0.1,
-        start_offset = 0,
-    }
-end
+emitter_config_new: any = ()
+  {
+    position = { x = 0, y = 0, z = 0 },
+    spread = { x = 1, y = 1, z = 1 },
+    direction = { x = 0, y = 1, z = 0 },
+    speed = { min = 5, max = 10 },
+    lifetime = { min = 0.5, max = 2 },
+    size = { min = 0.1, max = 0.5 },
+    rotation = { min = 0, max = 360 },
+    angular_velocity = { min = -90, max = 90 },
+    colors = {
+      { r = 1, g = 0.8, b = 0, a = 1 },
+      { r = 1, g = 0.3, b = 0, a = 0 }
+    },
+    rate = 10,
+    burst = 0,
+    gravity = { x = 0, y = -9.8, z = 0 },
+    drag = 0.1,
+    start_offset = 0
+  }
 
-emitter_config_set_position(config: any, x: f64, y: f64, z: f64): void
-    config.position = {x = x, y = y, z = z}
-end
+emitter_config_set_position: void = (config: any, x: f64, y: f64, z: f64)
+  config.position = { x = x, y = y, z = z }
 
-emitter_config_set_spread(config: any, x: f64, y: f64, z: f64): void
-    config.spread = {x = x, y = y, z = z}
-end
+emitter_config_set_spread: void = (config: any, x: f64, y: f64, z: f64)
+  config.spread = { x = x, y = y, z = z }
 
-emitter_config_set_speed(config: any, min: f64, max: f64): void
-    config.speed = {min = min, max = max}
-end
+emitter_config_set_speed: void = (config: any, min: f64, max: f64)
+  config.speed = { min = min, max = max }
 
-emitter_config_set_lifetime(config: any, min: f64, max: f64): void
-    config.lifetime = {min = min, max = max}
-end
+emitter_config_set_lifetime: void = (config: any, min: f64, max: f64)
+  config.lifetime = { min = min, max = max }
 
-emitter_config_set_colors(config: any, colors: any): void
-    config.colors = colors
-end
+emitter_config_set_colors: void = (config: any, colors: any)
+  config.colors = colors
 
-emitter_config_set_rate(config: any, rate: f64): void
-    config.rate = rate
-end
+emitter_config_set_rate: void = (config: any, rate: f64)
+  config.rate = rate
 
-emitter_config_set_burst(config: any, count: i64): void
-    config.burst = count
-end
+emitter_config_set_burst: void = (config: any, count: i64)
+  config.burst = count
 
-emitter_config_set_gravity(config: any, x: f64, y: f64, z: f64): void
-    config.gravity = {x = x, y = y, z = z}
-end
+emitter_config_set_gravity: void = (config: any, x: f64, y: f64, z: f64)
+  config.gravity = { x = x, y = y, z = z }
 
 # ═══════════════════════════════════════════════════════════════
 # Particle Emitter
 # ═══════════════════════════════════════════════════════════════
 
-emitter_new(config: any): any
-    {
-        config = config,
-        particles = {},
-        time_since_emission = 0,
-        active = true,
+emitter_new: any = (config: any)
+  {
+    config = config,
+    particles = {},
+    time_since_emission = 0,
+    active = true
+  }
+
+emitter_emit: any = (emitter: any)
+  config = emitter.config
+  particle = particle_new()
+  
+# Randomize position within spread
+  particle.position = {
+    x = config.position.x + (math.random() - 0.5) * config.spread.x,
+    y = config.position.y + (math.random() - 0.5) * config.spread.y,
+    z = config.position.z + (math.random() - 0.5) * config.spread.z
+  }
+  
+# Randomize velocity
+  speed = config.speed.min + math.random() * (config.speed.max - config.speed.min)
+  angle = math.random() * 2 * math.pi
+  elevation = (math.random() - 0.5) * math.pi * config.spread.y
+  
+particle.velocity = {
+    x = config.direction.x + angle:cos() * elevation:cos() * speed,
+    y = config.direction.y + elevation:sin() * speed,
+    z = config.direction.z + angle:sin() * elevation:cos() * speed
+  }
+  
+# Randomize properties
+  particle.lifetime = config.lifetime.min + math.random() * (config.lifetime.max - config.lifetime.min)
+  particle.size = config.size.min + math.random() * (config.size.max - config.size.min)
+  particle.rotation = config.rotation.min + math.random() * (config.rotation.max - config.rotation.min)
+  particle.angular_velocity = config.angular_velocity.min + math.random() * (config.angular_velocity.max - config.angular_velocity.min)
+  
+# Interpolate color
+  if config:len().colors >= 2
+    t = math.random()
+    c1 = config.colors[1]
+    c2 = config.colors[config:len().colors]
+    particle.color = {
+      r = c1.r + (c2.r - c1.r) * t,
+      g = c1.g + (c2.g - c1.g) * t,
+      b = c1.b + (c2.b - c1.b) * t,
+      a = c1.a + (c2.a - c1.a) * t
     }
-end
+  
+particle.acceleration = config.gravity
+  emitter.particles[emitter:len().particles + 1] = particle
+  particle
 
-emitter_emit(emitter: any): any
-    config = emitter.config
-    particle = particle_new()
+emitter_update: void = (emitter: any, delta_time: f64)
+  if not emitter.active
+    return
+  
+config = emitter.config
+  
+# Emit new particles
+  emitter.time_since_emission = emitter.time_since_emission + delta_time
+  if emitter.time_since_emission >= 1 / config.rate
+    emitter_emit(emitter)
+    emitter.time_since_emission = 0
+  
+# Burst
+  if config.burst > 0
+    i = 0
+    while i < config.burst
+      emitter_emit(emitter)
+      i = i + 1
+    config.burst = 0
+  
+# Update particles
+  i = 1
+  while i <= emitter:len().particles
+    p = emitter.particles[i]
+    p.age = p.age + delta_time
+    
+if p.age >= p.lifetime
+      p.alive = false
+      emitter.particles:remove(i)
+    else
+      # Update velocity with acceleration
+      p.velocity.x = p.velocity.x + p.acceleration.x * delta_time
+      p.velocity.y = p.velocity.y + p.acceleration.y * delta_time
+      p.velocity.z = p.velocity.z + p.acceleration.z * delta_time
+      
+# Apply drag
+      drag = 1 - config.drag * delta_time
+      p.velocity.x = p.velocity.x * drag
+      p.velocity.y = p.velocity.y * drag
+      p.velocity.z = p.velocity.z * drag
+      
+# Update position
+      p.position.x = p.position.x + p.velocity.x * delta_time
+      p.position.y = p.position.y + p.velocity.y * delta_time
+      p.position.z = p.position.z + p.velocity.z * delta_time
+      
+# Update rotation
+      p.rotation = p.rotation + p.angular_velocity * delta_time
+      
+i = i + 1
 
-    # Randomize position within spread
-    particle.position = {
-        x = config.position.x + (math.random() - 0.5) * config.spread.x,
-        y = config.position.y + (math.random() - 0.5) * config.spread.y,
-        z = config.position.z + (math.random() - 0.5) * config.spread.z,
-    }
+emitter_get_particles: any = (emitter: any)
+  emitter.particles
 
-    # Randomize velocity
-    speed = config.speed.min + math.random() * (config.speed.max - config.speed.min)
-    angle = math.random() * 2 * math.pi
-    elevation = (math.random() - 0.5) * math.pi * config.spread.y
+emitter_clear: void = (emitter: any)
+  emitter.particles = {}
 
-    particle.velocity = {
-        x = config.direction.x + angle:cos() * elevation:cos() * speed,
-        y = config.direction.y + elevation:sin() * speed,
-        z = config.direction.z + angle:sin() * elevation:cos() * speed,
-    }
+emitter_set_active: void = (emitter: any, active: bool)
+  emitter.active = active
 
-    # Randomize properties
-    particle.lifetime = config.lifetime.min + math.random() * (config.lifetime.max - config.lifetime.min)
-    particle.size = config.size.min + math.random() * (config.size.max - config.size.min)
-    particle.rotation = config.rotation.min + math.random() * (config.rotation.max - config.rotation.min)
-    particle.angular_velocity = config.angular_velocity.min + math.random() * (config.angular_velocity.max - config.angular_velocity.min)
-
-    # Interpolate color
-    if config:len().colors >= 2
-        t = math.random()
-        c1 = config.colors[1]
-        c2 = config.colors[config:len().colors]
-        particle.color = {
-            r = c1.r + (c2.r - c1.r) * t,
-            g = c1.g + (c2.g - c1.g) * t,
-            b = c1.b + (c2.b - c1.b) * t,
-            a = c1.a + (c2.a - c1.a) * t,
-        }
-    end
-
-    particle.acceleration = config.gravity
-    emitter.particles[emitter:len().particles + 1] = particle
-    particle
-end
-
-emitter_update(emitter: any, delta_time: f64): void
-    if not emitter.active return end
-
-    config = emitter.config
-
-    # Emit new particles
-    emitter.time_since_emission = emitter.time_since_emission + delta_time
-    if emitter.time_since_emission >= 1 / config.rate
-        emitter_emit(emitter)
-        emitter.time_since_emission = 0
-    end
-
-    # Burst
-    if config.burst > 0
-        i = 0
-        while i < config.burst
-            emitter_emit(emitter)
-            i += 1
-        end
-        config.burst = 0
-    end
-
-    # Update particles
-    i = 1
-    while i <= emitter:len().particles
-        p = emitter.particles[i]
-        p.age = p.age + delta_time
-
-        if p.age >= p.lifetime
-            p.alive = false
-            emitter.particles:remove(i)
-        else
-            # Update velocity with acceleration
-            p.velocity.x = p.velocity.x + p.acceleration.x * delta_time
-            p.velocity.y = p.velocity.y + p.acceleration.y * delta_time
-            p.velocity.z = p.velocity.z + p.acceleration.z * delta_time
-
-            # Apply drag
-            drag = 1 - config.drag * delta_time
-            p.velocity.x = p.velocity.x * drag
-            p.velocity.y = p.velocity.y * drag
-            p.velocity.z = p.velocity.z * drag
-
-            # Update position
-            p.position.x = p.position.x + p.velocity.x * delta_time
-            p.position.y = p.position.y + p.velocity.y * delta_time
-            p.position.z = p.position.z + p.velocity.z * delta_time
-
-            # Update rotation
-            p.rotation = p.rotation + p.angular_velocity * delta_time
-
-            i += 1
-        end
-    end
-end
-
-emitter_get_particles(emitter: any): any
-    emitter.particles
-end
-
-emitter_clear(emitter: any): void
-    emitter.particles = {}
-end
-
-emitter_set_active(emitter: any, active: bool): void
-    emitter.active = active
-end
-
-emitter_particle_count(emitter: any): i64
-    emitter.particles:len()
-end
+emitter_particle_count: i64 = (emitter: any)
+  emitter.particles:len()
 
 # ═══════════════════════════════════════════════════════════════
 # Particle System
 # ═══════════════════════════════════════════════════════════════
 
-system_new(): any
-    {
-        emitters = {},
-        max_particles = 10000,
-    }
-end
+system_new: any = ()
+  {
+    emitters = {},
+    max_particles = 10000
+  }
 
-system_add_emitter(system: any, emitter: any): void
-    system.emitters[system:len().emitters + 1] = emitter
-end
+system_add_emitter: void = (system: any, emitter: any)
+  system.emitters[system:len().emitters + 1] = emitter
 
-system_update(system: any, delta_time: f64): void
-    total_particles = 0
-    for emitter in system.emitters
-        emitter_update(emitter, delta_time)
-        total_particles += emitter_particle_count(emitter)
-    end
-end
+system_update: void = (system: any, delta_time: f64)
+  total_particles = 0
+  for emitter in system.emitters
+    emitter_update(emitter, delta_time)
+    total_particles = total_particles + emitter_particle_count(emitter)
 
-system_get_all_particles(system: any): any
-    particles = {}
-    for emitter in system.emitters
-        for p in emitter_get_particles(emitter)
-            particles[particles:len() + 1] = p
-        end
-    end
-    particles
-end
+system_get_all_particles: any = (system: any)
+  particles = {}
+  for emitter in system.emitters
+    for p in emitter_get_particles(emitter)
+      particles[particles:len() + 1] = p
+  particles
 
-system_clear(system: any): void
-    for emitter in system.emitters
-        emitter_clear(emitter)
-    end
-end
+system_clear: void = (system: any)
+  for emitter in system.emitters
+    emitter_clear(emitter)
 
-system_total_count(system: any): i64
-    count = 0
-    for emitter in system.emitters
-        count += emitter_particle_count(emitter)
-    end
-    count
-end
+system_total_count: i64 = (system: any)
+  count = 0
+  for emitter in system.emitters
+    count = count + emitter_particle_count(emitter)
+  count
 
 # ═══════════════════════════════════════════════════════════════
 # Preset Configurations
 # ═══════════════════════════════════════════════════════════════
 
-fire(): any
-    config = emitter_config_new()
-    config.direction = {x = 0, y = 1, z = 0}
-    config.spread = {x = 0.2, y = 0.1, z = 0.2}
-    config.speed = {min = 2, max = 4}
-    config.lifetime = {min = 0.3, max = 0.8}
-    config.size = {min = 0.2, max = 0.5}
-    config.colors = {
-        {r = 1, g = 0.9, b = 0.1, a = 1},
-        {r = 1, g = 0.4, b = 0, a = 0.8},
-        {r = 0.5, g = 0.1, b = 0, a = 0},
-    }
-    config.rate = 20
-    config.gravity = {x = 0, y = 2, z = 0}
-    config.drag = 0.5
-    config
-end
+fire: any = ()
+  config = emitter_config_new()
+  config.direction = { x = 0, y = 1, z = 0 }
+  config.spread = { x = 0.2, y = 0.1, z = 0.2 }
+  config.speed = { min = 2, max = 4 }
+  config.lifetime = { min = 0.3, max = 0.8 }
+  config.size = { min = 0.2, max = 0.5 }
+  config.colors = {
+    { r = 1, g = 0.9, b = 0.1, a = 1 },
+    { r = 1, g = 0.4, b = 0, a = 0.8 },
+    { r = 0.5, g = 0.1, b = 0, a = 0 }
+  }
+  config.rate = 20
+  config.gravity = { x = 0, y = 2, z = 0 }
+  config.drag = 0.5
+  config
 
-smoke(): any
-    config = emitter_config_new()
-    config.direction = {x = 0, y = 1, z = 0}
-    config.spread = {x = 0.3, y = 0.2, z = 0.3}
-    config.speed = {min = 0.5, max = 1.5}
-    config.lifetime = {min = 1, max = 3}
-    config.size = {min = 0.5, max = 1.5}
-    config.colors = {
-        {r = 0.5, g = 0.5, b = 0.5, a = 0.5},
-        {r = 0.3, g = 0.3, b = 0.3, a = 0},
-    }
-    config.rate = 5
-    config.gravity = {x = 0, y = 0.5, z = 0}
-    config.drag = 0.8
-    config
-end
+smoke: any = ()
+  config = emitter_config_new()
+  config.direction = { x = 0, y = 1, z = 0 }
+  config.spread = { x = 0.3, y = 0.2, z = 0.3 }
+  config.speed = { min = 0.5, max = 1.5 }
+  config.lifetime = { min = 1, max = 3 }
+  config.size = { min = 0.5, max = 1.5 }
+  config.colors = {
+    { r = 0.5, g = 0.5, b = 0.5, a = 0.5 },
+    { r = 0.3, g = 0.3, b = 0.3, a = 0 }
+  }
+  config.rate = 5
+  config.gravity = { x = 0, y = 0.5, z = 0 }
+  config.drag = 0.8
+  config
 
-rain(): any
-    config = emitter_config_new()
-    config.position = {x = 0, y = 10, z = 0}
-    config.spread = {x = 20, y = 0, z = 20}
-    config.direction = {x = 0, y = -1, z = 0}
-    config.speed = {min = 8, max = 12}
-    config.lifetime = {min = 0.5, max = 1}
-    config.size = {min = 0.05, max = 0.1}
-    config.colors = {
-        {r = 0.5, g = 0.7, b = 1, a = 0.5},
-        {r = 0.5, g = 0.7, b = 1, a = 0},
-    }
-    config.rate = 100
-    config.gravity = {x = 0, y = -9.8, z = 0}
-    config.drag = 0.01
-    config
-end
+rain: any = ()
+  config = emitter_config_new()
+  config.position = { x = 0, y = 10, z = 0 }
+  config.spread = { x = 20, y = 0, z = 20 }
+  config.direction = { x = 0, y = -1, z = 0 }
+  config.speed = { min = 8, max = 12 }
+  config.lifetime = { min = 0.5, max = 1 }
+  config.size = { min = 0.05, max = 0.1 }
+  config.colors = {
+    { r = 0.5, g = 0.7, b = 1, a = 0.5 },
+    { r = 0.5, g = 0.7, b = 1, a = 0 }
+  }
+  config.rate = 100
+  config.gravity = { x = 0, y = -9.8, z = 0 }
+  config.drag = 0.01
+  config
 
-sparkle(): any
-    config = emitter_config_new()
-    config.spread = {x = 0.5, y = 0.5, z = 0.5}
-    config.speed = {min = 0.1, max = 0.5}
-    config.lifetime = {min = 0.5, max = 1.5}
-    config.size = {min = 0.05, max = 0.15}
-    config.colors = {
-        {r = 1, g = 1, b = 0.8, a = 1},
-        {r = 1, g = 1, b = 0.5, a = 0},
-    }
-    config.rate = 15
-    config.gravity = {x = 0, y = -1, z = 0}
-    config.drag = 0.3
-    config
-end
-
+sparkle: any = ()
+  config = emitter_config_new()
+  config.spread = { x = 0.5, y = 0.5, z = 0.5 }
+  config.speed = { min = 0.1, max = 0.5 }
+  config.lifetime = { min = 0.5, max = 1.5 }
+  config.size = { min = 0.05, max = 0.15 }
+  config.colors = {
+    { r = 1, g = 1, b = 0.8, a = 1 },
+    { r = 1, g = 1, b = 0.5, a = 0 }
+  }
+  config.rate = 15
+  config.gravity = { x = 0, y = -1, z = 0 }
+  config.drag = 0.3
+  config
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Particle
 # Emitter Config
 # Emitter

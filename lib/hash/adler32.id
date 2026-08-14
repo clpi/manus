@@ -1,24 +1,19 @@
 # hash.adler32 — Adler-32 checksum (mirrors Go's hash/adler32)
 
-new(): any
-    {s1 = 1, s2 = 0}
-end
+new: any = ()
+  { s1 = 1, s2 = 0 }
 
-update(state: any, data: str): void
-    if data == nil return end
-    for i = 1, data:len()
-        state.s1 = (state.s1 + data:byte(i)) % 65521
-        state.s2 = (state.s2 + state.s1) % 65521
-    end
-end
+update: void = (state: any, data: str)
+  if data == nil
+    return
+  for i = 1, data:len()
+    state.s1 = (state.s1 + data:byte(i)) % 65521
+    state.s2 = (state.s2 + state.s1) % 65521
 
-final(state: any): i64
-    (state.s2 * 65536 + state.s1) % 4294967296
-end
+final: i64 = (state: any)
+  (state.s2 * 65536 + state.s1) % 4294967296
 
-checksum(data: str): i64
-    s = new()
-    update(s, data)
-    final(s)
-end
-
+checksum: i64 = (data: str)
+  s = new()
+  update(s, data)
+  final(s)

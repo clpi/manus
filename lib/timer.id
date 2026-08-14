@@ -6,230 +6,220 @@
 # `math.floor` yields f64, so the declared `: i64` was a return-type mismatch
 # that took the whole module down. The conversion is written explicitly through
 # the canonical `to` edge rather than left to an implicit narrowing.
-std_timer_round(x: any): i64
-    to(i64)(x + 0.5:floor())
-end
+std_timer_round: i64 = (x: any)
+  to(i64)(x + 0.5:floor())
 
 # Internal: round a number to `places` decimal places.
-std_timer_round_dec(x: any, places: any): any
-    factor = 1
-    i = 0
-    while i < places
-        factor *= 10
-        i += 1
-    end
-    std_timer_round(x * factor) / factor
-end
+std_timer_round_dec: any = (x: any, places: any)
+  factor = 1
+  i = 0
+  while i < places
+    factor = factor * 10
+    i = i + 1
+  std_timer_round(x * factor) / factor
 
 # ===== Timer type =====
 
 # new: create a new timer, started immediately.
-new(): any
-    {start = os.clock(), laps = {}, running = true, stopped_at = nil}
-end
+new: any = ()
+  { start = os.clock(), laps = {}, running = true, stopped_at = nil }
 
 # elapsed: return seconds since timer was created or last lap.
-elapsed(t: any): any
-    if t == nil return 0 end
-    if not t.running return t.stopped_at - t.start end
-    os.clock() - t.start
-end
+elapsed: any = (t: any)
+  if t == nil
+    return 0
+  if not t.running
+    return t.stopped_at - t.start
+  os.clock() - t.start
 
 # lap: record a lap time and return the elapsed time since start.
-lap(t: any): any
-    if t == nil return 0 end
-    now = os.clock()
-    lap_time = now - t.start
-    t.laps[t.laps:len() + 1] = lap_time
-    lap_time
-end
+lap: any = (t: any)
+  if t == nil
+    return 0
+  now = os.clock()
+  lap_time = now - t.start
+  t.laps[t.laps:len() + 1] = lap_time
+  lap_time
 
 # lap_elapsed: return time since the last lap (or start if first lap).
-lap_elapsed(t: any): any
-    if t == nil return 0 end
-    now = os.clock()
-    if t.laps:len() == 0
-        return now - t.start
-    end
-    now - t.laps[t.laps:len()]
-end
+lap_elapsed: any = (t: any)
+  if t == nil
+    return 0
+  now = os.clock()
+  if t.laps:len() == 0
+    return now - t.start
+  now - t.laps[t.laps:len()]
 
 # stop: stop the timer and return total elapsed time.
-stop(t: any): any
-    if t == nil return 0 end
-    t.stopped_at = os.clock()
-    t.running = false
-    t.stopped_at - t.start
-end
+stop: any = (t: any)
+  if t == nil
+    return 0
+  t.stopped_at = os.clock()
+  t.running = false
+  t.stopped_at - t.start
 
 # reset: reset the timer to zero and restart.
-reset(t: any): void
-    if t == nil return end
-    t.start = os.clock()
-    t.laps = {}
-    t.running = true
-    t.stopped_at = nil
-end
+reset: void = (t: any)
+  if t == nil
+    return
+  t.start = os.clock()
+  t.laps = {}
+  t.running = true
+  t.stopped_at = nil
 
 # is_running: check if the timer is still running.
-is_running(t: any): bool
-    if t == nil return false end
-    t.running
-end
+is_running: bool = (t: any)
+  if t == nil
+    return false
+  t.running
 
 # get_laps: return the list of recorded lap times.
-get_laps(t: any): any
-    if t == nil return {} end
-    t.laps
-end
+get_laps: any = (t: any)
+  if t == nil
+    return {}
+  t.laps
 
 # lap_count: return the number of recorded laps.
-lap_count(t: any): i64
-    if t == nil return 0 end
-    t.laps:len()
-end
+lap_count: i64 = (t: any)
+  if t == nil
+    return 0
+  t.laps:len()
 
 # ===== Formatting =====
 
 # format: format seconds into a human-readable string.
-format(seconds: any): str
-    if seconds == nil return "0s" end
-    if seconds < 0.001
-        ms = seconds * 1000000
-        return to(str)(std_timer_round(ms)) .. "us"
-    end
-    if seconds < 1
-        ms = seconds * 1000
-        return to(str)(std_timer_round(ms)) .. "ms"
-    end
-    if seconds < 60
-        return to(str)(std_timer_round_dec(seconds, 3)) .. "s"
-    end
-    mins = seconds / 60:floor()
-    secs = seconds - mins * 60
-    return mins:to(str) .. "m" .. to(str)(std_timer_round_dec(secs, 1)) .. "s"
-end
+format: str = (seconds: any)
+  if seconds == nil
+    return "0s"
+  if seconds < 0.001
+    ms = seconds * 1000000
+    return to(str)(std_timer_round(ms)) .. "us"
+  if seconds < 1
+    ms = seconds * 1000
+    return to(str)(std_timer_round(ms)) .. "ms"
+  if seconds < 60
+    return to(str)(std_timer_round_dec(seconds, 3)) .. "s"
+  mins = seconds / 60:floor()
+  secs = seconds - mins * 60
+  return mins:to(str) .. "m" .. to(str)(std_timer_round_dec(secs, 1)) .. "s"
 
 # summary: return a summary table of all lap times.
-summary(t: any): any
-    if t == nil return {} end
-    laps = t.laps
-    n = laps:len()
-    if n == 0
-        return {count = 0, total = 0, min = 0, max = 0, avg = 0}
-    end
-    total = 0
-    min_val = laps[1]
-    max_val = laps[1]
-    i = 1
-    while i <= n
-        if laps[i] < min_val min_val = laps[i] end
-        if laps[i] > max_val max_val = laps[i] end
-        total += laps[i]
-        i += 1
-    end
-    {count = n, total = total, min = min_val, max = max_val, avg = total / n}
-end
+summary: any = (t: any)
+  if t == nil
+    return {}
+  laps = t.laps
+  n = laps:len()
+  if n == 0
+    return { count = 0, total = 0, min = 0, max = 0, avg = 0 }
+  total = 0
+  min_val = laps[1]
+  max_val = laps[1]
+  i = 1
+  while i <= n
+    if laps[i] < min_val
+      min_val = laps[i]
+    if laps[i] > max_val
+      max_val = laps[i]
+    total = total + laps[i]
+    i = i + 1
+  { count = n, total = total, min = min_val, max = max_val, avg = total / n }
 
 # ===== Benchmarking =====
 
 # measure: run fn and return {result, elapsed_seconds}.
-measure(fn_ref: any): any
-    t = new()
-    r = fn_ref()
-    d = stop(t)
-    out = {}
-    out.result = r
-    out.elapsed = d
-    out
-end
+measure: any = (fn_ref: any)
+  t = new()
+  r = fn_ref()
+  d = stop(t)
+  out = {}
+  out.result = r
+  out.elapsed = d
+  out
 
 # time_it: run fn `n` times and return {total, avg, min, max}.
-time_it(n: i64, fn_ref: any): any
-    if n == nil or n < 1 n = 1 end
-    times = {}
-    i = 0
-    while i < n
-        t = new()
-        fn_ref()
-        stop(t)
-        times[times:len() + 1] = elapsed(t)
-        i += 1
-    end
-    total = 0
-    min_val = times[1]
-    max_val = times[1]
-    j = 1
-    while j <= times:len()
-        if times[j] < min_val min_val = times[j] end
-        if times[j] > max_val max_val = times[j] end
-        total += times[j]
-        j += 1
-    end
-    out = {}
-    out.iterations = n
-    out.total = total
-    out.avg = total / n
-    out.min = min_val
-    out.max = max_val
-    out.times = times
-    out
-end
+time_it: any = (n: i64, fn_ref: any)
+  if n == nil or n < 1
+    n = 1
+  times = {}
+  i = 0
+  while i < n
+    t = new()
+    fn_ref()
+    stop(t)
+    times[times:len() + 1] = elapsed(t)
+    i = i + 1
+  total = 0
+  min_val = times[1]
+  max_val = times[1]
+  j = 1
+  while j <= times:len()
+    if times[j] < min_val
+      min_val = times[j]
+    if times[j] > max_val
+      max_val = times[j]
+    total = total + times[j]
+    j = j + 1
+  out = {}
+  out.iterations = n
+  out.total = total
+  out.avg = total / n
+  out.min = min_val
+  out.max = max_val
+  out.times = times
+  out
 
 # bench: run fn until at least `min_seconds` have elapsed, report stats.
-bench(fn_ref: any, min_seconds: float): any
-    if min_seconds == nil min_seconds = 0.1 end
-    times = {}
-    total = 0
-    count = 0
-    while total < min_seconds
-        t = new()
-        fn_ref()
-        stop(t)
-        lap_time = elapsed(t)
-        times[times:len() + 1] = lap_time
-        total += lap_time
-        count += 1
-    end
-    min_val = times[1]
-    max_val = times[1]
-    i = 1
-    while i <= times:len()
-        if times[i] < min_val min_val = times[i] end
-        if times[i] > max_val max_val = times[i] end
-        i += 1
-    end
-    out = {}
-    out.iterations = count
-    out.total = total
-    out.avg = total / count
-    out.min = min_val
-    out.max = max_val
-    out.ops_per_sec = count / total
-    out
-end
+bench: any = (fn_ref: any, min_seconds: float)
+  if min_seconds == nil
+    min_seconds = 0.1
+  times = {}
+  total = 0
+  count = 0
+  while total < min_seconds
+    t = new()
+    fn_ref()
+    stop(t)
+    lap_time = elapsed(t)
+    times[times:len() + 1] = lap_time
+    total = total + lap_time
+    count = count + 1
+  min_val = times[1]
+  max_val = times[1]
+  i = 1
+  while i <= times:len()
+    if times[i] < min_val
+      min_val = times[i]
+    if times[i] > max_val
+      max_val = times[i]
+    i = i + 1
+  out = {}
+  out.iterations = count
+  out.total = total
+  out.avg = total / count
+  out.min = min_val
+  out.max = max_val
+  out.ops_per_sec = count / total
+  out
 
 # compare: run two functions and report which is faster.
-compare(name_a: str, fn_a: any, name_b: str, fn_b: any, n: i64): any
-    if n == nil n = 1000 end
-    a = time_it(n, fn_a)
-    b = time_it(n, fn_b)
-    faster = ""
-    ratio = 0
-    if b.avg > 0
-        ratio = a.avg / b.avg
-    end
-    if a.avg < b.avg
-        faster = name_a
-    else
-        faster = name_b
-        if a.avg > 0 ratio = b.avg / a.avg end
-    end
-    out = {}
-    out[name_a] = a
-    out[name_b] = b
-    out.faster = faster
-    out.ratio = ratio
-    out
-end
-
+compare: any = (name_a: str, fn_a: any, name_b: str, fn_b: any, n: i64)
+  if n == nil
+    n = 1000
+  a = time_it(n, fn_a)
+  b = time_it(n, fn_b)
+  faster = ""
+  ratio = 0
+  if b.avg > 0
+    ratio = a.avg / b.avg
+  if a.avg < b.avg
+    faster = name_a
+  else
+    faster = name_b
+    if a.avg > 0
+      ratio = b.avg / a.avg
+  out = {}
+  out[name_a] = a
+  out[name_b] = b
+  out.faster = faster
+  out.ratio = ratio
+  out

@@ -4,275 +4,241 @@
 # Supports array indices in paths: "users.0.name"
 
 # Internal: split a dot-separated path string into parts.
-std_property_parse(path: str): any
-    if path == nil return {} end
-    parts = {}
-    current = ""
-    i = 1
-    while i <= path:len()
-        ch = path:sub(i, i)
-        if ch == "."
-            if current != ""
-                parts[parts:len() + 1] = current
-            end
-            current = ""
-        else
-            current = current .. ch
-        end
-        i += 1
-    end
-    if current != ""
+std_property_parse: any = (path: str)
+  if path == nil
+    return {}
+  parts = {}
+  current = ""
+  i = 1
+  while i <= path:len()
+    ch = path:sub(i, i)
+    if ch == "."
+      if current != ""
         parts[parts:len() + 1] = current
-    end
-    parts
-end
+      current = ""
+    else
+      current = current .. ch
+    i = i + 1
+  if current != ""
+    parts[parts:len() + 1] = current
+  parts
 
 # Internal: try to convert a string to a number.
-std_property_to_num(s: str): any
-    if s == nil return nil end
-    num = s:to(i64)
-    num
-end
+std_property_to_num: any = (s: str)
+  if s == nil
+    return nil
+  num = s:to(i64)
+  num
 
 # Internal: navigate to the parent of a dot-path, return {parent, last_key}.
-std_property_navigate(obj: any, path: str): any
-    if obj == nil or path == nil return nil end
-    parts = std_property_parse(path)
-    if parts:len() == 0 return nil end
-    current = obj
-    i = 1
-    while i < parts:len()
-        key = parts[i]
-        idx = std_property_to_num(key)
-        if idx != nil
-            current = current[idx]
-        else
-            current = current[key]
-        end
-        if current == nil return nil end
-        i += 1
-    end
-    last = parts[parts:len()]
-    last_idx = std_property_to_num(last)
-    if last_idx != nil
-        return {parent = current, key = last_idx, is_num = true}
-    end
-    return {parent = current, key = last, is_num = false}
-end
+std_property_navigate: any = (obj: any, path: str)
+  if obj == nil or path == nil
+    return nil
+  parts = std_property_parse(path)
+  if parts:len() == 0
+    return nil
+  current = obj
+  i = 1
+  while i < parts:len()
+    key = parts[i]
+    idx = std_property_to_num(key)
+    if idx != nil
+      current = current[idx]
+    else
+      current = current[key]
+    if current == nil
+      return nil
+    i = i + 1
+  last = parts[parts:len()]
+  last_idx = std_property_to_num(last)
+  if last_idx != nil
+    return { parent = current, key = last_idx, is_num = true }
+  return { parent = current, key = last, is_num = false }
 
 # Internal: ensure path exists by creating intermediate tables.
-std_property_ensure_path(obj: any, parts: any): any
-    current = obj
-    i = 1
-    while i <= parts:len()
-        key = parts[i]
-        idx = std_property_to_num(key)
-        if idx != nil
-            if current[idx] == nil
-                current[idx] = {}
-            end
-            current = current[idx]
-        else
-            if current[key] == nil
-                current[key] = {}
-            end
-            current = current[key]
-        end
-        i += 1
-    end
-    current
-end
+std_property_ensure_path: any = (obj: any, parts: any)
+  current = obj
+  i = 1
+  while i <= parts:len()
+    key = parts[i]
+    idx = std_property_to_num(key)
+    if idx != nil
+      if current[idx] == nil
+        current[idx] = {}
+      current = current[idx]
+    else
+      if current[key] == nil
+        current[key] = {}
+      current = current[key]
+    i = i + 1
+  current
 
 # parse_path: public alias for path parsing.
-parse_path(path: str): any
-    std_property_parse(path)
-end
+parse_path: any = (path: str)
+  std_property_parse(path)
 
 # get: retrieve a deeply nested value by dot-path.
 # get({a = {b = {c = 42}}}, "a.b.c") => 42
-get(obj: any, path: str): any
-    if obj == nil or path == nil return nil end
-    parts = std_property_parse(path)
-    current = obj
-    i = 1
-    while i <= parts:len()
-        if type(current) != "table" return nil end
-        key = parts[i]
-        idx = std_property_to_num(key)
-        if idx != nil
-            current = current[idx]
-        else
-            current = current[key]
-        end
-        if current == nil return nil end
-        i += 1
-    end
-    current
-end
+get: any = (obj: any, path: str)
+  if obj == nil or path == nil
+    return nil
+  parts = std_property_parse(path)
+  current = obj
+  i = 1
+  while i <= parts:len()
+    if type(current) != "table"
+      return nil
+    key = parts[i]
+    idx = std_property_to_num(key)
+    if idx != nil
+      current = current[idx]
+    else
+      current = current[key]
+    if current == nil
+      return nil
+    i = i + 1
+  current
 
 # set: assign a value at a deeply nested dot-path, creating intermediate tables.
 # set({}, "a.b.c", 42) => {a = {b = {c = 42}}}
-set(obj: any, path: str, value: any): void
-    if obj == nil or path == nil return end
-    parts = std_property_parse(path)
-    if parts:len() == 0 return end
-    current = obj
-    i = 1
-    while i < parts:len()
-        key = parts[i]
-        idx = std_property_to_num(key)
-        if idx != nil
-            if current[idx] == nil
-                current[idx] = {}
-            end
-            current = current[idx]
-        else
-            if current[key] == nil
-                current[key] = {}
-            end
-            current = current[key]
-        end
-        i += 1
-    end
-    last = parts[parts:len()]
-    last_idx = std_property_to_num(last)
-    if last_idx != nil
-        current[last_idx] = value
+set: void = (obj: any, path: str, value: any)
+  if obj == nil or path == nil
+    return
+  parts = std_property_parse(path)
+  if parts:len() == 0
+    return
+  current = obj
+  i = 1
+  while i < parts:len()
+    key = parts[i]
+    idx = std_property_to_num(key)
+    if idx != nil
+      if current[idx] == nil
+        current[idx] = {}
+      current = current[idx]
     else
-        current[last] = value
-    end
-end
+      if current[key] == nil
+        current[key] = {}
+      current = current[key]
+    i = i + 1
+  last = parts[parts:len()]
+  last_idx = std_property_to_num(last)
+  if last_idx != nil
+    current[last_idx] = value
+  else
+    current[last] = value
 
 # has: check if a dot-path exists in a nested table.
-has(obj: any, path: str): bool
-    if obj == nil or path == nil return false end
-    parts = std_property_parse(path)
-    current = obj
-    i = 1
-    while i <= parts:len()
-        if type(current) != "table" return false end
-        key = parts[i]
-        idx = std_property_to_num(key)
-        if idx != nil
-            current = current[idx]
-        else
-            current = current[key]
-        end
-        if current == nil return false end
-        i += 1
-    end
-    true
-end
+has: bool = (obj: any, path: str)
+  if obj == nil or path == nil
+    return false
+  parts = std_property_parse(path)
+  current = obj
+  i = 1
+  while i <= parts:len()
+    if type(current) != "table"
+      return false
+    key = parts[i]
+    idx = std_property_to_num(key)
+    if idx != nil
+      current = current[idx]
+    else
+      current = current[key]
+    if current == nil
+      return false
+    i = i + 1
+  true
 
 # delete: remove a deeply nested value by dot-path.
-delete(obj: any, path: str): any
-    nav = std_property_navigate(obj, path)
-    if nav == nil return nil end
-    removed = nil
-    if nav.is_num
-        removed = nav.parent[nav.key]
-        nav.parent[nav.key] = nil
-    else
-        removed = nav.parent[nav.key]
-        nav.parent[nav.key] = nil
-    end
-    removed
-end
+delete: any = (obj: any, path: str)
+  nav = std_property_navigate(obj, path)
+  if nav == nil
+    return nil
+  removed = nil
+  if nav.is_num
+    removed = nav.parent[nav.key]
+    nav.parent[nav.key] = nil
+  else
+    removed = nav.parent[nav.key]
+    nav.parent[nav.key] = nil
+  removed
 
 # get_or: like get but returns a fallback if the path doesn't exist.
-get_or(obj: any, path: str, fallback: any): any
-    result = get(obj, path)
-    if result == nil return fallback end
-    result
-end
+get_or: any = (obj: any, path: str, fallback: any)
+  result = get(obj, path)
+  if result == nil
+    return fallback
+  result
 
 # set_multiple: set many values from a table of {path = value} pairs.
-set_multiple(obj: any, values: any): void
-    if obj == nil or values == nil return end
-    for path, value in values
-        set(obj, path, value)
-    end
-end
+set_multiple: void = (obj: any, values: any)
+  if obj == nil or values == nil
+    return
+  for path, value in values
+    set(obj, path, value)
 
 # Internal: flatten recursive helper.
-std_property_flatten_rec(obj: any, prefix: any, out: any): void
-    if obj == nil return end
-    for k, v in obj
-        path = k:to(str)
-        if prefix != ""
-            path = prefix .. "." .. path
-        end
-        if type(v) == "table"
-            has_leaf = false
-            for _, inner in v
-                if type(inner) != "table"
-                    has_leaf = true
-                    break
-                end
-            end
-            if has_leaf
-                out[path] = v
-            else
-                std_property_flatten_rec(v, path, out)
-            end
-        else
-            out[path] = v
-        end
-    end
-end
+std_property_flatten_rec: void = (obj: any, prefix: any, out: any)
+  if obj == nil
+    return
+  for k, v in obj
+    path = k:to(str)
+    if prefix != ""
+      path = prefix .. "." .. path
+    if type(v) == "table"
+      has_leaf = false
+      for _, inner in v
+        if type(inner) != "table"
+          has_leaf = true
+          break
+      if has_leaf
+        out[path] = v
+      else
+        std_property_flatten_rec(v, path, out)
+    else
+      out[path] = v
 
 # flatten: flatten a nested table into dot-path => value pairs.
-flatten(obj: any, prefix: any): any
-    out = {}
-    if prefix == nil prefix = "" end
-    std_property_flatten_rec(obj, prefix, out)
-    out
-end
+flatten: any = (obj: any, prefix: any)
+  out = {}
+  if prefix == nil
+    prefix = ""
+  std_property_flatten_rec(obj, prefix, out)
+  out
 
 # keys: get all dot-paths that lead to leaf values.
-keys(obj: any): any
-    flat = flatten(obj, "")
-    out = {}
-    for pk, _pv in flat
-        out[out:len() + 1] = pk
-    end
-    out
-end
+keys: any = (obj: any)
+  flat = flatten(obj, "")
+  out = {}
+  for pk, _pv in flat
+    out[out:len() + 1] = pk
+  out
 
 # values: get all leaf values in depth-first order.
-values(obj: any): any
-    flat = flatten(obj, "")
-    out = {}
-    for _, v in flat
-        out[out:len() + 1] = v
-    end
-    out
-end
+values: any = (obj: any)
+  flat = flatten(obj, "")
+  out = {}
+  for _, v in flat
+    out[out:len() + 1] = v
+  out
 
 # update: like set but only if the path already exists (no creation).
-update(obj: any, path: str, value: any): bool
-    if not has(obj, path) return false end
-    set(obj, path, value)
-    true
-end
+update: bool = (obj: any, path: str, value: any)
+  if not has(obj, path)
+    return false
+  set(obj, path, value)
+  true
 
 # merge_deep: deep merge two tables (b's values override a's recursively).
-merge_deep(a: any, b: any): any
-    out = {}
-    if a != nil
-        for k, v in a
-            out[k] = v
-        end
-    end
-    if b != nil
-        for k, v in b
-            if type(v) == "table" and type(out[k]) == "table"
-                out[k] = merge_deep(out[k], v)
-            else
-                out[k] = v
-            end
-        end
-    end
-    out
-end
-
+merge_deep: any = (a: any, b: any)
+  out = {}
+  if a != nil
+    for k, v in a
+      out[k] = v
+  if b != nil
+    for k, v in b
+      if type(v) == "table" and type(out[k]) == "table"
+        out[k] = merge_deep(out[k], v)
+      else
+        out[k] = v
+  out

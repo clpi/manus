@@ -12,6 +12,7 @@ Point: { x: f64, y: f64, tag: str }
 Pair: { x: f64, y: f64, tag: str }
 
 # One line: apply TouchApi to all HasXY types AND emit omni C (ceiling + sweep comment).
+
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
     for i = 1, meta:len().fields
@@ -22,8 +23,8 @@ end)
 
 @comp.burst("HasXY", TouchApi, "HasTag")
 
-mark: str = (meta)
-  meta.name .. ";"
+mark: str = meta
+meta.name .. ";"
 
 COMBOS = @comp.catalog("combinators")
 SWEEP = @comp.map("HasXY", mark)

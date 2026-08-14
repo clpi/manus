@@ -9,110 +9,110 @@
 # inline where they are needed.
 
 # background: the root context (never cancelled, no deadline).
-background_ctx(): any
-    {deadline = nil, cancelled = false, parent = nil, key = "background", done = false}
-end
+background_ctx: any = ()
+  { deadline = nil, cancelled = false, parent = nil, key = "background", done = false }
 
 # todo: a placeholder context for when no context is decided yet.
-todo_ctx(): any
-    {deadline = nil, cancelled = false, parent = nil, key = "todo", done = false}
-end
+todo_ctx: any = ()
+  { deadline = nil, cancelled = false, parent = nil, key = "todo", done = false }
 
 # with_cancel: create a child context that can be cancelled.
-with_cancel(parent: any): any
-    if parent == nil parent = background_ctx() end
-    {deadline = parent.deadline, cancelled = false, parent = parent, done = false}
-end
+with_cancel: any = (parent: any)
+  if parent == nil
+    parent = background_ctx()
+  { deadline = parent.deadline, cancelled = false, parent = parent, done = false }
 
 # with_deadline: create a child context with a specific deadline (epoch seconds).
-with_deadline(parent: any, deadline: any): any
-    if parent == nil parent = background_ctx() end
-    # inherit the earlier deadline
-    d = deadline
-    if has(.deadline)(parent) and parent.deadline < d d = parent.deadline end
-    {deadline = d, cancelled = false, parent = parent, done = false}
-end
+with_deadline: any = (parent: any, deadline: any)
+  if parent == nil
+    parent = background_ctx()
+  # inherit the earlier deadline
+  d = deadline
+  if has(.deadline)(parent) and parent.deadline < d
+    d = parent.deadline
+  { deadline = d, cancelled = false, parent = parent, done = false }
 
 # with_timeout: create a child context that times out after `timeout` seconds.
-with_timeout(parent: any, timeout: any): any
-    # get current time
-    t = time
-    now = t.now()
-    with_deadline(parent, now + timeout)
-end
+with_timeout: any = (parent: any, timeout: any)
+  # get current time
+  t = time
+  now = t.now()
+  with_deadline(parent, now + timeout)
 
 # with_value: create a child context carrying a key-value pair.
-with_value(parent: any, key: any, value: any): any
-    if parent == nil parent = background_ctx() end
-    child = {deadline = parent.deadline, cancelled = false, parent = parent, done = false}
-    child[key] = value
-    child
-end
+with_value: any = (parent: any, key: any, value: any)
+  if parent == nil
+    parent = background_ctx()
+  child = { deadline = parent.deadline, cancelled = false, parent = parent, done = false }
+  child[key] = value
+  child
 
 # cancel: cancel a context (and all its children via propagation).
-cancel(ctx: any): void
-    if ctx == nil return end
-    ctx.cancelled = true
-    ctx.done = true
-end
+cancel: void = (ctx: any)
+  if ctx == nil
+    return
+  ctx.cancelled = true
+  ctx.done = true
 
 # is_cancelled: report whether ctx (or any ancestor) has been cancelled.
-is_cancelled(ctx: any): bool
-    if ctx == nil return false end
-    cur = ctx
-    while cur != nil
-        if cur.cancelled return true end
-        cur = cur.parent
-    end
-    false
-end
+is_cancelled: bool = (ctx: any)
+  if ctx == nil
+    return false
+  cur = ctx
+  while cur != nil
+    if cur.cancelled
+      return true
+    cur = cur.parent
+  false
 
 # deadline: return the deadline (epoch seconds) or nil if none.
-deadline(ctx: any): any
-    if ctx == nil return nil end
-    cur = ctx
-    while cur != nil
-        if has(.deadline)(cur) return cur.deadline end
-        cur = cur.parent
-    end
-    nil
-end
+deadline: any = (ctx: any)
+  if ctx == nil
+    return nil
+  cur = ctx
+  while cur != nil
+    if has(.deadline)(cur)
+      return cur.deadline
+    cur = cur.parent
+  nil
 
 # done: report whether the context's work is done (cancelled or deadline expired).
-done(ctx: any): any
-    if ctx == nil return false end
-    if is_cancelled(ctx) return true end
-    d = deadline(ctx)
-    if d != nil
-        t = time
-        if t.now() >= d return true end
-    end
-    false
-end
+done: any = (ctx: any)
+  if ctx == nil
+    return false
+  if is_cancelled(ctx)
+    return true
+  d = deadline(ctx)
+  if d != nil
+    t = time
+    if t.now() >= d
+      return true
+  false
 
 # err: return a description of why the context was done, or nil.
-err(ctx: any): any
-    if ctx == nil return nil end
-    if is_cancelled(ctx) return "context canceled" end
-    d = deadline(ctx)
-    if d != nil
-        t = time
-        if t.now() >= d return "context deadline exceeded" end
-    end
-    nil
-end
+err: any = (ctx: any)
+  if ctx == nil
+    return nil
+  if is_cancelled(ctx)
+    return "context canceled"
+  d = deadline(ctx)
+  if d != nil
+    t = time
+    if t.now() >= d
+      return "context deadline exceeded"
+  nil
 
 # value: look up key in the context chain.
-value(ctx: any, key: any): any
-    if ctx == nil return nil end
-    cur = ctx
-    while cur != nil
-        v = cur[key]
-        if v != nil return v end
-        cur = cur.parent
-    end
-    nil
-end
+value: any = (ctx: any, key: any)
+  if ctx == nil
+    return nil
+  cur = ctx
+  while cur != nil
+    v = cur[key]
+    if v != nil
+      return v
+    cur = cur.parent
+  nil
 
 background = background_ctx()
 todo = todo_ctx()

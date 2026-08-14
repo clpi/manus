@@ -1,99 +1,79 @@
 # atomic — atomic operations on table-backed memory
 # Uses compare swap for CAS-based mutexes and hardware spinwait for CPU yielding.
 
+store: any = (t: any, key: any, value: any)
+  old = t[key]
+  t[key] = value
+  old
 
-store(t: any, key: any, value: any): any
-    old = t[key]
-    t[key] = value
-    old
-end
+swap: any = (t: any, key: any, expected: any, new: any)
+  old = t[key]
+  if old == expected
+    t[key] = new
+    return true, new
+  return false, old
 
-swap(t: any, key: any, expected: any, new: any): any
-    old = t[key]
-    if old == expected
-        t[key] = new
-        return true, new
-    end
-    return false, old
-end
+add: any = (t: any, key: any, delta: any)
+  old = t[key]
+  if type(old) == "number"
+    t[key] = old + delta
+  else
+    t[key] = delta
+  old
 
-add(t: any, key: any, delta: any): any
-    old = t[key]
-    if type(old) == "number"
-        t[key] = old + delta
-    else
-        t[key] = delta
-    end
-    old
-end
+sub: any = (t: any, key: any, delta: any)
+  old = t[key]
+  if type(old) == "number"
+    t[key] = old - delta
+  else
+    t[key] = -delta
+  old
 
-sub(t: any, key: any, delta: any): any
-    old = t[key]
-    if type(old) == "number"
-        t[key] = old - delta
-    else
-        t[key] = -delta
-    end
-    old
-end
+inc: any = (t: any, key: any)
+  old = t[key]
+  if type(old) == "number"
+    t[key] = old + 1
+  else
+    t[key] = 1
+  old
 
-inc(t: any, key: any): any
-    old = t[key]
-    if type(old) == "number"
-        t[key] = old + 1
-    else
-        t[key] = 1
-    end
-    old
-end
+dec: any = (t: any, key: any)
+  old = t[key]
+  if type(old) == "number"
+    t[key] = old - 1
+  else
+    t[key] = -1
+  old
 
-dec(t: any, key: any): any
-    old = t[key]
-    if type(old) == "number"
-        t[key] = old - 1
-    else
-        t[key] = -1
-    end
-    old
-end
+mutex: any = ()
+  { locked = false, owner = nil, count = 0 }
 
-mutex(): any
-    { locked = false, owner = nil, count = 0 }
-end
-
-lock(m: any): void
-    while true
-        ok, _ = swap(m, "locked", false, true)
-        if ok
-            m.owner = "current"
-            m.count = 1
-            return
-        end
-        hardware.spinwait()
-    end
-end
-
-unlock(m: any): void
-    m.owner = nil
-    m.count = 0
-    m.locked = false
-end
-
-probe(m: any): bool
+lock: void = (m: any)
+  while true
     ok, _ = swap(m, "locked", false, true)
     if ok
-        m.owner = "current"
-        m.count = 1
-        return true
-    end
-    false
-end
+      m.owner = "current"
+      m.count = 1
+      return
+    hardware.spinwait()
 
-held(m: any): bool
-    m.locked
-end
+unlock: void = (m: any)
+  m.owner = nil
+  m.count = 0
+  m.locked = false
 
-signal(sp: any): void
-    if sp == nil return end
-    sp.notify = true
-end
+probe: bool = (m: any)
+  ok, _ = swap(m, "locked", false, true)
+  if ok
+    m.owner = "current"
+    m.count = 1
+    return true
+  false
+
+held: bool = (m: any)
+  m.locked
+
+signal: void = (sp: any)
+  if sp == nil
+    return
+  sp.notify = true

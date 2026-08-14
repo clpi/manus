@@ -1286,9 +1286,20 @@ pub const Parser = struct {
         const l = (try self.adv()).loc;
         var vals: std.ArrayList(*ast.Expr) = .empty;
         const nxt = try self.pk();
-        switch (nxt.kind) {
+        sw: switch (nxt.kind) {
             .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi => {},
             else => {
+                // A one-liner is terminated by the NEWLINE (§3.3), so a bare
+                // `return` with nothing after it on its own line returns no
+                // value. Without this it reached across the line break and took
+                // the NEXT statement as its result: `return` followed by
+                // `c = self.src:byte(...)` parsed `c` as the returned
+                // expression and then choked on the `=`.
+                //
+                // It only became reachable when `end` stopped being written —
+                // `return end` used to terminate it, and the closer was doing
+                // work the layout should have been doing.
+                if (self.idol_mode and nxt.loc.line != l.line) break :sw;
                 try vals.append(self.alloc, try self.parse_expr());
                 while (try self.eat(.comma) != null)
                     try vals.append(self.alloc, try self.parse_expr());

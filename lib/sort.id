@@ -3,211 +3,199 @@
 # for ascending/descending order on homogeneous array-like tables.
 
 # Insertion sort for small ranges (stable).
-insertion(arr: any, lo: any, hi: any, less: any): void
-    i = lo + 1
-    while i <= hi
-        key = arr[i]
-        j = i
-        while j > lo and less(key, arr[j - 1])
-            arr[j] = arr[j - 1]
-            j -= 1
-        end
-        arr[j] = key
-        i += 1
-    end
-end
+insertion: void = (arr: any, lo: any, hi: any, less: any)
+  i = lo + 1
+  while i <= hi
+    key = arr[i]
+    j = i
+    while j > lo and less(key, arr[j - 1])
+      arr[j] = arr[j - 1]
+      j = j - 1
+    arr[j] = key
+    i = i + 1
 
 # Median-of-three pivot selection.
-median3(arr: any, lo: any, hi: any, less: any): any
-    mid = lo + (hi - lo) / 2
-    if less(arr[mid], arr[lo])
-        tmp = arr[lo]
-        arr[lo] = arr[mid]
-        arr[mid] = tmp
-    end
-    if less(arr[hi], arr[lo])
-        tmp = arr[lo]
-        arr[lo] = arr[hi]
-        arr[hi] = tmp
-    end
-    if less(arr[hi], arr[mid])
-        tmp = arr[mid]
-        arr[mid] = arr[hi]
-        arr[hi] = tmp
-    end
-    arr[mid]
-end
+median3: any = (arr: any, lo: any, hi: any, less: any)
+  mid = lo + (hi - lo) / 2
+  if less(arr[mid], arr[lo])
+    tmp = arr[lo]
+    arr[lo] = arr[mid]
+    arr[mid] = tmp
+  if less(arr[hi], arr[lo])
+    tmp = arr[lo]
+    arr[lo] = arr[hi]
+    arr[hi] = tmp
+  if less(arr[hi], arr[mid])
+    tmp = arr[mid]
+    arr[mid] = arr[hi]
+    arr[hi] = tmp
+  arr[mid]
 
 # Partition for quicksort (Lomuto scheme).
-partition(arr: any, lo: any, hi: any, less: any): any
-    pivot = median3(arr, lo, hi, less)
-    # move pivot to hi-1
-    tmp = arr[hi - 1]
-    arr[hi - 1] = arr[lo + (hi - lo) / 2]
-    arr[lo + (hi - lo) / 2] = tmp
-    pivot = arr[hi - 1]
-    i = lo
-    j = hi - 1
-    while true
-        i += 1
-        while less(arr[i], pivot) do i += 1 end
-        j -= 1
-        while less(pivot, arr[j]) do j -= 1 end
-        if i >= j break end
-        tmp = arr[i]
-        arr[i] = arr[j]
-        arr[j] = tmp
-    end
-    # place pivot
-    tmp = arr[i]
-    arr[i] = arr[hi - 1]
-    arr[hi - 1] = tmp
-    i
-end
-
-# Introsort-style quicksort with insertion-sort cutoff.
-quicksort(arr: any, lo: any, hi: any, less: any): void
-    while hi - lo > 24
-        p = partition(arr, lo, hi, less)
-        if p - lo < hi - p
-            quicksort(arr, lo, p - 1, less)
-            lo = p + 1
-        else
-            quicksort(arr, p + 1, hi, less)
-            hi = p - 1
-        end
-    end
-    if hi - lo > 1
-        insertion(arr, lo, hi, less)
-    end
-end
-
-# sort: sort the array portion of `arr` in-place using `less` comparator.
-# less(a, b) should return true when a should come before b.
-sort(arr: any, less: any): void
-    if arr == nil return end
-    n = arr:len()
-    if n < 2 return end
-    quicksort(arr, 1, n, less)
-end
-
-# stable: sort stably (insertion sort, O(n^2) but correct for all inputs).
-stable(arr: any, less: any): void
-    if arr == nil return end
-    n = arr:len()
-    if n < 2 return end
-    insertion(arr, 1, n, less)
-end
-
-# Ascending integer sort.
-asc(a: any, b: any): bool
-    return a < b
-end
-
-# Descending integer sort.
-desc(a: any, b: any): bool
-    return a > b
-end
-
-ints(arr: any): void
-    if arr == nil return end
-    n = arr:len()
-    if n < 2 return end
-    quicksort(arr, 1, n, asc)
-end
-
-intdesc(arr: any): void
-    if arr == nil return end
-    n = arr:len()
-    if n < 2 return end
-    quicksort(arr, 1, n, desc)
-end
-
-sless(a: any, b: any): bool
-    return a:to(str) < b:to(str)
-end
-
-strings(arr: any): void
-    if arr == nil return end
-    n = arr:len()
-    if n < 2 return end
-    quicksort(arr, 1, n, sless)
-end
-
-# sorted: returns true if arr is sorted according to less.
-sorted(arr: any, less: any): bool
-    if arr == nil return true end
-    n = arr:len()
-    i = 2
-    while i <= n
-        if less(arr[i], arr[i - 1]) return false end
-        i += 1
-    end
-    true
-end
-
-# search: binary search for the smallest index i in [lo, hi) where f(i) is true.
-search(n: any, f: any): any
-    lo = 0
-    hi = n
-    while lo < hi
-        mid = lo + (hi - lo) / 2
-        if f(mid + 1)
-            hi = mid
-        else
-            lo = mid + 1
-        end
-    end
-    lo
-end
-
-# bsearch: binary search for value v in a sorted arr.
-# Returns 1-based index or -1. Uses iterative search (no closures).
-bsearch(arr: any, v: any, less: any): any
-    if arr == nil return 0 - 1 end
-    n = arr:len()
-    lo = 0
-    hi = n
-    while lo < hi
-        mid = lo + (hi - lo) / 2
-        if less(v, arr[mid + 1])
-            hi = mid
-        elseif less(arr[mid + 1], v)
-            lo = mid + 1
-        else
-            return mid + 1
-        end
-    end
-    0 - 1
-end
-
-# reverse: reverse the array portion of arr in-place.
-reverse(arr: any): void
-    if arr == nil return end
-    n = arr:len()
-    i = 1
-    j = n
-    while i < j
-        tmp = arr[i]
-        arr[i] = arr[j]
-        arr[j] = tmp
-        i += 1
-        j -= 1
-    end
-end
-
-# swap: swap two indices.
-swap(arr: any, i: any, j: any): void
+partition: any = (arr: any, lo: any, hi: any, less: any)
+  pivot = median3(arr, lo, hi, less)
+  # move pivot to hi-1
+  tmp = arr[hi - 1]
+  arr[hi - 1] = arr[lo + (hi - lo) / 2]
+  arr[lo + (hi - lo) / 2] = tmp
+  pivot = arr[hi - 1]
+  i = lo
+  j = hi - 1
+  while true
+    i = i + 1
+    while less(arr[i], pivot)
+      i = i + 1
+    j = j - 1
+    while less(pivot, arr[j])
+      j = j - 1
+    if i >= j
+      break
     tmp = arr[i]
     arr[i] = arr[j]
     arr[j] = tmp
-end
+  # place pivot
+  tmp = arr[i]
+  arr[i] = arr[hi - 1]
+  arr[hi - 1] = tmp
+  i
+
+# Introsort-style quicksort with insertion-sort cutoff.
+quicksort: void = (arr: any, lo: any, hi: any, less: any)
+  while hi - lo > 24
+    p = partition(arr, lo, hi, less)
+    if p - lo < hi - p
+      quicksort(arr, lo, p - 1, less)
+      lo = p + 1
+    else
+      quicksort(arr, p + 1, hi, less)
+      hi = p - 1
+  if hi - lo > 1
+    insertion(arr, lo, hi, less)
+
+# sort: sort the array portion of `arr` in-place using `less` comparator.
+# less(a, b) should return true when a should come before b.
+sort: void = (arr: any, less: any)
+  if arr == nil
+    return
+  n = arr:len()
+  if n < 2
+    return
+  quicksort(arr, 1, n, less)
+
+# stable: sort stably (insertion sort, O(n^2) but correct for all inputs).
+stable: void = (arr: any, less: any)
+  if arr == nil
+    return
+  n = arr:len()
+  if n < 2
+    return
+  insertion(arr, 1, n, less)
+
+# Ascending integer sort.
+asc: bool = (a: any, b: any)
+  return a < b
+
+# Descending integer sort.
+desc: bool = (a: any, b: any)
+  return a > b
+
+ints: void = (arr: any)
+  if arr == nil
+    return
+  n = arr:len()
+  if n < 2
+    return
+  quicksort(arr, 1, n, asc)
+
+intdesc: void = (arr: any)
+  if arr == nil
+    return
+  n = arr:len()
+  if n < 2
+    return
+  quicksort(arr, 1, n, desc)
+
+sless: bool = (a: any, b: any)
+  return a:to(str) < b:to(str)
+
+strings: void = (arr: any)
+  if arr == nil
+    return
+  n = arr:len()
+  if n < 2
+    return
+  quicksort(arr, 1, n, sless)
+
+# sorted: returns true if arr is sorted according to less.
+sorted: bool = (arr: any, less: any)
+  if arr == nil
+    return true
+  n = arr:len()
+  i = 2
+  while i <= n
+    if less(arr[i], arr[i - 1])
+      return false
+    i = i + 1
+  true
+
+# search: binary search for the smallest index i in [lo, hi) where f(i) is true.
+search: any = (n: any, f: any)
+  lo = 0
+  hi = n
+  while lo < hi
+    mid = lo + (hi - lo) / 2
+    if f(mid + 1)
+      hi = mid
+    else
+      lo = mid + 1
+  lo
+
+# bsearch: binary search for value v in a sorted arr.
+# Returns 1-based index or -1. Uses iterative search (no closures).
+bsearch: any = (arr: any, v: any, less: any)
+  if arr == nil
+    return 0 - 1
+  n = arr:len()
+  lo = 0
+  hi = n
+  while lo < hi
+    mid = lo + (hi - lo) / 2
+    if less(v, arr[mid + 1])
+      hi = mid
+    elseif less(arr[mid + 1], v)
+      lo = mid + 1
+    else
+      return mid + 1
+  0 - 1
+
+# reverse: reverse the array portion of arr in-place.
+reverse: void = (arr: any)
+  if arr == nil
+    return
+  n = arr:len()
+  i = 1
+  j = n
+  while i < j
+    tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
+    i = i + 1
+    j = j - 1
+
+# swap: swap two indices.
+swap: void = (arr: any, i: any, j: any)
+  tmp = arr[i]
+  arr[i] = arr[j]
+  arr[j] = tmp
 
 # slice: sort a sub-range [from, to] of arr.
-slice(arr: any, from: any, to: any, less: any): void
-    if arr == nil return end
-    if from < 1 from = 1 end
-    if to > arr:len() to = arr:len() end
-    if to - from < 1 return end
-    quicksort(arr, from, to, less)
-end
+slice: void = (arr: any, from: any, to: any, less: any)
+  if arr == nil
+    return
+  if from < 1
+    from = 1
+  if to > arr:len()
+    to = arr:len()
+  if to - from < 1
+    return
+  quicksort(arr, from, to, less)

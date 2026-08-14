@@ -21,8 +21,8 @@ Pt: { x: f64, y: f64 }
 
 # 1. @comp.power # power-set enumeration: O(2^n).
 #    For 3 matching types -> 2^3 - 1 = 7 non-empty subsets.
-power_sig: str = (subset)
-  subset.name .. ";"
+power_sig: str = subset
+subset.name .. ";"
 
 POWER = @comp.power("HasXY", power_sig)
 print("=== @comp.power (2^3 - 1 = 7 subsets) ===")
@@ -36,8 +36,8 @@ print(PSET)
 
 # 3. @comp.permute # permutation enumeration: O(n!).
 #    For 3 matching types -> 3! = 6 permutations.
-perm_sig: str = (ordered)
-  ordered.name .. ";"
+perm_sig: str = ordered
+ordered.name .. ";"
 
 PERMUTE = @comp.permute("HasXY", perm_sig)
 print("=== @comp.permute (3! = 6 orderings) ===")

@@ -13,167 +13,143 @@ TAG_ARRAY = 5
 TAG_TABLE = 6
 
 # marshal: encode a value as a binary string.
-marshal(v: any): str
-    out = {}
-    encode(v, out)
-    return out:concat()
-end
+marshal: str = (v: any)
+  out = {}
+  encode(v, out)
+  return out:concat()
 
 # encode: internal encoder that appends to the out array.
-encode(v: any, out: any): void
-    if v == nil
-        out[out:len() + 1] = TAG_NIL:char()
-        return
-    end
-    t = type(v)
-    if t == "boolean"
-        out[out:len() + 1] = TAG_BOOL:char()
-        if v
-            out[out:len() + 1] = 1:char()
-        else
-            out[out:len() + 1] = 0:char()
-        end
-        return
-    end
-    if t == "number"
-        if v:floor() == v and v:abs() < 2^53
-            out[out:len() + 1] = TAG_INT:char()
-            encode_int(v, out)
-        else
-            out[out:len() + 1] = TAG_FLOAT:char()
-            out[out:len() + 1] = "%.17g":format(v)
-            out[out:len() + 1] = 0:char()  # null terminator
-        end
-        return
-    end
-    if t == "string"
-        out[out:len() + 1] = TAG_STRING:char()
-        encode_int(v:len(), out)
-        out[out:len() + 1] = v
-        return
-    end
-    if t == "table"
-        # check if array
-        n = v:len()
-        count = 0
-        for _ in v do count += 1 end
-        if count == n and n > 0
-            out[out:len() + 1] = TAG_ARRAY:char()
-            encode_int(n, out)
-            i = 1
-            while i <= n
-                encode(v[i], out)
-                i += 1
-            end
-        else
-            out[out:len() + 1] = TAG_TABLE:char()
-            encode_int(count, out)
-            for k, val in v
-                encode(k:to(str), out)
-                encode(val, out)
-            end
-        end
-        return
-    end
-    # unsupported type
+encode: void = (v: any, out: any)
+  if v == nil
     out[out:len() + 1] = TAG_NIL:char()
-end
+    return
+  t = type(v)
+  if t == "boolean"
+    out[out:len() + 1] = TAG_BOOL:char()
+    if v
+      out[out:len() + 1] = 1:char()
+    else
+      out[out:len() + 1] = 0:char()
+    return
+  if t == "number"
+    if v:floor() == v and v:abs() < 2 ^ 53
+      out[out:len() + 1] = TAG_INT:char()
+      encode_int(v, out)
+    else
+      out[out:len() + 1] = TAG_FLOAT:char()
+      out[out:len() + 1] = "%.17g":format(v)
+      # null terminator
+      out[out:len() + 1] = 0:char()
+    return
+  if t == "string"
+    out[out:len() + 1] = TAG_STRING:char()
+    encode_int(v:len(), out)
+    out[out:len() + 1] = v
+    return
+  if t == "table"
+    # check if array
+    n = v:len()
+    count = 0
+    for _ in v
+      count = count + 1
+    if count == n and n > 0
+      out[out:len() + 1] = TAG_ARRAY:char()
+      encode_int(n, out)
+      i = 1
+      while i <= n
+        encode(v[i], out)
+        i = i + 1
+    else
+      out[out:len() + 1] = TAG_TABLE:char()
+      encode_int(count, out)
+      for k, val in v
+        encode(k:to(str), out)
+        encode(val, out)
+    return
+  # unsupported type
+  out[out:len() + 1] = TAG_NIL:char()
 
 # encode_int: encode an integer as a variable-length string.
-encode_int(v: i64, out: any): void
-    if v == 0
-        out[out:len() + 1] = 0:char()
-        return
-    end
-    parts = {}
-    n = v
-    if n < 0
-        # encode sign as complement
-        n = 0 - n
-    end
-    while n > 0
-        parts[parts:len() + 1] = n % 256:char()
-        n /= 256
-    end
-    i = parts:len()
-    while i >= 1
-        out[out:len() + 1] = parts[i]
-        i -= 1
-    end
-end
+encode_int: void = (v: i64, out: any)
+  if v == 0
+    out[out:len() + 1] = 0:char()
+    return
+  parts = {}
+  n = v
+  if n < 0
+    # encode sign as complement
+    n = 0 - n
+  while n > 0
+    parts[parts:len() + 1] = n % 256:char()
+    n = n / 256
+  i = parts:len()
+  while i >= 1
+    out[out:len() + 1] = parts[i]
+    i = i - 1
 
 # unmarshal: decode a binary string into a Duo value.
 # Returns (value, bytes_consumed).
-unmarshal(data: str): any
-    if data == nil or data == "" return nil, 0 end
-    parser = {s = data, pos = 1}
-    v = decode(parser)
-    return v, parser.pos - 1
-end
+unmarshal: any = (data: str)
+  if data == nil or data == ""
+    return nil, 0
+  parser = { s = data, pos = 1 }
+  v = decode(parser)
+  return v, parser.pos - 1
 
 # decode: internal decoder.
-decode(p: any): any
-    if p.pos > p:len().s return nil end
-    tag = p.s:byte(p.pos)
+decode: any = (p: any)
+  if p.pos > p:len().s
+    return nil
+  tag = p.s:byte(p.pos)
+  p.pos = p.pos + 1
+  if tag == TAG_NIL
+    return nil
+  if tag == TAG_BOOL
+    b = p.s:byte(p.pos)
     p.pos = p.pos + 1
-    if tag == TAG_NIL return nil end
-    if tag == TAG_BOOL
-        b = p.s:byte(p.pos)
-        p.pos = p.pos + 1
-        return b != 0
-    end
-    if tag == TAG_INT
-        return decode_int(p)
-    end
-    if tag == TAG_FLOAT
-        start = p.pos
-        while p.pos <= p:len().s and p.s:byte(p.pos) != 0
-            p.pos = p.pos + 1
-        end
-        s = p.s:sub(start, p.pos - 1)
-        p.pos = p.pos + 1  # skip null terminator
-        return s:to(i64)
-    end
-    if tag == TAG_STRING
-        len = decode_int(p)
-        s = p.s:sub(p.pos, p.pos + len - 1)
-        p.pos = p.pos + len
-        return s
-    end
-    if tag == TAG_ARRAY
-        n = decode_int(p)
-        arr = {}
-        i = 1
-        while i <= n
-            arr[i] = decode(p)
-            i += 1
-        end
-        return arr
-    end
-    if tag == TAG_TABLE
-        n = decode_int(p)
-        tbl = {}
-        i = 1
-        while i <= n
-            k = decode(p)
-            v = decode(p)
-            tbl[k] = v
-            i += 1
-        end
-        return tbl
-    end
-    nil
-end
+    return b != 0
+  if tag == TAG_INT
+    return decode_int(p)
+  if tag == TAG_FLOAT
+    start = p.pos
+    while p.pos <= p:len().s and p.s:byte(p.pos) != 0
+      p.pos = p.pos + 1
+    s = p.s:sub(start, p.pos - 1)
+    # skip null terminator
+    p.pos = p.pos + 1
+    return s:to(i64)
+  if tag == TAG_STRING
+    len = decode_int(p)
+    s = p.s:sub(p.pos, p.pos + len - 1)
+    p.pos = p.pos + len
+    return s
+  if tag == TAG_ARRAY
+    n = decode_int(p)
+    arr = {}
+    i = 1
+    while i <= n
+      arr[i] = decode(p)
+      i = i + 1
+    return arr
+  if tag == TAG_TABLE
+    n = decode_int(p)
+    tbl = {}
+    i = 1
+    while i <= n
+      k = decode(p)
+      v = decode(p)
+      tbl[k] = v
+      i = i + 1
+    return tbl
+  nil
 
 # decode_int: decode a variable-length integer.
-decode_int(p: any): i64
-    v = 0
-    while p.pos <= p:len().s
-        b = p.s:byte(p.pos)
-        p.pos = p.pos + 1
-        v = v * 256 + b
-        if b < 128 break end
-    end
-    v
-end
-
+decode_int: i64 = (p: any)
+  v = 0
+  while p.pos <= p:len().s
+    b = p.s:byte(p.pos)
+    p.pos = p.pos + 1
+    v = v * 256 + b
+    if b < 128
+      break
+  v

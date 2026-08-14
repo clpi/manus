@@ -1,65 +1,51 @@
 # log — structured logging with level filtering
 
 global log_level = 1
-global log_levels = {DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3}
+global log_levels = { DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3 }
 
-set_level(level: str): void
-    if level == nil level = "DEBUG" end
-    v = log_levels[level]
-    if v != nil
-        log_level = v
-    end
-end
+set_level: void = (level: str)
+  if level == nil
+    level = "DEBUG"
+  v = log_levels[level]
+  if v != nil
+    log_level = v
 
-get_level(): str
-    for name, v in log_levels
-        if v == log_level return name end
-    end
-    "INFO"
-end
+get_level: str = ()
+  for name, v in log_levels
+    if v == log_level
+      return name
+  "INFO"
 
-debug(msg: str): void
-    if log_level <= 0
-        io:write("[DEBUG] %s\n":format(msg))
-    end
-end
+debug: void = (msg: str)
+  if log_level <= 0
+    io:write("[DEBUG] %s\n":format(msg))
 
-info(msg: str): void
-    if log_level <= 1
-        io:write("[INFO] %s\n":format(msg))
-    end
-end
+info: void = (msg: str)
+  if log_level <= 1
+    io:write("[INFO] %s\n":format(msg))
 
-warn(msg: str): void
-    if log_level <= 2
-        io:write("[WARN] %s\n":format(msg))
-    end
-end
+warn: void = (msg: str)
+  if log_level <= 2
+    io:write("[WARN] %s\n":format(msg))
 
-error(msg: str): void
-    if log_level <= 3
-        io:write("[ERROR] %s\n":format(msg))
-    end
-end
+error: void = (msg: str)
+  if log_level <= 3
+    io:write("[ERROR] %s\n":format(msg))
 
-print(level: str, msg: str): void
-    if level == nil
-        io:write("%s\n":format(msg))
-    else
-        io:write("[%s] %s\n":format(level:upper(), msg))
-    end
-end
+print: void = (level: str, msg: str)
+  if level == nil
+    io:write("%s\n":format(msg))
+  else
+    io:write("[%s] %s\n":format(level:upper(), msg))
 
-with_fields(level: str, fields: any, msg: str): void
-    if level == nil level = "INFO" end
-    level_val = log_levels[level:upper()] or 1
-    if level_val < log_level return end
-    parts = {"[%s] %s":format(level:upper(), msg)}
-    if fields != nil
-        for k, v in fields
-            parts[parts:len() + 1] = "%s=%s":format(k, v:to(str))
-        end
-    end
-    io:write(parts:concat(" ") .. "\n")
-end
-
+with_fields: void = (level: str, fields: any, msg: str)
+  if level == nil
+    level = "INFO"
+  level_val = log_levels[level:upper()] or 1
+  if level_val < log_level
+    return
+  parts = { "[%s] %s":format(level:upper(), msg) }
+  if fields != nil
+    for k, v in fields
+      parts[parts:len() + 1] = "%s=%s":format(k, v:to(str))
+  io:write(parts:concat(" ") .. "\n")

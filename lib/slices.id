@@ -1,233 +1,226 @@
 # slices — slice helper utilities (mirrors Go 1.21 slices package)
 
-clip(arr: any, n: i64): any
-    if arr == nil return arr end
-    len = arr:len()
-    if n >= len return arr end
-    if n < 0 n = 0 end
+clip: any = (arr: any, n: i64)
+  if arr == nil
+    return arr
+  len = arr:len()
+  if n >= len
+    return arr
+  if n < 0
+    n = 0
+  i = n + 1
+  while i <= len
+    arr[i] = nil
+    i = i + 1
+  arr
+
+clone: any = (arr: any)
+  if arr == nil
+    return {}
+  out = {}
+  i = 1
+  while i <= arr:len()
+    out[i] = arr[i]
+    i = i + 1
+  out
+
+compact: any = (arr: any, eq: any)
+  if arr == nil
+    return {}
+  n = arr:len()
+  if n <= 1
+    return clone(arr)
+  out = {}
+  out[1] = arr[1]
+  j = 1
+  i = 2
+  while i <= n
+    if not eq(arr[i], out[j])
+      j = j + 1
+      out[j] = arr[i]
+    i = i + 1
+  out
+
+contains: bool = (arr: any, v: any)
+  if arr == nil
+    return false
+  i = 1
+  while i <= arr:len()
+    if arr[i] == v
+      return true
+    i = i + 1
+  false
+
+index: i64 = (arr: any, v: any)
+  if arr == nil
+    return 0 - 1
+  i = 1
+  while i <= arr:len()
+    if arr[i] == v
+      return i
+    i = i + 1
+  0 - 1
+
+where: i64 = (arr: any, f: any)
+  if arr == nil
+    return 0 - 1
+  i = 1
+  while i <= arr:len()
+    if f(arr[i])
+      return i
+    i = i + 1
+  0 - 1
+
+insert: any = (arr: any, i: i64, v: any)
+  if arr == nil
+    arr = {}
+  n = arr:len()
+  if i < 1
+    i = 1
+  if i > n + 1
     i = n + 1
-    while i <= len
-        arr[i] = nil
-        i += 1
-    end
-    arr
-end
+  out = {}
+  j = 1
+  while j < i
+    out[j] = arr[j]
+    j = j + 1
+  out[i] = v
+  j = i
+  while j <= n
+    out[j + 1] = arr[j]
+    j = j + 1
+  out
 
-clone(arr: any): any
-    if arr == nil return {} end
-    out = {}
+delete: any = (arr: any, i: i64)
+  if arr == nil
+    return {}
+  n = arr:len()
+  if i < 1 or i > n
+    return clone(arr)
+  out = {}
+  j = 1
+  while j <= n
+    if j != i
+      out[out:len() + 1] = arr[j]
+    j = j + 1
+  out
+
+reject: any = (arr: any, f: any)
+  if arr == nil
+    return {}
+  out = {}
+  i = 1
+  while i <= arr:len()
+    if not f(arr[i])
+      out[out:len() + 1] = arr[i]
+    i = i + 1
+  out
+
+reverse: void = (arr: any)
+  if arr == nil
+    return
+  n = arr:len()
+  i = 1
+  j = n
+  while i < j
+    tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
+    i = i + 1
+    j = j - 1
+
+replace: any = (arr: any, i: i64, j: i64, v: any)
+  if arr == nil
+    arr = {}
+  n = arr:len()
+  if i < 1
     i = 1
-    while i <= arr:len()
-        out[i] = arr[i]
-        i += 1
-    end
-    out
-end
-
-compact(arr: any, eq: any): any
-    if arr == nil return {} end
-    n = arr:len()
-    if n <= 1 return clone(arr) end
-    out = {}
-    out[1] = arr[1]
-    j = 1
-    i = 2
-    while i <= n
-        if not eq(arr[i], out[j])
-            j += 1
-            out[j] = arr[i]
-        end
-        i += 1
-    end
-    out
-end
-
-contains(arr: any, v: any): bool
-    if arr == nil return false end
-    i = 1
-    while i <= arr:len()
-        if arr[i] == v return true end
-        i += 1
-    end
-    false
-end
-
-index(arr: any, v: any): i64
-    if arr == nil return 0 - 1 end
-    i = 1
-    while i <= arr:len()
-        if arr[i] == v return i end
-        i += 1
-    end
-    0 - 1
-end
-
-where(arr: any, f: any): i64
-    if arr == nil return 0 - 1 end
-    i = 1
-    while i <= arr:len()
-        if f(arr[i]) return i end
-        i += 1
-    end
-    0 - 1
-end
-
-insert(arr: any, i: i64, v: any): any
-    if arr == nil arr = {} end
-    n = arr:len()
-    if i < 1 i = 1 end
-    if i > n + 1 i = n + 1 end
-    out = {}
-    j = 1
-    while j < i
-        out[j] = arr[j]
-        j += 1
-    end
-    out[i] = v
-    j = i
-    while j <= n
-        out[j + 1] = arr[j]
-        j += 1
-    end
-    out
-end
-
-delete(arr: any, i: i64): any
-    if arr == nil return {} end
-    n = arr:len()
-    if i < 1 or i > n return clone(arr) end
-    out = {}
-    j = 1
-    while j <= n
-        if j != i
-            out[out:len() + 1] = arr[j]
-        end
-        j += 1
-    end
-    out
-end
-
-reject(arr: any, f: any): any
-    if arr == nil return {} end
-    out = {}
-    i = 1
-    while i <= arr:len()
-        if not f(arr[i])
-            out[out:len() + 1] = arr[i]
-        end
-        i += 1
-    end
-    out
-end
-
-reverse(arr: any): void
-    if arr == nil return end
-    n = arr:len()
-    i = 1
+  if j > n
     j = n
-    while i < j
-        tmp = arr[i]
-        arr[i] = arr[j]
-        arr[j] = tmp
-        i += 1
-        j -= 1
-    end
-end
+  if j < i
+    j = i
+  out = {}
+  k = 1
+  while k < i
+    out[k] = arr[k]
+    k = k + 1
+  out[i] = v
+  k = j + 1
+  while k <= n
+    out[out:len() + 1] = arr[k]
+    k = k + 1
+  out
 
-replace(arr: any, i: i64, j: i64, v: any): any
-    if arr == nil arr = {} end
-    n = arr:len()
-    if i < 1 i = 1 end
-    if j > n j = n end
-    if j < i j = i end
-    out = {}
-    k = 1
-    while k < i
-        out[k] = arr[k]
-        k += 1
-    end
-    out[i] = v
-    k = j + 1
-    while k <= n
-        out[out:len() + 1] = arr[k]
-        k += 1
-    end
-    out
-end
+grow: any = (arr: any, n: i64)
+  arr
 
-grow(arr: any, n: i64): any
-    arr
-end
+bsearch: any = (arr: any, v: any, less: any)
+  if arr == nil
+    return 0, false
+  lo = 0
+  hi = arr:len()
+  while lo < hi
+    mid = lo + (hi - lo) / 2
+    if less(v, arr[mid + 1])
+      hi = mid
+    elseif less(arr[mid + 1], v)
+      lo = mid + 1
+    else
+      return mid + 1, true
+  return lo + 1, false
 
-bsearch(arr: any, v: any, less: any): any
-    if arr == nil return 0, false end
-    lo = 0
-    hi = arr:len()
-    while lo < hi
-        mid = lo + (hi - lo) / 2
-        if less(v, arr[mid + 1])
-            hi = mid
-        elseif less(arr[mid + 1], v)
-            lo = mid + 1
-        else
-            return mid + 1, true
-        end
-    end
-    return lo + 1, false
-end
+max: any = (arr: any, less: any)
+  if arr == nil
+    return nil
+  n = arr:len()
+  if n == 0
+    return nil
+  m = arr[1]
+  i = 2
+  while i <= n
+    if less(m, arr[i])
+      m = arr[i]
+    i = i + 1
+  m
 
-max(arr: any, less: any): any
-    if arr == nil return nil end
-    n = arr:len()
-    if n == 0 return nil end
-    m = arr[1]
-    i = 2
-    while i <= n
-        if less(m, arr[i]) m = arr[i] end
-        i += 1
-    end
-    m
-end
+min: any = (arr: any, less: any)
+  if arr == nil
+    return nil
+  n = arr:len()
+  if n == 0
+    return nil
+  m = arr[1]
+  i = 2
+  while i <= n
+    if less(arr[i], m)
+      m = arr[i]
+    i = i + 1
+  m
 
-min(arr: any, less: any): any
-    if arr == nil return nil end
-    n = arr:len()
-    if n == 0 return nil end
-    m = arr[1]
-    i = 2
-    while i <= n
-        if less(arr[i], m) m = arr[i] end
-        i += 1
-    end
-    m
-end
+sorted: bool = (arr: any, less: any)
+  if arr == nil
+    return true
+  n = arr:len()
+  i = 2
+  while i <= n
+    if less(arr[i], arr[i - 1])
+      return false
+    i = i + 1
+  true
 
-sorted(arr: any, less: any): bool
-    if arr == nil return true end
-    n = arr:len()
-    i = 2
-    while i <= n
-        if less(arr[i], arr[i - 1]) return false end
-        i += 1
-    end
-    true
-end
-
-chunk(arr: any, n: i64): any
-    if arr == nil return {} end
-    if n == nil or n < 1 n = 1 end
-    out = {}
-    i = 1
-    while i <= arr:len()
-        c = {}
-        j = 0
-        while j < n and i + j <= arr:len()
-            c[j + 1] = arr[i + j]
-            j += 1
-        end
-        out[out:len() + 1] = c
-        i += n
-    end
-    out
-end
-
+chunk: any = (arr: any, n: i64)
+  if arr == nil
+    return {}
+  if n == nil or n < 1
+    n = 1
+  out = {}
+  i = 1
+  while i <= arr:len()
+    c = {}
+    j = 0
+    while j < n and i + j <= arr:len()
+      c[j + 1] = arr[i + j]
+      j = j + 1
+    out[out:len() + 1] = c
+    i = i + n
+  out

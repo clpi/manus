@@ -18,8 +18,8 @@ Pair: { x: f64, y: f64 }
     acc
 end)
 
-registry_line: str = (meta)
-  meta.name .. ";"
+registry_line: str = meta
+meta.name .. ";"
 
 # Derive sweep only (2-arg form)
 __emit(@comp.expand("HasXY", TouchApi))

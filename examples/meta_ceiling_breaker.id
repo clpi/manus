@@ -13,6 +13,7 @@ Pair: { x: f64, y: f64, tag: str }
 Label: { tag: str }
 
 # One @comp.ceiling line → O(types × fields) + O(types² × fields) C
+
 @comp.define.derive("PairApi", generate(meta) -> str
     acc = "/* pair " .. meta.name .. " */\n"
     if meta.left != nil

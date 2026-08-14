@@ -19,6 +19,7 @@ Pair: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
 Label: { tag: str, id: i64, extra: i64 }
 
 # One line: derive.all + quadratic + cubic + quartic emit
+
 @comp.define.derive("QuadApi", generate(meta) -> str
     if meta.parts != nil and meta:len().parts >= 4
         "/* quad " .. meta.name .. " */\n"

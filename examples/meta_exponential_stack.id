@@ -26,8 +26,8 @@ end)
 pair_sig: str = (a, b)
   a.name .. "x" .. b.name .. ";"
 
-mark: str = (meta)
-  meta.name .. ";"
+mark: str = meta
+meta.name .. ";"
 
 PAIRS = @comp.product("HasXY", "HasTag", pair_sig)
 SWEEP = @comp.map("HasXY", mark)
