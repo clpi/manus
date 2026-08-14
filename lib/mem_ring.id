@@ -1,4 +1,4 @@
-# std.mem — Enhanced memory primitives: ring buffer, mmap wrapper, virtual memory arena
+# mem — Enhanced memory primitives: ring buffer, mmap wrapper, virtual memory arena
 # Extends the existing mem.id with advanced memory management for runtime and networking.
 
 # ═══════════════════════════════════════════════════════════════

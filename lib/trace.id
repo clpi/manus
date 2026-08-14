@@ -1,4 +1,4 @@
-# std.trace — beautiful, semantically-formatted trace & debug output
+# trace — beautiful, semantically-formatted trace & debug output
 #
 # Design:
 #   * Every event is signed with a beautiful Unicode glyph and colored
@@ -23,12 +23,12 @@
 # `req` other stdlib modules at top level. The current codegen drops
 # top-level `local x = stdlib` bindings when a stdlib module is
 # inlined under `duo run`; inlining ANSI codes + tty detection here
-# keeps std.trace compilable today. When that codegen gap is fixed,
+# keeps trace compilable today. When that codegen gap is fixed,
 # trace.id can switch back to `local color = color` etc.
 
 global M = {}
 
-# ─── ANSI codes (inline copy of std.color) ─────────────────────────
+# ─── ANSI codes (inline copy of color) ─────────────────────────
 M.RESET      = "\x1b[0m"
 M.BOLD       = "\x1b[1m"
 M.DIM        = "\x1b[2m"

@@ -1,5 +1,5 @@
-# std.concurrent — high-level concurrency primitives (Requirement 20.9)
-# Builds on std.sync's scheduler.  Provides go/wait/select/all patterns.
+# concurrent — high-level concurrency primitives (Requirement 20.9)
+# Builds on sync's scheduler.  Provides go/wait/select/all patterns.
 
 # Projections for channel operations
 send = sync.send

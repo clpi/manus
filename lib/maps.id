@@ -1,4 +1,4 @@
-# std.maps — map (table) helper utilities (mirrors Go 1.21 maps package)
+# maps — map (table) helper utilities (mirrors Go 1.21 maps package)
 
 clone(m: any): any
     if m == nil return {} end

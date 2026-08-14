@@ -1,4 +1,4 @@
-# std.encoding.ascii85 — Ascii85 (Adobe-style) encoding (mirrors Go's encoding/ascii85)
+# encoding.ascii85 — Ascii85 (Adobe-style) encoding (mirrors Go's encoding/ascii85)
 
 alphabet = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 

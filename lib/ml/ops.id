@@ -1,4 +1,4 @@
-# std.ml.ops — High-level ML ops; hot paths delegate to ml.* intrinsics
+# ml.ops — High-level ML ops; hot paths delegate to ml.* intrinsics
 
 # Native kernels (zero-arg checksum benchmarks / fused paths)
 gemm(): f64
@@ -40,16 +40,16 @@ end
 # User-facing tensor ops (stdlib path; compiler may fuse later)
 @hot
 matmul(a, b): any
-    return std.ml.tensor.matmul(a, b)
+    return ml.tensor.matmul(a, b)
 end
 
 @hot
 softmax(t): any
-    return std.ml.tensor.softmax(t)
+    return ml.tensor.softmax(t)
 end
 
 gelu(t): any
-    result = std.ml.tensor.zeros(t.rows, t.cols)
+    result = ml.tensor.zeros(t.rows, t.cols)
     for i = 1, t.size
         v = t.data[i]
         inner = 0.044715 * v * v * v + v
@@ -70,7 +70,7 @@ layernorm(t, eps): any
         var += d * d
     end
     rstd = 1.0 / var / n + eps:sqrt()
-    result = std.ml.tensor.zeros(t.rows, t.cols)
+    result = ml.tensor.zeros(t.rows, t.cols)
     for i = 1, n
         result.data[i] = (t.data[i] - mean) * rstd
     end

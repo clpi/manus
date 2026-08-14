@@ -1,6 +1,6 @@
-# std.meta — reflection, type introspection, and meta utilities
-# Derivable concept descriptors live in std.meta.derive, and macro helpers live
-# in std.meta.macros. Import those submodules directly when needed so the core
+# meta — reflection, type introspection, and meta utilities
+# Derivable concept descriptors live in meta.derive, and macro helpers live
+# in meta.macros. Import those submodules directly when needed so the core
 # reflection module stays lightweight.
 
 # ─────────────────────────────────────────────────────────────

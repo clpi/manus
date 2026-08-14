@@ -1,4 +1,4 @@
-# std.datetime — date and time parsing, formatting, and arithmetic
+# datetime — date and time parsing, formatting, and arithmetic
 # Uses Lua's os.date/os.time as the underlying engine.
 # A datetime is a table: {year, month, day, hour, min, sec, wday, yday, isdst}
 

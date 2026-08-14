@@ -81,7 +81,7 @@ _best_of(cmd: str, runs: i64): i64
 end
 
 main: i64 = ()
-    ward = std.script.getenv_or("WARD_BIN")
+    ward = script.getenv_or("WARD_BIN")
     if ward == ""
         print("run: set WARD_BIN to the ward binary")
         return 1
@@ -122,7 +122,7 @@ main: i64 = ()
     for _i, b in benches:split(" ")
         if b != ""
             f = dir .. "/" .. b .. ".wasm"
-            if not std.script.fs_exists(f)
+            if not script.fs_exists(f)
                 print(b .. ": MISSING " .. f)
             else
                 # The reference answer, from wasmtime. Every other runtime's

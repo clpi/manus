@@ -1691,7 +1691,7 @@ rulesonly(body: str): str
         ""
 
 envor(name: str, fallback: str): str
-    v = std.os.getenv(name)
+    v = os.getenv(name)
     s: str = v:to(str)
     if s == "" fallback else s end
 
@@ -1718,7 +1718,7 @@ main(): i64
 
     bad: i64 = report()
     if bad != 0
-        std.os.exit(bad)
+        os.exit(bad)
     end
 
     body: str = head(count)
@@ -1771,7 +1771,7 @@ main(): i64
         print("treesitter emit: FAIL — the emitted text is missing binary_expression, the")
         print("  module export, or the residue's conflict list. The emitter is broken,")
         print("  not the grammar.")
-        std.os.exit(3)
+        os.exit(3)
     end
 
     if check == "1"
@@ -1786,7 +1786,7 @@ main(): i64
             print("  Either a generated region was hand-edited, or the emitter changed and")
             print("  the file was not regenerated. Run:")
             print("      idol run scripts/treesitter_emit.id")
-            std.os.exit(1)
+            os.exit(1)
         end
     else
         done: bool = spill(out, body)
@@ -1794,7 +1794,7 @@ main(): i64
             print("treesitter emit: wrote {out}")
         else
             print("treesitter emit: FAIL — could not write {out}")
-            std.os.exit(3)
+            os.exit(3)
         end
     end
     0

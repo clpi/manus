@@ -1,4 +1,4 @@
-# std.thread — OS-level threading primitives
+# thread — OS-level threading primitives
 # Provides mutex, rwlock, condition variables, semaphore, barrier,
 # thread spawning/joining, and thread-local storage.
 # In single-threaded mode these use coroutine-based cooperative scheduling.
@@ -349,7 +349,7 @@ yield(): void
 end
 
 # ─────────────────────────────────────────────────────────────
-# Thread-safe wrapper around std.concurrent channels
+# Thread-safe wrapper around concurrent channels
 # ─────────────────────────────────────────────────────────────
 
 # Create a thread-safe channel.

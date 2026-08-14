@@ -1,4 +1,4 @@
-# std.table — table and array helper utilities
+# table — table and array helper utilities
 
 t: any:len(): any
     if t == nil return 0 end

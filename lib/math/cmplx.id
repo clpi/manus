@@ -1,4 +1,4 @@
-# std.math.cmplx — complex number support (mirrors Go's math/cmplx)
+# math.cmplx — complex number support (mirrors Go's math/cmplx)
 # Complex numbers as tables {re, im}.
 
 new(re: any, im: any): any

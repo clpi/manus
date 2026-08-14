@@ -23,7 +23,7 @@ end
 # (4.436463668243931 vs 4.4364636682439311), which read as a DIFF and hid real
 # passes.
 _norm(s: str): str
-    t = std.script.chomp(s)
+    t = script.chomp(s)
     if not numeric(t)
         return t
     end

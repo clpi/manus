@@ -1,4 +1,4 @@
-# std.ml.vision — Image classification, data augmentation
+# ml.vision — Image classification, data augmentation
 # For ward's vision model support and preprocessing pipeline.
 
 # ═══════════════════════════════════════════════════════════════

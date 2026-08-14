@@ -1,4 +1,4 @@
-# std.net.http.httptest — HTTP test utilities (mirrors Go's net/http/httptest)
+# net.http.httptest — HTTP test utilities (mirrors Go's net/http/httptest)
 
 server(handler: any): any
     port = 0

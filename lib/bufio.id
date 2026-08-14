@@ -1,4 +1,4 @@
-# std.bufio — buffered I/O utilities (mirrors Go's bufio package)
+# bufio — buffered I/O utilities (mirrors Go's bufio package)
 # Provides buffered readers/writers/scanners on top of std.io file handles.
 
 # reader: wrap a file handle in a buffered reader.

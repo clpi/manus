@@ -1,4 +1,4 @@
-# std.os.process — Process management, spawning, pipes
+# os.process — Process management, spawning, pipes
 # For ward's process isolation and runtime management.
 
 # ═══════════════════════════════════════════════════════════════

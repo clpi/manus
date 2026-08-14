@@ -1,4 +1,4 @@
-# std.os.linux — Linux-specific APIs
+# os.linux — Linux-specific APIs
 # For epoll, inotify, eventfd, timerfd, and mmap.
 # Uses @c.emit for direct Linux syscalls.
 

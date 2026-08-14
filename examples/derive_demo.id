@@ -1,4 +1,4 @@
-# Derive demo: demonstrates concepts from std.meta.derive and reflection
+# Derive demo: demonstrates concepts from meta.derive and reflection
 
 # Define a concept for equality
 concept Equatable
@@ -39,7 +39,7 @@ for _, name in fields do
     print("  " .. name .. ": " .. type(point[name]))
 end
 
-# Type sizes (conceptual from std.meta.macros)
+# Type sizes (conceptual from meta.macros)
 print("\nType sizes (bytes):")
 print("  i64: 8")
 print("  f64: 8")

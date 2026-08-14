@@ -1,7 +1,7 @@
-# std.math.prng — Cryptographically secure pseudo-random number generators
+# math.prng — Cryptographically secure pseudo-random number generators
 # Provides ChaCha20 stream cipher and HMAC-DRBG (NIST SP 800-90A).
 # These are suitable for security-sensitive applications (key generation,
-# nonces, tokens). For non-security uses, std.random is faster.
+# nonces, tokens). For non-security uses, random is faster.
 
 M = {}
 
@@ -117,13 +117,13 @@ hmac_drbg_new(entropy: str, nonce: str, personalization: str): any
     entropy_input = entropy .. nonce .. personalization
 
     # Initial seeding: K = HMAC(K, V || 0x00 || entropy_input)
-    K = std.crypto.hmac.hmac_sha256_bytes(K, V .. 0:char() .. entropy_input)
+    K = crypto.hmac.hmac_sha256_bytes(K, V .. 0:char() .. entropy_input)
     # V = HMAC(K, V)
-    V = std.crypto.hmac.hmac_sha256_bytes(K, V)
+    V = crypto.hmac.hmac_sha256_bytes(K, V)
 
     # Additional entropy rounds
-    K = std.crypto.hmac.hmac_sha256_bytes(K, V .. 1:char() .. entropy_input)
-    V = std.crypto.hmac.hmac_sha256_bytes(K, V)
+    K = crypto.hmac.hmac_sha256_bytes(K, V .. 1:char() .. entropy_input)
+    V = crypto.hmac.hmac_sha256_bytes(K, V)
 
     {
         v = V,
@@ -137,7 +137,7 @@ hmac_drbg_generate(state: any, num_bytes: i64): str
 
     while remaining > 0
         # V = HMAC(K, V)
-        state.v = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v)
+        state.v = crypto.hmac.hmac_sha256_bytes(state.k, state.v)
 
         # Take min(remaining, 32) bytes from V
         take = remaining
@@ -150,14 +150,14 @@ hmac_drbg_generate(state: any, num_bytes: i64): str
 
 hmac_drbg_reseed(state: any, entropy: str): void
     # K = HMAC(K, V || 0x00 || entropy)
-    state.k = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v .. 0:char() .. entropy)
+    state.k = crypto.hmac.hmac_sha256_bytes(state.k, state.v .. 0:char() .. entropy)
     # V = HMAC(K, V)
-    state.v = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v)
+    state.v = crypto.hmac.hmac_sha256_bytes(state.k, state.v)
 
     # K = HMAC(K, V || 0x01 || entropy)
-    state.k = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v .. 1:char() .. entropy)
+    state.k = crypto.hmac.hmac_sha256_bytes(state.k, state.v .. 1:char() .. entropy)
     # V = HMAC(K, V)
-    state.v = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v)
+    state.v = crypto.hmac.hmac_sha256_bytes(state.k, state.v)
 
     state.reseed_counter = 0
 

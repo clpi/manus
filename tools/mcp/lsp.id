@@ -8,15 +8,15 @@
 -- no closure capture, so lowering emits an undeclared C identifier and the
 -- server never builds. Sibling modules are spelled from the PROJECT root
 -- (`tools.mcp.x`): `req` resolves at compile time against the tree above the
--- source file, so a bare name only worked with cwd = tools/std.mcp.
+-- source file, so a bare name only worked with cwd = tools/mcp.
 --
--- `std.script` is gone: it is the denied activity junk drawer.
--- Its uses here were fs reads/writes and popen captures, which are std.fs and
--- std.proc; lock-taking work belongs to tools.mcp.shared.
+-- `script` is gone: it is the denied activity junk drawer.
+-- Its uses here were fs reads/writes and popen captures, which are fs and
+-- proc; lock-taking work belongs to tools.mcp.shared.
 --
 -- STD IS THE PRELUDE GRAPH: no module tree, no import. std
 -- descriptors are referenced DIRECTLY  -  `dual_tool`,
--- `std.fs.exists`, `std.json.encode`, `std.os.getenv`  -  which was verified to
+-- `fs.exists`, `json.encode`, `os.getenv`  -  which was verified to
 -- work from inside a tool handler before this file stopped importing them.
 -- `req "std.x"` is migration debt against that rule; the `req` left here
 -- names a PROJECT module, which is not std and does still need one.
@@ -24,18 +24,18 @@ shared = req("tools.mcp.shared")
 clock = req("lib.clock")
 
 tool: void = (name: str, desc: str, schema: any, handler: any)
-    std.mcp.register_tool(string.gsub(name, "^duo_", "idol_"), desc, schema, handler)
+    mcp.register_tool(string.gsub(name, "^duo_", "idol_"), desc, schema, handler)
 end
 
 -- DUO_ROOT as a VALUE at file scope, not a helper function: a named
 -- file-scope function called from a handler lowers to an upvalue call Duo
--- cannot make. `std.os.getenv` answers ""  -  never nil  -  for an unset name.
-root = std.os.getenv("IDOL_ROOT") or ""
+-- cannot make. `os.getenv` answers ""  -  never nil  -  for an unset name.
+root = os.getenv("IDOL_ROOT") or ""
 if root:len() == 0
-    root = std.os.getenv("DUO_ROOT") or ""
+    root = os.getenv("DUO_ROOT") or ""
 end
 if root:len() == 0
-    root = std.os.getenv("PWD") or ""
+    root = os.getenv("PWD") or ""
 end
 if root:len() == 0
     root = "."
@@ -43,7 +43,7 @@ end
 
 -- Static @comp.* catalog (from meta_module.zig, should be auto-generated).
 --
--- KNOWN BROKEN, and NOT a regression from the std.script removal: the only
+-- KNOWN BROKEN, and NOT a regression from the script removal: the only
 -- two handlers that read this table  -  `duo_meta_catalog` and
 -- `duo_complexity`  -  send NO response at all and the server then exits 0.
 -- They are registered, they appear in tools/list, and calling either one
@@ -123,7 +123,7 @@ tool("duo_diagnostics", "Get compiler diagnostics for a Duo source file", {
             diags[diags:len() + 1] = diag
         end
     end
-    std.json.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
+    json.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
 end)
 
 -- Tool: duo_compile_check  -  same as diagnostics
@@ -153,7 +153,7 @@ tool("duo_compile_check", "Run duo check and return parsed diagnostics", {
             }
         end
     end
-    std.json.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
+    json.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
 end)
 
 -- Tool: duo_table_shapes  -  semantic graph table/enum shape export for agents
@@ -170,13 +170,13 @@ tool("duo_table_shapes", "Export table_shapes and enum_shapes from duo graph JSO
     -- tools/list and all of which were dead.
     output = "{std.proc.capture(shared.idbin} graph {args.file_path}{\" 2>&1\")}"
     if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed")
-        return std.json.encode({ ok = false, error = string.sub(output, 1, 4000), table_shapes = {}, enum_shapes = {} })
+        return json.encode({ ok = false, error = string.sub(output, 1, 4000), table_shapes = {}, enum_shapes = {} })
     end
-    parsed = std.json.decode(output)
+    parsed = json.decode(output)
     if parsed == nil
-        return std.json.encode({ ok = false, error = "failed to parse duo graph JSON", raw_output = string.sub(output, 1, 2000) })
+        return json.encode({ ok = false, error = "failed to parse duo graph JSON", raw_output = string.sub(output, 1, 2000) })
     end
-    std.json.encode({
+    json.encode({
         ok = true,
         file = parsed.file,
         table_shapes = parsed.table_shapes or {},
@@ -210,9 +210,9 @@ tool("duo_meta_catalog", "List all @comp.* / @meta.* constructs", {
             elseif agent_keys[k] then groups.agent_hooks[k] = v
             else groups.type_introspection[k] = v end
         end
-        return std.json.encode(groups)
+        return json.encode(groups)
     end
-    std.json.encode(META_CATALOG)
+    json.encode(META_CATALOG)
 end)
 
 -- Tool: duo_meta_ladder  -  show scaling ladder
@@ -243,7 +243,7 @@ tool("duo_meta_ladder", "Show the @comp.* scaling ladder O(types) → O(n!)", {
         { name = "scheme", scaling = "O(declarations)", description = "Generative: declarative scheme" },
         { name = "each", scaling = "composition glue", description = "Split combinator output; chain stages" },
     }
-    std.json.encode(ladder)
+    json.encode(ladder)
 end)
 
 -- Tool: duo_language_features  -  list language features
@@ -251,7 +251,7 @@ tool("duo_language_features", "List all implemented Duo language features", {
     type = "object",
     properties = {},
 }, fun(_args)
-    std.json.encode({
+    json.encode({
         syntax = {
             ["fun"] = "Function declaration (replaces function)",
             ["req"] = "Module import (replaces require)",
@@ -279,7 +279,7 @@ tool("duo_coordination_buffer", "Read the shared agent coordination buffer", {
     type = "object",
     properties = {},
 }, fun(_args)
-    std.json.encode(shared.document(shared.coordpath, "coordination-buffer", 0))
+    json.encode(shared.document(shared.coordpath, "coordination-buffer", 0))
 end)
 
 -- Tool: duo_agent_gaps_buffer  -  read gaps ledger
@@ -287,7 +287,7 @@ tool("duo_agent_gaps_buffer", "Read the cross-session agent gaps ledger", {
     type = "object",
     properties = {},
 }, fun(_args)
-    std.json.encode(shared.document(shared.coordpath, "gaps-buffer", 0))
+    json.encode(shared.document(shared.coordpath, "gaps-buffer", 0))
 end)
 
 -- Tool: duo_agent_canonical_index  -  read canonical index
@@ -295,7 +295,7 @@ tool("duo_agent_canonical_index", "Read canonical router for agent buffers", {
     type = "object",
     properties = {},
 }, fun(_args)
-    std.json.encode(shared.document(shared.canonpath, "canonical-index", 0))
+    json.encode(shared.document(shared.canonpath, "canonical-index", 0))
 end)
 
 -- Tool: duo_grammar_spec_read  -  read grammar spec
@@ -303,7 +303,7 @@ tool("duo_grammar_spec_read", "Read canonical surface-syntax rules", {
     type = "object",
     properties = {},
 }, fun(_args)
-    std.json.encode(shared.document(shared.root .. "/docs/GRAMMAR_SPEC.md", "grammar-spec", 0))
+    json.encode(shared.document(shared.root .. "/docs/GRAMMAR_SPEC.md", "grammar-spec", 0))
 end)
 
 -- Tool: duo_grammar_spec_update  -  append grammar rule change
@@ -317,10 +317,10 @@ tool("duo_grammar_spec_update", "Append a grammar rule changelog entry", {
     required = { "rule_id", "status", "detail" },
 }, fun(args)
     gpath = "docs/GRAMMAR_SPEC.md"
-    if not std.fs.exists(gpath)
-        return std.json.encode({ kind = "grammar.update", ok = false, path = gpath, reason = "grammar spec missing; create docs/GRAMMAR_SPEC.md first" })
+    if not fs.exists(gpath)
+        return json.encode({ kind = "grammar.update", ok = false, path = gpath, reason = "grammar spec missing; create docs/GRAMMAR_SPEC.md first" })
     end
-    content = std.fs.read_file(gpath)
+    content = fs.read_file(gpath)
     date = clock.utc():sub(1, 10)
     entry = "| {date} | {args.rule_id} | {args.status}: {args.detail} |\n"
     marker = "## Changelog\n\n| Date | Rule | Change |\n| --- | --- | --- |\n"
@@ -329,8 +329,8 @@ tool("duo_grammar_spec_update", "Append a grammar rule changelog entry", {
     else
         content = "{content}\\n## Changelog\\n\\n| Date | Rule | Change |\\n| --- | --- | --- |\\n{entry}"
     end
-    std.fs.write_file(gpath, content)
-    std.json.encode({ kind = "grammar.update", ok = true, path = gpath, rule = args.rule_id, status = args.status })
+    fs.write_file(gpath, content)
+    json.encode({ kind = "grammar.update", ok = true, path = gpath, rule = args.rule_id, status = args.status })
 end)
 
 -- Tool: duo_directive_hierarchy_read  -  read directive hierarchy
@@ -338,7 +338,7 @@ tool("duo_directive_hierarchy_read", "Read @comp.* dotted directive hierarchy", 
     type = "object",
     properties = {},
 }, fun(_args)
-    std.json.encode(shared.document(shared.root .. "/docs/DIRECTIVE_HIERARCHY.md", "directive-hierarchy", 0))
+    json.encode(shared.document(shared.root .. "/docs/DIRECTIVE_HIERARCHY.md", "directive-hierarchy", 0))
 end)
 
 -- Tool: duo_agent_smoke  -  run agent-smoke gate
@@ -349,7 +349,7 @@ tool("duo_agent_smoke", "Run tier-0 agent-smoke gate under lock", {
     },
 }, fun(args)
     result = shared.agent_smoke(args.timeout or 600)
-    std.json.encode(result)
+    json.encode(result)
 end)
 
 -- Tool: duo_audit_native_boxing  -  native boxing audit
@@ -361,7 +361,7 @@ tool("duo_audit_native_boxing", "Dump C for a .id file and flag boxing patterns"
     required = { "file_path" },
 }, fun(args)
     result = shared.audit_native_boxing(args.file_path)
-    std.json.encode(result)
+    json.encode(result)
 end)
 
 -- Tool: duo_audit_metaprogramming_smokes  -  batch native audit
@@ -401,7 +401,7 @@ tool("duo_audit_metaprogramming_smokes", "Batch native-boxing audit on generativ
         results[results:len() + 1] = r
         if r.pass then passed += 1 else failed += 1 end
     end
-    std.json.encode({ total = paths:len(), passed = passed, failed = failed, results = results })
+    json.encode({ total = paths:len(), passed = passed, failed = failed, results = results })
 end)
 
 -- Tool: duo_session_log  -  structured session log entry
@@ -414,7 +414,7 @@ tool("duo_session_log", "Append a structured session log entry to the coordinati
     },
     required = { "agent_id", "summary" },
 }, fun(args)
-    std.json.encode(shared.session_log(args.agent_id, args.summary, args.detail or ""))
+    json.encode(shared.session_log(args.agent_id, args.summary, args.detail or ""))
 end)
 
 -- Tool: duo_repo_tooling  -  run a Duo repo script
@@ -427,7 +427,7 @@ tool("duo_repo_tooling", "Run a Duo repo-tooling script from scripts/", {
     required = { "script_name" },
 }, fun(args)
     result = shared.repo_tooling(args.script_name, args.args or "")
-    std.json.encode(result)
+    json.encode(result)
 end)
 
 -- Tool: duo_complexity  -  query complexity for any @comp.* path
@@ -454,7 +454,7 @@ tool("duo_complexity", "Query complexity information for any @comp.* path (e.g.,
         -- Look up in catalog
         entry = catalog[core] or catalog[path]
         if entry
-            std.json.encode({
+            json.encode({
                 path = path,
                 core = core,
                 complexity = entry.scaling or "unknown",
@@ -471,7 +471,7 @@ tool("duo_complexity", "Query complexity information for any @comp.* path (e.g.,
         end
         return "{std.json.encode({ error = \"Path not found in catalog: \"}{path, suggestion = \"Use duo_meta_catalog() to see all available paths\" })}"
     end
-    std.json.encode({ error = "Path must start with comp., meta., or compiler.: " .. path })
+    json.encode({ error = "Path must start with comp., meta., or compiler.: " .. path })
 end)
 
 -- Tool: duo_next_combinators  -  suggest next-level combinators
@@ -536,7 +536,7 @@ tool("duo_next_combinators", "Suggest next-level combinators for a given @comp.*
     }
     
     entry = suggestions_map[core] or suggestions_map["map"]
-    std.json.encode({
+    json.encode({
         path = path,
         next_level = entry.suggestions,
         explanation = entry.explanation,
@@ -552,10 +552,10 @@ tool("duo_multiplier_opportunities", "Analyze a .id file for places where metapr
     },
     required = { "file_path" },
 }, fun(args)
-    if not std.fs.exists(args.file_path)
-        std.json.encode({ error = "File not found: " .. args.file_path })
+    if not fs.exists(args.file_path)
+        json.encode({ error = "File not found: " .. args.file_path })
     else
-        content = std.fs.read_file(args.file_path)
+        content = fs.read_file(args.file_path)
         
         opportunities = {}
         
@@ -606,7 +606,7 @@ tool("duo_multiplier_opportunities", "Analyze a .id file for places where metapr
             })
         end
         
-    std.json.encode({
+    json.encode({
         file = args.file_path,
         opportunities = opportunities,
         count = opportunities:len(),
@@ -624,7 +624,7 @@ tool("duo_agent_session_start", "Session bootstrap: coordination, gaps, canonica
     coord = shared.coordination_read()
     p0 = shared.open_p0_gaps()
     canon = shared.canonical_index()
-    std.json.encode({
+    json.encode({
         agent_id = args.agent_id or "agent",
         infer_one = shared.infer_one_context(),
         harness_seams = shared.harness_seams_context(),
@@ -700,7 +700,7 @@ tool("duo_audit_codegen_pitfalls", "Static-scan a .id file for known Duo codegen
     required = { "file_path" },
 }, fun(args)
     result = shared.audit_codegen_pitfalls(args.file_path)
-    std.json.encode(result)
+    json.encode(result)
 end)
 
 -- Tool: duo_exponential_evaluate  -  analyze Duo code for metaprogramming opportunities
@@ -720,7 +720,7 @@ tool("duo_exponential_evaluate", "Analyze Duo source code for metaprogramming op
     -- C call, where a third argument is a hard compile error. Dropping it here
     -- preserves the behaviour the extra arg already had: none.
     result = shared.exponential_evaluate(args.code, args.file_path)
-    std.json.encode(result)
+    json.encode(result)
 end)
 
 -- Tool: duo_onboard_exponential  -  guided onboarding for leveraging Duo's metaprogramming

@@ -1,4 +1,4 @@
-# std.wasm.wasi — WASI (WebAssembly System Interface) type definitions and bindings
+# wasm.wasi — WASI (WebAssembly System Interface) type definitions and bindings
 # Maps WASI preview1/preview2 types to Duo-native types for WASM targets.
 
 # WASI errno constants

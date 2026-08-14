@@ -1,4 +1,4 @@
-# std.collections — basic data structures over Duo tables
+# collections — basic data structures over Duo tables
 
 list_new(): any
     {}

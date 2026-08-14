@@ -1,4 +1,4 @@
-# std.str — native string primitives for compiler-grade Duo.
+# str — native string primitives for compiler-grade Duo.
 #
 # `string.sub` cannot lower on the direct backend: it allocates a
 # NUL-terminated string, and native_backend emits only read-only __TEXT

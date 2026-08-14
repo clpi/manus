@@ -1,4 +1,4 @@
-# std.time — time utilities
+# time — time utilities
 
 @comp.c.include("sys/time.h")
 @comp.c.include("time.h")
@@ -29,7 +29,7 @@ end
 # and this returned 0 for every call # so `monotonic()` measured a zero delta
 # across a 250 ms sleep, and any Duo benchmark harness built on it would have
 # reported every run as instantaneous. Every other @c.emit-bodied function in
-# the stdlib (see std.script.fs_exists) already writes the explicit return.
+# the stdlib (see script.fs_exists) already writes the explicit return.
 now_ns(): i64
     return @comp.c.emit("({ struct timeval tv; gettimeofday(&tv, NULL); (int64_t)(tv.tv_sec * 1000000000LL + tv.tv_usec * 1000LL); })")
 end

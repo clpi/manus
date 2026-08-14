@@ -1,4 +1,4 @@
-# std.diff — Structural diff algorithms
+# diff — Structural diff algorithms
 # Myers O(ND) text diff, LCS, and hierarchical table diff.
 # Critical for: config management, CRDTs, code review, data sync,
 # ML model versioning, and version control systems.

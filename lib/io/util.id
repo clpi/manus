@@ -1,4 +1,4 @@
-# std.io_util — I/O utilities (mirrors Go's io/ioutil)
+# io_util — I/O utilities (mirrors Go's io/ioutil)
 # Provides convenience functions for reading all data from files/streams.
 
 # all: read all data from a file handle until EOF.

@@ -17,7 +17,7 @@ check(desc, cond)
     end
 end
 
-# ── std.string ──────────────────────────────────────────────────────────
+# ── string ──────────────────────────────────────────────────────────
 
 io.write("\n--- std.string ---\n")
 
@@ -39,7 +39,7 @@ check("repeat", str_mod.repeat("ab", 3) == "ababab")
 check("replace first", str_mod.replace("a-b-c", "-", ":", 1) == "a:b-c")
 check("replace all via replace_all", str_mod.replace_all("a-b-c", "-", ":") == "a:b:c")
 
-# ── std.table ───────────────────────────────────────────────────────────
+# ── table ───────────────────────────────────────────────────────────
 
 io.write("\n--- std.table ---\n")
 
@@ -61,7 +61,7 @@ check("every false", not tbl.every({2, 3, 6}, (v) return v % 2 == 0))
 check("some true", tbl.some({1, 3, 4}, (v) return v % 2 == 0))
 check("some false", not tbl.some({1, 3, 5}, (v) return v % 2 == 0))
 
-# ── std.math ────────────────────────────────────────────────────────────
+# ── math ────────────────────────────────────────────────────────────
 
 io.write("\n--- std.math ---\n")
 
@@ -77,7 +77,7 @@ check("approx_eq diff", not num.approx_eq(1.0, 2.0))
 check("min_of", num.min_of({5, 3, 8, 1, 9}) == 1)
 check("max_of", num.max_of({5, 3, 8, 1, 9}) == 9)
 
-# ── std.crypto ──────────────────────────────────────────────────────────
+# ── crypto ──────────────────────────────────────────────────────────
 
 io.write("\n--- std.crypto ---\n")
 
@@ -93,7 +93,7 @@ check("compare_digest length", not crypto.compare_digest("abc", "abcd"))
 check("hmac_sha256", crypto:len().hmac_sha256("key", "message") == 64)
 check("secure_random_hex", crypto:len().secure_random_hex(16) == 32)
 
-# ── std.fmt ─────────────────────────────────────────────────────────────
+# ── fmt ─────────────────────────────────────────────────────────────
 
 io.write("\n--- std.fmt ---\n")
 
@@ -108,7 +108,7 @@ check("repr number", fmt.repr(42) == "42")
 check("repr nil", fmt.repr(nil) == "nil")
 check("repr bool", fmt.repr(true) == "true")
 
-# ── std.log ─────────────────────────────────────────────────────────────
+# ── log ─────────────────────────────────────────────────────────────
 
 io.write("\n--- std.log ---\n")
 
@@ -119,7 +119,7 @@ check("log reset", log.get_level() == "DEBUG")
 log.with_fields("INFO", {user = "test", id = 42}, "action performed")
 check("log with_fields", true)
 
-# ── std.zip ─────────────────────────────────────────────────────────────
+# ── zip ─────────────────────────────────────────────────────────────
 
 io.write("\n--- std.zip ---\n")
 
@@ -129,7 +129,7 @@ check("zip.list exists", type(zip.list) == "function")
 check("zip.info exists", type(zip.info) == "function")
 check("zip.info nil", zip.info("/nonexistent.zip") == nil)
 
-# ── std.iter ────────────────────────────────────────────────────────────
+# ── iter ────────────────────────────────────────────────────────────
 
 io.write("\n--- std.iter ---\n")
 

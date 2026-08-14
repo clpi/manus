@@ -1,4 +1,4 @@
-# std.emit — native-typed emission primitives for code generators.
+# emit — native-typed emission primitives for code generators.
 #
 # STATUS: the primitives below lower correctly — inspect the generated C and
 # `std_emit__emit_read_u32` is clean native code with zero `lua_*`. But they are

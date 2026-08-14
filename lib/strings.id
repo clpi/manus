@@ -1,5 +1,5 @@
-# std.str — string building, interpolation, and advanced manipulation
-# Complements std.string with builder patterns and template interpolation.
+# str — string building, interpolation, and advanced manipulation
+# Complements string with builder patterns and template interpolation.
 
 # ---- Builder ----
 
@@ -49,7 +49,7 @@ builder_reset(b: any): void
     b.count = 0
 end
 
-# builder_to_string: concatenate all parts into a single std.string.
+# builder_to_string: concatenate all parts into a single string.
 builder_to_string(b: any): str
     b.parts:concat()
 end

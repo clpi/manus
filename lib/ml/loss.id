@@ -1,4 +1,4 @@
-# std.ml.loss — Loss functions for training neural networks
+# ml.loss — Loss functions for training neural networks
 
 # ═══════════════════════════════════════════════════════════════
 # Classification losses

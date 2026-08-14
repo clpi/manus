@@ -1,4 +1,4 @@
-# std.cache — caching strategies (TTL, LRU, and simple)
+# cache — caching strategies (TTL, LRU, and simple)
 # Provides time-based expiration, least-recently-used eviction,
 # and simple key-value caches with statistics.
 

@@ -1,4 +1,4 @@
-# std.graphics.font — Font rendering and text layout
+# graphics.font — Font rendering and text layout
 # For rendering text in ward's graphics pipeline.
 
 # ═══════════════════════════════════════════════════════════════

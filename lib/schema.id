@@ -1,4 +1,4 @@
-# std.schema — Declarative data validation framework
+# schema — Declarative data validation framework
 # Define schemas as data, validate values against them.
 # Critical for: API request/response validation, config validation,
 # data pipeline contracts, ML input shape/type checking.

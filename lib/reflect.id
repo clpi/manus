@@ -1,4 +1,4 @@
-# std.reflect — runtime reflection (mirrors Go's reflect package)
+# reflect — runtime reflection (mirrors Go's reflect package)
 # Provides type inspection and value manipulation for Duo tables and values.
 
 # type_of: return a type descriptor string for a value.

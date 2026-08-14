@@ -1,4 +1,4 @@
-# std.crypto.rand — cryptographic random number generation (uses /dev/urandom)
+# crypto.rand — cryptographic random number generation (uses /dev/urandom)
 
 @comp.c.include("fcntl.h")
 @comp.c.include("unistd.h")

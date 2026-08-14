@@ -1,4 +1,4 @@
-# std.mcp — Model Context Protocol SDK for Duo.
+# mcp — Model Context Protocol SDK for Duo.
 # Provides a pure Duo implementation of the MCP stdio transport (JSON-RPC 2.0).
 
 global M = {}

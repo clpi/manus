@@ -1,4 +1,4 @@
-# std.mem — memory primitives, allocators, and low-level memory operations
+# mem — memory primitives, allocators, and low-level memory operations
 # Provides raw memory utilities backed by C stdlib/mmap, plus arena/pool/stack allocators.
 
 @comp.c.include("stdlib.h")

@@ -1,4 +1,4 @@
-# std.heap — specialized data structures: binary heap, priority queue, bloom filter, LRU cache
+# heap — specialized data structures: binary heap, priority queue, bloom filter, LRU cache
 # These are fundamental for networking (priority scheduling), ML (beam search),
 # and runtime (GC mark queues).
 

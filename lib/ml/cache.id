@@ -1,4 +1,4 @@
-# std.ml.cache — Model inference cache
+# ml.cache — Model inference cache
 # For caching model outputs and reducing redundant computation.
 
 # ═══════════════════════════════════════════════════════════════

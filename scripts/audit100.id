@@ -635,7 +635,7 @@ main: i64 = ()
     #   snake +20   `mem.read_i64` / `mem.write_i64` (13), `last_alu` /
     #               `last_cset` (4), `uleb_end`, `uleb_val`. Every one is a
     #               call to an EXISTING std or file-local name. Renaming them
-    #               is a std.mem surface change, not a diff-local repair.
+    #               is a mem surface change, not a diff-local repair.
     #   stdlib +2   two `...:byte()` lines. ward reads its module image
     #               a byte at a time and there are 60-odd of these already;
     #               `s[i]` is the denied spelling and does not compile on a
@@ -696,7 +696,7 @@ main: i64 = ()
     #               beside 51 existing ones. `s[i]` is the denied spelling
     #               and does not compile on a `str` today (GAP-025).
     #   trailret+15 fourteen `return jitbail(...)` / `return bailtrap(pc)` in
-    #               ward.id and one `return @c.emit(...)` in std.jit. All the
+    #               ward.id and one `return @c.emit(...)` in jit. All the
     #               ward ones are EARLY returns from inside a branch, which is
     #               this file's refusal idiom at 56 existing sites; an early
     #               return is not a tail return and cannot become a bare tail
@@ -849,7 +849,7 @@ main: i64 = ()
     #   underprefix  1815 -> 1808   -7   `_count` -> `tally`, and its 6 call sites
     #   stdlib       2022 -> 2020   -2   `string.byte`/`string.sub` -> `s:byte`/`s:sub`
     #   concatlit    2425 -> 2411  -14   every `.. "…"` -> `"…{x}…"`
-    #   trailret     3437 -> 3437   -2   two `return 3` / `return 1` -> `std.os.exit`
+    #   trailret     3437 -> 3437   -2   two `return 3` / `return 1` -> `os.exit`
     #
     # `trailret` is NOT lowered even though this diff removed two points, and
     # that is deliberate rather than an oversight: the row reads 3441 against

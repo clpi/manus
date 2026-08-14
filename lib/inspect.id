@@ -1,4 +1,4 @@
-# std.inspect — deep inspection, formatting, and debugging of values
+# inspect — deep inspection, formatting, and debugging of values
 # Provides rich pretty-printing, table diffing, and deep comparison
 # for debugging complex data structures.
 

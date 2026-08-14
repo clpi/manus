@@ -1,4 +1,4 @@
-# std.container — container types (mirrors Go's container/heap, list, ring)
+# container — container types (mirrors Go's container/heap, list, ring)
 # Provides a binary min-heap, a doubly-linked list, and a circular ring.
 
 # ===== Heap (min-heap) =====

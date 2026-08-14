@@ -1,4 +1,4 @@
-# std.math.fast — branchless and intrinsic-backed math primitives
+# math.fast — branchless and intrinsic-backed math primitives
 #
 # Typed i64/float helpers that lower to branchless C or single-instruction
 # intrinsics (@popcount, @clz, @ctz, @rotl).

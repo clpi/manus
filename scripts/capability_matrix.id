@@ -336,13 +336,13 @@ main: i64 = ()
     # programs exist to be rejected; scoring them here would shrink every rung
     # population and make every number mean less — the same argument
     # docs/spec/corpus.md makes for the canonical partition.
-    std.script.run(
+    script.run(
         "find {root} -name \"*.id\" -not -path \"*/compile_fail/*\" | sort > {listpath}")
     # `wc -l <`, not `awk END`, for a reason that is about Duo and !shell:
     # `{` opens a string interpolation hole, so an awk program cannot be
     # written in a Duo string literal at all. `find | sort` always ends its
     # output with a newline, so the line count is the file count.
-    wanted: i64 = to(i64)(std.script.chomp(std.script.capture("wc -l < {listpath}")))
+    wanted: i64 = to(i64)(script.chomp(script.capture("wc -l < {listpath}")))
     if wanted == 0
         print("capability_matrix: FAIL — no .id programs under {root}; the sweep is broken")
         return 3

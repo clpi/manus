@@ -1,4 +1,4 @@
-# std.utf8 — utf-8 utilities
+# utf8 — utf-8 utilities
 
 char(codepoint: int): str
     utf8.char(codepoint)

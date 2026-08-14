@@ -1,4 +1,4 @@
-# std.encoding.varint — Variable-length integer encodings
+# encoding.varint — Variable-length integer encodings
 # Provides three common varint formats:
 #   1. Base-128 varint (protobuf-style, unsigned)
 #   2. ZigZag encoding (maps signed to unsigned for better compression)

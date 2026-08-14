@@ -1,6 +1,6 @@
 # ml_showcase.id — Mojo-class ML workflow in Duo (minimal syntax)
 #
-# Demonstrates: @device, @autodiff, @profile, nn.build, ml.* intrinsics, std.ml.*
+# Demonstrates: @device, @autodiff, @profile, nn.build, ml.* intrinsics, ml.*
 
 NN = nn
 Ops = ops
@@ -43,7 +43,7 @@ main()
     dev = Device.best()
     print("Device: auto (compiler selects CPU/Metal/CUDA)")
 
-    # Model = nn { linear; relu; … } (desugars to std.ml.nn.build)
+    # Model = nn { linear; relu; … } (desugars to ml.nn.build)
     model = nn {
         linear(784, 256)
         relu
@@ -52,7 +52,7 @@ main()
     }
     print("Model layers: %d":format(model.n_layers))
 
-    # `@grad` desugars to std.ml.autodiff:grad (pairs with @autodiff on loss)
+    # `@grad` desugars to ml.autodiff:grad (pairs with @autodiff on loss)
     grad_hook = @grad(loss_mnist, model)
 
     fused = Fusion.fuse_sequential(model)

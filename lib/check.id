@@ -1,4 +1,4 @@
-# std.check — rich assertion library with context and messages
+# check — rich assertion library with context and messages
 # Provides expressive assertions that print helpful diagnostics
 # on failure. Ideal for tests, preconditions, and invariants.
 

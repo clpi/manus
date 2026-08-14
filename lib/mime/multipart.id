@@ -1,4 +1,4 @@
-# std.mime.multipart — MIME multipart reader/writer (mirrors Go's mime/multipart)
+# mime.multipart — MIME multipart reader/writer (mirrors Go's mime/multipart)
 
 parse_boundary(content_type: any)
     if content_type == nil return nil end

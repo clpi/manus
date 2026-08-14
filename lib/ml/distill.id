@@ -1,4 +1,4 @@
-# std.ml.distill — Knowledge distillation
+# ml.distill — Knowledge distillation
 # For compressing large models into smaller ones for edge deployment.
 
 # ═══════════════════════════════════════════════════════════════

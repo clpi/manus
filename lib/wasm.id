@@ -1,4 +1,4 @@
-# std.wasm — WebAssembly binary format decoder/encoder
+# wasm — WebAssembly binary format decoder/encoder
 # This module provides WASM module parsing, validation, and manipulation.
 # Used by ward (Duo's WASM runtime) and tools that generate/transform WASM.
 

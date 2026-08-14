@@ -1,4 +1,4 @@
-# std.random — Random number generation and utilities
+# random — Random number generation and utilities
 
 # seed: seed the random number generator.
 seed(s: int): void

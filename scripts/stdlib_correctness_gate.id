@@ -65,130 +65,130 @@ main(): i64
     # the implementation. Encode dropped '=' padding entirely and decode lost
     # one byte from every 2-byte tail, so the module's own round trip was
     # lossy: encode("hi") -> "aGk" -> decode -> "h".
-    check("base64.encode('h')", std.base64.encode("h"), "aA==")
-    check("base64.encode('hi')", std.base64.encode("hi"), "aGk=")
-    check("base64.encode('hel')", std.base64.encode("hel"), "aGVs")
-    check("base64.encode('hello')", std.base64.encode("hello"), "aGVsbG8=")
-    check("base64.decode('aGk=')", std.base64.decode("aGk="), "hi")
-    check("base64.decode('aA==')", std.base64.decode("aA=="), "h")
-    check("base64.roundtrip", std.base64.decode(std.base64.encode("hello world")), "hello world")
+    check("base64.encode('h')", base64.encode("h"), "aA==")
+    check("base64.encode('hi')", base64.encode("hi"), "aGk=")
+    check("base64.encode('hel')", base64.encode("hel"), "aGVs")
+    check("base64.encode('hello')", base64.encode("hello"), "aGVsbG8=")
+    check("base64.decode('aGk=')", base64.decode("aGk="), "hi")
+    check("base64.decode('aA==')", base64.decode("aA=="), "h")
+    check("base64.roundtrip", base64.decode(base64.encode("hello world")), "hello world")
 
-    # std.base32 — RFC 4648 s6 vectors, both directions now. Encode emitted
+    # base32 — RFC 4648 s6 vectors, both directions now. Encode emitted
     # seven characters per partial group instead of eight; decode was broken by
-    # std.string.char returning a FOUR-byte string (see string.id), so every
+    # string.char returning a FOUR-byte string (see string.id), so every
     # byte after the first vanished at table.concat.
-    check("base32.encode('h')", std.base32.encode("h"), "NA======")
-    check("base32.encode('hi')", std.base32.encode("hi"), "NBUQ====")
-    check("base32.encode('hello')", std.base32.encode("hello"), "NBSWY3DP")
-    check("base32.decode('NA======')", std.base32.decode("NA======"), "h")
-    check("base32.decode('NBUQ====')", std.base32.decode("NBUQ===="), "hi")
-    check("base32.decode('NBSWY3DP')", std.base32.decode("NBSWY3DP"), "hello")
-    check("base32.roundtrip", std.base32.decode(std.base32.encode("hi")), "hi")
+    check("base32.encode('h')", base32.encode("h"), "NA======")
+    check("base32.encode('hi')", base32.encode("hi"), "NBUQ====")
+    check("base32.encode('hello')", base32.encode("hello"), "NBSWY3DP")
+    check("base32.decode('NA======')", base32.decode("NA======"), "h")
+    check("base32.decode('NBUQ====')", base32.decode("NBUQ===="), "hi")
+    check("base32.decode('NBSWY3DP')", base32.decode("NBSWY3DP"), "hello")
+    check("base32.roundtrip", base32.decode(base32.encode("hi")), "hi")
     # The defect underneath base32 decode, pinned directly.
     check("string.char len", 104:char():len():to(str), "1")
     check("string.char concat", 104:char() .. 101:char(), "he")
     check("string.rep", "x":rep(2), "xx")
 
-    # std.bit and std.hash.fnv — both CORRECT. Added as coverage, and as a
-    # correction: an earlier sweep of mine reported `std.bit.band/bor` and
-    # `std.hash.fnv.hash32` returning nil and I recorded them as defects in two
-    # commit messages. Those names never existed. std.bit exposes
-    # popcount/clz/ctz/bit_length/rotl/rotr/reverse; std.hash.fnv is a
+    # bit and hash.fnv — both CORRECT. Added as coverage, and as a
+    # correction: an earlier sweep of mine reported `bit.band/bor` and
+    # `hash.fnv.hash32` returning nil and I recorded them as defects in two
+    # commit messages. Those names never existed. bit exposes
+    # popcount/clz/ctz/bit_length/rotl/rotr/reverse; hash.fnv is a
     # STREAMING api (new32a/update/final). The probe was wrong, not the code.
     #
     # The FNV vector is the real one: FNV-1a 32 of "hello" is 1335831723.
     # NOT 2166136261 — that is the offset basis, i.e. what this module returns
     # when driven wrong, and it looks exactly like a plausible hash.
-    check("bit.popcount(255)", std.bit.popcount(255):to(str), "8")
-    check("bit.clz(1)", std.bit.clz(1):to(str), "63")
-    check("bit.bit_length(8)", std.bit.bit_length(8):to(str), "4")
-    check("bit.rotl(1,1)", std.bit.rotl(1, 1):to(str), "2")
+    check("bit.popcount(255)", bit.popcount(255):to(str), "8")
+    check("bit.clz(1)", bit.clz(1):to(str), "63")
+    check("bit.bit_length(8)", bit.bit_length(8):to(str), "4")
+    check("bit.rotl(1,1)", bit.rotl(1, 1):to(str), "2")
     check("fnv1a32('hello')", fnv_hello():to(str), "1335831723")
 
     # Modules swept and found CORRECT. Recorded as coverage so a future
     # change cannot break them silently — which is the point of a ratchet, and
-    # cheaper than rediscovering them. `std.math.pow` is deliberately absent:
+    # cheaper than rediscovering them. `math.pow` is deliberately absent:
     # Lua 5.3 removed it in favour of `^`, so its nil is correct, not a defect.
-    check("crypto.hex_encode", std.crypto.hex_encode("hi"), "6869")
-    check("crypto.hex_decode", std.crypto.hex_decode("6869"), "hi")
-    check("json.encode", std.json.encode({a = 1}):to(str), "{\"a\":1}")
-    check("script.path_basename", std.script.path_basename("a/b/c.id"), "c.id")
-    check("script.path_stem", std.script.path_stem("a/b/c.id"), "c")
-    check("script.path_ext", std.script.path_ext("a/b/c.id"), ".id")
-    check("script.path_dirname", std.script.path_dirname("a/b/c.id"), "a/b")
+    check("crypto.hex_encode", crypto.hex_encode("hi"), "6869")
+    check("crypto.hex_decode", crypto.hex_decode("6869"), "hi")
+    check("json.encode", json.encode({a = 1}):to(str), "{\"a\":1}")
+    check("script.path_basename", script.path_basename("a/b/c.id"), "c.id")
+    check("script.path_stem", script.path_stem("a/b/c.id"), "c")
+    check("script.path_ext", script.path_ext("a/b/c.id"), ".id")
+    check("script.path_dirname", script.path_dirname("a/b/c.id"), "a/b")
     check("string.trim", "  hi  ":trim(), "hi")
     check("string.reverse", "abc":reverse(), "cba")
     check("string.count", "banana":count("a"):to(str), "3")
-    check("string.pad_left", std.string.pad_left("7", 3, "0"), "007")
-    check("string.repeat_str", std.string.repeat_str("ab", 3), "ababab")
-    check("table.index_of", std.table.index_of({5, 6, 7}, 6):to(str), "2")
-    check("table.reverse", std.table.reverse({1, 2, 3})[1]:to(str), "3")
+    check("string.pad_left", string.pad_left("7", 3, "0"), "007")
+    check("string.repeat_str", string.repeat_str("ab", 3), "ababab")
+    check("table.index_of", table.index_of({5, 6, 7}, 6):to(str), "2")
+    check("table.reverse", table.reverse({1, 2, 3})[1]:to(str), "3")
     check("table.concat", {"a":concat("b"}, "-"), "a-b")
     check("math.floor", 2.7:floor():to(str), "2")
     check("math.min", 3:min(7):to(str), "3")
 
-    # std.cmp — min returned `true` and max returned the SMALLER value. Third
+    # cmp — min returned `true` and max returned the SMALLER value. Third
     # and fourth instances of the parenless-application trap, after
     # strconv.format_bool and fmt.boolean: in `if a < b a else b end` the
     # trailing `b a` reads as `b(a)`, so the clause called its own operand.
-    check("cmp.min(3,7)", std.cmp.min(3, 7):to(str), "3")
-    check("cmp.max(3,7)", std.cmp.max(3, 7):to(str), "7")
-    check("cmp.min(9,2)", std.cmp.min(9, 2):to(str), "2")
-    check("cmp.max(9,2)", std.cmp.max(9, 2):to(str), "9")
-    check("cmp.clamp(5,1,3)", std.cmp.clamp(5, 1, 3):to(str), "3")
+    check("cmp.min(3,7)", cmp.min(3, 7):to(str), "3")
+    check("cmp.max(3,7)", cmp.max(3, 7):to(str), "7")
+    check("cmp.min(9,2)", cmp.min(9, 2):to(str), "2")
+    check("cmp.max(9,2)", cmp.max(9, 2):to(str), "9")
+    check("cmp.clamp(5,1,3)", cmp.clamp(5, 1, 3):to(str), "3")
 
-    # std.csv / std.uuid — swept, correct, pinned as coverage.
-    check("csv.parse_line[1]", std.csv.parse_line("a,b")[1]:to(str), "a")
-    check("csv.parse_line[2]", std.csv.parse_line("a,b")[2]:to(str), "b")
-    check("uuid.v4 length", std.uuid.v4():len():to(str), "36")
+    # csv / uuid — swept, correct, pinned as coverage.
+    check("csv.parse_line[1]", csv.parse_line("a,b")[1]:to(str), "a")
+    check("csv.parse_line[2]", csv.parse_line("a,b")[2]:to(str), "b")
+    check("uuid.v4 length", uuid.v4():len():to(str), "36")
 
-    # std.inspect — hashed every input to "{}" because a line was a concat
+    # inspect — hashed every input to "{}" because a line was a concat
     # expression with no assignment.
-    check("inspect.hash", std.inspect.std_inspect_hash({1, 2}), "{1=number:1,2=number:2}")
-    check("inspect.to_str", std.inspect.std_inspect_to_str({7}, 0, {}), "[7]")
+    check("inspect.hash", inspect.std_inspect_hash({1, 2}), "{1=number:1,2=number:2}")
+    check("inspect.to_str", inspect.std_inspect_to_str({7}, 0, {}), "[7]")
 
-    # std.xml — round-trip, not just one direction.
-    check("xml.escape", std.xml.escape("a<b"), "a&lt;b")
-    check("xml.unescape", std.xml.unescape("a&lt;b"), "a<b")
+    # xml — round-trip, not just one direction.
+    check("xml.escape", xml.escape("a<b"), "a&lt;b")
+    check("xml.unescape", xml.unescape("a&lt;b"), "a<b")
 
-    # std.wasm — constants that vanished when referenced from a nested export
+    # wasm — constants that vanished when referenced from a nested export
     # table. Values are from the WASM binary format spec, not from the module.
-    check("wasm.SECTION.CODE", std.wasm.SECTION.CODE:to(str), "10")
-    check("wasm.TYPE.I32", std.wasm.TYPE.I32:to(str), "127")
-    check("wasm.TYPE.FUNC", std.wasm.TYPE.FUNC:to(str), "96")
+    check("wasm.SECTION.CODE", wasm.SECTION.CODE:to(str), "10")
+    check("wasm.TYPE.I32", wasm.TYPE.I32:to(str), "127")
+    check("wasm.TYPE.FUNC", wasm.TYPE.FUNC:to(str), "96")
 
-    # std.encoding.protobuf / std.net.ws — same nested-table defect.
-    check("protobuf.WIRE.VARINT", std.encoding.protobuf.WIRE.VARINT:to(str), "0")
-    check("protobuf.WIRE.FIXED32", std.encoding.protobuf.WIRE.FIXED32:to(str), "5")
-    check("ws.OP.PONG", std.net.ws.OP.PONG:to(str), "10")
+    # encoding.protobuf / net.ws — same nested-table defect.
+    check("protobuf.WIRE.VARINT", encoding.protobuf.WIRE.VARINT:to(str), "0")
+    check("protobuf.WIRE.FIXED32", encoding.protobuf.WIRE.FIXED32:to(str), "5")
+    check("ws.OP.PONG", net.ws.OP.PONG:to(str), "10")
 
-    # std.math.geometry — vec2_dot of (3,4).(1,0) is 3. Arithmetic, not lookup.
-    check("geometry.vec2_dot", std.math.geometry.vec2_dot(
-        std.math.geometry.vec2_new(3.0, 4.0),
-        std.math.geometry.vec2_new(1.0, 0.0):to(str)), "3")
+    # math.geometry — vec2_dot of (3,4).(1,0) is 3. Arithmetic, not lookup.
+    check("geometry.vec2_dot", math.geometry.vec2_dot(
+        math.geometry.vec2_new(3.0, 4.0),
+        math.geometry.vec2_new(1.0, 0.0):to(str)), "3")
 
-    # std.encoding.ascii85 — ceiling of n/4 in 4-byte groups: 2*5 + 4.
-    check("ascii85.max_encoded_len", std.encoding.ascii85.max_encoded_8:len():to(str), "14")
+    # encoding.ascii85 — ceiling of n/4 in 4-byte groups: 2*5 + 4.
+    check("ascii85.max_encoded_len", encoding.ascii85.max_encoded_8:len():to(str), "14")
 
-    # std.timer — round-half-up.
-    check("timer.round", std.timer.std_timer_round(2.6):to(str), "3")
+    # timer — round-half-up.
+    check("timer.round", timer.std_timer_round(2.6):to(str), "3")
 
-    # std.mime — the keys carry the dot.
-    check("mime.type_by_extension", std.mime.type_by_extension(".txt"), "text/plain")
+    # mime — the keys carry the dot.
+    check("mime.type_by_extension", mime.type_by_extension(".txt"), "text/plain")
 
-    # std.utf8 — projections onto the host surface.
-    check("utf8.char", std.utf8.char(65), "A")
-    check("utf8.len", std.utf8.len("abc", 1, 3):to(str), "3")
+    # utf8 — projections onto the host surface.
+    check("utf8.char", utf8.char(65), "A")
+    check("utf8.len", utf8.len("abc", 1, 3):to(str), "3")
 
-    # std.sync.once — fires once, then no-ops.
-    check("once.new.done", std.sync.once.new_once().done:to(str), "false")
+    # sync.once — fires once, then no-ops.
+    check("once.new.done", sync.once.new_once().done:to(str), "false")
 
-    # std.script — the exact exit status `run` cannot give, and the chomp that
+    # script — the exact exit status `run` cannot give, and the chomp that
     # fs_tmpdir needed.
-    check("script.status(true)", std.script.status("true"):to(str), "0")
-    check("script.status(exit 7)", std.script.status("exit 7"):to(str), "7")
-    check("script.chomp", std.script.chomp("x\n"), "x")
-    check("script.getenv fallback", std.script.getenv("DEFINITELY_UNSET_XYZ", "fb"), "fb")
+    check("script.status(true)", script.status("true"):to(str), "0")
+    check("script.status(exit 7)", script.status("exit 7"):to(str), "7")
+    check("script.chomp", script.chomp("x\n"), "x")
+    check("script.getenv fallback", script.getenv("DEFINITELY_UNSET_XYZ", "fb"), "fb")
 
     io.write(report)
     print("stdlib_correctness: " .. fails:to(str) .. " wrong of " .. checked:to(str)

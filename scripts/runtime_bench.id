@@ -203,7 +203,7 @@ answer(raw: str): str
     for i, line in cut(raw)
         keep: bool = not starts(line, "engine=") and !starts(line, "result=")
             and !starts(line, "seconds=")
-        piece: str = std.script.chomp(line)
+        piece: str = script.chomp(line)
         if keep and piece != ""
             if out == ""
                 out = piece
@@ -300,12 +300,12 @@ end
 # macOS spelling gets -1 and an `n/a` cell rather than a number off by 1024.
 peak(cmd: str): i64
     probe: str = "/usr/bin/time -l {cmd} 2>&1 >/dev/null | grep maximum"
-    number(std.script.chomp(shell(probe)))
+    number(script.chomp(shell(probe)))
 end
 
 filepath: str:len(): i64
     probe: str = "wc -c < '{path}' 2>/dev/null"
-    number(std.script.chomp(shell(probe)))
+    number(script.chomp(shell(probe)))
 end
 
 # Tracked source lines under a pathspec, counted through git so untracked
@@ -788,13 +788,13 @@ main(): i64
             105000000, 27000000, 10000000, 32500000, 10500000, 25000000,
             450000000, 4300000000, 19000000,
         }
-        basefile: str = std.script.getenv("BENCH_BASELINE", "")
+        basefile: str = script.getenv("BENCH_BASELINE", "")
         if basefile != "" and exists(basefile)
             for i, line in cut(slurp(basefile))
                 for j, nm in wname
                     tag: str = "{nm} "
                     if starts(line, tag)
-                        v: str = std.script.chomp(line:sub(tag:len() + 1, line:len()))
+                        v: str = script.chomp(line:sub(tag:len() + 1, line:len()))
                         if digits(v)
                             baseline[j] = to(i64)(v)
                         end

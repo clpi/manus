@@ -1,4 +1,4 @@
-# std.jit — executable code buffers for runtime code generation.
+# jit — executable code buffers for runtime code generation.
 #
 # The three primitives a JIT needs and that no pure-Duo code can express:
 # allocate memory that can be made executable, write machine words into it,

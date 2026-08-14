@@ -157,16 +157,16 @@ absf(x: f64): f64
     o
 end
 
-homedir = std.script.getenv("DUO_ROOT", ".")
+homedir = script.getenv("DUO_ROOT", ".")
 root = sh("cd '{homedir}' && pwd")
 duobin = "{root}/zig-out/bin/idol"
-zigbin = std.script.getenv("ZIG", "zig")
-cc = std.script.getenv("CC", "clang")
-stripbin = std.script.getenv("STRIP", "strip")
-runs = to(i64)(std.script.getenv("RUNS", "5"))
-chainmid = to(i64)(std.script.getenv("CHAIN_FUNCS", "180"))
-chainsmall = to(i64)(std.script.getenv("CHAIN_FUNCS_1K", chainmid:to(str)))
-chainbig = to(i64)(std.script.getenv("CHAIN_FUNCS_10K", "1500"))
+zigbin = script.getenv("ZIG", "zig")
+cc = script.getenv("CC", "clang")
+stripbin = script.getenv("STRIP", "strip")
+runs = to(i64)(script.getenv("RUNS", "5"))
+chainmid = to(i64)(script.getenv("CHAIN_FUNCS", "180"))
+chainsmall = to(i64)(script.getenv("CHAIN_FUNCS_1K", chainmid:to(str)))
+chainbig = to(i64)(script.getenv("CHAIN_FUNCS_10K", "1500"))
 uname = sh("uname -s")
 
 trimflag(): str
@@ -199,14 +199,14 @@ mintime(label: str, cmd: str, floor: i64): i64
     best: i64 = 0
     i: i64 = 0
     while i < runs
-        a: i64 = std.time.monotonic()
-        rc: i64 = std.script.run(quiet)
-        b: i64 = std.time.monotonic()
+        a: i64 = time.monotonic()
+        rc: i64 = script.run(quiet)
+        b: i64 = time.monotonic()
         if rc != 0
             print("compile-size-bench: FAIL — {label} exited {rc}")
             print("  command: {cmd}")
             print(sh("sed -n '1,40p' '{log}'"))
-            std.os.exit(1)
+            os.exit(1)
         end
         d: i64 = b - a
         if best == 0 or d < best
@@ -225,9 +225,9 @@ spawnfloor(): i64
     best: i64 = 0
     i: i64 = 0
     while i < 8
-        a: i64 = std.time.monotonic()
-        rc: i64 = std.script.run("true")
-        b: i64 = std.time.monotonic()
+        a: i64 = time.monotonic()
+        rc: i64 = script.run("true")
+        b: i64 = time.monotonic()
         d: i64 = b - a
         if rc == 0 and (best == 0 or d < best)
             best = d
@@ -238,13 +238,13 @@ spawnfloor(): i64
 end
 
 strippedinput: str, out: str:len(): i64
-    std.script.must("cp '{input}' '{out}'")
-    std.script.run("'{stripbin}' {stripmode} '{out}' 2>/dev/null")
+    script.must("cp '{input}' '{out}'")
+    script.run("'{stripbin}' {stripmode} '{out}' 2>/dev/null")
     sizeat(out)
 end
 
 duotyped(path: str): void
-    f = std.io.open(path, "w")
+    f = io.open(path, "w")
     f:write("fun fib_iter(n: i64): i64\n")
     f:write("    a: i64 = 0\n")
     f:write("    b: i64 = 1\n")
@@ -273,7 +273,7 @@ duotyped(path: str): void
 end
 
 ctyped(path: str): void
-    f = std.io.open(path, "w")
+    f = io.open(path, "w")
     f:write("include:len() <stdint.h>\n")
     f:write("include:len() <stdio.h>\n")
     f:write("\n")
@@ -304,7 +304,7 @@ ctyped(path: str): void
 end
 
 duochain(path: str, funcs: i64): void
-    f = std.io.open(path, "w")
+    f = io.open(path, "w")
     f:write("-- Generated typed function-chain workload.\n")
     f:write("\n")
     i: i64 = 0
@@ -340,7 +340,7 @@ duochain(path: str, funcs: i64): void
 end
 
 cchain(path: str, funcs: i64): void
-    f = std.io.open(path, "w")
+    f = io.open(path, "w")
     f:write("include:len() <stdint.h>\n")
     f:write("include:len() <stdio.h>\n")
     f:write("\n")
@@ -442,7 +442,7 @@ workload(name: str, idolsrc: str, csrc: str, idolout: str, cout: str,
     canswer: str = sh("'{cout}'")
     if duoanswer != canswer
         print("RESULT mismatch for {name}: Idol={duoanswer} C={canswer}")
-        std.os.exit(1)
+        os.exit(1)
     end
     pairrows(name, idolsrc, csrc, idolout, cout, idolns, cns)
     resultrow(name, duoanswer)
@@ -452,14 +452,14 @@ end
 # supposed to emit. A capture that silently produced 0 rows would otherwise
 # compare two empty lists and call them equal.
 capturerows(label: str, want: i64, bin: str, out: str): void
-    rc: i64 = std.script.run("'{bin}' > '{out}.raw' 2>'{out}.err'")
-    std.script.run("grep '^RESULT ' '{out}.raw' | sort > '{out}'")
+    rc: i64 = script.run("'{bin}' > '{out}.raw' 2>'{out}.err'")
+    script.run("grep '^RESULT ' '{out}.raw' | sort > '{out}'")
     got: i64 = to(i64)(sh("grep -c '^RESULT ' '{out}' | tr -d ' '"))
     if rc != 0 or got != want
         print("RESULT capture failed for {label}: got {got}/{want} row(s), status {rc}")
         print(sh("sed -n '1,40p' '{out}.err'"))
         print(sh("sed -n '1,40p' '{out}.raw'"))
-        std.os.exit(1)
+        os.exit(1)
     end
 end
 
@@ -470,7 +470,7 @@ mlagree(duopath: str, cpath: str): void
     nc: i64 = cl:len()
     if nd != nc
         print("RESULT count mismatch: Idol={nd} C={nc}")
-        std.os.exit(1)
+        os.exit(1)
     end
     i: i64 = 1
     while i <= nd
@@ -480,7 +480,7 @@ mlagree(duopath: str, cpath: str): void
         idb: str = field(b, 2)
         if ida == "" or ida != idb
             print("RESULT id mismatch: Idol={a} C={b}")
-            std.os.exit(1)
+            os.exit(1)
         end
         d: f64 = to(f64)(field(a, 3))
         r: f64 = to(f64)(field(b, 3))
@@ -490,7 +490,7 @@ mlagree(duopath: str, cpath: str): void
         end
         if absf(d - r) / denom >= 0.0001
             print("RESULT mismatch for {ida}: Idol={d} C={r}")
-            std.os.exit(1)
+            os.exit(1)
         end
         i += 1
     end
@@ -527,7 +527,7 @@ idolapp(name: str, idolsrc: str, sentinel: str, floor: i64): void
     seen: i64 = to(i64)(sh("'{idolout}' 2>/dev/null | grep -c -F '{sentinel}' | tr -d ' '"))
     if seen < 1
         print("RESULT mismatch for {name}: missing sentinel '{sentinel}'")
-        std.os.exit(1)
+        os.exit(1)
     end
     idollines: i64 = linesat(idolsrc)
     idolbytes: i64 = sizeat(idolsrc)
@@ -543,23 +543,23 @@ end
 
 main(): i64
     if sh("test -x '{duobin}' && echo yes") != "yes"
-        std.script.must("cd '{root}' && '{zigbin}' build")
+        script.must("cd '{root}' && '{zigbin}' build")
     end
     if sh("test -x '{duobin}' && echo yes") != "yes"
         print("compile-size-bench: FAIL — no idol binary at {duobin}")
-        std.os.exit(1)
+        os.exit(1)
     end
     if work == ""
         print("compile-size-bench: FAIL — mktemp -d produced nothing")
-        std.os.exit(1)
+        os.exit(1)
     end
 
-    sdk = std.script.getenv("SDKROOT", "")
+    sdk = script.getenv("SDKROOT", "")
     if sdk == ""
         sdk = sh("xcrun --sdk macosx --show-sdk-path 2>/dev/null")
     end
     if sdk != ""
-        std.os.setenv("SDKROOT", sdk, true)
+        os.setenv("SDKROOT", sdk, true)
     end
 
     floor: i64 = spawnfloor()
@@ -597,7 +597,7 @@ main(): i64
     idolapp("metaprogramming_app", "{root}/examples/benchmark.id",
         "RESULT matmul", floor)
 
-    std.script.must("rm -rf '{work}'")
+    script.must("rm -rf '{work}'")
 
     print("")
     print("Note: this is a tracking benchmark. It reports typed-program runtime")

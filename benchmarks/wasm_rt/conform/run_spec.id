@@ -87,15 +87,15 @@ _arg_str(v: any): str
 end
 
 main: i64 = ()
-    ward = std.script.getenv_or("WARD")
-    if ward == "" or not std.script.fs_exists(ward)
+    ward = script.getenv_or("WARD")
+    if ward == "" or not script.fs_exists(ward)
         print("set WARD=/path/to/ward binary")
         os.exit(1)
     end
 
     suite = "../wart/third_party/testsuite"
     only = ""
-    args = std.os.args()
+    args = os.args()
     i = 1
     while i <= #args
         a = args[i]
@@ -115,9 +115,9 @@ main: i64 = ()
     end
 
     td = "/tmp/duo_wasm_conform"
-    std.script.run("rm -rf " .. td .. " && mkdir -p " .. td)
+    script.run("rm -rf " .. td .. " && mkdir -p " .. td)
 
-    listing = std.script.capture("ls " .. suite .. "/*.wast 2>/dev/null")
+    listing = script.capture("ls " .. suite .. "/*.wast 2>/dev/null")
     tot_ok = 0
     tot_bad = 0
     tot_skip = 0
@@ -125,17 +125,17 @@ main: i64 = ()
     fails = {}
 
     for _i, line in listing:split("\n")
-        wast = std.script.chomp(line)
+        wast = script.chomp(line)
         if wast != ""
             name = _sh("basename " .. wast .. " .wast")
             wanted = only == "" or only:find(name, 1, true) != nil
             if wanted
                 js = td .. "/" .. name .. ".json"
-                if std.script.run("wast2json " .. wast .. " -o " .. js .. " >/dev/null 2>&1") != 0
+                if script.run("wast2json " .. wast .. " -o " .. js .. " >/dev/null 2>&1") != 0
                     tot_skip = tot_skip + 1
                     fails[#fails + 1] = name .. ": wast2json failed"
                 else
-                    spec = std.json.decode(std.script.capture("cat " .. js))
+                    spec = json.decode(script.capture("cat " .. js))
                     cur_mod = ""
                     ok = 0
                     bad = 0

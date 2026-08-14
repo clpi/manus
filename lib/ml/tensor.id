@@ -1,4 +1,4 @@
-# std.ml.tensor — Tensor type for ML workloads
+# ml.tensor — Tensor type for ML workloads
 # Uses mem.* intrinsics for direct memory access.
 
 # ═══════════════════════════════════════════════════════════════
