@@ -1,0 +1,6593 @@
+{
+ "classification_enum": [
+  "field",
+  "fieldmutation",
+  "worldrelation",
+  "subjectrelation",
+  "foreign",
+  "migration",
+  "blocked"
+ ],
+ "dirty": [
+  "M src/dnir_lower.zig"
+ ],
+ "occurrences": [
+  {
+   "classification": "migration",
+   "code": "args = std.os.args()",
+   "family": "os_args",
+   "file": "benchmarks/wasm_rt/conform/run_spec.id",
+   "line": 98,
+   "target": "os.args[n] table"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Every runtime must produce byte-identical stdout or its time is discarded:",
+   "family": "stdio",
+   "file": "benchmarks/wasm_rt/run.id",
+   "line": 9,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# time is only reported if its stdout matches this byte for",
+   "family": "stdio",
+   "file": "benchmarks/wasm_rt/run.id",
+   "line": 129,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "io.stdout:setvbuf(\"no\")",
+   "family": "stdio",
+   "file": "examples/comp_canonical_directives_showcase.id",
+   "line": 15,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# compile_fail: environment is not a thing \u2014 use os.env table (docs/spec/world.md).",
+   "family": "environment",
+   "file": "examples/compile_fail/host_environment.id",
+   "line": 2,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "mode = environment[\"IDOLTREE\"]",
+   "family": "environment",
+   "file": "examples/compile_fail/host_environment.id",
+   "line": 5,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "mode = os.getenv(\"IDOLTREE\")",
+   "family": "os_getenv",
+   "file": "examples/compile_fail/host_getenv.id",
+   "line": 5,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "a = os.args()",
+   "family": "os_args",
+   "file": "examples/compile_fail/host_osargs.id",
+   "line": 5,
+   "target": "os.args[n] table"
+  },
+  {
+   "classification": "foreign",
+   "code": "# compile_fail: io.read is namespace-method syntax \u2014 use io:read (docs/spec/world.md).",
+   "family": "io_calls",
+   "file": "examples/compile_fail/world_io_dot.id",
+   "line": 2,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "text = io.read(\"*a\")",
+   "family": "io_calls",
+   "file": "examples/compile_fail/world_io_dot.id",
+   "line": 5,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# compile_fail: std.os is not semantic authority (docs/spec/world.md, law.std.zero).",
+   "family": "std_os",
+   "file": "examples/compile_fail/world_std_os.id",
+   "line": 2,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "examples/compile_fail/world_std_os.id",
+   "line": 5,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Launcher ingress (bootstrap only): host argv \u2192 os.args table projection.",
+   "family": "argv",
+   "file": "examples/host/args.id",
+   "line": 3,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Source never calls os.args(). It indexes the ordinary table.",
+   "family": "os_args",
+   "file": "examples/host/args.id",
+   "line": 4,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "command: str = os.args(1)",
+   "family": "os_args",
+   "file": "examples/host/args.id",
+   "line": 6,
+   "target": "os.args[n] table"
+  },
+  {
+   "classification": "migration",
+   "code": "target: str = os.args(2)",
+   "family": "os_args",
+   "file": "examples/host/args.id",
+   "line": 7,
+   "target": "os.args[n] table"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Never io.read() / io.write(). Use io:read / io:write under io world.",
+   "family": "io_calls",
+   "file": "examples/host/endpoint.id",
+   "line": 3,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# environment is NOT a thing. Never os.getenv. Never environment[...].",
+   "family": "environment",
+   "file": "examples/host/env.id",
+   "line": 3,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "examples/l1_module_sealed_proof.id",
+   "line": 8,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(2)",
+   "family": "std_os",
+   "file": "examples/l1_module_sealed_proof.id",
+   "line": 14,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "examples/l2_fallback_field_manifest_proof.id",
+   "line": 15,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"WASI stdin fd:  0\")",
+   "family": "stdio",
+   "file": "examples/meta_full_demo.id",
+   "line": 110,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"WASI stdout fd: 1\")",
+   "family": "stdio",
+   "file": "examples/meta_full_demo.id",
+   "line": 111,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"WASI stderr fd: 2\")",
+   "family": "stdio",
+   "file": "examples/meta_full_demo.id",
+   "line": 112,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# 6, and the exit status carries it so a stdout-only regression is not the",
+   "family": "stdio",
+   "file": "examples/native_differential/g067_for_body_is_a_call.id",
+   "line": 68,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# run. Both columns exit 0, so only the stdout comparison can see it at all.",
+   "family": "stdio",
+   "file": "examples/native_differential/known_divergent/g064_int_div_by_zero.id",
+   "line": 26,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# one. This row is only watchable because the differential compares stdout",
+   "family": "stdio",
+   "file": "examples/native_differential/known_divergent/g065_integer_division.id",
+   "line": 38,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Source reading is embedded rather than read from disk because `std.os.read_file`",
+   "family": "std_os",
+   "file": "examples/native_differential/tokenizer_selfscan.id",
+   "line": 13,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Nested ambient std access: std.os and std.json reached through dotted paths,",
+   "family": "std_os",
+   "file": "examples/nested_std_req_smoke.id",
+   "line": 1,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# the file is written and read through std.os directly.",
+   "family": "std_os",
+   "file": "examples/nested_std_req_smoke.id",
+   "line": 3,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.write_file(path, \"{\\\"ok\\\":true,\\\"n\\\":7}\")",
+   "family": "std_os",
+   "file": "examples/nested_std_req_smoke.id",
+   "line": 5,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "data = std.json.decode(std.os.read_file(path))",
+   "family": "std_os",
+   "file": "examples/nested_std_req_smoke.id",
+   "line": 7,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   \u2022 injects its stdout as raw C at module scope (parallel to @c.emit), or",
+   "family": "stdio",
+   "file": "examples/run_showcase.id",
+   "line": 5,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   \u2022 returns the stdout as a comptime string when used in an expression.",
+   "family": "stdio",
+   "file": "examples/run_showcase.id",
+   "line": 6,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# 1. Directive form: run a tool, inject stdout as raw C",
+   "family": "stdio",
+   "file": "examples/run_showcase.id",
+   "line": 20,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# 2. Expression form: bake a command's stdout into a Duo comptime string",
+   "family": "stdio",
+   "file": "examples/run_showcase.id",
+   "line": 34,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Compose @c.emit with @run: expression-position @run returns stdout as a string,",
+   "family": "stdio",
+   "file": "examples/run_showcase.id",
+   "line": 64,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#     injects stdout as raw C (parallel to @c.emit, but piped from a tool);",
+   "family": "stdio",
+   "file": "examples/run_smoke.id",
+   "line": 5,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   \u2022 in expression position it returns the stdout as a comptime string.",
+   "family": "stdio",
+   "file": "examples/run_smoke.id",
+   "line": 6,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Expression form: bake a shell command's stdout into a comptime string.",
+   "family": "stdio",
+   "file": "examples/run_smoke.id",
+   "line": 8,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Directive form at module scope: run a command, inject its stdout as C.",
+   "family": "stdio",
+   "file": "examples/run_smoke.id",
+   "line": 12,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "stdout:write(os.args[1])",
+   "family": "stdio",
+   "file": "examples/shc/arg.id",
+   "line": 1,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "stdout:write(stdin:read())",
+   "family": "stdio",
+   "file": "examples/shc/compose.id",
+   "line": 1,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "stdout:write(os.cwd)",
+   "family": "stdio",
+   "file": "examples/shc/cwd.id",
+   "line": 1,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "field",
+   "code": "stdout:write(os.env[\"PATH\"])",
+   "family": "os_env_index",
+   "file": "examples/shc/env.id",
+   "line": 1,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "stdout:write(\"examples/shc/lexer.id\":read())",
+   "family": "stdio",
+   "file": "examples/shc/path.id",
+   "line": 1,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "stdin:read()",
+   "family": "stdio",
+   "file": "examples/shc/read.id",
+   "line": 1,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "stdout:write(\"hi\")",
+   "family": "stdio",
+   "file": "examples/shc/write.id",
+   "line": 1,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  FAIL: \" .. desc .. \"\\n\")",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 16,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n--- std.string ---\\n\")",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 22,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n--- std.table ---\\n\")",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 44,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n--- std.math ---\\n\")",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 66,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n--- std.crypto ---\\n\")",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 82,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n--- std.fmt ---\\n\")",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 98,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n--- std.log ---\\n\")",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 113,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n--- std.zip ---\\n\")",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 124,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n--- std.iter ---\\n\")",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 134,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n=== Results: %d passed, %d failed ===\\n\":format(pass, fail))",
+   "family": "io_calls",
+   "file": "examples/stdlib_comprehensive_test.id",
+   "line": 152,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# compares stdout, so a faulting program cannot be a passing row here. The",
+   "family": "stdio",
+   "file": "examples/table/str/edge.id",
+   "line": 12,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# compares stdout, so a faulting program cannot be a passing row here. The",
+   "family": "stdio",
+   "file": "examples/table/stredge.id",
+   "line": 12,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"stdin:  \" .. to(str)(fd_stdin()))",
+   "family": "stdio",
+   "file": "examples/wasi_demo.id",
+   "line": 76,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"stdout: \" .. to(str)(fd_stdout()))",
+   "family": "stdio",
+   "file": "examples/wasi_demo.id",
+   "line": 77,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"stderr: \" .. to(str)(fd_stderr()))",
+   "family": "stdio",
+   "file": "examples/wasi_demo.id",
+   "line": 78,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Transport: stdin unified diff (added lines only), Idol only.",
+   "family": "stdio",
+   "file": "gate/admission.id",
+   "line": 9,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "text = stdin:read()",
+   "family": "stdio",
+   "file": "gate/admission.id",
+   "line": 13,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "migration",
+   "code": "h = nspace(path, no, code, \"std\\x2E\", \"law.standard.environment\", \"no std namespace \u2014 admitted relations project directly\")",
+   "family": "environment",
+   "file": "gate/admission.id",
+   "line": 102,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "h += nspace(path, no, code, \"core.\", \"law.standard.environment\", \"core is vocabulary authority not runtime table\")",
+   "family": "environment",
+   "file": "gate/admission.id",
+   "line": 108,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"gate/admission: FAIL empty input \u2014 pipe unified diff on stdin\")",
+   "family": "stdio",
+   "file": "gate/admission.id",
+   "line": 222,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "empty_positive = 'os.env[name] == \"\"'",
+   "family": "os_setenv",
+   "file": "gate/architecture.id",
+   "line": 134,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "process_negative = \"io.popen(\"",
+   "family": "io_calls",
+   "file": "gate/architecture.id",
+   "line": 170,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"gate/build: transport is stdin to gate/idiom.id\")",
+   "family": "stdio",
+   "file": "gate/build.id",
+   "line": 7,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "body = stdin:read()",
+   "family": "stdio",
+   "file": "gate/bytetest.id",
+   "line": 2,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "read = { id = \"read\", subject = \"stream|path|stdin\", effect = \"observe\", law = \"law.relation.read\", owner = \"graph\" },",
+   "family": "stdio",
+   "file": "gate/catalog.id",
+   "line": 21,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Gate transport: Idol only \u2014 stdin:read() pipe. No os.args, no --backend=c.",
+   "family": "stdio",
+   "file": "gate/census.id",
+   "line": 3,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "text = stdin:read()",
+   "family": "stdio",
+   "file": "gate/census.id",
+   "line": 7,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"gate/census: stem census pass (run gate/path.id tree via stdin for compound paths)\")",
+   "family": "stdio",
+   "file": "gate/census.id",
+   "line": 96,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Gate transport: Idol only - stdin via stdin:read(). No os.args, no --backend=c.",
+   "family": "stdio",
+   "file": "gate/graph.id",
+   "line": 11,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "text = stdin:read()",
+   "family": "stdio",
+   "file": "gate/graph.id",
+   "line": 14,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"gate/graph: empty input - pipe unified diff on stdin\")",
+   "family": "stdio",
+   "file": "gate/graph.id",
+   "line": 360,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Gate transport: Idol only \u2014 stdin via stdin:read(). No os.args, no --backend=c.",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 10,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "text = stdin:read()",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 13,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += rowh(path, no, code, \"host.args\", \"os.args(\", \"law.host.root\", \"os.args[n] under os world; foreign argv only at scripts/ingress/\")",
+   "family": "os_args",
+   "file": "gate/host.id",
+   "line": 114,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += rowh(path, no, code, \"host.getenv\", \"os.getenv(\", \"law.host.root\", \"os.env[key] \u2014 environment is not a thing\")",
+   "family": "os_getenv",
+   "file": "gate/host.id",
+   "line": 115,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += rowh(path, no, code, \"host.environment\", \"environment[\", \"law.host.root\", \"environment is not a thing \u2014 use os.env[key]\")",
+   "family": "os_env_index",
+   "file": "gate/host.id",
+   "line": 116,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += rowh(path, no, code, \"host.environment.colon\", \"environment:\", \"law.host.root\", \"environment is not a thing \u2014 use os.env[key]\")",
+   "family": "os_env_index",
+   "file": "gate/host.id",
+   "line": 117,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += rowh(path, no, code, \"host.popen\", \"io.popen(\", \"law.host.process\", \"command(line) then c:open(mode) \u2014 never popen\")",
+   "family": "io_calls",
+   "file": "gate/host.id",
+   "line": 118,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "hits += rowh(path, no, code, \"host.write\", \"io.write(\", \"law.host.endpoint\", \"subject:write() \u2014 never io.write()\")",
+   "family": "io_calls",
+   "file": "gate/host.id",
+   "line": 125,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "hits += rowh(path, no, code, \"host.open\", \"io.open(\", \"law.world.dot\", \"path:open(mode) \u2014 subject-first; never io.open()\")",
+   "family": "io_calls",
+   "file": "gate/host.id",
+   "line": 126,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += rowh(path, no, code, \"host.stdin.arch\", \"stdin-only\", \"law.host.endpoint\", \"endpoint polymorphism; never stdin-only language architecture\")",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 128,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += rowh(path, no, code, \"host.read.colon\", \"io:read(\", \"law.relation.read\", \"stdin:read() or path:read() \u2014 read relation on subject; never io:read\")",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 170,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += rowh(path, no, code, \"host.read\", \"io.read(\", \"law.relation.read\", \"stdin:read() or path:read() \u2014 never io.read\")",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 171,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, io is a world \u2014 stdin:read() / path:read() / subject:relation(); never io.method())\")",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 181,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, os is a world \u2014 use os.args[n] / os.env[k]; never os.method())\")",
+   "family": "os_env_index",
+   "file": "gate/host.id",
+   "line": 184,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, std\\x2Eio forbidden \u2014 stdin:read() / path:read() / subject:relation(); docs/spec/world.md)\")",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 187,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if audit(\"probe.id\", 1, \"x = os.args()\") == 0",
+   "family": "os_args",
+   "file": "gate/host.id",
+   "line": 242,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: io:read must be rejected \u2014 use stdin:read() / path:read() even in ingress\")",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 246,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if audit(\"scripts/ingress/input/read.id\", 2, \"x = stdin:read()\") != 0",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 248,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: canonical stdin:read rejected in ingress\")",
+   "family": "stdio",
+   "file": "gate/host.id",
+   "line": 249,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "if audit(\"probe.id\", 2, \"mode = os.getenv(\\\"X\\\")\") == 0",
+   "family": "os_getenv",
+   "file": "gate/host.id",
+   "line": 251,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if audit(\"probe.id\", 3, \"f = io.popen(\\\"git status\\\")\") == 0",
+   "family": "io_calls",
+   "file": "gate/host.id",
+   "line": 254,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "if audit(\"probe.id\", 4, \"text = io.read(\\\"*a\\\")\") == 0",
+   "family": "io_calls",
+   "file": "gate/host.id",
+   "line": 257,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "if audit(\"probe.id\", 5, \"mode = environment[\\\"X\\\"]\") == 0",
+   "family": "environment",
+   "file": "gate/host.id",
+   "line": 263,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: environment entity did not fire\")",
+   "family": "environment",
+   "file": "gate/host.id",
+   "line": 264,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if audit(\"probe.id\", 6, \"mode = os.env[\\\"X\\\"]\") != 0",
+   "family": "os_env_index",
+   "file": "gate/host.id",
+   "line": 266,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "migration",
+   "code": "if audit(\"probe.id\", 8, \"f = io.open(p)\") == 0",
+   "family": "io_calls",
+   "file": "gate/host.id",
+   "line": 275,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "if audit(\"probe.id\", 10, \"f = std\\x2Eio.open(p)\") == 0",
+   "family": "io_calls",
+   "file": "gate/host.id",
+   "line": 281,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "print(\"control FAIL: std\\x2Eio.open / qual did not fire\")",
+   "family": "io_calls",
+   "file": "gate/host.id",
+   "line": 282,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Gate transport: Idol only \u2014 stdin via stdin:read(). No os.args, no --backend=c.",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 6,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "text = stdin:read()",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 28,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "code:has(\"io:read(\") or code:has(\"io.read(\")",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 142,
+   "target": "enforcement/detector machinery (gate)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"os.args(\", \"host-TEMP\", \"os.args[n] table under os world \u2014 never os.args()\", quiet)",
+   "family": "os_args",
+   "file": "gate/idiom.id",
+   "line": 228,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"os.getenv(\", \"host-TEMP\", \"os.env[key] / os.env(key) \u2014 environment is not a thing\", quiet)",
+   "family": "os_getenv",
+   "file": "gate/idiom.id",
+   "line": 229,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"environment[\", \"host-TEMP\", \"environment is not a thing \u2014 use os.env[key]\", quiet)",
+   "family": "os_env_index",
+   "file": "gate/idiom.id",
+   "line": 230,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"environment:\", \"host-TEMP\", \"environment is not a thing \u2014 use os.env[key]\", quiet)",
+   "family": "os_env_index",
+   "file": "gate/idiom.id",
+   "line": 231,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"io.popen(\", \"host-TEMP\", \"command(line) then c:open(mode) across process boundary \u2014 docs/spec/host.md\", quiet)",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 232,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"io.read(\", \"law.relation.read\", \"stdin:read() or path:read() \u2014 read relation on subject; never io.read\", quiet)",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 237,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "migration",
+   "code": "hits += flag(path, no, code, \"io.open(\", \"law.world.dot\", \"path:open(mode) \u2014 subject-first; never io.open dot\", quiet)",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 238,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "hits += flag(path, no, code, \"io.write(\", \"law.world.dot\", \"subject:write() \u2014 never io.write dot\", quiet)",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 239,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"env_set\", \"LAW-ONE\", \"os.env[key] = value \u2014 never env_set snake\", quiet)",
+   "family": "os_setenv",
+   "file": "gate/idiom.id",
+   "line": 302,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"env_get\", \"LAW-ONE\", \"os.env[key] \u2014 never env_get snake\", quiet)",
+   "family": "os_env_index",
+   "file": "gate/idiom.id",
+   "line": 303,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"io:read(\", \"law.relation.read\", \"stdin:read() or path:read() \u2014 read relation on subject; never io:read\", quiet)",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 333,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"gate.sh\", \"foreign-zero\", \"gate transport is Idol only \u2014 pipe diff via stdin:read()\", quiet)",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 406,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"{path}:{no}  io:read(  [law.relation.read]  stdin:read() or path:read() \u2014 read relation on subject\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 977,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"{path}:{no}  read(  [law.relation.read]  path:read() or stdin:read() \u2014 subject-first; never read(path)\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 1001,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, io is a world \u2014 stdin:read() / path:read() / subject:relation(); never io.method())\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 1022,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, os is a world \u2014 use os.args[n] / os.env[k]; never os.method())\")",
+   "family": "os_env_index",
+   "file": "gate/idiom.id",
+   "line": 1026,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, std\\x2Eio is forbidden \u2014 stdin:read() / path:read() / subject:relation(); docs/spec/world.md\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 1030,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if subject(read)(\"line = stdin:read()\") or subject(read)(\"path:read()\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 1227,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: subject(read) rejected canonical stdin:read / path:read\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 1228,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !\"args = os.args()\":has(\"os.args(\")",
+   "family": "os_args",
+   "file": "gate/idiom.id",
+   "line": 1308,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !\"mode = os.getenv(\\\"X\\\")\":has(\"os.getenv(\")",
+   "family": "os_getenv",
+   "file": "gate/idiom.id",
+   "line": 1311,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if \"command = os.args[1]\":has(\"os.args(\")",
+   "family": "os_args",
+   "file": "gate/idiom.id",
+   "line": 1317,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: os.args() fired on os.args table index\")",
+   "family": "os_args",
+   "file": "gate/idiom.id",
+   "line": 1318,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !\"mode = environment[\":has(\"environment[\")",
+   "family": "environment",
+   "file": "gate/idiom.id",
+   "line": 1320,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: environment entity firewall did not fire\")",
+   "family": "environment",
+   "file": "gate/idiom.id",
+   "line": 1321,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "migration",
+   "code": "if !dot(io)(\"text = io.read(\\\"*a\\\")\")",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 1341,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "print(\"control FAIL: dot(io) did not reject io.read\")",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 1342,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: dot(io) fired on io:read \u2014 use stdin:read() or path:read()\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 1348,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "migration",
+   "code": "if dot(io)(\"x = std\\x2Eio.open(p)\")",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 1350,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "if !dot(std)(io, \"f = std\\x2Eio.open(p)\")",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 1353,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "print(\"control FAIL: dot(std)(io) did not reject std\\x2Eio.open\")",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 1354,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "if sigil(\"reply = @stdin:read()\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 1377,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !\"viewrouter = stdin:read\":has(\"viewrouter\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 1419,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "migration",
+   "code": "if \"io.open(\":has(\"fswrite\")",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 1506,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "print(\"control FAIL: fswrite fired on canonical io.open write\")",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 1507,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "samplecatalog = \"--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+resident = { read = io.read }{nl}\"",
+   "family": "io_calls",
+   "file": "gate/idiom.id",
+   "line": 1577,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"gate/idiom: empty input \u2014 pipe unified diff on stdin\")",
+   "family": "stdio",
+   "file": "gate/idiom.id",
+   "line": 1600,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Gate transport: Idol only \u2014 stdin via stdin:read(). No os.args, no --backend=c.",
+   "family": "stdio",
+   "file": "gate/path.id",
+   "line": 8,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "text = stdin:read()",
+   "family": "stdio",
+   "file": "gate/path.id",
+   "line": 12,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "# preparation piped through stdin, not io.popen inside this gate.",
+   "family": "stdio",
+   "file": "gate/path.id",
+   "line": 76,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"gate/path: empty tree listing on stdin\")",
+   "family": "stdio",
+   "file": "gate/path.id",
+   "line": 478,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Gate transport: Idol only \u2014 stdin via stdin:read(). No os.args, no --backend=c.",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 6,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "text = stdin:read()",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 28,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "code:has(\"io:read(\") or code:has(\"io.read(\")",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 142,
+   "target": "enforcement/detector machinery (gate)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"os.args(\", \"host-TEMP\", \"os.args[n] table under os world \u2014 never os.args()\", quiet)",
+   "family": "os_args",
+   "file": "gate/probe.id",
+   "line": 228,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"os.getenv(\", \"host-TEMP\", \"os.env[key] / os.env(key) \u2014 environment is not a thing\", quiet)",
+   "family": "os_getenv",
+   "file": "gate/probe.id",
+   "line": 229,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"environment[\", \"host-TEMP\", \"environment is not a thing \u2014 use os.env[key]\", quiet)",
+   "family": "os_env_index",
+   "file": "gate/probe.id",
+   "line": 230,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"environment:\", \"host-TEMP\", \"environment is not a thing \u2014 use os.env[key]\", quiet)",
+   "family": "os_env_index",
+   "file": "gate/probe.id",
+   "line": 231,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"io.popen(\", \"host-TEMP\", \"command(line) then c:open(mode) across process boundary \u2014 docs/spec/host.md\", quiet)",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 232,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"io.read(\", \"law.relation.read\", \"stdin:read() or path:read() \u2014 read relation on subject; never io.read\", quiet)",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 237,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "migration",
+   "code": "hits += flag(path, no, code, \"io.open(\", \"law.world.dot\", \"path:open(mode) \u2014 subject-first; never io.open dot\", quiet)",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 238,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "hits += flag(path, no, code, \"io.write(\", \"law.world.dot\", \"subject:write() \u2014 never io.write dot\", quiet)",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 239,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"env_set\", \"LAW-ONE\", \"os.env[key] = value \u2014 never env_set snake\", quiet)",
+   "family": "os_setenv",
+   "file": "gate/probe.id",
+   "line": 302,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"env_get\", \"LAW-ONE\", \"os.env[key] \u2014 never env_get snake\", quiet)",
+   "family": "os_env_index",
+   "file": "gate/probe.id",
+   "line": 303,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"io:read(\", \"law.relation.read\", \"stdin:read() or path:read() \u2014 read relation on subject; never io:read\", quiet)",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 333,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += flag(path, no, code, \"gate.sh\", \"foreign-zero\", \"gate transport is Idol only \u2014 pipe diff via stdin:read()\", quiet)",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 406,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"{path}:{no}  io:read(  [law.relation.read]  stdin:read() or path:read() \u2014 read relation on subject\")",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 977,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"{path}:{no}  read(  [law.relation.read]  path:read() or stdin:read() \u2014 subject-first; never read(path)\")",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 1001,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, io is a world \u2014 stdin:read() / path:read() / subject:relation(); never io.method())\")",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 1022,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, os is a world \u2014 use os.args[n] / os.env[k]; never os.method())\")",
+   "family": "os_env_index",
+   "file": "gate/probe.id",
+   "line": 1026,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, std\\x2Eio is forbidden \u2014 stdin:read() / path:read() / subject:relation(); docs/spec/world.md\")",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 1030,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if subject(read)(\"line = stdin:read()\") or subject(read)(\"path:read()\")",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 1227,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: subject(read) rejected canonical stdin:read / path:read\")",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 1228,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !\"args = os.args()\":has(\"os.args(\")",
+   "family": "os_args",
+   "file": "gate/probe.id",
+   "line": 1308,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !\"mode = os.getenv(\\\"X\\\")\":has(\"os.getenv(\")",
+   "family": "os_getenv",
+   "file": "gate/probe.id",
+   "line": 1311,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if \"command = os.args[1]\":has(\"os.args(\")",
+   "family": "os_args",
+   "file": "gate/probe.id",
+   "line": 1317,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: os.args() fired on os.args table index\")",
+   "family": "os_args",
+   "file": "gate/probe.id",
+   "line": 1318,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !\"mode = environment[\":has(\"environment[\")",
+   "family": "environment",
+   "file": "gate/probe.id",
+   "line": 1320,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: environment entity firewall did not fire\")",
+   "family": "environment",
+   "file": "gate/probe.id",
+   "line": 1321,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "migration",
+   "code": "if !dot(io)(\"text = io.read(\\\"*a\\\")\")",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 1341,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "print(\"control FAIL: dot(io) did not reject io.read\")",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 1342,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: dot(io) fired on io:read \u2014 use stdin:read() or path:read()\")",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 1348,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "migration",
+   "code": "if dot(io)(\"x = std\\x2Eio.open(p)\")",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 1350,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "if !dot(std)(io, \"f = std\\x2Eio.open(p)\")",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 1353,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "print(\"control FAIL: dot(std)(io) did not reject std\\x2Eio.open\")",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 1354,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "if sigil(\"reply = @stdin:read()\")",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 1377,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !\"viewrouter = stdin:read\":has(\"viewrouter\")",
+   "family": "stdio",
+   "file": "gate/probe.id",
+   "line": 1419,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "migration",
+   "code": "if \"io.open(\":has(\"fswrite\")",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 1506,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "print(\"control FAIL: fswrite fired on canonical io.open write\")",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 1507,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "samplecatalog = \"--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+resident = { read = io.read }{nl}\"",
+   "family": "io_calls",
+   "file": "gate/probe.id",
+   "line": 1577,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Provides buffered readers/writers/scanners on top of std.io file handles.",
+   "family": "std_io",
+   "file": "lib/bufio.id",
+   "line": 2,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# std.build \u2014 build system helpers and environment info",
+   "family": "environment",
+   "file": "lib/build.id",
+   "line": 1,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "host = os.getenv(\"HOSTNAME\") or \"unknown\",",
+   "family": "os_getenv",
+   "file": "lib/build.id",
+   "line": 10,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "os.getenv(\"OSTYPE\") or \"unknown\"",
+   "family": "os_getenv",
+   "file": "lib/build.id",
+   "line": 16,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "a = os.getenv(\"HOSTTYPE\") or os.getenv(\"MACHTYPE\") or \"unknown\"",
+   "family": "os_getenv",
+   "file": "lib/build.id",
+   "line": 20,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "os.getenv(\"DEBUG\") == \"1\"",
+   "family": "os_getenv",
+   "file": "lib/build.id",
+   "line": 29,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "os.getenv(\"BUILD_ENV\") or \"development\"",
+   "family": "os_getenv",
+   "file": "lib/build.id",
+   "line": 33,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "fh = io.open(_asmpath, \"w\")",
+   "family": "io_calls",
+   "file": "lib/compiler/arm64check.id",
+   "line": 47,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "fh = io.open(src, \"w\")",
+   "family": "io_calls",
+   "file": "lib/compiler/emit_c.id",
+   "line": 111,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# `ld: library 'System' not found` outside the SDK environment, which made",
+   "family": "environment",
+   "file": "lib/compiler/emit_c.id",
+   "line": 118,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"gzip -d 2>/dev/null\", \"w\")",
+   "family": "io_calls",
+   "file": "lib/compress/gzip.id",
+   "line": 10,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/compress/gzip.id",
+   "line": 14,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"gzip -c 2>/dev/null\", \"w\")",
+   "family": "io_calls",
+   "file": "lib/compress/gzip.id",
+   "line": 21,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/compress/gzip.id",
+   "line": 25,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# dot-path access, and environment variable overrides.",
+   "family": "environment",
+   "file": "lib/config.id",
+   "line": 3,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# load_env: populate config values from environment variables.",
+   "family": "environment",
+   "file": "lib/config.id",
+   "line": 149,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "env_data = os.getenv()",
+   "family": "os_getenv",
+   "file": "lib/config.id",
+   "line": 151,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "field",
+   "code": "v = os.env[name]",
+   "family": "os_env_index",
+   "file": "lib/env.id",
+   "line": 4,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "v = os.env[name]",
+   "family": "os_env_index",
+   "file": "lib/env.id",
+   "line": 18,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "migration",
+   "code": "parse(fs: any, argv: any): any",
+   "family": "argv",
+   "file": "lib/flag.id",
+   "line": 39,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "if argv == nil argv = {} end",
+   "family": "argv",
+   "file": "lib/flag.id",
+   "line": 40,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "n = argv:len()",
+   "family": "argv",
+   "file": "lib/flag.id",
+   "line": 42,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "arg = argv[i]",
+   "family": "argv",
+   "file": "lib/flag.id",
+   "line": 46,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "fs.args[fs.args:len() + 1] = argv[i]",
+   "family": "argv",
+   "file": "lib/flag.id",
+   "line": 51,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"flag: unknown flag --\" .. fname .. \"\\n\")",
+   "family": "io_calls",
+   "file": "lib/flag.id",
+   "line": 69,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"flag: --\" .. fname .. \" requires a value\\n\")",
+   "family": "io_calls",
+   "file": "lib/flag.id",
+   "line": 82,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "fval = argv[i]",
+   "family": "argv",
+   "file": "lib/flag.id",
+   "line": 85,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"flag: unknown flag -\" .. fname .. \"\\n\")",
+   "family": "io_calls",
+   "file": "lib/flag.id",
+   "line": 108,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"flag: -\" .. fname .. \" requires a value\\n\")",
+   "family": "io_calls",
+   "file": "lib/flag.id",
+   "line": 121,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "fval = argv[i]",
+   "family": "argv",
+   "file": "lib/flag.id",
+   "line": 124,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(prefix .. \"\\n        \" .. f.usage:to(str) .. \" (default: \" .. f.default:to(str) .. \")\\n\")",
+   "family": "io_calls",
+   "file": "lib/flag.id",
+   "line": 168,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "parse_argv(argv: any): any",
+   "family": "argv",
+   "file": "lib/flag.id",
+   "line": 189,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "parse(default_fs, argv)",
+   "family": "argv",
+   "file": "lib/flag.id",
+   "line": 190,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(s)",
+   "family": "io_calls",
+   "file": "lib/fmt.id",
+   "line": 119,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n\")",
+   "family": "io_calls",
+   "file": "lib/fmt.id",
+   "line": 120,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"r\")",
+   "family": "io_calls",
+   "file": "lib/fs.id",
+   "line": 5,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"r\")",
+   "family": "io_calls",
+   "file": "lib/fs.id",
+   "line": 12,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"w\")",
+   "family": "io_calls",
+   "file": "lib/fs.id",
+   "line": 26,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"a\")",
+   "family": "io_calls",
+   "file": "lib/fs.id",
+   "line": 35,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"r\")",
+   "family": "io_calls",
+   "file": "lib/fs.id",
+   "line": 45,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Do not use os.execute, io.popen, Lua .., or shell-string construction.",
+   "family": "io_calls",
+   "file": "lib/fs.id",
+   "line": 76,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"uname -s 2>/dev/null\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/fs_watch.id",
+   "line": 30,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"stat -f%m '\" .. path:gsub(\"'\", \"'\\\\''\") .. \"' 2>/dev/null\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/fs_watch.id",
+   "line": 566,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"stat -c %Y '\" .. path:gsub(\"'\", \"'\\\\''\") .. \"' 2>/dev/null\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/fs_watch.id",
+   "line": 569,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "go.io = std.io",
+   "family": "std_io",
+   "file": "lib/go.id",
+   "line": 9,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "go.os = std.os",
+   "family": "std_os",
+   "file": "lib/go.id",
+   "line": 10,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"rb\")",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 31,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "riff = std.io.read(f, 4)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 37,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.close(f)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 39,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.read(f, 4)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 44,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "wave = std.io.read(f, 4)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 47,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.close(f)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 49,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "chunk_id = std.io.read(f, 4)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 60,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "size_bytes = std.io.read(f, 4)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 64,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "fmt_data = std.io.read(f, chunk_size)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 75,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "raw = std.io.read(f, chunk_size)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 85,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.read(f, chunk_size)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 111,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.close(f)",
+   "family": "std_io",
+   "file": "lib/graphics/audio.id",
+   "line": 115,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Delegates I/O to std.image.png and std.io.",
+   "family": "std_io",
+   "file": "lib/graphics/image.id",
+   "line": 3,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"rb\")",
+   "family": "io_calls",
+   "file": "lib/graphics/image.id",
+   "line": 12,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "raw = io.read(f, \"*a\")",
+   "family": "io_calls",
+   "file": "lib/graphics/image.id",
+   "line": 16,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.close(f)",
+   "family": "io_calls",
+   "file": "lib/graphics/image.id",
+   "line": 17,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"wb\")",
+   "family": "io_calls",
+   "file": "lib/graphics/image.id",
+   "line": 39,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(f, png_data.data)",
+   "family": "io_calls",
+   "file": "lib/graphics/image.id",
+   "line": 43,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.close(f)",
+   "family": "io_calls",
+   "file": "lib/graphics/image.id",
+   "line": 44,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# std.io.buffer \u2014 Buffered I/O operations",
+   "family": "std_io",
+   "file": "lib/io/buffer.id",
+   "line": 1,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Sources: file handles (std.io.open), stdin, or raw byte-table sources.",
+   "family": "std_io",
+   "file": "lib/io/buffer.id",
+   "line": 3,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "field",
+   "code": "rio.buf[rio.write_pos & rio.mask] = data[i]",
+   "family": "io_calls",
+   "file": "lib/io/buffer.id",
+   "line": 262,
+   "target": "ring-buffer record fields (lib/io/buffer.id)"
+  },
+  {
+   "classification": "field",
+   "code": "rio.write_pos = rio.write_pos + 1",
+   "family": "io_calls",
+   "file": "lib/io/buffer.id",
+   "line": 263,
+   "target": "ring-buffer record fields (lib/io/buffer.id)"
+  },
+  {
+   "classification": "field",
+   "code": "if rio.write_pos - rio.read_pos >= rio.capacity",
+   "family": "io_calls",
+   "file": "lib/io/buffer.id",
+   "line": 264,
+   "target": "ring-buffer record fields (lib/io/buffer.id)"
+  },
+  {
+   "classification": "field",
+   "code": "while count < n and (rio.read_pos < rio.write_pos or rio.full)",
+   "family": "io_calls",
+   "file": "lib/io/buffer.id",
+   "line": 275,
+   "target": "ring-buffer record fields (lib/io/buffer.id)"
+  },
+  {
+   "classification": "field",
+   "code": "result[result:len() + 1] = rio.buf[rio.read_pos & rio.mask]",
+   "family": "io_calls",
+   "file": "lib/io/buffer.id",
+   "line": 276,
+   "target": "ring-buffer record fields (lib/io/buffer.id)"
+  },
+  {
+   "classification": "field",
+   "code": "rio.read_pos = rio.read_pos + 1",
+   "family": "io_calls",
+   "file": "lib/io/buffer.id",
+   "line": 277,
+   "target": "ring-buffer record fields (lib/io/buffer.id)"
+  },
+  {
+   "classification": "field",
+   "code": "rio.write_pos - rio.read_pos",
+   "family": "io_calls",
+   "file": "lib/io/buffer.id",
+   "line": 286,
+   "target": "ring-buffer record fields (lib/io/buffer.id)"
+  },
+  {
+   "classification": "field",
+   "code": "rio.capacity - (rio.write_pos - rio.read_pos)",
+   "family": "io_calls",
+   "file": "lib/io/buffer.id",
+   "line": 291,
+   "target": "ring-buffer record fields (lib/io/buffer.id)"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"r\")",
+   "family": "io_calls",
+   "file": "lib/io/util.id",
+   "line": 19,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"w\")",
+   "family": "io_calls",
+   "file": "lib/io/util.id",
+   "line": 30,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"a\")",
+   "family": "io_calls",
+   "file": "lib/io/util.id",
+   "line": 41,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"ls -1 \" .. dir .. \" 2>/dev/null\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/io/util.id",
+   "line": 51,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"w+\")",
+   "family": "io_calls",
+   "file": "lib/io/util.id",
+   "line": 72,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"[DEBUG] %s\\n\":format(msg))",
+   "family": "io_calls",
+   "file": "lib/log.id",
+   "line": 23,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"[INFO] %s\\n\":format(msg))",
+   "family": "io_calls",
+   "file": "lib/log.id",
+   "line": 29,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"[WARN] %s\\n\":format(msg))",
+   "family": "io_calls",
+   "file": "lib/log.id",
+   "line": 35,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"[ERROR] %s\\n\":format(msg))",
+   "family": "io_calls",
+   "file": "lib/log.id",
+   "line": 41,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"%s\\n\":format(msg))",
+   "family": "io_calls",
+   "file": "lib/log.id",
+   "line": 47,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"[%s] %s\\n\":format(level:upper(), msg))",
+   "family": "io_calls",
+   "file": "lib/log.id",
+   "line": 49,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(parts:concat(\" \") .. \"\\n\")",
+   "family": "io_calls",
+   "file": "lib/log.id",
+   "line": 63,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "handle = io.popen(\"cat /dev/urandom 2>/dev/null | head -c \" .. n)",
+   "family": "io_calls",
+   "file": "lib/math/prng.id",
+   "line": 185,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"rb\")",
+   "family": "std_io",
+   "file": "lib/ml/deploy.id",
+   "line": 61,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "len_bytes = std.io.read(f, 8)",
+   "family": "std_io",
+   "file": "lib/ml/deploy.id",
+   "line": 67,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.close(f)",
+   "family": "std_io",
+   "file": "lib/ml/deploy.id",
+   "line": 69,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "header_json = std.io.read(f, header_len)",
+   "family": "std_io",
+   "file": "lib/ml/deploy.id",
+   "line": 82,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.close(f)",
+   "family": "std_io",
+   "file": "lib/ml/deploy.id",
+   "line": 83,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "cuda_env = os.getenv(\"CUDA_VISIBLE_DEVICES\")",
+   "family": "os_getenv",
+   "file": "lib/ml/device.id",
+   "line": 35,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "handle = io.popen(\"uname -m 2>/dev/null\")",
+   "family": "io_calls",
+   "file": "lib/ml/device.id",
+   "line": 40,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "metal_handle = io.popen(\"system_profiler SPDisplaysDataType 2>/dev/null | head -5\")",
+   "family": "io_calls",
+   "file": "lib/ml/device.id",
+   "line": 46,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "nvidia_handle = io.popen(\"nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1\")",
+   "family": "io_calls",
+   "file": "lib/ml/device.id",
+   "line": 58,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"w\")",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 90,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.write(f, data)",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 94,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.close(f)",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 95,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"w\")",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 125,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.write(f, encoded)",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 129,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.close(f)",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 130,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"w\")",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 176,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.write(f, string.pack(\"<I8\", header_len))",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 182,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.write(f, data.header)",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 183,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.close(f)",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 184,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"w\")",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 236,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.write(f, data.data)",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 240,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.io.close(f)",
+   "family": "std_io",
+   "file": "lib/ml/export.id",
+   "line": 241,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(\"/proc/self/stat\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/mproc.id",
+   "line": 6,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "line = io.read(f, \"*l\")",
+   "family": "io_calls",
+   "file": "lib/mproc.id",
+   "line": 8,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.close(f)",
+   "family": "io_calls",
+   "file": "lib/mproc.id",
+   "line": 9,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "handle = io.popen(\"echo $$\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/mproc.id",
+   "line": 18,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "result = io.read(handle, \"*l\")",
+   "family": "io_calls",
+   "file": "lib/mproc.id",
+   "line": 20,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.close(handle)",
+   "family": "io_calls",
+   "file": "lib/mproc.id",
+   "line": 21,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "handle = io.popen(cmd .. \" 2>&1 & echo $!\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/mproc.id",
+   "line": 28,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "pid_str = io.read(handle, \"*l\")",
+   "family": "io_calls",
+   "file": "lib/mproc.id",
+   "line": 30,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.close(handle)",
+   "family": "io_calls",
+   "file": "lib/mproc.id",
+   "line": 31,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"curl -sL --max-time 30 -- \" .. safe_url, \"r\")",
+   "family": "io_calls",
+   "file": "lib/net.id",
+   "line": 39,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "lib/net.id",
+   "line": 57,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "lib/net.id",
+   "line": 82,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"net.http_serve: listen failed on port \" .. port:to(str) .. \"\\n\")",
+   "family": "io_calls",
+   "file": "lib/net.id",
+   "line": 145,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"net: listening on :\" .. port:to(str) .. \"\\n\")",
+   "family": "io_calls",
+   "file": "lib/net.id",
+   "line": 147,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "method = os.getenv(\"REQUEST_METHOD\") or \"GET\"",
+   "family": "os_getenv",
+   "file": "lib/net/http/cgi.id",
+   "line": 4,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "path = os.getenv(\"PATH_INFO\") or \"/\"",
+   "family": "os_getenv",
+   "file": "lib/net/http/cgi.id",
+   "line": 5,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "query = os.getenv(\"QUERY_STRING\") or \"\"",
+   "family": "os_getenv",
+   "file": "lib/net/http/cgi.id",
+   "line": 6,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "body = io.read()",
+   "family": "io_calls",
+   "file": "lib/net/http/cgi.id",
+   "line": 9,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"Status: 200 OK\\r\\nContent-Type: text/plain\\r\\n\\r\\n\")",
+   "family": "io_calls",
+   "file": "lib/net/http/cgi.id",
+   "line": 12,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(resp)",
+   "family": "io_calls",
+   "file": "lib/net/http/cgi.id",
+   "line": 13,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "{method = os.getenv(\"REQUEST_METHOD\") or \"GET\", path = os.getenv(\"PATH_INFO\") or \"/\", query = os.getenv(\"QUERY_STRING\") or \"\"}",
+   "family": "os_getenv",
+   "file": "lib/net/http/cgi.id",
+   "line": 17,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Uses io.popen to invoke the system `sendmail` or `curl` as a transport.",
+   "family": "io_calls",
+   "file": "lib/net/smtp.id",
+   "line": 3,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd .. \" 2>&1\", \"w\")",
+   "family": "io_calls",
+   "file": "lib/net/smtp.id",
+   "line": 30,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd .. \" 2>&1\", \"w\")",
+   "family": "io_calls",
+   "file": "lib/net/smtp.id",
+   "line": 75,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# No @c.emit. No lua. Use os.args[n], os.env[key], io:read(path) at call sites.",
+   "family": "os_env_index",
+   "file": "lib/os.id",
+   "line": 2,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "field",
+   "code": "v = os.env[name]",
+   "family": "os_env_index",
+   "file": "lib/os.id",
+   "line": 22,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "# std.os.linux \u2014 Linux-specific APIs",
+   "family": "std_os",
+   "file": "lib/os/linux.id",
+   "line": 1,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# std.os.process \u2014 Process management, spawning, pipes",
+   "family": "std_os",
+   "file": "lib/os/process.id",
+   "line": 1,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdin = \"pipe\",",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 14,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdout = \"pipe\",",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 15,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stderr = \"pipe\",",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 16,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "config.stdin = mode  # \"pipe\", \"inherit\", \"ignore\", or file path",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 46,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "config.stdout = mode",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 51,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "config.stderr = mode",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 56,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdin = nil,",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 73,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdout = nil,",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 74,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stderr = nil,",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 75,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Set environment variables for the child process",
+   "family": "environment",
+   "file": "lib/os/process.id",
+   "line": 88,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "handle = io.popen(env_prefix .. full_cmd .. \" 2>&1 & echo $!\")",
+   "family": "io_calls",
+   "file": "lib/os/process.id",
+   "line": 95,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "pid_str = io.read(handle, \"*l\")",
+   "family": "io_calls",
+   "file": "lib/os/process.id",
+   "line": 97,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.close(handle)",
+   "family": "io_calls",
+   "file": "lib/os/process.id",
+   "line": 98,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "handle = io.popen(\"echo $?\")",
+   "family": "io_calls",
+   "file": "lib/os/process.id",
+   "line": 119,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "code_str = io.read(handle, \"*l\")",
+   "family": "io_calls",
+   "file": "lib/os/process.id",
+   "line": 121,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.close(handle)",
+   "family": "io_calls",
+   "file": "lib/os/process.id",
+   "line": 122,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "field",
+   "code": "if proc.stdin == nil",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 151,
+   "target": "child-process pipe descriptor field"
+  },
+  {
+   "classification": "foreign",
+   "code": "return {error = \"stdin not available\"}",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 152,
+   "target": "error-string/prose reference (not an io endpoint)"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Write to the process's stdin pipe",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 155,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "field",
+   "code": "if type(proc.stdin) == \"userdata\"",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 156,
+   "target": "child-process pipe descriptor field"
+  },
+  {
+   "classification": "subjectrelation",
+   "code": "proc.stdin:write(data)",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 157,
+   "target": "child-process pipe handle relation"
+  },
+  {
+   "classification": "subjectrelation",
+   "code": "proc.stdin:flush()",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 158,
+   "target": "child-process pipe handle relation"
+  },
+  {
+   "classification": "field",
+   "code": "if proc.stdout == nil",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 164,
+   "target": "child-process pipe descriptor field"
+  },
+  {
+   "classification": "foreign",
+   "code": "return {error = \"stdout not available\"}",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 165,
+   "target": "error-string/prose reference (not an io endpoint)"
+  },
+  {
+   "classification": "field",
+   "code": "if type(proc.stdout) == \"userdata\"",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 168,
+   "target": "child-process pipe descriptor field"
+  },
+  {
+   "classification": "subjectrelation",
+   "code": "data = proc.stdout:read(\"*a\") or \"\"",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 169,
+   "target": "child-process pipe handle relation"
+  },
+  {
+   "classification": "field",
+   "code": "if proc.stderr == nil",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 176,
+   "target": "child-process pipe descriptor field"
+  },
+  {
+   "classification": "foreign",
+   "code": "return {error = \"stderr not available\"}",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 177,
+   "target": "error-string/prose reference (not an io endpoint)"
+  },
+  {
+   "classification": "field",
+   "code": "if type(proc.stderr) == \"userdata\"",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 180,
+   "target": "child-process pipe descriptor field"
+  },
+  {
+   "classification": "subjectrelation",
+   "code": "data = proc.stderr:read(\"*a\") or \"\"",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 181,
+   "target": "child-process pipe handle relation"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(full_cmd .. \" 2>&1; echo \\\"\\\\n$?\\\"\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/os/process.id",
+   "line": 209,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "return {exit_code = 1, stdout = \"\", stderr = \"Failed to execute: \" .. cmd}",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 211,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdout = raw",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 223,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdout = raw:sub(1, last_nl - 1)",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 227,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdout = stdout,",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 234,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stderr = \"\",",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 235,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"echo '\" .. escaped_input .. \"' | \" .. full_cmd .. \" 2>&1; echo \\\"\\\\n$?\\\"\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/os/process.id",
+   "line": 249,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "return {exit_code = 1, stdout = \"\", stderr = \"Failed to execute: \" .. cmd}",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 251,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdout = raw",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 257,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdout = raw:sub(1, last_nl - 1)",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 261,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stdout = stdout,",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 268,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "fieldmutation",
+   "code": "stderr = \"\",",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 269,
+   "target": "child-process pipe descriptor assignment"
+  },
+  {
+   "classification": "field",
+   "code": "result.stdout",
+   "family": "stdio",
+   "file": "lib/os/process.id",
+   "line": 275,
+   "target": "child-process pipe descriptor field"
+  },
+  {
+   "classification": "migration",
+   "code": "os.getenv(name)",
+   "family": "os_getenv",
+   "file": "lib/os/process.id",
+   "line": 314,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Use C setenv for persistent environment changes in the current process",
+   "family": "environment",
+   "file": "lib/os/process.id",
+   "line": 318,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Also update Lua's environment table",
+   "family": "environment",
+   "file": "lib/os/process.id",
+   "line": 320,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "os.setenv(name, value)",
+   "family": "os_setenv",
+   "file": "lib/os/process.id",
+   "line": 321,
+   "target": "os.env[key] = value"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Use C unsetenv for persistent environment changes",
+   "family": "environment",
+   "file": "lib/os/process.id",
+   "line": 326,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "os.setenv(name, nil)",
+   "family": "os_setenv",
+   "file": "lib/os/process.id",
+   "line": 328,
+   "target": "os.env[key] = value"
+  },
+  {
+   "classification": "migration",
+   "code": "os.getenv()",
+   "family": "os_getenv",
+   "file": "lib/os/process.id",
+   "line": 333,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "# std.os.signal \u2014 Signal handling for runtime",
+   "family": "std_os",
+   "file": "lib/os/signal.id",
+   "line": 1,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "lib/proc.id",
+   "line": 10,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1\", \"r\")",
+   "family": "io_calls",
+   "file": "lib/runtime.id",
+   "line": 5,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "if os.env[\"DUO_ALREADY_BUILT\"] == \"1\"",
+   "family": "os_setenv",
+   "file": "lib/script.id",
+   "line": 155,
+   "target": "os.env[key] = value"
+  },
+  {
+   "classification": "field",
+   "code": "v = os.env[name]",
+   "family": "os_env_index",
+   "file": "lib/script.id",
+   "line": 179,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "v = os.env[name]",
+   "family": "os_env_index",
+   "file": "lib/script.id",
+   "line": 186,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "# mutate its parent's environment. `must` only checks export's exit status,",
+   "family": "environment",
+   "file": "lib/script.id",
+   "line": 193,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "os.env[name] = value",
+   "family": "os_setenv",
+   "file": "lib/script.id",
+   "line": 206,
+   "target": "os.env[key] = value"
+  },
+  {
+   "classification": "migration",
+   "code": "forbidden = \"|std|proc|ir|core|runtime|system|environment|\"",
+   "family": "environment",
+   "file": "lib/semantic/census.id",
+   "line": 5,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "read = io.read",
+   "family": "io_calls",
+   "file": "lib/semantic/ingest.id",
+   "line": 7,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "write = io.write",
+   "family": "io_calls",
+   "file": "lib/semantic/ingest.id",
+   "line": 8,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"sync: task error: \" .. err:to(str) .. \"\\n\")",
+   "family": "io_calls",
+   "file": "lib/sync.id",
+   "line": 22,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"sync: task error: \" .. err:to(str) .. \"\\n\")",
+   "family": "io_calls",
+   "file": "lib/sync.id",
+   "line": 35,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"=== %s ===\\n\":format(msg))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 2,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  PASS: %s\\n\":format(msg or \"\"))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 7,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  FAIL: %s (expected %s, got %s)\\n\":format(msg or \"\", expected:to(str), actual:to(str)))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 9,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  PASS: %s\\n\":format(msg or \"\"))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 15,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  FAIL: %s (expected not %s)\\n\":format(msg or \"\", not_expected:to(str)))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 17,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  PASS: %s\\n\":format(msg or \"\"))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 23,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  FAIL: %s\\n\":format(msg or \"\"))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 25,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  PASS: %s\\n\":format(msg or \"\"))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 31,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  FAIL: %s\\n\":format(msg or \"\"))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 33,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  PASS: %s\\n\":format(msg or \"\"))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 39,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  FAIL: %s (expected nil, got %s)\\n\":format(msg or \"\", val:to(str)))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 41,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  PASS: %s\\n\":format(msg or \"\"))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 47,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  FAIL: %s (expected not nil)\\n\":format(msg or \"\"))",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 49,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"=== tests done ===\\n\")",
+   "family": "io_calls",
+   "file": "lib/test.id",
+   "line": 54,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "handle = io.popen(\"unzip -l \" .. archive_path .. \" 2>/dev/null\")",
+   "family": "io_calls",
+   "file": "lib/zip.id",
+   "line": 31,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "handle = io.popen(\"unzip -l \" .. archive_path .. \" 2>/dev/null\")",
+   "family": "io_calls",
+   "file": "lib/zip.id",
+   "line": 55,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "handle = io.popen(\"unzip -l \" .. archive_path .. \" 2>/dev/null\")",
+   "family": "io_calls",
+   "file": "lib/zip.id",
+   "line": 85,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "field",
+   "code": "root = os.env[\"DUO_ROOT\"] or \".\"",
+   "family": "os_env_index",
+   "file": "scripts/abi_matrix.id",
+   "line": 54,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "ceiling: i64 = (os.env[\"MISCOMPILE_CEILING\"] or \"0\"):to(i64)",
+   "family": "os_env_index",
+   "file": "scripts/abi_matrix.id",
+   "line": 135,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "migration",
+   "code": "content = io.read_file(coordpth)",
+   "family": "io_calls",
+   "file": "scripts/agent_dedup.id",
+   "line": 25,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# needed `|| echo 0`. cap keeps the stdout either way.",
+   "family": "stdio",
+   "file": "scripts/agent_dedup_check.id",
+   "line": 49,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "field",
+   "code": "lockdir = os.env[\"DUO_BUILD_LOCK\"] or \"/tmp/duo-build.lock\"",
+   "family": "os_env_index",
+   "file": "scripts/agent_dedup_check.id",
+   "line": 71,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "global duo: str = os.env[\"DUO\"] or \"\"",
+   "family": "os_env_index",
+   "file": "scripts/applyone.id",
+   "line": 46,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "migration",
+   "code": "fh = io.open(tmp, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/assert_no_ansi_reports.id",
+   "line": 77,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "field",
+   "code": "paths = os.env[\"AUDIT100paths\"] or \"/tmp/idol_audit100_canonical.list\"",
+   "family": "os_env_index",
+   "file": "scripts/audit100.id",
+   "line": 76,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "# stdout, so the same row regex can be pointed at the working copy of a file",
+   "family": "stdio",
+   "file": "scripts/audit100.id",
+   "line": 163,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   import         -1    gate/idiom.id `os = os` -> `std.os.exit`",
+   "family": "std_os",
+   "file": "scripts/audit100.id",
+   "line": 802,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   * gate/idiom.id PASS, and `std.os.exit` positive-controlled by",
+   "family": "std_os",
+   "file": "scripts/audit100.id",
+   "line": 835,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   trailret     3437 -> 3437   -2   two `return 3` / `return 1` -> `std.os.exit`",
+   "family": "std_os",
+   "file": "scripts/audit100.id",
+   "line": 852,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "field",
+   "code": "show: str = os.env[\"AUDIT100_SHOW\"] or \"\"",
+   "family": "os_env_index",
+   "file": "scripts/audit100.id",
+   "line": 1253,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"DUO_ROOT\")",
+   "family": "os_getenv",
+   "file": "scripts/bootstrap_scan.id",
+   "line": 156,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/bootstrap_scan.id",
+   "line": 211,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/bootstrap_scan.id",
+   "line": 240,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "# when its stdout equals the `-- expect:` line it carries. Two of the twenty",
+   "family": "stdio",
+   "file": "scripts/boring_corpus.id",
+   "line": 30,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# One fixture: compile it, RUN it, compare stdout against the value the",
+   "family": "stdio",
+   "file": "scripts/boring_corpus.id",
+   "line": 110,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "code = status(\"{bin} >{work}/{name}.stdout 2>/dev/null\")",
+   "family": "stdio",
+   "file": "scripts/boring_corpus.id",
+   "line": 129,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "got = cap(\"cat {work}/{name}.stdout\")",
+   "family": "stdio",
+   "file": "scripts/boring_corpus.id",
+   "line": 130,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "row = \"  FAIL  {name}  exited {code} (signal or error), stdout '{got}'\\n\"",
+   "family": "stdio",
+   "file": "scripts/boring_corpus.id",
+   "line": 132,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "field",
+   "code": "duo = os.env[\"DUO\"] or \"./zig-out/bin/idol\"",
+   "family": "os_env_index",
+   "file": "scripts/boring_corpus.id",
+   "line": 235,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "zig = os.env[\"ZIG\"] or \"zig\"",
+   "family": "os_env_index",
+   "file": "scripts/build_determinism.id",
+   "line": 190,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "opt = os.env[\"DETERMINISM_OPT\"] or \"ReleaseFast\"",
+   "family": "os_env_index",
+   "file": "scripts/build_determinism.id",
+   "line": 191,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "cap0: i64 = (os.env[\"DETERMINISM_ARTIFACT_FLOOR\"] or \"1\"):to(i64)",
+   "family": "os_env_index",
+   "file": "scripts/build_determinism.id",
+   "line": 286,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "if (os.env[\"DETERMINISM_KEEP\"] or \"\") == \"\"",
+   "family": "os_env_index",
+   "file": "scripts/build_determinism.id",
+   "line": 302,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "stdout:write(\"canon: pass\\n\")",
+   "family": "stdio",
+   "file": "scripts/canon.id",
+   "line": 71,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   proven      both binaries BUILD, both RUN, and they agree on stdout and on",
+   "family": "stdio",
+   "file": "scripts/capability_matrix.id",
+   "line": 29,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# same stdout, same exit code. It is deliberately stricter than",
+   "family": "stdio",
+   "file": "scripts/capability_matrix.id",
+   "line": 40,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "field",
+   "code": "os.env[name] or fallback",
+   "family": "os_env_index",
+   "file": "scripts/capability_matrix.id",
+   "line": 143,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(inversions)",
+   "family": "io_calls",
+   "file": "scripts/capability_matrix.id",
+   "line": 420,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "#     W  witnessed    the two backends ran and AGREE on stdout and on exit",
+   "family": "stdio",
+   "file": "scripts/capability_rows.id",
+   "line": 49,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# asserted. Every \u2713 is the exit status or the stdout of a command run against",
+   "family": "stdio",
+   "file": "scripts/capability_rows.id",
+   "line": 71,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# agreement, on BOTH stdout and status, because a backend that returns",
+   "family": "stdio",
+   "file": "scripts/capability_rows.id",
+   "line": 336,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "\"                f = io.open(path, \\\"r\\\")\",",
+   "family": "io_calls",
+   "file": "scripts/capability_rows.id",
+   "line": 381,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(nofixture)",
+   "family": "io_calls",
+   "file": "scripts/capability_rows.id",
+   "line": 754,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(denyrows)",
+   "family": "io_calls",
+   "file": "scripts/capability_rows.id",
+   "line": 760,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# release: fs / net / clock / rand \u2014 and process/environment \u2014 reach programs",
+   "family": "environment",
+   "file": "scripts/capability_scan.id",
+   "line": 4,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   fs      io.open / io.lines / os.remove / fs.* and the libc file surface",
+   "family": "io_calls",
+   "file": "scripts/capability_scan.id",
+   "line": 15,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   proc    os.getenv / os.execute / io.popen / system / fork / exec",
+   "family": "io_calls",
+   "file": "scripts/capability_scan.id",
+   "line": 19,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   stdio   io.write / io.read / io.type \u2014 REPORTED, NOT RATCHETED",
+   "family": "io_calls",
+   "file": "scripts/capability_scan.id",
+   "line": 21,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# decided: `print` is the same authority as `io.write` and lives in nearly",
+   "family": "io_calls",
+   "file": "scripts/capability_scan.id",
+   "line": 29,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# for stdin, so the same filter serves the corpus scan and the probe.",
+   "family": "stdio",
+   "file": "scripts/capability_scan.id",
+   "line": 122,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "if !sound(fspat, \"  h = io.open(path)\")",
+   "family": "io_calls",
+   "file": "scripts/capability_scan.id",
+   "line": 266,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !sound(procpat, \"  v = os.getenv(name)\")",
+   "family": "os_getenv",
+   "file": "scripts/capability_scan.id",
+   "line": 278,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "migration",
+   "code": "if !sound(stdiopat, \"  io.write(line)\")",
+   "family": "io_calls",
+   "file": "scripts/capability_scan.id",
+   "line": 284,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "row(\"proc\", proc, procm, procw, \"process + environment\")",
+   "family": "environment",
+   "file": "scripts/capability_scan.id",
+   "line": 356,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(std.script.capture(\"{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15\"))",
+   "family": "io_calls",
+   "file": "scripts/capability_scan.id",
+   "line": 383,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# and scripts/proof/ambientfold.id, which reach std.os.exit to signal WHICH",
+   "family": "std_os",
+   "file": "scripts/capability_scan.id",
+   "line": 413,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# WHY EXIT STATUS AND NOT OUTPUT: `std.os.execute` collapses every nonzero",
+   "family": "std_os",
+   "file": "scripts/capability_table.id",
+   "line": 37,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(output)",
+   "family": "io_calls",
+   "file": "scripts/capability_table.id",
+   "line": 213,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Paths come from the environment, NOT argv: duo-compiled binaries do !# populate Lua's `arg` (it reads back nil), so an argv-driven script silently",
+   "family": "argv",
+   "file": "scripts/census/chained/comparison.id",
+   "line": 17,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Root sequence \u2014 paths from the environment.",
+   "family": "environment",
+   "file": "scripts/census/chained/comparison.id",
+   "line": 122,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# `>/dev/null 2>&1`. A command carrying its own `>out` then has two stdout",
+   "family": "stdio",
+   "file": "scripts/cfloor.id",
+   "line": 58,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Paths come from the environment, NOT argv: duo-compiled binaries do not",
+   "family": "argv",
+   "file": "scripts/chained_comparison_census.id",
+   "line": 17,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# populate Lua's `arg` (it reads back nil), so an argv-driven script silently",
+   "family": "argv",
+   "file": "scripts/chained_comparison_census.id",
+   "line": 18,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "field",
+   "code": "paths = os.env[\"CENSUS_PATHS\"]",
+   "family": "os_env_index",
+   "file": "scripts/chained_comparison_census.id",
+   "line": 152,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "label = os.env[\"CENSUS_LABEL\"]",
+   "family": "os_env_index",
+   "file": "scripts/chained_comparison_census.id",
+   "line": 180,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Does the verb's combined output hold `want`? Diagnostics go to stderr and the",
+   "family": "stdio",
+   "file": "scripts/contract.id",
+   "line": 57,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# explain render goes to stdout, so both are folded in.",
+   "family": "stdio",
+   "file": "scripts/contract.id",
+   "line": 58,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(main())",
+   "family": "std_os",
+   "file": "scripts/contract.id",
+   "line": 265,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/convert_canon.id",
+   "line": 268,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/convert_canon.id",
+   "line": 273,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/convert_canon.id",
+   "line": 298,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(unclassified)",
+   "family": "io_calls",
+   "file": "scripts/corpus_classify.id",
+   "line": 425,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(c1)",
+   "family": "io_calls",
+   "file": "scripts/corpus_classify.id",
+   "line": 489,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(c2)",
+   "family": "io_calls",
+   "file": "scripts/corpus_classify.id",
+   "line": 494,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(c3)",
+   "family": "io_calls",
+   "file": "scripts/corpus_classify.id",
+   "line": 499,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n-- MANIFEST ROWS (class tier ref path) --\\n\")",
+   "family": "io_calls",
+   "file": "scripts/corpus_classify.id",
+   "line": 506,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(rows)",
+   "family": "io_calls",
+   "file": "scripts/corpus_classify.id",
+   "line": 507,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# diff on stdin. Keep this file small so pre-commit and zig build use the same scanner.",
+   "family": "stdio",
+   "file": "scripts/duo_idiom_gate.id",
+   "line": 4,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/duo_idiom_gate.id",
+   "line": 16,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# receives only what follows. This used to require `--` in its own argv and",
+   "family": "argv",
+   "file": "scripts/duo_lock.id",
+   "line": 38,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/embedledger.id",
+   "line": 18,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(main())",
+   "family": "std_os",
+   "file": "scripts/explain.id",
+   "line": 155,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/foreign_census.id",
+   "line": 76,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "field",
+   "code": "v = os.env[name]",
+   "family": "os_env_index",
+   "file": "scripts/foreign_census.id",
+   "line": 93,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/foreign_moveprefix.id",
+   "line": 15,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Modes, selected by the `gapmode` environment variable:",
+   "family": "environment",
+   "file": "scripts/gapalloc.id",
+   "line": 9,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "field",
+   "code": "mode = os.env[\"gapmode\"]",
+   "family": "os_env_index",
+   "file": "scripts/gapalloc.id",
+   "line": 22,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/highlight.id",
+   "line": 216,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "duo: str = std.os.getenv(\"hlduo\")",
+   "family": "os_getenv",
+   "file": "scripts/highlight.id",
+   "line": 488,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/highlight.id",
+   "line": 499,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/highlight.id",
+   "line": 503,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/highlight.id",
+   "line": 511,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/highlight.id",
+   "line": 521,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/highlight.id",
+   "line": 548,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/highlight.id",
+   "line": 553,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/highlight.id",
+   "line": 1116,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "# the shipped binary over tracked fixtures and reads stdout. The identity LAWS",
+   "family": "stdio",
+   "file": "scripts/id.id",
+   "line": 34,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Gate transport: Idol only \u2014 stdin via stdin:read(). No os.args, no --backend=c.",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 34,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "text = stdin:read()",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 48,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "code:has(\"io:read(\") or code:has(\"io.read(\")",
+   "family": "io_calls",
+   "file": "scripts/idiomgate.id",
+   "line": 176,
+   "target": "enforcement/detector machinery (gate)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"os.args(\", \"host-TEMP\", \"os.args[n] table under os world \u2014 never os.args()\", quiet)",
+   "family": "os_args",
+   "file": "scripts/idiomgate.id",
+   "line": 234,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"os.getenv(\", \"host-TEMP\", \"os.env[key] / os.env(key) \u2014 environment is not a thing\", quiet)",
+   "family": "os_getenv",
+   "file": "scripts/idiomgate.id",
+   "line": 235,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"environment[\", \"host-TEMP\", \"environment is not a thing \u2014 use os.env[key]\", quiet)",
+   "family": "os_env_index",
+   "file": "scripts/idiomgate.id",
+   "line": 236,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"environment:\", \"host-TEMP\", \"environment is not a thing \u2014 use os.env[key]\", quiet)",
+   "family": "os_env_index",
+   "file": "scripts/idiomgate.id",
+   "line": 237,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"io.popen(\", \"host-TEMP\", \"command(line) then c:open(mode) across process boundary \u2014 docs/spec/host.md\", quiet)",
+   "family": "io_calls",
+   "file": "scripts/idiomgate.id",
+   "line": 238,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"io.read(\", \"law.relation.read\", \"stdin:read() or path:read() \u2014 read relation on subject; never io.read\", quiet)",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 243,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "migration",
+   "code": "hits += ruleq(path, no, code, \"io.open(\", \"law.world.dot\", \"path:open(mode) \u2014 subject-first; never io.open dot\", quiet)",
+   "family": "io_calls",
+   "file": "scripts/idiomgate.id",
+   "line": 244,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "hits += ruleq(path, no, code, \"io.write(\", \"law.world.dot\", \"subject:write() \u2014 never io.write dot\", quiet)",
+   "family": "io_calls",
+   "file": "scripts/idiomgate.id",
+   "line": 245,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"env_set\", \"LAW-ONE\", \"os.env[key] = value \u2014 never env_set snake\", quiet)",
+   "family": "os_setenv",
+   "file": "scripts/idiomgate.id",
+   "line": 279,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"env_get\", \"LAW-ONE\", \"os.env[key] \u2014 never env_get snake\", quiet)",
+   "family": "os_env_index",
+   "file": "scripts/idiomgate.id",
+   "line": 280,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"io:read(\", \"law.relation.read\", \"stdin:read() or path:read() \u2014 read relation on subject; never io:read\", quiet)",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 306,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "hits += ruleq(path, no, code, \"gate.sh\", \"foreign-zero\", \"gate transport is Idol only \u2014 pipe diff via stdin:read()\", quiet)",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 349,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"{path}:{no}  io:read(  [law.relation.read]  stdin:read() or path:read() \u2014 read relation on subject\")",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 831,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, io is a world \u2014 stdin:read() / path:read() / subject:relation(); never io.method())\")",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 837,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, os is a world \u2014 use os.args[n] / os.env[k]; never os.method())\")",
+   "family": "os_env_index",
+   "file": "scripts/idiomgate.id",
+   "line": 841,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, std.io is forbidden \u2014 stdin:read() / path:read() / subject:relation(); docs/spec/world.md\")",
+   "family": "std_io",
+   "file": "scripts/idiomgate.id",
+   "line": 845,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"({path}, {no}, violation, law.world.dot, std.os is forbidden \u2014 use root projection or bridge relations; docs/spec/world.md\")",
+   "family": "std_os",
+   "file": "scripts/idiomgate.id",
+   "line": 849,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if subject(read)(\"line = stdin:read()\") or subject(read)(\"path:read()\")",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 1007,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: subject(read) rejected canonical stdin:read / path:read\")",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 1008,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !probe(\"args = os.args()\", \"os.args(\")",
+   "family": "os_args",
+   "file": "scripts/idiomgate.id",
+   "line": 1046,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !probe(\"mode = os.getenv(\\\"X\\\")\", \"os.getenv(\")",
+   "family": "os_getenv",
+   "file": "scripts/idiomgate.id",
+   "line": 1049,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if probe(\"command = os.args[1]\", \"os.args(\")",
+   "family": "os_args",
+   "file": "scripts/idiomgate.id",
+   "line": 1055,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: os.args() fired on os.args table index\")",
+   "family": "os_args",
+   "file": "scripts/idiomgate.id",
+   "line": 1056,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !probe(\"mode = environment[\", \"environment[\")",
+   "family": "environment",
+   "file": "scripts/idiomgate.id",
+   "line": 1058,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: environment entity firewall did not fire\")",
+   "family": "environment",
+   "file": "scripts/idiomgate.id",
+   "line": 1059,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "migration",
+   "code": "if !dot(io)(\"text = io.read(\\\"*a\\\")\")",
+   "family": "io_calls",
+   "file": "scripts/idiomgate.id",
+   "line": 1067,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "print(\"control FAIL: dot(io) did not reject io.read\")",
+   "family": "io_calls",
+   "file": "scripts/idiomgate.id",
+   "line": 1068,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: dot(io) fired on io:read \u2014 use stdin:read() or path:read()\")",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 1074,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "migration",
+   "code": "if dot(io)(\"x = std.io.open(p)\")",
+   "family": "std_io",
+   "file": "scripts/idiomgate.id",
+   "line": 1076,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: dot(io) fired on std.io qualification\")",
+   "family": "std_io",
+   "file": "scripts/idiomgate.id",
+   "line": 1077,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !dot(std)(io, \"f = std.io.open(p)\")",
+   "family": "std_io",
+   "file": "scripts/idiomgate.id",
+   "line": 1079,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"control FAIL: dot(std)(io) did not reject std.io.open\")",
+   "family": "std_io",
+   "file": "scripts/idiomgate.id",
+   "line": 1080,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "if !probe(\"viewrouter = stdin:read\", \"viewrouter\")",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 1106,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "migration",
+   "code": "if probe(\"io.open(\", \"fswrite\")",
+   "family": "io_calls",
+   "file": "scripts/idiomgate.id",
+   "line": 1193,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "print(\"control FAIL: fswrite fired on canonical io.open write\")",
+   "family": "io_calls",
+   "file": "scripts/idiomgate.id",
+   "line": 1194,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "print(\"idiomgate: empty input \u2014 pipe unified diff on stdin\")",
+   "family": "stdio",
+   "file": "scripts/idiomgate.id",
+   "line": 1261,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "field",
+   "code": "lockdir = os.env[\"IDOL_BUILD_LOCK\"] or \"/tmp/idol-lock\"",
+   "family": "os_env_index",
+   "file": "scripts/idol_lock.id",
+   "line": 21,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "migration",
+   "code": "os.env[\"IDOL_LOCK_HELD\"] = \"1\"",
+   "family": "os_setenv",
+   "file": "scripts/idol_lock.id",
+   "line": 80,
+   "target": "os.env[key] = value"
+  },
+  {
+   "classification": "migration",
+   "code": "os.env[\"IDOL_BUILD_LOCK\"] = lockdir",
+   "family": "os_setenv",
+   "file": "scripts/idol_lock.id",
+   "line": 81,
+   "target": "os.env[key] = value"
+  },
+  {
+   "classification": "foreign",
+   "code": "stdin:read()",
+   "family": "stdio",
+   "file": "scripts/ingress/input/read.id",
+   "line": 5,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Shared gate transport \u2014 Idol only. Stdin via stdin:read(). No os.args, no --backend=c.",
+   "family": "stdio",
+   "file": "scripts/ingress/transport.id",
+   "line": 1,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "text = stdin:read()",
+   "family": "stdio",
+   "file": "scripts/ingress/transport.id",
+   "line": 4,
+   "target": "gate transport \u2014 foreign host boundary (stays)"
+  },
+  {
+   "classification": "foreign",
+   "code": "# nothing there, and std.os.execute would hand back a confident nonzero that",
+   "family": "std_os",
+   "file": "scripts/init_build_smoke.id",
+   "line": 24,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(main())",
+   "family": "std_os",
+   "file": "scripts/init_build_smoke.id",
+   "line": 140,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "field",
+   "code": "root = os.env[\"DUO_ROOT\"] or \".\"",
+   "family": "os_env_index",
+   "file": "scripts/isa_fidelity.id",
+   "line": 79,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/language_census.id",
+   "line": 124,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "field",
+   "code": "v = os.env[name]",
+   "family": "os_env_index",
+   "file": "scripts/language_census.id",
+   "line": 135,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/language_census2.id",
+   "line": 11,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "field",
+   "code": "strict = (os.env[\"CLAIMLEDGER_STRICT\"] or \"\") == \"1\"",
+   "family": "os_env_index",
+   "file": "scripts/ledger/claim.id",
+   "line": 233,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "\"direct and c backends agree on stdout and exit for blocking fixtures\",",
+   "family": "stdio",
+   "file": "scripts/ledger/ftcftw.id",
+   "line": 56,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "\"stdout\")",
+   "family": "stdio",
+   "file": "scripts/ledger/ftcftw.id",
+   "line": 60,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(main())",
+   "family": "std_os",
+   "file": "scripts/luahost.id",
+   "line": 108,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/module_surface_gate.id",
+   "line": 278,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# std.os.execute collapses every nonzero status to 1. A differential built on",
+   "family": "std_os",
+   "file": "scripts/native_differential.id",
+   "line": 17,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# The stdout half of one row's verdict. Split out so the comparison reads as",
+   "family": "stdio",
+   "file": "scripts/native_differential.id",
+   "line": 59,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "fail(name .. \": stdout differs \u2014 c=[\" .. ctext .. \"] direct=[\" .. dtext .. \"]\")",
+   "family": "stdio",
+   "file": "scripts/native_differential.id",
+   "line": 66,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# stdout, say which of the three arms you landed in. They differed only in the",
+   "family": "stdio",
+   "file": "scripts/native_differential.id",
+   "line": 109,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(fails)",
+   "family": "io_calls",
+   "file": "scripts/native_differential.id",
+   "line": 236,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(rows)",
+   "family": "io_calls",
+   "file": "scripts/nominal_zero_cost.id",
+   "line": 217,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/perfledger.id",
+   "line": 16,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/proof/ambientfold.id",
+   "line": 28,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(2)",
+   "family": "std_os",
+   "file": "scripts/proof/ambientfold.id",
+   "line": 32,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/proof/ambientfold.id",
+   "line": 39,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Write a probe and answer its stdout, chomped. `flags` selects the lowering.",
+   "family": "stdio",
+   "file": "scripts/proof/convert.id",
+   "line": 45,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# `answer` reads stdout, and an empty stdout is also what a program that",
+   "family": "stdio",
+   "file": "scripts/proof/convert.id",
+   "line": 125,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# The \"Abort trap: 6\" lines on stderr around here are the SHELL reporting",
+   "family": "stdio",
+   "file": "scripts/proof/convert.id",
+   "line": 131,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/proof/convert.id",
+   "line": 151,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/proof/symbol.id",
+   "line": 50,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/proof/symbol.id",
+   "line": 53,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/proof/symbol.id",
+   "line": 56,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/proof/symbol.id",
+   "line": 59,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/proof/symbol.id",
+   "line": 89,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(main())",
+   "family": "std_os",
+   "file": "scripts/realize.id",
+   "line": 254,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(std.script.capture(\"{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15\"))",
+   "family": "io_calls",
+   "file": "scripts/recognition_scan.id",
+   "line": 408,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# `cc` alone finds no `stdio.h` in this environment: there is no default",
+   "family": "environment",
+   "file": "scripts/record_exec.id",
+   "line": 40,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/record_exec.id",
+   "line": 77,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/record_exec.id",
+   "line": 80,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/record_exec.id",
+   "line": 83,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/record_exec.id",
+   "line": 116,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"repo_hygiene: FAIL \u2014 \" .. msg .. \"\\n\")",
+   "family": "io_calls",
+   "file": "scripts/repo_hygiene.id",
+   "line": 22,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Keep compile progress off stdout",
+   "family": "stdio",
+   "file": "scripts/run_benchmark.id",
+   "line": 7,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   uname / xcrun / mktemp / cp / rm     environment facts and file moves",
+   "family": "environment",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 16,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 209,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"w\")",
+   "family": "std_io",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 247,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"w\")",
+   "family": "std_io",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 276,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"w\")",
+   "family": "std_io",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 307,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = std.io.open(path, \"w\")",
+   "family": "std_io",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 343,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 445,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 462,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 473,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 483,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 493,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 530,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 550,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 554,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.setenv(\"SDKROOT\", sdk, true)",
+   "family": "os_setenv",
+   "file": "scripts/run_compile_size_benchmark.id",
+   "line": 562,
+   "target": "os.env[key] = value"
+  },
+  {
+   "classification": "migration",
+   "code": "args = std.os.args()",
+   "family": "os_args",
+   "file": "scripts/run_wasm_benchmark.id",
+   "line": 161,
+   "target": "os.args[n] table"
+  },
+  {
+   "classification": "foreign",
+   "code": "#           ANSWER is its stdout. All four runtimes qualify.",
+   "family": "stdio",
+   "file": "scripts/runtime_bench.id",
+   "line": 59,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# WARD IS INVOKED THROUGH THE ENVIRONMENT, not argv. `tools/wasm/src/ward.id`",
+   "family": "argv",
+   "file": "scripts/runtime_bench.id",
+   "line": 75,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# came out wrong. ward also appends a three-line trailer to stdout, stripped",
+   "family": "stdio",
+   "file": "scripts/runtime_bench.id",
+   "line": 78,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# ward appends `engine=`, `result=` and `seconds=` lines to stdout. The",
+   "family": "stdio",
+   "file": "scripts/runtime_bench.id",
+   "line": 198,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# One timed run. stdout and stderr go to /dev/null so no pipe sits inside the",
+   "family": "stdio",
+   "file": "scripts/runtime_bench.id",
+   "line": 231,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# other cell is stdout with ward's trailer removed.",
+   "family": "stdio",
+   "file": "scripts/runtime_bench.id",
+   "line": 362,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/scratchcensus.id",
+   "line": 28,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(0)",
+   "family": "std_os",
+   "file": "scripts/scratchcensus.id",
+   "line": 35,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/scratchcensus.id",
+   "line": 40,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "# binaries' stdout to /dev/null. Two backends that print different answers",
+   "family": "stdio",
+   "file": "scripts/semantic_harness.id",
+   "line": 6,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# 49 entries do agree on stdout, so this locks in a clean baseline rather than",
+   "family": "stdio",
+   "file": "scripts/semantic_harness.id",
+   "line": 9,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# One (entry, target) cell. Exit status and stdout fingerprint are packed into",
+   "family": "stdio",
+   "file": "scripts/semantic_harness.id",
+   "line": 50,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   else  status * 2^32 + fingerprint(stdout)",
+   "family": "stdio",
+   "file": "scripts/semantic_harness.id",
+   "line": 54,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(bad)",
+   "family": "io_calls",
+   "file": "scripts/semantic_harness.id",
+   "line": 125,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "positive = \"os.env[name] == \\\"\\\"\",",
+   "family": "os_setenv",
+   "file": "scripts/semanticgate.id",
+   "line": 162,
+   "target": "enforcement/detector machinery (gate or census tool)"
+  },
+  {
+   "classification": "foreign",
+   "code": "negative = \"io.popen(\",",
+   "family": "io_calls",
+   "file": "scripts/semanticgate.id",
+   "line": 212,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/shcledger.id",
+   "line": 17,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "field",
+   "code": "v = os.env[name]",
+   "family": "os_env_index",
+   "file": "scripts/shcledger.id",
+   "line": 110,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(main())",
+   "family": "std_os",
+   "file": "scripts/sim.id",
+   "line": 196,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(report)",
+   "family": "io_calls",
+   "file": "scripts/spec_conformance.id",
+   "line": 169,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(report)",
+   "family": "io_calls",
+   "file": "scripts/stdlib_correctness_gate.id",
+   "line": 193,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(report)",
+   "family": "io_calls",
+   "file": "scripts/stdlib_embed_gate.id",
+   "line": 76,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# One fixture, one backend: compile, run, capture stdout with newlines turned",
+   "family": "stdio",
+   "file": "scripts/tailslot.id",
+   "line": 54,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# wasm32-wasi`, run under wasmtime, assert stdout EXACTLY, and (where wabt is",
+   "family": "stdio",
+   "file": "scripts/test_wasm_execution.id",
+   "line": 6,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Compile to wasm. Returns the .wasm path, or \"\" on failure. Compiler stderr",
+   "family": "stdio",
+   "file": "scripts/test_wasm_execution.id",
+   "line": 51,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# src, label, expected stdout, and whether to also check module structure.",
+   "family": "stdio",
+   "file": "scripts/test_wasm_execution.id",
+   "line": 138,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(main())",
+   "family": "std_os",
+   "file": "scripts/transform.id",
+   "line": 349,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "#      and is really a missing environment variable. Resolved explicitly",
+   "family": "environment",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 21,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "fromenv = std.script.chomp(std.os.getenv(\"SDKROOT\"))",
+   "family": "os_getenv",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 41,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "# with $PWD: an unreadable path makes tree-sitter print nothing to stdout,",
+   "family": "stdio",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 84,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"tree_sitter_coverage: CONTROL FAILED \u2014 a valid file was reported unrecognised\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 93,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  this means the measurement is broken, not that the grammar regressed\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 94,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"tree_sitter_coverage: CONTROL FAILED \u2014 a file with a deliberate syntax error was reported RECOGNISED\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 98,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  the detector cannot fail, so its count proves nothing\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 99,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"tree_sitter_coverage: FAIL \u2014 cannot resolve SDKROOT (xcrun --show-sdk-path returned nothing)\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 109,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  without it the tree-sitter CLI cannot compile parser.c and reports EVERY file unparseable\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 110,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"tree_sitter_coverage: FAIL \u2014 tree-sitter CLI not found on PATH\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 116,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  the grammar cannot be built or measured; install it rather than skipping this gate\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 117,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"tree_sitter_coverage: FAIL \u2014 tree-sitter generate exited \" .. genstatus:to(str) .. \"\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 125,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(_sh(sdk, \"cd \" .. grammardir .. \" && tree-sitter generate 2>&1 | head -40\"))",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 126,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"tree_sitter_coverage: FAIL \u2014 tree-sitter generate emitted warnings\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 136,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(genout)",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 137,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  drop the entries it names; every conflict must be provably necessary\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 138,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"tree_sitter_coverage: FAIL \u2014 no tracked .id files found; the corpus list is empty\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 166,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"tree_sitter_coverage: FAIL \u2014 \" .. fails:to(str) .. \" unrecognised, ceiling is \" .. ceiling:to(str) .. \"\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 178,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  the files that failed:\\n\")",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 179,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(_sh(sdk, \"cd \" .. grammardir .. \" && tree-sitter parse --quiet --paths '\" .. listfile .. \"' 2>/dev/null | sort -u | head -40\"))",
+   "family": "io_calls",
+   "file": "scripts/tree_sitter_coverage.id",
+   "line": 180,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"r\")",
+   "family": "io_calls",
+   "file": "scripts/treesitter_emit.id",
+   "line": 83,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"w\")",
+   "family": "io_calls",
+   "file": "scripts/treesitter_emit.id",
+   "line": 93,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "v = std.os.getenv(name)",
+   "family": "os_getenv",
+   "file": "scripts/treesitter_emit.id",
+   "line": 1694,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(bad)",
+   "family": "std_os",
+   "file": "scripts/treesitter_emit.id",
+   "line": 1721,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/treesitter_emit.id",
+   "line": 1774,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/treesitter_emit.id",
+   "line": 1789,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/treesitter_emit.id",
+   "line": 1797,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "b = \"{b}    execFile(cmd, [bin], (err, stdout) => {\\n\"",
+   "family": "stdio",
+   "file": "scripts/vscodeemit.id",
+   "line": 89,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "b = \"{b}      const first = stdout.trim().split(/[\\\\r\\\\n]/)[0];\\n\"",
+   "family": "stdio",
+   "file": "scripts/vscodeemit.id",
+   "line": 91,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"w\")",
+   "family": "io_calls",
+   "file": "scripts/vscodeemit.id",
+   "line": 108,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/vscodeemit.id",
+   "line": 119,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/vscodeproj.id",
+   "line": 10,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "scripts/vscodeproj.id",
+   "line": 15,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(rc)",
+   "family": "std_os",
+   "file": "scripts/vscodeproj.id",
+   "line": 20,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "scripts/vscodeproj.id",
+   "line": 26,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"IDOL_ROOT\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/gate.id",
+   "line": 64,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"DUO_ROOT\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/gate.id",
+   "line": 66,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"PWD\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/gate.id",
+   "line": 69,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "idolbin = std.os.getenv(\"IDOL_BIN\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/gate.id",
+   "line": 75,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "idolbin = std.os.getenv(\"DUO_BIN\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/gate.id",
+   "line": 77,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "server = std.os.getenv(\"LSPGATE_SERVER\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/gate.id",
+   "line": 83,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  ok   \" .. what .. \"\\n\")",
+   "family": "io_calls",
+   "file": "tools/lsp/gate.id",
+   "line": 97,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  FAIL \" .. what .. \" \u2014 \" .. detail .. \"\\n\")",
+   "family": "io_calls",
+   "file": "tools/lsp/gate.id",
+   "line": 99,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Feed the server a session on stdin, hand back everything it wrote. stdin is",
+   "family": "stdio",
+   "file": "tools/lsp/gate.id",
+   "line": 112,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"lsp-gate: the LSP must SERVE, not merely compile\\n\")",
+   "family": "io_calls",
+   "file": "tools/lsp/gate.id",
+   "line": 194,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  server: \" .. server .. \"\\n\")",
+   "family": "io_calls",
+   "file": "tools/lsp/gate.id",
+   "line": 195,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "check(false, \"the server wrote anything at all\", \"zero bytes on stdout \u2014 it did not start, or it died before the first reply\")",
+   "family": "stdio",
+   "file": "tools/lsp/gate.id",
+   "line": 228,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\nlsp-gate: FAIL \u2014 no session\\n\")",
+   "family": "io_calls",
+   "file": "tools/lsp/gate.id",
+   "line": 229,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "tools/lsp/gate.id",
+   "line": 230,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  OWED docs/spec/roles.md is absent \u2014 the legend cannot be re-derived, so H-1 drift is UNCHECKED this run\\n\")",
+   "family": "io_calls",
+   "file": "tools/lsp/gate.id",
+   "line": 377,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n\")",
+   "family": "io_calls",
+   "file": "tools/lsp/gate.id",
+   "line": 382,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"lsp-gate: PASS \u2014 the server handshakes, survives a close, and answers by value\\n\")",
+   "family": "io_calls",
+   "file": "tools/lsp/gate.id",
+   "line": 384,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"lsp-gate: FAIL \u2014 \" .. fails:to(str) .. \" check(s) failed\\n\")",
+   "family": "io_calls",
+   "file": "tools/lsp/gate.id",
+   "line": 387,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is",
+   "family": "std_os",
+   "file": "tools/lsp/gate.id",
+   "line": 388,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "tools/lsp/gate.id",
+   "line": 391,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"IDOL_ROOT\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/legend.id",
+   "line": 34,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"DUO_ROOT\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/legend.id",
+   "line": 36,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"PWD\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/legend.id",
+   "line": 39,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(2)",
+   "family": "std_os",
+   "file": "tools/lsp/legend.id",
+   "line": 138,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(2)",
+   "family": "std_os",
+   "file": "tools/lsp/legend.id",
+   "line": 171,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(2)",
+   "family": "std_os",
+   "file": "tools/lsp/legend.id",
+   "line": 176,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(2)",
+   "family": "std_os",
+   "file": "tools/lsp/legend.id",
+   "line": 219,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(2)",
+   "family": "std_os",
+   "file": "tools/lsp/legend.id",
+   "line": 231,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Modes, by env; the path comes from argv:",
+   "family": "argv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 147,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   hlpath          the file to project (argv also works when compiled)",
+   "family": "argv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 148,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "path: str = std.os.getenv(\"hlpath\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1333,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "ln: i64 = to(i64)(std.os.getenv(\"hlline\"))",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1334,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "col: i64 = to(i64)(std.os.getenv(\"hlbyte\"))",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1335,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"r\")",
+   "family": "io_calls",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1338,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(3)",
+   "family": "std_os",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1539,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "mode: str = std.os.getenv(\"hlmode\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1542,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(0)",
+   "family": "std_os",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1564,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(0)",
+   "family": "std_os",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1569,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "bare: str = std.os.getenv(\"hlrole\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1577,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(0)",
+   "family": "std_os",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1580,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(0)",
+   "family": "std_os",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1584,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(0)",
+   "family": "std_os",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1589,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "foreign",
+   "code": "# `hlpath` first: `duo run` hands the SCRIPT to argv, not the argument, so a",
+   "family": "argv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1592,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# projector that only read argv answered \"no path\" under the interpreter and",
+   "family": "argv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1593,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "path: str = std.os.getenv(\"hlpath\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1595,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(2)",
+   "family": "std_os",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1601,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"r\")",
+   "family": "io_calls",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1603,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(2)",
+   "family": "std_os",
+   "file": "tools/lsp/src/highlight.id",
+   "line": 1606,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "f = os.getenv(\"DUO_LSP_CHECK_FLAGS\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/server.id",
+   "line": 1118,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "h = os.getenv(\"DUO_LSP_HINTS\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/server.id",
+   "line": 1122,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "b = os.getenv(\"DUO_LSP_DUO_BIN\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/server.id",
+   "line": 1129,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "b = os.getenv(\"DUO_BIN\")",
+   "family": "os_getenv",
+   "file": "tools/lsp/src/server.id",
+   "line": 1133,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "f = io.popen(\"which duo 2>/dev/null\", \"r\")",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 1137,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(header, body)",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 1162,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.flush()",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 1163,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(d.tmp, \"w\")",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 1252,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "p = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 1424,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "p = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 1488,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(fp, \"r\")",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 1507,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "c = io.read(1)",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 1524,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "body = io.read(content_length)",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 1562,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "p = io.popen(cmd, \"r\")",
+   "family": "io_calls",
+   "file": "tools/lsp/src/server.id",
+   "line": 2082,
+   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "-- Environment reads go through `std.os.getenv`; process work",
+   "family": "std_os",
+   "file": "tools/mcp/bench.id",
+   "line": 9,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "-- `std.os.getenv` answers \"\" and NOT nil for an unset name, so `getenv(x) or",
+   "family": "std_os",
+   "file": "tools/mcp/bench.id",
+   "line": 18,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "field",
+   "code": "root = os.env[\"IDOL_ROOT\"] or \"\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/bench.id",
+   "line": 21,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "root = os.env[\"DUO_ROOT\"] or \"\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/bench.id",
+   "line": 23,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "root = os.env[\"PWD\"] or \"\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/bench.id",
+   "line": 26,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "migration",
+   "code": "-- `std.fs.exists`, `std.json.encode`, `std.os.getenv`  -  which was verified to",
+   "family": "std_os",
+   "file": "tools/mcp/bench.id",
+   "line": 52,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "-- things it was used for here are `std.os.getenv` and `std.proc.capture`.",
+   "family": "std_os",
+   "file": "tools/mcp/eval.id",
+   "line": 16,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "-- against \"\" explicitly. The old `os.getenv(name, default)` two-argument",
+   "family": "os_getenv",
+   "file": "tools/mcp/eval.id",
+   "line": 18,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "duo_root = std.os.getenv(\"IDOL_ROOT\")",
+   "family": "os_getenv",
+   "file": "tools/mcp/eval.id",
+   "line": 20,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "if duo_root == nil or duo_root == \"\" then duo_root = std.os.getenv(\"DUO_ROOT\") end",
+   "family": "os_getenv",
+   "file": "tools/mcp/eval.id",
+   "line": 21,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "duo_bin = std.os.getenv(\"IDOL_BIN\")",
+   "family": "os_getenv",
+   "file": "tools/mcp/eval.id",
+   "line": 23,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "if duo_bin == nil or duo_bin == \"\" then duo_bin = std.os.getenv(\"DUO_BIN\") end",
+   "family": "os_getenv",
+   "file": "tools/mcp/eval.id",
+   "line": 24,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"IDOL_ROOT\") or \"\"",
+   "family": "os_getenv",
+   "file": "tools/mcp/gate.id",
+   "line": 63,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"DUO_ROOT\") or \"\"",
+   "family": "os_getenv",
+   "file": "tools/mcp/gate.id",
+   "line": 65,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"PWD\") or \"\"",
+   "family": "os_getenv",
+   "file": "tools/mcp/gate.id",
+   "line": 68,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "idol_bin = std.os.getenv(\"IDOL_BIN\") or \"\"",
+   "family": "os_getenv",
+   "file": "tools/mcp/gate.id",
+   "line": 74,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "idol_bin = std.os.getenv(\"DUO_BIN\") or \"\"",
+   "family": "os_getenv",
+   "file": "tools/mcp/gate.id",
+   "line": 76,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  ok   \" .. what .. \"\\n\")",
+   "family": "io_calls",
+   "file": "tools/mcp/gate.id",
+   "line": 89,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"  FAIL \" .. what .. \"  -  \" .. detail .. \"\\n\")",
+   "family": "io_calls",
+   "file": "tools/mcp/gate.id",
+   "line": 91,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "-- Drive a server: feed it `lines` on stdin, hand back everything it wrote.",
+   "family": "stdio",
+   "file": "tools/mcp/gate.id",
+   "line": 95,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "-- stdin is a FILE, not a pipe, because the transport is newline-delimited",
+   "family": "stdio",
+   "file": "tools/mcp/gate.id",
+   "line": 96,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"mcp-gate: the MCP servers must SERVE, not merely compile\\n\")",
+   "family": "io_calls",
+   "file": "tools/mcp/gate.id",
+   "line": 140,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"bench.id\\n\")",
+   "family": "io_calls",
+   "file": "tools/mcp/gate.id",
+   "line": 160,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"lsp.id\\n\")",
+   "family": "io_calls",
+   "file": "tools/mcp/gate.id",
+   "line": 323,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"zls.id\\n\")",
+   "family": "io_calls",
+   "file": "tools/mcp/gate.id",
+   "line": 402,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"\\n\")",
+   "family": "io_calls",
+   "file": "tools/mcp/gate.id",
+   "line": 443,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"mcp-gate: PASS  -  all three servers handshake, serve their full tool census, and answer by value\\n\")",
+   "family": "io_calls",
+   "file": "tools/mcp/gate.id",
+   "line": 445,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(\"mcp-gate: FAIL  -  \" .. fails:to(str) .. \" check(s) failed\\n\")",
+   "family": "io_calls",
+   "file": "tools/mcp/gate.id",
+   "line": 448,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "-- `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is",
+   "family": "std_os",
+   "file": "tools/mcp/gate.id",
+   "line": 449,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "std.os.exit(1)",
+   "family": "std_os",
+   "file": "tools/mcp/gate.id",
+   "line": 454,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "-- `std.fs.exists`, `std.json.encode`, `std.os.getenv`  -  which was verified to",
+   "family": "std_os",
+   "file": "tools/mcp/lsp.id",
+   "line": 19,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "-- cannot make. `std.os.getenv` answers \"\"  -  never nil  -  for an unset name.",
+   "family": "std_os",
+   "file": "tools/mcp/lsp.id",
+   "line": 32,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"IDOL_ROOT\") or \"\"",
+   "family": "os_getenv",
+   "file": "tools/mcp/lsp.id",
+   "line": 33,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"DUO_ROOT\") or \"\"",
+   "family": "os_getenv",
+   "file": "tools/mcp/lsp.id",
+   "line": 35,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "root = std.os.getenv(\"PWD\") or \"\"",
+   "family": "os_getenv",
+   "file": "tools/mcp/lsp.id",
+   "line": 38,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Transport: newline-delimited JSON-RPC over stdio (stdin:line / stdout:write).",
+   "family": "stdio",
+   "file": "tools/mcp/native.id",
+   "line": 2,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   - End of input is not a value: when the peer closes stdin the C ingress",
+   "family": "stdio",
+   "file": "tools/mcp/native.id",
+   "line": 7,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# GAP-145 lexer (double-quoted \"\\\"\" does not unescape). Tool stdout is",
+   "family": "stdio",
+   "file": "tools/mcp/native.id",
+   "line": 13,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "line = stdin:line()",
+   "family": "stdio",
+   "file": "tools/mcp/native.id",
+   "line": 17,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "stdout:write(resp)",
+   "family": "stdio",
+   "file": "tools/mcp/native.id",
+   "line": 55,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "line = stdin:line()",
+   "family": "stdio",
+   "file": "tools/mcp/native.id",
+   "line": 56,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "field",
+   "code": "root = os.env[\"IDOL_ROOT\"] or \"\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/shared.id",
+   "line": 15,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "root = os.env[\"DUO_ROOT\"] or \"\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/shared.id",
+   "line": 17,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "root = os.env[\"PWD\"] or \"\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/shared.id",
+   "line": 20,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "idbin = os.env[\"IDOL_BIN\"] or \"\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/shared.id",
+   "line": 32,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "idbin = os.env[\"DUO_BIN\"] or \"\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/shared.id",
+   "line": 34,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "if os.env[\"DUO_LOCK_HELD\"] != \"1\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/shared.id",
+   "line": 140,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "if os.env[\"DUO_LOCK_HELD\"] != \"1\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/shared.id",
+   "line": 162,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "field",
+   "code": "if os.env[\"DUO_LOCK_HELD\"] != \"1\"",
+   "family": "os_env_index",
+   "file": "tools/mcp/shared.id",
+   "line": 187,
+   "target": "already canonical v2"
+  },
+  {
+   "classification": "foreign",
+   "code": "# the engine reads DUO_WASM_MODULE, NOT argv (src/engine.id entry) and silently falls",
+   "family": "argv",
+   "file": "tools/wasm/bench/perf.id",
+   "line": 74,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# DUO_WASM_MODULE, NOT argv (src/engine.id entry), and silently falls back to a",
+   "family": "argv",
+   "file": "tools/wasm/bench/run.id",
+   "line": 8,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   the engine      DUO_WASM_MODULE env var, DUO_WASM_INVOKE picks the export (never argv)",
+   "family": "argv",
+   "file": "tools/wasm/bench/six.id",
+   "line": 18,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   wasm3     writes its `Result:` line to STDERR, not stdout \u2014 reading only",
+   "family": "stdio",
+   "file": "tools/wasm/bench/six.id",
+   "line": 23,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#             stdout made every wasm3 cell read WRONG against a right answer",
+   "family": "stdio",
+   "file": "tools/wasm/bench/six.id",
+   "line": 24,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# stderr; wasmtime's stdout must stay clean because it is the",
+   "family": "stdio",
+   "file": "tools/wasm/bench/six.id",
+   "line": 290,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# oracle and it prints a `--invoke` warning on stderr.",
+   "family": "stdio",
+   "file": "tools/wasm/bench/six.id",
+   "line": 291,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#                   diagnostic to stderr. Before that commit a trap and a",
+   "family": "stdio",
+   "file": "tools/wasm/bench/wart.id",
+   "line": 136,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# opcode was named on stderr; that diagnostic was never written, and there was",
+   "family": "stdio",
+   "file": "tools/wasm/src/engine.id",
+   "line": 466,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# no stderr surface in the Duo stdlib to write it with. So the only thing",
+   "family": "stdio",
+   "file": "tools/wasm/src/engine.id",
+   "line": 467,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# to grep stdout for a sentinel # and -1 is a perfectly legal i64 result, so",
+   "family": "stdio",
+   "file": "tools/wasm/src/engine.id",
+   "line": 469,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "#   exit 0   a result was computed; stdout carries `result=<v>`",
+   "family": "stdio",
+   "file": "tools/wasm/src/engine.id",
+   "line": 479,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# to stdout on a failure, so `result=` on stdout now means a result.",
+   "family": "stdio",
+   "file": "tools/wasm/src/engine.id",
+   "line": 484,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "if os.getenv(\"DUO_WASM_JIT_TRACE\")",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/engine.id",
+   "line": 743,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(mem.read_byte(lin, bp + k3):char())",
+   "family": "io_calls",
+   "file": "tools/wasm/src/engine.id",
+   "line": 1495,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Name the opcode on stderr. A bare -1 turned every gap into the same",
+   "family": "stdio",
+   "file": "tools/wasm/src/engine.id",
+   "line": 3194,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# environment: DUO_WASM_MODULE picks the module, DUO_WASM_ENGINE=interp forces the",
+   "family": "environment",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6046,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "path = os.getenv(\"DUO_WASM_MODULE\")",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6057,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "invoke = os.getenv(\"DUO_WASM_INVOKE\") or \"run\"",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6058,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "# to stdout and fall off the end of main, i.e. exit 0 # so a harness that",
+   "family": "stdio",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6060,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "if os.getenv(\"DUO_WASM_ENGINE\") == \"interp\"",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6068,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"rb\")",
+   "family": "io_calls",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6072,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "if os.getenv(\"DUO_WASM_PHASES\")",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6101,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "dmp = os.getenv(\"DUO_WASM_DUMP\")",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6128,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "df = io.open(dmp, \"w\")",
+   "family": "io_calls",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6130,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "if os.getenv(\"DUO_WASM_PHASES\")",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/engine.id",
+   "line": 6142,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "req \"std.os\"",
+   "family": "std_os",
+   "file": "tools/wasm/src/wasm/jit.id",
+   "line": 8,
+   "target": "drop std prefix"
+  },
+  {
+   "classification": "migration",
+   "code": "global trace_reject = os.getenv(\"DUO_WASM_JIT_TRACE\")",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/wasm/jit_arm64.id",
+   "line": 353,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "global dump_path = os.getenv(\"DUO_WASM_JIT_DUMP\")",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/wasm/jit_arm64.id",
+   "line": 385,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "f = io.open(path, \"wb\")",
+   "family": "io_calls",
+   "file": "tools/wasm/src/wasm/jit_arm64.id",
+   "line": 387,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "migration",
+   "code": "M.available = jit.arch() == \"arm64\" and os.getenv(\"DUO_WASM_JIT\") != \"0\"",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/wasm/jit_arm64.id",
+   "line": 699,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "migration",
+   "code": "if os.getenv(\"DUO_WASM_TRACE_FD\")",
+   "family": "os_getenv",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 44,
+   "target": "os.env[key]"
+  },
+  {
+   "classification": "foreign",
+   "code": "io.stderr:write(\"[fd_write fd=\" .. tostring(fd) .. \" iov=\" .. tostring(i)",
+   "family": "stdio",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 45,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "migration",
+   "code": "io.write(data)",
+   "family": "io_calls",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 51,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "io.stderr:write(data)",
+   "family": "stdio",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 53,
+   "target": "host realization boundary"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Simplified: stdin read",
+   "family": "stdio",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 70,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "data = io.read(buf_len)",
+   "family": "io_calls",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 76,
+   "target": "io:read()/io:write() or subject:read()/write()"
+  },
+  {
+   "classification": "foreign",
+   "code": "# stdout/stderr are treated as non-tty so line-buffered output flushes",
+   "family": "stdio",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 99,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "migration",
+   "code": "argv = rt.args or {\"wasm\"}",
+   "family": "argv",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 141,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "for i = 1, argv:len()",
+   "family": "argv",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 143,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "buf_size += argv:len()[i] + 1",
+   "family": "argv",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 144,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "runtime.mem_store_i32(rt, argc_ptr, argv:len())",
+   "family": "argv",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 146,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "argv = rt.args or {\"wasm\"}",
+   "family": "argv",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 155,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "for i = 1, argv:len()",
+   "family": "argv",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 157,
+   "target": "os.args"
+  },
+  {
+   "classification": "migration",
+   "code": "s = argv[i]",
+   "family": "argv",
+   "file": "tools/wasm/src/wasm/wasi.id",
+   "line": 158,
+   "target": "os.args"
+  },
+  {
+   "classification": "foreign",
+   "code": "# Mode selection is an ENV VAR, not argv: duo-compiled binaries do not",
+   "family": "argv",
+   "file": "tools/wasm/tools/opcodes.id",
+   "line": 530,
+   "target": "prose/comment reference"
+  },
+  {
+   "classification": "foreign",
+   "code": "# populate Lua's `arg`, and an argv-driven flag would silently take the",
+   "family": "argv",
+   "file": "tools/wasm/tools/opcodes.id",
+   "line": 531,
+   "target": "prose/comment reference"
+  }
+ ],
+ "revision": "c989a5a808dc69edd3916f618b9485abdab0b844",
+ "schema": "idol-v2-reconciliation-machine-ledger",
+ "scope": [
+  "lib",
+  "tools",
+  "scripts",
+  "gate",
+  "benchmarks",
+  "examples"
+ ],
+ "totals": {
+  "by_classification": {
+   "field": 53,
+   "fieldmutation": 19,
+   "foreign": 342,
+   "migration": 400,
+   "subjectrelation": 4
+  },
+  "by_family": {
+   "argv": 31,
+   "environment": 31,
+   "io_calls": 252,
+   "os_args": 20,
+   "os_env_index": 55,
+   "os_getenv": 70,
+   "os_setenv": 12,
+   "std_io": 44,
+   "std_os": 100,
+   "stdio": 203
+  },
+  "occurrences": 818,
+  "unclassified": 0
+ }
+}
