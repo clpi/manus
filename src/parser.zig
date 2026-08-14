@@ -2907,6 +2907,20 @@ pub const Parser = struct {
     /// clause itself binds to this `if` BY COLUMN. The construct closes by
     /// layout when any of its blocks was governed by layout; a written `end` is
     /// accepted and deleted either way.
+    /// True when a `(` starts in the column immediately after `kw` ends, on the
+    /// same line — `else(cond)` rather than `else (value)`.
+    ///
+    /// Peeking cannot consume: the caller still has to parse the parenthesized
+    /// expression itself, so this restores lexer state before returning.
+    fn glued_lparen(self: *Parser, kw: Token) bool {
+        const saved = self.lex.saveState();
+        defer self.lex.restoreState(saved);
+        const nxt = self.pk() catch return false;
+        if (nxt.kind != .lparen) return false;
+        if (nxt.loc.line != kw.loc.line) return false;
+        return nxt.loc.col == kw.loc.col + @as(u32, @intCast(kw.text.len));
+    }
+
     fn parse_if_clauses(self: *Parser, l: ast.Loc) ParseError!IfClauses {
         try self.eat_deprecated(.kw_then);
         const then_body = try self.parse_block_at(l);
@@ -2923,6 +2937,30 @@ pub const Parser = struct {
                 try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
             } else if (try self.clause_binds(l, .kw_else, offside)) {
                 const kw = try self.adv();
+                // `else(condition)` — the alternative is itself conditional.
+                // This is what retires `elseif`: `else` means "the remaining
+                // alternative" everywhere, and a parenthesized operand narrows
+                // which remainder, so the chain reads
+                //
+                //     if(a) x
+                //     else(b) y
+                //     else z
+                //
+                // with one rule instead of a second keyword. It desugars to the
+                // SAME ElseIf node `elseif` builds, so the two spellings cannot
+                // diverge — `gate/control.id` compares them input by input.
+                //
+                // ADJACENCY decides, the same rule `peek_glued_assign` already
+                // uses: `else(` is the conditional face, `else (` with a space
+                // is an ordinary parenthesized body. Nothing is ambiguous, so
+                // nothing has to be rejected under §42.
+                if (self.glued_lparen(kw)) {
+                    const ec = try self.parse_expr();
+                    const eb = try self.parse_block_at(kw.loc);
+                    offside = offside or self.last_layout.offside;
+                    try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
+                    continue;
+                }
                 else_body = try self.parse_block_at(kw.loc);
                 offside = offside or self.last_layout.offside;
                 break;
@@ -5418,7 +5456,21 @@ pub const Parser = struct {
             else_expr = try self.parse_if_expr_after_if(nested_l, consume_end);
             return self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, then_expr, else_expr) });
         }
-        if (try self.eat(.kw_else) != null) {
+        if (try self.eat(.kw_else)) |else_kw| {
+            // `else(condition) arm` in VALUE position, so the aligned chain
+            //
+            //     r = if(a) 10
+            //         else(b) 20
+            //         else 40
+            //
+            // is one value-producing conditional rather than four writes to a
+            // binding. Same node as `elseif` and `else if` produce; only the
+            // spelling differs. Adjacency separates it from `else (value)`.
+            if (self.glued_lparen(else_kw)) {
+                const nested_cond = try self.parse_expr();
+                else_expr = try self.parse_if_expr_after_if_with_cond(else_kw.loc, nested_cond, consume_end);
+                return self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, then_expr, else_expr) });
+            }
             if (try self.eat(.kw_if) != null) {
                 const nested_l = (try self.pk()).loc;
                 else_expr = try self.parse_if_expr_after_if(nested_l, consume_end);

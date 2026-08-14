@@ -437,6 +437,23 @@ pub const PrettyPrinter = struct {
 
     // ── Match ───────────────────────────────────────────────────────────────────
 
+    /// Close a block.
+    ///
+    /// The constitution fixes `syntax.block = @{ bound = .offside, close =
+    /// false }`: indentation delimits a block and there is NO closing
+    /// delimiter. Canonical Idol therefore writes nothing here — the dedent is
+    /// the close. The Lua face still needs `end`, and so does the JIT's Lua
+    /// emitter, so the terminator survives exactly where it is someone else's
+    /// grammar.
+    ///
+    /// One origin for every block form, so `end` cannot come back for one
+    /// construct and not another.
+    fn closeBlock(self: *PrettyPrinter) !void {
+        if (self.mode == .idol and self.canonical) return;
+        try self.nl();
+        try self.write("end");
+    }
+
     fn printMatchExpr(self: *PrettyPrinter, m: *const ast.MatchExpr) !void {
         try self.write("match ");
         try self.printExpr(m.scrutinee, 0);
@@ -463,8 +480,7 @@ pub const PrettyPrinter = struct {
             }
         }
         self.dedent();
-        try self.nl();
-        try self.write("end");
+        try self.closeBlock();
     }
 
     // ── Statements ──────────────────────────────────────────────────────────────
@@ -489,8 +505,7 @@ pub const PrettyPrinter = struct {
                         try self.nl();
                         try self.printBlock(&block);
                         self.dedent();
-                        try self.nl();
-                        try self.write("end");
+                        try self.closeBlock();
                     },
                 }
             },
@@ -575,15 +590,13 @@ pub const PrettyPrinter = struct {
                 }
                 try self.write("do");
                 try self.printBlock(&db.body);
-                try self.nl();
-                try self.write("end");
+                try self.closeBlock();
             },
             .while_loop => |wl| {
                 try self.write("while ");
                 try self.printExpr(wl.cond, 0);
                 try self.printBlock(&wl.body);
-                try self.nl();
-                try self.write("end");
+                try self.closeBlock();
             },
             .repeat_loop => |rl| {
                 try self.write("repeat");
@@ -619,8 +632,7 @@ pub const PrettyPrinter = struct {
                     try self.write("else");
                     try self.printBlock(&eb);
                 }
-                try self.nl();
-                try self.write("end");
+                try self.closeBlock();
             },
             .num_for => |nf| {
                 try self.write("for ");
@@ -638,8 +650,7 @@ pub const PrettyPrinter = struct {
                     try self.printExpr(step, 0);
                 }
                 try self.printBlock(&nf.body);
-                try self.nl();
-                try self.write("end");
+                try self.closeBlock();
             },
             .gen_for => |gf| {
                 try self.write("for ");
@@ -653,8 +664,7 @@ pub const PrettyPrinter = struct {
                     try self.printExpr(it, 0);
                 }
                 try self.printBlock(&gf.body);
-                try self.nl();
-                try self.write("end");
+                try self.closeBlock();
             },
             .func_decl => |fd| try self.printFuncDecl(&fd),
             .ret => |r| {
@@ -688,14 +698,12 @@ pub const PrettyPrinter = struct {
                     try self.write("defer");
                     try self.printBlock(&defer_stmt.body);
                 }
-                try self.nl();
-                try self.write("end");
+                try self.closeBlock();
             },
             .defer_stmt => |d| {
                 try self.write("defer");
                 try self.printBlock(&d.body);
-                try self.nl();
-                try self.write("end");
+                try self.closeBlock();
             },
             .enum_def => |ed| try self.printEnumDef(&ed),
             .concept_def => |cd| try self.printConceptDef(&cd),
@@ -750,8 +758,7 @@ pub const PrettyPrinter = struct {
                         try self.printFuncDecl(m);
                     }
                     self.dedent();
-                    try self.nl();
-                    try self.write("end");
+                    try self.closeBlock();
                 }
             },
             .cinclude => |ci| try self.print("@cinclude(\"{s}\")\n", .{ci.header}),
@@ -803,8 +810,7 @@ pub const PrettyPrinter = struct {
         }
         try self.printFuncSig(&fd.func);
         try self.printBlock(&fd.func.body);
-        try self.nl();
-        try self.write("end");
+        try self.closeBlock();
     }
 
     pub fn printFuncBody(self: *PrettyPrinter, fb: *const ast.FuncBody) Error!void {
@@ -855,8 +861,7 @@ pub const PrettyPrinter = struct {
         if (self.mode == .idol and !self.canonical) try self.write("fun");
         try self.printFuncSig(fb);
         try self.printBlock(&fb.body);
-        try self.nl();
-        try self.write("end");
+        try self.closeBlock();
     }
 
     /// The body's SOLE expression, when it has one — the shape the lens
@@ -968,8 +973,7 @@ pub const PrettyPrinter = struct {
             }
         }
         self.dedent();
-        try self.nl();
-        try self.write("end");
+        try self.closeBlock();
     }
 
     // ── Concept ───────────────────────────────────────────────────────────────
@@ -1000,8 +1004,7 @@ pub const PrettyPrinter = struct {
             try self.printTypeExpr(fld.typ);
         }
         self.dedent();
-        try self.nl();
-        try self.write("end");
+        try self.closeBlock();
     }
 
     fn printFuncSigParams(self: *PrettyPrinter, sig: *const ast.FuncSignature) !void {
@@ -1226,7 +1229,7 @@ test "pretty: concept definition" {
     );
 }
 
-test "pretty: canonical mode strips fun, then, and do/end wrapper" {
+test "pretty: canonical mode strips fun, then, and every block terminator" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1246,14 +1249,16 @@ test "pretty: canonical mode strips fun, then, and do/end wrapper" {
     );
     const out = try prettyPrintCanonical(alloc, &mod, .idol, true);
     defer alloc.free(out);
+    // `syntax.block = @{ bound = .offside, close = false }` — indentation
+    // delimits and there is no terminator, so no `end` survives canonical
+    // output for ANY block form. The dedent before `print` is what closes both
+    // the `if` and the relation.
     try testing.expectEqualStrings(
         \\add(x: i64, y: i64) -> i64
         \\  if x < y
         \\    return x
         \\  else
         \\    return y
-        \\  end
-        \\end
         \\print("hi")
         \\
         \\
