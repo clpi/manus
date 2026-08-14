@@ -163,7 +163,7 @@ bsearch: any = (arr: any, v: any, less: any)
     mid = lo + (hi - lo) / 2
     if less(v, arr[mid + 1])
       hi = mid
-    elseif less(arr[mid + 1], v)
+    else(less(arr[mid + 1], v))
       lo = mid + 1
     else
       return mid + 1, true

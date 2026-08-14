@@ -93,7 +93,7 @@ unresolved: i64 = (src: str, file: str, family: i64, report: bool)
             if b.kind == token.KIND_NAME
               if lexer.peek(lx).kind == token.KIND_ASSIGN
                 binds = true
-              elseif lexer.peek(lx).kind == token.KIND_COMMA
+              else(lexer.peek(lx).kind == token.KIND_COMMA)
                 walking = true
         lexer.restore_state(lx, st)
       if nxt.kind == token.KIND_LPAREN and kind != token.KIND_DOT and kind != token.KIND_COLON

@@ -79,14 +79,14 @@ ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
   bytes = {}
   # First byte: FIN bit + opcode
   bytes[1] = 128 | opcode
-  
-# Payload length
+
+  # Payload length
   len = payload:len()
   if len < 126
     bytes[2] = len
     if mask
       bytes[2] = bytes[2] | 128
-  elseif len < 65536
+  else(len < 65536)
     bytes[2] = 126
     if mask
       bytes[2] = bytes[2] | 128
@@ -100,8 +100,8 @@ ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
     while i < 8
       bytes[3 + i] = len >> (56 - i * 8) & 255
       i = i + 1
-  
-# Masking key (if client->server) using CSPRNG
+
+  # Masking key (if client->server) using CSPRNG
   mask_key = nil
   if mask
     key_data = std.crypto.rand.bytes(4)
@@ -111,8 +111,8 @@ ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
       mask_key[i] = key_data:byte(i)
       bytes[bytes:len() + 1] = mask_key[i]
       i = i + 1
-  
-# Payload
+
+  # Payload
   i = 1
   while i <= payload:len()
     if mask
@@ -145,7 +145,7 @@ offset = pos + 2
 if payload_len == 126
   payload_len = data[offset] << 8 | data[offset + 1]
   offset = offset + 2
-elseif payload_len == 127
+else(payload_len == 127)
   payload_len = 0
   i = 0
   while i < 8
@@ -202,8 +202,8 @@ ws_server_handshake: str = (request: str)
   key = string["match"](request, "Sec%-WebSocket%-Key: ([%w%+/=]+)")
   if key == nil
     return "HTTP/1.1 400 Bad Request\r\n\r\n"
-  
-# Compute accept hash
+
+  # Compute accept hash
   magic = "258EAFA5-E914-47DA-95CA-5AB9FC1B5B09"
   accept = base64_sha1(key .. magic)
 
@@ -268,34 +268,34 @@ ws_connection_receive: any = (conn: any, data: any)
   # Append to buffer
   for b in data
     conn.buffer[conn:len().buffer + 1] = b
-  
-# Try to decode
+
+  # Try to decode
   if conn:len().buffer < 2
     return nil
   frame = ws_decode_frame(conn.buffer, 1)
   if frame == nil
     return nil
-  
-# Remove consumed bytes
+
+  # Remove consumed bytes
   new_buf = {}
   i = frame.next
   while i <= conn:len().buffer
     new_buf[new_buf:len() + 1] = conn.buffer[i]
     i = i + 1
   conn.buffer = new_buf
-  
-# Handle control frames
+
+  # Handle control frames
   if frame.opcode == OP_PING
     conn.state = "connected"
     return { type = "ping", payload = frame.payload }
-  elseif frame.opcode == OP_PONG
+  else(frame.opcode == OP_PONG)
     return { type = "pong", payload = frame.payload }
-  elseif frame.opcode == OP_CLOSE
+  else(frame.opcode == OP_CLOSE)
     conn.state = "closed"
     if frame:len().payload >= 2
       conn.close_code = frame.payload[1] << 8 | frame.payload[2]
     return { type = "close", code = conn.close_code }
-  elseif frame.opcode == OP_TEXT
+  else(frame.opcode == OP_TEXT)
     # Convert payload to string
     parts = {}
     i = 1
@@ -303,7 +303,7 @@ ws_connection_receive: any = (conn: any, data: any)
       parts[parts:len() + 1] = frame.payload[i]:char()
       i = i + 1
     return { type = "text", data = parts:concat() }
-  elseif frame.opcode == OP_BINARY
+  else(frame.opcode == OP_BINARY)
     return { type = "binary", data = frame.payload }
 
 nil

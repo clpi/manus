@@ -169,12 +169,12 @@ reader_tag: any = (r: any)
 reader_skip_field: void = (r: any, wire_type: i64)
   if wire_type == WIRE_VARINT
     reader_varint(r)
-  elseif wire_type == WIRE_64BIT
+  else(wire_type == WIRE_64BIT)
     r.pos = r.pos + 8
-  elseif wire_type == WIRE_LENGTH_DELIMITED
+  else(wire_type == WIRE_LENGTH_DELIMITED)
     len = reader_varint(r)
     r.pos = r.pos + len
-  elseif wire_type == WIRE_32BIT
+  else(wire_type == WIRE_32BIT)
     r.pos = r.pos + 4
 
 reader_field_bytes: any = (r: any, wire_type: i64)
@@ -258,13 +258,13 @@ message_encode: any = (schema: any, values: any)
     if value != nil
       if field_def.type == "varint"
         write_field_varint(w, field_def.field_num, value)
-      elseif field_def.type == "string"
+      else(field_def.type == "string")
         write_field_string(w, field_def.field_num, value)
-      elseif field_def.type == "bytes"
+      else(field_def.type == "bytes")
         write_field_bytes(w, field_def.field_num, value)
-      elseif field_def.type == "fixed32"
+      else(field_def.type == "fixed32")
         write_field_fixed32(w, field_def.field_num, value)
-      elseif field_def.type == "fixed64"
+      else(field_def.type == "fixed64")
         write_field_fixed64(w, field_def.field_num, value)
   writer_bytes(w)
 

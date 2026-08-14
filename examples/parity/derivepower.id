@@ -14,6 +14,6 @@ TOP = @comp.derive.power("Has1", Stub)
 NESTED = @comp.map("q", fun(seed)
   @comp.derive.power("Has1", Stub)
 end)
-parity: str = ()
-  @comp.derive.power("Has1", Stub)
+parity: str = {}
+@comp.derive.power("Has1", Stub)
 BLOCK = parity()

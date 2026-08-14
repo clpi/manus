@@ -32,7 +32,7 @@ compress: any = (data: any)
       length = match_len - 4
       if length < 60
         out[out:len() + 1] = length << 2 | 1
-      elseif length < 256
+      else(length < 256)
         out[out:len() + 1] = 59 << 2 | 1
         out[out:len() + 1] = length
       else
@@ -57,7 +57,7 @@ compress: any = (data: any)
       # Write literal header
       if literal_len < 61
         out[out:len() + 1] = (literal_len - 1) << 2 | 0
-      elseif literal_len < 256
+      else(literal_len < 256)
         out[out:len() + 1] = 60 << 2 | 0
         out[out:len() + 1] = literal_len
       else
@@ -93,11 +93,11 @@ decompress: any = (data: any)
       literal_len = byte >> 2 & 63
       if literal_len < 60
         literal_len = literal_len + 1
-      elseif literal_len == 60
+      else(literal_len == 60)
         literal_len = data[r.pos] + 1
         r.pos = r.pos + 1
-      elseif literal_len == 61
-        literal_len = data[r.pos] + data[r.pos + 1] << 8 + 1
+      else(literal_len == 61)
+        literal_len = (data[r.pos] + data[r.pos + 1]) << (8 + 1)
         r.pos = r.pos + 2
 
       i = 0
@@ -105,19 +105,19 @@ decompress: any = (data: any)
         out[out:len() + 1] = data[r.pos]
         r.pos = r.pos + 1
         i = i + 1
-    elseif tag == 1
+    else(tag == 1)
 
       # Copy with 2-byte offset
       length = byte >> 2 & 63
       if length < 60
         length = length + 4
-      elseif length == 60
+      else(length == 60)
         length = data[r.pos] + 4
         r.pos = r.pos + 1
-      elseif length == 61
-        length = data[r.pos] + data[r.pos + 1] << 8 + 4
+      else(length == 61)
+        length = (data[r.pos] + data[r.pos + 1]) << (8 + 4)
         r.pos = r.pos + 2
-      offset = data[r.pos] + data[r.pos + 1] << 8 + 1
+      offset = (data[r.pos] + data[r.pos + 1]) << (8 + 1)
       r.pos = r.pos + 2
 
       # Copy from output buffer
@@ -126,7 +126,7 @@ decompress: any = (data: any)
       while i < length
         out[out:len() + 1] = out[src_pos + i]
         i = i + 1
-    elseif tag == 2
+    else(tag == 2)
 
       # Copy with 1-byte offset
       length = byte >> 2 & 63
@@ -143,7 +143,7 @@ decompress: any = (data: any)
       while i < length
         out[out:len() + 1] = out[src_pos + i]
         i = i + 1
-    elseif tag == 3
+    else(tag == 3)
 
       # Copy with 4-byte offset
       length = byte >> 2 & 63
@@ -152,7 +152,7 @@ decompress: any = (data: any)
       else
         length = data[r.pos] + 4
         r.pos = r.pos + 1
-      offset = data[r.pos] + data[r.pos + 1] << 8 + data[r.pos + 2] << 16 + data[r.pos + 3] << 24 + 1
+      offset = (data[r.pos] + data[r.pos + 1]) << (8 + data[r.pos + 2]) << (16 + data[r.pos + 3]) << (24 + 1)
       r.pos = r.pos + 4
 
       src_pos = out:len() - offset + 1

@@ -37,7 +37,7 @@ decode_header: any = (data: str)
         info.width = read_u16(data, off + 7)
         info.components = data:byte(off + 9)
         info.frame_marker = marker
-      elseif marker == 219
+      else(marker == 219)
         # Quantization table
         table_id = data:byte(off + 4) & 15
         qt = {}
@@ -46,7 +46,7 @@ decode_header: any = (data: str)
           qt[qi] = data:byte(off + 5 + qi - 1)
           qi = qi + 1
         info.quant_tables[table_id] = qt
-      elseif marker == 218
+      else(marker == 218)
         # Start of scan — record offset for later decoding
         info.sos_data = off + 4
       off = off + 2 + seg_len
@@ -79,8 +79,8 @@ decode: any = (data: str)
   if info.width == 0 or info.height == 0
     return nil
   img = image.new_rgba(image.rect(0, 0, info.width, info.height))
-  
-# Decode MCU blocks using simplified approach
+
+  # Decode MCU blocks using simplified approach
   # For baseline JPEG: try to extract entropy-coded data after SOS marker
   if info.sos_data and info.sos_data < data:len()
     # Read entropy-coded segment (simplified: extract raw bytes as pseudo-pixels)

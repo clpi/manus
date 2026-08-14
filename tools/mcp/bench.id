@@ -126,9 +126,9 @@ embed_symbols_tool: str = (args: any)
     f = sym.file or ""
     if sc == "all"
       records:push(sym)
-    elseif sc == "compiler" and string.find(f, "src", 1, true) == 1
+    else(sc == "compiler" and string.find(f, "src", 1, true) == 1)
       records:push(sym)
-    elseif sc == "library" and string.find(f, "lib/std", 1, true) == 1
+    else(sc == "library" and string.find(f, "lib/std", 1, true) == 1)
       records:push(sym)
   results = vector.rank(qvec, records, k)
   note = nil

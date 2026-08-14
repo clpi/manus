@@ -284,9 +284,9 @@ main: i64 = ()
                 # so agreement cannot be claimed and the row is
                 # skipped rather than timed on exit status
                 okrt[r] = false
-              elseif got == oracle
+              else(got == oracle)
                 okrt[r] = true
-              elseif got == "" or _errored(raw)
+              else(got == "" or _errored(raw))
                 # produced nothing at all: this runtime cannot
                 # be driven to this export, which is different
                 # from computing the wrong thing and must not
@@ -338,7 +338,7 @@ main: i64 = ()
           if best < floor and idolms < floor
             startup = startup + 1
             bestr = bestr .. " (startup)"
-          elseif bestr == "the engine"
+          else(bestr == "the engine")
             firsts = firsts + 1
           else
             nloss = nloss + 1

@@ -546,7 +546,7 @@ light_calculate: any = (light: any, point: any, normal: any)
     specular = vec3_scale(light.color, spec * light.intensity * attenuation)
 
     { diffuse = diffuse, specular = specular }
-  elseif light.type == "directional"
+  else(light.type == "directional")
 
     light_dir = vec3_normalize(vec3_negate(light.direction))
 

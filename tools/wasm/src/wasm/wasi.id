@@ -42,8 +42,8 @@ for i = 0, iovs_len - 1
   base_addr = iovs_ptr + i * 8
   buf_ptr = runtime.mem_load_i32(rt, base_addr)
   buf_len = runtime.mem_load_i32(rt, base_addr + 4)
-  
-# Read bytes from WASM memory
+
+  # Read bytes from WASM memory
   data = ""
   for j = 0, buf_len - 1
     data = data .. mem_mod.read_byte(rt.memory, buf_ptr + j):char()
@@ -53,7 +53,7 @@ if os.getenv("DUO_WASM_TRACE_FD")
 
 if fd == 1
   io.write(data)
-elseif fd == 2
+else(fd == 2)
   io.stderr:write(data)
 total = total + buf_len
 

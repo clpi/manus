@@ -15,7 +15,7 @@ quantize_symmetric: any = (t, bits)
 
   if bits == 8
     scale = max_abs / 127.0
-  elseif bits == 4
+  else(bits == 4)
     scale = max_abs / 7.0
   else
     scale = max_abs / (2 ^ (bits - 1) - 1)
@@ -37,7 +37,7 @@ quantize_symmetric: any = (t, bits)
     for i = 1, t.size
       q.data[i] = t.data[i] / scale + 0.5:floor()
       q.data[i] = -128:max(127:min(q.data[i]))
-  elseif bits == 4
+  else(bits == 4)
     # Pack two 4-bit values per byte
     for i = 1, t.size, 2
       val1 = t.data[i] / scale + 0.5:floor()
@@ -97,38 +97,38 @@ quantize_asymmetric: any = (t, bits)
 # Dequantization
 # ═══════════════════════════════════════════════════════════════
 
-dequantize: any = (q)
-  result = {}
-  result.rows = q.rows
-  result.cols = q.cols
-  result.size = q.size
-  result.data = {}
+dequantize: any = q
+result = {}
+result.rows = q.rows
+result.cols = q.cols
+result.size = q.size
+result.data = {}
 
-  if q.bits == 4
-    # Unpack 4-bit values
-    idx = 1
-    for i = 1, q:len().data
-      byte = q.data[i]
-      val1 = byte & 15
-      if val1 >= 8
-        val1 = val1 - 16
-      result.data[idx] = val1 * q.scale
+if q.bits == 4
+  # Unpack 4-bit values
+  idx = 1
+  for i = 1, q:len().data
+    byte = q.data[i]
+    val1 = byte & 15
+    if val1 >= 8
+      val1 = val1 - 16
+    result.data[idx] = val1 * q.scale
+    idx = idx + 1
+
+    if idx <= q.size
+      val2 = byte >> 4 & 15
+      if val2 >= 8
+        val2 = val2 - 16
+      result.data[idx] = val2 * q.scale
       idx = idx + 1
+else
+  for i = 1, q.size
+    if q.dtype and q.dtype:sub(1, 4) == "uint"
+      result.data[i] = (q.data[i] - q.zero_point) * q.scale
+    else
+      result.data[i] = q.data[i] * q.scale
 
-      if idx <= q.size
-        val2 = byte >> 4 & 15
-        if val2 >= 8
-          val2 = val2 - 16
-        result.data[idx] = val2 * q.scale
-        idx = idx + 1
-  else
-    for i = 1, q.size
-      if q.dtype and q.dtype:sub(1, 4) == "uint"
-        result.data[i] = (q.data[i] - q.zero_point) * q.scale
-      else
-        result.data[i] = q.data[i] * q.scale
-
-  result
+result
 
 # ═══════════════════════════════════════════════════════════════
 # FP16 (Half Precision)
@@ -160,7 +160,7 @@ fp16_encode: i64 = (value: f64)
     # Denormalized
     mantissa = mantissa * 2 ^ (1 - exp)
     exp = 0
-  elseif exp >= 31
+  else(exp >= 31)
     # Overflow to infinity
     return sign << 15 | 31744
 
@@ -180,7 +180,7 @@ fp16_decode: f64 = (bits: i64)
       return sign == 0 and 0.0 or -0.0
     # Denormalized
     value = mantissa / 1024.0 * 2 ^ -14
-  elseif exp == 31
+  else(exp == 31)
     if mantissa == 0
       return sign == 0 and 1000000000000000000000000000000.0 or -1000000000000000000000000000000.0
     # NaN
@@ -192,29 +192,29 @@ fp16_decode: f64 = (bits: i64)
     value = -value
   value
 
-tensor_to_fp16: any = (t)
-  result = {}
-  result.rows = t.rows
-  result.cols = t.cols
-  result.size = t.size
-  result.dtype = "f16"
-  result.data = {}
+tensor_to_fp16: any = t
+result = {}
+result.rows = t.rows
+result.cols = t.cols
+result.size = t.size
+result.dtype = "f16"
+result.data = {}
 
-  for i = 1, t.size
-    result.data[i] = fp16_encode(t.data[i])
-  result
+for i = 1, t.size
+  result.data[i] = fp16_encode(t.data[i])
+result
 
-tensor_from_fp16: any = (t)
-  result = {}
-  result.rows = t.rows
-  result.cols = t.cols
-  result.size = t.size
-  result.dtype = "f32"
-  result.data = {}
+tensor_from_fp16: any = t
+result = {}
+result.rows = t.rows
+result.cols = t.cols
+result.size = t.size
+result.dtype = "f32"
+result.data = {}
 
-  for i = 1, t.size
-    result.data[i] = fp16_decode(t.data[i])
-  result
+for i = 1, t.size
+  result.data[i] = fp16_decode(t.data[i])
+result
 
 # ═══════════════════════════════════════════════════════════════
 # GPTQ-style Quantization (block-wise)
@@ -275,29 +275,29 @@ gptq_quantize: any = (t, bits, block_size)
 
   q
 
-gptq_dequantize: any = (q)
-  result = {}
-  result.rows = q.rows
-  result.cols = q.cols
-  result.size = q.size
-  result.dtype = "f32"
-  result.data = {}
+gptq_dequantize: any = q
+result = {}
+result.rows = q.rows
+result.cols = q.cols
+result.size = q.size
+result.dtype = "f32"
+result.data = {}
 
-  block_size = q.block_size
-  num_blocks = q.size / block_size:ceil()
-  idx = 1
+block_size = q.block_size
+num_blocks = q.size / block_size:ceil()
+idx = 1
 
-  for b = 1, num_blocks
-    scale = q.scales[b]
-    zero_point = q.zeros[b]
-    block_start = (b - 1) * block_size + 1
-    block_end = b * block_size:min(q.size)
+for b = 1, num_blocks
+  scale = q.scales[b]
+  zero_point = q.zeros[b]
+  block_start = (b - 1) * block_size + 1
+  block_end = b * block_size:min(q.size)
 
-    for i = block_start, block_end
-      result.data[i] = (q.data[idx] - zero_point) * scale
-      idx = idx + 1
+  for i = block_start, block_end
+    result.data[i] = (q.data[idx] - zero_point) * scale
+    idx = idx + 1
 
-  result
+result
 
 # ═══════════════════════════════════════════════════════════════
 # Mixed-precision policy (pairs with @precision in ai_ml_native.md)
@@ -311,31 +311,31 @@ amp_policy: any = ()
     gradient_checkpointing = false
   }
 
-stats: any = (q)
-  # Calculate compression ratio
-  original_bits = 32
-  compressed_bits = q.bits
+stats: any = q
+# Calculate compression ratio
+original_bits = 32
+compressed_bits = q.bits
 
-  if q.bits == 4
-    # Packed 4-bit
-    compressed_bits = 4
+if q.bits == 4
+  # Packed 4-bit
+  compressed_bits = 4
 
-  compression_ratio = original_bits / compressed_bits
+compression_ratio = original_bits / compressed_bits
 
-  # Estimate size in bytes
-  if q.bits == 4
-    size_bytes = q.size / 2:ceil()
-  else
-    size_bytes = q.size * q.bits / 8:ceil()
+# Estimate size in bytes
+if q.bits == 4
+  size_bytes = q.size / 2:ceil()
+else
+  size_bytes = q.size * q.bits / 8:ceil()
 
-  {
-    bits = q.bits,
-    dtype = q.dtype,
-    size = q.size,
-    size_bytes = size_bytes,
-    compression_ratio = compression_ratio,
-    block_size = q.block_size or q.size
-  }
+{
+  bits = q.bits,
+  dtype = q.dtype,
+  size = q.size,
+  size_bytes = size_bytes,
+  compression_ratio = compression_ratio,
+  block_size = q.block_size or q.size
+}
 # Symmetric
 # Asymmetric
 # Dequantize

@@ -172,9 +172,9 @@ embedding_layer: any = (vocab_size: i64, embed_dim: i64, max_seq_len: i64, pos_e
 
   if pos_encoding == "rope"
     pos_emb = rope_embedding(embed_dim, 10000, max_seq_len)
-  elseif pos_encoding == "sinusoidal"
+  else(pos_encoding == "sinusoidal")
     pos_emb = sinusoidal_encoding(max_seq_len, embed_dim)
-  elseif pos_encoding == "learned"
+  else(pos_encoding == "learned")
     pos_emb = learned_positional_embedding(max_seq_len, embed_dim)
 
   {
@@ -195,10 +195,10 @@ embedding_forward: any = (layer: any, token_ids: any, offset: i64)
   if has(.pos)(layer)
     if layer.pos_encoding == "rope"
       x = rope_forward(layer.pos, x, offset)
-    elseif layer.pos_encoding == "sinusoidal"
+    else(layer.pos_encoding == "sinusoidal")
       pos_enc = sinusoidal_forward(layer.pos, x.rows)
       x = ml.tensor.add(x, pos_enc)
-    elseif layer.pos_encoding == "learned"
+    else(layer.pos_encoding == "learned")
       positions = {}
       for i = 0, x.rows - 1
         positions[positions:len() + 1] = i

@@ -27,7 +27,7 @@ seen = 0
 for name, score in scores
   if name == "ada"
     score = score + 1
-  elseif name == "lua"
+  else(name == "lua")
     score = score + 2
   seen = seen + 1
 

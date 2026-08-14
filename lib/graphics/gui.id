@@ -98,7 +98,7 @@ button: bool = (state: any, label: str)
   # Draw
   if state.active_item == id and hover
     gui_draw_rect(state, x, y, w, h, { r = 0.3, g = 0.3, b = 0.8, a = 1 })
-  elseif hover
+  else(hover)
     gui_draw_rect(state, x, y, w, h, { r = 0.4, g = 0.4, b = 0.4, a = 1 })
   else
     gui_draw_rect(state, x, y, w, h, { r = 0.2, g = 0.2, b = 0.2, a = 1 })
@@ -178,7 +178,7 @@ text_input: str = (state: any, label: str, text: str)
   if state.mouse_pressed
     if x <= state.mouse_x and state.mouse_x <= x + w and y <= state.mouse_y and state.mouse_y <= y + h
       state.active_item = id
-    elseif state.active_item == id
+    else(state.active_item == id)
       state.active_item = nil
 
   # Draw background

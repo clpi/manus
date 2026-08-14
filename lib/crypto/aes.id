@@ -561,7 +561,7 @@ key_expansion: any = (key: any, key_len: i64)
   if key_len == 16
     nk = 4
     nr = 10
-  elseif key_len == 24
+  else(key_len == 24)
     nk = 6
     nr = 12
   else
@@ -586,7 +586,7 @@ if i % nk == 0
     SBOX[temp[4] + 1],
     SBOX[temp[1] + 1]
   }
-elseif nk > 6 and i % nk == 4
+else(nk > 6 and i % nk == 4)
   # SubWord only for AES-256
   temp = {
     SBOX[temp[1] + 1],
@@ -627,16 +627,16 @@ aes_inv_shift_rows: void = (state: any)
   state[9] = state[5]
   state[5] = state[1]
   state[1] = temp
-  
-# Row 2: shift right by 2
+
+  # Row 2: shift right by 2
   temp = state[2]
   state[2] = state[10]
   state[10] = temp
   temp = state[6]
   state[6] = state[14]
   state[14] = temp
-  
-# Row 3: shift right by 3
+
+  # Row 3: shift right by 3
   temp = state[3]
   state[3] = state[7]
   state[7] = state[11]
@@ -664,16 +664,16 @@ aes_shift_rows: void = (state: any)
   state[5] = state[9]
   state[9] = state[13]
   state[13] = temp
-  
-# Row 2: shift left by 2
+
+  # Row 2: shift left by 2
   temp = state[2]
   state[2] = state[10]
   state[10] = temp
   temp = state[6]
   state[6] = state[14]
   state[14] = temp
-  
-# Row 3: shift left by 3
+
+  # Row 3: shift left by 3
   temp = state[15]
   state[15] = state[11]
   state[11] = state[7]
@@ -771,8 +771,8 @@ state
 cbc_encrypt: any = (plaintext: any, key: any, iv: any)
   key_len = key:len()
   expanded = key_expansion(key, key_len)
-  
-# PKCS7 padding
+
+  # PKCS7 padding
   pad_len = 16 - plaintext:len() % 16
   padded = {}
   for i = 1, plaintext:len()

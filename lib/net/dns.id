@@ -87,7 +87,7 @@ name_decode: any = (data: any, pos: i64)
     if len == 0
       pos = pos + 1
       break
-    elseif len & 192 == 192
+    else(len & 192 == 192)
       if not jumped
         original_pos = original_pos + 2
       pointer = (len & 63) << 8 | data[pos + 1]
@@ -149,7 +149,7 @@ record_decode: any = (data: any, pos: i64)
   rdata = nil
   if rtype == A and rdlength == 4
     rdata = to(str)(data[pos]) .. "." .. to(str)(data[pos + 1]) .. "." .. to(str)(data[pos + 2]) .. "." .. to(str)(data[pos + 3])
-  elseif rtype == AAAA and rdlength == 16
+  else(rtype == AAAA and rdlength == 16)
     parts = {}
     i = 0
     while i < 16
@@ -158,17 +158,17 @@ record_decode: any = (data: any, pos: i64)
       parts[parts:len() + 1] = "%02x%02x":format(hi, lo)
       i = i + 2
     rdata = parts:concat(":")
-  elseif rtype == CNAME or rtype == NS or rtype == PTR
+  else(rtype == CNAME or rtype == NS or rtype == PTR)
     cname = name_decode(data, pos)
     rdata = cname.name
-  elseif rtype == MX
+  else(rtype == MX)
     preference = data[pos] << 8 | data[pos + 1]
     exchange = name_decode(data, pos + 2)
     rdata = {
       preference = preference,
       exchange = exchange.name
     }
-  elseif rtype == TXT
+  else(rtype == TXT)
     txt_len = data[pos]
     txt = ""
     i = 1
@@ -176,7 +176,7 @@ record_decode: any = (data: any, pos: i64)
       txt = txt .. data[pos + i]:char()
       i = i + 1
     rdata = txt
-  elseif rtype == SRV
+  else(rtype == SRV)
     priority = data[pos] << 8 | data[pos + 1]
     weight = data[pos + 2] << 8 | data[pos + 3]
     port = data[pos + 4] << 8 | data[pos + 5]

@@ -102,7 +102,7 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
         point = reflected,
         value = rval
       }
-    elseif rval < best.value
+    else(rval < best.value)
       expanded = {}
       i = 1
       while i <= n
@@ -180,7 +180,7 @@ grid: any = (f: any, ranges: any, steps: i64)
       if value < bestv
         bestv = value
         best = params
-  elseif names:len() == 2
+  else(names:len() == 2)
     for v1 in g[names[1]]
       for v2 in g[names[2]]
         params = {

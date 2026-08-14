@@ -16,7 +16,7 @@ parse: any = (url: str)
   rest = url
   if rest:sub(1, 7) == "http://"
     rest = rest:sub(8)
-  elseif rest:sub(1, 8) == "https://"
+  else(rest:sub(1, 8) == "https://")
     scheme = "https"
     rest = rest:sub(9)
   default = 80

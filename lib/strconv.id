@@ -48,7 +48,7 @@ format_float: str = (v: any, fmt: str, prec: any)
       "%e":format(v)
     else
       "%." .. prec:to(str) .. "e":format(v)
-  elseif fmt == "f"
+  else(fmt == "f")
     if prec < 0
       "%f":format(v)
     else
@@ -72,14 +72,14 @@ parse_int: any = (s: str, base: any)
   if s:sub(1, 1) == "-"
     neg = true
     s = s:sub(2)
-  elseif s:sub(1, 1) == "+"
+  else(s:sub(1, 1) == "+")
     s = s:sub(2)
   if base == nil or base == 0
     base = 10
     if s:sub(1, 2) == "0x" or s:sub(1, 2) == "0X"
       base = 16
       s = s:sub(3)
-    elseif s:sub(1, 1) == "0" and s:len() > 1
+    else(s:sub(1, 1) == "0" and s:len() > 1)
       base = 8
       s = s:sub(2)
   if base < 2 or base > 36
@@ -116,7 +116,7 @@ parse_float: any = (s: str)
   if s:sub(1, 1) == "-"
     neg = true
     s = s:sub(2)
-  elseif s:sub(1, 1) == "+"
+  else(s:sub(1, 1) == "+")
     s = s:sub(2)
   # match numeric pattern: digits . digits [eE [+-] digits]
   # Use Lua pattern to validate
@@ -156,15 +156,15 @@ quote: str = (s: str)
     b = s:byte(i)
     if ch == "\\"
       out[out:len() + 1] = "\\\\"
-    elseif ch == "\""
+    else(ch == "\"")
       out[out:len() + 1] = "\\\""
-    elseif ch == "\n"
+    else(ch == "\n")
       out[out:len() + 1] = "\\n"
-    elseif ch == "\r"
+    else(ch == "\r")
       out[out:len() + 1] = "\\r"
-    elseif ch == "\t"
+    else(ch == "\t")
       out[out:len() + 1] = "\\t"
-    elseif b < 32
+    else(b < 32)
       out[out:len() + 1] = "\\x%02X":format(b)
     else
       out[out:len() + 1] = ch
@@ -192,17 +192,17 @@ unquote: str = (s: str)
       nxt = inner:sub(i + 1, i + 1)
       if nxt == "n"
         out[out:len() + 1] = "\n"
-      elseif nxt == "t"
+      else(nxt == "t")
         out[out:len() + 1] = "\t"
-      elseif nxt == "r"
+      else(nxt == "r")
         out[out:len() + 1] = "\r"
-      elseif nxt == "\\"
+      else(nxt == "\\")
         out[out:len() + 1] = "\\"
-      elseif nxt == "\""
+      else(nxt == "\"")
         out[out:len() + 1] = "\""
-      elseif nxt == "'"
+      else(nxt == "'")
         out[out:len() + 1] = "'"
-      elseif nxt == "0"
+      else(nxt == "0")
         out[out:len() + 1] = 0:char()
       else
         out[out:len() + 1] = nxt

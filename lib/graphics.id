@@ -72,7 +72,7 @@ color_to_hsv: any = (c: any)
       h = (g - b) / d
       if g < b
         h = h + 6
-    elseif max_val == g
+    else(max_val == g)
       h = (b - r) / d + 2
     else
       h = (r - g) / d + 4

@@ -134,15 +134,15 @@ optimizer_step: void = (opt: any, params: any, grads: any)
 
   if opt.type == "sgd"
     step_sgd(opt, params, grads)
-  elseif opt.type == "adam"
+  else(opt.type == "adam")
     step_adam(opt, params, grads)
-  elseif opt.type == "adamw"
+  else(opt.type == "adamw")
     step_adamw(opt, params, grads)
-  elseif opt.type == "adagrad"
+  else(opt.type == "adagrad")
     step_adagrad(opt, params, grads)
-  elseif opt.type == "rmsprop"
+  else(opt.type == "rmsprop")
     step_rmsprop(opt, params, grads)
-  elseif opt.type == "lamb"
+  else(opt.type == "lamb")
     step_lamb(opt, params, grads)
 
 step_sgd: void = (opt: any, params: any, grads: any)
@@ -359,25 +359,25 @@ scheduler_get_lr: f64 = (scheduler: any)
   if scheduler.type == "step"
     epochs = step / scheduler.step_size:floor()
     return scheduler.initial_lr * scheduler.gamma:pow(epochs)
-  elseif scheduler.type == "exponential"
+  else(scheduler.type == "exponential")
 
     return scheduler.initial_lr * scheduler.gamma:pow(step)
-  elseif scheduler.type == "cosine"
+  else(scheduler.type == "cosine")
 
     t = step / scheduler.T_max
     return scheduler.eta_min + 0.5 * (scheduler.initial_lr - scheduler.eta_min) * (1 + math.pi * t:cos())
-  elseif scheduler.type == "warmup_cosine"
+  else(scheduler.type == "warmup_cosine")
 
     if step < scheduler.warmup_steps
       return scheduler.peak_lr * step / scheduler.warmup_steps
     progress = (step - scheduler.warmup_steps) / (scheduler.total_steps - scheduler.warmup_steps)
     return scheduler.min_lr + 0.5 * (scheduler.peak_lr - scheduler.min_lr) * (1 + math.pi * progress:cos())
-  elseif scheduler.type == "warmup_constant"
+  else(scheduler.type == "warmup_constant")
 
     if step < scheduler.warmup_steps
       return scheduler.peak_lr * step / scheduler.warmup_steps
     return scheduler.peak_lr
-  elseif scheduler.type == "one_cycle"
+  else(scheduler.type == "one_cycle")
 
     div = scheduler.total_steps * scheduler.pct_start
     if step <= div
@@ -414,7 +414,7 @@ clip_grad_value: void = (grads: any, max_value: f64)
     for j = 1, g.size
       if g.data[j] > max_value
         g.data[j] = max_value
-      elseif g.data[j] < -max_value
+      else(g.data[j] < -max_value)
         g.data[j] = -max_value
 
 # ═══════════════════════════════════════════════════════════════

@@ -75,16 +75,16 @@ pool_acquire: any = (pool: any)
     pool.available[pool:len().available] = nil
     pool.in_use = pool.in_use + 1
     return conn
-  
-# Create new connection if under limit
+
+  # Create new connection if under limit
   if pool.total < pool.config.max_connections
     conn = connection_new(pool.config)
     if conn
       pool.total = pool.total + 1
       pool.in_use = pool.in_use + 1
       return conn
-  
-# pool exhausted
+
+  # pool exhausted
   nil
 
 pool_release: void = (pool: any, conn: any)
@@ -298,98 +298,98 @@ delete: any = (q: any, table: str)
 build: any = (q: any)
   parts = {}
   params = {}
-  
+
 if q.type == "select"
-    # SELECT
-    if q:len().columns == 0
-      parts[parts:len() + 1] = "SELECT *"
-    else
-      parts[parts:len() + 1] = "SELECT " .. q.columns:concat(", ")
-    
-# FROM
-    if q.table != ""
-      parts[parts:len() + 1] = "FROM " .. q.table
-    
-# JOINs
-    for join in q.joins
-      parts[parts:len() + 1] = join.type .. " JOIN " .. join.table .. " ON " .. join.condition
-    
-# WHERE
-    if q:len().where > 0
-      parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
-      for p in q.params
-        params[params:len() + 1] = p
-    
-# GROUP BY
-    if q:len().group_by > 0
-      parts[parts:len() + 1] = "GROUP BY " .. q.group_by:concat(", ")
-    
-# HAVING
-    if q:len().having > 0
-      parts[parts:len() + 1] = "HAVING " .. q.having:concat(" AND ")
-    
-# ORDER BY
-    if q:len().order_by > 0
-      order_parts = {}
-      for o in q.order_by
-        order_parts[order_parts:len() + 1] = o.column .. " " .. o.direction
-      parts[parts:len() + 1] = "ORDER BY " .. order_parts:concat(", ")
-    
-# LIMIT
-    if has(.limit)(q)
-      parts[parts:len() + 1] = "LIMIT " .. q.limit:to(str)
-    
-# OFFSET
-    if has(.offset)(q)
-      parts[parts:len() + 1] = "OFFSET " .. q.offset:to(str)
-  elseif q.type == "insert"
-    
-# INSERT INTO
-    parts[parts:len() + 1] = "INSERT INTO " .. q.table
-    
-# Columns and values
-    columns = {}
-    values = {}
-    placeholders = {}
-    for col, val in q.data
-      columns[columns:len() + 1] = col
-      values[values:len() + 1] = val
-      placeholders[placeholders:len() + 1] = "$" .. to(str)(params:len() + 1)
-      params[params:len() + 1] = val
-    parts[parts:len() + 1] = "(" .. columns:concat(", ") .. ")"
-    parts[parts:len() + 1] = "VALUES (" .. placeholders:concat(", ") .. ")"
-  elseif q.type == "update"
-    
-# UPDATE
-    parts[parts:len() + 1] = "UPDATE " .. q.table
-    
-# SET
-    set_parts = {}
-    for col, val in q.data
-      set_parts[set_parts:len() + 1] = col .. " = $" .. to(str)(params:len() + 1)
-      params[params:len() + 1] = val
-    parts[parts:len() + 1] = "SET " .. set_parts:concat(", ")
-    
-# WHERE
-    if q:len().where > 0
-      parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
-      for p in q.params
-        params[params:len() + 1] = p
-  elseif q.type == "delete"
-    
-# DELETE
-    parts[parts:len() + 1] = "DELETE FROM " .. q.table
-    
-# WHERE
-    if q:len().where > 0
-      parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
-      for p in q.params
-        params[params:len() + 1] = p
-  
+  # SELECT
+  if q:len().columns == 0
+    parts[parts:len() + 1] = "SELECT *"
+  else
+    parts[parts:len() + 1] = "SELECT " .. q.columns:concat(", ")
+
+  # FROM
+  if q.table != ""
+    parts[parts:len() + 1] = "FROM " .. q.table
+
+  # JOINs
+  for join in q.joins
+    parts[parts:len() + 1] = join.type .. " JOIN " .. join.table .. " ON " .. join.condition
+
+  # WHERE
+  if q:len().where > 0
+    parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
+    for p in q.params
+      params[params:len() + 1] = p
+
+  # GROUP BY
+  if q:len().group_by > 0
+    parts[parts:len() + 1] = "GROUP BY " .. q.group_by:concat(", ")
+
+  # HAVING
+  if q:len().having > 0
+    parts[parts:len() + 1] = "HAVING " .. q.having:concat(" AND ")
+
+  # ORDER BY
+  if q:len().order_by > 0
+    order_parts = {}
+    for o in q.order_by
+      order_parts[order_parts:len() + 1] = o.column .. " " .. o.direction
+    parts[parts:len() + 1] = "ORDER BY " .. order_parts:concat(", ")
+
+  # LIMIT
+  if has(.limit)(q)
+    parts[parts:len() + 1] = "LIMIT " .. q.limit:to(str)
+
+  # OFFSET
+  if has(.offset)(q)
+    parts[parts:len() + 1] = "OFFSET " .. q.offset:to(str)
+else(q.type == "insert")
+
+  # INSERT INTO
+  parts[parts:len() + 1] = "INSERT INTO " .. q.table
+
+  # Columns and values
+  columns = {}
+  values = {}
+  placeholders = {}
+  for col, val in q.data
+    columns[columns:len() + 1] = col
+    values[values:len() + 1] = val
+    placeholders[placeholders:len() + 1] = "$" .. to(str)(params:len() + 1)
+    params[params:len() + 1] = val
+  parts[parts:len() + 1] = "(" .. columns:concat(", ") .. ")"
+  parts[parts:len() + 1] = "VALUES (" .. placeholders:concat(", ") .. ")"
+else(q.type == "update")
+
+  # UPDATE
+  parts[parts:len() + 1] = "UPDATE " .. q.table
+
+  # SET
+  set_parts = {}
+  for col, val in q.data
+    set_parts[set_parts:len() + 1] = col .. " = $" .. to(str)(params:len() + 1)
+    params[params:len() + 1] = val
+  parts[parts:len() + 1] = "SET " .. set_parts:concat(", ")
+
+  # WHERE
+  if q:len().where > 0
+    parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
+    for p in q.params
+      params[params:len() + 1] = p
+else(q.type == "delete")
+
+  # DELETE
+  parts[parts:len() + 1] = "DELETE FROM " .. q.table
+
+  # WHERE
+  if q:len().where > 0
+    parts[parts:len() + 1] = "WHERE " .. q.where:concat(" AND ")
+    for p in q.params
+      params[params:len() + 1] = p
+
 {
-    sql = parts:concat(" "),
-    params = params
-  }
+  sql = parts:concat(" "),
+  params = params
+}
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════

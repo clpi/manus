@@ -312,7 +312,7 @@ voronoi_2d: any = (x: f64, y: f64, seed: i64)
         second_min = min_dist
         min_dist = dist
         closest_cell = { x = px, y = py }
-      elseif dist < second_min
+      else(dist < second_min)
         second_min = dist
 
       dx = dx + 1

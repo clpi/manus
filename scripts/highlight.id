@@ -566,7 +566,7 @@ main: i64 = ()
           bad = bad + 1
         if i <= gl:len() and gl[i] == roleln
           nagree = nagree + 1
-        elseif i <= gl:len()
+        else(i <= gl:len())
           n: str = i:to(str)
           want: str = gl[i]
           print("  !! {src}:{n} golden mismatch")
@@ -931,7 +931,7 @@ main: i64 = ()
   if fresh == ""
     print("    !! the generator produced nothing")
     bad = bad + 1
-  elseif fresh == tracked
+  else(fresh == tracked)
     nb: str = to(str)(tracked:len())
     print("    {scm}")
     print("    regenerates byte-identically, {nb} bytes")

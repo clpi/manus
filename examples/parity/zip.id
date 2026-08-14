@@ -10,8 +10,8 @@ NESTED = @comp.map("q", fun(seed)
     p.a .. p.b .. "\n"
   end)
 end)
-parity: str = ()
-  @comp.zip("a|b", "1|2", fun(p)
-    p.a .. p.b .. "\n"
-  end)
+parity: str = {}
+@comp.zip("a|b", "1|2", fun(p)
+  p.a .. p.b .. "\n"
+end)
 BLOCK = parity()

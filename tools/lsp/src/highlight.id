@@ -681,13 +681,13 @@ wordrole: str = (line: str, i: i64, word: str, descpos: bool, prev: i64, inbrace
   nxt: i64 = ahead(line, i + word:len())
   if holds(keywords, word)
     out = "kk"
-  elseif holds(literals, word)
+  else(holds(literals, word))
     out = "yy"
-  elseif holds(shapes, word)
+  else(holds(shapes, word))
     out = "dh"
-  elseif holds(worlds, word)
+  else(holds(worlds, word))
     out = "ww"
-  elseif descpos
+  else(descpos)
     # ON A DESCRIPTOR EDGE, and this arm must outrank the invoke arm below.
     # Both are "the previous byte was a colon"; only the EDGE separates
     # them, and `descpos` is exactly the bit the copula set. Ordered the
@@ -695,19 +695,19 @@ wordrole: str = (line: str, i: i64, word: str, descpos: bool, prev: i64, inbrace
     # called name because a colon preceded it — a lexer's answer, and the
     # corpus caught it. `x: seq(entry)` names a shape and `seq` is its head.
     out = "dh"
-  elseif prev == 58
+  else(prev == 58)
     # reached through an INVOKE `:`; the receiver is to the left. §0.5.
     out = "fc"
-  elseif nxt == 123
+  else(nxt == 123)
     # immediately before `{`: rung (a) of the CONSTRUCTOR LADDER, §0.4 —
     # `desc{…}`. The name heads a descriptor, it is not a value.
     out = "dh"
-  elseif inbrace and nxt == 61
+  else(inbrace and nxt == 61)
     # a name inside a descriptor brace, bound: that is a SLOT declaration,
     # §0.3's case-set inline at the field. It names part of a shape, so it
     # is a descriptor with the slot card, not a place.
     out = "ds"
-  elseif nxt == 40
+  else(nxt == 40)
     # immediately before `(`: an application. §0.5 — the trie declares
     # operation-first and the value calls subject-first, and BOTH spellings
     # put the operation immediately before its parenthesis.
@@ -791,12 +791,12 @@ scan: str = (line: str, surface: str)
     if blank(b)
       out = "{out}ls"
       i = i + 1
-    elseif b == 45 and nb == 45
+    else(b == 45 and nb == 45)
       # `--` to end of line. FAINT, never absent (H-6).
       piece = pairof(mcode, kprose, line:len() - i + 1)
       out = out .. piece
       i = line:len() + 1
-    elseif b == 34 or b == 39
+    else(b == 34 or b == 39)
       # BOTH quotes. `'x'` used to fall through to the arithmetic arm and
       # render as operator/place/operator — a string read as two products
       # around a variable. grammar.md §1 gives `string` both spellings and
@@ -808,7 +808,7 @@ scan: str = (line: str, surface: str)
       out = out .. piece
       head = false
       i = j + 1
-    elseif b == 59
+    else(b == 59)
       # THE SEMICOLON DOES NOT EXIST. In idol it names nothing,
       # so it takes no role — it diagnoses. In dnir it is metadata
       # notation, which is a comment, and that is the only reading left.
@@ -820,7 +820,7 @@ scan: str = (line: str, surface: str)
         out = "{out}!!"
         head = false
         i = i + 1
-    elseif b == 58
+    else(b == 58)
       # THE FIRST PROOF, decided by grammar.md R1 (NORMATIVE):
       # INVOKE always takes an argument group, IS never does. So a `:` is
       # an invoke exactly when a name follows it immediately AND that name
@@ -841,7 +841,7 @@ scan: str = (line: str, surface: str)
           descpos = true
       head = false
       i = i + 1
-    elseif b == 124
+    else(b == 124)
       # THE SECOND PROOF, and it reads the bits the earlier arms set.
       # On a descriptor edge it is the UNION. Off the edge §0g gives it
       # two readings and the ruling decides neither: "channels = stream
@@ -854,22 +854,22 @@ scan: str = (line: str, surface: str)
       # green. gap[078]: the ruling did not reach this span.
       if descpos or surface == "ebnf"
         out = "{out}ul"
-      elseif streaming
+      else(streaming)
         out = "{out}bm"
       else
         out = "{out}!!"
       head = false
       i = i + 1
-    elseif b == 61
+    else(b == 61)
       if surface == "ebnf"
         out = "{out}ca"
         i = i + 1
-      elseif nb == 61
+      else(nb == 61)
         # §0g: `==` is a RELATION query, not a binding.
         piece = pairof(ocode, krel, 2)
         out = out .. piece
         i = i + 2
-      elseif pb == 43 or pb == 45 or pb == 42 or pb == 47
+      else(pb == 43 or pb == 45 or pb == 42 or pb == 47)
         out = "{out}ou"
         i = i + 1
       else
@@ -879,7 +879,7 @@ scan: str = (line: str, surface: str)
         descpos = false
         i = i + 1
       head = false
-    elseif b == 37 and surface == "dnir"
+    else(b == 37 and surface == "dnir")
       # BEFORE the arithmetic arm, which also owns byte 37. Tested after
       # it, every dnir place read as a modulo followed by a literal — a
       # plausible-looking answer, which is the kind this corpus exists to
@@ -889,11 +889,11 @@ scan: str = (line: str, surface: str)
       out = out .. piece
       head = false
       i = i + w:len() + 1
-    elseif b == 43 or b == 42 or b == 47 or b == 37
+    else(b == 43 or b == 42 or b == 47 or b == 37)
       card: str = "a"
       if nb == 61
         card = "u"
-      elseif b == 42 and descpos
+      else(b == 42 and descpos)
         # §0g unit `*`: on a descriptor edge a product is a UNIT, not
         # arithmetic.
         card = "n"
@@ -901,16 +901,16 @@ scan: str = (line: str, surface: str)
       out = out .. piece
       head = false
       i = i + 1
-    elseif b == 60 or b == 62
+    else(b == 60 or b == 62)
       out = "{out}or"
       head = false
       i = i + 1
-    elseif b == 45 and surface == "dnir" and nb == 62
+    else(b == 45 and surface == "dnir" and nb == 62)
       piece = pairof(ocode, kflow, 2)
       out = out .. piece
       head = false
       i = i + 2
-    elseif b == 64
+    else(b == 64)
       # §0.2 the @ DYAD. Postfix on a word is an ANCHOR; otherwise it is
       # the bare innermost descriptor.
       card: str = "d"
@@ -920,7 +920,7 @@ scan: str = (line: str, surface: str)
       out = out .. piece
       head = false
       i = i + 1
-    elseif b == 46
+    else(b == 46)
       w: str = wordat(line, i + 1)
       if walkat(pb)
         # §0g walk-writes: a walk on the left of a binding WRITES.
@@ -936,7 +936,7 @@ scan: str = (line: str, surface: str)
           card = "s"
         piece = pairof(vcode, card, w:len() + 1)
         out = out .. piece
-      elseif caseat(pb)
+      else(caseat(pb))
         piece = pairof(ycode, kcase, w:len() + 1)
         out = out .. piece
       else
@@ -944,13 +944,13 @@ scan: str = (line: str, surface: str)
         out = out .. piece
       head = false
       i = i + w:len() + 1
-    elseif b == 35 and surface == "asm"
+    else(b == 35 and surface == "asm")
       w: str = wordat(line, i + 1)
       piece = pairof(ncode, kimm, w:len() + 1)
       out = out .. piece
       head = false
       i = i + w:len() + 1
-    elseif digit(b)
+    else(digit(b))
       j: i64 = i
       while j <= line:len() and (digit(line:byte(j)) or line:byte(j) == 46)
         j = j + 1
@@ -958,7 +958,7 @@ scan: str = (line: str, surface: str)
       out = out .. piece
       head = false
       i = j
-    elseif heady(b)
+    else(heady(b))
       w: str = wordat(line, i)
       rc: str = wordrole(line, i, w, descpos, pb, braces > 0)
       if surface == "dnir" and (head or pb == 61)
@@ -970,7 +970,7 @@ scan: str = (line: str, surface: str)
       if surface == "asm"
         if head
           rc = "fo"
-        elseif machine(w)
+        else(machine(w))
           rc = "pr"
       if surface == "ebnf" and not holds(keywords, w)
         # §0g per-language leftovers: an ebnf leftover is a NONTERMINAL
@@ -993,7 +993,7 @@ scan: str = (line: str, surface: str)
       out = out .. piece
       head = false
       i = i + w:len()
-    elseif b == 40
+    else(b == 40)
       depth = depth + 1
       # §0g: level parens vs parameter parens vs grouping. A LEVEL is the
       # marked form and `laddered` is the mark, so on a laddered line the
@@ -1006,7 +1006,7 @@ scan: str = (line: str, surface: str)
         if level and groups == 0
           card = "t"
         groups = groups + 1
-      elseif pb == 61 and level
+      else(pb == 61 and level)
         card = "p"
       # the closer must answer what the opener answered, so the card is
       # pushed rather than recomputed; recomputing it read `)` as a level
@@ -1017,7 +1017,7 @@ scan: str = (line: str, surface: str)
       descpos = false
       head = false
       i = i + 1
-    elseif b == 41
+    else(b == 41)
       card: str = "g"
       if opened:len() > 0
         card = opened:sub(opened:len(), opened:len())
@@ -1027,7 +1027,7 @@ scan: str = (line: str, surface: str)
       out = out .. piece
       head = false
       i = i + 1
-    elseif b == 123 or b == 125
+    else(b == 123 or b == 125)
       if b == 123
         braces = braces + 1
       else
@@ -1035,7 +1035,7 @@ scan: str = (line: str, surface: str)
       out = "{out}ld"
       head = false
       i = i + 1
-    elseif b == 91
+    else(b == 91)
       # §4: SPACE WALK is its OWN ROLE, descriptor-tinted — trie
       # navigation, not a bracket. `to[str]` walks descriptor space;
       # `xs[0]` retrieves from a table by a value key. What separates them
@@ -1051,7 +1051,7 @@ scan: str = (line: str, surface: str)
       card: str = kbad
       if holds(shapes, inner)
         card = "w"
-      elseif inner:len() > 0 and (digit(inner:byte(1)) or inner:byte(1) == 34)
+      else(inner:len() > 0 and (digit(inner:byte(1)) or inner:byte(1) == 34))
         card = "i"
       role: str = rcode
       if card == kbad
@@ -1061,7 +1061,7 @@ scan: str = (line: str, surface: str)
       out = out .. piece
       head = false
       i = i + 1
-    elseif b == 93
+    else(b == 93)
       # the closer answers what the opener answered, for the reason the
       # paren closer does: recomputing it reads the byte AFTER the group.
       card: str = kbad
@@ -1075,7 +1075,7 @@ scan: str = (line: str, surface: str)
       out = out .. piece
       head = false
       i = i + 1
-    elseif b == 44
+    else(b == 44)
       # §0g: the comma STRATIFIES a group; it is not decoration.
       out = "{out}lx"
       head = false
@@ -1099,7 +1099,7 @@ machine: bool = (w: str)
   out: bool = false
   if w == "sp" or w == "lr" or w == "pc" or w == "fp"
     out = true
-  elseif w:len() >= 2 and (w:byte(1) == 120 or w:byte(1) == 119) and digit(w:byte(2))
+  else(w:len() >= 2 and (w:byte(1) == 120 or w:byte(1) == 119) and digit(w:byte(2)))
     out = true
   out
 
@@ -1160,7 +1160,7 @@ why: str = (key: str)
     out = "{out}  rule     {cite}\n"
     out = "{out}  dnir     dnir.none\n"
     out = "{out}  why      G-TOTAL forbids a default here; the span diagnoses\n"
-  elseif r != ""
+  else(r != "")
     nm: str = field(r, 1)
     cd: str = field(r, 2)
     hu: str = field(r, 3)

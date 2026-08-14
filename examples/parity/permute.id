@@ -15,8 +15,8 @@ NESTED = @comp.map("q", fun(seed)
     ordered.name .. "\n"
   end)
 end)
-parity: str = ()
-  @comp.permute("Has1", fun(ordered)
-    ordered.name .. "\n"
-  end)
+parity: str = {}
+@comp.permute("Has1", fun(ordered)
+  ordered.name .. "\n"
+end)
 BLOCK = parity()

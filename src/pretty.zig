@@ -683,6 +683,18 @@ pub const PrettyPrinter = struct {
                 try self.printBlock(&is.then);
                 for (is.elseifs) |ei| {
                     try self.nl();
+                    // `elseif` is a Lua keyword; the canonical face is
+                    // `else(condition)`, proved input-by-input against the
+                    // hand-nested form in idol-native/gate/control.id. The
+                    // printer was re-emitting `elseif` after every conversion,
+                    // so 743 of them kept coming back.
+                    if (self.mode == .idol and self.canonical) {
+                        try self.write("else(");
+                        try self.printExpr(ei.cond, 0);
+                        try self.write(")");
+                        try self.printBlock(&ei.body);
+                        continue;
+                    }
                     try self.write("elseif ");
                     try self.printExpr(ei.cond, 0);
                     if (self.mode == .lua or (self.mode == .idol and !self.canonical)) {

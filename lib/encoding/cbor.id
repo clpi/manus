@@ -54,10 +54,10 @@ encode_number: void = (n: f64, buf: any)
   if n >= 0 and n:floor() == n and n < 18446744073709552000.0
     # Unsigned integer
     encode_uint(MT_UINT, n:floor(), buf)
-  elseif n < 0 and n:floor() == n and n >= -18446744073709552000.0
+  else(n < 0 and n:floor() == n and n >= -18446744073709552000.0)
     # Negative integer: store as -1 - n
     encode_uint(MT_NEGINT, -1 - n:floor(), buf)
-  elseif n:floor() == n and n:abs() < 2 ^ 53
+  else(n:floor() == n and n:abs() < 2 ^ 53)
     # Large integer — encode as 8-byte float
     encode_float64(n, buf)
   else
@@ -67,14 +67,14 @@ encode_number: void = (n: f64, buf: any)
 encode_uint: void = (major: i64, value: i64, buf: any)
   if value < 24
     buf[buf:len() + 1] = major * 32 + value:char()
-  elseif value <= 255
+  else(value <= 255)
     buf[buf:len() + 1] = major * 32 + 24:char()
     buf[buf:len() + 1] = value:char()
-  elseif value <= 65535
+  else(value <= 65535)
     buf[buf:len() + 1] = major * 32 + 25:char()
     buf[buf:len() + 1] = value / 256:floor():char()
     buf[buf:len() + 1] = value % 256:char()
-  elseif value <= 4294967295
+  else(value <= 4294967295)
     buf[buf:len() + 1] = major * 32 + 26:char()
     buf[buf:len() + 1] = value / 16777216:floor():char()
     buf[buf:len() + 1] = value / 65536:floor() % 256:char()
@@ -212,10 +212,10 @@ encode_addinfo: i64 = (n: i64)
 encode_addinfo_bytes: void = (n: i64, buf: any)
   if n >= 24 and n <= 255
     buf[buf:len() + 1] = n:char()
-  elseif n >= 256 and n <= 65535
+  else(n >= 256 and n <= 65535)
     buf[buf:len() + 1] = n / 256:floor():char()
     buf[buf:len() + 1] = n % 256:char()
-  elseif n >= 65536 and n <= 4294967295
+  else(n >= 65536 and n <= 4294967295)
     buf[buf:len() + 1] = n / 16777216:floor():char()
     buf[buf:len() + 1] = n / 65536:floor() % 256:char()
     buf[buf:len() + 1] = n / 256:floor() % 256:char()
@@ -241,25 +241,25 @@ decode_value: any = (data: str, pos: any)
     error("cbor: unexpected end of data")
   byte = data:byte(pos[1])
   pos[1] = pos[1] + 1
-  
+
 major = byte / 32:floor()
-  addinfo = byte % 32
-  
+addinfo = byte % 32
+
 if major == MT_UINT
-    return decode_uint(addinfo, data, pos)
-  if major == MT_NEGINT
-    return -1 - decode_uint(addinfo, data, pos)
-  if major == MT_BYTES
-    return decode_bytes(addinfo, data, pos)
-  if major == MT_TEXT
-    return decode_text(addinfo, data, pos)
-  if major == MT_ARRAY
-    return decode_array(addinfo, data, pos)
-  if major == MT_MAP
-    return decode_map(addinfo, data, pos)
-  if major == MT_SPECIAL
-    return decode_special(addinfo, data, pos)
-  error("cbor: unknown major type " .. major)
+  return decode_uint(addinfo, data, pos)
+if major == MT_NEGINT
+  return -1 - decode_uint(addinfo, data, pos)
+if major == MT_BYTES
+  return decode_bytes(addinfo, data, pos)
+if major == MT_TEXT
+  return decode_text(addinfo, data, pos)
+if major == MT_ARRAY
+  return decode_array(addinfo, data, pos)
+if major == MT_MAP
+  return decode_map(addinfo, data, pos)
+if major == MT_SPECIAL
+  return decode_special(addinfo, data, pos)
+error("cbor: unknown major type " .. major)
 
 decode_uint: i64 = (addinfo: i64, data: str, pos: any)
   if addinfo < 24

@@ -29,9 +29,9 @@ decode: any = (data: str)
     if trimmed:sub(1, 11) == "-----BEGIN "
       typ = trimmed:sub(12, trimmed:len() - 5)
       begin_marker = trimmed
-    elseif trimmed:sub(1, 9) == "-----END "
+    else(trimmed:sub(1, 9) == "-----END ")
       end_marker = trimmed
-    elseif begin_marker != nil and end_marker == nil
+    else(begin_marker != nil and end_marker == nil)
       if trimmed:len() > 0
         b64_lines[b64_lines:len() + 1] = trimmed
   if typ == nil

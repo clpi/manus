@@ -35,7 +35,7 @@ clean: str = (path: str)
   for _, part in parts
     if part == ".."
       stack:remove()
-    elseif part != "." and part != ""
+    else(part != "." and part != "")
       stack[stack:len() + 1] = part
   if stack:len() == 0
     return "."

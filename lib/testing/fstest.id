@@ -39,9 +39,9 @@ mapfs_seek: i64 = (f: any, offset: i64, whence: i64)
     return 0
   if whence == 0
     f.pos = offset + 1
-  elseif whence == 1
+  else(whence == 1)
     f.pos = f.pos + offset
-  elseif whence == 2
+  else(whence == 2)
     f.pos = f.data:len() + offset + 1
   if f.pos < 1
     f.pos = 1

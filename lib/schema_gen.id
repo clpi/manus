@@ -101,11 +101,11 @@ emit_json_serializers: str = (name: str, fields: any)
   for _, f in fields
     if f.type == "str"
       serialize_parts[serialize_parts:len() + 1] = "    cJSON_AddStringToObject(json, \"" .. f.name .. "\", record->" .. f.name .. ");"
-    elseif f.type == "i64"
+    else(f.type == "i64")
       serialize_parts[serialize_parts:len() + 1] = "    cJSON_AddNumberToObject(json, \"" .. f.name .. "\", (double)record->" .. f.name .. ");"
-    elseif f.type == "f64"
+    else(f.type == "f64")
       serialize_parts[serialize_parts:len() + 1] = "    cJSON_AddNumberToObject(json, \"" .. f.name .. "\", record->" .. f.name .. ");"
-    elseif f.type == "bool"
+    else(f.type == "bool")
       serialize_parts[serialize_parts:len() + 1] = "    cJSON_AddBoolToObject(json, \"" .. f.name .. "\", record->" .. f.name .. ");"
   "/* [schema_gen] to_json_" .. lower .. " */\ncJSON* to_json_" .. lower .. "(const " .. name .. "* record) {\n    cJSON* json = cJSON_CreateObject();\n" .. str_join(serialize_parts, "\n") .. "\n    return json;\n}"
 

@@ -1,7 +1,7 @@
 classify: i64 = (n: i64)
   if n < 0
     return 0 - 1
-  elseif n == 0
+  else(n == 0)
     return 0
   return 1
 main: i64 = ()

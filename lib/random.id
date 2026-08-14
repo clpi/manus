@@ -140,15 +140,15 @@ uuid_v4ish: str = ()
   while i <= 36
     if i == 9 or i == 14 or i == 19 or i == 24
       parts[i] = "-"
-    elseif i == 15
+    else(i == 15)
       parts[i] = "4"
-    elseif i == 20
+    else(i == 20)
       idx = 1:random(4)
       if idx == 1
         parts[i] = "8"
-      elseif idx == 2
+      else(idx == 2)
         parts[i] = "9"
-      elseif idx == 3
+      else(idx == 3)
         parts[i] = "a"
       else
         parts[i] = "b"

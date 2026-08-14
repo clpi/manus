@@ -16,37 +16,38 @@
 m = {}
 
 available: bool = ()
-    std.proc.exec("which zls >/dev/null 2>&1") == 0
+  std.proc.exec("which zls >/dev/null 2>&1") == 0
 
 -- One LSP round trip through `zls --stdio` via temp files. Returns a decoded
 -- table, or a table carrying `error`  -  never nil, so callers do not have to
 -- distinguish "no answer" from "no zls".
 request: any = (method: str, params: any)
-    if not available()
-        return { error = "zls not installed or not on PATH" }
-    tmpdir = string.gsub(std.proc.capture("mktemp -d 2>/dev/null"), "%s+", "")
-    if tmpdir == ""
-        return { error = "cannot create temp dir" }
-    reqf = "{tmpdir}/request.json"
-    respf = "{tmpdir}/response.json"
-    obj = { jsonrpc = "2.0", id = 1, method = method }
-    if params != nil then obj.params = params
-    std.fs.write_file(reqf, std.json.encode(obj))
-    std.proc.exec("zls --stdio < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
-    resp = std.fs.read_file(respf) or ""
-    std.proc.exec("rm -rf '" .. tmpdir .. "' 2>/dev/null")
-    if resp == ""
-        return { error = "no response from zls" }
-    std.json.decode(resp)
+  if not available()
+    return { error = "zls not installed or not on PATH" }
+  tmpdir = string.gsub(std.proc.capture("mktemp -d 2>/dev/null"), "%s+", "")
+  if tmpdir == ""
+    return { error = "cannot create temp dir" }
+  reqf = "{tmpdir}/request.json"
+  respf = "{tmpdir}/response.json"
+  obj = { jsonrpc = "2.0", id = 1, method = method }
+  if params != nil
+    obj.params = params
+  std.fs.write_file(reqf, std.json.encode(obj))
+  std.proc.exec("zls --stdio < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
+  resp = std.fs.read_file(respf) or ""
+  std.proc.exec("rm -rf '" .. tmpdir .. "' 2>/dev/null")
+  if resp == ""
+    return { error = "no response from zls" }
+  std.json.decode(resp)
 
 read_source: str = (path: str)
-    std.fs.read_file(path) or ""
+  std.fs.read_file(path) or ""
 
 fmt: str = (path: str)
-    rc = "{std.proc.exec(\"zig fmt \"}{path}{\" 2>&1\")}"
-    if rc == 0
-        return "formatted: {path}"
-    "fmt failed (exit " .. rc .. "): " .. path
+  rc = "{std.proc.exec(\"zig fmt \"}{path}{\" 2>&1\")}"
+  if rc == 0
+    return "formatted: {path}"
+  "fmt failed (exit " .. rc .. "): " .. path
 
 m.available = available
 m.request = request

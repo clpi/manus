@@ -10,7 +10,7 @@ escape: str = (s: str)
     b = s:byte(i)
     if b >= 65 and b <= 90 or b >= 97 and b <= 122 or b >= 48 and b <= 57 or b == 45 or b == 46 or b == 95 or b == 126
       out[out:len() + 1] = s:sub(i, i)
-    elseif b == 32
+    else(b == 32)
       out[out:len() + 1] = "+"
     else
       out[out:len() + 1] = "%%%02X":format(b)
@@ -48,7 +48,7 @@ unescape: str = (s: str)
       else
         out[out:len() + 1] = ch
       i = i + 3
-    elseif ch == "+"
+    else(ch == "+")
       out[out:len() + 1] = " "
       i = i + 1
     else
@@ -202,7 +202,7 @@ build: str = (u: any)
   result = result .. (u.path or "/")
   if has(.raw_query)(u) and u.raw_query != ""
     result = result .. "?" .. u.raw_query
-  elseif has(.query)(u)
+  else(has(.query)(u))
     qs = encode_query(u.query)
     if qs != ""
       result = result .. "?" .. qs
