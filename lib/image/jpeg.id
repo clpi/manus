@@ -1,4 +1,4 @@
-# std.image.jpeg — JPEG image decoder
+# image.jpeg — JPEG image decoder
 # Parses JPEG headers for real dimensions, components, and quantization tables.
 # Pixel decoding uses a simplified IDCT approximation (not full ITU-T T.81).
 
@@ -80,7 +80,7 @@ decode(data: str): any
     info = decode_header(data)
     if info == nil return nil end
     if info.width == 0 or info.height == 0 return nil end
-    img = std.image.new_rgba(std.image.rect(0, 0, info.width, info.height))
+    img = image.new_rgba(image.rect(0, 0, info.width, info.height))
 
     # Decode MCU blocks using simplified approach
     # For baseline JPEG: try to extract entropy-coded data after SOS marker
@@ -97,16 +97,16 @@ decode(data: str): any
                     r = data:byte(byte_off) or 128
                     g = data:byte(byte_off + 1) or 128
                     b = data:byte(byte_off + 2) or 128
-                    c = std.image.color.rgba(r * 257, g * 257, b * 257, 65535)
-                    std.image.img_set(img, x, y, c)
+                    c = image.color.rgba(r * 257, g * 257, b * 257, 65535)
+                    image.img_set(img, x, y, c)
                 end
             end
         else
             # No entropy data — fill with gray
             for y = 0, info.height - 1
                 for x = 0, info.width - 1
-                    c = std.image.color.rgba(32768, 32768, 32768, 65335)
-                    std.image.img_set(img, x, y, c)
+                    c = image.color.rgba(32768, 32768, 32768, 65335)
+                    image.img_set(img, x, y, c)
                 end
             end
         end
@@ -114,8 +114,8 @@ decode(data: str): any
         # No SOS marker — fill with gray
         for y = 0, info.height - 1
             for x = 0, info.width - 1
-                c = std.image.color.rgba(32768, 32768, 32768, 65335)
-                std.image.img_set(img, x, y, c)
+                c = image.color.rgba(32768, 32768, 32768, 65335)
+                image.img_set(img, x, y, c)
             end
         end
     end

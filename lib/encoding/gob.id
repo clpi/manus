@@ -1,4 +1,4 @@
-# std.encoding_gob — simple gob-like encoding (mirrors Go's encoding/gob)
+# encoding_gob — simple gob-like encoding (mirrors Go's encoding/gob)
 # Provides a simple binary serialization format for Duo tables.
 # This is NOT Go's gob format; it is a Duo-specific binary serializer
 # that can encode tables, arrays, strings, numbers, booleans, and nil.

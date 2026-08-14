@@ -68,10 +68,10 @@ judgeout(name: str, ctext: str, dtext: str): void
 # `ls` rather than a glob: an empty directory must yield nothing, not a literal
 # unexpanded pattern treated as a filename.
 listfiles(dir: str): any
-    out = std.script.capture("ls " .. dir .. "/*.id 2>/dev/null")
+    out = script.capture("ls " .. dir .. "/*.id 2>/dev/null")
     files = {}
     for i, line in out:split("\n")
-        t = std.script.chomp(line)
+        t = script.chomp(line)
         if t != ""
             files[files:len() + 1] = t
         end
@@ -80,11 +80,11 @@ listfiles(dir: str): any
 end
 
 stem(path: str): str
-    std.script.chomp(std.script.capture("basename " .. path .. " .id"))
+    script.chomp(script.capture("basename " .. path .. " .id"))
 end
 
 compileok(idol: str, src: str, backend: str, out: str): bool
-    std.script.run(idol .. " compile " .. src .. " --backend=" .. backend
+    script.run(idol .. " compile " .. src .. " --backend=" .. backend
         .. " --emit exe -o " .. out .. " >/dev/null 2>&1") == 0
 end
 

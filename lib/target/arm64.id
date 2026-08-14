@@ -1,4 +1,4 @@
-# std.target.arm64 — the ARM64 instruction set as DATA.
+# target.arm64 — the ARM64 instruction set as DATA.
 #
 # The descent model makes one structural claim about the descent:
 #

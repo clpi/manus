@@ -1,4 +1,4 @@
-# std.crypto.tls — TLS client via OpenSSL (@ffi bindings)
+# crypto.tls — TLS client via OpenSSL (@ffi bindings)
 # Provides TLS/SSL connections over TCP sockets.
 # Link with: duo compile myapp.id #link ssl crypto
 
@@ -90,7 +90,7 @@ dial(host: str, port: i64, config: any): any
     if config == nil config = new_config() end
 
     # Establish TCP connection first
-    fd = std.net.connect(host, port)
+    fd = net.connect(host, port)
     if fd == nil
         return nil, "TCP connection failed"
     end
@@ -99,7 +99,7 @@ dial(host: str, port: i64, config: any): any
     method = tls_client_method()
     ctx = ssl_ctx_new(method)
     if ctx == nil
-        std.net.close(fd)
+        net.close(fd)
         return nil, "Failed to create SSL context"
     end
 
@@ -110,7 +110,7 @@ dial(host: str, port: i64, config: any): any
     ssl = ssl_new(ctx)
     if ssl == nil
         ssl_ctx_free(ctx)
-        std.net.close(fd)
+        net.close(fd)
         return nil, "Failed to create SSL connection"
     end
 
@@ -127,7 +127,7 @@ dial(host: str, port: i64, config: any): any
     if ret != 1
         ssl_free(ssl)
         ssl_ctx_free(ctx)
-        std.net.close(fd)
+        net.close(fd)
         return nil, "TLS handshake failed"
     end
 
@@ -168,7 +168,7 @@ close(conn: any): void
         conn.ctx = nil
     end
     if has(.fd)(conn)
-        std.net.close(conn.fd)
+        net.close(conn.fd)
         conn.fd = nil
     end
 end
@@ -179,7 +179,7 @@ end
 
 https_get(url: str): any
     # Parse URL
-    parsed = std.net.parse_url(url)
+    parsed = net.parse_url(url)
     host = parsed.host
     port = parsed.port
     path = parsed.path

@@ -1,4 +1,4 @@
-# std.ml.quant — Quantization helpers (f16, int8, int4, GPTQ-style)
+# ml.quant — Quantization helpers (f16, int8, int4, GPTQ-style)
 
 # ═══════════════════════════════════════════════════════════════
 # Symmetric INT8 Quantization

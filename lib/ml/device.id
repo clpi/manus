@@ -1,4 +1,4 @@
-# std.ml.device — Device selection (runtime table + compile-time @device hints)
+# ml.device — Device selection (runtime table + compile-time @device hints)
 #
 # Use `@device(.auto)` on functions for backend selection at compile time.
 # This module tracks runtime placement for tensors and pipelines.

@@ -1,4 +1,4 @@
-# std.encoding.cbor — CBOR (RFC 7049) encoder/decoder
+# encoding.cbor — CBOR (RFC 7049) encoder/decoder
 # Concise Binary Object Representation: self-describing binary format
 # that supports integers, floats, strings, arrays, maps, and more.
 

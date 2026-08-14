@@ -1,4 +1,4 @@
-# std.schema_gen — Schema-Driven Code Generation
+# schema_gen — Schema-Driven Code Generation
 # Read JSON Schema, OpenAPI, or Protobuf definitions at compile time
 # and generate strongly-typed Duo code with validation and serialization.
 #

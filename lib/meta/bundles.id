@@ -1,4 +1,4 @@
-# std.meta.bundles — @comp.derive.bundle catalog and helpers
+# meta.bundles — @comp.derive.bundle catalog and helpers
 # One line on a type → many generated trait implementations.
 # Bare syntax + implicit module-scope table (G-033/G-039).
 

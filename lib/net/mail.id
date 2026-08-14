@@ -1,4 +1,4 @@
-# std.net_mail — email address and message parsing (mirrors Go's net/mail)
+# net_mail — email address and message parsing (mirrors Go's net/mail)
 
 # address: parse a single email address string.
 address(s: str): any

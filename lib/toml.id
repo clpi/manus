@@ -1,4 +1,4 @@
-# std.toml — TOML parser with section support
+# toml — TOML parser with section support
 
 parse_value(s: str): any
     if s == nil return nil end

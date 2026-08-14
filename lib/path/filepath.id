@@ -1,4 +1,4 @@
-# std.path.filepath — cross-platform path manipulation (mirrors Go's path/filepath package)
+# path.filepath — cross-platform path manipulation (mirrors Go's path/filepath package)
 
 # Separator is the OS-specific path separator.
 separator = "/"

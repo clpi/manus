@@ -1,4 +1,4 @@
-# std.math.fft — Fast Fourier Transform
+# math.fft — Fast Fourier Transform
 # For signal processing, audio analysis, and convolution acceleration.
 
 # ═══════════════════════════════════════════════════════════════

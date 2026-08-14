@@ -1,4 +1,4 @@
-# std.encoding.protobuf — Protocol Buffers encoding/decoding
+# encoding.protobuf — Protocol Buffers encoding/decoding
 # Minimal implementation for wire format (varint, length-delimited, fixed32/64)
 
 # Wire types

@@ -1,4 +1,4 @@
-# std.hex — Hexadecimal encoding and decoding utilities
+# hex — Hexadecimal encoding and decoding utilities
 
 
 encode(s: str): str

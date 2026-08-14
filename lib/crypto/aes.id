@@ -1,4 +1,4 @@
-# std.crypto.aes — AES encryption/decryption (AES-128, AES-192, AES-256)
+# crypto.aes — AES encryption/decryption (AES-128, AES-192, AES-256)
 # For ward runtime security and general cryptographic needs.
 
 # ═══════════════════════════════════════════════════════════════

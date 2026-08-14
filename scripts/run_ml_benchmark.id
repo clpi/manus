@@ -16,7 +16,7 @@ _NAMES = { "matmul_256", "conv2d", "softmax_1k", "attention", "mlp_forward" }
 _WORK = "/tmp/duo_ml_bench"
 
 _env_or(n: str, d: str): str
-    v = std.script.getenv_or(n)
+    v = script.getenv_or(n)
     if v == "" return d end
     v
 end
@@ -89,7 +89,7 @@ end
 _lines(t: str): any
     out = {}
     for _i, l in t:split("\n")
-        c = std.script.chomp(l)
+        c = script.chomp(l)
         if c != ""
             out[out:len() + 1] = c
         end
@@ -140,26 +140,26 @@ main: i64 = ()
     print("     ML BENCHMARK: Duo vs C             ")
     print("========================================")
 
-    if !std.script.fs_exists(duo)
+    if !script.fs_exists(duo)
         print("Building Duo compiler...")
-        if std.script.run(_env_or("ZIG", "zig") .. " build") != 0
+        if script.run(_env_or("ZIG", "zig") .. " build") != 0
             return 1
         end
     end
 
-    std.script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
+    script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
     duo_bin = _WORK .. "/duo_ml_bench"
     c_bin = _WORK .. "/c_ml_bench"
 
     print("Compiling bench_ml.id...")
-    if std.script.run(duo .. " compile examples/bench_ml.id -o " .. duo_bin) != 0
+    if script.run(duo .. " compile examples/bench_ml.id -o " .. duo_bin) != 0
         print("ml_benchmark: FAIL — bench_ml.id did not compile")
         return 1
     end
 
     print("Compiling bench_ml_c.c...")
-    sdk = std.script.chomp(std.script.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null"))
-    if std.script.run("SDKROOT=" .. sdk .. " " .. cc
+    sdk = script.chomp(script.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null"))
+    if script.run("SDKROOT=" .. sdk .. " " .. cc
         .. " -O3 -ffast-math -march=native -flto -lm -o " .. c_bin .. " examples/bench_ml_c.c") != 0
         print("ml_benchmark: FAIL — bench_ml_c.c did not compile")
         return 1
@@ -168,8 +168,8 @@ main: i64 = ()
     print("")
     print("--- Correctness Check ---")
 
-    dres = _results(std.script.capture(duo_bin .. " 2>/dev/null"))
-    cres = _results(std.script.capture(c_bin .. " 2>/dev/null"))
+    dres = _results(script.capture(duo_bin .. " 2>/dev/null"))
+    cres = _results(script.capture(c_bin .. " 2>/dev/null"))
 
     # A short RESULT set is a failed run wearing the costume of a passing one:
     # with zero rows every comparison below is vacuously satisfied.
@@ -225,7 +225,7 @@ main: i64 = ()
     print("Running Duo (" .. runs:to(str) .. " times)...")
     r = 0
     while r < runs
-        for k, v in _times(std.script.capture(duo_bin .. " 2>/dev/null"))
+        for k, v in _times(script.capture(duo_bin .. " 2>/dev/null"))
             if dmin[k] == nil or v < dmin[k] dmin[k] = v end
         end
         r += 1
@@ -233,7 +233,7 @@ main: i64 = ()
     print("Running C (" .. runs:to(str) .. " times)...")
     r = 0
     while r < runs
-        for k, v in _times(std.script.capture(c_bin .. " 2>/dev/null"))
+        for k, v in _times(script.capture(c_bin .. " 2>/dev/null"))
             if cmin[k] == nil or v < cmin[k] cmin[k] = v end
         end
         r += 1

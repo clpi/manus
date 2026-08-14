@@ -1,4 +1,4 @@
-# std.regex — PCRE2 regular expression bindings via @ffi
+# regex — PCRE2 regular expression bindings via @ffi
 # Usage: duo compile myapp.id #link pcre2-8
 # This module provides compile, match, find, find_all, replace, and helpers
 # using the PCRE2 C library (libpcre2-8, the 8-bit code unit width variant).

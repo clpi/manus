@@ -1,4 +1,4 @@
-# std.ml.optim — Optimizers and learning rate schedulers
+# ml.optim — Optimizers and learning rate schedulers
 
 Tensor = tensor
 

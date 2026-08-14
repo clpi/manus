@@ -1,4 +1,4 @@
-# std.encoding_json — JSON encoder/decoder (mirrors Go's encoding/json)
+# encoding_json — JSON encoder/decoder (mirrors Go's encoding/json)
 # All recursive helpers are merged into single self-referencing functions
 # because Duo does not support forward references between functions.
 # Error handling uses p.err field instead of multi-return to avoid codegen issues.

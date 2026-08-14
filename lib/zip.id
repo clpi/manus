@@ -1,4 +1,4 @@
-# std.zip — ZIP archive utilities
+# zip — ZIP archive utilities
 
 proc = proc
 fs = fs

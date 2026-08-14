@@ -485,7 +485,7 @@ captures(body: str, glyph: str): i64
 end
 
 main(): i64
-    duo: str = std.os.getenv("hlduo")
+    duo: str = os.getenv("hlduo")
     if duo == ""
         duo = "./zig-out/bin/idol"
     end
@@ -496,29 +496,29 @@ main(): i64
     # scores every row zero and reads exactly like a clean run.
     if !runnable(duo)
         print("highlight corpus: FAIL — no duo binary at {duo}; set hlduo")
-        std.os.exit(3)
+        os.exit(3)
     end
     if slurp(projector) == ""
         print("highlight corpus: FAIL — no projector at {projector}")
-        std.os.exit(3)
+        os.exit(3)
     end
 
-    std.script.run("mkdir -p {work}")
+    script.run("mkdir -p {work}")
     bin: str = "{work}/hl"
-    build: i64 = std.script.status("{duo} compile {projector} -o {bin} 2>/dev/null")
+    build: i64 = script.status("{duo} compile {projector} -o {bin} 2>/dev/null")
     if build != 0 or !runnable(bin)
         print("highlight corpus: FAIL — the projector did not compile: {projector}")
-        std.os.exit(3)
+        os.exit(3)
     end
     print("  projector  {bin}")
 
     # The taxonomy must pass its own closure check before any number it
     # produces is worth reading. Exit 3 from the projector IS that check.
-    tax: i64 = std.script.status("hlmode=table {bin} > {work}/table 2>/dev/null")
+    tax: i64 = script.status("hlmode=table {bin} > {work}/table 2>/dev/null")
     if tax != 0
         print("highlight corpus: FAIL — the taxonomy failed its closure check")
         print("  {work}/table carries what it said")
-        std.os.exit(3)
+        os.exit(3)
     end
     nroles: i64 = 0
     ncards: i64 = 0
@@ -840,8 +840,8 @@ main(): i64
         base: str = src:sub(1, src:len() - 4)
         side: str = "{base}.roles.id"
         kind: str = spankinds[s]
-        std.script.run("hlpath={src} {bin} > {work}/sr 2>/dev/null")
-        std.script.run("hlmode=cards hlpath={src} {bin} > {work}/sc 2>/dev/null")
+        script.run("hlpath={src} {bin} > {work}/sr 2>/dev/null")
+        script.run("hlmode=cards hlpath={src} {bin} > {work}/sc 2>/dev/null")
         rl = cut(slurp("{work}/sr"))
         cl = cut(slurp("{work}/sc"))
         got = {}

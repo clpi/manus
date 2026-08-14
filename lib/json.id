@@ -1,4 +1,4 @@
-# std.json — JSON encoder and decoder for Duo.
+# json — JSON encoder and decoder for Duo.
 #
 # Pure Duo, no external module dependencies. Objects become tables with
 # string keys; arrays become tables with integer keys 1..n; null becomes nil;

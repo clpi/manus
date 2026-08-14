@@ -1,4 +1,4 @@
-# std.compress.lzw — LZW decompression (mirrors Go's compress/lzw)
+# compress.lzw — LZW decompression (mirrors Go's compress/lzw)
 # Used in GIF and PDF. Implements LZW with variable-width codes (3-12 bits).
 
 LSB = "lsb"

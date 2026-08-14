@@ -1,4 +1,4 @@
-# std.compress_flate — DEFLATE compression (mirrors Go's compress/flate)
+# compress_flate — DEFLATE compression (mirrors Go's compress/flate)
 
 compress(data: any)
     if data == nil or data == "" return "" end

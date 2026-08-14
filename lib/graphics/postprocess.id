@@ -1,4 +1,4 @@
-# std.graphics.postprocess — Post-processing effects
+# graphics.postprocess — Post-processing effects
 # For screen-space effects in ward's rendering pipeline.
 
 # ═══════════════════════════════════════════════════════════════

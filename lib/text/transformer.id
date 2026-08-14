@@ -1,4 +1,4 @@
-# std.text.transformer — Text transformation utilities
+# text.transformer — Text transformation utilities
 # For NLP preprocessing and text normalization in ward's ML pipeline.
 
 # ═══════════════════════════════════════════════════════════════

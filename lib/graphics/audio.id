@@ -1,4 +1,4 @@
-# std.graphics.audio — Audio playback and spatial audio
+# graphics.audio — Audio playback and spatial audio
 # For sound effects and music in ward's runtime.
 # Supports WAV file loading (PCM format) and procedural waveform generation.
 

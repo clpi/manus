@@ -1,4 +1,4 @@
-# std.string — string helper utilities
+# string — string helper utilities
 
 std_string_is_empty(s: any): bool
     s == nil or s:len() == 0
@@ -302,7 +302,7 @@ M.is_alpha = std_string_is_alpha
 M.is_digit = std_string_is_digit
 M.is_alphanumeric = std_string_is_alphanumeric
 
-# The Lua-builtin surface, which this module never exposed. `std.string.byte`
+# The Lua-builtin surface, which this module never exposed. `string.byte`
 # and friends therefore resolved to a MISSING MEMBER and returned nil — no
 # error, no diagnostic, just nil where a byte should be. There are 431 such
 # calls across lib/: byte 130, len 103, sub 102, gsub 36, char 22, find 7,
@@ -311,7 +311,7 @@ M.is_alphanumeric = std_string_is_alphanumeric
 #
 # These are projections, not reimplementations: one edge, and `string.*`
 # remains the thing that actually runs. Exposing them here is what makes the
-# ambient spelling `std.string.byte` mean what every caller already assumed.
+# ambient spelling `string.byte` mean what every caller already assumed.
 # `char` and `rep` are FORWARDING FUNCTIONS, not value aliases like the rest.
 # Aliasing a host function with VARIADIC or OPTIONAL arity through a module
 # produces wrong results: `104:char()` returned a value that

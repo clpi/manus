@@ -1,5 +1,5 @@
 # Memory allocator demo: arena, pool, and stack allocators
-# Demonstrates memory primitives and allocators (std.mem)
+# Demonstrates memory primitives and allocators (mem)
 
 # Define a simple arena allocator
 arena_new(size: i64)

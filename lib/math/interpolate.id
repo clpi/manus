@@ -1,4 +1,4 @@
-# std.math.interpolate — Interpolation and easing functions
+# math.interpolate — Interpolation and easing functions
 # For animations, transitions, and smooth value generation.
 
 # ═══════════════════════════════════════════════════════════════

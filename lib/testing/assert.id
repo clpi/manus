@@ -1,4 +1,4 @@
-# std.testing.assert — Rich test assertions
+# testing.assert — Rich test assertions
 # Extends basic testing with more expressive assertion functions.
 
 # ═══════════════════════════════════════════════════════════════

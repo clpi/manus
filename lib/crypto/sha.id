@@ -1,4 +1,4 @@
-# std.crypto_sha — SHA-1 and SHA-256 hash implementations
+# crypto_sha — SHA-1 and SHA-256 hash implementations
 # These are pure-Duo implementations of SHA-1 and SHA-256. They operate on
 # byte strings and produce hex-encoded digests.
 # Note: rotate-right (ror) is inlined at each call site because duo's typed

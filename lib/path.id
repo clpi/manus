@@ -1,4 +1,4 @@
-# std.path — path manipulation utilities (POSIX-style)
+# path — path manipulation utilities (POSIX-style)
 
 join(a: str, b: str): str
     if a == ""

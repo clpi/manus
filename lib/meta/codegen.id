@@ -1,4 +1,4 @@
-# std.meta.codegen — compile-time C code generation helpers
+# meta.codegen — compile-time C code generation helpers
 # Use with @meta.define.derive, @meta.fields.map, @meta.loop, @meta.map, and @c.emit
 # to turn O(1) descriptions into O(n) generated code.
 

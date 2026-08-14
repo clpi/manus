@@ -1,4 +1,4 @@
-# std.graphics.mesh — 3D mesh, scene graph, camera, lighting
+# graphics.mesh — 3D mesh, scene graph, camera, lighting
 # For ward's graphics output and 3D rendering pipeline.
 
 # ═══════════════════════════════════════════════════════════════

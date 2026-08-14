@@ -1,4 +1,4 @@
-# std.os.signal — Signal handling for runtime
+# os.signal — Signal handling for runtime
 # Used by ward to handle process signals and clean shutdown.
 
 # ═══════════════════════════════════════════════════════════════

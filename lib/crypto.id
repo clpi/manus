@@ -1,4 +1,4 @@
-# std.crypto — cryptographic hash and encoding utilities
+# crypto — cryptographic hash and encoding utilities
 
 global crypto_sha = sha
 global hash_sha512 = sha512

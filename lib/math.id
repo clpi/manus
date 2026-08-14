@@ -1,4 +1,4 @@
-# std.math — numeric helper utilities
+# math — numeric helper utilities
 
 clamp(x: any, lo: any, hi: any): any
     if x < lo return lo end

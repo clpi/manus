@@ -1,4 +1,4 @@
-# std.vector — Duo-native text embeddings + cosine similarity.
+# vector — Duo-native text embeddings + cosine similarity.
 #
 # Provides symbol/query "vector embeddings" with NO Python, NO model download.
 # Backs `duo_embed_symbols` (MCP) so it is a genuine semantic symbol index, not a

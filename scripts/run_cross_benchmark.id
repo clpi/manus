@@ -39,7 +39,7 @@ _names = {
 _fail = 0
 
 _env_or(n: str, d: str): str
-    v = std.script.getenv_or(n)
+    v = script.getenv_or(n)
     if v == "" return d end
     v
 end

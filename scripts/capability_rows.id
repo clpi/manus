@@ -455,7 +455,7 @@ main: i64 = ()
     # build nobody has. capability_matrix.id caught a stale binary twice while
     # it was being written; this is the same refusal, not a nested `zig build`,
     # which would contend for the build cache lock.
-    stale = std.script.chomp(std.script.capture(
+    stale = script.chomp(script.capture(
         "find src -name \"*.zig\" -newer {duo} 2>/dev/null | head -3"))
     if stale != ""
         print("capability_rows: FAIL — {duo} is older than src/; run `zig build`")
@@ -465,13 +465,13 @@ main: i64 = ()
 
     tprefix = ""
     for i, cand in {"timeout", "gtimeout"}
-        if tprefix == "" and std.script.chomp(std.script.capture(
+        if tprefix == "" and script.chomp(script.capture(
             "command -v {cand} 2>/dev/null")) != ""
             tprefix = "{cand} {limit} "
         end
     end
 
-    std.script.run("rm -rf {work} && mkdir -p {work}/w {work}/g {work}/c")
+    script.run("rm -rf {work} && mkdir -p {work}/w {work}/g {work}/c")
 
     # Collect fixtures, and REFUSE a row that names a file that is not there.
     # A missing fixture must not read as a shorter row; that is how a
@@ -481,14 +481,14 @@ main: i64 = ()
     # quietly regress to printing `{r[1]}` as literal text.
     for ri, r in rows
         for fi, f in r[3]
-            if !std.script.fs_exists(f)
+            if !script.fs_exists(f)
                 print("capability_rows: FAIL — row '{r[1]}' names a missing fixture {f}")
                 return 3
             end
             remember(files, seen, f)
         end
         for fi, f in r[4]
-            if !std.script.fs_exists(f)
+            if !script.fs_exists(f)
                 print("capability_rows: FAIL — row '{r[1]}' names a missing deny fixture {f}")
                 return 3
             end
@@ -505,16 +505,16 @@ main: i64 = ()
     # columns. `ctlvalue` is derived from a fixture that DECLARES a value —
     # without one there is nothing to falsify and the control would be vacuous.
     good = "examples/layout/offside.id"
-    if !std.script.fs_exists(good)
+    if !script.fs_exists(good)
         print("capability_rows: FAIL — the control source {good} is gone")
         return 3
     end
     ctlsyntax = "{work}/c/ctlsyntax.id"
     ctltype = "{work}/c/ctltype.id"
     ctlvalue = "{work}/c/ctlvalue.id"
-    std.script.run("cp {good} {ctlsyntax} && printf 'if if if\\n' >> {ctlsyntax}")
-    std.script.run("cp {good} {ctltype} && printf 'bad: i64 = \"notanumber\"\\n' >> {ctltype}")
-    std.script.run("sed 's/^-- expect: .*/-- expect: 99 99 99/' {good} > {ctlvalue}")
+    script.run("cp {good} {ctlsyntax} && printf 'if if if\\n' >> {ctlsyntax}")
+    script.run("cp {good} {ctltype} && printf 'bad: i64 = \"notanumber\"\\n' >> {ctltype}")
+    script.run("sed 's/^-- expect: .*/-- expect: 99 99 99/' {good} > {ctlvalue}")
     remember(files, seen, ctlsyntax)
     remember(files, seen, ctltype)
     remember(files, seen, ctlvalue)
@@ -524,9 +524,9 @@ main: i64 = ()
     for i, f in files
         listing = listing .. f .. "\n"
     end
-    std.script.fs_write(listpath, listing)
+    script.fs_write(listpath, listing)
 
-    std.script.fs_write("{work}/probe.sh", probetext(duo, tprefix))
+    script.fs_write("{work}/probe.sh", probetext(duo, tprefix))
     # `xargs -n 2` so each worker gets the path AND its work slot; the slot is
     # computed here rather than in shell because the shell form would need a
     # `tr` per fixture and this one is exact.
@@ -534,13 +534,13 @@ main: i64 = ()
     for i, f in files
         joined = joined .. f .. "\n" .. slot(f) .. "\n"
     end
-    std.script.fs_write("{work}/pairs.list", joined)
-    std.script.run(
+    script.fs_write("{work}/pairs.list", joined)
+    script.run(
         "xargs -P {jobs} -n 2 sh {work}/probe.sh < {work}/pairs.list > {work}/records.tsv 2>/dev/null")
 
     nrec = 0
-    for i, line in std.script.fs_read("{work}/records.tsv"):split("\n")
-        rec = std.script.chomp(line)
+    for i, line in script.fs_read("{work}/records.tsv"):split("\n")
+        rec = script.chomp(line)
         if rec:len() > 8
             t = tab(rec)
             probe[rec:sub(t + 1, rec:len())] = rec:sub(1, t - 1)
@@ -558,17 +558,17 @@ main: i64 = ()
     # costs about eight seconds and doing it per fixture would dominate the run.
     hostsrc = "{work}/hostprobe.id"
     hostbin = "{work}/hostprobe.bin"
-    std.script.fs_write(hostsrc, hosttext())
-    if std.script.status("{duo} compile {hostsrc} --emit exe -o {hostbin} >/dev/null 2>&1") != 0
+    script.fs_write(hostsrc, hosttext())
+    if script.status("{duo} compile {hostsrc} --emit exe -o {hostbin} >/dev/null 2>&1") != 0
         print("capability_rows: FAIL — the self-hosted front end probe did not build;")
         print("  H cannot be measured, and an unmeasured column must not print as `—`")
         return 3
     end
-    std.script.env_set("CAPROWS_LIST", listpath)
-    std.script.run("CAPROWS_LIST={listpath} {hostbin} > {work}/host.tsv 2>/dev/null")
+    script.env_set("CAPROWS_LIST", listpath)
+    script.run("CAPROWS_LIST={listpath} {hostbin} > {work}/host.tsv 2>/dev/null")
     nhost = 0
-    for i, line in std.script.fs_read("{work}/host.tsv"):split("\n")
-        rec = std.script.chomp(line)
+    for i, line in script.fs_read("{work}/host.tsv"):split("\n")
+        rec = script.chomp(line)
         if rec:len() > 2
             t = tab(rec)
             host[rec:sub(t + 1, rec:len())] = rec:sub(1, t - 1)
@@ -766,7 +766,7 @@ main: i64 = ()
     # demand / witnesses"; the exported graph is nodes only.
     edges = 0
     for i, f in files
-        if std.script.status(
+        if script.status(
             "grep -qF '\"edges\"' {work}/g/" .. slot(f) .. ".json 2>/dev/null") == 0
             edges += 1
         end

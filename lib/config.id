@@ -1,4 +1,4 @@
-# std.config — structured configuration with defaults, merge, and validation
+# config — structured configuration with defaults, merge, and validation
 # Provides a config object that supports default schemas, deep merging,
 # dot-path access, and environment variable overrides.
 

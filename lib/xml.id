@@ -1,4 +1,4 @@
-# std.xml — basic XML parsing and formatting
+# xml — basic XML parsing and formatting
 
 xml_entity_to_char(c: any): any
     c:char()

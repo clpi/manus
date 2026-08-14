@@ -1,4 +1,4 @@
-# std.ml.data — Batching, shuffling, and dataset iterators (training pipelines)
+# ml.data — Batching, shuffling, and dataset iterators (training pipelines)
 
 batch(samples, batch_size): any
     if batch_size == nil batch_size = 32 end

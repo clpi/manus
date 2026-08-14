@@ -1,4 +1,4 @@
-# std.runtime.memory — Memory management for ward runtime
+# runtime.memory — Memory management for ward runtime
 # Heap management, GC tuning, memory arenas for isolate isolation.
 
 # ═══════════════════════════════════════════════════════════════

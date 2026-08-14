@@ -1,4 +1,4 @@
-# std.ml.train — Training loop helpers (forward / loss / backward / step)
+# ml.train — Training loop helpers (forward / loss / backward / step)
 
 sgd(model, optimizer, lr): any
     if lr == nil lr = optimizer.lr end
@@ -22,11 +22,11 @@ end
 @profile
 step(model, x, target, lr): f64
     if lr == nil lr = 0.01 end
-    tape = std.ml.autodiff.tape_new()
-    pred = std.ml.nn.forward(model, x)
-    loss = std.ml.nn.cross(pred, target)
+    tape = ml.autodiff.tape_new()
+    pred = ml.nn.forward(model, x)
+    loss = ml.nn.cross(pred, target)
     # Backward pass: compute gradients via autodiff tape
-    grad = std.ml.autodiff.backward(tape, loss)
+    grad = ml.autodiff.backward(tape, loss)
     return loss
 end
 

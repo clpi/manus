@@ -10,7 +10,7 @@
 # WHAT COUNTS AS DERIVED. A line is derived when it was projected from a
 # descriptor rather than typed by a person, and it says so in the source:
 #
-#   # derived(std.wasm.opcodes) begin
+#   # derived(wasm.opcodes) begin
 #   ...projected lines...
 #   # derived end
 #
@@ -69,7 +69,7 @@ end
 # A file's marker-free line count, used to report what the projection would
 # have to cover. Kept separate from _scan so the two can disagree loudly.
 _count(path: str): str
-    _scan(std.script.fs_read(path))
+    _scan(script.fs_read(path))
 end
 
 # Lines that hard-code a WASM-format fact the canonical descriptor table
@@ -178,7 +178,7 @@ main(): i64
     # host modules # runtime.id, init.id # were deleted; it compiles and
     # runs nowhere).
     orphan = 0
-    for _i, f in std.script.fs_glob("src/wasm/*.id")
+    for _i, f in script.fs_glob("src/wasm/*.id")
         o = _count(f)
         orphan += _part(o, 1)
         print(_pad(f, 30) .. _pad(to(str)(_part(o, 1)), 8) .. _pad(to(str)(_part(o, 2)), 9) .. "no")
@@ -193,7 +193,7 @@ main(): i64
     end
     print("orphan code lines    " .. orphan:to(str) .. "  (in src/wasm/, required by nothing)")
 
-    facts = _format_facts(std.script.fs_read(built))
+    facts = _format_facts(script.fs_read(built))
     print("")
     print("hand-encoded WASM opcode predicates in the shipped file: " .. facts:to(str))
     print("  was 241 on 2026-08-08, before the dispatch was projected from")

@@ -1,4 +1,4 @@
-# std.strconv — string conversion utilities (mirrors Go's strconv package)
+# strconv — string conversion utilities (mirrors Go's strconv package)
 # Provides numeric-to-string and string-to-numeric conversions with base
 # support, quote/unescape helpers, and boolean formatting.
 

@@ -20,7 +20,7 @@ _WORK = "/tmp/duo_wasm_bench"
 _SRC = "examples/benchmark_wasm.lua"
 
 _env_or(n: str, d: str): str
-    v = std.script.getenv_or(n)
+    v = script.getenv_or(n)
     if v == "" return d end
     v
 end
@@ -70,7 +70,7 @@ _fx(x: f64, places: i64): str
 end
 
 _have(t: str): bool
-    std.script.chomp(std.script.capture("command -v " .. t .. " 2>/dev/null")) != ""
+    script.chomp(script.capture("command -v " .. t .. " 2>/dev/null")) != ""
 end
 
 _fields(l: str): any
@@ -87,7 +87,7 @@ _result_block(text: str): str
     out = ""
     n = 0
     for _i, l in text:split("\n")
-        f = _fields(std.script.chomp(l))
+        f = _fields(script.chomp(l))
         if f:len() >= 3 and f[1] == "RESULT"
             out = out .. f[2] .. " " .. f[3] .. "\n"
             n += 1
@@ -106,7 +106,7 @@ _result_count(block: str): i64
     0
 end
 
-# Wall clock via std.time.monotonic. The shell version needed a two-stage
+# Wall clock via time.monotonic. The shell version needed a two-stage
 # fallback # `/usr/bin/time -f %e`, and if that produced something
 # unparseable, bash's own TIMEFORMAT='%R' -- because GNU and BSD `time` differ.
 # An in-process clock has neither problem and no fork per sample.

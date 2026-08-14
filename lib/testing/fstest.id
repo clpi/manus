@@ -1,4 +1,4 @@
-# std.testing.fstest — filesystem test helpers (mirrors Go's testing/fstest)
+# testing.fstest — filesystem test helpers (mirrors Go's testing/fstest)
 # Provides a MapFS in-memory filesystem for testing file operations.
 
 MapFS = {}

@@ -5,8 +5,8 @@
 --
 -- Each tool registers as idol_* only.
 
--- `std.script` is deliberately absent: it is the denied activity junk drawer.
--- Environment reads go through `std.os.getenv`; process work
+-- `script` is deliberately absent: it is the denied activity junk drawer.
+-- Environment reads go through `os.getenv`; process work
 -- routes through `tools.mcp.shared`, which owns the build lock.
 --
 -- DUO_ROOT is resolved ONCE, at file scope, as a VALUE  -  not as a helper
@@ -15,7 +15,7 @@
 -- ("called object type 'lua_Value' is not a function"). Module tables and
 -- plain values reached from a handler are fine; a call is not.
 --
--- `std.os.getenv` answers "" and NOT nil for an unset name, so `getenv(x) or
+-- `os.getenv` answers "" and NOT nil for an unset name, so `getenv(x) or
 -- default` hands back "" and every path built from it resolves against the
 -- filesystem root. The `== ""` test is the whole point of this binding.
 root = os.env["IDOL_ROOT"] or ""

@@ -9,8 +9,8 @@
 # Note `duo run x.id # cmd` consumes the first `--` itself, which is why the
 # timeout form carries two.
 
-cmd = std.script.lock_cmd("printf script_lock")
-cmd_timeout = std.script.lock_cmd_timeout("printf script_lock", 7)
+cmd = script.lock_cmd("printf script_lock")
+cmd_timeout = script.lock_cmd_timeout("printf script_lock", 7)
 
 wraps_duo = cmd:find("scripts/duo_lock.id") != nil
 no_shell = cmd:find("duo_lock.sh") == nil
@@ -20,7 +20,7 @@ has_timeout = cmd_timeout:find("--timeout 7") != nil
 # The functional half: inside `zig build agent-smoke` the lock is already held,
 # so locked_run sees DUO_LOCK_HELD=1 and runs directly. That reentrancy is the
 # reason wrapping the gate in the lock does not deadlock against itself.
-ran = std.script.locked_ok("printf script_lock >/dev/null")
+ran = script.locked_ok("printf script_lock >/dev/null")
 
 ok = wraps_duo and no_shell and carries_cmd and has_timeout and ran
 

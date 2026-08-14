@@ -473,7 +473,7 @@ citing(id: str): str
         end
         i += 1
     end
-    std.script.chomp(out)
+    script.chomp(out)
 end
 
 # CLOSURE, checked before anything is printed. H-2 rules that the role set is
@@ -1536,10 +1536,10 @@ main(): i64
     bad: str = closed()
     if bad != ""
         print("highlight: FAIL — {bad}")
-        std.os.exit(3)
+        os.exit(3)
     end
 
-    mode: str = std.os.getenv("hlmode")
+    mode: str = os.getenv("hlmode")
     if mode == ""
         mode = "roles"
     end
@@ -1561,12 +1561,12 @@ main(): i64
             print("  {c}")
             i += 1
         end
-        std.os.exit(0)
+        os.exit(0)
     end
 
     if mode == "legend"
         print(legend())
-        std.os.exit(0)
+        os.exit(0)
     end
 
     # H-7 `why(span)`, the read-only path. Given a FILE and a byte position it
@@ -1574,36 +1574,36 @@ main(): i64
     # citation and the dnir edge. `hlrole` still answers for a bare role, which
     # is what the generated legend needs; a SPAN is what a hover needs.
     if mode == "why"
-        bare: str = std.os.getenv("hlrole")
+        bare: str = os.getenv("hlrole")
         if bare != ""
             print(why(bare))
-            std.os.exit(0)
+            os.exit(0)
         end
         at: str = spanwhy()
         print(at)
-        std.os.exit(0)
+        os.exit(0)
     end
 
     if mode == "scm"
         print(emitscm())
-        std.os.exit(0)
+        os.exit(0)
     end
 
     # `hlpath` first: `duo run` hands the SCRIPT to argv, not the argument, so a
     # projector that only read argv answered "no path" under the interpreter and
     # correctly under a compiled binary. Env works under both.
-    path: str = std.os.getenv("hlpath")
+    path: str = os.getenv("hlpath")
     if path == ""
-        path = std.script.arg(1, "")
+        path = script.arg(1, "")
     end
     if path == ""
         print("highlight: FAIL — no path; this mode needs a file")
-        std.os.exit(2)
+        os.exit(2)
     end
     f = io.open(path, "r")
     if not f
         print("highlight: FAIL — cannot read {path}")
-        std.os.exit(2)
+        os.exit(2)
     end
     body: str = f:read("a")
     f:close()

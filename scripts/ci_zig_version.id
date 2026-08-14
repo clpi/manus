@@ -10,13 +10,13 @@ _pin_file(): str
 end
 
 main(): i64
-    if !std.script.fs_exists(_pin_file())
+    if !script.fs_exists(_pin_file())
         print("ci_zig_version: missing " .. _pin_file())
         return 1
     end
 
-    for _i, line in std.script.fs_read(_pin_file()):split("\n")
-        if std.string.contains(line, "minimum_zig_version")
+    for _i, line in script.fs_read(_pin_file()):split("\n")
+        if string.contains(line, "minimum_zig_version")
             # The value is the text between the first pair of double quotes.
             a = line:find("\"", 1, true)
             if a != nil

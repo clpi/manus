@@ -1,4 +1,4 @@
-# std.type_diff — Compile-Time Structural Type Diffing
+# type_diff — Compile-Time Structural Type Diffing
 # Compare two type signatures at compile time and generate a diff
 # showing added, removed, and changed fields.
 # Useful for API migration, schema evolution, and compatibility checks.

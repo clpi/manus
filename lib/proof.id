@@ -1,9 +1,9 @@
-# std.proof — proof helpers (codegen-safe; no json.decode/inspect on hot path).
+# proof — proof helpers (codegen-safe; no json.decode/inspect on hot path).
 sha256(data: str): str
-    p = std.script.fs_tmp():gsub("\n", "")
-    std.script.fs_write(p, data)
-    h = std.script.capture("shasum -a 256 '" .. p .. "' 2>/dev/null"):match("(%x+)") or ""
-    std.script.fs_rm(p)
+    p = script.fs_tmp():gsub("\n", "")
+    script.fs_write(p, data)
+    h = script.capture("shasum -a 256 '" .. p .. "' 2>/dev/null"):match("(%x+)") or ""
+    script.fs_rm(p)
     h
 end
 
@@ -36,7 +36,7 @@ end
 artifact_path(stem: str, prefer_native: bool): str
     native = "/tmp/duo_" .. stem .. "_native.o.proof.json"
     cpath = "/tmp/duo_" .. stem .. ".c.proof.json"
-    if prefer_native and std.script.fs_exists(native)
+    if prefer_native and script.fs_exists(native)
         return native
     end
     cpath
@@ -59,7 +59,7 @@ proof_field_str(text: str, key: str): str
 end
 
 load_emission(path: str): any
-    text = std.script.fs_read(path)
+    text = script.fs_read(path)
     out = {
         boxes = proof_field_int(text, "boxes"),
         unboxes = proof_field_int(text, "unboxes"),
@@ -70,7 +70,7 @@ load_emission(path: str): any
 end
 
 artifact_fingerprint(path: str): str
-    sha256(std.script.fs_read(path))
+    sha256(script.fs_read(path))
 end
 
 bench_profiles(): any

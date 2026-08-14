@@ -1,4 +1,4 @@
-# std.text.template.parse — Template AST and parser (mirrors Go's text/template/parse)
+# text.template.parse — Template AST and parser (mirrors Go's text/template/parse)
 
 new_node(kind: any)
     return {kind = kind, children = {}, text = "", pos = 0}

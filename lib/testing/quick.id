@@ -1,4 +1,4 @@
-# std.testing.quick — property-based testing (mirrors Go's testing/quick)
+# testing.quick — property-based testing (mirrors Go's testing/quick)
 # Generates random test values and checks that properties hold for all of them.
 
 

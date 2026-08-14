@@ -1,4 +1,4 @@
-# std.build — build system helpers and environment info
+# build — build system helpers and environment info
 
 global _project = { name = "duo-app", version = "0.1.0", default = "app" }
 global _targets = {}
@@ -97,17 +97,17 @@ clean(): i64
 end
 
 log_target(t: any): void
-    print(std.term.banner("build target"))
-    print(std.term.kv("name", t.name))
-    print(std.term.kv("source", t.src))
-    if has(.out)(t) print(std.term.kv("output", t.out)) end
-    print(std.term.kv("command", command(t)))
+    print(term.banner("build target"))
+    print(term.kv("name", t.name))
+    print(term.kv("source", t.src))
+    if has(.out)(t) print(term.kv("output", t.out)) end
+    print(term.kv("command", command(t)))
 end
 
 log_project(): void
-    print(std.term.banner("duo project"))
-    print(std.term.kv("name", _project.name))
-    print(std.term.kv("version", _project.version))
-    print(std.term.kv("default", _project.default))
+    print(term.banner("duo project"))
+    print(term.kv("name", _project.name))
+    print(term.kv("version", _project.version))
+    print(term.kv("default", _project.default))
 end
 

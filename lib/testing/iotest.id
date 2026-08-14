@@ -1,4 +1,4 @@
-# std.testing.iotest — I/O test helpers (mirrors Go's testing/iotest)
+# testing.iotest — I/O test helpers (mirrors Go's testing/iotest)
 # Provides readers/writers that simulate errors, slow reads, etc.
 
 new_one_byte_reader(data: str): any

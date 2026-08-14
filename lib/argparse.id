@@ -1,4 +1,4 @@
-# std.argparse — Command-line argument parser
+# argparse — Command-line argument parser
 
 argparse_key(s: str): str
     s or "":gsub("^%-+", "")

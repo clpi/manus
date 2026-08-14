@@ -1,4 +1,4 @@
-# std.net_url — URL parsing and construction (mirrors Go's net/url)
+# net_url — URL parsing and construction (mirrors Go's net/url)
 
 # escape: percent-encode a string for use in URL components.
 escape(s: str): str

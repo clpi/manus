@@ -1,4 +1,4 @@
-# std.crypto_hmac — HMAC implementation (mirrors Go's crypto/hmac)
+# crypto_hmac — HMAC implementation (mirrors Go's crypto/hmac)
 # Provides HMAC construction using any hash function that takes a string and
 # returns a hex string.
 
@@ -32,7 +32,7 @@ hmac(hash: any, key: str, message: str, block: i64): str
     hash(outer .. digest)
 end
 
-# hmac_sha256: HMAC-SHA-256 using the std.crypto sha256.
+# hmac_sha256: HMAC-SHA-256 using the crypto sha256.
 hmac_sha256(key: str, message: str): str
     hmac(crypto.sha256, key, message, 64)
 end

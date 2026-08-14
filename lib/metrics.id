@@ -1,4 +1,4 @@
-# std.metrics — Observability: counters, gauges, histograms, timers
+# metrics — Observability: counters, gauges, histograms, timers
 # For profiling ward runtime, ML inference, and application monitoring.
 
 # ═══════════════════════════════════════════════════════════════

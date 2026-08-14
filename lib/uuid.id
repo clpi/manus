@@ -1,4 +1,4 @@
-# std.uuid — UUID generation utilities
+# uuid — UUID generation utilities
 # Uses CSPRNG for unpredictable UUIDs
 
 crypto_rand = rand

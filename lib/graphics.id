@@ -1,4 +1,4 @@
-# std.graphics — color, geometry, and render pipeline primitives
+# graphics — color, geometry, and render pipeline primitives
 # Targets: game engines, visualization, ML result rendering, image processing
 
 # ═══════════════════════════════════════════════════════════════
@@ -58,10 +58,10 @@ end
 
 color_clamp(c: any): any
     {
-        r = std.math.clamp(c.r, 0, 1),
-        g = std.math.clamp(c.g, 0, 1),
-        b = std.math.clamp(c.b, 0, 1),
-        a = std.math.clamp(c.a, 0, 1),
+        r = math.clamp(c.r, 0, 1),
+        g = math.clamp(c.g, 0, 1),
+        b = math.clamp(c.b, 0, 1),
+        a = math.clamp(c.a, 0, 1),
     }
 end
 

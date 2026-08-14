@@ -6,7 +6,7 @@ iom = io
 # Execution strategy is chosen at run time and is CROSS-ARCHITECTURE
 # CONSISTENT: every path computes the same result on every host.
 #
-#   arm64  -> JIT to native ARM64 (std.jit mmap/seal/call)
+#   arm64  -> JIT to native ARM64 (jit mmap/seal/call)
 #   other  -> the interpreter, which is architecture-independent
 #
 # The JIT also falls back to the interpreter whenever it meets an opcode it
@@ -5376,14 +5376,14 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       if cfx < 0
       # ── IMPORTED FUNCTION ────────────────────────────────────────────────
-      # This was the architectural blocker, and it was in `std.jit`, not here:
+      # This was the architectural blocker, and it was in `jit`, not here:
       # alloc/w32/seal/call* let Duo emit code and ENTER it, and nothing let
       # emitted code LEAVE it. So a body that reached an import took the WHOLE
       # module to the interpreter # which is every wasi-libc `_start`, because
       # `_start` reaches `fd_write` to print its answer. `hot`, `hot_big` and
       # `brtable` all bailed here, at body offset 9, on the first `call`.
       #
-      # `std.jit.sym` now answers with a host function address, so the effect
+      # `jit.sym` now answers with a host function address, so the effect
       # is emitted: materialize the address into x17 and `BLR` it. Dispatch is
       # on the import's FIELD NAME -- the same byte test the interpreter
       # applies # and every import that is not one engine can perform keeps the

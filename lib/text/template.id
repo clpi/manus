@@ -1,4 +1,4 @@
-# std.text_template — simple text templating (mirrors Go's text/template)
+# text_template — simple text templating (mirrors Go's text/template)
 # Provides {{.Field}} substitution and {{range}}/{{end}} blocks over a data
 # table. This is a minimal implementation covering the most common patterns.
 

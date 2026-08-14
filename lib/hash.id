@@ -1,4 +1,4 @@
-# std.hash — hashing utilities
+# hash — hashing utilities
 
 md5(s: str): str
     sum = 0

@@ -2260,7 +2260,7 @@ fun graph_for(uri) -> any
 end
 # The identifier under the cursor, with its bounds. Deliberately NOT
 # `word_at_lo`: that one treats `.`, `@` and `$` as word bytes, so on
-# `std.agent.discover()` it answers the whole dotted path, and starting it on a
+# `agent.discover()` it answers the whole dotted path, and starting it on a
 # non-word byte makes it span the punctuation into the next token. The graph is
 # keyed by bare names, so bare names are what the cursor must resolve to.
 fun ident_span_lo(text, lo, line, col) -> any

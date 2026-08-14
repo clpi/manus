@@ -1,4 +1,4 @@
-# std.image — Image root module (mirrors Go's image)
+# image — Image root module (mirrors Go's image)
 
 
 pt(x: any, y: any): any

@@ -21,7 +21,7 @@ _NAMES = { "matmul", "qsort", "hashtable", "bsearch", "nbody", "fnv" }
 _WORK = "/tmp/duo-honest"
 
 _env_or(n: str, d: str): str
-    v = std.script.getenv_or(n)
+    v = script.getenv_or(n)
     if v == "" return d end
     v
 end
@@ -82,7 +82,7 @@ _rows(text: str, tag: str): any
     r = {}
     n = 0
     for _i, l in text:split("\n")
-        f = _fields(std.script.chomp(l))
+        f = _fields(script.chomp(l))
         if f:len() >= 3 and f[1] == tag
             r[f[2]] = f[3]
             n += 1
@@ -99,34 +99,34 @@ end
 
 main: i64 = ()
     duo = "./zig-out/bin/idol"
-    std.script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
+    script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
     dbin = _WORK .. "/honest_duo"
     cbin = _WORK .. "/honest_c"
 
     print("=== Honest Benchmark: Duo vs C (runtime-seeded observable workloads) ===")
     print("")
     print("Compiling Duo...")
-    if std.script.run(duo .. " compile examples/bench_honest.id -o " .. dbin) != 0
+    if script.run(duo .. " compile examples/bench_honest.id -o " .. dbin) != 0
         return _fail("honest_benchmark: FAIL — bench_honest.id did not compile")
     end
 
     print("Compiling C reference...")
-    sdk = std.script.chomp(std.script.capture("xcrun --show-sdk-path 2>/dev/null"))
+    sdk = script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))
     cflags = "-O3 -ffast-math -march=native -flto -lm"
     if sdk != "" cflags = cflags .. " -isysroot " .. sdk end
-    if std.script.run("clang " .. cflags .. " -o " .. cbin .. " examples/bench_honest_c.c") != 0
+    if script.run("clang " .. cflags .. " -o " .. cbin .. " examples/bench_honest_c.c") != 0
         return _fail("honest_benchmark: FAIL — bench_honest_c.c did not compile")
     end
 
     seed = _env_or("HONEST_SEED", "123456789")
-    std.script.env_set("HONEST_SEED", seed)
+    script.env_set("HONEST_SEED", seed)
     print("")
     print("Seed: " .. seed)
     print("")
     print("--- Correctness Check ---")
 
-    dres = _rows(std.script.capture("HONEST_SEED=" .. seed .. " " .. dbin .. " 2>/dev/null"), "RESULT")
-    cres = _rows(std.script.capture("HONEST_SEED=" .. seed .. " " .. cbin .. " 2>/dev/null"), "RESULT")
+    dres = _rows(script.capture("HONEST_SEED=" .. seed .. " " .. dbin .. " 2>/dev/null"), "RESULT")
+    cres = _rows(script.capture("HONEST_SEED=" .. seed .. " " .. cbin .. " 2>/dev/null"), "RESULT")
 
     # A short RESULT set is a failed run wearing the costume of a passing one:
     # with zero rows every comparison below is vacuously satisfied.
@@ -176,7 +176,7 @@ main: i64 = ()
         print("Running " .. pair[1] .. " (" .. _RUNS:to(str) .. " iterations)...")
         r = 0
         while r < _RUNS
-            t = _rows(std.script.capture("HONEST_SEED=" .. seed .. " " .. pair[2] .. " 2>/dev/null"), "Time")
+            t = _rows(script.capture("HONEST_SEED=" .. seed .. " " .. pair[2] .. " 2>/dev/null"), "Time")
             if t["__n"] != _ROWS:to(str)
                 return _fail(pair[1] .. " timing run " .. to(str)(r + 1)
                     .. " Time count mismatch: got " .. t["__n"] .. " expected " .. _ROWS:to(str))

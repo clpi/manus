@@ -1,4 +1,4 @@
-# std.net — TCP/UDP sockets + HTTP client/server
+# net — TCP/UDP sockets + HTTP client/server
 # Architecture: When the module variable is named "net", the duo codegen emits
 # direct C calls (duo_net_tcp_connect, duo_net_http_get, etc.) for zero-overhead
 # networking. This fallback uses curl for HTTP and stubs for raw sockets.

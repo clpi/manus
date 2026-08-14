@@ -11,7 +11,7 @@
 #
 # Timing is interleaved min-of-N. `the engine`'s own printed `seconds=` is os.clock,
 # which on macOS accumulates CPU across threads; it must never be quoted for a
-# perf claim. This harness uses std.time.monotonic around the whole run.
+# perf claim. This harness uses time.monotonic around the whole run.
 #
 # THE INVOCATION SURFACES DO NOT MATCH, and pretending they do is how a bogus
 # row gets published:
@@ -30,9 +30,9 @@ _msns(): i64
 end
 
 _time_ms(cmd: str): i64
-    a: i64 = std.time.monotonic()
-    std.script.status(cmd)
-    b: i64 = std.time.monotonic()
+    a: i64 = time.monotonic()
+    script.status(cmd)
+    b: i64 = time.monotonic()
     to(i64)((b - a) / _msns())
 end
 
@@ -103,7 +103,7 @@ end
 # One spelling for a value that six runtimes print six ways: signed vs
 # unsigned i32, hex with a type suffix, and differing f64 digit counts.
 _norm(raw: str): str
-    t = std.script.chomp(raw)
+    t = script.chomp(raw)
     t = t:gsub(":i32", "")
     t = t:gsub(":i64", "")
     t = t:gsub(":f32", "")
@@ -263,15 +263,15 @@ main(): i64
     # wart's 12 -- which is precisely the loss the row exists to show. This is a
     # resolution rule, not a per-module one: it keys on the measured time, never
     # on a name, an index or an input size.
-    floor: i64 = to(i64)(std.script.getenv("FLOOR_MS", "40"))
+    floor: i64 = to(i64)(script.getenv("FLOOR_MS", "40"))
     startup = 0
 
     for _i, mod in fixtures
         abs = root .. "/" .. mod
-        name = std.script.path_stem(mod)
+        name = script.path_stem(mod)
         for _j, entry in {"run", "_start"}
-            if std.script.status("wasmtime --invoke " .. entry .. " " .. mod .. " >/dev/null 2>&1") == 0
-                oracle = _norm(_answer(std.script.capture(
+            if script.status("wasmtime --invoke " .. entry .. " " .. mod .. " >/dev/null 2>&1") == 0
+                oracle = _norm(_answer(script.capture(
                     "wasmtime --invoke " .. entry .. " " .. mod .. " 2>/dev/null")))
 
                 # ── commands, one per runtime ────────────────────────────
@@ -309,7 +309,7 @@ main(): i64
                         if r == "wart" and entry != "_start"
                             okrt[r] = false
                         else
-                            raw = std.script.capture(cmd[r] .. errpol[r])
+                            raw = script.capture(cmd[r] .. errpol[r])
                             got = _norm(_answer(raw))
                             if oracle == ""
                                 # a void export: there is no value to agree on,

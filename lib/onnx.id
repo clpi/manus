@@ -1,4 +1,4 @@
-# std.onnx — ONNX Runtime inference bindings via @ffi
+# onnx — ONNX Runtime inference bindings via @ffi
 # Usage: duo compile myapp.id #link onnxruntime
 #       (and compile lib/c/onnx_shim.c, link it into the final binary)
 #

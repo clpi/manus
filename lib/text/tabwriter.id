@@ -1,4 +1,4 @@
-# std.text_tabwriter — tab-separated column writer (mirrors Go's text/tabwriter)
+# text_tabwriter — tab-separated column writer (mirrors Go's text/tabwriter)
 # Aligns columns of text separated by tab characters into a neat table.
 
 # new_writer: create a tabwriter with the given parameters.

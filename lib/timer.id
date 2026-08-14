@@ -1,4 +1,4 @@
-# std.timer — performance measurement, timing, and benchmarking
+# timer — performance measurement, timing, and benchmarking
 # Provides high-resolution timers, lap tracking, and benchmark
 # utilities for measuring code performance.
 

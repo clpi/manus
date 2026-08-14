@@ -1,4 +1,4 @@
-# std.fs_watch — file system watching via kqueue (macOS), inotify (Linux),
+# fs_watch — file system watching via kqueue (macOS), inotify (Linux),
 # and a portable polling fallback.
 #
 # Usage:

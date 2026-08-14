@@ -1,4 +1,4 @@
-# std.fmt — formatting utilities
+# fmt — formatting utilities
 
 int(v: any): str
     if v == nil return "nil" end

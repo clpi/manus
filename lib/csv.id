@@ -1,4 +1,4 @@
-# std.csv — basic CSV parsing and formatting
+# csv — basic CSV parsing and formatting
 
 parse_line(line: any): any
         res = {}

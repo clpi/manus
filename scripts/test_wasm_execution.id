@@ -35,28 +35,28 @@ _skipped(m: str, why: str): void
 end
 
 _have(t: str): bool
-    std.script.chomp(std.script.capture("command -v " .. t .. " 2>/dev/null")) != ""
+    script.chomp(script.capture("command -v " .. t .. " 2>/dev/null")) != ""
 end
 
 _env_or(n: str, d: str): str
-    v = std.script.getenv_or(n)
+    v = script.getenv_or(n)
     if v == "" return d end
     v
 end
 
 _stem(p: str): str
-    std.script.chomp(std.script.capture("basename " .. p .. " | sed 's/\\.[^.]*$//'"))
+    script.chomp(script.capture("basename " .. p .. " | sed 's/\\.[^.]*$//'"))
 end
 
 # Compile to wasm. Returns the .wasm path, or "" on failure. Compiler stderr
 # is kept so a failure can name its cause instead of just "compile failed".
 _compile(duo: str, src: str): str
     w = _TMP .. "/" .. _stem(src) .. ".wasm"
-    if std.script.run(duo .. " compile " .. src .. " --target wasm32-wasi -o " .. w
+    if script.run(duo .. " compile " .. src .. " --target wasm32-wasi -o " .. w
         .. " 2>" .. _TMP .. "/err") != 0
         return ""
     end
-    if !std.script.fs_exists(w)
+    if !script.fs_exists(w)
         # GAP-19's shape: the compiler can report success and write nothing,
         # or write the wrong format. Existence is checked separately from the
         # exit status for exactly that reason.

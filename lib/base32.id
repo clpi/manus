@@ -1,4 +1,4 @@
-# std.base32 — Base32 encoding and decoding (RFC 4648)
+# base32 — Base32 encoding and decoding (RFC 4648)
 
 # Note: base32 lookup tables (alphabets and decode tables) are constructed
 # inside the functions that use them. The duo codegen does not yet expose

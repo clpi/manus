@@ -1,4 +1,4 @@
-# std.encoding_binary — binary read/write (mirrors Go's encoding/binary)
+# encoding_binary — binary read/write (mirrors Go's encoding/binary)
 # Provides little-endian and big-endian encoding of integers into byte strings
 # and decoding back. Float is handled via string.format / tonumber.
 

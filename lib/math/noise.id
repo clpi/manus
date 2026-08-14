@@ -1,4 +1,4 @@
-# std.math.noise — Perlin and Simplex noise
+# math.noise — Perlin and Simplex noise
 # For procedural generation, terrain, textures, and ML data augmentation.
 
 # ═══════════════════════════════════════════════════════════════

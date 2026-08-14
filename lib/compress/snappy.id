@@ -1,4 +1,4 @@
-# std.compress.snappy — Snappy compression (fast, low-ratio)
+# compress.snappy — Snappy compression (fast, low-ratio)
 # Snappy is used in many systems for its speed: LevelDB, RocksDB, Kafka, etc.
 
 # ═══════════════════════════════════════════════════════════════

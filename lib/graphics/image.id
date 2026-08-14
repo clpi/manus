@@ -1,4 +1,4 @@
-# std.graphics.image — Image loading, saving, and manipulation
+# graphics.image — Image loading, saving, and manipulation
 # For loading PNG/JPEG/etc. in ward's rendering pipeline.
 # Delegates I/O to std.image.png and std.io.
 

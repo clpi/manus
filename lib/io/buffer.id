@@ -1,6 +1,6 @@
-# std.io.buffer — Buffered I/O operations
+# io.buffer — Buffered I/O operations
 # For efficient file and network I/O.
-# Sources: file handles (std.io.open), stdin, or raw byte-table sources.
+# Sources: file handles (io.open), stdin, or raw byte-table sources.
 
 # ═══════════════════════════════════════════════════════════════
 # Buffered Reader

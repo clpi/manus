@@ -1,4 +1,4 @@
-# std.hash.sha512 — SHA-512 hash (mirrors Go's crypto/sha512)
+# hash.sha512 — SHA-512 hash (mirrors Go's crypto/sha512)
 # Pure-Duo implementation using 32-bit word pairs to represent 64-bit values.
 
 wide(hi: i64, lo: i64): any

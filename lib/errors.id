@@ -1,4 +1,4 @@
-# std.errors — error creation and wrapping (mirrors Go's errors package)
+# errors — error creation and wrapping (mirrors Go's errors package)
 # In Duo, errors are represented as tables with a `message` field and
 # optional `cause` chain. The `error` interface is just a callable returning
 # a string description.

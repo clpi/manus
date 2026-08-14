@@ -1,4 +1,4 @@
-# std.yaml — YAML parser with nested structure support
+# yaml — YAML parser with nested structure support
 
 parse_value(data: str, start: i64, indent: i64): any
     i = start

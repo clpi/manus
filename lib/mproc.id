@@ -1,4 +1,4 @@
-# std.mproc — multi-process utilities
+# mproc — multi-process utilities
 
 
 pid(): str

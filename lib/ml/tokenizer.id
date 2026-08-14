@@ -1,4 +1,4 @@
-# std.ml.tokenizer — Tokenization algorithms (BPE, WordPiece, SentencePiece)
+# ml.tokenizer — Tokenization algorithms (BPE, WordPiece, SentencePiece)
 # Essential for LLM inference in ward and ML pipelines.
 
 # ═══════════════════════════════════════════════════════════════

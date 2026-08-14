@@ -1,4 +1,4 @@
-# std.ffi_gen — Intelligent FFI Binding Generator
+# ffi_gen — Intelligent FFI Binding Generator
 # At compile time, parses C headers and generates Duo FFI bindings
 # with proper type mapping, error handling, and memory management hints.
 #

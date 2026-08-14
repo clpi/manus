@@ -1,4 +1,4 @@
-# std.net_smtp — SMTP client (mirrors Go's net/smtp)
+# net_smtp — SMTP client (mirrors Go's net/smtp)
 # Provides a minimal SMTP client for sending plain-text email.
 # Uses io.popen to invoke the system `sendmail` or `curl` as a transport.
 

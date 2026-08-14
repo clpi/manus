@@ -1,4 +1,4 @@
-# std.image.png — PNG image decoder/encoder
+# image.png — PNG image decoder/encoder
 # Decoder: reads IHDR, IDAT, IEND chunks with zlib decompression and filter reconstruction.
 # Encoder: writes uncompressed store blocks (valid PNG, larger files).
 
@@ -174,19 +174,19 @@ decode(data: str): any
             # Create image based on color type
             if color_type == 6
                 # RGBA
-                img = std.image.new_rgba(std.image.rect(0, 0, width, height))
+                img = image.new_rgba(image.rect(0, 0, width, height))
             elseif color_type == 2
                 # RGB (will set alpha to 255)
-                img = std.image.new_rgba(std.image.rect(0, 0, width, height))
+                img = image.new_rgba(image.rect(0, 0, width, height))
             elseif color_type == 0
                 # Grayscale
-                img = std.image.new_gray(std.image.rect(0, 0, width, height))
+                img = image.new_gray(image.rect(0, 0, width, height))
             elseif color_type == 4
                 # Gray + Alpha
-                img = std.image.new_rgba(std.image.rect(0, 0, width, height))
+                img = image.new_rgba(image.rect(0, 0, width, height))
             else
                 # Unsupported: create RGBA as fallback
-                img = std.image.new_rgba(std.image.rect(0, 0, width, height))
+                img = image.new_rgba(image.rect(0, 0, width, height))
             end
 
         elseif chunk_type == "IDAT"
@@ -205,7 +205,7 @@ decode(data: str): any
     if img != nil and idat_data:len() > 0
         # Decompress the IDAT data (zlib wrapped)
         compressed = str_to_bytes(idat_data)
-        raw_data_str = std.compress.zlib.decompress(idat_data)
+        raw_data_str = compress.zlib.decompress(idat_data)
         raw_data = str_to_bytes(raw_data_str)
 
         # Determine bytes per pixel based on color type and bit depth
@@ -236,22 +236,22 @@ decode(data: str): any
                     g = recon[col * 4 + 2] * 257
                     b = recon[col * 4 + 3] * 257
                     a = recon[col * 4 + 4] * 257
-                    std.image.img_set(img, col, row, std.image.color.rgba(r, g, b, a))
+                    image.img_set(img, col, row, image.color.rgba(r, g, b, a))
                 elseif color_type == 2
                     # RGB
                     r = recon[col * 3 + 1] * 257
                     g = recon[col * 3 + 2] * 257
                     b = recon[col * 3 + 3] * 257
-                    std.image.img_set(img, col, row, std.image.color.rgba(r, g, b, 65535))
+                    image.img_set(img, col, row, image.color.rgba(r, g, b, 65535))
                 elseif color_type == 0
                     # Grayscale
                     y = recon[col + 1] * 257
-                    std.image.img_set(img, col, row, std.image.color.gray(y))
+                    image.img_set(img, col, row, image.color.gray(y))
                 elseif color_type == 4
                     # Gray + Alpha
                     y = recon[col * 2 + 1] * 257
                     a = recon[col * 2 + 2] * 257
-                    std.image.img_set(img, col, row, std.image.color.rgba(y, y, y, a))
+                    image.img_set(img, col, row, image.color.rgba(y, y, y, a))
                 end
                 col += 1
             end
@@ -268,8 +268,8 @@ end
 
 encode(img: any): str
     out = "\137PNG\r\n\26\n"
-    w = std.image.rect_dx(img.rect)
-    h = std.image.rect_dy(img.rect)
+    w = image.rect_dx(img.rect)
+    h = image.rect_dy(img.rect)
 
     # IHDR chunk (13 bytes)
     ihdr_data = string.char(
@@ -288,7 +288,7 @@ encode(img: any): str
     for y = 0, h - 1
         raw = raw .. 0:char() # filter: none
         for x = 0, w - 1
-            c = std.image.img_at(img, x, y)
+            c = image.img_at(img, x, y)
             r = (c.r / 257) % 256
             g = (c.g / 257) % 256
             b = (c.b / 257) % 256

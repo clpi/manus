@@ -1,4 +1,4 @@
-# std.graph — Graph data structure and algorithms
+# graph — Graph data structure and algorithms
 # Adjacency-list representation with BFS, DFS, topological sort,
 # shortest path, cycle detection, and strongly connected components.
 # Critical for: ML computation graphs, build systems, dependency

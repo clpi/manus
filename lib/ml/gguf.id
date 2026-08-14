@@ -1,4 +1,4 @@
-# std.ml.gguf — GGUF model file parser (for LLM inference in ward)
+# ml.gguf — GGUF model file parser (for LLM inference in ward)
 # GGUF is the standard format for quantized LLM weights (llama.cpp, etc.)
 
 # GGUF magic number

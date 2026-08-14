@@ -61,7 +61,7 @@ s.must("cd " .. ROOT .. " && if [ ! -x zig-out/bin/idol ]; then ${ZIG:-zig} buil
 # which backend and representation produced the numbers below, so a run that
 # silently fell back to a boxed representation is distinguishable from one that
 # did not. DUO_BENCH_MANIFEST is also read downstream # and only reaches a
-# child now that std.script.env_set is a real setenv rather than a shelled-out
+# child now that script.env_set is a real setenv rather than a shelled-out
 # `export` that never left its subshell.
 BENCH_BACKEND = s.getenv_or("BENCH_BACKEND")
 if BENCH_BACKEND:len() == 0

@@ -1,4 +1,4 @@
-# std.net.http.httputil — HTTP utilities (mirrors Go's net/http/httputil)
+# net.http.httputil — HTTP utilities (mirrors Go's net/http/httputil)
 # Provides reverse proxy and dump helpers
 
 dump(x: any): str

@@ -34,9 +34,9 @@
 #              is proven but not canonical is proven until someone breaks it
 #              quietly.
 #
-# WHY EXIT STATUS AND NOT OUTPUT: `std.os.execute` collapses every nonzero
-# status to 1, so a differential built on `std.script.run` compares 1 against 1
-# and calls every divergence agreement. `std.script.status` reads the real code
+# WHY EXIT STATUS AND NOT OUTPUT: `os.execute` collapses every nonzero
+# status to 1, so a differential built on `script.run` compares 1 against 1
+# and calls every divergence agreement. `script.status` reads the real code
 # back through a subshell. Same reason scripts/native_differential.id does it.
 #
 # This is a REPORT, not a second gate: `native-differential` already blocks on
@@ -59,30 +59,30 @@ prv = 0
 can = 0
 
 envval(name: str, fallback: str): str
-    v = std.script.getenv_or(name)
+    v = script.getenv_or(name)
     if v == "" return fallback end
     v
 
 status(cmd: str): i64
-    std.script.status(timeprep .. cmd)
+    script.status(timeprep .. cmd)
 end
 
 quiet(cmd: str): i64
-    std.script.status(cmd .. " >/dev/null 2>&1")
+    script.status(cmd .. " >/dev/null 2>&1")
 end
 
 files(dir: str): any
-    out = std.script.capture("ls " .. dir .. "/*.id 2>/dev/null")
+    out = script.capture("ls " .. dir .. "/*.id 2>/dev/null")
     acc = {}
     for i, line in out:split("\n")
-        t = std.script.chomp(line)
+        t = script.chomp(line)
         if t != ""
             acc[acc:len() + 1] = t
         end
     acc
 
 name(path: str): str
-    std.script.chomp(std.script.capture("basename " .. path .. " .id"))
+    script.chomp(script.capture("basename " .. path .. " .id"))
 
 # The fixture's own statement of intent: does it carry a `--` comment line at
 # all?
@@ -134,7 +134,7 @@ measure(idol: str, src: str, group: str, blocking: bool, declaredans: bool): voi
     # A MEASUREMENT MUST NOT BE ABLE TO WRITE TO WHAT IT MEASURES. It runs on
     # a copy, and the copy is what gets rewritten.
     copy = work .. "/" .. nm .. ".fmt.id"
-    std.script.run("cp " .. src .. " " .. copy)
+    script.run("cp " .. src .. " " .. copy)
     ispars = quiet(idol .. " fmt " .. copy) == 0
     ischk = quiet(idol .. " check " .. src) == 0
 
@@ -178,19 +178,19 @@ main: i64 = ()
     corpus = envval("NATIVE_DIFF_CORPUS", "examples/native_differential")
     run_timeout = envval("NATIVE_DIFF_TIMEOUT", "10")
 
-    if !std.script.fs_exists(idol)
+    if !script.fs_exists(idol)
         print("capability_table: FAIL — no compiler at " .. idol)
         return 1
     end
 
     for i, cand in {"timeout", "gtimeout"}
-        if timeprep == "" and std.script.chomp(std.script.capture(
+        if timeprep == "" and script.chomp(script.capture(
             "command -v " .. cand .. " 2>/dev/null")) != ""
             timeprep = cand .. " " .. run_timeout .. " "
         end
     end
 
-    std.script.run("rm -rf " .. work .. " && mkdir -p " .. work)
+    script.run("rm -rf " .. work .. " && mkdir -p " .. work)
 
     for i, src in files(corpus)
         measure(idol, src, "corpus", true, false)

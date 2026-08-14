@@ -1,4 +1,4 @@
-# std.ini — INI file parser
+# ini — INI file parser
 
 parse(data: str): any
     lines = data:split("\n")
