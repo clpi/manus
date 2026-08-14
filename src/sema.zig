@@ -6,6 +6,7 @@ const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
 const Expr = ast.Expr;
 const types = @import("types.zig");
+const subject_home = @import("subject_home.zig");
 const RT = types.ResolvedType;
 const term = @import("term.zig");
 const directives = @import("directives.zig");
@@ -2709,6 +2710,13 @@ pub const Sema = struct {
                 return true;
         }
         if (std.mem.eql(u8, method, "to") and args.len == 1) return true;
+        // SUBJECT-ONE. `subject:relation(x)` is the same edge as
+        // `home.relation(subject, x)`, and the canon PREFERS the subject-first
+        // spelling. It used to resolve through the allow-list below while the
+        // operation-first face resolved through the module tables, so
+        // `math.floor(x)` compiled and `x:floor()` did not. One origin now
+        // answers for both faces; see src/subject_home.zig.
+        if (subject_home.homeOfWithReceiver(method, ot == .str) != null) return true;
         if (ot == .str or ot == .any) {
             if (std.mem.eql(u8, method, "len") and args.len == 0) return true;
             if (std.mem.eql(u8, method, "has") and args.len == 1) return true;

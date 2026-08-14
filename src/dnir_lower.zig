@@ -9,6 +9,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const Expr = ast.Expr;
 const types = @import("types.zig");
+const subject_home = @import("subject_home.zig");
 const dnir = @import("native_ir.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
@@ -3475,6 +3476,12 @@ fn faceAsCall(ctx: *LowerCtx, expr: *const ast.Expr) Error!*const ast.Expr {
     if (exprIsStr(ctx, mc.obj) or string_method) {
         const recv = try ctx.alloc.create(ast.Expr);
         recv.* = .{ .name = .{ .loc = mc.loc, .ident = "string" } };
+        func.* = .{ .field = .{ .loc = mc.loc, .obj = recv, .field = mc.method } };
+    } else if (subject_home.homeOfWithReceiver(mc.method, exprIsStr(ctx, mc.obj))) |owner| {
+        // The subject-first face rebuilt as `home.relation(subject, …)`, the
+        // same node the operation-first face builds. One edge, two spellings.
+        const recv = try ctx.alloc.create(ast.Expr);
+        recv.* = .{ .name = .{ .loc = mc.loc, .ident = subject_home.homeName(owner) } };
         func.* = .{ .field = .{ .loc = mc.loc, .obj = recv, .field = mc.method } };
     } else {
         func.* = .{ .name = .{ .loc = mc.loc, .ident = mc.method } };
