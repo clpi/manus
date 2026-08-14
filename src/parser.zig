@@ -4074,7 +4074,16 @@ pub const Parser = struct {
                     try path.append(self.alloc, part.text);
                 } else if ((try self.pk()).kind == .colon) {
                     const colon = try self.pk();
+                    // `a:b = (…)` is a single-line declaration. When the token
+                    // after `:` is on a LATER line this is not that form at all
+                    // — it is a descriptor home written offside (`point:` over
+                    // `x: f64`), and consuming it here reported "expected
+                    // function arguments" for a shape that is not a function.
                     _ = try self.adv();
+                    if ((try self.pk()).loc.line != colon.loc.line) {
+                        self.lex.restoreState(saved);
+                        return null;
+                    }
                     if ((try self.pk()).kind != .name) {
                         self.lex.restoreState(saved);
                         return null;
@@ -4185,7 +4194,21 @@ pub const Parser = struct {
         // Typed-binding without 'local': name : Type = value
         // parse_suffixed_expr breaks on ':' when followed by a type-like token.
         if (first.* == .name and nxt.kind == .colon) {
-            _ = try self.adv(); // consume ':'
+            const colon_tok = try self.adv(); // consume ':'
+            // `point:` over an indented field region — a descriptor home with
+            // no delimiters. Checked before the `{`/`@` faces because it is a
+            // different shape entirely, not a variant of them.
+            if (try self.starts_offside_record(colon_tok)) {
+                const rec_typ = try self.parse_offside_record(colon_tok.loc);
+                return ast.Stmt{ .alias_def = .{
+                    .loc = first.loc(),
+                    .name = first.name.ident,
+                    .target = rec_typ,
+                    .fields = &.{},
+                    .methods = &.{},
+                    .attributes = &.{},
+                } };
+            }
             // deleted prefix-`@`, so the canonical spelling of a
             // case-set is `kind: { name, number, eof }` — §7 and the
             // golden `token`/`lexer` in §20 are written that way. The machinery
@@ -5422,6 +5445,60 @@ pub const Parser = struct {
     /// a sequence. That restriction is what keeps this from being "indentation
     /// may stand in for a delimiter anywhere", which would be ambiguous; the
     /// region's role is fixed before its contents are read, never after.
+    /// True when `name:` is followed by an indented region of FIELD forms, which
+    /// is a descriptor home written without delimiters:
+    ///
+    ///     point:
+    ///         x: f64
+    ///         y: f64
+    ///
+    /// The `:` already says a descriptor context follows, so the braces were
+    /// repeating a boundary the introducer had established. Field forms only
+    /// (`name:`), for the same reason a structured pack requires slot forms.
+    fn starts_offside_record(self: *Parser, colon: Token) ParseError!bool {
+        const first = try self.pk();
+        if (first.loc.line == colon.loc.line) return false;
+        if (first.kind != .name) return false;
+        const saved = self.lex.saveState();
+        const saved_line = self.prev_line;
+        const saved_end = self.prev_end_col;
+        defer {
+            self.lex.restoreState(saved);
+            self.prev_line = saved_line;
+            self.prev_end_col = saved_end;
+        }
+        _ = try self.adv();
+        return (try self.pk()).kind == .colon;
+    }
+
+    /// The same record type the delimited literal builds, read from an offside
+    /// region. One node, two spellings.
+    fn parse_offside_record(self: *Parser, open: ast.Loc) ParseError!ast.TypeExpr {
+        var fields: std.ArrayList(ast.RecordField) = .empty;
+        var col: u32 = 0;
+        while (true) {
+            const tok = try self.pk();
+            if (tok.kind != .name) break;
+            if (fields.items.len == 0) {
+                if (tok.loc.line == open.line) break;
+                col = tok.loc.col;
+            } else if (tok.loc.col != col or tok.loc.line == self.prev_line) break;
+            const fl = tok.loc;
+            const fn_tok = try self.expect(.name);
+            _ = try self.expect(.colon);
+            const ft = (try self.parse_inline_caseset(fn_tok.text, fl)) orelse
+                try self.parse_field_type();
+            try fields.append(self.alloc, ast.RecordField{
+                .name = fn_tok.text,
+                .typ = ft,
+                .loc = fl,
+            });
+        }
+        const rt = try self.alloc.create(ast.TypeExpr.RecordType);
+        rt.* = .{ .fields = try fields.toOwnedSlice(self.alloc) };
+        return .{ .record = rt };
+    }
+
     fn starts_offside_pack(self: *Parser, eq: Token) ParseError!bool {
         const first = try self.pk();
         if (first.loc.line == eq.loc.line) return false;
@@ -6161,6 +6238,17 @@ pub const Parser = struct {
                     }
                     if (after_colon.kind == .star or after_colon.kind == .question) {
                         // name : *Type or name : ?Type — pointer/optional type; don't consume
+                        self.lex.restoreState(saved);
+                        break;
+                    }
+                    // `point:` followed by a LATER line is a descriptor home
+                    // written offside, not a subject call — a subject call's
+                    // method name always sits on the same line as its `:`.
+                    // Without this, `point:` over `x: f64` was consumed as
+                    // `point:x(...)` and reported "expected function arguments".
+                    // `a:match` over an offside pack is unaffected: its method
+                    // name IS on the `:` line.
+                    if (after_colon.loc.line != tok.loc.line) {
                         self.lex.restoreState(saved);
                         break;
                     }
