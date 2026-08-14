@@ -5199,7 +5199,10 @@ pub const CodeGen = struct {
                     self.probeSubjectRelationType(mc.method, mc.obj, mc.args.len) != null or
                     // law.host.projection { projects = to, authority = false }
                     // gap[082] is the deletion gate.
-                    (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1);
+                    (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1) or
+                    // The test world's relations lower to a trap, not a call,
+                    // so there is no declaration for this precheck to find.
+                    (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "test"));
                 if (!resolvable) {
                     self.nativeDiagFailFmt("method-unresolved:{s}", .{mc.method});
                     break :blk false;

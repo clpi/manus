@@ -18,7 +18,7 @@
 
 const std = @import("std");
 
-pub const Home = enum { string, math, table, io };
+pub const Home = enum { string, math, table, io, testing };
 
 const string_members = [_][]const u8{
     "sub",   "match", "byte",    "len",    "char",   "rep",
@@ -68,6 +68,16 @@ const io_members = [_][]const u8{
     "flush", "seek", "lines", "setvbuf",
 };
 
+/// The TEST world's relations. Reached as `test:assert(...)`, and only in a
+/// file the test world is injected into — which sema derives from where the
+/// file LIVES (`test/`, `*_test.id`), not from an import or an attribute.
+///
+/// This is what `@comp.assert` should have been. A directive namespace is a
+/// namespace; a world is a subject, and an assertion is a relation on it.
+const testing_members = [_][]const u8{
+    "assert", "refute", "equal", "differs", "raises", "near",
+};
+
 const table_members = [_][]const u8{
     "insert", "remove", "sort", "unpack", "push", "pop", "concat",
 };
@@ -100,6 +110,7 @@ pub fn homeOf(method: []const u8) ?Home {
     if (has(&math_members, method)) return .math;
     if (has(&table_members, method)) return .table;
     if (has(&io_members, method)) return .io;
+    if (has(&testing_members, method)) return .testing;
     return null;
 }
 
@@ -119,6 +130,7 @@ pub fn homeName(h: Home) []const u8 {
         .math => "math",
         .table => "table",
         .io => "io",
+        .testing => "test",
     };
 }
 

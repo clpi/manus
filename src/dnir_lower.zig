@@ -2895,6 +2895,50 @@ fn lowerPositionalTableIntoMemory(ctx: *LowerCtx, name: []const u8, table: *cons
 /// Emitted for the STORE and for the dynamic READ, because the read has the same
 /// defect from the other side: an out-of-range read answered 0 where the table
 /// has no such element at all.
+/// `test:assert(cond, msg)` and `test:equal(a, b, msg)` — the test world's
+/// relations, lowered to a real trap.
+///
+/// An assertion that only type-checks is not an assertion. These become a
+/// branch and an `abort`, the same shape the index bounds trap already uses, so
+/// a failing assertion stops the process rather than being decoration. The
+/// message operand is checked for arity and is not otherwise realized here —
+/// there is no output channel in this subset to carry it.
+fn lowerTestRelation(ctx: *LowerCtx, method: []const u8, args: []const *const ast.Expr) Error!?dnir.Value {
+    const cond: dnir.Value = blk: {
+        if (std.mem.eql(u8, method, "assert")) {
+            if (args.len < 1) return bail(ctx.diagnostic, @src());
+            break :blk try lowerExpr(ctx, args[0]);
+        }
+        if (std.mem.eql(u8, method, "refute")) {
+            if (args.len < 1) return bail(ctx.diagnostic, @src());
+            const v = try lowerExpr(ctx, args[0]);
+            const t = ctx.freshTemp();
+            try ctx.emit(.{ .op = .binop, .result = t, .binop = .eq, .lhs = v, .rhs = .{ .i64 = 0 } });
+            break :blk .{ .temp = t };
+        }
+        if (std.mem.eql(u8, method, "equal") or std.mem.eql(u8, method, "differs")) {
+            if (args.len < 2) return bail(ctx.diagnostic, @src());
+            const a = try lowerExpr(ctx, args[0]);
+            const b = try lowerExpr(ctx, args[1]);
+            const t = ctx.freshTemp();
+            const op: dnir.BinOpTag = if (std.mem.eql(u8, method, "equal")) .eq else .neq;
+            try ctx.emit(.{ .op = .binop, .result = t, .binop = op, .lhs = a, .rhs = b });
+            break :blk .{ .temp = t };
+        }
+        return null;
+    };
+    try ensureExtern(ctx, "os", "abort", "abort");
+    const bad = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
+    const skip = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .branch_target = 0 });
+    const trap: u32 = @intCast(ctx.instrs.items.len);
+    ctx.instrs.items[bad].branch_target = trap;
+    try ctx.emit(.{ .op = .call_extern, .callee = "abort" });
+    ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
+    return .void;
+}
+
 fn emitIndexBoundsTrap(ctx: *LowerCtx, idx_slot: u32, len: i64) Error!void {
     try ensureExtern(ctx, "os", "abort", "abort");
 
@@ -3853,6 +3897,14 @@ fn lowerSubjectCall(
     expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
+    // The test world's relations become a real trap rather than a call into a
+    // module that does not exist at runtime. Gated on the SUBJECT being `test`,
+    // so a user relation named `assert` on any other subject is untouched.
+    if (expr.* == .method_call and expr.method_call.obj.* == .name and
+        std.mem.eql(u8, expr.method_call.obj.name.ident, "test"))
+    {
+        if (try lowerTestRelation(ctx, expr.method_call.method, expr.method_call.args)) |v| return v;
+    }
     if (ctx.occurrences.get(expr)) |application| {
         if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr)) {
             if (ctx.graph.applicationSubject(application.application) == null) {

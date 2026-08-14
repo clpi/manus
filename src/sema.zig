@@ -480,7 +480,24 @@ pub const Sema = struct {
     };
 
     /// Standard library function names that are known built-in globals.
-    fn is_builtin_global(_: *const Sema, name: []const u8) bool {
+    /// The TEST WORLD, injected by file structure rather than imported.
+    ///
+    /// Assertions do not belong in a directive namespace (`@comp.assert`) and
+    /// do not belong in every program either. They belong to a `test` world,
+    /// and which files inhabit that world is already stated by where they LIVE:
+    /// a `test/` component in the path, or a `*_test.id` stem. Deriving it from
+    /// structure means no import, no attribute, and no way for a non-test file
+    /// to reach an assertion by accident.
+    fn inTestWorld(self: *const Sema) bool {
+        const p = self.source_path orelse return false;
+        if (std.mem.indexOf(u8, p, "/test/") != null) return true;
+        if (std.mem.startsWith(u8, p, "test/")) return true;
+        const stem = std.fs.path.basename(p);
+        return std.mem.endsWith(u8, stem, "_test.id") or std.mem.startsWith(u8, stem, "test_");
+    }
+
+    fn is_builtin_global(self: *const Sema, name: []const u8) bool {
+        if (std.mem.eql(u8, name, "test")) return self.inTestWorld();
         // Lua standard library globals
         if (std.mem.eql(u8, name, "string") or
             std.mem.eql(u8, name, "table") or
@@ -2716,7 +2733,14 @@ pub const Sema = struct {
         // operation-first face resolved through the module tables, so
         // `math.floor(x)` compiled and `x:floor()` did not. One origin now
         // answers for both faces; see src/subject_home.zig.
-        if (subject_home.homeOfWithReceiver(method, ot == .str) != null) return true;
+        if (subject_home.homeOfWithReceiver(method, ot == .str)) |owner| {
+            // The test world is INJECTED BY STRUCTURE, so its relations resolve
+            // only in a file that inhabits it. Without this the world was
+            // admitted as a name in `test/` but `test:assert(...)` resolved
+            // anywhere, which is the opposite of deriving reach from location.
+            if (owner == .testing) return self.inTestWorld();
+            return true;
+        }
         if (ot == .str or ot == .any) {
             if (std.mem.eql(u8, method, "len") and args.len == 0) return true;
             if (std.mem.eql(u8, method, "has") and args.len == 1) return true;
