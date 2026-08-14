@@ -5328,11 +5328,52 @@ pub const Parser = struct {
 
     fn parse_if_expr(self: *Parser) ParseError!*ast.Expr {
         const l = (try self.expect(.kw_if)).loc;
+        // §15 comma-packed application face: `if(c, yes, no)` is a SOURCE
+        // PROJECTION of the block face, not a second construct. It is desugared
+        // right here into the SAME `if_expr` node the block face builds, so the
+        // two spellings cannot diverge semantically — that is the ruling's
+        // negative control #1 satisfied by construction rather than by testing.
+        //
+        // Unambiguous because a condition can never be a comma list: a single
+        // element `if(c)` is an ordinary parenthesized condition and falls
+        // through to the block face untouched. The curried face `if(c)(a)(b)`
+        // stays IMPLEMENTATION-BLOCKED — distinguishing it from a condition that
+        // is itself a call chain (`if (f)(x) then …`) needs the resolver, and
+        // §42 says reject ambiguity rather than guess.
+        if ((try self.pk()).kind == .lparen) {
+            _ = try self.adv();
+            const first = try self.parse_expr();
+            if ((try self.pk()).kind == .comma) {
+                _ = try self.adv();
+                const then_e = try self.parse_expr();
+                // A two-element pack has no false alternative. Synthesising `nil`
+                // here would mint exactly the fake zero/nil/empty result identity
+                // §17 forbids — and it did: `if(c, 7)` returned 0 for c = 0. The
+                // block face already fails closed on a missing arm, so this one
+                // does too rather than answering with a value nobody wrote.
+                if ((try self.pk()).kind != .comma) {
+                    term.locErr(l, "`if(condition, yes)` has no false alternative; write `if(condition, yes, no)` or use the block form", .{});
+                    return error.UnexpectedToken;
+                }
+                _ = try self.adv();
+                const else_e = try self.parse_expr();
+                _ = try self.expect(.rparen);
+                return self.new_expr(.{ .if_expr = try self.new_if_expr(l, first, then_e, else_e) });
+            }
+            _ = try self.expect(.rparen);
+            return self.parse_if_expr_after_if_with_cond(l, first, true);
+        }
         return self.parse_if_expr_after_if(l, true);
     }
 
     fn parse_if_expr_after_if(self: *Parser, l: ast.Loc, consume_end: bool) ParseError!*ast.Expr {
         const cond = try self.parse_expr();
+        return self.parse_if_expr_after_if_with_cond(l, cond, consume_end);
+    }
+
+    /// Same as `parse_if_expr_after_if`, for a condition already parsed by the
+    /// caller (the §15 single-element group `if(c)`).
+    fn parse_if_expr_after_if_with_cond(self: *Parser, l: ast.Loc, cond: *ast.Expr, consume_end: bool) ParseError!*ast.Expr {
         // §6: `kind = if tok.keyword keyword else name` — the
         // expression-if IS the ternary, and like every other one-liner it is
         // terminated by the newline (§3.3), not by a closer. `then` is what
