@@ -823,10 +823,13 @@ next_tok(self: Lexer): Tok
         end
         return { kind = 75, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 126
-        if self:peek_char() == 61
-            self:adv()
-            return { kind = 89, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
+        # `~` is XOR and nothing else. It used to swallow a following `=` and
+        # report inequality (kind 89), which is Lua's spelling, not this
+        # language's: inequality is `!=`. Eagerly gluing the `=` here was also
+        # what made `x ~= 1` silently a DISCARDED COMPARISON where xor-assign
+        # was meant. Emitting the bare tilde lets the grammar's adjacency rule
+        # form `~=` as a compound assignment, exactly as it already forms
+        # `>>=`, `<<=`, `|=` and `&=`.
         return { kind = 76, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 60
         if self:peek_char() == 61

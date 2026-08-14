@@ -47,7 +47,7 @@ fun find_from(s, sub, start) -> i64
     is_match = true
     j = 0
     while j < subn
-      if s:byte(i + j) ~= sub:byte(j + 1) then
+      if s:byte(i + j) != sub:byte(j + 1) then
         is_match = false
         break
       end
@@ -164,7 +164,7 @@ end
 forget(t: any, key: any): any
   out = {}
   for k, v in t
-    if k ~= key and v ~= nil then
+    if k != key and v != nil then
       out[k] = v
     end
   end
@@ -305,7 +305,7 @@ end
 fun split_prefix_after_dot(prefix) -> str
   out = prefix
   p = find_from(out, ".", 1)
-  while p ~= 0
+  while p != 0
     out = out:sub(p + 1)
     p = find_from(out, ".", 1)
   end
@@ -516,7 +516,7 @@ fun name_after_keywords(rest) -> any
     end
   end
   result = first_ident(r)
-  if result ~= nil then
+  if result != nil then
     result.col_offset = result.col_offset + offset
   end
   result
@@ -541,7 +541,7 @@ fun match_typed(code) -> any
   if i > n then
     return nil
   end
-  if code:byte(i) ~= 58 then
+  if code:byte(i) != 58 then
     return nil
   end
   name
@@ -589,7 +589,7 @@ fun match_bare_function(code) -> any
   while i <= n and is_space_byte(code:byte(i))
     i += 1
   end
-  if i > n or code:byte(i) ~= 40 then
+  if i > n or code:byte(i) != 40 then
     return nil
   end
   depth = 1
@@ -606,7 +606,7 @@ fun match_bare_function(code) -> any
     end
     i += 1
   end
-  if depth ~= 0 or not has_typed_param then
+  if depth != 0 or not has_typed_param then
     return nil
   end
   name
@@ -682,14 +682,14 @@ fun scan_symbols_lo(text, lo) -> any
     elseif top and (kw == "local" or kw == "global") then
       if starts_keyword(rest, "fun") or starts_keyword(rest, "function") then
         id = name_after_keywords(rest)
-        if id ~= nil then
+        if id != nil then
           syms[syms:len() + 1] = mk_sym(id.name, 12, i - 1, indent + kw:len() + id.col_offset, "", raw)
           container = id.name
           container_kind = 12
         end
       else
         id = first_ident(rest)
-        if id ~= nil then
+        if id != nil then
           k = 13
           if kw == "global" or is_upper(id.name) then
             k = 14
@@ -699,13 +699,13 @@ fun scan_symbols_lo(text, lo) -> any
       end
     elseif kw == "const" then
       id = first_ident(rest)
-      if id ~= nil then
+      if id != nil then
         syms[syms:len() + 1] = mk_sym(id.name, 14, i - 1, indent + kw:len() + id.col_offset, "", raw)
       end
-    elseif is_block_opener(kw) and kw ~= "do" and kw ~= "begin" then
+    elseif is_block_opener(kw) and kw != "do" and kw != "begin" then
       if kw == "fun" or kw == "function" or kw == "enum" or kw == "concept" then
         id = first_ident(rest)
-        if id ~= nil then
+        if id != nil then
           syms[syms:len() + 1] = mk_sym(id.name, kind_of(kw), i - 1, indent + kw:len() + id.col_offset, container, raw)
           if container == "" then
             container = id.name
@@ -720,7 +720,7 @@ fun scan_symbols_lo(text, lo) -> any
       # trie had no depth to show on canonical source. `indent` is passed
       # separately as the column, so trimming loses nothing.
       bf = match_bare_function(trim(code))
-      if bf ~= nil then
+      if bf != nil then
         syms[syms:len() + 1] = mk_sym(bf, 12, i - 1, indent, container, raw)
         if container == "" then
           container = bf
@@ -729,11 +729,11 @@ fun scan_symbols_lo(text, lo) -> any
         depth += 1
       else
         tb = match_typed(code)
-        if tb ~= nil then
+        if tb != nil then
           syms[syms:len() + 1] = mk_sym(tb, 13, i - 1, indent, container, raw)
         else
           pa = match_plain_assign(code)
-          if pa ~= nil and not starts_with(rest, ".") and not contains_char(raw, ".") then
+          if pa != nil and not starts_with(rest, ".") and not contains_char(raw, ".") then
             syms[syms:len() + 1] = mk_sym(pa, 13, i - 1, indent, container, raw)
           end
         end
@@ -801,7 +801,7 @@ fun find_refs_in_text(text, lo, name, uri) -> any
           is_match = true
           k = 0
           while k < nn
-            if raw:byte(p + k) ~= name:byte(k + 1) then
+            if raw:byte(p + k) != name:byte(k + 1) then
               is_match = false
               break
             end
@@ -864,7 +864,7 @@ fun find_rename_edits_in_text(text, lo, name, new_name, uri) -> any
           is_match = true
           k = 0
           while k < nn
-            if raw:byte(p + k) ~= name:byte(k + 1) then
+            if raw:byte(p + k) != name:byte(k + 1) then
               is_match = false
               break
             end
@@ -912,7 +912,7 @@ fun compute_folding_ranges(text, lo) -> any
     end
     code = strip_comment(raw)
     ctrim = trim(code)
-    if ctrim ~= "" then
+    if ctrim != "" then
       b = ctrim:byte(1)
       is_block = false
       if is_ident_start(b) then
@@ -950,7 +950,7 @@ fun compute_folding_ranges(text, lo) -> any
           end
           k += 1
         end
-        if f.endLine ~= nil then
+        if f.endLine != nil then
           folds[folds:len() + 1] = f
         end
       end
@@ -978,9 +978,9 @@ end
 fun ws_find_all_refs(idx, name, exclude_uri) -> any
   refs = {}
   for uri, syms in idx.entries
-    if uri ~= exclude_uri then
+    if uri != exclude_uri then
       lo = compute_line_offs(idx._texts[uri] or "")
-      if idx._texts[uri] ~= nil then
+      if idx._texts[uri] != nil then
         r = find_refs_in_text(idx._texts[uri], lo, name, uri)
         j = 1
         while j <= r:len()
@@ -995,9 +995,9 @@ end
 fun ws_find_all_edits(idx, name, new_name, exclude_uri) -> any
   edits = {}
   for uri, syms in idx.entries
-    if uri ~= exclude_uri then
+    if uri != exclude_uri then
       txt = idx._texts[uri]
-      if txt ~= nil then
+      if txt != nil then
         lo = compute_line_offs(txt)
         r = find_rename_edits_in_text(txt, lo, name, new_name, uri)
         j = 1
@@ -1015,9 +1015,9 @@ fun ws_search_symbols(idx, query) -> any
   seen = {}
   for uri, syms in idx.entries
     j = 1
-    while syms ~= nil and j <= syms:len()
+    while syms != nil and j <= syms:len()
       s = syms[j]
-      is_public = s.name:sub(1, 1) ~= "_"
+      is_public = s.name:sub(1, 1) != "_"
       if is_public and seen[s.name] == nil then
         if query == "" or completion_matches(s.name, query) then
           o = {}
@@ -1046,7 +1046,7 @@ fun find_doc_highlights(text, lo, syms, line, col) -> any
   # check if cursor is on a declared symbol
   s = symbol_at(syms, line, col)
   kind = 1
-  if s ~= nil and s.name == name then
+  if s != nil and s.name == name then
     kind = 2
   end
   highlights = {}
@@ -1071,7 +1071,7 @@ fun find_doc_highlights(text, lo, syms, line, col) -> any
           is_match = true
           k = 0
           while k < nn
-            if raw:byte(p + k) ~= name:byte(k + 1) then
+            if raw:byte(p + k) != name:byte(k + 1) then
               is_match = false
               break
             end
@@ -1116,30 +1116,30 @@ fun shell_quote(s) -> str
 end
 fun resolve_check_flags() -> str
   f = os.getenv("DUO_LSP_CHECK_FLAGS")
-  if f ~= nil and f ~= "" then
+  if f != nil and f != "" then
     return f .. " "
   end
   h = os.getenv("DUO_LSP_HINTS")
-  if h ~= nil and (h == "1" or h == "true" or h == "yes") then
+  if h != nil and (h == "1" or h == "true" or h == "yes") then
     return "--hints "
   end
   ""
 end
 fun resolve_duo_bin() -> any
   b = os.getenv("DUO_LSP_DUO_BIN")
-  if b ~= nil and b ~= "" then
+  if b != nil and b != "" then
     return b
   end
   b = os.getenv("DUO_BIN")
-  if b ~= nil and b ~= "" then
+  if b != nil and b != "" then
     return b
   end
   f = io.popen("which duo 2>/dev/null", "r")
-  if f ~= nil then
+  if f != nil then
     out = f:read("*a")
     f:close()
     out = trim(out)
-    if out ~= "" then
+    if out != "" then
       return out
     end
   end
@@ -1229,7 +1229,7 @@ fun ensure_lo(d) -> void
 end
 fun ensure_syms(d) -> void
   ensure_lo(d)
-  if d.syms == nil or d.syms_version ~= d.version then
+  if d.syms == nil or d.syms_version != d.version then
     d.syms = scan_symbols_lo(d.text, d.lo)
     d.syms_version = d.version
   end
@@ -1262,7 +1262,7 @@ end
 fun parse_diag_line(line) -> any
   n = line:len()
   p = find_from(line, ".line = ", 1)
-  if p ~= 0 then
+  if p != 0 then
     i = p + 8
     ld = parse_digits(line, i)
     if ld == nil then
@@ -1312,19 +1312,19 @@ fun parse_diag_line(line) -> any
   marker = 0
   mlen = 0
   sev = 1
-  if e ~= 0 then
+  if e != 0 then
     marker = e
     mlen = 9
     sev = 1
-  elseif w ~= 0 then
+  elseif w != 0 then
     marker = w
     mlen = 11
     sev = 2
-  elseif h ~= 0 then
+  elseif h != 0 then
     marker = h
     mlen = 8
     sev = 4
-  elseif inf ~= 0 then
+  elseif inf != 0 then
     marker = inf
     mlen = 8
     sev = 3
@@ -1396,7 +1396,7 @@ fun parse_diagnostics(out, lo, text) -> any
       pos = nl + 1
     end
     d = parse_diag_line(line)
-    if d ~= nil then
+    if d != nil then
       ec = word_end_lo(text, lo, d.line, d.col)
       diag = {}
       diag.range = mk_range(d.line, d.col, ec)
@@ -1431,7 +1431,7 @@ fun run_check(uri) -> void
   diags = parse_diagnostics(out, d.lo, d.text)
   if diags:len() == 0 then
     ep = find_from(out, "error:", 1)
-    if ep ~= 0 then
+    if ep != 0 then
       diag = {}
       diag.range = mk_range(0, 0, word_end_lo(d.text, d.lo, 0, 0))
       diag.severity = 1
@@ -1465,7 +1465,7 @@ fun flush_dirty() -> void
   t = now_secs()
   for uri, d in docs
     # `d ~= nil` is not paranoia, it is the crash site. See `forget` above.
-    if d ~= nil and d.dirty then
+    if d != nil and d.dirty then
       if t > d.last_t then
         run_check(uri)
         d.last_t = t
@@ -1503,9 +1503,9 @@ fun scan_workspace() -> void
       fp = trim(out:sub(pos, nl - 1))
       pos = nl + 1
     end
-    if fp ~= "" then
+    if fp != "" then
       f = io.open(fp, "r")
-      if f ~= nil then
+      if f != nil then
         txt = f:read("*a")
         f:close()
         # reconstruct file:// URI
@@ -1531,7 +1531,7 @@ fun read_line() -> any
     if c == "\n" then
       break
     end
-    if c ~= "\r" then
+    if c != "\r" then
       out[out:len() + 1] = c
     end
   end
@@ -1548,10 +1548,10 @@ fun read_message() -> any
       break
     end
     p = find_from(line, "Content-Length:", 1)
-    if p ~= 0 then
+    if p != 0 then
       rest = trim(line:sub(p + 15))
       n = tonumber(rest)
-      if n ~= nil then
+      if n != nil then
         content_length = n
       end
     end
@@ -1595,7 +1595,7 @@ fun apply_changes(text, changes) -> str
     if txt == nil then
       txt = ""
     end
-    if ch.range ~= nil then
+    if ch.range != nil then
       s = offset_at(out, ch.range.start)
       e = offset_at(out, ch.range["end"])
       if s < 0 then
@@ -1622,14 +1622,14 @@ fun completion_matches(name, prefix) -> bool
     return true
   end
   p = find_from(name, ":", 1)
-  while p ~= 0
+  while p != 0
     if starts_with(name:sub(p + 1), prefix) then
       return true
     end
     p = find_from(name, ":", p + 1)
   end
   p = find_from(name, ".", 1)
-  while p ~= 0
+  while p != 0
     if starts_with(name:sub(p + 1), prefix) then
       return true
     end
@@ -1659,20 +1659,20 @@ fun add_completion(out, seen, label, kind, detail, insert_text, sort_text) -> vo
   if label == nil or label == "" then
     return
   end
-  if seen[label] ~= nil then
+  if seen[label] != nil then
     return
   end
   seen[label] = true
   item = {}
   item.label = label
   item.kind = kind
-  if detail ~= nil and detail ~= "" then
+  if detail != nil and detail != "" then
     item.detail = detail
   end
-  if insert_text ~= nil and insert_text ~= label then
+  if insert_text != nil and insert_text != label then
     item.insertText = insert_text
   end
-  if sort_text ~= nil then
+  if sort_text != nil then
     item.sortText = sort_text
   end
   out[out:len() + 1] = item
@@ -1847,7 +1847,7 @@ end
 # ── LSP handlers ─────────────────────────────────────────────────────────────
 
 fun handle_initialize(params) -> any
-  if params ~= nil and params.rootUri ~= nil then
+  if params != nil and params.rootUri != nil then
     io.lsp.root_uri = params.rootUri
   end
   scan_workspace()
@@ -1949,7 +1949,7 @@ fun handle_did_close(params) -> void
   end
   uri = td.uri
   d = io.lsp.docs[uri]
-  if d ~= nil and d.tmp ~= nil then
+  if d != nil and d.tmp != nil then
     os.remove(d.tmp)
   end
   io.lsp.docs = forget(io.lsp.docs, uri)
@@ -1964,9 +1964,9 @@ fun handle_did_save(params) -> void
     return
   end
   uri = td.uri
-  if io.lsp.docs[uri] ~= nil then
+  if io.lsp.docs[uri] != nil then
     d = io.lsp.docs[uri]
-    if params.text ~= nil then
+    if params.text != nil then
       d.text = params.text
       invalidate(d)
       io.lsp.ws._texts[uri] = d.text
@@ -2024,7 +2024,7 @@ fun handle_document_symbol(params) -> any
     o.range = mk_wide(s.line, s.col, s.line, s.endCol)
     o.selectionRange = mk_range(s.line, s.col, s.col + s.name:len())
     o.children = {}
-    if s.detail ~= nil and s.detail ~= "" then
+    if s.detail != nil and s.detail != "" then
       o.detail = s.detail
     end
     # Close every ancestor this symbol is not inside, extending each closed
@@ -2067,7 +2067,7 @@ end
 
 fun dirname(path) -> str
   d = path:match("^(.*)/[^/]+$")
-  if d ~= nil then
+  if d != nil then
     return d
   end
   "."
@@ -2107,17 +2107,17 @@ fun foreign_entity_in_doc(text, uri, symbol) -> any
   while i <= headers:len()
     header = headers[i]
     resolved = header
-    if header:sub(1, 1) ~= "/" then
+    if header:sub(1, 1) != "/" then
       resolved = base .. "/" .. header
     end
     out = run_duo_capture("sim --import-c " .. resolved)
-    if out ~= "" then
+    if out != "" then
       snap = io.lsp.json.decode(out)
-      if snap ~= nil and snap.entities ~= nil then
+      if snap != nil and snap.entities != nil then
         j = 1
         while j <= snap.entities:len()
           ent = snap.entities[j]
-          if ent ~= nil and ent.name == symbol then
+          if ent != nil and ent.name == symbol then
             ent._resolved_header = resolved
             return ent
           end
@@ -2133,40 +2133,40 @@ end
 fun format_foreign_hover(ent) -> str
   lines = {}
   lines[lines:len() + 1] = "**foreign " .. (ent.kind or "entity") .. "** `" .. ent.name .. "`"
-  if ent.origin ~= nil then
+  if ent.origin != nil then
     lines[lines:len() + 1] = ""
     lines[lines:len() + 1] = "- **origin:** " .. (ent.origin.language or "?") .. " · `" .. (ent.origin.artifact or "?") .. "`"
   end
-  if ent._resolved_header ~= nil then
+  if ent._resolved_header != nil then
     lines[lines:len() + 1] = "- **header:** `" .. ent._resolved_header .. "`"
   end
-  if ent.storage_class ~= nil then
+  if ent.storage_class != nil then
     lines[lines:len() + 1] = "- **storage:** " .. ent.storage_class
   end
-  if ent.size_bytes ~= nil then
+  if ent.size_bytes != nil then
     sz = tostring(ent.size_bytes)
     al = ent.align_bytes
-    if al ~= nil then
+    if al != nil then
       lines[lines:len() + 1] = "- **layout:** " .. sz .. " bytes, align " .. tostring(al)
     else
       lines[lines:len() + 1] = "- **layout:** " .. sz .. " bytes"
     end
   end
-  if ent.fields ~= nil and ent.fields:len() > 0 then
+  if ent.fields != nil and ent.fields:len() > 0 then
     lines[lines:len() + 1] = ""
     lines[lines:len() + 1] = "**fields**"
     fi = 1
     while fi <= ent.fields:len()
       f = ent.fields[fi]
       off = ""
-      if f.offset ~= nil then
+      if f.offset != nil then
         off = " @+" .. tostring(f.offset)
       end
       lines[lines:len() + 1] = "- `" .. f.name .. "`: " .. f.type .. off
       fi += 1
     end
   end
-  if ent.params ~= nil and ent.params:len() > 0 then
+  if ent.params != nil and ent.params:len() > 0 then
     lines[lines:len() + 1] = ""
     lines[lines:len() + 1] = "**params**"
     pi = 1
@@ -2176,14 +2176,14 @@ fun format_foreign_hover(ent) -> str
       pi += 1
     end
   end
-  if ent.return_type ~= nil then
+  if ent.return_type != nil then
     lines[lines:len() + 1] = "- **returns:** " .. ent.return_type
   end
-  if ent.abi ~= nil then
+  if ent.abi != nil then
     lines[lines:len() + 1] = ""
     lines[lines:len() + 1] = "**ABI:** " .. (ent.abi.calling_convention or "?") .. ", pass-by " .. (ent.abi.pass_by or "?")
   end
-  if ent.contract ~= nil then
+  if ent.contract != nil then
     lines[lines:len() + 1] = ""
     lines[lines:len() + 1] = "_semantic: " .. (ent.contract.semantic_completeness or "?")
       .. " · abi: " .. (ent.contract.abi_completeness or "?")
@@ -2210,7 +2210,7 @@ fun graph_bare_name(n) -> str
     return ""
   end
   p = find_from(n, "::", 1)
-  if p ~= 0 then
+  if p != 0 then
     return n:sub(p + 2)
   end
   n
@@ -2248,7 +2248,7 @@ fun graph_for(uri) -> any
   out = run_duo_capture("graph " .. shell_quote(path))
   # A parse failure prints diagnostics, not JSON. Decide on the first byte
   # rather than handing the decoder something it will answer nil to anyway.
-  if out:sub(1, 1) ~= "{" then
+  if out:sub(1, 1) != "{" then
     return nil
   end
   g = io.lsp.json.decode(out)
@@ -2349,30 +2349,30 @@ fun graph_add_line(lines, s) -> void
 end
 fun format_graph_hover(node, def, sig) -> str
   lines = {}
-  if sig ~= "" then
+  if sig != "" then
     graph_add_line(lines, "```duo")
     graph_add_line(lines, sig)
     graph_add_line(lines, "```")
   end
   graph_add_line(lines, "_" .. tostring(node.kind) .. "_ **" .. graph_bare_name(node.name) .. "**")
   owner = graph_owner_name(node.name)
-  if owner ~= "" then
+  if owner != "" then
     graph_add_line(lines, "- **in:** `" .. owner .. "`")
   end
-  if node.callee_kind ~= nil then
+  if node.callee_kind != nil then
     graph_add_line(lines, "- **callee:** " .. tostring(node.callee_kind) .. " · **arity:** " .. tostring(node.arg_count))
   end
-  if node.specializable ~= nil then
+  if node.specializable != nil then
     spec = "no"
     if node.specializable then
       spec = "yes"
     end
     graph_add_line(lines, "- **specializable:** " .. spec)
   end
-  if node.knowledge ~= nil then
+  if node.knowledge != nil then
     graph_add_line(lines, "- **knowledge:** " .. tostring(node.knowledge) .. " · **stage:** " .. tostring(node.stage))
   end
-  if def ~= nil and def ~= node and def.line ~= nil and def.line > 0 then
+  if def != nil and def != node and def.line != nil and def.line > 0 then
     graph_add_line(lines, "- **declared:** " .. tostring(def.kind) .. " at line " .. tostring(def.line))
   end
   # `stable_id` is deliberately NOT shown. It hashes the module PATH, and an
@@ -2395,11 +2395,11 @@ fun handle_hover(params) -> any
   col = params.position.character
   span = ident_span_lo(d.text, d.lo, line, col)
 
-  if span ~= nil then
+  if span != nil then
     # Foreign descriptors keep answering from the SIM snapshot: they are
     # C entities, so the Idol semantic graph has nothing to say about them.
     foreign = foreign_entity_in_doc(d.text, uri, span.name)
-    if foreign ~= nil then
+    if foreign != nil then
       c = {}
       c.kind = "markdown"
       c.value = format_foreign_hover(foreign) .. why_lines(d.text, line, col)
@@ -2410,12 +2410,12 @@ fun handle_hover(params) -> any
     end
 
     g = graph_for(uri)
-    if g ~= nil then
+    if g != nil then
       node = graph_node_here(g, span.name, line, col)
-      if node ~= nil then
+      if node != nil then
         sig = ""
         ln = get_line_lo(d.text, d.lo, node.line - 1)
-        if ln ~= nil then
+        if ln != nil then
           sig = trim(ln)
         end
         c = {}
@@ -2441,13 +2441,13 @@ fun handle_hover(params) -> any
   end
   ln = get_line_lo(d.text, d.lo, s.line)
   sig = ""
-  if ln ~= nil then
+  if ln != nil then
     sig = trim(ln)
   end
   c = {}
   c.kind = "markdown"
   c.value = "```duo\n" .. sig .. "\n```\n_" .. kind_label(s.kind) .. "_ **" .. s.name .. "**"
-  if s.container ~= nil and s.container ~= "" then
+  if s.container != nil and s.container != "" then
     c.value = c.value .. "  (in " .. s.container .. ")"
   end
   c.value = c.value .. "\n\n_not lifted into the semantic graph; scanned from text_"
@@ -2489,7 +2489,7 @@ fun handle_references(params) -> any
   refs = find_refs_in_text(d.text, d.lo, s.name, uri)
   # also search open workspace files
   for wuri, wd in io.lsp.docs
-    if wuri ~= uri and wd ~= nil then
+    if wuri != uri and wd != nil then
       ensure_lo(wd)
       r = find_refs_in_text(wd.text, wd.lo, s.name, wuri)
       j = 1
@@ -2531,7 +2531,7 @@ fun handle_rename(params) -> any
   edits = find_rename_edits_in_text(d.text, d.lo, old_name, new_name, uri)
   # collect edits from open workspace docs
   for wuri, wd in io.lsp.docs
-    if wuri ~= uri and wd ~= nil then
+    if wuri != uri and wd != nil then
       ensure_lo(wd)
       r = find_rename_edits_in_text(wd.text, wd.lo, old_name, new_name, wuri)
       j = 1
@@ -2613,14 +2613,14 @@ fun handle_completion(params) -> any
   end
   # add workspace symbols not already in local scope
   for uri2, syms2 in io.lsp.ws.entries
-    if uri2 ~= uri then
+    if uri2 != uri then
       j = 1
-      while syms2 ~= nil and j <= syms2:len()
+      while syms2 != nil and j <= syms2:len()
         s2 = syms2[j]
-        is_public = s2.name:sub(1, 1) ~= "_"
+        is_public = s2.name:sub(1, 1) != "_"
         if is_public and completion_matches(s2.name, prefix) then
           detail = kind_label(s2.kind)
-          if s2.container ~= nil and s2.container ~= "" then
+          if s2.container != nil and s2.container != "" then
             detail = detail .. " (in " .. s2.container .. ")"
           end
           add_completion(out, seen, s2.name, completion_kind_for_symbol(s2.kind), detail, nil, "z_" .. s2.name)
@@ -2733,7 +2733,7 @@ fun scan_line(ln, line, out) -> i64
       i = n + 1
     elseif b == 34 or b == 39 then
       j = i + 1
-      while j <= n and ln:byte(j) ~= b
+      while j <= n and ln:byte(j) != b
         if ln:byte(j) == 92 then
           j += 1
         end
@@ -2943,7 +2943,7 @@ fun scan(text) -> any
         q = sp.col + 1
         while q <= sp.col + sp.wide
           sb = lntext:byte(q)
-          if sb ~= nil and sb ~= 32 and sb ~= 9 and sb ~= 13 then
+          if sb != nil and sb != 32 and sb != 9 and sb != 13 then
             solid += 1
           end
           q += 1
@@ -2953,7 +2953,7 @@ fun scan(text) -> any
       end
       line += 1
       start = i + 1
-    elseif b ~= 32 and b ~= 9 and b ~= 13 then
+    elseif b != 32 and b != 9 and b != 13 then
       bytes += 1
     end
     i += 1
@@ -2973,7 +2973,7 @@ fun scan(text) -> any
       # carries a rule citation. `cite` has no default arm, so a role with no
       # rule behind it answers "" and is counted as UNCITED rather than
       # silently credited.
-      if cite(s.role) ~= "" then
+      if cite(s.role) != "" then
         told += s.solid
       end
     end
@@ -3197,7 +3197,7 @@ fun sim_for(uri) -> any
     return nil
   end
   out = run_duo_capture("sim " .. shell_quote(path))
-  if out:sub(1, 1) ~= "{" then
+  if out:sub(1, 1) != "{" then
     return nil
   end
   s = io.lsp.json.decode(out)
@@ -3243,17 +3243,17 @@ fun handle_inlay_hint(params) -> any
   ensure_lo(d)
   out = {}
   s = sim_for(uri)
-  if s ~= nil then
+  if s != nil then
     i = 1
     while i <= s.entities:len()
       e = s.entities[i]
-      if e.kind == "function" and e.return_type ~= nil then
+      if e.kind == "function" and e.return_type != nil then
         want = descriptor(e.return_type)
         j = 0
         nl = d.lo:len()
-        while want ~= nil and j < nl
+        while want != nil and j < nl
           ln = get_line_lo(d.text, d.lo, j)
-          if ln ~= nil and starts_with(trim(ln), e.name) and contains_char(ln, "(") and not states_return(ln) then
+          if ln != nil and starts_with(trim(ln), e.name) and contains_char(ln, "(") and not states_return(ln) then
             p = find_last(ln, ")")
             if p > 0 then
               out[out:len() + 1] = mk_hint(j, p, ": " .. want, 1,
@@ -3276,12 +3276,12 @@ fun handle_inlay_hint(params) -> any
   while k <= d.syms:len()
     sym = d.syms[k]
     ln = get_line_lo(d.text, d.lo, sym.line)
-    if ln ~= nil and not contains_char(substring_before(ln, "="), ":") then
+    if ln != nil and not contains_char(substring_before(ln, "="), ":") then
       rhs = trim(substring_after(ln, "="))
       want = nil
-      if rhs ~= "" and starts_with(rhs, "\"") then
+      if rhs != "" and starts_with(rhs, "\"") then
         want = "str"
-      elseif rhs ~= "" and digit(rhs:byte(1)) then
+      elseif rhs != "" and digit(rhs:byte(1)) then
         want = "i64"
         if contains_char(rhs, ".") then
           want = "f64"
@@ -3289,7 +3289,7 @@ fun handle_inlay_hint(params) -> any
       elseif rhs == "true" or rhs == "false" then
         want = "bool"
       end
-      if want ~= nil then
+      if want != nil then
         out[out:len() + 1] = mk_hint(sym.line, sym.col + sym.name:len(), ": " .. want, 1,
           "B-13 CDR — no contract declared; the descriptor is the literal's own (grammar.md §1)")
       end
@@ -3429,7 +3429,7 @@ fun handle_message(msg) -> void
     reply(id, handle_inlay_hint(params))
   elseif method == "textDocument/codeLens" then
     reply(id, handle_code_lens(params))
-  elseif id ~= nil then
+  elseif id != nil then
     reply_error(id, -32601, "method not found: " .. tostring(method))
   end
 end

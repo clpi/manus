@@ -173,7 +173,7 @@ pub const TokenKind = enum {
             .dots => "...",
             .hash_hash => "##",
             .eq => "==",
-            .neq => "~=",
+            .neq => "!=",
             .leq => "<=",
             .geq => ">=",
             .lshift => "<<",
@@ -941,10 +941,12 @@ pub const Lexer = struct {
                 _ = self.adv();
                 break :blk Token{ .kind = .fat_arrow, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
             } else Token{ .kind = .assign, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
-            '~' => if (self.peek_char() == '=') blk: {
-                _ = self.adv();
-                break :blk Token{ .kind = .neq, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
-            } else Token{ .kind = .tilde, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            // `~` is XOR and nothing else; inequality is `!=`. Gluing a
+            // following `=` here reported inequality (Lua's spelling) and, worse,
+            // turned `x ~= 1` into a discarded comparison where xor-assign was
+            // meant. Left bare, the grammar's adjacency rule forms `~=` as a
+            // compound assignment like `>>=`, `<<=`, `|=` and `&=`.
+            '~' => Token{ .kind = .tilde, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '<' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
                 break :blk Token{ .kind = .leq, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
@@ -1354,11 +1356,14 @@ test "lex: single-char operators" {
 }
 
 test "lex: multi-char operators" {
-    var l = Lexer.init("== ~= != <= >= << >> // .. ... ## -> :: += -= *= /= %= ^=", "test");
+    // `~=` is deliberately absent as an inequality spelling: `~` is XOR, so it
+    // lexes bare and the grammar forms `~=` as a compound assignment.
+    var l = Lexer.init("== != <= >= << >> // .. ... ## -> :: += -= *= /= %= ^= ~=", "test");
     const expected = [_]TokenKind{
-        .eq,           .neq,         .neq,          .leq,            .geq,          .lshift, .rshift,
+        .eq,           .neq,         .leq,          .geq,            .lshift,       .rshift,
         .idiv,         .concat,      .dots,         .hash_hash,      .arrow,        .dcolon, .plus_assign,
         .minus_assign, .star_assign, .slash_assign, .percent_assign, .caret_assign,
+        .tilde,        .assign,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }

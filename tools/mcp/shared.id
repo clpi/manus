@@ -63,7 +63,7 @@ coordination_update = (action: str, agent_id: str, detail: str, files: str)
     timestamp = clock.coord()
     entry = "\n### [{timestamp}] {agent_id}  -  {action:upper()}\n"
     entry = "{entry}Detail: {detail}\n"
-    if files ~= ""
+    if files != ""
         entry = "{entry}Files: {files}\n"
     end
     status = "ACTIVE"
@@ -82,7 +82,7 @@ end
 session_log = (agent_id: str, summary: str, detail: str)
     timestamp = clock.utc()
     entry = "\n| {timestamp} | {agent_id} | {summary} |"
-    if detail ~= ""
+    if detail != ""
         entry = "{entry} {detail} |"
     else
         entry = "{entry} |"
@@ -137,7 +137,7 @@ end
 agent_smoke: any = (timeout: int)
     smoke_cmd = "{duobin} run scripts/agent_smoke.id"
     full = smoke_cmd
-    if os.env["DUO_LOCK_HELD"] ~= "1"
+    if os.env["DUO_LOCK_HELD"] != "1"
         full = "{lockprefix}{smoke_cmd}"
     end
     cap = exact_capture(full)
@@ -145,7 +145,7 @@ agent_smoke: any = (timeout: int)
     dirty = capture("git status --short 2>/dev/null") or ""
     dest = os.tmpname()
     fs:write_file(dest, cap.output)
-    { gate = "agent-smoke", command = full, inner_command = smoke_cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = dest }
+    { gate = "agent-smoke", command = full, inner_command = smoke_cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status != 75, artifact = dest }
 end
 
 build_run: any = (kind: str, timeout: int)
@@ -159,7 +159,7 @@ build_run: any = (kind: str, timeout: int)
     cmd = gates[kind]
     if cmd == nil then return { error = "unknown gate: {kind}" } end
     full = cmd
-    if os.env["DUO_LOCK_HELD"] ~= "1"
+    if os.env["DUO_LOCK_HELD"] != "1"
         full = "{lockprefix}{cmd}"
     end
     cap = exact_capture(full)
@@ -167,7 +167,7 @@ build_run: any = (kind: str, timeout: int)
     dirty = capture("git status --short 2>/dev/null") or ""
     dest = os.tmpname()
     fs:write_file(dest, cap.output)
-    { gate = kind, command = full, inner_command = cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = dest }
+    { gate = kind, command = full, inner_command = cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status != 75, artifact = dest }
 end
 
 # Benchmark suites. An ALLOWLIST, not string interpolation: `suite`
@@ -184,7 +184,7 @@ bench_run: any = (kind: str, timeout: int)
     cmd = suites[kind]
     if cmd == nil then return { error = "unknown bench suite: {kind}" } end
     full = cmd
-    if os.env["DUO_LOCK_HELD"] ~= "1"
+    if os.env["DUO_LOCK_HELD"] != "1"
         full = "{lockprefix}{cmd}"
     end
     cap = exact_capture(full)
@@ -192,7 +192,7 @@ bench_run: any = (kind: str, timeout: int)
     dirty = capture("git status --short 2>/dev/null") or ""
     dest = os.tmpname()
     fs:write_file(dest, cap.output)
-    { suite = kind, command = full, inner_command = cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = dest }
+    { suite = kind, command = full, inner_command = cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status != 75, artifact = dest }
 end
 
 # === DOCUMENT ENVELOPE (§0g / H-8 partial repair) ===
@@ -250,7 +250,7 @@ repo_tooling: any = (script_name: str, args: str)
     else
         return { error = "script not found: {script_name}" }
     end
-    if args ~= "" then full = "{full} {args}" end
+    if args != "" then full = "{full} {args}" end
     rc = run(full)
     { exit_code = rc, outcome = process.verdict(rc), script = script_name }
 end
@@ -274,8 +274,8 @@ harness_context: str = ()
 
 dev_session_start: str = (owner: str, work_item: str, client: str)
     cmd = "{duobin} dev session start --owner {owner}"
-    if client ~= "" then cmd = "{cmd} --client {client}" end
-    if work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
+    if client != "" then cmd = "{cmd} --client {client}" end
+    if work_item != "" then cmd = "{cmd} --work-item {work_item}" end
     capture("{cmd} 2>&1")
 end
 
@@ -286,8 +286,8 @@ end
 # function once the real lock is held.
 dev_claim_note: str = (owner: str, file: str, client: str, work_item: str)
     cmd = "{duobin} dev claim acquire --owner {owner} --file {file}"
-    if client ~= "" then cmd = "{cmd} --client {client}" end
-    if work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
+    if client != "" then cmd = "{cmd} --client {client}" end
+    if work_item != "" then cmd = "{cmd} --work-item {work_item}" end
     capture("{cmd} 2>&1")
 end
 
@@ -301,8 +301,8 @@ end
 
 dev_validate_plan: str = (file: str, work_item: str)
     cmd = "{duobin} dev validate plan"
-    if file ~= "" then cmd = "{cmd} --file {file}"
-    elseif work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
+    if file != "" then cmd = "{cmd} --file {file}"
+    elseif work_item != "" then cmd = "{cmd} --work-item {work_item}" end
     capture("{cmd} 2>&1")
 end
 
@@ -328,14 +328,14 @@ end
 
 dev_integration_submit: str = (owner: str, work_item: str, claim_id: str)
     cmd = "{duobin} dev integration submit --owner {owner} --work-item {work_item}"
-    if claim_id ~= nil and claim_id ~= "" then cmd = "{cmd} --claim-id {claim_id}" end
+    if claim_id != nil and claim_id != "" then cmd = "{cmd} --claim-id {claim_id}" end
     capture("{cmd} 2>&1")
 end
 
 dev_validate_run: str = (file: str, work_item: str, execute: bool)
     cmd = "{duobin} dev validate run"
-    if file ~= nil and file ~= "" then cmd = "{cmd} --file {file}"
-    elseif work_item ~= nil and work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
+    if file != nil and file != "" then cmd = "{cmd} --file {file}"
+    elseif work_item != nil and work_item != "" then cmd = "{cmd} --work-item {work_item}" end
     if execute then cmd = "{cmd} --execute" end
     capture("{cmd} 2>&1")
 end
@@ -422,7 +422,7 @@ end
 
 foreign_import_preview: any = (header_path: str, source_dir: str)
     resolved = header_path
-    if source_dir ~= "" and string.sub(header_path, 1, 1) ~= "/" then
+    if source_dir != "" and string.sub(header_path, 1, 1) != "/" then
         resolved = "{source_dir}/{header_path}"
     end
     output = capture("{duobin} sim --import-c {resolved} 2>&1")
@@ -592,11 +592,11 @@ perf_gaps: any = ()
         ln = lines[i]
         if string.sub(ln, 1, 4) == "| F-" then
             kind_match = false
-            if string.find(ln, "perf_gap", 1, true) ~= nil then kind_match = true end
-            if string.find(ln, "native_lowering", 1, true) ~= nil then kind_match = true end
-            if string.find(ln, "codegen_gap", 1, true) ~= nil then kind_match = true end
+            if string.find(ln, "perf_gap", 1, true) != nil then kind_match = true end
+            if string.find(ln, "native_lowering", 1, true) != nil then kind_match = true end
+            if string.find(ln, "codegen_gap", 1, true) != nil then kind_match = true end
             status_open = false
-            if string.find(ln, "| open |", 1, true) ~= nil then status_open = true end
+            if string.find(ln, "| open |", 1, true) != nil then status_open = true end
             if kind_match
                 if status_open then _ = gaps:push(ln) end
             end
@@ -630,7 +630,7 @@ audit_codegen_pitfalls: any = (file_path: str)
         ln = lines[i]
         tr = str_trim(ln)
         -- F-13813-3: `= nil` init risks void* type inference
-        if string.find(tr, "= nil", 1, true) ~= nil then
+        if string.find(tr, "= nil", 1, true) != nil then
             _ = findings:push({
                 line = i,
                 rule = "F-13813-3 nil-init",
@@ -657,11 +657,11 @@ audit_codegen_pitfalls: any = (file_path: str)
         end
         if is_tail then
             bare_call = false
-            has_assign = string.find(tr, " = ", 1, true) ~= nil
+            has_assign = string.find(tr, " = ", 1, true) != nil
             starts_return = string.find(tr, "return ", 1, true) == 1
             if (not has_assign) and (not starts_return) then
                 paren = string.find(tr, "(", 1, true)
-                if paren ~= nil and paren > 1 then
+                if paren != nil and paren > 1 then
                     head = string.sub(tr, 1, paren - 1)
                     -- head must be a bare identifier/path; validate via string.byte
                     -- (number comparison  -  string == fails inside loops).
@@ -713,12 +713,12 @@ str_trim: str = (s: str)
     b = s:len()
     while a <= b
         code = s:byte(a)
-        if code ~= 32 and code ~= 9 then break end
+        if code != 32 and code != 9 then break end
         a += 1
     end
     while b >= a
         code = s:byte(b)
-        if code ~= 32 and code ~= 9 then break end
+        if code != 32 and code != 9 then break end
         b -= 1
     end
     string.sub(s, a, b)
@@ -852,7 +852,7 @@ exponential_evaluate: any = (code: str, file_path: str)
     for i = 1, lines:len()
         t = str_trim(lines[i])
         eq = string.find(t, "=")
-        if eq and eq > 1 and string.sub(t, eq, eq + 1) ~= "=="
+        if eq and eq > 1 and string.sub(t, eq, eq + 1) != "=="
             rhs = str_trim(string.sub(t, eq + 1))
             if not string.find(rhs, "[%a]") and (string.find(rhs, "[%*]") or string.find(rhs, "[%+]") or string.find(rhs, "[/]"))
                 _ = suggestions:push({
@@ -883,7 +883,7 @@ exponential_evaluate: any = (code: str, file_path: str)
         suggestions = suggestions,
         optimized_preview = optimized,
     }
-    if file_path and file_path ~= "" and fs:exists(file_path)
+    if file_path and file_path != "" and fs:exists(file_path)
         result.boxing = audit_native_boxing(file_path)
     end
     result
@@ -905,7 +905,7 @@ exponential_onboard: any = (question: str, code: str)
     end
     q_lower = string.lower(question)
     for key, val in questions
-        if string.find(q_lower, string.lower(key), 1, true) ~= nil
+        if string.find(q_lower, string.lower(key), 1, true) != nil
             return { guidance = val, question = question, matched = key }
         end
     end
@@ -967,16 +967,16 @@ file_finding: str = (kind: str, title: str, detail: str, priority: str, files: s
     pr = priority
     if pr == "" or pr == nil then pr = "P1" end
     row = "| {id} | {title} | {pr} | {kind} | {ts} | open | {detail} |"
-    if files ~= "" then row = "{row} Files: {files} |" end
+    if files != "" then row = "{row} Files: {files} |" end
     content = coordination_read()
     hdr = "| ID | Title | Priority | Kind | Logged | Status | Detail |"
     -- Use plain=true (literal) finds: the marker contains '-', the detail may
     -- contain '%', both of which are Lua-pattern metacharacters and would
     -- corrupt a pattern-based find/gsub.
     mpos = string.find(content, gapsmarker, 1, true)
-    if mpos ~= nil then
+    if mpos != nil then
         hpos = string.find(content, hdr, mpos, true)
-        if hpos ~= nil then
+        if hpos != nil then
             hlen = string.len(hdr)
             content = "{string.sub(content, 1, hpos + hlen - 1)}\n{row}{string.sub(content, hpos + hlen)}"
         else
@@ -1093,14 +1093,14 @@ gaphigh: int = ()
     hi = tonumber(capture("printf %s \"$(git -C '{root}' log --all --name-only --pretty=format: -- gaps/ 2>/dev/null | grep -oE 'GAP-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)\"")) or 0
     for _, name in fs:read_dir(gapsdir) or {}
         d = string.match(name, "^GAP%-(%d+)")
-        if d ~= nil
+        if d != nil
             v = tonumber(d) or 0
             if v > hi then hi = v end
         end
     end
     for _, name in fs:read_dir(gapledger) or {}
         d = string.match(name, "^GAP%-(%d+)")
-        if d ~= nil
+        if d != nil
             v = tonumber(d) or 0
             if v > hi then hi = v end
         end
@@ -1140,7 +1140,7 @@ gap_open: str = (agent_id: str, kind: str, title: str, detail: str, priority: st
     pr = priority
     if pr == nil or pr == "" then pr = "P1" end
     body = "# {id}  -  {title}\n\n**Status:** OPEN · **Filed:** {ts}\n**Priority:** {pr} · **Kind:** {kind}\n**Filed by:** {agent_id}\n"
-    if files ~= nil and files ~= ""
+    if files != nil and files != ""
         body = "{body}**Files:** {files}\n"
     end
     body = "{body}\n{detail}\n"
@@ -1258,19 +1258,19 @@ dev_claim_acquire: str = (owner: str, file: str, client: str, work_item: str)
     got = run("mkdir -p {claimsdir}/{key}")
     if not got
         m = claim_meta(key)
-        if m ~= nil and m.owner == own
+        if m != nil and m.owner == own
             -- Re-entrant: same owner, refresh the lease rather than deadlock
             -- against itself.
             claim_write(key, own, wi)
             return json:encode({ granted = true, path = path, owner = own, reentrant = true })
         end
-        if m ~= nil and (clock.now() - m.at) >= claimttl
+        if m != nil and (clock.now() - m.at) >= claimttl
             claim_drop(key)
             got = run("mkdir -p {claimsdir}/{key}")
         end
         if not got
             holder = "unknown"
-            if m ~= nil then holder = m.owner end
+            if m != nil then holder = m.owner end
             return json:encode({ granted = false, path = path, held_by = holder, reason = "file already claimed" })
         end
     end
@@ -1279,12 +1279,12 @@ dev_claim_acquire: str = (owner: str, file: str, client: str, work_item: str)
     -- ACQUIRE-THEN-VERIFY: now look for a live claim that covers, or is
     -- covered by, this path.
     for _, other in fs:read_dir(claimsdir) or {}
-        if other ~= key
+        if other != key
             op = claim_unkey(other)
             if claim_overlaps(path, op) and claim_live(other)
                 om = claim_meta(other)
                 oo = "unknown"
-                if om ~= nil then oo = om.owner end
+                if om != nil then oo = om.owner end
                 claim_drop(key)
                 return json:encode({ granted = false, path = path, overlaps = op, held_by = oo, reason = "overlapping claim" })
             end
@@ -1300,7 +1300,7 @@ dev_claim_release: str = (owner: str, file: str)
     if m == nil
         return json:encode({ released = false, path = path, reason = "no such claim" })
     end
-    if m.owner ~= owner
+    if m.owner != owner
         return json:encode({ released = false, path = path, held_by = m.owner, reason = "not the holder" })
     end
     -- NOT `gone = claim_drop(key)` then encode: binding a bool-returning call
@@ -1318,7 +1318,7 @@ dev_claim_files: str = ()
     now = clock.now()
     for _, key in fs:read_dir(claimsdir) or {}
         m = claim_meta(key)
-        if m ~= nil
+        if m != nil
             age = now - m.at
             rows[rows:len() + 1] = {
                 path = claim_unkey(key),
@@ -1346,9 +1346,9 @@ agent_gaps_update: str = (action: str, agent_id: str, gap_id: str, kind: str, ti
     marker = "### Findings log (append-only, newest first)"
     table_marker = "| UTC | Agent | Action | Detail |\n| --- | --- | --- | --- |"
     mpos = string.find(content, marker, 1, true)
-    if mpos ~= nil
+    if mpos != nil
         hpos = string.find(content, table_marker, mpos, true)
-        if hpos ~= nil
+        if hpos != nil
             content = "{string.sub(content, 1, hpos + string.len(table_marker) - 1)}{entry}{string.sub(content, hpos + string.len(table_marker))}"
         else
             content = "{content}{entry}\n"

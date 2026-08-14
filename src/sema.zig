@@ -12940,7 +12940,7 @@ test "sema: gcd closed form is retired, on its own kernel too" {
         \\  while i <= n do
         \\    local a = i
         \\    local b = (i * 7 + 3) % 10000 + 1
-        \\    while b ~= 0 do
+        \\    while b != 0 do
         \\      local tmp = b
         \\      b = a % b
         \\      a = tmp
@@ -12960,7 +12960,7 @@ test "sema: gcd closed form is retired, on its own kernel too" {
         \\  while i <= n do
         \\    local a = i
         \\    local b = (i * 11 + 3) % 10000 + 1
-        \\    while b ~= 0 do
+        \\    while b != 0 do
         \\      local tmp = b
         \\      b = a % b
         \\      a = tmp
@@ -13601,7 +13601,7 @@ test "sema: gcd shape still matches, but the closed form is retired" {
         \\  while i <= n do
         \\    local a = i
         \\    local b = (i * 7 + 3) % 10000 + 1
-        \\    while b ~= 0 do
+        \\    while b != 0 do
         \\      local tmp = b
         \\      b = a % b
         \\      a = tmp

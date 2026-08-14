@@ -234,17 +234,19 @@ test "grammar roles: plus is infix not postfix" {
 }
 
 test "grammar roles: distinct spellings collapse to one identity and one role" {
-    // `!=` and `~=` are two source spellings that both lex to the single
-    // identity `.neq` (src/lexer.zig). Role lookup keys on that identity, so
-    // whichever spelling produced the token, the role is one row: a nonassoc
-    // comparison sharing the `.eq` role class. Holding identity fixed fixes the
-    // role — spelling never reaches this table.
+    // `!=` is the one inequality spelling; it lexes to the identity `.neq`
+    // (src/lexer.zig). Role lookup keys on that identity rather than on the
+    // characters, so the role is one row: a nonassoc comparison sharing the
+    // `.eq` role class. Holding identity fixed fixes the role — spelling never
+    // reaches this table. (`~=` used to be a second spelling of this identity
+    // and is now xor-assign, which is exactly the kind of change this
+    // separation absorbs without touching the role table.)
     const r = lookup(.neq);
     try std.testing.expect(isInfix(.neq));
     try std.testing.expectEqual(Associativity.nonassoc, r.assoc);
     try std.testing.expectEqual(lookup(.eq).precedence, r.precedence);
     try std.testing.expectEqual(lookup(.eq).assoc, r.assoc);
-    try std.testing.expectEqualStrings("~=", lexer.TokenKind.neq.spelling());
+    try std.testing.expectEqualStrings("!=", lexer.TokenKind.neq.spelling());
 }
 
 test "grammar roles: one spelling splits into identities with different roles" {

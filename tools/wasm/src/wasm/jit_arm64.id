@@ -227,7 +227,7 @@ fun vs_alloc_not(b, a1: i64, a2: i64): i64
   i: i64 = 1
   while i <= 8
     r: i64 = POOL[i]
-    if not vs_holds(b, r) and r ~= a1 and r ~= a2 return r end
+    if not vs_holds(b, r) and r != a1 and r != a2 return r end
     i += 1
   end
   return POOL[1]
@@ -295,9 +295,9 @@ fun flush_tos(b)
 end
 fun mov_imm(b, d: i64, v: i64)
   put(b, movz(d, v & 0xFFFF, 0))
-  if (v >> 16) & 0xFFFF ~= 0 put(b, movk(d, (v >> 16) & 0xFFFF, 1)) end
-  if (v >> 32) & 0xFFFF ~= 0 put(b, movk(d, (v >> 32) & 0xFFFF, 2)) end
-  if (v >> 48) & 0xFFFF ~= 0 put(b, movk(d, (v >> 48) & 0xFFFF, 3)) end
+  if (v >> 16) & 0xFFFF != 0 put(b, movk(d, (v >> 16) & 0xFFFF, 1)) end
+  if (v >> 32) & 0xFFFF != 0 put(b, movk(d, (v >> 32) & 0xFFFF, 2)) end
+  if (v >> 48) & 0xFFFF != 0 put(b, movk(d, (v >> 48) & 0xFFFF, 3)) end
 end
 
 # ── LEB128 over the body string ─────────────────────────────────────────
@@ -323,7 +323,7 @@ fun leb_s(body: any, pc: i64)
     result |= ((byte & 0x7F) << shift)
     shift += 7
   until (byte & 0x80) == 0
-  if shift < 64 and (byte & 0x40) ~= 0
+  if shift < 64 and (byte & 0x40) != 0
     ones: i64 = -1
     result |= (ones << shift)
   end
@@ -360,19 +360,19 @@ fun can_compile(body: any, body_len: i64): bool
   while pc <= body_len
     op: i64 = body:byte(pc)
     pc += 1
-    if BIN[op] ~= nil or CMP[op] ~= nil or REM[op] ~= nil or CONV[op] ~= nil or op == 0x1B
+    if BIN[op] != nil or CMP[op] != nil or REM[op] != nil or CONV[op] != nil or op == 0x1B
       # no immediate
     elseif op == 0x45 or op == 0x50 or op == 0x1A or op == 0x0B or op == 0x0F or op == 0x01
       # no immediate
-    elseif MEM[op] ~= nil
+    elseif MEM[op] != nil
       _, pc = leb_u(body, pc)          # align
       _, pc = leb_u(body, pc)          # offset
     elseif op == 0x02 or op == 0x03
       pc += 1                      # blocktype byte
-    elseif LEB1[op] ~= nil
+    elseif LEB1[op] != nil
       _, pc = leb_s(body, pc)
     else
-      if trace_reject ~= nil
+      if trace_reject != nil
         print("JIT reject op=0x%02X len=%d":format(op, body_len))
       end
       return false
@@ -408,14 +408,14 @@ fun locals_touched(body: any, body_len: i64): i64
       idx, np = leb_u(body, pc)
       pc = np
       if idx + 1 > hi hi = idx + 1 end
-    elseif BIN[op] ~= nil or CMP[op] ~= nil or REM[op] ~= nil or CONV[op] ~= nil or op == 0x1B
+    elseif BIN[op] != nil or CMP[op] != nil or REM[op] != nil or CONV[op] != nil or op == 0x1B
     elseif op == 0x45 or op == 0x50 or op == 0x1A or op == 0x0B or op == 0x0F or op == 0x01
     elseif op == 0x02 or op == 0x03
       pc += 1
-    elseif MEM[op] ~= nil
+    elseif MEM[op] != nil
       _, pc = leb_u(body, pc)
       _, pc = leb_u(body, pc)
-    elseif LEB1[op] ~= nil
+    elseif LEB1[op] != nil
       _, pc = leb_s(body, pc)
     end
   end
@@ -461,7 +461,7 @@ fun compile(body: any, body_len: i64)
     op: i64 = body:byte(pc)
     pc += 1
 
-    if BIN[op] ~= nil
+    if BIN[op] != nil
       spec = BIN[op]
       rb: i64 = vs_pop(b)
       ra: i64 = vs_pop(b)
@@ -470,7 +470,7 @@ fun compile(body: any, body_len: i64)
       if spec.w put(b, sxtw(rd, rd)) end
       vs_push(b, rd)
 
-    elseif CMP[op] ~= nil
+    elseif CMP[op] != nil
       spec = CMP[op]
       cb: i64 = vs_pop(b)
       ca: i64 = vs_pop(b)
@@ -537,7 +537,7 @@ fun compile(body: any, body_len: i64)
       mov_imm(b, k64, v)
       vs_push(b, k64)
 
-    elseif REM[op] ~= nil
+    elseif REM[op] != nil
       spec = REM[op]
       mb: i64 = vs_pop(b)                       # divisor
       ma: i64 = vs_pop(b)                       # dividend
@@ -548,7 +548,7 @@ fun compile(body: any, body_len: i64)
       if spec.w put(b, sxtw(md, md)) end
       vs_push(b, md)
 
-    elseif CONV[op] ~= nil
+    elseif CONV[op] != nil
       cv: i64 = vs_pop(b)
       insn: i64 = CONV[op]
       if op == 0xAD
@@ -567,7 +567,7 @@ fun compile(body: any, body_len: i64)
       put(b, csel(sd, st, sf, 0x1))             # ne -> true value
       vs_push(b, sd)
 
-    elseif MEM[op] ~= nil
+    elseif MEM[op] != nil
       spec = MEM[op]
       _, pc = leb_u(body, pc)                  # align (ignored: unaligned ok)
       off, pc2 = leb_u(body, pc)
@@ -575,7 +575,7 @@ fun compile(body: any, body_len: i64)
       if spec.ld
         ad: i64 = vs_pop(b)                    # address
         put(b, uxtw(ad, ad))                   # wasm i32 address is unsigned
-        if off ~= 0
+        if off != 0
           ot: i64 = vs_alloc_not(b, ad, ad)
           mov_imm(b, ot, off)
           put(b, dp3(0x8B000000, ad, ad, ot))
@@ -587,7 +587,7 @@ fun compile(body: any, body_len: i64)
         sv: i64 = vs_pop(b)                    # value
         sa: i64 = vs_pop(b)                    # address
         put(b, uxtw(sa, sa))
-        if off ~= 0
+        if off != 0
           ot2: i64 = vs_alloc_not(b, sa, sv)
           mov_imm(b, ot2, off)
           put(b, dp3(0x8B000000, sa, sa, ot2))
@@ -678,7 +678,7 @@ fun compile(body: any, body_len: i64)
 
   emit_epilogue(b)
   if not b.ok return nil end
-  if dump_path ~= nil and body_len > 40
+  if dump_path != nil and body_len > 40
     dump(b, dump_path)
   end
   if not jit.seal(b.mem, b.cap * 4) return nil end
@@ -696,5 +696,5 @@ M.can_compile = can_compile
 # On by default: compile() is authoritative and returns nil for any body
 # outside the supported opcode set, so an unsupported function transparently
 # keeps interpreting. DUO_WASM_JIT=0 forces the interpreter everywhere.
-M.available = jit.arch() == "arm64" and os.getenv("DUO_WASM_JIT") ~= "0"
+M.available = jit.arch() == "arm64" and os.getenv("DUO_WASM_JIT") != "0"
 M

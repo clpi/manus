@@ -4591,6 +4591,7 @@ pub const Parser = struct {
             .lshift => .lshift,
             .pipe => .bor,
             .amp => .band,
+            .tilde => .bxor,
             else => return null,
         };
         const saved = self.lex.saveState();

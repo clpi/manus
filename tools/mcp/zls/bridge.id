@@ -33,7 +33,7 @@ request: any = (method: str, params: any)
     reqf = "{tmpdir}/request.json"
     respf = "{tmpdir}/response.json"
     obj = { jsonrpc = "2.0", id = 1, method = method }
-    if params ~= nil then obj.params = params end
+    if params != nil then obj.params = params end
     std.fs.write_file(reqf, std.json.encode(obj))
     std.proc.exec("zls --stdio < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
     resp = std.fs.read_file(respf) or ""

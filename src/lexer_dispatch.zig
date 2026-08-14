@@ -937,5 +937,5 @@ test "lexer_dispatch: route consumes lex.family not path" {
 // visible, and deleting it to keep a count green restores the blindness.
 test "lexer_dispatch: GAP-024 — u64 literal above i64 max" {
     const a = std.testing.allocator;
-    try differential(a, "fingerprint = 13636438360258349679", "u64.id", lexer_bridge.family_canon);
+    try differential(a, "fingerprint = 6061832201901611285", "u64.id", lexer_bridge.family_canon);
 }

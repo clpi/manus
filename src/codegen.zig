@@ -35551,7 +35551,7 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    while k <= m do
             \\        local v = k
             \\        local bits = 0
-            \\        while v ~= 0 do
+            \\        while v != 0 do
             \\            bits += (v & 1)
             \\            v = v >> 1
             \\        end
@@ -35572,7 +35572,7 @@ test "tightened kernel recognisers fold the template and decline everything else
             \\    while k <= m do
             \\        local v = k
             \\        local bits = 0
-            \\        while v ~= 0 do
+            \\        while v != 0 do
             \\            bits += (v & 3)
             \\            v = v >> 2
             \\        end

@@ -37,7 +37,7 @@ main(): i64
     # <= 32 bytes: hashed in full, on both sides, exactly as it always was.
     shortlit = box("shortkey")
     shortbuilt = box("shortkey!":sub(1, 8))
-    if shortlit ~= shortbuilt
+    if shortlit != shortbuilt
         print("FAIL short: literal and runtime-built are different objects")
         fails += 1
     end
@@ -45,7 +45,7 @@ main(): i64
     # > 32 bytes: sampled on a stride, on both sides.
     longlit = box("a very long table key that is definitely more than thirty-two bytes long")
     longbuilt = box("a very long table key that is definitely more than thirty-two bytes long" .. "!":sub(1, 72))
-    if longlit ~= longbuilt
+    if longlit != longbuilt
         print("FAIL long: literal and runtime-built are different objects")
         fails += 1
     end
@@ -54,11 +54,11 @@ main(): i64
     t = {}
     t[shortbuilt] = 11
     t[longbuilt] = 22
-    if t[shortlit] ~= 11
+    if t[shortlit] != 11
         print("FAIL short key: inserted by runtime hash, read by literal hash")
         fails += 1
     end
-    if t[longlit] ~= 22
+    if t[longlit] != 22
         print("FAIL long key: inserted by runtime hash, read by literal hash")
         fails += 1
     end
@@ -76,19 +76,19 @@ main(): i64
     bad = 0
     i = 0
     while i < 200 do
-        if u["x":rep(500) .. tostring(i)] ~= i
+        if u["x":rep(500) .. tostring(i)] != i
             bad += 1
         end
         i += 1
     end
-    if bad ~= 0
+    if bad != 0
         print("FAIL long distinct keys: " .. tostring(bad) .. " of 200 merged")
         fails += 1
     end
 
     # Negative control: a long key never inserted must miss. Without this, a
     # table that answered every lookup would score 200/200 above.
-    if u["x":rep(500) .. "999"] ~= nil
+    if u["x":rep(500) .. "999"] != nil
         print("FAIL control: a long key never inserted answered non-nil")
         fails += 1
     end

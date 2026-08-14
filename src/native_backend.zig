@@ -8613,8 +8613,8 @@ test "native backend refuses raw byte source absent graph byte facts" {
         \\    base = wasm_header
         \\    b0 = read_u8_at(base, 0)
         \\    b3 = read_u8_at(base, 3)
-        \\    if b0 ~= 0 return 1001 end
-        \\    if b3 ~= 0x6D return 1004 end
+        \\    if b0 != 0 return 1001 end
+        \\    if b3 != 0x6D return 1004 end
         \\    0
         \\end
     ;
@@ -8720,9 +8720,9 @@ test "native backend refuses unresolved byte call and retains branch-field physi
         \\main(): i64
         \\    c = { data = wasm_header, pos = 0, len = 8 }
         \\    b0 = read_u8_at(c.data, 0)
-        \\    if b0 ~= 0 return 1001 end
+        \\    if b0 != 0 return 1001 end
         \\    c.pos = c.pos + 1
-        \\    if c.pos ~= 1 return 1006 end
+        \\    if c.pos != 1 return 1006 end
         \\    0
         \\end
     ;

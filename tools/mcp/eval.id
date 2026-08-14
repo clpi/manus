@@ -30,7 +30,7 @@ parse_fun_header_str: any = (line: str)
     name = nil
     blob = nil
     mname, mblob = string.match(line, "^%s*fun%s+([%w_]+)(%b())")
-    if mname ~= nil then
+    if mname != nil then
         name = mname
         blob = mblob
     else
@@ -53,7 +53,7 @@ parse_fun_header_str: any = (line: str)
         p = string.sub(inner, p_start, p_end)
         pos = p_end + 1
         pt = string.match(p, "^%s*[%w_]+%s*:%s*([%w_]+)%s*$")
-        if pt ~= nil then pset[pt] = 1 end
+        if pt != nil then pset[pt] = 1 end
     end
     ptypes_csv = ""
     first = 1
@@ -75,7 +75,7 @@ NUMERIC = { ["i32"] = 1, ["i64"] = 1, ["u32"] = 1, ["u64"] = 1, ["f32"] = 1, ["f
 
 uniform_numeric: any = (ptypes_csv: str)
     if ptypes_csv == nil or ptypes_csv == "" then return nil end
-    if string.find(ptypes_csv, ",") ~= nil then return nil end
+    if string.find(ptypes_csv, ",") != nil then return nil end
     if NUMERIC[ptypes_csv] == nil then return nil end
     ptypes_csv
 end
@@ -86,7 +86,7 @@ extract_records: str = (src: str)
     first = 1
     for ln in string.gmatch(src .. "\n", "([^\n]*)\n") do
         rec = parse_fun_header_str(ln)
-        if rec ~= nil then
+        if rec != nil then
             if first == 1 then
                 out = rec
                 first = 0
@@ -114,11 +114,11 @@ detect_op_families: str = (records_csv: str)
     for rec in string.gmatch(records_csv, "([^\n]+)") do
         name = string.match(rec, "^([^;]+)")
         ptypes_csv = string.match(rec, ";([^;]+);")
-        if name ~= nil and ptypes_csv ~= nil then
+        if name != nil and ptypes_csv != nil then
             t = uniform_numeric(ptypes_csv)
-            if t ~= nil then
+            if t != nil then
                 pre = string.match(name, "^([%w]+)_([%w]+)$")
-                if pre ~= nil then
+                if pre != nil then
                     cur = prefixes[pre]
                     if cur == nil then cur = "" end
                     if string.find("," .. cur .. ",", "," .. t .. ",") == nil then
@@ -155,7 +155,7 @@ CTYPE_CSV = "i32:int32_t,i64:int64_t,u32:uint32_t,u64:uint64_t,f32:float,f64:dou
 
 ctype_of: str = (ty: str)
     c = "{string.match(CTYPE_CSV, ty}{\":([^,]+)\")}"
-    if c ~= nil then return c end
+    if c != nil then return c end
     ty
 end
 
@@ -186,9 +186,9 @@ detect_eq_count: int = (records_csv: str)
     for rec in string.gmatch(records_csv, "([^\n]+)") do
         name = string.match(rec, "^([^;]+)")
         ret = string.match(rec, ";[^;]+;([^;]+)$")
-        if name ~= nil and ret == "bool" then
+        if name != nil and ret == "bool" then
             low = string.lower(name)
-            if string.find(low, "eq") ~= nil or string.find(low, "equal") ~= nil then
+            if string.find(low, "eq") != nil or string.find(low, "equal") != nil then
                 eq_marks = "{eq_marks}."
             end
         end
@@ -224,7 +224,7 @@ audit_boxing: any = (source: str)
     hit_marks = ""
     first = 1
     for needle, _ in needles do
-        if string.find(c, needle, 1, true) ~= nil then
+        if string.find(c, needle, 1, true) != nil then
             hit_marks = "{hit_marks}."
             if first == 1 then
                 hits_csv = needle
@@ -254,10 +254,10 @@ evaluate: str = (source: str, goal: str)
     transforms = {}
     applied = {}
     intermediary_parts = ""
-    if families_csv ~= "" then
+    if families_csv != "" then
         for row in string.gmatch(families_csv, "([^\n]+)") do
             code = emit_generate(row)
-            if code ~= "" then
+            if code != "" then
                 pre = string.match(row, "^([^;]+)")
                 cnt = string.match(row, ";[^;]+;([^;]+)$")
                 transforms[pre] = code
@@ -267,7 +267,7 @@ evaluate: str = (source: str, goal: str)
         end
     end
     dcode = emit_derive_hint(eq_count)
-    if dcode ~= "" then
+    if dcode != "" then
         transforms["derive"] = dcode
         applied["derive"] = "@derive (collapse " .. eq_count .. " eq fn(s))"
         if intermediary_parts == "" then intermediary_parts = "{dcode else intermediary_parts = intermediary_parts}\\n\\n{dcode end}"
@@ -292,7 +292,7 @@ evaluate: str = (source: str, goal: str)
 
     original_loc = count_newlines(source) + 1
     intermediary_loc = 0
-    if intermediary_parts ~= "" then intermediary_loc = count_newlines(intermediary_parts) + 1 end
+    if intermediary_parts != "" then intermediary_loc = count_newlines(intermediary_parts) + 1 end
 
     combinator_count = family_count
     if eq_count > 0 then combinator_count += 1 end

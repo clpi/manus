@@ -7848,16 +7848,7 @@ __attribute__((visibility("default"))) duo_rec_59c700cbb43a8f9d next_tok(duo_rec
             .float_val = 0e0
         };
     } else if ((c == 126)) {
-        if ((peek_char(self) == 61)) {
-            adv(self);
-            return (duo_rec_59c700cbb43a8f9d){
-                .kind = 89,
-                .loc = l,
-                .text = duo_str_sub_cstr(self->src, (int64_t)((p - 1)), (int64_t)((self->pos - 1))),
-                .int_val = 0,
-                .float_val = 0e0
-            };
-        }
+        /* `~` is XOR only; inequality is `!=`. See lib/compiler/lexer.id. */
         return (duo_rec_59c700cbb43a8f9d){
             .kind = 76,
             .loc = l,

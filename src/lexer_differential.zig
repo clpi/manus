@@ -17,7 +17,10 @@ pub const kind_corpus: []const CorpusCase = &.{
     .{ .id = "type-i64", .source = "i64", .expected = &.{ .kw_i64, .eof } },
     .{ .id = "bare-fn", .source = "fun x end", .expected = &.{ .kw_fun, .name, .kw_end, .eof } },
     .{ .id = "int-lit", .source = "42", .expected = &.{ .int_lit, .eof } },
-    .{ .id = "ops-eq-neq", .source = "== ~=", .expected = &.{ .eq, .neq, .eof } },
+    .{ .id = "ops-eq-neq", .source = "== !=", .expected = &.{ .eq, .neq, .eof } },
+    // `~=` is no longer one token: `~` is XOR, and the grammar glues the
+    // adjacent `=` into a compound assignment. Both lexers must agree on that.
+    .{ .id = "ops-xor-assign", .source = "~=", .expected = &.{ .tilde, .assign, .eof } },
     .{ .id = "at-directive", .source = "@inline", .expected = &.{ .at, .name, .eof } },
     .{ .id = "line-col", .source = "a\nb", .expected = &.{ .name, .name, .eof } },
 };
@@ -33,7 +36,12 @@ pub const fingerprint_corpus: []const []const u8 = &.{
     "...",
 };
 
-pub const expected_fingerprint: u64 = 14826786755700828545;
+// Re-pinned when `~=` stopped being an inequality token: `~` now lexes bare as
+// XOR and the grammar glues the adjacent `=` into a compound assignment, so the
+// corpus line `a == b ~= c` yields a different kind stream. Both lexers were
+// changed together and the differential above still agrees, which is the check
+// that matters; this constant only pins the agreed-on value.
+pub const expected_fingerprint: u64 = 14826787075386167907;
 
 /// The generated migration tokenizer computes the same corpus fingerprint via
 /// `duo_lexer_kind_fingerprint` in `lib/compiler/lexer.id`. Matching means
@@ -83,9 +91,9 @@ pub fn textFingerprintSource(src: []const u8) lexer.LexError!u64 {
 }
 
 /// The value `hostTextCorpusFingerprint` produces, which
-/// The migration text differential must reproduce this value. The same bits as
-/// i64 are -4810305713451201937.
-pub const expected_text_fingerprint: u64 = 13636438360258349679;
+/// The migration text differential must reproduce this value. Re-pinned with
+/// `expected_fingerprint` above, for the same reason.
+pub const expected_text_fingerprint: u64 = 6061832201901611285;
 
 pub fn hostTextCorpusFingerprint() !u64 {
     var h: u64 = 0;

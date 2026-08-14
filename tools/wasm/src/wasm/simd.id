@@ -55,9 +55,9 @@ end
 # detector, which replaces the whole body with __ack_impl. Fixed in current duo;
 # duo_old still has it.
 sign_extend: i64 = (x: i64, w: i64)
-  if w ~= 64
+  if w != 64
     one: i64 = 1
-    if (x & (one << (w - 1))) ~= 0 return x - (one << w) end
+    if (x & (one << (w - 1))) != 0 return x - (one << w) end
   end
   return x
 end
@@ -113,7 +113,7 @@ for sh in { { w = I8, a = 110, m = 0 }, { w = I16, a = 142, m = 149 },
             { w = I32, a = 174, m = 181 }, { w = I64, a = 206, m = 213 } }
   OPS[sh.a]     = { w = sh.w, k = "add", n = 2, sg = true, fl = false, c = false }
   OPS[sh.a + 3] = { w = sh.w, k = "sub", n = 2, sg = true, fl = false, c = false }
-  if sh.m ~= 0
+  if sh.m != 0
     OPS[sh.m] = { w = sh.w, k = "mul", n = 2, sg = true, fl = false, c = false }
   end
 end
@@ -122,7 +122,7 @@ end
 for sh in { { w = I8, ab = 96, ng = 97 }, { w = I16, ab = 128, ng = 129 },
             { w = I32, ab = 160, ng = 161 }, { w = I64, ab = 0, ng = 193 } }
   OPS[sh.ng] = { w = sh.w, k = "neg", n = 1, sg = true, fl = false, c = false }
-  if sh.ab ~= 0
+  if sh.ab != 0
     OPS[sh.ab] = { w = sh.w, k = "abs", n = 1, sg = true, fl = false, c = false }
   end
 end
@@ -175,8 +175,8 @@ flt_k: f64 = (k: str, x: f64, y: f64)
     if x < 0.0 return 0.0 - x end
     return x
   end
-  if x ~= x return x end
-  if y ~= y return y end
+  if x != x return x end
+  if y != y return y end
   if k == "min"
     if y < x return y end
     return x
@@ -187,7 +187,7 @@ end
 
 cmp_ok: bool = (k: str, x: f64, y: f64)
   if k == "eq" return x == y end
-  if k == "ne" return x ~= y end
+  if k == "ne" return x != y end
   if k == "lt" return x < y end
   if k == "gt" return x > y end
   if k == "le" return x <= y end

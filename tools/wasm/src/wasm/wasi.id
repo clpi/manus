@@ -93,7 +93,7 @@ fun wasi_fd_fdstat_get(rt, args)
   runtime = rt_mod
   filetype = 2 # character device for stdio fds
   flags = 0
-  if fd ~= 0 and fd ~= 1 and fd ~= 2
+  if fd != 0 and fd != 1 and fd != 2
     filetype = 0
   else
     # stdout/stderr are treated as non-tty so line-buffered output flushes

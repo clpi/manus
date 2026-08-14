@@ -266,7 +266,7 @@ pub const PrettyPrinter = struct {
                     .rshift => " >> ",
                     .concat => " .. ",
                     .eq => " == ",
-                    .neq => " ~= ",
+                    .neq => " != ",
                     .lt => " < ",
                     .gt => " > ",
                     .leq => " <= ",

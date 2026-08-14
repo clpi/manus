@@ -4999,7 +4999,7 @@ test "dnir_lower: hardware direct module" {
         \\main(): i64
         \\    @comp.hint.fence()
         \\    bits = @comp.bit.popcount(47)
-        \\    if bits ~= 5 return 1 end
+        \\    if bits != 5 return 1 end
         \\    @comp.hint.fence()
         \\    0
         \\end

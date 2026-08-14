@@ -205,10 +205,10 @@ main = (): i64
 
     bn = count_names(bout)
     bs = count_schemas(bout)
-    if bn ~= bs
+    if bn != bs
         report("failed", "duo_bench tool census agrees", "name count " .. bn:to(str) .. " vs schema count " .. bs:to(str))
         fails += 1
-    elseif bn ~= 35
+    elseif bn != 35
         report("failed", "idol-bench serves 35 tools", "served " .. bn:to(str) .. "  -  update ON PURPOSE when adding a tool")
         fails += 1
     else
@@ -343,10 +343,10 @@ main = (): i64
 
     ln = count_names(lout)
     ls = count_schemas(lout)
-    if ln ~= ls
+    if ln != ls
         report("failed", "duo_lsp tool census agrees", "name count " .. ln:to(str) .. " vs schema count " .. ls:to(str))
         fails += 1
-    elseif ln ~= 32
+    elseif ln != 32
         report("failed", "idol-lsp serves 32 tools", "served " .. ln:to(str) .. "  -  update ON PURPOSE when adding a tool")
         fails += 1
     else
@@ -417,7 +417,7 @@ main = (): i64
     for hit in string.gmatch(zout, "\"name\":\"zig_")
         zn += 1
     end
-    if zn ~= 4
+    if zn != 4
         report("failed", "zls serves 4 tools", "served " .. zn:to(str))
         fails += 1
     else
