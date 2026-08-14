@@ -2,10 +2,16 @@
 # TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
 # All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
-TOP = @comp.match("a|b", fun(m) m.pattern .. "\n" end)
-NESTED = @comp.map("q", fun(seed)
-    @comp.match("a|b", fun(m) m.pattern .. "\n" end)
+TOP = @comp.match("a|b", fun(m)
+  m.pattern .. "\n"
 end)
-parity(): str
-    @comp.match("a|b", fun(m) m.pattern .. "\n" end)
+NESTED = @comp.map("q", fun(seed)
+  @comp.match("a|b", fun(m)
+    m.pattern .. "\n"
+  end)
+end)
+parity: str = ()
+  @comp.match("a|b", fun(m)
+    m.pattern .. "\n"
+  end)
 BLOCK = parity()

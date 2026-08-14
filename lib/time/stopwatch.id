@@ -1,81 +1,63 @@
-stopwatch_new(): any
+stopwatch_new: any = ()
   {
     start_time = nil,
     elapsed = 0,
     running = false,
     laps = {}
   }
-end
-stopwatch_start(sw: any): void
+stopwatch_start: void = (sw: any)
   if sw.running
     return
-  end
   sw.start_time = os.clock()
   sw.running = true
-end
-stopwatch_stop(sw: any): f64
+stopwatch_stop: f64 = (sw: any)
   if not sw.running
     return sw.elapsed
-  end
   sw.elapsed = sw.elapsed + os.clock() - sw.start_time
   sw.running = false
   sw.elapsed
-end
-stopwatch_reset(sw: any): void
+stopwatch_reset: void = (sw: any)
   sw.start_time = nil
   sw.elapsed = 0
   sw.running = false
   sw.laps = {}
-end
-stopwatch_elapsed(sw: any): f64
+stopwatch_elapsed: f64 = (sw: any)
   if not sw.running
     return sw.elapsed
-  end
   sw.elapsed + os.clock() - sw.start_time
-end
-stopwatch_lap(sw: any): f64
+stopwatch_lap: f64 = (sw: any)
   if not sw.running
     return 0.0
-  end
   lap_time = os.clock() - sw.start_time
   sw.laps[sw:len().laps + 1] = lap_time
   sw.start_time = os.clock()
   lap_time
-end
-stopwatch_laps(sw: any): any
+stopwatch_laps: any = (sw: any)
   sw.laps
-end
-stopwatch_avg_lap(sw: any): f64
+stopwatch_avg_lap: f64 = (sw: any)
   if sw:len().laps == 0
     return 0.0
-  end
   total = 0
   for lap in sw.laps
-    total += lap
-  end
+    total = total + lap
   total / sw:len().laps
-end
-scoped_timer_new(name: str): any
+scoped_timer_new: any = (name: str)
   sw = stopwatch_new()
   stopwatch_start(sw)
   {
     name = name,
     stopwatch = sw
   }
-end
-scoped_timer_stop(st: any): f64
+scoped_timer_stop: f64 = (st: any)
   elapsed = stopwatch_stop(st.stopwatch)
   elapsed
-end
-scoped_timer_elapsed(st: any): f64
+scoped_timer_elapsed: f64 = (st: any)
   stopwatch_elapsed(st.stopwatch)
-end
-profiler_new(): any
+profiler_new: any = ()
   {
     sections = {}
   }
-end
-profiler_start(profiler: any, name: str): void
+profiler_start: void = (profiler: any, name: str)
   if profiler.sections[name] == nil
     profiler.sections[name] = {
       total = 0,
@@ -84,30 +66,23 @@ profiler_start(profiler: any, name: str): void
       max = -1000000000000000000000000000000.0,
       start_time = nil
     }
-  end
   profiler.sections[name].start_time = os.clock()
-end
-profiler_stop(profiler: any, name: str): void
+profiler_stop: void = (profiler: any, name: str)
   section = profiler.sections[name]
   if section == nil or section.start_time == nil
     return
-  end
   elapsed = os.clock() - section.start_time
   section.total = section.total + elapsed
   section.count = section.count + 1
   if elapsed < section.min
     section.min = elapsed
-  end
   if elapsed > section.max
     section.max = elapsed
-  end
   section.start_time = nil
-end
-profiler_stats(profiler: any, name: str): any
+profiler_stats: any = (profiler: any, name: str)
   section = profiler.sections[name]
   if section == nil
     return nil
-  end
   {
     name = name,
     total = section.total,
@@ -116,29 +91,23 @@ profiler_stats(profiler: any, name: str): any
     min = section.count > 0 and section.min or 0,
     max = section.count > 0 and section.max or 0
   }
-end
-profiler_report(profiler: any): any
+profiler_report: any = (profiler: any)
   report = {}
   for name, section in profiler.sections
     report[report:len() + 1] = profiler_stats(profiler, name)
-  end
-  report:sort((a: any, b: any): any
+  report:sort(fun(a: any, b: any) -> any
     a.total > b.total
   end)
   report
-end
-profiler_reset(profiler: any): void
+profiler_reset: void = (profiler: any)
   profiler.sections = {}
-end
-benchmark(func: any, iterations: i64): any
+benchmark: any = (func: any, iterations: i64)
   if iterations == nil
     iterations = 1000
-  end
   i = 0
   while i < iterations:min(100)
     func()
-    i += 1
-  end
+    i = i + 1
   times = {}
   i = 0
   while i < iterations
@@ -146,13 +115,11 @@ benchmark(func: any, iterations: i64): any
     func()
     elapsed = os.clock() - start
     times[times:len() + 1] = elapsed
-    i += 1
-  end
+    i = i + 1
   times:sort()
   total = 0
   for t in times
-    total += t
-  end
+    total = total + t
   {
     iterations = iterations,
     total = total,
@@ -164,4 +131,3 @@ benchmark(func: any, iterations: i64): any
     p99 = times[iterations * 0.99:floor() + 1],
     ops_per_sec = iterations / total
   }
-end

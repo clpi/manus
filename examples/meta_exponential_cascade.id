@@ -6,8 +6,8 @@
 #   @comp.power → @comp.each → @comp.template (nested hooks via G-059 meta_hook)
 
 concept HasXY
-    x: f64
-    y: f64
+  x: f64
+  y: f64
 
 Vec2: { x: f64, y: f64 }
 Vec3: { x: f64, y: f64, z: f64 }
@@ -18,16 +18,16 @@ TYPES = "i32|" .. "i64|" .. "f64"
 OPS = "add|" .. "sub"
 
 PAIRS = @comp.zip(TYPES, OPS, fun(p)
-    p.a .. "_" .. p.b .. " "
+  p.a .. "_" .. p.b .. " "
 end)
 
 # power(3 types) → 7 subset fragments; each re-expands; template emits C stub per type.
 SUBSETS = @comp.power("HasXY", fun(s)
-    s.name .. ";"
+  s.name .. ";"
 end)
 
 CASCADE = @comp.each(SUBSETS, fun(frag)
-    @comp.template(frag.name .. ":int64_t", "int64_t tag_$0() { return 0 }\n")
+  @comp.template(frag.name .. ":int64_t", "int64_t tag_$0() { return 0 }\n")
 end)
 
 HINT = @comp.agent.multiplier("compose exponential cascade")
@@ -44,7 +44,7 @@ OP_AXES = @comp.str.splitcount(OPS, "|")
 PAIR_COUNT = TYPE_AXES * OP_AXES
 CASCADE_LINES = @comp.str.countlines(CASCADE)
 
-ok = (PAIR_COUNT == 6 and CASCADE_LINES == 7 and TYPE_AXES == 3 and OP_AXES == 2)
+ok = PAIR_COUNT == 6 and CASCADE_LINES == 7 and TYPE_AXES == 3 and OP_AXES == 2
 print("=== RESULT ===")
 print("cascade_ok = " .. to(str)(ok))
 print("RESULT cascade_pairs " .. to(str)(PAIR_COUNT))

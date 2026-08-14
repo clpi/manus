@@ -9,7 +9,7 @@ AAAA = 28
 SRV = 33
 PTR = 12
 ANY = 255
-header_new(id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra: i64, z: i64, rcode: i64): any
+header_new: any = (id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra: i64, z: i64, rcode: i64)
   {
     id = id,
     qr = qr,
@@ -25,8 +25,7 @@ header_new(id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra: i64, z:
     nscount = 0,
     arcount = 0
   }
-end
-header_encode(h: any): any
+header_encode: any = (h: any)
   bytes = {}
   bytes[1] = h.id >> 8 & 255
   bytes[2] = h.id & 255
@@ -42,8 +41,7 @@ header_encode(h: any): any
   bytes[11] = h.arcount >> 8 & 255
   bytes[12] = h.arcount & 255
   bytes
-end
-header_decode(data: any): any
+header_decode: any = (data: any)
   id = data[1] << 8 | data[2]
   flags = data[3] << 8 | data[4]
   {
@@ -61,8 +59,7 @@ header_decode(data: any): any
     nscount = data[9] << 8 | data[10],
     arcount = data[11] << 8 | data[12]
   }
-end
-name_encode(name: str): any
+name_encode: any = (name: str)
   bytes = {}
   pos = 1
   len = name:len()
@@ -70,58 +67,48 @@ name_encode(name: str): any
     dot_pos = name:find(".", pos, true)
     if dot_pos == nil
       dot_pos = len + 1
-    end
     label_len = dot_pos - pos
     bytes[bytes:len() + 1] = label_len
     i = pos
     while i < dot_pos
       bytes[bytes:len() + 1] = name:byte(i)
-      i += 1
-    end
+      i = i + 1
     pos = dot_pos + 1
-  end
   bytes[bytes:len() + 1] = 0
   bytes
-end
-name_decode(data: any, pos: i64): any
+name_decode: any = (data: any, pos: i64)
   parts = {}
   jumped = false
   original_pos = pos
   while true
     if pos > data:len()
       break
-    end
     len = data[pos]
     if len == 0
-      pos += 1
+      pos = pos + 1
       break
     elseif len & 192 == 192
       if not jumped
-        original_pos += 2
-      end
+        original_pos = original_pos + 2
       pointer = (len & 63) << 8 | data[pos + 1]
       pos = pointer + 1
       jumped = true
     else
-      pos += 1
+      pos = pos + 1
       label = ""
       i = 0
       while i < len
         label = label .. data[pos + i]:char()
-        i += 1
-      end
+        i = i + 1
       parts[parts:len() + 1] = label
-      pos += len
-    end
-  end
+      pos = pos + len
   name = parts:concat(".")
   next_pos = jumped and original_pos or pos
   {
     name = name,
     next = next_pos
   }
-end
-query_new(name: str, qtype: i64): any
+query_new: any = (name: str, qtype: i64)
   crypto_rand = rand
   id_bytes = crypto_rand.bytes(2)
   query_id = id_bytes:byte(1) << 8 | id_bytes:byte(2)
@@ -133,36 +120,32 @@ query_new(name: str, qtype: i64): any
       qclass = 1
     }
   }
-end
-query_encode(q: any): any
+query_encode: any = (q: any)
   bytes = {}
   q.header.qdcount = 1
   header_bytes = header_encode(q.header)
   for b in header_bytes
     bytes[bytes:len() + 1] = b
-  end
   name_bytes = name_encode(q.question.name)
   for b in name_bytes
     bytes[bytes:len() + 1] = b
-  end
   bytes[bytes:len() + 1] = q.question.qtype >> 8 & 255
   bytes[bytes:len() + 1] = q.question.qtype & 255
   bytes[bytes:len() + 1] = q.question.qclass >> 8 & 255
   bytes[bytes:len() + 1] = q.question.qclass & 255
   bytes
-end
-record_decode(data: any, pos: i64): any
+record_decode: any = (data: any, pos: i64)
   result = name_decode(data, pos)
   name = result.name
   pos = result.next
   rtype = data[pos] << 8 | data[pos + 1]
-  pos += 2
+  pos = pos + 2
   rclass = data[pos] << 8 | data[pos + 1]
-  pos += 2
+  pos = pos + 2
   ttl = data[pos] << 24 | data[pos + 1] << 16 | data[pos + 2] << 8 | data[pos + 3]
-  pos += 4
+  pos = pos + 4
   rdlength = data[pos] << 8 | data[pos + 1]
-  pos += 2
+  pos = pos + 2
   rdata = nil
   if rtype == A and rdlength == 4
     rdata = to(str)(data[pos]) .. "." .. to(str)(data[pos + 1]) .. "." .. to(str)(data[pos + 2]) .. "." .. to(str)(data[pos + 3])
@@ -173,8 +156,7 @@ record_decode(data: any, pos: i64): any
       hi = data[pos + i]
       lo = data[pos + i + 1]
       parts[parts:len() + 1] = "%02x%02x":format(hi, lo)
-      i += 2
-    end
+      i = i + 2
     rdata = parts:concat(":")
   elseif rtype == CNAME or rtype == NS or rtype == PTR
     cname = name_decode(data, pos)
@@ -192,8 +174,7 @@ record_decode(data: any, pos: i64): any
     i = 1
     while i <= txt_len
       txt = txt .. data[pos + i]:char()
-      i += 1
-    end
+      i = i + 1
     rdata = txt
   elseif rtype == SRV
     priority = data[pos] << 8 | data[pos + 1]
@@ -206,8 +187,7 @@ record_decode(data: any, pos: i64): any
       port = port,
       target = target.name
     }
-  end
-  pos += rdlength
+  pos = pos + rdlength
   {
     name = name,
     type = rtype,
@@ -217,48 +197,42 @@ record_decode(data: any, pos: i64): any
     rdata = rdata,
     next = pos
   }
-end
-response_decode(data: any): any
+response_decode: any = (data: any)
   header = header_decode(data)
   pos = 13
   i = 0
   while i < header.qdcount
     result = name_decode(data, pos)
     pos = result.next + 4
-    i += 1
-  end
+    i = i + 1
   answers = {}
   i = 0
   while i < header.ancount
     record = record_decode(data, pos)
     answers[answers:len() + 1] = record
     pos = record.next
-    i += 1
-  end
+    i = i + 1
   authority = {}
   i = 0
   while i < header.nscount
     record = record_decode(data, pos)
     authority[authority:len() + 1] = record
     pos = record.next
-    i += 1
-  end
+    i = i + 1
   additional = {}
   i = 0
   while i < header.arcount
     record = record_decode(data, pos)
     additional[additional:len() + 1] = record
     pos = record.next
-    i += 1
-  end
+    i = i + 1
   {
     header = header,
     answers = answers,
     authority = authority,
     additional = additional
   }
-end
-resolver_new(): any
+resolver_new: any = ()
   {
     servers = {
       "8.8.8.8",
@@ -271,18 +245,14 @@ resolver_new(): any
     cache = {},
     retries = 3
   }
-end
-resolver_set_servers(resolver: any, servers: any): void
+resolver_set_servers: void = (resolver: any, servers: any)
   resolver.servers = servers
-end
-resolver_set_timeout(resolver: any, timeout: i64): void
+resolver_set_timeout: void = (resolver: any, timeout: i64)
   resolver.timeout = timeout
-end
-resolver_resolve(resolver: any, name: str, qtype: i64): any
+resolver_resolve: any = (resolver: any, name: str, qtype: i64)
   cache_key = name .. ":" .. qtype:to(str)
   if resolver.cache[cache_key]
     return resolver.cache[cache_key]
-  end
   if qtype == A
     ip = net.dns_resolve(name)
     if ip != nil
@@ -304,8 +274,6 @@ resolver_resolve(resolver: any, name: str, qtype: i64): any
       }
       resolver.cache[cache_key] = result
       return result
-    end
-  end
   for server in resolver.servers
     query = query_new(name, qtype)
     query_bytes = query_encode(query)
@@ -317,81 +285,61 @@ resolver_resolve(resolver: any, name: str, qtype: i64): any
     }
     if result.header.rcode == 0 and result:len().answers > 0
       resolver.cache[cache_key] = result
-    end
     return result
-  end
   {
     error = "All DNS servers failed"
   }
-end
-resolver_lookup_a(resolver: any, name: str): any
+resolver_lookup_a: any = (resolver: any, name: str)
   result = resolver_resolve(resolver, name, A)
   if result.error
     return result
-  end
   ips = {}
   for answer in result.answers
     if answer.type == A
       ips[ips:len() + 1] = answer.rdata
-    end
-  end
   {
     ips = ips
   }
-end
-resolver_lookup_aaaa(resolver: any, name: str): any
+resolver_lookup_aaaa: any = (resolver: any, name: str)
   result = resolver_resolve(resolver, name, AAAA)
   if result.error
     return result
-  end
   ips = {}
   for answer in result.answers
     if answer.type == AAAA
       ips[ips:len() + 1] = answer.rdata
-    end
-  end
   {
     ips = ips
   }
-end
-resolver_lookup_mx(resolver: any, name: str): any
+resolver_lookup_mx: any = (resolver: any, name: str)
   result = resolver_resolve(resolver, name, MX)
   if result.error
     return result
-  end
   mx_records = {}
   for answer in result.answers
     if answer.type == MX
       mx_records[mx_records:len() + 1] = answer.rdata
-    end
-  end
-  mx_records:sort((a: any, b: any): any
+  mx_records:sort(fun(a: any, b: any) -> any
     a.preference < b.preference
   end)
   {
     records = mx_records
   }
-end
-resolver_lookup_cname(resolver: any, name: str): any
+resolver_lookup_cname: any = (resolver: any, name: str)
   result = resolver_resolve(resolver, name, CNAME)
   if result.error
     return result
-  end
   for answer in result.answers
     if answer.type == CNAME
       return {
         cname = answer.rdata
       }
-    end
-  end
   {
     cname = nil
   }
-end
-resolver_flush_cache(resolver: any): void
+resolver_flush_cache: void = (resolver: any)
   resolver.cache = {}
-end
-type_name(qtype: i64): str
+type_name: str = (qtype: i64)
   types = {
     [A] = "A",
     [NS] = "NS",
@@ -405,8 +353,7 @@ type_name(qtype: i64): str
     [ANY] = "ANY"
   }
   types[qtype] or "UNKNOWN"
-end
-type_from_name(name: str): i64
+type_from_name: i64 = (name: str)
   types = {
     A = A,
     NS = NS,
@@ -420,4 +367,3 @@ type_from_name(name: str): i64
     ANY = ANY
   }
   types[name:upper()] or 0
-end

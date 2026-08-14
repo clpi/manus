@@ -1,26 +1,18 @@
-table_new(): any
+table_new: any = ()
   {}
-end
-table_get(m: any, key: any): any
+table_get: any = (m: any, key: any)
   m[key]
-end
-table_set(m: any, key: any, value: any): void
+table_set: void = (m: any, key: any, value: any)
   m[key] = value
-end
-table_has(m: any, key: any): bool
+table_has: bool = (m: any, key: any)
   m[key] != nil
-end
-wrap(fn: any): any
+wrap: any = (fn: any)
   cache = {}
-  return (x: any): any
+  return fun(x: any) -> any
     if cache[x] == nil
       cache[x] = fn(x)
-    end
     cache[x]
   end
-end
-clear(m: any): void
+clear: void = (m: any)
   for k, _ in m
     m[k] = nil
-  end
-end

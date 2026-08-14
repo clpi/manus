@@ -1,4 +1,4 @@
-descend(f: any, df: any, x0: f64, lr: f64, iterations: i64): any
+descend: any = (f: any, df: any, x0: f64, lr: f64, iterations: i64)
   x = x0
   history = {
     x
@@ -6,27 +6,22 @@ descend(f: any, df: any, x0: f64, lr: f64, iterations: i64): any
   i = 0
   while i < iterations
     grad = df(x)
-    x -= lr * grad
+    x = x - lr * grad
     history[history:len() + 1] = x
-    i += 1
-  end
+    i = i + 1
   {
     x = x,
     fx = f(x),
     history = history,
     iterations = iterations
   }
-end
-adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, iterations: i64): any
+adam: any = (f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, iterations: i64)
   if beta1 == nil
     beta1 = 0.9
-  end
   if beta2 == nil
     beta2 = 0.999
-  end
   if epsilon == nil
     epsilon = 0.00000001
-  end
   x = x0
   m = 0
   v = 0
@@ -40,30 +35,24 @@ adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, it
     v = beta2 * v + (1 - beta2) * grad * grad
     mh = m / (1 - beta1 ^ i)
     vh = v / (1 - beta2 ^ i)
-    x -= lr * mh / (vh:sqrt() + epsilon)
+    x = x - lr * mh / (vh:sqrt() + epsilon)
     history[history:len() + 1] = x
-    i += 1
-  end
+    i = i + 1
   {
     x = x,
     fx = f(x),
     history = history,
     iterations = iterations
   }
-end
-nelder(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations: i64): any
+nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations: i64)
   if alpha == nil
     alpha = 1.0
-  end
   if gamma == nil
     gamma = 2.0
-  end
   if rho == nil
     rho = 0.5
-  end
   if sigma == nil
     sigma = 0.5
-  end
   n = x0:len()
   simplex = {}
   simplex[1] = {
@@ -79,18 +68,15 @@ nelder(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations
         point[j] = x0[j] + 0.05
       else
         point[j] = x0[j]
-      end
-      j += 1
-    end
+      j = j + 1
     simplex[simplex:len() + 1] = {
       point = point,
       value = f(point)
     }
-    i += 1
-  end
+    i = i + 1
   iter = 0
   while iter < iterations
-    simplex:sort((a: any, b: any): any
+    simplex:sort(fun(a: any, b: any) -> any
       a.value < b.value
     end)
     best = simplex[1]
@@ -102,17 +88,14 @@ nelder(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations
       j = 1
       while j <= n
         centroid[i] = centroid[i] + simplex[j].point[i]
-        j += 1
-      end
+        j = j + 1
       centroid[i] = centroid[i] / n
-      i += 1
-    end
+      i = i + 1
     reflected = {}
     i = 1
     while i <= n
       reflected[i] = centroid[i] + alpha * (centroid[i] - worst.point[i])
-      i += 1
-    end
+      i = i + 1
     rval = f(reflected)
     if rval < simplex[n].value and rval >= best.value
       simplex[n + 1] = {
@@ -124,8 +107,7 @@ nelder(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations
       i = 1
       while i <= n
         expanded[i] = centroid[i] + gamma * (reflected[i] - centroid[i])
-        i += 1
-      end
+        i = i + 1
       eval = f(expanded)
       if eval < rval
         simplex[n + 1] = {
@@ -137,14 +119,12 @@ nelder(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations
           point = reflected,
           value = rval
         }
-      end
     else
       contracted = {}
       i = 1
       while i <= n
         contracted[i] = centroid[i] + rho * (worst.point[i] - centroid[i])
-        i += 1
-      end
+        i = i + 1
       cval = f(contracted)
       if cval < worst.value
         simplex[n + 1] = {
@@ -157,16 +137,11 @@ nelder(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations
           j = 1
           while j <= n
             simplex[i].point[j] = best.point[j] + sigma * (simplex[i].point[j] - best.point[j])
-            j += 1
-          end
+            j = j + 1
           simplex[i].value = f(simplex[i].point)
-          i += 1
-        end
-      end
-    end
-    iter += 1
-  end
-  simplex:sort((a: any, b: any): any
+          i = i + 1
+    iter = iter + 1
+  simplex:sort(fun(a: any, b: any) -> any
     a.value < b.value
   end)
   {
@@ -174,8 +149,7 @@ nelder(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations
     fx = simplex[1].value,
     iterations = iterations
   }
-end
-grid(f: any, ranges: any, steps: i64): any
+grid: any = (f: any, ranges: any, steps: i64)
   g = {}
   for name, range in ranges
     lo = range[1]
@@ -185,17 +159,14 @@ grid(f: any, ranges: any, steps: i64): any
     i = 0
     while i < steps
       points[points:len() + 1] = lo + i * step
-      i += 1
-    end
+      i = i + 1
     g[name] = points
-  end
   best = nil
   bestv = 1000000000000000000000000000000.0
   results = {}
   names = {}
   for name in ranges
     names[names:len() + 1] = name
-  end
   if names:len() == 1
     for v in g[names[1]]
       params = {
@@ -209,8 +180,6 @@ grid(f: any, ranges: any, steps: i64): any
       if value < bestv
         bestv = value
         best = params
-      end
-    end
   elseif names:len() == 2
     for v1 in g[names[1]]
       for v2 in g[names[2]]
@@ -226,17 +195,12 @@ grid(f: any, ranges: any, steps: i64): any
         if value < bestv
           bestv = value
           best = params
-        end
-      end
-    end
-  end
   {
     best = best,
     bestv = bestv,
     results = results
   }
-end
-random(f: any, ranges: any, iterations: i64): any
+random: any = (f: any, ranges: any, iterations: i64)
   best = nil
   bestv = 1000000000000000000000000000000.0
   results = {}
@@ -247,7 +211,6 @@ random(f: any, ranges: any, iterations: i64): any
       lo = range[1]
       hi = range[2]
       params[name] = lo + math.random() * (hi - lo)
-    end
     value = f(params)
     results[results:len() + 1] = {
       params = params,
@@ -256,34 +219,25 @@ random(f: any, ranges: any, iterations: i64): any
     if value < bestv
       bestv = value
       best = params
-    end
-    i += 1
-  end
+    i = i + 1
   {
     best = best,
     bestv = bestv,
     results = results
   }
-end
-line(f: any, x: f64, direction: f64, alpha: f64, beta: f64, limit: i64): f64
+line: f64 = (f: any, x: f64, direction: f64, alpha: f64, beta: f64, limit: i64)
   if alpha == nil
     alpha = 0.5
-  end
   if beta == nil
     beta = 0.8
-  end
   if limit == nil
     limit = 20
-  end
   t = 1.0
   fx = f(x)
   i = 0
   while i < limit
     if f(x + t * direction) <= fx + alpha * t * direction
       return t
-    end
     t = beta * t
-    i += 1
-  end
+    i = i + 1
   t
-end

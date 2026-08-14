@@ -3,15 +3,15 @@
 # All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
 concept Has1
-    x: i64
-type T1 = { x: i64 }
-sig(t): str
-    t.name .. "\n"
+  x: i64
+T1: { x: i64 }
+sig: str = (t)
+  t.name .. "\n"
 
 TOP = @comp.power("Has1", sig)
 NESTED = @comp.map("q", fun(seed)
-    @comp.power("Has1", sig)
+  @comp.power("Has1", sig)
 end)
-parity(): str
-    @comp.power("Has1", sig)
+parity: str = ()
+  @comp.power("Has1", sig)
 BLOCK = parity()

@@ -1,4 +1,4 @@
-new(texture: any, x: f64, y: f64): any
+new: any = (texture: any, x: f64, y: f64)
   {
     texture = texture,
     x = x,
@@ -21,31 +21,25 @@ new(texture: any, x: f64, y: f64): any
     flip_y = false,
     z_order = 0
   }
-end
-set_position(sprite: any, x: f64, y: f64): void
+set_position: void = (sprite: any, x: f64, y: f64)
   sprite.x = x
   sprite.y = y
-end
-set_scale(sprite: any, sx: f64, sy: f64): void
+set_scale: void = (sprite: any, sx: f64, sy: f64)
   sprite.scale_x = sx
   sprite.scale_y = sy or sx
-end
-set_rotation(sprite: any, degrees: f64): void
+set_rotation: void = (sprite: any, degrees: f64)
   sprite.rotation = degrees
-end
-set_color(sprite: any, r: f64, g: f64, b: f64, a: f64): void
+set_color: void = (sprite: any, r: f64, g: f64, b: f64, a: f64)
   sprite.color = {
     r = r,
     g = g,
     b = b,
     a = a or 1
   }
-end
-set_flip(sprite: any, flip_x: bool, flip_y: bool): void
+set_flip: void = (sprite: any, flip_x: bool, flip_y: bool)
   sprite.flip_x = flip_x
   sprite.flip_y = flip_y
-end
-sheet_new(texture: any, frame_width: i64, frame_height: i64): any
+sheet_new: any = (texture: any, frame_width: i64, frame_height: i64)
   cols = texture.width / frame_width:floor()
   rows = texture.height / frame_height:floor()
   frames = {}
@@ -59,24 +53,20 @@ sheet_new(texture: any, frame_width: i64, frame_height: i64): any
         width = frame_width,
         height = frame_height
       }
-      x += 1
-    end
-    y += 1
-  end
+      x = x + 1
+    y = y + 1
   {
     texture = texture,
     frame_width = frame_width,
     frame_height = frame_height,
     frames = frames
   }
-end
-sheet_get_frame(sheet: any, index: i64): any
+sheet_get_frame: any = (sheet: any, index: i64)
   sheet.frames[index]
-end
-sheet_get_frame_count(sheet: any): i64
-  s:len()heet.frames
-end
-anim_new(sheet: any, frame_indices: any, fps: f64): any
+sheet_get_frame_count: i64 = (sheet: any)
+  s:len()
+  heet.frames
+anim_new: any = (sheet: any, frame_indices: any, fps: f64)
   {
     sheet = sheet,
     frames = frame_indices,
@@ -86,22 +76,17 @@ anim_new(sheet: any, frame_indices: any, fps: f64): any
     playing = false,
     loop = true
   }
-end
-anim_play(anim: any): void
+anim_play: void = (anim: any)
   anim.playing = true
   anim.current_frame = 1
   anim.elapsed = 0
-end
-anim_stop(anim: any): void
+anim_stop: void = (anim: any)
   anim.playing = false
-end
-anim_pause(anim: any): void
+anim_pause: void = (anim: any)
   anim.playing = false
-end
-anim_update(anim: any, delta_time: f64): void
+anim_update: void = (anim: any, delta_time: f64)
   if not anim.playing
     return
-  end
   anim.elapsed = anim.elapsed + delta_time
   frame_duration = 1 / anim.fps
   if anim.elapsed >= frame_duration
@@ -113,44 +98,32 @@ anim_update(anim: any, delta_time: f64): void
       else
         anim.current_frame = anim:len().frames
         anim.playing = false
-      end
-    end
-  end
-end
-anim_get_frame(anim: any): any
+anim_get_frame: any = (anim: any)
   frame_index = anim.frames[anim.current_frame]
   anim.sheet.frames[frame_index]
-end
-renderer_new(): any
+renderer_new: any = ()
   {
     sprites = {},
     sorted = false
   }
-end
-renderer_add(renderer: any, sprite: any): void
+renderer_add: void = (renderer: any, sprite: any)
   renderer.sprites[renderer:len().sprites + 1] = sprite
   renderer.sorted = false
-end
-renderer_remove(renderer: any, sprite: any): void
+renderer_remove: void = (renderer: any, sprite: any)
   i = 1
   while i <= renderer:len().sprites
     if renderer.sprites[i] == sprite
       renderer.sprites:remove(i)
       return
-    end
-    i += 1
-  end
-end
-renderer_sort(renderer: any): void
-  renderer.sprites:sort((a: any, b: any): any
+    i = i + 1
+renderer_sort: void = (renderer: any)
+  renderer.sprites:sort(fun(a: any, b: any) -> any
     a.z_order < b.z_order
   end)
   renderer.sorted = true
-end
-renderer_render(renderer: any): any
+renderer_render: any = (renderer: any)
   if not renderer.sorted
     renderer_sort(renderer)
-  end
   render_calls = {}
   for sprite in renderer.sprites
     if sprite.visible
@@ -167,10 +140,7 @@ renderer_render(renderer: any): any
         pivot_x = sprite.pivot_x,
         pivot_y = sprite.pivot_y
       }
-    end
-  end
   {
     calls = render_calls,
     count = render_calls:len()
   }
-end

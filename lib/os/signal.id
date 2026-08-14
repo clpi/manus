@@ -27,173 +27,149 @@ SIGWINCH = 28
 # Signal Handler Registry
 # ═══════════════════════════════════════════════════════════════
 
-handler_new(): any
-    {
-        handlers = {},
-        default_handlers = {},
-        signal_queue = {},
-        blocked = {},
-    }
-end
+handler_new: any = ()
+  {
+    handlers = {},
+    default_handlers = {},
+    signal_queue = {},
+    blocked = {}
+  }
 
-register(handler: any, sig: i64, callback: any): void
-    handler.handlers[sig] = callback
-end
+register: void = (handler: any, sig: i64, callback: any)
+  handler.handlers[sig] = callback
 
-unregister(handler: any, sig: i64): void
-    handler.handlers[sig] = nil
-end
+unregister: void = (handler: any, sig: i64)
+  handler.handlers[sig] = nil
 
-block(handler: any, sig: i64): void
-    handler.blocked[sig] = true
-end
+block: void = (handler: any, sig: i64)
+  handler.blocked[sig] = true
 
-unblock(handler: any, sig: i64): void
-    handler.blocked[sig] = nil
-end
+unblock: void = (handler: any, sig: i64)
+  handler.blocked[sig] = nil
 
-emit(handler: any, sig: i64): void
-    if handler.blocked[sig]
-        handler.signal_queue[handler:len().signal_queue + 1] = sig
-        return
-    end
+emit: void = (handler: any, sig: i64)
+  if handler.blocked[sig]
+    handler.signal_queue[handler:len().signal_queue + 1] = sig
+    return
 
-    if handler.handlers[sig]
-        handler.handlers[sig](sig)
-    end
-end
+  if handler.handlers[sig]
+    handler.handlers[sig](sig)
 
-process_queue(handler: any): void
-    while handler:len().signal_queue > 0
-        sig = handler.signal_queue[1]
-        handler.signal_queue:remove(1)
-        if not handler.blocked[sig] and handler.handlers[sig]
-            handler.handlers[sig](sig)
-        end
-    end
-end
+process_queue: void = (handler: any)
+  while handler:len().signal_queue > 0
+    sig = handler.signal_queue[1]
+    handler.signal_queue:remove(1)
+    if not handler.blocked[sig] and handler.handlers[sig]
+      handler.handlers[sig](sig)
 
 # ═══════════════════════════════════════════════════════════════
 # Signal Utilities
 # ═══════════════════════════════════════════════════════════════
 
-name(sig: i64): str
-    names = {
-        [SIGHUP] = "SIGHUP",
-        [SIGINT] = "SIGINT",
-        [SIGQUIT] = "SIGQUIT",
-        [SIGKILL] = "SIGKILL",
-        [SIGUSR1] = "SIGUSR1",
-        [SIGUSR2] = "SIGUSR2",
-        [SIGPIPE] = "SIGPIPE",
-        [SIGALRM] = "SIGALRM",
-        [SIGTERM] = "SIGTERM",
-        [SIGSTOP] = "SIGSTOP",
-        [SIGCONT] = "SIGCONT",
-        [SIGCHLD] = "SIGCHLD",
-        [SIGTSTP] = "SIGTSTP",
-        [SIGTTIN] = "SIGTTIN",
-        [SIGTTOU] = "SIGTTOU",
-        [SIGPROF] = "SIGPROF",
-        [SIGWINCH] = "SIGWINCH",
-    }
-    names[sig] or "UNKNOWN"
-end
+name: str = (sig: i64)
+  names = {
+    [SIGHUP] = "SIGHUP",
+    [SIGINT] = "SIGINT",
+    [SIGQUIT] = "SIGQUIT",
+    [SIGKILL] = "SIGKILL",
+    [SIGUSR1] = "SIGUSR1",
+    [SIGUSR2] = "SIGUSR2",
+    [SIGPIPE] = "SIGPIPE",
+    [SIGALRM] = "SIGALRM",
+    [SIGTERM] = "SIGTERM",
+    [SIGSTOP] = "SIGSTOP",
+    [SIGCONT] = "SIGCONT",
+    [SIGCHLD] = "SIGCHLD",
+    [SIGTSTP] = "SIGTSTP",
+    [SIGTTIN] = "SIGTTIN",
+    [SIGTTOU] = "SIGTTOU",
+    [SIGPROF] = "SIGPROF",
+    [SIGWINCH] = "SIGWINCH"
+  }
+  names[sig] or "UNKNOWN"
 
-from_name(name: str): i64
-    names = {
-        HUP = SIGHUP,
-        INT = SIGINT,
-        QUIT = SIGQUIT,
-        KILL = SIGKILL,
-        USR1 = SIGUSR1,
-        USR2 = SIGUSR2,
-        PIPE = SIGPIPE,
-        ALRM = SIGALRM,
-        TERM = SIGTERM,
-        STOP = SIGSTOP,
-        CONT = SIGCONT,
-        CHLD = SIGCHLD,
-        TSTP = SIGTSTP,
-        TTIN = SIGTTIN,
-        TTOU = SIGTTOU,
-        PROF = SIGPROF,
-        WINCH = SIGWINCH,
-    }
-    # Remove SIG prefix if present
-    clean = name
-    if name:sub(1, 3) == "SIG"
-        clean = name:sub(4)
-    end
-    names[clean] or 0
-end
+from_name: i64 = (name: str)
+  names = {
+    HUP = SIGHUP,
+    INT = SIGINT,
+    QUIT = SIGQUIT,
+    KILL = SIGKILL,
+    USR1 = SIGUSR1,
+    USR2 = SIGUSR2,
+    PIPE = SIGPIPE,
+    ALRM = SIGALRM,
+    TERM = SIGTERM,
+    STOP = SIGSTOP,
+    CONT = SIGCONT,
+    CHLD = SIGCHLD,
+    TSTP = SIGTSTP,
+    TTIN = SIGTTIN,
+    TTOU = SIGTTOU,
+    PROF = SIGPROF,
+    WINCH = SIGWINCH
+  }
+  # Remove SIG prefix if present
+  clean = name
+  if name:sub(1, 3) == "SIG"
+    clean = name:sub(4)
+  names[clean] or 0
 
-is_fatal(sig: i64): bool
-    sig == SIGKILL or sig == SIGTERM or sig == SIGHUP
-end
+is_fatal: bool = (sig: i64)
+  sig == SIGKILL or sig == SIGTERM or sig == SIGHUP
 
-is_stop(sig: i64): bool
-    sig == SIGSTOP or sig == SIGTSTP or sig == SIGTTIN or sig == SIGTTOU
-end
+is_stop: bool = (sig: i64)
+  sig == SIGSTOP or sig == SIGTSTP or sig == SIGTTIN or sig == SIGTTOU
 
-is_continue(sig: i64): bool
-    sig == SIGCONT
-end
+is_continue: bool = (sig: i64)
+  sig == SIGCONT
 
 # ═══════════════════════════════════════════════════════════════
 # Graceful Shutdown Handler
 # ═══════════════════════════════════════════════════════════════
 
-shutdown_new(): any
-    {
-        handler = handler_new(),
-        shutdown_hooks = {},
-        is_shutting_down = false,
-        shutdown_timeout = 30,
-    }
-end
+shutdown_new: any = ()
+  {
+    handler = handler_new(),
+    shutdown_hooks = {},
+    is_shutting_down = false,
+    shutdown_timeout = 30
+  }
 
-shutdown_register(sh: any, callback: any): void
-    sh.shutdown_hooks[sh:len().shutdown_hooks + 1] = callback
-end
+shutdown_register: void = (sh: any, callback: any)
+  sh.shutdown_hooks[sh:len().shutdown_hooks + 1] = callback
 
-shutdown_trigger(sh: any): void
-    if sh.is_shutting_down return end
-    sh.is_shutting_down = true
+shutdown_trigger: void = (sh: any)
+  if sh.is_shutting_down
+    return
+  sh.is_shutting_down = true
 
-    # Run hooks in reverse order
-    i = sh:len().shutdown_hooks
-    while i >= 1
-        sh.shutdown_hooks[i]()
-        i -= 1
-    end
-end
+  # Run hooks in reverse order
+  i = sh:len().shutdown_hooks
+  while i >= 1
+    sh.shutdown_hooks[i]()
+    i = i - 1
 
-shutdown_is_active(sh: any): bool
-    sh.is_shutting_down
-end
+shutdown_is_active: bool = (sh: any)
+  sh.is_shutting_down
 
-shutdown_setup(sh: any): void
-    # Register signal handlers for graceful shutdown
-    register(sh.handler, SIGTERM, function(sig)
-        print("Received SIGTERM, shutting down...")
-        shutdown_trigger(sh)
-    end)
+shutdown_setup: void = (sh: any)
+  # Register signal handlers for graceful shutdown
+  register(sh.handler, SIGTERM, fun(sig)
+    print("Received SIGTERM, shutting down...")
+    shutdown_trigger(sh)
+  end)
 
-    register(sh.handler, SIGINT, function(sig)
-        print("Received SIGINT, shutting down...")
-        shutdown_trigger(sh)
-    end)
+  register(sh.handler, SIGINT, fun(sig)
+    print("Received SIGINT, shutting down...")
+    shutdown_trigger(sh)
+  end)
 
-    register(sh.handler, SIGHUP, function(sig)
-        print("Received SIGHUP, reloading...")
-    end)
-end
-
+  register(sh.handler, SIGHUP, fun(sig)
+    print("Received SIGHUP, reloading...")
+  end)
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Constants
 # Handler
 # Utilities

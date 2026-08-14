@@ -1,21 +1,17 @@
-encode(s: str): str
+encode: str = (s: str)
   if s == nil
     return ""
-  end
-  s:gsub("([^%w%.%-~_])", (c: str): str
+  s:gsub("([^%w%.%-~_])", fun(c: str) -> str
     "%%%02X":format(c:byte())
   end)
-end
-decode(s: str): str
+decode: str = (s: str)
   if s == nil
     return ""
-  end
   s = s:gsub("+", " ")
-  s:gsub("%%(%x%x)", (h: str): str
+  s:gsub("%%(%x%x)", fun(h: str) -> str
     tonumber(h, 16):char()
   end)
-end
-parse(url: str): any
+parse: any = (url: str)
   scheme = "http"
   rest = url
   if rest:sub(1, 7) == "http://"
@@ -23,30 +19,25 @@ parse(url: str): any
   elseif rest:sub(1, 8) == "https://"
     scheme = "https"
     rest = rest:sub(9)
-  end
   default = 80
   if scheme == "https"
     default = 443
-  end
   host = rest
   path = "/"
   slash = rest:find("/")
   if slash
     host = rest:sub(1, slash - 1)
     path = rest:sub(slash)
-  end
   colon = host:find(":")
   port = default
   if colon
     port = host:sub(colon + 1:to(i64)) or default
     host = host:sub(1, colon - 1)
-  end
   query = ""
   mark = path:find("?")
   if mark
     query = path:sub(mark + 1)
     path = path:sub(1, mark - 1)
-  end
   {
     scheme = scheme,
     host = host,
@@ -54,4 +45,3 @@ parse(url: str): any
     path = path,
     query = query
   }
-end

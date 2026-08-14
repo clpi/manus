@@ -1,9 +1,9 @@
 global finalized = 0
 
 object = setmetatable({}, {
-    __gc = fun(self: any): void
-        finalized += 1
-    end,
+  __gc = fun(self: any) -> void
+    finalized = finalized + 1
+  end
 })
 
 collectgarbage("collect")

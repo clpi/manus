@@ -4,8 +4,8 @@
 
 TOP = @comp.interpolate("x={v}", { v = "1" })
 NESTED = @comp.map("q", fun(seed)
-    @comp.interpolate("x={v}", { v = "1" })
+  @comp.interpolate("x={v}", { v = "1" })
 end)
-parity(): str
-    @comp.interpolate("x={v}", { v = "1" })
+parity: str = ()
+  @comp.interpolate("x={v}", { v = "1" })
 BLOCK = parity()

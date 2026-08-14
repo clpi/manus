@@ -4,79 +4,79 @@
 
 # Level 1: @comp.match generates type names
 types = @comp.match("i32|i64|f64", fun(m)
-    m.pattern
+  m.pattern
 end)
 print("=== Level 1: @comp.match → type list ===")
 print(types)
 
 # Level 2: @comp.tabulate generates indices
 indices = @comp.tabulate(4, fun(m)
-    to(str)(m.index)
+  to(str)(m.index)
 end)
 print("=== Level 2: @comp.tabulate → indices ===")
 print(indices)
 
 # Level 3: @comp.zip generates type×operation pairs
 pairs = @comp.zip("i32|i64|f64", "add|sub", fun(p)
-    p.a .. "_" .. p.b .. " "
+  p.a .. "_" .. p.b .. " "
 end)
 print("=== Level 3: @comp.zip → type×op pairs ===")
 print(pairs)
 
 # Level 4: @comp.interpolate templates C function bodies
-templated = @comp.interpolate("int64_t {name}(int64_t a, int64_t b) { return a {op} b; }", {name = "add_i32", op = "+"})
+templated = @comp.interpolate("int64_t {name}(int64_t a, int64_t b) { return a {op} b; }", { name = "add_i32", op = "+" })
 print("=== Level 4: @comp.interpolate → C function ===")
 print(templated)
 
 # Level 5: Chain @comp.match → @comp.each (composition via string)
 # match generates fragments, each processes each fragment
 fragments = @comp.match("add|sub|mul|div", fun(m)
-    "i64 " .. m.pattern .. "(i64 a, i64 b);\n"
+  "i64 " .. m.pattern .. "(i64 a, i64 b);\n"
 end)
 print("=== Level 5: @comp.match output ===")
 print(fragments)
 
 annotated = @comp.each(fragments, fun(f)
-    "/* " .. to(str)(f.index) .. ": " .. f.name .. " */\n"
+  "/* " .. to(str)(f.index) .. ": " .. f.name .. " */\n"
 end)
 print("=== Level 5: @comp.match → @comp.each ===")
 print(annotated)
 
 # Level 6: @comp.zip generates all type×op function signatures
 all_sigs = @comp.zip("i32|i64|f64", "add|sub|mul", fun(p)
-    "int64_t " .. p.a .. "_" .. p.b .. "(int64_t a, int64_t b);\n"
+  "int64_t " .. p.a .. "_" .. p.b .. "(int64_t a, int64_t b);\n"
 end)
 print("=== Level 6: @comp.zip → 9 function signatures ===")
 print(all_sigs)
 
 # Level 7: NESTED @comp.match inside @comp.match (arbitrary composition depth)
 nested = @comp.match("i32|i64", fun(m)
-    @comp.match("add|sub", fun(p)
-        p.pattern .. "_" .. m.pattern .. " "
-    end)
+  @comp.match("add|sub", fun(p)
+    p.pattern .. "_" .. m.pattern .. " "
+  end)
 end)
 print("=== Level 7: nested @comp.match → 4 type×op names ===")
 print(nested)
 
 # Level 8: NESTED @comp.interpolate inside @comp.match
 typed = @comp.match("i32|i64|f64", fun(m)
-    @comp.interpolate("typedef {name} variant_{idx};\n", {name = m.pattern, idx = to(str)(m.index)})
+  @comp.interpolate("typedef {name} variant_{idx};\n", { name = m.pattern, idx = to(str)(m.index) })
 end)
 print("=== Level 8: nested @comp.interpolate → 3 typedefs ===")
 print(typed)
 
 # Level 9: NESTED @comp.tabulate inside @comp.match
 expanded = @comp.match("vec|mat", fun(m)
-    @comp.tabulate(4, fun(i)
-        m.pattern .. "_comp" .. to(str)(i.index) .. " "
-    end)
+  @comp.tabulate(4, fun(i)
+    m.pattern .. "_comp" .. to(str)(i.index) .. " "
+  end)
 end)
 print("=== Level 9: nested @comp.tabulate → 8 component names ===")
 print(expanded)
 
 # Level 10: NESTED @comp.template inside @comp.match (deepest generative stack)
 level10 = @comp.match("i32|i64", fun(m)
-    @comp.template(m.pattern .. ":int64_t", "int64_t tag_$0() { return 0; }\n")
+  @comp.template(m.pattern .. ":int64_t", "int64_t tag_$0() { return 0; }\n")
 end)
 print("=== Level 10: nested @comp.template → 2 C stubs ===")
 print(level10)

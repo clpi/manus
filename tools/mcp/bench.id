@@ -20,14 +20,11 @@
 -- filesystem root. The `== ""` test is the whole point of this binding.
 root = os.env["IDOL_ROOT"] or ""
 if root:len() == 0
-    root = os.env["DUO_ROOT"] or ""
-end
+  root = os.env["DUO_ROOT"] or ""
 if root:len() == 0
-    root = os.env["PWD"] or ""
-end
+  root = os.env["PWD"] or ""
 if root:len() == 0
-    root = "."
-end
+  root = "."
 
 -- EVERY `req` LIVES HERE, AT FILE SCOPE, AND MUST STAY HERE.
 --
@@ -58,561 +55,533 @@ eval = req("tools.mcp.eval")
 vector = req("lib.std.vector")
 
 tool: void = (name: str, schema: any, handler: any)
-    std.mcp.register_tool(string.gsub(name, "^duo_", "idol_"), schema, handler)
-end
+  std.mcp.register_tool(string.gsub(name, "^duo_", "idol_"), schema, handler)
 
 audit_tally: any = (results: any)
-    wins = 0
-    losses = 0
-    for _, r in results
-        if r.pass
-            wins += 1
-        end
-        if !r.pass
-            losses += 1
-        end
-    end
-    { passed = wins, failed = losses }
-end
+  wins = 0
+  losses = 0
+  for _, r in results
+    if r.pass
+      wins = wins + 1
+    if not r.pass
+      losses = losses + 1
+  { passed = wins, failed = losses }
 
 audit_smokes: str = ()
-    paths = {
-        "examples/json/iteration.id",
-        "examples/boring/anagram.id",
-        "examples/boring/fizzbuzz.id",
-        "examples/boring/fib.id",
-        "examples/boring/primes.id",
-        "examples/boring/sort/quick.id",
-        "examples/boring/search/binary.id",
-        "examples/boring/mat/mul.id",
-        "examples/layout/guard.id",
-        "examples/layout/loop/body.id",
-        "examples/demand/result.id",
-        "examples/demand/swap.id",
-        "examples/demand/tail.id",
-        "examples/pack/consume.id",
-        "examples/projection/descriptor.id",
-        "examples/read/stream.id",
-        "examples/native/record.id",
-        "examples/hash/agreement.id",
-        "examples/control/default.id",
-        "examples/conversion/level.id",
-        "examples/table/str/split.id",
-        "examples/table/float/render.id",
-    }
-    results = {}
-    i = 1
-    while i <= paths:len()
-        results:push(shared.audit_native_boxing(paths[i]))
-        i += 1
-    end
-    tallies = audit_tally(results)
-    total = paths:len()
-    std.json.encode({ total = total, passed = tallies.passed, failed = tallies.failed, results = results })
-end
+  paths = {
+    "examples/json/iteration.id",
+    "examples/boring/anagram.id",
+    "examples/boring/fizzbuzz.id",
+    "examples/boring/fib.id",
+    "examples/boring/primes.id",
+    "examples/boring/sort/quick.id",
+    "examples/boring/search/binary.id",
+    "examples/boring/mat/mul.id",
+    "examples/layout/guard.id",
+    "examples/layout/loop/body.id",
+    "examples/demand/result.id",
+    "examples/demand/swap.id",
+    "examples/demand/tail.id",
+    "examples/pack/consume.id",
+    "examples/projection/descriptor.id",
+    "examples/read/stream.id",
+    "examples/native/record.id",
+    "examples/hash/agreement.id",
+    "examples/control/default.id",
+    "examples/conversion/level.id",
+    "examples/table/str/split.id",
+    "examples/table/float/render.id"
+  }
+  results = {}
+  i = 1
+  while i <= paths:len()
+    results:push(shared.audit_native_boxing(paths[i]))
+    i = i + 1
+  tallies = audit_tally(results)
+  total = paths:len()
+  std.json.encode({ total = total, passed = tallies.passed, failed = tallies.failed, results = results })
 
 embed_symbols_tool: str = (args: any)
-    rd = shared.root
-    ipath = "{rd}/docs/symbol_index.json"
-    k = args.top_k or 10
-    sc = args.scope or "all"
-    if args.force_rebuild
-        return std.json.encode({
-            error = "symbol index rebuild blocked",
-            reason = "scripts/build_symbol_index.id absent  -  IMPLEMENTATION-BLOCKED",
-        })
-    end
-    raw = std.fs.read_file(ipath)
-    if !raw
-        return std.json.encode({ error = "symbol index not found at {ipath}" })
-    end
-    idx = std.json.decode(raw)
-    dim = idx.dim or 256
-    decoded = 0
-    for _ in idx.symbols or {}
-        decoded += 1
-    end
-    indexed = idx.count or decoded
-    qvec = vector.embed(args.query or "", dim)
-    records = {}
-    for _, sym in idx.symbols or {}
-        f = sym.file or ""
-        if sc == "all"
-            records:push(sym)
-        elseif sc == "compiler" and string.find(f, "src", 1, true) == 1
-            records:push(sym)
-        elseif sc == "library" and string.find(f, "lib/std", 1, true) == 1
-            records:push(sym)
-        end
-    end
-    results = vector.rank(qvec, records, k)
-    note = nil
-    if decoded < indexed
-        note = "partial decode: {decoded}/{indexed} symbols visible  -  runtime tonumber heap-corruption bug (see findings 2026-08-02T23:10) reduces recall until codegen.zig fix lands"
-    end
-    std.json.encode({ results = results, decoded = decoded, indexed = indexed, note = note, query = args.query, dim = dim })
-end
+  rd = shared.root
+  ipath = "{rd}/docs/symbol_index.json"
+  k = args.top_k or 10
+  sc = args.scope or "all"
+  if args.force_rebuild
+    return std.json.encode({
+      error = "symbol index rebuild blocked",
+      reason = "scripts/build_symbol_index.id absent  -  IMPLEMENTATION-BLOCKED"
+    })
+  raw = std.fs.read_file(ipath)
+  if not raw
+    return std.json.encode({ error = "symbol index not found at {ipath}" })
+  idx = std.json.decode(raw)
+  dim = idx.dim or 256
+  decoded = 0
+  for _ in idx.symbols or {}
+    decoded = decoded + 1
+  indexed = idx.count or decoded
+  qvec = vector.embed(args.query or "", dim)
+  records = {}
+  for _, sym in idx.symbols or {}
+    f = sym.file or ""
+    if sc == "all"
+      records:push(sym)
+    elseif sc == "compiler" and string.find(f, "src", 1, true) == 1
+      records:push(sym)
+    elseif sc == "library" and string.find(f, "lib/std", 1, true) == 1
+      records:push(sym)
+  results = vector.rank(qvec, records, k)
+  note = nil
+  if decoded < indexed
+    note = "partial decode: {decoded}/{indexed} symbols visible  -  runtime tonumber heap-corruption bug (see findings 2026-08-02T23:10) reduces recall until codegen.zig fix lands"
+  std.json.encode({ results = results, decoded = decoded, indexed = indexed, note = note, query = args.query, dim = dim })
 
 tool("duo_bench_run", {
-    description = "Run a benchmark suite under build lock",
-    type = "object",
-    properties = {
-        suite = { type = "string", description = "bench|ml-bench|honest-bench|cross-bench" },
-        timeout = { type = "number" },
-    },
-    required = { "suite" },
+  description = "Run a benchmark suite under build lock",
+  type = "object",
+  properties = {
+    suite = { type = "string", description = "bench|ml-bench|honest-bench|cross-bench" },
+    timeout = { type = "number" }
+  },
+  required = { "suite" }
 }, fun(args)
-    if args.suite == nil or args.suite == ""
-        return std.json.encode({ error = "no bench type given" })
-    end
-    std.json.encode(shared.bench_run(args.suite, args.timeout or 900))
+  if args.suite == nil or args.suite == ""
+    return std.json.encode({ error = "no bench type given" })
+  std.json.encode(shared.bench_run(args.suite, args.timeout or 900))
 end)
 
 tool("duo_build_run", {
-    description = "Run a build/test gate",
-    type = "object",
-    properties = {
-        gate = { type = "string" },
-        timeout = { type = "number" },
-    },
-    required = { "gate" },
+  description = "Run a build/test gate",
+  type = "object",
+  properties = {
+    gate = { type = "string" },
+    timeout = { type = "number" }
+  },
+  required = { "gate" }
 }, fun(args)
-    std.json.encode(shared.build_run(args.gate, args.timeout or 600))
+  std.json.encode(shared.build_run(args.gate, args.timeout or 600))
 end)
 
 tool("duo_agent_smoke", {
-    description = "Run tier-0 agent-smoke gate under lock",
-    type = "object",
-    properties = {
-        timeout = { type = "number" },
-    },
+  description = "Run tier-0 agent-smoke gate under lock",
+  type = "object",
+  properties = {
+    timeout = { type = "number" }
+  }
 }, fun(args)
-    std.json.encode(shared.agent_smoke(args.timeout or 600))
+  std.json.encode(shared.agent_smoke(args.timeout or 600))
 end)
 
 tool("duo_coordination_read", {
-    description = "Read the shared agent coordination buffer",
-    type = "object",
-    properties = {},
+  description = "Read the shared agent coordination buffer",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    std.json.encode(shared.document(shared.coordpath, "coordination-buffer", 0))
+  std.json.encode(shared.document(shared.coordpath, "coordination-buffer", 0))
 end)
 
 tool("duo_coordination_update", {
-    description = "Update the coordination buffer (claim/release/note)",
-    type = "object",
-    properties = {
-        action = { type = "string" },
-        agent_id = { type = "string" },
-        detail = { type = "string" },
-        files = { type = "string" },
-    },
-    required = { "action", "agent_id", "detail" },
+  description = "Update the coordination buffer (claim/release/note)",
+  type = "object",
+  properties = {
+    action = { type = "string" },
+    agent_id = { type = "string" },
+    detail = { type = "string" },
+    files = { type = "string" }
+  },
+  required = { "action", "agent_id", "detail" }
 }, fun(args)
-    std.json.encode(shared.coordination_update(args.action, args.agent_id, args.detail, args.files or ""))
+  std.json.encode(shared.coordination_update(args.action, args.agent_id, args.detail, args.files or ""))
 end)
 
 tool("duo_session_log", {
-    description = "Append a structured session log entry",
-    type = "object",
-    properties = {
-        agent_id = { type = "string" },
-        summary = { type = "string" },
-        detail = { type = "string" },
-    },
-    required = { "agent_id", "summary" },
+  description = "Append a structured session log entry",
+  type = "object",
+  properties = {
+    agent_id = { type = "string" },
+    summary = { type = "string" },
+    detail = { type = "string" }
+  },
+  required = { "agent_id", "summary" }
 }, fun(args)
-    std.json.encode(shared.session_log(args.agent_id, args.summary, args.detail or ""))
+  std.json.encode(shared.session_log(args.agent_id, args.summary, args.detail or ""))
 end)
 
 tool("duo_repo_tooling", {
-    description = "Run a Duo repo-tooling script",
-    type = "object",
-    properties = {
-        script_name = { type = "string" },
-        args = { type = "string" },
-    },
-    required = { "script_name" },
+  description = "Run a Duo repo-tooling script",
+  type = "object",
+  properties = {
+    script_name = { type = "string" },
+    args = { type = "string" }
+  },
+  required = { "script_name" }
 }, fun(args)
-    std.json.encode(shared.repo_tooling(args.script_name, args.args or ""))
+  std.json.encode(shared.repo_tooling(args.script_name, args.args or ""))
 end)
 
 tool("duo_perf_ledger", {
-    description = "Read the performance ledger summary",
-    type = "object",
-    properties = {},
+  description = "Read the performance ledger summary",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    std.json.encode(shared.document(shared.perfpath, "perf-ledger", 10000))
+  std.json.encode(shared.document(shared.perfpath, "perf-ledger", 10000))
 end)
 
 tool("duo_agent_canonical_index", {
-    description = "Read the canonical agent index router",
-    type = "object",
-    properties = {},
+  description = "Read the canonical agent index router",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    std.json.encode(shared.document(shared.canonpath, "canonical-index", 0))
+  std.json.encode(shared.document(shared.canonpath, "canonical-index", 0))
 end)
 
 tool("duo_audit_native_boxing", {
-    description = "Dump C for a .id file and flag lua_Value boxing",
-    type = "object",
-    properties = {
-        file_path = { type = "string" },
-    },
-    required = { "file_path" },
+  description = "Dump C for a .id file and flag lua_Value boxing",
+  type = "object",
+  properties = {
+    file_path = { type = "string" }
+  },
+  required = { "file_path" }
 }, fun(args)
-    std.json.encode(shared.audit_native_boxing(args.file_path))
+  std.json.encode(shared.audit_native_boxing(args.file_path))
 end)
 
 tool("duo_audit_metaprogramming_smokes", {
-    description = "Batch native-boxing audit on generative showcases",
-    type = "object",
-    properties = {},
+  description = "Batch native-boxing audit on generative showcases",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    audit_smokes()
+  audit_smokes()
 end)
 
 tool("duo_agent_gaps_read", {
-    description = "Read open P0 gaps from coordination buffer",
-    type = "object",
-    properties = {},
+  description = "Read open P0 gaps from coordination buffer",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    std.json.encode({ open_p0 = shared.open_p0_gaps() })
+  std.json.encode({ open_p0 = shared.open_p0_gaps() })
 end)
 
 tool("duo_agent_gaps_update", {
-    description = "Open or log updates for the canonical cross-agent gap buffer",
-    type = "object",
-    properties = {
-        action = { type = "string", description = "open|claim|delegate|close|note" },
-        agent_id = { type = "string" },
-        gap_id = { type = "string", description = "Existing gap id for non-open actions" },
-        kind = { type = "string", description = "perf|native|meta|script|agent|backend|expressiveness_gap|native_lowering_gap" },
-        title = { type = "string" },
-        detail = { type = "string" },
-        priority = { type = "string", description = "P0|P1|P2" },
-        files = { type = "string" },
-    },
-    required = { "action", "agent_id", "detail" },
+  description = "Open or log updates for the canonical cross-agent gap buffer",
+  type = "object",
+  properties = {
+    action = { type = "string", description = "open|claim|delegate|close|note" },
+    agent_id = { type = "string" },
+    gap_id = { type = "string", description = "Existing gap id for non-open actions" },
+    kind = { type = "string", description = "perf|native|meta|script|agent|backend|expressiveness_gap|native_lowering_gap" },
+    title = { type = "string" },
+    detail = { type = "string" },
+    priority = { type = "string", description = "P0|P1|P2" },
+    files = { type = "string" }
+  },
+  required = { "action", "agent_id", "detail" }
 }, fun(args)
-    shared.agent_gaps_update(
-        args.action or "open",
-        args.agent_id or "agent",
-        args.gap_id or "",
-        args.kind or "agent",
-        args.title or "untitled gap",
-        args.detail or "",
-        args.priority or "P1",
-        args.files or ""
-    )
+  shared.agent_gaps_update(args.action or "open", args.agent_id or "agent", args.gap_id or "", args.kind or "agent", args.title or "untitled gap", args.detail or "", args.priority or "P1", args.files or "")
 end)
 
 tool("duo_agent_session_start", {
-    description = "Session bootstrap: dev control plane + INFER-ONE + seam audit + coordination + gaps",
-    type = "object",
-    properties = {
-        agent_id = { type = "string" },
-        work_item = { type = "string", description = "Optional P13-WSn work item for context bundle" },
-    },
+  description = "Session bootstrap: dev control plane + INFER-ONE + seam audit + coordination + gaps",
+  type = "object",
+  properties = {
+    agent_id = { type = "string" },
+    work_item = { type = "string", description = "Optional P13-WSn work item for context bundle" }
+  }
 }, fun(args)
-    agent = args.agent_id or "agent"
-    wi = args.work_item or ""
-    dev_json = shared.dev_session_start(agent, wi, agent)
-    coord = shared.coordination_read()
-    p0 = shared.open_p0_gaps()
-    canon = shared.canonical_index()
-    open_count = p0:len()
-    std.json.encode({
-        agent_id = agent,
-        dev_control_plane = dev_json,
-        infer_one = shared.infer_one_context(),
-        harness_seams = shared.harness_seams_context(),
-        harness_context = shared.harness_context(),
-        coordination_path = shared.coordpath,
-        canonical_index_path = shared.canonpath,
-        open_p0_count = open_count,
-        open_p0_gaps = p0,
-        open_p0_census_source = "gaps/GAP-*.md",
-        open_p0_census_complete = open_count > 0,
-        next_steps = {},
-        coordination_excerpt = string.sub(coord, 1, 2000),
-        canonical_excerpt = string.sub(canon, 1, 2000),
-    })
+  agent = args.agent_id or "agent"
+  wi = args.work_item or ""
+  dev_json = shared.dev_session_start(agent, wi, agent)
+  coord = shared.coordination_read()
+  p0 = shared.open_p0_gaps()
+  canon = shared.canonical_index()
+  open_count = p0:len()
+  std.json.encode({
+    agent_id = agent,
+    dev_control_plane = dev_json,
+    infer_one = shared.infer_one_context(),
+    harness_seams = shared.harness_seams_context(),
+    harness_context = shared.harness_context(),
+    coordination_path = shared.coordpath,
+    canonical_index_path = shared.canonpath,
+    open_p0_count = open_count,
+    open_p0_gaps = p0,
+    open_p0_census_source = "gaps/GAP-*.md",
+    open_p0_census_complete = open_count > 0,
+    next_steps = {},
+    coordination_excerpt = string.sub(coord, 1, 2000),
+    canonical_excerpt = string.sub(canon, 1, 2000)
+  })
 end)
 
 tool("duo_dev_claim_acquire", {
-    description = "Claim a FILE PATH exclusively. Returns granted=false with held_by when another live claim covers or is covered by the path. Partition work by file, not by feature.",
-    type = "object",
-    properties = {
-        owner = { type = "string" },
-        file = { type = "string", description = "Repo-relative path; a directory claims everything under it" },
-        client = { type = "string" },
-        work_item = { type = "string" },
-    },
-    required = { "owner", "file" },
+  description = "Claim a FILE PATH exclusively. Returns granted=false with held_by when another live claim covers or is covered by the path. Partition work by file, not by feature.",
+  type = "object",
+  properties = {
+    owner = { type = "string" },
+    file = { type = "string", description = "Repo-relative path; a directory claims everything under it" },
+    client = { type = "string" },
+    work_item = { type = "string" }
+  },
+  required = { "owner", "file" }
 }, fun(args)
-    shared.dev_claim_acquire(args.owner, args.file, args.client or args.owner, args.work_item or "")
+  shared.dev_claim_acquire(args.owner, args.file, args.client or args.owner, args.work_item or "")
 end)
 
 tool("duo_dev_claim_release", {
-    description = "Release a file-path claim. Only the holder may release it.",
-    type = "object",
-    properties = {
-        owner = { type = "string" },
-        file = { type = "string" },
-    },
-    required = { "owner", "file" },
+  description = "Release a file-path claim. Only the holder may release it.",
+  type = "object",
+  properties = {
+    owner = { type = "string" },
+    file = { type = "string" }
+  },
+  required = { "owner", "file" }
 }, fun(args)
-    shared.dev_claim_release(args.owner, args.file)
+  shared.dev_claim_release(args.owner, args.file)
 end)
 
 tool("duo_dev_claim_files", {
-    description = "List every live file-path claim with its owner and age",
-    type = "object",
-    properties = {},
+  description = "List every live file-path claim with its owner and age",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    shared.dev_claim_files()
+  shared.dev_claim_files()
 end)
 
 tool("duo_dev_coordination_export", {
-    description = "Export machine-readable active claims",
-    type = "object",
-    properties = {},
+  description = "Export machine-readable active claims",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    shared.dev_coordination_export()
+  shared.dev_coordination_export()
 end)
 
 tool("duo_semantic_transaction_preview", {
-    description = "Bounded semantic transaction preview",
-    type = "object",
-    properties = {
-        classifier = { type = "string", description = "e.g. classifier.sorted_lookup" },
-    },
+  description = "Bounded semantic transaction preview",
+  type = "object",
+  properties = {
+    classifier = { type = "string", description = "e.g. classifier.sorted_lookup" }
+  }
 }, fun(args)
-    shared.semantic_transaction_preview(args.classifier or "classifier.sorted_lookup")
+  shared.semantic_transaction_preview(args.classifier or "classifier.sorted_lookup")
 end)
 
 tool("duo_semantic_transaction_validate", {
-    description = "Validate bounded semantic transaction",
-    type = "object",
-    properties = {
-        classifier = { type = "string" },
-    },
+  description = "Validate bounded semantic transaction",
+  type = "object",
+  properties = {
+    classifier = { type = "string" }
+  }
 }, fun(args)
-    shared.semantic_transaction_validate(args.classifier or "classifier.sorted_lookup")
+  shared.semantic_transaction_validate(args.classifier or "classifier.sorted_lookup")
 end)
 
 tool("duo_semantic_claims", {
-    description = "Release capability registry + effective claims",
-    type = "object",
-    properties = {},
+  description = "Release capability registry + effective claims",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    shared.semantic_claims()
+  shared.semantic_claims()
 end)
 
 tool("duo_dev_validate_run", {
-    description = "Run impact-based validation plan",
-    type = "object",
-    properties = {
-        file = { type = "string" },
-        work_item = { type = "string" },
-        execute = { type = "boolean", description = "Actually run gates (default dry-run)" },
-    },
+  description = "Run impact-based validation plan",
+  type = "object",
+  properties = {
+    file = { type = "string" },
+    work_item = { type = "string" },
+    execute = { type = "boolean", description = "Actually run gates (default dry-run)" }
+  }
 }, fun(args)
-    shared.dev_validate_run(args.file or "", args.work_item or "", args.execute == true)
+  shared.dev_validate_run(args.file or "", args.work_item or "", args.execute == true)
 end)
 
 tool("duo_bench_regressions", {
-    description = "Run the release benchmark aggregate and return its process-bound status and raw artifact.",
-    type = "object",
-    properties = {
-        suite = { type = "string", ["enum"] = { "bench" }, description = "Release proof suite" },
-    },
+  description = "Run the release benchmark aggregate and return its process-bound status and raw artifact.",
+  type = "object",
+  properties = {
+    suite = { type = "string", ["enum"] = { "bench" }, description = "Release proof suite" }
+  }
 }, fun(args)
-    bt = args.suite
-    if bt == nil
-        bt = "bench"
-    end
-    std.json.encode(shared.prove(bt))
+  bt = args.suite
+  if bt == nil
+    bt = "bench"
+  std.json.encode(shared.prove(bt))
 end)
 
 tool("duo_perf_gaps", {
-    description = "List open performance / native-lowering / codegen gaps from the coordination buffer, plus a performance.md excerpt.",
-    type = "object",
-    properties = {},
+  description = "List open performance / native-lowering / codegen gaps from the coordination buffer, plus a performance.md excerpt.",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    std.json.encode(shared.perf_gaps())
+  std.json.encode(shared.perf_gaps())
 end)
 
 tool("duo_file_finding", {
-    description = "File a finding (bug/exponential_opportunity/ergonomic_gap/regression) to the coordination buffer",
-    type = "object",
-    properties = {
-        kind = { type = "string", description = "bug|exponential_opportunity|ergonomic_gap|regression" },
-        title = { type = "string" },
-        detail = { type = "string" },
-        priority = { type = "string", description = "P0|P1|P2" },
-        file_path = { type = "string" },
-    },
-    required = { "kind", "title", "detail", "priority" },
+  description = "File a finding (bug/exponential_opportunity/ergonomic_gap/regression) to the coordination buffer",
+  type = "object",
+  properties = {
+    kind = { type = "string", description = "bug|exponential_opportunity|ergonomic_gap|regression" },
+    title = { type = "string" },
+    detail = { type = "string" },
+    priority = { type = "string", description = "P0|P1|P2" },
+    file_path = { type = "string" }
+  },
+  required = { "kind", "title", "detail", "priority" }
 }, fun(args)
-    coord_path = shared.coordpath
-    ts = shared.utc()
-    fp_line = ""
-    if args.file_path and args.file_path != ""
-        fp_line = "\\n  file: {args.file_path}"
-    end
-    entry = "\\n\\n### [{(args.priority or \"P1\")}] [{(args.kind or \"bug\")}] {(args.title or \"\")}\\n- filed: {ts}{fp_line}\\n- detail: {(args.detail or \"\")}\\n"
-    existing = std.fs.read_file(coord_path) or ""
-    marker = "## Cross-Agent Gap Buffer"
-    marker_len = string.len(marker)
-    idx = string.find(existing, marker, 1, true)
-    if idx
-        before = string.sub(existing, 1, idx + marker_len - 1)
-        after = string.sub(existing, idx + marker_len)
-        std.fs.write_file(coord_path, "{before}{entry}{after}")
-    else
-        std.fs.write_file(coord_path, "{existing}\n{marker}{entry}")
-    end
-    std.json.encode({ filed = true, kind = args.kind, title = args.title, priority = args.priority })
+  coord_path = shared.coordpath
+  ts = shared.utc()
+  fp_line = ""
+  if args.file_path and args.file_path != ""
+    fp_line = "\\n  file: {args.file_path}"
+  entry = "\\n\\n### [{(args.priority or \"P1\")}] [{(args.kind or \"bug\")}] {(args.title or \"\")}\\n- filed: {ts}{fp_line}\\n- detail: {(args.detail or \"\")}\\n"
+  existing = std.fs.read_file(coord_path) or ""
+  marker = "## Cross-Agent Gap Buffer"
+  marker_len = string.len(marker)
+  idx = string.find(existing, marker, 1, true)
+  if idx
+    before = string.sub(existing, 1, idx + marker_len - 1)
+    after = string.sub(existing, idx + marker_len)
+    std.fs.write_file(coord_path, "{before}{entry}{after}")
+  else
+    std.fs.write_file(coord_path, "{existing}\n{marker}{entry}")
+  std.json.encode({ filed = true, kind = args.kind, title = args.title, priority = args.priority })
 end)
 
 tool("duo_exponential_eval", {
-    description = "Exponential evaluator: input Duo source -> metaprogramming-enhanced, minimized Duo intermediary using @comp.* combinators (collapses type-polymorphic fn families into @comp.generate, equality boilerplate into @derive, dispatch chains into tables), plus a native-boxing (lua_Value) audit and LOC metrics. Returns JSON.",
-    type = "object",
-    properties = {
-        source = { type = "string", description = "Duo source code to analyze" },
-        goal = { type = "string", description = "Optional description of what the code does" },
-    },
-    required = { "source" },
+  description = "Exponential evaluator: input Duo source -> metaprogramming-enhanced, minimized Duo intermediary using @comp.* combinators (collapses type-polymorphic fn families into @comp.generate, equality boilerplate into @derive, dispatch chains into tables), plus a native-boxing (lua_Value) audit and LOC metrics. Returns JSON.",
+  type = "object",
+  properties = {
+    source = { type = "string", description = "Duo source code to analyze" },
+    goal = { type = "string", description = "Optional description of what the code does" }
+  },
+  required = { "source" }
 }, fun(args)
-    res = eval.evaluate(args.source or "", args.goal or "")
-    if res != nil and res != "" then return res end
-    -- fallback only if the evaluator module is unavailable
-    std.json.encode({ error = "duo_eval.evaluate returned no result", fallback = true, goal = args.goal or "" })
+  res = eval.evaluate(args.source or "", args.goal or "")
+  if res != nil and res != ""
+    return res
+  -- fallback only if the evaluator module is unavailable
+  std.json.encode({ error = "duo_eval.evaluate returned no result", fallback = true, goal = args.goal or "" })
 end)
 
 tool("duo_grammar_spec_read", {
-    description = "Read the canonical Duo grammar spec",
-    type = "object",
-    properties = {},
+  description = "Read the canonical Duo grammar spec",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    std.json.encode(shared.document("{shared.root}/docs/GRAMMAR_SPEC.md", "grammar-spec", 0))
+  std.json.encode(shared.document("{shared.root}/docs/GRAMMAR_SPEC.md", "grammar-spec", 0))
 end)
 
 tool("duo_grammar_spec_update", {
-    description = "Append a grammar rule to the canonical Duo grammar spec",
-    type = "object",
-    properties = {
-        rule_id = { type = "string" },
-        status = { type = "string", description = "preferred|accepted|deprecated|removed" },
-        title = { type = "string" },
-        content = { type = "string" },
-    },
-    required = { "rule_id", "status", "title", "content" },
+  description = "Append a grammar rule to the canonical Duo grammar spec",
+  type = "object",
+  properties = {
+    rule_id = { type = "string" },
+    status = { type = "string", description = "preferred|accepted|deprecated|removed" },
+    title = { type = "string" },
+    content = { type = "string" }
+  },
+  required = { "rule_id", "status", "title", "content" }
 }, fun(args)
-    spec_path = "{shared.root}/docs/GRAMMAR_SPEC.md"
-    existing = std.fs.read_file(spec_path) or ""
-    ts = shared.utc()
-    entry = "\\n\\n## Rule: {(args.rule_id or \"\")} [{(args.status or \"accepted\")}]\\n### {(args.title or \"\")}\\n_Updated: {ts}_\\n\\n{(args.content or \"\")}\\n"
-    std.fs.write_file(spec_path, "{existing}{entry}")
-    std.json.encode({ appended = true, rule_id = args.rule_id, status = args.status })
+  spec_path = "{shared.root}/docs/GRAMMAR_SPEC.md"
+  existing = std.fs.read_file(spec_path) or ""
+  ts = shared.utc()
+  entry = "\\n\\n## Rule: {(args.rule_id or \"\")} [{(args.status or \"accepted\")}]\\n### {(args.title or \"\")}\\n_Updated: {ts}_\\n\\n{(args.content or \"\")}\\n"
+  std.fs.write_file(spec_path, "{existing}{entry}")
+  std.json.encode({ appended = true, rule_id = args.rule_id, status = args.status })
 end)
 
 tool("duo_directive_hierarchy_read", {
-    description = "Read the @comp.* directive hierarchy documentation",
-    type = "object",
-    properties = {},
+  description = "Read the @comp.* directive hierarchy documentation",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    std.json.encode(shared.document("{shared.root}/docs/DIRECTIVE_HIERARCHY.md", "directive-hierarchy", 0))
+  std.json.encode(shared.document("{shared.root}/docs/DIRECTIVE_HIERARCHY.md", "directive-hierarchy", 0))
 end)
 
 tool("duo_embed_symbols", {
-    description = "Symbol-level VECTOR embedding search over compiler and library sources (vector: hashed bag-of-n-grams + cosine similarity, NOT keyword matching). Builds docs/symbol_index.json on first call or when force_rebuild=true.",
-    type = "object",
-    properties = {
-        query         = { type = "string",  description = "Natural language or code query" },
-        top_k         = { type = "number",  description = "Number of results (default 10)" },
-        scope         = { type = "string",  description = "compiler|library|all (default all)" },
-        force_rebuild = { type = "boolean", description = "Rebuild symbol index from source" },
-    },
-    required = { "query" },
+  description = "Symbol-level VECTOR embedding search over compiler and library sources (vector: hashed bag-of-n-grams + cosine similarity, NOT keyword matching). Builds docs/symbol_index.json on first call or when force_rebuild=true.",
+  type = "object",
+  properties = {
+    query = { type = "string", description = "Natural language or code query" },
+    top_k = { type = "number", description = "Number of results (default 10)" },
+    scope = { type = "string", description = "compiler|library|all (default all)" },
+    force_rebuild = { type = "boolean", description = "Rebuild symbol index from source" }
+  },
+  required = { "query" }
 }, fun(args)
-    embed_symbols_tool(args)
+  embed_symbols_tool(args)
 end)
 
-
-
 tool("duo_cross_lang_meta", {
-    description = "Guide for injecting Duo @comp.* exponential metaprogramming into any host language project.",
-    type = "object",
-    properties = {
-        host_lang = { type = "string", description = "python|rust|zig|c|js|ts|go|any" },
-        goal      = { type = "string", description = "What to achieve (e.g. derive, pipeline, embed-json)" },
-    },
+  description = "Guide for injecting Duo @comp.* exponential metaprogramming into any host language project.",
+  type = "object",
+  properties = {
+    host_lang = { type = "string", description = "python|rust|zig|c|js|ts|go|any" },
+    goal = { type = "string", description = "What to achieve (e.g. derive, pipeline, embed-json)" }
+  }
 }, fun(args)
-    lang = args.host_lang or "any"
-    goal = args.goal or ""
-    hdr = "# Using Duo metaprogramming from {lang}\n\n"
-    body = "## Drop-in: a standalone meta.id in your project\n\n  @comp.derive(Serialize, Hash, Eq)\n  MyType = { x: i64, y: i64 }\n\n  @comp.pipeline(\"load -> validate -> transform -> emit\")\n  process(item: Item): Result\n\nDuo build step emits C/asm/object your toolchain links directly.\n\n## Via duo_exponential_eval MCP tool\n\nPass any code snippet; Duo returns native C + @comp.* expansion.\n\n## Scaling ladder\n\n  @comp.map      1 type  -> N\n  @comp.product  2 types -> N^2\n  @comp.burst    N types -> derives x product\n  @comp.transcend 3      -> N^3\n  @comp.power    N       -> 2^N specializations\n  @comp.permute  N       -> N! orderings\n\n## Agent workflow\n\n1. duo_exponential_eval(source=...) -> optimized Duo\n2. duo_meta_catalog() -> browse @comp.* constructs\n3. duo_meta_ladder() -> understand scaling\n4. duo_file_finding(kind=\"ergonomic_gap\", ...) -> file gaps\n"
-    std.json.encode({ guide = "{hdr}{body}", host_lang = lang, goal = goal })
+  lang = args.host_lang or "any"
+  goal = args.goal or ""
+  hdr = "# Using Duo metaprogramming from {lang}\n\n"
+  body = "## Drop-in: a standalone meta.id in your project\n\n  @comp.derive(Serialize, Hash, Eq)\n  MyType = { x: i64, y: i64 }\n\n  @comp.pipeline(\"load -> validate -> transform -> emit\")\n  process(item: Item): Result\n\nDuo build step emits C/asm/object your toolchain links directly.\n\n## Via duo_exponential_eval MCP tool\n\nPass any code snippet; Duo returns native C + @comp.* expansion.\n\n## Scaling ladder\n\n  @comp.map      1 type  -> N\n  @comp.product  2 types -> N^2\n  @comp.burst    N types -> derives x product\n  @comp.transcend 3      -> N^3\n  @comp.power    N       -> 2^N specializations\n  @comp.permute  N       -> N! orderings\n\n## Agent workflow\n\n1. duo_exponential_eval(source=...) -> optimized Duo\n2. duo_meta_catalog() -> browse @comp.* constructs\n3. duo_meta_ladder() -> understand scaling\n4. duo_file_finding(kind=\"ergonomic_gap\", ...) -> file gaps\n"
+  std.json.encode({ guide = "{hdr}{body}", host_lang = lang, goal = goal })
 end)
 
 tool("duo_semantic_snapshot", {
-    description = "Export SIM v0 semantic snapshot JSON for a .id file",
-    type = "object",
-    properties = {
-        file_path = { type = "string" },
-    },
-    required = { "file_path" },
+  description = "Export SIM v0 semantic snapshot JSON for a .id file",
+  type = "object",
+  properties = {
+    file_path = { type = "string" }
+  },
+  required = { "file_path" }
 }, fun(args)
-    -- `sx` was NEVER BOUND in this handler  -  the only two `sx = req` sites in
-    -- the file were inside two OTHER handlers. That is what lowered to
-    -- `make_closure_29(sx)` and made the whole server unbuildable.
-    output = shared.semantic_snapshot_raw(args.file_path or "")
-    if output == nil or string.len(output) == 0 then return "{\"error\":\"empty output\"}" end
-    i = string.find(output, "{", 1, true)
-    -- EXPLICIT `return`s, not a trailing `if … else … end` used as the value.
-    -- A handler whose tail expression is a bare if/else sends NO RESPONSE AT
-    -- ALL and ends the session; measured 2026-08-08 on this exact tool. Every
-    -- handler still shaped that way is in the dead list in tools/mcp/CLAUDE.md.
-    if i
-        return string.sub(output, i)
-    end
-    "{\"error\":\"no JSON in output\"}"
+  -- `sx` was NEVER BOUND in this handler  -  the only two `sx = req` sites in
+  -- the file were inside two OTHER handlers. That is what lowered to
+  -- `make_closure_29(sx)` and made the whole server unbuildable.
+  output = shared.semantic_snapshot_raw(args.file_path or "")
+  if output == nil or string.len(output) == 0
+    return "{\"error\":\"empty output\"}"
+  i = string.find(output, "{", 1, true)
+  -- EXPLICIT `return`s, not a trailing `if … else … end` used as the value.
+  -- A handler whose tail expression is a bare if/else sends NO RESPONSE AT
+  -- ALL and ends the session; measured 2026-08-08 on this exact tool. Every
+  -- handler still shaped that way is in the dead list in tools/mcp/CLAUDE.md.
+  if i
+    return string.sub(output, i)
+  "{\"error\":\"no JSON in output\"}"
 end)
 
 tool("duo_foreign_import_preview", {
-    description = "Preview C header import as SIM v0 entities",
-    type = "object",
-    properties = {
-        header_path = { type = "string" },
-        source_dir = { type = "string" },
-    },
-    required = { "header_path" },
+  description = "Preview C header import as SIM v0 entities",
+  type = "object",
+  properties = {
+    header_path = { type = "string" },
+    source_dir = { type = "string" }
+  },
+  required = { "header_path" }
 }, fun(args)
-    src_dir = args.source_dir or ""
-    if src_dir == "" then
-        dir = string.match(args.header_path, "^(.*)/[^/]+$")
-        if dir then src_dir = dir end
-    end
-    std.json.encode(shared.foreign_import_preview(args.header_path, src_dir))
+  src_dir = args.source_dir or ""
+  if src_dir == ""
+    dir = string.match(args.header_path, "^(.*)/[^/]+$")
+    if dir
+      src_dir = dir
+  std.json.encode(shared.foreign_import_preview(args.header_path, src_dir))
 end)
 
 tool("duo_pass5_catalog", {
-    description = "Workstream and milestone status from the interchange catalog",
-    type = "object",
-    properties = {},
+  description = "Workstream and milestone status from the interchange catalog",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    std.json.encode(shared.pass5_catalog())
+  std.json.encode(shared.pass5_catalog())
 end)
 
 tool("duo_pass6_catalog", {
-    description = "Architectural reconciliation catalog",
-    type = "object",
-    properties = {},
+  description = "Architectural reconciliation catalog",
+  type = "object",
+  properties = {}
 }, fun(_args)
-    std.json.encode(shared.pass6_catalog())
+  std.json.encode(shared.pass6_catalog())
 end)
 
 std.mcp.serve()

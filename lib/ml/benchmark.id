@@ -1,4 +1,4 @@
-config_new(): any
+config_new: any = ()
   {
     warmup_runs = 10,
     num_runs = 100,
@@ -16,8 +16,7 @@ config_new(): any
     measure_first_token = true,
     output_dir = "./benchmarks"
   }
-end
-result_new(model_name: str, batch_size: i64): any
+result_new: any = (model_name: str, batch_size: i64)
   {
     model_name = model_name,
     batch_size = batch_size,
@@ -28,23 +27,19 @@ result_new(model_name: str, batch_size: i64): any
     memory_peak = 0,
     tokens_per_second = 0
   }
-end
-result_add_latency(result: any, latency: f64): void
+result_add_latency: void = (result: any, latency: f64)
   result.latencies[result:len().latencies + 1] = latency
-end
-result_calculate_stats(result: any): void
+result_calculate_stats: void = (result: any)
   n = result:len().latencies
   if n == 0
     return
-  end
   sorted = {
     result.latencies:unpack()
   }
   sorted:sort()
   sum = 0
   for v in sorted
-    sum += v
-  end
+    sum = sum + v
   result.mean_latency = sum / n
   result.median_latency = sorted[n / 2:floor() + 1]
   result.p95_latency = sorted[n * 0.95:floor() + 1]
@@ -54,15 +49,12 @@ result_calculate_stats(result: any): void
   if result.mean_latency > 0
     result.throughput = result.batch_size / result.mean_latency
     result.tokens_per_second = result.throughput
-  end
-end
-runner_new(config: any): any
+runner_new: any = (config: any)
   {
     config = config,
     results = {}
   }
-end
-runner_run(runner: any, model_fn: any, input_generator: any): any
+runner_run: any = (runner: any, model_fn: any, input_generator: any)
   config = runner.config
   results = {}
   batch_idx = 1
@@ -73,8 +65,7 @@ runner_run(runner: any, model_fn: any, input_generator: any): any
     while i < config.warmup_runs
       input = input_generator(batch_size)
       model_fn(input)
-      i += 1
-    end
+      i = i + 1
     i = 0
     while i < config.num_runs
       start_time = os.clock()
@@ -82,31 +73,26 @@ runner_run(runner: any, model_fn: any, input_generator: any): any
       output = model_fn(input)
       end_time = os.clock()
       result_add_latency(result, end_time - start_time)
-      i += 1
-    end
+      i = i + 1
     result_calculate_stats(result)
     results[batch_idx] = result
-    batch_idx += 1
-  end
+    batch_idx = batch_idx + 1
   runner.results = results
   results
-end
-throughput(model_fn: any, input_generator: any, batch_size: i64, duration: f64): any
+throughput: any = (model_fn: any, input_generator: any, batch_size: i64, duration: f64)
   i = 0
   while i < 5
     input = input_generator(batch_size)
     model_fn(input)
-    i += 1
-  end
+    i = i + 1
   start_time = os.clock()
   tokens = 0
   runs = 0
   while os.clock() - start_time < duration
     input = input_generator(batch_size)
     output = model_fn(input)
-    tokens += batch_size
-    runs += 1
-  end
+    tokens = tokens + batch_size
+    runs = runs + 1
   elapsed = os.clock() - start_time
   {
     batch_size = batch_size,
@@ -116,14 +102,12 @@ throughput(model_fn: any, input_generator: any, batch_size: i64, duration: f64):
     tokens_per_second = tokens / elapsed,
     runs_per_second = runs / elapsed
   }
-end
-latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): any
+latency: any = (model_fn: any, input_generator: any, batch_size: i64, num_runs: i64)
   i = 0
   while i < 5
     input = input_generator(batch_size)
     model_fn(input)
-    i += 1
-  end
+    i = i + 1
   latencies = {}
   i = 0
   while i < num_runs
@@ -132,13 +116,11 @@ latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): an
     model_fn(input)
     end_time = os.clock()
     latencies[latencies:len() + 1] = end_time - start_time
-    i += 1
-  end
+    i = i + 1
   latencies:sort()
   sum = 0
   for v in latencies
-    sum += v
-  end
+    sum = sum + v
   {
     batch_size = batch_size,
     num_runs = num_runs,
@@ -149,26 +131,22 @@ latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): an
     min = latencies[1],
     max = latencies[num_runs]
   }
-end
-memory(model_fn: any, input_generator: any, batch_size: i64): any
+memory: any = (model_fn: any, input_generator: any, batch_size: i64)
   input = input_generator(batch_size)
   output = model_fn(input)
   input_size = 0
   if input and input.data
     input_size = input:len().data * 4
-  end
   output_size = 0
   if output and output.data
     output_size = output:len().data * 4
-  end
   {
     batch_size = batch_size,
     input_size = input_size,
     output_size = output_size,
     estimated_total = input_size + output_size
   }
-end
-compare(results: any): any
+compare: any = (results: any)
   comparison = {}
   for name, result in results
     comparison[name] = {
@@ -176,23 +154,19 @@ compare(results: any): any
       throughput = result.throughput or 0,
       tokens_per_second = result.tokens_per_second or 0
     }
-  end
   comparison
-end
-rank(results: any, metric: str): any
+rank: any = (results: any, metric: str)
   ranked = {}
   for name, result in results
     ranked[ranked:len() + 1] = {
       name = name,
       value = result[metric] or 0
     }
-  end
-  ranked:sort((a: any, b: any): any
+  ranked:sort(fun(a: any, b: any) -> any
     a.value > b.value
   end)
   ranked
-end
-report(results: any): str
+report: str = (results: any)
   lines = {}
   lines[lines:len() + 1] = "=== Benchmark Report ==="
   lines[lines:len() + 1] = ""
@@ -206,6 +180,4 @@ report(results: any): str
     lines[lines:len() + 1] = "  Throughput: " .. result.throughput:to(str) .. " batches/s"
     lines[lines:len() + 1] = "  Tokens/sec: " .. result.tokens_per_second:to(str)
     lines[lines:len() + 1] = ""
-  end
   lines:concat("\n")
-end

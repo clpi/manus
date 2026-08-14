@@ -3,14 +3,20 @@
 # All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
 concept Has1
-    x: i64
-type T1 = { x: i64 }
-type T2 = { x: i64, y: i64 }
+  x: i64
+T1: { x: i64 }
+T2: { x: i64, y: i64 }
 
-TOP = @comp.permute("Has1", fun(ordered) ordered.name .. "\n" end)
-NESTED = @comp.map("q", fun(seed)
-    @comp.permute("Has1", fun(ordered) ordered.name .. "\n" end)
+TOP = @comp.permute("Has1", fun(ordered)
+  ordered.name .. "\n"
 end)
-parity(): str
-    @comp.permute("Has1", fun(ordered) ordered.name .. "\n" end)
+NESTED = @comp.map("q", fun(seed)
+  @comp.permute("Has1", fun(ordered)
+    ordered.name .. "\n"
+  end)
+end)
+parity: str = ()
+  @comp.permute("Has1", fun(ordered)
+    ordered.name .. "\n"
+  end)
 BLOCK = parity()
