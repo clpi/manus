@@ -604,7 +604,7 @@ fn lowerModuleFromGraph(
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
         if (!shouldIncludeFuncDecl(fd)) continue;
-        if (!functionEligible(fd, records.items)) continue;
+        if (!functionEligible(fd, records.items, mod)) continue;
         const slots = f64AbiParamSlots(fd, records.items) orelse continue;
         if (slots == 0 or slots > 8) continue;
         const key = try funcExportName(alloc, fd);
@@ -655,7 +655,7 @@ fn lowerModuleFromGraph(
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
         if (!shouldIncludeFuncDecl(fd)) continue;
-        if (!functionEligible(fd, records.items)) continue;
+        if (!functionEligible(fd, records.items, mod)) continue;
         const rec = findRecordName(records.items, fd.func.ret_type) orelse continue;
         const export_name = try funcExportName(alloc, fd);
         defer alloc.free(export_name);
@@ -682,7 +682,7 @@ fn lowerModuleFromGraph(
         // true statement about a module and a useless one about a fix: every
         // one of these bails means exactly one declaration was ineligible, and
         // which one is the entire finding.
-        if (!functionEligible(fd, records.items)) {
+        if (!functionEligible(fd, records.items, mod)) {
             // The WHOLE path, not `path[0]`. A spliced `req` module contributes
             // `os.exit`, `os.clock`, `os.time` … and every one of them reported
             // as plain `os`, so the row named a module where the finding is one
@@ -1014,7 +1014,25 @@ pub fn recordReturnIsIndirect(rec: dnir.RecordDesc) bool {
     return rec.fields.len > max_reg_record_fields;
 }
 
-fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool {
+/// A payload-free case-set used as a type: ABI-identical to an integer, because
+/// its values ARE the module constants `Home.case` folds to. A case-set with
+/// payloads carries content and has no scalar ABI here, so it stays ineligible
+/// rather than being silently truncated to its tag.
+fn typeIsScalarCaseSet(mod: *const ast.Module, typ: ast.TypeExpr) bool {
+    const name = switch (typ) {
+        .named => |n| n,
+        else => return false,
+    };
+    for (mod.body.stmts) |*st| {
+        if (st.* != .enum_def) continue;
+        if (!std.mem.eql(u8, st.enum_def.name, name)) continue;
+        for (st.enum_def.variants) |v| if (v.payload != null) return false;
+        return true;
+    }
+    return false;
+}
+
+fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc, mod: *const ast.Module) bool {
     if (fd.func.vararg or fd.func.vararg_name != null) return false;
     if (findRecordName(recs, fd.func.ret_type)) |rec| {
         if (rec.fields.len == 0 or rec.fields.len > max_record_fields) return false;
@@ -1035,12 +1053,14 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
                 if (r.fields.len > max_reg_record_fields) return false;
                 continue;
             }
-            if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
+            if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ) and
+                !typeIsScalarCaseSet(mod, p.typ)) return false;
         }
         return true;
     }
     if (!isFloatType(fd.func.ret_type) and !isIntType(fd.func.ret_type) and !isBoolType(fd.func.ret_type) and
         !isStrType(fd.func.ret_type) and !isVoidType(fd.func.ret_type) and
+        !typeIsScalarCaseSet(mod, fd.func.ret_type) and
         fd.func.ret_type != .inferred) return false;
     // AAPCS64 assigns the result and argument register classes independently.
     // Determine the parameter file from parameter descriptors, never from the
@@ -1060,7 +1080,8 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
         }
         // `ptr` rides x0..x7 like an i64 — it is the base address of a
         // memory-backed positional table (SH-04).
-        if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
+        if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ) and
+            !typeIsScalarCaseSet(mod, p.typ)) return false;
         gp_slots += 1;
         if (gp_slots > max_direct_scalar_args) return false;
     }
@@ -3533,6 +3554,16 @@ fn checkedScalarOperand(
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-descriptor");
     switch (descriptor) {
         .i32, .i64, .bool, .str, .f64, .any => {},
+        // A PAYLOAD-FREE case-set rides an integer register: its values are the
+        // module constants `Home.case` folds to, so it is ABI-identical to i64
+        // and crosses a relation boundary the same way. A case-set WITH payloads
+        // is not — it carries content, which has no scalar ABI here — so it is
+        // still refused rather than truncated to its tag.
+        .enum_type => |e| {
+            for (e.variants) |v| {
+                if (v.payload != null) return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+            }
+        },
         .@"struct", .table_type => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
         else => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
     }

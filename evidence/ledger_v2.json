@@ -9,7 +9,7 @@
   "blocked"
  ],
  "dirty": [
-  "M src/dnir_lower.zig"
+  "M evidence/ledger_v2.json"
  ],
  "occurrences": [
   {
@@ -533,20 +533,20 @@
    "target": "gate transport \u2014 foreign host boundary (stays)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "h = nspace(path, no, code, \"std\\x2E\", \"law.standard.environment\", \"no std namespace \u2014 admitted relations project directly\")",
    "family": "environment",
    "file": "gate/admission.id",
    "line": 102,
-   "target": "os.env[key]"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "h += nspace(path, no, code, \"core.\", \"law.standard.environment\", \"core is vocabulary authority not runtime table\")",
    "family": "environment",
    "file": "gate/admission.id",
    "line": 108,
-   "target": "os.env[key]"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -554,7 +554,7 @@
    "family": "stdio",
    "file": "gate/admission.id",
    "line": 222,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -578,7 +578,7 @@
    "family": "stdio",
    "file": "gate/build.id",
    "line": 7,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -618,7 +618,7 @@
    "family": "stdio",
    "file": "gate/census.id",
    "line": 96,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -642,7 +642,7 @@
    "family": "stdio",
    "file": "gate/graph.id",
    "line": 360,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -698,23 +698,23 @@
    "family": "io_calls",
    "file": "gate/host.id",
    "line": 118,
-   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "hits += rowh(path, no, code, \"host.write\", \"io.write(\", \"law.host.endpoint\", \"subject:write() \u2014 never io.write()\")",
    "family": "io_calls",
    "file": "gate/host.id",
    "line": 125,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "hits += rowh(path, no, code, \"host.open\", \"io.open(\", \"law.world.dot\", \"path:open(mode) \u2014 subject-first; never io.open()\")",
    "family": "io_calls",
    "file": "gate/host.id",
    "line": 126,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -722,7 +722,7 @@
    "family": "stdio",
    "file": "gate/host.id",
    "line": 128,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -730,7 +730,7 @@
    "family": "stdio",
    "file": "gate/host.id",
    "line": 170,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -738,7 +738,7 @@
    "family": "stdio",
    "file": "gate/host.id",
    "line": 171,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -746,7 +746,7 @@
    "family": "stdio",
    "file": "gate/host.id",
    "line": 181,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -762,7 +762,7 @@
    "family": "stdio",
    "file": "gate/host.id",
    "line": 187,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -778,7 +778,7 @@
    "family": "stdio",
    "file": "gate/host.id",
    "line": 246,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -786,7 +786,7 @@
    "family": "stdio",
    "file": "gate/host.id",
    "line": 248,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -794,7 +794,7 @@
    "family": "stdio",
    "file": "gate/host.id",
    "line": 249,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -810,15 +810,15 @@
    "family": "io_calls",
    "file": "gate/host.id",
    "line": 254,
-   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if audit(\"probe.id\", 4, \"text = io.read(\\\"*a\\\")\") == 0",
    "family": "io_calls",
    "file": "gate/host.id",
    "line": 257,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -845,28 +845,28 @@
    "target": "enforcement/detector machinery (gate or census tool)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if audit(\"probe.id\", 8, \"f = io.open(p)\") == 0",
    "family": "io_calls",
    "file": "gate/host.id",
    "line": 275,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if audit(\"probe.id\", 10, \"f = std\\x2Eio.open(p)\") == 0",
    "family": "io_calls",
    "file": "gate/host.id",
    "line": 281,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "print(\"control FAIL: std\\x2Eio.open / qual did not fire\")",
    "family": "io_calls",
    "file": "gate/host.id",
    "line": 282,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -890,7 +890,7 @@
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 142,
-   "target": "enforcement/detector machinery (gate)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -930,7 +930,7 @@
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 232,
-   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -938,23 +938,23 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 237,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "hits += flag(path, no, code, \"io.open(\", \"law.world.dot\", \"path:open(mode) \u2014 subject-first; never io.open dot\", quiet)",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 238,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "hits += flag(path, no, code, \"io.write(\", \"law.world.dot\", \"subject:write() \u2014 never io.write dot\", quiet)",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 239,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -978,7 +978,7 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 333,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -986,7 +986,7 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 406,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -994,7 +994,7 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 977,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1002,7 +1002,7 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 1001,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1010,7 +1010,7 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 1022,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1026,7 +1026,7 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 1030,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1042,7 +1042,7 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 1228,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1093,20 +1093,20 @@
    "target": "enforcement/detector machinery (gate or census tool)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if !dot(io)(\"text = io.read(\\\"*a\\\")\")",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 1341,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "print(\"control FAIL: dot(io) did not reject io.read\")",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 1342,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1114,31 +1114,31 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 1348,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if dot(io)(\"x = std\\x2Eio.open(p)\")",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 1350,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if !dot(std)(io, \"f = std\\x2Eio.open(p)\")",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 1353,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "print(\"control FAIL: dot(std)(io) did not reject std\\x2Eio.open\")",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 1354,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1154,31 +1154,31 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 1419,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if \"io.open(\":has(\"fswrite\")",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 1506,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "print(\"control FAIL: fswrite fired on canonical io.open write\")",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 1507,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "samplecatalog = \"--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+resident = { read = io.read }{nl}\"",
    "family": "io_calls",
    "file": "gate/idiom.id",
    "line": 1577,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1186,7 +1186,7 @@
    "family": "stdio",
    "file": "gate/idiom.id",
    "line": 1600,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1218,7 +1218,7 @@
    "family": "stdio",
    "file": "gate/path.id",
    "line": 478,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1242,7 +1242,7 @@
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 142,
-   "target": "enforcement/detector machinery (gate)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1282,7 +1282,7 @@
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 232,
-   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1290,23 +1290,23 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 237,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "hits += flag(path, no, code, \"io.open(\", \"law.world.dot\", \"path:open(mode) \u2014 subject-first; never io.open dot\", quiet)",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 238,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "hits += flag(path, no, code, \"io.write(\", \"law.world.dot\", \"subject:write() \u2014 never io.write dot\", quiet)",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 239,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1330,7 +1330,7 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 333,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1338,7 +1338,7 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 406,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1346,7 +1346,7 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 977,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1354,7 +1354,7 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 1001,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1362,7 +1362,7 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 1022,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1378,7 +1378,7 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 1030,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1394,7 +1394,7 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 1228,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1445,20 +1445,20 @@
    "target": "enforcement/detector machinery (gate or census tool)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if !dot(io)(\"text = io.read(\\\"*a\\\")\")",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 1341,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "print(\"control FAIL: dot(io) did not reject io.read\")",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 1342,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1466,31 +1466,31 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 1348,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if dot(io)(\"x = std\\x2Eio.open(p)\")",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 1350,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if !dot(std)(io, \"f = std\\x2Eio.open(p)\")",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 1353,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "print(\"control FAIL: dot(std)(io) did not reject std\\x2Eio.open\")",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 1354,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -1506,31 +1506,31 @@
    "family": "stdio",
    "file": "gate/probe.id",
    "line": 1419,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if \"io.open(\":has(\"fswrite\")",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 1506,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "print(\"control FAIL: fswrite fired on canonical io.open write\")",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 1507,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "samplecatalog = \"--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+resident = { read = io.read }{nl}\"",
    "family": "io_calls",
    "file": "gate/probe.id",
    "line": 1577,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4018,7 +4018,7 @@
    "family": "io_calls",
    "file": "scripts/idiomgate.id",
    "line": 176,
-   "target": "enforcement/detector machinery (gate)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4058,7 +4058,7 @@
    "family": "io_calls",
    "file": "scripts/idiomgate.id",
    "line": 238,
-   "target": "process boundary \u2014 command(c) then handle:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4066,23 +4066,23 @@
    "family": "stdio",
    "file": "scripts/idiomgate.id",
    "line": 243,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "hits += ruleq(path, no, code, \"io.open(\", \"law.world.dot\", \"path:open(mode) \u2014 subject-first; never io.open dot\", quiet)",
    "family": "io_calls",
    "file": "scripts/idiomgate.id",
    "line": 244,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "hits += ruleq(path, no, code, \"io.write(\", \"law.world.dot\", \"subject:write() \u2014 never io.write dot\", quiet)",
    "family": "io_calls",
    "file": "scripts/idiomgate.id",
    "line": 245,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4106,7 +4106,7 @@
    "family": "stdio",
    "file": "scripts/idiomgate.id",
    "line": 306,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4114,7 +4114,7 @@
    "family": "stdio",
    "file": "scripts/idiomgate.id",
    "line": 349,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4122,7 +4122,7 @@
    "family": "stdio",
    "file": "scripts/idiomgate.id",
    "line": 831,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4130,7 +4130,7 @@
    "family": "stdio",
    "file": "scripts/idiomgate.id",
    "line": 837,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4170,7 +4170,7 @@
    "family": "stdio",
    "file": "scripts/idiomgate.id",
    "line": 1008,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4221,20 +4221,20 @@
    "target": "enforcement/detector machinery (gate or census tool)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if !dot(io)(\"text = io.read(\\\"*a\\\")\")",
    "family": "io_calls",
    "file": "scripts/idiomgate.id",
    "line": 1067,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "print(\"control FAIL: dot(io) did not reject io.read\")",
    "family": "io_calls",
    "file": "scripts/idiomgate.id",
    "line": 1068,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4242,15 +4242,15 @@
    "family": "stdio",
    "file": "scripts/idiomgate.id",
    "line": 1074,
-   "target": "gate transport \u2014 foreign host boundary (stays)"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if dot(io)(\"x = std.io.open(p)\")",
    "family": "std_io",
    "file": "scripts/idiomgate.id",
    "line": 1076,
-   "target": "drop std prefix"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4282,23 +4282,23 @@
    "family": "stdio",
    "file": "scripts/idiomgate.id",
    "line": 1106,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "if probe(\"io.open(\", \"fswrite\")",
    "family": "io_calls",
    "file": "scripts/idiomgate.id",
    "line": 1193,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
-   "classification": "migration",
+   "classification": "foreign",
    "code": "print(\"control FAIL: fswrite fired on canonical io.open write\")",
    "family": "io_calls",
    "file": "scripts/idiomgate.id",
    "line": 1194,
-   "target": "io:read()/io:write() or subject:read()/write()"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "foreign",
@@ -4306,7 +4306,7 @@
    "family": "stdio",
    "file": "scripts/idiomgate.id",
    "line": 1261,
-   "target": "host realization boundary"
+   "target": "enforcement/detector control string (gate)"
   },
   {
    "classification": "field",
@@ -6557,7 +6557,7 @@
    "target": "prose/comment reference"
   }
  ],
- "revision": "c989a5a808dc69edd3916f618b9485abdab0b844",
+ "revision": "85f0c9875fa644a9810490e02aefd73c769dd671",
  "schema": "idol-v2-reconciliation-machine-ledger",
  "scope": [
   "lib",
@@ -6571,8 +6571,8 @@
   "by_classification": {
    "field": 53,
    "fieldmutation": 19,
-   "foreign": 342,
-   "migration": 400,
+   "foreign": 377,
+   "migration": 365,
    "subjectrelation": 4
   },
   "by_family": {
