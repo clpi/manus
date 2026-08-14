@@ -2071,7 +2071,15 @@ pub const Parser = struct {
         var methods: std.ArrayList(ast.FuncSignature) = .empty;
         var fields: std.ArrayList(ast.ConceptDef.RequiredField) = .empty;
 
+        // OFFSIDE CLOSES IT, like every other block (`syntax.block.close =
+        // false`). This loop ran until `kw_end` and nothing else, so a concept
+        // written without a terminator swallowed whatever followed and reported
+        // "unexpected token in concept body" pointing at the NEXT statement. A
+        // member sits right of the `concept` keyword; anything at or left of it
+        // has closed the body.
         while ((try self.pk()).kind != .kw_end and (try self.pk()).kind != .eof) {
+            const probe = try self.pk();
+            if (self.idol_mode and probe.loc.line != l.line and probe.loc.col <= l.col) break;
             if ((try self.pk()).kind == .kw_fun or (try self.pk()).kind == .kw_function) {
                 // Legacy required method: `fun name(params) -> ret_type`. GR-001
                 // retires `fun`; the bare form below is canonical.
@@ -2100,7 +2108,9 @@ pub const Parser = struct {
                 return ParseError.UnexpectedToken;
             }
         }
-        _ = try self.expect(.kw_end);
+        // `end` is ACCEPTED AND DELETED, not demanded — the body may have
+        // closed by dedent above, in which case there is nothing to consume.
+        _ = try self.eat(.kw_end);
 
         return ast.Stmt{ .concept_def = .{
             .loc = l,
@@ -6176,6 +6186,24 @@ pub const Parser = struct {
         if (std.mem.eql(u8, qualified, "c.call") and args_slice.len >= 1) {
             const call_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__c_call" } });
             return self.new_expr(.{ .call = .{ .loc = l, .func = call_name, .args = args_slice } });
+        }
+        // A parser running in order to REPRINT keeps the written spelling.
+        // Every branch below lowers `@name(...)` to an internal `__name(...)`,
+        // and the printer then emits THAT — so `@comp.assert(...)` came back
+        // out as `__static_assert(...)`, which the parser will not take back.
+        // Third instance of the same class, after interpolation and the anchor:
+        // a parse-time desugar is invisible to a formatter.
+        if (self.formatting) {
+            // `qualified` is freed on return by the defer above, so the AST
+            // gets a COPY. Storing the original produced a dangling slice and
+            // the formatter emitted raw garbage bytes — which the lexer then
+            // rejected as "non-ASCII outside a string", pointing nowhere near
+            // the cause.
+            return self.new_expr(.{ .macro_call = .{
+                .loc = l,
+                .name = try self.alloc.dupe(u8, qualified),
+                .args = args_slice,
+            } });
         }
         // `@asm(...)` desugars to `__asm(...)` for inline assembly.
         if (std.mem.eql(u8, qualified, "asm") and args_slice.len >= 1) {
