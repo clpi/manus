@@ -874,6 +874,19 @@ pub const PrettyPrinter = struct {
             }
         }
         if (self.mode == .idol and self.canonical) {
+            // Generic parameters belong to the NAME, not the operand pack:
+            // `identity<T>: T = (value: T)`. Writing them after the `=` gave
+            // `identity: T = <T>(value: T)`, which does not parse — the binding
+            // face moves the result descriptor left, so the type parameters
+            // have to travel with the name it now sits beside.
+            if (fd.func.type_params) |tps| {
+                try self.write("<");
+                for (tps, 0..) |tp, ti| {
+                    if (ti > 0) try self.write(", ");
+                    try self.printTypeExpr(tp);
+                }
+                try self.write(">");
+            }
             // CANONICAL BINDING FACE. A relation is `name: result = (params)`,
             // not `name(params) -> result`. The arrow form is a declaration
             // shape; the binding form is what the canon actually writes, and a
@@ -896,14 +909,7 @@ pub const PrettyPrinter = struct {
     /// The parameter pack alone — the result descriptor belongs to the binding
     /// in the canonical face, so it is written before the `=`, not after `)`.
     fn printFuncParamsOnly(self: *PrettyPrinter, fb: *const ast.FuncBody) !void {
-        if (fb.type_params) |tps| {
-            try self.write("<");
-            for (tps, 0..) |tp, i| {
-                if (i > 0) try self.write(", ");
-                try self.printTypeExpr(tp);
-            }
-            try self.write(">");
-        }
+        // Type parameters are written beside the NAME by the caller; see there.
         try self.write("(");
         for (fb.params, 0..) |param, i| {
             if (i > 0) try self.write(", ");
