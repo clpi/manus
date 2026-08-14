@@ -2051,6 +2051,23 @@ pub const Sema = struct {
             if (block_implicit_return_expr(blk)) |e| {
                 const actual = try self.check_expr(e);
                 self.check_return_value(e.loc(), actual);
+            } else if (self.current_ret != .any and self.current_ret != .void and blk.stmts.len > 0) {
+                // A function body ending in an `if` with NO else has no value on
+                // the false path, and nothing downstream supplies one — the
+                // backend emitted whatever happened to be left in the result
+                // register (`if c then 7` returned 132 for c = 0, deterministically).
+                // The control ruling §17 says a missing alternative must not mint a
+                // fake zero/nil/empty identity; failing closed is the honest option,
+                // and silently returning uninitialised state is the one outcome this
+                // project's law does not tolerate.
+                const last = &blk.stmts[blk.stmts.len - 1];
+                if (last.* == .if_stmt and last.if_stmt.else_body == null) {
+                    self.err(
+                        last.if_stmt.loc,
+                        "`if` without `else` leaves the function with no value on the false path",
+                        .{},
+                    );
+                }
             }
         } else if (blk.tail_expr) |e| {
             // A block's tail expression is not in `stmts`, so without this it was
