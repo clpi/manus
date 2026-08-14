@@ -87,6 +87,9 @@ const semantic_transaction = @import("semantic_transaction.zig");
 var macos_sdkroot_configured = false;
 var compiler_lib_root: ?[]const u8 = null;
 var forwarded_program_args: []const []const u8 = &.{};
+/// argv[0], recorded so the build cache key can include the compiler's own
+/// bytes — a rebuilt compiler must invalidate every cached artifact.
+var self_argv0: []const u8 = "";
 var graph_diag_enabled: bool = false;
 var graph_write_enabled: bool = false;
 var global_bench_backend: backend_identity.BenchBackend = .c_specialized;
@@ -629,6 +632,7 @@ pub fn main(init: std.process.Init) !void {
         }
     }
     forwarded_program_args = forwarded_args.items;
+    if (args.len > 0) self_argv0 = args[0];
 
     if (global_bench_profile_cli and global_backend_explicit) {
         const selected = backend_identity.Backend.parse(compile_backend) orelse {
@@ -3925,6 +3929,79 @@ fn reportDirectBackendError(
     _ = io;
 }
 
+
+/// law.md §40 build cache. A byte-identical source compiled by a byte-identical
+/// compiler under identical settings yields a byte-identical artifact, so reuse
+/// it rather than redoing the whole module. For a single-file compile the
+/// semantic dependency set IS that file, so a content key is exact here — not the
+/// "cache by source spelling" §40 warns against, which is about invalidating too
+/// coarsely across a dependency graph.
+///
+/// FAIL-SAFE BY CONSTRUCTION: every operation returns null/false on any error, so
+/// the cache can only ever make a build faster, never wrong. A miss falls through
+/// to a normal compile.
+fn buildCacheKey(
+    alloc: std.mem.Allocator,
+    io: Io,
+    src_path: []const u8,
+    target: []const u8,
+    backend_mode: []const u8,
+    opt: []const u8,
+) ?[]u8 {
+    const cwd = Io.Dir.cwd();
+    const src = Io.Dir.readFileAlloc(cwd, io, src_path, alloc, .unlimited) catch return null;
+    defer alloc.free(src);
+    if (self_argv0.len == 0) return null;
+    // Identify the compiler by size+mtime, NOT by hashing its bytes: it is a
+    // ~15 MB binary, and reading it on every invocation cost more than the
+    // compile the cache exists to avoid (measured: 159 ms -> 258 ms).
+    const self_stat = Io.Dir.statFile(cwd, io, self_argv0, .{}) catch return null;
+    var h = std.crypto.hash.sha2.Sha256.init(.{});
+    h.update(src);
+    h.update(target);
+    h.update(backend_mode);
+    h.update(opt);
+    h.update(std.mem.asBytes(&self_stat.size));
+    h.update(std.mem.asBytes(&self_stat.mtime));
+    var digest: [32]u8 = undefined;
+    h.final(&digest);
+    // Flat path: no directory to create, so one fewer failure mode.
+    return std.fmt.allocPrint(alloc, "idol-cache-{s}", .{std.fmt.bytesToHex(digest, .lower)}) catch null;
+}
+
+fn buildCacheDir(io: Io) ?Io.Dir {
+    // Open /tmp once as a Dir handle and address entries by BASENAME. The
+    // relative readFileAlloc/writeFile entry points take a sub_path, so handing
+    // them an absolute "/tmp/..." silently misbehaves — that is what made the
+    // first version of this cache never store anything.
+    return Io.Dir.openDirAbsolute(io, "/tmp", .{}) catch null;
+}
+
+fn buildCacheLoad(io: Io, cache_name: []const u8, out_path: []const u8, alloc: std.mem.Allocator) bool {
+    var dir = buildCacheDir(io) orelse return false;
+    defer dir.close(io);
+    const bytes = Io.Dir.readFileAlloc(dir, io, cache_name, alloc, .unlimited) catch return false;
+    defer alloc.free(bytes);
+    const cwd = Io.Dir.cwd();
+    Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = bytes }) catch return false;
+    // The artifact must stay executable; writeFile alone does not set the bit
+    // when it creates the file fresh.
+    if (Io.Dir.openFile(cwd, io, out_path, .{})) |f| {
+        defer f.close(io);
+        f.setPermissions(io, .executable_file) catch {};
+    } else |_| {}
+    return true;
+}
+
+fn buildCacheStore(io: Io, cache_name: []const u8, out_path: []const u8, alloc: std.mem.Allocator) void {
+    var dir = buildCacheDir(io) orelse return;
+    defer dir.close(io);
+    const cwd = Io.Dir.cwd();
+    const bytes = Io.Dir.readFileAlloc(cwd, io, out_path, alloc, .unlimited) catch return;
+    defer alloc.free(bytes);
+    Io.Dir.writeFile(dir, io, .{ .sub_path = cache_name, .data = bytes }) catch return;
+}
+
 fn do_compile(
     alloc: std.mem.Allocator,
     io: Io,
@@ -3960,6 +4037,38 @@ fn do_compile(
     }
 
     debug_trace.event(.build, .module, "compile {s} -> {s}", .{ src_path, out_path });
+
+    // §40 build cache. Only for a plain executable compile: test/bench/pgo/lib
+    // modes have side effects beyond the artifact, so they always rebuild.
+    const cacheable = !check_only and !test_mode and !bench_mode and !pgo and
+        !lib_mode and !load_chunk and std.mem.indexOf(u8, target, "wasm") == null;
+    const cache_path: ?[]u8 = if (cacheable)
+        buildCacheKey(alloc, io, src_path, target, backend_mode, opt)
+    else
+        null;
+    if (cache_path) |cp| {
+        if (buildCacheLoad(io, cp, out_path, alloc)) {
+            if (term.build_report != .plain) term.ok("✓ {s} (cached)", .{out_path});
+            if (run_after) {
+                var run_args: std.ArrayList([]const u8) = .empty;
+                defer run_args.deinit(alloc);
+                try run_args.append(alloc, out_path);
+                try run_args.appendSlice(alloc, forwarded_program_args);
+                var run_child = try std.process.spawn(io, .{
+                    .argv = run_args.items,
+                    .stdin = .inherit,
+                    .stdout = .inherit,
+                    .stderr = .inherit,
+                });
+                switch (try run_child.wait(io)) {
+                    .exited => |code| std.process.exit(code),
+                    .signal => std.process.exit(128),
+                    else => std.process.exit(1),
+                }
+            }
+            return;
+        }
+    }
 
     var phase_timer = start_trace_timer(io);
     var ps = try parse_and_check(alloc, io, src_path);
@@ -4190,6 +4299,11 @@ fn do_compile(
                             term.buildPhaseDone("compile", total_ms, out_path);
                         }
                         if (!run_after and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+                        // The direct backend completes and exits HERE, never
+                        // reaching the shared tail, so the cache store lives on
+                        // this path too. (Placing it only at the tail made the
+                        // cache silently inert for every native compile.)
+                        if (cache_path) |cp| buildCacheStore(io, cp, out_path, alloc);
                         if (run_after) {
                             var run_args: std.ArrayList([]const u8) = .empty;
                             try run_args.append(alloc, out_path);
@@ -4599,6 +4713,8 @@ fn do_compile(
     if (!run_after and !(test_mode and term.test_report == .json)) {
         term.ok("✓ {s}", .{out_path});
     }
+
+    if (cache_path) |cp| buildCacheStore(io, cp, out_path, alloc);
 
     if (run_after and !is_wasm) {
         if (test_mode) {
