@@ -502,11 +502,11 @@ T.divider()
 
 h1 = T.span("compile_module", {module = "std.math.fft", size = 8192})
 h2 = T.span("parse", {tokens = 4096})
-for _x = 1, 2000 do 
+for _x = 1, 2000
 T.span_end(h2)
 
 h3 = T.span("type_check", {fns = 24, errors = 0})
-for _y = 1, 5000 do 
+for _y = 1, 5000
 T.span_end(h3, {note = "cleared all predicates"})
 T.span_end(h1, {emitted_bytes = 16384})
 
