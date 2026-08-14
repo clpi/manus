@@ -971,10 +971,33 @@ pub const PrettyPrinter = struct {
         // worse than the rejection it replaces. Keeping `fun` keeps the head
         // unambiguous, and it projects IDENTICALLY to the source for both the
         // sole-expression and the multi-statement body.
-        if (self.mode == .idol and !self.canonical) try self.write("fun");
+        // CANONICAL MODE KEEPS IT TOO, and the reasoning above is why. `fun` on
+        // a LAMBDA is not a block delimiter — it is the head disambiguator. The
+        // canonical pass dropped it along with `then`/`end`/`fun`-on-a-
+        // declaration, and the result does not reparse: a lambda passed as a
+        // call argument became
+        //
+        //     @comp.match("…", (m)
+        //       m.pattern)
+        //
+        // whose offside body has no way to close before the `)`. Emitting the
+        // one-line form instead would be worse — at statement level it is the
+        // known `is_bare_lambda_head` misparse.
+        //
+        // So this stays until a lambda head has an unambiguous canonical
+        // spelling. Declarations are unaffected: `printFuncDef` writes the
+        // binding face and never reaches here.
+        if (self.mode == .idol) try self.write("fun");
         try self.printFuncSig(fb);
         try self.printBlock(&fb.body);
-        try self.closeBlock();
+        // A LAMBDA closes with `end`, in canonical mode too, for the same
+        // reason its head keeps `fun`: it is not delimited by layout. A lambda
+        // written as a call argument is followed by the call's `)`, so its body
+        // has nothing to dedent against — `fun(m)` over `m.pattern)` leaves the
+        // body running into the closing paren. `closeBlock` is for blocks the
+        // offside rule can close; this is not one of them.
+        try self.nl();
+        try self.write("end");
     }
 
     /// The body's SOLE expression, when it has one — the shape the lens
