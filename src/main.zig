@@ -3983,13 +3983,23 @@ fn buildCacheLoad(io: Io, cache_name: []const u8, out_path: []const u8, alloc: s
     const bytes = Io.Dir.readFileAlloc(dir, io, cache_name, alloc, .unlimited) catch return false;
     defer alloc.free(bytes);
     const cwd = Io.Dir.cwd();
-    Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = bytes }) catch return false;
-    // The artifact must stay executable; writeFile alone does not set the bit
-    // when it creates the file fresh.
-    if (Io.Dir.openFile(cwd, io, out_path, .{})) |f| {
+
+    // WRITE-THEN-RENAME, not write-in-place. Rewriting a Mach-O that was recently
+    // executed invalidates its ad-hoc code signature, and the kernel then SIGKILLs
+    // it — observed as an intermittent exit 137 from a cache hit. Renaming a fresh
+    // file over the old one gives the replacement a new inode and a clean
+    // validation, which is the standard fix for this on Apple Silicon.
+    const tmp_path = std.fmt.allocPrint(alloc, "{s}.cachetmp", .{out_path}) catch return false;
+    defer alloc.free(tmp_path);
+    Io.Dir.writeFile(cwd, io, .{ .sub_path = tmp_path, .data = bytes }) catch return false;
+    if (Io.Dir.openFile(cwd, io, tmp_path, .{})) |f| {
         defer f.close(io);
         f.setPermissions(io, .executable_file) catch {};
     } else |_| {}
+    Io.Dir.rename(cwd, tmp_path, cwd, out_path, io) catch {
+        Io.Dir.deleteFile(cwd, io, tmp_path) catch {};
+        return false;
+    };
     return true;
 }
 
