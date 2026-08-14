@@ -4243,7 +4243,25 @@ pub const Parser = struct {
             }
 
             var inits: std.ArrayList(*ast.Expr) = .empty;
-            if (try self.eat(.assign) != null) {
+            if (try self.eat(.assign)) |eq_tok| {
+                // A bare `=` whose RHS is an indented slot region is a
+                // structured pack; see `starts_offside_pack`.
+                if (try self.starts_offside_pack(eq_tok)) {
+                    try inits.append(self.alloc, try self.parse_offside_pack_expr(eq_tok.loc));
+                    var pnames: std.ArrayList(ast.LocalName) = .empty;
+                    try pnames.append(self.alloc, ast.LocalName{
+                        .ident = first.name.ident,
+                        .typ = typ,
+                        .attrib = null,
+                        .attributes = &.{},
+                        .loc = first.loc(),
+                    });
+                    return ast.Stmt{ .local_decl = .{
+                        .loc = first.loc(),
+                        .names = try pnames.toOwnedSlice(self.alloc),
+                        .inits = try inits.toOwnedSlice(self.alloc),
+                    } };
+                }
                 // C0 §65: the result descriptor belongs to the binding, not to
                 // a suffix on the callable face.  Preserve that demand on the
                 // ordinary function record so every later stage sees exactly
@@ -4347,6 +4365,10 @@ pub const Parser = struct {
                     .lhs = first,
                     .rhs = rhs,
                 } }));
+            } else if (try self.starts_offside_pack(nxt)) {
+                // `person =` over an indented slot region — a structured pack,
+                // no delimiters. Slot forms only; see `starts_offside_pack`.
+                try values.append(self.alloc, try self.parse_offside_pack_expr(nxt.loc));
             } else {
                 if (self.match_arm_depth > 0) {
                     try values.append(self.alloc, try self.parse_match_scrutinee());
@@ -4395,6 +4417,11 @@ pub const Parser = struct {
                         .lhs = first,
                         .rhs = rhs,
                     } }));
+                } else if (try self.starts_offside_pack(after)) {
+                    // `person =` over an indented slot region — a structured
+                    // pack, no delimiters. Slot forms only; see
+                    // `starts_offside_pack`.
+                    try values.append(self.alloc, try self.parse_offside_pack_expr(after.loc));
                 } else {
                     if (self.match_arm_depth > 0) {
                         try values.append(self.alloc, try self.parse_match_scrutinee());
@@ -5382,6 +5409,55 @@ pub const Parser = struct {
     /// block, because `else` CLOSES a statement block — it is a control-clause
     /// opener there — while here it is an ordinary key naming the remaining
     /// alternative.
+    /// True when a bare `=` is followed by an indented region of SLOT forms,
+    /// which introduces a structured pack:
+    ///
+    ///     person =
+    ///         name = "Chris"
+    ///         age = 30
+    ///
+    /// SLOT FORMS ONLY. An indented region of bare expressions is NOT a pack —
+    /// it would be indistinguishable from an executable region, so
+    /// `xs = (1, 2, 3)` stays explicit and `xs =` over three bare lines is not
+    /// a sequence. That restriction is what keeps this from being "indentation
+    /// may stand in for a delimiter anywhere", which would be ambiguous; the
+    /// region's role is fixed before its contents are read, never after.
+    fn starts_offside_pack(self: *Parser, eq: Token) ParseError!bool {
+        const first = try self.pk();
+        if (first.loc.line == eq.loc.line) return false;
+        const saved = self.lex.saveState();
+        const saved_line = self.prev_line;
+        const saved_end = self.prev_end_col;
+        defer {
+            self.lex.restoreState(saved);
+            self.prev_line = saved_line;
+            self.prev_end_col = saved_end;
+        }
+        if (first.kind == .lbracket) {
+            var depth: usize = 0;
+            while (true) {
+                const t = try self.adv();
+                if (t.kind == .eof) return false;
+                if (t.kind == .lbracket) depth += 1;
+                if (t.kind == .rbracket) {
+                    depth -= 1;
+                    if (depth == 0) break;
+                }
+            }
+            return (try self.pk()).kind == .assign;
+        }
+        if (first.kind != .name and !grammar_roles.isDescriptor(first.kind)) return false;
+        _ = try self.adv();
+        return (try self.pk()).kind == .assign;
+    }
+
+    /// The pack expression for an offside slot region, so both the binding RHS
+    /// and a nested slot build the same node.
+    fn parse_offside_pack_expr(self: *Parser, open: ast.Loc) ParseError!*ast.Expr {
+        const fields = try self.parse_offside_pack(open);
+        return self.new_expr(.{ .table = .{ .loc = open, .fields = fields } });
+    }
+
     fn parse_offside_pack(self: *Parser, open: ast.Loc) ParseError![]ast.TableField {
         var fields: std.ArrayList(ast.TableField) = .empty;
         // The first alternative establishes the region's column; every later one
@@ -5419,8 +5495,14 @@ pub const Parser = struct {
             if (tok.kind != .name and tok.kind != .kw_else and !grammar_roles.isDescriptor(tok.kind)) break;
             const key_text = if (tok.kind == .name) tok.text else tok.kind.spelling();
             _ = try self.adv();
-            _ = try self.expect(.assign);
-            const val = try self.parse_expr();
+            const eq = try self.expect(.assign);
+            // A slot whose value is itself an indented slot region nests, so
+            // `server =` over `host = …` / `port = …` needs no delimiters at
+            // any depth.
+            const val = if (try self.starts_offside_pack(eq))
+                try self.parse_offside_pack_expr(eq.loc)
+            else
+                try self.parse_expr();
             try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
         }
         return fields.toOwnedSlice(self.alloc);
