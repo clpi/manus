@@ -5361,6 +5361,36 @@ pub const Parser = struct {
                 return self.new_expr(.{ .if_expr = try self.new_if_expr(l, first, then_e, else_e) });
             }
             _ = try self.expect(.rparen);
+            // §2/§48 CURRIED FACE. Three parenthesized groups after `if` is
+            // `if(c)(yes)(no)`; two is a condition that is itself a call chain
+            // (`if (f)(x) then …`); one is a plain parenthesized condition. That
+            // count disambiguates without guessing, so the curried face resolves
+            // to the SAME if_expr node as the block face — one relation, one
+            // application architecture, as §30 requires.
+            if ((try self.pk()).kind == .lparen) {
+                _ = try self.adv();
+                const second = try self.parse_expr();
+                _ = try self.expect(.rparen);
+                if ((try self.pk()).kind == .lparen) {
+                    _ = try self.adv();
+                    const third = try self.parse_expr();
+                    _ = try self.expect(.rparen);
+                    // §42: if a control keyword still follows, the spelling is
+                    // genuinely ambiguous between curried control and a call
+                    // condition. Reject rather than pick one.
+                    const after = try self.pk();
+                    if (after.kind == .kw_then or after.kind == .kw_else) {
+                        term.locErr(l, "ambiguous `if`: three applied groups read as the curried face `if(c)(yes)(no)`, but `then`/`else` follows", .{});
+                        return error.UnexpectedToken;
+                    }
+                    return self.new_expr(.{ .if_expr = try self.new_if_expr(l, first, second, third) });
+                }
+                // Two groups: the condition was a call chain `first(second)`.
+                var args = try self.alloc.alloc(*ast.Expr, 1);
+                args[0] = second;
+                const call = try self.new_expr(.{ .call = .{ .loc = l, .func = first, .args = args } });
+                return self.parse_if_expr_after_if_with_cond(l, call, true);
+            }
             return self.parse_if_expr_after_if_with_cond(l, first, true);
         }
         return self.parse_if_expr_after_if(l, true);
