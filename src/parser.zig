@@ -5117,8 +5117,21 @@ pub const Parser = struct {
                     const fb = try self.new_fb(try self.parse_func_body(l));
                     break :blk self.new_expr(.{ .func_expr = fb });
                 }
-                _ = try self.adv();
+                const open_tok = try self.adv();
+                // `()` is the explicit pack delimiter. A labeled slot at slot
+                // level (`name = value`) makes this a pack, not a group.
+                if (try self.starts_paren_pack()) break :blk try self.parse_paren_pack(open_tok.loc);
+                if ((try self.pk()).kind == .rparen) {
+                    // `()` — the empty pack.
+                    _ = try self.adv();
+                    break :blk try self.new_expr(.{ .table = .{ .loc = open_tok.loc, .fields = &.{} } });
+                }
                 const e = try self.parse_expr();
+                // A comma means this was a pack all along, and a TRAILING comma
+                // is how a one-slot pack is spelled — `(a)` is grouping, `(a,)`
+                // is a pack of one. Without that distinction there is no way to
+                // write a single-slot pack at all.
+                if ((try self.pk()).kind == .comma) break :blk try self.finish_positional_pack(open_tok.loc, e);
                 _ = try self.expect(.rparen);
                 break :blk e;
             },
@@ -5455,6 +5468,52 @@ pub const Parser = struct {
     /// The `:` already says a descriptor context follows, so the braces were
     /// repeating a boundary the introducer had established. Field forms only
     /// (`name:`), for the same reason a structured pack requires slot forms.
+    /// `(name = value, …)` — a labeled pack rather than a parenthesized
+    /// assignment. Inside pack syntax `name =` at slot level IS a slot label;
+    /// the parser already knows it is reading a pack, so this is contextual
+    /// rather than ambiguous.
+    fn starts_paren_pack(self: *Parser) ParseError!bool {
+        const first = try self.pk();
+        if (first.kind != .name and !grammar_roles.isDescriptor(first.kind)) return false;
+        const saved = self.lex.saveState();
+        const saved_line = self.prev_line;
+        const saved_end = self.prev_end_col;
+        defer {
+            self.lex.restoreState(saved);
+            self.prev_line = saved_line;
+            self.prev_end_col = saved_end;
+        }
+        _ = try self.adv();
+        return (try self.pk()).kind == .assign;
+    }
+
+    fn parse_paren_pack(self: *Parser, l: ast.Loc) ParseError!*ast.Expr {
+        var fields: std.ArrayList(ast.TableField) = .empty;
+        while (true) {
+            if ((try self.pk()).kind == .rparen) break;
+            const key_tok = try self.adv();
+            const key_text = if (key_tok.kind == .name) key_tok.text else key_tok.kind.spelling();
+            _ = try self.expect(.assign);
+            const val = try self.parse_expr();
+            try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
+            if (try self.eat(.comma) == null) break;
+        }
+        _ = try self.expect(.rparen);
+        return self.new_expr(.{ .table = .{ .loc = l, .fields = try fields.toOwnedSlice(self.alloc) } });
+    }
+
+    /// `(a, b)` and `(a,)`, given the first element already parsed.
+    fn finish_positional_pack(self: *Parser, l: ast.Loc, first: *ast.Expr) ParseError!*ast.Expr {
+        var fields: std.ArrayList(ast.TableField) = .empty;
+        try fields.append(self.alloc, .{ .positional = first });
+        while (try self.eat(.comma) != null) {
+            if ((try self.pk()).kind == .rparen) break; // trailing comma
+            try fields.append(self.alloc, .{ .positional = try self.parse_expr() });
+        }
+        _ = try self.expect(.rparen);
+        return self.new_expr(.{ .table = .{ .loc = l, .fields = try fields.toOwnedSlice(self.alloc) } });
+    }
+
     fn starts_offside_record(self: *Parser, colon: Token) ParseError!bool {
         const first = try self.pk();
         if (first.loc.line == colon.loc.line) return false;
