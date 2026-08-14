@@ -57,9 +57,9 @@ from_protobuf_string(proto_src: str): str
         return "/* schema_gen: empty proto source */"
     end
     code_parts = {}
-    for name, fields in proto_src:gmatch("message%s+(%w+)%s*{(.-)}") do
+    for name, fields in proto_src:gmatch("message%s+(%w+)%s*{(.-)}")
         duo_fields = {}
-        for field in fields:gmatch("[^\n]+") do
+        for field in fields:gmatch("[^\n]+")
             field = field:gsub("^%s+", "")
             field = field:gsub("%s+$", "")
             field = field:gsub(";", "")
@@ -153,7 +153,7 @@ end
 
 parse_json_properties(json: str): any
     fields = {}
-    for name in json:gmatch('"(%w+)"%s*:%s*{') do
+    for name in json:gmatch('"(%w+)"%s*:%s*{')
         type_str = json:match('"' .. name .. '"%s*:%s*{[^}]*"type"%s*:%s*"(%w+)"')
         if type_str
             fields[fields:len() + 1] = {
@@ -167,7 +167,7 @@ end
 
 parse_required_fields(json: str): any
     required = {}
-    for name in json:gmatch('"(%w+)"') do
+    for name in json:gmatch('"(%w+)"')
         required[name] = true
     end
     required

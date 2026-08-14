@@ -39,7 +39,10 @@ Current delimiter roles remain:
 - `[]` genuinely computed projection;
 - `.` statically named projection after an explicit subject;
 - `:` admitted descriptor, subject, and home roles;
-- `@` bare descriptor anchor or postfix relation anchor, never a directive.
+- `@` the current-world accessor: bare `@` the current-world value, `@member`
+  world access (never `@.member` or `@:member` — `@` already accesses),
+  `@member = v` mutation, `thing@world` qualification, `@{ k = v }` injection,
+  never a directive or a postfix relation anchor.
 
 An incompatible source face and resolved subject diagnose before lowering.
 Parser acceptance never authorizes a backend fallback.

@@ -1,7 +1,7 @@
-# SH-10 — the duon-native owner of RECORD emission.
+# SH-10 — the idol-native owner of RECORD emission.
 #
 # The second half of the capability three canonical repairs terminate at.
-# `symbol.id` owns the NAME a duon function takes in C; this owns the SHAPE a
+# `symbol.id` owns the NAME a idol function takes in C; this owns the SHAPE a
 # descriptor takes, and the form applying it produces.
 #
 # WHAT IT UNBLOCKS. gap[088]: `point{ x = 1, y = 2 }` — the constructor
@@ -48,7 +48,7 @@ typename: str = (desc: str)
 # The outer parens are not decoration: a compound literal in expression
 # position binds looser than a cast, and `(duo_point){…}.x` without them
 # parses as a cast applied to a member access.
-applynamed: str = (desc: str, fields: str)
+named: str = (desc: str, fields: str)
     ty: str = typename(desc)
     "(({ty}){{fields}})"
 
@@ -58,7 +58,7 @@ applynamed: str = (desc: str, fields: str)
 # the descriptor declared its fields. That correspondence is the whole reason
 # positional construction is expressible at all, and it is why a descriptor
 # whose field order is not stable cannot take this form.
-applypositional: str = (desc: str, values: str)
+positional: str = (desc: str, values: str)
     ty: str = typename(desc)
     "(({ty}){{values}})"
 

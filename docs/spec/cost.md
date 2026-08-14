@@ -1,8 +1,8 @@
-# duon 0.1 — The Cost Model
+# idol 0.1 — The Cost Model
 
-**Owed by Pass 100 §22 · commissioned by Pass 106 §1 · normative.**
+**Owed by the cost contract · normative.**
 
-Pass 106 states the problem exactly: *"Fifty years of 'sufficiently smart
+The cost contract states the problem exactly: *"Fifty years of 'sufficiently smart
 compiler' burns — Haskell's space leaks specifically — mean DEMAND triggers a
 trained allergy. The answer cannot be 'trust the witnesses'."*
 
@@ -24,7 +24,8 @@ Values and expressions:
 ```
 v ::= number | byte | str | bool | nil | table | callable | pack
 e ::= v | x | e.n | e[e] | e(e,…) | e:n(e,…) | e op e | not e
-    | { field,… } | "…{e}…" | if e then e else e | fn | e@rel
+    | { field,… } | "…{e}…" | if e then e else e | fn
+    | @ | @x | e@w | @{ field,… } | e@{ field,… }
 ```
 
 Evaluation contexts — the shape of "the next thing that reduces":
@@ -38,7 +39,7 @@ E ::= []
     | not E
     | { f = v,…, f = E, f = e,… }       # fields L→R
     | "…{v}…{E}…{e}…"                   # holes L→R
-    | E@rel
+    | e@E | E@w                          # world qualifier reduces first, then subtree
 ```
 
 Reduction:
@@ -159,7 +160,7 @@ the table.
 ## 3. Worst-case behaviour, one page
 
 `n` is the size of the operand. `k` is a key. "unwind" means the construct can
-raise a **fault** that unwinds the world (Pass 107 §3) — never the process by
+raise a **fault** that unwinds the world — never the process by
 default. Allocation counts are **worst case**, with the best-effort column
 assumed off.
 
@@ -200,7 +201,7 @@ assumed off.
 | `release` (tier 1 proven drop) | O(1) at a static point | 0 | no |
 | `release` (tier 3 managed RC) | O(1) per count; cycle collection only on cycle-possible shapes | 0 | no |
 | tail call | O(1), constant stack (TAIL) | frame reused | no |
-| non-tail recursion | O(depth) stack | frame per level | metered `error.depth`, routed (Pass 107 §3) |
+| non-tail recursion | O(depth) stack | frame per level | metered `error.depth`, routed |
 
 Two rows carry the honest bad news and are here on purpose. **Hash indexing is
 O(n) worst case**, not O(1) — the guarantee is expected-time with a keyed,
@@ -273,7 +274,7 @@ no individual call site is promised rung 3.
 
 ## 6. Memory cost, per tier
 
-From Pass 107 §2, which is decided and permanent:
+From the memory contract, which is decided and permanent:
 
 ```
 tier 1  PROVEN DROPS   free inserted at a static point. Runtime cost: ZERO.
@@ -288,7 +289,7 @@ tier 3  MANAGED RC     one count per shared reference edge, elided by borrow
 never   tracing stop-the-world. Latency is a language property.
 ```
 
-The honest open question, ledgered by Pass 107 and repeated here so a budget
+The honest open question, ledgered and repeated here so a budget
 does not have to go find it: **RC-with-elision versus tracing on share-heavy
 graph workloads is unmeasured**, and it enters the benchmark corpus by name.
 
@@ -298,7 +299,7 @@ graph workloads is unmeasured**, and it enters the benchmark corpus by name.
 
 Everything above is the specification. This section is what the tree does on
 **2026-08-08**, branch `canonical-to-relation`, `zig build` debug binary at
-`zig-out/bin/duo`. Every row was produced by running a probe and reading a
+`zig-out/bin/idol`. Every row was produced by running a probe and reading a
 value or generated artifact — never by reading source and inferring. Identifiers
 quoted from generated output are **C**, not Duo.
 
@@ -336,15 +337,14 @@ quoted from generated output are **C**, not Duo.
 - **TAIL is not implemented, and the failure mode is a SIGSEGV.** A textbook
   tail call compiles to a real call: the direct backend emits a 48-byte frame,
   `bl` to itself, restore, `ret`. Positive control at depth 1000 prints `1000`;
-  at depth 5,000,000 the binary exits **139**. Pass 107 §3 says "No SIGSEGV as
+  at depth 5,000,000 the binary exits **139**. The fault contract says "No SIGSEGV as
   an API" and there is no depth metering and no routed `error.depth` today.
 - **No deallocation is emitted, at any tier.** Zero `free` call sites appear in
   the user region of the generated C (0 below line 5900 of a 6039-line output;
   the 45 in the file are all inside the runtime's own rehash and string-pool
   helpers). A capturing closure's heap object initializes a `refcount` field to
   1; across the whole generated file that field is written twice and decremented
-  **zero** times. Tier 1 is described as the only tier this tree has (Pass 107
-  §4); measured, the tree has none of the three.
+  **zero** times. Tier 1 is described as the only tier this tree has; measured, the tree has none of the three.
 - **Interpolation costs two allocations and leaks both.** `"value {n}"` compiles
   to an integer-to-string allocation feeding a concat allocation, and nothing
   frees either. The §3 table's row is right about the count and optimistic about

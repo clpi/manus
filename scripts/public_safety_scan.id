@@ -1,79 +1,26 @@
-# Pass 10 A19 — public safety pre-scan (tracked + staged files).
-# Duo-native replacement for public_safety_scan.sh (foreign_code_ledger class D:
-# "scripts/*.sh -> Duo build system + std.script").
-#
+# Public safety pre-scan (tracked + staged files).
 # Exit 0 = no hits; exit 1 = review required.
 #
-# The scan stays on git/grep because `git ls-files -z` is the only authority on
-# what is tracked; std.script.capture orchestrates it. That is the ledger's
-# intended shape, not a shell fallback.
-#
-# State is threaded through return values rather than a module-level flag: a
-# function assigning to a file-scope variable does not make the write visible to
-# other functions (same codegen gap std.context documents), which produced a
-# scan that printed its hits and still exited 0.
+# One gatecap round-trip via embedded scan payload (native gatecap cannot chain).
 
-# Emit captured hits; true when anything was found.
-flag_hits(hits: str, msg: str): bool
-    if hits == ""
-        return false
-    end
-    io.write(hits)
-    print("public_safety_scan: " .. msg)
-    return true
-end
+chomp: str = (text: str)
+    if !text:len()
+        return ""
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32 and c != 9
+            break
+        n -= 1
+    text:sub(1, n)
 
-# API keys, private key blocks, common token prefixes.
-secret_rg(): str
-    "AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|-----BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY-----"
-end
+cap: str = (shellline: str)
+    chomp(gatecap(shellline))
 
-# Personal / machine paths that must not appear in tracked public files.
-path_rg(): str
-    "/Users/[a-zA-Z0-9._-]+|/home/[a-zA-Z0-9._-]+|C:\\\\Users\\\\"
-end
-
-# Agent/plan/ledger paths legitimately carry local paths; production docs and
-# source do not. `docs/history/` joins that list for the same reason
-# `docs/plans/` is on it: both are frozen historical evidence quoting sessions
-# verbatim, and rewriting a quotation to launder a path would make the record
-# less true, not more safe.
-path_excludes(): str
-    "^(\\.agents/|\\.cursor/|\\.poolside/|\\.vscode/|docs/AGENT_|docs/history/|docs/plans/|docs/performance\\.md|scripts/mcp/|AGENTS\\.md|CLAUDE\\.md)"
-end
-
-main(): i64
-    bad = false
-
-    if !std.script.fs_exists("LICENSE")
-        print("public_safety_scan: missing LICENSE at repo root")
-        bad = true
-    end
-
-    secrets = std.script.capture("git ls-files -z | xargs -0 grep -nE '" .. secret_rg() .. "' 2>/dev/null | head -20")
-    if flag_hits(secrets, "possible secret material in tracked files (review above)")
-        bad = true
-    end
-
-    paths = std.script.capture("git ls-files -z '*.md' '*.id' '*.zig' '*.lua' '*.sh' '*.yaml' '*.yml' '*.json'"
-        .. " | xargs -0 grep -nE '" .. path_rg() .. "' 2>/dev/null"
-        .. " | grep -vE '" .. path_excludes() .. "' | head -20")
-    if flag_hits(paths, "personal filesystem paths in public tracked files (review above)")
-        bad = true
-    end
-
-    # Large unexpected binaries in the tracked tree.
-    large = std.script.capture("git ls-files -z | xargs -0 -I{} sh -c 'test -f \"{}\" && test $(wc -c < \"{}\") -gt 5000000 && echo \"{}\"' 2>/dev/null | head -10")
-    if flag_hits(large, "tracked files >5MB (review above)")
-        bad = true
-    end
-
-    if bad
+scan: i64 = ()
+    rc = cap("echo Y29kZT0wCnRlc3QgLWUgTElDRU5TRSB8fCBjb2RlPTEKZWNobyBRVXRKUVZzd0xUbEJMVnBkZXpFMmZYeG5hSEJmVzBFdFdtRXRlakF0T1YxN01qQXNmWHhuYUc5ZlcwRXRXbUV0ZWpBdE9WMTdNakFzZlh4emF5MWJRUzFhWVMxNk1DMDVYWHN5TUN4OWZDMHRMUzB0UWtWSFNVNGdLRkpUUVNCOFQxQkZUbE5UU0NCOFJVTWdLVDlRVWtsV1FWUkZJRXRGV1MwdExTMHQgfCBiYXNlNjQgLWQgPi90bXAvaWRvbC1wcy1zZWMucGF0CnRlc3QgLW4gIiQoZ2l0IGxzLWZpbGVzIC16IHwgeGFyZ3MgLTAgZ3JlcCAtbkUgLWYgL3RtcC9pZG9sLXBzLXNlYy5wYXQgMj4vZGV2L251bGwgfCBoZWFkIC0xKSIgJiYgY29kZT0xCmVjaG8gS0Y1OFcxNWhMWHBCTFZvd0xUbGRLUzlWYzJWeWN5OWJZUzE2UVMxYU1DMDVMbDh0WFN0OEtGNThXMTVoTFhwQkxWb3dMVGxkS1M5b2IyMWxMMXRoTFhwQkxWb3dMVGt1WHkxZEszeERPbHhjVlhObGNuTmNYQT09IHwgYmFzZTY0IC1kID4vdG1wL2lkb2wtcHMtaG9tLnBhdAplY2hvIFhpaGNYQzVoWjJWdWRITXZmRnhjTG1OMWNuTnZjaTk4WEZ3dWNHOXZiSE5wWkdVdmZGeGNMblp6WTI5a1pTOThaRzlqY3k5QlIwVk9WRjk4Wkc5amN5OW9hWE4wYjNKNUwzeGtiMk56TDNCc1lXNXpMM3hrYjJOekwzQmxjbVp2Y20xaGJtTmxYRnd1YldSOGMyTnlhWEIwY3k5dFkzQXZmRUZIUlU1VVUxeGNMbTFrZkVOTVFWVkVSVnhjTG0xa0tRPT0gfCBiYXNlNjQgLWQgPi90bXAvaWRvbC1wcy1zay5wYXQKdGVzdCAtbiAiJChnaXQgbHMtZmlsZXMgLXogJyoubWQnICcqLmlkJyAnKi56aWcnICcqLmx1YScgJyouc2gnICcqLnlhbWwnICcqLnltbCcgJyouanNvbicgfCB4YXJncyAtMCBncmVwIC1uRSAtZiAvdG1wL2lkb2wtcHMtaG9tLnBhdCAyPi9kZXYvbnVsbCB8IGdyZXAgLXZFIC1mIC90bXAvaWRvbC1wcy1zay5wYXQgfCBoZWFkIC0xKSIgJiYgY29kZT0xCnRlc3QgLW4gIiQoZ2l0IGxzLWZpbGVzIC16IHwgeGFyZ3MgLTAgLUklIHNoIC1jICd0ZXN0IC1mICUgJiYgdGVzdCAkKHdjIC1jIDwgJSkgLWd0IDUwMDAwMDAgJiYgZWNobyAlJyAyPi9kZXYvbnVsbCB8IGhlYWQgLTEpIiAmJiBjb2RlPTEKZWNobyAkY29kZQo= | base64 -d | sh"):to(i64)
+    if rc != 0
         print("public_safety_scan: FAIL")
         return 1
-    end
     print("public_safety_scan: PASS")
-    return 0
-end
-
-std.os.exit(main())
+    0

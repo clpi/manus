@@ -61,7 +61,7 @@ parse_with(parser, args: any): any
         v = args[i]
         if v == "--" and not stop_options
             stop_options = true
-            i = i + 1
+            i += 1
         elseif not stop_options and v:sub(1, 2) == "--"
             name = v:sub(3)
             eq = name:find("=")
@@ -69,17 +69,17 @@ parse_with(parser, args: any): any
                 key = name:sub(1, eq - 1)
                 val = name:sub(eq + 1)
                 opts[key] = val
-                i = i + 1
+                i += 1
             else
                 matched = false
                 for _, opt in parser.options
                     if opt.long == v
                         if i + 1 <= args:len() and args[i + 1]:sub(1, 1) != "-"
                             opts[opt.key] = args[i + 1]
-                            i = i + 2
+                            i += 2
                         else
                             opts[opt.key] = nil
-                            i = i + 1
+                            i += 1
                         end
                         matched = true
                         break
@@ -90,14 +90,14 @@ parse_with(parser, args: any): any
                         if fl.long == v
                             opts[fl.key] = true
                             matched = true
-                            i = i + 1
+                            i += 1
                             break
                         end
                     end
                 end
                 if not matched
                     opts[name] = true
-                    i = i + 1
+                    i += 1
                 end
             end
         elseif not stop_options and v:sub(1, 1) == "-" and v:len() > 1
@@ -109,13 +109,13 @@ parse_with(parser, args: any): any
                 if opt.short == short_opt
                     if rest:len() > 0
                         opts[opt.key] = rest
-                        i = i + 1
+                        i += 1
                     elseif i + 1 <= args:len() and args[i + 1]:sub(1, 1) != "-"
                         opts[opt.key] = args[i + 1]
-                        i = i + 2
+                        i += 2
                     else
                         opts[opt.key] = nil
-                        i = i + 1
+                        i += 1
                     end
                     matched = true
                     break
@@ -126,7 +126,7 @@ parse_with(parser, args: any): any
                     if fl.short == short_opt
                         opts[fl.key] = true
                         matched = true
-                        i = i + 1
+                        i += 1
                         break
                     end
                 end
@@ -134,21 +134,21 @@ parse_with(parser, args: any): any
             if not matched
                 if rest:len() > 0 and i + 1 <= args:len() and args[i + 1]:sub(1, 1) != "-"
                     opts[name] = args[i + 1]
-                    i = i + 2
+                    i += 2
                 else
                     opts[name] = true
-                    i = i + 1
+                    i += 1
                 end
             end
         else
             if positional_idx <= parser:len().positionals
                 def = parser.positionals[positional_idx]
                 opts[def.name] = v
-                positional_idx = positional_idx + 1
+                positional_idx += 1
             else
                 opts.rest_args[opts:len().rest_args + 1] = v
             end
-            i = i + 1
+            i += 1
         end
     end
 
@@ -157,7 +157,7 @@ parse_with(parser, args: any): any
         if opts[def.name] == nil
             opts[def.name] = nil
         end
-        positional_idx = positional_idx + 1
+        positional_idx += 1
     end
 
     opts

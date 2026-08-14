@@ -66,7 +66,7 @@ buffer_load(buffer: any, path: str): any
         chunk_size = 0
         i = 1
         while i <= 4
-            chunk_size = chunk_size + size_bytes:byte(i) * (256 ^ (i - 1))
+            chunk_size += size_bytes:byte(i) * (256 ^ (i - 1))
             i += 1
         end
 

@@ -2,8 +2,8 @@ f(n: i64): i64
     t = n
     i = n
     while i <= 3 do
-        t = t + i
-        i = i + 1
+        t += i
+        i += 1
     end
     return t
 end

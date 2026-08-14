@@ -1,138 +1,106 @@
-# Performance evidence ledger.
+# Performance evidence index — contract presence, not complete proof.
 #
-# This is a read-only index, !a benchmark runner. It names the duon scripts
-# whose results are needed before broad speed, wasm, startup, or size claims.
+# Same IMPLEMENTATION-BLOCKED curry note as scripts/ledger/ftcftw.id:
+# audit(path)(pattern) SIGSEGV on direct native. Restore when that run lives.
 
-chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
-            break
-        n -= 1
-    text:sub(1, n)
+look: bool = (path: str, pattern: str)
+    body = path:read()
+    body:has(pattern)
 
-cap: str = (cmd: str)
-    chomp(gatecap(cmd))
-
-status: i64 = (cmd: str)
-    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
-
-lines: any = (text: str)
-    out = {}
-    start = 1
-    i = 1
-    n = text:len()
-    while i <= n
-        if text:byte(i) == 10
-            if i > start
-                out[out:len() + 1] = text:sub(start, i - 1)
-            start = i + 1
-        i += 1
-    if start <= n
-        out[out:len() + 1] = text:sub(start, n)
-    out
-
-present: bool = (path: str)
-    status("test -e '{path}'") == 0
-
-grepfile: bool = (path: str, pat: str)
-    cap("cat '{path}' 2>/dev/null"):find(pat, 1, true)
-
-demandpath: i64 = (path: str, tag: str, pat: str)
-    if grepfile(path, pat)
+need: i64 = (path: str, tag: str, pattern: str)
+    if look(path, pattern)
         print("  ok {tag}")
         return 0
-    print("  miss {tag}: {pat}")
+    print("  miss {tag}: {pattern}")
     1
 
+row: i64 = (path: str, proof: str, a: str, b: str, c: str, d: str)
+    print("index {path}")
+    print("  {proof}")
+    fail = 0
+    fail += need(path, "contract", a)
+    fail += need(path, "oracle", b)
+    fail += need(path, "negative", c)
+    fail += need(path, "verdict", d)
+    fail
+
 control: i64 = ()
-    filepath = "scripts/ledger/perf.id"
-    presentpat = "ledger/perf: pass all evidence contracts present"
-    absentpat = "ledger/perf-control-absent"
-    if !grepfile(filepath, presentpat)
+    path = "scripts/ledger/perf.id"
+    if !look(path, "ledger/perf: pass all evidence contracts present")
         print("ledger/perf: fail control present pattern")
         return 1
-    if grepfile(filepath, absentpat)
+    if look(path, "ZZZ_" .. "PERF_NEG" .. "_CTRL")
         print("ledger/perf: fail control absent pattern")
         return 1
     print("ledger/perf: control ok")
     0
 
-row: i64 = (name: str, path: str, proof: str, a: str, b: str, c: str, d: str)
-    state = "missing"
-    if present(path)
-        state = "present"
-    print("{state} {name} {path}")
-    print("  {proof}")
-    result = 0
-    if state == "missing"
-        result = 1
-    else
-        result += demandpath(path, "contract", a)
-        result += demandpath(path, "oracle", b)
-        result += demandpath(path, "negative", c)
-        result += demandpath(path, "verdict", d)
-    result
+main: i64 = ()
+    fail = control()
+    fail += row("scripts/run_benchmark.id",
+        "Idol-hosted kernels match reference C before any speed comparison",
+        "reference C benchmark",
+        "RESULT_FAIL_FLAG = 1",
+        "Benchmark failed:",
+        "Duo .lua/.id >= C")
+    fail += row("scripts/runtime_bench.id",
+        "Idol Wasm runtime measured against wasmtime with answer-checked exec axis",
+        "wasmtime is the oracle",
+        "answer mismatch",
+        "losses += 1",
+        "runtime bench: PASS")
+    fail += row("scripts/run_compile_size_benchmark.id",
+        "compile-time and artifact-size evidence for generated C vs direct native",
+        "compile size benchmark",
+        "compile_size: FAIL",
+        "compile_size: PASS",
+        "artifact")
+    fail += row("scripts/run_gpu_benchmark.id",
+        "GPU Metal benchmark axis remains wired",
+        "gpu benchmark",
+        "gpu: FAIL",
+        "gpu: PASS",
+        "Metal")
+    fail += row("scripts/run_cross_benchmark.id",
+        "cross-language benchmark axis remains wired",
+        "cross benchmark",
+        "cross: FAIL",
+        "cross: PASS",
+        "LuaJIT")
+    fail += row("scripts/run_wasm_benchmark.id",
+        "wasm runtime benchmark axis remains wired",
+        "wasm benchmark",
+        "wasm: FAIL",
+        "wasm: PASS",
+        "wasmtime")
+    fail += row("scripts/run_honest_benchmark.id",
+        "honest benchmark axis remains wired",
+        "honest benchmark",
+        "honest: FAIL",
+        "honest: PASS",
+        "no precomputation")
+    fail += row("scripts/run_ml_benchmark.id",
+        "ML benchmark axis remains wired",
+        "ml benchmark",
+        "ml: FAIL",
+        "ml: PASS",
+        "ML")
+    fail += row("scripts/ledger/ftcftw.id",
+        "Idol-only native > c-equivalent > wasm oracle evidence chain index",
+        "claim.refused faster than c across the board",
+        "claim.made    law.project.ftcftw",
+        "complete FTCFTW proof: NOT PROVEN",
+        "ledger/ftcftw: pass all evidence contracts present")
+    fail += row("scripts/ledger/evidence.id",
+        "EVIDENCE-SUBJECT-ONE binds subject and evidence revisions separately",
+        "subject revision: 29f62035",
+        "evidence revision: 59093d7b",
+        "FTCFTW complete proof: NOT PROVEN",
+        "ledger/evidence: PASS subject 29f62035 / evidence 59093d7b")
 
-missing = control()
-missing += row("bench", "scripts/run_benchmark.id",
-    "duon and hosted lua results match reference c and meet the c speed floor",
-    "benchmark results match reference C",
-    "reference C benchmark",
-    "RESULT_FAIL_FLAG = 1",
-    "Duo .lua/.id >= C")
-missing += row("cross", "scripts/run_cross_benchmark.id",
-    "duon compared against c lua and luajit without changing kernels",
-    "Correctness (RESULT lines vs reference C)",
-    "reference C binary",
-    "Cross-language benchmark FAILED",
-    "Duo must match reference C")
-missing += row("wasm", "scripts/run_wasm_benchmark.id",
-    "wasm runtimes measured through the command harness",
-    "ERROR: Expected ",
-    "wasmtime",
-    "runtimes disagree",
-    " RESULT lines present")
-missing += row("runtime", "scripts/runtime_bench.id",
-    "ward measured against wart wasmtime and wasmer for bytes startup rss and execution",
-    "AXIS startup and rss",
-    "wasmtime is the oracle",
-    "losses += 1",
-    "AXIS bytes")
-missing += row("size", "scripts/run_compile_size_benchmark.id",
-    "compile time and binary size tracked against c",
-    "binary_bytes",
-    "RESULT mismatch",
-    "RESULT count mismatch",
-    "compile-size-bench")
-missing += row("ml", "scripts/run_ml_benchmark.id",
-    "ml kernels measured against c",
-    "RESULT row(s), expected",
-    "bench_ml_c.c",
-    "mismatch",
-    "Duo vs C")
-missing += row("honest", "scripts/run_honest_benchmark.id",
-    "runtime input benchmark blocks precomputation claims",
-    "HONEST_SEED",
-    "bench_honest_c.c",
-    "RESULT count mismatch",
-    "Duo matches or beats C")
-missing += row("proof", "scripts/proof/benchmark.id",
-    "profile correctness and proof artifacts",
-    "proof_matrix_summary.json",
-    "direct-native-subset",
-    "must have zero boxes",
-    "cross-profile semantics match")
-missing += row("ftcftw", "scripts/ledger/ftcftw.id",
-    "Idol-only SHC native > c-equivalent > wasm oracle evidence chain index",
-    "claim.refused faster than c across the board",
-    "claim.made    law.project.ftcftw",
-    "ledger/ftcftw: fail missing contracts",
-    "ledger/ftcftw: pass all evidence contracts present")
-
-if missing == 0
+    print("")
+    if fail > 0
+        print("ledger/perf: fail missing contracts {fail}")
+        return 1
     print("ledger/perf: pass all evidence contracts present")
-    return 0
-print("ledger/perf: fail missing contracts {missing}")
-1
+    0

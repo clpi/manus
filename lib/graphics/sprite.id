@@ -59,9 +59,9 @@ sheet_new(texture: any, frame_width: i64, frame_height: i64): any
         width = frame_width,
         height = frame_height
       }
-      x = x + 1
+      x += 1
     end
-    y = y + 1
+    y += 1
   end
   {
     texture = texture,
@@ -138,11 +138,11 @@ renderer_remove(renderer: any, sprite: any): void
       renderer.sprites:remove(i)
       return
     end
-    i = i + 1
+    i += 1
   end
 end
 renderer_sort(renderer: any): void
-  table.sort(renderer.sprites, (a: any, b: any): any
+  renderer.sprites:sort((a: any, b: any): any
     a.z_order < b.z_order
   end)
   renderer.sorted = true

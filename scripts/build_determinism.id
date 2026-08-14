@@ -1,6 +1,6 @@
 # U2 — `build@deterministic`, made executable.
 #
-# Pass 105 §3 U2: determinism by default, bit-reproducible builds. It is on
+# U2: determinism by default, bit-reproducible builds. It is on
 # the unretrofittable list for a measured reason — reproducibility cost Debian
 # a decade of retrofitting, and the retrofit is still not finished. §4 spells
 # the anchor `build@deterministic` as "double-build fingerprint identity".
@@ -49,7 +49,7 @@
 # exact shape that passes when its comparison is broken (CLAUDE.md §3:
 # positive-control every zero):
 #
-#   1. both prefixes are non-empty and contain `bin/duo` — otherwise "all
+#   1. both prefixes are non-empty and contain `bin/idol` — otherwise "all
 #      artifacts identical" is a statement about the empty set;
 #   2. the comparator says a file is identical to ITSELF;
 #   3. the comparator says a file DIFFERS from a one-byte-mutated copy of
@@ -200,7 +200,7 @@ main: i64 = ()
         if ver == ""
             print("build_determinism: FAIL — no zig on PATH; set ZIG")
             code = 3
-        print("build_determinism — Pass 105 U2: build@deterministic")
+        print("build_determinism — U2: build@deterministic")
         print("  zig       {ver}")
         print("  optimize  {opt}")
         print("  scratch   {work}")
@@ -226,13 +226,13 @@ main: i64 = ()
             print("build_determinism: FAIL — the build installed 0 files; there is nothing to compare and a green here would mean nothing")
             code = 3
     if code == 0
-        if !here("{work}/outa/bin/duo")
-            print("build_determinism: FAIL — no bin/duo in the first prefix; the compiler itself is not among the artifacts being compared")
+        if !here("{work}/outa/bin/idol")
+            print("build_determinism: FAIL — no bin/idol in the first prefix; the compiler itself is not among the artifacts being compared")
             code = 3
 
     # Controls 2 and 3: the comparator, both directions.
     if code == 0
-        witness: str = "{work}/outa/bin/duo"
+        witness: str = "{work}/outa/bin/idol"
         if !same(witness, witness)
             print("build_determinism: FAIL — the comparator says a file differs from itself; every `identical` below would be worthless")
             code = 3

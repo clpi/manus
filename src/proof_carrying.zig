@@ -1,7 +1,7 @@
-//! Pass 12 — proof-carrying semantic transformations (Goals A–C foundation).
+//! — proof-carrying semantic transformations (Goals A–C foundation).
 //!
-//! Reuses Pass 8 `evidence_record.Kind`; does NOT introduce a parallel proof language.
-//! Canonical plan: `docs/plans/pass12_semantic_autonomy.md`
+//! Reuses `evidence_record.Kind`; does NOT introduce a parallel proof language.
+//! Canonical plan: the semantic-autonomy plan
 const std = @import("std");
 const evidence_record = @import("evidence_record.zig");
 
@@ -52,10 +52,10 @@ pub fn lineageGate(record: TransformProofRecord) bool {
     return g.hasLineage();
 }
 
-/// Evidence classes accepted for obligation discharge (Pass 12 §3.2, §4).
+/// Evidence classes accepted for obligation discharge (§3.2, §4).
 pub const AcceptedEvidence = evidence_record.Kind;
 
-/// Pass 12 §9.1 — capability registry entries linked to release claims.
+/// §9.1 — capability registry entries linked to release claims.
 pub const Capability = struct {
     id: []const u8,
     description: []const u8,
@@ -78,7 +78,7 @@ pub const seed_capabilities: []const Capability = &.{
     .{ .id = "cap.cli.semantic.transaction", .description = "Bounded semantic transaction preview/validate (MCP parity)", .status = .partial, .owner = "src/semantic_transaction.zig" },
 };
 
-/// Recompute claim status from capability dependencies (Pass 12 §9.2).
+/// Recompute claim status from capability dependencies (§9.2).
 pub fn effectiveClaimStatus(claim: ReleaseClaim) ClaimStatus {
     if (claim.status == .stale) return .stale;
     for (claim.dependency_ids) |dep| {
@@ -139,7 +139,7 @@ pub const ObligationStatus = enum {
     }
 };
 
-/// Semantic counterexample artifact (Pass 12 §3.4).
+/// Semantic counterexample artifact (§3.4).
 pub const Counterexample = struct {
     obligation_id: []const u8,
     subject_entity: []const u8,
@@ -150,7 +150,7 @@ pub const Counterexample = struct {
     compiler_version: ?[]const u8 = null,
 };
 
-/// Realization candidate with implementation provenance (Pass 12 §3.3).
+/// Realization candidate with implementation provenance (§3.3).
 pub const CandidateImplementation = struct {
     id: []const u8,
     subject_entity: []const u8,
@@ -189,7 +189,7 @@ pub const CandidateStatus = enum {
     }
 };
 
-/// Derived view of canonical facts (Pass 12 §3.6).
+/// Derived view of canonical facts (§3.6).
 pub const SemanticProjection = struct {
     id: []const u8,
     kind: ProjectionKind,
@@ -224,7 +224,7 @@ pub const ProjectionKind = enum {
     }
 };
 
-/// Structured result of an important transformation (Pass 12 §4).
+/// Structured result of an important transformation (§4).
 pub const TransformProofRecord = struct {
     transform_id: []const u8,
     transform_version: []const u8,
@@ -272,7 +272,7 @@ pub const TransformResult = enum {
     }
 };
 
-/// Collected evidence for a capability, transaction, or claim (Pass 12 §3.5).
+/// Collected evidence for a capability, transaction, or claim (§3.5).
 pub const ProofBundle = struct {
     bundle_id: []const u8,
     subject_entity: []const u8,
@@ -284,7 +284,7 @@ pub const ProofBundle = struct {
     stale: bool = false,
 };
 
-/// Release claim linked to proof dependencies (Pass 12 §9).
+/// Release claim linked to proof dependencies (§9).
 pub const ReleaseClaim = struct {
     id: []const u8,
     statement: []const u8,
@@ -305,7 +305,7 @@ pub const ClaimStatus = enum {
     }
 };
 
-pub const RELEASE_PROOF_SCHEMA_VERSION = "duo-release-proof-v0";
+pub const RELEASE_PROOF_SCHEMA_VERSION = "idol-release-proof-v0";
 pub const RELEASE_PROOF_BUNDLE_DIR = ".id/proof/release-0.1";
 
 /// The release argument is deliberately orthogonal: passing one domain cannot
@@ -570,7 +570,7 @@ pub const seed_claims: []const ReleaseClaim = &.{
     },
 };
 
-/// Mark claims stale when a proof bundle is explicitly invalidated (Pass 12 §9.2).
+/// Mark claims stale when a proof bundle is explicitly invalidated (§9.2).
 pub fn claimStatusWithBundle(claim: ReleaseClaim, bundle: ?ProofBundle) ClaimStatus {
     if (bundle) |b| {
         if (b.stale) return .stale;

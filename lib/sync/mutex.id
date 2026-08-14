@@ -3,8 +3,8 @@
 # is no true OS-level preemption, these are advisory locks for coordinating
 # coroutines rather than threads.
 
-# new_mutex: create a new Mutex.
-new_mutex(): any
+# mutex: create a new Mutex.
+mutex(): any
     {locked = false}
 end
 
@@ -12,7 +12,7 @@ end
 lock(m: any): void
     while m.locked
         co = coroutine
-        co.yield_()
+        co.yield()
     end
     m.locked = true
 end
@@ -22,23 +22,23 @@ unlock(m: any): void
     m.locked = false
 end
 
-# try_lock: attempt to acquire the mutex without blocking. Returns true if acquired.
-try_lock(m: any): bool
+# probe: attempt to acquire the mutex without blocking. Returns true if acquired.
+probe(m: any): bool
     if m.locked return false end
     m.locked = true
     true
 end
 
-# new_rwmutex: create a new RWMutex.
-new_rwmutex(): any
-    {writers = 0, readers = 0, write_locked = false}
+# rwmutex: create a new RWMutex.
+rwmutex(): any
+    {writers = 0, readers = 0, writing = false}
 end
 
 # rlock: acquire a read lock.
 rlock(m: any): void
-    while m.write_locked
+    while m.writing
         co = coroutine
-        co.yield_()
+        co.yield()
     end
     m.readers = m.readers + 1
 end
@@ -51,14 +51,14 @@ end
 
 # wlock: acquire a write lock.
 wlock(m: any): void
-    while m.write_locked or m.readers > 0
+    while m.writing or m.readers > 0
         co = coroutine
-        co.yield_()
+        co.yield()
     end
-    m.write_locked = true
+    m.writing = true
 end
 
 # wunlock: release a write lock.
 wunlock(m: any): void
-    m.write_locked = false
+    m.writing = false
 end

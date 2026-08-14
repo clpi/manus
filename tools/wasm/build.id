@@ -1,11 +1,11 @@
-# duon wasm — build manifest.
+# idol wasm — build manifest.
 #
 # This file used to describe a project called ward with five build targets
-# (`src/main.id`, `src/cli.id`, `src/lib.id`, `test/bench.id`) and a
-# headline claiming it reimplemented ~1.3M lines of Zig in <10K lines of Duo.
-# Not one of those five files exists, and the ratio was wrong by two orders of
-# magnitude in the flattering direction: measured 2026-08-08, wart is 121,285
-# lines of Zig and this engine is 11,350 lines of Duo, a 10.7x ratio.
+# that never existed in this tree, and a headline claiming it reimplemented
+# ~1.3M lines of Zig in under ten thousand lines. The ratio was wrong by two
+# orders of magnitude in the flattering direction: measured 2026-08-08, wart
+# is 121,285 lines of Zig and this engine is 11,350 lines of Idol, a 10.7x
+# ratio.
 #
 # What is true is below, and the authority is `build.zig`'s `wasm-test` step,
 # which is what actually builds and runs this. A manifest that names files
@@ -13,7 +13,7 @@
 
 name = "wasm"
 version = "0.1.0"
-description = "duon's WebAssembly engine — decode, interpret, JIT to ARM64"
+description = "idol's WebAssembly engine — decode, interpret, JIT to ARM64"
 
 # The whole runtime, one file. `docs/wasm-integration.md` §1.1 records why it
 # is not decomposed: pointer locals must not cross a function boundary, and a

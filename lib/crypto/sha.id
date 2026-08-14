@@ -15,15 +15,15 @@ sha1(s: str): str
         msg = msg .. 0:char()
     end
     # append length in bits as big-endian 64-bit
-    bit_len = s:len() * 8
+    bits = s:len() * 8
     # high 32 bits (usually 0 for small inputs)
     msg = msg .. 0:char(0, 0, 0)
     # low 32 bits
     msg = msg .. string.char(
-        (bit_len / 16777216) % 256,
-        (bit_len / 65536) % 256,
-        (bit_len / 256) % 256,
-        bit_len % 256
+        (bits / 16777216) % 256,
+        (bits / 65536) % 256,
+        (bits / 256) % 256,
+        bits % 256
     )
     # initial hash values
     h0 = 0x67452301
@@ -33,8 +33,8 @@ sha1(s: str): str
     h4 = 0xC3D2E1F0
     # process each 64-byte block
     block = 0
-    nblocks = msg:len() / 64
-    while block < nblocks
+    blocks = msg:len() / 64
+    while block < blocks
         w = {}
         j = 0
         while j < 16
@@ -110,13 +110,13 @@ sha256(s: str): str
     while msg:len() % 64 != 56
         msg = msg .. 0:char()
     end
-    bit_len = s:len() * 8
+    bits = s:len() * 8
     msg = msg .. 0:char(0, 0, 0)
     msg = msg .. string.char(
-        (bit_len / 16777216) % 256,
-        (bit_len / 65536) % 256,
-        (bit_len / 256) % 256,
-        bit_len % 256
+        (bits / 16777216) % 256,
+        (bits / 65536) % 256,
+        (bits / 256) % 256,
+        bits % 256
     )
     # initial hash values
     hv0 = 0x6a09e667
@@ -128,8 +128,8 @@ sha256(s: str): str
     hv6 = 0x1f83d9ab
     hv7 = 0x5be0cd19
     block = 0
-    nblocks = msg:len() / 64
-    while block < nblocks
+    blocks = msg:len() / 64
+    while block < blocks
         w = {}
         j = 0
         while j < 16

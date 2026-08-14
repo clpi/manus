@@ -4,7 +4,6 @@
 //! Not a second semantic graph: assumptions reference stable entity IDs from sema/graph.
 const std = @import("std");
 const optimization_outcome = @import("optimization_outcome.zig");
-const types = @import("types.zig");
 const sema = @import("sema.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const ast = @import("ast.zig");
@@ -131,45 +130,11 @@ pub const Guard = struct {
     }
 };
 
-/// Catalog of common assumption patterns (expand as wiring lands).
-pub const assumption_catalog: []const struct {
-    id: []const u8,
-    predicate: Predicate,
-    origin: Origin,
-    scope: ValidityScope,
-    guard: GuardImplementation,
-    wired: bool,
-} = &.{
-    .{ .id = "assume.shape.sealed", .predicate = .shape_id_matches, .origin = .graph_lift, .scope = .module, .guard = .compare_shape_id, .wired = true },
-    .{ .id = "assume.call.target", .predicate = .call_target_known, .origin = .specialization, .scope = .function, .guard = .type_tag_check, .wired = false },
-    .{ .id = "assume.no.escape", .predicate = .value_non_escaping, .origin = .sema, .scope = .function, .guard = .none, .wired = true },
-    .{ .id = "assume.simd.width", .predicate = .target_simd_width, .origin = .representation, .scope = .link, .guard = .runtime_trap, .wired = false },
-    .{ .id = "assume.tensor.extent", .predicate = .tensor_extent_known, .origin = .specialization, .scope = .function, .guard = .range_check, .wired = false },
-};
-
 fn jsonEscape(w: *std.Io.Writer, s: []const u8) !void {
     for (s) |c| switch (c) {
         '"', '\\' => try w.print("\\{c}", .{c}),
         else => try w.writeAll(&.{c}),
     };
-}
-
-pub fn writeCatalogJson(w: *std.Io.Writer) !void {
-    try w.print("[", .{});
-    for (assumption_catalog, 0..) |row, i| {
-        if (i > 0) try w.print(",", .{});
-        try w.print(
-            "{{\"id\":\"{s}\",\"predicate\":\"{s}\",\"origin\":\"{s}\",\"scope\":\"{s}\",\"guard\":\"{s}\",\"wired\":",
-            .{ row.id, row.predicate.name(), row.origin.name(), row.scope.name(), row.guard.name() },
-        );
-        try w.print("{s}", .{if (row.wired) "true" else "false"});
-        try w.print("}}", .{});
-    }
-    try w.print("]", .{});
-}
-
-fn entityId(alloc: std.mem.Allocator, kind: []const u8, name: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(alloc, "duo:{s}:{s}", .{ kind, name });
 }
 
 pub const ModuleAssumptions = struct {
@@ -181,33 +146,19 @@ pub const ModuleAssumptions = struct {
     }
 };
 
-fn appendShapeAssumption(
+fn appendGuardedShape(
     alloc: std.mem.Allocator,
     out: *std.ArrayListUnmanaged(Assumption),
-    record_name: []const u8,
-    sc: types.StorageClass,
-    shape_id: ?u64,
+    entity: semantic_graph.id,
 ) !void {
-    const subject = try entityId(alloc, "record", record_name);
+    const subject = try std.fmt.allocPrint(alloc, "{d}", .{entity});
     errdefer alloc.free(subject);
-    const id = try std.fmt.allocPrint(alloc, "assume.shape.sealed:{s}", .{record_name});
+    const id = try std.fmt.allocPrint(alloc, "guard:{d}", .{entity});
     errdefer alloc.free(id);
-
-    const evidence: optimization_outcome.Evidence = switch (sc) {
-        .native, .sealed => .proven,
-        .guarded => .guarded,
-        .dynamic => .assumed,
-    };
-
-    const inv_msg: []const u8 = switch (sc) {
-        .dynamic => "field added or value escapes dynamic table semantics",
-        else => "field added, metatable changed, or storage class widened",
-    };
-    const inv = try alloc.dupe(u8, inv_msg);
+    const inv = try alloc.dupe(u8, "speculated shape_id_matches fact invalidated");
     errdefer alloc.free(inv);
-    const fb = try alloc.dupe(u8, "dynamic table representation with runtime shape checks");
+    const fb = try alloc.dupe(u8, "general table realization");
     errdefer alloc.free(fb);
-    _ = shape_id;
     try out.append(alloc, .{
         .id = id,
         .subject_entity = subject,
@@ -216,11 +167,12 @@ fn appendShapeAssumption(
         .scope = .module,
         .invalidation = inv,
         .fallback = fb,
-        .evidence = evidence,
+        .evidence = .guarded,
     });
 }
 
-/// Project module assumptions from the semantic graph.
+/// Project speculated guards from the semantic graph (`law.guard.one`).
+/// Known fact → guard 0. Unknown fact → general realization, no guard.
 pub fn buildFromModule(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -235,12 +187,12 @@ pub fn buildFromModule(
         items.deinit(alloc);
     }
 
-    for (graph.nodes.items) |node| {
-        if (node.kind != .table_shape) continue;
-        const name = node.name orelse continue;
-        if (!graph.atModuleScope(&node)) continue;
-        const sc = node.storage_class orelse .dynamic;
-        try appendShapeAssumption(alloc, &items, name, sc, node.shape_id);
+    for (graph.nodes.items, 0..) |node, i| {
+        if (!graph.hasTableDescriptorFacts(@intCast(i))) continue;
+        if (!semantic_graph.SemanticGraph.atModuleScope(graph, &node)) continue;
+        const knowledge = node.knowledge orelse continue;
+        if (knowledge != .guarded) continue;
+        try appendGuardedShape(alloc, &items, @intCast(i));
     }
 
     return .{ .items = try items.toOwnedSlice(alloc) };
@@ -279,20 +231,9 @@ pub fn writeAssumptionJson(a: *const Assumption, w: *std.Io.Writer) !void {
     try w.print("}}", .{});
 }
 
-test "assumption_guard: sealed shape catalog entry wired" {
-    const row = assumption_catalog[0];
-    try std.testing.expectEqualStrings("assume.shape.sealed", row.id);
-    try std.testing.expect(row.wired);
-    try std.testing.expectEqual(Predicate.shape_id_matches, row.predicate);
-}
-
-test "assumption_guard: writeCatalogJson emits predicate names" {
-    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
-    defer aw.deinit();
-    try writeCatalogJson(&aw.writer);
-    const out = aw.written();
-    try std.testing.expect(std.mem.indexOf(u8, out, "shape_id_matches") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "assume.no.escape") != null);
+test "assumption_guard: no assumption catalog" {
+    try std.testing.expect(!@hasDecl(@This(), "assumption_catalog"));
+    try std.testing.expect(!@hasDecl(@This(), "writeCatalogJson"));
 }
 
 test "assumption_guard: graph input is required" {
@@ -300,7 +241,7 @@ test "assumption_guard: graph input is required" {
     try std.testing.expect(build_info.param_types[3].? == *const semantic_graph.SemanticGraph);
 }
 
-test "assumption_guard: sealed Point record yields shape assumption" {
+test "assumption_guard: known and unknown shapes emit no guard" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -327,6 +268,35 @@ test "assumption_guard: sealed Point record yields shape assumption" {
 
     var assumptions = try buildFromModule(alloc, &mod, &semantic, &graph);
     defer assumptions.deinit(alloc);
-    try std.testing.expect(assumptions.items.len >= 1);
+    try std.testing.expectEqual(@as(usize, 0), assumptions.items.len);
+}
+
+test "assumption_guard: speculated knowledge emits exact guard" {
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const home = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "guard.id", .start = 0, .end = 0 },
+    });
+    const shape = try graph.addChild(home, .{
+        .kind = .table_shape,
+        .span = .{ .file = "guard.id", .start = 1, .end = 1 },
+        .name = "Point",
+        .knowledge = .guarded,
+        .descriptor_state = .sealed,
+        .shape_id = 1,
+    });
+    var dummy_mod: ast.Module = undefined;
+    var dummy_sem = sema.Sema.init(std.testing.allocator);
+    defer dummy_sem.deinit();
+    var assumptions = try buildFromModule(std.testing.allocator, &dummy_mod, &dummy_sem, &graph);
+    defer assumptions.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 1), assumptions.items.len);
     try std.testing.expectEqual(Predicate.shape_id_matches, assumptions.items[0].predicate);
+    try std.testing.expectEqual(optimization_outcome.Evidence.guarded, assumptions.items[0].evidence);
+    var id_buf: [20]u8 = undefined;
+    const expected = std.fmt.bufPrint(&id_buf, "{d}", .{shape}) catch unreachable;
+    try std.testing.expectEqualStrings(expected, assumptions.items[0].subject_entity);
+    try std.testing.expect(assumptions.items[0].fallback != null);
+    try std.testing.expect(assumptions.items[0].invalidation != null);
 }

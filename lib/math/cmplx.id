@@ -58,11 +58,11 @@ log(a: any): any
 end
 
 sin(a: any): any
-    {re = a.re:sin() * math.cosh(a.im), im = a.re:cos() * math.sinh(a.im)}
+    {re = a.re:sin() * a.im:cosh(), im = a.re:cos() * math.sinh(a.im)}
 end
 
 cos(a: any): any
-    {re = a.re:cos() * math.cosh(a.im), im = -a.re:sin() * math.sinh(a.im)}
+    {re = a.re:cos() * a.im:cosh(), im = -a.re:sin() * math.sinh(a.im)}
 end
 
 tan(a: any): any
@@ -76,7 +76,7 @@ sqrt(a: any): any
         return {re = a.re:sqrt(), im = 0}
     end
     r = abs(a)
-    return {re = (r + a.re) / 2:sqrt(), im = math.sign(a.im) * (r - a.re) / 2:sqrt()}
+    return {re = (r + a.re) / 2:sqrt(), im = a.im:sign() * (r - a.re) / 2:sqrt()}
 end
 
 pow(a: any, b: any): any
@@ -96,11 +96,11 @@ pow(a: any, b: any): any
     exp(mul(b, log(a)))
 end
 
-is_nan(a: any): bool
+nan(a: any): bool
     a.re != a.re or a.im != a.im
 end
 
-is_inf(a: any): bool
+inf(a: any): bool
     a.re == math.huge or a.re == -math.huge or a.im == math.huge or a.im == -math.huge
 end
 

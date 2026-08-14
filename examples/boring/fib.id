@@ -1,12 +1,11 @@
 # Fibonacci both ways. The recursive and iterative answers must AGREE, so a
 # broken accumulator cannot pass by matching a frozen literal.
 # expect: 6765 6765
+# @corpus current
 fib: i64 = (n: i64)
     if n < 2
-        return n
-    end
+        n
     fib(n - 1) + fib(n - 2)
-end
 
 loop: i64 = (n: i64)
     a = 0
@@ -15,13 +14,8 @@ loop: i64 = (n: i64)
         c = a + b
         a = b
         b = c
-    end
     a
-end
 
-main: i64 = ()
-    r = fib(20)
-    l = loop(20)
-    print("{r} {l}")
-    0
-end
+r = fib(20)
+l = loop(20)
+print("{r} {l}")

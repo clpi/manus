@@ -129,7 +129,7 @@ parse_float(s: str): any
         m = string["match"](s, "^(%d*%.%d+[eE]?[+-]?%d*)$")
     end
     if m == nil return 0.0, false end
-    v = tonumber(s)
+    v = s:to(i64)
     if v == nil return 0.0, false end
     if neg v = 0 - v end
     return v, true
@@ -221,7 +221,7 @@ end
 # append_bool: format a boolean as "true" or "false".
 format_bool(b: bool): str
     # A guard, not `if b "true" else "false" end`. In the endless one-liner
-    # form the clause must be SELF-DELIMITED (Pass 48 2.4), and `b "true"`
+    # form the clause must be SELF-DELIMITED, and `b "true"`
     # reads as PARENLESS APPLICATION # the emitted C was
     # `b(lua_val_from_literal("true", ...))`, i.e. calling a bool
     # ("called object type 'bool' is not a function"), which took the module

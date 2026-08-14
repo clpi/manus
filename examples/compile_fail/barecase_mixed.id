@@ -33,6 +33,6 @@ main = (): i64
     k = token.kind.eof
     n = 0
     if k == circle
-        n = n + 1
+        n += 1
     print("{n}")
     0

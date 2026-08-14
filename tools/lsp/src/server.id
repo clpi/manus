@@ -51,12 +51,12 @@ fun find_from(s, sub, start) -> i64
         is_match = false
         break
       end
-      j = j + 1
+      j += 1
     end
     if is_match then
       return i
     end
-    i = i + 1
+    i += 1
   end
   0
 end
@@ -68,7 +68,7 @@ fun find_last(s, ch) -> i64
     if s:byte(j) == cb then
       return j
     end
-    j = j - 1
+    j -= 1
   end
   0
 end
@@ -94,11 +94,11 @@ fun trim(s) -> str
   n = s:len()
   i = 1
   while i <= n and is_space_byte(s:byte(i))
-    i = i + 1
+    i += 1
   end
   j = n
   while j >= i and is_space_byte(s:byte(j))
-    j = j - 1
+    j -= 1
   end
   if j < i then
     return ""
@@ -116,7 +116,7 @@ fun contains_char(s, ch) -> bool
     if s:byte(i) == cb then
       return true
     end
-    i = i + 1
+    i += 1
   end
   false
 end
@@ -127,9 +127,9 @@ fun count_char(s, ch) -> i64
   i = 1
   while i <= n
     if s:byte(i) == cb then
-      c = c + 1
+      c += 1
     end
-    i = i + 1
+    i += 1
   end
   c
 end
@@ -181,7 +181,7 @@ fun compute_line_offs(text) -> any
     if text:byte(pos) == 10 then
       lo[lo:len() + 1] = pos + 1
     end
-    pos = pos + 1
+    pos += 1
   end
   lo
 end
@@ -240,7 +240,7 @@ fun word_end_lo(text, lo, line, col) -> i64
   while e < n
     b = ln:byte(e + 1)
     if is_word_char_byte(b) then
-      e = e + 1
+      e += 1
     else
       break
     end
@@ -267,11 +267,11 @@ fun word_at_lo(text, lo, line, col) -> str
   end
   start = col
   while start > 1 and is_word_char_byte(ln:byte(start - 1))
-    start = start - 1
+    start -= 1
   end
   en = col
   while en < n and is_word_char_byte(ln:byte(en + 1))
-    en = en + 1
+    en += 1
   end
   if start > en then
     return ""
@@ -295,7 +295,7 @@ fun word_prefix_lo(text, lo, line, col) -> str
   end
   start = col
   while start > 1 and is_word_char_byte(ln:byte(start - 1))
-    start = start - 1
+    start -= 1
   end
   if start >= col then
     return ""
@@ -330,7 +330,7 @@ fun strip_comment(line) -> str
     elseif b == 45 and i < n and line:byte(i + 1) == 45 then
       return line:sub(1, i - 1)
     end
-    i = i + 1
+    i += 1
   end
   line
 end
@@ -339,7 +339,7 @@ fun head_keyword(line) -> any
   ctrim = trim(code)
   indent = 0
   while indent < line:len() and line:byte(indent + 1) == 32
-    indent = indent + 1
+    indent += 1
   end
   if ctrim == "" then
     r = {}
@@ -359,7 +359,7 @@ fun head_keyword(line) -> any
   i = 1
   n = ctrim:len()
   while i <= n and is_ident_char(ctrim:byte(i))
-    i = i + 1
+    i += 1
   end
   r = {}
   r.kw = ctrim:sub(1, i - 1)
@@ -399,14 +399,14 @@ fun count_keyword(s, word) -> i64
     if is_ident_start(b) then
       j = i
       while j <= n and is_ident_char(s:byte(j))
-        j = j + 1
+        j += 1
       end
       if j - i == wn and s:sub(i, j - 1) == word then
-        c = c + 1
+        c += 1
       end
       i = j
     else
-      i = i + 1
+      i += 1
     end
   end
   c
@@ -462,7 +462,7 @@ fun first_ident(s) -> any
   end
   start_pos = 1
   while start_pos <= n and is_space_byte(s:byte(start_pos))
-    start_pos = start_pos + 1
+    start_pos += 1
   end
   if start_pos > n then
     return nil
@@ -473,7 +473,7 @@ fun first_ident(s) -> any
   end
   i = start_pos
   while i <= n and is_ident_char(s:byte(i))
-    i = i + 1
+    i += 1
   end
   r = {}
   r.name = s:sub(start_pos, i - 1)
@@ -485,7 +485,7 @@ fun name_after_keywords(rest) -> any
   offset = 0
   r = rest
   while r:len() > 0 and r[1] == " "
-    offset = offset + 1
+    offset += 1
     r = r:sub(2)
   end
   if starts_keyword(r, "local") or starts_keyword(r, "global") then
@@ -493,14 +493,14 @@ fun name_after_keywords(rest) -> any
     if starts_keyword(r, "global") then kw_len = "global":len() end
     r = r:sub(kw_len + 1)
     while r:len() > 0 and r[1] == " "
-      offset = offset + 1
+      offset += 1
       r = r:sub(2)
     end
   end
   if starts_keyword(r, "async") then
     r = r:sub("async":len() + 1)
     while r:len() > 0 and r[1] == " "
-      offset = offset + 1
+      offset += 1
       r = r:sub(2)
     end
   end
@@ -511,7 +511,7 @@ fun name_after_keywords(rest) -> any
   if kw_len > 0 then
     r = r:sub(kw_len + 1)
     while r:len() > 0 and r[1] == " "
-      offset = offset + 1
+      offset += 1
       r = r:sub(2)
     end
   end
@@ -532,11 +532,11 @@ fun match_typed(code) -> any
     return nil
   end
   while i <= n and is_ident_char(code:byte(i))
-    i = i + 1
+    i += 1
   end
   name = code:sub(1, i - 1)
   while i <= n and code:byte(i) == 32
-    i = i + 1
+    i += 1
   end
   if i > n then
     return nil
@@ -557,11 +557,11 @@ fun match_plain_assign(code) -> any
     return nil
   end
   while i <= n and is_ident_char(code:byte(i))
-    i = i + 1
+    i += 1
   end
   name = code:sub(1, i - 1)
   while i <= n and code:byte(i) == 32
-    i = i + 1
+    i += 1
   end
   if i > n then
     return nil
@@ -583,28 +583,28 @@ fun match_bare_function(code) -> any
     return nil
   end
   while i <= n and is_ident_char(code:byte(i))
-    i = i + 1
+    i += 1
   end
   name = code:sub(1, i - 1)
   while i <= n and is_space_byte(code:byte(i))
-    i = i + 1
+    i += 1
   end
   if i > n or code:byte(i) ~= 40 then
     return nil
   end
   depth = 1
   has_typed_param = false
-  i = i + 1
+  i += 1
   while i <= n and depth > 0
     ch = code:byte(i)
     if ch == 40 then
-      depth = depth + 1
+      depth += 1
     elseif ch == 41 then
-      depth = depth - 1
+      depth -= 1
     elseif ch == 58 then
       has_typed_param = true
     end
-    i = i + 1
+    i += 1
   end
   if depth ~= 0 or not has_typed_param then
     return nil
@@ -662,7 +662,7 @@ fun scan_symbols_lo(text, lo) -> any
     closes = count_char(code, "}")
     top = depth == 0 and brace == 0
     ends = count_end(code)
-    brace = brace + opens - closes
+    brace += opens - closes
     if brace < 0 then
       brace = 0
     end
@@ -671,7 +671,7 @@ fun scan_symbols_lo(text, lo) -> any
     rest = info.rest
     indent = info.indent
     if kw == "end" then
-      depth = depth + ends - 1
+      depth += ends - 1
       if depth < 0 then
         depth = 0
       end
@@ -726,7 +726,7 @@ fun scan_symbols_lo(text, lo) -> any
           container = bf
           container_kind = 12
         end
-        depth = depth + 1
+        depth += 1
       else
         tb = match_typed(code)
         if tb ~= nil then
@@ -739,7 +739,7 @@ fun scan_symbols_lo(text, lo) -> any
         end
       end
     end
-    i = i + 1
+    i += 1
   end
   syms
 end
@@ -754,7 +754,7 @@ fun symbol_at(syms, line, col) -> any
         return s
       end
     end
-    i = i + 1
+    i += 1
   end
   nil
 end
@@ -769,7 +769,7 @@ fun is_upper(name) -> bool
     if not (b >= 65 and b <= 90 or b == 95 or b >= 48 and b <= 57) then
       return false
     end
-    i = i + 1
+    i += 1
   end
   true
 end
@@ -795,7 +795,7 @@ fun find_refs_in_text(text, lo, name, uri) -> any
       if is_ident_start(b) then
         j = p
         while j <= rn and is_ident_char(raw:byte(j))
-          j = j + 1
+          j += 1
         end
         if j - p == nn then
           is_match = true
@@ -805,7 +805,7 @@ fun find_refs_in_text(text, lo, name, uri) -> any
               is_match = false
               break
             end
-            k = k + 1
+            k += 1
           end
           if is_match then
             before_ok = true
@@ -829,10 +829,10 @@ fun find_refs_in_text(text, lo, name, uri) -> any
         end
         p = j
       else
-        p = p + 1
+        p += 1
       end
     end
-    i = i + 1
+    i += 1
   end
   refs
 end
@@ -858,7 +858,7 @@ fun find_rename_edits_in_text(text, lo, name, new_name, uri) -> any
       if is_ident_start(b) then
         j = p
         while j <= rn and is_ident_char(raw:byte(j))
-          j = j + 1
+          j += 1
         end
         if j - p == nn then
           is_match = true
@@ -868,7 +868,7 @@ fun find_rename_edits_in_text(text, lo, name, new_name, uri) -> any
               is_match = false
               break
             end
-            k = k + 1
+            k += 1
           end
           if is_match then
             before_ok = true
@@ -892,10 +892,10 @@ fun find_rename_edits_in_text(text, lo, name, new_name, uri) -> any
         end
         p = j
       else
-        p = p + 1
+        p += 1
       end
     end
-    i = i + 1
+    i += 1
   end
   edits
 end
@@ -920,7 +920,7 @@ fun compute_folding_ranges(text, lo) -> any
         j = 1
         cn = ctrim:len()
         while j <= cn and is_ident_char(ctrim:byte(j))
-          j = j + 1
+          j += 1
         end
         kw = ctrim:sub(1, j - 1)
         is_block = is_block_opener(kw) or kw == "do" or kw == "begin"
@@ -943,19 +943,19 @@ fun compute_folding_ranges(text, lo) -> any
             break
           end
           ecode = strip_comment(eraw)
-          depth = depth - count_end(ecode)
+          depth -= count_end(ecode)
           if depth <= 0 then
             f.endLine = k
             f.endCharacter = 0
           end
-          k = k + 1
+          k += 1
         end
         if f.endLine ~= nil then
           folds[folds:len() + 1] = f
         end
       end
     end
-    i = i + 1
+    i += 1
   end
   folds
 end
@@ -985,7 +985,7 @@ fun ws_find_all_refs(idx, name, exclude_uri) -> any
         j = 1
         while j <= r:len()
           refs[refs:len() + 1] = r[j]
-          j = j + 1
+          j += 1
         end
       end
     end
@@ -1003,7 +1003,7 @@ fun ws_find_all_edits(idx, name, new_name, exclude_uri) -> any
         j = 1
         while j <= r:len()
           edits[edits:len() + 1] = r[j]
-          j = j + 1
+          j += 1
         end
       end
     end
@@ -1031,7 +1031,7 @@ fun ws_search_symbols(idx, query) -> any
           seen[s.name] = true
         end
       end
-      j = j + 1
+      j += 1
     end
   end
   results
@@ -1065,7 +1065,7 @@ fun find_doc_highlights(text, lo, syms, line, col) -> any
       if is_ident_start(b) then
         j = p
         while j <= rn and is_ident_char(raw:byte(j))
-          j = j + 1
+          j += 1
         end
         if j - p == nn then
           is_match = true
@@ -1075,7 +1075,7 @@ fun find_doc_highlights(text, lo, syms, line, col) -> any
               is_match = false
               break
             end
-            k = k + 1
+            k += 1
           end
           if is_match then
             before_ok = true
@@ -1102,10 +1102,10 @@ fun find_doc_highlights(text, lo, syms, line, col) -> any
         end
         p = j
       else
-        p = p + 1
+        p += 1
       end
     end
-    i = i + 1
+    i += 1
   end
   highlights
 end
@@ -1365,7 +1365,7 @@ fun parse_digits(s, i) -> any
     if b >= 48 and b <= 57 then
       v = v * 10 + b - 48
       any = true
-      i = i + 1
+      i += 1
     else
       break
     end
@@ -1575,9 +1575,9 @@ fun offset_at(text, pos) -> i64
   cur_line = 0
   while i <= n and cur_line < line
     if text:byte(i) == 10 then
-      cur_line = cur_line + 1
+      cur_line += 1
     end
-    i = i + 1
+    i += 1
   end
   off = i - 1 + chcol
   if off < 0 then
@@ -1608,7 +1608,7 @@ fun apply_changes(text, changes) -> str
     else
       out = txt
     end
-    i = i + 1
+    i += 1
   end
   out
 end
@@ -1820,10 +1820,10 @@ fun add_static_completions(out, seen, prefix) -> void
   add_snippet_completion(out, seen, "@derive", "derive trait impl", "@derive(${1:Display, Eq})", prefix, "d_derive")
   add_snippet_completion(out, seen, "@ffi", "FFI declaration", "@ffi(\"${1:name}\")", prefix, "d_ffi")
   add_snippet_completion(out, seen, "@export", "export with C ABI", "@export(\"${1:name}\")", prefix, "d_export")
-  add_snippet_completion(out, seen, "@c.include", "include C header", "@c.include(\"${1:header.h}\")", prefix, "d_c_include")
-  add_snippet_completion(out, seen, "@c.emit", "emit raw C code", "@c.emit(\"${1:code}\")", prefix, "d_c_emit")
-  add_snippet_completion(out, seen, "@c.export", "export to C", "@c.export(\"${1:name}\")", prefix, "d_c_export")
-  add_snippet_completion(out, seen, "@c.import", "import C declarations", "@c.import(\"${1:header.h}\")", prefix, "d_c_import")
+  add_snippet_completion(out, seen, "@comp.c.include", "include C header", "@comp.c.include(\"${1:header.h}\")", prefix, "d_c_include")
+  add_snippet_completion(out, seen, "@comp.c.emit", "emit raw C code", "@comp.c.emit(\"${1:code}\")", prefix, "d_c_emit")
+  add_snippet_completion(out, seen, "@comp.c.export", "export to C", "@comp.c.export(\"${1:name}\")", prefix, "d_c_export")
+  add_snippet_completion(out, seen, "@comp.c.import", "import C declarations", "@comp.c.import(\"${1:header.h}\")", prefix, "d_c_import")
   add_snippet_completion(out, seen, "@device", "target device", "@device(${1:.auto})", prefix, "d_device")
   add_snippet_completion(out, seen, "@autodiff", "automatic differentiation", "@autodiff", prefix, "d_autodiff")
   add_snippet_completion(out, seen, "@(", "compile-time eval", "@(${1:expr})", prefix, "d_comptime")
@@ -1869,7 +1869,7 @@ fun handle_initialize(params) -> any
   triggers[triggers:len() + 1] = "("
   cp.triggerCharacters = triggers
   caps.completionProvider = cp
-  # Pass 117 §0g. The legend is the GENERATED taxonomy above, handed to the
+  # §0g. The legend is the GENERATED taxonomy above, handed to the
   # client verbatim: a client that renders a role this server never emits is
   # reading the law's list, not a list this file invented.
   lg = {}
@@ -1884,7 +1884,7 @@ fun handle_initialize(params) -> any
   clp.resolveProvider = false
   caps.codeLensProvider = clp
   info = {}
-  info.name = "duo-lsp"
+  info.name = "idol-lsp"
   info.version = "0.3.0"
   r = {}
   r.capabilities = caps
@@ -2044,7 +2044,7 @@ fun handle_document_symbol(params) -> any
     end
     open[open:len() + 1] = o
     cols[cols:len() + 1] = s.col
-    i = i + 1
+    i += 1
   end
   # Whatever is still open runs to the end of the document.
   ensure_lo(d)
@@ -2057,7 +2057,7 @@ fun handle_document_symbol(params) -> any
   out
 end
 
-# ── Pass 5 foreign descriptor hover (SIM via @c.import) ─────────────────────
+# ── foreign descriptor hover (SIM via @comp.c.import) ─────────────
 fun uri_to_path(uri) -> str
   if starts_with(uri, "file://") then
     return uri:sub(8)
@@ -2121,11 +2121,11 @@ fun foreign_entity_in_doc(text, uri, symbol) -> any
             ent._resolved_header = resolved
             return ent
           end
-          j = j + 1
+          j += 1
         end
       end
     end
-    i = i + 1
+    i += 1
   end
   nil
 end
@@ -2163,7 +2163,7 @@ fun format_foreign_hover(ent) -> str
         off = " @+" .. tostring(f.offset)
       end
       lines[lines:len() + 1] = "- `" .. f.name .. "`: " .. f.type .. off
-      fi = fi + 1
+      fi += 1
     end
   end
   if ent.params ~= nil and ent.params:len() > 0 then
@@ -2173,7 +2173,7 @@ fun format_foreign_hover(ent) -> str
     while pi <= ent.params:len()
       p = ent.params[pi]
       lines[lines:len() + 1] = "- `" .. p.name .. "`: " .. p.type
-      pi = pi + 1
+      pi += 1
     end
   end
   if ent.return_type ~= nil then
@@ -2192,14 +2192,14 @@ fun format_foreign_hover(ent) -> str
   lines:concat("\n")
 end
 
-# ── graph service client (Pass 101 §3) ──────────────────────────────────────
+# ── graph service client ──────────────────────────────────────────────────────
 #
-# `duo graph <file>` IS the query surface Pass 101 asks a front-end to project.
+# `idol graph <file>` IS the query surface a front-end asks to project.
 # Per node it emits the kind the COMPILER assigned, the declaration line/col,
 # a content-addressed `stable_id`, and for calls the callee kind, arity,
-# specializability and the Pass 2 knowledge/stage lattice position. None of
+# specializability and the knowledge/stage lattice position. None of
 # that is recoverable by scanning text, and the scanner's answers were wrong
-# where they overlapped: measured on `lib/std/compiler/graph.id`, hover over
+# where they overlapped: measured on `lib/compiler/graph.id`, hover over
 # `_has` (a `func` in the graph) reported "_variable_", and hover over a call
 # site or a local returned nil because the scanner only indexes declarations.
 #
@@ -2280,11 +2280,11 @@ fun ident_span_lo(text, lo, line, col) -> any
   end
   start = col
   while start > 0 and is_ident_char(ln:byte(start))
-    start = start - 1
+    start -= 1
   end
   stop = col
   while stop + 1 < n and is_ident_char(ln:byte(stop + 2))
-    stop = stop + 1
+    stop += 1
   end
   sp = {}
   sp.name = ln:sub(start + 1, stop + 1)
@@ -2296,7 +2296,7 @@ end
 # that name.
 #
 # MEASURED: a `call` node's col is NOT the callee's first byte. On
-# `lib/std/compiler/graph.id:78` (`acc = _add(acc, t.text)`) the graph puts
+# `lib/compiler/graph.id:78` (`acc = _add(acc, t.text)`) the graph puts
 # `_add` at col 27, which is the `(`; on `:61` the method call `byte` lands on
 # the `:` at col 23. So containment can only decide a declaration, and the
 # caller must take the hover RANGE from the cursor's own token, never from
@@ -2323,7 +2323,7 @@ fun graph_node_here(g, name, line, col) -> any
         bestd = dist
       end
     end
-    i = i + 1
+    i += 1
   end
   best
 end
@@ -2340,7 +2340,7 @@ fun graph_def_node(g, name) -> any
         return e
       end
     end
-    i = i + 1
+    i += 1
   end
   nil
 end
@@ -2396,8 +2396,8 @@ fun handle_hover(params) -> any
   span = ident_span_lo(d.text, d.lo, line, col)
 
   if span ~= nil then
-    # Foreign descriptors keep answering from the Pass 5 SIM snapshot: they are
-    # C entities, so the Duo semantic graph has nothing to say about them.
+    # Foreign descriptors keep answering from the SIM snapshot: they are
+    # C entities, so the Idol semantic graph has nothing to say about them.
     foreign = foreign_entity_in_doc(d.text, uri, span.name)
     if foreign ~= nil then
       c = {}
@@ -2495,7 +2495,7 @@ fun handle_references(params) -> any
       j = 1
       while j <= r:len()
         refs[refs:len() + 1] = r[j]
-        j = j + 1
+        j += 1
       end
     end
   end
@@ -2506,7 +2506,7 @@ fun handle_references(params) -> any
     rr.uri = refs[i].uri
     rr.range = mk_range(refs[i].line, refs[i].col, refs[i].endCol)
     out[out:len() + 1] = rr
-    i = i + 1
+    i += 1
   end
   out
 end
@@ -2537,7 +2537,7 @@ fun handle_rename(params) -> any
       j = 1
       while j <= r:len()
         edits[edits:len() + 1] = r[j]
-        j = j + 1
+        j += 1
       end
     end
   end
@@ -2553,7 +2553,7 @@ fun handle_rename(params) -> any
     te.range = mk_range(e.line, e.col, e.endCol)
     te.newText = e.newName
     changes[e.uri][changes[e.uri]:len() + 1] = te
-    i = i + 1
+    i += 1
   end
   we = {}
   we.changes = changes
@@ -2609,7 +2609,7 @@ fun handle_completion(params) -> any
     if completion_matches(s.name, prefix) then
       add_completion(out, seen, s.name, completion_kind_for_symbol(s.kind), kind_label(s.kind), nil, "z_" .. s.name)
     end
-    i = i + 1
+    i += 1
   end
   # add workspace symbols not already in local scope
   for uri2, syms2 in io.lsp.ws.entries
@@ -2625,7 +2625,7 @@ fun handle_completion(params) -> any
           end
           add_completion(out, seen, s2.name, completion_kind_for_symbol(s2.kind), detail, nil, "z_" .. s2.name)
         end
-        j = j + 1
+        j += 1
       end
     end
   end
@@ -2633,7 +2633,7 @@ fun handle_completion(params) -> any
   out
 end
 
-# ── roles: the G-TOTAL projection (Pass 117 §0g) ─────────────────────────────
+# ── roles: the G-TOTAL projection (§0g) ─────────────────────────────
 #
 # CLAUDE.md §0g gates every rendered artifact and front-end on role coverage
 # of 100% of non-whitespace bytes and ZERO unresolved-ambiguity spans, and
@@ -2669,7 +2669,7 @@ roleid(name: any): i64
     if io.lsp.legend[i] == name then
       return i - 1
     end
-    i = i + 1
+    i += 1
   end
   -1
 end
@@ -2709,7 +2709,7 @@ fun push_span(out, line, col, wide, role, card) -> void
   # ROLE, a split within one hue is a CARD. `=` `+=` `==` all sit in the red
   # law space, so they are one role wearing three cards, and the card is what
   # gives the token a statement MORE SPECIFIC than its lexical class — the
-  # SPECIFICITY bar Pass 118 sets and coverage alone does not clear.
+  # SPECIFICITY bar the ruling sets and coverage alone does not clear.
   s.card = card
   out[out:len() + 1] = s
 end
@@ -2727,7 +2727,7 @@ fun scan_line(ln, line, out) -> i64
   while i <= n
     b = ln:byte(i)
     if b == 32 or b == 9 or b == 13 then
-      i = i + 1
+      i += 1
     elseif b == 45 and i < n and ln:byte(i + 1) == 45 then
       push_span(out, line, i - 1, n - i + 1, "comment", "line")
       i = n + 1
@@ -2735,9 +2735,9 @@ fun scan_line(ln, line, out) -> i64
       j = i + 1
       while j <= n and ln:byte(j) ~= b
         if ln:byte(j) == 92 then
-          j = j + 1
+          j += 1
         end
-        j = j + 1
+        j += 1
       end
       if j > n then
         j = n
@@ -2747,7 +2747,7 @@ fun scan_line(ln, line, out) -> i64
     elseif digit(b) then
       j = i
       while j <= n and (digit(ln:byte(j)) or ln:byte(j) == 46)
-        j = j + 1
+        j += 1
       end
       push_span(out, line, i - 1, j - i, "number", "literal")
       i = j
@@ -2755,7 +2755,7 @@ fun scan_line(ln, line, out) -> i64
     elseif namestart(b) then
       j = i
       while j <= n and namebyte(ln:byte(j))
-        j = j + 1
+        j += 1
       end
       w = ln:sub(i, j - 1)
       # §0d RULING: the eighteenth role is `place` — the ordinary binding.
@@ -2777,7 +2777,7 @@ fun scan_line(ln, line, out) -> i64
         # 118 SPECIFICITY finding in its purest form.
         role = "ambiguous"
         card = "callable|descriptor"
-        amb = amb + 1
+        amb += 1
       end
       push_span(out, line, i - 1, j - i, role, card)
       # A descriptor stays in shape position only while `|`/`&` keep joining
@@ -2785,7 +2785,7 @@ fun scan_line(ln, line, out) -> i64
       if role == "descriptor" then
         k = j
         while k <= n and (ln:byte(k) == 32 or ln:byte(k) == 9)
-          k = k + 1
+          k += 1
         end
         shape = k <= n and (ln:byte(k) == 124 or ln:byte(k) == 38)
       end
@@ -2799,7 +2799,7 @@ fun scan_line(ln, line, out) -> i64
       if k <= n and namestart(ln:byte(k)) then
         m = k
         while m <= n and namebyte(ln:byte(m))
-          m = m + 1
+          m += 1
         end
         opens = m <= n and (ln:byte(m) == 40 or ln:byte(m) == 123 or ln:byte(m) == 34)
         if opens then
@@ -2811,7 +2811,7 @@ fun scan_line(ln, line, out) -> i64
           push_span(out, line, k - 1, m - k, "descriptor", "shape")
           p = m
           while p <= n and (ln:byte(p) == 32 or ln:byte(p) == 9)
-            p = p + 1
+            p += 1
           end
           shape = p <= n and (ln:byte(p) == 124 or ln:byte(p) == 38)
         end
@@ -2819,31 +2819,31 @@ fun scan_line(ln, line, out) -> i64
       else
         push_span(out, line, i - 1, 1, "copula")
         shape = true
-        i = i + 1
+        i += 1
       end
     elseif b == 61 then
       if i < n and ln:byte(i + 1) == 61 then
         push_span(out, line, i - 1, 2, "operator", "relation")
-        i = i + 2
+        i += 2
       else
         push_span(out, line, i - 1, 1, "operator", "bind")
-        i = i + 1
+        i += 1
       end
       shape = false
     elseif (b == 43 or b == 45 or b == 42 or b == 47 or b == 37) and i < n and ln:byte(i + 1) == 61 then
       push_span(out, line, i - 1, 2, "operator", "update")
-      i = i + 2
+      i += 2
       shape = false
     elseif b == 64 then
       # R5: postfix `X@rel` needs a left operand, bare `@` is a primary. Both
       # are orange and H-4 splits them no further, so both are `anchor` and
       # the form goes in the why-chain.
       push_span(out, line, i - 1, 1, "anchor", "dyad")
-      i = i + 1
+      i += 1
     elseif b == 46 then
       j = i + 1
       while j <= n and namebyte(ln:byte(j))
-        j = j + 1
+        j += 1
       end
       if j == i + 1 then
         push_span(out, line, i - 1, 1, "operator", "dot")
@@ -2854,7 +2854,7 @@ fun scan_line(ln, line, out) -> i64
         # is a lens, descriptor-expected position is the case, neither is a
         # diagnostic. The parser makes ONE node and resolution is semantic.
         push_span(out, line, i - 1, j - i, "ambiguous", "case|walk")
-        amb = amb + 1
+        amb += 1
       end
       i = j
     elseif b == 124 then
@@ -2864,9 +2864,9 @@ fun scan_line(ln, line, out) -> i64
         # roles.md §5.2: outside shape position `pipe` and `bor` are separated
         # by OPERAND SPACE, which is a graph question. Two candidates.
         push_span(out, line, i - 1, 1, "ambiguous", "union|pipe")
-        amb = amb + 1
+        amb += 1
       end
-      i = i + 1
+      i += 1
     elseif b == 40 then
       app = i > 1 and operandend(ln:byte(i - 1))
       stack[stack:len() + 1] = app
@@ -2879,7 +2879,7 @@ fun scan_line(ln, line, out) -> i64
       else
         push_span(out, line, i - 1, 1, "layout", "group")
       end
-      i = i + 1
+      i += 1
     elseif b == 41 then
       app = false
       if stack:len() > 0 then
@@ -2891,20 +2891,20 @@ fun scan_line(ln, line, out) -> i64
       else
         push_span(out, line, i - 1, 1, "layout", "group")
       end
-      i = i + 1
+      i += 1
     elseif b == 123 or b == 125 then
       push_span(out, line, i - 1, 1, "layout", "brace")
-      i = i + 1
+      i += 1
     elseif b == 91 or b == 93 then
       push_span(out, line, i - 1, 1, "layout", "bracket")
-      i = i + 1
+      i += 1
     elseif b == 44 then
       push_span(out, line, i - 1, 1, "layout", "stratify")
-      i = i + 1
+      i += 1
       shape = false
     else
       push_span(out, line, i - 1, 1, "operator", "infix")
-      i = i + 1
+      i += 1
     end
   end
   amb
@@ -2929,7 +2929,7 @@ fun scan(text) -> any
     if i > n or b == 10 then
       lntext = text:sub(start, i - 1)
       was = out:len()
-      amb = amb + scan_line(lntext, line, out)
+      amb += scan_line(lntext, line, out)
       # BYTE TOTALITY. A span's WIDTH is its extent on the line; the bytes it
       # can be credited for are the NON-WHITESPACE ones inside it. A comment
       # span covers `-- copula`, nine bytes wide and eight of them solid, and
@@ -2944,19 +2944,19 @@ fun scan(text) -> any
         while q <= sp.col + sp.wide
           sb = lntext:byte(q)
           if sb ~= nil and sb ~= 32 and sb ~= 9 and sb ~= 13 then
-            solid = solid + 1
+            solid += 1
           end
-          q = q + 1
+          q += 1
         end
         sp.solid = solid
-        k = k + 1
+        k += 1
       end
-      line = line + 1
+      line += 1
       start = i + 1
     elseif b ~= 32 and b ~= 9 and b ~= 13 then
-      bytes = bytes + 1
+      bytes += 1
     end
-    i = i + 1
+    i += 1
   end
   hits = 0
   told = 0
@@ -2965,25 +2965,25 @@ fun scan(text) -> any
   j = 1
   while j <= out:len()
     s = out[j]
-    seen = seen + s.solid
+    seen += s.solid
     rid = roleid(s.role)
     if rid >= 0 and rid < io.lsp.closed then
-      hits = hits + s.solid
+      hits += s.solid
       # PROVENANCE, the third G-TOTAL number (§0g): a role counts only when it
       # carries a rule citation. `cite` has no default arm, so a role with no
       # rule behind it answers "" and is counted as UNCITED rather than
       # silently credited.
       if cite(s.role) ~= "" then
-        told = told + s.solid
+        told += s.solid
       end
     end
     # A card that cannot decide between two refinements of one role is the
-    # Pass 118 SPECIFICITY finding. It is NOT role ambiguity — the hue is
+    # SPECIFICITY finding. It is NOT role ambiguity — the hue is
     # settled — so it is counted on its own line and never folded in.
     if contains_char(s.card, "|") then
-      vague = vague + 1
+      vague += 1
     end
-    j = j + 1
+    j += 1
   end
   r = {}
   r.spans = out
@@ -3039,7 +3039,7 @@ fun semantic_tokens(text) -> any
       prev_line = s.line
       prev_col = s.col
     end
-    i = i + 1
+    i += 1
   end
   r = {}
   r.data = data
@@ -3064,7 +3064,7 @@ roleat(text: any, line: any, col: any): any
     if s.line == line and col >= s.col and col < s.col + s.wide then
       return s
     end
-    i = i + 1
+    i += 1
   end
   nil
 end
@@ -3088,7 +3088,7 @@ cite(role: any): any
     return "grammar.md R5 — the @ DYAD; no prefix-@ production exists, so the grammar cannot express a directive"
   end
   if role == "walk" then
-    return "pass100 §4 — data access `a.b`, walk from the left operand; H-4 green"
+    return "§4 — data access `a.b`, walk from the left operand; H-4 green"
   end
   if role == "keyword" then
     return "grammar.md §3 closed terminal set; H-4 red law space"
@@ -3156,7 +3156,7 @@ fun handle_semantic_tokens(params) -> any
   semantic_tokens(d.text)
 end
 
-# ── inlay hints: the CDR-inferred descriptor (Pass 117 §0g, B-13) ────────────
+# ── inlay hints: the CDR-inferred descriptor (§0g, B-13) ────────────
 #
 # CDR says a DECLARED contract directs realization and a restated conversion
 # erases. The hint is the other half: what the compiler inferred where the
@@ -3165,7 +3165,7 @@ end
 # the graph client uses (§0f: one graph service, N front ends).
 #
 # sim-v0 answers in C spellings because that is its published vocabulary. The
-# map back to duon descriptors is exhaustive over what sim emits today and
+# map back to idol descriptors is exhaustive over what sim emits today and
 # DECLINES on anything else — an unmapped spelling produces no hint at all,
 # because a hint that guesses a descriptor is worse than no hint.
 descriptor(c: any): any
@@ -3261,10 +3261,10 @@ fun handle_inlay_hint(params) -> any
               j = nl
             end
           end
-          j = j + 1
+          j += 1
         end
       end
-      i = i + 1
+      i += 1
     end
   end
   # Module bindings. `duo sim` lifts no entity for `total = 7` (measured — a
@@ -3294,14 +3294,14 @@ fun handle_inlay_hint(params) -> any
           "B-13 CDR — no contract declared; the descriptor is the literal's own (grammar.md §1)")
       end
     end
-    k = k + 1
+    k += 1
   end
   out
 end
 
-# ── code lenses: lenses COUNT WITNESSES (Pass 117 §0g) ───────────────────────
+# ── code lenses: lenses COUNT WITNESSES (§0g) ───────────────────────
 #
-# Stated so the number is not read as more than it is: Pass 104's admission
+# Stated so the number is not read as more than it is: the admission
 # witnesses have NO SURFACE in this tree — `witness` is role 17 in
 # docs/spec/roles.md §2 with the decider column empty, and `why` is undeclared
 # (gap[064]). So what these lenses count is the evidence that DOES exist and
@@ -3373,7 +3373,7 @@ fun handle_code_lens(params) -> any
       ll.data = dd
       out[out:len() + 1] = ll
     end
-    i = i + 1
+    i += 1
   end
   out
 end

@@ -1,25 +1,31 @@
-#!/usr/bin/env duo
--- duo-mcp/duo_bench.id — MCP server: benchmarks, build gates, perf audit, coordination.
--- Pure Duo. Run from the Duo repo root: duo run tools/mcp/duo_bench.id
-
--- `std.script` is deliberately absent: it is the denied activity junk drawer
--- (Pass 100 §15). Environment reads go through `std.os.getenv`; process work
--- routes through `duo_shared`, which owns the build lock.
+-- tools/mcp/bench.id  -  MCP server: benchmarks, build gates, perf audit, coordination.
+-- Run: idol run tools/mcp/bench.id
+-- Bootstrap Lua/Duo faces remain until MCP migrates to Idol. Run from repo root:
+--   idol run tools/mcp/bench.id
 --
--- DUO_ROOT is resolved ONCE, at file scope, as a VALUE — not as a helper
+-- Each tool registers as idol_* only.
+
+-- `std.script` is deliberately absent: it is the denied activity junk drawer.
+-- Environment reads go through `std.os.getenv`; process work
+-- routes through `tools.mcp.shared`, which owns the build lock.
+--
+-- DUO_ROOT is resolved ONCE, at file scope, as a VALUE  -  not as a helper
 -- function. A named file-scope function called from inside a tool handler
--- lowers to `cl->up0()`, an upvalue call Duo has no capture machinery for
+-- lowers to `cl->up0()`, an upvalue call Idol has no capture machinery for
 -- ("called object type 'lua_Value' is not a function"). Module tables and
 -- plain values reached from a handler are fine; a call is not.
 --
 -- `std.os.getenv` answers "" and NOT nil for an unset name, so `getenv(x) or
 -- default` hands back "" and every path built from it resolves against the
 -- filesystem root. The `== ""` test is the whole point of this binding.
-root = os.env["DUO_ROOT"]
-if root == nil or root == ""
-    root = os.env["PWD"]
+root = os.env["IDOL_ROOT"] or ""
+if root:len() == 0
+    root = os.env["DUO_ROOT"] or ""
 end
-if root == nil or root == ""
+if root:len() == 0
+    root = os.env["PWD"] or ""
+end
+if root:len() == 0
     root = "."
 end
 
@@ -30,55 +36,74 @@ end
 -- `duo_make_closure_29(sx)` naming a C identifier that was never declared and
 -- the whole server fails to build with "use of undeclared identifier 'sx'".
 -- `duo check` reports no errors on that file. The server was dead and looked
--- healthy — which is how both MCP servers stayed dead with nothing noticing.
+-- healthy  -  which is how both MCP servers stayed dead with nothing noticing.
 -- See `zig build mcp-gate`.
 --
 -- Sibling modules are spelled from the PROJECT root (`tools.mcp.x`), never
 -- bare (`x`). `req` is resolved at COMPILE time against the directory tree
--- above the source file — the compiler walks up from the .id file looking
--- for a sibling `src/` — so a bare `req "duo_shared"` only resolved when the
+-- above the source file  -  the compiler walks up from the .id file looking
+-- for a sibling `src/`  -  so a bare `req "duo_shared"` only resolved when the
 -- process happened to be started with cwd = tools/mcp, and died with
--- `module not found: duo_shared` from anywhere else. An MCP client starts its
+-- `module not found: shared` from anywhere else. An MCP client starts its
 -- servers from wherever it likes. The rooted spelling is cwd-independent.
 --
--- STD IS THE PRELUDE GRAPH (Pass 118 §0h): no module tree, no import. std
--- descriptors are referenced DIRECTLY — `std.mcp.register_tool`,
--- `std.fs.exists`, `std.json.encode`, `std.os.getenv` — which was verified to
+-- STD IS THE PRELUDE GRAPH: no module tree, no import. std
+-- descriptors are referenced DIRECTLY  -  `dual_tool`,
+-- `std.fs.exists`, `std.json.encode`, `std.os.getenv`  -  which was verified to
 -- work from inside a tool handler before this file stopped importing them.
 -- `req "std.x"` is migration debt against that rule; both `req`s left here
 -- name PROJECT modules, which are not std and do still need one.
-shared = req "tools.mcp.shared"
-eval = req "tools.mcp.eval"
-vector = req "lib.std.vector"
+shared = req("tools.mcp.shared")
+eval = req("tools.mcp.eval")
+vector = req("lib.std.vector")
 
-fun audit_tally(results: any): any
-    passed = 0
-    failed = 0
-    for _, r in results
-        if r.pass
-            passed += 1
-        end
-        if not r.pass
-            failed += 1
-        end
-    end
-    { passed = passed, failed = failed }
+tool: void = (name: str, schema: any, handler: any)
+    std.mcp.register_tool(string.gsub(name, "^duo_", "idol_"), schema, handler)
 end
 
-fun audit_smokes(): str
+audit_tally: any = (results: any)
+    wins = 0
+    losses = 0
+    for _, r in results
+        if r.pass
+            wins += 1
+        end
+        if !r.pass
+            losses += 1
+        end
+    end
+    { passed = wins, failed = losses }
+end
+
+audit_smokes: str = ()
     paths = {
-        "examples/meta_template_showcase.id",
-        "examples/meta_generate_showcase.id",
-        "examples/meta_scheme_showcase.id",
-        "examples/meta_grammar_showcase.id",
-        "examples/meta_weave_showcase.id",
-        "examples/meta_power_permute_showcase.id",
-        "examples/meta_choose_showcase.id",
+        "examples/json/iteration.id",
+        "examples/boring/anagram.id",
+        "examples/boring/fizzbuzz.id",
+        "examples/boring/fib.id",
+        "examples/boring/primes.id",
+        "examples/boring/sort/quick.id",
+        "examples/boring/search/binary.id",
+        "examples/boring/mat/mul.id",
+        "examples/layout/guard.id",
+        "examples/layout/loop/body.id",
+        "examples/demand/result.id",
+        "examples/demand/swap.id",
+        "examples/demand/tail.id",
+        "examples/pack/consume.id",
+        "examples/projection/descriptor.id",
+        "examples/read/stream.id",
+        "examples/native/record.id",
+        "examples/hash/agreement.id",
+        "examples/control/default.id",
+        "examples/conversion/level.id",
+        "examples/table/str/split.id",
+        "examples/table/float/render.id",
     }
     results = {}
     i = 1
     while i <= paths:len()
-        table.insert(results, shared.audit_native_boxing(paths[i]))
+        results:push(shared.audit_native_boxing(paths[i]))
         i += 1
     end
     tallies = audit_tally(results)
@@ -86,19 +111,19 @@ fun audit_smokes(): str
     std.json.encode({ total = total, passed = tallies.passed, failed = tallies.failed, results = results })
 end
 
-fun embed_symbols_tool(args: any): str
-    rd = root
+embed_symbols_tool: str = (args: any)
+    rd = shared.root
     ipath = "{rd}/docs/symbol_index.json"
     k = args.top_k or 10
     sc = args.scope or "all"
-    if args.force_rebuild or not std.fs.exists(ipath)
-        r = shared.capture("cd {rd} && {shared.idbin} run --backend=c scripts/build_symbol_index.id -- {ipath}")
-        if r.status ~= 0
-            return std.json.encode({ error = "symbol index build failed", status = r.status })
-        end
+    if args.force_rebuild
+        return std.json.encode({
+            error = "symbol index rebuild blocked",
+            reason = "scripts/build_symbol_index.id absent  -  IMPLEMENTATION-BLOCKED",
+        })
     end
     raw = std.fs.read_file(ipath)
-    if not raw
+    if !raw
         return std.json.encode({ error = "symbol index not found at {ipath}" })
     end
     idx = std.json.decode(raw)
@@ -113,22 +138,22 @@ fun embed_symbols_tool(args: any): str
     for _, sym in idx.symbols or {}
         f = sym.file or ""
         if sc == "all"
-            table.insert(records, sym)
+            records:push(sym)
         elseif sc == "compiler" and string.find(f, "src", 1, true) == 1
-            table.insert(records, sym)
+            records:push(sym)
         elseif sc == "library" and string.find(f, "lib/std", 1, true) == 1
-            table.insert(records, sym)
+            records:push(sym)
         end
     end
     results = vector.rank(qvec, records, k)
     note = nil
     if decoded < indexed
-        note = "partial decode: {decoded}/{indexed} symbols visible — runtime tonumber heap-corruption bug (see findings 2026-08-02T23:10) reduces recall until codegen.zig fix lands"
+        note = "partial decode: {decoded}/{indexed} symbols visible  -  runtime tonumber heap-corruption bug (see findings 2026-08-02T23:10) reduces recall until codegen.zig fix lands"
     end
     std.json.encode({ results = results, decoded = decoded, indexed = indexed, note = note, query = args.query, dim = dim })
 end
 
-std.mcp.register_tool("duo_bench_run", {
+tool("duo_bench_run", {
     description = "Run a benchmark suite under build lock",
     type = "object",
     properties = {
@@ -143,7 +168,7 @@ std.mcp.register_tool("duo_bench_run", {
     std.json.encode(shared.bench_run(args.suite, args.timeout or 900))
 end)
 
-std.mcp.register_tool("duo_build_run", {
+tool("duo_build_run", {
     description = "Run a build/test gate",
     type = "object",
     properties = {
@@ -155,7 +180,7 @@ std.mcp.register_tool("duo_build_run", {
     std.json.encode(shared.build_run(args.gate, args.timeout or 600))
 end)
 
-std.mcp.register_tool("duo_agent_smoke", {
+tool("duo_agent_smoke", {
     description = "Run tier-0 agent-smoke gate under lock",
     type = "object",
     properties = {
@@ -165,7 +190,7 @@ std.mcp.register_tool("duo_agent_smoke", {
     std.json.encode(shared.agent_smoke(args.timeout or 600))
 end)
 
-std.mcp.register_tool("duo_coordination_read", {
+tool("duo_coordination_read", {
     description = "Read the shared agent coordination buffer",
     type = "object",
     properties = {},
@@ -173,7 +198,7 @@ std.mcp.register_tool("duo_coordination_read", {
     std.json.encode(shared.document(shared.coordpath, "coordination-buffer", 0))
 end)
 
-std.mcp.register_tool("duo_coordination_update", {
+tool("duo_coordination_update", {
     description = "Update the coordination buffer (claim/release/note)",
     type = "object",
     properties = {
@@ -187,7 +212,7 @@ std.mcp.register_tool("duo_coordination_update", {
     std.json.encode(shared.coordination_update(args.action, args.agent_id, args.detail, args.files or ""))
 end)
 
-std.mcp.register_tool("duo_session_log", {
+tool("duo_session_log", {
     description = "Append a structured session log entry",
     type = "object",
     properties = {
@@ -200,7 +225,7 @@ std.mcp.register_tool("duo_session_log", {
     std.json.encode(shared.session_log(args.agent_id, args.summary, args.detail or ""))
 end)
 
-std.mcp.register_tool("duo_repo_tooling", {
+tool("duo_repo_tooling", {
     description = "Run a Duo repo-tooling script",
     type = "object",
     properties = {
@@ -212,7 +237,7 @@ std.mcp.register_tool("duo_repo_tooling", {
     std.json.encode(shared.repo_tooling(args.script_name, args.args or ""))
 end)
 
-std.mcp.register_tool("duo_perf_ledger", {
+tool("duo_perf_ledger", {
     description = "Read the performance ledger summary",
     type = "object",
     properties = {},
@@ -220,7 +245,7 @@ std.mcp.register_tool("duo_perf_ledger", {
     std.json.encode(shared.document(shared.perfpath, "perf-ledger", 10000))
 end)
 
-std.mcp.register_tool("duo_agent_canonical_index", {
+tool("duo_agent_canonical_index", {
     description = "Read the canonical agent index router",
     type = "object",
     properties = {},
@@ -228,7 +253,7 @@ std.mcp.register_tool("duo_agent_canonical_index", {
     std.json.encode(shared.document(shared.canonpath, "canonical-index", 0))
 end)
 
-std.mcp.register_tool("duo_audit_native_boxing", {
+tool("duo_audit_native_boxing", {
     description = "Dump C for a .id file and flag lua_Value boxing",
     type = "object",
     properties = {
@@ -239,7 +264,7 @@ std.mcp.register_tool("duo_audit_native_boxing", {
     std.json.encode(shared.audit_native_boxing(args.file_path))
 end)
 
-std.mcp.register_tool("duo_audit_metaprogramming_smokes", {
+tool("duo_audit_metaprogramming_smokes", {
     description = "Batch native-boxing audit on generative showcases",
     type = "object",
     properties = {},
@@ -247,7 +272,7 @@ std.mcp.register_tool("duo_audit_metaprogramming_smokes", {
     audit_smokes()
 end)
 
-std.mcp.register_tool("duo_agent_gaps_read", {
+tool("duo_agent_gaps_read", {
     description = "Read open P0 gaps from coordination buffer",
     type = "object",
     properties = {},
@@ -255,7 +280,7 @@ std.mcp.register_tool("duo_agent_gaps_read", {
     std.json.encode({ open_p0 = shared.open_p0_gaps() })
 end)
 
-std.mcp.register_tool("duo_agent_gaps_update", {
+tool("duo_agent_gaps_update", {
     description = "Open or log updates for the canonical cross-agent gap buffer",
     type = "object",
     properties = {
@@ -282,7 +307,7 @@ std.mcp.register_tool("duo_agent_gaps_update", {
     )
 end)
 
-std.mcp.register_tool("duo_agent_session_start", {
+tool("duo_agent_session_start", {
     description = "Session bootstrap: dev control plane + INFER-ONE + seam audit + coordination + gaps",
     type = "object",
     properties = {
@@ -306,13 +331,16 @@ std.mcp.register_tool("duo_agent_session_start", {
         coordination_path = shared.coordpath,
         canonical_index_path = shared.canonpath,
         open_p0_count = open_count,
+        open_p0_gaps = p0,
+        open_p0_census_source = "gaps/GAP-*.md",
+        open_p0_census_complete = open_count > 0,
         next_steps = {},
         coordination_excerpt = string.sub(coord, 1, 2000),
         canonical_excerpt = string.sub(canon, 1, 2000),
     })
 end)
 
-std.mcp.register_tool("duo_dev_claim_acquire", {
+tool("duo_dev_claim_acquire", {
     description = "Claim a FILE PATH exclusively. Returns granted=false with held_by when another live claim covers or is covered by the path. Partition work by file, not by feature.",
     type = "object",
     properties = {
@@ -326,7 +354,7 @@ std.mcp.register_tool("duo_dev_claim_acquire", {
     shared.dev_claim_acquire(args.owner, args.file, args.client or args.owner, args.work_item or "")
 end)
 
-std.mcp.register_tool("duo_dev_claim_release", {
+tool("duo_dev_claim_release", {
     description = "Release a file-path claim. Only the holder may release it.",
     type = "object",
     properties = {
@@ -338,7 +366,7 @@ std.mcp.register_tool("duo_dev_claim_release", {
     shared.dev_claim_release(args.owner, args.file)
 end)
 
-std.mcp.register_tool("duo_dev_claim_files", {
+tool("duo_dev_claim_files", {
     description = "List every live file-path claim with its owner and age",
     type = "object",
     properties = {},
@@ -346,16 +374,16 @@ std.mcp.register_tool("duo_dev_claim_files", {
     shared.dev_claim_files()
 end)
 
-std.mcp.register_tool("duo_dev_coordination_export", {
-    description = "Export machine-readable active claims (Pass 13 P13-WS18)",
+tool("duo_dev_coordination_export", {
+    description = "Export machine-readable active claims",
     type = "object",
     properties = {},
 }, fun(_args)
     shared.dev_coordination_export()
 end)
 
-std.mcp.register_tool("duo_semantic_transaction_preview", {
-    description = "Bounded semantic transaction preview (Pass 12 P12-WS8)",
+tool("duo_semantic_transaction_preview", {
+    description = "Bounded semantic transaction preview",
     type = "object",
     properties = {
         classifier = { type = "string", description = "e.g. classifier.sorted_lookup" },
@@ -364,8 +392,8 @@ std.mcp.register_tool("duo_semantic_transaction_preview", {
     shared.semantic_transaction_preview(args.classifier or "classifier.sorted_lookup")
 end)
 
-std.mcp.register_tool("duo_semantic_transaction_validate", {
-    description = "Validate bounded semantic transaction (Pass 12 P12-WS8)",
+tool("duo_semantic_transaction_validate", {
+    description = "Validate bounded semantic transaction",
     type = "object",
     properties = {
         classifier = { type = "string" },
@@ -374,16 +402,16 @@ std.mcp.register_tool("duo_semantic_transaction_validate", {
     shared.semantic_transaction_validate(args.classifier or "classifier.sorted_lookup")
 end)
 
-std.mcp.register_tool("duo_semantic_claims", {
-    description = "Release capability registry + effective claims (Pass 12 P12-WS10)",
+tool("duo_semantic_claims", {
+    description = "Release capability registry + effective claims",
     type = "object",
     properties = {},
 }, fun(_args)
     shared.semantic_claims()
 end)
 
-std.mcp.register_tool("duo_dev_validate_run", {
-    description = "Run impact-based validation plan (Pass 13 P13-WS7)",
+tool("duo_dev_validate_run", {
+    description = "Run impact-based validation plan",
     type = "object",
     properties = {
         file = { type = "string" },
@@ -394,7 +422,7 @@ std.mcp.register_tool("duo_dev_validate_run", {
     shared.dev_validate_run(args.file or "", args.work_item or "", args.execute == true)
 end)
 
-std.mcp.register_tool("duo_bench_regressions", {
+tool("duo_bench_regressions", {
     description = "Run the release benchmark aggregate and return its process-bound status and raw artifact.",
     type = "object",
     properties = {
@@ -408,7 +436,7 @@ std.mcp.register_tool("duo_bench_regressions", {
     std.json.encode(shared.prove(bt))
 end)
 
-std.mcp.register_tool("duo_perf_gaps", {
+tool("duo_perf_gaps", {
     description = "List open performance / native-lowering / codegen gaps from the coordination buffer, plus a performance.md excerpt.",
     type = "object",
     properties = {},
@@ -416,7 +444,7 @@ std.mcp.register_tool("duo_perf_gaps", {
     std.json.encode(shared.perf_gaps())
 end)
 
-std.mcp.register_tool("duo_file_finding", {
+tool("duo_file_finding", {
     description = "File a finding (bug/exponential_opportunity/ergonomic_gap/regression) to the coordination buffer",
     type = "object",
     properties = {
@@ -449,7 +477,7 @@ std.mcp.register_tool("duo_file_finding", {
     std.json.encode({ filed = true, kind = args.kind, title = args.title, priority = args.priority })
 end)
 
-std.mcp.register_tool("duo_exponential_eval", {
+tool("duo_exponential_eval", {
     description = "Exponential evaluator: input Duo source -> metaprogramming-enhanced, minimized Duo intermediary using @comp.* combinators (collapses type-polymorphic fn families into @comp.generate, equality boilerplate into @derive, dispatch chains into tables), plus a native-boxing (lua_Value) audit and LOC metrics. Returns JSON.",
     type = "object",
     properties = {
@@ -464,7 +492,7 @@ std.mcp.register_tool("duo_exponential_eval", {
     std.json.encode({ error = "duo_eval.evaluate returned no result", fallback = true, goal = args.goal or "" })
 end)
 
-std.mcp.register_tool("duo_grammar_spec_read", {
+tool("duo_grammar_spec_read", {
     description = "Read the canonical Duo grammar spec",
     type = "object",
     properties = {},
@@ -472,7 +500,7 @@ std.mcp.register_tool("duo_grammar_spec_read", {
     std.json.encode(shared.document("{shared.root}/docs/GRAMMAR_SPEC.md", "grammar-spec", 0))
 end)
 
-std.mcp.register_tool("duo_grammar_spec_update", {
+tool("duo_grammar_spec_update", {
     description = "Append a grammar rule to the canonical Duo grammar spec",
     type = "object",
     properties = {
@@ -491,7 +519,7 @@ std.mcp.register_tool("duo_grammar_spec_update", {
     std.json.encode({ appended = true, rule_id = args.rule_id, status = args.status })
 end)
 
-std.mcp.register_tool("duo_directive_hierarchy_read", {
+tool("duo_directive_hierarchy_read", {
     description = "Read the @comp.* directive hierarchy documentation",
     type = "object",
     properties = {},
@@ -499,7 +527,7 @@ std.mcp.register_tool("duo_directive_hierarchy_read", {
     std.json.encode(shared.document("{shared.root}/docs/DIRECTIVE_HIERARCHY.md", "directive-hierarchy", 0))
 end)
 
-std.mcp.register_tool("duo_embed_symbols", {
+tool("duo_embed_symbols", {
     description = "Symbol-level VECTOR embedding search over compiler and library sources (vector: hashed bag-of-n-grams + cosine similarity, NOT keyword matching). Builds docs/symbol_index.json on first call or when force_rebuild=true.",
     type = "object",
     properties = {
@@ -515,7 +543,7 @@ end)
 
 
 
-std.mcp.register_tool("duo_cross_lang_meta", {
+tool("duo_cross_lang_meta", {
     description = "Guide for injecting Duo @comp.* exponential metaprogramming into any host language project.",
     type = "object",
     properties = {
@@ -530,17 +558,17 @@ std.mcp.register_tool("duo_cross_lang_meta", {
     std.json.encode({ guide = "{hdr}{body}", host_lang = lang, goal = goal })
 end)
 
-std.mcp.register_tool("duo_semantic_snapshot", {
-    description = "Export SIM v0 semantic snapshot JSON for a .id file (Pass 5)",
+tool("duo_semantic_snapshot", {
+    description = "Export SIM v0 semantic snapshot JSON for a .id file",
     type = "object",
     properties = {
         file_path = { type = "string" },
     },
     required = { "file_path" },
 }, fun(args)
-    -- `sx` was NEVER BOUND in this handler — the only two `sx = req` sites in
+    -- `sx` was NEVER BOUND in this handler  -  the only two `sx = req` sites in
     -- the file were inside two OTHER handlers. That is what lowered to
-    -- `duo_make_closure_29(sx)` and made the whole server unbuildable.
+    -- `make_closure_29(sx)` and made the whole server unbuildable.
     output = shared.semantic_snapshot_raw(args.file_path or "")
     if output == nil or string.len(output) == 0 then return "{\"error\":\"empty output\"}" end
     i = string.find(output, "{", 1, true)
@@ -554,8 +582,8 @@ std.mcp.register_tool("duo_semantic_snapshot", {
     "{\"error\":\"no JSON in output\"}"
 end)
 
-std.mcp.register_tool("duo_foreign_import_preview", {
-    description = "Preview C header import as SIM v0 entities (Pass 5)",
+tool("duo_foreign_import_preview", {
+    description = "Preview C header import as SIM v0 entities",
     type = "object",
     properties = {
         header_path = { type = "string" },
@@ -571,16 +599,16 @@ std.mcp.register_tool("duo_foreign_import_preview", {
     std.json.encode(shared.foreign_import_preview(args.header_path, src_dir))
 end)
 
-std.mcp.register_tool("duo_pass5_catalog", {
-    description = "Pass 5 workstream and milestone status from duo catalog",
+tool("duo_pass5_catalog", {
+    description = "Workstream and milestone status from the interchange catalog",
     type = "object",
     properties = {},
 }, fun(_args)
     std.json.encode(shared.pass5_catalog())
 end)
 
-std.mcp.register_tool("duo_pass6_catalog", {
-    description = "Pass 6 architectural reconciliation catalog",
+tool("duo_pass6_catalog", {
+    description = "Architectural reconciliation catalog",
     type = "object",
     properties = {},
 }, fun(_args)

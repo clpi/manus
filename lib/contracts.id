@@ -55,7 +55,7 @@ end
 global contract_stack = {}
 global contract_count = 0
 pre(condition: str, message: str)
-  contract_count = contract_count + 1
+  contract_count += 1
   contract_stack[contract_count] = {
     kind = "pre",
     condition = condition,
@@ -63,7 +63,7 @@ pre(condition: str, message: str)
   }
 end
 post(condition: str, message: str)
-  contract_count = contract_count + 1
+  contract_count += 1
   contract_stack[contract_count] = {
     kind = "post",
     condition = condition,
@@ -71,7 +71,7 @@ post(condition: str, message: str)
   }
 end
 invariant(condition: str, message: str)
-  contract_count = contract_count + 1
+  contract_count += 1
   contract_stack[contract_count] = {
     kind = "invariant",
     condition = condition,
@@ -483,9 +483,9 @@ concept_coverage(required_members: any, provided_members: any): any
     required = required_members[i]
     provided = find_member(provided_members, required)
     if provided
-      matched_count = matched_count + 1
+      matched_count += 1
     else
-      missing_count = missing_count + 1
+      missing_count += 1
       missing_parts[missing_parts:len() + 1] = member_signature(required)
     end
   end

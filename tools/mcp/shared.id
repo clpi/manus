@@ -1,38 +1,45 @@
 m = {}
 
-clock = req "lib.clock"
-process = req "lib.process"
-fs = req "lib.std.fs"
-json = req "lib.std.json"
+clock = req("lib.clock")
+process = req("lib.process")
+fs = req("lib.std.fs")
+json = req("lib.std.json")
 
-# tools/mcp/shared.id — shared MCP implementations.
+# Projection: process.run exposed as run relation (WORLD/AUTHORITY compliance)
+run = process.run
+capture = process.capture
 
-# Host env, fs, process, and clock homes — no @c.* and no universal namespace.
-root = os.env["DUO_ROOT"]
-if root == nil or root == ""
-    root = os.env["PWD"]
+# tools/mcp/shared.id  -  shared MCP implementations.
+
+# Host env, fs, process, and clock homes  -  no @c.* and no universal namespace.
+root = os.env["IDOL_ROOT"] or ""
+if root:len() == 0
+    root = os.env["DUO_ROOT"] or ""
 end
-if root == nil or root == ""
+if root:len() == 0
+    root = os.env["PWD"] or ""
+end
+if root:len() == 0
     root = "."
 end
-# Session state, NOT repository truth. These tools APPEND — five write sites
-# below — which is how .agents/AGENT_COORDINATION.md grew to 4619 tracked
+# Session state, NOT repository truth. These tools APPEND  -  five write sites
+# below  -  which is how .agents/AGENT_COORDINATION.md grew to 4619 tracked
 # lines and became a control plane. .agents/session/ is gitignored; the
 # durable document it replaced stays hand-maintained and small.
 coordpath = "{root}/.agents/session/coordination.md"
 perfpath = "{root}/docs/performance.md"
 canonpath = "{root}/.agents/AGENT_CANONICAL.md"
-idbin = os.env["IDOL_BIN"]
-if idbin == nil or idbin == ""
-    idbin = os.env["DUO_BIN"]
+idbin = os.env["IDOL_BIN"] or ""
+if idbin:len() == 0
+    idbin = os.env["DUO_BIN"] or ""
 end
-if idbin == nil or idbin == ""
+if idbin:len() == 0
     idbin = "{root}/zig-out/bin/idol"
 end
 duobin = idbin
 
 # The build lock lives here so no shell-wrapper namespace is needed.
-lockprefix = "{duobin} run --backend=c {root}/scripts/duo_lock.id -- "
+lockprefix = "{duobin} run {root}/scripts/idol_lock.id -- "
 
 # Section heading that marks the open-gaps/findings table in the
 # coordination buffer. Kept as a constant so callers that search for it
@@ -44,7 +51,7 @@ finding_seq = 0
 
 # === Coordination ===
 
-fun coordination_read(): str
+coordination_read: str = ()
     if fs:exists(coordpath)
         fs:read_file(coordpath)
     else
@@ -52,9 +59,9 @@ fun coordination_read(): str
     end
 end
 
-fun coordination_update(action: str, agent_id: str, detail: str, files: str)
+coordination_update = (action: str, agent_id: str, detail: str, files: str)
     timestamp = clock.coord()
-    entry = "\n### [{timestamp}] {agent_id} — {action:upper()}\n"
+    entry = "\n### [{timestamp}] {agent_id}  -  {action:upper()}\n"
     entry = "{entry}Detail: {detail}\n"
     if files ~= ""
         entry = "{entry}Files: {files}\n"
@@ -66,16 +73,20 @@ fun coordination_update(action: str, agent_id: str, detail: str, files: str)
     prior = fs:read_file(coordpath)
     fs:write_file(coordpath, "{prior}{entry}")
     # Structured, not "ok: …". A prose acknowledgement is an H-8 finding and
-    -- it also told the caller nothing it could act on — not which buffer was
+    -- it also told the caller nothing it could act on  -  not which buffer was
     -- written, not what status the entry landed with.
     { kind = "coordination.update", action = action, agent = agent_id,
              status = status, path = coordpath, files = files }
 end
 
-fun session_log(agent_id: str, summary: str, detail: str)
+session_log = (agent_id: str, summary: str, detail: str)
     timestamp = clock.utc()
     entry = "\n| {timestamp} | {agent_id} | {summary} |"
-    if detail ~= "" then entry = "{entry} {detail} |" else entry = "{entry} |" end
+    if detail ~= ""
+        entry = "{entry} {detail} |"
+    else
+        entry = "{entry} |"
+    end
     content = fs:read_file(coordpath)
     marker = "## Session log (newest first)"
     pos = string.find(content, marker)
@@ -95,7 +106,7 @@ fun session_log(agent_id: str, summary: str, detail: str)
     { kind = "session.log", agent = agent_id, summary = summary, path = coordpath }
 end
 
-fun open_p0_gaps(): any
+open_p0_gaps: any = ()
     content = coordination_read()
     gaps = {}
     for line in string.gmatch(content, "| G-[^|]+ |[^|]+ | P0 |[^|]+ |[^|]+ |")
@@ -104,40 +115,40 @@ fun open_p0_gaps(): any
     gaps
 end
 
-fun exact_capture(cmd: str): any
+exact_capture: any = (cmd: str)
     full = cmd
-    out = process.capture("{full} 2>&1; echo \"duoexit:$?\"")
+    out = capture("{full} 2>&1; echo \"duoexit:$?\"")
     mark = "duoexit:"
-    status = -1
+    code = -1
     clean = out
     for i = 1, out:len() do
         if string.sub(out, i, i + mark:len() - 1) == mark then
             rest = string.sub(out, i + mark:len(), out:len())
-            status = tonumber(string.gsub(rest, "%s+", "")) or -1
+            code = tonumber(string.gsub(rest, "%s+", "")) or -1
             clean = string.sub(out, 1, i - 1)
             break
         end
     end
-    { status = status, passed = status == 0, output = clean }
+    { outcome = process.verdict(code), status = code, output = clean }
 end
 
 # === Build gates ===
 
-fun agent_smoke(timeout: int): any
+agent_smoke: any = (timeout: int)
     smoke_cmd = "{duobin} run scripts/agent_smoke.id"
     full = smoke_cmd
     if os.env["DUO_LOCK_HELD"] ~= "1"
         full = "{lockprefix}{smoke_cmd}"
     end
     cap = exact_capture(full)
-    revision = string.gsub(process.capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
-    dirty = process.capture("git status --short 2>/dev/null") or ""
-    path = os.tmpname()
-    fs:write_file(path, cap.output)
-    { gate = "agent-smoke", command = full, inner_command = smoke_cmd, exit_code = cap.status, passed = cap.passed, revision = revision, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = path }
+    rev = string.gsub(capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
+    dirty = capture("git status --short 2>/dev/null") or ""
+    dest = os.tmpname()
+    fs:write_file(dest, cap.output)
+    { gate = "agent-smoke", command = full, inner_command = smoke_cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = dest }
 end
 
-fun build_run(gate: str, timeout: int): any
+build_run: any = (kind: str, timeout: int)
     gates = {
         build = "zig build",
         test = "zig build test",
@@ -145,24 +156,24 @@ fun build_run(gate: str, timeout: int): any
         ["fmt-check"] = "zig fmt src --check",
         ["agent-smoke"] = "{duobin} run scripts/agent_smoke.id",
     }
-    cmd = gates[gate]
-    if cmd == nil then return { error = "unknown gate: {gate}" } end
+    cmd = gates[kind]
+    if cmd == nil then return { error = "unknown gate: {kind}" } end
     full = cmd
     if os.env["DUO_LOCK_HELD"] ~= "1"
         full = "{lockprefix}{cmd}"
     end
     cap = exact_capture(full)
-    revision = string.gsub(process.capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
-    dirty = process.capture("git status --short 2>/dev/null") or ""
-    path = os.tmpname()
-    fs:write_file(path, cap.output)
-    { gate = gate, command = full, inner_command = cmd, exit_code = cap.status, passed = cap.passed, revision = revision, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = path }
+    rev = string.gsub(capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
+    dirty = capture("git status --short 2>/dev/null") or ""
+    dest = os.tmpname()
+    fs:write_file(dest, cap.output)
+    { gate = kind, command = full, inner_command = cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = dest }
 end
 
 # Benchmark suites. An ALLOWLIST, not string interpolation: `suite`
 # arrives from an MCP client, and the old duo_bench.id handler pasted it
 # straight into a shell command line under the build lock.
-fun bench_run(suite: str, timeout: int): any
+bench_run: any = (kind: str, timeout: int)
     suites = {
         bench = "zig build bench",
         ["ml-bench"] = "zig build ml-bench",
@@ -170,69 +181,43 @@ fun bench_run(suite: str, timeout: int): any
         ["cross-bench"] = "zig build cross-bench",
         ["wasm-bench"] = "zig build wasm-bench",
     }
-    cmd = suites[suite]
-    if cmd == nil then return { error = "unknown bench suite: {suite}" } end
+    cmd = suites[kind]
+    if cmd == nil then return { error = "unknown bench suite: {kind}" } end
     full = cmd
     if os.env["DUO_LOCK_HELD"] ~= "1"
         full = "{lockprefix}{cmd}"
     end
     cap = exact_capture(full)
-    revision = string.gsub(process.capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
-    dirty = process.capture("git status --short 2>/dev/null") or ""
-    path = os.tmpname()
-    fs:write_file(path, cap.output)
-    { suite = suite, command = full, inner_command = cmd, exit_code = cap.status, passed = cap.passed, revision = revision, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = path }
+    rev = string.gsub(capture("git rev-parse HEAD 2>/dev/null") or "", "\n", "")
+    dirty = capture("git status --short 2>/dev/null") or ""
+    dest = os.tmpname()
+    fs:write_file(dest, cap.output)
+    { suite = kind, command = full, inner_command = cmd, exit_code = cap.status, outcome = cap.outcome, revision = rev, dirty_snapshot = dirty, lock_acquisition = cap.status ~= 75, artifact = dest }
 end
 
-# Run a fixed internal command under the build lock and retain its output and
-# status from the same process. This relation is not exposed as an MCP tool.
-runcapture: any = (cmd: str)
-    full = cmd
-    if os.env["DUO_LOCK_HELD"] ~= "1"
-        full = "{lockprefix}{cmd}"
-    end
-    out = process.capture("{full} 2>&1; echo \"duoexit:$?\"")
-    mark = "duoexit:"
-    raw = out
-    at: i64 = 0
-    i: i64 = 1
-    while i + mark:len() - 1 <= raw:len()
-        if raw:sub(i, i + mark:len() - 1) == mark
-            at = i
-        i += 1
-    status: i64 = -1
-    out = raw
-    if at > 0
-        status = raw:sub(at + mark:len()):to(i64)
-        if at == 1
-            out = ""
-        else
-            out = raw:sub(1, at - 1)
-    { status = status, passed = status == 0, output = out }
-
-# === DOCUMENT ENVELOPE (Pass 117 §0g / H-8 partial repair) ===
+# === DOCUMENT ENVELOPE (§0g / H-8 partial repair) ===
 #
 # G-TOTAL gates every rendered artifact and front-end, docs included, and says
-# MCP responses are `(span, role, why, dnir)` tuples — plain-string output is
+# MCP responses are `(span, role, why, dnir)` tuples  -  plain-string output is
 # an H-8 finding. Ten tools here answered by handing back the raw bytes of a
 # markdown file, which is the plainest possible plain text.
 #
 # This is a PARTIAL repair and is labelled as one. What it fixes honestly:
-# the response now carries the document's PROVENANCE as checkable facts —
+# the response now carries the document's PROVENANCE as checkable facts  - 
 # which path was read, whether it existed, how many bytes and lines it has,
 # and whether the client is holding all of them. Before this, a caller could
 # not distinguish "the ledger is empty" from "the path was wrong" from "the
 # reply was truncated at 10000 bytes"; all three arrived as a short string.
 #
 # What it does NOT do, deliberately: it does not emit a `role`. The 18-role
-# taxonomy H-2 calls CLOSED is not enumerated anywhere in the tree —
+# taxonomy H-2 calls CLOSED is not enumerated anywhere in the tree  - 
 # docs/spec/roles.md §4 counts 17 named, says role 18 "is unnamed anywhere",
 # and refuses to guess it; gaps/GAP-071 records that G-TOTAL cannot yet be
 # measured. Emitting a guessed role would satisfy a scan while making the
 # number unfalsifiable, which is worse than the plain text it replaced. The
 # `role` and `dnir` legs stay UNWRITTEN until the taxonomy lands, and this
 # envelope never claims compliance.
-fun document(path: str, label: str, limit: int): any
+document: any = (path: str, label: str, limit: int)
     if not fs:exists(path)
         return { kind = "document", label = label, path = path, exists = false,
                  bytes = 0, lines = 0, truncated = false, text = "" }
@@ -254,7 +239,7 @@ end
 
 # === Repo tooling ===
 
-fun repo_tooling(script_name: str, args: str): any
+repo_tooling: any = (script_name: str, args: str)
     full = ""
     if fs:exists("scripts/{script_name}")
         full = "{duobin} run scripts/{script_name}"
@@ -266,102 +251,102 @@ fun repo_tooling(script_name: str, args: str): any
         return { error = "script not found: {script_name}" }
     end
     if args ~= "" then full = "{full} {args}" end
-    rc = process.run(full)
-    { exit_code = rc, passed = rc == 0, script = script_name }
+    rc = run(full)
+    { exit_code = rc, outcome = process.verdict(rc), script = script_name }
 end
 
-# === INFER-ONE agent context (C0 law.infer.one — session bootstrap for all MCP agents) ===
+# === INFER-ONE agent context (C0 law.infer.one  -  session bootstrap for all MCP agents) ===
 
-inferbrief = "INFER-ONE endpoint: to is a graph relation — usually NOT spelled in source. PROJECTION-ONE: one algebra for conversion/protocol/world/home — fact completion not namespace lookup. FROM-ZERO/STD-ZERO/LIB-ZERO. Ladder: value → value:to() → value:to(T). Census: scripts/infer_census.id scripts/projection_census.id. IMPLEMENTATION-BLOCKED when inference missing. Gates: law.gate.infer law.gate.projection."
+inferbrief = "SOURCE-INFER-ONE: no spelling restates uniquely recoverable facts. FACT-COMPOSITION-INFER-ONE: projection/injection/world normally zero source syntax. Ladder: value → value:to(target) only when target not inferable; no value:to() rung. Census: scripts/infer_census.id scripts/projection_census.id. IMPLEMENTATION-BLOCKED when inference missing. Gates: law.gate.infer law.gate.projection."
 
-seamsbrief = "SEAM-AUDIT (before code): law.system.invariant — (1) bridges need deletion witness (2) inference bounded/direct/unique (3) facts rich representation compact. One fact producer (law.fact.producer.one); BRIDGE-DEATH 8-field witness at introduction; no silent fallback (law.fallback.zero); UNKNOWN-ONE; PROFILE-EVIDENCE never semantic truth; infer contract; physical objects justify demand; SHC=executed authority; delta budgets; stop on ambiguity. Full checklist: docs/spec/harness-projection.md § seam audit."
+seamsbrief = "SEAM-AUDIT (before code): law.system.invariant  -  (1) bridges need deletion witness (2) inference bounded/direct/unique (3) facts rich representation compact. One fact producer (law.fact.producer.one); BRIDGE-DEATH 8-field witness at introduction; no silent fallback (law.fallback.zero); UNKNOWN-ONE; PROFILE-EVIDENCE never semantic truth; infer contract; physical objects justify demand; SHC=executed authority; delta budgets; stop on ambiguity. Full checklist: docs/spec/harness-projection.md § seam audit."
 
-fun infer_one_context(): str
+infer_one_context: str = ()
     inferbrief
 
-fun harness_seams_context(): str
+harness_seams_context: str = ()
     seamsbrief
 
-fun harness_context(): str
-    "{inferbrief}\n{seamsbrief}"
+harness_context: str = ()
+    inferbrief .. "\n" .. seamsbrief
 
-# === Pass 13 dev control plane (machine-readable claims) ===
+# === Dev control plane (machine-readable claims) ===
 
-fun dev_session_start(owner: str, work_item: str, client: str): str
+dev_session_start: str = (owner: str, work_item: str, client: str)
     cmd = "{duobin} dev session start --owner {owner}"
     if client ~= "" then cmd = "{cmd} --client {client}" end
     if work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
-    process.capture("{cmd} 2>&1")
+    capture("{cmd} 2>&1")
 end
 
-# The compiler-side lease. It reports a claim; it does NOT arbitrate one —
+# The compiler-side lease. It reports a claim; it does NOT arbitrate one  - 
 # two callers both get an "acquired" line back. The arbitrating claim is
 # `dev_claim_acquire` further down, which holds a mkdir(2) lock. This one is
 # kept for its side effect on the dev control plane and is called BY that
 # function once the real lock is held.
-fun dev_claim_note(owner: str, file: str, client: str, work_item: str): str
+dev_claim_note: str = (owner: str, file: str, client: str, work_item: str)
     cmd = "{duobin} dev claim acquire --owner {owner} --file {file}"
     if client ~= "" then cmd = "{cmd} --client {client}" end
     if work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
-    process.capture("{cmd} 2>&1")
+    capture("{cmd} 2>&1")
 end
 
-fun dev_claim_list(): str
-    process.capture("{duobin} dev claim list 2>&1")
+dev_claim_list: str = ()
+    capture("{duobin} dev claim list 2>&1")
 end
 
-fun dev_coordination_export(): str
-    process.capture("{duobin} dev coordination export 2>&1")
+dev_coordination_export: str = ()
+    capture("{duobin} dev coordination export 2>&1")
 end
 
-fun dev_validate_plan(file: str, work_item: str): str
+dev_validate_plan: str = (file: str, work_item: str)
     cmd = "{duobin} dev validate plan"
     if file ~= "" then cmd = "{cmd} --file {file}"
     elseif work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
-    process.capture("{cmd} 2>&1")
+    capture("{cmd} 2>&1")
 end
 
-fun semantic_claims(): str
-    process.capture("{duobin} semantic claims 2>&1")
+semantic_claims: str = ()
+    capture("{duobin} semantic claims 2>&1")
 end
 
-fun semantic_transaction_preview(classifier: str): str
+semantic_transaction_preview: str = (classifier: str)
     c = classifier
     if c == nil or c == "" then c = "classifier.sorted_lookup" end
-    process.capture("{duobin} semantic preview {c} 2>&1")
+    capture("{duobin} semantic preview {c} 2>&1")
 end
 
-fun semantic_transaction_validate(classifier: str): str
+semantic_transaction_validate: str = (classifier: str)
     c = classifier
     if c == nil or c == "" then c = "classifier.sorted_lookup" end
-    process.capture("{duobin} semantic validate {c} 2>&1")
+    capture("{duobin} semantic validate {c} 2>&1")
 end
 
-fun dev_integration_list(): str
-    process.capture("{duobin} dev integration list 2>&1")
+dev_integration_list: str = ()
+    capture("{duobin} dev integration list 2>&1")
 end
 
-fun dev_integration_submit(owner: str, work_item: str, claim_id: str): str
+dev_integration_submit: str = (owner: str, work_item: str, claim_id: str)
     cmd = "{duobin} dev integration submit --owner {owner} --work-item {work_item}"
     if claim_id ~= nil and claim_id ~= "" then cmd = "{cmd} --claim-id {claim_id}" end
-    process.capture("{cmd} 2>&1")
+    capture("{cmd} 2>&1")
 end
 
-fun dev_validate_run(file: str, work_item: str, execute: bool): str
+dev_validate_run: str = (file: str, work_item: str, execute: bool)
     cmd = "{duobin} dev validate run"
     if file ~= nil and file ~= "" then cmd = "{cmd} --file {file}"
     elseif work_item ~= nil and work_item ~= "" then cmd = "{cmd} --work-item {work_item}" end
     if execute then cmd = "{cmd} --execute" end
-    process.capture("{cmd} 2>&1")
+    capture("{cmd} 2>&1")
 end
 
 # === Native boxing audit ===
 
-fun dump_c(file_path: str): str
-    process.capture("{duobin} dump-c {file_path} 2>&1")
+dump_c: str = (file_path: str)
+    capture("{duobin} dump-c {file_path} 2>&1")
 end
 
-fun audit_native_boxing(file_path: str): any
+audit_native_boxing: any = (file_path: str)
     c_code = dump_c(file_path)
     hits = {}
     for _, needle in {"lua_invoke(", "lua_table_get_str_lit(", "lua_Value ", "lua_table_new(", "lua_val_from_"}
@@ -378,7 +363,11 @@ fun audit_native_boxing(file_path: str): any
         end
     end
     user = ""
-    if main_pos > 0 then user = string.sub(c_code, main_pos) else user = string.sub(c_code, -4000) end
+    if main_pos > 0
+        user = string.sub(c_code, main_pos)
+    else
+        user = string.sub(c_code, -4000)
+    end
     comptime_violations = {}
     for ident, rhs in string.gmatch(user, "const char%* (%w+) = ([^;]+);")
         if string.find(rhs, "lua_")
@@ -400,10 +389,10 @@ fun audit_native_boxing(file_path: str): any
     }
 end
 
-# === Pass 5 semantic interchange (SIM) ===
+# === Semantic interchange (SIM) ===
 
-fun semantic_snapshot(file_path: str): any
-    output = process.capture("{duobin} sim {file_path} 2>&1")
+semantic_snapshot: any = (file_path: str)
+    output = capture("{duobin} sim {file_path} 2>&1")
     if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed") then
         return { ok = false, error = string.sub(output, 1, 4000), schema = "sim-v0" }
     end
@@ -421,8 +410,8 @@ fun semantic_snapshot(file_path: str): any
     }
 end
 
-fun semantic_snapshot_raw(file_path: str): str
-    output = process.capture("{duobin} sim {file_path} 2>&1")
+semantic_snapshot_raw: str = (file_path: str)
+    output = capture("{duobin} sim {file_path} 2>&1")
     -- Find the JSON start (skip any diagnostic lines)
     i = string.find(output, "{")
     if i == nil then
@@ -431,12 +420,12 @@ fun semantic_snapshot_raw(file_path: str): str
     string.sub(output, i)
 end
 
-fun foreign_import_preview(header_path: str, source_dir: str): any
+foreign_import_preview: any = (header_path: str, source_dir: str)
     resolved = header_path
     if source_dir ~= "" and string.sub(header_path, 1, 1) ~= "/" then
         resolved = "{source_dir}/{header_path}"
     end
-    output = process.capture("{duobin} sim --import-c {resolved} 2>&1")
+    output = capture("{duobin} sim --import-c {resolved} 2>&1")
     if string.find(output, ": error:") or string.find(output, "failed") then
         return { ok = false, error = string.sub(output, 1, 4000), header = resolved }
     end
@@ -462,8 +451,8 @@ fun foreign_import_preview(header_path: str, source_dir: str): any
     }
 end
 
-fun pass6_catalog(): any
-    output = process.capture("{duobin} catalog 2>&1")
+pass6_catalog: any = ()
+    output = capture("{duobin} catalog 2>&1")
     parsed = json:decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
@@ -475,8 +464,8 @@ fun pass6_catalog(): any
     { ok = true, pass6 = p6 }
 end
 
-fun pass5_catalog(): any
-    output = process.capture("{duobin} catalog 2>&1")
+pass5_catalog: any = ()
+    output = capture("{duobin} catalog 2>&1")
     parsed = json:decode(output)
     if parsed == nil then
         return { ok = false, error = "failed to parse catalog JSON", raw_output = string.sub(output, 1, 2000) }
@@ -488,7 +477,7 @@ fun pass5_catalog(): any
     { ok = true, pass5 = p5 }
 end
 
-fun foreign_entity_lookup(file_path: str, symbol: str): any
+foreign_entity_lookup: any = (file_path: str, symbol: str)
     content = ""
     if fs:exists(file_path) then content = fs:read_file(file_path) end
     source_dir = file_path
@@ -519,14 +508,14 @@ end
 
 # === Canonical index ===
 
-fun canonical_index(): str
+canonical_index: str = ()
     if fs:exists(canonpath)
         return fs:read_file(canonpath)
     end
     "Canonical index not found at {canonpath}"
 end
 
-fun perf_ledger(): str
+perf_ledger: str = ()
     if fs:exists(perfpath)
         return string.sub(fs:read_file(perfpath), 1, 10000)
     end
@@ -555,16 +544,11 @@ observe: any = (proof: any, line: str)
 
 prove: any = (suite: str)
     if suite != "bench"
-        return {
-            passed = false
-            suite = suite
-            status = -1
-            error = "benchmark proof supports only the release bench suite"
-        }
-    path = os.tmpname()
+        return { outcome = "failed", bench = suite, code = -1, error = "benchmark proof supports only the release bench suite" }
+    dest = os.tmpname()
     command = "zig build bench"
-    run = runcapture("{command} > '{path}' 2>&1")
-    status = run.status
+    result = exact_capture("{lockprefix}{command} > '{dest}' 2>&1")
+    code = result.status
     proof = {
         correct = false
         fold = false
@@ -574,7 +558,7 @@ prove: any = (suite: str)
         failures = {}
         observe = observe
     }
-    artifact = document(path, "benchmark", 0)
+    artifact = document(dest, "benchmark", 0)
     if not artifact.exists
         proof.failures:push("artifact")
     else
@@ -588,29 +572,18 @@ prove: any = (suite: str)
     positive = positive:observe("All benchmarks: results match and Duo .lua/.id >= C on measured time")
     reject = { correct = false, fold = false, removal = false, negative = false, speed = false, failures = {}, observe = observe }
     reject = reject:observe("FAIL: synthetic control")
-    controls = positive.correct and positive.fold and positive.removal
+    if code == 0 and proof.correct and proof.fold and proof.removal
+        and proof.negative and proof.speed and proof.failures:len() == 0
+        and positive.correct and positive.fold and positive.removal
         and positive.negative and positive.speed and positive.failures:len() == 0
         and reject.failures:len() == 1
-    {
-        passed = status == 0 and proof.correct and proof.fold and proof.removal
-            and proof.negative and proof.speed and proof.failures:len() == 0 and controls
-        correct = proof.correct
-        fold = proof.fold
-        removal = proof.removal
-        negative = proof.negative
-        speed = proof.speed
-        failures = proof.failures
-        suite = suite
-        status = status
-        artifact = path
-        gate = "zig build bench"
-        controls = controls
-    }
+        { outcome = "ok", correct = proof.correct, fold = proof.fold, removal = proof.removal, negative = proof.negative, speed = proof.speed, failures = proof.failures, bench = suite, code = code, artifact = dest, gate = "zig build bench" }
+    { outcome = "failed", correct = proof.correct, fold = proof.fold, removal = proof.removal, negative = proof.negative, speed = proof.speed, failures = proof.failures, bench = suite, code = code, artifact = dest, gate = "zig build bench" }
 
 # === Open performance gaps ===
 # Surface perf / native-lowering / codegen gaps that are still open in the
 # cross-agent gap buffer, plus a performance.md excerpt for context.
-fun perf_gaps(): any
+perf_gaps: any = ()
     content = coordination_read()
     lines = string.split(content, "\n")
     gaps = {}
@@ -625,7 +598,7 @@ fun perf_gaps(): any
             status_open = false
             if string.find(ln, "| open |", 1, true) ~= nil then status_open = true end
             if kind_match
-                if status_open then _ = table.insert(gaps, ln) end
+                if status_open then _ = gaps:push(ln) end
             end
         end
         i += 1
@@ -645,7 +618,7 @@ end
 # premature return; F-13813-3 nil-init void* inference) in a .id source file,
 # with the verified workaround for each. Protects every duo developer from
 # spending hours on these. Literal scans only (pattern engine is unreliable).
-fun audit_codegen_pitfalls(file_path: str): any
+audit_codegen_pitfalls: any = (file_path: str)
     if not fs:exists(file_path) then
         return { error = "file not found: {file_path}" }
     end
@@ -658,7 +631,7 @@ fun audit_codegen_pitfalls(file_path: str): any
         tr = str_trim(ln)
         -- F-13813-3: `= nil` init risks void* type inference
         if string.find(tr, "= nil", 1, true) ~= nil then
-            _ = table.insert(findings, {
+            _ = findings:push({
                 line = i,
                 rule = "F-13813-3 nil-init",
                 risk = "sema infers void*; later typed assignment fails to compile or mis-codes",
@@ -691,11 +664,11 @@ fun audit_codegen_pitfalls(file_path: str): any
                 if paren ~= nil and paren > 1 then
                     head = string.sub(tr, 1, paren - 1)
                     -- head must be a bare identifier/path; validate via string.byte
-                    -- (number comparison — string == fails inside loops).
+                    -- (number comparison  -  string == fails inside loops).
                     head_ok = true
                     k = 1
                     while k <= head:len()
-                        code = string.byte(head, k)
+                        code = head:byte(k)
                         ok_c = false
                         if code >= 48 and code <= 57 then ok_c = true end
                         if code >= 65 and code <= 90 then ok_c = true end
@@ -709,11 +682,11 @@ fun audit_codegen_pitfalls(file_path: str): any
                 end
             end
             if bare_call then
-                _ = table.insert(findings, {
+                _ = findings:push({
                     line = i,
                     rule = "F-13813-2 call-as-tail",
                     risk = "codegen emits premature return; enclosing function exits here",
-                    fix = "prefix with `_ = `  (e.g.  `_ = table.insert(t, v)`)",
+                    fix = "prefix with `_ = `  (e.g.  `_ = t:push(v)`)",
                 })
             end
         end
@@ -732,26 +705,26 @@ end
 # boxing when file_path points at a real .id file.
 TYPE_SUFFIXES = { "i64", "f64", "i32", "f32", "str", "bool", "u64", "u32" }
 
-fun str_trim(s: str): str
+str_trim: str = (s: str)
     -- Uses string.byte + NUMBER comparison, not string == / ~=. Duo codegen
     -- mis-compares string.sub results inside while loops (c == " " is false for
     -- a space). Number comparison (byte ~= 32) is reliable. Space=32, tab=9.
     a = 1
     b = s:len()
     while a <= b
-        code = string.byte(s, a)
+        code = s:byte(a)
         if code ~= 32 and code ~= 9 then break end
         a += 1
     end
     while b >= a
-        code = string.byte(s, b)
+        code = s:byte(b)
         if code ~= 32 and code ~= 9 then break end
         b -= 1
     end
     string.sub(s, a, b)
 end
 
-fun exponential_evaluate(code: str, file_path: str): any
+exponential_evaluate: any = (code: str, file_path: str)
     suggestions = {}
     lines = string.split(code, "\n")
 
@@ -787,7 +760,7 @@ fun exponential_evaluate(code: str, file_path: str): any
             if first == 0 or ln < first then first = ln end
         end
         if cnt >= 2
-            _ = table.insert(suggestions, {
+            _ = suggestions:push({
                 kind = "exponential_opportunity",
                 line = first,
                 construct = "@comp.map / @comp.derive",
@@ -807,7 +780,7 @@ fun exponential_evaluate(code: str, file_path: str): any
         end
     end
     if dispatch_hits >= 2
-        _ = table.insert(suggestions, {
+        _ = suggestions:push({
             kind = "exponential_opportunity",
             line = dispatch_line,
             construct = "@comp.select / @comp.product",
@@ -846,7 +819,7 @@ fun exponential_evaluate(code: str, file_path: str): any
         end
     end
     if c_line > 0
-        _ = table.insert(suggestions, {
+        _ = suggestions:push({
             kind = "exponential_opportunity",
             line = c_line,
             construct = "@comp.compile.unroll",
@@ -866,7 +839,7 @@ fun exponential_evaluate(code: str, file_path: str): any
         end
     end
     if type_defs >= 3
-        _ = table.insert(suggestions, {
+        _ = suggestions:push({
             kind = "exponential_opportunity",
             line = type_line,
             construct = "@comp.derive.bundle",
@@ -882,7 +855,7 @@ fun exponential_evaluate(code: str, file_path: str): any
         if eq and eq > 1 and string.sub(t, eq, eq + 1) ~= "=="
             rhs = str_trim(string.sub(t, eq + 1))
             if not string.find(rhs, "[%a]") and (string.find(rhs, "[%*]") or string.find(rhs, "[%+]") or string.find(rhs, "[/]"))
-                _ = table.insert(suggestions, {
+                _ = suggestions:push({
                     kind = "ergonomic_gap",
                     line = i,
                     construct = "@(expr)",
@@ -918,7 +891,7 @@ end
 
 # === Exponential mentoring: Onboarding guidance for metaprogramming ===
 
-fun exponential_onboard(question: str, code: str): any
+exponential_onboard: any = (question: str, code: str)
     default = "Exponential metaprogramming: write less source, get more native specialization via @comp.map, @comp.derive.all, @comp.burst, and @comp.tensor."
     derive = "Use @comp.derive.all when structures repeat getters/setters across stable fields."
     mapnote = "@comp.map emits one specialized native function per type with no runtime dispatch."
@@ -939,7 +912,7 @@ fun exponential_onboard(question: str, code: str): any
     { error = "Question not recognized. Try: what is exponential metaprogramming, when to use derive, how map differs from regular function" }
 end
 
-fun combinator_info(path: str): any
+combinator_info: any = (path: str)
     result = {
         map = {
             name = "@comp.map",
@@ -972,19 +945,19 @@ fun combinator_info(path: str): any
     }
     
     if path == "" or path == nil
-        return { combinators = table.keys(result), info = "Available combinators: {table.concat(table.keys(result), ", ")}" }
+        return { combinators = result:keys(), info = "Available combinators: {result:keys():join(", ")}" }
     end
     
     if result[path]
         return result[path]
     end
     
-    { error = "Unknown combinator: {path}. Available: {table.concat(table.keys(result), \", \")}" }
+    { error = "Unknown combinator: {path}. Available: {result:keys():join(\", \")}" }
 end
 
 # ====================================
 
-fun file_finding(kind: str, title: str, detail: str, priority: str, files: str): str
+file_finding: str = (kind: str, title: str, detail: str, priority: str, files: str)
     # IDs must be unique within a second (batch calls share clock.now()); use a
     # per-process counter so same-second filings never collide.
     finding_seq += 1
@@ -1019,7 +992,7 @@ end
 # === GAP NUMBER ALLOCATION ============================================
 #
 # `gaps/` is a shared numeric registry with no allocator. Every session read
-# the directory, picked "the next one", and wrote it — so two sessions that
+# the directory, picked "the next one", and wrote it  -  so two sessions that
 # read before either wrote both picked the same number. That is not
 # hypothetical: GAP-065 was filed, overwritten by another session, and had to
 # be refiled as GAP-067; three collisions landed in a single night.
@@ -1038,25 +1011,25 @@ end
 # The allocator above was correct and still collided FOUR times in two days,
 # because both of its inputs were WORKTREE-LOCAL:
 #
-#   gaps/                         the working tree's gap files — one branch
+#   gaps/                         the working tree's gap files  -  one branch
 #   .agents/session/gapalloc      gitignored, so every worktree has its OWN
 #
 # Parallel agents in this repo work in `git worktree`s by design (it is the
 # mitigation for a bare `git commit` sweeping another session's staged work).
 # Two agents in two worktrees therefore mkdir'd two DIFFERENT paths. Both
-# won. The POSIX guarantee held perfectly and protected nothing — measured:
+# won. The POSIX guarantee held perfectly and protected nothing  -  measured:
 # this worktree had no ledger directory at all, while the main checkout's
 # held GAP-074, so both would have been handed the same next number.
 #
 # THE FIX IS TO RESTORE ONE FILESYSTEM VIEW without giving up worktrees.
 # `git rev-parse --git-common-dir` names the ONE directory every worktree of
-# a repository shares — linked worktrees keep private `.git/worktrees/<name>`
+# a repository shares  -  linked worktrees keep private `.git/worktrees/<name>`
 # state but resolve --git-common-dir to the same parent. Putting the
 # reservation there makes the mkdir atomicity mean across worktrees exactly
 # what it already meant across processes. The 12-process property is
 # preserved, not weakened: the primitive is unchanged, only its LOCATION.
 #
-# Not repo-private state, so it is not gitignored — it is outside the work
+# Not repo-private state, so it is not gitignored  -  it is outside the work
 # tree entirely, which is why it survives branch switches and worktree
 # deletion, and why no `git status` ever shows it.
 
@@ -1070,30 +1043,30 @@ gapsdir = "{root}/gaps"
 # substitution already drops trailing newlines, and a path may contain
 # spaces, so a whitespace-squeeze would corrupt it.
 #
-# `${g:-…}` covers BOTH failure modes together — git absent (non-zero exit)
+# `${g:-…}` covers BOTH failure modes together  -  git absent (non-zero exit)
 # and git answering empty. Without the empty arm a blank answer would build
-# the ledger path "/duon-gapalloc" at the filesystem root. Degrading to the
+# the ledger path "/idol-gapalloc" at the filesystem root. Degrading to the
 # old worktree-local ledger beats refusing to allocate: with no git there are
 # no sibling worktrees to collide with anyway.
 #
 # Line-oriented process.capture re-appends "\n" to each read line, so trim trailing newline before path use.
 # result always carries exactly one trailing newline even against `printf %s`
-# — the shell cannot hand back a bare string. Trimming it is not optional:
-# the un-trimmed value builds ".git\n/duon-gapalloc", a path with a newline
+#  -  the shell cannot hand back a bare string. Trimming it is not optional:
+# the un-trimmed value builds ".git\n/idol-gapalloc", a path with a newline
 # in the MIDDLE, and every worktree would still agree on it, so the allocator
 # would keep working and stay wrong. Caught only by dumping the bytes; a
 # line-oriented grep over the gate's own output hides it perfectly.
 #
-# THE `: str` IS LOAD-BEARING — do not drop it to match the bindings above.
+# THE `: str` IS LOAD-BEARING  -  do not drop it to match the bindings above.
 # Without the annotation the process.capture result stays a BOXED value, and codegen
 # emits `lua_str_buf_len_i64` against the box, which answers 0. `:len() - 1`
-# is then -1, and `sub(1, -1)` is Lua for "the whole string" — so the trim
+# is then -1, and `sub(1, -1)` is Lua for "the whole string"  -  so the trim
 # silently returns its input and there is no error anywhere. `str_trim` below
 # survives the same hazard for the same reason: its parameter is typed.
-gapraw: str = process.capture("g=$(git -C '{root}' rev-parse --path-format=absolute --git-common-dir 2>/dev/null); printf %s \"${g:-{root}/.agents/session}\"")
-gapledger = "{gapraw:sub(1, gapraw:len() - 1)}/duon-gapalloc"
+gapraw: str = capture("g=$(git -C '{root}' rev-parse --path-format=absolute --git-common-dir 2>/dev/null); printf %s \"${g:-{root}/.agents/session}\"")
+gapledger = "{gapraw:sub(1, gapraw:len() - 1)}/idol-gapalloc"
 
-fun gappad(n: int): str
+gappad: str = (n: int)
     s = n:to(str)
     while string.len(s) < 3
         s = "0{s}"
@@ -1104,11 +1077,11 @@ end
 # Highest number VISIBLE anywhere: filed gaps and prior reservations both
 # count. Seeding from the union is what stops the allocator from walking up
 # from 1 and colliding with a gap somebody filed by hand.
-fun gaphigh(): int
+gaphigh: int = ()
     -- SEEDED FROM EVERY REF, not just the checked-out branch. A gap filed and
     -- COMMITTED on a branch that has not merged is invisible to both scans
     -- below, and that is the half of gap[076] the shared ledger cannot cover
-    -- — a number filed by hand, or before the allocator existed, leaves no
+    --  -  a number filed by hand, or before the allocator existed, leaves no
     -- reservation directory behind. The shared ledger covers the mirror case,
     -- a file reserved but not yet committed. Both run because neither
     -- subsumes the other. Measured at 0.06s on this repo.
@@ -1117,7 +1090,7 @@ fun gaphigh(): int
     -- below can only raise it, so if the pipeline answers empty or garbage
     -- (`tonumber` yields 0 here, it does not fail) the allocator degrades to
     -- exactly its previous behaviour instead of handing out a low number.
-    hi = tonumber(process.capture("printf %s \"$(git -C '{root}' log --all --name-only --pretty=format: -- gaps/ 2>/dev/null | grep -oE 'GAP-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)\"")) or 0
+    hi = tonumber(capture("printf %s \"$(git -C '{root}' log --all --name-only --pretty=format: -- gaps/ 2>/dev/null | grep -oE 'GAP-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)\"")) or 0
     for _, name in fs:read_dir(gapsdir) or {}
         d = string.match(name, "^GAP%-(%d+)")
         if d ~= nil
@@ -1137,13 +1110,13 @@ end
 
 # Hand back a number nobody else can be holding. Returns -1 only if 512
 # consecutive numbers are all taken, which means something is very wrong.
-fun gapallocate(): int
-    process.run("mkdir -p {gapledger}")
+gapallocate: int = ()
+    run("mkdir -p {gapledger}")
     n = gaphigh() + 1
     tries = 0
     while tries < 512
         -- THE ATOMIC STEP. Exactly one concurrent caller sees true here.
-        if process.run("mkdir -p {gapledger}/GAP-{gappad(n)}")
+        if run("mkdir -p {gapledger}/GAP-{gappad(n)}")
             -- Won the reservation. If a gap file already occupies the number
             -- (filed by hand, before this allocator existed), keep the
             -- reservation so it is never handed out, and take the next.
@@ -1157,7 +1130,7 @@ fun gapallocate(): int
     -1
 end
 
-fun gap_open(agent_id: str, kind: str, title: str, detail: str, priority: str, files: str): str
+gap_open: str = (agent_id: str, kind: str, title: str, detail: str, priority: str, files: str)
     n = gapallocate()
     if n < 0
         return json:encode({ allocated = false, error = "no free gap number in 512 tries" })
@@ -1166,13 +1139,13 @@ fun gap_open(agent_id: str, kind: str, title: str, detail: str, priority: str, f
     ts = clock.utc()
     pr = priority
     if pr == nil or pr == "" then pr = "P1" end
-    body = "# {id} — {title}\n\n**Status:** OPEN · **Filed:** {ts}\n**Priority:** {pr} · **Kind:** {kind}\n**Filed by:** {agent_id}\n"
+    body = "# {id}  -  {title}\n\n**Status:** OPEN · **Filed:** {ts}\n**Priority:** {pr} · **Kind:** {kind}\n**Filed by:** {agent_id}\n"
     if files ~= nil and files ~= ""
         body = "{body}**Files:** {files}\n"
     end
     body = "{body}\n{detail}\n"
     fs:write_file("{gapsdir}/{id}.md", body)
-    file_finding(kind, "{id} — {title}", detail, pr, files)
+    file_finding(kind, "{id}  -  {title}", detail, pr, files)
     json:encode({ allocated = true, gap_id = id, number = n, path = "gaps/{id}.md", priority = pr })
 end
 
@@ -1190,7 +1163,7 @@ end
 # decided by one mkdir, so it is handled by ACQUIRE-THEN-VERIFY: take the
 # exact lock, then look for a live overlapping claim, and if one is there,
 # release and report a conflict. Whoever observes the overlap backs off
-# UNCONDITIONALLY. That can never double-grant — for both callers to see a
+# UNCONDITIONALLY. That can never double-grant  -  for both callers to see a
 # clear scan, both scans would have to precede both mkdirs, and each caller
 # scans strictly after its own mkdir. It can conservatively refuse both,
 # which a retry resolves; refusing twice is safe, granting twice is not.
@@ -1200,7 +1173,7 @@ claimttl = 14400
 
 # Repo-relative, no leading "./", no trailing "/". Two spellings of one file
 # must produce one key or the lock protects nothing.
-fun claim_norm(p: str): str
+claim_norm: str = (p: str)
     s = p or ""
     if string.sub(s, 1, string.len(root)) == root
         s = string.sub(s, string.len(root) + 1)
@@ -1219,24 +1192,24 @@ fun claim_norm(p: str): str
 end
 
 # "/" is not legal in a directory name; "~" is not legal in a repo path here.
-fun claim_key(p: str): str
+claim_key: str = (p: str)
     string.gsub(p, "/", "~")
 end
 
-fun claim_unkey(k: str): str
+claim_unkey: str = (k: str)
     string.gsub(k, "~", "/")
 end
 
 # Does one claim cover the other? Prefix comparison at a SEGMENT boundary:
 # "tools/mcp" covers "tools/mcp/x.id" but must not cover "tools/mcpx.id".
-fun claim_overlaps(a: str, b: str): bool
+claim_overlaps: bool = (a: str, b: str)
     if a == b then return true end
     if string.sub(b, 1, string.len(a) + 1) == "{a}/" then return true end
     if string.sub(a, 1, string.len(b) + 1) == "{b}/" then return true end
     false
 end
 
-fun claim_meta(key: str): any
+claim_meta: any = (key: str)
     raw = fs:read_file("{claimsdir}/{key}/owner")
     if raw == nil or raw == "" then return nil end
     owner = string.match(raw, "^([^\t]*)")
@@ -1245,34 +1218,34 @@ fun claim_meta(key: str): any
     { owner = owner or "", at = tonumber(tsv) or 0, work = wi or "" }
 end
 
-fun claim_live(key: str): bool
+claim_live: bool = (key: str)
     m = claim_meta(key)
     if m == nil then return false end
     now = clock.now()
     (now - m.at) < claimttl
 end
 
-fun claim_write(key: str, owner: str, work: str): void
+claim_write: void = (key: str, owner: str, work: str)
     now = clock.now()
     fs:write_file("{claimsdir}/{key}/owner",
         "{owner}\t{now:to(str)}\t{work}\n")
 end
 
-# Remove claim directories with shell rm and verify metadata is gone — host remove lied on success.
+# Remove claim directories with shell rm and verify metadata is gone  -  host remove lied on success.
 # `os.remove(path) ~= nil`, and `false ~= nil` is TRUE, so it reports success
-# unconditionally — measured 2026-08-08: it returned true on a file that was
+# unconditionally  -  measured 2026-08-08: it returned true on a file that was
 # still on disk and still read back its old contents afterwards. A release
 # that lies leaves a lock nobody can clear, which is worse than no lock at
 # all. Drop the whole claim directory in one shot and VERIFY BY VALUE that
 # the metadata is gone before reporting anything.
-fun claim_drop(key: str): bool
+claim_drop: bool = (key: str)
     dir = "{claimsdir}/{key}"
-    process.run("rm -rf '{dir}'")
+    run("rm -rf '{dir}'")
     claim_meta(key) == nil
 end
 
-fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
-    process.run("mkdir -p {claimsdir}")
+dev_claim_acquire: str = (owner: str, file: str, client: str, work_item: str)
+    run("mkdir -p {claimsdir}")
     path = claim_norm(file)
     if path == ""
         return json:encode({ granted = false, reason = "empty file path" })
@@ -1282,7 +1255,7 @@ fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
     own = owner or "agent"
 
     -- THE ATOMIC STEP for the exact path.
-    got = process.run("mkdir -p {claimsdir}/{key}")
+    got = run("mkdir -p {claimsdir}/{key}")
     if not got
         m = claim_meta(key)
         if m ~= nil and m.owner == own
@@ -1293,7 +1266,7 @@ fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
         end
         if m ~= nil and (clock.now() - m.at) >= claimttl
             claim_drop(key)
-            got = process.run("mkdir -p {claimsdir}/{key}")
+            got = run("mkdir -p {claimsdir}/{key}")
         end
         if not got
             holder = "unknown"
@@ -1320,7 +1293,7 @@ fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
     json:encode({ granted = true, path = path, owner = own, work_item = wi, ttl = claimttl })
 end
 
-fun dev_claim_release(owner: str, file: str): str
+dev_claim_release: str = (owner: str, file: str)
     path = claim_norm(file)
     key = claim_key(path)
     m = claim_meta(key)
@@ -1340,7 +1313,7 @@ fun dev_claim_release(owner: str, file: str): str
     json:encode({ released = false, path = path, reason = "release did not clear the claim" })
 end
 
-fun dev_claim_files(): str
+dev_claim_files: str = ()
     rows = {}
     now = clock.now()
     for _, key in fs:read_dir(claimsdir) or {}
@@ -1359,7 +1332,7 @@ fun dev_claim_files(): str
     json:encode({ claims = rows, count = rows:len(), ttl = claimttl })
 end
 
-fun agent_gaps_update(action: str, agent_id: str, gap_id: str, kind: str, title: str, detail: str, priority: str, files: str): str
+agent_gaps_update: str = (action: str, agent_id: str, gap_id: str, kind: str, title: str, detail: str, priority: str, files: str)
     act = action
     if act == nil or act == "" then act = "open" end
     if act == "open"
@@ -1405,7 +1378,7 @@ m.bench_run = bench_run
 m.now = clock.now
 m.utc = clock.utc
 m.coord = clock.coord
-m.capture = runcapture
+m.capture = exact_capture
 m.semantic_snapshot_raw = semantic_snapshot_raw
 m.repo_tooling = repo_tooling
 m.dump_c = dump_c

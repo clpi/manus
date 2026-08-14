@@ -1,4 +1,4 @@
-//! Pass 9 — canonical Wasm instruction semantic descriptors (P9-04).
+//! — canonical Wasm instruction semantic descriptors (P9-04).
 //!
 //! Single source of truth for opcode facts, stack effects, immediates, and
 //! provenance hooks. Decoder/validator tables are generated from this module

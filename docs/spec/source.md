@@ -366,17 +366,30 @@ Denied: `source: readable`, `trait`, `impl`, `@implements`, `concept`, and every
 native adjective protocol (`readable`, `writable`, `iterable`, `hashable`, …).
 The relation catalog is the universal protocol catalog.
 
-## Inference (INFER-ONE)
+## Inference (SOURCE-INFER-ONE / INFER-ONE / INTERMEDIATE-ZERO)
 
 **Endpoint:** `to` is a semantic relation that should usually exist in the graph
-without being spelled in source — the goal is not “make `to` shorter.”
+without being spelled in source — the goal is not "make `to` shorter."
+
+INFER-ONE generalizes beyond conversion to bindings, relation/method names,
+static projections, target descriptors, protocol satisfaction, world
+satisfaction, capture, projection/injection composition, and stage/target
+qualification. Every source token must contribute semantic information not
+already uniquely recoverable from graph-visible demand/context. Source is a
+disambiguation surface, not a dump of graph facts.
 
 Authoritative law: `law.infer.one`, `law.source.minimum`, `law.direct.bridge.one`,
-`law.conversion.tripart`, `law.repair.infer`, `law.gate.infer`.
+`law.conversion.tripart`, `law.repair.infer`, `law.gate.infer`,
+`law.intermediate.zero`.
 
 Write only semantic information the compiler cannot uniquely recover from binding,
 parameter, result, field, relation, projection, world, and law facts already in
-context. The shortest uniquely resolving source is canonical:
+context. **SOURCE-INFER-ONE** applies uniformly — recoverable from subject,
+operands, result/descriptor demand, reachable facts, relation constraints,
+world/effect requirements, stage, provenance, and control-flow refinement.
+**FACT-COMPOSITION-INFER-ONE:** projection, injection, capture, protocol/world
+satisfaction are graph facts with normally zero source syntax. The shortest
+uniquely resolving source is canonical:
 
 ```id
 flag: bool = value
@@ -384,10 +397,17 @@ enable(value)
 check: bool = (value) value
 ```
 
-Conversion ladder: omit `to` when unique → `value:to()` when relation must be
-explicit → `value:to(T)` when target must be explicit. Never bulk-delete `to`
-without graph identity proof. If inference is not implemented, report
-`IMPLEMENTATION-BLOCKED` — do not require redundant casts as workaround.
+Conversion ladder: omit `to` when unique → `value:to(target)` only when target is
+not inferable. There is no canonical `value:to()` rung — if the relation is
+explicit and the target is uniquely inferable, spelling `to` adds no information.
+Never bulk-delete `to` without graph identity proof. If inference is not
+implemented, report `IMPLEMENTATION-BLOCKED` — do not require redundant casts
+as workaround.
+
+INTERMEDIATE-ZERO: do not name intermediate values used once when the chain
+preserves semantic identity — chain relations directly. Retain a named
+intermediate only when the name contributes semantic information the chain does
+not (multiple consumers, or human-clarity place identity).
 
 MCP: `duo_agent_session_start` returns `infer_one` on all agent servers.
 
@@ -675,8 +695,8 @@ new runtime standard table = 0
 new compound semantic filenames = 0
 ```
 
-`gates/path.id` enforces LAW-ONE path names on staged paths and the tracked tree.
-`gates/idiom.id` remains a lexical migration preflight on added lines only;
+`gate/path.id` enforces LAW-ONE path names on staged paths and the tracked tree.
+`gate/idiom.id` remains a lexical migration preflight on added lines only;
 it must not be reported as semantic canonicality. Closure, namespace, length,
 cast, world, and relation identity verdicts belong to production parse → resolve
 → graph → obligation query (`GAP-124`, `scripts/canon.id`). Delete idiomgate

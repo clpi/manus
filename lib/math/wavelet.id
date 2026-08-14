@@ -211,7 +211,7 @@ denoise(signal: any, threshold: f64): any
             if coeff:abs() < threshold
                 decomp.details[i][j] = 0
             else
-                decomp.details[i][j] = coeff - math.sign(coeff) * threshold
+                decomp.details[i][j] = coeff - coeff:sign() * threshold
             end
             j += 1
         end

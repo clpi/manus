@@ -1,4 +1,4 @@
-//! Pass 7 — semantic fingerprints for caching, dedupe, and regression detection.
+//! — semantic fingerprints for caching, dedupe, and regression detection.
 //!
 //! Derived from canonical semantic facts, not raw source text.
 const std = @import("std");

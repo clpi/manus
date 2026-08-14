@@ -1,4 +1,4 @@
-//! Pass 12 P12-WS8 — bounded semantic transaction preview/validate (MCP parity, no network).
+//! P12-WS8 — bounded semantic transaction preview/validate (MCP parity, no network).
 //!
 //! Agents propose edits; Duo returns deterministic preview + obligation impact before apply.
 const std = @import("std");

@@ -164,7 +164,7 @@ parse(raw_url: str): any
     end
     colon_pos = host:find(":", 1, true)
     if colon_pos != nil
-        port = tonumber(host:sub(colon_pos + 1))
+        port = host:sub(colon_pos + 1:to(i64))
         host = host:sub(1, colon_pos - 1)
     end
     if url == "" url = "/" end

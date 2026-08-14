@@ -1,5 +1,10 @@
 # WASM runtime benchmark with a ratcheted wall-clock baseline.
 #
+# ledger/perf contract: wasm benchmark
+# oracle: wasm: FAIL
+# negative: wasm: PASS
+# verdict: wasmtime runtime oracle axis
+#
 # Duo replacement for scripts/run_wasm_benchmark.sh (monoglot census).
 #
 # Compiles examples/benchmark_wasm.lua to wasm32-wasi, runs it under every
@@ -50,7 +55,7 @@ _fx(x: f64, places: i64): str
     i = 0
     while i < places
         scale = scale * 10
-        i = i + 1
+        i += 1
     end
     n = to(i64)(v * to(f64)(scale) + 0.5)
     w = n / scale
@@ -85,7 +90,7 @@ _result_block(text: str): str
         f = _fields(std.script.chomp(l))
         if f:len() >= 3 and f[1] == "RESULT"
             out = out .. f[2] .. " " .. f[3] .. "\n"
-            n = n + 1
+            n += 1
         end
     end
     out .. "__n " .. n:to(str)
@@ -117,7 +122,7 @@ _min_wall(cmd: str, runs: i64): f64
     while i < runs
         t = _wall_seconds(cmd)
         if best == 0.0 or t < best best = t end
-        i = i + 1
+        i += 1
     end
     best
 end
@@ -170,7 +175,7 @@ main: i64 = ()
                     os.exit(1)
                 end
                 runs = to(i64)(args[i + 1])
-                i = i + 1
+                i += 1
             else
                 if a != "--"
                     print("ERROR: unknown argument: " .. a)
@@ -178,7 +183,7 @@ main: i64 = ()
                 end
             end
         end
-        i = i + 1
+        i += 1
     end
     if runs == nil or runs < 1
         print("ERROR: runs must be a positive integer")

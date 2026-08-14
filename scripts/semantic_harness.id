@@ -1,4 +1,4 @@
-# Pass 57 A2 — the semantic harness: ONE source, N projection targets.
+# The semantic harness: ONE source, N projection targets.
 #
 # What this replaces, and why it is not a rewrite of native_differential.sh.
 #
@@ -84,7 +84,7 @@ main(): i64
 
     for fi, src in files
         stem = std.script.path_stem(src)
-        entries = entries + 1
+        entries += 1
 
         ref = 0
         ref_name = ""
@@ -120,7 +120,7 @@ main(): i64
         end
 
         if bad != ""
-            diverged = diverged + 1
+            diverged += 1
             print("semantic_harness: DIVERGE " .. stem)
             io.write(bad)
         end
@@ -128,7 +128,7 @@ main(): i64
 
     ncols = 0
     for ti, t in cols
-        ncols = ncols + 1
+        ncols += 1
     end
 
     print("semantic_harness: " .. entries:to(str) .. " entries x " .. ncols:to(str)

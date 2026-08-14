@@ -1,0 +1,35 @@
+chomp: str = (text: str)
+    n = text:len()
+    while n > 0
+        c = text:byte(n)
+        if c != 10 and c != 13 and c != 32
+            break
+        n -= 1
+    text:sub(1, n)
+
+cap: str = (cmd: str)
+    chomp(gatecap(cmd))
+
+digits: i64 = (text: str)
+    s = chomp(text)
+    if !s:len()
+        return 0
+    v = 0
+    i = 1
+    while i <= s:len()
+        c = s:byte(i)
+        if c >= 48 and c <= 57
+            v = v * 10 + (c - 48)
+        i += 1
+    v
+
+main: i64 = ()
+    gatecap("grep '^ledger' docs/spec/foreign.md > /tmp/idol-fw-rules")
+    gatecap("git ls-files | grep -E '[.](zig|c)$' > /tmp/idol-fw-all")
+    i = 1
+    while i <= 3
+        gatecap("sed -n '{i}p' /tmp/idol-fw-rules > /tmp/idol-fw-pre")
+        pre = cap("cat /tmp/idol-fw-pre")
+        print("i={i} pre=[{pre}]")
+        i += 1
+    0

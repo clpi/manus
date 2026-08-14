@@ -1,10 +1,10 @@
-# Pass 11 WP-12: repository hygiene gate (forbidden root artifacts).
+# Repository hygiene gate (forbidden root artifacts).
 #
 # Duo replacement for scripts/repo_hygiene.sh, closing removal-ledger entry
 # RL-12, whose gate reads "repo_hygiene.id + zig build repo-hygiene".
 #
 # Every rule here exists because the artifact it names actually got committed
-# once. The root file literally called "-" was a 1 MB accident from the Pass 10
+# once. The root file literally called "-" was a 1 MB accident from the audit
 # audit; the tracked `_*.out` probes are what agent sessions leave behind.
 #
 # Failures are counted, never short-circuited: a hygiene gate that stops at the
@@ -27,7 +27,7 @@ end
 main: i64 = ()
     fails = 0
 
-    # Root file literally named "-" (1 MB accident from the Pass 10 audit).
+    # Root file literally named "-" (1 MB accident from the audit).
     if _report(std.script.fs_exists("-"), "root file '-' must be removed")
         fails += 1
     end
@@ -47,7 +47,7 @@ main: i64 = ()
     end
 
     rootforeign = std.script.chomp(std.script.capture("find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort | head -1"))
-    if _report(rootforeign != "", "root foreign scratch script {rootforeign} present (delete or move into duon)")
+    if _report(rootforeign != "", "root foreign scratch script {rootforeign} present (delete or move into idol)")
         fails += 1
 
     # Tracked *.out must never ship; local gitignored copies are fine.

@@ -1,9 +1,9 @@
-# Pass 101 §4: wart as the differential BASELINE, plus the claim table.
+# wart as the differential BASELINE, plus the claim table.
 #
 #   duo run bench/wart.id            # generated differential + timing
 #   K=16 N=5 duo run bench/wart.id   # more kernels, more reps
 #
-# Pass 101 asks for "wart enters the differential harness as the baseline" and
+# The mandate asks for "wart enters the differential harness as the baseline" and
 # for the claim to "ship as a table, not an adjective". Before 2026-08-08 no
 # harness compared the engine to wart at all: bench/verify.id differences the engine
 # against wasmtime, bench/run.id has a wart column that only reports SIGILL or
@@ -164,7 +164,7 @@ _wart_assert(wart: str, wasm: str): str
 end
 
 main(): i64
-    binary = std.script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
+    binary = std.script.getenv("IDOL_WASM_BIN", "/tmp/idolwasm")
     wart = std.script.getenv("WART", std.script.getenv("HOME", ".") .. "/x/wart/zig-out/bin/wart")
     wasmtime = std.script.getenv("WASMTIME", "wasmtime")
     kn: i64 = to(i64)(std.script.getenv("K", "8"))
@@ -181,7 +181,7 @@ main(): i64
     end
     if not std.script.fs_exists(wart)
         print("no wart binary at " .. wart)
-        print("wart is the Pass 101 baseline; without it this table cannot be produced.")
+        print("wart is the differential baseline; without it this table cannot be produced.")
         return 1
     end
     if std.script.status("command -v wat2wasm >/dev/null 2>&1") != 0
@@ -233,13 +233,13 @@ main(): i64
 
     # ── GENERATED DIFFERENTIAL + TIMING ──────────────────────────────────
     print(_pad("KERNEL", 10) .. _pad("WASMTIME", 14) .. _pad("WARD", 14)
-        .. _pad("wart", 10) .. _pad("duon", 10) .. _pad("the engine ms", 9)
+        .. _pad("wart", 10) .. _pad("the engine", 10) .. _pad("the engine ms", 9)
         .. _pad("wart ms", 9) .. _pad("wtime ms", 9) .. "the engine/wart")
     _rule(104)
 
     seed = seed0
     bad = 0
-    sduon = 0
+    sidol = 0
     swart = 0
     i = 1
     while i <= kn
@@ -251,7 +251,7 @@ main(): i64
         amod = _build(dir, "k" .. i:to(str) .. "_assert", _assert_wat(body, ref))
 
         vwart = _wart_assert(wart, amod)
-        vduon = _expect(binary, amod)
+        vidol = _expect(binary, amod)
 
         # the engine's own value, read the way bench/verify.id reads it, so the row
         # carries a number and not only a verdict. wasmtime prints i32 signed
@@ -264,15 +264,15 @@ main(): i64
         # Interleaved, min of `reps`. Interleaving matters: this box drifts
         # measurably under sustained load, and a sequential sweep charges the
         # drift to whichever runtime ran last.
-        tduon = 9999999
+        tidol = 9999999
         twart = 9999999
         twt = 9999999
         j = 1
         while j <= reps
             a = _time_ms("DUO_WASM_MODULE=" .. rmod .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit "
                 .. binary .. " >/dev/null 2>&1")
-            if a < tduon
-                tduon = a
+            if a < tidol
+                tidol = a
             end
             b = _time_ms(wart .. " run --jit " .. amod .. " >/dev/null 2>&1")
             if b < twart
@@ -284,33 +284,33 @@ main(): i64
             end
             j += 1
         end
-        sduon = sduon + tduon
-        swart = swart + twart
+        sidol += tidol
+        swart += twart
 
         ratio = "-"
         if twart > 0
-            ratio = to(str)(tduon * 100 / twart) .. "%"
+            ratio = to(str)(tidol * 100 / twart) .. "%"
         end
-        if vwart != "agree" or vduon != "agree"
+        if vwart != "agree" or vidol != "agree"
             bad += 1
         end
         print(_pad("k" .. i:to(str), 10) .. _pad(ref, 14) .. _pad(got, 14)
-            .. _pad(vwart, 10) .. _pad(vduon, 10) .. _pad(tduon:to(str), 9)
+            .. _pad(vwart, 10) .. _pad(vidol, 10) .. _pad(tidol:to(str), 9)
             .. _pad(twart:to(str), 9) .. _pad(twt:to(str), 9) .. ratio)
         i += 1
     end
 
     _rule(104)
     if swart > 0
-        print("aggregate the engine/wart = " .. to(str)(sduon * 100 / swart)
-            .. "%   (<100% means the engine is faster -- Pass 101 §4 asks for < 100%)")
+        print("aggregate the engine/wart = " .. to(str)(sidol * 100 / swart)
+            .. "%   (<100% means the engine is faster -- the target asks for < 100%)")
     end
     print("kernels where a runtime disagreed with the oracle: " .. bad:to(str) .. "/" .. kn:to(str))
 
     if bad != 0
         return 1
     end
-    if swart > 0 and sduon >= swart
+    if swart > 0 and sidol >= swart
         print("")
         print("*** PASS 101 §4 UNMET: the engine is not faster than wart on this corpus ***")
         return 1

@@ -1,78 +1,78 @@
-# GENERATED from src/token_classify_gen.zig — do not edit by hand.
-# Regenerate: duo token-tables emit
-# Canonical token facts: src/token_semantic.zig
+-- GENERATED from src/token_classify_gen.zig — do not edit by hand.
+-- Regenerate: duo token-tables emit
+-- Canonical token facts: src/token_semantic.zig
 
-# Pass 12 M1 — Duo-native keyword classifier (P12-WS7).
-# 54 reserved words across 3 categories; 3 candidate realizations.
-# Proof: examples/pass12_m1_diff.id (differential + fuzz); artifact
-# inspection in src/token_classify_gen.zig (kind ids match lexer.TokenKind).
+-- Pass 12 M1 — Duo-native keyword classifier (P12-WS7).
+-- 54 reserved words across 3 categories; 3 candidate realizations.
+-- Proof: examples/pass12_m1_diff.id (differential + fuzz); artifact
+-- inspection in src/token_classify_gen.zig (kind ids match lexer.TokenKind).
 
-GENERATOR_OWNER = "src/token_classify_gen.zig"
-DESCRIPTOR_SCHEMA = "token-semantic-v0"
-KEYWORD_COUNT = 54
-PRODUCTION_CLASSIFIER = "classifier.branch_chain"
+GENERATOROWNER = "src/token_classify_gen.zig"
+DESCRIPTORSCHEMA = "token-semantic-v0"
+KEYWORDCOUNT = 54
+PRODUCTIONCLASSIFIER = "classifier.branchchain"
 
-# Categories: 1 = lua_keyword, 2 = type_descriptor, 3 = contextual
-CATEGORY_LUA = 1
-CATEGORY_DUO_TYPE = 2
-CATEGORY_DUO_CONTEXTUAL = 3
-KIND_AND = 4
-KIND_BREAK = 5
-KIND_CONTINUE = 6
-KIND_DO = 7
-KIND_ELSE = 8
-KIND_ELSEIF = 9
-KIND_END = 10
-KIND_FALSE = 11
-KIND_FOR = 12
-KIND_FUNCTION = 13
-KIND_FUN = 14
-KIND_GLOBAL = 15
-KIND_GOTO = 16
-KIND_IF = 17
-KIND_IN = 18
-KIND_LOCAL = 19
-KIND_NIL = 20
-KIND_NOT = 21
-KIND_OR = 22
-KIND_REPEAT = 23
-KIND_RETURN = 24
-KIND_THEN = 25
-KIND_TRUE = 26
-KIND_UNTIL = 27
-KIND_WHILE = 28
-KIND_CONST = 29
-KIND_ENUM = 30
-KIND_I8 = 31
-KIND_I16 = 32
-KIND_I32 = 33
-KIND_I64 = 34
-KIND_U8 = 35
-KIND_U16 = 36
-KIND_U32 = 37
-KIND_U64 = 38
-KIND_F32 = 39
-KIND_F64 = 40
-KIND_BOOL = 41
-KIND_VOID = 42
-KIND_STR = 43
-KIND_MATCH = 44
-KIND_TRY = 45
-KIND_CATCH = 46
-KIND_DEFER = 47
-KIND_ASYNC = 48
-KIND_AWAIT = 49
-KIND_CONCEPT = 50
-KIND_ALIAS = 51
-KIND_PRIVATE = 52
-KIND_EXTENDS = 53
-KIND_MACRO = 54
-KIND_COMPTIME = 55
-KIND_BY = 56
-KIND_LET = 57
+-- Categories: 1 = luakeyword, 2 = duotype, 3 = duocontextual
+CATEGORYLUA = 1
+CATEGORYDUOTYPE = 2
+CATEGORYDUOCONTEXTUAL = 3
+KINDAND = 4
+KINDBREAK = 5
+KINDCONTINUE = 6
+KINDDO = 7
+KINDELSE = 8
+KINDELSEIF = 9
+KINDEND = 10
+KINDFALSE = 11
+KINDFOR = 12
+KINDFUNCTION = 13
+KINDFUN = 14
+KINDGLOBAL = 15
+KINDGOTO = 16
+KINDIF = 17
+KINDIN = 18
+KINDLOCAL = 19
+KINDNIL = 20
+KINDNOT = 21
+KINDOR = 22
+KINDREPEAT = 23
+KINDRETURN = 24
+KINDTHEN = 25
+KINDTRUE = 26
+KINDUNTIL = 27
+KINDWHILE = 28
+KINDCONST = 29
+KINDENUM = 30
+KINDI8 = 31
+KINDI16 = 32
+KINDI32 = 33
+KINDI64 = 34
+KINDU8 = 35
+KINDU16 = 36
+KINDU32 = 37
+KINDU64 = 38
+KINDF32 = 39
+KINDF64 = 40
+KINDBOOL = 41
+KINDVOID = 42
+KINDSTR = 43
+KINDMATCH = 44
+KINDTRY = 45
+KINDCATCH = 46
+KINDDEFER = 47
+KINDASYNC = 48
+KINDAWAIT = 49
+KINDCONCEPT = 50
+KINDALIAS = 51
+KINDPRIVATE = 52
+KINDEXTENDS = 53
+KINDMACRO = 54
+KINDCOMPTIME = 55
+KINDBY = 56
+KINDLET = 57
 
-# Sorted descriptor (lexicographic) for sorted_lookup + metadata.
-SORTED_TEXT = {
+-- Sorted descriptor (lexicographic) for sortedlookup + metadata.
+SORTEDTEXT = {
     "alias",
     "and",
     "async",
@@ -128,7 +128,7 @@ SORTED_TEXT = {
     "void",
     "while",
 }
-SORTED_ID = {
+SORTEDID = {
     51,
     4,
     48,
@@ -184,7 +184,7 @@ SORTED_ID = {
     42,
     28,
 }
-SORTED_CATEGORY = {
+SORTEDCATEGORY = {
     3,
     1,
     3,
@@ -241,154 +241,154 @@ SORTED_CATEGORY = {
     1,
 }
 
-# Candidate 1: branch chain (production).
-fun classify_branch_chain(w: str): i64
-    if w == "and" return 4 end
-    if w == "break" return 5 end
-    if w == "continue" return 6 end
-    if w == "do" return 7 end
-    if w == "else" return 8 end
-    if w == "elseif" return 9 end
-    if w == "end" return 10 end
-    if w == "false" return 11 end
-    if w == "for" return 12 end
-    if w == "function" return 13 end
-    if w == "fun" return 14 end
-    if w == "global" return 15 end
-    if w == "goto" return 16 end
-    if w == "if" return 17 end
-    if w == "in" return 18 end
-    if w == "local" return 19 end
-    if w == "nil" return 20 end
-    if w == "not" return 21 end
-    if w == "or" return 22 end
-    if w == "repeat" return 23 end
-    if w == "return" return 24 end
-    if w == "then" return 25 end
-    if w == "true" return 26 end
-    if w == "until" return 27 end
-    if w == "while" return 28 end
-    if w == "const" return 29 end
-    if w == "enum" return 30 end
-    if w == "i8" return 31 end
-    if w == "i16" return 32 end
-    if w == "i32" return 33 end
-    if w == "i64" return 34 end
-    if w == "u8" return 35 end
-    if w == "u16" return 36 end
-    if w == "u32" return 37 end
-    if w == "u64" return 38 end
-    if w == "f32" return 39 end
-    if w == "f64" return 40 end
-    if w == "bool" return 41 end
-    if w == "void" return 42 end
-    if w == "str" return 43 end
-    if w == "match" return 44 end
-    if w == "try" return 45 end
-    if w == "catch" return 46 end
-    if w == "defer" return 47 end
-    if w == "async" return 48 end
-    if w == "await" return 49 end
-    if w == "concept" return 50 end
-    if w == "alias" return 51 end
-    if w == "private" return 52 end
-    if w == "extends" return 53 end
-    if w == "macro" return 54 end
-    if w == "comptime" return 55 end
-    if w == "by" return 56 end
-    if w == "let" return 57 end
+-- Candidate 1: branch chain (production).
+classifybranchchain: i64 = (w: str)
+    if w == "and" then return 4 end
+    if w == "break" then return 5 end
+    if w == "continue" then return 6 end
+    if w == "do" then return 7 end
+    if w == "else" then return 8 end
+    if w == "elseif" then return 9 end
+    if w == "end" then return 10 end
+    if w == "false" then return 11 end
+    if w == "for" then return 12 end
+    if w == "function" then return 13 end
+    if w == "fun" then return 14 end
+    if w == "global" then return 15 end
+    if w == "goto" then return 16 end
+    if w == "if" then return 17 end
+    if w == "in" then return 18 end
+    if w == "local" then return 19 end
+    if w == "nil" then return 20 end
+    if w == "not" then return 21 end
+    if w == "or" then return 22 end
+    if w == "repeat" then return 23 end
+    if w == "return" then return 24 end
+    if w == "then" then return 25 end
+    if w == "true" then return 26 end
+    if w == "until" then return 27 end
+    if w == "while" then return 28 end
+    if w == "const" then return 29 end
+    if w == "enum" then return 30 end
+    if w == "i8" then return 31 end
+    if w == "i16" then return 32 end
+    if w == "i32" then return 33 end
+    if w == "i64" then return 34 end
+    if w == "u8" then return 35 end
+    if w == "u16" then return 36 end
+    if w == "u32" then return 37 end
+    if w == "u64" then return 38 end
+    if w == "f32" then return 39 end
+    if w == "f64" then return 40 end
+    if w == "bool" then return 41 end
+    if w == "void" then return 42 end
+    if w == "str" then return 43 end
+    if w == "match" then return 44 end
+    if w == "try" then return 45 end
+    if w == "catch" then return 46 end
+    if w == "defer" then return 47 end
+    if w == "async" then return 48 end
+    if w == "await" then return 49 end
+    if w == "concept" then return 50 end
+    if w == "alias" then return 51 end
+    if w == "private" then return 52 end
+    if w == "extends" then return 53 end
+    if w == "macro" then return 54 end
+    if w == "comptime" then return 55 end
+    if w == "by" then return 56 end
+    if w == "let" then return 57 end
     0
 end
 
-# Candidate 2: length bucket (filter then equality chain).
-fun classify_length_bucket(w: str): i64
-    n = w:len()
-    if n == 2
-        if w == "do" return 7 end
-        if w == "if" return 17 end
-        if w == "in" return 18 end
-        if w == "or" return 22 end
-        if w == "i8" return 31 end
-        if w == "u8" return 35 end
-        if w == "by" return 56 end
+-- Candidate 2: length bucket (filter then equality chain).
+classifylengthbucket: i64 = (w: str)
+    n = string.len(w)
+    if n == 2 then
+        if w == "do" then return 7 end
+        if w == "if" then return 17 end
+        if w == "in" then return 18 end
+        if w == "or" then return 22 end
+        if w == "i8" then return 31 end
+        if w == "u8" then return 35 end
+        if w == "by" then return 56 end
         0
     end
-    if n == 3
-        if w == "and" return 4 end
-        if w == "end" return 10 end
-        if w == "for" return 12 end
-        if w == "fun" return 14 end
-        if w == "nil" return 20 end
-        if w == "not" return 21 end
-        if w == "i16" return 32 end
-        if w == "i32" return 33 end
-        if w == "i64" return 34 end
-        if w == "u16" return 36 end
-        if w == "u32" return 37 end
-        if w == "u64" return 38 end
-        if w == "f32" return 39 end
-        if w == "f64" return 40 end
-        if w == "str" return 43 end
-        if w == "try" return 45 end
-        if w == "let" return 57 end
+    if n == 3 then
+        if w == "and" then return 4 end
+        if w == "end" then return 10 end
+        if w == "for" then return 12 end
+        if w == "fun" then return 14 end
+        if w == "nil" then return 20 end
+        if w == "not" then return 21 end
+        if w == "i16" then return 32 end
+        if w == "i32" then return 33 end
+        if w == "i64" then return 34 end
+        if w == "u16" then return 36 end
+        if w == "u32" then return 37 end
+        if w == "u64" then return 38 end
+        if w == "f32" then return 39 end
+        if w == "f64" then return 40 end
+        if w == "str" then return 43 end
+        if w == "try" then return 45 end
+        if w == "let" then return 57 end
         0
     end
-    if n == 4
-        if w == "else" return 8 end
-        if w == "goto" return 16 end
-        if w == "then" return 25 end
-        if w == "true" return 26 end
-        if w == "enum" return 30 end
-        if w == "bool" return 41 end
-        if w == "void" return 42 end
+    if n == 4 then
+        if w == "else" then return 8 end
+        if w == "goto" then return 16 end
+        if w == "then" then return 25 end
+        if w == "true" then return 26 end
+        if w == "enum" then return 30 end
+        if w == "bool" then return 41 end
+        if w == "void" then return 42 end
         0
     end
-    if n == 5
-        if w == "break" return 5 end
-        if w == "false" return 11 end
-        if w == "local" return 19 end
-        if w == "until" return 27 end
-        if w == "while" return 28 end
-        if w == "const" return 29 end
-        if w == "match" return 44 end
-        if w == "catch" return 46 end
-        if w == "defer" return 47 end
-        if w == "async" return 48 end
-        if w == "await" return 49 end
-        if w == "alias" return 51 end
-        if w == "macro" return 54 end
+    if n == 5 then
+        if w == "break" then return 5 end
+        if w == "false" then return 11 end
+        if w == "local" then return 19 end
+        if w == "until" then return 27 end
+        if w == "while" then return 28 end
+        if w == "const" then return 29 end
+        if w == "match" then return 44 end
+        if w == "catch" then return 46 end
+        if w == "defer" then return 47 end
+        if w == "async" then return 48 end
+        if w == "await" then return 49 end
+        if w == "alias" then return 51 end
+        if w == "macro" then return 54 end
         0
     end
-    if n == 6
-        if w == "elseif" return 9 end
-        if w == "global" return 15 end
-        if w == "repeat" return 23 end
-        if w == "return" return 24 end
+    if n == 6 then
+        if w == "elseif" then return 9 end
+        if w == "global" then return 15 end
+        if w == "repeat" then return 23 end
+        if w == "return" then return 24 end
         0
     end
-    if n == 7
-        if w == "concept" return 50 end
-        if w == "private" return 52 end
-        if w == "extends" return 53 end
+    if n == 7 then
+        if w == "concept" then return 50 end
+        if w == "private" then return 52 end
+        if w == "extends" then return 53 end
         0
     end
-    if n == 8
-        if w == "continue" return 6 end
-        if w == "function" return 13 end
-        if w == "comptime" return 55 end
+    if n == 8 then
+        if w == "continue" then return 6 end
+        if w == "function" then return 13 end
+        if w == "comptime" then return 55 end
         0
     end
     0
 end
 
-# Candidate 3: sorted lookup (binary search over descriptor).
-fun classify_sorted_lookup(w: str): i64
+-- Candidate 3: sorted lookup (binary search over descriptor).
+classifysortedlookup: i64 = (w: str)
     lo = 1
     hi = 54
     while lo <= hi
         mid = (lo + hi) // 2
-        if w == SORTED_TEXT[mid] return SORTED_ID[mid] end
-        if w < SORTED_TEXT[mid]
+        if w == SORTEDTEXT[mid] then return SORTEDID[mid] end
+        if w < SORTEDTEXT[mid] then
             hi = mid - 1
         else
             lo = mid + 1
@@ -397,30 +397,30 @@ fun classify_sorted_lookup(w: str): i64
     0
 end
 
-# Production entry (mirrors token_semantic.production_classifier).
+-- Production entry (mirrors token_semantic.production_classifier).
 @c.export("duo_keyword_classify")
-fun classify(w: str): i64
-    classify_branch_chain(w)
+classify: i64 = (w: str)
+    classifybranchchain(w)
 end
 
-fun is_keyword(w: str): bool
+iskeyword: bool = (w: str)
     classify(w) != 0
 end
 
-fun category_of(id: i64): i64
+categoryof: i64 = (id: i64)
     i = 1
-    while i <= KEYWORD_COUNT
-        if SORTED_ID[i] == id return SORTED_CATEGORY[i] end
-        i = i + 1
+    while i <= KEYWORDCOUNT
+        if SORTEDID[i] == id then return SORTEDCATEGORY[i] end
+        i += 1
     end
     0
 end
 
-fun spelling_of(id: i64): str
+spellingof: str = (id: i64)
     i = 1
-    while i <= KEYWORD_COUNT
-        if SORTED_ID[i] == id return SORTED_TEXT[i] end
-        i = i + 1
+    while i <= KEYWORDCOUNT
+        if SORTEDID[i] == id then return SORTEDTEXT[i] end
+        i += 1
     end
     ""
 end

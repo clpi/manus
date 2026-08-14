@@ -1,4 +1,4 @@
-# Lua-host corpus gate — the hosted-language constructs the duon front end
+# Lua-host corpus gate — the hosted-language constructs the idol front end
 # must accept, walked through the CLI on real files.
 #
 # PORTED from src/lua_superset_corpus.zig, deleted in the same commit. That
@@ -10,7 +10,7 @@
 # to survive that widening; the construct under test is unchanged, and the
 # fixture says so in its own header.
 #
-# What the corpus is actually for, restated against Pass 120 §33 P0.4: this
+# What the corpus is actually for, restated against P0.4: this
 # compiler hosts Lua as a FIRST-CLASS source language, so long strings, long
 # comments, bracket levels, repeat/until and local function are not a legacy
 # courtesy — they are input the front end owes an answer on. The old file's

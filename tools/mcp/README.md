@@ -21,7 +21,7 @@ Run the exact serialized MCP gate after changes:
 
 ```bash
 repo="$(git rev-parse --show-toplevel)"
-"$repo/zig-out/bin/idol" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate
+"$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- zig build mcp-gate
 ```
 
 The gate must prove handshake, schema/value agreement, truthful session state,

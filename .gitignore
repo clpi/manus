@@ -156,3 +156,6 @@ duo_keyword_classify.c
 /ext/tree-sitter-duo/src/parser.c
 /ext/tree-sitter-duo/src/node-types.json
 /ext/tree-sitter-duo/src/tree_sitter/
+/ext/tree-sitter-idol/src/parser.c
+/ext/tree-sitter-idol/src/node-types.json
+/ext/tree-sitter-idol/src/tree_sitter/

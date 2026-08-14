@@ -61,7 +61,10 @@
 #
 # LSPGATE_SERVER   drive a different server file (the controls use it).
 
-root = std.os.getenv("DUO_ROOT")
+root = std.os.getenv("IDOL_ROOT")
+if root == nil or root == ""
+    root = std.os.getenv("DUO_ROOT")
+end
 if root == nil or root == ""
     root = std.os.getenv("PWD")
 end
@@ -69,9 +72,12 @@ if root == nil or root == ""
     root = "."
 end
 
-duobin = std.os.getenv("DUO_BIN")
-if duobin == nil or duobin == ""
-    duobin = root .. "/zig-out/bin/duo"
+idolbin = std.os.getenv("IDOL_BIN")
+if idolbin == nil or idolbin == ""
+    idolbin = std.os.getenv("DUO_BIN")
+end
+if idolbin == nil or idolbin == ""
+    idolbin = root .. "/zig-out/bin/idol"
 end
 
 server = std.os.getenv("LSPGATE_SERVER")
@@ -79,10 +85,10 @@ if server == nil or server == ""
     server = root .. "/tools/lsp/src/server.id"
 end
 
-# `duo run x.id` drops `x.out` in the CURRENT directory. Run from the repo
+# `idol run x.id` drops `x.out` in the CURRENT directory. Run from the repo
 # root and the gate litters the root with server.out, which `zig build
 # repo-hygiene` is entitled to fail on. Work in a scratch dir.
-work = "/tmp/duo-lsp-gate"
+work = "/tmp/idol-lsp-gate"
 
 fails = 0
 
@@ -110,7 +116,7 @@ drive(lines: str): str
     reqf = work .. "/req.lsp"
     respf = work .. "/resp.lsp"
     std.fs.write_file(reqf, lines)
-    os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. duobin
+    os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idolbin
         .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
     std.fs.read_file(respf) or ""
 end
@@ -130,12 +136,12 @@ has(blob: str, needle: str): bool
                 ok = false
                 j = nn
             end
-            j = j + 1
+            j += 1
         end
         if ok
             return true
         end
-        i = i + 1
+        i += 1
     end
     false
 end
@@ -147,7 +153,7 @@ end
 check(ok: bool, what: str, detail: str): void
     report(ok, what, detail)
     if not ok
-        fails = fails + 1
+        fails += 1
     end
 end
 
@@ -226,7 +232,7 @@ main(): i64
     end
 
     # ── handshake and the capability set ─────────────────────────────────
-    check(has(out, "\"serverInfo\":{\"name\":\"duo-lsp\""), "initialize handshakes",
+    check(has(out, "\"serverInfo\":{\"name\":\"idol-lsp\""), "initialize handshakes",
         "no serverInfo in the response — the server never handshook")
 
     for i, cap in {"hoverProvider", "definitionProvider", "documentSymbolProvider",
@@ -246,7 +252,7 @@ main(): i64
         .. "\"union\",\"anchor\",\"retrieve\",\"invoke\",\"callable\",\"world\",\"foreign\","
         .. "\"place\",\"number\",\"literal\",\"case\",\"comment\",\"walk\",\"pipe\"]"
     check(has(out, legend), "the semantic-token legend is the merged CLOSED set, in order",
-        "the legend drifted from tools/lsp/src/highlight.id — regenerate with `duo run tools/lsp/legend.id`")
+        "the legend drifted from tools/lsp/src/highlight.id — regenerate with `idol run tools/lsp/legend.id`")
     check(has(out, "\"tokenModifiers\":[\"declaration\",\"defaultlibrary\"]"),
         "the legend carries H-3 weight and H-5 italic as modifiers",
         "definition-adds-weight and ambient-is-italic are axes and must reach the client")
@@ -362,7 +368,7 @@ main(): i64
     # check with teeth: it runs the real generator against the real document.
     src = root .. "/docs/spec/roles.md"
     if std.fs.exists(src)
-        rc = os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. duobin
+        rc = os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. idolbin
             .. "' run --backend=c '" .. root .. "/tools/lsp/legend.id' > '" .. work .. "/legend.txt' 2>/dev/null")
         gen = std.fs.read_file(work .. "/legend.txt") or ""
         check(has(gen, "already current"), "the committed legend re-derives from docs/spec/roles.md",

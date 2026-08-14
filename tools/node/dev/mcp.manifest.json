@@ -19,10 +19,20 @@
   ],
   "skill": "idol-dev",
   "skill_path": ".pi/skills/idol-dev",
-  "deprecated_skill": "duon-development",
+  "deprecated_skill": "idol-development",
   "servers": [
     {
-      "name": "duo-bench",
+      "name": "idol",
+      "entry": "tools/mcp/native.id",
+      "provenance": "native",
+      "backend": "native",
+      "required": true,
+      "startup_timeout_sec": 60,
+      "tool_timeout_sec": 1800,
+      "purpose": "native sentinel-free MCP server (idol run, no --backend=c): status, head, orient"
+    },
+    {
+      "name": "idol-bench",
       "entry": "tools/mcp/bench.id",
       "provenance": "bootstrap-compatibility",
       "backend": "c",
@@ -32,7 +42,7 @@
       "purpose": "claims, gaps, serialized gates, and performance evidence"
     },
     {
-      "name": "duo-lsp",
+      "name": "idol-lsp",
       "entry": "tools/mcp/lsp.id",
       "provenance": "bootstrap-compatibility",
       "backend": "c",

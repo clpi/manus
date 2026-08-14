@@ -1,4 +1,4 @@
-# gates/admission — semantic-admission firewall for canonical native operations.
+# gate/admission — semantic-admission firewall for canonical native operations.
 #
 # Every ADDED canonical line operation must classify as exactly one of:
 #   canonical.relation | descriptor.application | grammar.face | world.projection
@@ -7,7 +7,7 @@
 #
 # Authority: C0 §67 law.binding.census · law.gate.algebra · law.lua.redirect
 # Transport: stdin unified diff (added lines only), Idol only.
-# Relation census projection: gates/catalog.id (documentation; lookups below — no req).
+# Relation census projection: gate/catalog.id (documentation; lookups below — no req).
 
 transport: str = ()
     text = stdin:read()
@@ -64,61 +64,69 @@ peek: bool = (code: str, spell: str)
         i += 1
     false
 
-subjectrel: bool = (code: str, needle: str)
-    hasmarker(code, needle)
-
-ns: i64 = (path: str, no: i64, code: str, spell: str, law: str, fix: str)
-    if peek(code, spell)
-        print("({path}, {no}, invalid.namespace, {spell}, {law}, {fix})")
-        1
-    else
-        0
-
-hasmarker: bool = (code: str, needle: str)
+find: bool = (code: str, needle: str)
     n = code:len()
     k = needle:len()
     i = 1
     while i + k - 1 <= n
         if code:sub(i, i + k - 1) == needle
-            return true
+            before = ""
+            if i > 1
+                before = code:sub(i - 1, i - 1)
+            if before != ":" and (before == "" or !wordc(before))
+                j = i + k
+                while j <= n and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
+                    j += 1
+                if j <= n and code:sub(j, j) == "("
+                    return true
         i += 1
     false
 
-auditnamespaces: i64 = (path: str, no: i64, code: str)
+edge: bool = (code: str, needle: str)
+    find(code, needle)
+
+nspace: i64 = (path: str, no: i64, code: str, spell: str, law: str, fix: str)
+    if peek(code, spell)
+        print("({path}, {no}, namespace, {spell}, {law}, {fix})")
+        1
+    else
+        0
+
+checkns: i64 = (path: str, no: i64, code: str)
     h = 0
-    h = h + ns(path, no, code, "table.", "law.lua.redirect", "xs:push xs:keys — subject-first collection relations")
-    h = h + ns(path, no, code, "string.", "law.lua.redirect", "text:sub text:find — subject-first text relations")
-    h = h + ns(path, no, code, "math.", "law.lua.redirect", "x:sqrt x:abs — subject-first numeric relations")
-    h = h + ns(path, no, code, "list.", "law.gate.algebra", "collection namespace respelling — use xs:push not list.append")
-    h = h + ns(path, no, code, "array.", "law.gate.algebra", "collection namespace respelling — use xs:push")
-    h = h + ns(path, no, code, "std\x2E", "law.standard.environment", "no std namespace — admitted relations project directly")
-    h = h + ns(path, no, code, "", "law.shell.run", "foo is namespace dispatch — run + world + demand facts")
-    h = h + ns(path, no, code, "proc.", "law.shell.run", "proc is not semantic authority")
-    h = h + ns(path, no, code, "fs.", "law.world.grant", "path:read path:exists — subject-first filesystem relations")
-    h = h + ns(path, no, code, "io.", "law.world.grant", "path:open stream:read — subject + world facts")
-    h = h + ns(path, no, code, "os.", "law.world.grant", "os.env os.args — world facts not namespace methods")
-    h = h + ns(path, no, code, "core.", "law.standard.environment", "core is vocabulary authority not runtime table")
-    h = h + ns(path, no, code, "ir.", "law.realization.only", "ir is realization authority not source vocabulary")
+    h += nspace(path, no, code, "table.", "law.lua.redirect", "xs:push xs:keys — subject-first collection relations")
+    h += nspace(path, no, code, "string.", "law.lua.redirect", "text:sub text:find — subject-first text relations")
+    h += nspace(path, no, code, "math.", "law.lua.redirect", "x:sqrt x:abs — subject-first numeric relations")
+    h += nspace(path, no, code, "list.", "law.gate.algebra", "collection namespace respelling — use xs:push not list.append")
+    h += nspace(path, no, code, "array.", "law.gate.algebra", "collection namespace respelling — use xs:push")
+    h = nspace(path, no, code, "std\x2E", "law.standard.environment", "no std namespace — admitted relations project directly")
+    h += nspace(path, no, code, "", "law.shell.run", "foo is namespace dispatch — run + world + demand facts")
+    h += nspace(path, no, code, "proc.", "law.shell.run", "proc is not semantic authority")
+    h += nspace(path, no, code, "fs.", "law.world.grant", "path:read path:exists — subject-first filesystem relations")
+    h += nspace(path, no, code, "io.", "law.world.grant", "path:open stream:read — subject + world facts")
+    h += nspace(path, no, code, "os.", "law.world.grant", "os.env os.args — world facts not namespace methods")
+    h += nspace(path, no, code, "core.", "law.standard.environment", "core is vocabulary authority not runtime table")
+    h += nspace(path, no, code, "ir.", "law.realization.only", "ir is realization authority not source vocabulary")
     h
 
-auditpredicates: i64 = (path: str, no: i64, code: str)
+checkpred: i64 = (path: str, no: i64, code: str)
     h = 0
     if peek(code, "isvalid") or peek(code, "is_valid")
         print("({path}, {no}, invalid.predicate, isvalid, law.audit.conventional, consume owned fact/case — never predicate helper)")
-        h = h + 1
-    if subjectrel(code, ":valid(")
+        h += 1
+    if edge(code, ":valid(")
         print("({path}, {no}, invalid.predicate, valid, law.audit.conventional, consume owned fact/case — never predicate projection)")
-        h = h + 1
-    if subjectrel(code, ":magicallyplausible(")
+        h += 1
+    if edge(code, ":magicallyplausible(")
         print("({path}, {no}, invalid.unresolved, magicallyplausible, law.binding.census, no admitted relation resolves — vocabulary blocked)")
-        h = h + 1
+        h += 1
     h
 
 audit: i64 = (path: str, no: i64, code: str)
-    h = auditnamespaces(path, no, code)
+    h = checkns(path, no, code)
     if h != 0
         return h
-    return auditpredicates(path, no, code)
+    return checkpred(path, no, code)
 
 head: bool = (line: str)
     line:len() >= 6 and line:sub(1, 6) == "+++ b/"
@@ -129,7 +137,7 @@ num: i64 = (s: str, i: i64)
     j = i
     while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
         v *= 10
-        v += (s:sub(j, j):byte() - 48)
+        v += (s:byte(j) - 48)
         j += 1
     v
 
@@ -158,8 +166,8 @@ scan: i64 = (body: str)
                     no = num(line, p + 1)
                 else
                     if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
-                        hits = hits + audit(path, no, strip(line:sub(2, line:len())))
-                        no = no + 1
+                        hits += audit(path, no, strip(line:sub(2, line:len())))
+                        no += 1
             line = ""
         else
             line = "{line}{c}"
@@ -207,16 +215,16 @@ control: bool = ()
     ok
 
 if !control()
-    print("gates/admission: FAIL positive controls")
+    print("gate/admission: FAIL positive controls")
     return 2
 body = transport()
 if body:len() == 0
-    print("gates/admission: FAIL empty input — pipe unified diff on stdin")
-    print("Usage: git diff -U0 --cached -- '*.id' | idol run gates/admission.id")
+    print("gate/admission: FAIL empty input — pipe unified diff on stdin")
+    print("Usage: git diff -U0 --cached -- '*.id' | idol run gate/admission.id")
     return 3
 total = scan(body)
 print("")
-print("gates/admission: {total} finding(s) on ADDED lines  [controls: A-H pass]")
+print("gate/admission: {total} finding(s) on ADDED lines  [controls: A-H pass]")
 if total > 0
     print("")
     print("Semantic admission: API-SHAPE-WITHOUT-SEMANTIC-ADMISSION is closed on added lines.")

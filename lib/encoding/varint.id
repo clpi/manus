@@ -25,7 +25,7 @@ read(data: str, pos: any): i64
         end
         byte = data:byte(pos[1])
         pos[1] += 1
-        result = result | ((byte & 0x7F) << shift)
+        result |= ((byte & 0x7F) << shift)
         if byte < 0x80
             break
         end
@@ -83,7 +83,7 @@ write_leb128(buf: any, value: i64): void
         byte = value & 0x7F
         value = value >> 7
         if value != 0
-            byte = byte | 0x80
+            byte |= 0x80
         end
         buf[buf:len() + 1] = byte:char()
     until value == 0
@@ -98,7 +98,7 @@ read_leb128(data: str, pos: any): i64
         end
         byte = data:byte(pos[1])
         pos[1] += 1
-        result = result | ((byte & 0x7F) << shift)
+        result |= ((byte & 0x7F) << shift)
         if byte < 0x80
             break
         end
@@ -118,7 +118,7 @@ write_signed_leb128(buf: any, value: i64): void
         if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) != 0)
             more = false
         else
-            byte = byte | 0x80
+            byte |= 0x80
         end
         buf[buf:len() + 1] = byte:char()
     end
@@ -133,11 +133,11 @@ read_signed_leb128(data: str, pos: any): i64
         end
         byte = data:byte(pos[1])
         pos[1] += 1
-        result = result | ((byte & 0x7F) << shift)
+        result |= ((byte & 0x7F) << shift)
         shift += 7
         if byte < 0x80
             if shift < 64 and (byte & 0x40) != 0
-                result = result | -(1 << shift)
+                result |= -(1 << shift)
             end
             break
         end

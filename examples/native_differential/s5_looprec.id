@@ -6,8 +6,8 @@ main(): i64
     acc = 0
     i = 1
     while i <= 5 do
-        acc = acc + fact(i)
-        i = i + 1
+        acc += fact(i)
+        i += 1
     end
     return acc
 end

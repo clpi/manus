@@ -1,4 +1,4 @@
--- duo-mcp/duo_eval.id — exponential metaprogramming evaluator.
+-- duo-mcp/duo_eval.id  -  exponential metaprogramming evaluator.
 -- Pure Duo. Input: Duo source. Output: metaprogramming-enhanced, minimized Duo
 -- intermediary using @comp.* combinators + native-boxing audit + LOC metrics.
 -- Imported by bench.id: `eval = req "tools.mcp.eval"`.
@@ -12,19 +12,21 @@
 --    identifiers/types never contain these bytes.
 
 
--- `std.script` is gone (denied activity junk drawer, Pass 100 §15). The two
+-- `std.script` is gone (denied activity junk drawer). The two
 -- things it was used for here are `std.os.getenv` and `std.proc.capture`.
--- getenv answers "" — NOT nil — for an unset name, so every read is guarded
+-- getenv answers ""  -  NOT nil  -  for an unset name, so every read is guarded
 -- against "" explicitly. The old `os.getenv(name, default)` two-argument
 -- form silently DROPPED its default under the Lua 5.1 runtime.
-duo_root = std.os.getenv("DUO_ROOT")
+duo_root = std.os.getenv("IDOL_ROOT")
+if duo_root == nil or duo_root == "" then duo_root = std.os.getenv("DUO_ROOT") end
 if duo_root == nil or duo_root == "" then duo_root = "." end
-duo_bin = std.os.getenv("DUO_BIN")
-if duo_bin == nil or duo_bin == "" then duo_bin = "{duo_root}{\"/zig-out/bin/duo\" end}"
+duo_bin = std.os.getenv("IDOL_BIN")
+if duo_bin == nil or duo_bin == "" then duo_bin = std.os.getenv("DUO_BIN") end
+if duo_bin == nil or duo_bin == "" then duo_bin = "{duo_root}{\"/zig-out/bin/idol\" end}"
 
 -- parse one line as a function header -> "name;ptypes_csv;ret" or nil.
 -- accepts: fun NAME(p: T, ...) [: | -> ] RET   and bare NAME(...) [: | -> ] RET
-fun parse_fun_header_str(line: str): any
+parse_fun_header_str: any = (line: str)
     name = nil
     blob = nil
     mname, mblob = string.match(line, "^%s*fun%s+([%w_]+)(%b())")
@@ -41,7 +43,7 @@ fun parse_fun_header_str(line: str): any
     if name == nil or blob == nil then return nil end
     inner = string.sub(blob, 2, blob:len() - 1)
     -- collect distinct param types into a csv (string-keyed set, G-054-safe: literals only)
-    -- NOTE: avoid string.gmatch here — it uses a global state and breaks
+    -- NOTE: avoid string.gmatch here  -  it uses a global state and breaks
     -- any outer gmatch iterator that called us (e.g. extract_records).
     pset = {}
     pos = 1
@@ -71,7 +73,7 @@ end
 
 NUMERIC = { ["i32"] = 1, ["i64"] = 1, ["u32"] = 1, ["u64"] = 1, ["f32"] = 1, ["f64"] = 1, ["int"] = 1, ["uint"] = 1 }
 
-fun uniform_numeric(ptypes_csv: str): any
+uniform_numeric: any = (ptypes_csv: str)
     if ptypes_csv == nil or ptypes_csv == "" then return nil end
     if string.find(ptypes_csv, ",") ~= nil then return nil end
     if NUMERIC[ptypes_csv] == nil then return nil end
@@ -79,7 +81,7 @@ fun uniform_numeric(ptypes_csv: str): any
 end
 
 -- records_csv: one "name;ptypes;ret" per line.
-fun extract_records(src: str): str
+extract_records: str = (src: str)
     out = ""
     first = 1
     for ln in string.gmatch(src .. "\n", "([^\n]*)\n") do
@@ -96,7 +98,7 @@ fun extract_records(src: str): str
     out
 end
 
-fun count_lines_str(s: str): int
+count_lines_str: int = (s: str)
     if s == "" then return 0 end
     -- single-return string ops only (no loop int-counter: dodges G-053 branch/loop reassign bug)
     nl = string.len(s) - string.len(string.gsub(s, "\n", ""))
@@ -105,7 +107,7 @@ end
 
 -- detect type-polymorphic op families -> "prefix;types_csv;count" rows joined by newline.
 -- groups via string-keyed->string-valued tables (G-054-safe).
-fun detect_op_families(records_csv: str): str
+detect_op_families: str = (records_csv: str)
     if records_csv == "" then return "" end
     prefixes = {}
     counts = {}
@@ -151,14 +153,14 @@ end
 
 CTYPE_CSV = "i32:int32_t,i64:int64_t,u32:uint32_t,u64:uint64_t,f32:float,f64:double,int:int,uint:unsigned"
 
-fun ctype_of(ty: str): str
+ctype_of: str = (ty: str)
     c = "{string.match(CTYPE_CSV, ty}{\":([^,]+)\")}"
     if c ~= nil then return c end
     ty
 end
 
 -- emit a @comp.generate call for one family row: 1 Duo line -> N native C fns.
-fun emit_generate(row: str): str
+emit_generate: str = (row: str)
     prefix = string.match(row, "^([^;]+)")
     types_csv = string.match(row, ";([^;]+);")
     cnt = string.match(row, ";[^;]+;([^;]+)$")
@@ -178,7 +180,7 @@ fun emit_generate(row: str): str
     "GEN_" .. prefix .. " = @comp.generate([[\nops: " .. prefix .. "\ntypes: " .. ctypes .. "\ntemplate: static inline $1 " .. prefix .. "_$0($1 a, $1 b) { return a OP b; }\n]])"
 end
 
-fun detect_eq_count(records_csv: str): int
+detect_eq_count: int = (records_csv: str)
     -- accumulate via string concat (proven safe) + string.len; no int reassignment in branch
     eq_marks = ""
     for rec in string.gmatch(records_csv, "([^\n]+)") do
@@ -194,12 +196,12 @@ fun detect_eq_count(records_csv: str): int
     string.len(eq_marks)
 end
 
-fun emit_derive_hint(eq_count: int): str
+emit_derive_hint: str = (eq_count: int)
     if eq_count == 0 then return "" end
     "-- detected " .. eq_count .. " equality/comparison fn(s) -> collapse to ONE type decl:\n--   @derive(Eq, Ord, Hash)\n--   type T { x: i64, y: i64 } end"
 end
 
-fun detect_dispatch_chains(src: str): int
+detect_dispatch_chains: int = (src: str)
     -- string accumulation + string.len (no int counter in loop: dodges G-053)
     marks = ""
     for _ in string.gmatch(src, "if%s+[%w_.]+%s*==%s*\"[%w_]+\"") do marks = marks .. "." end
@@ -207,12 +209,12 @@ fun detect_dispatch_chains(src: str): int
     string.len(marks)
 end
 
-fun count_newlines(s: str): int
+count_newlines: int = (s: str)
     -- single-return string ops only
     string.len(s) - string.len(string.gsub(s, "\n", ""))
 end
 
-fun audit_boxing(source: str): any
+audit_boxing: any = (source: str)
     tmp = "/tmp/duo_eval_audit.id"
     std.fs.write_file(tmp, source)
     -- full path: "duo" is not on PATH (was the root cause of the 68-char error output).
@@ -240,7 +242,7 @@ fun audit_boxing(source: str): any
     out
 end
 
-fun evaluate(source: str, goal: str): str
+evaluate: str = (source: str, goal: str)
     records_csv = extract_records(source)
     fcount = count_lines_str(records_csv)
     families_csv = detect_op_families(records_csv)

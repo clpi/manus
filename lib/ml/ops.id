@@ -1,39 +1,39 @@
 # std.ml.ops — High-level ML ops; hot paths delegate to ml.* intrinsics
 
 # Native kernels (zero-arg checksum benchmarks / fused paths)
-bench_matmul(): f64
+gemm(): f64
     return ml.matmul_256()
 end
 
-bench_conv2d(): f64
+conv(): f64
     return ml.conv2d()
 end
 
-bench_softmax(): f64
+sm(): f64
     return ml.softmax_1k()
 end
 
-bench_attention(): f64
+attn(): f64
     return ml.attention()
 end
 
-bench_mlp(): f64
+mlp(): f64
     return ml.mlp_forward()
 end
 
-bench_gelu(): f64
+gauss(): f64
     return ml.gelu_1k()
 end
 
-bench_layernorm(): f64
+ln(): f64
     return ml.layernorm_1k()
 end
 
-bench_dot(): f64
+inner(): f64
     return ml.dot_1m()
 end
 
-bench_conv1d(): f64
+corr(): f64
     return ml.conv1d()
 end
 
@@ -69,10 +69,10 @@ layernorm(t, eps): any
         d = t.data[i] - mean
         var += d * d
     end
-    inv_std = 1.0 / var / n + eps:sqrt()
+    rstd = 1.0 / var / n + eps:sqrt()
     result = std.ml.tensor.zeros(t.rows, t.cols)
     for i = 1, n
-        result.data[i] = (t.data[i] - mean) * inv_std
+        result.data[i] = (t.data[i] - mean) * rstd
     end
     return result
 end
@@ -85,4 +85,3 @@ dot(a, b): f64
     end
     return sum
 end
-

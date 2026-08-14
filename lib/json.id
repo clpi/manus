@@ -222,7 +222,7 @@ json_number(cur): any
         end
     end
     num_str = s:sub(start, cur.i - 1)
-    tonumber(num_str)
+    num_str:to(i64)
 end
 
 json_value(cur): any
@@ -269,7 +269,7 @@ json_value(cur): any
         end
         while true
             val = json_value(cur)
-            arrn = arrn + 1
+            arrn += 1
             arr[arrn] = val
             json_skip_ws(cur)
             b2 = cur.s:byte(cur.i)

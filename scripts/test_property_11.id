@@ -41,7 +41,7 @@ _check_module(name: str, src: str, cc: str): str
     std.script.fs_write(duo_file, src)
     if std.script.run("./zig-out/bin/idol dump-c " .. duo_file .. " > " .. c_file .. " 2>/dev/null") != 0
         print("FAIL " .. name .. ": duo dump-c failed")
-        _fails = _fails + 1
+        _fails += 1
         return ""
     end
 
@@ -50,7 +50,7 @@ _check_module(name: str, src: str, cc: str): str
     if std.script.run(cmd) != 0
         print("FAIL " .. name .. ": generated C does not compile")
         print(std.script.capture("head -6 " .. log))
-        _fails = _fails + 1
+        _fails += 1
         return ""
     end
 
@@ -66,7 +66,7 @@ _c_contains(path: str, needle: str, why: str): void
         "grep -Fc \"" .. needle .. "\" " .. path .. " 2>/dev/null"))
     if n == "" or n == "0"
         print("FAIL " .. why)
-        _fails = _fails + 1
+        _fails += 1
     end
 end
 
@@ -105,8 +105,8 @@ local b: bool = a > 1.0
   local acc: i64 = 0
   local i: i64 = 1
   while i <= n do
-    acc = acc + i
-    i = i + 1
+    acc += i
+    i += 1
   end
   return acc
 end

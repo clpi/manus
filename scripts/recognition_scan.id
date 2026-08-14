@@ -1,4 +1,4 @@
-# RECOGNITION — Pass 116 §0a, made executable. Reaffirmed by Pass 118 §0h.
+# RECOGNITION — §0a, made executable. Reaffirmed by §0h.
 #
 # The ruling: *"no `std.mem` / `std.fmt` / `std.math`. Pure ops are VALUE EDGES
 # (`x:abs()`, `s:copy()`); worlds are the ONLY capability namespaces. Idiom
@@ -23,14 +23,14 @@
 #           THE OBVIOUS SHORTCUT IS FORECLOSED, and it is worth writing down
 #           because it is what a hurried migration would reach for: moving the
 #           pure ops into some other namespace — `std.numeric`, `num.`, a
-#           renamed `math` — is NOT a repair. Pass 118 §0h says std has NO
+#           renamed `math` — is NOT a repair. The prelude ruling says std has NO
 #           MODULE TREE and that WORLDS ARE THE ONLY NAMESPACES, so a fresh
 #           namespace for capability-free ops is the same defect respelled,
 #           and it would move this row to zero while changing nothing. The
 #           only legal destination is the descriptor.
 #   rand    math.random / math.randomseed
 #           NOT pure. Ambient authority, and §0a says worlds are the ONLY
-#           capability namespaces — which is also precisely what Pass 105 U1
+#           capability namespaces — which is also precisely what U1
 #           (`std@{ ambient = false }`) demands. Repair is a world. See
 #           BLOCKER 2.
 #   sub     math.fft / math.stats / math.prng / math.geometry …
@@ -41,7 +41,7 @@
 #
 # THE LEVERAGE, and it is the reason this file exists on the same night as the
 # capability scan: `rand` is not a side note. It is the ENTIRE `rand` class of
-# Pass 105 U1 — 50 sites across 14 modules, the third-largest ambient class in
+# U1 — 50 sites across 14 modules, the third-largest ambient class in
 # `lib/std`. gaps/GAP-061.md reported `rand` at ZERO because it grepped for
 # `rand(`; this tree spells it `math.random(`. Retiring `math.random` and
 # closing U1's rand class are THE SAME EDIT. `zig build capability-scan` is the
@@ -66,11 +66,11 @@
 #   target form on every run and reports whether it still fails.
 #
 #   BLOCKER 2 — there is no WORLD. `world` appears nowhere in `lib/std` except
-#   one line of prose, and `docs/spec/grammar.md` (Pass 108, NORMATIVE) does
+#   one line of prose, and `docs/spec/grammar.md` (NORMATIVE) does
 #   not contain the word at all. There is no construct to move `math.random`
 #   behind. `grammar` below greps the normative grammar on every run.
 #
-#   Pass 118 §0h RAISES the cost of this blocker rather than lowering it:
+#   §0h RAISES the cost of this blocker rather than lowering it:
 #   worlds are now the only namespaces std has at all, so the construct that
 #   `math.random` is waiting on is the same construct the whole prelude graph
 #   is waiting on. This row cannot be closed by a local edit in `lib/std`, and
@@ -92,7 +92,7 @@
 # TWO NUMBERS THAT LOOK WRONG AND ARE NOT, recorded so nobody re-derives them:
 #
 #   `rand` reads 51 here and 50 in capability_scan. The difference is
-#   `lib/std/math.id:200-201`, `M.random = math.random` and its `randomseed`
+#   `lib/math.id:200-201`, `M.random = math.random` and its `randomseed`
 #   twin — RE-EXPORT ALIASES, not calls. capability_scan's pattern requires a
 #   trailing `(` and cannot see them; its own header lists aliases as a known
 #   blind spot. This row does not require the paren, because an alias that
@@ -105,7 +105,7 @@
 #   they land on the `ns` row. There is no BARE `math.fft` in the tree. The
 #   row stays because the spelling is one edit away from appearing.
 #
-# POPULATION. Tracked `lib/std/**/*.id` — the shipped standard library, the
+# POPULATION. Tracked `lib/**/*.id` — the shipped standard library, the
 # thing the ruling is about. The rest of the tree is REPORTED so the number is
 # not mistaken for a whole-repo claim.
 #
@@ -138,7 +138,7 @@ space = " "
 # because a single-file xargs batch drops the path prefix and would take the
 # module census with it.
 head(root: str): str
-    "cd {root} && git ls-files 'lib/std/*.id' | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
+    "cd {root} && git ls-files 'lib/*.id' | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
 end
 
 # Matching lines, whole-line comments dropped.
@@ -167,7 +167,7 @@ end
 # lib/std) but the exclusion is written against the pathspec, not the
 # directory, so moving the file cannot silently reintroduce it.
 outside(root: str, pat: str): i64
-    cmd: str = "cd {root} && git ls-files '*.id' | grep -v -E {q}^lib/std/{q} | grep -v -E {q}^scripts/recognition{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E {q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
+    cmd: str = "cd {root} && git ls-files '*.id' | grep -v -E {q}^lib/{q} | grep -v -E {q}^scripts/recognition{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E {q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
     to(i64)(std.script.chomp(std.script.capture(cmd)))
 end
 
@@ -255,10 +255,10 @@ main(): i64
     end
 
     if code == 0
-        total = to(i64)(std.script.chomp(std.script.capture("cd {root} && git ls-files 'lib/std/*.id' | wc -l")))
-        print("recognition scan — Pass 116 §0a: no std.mem / std.fmt / std.math")
+        total = to(i64)(std.script.chomp(std.script.capture("cd {root} && git ls-files 'lib/*.id' | wc -l")))
+        print("recognition scan — §0a: no std.mem / std.fmt / std.math")
         print("  root      {root}")
-        print("  modules   {total} tracked lib/std/**/*.id")
+        print("  modules   {total} tracked lib/**/*.id")
         if total == 0
             print("recognition scan: FAIL — 0 std modules found; the scan did not run")
             code = 3

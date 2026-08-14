@@ -52,7 +52,7 @@ fun wasi_fd_write(rt, args)
     elseif fd == 2
       io.stderr:write(data)
     end
-    total = total + buf_len
+    total += buf_len
   end
 
   runtime.mem_store_i32(rt, nwritten_ptr, total)
@@ -78,7 +78,7 @@ fun wasi_fd_read(rt, args)
         for j = 1, data:len()
           mem_mod.write_byte(rt.memory, buf_ptr + j - 1, data:byte(j))
         end
-        total = total + data:len()
+        total += data:len()
       end
     end
   end
@@ -141,7 +141,7 @@ fun wasi_args_sizes_get(rt, args)
   argv = rt.args or {"wasm"}
   buf_size = 0
   for i = 1, argv:len()
-    buf_size = buf_size + argv:len()[i] + 1
+    buf_size += argv:len()[i] + 1
   end
   runtime.mem_store_i32(rt, argc_ptr, argv:len())
   runtime.mem_store_i32(rt, argv_buf_size_ptr, buf_size)
@@ -161,7 +161,7 @@ fun wasi_args_get(rt, args)
       mem_mod.write_byte(rt.memory, cursor + j - 1, s:byte(j))
     end
     mem_mod.write_byte(rt.memory, cursor + s:len(), 0)
-    cursor = cursor + s:len() + 1
+    cursor += s:len() + 1
   end
   ERRNO.success
 end

@@ -31,7 +31,7 @@ parse_expr(toks: ptr, st: ptr, n: i64): i64
     while st[1] <= n and toks[st[1]] == -1
         st[1] = st[1] + 1
         rhs: i64 = parse_term(toks, st, n)
-        acc = acc + rhs
+        acc += rhs
     end
     acc
 end

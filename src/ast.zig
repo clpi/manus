@@ -2,7 +2,7 @@ const std = @import("std");
 pub const Loc = @import("lexer.zig").Loc;
 const RT = @import("types.zig").ResolvedType;
 
-/// Pass 24 §4.1 — the surface FACE an application was written through.
+/// §4.1 — the surface FACE an application was written through.
 ///
 /// c0 §44 `law.apply.one`: "parenthesized, braced and string faces project onto
 /// the SAME application relation". The face is therefore a recorded FACT on the
@@ -94,7 +94,7 @@ pub const TypeExpr = union(enum) {
     pub const RecordType = struct {
         fields: []RecordField,
         /// Layout facts written as refinement edges on the descriptor itself:
-        /// `{ x: i8, y: i64 } & packed & align(8)`. Pass 100 §11 ("layout
+        /// `{ x: i8, y: i64 } & packed & align(8)`. §11 ("layout
         /// facts") and LAW-STRATA (`&` = the refinement edge). This is NOT an
         /// attribute list: it is the one fact the old `@packed` / `@align(n)`
         /// attributes were secretly storing, now held where the descriptor is.
@@ -276,9 +276,9 @@ pub const TableField = union(enum) {
     indexed: struct { key: *Expr, val: *Expr }, // [expr] = expr
     named: struct { key: []const u8, val: *Expr }, // name = expr
     positional: *Expr, // expr
-    /// Pass 3: `{ ..source, x = 1 }` — merge table at construction.
+    /// `{ ..source, x = 1 }` — merge table at construction.
     spread: *Expr,
-    /// Pass 36 (final surface, Pass 40) — semantic entry in a table literal:
+    /// (final surface) — semantic entry in a table literal:
     /// `@eq = impl` or `@to(str) = impl`. `op` is the operation name; `param`
     /// is the optional relationship parameter (e.g. `str` in `@to(str)`); `val`
     /// is the implementation.
@@ -343,7 +343,7 @@ pub const FuncBody = struct {
     /// Lua 5.5 named vararg: function f(...args)
     vararg_name: ?[]const u8 = null,
     ret_type: TypeExpr,
-    /// Pass 100 §8 B-12 — the contract declared a FAILURE ALTERNATIVE
+    /// §8 B-12 — the contract declared a FAILURE ALTERNATIVE
     /// (`: u64 | error`). The structural nil is UNWRITTEN, so `ret_type` still
     /// carries `u64` alone, and this records that what the function actually
     /// returns is the correlated pack `(value, nil) | (nil, error)`. Without
@@ -489,13 +489,24 @@ pub const FuncBody = struct {
     upvalues: []Upvalue = &.{},
 };
 
+/// Quoted source identity. Projects producer token kinds; `.host` is fabricated.
+pub const Quote = enum {
+    text,
+    bytes,
+    compat_text,
+    compat_long,
+    host,
+};
+
 pub const Expr = union(enum) {
     nil: Loc,
     true_lit: Loc,
     false_lit: Loc,
     int_lit: struct { loc: Loc, val: i64 },
     float_lit: struct { loc: Loc, val: f64 },
-    string_lit: struct { loc: Loc, val: []const u8 },
+    /// Quoted source or a host-fabricated byte sequence. `quote` is the
+    /// producer identity (GAP-145); `.host` is not a source quote.
+    string_lit: struct { loc: Loc, val: []const u8, quote: Quote = .host },
     vararg: Loc,
     name: struct { loc: Loc, ident: []const u8 },
     index: struct { loc: Loc, obj: *Expr, key: *Expr },
@@ -521,11 +532,11 @@ pub const Expr = union(enum) {
     macro_call: MacroCall,
     sequence: struct { loc: Loc, exprs: []*Expr }, // a, b multi-value
     range: struct { loc: Loc, start: *Expr, end: *Expr, step: ?*Expr }, // a..b, a..b by step
-    /// Pass 36 (final surface, Pass 40) — semantic identity `@name` in the
+    /// (final surface) — semantic identity `@name` in the
     /// current world. `@eq(a, b)` is a `.call` whose `.func` is this node;
     /// `@to(str)` is a `.call` whose schema decides relation-vs-invocation.
     semantic: struct { loc: Loc, op: []const u8 },
-    /// Pass 36 (final surface) — bare `@` denotes the current effective
+    /// (final surface) — bare `@` denotes the current effective
     /// semantic world, as a value.
     semantic_scope: Loc,
 
@@ -727,7 +738,7 @@ pub const Stmt = union(enum) {
     repeat_loop: struct { loc: Loc, body: Block, cond: *Expr },
     if_stmt: struct {
         loc: Loc,
-        /// Pass 3: `if name = expr` binding condition (evaluated before truth test).
+        /// `if name = expr` binding condition (evaluated before truth test).
         binding: ?struct { name: []const u8, expr: *Expr } = null,
         cond: *Expr,
         then: Block,
@@ -823,6 +834,30 @@ pub const Block = struct {
 pub const Module = struct {
     file: []const u8,
     body: Block,
+
+    /// File-scope statements or a tail expression that *do* something, as
+    /// opposed to declarations that only bind. The tail is the program.
+    pub fn program(self: *const Module) bool {
+        if (self.body.tail_expr != null) return true;
+        for (self.body.stmts) |*stmt| switch (stmt.*) {
+            .call_stmt,
+            .expr_stmt,
+            .assign,
+            .do_block,
+            .while_loop,
+            .repeat_loop,
+            .if_stmt,
+            .num_for,
+            .gen_for,
+            .ret,
+            .match_stmt,
+            .try_stmt,
+            .defer_stmt,
+            => return true,
+            else => {},
+        };
+        return false;
+    }
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

@@ -8,16 +8,16 @@ store(t: any, key: any, value: any): any
     old
 end
 
-compare_swap(t: any, key: any, expected: any, new_value: any): any
+swap(t: any, key: any, expected: any, new: any): any
     old = t[key]
     if old == expected
-        t[key] = new_value
-        return true, new_value
+        t[key] = new
+        return true, new
     end
     return false, old
 end
 
-fetch_add(t: any, key: any, delta: any): any
+add(t: any, key: any, delta: any): any
     old = t[key]
     if type(old) == "number"
         t[key] = old + delta
@@ -27,7 +27,7 @@ fetch_add(t: any, key: any, delta: any): any
     old
 end
 
-fetch_sub(t: any, key: any, delta: any): any
+sub(t: any, key: any, delta: any): any
     old = t[key]
     if type(old) == "number"
         t[key] = old - delta
@@ -57,13 +57,13 @@ dec(t: any, key: any): any
     old
 end
 
-mutex_new(): any
+mutex(): any
     { locked = false, owner = nil, count = 0 }
 end
 
 lock(m: any): void
     while true
-        ok, _ = compare_swap(m, "locked", false, true)
+        ok, _ = swap(m, "locked", false, true)
         if ok
             m.owner = "current"
             m.count = 1
@@ -79,8 +79,8 @@ unlock(m: any): void
     m.locked = false
 end
 
-try_lock(m: any): bool
-    ok, _ = compare_swap(m, "locked", false, true)
+probe(m: any): bool
+    ok, _ = swap(m, "locked", false, true)
     if ok
         m.owner = "current"
         m.count = 1
@@ -89,7 +89,7 @@ try_lock(m: any): bool
     false
 end
 
-is_locked(m: any): bool
+held(m: any): bool
     m.locked
 end
 

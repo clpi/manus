@@ -1,4 +1,4 @@
-//! Pass 8 — project-local persistent semantic evidence cache (bounded, invalidatable).
+//! — project-local persistent semantic evidence cache (bounded, invalidatable).
 //!
 //! Not a general database: compiler fingerprints, outcomes, and reuse keys only.
 const std = @import("std");
@@ -7,7 +7,7 @@ pub const SCHEMA_VERSION = "persistent-semantic-state-v0";
 pub const CACHE_DIR = ".id/cache/semantic";
 pub const DEFAULT_CACHE_PATH = ".id/cache/semantic/state.json";
 
-/// Classification of persistent facts (Pass 8 §5 / Goal C).
+/// Classification of persistent facts (§5 / Goal C).
 pub const FactKind = enum(u8) {
     semantic_invariant,
     source_derived,
@@ -77,7 +77,7 @@ pub const ReuseDecision = struct {
     }
 };
 
-/// Validate cross-build reuse (Milestone 2 foundation — Pass 8 §5).
+/// Validate cross-build reuse (Milestone 2 foundation — §5).
 pub fn canReuse(
     alloc: std.mem.Allocator,
     entry: *const Entry,

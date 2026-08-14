@@ -1,10 +1,10 @@
-/// Pass 2 — Foundational Convergence Algebra (spine types, not surface syntax).
+/// — Foundational Convergence Algebra (spine types, not surface syntax).
 ///
-/// Canonical audit: `docs/plans/pass2_foundational_convergence.md`
+/// Canonical audit: the foundational-convergence plan
 ///
 /// Goal: collapse independent compiler mechanisms into a small set of orthogonal
 /// algebras. This module defines the shared vocabulary; `transform_engine.zig` and
-/// `semantic_graph.zig` attach metadata. No user-facing syntax changes in Pass 2.
+/// `semantic_graph.zig` attach metadata. No user-facing syntax changes.
 const std = @import("std");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
@@ -49,7 +49,7 @@ pub const KnowledgeLevel = enum(u8) {
         return @intFromEnum(self) >= @intFromEnum(other);
     }
 
-    /// Bridge Pass 1 storage classes into the knowledge lattice.
+    /// Bridge storage classes into the knowledge lattice.
     pub fn fromStorageClass(sc: types.StorageClass) KnowledgeLevel {
         return switch (sc) {
             .dynamic => .observed,
@@ -155,7 +155,7 @@ pub const DescriptorExpr = struct {
     }
 };
 
-/// Arena-backed builder for descriptor expression trees (Pass 2.1 — internal only).
+/// Arena-backed builder for descriptor expression trees (— internal only).
 pub const DescriptorExprBuilder = struct {
     nodes: std.ArrayListUnmanaged(DescriptorExpr) = .empty,
     alloc: std.mem.Allocator,
@@ -338,7 +338,7 @@ pub const ShapeOp = enum {
         return @tagName(self);
     }
 
-    /// Map shape ops to knowledge transitions (Pass 1 storage → Pass 2 structure).
+    /// Map shape ops to knowledge transitions (storage → structure).
     pub fn resultingKnowledge(op: ShapeOp, input: KnowledgeLevel) KnowledgeLevel {
         return switch (op) {
             .seal, .freeze => KnowledgeLevel.join(input, .stable),
@@ -1185,7 +1185,7 @@ pub fn writeCatalogJson(w: *std.Io.Writer) !void {
     try w.print("\n]}}\n", .{});
 }
 
-// ── Pass 2.1: Knowledge lattice ↔ ResolvedType bridge ────────────────────────
+// ── Knowledge lattice ↔ ResolvedType bridge ────────────────────────
 
 /// Map a sema-resolved type to its position on the knowledge lattice.
 pub fn knowledgeOfType(rt: types.ResolvedType) KnowledgeLevel {
@@ -1232,12 +1232,12 @@ pub fn knowledgeAtLeastType(rt: types.ResolvedType, min: KnowledgeLevel) bool {
     return knowledgeOfType(rt).dominates(min);
 }
 
-/// Pass 2 lattice form of `ResolvedType.is_native()` — no lua_Value lowering.
+/// lattice form of `ResolvedType.is_native()` — no lua_Value lowering.
 pub fn lowersToNativeC(rt: types.ResolvedType) bool {
     return knowledgeAtLeastType(rt, .native);
 }
 
-// ── Pass 2.1: Call Algebra ↔ CallShape bridge ─────────────────────────────────
+// ── Call Algebra ↔ CallShape bridge ─────────────────────────────────
 
 /// Evaluation stage for a call site inferred from AST CallShape.
 pub fn stageOfCallShape(shape: types.CallShape) Stage {
@@ -1262,12 +1262,12 @@ pub fn callSiteFromShape(shape: types.CallShape) CallSite {
     return callSiteFromShapeWithEffects(shape, .{});
 }
 
-/// CallSite with callee effect facts merged (Pass 2.2 effect algebra bridge).
+/// CallSite with callee effect facts merged (effect algebra bridge).
 pub fn callSiteFromShapeWithEffects(shape: types.CallShape, callee_effects: EffectSet) CallSite {
     return callSiteFromShapeWithCalleeFacts(shape, callee_effects, .{});
 }
 
-/// CallSite with callee effect + hardware facts (Pass 2.5 call transform bridge).
+/// CallSite with callee effect + hardware facts (call transform bridge).
 pub fn callSiteFromShapeWithCalleeFacts(
     shape: types.CallShape,
     callee_effects: EffectSet,
@@ -1316,7 +1316,7 @@ pub fn shapeOpFromTransformId(id: []const u8) ?ShapeOp {
     return null;
 }
 
-// ── Pass 2.2: Call transforms (CallSite → graph rewrite) ─────────────────────
+// ── Call transforms (CallSite → graph rewrite) ─────────────────────
 
 /// Optimizations that rewrite CallSite semantic objects (not surface syntax).
 pub const CallTransform = enum {

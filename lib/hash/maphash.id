@@ -2,22 +2,22 @@
 # A non-cryptographic hash function suitable for use in hash tables.
 # Uses a seed-based FNV-like approach to resist hash-collision attacks.
 
-make_seed(): i64
+seed(): i64
     bytes = std.crypto.rand.bytes(8)
-    seed = 0
+    s = 0
     i = 0
     while i < 8
-        seed = (seed << 8) | bytes:byte(i + 1)
+        s = (s << 8) | bytes:byte(i + 1)
         i += 1
     end
-    seed
+    s
 end
 
 new(): any
-    {seed = make_seed(), hash = 0}
+    {seed = seed(), hash = 0}
 end
 
-new_with_seed(seed: i64): any
+from(seed: i64): any
     {seed = seed, hash = 0}
 end
 
@@ -28,7 +28,7 @@ write(h: any, data: str): void
     end
 end
 
-write_byte(h: any, b: i64): void
+put(h: any, b: i64): void
     h.hash = (h.hash * 31 + b)
 end
 
@@ -36,7 +36,7 @@ sum(h: any): i64
     h.hash
 end
 
-hash_string(seed: i64, s: str): i64
+hash(seed: i64, s: str): i64
     h = seed
     for i = 1, s:len()
         h = (h * 31 + s:byte(i))
@@ -44,11 +44,10 @@ hash_string(seed: i64, s: str): i64
     h
 end
 
-hash_bytes(seed: i64, data: str, off: i64, len: i64): i64
+fold(seed: i64, data: str, off: i64, len: i64): i64
     h = seed
     for i = off, off + len - 1
         h = (h * 31 + data:byte(i))
     end
     h
 end
-

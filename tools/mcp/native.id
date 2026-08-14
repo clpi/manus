@@ -1,0 +1,56 @@
+# Native MCP server — runs on `idol run` (no C backend, no Lua runtime).
+# Transport: newline-delimited JSON-RPC over stdio (stdin:line / stdout:write).
+#
+# Sentinel-free by construction (PREDICATE-ZERO):
+#   - No `== 0` / `== ""` / `== nil` / `== true` anywhere. Dispatch is by the
+#     `line:has(needle)` presence fact, consumed directly in refinement `if`.
+#   - End of input is not a value: when the peer closes stdin the C ingress
+#     primitive ends the process, so the loop is `while true` with no EOF flag.
+#   - `find` results are used only as substring coordinates, inside a branch a
+#     `has` fact has already proved the field present — never compared to a
+#     not-found sentinel.
+# JSON literals are single-quoted byte sequences so real quotes survive the
+# GAP-145 lexer (double-quoted "\"" does not unescape). Tool stdout is
+# JSON-encoded by `jq -Rs .`; command substitution strips jq's trailing newline
+# so a response never embeds a raw newline that would break framing.
+
+line = stdin:line()
+while true
+    idp: i64 = line:find('"id":', 1, 1)
+    ia: i64 = idp + 5
+    cma: i64 = line:find(',', ia, 1)
+    idstr: str = if line:has('"id":')
+        line:sub(ia, cma - 1)
+    else
+        ""
+
+    cmd: str = if line:has('"name":"status"')
+        "git status --short --branch"
+    else
+        if line:has('"name":"head"')
+            "git rev-parse HEAD"
+        else
+            if line:has('"name":"orient"')
+                "./tools/node/dev/orient"
+            else
+                "echo unknown tool"
+
+    resp: str = if line:has('"method":"tools/call"')
+        '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{"content":[{"type":"text","text":' .. gatecap('printf %s "$( ( ' .. cmd .. ' ) 2>&1 | jq -Rs . )"') .. '}]}}'
+    else
+        if line:has('"method":"tools/list"')
+            '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{"tools":[{"name":"status","description":"git status --short --branch","inputSchema":{"type":"object","properties":{}}},{"name":"head","description":"current HEAD commit id","inputSchema":{"type":"object","properties":{}}},{"name":"orient","description":"Idol orientation snapshot","inputSchema":{"type":"object","properties":{}}}]}}'
+        else
+            if line:has('"method":"initialize"')
+                '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"idol","version":"0.0.0"}}}'
+            else
+                if line:has('"method":"ping"')
+                    '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{}}'
+                else
+                    if line:has('"id":')
+                        '{"jsonrpc":"2.0","id":' .. idstr .. ',"error":{"code":-32601,"message":"method not found"}}'
+                    else
+                        '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"debug","logger":"idol","data":"ack"}}'
+
+    stdout:write(resp)
+    line = stdin:line()

@@ -54,7 +54,7 @@ scanone: tok = (src: str, pos: i64)
     n = src:len()
     i = pos
     while i <= n and is_space(src:byte(i)) == 1
-        i = i + 1
+        i += 1
     end
     if i > n
         return { kind = Kind.eof, start = i, len = 0 }
@@ -63,14 +63,14 @@ scanone: tok = (src: str, pos: i64)
     if is_alpha(c) == 1
         j = i
         while j <= n and is_alpha(src:byte(j)) == 1
-            j = j + 1
+            j += 1
         end
         return { kind = Kind.ident, start = i, len = j - i }
     end
     if is_digit(c) == 1
         j = i
         while j <= n and is_digit(src:byte(j)) == 1
-            j = j + 1
+            j += 1
         end
         return { kind = Kind.number, start = i, len = j - i }
     end
@@ -88,7 +88,7 @@ count_tokens: i64 = (src: str)
         if t.kind == Kind.eof
             return total
         end
-        total = total + 1
+        total += 1
         pos = t.start + t.len
     end
     total

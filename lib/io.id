@@ -17,18 +17,18 @@ flush(file: any): void
     file:flush()
 end
 
-read_bytes(file: any, n: int): str
+bytes(file: any, n: int): str
     file:read(n)
 end
 
-write_bytes(file: any, data: str): void
+put(file: any, data: str): void
     file:write(data)
 end
 
-read_line(file: any): any
+line(file: any): any
     file:read("*l")
 end
 
-read_all(file: any): any
+all(file: any): any
     file:read("*a")
 end

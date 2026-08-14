@@ -1,40 +1,38 @@
-# GAP-157 fs proof router — subject-first path relations, no std.
+# GAP-157 fs proof router — subject-first path relations, no std namespace.
 
-proof = { remove = "scripts/proof/remove.id", mkdir = "scripts/proof/mkdir.id" }
+remove = "scripts/proof/remove.id"
+mkdir = "scripts/proof/mkdir.id"
 
 len(path) = (min: i64)
     path:read()
         :len() >= min
 
-
 audit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 hit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 main: i64 = ()
-    code: i64 = 0
-    if !len(proof["remove"])(16)
-        code = 1
-    if code == 0 and !len(proof["mkdir"])(16)
-        code = 2
-    if code == 0 and !audit(proof["remove"])(":remove%(")
-        code = 3
-    if code == 0 and !audit(proof["remove"])(":exists%(")
-        code = 4
-    if code == 0 and hit(proof["remove"])("std%.[a-z]")
-        code = 5
-    if code == 0 and hit(proof["remove"])("fs:")
-        code = 6
-    if code == 0 and !audit(proof["mkdir"])(":mkdir%(")
-        code = 7
-    if code == 0 and !audit(proof["mkdir"])(":copy%(")
-        code = 8
-    if code == 0 and hit(proof["mkdir"])("std%.[a-z]")
-        code = 9
-    if code == 0
-        print("proof/fs: pass")
-    code
+    if !remove:len(16)
+        return 1
+    if !mkdir:len(16)
+        return 2
+    if !remove:audit(":remove(")
+        return 3
+    if !remove:audit(":exists(")
+        return 4
+    if remove:hit("std.")
+        return 5
+    if remove:hit("fs.")
+        return 6
+    if !mkdir:audit(":mkdir(")
+        return 7
+    if !mkdir:audit(":copy(")
+        return 8
+    if mkdir:hit("std.")
+        return 9
+    print("proof/fs: pass")
+    0

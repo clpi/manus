@@ -1,0 +1,13 @@
+main: i64 = ()
+    t = ""
+    s = "    end"
+    n = s:len()
+    i = 1
+    while i <= n
+        c = s:sub(i, i)
+        if c != " " and c != "\t"
+            t = "{t}{c}"
+        i += 1
+    if t == "end"
+        return 0
+    1

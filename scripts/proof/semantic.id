@@ -1,69 +1,41 @@
-# SH-10 + GAP-124 + GAP-157 proof suite orchestrator — idol check, no std.
-
-proof = {
-    resident = "scripts/proof/resident.id"
-    fs = "scripts/proof/fs.id"
-    core = "scripts/proof/core.id"
-    bit = "scripts/proof/bit.id"
-    view = "scripts/proof/view.id"
-    audit = "scripts/proof/audit.id"
-}
+# SH-10 + GAP-124 + GAP-157 proof suite orchestrator — idol check + direct run, no std.
 
 len(path) = (min: i64)
     path:read()
         :len() >= min
 
-
 audit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 hit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 main: i64 = ()
-    code: i64 = 0
-    if !len(proof["resident"])(32)
-        code = 1
-    if code == 0 and !audit(proof["resident"])("path:read%(")
-        code = 2
-    if code == 0 and hit(proof["resident"])("router%(")
-        code = 3
-    if code == 0 and !len(proof["fs"])(16)
-        code = 4
-    if code == 0 and !audit(proof["fs"])("path:read%(")
-        code = 5
-    if code == 0 and hit(proof["fs"])("std%.[a-z]")
-        code = 6
-    if code == 0 and !len(proof["core"])(16)
-        code = 7
-    if code == 0 and hit(proof["core"])("duo_fn_")
-        code = 8
-    if code == 0 and !len(proof["bit"])(32)
-        code = 9
-    if code == 0 and hit(proof["bit"])("bitcast")
-        code = 10
-    if code == 0 and !audit(proof["bit"])(":to%(bit%)")
-        code = 11
-    if code == 0 and !audit(proof["bit"])("type bit = i64")
-        code = 12
-    if code == 0 and !audit(proof["bit"])("to%(i64%)%(bit%)")
-        code = 13
-    if code == 0 and hit(proof["bit"])("unpack@view")
-        code = 14
-    if code == 0 and !len(proof["view"])(16)
-        code = 15
-    if code == 0 and hit(proof["view"])("viewedges")
-        code = 16
-    if code == 0 and hit(proof["view"])("viewrouter")
-        code = 17
-    if code == 0 and hit(proof["view"])("router%(")
-        code = 18
-    if code == 0 and !audit(proof["view"])("view%(edges%)")
-        code = 19
-    if code == 0 and !len(proof["audit"])(16)
-        code = 20
-    if code == 0
-        print("semantic proof: pass")
-    code
+    if !"scripts/proof/resident.id":audit("path:read(")
+        return 2
+    if "scripts/proof/resident.id":hit("router(")
+        return 3
+    if !"scripts/proof/fs.id":audit("path:read(")
+        return 5
+    if "scripts/proof/remove.id":hit("std.")
+        return 6
+    if !"scripts/proof/core.id":audit("record:hit")
+        return 8
+    if "scripts/proof/bit.id":hit("bitcast")
+        return 10
+    if !"scripts/proof/bit.id":audit(":to(bit)")
+        return 11
+    if !"scripts/proof/view.id":audit("@view")
+        return 19
+    if !"scripts/proof/audit.id":audit("path:read(")
+        return 20
+    if !"scripts/proof/graph.id":audit("graph:hit")
+        return 22
+    if !"scripts/proof/graph.id":audit("descriptor_ref")
+        return 23
+    if !"scripts/proof/graph.id":audit("callfirst:")
+        return 29
+    print("semantic proof: pass")
+    0

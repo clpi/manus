@@ -1,0 +1,7 @@
+#!/bin/sh
+# U8 foreign licence census — Pass 105. Shell transport only (GAP-154).
+set -eu
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo"
+idol="${IDOL:-$repo/zig-out/bin/idol}"
+exec "$idol" run --entry census scripts/census/foreign.id

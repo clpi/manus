@@ -36,7 +36,7 @@ pub const fingerprint_corpus: []const []const u8 = &.{
 pub const expected_fingerprint: u64 = 14826786755700828545;
 
 /// The generated migration tokenizer computes the same corpus fingerprint via
-/// `duo_lexer_kind_fingerprint` in `lib/std/compiler/lexer.id`. Matching means
+/// `duo_lexer_kind_fingerprint` in `lib/compiler/lexer.id`. Matching means
 /// the two tokenizers agree token-for-token, including EOF, over every corpus
 /// entry.
 ///
@@ -44,7 +44,7 @@ pub const expected_fingerprint: u64 = 14826786755700828545;
 /// bits as i64.
 pub const expected_fingerprint_i64: i64 = @bitCast(expected_fingerprint);
 pub const MIGRATION_FINGERPRINT_SOURCE = "lib/compiler/lexer.id";
-pub const MIGRATION_FINGERPRINT_EXPORT = "duolexerkindfingerprint";
+pub const MIGRATION_FINGERPRINT_EXPORT = "duo_lexer_kind_fingerprint";
 
 pub fn mixFingerprint(h: u64, kind: lexer.TokenKind) u64 {
     return h *% 31 +% @intFromEnum(kind);
@@ -69,7 +69,7 @@ pub fn fingerprintSource(src: []const u8) lexer.LexError!u64 {
 /// Mixes the LENGTH before the bytes so concatenation cannot alias ("ab" then
 /// "c" must not hash like "a" then "bc"), and includes the terminating EOF
 /// (length 0). Must stay identical to `duo_lexer_text_fingerprint` in
-/// lib/std/compiler/lexer.id.
+/// lib/compiler/lexer.id.
 pub fn textFingerprintSource(src: []const u8) lexer.LexError!u64 {
     var h: u64 = 0;
     var lex = lexer.Lexer.init(src, "corpus.id");

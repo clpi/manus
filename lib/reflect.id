@@ -60,7 +60,7 @@ end
 can_int(v: any): bool
     if type(v) == "number" return true end
     if type(v) == "string"
-        return tonumber(v) != nil
+        return v:to(i64) != nil
     end
     false
 end
@@ -69,7 +69,7 @@ end
 to_int(v: any): any
     if type(v) == "number" return v:floor() end
     if type(v) == "string"
-        n = tonumber(v)
+        n = v:to(i64)
         if n != nil return n:floor() end
     end
     nil
@@ -78,7 +78,7 @@ end
 # to_float: convert v to a float, or nil.
 to_float(v: any): any
     if type(v) == "number" return v end
-    if type(v) == "string" return tonumber(v) end
+    if type(v) == "string" return v:to(i64) end
     nil
 end
 

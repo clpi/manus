@@ -1,5 +1,5 @@
 ---
-globs: ["*.id", "docs/spec/**", "CLAUDE.md", "AGENTS.md", "gates/**"]
+globs: ["*.id", "docs/spec/**", "CLAUDE.md", "AGENTS.md", "gate/**"]
 ---
 
 # Language
@@ -8,7 +8,7 @@ Use `AGENTS.md`, `docs/spec/constitution.md`, `docs/spec/source.md`,
 `CLAUDE.md`, `docs/spec/grammar.md`, and `docs/spec/corpus.md`.
 
 Canonical source is `.id`. Current language is **Idol** (`idol`). C0 owns
-`law.update.face`; `AGENTS.md` projects it, and `gates/idiom.id` exposes
+`law.update.face`; `AGENTS.md` projects it, and `gate/idiom.id` exposes
 candidate pressure pending the graph witness. Do not use examples or
 historical files as language law.
 
@@ -30,7 +30,7 @@ scan(diff)(body) = ()
     # diff is a symbol, not a string — same curry shape as to(micron)(inch)
 
 scan(path)(body) = ()
-    # path-list boundary in gates/path.id
+    # path-list boundary in gate/path.id
 
 ingress(path) = ()
     # ingress is the subject/home edge
@@ -67,7 +67,7 @@ dot(std) = (world: str, code: str)
 Call sites: `dot(io)(code)`, `hit(io)(code)`, `dot(std)(io, code)` — never `worlddot`,
 `qualworlddot`, or `dot(code, "io")`.
 
-Reference gates: `gates/idiom.id`, `gates/host.id`, `gates/path.id`.
+Reference gates: `gate/idiom.id`, `gate/host.id`, `gate/path.id`.
 Transport: stdin via `stdin:read()`; shell pipes or `< file` redirect. No
 `gate.sh`, `gatepath`, `os.args`, or `--backend=c`.
 
@@ -92,5 +92,5 @@ path components. One lowercase word per home; decompose through hierarchy:
 - `semantic/graph.id` — never `semantic_graph.id`
 - `suffix/array.id` — never `suffixarray.id`
 
-`gates/path.id` rejects `_` in stems via `sep()` on every path component.
+`gate/path.id` rejects `_` in stems via `sep()` on every path component.
 Positive control: `semantic_graph` fails; `semantic/graph.id` passes.

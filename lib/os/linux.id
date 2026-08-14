@@ -21,19 +21,19 @@ M.EPOLLET = 0x80000000
 # Linux syscalls via @c.emit
 # ═══════════════════════════════════════════════════════════════
 
-@c.emit('include:len() <sys/epoll.h>')
-@c.emit('include:len() <sys/inotify.h>')
-@c.emit('include:len() <sys/eventfd.h>')
-@c.emit('include:len() <sys/timerfd.h>')
-@c.emit('include:len() <sys/mman.h>')
-@c.emit('include:len() <unistd.h>')
-@c.emit('include:len() <fcntl.h>')
-@c.emit('include:len() <stdlib.h>')
-@c.emit('include:len() <string.h>')
+@comp.c.emit('include:len() <sys/epoll.h>')
+@comp.c.emit('include:len() <sys/inotify.h>')
+@comp.c.emit('include:len() <sys/eventfd.h>')
+@comp.c.emit('include:len() <sys/timerfd.h>')
+@comp.c.emit('include:len() <sys/mman.h>')
+@comp.c.emit('include:len() <unistd.h>')
+@comp.c.emit('include:len() <fcntl.h>')
+@comp.c.emit('include:len() <stdlib.h>')
+@comp.c.emit('include:len() <string.h>')
 
 # C shim functions for Linux syscalls
 
-@c.emit([[
+@comp.c.emit([[
 static int duo_epoll_create(int maxevents) {
     return epoll_create1(0);
 }

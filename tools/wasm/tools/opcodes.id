@@ -10,14 +10,14 @@
 # exact failure ("hand-writing the rest across interpreter arms *and* JIT
 # emitters is the thing to avoid") and it happened anyway, because there was
 # nothing to hand-write *from* on the engine side: duo's canonical table
-# (lib/std/wasm/ward_mvp_opcodes.id) stops at 63 ops and the engine needs 170.
+# (lib/wasm/ward_mvp_opcodes.id) stops at 63 ops and the engine needs 170.
 #
 # So OPS below is the descriptor, and every opcode number the engine compiles
 # against is projected from it. An opcode number now appears ONCE in this
 # repo per fact, not once per consumer.
 #
 # THIS TABLE IS NOT A SECOND SOURCE OF TRUTH. `_agree` checks every row that
-# lib/std/wasm/ward_mvp_opcodes.id also carries against that file, parsed at
+# lib/wasm/ward_mvp_opcodes.id also carries against that file, parsed at
 # run time, and refuses to project on any disagreement. duo's canonical table
 # stays the authority for the 63 it holds; OPS extends it and is answerable
 # to it. That check is negative-controlled by `_selfcheck` # a table that
@@ -25,7 +25,7 @@
 #
 # MONOGLOT: this is .id, not the .py that used to do this job (deleted
 # 2026-08-07 after it silently read a /tmp path that no longer existed) and
-# not the .zig generator that owns lib/std/wasm/.
+# not the .zig generator that owns lib/wasm/.
 
 # {opcode, canonical wasm name}. Ordered by opcode; the projection preserves
 # this order, which is what makes re-running a no-op.
@@ -273,7 +273,7 @@ CMPCOND = {
 }
 
 # Duo keywords cannot be bare identifiers, so those four names take a trailing
-# underscore. The set matches lib/std/wasm/ward_mvp_opcodes.id exactly, which
+# underscore. The set matches lib/wasm/ward_mvp_opcodes.id exactly, which
 # is what lets `_agree` compare the two files name-for-name.
 _reserved = {"if", "else", "end", "return"}
 
@@ -404,7 +404,7 @@ end
 
 # ── answerability to duo's canonical table ───────────────────────────────
 #
-# Parses lib/std/wasm/ward_mvp_opcodes.id (63 ops, emitted by
+# Parses lib/wasm/ward_mvp_opcodes.id (63 ops, emitted by
 # `duo wasm-tables emit`) and demands OPS agree on every one. Reported as a
 # count, not a boolean, because a parser that matched nothing would otherwise
 # read as unanimous agreement.
@@ -505,14 +505,14 @@ main(): i64
     end
 
     # NOT a hardcoded default. A personal path here is a public_safety_scan
-    # failure (Pass 10 A19) and it is also wrong for everyone but one machine;
+    # failure (A19) and it is also wrong for everyone but one machine;
     # ask git where the checkout is instead. `_agree` below is the control:
     # a root that does not resolve parses 0 rows and the tool refuses.
     root = std.script.getenv("DUO_ROOT", "")
     if root == ""
         root = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
     end
-    canon = root .. "/lib/std/wasm/ward_mvp_opcodes.id"
+    canon = root .. "/lib/wasm/ward_mvp_opcodes.id"
     n = _agree(canon)
     if n == 0
         print("*** parsed 0 rows out of " .. canon .. "; the agreement check is broken ***")

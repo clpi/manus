@@ -1,4 +1,4 @@
-# gap[065]. `i64 / i64` is typed f64, against Pass 100 B-4, and the two
+# gap[065]. `i64 / i64` is typed f64, against B-4, and the two
 # backends resolve the mismatch differently — so THE C ORACLE IS WRONG HERE.
 #
 # B-4: "division operand-selected: `i64/i64` truncates (overflow regime); any
@@ -15,7 +15,7 @@
 #
 # **The direct backend is CORRECT on every row.** It truncates, which is what
 # B-4 says. This is the one place in the tree where the reference side is the
-# wrong one, and Pass 103 §5 licenses the C backend as a CI ORACLE — so an
+# wrong one, and the oracle ruling licenses the C backend as a CI ORACLE — so an
 # oracle answering 4615063718147915776 for 7/2 is not an oracle for integer
 # arithmetic, and every gate built on the comparison inherits the hole.
 #

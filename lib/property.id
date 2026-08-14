@@ -30,7 +30,7 @@ end
 # Internal: try to convert a string to a number.
 std_property_to_num(s: str): any
     if s == nil return nil end
-    num = tonumber(s)
+    num = s:to(i64)
     num
 end
 

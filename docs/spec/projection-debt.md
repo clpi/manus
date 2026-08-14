@@ -7,8 +7,8 @@ require GAP-124 application records.
 Regenerate counts (from repository root):
 
 ```bash
-idol run scripts/projection_census.id
-idol run scripts/infer_census.id
+idol run scripts/census/projection.id
+idol run scripts/census/infer.id
 # or bundled:
 ./tools/node/dev/projectioncensus
 ```
@@ -35,26 +35,25 @@ no live canonical conversion uses `:from(`:
 
 | file | role | action |
 |---|---|---|
-| `examples/conversion/relation.id` | migration comment | keep — documents FROM-ZERO |
+| `examples/conversion/relation.id` | subject-first `to` | keep — FROM-ZERO teaching |
 | `examples/nominal/measure.id` | historical comment | keep — pre-nominal debt story |
 | `examples/compile_fail/relation_lossy_compose.id` | comment only | keep — proof fixture uses `5:to(milli)` |
-| `scripts/idiomgate.id` | gate ratchet | keep until graph gate |
-| `gates/idiom.id` | gate ratchet | keep until graph gate |
-| `scripts/projection_census.id` | census label | keep |
+| `gate/idiom.id` | gate ratchet | keep until graph gate |
+| `scripts/census/projection.id` | census label | keep |
 
 **FROM-ZERO canonical source debt: clear.**
 
 ## Top `:to(` debt by file (migration / std-migration)
 
-Highest counts live in `lib/std/*` and benchmark scripts — **std-migration
+Highest counts live in `lib/*` and benchmark scripts — **std-migration
 debt**, not canonical teaching:
 
 | tier | paths | repair class |
 |---|---|---|
-| std-migration | `lib/std/trace.id`, `lib/std/inspect.id`, … | H — frozen distribution; do not extend |
+| std-migration | `lib/trace.id`, `lib/inspect.id`, … | H — frozen distribution; do not extend |
 | script/bench | `scripts/runtime_bench.id`, `scripts/audit100.id`, … | I — bootstrap measurement |
 | mcp-agent | `tools/mcp/shared.id` (~11 `:to(`) | J — GAP-159 process/run migration |
-| gate | `scripts/idiomgate.id`, `gates/idiom.id` | K — ratchet rules mentioning patterns |
+| gate | `gate/idiom.id` | K — ratchet rules mentioning patterns |
 | canonical-teaching | `examples/conversion/*`, `examples/projection/*`, … | verified — must match C0 |
 
 ## `process.*` namespace (GAP-159)

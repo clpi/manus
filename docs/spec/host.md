@@ -37,7 +37,7 @@ graphs, or wrappers to call. They are not migration targets and not bootstrap
 substitutes. A spelling like `std.proc.capture` or `ir.node` does not become
 lawful because it compiles or because nearby debt uses it.
 
-Historical filesystem paths (`lib/std/…`) and realization encodings (DNIR) are
+Historical filesystem paths (`lib/…`) and realization encodings (DNIR) are
 bootstrap or realization provenance only — delete or push outward, never extend.
 
 Renaming host spellings without semantic decomposition is forbidden:
@@ -308,10 +308,10 @@ establish the semantic boundary and name a deletion gate.
 
 Lexical ratchets on **added lines** are temporary migration firewalls only:
 
-- `gates/host.id` — blocks new host API spellings on staged additions
+- `gate/host.id` — blocks new host API spellings on staged additions
 - `scripts/ingress/` home — bootstrap foreign ingress boundary (`input.id`, `output.id`, `arg.id`)
 
-`gates/architecture.id` must **not** host `hostread`, `hostargs`, `hostenv`, or
+`gate/architecture.id` must **not** host `hostread`, `hostargs`, `hostenv`, or
 other host spelling census rows. That is the same antipattern as `suffix()`,
 `readface`, and admission string detectors. Host semantic verdicts belong to
 GAP-124 graph obligations.

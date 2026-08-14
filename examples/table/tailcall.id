@@ -2,15 +2,11 @@
 # complete with the right answer and no signal. The NON-tail half of the row
 # is measured separately, in `depth.id`, because it does not survive.
 # expect: 10000000
+# @corpus current
 tail: i64 = (n: i64, acc: i64)
     if n <= 0
-        return acc
-    end
+        acc
     tail(n - 1, acc + 1)
-end
 
-main: i64 = ()
-    a = tail(10000000, 0)
-    print("{a}")
-    0
-end
+a = tail(10000000, 0)
+print("{a}")

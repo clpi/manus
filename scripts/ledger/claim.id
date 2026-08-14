@@ -1,7 +1,7 @@
 # Live agent claim ledger.
 #
 # The durable coordination file points agents at `.agents/session/claims`.
-# This script turns those markdown claims into a concise duon-readable view.
+# This script turns those markdown claims into a concise idol-readable view.
 
 capture: str = (shellline: str)
     gatecap(shellline)
@@ -198,7 +198,7 @@ control: i64 = ()
     if !touches("tools/wasm/**", "tools/wasm/src/engine.id")
         print("ledger/claim: fail control wildcard")
         bad += 1
-    if touches("tools/wasm/**", "lib/std/fs.id")
+    if touches("tools/wasm/**", "lib/fs.id")
         print("ledger/claim: fail control disjoint")
         bad += 1
     if bad == 0

@@ -9,7 +9,7 @@
 # identifier, and nothing has ever convicted it.
 #
 # WHAT THE EXEMPTION ACTUALLY GRANTS. `law.host.projection` is precise: the
-# bootstrap may look un-duon-like ONLY WHERE THE HOST LANGUAGE REQUIRES IT.
+# bootstrap may look un-idol-like ONLY WHERE THE HOST LANGUAGE REQUIRES IT.
 # Zig does not require a companion `Kind` enum — §0.3's inline case-set has a
 # direct Zig spelling. The enum is a DESIGN CHOICE sheltering under a grant
 # written for pointer arithmetic and `extern` layout. "Bootstrap ledger" has
@@ -138,7 +138,7 @@ pad: str = (s: str, width: i64)
     out
 
 # Every hole below is a PLAIN BINDING, never an expression. `"{pad(name, 11)}"`
-# renders the call LITERALLY — duon interpolation substitutes bindings and
+# renders the call LITERALLY — idol interpolation substitutes bindings and
 # field walks only, so an expression hole silently prints its own source and
 # the table reads as corrupt data rather than as a formatting bug.
 row: i64 = (name: str, n: i64, budget: i64)
@@ -162,22 +162,22 @@ main: i64 = ()
     bad = 0
     if sees(upperpat, "pub const NodeKind = enum {") != 1
         print("CONTROL FAILED: upper does not see `pub const NodeKind = enum`")
-        bad = bad + 1
+        bad += 1
     if sees(upperpat, "pub const node = enum {") != 0
         print("CONTROL FAILED: upper convicts an already-canonical name")
-        bad = bad + 1
+        bad += 1
     if sees(companionpat, "pub const EdgeKind = enum {") != 1
         print("CONTROL FAILED: companion does not see `EdgeKind`")
-        bad = bad + 1
+        bad += 1
     if sees(companionpat, "pub const Lexer = struct {") != 0
         print("CONTROL FAILED: companion convicts a non-companion type")
-        bad = bad + 1
+        bad += 1
     if sees(relationpat, "pub fn addChild(self: *SemanticGraph") != 1
         print("CONTROL FAILED: relation does not see `addChild`")
-        bad = bad + 1
+        bad += 1
     if sees(relationpat, "pub fn get(self: *const SemanticGraph") != 0
         print("CONTROL FAILED: relation convicts an ordinary accessor")
-        bad = bad + 1
+        bad += 1
 
     # The assumption row has FIVE controls, because it is a pipeline rather
     # than one grep and every stage of a pipeline can fail silently to zero.
@@ -187,22 +187,22 @@ main: i64 = ()
     # perfect nothing, which this repository has already shipped once.
     if lines(live(zig(root))) < 1
         print("CONTROL FAILED: the live extractor reads no flag from src/*.zig")
-        bad = bad + 1
+        bad += 1
     if lines(verified(zig(root))) < 1
         print("CONTROL FAILED: the verify extractor reads no companion from src/*.zig")
-        bad = bad + 1
+        bad += 1
     if lines(live("printf {q}    fb.use_alpha = detect(fb);\\n{q}")) != 1
         print("CONTROL FAILED: live does not see a conditionally-assigned flag")
-        bad = bad + 1
+        bad += 1
     if lines(live("printf {q}    fb.use_beta = false;\\n{q}")) != 0
         print("CONTROL FAILED: live counts a flag retired to false")
-        bad = bad + 1
+        bad += 1
     if minus("printf {q}alpha\\n{q}", "printf {q}beta\\n{q}") != 1
         print("CONTROL FAILED: minus loses a left-only name")
-        bad = bad + 1
+        bad += 1
     if minus("printf {q}alpha\\n{q}", "printf {q}alpha\\n{q}") != 0
         print("CONTROL FAILED: minus keeps a name present on both sides")
-        bad = bad + 1
+        bad += 1
 
     if bad > 0
         print("")
@@ -219,10 +219,10 @@ main: i64 = ()
     print("  the deny table over src/*.zig — the corpus audit100 cannot see")
     print("  row          count   budget")
     over = 0
-    over = over + row("upper", upper, 444)
-    over = over + row("companion", companion, 41)
-    over = over + row("relation", relation, 45)
-    over = over + row("assume", assume, 17)
+    over += row("upper", upper, 444)
+    over += row("companion", companion, 41)
+    over += row("relation", relation, 45)
+    over += row("assume", assume, 17)
     print("")
     print("  §0.1 LAW-ONE denies uppercase; §0.3 denies companion *Kind/*Type")
     print("  by name; law.arch.relation denies a semantic distinction encoded")

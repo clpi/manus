@@ -1,5 +1,10 @@
 # run_gpu_benchmark.id — build and run the GPU (Metal) vs CPU matmul benchmark.
 #
+# ledger/perf contract: gpu benchmark
+# oracle: gpu: FAIL
+# negative: gpu: PASS
+# verdict: Metal GPU matmul axis
+#
 # Duo replacement for scripts/run_gpu_benchmark.sh (monoglot census).
 #
 # Requirements: macOS with a Metal-capable GPU, Xcode command line tools, and

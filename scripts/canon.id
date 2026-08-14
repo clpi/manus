@@ -12,18 +12,6 @@ world: i64 = (need: i64, reach: i64)
     else
         invalid
 
-subject: i64 = (possessed: bool, callable: bool, operation: bool)
-    if possessed
-        if callable
-            if operation
-                migrate
-            else
-                valid
-        else
-            valid
-    else
-        valid
-
 vocab: i64 = (known: bool, duplicate: bool, qualifier: bool, foreign: bool)
     if duplicate
         invalid
@@ -69,20 +57,16 @@ main: i64 = ()
         code = 1
     if 2:world(0) != invalid
         code = 2
-    if true:subject(true, true) != migrate
-        code = 3
-    if true:subject(true, false) != valid
-        code = 4
     if true:vocab(false, false, false) != valid
-        code = 5
+        code = 3
     if false:vocab(false, false, true) != missing
-        code = 6
+        code = 4
     if true:sentinel(true, true) != invalid
-        code = 7
+        code = 5
     if true:control(true, true) != migrate
-        code = 8
+        code = 6
     if true:control(false, true) != missing
-        code = 9
+        code = 7
     if code == 0
-        print("canon: pass")
+        stdout:write("canon: pass\n")
     code

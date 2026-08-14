@@ -39,13 +39,13 @@ end
 read_leb128_u(buf: any): i64
     result = 0
     shift = 0
-    while true do
+    while true
         if buf.pos > buf.len return -1 end
         b = buf.data:byte(buf.pos)
         buf.pos = buf.pos + 1
-        result = result + ((b % 128) * (2 ^ shift))
+        result += ((b % 128) * (2 ^ shift))
         if b < 128 return result end
-        shift = shift + 7
+        shift += 7
         if shift >= 35 return -1 end
     end
     result
@@ -55,15 +55,15 @@ end
 read_leb128_s(buf: any): i64
     result = 0
     shift = 0
-    while true do
+    while true
         if buf.pos > buf.len return -1 end
         b = buf.data:byte(buf.pos)
         buf.pos = buf.pos + 1
-        result = result + ((b % 128) * (2 ^ shift))
-        shift = shift + 7
+        result += ((b % 128) * (2 ^ shift))
+        shift += 7
         if b < 128
             if shift < 64 and (b % 256) >= 64
-                result = result - (2 ^ shift)
+                result -= (2 ^ shift)
             end
             return result
         end

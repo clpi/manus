@@ -4,7 +4,7 @@
 # intrinsics (@popcount, @clz, @ctz, @rotl).
 
 # Guards, not `if a < b a else b end`. The endless one-liner clause must be
-# SELF-DELIMITED (Pass 64 2.2), and the trailing `b a` reads as PARENLESS
+# SELF-DELIMITED, and the trailing `b a` reads as PARENLESS
 # APPLICATION # the clause became `a < b(a)`, calling the operand.
 #
 # `fast_abs` below (`if x < 0 0 - x else x end`) is SAFE: its body begins with
@@ -25,14 +25,14 @@ fast_max(a: i64, b: i64): i64
     b
 end
 
-fast_minf(a: float, b: float): float
+minf(a: float, b: float): float
     if a < b
         return a
     end
     b
 end
 
-fast_maxf(a: float, b: float): float
+maxf(a: float, b: float): float
     if a > b
         return a
     end
@@ -43,7 +43,7 @@ fast_abs(x: i64): i64
     if x < 0 0 - x else x end
 end
 
-fast_absf(x: float): float
+absf(x: float): float
     if x < 0.0 0.0 - x else x end
 end
 
@@ -51,23 +51,23 @@ fast_clamp(x: i64, lo: i64, hi: i64): i64
     if x < lo lo elseif x > hi hi else x end
 end
 
-fast_clampf(x: float, lo: float, hi: float): float
+clampf(x: float, lo: float, hi: float): float
     if x < lo lo elseif x > hi hi else x end
 end
 
-fast_sign(x: i64): i64
+sign(x: i64): i64
     (x > 0) - (x < 0)
 end
 
-fast_signf(x: float): i64
+signf(x: float): i64
     if x > 0.0 1 elseif x < 0.0 -1 else 0 end
 end
 
-fast_lerp(a: float, b: float, t: float): float
+lerp(a: float, b: float, t: float): float
     a + (b - a) * t
 end
 
-fast_lerpi(a: i64, b: i64, numer: i64, denom: i64): i64
+lerpi(a: i64, b: i64, numer: i64, denom: i64): i64
     a + (b - a) * numer // denom
 end
 
@@ -97,15 +97,15 @@ fast_rotr(x: i64, k: i64): i64
     @comp.bit.rotr(x, kk)
 end
 
-fast_next_pow2(x: i64): i64
+ceil2(x: i64): i64
     if x <= 1 return 1 end
     v = x - 1
-    v = v | (v >> 1)
-    v = v | (v >> 2)
-    v = v | (v >> 4)
-    v = v | (v >> 8)
-    v = v | (v >> 16)
-    v = v | (v >> 32)
+    v |= (v >> 1)
+    v |= (v >> 2)
+    v |= (v >> 4)
+    v |= (v >> 8)
+    v |= (v >> 16)
+    v |= (v >> 32)
     v + 1
 end
 
@@ -113,25 +113,25 @@ fast_is_pow2(x: i64): bool
     x > 0 and (x & (x - 1)) == 0
 end
 
-fast_ceil_div(a: i64, b: i64): i64
+ceil(a: i64, b: i64): i64
     (a + b - 1) // b
 end
 
-fast_avg(a: i64, b: i64): i64
+avg(a: i64, b: i64): i64
     (a & b) + (((a | b) - (a & b)) >> 1)
 end
 
-fast_sat_add(a: i64, b: i64): i64
+satadd(a: i64, b: i64): i64
     r = a + b
     if r < a 9223372036854775807 else r end
 end
 
-fast_sat_sub(a: i64, b: i64): i64
+satsub(a: i64, b: i64): i64
     r = a - b
     if r > a 0 else r end
 end
 
-fast_euclid_mod(a: i64, b: i64): i64
+mod(a: i64, b: i64): i64
     r = a % b
     if r >= 0 return r end
     mag = b
@@ -150,7 +150,7 @@ fast_gcd(a: i64, b: i64): i64
     a
 end
 
-fast_lcm(a: i64, b: i64): i64
+lcm(a: i64, b: i64): i64
     if a == 0 or b == 0 return 0 end
     (a // fast_gcd(a, b)) * b
 end

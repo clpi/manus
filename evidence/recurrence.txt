@@ -1,0 +1,173 @@
+FTCFTW measured evidence — direct-native vs C-equivalent on scalar loop kernels
+================================================================================
+
+law.evidence.subject.one — measured subject revision recorded separately from prose.
+
+Committed base   : 2d3f1e7fef8e5c510eb6af053f9b5679f3dd1acd  (== checkout HEAD)
+Measured subject : committed base + UNCOMMITTED src/native_backend.zig change
+                   (loop-invariant immediate hoisting + mul/add -> madd fusion).
+                   The change is not yet committed; this file measures the working
+                   tree, and both the BEFORE (committed) and AFTER (working tree)
+                   hot loops are recorded so the delta is attributable.
+Compiler binary  : zig-out/bin/idol  (zig build from the working tree)
+Machine          : Apple M4, arm64, macOS
+Reference        : Apple clang, -O3 via idol --backend=c
+Captured (UTC)   : 2026-08-13T21:00:00Z
+Method           : idol compile (compile-only) both backends; /usr/bin/time -p,
+                   best-of-5 warm USER seconds; static otool -tV hot-loop disasm.
+                   Spot dominance measurement, not a certified suite.
+
+CORRECTION OF THE PRIOR NOTICE (law.evidence.subject.one, law.source.not.proof)
+-------------------------------------------------------------------------------
+A prior version of this file, at this same committed base 2d3f1e7f, asserted that
+"constant-LICM already works, the hot loop is 12 instructions with every literal
+hoisted to the prologue." Re-measured directly from the emitted binary of the
+COMMITTED backend, that claim is FALSE. At 2d3f1e7f the recurrence hot loop is
+21 instructions and every loop-invariant 64-bit constant (the bound, both LCG
+constants, and the +1) is re-materialized by a fresh mov/movk chain EVERY
+iteration — exactly the ~13-of-21 debt the original capture reported and the
+"correction" wrongly dismissed. Prose is not measurement (law.source.not.proof);
+the disassembly is the authority.
+
+This working-tree change IMPLEMENTS the loop-invariant hoisting the stale notice
+falsely claimed already existed, and additionally fuses mul+add into madd. The
+verified before/after below is the actual evidence.
+
+Verification machinery (law.oracle.bounded) — differential oracle
+-----------------------------------------------------------------
+Fast, hang-proof harness: compile-only under both backends, run each binary,
+compare the exit-code observation. Every kernel in this file plus the regression
+battery (fib(27) recursion, fact(10) while-loop, doubly-nested loop) AGREES
+native == c. Unit suite at this working tree: 1289 pass, 3 fail — the 3 failures
+are PRE-EXISTING negative-diagnostic tests that fail identically on the committed
+backend (verified by restoring the committed src/native_backend.zig and
+re-running), so this change introduces ZERO new divergence and ZERO new failure.
+Any further codegen change must preserve this: no new oracle divergence, no new
+unit failure. This harness is the admission gate for the backend optimizer.
+
+Optimization implemented (docs/spec/law.md §99 OPTIMIZATION-OPEN, §107)
+----------------------------------------------------------------------
+(1) LOOP-INVARIANT IMMEDIATE HOISTING (REPRESENTATION/MOVEMENT axis). A `.i64`
+    constant used inside a natural loop (a `br` whose target is at/behind it) was
+    re-materialized every iteration by `evalDnirValue`. The backend now plans,
+    per loop head, the distinct constants its body re-materializes, reserves a
+    home register for the costliest (bounded budget), pre-materializes them in the
+    preheader (emitted before the head's code offset, so the back edge re-enters
+    AFTER the movs), and returns the reserved register on each in-loop use.
+    Constants are loop-invariant by definition — no dependence, alias, effect, or
+    order obligation exists (law.observation.minimum), so this is the safest
+    possible motion. Nested loops share an enclosing loop's reserved constants.
+(2) MUL+ADD -> MADD FUSION (WORK axis). `mul -> T ; add(T, c) -> D` with T's only
+    reader the add folds into `madd D, a, b, c`. Same single-reader discipline as
+    the pre-existing cmp+branch fold; `sub` is excluded (only `c - a*b` maps to
+    `msub`).
+
+Kernel A — nonlinear dependent recurrence (latency-bound)
+---------------------------------------------------------
+    main: i64 = ()
+     x: i64 = 88172645463325252
+     i: i64 = 0
+     while i < 500000000
+      x = x * 6364136223846793005 + 1442695040888963407
+      x = x + (x * x)
+      i += 1
+     x % 251
+
+Equivalence : direct exit 90 == c exit 90  (AGREE)
+Timing      : direct-native best-user 0.98 s   |   clang -O3 best-user 0.94 s
+Outcome     : PARITY  (status = bound)
+Lower bound : loop-carried latency of the dependent i64 multiplies. Nonlinear +
+              i64-wrapping, so NEITHER backend can close-form or vectorize; both
+              are pinned to the same multiply-latency floor.
+
+BEFORE (committed 2d3f1e7f) — 21-instruction loop, constants re-materialized:
+    mov  x9,#0x6500 ; movk x9,#0x1dcd,lsl16      ; bound  (re-materialized/iter)
+    cmp  x11, x9 ; b.ge exit
+    mov  x9,#0x7f2d ; movk x9,... (x4)           ; C1     (re-materialized/iter)
+    mul  x12, x10, x9
+    mov  x9,#0x814f ; movk x9,... (x4)           ; C2     (re-materialized/iter)
+    add  x13, x12, x9
+    mov  x10, x13
+    mul  x9,  x10, x10 ; add x12, x10, x9 ; mov x10, x12
+    mov  x9,#0x1 ; add x12, x11, x9 ; mov x11, x12 ; b loop
+
+AFTER (working tree) — 9-instruction loop (all constants in preheader
+x9=bound, x12=C1, x13=C2, x14=1; mul+add fused to madd):
+    cmp  x11, x9              ; i < bound
+    b.ge exit
+    madd x15, x10, x12, x13   ; x*C1 + C2      <- LICM + madd
+    mov  x10, x15             ; home copy      <- residual (debt 3)
+    madd x15, x10, x10, x10   ; x*x + x        <- madd
+    mov  x10, x15             ; home copy      <- residual (debt 3)
+    add  x15, x11, x14        ; i + 1          <- LICM
+    mov  x11, x15             ; home copy      <- residual (debt 3)
+    b    loop
+
+clang uses 2 madd + subs/b.ne. Residual vs clang: (3) copy coalescing — 3
+home moves/iter. NON-TIME-OBSERVABLE here: they retire in the multiply-latency
+shadow, which is why the 21->9 instruction reduction is ~0% wall clock on this
+latency-bound kernel. It is the next open codegen debt (register-allocation
+preferred-destination), guarded by the oracle. See gaps/GAP-169.md.
+
+Kernel B — four independent nonlinear LCG lanes (throughput-bound)
+-----------------------------------------------------------------
+    main: i64 = ()  ; a,b,c,d = 11,22,33,44
+     while i < 300000000
+      a = a * 6364136223846793005 + 1   ; b,c,d likewise with +3,+5,+7
+      i += 1
+     (a + b + c + d) % 251
+
+Equivalence : direct exit 203 == c exit 203  (AGREE)
+Timing      : direct-native best-user 0.29 s   |   clang -O3 best-user 0.29 s
+Outcome     : PARITY  (status = bound)
+Effect of this change: the shared multiplier C1 is hoisted once (x15), all four
+addends hoisted (x16=+1, x17=+3, x19=+5, x20=+7), the bound hoisted (x9), and all
+four lanes fuse to `madd x21, lane, x15, addend`. Inner loop is 4*(madd+mov) +
+(add+mov) + cmp/b.ge/b = 13 instr; clang uses 4 madd + subs/b.ne. The only
+residual is the per-lane home `mov` (debt 3), non-time-observable at the
+multiply-port throughput floor both backends hit.
+
+Kernel C — affine accumulators (the one genuine loss)
+-----------------------------------------------------
+    main: i64 = ()  ; a=1, b=2
+     while i < 400000000
+      a = a + 1103515245
+      b = b + 12345
+      i += 1
+     (a + b) % 251
+
+Equivalence : direct exit 221 == c exit 221  (AGREE)
+Timing      : direct-native best-user 0.10 s   |   clang -O3 best-user 0.00 s
+Outcome     : LOSS (status = open) — clang's C inner loop has ZERO adds.
+Cause       : missing SCALAR EVOLUTION / affine closed-form. Every accumulator is
+              affine (a_final = a0 + N*stride), so the program's only observation
+              (a compile-time-constant exit code) is computable in O(1). clang
+              recognizes the affine induction, closes the loop to a constant, and
+              reaches the O(1) lower bound. The direct backend runs all 4e8
+              iterations. This is the correctly-attributed FTCFTW debt: NOT
+              peephole (LICM/madd/copy), but a graph-level closed-form recognition.
+              It does NOT apply to A/B: their recurrence is nonlinear and
+              i64-wrapping, so clang cannot close them either — which is exactly
+              why A/B are at parity and C is not.
+Lower bound : O(1) — the sole observation is a compile-time constant.
+
+Classification (docs/spec/law.md §107 OPTIMIZATION-SPACE-COMPLETE)
+------------------------------------------------------------------
+A, B: WORK/INFORMATION lower bound already reached (both backends multiply-bound).
+      This change closed the REPRESENTATION/MOVEMENT debt that was there in the
+      committed base (per-iteration constant re-materialization) and the WORK debt
+      (mul+add -> madd). Remaining REPRESENTATION residual (copy coalescing, debt
+      3) is real but not time-observable here -> bound.
+C   : ALGORITHM axis — affine closed-form / scalar evolution absent in the direct
+      backend; competitor reaches O(1). This is the one open per-kernel debt and
+      it is a semantic-graph transformation (recognize affine induction), guarded
+      by the differential oracle above. See gaps/GAP-169.md, gaps/GAP-172.md.
+
+Frontier ratchet (gaps/GAP-172.md mechanical loop)
+--------------------------------------------------
+measure -> found largest debt (per-iteration constant re-materialization, 13/21
+instr on A) -> classified (E.cause = REPRESENTATION/MOVEMENT + WORK) -> implemented
+(LICM immediate hoisting + madd fusion) -> validated (differential oracle AGREE on
+7 kernels/battery; 0 new unit failures) -> ratcheted (this file). Next open row:
+debt (3) copy coalescing (REPRESENTATION), then Kernel C affine closed-form
+(ALGORITHM) as the dominant remaining loss.

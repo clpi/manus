@@ -1,4 +1,4 @@
-# gates/path — LAW-ONE path/name migration preflight. NOT semantic authority.
+# gate/path — LAW-ONE path/name migration preflight. NOT semantic authority.
 #
 # Classification: temporary migration approximation for path stems and separators.
 # Production authority approximated: filename law in docs/spec/source.md and
@@ -6,7 +6,7 @@
 # Deletion gate: GAP-124 closes graph-backed canonicality on staged diffs.
 #
 # Gate transport: Idol only — stdin via stdin:read(). No os.args, no --backend=c.
-#   idol run gates/path.id < idolgate-body.txt
+#   idol run gate/path.id < idolgate-body.txt
 
 transport: str = ()
     text = stdin:read()
@@ -72,9 +72,9 @@ known: bool = (word: str)
         i += 1
     false
 
+# Static vocabulary only. Dynamic git-derived stems belong in build-world
+# preparation piped through stdin, not io.popen inside this gate.
 seed: bool = ()
-    # Static vocabulary only. Dynamic git-derived stems belong in build-world
-    # preparation piped through stdin, not io.popen inside this gate.
     true
 
 foreign: bool = (path: str)
@@ -151,6 +151,97 @@ mash: bool = (name: str)
         i += 1
     false
 
+member: bool = (hay: str, word: str)
+    m = word:len()
+    if m < 2
+        return false
+    needle = " {word} "
+    n = hay:len()
+    k = needle:len()
+    i = 1
+    while i + k - 1 <= n
+        if hay:sub(i, i + k - 1) == needle
+            return true
+        i += 1
+    false
+
+roles = " reader writer runner caller encoder decoder parser formatter checker validator builder emitter generator scanner resolver evaluator interpreter provider producer consumer receiver sender "
+collisions = " router gateway dispatcher registry manager factory adapter broker mediator controller coordinator orchestrator handler executor pipeline scheduler loader bridge shim proxy wrapper frontend backend context session service driver framework container "
+cardinals = " bytes strings chars fields variants tokens nodes edges values arguments results captures tests gates examples fixtures files rules worlds protocols descriptors collections contracts encodings formats "
+histwords = " showcase legacy deprecated compat "
+
+ends: bool = (name: str, ending: str)
+    n = name:len()
+    m = ending:len()
+    if n <= m
+        return false
+    if name:sub(n - m + 1, n) != ending
+        return false
+    if n > m and !alpha(name:sub(n - m, n - m))
+        return false
+    true
+
+rolestem: bool = (name: str)
+    if known(name) or name:len() < 4
+        return false
+    if member(roles, name)
+        return true
+    ends(name, "reader") or ends(name, "writer") or ends(name, "runner")
+    or ends(name, "caller") or ends(name, "encoder") or ends(name, "decoder")
+    or ends(name, "parser") or ends(name, "formatter") or ends(name, "checker")
+    or ends(name, "validator") or ends(name, "builder") or ends(name, "emitter")
+    or ends(name, "generator") or ends(name, "scanner") or ends(name, "resolver")
+    or ends(name, "provider") or ends(name, "producer") or ends(name, "consumer")
+
+collisionstem: bool = (name: str)
+    if known(name) or name:len() < 4
+        return false
+    if member(collisions, name)
+        return true
+    ends(name, "router") or ends(name, "gateway") or ends(name, "dispatcher")
+    or ends(name, "registry") or ends(name, "manager") or ends(name, "factory")
+    or ends(name, "adapter") or ends(name, "broker") or ends(name, "mediator")
+    or ends(name, "controller") or ends(name, "coordinator") or ends(name, "orchestrator")
+    or ends(name, "handler") or ends(name, "executor") or ends(name, "pipeline")
+    or ends(name, "scheduler") or ends(name, "loader") or ends(name, "bridge")
+    or ends(name, "wrapper") or ends(name, "context") or ends(name, "session")
+    or ends(name, "service") or ends(name, "framework") or ends(name, "container")
+
+cardinalstem: bool = (name: str)
+    member(cardinals, name)
+
+ables = " callable readable writable iterable indexable hashable comparable serializable encodable decodable parseable printable executable runnable awaitable seekable "
+
+ablestem: bool = (name: str)
+    if member(ables, name)
+        return true
+    n = name:len()
+    if n < 6
+        return false
+    ends(name, "able") or ends(name, "ible")
+
+histstem: bool = (name: str)
+    if atom(name, "pass") or atom(name, "gap") or atom(name, "phase")
+        return true
+    member(histwords, name) or ends(name, "showcase") or ends(name, "legacy")
+    or ends(name, "deprecated") or ends(name, "compat")
+
+orghomes = " std lib core common shared util utils helper helpers support internal framework platform system module modules namespace namespaces "
+mediatorhomes = " router gateway dispatcher registry manager factory adapter broker context engine pipeline service provider bridge wrapper "
+
+orghome: bool = (name: str)
+    if known(name)
+        return false
+    member(orghomes, name) or ends(name, "utils") or ends(name, "helpers")
+
+mediatorhome: bool = (name: str)
+    if known(name)
+        return false
+    member(mediatorhomes, name)
+
+filename: bool = (where: str)
+    where:len() > 0 and where:sub(where:len(), where:len()) != ":"
+
 verdict: i64 = (where: str, name: str)
     hits = 0
     if name:len() == 0
@@ -164,12 +255,41 @@ verdict: i64 = (where: str, name: str)
     if mash(name)
         print("{where}  [PATH-SEMANTICS-BLOCKED]  mashed compound `{name}` — decompose the owner")
         hits += 1
+    if filename(where)
+        if rolestem(name)
+            print("{where}  [law.identity.role]  role-noun stem `{name}` — subject + relation; docs/spec/canonical.md §26")
+            hits += 1
+        if collisionstem(name)
+            print("{where}  [law.identity.collision]  mediator stem `{name}` — decompose; docs/spec/canonical.md §26")
+            hits += 1
+        if cardinalstem(name)
+            print("{where}  [law.identity.cardinal]  plural-cardinality stem `{name}` — one entity + facts; docs/spec/canonical.md §26")
+            hits += 1
+        if ablestem(name)
+            print("{where}  [law.protocol.name.zero]  *able/*ible stem `{name}` — relation constraints only; docs/spec/canonical.md §26")
+            hits += 1
+        if histstem(name)
+            print("{where}  [law.source.not.proof]  history/showcase stem `{name}` — isolate or delete; docs/spec/canonical.md §26")
+            hits += 1
+    if !filename(where) and name:len() > 0
+        if orghome(name)
+            print("{where}  [law.std.zero]  organizational namespace `{name}` — layout/home projection; docs/spec/canonical.md §27")
+            hits += 1
+        if mediatorhome(name)
+            print("{where}  [law.identity.collision]  mediator home `{name}` — decompose; docs/spec/canonical.md §27")
+            hits += 1
+        if name == "semantic"
+            print("{where}  [law.catalog.zero]  catalog home `{name}` — resolver publishes graph ids")
+            hits += 1
     hits
 
 walk: i64 = (path: str)
     if !owned(path)
         return 0
     hits = verdict(path, leaf(path))
+    if has(path, "lib/semantic/")
+        print("{path}  [law.catalog.zero]  no relation catalog home — resolver publishes graph ids")
+        hits += 1
     part = ""
     n = path:len()
     i = 1
@@ -294,7 +414,7 @@ num: i64 = (s: str, i: i64)
     j = i
     while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
         v *= 10
-        v += (s:sub(j, j):byte() - 48)
+        v += (s:byte(j) - 48)
         j += 1
     v
 
@@ -355,10 +475,10 @@ diff: i64 = (body: str)
 
 tree: i64 = (body: str)
     if body:len() == 0
-        print("gates/path: empty tree listing on stdin")
+        print("gate/path: empty tree listing on stdin")
         return 3
     hits = list(body)
-    print("gates/path: {hits} finding(s) on tracked project paths  [tree: pass]")
+    print("gate/path: {hits} finding(s) on tracked project paths  [tree: pass]")
     hits
 
 # Decode IDOLGATE section protocol from input body.
@@ -420,7 +540,7 @@ feed: i64 = (body: str)
         total += list(a)
     if b:len() > 0
         total += diff(b)
-    print("gates/path: {total} finding(s) on staged names  [control: pass]")
+    print("gate/path: {total} finding(s) on staged names  [control: pass]")
     if total > 0
         return 1
     0
@@ -511,18 +631,39 @@ control: bool = ()
     if verdict("scripts/census/infer.id", "infer") != 0
         print("control FAIL: scripts/census/infer.id decomposed path rejected")
         ok = false
+    if verdict("filereader.id", "filereader") == 0
+        print("control FAIL: filereader role-noun stem not rejected")
+        ok = false
+    if verdict("callable.id", "callable") == 0
+        print("control FAIL: callable protocol stem not rejected")
+        ok = false
+    if verdict("bytes.id", "bytes") == 0
+        print("control FAIL: bytes plural-cardinality stem not rejected")
+        ok = false
+    if verdict("lib/compiler/graph.id", "graph") != 0
+        print("control FAIL: graph canonical stem rejected")
+        ok = false
+    if verdict("lib/semantic/io.id:", "semantic") == 0
+        print("control FAIL: semantic catalog home not rejected")
+        ok = false
+    if verdict("examples/foo.id:", "examples") != 0
+        print("control FAIL: established examples home rejected")
+        ok = false
+    if verdict("probe/utils/foo.id:", "utils") == 0
+        print("control FAIL: utils organizational home not rejected")
+        ok = false
     ok
 
 main: i64 = ()
     if !seed()
-        print("gates/path: vocabulary load failed")
+        print("gate/path: vocabulary load failed")
         return 3
     if !control()
-        print("gates/path: POSITIVE CONTROL FAILED")
+        print("gate/path: POSITIVE CONTROL FAILED")
         return 3
     body = transport()
     if body:len() == 0
-        print("gates/path: empty input — pipe IDOLGATE sections")
-        print("  { printf 'IDOLGATE tree\\n'; git ls-files; printf '\\nIDOLGATE end\\n'; } | idol run gates/path.id")
+        print("gate/path: empty input — pipe IDOLGATE sections")
+        print("  { printf 'IDOLGATE tree\\n'; git ls-files; printf '\\nIDOLGATE end\\n'; } | idol run gate/path.id")
         return 3
     feed(body)

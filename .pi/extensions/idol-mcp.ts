@@ -3,11 +3,11 @@
  *
  * WHY THIS EXISTS
  * pi has no native MCP. The Idol coordination workflow is MCP-based:
- * `duo-bench` owns claims (duo_dev_claim_acquire / duo_dev_claim_files),
- * gaps (duo_agent_gaps_update), session start (duo_agent_session_start), and
- * serialized builds; `duo-lsp` owns diagnostics; `zls` owns Zig navigation.
+ * `idol-bench` owns claims (idol_dev_claim_acquire / duo_dev_claim_acquire aliases,
+ * idol_dev_claim_files), gaps (idol_agent_gaps_update), session start
+ * (idol_agent_session_start), and serialized builds; `idol-lsp` owns diagnostics; `zls` owns Zig navigation.
  * This extension speaks newline-delimited JSON-RPC 2.0 to those servers by
- * spawning the repository-native `duo` binary on the same entrypoints the
+ * spawning the repository-native `idol` binary on the same entrypoints the
  * Cursor/Codex projections use (tools/node/dev/mcp.manifest.json).
  *
  * SCOPE — tooling projection only
@@ -19,7 +19,7 @@
  * USAGE
  * - `idol_mcp_status`        — report server health + discovered tools.
  * - `idol__<server>__<tool>` — one pi tool per MCP tool discovered via
- *   tools/list (e.g. idol__duo-bench__duo_dev_claim_acquire). Arguments are
+ *   tools/list (e.g. idol__idol-bench__duo_dev_claim_acquire). Arguments are
  *   forwarded as the MCP `arguments` object.
  *
  * Servers start lazily on first use and are torn down on session_shutdown.
@@ -282,7 +282,7 @@ export default function (pi: ExtensionAPI) {
     name: statusToolName,
     label: "Idol MCP status",
     description:
-      "Bridge health for the Idol MCP servers (duo-bench, duo-lsp, zls) and the tools each exposes. Start here to see whether the coordination/build/LSP servers are reachable from pi.",
+      "Bridge health for the Idol MCP servers (idol-bench, idol-lsp, zls) and the tools each exposes. Start here to see whether the coordination/build/LSP servers are reachable from pi.",
     parameters: Type.Object({}),
     async execute() {
       const servers = loadManifest();

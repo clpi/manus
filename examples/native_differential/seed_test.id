@@ -1,9 +1,9 @@
 main: i64 = ()
-    census = io:read("lib/semantic/census.id")
-    if census == nil
+    body = io:read("gate/idiom.id")
+    if body == nil
         return 1
-    if census:match("forbidden")
-        print("forbidden ok")
-    if census:match("|std|")
-        print("std token ok")
+    if body:match("law.catalog.zero")
+        print("catalog zero ok")
+    if body:match("law.boolean.mirror.zero")
+        print("boolean mirror ok")
     0

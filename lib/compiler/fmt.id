@@ -1,6 +1,6 @@
 # SH-05 — the canonicalizer, seed.
 #
-# Pass 48 §4.1 makes layout a compiler stage: the formatter computes it, there
+# Layout is a compiler stage: the formatter computes it, there
 # is no configuration, and a diff is post-canonical. This is the first stage of
 # that, in Duo.
 #
@@ -13,7 +13,7 @@
 # The first property is why this file waited for the parser to reach 245/245 on
 # lib/std: a projection oracle that rejects a third of the corpus cannot tell
 # you whether a rewrite preserved meaning. Both are gated over the whole corpus
-# by examples/pass16_formatter_proof.id.
+# by the formatter proof corpus.
 #
 # SCOPE, stated honestly, and smaller than I first wrote it. This seed applies
 # exactly one rule:
@@ -31,7 +31,7 @@
 # trailing spaces inside a `[[ ... ]]` literal, and tab expansion rewrites the
 # contents of quoted strings. lib/std simply contains no such string. The
 # string-aware version that followed preserved meaning but was not a fixpoint
-# on lib/std/jit.id (one byte longer on the second pass), so it is not correct
+# on lib/jit.id (one byte longer on the second pass), so it is not correct
 # either.
 #
 # The rule that ships is the one whose proof I trust. Block-depth re-indent,

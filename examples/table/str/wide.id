@@ -1,0 +1,16 @@
+# TEXT: the numeric str-edge above 2^53. The digits name an exact i64, and the
+# edge now delivers it. §12 B-13 makes this edge part of the declared
+# contract, so a lossy edge was a wrong answer rather than a rounding policy.
+#
+# REMEASURED 2026-08-08 (gaps/GAP-081.md step 1). This row read
+# 9007199254740992 for as long as it could be read at all — the edge routed
+# through a double and lost the low bit. What the row could NOT say, because
+# the fixture ran through the boxed lowering, is that the same conversion in a
+# full-native module did not compile: `to(i64)` on a typed `str` reached
+# `lua_to_num`, a name no full-native module declares, in BOTH faces. It now
+# reaches a plain-C integer parse and keeps all 64 bits, which is why this
+# number moved by exactly one.
+# expect: 9007199254740993
+# @corpus current
+b = "9007199254740993":to(i64)
+print("{b}")

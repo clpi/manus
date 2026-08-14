@@ -37,14 +37,14 @@ pub const Symbol = struct {
     is_vararg_rest: bool = false,
     /// If non-null, using this symbol emits a deprecation warning.
     deprecated_msg: ?[]const u8 = null,
-    /// Pass 2: knowledge lattice position derived from `typ` (see `Symbol.knowledge`).
+    /// knowledge lattice position derived from `typ` (see `Symbol.knowledge`).
     /// Escape analysis fields (populated by analyze_closure_upvalues and checking passes)
     escapes: bool = false, // true if variable outlives its scope
     address_taken: bool = false, // true if &var is used or stored in table
     captured_by_closure: bool = false, // true if referenced in a nested function
     assigned_after_init: bool = false, // true if reassigned after declaration
 
-    /// Knowledge lattice position for this binding (Pass 2 convergence).
+    /// Knowledge lattice position for this binding (convergence).
     pub fn knowledge(self: Symbol) semantic_algebra.KnowledgeLevel {
         return semantic_algebra.knowledgeOfType(self.typ);
     }
@@ -388,9 +388,9 @@ pub const Sema = struct {
     scope: Scope,
     type_map: TypeMap,
     module_globals: std.StringHashMapUnmanaged(RT) = .{},
-    /// Module-scope Duo bindings retained after `check_module` (Pass 2 lattice queries).
+    /// Module-scope Duo bindings retained after `check_module` (lattice queries).
     module_bindings: std.StringHashMapUnmanaged(Symbol) = .{},
-    /// Pass 34 L1 — req bindings treated as sealed-after-load unless mutated (idol_mode).
+    /// L1 — req bindings treated as sealed-after-load unless mutated (idol_mode).
     module_sealed: std.StringHashMapUnmanaged(void) = .{},
     /// Registry of declared enum types for exhaustiveness checking.
     enum_types: std.StringHashMapUnmanaged(RT) = .{},
@@ -439,7 +439,7 @@ pub const Sema = struct {
     hints_enabled: bool = false,
     info_enabled: bool = false,
     current_ret: RT,
-    /// Pass 100 §8 B-12 — the contract being checked declared a FAILURE
+    /// §8 B-12 — the contract being checked declared a FAILURE
     /// alternative (`: u64 | error`), so what it returns is the correlated
     /// pack `(value, nil) | (nil, error)`. A `nil` in the VALUE position is
     /// then the declared shape of a failure, not a type error.
@@ -465,7 +465,7 @@ pub const Sema = struct {
     /// Collected `@build.*` module directives from the current module.
     build_directives: std.ArrayListUnmanaged(ast.Attribute) = .empty,
     debug_directives: std.ArrayListUnmanaged(ast.Attribute) = .empty,
-    /// Pass 5: Duo source path for resolving `@c.import` header paths.
+    /// Duo source path for resolving `@c.import` header paths.
     source_path: ?[]const u8 = null,
     /// Imported C record descriptors keyed by foreign type name (e.g. CPoint).
     foreign_records: std.StringHashMapUnmanaged(RT) = .{},
@@ -621,7 +621,7 @@ pub const Sema = struct {
         };
     }
 
-    /// Knowledge lattice position for a checked expression (Pass 2).
+    /// Knowledge lattice position for a checked expression.
     pub fn exprKnowledge(self: *const Sema, expr: *const ast.Expr) semantic_algebra.KnowledgeLevel {
         const rt = self.type_map.get(expr) orelse return .unknown;
         return semantic_algebra.knowledgeOfType(rt);
@@ -661,7 +661,7 @@ pub const Sema = struct {
         });
     }
 
-    /// Pass 34 L1 — true when binding is a req module assumed frozen after load.
+    /// L1 — true when binding is a req module assumed frozen after load.
     pub fn moduleSealed(self: *const Sema, name: []const u8) bool {
         return self.module_sealed.contains(name);
     }
@@ -952,7 +952,7 @@ pub const Sema = struct {
     /// lib/std modules — measured, and the reason the guard is not just a
     /// scope lookup.
     fn is_relation_family(name: []const u8) bool {
-        // Inlined from the deleted `pass48_catalog.zig`. These two arrays were
+        // Inlined from a deleted catalog module. These two arrays were
         // the ONLY part of the 58-file audit-apparatus cluster that the live
         // compiler read: the catalog existed to be self-checked by a gate, and
         // this data rode along inside it. It belongs with its one consumer.
@@ -971,8 +971,8 @@ pub const Sema = struct {
         for (shc_relation_families) |f| {
             if (std.mem.eql(u8, name, f)) return true;
         }
-        // `has` is named by Pass 81 §2.2 as projecting over `place` beside
-        // `get`/`set`, but pass48_catalog.std_relation_families lists only those
+        // `has` is named by §2.2 as projecting over `place` beside
+        // `get`/`set`, but the inlined `std_relation_families` lists only those
         // two. Measured: without this, the guard rejects 20 lib/std modules that
         // legitimately call `has(.err)(r)`. Listed here rather than added to the
         // catalog so a catalog-count gate is not silently moved.
@@ -985,7 +985,7 @@ pub const Sema = struct {
         // `__`-prefixed names are compiler intrinsics (__native_load_u8,
         // __sizeof, __typeof, the __comptime* family). They are recognised in
         // the call handler by name, never declared in scope, so the undeclared
-        // -call guard must not see them. Caught by pass11_wasm_blob_direct.
+        // -call guard must not see them. Caught by the direct wasm-blob path.
         if (std.mem.startsWith(u8, name, "__")) return true;
         return false;
     }
@@ -1712,7 +1712,7 @@ pub const Sema = struct {
         self.generic_func_arities.clearRetainingCapacity();
         self.callable_defs.clearRetainingCapacity();
         self.applications.clearRetainingCapacity();
-        // Pass 5: import foreign declarations from @c.import / @cinclude headers first.
+        // import foreign declarations from @c.import / @cinclude headers first.
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .cinclude) {
                 try self.importForeignHeader(stmt.cinclude.header);
@@ -2009,7 +2009,7 @@ pub const Sema = struct {
         };
     }
 
-    /// Pass 100 §8 B-12 — the return type a contract LOWERS to.
+    /// §8 B-12 — the return type a contract LOWERS to.
     ///
     /// `: u64 | error` declares the correlated pack `(value, nil) | (nil,
     /// error)`, and Duo has no type for a pack. So the SIGNATURE a caller sees
@@ -2066,7 +2066,7 @@ pub const Sema = struct {
         self.scope.pop();
     }
 
-    /// Pass 25 §5.1 — tail-demand propagation (not backward local search).
+    /// §5.1 — tail-demand propagation (not backward local search).
     fn block_implicit_return_expr(blk: *const ast.Block) ?*ast.Expr {
         return tail_result_demand.blockTailResultExpr(blk);
     }
@@ -2615,7 +2615,7 @@ pub const Sema = struct {
                 },
                 .positional => {},
                 .spread => |sp| _ = self.check_expr(sp) catch {},
-                // Pass 36 G1/G8 recorded, not implemented (Phase 0): a semantic entry is keyed in the
+                // G1/G8 recorded, not implemented (Phase 0): a semantic entry is keyed in the
                 // semantic namespace, not the ordinary one, so it never contributes
                 // an ordinary field type.
                 .semantic => {},
@@ -2652,6 +2652,60 @@ pub const Sema = struct {
         var lookup_buf: [384]u8 = undefined;
         const lookup_key = self.table_field_lookup_key(table_name, field_name, &lookup_buf) orelse return null;
         return self.table_field_types.get(lookup_key);
+    }
+
+    /// Whether `subject:relation(args)` resolves to a declared relation, builtin,
+    /// or admitted bootstrap edge. gap[113]: absent relations must not compile
+    /// as `.any` and answer nil at runtime.
+    fn methodCallResolved(
+        self: *Sema,
+        obj: *const ast.Expr,
+        method: []const u8,
+        args: []const *ast.Expr,
+        ot: RT,
+    ) bool {
+        if (self.callable_defs.get(method)) |target| {
+            if (target) |resolved| {
+                _ = resolved;
+                return true;
+            }
+        }
+        var prefix_buf: [128]u8 = undefined;
+        if (method.len + 2 <= prefix_buf.len) {
+            @memcpy(prefix_buf[0..method.len], method);
+            prefix_buf[method.len] = '_';
+            prefix_buf[method.len + 1] = '_';
+            const prefix = prefix_buf[0 .. method.len + 2];
+            var it = self.callable_defs.iterator();
+            while (it.next()) |entry| {
+                if (entry.value_ptr.* == null) continue;
+                if (std.mem.startsWith(u8, entry.key_ptr.*, prefix)) return true;
+            }
+        }
+        if (obj.* == .name) {
+            const recv = obj.name.ident;
+            if (std.mem.eql(u8, recv, "stdin") and std.mem.eql(u8, method, "read") and args.len == 0)
+                return true;
+            if (std.mem.eql(u8, recv, "stdin") and std.mem.eql(u8, method, "line") and args.len == 0)
+                return true;
+            if (std.mem.eql(u8, recv, "stdout") and std.mem.eql(u8, method, "write") and args.len == 1)
+                return true;
+        }
+        if (std.mem.eql(u8, method, "to") and args.len == 1) return true;
+        if (ot == .str or ot == .any) {
+            if (std.mem.eql(u8, method, "len") and args.len == 0) return true;
+            if (std.mem.eql(u8, method, "has") and args.len == 1) return true;
+            if (std.mem.eql(u8, method, "find") and args.len == 3) return true;
+            if (std.mem.eql(u8, method, "tail") and args.len == 0) return true;
+            if (std.mem.eql(u8, method, "read") and (args.len == 0 or args.len == 1)) return true;
+            if (std.mem.eql(u8, method, "write") and args.len == 1) return true;
+            if (std.mem.eql(u8, method, "close") and args.len == 0) return true;
+            if (std.mem.eql(u8, method, "match") and args.len == 1) return true;
+            if (std.mem.eql(u8, method, "sub") and (args.len == 1 or args.len == 2)) return true;
+            if (std.mem.eql(u8, method, "byte") and args.len == 1) return true;
+            if (std.mem.eql(u8, method, "gsub") and args.len == 2) return true;
+        }
+        return false;
     }
 
     fn check_expr(self: *Sema, expr: *ast.Expr) SemaError!RT {
@@ -2744,7 +2798,7 @@ pub const Sema = struct {
                 self.err(expr.loc(), "unexpanded macro expression reached semantic analysis", .{});
                 return .any;
             },
-            // Pass 36 G1/G2 (`@name`, `@`) are canon, but Phase 0 ships no parser
+            // G1/G2 (`@name`, `@`) are canon, but Phase 0 ships no parser
             // production, so nothing reaches here yet. Refuse rather than infer a
             // type for a resolution ladder that is not implemented.
             .semantic, .semantic_scope => {
@@ -2852,7 +2906,7 @@ pub const Sema = struct {
             .call => |c| {
                 // Canonical curried form `mem.store("i64")(ptr, val)`: the type
                 // selector is its own curry level and never shares a parameter
-                // list with values (Pass 48 §2.6 application schemas). Must be
+                // list with values (§2.6 application schemas). Must be
                 // handled BEFORE anything type-checks `c.func`, or the inner
                 // `mem.store("i64")` is validated on its own and fails arity.
                 if (c.func.* == .call) {
@@ -3266,14 +3320,12 @@ pub const Sema = struct {
                 if (std.mem.eql(u8, mc.method, "to_string") and enum_type_has_derive(ot, "Display")) {
                     return .str;
                 }
-                if (self.callable_defs.get(mc.method)) |target| {
-                    if (target) |resolved| {
-                        if (self.scope.lookup(mc.method)) |symbol| {
-                            if (symbol.typ == .func) {
-                                const callable = symbol.typ.func;
-                                if (callable.params.len == mc.args.len + 1 and
-                                    callable.params[0].eql(ot))
-                                {
+                if (self.methodCallResolved(mc.obj, mc.method, mc.args, ot)) {
+                    if (self.callable_defs.get(mc.method)) |target| {
+                        if (target) |resolved| {
+                            if (self.scope.lookup(mc.method)) |symbol| {
+                                if (symbol.typ == .func) {
+                                    const callable = symbol.typ.func;
                                     const result = callable.ret.*;
                                     try self.recordApplication(expr, resolved, mc.obj, mc.args, result);
                                     return result;
@@ -3281,7 +3333,13 @@ pub const Sema = struct {
                             }
                         }
                     }
+                    return .any;
                 }
+                self.err(
+                    mc.loc,
+                    "'{s}' is neither a descriptor nor a callable, so the {s} application has no subject: descriptor space holds no '{s}' and callable space holds no '{s}' (no declaration, no builtin, no foreign import)",
+                    .{ mc.method, mc.form.name(), mc.method, mc.method },
+                );
                 return .any;
             },
             .binop => |b| self.check_binop(expr.loc(), b.op, b.lhs, b.rhs),
@@ -3308,7 +3366,7 @@ pub const Sema = struct {
                         .spread => |sp| {
                             _ = try self.check_expr(sp);
                         },
-                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): check the implementation only.
+                        // G1/G8 recorded, not implemented (Phase 0): check the implementation only.
                         .semantic => |*sm| {
                             _ = try self.check_expr(sm.val);
                         },
@@ -3385,12 +3443,12 @@ pub const Sema = struct {
 
     /// GAP-059 — the half of the `@` token that ADJACENCY did not reconcile.
     ///
-    /// Pass 100 §2 gives `@` exactly two surviving stances, the DYAD: bare `@`
+    /// §2 gives `@` exactly two surviving stances, the DYAD: bare `@`
     /// NAMES the enclosing descriptor, and postfix `X@rel` MOVES the anchor and
     /// RETRIEVES. Neither is a binary operator over values. `3f6ec4e` gave the
     /// GLUED spelling to the anchor — `at_is_glued_anchor` in `src/parser.zig`
     /// reads `p@x` as a SUFFIX beside `.field` and `[i]`, agreeing with
-    /// `lib/std/compiler/parser.id`, pinned by value at 353 in
+    /// `lib/compiler/parser.id`, pinned by value at 353 in
     /// `examples/anchor/move.id`.
     ///
     /// `infix_prec` still maps the `@` token to `.matmul`, so the SPACED
@@ -3645,7 +3703,7 @@ pub const Sema = struct {
                         .spread => |sp| {
                             if (expr_has_func_expr(sp)) return true;
                         },
-                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): the implementation may be a function.
+                        // G1/G8 recorded, not implemented (Phase 0): the implementation may be a function.
                         .semantic => |sm| {
                             if (expr_has_func_expr(sm.val)) return true;
                         },
@@ -3898,7 +3956,7 @@ pub const Sema = struct {
                         .named => |nmd| try collect_upvalue_names_expr(nmd.val, params, body_locals, names, flags, sema),
                         .positional => |pos| try collect_upvalue_names_expr(pos, params, body_locals, names, flags, sema),
                         .spread => |sp| try collect_upvalue_names_expr(sp, params, body_locals, names, flags, sema),
-                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): the implementation may capture upvalues.
+                        // G1/G8 recorded, not implemented (Phase 0): the implementation may capture upvalues.
                         .semantic => |sm| try collect_upvalue_names_expr(sm.val, params, body_locals, names, flags, sema),
                     }
                 }
@@ -4057,7 +4115,7 @@ pub const Sema = struct {
             });
         }
 
-        // Pass 1: type-check with declared (or dynamic) signature to populate type_map.
+        // type-check with declared (or dynamic) signature to populate type_map.
         const prev_ret = self.current_ret;
         const prev_fallible = self.current_ret_fallible;
         const prev_nopanic = self.current_nopanic;
@@ -4086,7 +4144,7 @@ pub const Sema = struct {
         try self.check_block_with_implicit_return(&fb.body, true);
         self.scope.pop();
 
-        // Pass 2: infer native signatures for scalar functions that are plain
+        // infer native signatures for scalar functions that are plain
         // enough to stay off the dynamic Lua path. This covers both untyped Lua
         // functions and .id functions with typed params but inferred returns.
         if (!fb.is_typed and !func_body_has_func_expr(fb)) {
@@ -4411,7 +4469,7 @@ pub const Sema = struct {
             }
         }
 
-        // Pass 3: re-check body with native types when specialized.
+        // re-check body with native types when specialized.
         if (fb.is_typed and !all_typed) {
             self.current_ret = if (fb.ret_fallible) (self.resolve_type(fb.ret_type) catch .any) else ret_t;
             self.current_ret_fallible = fb.ret_fallible;
@@ -4946,7 +5004,7 @@ pub const Sema = struct {
                 .positional => |p| p,
                 .named => |n| n.val,
                 .indexed => |idx| idx.val,
-                // Pass 36 G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept members.
+                // G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept members.
                 .spread, .semantic => continue,
             };
             if (concept_member_name_expr(member_expr)) |name| {
@@ -4971,7 +5029,7 @@ pub const Sema = struct {
                 .positional => |p| p,
                 .named => |n| n.val,
                 .indexed => |idx| idx.val,
-                // Pass 36 G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept params.
+                // G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept params.
                 .spread, .semantic => continue,
             };
             const pt: RT = if (elem.* == .string_lit)
@@ -4992,7 +5050,7 @@ pub const Sema = struct {
                 .positional => |p| p,
                 .named => |n| n.val,
                 .indexed => |idx| idx.val,
-                // Pass 36 G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept members.
+                // G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept members.
                 .spread, .semantic => continue,
             };
             if (concept_member_name_expr(member_expr)) |name| {
@@ -10816,7 +10874,7 @@ pub const Sema = struct {
                     .spread => |s| {
                         if (expr_references_name(s, name)) return true;
                     },
-                    // Pass 36 G1/G8 recorded, not implemented (Phase 0): only the implementation can reference a name.
+                    // G1/G8 recorded, not implemented (Phase 0): only the implementation can reference a name.
                     .semantic => |sm| {
                         if (expr_references_name(sm.val, name)) return true;
                     },
@@ -10882,7 +10940,7 @@ pub const Sema = struct {
         };
     }
 
-    /// Pass 23 §3 — colon methods get implicit `self: Receiver` when the descriptor exists.
+    /// §3 — colon methods get implicit `self: Receiver` when the descriptor exists.
     fn seed_method_self_param_type(self: *Sema, fd: *ast.FuncDecl) void {
         const fb = &fd.func;
         if (!fd.method or fd.path.len < 2 or fb.params.len == 0) return;
@@ -10917,7 +10975,7 @@ pub const Sema = struct {
         // `infer_block` computes the tail type but discards it, so a function
         // like `sub = (a: i32, b: i32) a - b end` with no explicit return type
         // would otherwise stay `.any` and box its result through lua_Value.
-        // Pass 23 §4: trailing assignment expression counts too.
+        // §4: trailing assignment expression counts too.
         if (block_implicit_return_expr(&fb.body)) |e| {
             const t = infer.infer_expr(e, .any);
             infer.ret_tys.append(infer.sema.alloc, t) catch return;
@@ -11363,7 +11421,7 @@ pub const Sema = struct {
                     self.ok = false;
                     break :blk .any;
                 },
-                // Pass 36 G1/G8 recorded, not implemented (Phase 0): bail out of this inference path
+                // G1/G8 recorded, not implemented (Phase 0): bail out of this inference path
                 // rather than guess a type for an unimplemented resolution ladder.
                 .semantic, .semantic_scope => blk: {
                     self.ok = false;
@@ -11531,6 +11589,34 @@ test "sema: braced ordinary callable fails closed" {
         \\    point{ x = 3 }
     , &arena);
     try testing.expectEqual(@as(u32, 1), s.errors);
+}
+
+test "sema: unknown subject-first relation fails closed" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\main: i64 = ()
+        \\    s = "abcd"
+        \\    r = s:zzznotarelation()
+        \\    0
+    , &arena);
+    try testing.expectEqual(@as(u32, 1), s.errors);
+    try testing.expectEqual(@as(usize, 1), s.diagnostics.items.len);
+    try testing.expect(std.mem.indexOf(u8, s.diagnostics.items[0].message, "zzznotarelation") != null);
+}
+
+test "sema: subject-first gsub and file read are admitted builtins" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\main: i64 = ()
+        \\    t = "a\nb":gsub("\n", "")
+        \\    f = io.open("x", "r")
+        \\    _ = f:read("a")
+        \\    f:close()
+        \\    0
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
 test "sema: braced ordinary callable refusal precedes pack arity" {
@@ -13527,30 +13613,28 @@ test "sema: collatz detector accepts integer division branch" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\function collatz_sum(n: i64): i64
-        \\  local total: i64 = 0
-        \\  local i: i64 = 1
-        \\  while i <= n do
-        \\    local x: i64 = i
-        \\    local steps: i64 = 0
-        \\    while x ~= 1 do
-        \\      if x % 2 == 0 then
-        \\        x //= 2
+        \\collatz_sum: i64 = (n: i64)
+        \\  total: i64 = 0
+        \\  i: i64 = 1
+        \\  while i <= n
+        \\    x: i64 = i
+        \\    steps: i64 = 0
+        \\    while x != 1
+        \\      if x % 2 == 0
+        \\        x = x // 2
         \\      else
         \\        x = 3 * x + 1
-        \\      end
         \\      steps += 1
-        \\    end
         \\    total += steps
         \\    i += 1
-        \\  end
-        \\  return total
-        \\end
+        \\  total
     ;
-    var lex = Lexer.init(src, "test");
+    var lex = Lexer.init(src, "test.id");
     var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
+    s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
     try testing.expect(mod.body.stmts[0] == .func_decl);

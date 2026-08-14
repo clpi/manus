@@ -21,26 +21,26 @@ file is right and this projection must be repaired.
 | Path | Purpose |
 | --- | --- |
 | `settings.json` | Project-local pi settings (compaction retention, npm via mise). |
-| `skills/idol-dev/` | The Idol development-loop skill + CLI helper scripts. Install into Codex with `./tools/node/dev/install-skills`. |
-| `extensions/idol-mcp.ts` | Bridges the three project MCP servers (`duo-bench`, `duo-lsp`, `zls`) into pi tools, since pi has no native MCP and the Idol coordination workflow (claims, gaps, serialized builds) is MCP-based. |
+| `skills/idol-dev/` | Pi-local mirror of the canonical Idol development-loop skill in `.devin/skills/idol-dev/`. Install into Codex and Devin with `./tools/node/dev/install-skills`. |
+| `extensions/idol-mcp.ts` | Bridges the three project MCP servers (`idol-bench`, `idol-lsp`, `zls`) into pi tools, since pi has no native MCP and the Idol coordination workflow (claims, gaps, serialized builds) is MCP-based. |
 
 ## What this projection does NOT do
 
 - It does not add a foreign compiler subsystem (Zig/C/Lua/shell/Python) inside
   the Idol compiler. The extension only shells out to the existing
-  repository-native `duo` binary to speak JSON-RPC to the project's own MCP
+  repository-native `idol` binary to speak JSON-RPC to the project's own MCP
   servers.
-- It does not bypass the gates. `skills/idol-dev` wraps `gates/idiom.id`
-  and `gates/architecture.id`; it never suppresses a finding.
+- It does not bypass the gates. `skills/idol-dev` wraps `gate/idiom.id`
+  and `gate/architecture.id`; it never suppresses a finding.
 - It does not replace claim coordination. Claim acquire/release is forwarded to
-  the `duo-bench` MCP server (`duo_dev_claim_acquire` etc.), the same authority
+  the `idol-bench` MCP server (`idol_dev_claim_acquire` / `duo_dev_claim_acquire` aliases), the same authority
   Cursor and Codex use.
 
 ## Trust
 
 pi will prompt before trusting this folder on first run because it contains
 project-local settings and skills. Use `/trust` to persist the decision. The
-extension executes the `duo` binary with your permissions; review
+extension executes the `idol` binary with your permissions; review
 `extensions/idol-mcp.ts` before trusting.
 
 ## Committing this directory

@@ -1,0 +1,85 @@
+# GAP-124 semantic canonicality ledger — verdict core + graph proof ownership.
+# File facts here; execution proof via zig build graph-proof (direct backend).
+
+len(path) = (min: i64)
+    path:read()
+        :len() >= min
+
+seen: bool = (text: str, needle: str)
+    n = text:len()
+    m = needle:len()
+    i = 1
+    while i + m - 1 <= n
+        if text:sub(i, i + m - 1) == needle
+            return true
+        i += 1
+    false
+
+semantic: i64 = ()
+    print("ledger/semantic -- GAP-124 canonicality blockers")
+    fail = 0
+    canon = "scripts/canon.id":read()
+    graph = "scripts/proof/graph.id":read()
+    ggate = "gate/graph.id":read()
+    proof = "scripts/proof/semantic.id":read()
+    if !canon:len()
+        print("  FAIL scripts/canon.id missing")
+        fail = 1
+    if canon:len()
+        print("  ok   verdict core scripts/canon.id")
+    if !seen(canon, "world: i64 = (need")
+        print("  FAIL WORLDGATE verdict missing")
+        fail = 1
+    if seen(canon, "world: i64 = (need")
+        print("  ok   WORLDGATE interned")
+    if !seen(canon, "vocab: i64 = (known")
+        print("  FAIL VOCABGATE verdict missing")
+        fail = 1
+    if seen(canon, "vocab: i64 = (known")
+        print("  ok   VOCABGATE interned")
+    if !seen(canon, "sentinel: i64 = (cases")
+        print("  FAIL SENTINELGATE verdict missing")
+        fail = 1
+    if seen(canon, "sentinel: i64 = (cases")
+        print("  ok   SENTINELGATE interned")
+    if !seen(canon, "control: i64 = (equivalent")
+        print("  FAIL CONTROLREDUCE verdict missing")
+        fail = 1
+    if seen(canon, "control: i64 = (equivalent")
+        print("  ok   CONTROLREDUCE interned")
+    if !graph:len()
+        print("  FAIL scripts/proof/graph.id missing")
+        fail = 1
+    if graph:len()
+        print("  ok   graph structural proof present")
+    if !seen(graph, "main: i64 = ()")
+        print("  FAIL graph proof missing direct entry")
+        fail = 1
+    if seen(graph, "main: i64 = ()")
+        print("  ok   graph proof direct entry")
+    if !ggate:len()
+        print("  FAIL gate/graph.id missing")
+        fail = 1
+    if ggate:len()
+        print("  ok   graph migration gate present")
+    if !seen(ggate, "graph: i64 = ()")
+        print("  FAIL graph gate missing entry")
+        fail = 1
+    if seen(ggate, "graph: i64 = ()")
+        print("  ok   graph gate entry")
+    if !proof:len()
+        print("  FAIL scripts/proof/semantic.id missing")
+        fail = 1
+    if proof:len()
+        print("  ok   semantic proof orchestrator present")
+    if fail
+        print("ledger/semantic: FAIL file facts")
+        return 1
+    print("ledger/semantic: PASS file facts")
+    print("  exec   zig build graph-proof (canon check + graph run)")
+    print("  open   SUBJECTGATE waits on application subject edges")
+    print("  open   total structured finding waits on graph ingestion")
+    print("  audit  scripts/ledger/application.id (APPLICATION-CONSUMER-ZERO)")
+    print("  audit  scripts/ledger/graph.id (graph sovereignty)")
+    print("  audit  scripts/ledger/graph.id (GRAPH-SOVEREIGNTY G1-G12)")
+    0

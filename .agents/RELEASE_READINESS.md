@@ -27,7 +27,7 @@ until every blocker below is closed and explicit release authorization is record
 
 | Requirement | Status |
 |---|---|
-| Update-face law owned by C0, projected by `AGENTS.md`; candidate gate at `scripts/idiomgate.id` | **met** — candidate finding, not semantic proof |
+| Update-face law owned by C0, projected by `AGENTS.md`; candidate gate at `gate/idiom.id` | **met** — candidate finding, not semantic proof |
 | Graph-owned canonicalizer for update-face equivalence | **blocked** — `GAP-145`, `GAP-134`, `GAP-124` |
 | Pre-commit / semantic gates pass on release candidate tree | **open** — requires clean aggregate run at candidate HEAD |
 | Canonicality split enforced: new debt = 0 vs existing corpus debt tracked separately | **in progress** — see `docs/METRICS.md` |
@@ -65,10 +65,10 @@ Parser authority transfer (`GAP-134`) is **blocked upstream** until the lexical
 1. `gaps/GAP-145.md` — distinct lexical token identities (text, bytes, compat
    literals/comments, shebang, reserved backtick) without delimiter-text
    inference.
-2. Generated grammar-role projection — `lib/std/token/grammar_role.id` from
-   `src/grammar_roles.zig` / `duo token-tables emit`; no parser-local spelling
+2. Generated grammar-role projection — `lib/token/grammarrole.id` from
+   `src/grammar_roles.zig` / `idol token-tables emit`; no parser-local spelling
    tables.
-3. Immutable token-pack view — `lib/std/compiler/token_view.id` and host
+3. Immutable token-pack view — `lib/compiler/token_view.id` and host
    `src/token_view.zig` for observation/lookahead.
 4. `gaps/GAP-134.md` — first bounded production parser recognition slice.
 
@@ -98,7 +98,7 @@ Claim exact paths before write. No broad cleanup. No release migration.
 
 Doctor failures observed on this checkout (not an exhaustive census): pinned tool
 version drift (zig, cursor, cursor-agent); stale compiler artifact vs
-`src/dnir_lower.zig`; `scripts/idiomgate.id` / `scripts/duo_lock.id` referenced
+`src/dnir_lower.zig`; `gate/idiom.id` / `scripts/idol_lock.id` referenced
 by doctor and coordination docs but **absent on disk** (only `.id` variants
 present); aggregate build gates blocked (`src/sema.zig` compile error); MCP raw
 initialize probe fail per `orient`. These are release/coordination blockers, not

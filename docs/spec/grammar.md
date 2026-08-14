@@ -41,10 +41,16 @@ identity or physical representation choice after normalization.
 - `:` carries only its admitted descriptor, subject, and home roles:
   `text:len()` for an explicit subject and `:normalize()` for the ambient
   subject;
-- `@` supplies a semantic anchor only: bare `@` names the enclosing descriptor,
-  `value@relation` selects that relation anchored at `value`, and `@{...}` is
-  the ambient descriptor applied to structured content. It never introduces a
-  compiler directive.
+- `@` IS THE CURRENT-WORLD ACCESSOR (`docs/spec/law.md` §4 + World+projection
+  add-on): bare `@` is the current-world value, `@member` accesses a static
+  current-world member (`@` is the accessor itself, so `@member.child` is one
+  world access then one ordinary static projection), `value@world` evaluates
+  `value` under `world`, `@{ k = v }` derives a world with injected facts
+  (injection), `thing@{ k = v }` evaluates a subtree under that derived world
+  (interjection), and `@member = v` mutates a world member place. INVALID:
+  `@.member` and `@:member` — `@` already accesses, so there is no `@.` step and
+  no `@:` dispatch. It never introduces a compiler directive
+  (`@comp`/`@host`/`@runtime`/…).
 
 Canonical structured faces include:
 
@@ -114,7 +120,7 @@ The authoritative formatter and gate must decide from graph facts and the
 equivalence witness. That implementation remains blocked by the distinct
 lexical identities in `GAP-145`, generated grammar roles in `GAP-134`, and the
 graph-derived semantic canonicality service in `GAP-124`. Any current text
-ratchet, including the added-line check in `scripts/idiomgate.id`, is
+ratchet, including the added-line check in `gate/idiom.id`, is
 non-authoritative migration pressure and may not claim equivalence.
 
 ## Parser boundary

@@ -1,7 +1,7 @@
 /// Semantic Interchange Model (SIM) v0 — versioned projection of Duo compiler facts.
 ///
 /// SIM is not the internal semantic graph. It is a stable, serializable boundary for
-/// MCP, LSP, foreign import, transformation input, and semantic diff (Pass 5 Layer A).
+/// MCP, LSP, foreign import, transformation input, and semantic diff (Layer A).
 const std = @import("std");
 const ast = @import("ast.zig");
 const types = @import("types.zig");

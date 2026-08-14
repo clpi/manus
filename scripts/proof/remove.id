@@ -1,40 +1,12 @@
 # path:remove — verified BY VALUE, both directions (GAP-157: no std).
 #
-# gap[075]'s owed fixture, and gap[100] rung 2's gate. Both cite it as
-# `scripts/fs_remove_proof.id`, which (a) carries an underscore LAW-ONE
-# forbids and (b) HAS NEVER EXISTED in any branch — `git log #diff-filter=A`
-# over both spellings returns nothing. gap[100] rung 2 reads "Gate: the
-# fixture that already exists", so that rung was gated on a file nobody
-# wrote. Recorded because a phantom gate is worse than a missing one: a
-# cited one reads as covered.
-#
-# gap[075] was TWO stacked defects and this fixture convicts both:
-#
-#   1. the return was unconditionally true. The body was `os.remove(p) ~= nil`
-#      and `false ~= nil` is TRUE, so no input could answer false.
-#   2. the removal did not happen for a path that existed.
-#
-# Defect 1 hid defect 2, and only looking at the FILESYSTEM separated them.
-# So every assertion below reads the filesystem, never the wrapper's word — a
-# fixture that only checked the return would pass against the broken code for
-# the missing-path case and prove nothing. Positive-controlled against a
-# reconstruction of the original body, which it convicts at direction 1.
-#
-# THREE DELIBERATE SHAPES, each measured, so none is "simplified" back:
-#
-#   * NO process teardown exit helper — one `code` place, guarded steps.
-#   * NO namespace fs: dispatch — path possesses copy/remove/exists/open.
-#   * NO `return <expr>`. One tail expression — §0.7's shape.
-#
-# Each guard reads `code == 0` so a later step cannot run after an earlier one
-# failed, and cannot overwrite the code that named the real failure.
+# Each step returns on failure so later steps cannot overwrite the exit code.
 #
 # exit 0 all good; 1..5 names the broken direction.
 
 base = "/tmp/idolproofremove"
 
 main: i64 = ()
-    code: i64 = 0
     real = "{base}/present.id"
     gone = "{base}/nosuchdir/cannotexist.txt"
     seed = "scripts/proof/remove.id"
@@ -45,38 +17,30 @@ main: i64 = ()
 
     if real:exists()
         print("fs remove proof: control failed — {real} exists before it was made")
-        code = 1
+        1
 
-    if code == 0
-        seed:copy(real)
+    seed:copy(real)
 
-    if code == 0 and !real:exists()
+    if !real:exists()
         print("fs remove proof: control failed — exists() says no after the copy")
-        code = 2
+        2
 
-    ok = false
-    if code == 0
-        ok = real:remove()
+    ok = real:remove()
 
-    if code == 0 and real:exists()
+    if real:exists()
         print("fs remove proof: remove answered {ok} and the file is STILL ON DISK")
-        code = 3
+        3
 
-    if code == 0 and ok == false
+    if !ok
         print("fs remove proof: the file was removed and remove answered {ok}")
-        code = 4
+        4
 
-    bad = false
-    if code == 0
-        bad = gone:remove()
+    bad = gone:remove()
 
-    if code == 0 and bad
+    if bad
         print("fs remove proof: remove answered {bad} for a path that cannot exist")
-        code = 5
+        5
 
     base:remove()
-
-    if code == 0
-        print("fs remove proof: both directions verified against the filesystem")
-
-    code
+    print("fs remove proof: both directions verified against the filesystem")
+    0

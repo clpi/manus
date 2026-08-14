@@ -58,7 +58,7 @@ reader_u32(r: any): any
     while true
         b = reader_u8(r)
         if b == nil return nil end
-        result = result | ((b & 0x7F) << shift)
+        result |= ((b & 0x7F) << shift)
         shift += 7
         if (b & 0x80) == 0 break end
     end
@@ -83,7 +83,7 @@ reader_u64(r: any): any
     while true
         b = reader_u8(r)
         if b == nil return nil end
-        result = result | ((b & 0x7F) << shift)
+        result |= ((b & 0x7F) << shift)
         shift += 7
         if (b & 0x80) == 0 break end
     end
@@ -97,13 +97,13 @@ reader_i32(r: any): any
     while true
         b = reader_u8(r)
         if b == nil return nil end
-        result = result | ((b & 0x7F) << shift)
+        result |= ((b & 0x7F) << shift)
         shift += 7
         if (b & 0x80) == 0 break end
     end
     # Sign extend
     if shift < 32 and (b & 0x40) != 0
-        result = result | (~0 << shift)
+        result |= (~0 << shift)
     end
     result
 end
@@ -115,12 +115,12 @@ reader_i64(r: any): any
     while true
         b = reader_u8(r)
         if b == nil return nil end
-        result = result | ((b & 0x7F) << shift)
+        result |= ((b & 0x7F) << shift)
         shift += 7
         if (b & 0x80) == 0 break end
     end
     if shift < 64 and (b & 0x40) != 0
-        result = result | (~0 << shift)
+        result |= (~0 << shift)
     end
     result
 end
@@ -521,8 +521,8 @@ M.VERSION = WASM_VERSION
 # Literals, not references to the SECTION_* constants above. A file-scope
 # constant referenced from inside a NESTED TABLE of the export table emits a
 # bare undeclared identifier when the module is embedded — third instance of
-# this compiler gap today, after lib/std/net/ws.id's opcode table and
-# lib/std/encoding/protobuf.id's WIRE table, where it is reduced to a
+# this compiler gap today, after lib/net/ws.id's opcode table and
+# lib/encoding/protobuf.id's WIRE table, where it is reduced to a
 # two-file repro.
 M.SECTION = {
     CUSTOM = 0,

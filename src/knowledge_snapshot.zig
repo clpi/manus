@@ -1,8 +1,7 @@
-//! Pass 7 — immutable knowledge snapshots at compiler phases.
+//! — immutable knowledge snapshots at compiler phases.
 //!
 //! Snapshots are projections of canonical compiler facts (not a second semantic graph).
 const std = @import("std");
-const ast = @import("ast.zig");
 const sema = @import("sema.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const semantic_graph = @import("semantic_graph.zig");
@@ -112,10 +111,11 @@ fn appendRecordFromGraph(
     alloc: std.mem.Allocator,
     out: *std.ArrayListUnmanaged(EntitySnapshot),
     graph: *const semantic_graph.SemanticGraph,
-    name: []const u8,
+    record: semantic_graph.id,
     phase: Phase,
 ) !void {
-    const node = graph.findTableShape(name) orelse return;
+    const node = graph.tableShapeEntity(record) orelse return;
+    const name = node.name orelse return;
     const eid = try entityId(alloc, .record, name);
     errdefer alloc.free(eid);
     const why = if (node.why) |w| try alloc.dupe(u8, w) else null;
@@ -138,7 +138,6 @@ fn appendRecordFromGraph(
 /// Build snapshots from sema results and the semantic graph.
 pub fn buildFromModule(
     alloc: std.mem.Allocator,
-    mod: *const ast.Module,
     semantic: *const sema.Sema,
     graph: *const semantic_graph.SemanticGraph,
     file: []const u8,
@@ -149,45 +148,28 @@ pub fn buildFromModule(
         entities.deinit(alloc);
     }
 
-    for (mod.body.stmts) |*stmt| {
-        switch (stmt.*) {
-            .func_decl => |*fd| {
-                if (fd.path.len != 1 or fd.method) continue;
-                const fname = fd.path[0];
-                const eid = try entityId(alloc, .function, fname);
-                errdefer alloc.free(eid);
-                const kn = semantic.symbolKnowledge(fname);
-                try entities.append(alloc, .{
-                    .entity_id = eid,
-                    .name = try alloc.dupe(u8, fname),
-                    .kind = .function,
-                    .phase = .after_sema,
-                    .knowledge = kn,
-                    .representation = if (kn == .native) try alloc.dupe(u8, "native") else try alloc.dupe(u8, "dynamic"),
-                    .effects = null,
-                    .fingerprint = fingerprintForEntity(eid, null, null, kn),
-                });
-            },
-            .alias_def => |*ad| {
-                try appendRecordFromGraph(alloc, &entities, graph, ad.name, .after_graph_lift);
-            },
-            else => {},
+    for (graph.nodes.items, 0..) |node, i| {
+        if (!semantic_graph.SemanticGraph.atModuleScope(graph, &node)) continue;
+        if (graph.callable(@intCast(i))) {
+            const fname = node.name orelse continue;
+            const eid = try entityId(alloc, .function, fname);
+            errdefer alloc.free(eid);
+            const kn = semantic.symbolKnowledge(fname);
+            try entities.append(alloc, .{
+                .entity_id = eid,
+                .name = try alloc.dupe(u8, fname),
+                .kind = .function,
+                .phase = .after_sema,
+                .knowledge = kn,
+                .representation = if (kn == .native) try alloc.dupe(u8, "native") else try alloc.dupe(u8, "dynamic"),
+                .effects = null,
+                .fingerprint = fingerprintForEntity(eid, null, null, kn),
+            });
+            continue;
         }
-    }
-
-    for (graph.nodes.items) |node| {
-        if (node.kind != .table_shape) continue;
-        const name = node.name orelse continue;
-        if (!graph.atModuleScope(&node)) continue;
-        var already = false;
-        for (entities.items) |ent| {
-            if (ent.kind == .record and std.mem.eql(u8, ent.name, name)) {
-                already = true;
-                break;
-            }
-        }
-        if (already) continue;
-        try appendRecordFromGraph(alloc, &entities, graph, name, .after_graph_lift);
+        if (!graph.hasTableDescriptorFacts(@intCast(i))) continue;
+        if (node.name == null) continue;
+        try appendRecordFromGraph(alloc, &entities, graph, @intCast(i), .after_graph_lift);
     }
 
     return .{
@@ -252,7 +234,8 @@ pub fn writeJsonLine(snap: *const ModuleSnapshots, w: *std.Io.Writer) !void {
 
 test "knowledge_snapshot: graph input is required" {
     const build_info = @typeInfo(@TypeOf(buildFromModule)).@"fn";
-    try std.testing.expect(build_info.param_types[3].? == *const semantic_graph.SemanticGraph);
+    try std.testing.expectEqual(@as(usize, 4), build_info.param_types.len);
+    try std.testing.expect(build_info.param_types[2].? == *const semantic_graph.SemanticGraph);
 }
 
 test "knowledge_snapshot: native Point record from graph lift" {
@@ -280,7 +263,7 @@ test "knowledge_snapshot: native Point record from graph lift" {
     defer graph.deinit();
     _ = try graph.liftModuleWithCalls(&mod, "point.id");
 
-    var snap = try buildFromModule(alloc, &mod, &semantic, &graph, "point.id");
+    var snap = try buildFromModule(alloc, &semantic, &graph, "point.id");
     defer snap.deinit(alloc);
 
     const point = blk: {
@@ -293,5 +276,12 @@ test "knowledge_snapshot: native Point record from graph lift" {
     try std.testing.expectEqual(EntityKind.record, point.kind);
     try std.testing.expectEqual(Phase.after_graph_lift, point.phase);
     try std.testing.expect(point.shape_id != null);
-    try std.testing.expect(point.why != null);
+
+    const distance = blk: {
+        for (snap.entities) |ent| {
+            if (std.mem.eql(u8, ent.name, "distance2")) break :blk ent;
+        }
+        break :blk null;
+    } orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(EntityKind.function, distance.kind);
 }

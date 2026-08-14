@@ -1,0 +1,24 @@
+# Binary search over a sorted sequence. Asserts a hit, a miss and a boundary,
+# because a search that always answers `found` passes any single hit.
+# expect: 5 0 1
+# @corpus current
+find: i64 = (xs, n: i64, key: i64)
+    lo = 1
+    hi = n
+    hit = 0
+    while lo <= hi and hit == 0
+        mid = lo + (hi - lo) / 2
+        v = xs[mid]
+        if v == key
+            hit = mid
+        if v < key
+            lo = mid + 1
+        if v >= key and hit == 0
+            hi = mid - 1
+    hit
+
+xs = { 2, 4, 6, 8, 10, 12, 14 }
+a = find(xs, 7, 10)
+b = find(xs, 7, 11)
+c = find(xs, 7, 2)
+print("{a} {b} {c}")

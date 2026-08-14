@@ -76,7 +76,7 @@ from a production gate or an admitted setup/admission check.
 ## MCP projection contract
 
 `tools/node/dev/mcp.manifest.json` is the single canonical MCP manifest. It
-declares the three required project servers: `duo-bench`, `duo-lsp`, and `zls`.
+declares the three required project servers: `idol-bench`, `idol-lsp`, and `zls`.
 `tools/node/dev/generate-configs` projects it into:
 
 - `.codex/mcp.generated.toml` for local inspection;
@@ -84,14 +84,14 @@ declares the three required project servers: `duo-bench`, `duo-lsp`, and `zls`.
 - `.cursor/mcp.json` for Cursor.
 
 `tools/node/dev/install-skills` installs the **`idol-dev`** skill into
-`~/.codex/skills/idol-dev` and retires any existing `duon-development` stub.
+`~/.codex/skills/idol-dev` and retires any existing `idol-development` stub.
 Run it after clone or when agent onboarding drifts.
 
 The generated files contain absolute machine paths and are ignored. Regenerate
 them on each machine; never copy them from another host.
 
 Cursor Agent must also approve each generated project server. `setup` performs
-that approval with `cursor agent mcp enable` for `duo-bench`, `duo-lsp`, and
+that approval with `cursor agent mcp enable` for `idol-bench`, `idol-lsp`, and
 `zls`; `doctor` requires `cursor agent mcp list` to report all three as ready.
 That is still not enough for admission: `doctor` also starts a fresh headless
 Cursor Agent session from the repository root and requires it to orient through

@@ -1,11 +1,11 @@
-//! Pass 8 — unified evidence model for realization decisions and persistent facts.
+//! — unified evidence model for realization decisions and persistent facts.
 //!
-//! Canonical owner for evidence classification. Extends Pass 7 `optimization_outcome.Evidence`
+//! Canonical owner for evidence classification. Extends `optimization_outcome.Evidence`
 //! without duplicating optimization outcome records.
 const std = @import("std");
 const optimization_outcome = @import("optimization_outcome.zig");
 
-/// Reliability class for compiler claims (Pass 8 §4.6, §6).
+/// Reliability class for compiler claims (§4.6, §6).
 pub const Kind = enum(u8) {
     proven_semantic_fact,
     guarded_fact,
@@ -51,7 +51,7 @@ pub const Kind = enum(u8) {
     }
 };
 
-/// Map Pass 7 optimization evidence into Pass 8 evidence kinds.
+/// Map optimization evidence into evidence kinds.
 pub fn fromOptimizationEvidence(ev: optimization_outcome.Evidence) Kind {
     return switch (ev) {
         .proven => .proven_semantic_fact,

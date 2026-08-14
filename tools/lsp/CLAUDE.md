@@ -60,10 +60,12 @@ compatibility spellings into the server.
 
 ## Source and migration
 
-Canonical project-owned implementation uses `.id`. Every tracked project-owned
-`.id` file in this directory is SOURCE-ZERO debt, not a template. Retain its
-observable behavior only by semantic migration into canonical `.id`, then delete
-the old source; delete obsolete behavior instead of preserving it as an archive.
+Canonical project-owned implementation uses `.id` and new canonical `.id` is
+freely admitted. The tracked `.id` implementation in this directory currently
+carries SOURCE-ZERO debt in its *noncanonical patterns* (host-shaped decisions,
+string classification, duplicate authority) — not by virtue of being `.id`, and
+it is not a canonical template. Migrate that debt by repairing the pattern in
+place into canonical `.id`; delete obsolete behavior instead of archiving it.
 
 Physical tool or environment names that still contain `duo` are bootstrap
 aliases and deletion targets only. They do not name the language, own protocol

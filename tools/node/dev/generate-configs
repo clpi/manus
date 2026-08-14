@@ -48,6 +48,8 @@ cursor_out="$tmp/cursor.json"
     "tool_timeout_sec = " + (.tool_timeout_sec|tostring) + "\n" +
     "required = " + (.required|tostring) + "\n\n" +
     "[mcp_servers." + .name + ".env]\n" +
+    "IDOL_ROOT = " + ($repo|@json) + "\n" +
+    "IDOL_BIN = " + ($duo|@json) + "\n" +
     "DUO_ROOT = " + ($repo|@json) + "\n" +
     "DUO_BIN = " + ($duo|@json) + "\n"
   ' "$manifest"
@@ -63,7 +65,7 @@ jq --arg repo "$repo" --arg duo "$duo" '
             command: $duo,
             args: ["run", ("--backend=" + .backend), ($repo + "/" + .entry)],
             cwd: $repo,
-            env: { DUO_ROOT: $repo, DUO_BIN: $duo }
+            env: { IDOL_ROOT: $repo, IDOL_BIN: $duo, DUO_ROOT: $repo, DUO_BIN: $duo }
           }
         })
       | from_entries
@@ -98,7 +100,7 @@ awk '
   /^# BEGIN IDSEM MCP$/ { marked=1; next }
   /^# END IDSEM MCP$/ { marked=0; next }
   marked == 1 { next }
-  /^\[mcp_servers\.(duo-bench|duo-lsp|zls)(\.env)?\]$/ { legacy=1; next }
+  /^\[mcp_servers\.(idol-bench|idol-lsp|duo-bench|duo-lsp|zls)(\.env)?\]$/ { legacy=1; next }
   /^\[/ { legacy=0 }
   legacy != 1 { print }
 ' "$codex_config" > "$clean"

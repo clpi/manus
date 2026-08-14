@@ -1,5 +1,5 @@
 # @corpus current
-# APPLY-ONE, the NEGATIVE twin of `examples/apply_one_descriptor_proof.id`.
+# APPLY-ONE, the NEGATIVE twin of `examples/projection/descriptor.id`.
 # c0 §43 `law.brace` row 1, §44 `apply.carries`. gap[092].
 #
 # WHY THIS TWIN EXISTS, and why the neither-case twin does not cover it.

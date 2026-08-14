@@ -36,7 +36,7 @@ denied; protocol satisfaction is a relation/application fact on the subject.
 | adaptation (internal) | foreign/realization projection with explicit origin/law |
 | context / session bags | graph fact set; worlds; stage; provenance |
 | execution selection | demand + realization + target facts |
-| semantic home reach | `"lib/semantic/ingest.id":read()` — path subject + read relation; never `semantic[slot]` or `check(semantic)(slot)` |
+| home reach | `"scripts/proof/bit.id":read()` — path subject + read relation; never `semantic[slot]` or `check(semantic)(slot)` |
 | proof home reach | path string + `audit(path)(pattern)` — never `proof[slot]` bracket index |
 
 ## Application closure (same law family as `args(n)`)
@@ -45,8 +45,8 @@ Bracket index on a table/home is migratable debt only. Canonical added lines use
 application:
 
 ```id
-"lib/semantic/ingest.id":read()
-audit("lib/semantic/census.id")("view%(edges%)")
+"scripts/proof/bit.id":read()
+audit("scripts/proof/bit.id")("@view")
 args(1)
 env("KEY")
 ```
@@ -69,7 +69,7 @@ selector kingdom:
 - `flag(..., "router(", ...)` (and sibling selector calls) in `adj`
 - `subject(slotindex)` — rejects `semantic[`, `proof[`, `home[`
 - mash binding names (`ingestbody`, `viewrouter`, …) with fixes pointing at
-  `"lib/semantic/<home>.id":read()` / `audit(path)(pattern)`
+  `"scripts/proof/bit.id":read()` / `audit(path)(pattern)`
 - `check(semantic` — slot-dispatch machinery; use path `:read()` on the home
 
 Graph canonicalization (`GAP-124`) remains the production owner; the gate is
@@ -84,9 +84,9 @@ src/derive_registry.zig
 src/transform_engine.zig
 tools/wasm/src/engine.id
 src/semantic_context.zig
-lib/std/context.id
+lib/context.id
 tools/mcp/zls/bridge.id
-src/duo_lexer_bridge.zig
+src/lexer_bridge.zig
 src/duo_keyword_bridge.zig
 src/c_frontend.zig
 src/explain_pipeline.zig

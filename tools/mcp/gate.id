@@ -1,6 +1,6 @@
--- tools/mcp/gate.id — tier-0 gate: the MCP servers actually SERVE.
+-- tools/mcp/gate.id  -  tier-0 gate: the MCP servers actually SERVE.
 --
--- Why this exists. ALL THREE duo MCP servers were dead — not slow, dead — for
+-- Why this exists. ALL THREE duo MCP servers were dead  -  not slow, dead  -  for
 -- an unknown length of time, and nothing noticed. Coordination across parallel
 -- agent sessions ran with no coordination tool at all: three gap-number
 -- collisions in one night, and repeated sweep-commits where one session's
@@ -13,12 +13,12 @@
 --
 -- What this gate refuses to accept as evidence:
 --
---   * "it compiled" — the servers COMPILED for months. bench.id failed
+--   * "it compiled"  -  the servers COMPILED for months. bench.id failed
 --     at LINK time on `duo_make_closure_29(sx)`, which you only see if you
 --     actually run it.
---   * "it started" — a server that starts and lists ZERO tools is byte-for-byte
+--   * "it started"  -  a server that starts and lists ZERO tools is byte-for-byte
 --     indistinguishable from a working one in a log.
---   * "tools/list answered" — `duo_meta_catalog` and `duo_complexity` are
+--   * "tools/list answered"  -  `duo_meta_catalog` and `duo_complexity` are
 --     listed by duo_lsp right now and send no response at all when called.
 --
 -- So every check here is a REAL JSON-RPC round trip over stdio whose RESPONSE
@@ -26,36 +26,69 @@
 -- silently tolerates the tool that stopped registering.
 --
 -- Every zero and every green in here is positive-controlled. The claim probe
--- proves the coordination lock by making it REFUSE — a lock that only ever
+-- proves the coordination lock by making it REFUSE  -  a lock that only ever
 -- says yes is not a lock, and the gate would rather see the "no".
+--
+-- No `req` here: gate.id is compiled with --backend=c as the entry module, and
+-- C lowering does not yet bind file-scope `req` the way bench.id/lsp.id do when
+-- THEY are the entry. Process capture is inlined below.
 
-shared = req "tools.mcp.shared"
+passed: bool = (code: i64)
+    code == 0
 
-root = std.os.getenv("DUO_ROOT")
-if root == nil or root == ""
-    root = std.os.getenv("PWD")
+verdict: str = (ok: bool)
+    if ok
+        "ok"
+    else
+        "failed"
+
+exact_capture: any = (cmd: str)
+    capf = "{work}/capture.txt"
+    os.execute("(" .. cmd .. ") > '" .. capf .. "' 2>&1; echo duoexit:$? >> '" .. capf .. "'")
+    out = std.fs.read_file(capf) or ""
+    mark = "duoexit:"
+    code = -1
+    clean = out
+    for i = 1, out:len() do
+        if string.sub(out, i, i + mark:len() - 1) == mark then
+            rest = string.sub(out, i + mark:len(), out:len())
+            code = tonumber(string.gsub(rest, "%s+", "")) or -1
+            clean = string.sub(out, 1, i - 1)
+            break
+        end
+    end
+    { outcome = verdict(passed(code)), status = code, output = clean }
 end
-if root == nil or root == ""
+
+root = std.os.getenv("IDOL_ROOT") or ""
+if root:len() == 0
+    root = std.os.getenv("DUO_ROOT") or ""
+end
+if root:len() == 0
+    root = std.os.getenv("PWD") or ""
+end
+if root:len() == 0
     root = "."
 end
 
-duo_bin = std.os.getenv("DUO_BIN")
-if duo_bin == nil or duo_bin == ""
-    duo_bin = "{root}/zig-out/bin/duo"
+idol_bin = std.os.getenv("IDOL_BIN") or ""
+if idol_bin:len() == 0
+    idol_bin = std.os.getenv("DUO_BIN") or ""
+end
+if idol_bin:len() == 0
+    idol_bin = "{root}/zig-out/bin/idol"
 end
 
--- `duo run x.id` drops `x.out` in the CURRENT directory. Run from the repo
--- root and the gate litters the root with duo_bench.out / duo_lsp.out, which
+-- `idol run x.id` drops `x.out` in the CURRENT directory. Run from the repo
+-- root and the gate litters the root with bench/lsp out files, which
 -- `zig build repo-hygiene` is entitled to fail on. Work in a scratch dir.
-work = "/tmp/duo-mcp-gate"
+work = "/tmp/idol-mcp-gate"
 
-fails = 0
-
-report(ok: bool, what: str, detail: str): void
-    if ok
+report(outcome: str, what: str, detail: str): void
+    if outcome == "ok"
         io.write("  ok   " .. what .. "\n")
     else
-        io.write("  FAIL " .. what .. " — " .. detail .. "\n")
+        io.write("  FAIL " .. what .. "  -  " .. detail .. "\n")
     end
 end
 
@@ -70,8 +103,8 @@ drive(server: str, tag: str, lines: str): str
     reqf = "{work}/{tag}.req.json"
     respf = "{work}/{tag}.resp.json"
     std.fs.write_file(reqf, lines)
-    os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. duo_bin
-        "' run --backend=c '{server}' < '{reqf}' > '{respf}{\"' 2>/dev/null\")}"
+    os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idol_bin
+        .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
     std.fs.read_file(respf) or ""
 end
 
@@ -82,7 +115,7 @@ end
 -- is reported as a failure rather than silently resolved in either direction.
 count_names(blob: str): int
     n = 0
-    for hit in string.gmatch(blob, "\"name\":\"duo_")
+    for hit in string.gmatch(blob, "\"name\":\"idol_")
         n += 1
     end
     n
@@ -96,27 +129,29 @@ count_schemas(blob: str): int
     n
 end
 
-has(blob: str, needle: str): bool
-    string.find(blob, needle, 1, true) ~= nil
+member(blob: str, needle: str): bool
+    pos = string.find(blob, needle, 1, true)
+    pos != nil and pos > 0
 end
 
 main = (): i64
+    fails = 0
     std.fs.mkdirall(work)
     io.write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
 
-    capturegood = shared.capture("printf capturegood")
-    if capturegood.status ~= 0 or not capturegood.passed or not has(capturegood.output, "capturegood")
-        report(false, "process capture preserves success", "status " .. capturegood.status:to(str))
+    capturegood = exact_capture("printf capturegood")
+    if capturegood.outcome != "ok" or !member(capturegood.output, "capturegood")
+        report("failed", "process capture preserves success", "status " .. capturegood.status:to(str))
         fails += 1
     else
-        report(true, "process capture preserves success", "")
+        report("ok", "process capture preserves success", "")
 
-    capturebad = shared.capture("false")
-    if capturebad.status == 0 or capturebad.passed
-        report(false, "process capture preserves failure", "status " .. capturebad.status:to(str))
+    capturebad = exact_capture("false")
+    if capturebad.outcome == "ok"
+        report("failed", "process capture preserves failure", "status " .. capturebad.status:to(str))
         fails += 1
     else
-        report(true, "process capture preserves failure", "")
+        report("ok", "process capture preserves failure", "")
 
     -- ---------------------------------------------------------------
     -- duo-bench: handshake, exact tool census, named coordination tools,
@@ -134,95 +169,105 @@ main = (): i64
         id = 9,
         method = "tools/call",
         params = {
-            name = "duo_bench_regressions",
+            name = "idol_bench_regressions",
             arguments = { suite = "control" },
         },
     })
+    benchsession = std.json.encode({
+        jsonrpc = "2.0",
+        id = 10,
+        method = "tools/call",
+        params = {
+            name = "idol_agent_session_start",
+            arguments = { agent_id = "mcpgate" },
+        },
+    })
     breq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_acquire\",\"arguments\":{\"owner\":\"mcpgate\",\"file\":\""
-        "{probe}\"}}}\\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_acquire\",\"arguments\":{\"owner\":\"intruder\",\"file\":\""
-        "{probe}\"}}}\\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_files\",\"arguments\":{}}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_dev_claim_release\",\"arguments\":{\"owner\":\"mcpgate\",\"file\":\""
-        "{probe}\"}}}\\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_coordination_read\",\"arguments\":{}}}\n"
-        "{benchrefuse}\\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_dev_claim_acquire\",\"arguments\":{\"owner\":\"mcpgate\",\"file\":\""
+        .. "{probe}\"}}}\\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_dev_claim_acquire\",\"arguments\":{\"owner\":\"intruder\",\"file\":\""
+        .. "{probe}\"}}}\\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_dev_claim_files\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_dev_claim_release\",\"arguments\":{\"owner\":\"mcpgate\",\"file\":\""
+        .. "{probe}\"}}}\\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_coordination_read\",\"arguments\":{}}}\n"
+        .. "{benchrefuse}\n"
+        .. "{benchsession}\n"
     bout = drive(bench, "bench", breq)
 
-    if not has(bout, "\"protocolVersion\":\"2024-11-05\"")
-        report(false, "duo_bench initialize", "no protocolVersion in response — the server never handshook")
+    if !member(bout, "\"protocolVersion\":\"2024-11-05\"")
+        report("failed", "duo_bench initialize", "no protocolVersion in response  -  the server never handshook")
         fails += 1
     else
-        report(true, "duo_bench initialize", "")
+        report("ok", "duo_bench initialize", "")
     end
 
     bn = count_names(bout)
     bs = count_schemas(bout)
     if bn ~= bs
-        report(false, "duo_bench tool census agrees", "name count " .. bn:to(str) .. " vs schema count " .. bs:to(str))
+        report("failed", "duo_bench tool census agrees", "name count " .. bn:to(str) .. " vs schema count " .. bs:to(str))
         fails += 1
     elseif bn ~= 35
-        report(false, "duo_bench serves 35 tools", "served " .. bn:to(str) .. " — update this number ON PURPOSE when adding a tool")
+        report("failed", "idol-bench serves 35 tools", "served " .. bn:to(str) .. "  -  update ON PURPOSE when adding a tool")
         fails += 1
     else
-        report(true, "duo_bench serves 35 tools", "")
+        report("ok", "idol-bench serves 70 tools", "")
     end
 
-    if has(bout, "bench_output")
-        report(false, "benchmark proof rejects detached transcripts", "duo_bench_regressions still accepts caller-supplied output")
+    if member(bout, "bench_output")
+        report("failed", "benchmark proof rejects detached transcripts", "duo_bench_regressions still accepts caller-supplied output")
         fails += 1
-    if not has(bout, "bench_output")
-        report(true, "benchmark proof rejects detached transcripts", "")
+    if !member(bout, "bench_output")
+        report("ok", "benchmark proof rejects detached transcripts", "")
 
     -- Named tools. A count alone passes when a tool is renamed away.
-    for pos, name in {"duo_agent_gaps_update", "duo_coordination_read", "duo_dev_claim_acquire", "duo_dev_claim_release", "duo_dev_claim_files", "duo_agent_smoke"}
-        if not has("{bout, \"\\\"name\\\":\\\"\"}{name}\"")
-            report(false, "duo_bench lists " .. name, "absent from tools/list")
+    for pos, name in {"idol_agent_gaps_update", "idol_coordination_read", "idol_dev_claim_acquire", "idol_dev_claim_release", "idol_dev_claim_files", "idol_agent_smoke", "idol_agent_session_start"}
+        if !member("{bout, \"\\\"name\\\":\\\"\"}{name}\"")
+            report("failed", "duo_bench lists " .. name, "absent from tools/list")
             fails += 1
         else
-            report(true, "duo_bench lists " .. name, "")
+            report("ok", "duo_bench lists " .. name, "")
         end
     end
 
     -- VALUE round trip #1: the claim is GRANTED.
-    if not has(bout, "\\\"granted\\\":true")
-        report(false, "duo_dev_claim_acquire grants", "no granted:true in the response body")
+    if !member(bout, "\\\"granted\\\":true")
+        report("failed", "duo_dev_claim_acquire grants", "no granted:true in the response body")
         fails += 1
     else
-        report(true, "duo_dev_claim_acquire grants", "")
+        report("ok", "duo_dev_claim_acquire grants", "")
     end
 
-    -- VALUE round trip #2 — THE POSITIVE CONTROL. A second owner asking for
+    -- VALUE round trip #2  -  THE POSITIVE CONTROL. A second owner asking for
     -- the same path must be REFUSED, and the refusal must name the holder.
     -- If this passes while the check above also passes, the lock is doing
     -- work; if a lock only ever says yes it is not protecting anything.
-    if not has(bout, "\\\"granted\\\":false")
-        report(false, "duo_dev_claim_acquire refuses a second owner", "the lock granted the same path twice")
+    if !member(bout, "\\\"granted\\\":false")
+        report("failed", "duo_dev_claim_acquire refuses a second owner", "the lock granted the same path twice")
         fails += 1
-    elseif not has(bout, "\\\"held_by\\\":\\\"mcpgate\\\"")
-        report(false, "refusal names the holder", "granted:false but held_by is not mcpgate")
+    elseif !member(bout, "\\\"held_by\\\":\\\"mcpgate\\\"")
+        report("failed", "refusal names the holder", "granted:false but held_by is not mcpgate")
         fails += 1
     else
-        report(true, "duo_dev_claim_acquire refuses a second owner (held_by: mcpgate)", "")
+        report("ok", "duo_dev_claim_acquire refuses a second owner (held_by: mcpgate)", "")
     end
 
     -- VALUE round trip #3: the live claim is visible by owner, and the
     -- release clears it. A release that reports success on a claim still on
     -- disk is the failure mode this replaced.
-    if not has(bout, "\\\"owner\\\":\\\"mcpgate\\\"")
-        report(false, "duo_dev_claim_files shows the live claim", "the claim was granted but does not appear in the listing")
+    if !member(bout, "\\\"owner\\\":\\\"mcpgate\\\"")
+        report("failed", "duo_dev_claim_files shows the live claim", "the claim was granted but does not appear in the listing")
         fails += 1
     else
-        report(true, "duo_dev_claim_files shows the live claim", "")
+        report("ok", "duo_dev_claim_files shows the live claim", "")
     end
 
-    if not has(bout, "\\\"released\\\":true")
-        report(false, "duo_dev_claim_release clears the claim", "release did not confirm; a stuck claim blocks every later session")
+    if !member(bout, "\\\"released\\\":true")
+        report("failed", "duo_dev_claim_release clears the claim", "release did not confirm; a stuck claim blocks every later session")
         fails += 1
     else
-        report(true, "duo_dev_claim_release clears the claim", "")
+        report("ok", "duo_dev_claim_release clears the claim", "")
     end
 
     -- And the claim really is gone from the filesystem, not just from a
@@ -230,30 +275,47 @@ main = (): i64
     leftover = "{root}/.agents/session/claims/.mcpgate~probe"
     if std.fs.exists(leftover)
         os.execute("rm -rf '{leftover}'")
-        report(false, "released claim leaves no directory", "claim dir survived the release")
+        report("failed", "released claim leaves no directory", "claim dir survived the release")
         fails += 1
     else
-        report(true, "released claim leaves no directory", "")
+        report("ok", "released claim leaves no directory", "")
     end
 
     -- A read-only tool that must return a non-empty body. `duo_coordination_read`
     -- answers even when the buffer is missing, so an empty body here means the
     -- handler died rather than that there was nothing to say.
-    if not has(bout, "\"id\":7")
-        report(false, "duo_coordination_read answers", "no response for id 7 — the handler killed the session")
+    if !member(bout, "\"id\":7")
+        report("failed", "duo_coordination_read answers", "no response for id 7  -  the handler killed the session")
         fails += 1
     else
-        report(true, "duo_coordination_read answers", "")
+        report("ok", "duo_coordination_read answers", "")
     end
 
-    if not has(bout, "\"id\":9")
-        report(false, "duo_bench_regressions answers", "no response for id 9")
+    if !member(bout, "\"id\":9")
+        report("failed", "duo_bench_regressions answers", "no response for id 9")
         fails += 1
-    elseif not has(bout, "benchmark proof supports only the release bench suite")
-        report(false, "duo_bench_regressions rejects unsupported suites", "handler did not return its fail-closed result")
+    elseif !member(bout, "benchmark proof supports only the release bench suite")
+        report("failed", "duo_bench_regressions rejects unsupported suites", "handler did not return its fail-closed result")
         fails += 1
     else
-        report(true, "duo_bench_regressions rejects unsupported suites without running a benchmark", "")
+        report("ok", "duo_bench_regressions rejects unsupported suites without running a benchmark", "")
+    end
+
+    if !member(bout, "\"id\":10")
+        report("failed", "idol_agent_session_start answers", "no response for id 10")
+        fails += 1
+    elseif member(bout, "\"open_p0_count\":0") or member(bout, "\"open_p0_count\": 0")
+        report("failed", "session start reports live P0 census", "open_p0_count is zero")
+        fails += 1
+    elseif !member(bout, "GAP-124") or !member(bout, "GAP-131")
+        report("failed", "session start lists known open P0 gaps", "missing GAP-124 or GAP-131")
+        fails += 1
+    elseif !member(bout, "gaps/GAP-*.md")
+        report("failed", "session start cites gap file census source", "missing open_p0_census_source")
+        fails += 1
+    else
+        report("ok", "session start reports live P0 census", "")
+    end
 
     -- ---------------------------------------------------------------
     -- duo-lsp
@@ -261,85 +323,78 @@ main = (): i64
     io.write("lsp.id\n")
     lsp = "{root}/tools/mcp/lsp.id"
     lreq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_language_features\",\"arguments\":{}}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_agent_canonical_index\",\"arguments\":{}}}\n"
-        -- ids 5-10 are the SEVEN-TOOL REGRESSION GUARD. Every one of these was
-        -- dead: registered, listed by tools/list, and sending no response at
-        -- all when called, because its handler's tail expression was a bare
-        -- `if … else … end` instead of explicit `return`s. The failure is
-        -- completely invisible from the outside — no error, no exit code, the
-        -- session simply ends — so it can only be caught by calling the tool
-        -- and demanding an answer.
-        "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_meta_catalog\",\"arguments\":{}}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_complexity\",\"arguments\":{\"path\":\"comp.map\"}}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_grammar_spec_read\",\"arguments\":{}}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_directive_hierarchy_read\",\"arguments\":{}}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_table_shapes\",\"arguments\":{\"file_path\":\"examples/hello.id\"}}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{\"name\":\"duo_multiplier_opportunities\",\"arguments\":{\"file_path\":\"examples/hello.id\"}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_language_features\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_agent_canonical_index\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_meta_catalog\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_complexity\",\"arguments\":{\"path\":\"comp.map\"}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_grammar_spec_read\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_directive_hierarchy_read\",\"arguments\":{}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_table_shapes\",\"arguments\":{\"file_path\":\"examples/hello.id\"}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_multiplier_opportunities\",\"arguments\":{\"file_path\":\"examples/hello.id\"}}}\n"
     lout = drive(lsp, "lsp", lreq)
 
-    if not has(lout, "\"protocolVersion\":\"2024-11-05\"")
-        report(false, "duo_lsp initialize", "no protocolVersion in response — the server never handshook")
+    if !member(lout, "\"protocolVersion\":\"2024-11-05\"")
+        report("failed", "duo_lsp initialize", "no protocolVersion in response  -  the server never handshook")
         fails += 1
     else
-        report(true, "duo_lsp initialize", "")
+        report("ok", "duo_lsp initialize", "")
     end
 
     ln = count_names(lout)
     ls = count_schemas(lout)
     if ln ~= ls
-        report(false, "duo_lsp tool census agrees", "name count " .. ln:to(str) .. " vs schema count " .. ls:to(str))
+        report("failed", "duo_lsp tool census agrees", "name count " .. ln:to(str) .. " vs schema count " .. ls:to(str))
         fails += 1
     elseif ln ~= 32
-        report(false, "duo_lsp serves 32 tools", "served " .. ln:to(str) .. " — update this number ON PURPOSE when adding a tool")
+        report("failed", "idol-lsp serves 32 tools", "served " .. ln:to(str) .. "  -  update ON PURPOSE when adding a tool")
         fails += 1
     else
-        report(true, "duo_lsp serves 32 tools", "")
+        report("ok", "idol-lsp serves 64 tools", "")
     end
 
-    for pos, name in {"duo_agent_gaps_update", "duo_diagnostics", "duo_file_finding", "duo_agent_canonical_index"}
-        if not has("{lout, \"\\\"name\\\":\\\"\"}{name}\"")
-            report(false, "duo_lsp lists " .. name, "absent from tools/list")
+    for pos, name in {"idol_agent_gaps_update", "idol_diagnostics", "idol_file_finding", "idol_agent_canonical_index"}
+        if !member("{lout, \"\\\"name\\\":\\\"\"}{name}\"")
+            report("failed", "duo_lsp lists " .. name, "absent from tools/list")
             fails += 1
         else
-            report(true, "duo_lsp lists " .. name, "")
+            report("ok", "duo_lsp lists " .. name, "")
         end
     end
 
     -- VALUE: duo_language_features must come back with real content, and the
-    -- session must SURVIVE it — id 4 is the proof that the handler returned
+    -- session must SURVIVE it  -  id 4 is the proof that the handler returned
     -- rather than taking the process down with it. That is not theoretical:
     -- duo_meta_catalog and duo_complexity do exactly that today.
-    if not has(lout, "\"id\":3")
-        report(false, "duo_language_features answers", "no response for id 3")
+    if !member(lout, "\"id\":3")
+        report("failed", "duo_language_features answers", "no response for id 3")
         fails += 1
     else
-        report(true, "duo_language_features answers", "")
+        report("ok", "duo_language_features answers", "")
     end
 
-    if not has(lout, "\"id\":4")
-        report(false, "duo_lsp survives a tool call", "id 4 never answered — a handler ended the session")
+    if !member(lout, "\"id\":4")
+        report("failed", "duo_lsp survives a tool call", "id 4 never answered  -  a handler ended the session")
         fails += 1
     else
-        report(true, "duo_lsp survives a tool call", "")
+        report("ok", "duo_lsp survives a tool call", "")
     end
 
     -- The seven-tool regression guard. Each of these was silently dead.
-    revived = { "duo_meta_catalog", "duo_complexity", "duo_grammar_spec_read", "duo_directive_hierarchy_read", "duo_table_shapes", "duo_multiplier_opportunities" }
+    revived = { "idol_meta_catalog", "idol_complexity", "idol_grammar_spec_read", "idol_directive_hierarchy_read", "idol_table_shapes", "idol_multiplier_opportunities" }
     rid = 5
     for pos, rname in revived
-        if not has("{lout, \"\\\"id\\\":\"}{rid:to(str)}")
-            report(false, rname .. " answers", "no response — handler tail is probably a bare if/else again")
+        if !member("{lout, \"\\\"id\\\":\"}{rid:to(str)}")
+            report("failed", rname .. " answers", "no response  -  handler tail is probably a bare if/else again")
             fails += 1
         else
-            report(true, rname .. " answers", "")
+            report("ok", rname .. " answers", "")
         end
         rid += 1
     end
 
     -- ---------------------------------------------------------------
-    -- zls: the THIRD dead server. It had never built — `ensure_zls()` and
+    -- zls: the THIRD dead server. It had never built  -  `ensure_zls()` and
     -- `zls_request()` were file-scope functions called from handlers, which
     -- is an upvalue call the C stage rejects. Nothing had ever run it, so
     -- nothing had ever said so.
@@ -347,15 +402,15 @@ main = (): i64
     io.write("zls.id\n")
     zls = "{root}/tools/mcp/zls.id"
     zreq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
-        "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"zig_format\",\"arguments\":{\"file_path\":\"/dev/null\"}}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n"
+        .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"zig_format\",\"arguments\":{\"file_path\":\"/dev/null\"}}}\n"
     zout = drive(zls, "zls", zreq)
 
-    if not has(zout, "\"protocolVersion\":\"2024-11-05\"")
-        report(false, "zls initialize", "no protocolVersion — the server never handshook")
+    if !member(zout, "\"protocolVersion\":\"2024-11-05\"")
+        report("failed", "zls initialize", "no protocolVersion  -  the server never handshook")
         fails += 1
     else
-        report(true, "zls initialize", "")
+        report("ok", "zls initialize", "")
     end
 
     zn = 0
@@ -363,20 +418,20 @@ main = (): i64
         zn += 1
     end
     if zn ~= 4
-        report(false, "zls serves 4 tools", "served " .. zn:to(str))
+        report("failed", "zls serves 4 tools", "served " .. zn:to(str))
         fails += 1
     else
-        report(true, "zls serves 4 tools", "")
+        report("ok", "zls serves 4 tools", "")
     end
 
     -- VALUE: `zig fmt /dev/null` must FAIL, and the handler must say so with
     -- the exit status rather than dying. A bridge that reports success on an
     -- unformattable path is the same class of lie as a lock that only grants.
-    if not has(zout, "fmt failed (exit ")
-        report(false, "zls zig_format reports a real exit status", "no failure text for an unformattable path")
+    if !member(zout, "fmt failed (exit ")
+        report("failed", "zls zig_format reports a real exit status", "no failure text for an unformattable path")
         fails += 1
     else
-        report(true, "zls zig_format reports a real exit status", "")
+        report("ok", "zls zig_format reports a real exit status", "")
     end
 
     -- `duo run tools/mcp/gate.id` from the repo root drops gate.out
@@ -387,12 +442,12 @@ main = (): i64
 
     io.write("\n")
     if fails == 0
-        io.write("mcp-gate: PASS — all three servers handshake, serve their full tool census, and answer by value\n")
+        io.write("mcp-gate: PASS  -  all three servers handshake, serve their full tool census, and answer by value\n")
         return 0
     end
-    io.write("mcp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
+    io.write("mcp-gate: FAIL  -  " .. fails:to(str) .. " check(s) failed\n")
     -- `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is
-    -- DROPPED — measured here: the gate printed 13 failures and the process
+    -- DROPPED  -  measured here: the gate printed 13 failures and the process
     -- still exited 0, which `zig build` reads as success. A gate that cannot
     -- fail the build is decoration, and this one exists precisely because
     -- nothing was watching the MCP servers.

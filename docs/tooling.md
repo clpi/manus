@@ -6,10 +6,12 @@ authority. Start at [AGENTS.md](../AGENTS.md), then follow the
 [integration workflow](../.agents/AGENT_INTEGRATION.md). The sole semantic law
 is [C0](spec/constitution.md).
 
-The language is Idol and canonical source uses `.id`. Every tracked
-project-owned `.id` file is SOURCE-ZERO debt. Physical `duo` executable or
-tool prefixes are bootstrap aliases and deletion targets, not a second current
-language. The current in-tree compiler, LSP, and MCP implementation paths live
+The language is Idol and canonical source uses `.id`; new canonical `.id` is
+freely admitted — it is the Idol source extension. Only tracked *noncanonical*
+`.id` content (host-shaped patterns, namespace dispatch, duplicate authority) is
+SOURCE-ZERO debt, migrated by repairing the pattern; the `.id` file itself is
+not debt. Physical `duo` executable or tool prefixes are bootstrap aliases and
+deletion targets, not a second current language. The current in-tree compiler, LSP, and MCP implementation paths live
 in this repository; do not route agents to historical companion checkouts or
 mistake those paths for canonical source.
 

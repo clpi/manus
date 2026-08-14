@@ -48,7 +48,7 @@ note: void = (tag: str, ok: bool, detail: str)
     if ok
         mark = "ok  "
     if !ok
-        failed = failed + 1
+        failed += 1
     rows = "{rows}  {mark} {tag}  {detail}\n"
 
 # One fixture, one backend: compile, run, capture stdout with newlines turned

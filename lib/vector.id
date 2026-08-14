@@ -34,7 +34,7 @@ hash32(s: str): i64
     i = 1
     while i <= n
         h = (h * 33 + s:byte(i)) % 4294967296
-        i = i + 1
+        i += 1
     end
     h
 end
@@ -49,10 +49,10 @@ tokens(text: str): any
     cur = ""
     while i <= n
         c = text:byte(i)
-        is_digit = c >= 48 and c <= 57
-        is_upper = c >= 65 and c <= 90
-        is_lower = c >= 97 and c <= 122
-        if is_digit or is_upper or is_lower
+        digit = c >= 48 and c <= 57
+        upper = c >= 65 and c <= 90
+        lower = c >= 97 and c <= 122
+        if digit or upper or lower
             cur = cur .. c:char()
         else
             if cur:len() >= 2
@@ -60,7 +60,7 @@ tokens(text: str): any
             end
             cur = ""
         end
-        i = i + 1
+        i += 1
     end
     if cur:len() >= 2
         out[out:len() + 1] = cur:lower()
@@ -78,7 +78,7 @@ trigrams(token: str): any
     i = 1
     while i <= n - 2
         out[out:len() + 1] = s:sub(i, i + 2)
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -97,8 +97,8 @@ embed(text: str, dim: i64): any
         end
     end
     sumsq = 0.0
-    for _k, w in vec
-        sumsq = sumsq + w * w
+    for k, w in vec
+        sumsq += w * w
     end
     # Store the L2 norm as a SCALED INTEGER (norm * 1e6), NOT a float. The C
     # runtime's tonumber crashes (heap corruption, EXIT 128) on long (>=15 sig-
@@ -119,7 +119,7 @@ cosine(q: any, s: any): float
         if k != "norm" and k != "dim"
             sw = s[k]
             if sw != nil
-                dot = dot + qw * sw
+                dot += qw * sw
             end
         end
     end
@@ -131,7 +131,7 @@ end
 # k-pass max selection (O(k*n)): avoids element-swapping, which miscompiles at
 # scale; uses a `taken` marker table and the field-vs-local comparison that is
 # verified to lower correctly.
-rank(q: any, records: any, top_k: i64): any
+rank(q: any, records: any, topk: i64): any
     all = {}
     for _, rec in records
         sc = cosine(q, rec.vec)
@@ -141,7 +141,7 @@ rank(q: any, records: any, top_k: i64): any
         end
     end
     n = all:len()
-    k = top_k
+    k = topk
     if k > n k = n end
     if k < 0 k = 0 end
     out = {}
@@ -158,12 +158,12 @@ rank(q: any, records: any, top_k: i64): any
                     besti = i
                 end
             end
-            i = i + 1
+            i += 1
         end
         if besti == 0 break end
         taken[besti] = true
         out[out:len() + 1] = all[besti]
-        round = round + 1
+        round += 1
     end
     out
 end

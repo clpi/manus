@@ -1,4 +1,4 @@
-//! Pass 5/6 — canonical SIM export pipeline (native module → graph enrich → abi.specialize).
+//! Canonical SIM export pipeline (native module → graph enrich → abi.specialize).
 const std = @import("std");
 const ast = @import("ast.zig");
 const sim = @import("sim.zig");
@@ -6,25 +6,82 @@ const abi_specialize = @import("abi_specialize.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const types = @import("types.zig");
 
+const ShapeIndex = struct {
+    tables: std.StringHashMapUnmanaged(semantic_graph.id),
+    enums: std.StringHashMapUnmanaged(semantic_graph.id),
+
+    fn deinit(self: *ShapeIndex, alloc: std.mem.Allocator) void {
+        self.tables.deinit(alloc);
+        self.enums.deinit(alloc);
+    }
+
+    fn build(
+        graph: *const semantic_graph.SemanticGraph,
+        alloc: std.mem.Allocator,
+    ) !ShapeIndex {
+        var index: ShapeIndex = .{ .tables = .empty, .enums = .empty };
+        errdefer index.deinit(alloc);
+
+        const tables = try graph.entitiesOfKind(.table_shape, alloc);
+        defer alloc.free(tables);
+        for (tables) |record| {
+            const node = graph.tableShapeEntity(record) orelse continue;
+            const name = node.name orelse continue;
+            try index.tables.put(alloc, name, record);
+        }
+
+        const enums = try graph.entitiesOfKind(.enum_shape, alloc);
+        defer alloc.free(enums);
+        for (enums) |descriptor| {
+            const node = graph.enumShapeEntity(descriptor) orelse continue;
+            const name = node.name orelse continue;
+            try index.enums.put(alloc, name, descriptor);
+        }
+        return index;
+    }
+};
+
+fn enrichRecordEntity(
+    alloc: std.mem.Allocator,
+    ent: *sim.Entity,
+    graph: *const semantic_graph.SemanticGraph,
+    record: semantic_graph.id,
+) !void {
+    const node = graph.tableShapeEntity(record) orelse return;
+    if (node.shape_id) |sid| ent.shape_id = sid;
+    if (node.why) |w| {
+        if (ent.why) |old| alloc.free(old);
+        ent.why = try alloc.dupe(u8, w);
+    }
+    if (node.storage_class) |sc| {
+        const label = types.storageClassName(sc);
+        if (ent.storage_class) |old| alloc.free(old);
+        ent.storage_class = try alloc.dupe(u8, label);
+    }
+}
+
+fn enrichEnumEntity(
+    ent: *sim.Entity,
+    graph: *const semantic_graph.SemanticGraph,
+    descriptor: semantic_graph.id,
+) void {
+    const node = graph.enumShapeEntity(descriptor) orelse return;
+    if (node.shape_id) |sid| ent.shape_id = sid;
+}
+
 fn enrichSnapshotFromGraph(alloc: std.mem.Allocator, snap: *sim.Snapshot, graph: *const semantic_graph.SemanticGraph) !void {
+    var index = try ShapeIndex.build(graph, alloc);
+    defer index.deinit(alloc);
+
     for (snap.entities) |*ent| {
         switch (ent.kind) {
             .record => {
-                const node = graph.findTableShape(ent.name) orelse continue;
-                if (node.shape_id) |sid| ent.shape_id = sid;
-                if (node.why) |w| {
-                    if (ent.why) |old| alloc.free(old);
-                    ent.why = try alloc.dupe(u8, w);
-                }
-                if (node.storage_class) |sc| {
-                    const label = types.storageClassName(sc);
-                    if (ent.storage_class) |old| alloc.free(old);
-                    ent.storage_class = try alloc.dupe(u8, label);
-                }
+                const record = index.tables.get(ent.name) orelse continue;
+                try enrichRecordEntity(alloc, ent, graph, record);
             },
             .enum_type => {
-                const node = graph.findEnumShape(ent.name) orelse continue;
-                if (node.shape_id) |sid| ent.shape_id = sid;
+                const descriptor = index.enums.get(ent.name) orelse continue;
+                enrichEnumEntity(ent, graph, descriptor);
             },
             else => {},
         }
@@ -119,7 +176,18 @@ test "sim_pipeline: graph enrichment attaches shape_id to Point" {
     var snap_graph = try exportInterchangeWithGraph(alloc, &mod, "point.id", &graph);
     defer snap_graph.deinit(alloc);
 
-    const graph_node = graph.findTableShape("Point") orelse return error.TestExpectedEqual;
+    const records = try graph.entitiesOfKind(.table_shape, alloc);
+    defer alloc.free(records);
+    var point_record: ?semantic_graph.id = null;
+    for (records) |record| {
+        const node = graph.tableShapeEntity(record) orelse continue;
+        if (std.mem.eql(u8, node.name.?, "Point")) {
+            point_record = record;
+            break;
+        }
+    }
+    const record = point_record orelse return error.TestExpectedEqual;
+    const graph_node = graph.tableShapeEntity(record) orelse return error.TestExpectedEqual;
     try std.testing.expect(graph_node.shape_id != null);
 
     const point_graph = blk: {

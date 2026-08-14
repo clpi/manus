@@ -1,0 +1,27 @@
+# GAP-157 zerostd proof — no std on remaining proof homes; catalog is gone.
+
+audit(path) = (pattern: str)
+    path:read()
+        :has(pattern)
+
+hit(path) = (pattern: str)
+    path:read()
+        :has(pattern)
+
+main: i64 = ()
+    if "scripts/proof/remove.id":hit("std.")
+        return 7
+    if "scripts/proof/mkdir.id":hit("std.")
+        return 8
+    if "scripts/proof/worldreach.id":hit("std.")
+        return 9
+    if "scripts/proof/record.id":hit("std.")
+        return 10
+    if "scripts/proof/audit.id":hit("std.")
+        return 17
+    if "scripts/proof/bit.id":hit("bitcast")
+        return 13
+    if "scripts/proof/bit.id":hit("std.")
+        return 14
+    print("semantic zerostd: pass")
+    0

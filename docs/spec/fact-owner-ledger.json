@@ -1,0 +1,100 @@
+{
+  "schema": "fact-owner-v1",
+  "facts": [
+    {
+      "fact": "lexical_id",
+      "producer": "lexer",
+      "consumers": ["parser", "diagnostic"]
+    },
+    {
+      "fact": "syntax_structure",
+      "producer": "parser",
+      "consumers": ["sema", "graph_lift"]
+    },
+    {
+      "fact": "home",
+      "producer": "source_ingress",
+      "consumers": ["graph_lift", "diagnostic"]
+    },
+    {
+      "fact": "binding",
+      "producer": "sema",
+      "consumers": ["graph_lift", "codegen"]
+    },
+    {
+      "fact": "relation",
+      "producer": "sema",
+      "consumers": ["graph_lift", "graph_query", "dnir_lower"]
+    },
+    {
+      "fact": "subject",
+      "producer": "sema",
+      "consumers": ["graph_lift", "graph_query", "dnir_lower"]
+    },
+    {
+      "fact": "projection",
+      "producer": "sema",
+      "consumers": ["graph_lift", "dnir_lower"]
+    },
+    {
+      "fact": "descriptor",
+      "producer": "sema",
+      "consumers": ["graph_lift", "graph_query"]
+    },
+    {
+      "fact": "descriptor_ref",
+      "producer": "graph_lift",
+      "consumers": ["graph_query", "realization"]
+    },
+    {
+      "fact": "member",
+      "producer": "graph_lift",
+      "consumers": ["graph_query", "realization"]
+    },
+    {
+      "fact": "application",
+      "producer": "graph_lift",
+      "consumers": ["graph_query", "dnir_lower", "codegen"]
+    },
+    {
+      "fact": "operand",
+      "producer": "graph_lift",
+      "consumers": ["graph_query", "dnir_lower"]
+    },
+    {
+      "fact": "result",
+      "producer": "graph_lift",
+      "consumers": ["graph_query", "dnir_lower"]
+    },
+    {
+      "fact": "capture",
+      "producer": "graph_lift",
+      "consumers": ["graph_query", "codegen"]
+    },
+    {
+      "fact": "demand",
+      "producer": "sema",
+      "consumers": ["graph_lift", "realization"]
+    },
+    {
+      "fact": "world_requirement",
+      "producer": "sema",
+      "consumers": ["realization"]
+    },
+    {
+      "fact": "witness",
+      "producer": "realization",
+      "consumers": ["codegen"]
+    },
+    {
+      "fact": "selected_target",
+      "producer": "realization",
+      "consumers": ["codegen", "dnir_lower"]
+    },
+    {
+      "fact": "provenance",
+      "producer": "parser",
+      "consumers": ["graph_lift", "diagnostic", "lsp", "mcp"]
+    }
+  ]
+}

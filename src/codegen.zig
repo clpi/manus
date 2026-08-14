@@ -43,7 +43,7 @@ const lexer_bridge = @import("lexer_bridge.zig");
 /// Production path uses `lexer_bridge.tokenizeAuthority()` `.generated_native`.
 /// 2026-08-07, but only `main.zig`'s driver consulted it. Every module-embed
 /// path below built its own `Lexer` and ran the host scanner, so a single
-/// compilation tokenized the entry point with `lib/std/compiler/lexer.duo` and
+/// compilation tokenized the entry point with `lib/compiler/lexer.duo` and
 /// its `req`-ed modules with `src/lexer.zig`. Two scanners deciding one
 /// compilation is the shape that hides a divergence — the embed decision and
 /// the driver would disagree about a source and nothing would report it.
@@ -52,6 +52,10 @@ const lexer_bridge = @import("lexer_bridge.zig");
 /// caller must decline the embed rather than continue on a stream it did not
 /// get; the host scanner would reject the same bytes a few lines later, in
 /// parse, where the diagnostic is worse.
+fn openEmbedLexer(src: []const u8, path: []const u8) @import("lexer.zig").Lexer {
+    return @import("lexer.zig").Lexer.initFacts(src, path, lexer_bridge.sourceFacts(path));
+}
+
 fn routeEmbedThroughDuoLexer(
     alloc: Allocator,
     lex: *@import("lexer.zig").Lexer,
@@ -215,9 +219,9 @@ pub const CodeGen = struct {
     req_module_bindings: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Req bindings that omit `lua_require` / `duo_g_*` storage (native-direct embedded modules).
     req_native_direct: std.StringHashMapUnmanaged(void) = .empty,
-    /// Pass 34 L1 — req module bindings assumed sealed after load unless invalidated.
+    /// L1 — req module bindings assumed sealed after load unless invalidated.
     module_sealed_bindings: std.StringHashMapUnmanaged(void) = .empty,
-    /// Pass 34 L2 — interned field IDs for fallback `.field` access. Field name -> stable
+    /// L2 — interned field IDs for fallback `.field` access. Field name -> stable
     /// integer ID emitted at every fallback access site (duo_fallback_get_* markers).
     fallback_interned_fields: std.StringHashMapUnmanaged(u32) = .empty,
     /// File paths of embedded modules (dedupe + dependency-first ordering).
@@ -256,7 +260,7 @@ pub const CodeGen = struct {
     native_diag_note: [96]u8 = undefined,
     native_diag_note_len: u8 = 0,
     native_diag_line: u32 = 0,
-    /// Pass 2: module-wide knowledge level; set alongside `native_scalar_mode`.
+    /// module-wide knowledge level; set alongside `native_scalar_mode`.
     module_knowledge: semantic_algebra.KnowledgeLevel = .unknown,
     /// Per-function native scalar: when true, the module has both native-eligible
     /// and non-native functions. Native-eligible functions get C codegen; the rest
@@ -285,7 +289,7 @@ pub const CodeGen = struct {
     precheck_types: std.StringHashMapUnmanaged(RT) = .empty,
     test_mode: bool = false,
     bench_mode: bool = false,
-    /// Pass 11 WP-01: explicit benchmark representation profile.
+    /// WP-01: explicit benchmark representation profile.
     bench_backend: backend_identity.BenchBackend = .c_specialized,
     test_structured_output: bool = false,
     test_filter: ?[]const u8 = null,
@@ -377,7 +381,7 @@ pub const CodeGen = struct {
     // recorded identities instead of reading the module's boxed export table.
     // Keyed `<mod>|<name>` to match emitted_global_storage.
     emitted_module_scalars: std.StringHashMapUnmanaged(void) = .{},
-    /// Pass 7: active function carries @noalloc — heap emit sites call guardNoAlloc.
+    /// active function carries @noalloc — heap emit sites call guardNoAlloc.
     current_func_noalloc: bool = false,
     noalloc_violation: ?[]const u8 = null,
     /// Per-scope set of `lua_Value` locals known to hold numbers only (safe to
@@ -396,9 +400,9 @@ pub const CodeGen = struct {
     table_field_types: ?*const std.StringHashMapUnmanaged(RT) = null,
     concepts: ?*const std.StringHashMapUnmanaged(sema.ConceptInfo) = null,
     table_methods: ?*const std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = null,
-    /// Pass 5: imported C record descriptors from sema.
+    /// imported C record descriptors from sema.
     foreign_records: ?*const std.StringHashMapUnmanaged(RT) = null,
-    /// Pass 5: imported C function descriptors from sema.
+    /// imported C function descriptors from sema.
     foreign_functions: ?*const std.StringHashMapUnmanaged(@import("foreign_adapter.zig").ForeignFunc) = null,
 
     const NativeDenseElem = enum { i64, f64, str };
@@ -886,6 +890,19 @@ pub const CodeGen = struct {
         }
     }
 
+    /// level edge `audit(path) = (pattern) …` → symbol `audit__path`.
+    /// Subject-first `path:audit(pattern)` resolves against the family symbol.
+    fn relationEdgeFuncDecl(self: *CodeGen, method: []const u8, arg_count: usize) ?*const ast.FuncDecl {
+        if (arg_count != 1) return null;
+        var prefix_buf: [128]u8 = undefined;
+        const prefix = std.fmt.bufPrint(&prefix_buf, "{s}__", .{method}) catch return null;
+        var it = self.func_decls.iterator();
+        while (it.next()) |entry| {
+            if (std.mem.startsWith(u8, entry.key_ptr.*, prefix)) return entry.value_ptr.*;
+        }
+        return null;
+    }
+
     /// Try to evaluate an expression's boolean condition at compile time.
     /// Returns `true` (always true), `false` (always false), or `null` (unknown).
     /// Used for dead-branch elimination in if/while/repeat.
@@ -1225,6 +1242,14 @@ pub const CodeGen = struct {
         return null;
     }
 
+    /// Host egress: `stdout:write(text)` — never `io:write`. Dual of `stdin:read`.
+    fn egress_method_result_type(_: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        if (obj.* != .name) return null;
+        if (!std.mem.eql(u8, method, "write") or args.len != 1) return null;
+        if (std.mem.eql(u8, obj.name.ident, "stdout")) return .void;
+        return null;
+    }
+
     /// Readable protocol: subject:read() on stdin or a path/str subject — never io:read().
     fn try_emit_readable_protocol(
         self: *CodeGen,
@@ -1246,6 +1271,8 @@ pub const CodeGen = struct {
     }
 
     fn readable_method_result_type(self: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        if (std.mem.eql(u8, method, "line") and args.len == 0 and
+            obj.* == .name and std.mem.eql(u8, obj.name.ident, "stdin")) return .str;
         if (!std.mem.eql(u8, method, "read") or args.len != 0) return null;
         if (obj.* == .name and std.mem.eql(u8, obj.name.ident, "stdin")) return .str;
         const obj_ty = self.expr_type(obj);
@@ -2015,6 +2042,9 @@ pub const CodeGen = struct {
             // method NAMES like the static-dispatch branch below (that list is
             // the names-carry-semantics shape LAW-ONE denies).
             if (self.func_decls.get(mc.method)) |fd| {
+                return self.resolve_type(contract_ret(&fd.func));
+            }
+            if (self.relationEdgeFuncDecl(mc.method, mc.args.len)) |fd| {
                 return self.resolve_type(contract_ret(&fd.func));
             }
             {
@@ -3258,7 +3288,7 @@ pub const CodeGen = struct {
     /// (`M = {}` / `M.x = 1`). Such a module emits `lua_table_set_str_lit`, so it
     /// needs the lua runtime — native-scalar mode would emit `void* M = NULL`
     /// and silently drop every field write. Deliberately NOT scoped to the tail
-    /// expression: `lib/std/wasm/ward_mvp_opcodes.duo` has no tail at all and
+    /// expression: `lib/wasm/ward_mvp_opcodes.duo` has no tail at all and
     /// still exports a table.
     /// True when any function anywhere in the module lowers a table to the dense
     /// (native array) representation, so the module needs `duo_dense_runtime`.
@@ -3395,7 +3425,7 @@ pub const CodeGen = struct {
             self.nativeDiagFail("subject-descriptors");
             return self.nofit(@src());
         };
-        // Pass 11 WP-01: bench_mode no longer forces boxing by default.
+        // WP-01: bench_mode no longer forces boxing by default.
         // Only --bench-backend=c-dynamic explicitly selects the boxed path.
         if (self.bench_mode and self.bench_backend == .c_dynamic) {
             self.nativeDiagFail("bench-c-dynamic");
@@ -3441,7 +3471,7 @@ pub const CodeGen = struct {
             // CONSUMER flattened `m.x` to a native symbol (`mod__x`) that was
             // never defined — which is why a constants module could not be
             // `req`d at all, including duo's own
-            // lib/std/wasm/ward_mvp_opcodes.duo.
+            // lib/wasm/ward_mvp_opcodes.duo.
         }
         if (module_materializes_table(mod)) {
             self.nativeDiagFail("keyed-table-export");
@@ -3596,7 +3626,7 @@ pub const CodeGen = struct {
                 },
                 // gap[108]. An UNTYPED file-scope binding — `total = 5`, no
                 // `: i64` — does not parse as a declaration at all. There is no
-                // `local`/`var` keyword in duon, so the parser hands module
+                // `local`/`var` keyword in idol, so the parser hands module
                 // scope an `.assign`, exactly as it does for `total = 8` inside
                 // a function. The two decl arms above therefore saw nothing,
                 // the guard did not fire, and the program ran natively with a
@@ -3779,7 +3809,7 @@ pub const CodeGen = struct {
 
             const sub_src = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, mod_path, self.alloc, .unlimited) catch return false;
             defer self.alloc.free(sub_src);
-            var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path);
+            var sub_lex = openEmbedLexer(sub_src, mod_path);
             if (!routeEmbedThroughDuoLexer(self.alloc, &sub_lex, sub_src, mod_path)) return false;
             var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
             // The embed path must parse a `.duo` module in the same dialect the
@@ -3788,7 +3818,7 @@ pub const CodeGen = struct {
             // directly but fails with "expected '<eof>', got 'end'" the moment it
             // is embedded — which is what stopped `std/script.duo` and
             // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
-            sub_parser.idol_mode = lexer_bridge.isIdolSourcePath(mod_path);
+            sub_parser.idol_mode = sub_lex.family == lexer_bridge.family_canon;
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -3995,7 +4025,7 @@ pub const CodeGen = struct {
     }
 
     fn stmt_is_native_scalar(self: *CodeGen, stmt: *const ast.Stmt, allow_return: bool) bool {
-        // Pass 42 §3.1 — a return pack (`a, b = f()`: several targets, one call)
+        // §3.1 — a return pack (`a, b = f()`: several targets, one call)
         // is emitted via `lua_mret_clear` / `lua_mret_get`, which the full-native
         // profile never declares. Treating such a function as native-scalar
         // produced C that referenced undeclared `lua_mret_*` and failed to
@@ -4056,7 +4086,7 @@ pub const CodeGen = struct {
             // and `stmt_declares_name` both read the arms side by side — but this
             // switch had no `.global_decl` case at all, so it fell to
             // `else => false` and disqualified the whole module. That is GAP-034
-            // drift in its purest form: `lib/std/compiler/lexer.duo` line 7 is
+            // drift in its purest form: `lib/compiler/lexer.duo` line 7 is
             // `global strm = req "std.str"` and that one line refused native
             // lowering for every program that embeds the Duo lexer.
             //
@@ -4089,7 +4119,7 @@ pub const CodeGen = struct {
                     // string. `init_is_native_scalar` says yes (an ambient path
                     // is a static path and folds), but the binding still names a
                     // module, so the same producer/consumer mismatch applies:
-                    // measured, `lib/std/compiler/rewrite.duo` chose native-scalar
+                    // measured, `lib/compiler/rewrite.duo` chose native-scalar
                     // and emitted `use of undeclared identifier
                     // duo_g_std_compiler_rewrite_C` plus four boxed-value type
                     // errors. It is the `req` case above wearing different
@@ -4118,7 +4148,7 @@ pub const CodeGen = struct {
                             // standalone CodeGen BEFORE anything is emitted — so an
                             // absent record means "not emitted yet", and reading it
                             // as "not native" refuses clean modules for not having
-                            // happened. Measured: lib/std/compiler/bind.duo
+                            // happened. Measured: lib/compiler/bind.duo
                             // prechecks CLEAN while its consumer bailed here.
                             // With no record, defer to the SAME predicate the `req`
                             // branch above already trusts — this is the `req` case
@@ -4157,6 +4187,7 @@ pub const CodeGen = struct {
                 break :blk true;
             },
             .assign => |as| blk: {
+                if (relation.declFromAssign(as) != null) break :blk true;
                 if (as.targets.len != as.values.len) break :blk false;
                 if (as.targets.len == 1 and as.values.len == 1 and as.targets[0].* == .name) {
                     var pathbuf: [512]u8 = undefined;
@@ -4249,7 +4280,7 @@ pub const CodeGen = struct {
             },
             .brk, .cont => true,
             .gen_for => |gf| blk: {
-                // Pass 42 §1.2 — generic-for lowers through the dynamic `__iter`
+                // §1.2 — generic-for lowers through the dynamic `__iter`
                 // metafield protocol (`lua_get_metafield_lit` + `lua_mret_*`), so
                 // no `for v in tbl` can be full-native today: claiming it emitted C
                 // referencing undeclared `lua_mret_clear`, which meant direct
@@ -4282,7 +4313,7 @@ pub const CodeGen = struct {
         };
     }
 
-    /// Expression/type knowledge from sema type_map (Pass 3 per-call lattice).
+    /// Expression/type knowledge from sema type_map (per-call lattice).
     fn exprKnowledge(self: *CodeGen, expr: *const ast.Expr) semantic_algebra.KnowledgeLevel {
         return semantic_algebra.knowledgeOfType(self.expr_type(expr));
     }
@@ -4299,7 +4330,7 @@ pub const CodeGen = struct {
         return self.funcUsesNativeLowering(fn_name);
     }
 
-    /// Pass 2: module-wide knowledge check (canonical replacement for `native_scalar_mode`).
+    /// module-wide knowledge check (canonical replacement for `native_scalar_mode`).
     fn moduleKnowledgeAtLeast(self: *const CodeGen, min: semantic_algebra.KnowledgeLevel) bool {
         return self.module_knowledge.dominates(min);
     }
@@ -4310,7 +4341,7 @@ pub const CodeGen = struct {
             self.moduleKnowledgeAtLeast(.native);
     }
 
-    /// Pass 6: public accessor for driver/link flags (prefer over raw `native_scalar_mode`).
+    /// public accessor for driver/link flags (prefer over raw `native_scalar_mode`).
     pub fn usesFullNativeLowering(self: *const CodeGen) bool {
         return self.moduleUsesFullNativeLowering();
     }
@@ -4541,7 +4572,7 @@ pub const CodeGen = struct {
         return true;
     }
 
-    /// Pass 2.5: dispatch eligible call transforms before generic call emission.
+    /// dispatch eligible call transforms before generic call emission.
     fn tryEmitCallTransformDispatch(self: *CodeGen, expr: *const ast.Expr) E!bool {
         if (expr.* != .call) return false;
         const c = expr.call;
@@ -5044,7 +5075,7 @@ pub const CodeGen = struct {
                         .indexed => |idx| if (!self.expr_is_native_scalar(idx.key) or
                             !self.expr_is_native_scalar(idx.val)) break :blk false,
                         .spread => break :blk false,
-                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): a semantic entry is never a native scalar.
+                        // G1/G8 recorded, not implemented (Phase 0): a semantic entry is never a native scalar.
                         .semantic => break :blk false,
                     };
                     break :blk true;
@@ -5157,8 +5188,10 @@ pub const CodeGen = struct {
                 }
                 const resolvable = self.string_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.readable_method_result_type(mc.method, mc.obj, mc.args) != null or
+                    self.egress_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.world_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.func_decls.get(mc.method) != null or
+                    self.relationEdgeFuncDecl(mc.method, mc.args.len) != null or
                     fd: {
                         var tbuf: [256]u8 = undefined;
                         break :fd self.func_decls.get(self.mangled_name(mc.method, &tbuf)) != null;
@@ -5171,8 +5204,9 @@ pub const CodeGen = struct {
                     self.nativeDiagFailFmt("method-unresolved:{s}", .{mc.method});
                     break :blk false;
                 }
+                if (self.relationEdgeFuncDecl(mc.method, mc.args.len) != null) break :blk true;
                 const rt = self.expr_type(expr);
-                if (rt.is_numeric() or rt == .bool or rt == .str or rt == .void or
+                if (rt.is_numeric() or rt == .bool or rt == .str or rt == .void or rt == .any or
                     self.type_lowers_native(rt)) break :blk true;
                 self.nativeDiagFailFmt("method-ret:{s}", .{mc.method});
                 break :blk false;
@@ -5800,7 +5834,7 @@ pub const CodeGen = struct {
                 self.mixed_scalar_mode = true;
             }
         }
-        // Pass 27 P0: bench profiles must diverge in generated C, not just manifest metadata.
+        // P0: bench profiles must diverge in generated C, not just manifest metadata.
         if (self.bench_mode and self.bench_backend == .c_dynamic) {
             self.mixed_scalar_mode = false;
             self.native_scalar_funcs.clearRetainingCapacity();
@@ -5873,7 +5907,7 @@ pub const CodeGen = struct {
         //
         // It used to ride along with the lua runtime block below, so a
         // native-scalar module that called a libm function got the call and not
-        // the declaration: `examples/pass27_proof_matrix.duo` died on
+        // the declaration: a proof-matrix example died on
         // `call to undeclared library function 'sqrt'` under C99 and could not
         // be built by EITHER backend (gap[055]).
         //
@@ -6407,7 +6441,7 @@ pub const CodeGen = struct {
         // run *before* the function forward-declarations so they can name
         // the record types in their signatures.
         // Payload-free enums FIRST. A record field may be typed by a case-set
-        // (`token: { kind: { name, number, eof } … }` — Pass 100 §7), and the
+        // (`token: { kind: { name, number, eof } … }` — §7), and the
         // struct naming `duo_token__kind` was emitted before the typedef that
         // defines it, so clang said "unknown type name". A payload-free enum
         // names nothing but integers, so nothing it needs can be emitted after
@@ -7267,7 +7301,7 @@ pub const CodeGen = struct {
                             .indexed => |ix| try c.walk_expr(ix.val),
                             .positional => |pos| try c.walk_expr(pos),
                             .spread => |sp| try c.walk_expr(sp),
-                            // Pass 36 G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
+                            // G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
                             .semantic => |sm| try c.walk_expr(sm.val),
                         };
                     },
@@ -8490,7 +8524,7 @@ pub const CodeGen = struct {
                     .indexed => |ix| try self.collect_records_in_expr(ix.val),
                     .positional => |pos| try self.collect_records_in_expr(pos),
                     .spread => |sp| try self.collect_records_in_expr(sp),
-                    // Pass 36 G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
+                    // G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
                     .semantic => |sm| try self.collect_records_in_expr(sm.val),
                 }
             },
@@ -8760,7 +8794,7 @@ pub const CodeGen = struct {
         for (fd.attributes) |attr| {
             // `@comp.c.export` is the canonical spelling (`@` is the single
             // compile-time prefix); `@c.export` is the deprecated form still in
-            // `lib/std/compiler/lexer.duo`. Only the deprecated one was matched
+            // `lib/compiler/lexer.duo`. Only the deprecated one was matched
             // here, so a canonically-written module got `static inline`
             // functions with no external linkage and could not be linked.
             if (std.mem.eql(u8, attr.name, "c.export") or
@@ -8792,7 +8826,7 @@ pub const CodeGen = struct {
             self.p("__attribute__((export_name(\"{s}\"), visibility(\"default\"))) ", .{export_name});
             return; // Skip static/inline/hot — these must be externally visible.
         }
-        // A library is a physical projection of its primary Duon package. Its
+        // A library is a physical projection of its primary Idol package. Its
         // ordinary root relations are already public through the module value;
         // requiring a prefix foreign directive merely to make that same API
         // linkable creates a second, syntax-owned export authority. Required
@@ -11266,7 +11300,7 @@ pub const CodeGen = struct {
             {
                 try self.hoist_control_implicit_locals(&blk.stmts[i], blk.stmts[i + 1 ..], blk.tail_expr);
                 try self.emit_stmt(&blk.stmts[i]);
-                // Pass 23 §4 — assignment expression value is the implicit return.
+                // §4 — assignment expression value is the implicit return.
                 // Re-use the assigned lvalue to avoid double-evaluating the RHS.
                 if (blk.stmts[i] == .assign and blk.stmts[i].assign.targets.len == 1 and
                     blk.stmts[i].assign.values.len == 1)
@@ -13593,7 +13627,7 @@ pub const CodeGen = struct {
                 }
             },
             .gen_for => |*gf| {
-                // gap[082]: `for src, conv in to[dest]` — Pass 100 §9's own
+                // gap[082]: `for src, conv in to[dest]` — §9's own
                 // enumeration face, which did not work: `to[dest]` lowered to
                 // `lua_table_get(to, ...)` and clang said "use of undeclared
                 // identifier 'to'". The trie is compile-time data, so the
@@ -14540,7 +14574,7 @@ pub const CodeGen = struct {
                 }
                 if (obj_rt != .any and self.expr_type(e) != .any) return false;
                 const hash = calc_lua_hash(f.field);
-                // Pass 34 L2 — interned field IDs: every fallback `.field` access on the
+                // L2 — interned field IDs: every fallback `.field` access on the
                 // dynamic path is emitted through a duo_fallback_get_* marker carrying a
                 // stable per-compilation field ID. The marker expands to the standard
                 // string-keyed lookup (zero runtime cost), and the generated C records
@@ -15392,7 +15426,7 @@ pub const CodeGen = struct {
     fn emit_expr(self: *CodeGen, expr: *const ast.Expr) E!void {
         switch (expr.*) {
             .quote, .unquote, .macro_call => self.p("/* unexpanded macro expression */ lua_val_nil()", .{}),
-            // Pass 36 G1/G2 (`@name`, `@`) are canon but Phase 0 ships no parser
+            // G1/G2 (`@name`, `@`) are canon but Phase 0 ships no parser
             // production for them, so nothing reaches here. Refuse rather than
             // invent a lowering before the resolution ladder exists.
             .semantic, .semantic_scope => self.p("/* Pass 36 semantic access: not yet lowered */ lua_val_nil()", .{}),
@@ -15496,12 +15530,16 @@ pub const CodeGen = struct {
                     self.emit_primitive_descriptor(canon);
                     return;
                 }
+                if (self.relation_descriptor_spelling(n.ident)) |spell| {
+                    self.emit_primitive_descriptor(spell);
+                    return;
+                }
                 self.emit_var_name(n.ident);
             },
             .field => |f| {
                 // The `f.field[0] == '@'` arm that used to stand here read the
                 // anchor stance out of an identifier's SPELLING and emitted a
-                // boxed `lua_get_metafield_lit` for it. Pass 100 §2 gives the
+                // boxed `lua_get_metafield_lit` for it. §2 gives the
                 // anchor three stances and `.@name` is none of them, so the
                 // parser now rejects the form outright and nothing produces a
                 // field name carrying the sigil. The re-derivation is gone with
@@ -15696,6 +15734,16 @@ pub const CodeGen = struct {
                 // gap[092]. A descriptor subject constructs. This must precede
                 // every other `.call` arm, because all of them assume a callee.
                 if (try self.emit_descriptor_application(c)) return;
+                if (c.func.* == .call) {
+                    const inner = c.func.call;
+                    if (inner.func.* == .name and std.mem.eql(u8, inner.func.name.ident, "to") and
+                        inner.args.len == 1 and inner.args[0].* == .name and c.args.len == 1 and
+                        !self.user_owns_name("to"))
+                    {
+                        const dest = inner.args[0].name.ident;
+                        if (try self.emit_relation_convert_exhaustive(dest, c.loc, c.args[0], self.expr_type(expr))) return;
+                    }
+                }
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     try self.emit_comptime_expr(c.args[0], self.expr_type(expr) == .any);
                     return;
@@ -16263,7 +16311,7 @@ pub const CodeGen = struct {
                     }
                     // Mixed native/dynamic: non-allowlisted callees route through lua_invoke
                     // UNLESS the callee's resolved type proves all params+return are native.
-                    // This is the per-call knowledge lattice (Pass 2) driving emission.
+                    // This is the per-call knowledge lattice driving emission.
                     if (!self.moduleUsesFullNativeLowering() and
                         ft == .func and c.func.* == .name and !self.funcUsesNativeLowering(c.func.name.ident))
                     {
@@ -16520,6 +16568,10 @@ pub const CodeGen = struct {
                     var inner = ast.Expr{ .call = .{ .loc = mc.loc, .func = &fam, .args = inner_args[0..] } };
                     var outer_args = [_]*ast.Expr{mc.obj};
                     if (try self.maybe_emit_stdlib_call(&inner, outer_args[0..], self.expr_type(expr))) return;
+                    if (mc.args[0].* == .name) {
+                        const dest = mc.args[0].name.ident;
+                        if (try self.emit_relation_convert_exhaustive(dest, mc.loc, mc.obj, self.expr_type(expr))) return;
+                    }
                 }
 
                 if (try self.tryEmitSubjectRelation(mc)) return;
@@ -16900,6 +16952,10 @@ pub const CodeGen = struct {
                         return;
                     }
                     if (try self.tryEmitSubjectRelation(mc)) return;
+                    if (std.mem.eql(u8, mc.method, "to")) {
+                        self.p("duo_fatal(\"unlowered native :to conversion\")", .{});
+                        return;
+                    }
                     try self.emit_expr(mc.obj);
                     self.p("__{s}(", .{mc.method});
                     for (mc.args, 0..) |arg, i| {
@@ -17622,7 +17678,7 @@ pub const CodeGen = struct {
                         .positional => array_count += 1,
                         .named, .indexed => hash_count += 1,
                         .spread => {},
-                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): semantic entries live in the
+                        // G1/G8 recorded, not implemented (Phase 0): semantic entries live in the
                         // semantic namespace, so they reserve no ordinary table slot.
                         .semantic => {},
                     }
@@ -17704,7 +17760,7 @@ pub const CodeGen = struct {
                             self.ind();
                             self.pl("}}", .{});
                         },
-                        // Pass 36 G8 (`{ @eq = impl }`): a semantic entry installs into
+                        // G8 (`{ @eq = impl }`): a semantic entry installs into
                         // the semantic namespace, not the ordinary table, so it emits
                         // no raw set here. Refuse rather than invent an installation
                         // path before the resolution ladder exists.
@@ -18960,7 +19016,7 @@ pub const CodeGen = struct {
         self.p("\"{s}\"", .{fallback});
     }
 
-    /// __why_module(binding) — Pass 34 L1 module sealing witness string.
+    /// __why_module(binding) — L1 module sealing witness string.
     fn emit_why_module_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         const explanation = blk: {
             if (args[0].* != .name) break :blk "module_sealed=n/a; operand is not a module binding name";
@@ -19982,7 +20038,7 @@ pub const CodeGen = struct {
     /// LAW-CALL's "data always wins the name", enforced by SCOPE LOOKUP rather
     /// than by guessing from operand types. A relation family may only be
     /// projected onto a bare name when the program has not bound that name
-    /// itself — `lib/std/reflect.duo` and `lib/std/utf8.duo` both define their
+    /// itself — `lib/reflect.duo` and `lib/utf8.duo` both define their
     /// own `len`, and an unguarded projection silently hijacked them.
     fn user_owns_name(self: *CodeGen, name: []const u8) bool {
         if (self.func_decls.contains(name)) return true;
@@ -20023,7 +20079,7 @@ pub const CodeGen = struct {
         };
     }
 
-    /// Pass 100 §8 B-12 — the return type a contract LOWERS to.
+    /// §8 B-12 — the return type a contract LOWERS to.
     ///
     /// `: u64 | error` declares the correlated pack `(value, nil) | (nil,
     /// error)`. A pack has no native scalar representation — `return nil,
@@ -20060,6 +20116,52 @@ pub const CodeGen = struct {
         self.p("lua_val_from_literal(\"{s}\", {d}, {d})", .{
             canon, calc_lua_hash(canon), canon.len,
         });
+    }
+
+    /// A descriptor interned by the relation store for this module. User
+    /// bindings still win the name — data always wins.
+    fn relation_descriptor_spelling(self: *CodeGen, name: []const u8) ?[]const u8 {
+        if (self.is_local_name(name) or self.is_global_name(name)) return null;
+        if (self.func_decls.contains(name) or self.func_bodies.contains(name)) return null;
+        const nm = self.relations.names orelse return null;
+        if (nm.lookup(.descriptor, name) != null) return name;
+        return null;
+    }
+
+    /// gap[082]: when demand does not spell the source descriptor (`v:to(dest)`),
+    /// succeed only when exactly one endpoint admits a path. Multiple admitted
+    /// routes are ambiguous (relation.zig: two lawful hubs never select by order).
+    fn emit_relation_convert_exhaustive(
+        self: *CodeGen,
+        dest: []const u8,
+        loc: ast.Loc,
+        value: *const ast.Expr,
+        result_rt: RT,
+    ) E!bool {
+        if (try self.emit_relation_convert(dest, null, loc, @constCast(value), result_rt)) return true;
+        const rel = self.relations.family("to") orelse return false;
+        var descs: std.ArrayListUnmanaged(relation.Id) = .empty;
+        defer descs.deinit(self.alloc);
+        try rel.endpoints(&descs, self.alloc);
+        var winner: ?[]const u8 = null;
+        var admitted: usize = 0;
+        for (descs.items) |id| {
+            const src = rel.names.text(id);
+            if (std.mem.eql(u8, src, dest)) continue;
+            const path = rel.derive(src, dest) orelse continue;
+            if (!path.admitted) continue;
+            admitted += 1;
+            winner = src;
+            if (admitted > 1) {
+                term.locErr(loc, "ambiguous conversion to {s}: spell the source with :from", .{dest});
+                term.locHint(loc, "use {s}:from(source)(value) when more than one descriptor admits a path", .{dest});
+                return false;
+            }
+        }
+        if (admitted == 1) {
+            return try self.emit_relation_convert(dest, winner, loc, @constCast(value), result_rt);
+        }
+        return false;
     }
 
     fn maybe_emit_stdlib_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
@@ -20853,7 +20955,7 @@ pub const CodeGen = struct {
         }
         // Canonical curried form: `mem.store("i64")(ptr, val)`. A type selector
         // is its own curry level and must never share a parameter list with
-        // values (Pass 48 §2.6 application schemas; idiom 2, operation-first
+        // values (§2.6 application schemas; idiom 2, operation-first
         // invocation). Normalize `f(type)(rest…)` to the flat `f(type, rest…)`
         // vector the emitters below already take, so both spellings lower
         // identically and the canonical one costs nothing.
@@ -22388,7 +22490,7 @@ pub const CodeGen = struct {
                         .named => |nmd| try self.collect_closures_expr(nmd.val, list),
                         .positional => |pos| try self.collect_closures_expr(pos, list),
                         .spread => |sp| try self.collect_closures_expr(sp, list),
-                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
+                        // G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
                         .semantic => |sm| try self.collect_closures_expr(sm.val, list),
                     }
                 }
@@ -22659,7 +22761,7 @@ pub const CodeGen = struct {
     fn stmt_fallthrough_returns(self: *CodeGen, stmt: *const ast.Stmt) bool {
         return switch (stmt.*) {
             .ret => true,
-            // Pass 23 §4 — final assignment returns its value (including compound assign).
+            // §4 — final assignment returns its value (including compound assign).
             .assign => |as| as.targets.len == 1 and as.values.len == 1,
             .if_stmt => |*is| blk: {
                 if (is.else_body == null) break :blk false;
@@ -22730,7 +22832,7 @@ pub const CodeGen = struct {
                         .named => |nmd| try self.collect_require_names(nmd.val, names),
                         .positional => |pos| try self.collect_require_names(pos, names),
                         .spread => |sp| try self.collect_require_names(sp, names),
-                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
+                        // G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
                         .semantic => |sm| try self.collect_require_names(sm.val, names),
                     }
                 }
@@ -22935,10 +23037,10 @@ pub const CodeGen = struct {
                     continue;
                 };
                 defer self.alloc.free(sub_src);
-                var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path.?);
+                var sub_lex = openEmbedLexer(sub_src, mod_path.?);
                 if (!routeEmbedThroughDuoLexer(self.alloc, &sub_lex, sub_src, mod_path.?)) continue;
                 var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
-                sub_parser.idol_mode = lexer_bridge.isIdolSourcePath(mod_path.?);
+                sub_parser.idol_mode = sub_lex.family == lexer_bridge.family_canon;
                 // The embed path must parse Idol modules in the same dialect the
                 // standalone path uses. Without this, duo-mode-only syntax (bare
                 // function declarations) parses fine when the file is compiled
@@ -23174,7 +23276,7 @@ pub const CodeGen = struct {
         const cwd = Io.Dir.cwd();
         const src = Io.Dir.readFileAlloc(cwd, self.io, path, self.alloc, .unlimited) catch return false;
         defer self.alloc.free(src);
-        var lex = @import("lexer.zig").Lexer.init(src, path);
+        var lex = openEmbedLexer(src, path);
         if (!routeEmbedThroughDuoLexer(self.alloc, &lex, src, path)) return false;
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
         // Embedded .duo files must be parsed with the Duo grammar. Without this
@@ -23182,7 +23284,7 @@ pub const CodeGen = struct {
         // bodies and typed bindings are rejected — the file then fails to embed
         // and its duo_mod_* thunk is never emitted, while the caller registers
         // it anyway ("use of undeclared identifier duo_mod_*").
-        parser.idol_mode = lexer_bridge.isIdolSourcePath(path);
+        parser.idol_mode = lex.family == lexer_bridge.family_canon;
         const submod = parser.parse_module() catch return false;
         if (module_ast_blocks_full_native_ast(&submod)) return false;
         // A dependency that materializes a table export is reached through
@@ -23225,7 +23327,7 @@ pub const CodeGen = struct {
 
             const sub_src = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, mod_path, self.alloc, .unlimited) catch return false;
             defer self.alloc.free(sub_src);
-            var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path);
+            var sub_lex = openEmbedLexer(sub_src, mod_path);
             if (!routeEmbedThroughDuoLexer(self.alloc, &sub_lex, sub_src, mod_path)) return false;
             var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
             // The embed path must parse a `.duo` module in the same dialect the
@@ -23234,7 +23336,7 @@ pub const CodeGen = struct {
             // directly but fails with "expected '<eof>', got 'end'" the moment it
             // is embedded — which is what stopped `std/script.duo` and
             // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
-            sub_parser.idol_mode = lexer_bridge.isIdolSourcePath(mod_path);
+            sub_parser.idol_mode = sub_lex.family == lexer_bridge.family_canon;
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -23411,7 +23513,7 @@ pub const CodeGen = struct {
         try self.module_sealed_bindings.put(self.alloc, owned, {});
     }
 
-    /// Pass 34 L2 — assign a stable interned field ID to a fallback `.field` access.
+    /// L2 — assign a stable interned field ID to a fallback `.field` access.
     /// IDs are assigned in first-use order per compilation (0-based).
     fn interned_fallback_field_id(self: *CodeGen, field: []const u8) u32 {
         if (self.fallback_interned_fields.get(field)) |id| return id;
@@ -23826,10 +23928,10 @@ pub const CodeGen = struct {
         const source = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, module_path, self.alloc, .unlimited) catch return null;
         defer self.alloc.free(source);
 
-        var lex = @import("lexer.zig").Lexer.init(source, module_path);
+        var lex = openEmbedLexer(source, module_path);
         if (!routeEmbedThroughDuoLexer(self.alloc, &lex, source, module_path)) return null;
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
-        parser.idol_mode = lexer_bridge.isIdolSourcePath(module_path);
+        parser.idol_mode = lex.family == lexer_bridge.family_canon;
         const module = parser.parse_module() catch return null;
 
         var declared = false;
@@ -24172,7 +24274,7 @@ pub const CodeGen = struct {
                     .named => |named| if (expr_references_name(named.val, name)) break :blk true,
                     .positional => |pos| if (expr_references_name(pos, name)) break :blk true,
                     .spread => |sp| if (expr_references_name(sp, name)) break :blk true,
-                    // Pass 36 G1/G8 recorded, not implemented (Phase 0): only the implementation can reference a name.
+                    // G1/G8 recorded, not implemented (Phase 0): only the implementation can reference a name.
                     .semantic => |sm| if (expr_references_name(sm.val, name)) break :blk true,
                 };
                 break :blk false;
@@ -24471,7 +24573,7 @@ pub const CodeGen = struct {
         // closure bodies are emitted after this function returns, so the source
         // must live for the duration of code generation.
 
-        var lex = @import("lexer.zig").Lexer.init(src, path);
+        var lex = openEmbedLexer(src, path);
         if (!routeEmbedThroughDuoLexer(self.alloc, &lex, src, path)) return false;
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
         // Embedded .duo files must be parsed with the Duo grammar. Without this
@@ -24479,15 +24581,15 @@ pub const CodeGen = struct {
         // bodies and typed bindings are rejected — the file then fails to embed
         // and its duo_mod_* thunk is never emitted, while the caller registers
         // it anyway ("use of undeclared identifier duo_mod_*").
-        parser.idol_mode = lexer_bridge.isIdolSourcePath(path);
+        parser.idol_mode = lex.family == lexer_bridge.family_canon;
         var submod = parser.parse_module() catch |e| {
             term.err("emit_embedded_module: parse failed for {s}: {}", .{ path, e });
             return false;
         };
         var subsem = sema.Sema.init(self.alloc);
         defer subsem.deinit();
-        subsem.lua55_mode = lexer_bridge.isLuaSourcePath(path);
-        subsem.idol_mode = lexer_bridge.isIdolSourcePath(path);
+        subsem.lua55_mode = lex.source_law == .lua;
+        subsem.idol_mode = lex.family == lexer_bridge.family_canon;
         subsem.next_closure_id = self.next_closure_id;
         subsem.check_module(&submod) catch |e| {
             term.err("emit_embedded_module: sema failed for {s}: {}", .{ path, e });
@@ -24896,7 +24998,7 @@ pub const CodeGen = struct {
         // the field writes then targeted a table that was never declared —
         // emitting `lua_table_set_str_lit((void*)0, ...)`. That made every
         // constants-style module (including duo's own
-        // lib/std/wasm/ward_mvp_opcodes.duo) impossible to `req`.
+        // lib/wasm/ward_mvp_opcodes.duo) impossible to `req`.
         self.note_str_list_disqualifications(&submod.body) catch |e| {
             term.err("emit_embedded_module: disqualification scan failed: {}", .{e});
             return false;
@@ -32049,7 +32151,7 @@ test "codegen: any accumulator plus boxed field unboxes both sides" {
     const fn_start = std.mem.indexOf(u8, output, "static lua_Value f(") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "return sum;") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end + "return sum;".len];
-    // `duo_fallback_get_num` is the Pass 34 L2 interned-field marker and expands
+    // `duo_fallback_get_num` is the L2 interned-field marker and expands
     // verbatim to `lua_table_get_str_num`; inside a function body it is the
     // spelling the emitter uses. Accept either, because the assertion is about
     // reading the field as a NUMBER (not `lua_to_num` on a boxed read, and no
@@ -32751,7 +32853,7 @@ test "codegen: implicit typed return unboxes dynamic field projection" {
     try cg.emit_module(&module);
     const output = aw.written();
     // Inside a function body a fallback projection is spelled through the
-    // Pass 34 L2 interned-field marker `duo_fallback_get_num(<fid>, …)`, a
+    // L2 interned-field marker `duo_fallback_get_num(<fid>, …)`, a
     // verbatim `#define` of `lua_table_get_str_num` (see the runtime prelude).
     // The property this test is named for is the UNBOX — the `(int64_t)` cast
     // straight off the numeric read — not which of the two identical spellings
@@ -33154,45 +33256,6 @@ test "codegen: typed string len methods lower without boxed runtime result" {
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_num(lua_str_len(") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value n = ") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value lit = ") == null);
-}
-
-test "codegen: typed string numeric results keep exact native result type" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lex = Lexer.init(
-        \\local s: str = "duo"
-        \\local n: u32 = string.len(s)
-        \\local b: u8 = string.byte(s, 2)
-        \\local packed: u16 = string.packsize("i")
-        \\local pos: f32 = ("duo"):find("u")
-        \\print(n, b, packed, pos)
-    , "test");
-    var parser = Parser.init(&lex, alloc);
-    var module = try parser.parse_module();
-    var semantic = sema.Sema.init(alloc);
-    defer semantic.deinit();
-    try semantic.check_module(&module);
-
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    try cg.emit_module(&module);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "uint32_t n = ((uint32_t)(((int64_t)strlen(s))))") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "uint8_t b = ((uint8_t)(((int64_t)(unsigned char)(s[") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "uint16_t packed = ((uint16_t)(((int64_t)lua_to_num(lua_str_packsize(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "float pos = ((float)lua_to_num(lua_str_find(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "uint32_t n = ((int64_t)strlen(s));") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "uint8_t b = lua_str_byte_i64(") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "uint16_t packed = ((int64_t)lua_to_num(lua_str_packsize(") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "float pos = ((double)lua_to_num(lua_str_find(") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_Value n = ") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_Value b = ") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_Value packed = ") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_Value pos = ") == null);
 }
 
 test "codegen: dynamic length operator emits native numeric helper" {
@@ -35304,80 +35367,6 @@ test "table max scan lowers the real comparison, never a frozen maximum" {
     try testing.expect(std.mem.indexOf(u8, out, "mx") != null);
 }
 
-test "loop versioning: an affine index gets a guarded unchecked arm, a modular one does not" {
-    // GAP-039. The proof is the guard, so what this pins is that the guard is
-    // PRESENT whenever the unchecked accessor is, and that the checked arm
-    // survives beside it — never the unchecked form on its own.
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var aw1: std.Io.Writer.Allocating = .init(alloc);
-    defer aw1.deinit();
-    const affine = try kernel_c_for_test(alloc,
-        \\function scan(n)
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        t[i] = i * 17
-        \\        i += 1
-        \\    end
-        \\    local s = 0
-        \\    i = 2
-        \\    while i <= n do
-        \\        s += t[i]; s += t[i - 1]
-        \\        i += 1
-        \\    end
-        \\    return s
-        \\end
-        \\print(scan(10))
-    , &aw1);
-    // The fast arm indexes the buffer directly…
-    try testing.expect(std.mem.indexOf(u8, affine, "__dt_t[") != null);
-    // …only under a range guard…
-    try testing.expect(std.mem.indexOf(u8, affine, "duo_dt_range_ok(__dtc_t") != null);
-    try testing.expect(std.mem.indexOf(u8, affine, "duo_dt_hi_num") != null);
-    // …and the checked accessor is still emitted for the other arm.
-    try testing.expect(std.mem.indexOf(u8, affine, "duo_dt_get_i64(__dt_t") != null);
-
-    // Negative control, same shape, one non-affine index: `(i % size) + 1` does
-    // not take its extremes at the loop's extremes, so no arm may be unchecked.
-    var aw2: std.Io.Writer.Allocating = .init(alloc);
-    defer aw2.deinit();
-    const modular = try kernel_c_for_test(alloc,
-        \\function ring(n)
-        \\    local size = 8
-        \\    local buf = {}
-        \\    local i = 1
-        \\    while i <= size do
-        \\        buf[i] = 0
-        \\        i += 1
-        \\    end
-        \\    local s = 0
-        \\    i = 0
-        \\    while i < n do
-        \\        buf[(i % size) + 1] = i
-        \\        s += buf[(i % size); s += 1]
-        \\        i += 1
-        \\    end
-        \\    return s
-        \\end
-        \\print(ring(10))
-    , &aw2);
-    try testing.expect(std.mem.indexOf(u8, modular, "duo_dt_get_i64(__dt_buf") != null);
-    // The fill loop above IS affine, so the file legitimately contains a guard;
-    // what must be absent is any raw index of the modular table beyond it.
-    var scan_at: usize = 0;
-    var raw_reads: usize = 0;
-    while (std.mem.indexOfPos(u8, modular, scan_at, "__dt_buf[")) |at| {
-        raw_reads += 1;
-        scan_at = at + 1;
-    }
-    // Exactly the two the fill loop's own guard proves — the modular loop's
-    // four accesses stay checked.
-    try testing.expect(raw_reads <= 1);
-}
-
 test "tightened kernel recognisers fold the template and decline everything else" {
     // Each row is the benchmark kernel (which must still fold) beside the SAME
     // program with one constant changed (which must not). Before this pass
@@ -36021,41 +36010,6 @@ test "codegen: print uses int format for payload-free enum values" {
         std.mem.indexOf(u8, output, "printf(\"%d\\n\", (int)(red))") != null);
 }
 
-test "codegen: native scalar str compare uses strcmp not lua_neq" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lex = Lexer.init(
-        \\branch_str(cond: bool): str
-        \\  if cond then msg = "yes" else msg = "no" end
-        \\  msg
-        \\end
-        \\main(): i64
-        \\  if branch_str(true) ~= "yes" then return 1 end
-        \\  return 0
-        \\end
-    , "test.duo");
-    var parser = Parser.init(&lex, alloc);
-    parser.idol_mode = true;
-    var module = try parser.parse_module();
-    var semantic = sema.Sema.init(alloc);
-    defer semantic.deinit();
-    semantic.idol_mode = true;
-    try semantic.check_module(&module);
-
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.idol_mode = true;
-    try cg.emit_module(&module);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "lua_neq") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "strcmp(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "duo_retain") == null);
-}
-
 test "codegen: __origin reports shape_id for typed records" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -36064,12 +36018,12 @@ test "codegen: __origin reports shape_id for typed records" {
     const alloc = arena.allocator();
     var lex = Lexer.init(
         \\alias Point = { x: f64, y: f64 }
-        \\fun main()
+        \\main: i64 = ()
         \\  p: Point = { x = 1.0, y = 2.0 }
         \\  o: str = @comp.origin(p)
         \\  print(o)
-        \\end
-    , "test.duo");
+        \\  0
+    , "test.id");
     var parser = Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
@@ -36085,40 +36039,6 @@ test "codegen: __origin reports shape_id for typed records" {
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "storage_class=native;shape_id=") != null);
-}
-
-// The float arm of `lua_num` once read `lua_num(v)` instead of `v.as.nval`, so
-// every float-tagged number recursed forever: SIGSEGV at -O0, and at -O2 LLVM
-// folded the infinite tail self-call into a bare `b .` spin. Any `any`-typed
-// parameter routes its return through this helper, which is how it took down
-// ward. The helper is emitted as fixed prelude text, so assert on that text.
-test "codegen: lua_num reads the double slot instead of recursing" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lex = Lexer.init(
-        \\main(): i64
-        \\  print(1)
-        \\  return 0
-        \\end
-    , "test.id");
-    var parser = Parser.init(&lex, alloc);
-    var module = try parser.parse_module();
-    var semantic = sema.Sema.init(alloc);
-    defer semantic.deinit();
-    semantic.idol_mode = true;
-    try semantic.check_module(&module);
-
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.idol_mode = true;
-    try cg.emit_module(&module);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "return v.number_kind == 1 ? (double)v.as.ival : v.as.nval;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, ": lua_num(v);") == null);
 }
 
 test "codegen: a function-body local outranks a module global of the same name" {

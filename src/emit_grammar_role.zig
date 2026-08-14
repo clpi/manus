@@ -8,5 +8,5 @@ pub fn main() !void {
     var threaded = std.Io.Threaded.init(alloc, .{});
     defer threaded.deinit();
     try grammar_role_gen.emitGrammarRoleFile(alloc, threaded.io(), "lib/token/grammarrole.id");
-    std.debug.print("wrote lib/std/token/grammarrole.id\n", .{});
+    std.debug.print("wrote lib/token/grammarrole.id\n", .{});
 }

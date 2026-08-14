@@ -60,26 +60,26 @@ ssl_shutdown(ssl: any): int
 
 new_config(): any
     {
-        insecure_skip_verify = false,
-        cert_file = nil,
-        key_file = nil,
-        ca_file = nil,
-        server_name = nil,
-        min_version = "tls12",
+        insecure = false,
+        cert = nil,
+        key = nil,
+        ca = nil,
+        name = nil,
+        version = "tls12",
     }
 end
 
-config_set_cert(config: any, cert_file: str, key_file: str): void
-    config.cert_file = cert_file
-    config.key_file = key_file
+set_cert(config: any, cert: str, key: str): void
+    config.cert = cert
+    config.key = key
 end
 
-config_set_ca(config: any, ca_file: str): void
-    config.ca_file = ca_file
+set_ca(config: any, ca: str): void
+    config.ca = ca
 end
 
-config_set_server_name(config: any, name: str): void
-    config.server_name = name
+set_name(config: any, name: str): void
+    config.name = name
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -118,7 +118,7 @@ dial(host: str, port: i64, config: any): any
     ssl_set_fd(ssl, fd)
 
     # Set server name for SNI
-    if config.server_name
+    if config.name
         # Use the hostname for SNI
     end
 
@@ -212,12 +212,12 @@ https_get(url: str): any
     # Parse status
     status = tonumber(string["match"](body, "HTTP/%d+%.%d+ (%d+)")) or 0
     sep = body:find("\r\n\r\n", 1, true)
-    resp_body = body
+    out = body
     if sep
-        resp_body = body:sub(sep + 4)
+        out = body:sub(sep + 4)
     end
 
-    {body = resp_body, status = status}
+    {body = out, status = status}
 end
 
 # ═══════════════════════════════════════════════════════════════

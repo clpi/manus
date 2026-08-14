@@ -2,6 +2,7 @@
 # loops. Asserts a sum, a product and a mixed expression, so a parser that
 # ignores precedence cannot pass the third.
 # expect: 5 12 14
+# @corpus current
 eval: i64 = (src: str)
     total = 0
     term = 1
@@ -14,27 +15,17 @@ eval: i64 = (src: str)
             d = b - 48
             if op == 43
                 term = d
-            end
             if op == 42
                 term = term * d
-            end
-        end
         if b == 43
-            total = total + term
+            total += term
             op = 43
-        end
         if b == 42
             op = 42
-        end
-        i = i + 1
-    end
+        i += 1
     total + term
-end
 
-main: i64 = ()
-    a = eval("2+3")
-    b = eval("3*4")
-    c = eval("2+3*4")
-    print("{a} {b} {c}")
-    0
-end
+a = eval("2+3")
+b = eval("3*4")
+c = eval("2+3*4")
+print("{a} {b} {c}")

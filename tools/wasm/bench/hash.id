@@ -21,7 +21,7 @@
 # GAP-12: `@c.export` does not attach to a value-form binding — it degrades
 # to "use of undeclared identifier '__c_export'". The exported entry stays a
 # bare declaration until that closes; `main` uses the canonical value form.
-@c.export("run")
+@comp.c.export("run")
 run(): i32
     h: u32 = 2166136261
     i: u32 = 0

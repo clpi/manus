@@ -2,11 +2,43 @@
 // Delete when compiler root projection owns str relations (GAP-155).
 
 #include <ctype.h>
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+// One-byte intern. Character walks (`s:sub(i, i)`) must not malloc a slice
+// per index — that is how `bare` in a large gate module ran to 4.9G.
+// Delete with duo_str_sub when the graph owns str slice/index.
+static char idol_one[256][2];
+static int idol_one_ready;
+
+static void idol_one_init(void) {
+    if (idol_one_ready) return;
+    for (int c = 0; c < 256; c++) {
+        idol_one[c][0] = (char)c;
+        idol_one[c][1] = 0;
+    }
+    idol_one_ready = 1;
+}
+
+const char* idol_str_at(const char* s, int64_t i) {
+    idol_one_init();
+    if (!s || i < 1) return &idol_one[0][0];
+    int64_t k = 1;
+    const unsigned char* p = (const unsigned char*)s;
+    while (*p) {
+        if (k == i) return &idol_one[*p][0];
+        p++;
+        k++;
+    }
+    return &idol_one[0][0];
+}
+
 static char* idol_str_sub_cstr(const char* str, int64_t start, int64_t end) {
     if (!str) str = "";
+    if (start == end && start >= 1) return (char*)idol_str_at(str, start);
     int64_t len = (int64_t)strlen(str);
     if (start < 0) start = len + start + 1;
     if (end < 0) end = len + end + 1;
@@ -17,6 +49,7 @@ static char* idol_str_sub_cstr(const char* str, int64_t start, int64_t end) {
         if (e) e[0] = '\0';
         return e;
     }
+    if (start == end) return (char*)idol_str_at(str, start);
     int64_t sublen = end - start + 1;
     char* out = (char*)malloc((size_t)sublen + 1);
     if (!out) return (char*)str;
@@ -27,6 +60,25 @@ static char* idol_str_sub_cstr(const char* str, int64_t start, int64_t end) {
 
 const char* duo_str_sub(const char* s, int64_t i, int64_t j) {
     return idol_str_sub_cstr(s, i, j);
+}
+
+static __attribute__((noreturn)) void idol_str_fatal(const char* msg) {
+    fprintf(stderr, "%s\n", msg);
+    abort();
+}
+
+int64_t duo_str_to_i64(const char* s) {
+    if (!s) idol_str_fatal("to(i64): no string");
+    const char* p = s;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    char* endp = NULL;
+    errno = 0;
+    long long v = strtoll(p, &endp, 10);
+    if (endp == p) idol_str_fatal("to(i64): not a number");
+    while (*endp == ' ' || *endp == '\t' || *endp == '\n' || *endp == '\r') endp++;
+    if (*endp != '\0') idol_str_fatal("to(i64): trailing text after number");
+    if (errno == ERANGE) idol_str_fatal("to(i64): out of range");
+    return (int64_t)v;
 }
 
 #define DUO_LP_MAXCAP 32
@@ -340,6 +392,17 @@ int idol_str_has(const char* hay, const char* needle) {
     if (!hay) hay = "";
     if (!needle || needle[0] == '\0') return 0;
     return strstr(hay, needle) != NULL ? 1 : 0;
+}
+
+int64_t idol_str_find(const char* hay, const char* needle, int64_t start, int plain) {
+    if (!hay) hay = "";
+    if (!needle || needle[0] == '\0') return 0;
+    if (start < 1) start = 1;
+    size_t hlen = strlen(hay);
+    if ((size_t)(start - 1) >= hlen) return 0;
+    if (!plain) return 0;
+    const char* at = strstr(hay + (size_t)(start - 1), needle);
+    return at ? (int64_t)(at - hay + 1) : 0;
 }
 
 char* idol_str_match(const char* s, const char* pat) {

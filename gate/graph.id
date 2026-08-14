@@ -1,0 +1,371 @@
+# gate/graph - TEMPORARY MIGRATION FIREWALL for graph identity / edge closure on ADDED lines.
+#
+# Classification: TEMPORARY MIGRATION FIREWALL (GAP-124, docs/spec/canonical.md).
+# Authority: structural edge roles only; occurrence/subject/packs on
+# ApplicationFact; relation identity is the unique .binding edge; node owns
+# descriptor/demand/provenance/stage/scope; id-first query API; descriptor
+# recursion from descriptor_ref edges only.
+# Deletion condition: production semantic graph gate on staged diff (GAP-124).
+#
+# Blocks NEW graph-closure regressions on staged additions in graph owner files.
+# Gate transport: Idol only - stdin via stdin:read(). No os.args, no --backend=c.
+
+transport: str = ()
+    text = stdin:read()
+    if text:len() == 0
+        return ""
+    text
+
+scope: bool = (path: str)
+    path == "src/semantic_graph.zig" or path == "src/graph_query.zig"
+
+consumer: bool = (path: str)
+    path == "src/sim_pipeline.zig" or path == "src/knowledge_snapshot.zig" or path == "src/realization.zig" or path == "src/dnir_lower.zig"
+
+row: i64 = (path: str, no: i64, code: str, id: str, needle: str, law: str, fix: str)
+    if !code:has(needle)
+        return 0
+    print("({path}, {no}, violation, {id}, {law}, {fix})")
+    1
+
+recursion: i64 = (path: str, no: i64, code: str)
+    if code:has("classifyDescriptorRecursionFromEdges")
+        return 0
+    if code:has("classifyDescriptorRecursion(")
+        print("({path}, {no}, violation, graph.recursion, law.graph.descriptor, classifyDescriptorRecursionFromEdges + descriptor_ref edges only)")
+        return 1
+    0
+
+graphrules: i64 = (path: str, no: i64, code: str)
+    hits = 0
+    hits += row(path, no, code, "graph.name", "referencesDescriptorName", "law.graph.descriptor", "publishDescriptorRefEdges - exact descriptor ids only")
+    hits += row(path, no, code, "graph.inline", "referencesDescriptorInline", "law.graph.descriptor", "publishDescriptorRefEdges - exact descriptor ids only")
+    hits += recursion(path, no, code)
+    hits += row(path, no, code, "graph.edge.subject", ".subject =>", "law.graph.edge", "application roles live on ApplicationFact - not EdgeKind")
+    hits += row(path, no, code, "graph.edge.argument", ".argument =>", "law.graph.edge", "application roles live on ApplicationFact - not EdgeKind")
+    hits += row(path, no, code, "graph.edge.result", ".result =>", "law.graph.edge", "application roles live on ApplicationFact - not EdgeKind")
+    hits += row(path, no, code, "graph.edge.relation", "edge.kind == .relation", "law.graph.edge", "relation identity is a graph node - not an operational edge kind")
+    hits += row(path, no, code, "graph.edge.subject.use", "edge.kind == .subject", "law.graph.edge", "subject lives on ApplicationFact - not EdgeKind")
+    hits += row(path, no, code, "graph.edge.argument.use", "edge.kind == .argument", "law.graph.edge", "operands live on ApplicationFact - not EdgeKind")
+    hits += row(path, no, code, "graph.edge.result.use", "edge.kind == .result", "law.graph.edge", "results live on ApplicationFact - not EdgeKind")
+    hits += row(path, no, code, "graph.edge.subject.set", ".kind = .subject", "law.graph.edge", "forbidden operational EdgeKind - use ApplicationFact")
+    hits += row(path, no, code, "graph.edge.argument.set", ".kind = .argument", "law.graph.edge", "forbidden operational EdgeKind - use ApplicationFact")
+    hits += row(path, no, code, "graph.edge.result.set", ".kind = .result", "law.graph.edge", "forbidden operational EdgeKind - use ApplicationFact")
+    hits += row(path, no, code, "graph.edge.relation.set", ".kind = .relation", "law.graph.edge", "forbidden operational EdgeKind - relation is a node kind")
+    hits += row(path, no, code, "graph.edge.run", "EdgeKind.run", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.call", "EdgeKind.call", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.read", "EdgeKind.read", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.write", "EdgeKind.write", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.invoke", "EdgeKind.invoke", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.execute", "EdgeKind.execute", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.get", "EdgeKind.get", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.set", "EdgeKind.set", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.open", "EdgeKind.open", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.parse", "EdgeKind.parse", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.encode", "EdgeKind.encode", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.decode", "EdgeKind.decode", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.dispatch", "EdgeKind.dispatch", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.resolve", "EdgeKind.resolve", "law.graph.edge", "forbidden operational EdgeKind - application roles live on ApplicationFact")
+    hits += row(path, no, code, "graph.edge.convert", "EdgeKind.convert", "law.graph.edge", "forbidden operational EdgeKind - conversion is relation application, not an edge")
+    hits += row(path, no, code, "graph.edge.compile", "EdgeKind.compile", "law.graph.edge", "forbidden operational EdgeKind - compilation is a transformation identity, not an edge")
+    hits += row(path, no, code, "graph.edge.lower", "EdgeKind.lower", "law.graph.edge", "forbidden operational EdgeKind - lowering is realization, not an edge")
+    hits += row(path, no, code, "graph.edge.emit", "EdgeKind.emit", "law.graph.edge", "forbidden operational EdgeKind - emission is realization/provenance, not an edge")
+    hits += row(path, no, code, "graph.node.source", "    source_file,", "law.graph.node", "origin/provenance facts - not a NodeKind")
+    hits += row(path, no, code, "graph.node.concept", "    concept,", "law.graph.node", "descriptor/application constraint - not a NodeKind")
+    hits += row(path, no, code, "graph.node.comptime", "    comptime_value,", "law.graph.node", "value + stage fact - not a NodeKind")
+    hits += row(path, no, code, "graph.node.emit", "    emit_artifact,", "law.graph.node", "realization/provenance - not a NodeKind")
+    hits += row(path, no, code, "graph.node.type", "    type_node,", "law.graph.node", "members are values with descriptor facts - not a type ontology")
+    hits += row(path, no, code, "graph.edge.def", "    def,", "law.graph.edge", "binding fact - not an abbreviated def edge")
+    hits += row(path, no, code, "graph.edge.use", "    use,", "law.graph.edge", "binding edge - never a use name-recovery kind")
+    hits += row(path, no, code, "graph.query.callee", "findCallsBySource", "law.graph.query", "users(binding) / applicationRelation(occurrence) - exact ids; never recover calls from callee or method text")
+    hits += row(path, no, code, "graph.edge.home", ".kind = .home", "law.graph.edge", "homeOf → Node.scope - do not publish a second home edge")
+    hits += row(path, no, code, "graph.card.null", "effect: ?id = null", "law.fact.cardinality", "Card unknown/none/one - null is not unknown")
+    hits += row(path, no, code, "graph.tag.validity", "kind != .func and", "law.tag.authority", "callable/hasDescriptorFacts - NodeKind must not establish validity")
+    hits += row(path, no, code, "graph.contains.mut", "addEdge(.{ .from = parent, .to = entity, .kind = .contains", "law.derived.index", "appendEdge from addChild - addEdge must not mint contains")
+    hits += row(path, no, code, "graph.tag.validity.shape", "kind != .table_shape", "law.tag.authority", "hasTableDescriptorFacts - not table_shape tag")
+    hits += row(path, no, code, "graph.tag.validity.enum", "kind != .enum_shape", "law.tag.authority", "hasEnumDescriptorFacts - not enum_shape tag")
+    hits += row(path, no, code, "graph.query.entitiesOfKind", "entitiesOfKind(", "law.tag.authority", "descriptorHomes/tableDescriptorHomes - not kind scan")
+    hits += row(path, no, code, "graph.json.scope", "shapeScopeLabel", "law.graph.query", "home id - never module/inline string scope")
+    hits += row(path, no, code, "graph.json.invent", "else \"dynamic\"", "law.representation.one", "omit unknown storage - do not invent dynamic")
+    hits += row(path, no, code, "graph.json.ast", "resolveTableShapeType", "law.graph.query", "membersOf(home) - never re-resolve AST for JSON fields")
+    hits += row(path, no, code, "graph.json.ctype", ".c_type(", "law.graph.query", "member ids - never C type spellings in the graph snapshot")
+    hits += row(path, no, code, "graph.why", "explainStorageClass", "law.representation.one", "storage_class fact - never a prose why string")
+    hits += row(path, no, code, "graph.from.storage", "fromStorageClass", "law.representation.one", "knowledge from seal - storage class is not a representation producer")
+    hits += row(path, no, code, "graph.native.specialize", "sc == .native", "law.representation.one", "native fields do not mint a specialize transform")
+    hits += row(path, no, code, "graph.shape.mash", "@shape", "law.path.name", "inline table_shape identity is the graph id - never a mashed @shape name")
+    hits += row(path, no, code, "graph.desc.scan", "resolveDescriptorEntityAtLift", "law.graph.descriptor", "resolveInHome(start) - contains chain only, never a whole-graph name scan")
+    hits += row(path, no, code, "graph.json.method", ",\"method\":", "law.graph.query", "call_shapes emit relation id - never recover method text")
+    hits += row(path, no, code, "graph.json.duoname", "duo_name(", "law.graph.query", "snapshot emits exact ids - never reconstruct a descriptor spelling")
+    hits += row(path, no, code, "graph.desc.label", "descriptor_label", "law.graph.descriptor", "descriptor_ref ids - never a mashed composition label")
+    hits += row(path, no, code, "graph.edge.typeof", "    type_of,", "law.graph.edge", "descriptor edge - never type_of underscore ontology")
+    hits += row(path, no, code, "graph.edge.transform.in", "    transform_input,", "law.graph.edge", "operand/provenance on the transformation identity - not transform_input")
+    hits += row(path, no, code, "graph.tag.func", "kind != .func", "law.tag.authority", "callable from result_descriptor facts - NodeKind must not establish validity")
+    hits += row(path, no, code, "graph.tag.module", "kind == .module", "law.module.zero", "homeOf / parent.scope - not module tag")
+    hits += row(path, no, code, "graph.tag.shape", "kind != .table_shape and", "law.tag.authority", "hasDescriptorFacts - not table_shape or enum_shape tag")
+    hits += row(path, no, code, "graph.tag.enum", "kind != .enum_shape", "law.tag.authority", "hasDescriptorFacts - not enum_shape tag")
+    hits += row(path, no, code, "graph.card.null", "null is unknown", "law.fact.cardinality", "Card unknown/none/one - null must not mean unknown")
+    hits
+
+queryrules: i64 = (path: str, no: i64, code: str)
+    if path != "src/graph_query.zig"
+        return 0
+    if code:has("testing") or code:has("TestExpectedEqual")
+        return 0
+    hits = 0
+    hits += row(path, no, code, "graph.query.func", "findFunc(", "law.graph.query", "requireEntity/entity/application - exact ids only; name lookup is migration debt in semantic_graph tests")
+    hits += row(path, no, code, "graph.query.name", "findByName(", "law.graph.query", "requireEntity/entity - exact ids only")
+    hits += row(path, no, code, "graph.query.kind", "findByNameOfKind(", "law.graph.query", "descriptor(entity_id) - exact ids only")
+    hits += row(path, no, code, "graph.tag.func", "kind != .func", "law.tag.authority", "requireEntity + applicable-relation facts — NodeKind must not establish validity")
+    hits += row(path, no, code, "graph.tag.module", "kind == .module", "law.module.zero", "homeOf / member facts — not module tag")
+    hits += row(path, no, code, "graph.tag.shape", "kind != .table_shape", "law.tag.authority", "descriptor facts on entity — not table_shape or enum_shape tag")
+    hits += row(path, no, code, "graph.tag.enum", "kind != .enum_shape", "law.tag.authority", "descriptor facts on entity — not enum_shape tag")
+    hits += row(path, no, code, "graph.query.dupe", "alloc.dupe(semantic_graph.id", "law.view.zerocopy", "borrow packed graph ranges — no alloc.dupe on hot operand/result query")
+    hits += row(path, no, code, "graph.query.scan", "graph.applications()", "law.fact.locality", "applicationsIn(home) - no global application scan")
+    hits += row(path, no, code, "graph.ast.semantic", "ast_ref.?)", "law.ast.backedge", "graph facts only after publication — ast_ref is provenance not semantic authority")
+    hits += row(path, no, code, "graph.ast.field", ".ast_ref", "law.ast.backedge", "ast_ref is provenance - query must not recover meaning from AST")
+    hits += row(path, no, code, "graph.query.record", "representationForRecord", "law.representation.one", "descriptor(id) / tableShapeEntity(id) - storage class is not a representation producer")
+    hits += row(path, no, code, "graph.query.names", "eligibleFunctionNames", "law.graph.query", "functionsInModule(module) - exact ids; never a source-spelling census")
+    hits += row(path, no, code, "graph.query.hardware", "hardwareDescriptorsOfModule", "law.graph.query", "hardware is realization - not a graph query")
+    hits += row(path, no, code, "graph.query.tier", "hardwareTierConsistent", "law.graph.query", "hardware is realization - not a graph query")
+    hits
+
+producerules: i64 = (path: str, no: i64, code: str)
+    if path != "src/graph_fact_producer.zig"
+        return 0
+    hits = 0
+    hits += row(path, no, code, "graph.catalog", "catalog", "law.catalog.zero", "fact-producer registry is a second catalog - deleted; do not restore")
+    hits
+
+consumerules: i64 = (path: str, no: i64, code: str)
+    if !consumer(path)
+        return 0
+    if code:has("Migration wrapper")
+        return 0
+    hits = 0
+    hits += row(path, no, code, "graph.shape.name", "findTableShape(", "law.graph.query", "tableShapeEntity(record_id) or entitiesOfKind - SIM boundary builds id index once")
+    hits += row(path, no, code, "graph.enum.name", "findEnumShape(", "law.graph.query", "enumShapeEntity(descriptor_id) or entitiesOfKind - SIM boundary builds id index once")
+    hits += row(path, no, code, "graph.func.name", "funcResultDescriptor(", "law.graph.query", "functionResultDescriptor(id) / resolveInHome - never a whole-graph name scan")
+    hits += row(path, no, code, "graph.kind.name", "findByNameOfKind(", "law.graph.query", "tableShapeEntity(id) / resolveInHome - never a whole-graph name scan")
+    hits += row(path, no, code, "graph.ast.consumer", ".ast_ref", "law.ast.backedge", "after publication consume graph facts - ast_ref is not semantic authority")
+    hits
+
+strip: str = (line: str)
+    out = ""
+    n = line:len()
+    quote = ""
+    i = 1
+    while i <= n
+        c = line:sub(i, i)
+        closed = false
+        if quote != ""
+            if c == quote
+                quote = ""
+                closed = true
+            out = "{out} "
+        if quote == "" and !closed
+            if c == "#"
+                return out
+            if c == "\"" or c == "'"
+                quote = c
+                out = "{out} "
+            if quote == ""
+                out = "{out}{c}"
+        i += 1
+    out
+
+audit = (path: str, no: i64, line: str): i64
+    code = strip(line)
+    hits = 0
+    if scope(path)
+        hits += graphrules(path, no, code)
+        hits += queryrules(path, no, code)
+    hits += producerules(path, no, code)
+    hits += consumerules(path, no, code)
+    hits
+
+num: i64 = (s: str, i: i64)
+    v = 0
+    n = s:len()
+    j = i
+    while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
+        v *= 10
+        v += (s:byte(j) - 48)
+        j += 1
+    v
+
+head: bool = (line: str)
+    line:len() >= 6 and line:sub(1, 6) == "+++ b/"
+
+scan: i64 = (body: str)
+    hits = 0
+    path = ""
+    no = 0
+    line = ""
+    nl = string.char(10)
+    n = body:len()
+    i = 1
+    while i <= n + 1
+        c = nl
+        if i <= n
+            c = body:sub(i, i)
+        hunk = c == nl and head(line)
+        mark = c == nl and !hunk and line:len() > 2 and line:sub(1, 2) == "@@"
+        add = c == nl and !hunk and !mark and line:len() > 0 and line:sub(1, 1) == "+" and path != ""
+        if hunk
+            path = line:sub(7, line:len())
+            no = 0
+        if mark
+            p = 1
+            m = line:len()
+            while p <= m and line:sub(p, p) != "+"
+                p += 1
+            no = num(line, p + 1)
+        if add
+            hits += audit(path, no, line:sub(2, line:len()))
+            no += 1
+        if c == nl
+            line = ""
+        if c != nl
+            line = "{line}{c}"
+        i += 1
+    hits
+
+control: bool = ()
+    ok = true
+    if audit("src/semantic_graph.zig", 1, "x = referencesDescriptorName(n)") == 0
+        print("control FAIL: graph.name did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 2, "r = classifyDescriptorRecursionFromEdges(g, a, d)") != 0
+        print("control FAIL: classifyDescriptorRecursionFromEdges rejected")
+        ok = false
+    if audit("src/semantic_graph.zig", 3, "r = classifyDescriptorRecursion(g, a, d)") == 0
+        print("control FAIL: graph.recursion did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 4, "if edge.kind == .relation") == 0
+        print("control FAIL: graph.edge.relation did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 5, "try self.addEdge(.{ .kind = .capture })") != 0
+        print("control FAIL: lawful .kind = .capture rejected")
+        ok = false
+    if audit("src/semantic_graph.zig", 6, "k = EdgeKind.run") == 0
+        print("control FAIL: graph.edge.run did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 36, "k = EdgeKind.convert") == 0
+        print("control FAIL: graph.edge.convert did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 37, "k = EdgeKind.compile") == 0
+        print("control FAIL: graph.edge.compile did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 38, "k = EdgeKind.lower") == 0
+        print("control FAIL: graph.edge.lower did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 39, "k = EdgeKind.emit") == 0
+        print("control FAIL: graph.edge.emit did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 40, "k = EdgeKind.transform_output") != 0
+        print("control FAIL: lawful EdgeKind.transform_output rejected")
+        ok = false
+    if audit("src/graph_query.zig", 7, "return graph.findFunc(\"main\")") == 0
+        print("control FAIL: graph.query.func did not fire")
+        ok = false
+    if audit("src/graph_query.zig", 8, "if testing { const main = unresolved.findFunc(\"main\") }") != 0
+        print("control FAIL: graph_query test findFunc rejected")
+        ok = false
+    if audit("src/graph_fact_producer.zig", 9, "pub const catalog = [_]Ownership{") == 0
+        print("control FAIL: restored fact-producer catalog did not fire")
+        ok = false
+    if audit("src/sim_pipeline.zig", 11, "const node = graph.findTableShape(name)") == 0
+        print("control FAIL: graph.shape.name did not fire")
+        ok = false
+    if audit("src/sim_pipeline.zig", 12, "const node = graph.tableShapeEntity(record)") != 0
+        print("control FAIL: tableShapeEntity rejected in consumer")
+        ok = false
+    if audit("src/semantic_graph.zig", 13, "    source_file,") == 0
+        print("control FAIL: source_file NodeKind did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 14, "    concept,") == 0
+        print("control FAIL: concept NodeKind did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 15, "    emit_artifact,") == 0
+        print("control FAIL: emit_artifact NodeKind did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 21, "    type_node,") == 0
+        print("control FAIL: type_node NodeKind did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 16, "    type_of,") == 0
+        print("control FAIL: type_of EdgeKind did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 17, "    transform_input,") == 0
+        print("control FAIL: transform_input EdgeKind did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 18, "    def,") == 0
+        print("control FAIL: def EdgeKind did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 19, "    use,") == 0
+        print("control FAIL: use EdgeKind did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 20, "    .kind = .binding") != 0
+        print("control FAIL: lawful binding edge rejected")
+        ok = false
+    if audit("src/semantic_graph.zig", 22, "findCallsBySourceCallee(") == 0
+        print("control FAIL: source-callee recovery did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 23, "findCallsBySourceMethod(") == 0
+        print("control FAIL: source-method recovery did not fire")
+        ok = false
+    if audit("src/graph_query.zig", 24, "return representationForRecord(g, r)") == 0
+        print("control FAIL: representationForRecord did not fire")
+        ok = false
+    if audit("src/graph_query.zig", 25, "return descriptor(g, r)") != 0
+        print("control FAIL: lawful descriptor query rejected")
+        ok = false
+    if audit("src/semantic_graph.zig", 26, "try self.addEdge(.{ .kind = .home })") == 0
+        print("control FAIL: home edge publish did not fire")
+        ok = false
+    if audit("src/graph_query.zig", 27, "return hardwareDescriptorsOfModule(a, m)") == 0
+        print("control FAIL: hardwareDescriptorsOfModule did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 28, "return shapeScopeLabel(node)") == 0
+        print("control FAIL: shapeScopeLabel did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 29, "try self.requireHome(entity)") != 0
+        print("control FAIL: requireHome rejected")
+        ok = false
+    if audit("src/semantic_graph.zig", 30, "rt = resolveTableShapeType(node)") == 0
+        print("control FAIL: resolveTableShapeType did not fire")
+        ok = false
+    if audit("src/semantic_graph.zig", 31, "try self.appendMembersJson(out, alloc, shape)") != 0
+        print("control FAIL: appendMembersJson rejected")
+        ok = false
+    if audit("src/semantic_graph.zig", 32, "descriptor_label") == 0
+        print("control FAIL: descriptor_label did not fire")
+        ok = false
+    if audit("src/dnir_lower.zig", 33, "funcResultDescriptor(") == 0
+        print("control FAIL: funcResultDescriptor did not fire")
+        ok = false
+    if audit("src/dnir_lower.zig", 34, "functionResultDescriptor(") != 0
+        print("control FAIL: lawful functionResultDescriptor rejected")
+        ok = false
+    if audit("src/realization.zig", 35, "findByNameOfKind(") == 0
+        print("control FAIL: findByNameOfKind did not fire")
+        ok = false
+    ok
+
+graph: i64 = ()
+    if !control()
+        print("gate/graph: POSITIVE CONTROL FAILED")
+        return 3
+    body = transport()
+    if body:len() == 0
+        print("gate/graph: empty input - pipe unified diff on stdin")
+        print("Usage: git diff -U0 --cached -- src/semantic_graph.zig ... | idol run gate/graph.id")
+        return 3
+    total = scan(body)
+    print("")
+    print("gate/graph: {total} finding(s) on ADDED lines  [control: pass]")
+    if total > 0
+        print("")
+        print("The law: GAP-124 · docs/spec/canonical.md · scripts/proof/graph.id")
+        print("Structural edges only; ApplicationFact owns application roles; id-first queries.")
+        return 1
+    0

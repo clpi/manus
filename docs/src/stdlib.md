@@ -3,8 +3,11 @@
 This page is a projection of the Idol constitution, not an API catalog or a
 second source of language law. The sole semantic authority is
 [`docs/spec/constitution.md`](../spec/constitution.md). Canonical project source
-uses `.id`; every tracked project-owned `.id` file is SOURCE-ZERO debt that
-must be semantically migrated or deleted.
+uses `.id` and new canonical `.id` is freely admitted — it is the Idol source
+extension. Only tracked *noncanonical* `.id` content (host-shaped patterns,
+namespace dispatch, string classification, duplicate authority) is SOURCE-ZERO
+debt, migrated by repairing the pattern; the `.id` file and extension are not
+themselves debt.
 
 Idol has no canonical semantic standard-library namespace. The repository's
 physical standard distribution is migration and implementation provenance. Its

@@ -1,4 +1,4 @@
-//! Pass 8 — realization variables, candidates, degrees of freedom, deterministic planning.
+//! — realization variables, candidates, degrees of freedom, deterministic planning.
 //!
 //! Canonical owner for "what remains free" and "what was selected" (not a second graph).
 const std = @import("std");
@@ -19,41 +19,25 @@ pub const C_FLOOR_SCHEMA_VERSION = "c-floor-v0";
 pub const C_FLOOR_OBJECTIVE: semantic_algebra.Objective = .balanced;
 pub const DEFAULT_TRANSFORM_VERSION = "transform-registry-v0";
 
-/// Maps storage class to the canonical realization candidate id (P8-M1 alignment with codegen).
-pub fn candidateIdForStorageClass(sc: types.StorageClass) []const u8 {
-    return switch (sc) {
-        .native => "repr.native_aggregate",
-        .sealed => "repr.native_sealed",
-        .guarded => "repr.guarded",
-        .dynamic => "repr.dynamic_table",
-    };
-}
+/// Storage class is not the realization producer (`law.representation.one`).
+/// C-emit used these strings as a second representation catalog. Deleted.
 
-pub fn cRepresentationForStorageClass(sc: types.StorageClass) []const u8 {
-    return switch (sc) {
-        .native => "native_aggregate",
-        .sealed => "native_struct",
-        .guarded => "guarded_struct",
-        .dynamic => "lua_Table",
-    };
-}
-
-/// Semantic fingerprint for a record entity including shape identity (P8-M2 invalidation).
-pub fn fingerprintForRecordEntity(
+/// Semantic fingerprint for one exact record entity, including shape identity.
+pub fn fingerprintForRecordId(
     alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
-    record_name: []const u8,
+    record: semantic_graph.id,
     target: []const u8,
     transform_version: []const u8,
 ) !u64 {
-    const entity_id = try std.fmt.allocPrint(alloc, "duo:record:{s}", .{record_name});
-    defer alloc.free(entity_id);
+    const node = graph.tableShapeEntity(record) orelse return error.InvalidRecordEntity;
+    var id_buf: [20]u8 = undefined;
+    const entity_id = std.fmt.bufPrint(&id_buf, "{d}", .{record}) catch
+        return error.InvalidRecordEntity;
     var shape_dep: ?[]const u8 = null;
     defer if (shape_dep) |s| alloc.free(s);
-    if (graph.findTableShape(record_name)) |node| {
-        if (node.shape_id) |sid| {
-            shape_dep = try std.fmt.allocPrint(alloc, "shape:{x}", .{sid});
-        }
+    if (node.shape_id) |sid| {
+        shape_dep = try std.fmt.allocPrint(alloc, "{x}", .{sid});
     }
     return semantic_fingerprint.compute(.{
         .entity_id = entity_id,
@@ -63,34 +47,17 @@ pub fn fingerprintForRecordEntity(
     });
 }
 
-/// Log structured outcome when codegen materializes a record representation (P8 codegen bridge).
+/// C-emit bootstrap may still call this. It must not select a realization.
 pub fn logAppliedRepresentation(
     alloc: std.mem.Allocator,
     record_name: []const u8,
     sc: types.StorageClass,
     c_typedef: []const u8,
 ) void {
-    if (sc == .dynamic) return;
-    const entity = std.fmt.allocPrint(alloc, "duo:record:{s}", .{record_name}) catch return;
-    defer alloc.free(entity);
-    const candidate = candidateIdForStorageClass(sc);
-    const reason = std.fmt.allocPrint(alloc, "codegen emitted {s} as {s}; candidate {s}", .{
-        c_typedef, cRepresentationForStorageClass(sc), candidate,
-    }) catch return;
-    defer alloc.free(reason);
-    optimization_outcome.logOutcome(
-        alloc,
-        "realization.representation",
-        entity,
-        .applied,
-        if (sc == .native) .proven else .guarded,
-        .emit_call,
-        reason,
-        "repr.dynamic_table",
-        cRepresentationForStorageClass(sc),
-        0,
-        0,
-    ) catch {};
+    _ = alloc;
+    _ = record_name;
+    _ = sc;
+    _ = c_typedef;
 }
 
 pub const Dimension = enum(u8) {
@@ -203,6 +170,8 @@ pub const Candidate = struct {
 pub const Variable = struct {
     id: []const u8,
     subject_entity: []const u8,
+    /// Exact graph entity when this variable is about one resident node.
+    entity: ?semantic_graph.id = null,
     dimension: Dimension,
     candidates: []Candidate,
     selected_index: ?usize = null,
@@ -268,7 +237,7 @@ pub const SelectionResult = struct {
     }
 };
 
-/// Pass 12 — structured candidate comparison report (P12-WS4).
+/// — structured candidate comparison report (P12-WS4).
 pub const CandidateComparisonReport = struct {
     subject_entity: []const u8,
     selected_id: ?[]const u8,
@@ -530,12 +499,12 @@ pub const LOWERING_COST_FACTS_ATTACHED: usize = 0;
 pub fn loweringVariableForFunc(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
-    func_name: []const u8,
+    function: semantic_graph.id,
     objective: semantic_algebra.Objective,
 ) !Variable {
-    const subject = try entityId(alloc, "func", func_name);
+    const subject = try std.fmt.allocPrint(alloc, "{d}", .{function});
     errdefer alloc.free(subject);
-    const var_id = try std.fmt.allocPrint(alloc, "realize.lowering:{s}", .{func_name});
+    const var_id = try std.fmt.allocPrint(alloc, "{s}:{d}", .{ Dimension.lowering.name(), function });
     errdefer alloc.free(var_id);
 
     const native_ok = funcLowersNative(alloc, fd);
@@ -573,13 +542,14 @@ pub fn loweringVariableForFunc(
     try freedoms.append(alloc, .{
         .kind = .multiversion,
         .status = if (native_ok) .negotiable else .fixed_requirement,
-        .scope = try alloc.dupe(u8, func_name),
+        .scope = try std.fmt.allocPrint(alloc, "{d}", .{function}),
         .source = try alloc.dupe(u8, "law.c.floor"),
     });
 
     var var_: Variable = .{
         .id = var_id,
         .subject_entity = subject,
+        .entity = function,
         .dimension = .lowering,
         .candidates = try candidates.toOwnedSlice(alloc),
         .hard_constraints = try alloc.dupe(u8, "observable answer identical across candidates"),
@@ -601,12 +571,12 @@ pub fn buildLoweringFloor(
         for (vars.items) |*v| v.deinit(alloc);
         vars.deinit(alloc);
     }
-    for (graph.nodes.items) |*node| {
-        if (node.kind != .func) continue;
-        const name = node.name orelse continue;
+    for (graph.nodes.items, 0..) |*node, i| {
+        if (!graph.callable(@intCast(i))) continue;
         const raw = node.ast_ref orelse continue;
         const fd: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
-        try vars.append(alloc, try loweringVariableForFunc(alloc, fd, name, objective));
+        const function: semantic_graph.id = @intCast(i);
+        try vars.append(alloc, try loweringVariableForFunc(alloc, fd, function, objective));
     }
     return vars.toOwnedSlice(alloc);
 }
@@ -618,10 +588,6 @@ pub fn legalCandidateCount(var_: *const Variable) usize {
         if (c.legal) n += 1;
     }
     return n;
-}
-
-fn entityId(alloc: std.mem.Allocator, kind: []const u8, name: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(alloc, "duo:{s}:{s}", .{ kind, name });
 }
 
 fn appendCandidate(
@@ -645,73 +611,37 @@ fn appendCandidate(
         .legal = legal,
         .rejection_reason = if (reason) |r| try alloc.dupe(u8, r) else null,
         .evidence = evidence,
-        .fallback = if (!legal) try alloc.dupe(u8, "dynamic_table") else null,
+        .fallback = if (!legal) try alloc.dupe(u8, "unselected") else null,
     });
 }
 
-pub fn representationVariableForRecord(
+pub fn representationVariableForRecordId(
     alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
-    record_name: []const u8,
+    record: semantic_graph.id,
     options: struct {
         auto_select: bool = true,
     },
 ) !?Variable {
-    const node = graph.findTableShape(record_name) orelse return null;
-    const subject = try entityId(alloc, "record", record_name);
+    _ = options;
+    if (graph.tableShapeEntity(record) == null) return null;
+    const subject = try std.fmt.allocPrint(alloc, "{d}", .{record});
     errdefer alloc.free(subject);
-    const var_id = try std.fmt.allocPrint(alloc, "realize.representation:{s}", .{record_name});
+    const var_id = try std.fmt.allocPrint(alloc, "{s}:{d}", .{ Dimension.representation.name(), record });
     errdefer alloc.free(var_id);
 
-    const sc = node.storage_class orelse .dynamic;
-    const kn = semantic_algebra.KnowledgeLevel.fromStorageClass(sc);
-
-    var candidates: std.ArrayListUnmanaged(Candidate) = .empty;
-    errdefer {
-        for (candidates.items) |*c| c.deinit(alloc);
-        candidates.deinit(alloc);
-    }
-
-    try appendCandidate(alloc, &candidates, "repr.dynamic_table", "Lua table (dynamic)", "lua_Table", 100, 90, true, null, .proven);
-    try appendCandidate(alloc, &candidates, "repr.guarded", "Guarded native struct", "guarded_struct", 60, 70, kn.dominates(.guarded), if (kn.dominates(.guarded)) null else "knowledge below guarded", .guarded);
-    try appendCandidate(alloc, &candidates, "repr.native_sealed", "Sealed native struct", "native_struct", 20, 50, kn.dominates(.stable), if (kn.dominates(.stable)) null else "shape not stable/sealed", if (sc == .native) .proven else .estimated);
-    try appendCandidate(alloc, &candidates, "repr.native_aggregate", "Register/native aggregate", "native_aggregate", 10, 40, sc == .native, if (sc == .native) null else "storage_class not native", .proven);
-
-    var freedoms: std.ArrayListUnmanaged(DegreeOfFreedom) = .empty;
-    errdefer {
-        for (freedoms.items) |*f| f.deinit(alloc);
-        freedoms.deinit(alloc);
-    }
-    try freedoms.append(alloc, .{
-        .kind = .change_layout,
-        .status = if (sc == .native) .fixed_semantics else .free,
-        .scope = try alloc.dupe(u8, record_name),
-        .source = try alloc.dupe(u8, "storage_class"),
-    });
-    try freedoms.append(alloc, .{
-        .kind = .fuse,
-        .status = if (kn.dominates(.stable)) .constrained else .unknown,
-        .scope = try alloc.dupe(u8, record_name),
-        .source = try alloc.dupe(u8, "knowledge_lattice"),
-    });
-
-    var var_: Variable = .{
+    // law.representation.one: storage class does not catalog or select
+    // boxed/stack/struct/SIMD. Unknown until demand writes a realization fact.
+    return .{
         .id = var_id,
         .subject_entity = subject,
+        .entity = record,
         .dimension = .representation,
-        .candidates = try candidates.toOwnedSlice(alloc),
-        .hard_constraints = try std.fmt.allocPrint(alloc, "observable Lua semantics preserved; shape_id={?}", .{node.shape_id}),
-        .freedoms = try freedoms.toOwnedSlice(alloc),
-        .rejections = &.{},
+        .candidates = try alloc.alloc(Candidate, 0),
+        .hard_constraints = try alloc.dupe(u8, "realization unknown"),
+        .freedoms = try alloc.alloc(DegreeOfFreedom, 0),
+        .rejections = try alloc.alloc(SelectionRejection, 0),
     };
-    if (options.auto_select) {
-        var sel = try selectDeterministic(alloc, &var_);
-        var_.rejections = sel.rejections;
-        if (sel.selected_id) |sid| alloc.free(sid);
-        sel.rejections = &.{};
-        sel.deinit(alloc);
-    }
-    return var_;
 }
 
 pub fn buildDeferredFromGraph(alloc: std.mem.Allocator, graph: *const semantic_graph.SemanticGraph, file: []const u8) !ModuleRealizations {
@@ -737,15 +667,15 @@ fn buildFromGraphOptions(
         vars.deinit(alloc);
     }
 
-    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    var seen: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;
     defer seen.deinit(alloc);
 
-    for (graph.nodes.items) |*node| {
-        if (node.kind != .table_shape) continue;
-        const name = node.name orelse continue;
-        if (seen.contains(name)) continue;
-        try seen.put(alloc, name, {});
-        if (try representationVariableForRecord(alloc, graph, name, .{
+    const records = try graph.entitiesOfKind(.table_shape, alloc);
+    defer alloc.free(records);
+    for (records) |record| {
+        if (seen.contains(record)) continue;
+        try seen.put(alloc, record, {});
+        if (try representationVariableForRecordId(alloc, graph, record, .{
             .auto_select = options.auto_select,
         })) |v| {
             try vars.append(alloc, v);
@@ -848,7 +778,7 @@ fn writeVariableJson(var_: Variable, w: *std.Io.Writer) !void {
         // beside it (`selected_id`, `subject_entity`, `static_cost`) are not,
         // and are left alone because other gates read them — but H-8 makes an
         // emission graph data rendered through the taxonomy, and LAW-ONE governs
-        // the taxonomy, so new keys obey it. `choice` exists so a duon consumer
+        // the taxonomy, so new keys obey it. `choice` exists so a idol consumer
         // can read the selection without writing `selected_id` in a literal.
         try w.print(",\"why\":{{\"realize\":{{\"law\":\"law.perf.floor\",\"retained\":{s},\"choice\":\"", .{
             if (sel.baseline) "true" else "false",
@@ -924,19 +854,21 @@ test "realization: native Point selects native aggregate" {
     try semantic.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&mod, "point.id");
+    const home = try graph.liftModuleWithCalls(&mod, "point.id");
 
     var m = try buildFromGraph(alloc, &graph, "point.id");
     defer m.deinit(alloc);
     try std.testing.expect(m.variables.len >= 1);
+    const point = graph.resolveInHome(home, "Point", .table_shape) orelse
+        return error.TestExpectedEqual;
     const point_var = blk: {
         for (m.variables) |v| {
-            if (std.mem.indexOf(u8, v.subject_entity, "Point") != null) break :blk v;
+            if (v.entity == point) break :blk v;
         }
         break :blk null;
     } orelse return error.TestExpectedEqual;
-    const sel = point_var.selected() orelse return error.TestExpectedEqual;
-    try std.testing.expect(std.mem.eql(u8, sel.id, "repr.native_aggregate"));
+    try std.testing.expect(point_var.selected() == null);
+    try std.testing.expectEqual(@as(usize, 0), point_var.candidates.len);
 }
 
 test "realization: selectDeterministic is stable" {
@@ -945,7 +877,7 @@ test "realization: selectDeterministic is stable" {
     const alloc = arena.allocator();
     var var_: Variable = .{
         .id = try alloc.dupe(u8, "test"),
-        .subject_entity = try alloc.dupe(u8, "duo:record:T"),
+        .subject_entity = try alloc.dupe(u8, "1"),
         .dimension = .representation,
         .candidates = try alloc.dupe(Candidate, &.{
             .{
@@ -1007,9 +939,9 @@ test "realization: compareCandidates produces report" {
     try std.testing.expectEqualStrings("classifier.sorted_lookup", report.selected_id.?);
 }
 
-test "realization: storage class maps to planner candidate" {
-    try std.testing.expectEqualStrings("repr.native_aggregate", candidateIdForStorageClass(.native));
-    try std.testing.expectEqualStrings("repr.dynamic_table", candidateIdForStorageClass(.dynamic));
+test "realization: storage class is not a representation producer" {
+    try std.testing.expect(!@hasDecl(@This(), "candidateIdForStorageClass"));
+    try std.testing.expect(!@hasDecl(@This(), "cRepresentationForStorageClass"));
 }
 
 test "realization: deferred candidates remain lawful until deterministic extraction" {
@@ -1041,18 +973,13 @@ test "realization: deferred candidates remain lawful until deterministic extract
     var deferred = try buildDeferredFromGraph(alloc, &graph, "user.id");
     defer deferred.deinit(alloc);
     try std.testing.expect(deferred.variables.len >= 1);
-    const candidate_count = deferred.variables[0].candidates.len;
-    const legal_count = legalCandidateCount(&deferred.variables[0]);
-    try std.testing.expect(legal_count >= 2);
+    try std.testing.expectEqual(@as(usize, 0), deferred.variables[0].candidates.len);
     try std.testing.expect(deferred.variables[0].selected_index == null);
 
     var selection = try selectDeterministic(alloc, &deferred.variables[0]);
     defer selection.deinit(alloc);
-    const selected = deferred.variables[0].selected() orelse return error.TestExpectedEqual;
-    try std.testing.expect(selected.legal);
-    try std.testing.expectEqualStrings("repr.native_sealed", selected.id);
-    try std.testing.expectEqual(candidate_count, deferred.variables[0].candidates.len);
-    try std.testing.expectEqual(legal_count, legalCandidateCount(&deferred.variables[0]));
+    try std.testing.expect(selection.selected_id == null);
+    try std.testing.expect(deferred.variables[0].selected() == null);
 }
 
 // ── §47 slice: two candidates, cost by value, floor retained ─────────────────
@@ -1062,6 +989,7 @@ const CFloorFixture = struct {
     graph: semantic_graph.SemanticGraph,
     sem: @import("sema.zig").Sema,
     mod: ast.Module,
+    home: semantic_graph.id,
 
     fn init(arena: *std.heap.ArenaAllocator, src: []const u8, file: []const u8) !CFloorFixture {
         const alloc = arena.allocator();
@@ -1074,22 +1002,23 @@ const CFloorFixture = struct {
         var m = mod;
         try semantic.check_module(&m);
         var graph = semantic_graph.SemanticGraph.init(alloc);
-        _ = try graph.liftModuleWithCalls(&m, file);
-        return .{ .arena = arena, .graph = graph, .sem = semantic, .mod = m };
+        const home = try graph.liftModuleWithCalls(&m, file);
+        return .{ .arena = arena, .graph = graph, .sem = semantic, .mod = m, .home = home };
     }
 
     fn deinit(self: *CFloorFixture) void {
         self.graph.deinit();
         self.sem.deinit();
     }
-};
 
-fn findVar(vars: []Variable, id: []const u8) ?*Variable {
-    for (vars) |*v| {
-        if (std.mem.eql(u8, v.id, id)) return v;
+    fn funcVar(self: *const CFloorFixture, vars: []Variable, name: []const u8) ?*Variable {
+        const entity = self.graph.resolveInHome(self.home, name, .func) orelse return null;
+        for (vars) |*v| {
+            if (v.entity == entity) return v;
+        }
+        return null;
     }
-    return null;
-}
+};
 
 fn findCandidate(var_: *const Variable, id: []const u8) ?*const Candidate {
     for (var_.candidates) |*c| {
@@ -1110,7 +1039,7 @@ test "cfloor: law.c.floor — a native-eligible callable still carries the C bas
     defer fx.deinit();
 
     const vars = try buildLoweringFloor(alloc, &fx.graph, .balanced);
-    const v = findVar(vars, "realize.lowering:add") orelse return error.TestExpectedEqual;
+    const v = fx.funcVar(vars, "add") orelse return error.TestExpectedEqual;
     // TWO candidates, and the C-equivalent one is present on a callable the
     // direct backend can lower perfectly well. That is the whole of law.c.floor:
     // the baseline is not conditional on the native path failing.
@@ -1135,7 +1064,7 @@ test "cfloor: law.perf.floor — with no cost fact the floor is RETAINED, not gu
     defer fx.deinit();
 
     const vars = try buildLoweringFloor(alloc, &fx.graph, .balanced);
-    const v = findVar(vars, "realize.lowering:add") orelse return error.TestExpectedEqual;
+    const v = fx.funcVar(vars, "add") orelse return error.TestExpectedEqual;
     const n = findCandidate(v, "lower.native") orelse return error.TestExpectedEqual;
     const verdict = n.verdict orelse return error.TestExpectedEqual;
 
@@ -1172,7 +1101,7 @@ test "cfloor: measured facts covering the objective DO unseat the floor" {
     // the same selector that retained the floor above now moves off it. Without
     // this the retention above proves only that the selector never moves.
     const vars = try buildLoweringFloor(alloc, &fx.graph, .latency);
-    const v = findVar(vars, "realize.lowering:add") orelse return error.TestExpectedEqual;
+    const v = fx.funcVar(vars, "add") orelse return error.TestExpectedEqual;
     for (v.candidates) |*c| {
         const native = std.mem.eql(u8, c.id, "lower.native");
         c.cost.setFact(.latency, if (native) 0.9 else 1.0, .measured);
@@ -1203,7 +1132,7 @@ test "cfloor: an `any` descriptor makes native invalid and the floor is the only
     defer fx.deinit();
 
     const vars = try buildLoweringFloor(alloc, &fx.graph, .balanced);
-    const v = findVar(vars, "realize.lowering:add") orelse return error.TestExpectedEqual;
+    const v = fx.funcVar(vars, "add") orelse return error.TestExpectedEqual;
     // The candidate is still THERE — law.perf.dominance forbids forgetting it —
     // it is merely not legal.
     try std.testing.expectEqual(@as(usize, 2), v.candidates.len);
@@ -1242,8 +1171,8 @@ test "cfloor: law.perf.dominance — adding a fact does not shrink the candidate
 
     // The fact must actually DO something, or the law above is satisfied by a
     // pair of identical plans and proves nothing. Legality grows 1 -> 2.
-    const b = findVar(before.lowering, "realize.lowering:add") orelse return error.TestExpectedEqual;
-    const a = findVar(after.lowering, "realize.lowering:add") orelse return error.TestExpectedEqual;
+    const b = weak.funcVar(before.lowering, "add") orelse return error.TestExpectedEqual;
+    const a = strong.funcVar(after.lowering, "add") orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 1), legalCandidateCount(b));
     try std.testing.expectEqual(@as(usize, 2), legalCandidateCount(a));
     try std.testing.expectEqual(b.candidates.len, a.candidates.len);
@@ -1270,10 +1199,10 @@ test "cfloor: the monotonicity checker FIRES when a candidate is deleted" {
 
     // Delete the native option from the later plan — the exact shape of "a fact
     // made the compiler forget an option it had".
-    const a = findVar(after.lowering, "realize.lowering:add") orelse return error.TestExpectedEqual;
+    const a = fx.funcVar(after.lowering, "add") orelse return error.TestExpectedEqual;
     a.candidates = a.candidates[0..1];
     const finding = monotoneAgainst(&before, &after) orelse return error.TestExpectedEqual;
-    try std.testing.expectEqualStrings("realize.lowering:add", finding.variable);
+    try std.testing.expectEqualStrings(a.id, finding.variable);
     try std.testing.expectEqualStrings("lower.native", finding.missing_candidate);
 }
 
@@ -1297,7 +1226,41 @@ test "realization: fingerprint includes shape identity" {
     try semantic.check_module(&mod);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = try graph.liftModuleWithCalls(&mod, "point.id");
-    const fp = try fingerprintForRecordEntity(alloc, &graph, "Point", "native", DEFAULT_TRANSFORM_VERSION);
+    const home = try graph.liftModuleWithCalls(&mod, "point.id");
+    const point = graph.resolveInHome(home, "Point", .table_shape) orelse
+        return error.TestExpectedEqual;
+    const fp = try fingerprintForRecordId(alloc, &graph, point, "native", DEFAULT_TRANSFORM_VERSION);
     try std.testing.expect(fp != 0);
+}
+
+test "realization: same-named records fingerprint as distinct ids" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\Point: @{ x: f64, y: f64 }
+        \\main(): i64
+        \\    0
+        \\end
+    ;
+    var lex_a = @import("lexer.zig").Lexer.init(src, "a.id");
+    var parser_a = @import("parser.zig").Parser.init(&lex_a, alloc);
+    parser_a.idol_mode = true;
+    var mod_a = try parser_a.parse_module();
+    var lex_b = @import("lexer.zig").Lexer.init(src, "b.id");
+    var parser_b = @import("parser.zig").Parser.init(&lex_b, alloc);
+    parser_b.idol_mode = true;
+    var mod_b = try parser_b.parse_module();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const first = try graph.liftModuleWithCalls(&mod_a, "a.id");
+    const second = try graph.liftModuleWithCalls(&mod_b, "b.id");
+    const point_a = graph.resolveInHome(first, "Point", .table_shape) orelse
+        return error.TestExpectedEqual;
+    const point_b = graph.resolveInHome(second, "Point", .table_shape) orelse
+        return error.TestExpectedEqual;
+    try std.testing.expect(point_a != point_b);
+    const fp_a = try fingerprintForRecordId(alloc, &graph, point_a, "native", DEFAULT_TRANSFORM_VERSION);
+    const fp_b = try fingerprintForRecordId(alloc, &graph, point_b, "native", DEFAULT_TRANSFORM_VERSION);
+    try std.testing.expect(fp_a != fp_b);
 }

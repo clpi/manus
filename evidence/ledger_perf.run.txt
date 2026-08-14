@@ -1,0 +1,53 @@
+  > compile (scripts/ledger/perf.id) …
+  ok compile (93 ms — ./perf.out)
+ledger/perf: control ok
+present bench scripts/run_benchmark.id
+  Idiom-hosted kernels match reference C before any speed comparison
+  ok contract
+  ok oracle
+  ok negative
+  ok verdict
+present runtime scripts/runtime_bench.id
+  Idiom Wasm runtime measured against wasmtime with answer-checked exec axis
+  ok contract
+  ok oracle
+  ok negative
+  ok verdict
+present compilesize scripts/run_compile_size_benchmark.id
+  compile-time and artifact-size evidence for generated C vs direct native
+  miss contract: compile size benchmark
+  miss oracle: compile_size: FAIL
+  miss negative: compile_size: PASS
+  miss verdict: artifact
+present gpu scripts/run_gpu_benchmark.id
+  GPU Metal benchmark axis remains wired
+  miss contract: gpu benchmark
+  miss oracle: gpu: FAIL
+  miss negative: gpu: PASS
+  ok verdict
+present cross scripts/run_cross_benchmark.id
+  cross-language benchmark axis remains wired
+  miss contract: cross benchmark
+  miss oracle: cross: FAIL
+  miss negative: cross: PASS
+  ok verdict
+present wasm scripts/run_wasm_benchmark.id
+  wasm runtime benchmark axis remains wired
+  miss contract: wasm benchmark
+  miss oracle: wasm: FAIL
+  miss negative: wasm: PASS
+  ok verdict
+present honest scripts/run_honest_benchmark.id
+  honest benchmark axis remains wired
+  ok contract
+  miss oracle: honest: FAIL
+  miss negative: honest: PASS
+  miss verdict: no precomputation
+present ml scripts/run_ml_benchmark.id
+  ML benchmark axis remains wired
+  miss contract: ml benchmark
+  miss oracle: ml: FAIL
+  miss negative: ml: PASS
+  ok verdict
+
+ledger/perf: fail missing contracts 19

@@ -1,17 +1,15 @@
 # std.bufio — buffered I/O utilities (mirrors Go's bufio package)
 # Provides buffered readers/writers/scanners on top of std.io file handles.
 
-io_mod = io
-
-# new_reader: wrap a file handle in a buffered reader.
+# reader: wrap a file handle in a buffered reader.
 # Fields: fh (file handle), buf (string), pos (1-based cursor), err
-new_reader(fh: any, size: i64): any
+reader(fh: any, size: i64): any
     if size == nil or size <= 0 size = 4096 end
     {fh = fh, buf = "", pos = 1, size = size, err = nil}
 end
 
-# reader_fill: read more data from the underlying handle into the buffer.
-reader_fill(r: any): any
+# fill: read more data from the underlying handle into the buffer.
+fill(r: any): any
     chunk = r.fh:read(r.size)
     if chunk == nil
         r.err = "EOF"
@@ -22,8 +20,8 @@ reader_fill(r: any): any
     r
 end
 
-# reader_read_line: read one line (without trailing newline). Returns (line, ok).
-reader_read_line(r: any): any
+# line: read one line (without trailing newline). Returns (line, ok).
+line(r: any): any
     while true
         # look for newline in remaining buffer
         remaining = r.buf:sub(r.pos)
@@ -38,8 +36,8 @@ reader_read_line(r: any): any
             return line, true
         end
         # no newline yet, try to fill
-        old_len = r.buf:sub(r.pos):len()
-        reader_fill(r)
+        was = r.buf:sub(r.pos):len()
+        fill(r)
         if has(.err)(r)
             # return whatever is left
             left = r.buf:sub(r.pos)
@@ -53,10 +51,10 @@ reader_read_line(r: any): any
     return "", false
 end
 
-# reader_read_bytes: read n bytes. Returns (bytes, ok).
-reader_read_bytes(r: any, n: i64): any
+# read: read n bytes. Returns (bytes, ok).
+read(r: any, n: i64): any
     while r.buf:sub(r.pos):len() < n
-        reader_fill(r)
+        fill(r)
         if has(.err)(r)
             left = r.buf:sub(r.pos)
             if left:len() > 0
@@ -71,15 +69,15 @@ reader_read_bytes(r: any, n: i64): any
     return data, true
 end
 
-# reader_read_string: alias for read_bytes (same semantics in Duo).
-reader_read_string(r: any, n: i64): any
-    reader_read_bytes(r, n)
+# text: alias for read (same semantics in Duo).
+text(r: any, n: i64): any
+    read(r, n)
 end
 
-# reader_read_byte: read a single byte value. Returns (byte, ok).
-reader_read_byte(r: any): any
+# byte: read a single byte value. Returns (byte, ok).
+byte(r: any): any
     while r.pos > r:len().buf
-        reader_fill(r)
+        fill(r)
         if has(.err)(r) return 0, false end
     end
     b = r.buf:byte(r.pos)
@@ -87,16 +85,16 @@ reader_read_byte(r: any): any
     return b, true
 end
 
-# reader_unread_byte: move cursor back one byte.
-reader_unread_byte(r: any): any
+# unread: move cursor back one byte.
+unread(r: any): any
     if r.pos > 1 r.pos = r.pos - 1 end
     r
 end
 
-# reader_peek: peek n bytes without consuming them.
-reader_peek(r: any, n: i64): any
+# peek: peek n bytes without consuming them.
+peek(r: any, n: i64): any
     while r.buf:sub(r.pos):len() < n
-        reader_fill(r)
+        fill(r)
         if has(.err)(r) break end
     end
     r.buf:sub(r.pos, r.pos + n - 1)
@@ -104,14 +102,14 @@ end
 
 # ----- Scanner -----
 
-# new_scanner: create a scanner that splits input on a delimiter (default "\n").
-new_scanner(fh: any, delim: str): any
+# scanner: create a scanner that splits input on a delimiter (default "\n").
+scanner(fh: any, delim: str): any
     if delim == nil delim = "\n" end
     {fh = fh, buf = "", pos = 1, delim = delim, done = false, size = 4096}
 end
 
-# scanner_scan: advance to the next token. Returns true if a token is available.
-scanner_scan(s: any): bool
+# scan: advance to the next token. Returns true if a token is available.
+scan(s: any): bool
     if s.done return false end
     while true
         remaining = s.buf:sub(s.pos)
@@ -139,26 +137,26 @@ scanner_scan(s: any): bool
     false
 end
 
-# scanner_text: return the current token.
-scanner_text(s: any): str
+# token: return the current token.
+token(s: any): str
     s.token
 end
 
-# scanner_bytes: alias for scanner_text (strings ARE byte sequences in Duo).
-scanner_bytes(s: any): str
+# bytes: alias for token (strings ARE byte sequences in Duo).
+bytes(s: any): str
     s.token
 end
 
 # ----- Writer -----
 
-# new_writer: create a buffered writer wrapping a file handle.
-new_writer(fh: any, size: i64): any
+# writer: create a buffered writer wrapping a file handle.
+writer(fh: any, size: i64): any
     if size == nil or size <= 0 size = 4096 end
     {fh = fh, buf = "", size = size}
 end
 
-# writer_flush: write all buffered data to the underlying handle.
-writer_flush(w: any): any
+# flush: write all buffered data to the underlying handle.
+flush(w: any): any
     if w:len().buf > 0
         w.fh:write(w.buf)
         w.buf = ""
@@ -166,28 +164,27 @@ writer_flush(w: any): any
     w
 end
 
-# writer_write: buffer a string for later flushing.
-writer_write(w: any, s: str): any
+# write: buffer a string for later flushing.
+write(w: any, s: str): any
     w.buf = w.buf .. s
     if w:len().buf >= w.size
-        writer_flush(w)
+        flush(w)
     end
     w
 end
 
-# writer_write_byte: buffer a single byte.
-writer_write_byte(w: any, b: i64): any
+# put: buffer a single byte.
+put(w: any, b: i64): any
     w.buf = w.buf .. b:char()
     if w:len().buf >= w.size
-        writer_flush(w)
+        flush(w)
     end
     w
 end
 
-# writer_close: flush and close.
-writer_close(w: any): any
-    writer_flush(w)
+# close: flush and close.
+close(w: any): any
+    flush(w)
     w.fh:close()
     w
 end
-

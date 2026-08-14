@@ -1,35 +1,29 @@
-# Structural owner for one semantic application.
+# Application structural roles (documentation only).
 #
-# Identities are supplied by the graph. This module preserves their complete
-# shape; it does not mint, authenticate, project, or observe them.
-
-identity: {
-    meaning: i64
-    content: i64
-    incarnation: i64
-}
-
-pack: {
-    identity: identity
-    values: identity
-    labels: identity
-    positions: identity
-    descriptors: identity
-    constants: identity
-    provenance: identity
-}
-
-application: {
-    identity: identity
-    relation: identity
-    subject: identity
-    arguments: pack
-    result: pack
-    descriptor: identity
-    facts: identity
-    world: identity
-    effects: identity
-    witness: identity
-    provenance: identity
-    demand: identity
-}
+# The graph entity is identity (ID-ONE). No coordinate schema here.
+# APPLICATION-FACT-CLOSURE — one authoritative owner per dimension:
+#
+# relation     unique `.binding` edge from occurrence
+# subject      unique `.projection` at application_subject_projection
+# operands     packed application_values range (ApplicationFact.arguments)
+# results      packed application_values range (ApplicationFact.results)
+# descriptor   application node.descriptor (occurrence)
+# demand       application node.demand (occurrence)
+# effect       ApplicationFact.effect Card
+# authority    ApplicationFact.authority Card
+# witness      ApplicationFact.witness Card
+# stage        application node.stage (occurrence)
+# caller       application node.scope (home of occurrence)
+# target       ApplicationFact.target Card
+# realization  ApplicationFact.realization Card
+# provenance   application node.span / provenanceOf
+#
+# FACT-CARDINALITY-ONE: Card = unknown | none | one(id). Never ?id = null.
+#
+# Query accessors (`law.application.consumer`, `law.fact.locality`):
+# applicationRelation applicationCaller applicationSubject
+# applicationArguments applicationResults applicationDescriptor
+# applicationDemand applicationStage applicationProvenance
+# applicationsIn(home) borrowed occurrence range — never scan all applications
+# relationsReferencedBy(home) unique relation ids from that range
+# effect/authority/witness/target/realization via ApplicationFact Card fields

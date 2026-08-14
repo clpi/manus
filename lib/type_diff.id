@@ -34,7 +34,7 @@ end
 count_fields(t: any): i64
     count = 0
     for _ in t
-        count = count + 1
+        count += 1
     end
     count
 end

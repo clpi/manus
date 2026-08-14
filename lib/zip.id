@@ -67,7 +67,7 @@ list_detailed(archive_path: str): any
             if name and name != ""
                 files[files:len() + 1] = {
                     name = name,
-                    size = tonumber(size),
+                    size = size:to(i64),
                     date = date,
                     time = time,
                 }
@@ -90,8 +90,8 @@ info(archive_path: str): any
     method, compressed, ratio, flag = output:match("^%s*(%S+)%s+(%d+)%s+(%d+)%%.*$")
     return {
         path = archive_path,
-        file_count = tonumber(file_count) or 0,
-        total_size = tonumber(total_size) or 0,
+        file_count = file_count:to(i64) or 0,
+        total_size = total_size:to(i64) or 0,
     }
 end
 

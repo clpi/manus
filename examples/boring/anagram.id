@@ -1,34 +1,28 @@
 # Anagram check by byte histogram. One positive and one negative, because a
 # comparator that always answers true passes the positive alone.
 # expect: 1 0
+# @corpus current
 same: i64 = (a: str, b: str)
-    if a:len() != b:len()
-        return 0
-    end
-    count = { }
-    for i = 1, 256
-        count:push(0)
-    end
-    i = 0
-    n = a:len()
-    while i < n
-        x = a[i]
-        y = b[i]
-        count[x + 1] = count[x + 1] + 1
-        count[y + 1] = count[y + 1] - 1
-        i = i + 1
-    end
-    for c in count
-        if c != 0
-            return 0
-        end
-    end
-    1
-end
+    if a:len() == b:len()
+        count = { }
+        for i = 1, 256
+            count:push(0)
+        i = 0
+        n = a:len()
+        while i < n
+            x = a[i]
+            y = b[i]
+            count[x + 1] = count[x + 1] + 1
+            count[y + 1] = count[y + 1] - 1
+            i += 1
+        ok = 1
+        for c in count
+            if c != 0
+                ok = 0
+        ok
+    else
+        0
 
-main: i64 = ()
-    a = same("listen", "silent")
-    b = same("listen", "tinsel!")
-    print("{a} {b}")
-    0
-end
+a = same("listen", "silent")
+b = same("listen", "tinsel!")
+print("{a} {b}")

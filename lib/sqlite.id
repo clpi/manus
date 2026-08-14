@@ -330,10 +330,10 @@ query(db: any, sql: str): any
     row_idx = 1
 
     rc = sqlite3_step(stmt)
-    while rc == SQLITE_ROW do
+    while rc == SQLITE_ROW
         row = {}
         col_idx = 0
-        while col_idx < ncols do
+        while col_idx < ncols
             name = sqlite3_column_name(stmt, col_idx)
             col_type = sqlite3_column_type(stmt, col_idx)
             val = nil

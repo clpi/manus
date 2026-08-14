@@ -2,12 +2,12 @@
 # SH-03 step: a Duo lexer that lowers to native ARM64 and emits the CANONICAL
 # token kind IDs — the same ids `src/lexer.zig` uses.
 #
-# The kind ids are not invented here. They come from `lib/std/token/classify.id`
+# The kind ids are not invented here. They come from `lib/token/classify.id`
 # (SH-02, already `duo_canonical`, generated from `src/token_classify_gen.zig`)
 # via `req`, and fold to immediates at compile time — so the Duo lexer and the
 # host lexer agree on token identity by construction, not by convention.
 #
-# Why this shape rather than `lib/std/compiler/lexer.id`: that lexer's `Lexer`
+# Why this shape rather than `lib/compiler/lexer.id`: that lexer's `Lexer`
 # record has 18 fields including strings, nested records and floats, which
 # exceeds the direct backend's 8-slot register ABI for aggregates. Keeping lexer
 # state in scalars and a 3-field token record puts the whole thing inside the
@@ -96,7 +96,7 @@ nexttoken: tok = (src: str, pos: i64)
     n = src:len()
     i = pos
     while i <= n and is_space(src:byte(i)) == 1
-        i = i + 1
+        i += 1
     end
     if i > n
         return { kind = 0 - 1, start = i, len = 0 }
@@ -105,14 +105,14 @@ nexttoken: tok = (src: str, pos: i64)
     if is_alpha(c) == 1
         j = i
         while j <= n and is_alpha(src:byte(j)) == 1
-            j = j + 1
+            j += 1
         end
         return { kind = classify_word(src, i, j - i), start = i, len = j - i }
     end
     if is_digit(c) == 1
         j = i
         while j <= n and is_digit(src:byte(j)) == 1
-            j = j + 1
+            j += 1
         end
         return { kind = KIND_NUMBER, start = i, len = j - i }
     end
@@ -132,7 +132,7 @@ sum_keyword_kinds: i64 = (src: str)
             return total
         end
         if t.kind > 1
-            total = total + t.kind
+            total += t.kind
         end
         pos = t.start + t.len
     end

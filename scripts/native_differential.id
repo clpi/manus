@@ -1,7 +1,7 @@
 # Native lowering differential — the direct ARM64 backend must agree with the C
 # backend on every corpus program.
 #
-# Duo replacement for scripts/native_differential.sh (monoglot census).
+# Idol replacement for scripts/native_differential.sh (monoglot census).
 #
 # Why this exists: the direct backend's own unit tests assert that instructions
 # are *present* ("at least 3 cmp, at least 3 b."). A backend can satisfy every
@@ -19,18 +19,18 @@
 # would pass while the backend returned 3 where C returned 7. std.script.status
 # reads the real code back through a subshell, so it is used throughout.
 
-_WORK = "/tmp/duo-native-diff"
+work = "/tmp/idol-native-diff"
 
-_agree = 0
-_diverge = 0
-_failures = ""
+agree = 0
+diverge = 0
+fails = ""
 
-_fail(msg: str): void
-    _failures = _failures .. "  " .. msg .. "\n"
-    _diverge = _diverge + 1
+fail(msg: str): void
+    fails = fails .. "  " .. msg .. "\n"
+    diverge += 1
 end
 
-_env(name: str, fallback: str): str
+envval(name: str, fallback: str): str
     v = std.script.getenv_or(name)
     if v == "" return fallback end
     v
@@ -38,10 +38,10 @@ end
 
 # A miscompiled loop does not fail, it spins. Every run is bounded, and 124 is
 # the timeout marker the caller checks for.
-_bounded = ""
+bounded = ""
 
-_rc(bin: str): i64
-    std.script.status(_bounded .. bin)
+rc(bin: str): i64
+    std.script.status(bounded .. bin)
 end
 
 # gap[067] part 2. Exit status alone is structurally blind to a DROPPED EFFECT:
@@ -53,24 +53,24 @@ end
 # Newlines are folded to spaces so a one-line failure message can carry the
 # whole transcript; a divergence in line BREAKS alone is not a divergence this
 # gate is built to catch, and squeezing them keeps the report readable.
-_printed(bin: str): str
-    std.script.chomp(std.script.capture(_bounded .. bin .. " 2>/dev/null | tr '\\n' ' '"))
+outtext(bin: str): str
+    std.script.chomp(std.script.capture(bounded .. bin .. " 2>/dev/null | tr '\\n' ' '"))
 
 # The stdout half of one row's verdict. Split out so the comparison reads as
 # one fact at the call site instead of four nested lines inside the status
 # ladder.
-_judge(name: str, ctext: str, dtext: str): void
+judgeout(name: str, ctext: str, dtext: str): void
     if ctext == dtext
-        _agree = _agree + 1
+        agree += 1
     if ctext != dtext
-        _fail(name .. ": stdout differs — c=[" .. ctext .. "] direct=[" .. dtext .. "]")
+        fail(name .. ": stdout differs — c=[" .. ctext .. "] direct=[" .. dtext .. "]")
 
 # `ls` rather than a glob: an empty directory must yield nothing, not a literal
 # unexpanded pattern treated as a filename.
-_list(dir: str): any
+listfiles(dir: str): any
     out = std.script.capture("ls " .. dir .. "/*.id 2>/dev/null")
     files = {}
-    for _i, line in out:split("\n")
+    for i, line in out:split("\n")
         t = std.script.chomp(line)
         if t != ""
             files[files:len() + 1] = t
@@ -79,13 +79,12 @@ _list(dir: str): any
     files
 end
 
-_stem(path: str): str
-    b = std.script.chomp(std.script.capture("basename " .. path .. " .id"))
-    b
+stem(path: str): str
+    std.script.chomp(std.script.capture("basename " .. path .. " .id"))
 end
 
-_compile(duo: str, src: str, backend: str, out: str): bool
-    std.script.run(duo .. " compile " .. src .. " --backend=" .. backend
+compileok(idol: str, src: str, backend: str, out: str): bool
+    std.script.run(idol .. " compile " .. src .. " --backend=" .. backend
         .. " --emit exe -o " .. out .. " >/dev/null 2>&1") == 0
 end
 
@@ -105,82 +104,82 @@ end
 # The third arm is the one with teeth, and it is the arm the folder always
 # claimed was impossible.
 #
-# `known_divergent/` runs through the SAME helper, because the two folders were
+# `knowndivergent/` runs through the SAME helper, because the two folders were
 # always one question asked twice — compile both ways, compare status AND
 # stdout, say which of the three arms you landed in. They differed only in the
 # word printed and in whether a divergence blocked, and both of those are now
 # parameters. Folding them also deletes the duplicate ladder rather than adding
 # a second one.
-_frontier(duo: str, kind: str, blocks: bool, src: str): void
-    name = _stem(src)
-    base = "{_WORK}/{kind}_{name}"
+frontier(idol: str, kind: str, blocks: bool, src: str): void
+    name = stem(src)
+    base = "{work}/{kind}_{name}"
     dbin = "{base}.direct"
     cbin = "{base}.c"
-    if !_compile(duo, src, "direct", dbin)
+    if !compileok(idol, src, "direct", dbin)
         print("native_differential: {kind} (direct cannot compile) — {name}")
     else
-        if !_compile(duo, src, "c", cbin)
+        if !compileok(idol, src, "c", cbin)
             print("native_differential: {kind} compiles under direct, C cannot build it — move to native_only/ — {name}")
         else
-            d = _rc(dbin)
-            c = _rc(cbin)
-            dtext = _printed(dbin)
-            ctext = _printed(cbin)
+            d = rc(dbin)
+            c = rc(cbin)
+            dtext = outtext(dbin)
+            ctext = outtext(cbin)
             note = "c={c}/[{ctext}] direct={d}/[{dtext}]"
             if d == c and dtext == ctext
                 print("native_differential: {kind} now COMPILES and AGREES — {name} (promote it into the corpus)")
             if d != c or dtext != ctext
                 if blocks
-                    _fail("{name}: {kind} program compiled under direct and MISCOMPILED — {note}")
+                    fail("{name}: {kind} program compiled under direct and MISCOMPILED — {note}")
                 if !blocks
                     print("native_differential: known divergence — {name} ({note})")
 
 main: i64 = ()
-    duo = _env("DUO", "./zig-out/bin/idol")
-    corpus = _env("NATIVE_DIFF_CORPUS", "examples/native_differential")
-    bound = _env("NATIVE_DIFF_TIMEOUT", "10")
+    idol = envval("IDOL", envval("DUO", "./zig-out/bin/idol"))
+    corpus = envval("NATIVE_DIFF_CORPUS", "examples/native_differential")
+    bound = envval("NATIVE_DIFF_TIMEOUT", "10")
 
-    if !std.script.fs_exists(duo)
-        zig = _env("ZIG", "zig")
+    if !std.script.fs_exists(idol)
+        zig = envval("ZIG", "zig")
         if std.script.run(zig .. " build") != 0
             print("native_differential: FAIL — zig build")
             return 1
         end
     end
 
-    for _i, cand in {"timeout", "gtimeout"}
-        if _bounded == "" and std.script.chomp(std.script.capture(
+    for i, cand in {"timeout", "gtimeout"}
+        if bounded == "" and std.script.chomp(std.script.capture(
             "command -v " .. cand .. " 2>/dev/null")) != ""
-            _bounded = cand .. " " .. bound .. " "
+            bounded = cand .. " " .. bound .. " "
         end
     end
 
-    std.script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
+    std.script.run("rm -rf " .. work .. " && mkdir -p " .. work)
 
-    for _i, src in _list(corpus)
-        name = _stem(src)
-        dbin = _WORK .. "/" .. name .. ".direct"
-        cbin = _WORK .. "/" .. name .. ".c"
+    for i, src in listfiles(corpus)
+        name = stem(src)
+        dbin = work .. "/" .. name .. ".direct"
+        cbin = work .. "/" .. name .. ".c"
 
-        if !_compile(duo, src, "direct", dbin)
-            _fail(name .. ": direct backend failed to compile")
+        if !compileok(idol, src, "direct", dbin)
+            fail(name .. ": direct backend failed to compile")
         else
-            if !_compile(duo, src, "c", cbin)
-                _fail(name .. ": c backend failed to compile")
+            if !compileok(idol, src, "c", cbin)
+                fail(name .. ": c backend failed to compile")
             else
-                drc = _rc(dbin)
-                crc = _rc(cbin)
+                drc = rc(dbin)
+                crc = rc(cbin)
                 if drc == 124
-                    _fail(name .. ": direct backend HUNG (>" .. bound .. "s) — c="
+                    fail(name .. ": direct backend HUNG (>" .. bound .. "s) — c="
                         .. crc:to(str))
                 else
                     if drc != crc
-                        _fail(name .. ": c=" .. crc:to(str) .. " direct=" .. drc:to(str))
+                        fail(name .. ": c=" .. crc:to(str) .. " direct=" .. drc:to(str))
                     else
                         # gap[067]. STDOUT is the second half of the comparison
                         # and the half that catches dropped effects. Status
                         # agreement is necessary, never sufficient.
-                        _judge(name, _printed(cbin), _printed(dbin))
+                        judgeout(name, outtext(cbin), outtext(dbin))
                     end
                 end
             end
@@ -191,23 +190,23 @@ main: i64 = ()
     # oracle (it cannot compile them at all), so the expected exit status is
     # declared in the file itself as `-- expect: N`. These block like the main
     # corpus: they pin self-hosting capabilities with no differential twin.
-    for _i, src in _list(corpus .. "/native_only")
-        name = _stem(src)
+    for i, src in listfiles(corpus .. "/native_only")
+        name = stem(src)
         expected = std.script.chomp(std.script.capture(
             "sed -n 's/^-- expect: *\\([0-9][0-9]*\\).*/\\1/p' " .. src .. " | head -1"))
         if expected == ""
-            _fail(name .. ": native_only file has no '-- expect: N' header")
+            fail(name .. ": native_only file has no '-- expect: N' header")
         else
-            bin = _WORK .. "/no_" .. name
-            if !_compile(duo, src, "direct", bin)
-                _fail(name .. ": direct backend failed to compile (native_only)")
+            bin = work .. "/no_" .. name
+            if !compileok(idol, src, "direct", bin)
+                fail(name .. ": direct backend failed to compile (native_only)")
             else
-                actual = _rc(bin)
+                actual = rc(bin)
                 if actual:to(str) != expected
-                    _fail(name .. ": expected " .. expected .. ", got " .. actual:to(str)
+                    fail(name .. ": expected " .. expected .. ", got " .. actual:to(str)
                         .. " (native_only)")
                 else
-                    _agree = _agree + 1
+                    agree += 1
                 end
             end
         end
@@ -215,53 +214,31 @@ main: i64 = ()
 
     # Frontier reporting. `unsupported/` holds programs the direct backend
     # refuses to compile (a capability gap — honest, not a miscompilation).
-    # `known_divergent/` holds programs it compiles and gets WRONG; those are
+    # `knowndivergent/` holds programs it compiles and gets WRONG; those are
     # open bugs, listed every run so they stay visible instead of decaying into
     # folklore. Neither blocks on the CAPABILITY being absent: the gate exists
     # to stop regressions in what already works.
-    #
-    # gap[108]. `unsupported/` used to be listed and nothing more — the name
-    # was printed and the program was never compiled. That made the folder's
-    # own contract ("an honest capability gap, NOT a miscompilation") an
-    # assertion rather than a measurement, and the assertion was load-bearing:
-    # `g066_written_file_scope_global` sits here precisely because the direct
-    # backend once answered 3 where C answered 6, and the only thing standing
-    # between that wrong answer and a user is one precheck guard in
-    # `codegen.zig`. Delete the guard and this gate would still have printed
-    # "unsupported" and passed.
-    #
-    # So the folder is now CHECKED, and the check is the contract itself:
-    # compile each program both ways, and
-    #   * direct refuses            -> the expected state, reported, no block
-    #   * direct compiles + AGREES  -> the capability landed, promote it, no block
-    #   * direct compiles + DIVERGES-> a MISCOMPILATION, and it BLOCKS
-    # The third arm is the one that has teeth, and it is the arm the folder
-    # always claimed was impossible.
-    # STDOUT counts in both folders for the same reason it counts in the main
-    # corpus: a row whose columns differ only in what they PRINT is still
-    # divergent, and reporting it as "now AGREES — promote it" would be worse
-    # than not watching it at all.
     unsupported_count = 0
-    for _i, src in _list(corpus .. "/unsupported")
-        unsupported_count = unsupported_count + 1
-        _frontier(duo, "unsupported", true, src)
+    for i, src in listfiles(corpus .. "/unsupported")
+        unsupported_count += 1
+        frontier(idol, "unsupported", true, src)
     end
 
-    for _i, src in _list(corpus .. "/known_divergent")
-        _frontier(duo, "known_divergent", false, src)
+    for i, src in listfiles(corpus .. "/knowndivergent")
+        frontier(idol, "knowndivergent", false, src)
     end
 
-    print("native_differential: " .. _agree:to(str) .. " agree, " .. _diverge:to(str)
+    print("native_differential: " .. agree:to(str) .. " agree, " .. diverge:to(str)
         .. " diverge, " .. unsupported_count:to(str) .. " unsupported (corpus: " .. corpus .. ")")
 
-    if _diverge != 0
+    if diverge != 0
         print("native_differential: FAIL")
-        io.write(_failures)
+        io.write(fails)
         return 1
     end
     # An empty corpus passing every check is the failure mode this catches:
     # a mistyped corpus path would otherwise report a clean run.
-    if _agree == 0
+    if agree == 0
         print("native_differential: FAIL (empty corpus)")
         return 1
     end

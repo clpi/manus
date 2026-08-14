@@ -202,7 +202,7 @@ distill_self_distillation_loss(logits: any, labels: any, temperature: f64): f64
         if soft_probs[i] > 1e-10
             # Weight by hard label probability (1 for correct class, 0 for others)
             if i == labels
-                soft_loss = soft_loss - soft_probs[i]:log()
+                soft_loss -= soft_probs[i]:log()
             end
         end
         i += 1

@@ -875,7 +875,7 @@ end
 # captures nothing.
 #
 # `partial_invoke` is `_`-prefixed and unexported: it is this module's
-# private surface (Pass 57 C2), reachable only through the value `partial`
+# private surface, reachable only through the value `partial`
 # hands back.
 partial_invoke(self: any, ...): any
     joined = {}

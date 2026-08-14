@@ -5,7 +5,7 @@ scan: tok = (src: str, pos: i64)
     if i < n
         j = i
         while j < n
-            j = j + 1
+            j += 1
         end
         return { kind = 1, start = j, len = 1 }
     end

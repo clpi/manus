@@ -93,7 +93,7 @@ pub const catalog: []const CatalogEntry = &.{
     .{ .intrinsic = .ctz, .tier = .scalar, .arm64 = "rbit+clz", .duo_surface = "@ctz / @comp.bit.ctz" },
 };
 
-/// Module-level hardware descriptor — one row per intrinsic exercised (Pass 22 WS23).
+/// Module-level hardware descriptor — one row per intrinsic exercised (WS23).
 pub const Descriptor = struct {
     intrinsic: HwIntrinsic,
     tier: Tier,

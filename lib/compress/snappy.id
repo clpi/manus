@@ -218,7 +218,7 @@ read_varint(r: any): i64
     while true
         byte = r.data[r.pos]
         r.pos = r.pos + 1
-        result = result | ((byte & 0x7F) << shift)
+        result |= ((byte & 0x7F) << shift)
         shift += 7
         if (byte & 0x80) == 0 break end
     end

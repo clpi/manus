@@ -3,8 +3,8 @@
 # relation projection is not curry.
 #
 # Declaration: `to(str) = (value)` → relation to, projection str, subject value.
-# Invocation ladder (shortest unique form): value:to(str) → value:to() → value
-# when graph proves each step (INFER-ONE).
+# Invocation ladder (shortest unique form): value:to(str) → value
+# when graph proves each step (INFER-ONE). value:to() is not a canonical rung.
 #
 # expect: 17
 
@@ -15,7 +15,5 @@ to(str) = (value)
 read(i64) = (lx, b)
     lx:read(i64)(b)
 
-main: i64 = ()
-    n: i64 = 17
-    print(n:to(str))
-    0
+n: i64 = 17
+print(n:to(str))

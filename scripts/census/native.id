@@ -62,42 +62,39 @@ tonum: i64 = (out: str)
         n -= 1
     out:sub(1, n):to(i64)
 
-root = cap("git rev-parse --show-toplevel 2>/dev/null")
-
-# One shell pass. Each program is compiled with the direct backend; the three
-# buckets are printed as a single line of counts so Duo parses numbers, !# process output.
-sweep: str = ()
+sweep: str = (root: str)
     gatecap("cd '{root}' && duo=./zig-out/bin/idol; ok=0; bail=0; un=0; noent=0; for f in $(find examples -name '*.id' | grep -v compile_fail); do out=$($duo compile --backend=direct $f -o /tmp/_census.bin 2>&1); case $out in *'ok compile'*) ok=$((ok+1)); continue;; esac; case $out in *DNB*) : ;; *) noent=$((noent+1)); continue;; esac; if grep -qE '^global [A-Za-z_]* = std.compiler\\.|=.*req.*std.compiler' $f; then un=$((un+1)); else bail=$((bail+1)); fi; done; echo $ok $bail $un $noent")
 
-counts = sweep()
-if counts:len() == 0
-    print("census/native: FAIL — sweep produced no output; census did !run")
-    return 3
+census: i64 = ()
+    root = cap("git rev-parse --show-toplevel 2>/dev/null")
+    counts = sweep(root)
+    if !counts:len()
+        print("census/native: FAIL — sweep produced no output; census did !run")
+        return 3
 
-ok = tonum(counts:match("^%d+"))
-rest = counts:gsub("^%d+%s+", "")
-bail = tonum(rest:match("^%d+"))
-rest2 = rest:gsub("^%d+%s+", "")
-unreachable = tonum(rest2:match("^%d+"))
+    ok = tonum(counts:match("^%d+"))
+    rest = counts:gsub("^%d+%s+", "")
+    bail = tonum(rest:match("^%d+"))
+    rest2 = rest:gsub("^%d+%s+", "")
+    unreachable = tonum(rest2:match("^%d+"))
 
-# Positive control. A census whose numerator AND denominator are both zero
-# is broken, !perfect — the exact failure mode that made an earlier
-# language gate report a confident 0/N from a worktree.
-if ok == 0
-    print("census/native: FAIL — 0 programs compiled natively; the sweep is broken")
-    return 3
+    # Positive control. A census whose numerator AND denominator are both zero
+    # is broken, !perfect — the exact failure mode that made an earlier
+    # language gate report a confident 0/N from a worktree.
+    if ok == 0
+        print("census/native: FAIL — 0 programs compiled natively; the sweep is broken")
+        return 3
 
-reachable = ok + bail
-print("native census (--backend=direct over examples/, compile_fail excluded)")
-print("  native        {ok}   lowered to ARM64")
-print("  bail          {bail}   reachable, !yet lowered — the worklist")
-print("  unreachable   {unreachable}   C-emitter fixtures; native is !a goal for these")
-print("  reachable     {reachable}   the denominator that can reach 100%")
+    reachable = ok + bail
+    print("native census (--backend=direct over examples/, compile_fail excluded)")
+    print("  native        {ok}   lowered to ARM64")
+    print("  bail          {bail}   reachable, !yet lowered — the worklist")
+    print("  unreachable   {unreachable}   C-emitter fixtures; native is !a goal for these")
+    print("  reachable     {reachable}   the denominator that can reach 100%")
 
-floor = env("NATIVE_FLOOR") or "88"
-floor = floor:to(i64)
-if ok < floor
-    print("census/native: FAIL — native {ok} fell below the ratchet {floor}")
-    return 1
-print("census/native: PASS (native {ok} >= {floor}, {reachable - ok} reachable programs remain)")
-0
+    floor = 88
+    if ok < floor
+        print("census/native: FAIL — native {ok} fell below the ratchet {floor}")
+        return 1
+    print("census/native: PASS (native {ok} >= {floor}, {reachable - ok} reachable programs remain)")
+    0

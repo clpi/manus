@@ -1,5 +1,4 @@
 const std = @import("std");
-const lexical_identity = @import("lexical_identity.zig");
 const source_cursor = @import("source_cursor.zig");
 
 pub const Loc = source_cursor.Loc;
@@ -128,6 +127,10 @@ pub const TokenKind = enum {
     compat_long_text_lit,
 
     eof,
+    shebang,
+    comment,
+    compat_comment,
+    compat_long_comment,
 
     pub fn spelling(self: TokenKind) []const u8 {
         return switch (self) {
@@ -187,12 +190,17 @@ pub const TokenKind = enum {
             .percent_assign => "%=",
             .caret_assign => "^=",
             .eof => "<eof>",
+            .shebang => "#!",
+            .comment => "#",
+            .compat_comment => "--",
+            .compat_long_comment => "--[[",
             else => blk: {
                 const entry = @import("token_semantic.zig").entryForKind(self) orelse unreachable;
                 break :blk entry.text;
             },
         };
     }
+
 };
 
 pub const Token = struct {
@@ -223,7 +231,7 @@ pub const Lexer = struct {
     pending_hint_count: u8 = 0,
 
     /// SH-03 production dispatch. When non-null, tokens come from the DUO lexer
-    /// (lib/std/compiler/lexer.id, via src/lexer_dispatch.zig) and this
+    /// (lib/compiler/lexer.id, via src/lexer_dispatch.zig) and this
     /// struct is a cursor over that stream rather than a scanner. The host
     /// scanner below stays intact and stays the differential oracle.
     ///
@@ -238,11 +246,49 @@ pub const Lexer = struct {
     text_scratch: [8192]u8 = undefined,
     text_scratch_len: usize = 0,
 
+    /// Source-family operand (1 = canon, 2 = compat). Set once at init; later
+    /// stages consume this fact and must not re-parse the path (`law.family.one`).
+    family: i64 = 0,
+    source_law: @import("lexer_bridge.zig").SourceLaw = .unknown,
+    /// Byte-zero `#!` line published by the producer. Empty when absent.
+    shebang: []const u8 = "",
+
+    /// Test convenience. Production compile, fmt, and embed call `initFacts`
+    /// after one `sourceFacts` ingress (`law.family.one`).
     pub fn init(src: []const u8, file: []const u8) Lexer {
+        const facts = @import("lexer_bridge.zig").sourceFacts(file);
+        return initFacts(src, file, facts);
+    }
+
+    pub fn initFacts(src: []const u8, file: []const u8, facts: @import("lexer_bridge.zig").SourceFacts) Lexer {
+        return initFamilyLaw(
+            src,
+            file,
+            @import("lexer_bridge.zig").familyCode(facts),
+            facts.law,
+        );
+    }
+
+    pub fn initFamily(src: []const u8, file: []const u8, family: i64) Lexer {
+        const law: @import("lexer_bridge.zig").SourceLaw = if (family == @import("lexer_bridge.zig").family_canon)
+            .idol
+        else
+            .lua;
+        return initFamilyLaw(src, file, family, law);
+    }
+
+    pub fn initFamilyLaw(
+        src: []const u8,
+        file: []const u8,
+        family: i64,
+        source_law: @import("lexer_bridge.zig").SourceLaw,
+    ) Lexer {
         return .{
             .cursor = source_cursor.ProductionCursor.init(src, file),
             .peeked = null,
             .last_error_loc = null,
+            .family = family,
+            .source_law = source_law,
         };
     }
 
@@ -252,15 +298,42 @@ pub const Lexer = struct {
     };
 
     /// Drive this lexer from an Idol-produced, EOF-terminated token stream.
+    /// `useDuoTokens` / `duo_tokens` are bridge-death names (`law.schema.one`).
+    /// Deletion: parser consumes the producer token view directly.
     pub fn useDuoTokens(self: *Lexer, toks: []const Token) TokenStreamError!void {
         if (toks.len == 0) return TokenStreamError.EmptyTokenStream;
         if (toks[toks.len - 1].kind != .eof) return TokenStreamError.MissingEndToken;
+        var start: usize = 0;
+        if (toks.len >= 2 and toks[0].kind == .shebang) {
+            self.shebang = toks[0].text;
+            start = 1;
+        }
         self.duo_tokens = toks;
-        self.duo_index = 0;
+        self.duo_index = start;
         self.peeked = null;
+        self.harvestCommentHints();
     }
 
-    /// Whether this lexer is tokenizing through Duo rather than the host scanner.
+    /// Observe `--- @` facts already in the producer pack. Host-scanner
+    /// harvest is not a production path (`law.bridge.death`).
+    fn harvestCommentHints(self: *Lexer) void {
+        self.pending_hint_count = 0;
+        self.pending_hints = .{ null, null, null, null, null, null, null, null };
+        const toks = self.duo_tokens orelse return;
+        for (toks) |tok| {
+            if (tok.kind != .compat_comment) continue;
+            if (tok.text.len < 3) continue;
+            if (tok.text[0] != '-' or tok.text[1] != '-' or tok.text[2] != '-') continue;
+            const trimmed = std.mem.trim(u8, tok.text[3..], " \t");
+            if (trimmed.len > 0 and trimmed[0] == '@' and self.pending_hint_count < 8) {
+                self.pending_hints[self.pending_hint_count] = trimmed[1..];
+                self.pending_hint_count += 1;
+            }
+        }
+    }
+
+    /// Whether this lexer is tokenizing through the Idol producer.
+    /// Name is bridge-death (`duo_*`); delete with `useDuoTokens`.
     pub fn isDuoBacked(self: *const Lexer) bool {
         return self.duo_tokens != null;
     }
@@ -279,10 +352,17 @@ pub const Lexer = struct {
     /// host scanner, which keeps returning `.eof` rather than erroring.
     fn duo_next(self: *Lexer) Token {
         const toks = self.duo_tokens.?;
-        if (self.duo_index >= toks.len) return toks[toks.len - 1];
-        const tok = toks[self.duo_index];
-        self.duo_index += 1;
-        return tok;
+        while (self.duo_index < toks.len) {
+            const tok = toks[self.duo_index];
+            self.duo_index += 1;
+            if (tok.kind == .shebang) {
+                self.shebang = tok.text;
+                continue;
+            }
+            if (tok.kind == .comment or tok.kind == .compat_comment or tok.kind == .compat_long_comment) continue;
+            return tok;
+        }
+        return toks[toks.len - 1];
     }
 
     fn cur_loc(self: *Lexer) Loc {
@@ -324,36 +404,6 @@ pub const Lexer = struct {
             const c = self.peek_char();
             if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
                 _ = self.adv();
-            } else if (c == '#' and self.peek_char2() == '!' and self.cursor.index == 0) {
-                while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
-                    _ = self.adv();
-            } else if (c == '#' and @import("lexer_bridge.zig").isIdolSourcePath(self.cursor.file)) {
-                while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
-                    _ = self.adv();
-            } else if (c == '-' and self.peek_char2() == '-') {
-                self.cursor.bumpCol(2);
-                const level = self.long_bracket_level();
-                if (level >= 0) {
-                    try self.skip_long(@intCast(level));
-                } else {
-                    // Check for triple-dash hint comment: --- @directive
-                    const is_triple_dash = self.cursor.index < self.cursor.bytes.len and self.peek_char() == '-';
-                    if (is_triple_dash) {
-                        _ = self.adv(); // consume third '-'
-                    }
-                    const comment_start = self.cursor.index;
-                    while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
-                        _ = self.adv();
-                    // If triple-dash, check for @hint pattern
-                    if (is_triple_dash) {
-                        const comment_text = self.cursor.bytes[comment_start..self.cursor.index];
-                        const trimmed = std.mem.trim(u8, comment_text, " \t");
-                        if (trimmed.len > 0 and trimmed[0] == '@' and self.pending_hint_count < 8) {
-                            self.pending_hints[self.pending_hint_count] = trimmed[1..]; // strip '@'
-                            self.pending_hint_count += 1;
-                        }
-                    }
-                }
             } else break;
         }
     }
@@ -507,7 +557,7 @@ pub const Lexer = struct {
 
     fn read_str(self: *Lexer, quote: u8) LexError![]const u8 {
         _ = self.adv(); // opening quote
-        if (quote == '"' and lexical_identity.isCanonicalSource(self.cursor.file)) {
+        if (quote == '"' and self.family == @import("lexer_bridge.zig").family_canon) {
             const c0 = self.peek_char();
             if (c0 == '\n' or c0 == '\r') return self.readCanonicalMultiline();
         }
@@ -711,7 +761,7 @@ pub const Lexer = struct {
                 // A hex literal is a bit pattern, not a signed magnitude. Parsing it
                 // as i64 rejected every constant with the top bit set — e.g. the FNV
                 // offset basis `0xcbf29ce484222325` (14695981039346656037) in
-                // `lib/std/heap.id`, which failed the whole file with
+                // `lib/heap.id`, which failed the whole file with
                 // "lexer failed with InvalidNumber". Fall back to u64 and reinterpret.
                 if (std.fmt.parseInt(i64, text[2..], 16)) |signed| {
                     break :blk signed;
@@ -742,13 +792,52 @@ pub const Lexer = struct {
         return @import("lexer_bridge.zig").lookupKeyword(text);
     }
 
-    fn next_tok(self: *Lexer) LexError!Token {
+    /// Producer stream, including shebang/comment identities. Parser-facing
+    /// `next()` / `peek()` skip those until GAP-134 roles exist.
+    pub fn next_tok(self: *Lexer) LexError!Token {
+        if (self.cursor.index == 0 and self.peek_char() == '#' and self.peek_char2() == '!') {
+            const loc = self.cur_loc();
+            const start = self.cursor.index;
+            while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
+                _ = self.adv();
+            return Token{ .kind = .shebang, .loc = loc, .text = self.cursor.bytes[start..self.cursor.index] };
+        }
         try self.skip_ws();
         if (self.cursor.index >= self.cursor.bytes.len)
             return Token{ .kind = .eof, .loc = self.cur_loc(), .text = "" };
 
         const l = self.cur_loc();
         const c = self.peek_char();
+        if (c == '#' and self.family == @import("lexer_bridge.zig").family_canon) {
+            const start = self.cursor.index;
+            while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
+                _ = self.adv();
+            return Token{ .kind = .comment, .loc = l, .text = self.cursor.bytes[start..self.cursor.index] };
+        }
+        if (c == '-' and self.peek_char2() == '-') {
+            const start = self.cursor.index;
+            _ = self.adv();
+            _ = self.adv();
+            const level = self.long_bracket_level();
+            if (level >= 0) {
+                try self.skip_long(@intCast(level));
+                return Token{ .kind = .compat_long_comment, .loc = l, .text = self.cursor.bytes[start..self.cursor.index] };
+            }
+            const is_triple = self.cursor.index < self.cursor.bytes.len and self.peek_char() == '-';
+            if (is_triple) _ = self.adv();
+            const body = self.cursor.index;
+            while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
+                _ = self.adv();
+            if (is_triple) {
+                const comment_text = self.cursor.bytes[body..self.cursor.index];
+                const trimmed = std.mem.trim(u8, comment_text, " \t");
+                if (trimmed.len > 0 and trimmed[0] == '@' and self.pending_hint_count < 8) {
+                    self.pending_hints[self.pending_hint_count] = trimmed[1..];
+                    self.pending_hint_count += 1;
+                }
+            }
+            return Token{ .kind = .compat_comment, .loc = l, .text = self.cursor.bytes[start..self.cursor.index] };
+        }
 
         // Numbers
         if (std.ascii.isDigit(c) or (c == '.' and std.ascii.isDigit(self.peek_char2())))
@@ -765,10 +854,15 @@ pub const Lexer = struct {
             return Token{ .kind = kind, .loc = l, .text = text };
         }
 
-        // Strings — GAP-145 identities keyed by quote and source provenance.
+        // Strings — GAP-145 identities keyed by quote and the family operand.
         if (c == '\'' or c == '"') {
-            const facts = lexical_identity.sourceFacts(self.cursor.file);
-            const lit_kind = lexical_identity.classifyQuote(facts, c, false).?.tokenKind();
+            const canon = self.family == @import("lexer_bridge.zig").family_canon;
+            const lit_kind: TokenKind = if (c == '"')
+                .text_lit
+            else if (canon)
+                .bytes_lit
+            else
+                .compat_text_lit;
             const s = try self.read_str(c);
             return Token{ .kind = lit_kind, .loc = l, .text = s };
         }
@@ -778,7 +872,7 @@ pub const Lexer = struct {
             const lvl = self.long_bracket_level();
             if (lvl >= 0) {
                 const s = try self.read_long_str(@intCast(lvl));
-                return Token{ .kind = .compat_long_text_lit, .loc = l, .text = s };
+                return Token{ .kind = .compat_long_text_lit, .loc = l, .text = s, .int_val = lvl };
             }
         }
 
@@ -880,29 +974,52 @@ pub const Lexer = struct {
         };
     }
 
+    /// Parser-facing stream. Comment/shebang identities stay on the producer
+    /// (`next_tok` / Idol tokenize). GAP-145 does not admit them as parser
+    /// tokens until generated roles exist (`GAP-134`).
+    fn takeParserToken(self: *Lexer, tok: Token) ?Token {
+        switch (tok.kind) {
+            .shebang => {
+                self.shebang = tok.text;
+                return null;
+            },
+            .comment, .compat_comment, .compat_long_comment => return null,
+            else => return tok,
+        }
+    }
+
+    fn host_next(self: *Lexer) LexError!Token {
+        while (true) {
+            const tok = self.next_tok() catch |err| {
+                self.last_error_loc = self.cur_loc();
+                return err;
+            };
+            if (self.takeParserToken(tok)) |visible| {
+                if (visible.kind == .backtick and self.family == @import("lexer_bridge.zig").family_canon) {
+                    self.last_error_loc = visible.loc;
+                    return LexError.UnexpectedChar;
+                }
+                return visible;
+            }
+        }
+    }
+
     pub fn next(self: *Lexer) LexError!Token {
         if (self.peeked) |tok| {
             self.peeked = null;
             return tok;
         }
         if (self.duo_tokens != null) return self.duo_next();
-        return self.next_tok() catch |err| {
-            self.last_error_loc = self.cur_loc();
-            return err;
-        };
+        return self.host_next();
     }
 
     pub fn peek(self: *Lexer) LexError!Token {
-        if (self.peeked == null and self.duo_tokens != null) {
+        if (self.peeked) |tok| return tok;
+        if (self.duo_tokens != null) {
             self.peeked = self.duo_next();
             return self.peeked.?;
         }
-        if (self.peeked == null) {
-            self.peeked = self.next_tok() catch |err| {
-                self.last_error_loc = self.cur_loc();
-                return err;
-            };
-        }
+        self.peeked = try self.host_next();
         return self.peeked.?;
     }
 
@@ -931,26 +1048,6 @@ pub const Lexer = struct {
         self.duo_index = state.duo_index;
     }
 
-    /// Check whether a token kind is a primitive type keyword (i8..f64, bool, void, str).
-    pub fn isTypeKeyword(kind: TokenKind) bool {
-        return switch (kind) {
-            .kw_i8,
-            .kw_i16,
-            .kw_i32,
-            .kw_i64,
-            .kw_u8,
-            .kw_u16,
-            .kw_u32,
-            .kw_u64,
-            .kw_f32,
-            .kw_f64,
-            .kw_bool,
-            .kw_void,
-            .kw_str,
-            => true,
-            else => false,
-        };
-    }
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -1100,6 +1197,7 @@ test "lex: long string level 0" {
     const tok = try l.next();
     try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("hello world", tok.text);
+    try testing.expectEqual(@as(i64, 0), tok.int_val);
 }
 
 test "lex: long string level 1" {
@@ -1107,6 +1205,7 @@ test "lex: long string level 1" {
     const tok = try l.next();
     try testing.expectEqual(TokenKind.compat_long_text_lit, tok.kind);
     try testing.expectEqualStrings("content", tok.text);
+    try testing.expectEqual(@as(i64, 1), tok.int_val);
 }
 
 test "lex: long string level 1 with embedded level-0 close" {
@@ -1208,6 +1307,14 @@ test "lex: canonical hash comment on .id is skipped" {
     try testing.expectEqual(@as(i64, 42), tok.int_val);
 }
 
+test "lex: family operand not suffix decides hash comment" {
+    const bridge = @import("lexer_bridge.zig");
+    var canon = Lexer.initFamily("# note\n42", "x.lua", bridge.family_canon);
+    try testing.expectEqual(TokenKind.int_lit, (try canon.next()).kind);
+    var compat = Lexer.initFamily("# note\n42", "x.id", bridge.family_compat);
+    try testing.expectEqual(TokenKind.hash, (try compat.next()).kind);
+}
+
 test "lex: line comment is skipped" {
     var l = Lexer.init("-- ignored\n42", "test");
     const tok = try l.next();
@@ -1302,8 +1409,53 @@ test "lex: whitespace skipped" {
     try testing.expectEqual(@as(i64, 42), tok.int_val);
 }
 
-test "lex: shebang line is skipped" {
+test "lex: backtick is a reserved identity then canon refuses it" {
+    const bridge = @import("lexer_bridge.zig");
+    var producer = Lexer.initFamily("`x", "t.id", bridge.family_canon);
+    const bang = try producer.next_tok();
+    try testing.expectEqual(TokenKind.backtick, bang.kind);
+    try testing.expectEqualStrings("`", bang.text);
+    var parser = Lexer.initFamily("`x", "t.id", bridge.family_canon);
+    try testing.expectError(error.UnexpectedChar, parser.next());
+}
+
+test "lex: shebang is a distinct identity then the program" {
     var l = Lexer.init("#!/usr/bin/env duo\nprint(42)", "test");
+    const bang = try l.next_tok();
+    try testing.expectEqual(TokenKind.shebang, bang.kind);
+    try testing.expectEqualStrings("#!/usr/bin/env duo", bang.text);
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.name, tok.kind);
+    try testing.expectEqualStrings("print", tok.text);
+    try testing.expectEqual(@as(u32, 2), tok.loc.line);
+}
+
+test "lex: long dash comment is a distinct compat identity then the program" {
+    var l = Lexer.init("--[[note]]\nprint(42)", "test");
+    const note = try l.next_tok();
+    try testing.expectEqual(TokenKind.compat_long_comment, note.kind);
+    try testing.expectEqualStrings("--[[note]]", note.text);
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.name, tok.kind);
+    try testing.expectEqualStrings("print", tok.text);
+}
+
+test "lex: dash comment is a distinct compat identity then the program" {
+    var l = Lexer.init("-- note\nprint(42)", "test");
+    const note = try l.next_tok();
+    try testing.expectEqual(TokenKind.compat_comment, note.kind);
+    try testing.expectEqualStrings("-- note", note.text);
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.name, tok.kind);
+    try testing.expectEqualStrings("print", tok.text);
+    try testing.expectEqual(@as(u32, 2), tok.loc.line);
+}
+
+test "lex: comment is a distinct identity then the program" {
+    var l = Lexer.initFamily("# note\nprint(42)", "test", @import("lexer_bridge.zig").family_canon);
+    const note = try l.next_tok();
+    try testing.expectEqual(TokenKind.comment, note.kind);
+    try testing.expectEqualStrings("# note", note.text);
     const tok = try l.next();
     try testing.expectEqual(TokenKind.name, tok.kind);
     try testing.expectEqualStrings("print", tok.text);

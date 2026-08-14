@@ -44,7 +44,7 @@ pub const Contract = struct {
     parity_sites: []const SiteKind = &.{},
 };
 
-/// Pass 7: directive hardness — distinguishes preferences from requirements.
+/// directive hardness — distinguishes preferences from requirements.
 pub const Hardness = enum {
     /// Compiler may ignore (e.g. @prefer.inline, @hot).
     preference,
@@ -75,15 +75,15 @@ pub const Descriptor = struct {
     budget: BudgetClass,
     output: OutputKind,
     contract: Contract,
-    /// Minimum knowledge required on inputs (Pass 2 convergence).
+    /// Minimum knowledge required on inputs (convergence).
     min_knowledge: semantic_algebra.KnowledgeLevel = .observed,
-    /// Default cost hint for portfolio selection (Pass 2 convergence).
+    /// Default cost hint for portfolio selection (convergence).
     cost_hint: semantic_algebra.CostVector = semantic_algebra.CostVector.neutral(),
-    /// Pass 7: how strongly this directive constrains the compiler.
+    /// how strongly this directive constrains the compiler.
     hardness: Hardness = .preference,
 };
 
-/// Pass 8: classification of evidence supporting a compiler decision.
+/// classification of evidence supporting a compiler decision.
 /// Every optimization decision, assumption, and realization selection should
 /// record what KIND of evidence supports it.
 pub const Evidence = enum(u8) {
@@ -126,7 +126,7 @@ pub const ProvenanceEntry = struct {
     site: SiteKind,
     inputs_hash: u64,
     output_hash: u64,
-    /// Pass 8: what evidence supports this transformation outcome.
+    /// what evidence supports this transformation outcome.
     evidence: Evidence = .heuristic,
     /// P2/GAP-137: exact graph coordinates retained through transformation
     /// provenance so a transformed application remains traceable from
@@ -166,7 +166,7 @@ pub fn provenanceEntries() []const ProvenanceEntry {
     return provenance_log.items;
 }
 
-/// Pass 117 H-8: the provenance log is CLEARED by `setProvenanceEnabled(false)`,
+/// H-8: the provenance log is CLEARED by `setProvenanceEnabled(false)`,
 /// which a provenance run's own `defer` fires before any caller can render it.
 /// The snapshot is what survives that teardown so the state can leave the
 /// process as `(transform, site, hashes)` data instead of staying invisible.
@@ -409,7 +409,7 @@ pub fn logInternalTransform(
 
 pub const TRANSFORM_VERSION = "transform-registry-v0";
 
-/// Pass 12: structured proof record for a logged transform application.
+/// structured proof record for a logged transform application.
 pub const TransformProofLogEntry = struct {
     record: proof_carrying.TransformProofRecord,
     site: SiteKind,
@@ -836,7 +836,7 @@ pub fn isRegisteredTransform(public_name: []const u8) bool {
     return descriptor(public_name) != null;
 }
 
-/// True for Pass 2 shape algebra transforms (`shape.seal`, `shape.lift`, …).
+/// True for shape algebra transforms (`shape.seal`, `shape.lift`, …).
 pub fn isShapeTransform(public_name: []const u8) bool {
     return shapeOpFromTransformId(public_name) != null;
 }
@@ -850,12 +850,12 @@ pub fn isIterationTransform(public_name: []const u8) bool {
     return false;
 }
 
-/// True for Pass 2 call algebra transforms (`call.inline`, `call.specialize`, …).
+/// True for call algebra transforms (`call.inline`, `call.specialize`, …).
 pub fn isCallTransform(public_name: []const u8) bool {
     return callTransformFromId(public_name) != null;
 }
 
-/// True for Pass 5 cross-language ABI transforms (`abi.specialize`, …).
+/// True for cross-language ABI transforms (`abi.specialize`, …).
 pub fn isAbiTransform(public_name: []const u8) bool {
     return std.mem.eql(u8, public_name, "abi.specialize");
 }

@@ -25,35 +25,26 @@
 # two positions shows up as the wrong branch rather than as a crash.
 # expect: 42 over trunc
 
-scan: i64 = (b: i64)| error
+scan: i64 = (b: i64) | error
     if b > 63
-        return nil, "over"
-    end
+        nil, "over"
     if b > 0
-        return b, nil
-    end
+        b, nil
     nil, "trunc"
-end
 
-main: i64 = ()
-    good = "?"
-    high = "?"
-    low = "?"
-    if v, e = scan(42)
-        good = "{v}"
-    else
-        good = "err {e}"
-    end
-    if v, e = scan(99)
-        high = "ok {v}"
-    else
-        high = e
-    end
-    if v, e = scan(0)
-        low = "ok {v}"
-    else
-        low = e
-    end
-    print("{good} {high} {low}")
-    0
-end
+good = "?"
+high = "?"
+low = "?"
+if v, e = scan(42)
+    good = "{v}"
+else
+    good = "err {e}"
+if v, e = scan(99)
+    high = "ok {v}"
+else
+    high = e
+if v, e = scan(0)
+    low = "ok {v}"
+else
+    low = e
+print("{good} {high} {low}")

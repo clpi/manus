@@ -1,0 +1,42 @@
+#!/bin/sh
+# Repository hygiene gate — shell transport until repo_hygiene.id C embed stabilizes.
+set -eu
+repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$repo"
+fails=0
+
+report() {
+  if [ "$1" -eq 1 ]; then
+    printf 'repo_hygiene: FAIL — %s\n' "$2" >&2
+    fails=$((fails + 1))
+  fi
+}
+
+tracked() {
+  git ls-files "$1" 2>/dev/null | head -1 | grep -q .
+}
+
+report "$( [ -f '-' ] && echo 1 || echo 0 )" "root file '-' must be removed"
+
+for f in .all_bench_output.log .run_all_bench_cmds.sh; do
+  if tracked "$f"; then
+    report 1 "tracked scratch file $f (git rm or archive)"
+  fi
+done
+
+for pat in '*.out' '*.profraw' 'test_*.c' 'test_*.wasm'; do
+  hit="$(find . -maxdepth 1 -type f -name "$pat" 2>/dev/null | head -1 || true)"
+  if [ -n "$hit" ] && tracked "$(basename "$hit")"; then
+    report 1 "tracked root artifact $(basename "$hit")"
+  fi
+done
+
+if git ls-files --error-unmatch .agents/session/ENVELOPE.md >/dev/null 2>&1; then
+  report 1 "committed session envelope .agents/session/ENVELOPE.md"
+fi
+
+if [ "$fails" -gt 0 ]; then
+  exit 1
+fi
+printf 'repo_hygiene: pass\n'
+exit 0

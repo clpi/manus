@@ -4,7 +4,7 @@ constant_time_compare(x: str, y: str): bool
     if x:len() != y:len() return false end
     v = 0
     for i = 1, x:len()
-        v = v | (x:byte(i) ~ y:byte(i))
+        v |= (x:byte(i) ~ y:byte(i))
     end
     return v == 0
 end
@@ -16,19 +16,19 @@ end
 
 constant_time_byte_eq(x: i64, y: i64): i64
     v = x ~ y
-    v = v | (v >> 4)
-    v = v | (v >> 2)
-    v = v | (v >> 1)
+    v |= (v >> 4)
+    v |= (v >> 2)
+    v |= (v >> 1)
     return (v & 1) ~ 1
 end
 
 constant_time_eq(x: i64, y: i64): i64
     v = x ~ y
-    v = v | (v >> 16)
-    v = v | (v >> 8)
-    v = v | (v >> 4)
-    v = v | (v >> 2)
-    v = v | (v >> 1)
+    v |= (v >> 16)
+    v |= (v >> 8)
+    v |= (v >> 4)
+    v |= (v >> 2)
+    v |= (v >> 1)
     return (v & 1) ~ 1
 end
 

@@ -2,26 +2,23 @@
 # must return the original, which a shift of zero would also do, so the
 # ciphertext is asserted too.
 # expect: kdo hal
-shift: str = (s: str, by: i64)
+# @corpus current
+shift: str = (s: str, delta: i64)
+    alpha = "abcdefghijklmnopqrstuvwxyz"
     out = ""
     i = 0
     n = s:len()
     while i < n
+        ch = s:sub(i + 1, i + 1)
+        piece = ch
         b = s[i]
-        c = b
         if b >= 97 and b <= 122
-            c = 97 + (b - 97 + by) % 26
-        end
-        piece = str{ c }
+            pos = (b - 97 + delta) % 26 + 1
+            piece = alpha:sub(pos, pos)
         out = "{out}{piece}"
-        i = i + 1
-    end
+        i += 1
     out
-end
 
-main: i64 = ()
-    a = shift("hal", 3)
-    b = shift(a, 23)
-    print("{a} {b}")
-    0
-end
+a = shift("hal", 3)
+b = shift(a, 23)
+print("{a} {b}")

@@ -1,4 +1,4 @@
-gradient_descent(f: any, df: any, x0: f64, lr: f64, iterations: i64): any
+descend(f: any, df: any, x0: f64, lr: f64, iterations: i64): any
   x = x0
   history = {
     x
@@ -6,13 +6,13 @@ gradient_descent(f: any, df: any, x0: f64, lr: f64, iterations: i64): any
   i = 0
   while i < iterations
     grad = df(x)
-    x = x - lr * grad
+    x -= lr * grad
     history[history:len() + 1] = x
-    i = i + 1
+    i += 1
   end
   {
     x = x,
-    f_x = f(x),
+    fx = f(x),
     history = history,
     iterations = iterations
   }
@@ -38,20 +38,20 @@ adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, it
     grad = df(x)
     m = beta1 * m + (1 - beta1) * grad
     v = beta2 * v + (1 - beta2) * grad * grad
-    m_hat = m / (1 - beta1 ^ i)
-    v_hat = v / (1 - beta2 ^ i)
-    x = x - lr * m_hat / (v_hat:sqrt() + epsilon)
+    mh = m / (1 - beta1 ^ i)
+    vh = v / (1 - beta2 ^ i)
+    x -= lr * mh / (vh:sqrt() + epsilon)
     history[history:len() + 1] = x
-    i = i + 1
+    i += 1
   end
   {
     x = x,
-    f_x = f(x),
+    fx = f(x),
     history = history,
     iterations = iterations
   }
 end
-nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations: i64): any
+nelder(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations: i64): any
   if alpha == nil
     alpha = 1.0
   end
@@ -80,17 +80,17 @@ nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, itera
       else
         point[j] = x0[j]
       end
-      j = j + 1
+      j += 1
     end
     simplex[simplex:len() + 1] = {
       point = point,
       value = f(point)
     }
-    i = i + 1
+    i += 1
   end
   iter = 0
   while iter < iterations
-    table.sort(simplex, (a: any, b: any): any
+    simplex:sort((a: any, b: any): any
       a.value < b.value
     end)
     best = simplex[1]
@@ -102,40 +102,40 @@ nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, itera
       j = 1
       while j <= n
         centroid[i] = centroid[i] + simplex[j].point[i]
-        j = j + 1
+        j += 1
       end
       centroid[i] = centroid[i] / n
-      i = i + 1
+      i += 1
     end
     reflected = {}
     i = 1
     while i <= n
       reflected[i] = centroid[i] + alpha * (centroid[i] - worst.point[i])
-      i = i + 1
+      i += 1
     end
-    reflected_value = f(reflected)
-    if reflected_value < simplex[n].value and reflected_value >= best.value
+    rval = f(reflected)
+    if rval < simplex[n].value and rval >= best.value
       simplex[n + 1] = {
         point = reflected,
-        value = reflected_value
+        value = rval
       }
-    elseif reflected_value < best.value
+    elseif rval < best.value
       expanded = {}
       i = 1
       while i <= n
         expanded[i] = centroid[i] + gamma * (reflected[i] - centroid[i])
-        i = i + 1
+        i += 1
       end
-      expanded_value = f(expanded)
-      if expanded_value < reflected_value
+      eval = f(expanded)
+      if eval < rval
         simplex[n + 1] = {
           point = expanded,
-          value = expanded_value
+          value = eval
         }
       else
         simplex[n + 1] = {
           point = reflected,
-          value = reflected_value
+          value = rval
         }
       end
     else
@@ -143,13 +143,13 @@ nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, itera
       i = 1
       while i <= n
         contracted[i] = centroid[i] + rho * (worst.point[i] - centroid[i])
-        i = i + 1
+        i += 1
       end
-      contracted_value = f(contracted)
-      if contracted_value < worst.value
+      cval = f(contracted)
+      if cval < worst.value
         simplex[n + 1] = {
           point = contracted,
-          value = contracted_value
+          value = cval
         }
       else
         i = 2
@@ -157,74 +157,74 @@ nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, itera
           j = 1
           while j <= n
             simplex[i].point[j] = best.point[j] + sigma * (simplex[i].point[j] - best.point[j])
-            j = j + 1
+            j += 1
           end
           simplex[i].value = f(simplex[i].point)
-          i = i + 1
+          i += 1
         end
       end
     end
-    iter = iter + 1
+    iter += 1
   end
-  table.sort(simplex, (a: any, b: any): any
+  simplex:sort((a: any, b: any): any
     a.value < b.value
   end)
   {
     x = simplex[1].point,
-    f_x = simplex[1].value,
+    fx = simplex[1].value,
     iterations = iterations
   }
 end
-grid_search(f: any, ranges: any, steps: i64): any
-  grid = {}
-  for param_name, range in ranges
-    min_val = range[1]
-    max_val = range[2]
-    step_size = (max_val - min_val) / (steps - 1)
+grid(f: any, ranges: any, steps: i64): any
+  g = {}
+  for name, range in ranges
+    lo = range[1]
+    hi = range[2]
+    step = (hi - lo) / (steps - 1)
     points = {}
     i = 0
     while i < steps
-      points[points:len() + 1] = min_val + i * step_size
-      i = i + 1
+      points[points:len() + 1] = lo + i * step
+      i += 1
     end
-    grid[param_name] = points
+    g[name] = points
   end
   best = nil
-  best_value = 1000000000000000000000000000000.0
+  bestv = 1000000000000000000000000000000.0
   results = {}
-  param_names = {}
+  names = {}
   for name in ranges
-    param_names[param_names:len() + 1] = name
+    names[names:len() + 1] = name
   end
-  if param_names:len() == 1
-    for v in grid[param_names[1]]
+  if names:len() == 1
+    for v in g[names[1]]
       params = {
-        [param_names[1]] = v
+        [names[1]] = v
       }
       value = f(params)
       results[results:len() + 1] = {
         params = params,
         value = value
       }
-      if value < best_value
-        best_value = value
+      if value < bestv
+        bestv = value
         best = params
       end
     end
-  elseif param_names:len() == 2
-    for v1 in grid[param_names[1]]
-      for v2 in grid[param_names[2]]
+  elseif names:len() == 2
+    for v1 in g[names[1]]
+      for v2 in g[names[2]]
         params = {
-          [param_names[1]] = v1,
-          [param_names[2]] = v2
+          [names[1]] = v1,
+          [names[2]] = v2
         }
         value = f(params)
         results[results:len() + 1] = {
           params = params,
           value = value
         }
-        if value < best_value
-          best_value = value
+        if value < bestv
+          bestv = value
           best = params
         end
       end
@@ -232,58 +232,58 @@ grid_search(f: any, ranges: any, steps: i64): any
   end
   {
     best = best,
-    best_value = best_value,
+    bestv = bestv,
     results = results
   }
 end
-random_search(f: any, ranges: any, iterations: i64): any
+random(f: any, ranges: any, iterations: i64): any
   best = nil
-  best_value = 1000000000000000000000000000000.0
+  bestv = 1000000000000000000000000000000.0
   results = {}
   i = 0
   while i < iterations
     params = {}
-    for param_name, range in ranges
-      min_val = range[1]
-      max_val = range[2]
-      params[param_name] = min_val + math.random() * (max_val - min_val)
+    for name, range in ranges
+      lo = range[1]
+      hi = range[2]
+      params[name] = lo + math.random() * (hi - lo)
     end
     value = f(params)
     results[results:len() + 1] = {
       params = params,
       value = value
     }
-    if value < best_value
-      best_value = value
+    if value < bestv
+      bestv = value
       best = params
     end
-    i = i + 1
+    i += 1
   end
   {
     best = best,
-    best_value = best_value,
+    bestv = bestv,
     results = results
   }
 end
-line_search(f: any, x: f64, direction: f64, alpha: f64, beta: f64, max_iter: i64): f64
+line(f: any, x: f64, direction: f64, alpha: f64, beta: f64, limit: i64): f64
   if alpha == nil
     alpha = 0.5
   end
   if beta == nil
     beta = 0.8
   end
-  if max_iter == nil
-    max_iter = 20
+  if limit == nil
+    limit = 20
   end
   t = 1.0
-  f_x = f(x)
+  fx = f(x)
   i = 0
-  while i < max_iter
-    if f(x + t * direction) <= f_x + alpha * t * direction
+  while i < limit
+    if f(x + t * direction) <= fx + alpha * t * direction
       return t
     end
     t = beta * t
-    i = i + 1
+    i += 1
   end
   t
 end

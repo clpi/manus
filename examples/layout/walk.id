@@ -31,12 +31,9 @@
 
 use = (f, v) f(v)
 
-main: i64 = ()
-    deep = { a = { b = 12 } }
-    rec = { a = 3, b = 4 }
-    arg = use(.a.b, deep)
-    flat = rec.a
-    walk = deep.a.b
-    print("{arg} {flat} {walk}")
-    0
-end
+deep = { a = { b = 12 } }
+rec = { a = 3, b = 4 }
+arg = use(.a.b, deep)
+flat = rec.a
+walk = deep.a.b
+print("{arg} {flat} {walk}")

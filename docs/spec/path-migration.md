@@ -18,7 +18,12 @@ Renaming without semantic decomposition is forbidden (`abi_matrix` → `abimatri
 | `scripts/bootstrap_scan.id` | bootstrap | ledger until Idol bootstrap scan owns fact; ratchet |
 | `scripts/parser_corpus_coverage.id` | compound | `scripts/corpus/` home + `coverage.id` or merge into census owner |
 | `scripts/language_census2.id` | numeric suffix | merge into `scripts/language_census.id` or rename without suffix |
-| `scripts/duo_idiom_gate.id` | history + compound | delete when `scripts/idiomgate.id` + `gates/idiom.id` fully own |
+| `scripts/idiomgate.id` | deleted | authority is `gate/idiom.id` |
+| `scripts/duo_idiom_gate.id` | deleted | `gate/idiom.id` + `gate/build.id` own transport |
+| `scripts/semanticgate.id` | bootstrap census | delete when GAP-124 graph gate owns staged verdicts |
+| `scripts/module_surface_gate.id` | bootstrap smoke | keep until module privacy is graph fact |
+| `scripts/stdlib_embed_gate.id` | bootstrap embed | delete under GAP-157 std home migration |
+| `scripts/stdlib_correctness_gate.id` | bootstrap embed | delete under GAP-157 |
 | `scripts/run_wasm_benchmark.id` | workflow | `tools/wasm/bench/` or single operational name |
 | `scripts/run_cross_benchmark.id` | workflow | `tools/bench/` or single operational name |
 | `src/benchmark_evidence.zig` | foreign bootstrap | delete when benchmark evidence executes in Idol (GAP-090 ledger) |
@@ -26,8 +31,8 @@ Renaming without semantic decomposition is forbidden (`abi_matrix` → `abimatri
 
 ## Enforcement
 
-- **New paths:** `gates/path.id` on staged added/renamed paths — zero violations.
-- **Existing debt:** ratchet via `gates/census.id`; classify before rename.
+- **New paths:** `gate/path.id` on staged added/renamed paths — zero violations.
+- **Existing debt:** ratchet via `gate/census.id`; classify before rename.
 - **Agents:** record `PATH-SEMANTICS-BLOCKED` when decomposition is unclear; do not mint compound filenames.
 
 ## Census

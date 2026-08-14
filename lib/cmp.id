@@ -16,7 +16,7 @@ ordered(a: any, b: any): i64
 end
 
 # Guards, not `if a < b a else b end`. The endless one-liner clause must be
-# SELF-DELIMITED (Pass 64 2.2): in `a < b a` the trailing `b a` reads as
+# SELF-DELIMITED: in `a < b a` the trailing `b a` reads as
 # PARENLESS APPLICATION, so the clause was `a < b(a)` # calling the operand.
 # min(3, 7) returned `true` and max(3, 7) returned 3.
 #

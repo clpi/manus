@@ -1,5 +1,5 @@
 # @corpus current
-# Pass 100 §3 — a written `end` is accepted and DELETED (§3.4), but under
+# A written `end` is accepted and DELETED (§3.4), but under
 # layout the two renderings have to agree about the same block.
 #
 # Here they disagree. `visit` is indented as a sibling of the `if`'s body, so
@@ -9,16 +9,16 @@
 # re-nesting offside is accused of, so it is a diagnostic instead — the closer
 # must sit at its opener's column or not be written at all.
 #
-# This shape was found in tracked source (lib/std/graphics/mesh.id), where the
+# This shape was found in tracked source (lib/graphics/mesh.id), where the
 # `end`-only grammar absorbed it without a word.
 
 visit = (n: i64): i64 n
 
 walk = (n: i64, seen: i64): i64
     if n > 0
-        seen = seen + 1
+        seen += 1
     for i = 1, n
-            seen = seen + visit(i)
+            seen += visit(i)
         end
     end
     seen

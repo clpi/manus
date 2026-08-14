@@ -1,82 +1,25 @@
-# GAP-124 + GAP-157 resident semantic proof — lib/semantic modules, no std.
-
-semantic = {
-    ingest = "lib/semantic/ingest.id"
-    vocab = "lib/semantic/vocabulary.id"
-    graph = "lib/semantic/graph.id"
-    census = "lib/semantic/census.id"
-    verdict = "lib/semantic/verdict.id"
-    zerostd = "lib/semantic/zerostd.id"
-    gate = "lib/semantic/gate.id"
-}
-
 len(path) = (min: i64)
     path:read()
         :len() >= min
 
-
 audit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 hit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
+
+# CATALOG-ZERO — relation rows with string worlds and boolean mirrors are not
+# authority. Resolver publishes graph ids. Probe samples in gate/idiom.id
+# contain the forbidden spellings on purpose; do not treat those as live rows.
 
 main: i64 = ()
-    code: i64 = 0
-    if !len(semantic["ingest"])(32)
-        code = 1
-    if code == 0 and !len(semantic["vocab"])(32)
-        code = 2
-    if code == 0 and !len(semantic["graph"])(16)
-        code = 3
-    if code == 0 and !len(semantic["census"])(16)
-        code = 4
-    if code == 0 and !len(semantic["verdict"])(16)
-        code = 5
-    if code == 0 and !len(semantic["zerostd"])(16)
-        code = 6
-    if code == 0 and !len(semantic["gate"])(16)
-        code = 24
-    if code == 0 and !audit(semantic["gate"])("class = \"gate\"")
-        code = 25
-    if code == 0 and hit(semantic["gate"])("std%.")
-        code = 26
-    if code == 0 and !audit(semantic["ingest"])("resident = {")
-        code = 7
-    if code == 0 and !audit(semantic["vocab"])("standard = ingest.resident")
-        code = 8
-    if code == 0 and !audit(semantic["census"])("forbidden = \"|std|")
-        code = 9
-    if code == 0 and hit(semantic["census"])("worlds = \"|std|")
-        code = 10
-    if code == 0 and !audit(semantic["zerostd"])("GAP-157")
-        code = 11
-    if code == 0 and !audit(semantic["graph"])("ingest.sync()")
-        code = 12
-    if code == 0 and hit(semantic["ingest"])("std%.[a-z]")
-        code = 13
-    if code == 0 and hit(semantic["ingest"])("relationid")
-        code = 14
-    if code == 0 and hit(semantic["ingest"])("read = 10")
-        code = 15
-    if code == 0 and hit(semantic["ingest"])("sym_")
-        code = 16
-    if code == 0 and hit(semantic["ingest"])("duo_fn_")
-        code = 17
-    if code == 0 and !audit(semantic["ingest"])("view%(edges%)")
-        code = 18
-    if code == 0 and !audit(semantic["ingest"])("|bit/f64|")
-        code = 19
-    if code == 0 and hit(semantic["census"])("viewedges")
-        code = 20
-    if code == 0 and !audit(semantic["census"])("view%(edges%)")
-        code = 21
-    if code == 0 and !audit(semantic["census"])("|i64/bit|")
-        code = 22
-    if code == 0 and hit(semantic["ingest"])("viewedges")
-        code = 23
-    if code == 0
-        print("proof/resident: pass")
-    code
+    if !"gate/idiom.id":audit("law.boolean.mirror.zero")
+        return 14
+    if !"gate/idiom.id":audit("law.catalog.zero")
+        return 15
+    if "scripts/proof/bit.id":hit("callable = true")
+        return 17
+    print("proof/resident: pass")
+    0

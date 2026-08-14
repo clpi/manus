@@ -57,7 +57,7 @@
 # CORPUS_CLASSIFY_EMIT=1   print one `class tier ref path` row per file, which
 #                          is what regenerates docs/corpus_manifest.md.
 
-# Pass 100 spelling, 2026-08-08. The helpers used to carry `_` prefixes and the
+# Canonical spelling, 2026-08-08. The helpers used to carry `_` prefixes and the
 # reports used to be `..` ladders; both are §1 deny rows that `audit100`
 # ratchets, and this file held 58 of one and 52 of the other. The behaviour is
 # unchanged and was checked that way: the full report and the
@@ -243,7 +243,7 @@ main(): i64
     # file is excluded from it (see SELF-EXCLUSION in the header).
     #
     # The group is a SUBSHELL, not a `{ …; }` brace group: a brace in a string
-    # literal is an interpolation hole in Pass 100, and `{ cat build.zig` would
+    # literal is an interpolation hole, and `{ cat build.zig` would
     # be read as one. `( … )` groups identically for a redirect.
     shell("cd {root} && ( cat build.zig 2>/dev/null; git ls-files 'scripts/*.id' | grep -v corpus_classify | tr '\\n' '\\0' | xargs -0 cat 2>/dev/null; find .github -type f 2>/dev/null | tr '\\n' '\\0' | xargs -0 cat 2>/dev/null; ) > {haystack}")
     haybytes: i64 = to(i64)(std.script.chomp(shell("wc -c < {haystack} 2>/dev/null")))

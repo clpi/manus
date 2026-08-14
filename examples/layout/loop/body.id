@@ -1,0 +1,34 @@
+# @corpus current
+# `skip = (p) while b = :peek() and p(b) .pos += 1`. A loop is the one
+# statement with no expression spelling, so a callable whose whole body is a
+# loop can only be written this way.
+#
+# THE DEGENERATE READING IS NOT A PARSE ERROR — it is a program that compiles
+# and runs. `token_can_start_func_body` had no `while`/`for`, so `(n: i64)`
+# scanned as a GROUPING paren: `step = (n: i64)` bound the parameter name as a
+# value and the loop became a SIBLING STATEMENT at file scope. `idol check`
+# reported that clean; only the C backend failed, and only on a later line.
+#
+# Which is why the first number is the one that matters. A loop that ran as a
+# file-scope statement has already finished before `main` starts, so it prints
+#
+#   3 3 …   the loop ran at declaration time — the degenerate reading
+#   0 3 …   the loop ran when the callable was CALLED — the correct one
+#
+# and the two are indistinguishable from the final value alone. The third
+# number does the same job for `for`: 2+3+4 = 9 requires every iteration, so a
+# body that ran once prints 2 and one that never ran prints 0.
+# expect: 0 3 9
+
+tick = 0
+step = (n: i64) while tick < n tick += 1
+
+grid = 0
+xs = { 2, 3, 4 }
+fill = (t) for i, v in t grid += v
+
+before = tick
+step(3)
+after = tick
+fill(xs)
+print("{before} {after} {grid}")

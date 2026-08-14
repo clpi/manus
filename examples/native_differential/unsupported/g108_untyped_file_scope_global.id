@@ -5,7 +5,7 @@
 # `total: i64 = 0`, which the parser hands module scope as a DECLARATION, and
 # the precheck guard added for gap[066] scanned exactly two statement kinds:
 # `.local_decl` and `.global_decl`. This program spells the same binding
-# `total = 5`. There is no `local` / `var` keyword in duon, so with the type
+# `total = 5`. There is no `local` / `var` keyword in idol, so with the type
 # annotation gone there is no declaration left to parse — module scope gets an
 # `.assign`, the same node `total = 8` produces inside `main`. The guard saw
 # nothing and the program ran natively:

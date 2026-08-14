@@ -1,4 +1,4 @@
-//! Pass 25 §5.1 — tail-demand propagation (AST resolution, no backward local search).
+//! §5.1 — tail-demand propagation (AST resolution, no backward local search).
 const std = @import("std");
 const ast = @import("ast.zig");
 const tail_result_model = @import("tail_result_model.zig");
@@ -41,7 +41,7 @@ pub fn demandFromRetType(ret: ast.TypeExpr) ResultDemand {
     };
 }
 
-/// Tail result expression only (legacy sema / Pass 23 hook).
+/// Tail result expression only (legacy sema / hook).
 pub fn blockTailResultExpr(blk: *const ast.Block) ?*ast.Expr {
     return if (blockTailResult(blk)) |r| r.expr else null;
 }
@@ -163,7 +163,7 @@ fn isDiscardCall(expr: *const ast.Expr) bool {
 /// void-ness rather than call-ness. Only a callee KNOWN to yield nothing is
 /// transparent; everything else is the result. `print` is the built-in floor;
 /// callers holding signatures widen it through `voidOracle`.
-fn isVoidShapedCall(expr: *const ast.Expr) bool {
+pub fn isVoidShapedCall(expr: *const ast.Expr) bool {
     if (expr.* != .call) return false;
     const callee = expr.call.func;
     if (callee.* == .name and std.mem.eql(u8, callee.name.ident, "print")) return true;

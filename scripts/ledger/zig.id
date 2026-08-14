@@ -2,7 +2,7 @@
 #
 # scripts/census/language proves the count is bounded. This file prints the exact
 # tracked bootstrap files, including build.zig, so the remaining queue is
-# inspectable from duon.
+# inspectable from idol.
 
 capture: str = (shellline: str)
     gatecap(shellline)
@@ -92,26 +92,27 @@ show: i64 = (name: str, files: any)
             print("  {files[i]}")
     count
 
-root = cap("git rev-parse --show-toplevel 2>/dev/null")
-if root == ""
-    print("ledger/zig: fail no git root")
-    return 3
+main: i64 = ()
+    root = cap("git rev-parse --show-toplevel 2>/dev/null")
+    if root == ""
+        print("ledger/zig: fail no git root")
+        return 3
 
-cmd = "cd '{root}' && git ls-files 'build.zig' 'src/*.zig' | sort"
-files = lines(capture(cmd))
-count = files:len()
-bad = control()
-if count == 0
-    print("ledger/zig: pass tracked zig 0")
-    return bad
+    cmd = "cd '{root}' && git ls-files 'build.zig' 'src/*.zig' | sort"
+    files = lines(capture(cmd))
+    count = files:len()
+    bad = control()
+    if count == 0
+        print("ledger/zig: pass tracked zig 0")
+        return bad
 
-print("ledger/zig: fail tracked zig {count}")
-show("build", files)
-show("front", files)
-show("back", files)
-show("native", files)
-show("wasm", files)
-show("semantic", files)
-show("test", files)
-show("support", files)
-1
+    print("ledger/zig: fail tracked zig {count}")
+    show("build", files)
+    show("front", files)
+    show("back", files)
+    show("native", files)
+    show("wasm", files)
+    show("semantic", files)
+    show("test", files)
+    show("support", files)
+    1

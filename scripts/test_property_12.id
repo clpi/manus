@@ -78,7 +78,7 @@ main: i64 = ()
             .. "    printf(\"%lld\\n\", (long long)(p" .. si .. " << s" .. si .. "));\n"
             .. "    printf(\"%lld\\n\", (long long)(p" .. si .. " >> s" .. si .. "));\n"
 
-        i = i + 1
+        i += 1
     end
 
     c = c .. "    return 0;\n}\n"

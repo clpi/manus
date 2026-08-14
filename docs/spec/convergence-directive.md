@@ -144,8 +144,9 @@ foreign linkage evidence. Missing semantic id/fact: **FAIL CLOSED**.
 
 ## 10. One fact producer
 
-Machine-readable ledger: `lib/semantic/producer.id`. Multiple authoritative producers
-or consumer reconstruction: **MERGE BLOCK**.
+Producer ownership lives in this directive and `docs/spec/convergence-contract.md`
+until graph queries exist. `lib/semantic/producer.id` is deleted (`law.catalog.zero`).
+Multiple authoritative producers or consumer reconstruction: **MERGE BLOCK**.
 
 ---
 

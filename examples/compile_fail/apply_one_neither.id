@@ -11,7 +11,7 @@
 # name is". A guess has no value to compare against — it has an ANSWER, and the
 # answer is wrong. So the pin has to be the diagnostic.
 #
-# The negative twin of `examples/apply_one_pack_proof.id`. That file's rows
+# The negative twin of `examples/pack/apply.id`. That file's rows
 # all have a subject that resolves; this one has a subject that resolves to
 # nothing, and the two must be read together. Either alone passes under a
 # compiler that had simply picked one reading for every brace.

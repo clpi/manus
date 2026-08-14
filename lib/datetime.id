@@ -296,15 +296,15 @@ end
 # We pre-declare variables so the codegen emits proper C declarations.
 
 dt_parse_digit2(s: str, pos: any): any
-    val = tonumber(s:sub(pos, pos)) * 10 + tonumber(s:sub(pos + 1, pos + 1))
+    val = s:sub(pos, pos):to(i64) * 10 + s:sub(pos + 1, pos + 1):to(i64)
     return val, pos + 2
 end
 
 dt_parse_digit4(s: str, pos: any): any
-    val = tonumber(s:sub(pos, pos)) * 1000
-    val += tonumber(s:sub(pos + 1, pos + 1)) * 100
-    val += tonumber(s:sub(pos + 2, pos + 2)) * 10
-    val += tonumber(s:sub(pos + 3, pos + 3))
+    val = s:sub(pos, pos):to(i64) * 1000
+    val += s:sub(pos + 1, pos + 1):to(i64) * 100
+    val += s:sub(pos + 2, pos + 2):to(i64) * 10
+    val += s:sub(pos + 3, pos + 3):to(i64)
     return val, pos + 4
 end
 

@@ -41,10 +41,6 @@ pub fn sourceFacts(path: []const u8) bridge.SourceFacts {
     return bridge.sourceFacts(path);
 }
 
-pub fn isCanonicalSource(path: []const u8) bool {
-    return sourceFacts(path).provenance == .canonical;
-}
-
 pub fn classifyQuote(facts: SourceFacts, quote: u8, long_string: bool) ?LiteralKind {
     if (long_string) return .compat_long_text;
     return switch (quote) {

@@ -10,24 +10,74 @@ the ignored `.agents/session/` state or in evidence from an exact run.
 |---|---|
 | Semantic law | `docs/spec/constitution.md` only |
 | Executed compiler frontier | `docs/bootstrap.md`, verified against production dispatch |
-| Live claims and leases | `.agents/session/`, accessed through MCP claim tools |
+| Live claims and leases | `.agents/session/claims/` (MCP mkdir locks; TTL 14400s), accessed through MCP claim tools |
 | Open obligations | `gaps/GAP-0NN.md`; session-start census remains `GAP-131` debt |
 | Performance evidence | `docs/performance.md` |
 | Source-family classification | `docs/spec/corpus.md` |
 | Source/home/package/world closure | `docs/spec/source.md` |
 | Historical changes | Git history |
 
+**Live control plane (`law.control.derived`):** do not read HEAD, dirty, or
+lane holders from this file. Obtain them from `git`, `.agents/session/claims/`,
+`scripts/ledger/claim.id`, and `tools/node/dev/orient`. This file names
+durable lane *roles* only.
+
+No string-world / relation catalogs. Storage class is not a representation
+producer. Family is a tokenize operand; `suffix(file)` is deleted. Production
+compile/fmt/embed use `sourceFacts` then `initFacts`. Do not report metrics
+“at HEAD” unless the measured subject equals the live tree
+(`law.evidence.subject`).
+
+**Eight production lanes** (35 realization risks fold here — not new reports).
+Designated long-term owners: Devin = 1–2, Codex = 3, Poolside = 4–7, Cursor =
+8 + interim when a designated owner is absent. **Acquire the claim file
+before editing.** Lane labels here are not locks.
+
+| # | Lane | Owns |
+|---|---|---|
+| 1 | Ingress + lexical SHC | source-family, GAP-145, token schema/magic/ordinals, bridge copies, oracle bound |
+| 2 | Grammar + parser SHC | GAP-134, roles, immutable token view, Idol parser |
+| 3 | Resolver + graph | exact binding, ontology, application facts, world/effect/witness, lineage |
+| 4 | Demand + realization choice | demand, **REPRESENTATION-ONE**, specialize-budget, ABI, tail, numeric/range |
+| 5 | Memory + effects | guard/deopt, alloc/region, alias/lifetime, copy/tag, bounds, string/table/layout, fusion/SIMD, concurrency, coroutine, metamethod |
+| 6 | Direct native + runtime | I/O witness, crashes→0, C-bridge death, object writer, DCE/link reachability, FFI, startup/size |
+| 7 | Wasm | same graph, import/export specialization, Wasmtime matrix |
+| 8 | Evidence + anti-drift | evidence-subject, MCP/LSP same-graph, census death, ratchets, B/C, miss diagnostics |
+
+**P0** source-family → GAP-145 → token ABI → GAP-134 → parser → graph
+(**GRAPH-SOVEREIGNTY G1–G12**, `scripts/ledger/graph.id`) → world/effect/witness
+→ demand → crashes/failures to zero.
+**P1** representation-one (items 1–3), then boxing/call/shape/closure/region/copy/tag/ABI/bounds/string/table/metamethod/fusion/concurrency/DCE (items 4–26).
+**P2** zero-copy tokens, dense graph, exact invalidation, parallel compiler, stage cache, object writer, LSP/MCP same-graph, replace grep census (items 27–35).
+**P3** crash 0, matrices, C + Wasmtime suites, B then C (items 36–44).
+
+Full 1–35: `docs/spec/realization.md`. Graph sovereignty G1–G12: same file § Graph sovereignty.
+Cluster map: `WORKSTREAM_DEBT_REGISTER.md` § Optimization architecture + § BI.
+
+`law.representation.one`, `law.guard.one`, `law.specialize.budget`, `law.abi.internal`,
+`law.error.cold`, `law.crash.first`, `law.cost.explain`, `law.application.consumer`,
+`law.fact.locality`, `law.grammar.one`, `law.control.derived` in C0 +
+`docs/spec/canonical.md` §11i–11q.
+
+No lane may mint relation catalogs, boolean-mirror rows, string-world tables,
+magic rejection codes, or host slot maps as substitutes for lane 3.
+Lane labels do not imply an active lock. Acquire before producing owned facts.
+
 ## Implementation owners
 
 Owner means the boundary that currently decides. Existing Zig and `.id`
 paths are bootstrap or compatibility debt, not destination architecture. A
-suffix-only `.id` rename is not canonicality or self-host transfer.
+suffix-only `.id` rename is not canonicality or self-host transfer. A new bounded
+Zig bridge is admitted when it is the fastest path to the next executed SHC
+transfer and carries a `law.bridge.death` deletion witness
+(`law.bootstrap.velocity`); foreign is forbidden only as permanent architecture
+or semantic authority.
 
 | Boundary | Current implementation owner |
 |---|---|
 | Driver and production dispatch | `src/main.zig` |
-| Lexer bridge | `src/duo_lexer_bridge.zig`, `src/duo_lexer_dispatch.zig` |
-| Lexer source and generated physical projection | `lib/std/compiler/lexer.id`, `src/duo_lexer_tokenize.c` |
+| Lexer bridge | `src/lexer_bridge.zig`, `src/lexer_dispatch.zig` |
+| Lexer source and generated physical projection | `lib/compiler/lexer.id`, `src/lexer_tokenize.c` |
 | Grammar and parser | `docs/spec/grammar.md`, `src/parser.zig`, `src/pass3*.zig` |
 | Binding and semantic production | `src/sema.zig`, `src/semantic_context.zig`, `src/semantic_graph.zig` |
 | Realization scheduling | `src/dnir_lower.zig`, `src/native_ir.zig`, `src/region_graph.zig` |
@@ -60,7 +110,7 @@ counts or translate a host module line for line.
 2. Claim exact paths and commit only explicit owned pathspecs.
 3. Serialize heavy commands through
    `repo="$(git rev-parse --show-toplevel)"` and
-   `"$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- <command>`.
+   `"$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- <command>`.
 4. Positive-control every zero and report the inner requested outcome.
 5. Never repair an integration failure by restoring a shadow authority another
    owner removed.

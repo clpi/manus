@@ -12,14 +12,18 @@ and obligations from the exact current `gaps/GAP-*.md` files. Read live
 ownership through `duo_dev_claim_files` rather than copying claims here.
 
 The current language and project are Idol (`idol`, `idollang/idol`), with
-canonical `.id` source. Bounded bootstrap bridges may remain only while executed
-with known deletion conditions (`law.bridge.death`, `docs/bootstrap.md`).
-An executed gate, lock, or MCP entrypoint remains bootstrap transport until
-`docs/bootstrap.md` credits the authority transfer.
+canonical `.id` source. Reaching the earliest executed SHC authority frontier is
+the priority: bounded bootstrap bridges — including new Zig where it is the
+fastest path to the next transfer — are admitted and preferred over stalling,
+each with a known deletion condition (`law.bridge.death`,
+`law.bootstrap.velocity`, `docs/bootstrap.md`); foreign is forbidden only as
+permanent architecture or semantic authority. An executed gate, lock, or MCP
+entrypoint remains bootstrap transport until `docs/bootstrap.md` credits the
+authority transfer.
 
 **Gate scan law:** diff/path boundaries are curried symbols —
 `scan(diff)(body)`, never `scandiff` or `scan("diff")`. See root `AGENTS.md`
-§ Gate scan boundaries and `gates/idiom.id` header.
+§ Gate scan boundaries and `gate/idiom.id` header.
 
 Do not treat this directory as a semantic registry. `std` is migration
 distribution, `std.script` is frozen debt, and neither an agent document nor a

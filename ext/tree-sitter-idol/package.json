@@ -1,0 +1,19 @@
+{
+  "name": "tree-sitter-idol",
+  "version": "0.1.0",
+  "description": "Idol grammar for tree-sitter",
+  "main": "src/parser.c",
+  "types": "src/parser.c",
+  "keywords": [
+    "parser",
+    "tree-sitter",
+    "idol"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "nan": "^2.18.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.0"
+  }
+}

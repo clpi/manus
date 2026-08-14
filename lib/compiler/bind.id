@@ -5,7 +5,7 @@
 # somewhere — as a declaration, a parameter, a loop variable, an assignment
 # target, or an ambient root.
 #
-# SCOPE, per Pass 48 §2.2: assignment targets the nearest existing binding and
+# SCOPE: assignment targets the nearest existing binding and
 # otherwise INTRODUCES one locally, and there is no `local`. So a name's
 # binding site is any assignment to it, anywhere in the file — which is why a
 # file-level bound set is the honest v1 shape rather than a shortcut. Nested
@@ -31,7 +31,7 @@
 
 # Membership over a "|a|b|" set. std.str is `sub` and `len`, so this is spelled
 # out rather than borrowed.
-_has: bool = (set: str, name: str)
+has: bool = (set: str, name: str)
     hay = set
     needle = "|" .. name .. "|"
     hn: i64 = hay:len()
@@ -55,31 +55,25 @@ _has: bool = (set: str, name: str)
     false
 end
 
-_add: str = (set: str, name: str)
-    if _has(set, name)
+add: str = (set: str, name: str)
+    if has(set, name)
         return set
     end
     set .. name .. "|"
 end
 
 # Ambient roots and the runtime surface. These are bound by the world, not by
-# the file (Pass 48 §2.7), so a file that mentions them is not unresolved.
-ambient: str = ()
-    "|io|os|fs|json|process|string|table|math|coroutine|mem|req|print|error|assert|type|"
-        .. "tostring|tonumber|pairs|ipairs|next|select|rawlen|rawget|rawset|"
-        .. "pcall|xpcall|setmetatable|getmetatable|require|to|from|len|arg|"
-        .. "true|false|nil|self|debug|package|utf8|load|dofile|loadstring|"
-        .. "unpack|collectgarbage|_G|_VERSION|"
-end
+# the file, so a file that mentions them is not unresolved.
+ambient = "|io|os|fs|json|process|string|table|math|coroutine|mem|req|print|error|assert|type|tostring|tonumber|pairs|ipairs|next|select|rawlen|rawget|rawset|pcall|xpcall|setmetatable|getmetatable|require|to|from|len|arg|true|false|nil|self|debug|package|utf8|load|dofile|loadstring|unpack|collectgarbage|_G|_VERSION|"
 
 # Names this file binds, and names it references but never binds.
 # Returns the unresolved count; `report` prints each.
-unresolved: i64 = (src: str, file: str, report: bool)
-    lx: Lexer = lexer.new(src, file)
-    bound = ambient()
+unresolved: i64 = (src: str, file: str, family: i64, report: bool)
+    lx: Lexer = lexer.new(src, file, family)
+    bound = ambient
     refs = "|"
-    prev_kind: i64 = 0
-    # Pass 1 over a fresh lexer collects bindings; pass 2 collects references.
+    kind: i64 = 0
+    # A first scan over a fresh lexer collects bindings; a second collects references.
     # Two passes because a name may be used before the line that binds it —
     # mutual recursion between top-level declarations is the normal case.
     while true
@@ -116,7 +110,7 @@ unresolved: i64 = (src: str, file: str, report: bool)
                 end
                 lexer.restore_state(lx, st)
             end
-            if nxt.kind == token.KIND_LPAREN and prev_kind != token.KIND_DOT and prev_kind != token.KIND_COLON
+            if nxt.kind == token.KIND_LPAREN and kind != token.KIND_DOT and kind != token.KIND_COLON
                 binds = true
             end
             # `span: { ... }` is a descriptor DECLARATION and binds the name.
@@ -134,7 +128,7 @@ unresolved: i64 = (src: str, file: str, report: bool)
             # same discriminator proj_stmt uses.
             if nxt.kind == token.KIND_COLON and t.loc.col != 1
                 cst = lexer.save_state(lx)
-                _c = lexer.next(lx)
+                c = lexer.next(lx)
                 ty = lexer.next(lx)
                 if ty.kind == token.KIND_NAME or (ty.kind >= token.KIND_I8 and ty.kind <= token.KIND_STR)
                     if lexer.peek(lx).kind == token.KIND_ASSIGN
@@ -144,28 +138,28 @@ unresolved: i64 = (src: str, file: str, report: bool)
                 lexer.restore_state(lx, cst)
             end
             # `spawn(fn: any, ...args)` — a NAMED vararg parameter binds too.
-            if prev_kind == token.KIND_DOTS
+            if kind == token.KIND_DOTS
                 binds = true
             end
-            if prev_kind == token.KIND_FUN or prev_kind == token.KIND_FUNCTION or prev_kind == token.KIND_FOR
+            if kind == token.KIND_FUN or kind == token.KIND_FUNCTION or kind == token.KIND_FOR
                 binds = true
             end
             # `concept Allocator ... end` declares the protocol's name.
-            if prev_kind == token.KIND_CONCEPT
+            if kind == token.KIND_CONCEPT
                 binds = true
             end
-            if prev_kind == token.KIND_LPAREN or prev_kind == token.KIND_COMMA
+            if kind == token.KIND_LPAREN or kind == token.KIND_COMMA
                 binds = true
             end
             if binds
-                bound = _add(bound, t.text)
+                bound = add(bound, t.text)
             end
         end
-        prev_kind = t.kind
+        kind = t.kind
     end
 
-    lx2: Lexer = lexer.new(src, file)
-    prev_kind = 0
+    lx2: Lexer = lexer.new(src, file, family)
+    kind = 0
     count: i64 = 0
     while true
         t = lexer.next(lx2)
@@ -173,12 +167,12 @@ unresolved: i64 = (src: str, file: str, report: bool)
             break
         end
         if t.kind == token.KIND_NAME
-            skip = prev_kind == token.KIND_DOT or prev_kind == token.KIND_COLON
+            skip = kind == token.KIND_DOT or kind == token.KIND_COLON
                 or prev_kind == token.KIND_AT
             if !skip
                 nxt = lexer.peek(lx2)
-                if nxt.kind != token.KIND_ASSIGN and !_has(bound, t.text) and !_has(refs, t.text)
-                    refs = _add(refs, t.text)
+                if nxt.kind != token.KIND_ASSIGN and !has(bound, t.text) and !has(refs, t.text)
+                    refs = add(refs, t.text)
                     count += 1
                     if report
                         print("  unresolved " .. file .. ": " .. t.text)

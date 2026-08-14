@@ -1,12 +1,12 @@
 # std.crypto.rand — cryptographic random number generation (uses /dev/urandom)
 
-@c.include("fcntl.h")
-@c.include("unistd.h")
+@comp.c.include("fcntl.h")
+@comp.c.include("unistd.h")
 
 bytes(n: i64): any
     if n == nil or n <= 0 return {} end
     out = {}
-    @c.emit([[{
+    @comp.c.emit([[{
         int fd = open("/dev/urandom", O_RDONLY);
         if (fd >= 0) {
             for (int i = 1; i <= n; i++) {
@@ -34,7 +34,7 @@ end
 int(max: i64): i64
     if max == nil or max <= 0 return 0 end
     r: i64 = 0
-    @c.emit([[{
+    @comp.c.emit([[{
         int fd = open("/dev/urandom", O_RDONLY);
         if (fd >= 0) { read(fd, &r, sizeof(r)); close(fd); }
     }]])

@@ -1,4 +1,4 @@
-# G-D3 — ISA fidelity. Pass 104 §4 asks for
+# G-D3 — ISA fidelity. The mandate asks for
 #
 #   > per-instruction encode/exec tests GENERATED from the descriptors and
 #   > checked against an oracle assembler AND hardware — continuous, automatic.
@@ -29,7 +29,7 @@
 # instruction set generates its own tests. Both asm texts read `rbit x, x` and
 # `scvtf d, x`, so only a BYTE-level oracle could tell the pairs apart.
 #
-# Pass 103 §5 licenses clang here and nowhere else: foreign toolchains are CI
+# The oracle ruling licenses clang here and nowhere else: foreign toolchains are CI
 # equipment, never the shipping path. Nothing this gate produces is linked.
 #
 # POSITIVE CONTROLS. A gate that reports 0 wrong is usually broken rather than
@@ -235,7 +235,7 @@ main: i64 = ()
         n = nrows:to(str)
         tup = each():to(str)
         total = nrows * each():to(str)
-        print("ISA fidelity — descriptors vs clang, byte for byte (Pass 104 G-D3)")
+        print("ISA fidelity — descriptors vs clang, byte for byte (G-D3)")
         print("  descriptors   {n} instruction forms")
         print("  tuples        {tup} operand combinations each — {total} instructions")
         print("")

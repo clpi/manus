@@ -1,5 +1,6 @@
-# std.agent — hooks for agentic development on Duo (compiler dev + end-user apps)
-# Primary surface: @comp.* (@meta.* / @compiler.* are aliases). Comptime strings fold to native C.
+# lib/agent — hooks for agentic development on Idol (compiler dev + end-user apps)
+# Primary surface: @comp.* (@meta.* / @compiler.* are aliases). Comptime strings
+# fold to native C during bootstrap; prefer canonical Idol teaching under examples/.
 
 discover(): str
     "comp.map comp.sweep comp.derive comp.product comp.tensor comp.nfold comp.burst comp.power comp.choose comp.permute\n" ..
@@ -24,17 +25,17 @@ end
 hook_index(): str
     ".agents/AGENT_CANONICAL.md — single router for all agents\n" ..
     ".agents/AGENT_COORDINATION.md — coordination buffer and Cross-Agent Gap Buffer\n" ..
-    "duo_agent_session_start / duo_coordination_update / duo_agent_gaps_update\n" ..
-    "std.agent — recipes, build_gates, native_policy, multiplier_for, smoke_targets\n" ..
-    "std.script — Duo-first scripting; prefer over bash/python"
+    "idol_agent_session_start / idol_coordination_update / idol_agent_gaps_update\n" ..
+    "lib/agent — recipes, build_gates, native_policy, multiplier_for, smoke_targets\n" ..
+    "Host scripting remains bootstrap debt; prefer Idol sources under tools/ and scripts/"
 end
 
 dedupe_policy(): str
     "1. Read .agents/AGENT_COORDINATION.md and claim before editing\n" ..
-    "2. Search duo_meta_catalog before adding directives or std modules\n" ..
-    "3. Extend std.agent, duo-mcp, and existing @comp.* hooks; do not fork parallel buffers\n" ..
-    "4. Serialize builds with scripts/duo_lock.sh\n" ..
-    "5. Use duo_coordination_update and duo_agent_gaps_update for coordination"
+    "2. Search idol_meta_catalog before adding directives or bootstrap modules\n" ..
+    "3. Extend lib/agent, tools/mcp/, and existing @comp.* hooks; do not fork parallel buffers\n" ..
+    "4. Serialize builds with scripts/idol_lock.id\n" ..
+    "5. Use idol_coordination_update and idol_agent_gaps_update for coordination"
 end
 
 gaps_file(): str
@@ -44,7 +45,7 @@ end
 gaps_index(): str
     "Cross-Agent Gap Buffer: .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer\n" ..
     "Categories: perf native meta script agent backend\n" ..
-    "MCP: duo_agent_gaps_read / duo_agent_gaps_update\n" ..
+    "MCP: idol_agent_gaps_read / idol_agent_gaps_update (duo_* legacy aliases retained)\n" ..
     "Policy: file expressiveness, native-lowering, scripting, backend, and coordination gaps before one-off work"
 end
 
@@ -65,7 +66,7 @@ grammar_index(): str
     "GR-001 bare typed function declarations; fun/function deprecated in .id\n" ..
     "GR-002 if-expressions\n" ..
     "GR-004 quoted table keys without brackets\n" ..
-    "MCP: duo_grammar_spec_read / duo_grammar_spec_update"
+    "MCP: idol_grammar_spec_read / idol_grammar_spec_update (bootstrap duo_* aliases)"
 end
 
 multiplier_for(goal: str): str
@@ -122,10 +123,10 @@ multiplier_for(goal: str): str
 end
 
 build_gates(): str
-    "tier0: ./zig-out/bin/duo run scripts/public_safety_scan.id && scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.id\n" ..
-    "tier1: scripts/duo_lock.sh -- zig build unit-test --summary all\n" ..
-    "tier2: scripts/duo_lock.sh -- zig build test\n" ..
-    "tier3: scripts/duo_lock.sh -- zig build bench  (claim benchmarks/perf; never parallel tier3)"
+    "tier0: ./zig-out/bin/idol run scripts/public_safety_scan.id && scripts/idol_lock.sh -- ./zig-out/bin/idol run scripts/agent_smoke.id\n" ..
+    "tier1: scripts/idol_lock.sh -- zig build unit-test --summary all\n" ..
+    "tier2: scripts/idol_lock.sh -- zig build test\n" ..
+    "tier3: scripts/idol_lock.sh -- zig build bench  (claim benchmarks/perf; never parallel tier3)"
 end
 
 native_policy(): str
@@ -150,70 +151,49 @@ recipes(): str
     "Declarative scheme: @comp.scheme(\"type T {...} | fn f(...): T\", template)\n" ..
     "Generate→each: @comp.each(@comp.generate(spec, body), fn) — re-expand each cartesian fragment\n" ..
     "Scheme→each: @comp.each(@comp.scheme(decls, tmpl), fn) — declarative units → fragments\n" ..
-    "Full stack: examples/meta_generative_stack_showcase.id — template/generate/scheme → each\n" ..
+    "Full stack: examples/parity/each.id — scheme/generate → each parity\n" ..
     "Parallel comptime: @comp.compile.thread\n" ..
     "Coordination: .agents/AGENT_COORDINATION.md; @comp.agent.dedupe(); claim before edit\n" ..
-    "Gaps ledger: .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; @comp.agent.gaps(); MCP duo_agent_gaps_*\n" ..
-    "Scripting: req std.script — prefer Duo over bash/python"
+    "Gaps ledger: .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; @comp.agent.gaps(); MCP idol_agent_gaps_*\n" ..
+    "Coordination lock: scripts/idol_lock.id"
+end
+
+# GAP-blocked teaching fixtures (idol check fails; owned by other gates):
+#   examples/pack/apply.id      — GAP-092 brace/descriptor rows
+#   examples/pack/merge.id      — correlated-pack syntax
+gap_blocked(): any
+    {
+        "examples/pack/apply.id",
+        "examples/pack/merge.id",
+        "examples/conversion/slot.id",
+        "examples/anchor/bare.id",
+    }
 end
 
 smoke_targets(): any
     {
-        "examples/agent_hooks_showcase.id",
-        "examples/wasm_opcode_projection_proof.id",
-        "examples/req_splice_table_constant_proof.id",
-        "examples/script_lock_smoke.id",
-        "examples/nested_std_req_smoke.id",
-        "examples/json_direct_iteration_smoke.id",
-        "examples/meta_hierarchy_showcase.id",
-        "examples/meta_power_permute_showcase.id",
-        "examples/meta_compose_each_showcase.id",
-        "examples/meta_choose_showcase.id",
-        "examples/comptime_cached_persistence_smoke.id",
-        "examples/std_metaprogramming_modules_smoke.id",
-        "examples/native_abi_smoke.id",
-        "examples/embed_json_schema_smoke.id",
-        "examples/embed_json_data_smoke.id",
-        "examples/meta_grammar_showcase.id",
-        "examples/meta_weave_showcase.id",
-        "examples/syntax_bare_fun_smoke.id",
-        "examples/syntax_not_neq_smoke.id",
-        "examples/missing_args_nil_smoke.id",
-        "examples/nested_tail_call_statement_smoke.id",
-        "examples/implicit_concat_tail_smoke.id",
-        "examples/branch_scope_smoke.id",
-        "examples/nil_init_smoke.id",
-        "examples/meta_template_showcase.id",
-        "examples/meta_template_callback_showcase.id",
-        "examples/meta_scheme_showcase.id",
-        "examples/meta_generate_showcase.id",
-        "examples/meta_generate_each_showcase.id",
-        "examples/meta_scheme_clauses_showcase.id",
-        "examples/meta_scheme_each_showcase.id",
-        "examples/meta_generative_stack_showcase.id",
-        "examples/meta_algebra_showcase.id",
-        "examples/meta_match_showcase.id",
-        "examples/meta_tabulate_showcase.id",
-        "examples/meta_interpolate_showcase.id",
-        "examples/meta_zip_showcase.id",
-        "examples/meta_composition_showcase.id",
-        "examples/meta_nested_algebra_showcase.id",
-        "examples/meta_exponential_cascade.id",
-        "examples/meta_ultra_cascade.id",
-        "examples/meta_match_fixpoint_showcase.id",
-        "examples/meta_derive_power_cascade.id",
-        "examples/meta_fixpoint_showcase.id",
-        "examples/empty_table_smoke.id",
-        "examples/embedded_bare_bundles_smoke.id",
-        "examples/vector_embed_smoke.id",
-        "examples/pass9/instruction_descriptor_smoke.id",
-        "examples/pass9/leb128_cursor_smoke.id",
-        "examples/pass9/decoder_table_smoke.id",
-        "examples/pass9/validator_stack_smoke.id",
-        "examples/pass9/decode_cursor_smoke.id",
-        "examples/pass9/decode_semantic_smoke.id",
-        "examples/pass9/decode_differential_smoke.id",
-        "examples/pass9/ward_mvp_opcodes_smoke.id",
+        "examples/json/iteration.id",
+        "examples/boring/anagram.id",
+        "examples/boring/fizzbuzz.id",
+        "examples/boring/fib.id",
+        "examples/boring/primes.id",
+        "examples/boring/sort/quick.id",
+        "examples/boring/search/binary.id",
+        "examples/boring/mat/mul.id",
+        "examples/layout/guard.id",
+        "examples/layout/loop/body.id",
+        "examples/demand/result.id",
+        "examples/demand/swap.id",
+        "examples/demand/tail.id",
+        "examples/pack/consume.id",
+        "examples/projection/descriptor.id",
+        "examples/read/stream.id",
+        "examples/native/record.id",
+        "examples/hash/agreement.id",
+        "examples/control/default.id",
+        "examples/conversion/level.id",
+        "examples/table/str/split.id",
+        "examples/table/float/render.id",
     }
 end
 
@@ -232,5 +212,6 @@ M = {
     build_gates = build_gates,
     native_policy = native_policy,
     recipes = recipes,
+    gap_blocked = gap_blocked,
     smoke_targets = smoke_targets,
 }

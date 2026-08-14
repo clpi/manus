@@ -3,7 +3,7 @@ scan: tok = (src: str, pos: i64)
     n = src:len()
     i = pos
     while i <= n and src:byte(i) == 32
-        i = i + 1
+        i += 1
     end
     { kind = 1, start = i, len = 1 }
 end

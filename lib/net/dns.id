@@ -76,7 +76,7 @@ name_encode(name: str): any
     i = pos
     while i < dot_pos
       bytes[bytes:len() + 1] = name:byte(i)
-      i = i + 1
+      i += 1
     end
     pos = dot_pos + 1
   end
@@ -93,25 +93,25 @@ name_decode(data: any, pos: i64): any
     end
     len = data[pos]
     if len == 0
-      pos = pos + 1
+      pos += 1
       break
     elseif len & 192 == 192
       if not jumped
-        original_pos = original_pos + 2
+        original_pos += 2
       end
       pointer = (len & 63) << 8 | data[pos + 1]
       pos = pointer + 1
       jumped = true
     else
-      pos = pos + 1
+      pos += 1
       label = ""
       i = 0
       while i < len
         label = label .. data[pos + i]:char()
-        i = i + 1
+        i += 1
       end
       parts[parts:len() + 1] = label
-      pos = pos + len
+      pos += len
     end
   end
   name = parts:concat(".")
@@ -156,13 +156,13 @@ record_decode(data: any, pos: i64): any
   name = result.name
   pos = result.next
   rtype = data[pos] << 8 | data[pos + 1]
-  pos = pos + 2
+  pos += 2
   rclass = data[pos] << 8 | data[pos + 1]
-  pos = pos + 2
+  pos += 2
   ttl = data[pos] << 24 | data[pos + 1] << 16 | data[pos + 2] << 8 | data[pos + 3]
-  pos = pos + 4
+  pos += 4
   rdlength = data[pos] << 8 | data[pos + 1]
-  pos = pos + 2
+  pos += 2
   rdata = nil
   if rtype == A and rdlength == 4
     rdata = to(str)(data[pos]) .. "." .. to(str)(data[pos + 1]) .. "." .. to(str)(data[pos + 2]) .. "." .. to(str)(data[pos + 3])
@@ -173,7 +173,7 @@ record_decode(data: any, pos: i64): any
       hi = data[pos + i]
       lo = data[pos + i + 1]
       parts[parts:len() + 1] = "%02x%02x":format(hi, lo)
-      i = i + 2
+      i += 2
     end
     rdata = parts:concat(":")
   elseif rtype == CNAME or rtype == NS or rtype == PTR
@@ -192,7 +192,7 @@ record_decode(data: any, pos: i64): any
     i = 1
     while i <= txt_len
       txt = txt .. data[pos + i]:char()
-      i = i + 1
+      i += 1
     end
     rdata = txt
   elseif rtype == SRV
@@ -207,7 +207,7 @@ record_decode(data: any, pos: i64): any
       target = target.name
     }
   end
-  pos = pos + rdlength
+  pos += rdlength
   {
     name = name,
     type = rtype,
@@ -225,7 +225,7 @@ response_decode(data: any): any
   while i < header.qdcount
     result = name_decode(data, pos)
     pos = result.next + 4
-    i = i + 1
+    i += 1
   end
   answers = {}
   i = 0
@@ -233,7 +233,7 @@ response_decode(data: any): any
     record = record_decode(data, pos)
     answers[answers:len() + 1] = record
     pos = record.next
-    i = i + 1
+    i += 1
   end
   authority = {}
   i = 0
@@ -241,7 +241,7 @@ response_decode(data: any): any
     record = record_decode(data, pos)
     authority[authority:len() + 1] = record
     pos = record.next
-    i = i + 1
+    i += 1
   end
   additional = {}
   i = 0
@@ -249,7 +249,7 @@ response_decode(data: any): any
     record = record_decode(data, pos)
     additional[additional:len() + 1] = record
     pos = record.next
-    i = i + 1
+    i += 1
   end
   {
     header = header,
@@ -365,7 +365,7 @@ resolver_lookup_mx(resolver: any, name: str): any
       mx_records[mx_records:len() + 1] = answer.rdata
     end
   end
-  table.sort(mx_records, (a: any, b: any): any
+  mx_records:sort((a: any, b: any): any
     a.preference < b.preference
   end)
   {

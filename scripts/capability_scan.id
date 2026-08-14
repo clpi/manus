@@ -1,14 +1,14 @@
 # U1 — `std@{ ambient = false }`, made executable.
 #
-# Pass 105 §3 U1 commits to ZERO AMBIENT AUTHORITY IN STD from the first
+# The capability mandate commits to ZERO AMBIENT AUTHORITY IN STD from the first
 # release: fs / net / clock / rand — and process/environment — reach programs
 # only through worlds. §4 names the instrument (`std@{ ambient = false }`,
 # run on every std module, forever) and §6 makes that one row effective
-# IMMEDIATELY rather than at 0.1. Pass 105 §7 and gaps/GAP-061.md record the
+# IMMEDIATELY rather than at 0.1. The mandate and gaps/GAP-061.md record the
 # honest starting distance. This file is the instrument those two documents
 # point at.
 #
-# WHAT IT MEASURES. Every tracked `lib/std/**/*.id` file, one grep pass per
+# WHAT IT MEASURES. Every tracked `lib/**/*.id` file, one grep pass per
 # capability class, counting CALL-SHAPED reaches at non-comment positions.
 # Six ratcheted classes plus one reported-only class:
 #
@@ -64,14 +64,14 @@
 # in GAP-061, both of which move the number:
 #
 #   * `@c.emit` payloads ARE scanned. GAP-061 lists them as a blind spot:
-#     `lib/std/os.id` and `lib/std/io.id` obtain capability through raw C
+#     `lib/os.id` and `lib/io.id` obtain capability through raw C
 #     that no regex over Duo call syntax can see. The libc names sit in every
 #     class pattern here precisely so the C inside those payloads is counted.
 #   * `rand` and `net` are NOT zero. GAP-061 reports both at zero and flags
 #     the zero as suspicious in the same breath ("a zero on a fresh probe is
 #     usually a broken probe"). It was: the probe looked for `rand(` and
 #     `random`, and this tree spells it `math.random(` — 50 sites across 14
-#     modules. `net` is 9 sites in `lib/std/net.id`, five of them the
+#     modules. `net` is 9 sites in `lib/net.id`, five of them the
 #     bodyless DECLARATIONS of `connect` / `listen` / `accept` / `send` /
 #     `recv` — ambient authority in its strongest form, a free function any
 #     caller can reach with no world in hand.
@@ -81,7 +81,7 @@
 # reach spelled through an alias or a table field is not counted; authority
 # obtained by reading a global is not counted. Pressure, not proof.
 #
-# POPULATION. Tracked `lib/std/**/*.id` only, and that is a CHOICE with a
+# POPULATION. Tracked `lib/**/*.id` only, and that is a CHOICE with a
 # known hole: Duo also lives inside Zig fixtures and inside `tools/wasm/src`,
 # and neither is std. U1 is a rule about the STANDARD LIBRARY — what a
 # program gets without asking — so the population is the shipped std surface.
@@ -149,7 +149,7 @@ space = " "
 # because a single-file xargs batch drops the path prefix and would take the
 # module census with it.
 head(root: str): str
-    "cd {root} && git ls-files 'lib/std/*.id' | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
+    "cd {root} && git ls-files 'lib/*.id' | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
 end
 
 # Matched lines, comment lines dropped, world-mediated lines dropped.
@@ -166,7 +166,7 @@ end
 # surface it names while reporting PASS. Reported, deliberately NOT ratcheted
 # yet — a budget is only honest once someone has agreed to hold it.
 beyond(root: str, pat: str): i64
-    pre: str = "cd {root} && git ls-files '*.id' | grep -v {q}^lib/std/{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
+    pre: str = "cd {root} && git ls-files '*.id' | grep -v {q}^lib/{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
     to(i64)(std.script.chomp(std.script.capture(cmd)))
 
@@ -239,10 +239,10 @@ main(): i64
     end
 
     if code == 0
-        total = to(i64)(std.script.chomp(std.script.capture("cd {root} && git ls-files 'lib/std/*.id' | wc -l")))
-        print("capability_scan — Pass 105 U1: std@ ambient = false")
+        total = to(i64)(std.script.chomp(std.script.capture("cd {root} && git ls-files 'lib/*.id' | wc -l")))
+        print("capability_scan — U1: std@ ambient = false")
         print("  root      {root}")
-        print("  modules   {total} tracked lib/std/**/*.id")
+        print("  modules   {total} tracked lib/**/*.id")
         if total == 0
             print("capability_scan: FAIL — 0 std modules found; the scan did not run")
             code = 3

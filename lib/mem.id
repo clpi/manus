@@ -1,9 +1,9 @@
 # std.mem — memory primitives, allocators, and low-level memory operations
 # Provides raw memory utilities backed by C stdlib/mmap, plus arena/pool/stack allocators.
 
-@c.include("stdlib.h")
-@c.include("string.h")
-@c.include("sys/mman.h")
+@comp.c.include("stdlib.h")
+@comp.c.include("string.h")
+@comp.c.include("sys/mman.h")
 
 # Memory size constants
 page_size(): u64
@@ -175,45 +175,45 @@ end
 
 # Raw heap allocation
 alloc(bytes: i64): any
-    @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = malloc((size_t)bytes); _v; })]])
+    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = malloc((size_t)bytes); _v; })]])
 end
 
 free(mem: any): void
-    @c.emit("free(mem.as.tval)")
+    @comp.c.emit("free(mem.as.tval)")
 end
 
 realloc(mem: any, new_bytes: i64): any
-    @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = realloc(mem.as.tval, (size_t)new_bytes); _v; })]])
+    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = realloc(mem.as.tval, (size_t)new_bytes); _v; })]])
 end
 
 dup(mem: any, bytes: i64): any
     if bytes == 0 return alloc(0) end
-    @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; void* _p = malloc((size_t)bytes); if (_p && mem.as.tval) memcpy(_p, mem.as.tval, (size_t)bytes); _v.as.tval = _p; _v; })]])
+    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; void* _p = malloc((size_t)bytes); if (_p && mem.as.tval) memcpy(_p, mem.as.tval, (size_t)bytes); _v.as.tval = _p; _v; })]])
 end
 
 offset(mem: any, n: i64): any
-    @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = (void*)((uint8_t*)mem.as.tval + n); _v; })]])
+    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = (void*)((uint8_t*)mem.as.tval + n); _v; })]])
 end
 
 # Raw memory operations
 mem_copy(dst: any, src: any, bytes: i64): void
     if bytes == 0 return end
-    @c.emit("memcpy(dst.as.tval, src.as.tval, (size_t)bytes)")
+    @comp.c.emit("memcpy(dst.as.tval, src.as.tval, (size_t)bytes)")
 end
 
 mem_set(mem: any, val: u8, bytes: i64): void
     if bytes == 0 return end
-    @c.emit("memset(mem.as.tval, (int)val, (size_t)bytes)")
+    @comp.c.emit("memset(mem.as.tval, (int)val, (size_t)bytes)")
 end
 
 mem_zero(mem: any, bytes: i64): void
     if bytes == 0 return end
-    @c.emit("memset(mem.as.tval, 0, (size_t)bytes)")
+    @comp.c.emit("memset(mem.as.tval, 0, (size_t)bytes)")
 end
 
 mem_compare(a: any, b: any, bytes: i64): i64
     if bytes == 0 return 0 end
-    @c.emit("(int64_t)memcmp(a.as.tval, b.as.tval, (size_t)bytes)")
+    @comp.c.emit("(int64_t)memcmp(a.as.tval, b.as.tval, (size_t)bytes)")
 end
 
 # mmap-backed allocation
@@ -223,11 +223,11 @@ mmap(bytes: i64): any
     # (e.g. macOS with _XOPEN_SOURCE only). calloc yields zeroed
     # memory, matching mmap(... PROT_READ|PROT_WRITE ...)'s semantics
     # on systems with mem_zero-filled pages.
-    @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc(1, (size_t)bytes); _v; })]])
+    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc(1, (size_t)bytes); _v; })]])
 end
 
 mremap(mem: any, old_bytes: i64, new_bytes: i64): any
-    @c.emit([[({
+    @comp.c.emit([[({
         lua_Value _v;
         _v.type = VAL_BUFFER;
         void* _r = realloc(mem.as.tval, (size_t)new_bytes);
@@ -246,91 +246,91 @@ end
 
 munmap(mem: any, bytes: i64): i64
     # Portable: just free. (munmap would require MAP_ANON-like backing.)
-    @c.emit("(free(mem.as.tval), 0)")
+    @comp.c.emit("(free(mem.as.tval), 0)")
     _ = bytes
 end
 
 # Byte readers/writers
 # VAL_STRING offsets are 1-indexed; VAL_BUFFER offsets are 0-indexed.
 read_byte(mem: any, offset: i64): i64
-    @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; (int64_t)_p[_off]; })")
+    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; (int64_t)_p[_off]; })")
 end
 
 write_byte(mem: any, offset: i64, val: i64): void
-    @c.emit("(((uint8_t*)mem.as.tval + offset)[0] = (uint8_t)val)")
+    @comp.c.emit("(((uint8_t*)mem.as.tval + offset)[0] = (uint8_t)val)")
 end
 
 read_i16(mem: any, offset: i64): i64
-    @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
 end
 
 write_i16(mem: any, offset: i64, val: i64): void
-    @c.emit("*(int16_t*)((uint8_t*)mem.as.tval + offset) = (int16_t)val")
+    @comp.c.emit("*(int16_t*)((uint8_t*)mem.as.tval + offset) = (int16_t)val")
 end
 
 read_u16(mem: any, offset: i64): i64
-    @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
 end
 
 write_u16(mem: any, offset: i64, val: u64): void
-    @c.emit("*(uint16_t*)((uint8_t*)mem.as.tval + offset) = (uint16_t)val")
+    @comp.c.emit("*(uint16_t*)((uint8_t*)mem.as.tval + offset) = (uint16_t)val")
 end
 
 read_i32(mem: any, offset: i64): i64
-    @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
 end
 
 write_i32(mem: any, offset: i64, val: i64): void
-    @c.emit("*(int32_t*)((uint8_t*)mem.as.tval + offset) = (int32_t)val")
+    @comp.c.emit("*(int32_t*)((uint8_t*)mem.as.tval + offset) = (int32_t)val")
 end
 
 read_u32(mem: any, offset: i64): i64
-    @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
 end
 
 write_u32(mem: any, offset: i64, val: u64): void
-    @c.emit("*(uint32_t*)((uint8_t*)mem.as.tval + offset) = (uint32_t)val")
+    @comp.c.emit("*(uint32_t*)((uint8_t*)mem.as.tval + offset) = (uint32_t)val")
 end
 
 read_i64(mem: any, offset: i64): i64
-    @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
+    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
 end
 
 write_i64(mem: any, offset: i64, val: i64): void
-    @c.emit("*(int64_t*)((uint8_t*)mem.as.tval + offset) = val")
+    @comp.c.emit("*(int64_t*)((uint8_t*)mem.as.tval + offset) = val")
 end
 
 read_u64(mem: any, offset: i64): u64
-    @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
+    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
 end
 
 write_u64(mem: any, offset: i64, val: u64): void
-    @c.emit("*(uint64_t*)((uint8_t*)mem.as.tval + offset) = val")
+    @comp.c.emit("*(uint64_t*)((uint8_t*)mem.as.tval + offset) = val")
 end
 
 read_f32(mem: any, offset: i64): f64
-    @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; float _v; memcpy(&_v, _p + _off, sizeof(_v)); (double)_v; })")
+    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; float _v; memcpy(&_v, _p + _off, sizeof(_v)); (double)_v; })")
 end
 
 write_f32(mem: any, offset: i64, val: f64): void
-    @c.emit("*(float*)((uint8_t*)mem.as.tval + offset) = (float)val")
+    @comp.c.emit("*(float*)((uint8_t*)mem.as.tval + offset) = (float)val")
 end
 
 read_f64(mem: any, offset: i64): f64
-    @c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; double _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
+    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; double _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
 end
 
 write_f64(mem: any, offset: i64, val: f64): void
-    @c.emit("*(double*)((uint8_t*)mem.as.tval + offset) = val")
+    @comp.c.emit("*(double*)((uint8_t*)mem.as.tval + offset) = val")
 end
 
 # Decode a 1-indexed byte sequence as a float (defaults to first byte).
 bytes_to_f32(s: str, i: i64 = 1): f64
-    @c.emit("({ float _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(float)); (double)_v; })")
+    @comp.c.emit("({ float _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(float)); (double)_v; })")
 end
 
 bytes_to_f64(s: str, i: i64 = 1): f64
-    @c.emit("({ double _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(double)); _v; })")
+    @comp.c.emit("({ double _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(double)); _v; })")
 end
 
 # Standard allocators

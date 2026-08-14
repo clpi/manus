@@ -1,9 +1,11 @@
 # Editor and language-tooling status
 
-Idol is the current language. Canonical native source uses `.id`; every tracked
-project-owned `.id` file is SOURCE-ZERO debt that must be semantically migrated
-or deleted. Idol is not a Lua superset, and a Lua grammar is not a safe fallback
-authority for canonical source.
+Idol is the current language. Canonical native source uses `.id` and new
+canonical `.id` is freely admitted — it is the Idol source extension. Only
+tracked *noncanonical* `.id` content (host-shaped patterns, namespace dispatch,
+duplicate authority) is SOURCE-ZERO debt, migrated by repairing the pattern; the
+`.id` file itself is not debt. Idol is not a Lua superset, and a Lua grammar is
+not a safe fallback authority for canonical source.
 
 The sole semantic law is
 [`docs/spec/constitution.md`](../spec/constitution.md). Tooling must project

@@ -60,7 +60,7 @@ constant text teaches readers to skip the section that will one day matter.
 - Re-rendering the source snippet for each attached note. One span, one snippet;
   additional spans get their own snippet only when they point somewhere else.
 - Internal enum names, Zig/C error names, generated-file paths, and stack
-  traces. A user never sees `ExpectedToken`, `/tmp/duo_x.c`, or a line number in
+  traces. A user never sees `ExpectedToken`, `/tmp/idol_x.c`, or a line number in
   the compiler's own source.
 - More than one diagnostic for one cause. Cascades are suppressed (§6).
 
@@ -116,7 +116,7 @@ obvious bug.
 
 ## 5. Facts and witnesses in a diagnostic
 
-Duo's checker is three-state (Pass 106 §2 item 3): **proven / runtime-checked /
+The checker is three-state: **proven / runtime-checked /
 diagnostic — no silent fourth state.** A diagnostic must say which of the three
 it is and, when it is the third, why the proof failed.
 
@@ -195,13 +195,13 @@ Rules:
 - **Every ID resolves.** `why(rule)(DUO-B4-SIGN)` prints the rule, its pass, its
   rationale, and a passing and a failing example. A diagnostic that cites a rule
   the toolchain cannot explain is a dead link.
-- **Prose section references are not IDs.** "Pass 100 §1 deny table" is a fine
+- **Prose section references are not IDs.** "the §1 deny table" is a fine
   thing to say in the `rule:` line *after* the ID; it is not a substitute,
   because prose section numbers move.
 
 ## 8. The machine-readable form
 
-Per Pass 105, **the agent surface is the go-to-market**, so the machine form is
+**The agent surface is the go-to-market**, so the machine form is
 not a downgrade of the human one — it is the *same* diagnostic with more of it.
 
 **`--diagnostics=json`**: one JSON object per diagnostic, one per line (JSONL,
@@ -266,7 +266,7 @@ error  DNB001  this shape is outside the direct backend today
 It names the construct, not an internal function. It says whether a workaround
 exists. It cites the gap row, so the message and the ledger cannot drift.
 
-**A green `duo check` on a program that cannot be built is the worst diagnostic
+**A green `idol check` on a program that cannot be built is the worst diagnostic
 in the system**, because it is a confident wrong answer. Whatever `check` cannot
 verify, it must say it cannot verify. Silence is a claim.
 
@@ -296,9 +296,9 @@ examples/compile_fail/anchor_infix_at.id:35:11: hint: the anchor is the GLUED
 ```
 
 ```
-examples/compile_fail/pass100_goto_retired.id:22:9: error: 'goto' is retired in
-  .id files (Pass 100 §1 deny table)
-… hint: Pass 100 §13: use `break`/`continue`, or a dispatch table —
+examples/compile_fail/goto_retired.id:22:9: error: 'goto' is retired in
+  .id files (§1 deny table)
+… hint: §13: use `break`/`continue`, or a dispatch table —
   `next(state)(event) = handler`, which gets exhaustiveness and the diagram free
 … hint: Lua-shaped input is still accepted, and still lowers natively, in a
   `.lua` file
@@ -355,12 +355,12 @@ and again from the renderer.
 mise installation and four `src/main.zig` line numbers:
 
 ```
-$ duo check nosuch.id
+$ idol check nosuch.id
 error: FileNotFound
-/Users/…/mise/installs/zig/master/lib/std/Io/Threaded.zig:4889:35: … in dirOpenFilePosix (duo)
+/Users/…/mise/installs/zig/master/lib/Io/Threaded.zig:4889:35: … in dirOpenFilePosix (idol)
                         .NOENT => return error.FileNotFound,
 … 16 more lines …
-<repo>/src/main.zig:903:9: 0x10479632b in main (duo)
+<repo>/src/main.zig:903:9: 0x10479632b in main (idol)
 ```
 
 This is a plausible first command a new user runs, and it is a stack trace.
@@ -370,32 +370,32 @@ This is a plausible first command a new user runs, and it is a stack trace.
 
 ```
 thread 496691 panic: integer overflow
-<repo>/src/region_transform.zig:166:19: … in evalConstBinop (duo)
+<repo>/src/region_transform.zig:166:19: … in evalConstBinop (idol)
         .add => a + b,
 ```
 
 **Clang errors leak verbatim, against a file the user never wrote.** Four
-separate legal-looking Duo programs produce this class:
+separate legal-looking Idol programs produce this class:
 
 ```
-/tmp/duo_n24.c:102:5: error: use of undeclared identifier 'b1010'      ← 0b1010
-/tmp/duo_n24.c:104:5: error: use of undeclared identifier '_000_000'   ← 1_000_000
-/tmp/duo_n32.c:103:17: error: call to undeclared function 'e__to'      ← x:to(u8)
-/tmp/duo_n37.c:105:27: error: call to undeclared function 'lua_to_num' ← s:to(i64)
-/tmp/duo_n10.c:106:17: error: call to undeclared function 'lua_imod_i64'
-/tmp/duo_d2.c:104:27: error: too many arguments to function call, expected 2, have 3
-/tmp/duo_n40.c:6081:19: error: initializing 'lua_Value' with an expression of
+/tmp/idol_n24.c:102:5: error: use of undeclared identifier 'b1010'      ← 0b1010
+/tmp/idol_n24.c:104:5: error: use of undeclared identifier '_000_000'   ← 1_000_000
+/tmp/idol_n32.c:103:17: error: call to undeclared function 'e__to'      ← x:to(u8)
+/tmp/idol_n37.c:105:27: error: call to undeclared function 'lua_to_num' ← s:to(i64)
+/tmp/idol_n10.c:106:17: error: call to undeclared function 'lua_imod_i64'
+/tmp/idol_d2.c:104:27: error: too many arguments to function call, expected 2, have 3
+/tmp/idol_n40.c:6081:19: error: initializing 'lua_Value' with an expression of
                         incompatible type 'int64_t *'                 ← t:sort()
 ```
 
-This is the foreign waist (Pass 103) speaking directly to the user. Every one of
+This is the foreign waist speaking directly to the user. Every one of
 them was preceded by **`✓ checked — no errors`**.
 
 **Internal error names as user-facing text.** Every parse failure ends with a
 Zig enum name: `error: parse failed: ExpectedToken`,
 `error: parse failed: UnexpectedToken`. `error: FileNotFound` and
-`hint: refused with: UnsupportedProgram` are the same leak. (`duo compile` and
-`duo check` do print identical diagnostics — checked, they do not diverge.)
+`hint: refused with: UnsupportedProgram` are the same leak. (`idol compile` and
+`idol check` do print identical diagnostics — checked, they do not diverge.)
 
 **The backend-bail diagnostic is the closest thing to §9 that exists, and it is
 addressed to a compiler author:**
@@ -418,7 +418,7 @@ and line, prints an internal error enum, and never says which construct in the
 Each of these was run; each produced `✓ checked — no errors`; each then
 misbehaved. These are worse than any message above.
 
-| program | `duo check` | what happens |
+| program | `idol check` | what happens |
 |---|---|---|
 | `add(1)` where `add` takes two | green | `--backend=direct` **builds and runs**, returns `6163459209` (an uninitialized register). `--backend=c` fails at clang. |
 | `add(1, 2, 3)` | green | direct returns `3`; C fails at clang. |
@@ -432,9 +432,9 @@ misbehaved. These are worse than any message above.
 | `("x": str) .. (5: i64)` | green | `"x5"` — B-5 says this is a diagnostic. |
 
 The arity row is the sharpest: it is the exact defect CLAUDE.md's consolidation
-note describes ("duo-mcp shipped a call passing three arguments to a
+note describes ("idol-mcp shipped a call passing three arguments to a
 two-argument function"), the fix for which was to bring the code in-tree so the
-gates would catch it — and the gate does not catch it. `duo check` is green and
+gates would catch it — and the gate does not catch it. `idol check` is green and
 the direct backend produces a garbage value.
 
 ### Against §1–§9, row by row
@@ -448,7 +448,7 @@ the direct backend produces a garbage value.
 | §4 counterexample | **NO BLOCK EXISTS.** Two diagnostics carry a witness in prose (`256 vs 128`; `column 9 … column 5`); the rest carry none, and the broadcast checker discards two shapes it holds. |
 | §5 facts / three-state | **DOES NOT EXIST.** No fact block, no provenance, no proven/unknown/runtime marker in any diagnostic. |
 | §6 severity | **MET on the levels.** `error`/`warning`/`hint`/`info` exactly, `info` gated behind `--info`/`DUO_INFO=1`, no `note`, no `-Werror`, no suppression pragmas. Fails §6's warning rule: `@satisfies is deprecated, use @comp.satisfies instead` names a replacement but no removal schedule. And the `warning: warning:` double label. |
-| §7 rule IDs | **ONE FAMILY.** `DNB001`–`DNB007`, backend-admission only, emitted as `hint:` text. Zero IDs on user-facing errors: `grep -rn 'DUO[0-9]' src/*.zig` returns **0** and `grep -rn '"E[0-9][0-9][0-9]' src/*.zig` returns **0** (positive control: `grep -rn 'DNB[0-9]' src/*.zig` returns 41). Some diagnostics cite prose sections ("Pass 100 §1 deny table", "§2 gives the anchor three stances") — good practice, not a substitute, and nothing resolves them. |
+| §7 rule IDs | **ONE FAMILY.** `DNB001`–`DNB007`, backend-admission only, emitted as `hint:` text. Zero IDs on user-facing errors: `grep -rn 'DUO[0-9]' src/*.zig` returns **0** and `grep -rn '"E[0-9][0-9][0-9]' src/*.zig` returns **0** (positive control: `grep -rn 'DNB[0-9]' src/*.zig` returns 41). Some diagnostics cite prose sections ("§1 deny table", "§2 gives the anchor three stances") — good practice, not a substitute, and nothing resolves them. |
 | §8 JSON | **DOES NOT EXIST.** `--diagnostics=json` is not a flag. `term.ReportStyle` has a `json` member but it is reachable only through `--test-report`/`--build-report`. |
 | §8 `--plain-diagnostics` | **EXISTS AND WORKS.** `file:line:col: severity: message`, one per line, hints retained, zero ANSI escapes. `tools/lsp/src/server.id:1372` is its consumer and parses it with `parse_diagnostics`. No byte offsets, no end positions, no fixes, no IDs — so the LSP cannot offer a code action even where the hint contains the exact replacement text. |
 | §8 stdout discipline | **VIOLATED.** *Everything* goes to stderr, including diagnostics; stdout is empty. And the progress line `  > compile (f.id) …` shares the stream with the diagnostics, so every consumer must filter it. |
@@ -464,7 +464,7 @@ the direct backend produces a garbage value.
 2. **Delete `printDiagnosticHelp`.** Six constant strings, emitted on every
    diagnostic, carrying nothing. Removing them makes every existing message
    better with no writing.
-3. **Make `duo check` refuse to be green when lowering will fail.** Ten of the
+3. **Make `idol check` refuse to be green when lowering will fail.** Ten of the
    silences above are one class: the checker does not model what the backends
    can build. Until it does, `check` is claiming something it has not verified,
    and CLAUDE.md §3's rule — verify by value, never by "it compiled" — applies

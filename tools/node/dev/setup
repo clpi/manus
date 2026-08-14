@@ -46,7 +46,7 @@ zig build --summary all
 
 "$repo/tools/node/dev/cursor-auth"
 
-for server in duo-bench duo-lsp zls; do
+for server in idol-bench idol-lsp zls; do
   cursor agent mcp enable "$server"
 done
 

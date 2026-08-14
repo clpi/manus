@@ -1,6 +1,6 @@
 # audit100 — CLAUDE.md §1 DENY LIST, made executable.
 #
-# Epoch 2 (Pass 100) put a deny table in CLAUDE.md and §2 says "ship with EVERY
+# Epoch 2 put a deny table in CLAUDE.md and §2 says "ship with EVERY
 # diff or the diff is rejected unread". Nothing enforced it, so it was read as
 # advice. This gate greps for it.
 #
@@ -71,9 +71,9 @@ me = "scripts/audit100.id"
 # `add_node` as the spellings it forbids, and `law.fact.one` must show the
 # two-write anti-pattern it rules out. A deny-grep over the law convicts the
 # law for citing the law. Exclusion is NOT a budget: the file is canonical, it
-# passes `duo check`, and every rule it states is enforced on every other file.
+# passes `idol check`, and every rule it states is enforced on every other file.
 law = "docs/spec/constitution.id"
-paths = os.env["AUDIT100paths"] or "/tmp/duo_audit100_canonical.list"
+paths = os.env["AUDIT100paths"] or "/tmp/idol_audit100_canonical.list"
 capture: str = (shellline: str)
     gatecap(shellline)
 
@@ -455,14 +455,14 @@ main: i64 = ()
     # This session DID repair one thing in that file rather than budget it, but
     # it was a different gate: its `getenv("DUO_ROOT", <an absolute path under
     # one author's home directory>)` default was failing public_safety_scan
-    # (Pass 10 A19), and the replacement adds no deny
+    # (A19), and the replacement adds no deny
     # line (two comments, one `if`, one assignment — verified: the counts below
     # are byte-identical before and after that commit).
     #
     # +2 MORE, landed while this was being written, and named rather than
     # absorbed: `fd10b39` (RL-04, a face call in a statement-level argument was
     # read as a declaration) added one `snake` point and one `underprefix`
-    # point, both in `lib/std/compiler/parser.id` (snake 315 -> 316,
+    # point, both in `lib/compiler/parser.id` (snake 315 -> 316,
     # underprefix 116 -> 117). Nothing else in that commit or its two siblings
     # moved any row. A one-line regression is the only kind anyone ever
     # introduces, so an unattributed +1 is indistinguishable from one — which
@@ -518,7 +518,7 @@ main: i64 = ()
     # that come textually before it, which is a C compile error.
     # REBASELINED 2026-08-08 (fourth time), measured at `9ef2e68` in a DETACHED
     # WORKTREE, and with `paths` pointed at an isolated path — the first
-    # attempt at this measurement read `/tmp/duo_audit100_canonical.list`
+    # attempt at this measurement read `/tmp/idol_audit100_canonical.list`
     # while a concurrent session's run in the main tree was rewriting it, and
     # reported that tree's counts under this tree's `root` banner. That is the
     # same class as every other lesson here: a fixed path in /tmp is a shared
@@ -550,7 +550,7 @@ main: i64 = ()
     #   one lowercase word (`folded`, `cutoff`, `ratio`, `tick`, `say`,
     #   `probe`, `measured`, `folds`, `losses`), routing every duration
     #   through ONE `string.format`, and expanding one-line `if`s. The `snake`
-    #   row goes DOWN because renaming `duo_file` -> `duofile` cleared five
+    #   row goes DOWN because a rename cleared five
     #   pre-existing hits that were not this commit's to begin with. What is
     #   left is irreducible: +20 concatlit is a report that interpolates
     #   numbers into prose, +1 upper is assigning the pre-existing
@@ -618,7 +618,7 @@ main: i64 = ()
     # per file with this gate's own two filters (drop `^\s*--` lines, strip
     # string bodies) against `git show HEAD:<path>` and the working copy:
     #
-    #   row          delta   tools/wasm/src/ward.id   lib/std/jit.id
+    #   row          delta   tools/wasm/src/ward.id   lib/jit.id
     #   snake         +20             20                    0
     #   directive      +1              0                    1
     #   stdlib         +2              2                    0
@@ -638,7 +638,7 @@ main: i64 = ()
     #               is a std.mem surface change, not a diff-local repair.
     #   stdlib +2   two `...:byte()` lines. ward reads its module image
     #               a byte at a time and there are 60-odd of these already;
-    #               `s[i]` is the Pass 100 spelling and does not compile on a
+    #               `s[i]` is the denied spelling and does not compile on a
     #               `str` today (GAP-025).
     #   trailret +7 six `return jitbail(…)` plus one `return bail(…)`, all
     #               EARLY returns from inside a branch, which is the file's
@@ -659,7 +659,7 @@ main: i64 = ()
     # 2026-08-08, ward's `call_indirect` jit arm. Five rows move, and every
     # point is attributed to one of TWO files. Measured the way the entries
     # below were: the gate was run at exactly its budgets first (it was), then
-    # with `lib/std/jit.id` alone reverted to HEAD, and the difference is that
+    # with `lib/jit.id` alone reverted to HEAD, and the difference is that
     # file's share. The `.wasm` fixture is counted separately in `nonduo`.
     #
     #   row          delta   ward.id  jit.id   ward_call_indirect_typed.wasm
@@ -693,7 +693,7 @@ main: i64 = ()
     #               ones carrying a `.`, which is what the pattern reads as a
     #               field access. Same class as GAP-041.
     #   stdlib +1   one `string.byte`, reading the table section's flags byte,
-    #               beside 51 existing ones. `s[i]` is the Pass 100 spelling
+    #               beside 51 existing ones. `s[i]` is the denied spelling
     #               and does not compile on a `str` today (GAP-025).
     #   trailret+15 fourteen `return jitbail(...)` / `return bailtrap(pc)` in
     #               ward.id and one `return @c.emit(...)` in std.jit. All the
@@ -714,7 +714,7 @@ main: i64 = ()
     # 2026-08-08, tree-sitter repair: `concatlit` 2429 -> 2428, RATCHETED DOWN.
     # `scripts/setup-nvim.id` built the generator command as
     # `"cd " .. ts .. " && tree-sitter generate ..."`; it is `"cd {ts} && …"`
-    # now, which is the Pass 100 §0.7 spelling and one fewer `..` beside a
+    # now, which is the canonical spelling and one fewer `..` beside a
     # literal. One file, one line, and the downward half of the ratchet is the
     # half that gets skipped. No other row moved: the remaining sixteen and
     # `nonduo` read EXACTLY their budgets over the same 450 canonical files
@@ -725,7 +725,7 @@ main: i64 = ()
     # mis-aligned `end` DIAGNOSE; each row calls that gate's own `run_fail`
     # helper, whose name carries the underscore. Renaming the helper is a
     # different diff. The -1 is a stray duplicated `peeked = lx.has_peeked` in
-    # `lib/std/compiler/parser.id`, at an indentation the `end`-only grammar
+    # `lib/compiler/parser.id`, at an indentation the `end`-only grammar
     # absorbed silently — the offside diagnostic is what found it.
     # 2026-08-08, §20 construct fixtures: `trailret` 3437 -> 3439, RAISED, and
     # the reason is that this row convicts the SPEC. GAP-025 already recorded
@@ -743,14 +743,14 @@ main: i64 = ()
     # first row in this table the COMPILER refuses rather than the gate counts.
     # The owner's ruling is that Lua back-compatibility is for `.lua` files
     # only, so `src/parser.zig` now rejects `try catch defer goto extends
-    # private await async macro let` in `duo_mode` with the canonical repair
+    # private await async macro let` in legacy mode with the canonical repair
     # named in the diagnostic. Every one of those keywords was measured at
     # ZERO line-leading uses over the 767 tracked `.id` files before it
     # landed.
     #
     # Its budget is 6, not 0, and the six are worth stating precisely because
     # they are the difference between what this gate can see and what the
-    # compiler sees. All six are `let` in `lib/std/graphics/shader.id`, and
+    # compiler sees. All six are `let` in `lib/graphics/shader.id`, and
     # all six are WGSL inside a `[[ … ]]` long bracket — shader source the
     # parser never reads as Duo. This gate's strip removes `"…"` bodies and
     # comments; it does not remove long brackets, so it cannot tell that
@@ -793,13 +793,13 @@ main: i64 = ()
     #
     #   row          delta   where it was paid
     #   snake         -36    corpus_classify.id 58 -> 4
-    #   upper          -6    duo_idiom_gate.id `ROOT` -> `root` (4);
+    #   upper          -6    gate/idiom.id `ROOT` -> `root` (4);
     #                        parser_corpus_coverage.id dropped its `P` alias (2)
     #   underprefix   -32    corpus_classify.id 58 -> 0
     #   axis           -2    corpus_classify.id `_is_class` -> `known`
     #   stdlib         -9    corpus_classify.id 17 -> 0 (`s:byte`/`s:sub`,
     #                        `out[#out + 1] =` for `table.insert`)
-    #   import         -1    duo_idiom_gate.id `os = os` -> `std.os.exit`
+    #   import         -1    gate/idiom.id `os = os` -> `std.os.exit`
     #   mwrapper       -4    capability_rows.id: four module-scope `x = {}`
     #                        accumulators became LOCALS of `main`, threaded
     #                        through `remember` as arguments. Nothing outside
@@ -808,7 +808,7 @@ main: i64 = ()
     #   trailret      -35    corpus_classify.id 13 -> 8 (the five that were
     #                        FUNCTION-FINAL; the eight `return 3` refusals stay,
     #                        an early return is not a tail expression),
-    #                        lib/std/bytes.id 10, lib/std/encoding/varint.id 7,
+    #                        lib/bytes.id 10, lib/encoding/varint.id 7,
     #                        tools/lsp/src/server.id 13
     #   nonduo         -1    `examples/benchmark.lua.backup` deleted — an
     #                        unreferenced stale copy of `examples/benchmark.lua`
@@ -819,9 +819,9 @@ main: i64 = ()
     #
     #   * corpus_classify.id — the full report AND the 951-line
     #     CORPUS_CLASSIFY_EMIT manifest are BYTE-IDENTICAL before and after.
-    #   * bytes.id / varint.id / server.id — `duo dump-c` on each file is
+    #   * bytes.id / varint.id / server.id — `idol dump-c` on each file is
     #     byte-identical before and after. Positive-controlled: the same
-    #     differential was run on `lib/std/encoding/binary.id`, where the
+    #     differential was run on `lib/encoding/binary.id`, where the
     #     identical transform is NOT sound — `b0:char(b1)` as a bare
     #     tail expression types as `f64`, not `str`, and dump-c drops to exit 1.
     #     That file was reverted. A bare tail expression is not always a
@@ -832,7 +832,7 @@ main: i64 = ()
     #     all four controls firing. The fixture count is the check that matters:
     #     the tables are now passed by reference and a lost mutation would show
     #     as `N records for 32 fixtures`.
-    #   * duo_idiom_gate.id PASS, and `std.os.exit` positive-controlled by
+    #   * gate/idiom.id PASS, and `std.os.exit` positive-controlled by
     #     value (exit 3) since the `req` it replaced was only on the FAIL path.
     #   * parser_corpus_coverage.id — 257/257, unchanged.
     #
@@ -870,7 +870,7 @@ main: i64 = ()
     # already ruled on once. `trailret`'s regex is
     # `(^|[[:space:]])return[[:space:]]+[^[:space:]]` — it is LINE-GRAINED, so
     # it cannot see whether a `return` is the last statement of a function.
-    # Pass 100 §5 (DEMAND-RETURN) does not deny `return`; it says "`return` =
+    # The demand-return rule does not deny `return`; it says "`return` =
     # EARLY EXIT or contract only". §1 denies the TRAILING one. The regex
     # cannot tell those two apart, so it convicts the licensed form. That is
     # verbatim the finding recorded above for `examples/pack/merge.id`,
@@ -905,7 +905,7 @@ main: i64 = ()
     #   The guards are already law-compliant, so rewriting them into if/else
     #   expression position is bending law-compliant code to satisfy an
     #   instrument that admits it cannot measure the distinction. It is also
-    #   bending it in the direction Pass 106 §4 built this corpus to resist:
+    #   bending it in the direction the corpus mandate built this corpus to resist:
     #   the boring corpus is twenty ORDINARY programs written the ordinary
     #   way, the instrument for finding what a mundane program needs that a
     #   lexer never did. An early-exit guard is the ordinary way in every
@@ -934,7 +934,7 @@ main: i64 = ()
     #      `examples/table/` under cover of this raise. The delta report added
     #      below is the check: it names the file before the commit exists.
     #
-    # 2026-08-08, ONE ROW ADDED: `convert`, at 949. Pass 121 §9 makes
+    # 2026-08-08, ONE ROW ADDED: `convert`, at 949. The result-demand rule makes
     # `n:to(str)` canonical and `(n):to(str)` noncanonical, and gaps/GAP-081.md
     # measured the tree at 1647 operation-first sites against ONE canonical
     # one. This row is that census turned into pressure. It is the ONLY number
@@ -987,7 +987,7 @@ main: i64 = ()
     # been measuring that since it landed — but only in BIND, CALL and FIELD
     # position, because its pattern requires a following `=`, `(` or `.`.
     #
-    # A duon DESCRIPTOR is declared with a copula: `Point: @{ x: f64 }`. The
+    # A idol DESCRIPTOR is declared with a copula: `Point: @{ x: f64 }`. The
     # byte after the name is `:`, so `upper` never saw a single one of them.
     # The largest population the deny row exists for was the one population it
     # could not count, and the row read 2169/2255 — comfortably green — the
@@ -1000,13 +1000,13 @@ main: i64 = ()
     #
     # WHAT THE REMAINING 18 ARE. Three populations, none of them "later":
     #
-    #  2  `tools/mcp/duo_shared.id` 909/939 — the words `EXAMPLE:` and
+    #  2  `tools/mcp/shared.id` 909/939 — the words `EXAMPLE:` and
     #     `Example:` inside `[[ … ]]` long-string bodies. MCP help text, not
-    #     duon code. The per-row strip deletes `"…"` bodies and cannot reach
+    #     idol code. The per-row strip deletes `"…"` bodies and cannot reach
     #     `[[ … ]]`, so this row over-reports there exactly as the header says
     #     every line-grained row does. IRREDUCIBLE without a lexer-grade strip.
     #
-    #  5  `lib/std/compiler/lexer.id` (Loc Tok State Lexer) and
+    #  5  `lib/compiler/lexer.id` (Loc Tok State Lexer) and
     #     `parser.id` (Res). The rename WORKS — it was written, it compiled on
     #     all four consumers, and both lexer differentials still hit their
     #     frozen fingerprints. It was reverted because `.githooks/pre-commit`
@@ -1014,7 +1014,7 @@ main: i64 = ()
     #     lines that carry pre-existing underscore debt (`peeked_token`,
     #     `int_val`, `next_tok`, `save_state`): 48 + 60 findings, none of them
     #     about uppercase. Clearing them means renaming std EXPORTS, which is a
-    #     surface change, and regenerating `src/duo_lexer_tokenize.c`, which
+    #     surface change, and regenerating `src/lexer_tokenize.c`, which
     #     currently carries another session's unshipped `to(i64)` work. The
     #     uppercase migration is BLOCKED ON THE SNAKE MIGRATION of those two
     #     files; it is not blocked on anything about uppercase.
@@ -1046,7 +1046,7 @@ main: i64 = ()
     #   `snake` 14121 -> 13966. Not a bonus — a COST OF ENTRY. `.githooks/
     #   pre-commit` gates the added lines of a diff, so every line a descriptor
     #   rename rewrites must also come to canon. That forced the underscore
-    #   repair of `lib/std/compiler/source.id` and `lib/std/cursor.id`
+    #   repair of `lib/compiler/source.id` and `lib/cursor.id`
     #   exports (`cursor_new` -> `cursornew`, `read_leb128_u` -> `readlebu`, 10
     #   + 7 functions with their three consumers), `tools/wasm/src/nn/init.id`
     #   (`n_embd` -> `nembd` and 15 more), and five differential fixtures.
@@ -1114,7 +1114,7 @@ main: i64 = ()
     # The distinction is the whole point of the column. A counted row is
     # pressure: someone can still write the text and the gate will only
     # complain if the total goes up. An ENFORCED row cannot be written at all
-    # in a `.id` file — `duo check` fails with the repair named — so its
+    #     in a `.id` file — `idol check` fails with the repair named — so its
     # count is a residue measurement, not a debt. Reporting both under one
     # heading, as this gate did until 2026-08-08, makes "we tolerate 167 of
     # these" and "these are impossible" look like the same fact.
@@ -1190,12 +1190,12 @@ main: i64 = ()
         print("audit100: FAIL — the upperdecl row does not see an uppercase descriptor declaration (@-brace {upat}, bare brace {ubare}); it would read 0 and pass")
         return 3
     if ulower != 0 or ucase != 0 or uplain != 0
-        print("audit100: FAIL — the upperdecl row convicts CANONICAL duon (lowercase descriptor {ulower}, inferred case-set {ucase}, ordinary line {uplain}); the ratchet would drive the repair backwards")
+        print("audit100: FAIL — the upperdecl row convicts CANONICAL idol (lowercase descriptor {ulower}, inferred case-set {ucase}, ordinary line {uplain}); the ratchet would drive the repair backwards")
         return 3
 
     # POSITIVE CONTROL ON `self`. §0a SELF-ZERO — "a parameter named `self` is
     # an audit finding; parameter lists count TRUE ARGUMENTS ONLY" — has been
-    # law since Pass 116, and CLAUDE.md §2 lists a "self scan" among the AUDIT
+    # law since the self-zero ruling, and CLAUDE.md §2 lists a "self scan" among the AUDIT
     # v4 rows. It did not exist. Not a row aimed at the wrong position like
     # `upperdecl` was: NO INSTRUMENT AT ALL, while the audit table named one,
     # so the row read as satisfied by being absent. gaps/GAP-071 measured 29
@@ -1296,8 +1296,8 @@ main: i64 = ()
     # `git ls-tree -r #name-only 4784b28 | grep -cv '\.(duo|md)$'` reads 538
     # at pristine HEAD, and the worktree index reads 539 with this diff in.
     #
-    #   +1  examples/compile_fail/pass100_try_retired.lua   landed at 4784b28
-    #   +1  examples/compile_fail/pass100_goto_retired.lua  this diff
+    #   +1  examples/compile_fail/try_retired.lua   landed at 4784b28
+    #   +1  examples/compile_fail/goto_retired.lua  this diff
     #
     # Both are the `.lua` twins of deny-table fixtures, and the twin is the
     # load-bearing half: without it the row proves only that the compiler
@@ -1456,7 +1456,7 @@ main: i64 = ()
         print("  no row above is attributable here. Every red row is HEAD's.")
 
     print("")
-    print("E = ENFORCED: `duo check` REFUSES this in a .id file and names the")
+    print("E = ENFORCED: `idol check` REFUSES this in a .id file and names the")
     print("  canonical repair. Unmarked rows are COUNTED only — the text still")
     print("  compiles and the budget is the only pressure on it. {marked} of {id:len()} rows are enforced.")
 

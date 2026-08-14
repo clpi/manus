@@ -58,7 +58,7 @@ check(label: str, ok: i64): void
     end
     if ok != 1
         record("  FAIL  {label}\n")
-        failed = failed + 1
+        failed += 1
     end
 end
 

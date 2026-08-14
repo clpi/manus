@@ -1,40 +1,33 @@
-# View-class edge pipe — view(edges) pipe; path audit over semantic homes.
+# View-class edges live on the bit proof — not a relation catalog pipe.
 
-view = { census = "lib/semantic/census.id", ingest = "lib/semantic/ingest.id" }
+bit = "scripts/proof/bit.id"
 
 len(path) = (min: i64)
     path:read()
         :len() >= min
 
-
 audit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 hit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 main: i64 = ()
-    code: i64 = 0
-    if !len(view["census"])(16)
-        code = 1
-    if code == 0 and !len(view["ingest"])(32)
-        code = 2
-    if code == 0 and hit(view["census"])("viewedges")
-        code = 3
-    if code == 0 and hit(view["ingest"])("viewedges")
-        code = 4
-    if code == 0 and !audit(view["census"])("view%(edges%)")
-        code = 5
-    if code == 0 and !audit(view["ingest"])("view%(edges%)")
-        code = 6
-    if code == 0 and !audit(view["census"])("|bit/f64|")
-        code = 7
-    if code == 0 and !audit(view["census"])("|i64/bit|")
-        code = 8
-    if code == 0 and !audit(view["ingest"])("|f32/bit|")
-        code = 9
-    if code == 0
-        print("proof/view: pass")
-    code
+    if !bit:len(32)
+        return 1
+    if bit:hit("viewedges")
+        return 3
+    if bit:hit("callable = true")
+        return 4
+    if !bit:audit("@view")
+        return 5
+    if !bit:audit(":to(bit)")
+        return 6
+    if !bit:audit("to(bit)(f64)")
+        return 7
+    if !bit:audit("to(i64)(bit)")
+        return 8
+    print("proof/view: pass")
+    0

@@ -1,7 +1,7 @@
 # Tracked C header/source ledger for the self-hosting target.
 #
 # scripts/census/language counts these as sanctioned bootstrap or oracle files. This
-# prints the exact queue so foreign C can retire under duon-visible evidence.
+# prints the exact queue so foreign C can retire under idol-visible evidence.
 
 capture: str = (shellline: str)
     gatecap(shellline)
@@ -62,21 +62,22 @@ show: i64 = (name: str, files: any)
         print("  {files[i]}")
     count
 
-root = cap("git rev-parse --show-toplevel 2>/dev/null")
-if root == ""
-    print("ledger/c: fail no git root")
-    return 3
+main: i64 = ()
+    root = cap("git rev-parse --show-toplevel 2>/dev/null")
+    if root == ""
+        print("ledger/c: fail no git root")
+        return 3
 
-cmd = "cd '{root}' && git ls-files '*.[ch]' | sort"
-files = lines(capture(cmd))
-boots = pick(files, "boot")
-oracles = pick(files, "oracle")
-count = boots:len()
-show("cboot", boots)
-show("coracle", oracles)
-if count == 0
-    print("ledger/c: pass bootstrap c 0")
-    return 0
+    cmd = "cd '{root}' && git ls-files '*.[ch]' | sort"
+    files = lines(capture(cmd))
+    boots = pick(files, "boot")
+    oracles = pick(files, "oracle")
+    count = boots:len()
+    show("cboot", boots)
+    show("coracle", oracles)
+    if count == 0
+        print("ledger/c: pass bootstrap c 0")
+        return 0
 
-print("ledger/c: fail bootstrap c {count}")
-1
+    print("ledger/c: fail bootstrap c {count}")
+    1

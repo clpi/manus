@@ -1,19 +1,19 @@
 /* GENERATED from src/token_classify_gen.zig — do not edit by hand.
  * Regenerate: duo token-tables emit
- * Canonical Duo projection: lib/std/token/classify.id (@c.export classify)
+ * Canonical Duo projection: lib/token/classify.id (@c.export classify)
  * Production consumer: src/keyword_bridge.zig → src/lexer.zig
  */
 #include <stdint.h>
 #include <string.h>
 
 /* weak: this generated table is the PROJECTION of
- * lib/std/token/classify.id. A program that embeds the canonical Duo
+ * lib/token/classify.id. A program that embeds the canonical Duo
  * source emits its own definition of the same symbol, and A3 ONE EDGE
  * says there is one fact behind both — so the Duo-emitted one must be
  * allowed to win rather than colliding. Without this, anything pulling
  * in SH-02's artifact AND SH-03's lexer fails to link with
  * `duplicate symbol '_duo_keyword_classify'`. */
-__attribute__((weak)) int64_t duokeywordclassify(const char *w) {
+__attribute__((weak)) int64_t duo_keyword_classify(const char *w) {
     if (strcmp(w, "and") == 0) return 4;
     if (strcmp(w, "break") == 0) return 5;
     if (strcmp(w, "continue") == 0) return 6;

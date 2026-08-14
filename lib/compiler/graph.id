@@ -1,11 +1,11 @@
 # SH-07 — the semantic graph, seed.
 #
-# Pass 48 §3.2: one edge is a relationship between declared things. The
+# One edge is a relationship between declared things. The
 # smallest honest instance of that, computable today, is the module's own
 # reference graph: NODES are top-level bindings, EDGES are references from one
 # to another.
 #
-# WHY THIS SHAPE FIRST. Pass 57 C2 / Pass 64 FF-19 make a file's top-level
+# WHY THIS SHAPE FIRST. Scope makes a file's top-level
 # bindings its surface and `_`-prefixed ones private. That turns in-degree into
 # a real question with a real answer: a `_private` binding with no references
 # inside its own file is dead code, and nothing outside the file may reach it
@@ -25,7 +25,7 @@
 # `lx: Lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
 # this file uses ambient roots. Measured, not assumed.
 
-_has: bool = (set: str, name: str)
+has: bool = (set: str, name: str)
     needle = "|" .. name .. "|"
     hn: i64 = set:len()
     nn: i64 = needle:len()
@@ -48,22 +48,18 @@ _has: bool = (set: str, name: str)
     false
 end
 
-_add: str = (set: str, name: str)
-    if _has(set, name)
+add: str = (set: str, name: str)
+    if has(set, name)
         return set
     end
     set .. name .. "|"
 end
 
-_is_private: bool = (name: str)
-    #name > 1 and name:byte(1) == 95
-end
-
 # Top-level binding names, as "|a|b|". A binding is at top level when its name
 # token sits in column 1 — the same layout signal the parser uses to recognise
 # a bodiless declaration.
-nodes: str = (src: str, file: str)
-    lx: Lexer = lexer.new(src, file)
+nodes: str = (src: str, file: str, family: i64)
+    lx: Lexer = lexer.new(src, file, family)
     acc = "|"
     while true
         t = lexer.next(lx)
@@ -73,7 +69,7 @@ nodes: str = (src: str, file: str)
         if t.kind == token.KIND_NAME and t.loc.col == 1
             nxt = lexer.peek(lx)
             if nxt.kind == token.KIND_ASSIGN or nxt.kind == token.KIND_LPAREN or nxt.kind == token.KIND_COLON
-                acc = _add(acc, t.text)
+                acc = add(acc, t.text)
             end
         end
     end
@@ -82,12 +78,12 @@ end
 
 # Private nodes with in-degree 0: declared `_name`, never referenced in the
 # file that declares them, and unreachable from outside it by policy.
-dead_private: i64 = (src: str, file: str, report: bool)
-    declared = nodes(src, file)
-    lx: Lexer = lexer.new(src, file)
+dead: i64 = (src: str, file: str, family: i64, report: bool)
+    declared = nodes(src, file, family)
+    lx: Lexer = lexer.new(src, file, family)
     used = "|"
-    prev_kind: i64 = 0
-    prev_col: i64 = 0
+    kind: i64 = 0
+    col: i64 = 0
     while true
         t = lexer.next(lx)
         if t.kind == token.KIND_EOF
@@ -103,15 +99,15 @@ dead_private: i64 = (src: str, file: str, report: bool)
         # `a:m()` now also marks a same-named top-level binding as used, so the
         # query can MISS a dead private — it can no longer invent one, which is
         # the failure that would delete live code.
-        if t.kind == token.KIND_NAME and prev_kind != token.KIND_DOT
+        if t.kind == token.KIND_NAME and kind != token.KIND_DOT
             # a declaration site is not a use of itself
-            decl_site = t.loc.col == 1
-            if !decl_site
-                used = _add(used, t.text)
+            decl = t.loc.col == 1
+            if !decl
+                used = add(used, t.text)
             end
         end
-        prev_kind = t.kind
-        prev_col = t.loc.col
+        kind = t.kind
+        col = t.loc.col
     end
 
     # walk the declared set and count private names never used
@@ -123,7 +119,7 @@ dead_private: i64 = (src: str, file: str, report: bool)
         if declared:byte(i) == 124
             if i > start
                 name = declared:sub(start, i - 1)
-                if _is_private(name) and !_has(used, name)
+                if name:len() > 1 and name:byte(1) == 95 and !has(used, name)
                     count += 1
                     if report
                         print("  dead private " .. file .. ": " .. name)

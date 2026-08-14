@@ -5,7 +5,7 @@
 # What this fixture discriminates, and it is the line gaps/GAP-078.md was filed
 # over: THE COPULA/INVOKE SPLIT, AND SPACING IS NOT THE DECIDER. `grammar.md`
 # R1 is — "IS never takes an argument group; INVOKE always does" — and R1 is
-# NORMATIVE (Pass 108). CLAUDE.md §0d's spaced-versus-tight sentence is a
+# NORMATIVE. CLAUDE.md §0d's spaced-versus-tight sentence is a
 # canonical-layout COROLLARY: it renders the decision, it does not make it.
 #
 # Line 3 separates them. `count:u32` is TIGHT and carries no call group, so R1

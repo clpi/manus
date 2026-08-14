@@ -148,7 +148,7 @@ shape(t: any)
     return { t.rows, t.cols }
 end
 
-tostring(t: any)
+t: any:to(str)
     return "Tensor(" .. t.rows:to(str) .. "x" .. t.cols:to(str) .. ")"
 end
 

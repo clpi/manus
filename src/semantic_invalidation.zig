@@ -1,4 +1,4 @@
-//! Pass 8 — bounded invalidation edges for persistent semantic evidence (P8-08 seed).
+//! — bounded invalidation edges for persistent semantic evidence (P8-08 seed).
 const std = @import("std");
 const persistent_semantic_state = @import("persistent_semantic_state.zig");
 

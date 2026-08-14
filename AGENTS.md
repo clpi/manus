@@ -2,10 +2,22 @@
 
 ## Authority
 
-The language law has one home. Read these files before editing Idol (`.id`), in
-this order:
+`docs/spec/law.md` is the **SUPREME one-page law** of Idol. It is authoritative
+over every other document and supersedes any stale projection wherever they
+diverge; where C0 or any projection below conflicts with `docs/spec/law.md`, that
+text is corrected to match `docs/spec/law.md`. Read it first.
 
-1. `docs/spec/constitution.md` — C0, the sole semantic authority. It is
+The language law otherwise has one structured home. Read these files before
+editing Idol (`.id`), in this order:
+
+0. `docs/spec/law.md` — **SUPREME one-page law**: final language + semantic +
+ compiler law; authoritative over every document below.
+1. `docs/spec/canonical.md` — **blind-start constitution**: machine-enforceable
+   lexical/path regex (§25–27) plus semantic-role law (§1–24, §29–33); read
+   **before repository code**; do not infer law from Git frequency.
+2. `docs/spec/agent.md` — **sole new-agent bootstrap**: readable constitutional
+   interpretation (sections I–CXLIX); supersedes partial prompts; **not C0**.
+3. `docs/spec/constitution.md` — C0, the sole semantic authority. It is
    structured law documentation, not executable source or a source template.
    **Idol algebra closure:** §67 (`law.semantic.universe` … `law.algebra.absolute`;
    adversarial controls in `law.gate.protocol`, `law.gate.algebra`,
@@ -16,17 +28,25 @@ this order:
    § universal anti-drift rules, and § projection (PROJECTION-ONE). **Anti-drift:**
    `law.source.not.proof`, `law.repair.class`, `law.projection.one`,
    `law.from.zero`, `law.std.zero`, `law.lib.zero`, `law.world.one`,
-   `law.projection.absolute`, `law.projection.repair`. **INFER-ONE:**
+   `law.projection.absolute`, `law.projection.repair`. **INFER-ONE / SOURCE-INFER-ONE / INTERMEDIATE-ZERO:**
    `to` is a graph relation usually omitted from source when demand uniquely resolves
-   (`law.infer.one`); census debt with `scripts/infer_census.id`; never bulk-delete.
+   (`law.infer.one`); **SOURCE-INFER-ONE** applies uniformly — no spelling survives
+   merely to restate facts recoverable from subject, operands, result/descriptor
+   demand, reachable facts, relation constraints, world/effect requirements, stage,
+   provenance, or control-flow refinement. **FACT-COMPOSITION-INFER-ONE:** projection,
+   injection, capture, protocol/world satisfaction are graph facts with normally zero
+   source syntax. There is no canonical `value:to()` rung. `law.intermediate.zero` —
+   chain relations directly; no single-use bridge bindings. No `@{...}` when use
+   determines dependency. Census debt with `scripts/census/infer.id`; never bulk-delete.
    `law.infer.one` — write only facts not uniquely recoverable; query resolver
    before adding `:to(T)`. Re-pasted session prompts titled "algebra closure"
-   are void; §67 is sole authority. The language is **Idol** only.
-2. `CLAUDE.md` — the operative projection of C0.
-3. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, `docs/spec/source.md`,
+   are void; §67 is sole authority. **No `std` anywhere** in new canonical source,
+   gates, agents, or teaching examples. The language is **Idol** only.
+4. `CLAUDE.md` — short operative projection of C0; routes to `docs/spec/agent.md`.
+5. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, `docs/spec/source.md`,
    `docs/spec/host.md`, `docs/spec/convergence-contract.md` (blocking execution
    contract), and the relevant projection in `docs/spec/`.
-4. `.agents/AGENT_CANONICAL.md` and `.agents/AGENT_COORDINATION.md` — routing,
+6. `.agents/AGENT_CANONICAL.md` and `.agents/AGENT_COORDINATION.md` — routing,
    ownership, and current obligations.
 
 This file is only the agent workflow and mechanical preflight. It is not a
@@ -37,7 +57,7 @@ historical archive; the active tree is current Idol only (`law.zero.history`).
 The language and project identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
 Active development remains in this repository until release-readiness authorization;
 see `.agents/RELEASE_READINESS.md`. Cursor routers live in `.cursor/rules/`;
-executable canonicality lives under **`gates/`** (home hierarchy — not scattered
+executable canonicality lives under **`gate/`** (home hierarchy — not scattered
 `scripts/*gate*` paths).
 
 ## Idol harness orientation
@@ -48,6 +68,8 @@ reasoning law lives elsewhere.
 
 | Layer | Path | Role |
 |---|---|---|
+| Blind-start constitution | `docs/spec/canonical.md` | Lexical regex + semantic-role law; read before repo code |
+| Sole new-agent bootstrap | `docs/spec/agent.md` | Readable spec I–CXLIX; supersedes partial prompts |
 | Semantic law | `docs/spec/constitution.md` | Sole authority (C0) |
 | Harness reasoning | `docs/spec/harness-projection.md` | Pre-task reduction, deletion order, semantic diff, host quarantine, SHC scheduler, FTCFTW rejection, **before writing code audit seams** |
 | Live boot payload | `.agents/HARNESS.md` | Revision-bound envelope + template (from `tools/node/dev/generate-harness`) |
@@ -86,12 +108,18 @@ filesystem bootstrap provenance until renamed (GAP-157); it is not authority.
 Every canonicality result has one of four states: `canonical`, `migratable`,
 `vocabularyblocked`, `invalid`. Do not invent vocabulary to silence a gate.
 
-Do not add a new Zig, C, Lua, shell, Python, or other foreign subsystem. Existing
-foreign implementation is bootstrap debt. A foreign edit is admissible only
-when an active gap and evidence show that it is the smallest bridge needed to
-unlock its Idol replacement, or when it strictly removes foreign surface. Keep
-the bridge local, preserve native performance, and move the authority into Idol
-in the same vertical slice as soon as the compiler can express it.
+New canonical `.id` is admitted — it is the Idol source extension. The priority
+is the earliest executed SHC authority frontier (`law.bootstrap.velocity`): a
+bounded foreign bridge — including new Zig — is admitted and preferred over
+stalling when it is the fastest path to the next executed transfer and carries a
+`law.bridge.death` deletion witness (host owner before, Idol owner after, next
+host boundary). What stays forbidden is a new *permanent* foreign subsystem,
+foreign SEMANTIC AUTHORITY, and a foreign semantic kingdom beside the graph.
+Keep the bridge local, preserve native performance, regenerate (never hand-fork)
+generated artifacts, and move the authority into Idol as soon as the compiler can
+express it. Do not block on a monoglot ideal the native compiler cannot yet
+express — record `IMPLEMENTATION-BLOCKED` and add the smallest unblocking bridge
+rather than idling.
 
 Never route a typed or compile-time value through a boxed compatibility value.
 The semantic value and its native realization remain distinct; compatibility
@@ -140,6 +168,36 @@ Presumptively noncanonical shapes whenever written or touched:
   prefer minimal source under `law.infer.one`; graph must prove redundancy before
   removal (`law.gate.infer`).
 
+Explicit anti-drift law classes:
+
+- **BOOLEAN-MIRROR-ZERO** (`law.boolean.mirror.zero`) — no boolean flag that
+  restates a direct graph fact (`callable`, `possessed`, `operation`, `typed`,
+  `authorized`, `captured`, `projected`, `resolved`, `imported`, `native`,
+  `static`). If the graph can express it structurally, the boolean must disappear.
+- **CATALOG-ZERO** (`law.catalog.zero`) — no table whose purpose is to enumerate
+  relations, descriptors, worlds, formats, handlers, operations, or capabilities.
+  Enumerations belong to graph identities and facts, not a second authority row.
+- **MAGIC-CODE-ZERO** (`law.magic.code.zero`) — no numeric/status/opcode/ordinal
+  code that selects semantic meaning on the consumer side. Rejection ids,
+  token roles, and semantic classes must cross the seam as stable identities or
+  graph facts, not as integers reconstructed by host switches.
+- **GENERIC-ACTION-ZERO** (`law.generic.action.zero`) — no generic orchestration
+  verb (`run`, `execute`, `process`, `apply`, `perform`, `handle`) as a project-owned
+  helper unless it names an actual semantic subject/relation. Root routines may not
+  be named merely to mean “start this tool.”
+- **FOUNDATIONAL-WORD-COLLISION-ZERO** (`law.foundational.collision.zero`) — do not
+  reuse foundational semantic words (`apply`, `project`, `realize`, `resolve`, `bind`,
+  `demand`, `witness`, `relation`, `subject`, `world`, `shape`, `descriptor`) for
+  local helpers that do not embody that exact canonical concept.
+- **EVIDENCE-SUBJECT-ONE** (`law.evidence.subject.one`) — every evidence artifact
+  must carry the exact measured subject revision separately from the evidence
+  revision. Metrics reported “at HEAD” are invalid unless the measured subject
+  equals the checkout HEAD.
+- **DIFFERENTIAL-ORACLE-BOUNDED** (`law.oracle.bounded`) — a host differential
+  oracle is valid only for the legacy-equivalent subset and must carry a concrete
+  deletion condition. When Idol law intentionally diverges, the oracle must not
+  veto the new behavior.
+
 After parsing, describe meaning in semantic terms. Parser terms such as
 statement, loop node, binary expression, or call expression are valid only
 while discussing recognition. Later boundaries must expose the actual relation,
@@ -156,7 +214,7 @@ when it introduces any of these forms:
 
 - an identifier containing an underscore or uppercase letter;
 - `end`, a semicolon, `then`, or `do` instead of offside structure;
-- `--` or Lua long comments instead of `#` comments — `gates/idiom.id` and `gates/path.id`
+- `--` or Lua long comments instead of `#` comments — `gate/idiom.id` and `gate/path.id`
 - Lua long strings, historical single-quoted text, `#value` length, or an
   unadmitted backtick use;
 - a new prefix directive or compatibility directive use;
@@ -176,7 +234,21 @@ when it introduces any of these forms:
 - adjective protocols or trait kingdom (`readable`, `writable`, `iterable`,
   `source: readable`, `trait`, `impl`, `@implements`, `concept`) — relation
   constraints only (`source: read`; `law.protocol.one`);
-- a new foreign source file.
+- `@` other than its world faces — `@` IS THE CURRENT-WORLD ACCESSOR: bare `@`
+  (the current world), `@member` world access (`@target`, `@env`), `@member = v`
+  ambient mutation (place), postfix `thing@world` / `thing@` world qualification,
+  `@{ k = v }` injection (derive a closed world), `thing@{ k = v }` interjection
+  (evaluate a subtree under an injected world), `@(eval)`; never `@.member` or
+  `@:member` (INVALID — `@` already accesses, so `@.` and `@:` steal `.`/`:`),
+  never `thing@relation` (relation orientation is the colon face `thing:relation`),
+  and never a compiler/host directive `@comp`, `@c`, `@host`, `@runtime`,
+  `@emit`, `@asm`, or any other `@` namespace — `gate/idiom.id` `sigil` /
+  `law.anchor.one` (`docs/spec/law.md` §4 + World+projection add-on; C0
+  `law.projection.algebra`, `law.at.one`);
+- a new foreign source file that is a permanent subsystem, a foreign semantic
+  authority, or lacks a `law.bridge.death` deletion witness — a bounded Zig
+  bootstrap bridge that advances the executed SHC frontier and carries that
+  witness is admitted (`law.bootstrap.velocity`).
 
 Canonical lexical meaning is fixed: double quotes are text, single quotes are
 bytes, hash starts a comment, length is the subject relation `len`, and backtick
@@ -195,7 +267,7 @@ base relation together with the exact place and update facts; it does not mint
 update evaluates a computed place once, so collapsing repeated subject, key, or
 index evaluation requires an explicit equivalence witness.
 
-The current `gates/idiom.id` added-line check is migration pressure over
+The current `gate/idiom.id` added-line check is migration pressure over
 text, not semantic proof and not permission to rewrite. Its
 `law.update.face` finding identifies only a candidate expanded face. Existing
 compound forms, distinct left/right subjects, declarations, and unwitnessed
@@ -209,10 +281,10 @@ working-tree diff:
     repo="$(git rev-parse --show-toplevel)"
  gate="$(mktemp -t idolgate)" && trap 'rm -f "$gate"' EXIT
  git diff -U0 -- '*.id' '*.id' > "$gate"
- cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/gates/idiom.id"
+ cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/gate/idiom.id"
 
-`gates/architecture.id` reads the staged index, so run it after staging or let
-the pre-commit hook run it. The hook also runs `gates/path.id` over every
+`gate/architecture.id` reads the staged index, so run it after staging or let
+the pre-commit hook run it. The hook also runs `gate/path.id` over every
 staged added or renamed path and over every added line in project teaching and
 implementation surfaces. Do not suppress, bypass, weaken, or route around a
 finding. Safe formatting rewrites require proved semantic equivalence.
@@ -221,8 +293,8 @@ Intent-sensitive findings require a semantic repair, not a regex rewrite.
 Path and home names obey the same LAW-ONE as source identifiers (`law.path.name`).
 Concat/mashed file and directory names are never allowed — each semantic unit belongs
 in its own home segment through hierarchy (`semantic/graph.id`), not a compound stem
-(`semantic_graph.id`, `readline.id`, `nativebackend/`). Both `gates/path.id` and
-`gates/idiom.id` reject separator violations, version taxonomy, mashed
+(`semantic_graph.id`, `readline.id`, `nativebackend/`). Both `gate/path.id` and
+`gate/idiom.id` reject separator violations, version taxonomy, mashed
 compounds in diff path headers, directory components, filename stems, and added-line
 tokens, and namespace-first calls (`string.*`, `std.string.*`, `table.*`, `math.*`,
 `std.*`) on every staged added line in project surfaces.
@@ -248,7 +320,7 @@ for host APIs.
 
 Run `./tools/node/dev/hostcensus` when auditing host debt. Never add `std.`,
 `proc.`, `ir.`, or similar namespace dispatch to new canonical source.
-Added-line host-pattern firewall: `gates/idiom.id` and `gates/host.id`
+Added-line host-pattern firewall: `gate/idiom.id` and `gate/host.id`
 (temporary until graph enforcement, `GAP-154`).
 
 ## Gate scan boundaries (LAW-ONE + curry)
@@ -325,7 +397,7 @@ dot(io) = (code: str)
 view(edges) = ()
     "|bit/f64|f64/bit|bit/f32|f32/bit|i64/bit|"
 
-view = { census = "lib/semantic/census.id", ingest = "lib/semantic/ingest.id" }
+bit = "scripts/proof/bit.id"
 ```
 
 Line-level work inside a diff boundary uses **`audit(path, no, line)`** — never
@@ -334,20 +406,20 @@ Bare-line `end` detection uses **`bare(code)`** — never `bareend`.
 Ingress home membership uses **`ingress(path)`** — never `ingressonly` or
 `only(ingress)(path)`; ingress is the subject.
 
-Authoritative implementations: `gates/idiom.id`, `gates/host.id`,
-`gates/path.id` (`scan(path)(body)` for path lists, `scan(diff)(body)` for
+Authoritative implementations: `gate/idiom.id`, `gate/host.id`,
+`gate/path.id` (`scan(path)(body)` for path lists, `scan(diff)(body)` for
 namediffs). Gate transport is stdin only — `stdin:read()` via pipe or shell
 redirect (`< file`); no `os.args`, no bash wrappers, no `gatepath`, no `gate.sh`.
-Run gates with **`idol run gates/<name>.id`** — never **`--backend=c`** (C emit is bootstrap
+Run gates with **`idol run gate/<name>.id`** — never **`--backend=c`** (C emit is bootstrap
 debt for the compiler build, not gate admission).
 Commit admission runs through `.githooks/pre-commit` (shell orchestrator → direct-backend
-`idol run gates/*`). Never `--backend=c` on gates.
+`idol run gate/*`). Never `--backend=c` on gates.
 
-Gate home (`gates/`):
+Gate home (`gate/`):
 
 | Gate | Role |
 |---|---|
-| `preflight` | `.githooks/pre-commit` shell → direct `idol run gates/*` |
+| `preflight` | `.githooks/pre-commit` shell → direct `idol run gate/*` |
 | `idiom.id` | Added-line lexical/canonical migration firewall |
 | `admission.id` | Semantic-admission firewall on added lines |
 | `host.id` | Host API debt on staged additions |
@@ -356,7 +428,7 @@ Gate home (`gates/`):
 | `census.id` | Path stem census |
 | `catalog.id` | Admitted relation projection (tables; admission inlines) |
 | `bootstrap.id` | Shared capture helpers for gate scripts |
-| `build.id` | Zig build-step idiom wrapper (diff → `gates/idiom.id`) |
+| `build.id` | Zig build-step idiom wrapper (diff → `gate/idiom.id`) |
 
 ## Path and file names (law.path.name)
 
@@ -371,7 +443,7 @@ Never use underscore separators in file or directory names. The stem projects
 the semantic table or home name; qualification belongs in nested homes and
 worlds, not punctuation in a single component.
 
-Enforced on staged paths and added lines by `gates/path.id` (`sep`, `mash`,
+Enforced on staged paths and added lines by `gate/path.id` (`sep`, `mash`,
 `walk`, `verdict`). Positive control rejects `semantic_graph.id` and accepts
 `semantic/graph.id`.
 
@@ -381,7 +453,7 @@ canonical one-word name, origin, and role. If decomposition is unclear, record
 
 Callable bindings use result demand on the binder: `name: descriptor = (args) body`.
 Never write suffix or header callable faces: `name = (): type`, `name = (args): type`,
-or `name(): type` — migratable debt ratcheted by `gates/architecture.id` staged
+or `name(): type` — migratable debt ratcheted by `gate/architecture.id` staged
 census (callable.result.suffix), `examples/demand/result.id`, and `scripts/canon.id`.
 Do not reintroduce a `suffix()` substring detector or `if !suffix(` / `if not suffix(` gate controls.
 Length is subject-first: `value:len()` — never `size(x)`, `len(x)`, `rawlen(x)`,
@@ -425,14 +497,14 @@ Read live claims before editing. Never restore shadow authorities removed by
 another owner.
 
 1. Read the local router and `docs/bootstrap.md`, then call
-   `duo_agent_session_start` and inspect `git status --short --branch`, recent
-   commits, `duo_dev_claim_files`, every current `gaps/GAP-*.md`, and
+   `idol_agent_session_start` (`duo_agent_session_start` bootstrap alias) and inspect `git status --short --branch`, recent
+   commits, `idol_dev_claim_files` (`duo_dev_claim_files` alias), every current `gaps/GAP-*.md`, and
    `git stash list`. Until `GAP-131` closes, the session gap summary is
    incomplete; the exact gap files and live claim result remain the routing
    evidence.
-2. Claim exact paths with `duo_dev_claim_acquire` before editing. Never edit a
+2. Claim exact paths with `idol_dev_claim_acquire` (`duo_dev_claim_acquire` alias) before editing. Never edit a
    path owned by another live session.
-3. Use `duo_agent_gaps_update` for numbered obligations. Do not create a second
+3. Use `idol_agent_gaps_update` (`duo_agent_gaps_update` alias) for numbered obligations. Do not create a second
    tracker or hand-allocate a gap.
 4. Serialize builds and benchmarks through the locked MCP build tools. Until a
    world-backed Idol coordinator is admitted, do not teach a `std.script`
@@ -457,29 +529,29 @@ or algorithm family.
 ## Learned User Preferences
 
 - Do not migrate development to `idollang/idol`; keep active work in `clpi/duo` until explicit release-readiness authorization.
-- Do not implement or hand-edit lexical or tokenizer logic outside the Idol lexer source path (`lib/std/compiler/lexer.id`, `lib/std/compiler/token.id`).
-- Do not use `ALU_OPS` or lookup-table dispatch for JIT lowering; specialize each opcode at its ALU or compare edge.
-- INFER-ONE (`law.infer.one`): write only facts not uniquely recoverable from demand/descriptors/context; query resolver before `:to(T)`; prefer demand-implied results over explicit `return` or redundant conversions.
-- Relation projection is not curry: declare `to(str) = (value)` and invoke `value:to(str)`; operation-first `to(str)(value)` is migratable debt only.
-- Gate `.id` helpers: boundary curry `len(path)(min)`, `audit(path)(pattern)`, `hit(path)(pattern)` — not flat comma forms or bridge bindings; multiline subject-first `path:read()` chains, no `text = path:read()` transitive bindings; stdin via `io:read()` only; `idol run`/`idol check`, never `--backend=c`.
+- Only create git commits when explicitly requested by the user.
+- Do not implement or hand-edit lexical or tokenizer logic outside the Idol lexer source path (`lib/compiler/lexer.id`, `lib/compiler/token.id`).
+- INFER-ONE / SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE / INTERMEDIATE-ZERO: no source spelling restates uniquely recoverable facts (subject, operands, demand, constraints, world/effect, stage, provenance, control-flow); projection/injection/capture/protocol/world satisfaction normally have zero source syntax; no canonical `value:to()` rung; no single-use bridge bindings; `@` only for anchors — never `@{...}` world/import/dependency lists; `IMPLEMENTATION-BLOCKED` not workaround canonization. Relation projection is not curry — declare `to(str) = (value)`, invoke `value:to(str)`; operation-first `to(str)(value)` is migratable debt. projection/injection/interjection are three uses of ordinary world/table semantics (select a fact / derive a world with added facts / evaluate a subtree under it), not new subsystems — no inject, scope, context, provider, registry, or dependency framework.
+- Do not defer, stop, or idle-block mid-task; "you are never blocked" — drive durable end-to-end fixes toward SHC/FTCFTW and either resolve or record `IMPLEMENTATION-BLOCKED` rather than stalling. Zig is admissible as a bootstrap bridge where genuinely needed to reach SHC fastest; aggressively reconcile and delete ALL stale rules, prose, legacy code, and non-canonical edge/binding usage across the whole repo rather than preserving it. FTCFTW is an open-ended, proof-driven Pareto-dominance contract against the best known implementation plus the semantic/physical lower bound (not a scalar score, not merely "faster than C") — strictly improve every cost dimension where physically possible, equal the proven lower bound otherwise, and never lose without naming the exact tradeoff or unresolved fact. Realization is a semantic-to-physical optimizer over the whole machine/OS/hardware/workload stack, not code generation (`law.physical.open` PHYSICAL-SPACE-OPEN: representation/encoding, algorithm/data structure, precision, layout, instruction selection, scheduling, ABI, OS interface/syscall, concurrency, hardware placement, specialization, persistence, distribution, energy — future strategies admitted by the same rule); preserve ONLY what semantics make observable, since every accidental observable is a permanent optimization barrier (`law.observation.minimum` OBSERVATION-MINIMUM). FTCFTW is the whole frontier `R(S,W,T,E,P)` — every physically lawful realization preserving the required observations — not a checklist (`law.optimization.space` OPTIMIZATION-SPACE-COMPLETE, `docs/spec/law.md` §107); a candidate is admitted iff it preserves demanded observations under the current world, satisfies authority/effect/resource constraints, is verifiable, and improves the chosen Pareto frontier; every individual optimization is an instance discovered inside `R` on the frontier axes — never a new constitutional mechanism. Square-zero foundation: `law.observation.one` (OBSERVATION-ONE + BOUNDARY-ONE + physical-nonexistence `none`), `law.equivalence.observation`, `law.demand.derivative`, `law.relation.property`, `law.change.delta`, `law.uncertainty.algebra`, `law.optimizer.economy` (§104–§106). REALIZATION-CONTRACT (`law.realization.contract`, §108) corrects the premise further: FTCFTW is not compiler optimization but optimal verified realization under semantics/information/physics/economics/uncertainty over the full tuple `R(S,O,W,D,K,E,H,P,F,B)` — *whether any computation occurs at all* is a candidate strategy (lawful nonexecution: cached/theorem/materialized/world-fact answers, demand elimination, observer elimination). Lower bounds are information/communication/I-O/circuit/work-vs-span/physical-law, not instruction counts; architecture (process/thread/service/shard/boundary erasure+introduction) is realization; meta-cost is lifecycle-global (a 1 ns win costing 10 h to find for a once-run program is a loss). The ~24 axes: identity, observation, law, knowledge, uncertainty, demand, change, equivalence, information, work, communication, representation, architecture, placement, schedule, boundary, failure, resource, search, verification, evidence, cost, adaptation, meta-cost — all extensible.
+- Gate `.id` helpers: boundary curry `len(path)(min)`, `audit(path)(pattern)`, `hit(path)(pattern)`; subject-first `path:flag(q)(no, code, pat, law, fix)`; one word per binding (decompose mashed compounds like `denyrows`/`gatehome`); multiline subject-first `path:read()` chains; stdin via `stdin:read()`; `idol run`/`idol check` only — no C, Lua, LLVM, or V backend ever (`--backend=c` is bootstrap debt, not gate admission).
+- LAW-ONE paths and bindings: one lowercase word per segment — no snake_case or mashed compounds; decompose through hierarchy (`semantic/graph.id`, not `semantic_graph.id`).
 - Prefix `!` is canonical negation — never `if not`, `and not`, or `(not` in Idol source (gate detector prose may still quote those strings).
 - Do not decide canonicality with string-detector or substring architecture (`codens`, `luahash`, `layout`, `has(...)` admission patterns); route through production lexer → parser → graph → obligations (`GAP-124`).
 - Harness must reason in Idol (pre-task reduction, semantic diff, deletion order), not as a conventional coding agent; read `docs/spec/harness-projection.md` and `.agents/HARNESS.md` before choosing work; audit seams for BRIDGE-DEATH, UNKNOWN-ONE, OWNERSHIP-ZERO, and PROFILE-EVIDENCE before introducing bridges or helpers.
-- Use `"{}"` text composition, not `..`; nested `{expr:to(str)}` inside string literals does not interpolate — build dynamic needles at expression level.
-- No `std.*`, `table.*`, `string.*`, or `math.*` namespace dispatch — subject-first edges only (`text:match`, `xs:keys`); reject lexical-substitution migrations (`std.*`→`process.*`, `req`→`process = lib.process`); prove semantic reduction, not respelling; `environment` is not a thing — use `os.env[k]`, `os.args[n]`, `io:read`/`io:write`.
-- `using`/`using(x)` forbidden — `use(x)` is the sole admitted compact lexical-admission face; do not refactor `scripts/grammarconvergence.id` without explicit approval.
+- Use `"{}"` text composition, not `..`; nested `{expr:to(str)}` inside string literals does not interpolate — build dynamic needles at expression level; `using`/`using(x)` forbidden — `use(x)` only; do not refactor `scripts/grammarconvergence.id` without explicit approval.
+- No `std.*`, `table.*`, `string.*`, or `math.*` namespace dispatch — subject-first edges only (`text:match`, `xs:keys`); reject `callable`/`*able`/codec/encoding protocol identities and lexical-substitution migrations; prove semantic reduction (DELETE/DECOMPOSE before rename), not respelling; never `==` against bool/nil/0/1/true/false or other sentinels; `environment` is not a thing — use `os.env[k]`, `os.args[n]`, `io:read`/`io:write`. No `match`/`case`/`switch`/pattern-object subsystem — control flow is refinement `if` (subject evaluated exactly once; branch heads are constraints on the already-evaluated subject; multi-arm refinement is unordered with no first-match/most-specific/declaration-order/trait precedence; nested `if` expresses order). Express every design from the small irreducible basis (id, fact, binding, value, table, descriptor, world, home, projection, application, relation, able, pack, place, refinement, demand, effect, witness, stage, provenance, transformation, realization) and reject match/pattern/trait/interface/module/namespace/import/service/context/result/option/future/promise/async/stream/iterator/macro/unsafe/capability/reflection unless irreducibility is proven.
 
 ## Learned Workspace Facts
 
-- Production lexical authority is `lib/std/compiler/lexer.id` and `lib/std/compiler/token.id`; `src/duo_lexer_tokenize.c` is generated from `lib/std/compiler/host.id` — regenerate, never hand-edit; `src/lexer.zig` is a differential oracle only.
+- Production lexical authority is `lib/compiler/lexer.id` and `lib/compiler/token.id`; `src/lexer_tokenize.c` is generated from `lib/compiler/host.id` — regenerate, never hand-edit; `src/lexer.zig` / `tokenizeHost()` are differential oracles only — not live production work.
 - Executed SHC frontier is **S0** (lexer/token/span only); compiler B does not exist; next frontier is GAP-145 lexical identity → GAP-134 grammar roles.
-- Harness boot payload: `docs/spec/harness-projection.md` → `.agents/HARNESS.md` via `tools/node/dev/generate-harness` (`orient` regenerates).
-- Dev and coordination tooling lives under `tools/node/dev/`; Codex agent skill is `idol-dev`.
-- Gate boundary relation descriptors live in `lib/semantic/gate.id` (`len`, `audit`, `hit`, `scan`, `dot` — curry slots, not world relations).
-- Reserved keyword `not` cannot be a table field name — census row is `debt.negation`, never `debt.not`.
-- Bit view edges registered in `lib/semantic/ingest.id` as curried `view(edges)` pipe (separate from world `edges`); reverse is `restore` not `unpack`.
-- Bit reinterpret proof: `scripts/proof/bit.id`; nominal `type bit = i64`; round-trip assertions; integer observation edge is `bit:to(i64)`.
-- Bootstrap/dev binary is `./zig-out/bin/idol` (`idol check`, `idol run`); `orient`, `doctor`, and `probe-mcp` default to it; proof scripts use `IDOL`/`./zig-out/bin/idol` — not `DUO`/`bin/duo`.
-- Authoritative migration gates live under `gates/` (`idiom.id`, `path.id`, `host.id`, `architecture.id`, `census.id`) — legacy `scripts/*gate.id` are debt, not authority; host boundary law is `docs/spec/host.md` (host firewall until `GAP-154`).
-- MCP bootstrap lives under `tools/mcp/` (`shared.id`, `bench.id`, `lsp.id`, `gate.id`, `audit.id`, `eval.id`, `zls/bridge.id`); integration gate is `zig build mcp-gate` → `./zig-out/bin/idol run --backend=c tools/mcp/gate.id`.
+- Blind-start constitution: read `docs/spec/canonical.md` before repository code; do not infer language law from Git frequency.
+- Harness boot payload and dev tooling: `docs/spec/harness-projection.md` → `.agents/HARNESS.md` via `tools/node/dev/generate-harness`/`orient`; coordination under `tools/node/dev/`; Devin/Codex skills at `.devin/skills/idol-dev/SKILL.md` (dev loop) and `.devin/skills/idol/SKILL.md` (authority projection).
+- Bit view edges are the `to(bit)` relations in `scripts/proof/bit.id` (`@view`); the 24-file `lib/semantic/*` shadow registry was deleted and there is no `lib/semantic/` relation catalog (`law.catalog.zero`); graph `NodeKind`/`EdgeKind` are physical tags only — never decide semantic validity/meaning from tags: tag narrows the candidate, exact facts validate meaning, never `tag == func` → function semantics (C0 laws APPLICATION-CONSUMER-ZERO, FACT-LOCALITY-ONE, GRAMMAR-ONE, CONTROL-PLANE-DERIVED-ZERO, TAG-AUTHORITY-ZERO, MODULE-ZERO, and the world/application closure AT-ONE, APPLICATION-ONE, WORLD-CLOSED).
+- Bootstrap/dev binary is `./zig-out/bin/idol` (`idol check`, `idol run`); `orient`, `doctor`, and `probe-mcp` default to it; `idol check` reliable for teaching paths; `idol run` may fail on native linker-entry debt — `scripts/agent_smoke.id` check-only until entry resolves; proof scripts use `IDOL`/`./zig-out/bin/idol`.
+- Native gate-transport ARM64 (`src/native_backend.zig`): when `gate_transport && body_has_call`, spill all GP locals to the prologue stack; run `materializePendingVarargs` before call setup (variadic holes like `snprintf` `%s`); regression at `scripts/proof/gatecap.id`. GAP-155 bootstrap faces live in `src/native_bootstrap.zig` (realization-owned); `dnir_lower` uses `native_bootstrap.applicationExpr` — ordinary module calls are not bootstrap.
+- Concurrent write lanes Codex, Poolside, and Devin are frequently stale/not-live; verify live `idol_dev_claim_files` before relying on them and aggressively clear/claim stale claims rather than waiting (user repeatedly directs clearing stale claims).
+- `scripts/census/foreign.id` persists repo/work paths via `/tmp/idol-foreign-*` shell indirection across `gatecap` calls until cross-call binding corruption is fixed.
+- Authoritative migration gates live under `gate/` (`idiom.id`, `path.id`, `host.id`, `architecture.id`, `census.id`, `admission.id`) — legacy `scripts/*gate.id` are debt; host boundary law is `docs/spec/host.md` (host firewall until `GAP-154`). Compound-word (LAW-ONE) vocabulary and logic already live in `gate/path.id` (`words` string plus `known()`/`sep()`/`mash()`/`tail()`) and `gate/idiom.id` (`words` plus `compound()`) — reuse them; enforce no compounds across the whole repo, decomposing each to existing edges/nodes, to hierarchy, or to elimination.
+- Serialize heavy commands through `tools/node/dev/idol-lock` (shell mutex; `scripts/idol_lock.id` remains bootstrap debt until direct subset closes); MCP manifest servers are **`idol-bench`**, **`idol-lsp`**, **`zls`** (`tools/node/dev/mcp.manifest.json`); each MCP tool registers as **`idol_*`** only (35 bench / 32 lsp tools); integration gate `zig build mcp-gate` → `./tools/node/dev/mcp-gate`.
 - Compiled Idol bootstrap quirks: `string.match` with `\t` patterns returns nil (use `string.find` + `string.char(9)`); `"\n"` may be literal backslash-n (use `string.char(10)` for line splits); file-scope `os.env[k]` may be empty at module init (defer env reads to runtime/bootstrap ingress).

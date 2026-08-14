@@ -226,10 +226,64 @@ syntax.name = @{
     uppercase  = false
 }
 
+# `docs/spec/law.md` §4–§5f: `@` IS THE CURRENT-WORLD ACCESSOR. Bare `@` is the
+# current world value. `@` immediately followed by a static name accesses that
+# world member: `@member` (`@target`, `@env`) — `@` already performs the access,
+# so `@member.child` is one world access then one ordinary static projection.
+# There is NO `@.` projection step and NO `@:` subject dispatch: `@.member` and
+# `@:member` are INVALID; write `@member`. Postfix `thing@world` interprets
+# `thing` in `world`; `thing@` is lawful current-world qualification (normally
+# redundant). `@{ … }` is the injection literal only (apply the current world to
+# a pack of `k = v` facts to derive a NEW closed world); an ordinary
+# pack/descriptor is plain `{ … }` with no sigil. `thing@{ … }` is interjection
+# — `thing@(@{ … })`. `@k = v` mutates a world member place. `@( … )` is eval. A
+# prefix `@` directive that names a compiler namespace (`@comp`, `@host`,
+# `@runtime`, `@c`, `@emit`, `@asm`) does not exist — that is a directive zoo,
+# not a world member.
 syntax.anchor = @{
-    bare    = .descriptor      # `@` is the enclosing descriptor
-    postfix = .relation        # `x@rel` moves the anchor
-    prefix  = false            # prefix `@` does not exist
+    bare      = .world         # `@` is the current world value
+    member    = .projection    # `@target` `@env` — access a static current-world member
+    postfix   = .world         # `thing@world` interprets thing in world; `thing@` current
+    eval      = .same          # `@( … )` evaluates in the current world
+    inject    = .world         # `@{ k = v }` derives a closed world with exact deltas; an ordinary pack/descriptor is plain `{ … }`
+    interject = .scope         # `thing@{ k = v }` evaluates thing under an injected world
+    mutate    = .place         # `@k = v` mutates a world member place, when it is a place
+    prefix    = false          # neither a prefix `@` directive namespace nor a `@.`/`@:` accessor step exists
+}
+
+# projection · injection · interjection · mutation are four uses of ONE
+# table/world mechanism — not four subsystems, and no inject/scope/context/
+# provider/registry/dependency framework is minted.
+world.projection = law{
+    id    = "law.projection.algebra"
+    kind  = .invariant
+    holds = .same
+    binds = {
+        "`.` is exactly one static structural projection — one filesystem child level or one static member — never dispatch, method/extension lookup, namespace/recursive search, or world/parent fallback",
+        "a bare name infers as a static projection of the current world only when no lexical binding supplies the meaning and the projection is unique; lexical binding wins for a bare lexical name and `@member` accesses the world member explicitly",
+        "injection `@{ k = v }` derives a NEW closed world: project(inject(w, k=v), k) = v and project(inject(w, k=v), q) = project(w, q) for every untouched q, established when the world is formed, never a runtime parent-world fallback",
+        "empty injection is identity, injecting the exact existing fact is idempotent, a duplicate member in one injection literal is an error, and nested injection shadows by formation order not search",
+        "interjection `thing@{ k = v }` is `thing@(@{ k = v })`; world qualification `thing@world` scopes to the evaluated subtree and threads its world through unresolved ambient dependencies without a runtime world argument, leaving the caller world unchanged",
+        "mutation `@k = v` is ordinary place mutation, persistent and observed by every alias; a derived world is a distinct world; prefer interjection for scoped replacement",
+        "after ingestion path is provenance and id/facts are authority; no component walks directories again, and when the world is statically known the realization keeps world object 0, lookup 0, and dispatch 0",
+    }
+    fails = "a second scope/context/provider/registry/dependency subsystem; `.`/`@` resolution that searches or falls back instead of selecting one exact fact; or a `@.member`/`@:member` accessor — `@` already accesses, so the only faces are `@member`, `@k = v`, `thing@world`, `@{ … }`, `thing@{ … }`"
+}
+
+# injection changes fact AVAILABILITY; it never bypasses satisfaction. authority
+# is a fact whose value must be a valid witness — a label/boolean/string cannot
+# manufacture it (`law.world.grant`, `law.able`).
+world.authority = law{
+    id    = "law.injection.authority"
+    kind  = .invariant
+    holds = .same
+    binds = {
+        "an injected authority fact must itself be a valid semantic witness; `@{ authority = true }` grants nothing",
+        "relation applicability (`able(read)`) and world authority are separate facts; protocol satisfaction never grants authority",
+        "a closure captures the smallest exact necessary world fact, not the whole world; the ambient world is not an automatic closure environment",
+        "a world is named for its genuine scenario, never for the fact it injects",
+    }
+    fails = "world injection used as authorization magic, or an ambient world captured whole when one fact was required"
 }
 
 syntax.block = @{
@@ -274,7 +328,7 @@ path.gate = law{
         "semantic_graph semanticGraph SemanticGraph semantic-graph and semanticgraph receive the same verdict",
         "old_thing to oldthing does not clear a compound finding merely because punctuation disappeared",
         "no filename allowlist becomes a second naming authority",
-        "long-term validation belongs in the source graph; gates/path.id and gates/idiom.id are the staged lexical and compound firewalls until then",
+        "long-term validation belongs in the source graph; gate/path.id and gate/idiom.id are the staged lexical and compound firewalls until then",
     }
     fails = "a commit that adds canonical source inside an invalid new filename or introduces a mashed compound name token on an added line"
 }
@@ -289,6 +343,40 @@ call.face = @{
 # law.paren.one: () after a relation name in a declaration head is projection, not
 # curry. to(str) = (value) does not produce a callable; value:to(str) supplies the
 # subject. f(a)(b) is two applications only when f(a) is actually callable.
+
+# `docs/spec/law.md` §6–§7: ONE application algebra. Ordinary table access is
+# application — `table(key)` — never `table[key]`, `table:get(key)`, or
+# `get(table, key)`. When application yields a place, `table(key) = value` is the
+# assignment face; there is no setter ontology. The resolver decides whether an
+# application yields a value, a place, or another applicable value; there is no
+# "get first / call first / table first" precedence, and incomparable applications
+# are an ambiguity error. `[]` is legacy/foreign-compat computed-key projection,
+# migratable to `table(key)`; `:get`/`get(t,k)` are noncanonical.
+access = @{
+    ordinary = .application    # table(key) — one application algebra, §6
+    place    = .assignment     # table(key) = value — no setter kingdom
+    precede  = false           # no get/call/table-first precedence; ambiguity errors
+    bracket  = .legacy         # table[key] is migratable computed-key debt
+}
+
+# `docs/spec/law.md` §9: `able(...)` is the ONE explicit protocol/requirement
+# boundary. It creates no trait, interface, protocol object, dictionary, vtable,
+# or adjective type. `able(eq)` / `able(read)` / `able(to(str))` mean the unknown
+# subject at this boundary must ADMIT the demanded relation/application shape.
+# ABLE IS NORMALLY INFERRED — omit it when implementation/use already establishes
+# the requirement; spell it only at a real boundary (public/open generic contract,
+# implementation unavailable, higher-order boundary, ambiguous requirements, or a
+# descriptor that explicitly exposes its admitted relation shape). Static
+# satisfaction keeps runtime protocol object / dictionary / vtable = 0. Protocol
+# satisfaction never grants authority. Adjective protocols (`readable`, `iterable`,
+# `source: readable`, `trait`, `impl`, `concept`) remain forbidden — the relation
+# constraint is `source: read` and the boundary word is `able`.
+able = @{
+    boundary = .protocol       # the one explicit requirement boundary
+    shape    = .application     # able(eq) able(read) able(to(str)) — admitted shape
+    default  = .inferred        # INFER ABLE FIRST; spell only at a real boundary
+    runtime  = false            # object 0 · dictionary 0 · vtable 0; grants no authority
+}
 
 subject = @{
     implicit = true
@@ -2083,12 +2171,13 @@ brace = law{
     fails = "letting a callable use braces or letting delimiter choice force representation"
 }
 
-# `@{ … }` IS THE SAME FORM with the name ELIDED — the enclosing descriptor
-# supplies it. So the anchor constructor is not a third mechanism either; it is
-# `name{ … }` where the name is recovered from context, which is exactly what
-# §42's minimum-information rule says should happen when the name is already
-# known.
-anchor.recover = "the same form, name recovered from the enclosing descriptor"
+# `@{ … }` IS WORLD INJECTION ONLY (§54, docs/spec/law.md; law.injection.only).
+# It derives a NEW closed world from the current world with the stated k = v fact
+# deltas. It is NOT name-elided descriptor construction: a descriptor is an
+# ordinary table `{ … }`, and descriptor construction is `name{ … }` (or plain
+# `{ … }` when the descriptor is demanded). `point = @{ x: f64, y: f64 }` is
+# retired — strengthen tables, do not add a descriptor sigil.
+anchor.recover = "@{ … } derives a world by injection; descriptor construction is name{ … } or plain { … }"
 
 # The provisional brace-call is retired. Ordinary call and descriptor
 # application converge semantically only after their distinct source facts
@@ -2594,43 +2683,107 @@ basis = law{
     fails = "a second sequence descriptor having to write `starts`, `contains` and `split` again"
 }
 
-# ═══ §52 · @ IS ANCHORING, AND NOTHING ELSE ════════════════════════════════
+# ═══ §52 · @ IS THE CURRENT WORLD ══════════════════════════════════════════
 #
-# The old reading — "@ is the universal compiler prefix" — is permanently
-# abandoned. What survives is one irreducible job, and the three surviving
-# The anchor forms omit a descriptor identity the semantic environment already
-# knows. Ambient subject application is the distinct leading-colon source face;
-# dot remains statically named projection.
+# SETTLED RULING (supersedes every earlier @ reading — see docs/spec/law.md
+# §4–§5f and law.projection.algebra). Two abandoned readings: "@ is the
+# universal compiler prefix" and "@ is only an enclosing-descriptor anchor whose
+# right operand is a relation." What survives: @ is THE CURRENT WORLD — the
+# enclosing closed semantic table under which meaning resolves. The descriptor a
+# pack recovers is that world; anchoring is a consequence of world resolution,
+# not a separate job. Postfix @ carries a WORLD, never a relation:
+# subject-relation orientation is the colon face (value:to(str)); @ qualifies.
 #
-#     @        the enclosing descriptor
-#     x@rel    the relation anchored at x
+#     @              the current world
+#     @member        access a static member of the current world (@ is the accessor)
+#     @member.child  one world access, then one ordinary static projection
+#     x@world        evaluate/project x under world
+#     @{ k = v }     derive the current world with exact injected facts (injection)
+#     x@{ k = v }    scoped interjection — x@(@{ k = v })
+#     @k = v         mutate a world member place, when it is a place
+#     @( … )         eval
 #
-# `@comp.foo` is not in that family and dies with the bootstrap authority it
-# carries.
+# INVALID: @.member and @:member — @ already accesses, so there is no `@.`
+# projection step and no `@:` subject dispatch. `@comp.foo` and prefix `@`
+# directives are not in that family and die with the bootstrap authority they carry.
 
 anchor = law{
     id    = "law.at.one"
     kind  = .invariant
-    holds = .anchor
+    holds = .world
     binds = {
-        "@ only denotes or establishes a semantic ANCHOR",
-        "@ never means compiler magic",
-        "prefix directive syntax DOES NOT EXIST",
-        "@ supplies the ambient descriptor while leading colon marks ambient subject application",
-        "dot supplies only a statically named projection after a written subject",
-        "x@rel selects relation rel anchored at semantic value or descriptor x",
+        "@ denotes the current world — the enclosing closed semantic table under which meaning resolves",
+        "@ never means compiler magic and prefix directive syntax DOES NOT EXIST",
+        "@{ … } is the injection literal only: applying the current world to a pack of k = v facts derives a NEW closed world — not mutation and not a third mechanism; an ordinary pack or descriptor is plain { … } with no sigil",
+        "x@world evaluates x under world and x@{ … } is scoped interjection x@(@{ … }); the caller world is unchanged afterward",
+        "@ is itself the accessor: @member accesses one static member of the current world and @k = v mutates a member place when the application yields a place; @.member and @:member are INVALID because @ already accesses",
+        "postfix @ carries a world not a relation — subject-relation orientation is the colon face value:to(str), never value@to(str)",
+        "same meaning in different worlds keeps the same semantic id with different witness target and realization facts",
     }
-    canon = { "origin = () @{0,0}", "point@ordering", "ward@allocation" }
-    deny  = "@comp.* and the legacy attributes — bootstrap debt with a deletion gate, never authority"
+    canon = { "origin = () {0,0}", "trial = @{ tax = (sum) 0 }", "sale.quote@trial", "sale.quote@{ fee = 0 }(100)" }
+    deny  = "@comp.* prefix directives, value@relation anchoring, and @.member/@:member accessor steps — bootstrap debt or invalid syntax with a deletion gate, never authority"
 }
 
-# `@{ … }` IS NOT A CONSTRUCTION SYNTAX. It is compositional: `@` recovers the
-# enclosing descriptor and `{ … }` is the pack, so it is APPLY-ONE with the
-# subject elided. `@{ x, y }` and `point{ x, y }` are the SAME family; the
-# first recovers `point` from context. This is why @ carries zero special
-# construction semantics and why the anchor form did not become a third
-# mechanism when §43 preserved brace structure and retired brace call.
-anchor.apply = "@ + pack = apply(enclosing descriptor)(pack)"
+# `@{ … }` IS WORLD INJECTION, NOT DESCRIPTOR CONSTRUCTION. It is compositional:
+# `@` is the current world and `{ … }` is a pack of `k = v` fact deltas, so
+# applying the current world to that pack derives a NEW closed world (§54). This
+# is APPLY-ONE, not a third mechanism. Descriptor construction is `point{ … }` (or
+# plain `{ … }` when demanded); `@{ x, y }` is not a name-elided `point{ x, y }`.
+anchor.apply = "@ + pack = apply(current world)(pack) = derived world; descriptor construction is name{ … }"
+
+# The @{} collision is resolved decisively: @{} is exclusively world injection.
+injectonly = law{
+    id    = "law.injection.only"
+    kind  = .invariant
+    holds = .same
+    binds = {
+        "@{ … } is exclusively world derivation/injection — a pack of k = v fact deltas applied to the current world yielding a new closed world",
+        "a descriptor is an ordinary table { … } whose values are descriptor constraints; descriptor construction is name{ … } or plain { … } — there is no descriptor sigil and point = @{ x: f64, y: f64 } is retired",
+        "@{ … } is never an import or dependency manifest; usage derives dependencies, so @{ os.env io.stdout } bare-name lists stay forbidden",
+    }
+    fails = "@{ … } used for descriptor construction, universe/authority selection, or a dependency list"
+}
+
+# Refinement selection: there is no match/case/switch/pattern kingdom.
+refineone = law{
+    id    = "law.refine.one"
+    kind  = .invariant
+    holds = .cases
+    binds = {
+        "if generalizes into refinement selection over the already-evaluated subject; branch heads are constraints (exact value, descriptor satisfaction plus binding, exact identity, else remainder) not patterns",
+        "the subject evaluates exactly once and a branch binding re-binds the refined value without copying",
+        "multi-arm refinement is semantically unordered — overlapping non-disjoint arms are an ambiguity error with no first-match most-specific declaration-order or trait precedence; ordered testing uses nested if and guards use nested if",
+        "if the result is demanded the arms must exhaust the possibility set or else is required; an undemanded remainder runs no body",
+    }
+    fails = "a match case switch or pattern-object subsystem, pattern guards, or destructuring-pattern syntax"
+}
+
+# Possibility algebra: unknown is a set of remaining possibilities that facts
+# monotonically remove — one mechanism behind refinement, able, unions, guards.
+possibilityone = law{
+    id    = "law.possibility.one"
+    kind  = .invariant
+    holds = .monotone
+    binds = {
+        "a value carries a set of remaining semantic possibilities; facts monotonically remove possibilities from unknown toward sealed",
+        "descriptor checking if-refinement able unions nil-refinement guard insertion call specialization conversion inference shape specialization and target selection are one mechanism",
+        "a union is not a kingdom — it is more than one remaining admissible alternative; a guard exists only when a profitable realization assumes one of several remaining possibilities",
+    }
+    fails = "a separate union type kingdom or a guard that boxes unrelated values"
+}
+
+# No undefined behavior: optimization comes from facts, never from UB.
+ubzero = law{
+    id    = "law.ub.zero"
+    kind  = .invariant
+    holds = .same
+    binds = {
+        "Idol requires no semantic undefined behavior to optimize; optimization comes from exact alias world shape demand range descriptor application effect and lifetime facts",
+        "ordinary integer arithmetic has no C-style undefined behavior and numeric law is fully defined before any FTCFTW claim",
+        "unknown behavior remains unknown; proven facts enable optimization",
+    }
+    fails = "an optimization that depends on undefined behavior rather than a proven semantic fact"
+}
 
 # ═══ §53 · CAPABILITY BY PRESSURE, NOT BY CHECKLIST ════════════════════════
 #
@@ -2669,16 +2822,16 @@ forcing = law{
 claim.refused = "faster than c across the board without exception"
 claim.made    = "more semantic knowledge never reduces the valid realization set"
 
-# ═══ §54 · THE PACK LADDER — three source forms, one application ═══════════
+# ═══ §54 · THE PACK LADDER — two source forms, one application ═════════════
 #
 # Most explicit to most inferred, and the canonicalizer picks the SHORTEST that
 # stays uniquely resolvable:
 #
 #     point{ x, y }    descriptor stated
-#     @{ x, y }        descriptor = the ambient one
 #     { x, y }         descriptor = the expected one
 #
-# Three source projections of ONE apply relation. Not three constructors.
+# Two source projections of ONE apply relation. Not two constructors. `@{ … }`
+# is NOT a rung here — it is world injection only (`law.injection.only`).
 
 pack.neutral = law{
     id    = "law.pack.neutral"
@@ -2703,20 +2856,13 @@ expect = law{
         "the pack is unchanged; only what is known about it changed",
     }
     canon = "p: point = { x, y }"
-    deny  = "p: point = @{ x, y } — @ restates what the demand already said"
+    deny  = "p: point = @{ x, y } — @{ … } is world injection, not a descriptor construction face (law.injection.only)"
 }
 
-atapply = law{
-    id    = "law.at.apply"
-    kind  = .invariant
-    holds = .ambient
-    binds = {
-        "@{ … } explicitly supplies the AMBIENT descriptor as the application subject",
-        "it earns its keep only where demand does not already determine the subject",
-    }
-    canon = "inside point: `copy = () @{ x, y }` where nothing else names point"
-    why   = "narrowing @{} to this makes it USEFUL rather than ubiquitous — and it stays compositional, @ recovering the descriptor and { } being the pack, so it is never a third mechanism."
-}
+# `law.at.apply` (`@{ … }` as ambient-descriptor application) is RETIRED: the
+# `@{}` collision is resolved decisively in favor of world injection only
+# (`law.injection.only`). Ambient-subject construction uses `{ … }` under demand
+# (`law.expect.apply`) or `name{ … }`; there is no descriptor sigil.
 
 omit = law{
     id    = "law.omit.derivable"
@@ -3128,6 +3274,10 @@ authority.graph = law{
         "native realization RECEIVES the semantic substrate; it is not optional metadata",
         "the lowerer ASKS — descriptor(result(relation)), descriptor(value), relation(call), effect, world, demand — and gets ONE answer",
         "the graph is the authoritative IDENTITY and PROVENANCE substrate; a fact attached to an identity has one authoritative SOURCE and is queryable at realization",
+        "node and edge tags are physical indexes — they do not own meaning (law.boolean.mirror.zero applied to graph kinds)",
+        "module source_file func param local call concept type_node transform_app comptime_value emit_artifact are not semantic identities",
+        "contains def use type_of transform_input transform_output are not meaning — reduce toward member binding descriptor operand result provenance",
+        "application roles relation subject operand result live on application facts — do not mint a second edge taxonomy for the same roles",
     }
     keep  = "ONE LOGICAL AUTHORITY, NOT ONE LITERAL STRUCTURE. A descriptor fact may physically live in a graph node, an interned table, a side arena or a query cache — turning the graph into a giant mutable compiler database would trade one architecture problem for a performance one."
     why   = "without this boundary, deleting reconstruction map #1 simply creates map #2. Opcode cleanup before it makes dnir prettier while the architecture stays broken."
@@ -3485,7 +3635,8 @@ vocabularyaudit = law{
 }
 
 canonicaldebt = {
-    "tracked project owned .id source -> 0",
+    "tracked noncanonical .id debt -> 0",
+    "new duo duon idsem source -> 0",
     "new generated native .id source -> 0",
     "current facing idol idol idol and pass branding outside exact history -> 0",
     "stale agent router concepts and compatibility pattern sources -> 0",
@@ -3559,11 +3710,13 @@ fileone = law{
     keep  = "one concept may require several relations descriptors proofs and realizations; cohesion is semantic rather than a line limit"
 }
 
-stdzero = law{
+std.zero = law{
     id    = "law.std.zero"
     kind  = .protocol
     holds = .zero
     binds = {
+        "STD-ZERO no semantic or canonical source std exists — std and lib paths are migration bootstrap provenance only and new canonical std semantic or source reference target equals zero",
+        "the standard universe is default reachable relations descriptors laws and pure values — there is no std table prelude object import or second relation catalog",
         "canonical semantic namespace roots are zero; std core system platform runtime base idol idol os fs script process and env never own native meaning",
         "std is migration distribution and foreign provenance, never semantic architecture or authority",
         "std script is frozen historical architecture and every touched use moves toward semantic reduction and deletion",
@@ -3646,17 +3799,6 @@ subjectone = law{
         "when that value is possessed and the relation is subject callable the canonical face is subject first per law.subject.resolve",
         "operation first application of its own first meaningful argument is noncanonical independent of home spelling",
         "the verdict follows relation identity and parameter roles rather than text",
-    }
-}
-
-worldone = law{
-    id    = "law.world.one"
-    kind  = .invariant
-    holds = .edge
-    binds = {
-        "a capability sensitive relation declares its required world facts",
-        "world requirements participate in checking staging sandboxing caching optimization adaptation authorization and provenance",
-        "there is no namespace capability system beside world edges",
     }
 }
 
@@ -3796,7 +3938,9 @@ corpuszero = law{
     holds = .semantic
     binds = {
         "semantic canonicality runs over every tracked source and generated canonical example",
-        "tracked project owned .id source descends to zero and new .id source fails immediately",
+        "canonical project owned source uses the .id extension and new canonical .id is admitted",
+        "new duo duon and idsem source fails immediately",
+        "tracked noncanonical .id debt descends to zero",
         "current examples tools compiler source and generated native source use canonical id",
         "foreign import support does not justify an in tree historical source library or a native compatibility mode",
         "a blind search adversary must find canonical id or unmistakable foreign data rather than a stale implementation pattern",
@@ -3811,7 +3955,7 @@ legacyzero = law{
     holds = .zero
     binds = {
         "native compilation recognizes canonical id only and has no idol idol lua or historical syntax mode",
-        "tracked project owned idol source native idol suffix recognition lua lexical forms historical directives old callable forms std namespace semantics and implicit boxed fallbacks descend to zero",
+        "retired duo duon idsem suffix recognition lua lexical forms historical directives old callable forms std namespace semantics and implicit boxed fallbacks descend to zero",
         "a still required historical behavior is first preserved as an explicit foreign lawset obligation then reimplemented through the shared id facts demand and realization architecture before the legacy carrier is deleted",
         "old or unmerged work is audited and corrected against current main rather than merged wholesale or deleted while its valid obligation remains unsatisfied",
         "foreign conformance input is generated structured external or mechanically unmistakable and never becomes searchable native training material",
@@ -3897,15 +4041,46 @@ authorityinvariant = law{
 # Enforcement adversarial controls: law.gate.protocol and law.gate.algebra.
 # Protocol closure: law.protocol.one · law.constraint.protocol · law.specialize.algebra.
 # Projection closure: law.projection.one · law.projection.pack · law.from.zero ·
-# law.std.zero · law.lib.zero · law.world.one · law.home.projection ·
+# law.std.zero · law.lib.zero · law.boolean.mirror.zero · law.catalog.zero · law.magic.zero · law.schema.one ·
+# law.main.zero · law.action.zero · law.foundation.zero · law.evidence.subject · law.oracle.bound ·
+# law.family.one · law.representation.one · law.guard.one · law.specialize.budget ·
+# law.abi.internal · law.crash.first · law.cost.explain · law.error.cold ·
+# law.application.consumer · law.fact.locality · law.grammar.one · law.control.derived ·
+# law.tag.authority · law.module.zero · law.fact.cardinality · law.application.closure ·
+# law.ast.backedge · law.fact.column · law.graph.sovereignty · law.target.contamination ·
+# law.prose.fact · law.demand.occurrence · law.derived.index · law.view.zerocopy ·
+# law.world.one · law.home.projection ·
 # law.shell.not.world · law.cross.one · law.conversion.derive · law.conversion.decl ·
 # law.gate.projection.
-# Inference closure: law.infer.one · law.source.minimum · law.direct.bridge.one · law.gate.infer.
+# Inference closure: law.infer.one · law.source.minimum · law.direct.bridge.one · law.gate.infer · law.intermediate.zero.
 # Meta-invariants (one-system SHC): law.bridge.death · law.fallback.zero · law.fact.producer.one ·
 # law.unknown.one · law.ownership.zero · law.effect.order · law.profile.evidence ·
 # law.incremental.semantic · law.canonical.semantic · law.infer.contract · law.world.capability ·
 # law.closure.semantic · law.shc.scheduler · law.delta.budget · law.coordination.fact ·
-# law.representation.demand · law.gate.convergence.
+# law.representation.demand · law.representation.one · law.guard.one · law.specialize.budget ·
+# law.abi.internal · law.error.cold · law.crash.first · law.cost.explain ·
+# law.application.consumer · law.fact.locality · law.grammar.one · law.control.derived ·
+# law.tag.authority · law.module.zero · law.fact.cardinality · law.application.closure ·
+# law.ast.backedge · law.fact.column · law.graph.sovereignty · law.target.contamination ·
+# law.prose.fact · law.demand.occurrence · law.derived.index · law.view.zerocopy ·
+# law.gate.convergence.
+# Machine realization closure: law.realization.late · law.alias.provenance · law.buffer.demand ·
+# law.vector.one · law.realization.valid · law.lower.bound · law.link.semantic.
+# FTCFTW dominance closure: law.ftcftw.dominance · law.optimization.open · law.cost.closure ·
+# law.algorithm.realization · law.optimization.validated.
+# Physical realization closure: law.physical.open · law.observation.minimum.
+# Square-zero foundational closure: law.observation.one (folds BOUNDARY-ONE and
+# physical-nonexistence none) · law.equivalence.observation · law.demand.derivative ·
+# law.relation.property · law.change.delta · law.uncertainty.algebra · law.optimizer.economy ·
+# law.optimization.space (OPTIMIZATION-SPACE-COMPLETE — the whole R(S,W,T,E,P) frontier) ·
+# law.realization.contract (REALIZATION-CONTRACT — satisfy a semantic observation contract at the
+# cheapest verified physical point; ~24 axes; physical lower bounds; lawful nonexecution).
+# law.obligation.one (OBLIGATION-ONE — semantics is allowed observations + required obligations,
+# incl. negative/temporal/liveness/safety/progress/fairness/causality/noninterference and
+# hyperproperties over sets of executions) · law.realization.universe (NINE-UNIVERSE — the
+# structural, non-enumerative closure: meaning/observation/knowledge/demand/equivalence/
+# realization/resource/search+proof/change, the supreme R equation, monotonic frontier,
+# value-of-information, contract-weakening debt, and the measurable optimality gap).
 # Anti-drift: law.source.not.proof · law.repair.class · law.doc.teaching · law.projection.pack · law.identity.projection · law.projection.absolute · law.projection.repair.
 
 semanticuniverse = law{
@@ -3926,8 +4101,8 @@ semanticuniverse = law{
     fails = "a second semantic ontology or namespace kingdom standing in for facts"
 }
 
-projectionalgebra = law{
-    id    = "law.projection.algebra"
+application.algebra = law{
+    id    = "law.application.algebra"
     kind  = .invariant
     holds = .checked
     binds = {
@@ -3936,6 +4111,43 @@ projectionalgebra = law{
         "there is no privileged standard dispatch path and no hidden std.x.y.z behind canonical source",
     }
     fails = "privileged std dispatch or unchecked application without relation subject world and demand facts"
+}
+
+application.one = law{
+    id    = "law.application.one"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "APPLICATION-ONE every value(args) is one application algebra — no function-call table-lookup accessor indexing method-call generic-call protocol-call or builtin-call kingdom; f(x) table(key) descriptor(value) world(key) closure(x) foreign(x) all begin as one question given applied value operand pack current world and result demand what exact lawful application exists",
+        "resolution MAY use only applied value identity operand identities and facts operand pack shape result demand descriptor facts table shape relation facts current world authority and witness facts stage control-flow refinements known metatable facts and target-independent semantic facts",
+        "resolution MUST NOT use callee spelling file path source category ast node kind looks-like-a-function looks-like-a-table declaration order fallback priority nearest namespace or registry order",
+        "resolution output is exactly one application fact — application id applied identity relation id only when semantically meaningful subject id only when semantically oriented operand pack result pack descriptor constraints effect authority requirement witness stage demand provenance — realization chooses physical behavior only afterward",
+        "resolution ladder collects exact facts enumerates lawful applications eliminates impossible candidates projects implied relation descriptor conversion able witness world-fact result-pack and stage then publishes exactly one candidate rejects zero and fails AMBIGUITY on more than one incomparable candidate before any realization",
+        "ambiguity is fail-closed — never resolve by first or nearest declaration most-recently-injected function-before-table table-before-relation or more-specific unless specificity is mathematically defined",
+        "table(key) is ordinary access — read versus write is chosen by demand not a different operation x = table(key) demands a value table(key) = value demands a place with no setter ontology and no get set or call relation invented merely for uniformity",
+        "static . and application () assert different author knowledge and stay distinct source faces user.name is one statically known structural projection user(\"name\") is application with key operand — . is never computed a runtime key uses table(key) and ordinal row(1) is ordinary application with no [] at or get unless at is an independently meaningful domain relation",
+        "colon is source subject orientation only — after resolution it is still an application with subject relation and operands never a methodcall or membercall graph kind",
+        "currying is not automatic add(1)(2) is ordinary chained application whose first application yields a callable — partial application specializes only where the relation or application descriptor admits it or a known callable value returns another applicable value",
+        "metatable and __call resolve ONCE — the resolver publishes the exact lawful application and the backend never runs try-function-else-table-else-__call priority code sealed metatable gives dynamic dispatch zero and a still-dynamic metatable keeps runtime dispatch because semantic alternatives remain",
+        "operators and conversion are application sugar a + b resolves to the arithmetic relation application and value:to(str) is explicit relation application only when the target is not inferable — grammar owns punctuation precedence the resolver owns meaning and lowering consumes the complete resolved application never reconstructing a fact from spelling ast host types or table/function category",
+        "cost falls monotonically with knowledge dynamic table and key to generic lookup known shape and exact key to direct field offset sealed table and exact demanded field to scalar replacement constant to no table at runtime — the source form is identical throughout",
+    }
+    canon = { "f(x)", "table(key)", "table(key) = value", "user.name", "add(1)(2)", "text:find(pattern)", "a + b" }
+    deny  = { "table[key]", "table:get(key)", "get(table, key)", "table:set(key, value)", "f:call(x)", "MethodCall", "member_call", "CoercionKind", "function-before-table precedence" }
+    fails = "a table-call function-call accessor method-call indexing or conversion kingdom; precedence or fallback resolution; automatic currying; or lowering that reconstructs facts from spelling ast host types or category"
+}
+
+world.closed = law{
+    id    = "law.world.closed"
+    kind  = .invariant
+    holds = .checked
+    binds = {
+        "WORLD-CLOSED a derived world @{ k = v } is closed at formation — it contains its inherited facts semantically at derivation with project(inject(w,k=v),k)=v and project(inject(w,k=v),q)=project(w,q) for every untouched q",
+        "resolution under a derived world uses its exact facts only — never lookup-in-derived then fall back to parent and never a nearest-world or reachable-world search even when the physical implementation uses structural sharing",
+        "world qualification thing@world changes the closed fact set for the evaluated subtree only and threads that world through unresolved ambient dependencies with no runtime world argument leaving the caller world unchanged",
+        "this closure forbids DI-style runtime parent-world fallback architecture — when the world is statically known realization keeps world object 0 lookup 0 dispatch 0",
+    }
+    fails = "a runtime parent-world fallback nearest-world search or reachable-world lookup instead of the closed derived-world fact set"
 }
 
 projectionone = law{
@@ -3950,7 +4162,7 @@ projectionone = law{
         "canonical source spells only facts the compiler cannot uniquely recover with preference implicit relation plus implicit projection then explicit relation plus implicit projection then explicit relation plus explicit projection where shorter form resolves identically",
         "every application preserves one normalized projection fact set — conversion protocol world home and generic projection are not independent semantic structures projection is a role not a new semantic kind",
         "relation projection to(str) = (value) and read(number) = (stream buffer) declare relation projection pack subject and operands — projection group is not an application and no intermediate callable exists",
-        "inferred relation projection value:to(str) may reduce to value:to() when target uniquely demanded and to value when relation and target uniquely inferable — graph still records inferred application syntax disappearance does not erase semantics",
+        "inferred relation projection value:to(str) may reduce to value when relation and target uniquely inferable — graph still records inferred application syntax disappearance does not erase semantics — value:to() is not a canonical rung because if relation is explicit and target uniquely inferable spelling to adds no information",
         "satisfaction conversion and realization remain distinct — satisfaction needs no to conversion is semantic relation with graph application source may omit realization is machine abi representation never semantic to",
         "exact integer n i32 = 5 is descriptor specialization not default i64 followed by to(i32)",
         "to is the one canonical conversion relation orientation — from does not receive independent relation id implementation registry trie protocol or conversion graph — from migration face normalizes to value:to(target) with source descriptor witnessed as source",
@@ -3961,7 +4173,7 @@ projectionone = law{
         "world grants authority not intent — unique compatible grant injects witness source need not name world — world availability never chooses conversion parser relation or target descriptor",
         "shell is interpretation law process is authority command is semantic value — shell is not automatically the authority world",
         "cross boundary projection adds origin law world abi provenance witness realization constraints — identity persists cross one requires explicit witness never map by same name path field spelling method name or binary layout alone",
-        "implied projection ladder is direct satisfaction infer relation and projection explicit relation inferred projection value:to() explicit projection value:to(str) explicit operands — minimal syntax demands maximal explainability in tooling",
+        "implied projection ladder is direct satisfaction infer relation and projection explicit relation inferred projection value:to(str) explicit operands — minimal syntax demands maximal explainability in tooling — value:to() is not a canonical rung because if relation is explicit and target uniquely inferable spelling to adds no information",
         "no spooky inference — implicit insertion only when demanded slot and supplied value define exactly one admitted bridge witness — constraint solving is not program synthesis",
         "relation algebra coherence prefers uniquely more specific candidate by semantic facts — incomparable means AMBIGUOUS uniformly for conversion protocol world shape hardware and stage specialization",
         "resolver determines relation projection role subject operand role result demand world requirement — parser preserves structure dnir consumes graph ids and facts missing projection fact fails closed",
@@ -3971,7 +4183,6 @@ projectionone = law{
     }
     canon = {
         "value",
-        "value:to()",
         "value:to(str)",
         "file = path:open()",
         "consume = (source) source:read()",
@@ -4005,19 +4216,6 @@ fromzero = law{
     fails = "second conversion universe or inverse from relation id beside to"
 }
 
-stdzero = law{
-    id    = "law.std.zero"
-    kind  = .invariant
-    holds = .zero
-    binds = {
-        "STD-ZERO no semantic or canonical source std exists — lib std paths are migration bootstrap provenance only",
-        "new canonical std semantic or source reference target equals zero",
-        "standard universe is default reachable relations descriptors laws and pure values — no std table prelude object or import",
-        "pure relations inject from ordinary relation catalog without standard namespace",
-    }
-    fails = "std as semantic authority namespace or canonical source lookup"
-}
-
 libzero = law{
     id    = "law.lib.zero"
     kind  = .invariant
@@ -4031,12 +4229,533 @@ libzero = law{
     fails = "lib.foo canonical source lookup or lib alias preserving module ontology"
 }
 
-worldone = law{
+booleanmirror = law{
+    id    = "law.boolean.mirror.zero"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "BOOLEAN-MIRROR-ZERO do not store a boolean flag that merely restates a structural graph fact",
+        "subject edge exists — never possessed = true or has_subject",
+        "witness edge exists — never authorized = true",
+        "capture edge exists — never captured = true",
+        "descriptor edge exists — never typed = true",
+        "application is applied or it is not — never callable = true",
+        "graph participation answers what an identity is — never operation = true or operation = false",
+        "also reject typed authorized captured projected resolved imported native static when the underlying fact is already an edge or role",
+        "absence of the fact is the answer — never world = empty string world = nil world = none world = false as sentinels",
+    }
+    fails = "boolean or string field mirroring subject witness capture descriptor application or world-requirement structure"
+}
+
+catalogzero = law{
+    id    = "law.catalog.zero"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "CATALOG-ZERO do not create a table whose primary purpose is to enumerate relations descriptors worlds formats handlers operations or capabilities",
+        "if the items already have identities and facts in the graph the catalog is a second authority and must be deleted",
+        "relation facts come from resolution — not rows with world string and boolean mirrors",
+        "authority comes from world or witness facts on the application — not relation→world category tables",
+        "json is a format or descriptor not an authority-bearing world",
+        "do not rename a catalog to preserve it — seq to sequence keeps the architecture",
+        "examples of deleted second authorities: seq relation catalog semantic/io semantic/fs encoding catalog builtin catalog directive catalog producer relation ledger",
+        "get and set are not registered relations unless a domain independently has those verbs — ordinary access is table(key) and table(key) = value",
+        "from is deleted when it only reverses to — conversion orients on source",
+        "derive compose project realize are not user relations merely because the compiler uses those words internally",
+    }
+    fails = "hand-authored relation world or capability registry consulted as semantic authority"
+}
+
+magiczero = law{
+    id    = "law.magic.zero"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "MAGIC-CODE-ZERO do not reconstruct semantic identity from a numeric code ordinal opcode sentinel or foreign status number",
+        "the producer already knows the rejection kind role or outcome — the consumer must not switch on minus 101 or enumFromInt",
+        "forbidden reconstructions include negative status to diagnostic lexErrorFromCode enum ordinal to host enum tokenKindFromOrdinal opcode to relation and shell status text to run outcome",
+        "carry rejection-id token-role-id or outcome fact across the seam — never a second host taxonomy that happens to agree today",
+    }
+    fails = "host switch ordinal map or sentinel integer standing in for producer identity"
+}
+
+schemaone = law{
+    id    = "law.schema.one"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "SCHEMA-ONE one producer per record law — host RECORD_SLOTS and positional field decode are a second schema",
+        "Idol lexer to magic array of seven i64 to Zig slot meanings is reconstruction — the producer projects the record the consumer reads that projection",
+        "prefer an immutable semantic token view whose fields are carried directly so the host does not rematerialize tokens",
+        "duo_lexer_tokenize_full duo_lexer_error_line and useDuoTokens are bridge-death names not permanent production symbols",
+        "deletion condition is producer-projected record plus rejection-id plus token-role-id with no host slot map",
+    }
+    fails = "manually authored consumer schema or positional ABI as semantic knowledge"
+}
+
+mainzero = law{
+    id    = "law.main.zero"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "MAIN-ZERO root body executes and the tail expression is the result — never main i64 wrapping another routine",
+        "tooling census gates and ledgers are not exempt — root execution remains root execution",
+        "file-scope result or a named step that is the actual semantic subject — never a ceremonial main",
+    }
+    fails = "main wrapper around an already-complete file body"
+}
+
+actionzero = law{
+    id    = "law.action.zero"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "GENERIC-ACTION-ZERO generic orchestration verbs run execute process apply perform handle require an actual semantic subject and relation",
+        "command run is legitimate because process execution is the relation — run i64 equals empty as a tool starter is not",
+        "a root routine must not be named merely to mean start this tool",
+    }
+    fails = "generic run execute process apply perform or handle with no semantic subject"
+}
+
+foundationzero = law{
+    id    = "law.foundation.zero"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "FOUNDATIONAL-WORD-COLLISION-ZERO do not use foundational semantic words as generic helpers",
+        "forbidden helper names unless the value genuinely is that concept: apply project realize resolve bind demand witness relation subject world shape descriptor",
+        "apply already means application algebra — a census helper must not steal it",
+        "this is distinct from machinery collision-zero router gateway registry — those are role nouns this is vocabulary dilution of the semantic universe",
+    }
+    fails = "foundational semantic word used as an arbitrary helper"
+}
+
+evidencesubject = law{
+    id    = "law.evidence.subject"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "EVIDENCE-SUBJECT-ONE evidence identity and measured-program identity are separate facts",
+        "a measurement commit must name subject revision and evidence revision",
+        "do not report metrics at HEAD unless the measured subject equals HEAD",
+        "executed frontier lives in docs/bootstrap.md metrics interpretation in docs/METRICS.md revision-bound evidence in a generated artifact — other reports are snapshots",
+    }
+    fails = "evidence commit treated as implementation HEAD or metrics reported at HEAD for a prior subject"
+}
+
+oraclebound = law{
+    id    = "law.oracle.bound"
+    kind  = .invariant
+    holds = .bound
+    binds = {
+        "a differential oracle covers the legacy-equivalent subset only",
+        "Idol law is the constitution and the canonical lexer — when Idol intentionally diverges the host scanner must not veto the new behavior",
+        "tokenizeHost remains differential-only and deletable under law.bridge.death — it must not become de facto semantic authority because every change is required to match it",
+    }
+    fails = "host differential vetoing intentional Idol lexical law or surviving as undeletable authority"
+}
+
+familyone = law{
+    id    = "law.family.one"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "SOURCE-FAMILY-ONE path suffix is provenance only",
+        "one ingress authority produces the source-family fact — later stages consume that fact",
+        "forbidden reconstructions include endsWith .id is_canonical_source(path) and suffix bytes deciding lexical law",
+        "deletion is family as an operand into tokenize — not recovered from the filename",
+    }
+    fails = "path or suffix standing in for source-family authority"
+}
+
+representationone = law{
+    id    = "law.representation.one"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "REPRESENTATION-ONE a semantic value has no physical representation until realization demand requires one",
+        "one realization decision owns width layout location boxing addressability aggregation and calling convention",
+        "no downstream pass separately decides boxed stack register heap struct or SIMD",
+        "FTCFTW is not a sequence of representation repairs — law.representation.demand still requires each remaining structure to name its observation",
+    }
+    fails = "a second pass choosing physical representation after realization already decided"
+}
+
+specializebudget = law{
+    id    = "law.specialize.budget"
+    kind  = .invariant
+    holds = .budget
+    binds = {
+        "SPECIALIZE-WHEN expected runtime gain exceeds compile cost plus code size plus I-cache pressure plus startup cost",
+        "same semantic id may have multiple realizations only when that inequality holds — clones are not new semantic identities",
+        "each specialization records applications benefiting branches removed allocations removed indirects removed bytes added compile-time added",
+        "perf.worth and law.perf.merge remain the merge and skip answers",
+    }
+    fails = "greedy specialization that explodes compile time object size I-cache or startup without a worth record"
+}
+
+guardone = law{
+    id    = "law.guard.one"
+    kind  = .invariant
+    holds = .alternative
+    binds = {
+        "a guard is an unresolved semantic alternative whose fast realization depends on a fact",
+        "not an optimizer artifact a type-check object a generic runtime check or a reason to box everything",
+        "fact known means guard zero — fact speculated from evidence means exact guard plus exact slow alternative — fact unknown means the appropriate general realization",
+        "every guard retains the assumed fact witness or evidence recovery realization and provenance",
+        "law.proof.epoch still owns region lifetime of a proven fact — law.profile.evidence still forbids promoting observation to truth",
+    }
+    fails = "guard as pass artifact or speculative fast path without fact witness recovery and provenance"
+}
+
+abiinternal = law{
+    id    = "law.abi.internal"
+    kind  = .invariant
+    holds = .boundary
+    binds = {
+        "semantic pack lowers to demanded physical slots then target abi assignment",
+        "known internal calls use an optimized internal abi — foreign abi only at an actual foreign boundary",
+        "register returns register arguments aggregate elision no tuple materialization no unnecessary sret no temporary pack and tail-call compatibility are realization objectives",
+        "a generic external abi between every internal function is a cost without a demand",
+        "law.abi.demand remains the derivation rule — this law forbids applying a foreign calling convention where no foreign boundary exists",
+    }
+    fails = "internal calls forced through a foreign or generic abi without a boundary fact"
+}
+
+errorcold = law{
+    id    = "law.error.cold"
+    kind  = .invariant
+    holds = .path
+    binds = {
+        "rare failure possibility must not automatically force a boxed result tagged union heap object or branch on every operation",
+        "use a cold continuation or separate error path where lawful",
+        "hot representation remains the success realization — failure does not choose the hot layout",
+    }
+    fails = "Result-style or tagged lowering that poisons the hot path because failure is possible"
+}
+
+crashfirst = law{
+    id    = "law.crash.first"
+    kind  = .invariant
+    holds = .severity
+    binds = {
+        "crash is worse than a wrong diagnostic which is worse than rejecting a valid program which is worse than an optimization miss",
+        "every crash is an immediate correctness blocker — performance work on an unstable backend is not evidence",
+        "backend refusal must name application id missing fact or capability consumer and expected producer — never an opaque unsupported category",
+    }
+    fails = "crash treated as an ordinary fail or bail without causal missing-fact identity"
+}
+
+costexplain = law{
+    id    = "law.cost.explain"
+    kind  = .invariant
+    holds = .causality
+    binds = {
+        "every remaining box allocation indirect copy hash tag or bounds check names the unresolved semantic fact that forces it",
+        "no causal explanation is a performance bug not an acceptable default",
+        "tooling queries the graph for that fact — it does not reconstruct the reason from generated text",
+        "every compiler refusal names the semantic entity or application the missing fact the expected producer and the consumer — parser resolver world descriptor realization specialization and vectorization included not only backend DNB",
+    }
+    fails = "physical cost without a named missing fact"
+}
+
+applicationconsumer = law{
+    id    = "law.application.consumer"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "APPLICATION-CONSUMER-ZERO lowering and later stages consume application facts from the graph they do not reconstruct them",
+        "forbidden independent derivation includes subject operand identity result identity descriptor effect world requirement witness demand and target",
+        "consuming ApplicationFact.relation from the graph while reconstructing adjacent fields from AST host types or callee text is partial transfer not closure",
+        "downstream reconstructed application facts target zero — audit every field used in DNIR and native lowering for provenance",
+        "the graph entity is identity — no three-coordinate identity record and no synthetic application schema beside the graph",
+    }
+    fails = "downstream reconstruction of an application fact the graph already owns or a coordinate identity standing in for the graph entity"
+}
+
+factlocality = law{
+    id    = "law.fact.locality"
+    kind  = .invariant
+    holds = .compact
+    binds = {
+        "FACT-LOCALITY-ONE the graph remains the authority while frequently consumed facts are stored in compact application-local ranges or dense-id tables",
+        "after an application is resolved do not re-query it through global hash maps or repeated edge scans on every lowering instruction",
+        "semantic correctness must not create compile-time query overhead — expose a derived physical view do not copy meaning out of the graph",
+    }
+    fails = "per-instruction global graph lookup as the hot compile path or a second meaning store beside the graph"
+}
+
+realizationlate = law{
+    id    = "law.realization.late"
+    kind  = .invariant
+    holds = .late
+    binds = {
+        "REALIZATION-LATE semantic identity persists to the final machine decision — representation is chosen once as late as profitable from exact demand effects alias shape world and target",
+        "there is no irreversible semantic cliff between the application graph and machine code — a conventional selection scheduling machine-ssa allocation and emission staging that discards meaning before the machine decision is forbidden",
+        "there is one authoritative semantic graph with sparse realization overlays — not a source tree an optimizer ir a lowering ir and a machine ir materialized as separate full worlds",
+        "the machine realizer arrives with more exact knowledge than a conventional lowered ir normally retains and uses it to avoid creating the allocations objects aliases generic abis temporaries dynamic calls and runtime abstractions a conventional backend must later struggle to remove",
+        "law.representation.one still owns the single representation decision — this law forbids losing the facts that decision consumes",
+    }
+    fails = "a lowering stage that discards semantic facts then reconstructs them or a second full ir world materialized beside the graph"
+}
+
+aliasprovenance = law{
+    id    = "law.alias.provenance"
+    kind  = .invariant
+    holds = .provenance
+    binds = {
+        "ALIAS-PROVENANCE place identity origin escape sharing mutation lifetime and projection are preserved from the moment a place is created — disjointness is a construction fact not a pointer analysis recovered after lowering",
+        "distinct exact nonescaping place identities are noalias by construction with no reconstructive pointer aliasing pass",
+        "memory dependence is sparse and semantic — only observable places carry store and load dependence and a value with no place never enters memory dependence at all",
+        "law.ownership.zero still owns alias lifetime and escape as facts — this law forbids discarding them so a later pass must rebuild them",
+    }
+    fails = "pointer alias reconstruction after lowering where the language already knew place disjointness or a global memory chain over values that were never places"
+}
+
+bufferdemand = law{
+    id    = "law.buffer.demand"
+    kind  = .invariant
+    holds = .demand
+    binds = {
+        "BUFFER-DEMAND high-level table array and text expressions stay semantically recognizable chains until cardinality shape effects alias target and demand are known — an intermediate table iterator closure or concatenated string materializes only when demanded",
+        "an ordinary table with known shape facts admits whole-array optimization scalar vector blocked kernel or accelerator realization without a separate ndarray tensor or matrix semantic kingdom",
+        "a map filter reduce chain realizes as one loop with zero intermediate tables when facts permit and text projection substring split parse and write preserve views until identity or ownership is demanded",
+        "law.representation.demand still requires each surviving structure to name its observation",
+    }
+    fails = "eager bufferization of a high-level chain into intermediate tables before demand or a tensor kingdom standing in for table shape facts"
+}
+
+vectorone = law{
+    id    = "law.vector.one"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "VECTOR-ONE one vectorization algebra derives iteration parallelism structurally-similar-application parallelism reduction fusion and thread or gpu realization from one semantic graph — no separate loop-vectorizer and scalar-combine kingdom",
+        "vector legality comes from iteration relations table shape stride alias facts application independence and reduction relation law not from a lowered loop shape",
+        "runtime alias checks are zero where semantic place facts prove independence — only a genuinely unresolved alias possibility emits a guard",
+        "reduction and scan realizations require the proven relation law associativity commutativity where needed and identity — no named reduce intrinsic is required",
+    }
+    fails = "a loop-vectorizer and scalar-combine split reconstructing parallelism from lowered ir or a runtime alias guard where place facts already prove independence"
+}
+
+realizationvalid = law{
+    id    = "law.realization.valid"
+    kind  = .invariant
+    holds = .witness
+    binds = {
+        "REALIZATION-VALID every aggressive lowering carries its input and output semantic fact set and emits or checks a local observational-equivalence witness — an aggressive machine rewrite is admitted only behind that validator",
+        "bounded local superoptimization of a small pure region enumerates candidate target sequences proves observational equivalence and selects by measured or modeled cost — it is not a general unbounded global superoptimizer",
+        "law.profile.evidence still forbids promoting an observation to truth — a hardware cost model calibrates selection not meaning",
+    }
+    fails = "an aggressive machine rewrite trusted without a local equivalence witness or an unbounded global superoptimizer as the architecture"
+}
+
+lowerbound = law{
+    id    = "law.lower.bound"
+    kind  = .invariant
+    holds = .evidence
+    binds = {
+        "LOWER-BOUND every FTCFTW benchmark reports three layers — the semantic minimum the physics requires the best equivalent native c fortran or llvm result and the current Idol result — superiority is claimed only against that honest triple",
+        "an opportunity-class claim is admissible now that Idol is architected to preserve facts a conventional lowering pipeline reconstructs while a measured-win claim requires current-subject evidence under law.evidence.subject",
+        "benchmarks compare compiler choices not language names — an optimized c an lto c a fortran-grade array compiler and a hand-tuned baseline are the honest opponents",
+        "law.profile.evidence and law.evidence.subject still bind — index or contract presence is not a performance result",
+        "the semantic minimum is not an instruction count it is drawn from the applicable lower bound family information theoretic bits that must be learned moved distinguished or emitted communication information crossing a boundary i o and memory hierarchy cache and external memory transfers and rounds circuit depth size and critical path parallel work and span and ultimately physical law speed of light memory latency and thermodynamic energy — closure states which family and which of proven semantic architectural measured machine or best known external bound was reached",
+        "cost is a distribution not a constant a dominance claim is invalid when confidence intervals overlap materially or when a nominal win is not robust to slight workload variation and adversarial and worst case inputs bound the claim not only friendly distributions",
+        "this law owns the evidence-reporting discipline — law.ftcftw.dominance owns the pareto acceptance inequality and law.cost.closure owns the per-application cost-debt graph fact and benchmark closure",
+    }
+    fails = "a beats-llvm-or-fortran claim without the three-layer measurement a lower bound asserted as an instruction count rather than an information communication work or physical family a dominance claim with overlapping confidence or a stored benchmark answer standing in for a current-subject run"
+}
+
+linksemantic = law{
+    id    = "law.link.semantic"
+    kind  = .invariant
+    holds = .application
+    binds = {
+        "LINK-SEMANTIC files and directories stop being compile units after ingestion — the compile and link grain is the application closure not the module or object file",
+        "an unreachable semantic application never emits its runtime support — semantic link elimination not only symbol-section garbage collection",
+        "a changed authoritative fact invalidates exactly the dependent application closure and reuses cached machine realizations whose application and target facts are unchanged",
+        "law.incremental.semantic and law.coordination.fact still own incremental identity — this law fixes the grain at the application not the file",
+    }
+    fails = "module or file compile-unit granularity surviving after ingestion or whole-program reanalysis on a fact change that touched a bounded application closure"
+}
+
+grammarone = law{
+    id    = "law.grammar.one"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "GRAMMAR-ONE exactly one executable grammar-fact owner",
+        "canonical Idol grammar facts are the authority — generated Zig or C tables are a bridge projection — grammar.md and Tree-sitter are human or editor projections from that owner",
+        "forbidden parallel owners include C0 prose grammar.id grammar_roles.zig grammarrole.id grammar.md and Tree-sitter each claiming to own recognition",
+        "a host grammar_roles.zig table is transitional and has a deletion condition once Idol owns the facts",
+        "parser-local BinOp maps spelling lists and category switches are reconstruction debt — token identity yields grammar-role facts and the parser observes them",
+        "Tree-sitter LSP MCP and formatter consume the same facts or generated projections they do not retain independent grammar or semantic classification",
+    }
+    fails = "a second executable grammar or semantic classification owner beside the one fact producer"
+}
+
+controlderived = law{
+    id    = "law.control.derived"
+    kind  = .invariant
+    holds = .derived
+    binds = {
+        "CONTROL-PLANE-DERIVED-ZERO durable human status docs do not manually encode live HEAD lane holder lock state or dirty tree",
+        "those facts come from git claims session state and orient evidence — pasting them into WORKSTREAM_DEBT_REGISTER AGENT_COORDINATION or TECH_DEBT_WORKSTREAM is anti-drift",
+        "workstream definitions and acceptance criteria may live in projections — live control-plane values may not",
+    }
+    fails = "a status projection that agents treat as live ownership or HEAD while the claim files and git disagree"
+}
+
+tagauthority = law{
+    id    = "law.tag.authority"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "TAG-AUTHORITY-ZERO a physical storage or index tag may accelerate candidate retrieval but may never establish semantic validity or meaning",
+        "forbidden semantic decisions include kind equals func module table_shape enum_shape call transform_app to gate applicability",
+        "ask whether exact facts establish the demanded relation descriptor binding or application shape — not whether a NodeKind tag matches",
+    }
+    fails = "graph_query or lowering that rejects or selects meaning from NodeKind or EdgeKind tags instead of published facts"
+}
+
+modulezero = law{
+    id    = "law.module.zero"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "MODULE-ZERO module is not a semantic kingdom — home member and provenance facts replace module identity",
+        "forbidden module-scoped behavior includes parent.kind equals module functionsInModule as a module lookup and module_path as resident semantic state",
+        "applicationsIn home relationsReferencedBy entity and emitReachability replace function-centric kingdom APIs where unnecessary",
+    }
+    fails = "module-ness still deciding scope reachability or lookup after home facts exist"
+}
+
+factcardinality = law{
+    id    = "law.fact.cardinality"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "FACT-CARDINALITY-ONE every optional application or entity fact distinguishes unknown known-absent and exactly-one id",
+        "null on an optional field means unknown not proven absent — known no effect no authority no witness no target require explicit absent facts",
+        "unknown is not absent — demand world and witness reasoning require three-valued or packed cardinality not a single nullable slot",
+    }
+    fails = "nullable optional conflating unknown with known-absent on effect authority witness target or demand facts"
+}
+
+applicationclosure = law{
+    id    = "law.application.closure"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "APPLICATION-FACT-CLOSURE every application dimension has exactly one authoritative storage location listed in the fact-location manifest",
+        "relation subject operands results descriptor demand effect authority witness stage caller home target realization and provenance each resolve to one owner — no reconstruction from neighbors",
+        "ApplicationFact Node edges scope stage demand and projections may not duplicate the same semantic fact without one authority and disposable derived indexes",
+    }
+    fails = "an application field with zero or multiple authoritative storages or recovered from AST callee text or adjacent facts"
+}
+
+astbackedge = law{
+    id    = "law.ast.backedge"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "AST-BACKEDGE-ZERO semantic reads through ast_ref target zero after graph publication",
+        "inventory every ast_ref read classify diagnostic-only versus semantic semantic reads must monotonically decrease",
+        "AST may remain provenance or debug material but cannot answer semantic questions after resolution",
+    }
+    fails = "lowering optimization or query recovering meaning from ast_ref instead of graph facts"
+}
+
+factcolumn = law{
+    id    = "law.fact.column"
+    kind  = .invariant
+    holds = .sparse
+    binds = {
+        "FACT-COLUMN-ONE dense entity id plus separate packed fact columns and ranges — not one giant nullable Node record",
+        "only facts that exist consume storage — field_count hardware_lowerings why owns_name and role-specific slots do not belong on every entity",
+        "semantic hot structures are name-free where possible — names live in provenance or display tables",
+    }
+    fails = "every Node physically carrying slots for every possible fact mixing semantic provenance demand optimization migration and allocator bookkeeping"
+}
+
+graphsovereignty = law{
+    id    = "law.graph.sovereignty"
+    kind  = .invariant
+    holds = .spine
+    binds = {
+        "GRAPH-SOVEREIGNTY the graph schema contains only Idol semantic ids and facts plus explicitly physical derived indexes",
+        "AST sema host ResolvedType StorageClass transform_engine and target hardware must project into or consume the graph — never define its ontology",
+        "the milestone after GAP-145 and GAP-134 is a true semantic spine not a host-shaped nullable mirror",
+    }
+    fails = "semantic_graph importing AST or transform engine to define meaning or host enums owning descriptor or stage state"
+}
+
+targetcontamination = law{
+    id    = "law.target.contamination"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "TARGET-CONTAMINATION-ZERO hardware and target realization candidates live in realization planning or indexes keyed by application value and target",
+        "hardware_lowerings on semantic Node contaminates the core graph across architectures and breaks cache reuse",
+    }
+    fails = "target-specific realization candidates stored as resident semantic entity facts"
+}
+
+prosefact = law{
+    id    = "law.prose.fact"
+    kind  = .invariant
+    holds = .zero
+    binds = {
+        "PROSE-FACT-ZERO freeform why strings are not authoritative facts",
+        "causes are structured entity id fact ids producer consumer — prose renders on demand",
+        "aligns with law.cost.explain and causal compiler refusal",
+    }
+    fails = "heap-allocated prose string standing in for a semantic or diagnostic fact owner"
+}
+
+demandoccurrence = law{
+    id    = "law.demand.occurrence"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "DEMAND-OCCURRENCE-ONE return and field demand attach to the exact application or use occurrence not globally to a value node unless genuinely global",
+        "the same relation or value may be consumed differently at different applications — demand is application-specific",
+    }
+    fails = "Node.demand or entity-global demand substituting for per-application demand facts"
+}
+
+derivedindex = law{
+    id    = "law.derived.index"
+    kind  = .invariant
+    holds = .one
+    binds = {
+        "DERIVED-INDEX-ONE scope and contains application caller adjacency and reverse indexes have exactly one authority",
+        "derived physical indexes are rebuilt from authority — never independently mutated so consistency cannot be violated",
+        "application_rows application_presence and application_candidates must justify authority versus derived duplication",
+    }
+    fails = "two independently mutable storages of the same home member or caller adjacency fact"
+}
+
+viewzerocopy = law{
+    id    = "law.view.zerocopy"
+    kind  = .invariant
+    holds = .borrowed
+    binds = {
+        "ZERO-COPY-GRAPH-VIEWS operand result capture and member queries return borrowed immutable slices over packed graph ranges where lifetime permits",
+        "forbidden hot-path pattern query then alloc.dupe then memcpy then free for ids already stored contiguously",
+    }
+    fails = "graph_query allocating copies of packed operand or result ranges on every access"
+}
+
+world.one = law{
     id    = "law.world.one"
     kind  = .invariant
     holds = .authority
     binds = {
-        "WORLD-ONE worlds represent irreducible authority not bundled os api namespaces",
+        "WORLD-ONE a world is the closed semantic table under which meaning resolves; authority is one class of fact within it, so a world is not synonymous with authority and is never a bundled os api namespace",
+        "a world may also contain bindings descriptors relations other worlds and stage target facts; authority is only one class of world fact",
+        "a capability sensitive relation declares its required world facts, and there is no namespace capability system beside world edges",
+        "world requirements participate in checking staging sandboxing caching optimization adaptation authorization and provenance",
         "avoid canonical monolithic os world and monolithic io world where authority can be represented more precisely as filesystem process environment clock network device capabilities",
         "ambient world fields args env cwd stdin stdout stderr clock may project from context when meaning unique — prefer args[1] env[KEY] stdout:write(text) clock:now() over os.args os.env io:write when unique context supplies values",
         "stdout is possessed endpoint value and legitimate subject — io is organizational authority not interchangeable",
@@ -4278,6 +4997,7 @@ worldgrant = law{
     kind  = .invariant
     holds = .authority
     binds = {
+        "a world is a closed semantic table; it may contain bindings descriptors relations facts other worlds and stage target facts, and authority is one class of fact within it — not the world itself",
         "a world supplies authority required for an application",
         "world is not a namespace import home protocol or type membership",
         "world is not granted by a home and is not granted by a protocol witness",
@@ -4745,8 +5465,8 @@ gatealgebra = law{
         "38 already satisfying value inserts no to application",
         "39 exact integer literal to i32 demand is descriptor specialization not fake i64 to i32 conversion",
         "40 two possible conversion targets require explicit to(T)",
-        "41 value:to() succeeds when target uniquely inferable from demand",
-        "42 value:to() fails when target ambiguous",
+        "41 omitted to succeeds when target uniquely inferable from demand",
+        "42 explicit to(target) required when target ambiguous",
         "43 conversion with unhandled failure cannot be silently inserted",
         "44 conversion with unavailable world cannot be inserted",
         "45 two available world witnesses remain ambiguous",
@@ -4763,6 +5483,10 @@ gatealgebra = law{
         "56 conversion inference never changes application cardinality",
         "57 foreign semantic conversion remains distinct from abi realization",
         "58 canonicalization is idempotent on resolved graph facts",
+        "59 callable possessed operation typed authorized captured projected resolved imported native static booleans fail when the graph already has the structural fact",
+        "60 world empty string world nil world none world false fail as absence sentinels — omit the world-requirement edge",
+        "61 a table enumerating relations descriptors worlds formats handlers or capabilities is a second authority and is rejected",
+        "62 relation row world = io or world = fs or world = json fails — authority is an application witness not a category string",
     }
     fails = "lexical gate alone or namespace respelling without semantic role change"
 }
@@ -4911,7 +5635,8 @@ inferone = law{
     holds = .constraint
     binds = {
         "endpoint is not make to shorter — to is a semantic relation that should usually exist in the graph without existing in source",
-        "INFER-ONE generalizes fact recoverability across conversions projections worlds descriptors calls and curry stages — not conversion syntax alone",
+        "INFER-ONE generalizes fact recoverability across conversions projections worlds descriptors calls and curry stages — not conversion syntax alone (SOURCE-INFER-ONE)",
+        "every source token must contribute semantic information not already uniquely recoverable from graph-visible demand context — source is a disambiguation surface not a dump of graph facts",
         "write only the semantic information that cannot be uniquely recovered from authoritative facts",
         "the compiler must know more than the source says and the source must not mechanically restate what the compiler already knows",
         "for every application distinguish supplied facts demanded facts inferred facts world witnesses semantic relation and realization",
@@ -4924,7 +5649,8 @@ inferone = law{
         "implicit relation insertion uses at most one direct semantic bridge relation under DIRECT-BRIDGE-ONE — no arbitrary conversion path search",
         "if supplied value already satisfies demanded descriptor and law insert no to — identity conversion zero is descriptor satisfaction not conversion",
         "omitting to from source does not erase it semantically — graph may retain inferred application with provenance when unique bridge is required",
-        "conversion ladder for to is level 0 omit when relation and target uniquely inferable then value:to() when relation must be explicit but target inferable then value:to(target) when target must be explicit then migrate historical to(target)(value) stopping at shortest uniquely valid face",
+        "conversion ladder for to is level 0 omit when relation and target uniquely inferable then value:to(target) when target must be explicit then migrate historical to(target)(value) stopping at shortest uniquely valid face — value:to() is not a canonical rung because if the relation is explicit and target uniquely inferable the target is graph-visible demand and spelling to adds no information",
+        "to is written ONLY when the target conversion cannot be inferred — value:to() is not canonical default syntax",
         "parameter result field operand interpolation and projection elision all follow the same rule — infer when unique from surrounding descriptor demand",
         "result demand flows backward parameter and field demand flow inward — inference is not exclusively left to right",
         "world context validates authority and witnesses effects it does not invent target intent",
@@ -4944,6 +5670,15 @@ inferone = law{
         "resolver algorithm for each demanded slot — (1) direct satisfaction (2) exactly one direct bridge relation (3) infer projection when relation named but projection missing (4) world witness or diagnose (5) failure obligations consumed (6) ambiguity requires explicit source",
         "inference priority order — direct semantic satisfaction then exact descriptor or refinement then exact relation projection then unique direct bridge then unique world witness then realization — never conversion before satisfaction",
         "syntax priority for authors and canonicalizer — omit inferred relation then omit inferred projection then subject orientation then true operands only then genuine curry only then world explicit only when ambiguity requires it",
+        "do not spell relation wrappers that add no semantic choice — f(x) not f:call(x) and table(key) not table:get(key) when application already conveys the relation",
+        "do not spell static qualification when an unqualified binding is uniquely resolved and human-obvious — env(HOME) preferred over os.env(HOME) — keep qualification only when it disambiguates actual semantic identity",
+        "projection is explicit in the GRAPH not necessarily SOURCE — injection is explicit in the GRAPH not necessarily SOURCE — protocol witness is explicit in the GRAPH not necessarily SOURCE — world witness is explicit in the GRAPH not necessarily SOURCE — closure capture is explicit in the GRAPH never manually declared when resolver can derive it",
+        "no source inject interject use-world capability declaration or @{...} dependency world list when use already determines the dependency",
+        "human clarity is the only secondary guard — if compiler inference is unique but omission would make the operation genuinely unclear to a human retain the irreducible meaningful relation — source:read() may remain because source() is semantically opaque to a human",
+        "never preserve explicit syntax merely because compiler inference is not implemented yet — mark IMPLEMENTATION-BLOCKED then implement inference — do not canonize the workaround",
+        "graph fact deletion is NOT implied by source spelling deletion — inferred relation projection conversion witness capture remain exact graph ids edges facts",
+        "canonical density objective — MINIMUM SOURCE SPELLING MAXIMUM GRAPH SEMANTICS ZERO REDUNDANT REALIZATION",
+        "gate every explicit source .to( explicit projection chain helper binding used once .get( :call( world injection declaration — ask WHAT INFORMATION HERE COULD NOT HAVE BEEN INFERRED — no answer delete spelling",
         "final law — facts before syntax demand before casts descriptors flow inward results flow backward world grants authority but does not invent intent relations injected only when one direct semantic bridge is uniquely demanded projection omitted when uniquely recoverable to omitted when uniquely recoverable currying only for a real callable stage realization never masquerades as conversion shortest uniquely resolving source is canonical richest accurately preserved graph is authoritative cheapest lawful realization is selected last",
     }
     canon = {
@@ -4957,13 +5692,46 @@ inferone = law{
     deny  = {
         "value:to(T) when T is already the exact demanded descriptor",
         "value:to() when to itself is uniquely injectable",
+        "value:to() as a canonical rung — if relation is explicit and target uniquely inferable spelling to adds no information",
         "f(value:to(i64)) when parameter slot already exactly demands i64 and bridge is unique",
         "x: str = value:to(str) when unique conversion proof exists",
+        "f:call(x) or table:get(key) when application already conveys the relation",
+        "os.env(HOME) or qualified path when unqualified binding is uniquely resolved and human-obvious",
+        "checked = value:validate() checked:normalize() — naming an intermediate used once when value:validate():normalize() preserves identity",
         "bulk regex deletion of to without graph identity proof",
         "multiple bridge steps for one demanded slot",
         "world availability alone choosing conversion target",
+        "inject interject use-world capability declaration or @{...} dependency world list when use already determines the dependency",
+        "preserving explicit syntax merely because compiler inference is not implemented yet",
     }
     fails = "requiring or preserving redundant explicit syntax when authoritative facts already determine one unique semantic result"
+}
+
+intermediatezero = law{
+    id    = "law.intermediate.zero"
+    kind  = .invariant
+    holds = .density
+    binds = {
+        "do not name intermediate values used once when the chain preserves semantic identity — value:validate():normalize() not checked = value:validate() checked:normalize()",
+        "a single-use binding exists only to control the next branch or call and carries no independent semantic identity — spelling it adds source without adding graph facts",
+        "INTERMEDIATE-ZERO applies to bindings relation results projection chains and conversion steps alike — not only to conversion intermediates",
+        "retain a named intermediate only when the name contributes semantic information the chain does not — e.g. a binding observed by multiple consumers or a place whose identity matters for human clarity",
+        "the canonicalizer collapses single-use intermediates by proving the chain re-resolution preserves semantic identity before removing the binding — never regex-delete bindings without graph proof",
+        "intermediate elision does not erase the graph fact — the application chain remains exact in the graph with provenance",
+        "IF ONE USE FOLLOWS ANOTHER LINEARLY DO NOT NAME THE INTERMEDIATE",
+    }
+    canon = {
+        "value:validate():normalize()",
+        "source:read():parse(json)",
+        "xs:first():to(str)",
+    }
+    deny  = {
+        "checked = value:validate() checked:normalize()",
+        "text = source:read() text:parse(json)",
+        "first = xs:first() first:to(str)",
+        "naming an intermediate whose only consumer is the next call in a linear chain",
+    }
+    fails = "naming a single-use intermediate that carries no semantic information beyond the chain it forwards"
 }
 
 systeminvariant = law{
@@ -5079,7 +5847,7 @@ parenone = law{
         "each relation declaration establishes projection arity and shape so lx:read(number)(b) is unambiguous and cannot be read as method-then-curry",
         "projection parameters are relation parameters not callable types — do not type to as descriptor arrow value arrow str; the catalog carries relation to projection target subject result",
         "in constraint position value: to(str) means the subject must admit relation to with projection target str without inventing convertible or protocol objects",
-        "value@to(str) when anchor syntax applies means relation to with projection str anchored on the subject not a bound method or closure object",
+        "subject-relation orientation is the colon face value:to(str); postfix @ carries a world not a relation (law.at.one), so value@to(str) relation anchoring is superseded and value@world qualifies value under world",
         "prefer subject then relation projection then operand pack then genuine currying then closure capture when choosing surface syntax",
         "runtime-dynamic values belong in the operand pack; projection is for qualification facts the graph can treat as semantic specialization",
     }
@@ -5124,12 +5892,12 @@ currystructural = law{
         "call shape is exact: a one operand call is one operand and is not a hole filled larger call so f(a) for declared f = (a, b) is the actual one operand call shape if such a shape exists not partial application of f(a, b)",
         "implicit curry from missing arity is forbidden because it would make overloaded call shapes optional operands variadic packs foreign ABI multiple return packs projection packs and descriptor inference ambiguous",
         "do not add hole partial bind curry or _ syntax for partial application: use an ordinary closure fixed = (b, c) f(a, b, c) which realization may erase when demand permits",
-        "arbitrary operand hole anchoring such as f(_, x) or f@arg(x) is not admitted: subject anchoring value@relation is unambiguous but operand holes are not",
+        "arbitrary operand hole anchoring such as f(_, x) or f@arg(x) is not admitted: operand-position holes are ambiguous and forbidden",
         "a nonescaping genuine curry scale(2)(x) must permit zero closure allocation zero environment allocation zero indirect call and zero runtime curry dispatch",
-        "anchored relation value@relation is subject anchoring not a bound method ontology and requires no mandatory bound method allocation",
+        "the subject-relation face is the colon value:relation and postfix @ carries a WORLD only value@world never a relation; value@relation subject anchoring is superseded per law.at.one and no bound method object is minted",
     }
-    canon = { "scale = (k) (x) x * k", "scale(2)(x)", "r = file@read", "fixed = (b, c) f(a, b, c)" }
-    deny  = { "implicit partial application from missing arity", "_ hole syntax", "f@arg operand anchoring", "mandatory closure for nonescaping curry", "bound method object for anchored relation" }
+    canon = { "scale = (k) (x) x * k", "scale(2)(x)", "r = file:read", "fixed = (b, c) f(a, b, c)" }
+    deny  = { "implicit partial application from missing arity", "_ hole syntax", "f@arg operand anchoring", "mandatory closure for nonescaping curry", "value@relation subject anchoring superseded — use value:relation" }
     fails = "inferring currying from missing operands or mandating runtime allocation for a nonescaping callable stage"
 }
 
@@ -5159,7 +5927,7 @@ repairinfer = law{
         "class B redundant parameter f(value:to(i64)) becomes f(value) when slot demands i64 uniquely",
         "class C redundant result body value:to(str) becomes value when result demands str uniquely",
         "class D redundant field count = value:to(i64) becomes count = value when field demands i64",
-        "class E target inferable relation explicit use value:to() when naming to is the remaining disambiguation",
+        "class E target inferable relation explicit omit to entirely when target uniquely inferable from demand — value:to() is not a canonical rung",
         "class F explicit target necessary keep value:to(str) when no surrounding demand fixes target",
         "class G no conversion needed delete to when value already satisfies descriptor",
         "class H physical cast delete semantic to move width to realization",
@@ -5724,6 +6492,25 @@ shcscheduler = law{
     fails = "utility migration presented as shc progress or compiler limitation canonized as teaching example"
 }
 
+# Velocity reconciliation: the monoglot ideal describes the destination, not a
+# gate on the road to it. Reaching the earliest executed SHC authority frontier
+# is the priority — a bounded foreign bridge is a tool for that, not a defeat.
+bootstrapvelocity = law{
+    id    = "law.bootstrap.velocity"
+    kind  = .protocol
+    holds = .priority
+    binds = {
+        "the earliest executable shc authority frontier is the priority — a bounded foreign bridge including new zig that advances the executed authority frontier is admitted and preferred over stalling when it is the fastest path to the next transfer",
+        "foreign is forbidden only as permanent architecture as semantic authority and as a new foreign semantic kingdom beside the graph — never as bootstrap scaffolding toward the next native owner",
+        "every admitted bootstrap bridge carries a law.bridge.death deletion witness naming the host owner before the idol owner after and the next host owned boundary — scaffolding without a deletion condition is permanent architecture",
+        "do not block on a monoglot ideal when the native compiler cannot yet express the stage — record implementation blocked and add the smallest bridge that unlocks the next executed transfer rather than idling",
+        "generated bridge artifacts are regenerated from their idol owner never hand edited — velocity never licenses a divergent hand fork of generated code",
+        "this reconciles law.foreign.integration law.bridge.death and law.shc.requirement — usefulness and velocity are kept while foreign semantic authority still shrinks at every milestone",
+    }
+    why   = "law.shc.requirement"
+    fails = "a monoglot restriction that stalls the shc frontier or a bootstrap bridge admitted without a deletion witness"
+}
+
 deltabudget = law{
     id    = "law.delta.budget"
     kind  = .protocol
@@ -5982,7 +6769,313 @@ ftcftw = law{
         "wasm enters the shared graph with its exact lawset and never creates a permanent virtual machine semantic kingdom",
         "a throughput win cannot hide worse cold start compiler work memory runtime obligation or artifact footprint",
         "every measurement names the executed backend snapshot comparator workload machine and known unsupported or divergent cases",
+        "the objective is dominance not parity — see law.ftcftw.dominance law.optimization.open law.cost.closure and law.algorithm.realization",
     }
+}
+
+ftcftwdominance = law{
+    id    = "law.ftcftw.dominance"
+    kind  = .invariant
+    holds = .pareto
+    binds = {
+        "FTCFTW-DOMINANCE the objective is verified pareto dominance over the best known semantically equivalent implementation reaching the physical lower bound wherever dominance is impossible not parity with c llvm fortran wasmtime or any named compiler",
+        "the comparison oracle is two things at once the strongest known implementation and the semantic physical lower bound — c llvm fortran wasmtime hand assembly and specialized libraries are each only one oracle",
+        "for every cost dimension exactly three outcomes are valid win strictly better than the best competitor with equivalence and confidence optimal equal to the proven lower bound where no improvement is physically possible or loss with exact optimization debt application id extra cost semantic cause unresolved fact lower bound and workstream",
+        "fewer operations than the semantic minimum is impossible so equalling the lower bound counts as ftcftw closure not failure",
+        "conflicting dimensions throughput vs size specialization vs compile time prefetch vs traffic energy are a pareto frontier under an explicit build world policy budget never a collapsed vanity scalar",
+        "target policy is a build world fact not a source change — minimize one objective under budgets binary bytes startup compile latency energy — same semantic program different realization frontier",
+        "ftcftw covers the whole lifecycle edit incremental compile link load relocation startup warmup first result steady tail footprint shutdown distribution and for wasm download decode validate compile instantiate initialize first call steady rss — a faster inner loop that compiles far slower or ships far larger is not dominance",
+        "the idol compiler obeys this contract on itself and self hosting makes it recursively testable",
+        "acceptance inequality IdolCost pareto dominates BestKnownCost unless the competing point is already a proven lower bound in which case idol reaches the same bound otherwise ftcftw status is open",
+    }
+    why   = "law.cost.explain"
+    fails = "parity framing a collapsed vanity score a policy encoded in source or a loss without causal optimization debt"
+}
+
+optimizationopen = law{
+    id    = "law.optimization.open"
+    kind  = .invariant
+    holds = .open
+    binds = {
+        "OPTIMIZATION-OPEN there is no closed optimization taxonomy — inlining sroa gvn licm slp vectorization dse and tail call are known instances of one problem derive proven equivalent realizations of a semantic region within budget and choose argmin cost r target world policy",
+        "the compiler reasons in semantic equivalence remaining possibility demand observation target and cost never which pass recognizes this pattern",
+        "any present or future semantics preserving transformation representation algorithm schedule layout abi staging hardware mapping or machine sequence is admissible",
+        "candidates may originate from deterministic rewrite equality saturation constraint or dynamic programming solving enumerative superoptimization autotuning profiles hardware in the loop measurement learned search models agents humans competitor binary mining or methods not yet invented — physical search strategies not semantic kingdoms",
+        "learned models and profiles are evidence never authority per law.profile.evidence",
+        "VERIFIED-OPTIMIZATION-ONE search may be experimental but the accepted result may never be semantically speculative — a candidate becomes canonical only when required observations are verified by translation validation or algebraic law per law.optimization.validated and it improves the selected cost frontier",
+        "every improvement eliminates one of four things work movement representation or uncertainty and any future unnamed optimization must reduce to one of these",
+        "completeness is a moving frontier closure is provable only for a bounded region and search domain report proved lower bound best realization found remaining gap and search coverage rather than claiming global completeness",
+        "the architecture is not parser ir fixed pass list backend but source semantic graph equivalence realization space verification multiobjective cost search pareto frontier selected realization machine — passes are not the ontology the searched verified cost ranked realization space is",
+    }
+    why   = "law.optimization.validated"
+    fails = "a blessed finite pass list a candidate admitted without verified observation preservation or optimization treated as pattern recognition"
+}
+
+costclosure = law{
+    id    = "law.cost.closure"
+    kind  = .invariant
+    holds = .debt
+    binds = {
+        "COST-CLOSURE every remaining physical cost is a graph fact carrying exact semantic cause theoretical lower bound actual measured cost and optimization debt delta",
+        "derive each hot application theoretical zero vector its cost under complete knowledge then actual minus lower bound is optimization debt yielding a mechanical ftcftw backlog agents query for greatest weighted debt not a curated pass list",
+        "unexplained cost is a compiler defect",
+        "competitors and hardware are continuous discovery systems compile equivalent source under the strongest competitor configuration measure inspect machine behavior map any advantage back to an idol semantic opportunity and add a regression oracle and explore verified realizations on the actual target to discover wins no compared compiler generates",
+        "a benchmark is closed only when idol dominates every compared implementation or reaches a proven lower bound",
+        "no benchmark win elsewhere and no geometric mean compensates for an open loss if ninety nine win and one loses where improvement is possible ftcftw remains open for that case",
+        "every case persists one row subject world target workload observations competitor lowerbound idol delta cause producer consumer proof evidence and status and the only admissible status values are win dominates the best competitor with equivalence and confidence bound reaches the proven lower bound open loses an improvable dimension or unknownbound where no useful lower bound is known — averagewin geomeanwin and goodenough are never statuses and idol opens the case automatically whenever it loses any improvable dimension",
+        "the frontier is machinery not a hand authored optimization list five graphs carry it A observation application or use to required observations to producer to proof B demand use to demanded property portion or quality to upstream transformer C law relation or descriptor to semantic law to witness to implications D frontier semantic region to candidate realization to preconditions to proof to cost vector to dependencies to status and E debt region to lower bound to selected realization to delta to cause classified as missing fact demand law candidate search proof or wrong cost model placement algorithm or representation",
+        "the development loop is mechanical measure then find largest debt then classify the missing element then implement then validate then ratchet and any semantic opportunity with no candidate provider is itself debt made visible before any benchmark regression — implementation program and workstreams in gaps GAP-172",
+    }
+    why   = "law.cost.explain"
+    fails = "a physical cost without cause lower bound and debt a benchmark called closed while an improvable loss stands an aggregate hiding a specific open loss a status outside win bound open or unknownbound or conflating unknownbound with reaching a proven lower bound"
+}
+
+algorithmrealization = law{
+    id    = "law.algorithm.realization"
+    kind  = .invariant
+    holds = .realization
+    binds = {
+        "ALGORITHM-REALIZATION-ONE algorithm and data structure choice are realization not source commitment when semantics do not mandate them",
+        "preserving specified observations the compiler may choose a fundamentally better algorithm linear lookup to binary search to perfect hash comparison sort to counting or radix from range facts generic matmul to tiled vector or gpu repeated parse to compiled parser generic regex to dfa generic table to direct switch and may change asymptotic complexity o n to o one o n log n to o n or repeated o n to one indexed preprocessing step",
+        "the same table semantics may realize as hash table sorted vector b tree direct array perfect hash trie bitmap bitset struct soa scalarized registers or nothing — idol compiles semantic data structures not programmer selected physical containers per law.representation.demand and shapes",
+        "realization is demand directed parse feeding only one projected member need not build a full object tree scan just enough allocate nothing else — applies to parsers encoders queries transforms files protocols reflection and math",
+        "optimization boundaries are only semantic observable effects authority boundary foreign abi unknown dynamic world resource policy or search budget never function file module package or library — an only organizational abstraction costs zero",
+        "dynamic programs specialize progressively unknown observed guarded sealed with correct deopt and multi version only when expected benefit times frequency exceeds compile code byte i cache and dispatch cost so specialization is itself ftcftw",
+    }
+    why   = "law.representation.demand"
+    fails = "algorithm or container committed by source spelling when semantics permit a cheaper realization or an organizational boundary blocking cross application optimization"
+}
+
+optimizationvalidated = law{
+    id    = "law.optimization.validated"
+    kind  = .invariant
+    holds = .verified
+    binds = {
+        "VERIFIED-OPTIMIZATION-ONE aggressive search is safe only because correctness never relies on trusting a transformation",
+        "every candidate carries input semantic observations candidate transformation output semantic observations and a proof witness or validation obligation and is admitted only when equivalent and cheaper on the selected frontier",
+        "machine level regions use translation validation where practical and algebraic transformations use their laws directly",
+        "this matters especially because agents write optimizer logic the search can be experimental the accepted result cannot be semantically speculative",
+    }
+    why   = "law.realization.valid"
+    fails = "an optimization admitted without verified observation preservation or correctness resting on trusting a pass"
+}
+
+physicalopen = law{
+    id    = "law.physical.open"
+    kind  = .invariant
+    holds = .open
+    binds = {
+        "PHYSICAL-SPACE-OPEN realization means any physically observable strategy that preserves the program semantic observations not merely machine representation and code generation — the idol optimizer is a semantic to physical realization optimizer not a code optimizer",
+        "no compiler phase backend convention runtime abstraction abi operating system interface data structure algorithm device or currently known optimization defines the boundary of the realization space",
+        "a physical strategy is admissible when semantic observations are preserved authority and effect constraints are satisfied target and world constraints admit it and the selected cost frontier improves",
+        "the search space includes and is not limited to computation representation algorithm data structure encoding layout precision memory placement and tier allocation instruction selection scheduling abi linking os interface syscall strategy concurrency hardware placement specialization persistence and distribution and unknown future physical strategies are admitted by the same rule",
+        "admitted physical strategies include entropy driven representation and compression bit level logic synthesis precision proportional to demand and range specialized transcendentals polyhedral and sparse schedule search distribution sensitive and adaptively switched algorithms cross run persistent specialization and aot jit hybrid realization snapshot preinitialized state page fault huge page tlb cache set uop cache fusion predictor btb and speculation window realization thermal dvfs heterogeneous core smt numa and bandwidth aware placement recompute vs store and automatic memoization prefetch and non temporal and write combining synthesis kernel crossing elimination and interface selection mmap sendfile splice io uring and vectored io kernel and network zero copy and protocol fusion accelerator instructions beyond simd and gpu npu dsp with complete transfer launch and sync cost semantic index query plan and materialized view synthesis storage tier and persistent memory realization transaction optimistic concurrency lock shape contention layout and per core specialization and energy carbon or dollar cost as pareto dimensions under world policy",
+        "security mandated speculation hardening is a realization cost that is zero exactly when a proof shows the mitigation is unnecessary for an exact application",
+        "none of these is a new semantic kingdom each is a physical search strategy under law.optimization.open verified under law.optimization.validated and accepted only on the cost frontier of law.ftcftw.dominance",
+    }
+    why   = "law.optimization.open"
+    fails = "a realization boundary drawn at a compiler phase backend abi os interface data structure algorithm or device rather than at a semantic observation or a physical strategy admitted without verification and cost frontier improvement"
+}
+
+observationminimum = law{
+    id    = "law.observation.minimum"
+    kind  = .invariant
+    holds = .observable
+    binds = {
+        "OBSERVATION-MINIMUM a realization must preserve only what the program semantics actually make observable and everything else is free to change",
+        "if the program cannot observe allocation identity table layout iteration order exact scheduling intermediate strings physical representation device or storage tier then each is a realization choice not a constraint",
+        "ftcftw power is proportional to how carefully idol defines what is and is not observable every accidental observable is a permanent optimization barrier",
+        "defining the exact observation model the behavior realizations must preserve is the highest leverage remaining language design work and an observable conservative by default that later proves unobservable is narrowed never widened silently",
+    }
+    why   = "law.observation.one"
+    fails = "an accidental observable that permanently blocks a lawful realization or a realization that changes a genuinely observable behavior"
+}
+
+# ── Square-zero foundation: a program is its observations ───────────────────
+# The deepest layer under APPLICATION-ONE and FTCFTW-DOMINANCE. A program is a
+# set of required observable relationships, not a sequence of steps. These
+# algebras — observation, equivalence, demand, relation-law, change, uncertainty,
+# optimizer-economy — make "claim every identified and unidentified optimization"
+# follow by construction rather than as an ever-growing checklist.
+
+observationone = law{
+    id    = "law.observation.one"
+    kind  = .invariant
+    holds = .observable
+    binds = {
+        "OBSERVATION-ONE a program is a set of required observable relationships between inputs worlds effects outcomes and outputs not a sequence of execution steps — if the written intermediate applications and bindings disappear entirely that is ideal not a violation",
+        "only explicitly semantic observations constrain realization and incidental physical behavior does not — for each candidate behavior result values effect ordering io bytes failure timing allocation pointer table object identity and address iteration order gc and finalizer timing thread scheduling stack depth fp rounding nan payload signed zero syscall count temporary files random sequence and clock and environment reads the language decides observable or not conservative by default narrowed by proof never silently widened",
+        "semantic time is not physical time a happens before b requires no particular nanoseconds reading a clock is an effect and execution duration is not semantics unless the program observes a clock or deadline world fact",
+        "observation sets are partly world dependent a security world may make timing cache access and address observable demanding constant time or oblivious realization while an ordinary world does not — the observable set is a world fact not a global constant",
+        "semantic time is not physical time a relation may require a happens before b without requiring any wall clock duration execution duration is not program semantics unless the program explicitly observes a clock or deadline world fact and reading the clock is itself an effect",
+        "a program may admit an allowed outcome set for concurrency unordered iteration and randomized algorithms and the optimizer may realize any allowed outcome unless a stronger world or demand fact constrains it determinism and reproducibility are world demands not global constraints",
+        "physical nonexistence none is a first class representation the default optimization question is can this binding value table closure pack world descriptor place result branch or loop cease to exist physically and if no required observation depends on its physical existence realization is none",
+        "BOUNDARY-ONE representation is free except at irreversible semantic boundaries foreign abi external file format network protocol shared memory observable pointer volatile device authority boundary or debugger demanded address — foreign representation has finite extent exactly the foreign application lifetime and never infects the whole program before and after the boundary representation is free again serialization is projection into an externally constrained representation and parsing is its inverse under a descriptor and endian and alignment are boundary representation facts not language primitives",
+    }
+    why   = "law.semantic.universe"
+    fails = "an incidental physical behavior treated as semantics an accidental observable made permanent execution duration or scheduling made observable without a clock deadline or security world fact or a foreign representation infecting beyond its boundary"
+}
+
+equivalenceobservation = law{
+    id    = "law.equivalence.observation"
+    kind  = .invariant
+    holds = .equivalence
+    binds = {
+        "equivalence is defined over the permitted observations results failure effects authority ordering observable identity and resource obligations — two realizations are equivalent when they produce the same permitted observations under the same inputs and world",
+        "every optimization reduces to prove equivalent then choose cheaper so translation validation and open ended search rest on this definition not on hand waving",
+        "identity equality semantic equivalence and representation sharing are distinct — two occurrence identities may remain distinct even when their values are equivalent and one identity may migrate physical representation over time",
+        "proof and provenance are irrelevant to meaning two proofs of the same fact or two source paths yielding the same value share realization unless the proof or provenance is itself observable or authority sensitive",
+        "copy semantics derive from observation would duplicating physical representation change an observation if no copy freely or not at all if identity is observed preserve it — no copy type versus move type kingdom",
+    }
+    why   = "law.canonical.semantic"
+    fails = "equivalence asserted without an observation model or proof and provenance polluting realization identity"
+}
+
+demandderivative = law{
+    id    = "law.demand.derivative"
+    kind  = .invariant
+    holds = .transformer
+    binds = {
+        "demand is a transformer for every relation demand of the output derives the exact demand of the inputs — this is the foundation of field pruning lazy parsing dead result elimination and query optimization",
+        "demand carries portion quality cardinality and order not merely needed or not — partial consumption first n existential any all count membership and top k or order statistic demand are first class",
+        "aggregate demand rewrites through relation law sort then first becomes selection map f then sum needs no materialized mapped values filter p then count counts directly — derived from effects cardinality ordering and dependence never a hardcoded pipeline list",
+        "inverse demand cancels work a producer already satisfies sorted input deletes a sort validated input deletes a validate — producer facts and consumer demand meet",
+        "demand facts and realization possibilities propagate bidirectionally to a fixed point monotonic where possible with cycle handling termination and widening for open worlds — not an arbitrary run inference twice",
+    }
+    why   = "law.demand.occurrence"
+    fails = "demand modeled only as a downstream boolean or an aggregate pipeline hardcoded instead of derived from relation law"
+}
+
+relationproperty = law{
+    id    = "law.relation.property"
+    kind  = .invariant
+    holds = .algebra
+    binds = {
+        "associativity commutativity identity idempotence monotonicity invertibility distributivity and fusion compatibility are relation facts not compiler special casing for primitive arithmetic",
+        "reductions parallelization regrouping distributed aggregation and reassociation follow from associativity and commutativity facts under the exact numeric or relation law",
+        "idempotence permits retry deduplication caching and coalescing invertibility permits incremental update undo and delta reconstruction monotonicity permits incremental and range propagation distributivity permits f of a plus b to f a plus f b when lawfully established",
+        "fusion compatibility is derived from effects cardinality ordering and dependence so unknown future relation combinations fuse automatically without a map plus filter recognizer",
+        "descriptor implication is systematic if descriptor a implies descriptor b then satisfying a satisfies b with no runtime conversion and semantic laws may imply other laws forming an inference accelerator",
+    }
+    why   = "law.effect.order"
+    fails = "algebraic transformation hardcoded for arithmetic only or a relation property assumed without a registered law"
+}
+
+changedelta = law{
+    id    = "law.change.delta"
+    kind  = .invariant
+    holds = .incremental
+    binds = {
+        "a relation may expose how its output changes when its input or world changes as a semantic delta or derivative law not necessarily an implementation api",
+        "with a change law recompute whole result becomes update changed portion a foundational ftcftw opportunity for ui compilers databases analytics and build systems",
+        "generalized differentiation unifies automatic incrementalization numeric gradients and dependency updates as one change algebra",
+        "reversibility lets a runtime store less state and reconstruct on demand useful in compression checkpointing undo and distributed protocols",
+    }
+    why   = "law.incremental.semantic"
+    fails = "recomputation where an exact change law would update only the affected portion"
+}
+
+uncertaintyalgebra = law{
+    id    = "law.uncertainty.algebra"
+    kind  = .invariant
+    holds = .lattice
+    binds = {
+        "semantic knowledge follows a lattice unknown then possible set then constrained set then singleton and refinement is monotonic no phase may forget an exact fact and reconstruct something weaker later except behind an explicit guarded assumption",
+        "fact evidence assumption and proof are strictly separate a fact is semantic truth evidence is observation suggesting a fact often holds an assumption is a guarded condition under which a candidate realization is valid and a proof or witness justifies a fact or transformation — do not collapse them",
+        "partial knowledge is first class known range known subset known prefix known cardinality partial shape known effect exclusion and known aliases impossible all optimize before a value is fully typed",
+        "absence is a general algebra across every dimension effect authority result field alias failure world member capture and allocation each may be unknown known absent known exact or possibly one of a set and known absence known no effect no escape no failure no alias no allocation is among the strongest optimization facts",
+        "unknown ambiguity and contradiction are distinct first class states ambiguity is two valid meanings contradiction is no valid meaning with provenance and unknown is meaning not yet known — a contradiction is a diagnostic fact never a downstream error code",
+    }
+    why   = "law.unknown.one"
+    fails = "collapsing fact evidence assumption and proof or conflating unknown ambiguity and contradiction or forgetting an exact fact"
+}
+
+optimizereconomy = law{
+    id    = "law.optimizer.economy"
+    kind  = .protocol
+    holds = .budgeted
+    binds = {
+        "the optimization process is itself optimized search and proof effort is budgeted by expected runtime gain times expected executions minus compile search and code size cost — universal search must not explode",
+        "verification cost is chosen by value cheap known law then translation validation then exhaustive proof and a proof carrying realization cache reuses a verified realization for a matching graph fragment and target without re proving",
+        "optimization is anytime a valid realization is produced quickly and improved as budget permits and search may run in background build infrastructure or distributed across machines without any language change",
+        "self improvement a verified discovered equivalence is promoted to a reusable law and because idol self hosts this loop is recursive the compiler improving itself under bounded verification",
+        "discovery is separated from trusted admission agents ml and search may propose anything but the trusted core is only a semantic checker proof verifier and cost measurement — minimize the trusted semantic and proof kernel so aggressive optimization stays safe",
+        "cross program knowledge target calibration this machine prefers sequence a over b and verified semantic rewrite theorems generalize across graphs without carrying program specific semantics",
+    }
+    why   = "law.optimization.open"
+    fails = "unbounded optimization search a trusted optimizer heuristic that bypasses the verifier or a discovered rewrite admitted without verification"
+}
+
+optimizationspace = law{
+    id    = "law.optimization.space"
+    kind  = .invariant
+    holds = .open
+    binds = {
+        "OPTIMIZATION-SPACE-COMPLETE ftcftw is not compiler optimization it is optimal realization of a semantic observation contract under semantics information physics economics and uncertainty — the question is what transformations are possible between an intention and an observation under physical law information constraints uncertainty resource constraints adversaries and changing worlds",
+        "for semantic identities and laws s demanded observation set o world and authority w downstream demand d known facts k uncertain evidence e physical resources h policy p fault and security and precision model f and compilation and search budget b the realization set r of s o w d k e h p f b is every physically lawful realization whose observations lie in allowed o s w f and ftcftw is search r then verified pareto frontier then dominate every known competitor point then equal the proven lower bound where further improvement is impossible",
+        "execution algorithm architecture storage distribution and even whether any computation occurs at all are merely candidate strategies — lawful nonexecution satisfying an observation from cache proof or known world facts is the ultimate zero cost realization",
+        "the admission rule is the only rule a candidate realization current or future named or unnamed from algebraic law superoptimization equality saturation program synthesis learned search autotuning competitor mining or agent proposal belongs in r if and only if it preserves the demanded observations under the current world satisfies authority effect and resource constraints has verifiable correctness and improves the chosen pareto frontier",
+        "no compiler phase source abstraction runtime architecture target family intermediate representation or fixed pass order may permanently narrow r without an explicit semantic observation requiring it — persistent equivalence kept across abstraction levels tunable transform composition with no privileged pass order and jointly optimized layout and computation are consequences not exceptions",
+        "the frontier factors into twenty four foundational axes identity observation law knowledge uncertainty demand change equivalence information work communication representation architecture placement schedule boundary failure resource search verification evidence cost adaptation and meta cost — every individual optimization idea and every one of the roughly two hundred discussed frontier classes is an instance discovered inside r not an addition to the constitution",
+        "lower bounds are not instruction counts they are information theoretic communication i o and memory hierarchy circuit and work span and ultimately physical law and closure states which bound was reached proven semantic minimum architectural minimum measured machine minimum or best known external",
+        "cost is a distribution not a constant dominance requires non overlapping confidence and robustness to workload variation and meta cost makes ftcftw lifecycle global a runtime win that costs more to discover and store than it ever repays is a global loss so every optimization carries an explicit break even execution count",
+        "idol chooses the cheapest verified physical way to satisfy a semantic observation contract everything else about an execution including computation noncomputation algorithm data structure representation precision memory control flow scheduling abi operating system mechanism placement hardware persistence distribution architecture and compiler strategy is an open realization variable admissible whenever the four part admission rule holds — this is how idol claims every identified and unidentified future optimization by construction",
+    }
+    why   = "law.physical.open"
+    fails = "treating ftcftw as a finite optimization checklist or letting a compiler phase abstraction target ir or pass order permanently narrow the realization space without a semantic observation requiring it"
+}
+
+realizationcontract = law{
+    id    = "law.realization.contract"
+    kind  = .invariant
+    holds = .open
+    binds = {
+        "REALIZATION-CONTRACT ftcftw is not compiler optimization it is optimal verified realization under semantics information physics economics and uncertainty — idol chooses the cheapest verified physical way to satisfy a semantic observation contract and execution algorithm architecture storage distribution and whether any computation occurs at all are candidate strategies not assumptions",
+        "the problem is not semantic program to cheapest machine code — given semantic identities and laws s demanded observation set o world and authority w downstream demand d known facts k uncertain evidence e physical resources h policy p fault security precision model f and compile search budget b find a realization r ranging over computation noncomputation algorithm data structure encoding precision architecture partition placement schedule memory persistence os mechanism hardware distribution and adaptation such that observations of r are within allowed o s w f and r is pareto optimal under p while correctness is verified and the remaining gap to known lower bounds is explicit",
+        "lower bounds are physical not instruction counts cost closure tracks information required versus processed communication complexity across every boundary io and cache block complexity circuit depth and size parallel work versus span synchronization and round complexity and ultimately speed of light memory latency and thermodynamic energy — an implementation reading a gigabyte to answer a one bit question is far from optimal even with perfect instruction selection and closure states which bound was reached provable semantic minimum architectural minimum measured machine minimum or best known external",
+        "lawful nonexecution is the ultimate realization if a demanded observation is already satisfiable from a cached exact answer a theorem materialized state or world facts r runs nothing — demand proven irrelevant to any observer disappears an effect or output proven unobservable in the current world takes its producer with it and pure results and proofs may be reused content addressed across programs when communication beats recomputation",
+        "architecture is realization a software boundary api serialization process split task object module rpc or scheduler that is not externally observable may be erased and a beneficial boundary may be introduced — cross layer optimization spans language compiler runtime allocator os database network hardware and deployment wherever the boundary is not semantically observable and the source need not fix the physical software architecture",
+        "meta cost is lifecycle global compilation search proof autotuning profiling and variant storage are costs a nanosecond runtime win that costs ten hours to discover for a once run program is a global loss every optimization carries a break even execution count cost dimensions are distributions and no dominance is claimed when confidence intervals overlap or when a candidate wins nominally but loses under slight workload or adversarial variation",
+        "the foundational axes are about twenty four identity observation law knowledge uncertainty demand change equivalence information work communication representation architecture placement schedule boundary failure resource search verification evidence cost adaptation and meta cost — every optimization is a combination of these and observation sets cost dimensions semantic facts and hardware targets remain extensible so no named ontology may permanently narrow r",
+    }
+    why   = "law.optimization.space"
+    fails = "assuming computation must occur or that realization means only how to execute a program treating a compiler as choosing machine code rather than satisfying a semantic observation contract at the cheapest verified physical point"
+}
+
+obligationone = law{
+    id    = "law.obligation.one"
+    kind  = .invariant
+    holds = .observable
+    binds = {
+        "OBLIGATION-ONE observation is only one side of semantics obligation is the other a program does not merely produce observations it owes obligations so semantics is allowed observations plus required obligations and same output alone is not semantic equivalence — ftcftw may optimize everything the contract does not require",
+        "positive obligations must eventually respond must commit durable state must respond within a deadline must preserve an ordering must release a resource must remain available under a fault model and must obey an authority boundary — negative obligations must not touch the network allocate leak secret dependent timing write after cancellation duplicate an external effect retain persistent state or let data leave a region and negative obligations are among the strongest optimization enablers because proving something cannot happen eliminates whole runtime mechanisms",
+        "obligations are temporal not merely ordered eventually a a until b never c after d a within deadline and b at most once — safety a bad thing never happens and liveness a required thing eventually happens are distinct and both must be preserved an optimization may keep safety yet break progress",
+        "a world fixes the progress model wait free lock free obstruction free eventual or best effort and whether fairness is observable never globally promise fairness a world did not demand — causality b because of a is stronger than order a before b and is a distinct graph fact and some optimizations reason counterfactually over several admissible worlds not only the realized one",
+        "noninterference changing a secret must not change a public observation is a relation between executions and ftcftw optimizes within it constant time privacy and information flow — trust and provenance quality axiom static proof trusted witness runtime observation profile estimate external claim or heuristic grade how aggressively a fact may be exploited and information flow declassification and privacy budget worlds bound which derived facts may cross a boundary",
+        "HYPERPROPERTIES equivalence is over sets of executions not one trace determinism noninterference serializability linearizability and observational consistency constrain the set of a program executions not any single run so a single trace observation equivalence model is insufficient and equivalence must preserve the demanded hyperproperties as well as per trace observations",
+    }
+    why   = "law.observation.one"
+    fails = "treating same output as equivalence ignoring a required obligation globally promising an obligation a world did not demand or a single trace equivalence that silently breaks a demanded hyperproperty like determinism noninterference or linearizability"
+}
+
+realizationuniverse = law{
+    id    = "law.realization.universe"
+    kind  = .invariant
+    holds = .open
+    binds = {
+        "NINE-UNIVERSE a complete ftcftw design cannot be a list of optimizations it must be a closure system in which every present and future optimization is a point in a formally open problem space and the whole architecture reduces to nine universes meaning observation knowledge demand equivalence realization resource search plus proof and change",
+        "meaning is identity relation fact world and law observation is value effect ordering time identity security liveness failure quality and obligation knowledge is unknown absent possible fact evidence assumption proof and provenance demand is which result portion quality when how often and under what obligation equivalence is which alternate behaviors preserve the required observations and hyperproperties and defines legal optimization",
+        "realization is an intentionally unbounded set computation noncomputation algorithm architecture representation placement schedule hardware os distribution and future physical strategy resource is an extensible vector time memory energy bandwidth space money reliability human effort and future resource search plus proof is discover verify measure rank learn generalize and reuse with no fixed algorithm set and change is inputs program world hardware evidence policy and physical state all change while semantic identity persists",
+        "the supreme ftcftw equation given meaning m observation and obligation contract o knowledge k demand d world w resource and policy p and current physical state x find any realization r such that r satisfies o of m w d no known lawful realization dominates r and the remaining gap to available lower bounds is explicit while continuously admitting new knowledge laws hardware search methods proofs cost dimensions and physical strategies",
+        "completeness is structural not enumerative no enumeration can close the realization set so the constitution closes it by the admission rule plus these nine universes never by a checklist — a future architecture memory technology os interface algorithm optimization theorem cost dimension observation or proof system must enrich existing identities and never mint a parallel semantic universe",
+        "value of information acquiring a fact by profiling probing prescanning querying an external service or requesting a stronger human or agent contract is itself an optimization action weighed as cost to learn versus expected savings and active semantic interrogation surfaces which unproven invariant would unlock a cheaper realization",
+        "contract weakening and semantic debt a declared guarantee exact order precision stable address or identity with no observer should be removed to expand the realization space and its presence is measurable debt and an api or architectural boundary that overcommits beyond consumer demand destroys optimization freedom and should be made demand polymorphic",
+        "real options and irreversibility keeping several physical options open or paying slightly more now to make future migration cheap has option value and irreversible choices published abi persistent format or distributed partitioning are priced",
+        "monotonic frontier a newer compiler may not knowingly regress a previously closed pareto point unless a selected constraint changed so the best ever realization and the best known competitor point are archived per semantic workload target and world and any regression is first class debt",
+        "optimality gap best known cost minus proven lower bound is the exact quantitative definition of remaining ftcftw debt and no faster realization found is kept distinct from proven none faster exists and where no useful lower bound is known optimality status is unbounded or unknown rather than falsely optimal",
+    }
+    why   = "law.realization.contract"
+    fails = "reducing ftcftw to an enumerated optimization checklist minting a parallel semantic universe for a new capability knowingly regressing a closed pareto point without a changed constraint conflating best competitor beaten with proven optimal or retaining an unobserved guarantee that needlessly narrows the realization space"
 }
 
 zerohistory = law{
@@ -6020,8 +7113,8 @@ nocbackend = law{
     fails = "C backend treated as permanent architecture or improved rather than deleted"
 }
 
-projection_algebra = law{
-    id    = "law.projection.algebra"
+filesystem.projection = law{
+    id    = "law.filesystem.projection"
     kind  = .invariant
     holds = .filesystem
     binds = {

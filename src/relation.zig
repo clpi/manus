@@ -1,4 +1,4 @@
-//! The relation store — gap[082], Pass 100 §9 ("Relations, the trie, protocols,
+//! The relation store — gap[082], §9 ("Relations, the trie, protocols,
 //! the algebra").
 //!
 //! WHAT THIS REPLACES. `to` was not a relation. Four sites in `codegen.zig`
@@ -768,7 +768,7 @@ pub const Relation = struct {
         return descs.items.len;
     }
 
-    fn endpoints(self: *const Relation, out: *std.ArrayListUnmanaged(Id), alloc: std.mem.Allocator) !void {
+    pub fn endpoints(self: *const Relation, out: *std.ArrayListUnmanaged(Id), alloc: std.mem.Allocator) !void {
         for (self.facts.items) |f| {
             try addUnique(out, alloc, f.id.src);
             try addUnique(out, alloc, f.id.dest);

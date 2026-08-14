@@ -1,6 +1,6 @@
 # GAP-081 step 3 — the canonicalizer, pointed at `to(str)` and nothing else.
 #
-# Pass 121 §9 makes `n:to(str)` canonical and `to(str)(n)` noncanonical, and
+# The result-demand rule makes `n:to(str)` canonical and `to(str)(n)` noncanonical, and
 # §17 says canonicalization performs the repair mechanically rather than
 # asking 250 files' worth of authors to. This is that mechanism, and it is
 # deliberately narrow in TWO directions at once.
@@ -30,7 +30,7 @@
 # FAILED TO BUILD. Quote parity is tracked per line and a line carrying one is
 # declined entire.
 #
-# THE WITNESS, Pass 121 §18, one per rewrite:
+# THE WITNESS, one per rewrite:
 #
 #     w  <path>:<line>  relation to · subject <s> · level str · graph identity unchanged
 #
@@ -204,9 +204,9 @@ walk: str = (path: str, talk: i64)
                 if !comment(line)
                     k = scan(path, line, no, talk)
                 if k < 0
-                    declined = declined + 1
+                    declined += 1
                 if k > 0
-                    rewrites = rewrites + k
+                    rewrites += k
                     edits = "{edits} -e {q}{no}s/{pattern}/{repl}/g{q}"
             start = i + 1
         i += 1
@@ -220,40 +220,40 @@ controls: i64 = ()
     bad = 0
     if scan("c", "    print(to(str)(n))", 1, 0) != 1
         print("CONTROL FAILED: does not see an operation-first conversion")
-        bad = bad + 1
+        bad += 1
     if scan("c", "    print(to(str)(p.x))", 1, 0) != 1
         print("CONTROL FAILED: does not see a field-walk subject")
-        bad = bad + 1
+        bad += 1
     if scan("c", "    print(n:to(str))", 1, 0) != 0
         print("CONTROL FAILED: convicts the CANONICAL subject-first form")
-        bad = bad + 1
+        bad += 1
     if scan("c", "    xs:to(seq)(entry)", 1, 0) != 0
         print("CONTROL FAILED: convicts a leveled canonical conversion")
-        bad = bad + 1
+        bad += 1
     if scan("c", "    print(to(str)(a + b))", 1, 0) != 0
         print("CONTROL FAILED: accepts an operator subject it cannot bracket")
-        bad = bad + 1
+        bad += 1
     if scan("c", "    print(to(str)(f(x)))", 1, 0) != 0
         print("CONTROL FAILED: accepts a call subject it cannot bracket")
-        bad = bad + 1
+        bad += 1
     if scan("c", "    msg = \"to(str)(n)\"", 1, 0) != -1
         print("CONTROL FAILED: does not decline a site inside a string literal")
-        bad = bad + 1
+        bad += 1
     # The same site behind an ESCAPED quote, which is the case that actually
     # broke. A scanner that mishandles `\\\"` reports the literal as closed and
     # offers its contents up as code.
     if scan("c", "    msg = probe(\"say \\\"to(str)(n)\\\" now\")", 1, 0) != -1
         print("CONTROL FAILED: an escaped quote flips the parity")
-        bad = bad + 1
+        bad += 1
     if scan("c", "    x = f(y) + 1", 1, 0) != 0
         print("CONTROL FAILED: sees a conversion in ordinary Duo")
-        bad = bad + 1
+        bad += 1
     if mark("42:  print(x)") != 42
         print("CONTROL FAILED: cannot read a grep line number")
-        bad = bad + 1
+        bad += 1
     if body("42:  print(x)") != "  print(x)"
         print("CONTROL FAILED: cannot read a grep line body")
-        bad = bad + 1
+        bad += 1
     bad
 
 main: i64 = ()
@@ -283,10 +283,10 @@ main: i64 = ()
             if i > start
                 path = text:sub(start, i - 1)
             if path != ""
-                seen = seen + 1
+                seen += 1
                 edits: str = walk(path, 1)
                 if edits != ""
-                    touched = touched + 1
+                    touched += 1
                     if apply == "1"
                         std.script.run("sed -i '' -E{edits} {path}")
             start = i + 1

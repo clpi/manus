@@ -6,7 +6,7 @@
 # into a buffer, which is the codegen loop itself.
 #
 # The buffer is a mutable positional table (dynamic index read + write, both
-# native), so emission is `code[n] = word; n = n + 1` — exactly the shape of
+# native), so emission is `code[n] = word; n += 1` — exactly the shape of
 # `emitFmt` in `src/native_backend.zig`.
 #
 # What is still missing for a real backend is writing that buffer to an object
@@ -41,15 +41,15 @@ main(): i64
     n = 1
 
     code[n] = enc_movz(0, 42)
-    n = n + 1
+    n += 1
     code[n] = enc_ret()
-    n = n + 1
+    n += 1
 
     # Verify the emitted sequence:
     #   mov x0, #42  -> 0xd2800540  (0xd2800000 | 42<<5 | 0) = 3531605312
     #   ret          -> 0xd65f03c0                            = 3596551104
     ok = 0
-    ok = ok + check(code[1], 3531605312)
-    ok = ok + check(code[2], 3596551104)
+    ok += check(code[1], 3531605312)
+    ok += check(code[2], 3596551104)
     ok
 end

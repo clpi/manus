@@ -37,11 +37,13 @@ semantic facts, cases, refinements, and transitions rather than teaching
 boolean `has`/`is`/`can`/`exists` helpers or sentinel checks. Unknown, absent,
 false, and unresolved remain distinct.
 
-Canonical project source uses `.id`. Any tracked project-owned `.id`
-implementation here is SOURCE-ZERO debt and must be semantically migrated or
-deleted, never copied as an example. Physical launcher and environment names
-containing `duo` are bootstrap aliases and deletion targets, not current
-language identity.
+Canonical project source uses `.id` and new canonical `.id` is freely admitted.
+The tracked `.id` implementation here currently carries SOURCE-ZERO debt in its
+*noncanonical patterns* (host-shaped/string-shaped decisions, duplicate
+authority) — not by virtue of being `.id` — migrated by repairing the pattern in
+place, and it is not a canonical example to copy. Physical launcher and
+environment names containing `duo` are bootstrap aliases and deletion targets,
+not current language identity.
 
 Validate the live implementation with the repository `lsp-gate` build step
 under the shared build lock. Evidence must come from real protocol traffic,

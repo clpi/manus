@@ -307,7 +307,7 @@ M.is_alphanumeric = std_string_is_alphanumeric
 # error, no diagnostic, just nil where a byte should be. There are 431 such
 # calls across lib/: byte 130, len 103, sub 102, gsub 36, char 22, find 7,
 # upper/lower 4 each, rep 1. Every one of them was silently reading nil, which
-# is how lib/std/image/gif.id could load cleanly and still decode nothing.
+# is how lib/image/gif.id could load cleanly and still decode nothing.
 #
 # These are projections, not reimplementations: one edge, and `string.*`
 # remains the thing that actually runs. Exposing them here is what makes the
@@ -326,7 +326,7 @@ M.is_alphanumeric = std_string_is_alphanumeric
 # never compare equal to nil and `a:char(b, c, d)` runs regardless #
 # `104:char()` came back four bytes long, printing as "h" because C
 # stops at the first null. The multi-argument call sites (all in
-# lib/std/image/png.id) use the host `string.char` directly instead.
+# lib/image/png.id) use the host `string.char` directly instead.
 char(c: any): any
     c:char()
 end

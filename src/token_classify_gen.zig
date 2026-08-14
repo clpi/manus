@@ -1,6 +1,6 @@
-//! Pass 12 M1 — Duo-native keyword classifier projection (P12-WS6/WS7).
+//! M1 — Duo-native keyword classifier projection (P12-WS6/WS7).
 //!
-//! Emits `lib/std/token/classify.id` from the canonical descriptor in
+//! Emits `lib/token/classify.id` from the canonical descriptor in
 //! `src/token_semantic.zig` (mirror of `wasm_semantic_gen.zig` → opcode_lookup.id).
 //!
 //! Projections emitted here: classifier (3 candidate realizations), spelling,
@@ -130,7 +130,7 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     try w.writeAll(
         \\
         \\-- Production entry (mirrors token_semantic.production_classifier).
-        \\@c.export("duokeywordclassify")
+        \\@c.export("duo_keyword_classify")
         \\classify: i64 = (w: str)
         \\    classifybranchchain(w)
         \\end
@@ -166,20 +166,20 @@ pub fn emitKeywordClassifyNativeC(w: *std.Io.Writer) !void {
     try w.print(
         \\/* GENERATED from {s} — do not edit by hand.
         \\ * Regenerate: duo token-tables emit
-        \\ * Canonical Duo projection: lib/std/token/classify.id (@c.export classify)
+        \\ * Canonical Duo projection: lib/token/classify.id (@c.export classify)
         \\ * Production consumer: src/keyword_bridge.zig → src/lexer.zig
         \\ */
         \\#include <stdint.h>
         \\#include <string.h>
         \\
         \\/* weak: this generated table is the PROJECTION of
-        \\ * lib/std/token/classify.id. A program that embeds the canonical Duo
+        \\ * lib/token/classify.id. A program that embeds the canonical Duo
         \\ * source emits its own definition of the same symbol, and A3 ONE EDGE
         \\ * says there is one fact behind both — so the Duo-emitted one must be
         \\ * allowed to win rather than colliding. Without this, anything pulling
         \\ * in SH-02's artifact AND SH-03's lexer fails to link with
         \\ * `duplicate symbol '_duo_keyword_classify'`. */
-        \\__attribute__((weak)) int64_t duokeywordclassify(const char *w) {{
+        \\__attribute__((weak)) int64_t duo_keyword_classify(const char *w) {{
         \\
     , .{PROVENANCE});
     for (kws) |kw| {

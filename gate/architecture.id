@@ -1,4 +1,4 @@
-# gates/architecture - semantic normalization architecture gate, C0 section 65.
+# gate/architecture - semantic normalization architecture gate, C0 section 65.
 #
 # A grammar face may survive for readable density. It may not survive as the
 # thing sema, optimization or lowering reasons about. This census separates
@@ -12,7 +12,7 @@
 # evidence. These are migration censuses, never semantic verdicts. GAP-124 owns
 # the graph queries that make world, subject, vocabulary, sentinel and control
 # findings authoritative. Host/world boundary is NOT spelling-census here.
-# Use gates/host.id + gates/idiom dot(world)(code) on ADDED lines; GAP-124 owns semantics.
+# Use gate/host.id + gate/idiom dot(world)(code) on ADDED lines; GAP-124 owns semantics.
 #
 # GAP-119 owns this gate's 34 process-capture namespace calls. Execution has
 # no admitted subject/world/result vocabulary yet, and GAP-117 prevents hiding
@@ -27,28 +27,28 @@ capture: str = (shellline: str)
 q = "'"
 
 digits: i64 = (text: str)
-    if text == nil or text:len() == 0
+    if !text:len()
         return -1
     v = 0
     i = 1
     n = text:len()
     while i <= n
-        c = text:sub(i, i)
-        if c >= "0" and c <= "9"
-            v = v * 10 + (c:byte() - 48)
+        b = text:byte(i)
+        if b >= 48 and b <= 57
+            v = v * 10 + (b - 48)
             i += 1
         else
-            if c:byte() == 10 or c:byte() == 13 or c:byte() == 32 or c:byte() == 9
+            if b == 10 or b == 13 or b == 32 or b == 9
                 i += 1
             else
                 return -1
     v
 
-ascount: i64 = (cmd: str)
+tally: i64 = (cmd: str)
     digits(capture(cmd))
 
 chomp: str = (text: str)
-    if text == nil
+    if !text:len()
         return ""
     n = text:len()
     while n > 0
@@ -65,7 +65,7 @@ all = "'src/*.zig'"
 front = "src/ast.zig src/parser.zig src/macro_expand.zig"
 after = "'src/*.zig' ':(exclude)src/ast.zig' ':(exclude)src/parser.zig' ':(exclude)src/macro_expand.zig' ':(exclude)src/pretty.zig'"
 proven = "src/ast.zig src/parser.zig src/pretty.zig"
-duofiles = "'*.id' ':(exclude)gates/architecture.id' ':(exclude)gates/idiom.id' ':(exclude)scripts/ingress/*'"
+duofiles = "'*.id' ':(exclude)gate/architecture.id' ':(exclude)gate/idiom.id' ':(exclude)scripts/ingress/*'"
 
 astpat = "ast\\.(Expr|Stmt|BinOp|UnOp|IfExpr|ElseIf|ListComprehension)"
 dispatchpat = "\\.(if_stmt|while_loop|repeat_loop|num_for|gen_for|brk|cont|ret|binop|unop|call|method_call|index|field|if_expr|contains_expr)[[:space:],]*=>"
@@ -73,6 +73,11 @@ parserpat = "pub const (BinOp|UnOp|IfExpr|ListComprehension|Stmt)[[:space:]=]"
 provenpat = "InvocationForm|\\.form[[:space:]]*(==|!=)"
 facepat = "if \\(c\\.form != \\.braced\\)"
 graphpat = "^[[:space:]]+(call|directive|pipeline),$"
+graphnamepat = "referencesDescriptor(Name|Inline)"
+graphrecursionpat = "classifyDescriptorRecursion\\("
+graphedgekindpat = "^[[:space:]]+(subject|argument|result),$"
+graphedgeusepat = "edge\\.kind == \\.(relation|subject|argument|result)|\\.kind = \\.(subject|argument|result)[,}]"
+graphquerypat = "find(Func|ByName|ByNameOfKind)\\("
 physicalpat = "^[[:space:]]+(br|br_if|br_if_not|ret|ret_record),$"
 irpat = "^[[:space:]]+(const_(i64|f64|str|req)|load_(local|field|index|global)|store_(local|field|index)|call_(direct|extern)|mov_arg|fp_mov_arg|br_if|br_if_not|ret_record|hw_(fence|spin|unary)|str_len|binop|cmp),$"
 taxpat = "pub const (Op|BinOpTag|FieldKind)[[:space:]=]"
@@ -230,118 +235,142 @@ blocked_control_owner = "gap.124"
 
 main: i64 = ()
     code = 0
-    cmd = "git grep -n {q}if not suffix({q} -- gates/idiom.id gates/path.id gates/census.id gates/host.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n {q}if not suffix({q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, suffix substring detector antipattern)")
         code = 3
-    cmd = "git grep -n {q}if suffix({q} -- gates/idiom.id gates/path.id gates/census.id gates/host.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n {q}if suffix({q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, suffix audit detector reintroduced)")
         code = 3
-    cmd = "git grep -n {q}suffix: bool{q} -- gates/idiom.id gates/path.id gates/census.id gates/host.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n {q}suffix: bool{q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, suffix detector kingdom reintroduced)")
         code = 3
-    cmd = "git grep -n -E {q}(^|[[:space:]])(if not |and not |or not |\\\\(not ){q} -- scripts/proof lib/semantic gates 2>/dev/null | grep -v grammarconvergence | grep -v text:match | grep -v 'never if not' | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n -E {q}(^|[[:space:]])(if not |and not |or not |\\\\(not ){q} -- scripts/proof gates 2>/dev/null | grep -v grammarconvergence | grep -v text:match | grep -v 'never if not' | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, keyword not in teaching surfaces)")
         code = 3
-    cmd = "git grep -n hostreadpat gates/architecture.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n hostreadpat gate/architecture.id 2>/dev/null | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, host spelling census antipattern)")
         code = 3
-    cmd = "git grep -n hostargspat gates/architecture.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n hostargspat gate/architecture.id 2>/dev/null | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, host spelling census antipattern)")
         code = 3
-    cmd = "git grep -n 'dot: bool = (code: str, world: str)' gates/idiom.id gates/host.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) < 2
+    cmd = "git grep -n 'dot: bool = (code: str, world: str)' gate/idiom.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+    if tally(cmd) < 2
         print("(semanticgate, control, gate, dot(code, world) enforcement removed from gates)")
         code = 3
-    cmd = "git grep -n '@c\\.' scripts/ingress gates gates/idiom.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n '@c\\.' scripts/ingress gates gate/idiom.id 2>/dev/null | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, @c foreign emit reintroduced in ingress/gates)")
         code = 3
-    cmd = "git grep -n lua_ scripts/ingress gates gates/idiom.id lib/id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n lua_ scripts/ingress gates gate/idiom.id lib/id 2>/dev/null | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, lua intermediary reintroduced in ingress/gates)")
         code = 3
-    cmd = "git grep -n '@c\\.' gates/architecture.id scripts/ingress gates lib/id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n '@c\\.' gate/architecture.id scripts/ingress gates lib/id 2>/dev/null | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, @c foreign emit reintroduced)")
         code = 3
-    cmd = "git grep -n popen gates/architecture.id lib/id gates gates/idiom.id 2>/dev/null | grep -v fix | grep -v Forbidden | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
+    cmd = "git grep -n popen gate/architecture.id lib/id gates gate/idiom.id 2>/dev/null | grep -v fix | grep -v Forbidden | wc -l | awk '{print $1}'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, popen spelling reintroduced — use command:open)")
         code = 3
-    cmd = "test -f gates/admission.id && test -f gates/catalog.id && printf 1 || printf 0"
-    if ascount(cmd) != 1
+    cmd = "test -f gate/admission.id && test -f gate/catalog.id && printf 1 || printf 0"
+    if tally(cmd) != 1
         print("(semanticgate, control, gate, admission firewall or relation catalog missing)")
         code = 3
-    cmd = "printf '' | ./zig-out/bin/idol run gates/admission.id 2>/dev/null | grep -c 'FAIL empty input'"
-    if ascount(cmd) != 1
+    cmd = "printf '' | ./zig-out/bin/idol run gate/admission.id 2>/dev/null | grep -c 'FAIL empty input'"
+    if tally(cmd) != 1
         print("(semanticgate, control, gate, admission empty-input fail-closed broken)")
         code = 3
-    cmd = "./zig-out/bin/idol run gates/admission.id 2>&1 | grep -c 'control A FAIL'"
-    if ascount(cmd) != 0
+    cmd = "./zig-out/bin/idol run gate/admission.id 2>&1 | grep -c 'control A FAIL'"
+    if tally(cmd) != 0
         print("(semanticgate, control, gate, admission adversarial controls broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}out = capture(\\\"echo\\\"){q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}out = std\x2Escript.capture(\\\"echo\\\"){q} | grep -q -E {q}std\\\\.script\\\\.capture\\\\({q} && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, admission, namespace-rename classifier broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}table.insert(t,v){q} | grep -q table\\\\. && printf {q}%s\\n{q} {q}list.append(t,v){q} | grep -q list\\\\. && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, admission, ecosystem-respelling classifier broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}y = math.sqrt(x){q} | grep -q math\\\\. && printf {q}%s\\n{q} {q}y = x:sqrt(){q} | grep -qv math\\\\. && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, admission, subject-vs-namespace classifier broken)")
         code = 3
     # Every census pathset is compared with an independently expanded source
     # set. An empty or narrowed pathset with zero matches must withhold counts.
-    cmd = "allfiles=$(git ls-files -- {all}); frontfiles=$(git ls-files -- {front}); afterfiles=$(git ls-files -- {after}); provenfiles=$(git ls-files -- {proven}); duos=$(git ls-files -- {duofiles}); expectedall=$(git ls-files -- {q}src/*.zig{q}); expectedfront=$(git ls-files -- src/ast.zig src/parser.zig src/macro_expand.zig); expectedafter=$(git ls-files -- {q}src/*.zig{q} {q}:(exclude)src/ast.zig{q} {q}:(exclude)src/parser.zig{q} {q}:(exclude)src/macro_expand.zig{q} {q}:(exclude)src/pretty.zig{q}); expectedproven=$(git ls-files -- src/ast.zig src/parser.zig src/pretty.zig); expectedduos=$(git ls-files -- {q}*.id{q} {q}:(exclude)gates/architecture.id{q} {q}:(exclude)gates/idiom.id{q}); if test -n \"$allfiles\" && test -n \"$duos\" && test \"$allfiles\" = \"$expectedall\" && test \"$frontfiles\" = \"$expectedfront\" && test \"$afterfiles\" = \"$expectedafter\" && test \"$provenfiles\" = \"$expectedproven\" && test \"$duos\" = \"$expectedduos\" && test -z \"$(git ls-files -- {q}src/no-such-*.zig{q})\" && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/ast.zig && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/native_ir.zig && printf {q}%s\\n{q} \"$duos\" | grep -qx lib/compiler/application.id && git cat-file -e :src/ast.zig && git cat-file -e :src/parser.zig && git cat-file -e :src/pretty.zig && git cat-file -e :src/native_ir.zig && git cat-file -e :src/semantic_graph.zig && git cat-file -e :gates/architecture.id && git grep --cached -q -E {q}{parserpat}{q} -- {front} && git grep --cached -q -E {q}{astpat}{q} -- {after} && git grep --cached -q {q}boxpat = {q} -- gates/architecture.id; then git grep --cached -q {q}boxpat = {q} -- {duofiles}; status=$?; if test $status = 1; then printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{boxed_positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{boxed_negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1; else printf 0; fi; else printf 0; fi"
-    if ascount(cmd) != 1
+    cmd = "allfiles=$(git ls-files -- {all}); frontfiles=$(git ls-files -- {front}); afterfiles=$(git ls-files -- {after}); provenfiles=$(git ls-files -- {proven}); duos=$(git ls-files -- {duofiles}); expectedall=$(git ls-files -- {q}src/*.zig{q}); expectedfront=$(git ls-files -- src/ast.zig src/parser.zig src/macro_expand.zig); expectedafter=$(git ls-files -- {q}src/*.zig{q} {q}:(exclude)src/ast.zig{q} {q}:(exclude)src/parser.zig{q} {q}:(exclude)src/macro_expand.zig{q} {q}:(exclude)src/pretty.zig{q}); expectedproven=$(git ls-files -- src/ast.zig src/parser.zig src/pretty.zig); expectedduos=$(git ls-files -- {q}*.id{q} {q}:(exclude)gate/architecture.id{q} {q}:(exclude)gate/idiom.id{q}); if test -n \"$allfiles\" && test -n \"$duos\" && test \"$allfiles\" = \"$expectedall\" && test \"$frontfiles\" = \"$expectedfront\" && test \"$afterfiles\" = \"$expectedafter\" && test \"$provenfiles\" = \"$expectedproven\" && test \"$duos\" = \"$expectedduos\" && test -z \"$(git ls-files -- {q}src/no-such-*.zig{q})\" && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/ast.zig && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/native_ir.zig && printf {q}%s\\n{q} \"$duos\" | grep -qx lib/compiler/application.id && git cat-file -e :src/ast.zig && git cat-file -e :src/parser.zig && git cat-file -e :src/pretty.zig && git cat-file -e :src/native_ir.zig && git cat-file -e :src/semantic_graph.zig && git cat-file -e :gate/architecture.id && git grep --cached -q -E {q}{parserpat}{q} -- {front} && git grep --cached -q -E {q}{astpat}{q} -- {after} && git grep --cached -q {q}boxpat = {q} -- gate/architecture.id; then git grep --cached -q {q}boxpat = {q} -- {duofiles}; status=$?; if test $status = 1; then printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{boxed_positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{boxed_negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1; else printf 0; fi; else printf 0; fi"
+    if tally(cmd) != 1
         print("(semanticgate, control, source, staged pathspec parser classifier or exclusion failed)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}.if_stmt => |branch|{q} | grep -c -E {q}{dispatchpat}{q}"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, dispatch, missed if face)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}.demand => |edge|{q} | grep -c -E {q}{dispatchpat}{q}"
-    if ascount(cmd) != 0
+    if tally(cmd) != 0
         print("(semanticgate, control, dispatch, convicted demand)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}    directive,{q} | grep -c -E {q}{graphpat}{q}"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, graph, missed directive kind)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}    relation,{q} | grep -c -E {q}{graphpat}{q}"
-    if ascount(cmd) != 0
+    if tally(cmd) != 0
         print("(semanticgate, control, graph, convicted relation)")
         code = 3
+    cmd = "printf {q}%s\\n{q} {q}referencesDescriptorName(x){q} | grep -c -E {q}{graphnamepat}{q}"
+    if tally(cmd) != 1
+        print("(semanticgate, control, graph, missed name-based descriptor match)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}classifyDescriptorRecursionFromEdges(g,a,d){q} | grep -c -E {q}{graphrecursionpat}{q}"
+    if tally(cmd) != 0
+        print("(semanticgate, control, graph, convicted FromEdges as bare recursion)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}classifyDescriptorRecursion(g,a,d){q} | grep -c -E {q}{graphrecursionpat}{q}"
+    if tally(cmd) != 1
+        print("(semanticgate, control, graph, missed bare recursion match)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}if edge.kind == .relation{q} | grep -c -E {q}{graphedgeusepat}{q}"
+    if tally(cmd) != 1
+        print("(semanticgate, control, graph, missed operational edge use)")
+        code = 3
+    cmd = "printf {q}%s\\n{q} {q}try self.addEdge(.{ .kind = .capture }){q} | grep -c -E {q}{graphedgeusepat}{q}"
+    if tally(cmd) != 0
+        print("(semanticgate, control, graph, convicted lawful capture edge)")
+        code = 3
+    cmd = "test -f gate/graph.id && printf 1 || printf 0"
+    if tally(cmd) != 1
+        print("(semanticgate, control, graph, gate/graph.id missing)")
+        code = 3
     cmd = "printf {q}%s\\n{q} {q}{vocab_positive}{q} | grep -c -E {q}{irpat}{q}"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, ir, missed duplicate call identity)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{vocab_negative}{q} | grep -c -E {q}{irpat}{q}"
-    if ascount(cmd) != 0
+    if tally(cmd) != 0
         print("(semanticgate, control, ir, convicted physical branch)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{syntax_positive}{q} | grep -c -E {q}{newpat}{q}"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, unclassified, missed new syntax kind)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{syntax_negative}{q} | grep -c -E {q}{newpat}{q}"
-    if ascount(cmd) != 0
+    if tally(cmd) != 0
         print("(semanticgate, control, unclassified, convicted semantic kind)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{namespace_positive}{q} | grep -c -E {q}{namespacepat}{q}"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, namespace, missed std fs operation)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{namespace_negative}{q} | grep -c -E {q}{namespacepat}{q}"
-    if ascount(cmd) != 0
+    if tally(cmd) != 0
         print("(semanticgate, control, namespace, convicted subject relation)")
         code = 3
     cmd = "./zig-out/bin/idol run examples/demand/result.id 2>/dev/null | tail -1 | tr -d '\\n'"
@@ -353,35 +382,35 @@ main: i64 = ()
         print("(semanticgate, control, source, canon proof broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{result_positive}{q} | grep -q -E {q}{suffixpat}{q} && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, source, suffix classifier broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{standard_positive}{q} | grep -q -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}{standard_negative}{q} | grep -q -v -E {q}{stdpat}{q} && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, source, std classifier broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{process_positive}{q} | grep -q -E {q}{processpat}{q} && printf {q}%s\\n{q} {q}{process_negative}{q} | grep -q -v -E {q}{processpat}{q} && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, source, process classifier broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{processadmit_positive}{q} | grep -q -E {q}{processadmitpat}{q} && printf {q}%s\\n{q} {q}{processadmit_negative}{q} | grep -q -v -E {q}{processadmitpat}{q} && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, source, process admission classifier broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{processns_positive}{q} | grep -q -E {q}{processnspat}{q} && printf {q}%s\\n{q} {q}{processns_negative}{q} | grep -q -v -E {q}{processnspat}{q} && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, source, process namespace authority classifier broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{longbracket_positive}{q} | grep -q -E {q}{longbracketpat}{q} && printf {q}%s\\n{q} {q}{longbracket_negative}{q} | grep -q -v -E {q}{longbracketpat}{q} && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, source, long bracket lexical classifier broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{negation_positive}{q} | grep -q -v -E {q}{notpat}{q} && printf {q}%s\\n{q} {q}{negation_negative}{q} | grep -q -E {q}{notpat}{q} && printf 1"
-    if ascount(cmd) != 1
+    if tally(cmd) != 1
         print("(semanticgate, control, source, keyword-not classifier broken)")
         code = 3
     cmd = "printf {q}%s\\n{q} {q}{result_negative}{q} | grep -c -E {q}{suffixpat}{q}"
-    if ascount(cmd) != 0
+    if tally(cmd) != 0
         print("(semanticgate, control, result, convicted result demand)")
         code = 3
 
@@ -389,58 +418,66 @@ main: i64 = ()
         print("(semanticgate, error, controls, broken, repository counts withheld)")
     if code == 0
         cmd = "git grep --cached -h -E {q}{parserpat}{q} -- {front} 2>/dev/null | wc -l | awk '{print $1}'"
-        parser = ascount(cmd)
+        parser = tally(cmd)
         cmd = "git grep --cached -h -E {q}{provenpat}{q} -- {proven} 2>/dev/null | wc -l | awk '{print $1}'"
-        provenance = ascount(cmd)
+        provenance = tally(cmd)
         cmd = "git grep --cached -h -E {q}{astpat}{q} -- src/pretty.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        render = ascount(cmd)
+        render = tally(cmd)
         cmd = "git grep --cached -h -E {q}{dispatchpat}{q} -- src/pretty.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        render += ascount(cmd)
+        render += tally(cmd)
         cmd = "git grep --cached -h -E {q}{physicalpat}{q} -- src/native_ir.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        physical = ascount(cmd)
+        physical = tally(cmd)
         cmd = "files=$(git ls-files -- {all}); if test -z \"$files\"; then printf 1000000; else git grep --cached -h -E {q}{newpat}{q} -- $files 2>/dev/null | wc -l; fi"
-        unclassified = ascount(cmd)
+        unclassified = tally(cmd)
         cmd = "git grep --cached -h -E {q}{astpat}{q} -- {after} 2>/dev/null | wc -l | awk '{print $1}'"
-        consumer = ascount(cmd)
+        consumer = tally(cmd)
         cmd = "git grep --cached -h -E {q}{dispatchpat}{q} -- {after} 2>/dev/null | wc -l | awk '{print $1}'"
-        dispatch = ascount(cmd)
+        dispatch = tally(cmd)
         cmd = "git grep --cached -h -E {q}{facepat}{q} -- {after} 2>/dev/null | wc -l | awk '{print $1}'"
-        face = ascount(cmd)
+        face = tally(cmd)
         cmd = "git grep --cached -h -E {q}{graphpat}{q} -- src/semantic_graph.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        graph = ascount(cmd)
+        graph = tally(cmd)
+        cmd = "git grep --cached -h -E {q}{graphnamepat}{q} -- src/semantic_graph.zig 2>/dev/null | wc -l | awk '{print $1}'"
+        graphname = tally(cmd)
+        cmd = "git grep --cached -h -E {q}{graphrecursionpat}{q} -- src/semantic_graph.zig 2>/dev/null | grep -v FromEdges | wc -l | awk '{print $1}'"
+        graphrecursion = tally(cmd)
+        cmd = "git grep --cached -h -E {q}{graphedgeusepat}{q} -- src/semantic_graph.zig 2>/dev/null | wc -l | awk '{print $1}'"
+        graphedgeop = tally(cmd)
+        cmd = "git grep --cached -h -E {q}{graphquerypat}{q} -- src/graph_query.zig 2>/dev/null | wc -l | awk '{print $1}'"
+        graphquery = tally(cmd)
         cmd = "git grep --cached -h -E {q}{irpat}{q} -- src/native_ir.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        ir = ascount(cmd)
+        ir = tally(cmd)
         cmd = "git grep --cached -h -E {q}{taxpat}{q} -- src/native_ir.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        taxonomy = ascount(cmd)
+        taxonomy = tally(cmd)
         cmd = "files=$(git ls-files -- {all}); if test -z \"$files\"; then printf 99999999; else a=$(git grep --cached -h -E {q}{apipat}{q} -- {after} 2>/dev/null | wc -l); b=$(git grep --cached -h {q}lua_Value{q} -- $files 2>/dev/null | wc -l); printf {q}%s{q} $((a * 10000 + b)); fi"
-        api = ascount(cmd)
+        api = tally(cmd)
         combined = api
         boxed = combined % 10000
         api = (combined - boxed) / 10000
         cmd = "git grep --cached -h -E {q}{namespacepat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '{print $1}'"
-        namespace = ascount(cmd)
+        namespace = tally(cmd)
         cmd = "git grep --cached -h -E {q}{stdpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '{print $1}'"
-        standard = ascount(cmd)
+        standard = tally(cmd)
         cmd = "git grep --cached -h -E {q}{suffixpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        suffix = ascount(cmd)
+        suffix = tally(cmd)
         cmd = "git grep --cached -h -E {q}{envemptypat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        envempty = ascount(cmd)
+        envempty = tally(cmd)
         cmd = "git grep --cached -h -E {q}{nilpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        nilabsence = ascount(cmd)
+        nilabsence = tally(cmd)
         cmd = "git grep --cached -h -E {q}{notpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        keywordnot = ascount(cmd)
+        keywordnot = tally(cmd)
         cmd = "git grep --cached -h -E {q}{existpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        existence = ascount(cmd)
-        cmd = "git show :gates/architecture.id | grep -E {q}std[.]proc[.]capture\\({q} | grep -v -E {q}^[[:space:]]*positive[[:space:]]*={q} | wc -l | awk '{print $1}'"
-        bootstrap = ascount(cmd)
+        existence = tally(cmd)
+        cmd = "git show :gate/architecture.id | grep -E {q}std[.]proc[.]capture\\({q} | grep -v -E {q}^[[:space:]]*positive[[:space:]]*={q} | wc -l | awk '{print $1}'"
+        bootstrap = tally(cmd)
         cmd = "git grep --cached -h -E {q}{processadmitpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '{print $1}'"
-        processadmit = ascount(cmd)
+        processadmit = tally(cmd)
         cmd = "git grep --cached -h -E {q}{processnspat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '{print $1}'"
-        processns = ascount(cmd)
+        processns = tally(cmd)
         cmd = "git grep --cached -h -E {q}{longbracketpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(\\\\-\\\\-|source[[:space:]]*=|\"){q} | wc -l | awk '{print $1}'"
-        longbracket = ascount(cmd)
+        longbracket = tally(cmd)
         cmd = "git ls-files '*.id' | grep -c {q}_{q}"
-        fileword = ascount(cmd)
+        fileword = tally(cmd)
 
         over = 0
         print("(semanticgate, count, parser-only, faces, {parser}, cap=5)")
@@ -462,6 +499,14 @@ main: i64 = ()
         if face > 2 over += 1
         print("(semanticgate, count, migration, graphkind, {graph}, cap=1)")
         if graph > 1 over += 1
+        print("(semanticgate, count, migration, graphname, {graphname}, cap=0)")
+        if graphname > 0 over += 1
+        print("(semanticgate, count, migration, graphrecursion, {graphrecursion}, cap=0)")
+        if graphrecursion > 0 over += 1
+        print("(semanticgate, count, migration, graphedgeop, {graphedgeop}, cap=0)")
+        if graphedgeop > 0 over += 1
+        print("(semanticgate, count, migration, graphquery, {graphquery}, cap=1)")
+        if graphquery > 1 over += 1
         print("(semanticgate, census, {vocab_state}, {vocab_id}, {ir}, cap={vocab_cap}, law={vocab_law}, owner={vocab_owner})")
         if ir > vocab_cap over += 1
         print("(semanticgate, census, {taxonomy_state}, {taxonomy_id}, {taxonomy}, cap={taxonomy_cap}, law={taxonomy_law}, owner={taxonomy_owner})")

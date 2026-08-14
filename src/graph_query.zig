@@ -1,79 +1,299 @@
 //! Bounded semantic-graph projections for compiler, LSP, and MCP consumers.
+//!
+//! Production queries accept exact graph ids only. Human name/path resolution
+//! belongs to an outer UI locator step — never inside these projections.
 const std = @import("std");
-const ast = @import("ast.zig");
-const dnir = @import("native_ir.zig");
-const dnir_hardware = @import("dnir_hardware.zig");
-const region_graph = @import("region_graph.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const semantic_algebra = @import("semantic_algebra.zig");
+const types = @import("types.zig");
 
-fn requireFunction(graph: *const semantic_graph.SemanticGraph, function: semantic_graph.id) !void {
-    const fact = graph.get(function) orelse return error.InvalidFunctionEntity;
-    if (fact.kind != .func) return error.InvalidFunctionEntity;
+pub fn requireEntity(graph: *const semantic_graph.SemanticGraph, e: semantic_graph.id) !*const semantic_graph.Node {
+    return graph.get(e) orelse return error.MissingGraphEntity;
 }
 
-/// Exact relations invoked directly from one function entity.
-pub fn calleesOf(
+fn requireCallable(graph: *const semantic_graph.SemanticGraph, callable: semantic_graph.id) !void {
+    if (!graph.callable(callable)) return error.InvalidFunctionEntity;
+}
+
+/// Migration alias — prefer `requireCallable`.
+fn requireFunction(graph: *const semantic_graph.SemanticGraph, function: semantic_graph.id) !void {
+    try requireCallable(graph, function);
+}
+
+/// Exact graph entity by id.
+pub fn entity(graph: *const semantic_graph.SemanticGraph, e: semantic_graph.id) ?*const semantic_graph.Node {
+    return graph.entityOf(e);
+}
+
+/// Checked application fact by application id.
+pub fn application(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) ?*const semantic_graph.ApplicationFact {
+    return graph.application(occurrence);
+}
+
+/// Relation id selected for one application occurrence.
+pub fn relation(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) ?semantic_graph.id {
+    return graph.applicationRelation(occurrence);
+}
+
+/// Subject value id for one application occurrence.
+pub fn subject(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) ?semantic_graph.id {
+    return graph.applicationSubject(occurrence);
+}
+
+/// Operand value ids — borrowed packed range (`law.fact.locality`).
+pub fn operand(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) ?[]const semantic_graph.id {
+    return graph.applicationArguments(occurrence);
+}
+
+/// Result value ids — borrowed packed range (`law.fact.locality`).
+pub fn result(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) ?[]const semantic_graph.id {
+    return graph.applicationResults(occurrence);
+}
+
+pub fn effect(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) semantic_graph.Card {
+    const fact = graph.application(occurrence) orelse return .unknown;
+    return fact.effect;
+}
+
+pub fn authority(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) semantic_graph.Card {
+    const fact = graph.application(occurrence) orelse return .unknown;
+    return fact.authority;
+}
+
+pub fn witness(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) semantic_graph.Card {
+    const fact = graph.application(occurrence) orelse return .unknown;
+    return fact.witness;
+}
+
+pub fn realization(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) semantic_graph.Card {
+    const fact = graph.application(occurrence) orelse return .unknown;
+    return fact.realization;
+}
+
+pub fn target(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) semantic_graph.Card {
+    const fact = graph.application(occurrence) orelse return .unknown;
+    return fact.target;
+}
+
+/// Evaluation stage when known on the application. Null is unknown.
+pub fn stage(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) ?semantic_algebra.Stage {
+    _ = graph.application(occurrence) orelse return null;
+    return graph.applicationStage(occurrence);
+}
+
+/// Descriptor entity projection by exact id.
+pub fn descriptor(
+    graph: *const semantic_graph.SemanticGraph,
+    e: semantic_graph.id,
+) !*const semantic_graph.Node {
+    const node = try requireEntity(graph, e);
+    if (!graph.hasDescriptorFacts(e)) return error.InvalidDescriptorEntity;
+    return node;
+}
+
+/// Member descriptor ids under one home descriptor entity.
+pub fn member(
     graph: *const semantic_graph.SemanticGraph,
     alloc: std.mem.Allocator,
-    function: semantic_graph.id,
+    home_id: semantic_graph.id,
+) ![]const semantic_graph.id {
+    return graph.membersOf(home_id, alloc);
+}
+
+/// Capture binding ids for one callable entity.
+pub fn capture(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    callable: semantic_graph.id,
+) ![]const semantic_graph.id {
+    return graph.capturesOf(callable, alloc);
+}
+
+/// Home context id for one entity.
+pub fn home(graph: *const semantic_graph.SemanticGraph, e: semantic_graph.id) ?semantic_graph.id {
+    return graph.homeOf(e);
+}
+
+/// Callable/relation entities directly under one home id.
+pub fn callablesInHome(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    home_id: semantic_graph.id,
+) ![]const semantic_graph.id {
+    return graph.callablesInHome(home_id, alloc);
+}
+
+/// Migration alias — prefer `callablesInHome` (`law.module.zero`).
+pub fn functionsInModule(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    module: semantic_graph.id,
+) ![]const semantic_graph.id {
+    return callablesInHome(graph, alloc, module);
+}
+
+/// Exact entities with a `.binding` edge to one binding id.
+pub fn users(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    binding: semantic_graph.id,
+) ![]const semantic_graph.id {
+    var out: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
+    errdefer out.deinit(alloc);
+    try graph.usersOf(binding, &out);
+    return try out.toOwnedSlice(alloc);
+}
+
+/// Table/record descriptor home ids in resident graph order.
+pub fn tableShapes(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+) ![]const semantic_graph.id {
+    return graph.tableDescriptorHomes(alloc);
+}
+
+/// Enum descriptor home ids in resident graph order.
+pub fn enumShapes(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+) ![]const semantic_graph.id {
+    return graph.enumDescriptorHomes(alloc);
+}
+
+/// Projection specialization value ids for one application occurrence.
+pub fn projection(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    occurrence: semantic_graph.id,
+) ![]const semantic_graph.id {
+    return graph.projectionsOf(occurrence, alloc);
+}
+
+/// Published `.descriptor_ref` targets for one descriptor entity.
+pub const DescriptorRef = struct {
+    entity: semantic_graph.id,
+    inline_ref: bool,
+};
+
+pub fn descriptorRef(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    descriptor_id: semantic_graph.id,
+) ![]DescriptorRef {
+    const refs = try graph.descriptorRefsOf(descriptor_id, alloc);
+    defer alloc.free(refs);
+    var out: std.ArrayListUnmanaged(DescriptorRef) = .empty;
+    errdefer out.deinit(alloc);
+    for (refs) |entry| {
+        try out.append(alloc, .{ .entity = entry.target, .inline_ref = entry.inline_ref });
+    }
+    return try out.toOwnedSlice(alloc);
+}
+
+/// Descriptor recursion derived from published `.descriptor_ref` edges only.
+pub fn descriptorRecursion(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    descriptor_id: semantic_graph.id,
+) !semantic_graph.Recursion {
+    return graph.descriptorRecursion(alloc, descriptor_id);
+}
+
+/// Source span provenance for one entity (display/diagnostic projection).
+pub fn provenance(
+    graph: *const semantic_graph.SemanticGraph,
+    e: semantic_graph.id,
+) ?semantic_graph.SpanRef {
+    return graph.provenanceOf(e);
+}
+
+/// Exact application occurrences owned by one caller/home entity — borrowed
+/// slice (`law.fact.locality`, `law.zero.copy.graph.views`).
+pub fn applicationsIn(
+    graph: *const semantic_graph.SemanticGraph,
+    caller: semantic_graph.id,
+) ![]const semantic_graph.id {
+    try requireCallable(graph, caller);
+    if (graph.unresolvedApplicationCount(caller) != 0) return error.UnresolvedApplication;
+    const owned = graph.applicationsInCaller(caller);
+    for (owned) |occurrence| {
+        if (graph.application(occurrence) == null) return error.UnresolvedApplication;
+    }
+    return owned;
+}
+
+/// Exact relations invoked from one caller/home entity.
+pub fn relationsReferencedBy(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    caller: semantic_graph.id,
 ) ![]const semantic_graph.id {
     var out: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
     errdefer out.deinit(alloc);
     var seen: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;
     defer seen.deinit(alloc);
 
-    try requireFunction(graph, function);
-    if (graph.unresolvedApplicationCount(function) != 0) return error.UnresolvedApplication;
-    for (graph.applications()) |stored| {
-        const fact = graph.application(stored.application) orelse return error.UnresolvedApplication;
-        if (fact.caller != function) continue;
-        if (seen.contains(fact.relation)) continue;
-        try seen.put(alloc, fact.relation, {});
-        try out.append(alloc, fact.relation);
+    const owned = try applicationsIn(graph, caller);
+    for (owned) |occurrence| {
+        const selected = graph.applicationRelation(occurrence) orelse
+            return error.UnresolvedApplication;
+        if (seen.contains(selected)) continue;
+        try seen.put(alloc, selected, {});
+        try out.append(alloc, selected);
     }
     return try out.toOwnedSlice(alloc);
 }
 
-/// Exact call occurrences inside one function entity.
+/// Migration alias — prefer `relationsReferencedBy` (`law.application.consumer`).
+pub fn calleesOf(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    function: semantic_graph.id,
+) ![]const semantic_graph.id {
+    return relationsReferencedBy(graph, alloc, function);
+}
+
+/// Migration alias — prefer `applicationsIn` (`law.application.consumer`).
 pub fn callsIn(
     graph: *const semantic_graph.SemanticGraph,
     alloc: std.mem.Allocator,
     function: semantic_graph.id,
-) ![]semantic_graph.id {
-    var out: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
-    errdefer out.deinit(alloc);
-
-    try requireFunction(graph, function);
-    if (graph.unresolvedApplicationCount(function) != 0) return error.UnresolvedApplication;
-    for (graph.applications()) |stored| {
-        const fact = graph.application(stored.application) orelse return error.UnresolvedApplication;
-        if (fact.caller != function) continue;
-        try out.append(alloc, fact.application);
-    }
-    return try out.toOwnedSlice(alloc);
-}
-
-/// Record layout facts projected from one exact graph entity.
-pub const RecordRepresentation = struct {
-    id: semantic_graph.id,
-    name: []const u8,
-    shape_fingerprint: ?u64,
-    storage_class: ?[]const u8,
-};
-
-pub fn representationForRecord(
-    graph: *const semantic_graph.SemanticGraph,
-    record: semantic_graph.id,
-) !RecordRepresentation {
-    const node = graph.get(record) orelse return error.InvalidRecordEntity;
-    if (node.kind != .table_shape) return error.InvalidRecordEntity;
-    const storage = if (node.storage_class) |sc| @import("types.zig").storageClassName(sc) else null;
-    return .{
-        .id = record,
-        .name = node.name orelse return error.MissingRecordName,
-        .shape_fingerprint = node.shape_id,
-        .storage_class = storage,
-    };
+) ![]const semantic_graph.id {
+    _ = alloc;
+    return applicationsIn(graph, function);
 }
 
 /// Graph-derived function emit order (callees before callers). See `SemanticGraph.moduleFunctionEmitOrder`.
@@ -85,40 +305,6 @@ pub fn functionEmitOrder(
     return graph.moduleFunctionEmitOrder(alloc, functions);
 }
 
-/// Hardware descriptor rows exercised in a lowered module (Pass 22 WS23 query surface).
-pub fn hardwareDescriptorsOfModule(
-    alloc: std.mem.Allocator,
-    m: dnir.Module,
-) ![]dnir_hardware.Descriptor {
-    return dnir_hardware.collectModuleDescriptors(alloc, m);
-}
-
-/// True when region hardware tier matches module tier and hardware nodes exist.
-pub fn hardwareTierConsistent(m: dnir.Module, regions: []const region_graph.Region) bool {
-    for (regions) |r| {
-        if (@intFromEnum(r.hardware_tier) > @intFromEnum(m.hardware_tier)) return false;
-    }
-    return true;
-}
-
-/// Collect eligible top-level function names from a module (same surface as DNIR lowering).
-pub fn eligibleFunctionNames(alloc: std.mem.Allocator, mod: *const ast.Module) ![]const []const u8 {
-    var names: std.ArrayListUnmanaged([]const u8) = .empty;
-    errdefer names.deinit(alloc);
-    for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .func_decl) continue;
-        const fd = &stmt.func_decl;
-        if (fd.path.len != 1 or fd.method or fd.is_local) continue;
-        var ffi = false;
-        for (fd.attributes) |attr| {
-            if (std.mem.eql(u8, attr.name, "ffi")) ffi = true;
-        }
-        if (ffi) continue;
-        try names.append(alloc, fd.path[0]);
-    }
-    return try names.toOwnedSlice(alloc);
-}
-
 test "graph_query: calls and callees from lifted graph" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -128,7 +314,7 @@ test "graph_query: calls and callees from lifted graph" {
     const src =
         \\helper: i64 = ()
         \\    1
-        \\main: i64 = ()
+        \\entry: i64 = ()
         \\    helper()
     ;
     var lex = Lexer.init(src, "query.id");
@@ -141,24 +327,48 @@ test "graph_query: calls and callees from lifted graph" {
     try checked.check_module(&mod);
     var g = semantic_graph.SemanticGraph.init(alloc);
     defer g.deinit();
-    _ = try g.liftModuleWithCheckedCalls(&mod, &checked, "query.id");
+    const module = try g.liftModuleWithCheckedCalls(&mod, &checked, "query.id");
 
-    const main = g.findFunc("main") orelse return error.TestExpectedEqual;
-    const helper = g.findFunc("helper") orelse return error.TestExpectedEqual;
+    const functions = try g.functionsInModule(module, alloc);
+    defer alloc.free(functions);
+    try std.testing.expectEqual(@as(usize, 2), functions.len);
+    const helper = g.resolveInHome(module, "helper", .func) orelse return error.TestExpectedEqual;
+    const entry = g.resolveInHome(module, "entry", .func) orelse return error.TestExpectedEqual;
 
-    const calls = try callsIn(&g, alloc, main);
-    defer alloc.free(calls);
+    const module_functions = try functionsInModule(&g, alloc, module);
+    defer alloc.free(module_functions);
+    try std.testing.expectEqualSlices(semantic_graph.id, functions, module_functions);
+
+    const calls = try applicationsIn(&g, entry);
     try std.testing.expect(calls.len == 1);
-    const call = g.application(calls[0]) orelse return error.TestExpectedEqual;
-    try std.testing.expectEqual(helper, call.relation);
-    try std.testing.expectEqual(main, call.caller);
+    const call = application(&g, calls[0]) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(helper, g.applicationRelation(call.application).?);
+    try std.testing.expectEqual(entry, g.applicationCaller(call.application).?);
+    try std.testing.expectEqual(helper, relation(&g, calls[0]).?);
+    const helper_users = try users(&g, alloc, helper);
+    defer alloc.free(helper_users);
+    try std.testing.expectEqual(@as(usize, 1), helper_users.len);
+    try std.testing.expectEqual(calls[0], helper_users[0]);
+    try std.testing.expect(effect(&g, calls[0]) == .unknown);
+    try std.testing.expect(authority(&g, calls[0]) == .unknown);
+    try std.testing.expect(witness(&g, calls[0]) == .unknown);
+    try std.testing.expect(realization(&g, calls[0]) == .unknown);
+    try std.testing.expect(target(&g, calls[0]) == .unknown);
+    try std.testing.expect(stage(&g, calls[0]) == null);
+    try std.testing.expect(call.effect == .unknown);
+    try std.testing.expect(call.authority == .unknown);
+    try std.testing.expect(call.witness == .unknown);
+    try std.testing.expect(call.target == .unknown);
+    try std.testing.expect(call.realization == .unknown);
 
-    const callees = try calleesOf(&g, alloc, main);
+    const callees = try relationsReferencedBy(&g, alloc, entry);
     defer alloc.free(callees);
     try std.testing.expect(callees.len == 1);
     try std.testing.expectEqual(helper, callees[0]);
 
-    const not_function = try g.addChild(main, .{
+    try std.testing.expectError(error.MissingGraphEntity, requireEntity(&g, @intCast(g.nodes.items.len)));
+
+    const not_function = try g.addChild(entry, .{
         .kind = .value,
         .span = .{ .file = "query.id", .start = 5, .end = 5 },
     });
@@ -167,38 +377,43 @@ test "graph_query: calls and callees from lifted graph" {
 
     var unresolved = semantic_graph.SemanticGraph.init(alloc);
     defer unresolved.deinit();
-    _ = try unresolved.liftModuleWithCalls(&mod, "query.id");
-    const unresolved_main = unresolved.findFunc("main") orelse return error.TestExpectedEqual;
-    try std.testing.expectError(error.UnresolvedApplication, callsIn(&unresolved, alloc, unresolved_main));
-    try std.testing.expectError(error.UnresolvedApplication, calleesOf(&unresolved, alloc, unresolved_main));
-    var unresolved_json: std.ArrayListUnmanaged(u8) = .empty;
-    defer unresolved_json.deinit(alloc);
-    try unresolved.writeJson(alloc, "query.id", &unresolved_json, null);
-    var unresolved_parsed = try std.json.parseFromSlice(std.json.Value, alloc, unresolved_json.items, .{});
-    defer unresolved_parsed.deinit();
-    try std.testing.expectEqual(
-        @as(usize, 1),
-        unresolved_parsed.value.object.get("unresolved_applications").?.array.items.len,
-    );
+    const unresolved_module = try unresolved.liftModuleWithCalls(&mod, "query.id");
+    const unresolved_functions = try unresolved.functionsInModule(unresolved_module, alloc);
+    defer alloc.free(unresolved_functions);
+    try std.testing.expectEqual(@as(usize, 2), unresolved_functions.len);
+    const unresolved_entry = unresolved.resolveInHome(unresolved_module, "entry", .func) orelse
+        return error.TestExpectedEqual;
+    try std.testing.expectError(error.UnresolvedApplication, callsIn(&unresolved, alloc, unresolved_entry));
+    try std.testing.expectError(error.UnresolvedApplication, calleesOf(&unresolved, alloc, unresolved_entry));
 
-    const relation = try g.addChild(main, .{
+    const relation_entity = try g.addChild(entry, .{
         .kind = .relation,
         .span = .{ .file = "query.id", .start = 6, .end = 5 },
+        .result_descriptor = .i64,
     });
-    g.application_facts.items[0].relation = relation;
-    const relation_calls = try callsIn(&g, alloc, main);
-    defer alloc.free(relation_calls);
-    try std.testing.expectEqualSlices(semantic_graph.id, &.{calls[0]}, relation_calls);
-    const relation_callees = try calleesOf(&g, alloc, main);
+    const occurrence = g.applications()[0].application;
+    var binding: ?usize = null;
+    for (g.edges.items, 0..) |edge, i| {
+        if (edge.from == occurrence and edge.kind == .binding) {
+            binding = i;
+            break;
+        }
+    }
+    g.edges.items[binding.?].to = relation_entity;
+    const relation_callees = try calleesOf(&g, alloc, entry);
     defer alloc.free(relation_callees);
-    try std.testing.expectEqualSlices(semantic_graph.id, &.{relation}, relation_callees);
+    try std.testing.expectEqualSlices(semantic_graph.id, &.{relation_entity}, relation_callees);
 
-    g.application_facts.items[0].relation = not_function;
-    try std.testing.expectError(error.UnresolvedApplication, callsIn(&g, alloc, main));
-    try std.testing.expectError(error.UnresolvedApplication, calleesOf(&g, alloc, main));
+    const projections = try projection(&g, alloc, calls[0]);
+    defer alloc.free(projections);
+    try std.testing.expectEqual(@as(usize, 0), projections.len);
+
+    g.edges.items[binding.?].to = not_function;
+    try std.testing.expectError(error.UnresolvedApplication, callsIn(&g, alloc, entry));
+    try std.testing.expectError(error.UnresolvedApplication, calleesOf(&g, alloc, entry));
 }
 
-test "graph_query: record projection requires one exact record id" {
+test "graph_query: descriptor requires one exact record id" {
     var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
     defer graph.deinit();
     const record = try graph.addNode(.{
@@ -207,25 +422,59 @@ test "graph_query: record projection requires one exact record id" {
         .name = "point",
         .storage_class = .native,
         .shape_id = 42,
+        .descriptor_state = .sealed,
     });
     const value = try graph.addNode(.{
         .kind = .value,
         .span = .{ .file = "record.id", .start = 2, .end = 1 },
         .name = "point",
     });
-    const unnamed_record = try graph.addNode(.{
+
+    const shape = try descriptor(&graph, record);
+    try std.testing.expectEqual(graph.get(record).?, shape);
+    try std.testing.expectEqualStrings("point", shape.name.?);
+    try std.testing.expectEqual(@as(?u64, 42), shape.shape_id);
+    try std.testing.expectError(error.InvalidDescriptorEntity, descriptor(&graph, value));
+    try std.testing.expectError(
+        error.MissingGraphEntity,
+        descriptor(&graph, @intCast(graph.nodes.items.len)),
+    );
+}
+
+test "graph_query: descriptor refs and recursion from exact ids" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var g = semantic_graph.SemanticGraph.init(alloc);
+    defer g.deinit();
+    const module = try g.addNode(.{ .kind = .module, .span = .{ .file = "rec.id", .start = 0, .end = 0 } });
+    const node_shape = try g.addChild(module, .{
         .kind = .table_shape,
-        .span = .{ .file = "record.id", .start = 3, .end = 1 },
+        .span = .{ .file = "rec.id", .start = 1, .end = 1 },
+        .name = "Node",
+        .storage_class = .native,
+        .descriptor_state = .sealed,
     });
 
-    const representation = try representationForRecord(&graph, record);
-    try std.testing.expectEqual(record, representation.id);
-    try std.testing.expectEqualStrings("point", representation.name);
-    try std.testing.expectEqual(@as(?u64, 42), representation.shape_fingerprint);
-    try std.testing.expectError(error.InvalidRecordEntity, representationForRecord(&graph, value));
-    try std.testing.expectError(error.MissingRecordName, representationForRecord(&graph, unnamed_record));
-    try std.testing.expectError(
-        error.InvalidRecordEntity,
-        representationForRecord(&graph, @intCast(graph.nodes.items.len)),
-    );
+    const node: types.ResolvedType = .{ .@"struct" = .{ .name = "Node" } };
+    const next = try alloc.create(types.ResolvedType);
+    next.* = node;
+    const fields = try alloc.alloc(types.FieldType, 2);
+    fields[0] = .{ .name = "value", .typ = .i64 };
+    fields[1] = .{ .name = "next", .typ = .{ .pointer = next } };
+    const table_type: types.ResolvedType = .{ .table_type = .{
+        .fields = fields,
+        .storage_class = .native,
+        .is_sealed = true,
+    } };
+
+    try g.publishDescriptorRefEdges(node_shape, table_type);
+    const refs = try descriptorRef(&g, alloc, node_shape);
+    defer alloc.free(refs);
+    try std.testing.expectEqual(@as(usize, 1), refs.len);
+    try std.testing.expectEqual(node_shape, refs[0].entity);
+    try std.testing.expect(!refs[0].inline_ref);
+    try std.testing.expectEqual(semantic_graph.Recursion.indirect_pointer, try descriptorRecursion(&g, alloc, node_shape));
+    try std.testing.expectError(error.InvalidDescriptorEntity, descriptorRef(&g, alloc, module));
 }

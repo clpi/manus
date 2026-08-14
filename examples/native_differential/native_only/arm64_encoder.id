@@ -53,14 +53,14 @@ end
 main(): i64
     ok = 0
     # mov x9, #0        -> 0xd2800009
-    ok = ok + check(enc_movz(9, 0), 3531603977)
+    ok += check(enc_movz(9, 0), 3531603977)
     # add x11, x9, x10  -> 0x8b0a012b
-    ok = ok + check(enc_add(11, 9, 10), 2332688683)
+    ok += check(enc_add(11, 9, 10), 2332688683)
     # sub x10, x0, x9   -> 0xcb09000a
-    ok = ok + check(enc_sub(10, 0, 9), 3406364682)
+    ok += check(enc_sub(10, 0, 9), 3406364682)
     # cset x10, lt      -> encodes invert(lt) = ge = 0xa -> 0x9a9fa7ea
-    ok = ok + check(enc_cset(10, 10), 2594154474)
+    ok += check(enc_cset(10, 10), 2594154474)
     # ret               -> 0xd65f03c0
-    ok = ok + check(enc_ret(), 3596551104)
+    ok += check(enc_ret(), 3596551104)
     ok
 end

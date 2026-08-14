@@ -1,20 +1,20 @@
 # std.sync_once — Once (mirrors Go's sync.Once)
 # Ensures a function is called exactly once, even across concurrent calls.
 
-# new_once: create a new Once.
-new_once(): any
+# once: create a new Once.
+once(): any
     {done = false, f = nil}
 end
 
-# do_fn: call fn exactly once. Subsequent calls are no-ops.
-do_fn(o: any, fn: any): any
+# run: call fn exactly once. Subsequent calls are no-ops.
+run(o: any, fn: any): any
     if o.done return nil end
     o.done = true
     fn()
 end
 
-# do_once_with_result: call fn once and cache its result.
-do_once_with_result(o: any, fn: any): any
+# call: call fn once and cache its result.
+call(o: any, fn: any): any
     if o.done return o.result end
     o.done = true
     o.result = fn()

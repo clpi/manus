@@ -24,12 +24,6 @@ pub const RefreshResult = struct {
     }
 };
 
-fn recordNameFromEntity(entity_id: []const u8) ?[]const u8 {
-    const prefix = "duo:record:";
-    if (!std.mem.startsWith(u8, entity_id, prefix)) return null;
-    return entity_id[prefix.len..];
-}
-
 fn combineInvalidationGraphs(
     alloc: std.mem.Allocator,
     first: *semantic_invalidation.Graph,
@@ -106,17 +100,17 @@ pub fn refreshRealizationCache(
     defer live_ids.deinit(alloc);
 
     for (realizations.variables) |var_| {
-        const sel = var_.selected() orelse continue;
-        const record_name = recordNameFromEntity(var_.subject_entity) orelse continue;
+        const record = var_.entity orelse continue;
         try live_ids.append(alloc, var_.subject_entity);
-        const fp = try realization.fingerprintForRecordEntity(alloc, graph, record_name, target, TRANSFORM_VERSION);
+        const fp = try realization.fingerprintForRecordId(alloc, graph, record, target, TRANSFORM_VERSION);
+        const artifact = if (var_.selected()) |sel| sel.representation else "unrealized";
         try mergeAudit(
             alloc,
             &state,
             &audits,
             var_.subject_entity,
             fp,
-            sel.representation,
+            artifact,
             target,
         );
     }

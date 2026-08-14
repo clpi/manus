@@ -11,6 +11,8 @@ example.
 
 Report these before file counts or keyword metrics (`docs/METRICS.md`):
 
+Full debt inventory and workstream order: `.agents/TECH_DEBT_WORKSTREAM.md`.
+
 1. **Executed authority frontier** — production stages actually Idol-owned
    (`docs/bootstrap.md` ledger).
 2. **Semantic reconstruction debt** — downstream decisions still re-deriving
@@ -58,25 +60,45 @@ closure, and proof. Do not start another pass,
 invent another semantic taxonomy, add surface syntax, or strengthen a bootstrap
 subsystem that the constitution requires Idol to replace.
 
+**Next inflection is not corpus rename.** Post-`dc07e5d7` history is dominated
+by `canonical: finalize … alignment` commits. That class of work does not move
+executed authority. Current compass: `.agents/TECH_DEBT_WORKSTREAM.md`.
+
+1. Close GAP-145 lexical identities on the already-Idol `tokenize()` route.
+   Host `tokenizeHost` is differential-only. Suffix/path ingress remains host.
+2. Then grammar-role authority + immutable token view (`GAP-134`) and the first
+   Idol parser recognition.
+3. Preserve exact graph ids (zero rediscovery); delete physical cost from
+   graph → demand → realization; prove FTCFTW with revision-bound damage
+   controls.
+4. Cursor/corpus lanes reject new syntax/naming debt. They do not become the
+   SHC frontier.
+
 Horizontal ports are useful only when they remove a dependency. They are not
 self-hosting progress unless semantic and production authority move into Idol.
 
-## No New Zig
+## New Zig: bounded bootstrap bridges only (`law.bootstrap.velocity`)
 
-Do not add Zig files, Zig semantic owners, Zig gates, Zig classifiers, Zig
-registries, or Zig reconstruction caches.
+Reaching the earliest executed SHC authority frontier is the priority. New Zig
+is admitted when it is the fastest path to the next executed transfer and it is
+a bounded bootstrap bridge — never a permanent Zig semantic owner, gate,
+classifier, registry, or reconstruction cache, and never a foreign semantic
+authority beside the graph.
 
-An edit to existing Zig is exceptional bootstrap wiring. It is admissible only
-when all of these are true:
+A new or edited Zig bridge is admissible when all of these hold:
 
-1. Canonical Idol already owns the semantic fact or relation.
-2. The edit only passes that authority into the current production path.
-3. No decision is reconstructed from syntax, text, names, or backend shape.
-4. Host semantic code is net negative, or the same change names the exact
-   deletion trigger and the Idol file that replaces it.
-5. A focused direct-native value proof fails before the edit and passes after.
+1. It advances the executed authority frontier — or passes existing Idol-owned
+   authority into the current production path — rather than minting a parallel
+   semantic owner.
+2. No decision is reconstructed from syntax, text, names, or backend shape.
+3. It carries a `law.bridge.death` deletion witness: host owner before, Idol
+   owner after, and the next host-owned boundary.
+4. Generated artifacts are regenerated from their Idol owner, never hand-forked.
 
-If those conditions do not hold, implement the missing authority in Idol first.
+Prefer implementing the missing authority in Idol; but do not idle on the
+monoglot ideal when the native compiler cannot yet express a stage — mark
+`IMPLEMENTATION-BLOCKED` and add the smallest bridge that unlocks the next
+executed transfer.
 Running the existing Zig bootstrap and its gates is validation, not permission
 to expand it. Retain old host implementations as differential oracles until the
 Idol replacement is proven, then delete them.

@@ -1,4 +1,4 @@
-//! Pass 34 L6 — representation manifest schema (build artifact from @comp.why / emission scans).
+//! L6 — representation manifest schema (build artifact from @comp.why / emission scans).
 const std = @import("std");
 const backend_identity = @import("backend_identity.zig");
 const native_barrier_checks = @import("native_barrier_checks.zig");
@@ -26,9 +26,9 @@ pub const EmissionCounts = struct {
     dynamic_dispatches: usize = 0,
     runtime_helpers: usize = 0,
     fallback_entries: usize = 0,
-    /// Pass 34 L2 — fallback `.field` accesses emitted via `duo_fallback_get_*` markers.
+    /// L2 — fallback `.field` accesses emitted via `duo_fallback_get_*` markers.
     fallback_field_accesses: usize = 0,
-    /// Pass 34 L2 — distinct interned field IDs among those fallback accesses.
+    /// L2 — distinct interned field IDs among those fallback accesses.
     interned_field_ids: usize = 0,
 
     pub fn fromGeneratedC(source: []const u8) EmissionCounts {

@@ -1,4 +1,4 @@
-# std.wasm.decode — cursor-integrated Wasm opcode + immediate decoding (Pass 9 P9-06).
+# std.wasm.decode — cursor-integrated Wasm opcode + immediate decoding.
 #
 # Uses std.bytes (any-buffer) until std.cursor ByteCursor native lowering lands (P9-WS3).
 # Semantic opcode facts: src/wasm_semantic.zig via std.wasm.opcode_lookup (generated).
@@ -10,9 +10,9 @@
 Inst = instruction
 Lookup = opcode_lookup
 
-DECODER_OWNER = "lib/std/wasm/decode.id"
+DECODER_OWNER = "lib/wasm/decode.id"
 SEMANTIC_TABLE = Inst.decoder_table_owner()
-LOOKUP_TABLE = "lib/std/wasm/opcode_lookup.id"
+LOOKUP_TABLE = "lib/wasm/opcode_lookup.id"
 CURSOR_SUBSTRATE = "decode-local-table"
 
 decoder_owner(): str
@@ -48,11 +48,11 @@ read_i32_imm(c): i64
     while true
         b = read_byte(c)
         if b < 0 return -1 end
-        result = result | ((b & 0x7F) << shift)
-        shift = shift + 7
+        result |= ((b & 0x7F) << shift)
+        shift += 7
         if (b & 0x80) == 0
             if shift < 64 and (b & 0x40) != 0
-                result = result | (~0 << shift)
+                result |= (~0 << shift)
             end
             return result
         end
@@ -67,9 +67,9 @@ read_u32_imm(c): i64
     while true
         b = read_byte(c)
         if b < 0 return -1 end
-        result = result | ((b & 0x7F) << shift)
+        result |= ((b & 0x7F) << shift)
         if (b & 0x80) == 0 return result end
-        shift = shift + 7
+        shift += 7
         if shift >= 35 return -1 end
     end
     return -1

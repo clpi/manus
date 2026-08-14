@@ -164,7 +164,7 @@ flags_from_mask(mask: str): int
     result = 0
     # Split on "|"
     rest = mask
-    while true do
+    while true
         pos = rest:find("|", 1, true)
         token
         if pos == nil
@@ -179,54 +179,54 @@ flags_from_mask(mask: str): int
         token = token:gsub("%s+$", "")
         if _platform == "kqueue"
             if token == "delete"
-                result = result | NOTE_DELETE
+                result |= NOTE_DELETE
             elseif token == "write"
-                result = result | NOTE_WRITE
+                result |= NOTE_WRITE
             elseif token == "extend"
-                result = result | NOTE_EXTEND
+                result |= NOTE_EXTEND
             elseif token == "attrib"
-                result = result | NOTE_ATTRIB
+                result |= NOTE_ATTRIB
             elseif token == "link"
-                result = result | NOTE_LINK
+                result |= NOTE_LINK
             elseif token == "rename"
-                result = result | NOTE_RENAME
+                result |= NOTE_RENAME
             elseif token == "revoke"
-                result = result | NOTE_REVOKE
+                result |= NOTE_REVOKE
             elseif token == "all"
-                result = result | NOTE_DELETE | NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_LINK | NOTE_RENAME | NOTE_REVOKE
+                result |= NOTE_DELETE | NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_LINK | NOTE_RENAME | NOTE_REVOKE
             end
         elseif _platform == "inotify"
             if token == "access"
-                result = result | IN_ACCESS
+                result |= IN_ACCESS
             elseif token == "modify" or token == "write"
-                result = result | IN_MODIFY
+                result |= IN_MODIFY
             elseif token == "attrib"
-                result = result | IN_ATTRIB
+                result |= IN_ATTRIB
             elseif token == "close_write"
-                result = result | IN_CLOSE_WRITE
+                result |= IN_CLOSE_WRITE
             elseif token == "close_nowrite"
-                result = result | IN_CLOSE_NOWRITE
+                result |= IN_CLOSE_NOWRITE
             elseif token == "open"
-                result = result | IN_OPEN
+                result |= IN_OPEN
             elseif token == "moved_from"
-                result = result | IN_MOVED_FROM
+                result |= IN_MOVED_FROM
             elseif token == "moved_to"
-                result = result | IN_MOVED_TO
+                result |= IN_MOVED_TO
             elseif token == "create"
-                result = result | IN_CREATE
+                result |= IN_CREATE
             elseif token == "delete"
-                result = result | IN_DELETE
+                result |= IN_DELETE
             elseif token == "delete_self"
-                result = result | IN_DELETE_SELF
+                result |= IN_DELETE_SELF
             elseif token == "move_self" or token == "rename"
-                result = result | IN_MOVE_SELF
+                result |= IN_MOVE_SELF
             elseif token == "all"
-                result = result | IN_ALL_EVENTS
+                result |= IN_ALL_EVENTS
             end
         else
             # Polling: just use a sentinel
             if token == "write" or token == "delete" or token == "rename" or token == "attrib" or token == "all"
-                result = result | 1
+                result |= 1
             end
         end
         if rest == "" break end
@@ -295,12 +295,12 @@ write_u64(buf: any, offset: int, val: int): void
     if v < 0
         # Two's complement: for negative, each byte is (v >> (b*8)) & 0xFF
         # which naturally produces the correct unsigned representation.
-        for i = 0, 7 do
+        for i = 0, 7
             byte_val = (v >> (i * 8)) & 0xFF
             bytes[i + 1] = byte_val:char()
         end
     else
-        for i = 0, 7 do
+        for i = 0, 7
             byte_val = (v >> (i * 8)) & 0xFF
             bytes[i + 1] = byte_val:char()
         end
@@ -451,7 +451,7 @@ poll(kq: int, timeout_ms: int): any
         # we use a workaround: copy each event to a Lua string via memcpy,
         # then parse the string.
         events = {}
-        for i = 0, n - 1 do
+        for i = 0, n - 1
             offset = i * KEVENT_SIZE
             # Copy 32 bytes to a Lua string
             tmp = "\0":rep(KEVENT_SIZE)
@@ -459,16 +459,16 @@ poll(kq: int, timeout_ms: int): any
 
             # Parse ident (bytes 0-7, little-endian u64)
             ident = 0
-            for b = 0, 7 do
+            for b = 0, 7
                 byte_val = tmp:byte(b + 1)
-                ident = ident | (byte_val << (b * 8))
+                ident |= (byte_val << (b * 8))
             end
 
             # Parse fflags (bytes 12-15, little-endian u32)
             fflags = 0
-            for b = 0, 3 do
+            for b = 0, 3
                 byte_val = tmp:byte(12 + b + 1)
-                fflags = fflags | (byte_val << (b * 8))
+                fflags |= (byte_val << (b * 8))
             end
 
             events[events:len() + 1] = {fd = ident, flags = fflags}
@@ -506,25 +506,25 @@ poll(kq: int, timeout_ms: int): any
         # Parse inotify events from the string
         events = {}
         pos = 1  # 1-based for Lua strings
-        while pos <= n do
+        while pos <= n
             if pos + 15 > n break end
 
             # wd (4 bytes, little-endian)
             wd = 0
-            for b = 0, 3 do
-                wd = wd | (data:byte(pos + b) << (b * 8))
+            for b = 0, 3
+                wd |= (data:byte(pos + b) << (b * 8))
             end
 
             # mask (4 bytes, little-endian)
             mask = 0
-            for b = 0, 3 do
-                mask = mask | (data:byte(pos + 4 + b) << (b * 8))
+            for b = 0, 3
+                mask |= (data:byte(pos + 4 + b) << (b * 8))
             end
 
             # len (4 bytes, offset 12, little-endian) — name length
             name_len = 0
-            for b = 0, 3 do
-                name_len = name_len | (data:byte(pos + 12 + b) << (b * 8))
+            for b = 0, 3
+                name_len |= (data:byte(pos + 12 + b) << (b * 8))
             end
 
             if wd > 0
@@ -592,7 +592,7 @@ poll_watch(path: str, callback: any, interval_ms: int): void
     last_mtime = get_mtime(path)
     last_exists = last_mtime != ""
 
-    while true do
+    while true
         # Sleep for interval
         sec = interval_ms / 1000.0
         os.execute("sleep " .. sec:to(str))

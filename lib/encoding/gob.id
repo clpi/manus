@@ -132,7 +132,7 @@ decode(p: any): any
         end
         s = p.s:sub(start, p.pos - 1)
         p.pos = p.pos + 1  # skip null terminator
-        return tonumber(s)
+        return s:to(i64)
     end
     if tag == TAG_STRING
         len = decode_int(p)

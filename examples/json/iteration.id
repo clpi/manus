@@ -1,0 +1,12 @@
+# @corpus current
+# expect: 1
+encoded_obj = { id = 7, name = "idol" }:to(json)
+decoded_obj = encoded_obj:parse(json)
+
+encoded_arr = { 1, 2, 3 }:to(json)
+decoded_arr = encoded_arr:parse(json)
+
+ok = decoded_obj.id == 7 and decoded_obj.name == "idol" and
+    decoded_arr(1) == 1 and decoded_arr(2) == 2 and decoded_arr(3) == 3
+
+print("RESULT json iteration = {ok:to(str)}")

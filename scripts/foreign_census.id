@@ -1,15 +1,15 @@
 # U8 — `toolchain@{ foreign = ledger | oracle }`, made executable.
 #
-# Pass 105 §4 lists U8 as "the census, gated". The census already existed —
-# `scripts/language_census.id` counts tracked non-Duo source and ratchets the
+# The census is gated. The census already existed —
+# `scripts/language_census.id` counts tracked non-Idol source and ratchets the
 # sh/py and js debt lines. What it could not answer is the question U8 asks:
 # BY WHAT RIGHT is each foreign file here. Two licences exist and no others:
 #
-#   ledger   bootstrap debt. Pass 103 §7 (G9): `src/*.zig` is "the licensed
+#   ledger   bootstrap debt. `src/*.zig` is "the licensed
 #            exception with a termination condition". It shrinks, and every
 #            rule must NAME its termination condition.
-#   oracle   test equipment. Pass 103 §5: "foreign compilers remain as
-#            oracles"; §7: the C differential is "EXPLICITLY LICENSED … C is
+#   oracle   test equipment. "foreign compilers remain as
+#            oracles"; the C differential is "EXPLICITLY LICENSED … C is
 #            the oracle, test equipment, never the shipping path". May persist.
 #
 # Anything else is a VIOLATION. `docs/spec/foreign.md` holds the rules, first
@@ -32,9 +32,9 @@
 # INSIDE `.id` files as `@c.emit` / `@c.include` payloads, and no
 # extension-based census can see it. This repository has already paid for that
 # blind spot once: gap[061]'s ambient-authority grep could not find the
-# capability `lib/std/os.id` and `lib/std/io.id` hold, because they hold it
+# capability `lib/os.id` and `lib/io.id` hold, because they hold it
 # through raw C. So embedded sites are a row here with a ratchet of their own.
-# They are ledger-class by construction — bootstrap, with Pass 103's
+# They are ledger-class by construction — bootstrap, with the
 # no-foreign-waist ruling as the termination condition — and they only shrink.
 #
 # CONTROLS, every run. The failure mode of a classifier is not a wrong answer,
@@ -86,7 +86,7 @@ capture: str = (cmd: str)
 cap: str = (cmd: str)
     chomp(capture(cmd))
 
-shellstatus: i64 = (cmd: str)
+status: i64 = (cmd: str)
     to(i64)(cap("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
 
 envor: str = (name: str, fallback: str)
@@ -97,7 +97,7 @@ envor: str = (name: str, fallback: str)
         v
 
 sh(cmd: str): i64
-    shellstatus(cmd)
+    status(cmd)
 end
 
 count(cmd: str): i64
@@ -187,7 +187,7 @@ main(): i64
         sh("grep -E '^(ledger|oracle)[[:space:]]' {manifest} > {work}/rules 2>/dev/null")
         rulecount = count("wc -l < {work}/rules")
 
-        print("foreign_census — Pass 105 U8: toolchain@ foreign = ledger or oracle")
+        print("foreign_census — U8: toolchain@ foreign = ledger or oracle")
         print("  root      {root}")
         print("  rules     {rulecount} from docs/spec/foreign.md")
         print("  foreign   {population} tracked files in another language")
@@ -295,15 +295,15 @@ main(): i64
             # error messages are not embedded C.
             embedded: i64 = count("cd {root} && git ls-files '*.id' | grep -v 'scripts/foreign_census.id' | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*--' | grep -o -E '@(comp\\.)?c\\.(emit|include)' | wc -l")
             print("")
-            print("  embedded       {embedded}    foreign code INSIDE .id (@c.emit / @c.include) — ledger by construction, invisible to any extension census")
+            print("  embedded       {embedded}    foreign code INSIDE .id (@comp.c.emit / @comp.c.include) — ledger by construction, invisible to any extension census")
 
             # Positive control on the embedded row: this tree demonstrably
-            # has embedded C — the compiler links a generated `@c.emit`
+            # has embedded C — the compiler links a generated `@comp.c.emit`
             # artifact to tokenize with — so a zero here is a broken grep, not
             # a milestone. The day it is genuinely zero, this check is the
             # thing to delete, in the commit that earns it.
             if embedded == 0
-                print("foreign_census: FAIL — 0 embedded @c sites. The compiler tokenizes with a generated @c.emit artifact, so a zero is a broken grep, not a milestone.")
+                print("foreign_census: FAIL — 0 embedded @c sites. The compiler tokenizes with a generated @comp.c.emit artifact, so a zero is a broken grep, not a milestone.")
                 code = 3
             end
 
@@ -315,7 +315,7 @@ main(): i64
                 over += 1
             end
             if embedded > embedfloor
-                print("foreign_census: FAIL — {embedded} embedded @c sites, over the ratchet {embedfloor}. Pass 103 graveyards C-as-intermediary; the count only goes down.")
+                print("foreign_census: FAIL — {embedded} embedded @c sites, over the ratchet {embedfloor}. C-as-intermediary is graveyarded; the count only goes down.")
                 over += 1
             end
             if over > 0

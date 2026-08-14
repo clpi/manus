@@ -40,11 +40,11 @@ simple_rnn_forward(layer: any, x: any, state: any): any
                 s += h.data[(k-1)] * layer.w_hh.data[(k-1)*layer.hidden_size + j]
             end
             if layer.activation == "tanh"
-                input_gate.data[j] = math.tanh(s)
+                input_gate.data[j] = s:tanh()
             elseif layer.activation == "relu"
                 input_gate.data[j] = 0:max(s)
             else
-                input_gate.data[j] = math.tanh(s)
+                input_gate.data[j] = s:tanh()
             end
         end
         h = input_gate
@@ -105,7 +105,7 @@ gru_forward(layer: any, x: any, state: any): any
             for k = 1, layer.hidden_size
                 s += r.data[k] * h.data[k] * layer.w_hn.data[(k-1)*layer.hidden_size + j]
             end
-            h_candidate.data[j] = math.tanh(s)
+            h_candidate.data[j] = s:tanh()
         end
 
         # h = (1 - z) * h_candidate + z * h
@@ -198,7 +198,7 @@ lstm_forward(layer: any, x: any, state: any, cell: any): any
             for k = 1, layer.hidden_size
                 s += h.data[k] * layer.w_hc.data[(k-1)*layer.hidden_size + j]
             end
-            c_gate.data[j] = math.tanh(s)
+            c_gate.data[j] = s:tanh()
         end
         # Output gate
         o_gate = sigmoid_vec(lstm_gate(x, t, h, layer.w_io, layer.w_ho, layer.b_io, layer.b_ho, layer.input_size, layer.hidden_size))
@@ -210,7 +210,7 @@ lstm_forward(layer: any, x: any, state: any, cell: any): any
 
         # Update hidden state: h = o * tanh(c)
         for j = 1, layer.hidden_size
-            h.data[j] = o_gate.data[j] * math.tanh(c.data[j])
+            h.data[j] = o_gate.data[j] * c.data[j]:tanh()
             outputs.data[(t-1)*layer.hidden_size + j] = h.data[j]
         end
     end

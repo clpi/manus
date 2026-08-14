@@ -13,7 +13,7 @@
 # decorative contract — an unchecked `@pure` is a wrong-answer generator, and
 # that is why it is diagnosed alongside `@noalloc`.
 #
-# Its twin is examples/pass7/pure_ok.id. The pair is the assertion: the
+# Its twin is the contract port's clean fixture. The pair is the assertion: the
 # diagnostic must fire here and must NOT fire there.
 seed: i64 = 7
 

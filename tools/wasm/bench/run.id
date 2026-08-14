@@ -1,4 +1,4 @@
-# duon wasm benchmark + coverage harness.
+# the engine wasm benchmark + coverage harness.
 #
 # Duo replacement for bench/run.sh, which shelled out to python3 four times per
 # module just to read a clock. Timing is std.time.monotonic() now.
@@ -8,8 +8,8 @@
 # DUO_WASM_MODULE, NOT argv (src/engine.id entry), and silently falls back to a
 # hardcoded /tmp/hash.wasm. Passing a module as an argument measures nothing.
 #
-#   duo run bench/run.id          # full sweep
-#   duo run bench/run.id cover    # coverage only, no timing
+#   idol run bench/run.id          # full sweep
+#   idol run bench/run.id cover    # coverage only, no timing
 #
 # For CORRECTNESS use bench/verify.id: "the engine produced a result" is not
 # coverage, and this harness only checks that the two engines agree with
@@ -139,15 +139,15 @@ _head(s: str): str
 end
 
 main(): i64
-    duo_bin = std.script.getenv("DUO", std.script.getenv("HOME", ".") .. "/x/duo/zig-out/bin/duo")
+    idol_bin = std.script.getenv("IDOL", std.script.getenv("DUO", std.script.getenv("HOME", ".") .. "/x/idol/zig-out/bin/idol"))
     wart = std.script.getenv("WART", std.script.getenv("HOME", ".") .. "/x/wart/zig-out/bin/wart")
     wasmtime = std.script.getenv("WASMTIME", "wasmtime")
-    binary = std.script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
+    binary = std.script.getenv("IDOL_WASM_BIN", std.script.getenv("IDOL_WASM_BIN", "/tmp/idolwasm"))
     mode = std.script.arg(1, "full")
     root = std.script.chomp(std.script.capture("pwd"))
 
     print("== building the engine ==")
-    if std.script.status(duo_bin .. " compile src/engine.id --backend=c --emit exe -o " .. binary) != 0
+    if std.script.status(idol_bin .. " compile src/engine.id --backend=c --emit exe -o " .. binary) != 0
         print("BUILD FAILED")
         return 1
     end
@@ -165,8 +165,8 @@ main(): i64
     end
 
     print("")
-    print(_pad("MODULE", 32) .. " " .. _pad("duon-jit (res|s|eng)", 26) .. " "
-        .. _pad("duon-interp", 26) .. " " .. _pad("wasmtime", 18) .. " wart")
+    print(_pad("MODULE", 32) .. " " .. _pad("the engine-jit (res|s|eng)", 26) .. " "
+        .. _pad("the engine-interp", 26) .. " " .. _pad("wasmtime", 18) .. " wart")
     _rule(126)
 
     pass = 0
@@ -197,7 +197,7 @@ main(): i64
     end
 
     _rule(126)
-    print("duon-wasm covers " .. pass:to(str) .. "/" .. total:to(str)
+    print("the engine-wasm covers " .. pass:to(str) .. "/" .. total:to(str)
         .. " modules (both engines agree, non-sentinel result)")
     0
 end

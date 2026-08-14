@@ -8,8 +8,8 @@ loop_over(src: str): i64
     n = src:len()
     while pos <= n do
         t: tok = mk(src, pos)
-        total = total + t.kind
-        pos = pos + t.len
+        total += t.kind
+        pos += t.len
     end
     return total
 end

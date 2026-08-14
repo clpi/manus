@@ -67,7 +67,7 @@ parse_value(data: str, start: i64, indent: i64): any
             elseif val_str == "null" or val_str == "~"
                 val = nil
             else
-                num = tonumber(val_str)
+                num = val_str:to(i64)
                 if num != nil
                     val = num
                 end
@@ -91,7 +91,7 @@ parse_value(data: str, start: i64, indent: i64): any
                                          (val:sub(1, 1) == "'" and val:sub(val:len(), val:len()) == "'"))
                 val = val:sub(2, val:len() - 1)
             end
-            num = tonumber(val)
+            num = val:to(i64)
             if num != nil val = num end
             return val, i, nil
         end

@@ -37,7 +37,7 @@ lines: any = (text: str)
         out[out:len() + 1] = text:sub(start, n)
     out
 
-shellstatus: i64 = (cmd: str)
+status: i64 = (cmd: str)
     to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
 
 cap: str = (cmd: str)
@@ -47,7 +47,7 @@ count(cmd: str): i64
     to(i64)(cap(cmd))
 
 sh(cmd: str): i64
-    shellstatus(cmd)
+    status(cmd)
 
 envor: str = (name: str, fallback: str)
     capture("printenv " .. name .. " 2>/dev/null || echo " .. fallback)

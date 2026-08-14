@@ -43,7 +43,7 @@ badstem: bool = (st: str)
         k += 1
     false
 
-scanfiles: i64 = (files: str)
+filescan: i64 = (files: str)
     canonicalid = 0
     zig = 0
     snake = 0
@@ -60,15 +60,15 @@ scanfiles: i64 = (files: str)
         if c == nl
             if line:len() > 0
                 if line:len() >= 4 and line:sub(1, 4) == "ext/"
-                    foreign = foreign + 1
+                    foreign += 1
                 if line:len() >= 3 and line:sub(line:len() - 2, line:len()) == ".id"
-                    canonicalid = canonicalid + 1
+                    canonicalid += 1
                     if badstem(stem(line))
-                        snake = snake + 1
+                        snake += 1
                 if line:len() >= 4 and line:sub(line:len() - 3, line:len()) == ".zig"
-                    zig = zig + 1
+                    zig += 1
                 if line:sub(1, 4) == "src/" or line:sub(1, 4) == "lib/" or line:sub(1, 8) == "scripts/" or line:sub(1, 5) == "gate/"
-                    project = project + 1
+                    project += 1
             line = ""
         else
             line = "{line}{c}"
@@ -88,7 +88,7 @@ if files:len() == 0
     print("gate/census: FAIL empty input — pipe git ls-files")
     3
 else
-    snake = scanfiles(files)
+    snake = filescan(files)
     if snake > 0
         print("gate/census: FAIL separator debt in tracked .id stems")
         1

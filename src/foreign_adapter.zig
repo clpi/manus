@@ -1,4 +1,4 @@
-//! Pass 5 Layer C — adapt SIM entities into Duo compiler foreign descriptors.
+//! Layer C — adapt SIM entities into Duo compiler foreign descriptors.
 const std = @import("std");
 const sim = @import("sim.zig");
 const types = @import("types.zig");
@@ -14,9 +14,9 @@ pub const ForeignFunc = struct {
     sim_id: []const u8,
     /// From SIM `abi.pass_by` after `abi.specialize` (`value`, `pointer`, …).
     pass_by: []const u8 = "unknown",
-    /// Pass 26 — semantic boundary on C foreign lift (default P26-B02).
+    /// — semantic boundary on C foreign lift (default P26-B02).
     boundary_id: []const u8 = "P26-B02",
-    /// Pass 26 — calling convention descriptor kind.
+    /// — calling convention descriptor kind.
     calling_conv: abi_resource.CallingConventionKind = .c_abi,
 
     pub fn deinit(self: *ForeignFunc, alloc: std.mem.Allocator) void {

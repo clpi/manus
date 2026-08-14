@@ -1,6 +1,6 @@
 # BAIL CAUSES ARE LAYERED, AND A RANKING OF THEM IS NOT A WORKLIST.
 #
-# The precheck reports the FIRST refusal and stops. `pass12_m1_bench` reports
+# The precheck reports the FIRST refusal and stops. The classifier benchmark reports
 # `runtime-global:os`; neutralize `os.clock()` and the SAME PROGRAM reports
 # `runtime-global:string`; neutralize that and it reports `lowerBinop —
 # concat`. One program, three causes, one line of output.
@@ -18,7 +18,7 @@
 #
 # "Native 100%" was unmeasurable, for three reasons this gate fixes.
 #
-#   1. `duo compile` FALLS BACK to the C backend and reports `ok compile`, so a
+#   1. `idol compile` FALLS BACK to the C backend and reports `ok compile`, so a
 #      naive sweep scores ~100% and means nothing. Only #backend=direct is an
 #      honest native answer.
 #   2. Most files under examples/ have no entry point at all. Counting them as
@@ -44,11 +44,11 @@
 # NATIVE_FLOOR (default 88) ratchets: a fix raises it, a regression fails the
 # gate. Exit 0 pass, 1 below the floor, 3 the census could not run.
 
-_sh: str = (cmd: str)
+shell: str = (cmd: str)
     std.script.capture("cd " .. std.script.getenv("DUO_ROOT", ".") .. " && " .. cmd)
 end
 
-_num: i64 = (out: str)
+num: i64 = (out: str)
     n: i64 = out:len()
     while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
         n -= 1
@@ -59,10 +59,10 @@ end
 # One shell pass. Each program is compiled with the direct backend; the three
 # buckets are printed as a single line of counts so Duo parses numbers, not
 # process output.
-_sweep: str = ()
-    _sh("duo=./zig-out/bin/idol; ok=0; bail=0; un=0; noent=0; "
+sweep: str = ()
+    shell("idol=./zig-out/bin/idol; ok=0; bail=0; un=0; noent=0; "
         .. "for f in $(find examples -name '*.id' | grep -v compile_fail); do "
-        .. "  out=$($duo compile --backend=direct \"$f\" -o /tmp/_census.bin 2>&1); "
+        .. "  out=$($idol compile --backend=direct \"$f\" -o /tmp/_census.bin 2>&1); "
         .. "  case \"$out\" in *'ok compile'*) ok=$((ok+1)); continue;; esac; "
         .. "  case \"$out\" in *DNB*) : ;; *) noent=$((noent+1)); continue;; esac; "
         .. "  if grep -qE '^global [A-Za-z_]* = std.compiler\\.|= *req *\"std.compiler' \"$f\"; then "
@@ -71,17 +71,17 @@ _sweep: str = ()
 end
 
 main(): i64
-    counts = _sweep()
+    counts = sweep()
     if counts:len() == 0
         print("native_census: FAIL — sweep produced no output; census did not run")
         return 3
     end
 
-    ok: i64 = _num(counts:match("^%d+"))
+    ok: i64 = num(counts:match("^%d+"))
     rest = counts:gsub("^%d+%s+", "")
-    bail: i64 = _num(rest:match("^%d+"))
+    bail: i64 = num(rest:match("^%d+"))
     rest2 = rest:gsub("^%d+%s+", "")
-    unreachable: i64 = _num(rest2:match("^%d+"))
+    unreachable: i64 = num(rest2:match("^%d+"))
 
     # Positive control. A census whose numerator AND denominator are both zero
     # is broken, not perfect — the exact failure mode that made an earlier

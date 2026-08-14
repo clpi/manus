@@ -220,21 +220,21 @@ library_new(): any
     }
 end
 
-library_add(lib: any, name: str, material: any): void
-    lib.materials[name] = material
+library_add(store: any, name: str, material: any): void
+    store.materials[name] = material
 end
 
-library_get(lib: any, name: str): any
-    lib.materials[name] or lib.default_materials["default"]
+library_get(store: any, name: str): any
+    store.materials[name] or store.default_materials["default"]
 end
 
-library_remove(lib: any, name: str): void
-    lib.materials[name] = nil
+library_remove(store: any, name: str): void
+    store.materials[name] = nil
 end
 
-library_list(lib: any): any
+library_list(store: any): any
     names = {}
-    for name in lib.materials
+    for name in store.materials
         names[names:len() + 1] = name
     end
     names

@@ -1,0 +1,67 @@
+# @corpus current
+# The compile-time string hash and the runtime string hash must agree bit for
+# bit, or interning silently splits.
+#
+# A string LITERAL is interned at the bucket named by the hash the COMPILER
+# computed. A string the program BUILDS is interned at the bucket named by the
+# hash the RUNTIME computed. If those two disagree, the built copy misses the
+# literal, becomes a second object holding the same bytes, and every consumer
+# that treats string identity as pointer identity says they are different strings.
+#
+# Long strings hash a SAMPLE rather than every byte, so both halves of the rule
+# are written twice and kept in step. Both sides of the 32-byte boundary are
+# exercised here. Passing a value through an `any` parameter forces the literal
+# down the compile-time hash path where the control can fire.
+
+box: any = (x: any)
+    x
+
+fails = 0
+
+shortlit = box("shortkey")
+shortbuilt = box("shortkey!":sub(1, 8))
+if shortlit ~= shortbuilt
+    print("FAIL short: literal and runtime-built are different objects")
+    fails += 1
+
+longlit = box("a very long table key that is definitely more than thirty-two bytes long")
+longbuilt = box("a very long table key that is definitely more than thirty-two bytes long" .. "!":sub(1, 72))
+if longlit ~= longbuilt
+    print("FAIL long: literal and runtime-built are different objects")
+    fails += 1
+
+t = {}
+t[shortbuilt] = 11
+t[longbuilt] = 22
+if t[shortlit] ~= 11
+    print("FAIL short key: inserted by runtime hash, read by literal hash")
+    fails += 1
+if t[longlit] ~= 22
+    print("FAIL long key: inserted by runtime hash, read by literal hash")
+    fails += 1
+
+u = {}
+i = 0
+while i < 200
+    u["x":rep(500) .. i:to(str)] = i
+    i += 1
+bad = 0
+i = 0
+while i < 200
+    if u["x":rep(500) .. i:to(str)] ~= i
+        bad += 1
+    i += 1
+if bad ~= 0
+    print("FAIL long distinct keys: {bad:to(str)} of 200 merged")
+    fails += 1
+
+if u["x":rep(500) .. "999"] ~= nil
+    print("FAIL control: a long key never inserted answered non-nil")
+    fails += 1
+
+print("hash agreement: 6 checks ran")
+if fails == 0
+    print("hash agreement: PASS")
+if fails != 0
+    print("hash agreement: FAIL {fails:to(str)}")
+    os.exit(1)

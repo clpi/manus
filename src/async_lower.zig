@@ -224,7 +224,7 @@ pub const AsyncLower = struct {
             },
             .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
-            // Pass 36 G1/G2: semantic identity and world are leaf nodes with no
+            // G1/G2: semantic identity and world are leaf nodes with no
             // async body to discover.
             .semantic, .semantic_scope => {},
             .sequence => |seq| {

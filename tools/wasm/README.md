@@ -28,11 +28,12 @@ PREDICATE-ZERO keeps capability, validation, presence, trap, and unknown states
 as facts or cases. Foreign predicate spellings remain foreign provenance until
 their mapping to native semantic facts is witnessed.
 
-Canonical project-owned source uses `.id`. Tracked project-owned `.id` files
-under this directory are SOURCE-ZERO debt and may be used only as behavioral or
-differential evidence while their retained semantics move into canonical
-source and the old files are deleted. They are not implementation templates.
-Foreign `.wasm` and `.wat` fixtures remain foreign inputs.
+Canonical project-owned source uses `.id` and new canonical `.id` is freely
+admitted. The tracked `.id` files under this directory currently carry
+SOURCE-ZERO debt in their *noncanonical patterns* — not by virtue of being
+`.id` — and serve as behavioral or differential evidence while that debt is
+repaired in place into canonical source. They are not canonical implementation
+templates. Foreign `.wasm` and `.wat` fixtures remain foreign inputs.
 
 Current capability and performance are never taken from this README. Verify the
 exact checkout with the repository `wasm-test` build step under the shared build

@@ -23,6 +23,7 @@ router; it contains no language law and no volatile project status.
 | Executed compiler frontier | `docs/bootstrap.md` |
 | Progress metrics dashboard | `docs/METRICS.md` |
 | Priority compass | `docs/AGENT_ALIGNMENT.md` |
+| Tech debt + FTCFTW workstream | `.agents/TECH_DEBT_WORKSTREAM.md` |
 | Ownership and gates | `.agents/AGENT_COORDINATION.md` |
 | Release readiness ledger | `.agents/RELEASE_READINESS.md` |
 | MCP setup | `.agents/AGENT_INTEGRATION.md` |
@@ -38,16 +39,17 @@ historical corpus file is an authority.
 1. Read `AGENTS.md` (orientation + mechanical preflight), the constitution,
    `CLAUDE.md`, `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the
    scope-specific authority.
-2. Call `duo_agent_session_start(agent_id="your-id")` on `duo-bench`.
+2. Call `idol_agent_session_start(agent_id="your-id")` on `idol-bench`
+   (`duo_agent_session_start` remains registered as a legacy alias).
 3. Inspect `git status --short --branch`, current HEAD, recent commits,
-   `duo_dev_claim_files`, every current `gaps/GAP-*.md`, and `git stash list`.
+   `idol_dev_claim_files` (`duo_dev_claim_files` legacy alias), every current `gaps/GAP-*.md`, and `git stash list`.
    Verify the executed frontier in `docs/bootstrap.md` against production.
 4. Treat the session-start gap summary as incomplete until `GAP-131` closes;
    route work from the exact gap files and live claim result.
-5. Claim exact paths with `duo_dev_claim_acquire` before editing.
+5. Claim exact paths with `idol_dev_claim_acquire` (`duo_dev_claim_acquire` legacy alias) before editing.
 6. Run heavy gates through the repository lock and record the inner outcome.
    The MCP health gate is
-   `repo="$(git rev-parse --show-toplevel)" && "$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate`.
+   `repo="$(git rev-parse --show-toplevel)" && "$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- zig build mcp-gate`.
    The `.id` lock entry is executed bootstrap transport, not self-hosting proof.
 7. Commit only explicit owned paths and release only your own claims.
 

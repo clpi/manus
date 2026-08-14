@@ -39,7 +39,7 @@ count: i64 = 5
 
 bump(): i64
     for i = 1, 3
-        total = total + i
+        total += i
     0
 
 main(): i64

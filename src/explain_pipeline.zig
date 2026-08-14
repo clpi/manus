@@ -1,4 +1,4 @@
-//! Pass 7 — run full codegen pipeline for optimization provenance / explain.
+//! — run full codegen pipeline for optimization provenance / explain.
 const std = @import("std");
 const ast = @import("ast.zig");
 const sema = @import("sema.zig");

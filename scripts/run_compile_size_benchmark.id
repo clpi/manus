@@ -1,23 +1,28 @@
-# Compile time + binary size, Duo against C. A TRACKING benchmark: it reports,
-# it does not fail when Duo is slower or larger.
+# Compile time + binary size, Idol against C. A TRACKING benchmark: it reports,
+# it does not fail when Idol is slower or larger.
 #
-# Duo replacement for scripts/run_compile_size_benchmark.sh (monoglot census,
+# ledger/perf contract: compile size benchmark
+# oracle: compile_size: FAIL
+# negative: compile_size: PASS
+# verdict: artifact size and compile-time evidence
+#
+# Idol replacement for scripts/run_compile_size_benchmark.sh (monoglot census,
 # G11). The shell version was the last tracked .sh in the repo and it carried
 # TWO foreign languages, not one: 439 lines of bash plus two inline python3
 # heredocs (39 lines) — one the wall-clock timer, one the ML float comparison.
-# Both are arithmetic, which is exactly what the census says belongs in Duo.
+# Both are arithmetic, which is exactly what the census says belongs in Idol.
 #
 # WHAT IS STILL SHELLED OUT, and why none of it is reasoning:
 #   uname / xcrun / mktemp / cp / rm     environment facts and file moves
 #   stat -f%z, wc -l                     one number, read back and compared here
 #   grep '^RESULT ' | sort               selecting and ordering lines; the
-#                                        COMPARISON of those lines is Duo
+#                                        COMPARISON of those lines is Idol
 #   the compilers themselves             the thing being measured
-# No branch, no ratio and no tolerance is computed by a foreign process.
+# No branch, no ratio and no tolerance is computed by foreign machinery.
 #
 # THE ONE MEASUREMENT DIFFERENCE, stated rather than buried. The shell version
-# timed with python's time.perf_counter around subprocess.run, which forks and
-# execs the compiler directly. Duo's process primitive goes through system(3),
+# timed with python's perf_counter around a child runner, which forks and
+# execs the compiler directly. Idol's process primitive goes through system(3),
 # which inserts a /bin/sh between this process and the compiler and costs
 # about 3.6 ms every call. So the harness MEASURES that floor — the min over
 # eight runs of an empty command, which spawns the shell and nothing else —
@@ -375,7 +380,7 @@ end
 head(): void
     a: str = pad("Workload", 22)
     b: str = pad("Metric", 16)
-    c: str = lpad("Duo", 12)
+    c: str = lpad("Idol", 12)
     d: str = lpad("C", 12)
     e: str = lpad("Ratio", 10)
     print("{a} {b} {c} {d} {e}")
@@ -410,36 +415,36 @@ resultrow(name: str, value: str): void
     print("RESULT {a} {value}")
 end
 
-pairrows(name: str, duosrc: str, csrc: str, duoout: str, cout: str,
-    duons: i64, cns: i64): void
-    duolines: i64 = linesat(duosrc)
+pairrows(name: str, idolsrc: str, csrc: str, idolout: str, cout: str,
+    idolns: i64, cns: i64): void
+    idollines: i64 = linesat(idolsrc)
     clines: i64 = linesat(csrc)
-    duobytes: i64 = sizeat(duosrc)
+    idolbytes: i64 = sizeat(idolsrc)
     cbytes: i64 = sizeat(csrc)
-    duosize: i64 = sizeat(duoout)
+    idolsize: i64 = sizeat(idolout)
     csize: i64 = sizeat(cout)
-    row(name, "source_lines", duolines:to(str), clines:to(str),
-        ratio(duolines, clines))
-    row(name, "source_bytes", duobytes:to(str), cbytes:to(str),
-        ratio(duobytes, cbytes))
-    row(name, "compile_s", secs(duons), secs(cns), ratio(duons, cns))
-    row(name, "binary_bytes", duosize:to(str), csize:to(str),
-        ratio(duosize, csize))
+    row(name, "source_lines", idollines:to(str), clines:to(str),
+        ratio(idollines, clines))
+    row(name, "source_bytes", idolbytes:to(str), cbytes:to(str),
+        ratio(idolbytes, cbytes))
+    row(name, "compile_s", secs(idolns), secs(cns), ratio(idolns, cns))
+    row(name, "binary_bytes", idolsize:to(str), csize:to(str),
+        ratio(idolsize, csize))
 end
 
-workload(name: str, duosrc: str, csrc: str, duoout: str, cout: str,
+workload(name: str, idolsrc: str, csrc: str, idolout: str, cout: str,
     floor: i64): void
-    duons: i64 = mintime("duo compile {name}",
-        "'{duobin}' compile '{duosrc}' -o '{duoout}'", floor)
+    idolns: i64 = mintime("idol compile {name}",
+        "'{duobin}' compile '{idolsrc}' -o '{idolout}'", floor)
     cns: i64 = mintime("cc {name}",
         "'{cc}' {cflags} '{csrc}' -o '{cout}'", floor)
-    duoanswer: str = sh("'{duoout}'")
+    duoanswer: str = sh("'{idolout}'")
     canswer: str = sh("'{cout}'")
     if duoanswer != canswer
-        print("RESULT mismatch for {name}: Duo={duoanswer} C={canswer}")
+        print("RESULT mismatch for {name}: Idol={duoanswer} C={canswer}")
         std.os.exit(1)
     end
-    pairrows(name, duosrc, csrc, duoout, cout, duons, cns)
+    pairrows(name, idolsrc, csrc, idolout, cout, idolns, cns)
     resultrow(name, duoanswer)
 end
 
@@ -464,7 +469,7 @@ mlagree(duopath: str, cpath: str): void
     nd: i64 = dl:len()
     nc: i64 = cl:len()
     if nd != nc
-        print("RESULT count mismatch: Duo={nd} C={nc}")
+        print("RESULT count mismatch: Idol={nd} C={nc}")
         std.os.exit(1)
     end
     i: i64 = 1
@@ -474,7 +479,7 @@ mlagree(duopath: str, cpath: str): void
         ida: str = field(a, 2)
         idb: str = field(b, 2)
         if ida == "" or ida != idb
-            print("RESULT id mismatch: Duo={a} C={b}")
+            print("RESULT id mismatch: Idol={a} C={b}")
             std.os.exit(1)
         end
         d: f64 = to(f64)(field(a, 3))
@@ -484,7 +489,7 @@ mlagree(duopath: str, cpath: str): void
             denom = 1.0
         end
         if absf(d - r) / denom >= 0.0001
-            print("RESULT mismatch for {ida}: Duo={d} C={r}")
+            print("RESULT mismatch for {ida}: Idol={d} C={r}")
             std.os.exit(1)
         end
         i += 1
@@ -493,46 +498,46 @@ end
 
 mlbinary(floor: i64): void
     name = "ml_binary"
-    duosrc = "{root}/examples/bench_ml.id"
+    idolsrc = "{root}/examples/bench_ml.id"
     csrc = "{root}/examples/bench_ml_c.c"
-    duoout = "{work}/ml_bench_duo"
+    idolout = "{work}/ml_bench_idol"
     cout = "{work}/ml_bench_c"
-    duorows = "{work}/ml_duo.results"
+    idolrows = "{work}/ml_idol.results"
     crows = "{work}/ml_c.results"
-    duons: i64 = mintime("duo compile {name}",
-        "'{duobin}' compile '{duosrc}' -o '{duoout}'", floor)
+    idolns: i64 = mintime("idol compile {name}",
+        "'{duobin}' compile '{idolsrc}' -o '{idolout}'", floor)
     cns: i64 = mintime("cc {name}",
         "'{cc}' {cflags} '{csrc}' -o '{cout}' -lm", floor)
-    capturerows("ml_binary Duo", 5, duoout, duorows)
+    capturerows("ml_binary Idol", 5, idolout, idolrows)
     capturerows("ml_binary C", 5, cout, crows)
-    mlagree(duorows, crows)
-    pairrows(name, duosrc, csrc, duoout, cout, duons, cns)
-    duostrip: i64 = strippedduoout, "{work}/ml_bench_duo_stripped":len()
+    mlagree(idolrows, crows)
+    pairrows(name, idolsrc, csrc, idolout, cout, idolns, cns)
+    idolstrip: i64 = strippedidolout, "{work}/ml_bench_idol_stripped":len()
     cstrip: i64 = strippedcout, "{work}/ml_bench_c_stripped":len()
-    row(name, "stripped_bytes", duostrip:to(str), cstrip:to(str),
-        ratio(duostrip, cstrip))
+    row(name, "stripped_bytes", idolstrip:to(str), cstrip:to(str),
+        ratio(idolstrip, cstrip))
     resultrow(name, "5_rows_match")
 end
 
-duoapp(name: str, duosrc: str, sentinel: str, floor: i64): void
-    duoout = "{work}/{name}_duo"
-    duostripped = "{work}/{name}_duo_stripped"
-    duons: i64 = mintime("duo compile {name}",
-        "'{duobin}' compile '{duosrc}' -o '{duoout}'", floor)
-    seen: i64 = to(i64)(sh("'{duoout}' 2>/dev/null | grep -c -F '{sentinel}' | tr -d ' '"))
+idolapp(name: str, idolsrc: str, sentinel: str, floor: i64): void
+    idolout = "{work}/{name}_idol"
+    idolstripped = "{work}/{name}_idol_stripped"
+    idolns: i64 = mintime("idol compile {name}",
+        "'{duobin}' compile '{idolsrc}' -o '{idolout}'", floor)
+    seen: i64 = to(i64)(sh("'{idolout}' 2>/dev/null | grep -c -F '{sentinel}' | tr -d ' '"))
     if seen < 1
         print("RESULT mismatch for {name}: missing sentinel '{sentinel}'")
         std.os.exit(1)
     end
-    duolines: i64 = linesat(duosrc)
-    duobytes: i64 = sizeat(duosrc)
-    duosize: i64 = sizeat(duoout)
-    duostrip: i64 = strippedduoout, duostripped:len()
-    lone(name, "source_lines", duolines:to(str))
-    lone(name, "source_bytes", duobytes:to(str))
-    lone(name, "compile_s", secs(duons))
-    lone(name, "binary_bytes", duosize:to(str))
-    lone(name, "stripped_bytes", duostrip:to(str))
+    idollines: i64 = linesat(idolsrc)
+    idolbytes: i64 = sizeat(idolsrc)
+    idolsize: i64 = sizeat(idolout)
+    idolstrip: i64 = strippedidolout, idolstripped:len()
+    lone(name, "source_lines", idollines:to(str))
+    lone(name, "source_bytes", idolbytes:to(str))
+    lone(name, "compile_s", secs(idolns))
+    lone(name, "binary_bytes", idolsize:to(str))
+    lone(name, "stripped_bytes", idolstrip:to(str))
     resultrow(name, "sentinel_match")
 end
 
@@ -541,7 +546,7 @@ main(): i64
         std.script.must("cd '{root}' && '{zigbin}' build")
     end
     if sh("test -x '{duobin}' && echo yes") != "yes"
-        print("compile-size-bench: FAIL — no duo binary at {duobin}")
+        print("compile-size-bench: FAIL — no idol binary at {duobin}")
         std.os.exit(1)
     end
     if work == ""
@@ -563,7 +568,7 @@ main(): i64
     print("=== Compile Time + Binary Size Benchmark ===")
     print("Runs: {runs} (minimum wall time)")
     print("Generated chain functions: 1k={chainsmall} 10k={chainbig}")
-    print("Harness: duo at {duobin}; spawn floor {floortext} s subtracted")
+    print("Harness: idol at {duobin}; spawn floor {floortext} s subtracted")
     print("")
     head()
 
@@ -572,25 +577,25 @@ main(): i64
     duotyped(duotypedsrc)
     ctyped(ctypedsrc)
     workload("typed_checksum", duotypedsrc, ctypedsrc,
-        "{work}/typed_checksum_duo", "{work}/typed_checksum_c", floor)
+        "{work}/typed_checksum_idol", "{work}/typed_checksum_c", floor)
 
     duosmall = "{work}/function_chain_1k.id"
     csmall = "{work}/function_chain_1k.c"
     duochain(duosmall, chainsmall)
     cchain(csmall, chainsmall)
     workload("function_chain_1k", duosmall, csmall,
-        "{work}/function_chain_1k_duo", "{work}/function_chain_1k_c", floor)
+        "{work}/function_chain_1k_idol", "{work}/function_chain_1k_c", floor)
 
     duobig = "{work}/function_chain_10k.id"
     cbig = "{work}/function_chain_10k.c"
     duochain(duobig, chainbig)
     cchain(cbig, chainbig)
     workload("function_chain_10k", duobig, cbig,
-        "{work}/function_chain_10k_duo", "{work}/function_chain_10k_c", floor)
+        "{work}/function_chain_10k_idol", "{work}/function_chain_10k_c", floor)
 
     mlbinary(floor)
-    duoapp("metaprogramming_app", "{root}/examples/metaprogramming_test.id",
-        "ALL METAPROGRAMMING TESTS PASSED", floor)
+    idolapp("metaprogramming_app", "{root}/examples/benchmark.id",
+        "RESULT matmul", floor)
 
     std.script.must("rm -rf '{work}'")
 
@@ -598,6 +603,6 @@ main(): i64
     print("Note: this is a tracking benchmark. It reports typed-program runtime")
     print("prelude cost, generated 1k/10k-line project scaling, ML binary size,")
     print("and a fixed metaprogramming app binary-size sample;")
-    print("it does not fail when Duo is slower or larger than C.")
+    print("it does not fail when Idol is slower or larger than C.")
     0
 end

@@ -7,7 +7,7 @@
 #
 # The distinction cost real work to learn. Two MOD-1 unwraps passed `duo check`
 # and shipped broken (std.result, std.ml.optim, restored in ad39dfe), and
-# lib/std/image/gif.id once loaded cleanly while every byte it read was nil.
+# lib/image/gif.id once loaded cleanly while every byte it read was nil.
 # So this gate exercises the AMBIENT PATH — `std.mod` from a fresh program —
 # which is the thing callers actually do.
 #
@@ -28,7 +28,7 @@ ceiling(): i64
     30
 end
 
-# Turn `lib/std/net/ws.id` into the ambient path `std.net.ws`.
+# Turn `lib/net/ws.id` into the ambient path `std.net.ws`.
 module_path(file: str): str
     inner = std.script.capture("printf '%s' \"" .. file .. "\" | sed 's|^lib/|std.|; s|/|.|g; s|\\.id$||; s|^std\\.std\\.|std.|'")
     std.script.chomp(inner)
@@ -62,15 +62,15 @@ main(): i64
             if i > start
                 file = listing:sub(start, i - 1)
                 mod = module_path(file)
-                total = total + 1
+                total += 1
                 if !reachable(mod)
-                    broken = broken + 1
+                    broken += 1
                     report = report .. "  UNREACHABLE " .. mod .. "\n"
                 end
             end
             start = i + 1
         end
-        i = i + 1
+        i += 1
     end
 
     io.write(report)

@@ -1243,7 +1243,7 @@ function commaSep1(rule) {
   return seq(rule, repeat(seq(',', rule)));
 }
 
-// Pass 100 §7 X8: the NEWLINE is the canonical separator inside a braced group
+// The NEWLINE is the canonical separator inside a braced group
 // and the comma is the optional one. `extras` already consumes the newline, so
 // "optional comma between elements, optional trailing comma" is the whole rule.
 function sepBy(rule) {

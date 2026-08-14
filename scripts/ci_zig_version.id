@@ -1,4 +1,4 @@
-# Pass 11 WP-13: single source for the CI Zig pin, read from build.zig.zon.
+# Single source for the CI Zig pin, read from build.zig.zon.
 #
 # Duo replacement for scripts/ci_zig_version.sh. Prints the pinned version and
 # nothing else, so CI can capture it directly:

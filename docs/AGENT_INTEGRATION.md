@@ -6,9 +6,12 @@ language law. Current agents begin at [AGENTS.md](../AGENTS.md), then follow the
 [integration workflow](../.agents/AGENT_INTEGRATION.md). The sole semantic law
 is [C0](spec/constitution.md).
 
-The language is Idol. Canonical source uses `.id`. Every tracked project-owned
-`.id` file is SOURCE-ZERO migration debt that must be semantically migrated or
-deleted; historical names remain only when their exact provenance is the topic.
+The language is Idol. Canonical source uses `.id` and new canonical `.id` is
+freely admitted — it is the Idol source extension. Only tracked *noncanonical*
+`.id` content (host-shaped patterns, namespace dispatch, duplicate authority) is
+SOURCE-ZERO migration debt, migrated by repairing the pattern; the `.id` file
+itself is not debt. Historical names remain only when their exact provenance is
+the topic.
 
 At session start, call `duo_agent_session_start`, inspect the dirty tree,
 `duo_dev_claim_files`, and live `gaps/GAP-*.md`, then claim exact paths through

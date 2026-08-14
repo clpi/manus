@@ -1,6 +1,6 @@
-# std.cursor — typed byte cursor for binary parsing (Pass 9 / Ward substrate).
+# std.cursor — typed byte cursor for binary parsing.
 # Blockers: (1) embedded-module record ctor codegen, (2) C str cannot hold NUL — need slice+len.
-# Proof: examples/pass9/leb128_cursor_smoke.id (numeric LEB128 + u32 le).
+# Proof: numeric LEB128 + u32 le decode through it.
 
 bytecursor: @{ data: str, pos: i64, len: i64 }
 
@@ -60,9 +60,9 @@ readlebu(c: bytecursor): i64
     while true
         b = readu8(c)
         if b < 0 return -1 end
-        result = result | ((b & 0x7F) << shift)
+        result |= ((b & 0x7F) << shift)
         if (b & 0x80) == 0 return result end
-        shift = shift + 7
+        shift += 7
         if shift >= 35 return -1 end
     end
     return -1
@@ -76,11 +76,11 @@ readlebs(c: bytecursor): i64
     while true
         b = readu8(c)
         if b < 0 return -1 end
-        result = result | ((b & 0x7F) << shift)
-        shift = shift + 7
+        result |= ((b & 0x7F) << shift)
+        shift += 7
         if (b & 0x80) == 0
             if shift < 64 and (b & 0x40) != 0
-                result = result | (~0 << shift)
+                result |= (~0 << shift)
             end
             return result
         end

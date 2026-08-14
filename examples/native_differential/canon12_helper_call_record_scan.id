@@ -12,7 +12,7 @@ scan: tok = (src: str, pos: i64)
     if is_alpha(c) == 1
         j = i
         while j < n
-            j = j + 1
+            j += 1
         end
         return { kind = 1, start = j, len = 1 }
     end

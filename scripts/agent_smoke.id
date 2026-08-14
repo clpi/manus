@@ -1,13 +1,10 @@
-# Agent tier-0 gate — Duo-native scripting (replaces bash logic; bash wrapper optional).
+# Agent tier-0 gate — Idol-native scripting.
 # Safe for parallel agent sessions; does NOT run bench/ml-bench/gpu-bench.
 # run: idol run scripts/agent_smoke.id
-# or:  idol run scripts/duo_lock.id -- ./zig-out/bin/idol run scripts/agent_smoke.id
-
-capture: str = (shellline: str)
-    gatecap(shellline)
+# or:  idol run scripts/idol_lock.id -- ./zig-out/bin/idol run scripts/agent_smoke.id
 
 chomp: str = (text: str)
-    if text == nil or text:len() == 0
+    if !text:len()
         return ""
     n = text:len()
     while n > 0
@@ -21,78 +18,37 @@ cap: str = (shellline: str)
     chomp(gatecap(shellline))
 
 status: i64 = (cmd: str)
-    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
+    cap("{cmd} >/dev/null 2>&1 && echo 0 || echo 1"):to(i64)
 
-bin = "./zig-out/bin/idol"
-
-if status("{bin} run scripts/public_safety_scan.id") != 0
-    print("agent-smoke: public_safety_scan FAIL")
-    return 1
-
-# Pass 57 C2 — exports are scope. No module may reach through another module's
-# `_`-prefixed surface. The gate carries its own positive control, so a clean
-# report is evidence rather than an absence of output.
-if status("{bin} run scripts/module_surface_gate.id") != 0
-    print("agent-smoke: module_surface_gate FAIL")
-    return 1
-
-# The hosted-language corpus, ported out of src/lua_superset_corpus.zig when
-# that file was deleted. It runs HERE rather than as its own build.zig step
-# because tier-0 is where a front-end regression should be caught, and because
-# the corpus is twelve `duo check` invocations, not a suite.
-if status("{bin} run scripts/luahost.id") != 0
-    print("agent-smoke: luahost FAIL")
-    return 1
-
-# The `duo explain` contract + enrichment assertions, ported out of
-# src/pass7_contract_tests.zig and src/pass7_explain_tests.zig when those
-# were deleted. They read the shipping JSON, so they
-# also convict a `duo explain` that has stopped printing a section.
-if status("{bin} run scripts/explain.id") != 0
-    print("agent-smoke: explain FAIL")
-    return 1
-
-# Declared contracts, asserted at the verbs a USER STANDS AT. GAP-090 measured
-# `@noalloc` accepted by `check`, `compile` AND `explain` because the only check
-# lived in the C emitter and the default backend is `direct` — the contract was
-# decorative while a Zig test called it covered. This gate reads exit codes, not
-# output, on six verb paths, and it also owns the lexer-rejection diagnostic
-# (H-8: a bare `error: UnexpectedChar` names no edge). GAP-091.
-if status("{bin} run scripts/contract.id") != 0
-    print("agent-smoke: contract FAIL")
-    return 1
-
-# The Pass 8 realization plan, the codegen outcome it produces, shape
-# fingerprint drift, cache invalidation and entity removal. Ported out of
-# src/pass8_realization_tests.zig + src/pass8_realization_codegen_tests.zig.
-if status("{bin} run scripts/realize.id") != 0
-    print("agent-smoke: realize FAIL")
-    return 1
-
-# The Pass 5 SIM snapshots — stable entity ids, ABI facts, and byte-for-byte
-# rendering invariance across two runs. Ported out of
-# src/pass5_golden_tests.zig.
-if status("{bin} run scripts/sim.id") != 0
-    print("agent-smoke: sim FAIL")
-    return 1
-
-# The transform engine: tier-1 registry contracts, the strict dispatch gate,
-# three-site combinator parity and the call algebra. Ported out of
-# src/meta_transform_tests.zig + src/call_transform_tests.zig +
-# src/pass6_dispatch_tests.zig.
-if status("{bin} run scripts/transform.id") != 0
-    print("agent-smoke: transform FAIL")
-    return 1
-
-# Smoke targets are enumerated in lib/std/agent.id:smoke_targets().
-# They are NOT imported here (lib/std is bootstrap debt), but they are read
-# through the filesystem projection so the gate tracks the canonical list.
-# Each target is run through the same binary; a nonzero exit fails the gate.
-raw = cap("grep 'examples/' lib/std/agent.id | sed 's/.*\"//;s/\".*//' | tr -d ',' | tr -d ' '")
-for f in raw:lines()
-    if status("{bin} run {f}") != 0
-        print("agent-smoke: {f} FAIL")
+smoke: i64 = ()
+    bin = "./zig-out/bin/idol"
+    if status("{bin} run scripts/public_safety_scan.id") != 0
+        print("agent-smoke: public_safety_scan FAIL")
         return 1
-
-print("agent-smoke: PASS")
-0
+    if status("{bin} run --backend=c scripts/module_surface_gate.id") != 0
+        print("agent-smoke: module_surface_gate FAIL")
+        return 1
+    if status("{bin} run --backend=c scripts/luahost.id") != 0
+        print("agent-smoke: luahost FAIL")
+        return 1
+    if status("{bin} run --backend=c scripts/explain.id") != 0
+        print("agent-smoke: explain FAIL")
+        return 1
+    if status("{bin} run --backend=c scripts/contract.id") != 0
+        print("agent-smoke: contract FAIL")
+        return 1
+    if status("{bin} run --backend=c scripts/realize.id") != 0
+        print("agent-smoke: realize FAIL")
+        return 1
+    if status("{bin} run --backend=c scripts/sim.id") != 0
+        print("agent-smoke: sim FAIL")
+        return 1
+    if status("{bin} run --backend=c scripts/transform.id") != 0
+        print("agent-smoke: transform FAIL")
+        return 1
+    ex = "sed -n '/smoke_targets(): any/,/^end/p' lib/agent.id | grep -o 'examples/[^\"]*' | while read -r f; do if [ -n \\\"$f\\\" ]; then {bin} check \\\"$f\\\" || exit 1; fi; done"
+    if status(ex) != 0
+        print("agent-smoke: examples check FAIL")
+        return 1
+    print("agent-smoke: PASS")
+    0

@@ -1,17 +1,17 @@
 # SH-10 — the symbol owner, proven BY VALUE and against the bootstrap.
 #
-# `lib/std/compiler/symbol.id` is the duon-native owner of C symbol emission.
-# This is its differential: the duon rule must answer what the bootstrap
+# `lib/compiler/symbol.id` is the idol-native owner of C symbol emission.
+# This is its differential: the idol rule must answer what the bootstrap
 # answers, for every name that matters, and it must answer for names the
 # bootstrap has never seen.
 #
 # WHY A DIFFERENTIAL AND NOT A UNIT TEST. `law.differential`: old is oracle,
-# new is candidate, the differential judges. A unit test on the duon rule alone
+# new is candidate, the differential judges. A unit test on the idol rule alone
 # would prove the rule is self-consistent, which is not the question. The
 # question is whether it agrees with the compiler that ships.
 #
-# WHY THE ROWS ARE THE ROWS. Four of them are duon's OWN VOCABULARY — `case`
-# (§0.3), `union` (§0.5), `register` (§0b), `default` (Pass 119's `?.` repair
+# WHY THE ROWS ARE THE ROWS. Four of them are idol's OWN VOCABULARY — `case`
+# (§0.3), `union` (§0.5), `register` (§0b), `default` (the `?.` repair
 # spells `get(.y, default)`). Three are the libc names that BIND SILENTLY
 # rather than failing: `read`, `write`, `open`. `abs` is the one measured
 # returning libc's answer — `abs(21)` printed 21. `main` is the exception.
@@ -20,7 +20,7 @@
 
 sym = symbol
 
-# Every row: the duon name, and the C symbol the rule must produce.
+# Every row: the idol name, and the C symbol the rule must produce.
 names = {
     "case", "union", "register", "default",
     "read", "write", "open", "abs",
@@ -35,11 +35,11 @@ check = (name: str, want: str)
         print("  ok   {name} -> {got}")
     else
         print("  FAIL {name} -> {got}, wanted {want}")
-        fail = fail + 1
+        fail += 1
 
 main: i64 = ()
     print("")
-    print("  the duon-native symbol owner (SH-10), by value")
+    print("  the idol-native symbol owner (SH-10), by value")
     print("")
 
     # CONTROLS FIRST. A row printed before the rule is shown to discriminate is
@@ -54,7 +54,7 @@ main: i64 = ()
     if sym.mangles("main")
         print("CONTROL FAILED: main must NOT take the ordinary prefix")
         std.os.exit(3)
-    if sym.mangles("read") == false
+    if !sym.mangles("read")
         print("CONTROL FAILED: an ordinary name must mangle")
         std.os.exit(3)
 
@@ -63,7 +63,7 @@ main: i64 = ()
     while i <= n
         nm: str = names[i]
         check(nm, "duo_fn_{nm}")
-        i = i + 1
+        i += 1
 
     # The exception, asserted separately because it is the one row that would
     # silently pass if `symbol` returned the prefix for everything.
@@ -72,7 +72,7 @@ main: i64 = ()
         print("  ok   main -> {check2}   (the exception)")
     else
         print("  FAIL main -> {check2}, wanted duo_entry_main")
-        fail = fail + 1
+        fail += 1
 
     # A module name must NOT be prefixed twice: `<mod>__<name>` is already
     # closed, and prefixing it again is the mistake this row exists to catch.
@@ -81,11 +81,11 @@ main: i64 = ()
         print("  ok   wire.read -> {mo}   (already closed, not reprefixed)")
     else
         print("  FAIL wire.read -> {mo}, wanted wire__read")
-        fail = fail + 1
+        fail += 1
 
     print("")
     if fail > 0
         print("symbol proof: FAIL — {fail} row(s) disagreed")
         std.os.exit(1)
-    print("symbol proof: PASS — 13 rows, every duon name owns its C symbol")
+    print("symbol proof: PASS — 13 rows, every idol name owns its C symbol")
     0

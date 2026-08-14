@@ -1,5 +1,5 @@
 main: i64 = ()
-    text = io:read("lib/semantic/vocabulary.id")
+    text = io:read("gate/idiom.id")
     if text == nil
         print("nil")
         return 1

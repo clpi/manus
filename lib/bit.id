@@ -59,7 +59,7 @@ reverse(x: i64): i64
     r = 0
     i = 0
     while i < 64
-        r = r | ((x >> i) & 1) << (63 - i)
+        r |= ((x >> i) & 1) << (63 - i)
         i += 1
     end
     r
@@ -125,12 +125,12 @@ end
 next_pow2(x: i64): i64
     if x <= 1 return 1 end
     x -= 1
-    x = x | (x >> 1)
-    x = x | (x >> 2)
-    x = x | (x >> 4)
-    x = x | (x >> 8)
-    x = x | (x >> 16)
-    x = x | (x >> 32)
+    x |= (x >> 1)
+    x |= (x >> 2)
+    x |= (x >> 4)
+    x |= (x >> 8)
+    x |= (x >> 16)
+    x |= (x >> 32)
     x + 1
 end
 
@@ -147,7 +147,7 @@ leb128_encode_u(value: i64): any
         byte = value & 0x7F
         value = value >> 7
         if value != 0
-            byte = byte | 0x80
+            byte |= 0x80
         end
         bytes[bytes:len() + 1] = byte
     until value == 0
@@ -161,7 +161,7 @@ leb128_decode_u(bytes: any, pos: i64): any
     i = pos
     while true
         byte = bytes[i]
-        result = result | ((byte & 0x7F) << shift)
+        result |= ((byte & 0x7F) << shift)
         shift += 7
         if (byte & 0x80) == 0 break end
         i += 1
@@ -179,7 +179,7 @@ leb128_encode_s(value: i64): any
         if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) != 0)
             more = false
         else
-            byte = byte | 0x80
+            byte |= 0x80
         end
         bytes[bytes:len() + 1] = byte
     end
@@ -193,11 +193,11 @@ leb128_decode_s(bytes: any, pos: i64): any
     i = pos
     while true
         byte = bytes[i]
-        result = result | ((byte & 0x7F) << shift)
+        result |= ((byte & 0x7F) << shift)
         shift += 7
         if (byte & 0x80) == 0
             if shift < 64 and (byte & 0x40) != 0
-                result = result | (~0 << shift)
+                result |= (~0 << shift)
             end
             break
         end

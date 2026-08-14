@@ -50,7 +50,8 @@ empty** until revision-bound aggregate proof fills them.
 
 **Current:** architectural readiness ~75–85%; measurement infrastructure
 ~60–70%; **complete FTCFTW claim not proven** (near 0% for the full bound).
-Stale proof bundles do not certify current HEAD.
+`scripts/ledger/ftcftw.id` passing means indexed contracts exist — not that
+the bound is proven. Stale proof bundles do not certify current HEAD.
 
 ## Traffic-light summary
 
@@ -75,7 +76,7 @@ earlier eras — that is progress.
 | Metric | Meaning |
 |---|---|
 | **New debt introduced** | Must be **0** on added/changed canonical lines (idiomgate, host/path gates, semanticgate ratchets) |
-| **Existing canonical-surface debt** | Historical ledgers and corpus (`scripts/debtledger.id`, `scripts/ftcftwledger.id`, etc.) — substantial, preexisting; not conflated with gate pass on a migration diff |
+| **Existing canonical-surface debt** | Historical ledgers and corpus (`scripts/ledger/debt.id`, `scripts/ledger/ftcftw.id`, etc.) — substantial, preexisting; not conflated with gate pass on a migration diff |
 
 A staged migration diff passing idiomgate/semanticgate proves **no new debt in
 that diff**, not that the entire historical `.id` corpus satisfies present law.
@@ -170,11 +171,11 @@ Constitution §67 is sole semantic algebra authority. Git owns historical archiv
 Machine-measurable values must come from running current ledgers against one
 clean HEAD, for example:
 
-- `scripts/debtledger.id` — historical canonical-surface debt (not gate pass)
-- `scripts/ftcftwledger.id` — performance claim boundaries
-- `scripts/shcledger.id` — self-host authority stages
-- `gates/architecture.id` — staged-index migration censuses
-- `gates/idiom.id` — added-line canonicality
+- `scripts/ledger/debt.id` — historical canonical-surface debt (not gate pass)
+- `scripts/ledger/ftcftw.id` — FTCFTW contract index (presence ≠ complete proof)
+- `scripts/ledger/shc.id` — self-host authority stages
+- `gate/architecture.id` — staged-index migration censuses
+- `gate/idiom.id` — added-line canonicality
 
 Inspect committed evidence artifacts for revision, dirty state, and aggregate
 outcome. A proof bundle at an older revision does not certify current HEAD.

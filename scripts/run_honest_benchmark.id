@@ -1,5 +1,10 @@
 # Honest benchmark: Duo vs C on runtime-seeded, unfoldable workloads.
 #
+# ledger/perf contract: honest benchmark
+# oracle: honest: FAIL
+# negative: honest: PASS
+# verdict: no precomputation — runtime-seeded workloads only
+#
 # Duo replacement for scripts/run_honest_benchmark.sh (monoglot census).
 #
 # "Honest" is the whole point: inputs come from a runtime-seeded PRNG so the
@@ -44,7 +49,7 @@ _fx(x: f64, places: i64): str
     i = 0
     while i < places
         scale = scale * 10
-        i = i + 1
+        i += 1
     end
     n = to(i64)(x * to(f64)(scale) + 0.5)
     w = n / scale
@@ -80,7 +85,7 @@ _rows(text: str, tag: str): any
         f = _fields(std.script.chomp(l))
         if f:len() >= 3 and f[1] == tag
             r[f[2]] = f[3]
-            n = n + 1
+            n += 1
         end
     end
     r["__n"] = n:to(str)
@@ -189,7 +194,7 @@ main: i64 = ()
                     end
                 end
             end
-            r = r + 1
+            r += 1
         end
     end
 

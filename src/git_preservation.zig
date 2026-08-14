@@ -1,12 +1,12 @@
-//! Pass 14 §5, §18 Audit 1, Milestone 1 — preservation-aware Git operations.
+//! §5, §18 Audit 1, Milestone 1 — preservation-aware Git operations.
 //!
 //! This is the *preservation* half of the development control plane. Where
-//! `dev_control_plane.zig` (Pass 13) owns coordination *state* (snapshots,
+//! `dev_control_plane.zig` owns coordination *state* (snapshots,
 //! claims, presentation), this module owns **what would be lost** by a
 //! destructive Git operation: stashes, dirty worktrees, untracked artifacts,
 //! branches carrying unique commits, and prunable worktrees.
 //!
-//! Philosophy (Pass 14 §5.1–5.2): destructive Git operations are exceptional.
+//! Philosophy (§5.1–5.2): destructive Git operations are exceptional.
 //! `git stash` is banned as a coordination tool. Worktrees may be removed only
 //! after every unique change is preserved (§5.3). This module inventories the
 //! repository so an agent or CI gate can answer: *could this destroy unique
@@ -18,7 +18,7 @@ const host_run = @import("host_run.zig");
 
 pub const SCHEMA_VERSION = "git-preservation-v0";
 
-/// Severity of a destructive-operation finding (Pass 14 §5).
+/// Severity of a destructive-operation finding (§5).
 pub const Severity = enum {
     safe,
     caution,
@@ -39,7 +39,7 @@ pub const DestructiveFinding = struct {
     detail: []const u8,
 };
 
-/// A linked working tree (Pass 14 §5.3 retirement protocol).
+/// A linked working tree (§5.3 retirement protocol).
 pub const Worktree = struct {
     path: []const u8,
     head: []const u8,

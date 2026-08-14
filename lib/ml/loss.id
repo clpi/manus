@@ -111,7 +111,7 @@ log_cosh(pred: any, target: any): f64
     sum = 0
     for i = 1, pred.size
         diff = pred.data[i] - target.data[i]
-        sum += math.cosh(diff):log()
+        sum += diff:cosh():log()
     end
     sum / pred.size
 end

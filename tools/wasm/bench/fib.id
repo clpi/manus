@@ -26,7 +26,7 @@ end
 # GAP-12: `@c.export` does not attach to a value-form binding, and it binds to
 # the NEXT bare declaration # so it must sit directly above `run`, not above
 # `fib`. Placing it above `fib` exports the wrong arity and the C build fails.
-@c.export("run")
+@comp.c.export("run")
 run(): i32
     fib(32)
 end

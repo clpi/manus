@@ -1,7 +1,7 @@
 # Expected (line, col, len, role) for walk.id. HAND-WRITTEN from the law.
 #
 # What this fixture discriminates: `.field` versus `.case`, two hues over one
-# glyph. With a left operand, `a.b` is data access (pass100 §4) and is the
+# glyph. With a left operand, `a.b` is data access and is the
 # green `walk` role, decidable, and it carries the card `read` — a walk-WRITE
 # is a different card and is underlined (§0g).
 #

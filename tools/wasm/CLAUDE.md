@@ -57,12 +57,15 @@ mapping to native facts is witnessed.
 
 ## Source and migration
 
-Canonical project-owned implementation uses `.id`. Existing project-owned
-`.id` sources in this directory are SOURCE-ZERO debt and behavioral evidence,
-not Idol idiom sources. For each retained behavior, identify the relation,
-subject, foreign law, worlds, effects, outcome, demand, and realization;
-migrate it semantically into `.id`, prove it, and delete the old source. Delete
-obsolete or duplicate implementations rather than archive them in-tree.
+Canonical project-owned implementation uses `.id` and new canonical `.id` is
+freely admitted. The existing `.id` sources in this directory currently carry
+SOURCE-ZERO debt in their *noncanonical patterns* (private opcode/stack
+machinery, standard-root dependencies, host-shaped fallback) — not by virtue of
+being `.id`, and they are behavioral evidence rather than canonical idiom
+templates. For each retained behavior, identify the relation, subject, foreign
+law, worlds, effects, outcome, demand, and realization, then repair the pattern
+in place into canonical `.id` and prove it. Delete obsolete or duplicate
+implementations rather than archive them in-tree.
 
 Compiler-forced monoliths, manual opcode ladders, sentinel outcomes, silent
 fallback, foreign-call wrappers, and implementation-qualified APIs are debt,

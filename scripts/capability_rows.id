@@ -1,4 +1,4 @@
-# Pass 100 §22 — the capability matrix, PER CAPABILITY.
+# The capability matrix, PER CAPABILITY.
 #
 # The two reports next door answer population questions.
 # scripts/capability_matrix.id asks "how far does the corpus get" and
@@ -161,8 +161,8 @@ rows = {
         "examples/pack/consume.id" },
       {} },
     # No fixture, deliberately — gap[059]. The two parsers in this tree
-    # disagree about what `X@rel` MEANS: `lib/std/compiler/parser.id:1386`
-    # projects `(anchor base name)`, which is Pass 100 §4, while the Zig front
+    # disagree about what `X@rel` MEANS: `lib/compiler/parser.id:1386`
+    # projects `(anchor base name)`, which is the retrieval rule, while the Zig front
     # end folds infix `@` into MATMUL and `duo check` exits 0 on
     # `i64@to(str)` with a tensor deprecation warning before codegen dies on
     # an undeclared `to`. A fixture has to assert something, and either
@@ -262,7 +262,7 @@ slot(path: str): str
         else
             out = out .. path:sub(i, i)
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -388,7 +388,7 @@ hosttext(): str
         "            end",
         "            start = i + 1",
         "        end",
-        "        i = i + 1",
+        "        i += 1",
         "    end",
         "    0",
         "end"
@@ -404,7 +404,7 @@ tab(rec: str): i64
     i: i64 = 1
     n: i64 = rec:len()
     while i <= n and rec:byte(i) != 9
-        i = i + 1
+        i += 1
     end
     i
 end
@@ -433,7 +433,7 @@ pad(s: str, w: i64): str
     i: i64 = s:len()
     while i < w
         out = out .. " "
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -544,7 +544,7 @@ main: i64 = ()
         if rec:len() > 8
             t = tab(rec)
             probe[rec:sub(t + 1, rec:len())] = rec:sub(1, t - 1)
-            nrec = nrec + 1
+            nrec += 1
         end
     end
     if nrec != files:len()
@@ -572,7 +572,7 @@ main: i64 = ()
         if rec:len() > 2
             t = tab(rec)
             host[rec:sub(t + 1, rec:len())] = rec:sub(1, t - 1)
-            nhost = nhost + 1
+            nhost += 1
         end
     end
     if nhost != files:len()
@@ -619,9 +619,9 @@ main: i64 = ()
     hostno = 0
     for i, f in files
         if host[f] == "0"
-            hostyes = hostyes + 1
+            hostyes += 1
         else
-            hostno = hostno + 1
+            hostno += 1
         end
     end
     if hostyes == 0 or hostno == 0
@@ -633,7 +633,7 @@ main: i64 = ()
     end
 
     print("")
-    print("  Pass 100 §22 — capability matrix, PER CAPABILITY, generated from fixtures")
+    print("  capability matrix, PER CAPABILITY, generated from fixtures")
     print("")
     # The header is built from the same 7-wide, 1-space cell geometry as the
     # body rather than typed as one literal, so a column cannot drift out from
@@ -667,31 +667,31 @@ main: i64 = ()
         for fi, f in fs
             rec = probe[f]
             if digit(rec, 1) == 1
-                d = d + 1
+                d += 1
             end
             if digit(rec, 2) == 1
-                p = p + 1
+                p += 1
             end
             if digit(rec, 3) == 1
-                s = s + 1
+                s += 1
             end
             # G asks two things and both must hold: the graph ran, and the
             # key it would have to carry is in what it emitted.
             if digit(rec, 4) == 1 and std.script.status(
                 "grep -qF '{gk}' {work}/g/" .. slot(f) .. ".json 2>/dev/null") == 0
-                g = g + 1
+                g += 1
             end
             if digit(rec, 5) == 2
-                c = c + 1
+                c += 1
             end
             if digit(rec, 6) == 1
-                n = n + 1
+                n += 1
             end
             if digit(rec, 7) == 1
-                w = w + 1
+                w += 1
             end
             if host[f] == "0"
-                h = h + 1
+                h += 1
             end
         end
         # C is three-valued at the fixture too: matched a declared value, or
@@ -701,7 +701,7 @@ main: i64 = ()
         cran = 0
         for fi, f in fs
             if digit(probe[f], 5) >= 1
-                cran = cran + 1
+                cran += 1
             end
         end
         ccell = cellof(c, nf, false)
@@ -726,7 +726,7 @@ main: i64 = ()
         # about a diagnostic: an offside mis-indent that only sema catches has
         # been caught by the wrong layer.
         for fi, f in r[4]
-            denytotal = denytotal + 1
+            denytotal += 1
             rec = probe[f]
             at = "rejected at sema "
             if digit(rec, 2) == 0
@@ -736,7 +736,7 @@ main: i64 = ()
                 denyrows = denyrows .. "    {at}  {nm}  {f}\n"
             else
                 denyrows = denyrows .. "    ACCEPTED         {nm}  {f}  <- the diagnostic is gone\n"
-                denyfail = denyfail + 1
+                denyfail += 1
             end
         end
     end
@@ -768,7 +768,7 @@ main: i64 = ()
     for i, f in files
         if std.script.status(
             "grep -qF '\"edges\"' {work}/g/" .. slot(f) .. ".json 2>/dev/null") == 0
-            edges = edges + 1
+            edges += 1
         end
     end
     ec = edges:to(str)

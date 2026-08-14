@@ -2,12 +2,6 @@
 # idol_lock.id — serialize heavy Idol/Zig builds across concurrent agent sessions.
 # Native mkdir mutex + stale-PID reclaim.
 
-@{
-    app
-    os
-    io
-}
-
 chomp: str = (text: str)
     n = text:len()
     while n > 0
@@ -23,69 +17,70 @@ cap: str = (cmd: str)
 status: i64 = (cmd: str)
     cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
 
-lockdir = env("IDOL_BUILD_LOCK") or "/tmp/idol-lock"
+main: i64 = ()
+    lockdir = os.env["IDOL_BUILD_LOCK"] or "/tmp/idol-lock"
 
-i = 1
-n = args:len()
+    i = 1
+    n = args:len()
 
-if n == 0
-    print("idol_lock: no command (usage: idol_lock.id [--timeout N] -- cmd...)")
-    return 64
-
-if args(1) == "status"
-    owner = cap("cat '{lockdir}/owner' 2>/dev/null")
-    if owner:len() > 0
-        print("LOCKED by {owner}")
-    else
-        print("FREE")
-    return 0
-
-timeout = 1800
-if args(i) == "--timeout"
-    if i + 1 > n
-        print("idol_lock: --timeout needs a value")
+    if n == 0
+        print("idol_lock: no command (usage: idol_lock.id [--timeout N] -- cmd...)")
         return 64
-    val = args(i + 1)
-    timeout = val and val:to(i64)
-    if !timeout
-        timeout = 1800
-    i += 2
 
-if i <= n and args(i) == "--"
-    i += 1
+    if args(1) == "status"
+        owner = cap("cat '{lockdir}/owner' 2>/dev/null")
+        if owner:len() > 0
+            print("LOCKED by {owner}")
+        else
+            print("FREE")
+        return 0
 
-if i > n
-    print("idol_lock: no command given")
-    return 64
+    timeout = 1800
+    if args(i) == "--timeout"
+        if i + 1 > n
+            print("idol_lock: --timeout needs a value")
+            return 64
+        val = args(i + 1)
+        timeout = val and val:to(i64)
+        if !timeout
+            timeout = 1800
+        i += 2
 
-cmd = ""
-first = true
-while i <= n
-    arg = args(i)
-    if first
-        cmd = arg
-        first = false
-    else
-        cmd = "{cmd} {arg}"
-    i += 1
+    if i <= n and args(i) == "--"
+        i += 1
 
-ok = status("mkdir '{lockdir}' 2>/dev/null && echo $$ > '{lockdir}/owner'")
-if ok != 0
-    waited = 0
-    while waited < timeout
-        ok = status("mkdir '{lockdir}' 2>/dev/null && echo $$ > '{lockdir}/owner'")
-        if ok == 0
-            break
-        status("sleep 1")
-        waited += 1
+    if i > n
+        print("idol_lock: no command given")
+        return 64
+
+    cmd = ""
+    first = true
+    while i <= n
+        arg = args(i)
+        if first
+            cmd = arg
+            first = false
+        else
+            cmd = "{cmd} {arg}"
+        i += 1
+
+    ok = status("mkdir '{lockdir}' 2>/dev/null && echo $$ > '{lockdir}/owner'")
     if ok != 0
-        print("idol_lock: timed out after {timeout}s waiting for lock")
-        return 75
+        waited = 0
+        while waited < timeout
+            ok = status("mkdir '{lockdir}' 2>/dev/null && echo $$ > '{lockdir}/owner'")
+            if ok == 0
+                break
+            status("sleep 1")
+            waited += 1
+        if ok != 0
+            print("idol_lock: timed out after {timeout}s waiting for lock")
+            return 75
 
-os.env["IDOL_LOCK_HELD"] = "1"
-os.env["IDOL_BUILD_LOCK"] = lockdir
-rc = status(cmd)
-gatecap("rm -rf '{lockdir}'")
-if rc != 0
-    return rc
-0
+    os.env["IDOL_LOCK_HELD"] = "1"
+    os.env["IDOL_BUILD_LOCK"] = lockdir
+    rc = status(cmd)
+    gatecap("rm -rf '{lockdir}'")
+    if rc != 0
+        return rc
+    0

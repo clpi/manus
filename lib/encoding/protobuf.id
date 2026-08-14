@@ -144,7 +144,7 @@ read_field_float(r: any): f64
     sign = 1
     if b0 >= 128
         sign = -1
-        b0 = b0 - 128
+        b0 -= 128
     end
     exp = b0 / 2:floor() * 16 + b1 / 16:floor()
     mantissa = (b0 % 2) * (2^23) + b1 * (2^15) + b2 * (2^7) + b3
@@ -175,7 +175,7 @@ reader_varint(r: any): any
         if r.pos > r.len return nil end
         byte = r.data[r.pos]
         r.pos = r.pos + 1
-        result = result | ((byte & 0x7F) << shift)
+        result |= ((byte & 0x7F) << shift)
         shift += 7
         if (byte & 0x80) == 0 break end
     end
@@ -235,7 +235,7 @@ reader_field_fixed64(r: any, wire_type: i64): any
     result = 0
     i = 0
     while i < 8
-        result = result | (r.data[r.pos + i] << (i * 8))
+        result |= (r.data[r.pos + i] << (i * 8))
         i += 1
     end
     r.pos = r.pos + 8
@@ -318,7 +318,7 @@ end
 # file-scope constant from inside a nested table emits a bare, UNDECLARED
 # identifier when the module is EMBEDDED ("use of undeclared identifier
 # 'WIRE_START_GROUP'"), though it resolves fine standalone. Same compiler gap
-# as lib/std/net/ws.id's opcode table; reduced there to a two-file repro.
+# as lib/net/ws.id's opcode table; reduced there to a two-file repro.
 WIRE = {
     VARINT = 0,
     FIXED64 = 1,

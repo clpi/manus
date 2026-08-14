@@ -1,0 +1,59 @@
+#!/bin/sh
+# Serialize heavy Idol/Zig builds across concurrent agent sessions.
+set -eu
+
+lockdir="${IDOL_BUILD_LOCK:-/tmp/idol-lock}"
+timeout="${IDOL_LOCK_TIMEOUT:-1800}"
+
+usage() {
+  echo "idol-lock: usage: idol-lock [--timeout N] -- cmd..." >&2
+  exit 64
+}
+
+if [ "$#" -eq 0 ]; then
+  usage
+fi
+
+if [ "$1" = "status" ]; then
+  if [ -f "$lockdir/owner" ]; then
+    printf 'LOCKED by %s\n' "$(cat "$lockdir/owner" 2>/dev/null || true)"
+  else
+    printf 'FREE\n'
+  fi
+  exit 0
+fi
+
+if [ "$1" = "--timeout" ]; then
+  shift
+  timeout="${1:-1800}"
+  shift
+fi
+
+if [ "${1:-}" = "--" ]; then
+  shift
+fi
+
+if [ "$#" -eq 0 ]; then
+  usage
+fi
+
+waited=0
+while ! mkdir "$lockdir" 2>/dev/null; do
+  if [ "$waited" -ge "$timeout" ]; then
+    echo "idol-lock: timed out after ${timeout}s waiting for lock" >&2
+    exit 75
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
+
+printf '%s\n' "$$" >"$lockdir/owner"
+export IDOL_LOCK_HELD=1
+export IDOL_BUILD_LOCK="$lockdir"
+trap 'rm -rf "$lockdir"' EXIT INT TERM
+
+set +e
+"$@"
+rc=$?
+set -e
+exit "$rc"

@@ -1,0 +1,12 @@
+# A stack and a queue over one sequence face. LIFO and FIFO must disagree,
+# which is the whole assertion.
+# expect: 3 1
+# @corpus current
+st = { }
+st:push(1)
+st:push(2)
+st:push(3)
+top = st:pop()
+q = { 1, 2, 3 }
+front = q[1]
+print("{top} {front}")

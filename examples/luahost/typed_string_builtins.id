@@ -1,0 +1,31 @@
+typed_sub(s: str): str
+  a: str = s:sub(1, 3)
+  return a
+end
+
+typed_tostring(n: i64): str
+  b: str = to(str)(n)
+  return b
+end
+
+combined(s: str, n: i64): str
+  a: str = s:sub(1, 3)
+  b: str = to(str)(n)
+  return a .. b
+end
+
+typed_find(s: str): i64
+  p: i64 = s:find("Duo", 1, true)
+  return p
+end
+
+method_find(s: str): i64
+  p: i64 = s:find("o", 1, true)
+  return p
+end
+
+print(typed_sub("abcdef"))
+print(typed_tostring(42))
+print(combined("abcdef", 42))
+print(typed_find("Hello Duo"))
+print(method_find("Duo"))

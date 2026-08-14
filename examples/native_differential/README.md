@@ -78,8 +78,8 @@ Plus compile-time module resolution: `Alias = req "std.compiler.token"` binds at
 compile time and `Alias.CONST` folds to an immediate. `native_only/req_module_constant.id`
 lowers to `mov x9, #14; mov x0, x9; ret` — the whole module reference erased.
 
-Of the Pass 16 self-hosting proofs, `pass16_m1_lexer_proof` and
-`pass16_lexer_corpus_proof` compile and run correctly through the direct backend
+Of the self-hosting proofs, the lexer proof and
+the lexer corpus proof compile and run correctly through the direct backend
 with zero `lua_*` symbols.
 
 Records lower through an **exploded** model: a record is stored as one local per
@@ -155,8 +155,7 @@ or:   S = lhs;  if !S goto RHS;  goto END;  RHS: S = rhs;  END:
 
 `or` uses `br_if_not` + `br` because the backend has no `br_if`. Scoped to
 integer contexts: when either operand's subtree touches f64, lowering refuses so
-the AST backend keeps handling `cond and a or b` over f64 records (Pass 11
-WP-04). Proven by `canon11_and_short_circuit`, `canon13_or_short_circuit`,
+the AST backend keeps handling `cond and a or b` over f64 records. Proven by `canon11_and_short_circuit`, `canon13_or_short_circuit`,
 `canon10_helper_plus_record_scan`, `canon12_helper_call_record_scan`.
 
 Also fixed alongside: `validateFunction` rejected `str` parameters on the general
@@ -199,7 +198,7 @@ on neither backend today; the scanner logic is identical either way.
 
 `native_only/lexer_native.id` compiles to native ARM64 and emits the **same
 token kind ids as `src/lexer.zig`**. The ids are not restated here — they are
-consumed via `req "std.token.classify"` from `lib/std/token/classify.id`
+consumed via `req "std.token.classify"` from `lib/token/classify.id`
 (SH-02, already `duo_canonical`, generated from `src/token_classify_gen.zig`) and
 fold to immediates. Duo lexer and host lexer therefore agree on token identity by
 construction rather than by convention: if an id ever moved, the gated total
@@ -214,7 +213,7 @@ It is gated `native_only` because the **C backend cannot compile it** — as wit
 `req_module_constant`, the direct backend is strictly more capable here, so C is
 not a valid oracle.
 
-Why not `lib/std/compiler/lexer.id` (the existing SH-03 differential oracle):
+Why not `lib/compiler/lexer.id` (the existing SH-03 differential oracle):
 its `lexer` record has 18 fields including strings, nested records and floats,
 exceeding the 8-slot register ABI for aggregates. Keeping lexer state in scalars
 and a 3-field token record puts the whole thing inside the proven native subset.
@@ -381,7 +380,7 @@ demonstrated in Duo, natively.
 **The one remaining gap is persistence — and it is smaller than it looks.**
 
 `os.write_file` does not lower natively (`DNB007`), but the reason is not that
-file I/O is hard. Look at its implementation in `lib/std/os.id`:
+file I/O is hard. Look at its implementation in `lib/os.id`:
 
 ```
 fun os_write_file(path: str, data: any): bool

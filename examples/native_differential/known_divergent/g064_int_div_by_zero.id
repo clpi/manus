@@ -15,9 +15,9 @@
 # as an integer. Fix the typing and this column changes on its own.
 #
 # **The direct column's 0 is not a fix either.** It is a decision nobody made.
-# Pass 100 B-4 says division is operand-selected and `i64/i64` truncates; it
+# The B-4 rule says division is operand-selected and `i64/i64` truncates; it
 # does not say what `7/0` does, and that silence IS the finding. `error.divzero`
-# routed, or a FAULT per Pass 107 §3, or a documented trap — any of the three is
+# routed, or a FAULT per the fault contract, or a documented trap — any of the three is
 # an answer. Two backends quietly disagreeing is what happens when there is
 # none, so this row must not be closed by making them agree on an undecided
 # value: the numerics page owes a ruling first, and then this file asserts it.

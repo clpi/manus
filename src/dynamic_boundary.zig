@@ -1,4 +1,4 @@
-/// Pass 4 — explicit dynamic-boundary facts and compiler explanations.
+/// — explicit dynamic-boundary facts and compiler explanations.
 ///
 /// Factual only: states what the compiler knows from types, knowledge lattice,
 /// and module/function native eligibility — no invented optimizations.

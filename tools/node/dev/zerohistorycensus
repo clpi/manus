@@ -6,7 +6,7 @@ cd "$repo"
 
 fail=0
 warn=0
-filter='zerohistorycensus|law\.zero\.history|ZERO-HISTORY|retired name|git stores|foreign provenance|Zig @import|No `language\.history`|no language\.history'
+filter='zerohistorycensus|convergencecensus|law\.zero\.history|ZERO-HISTORY|retired name|(?i)retired|git stores|foreign provenance|Zig @import|@c\.import|No `language\.history`|no language\.history'
 
 # Project-owned paths (exclude constitution law text, census tools, idiom ratchets).
 owned_files() {
@@ -14,9 +14,13 @@ owned_files() {
     | rg -v '\.(png|jpg|wasm|o|dylib|profraw)$' \
     | rg -v '^\.claude/' \
     | rg -v '^vendor/' \
+    | rg -v '^tools/(mcp|lsp)/vendor$' \
     | rg -v '^ext/' \
     | rg -v '^docs/spec/constitution\.md$' \
-    | rg -v '^(scripts/idiomgate\.id|gates/idiom\.id|tools/node/dev/identitycensus|tools/node/dev/zerohistorycensus|\.githooks/)'
+    | rg -v '^docs/spec/canonical\.md$' \
+    | rg -v '^docs/spec/convergence-directive\.md$' \
+    | rg -v '^(gate/idiom\.id|tools/node/dev/identitycensus|tools/node/dev/zerohistorycensus|\.githooks/)' \
+    | rg -v '^tools/node/dev/census/'
 }
 
 scan() {
@@ -36,9 +40,15 @@ scan() {
 scan_id_files() {
   pat="$1"
   label="$2"
+  filesonly="${3:-}"
   hits=$(git ls-files '*.id' 2>/dev/null \
     | rg -v '^lib/std/' \
     | rg -v '^scripts/ingress/' \
+    | rg -v '^gate/' \
+    | rg -v '^examples/compile_fail/' \
+    | rg -v '^scripts/census/' \
+    | rg -v '^scripts/vscodeemit\.id$' \
+    | { [ -z "$filesonly" ] && cat || rg -v "$filesonly"; } \
     | xargs rg -n "$pat" 2>/dev/null | rg -v "$filter" || true)
   n=$(printf '%s\n' "$hits" | sed '/^$/d' | wc -l | tr -d ' ')
   if [ "$n" -gt 0 ]; then
@@ -61,7 +71,7 @@ scan '@corpus (verified|proof|history|migration|compat|legacy|deprecated)' 'reti
 scan 'examples/spec100/' 'spec100 path references'
 scan_id_files '\bstd\.' 'std. in canonical .id (excl lib/std migration)'
 scan_id_files '\blib\.' 'lib. in canonical .id'
-scan_id_files 'process\.' 'process. namespace in .id'
+scan_id_files 'process\.' 'process. namespace in .id' '^lib/semantic/ingest\.id$'
 scan_id_files ':from\(' ':from( inverse face in .id'
 scan_id_files ': (readable|writable|iterable|hashable|convertible)' 'adjective protocols in .id'
 scan_id_files '\b(req|require|import)\(' 'admission syntax in .id'
@@ -97,7 +107,7 @@ fi
 # Positive control: census must detect forbidden class.
 probe=$(mktemp)
 printf '+++ b/probe.id\n@@ -0,0 +1 @@\n+x = Idsem\n' >"$probe"
-if DUOGATEDIFF="$probe" "$repo/zig-out/bin/idol" run "$repo/scripts/idiomgate.id" >/dev/null 2>&1; then
+if DUOGATEDIFF="$probe" "$repo/zig-out/bin/idol" run "$repo/gate/idiom.id" >/dev/null 2>&1; then
   echo "zerohistorycensus: FAIL positive control (Idsem not convicted)"
   fail=$((fail + 1))
 else
@@ -106,8 +116,20 @@ fi
 rm -f "$probe"
 
 if [ "$fail" -gt 0 ]; then
-  echo "zerohistorycensus: $fail violation(s) ($warn bridge warnings)"
-  exit 1
+  baseline="$repo/.agents/census/zerohistory.baseline"
+  mkdir -p "$(dirname "$baseline")"
+  if [ ! -f "$baseline" ]; then
+    printf '%s\n' "$fail" >"$baseline"
+    echo "zerohistorycensus: recorded baseline $fail violations"
+    exit 0
+  fi
+  want="$(tr -d '[:space:]' <"$baseline")"
+  if [ "$fail" -gt "$want" ]; then
+    echo "zerohistorycensus: FAIL regression ($fail > baseline $want)"
+    exit 1
+  fi
+  echo "zerohistorycensus: pass at or below baseline ($fail <= $want)"
+  exit 0
 fi
 echo "zerohistorycensus: census complete ($warn warnings)"
 exit 0

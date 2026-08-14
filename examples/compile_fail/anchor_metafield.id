@@ -1,5 +1,5 @@
 # @corpus current
-# Pass 100 §2 THE ANCHOR — `.@name` is not one of the three stances.
+# THE ANCHOR — `.@name` is not one of the three stances.
 #
 # This fixture is a REJECTION fixture and not a value fixture because the form
 # it pins cannot be measured by a value: that is precisely how it shipped. On

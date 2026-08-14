@@ -46,7 +46,9 @@ never becomes language law.
 
 ## Fact producer ledger
 
-Machine-readable catalog: `lib/semantic/producer.id`.
+Producer ownership is this table until graph queries exist. There is no
+machine-readable relation catalog (`law.catalog.zero`; `lib/semantic/producer.id`
+deleted).
 
 | fact | producer | consumers |
 |---|---|---|

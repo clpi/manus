@@ -27,8 +27,8 @@ knowledge:
       docs/spec/source.md, docs/spec/AUTHORITY.md, docs/bootstrap.md, and the
       relevant projection. docs/spec/constitution.md is the sole semantic law.
       Current language and project identity is Idol (`idol`, `.id`). Use skill
-      idol-dev (`.pi/skills/idol-dev`), not duon-development. Historical Idol,
-      Duo, Duon, and `.id` are provenance only. This Devin projection is not
+      idol-dev (`.pi/skills/idol-dev`), not idol-development. Historical Idol,
+      Duo, Idol, and `.id` are provenance only. This Devin projection is not
       semantic authority.
 
   - name: orientation
@@ -48,8 +48,8 @@ knowledge:
     contents: |
       Use ./tools/node/dev/doctor for fast development-node admission. Use
       ./tools/node/dev/probe-mcp for raw MCP initialize health. Heavy gates must
-      resolve the repository root and run through its `zig-out/bin/duo` with
-      `run --backend=c`, its `scripts/duo_lock.id`, and `-- ...`.
+      resolve the repository root and run through its `zig-out/bin/idol` with
+      `run`, its `scripts/idol_lock.id`, and `-- ...`.
       Evidence is exact tree, command, executed path, outcome, and positive
       controls.
 

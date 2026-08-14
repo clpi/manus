@@ -41,13 +41,11 @@ sum: i64 = (n: i64)
     acc = 0
     i = 1
     while i <= n
-        acc = acc + i
-        i = i + 1
+        acc += i
+        i += 1
     acc
 
-main: i64 = ()
-    p = pick(10)
-    r = rung(5, 1)
-    t = sum(3)
-    print("{p} {r} {t}")
-    0
+p = pick(10)
+r = rung(5, 1)
+t = sum(3)
+print("{p} {r} {t}")

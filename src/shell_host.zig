@@ -1,4 +1,4 @@
-//! Pass 15 — cross-platform host shell escape hatch (`shell()` / `!` prefix).
+//! — cross-platform host shell escape hatch (`shell()` / `!` prefix).
 //!
 //! Raw text-reparsed execution is explicit, capability-gated, and harder to optimize.
 const std = @import("std");

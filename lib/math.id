@@ -1,49 +1,49 @@
 # std.math — numeric helper utilities
 
-std_math_clamp(x: any, lo: any, hi: any): any
+clamp(x: any, lo: any, hi: any): any
     if x < lo return lo end
     if x > hi return hi end
     x
 end
 
-std_math_min(a: any, b: any): any
+min(a: any, b: any): any
     if a < b return a end
     b
 end
 
-std_math_max(a: any, b: any): any
+max(a: any, b: any): any
     if a > b return a end
     b
 end
 
-std_math_sign(x: any): i64
+sign(x: any): i64
     if x > 0 return 1 end
     if x < 0 return -1 end
     0
 end
 
-std_math_round(x: any): i64
+round(x: any): i64
     if x >= 0
         return @as(i64, x + 0.5:floor())
     end
     return @as(i64, 0 - (0 - x) + 0.5:floor())
 end
 
-std_math_lerp(a: any, b: any, t: any): any
+lerp(a: any, b: any, t: any): any
     a + (b - a) * t
 end
 
-std_math_remap(...args): any
+remap(...args): any
     x = args[1]
-    in_min = args[2]
-    in_max = args[3]
-    out_min = args[4]
-    out_max = args[5]
-    if in_max == in_min return out_min end
-    out_min + (x - in_min) * (out_max - out_min) / (in_max - in_min)
+    ilo = args[2]
+    ihi = args[3]
+    olo = args[4]
+    ohi = args[5]
+    if ihi == ilo return olo end
+    olo + (x - ilo) * (ohi - olo) / (ihi - ilo)
 end
 
-std_math_sum(xs: any): any
+sum(xs: any): any
     total = 0
     for _, v in xs
         total += v
@@ -51,30 +51,30 @@ std_math_sum(xs: any): any
     total
 end
 
-std_math_mean(xs: any): any
+mean(xs: any): any
     if xs == nil or xs:len() == 0 return 0 end
-    std_math_sum(xs) / xs:len()
+    sum(xs) / xs:len()
 end
 
-std_math_is_even(n: i64): bool
+even(n: i64): bool
     n % 2 == 0
 end
 
-std_math_is_odd(n: i64): bool
+odd(n: i64): bool
     n % 2 != 0
 end
 
-std_math_distance_squared(x1: any, y1: any, x2: any, y2: any): any
+distsq(x1: any, y1: any, x2: any, y2: any): any
     dx = x2 - x1
     dy = y2 - y1
     dx * dx + dy * dy
 end
 
-std_math_distance(x1: any, y1: any, x2: any, y2: any): any
-    std_math_distance_squared(x1, y1, x2, y2):sqrt()
+distance(x1: any, y1: any, x2: any, y2: any): any
+    distsq(x1, y1, x2, y2):sqrt()
 end
 
-std_math_gcd(a: i64, b: i64): i64
+gcd(a: i64, b: i64): i64
     if a < 0 a = 0 - a end
     if b < 0 b = 0 - b end
     while b != 0
@@ -85,14 +85,14 @@ std_math_gcd(a: i64, b: i64): i64
     a
 end
 
-std_math_lcm(a: i64, b: i64): i64
+lcm(a: i64, b: i64): i64
     if a == 0 or b == 0 return 0 end
     n = a * b
     if n < 0 n = 0 - n end
-    n / std_math_gcd(a, b)
+    n / gcd(a, b)
 end
 
-std_math_median(xs: any): any
+median(xs: any): any
     if xs == nil or xs:len() == 0 return 0 end
     sorted = {}
     for _, v in xs
@@ -106,34 +106,34 @@ std_math_median(xs: any): any
     (sorted[n / 2] + sorted[n / 2 + 1]) / 2
 end
 
-std_math_variance(xs: any): any
+variance(xs: any): any
     if xs == nil or xs:len() <= 1 return 0 end
-    m = std_math_mean(xs)
-    sum_sq = 0
+    m = mean(xs)
+    ssq = 0
     for _, v in xs
         diff = v - m
-        sum_sq = sum_sq + diff * diff
+        ssq += diff * diff
     end
-    sum_sq / xs:len()
+    ssq / xs:len()
 end
 
-std_math_std_dev(xs: any): any
-    std_math_variance(xs):sqrt()
+stddev(xs: any): any
+    variance(xs):sqrt()
 end
 
-std_math_smoothstep(edge0: any, edge1: any, x: any): any
-    t = std_math_clamp((x - edge0) / (edge1 - edge0), 0, 1)
+smoothstep(edge0: any, edge1: any, x: any): any
+    t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
     t * t * (3 - 2 * t)
 end
 
-std_math_approx_eq(a: any, b: any, eps: any): bool
+approx(a: any, b: any, eps: any): bool
     if eps == nil eps = 1e-9 end
     diff = a - b
     if diff < 0 diff = 0 - diff end
     diff <= eps
 end
 
-std_math_min_of(list: any): any
+least(list: any): any
     if list == nil or list:len() == 0 return nil end
     result = list[1]
     i = 2
@@ -144,7 +144,7 @@ std_math_min_of(list: any): any
     result
 end
 
-std_math_max_of(list: any): any
+greatest(list: any): any
     if list == nil or list:len() == 0 return nil end
     result = list[1]
     i = 2
@@ -156,28 +156,28 @@ std_math_max_of(list: any): any
 end
 
 M = {}
-M.clamp = std_math_clamp
-M.min = std_math_min
-M.max = std_math_max
-M.sign = std_math_sign
-M.round = std_math_round
-M.lerp = std_math_lerp
-M.remap = std_math_remap
-M.sum = std_math_sum
-M.mean = std_math_mean
-M.median = std_math_median
-M.variance = std_math_variance
-M.std_dev = std_math_std_dev
-M.smoothstep = std_math_smoothstep
-M.approx_eq = std_math_approx_eq
-M.min_of = std_math_min_of
-M.max_of = std_math_max_of
-M.is_even = std_math_is_even
-M.is_odd = std_math_is_odd
-M.distance = std_math_distance
-M.distance_squared = std_math_distance_squared
-M.gcd = std_math_gcd
-M.lcm = std_math_lcm
+M.clamp = clamp
+M.min = min
+M.max = max
+M.sign = sign
+M.round = round
+M.lerp = lerp
+M.remap = remap
+M.sum = sum
+M.mean = mean
+M.median = median
+M.variance = variance
+M.std_dev = stddev
+M.smoothstep = smoothstep
+M.approx_eq = approx
+M.min_of = least
+M.max_of = greatest
+M.is_even = even
+M.is_odd = odd
+M.distance = distance
+M.distance_squared = distsq
+M.gcd = gcd
+M.lcm = lcm
 
 # Expose core Lua math utilities
 M.pi = math.pi

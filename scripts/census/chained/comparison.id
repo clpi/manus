@@ -28,24 +28,24 @@
 ands = 0
 files = 0
 
-identbyte: bool = (c: i64)
+idbyte: bool = (c: i64)
     (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 or c == 46
 
 # Scan left from `i` (1-based, inclusive) over an identifier/path, returning the
 # start index, or 0 when there is no identifier there.
-identstart: i64 = (s: str, i: i64)
+idstart: i64 = (s: str, i: i64)
     j = i
-    while j >= 1 and identbyte(s:byte(j))
+    while j >= 1 and idbyte(s:byte(j))
         j -= 1
     if j == i
         return 0
     j + 1
 
 # Scan right from `i` over an identifier/path, returning the end index, or 0.
-identstop: i64 = (s: str, i: i64)
+idstop: i64 = (s: str, i: i64)
     n = s:len()
     j = i
-    while j <= n and identbyte(s:byte(j))
+    while j <= n and idbyte(s:byte(j))
         j += 1
     if j == i
         return 0
@@ -97,7 +97,7 @@ scan: i64 = (src: str, path: str)
             ands += 1
             # LEFT of `and`: ... op B
             le = skipl(src, i - 1)
-            bs = identstart(src, le)
+            bs = idstart(src, le)
             if bs > 0
                 opl = skipl(src, bs - 1)
                 oplen = 0
@@ -108,7 +108,7 @@ scan: i64 = (src: str, path: str)
                 if oplen > 0
                     # RIGHT of `and`: C op ...
                     rs = skipr(src, i + 5)
-                    re = identstop(src, rs)
+                    re = idstop(src, rs)
                     if re > 0
                         ao = skipr(src, re + 1)
                         if ordop(src, ao) > 0

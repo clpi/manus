@@ -41,8 +41,8 @@ row: str = (id: str)
 main: i64 = ()
     root = here()
     bin = compiler(root)
-    fixtures = "{root}/examples/pass5/fixtures"
-    examples = "{root}/examples/pass5"
+    fixtures = "{root}/examples/foreign/fixtures"
+    examples = "{root}/examples/foreign"
     point = {
         header = "{fixtures}/point.h",
         oracle = "{fixtures}/point.c",
@@ -53,7 +53,7 @@ main: i64 = ()
         oracle = "{fixtures}/big_rect.c",
         source = "{examples}/c_big_rect_smoke.id",
     }
-    native = "{root}/examples/pass4_native_milestone.id"
+    native = "{root}/examples/native/milestone.id"
     boxes = "grep -E -q '(lua_Value|lua_val_|lua_to_|lua_table_|duo_retain|duo_release|duo_CPoint|duo_CBigRect)' "
     bad = 0
 
@@ -79,8 +79,8 @@ main: i64 = ()
 
     call = row("c:function:distance2")
     shape = row("c:record:CPoint")
-    probe = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/snap.json"
-        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/pass5/fixtures/point.h\\\",\\\"entity_count\\\":2" $d/snap.json'
+    probe = "cd '{root}' && '{bin}' sim --import-c examples/foreign/fixtures/point.h > $d/snap.json"
+        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/foreign/fixtures/point.h\\\",\\\"entity_count\\\":2" $d/snap.json'
         .. ' && (' .. call .. ' | grep -F "\\\"origin\\\":{\\\"language\\\":\\\"c\\\""'
         .. ' | grep -F "\\\"params\\\":[{\\\"name\\\":\\\"point\\\",\\\"type\\\":\\\"CPoint\\\"}]"'
         .. ' | grep -E "\\\"return.type\\\":\\\"f64\\\""'
@@ -95,39 +95,39 @@ main: i64 = ()
         "S1: point snapshot lost bounded identity, exact layout, C ABI, or native storage")
 
     absent = row("c:function:absent")
-    probe = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/snap.json"
+    probe = "cd '{root}' && '{bin}' sim --import-c examples/foreign/fixtures/point.h > $d/snap.json"
         .. " && ! ({absent} >/dev/null)"
     bad += expect(isolated(probe),
         "control 7: bounded selector found an absent stable identity")
 
-    stable = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/one.json"
-        .. " && '{bin}' sim --import-c examples/pass5/fixtures/point.h > $d/two.json"
+    stable = "cd '{root}' && '{bin}' sim --import-c examples/foreign/fixtures/point.h > $d/one.json"
+        .. " && '{bin}' sim --import-c examples/foreign/fixtures/point.h > $d/two.json"
         .. " && cmp -s $d/one.json $d/two.json"
     bad += expect(isolated(stable),
         "S2: identical point imports rendered different bytes")
 
     call = row("duo:function:distance2")
     shape = row("duo:record:Point")
-    probe = "cd '{root}' && '{bin}' sim examples/pass4_native_milestone.id > $d/snap.json"
-        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/pass4_native_milestone.id\\\",\\\"entity_count\\\":3" $d/snap.json'
+    probe = "cd '{root}' && '{bin}' sim examples/native/milestone.id > $d/snap.json"
+        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/native/milestone.id\\\",\\\"entity_count\\\":3" $d/snap.json'
         .. ' && (' .. call .. ' | grep -F "\\\"origin\\\":{\\\"language\\\":\\\"duo\\\""'
         .. ' | grep -E "\\\"abi\\\":\\{\\\"calling.convention\\\":\\\"duo-native\\\""'
         .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"duo\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
         .. ' && (' .. shape .. ' | grep -F "\\\"storage_class\\\":\\\"native\\\""'
         .. ' | grep -q -F "\\\"contract\\\":{\\\"origin_language\\\":\\\"duo\\\",\\\"semantic_completeness\\\":\\\"complete\\\",\\\"abi_completeness\\\":\\\"complete\\\"")'
     bad += expect(isolated(probe),
-        "S3: native snapshot lost bounded identity, Duon origin, or native storage")
+        "S3: native snapshot lost bounded identity, Idol origin, or native storage")
 
-    stable = "cd '{root}' && '{bin}' sim examples/pass4_native_milestone.id > $d/one.json"
-        .. " && '{bin}' sim examples/pass4_native_milestone.id > $d/two.json"
+    stable = "cd '{root}' && '{bin}' sim examples/native/milestone.id > $d/one.json"
+        .. " && '{bin}' sim examples/native/milestone.id > $d/two.json"
         .. " && cmp -s $d/one.json $d/two.json"
     bad += expect(isolated(stable),
         "S4: identical native exports rendered different bytes")
 
     call = row("c:function:sum4")
     shape = row("c:record:CBigRect")
-    probe = "cd '{root}' && '{bin}' sim --import-c examples/pass5/fixtures/big_rect.h > $d/snap.json"
-        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/pass5/fixtures/big_rect.h\\\",\\\"entity_count\\\":2" $d/snap.json'
+    probe = "cd '{root}' && '{bin}' sim --import-c examples/foreign/fixtures/big_rect.h > $d/snap.json"
+        .. ' && grep -q -F "\\\"schema\\\":\\\"sim-v0\\\",\\\"file\\\":\\\"examples/foreign/fixtures/big_rect.h\\\",\\\"entity_count\\\":2" $d/snap.json'
         .. ' && (' .. call .. ' | grep -F "\\\"origin\\\":{\\\"language\\\":\\\"c\\\""'
         .. ' | grep -F "\\\"params\\\":[{\\\"name\\\":\\\"rect\\\",\\\"type\\\":\\\"CBigRect*\\\"}]"'
         .. ' | grep -F "\\\"abi\\\":{\\\"calling_convention\\\":\\\"c\\\",\\\"pass_by\\\":\\\"pointer\\\"}"'

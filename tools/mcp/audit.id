@@ -1,24 +1,39 @@
--- tools/mcp/mcp_audit.id — standalone native-boxing audit over the
--- metaprogramming showcases. Run from the repo root:
---   duo run tools/mcp/mcp_audit.id
+-- tools/mcp/audit.id  -  standalone native-boxing audit over canonical teaching
+-- surfaces. Run from the repo root:
+--   idol run tools/mcp/audit.id
 --
--- This duplicates duo_bench.id's `duo_audit_metaprogramming_smokes` tool and
+-- This duplicates bench.id's canonical teaching audit tool and
 -- nothing in the repo references it. It is kept only as a way to run that
 -- audit without an MCP client; it is a fair deletion candidate.
 --
 -- It carried three defects until 2026-08-08 and could not have run at all:
 -- `req "duo_shared"` (bare, so it resolved only with cwd = tools/mcp), plus
 -- unused `std.mcp` and `std.script` imports.
-shared = req "tools.mcp.shared"
+shared = req("tools.mcp.shared")
 
 paths = {
-    "examples/meta_template_showcase.id",
-    "examples/meta_generate_showcase.id",
-    "examples/meta_scheme_showcase.id",
-    "examples/meta_grammar_showcase.id",
-    "examples/meta_weave_showcase.id",
-    "examples/meta_power_permute_showcase.id",
-    "examples/meta_choose_showcase.id",
+    "examples/json/iteration.id",
+    "examples/boring/anagram.id",
+    "examples/boring/fizzbuzz.id",
+    "examples/boring/fib.id",
+    "examples/boring/primes.id",
+    "examples/boring/sort/quick.id",
+    "examples/boring/search/binary.id",
+    "examples/boring/mat/mul.id",
+    "examples/layout/guard.id",
+    "examples/layout/loop/body.id",
+    "examples/demand/result.id",
+    "examples/demand/swap.id",
+    "examples/demand/tail.id",
+    "examples/pack/consume.id",
+    "examples/projection/descriptor.id",
+    "examples/read/stream.id",
+    "examples/native/record.id",
+    "examples/hash/agreement.id",
+    "examples/control/default.id",
+    "examples/conversion/level.id",
+    "examples/table/str/split.id",
+    "examples/table/float/render.id",
 }
 passed = 0
 failed = 0

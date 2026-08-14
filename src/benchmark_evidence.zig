@@ -29,7 +29,7 @@ pub const EvidenceCounters = struct {
     return_pack_materializations: usize = 0,
     runtime_helpers: usize = 0,
     code_size_bytes: usize = 0,
-    /// Pass 34 L2 — fallback `.field` accesses (duo_fallback_get_* markers) + distinct
+    /// L2 — fallback `.field` accesses (duo_fallback_get_* markers) + distinct
     /// interned field IDs, surfaced in the L6 manifest emission section.
     fallback_field_accesses: usize = 0,
     interned_field_ids: usize = 0,

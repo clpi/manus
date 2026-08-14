@@ -10,12 +10,10 @@
 src = { 3, 5, 7, 11 }
 pos = 0
 pull = ()
-    pos = pos + 1
+    pos += 1
     src[pos]
-end
 small = (n) n < 7
 total = 0
 while b = pull() and small(b)
-    total = total + b
-end
+    total += b
 print("{total} {pos}")

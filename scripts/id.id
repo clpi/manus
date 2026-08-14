@@ -70,9 +70,9 @@ answer(path: str): str
         "DUO_SER=1 ./zig-out/bin/idol run {path} 2>/dev/null | tail -1"))
 
 row(name: str, got: str, want: str): void
-    rows = rows + 1
+    rows += 1
     if got == want
-        pass = pass + 1
+        pass += 1
         std.script.echo("  ok   {name}")
     if got != want
         std.script.echo("  FAIL {name}")
@@ -100,16 +100,16 @@ if algebra > 0
         if quarantine > 0
             control = 1
 
-rows = rows + 1
+rows += 1
 if control == 1
-    pass = pass + 1
+    pass += 1
     std.script.echo("  ok   scanner control: {quarantine} byte comparison(s) in the quarantine")
 if control == 0
     std.script.echo("  FAIL scanner control: the quarantine reads {quarantine} — the scan is blind, so the algebra's zero is unearned")
 
-rows = rows + 1
+rows += 1
 if leaked == 0
-    pass = pass + 1
+    pass += 1
     std.script.echo("  ok   algebra is id-native: 0 byte comparisons from `pub const Relation` down")
 if leaked != 0
     std.script.echo("  FAIL the text key is growing back: {leaked} byte comparison(s) in the algebra")

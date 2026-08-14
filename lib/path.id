@@ -63,7 +63,7 @@ extname(p: str): str
     ""
 end
 
-is_absolute(p: str): bool
+absolute(p: str): bool
     if p == nil or p == "" return false end
     p:sub(1, 1) == "/"
 end

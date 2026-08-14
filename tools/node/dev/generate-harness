@@ -180,7 +180,7 @@ Not whole-corpus closure — new debt on touched lines must be zero:
 - std.* renamed to another namespace without semantic decomposition
 - [[ ... ]] on touched canonical lines — compatibility debt
 
-Run: git diff -U0 -- '*.id' | ./zig-out/bin/idol run scripts/idiomgate.id
+Run: git diff -U0 -- '*.id' | ./zig-out/bin/idol run gate/idiom.id
 
 ---
 

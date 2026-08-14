@@ -36,19 +36,18 @@ must(cmd: str): void
     end
 end
 
-# The wrapper is Duo (RL-13); scripts/duo_lock.sh is deleted. `idol run x.id #
-# cmd` consumes the first `--` itself, so the wrapper never sees a separator
-# and none is passed here.
-    lock_cmd(cmd: str): str
-    idol_bin() .. " run scripts/duo_lock.id -- " .. cmd
+# Lock wrapper: `idol run scripts/idol_lock.id -- cmd` — the lock script consumes
+# the first `--` itself, so the wrapper never passes a separator through.
+lock_cmd(cmd: str): str
+    idol_bin() .. " run scripts/idol_lock.id -- " .. cmd
 end
 
 lock_cmd_timeout(cmd: str, timeout: i64): str
-    idol_bin() .. " run scripts/duo_lock.id -- --timeout " .. timeout:to(str) .. " -- " .. cmd
+    idol_bin() .. " run scripts/idol_lock.id -- --timeout " .. timeout:to(str) .. " -- " .. cmd
 end
 
 locked_run(cmd: str): i64
-    if getenv_or("DUO_LOCK_HELD") == "1"
+    if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
         return run(cmd)
     end
     run(lock_cmd(cmd))
@@ -66,9 +65,9 @@ locked_must_timeout(cmd: str, timeout: i64): void
     must(lock_cmd_timeout(cmd, timeout))
 end
 
-# Native build mutex (mkdir + stale-PID reclaim). Used by scripts/duo_lock.id.
+# Native build mutex (mkdir + stale-PID reclaim). Used by scripts/idol_lock.id.
 build_lock_dir(): str
-    getenv("DUO_BUILD_LOCK", "/tmp/duo-build.lock")
+    getenv("IDOL_BUILD_LOCK", getenv("DUO_BUILD_LOCK", "/tmp/idol-lock"))
 end
 
 build_lock_owner(): str
@@ -100,7 +99,7 @@ build_lock_release(): void
 end
 
 build_lock_acquire(timeout: i64): bool
-    if getenv_or("DUO_LOCK_HELD") == "1"
+    if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
         return true
     end
     waited = 0
@@ -118,7 +117,7 @@ build_lock_acquire(timeout: i64): bool
         end
         run(cmd)
         if not stale_now
-            waited = waited + 2
+            waited += 2
         end
     end
     false
@@ -194,7 +193,7 @@ end
 # mutate its parent's environment. `must` only checks export's exit status,
 # which is always 0 # so every caller got a success it never received.
 #
-# What it broke, measured: scripts/duo_lock.id publishes DUO_LOCK_HELD=1 so a
+# What it broke, measured: scripts/idol_lock.id publishes IDOL_LOCK_HELD=1 so a
 # nested locked_run inside the wrapped command takes the early-return in
 # build_lock_acquire instead of re-acquiring a lock this process already holds.
 # With the no-op that variable never reached the child, so any nesting would
@@ -335,7 +334,7 @@ end
 chomp(s: str): str
     n = s:len()
     while n > 0 and s:byte(n) == 10
-        n = n - 1
+        n -= 1
     end
     s:sub(1, n)
 end

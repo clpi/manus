@@ -1,0 +1,37 @@
+# EVIDENCE-SUBJECT-ONE - file facts ratchet (GAP-154 bootstrap).
+# subject revision: 29f62035
+# evidence revision: 59093d7b
+
+look: bool = (path: str, pattern: str)
+    body = path:read()
+    body:has(pattern)
+
+need: i64 = (path: str, tag: str, pattern: str)
+    if look(path, pattern)
+        print("  ok   {tag}")
+        return 0
+    print("  miss {tag}")
+    1
+
+main: i64 = ()
+    print("ledger/evidence")
+    fail = 0
+    if need("evidence/EVIDENCE_BUNDLE.md", "subject 29f62035", "29f62035")
+        fail = 1
+    if need("evidence/EVIDENCE_BUNDLE.md", "evidence 59093d7b", "59093d7b")
+        fail = 1
+    if need("evidence/EVIDENCE_BUNDLE.md", "FTCFTW not proven", "FTCFTW complete proof: NOT PROVEN")
+        fail = 1
+    if need("evidence/EVIDENCE_BUNDLE.md", "no compiler B", "No compiler B")
+        fail = 1
+    if need(".agents/TECH_DEBT_WORKSTREAM.md", "compass subject", "29f62035")
+        fail = 1
+    if need("docs/bootstrap.md", "frontier evidence revision", "59093d7b")
+        fail = 1
+    if need("docs/bootstrap.md", "tokenize production route", "tokenize()")
+        fail = 1
+    if fail
+        print("ledger/evidence: FAIL")
+    if !fail
+        print("ledger/evidence: PASS subject 29f62035 / evidence 59093d7b")
+    fail

@@ -1,4 +1,4 @@
-# The capability matrix — Pass 100 §22's "Running: nothing", replaced by a
+# The capability matrix — the "Running: nothing" answer, replaced by a
 # measurement.
 #
 # §22 used to answer the question "what works?" with a Boolean: implemented or
@@ -94,16 +94,16 @@ probepath = "/tmp/duo-capability-matrix/probe.sh"
 recordpath = "/tmp/duo-capability-matrix/records.tsv"
 listpath = "/tmp/duo-capability-matrix/files.list"
 
-ndescribed = 0
-nparsed = 0
-nchecked = 0
-ncpath = 0
-nnative = 0
-nproven = 0
-ncanonical = 0
-nnoentry = 0
-nundescribed = 0
-ntotal = 0
+countsd = 0
+countsp = 0
+countsc = 0
+countspc = 0
+countsn = 0
+countspr = 0
+countsca = 0
+countsnentry = 0
+countsund = 0
+countstotal = 0
 
 topcanon = 0
 topproven = 0
@@ -111,8 +111,8 @@ topnative = 0
 topnoentry = 0
 topbail = 0
 topchecked = 0
-topparsed = 0
-topdescribed = 0
+countsptop = 0
+countstopt = 0
 topnone = 0
 
 inversions = ""
@@ -378,7 +378,7 @@ main: i64 = ()
     end
 
     print("")
-    print("  Pass 100 §22 — capability matrix over {root}/ (compile_fail excluded)")
+    print("  capability matrix over {root}/ (compile_fail excluded)")
     print("")
     print("  RUNG POPULATION — programs reaching each rung, measured independently")
     rung("described    ", ndescribed, ntotal)

@@ -62,7 +62,7 @@ marshal(v: any): str
         else
             # object
             keys = {}
-            for mk in v do
+            for mk in v
                 if type(mk) == "string"
                     keys[keys:len() + 1] = mk
                 end
@@ -313,7 +313,7 @@ parse_value(p: any): any
             end
         end
         num_str = p.s:sub(start, p.pos - 1)
-        nv = tonumber(num_str)
+        nv = num_str:to(i64)
         if nv == nil
             p.err = "invalid number"
             return nil

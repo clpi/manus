@@ -24,21 +24,14 @@ token: {
     span: i64
 }
 
-main: i64 = ()
-    n = 0
-    k = token.kind.eof
-    if k == token.kind.eof
-        n = n + 1
-    end
-    if k == token.kind.number
-        n = n + 100
-    end
-    if token.kind.number == token.kind.number
-        n = n + 8
-    end
-    if token.kind.name == token.kind.symbol
-        n = n + 400
-    end
-    print("{n}")
-    0
-end
+n = 0
+k = token.kind.eof
+if k == token.kind.eof
+    n += 1
+if k == token.kind.number
+    n += 100
+if token.kind.number == token.kind.number
+    n += 8
+if token.kind.name == token.kind.symbol
+    n += 400
+print("{n}")

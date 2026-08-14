@@ -6,7 +6,7 @@
 # parser uses.
 #
 # HOW IT IS CHECKED, and why that matters more than the code. The expected
-# values in examples/pass16_comptime_proof.id are not numbers I typed — each
+# values in the comptime proof are not numbers I typed — each
 # is the SAME expression, written in Duo, evaluated by the host compiler:
 #
 #     check("2 + 3 * 4", 2 + 3 * 4)
@@ -190,9 +190,9 @@ _addsub: i64 = ()
     left: i64 = _term()
     while true
         if _eat(43, 0)
-            left = left + _term()
+            left += _term()
         elseif _eat(45, 0)
-            left = left - _term()
+            left -= _term()
         else
             return left
         end
@@ -237,7 +237,7 @@ end
 _expr: i64 = ()
     left: i64 = _bxor()
     while _eat(124, 0)
-        left = left | _bxor()
+        left |= _bxor()
     end
     left
 end

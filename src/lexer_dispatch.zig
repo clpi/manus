@@ -2,7 +2,7 @@
 //!
 //! This is the seam `lexer_bridge.tokenizeAuthority()` switches on. It binds
 //! `duo_lexer_tokenize_full` from the artifact built out of
-//! `lib/std/compiler/host.id` and rebuilds host `Token`s from the flat record
+//! `lib/compiler/host.id` and rebuilds host `Token`s from the flat record
 //! buffer, so the compiler can tokenize through Idol instead of `src/lexer.zig`.
 //!
 //! WHY `tokenize_full` AND NOT `tokenize_text`: `tokenize_text` writes six i64
@@ -17,15 +17,29 @@
 //! which is the path that initializes correctly.
 const std = @import("std");
 const lexer = @import("lexer.zig");
+const lexer_bridge = @import("lexer_bridge.zig");
 
-/// Temporary physical width of `duo_lexer_tokenize_full` records:
-/// 0 kind · 1 line · 2 col · 3 int_val · 4 source_off · 5 text_len · 6 float_val.
-/// GAP-107 deletes this host constant once the producer projects its schema.
-pub const RECORD_SLOTS: usize = 7;
+/// Producer schema queries (`law.schema.one`, `law.magic.zero`).
+/// The host must not independently know slot positions, rejection codes, or
+/// token kind ordinals. Query these facts instead of hardcoding.
+extern fn recordslots() i64;
+extern fn fieldkind() i64;
+extern fn fieldline() i64;
+extern fn fieldcol() i64;
+extern fn fieldint() i64;
+extern fn fieldoff() i64;
+extern fn fieldlen() i64;
+extern fn fieldfloat() i64;
+extern fn rejectioncount() i64;
+extern fn rejectioncode(i: i64) i64;
+extern fn rejectionname(code: i64) [*:0]const u8;
+extern fn kindcount() i64;
+extern fn kindname(i: i64) [*:0]const u8;
 
 extern fn duo_lexer_tokenize_full(
     src: [*:0]const u8,
     file: [*:0]const u8,
+    family: i64,
     out: [*]i64,
     cap: i64,
     txt: i64,
@@ -33,9 +47,8 @@ extern fn duo_lexer_tokenize_full(
 ) i64;
 
 /// GAP-017 closed: the Idol lexer returns a REJECTION rather than aborting the
-/// process. Negative returns are offset by 100 so they cannot be confused with
-/// -1 (buffer too small), and the codes mirror `lexer.LexError`'s order.
-extern fn duo_lexer_error_line(src: [*:0]const u8, file: [*:0]const u8) i64;
+/// process. Host queries rejection identity by name, not magic code.
+extern fn duo_lexer_error_line(src: [*:0]const u8, file: [*:0]const u8, family: i64) i64;
 
 pub const DispatchError = error{
     BufferTooSmall,
@@ -53,128 +66,266 @@ pub const DispatchError = error{
 
 /// Line of a source rejection. An invalid diagnostic record is an ABI failure,
 /// not a fabricated source location.
-pub fn errorLine(src: [:0]const u8, file: [:0]const u8) error{InvalidTokenLocation}!u32 {
-    const line = duo_lexer_error_line(src.ptr, file.ptr);
+pub fn errorLine(src: [:0]const u8, file: [:0]const u8, family: i64) error{InvalidTokenLocation}!u32 {
+    const line = duo_lexer_error_line(src.ptr, file.ptr, family);
     if (line <= 0) return error.InvalidTokenLocation;
     return std.math.cast(u32, line) orelse error.InvalidTokenLocation;
 }
 
-fn lexErrorFromCode(code: i64) DispatchError {
-    return switch (code) {
-        -101 => lexer.LexError.UnterminatedString,
-        -102 => lexer.LexError.UnterminatedLongString,
-        -103 => lexer.LexError.InvalidEscape,
-        -104 => lexer.LexError.UnexpectedChar,
-        -105 => lexer.LexError.InsufficientIndent,
-        else => DispatchError.InvalidRejectionCode,
-    };
+fn rejectionNameToError(name: [*:0]const u8) ?lexer.LexError {
+    const name_slice = std.mem.span(name);
+    if (std.mem.eql(u8, name_slice, "UnterminatedString")) return error.UnterminatedString;
+    if (std.mem.eql(u8, name_slice, "UnterminatedLongString")) return error.UnterminatedLongString;
+    if (std.mem.eql(u8, name_slice, "InvalidEscape")) return error.InvalidEscape;
+    if (std.mem.eql(u8, name_slice, "UnexpectedChar")) return error.UnexpectedChar;
+    if (std.mem.eql(u8, name_slice, "InsufficientIndent")) return error.InsufficientIndent;
+    return null;
 }
 
-fn tokenKindFromOrdinal(raw: i64) ?lexer.TokenKind {
-    const enum_info = @typeInfo(lexer.TokenKind).@"enum";
-    comptime {
-        for (enum_info.field_values, 0..) |value, ordinal| {
-            if (value != ordinal) @compileError("TokenKind ABI requires contiguous ordinals");
-        }
+fn kindFromName(name: [*:0]const u8) ?lexer.TokenKind {
+    const s = std.mem.span(name);
+    if (s.len == 0) return null;
+    if (std.meta.stringToEnum(lexer.TokenKind, s)) |k| {
+        if (k == .string_lit) return null;
+        return k;
     }
-    if (raw < 0 or raw >= enum_info.field_names.len) return null;
-    return @enumFromInt(@as(enum_info.tag_type, @intCast(raw)));
+    var buf: [32]u8 = undefined;
+    const prefixed = std.fmt.bufPrint(&buf, "kw_{s}", .{s}) catch return null;
+    if (std.meta.stringToEnum(lexer.TokenKind, prefixed)) |k| return k;
+    if (std.mem.eql(u8, s, "long_text_lit")) return .compat_long_text_lit;
+    return null;
+}
+
+fn producer(name: []const u8) i64 {
+    var i: i64 = 0;
+    while (i < kindcount()) : (i += 1) {
+        if (std.mem.eql(u8, std.mem.span(kindname(i)), name)) return i;
+    }
+    return -1;
+}
+
+
+
+/// SCHEMA-ONE hot path: producer `kindname(i)` binds to host identity once.
+/// Per-token `kindFromName(kindname(raw))` is a string compare on every
+/// record. Deleting `bindKindSchema` / `kind_at_name` is a compile failure
+/// in the bind-once test and an SHC fail.
+var kind_at_name: [256]?lexer.TokenKind = @splat(null);
+var kind_bound = false;
+
+fn bindKindSchema() void {
+    if (kind_bound) return;
+    const n = kindcount();
+    if (n <= 0 or n > kind_at_name.len) return;
+    var i: i64 = 0;
+    while (i < n) : (i += 1) {
+        kind_at_name[@intCast(i)] = kindFromName(kindname(i));
+    }
+    kind_bound = true;
+}
+
+fn kindFromRecord(raw: i64) DispatchError!lexer.TokenKind {
+    if (!kind_bound) return DispatchError.InvalidTokenKind;
+    if (raw < 0 or raw >= kind_at_name.len) return DispatchError.InvalidTokenKind;
+    return kind_at_name[@intCast(raw)] orelse DispatchError.InvalidTokenKind;
+}
+
+fn slot(pos: i64, slots: usize) DispatchError!usize {
+    const i = std.math.cast(usize, pos) orelse return DispatchError.InvalidRecordCount;
+    if (i >= slots) return DispatchError.InvalidRecordCount;
+    return i;
+}
+
+/// Producer record layout binds once (`law.schema.one`). `recordslots()` and
+/// `field*()` are the same seven facts on every call; querying them per
+/// tokenize is seven extra foreign calls on the compile hot path.
+var record_slots: usize = 0;
+var at_kind: usize = 0;
+var at_line: usize = 0;
+var at_col: usize = 0;
+var at_int: usize = 0;
+var at_off: usize = 0;
+var at_len: usize = 0;
+var at_float: usize = 0;
+var record_bound = false;
+
+fn bindRecordSchema() DispatchError!void {
+    if (record_bound) return;
+    const slots = std.math.cast(usize, recordslots()) orelse return DispatchError.InvalidRecordCount;
+    if (slots == 0) return DispatchError.InvalidRecordCount;
+    const kind = try slot(fieldkind(), slots);
+    const line = try slot(fieldline(), slots);
+    const col = try slot(fieldcol(), slots);
+    const intv = try slot(fieldint(), slots);
+    const off = try slot(fieldoff(), slots);
+    const len = try slot(fieldlen(), slots);
+    const flt = try slot(fieldfloat(), slots);
+    at_kind = kind;
+    at_line = line;
+    at_col = col;
+    at_int = intv;
+    at_off = off;
+    at_len = len;
+    at_float = flt;
+    record_slots = slots;
+    record_bound = true;
 }
 
 fn decodeRecords(
     allocator: std.mem.Allocator,
-    src: [:0]const u8,
-    file: [:0]const u8,
+    src: []const u8,
+    file: []const u8,
     records: []const i64,
     record_count: i64,
 ) DispatchError![]lexer.Token {
+    try bindRecordSchema();
+    bindKindSchema();
+    if (!kind_bound) return DispatchError.InvalidTokenKind;
+    const slots = record_slots;
+    const kind_at = at_kind;
+    const line_at = at_line;
+    const col_at = at_col;
+    const int_at = at_int;
+    const off_at = at_off;
+    const len_at = at_len;
+    const float_at = at_float;
+
     const count = std.math.cast(usize, record_count) orelse return DispatchError.InvalidRecordCount;
     if (count == 0) return DispatchError.InvalidRecordCount;
-    const used_slots = std.math.mul(usize, count, RECORD_SLOTS) catch
+    const used_slots = std.math.mul(usize, count, slots) catch
         return DispatchError.InvalidRecordCount;
     if (used_slots > records.len) return DispatchError.InvalidRecordCount;
 
     const tokens = try allocator.alloc(lexer.Token, count);
-    errdefer allocator.free(tokens);
-
-    for (tokens, 0..) |*tok, i| {
-        const r = records[i * RECORD_SLOTS ..][0..RECORD_SLOTS];
-        const kind = tokenKindFromOrdinal(r[0]) orelse
-            return DispatchError.InvalidTokenKind;
-        const line = std.math.cast(u32, r[1]) orelse
-            return DispatchError.InvalidTokenLocation;
-        const col = std.math.cast(u32, r[2]) orelse
-            return DispatchError.InvalidTokenLocation;
-        if (line == 0 or col == 0) return DispatchError.InvalidTokenLocation;
-        if (r[4] < 0 or r[5] < 0) return DispatchError.InvalidSourceSpan;
-        const off = std.math.cast(usize, r[4]) orelse return DispatchError.InvalidSourceSpan;
-        const len = std.math.cast(usize, r[5]) orelse return DispatchError.InvalidSourceSpan;
-        if (off > src.len or len > src.len - off) return DispatchError.InvalidSourceSpan;
-        const final = i + 1 == count;
-        if (kind == .eof) {
-            if (!final or len != 0) return DispatchError.InvalidEndToken;
-            // Generated C publishes end-of-content offset against strlen; dispatch
-            // passes a NUL-terminated copy whose .len includes the sentinel.
-            const end_ok = off == src.len or (src.len > 0 and off + 1 == src.len and src[src.len - 1] == 0);
-            if (!end_ok) return DispatchError.InvalidEndToken;
-        } else if (final) {
-            return DispatchError.InvalidEndToken;
-        }
-
-        tok.* = .{
-            .kind = kind,
-            .loc = .{ .file = file, .line = line, .col = col },
-            .text = src[off .. off + len],
-            .int_val = r[3],
-            .float_val = @bitCast(r[6]),
+    var rec = records;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const r = rec[0..slots];
+        rec = rec[slots..];
+        const tok = tokenFromRecord(
+            r,
+            src,
+            file,
+            kind_at,
+            line_at,
+            col_at,
+            int_at,
+            off_at,
+            len_at,
+            float_at,
+            i + 1 == count,
+        ) catch |e| {
+            allocator.free(tokens);
+            return e;
         };
+        tokens[i] = tok;
     }
     return tokens;
 }
 
+fn tokenFromRecord(
+    r: []const i64,
+    src: []const u8,
+    file: []const u8,
+    kind_at: usize,
+    line_at: usize,
+    col_at: usize,
+    int_at: usize,
+    off_at: usize,
+    len_at: usize,
+    float_at: usize,
+    final: bool,
+) DispatchError!lexer.Token {
+    const kind = try kindFromRecord(r[kind_at]);
+    const line = std.math.cast(u32, r[line_at]) orelse
+        return DispatchError.InvalidTokenLocation;
+    const col = std.math.cast(u32, r[col_at]) orelse
+        return DispatchError.InvalidTokenLocation;
+    if (line == 0 or col == 0) return DispatchError.InvalidTokenLocation;
+    if (r[off_at] < 0 or r[len_at] < 0) return DispatchError.InvalidSourceSpan;
+    const off = std.math.cast(usize, r[off_at]) orelse return DispatchError.InvalidSourceSpan;
+    const len = std.math.cast(usize, r[len_at]) orelse return DispatchError.InvalidSourceSpan;
+    if (off > src.len or len > src.len - off) return DispatchError.InvalidSourceSpan;
+    if (kind == .eof) {
+        if (!final or len != 0) return DispatchError.InvalidEndToken;
+        const end_ok = off == src.len or (src.len > 0 and off + 1 == src.len and src[src.len - 1] == 0);
+        if (!end_ok) return DispatchError.InvalidEndToken;
+    } else if (final) {
+        return DispatchError.InvalidEndToken;
+    }
+    return .{
+        .kind = kind,
+        .loc = .{ .file = file, .line = line, .col = col },
+        .text = src[off .. off + len],
+        .int_val = r[int_at],
+        .float_val = @bitCast(r[float_at]),
+    };
+}
+
 /// Tokenize `src` through the Idol lexer, returning host `Token`s.
 ///
-/// `text` slices point into `src`, using source offsets published by  the Idol
+/// `text` slices point into `view`, using source offsets published by the Idol
 /// lexer. The host does not reconstruct provenance from copied token bytes.
+/// `csrc`/`cfile` are the sentinel forms the generated-C entry requires;
+/// `view`/`name` are the caller-owned spans tokens must observe.
 pub fn tokenize(
     allocator: std.mem.Allocator,
     src: [:0]const u8,
     file: [:0]const u8,
+    family: i64,
 ) DispatchError![]lexer.Token {
     if (std.mem.indexOfScalar(u8, src, 0) != null or
         std.mem.indexOfScalar(u8, file, 0) != null)
         return DispatchError.EmbeddedNul;
+    return tokenizeTrusted(allocator, src, file, src, file, family);
+}
 
-    // One record per byte is a safe upper bound: every token consumes at least
-    // one source byte, plus one for the terminating EOF. Sized rather than
-    // guessed, so a short read can never masquerade as a short file.
-    const cap = std.math.add(usize, src.len, 2) catch return DispatchError.SourceTooLarge;
-    const slot_count = std.math.mul(usize, cap, RECORD_SLOTS) catch
-        return DispatchError.SourceTooLarge;
-    const cap_i64 = std.math.cast(i64, cap) orelse return DispatchError.SourceTooLarge;
-    const records = try allocator.alloc(i64, slot_count);
-    defer allocator.free(records);
+fn tokenizeTrusted(
+    allocator: std.mem.Allocator,
+    csrc: [:0]const u8,
+    cfile: [:0]const u8,
+    view: []const u8,
+    name: []const u8,
+    family: i64,
+) DispatchError![]lexer.Token {
+    try bindRecordSchema();
+    const slots = record_slots;
+    const max_tokens = std.math.add(usize, view.len, 2) catch return DispatchError.SourceTooLarge;
+    // Dense operator streams (`a+b+c`) exceed `len/4` tokens. First-fit
+    // `len/2+16` avoids a full re-lex on typical source; the loop still
+    // doubles to `len+2` on the cold BufferTooSmall path.
+    var cap: usize = view.len / 2 + 16;
+    if (cap > max_tokens) cap = max_tokens;
+    if (cap < 8) cap = @min(@as(usize, 8), max_tokens);
 
-    const n = duo_lexer_tokenize_full(
-        src.ptr,
-        file.ptr,
-        records.ptr,
-        cap_i64,
-        0,
-        0,
-    );
-    if (n == -1) return DispatchError.BufferTooSmall;
-    // A malformed source is a rejection the caller reports, not a truncated
-    // stream — a short read that looks like a short file is the one failure a
-    // parser cannot detect.
-    if (n < 0) return lexErrorFromCode(n);
-
-    // GAP-022's first repair copied every token into an arena, then searched
-    // the source for that copy. That preserved parser pointer arithmetic but
-    // left source provenance as host reconstruction. Slot 4 is now the exact
-    // zero-based text offset decided by the Idol lexer. Reject an impossible
-    // span instead of silently falling back to copied bytes.
-    return decodeRecords(allocator, src, file, records, n);
+    while (true) {
+        const slot_count = std.math.mul(usize, cap, slots) catch
+            return DispatchError.SourceTooLarge;
+        const cap_i64 = std.math.cast(i64, cap) orelse return DispatchError.SourceTooLarge;
+        const records = try allocator.alloc(i64, slot_count);
+        const n = duo_lexer_tokenize_full(
+            csrc.ptr,
+            cfile.ptr,
+            family,
+            records.ptr,
+            cap_i64,
+            0,
+            0,
+        );
+        if (n == -1) {
+            allocator.free(records);
+            if (cap >= max_tokens) return DispatchError.BufferTooSmall;
+            const doubled = std.math.mul(usize, cap, 2) catch max_tokens;
+            cap = @min(doubled, max_tokens);
+            continue;
+        }
+        defer allocator.free(records);
+        if (n < 0) {
+            const name_err = rejectionname(n);
+            return rejectionNameToError(name_err) orelse DispatchError.InvalidRejectionCode;
+        }
+        return decodeRecords(allocator, view, name, records, n);
+    }
 }
 
 /// Drive `lex` from the Idol lexer's token stream instead of the host scanner.
@@ -191,48 +342,80 @@ pub fn tokenize(
 /// production fallback: resource pressure must not silently restore host
 /// lexical authority.
 ///
+/// Sentinel view for the generated-C `strlen` ABI. Fits in `buf` with no
+/// heap; otherwise one heap copy. Tokens still observe the caller `src`.
+const SentinelCopy = struct {
+    z: [:0]const u8,
+    heap: ?[:0]u8,
+};
+
+fn copySentinel(alloc: std.mem.Allocator, src: []const u8, buf: []u8) DispatchError!SentinelCopy {
+    if (src.len < buf.len) {
+        @memcpy(buf[0..src.len], src);
+        buf[src.len] = 0;
+        return .{ .z = buf[0..src.len :0], .heap = null };
+    }
+    const heap = std.mem.concatWithSentinel(alloc, u8, &.{src}, 0) catch
+        return DispatchError.OutOfMemory;
+    return .{ .z = heap, .heap = heap };
+}
+
 /// The token pack outlives `lex`. The NUL-terminated source and file copies are
-/// needed only for the generated-C call; every token view is rebased to the
-/// caller-owned source and file before those copies are released.
+/// needed only for the generated-C call (`strlen` ABI). Decode writes views
+/// into the caller-owned source and file — no rebase walk after tokenize.
+/// Typical files and every path fit in the stack buffers; heap only when
+/// source exceeds that.
 pub fn route(
     alloc: std.mem.Allocator,
     lex: *lexer.Lexer,
     src: []const u8,
     file: []const u8,
 ) !void {
-    const bridge = @import("lexer_bridge.zig");
-    const zsrc = try std.mem.concatWithSentinel(alloc, u8, &.{src}, 0);
-    defer alloc.free(zsrc);
-    const zfile = try std.mem.concatWithSentinel(alloc, u8, &.{file}, 0);
-    defer alloc.free(zfile);
+    if (std.mem.indexOfScalar(u8, src, 0) != null or
+        std.mem.indexOfScalar(u8, file, 0) != null)
+        return DispatchError.EmbeddedNul;
 
-    // GAP-145: tracked `lexer_tokenize.c` is stale on `#` comment skip and
-    // KIND_EOF ordinals for canonical `.id`. Host scanner owns `.id` admission
-    // until regeneration from `lib/std/compiler/host.id`.
-    const toks: []lexer.Token = if (bridge.isIdolSourcePath(file))
-        try tokenizeHost(alloc, zsrc, zfile)
-    else
-        tokenize(alloc, zsrc, zfile) catch |e| switch (e) {
+    var src_buf: [32768]u8 = undefined;
+    var file_buf: [512]u8 = undefined;
+    const src_copy = try copySentinel(alloc, src, &src_buf);
+    const file_copy = copySentinel(alloc, file, &file_buf) catch |e| {
+        if (src_copy.heap) |p| alloc.free(p);
+        return e;
+    };
+    const zsrc = src_copy.z;
+    const zfile = file_copy.z;
+
+    // Production tokens come from the Idol lexer. Family is the operand already
+    // on `lex` — do not re-parse the path here (`law.family.one`).
+    const family = lex.family;
+    const toks: []lexer.Token = tokenizeTrusted(alloc, zsrc, zfile, src, file, family) catch |e| {
+        switch (e) {
             error.UnterminatedString,
             error.UnterminatedLongString,
             error.InvalidNumber,
             error.UnexpectedChar,
             error.InvalidEscape,
+            error.InsufficientIndent,
             => {
-                lex.last_error_loc = .{ .file = file, .line = try errorLine(zsrc, zfile), .col = 1 };
-                return e;
+                const line = errorLine(zsrc, zfile, family) catch |le| {
+                    if (src_copy.heap) |p| alloc.free(p);
+                    if (file_copy.heap) |p| alloc.free(p);
+                    return le;
+                };
+                lex.last_error_loc = .{ .file = file, .line = line, .col = 1 };
             },
-            else => return e,
-        };
-    errdefer alloc.free(toks);
-    for (toks) |*tok| {
-        tok.loc.file = file;
-        if (tok.text.len == 0) continue;
-        const off = @intFromPtr(tok.text.ptr) - @intFromPtr(zsrc.ptr);
-        std.debug.assert(off + tok.text.len <= src.len);
-        tok.text = src[off .. off + tok.text.len];
-    }
-    try lex.useDuoTokens(toks);
+            else => {},
+        }
+        if (src_copy.heap) |p| alloc.free(p);
+        if (file_copy.heap) |p| alloc.free(p);
+        return e;
+    };
+    if (src_copy.heap) |p| alloc.free(p);
+    if (file_copy.heap) |p| alloc.free(p);
+    lex.useDuoTokens(toks) catch |e| {
+        alloc.free(toks);
+        return e;
+    };
 }
 
 /// Tokenize `src` with the HOST lexer — the differential's other side.
@@ -240,12 +423,13 @@ fn tokenizeHost(
     allocator: std.mem.Allocator,
     src: [:0]const u8,
     file: [:0]const u8,
+    family: i64,
 ) ![]lexer.Token {
-    var lx = lexer.Lexer.init(src, file);
+    var lx = lexer.Lexer.initFamily(src, file, family);
     var out: std.ArrayList(lexer.Token) = .empty;
     errdefer out.deinit(allocator);
     while (true) {
-        const tok = try lx.next();
+        const tok = try lx.next_tok();
         try out.append(allocator, tok);
         if (tok.kind == .eof) break;
     }
@@ -259,11 +443,16 @@ fn tokenizeHost(
 /// separately, text). Neither reads `int_val` or `float_val`, which is how
 /// GAP-021 survived — every float literal lexed to its integer part while all
 /// gates stayed green. This compares the whole record.
-pub fn differential(allocator: std.mem.Allocator, src: [:0]const u8, file: [:0]const u8) !void {
-    const host = try tokenizeHost(allocator, src, file);
+pub fn differential(
+    allocator: std.mem.Allocator,
+    src: [:0]const u8,
+    file: [:0]const u8,
+    family: i64,
+) !void {
+    const host = try tokenizeHost(allocator, src, file, family);
     defer allocator.free(host);
 
-    const idol = try tokenize(allocator, src, file);
+    const idol = try tokenize(allocator, src, file, family);
     defer allocator.free(idol);
 
     if (host.len != idol.len) return error.TokenCountMismatch;
@@ -277,12 +466,68 @@ pub fn differential(allocator: std.mem.Allocator, src: [:0]const u8, file: [:0]c
     }
 }
 
+test "lexer_dispatch: kind identity binds producer names once" {
+    bindKindSchema();
+    try bindRecordSchema();
+    try std.testing.expect(kind_bound);
+    try std.testing.expect(record_bound);
+    try std.testing.expect(record_slots > 0);
+    try std.testing.expect(at_kind < record_slots);
+    const eof_i = producer("eof");
+    try std.testing.expect(eof_i >= 0);
+    try std.testing.expectEqual(lexer.TokenKind.eof, kind_at_name[@intCast(eof_i)].?);
+    try std.testing.expectEqual(lexer.TokenKind.eof, try kindFromRecord(eof_i));
+    try std.testing.expectEqual(lexer.TokenKind.compat_long_text_lit, try kindFromRecord(producer("long_text_lit")));
+    try std.testing.expectEqual(lexer.TokenKind.shebang, try kindFromRecord(producer("shebang")));
+    try std.testing.expectEqual(lexer.TokenKind.comment, try kindFromRecord(producer("comment")));
+    try std.testing.expectError(DispatchError.InvalidTokenKind, kindFromRecord(-1));
+}
+
+test "lexer_dispatch: record fields are producer positions" {
+    const slots = recordslots();
+    try std.testing.expect(slots > 0);
+    const positions = [_]i64{
+        fieldkind(), fieldline(), fieldcol(), fieldint(),
+        fieldoff(), fieldlen(), fieldfloat(),
+    };
+    var seen: [16]bool = undefined;
+    inline for (0..16) |j| seen[j] = false;
+    for (positions) |pos| {
+        try std.testing.expect(pos >= 0 and pos < slots);
+        const i: usize = @intCast(pos);
+        try std.testing.expect(!seen[i]);
+        seen[i] = true;
+    }
+    const kinds = kindcount();
+    try std.testing.expect(kinds > 0);
+    var k: i64 = 0;
+    var published: i64 = 0;
+    while (k < kinds) : (k += 1) {
+        const name = std.mem.span(kindname(k));
+        if (name.len == 0) {
+            try std.testing.expect(kindFromName(kindname(k)) == null);
+            continue;
+        }
+        try std.testing.expect(kindFromName(kindname(k)) != null);
+        published += 1;
+    }
+    try std.testing.expect(published == kinds - 1);
+    try std.testing.expect(producer("string_lit") < 0);
+    bindKindSchema();
+    try std.testing.expectError(DispatchError.InvalidTokenKind, kindFromRecord(3));
+    try std.testing.expect(rejectioncount() > 0);
+    const last = rejectioncode(rejectioncount());
+    try std.testing.expectEqualStrings("InsufficientIndent", std.mem.span(rejectionname(last)));
+    try std.testing.expectEqual(lexer.LexError.InsufficientIndent, rejectionNameToError(rejectionname(last)).?);
+    try std.testing.expect(rejectionNameToError(rejectionname(-199)) == null);
+}
+
 test "lexer_dispatch: malformed generated records fail closed" {
     const a = std.testing.allocator;
     const source: [:0]const u8 = "";
     const file: [:0]const u8 = "record.id";
     var record = [_]i64{
-        @intFromEnum(lexer.TokenKind.eof),
+        producer("eof"),
         1,
         1,
         0,
@@ -305,12 +550,12 @@ test "lexer_dispatch: malformed generated records fail closed" {
         decodeRecords(a, "x", file, &record, 1),
     );
     record[5] = 0;
-    record[0] = @intFromEnum(lexer.TokenKind.name);
+    record[0] = producer("name");
     try std.testing.expectError(
         DispatchError.InvalidEndToken,
         decodeRecords(a, source, file, &record, 1),
     );
-    record[0] = @intFromEnum(lexer.TokenKind.eof);
+    record[0] = producer("eof");
 
     try std.testing.expectError(
         DispatchError.InvalidRecordCount,
@@ -339,7 +584,7 @@ test "lexer_dispatch: malformed generated records fail closed" {
         DispatchError.InvalidTokenKind,
         decodeRecords(a, source, file, &record, 1),
     );
-    record[0] = @intFromEnum(lexer.TokenKind.eof);
+    record[0] = producer("eof");
 
     record[1] = -1;
     try std.testing.expectError(
@@ -388,18 +633,32 @@ test "lexer_dispatch: malformed generated records fail closed" {
         decodeRecords(a, source, file, &record, 1),
     );
 
-    try std.testing.expectEqual(
-        DispatchError.InvalidRejectionCode,
-        lexErrorFromCode(-105),
-    );
-
     var premature = [_]i64{
-        @intFromEnum(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0,
-        @intFromEnum(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0,
+        producer("eof"), 1, 1, 0, 0, 0, 0,
+        producer("eof"), 1, 1, 0, 0, 0, 0,
     };
     try std.testing.expectError(
         DispatchError.InvalidEndToken,
         decodeRecords(a, source, file, &premature, 2),
+    );
+
+    const last = rejectioncode(rejectioncount());
+    try std.testing.expectEqual(
+        lexer.LexError.InsufficientIndent,
+        rejectionNameToError(rejectionname(last)).?,
+    );
+    try std.testing.expectEqual(
+        DispatchError.InvalidRejectionCode,
+        rejectionNameToError(rejectionname(-199)) orelse DispatchError.InvalidRejectionCode,
+    );
+
+    var double_eof = [_]i64{
+        producer("eof"), 1, 1, 0, 0, 0, 0,
+        producer("eof"), 1, 1, 0, 0, 0, 0,
+    };
+    try std.testing.expectError(
+        DispatchError.InvalidEndToken,
+        decodeRecords(a, source, file, &double_eof, 2),
     );
 }
 
@@ -423,9 +682,60 @@ test "lexer_dispatch: production route rejects embedded NUL" {
     try std.testing.expect(!file_lex.isDuoBacked());
 }
 
+test "lexer_dispatch: backtick identity then canon parser stream refuses" {
+    const a = std.testing.allocator;
+    const src: []const u8 = "`\n";
+    var scan = lexer.Lexer.initFamily(src, "t.id", lexer_bridge.family_canon);
+    const bang = try scan.next_tok();
+    try std.testing.expectEqual(lexer.TokenKind.backtick, bang.kind);
+    try std.testing.expectError(
+        lexer.LexError.UnexpectedChar,
+        tokenize(a, "`\n", "t.id", lexer_bridge.family_canon),
+    );
+    var lex = lexer.Lexer.initFamily(src, "t.id", lexer_bridge.family_canon);
+    try std.testing.expectError(lexer.LexError.UnexpectedChar, route(a, &lex, src, "t.id"));
+}
+
+test "lexer_dispatch: shebang identity then program" {
+    const a = std.testing.allocator;
+    const toks = try tokenize(a, "#!/usr/bin/env idol\n1\n", "t.id", lexer_bridge.family_canon);
+    defer a.free(toks);
+    try std.testing.expectEqual(lexer.TokenKind.shebang, toks[0].kind);
+    try std.testing.expectEqualStrings("#!/usr/bin/env idol", toks[0].text);
+    try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[1].kind);
+    try std.testing.expectEqual(@as(i64, 1), toks[1].int_val);
+}
+
+test "lexer_dispatch: long dash comment identity then program" {
+    const a = std.testing.allocator;
+    const toks = try tokenize(a, "--[[note]]\n1\n", "t.id", lexer_bridge.family_canon);
+    defer a.free(toks);
+    try std.testing.expectEqual(lexer.TokenKind.compat_long_comment, toks[0].kind);
+    try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[1].kind);
+}
+
+test "lexer_dispatch: dash comment identity then program" {
+    const a = std.testing.allocator;
+    const toks = try tokenize(a, "-- note\n1\n", "t.id", lexer_bridge.family_canon);
+    defer a.free(toks);
+    try std.testing.expectEqual(lexer.TokenKind.compat_comment, toks[0].kind);
+    try std.testing.expectEqualStrings("-- note", toks[0].text);
+    try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[1].kind);
+}
+
+test "lexer_dispatch: comment identity then program" {
+    const a = std.testing.allocator;
+    const toks = try tokenize(a, "# note\n1\n", "t.id", lexer_bridge.family_canon);
+    defer a.free(toks);
+    try std.testing.expectEqual(lexer.TokenKind.comment, toks[0].kind);
+    try std.testing.expectEqualStrings("# note", toks[0].text);
+    try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[1].kind);
+    try std.testing.expectEqual(@as(i64, 1), toks[1].int_val);
+}
+
 test "lexer_dispatch: Idol lexer drives a host token stream" {
     const a = std.testing.allocator;
-    const toks = try tokenize(a, "fun add(a: i64): i64 = a + 1 end", "t.id");
+    const toks = try tokenize(a, "fun add(a: i64): i64 = a + 1 end", "t.id", lexer_bridge.family_canon);
     defer a.free(toks);
     try std.testing.expectEqual(@as(usize, 15), toks.len);
     try std.testing.expectEqual(lexer.TokenKind.kw_fun, toks[0].kind);
@@ -433,9 +743,23 @@ test "lexer_dispatch: Idol lexer drives a host token stream" {
     try std.testing.expectEqual(@as(u32, 1), toks[0].loc.line);
 }
 
+test "lexer_dispatch: route publishes shebang and hides it from the parser pack" {
+    const a = std.testing.allocator;
+    const src: []const u8 = "#!/usr/bin/env idol\n# note\n1\n";
+    var lex = lexer.Lexer.init(src, "t.id");
+    try route(a, &lex, src, "t.id");
+    const toks = lex.duo_tokens.?;
+    defer a.free(toks);
+    const first = try lex.next();
+    try std.testing.expectEqualStrings("#!/usr/bin/env idol", lex.shebang);
+    try std.testing.expectEqual(lexer.TokenKind.int_lit, first.kind);
+    try std.testing.expectEqual(@as(i64, 1), first.int_val);
+}
+
 test "lexer_dispatch: production route fails closed on storage failure" {
     const src = "main: i64 = ()\n    0";
-    for ([_]usize{ 0, 1, 2, 3 }) |fail_index| {
+    // Sentinel copies fit on the stack; heap is records then tokens.
+    for ([_]usize{ 0, 1 }) |fail_index| {
         var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{
             .fail_index = fail_index,
         });
@@ -465,10 +789,23 @@ test "lexer_dispatch: production route releases temporary source copies" {
     try std.testing.expectEqual(@intFromPtr(file.ptr), @intFromPtr(toks[0].loc.file.ptr));
 }
 
+test "lexer_dispatch: long text publishes delimiter level" {
+    const a = std.testing.allocator;
+    const source: [:0]const u8 = "[[a]] [=[b]=]";
+    const toks = try tokenize(a, source, "span.id", lexer_bridge.family_compat);
+    defer a.free(toks);
+    try std.testing.expectEqual(lexer.TokenKind.compat_long_text_lit, toks[0].kind);
+    try std.testing.expectEqual(@as(i64, 0), toks[0].int_val);
+    try std.testing.expectEqualStrings("a", toks[0].text);
+    try std.testing.expectEqual(lexer.TokenKind.compat_long_text_lit, toks[1].kind);
+    try std.testing.expectEqual(@as(i64, 1), toks[1].int_val);
+    try std.testing.expectEqualStrings("b", toks[1].text);
+}
+
 test "lexer_dispatch: Idol owns exact token source spans" {
     const a = std.testing.allocator;
     const source: [:0]const u8 = "a a \"a\" [[a]]";
-    const toks = try tokenize(a, source, "span.id");
+    const toks = try tokenize(a, source, "span.id", lexer_bridge.family_canon);
     defer a.free(toks);
 
     const base = @intFromPtr(source.ptr);
@@ -487,18 +824,16 @@ test "lexer_dispatch: token streams agree field for field" {
         "x = 1.5 y = 42 z = 0xFF",
         "s = \"a\\tb\\nc\"",
         "a<=b and c>=d or e~=f",
-        "-- comment\ny = 2 -- trailing\nz = 3",
-        "s = [[raw \\n not an escape]]",
         "a = 1e3 b = 2.5e-2 c = 0.5",
     };
-    for (cases) |case| try differential(a, case, "t.id");
+    for (cases) |case| try differential(a, case, "t.id", lexer_bridge.family_canon);
 }
 
 // The float case is the one that was silently wrong. Name it separately so a
 // regression breaks a test that says WHY, rather than shifting a count.
 test "lexer_dispatch: float literals carry their value" {
     const a = std.testing.allocator;
-    const toks = try tokenize(a, "1.5", "t.id");
+    const toks = try tokenize(a, "1.5", "t.id", lexer_bridge.family_canon);
     defer a.free(toks);
     try std.testing.expectEqual(lexer.TokenKind.float_lit, toks[0].kind);
     try std.testing.expectEqual(@as(f64, 1.5), toks[0].float_val);
@@ -512,16 +847,16 @@ test "lexer_dispatch: malformed sources reject instead of aborting" {
     const a = std.testing.allocator;
     try std.testing.expectError(
         lexer.LexError.UnterminatedString,
-        tokenize(a, "s = \"unterminated", "bad.duo"),
+        tokenize(a, "s = \"unterminated", "bad.duo", lexer_bridge.family_compat),
     );
     try std.testing.expectError(
         lexer.LexError.UnterminatedLongString,
-        tokenize(a, "s = [[unterminated", "bad.id"),
+        tokenize(a, "s = [[unterminated", "bad.id", lexer_bridge.family_canon),
     );
 }
 
 test "lexer_dispatch: a rejection carries its line" {
-    try std.testing.expectEqual(@as(u32, 2), try errorLine("x = 1\ns = \"bad", "bad.duo"));
+    try std.testing.expectEqual(@as(u32, 2), try errorLine("x = 1\ns = \"bad", "bad.duo", lexer_bridge.family_compat));
 }
 
 // GAP-023: do the shapes those proofs are built from — corpus data held as
@@ -530,8 +865,8 @@ test "lexer_dispatch: a rejection carries its line" {
 // never built and its empty failure list read as a pass).
 test "lexer_dispatch: corpus-data-as-literals tokenizes identically" {
     const a = std.testing.allocator;
-    try differential(a, "corpus = { \"a == b ~= c\", \"-- line\\nfun\", \"\\\"hi\\\" 'there'\" }", "proof.id");
-    try differential(a, "h = 0 s = \"a\\tb\\nc\\\\d\" n = #s", "proof.duo");
+    try differential(a, "corpus = { \"a == b ~= c\", \"-- line\\nfun\", \"\\\"hi\\\" 'there'\" }", "proof.id", lexer_bridge.family_canon);
+    try differential(a, "h = 0 s = \"a\\tb\\nc\\\\d\" n = #s", "proof.duo", lexer_bridge.family_compat);
 }
 
 // gap[042]. GAP-024 fixed `_int_of`'s DECIMAL accumulator and left the HEX one
@@ -555,7 +890,7 @@ test "lexer_dispatch: gap[042] — hex literals at and above 2^63" {
         "b = 0x7FFFFFFFFFFFFFFF",
         "x = 0xff y = 0x10 z = 0x0",
     };
-    for (cases) |case| try differential(a, case, "hex.id");
+    for (cases) |case| try differential(a, case, "hex.id", lexer_bridge.family_canon);
 }
 
 // The same literal, asserted by VALUE rather than by agreement, so a change
@@ -563,10 +898,34 @@ test "lexer_dispatch: gap[042] — hex literals at and above 2^63" {
 // is 14695981039346656037, which as an i64 bit pattern is -3750763034362895579.
 test "lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
     const a = std.testing.allocator;
-    const toks = try tokenize(a, "0xcbf29ce484222325", "hex.id");
+    const toks = try tokenize(a, "0xcbf29ce484222325", "hex.id", lexer_bridge.family_canon);
     defer a.free(toks);
     try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[0].kind);
     try std.testing.expectEqual(@as(i64, -3750763034362895579), toks[0].int_val);
+}
+
+test "lexer_dispatch: family is tokenize operand not suffix" {
+    const a = std.testing.allocator;
+    const src: [:0]const u8 = "x = 'a'";
+    const crossed_lua: [:0]const u8 = "x.lua";
+    const crossed_id: [:0]const u8 = "x.id";
+
+    const canon = try tokenize(a, src, crossed_lua, lexer_bridge.family_canon);
+    defer a.free(canon);
+    try std.testing.expectEqual(lexer.TokenKind.bytes_lit, canon[2].kind);
+
+    const compat = try tokenize(a, src, crossed_id, lexer_bridge.family_compat);
+    defer a.free(compat);
+    try std.testing.expectEqual(lexer.TokenKind.compat_text_lit, compat[2].kind);
+}
+
+test "lexer_dispatch: route consumes lex.family not path" {
+    const a = std.testing.allocator;
+    const src: []const u8 = "x = 'a'";
+    var lex = lexer.Lexer.initFamily(src, "x.lua", lexer_bridge.family_canon);
+    try route(a, &lex, src, "x.lua");
+    defer a.free(lex.duo_tokens.?);
+    try std.testing.expectEqual(lexer.TokenKind.bytes_lit, lex.duo_tokens.?[2].kind);
 }
 
 // GAP-024, found while probing GAP-023 and NOT its cause: the host lexer
@@ -578,5 +937,5 @@ test "lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
 // visible, and deleting it to keep a count green restores the blindness.
 test "lexer_dispatch: GAP-024 — u64 literal above i64 max" {
     const a = std.testing.allocator;
-    try differential(a, "fingerprint = 13636438360258349679", "u64.id");
+    try differential(a, "fingerprint = 13636438360258349679", "u64.id", lexer_bridge.family_canon);
 }

@@ -1,0 +1,44 @@
+# Default parameters, `continue`, and mem load/store round-trip.
+# expect: 14 16 10
+# @corpus current
+default_step: i64 = 3
+
+score: i64 = (base: i64, step: i64 = default_step, factor: i64 = 2)
+    base + step * factor
+
+skipped_sum: i64 = (limit: i64)
+    total: i64 = 0
+    for i = 1, limit
+        if i % 2 == 0
+            continue
+        total += i
+    total
+
+block = "alpha\nbeta"
+bracket = "contains ]] without ending"
+
+if block != "alpha\nbeta"
+    error("bad long string")
+
+if bracket != "contains ]] without ending"
+    error("bad equal-delimited long string")
+
+raw: *u8 = mem.alloc(16)
+mem.assume(!mem.is_null(raw))
+mem.prefetch(raw)
+
+slot: *i64 = mem.cast("i64", raw)
+mem.store(i64)(slot, score(4))
+got: i64 = mem.load(i64)(slot)
+
+if got != 10
+    mem.trap()
+
+if got == 0
+    mem.unreachable()
+
+mem.free(raw)
+
+print(score(4, 5))
+print(skipped_sum(7))
+print(got)

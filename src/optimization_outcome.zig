@@ -1,4 +1,4 @@
-//! Pass 7 — structured optimization / transformation outcome records.
+//! — structured optimization / transformation outcome records.
 //!
 //! Complements `transform_engine` provenance hashes with agent-consumable outcomes.
 const std = @import("std");
@@ -34,7 +34,7 @@ pub const Status = enum(u8) {
     }
 };
 
-/// Evidence strength for an optimization claim (Pass 7 §10.1).
+/// Evidence strength for an optimization claim (§10.1).
 pub const Evidence = enum(u8) {
     proven,
     guarded,

@@ -1,0 +1,38 @@
+# @corpus current
+# APPLY-ONE, the DESCRIPTOR subject — c0 §43 `law.brace` row 1, §44
+# `apply.edge` / `law.pack.shape`. gap[092], the resolving half.
+#
+# THE LAW. `apply(descriptor)(fieldpack) -> a value the descriptor describes`.
+# The subject decides what applying means; the FACE does not, and the parser
+# resolves nothing. Before this, the call path won unconditionally and
+# `point{ x = 3.0, y = 4.0 }` reported `call to undeclared function 'point'`.
+#
+# WHY A SECOND FILE and not more rows in `examples/pack/apply.id`. That file
+# carries `kind = @{ eof = 0, ident = 1 }`, and a top-level function with a
+# non-`any` return type in the same file makes its `print(kind.ident)` emit
+# `lua_to_display_str(1)` — an `int` where a `lua_Value` is wanted. MEASURED on
+# the pre-GAP-092 compiler (`HEAD~1`, built in isolation), so it is a
+# pre-existing defect this work neither caused nor repairs. The rows below need
+# a descriptor-typed callee, so they live here. Recorded rather than worked
+# around silently: a fixture that quietly avoids a defect hides it.
+#
+# Every row asserts a VALUE, except the last, which asserts a REPRESENTATION
+# and therefore cannot be asserted here at all — see ROW 4.
+
+point: @{ x: f64, y: f64 }
+
+# A parameter typed by the DESCRIPTOR. This is what makes ROW 2 a composition
+# proof rather than a second binding proof.
+sum: f64 = (p: point)
+    p.x + p.y
+
+q = point{ x = 3.0, y = 4.0 }
+print(q.x)
+print(q.y)
+
+print(sum(point{ x = 10.0, y = 11.0 }))
+
+print(sum(point{ 1.0, 20.0 }))
+
+print(sum(point{ x = 0.5, y = 0.25 }))
+

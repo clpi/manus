@@ -1,8 +1,8 @@
 # Embedded @c audit and enforce for the self-hosting target.
 #
-# foreign_census advertises the aggregate count and keeps the unclassified
+# scripts/census/foreign.id advertises the aggregate count and keeps the unclassified
 # floor. This script audits each remaining payload site by file and enforces
-# the Pass 103 termination condition: embedded C only shrinks; self-hosting
+# the termination condition: embedded C only shrinks; self-hosting
 # requires zero sites.
 
 chomp: str = (text: str)
@@ -106,7 +106,7 @@ main: i64 = ()
         print("embedledger: fail no git root")
         return 3
 
-    files = lines(cap("cd '" .. root .. "' && git ls-files '*.id' | grep -v '^scripts/foreign_census.id$' | sort"))
+    files = lines(cap("cd '" .. root .. "' && git ls-files '*.id' | grep -v '^scripts/census/foreign.id$' | sort"))
     total = 0
     payload = 0
     print("embedledger -- audit (sites by file)")

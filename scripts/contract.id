@@ -3,9 +3,9 @@
 #
 # WHY THIS GATE EXISTS. GAP-090 measured `@noalloc` as decorative:
 #
-#     duo check   examples/pass7/noalloc_fail.id    exit 0
-#     duo compile examples/pass7/noalloc_fail.id    exit 0
-#     duo explain examples/pass7/noalloc_fail.id    exit 0, rejection as JSON
+#     idol check   examples/contracts/noalloc_fail.id    exit 0
+#     idol compile examples/contracts/noalloc_fail.id    exit 0
+#     idol explain examples/contracts/noalloc_fail.id    exit 0, rejection as JSON
 #
 # The contract was checked in exactly one place, `codegen.zig`'s guardNoAlloc,
 # which only runs while the C backend is emitting. The default backend is
@@ -22,7 +22,7 @@
 # how a broken commit got shipped as verified once already.
 #
 # FIXTURE HOMES. Positives sit beside the pair they belong to in
-# `examples/pass7/`; negatives sit in `examples/compile_fail/`, which
+# `examples/contracts/`; negatives sit in `examples/compile_fail/`, which
 # `docs/spec/corpus.md` classifies `negative` — denied text IS the assertion
 # there, so the deny-table scan correctly skips them.
 
@@ -104,9 +104,9 @@ main: i64 = ()
         bad += 1
     end
 
-    naok = "{root}/examples/pass7/noalloc_ok.id"
-    nabad = "{root}/examples/pass7/noalloc_fail.id"
-    pureok = "{root}/examples/pass7/pure_ok.id"
+    naok = "{root}/examples/contracts/noalloc_ok.id"
+    nabad = "{root}/examples/contracts/noalloc_fail.id"
+    pureok = "{root}/examples/contracts/pure_ok.id"
     purebad = "{root}/examples/compile_fail/pure_module_state.id"
     lexbad = "{root}/examples/compile_fail/lex_slash_comment.id"
 
@@ -247,7 +247,7 @@ main: i64 = ()
         shout("FAIL — the lexer diagnostic named no file and no span")
         bad += 1
     end
-    if !mentions(bin, "explain", lexbad, "a duon comment starts with")
+    if !mentions(bin, "explain", lexbad, "a idol comment starts with")
         shout("FAIL — the lexer diagnostic carried no repair")
         bad += 1
     end

@@ -1,30 +1,18 @@
 #!/bin/sh
 # PROJECTION-ONE + INFER-ONE text debt census (GAP-165).
-# Runs canonical Idol censuses — not rg one-liners in shell.
+# Runs the Idol census entries. Shell here is transport only.
 set -eu
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$repo"
-
-duo="${IDOL:-$repo/zig-out/bin/idol}"
+idol="${IDOL:-$repo/zig-out/bin/idol}"
 fail=0
-
-run_census() {
-  label="$1"
-  script="$2"
-  if "$duo" run "$repo/$script" >/tmp/idol-projection-census.out 2>&1; then
-    echo "projectioncensus: pass $label"
-    sed 's/^/  /' /tmp/idol-projection-census.out
-  else
-    echo "projectioncensus: FAIL $label" >&2
-    sed 's/^/  /' /tmp/idol-projection-census.out >&2
-    fail=1
-  fi
-}
-
-run_census "projection_census" "scripts/projection_census.id"
-run_census "infer_census" "scripts/infer_census.id"
-
-if [ "$fail" -ne 0 ]; then
-  exit 1
+if ! "$idol" run scripts/census/infer.id; then
+  echo "projectioncensus: FAIL census/infer" >&2
+  fail=1
 fi
+if ! "$idol" run scripts/census/projection.id; then
+  echo "projectioncensus: FAIL census/projection" >&2
+  fail=1
+fi
+[ "$fail" -eq 0 ] || exit 1
 exit 0

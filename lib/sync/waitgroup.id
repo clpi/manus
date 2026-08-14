@@ -3,8 +3,8 @@
 # allows waiting for all to complete. Since Duo has cooperative async, the
 # "wait" is a busy-check loop yielding to the scheduler.
 
-# new_waitgroup: create a new WaitGroup.
-new_waitgroup(): any
+# waitgroup: create a new WaitGroup.
+waitgroup(): any
     {count = 0}
 end
 
@@ -26,12 +26,12 @@ wait(wg: any): bool
     wg.count == 0
 end
 
-# wait_block: block until count == 0, yielding between checks.
-wait_block(wg: any): void
+# block: block until count == 0, yielding between checks.
+block(wg: any): void
     while wg.count > 0
         # yield to scheduler if available
         co = coroutine
-        co.yield_()
+        co.yield()
     end
 end
 
@@ -39,4 +39,3 @@ end
 count(wg: any): i64
     wg.count
 end
-

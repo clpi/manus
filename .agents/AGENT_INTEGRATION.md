@@ -9,11 +9,13 @@ The version-locked MCP implementations live in this repository:
 
 | Physical server name | Entry point | Purpose |
 |---|---|---|
-| `duo-bench` | `tools/mcp/bench.id` | claims, gaps, serialized gates, performance evidence |
-| `duo-lsp` | `tools/mcp/lsp.id` | diagnostics and language intelligence |
+| `idol-bench` | `tools/mcp/bench.id` | claims, gaps, serialized gates, performance evidence |
+| `idol-lsp` | `tools/mcp/lsp.id` | diagnostics and language intelligence |
 | `zls` | `tools/mcp/zls.id` | Zig bootstrap navigation |
 
-The physical `duo` executable and `duo-*` server names are bootstrap aliases.
+The physical `duo` executable, `duo-*` server names, and `duo_*` MCP tool names
+are legacy aliases registered beside `idol_*` on the same servers. Prefer
+`idol-bench`, `idol-lsp`, and `idol_*` tools in new client configuration.
 The current `.id` server entrypoints are executed bootstrap/compatibility
 transport; their suffix alone proves neither canonicality nor self-hosting
 authority transfer. Historical `.id` paths are migration provenance. None of
@@ -32,17 +34,17 @@ additional manifest authorities.
 The generated Codex shape is:
 
 ```toml
-[mcp_servers.id-bench]
-command = "<repo>/zig-out/bin/duo"
-args = ["run", "--backend=c", "<repo>/tools/mcp/bench.id"]
+[mcp_servers.idol-bench]
+command = "<repo>/zig-out/bin/idol"
+args = ["run", "<repo>/tools/mcp/bench.id"]
 cwd = "<repo>"
-env = { DUO_ROOT = "<repo>", DUO_BIN = "<repo>/zig-out/bin/duo" }
+env = { IDOL_ROOT = "<repo>", IDOL_BIN = "<repo>/zig-out/bin/idol", DUO_ROOT = "<repo>", DUO_BIN = "<repo>/zig-out/bin/idol" }
 startup_timeout_sec = 60
 tool_timeout_sec = 1800
 required = true
 ```
 
-`duo-lsp` and `zls` use the same command, cwd, and environment pattern with
+`idol-lsp` and `zls` use the same command, cwd, and environment pattern with
 their own entry points. Keep the pinned Zig and ZLS directories in `PATH` for
 desktop and IDE launches.
 
@@ -71,10 +73,10 @@ Run setup evidence from the repository root:
 repo="$(git rev-parse --show-toplevel)"
 codex --strict-config doctor
 codex mcp list
-"$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- zig build mcp-gate
+"$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- zig build mcp-gate
 ```
 
 The absolute bootstrap paths avoid the current relative-executable discovery
-failure. The first two commands validate client configuration. The locked
-`--backend=c` gate validates the actual repository handlers. A client listing
-tools without exercising the handlers is not MCP health evidence.
+failure. The first two commands validate client configuration. The locked MCP
+gate validates the actual repository handlers. A client listing tools without
+exercising the handlers is not MCP health evidence.

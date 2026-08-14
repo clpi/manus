@@ -26,7 +26,7 @@ parse_url(url: str): any
     colon_pos = host:find(":")
     port = default_port
     if colon_pos
-        port = tonumber(host:sub(colon_pos + 1)) or default_port
+        port = host:sub(colon_pos + 1:to(i64)) or default_port
         host = host:sub(1, colon_pos - 1)
     end
     {scheme = scheme, host = host, port = port, path = path}

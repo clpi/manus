@@ -1,4 +1,4 @@
-#!/usr/bin/env duo
+#!/usr/bin/env idol
 # APPLY-ONE gate — c0 §43 `law.brace`, §44 `law.apply.one` / `law.pack.shape`.
 #
 # WHY A GATE AND NOT JUST A FIXTURE. The positive fixture and the negative twin
@@ -106,7 +106,7 @@ main: void = ()
     # ROW 1 — the POSITIVE twin, by VALUE. Six prints, and the pair that must
     # agree is the third and fourth: the brace face and the paren face applied
     # to one callable. "It compiled" is not the assertion; the digits are.
-    pos = "examples/apply_one_pack_proof.id"
+    pos = "examples/pack/apply.id"
     out = capture("{duo} run {pos}")
     hasvalues = out:find("3", 1, true) != nil
     if out:find("7", 1, true) == nil
@@ -144,7 +144,7 @@ main: void = ()
 
     # ROW 5 — the DESCRIPTOR subject CONSTRUCTS, by value. This is the row that
     # was inverted; see the header.
-    dpos = "examples/apply_one_descriptor_proof.id"
+    dpos = "examples/projection/descriptor.id"
     dout = capture("{duo} run {dpos}")
     drc = status("{duo} run {dpos}")
     dvalues = drc == 0 and has(dout, "3\n4\n21\n21\n0.75")
@@ -199,7 +199,7 @@ main: void = ()
     # 2026-08-09: `s.write` leaves the file empty and `s.read` answers nil,
     # while `s.fs_write` / `s.fs_read` beside them work. That is the
     # "a resolving ambient path is not a working one" shape, and it is a real
-    # defect in `lib/std/script.id`, reported and !repaired here. The
+    # defect in `lib/script.id`, reported and !repaired here. The
     # underscored spellings are the ones that work and LAW-ONE forbids them on
     # a new line, so these rows take the third road and let `sh` do it.
     put(fa, "point: @{ x: f64, y: f64 }\nmain(): void\n    q = point{ x = 3.0, y: 4.0 }\n    print(q.x)\n")

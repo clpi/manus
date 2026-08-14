@@ -51,7 +51,7 @@ stopwatch_avg_lap(sw: any): f64
   end
   total = 0
   for lap in sw.laps
-    total = total + lap
+    total += lap
   end
   total / sw:len().laps
 end
@@ -122,7 +122,7 @@ profiler_report(profiler: any): any
   for name, section in profiler.sections
     report[report:len() + 1] = profiler_stats(profiler, name)
   end
-  table.sort(report, (a: any, b: any): any
+  report:sort((a: any, b: any): any
     a.total > b.total
   end)
   report
@@ -137,7 +137,7 @@ benchmark(func: any, iterations: i64): any
   i = 0
   while i < iterations:min(100)
     func()
-    i = i + 1
+    i += 1
   end
   times = {}
   i = 0
@@ -146,12 +146,12 @@ benchmark(func: any, iterations: i64): any
     func()
     elapsed = os.clock() - start
     times[times:len() + 1] = elapsed
-    i = i + 1
+    i += 1
   end
   times:sort()
   total = 0
   for t in times
-    total = total + t
+    total += t
   end
   {
     iterations = iterations,

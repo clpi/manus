@@ -56,7 +56,7 @@ end
 
 s.must("cd " .. ROOT .. " && if [ ! -x zig-out/bin/idol ]; then ${ZIG:-zig} build; fi")
 
-# Pass 11 WP-01: explicit benchmark manifest (backend must not force boxing).
+# Explicit benchmark manifest (backend must not force boxing).
 # The first port dropped this entirely. It is not decoration: the row states
 # which backend and representation produced the numbers below, so a run that
 # silently fell back to a boxed representation is distinguishable from one that
@@ -67,20 +67,20 @@ BENCH_BACKEND = s.getenv_or("BENCH_BACKEND")
 if BENCH_BACKEND:len() == 0
     BENCH_BACKEND = "c-specialized"
 end
-duo_version = trim(s.capture(DUO .. " --version 2>/dev/null || echo unknown"))
-if duo_version:len() == 0
-    duo_version = "unknown"
+duover = trim(s.capture(DUO .. " --version 2>/dev/null || echo unknown"))
+if duover:len() == 0
+    duover = "unknown"
 end
-BENCH_MANIFEST = "backend=" .. BENCH_BACKEND .. " representation=specialized runtime=dynamic intermediate=generated-c external_compiler=" .. CC .. " duo=" .. duo_version
+BENCH_MANIFEST = "backend=" .. BENCH_BACKEND .. " representation=specialized runtime=dynamic intermediate=generated-c external_compiler=" .. CC .. " duo=" .. duover
 print("BENCH_MANIFEST " .. BENCH_MANIFEST)
 s.env_set("DUO_BENCH_MANIFEST", BENCH_MANIFEST)
 
 BENCH_PARALLEL_COMPILE = s.getenv_or("BENCH_PARALLEL_COMPILE")
 
-_duo_lua_compile = "/usr/bin/time -l " .. DUO .. " compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out 2> /tmp/duolua_compile_time.txt"
-_c_instr_compile = CC .. " " .. CFLAGS .. " -fprofile-instr-generate -o /tmp/c_bench_instr.out examples/benchmark_c.c"
-_c_opt_compile = "/usr/bin/time -l " .. CC .. " " .. CFLAGS .. " -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c 2> /tmp/c_compile_time.txt"
-_c_profile_steps = "env LLVM_PROFILE_FILE=/tmp/c_bench.profraw /tmp/c_bench_instr.out > /dev/null 2>&1 || true; xcrun llvm-profdata merge -output=/tmp/c_bench.profdata /tmp/c_bench.profraw"
+luaexe = "/usr/bin/time -l " .. DUO .. " compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out 2> /tmp/duolua_compile_time.txt"
+cinstr = CC .. " " .. CFLAGS .. " -fprofile-instr-generate -o /tmp/c_bench_instr.out examples/benchmark_c.c"
+copt = "/usr/bin/time -l " .. CC .. " " .. CFLAGS .. " -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c 2> /tmp/c_compile_time.txt"
+cprof = "env LLVM_PROFILE_FILE=/tmp/c_bench.profraw /tmp/c_bench_instr.out > /dev/null 2>&1 || true; xcrun llvm-profdata merge -output=/tmp/c_bench.profdata /tmp/c_bench.profraw"
 
 if BENCH_PARALLEL_COMPILE == "1"
     # ONE shell. The previous spelling backgrounded with `s.run("... &")` and
@@ -89,12 +89,12 @@ if BENCH_PARALLEL_COMPILE == "1"
     # script raced on to time /tmp/duo_bench.out while it was still being
     # written, or was a stale binary from a previous run. Off by default, so it
     # never fired in CI; a trap for whoever set the variable.
-    s.must("cd " .. ROOT .. " && { " .. _duo_lua_compile .. " ; } & DUO_PID=$!; " .. _c_instr_compile .. " && { " .. _c_profile_steps .. " ; } && { " .. _c_opt_compile .. " ; } & CC_PID=$!; wait $DUO_PID && wait $CC_PID")
+    s.must("cd " .. ROOT .. " && { " .. luaexe .. " ; } & DUO_PID=$!; " .. cinstr .. " && { " .. cprof .. " ; } && { " .. copt .. " ; } & CC_PID=$!; wait $DUO_PID && wait $CC_PID")
 else
-    s.must("cd " .. ROOT .. " && " .. _duo_lua_compile)
-    s.must("cd " .. ROOT .. " && " .. _c_instr_compile)
-    s.run(_c_profile_steps)
-    s.must("cd " .. ROOT .. " && " .. _c_opt_compile)
+    s.must("cd " .. ROOT .. " && " .. luaexe)
+    s.must("cd " .. ROOT .. " && " .. cinstr)
+    s.run(cprof)
+    s.must("cd " .. ROOT .. " && " .. copt)
 end
 
 # Compile the .id mirror
@@ -273,7 +273,7 @@ collect_min_times(cmd: str): table
     _collect_min_times_impl(cmd, {})
 end
 
-capture_results(label: str, cmd: str): table
+capture(label: str, cmd: str): table
     status = 0
     res = {}
     for attempt = 1, 2
@@ -435,17 +435,17 @@ end
 control(): i64
     bad: i64 = 0
     say("=== fold classifier control (synthetic; no benchmark data in scope) ===")
-    bad = bad + probe("zero against real work        ", 0.0,      0.01,   true)
-    bad = bad + probe("one tick against real work    ", 0.000001, 0.01,   true)
-    bad = bad + probe("exactly at the cutoff         ", 0.00001,  0.01,   true)
-    bad = bad + probe("above cutoff, ratio 500       ", 0.00002,  0.01,   true)
-    bad = bad + probe("above cutoff, ratio 50        ", 0.0002,   0.01,   false)
-    bad = bad + probe("at the cutoff, ratio only 10  ", 0.00001,  0.0001, true)
-    bad = bad + probe("just over cutoff, ratio only 5", 0.00002,  0.0001, false)
-    bad = bad + probe("genuine win, 2x               ", 0.005,    0.01,   false)
-    bad = bad + probe("genuine win, 50x              ", 0.0001,   0.005,  false)
-    bad = bad + probe("both sides under the cutoff   ", 0.0,      0.0,    true)
-    bad = bad + probe("slower than C                 ", 0.02,     0.01,   false)
+    bad += probe("zero against real work        ", 0.0,      0.01,   true)
+    bad += probe("one tick against real work    ", 0.000001, 0.01,   true)
+    bad += probe("exactly at the cutoff         ", 0.00001,  0.01,   true)
+    bad += probe("above cutoff, ratio 500       ", 0.00002,  0.01,   true)
+    bad += probe("above cutoff, ratio 50        ", 0.0002,   0.01,   false)
+    bad += probe("at the cutoff, ratio only 10  ", 0.00001,  0.0001, true)
+    bad += probe("just over cutoff, ratio only 5", 0.00002,  0.0001, false)
+    bad += probe("genuine win, 2x               ", 0.005,    0.01,   false)
+    bad += probe("genuine win, 50x              ", 0.0001,   0.005,  false)
+    bad += probe("both sides under the cutoff   ", 0.0,      0.0,    true)
+    bad += probe("slower than C                 ", 0.02,     0.01,   false)
     bad
 end
 
@@ -459,9 +459,9 @@ say("fold classifier control: 11/11 agree (cutoff=" .. sec(cutoff)
 say("")
 
 print("=== Correctness (RESULT lines) ===")
-duobenchres = capture_results("Duo benchmark.lua", "/tmp/duo_bench.out")
-duobenchduores = capture_results("Duo benchmark.id", "/tmp/duo_bench_duo.out")
-cbenchres = capture_results("reference C benchmark", "/tmp/c_bench.out")
+duamark = capture("Duo benchmark.lua", "/tmp/duo_bench.out")
+duobenchduores = capture("Duo benchmark.id", "/tmp/duo_bench_duo.out")
+cbenchres = capture("reference C benchmark", "/tmp/c_bench.out")
 
 # `global` is load-bearing. As a BARE top-level binding this stayed false
 # through both reassignments below: the suite printed real mismatches and then
@@ -469,7 +469,7 @@ cbenchres = capture_results("reference C benchmark", "/tmp/c_bench.out")
 # further down was already declared global and always worked, which is the
 # contrast that named the cause.
 global RESULT_FAIL: bool = false
-if !compare_results("Duo .lua", duobenchres, cbenchres)
+if !compare_results("Duo .lua", duamark, cbenchres)
     RESULT_FAIL = true
 end
 if !compare_results("Duo .id", duobenchduores, cbenchres)
@@ -621,33 +621,33 @@ for i = 1, TIMED
         filedur: f64 = duofile
         cdur: f64 = c
         if folded(luadur, cdur) or folded(filedur, cdur)
-            partial = partial + 1
+            partial += 1
             why = foldreason(luadur, cdur)
             if why != ""
-                foldsites = foldsites + 1
+                foldsites += 1
             end
             if why == "res"
-                foldresall = foldresall + 1
+                foldresall += 1
             end
             if why == "form"
-                foldformall = foldformall + 1
+                foldformall += 1
             end
             if why == "both"
-                foldbothall = foldbothall + 1
+                foldbothall += 1
             end
 
             why = foldreason(filedur, cdur)
             if why != ""
-                foldsites = foldsites + 1
+                foldsites += 1
             end
             if why == "res"
-                foldresall = foldresall + 1
+                foldresall += 1
             end
             if why == "form"
-                foldformall = foldformall + 1
+                foldformall += 1
             end
             if why == "both"
-                foldbothall = foldbothall + 1
+                foldbothall += 1
             end
         end
     end
@@ -657,7 +657,7 @@ for i = 1, TIMED
     winner = "Duo"
     if c_wins == 1
         winner = "C"
-        losses = losses + 1
+        losses += 1
         RESULT_FAIL_FLAG = 1
     else
         # The SLOWER of the two Duo builds decides. A row is folded only when
@@ -674,27 +674,27 @@ for i = 1, TIMED
             least = slower
         end
         if ct > cutoff and folded(ct, ct)
-            impossible = impossible + 1
+            impossible += 1
         end
         if folded(slower, ct)
             # EVALUATED, NOT RUN. Not a win: the pass/fail criterion is
             # "Duo must beat or tie C on every test", and a row whose kernel
             # did not execute has not beaten anything.
             winner = "folded"
-            folds = folds + 1
+            folds += 1
             why = foldreason(slower, ct)
             if why == "res"
-                foldres = foldres + 1
+                foldres += 1
             end
             if why == "form"
-                foldform = foldform + 1
+                foldform += 1
             end
             if why == "both"
-                foldboth = foldboth + 1
+                foldboth += 1
             end
             RESULT_FAIL_FLAG = 1
         else
-            measured = measured + 1
+            measured += 1
         end
     end
     d_fmt = "N/A"
@@ -773,37 +773,37 @@ if RESULT_FAIL_FLAG == 1
     say("      beating must be MEASURED. Folded rows count against this verdict.")
 end
 
-extract_compile_metrics(file: str): table
+extract(file: str): table
     out = s.capture("cat " .. file .. " 2>/dev/null || echo ''")
     latency = out:match("([0-9%.]+)%s+real")
     mem = out:match("([0-9]+)%s+maximum resident set size")
     { latency = tonumber(latency) or -1.0, mem = tonumber(mem) or -1 }
 end
 
-duolua_metrics = extract_compile_metrics("/tmp/duolua_compile_time.txt")
-duoduo_metrics = extract_compile_metrics("/tmp/duoduo_compile_time.txt")
-c_metrics = extract_compile_metrics("/tmp/c_compile_time.txt")
+duamet = extract("/tmp/duolua_compile_time.txt")
+duodu = extract("/tmp/duoduo_compile_time.txt")
+cmet = extract("/tmp/c_compile_time.txt")
 
-duolua_size = tonumber(trim(s.capture("stat -f %z /tmp/duo_bench.out 2>/dev/null || echo 0"))) or -1
-duoduo_size = tonumber(trim(s.capture("stat -f %z /tmp/duo_bench_duo.out 2>/dev/null || echo 0"))) or -1
-c_size = tonumber(trim(s.capture("stat -f %z /tmp/c_bench.out 2>/dev/null || echo 0"))) or -1
+duasize = tonumber(trim(s.capture("stat -f %z /tmp/duo_bench.out 2>/dev/null || echo 0"))) or -1
+duosize = tonumber(trim(s.capture("stat -f %z /tmp/duo_bench_duo.out 2>/dev/null || echo 0"))) or -1
+csz = tonumber(trim(s.capture("stat -f %z /tmp/c_bench.out 2>/dev/null || echo 0"))) or -1
 
 # Workstream A/B evidence binding
-duo_hash = trim(s.capture("shasum -a 256 " .. DUO .. " 2>/dev/null | awk '{print $1}'"))
-c_out_hash = trim(s.capture("shasum -a 256 /tmp/c_bench.out 2>/dev/null | awk '{print $1}'"))
-workload_hash = trim(s.capture("shasum -a 256 examples/benchmark.id 2>/dev/null | awk '{print $1}'"))
+duohash = trim(s.capture("shasum -a 256 " .. DUO .. " 2>/dev/null | awk '{print $1}'"))
+couthash = trim(s.capture("shasum -a 256 /tmp/c_bench.out 2>/dev/null | awk '{print $1}'"))
+workhash = trim(s.capture("shasum -a 256 examples/benchmark.id 2>/dev/null | awk '{print $1}'"))
 
 evidence = "{\n"
 evidence = evidence .. "  \"revision\": \"" .. trim(s.capture("git rev-parse HEAD")) .. "\",\n"
 evidence = evidence .. "  \"compiler_artifact\": \"" .. DUO .. "\",\n"
-evidence = evidence .. "  \"compiler_hash\": \"" .. duo_hash .. "\",\n"
+evidence = evidence .. "  \"compiler_hash\": \"" .. duohash .. "\",\n"
 evidence = evidence .. "  \"target\": \"" .. trim(s.capture("uname -m -s")) .. "\",\n"
 evidence = evidence .. "  \"benchmark_identity\": \"run_benchmark.id\",\n"
 evidence = evidence .. "  \"input_identity\": \"" .. BENCH_MANIFEST .. "\",\n"
-evidence = evidence .. "  \"workload_hash\": \"" .. workload_hash .. "\",\n"
+evidence = evidence .. "  \"workhash\": \"" .. workhash .. "\",\n"
 evidence = evidence .. "  \"realization_mode\": \"" .. BENCH_BACKEND .. "\",\n"
 evidence = evidence .. "  \"comparator\": \"C\",\n"
-evidence = evidence .. "  \"comparator_hash\": \"" .. c_out_hash .. "\",\n"
+evidence = evidence .. "  \"comparator_hash\": \"" .. couthash .. "\",\n"
 evidence = evidence .. "  \"warm_cold\": \"warm\",\n"
 evidence = evidence .. "  \"outcome\": "
 if RESULT_FAIL_FLAG == 0
@@ -812,9 +812,9 @@ else
     evidence = evidence .. "false,\n"
 end
 evidence = evidence .. "  \"compilation\": {\n"
-evidence = evidence .. "    \"duo_lua\": {\"latency_s\": " .. tostring(duolua_metrics.latency) .. ", \"peak_mem_bytes\": " .. tostring(duolua_metrics.mem) .. ", \"artifact_size_bytes\": " .. tostring(duolua_size) .. "},\n"
-evidence = evidence .. "    \"duo_duo\": {\"latency_s\": " .. tostring(duoduo_metrics.latency) .. ", \"peak_mem_bytes\": " .. tostring(duoduo_metrics.mem) .. ", \"artifact_size_bytes\": " .. tostring(duoduo_size) .. "},\n"
-evidence = evidence .. "    \"c_opt\": {\"latency_s\": " .. tostring(c_metrics.latency) .. ", \"peak_mem_bytes\": " .. tostring(c_metrics.mem) .. ", \"artifact_size_bytes\": " .. tostring(c_size) .. "}\n"
+evidence = evidence .. "    \"duo_lua\": {\"latency_s\": " .. tostring(duolua.latency) .. ", \"peak_mem_bytes\": " .. tostring(duolua.mem) .. ", \"artifact_size_bytes\": " .. tostring(duasize) .. "},\n"
+evidence = evidence .. "    \"duo_duo\": {\"latency_s\": " .. tostring(duoduo.latency) .. ", \"peak_mem_bytes\": " .. tostring(duoduo.mem) .. ", \"artifact_size_bytes\": " .. tostring(duosize) .. "},\n"
+evidence = evidence .. "    \"c_opt\": {\"latency_s\": " .. tostring(cmet.latency) .. ", \"peak_mem_bytes\": " .. tostring(cmet.mem) .. ", \"artifact_size_bytes\": " .. tostring(csz) .. "}\n"
 evidence = evidence .. "  },\n"
 evidence = evidence .. "  \"measurements\": [\n"
 

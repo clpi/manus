@@ -30,7 +30,7 @@ read_bits(r: any, n: i64): any
         if r.order == MSB
             v = (v << 1) | b
         else
-            v = v | (b << i)
+            v |= (b << i)
         end
     end
     v

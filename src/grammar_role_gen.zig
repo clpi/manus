@@ -1,4 +1,4 @@
-//! Emit `lib/std/token/grammarrole.id` from `src/grammar_roles.zig`.
+//! Emit `lib/token/grammarrole.id` from `src/grammar_roles.zig`.
 const std = @import("std");
 const grammar_roles = @import("grammar_roles.zig");
 const lexer = @import("lexer.zig");
@@ -38,7 +38,11 @@ fn emitGrammarRole(w: *std.Io.Writer) !void {
     try emitBoolTable(w, "POSTFIX", &grammar_roles.rows, "postfix");
     try emitBoolTable(w, "PARAMETER", &grammar_roles.rows, "parameter");
     try emitBoolTable(w, "LITERALKIND", &grammar_roles.rows, "literal_kind");
+    try emitBoolTable(w, "QUOTED", &grammar_roles.rows, "quoted");
     try emitBoolTable(w, "PROJECTION", &grammar_roles.rows, "projection");
+    try emitBoolTable(w, "BODYSTART", &grammar_roles.rows, "body_start");
+    try emitBoolTable(w, "DESCRIPTOR", &grammar_roles.rows, "descriptor");
+    try emitBoolTable(w, "PATTERN", &grammar_roles.rows, "pattern");
     try emitBoolTable(w, "COMPATONLY", &grammar_roles.rows, "compat_only");
     try emitI64Table(w, "PRECEDENCE", &grammar_roles.rows, "precedence");
     try emitI64Table(w, "ASSOC", &grammar_roles.rows, "assoc");
@@ -63,6 +67,22 @@ fn emitGrammarRole(w: *std.Io.Writer) !void {
         \\
         \\roleliteral: bool = (kind: i64)
         \\    kind >= 0 and kind < ROLECOUNT and LITERALKIND[kind + 1] != 0
+        \\end
+        \\
+        \\rolequoted: bool = (kind: i64)
+        \\    kind >= 0 and kind < ROLECOUNT and QUOTED[kind + 1] != 0
+        \\end
+        \\
+        \\rolebodystart: bool = (kind: i64)
+        \\    kind >= 0 and kind < ROLECOUNT and BODYSTART[kind + 1] != 0
+        \\end
+        \\
+        \\roledescriptor: bool = (kind: i64)
+        \\    kind >= 0 and kind < ROLECOUNT and DESCRIPTOR[kind + 1] != 0
+        \\end
+        \\
+        \\rolepattern: bool = (kind: i64)
+        \\    kind >= 0 and kind < ROLECOUNT and PATTERN[kind + 1] != 0
         \\end
         \\
         \\rolecompatonly: bool = (kind: i64)
@@ -126,6 +146,9 @@ test "grammar role generator includes begin_expr lookup" {
     defer aw.deinit();
     try emitGrammarRole(&aw.writer);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "rolebeginexpr") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "rolebodystart") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "rolequoted") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "roledescriptor") != null);
 }
 
 test "grammar role generator preserves token cardinality and eof identity" {

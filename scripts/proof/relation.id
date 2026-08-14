@@ -1,0 +1,37 @@
+# GAP-103 relation identity - structural admission only.
+# Never --backend=c. C-run ser/answer rows are deleted (law.bridge.death).
+
+target = "src/relation.zig"
+fixture = "examples/conversion/relation.id"
+store = "examples/conversion/store.id"
+
+len(path) = (min: i64)
+    path:read()
+        :len() >= min
+
+audit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+hit(path) = (pattern: str)
+    path:read()
+        :match(pattern)
+
+code = 0
+if !target:len(256)
+    code = 1
+if !code and !fixture:len(32)
+    code = 2
+if !code and !store:len(32)
+    code = 3
+if !code and !target:audit("pub const Relation")
+    code = 4
+if !code and target:hit("--backend=c")
+    code = 5
+if !code and !target:audit("pub const Store")
+    code = 6
+
+main: i64 = ()
+    if !code
+        print("relation proof: pass")
+    code

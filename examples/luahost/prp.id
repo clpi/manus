@@ -1,5 +1,5 @@
 # CF-1 — repeat/until, whose condition reads names bound in the body.
 local n = 3
 repeat
-    n = n - 1
+    n -= 1
 until n <= 0

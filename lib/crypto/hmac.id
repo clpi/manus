@@ -4,32 +4,32 @@
 
 h = hash
 
-# hmac: compute HMAC of message m using key k and hash function hash_fn.
-# hash_fn(s) should return a hex string. block_size is the hash's block size.
-hmac(hash_fn: any, key: str, message: str, block_size: i64): str
-    if block_size == nil block_size = 64 end
-    # if key is longer than block_size, hash it
-    if key:len() > block_size
-        key = hash_fn(key)
+# hmac: compute HMAC of message m using key k and hash function hash.
+# hash(s) should return a hex string. block is the hash's block size.
+hmac(hash: any, key: str, message: str, block: i64): str
+    if block == nil block = 64 end
+    # if key is longer than block, hash it
+    if key:len() > block
+        key = hash(key)
     end
-    # pad key to block_size
-    while key:len() < block_size
+    # pad key to block
+    while key:len() < block
         key = key .. 0:char()
     end
     # create inner and outer pads
-    inner_pad = ""
-    outer_pad = ""
+    inner = ""
+    outer = ""
     i = 1
-    while i <= block_size
+    while i <= block
         k = key:byte(i)
-        inner_pad = inner_pad .. k ~ 0x36:char()
-        outer_pad = outer_pad .. k ~ 0x5C:char()
+        inner = inner .. k ~ 0x36:char()
+        outer = outer .. k ~ 0x5C:char()
         i += 1
     end
     # compute inner hash
-    inner_hash = hash_fn(inner_pad .. message)
+    digest = hash(inner .. message)
     # compute outer hash
-    hash_fn(outer_pad .. inner_hash)
+    hash(outer .. digest)
 end
 
 # hmac_sha256: HMAC-SHA-256 using the std.crypto sha256.
@@ -43,8 +43,8 @@ hmac_sha256_bytes(key: str, message: str): str
     bytes = {}
     i = 1
     while i <= 64
-        byte_val = tonumber(hex:sub(i, i + 1), 16)
-        bytes[bytes:len() + 1] = byte_val:char()
+        val = tonumber(hex:sub(i, i + 1), 16)
+        bytes[bytes:len() + 1] = val:char()
         i += 2
     end
     return bytes:concat()
@@ -71,9 +71,8 @@ equal(a: str, b: str): bool
     result = 0
     i = 1
     while i <= a:len()
-        result = result | (a:byte(i) ~ b:byte(i))
+        result |= (a:byte(i) ~ b:byte(i))
         i += 1
     end
     result == 0
 end
-

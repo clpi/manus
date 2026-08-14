@@ -8,7 +8,7 @@
 #
 # A highlighter that is a lexer cannot make that claim, because a lexer sees
 # glyphs. The two places where the difference is visible from outside are the
-# two glyphs duon overloads, and both are in the corpus:
+# two glyphs idol overloads, and both are in the corpus:
 #
 #   `:`  is TWO roles.  `x: f64` is the COPULA — the ascription edge, law/red.
 #                       `lx:read` is INVOKE — the call edge, callable/purple.
@@ -17,7 +17,7 @@
 #
 # HOW EACH IS DECIDED, stated so the shortcut is auditable:
 #
-#   `:`  by grammar.md R1, WHICH IS NORMATIVE (Pass 108): INVOKE always takes
+#   `:`  by grammar.md R1, WHICH IS NORMATIVE: INVOKE always takes
 #        an argument group, IS never does. This file used to decide it by
 #        LAYOUT — §0d's "copula SPACED, invoke TIGHT" — and gaps/GAP-078.md
 #        ruled that reading a FINDING and deleted it. The argument that lost is
@@ -38,7 +38,7 @@
 #        nothing on that line opened a descriptor edge. No glyph window of any
 #        width answers this. The roles CHAIN, which is the whole thesis.
 #
-# ── G-TOTAL (§0g, Pass 117) ─────────────────────────────────────────────────
+# ── G-TOTAL (§0g) ─────────────────────────────────────────────────
 #
 # Three obligations, and the third is the sharp one:
 #
@@ -60,7 +60,7 @@
 #   WHY-CHAIN     every role carries its rule citation and dnir edge. `why()`
 #                 answers from the same rows the projection uses.
 #
-# SPECIFICITY (Pass 118) is measured SEPARATELY and is the bar coverage is not.
+# SPECIFICITY is measured SEPARATELY and is the bar coverage is not.
 # A taxonomy that assigns every byte a role but tells you nothing a lexer could
 # not have told you scores 100% coverage and FAILS. The measure: a lexeme whose
 # (role, card) is the SAME everywhere it appears was decided by its spelling —
@@ -93,11 +93,11 @@
 # pipe green — and H-4 defines a role's hue as its semantic space. `=`, `+=`
 # and `==` never change colour, so they refine rather than fork.
 #
-# WHERE THE LAW NAMES A ROLE, THE LAW WINS OVER THAT DISCRIMINATOR. Pass 118 §4
+# WHERE THE LAW NAMES A ROLE, THE LAW WINS OVER THAT DISCRIMINATOR. §4
 # names SPACE WALK (`to[str]`) its own ROLE, descriptor-tinted — trie navigation
 # into descriptor space, not a bracket. The hue discriminator would have made it
 # a card inside `descriptor`; it is a role because the law says so, and it is
-# spelled `retrieve` (pass100 §4's own word for `[ ]`). Braces (a matching
+# spelled `retrieve` (§4's own word for `[ ]`). Braces (a matching
 # stack), comma (stratify), unit `*` and dnir `=`/`->` stay CARDS, which is what
 # the same section says about them.
 #
@@ -181,7 +181,7 @@
 # italic: H-5, AMBIENT and FOREIGN. `world` is italic because an ambient
 # capability reach is a fact the reader must see without looking it up, and
 # `foreign` is italic because THE TRUST BOUNDARY IS TYPOGRAPHIC — you can see
-# where duon stops without reading a word of the span.
+# where idol stops without reading a word of the span.
 #
 # luminance: H-6, luminance is SURPRISAL. `faint` is not "less important", it
 # is "fully inferable from its surroundings" — layout and comments are the two
@@ -255,7 +255,7 @@ cards = {
     "nonterm  descriptor n a nonterminal reference",
     "slot     descriptor s a declared slot at a descriptor",
     "control  keyword    k control law",
-    "bare     anchor     d the innermost enclosing descriptor",
+    "bare     anchor     d the current world",
     "rel      anchor     n a postfix anchor",
     "call     callable   c an application",
     "opcode   callable   o a machine or dnir operation",
@@ -295,7 +295,7 @@ rules = {
     "h5   §0d H-5 weight is definition; italic is ambient or foreign",
     "h6   §0d H-6 the role function is total; luminance is surprisal",
     "g17  §0g G-TOTAL fine splits are law; a card refines, never forks, a role",
-    "p118 §0d Pass 118 §4 the space walk is trie navigation, its own role",
+    "p118 §0d §4 the space walk is trie navigation, its own role",
     "law1 §0.1 LAW-ONE identifiers are one lowercase word",
     "law2 §0.2 the @ dyad: bare descriptor and postfix anchor",
     "law3 §0.3 inferred cases, read from descriptor-expected position",
@@ -385,7 +385,7 @@ field(line: str, n: i64): str
         b: i64 = line:byte(i)
         if b == 32 or b == 9
             if inword
-                seen = seen + 1
+                seen += 1
                 if seen == n
                     out = line:sub(start, i - 1)
                 end
@@ -397,10 +397,10 @@ field(line: str, n: i64): str
                 start = i
             end
         end
-        i = i + 1
+        i += 1
     end
     if inword
-        seen = seen + 1
+        seen += 1
         if seen == n
             out = line:sub(start, line:len())
         end
@@ -417,7 +417,7 @@ rowof(key: str): str
         if field(r, 1) == key or field(r, 2) == key
             out = r
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -443,7 +443,7 @@ carding(role: str, card: str): str
         if field(c, 3) == card and (field(c, 2) == nm or field(c, 2) == "none")
             out = field(c, 1)
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -455,7 +455,7 @@ hexof(hue: str): str
         if field(hues[i], 1) == hue
             out = field(hues[i], 2)
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -471,7 +471,7 @@ citing(id: str): str
                 out = out:sub(2, out:len())
             end
         end
-        i = i + 1
+        i += 1
     end
     std.script.chomp(out)
 end
@@ -516,20 +516,20 @@ closed(): str
             if j != i and field(roles[j], 1) == nm
                 bad = "role name {nm} appears twice"
             end
-            j = j + 1
+            j += 1
         end
         seen: i64 = 0
         j = 1
         while j <= cards:len()
             if field(cards[j], 2) == nm
-                seen = seen + 1
+                seen += 1
             end
-            j = j + 1
+            j += 1
         end
         if seen == 0
             bad = "role {nm} carries no card; §0g wants every role refined"
         end
-        i = i + 1
+        i += 1
     end
     i = 1
     diag: i64 = 0
@@ -541,9 +541,9 @@ closed(): str
             bad = "card {cn} refines {cr}, which is not a role"
         end
         if cr == "none" and field(c, 3) == kbad
-            diag = diag + 1
+            diag += 1
         end
-        i = i + 1
+        i += 1
     end
     # gap[078]: the taxonomy must be able to SAY "two candidates". G-TOTAL gates
     # ambiguity at 0, and a set with no diagnostic member reports that 0 by
@@ -583,7 +583,7 @@ ahead(line: str, i: i64): i64
         if not blank(b)
             out = b
         end
-        j = j + 1
+        j += 1
     end
     out
 end
@@ -596,7 +596,7 @@ nextat(line: str, i: i64): i64
         if not blank(line:byte(j))
             out = j
         end
-        j = j + 1
+        j += 1
     end
     out
 end
@@ -619,7 +619,7 @@ behind(line: str, i: i64): i64
         if not blank(b)
             out = b
         end
-        j = j - 1
+        j -= 1
     end
     out
 end
@@ -645,7 +645,7 @@ dotted(s: str): bool
         if s:byte(i) == 46
             found = true
         end
-        i = i + 1
+        i += 1
     end
     found
 end
@@ -660,7 +660,7 @@ shapes = "i64 i32 i16 i8 u64 u32 u16 u8 f64 f32 str bool void any error byte bit
 worlds = "print sh io os fs net clock rand env std task"
 
 # The codes, bound once. Spelling a role or card code as a bare letter at a
-# call site is how a taxonomy and its consumers drift apart — and duon has no
+# call site is how a taxonomy and its consumers drift apart — and idol has no
 # string literal inside an interpolation hole, so binding them is also the only
 # way the scanner can name them where it uses them.
 mcode = "m"
@@ -695,7 +695,7 @@ pairof(role: str, card: str, n: i64): str
     i: i64 = 0
     while i < n
         acc = "{acc}{role}{card}"
-        i = i + 1
+        i += 1
     end
     acc
 end
@@ -707,7 +707,7 @@ lane(duet: str, k: i64): str
     while i <= duet:len()
         c: str = duet:sub(i, i)
         out = out .. c
-        i = i + 2
+        i += 2
     end
     out
 end
@@ -716,7 +716,7 @@ end
 wordat(line: str, i: i64): str
     j: i64 = i
     while j <= line:len() and wordy(line:byte(j))
-        j = j + 1
+        j += 1
     end
     line:sub(i, j - 1)
 end
@@ -740,7 +740,7 @@ laddered(line: str): bool
                 found = true
             end
         end
-        i = i + 1
+        i += 1
     end
     found
 end
@@ -808,16 +808,16 @@ walkat(prev: i64): bool
 end
 
 # Project one line into interleaved role/card bytes. `surface` selects the
-# reading; `duon` is the real one and the other four are the surfaces §0d
+# reading; `idol` is the real one and the other four are the surfaces §0d
 # requires ONE colour language to cover.
-# A foreign fixture is a duon file that CARRIES foreign source; its own header
-# and prose are duon and sit OUTSIDE the trust boundary the header declares.
+# A foreign fixture is a idol file that CARRIES foreign source; its own header
+# and prose are idol and sit OUTSIDE the trust boundary the header declares.
 # Only a line that starts with `--` is frame — mid-line `--` (C's `n--`) is
 # foreign text and stays foreign.
 framing(line: str): bool
     i: i64 = 1
     while i <= line:len() and blank(line:byte(i))
-        i = i + 1
+        i += 1
     end
     i + 1 <= line:len() and line:byte(i) == 45 and line:byte(i + 1) == 45
 end
@@ -827,7 +827,7 @@ duet(line: str, surface: str): str
     if surface == "foreign" and not framing(line)
         # §0d H-5: the trust boundary is typographic. There is no graph behind
         # foreign source — that is what makes it foreign — so it takes ONE role
-        # across its whole extent and the italic says where duon stopped.
+        # across its whole extent and the italic says where idol stopped.
         # Colouring inside it would be a claim to understand it.
         i: i64 = 1
         while i <= line:len()
@@ -836,7 +836,7 @@ duet(line: str, surface: str): str
             else
                 out = "{out}gg"
             end
-            i = i + 1
+            i += 1
         end
     else
         out = scan(line, surface)
@@ -875,7 +875,7 @@ scan(line: str, surface: str): str
 
         if blank(b)
             out = "{out}ls"
-            i = i + 1
+            i += 1
         elseif b == 45 and nb == 45
             # `--` to end of line. FAINT, never absent (H-6).
             piece = pairof(mcode, kprose, line:len() - i + 1)
@@ -888,14 +888,14 @@ scan(line: str, surface: str): str
             # the flat span corpus is what caught it. gap[078].
             j: i64 = i + 1
             while j <= line:len() and line:byte(j) != b
-                j = j + 1
+                j += 1
             end
             piece = strand(line, i, j, surface)
             out = out .. piece
             head = false
             i = j + 1
         elseif b == 59
-            # Pass 119: THE SEMICOLON DOES NOT EXIST. In duon it names nothing,
+            # THE SEMICOLON DOES NOT EXIST. In idol it names nothing,
             # so it takes no role — it diagnoses. In dnir it is metadata
             # notation, which is a comment, and that is the only reading left.
             if surface == "dnir"
@@ -905,10 +905,10 @@ scan(line: str, surface: str): str
             else
                 out = "{out}!!"
                 head = false
-                i = i + 1
+                i += 1
             end
         elseif b == 58
-            # THE FIRST PROOF, decided by grammar.md R1 (NORMATIVE, Pass 108):
+            # THE FIRST PROOF, decided by grammar.md R1 (NORMATIVE):
             # INVOKE always takes an argument group, IS never does. So a `:` is
             # an invoke exactly when a name follows it immediately AND that name
             # is immediately followed by a call group — `(`, `{` or `"`. Every
@@ -929,12 +929,12 @@ scan(line: str, surface: str): str
                 end
             end
             head = false
-            i = i + 1
+            i += 1
         elseif b == 124
             # THE SECOND PROOF, and it reads the bits the earlier arms set.
             # On a descriptor edge it is the UNION. Off the edge §0g gives it
             # two readings and the ruling decides neither: "channels = stream
-            # places composed by `|`" is the PIPE, and pass100 §4 lists `bor`
+            # places composed by `|`" is the PIPE, and the retrieval ruling lists `bor`
             # over integer operands. What separates them is operand space, so
             # the only surface fact available is whether a stream place was
             # opened on this line — a world action does that. `sh "ls" | grep(…)`
@@ -949,25 +949,25 @@ scan(line: str, surface: str): str
                 out = "{out}!!"
             end
             head = false
-            i = i + 1
+            i += 1
         elseif b == 61
             if surface == "ebnf"
                 out = "{out}ca"
-                i = i + 1
+                i += 1
             elseif nb == 61
                 # §0g: `==` is a RELATION query, not a binding.
                 piece = pairof(ocode, krel, 2)
                 out = out .. piece
-                i = i + 2
+                i += 2
             elseif pb == 43 or pb == 45 or pb == 42 or pb == 47
                 out = "{out}ou"
-                i = i + 1
+                i += 1
             else
                 # §0g: `=` BINDS — it asserts a fact — and a binding closes the
                 # descriptor edge the copula opened.
                 out = "{out}ob"
                 descpos = false
-                i = i + 1
+                i += 1
             end
             head = false
         elseif b == 37 and surface == "dnir"
@@ -979,7 +979,7 @@ scan(line: str, surface: str): str
             piece = pairof(pcode, kreg, w:len() + 1)
             out = out .. piece
             head = false
-            i = i + w:len() + 1
+            i += w:len() + 1
         elseif b == 43 or b == 42 or b == 47 or b == 37
             card: str = "a"
             if nb == 61
@@ -992,16 +992,16 @@ scan(line: str, surface: str): str
             piece = pairof(ocode, card, 1)
             out = out .. piece
             head = false
-            i = i + 1
+            i += 1
         elseif b == 60 or b == 62
             out = "{out}or"
             head = false
-            i = i + 1
+            i += 1
         elseif b == 45 and surface == "dnir" and nb == 62
             piece = pairof(ocode, kflow, 2)
             out = out .. piece
             head = false
-            i = i + 2
+            i += 2
         elseif b == 64
             # §0.2 the @ DYAD. Postfix on a word is an ANCHOR; otherwise it is
             # the bare innermost descriptor.
@@ -1012,7 +1012,7 @@ scan(line: str, surface: str): str
             piece = pairof(acode, card, 1)
             out = out .. piece
             head = false
-            i = i + 1
+            i += 1
         elseif b == 46
             w: str = wordat(line, i + 1)
             if walkat(pb)
@@ -1039,17 +1039,17 @@ scan(line: str, surface: str): str
                 out = out .. piece
             end
             head = false
-            i = i + w:len() + 1
+            i += w:len() + 1
         elseif b == 35 and surface == "asm"
             w: str = wordat(line, i + 1)
             piece = pairof(ncode, kimm, w:len() + 1)
             out = out .. piece
             head = false
-            i = i + w:len() + 1
+            i += w:len() + 1
         elseif digit(b)
             j: i64 = i
             while j <= line:len() and (digit(line:byte(j)) or line:byte(j) == 46)
-                j = j + 1
+                j += 1
             end
             piece = pairof(ncode, klit, j - i)
             out = out .. piece
@@ -1078,7 +1078,7 @@ scan(line: str, surface: str): str
                 rc = "dn"
             end
             if surface == "dnir" and rc == "pv"
-                # Pass 118 §4, per-language totalization: "every leftover
+                # §4, per-language totalization: "every leftover
                 # identifier is a NAMED role (`d-i` — a fact name), never
                 # generic." A dnir word that reached the generic `value` card
                 # got no more than its lexical class, which §0g SPECIFICITY
@@ -1095,9 +1095,9 @@ scan(line: str, surface: str): str
             piece = pairof(rc:sub(1, 1), rc:sub(2, 2), w:len())
             out = out .. piece
             head = false
-            i = i + w:len()
+            i += w:len()
         elseif b == 40
-            depth = depth + 1
+            depth += 1
             # §0g: level parens vs parameter parens vs grouping. A LEVEL is the
             # marked form and `laddered` is the mark, so on a laddered line the
             # first name-adjacent group is the strata level and the rest are
@@ -1109,7 +1109,7 @@ scan(line: str, surface: str): str
                 if level and groups == 0
                     card = "t"
                 end
-                groups = groups + 1
+                groups += 1
             elseif pb == 61 and level
                 card = "p"
             end
@@ -1121,29 +1121,29 @@ scan(line: str, surface: str): str
             out = out .. piece
             descpos = false
             head = false
-            i = i + 1
+            i += 1
         elseif b == 41
             card: str = "g"
             if opened:len() > 0
                 card = opened:sub(opened:len(), opened:len())
                 opened = opened:sub(1, opened:len() - 1)
             end
-            depth = depth - 1
+            depth -= 1
             piece = pairof(lcode, card, 1)
             out = out .. piece
             head = false
-            i = i + 1
+            i += 1
         elseif b == 123 or b == 125
             if b == 123
-                braces = braces + 1
+                braces += 1
             else
-                braces = braces - 1
+                braces -= 1
             end
             out = "{out}ld"
             head = false
-            i = i + 1
+            i += 1
         elseif b == 91
-            # Pass 118 §4: SPACE WALK is its OWN ROLE, descriptor-tinted — trie
+            # §4: SPACE WALK is its OWN ROLE, descriptor-tinted — trie
             # navigation, not a bracket. `to[str]` walks descriptor space;
             # `xs[0]` retrieves from a table by a value key. What separates them
             # is the CONTENT's space, which is R5's "operands select the
@@ -1153,7 +1153,7 @@ scan(line: str, surface: str): str
             # rather than defaulting. gap[078].
             j: i64 = i + 1
             while j <= line:len() and line:byte(j) != 93
-                j = j + 1
+                j += 1
             end
             inner: str = line:sub(i + 1, j - 1)
             card: str = kbad
@@ -1170,7 +1170,7 @@ scan(line: str, surface: str): str
             piece = pairof(role, card, 1)
             out = out .. piece
             head = false
-            i = i + 1
+            i += 1
         elseif b == 93
             # the closer answers what the opener answered, for the reason the
             # paren closer does: recomputing it reads the byte AFTER the group.
@@ -1186,16 +1186,16 @@ scan(line: str, surface: str): str
             piece = pairof(role, card, 1)
             out = out .. piece
             head = false
-            i = i + 1
+            i += 1
         elseif b == 44
             # §0g: the comma STRATIFIES a group; it is not decoration.
             out = "{out}lx"
             head = false
-            i = i + 1
+            i += 1
         else
             out = "{out}oa"
             head = false
-            i = i + 1
+            i += 1
         end
     end
     out
@@ -1205,7 +1205,7 @@ end
 wordstart(line: str, i: i64): i64
     j: i64 = i
     while j >= 1 and wordy(line:byte(j))
-        j = j - 1
+        j -= 1
     end
     j + 1
 end
@@ -1230,7 +1230,7 @@ end
 #
 # The delimiting quote takes the layout card `quote`, not `group`: it delimits a
 # literal and delimits nothing else, and a card that cannot beat "punctuation"
-# is the Pass 118 SPECIFICITY finding. The interpolation braces stay `group` —
+# is the SPECIFICITY finding. The interpolation braces stay `group` —
 # they delimit an expression, which is what grouping means.
 strand(line: str, i: i64, j: i64, surface: str): str
     card: str = "q"
@@ -1244,7 +1244,7 @@ strand(line: str, i: i64, j: i64, surface: str): str
         if line:byte(k) == 123
             e: i64 = k + 1
             while e <= j - 1 and line:byte(e) != 125
-                e = e + 1
+                e += 1
             end
             inner: str = line:sub(k + 1, e - 1)
             rc: str = "pv"
@@ -1259,7 +1259,7 @@ strand(line: str, i: i64, j: i64, surface: str): str
         else
             piece = pairof(tcode, card, 1)
             out = out .. piece
-            k = k + 1
+            k += 1
         end
     end
     if j <= line:len()
@@ -1315,12 +1315,12 @@ why(key: str): str
                 word: str = field(c, j)
                 while word != ""
                     out = "{out} {word}"
-                    j = j + 1
+                    j += 1
                     word = field(c, j)
                 end
                 out = "{out}\n"
             end
-            i = i + 1
+            i += 1
         end
     end
     out
@@ -1389,7 +1389,7 @@ legend(): str
         idx: str = to(str)(i - 1)
         nm: str = field(r, 1)
         out = "{out}{idx} {nm} {mods}\n"
-        i = i + 1
+        i += 1
     end
     # without this the legend ends in a newline AND `print` adds one, so the
     # file carries one empty row past the last role. A consumer that indexes the
@@ -1447,7 +1447,7 @@ emitscm(): str
         nm: str = field(r, 1)
         cap: str = field(r, 9)
         b = "{b};   {nm} {cap} {hx}\n"
-        i = i + 1
+        i += 1
     end
     b = "{b}\n"
     kcap: str = capof("keyword")
@@ -1473,7 +1473,7 @@ emitscm(): str
         word: str = field(row, j)
         while field(row, j + 1) != ""
             pat = "{pat} {word}"
-            j = j + 1
+            j += 1
             word = field(row, j)
         end
         cap: str = capof(word)
@@ -1485,14 +1485,14 @@ emitscm(): str
         else
             b = "{b}{pat} {cap}\n"
         end
-        i = i + 1
+        i += 1
     end
     ccap: str = capof("comment")
     b = "{b}\n(comment) {ccap} @spell\n\n"
     bcap: str = capof("layout")
     b = "{b}[\n  {q}({q} {q}){q}\n] {bcap}\n\n"
     b = "{b}[\n  {q},{q} {q}.{q}\n] {bcap}\n\n"
-    # Pass 118 §4: the square brackets are the SPACE WALK, not layout. This is
+    # §4: the square brackets are the SPACE WALK, not layout. This is
     # the one place the generated query can carry a role the old grammar folded
     # into punctuation, so it does.
     rcap: str = capof("retrieve")
@@ -1517,11 +1517,11 @@ end
 # The surface a fixture declares, from its `-- surface: <name>` header. Read as
 # the THIRD FIELD of the line rather than as the text after the colon: `sub`
 # past the colon keeps the leading space, and " ebnf" matches no surface name,
-# so every non-duon fixture was silently scanned as duon and looked plausible.
+# so every non-idol fixture was silently scanned as idol and looked plausible.
 # Only the FIRST header counts; a later line mentioning the word must not
 # retarget the file.
 surfaceof(body: str): str
-    out: str = "duon"
+    out: str = "idol"
     found: bool = false
     for i, ln in body:split("\n")
         if not found and ln:find("surface:") > 0
@@ -1551,7 +1551,7 @@ main(): i64
         while i <= roles:len()
             r: str = roles[i]
             print("  {r}")
-            i = i + 1
+            i += 1
         end
         print("cards, §0g fine splits — refinements WITHIN a role:")
         print("  name role code note")
@@ -1559,7 +1559,7 @@ main(): i64
         while i <= cards:len()
             c: str = cards[i]
             print("  {c}")
-            i = i + 1
+            i += 1
         end
         std.os.exit(0)
     end
@@ -1616,7 +1616,7 @@ main(): i64
     lines = body:split("\n")
     last: i64 = lines:len()
     if last > 0 and lines[last] == ""
-        last = last - 1
+        last -= 1
     end
     i: i64 = 1
     while i <= last
@@ -1626,7 +1626,7 @@ main(): i64
         else
             print(project(ln, surface))
         end
-        i = i + 1
+        i += 1
     end
     0
 end

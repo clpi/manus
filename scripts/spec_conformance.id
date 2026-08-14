@@ -1,6 +1,6 @@
-# Pass 64 Part VIII — G1/G2: does the compiler implement the spec it is given?
+# G1/G2: does the compiler implement the spec it is given?
 #
-# Why this exists. Passes 57, 59, 60, 61 and 64 each pin canonical forms, and
+# Why this exists. The canonical-form rounds each pin canonical forms, and
 # in three of them the canonical form was NOT implemented — `"{x}"` printed the
 # literal text `{x}`, `t:push(v)` compiled clean and dropped the element,
 # `f = (x: t): r ... end` did not parse at all. An agent following the spec
@@ -8,7 +8,7 @@
 # nothing failed to warn it, because these are wrong-output bugs and not
 # errors.
 #
-# So conformance is measured, not assumed. Every row below is a Pass 64 surface
+# So conformance is measured, not assumed. Every row below is a surface form
 # form reduced to the smallest program that exercises it. A row is IMPLEMENTED
 # only if the program compiles AND prints the expected value: "compiles" is not
 # evidence, since the whole failure class here compiles.
@@ -34,8 +34,8 @@ baseline(): i64
 end
 
 # An open brace, built rather than written. Interpolation has NO ESCAPE: there
-# is no way to spell a literal `{name}` in a Duo string, so a file like this
-# one # whose data is Duo source containing interpolation holes # would have
+# is no way to spell a literal `{name}` in an Idol string, so a file like this
+# one # whose data is Idol source containing interpolation holes # would have
 # its own corpus rewritten by the compiler. That is not hypothetical: the first
 # run of this gate failed with "use of undeclared identifier 'x'" because the
 # STR-1 row's test PROGRAM was interpolated as if it were this program's
@@ -58,7 +58,7 @@ report = ""
 # because a function assigning to a file-scope variable is not reliably visible
 # to other functions.
 probe(id: str, src: str, want: str): bool
-    path = "/tmp/duo_specconf.id"
+    path = "/tmp/idol_specconf.id"
     std.script.fs_write(path, src)
     got = std.script.capture(std.script.id_bin() .. " run " .. path .. " 2>/dev/null")
     trimmed = std.script.chomp(got)
@@ -69,9 +69,9 @@ probe(id: str, src: str, want: str): bool
 end
 
 record(id: str, src: str, want: str): void
-    checked = checked + 1
+    checked += 1
     if probe(id, src, want)
-        implemented = implemented + 1
+        implemented += 1
         report = report .. "  ok      " .. id .. "\n"
     else
         report = report .. "  MISSING " .. id .. "\n"
@@ -104,12 +104,12 @@ main(): i64
     record("STR-1 field hole", "main(): void\n    p = { x = 4 }\n    print(\"" .. lb() .. "p.x}\")\nend\n", "4")
     record("STR-1 expr hole", "main(): void\n    i = 1\n    print(\"" .. lb() .. "i + 1}\")\nend\n", "2")
 
-    # PART II 2.1 / Pass 38 — access and relations.
+    # PART II 2.1 — access and relations.
     #
     # The "G6 value.@name" row that stood here asserted the graveyard form
     # PRESENT while the row below asserted it ABSENT — two rows of one suite
     # demanding opposite answers about one spelling, which is the conflict in
-    # miniature. Pass 100 §2 settles it: the anchor has three stances and
+    # miniature. The anchor has three stances and
     # `.@name` is not among them. The row is retired, not flipped; the ABSENT
     # row below is the one that carries the ruling.
     record("FF-14 subject-first convert", "main(): void\n    print(42:to(str))\nend\n", "42")
@@ -124,19 +124,19 @@ main(): i64
     record("LV-8 for v in t", "main(): void\n    t = {10, 20}\n    s = 0\n    for v in t\n        s = s + v\n    end\n    print(s)\nend\n", "30")
     record("LV-13 s:len()", "main(): void\n    print(#\"hello\")\nend\n", "5")
 
-    # Pass 48 §2.1/§2.6 + Pass 67 §2 (S14): apply / retrieve / anchor are ruled
+    # Apply / retrieve / anchor are ruled
     # TOTAL and DISJOINT. Only APPLY exists. The collision S14 resolves —
     # `to(str)(Point)` reading as retrieval vs application — cannot occur
     # today, because the bracket retrieval form it is disambiguated against
     # does not parse to anything.
     #
-    # Note Pass 48 §2.6's own example lines (`edge = to[str][Point]`,
+    # Note the spec's own example lines (`edge = to[str][Point]`,
     # `render = Point@to(str)`) are among the rows that do not compile.
     record("S14 apply subject-first to(T)", "main(): void\n    print(42:to(str))\nend\n", "42")
     record("S14 retrieve to[T]", "main(): void\n    print(to[str] != nil)\nend\n", "true")
     record("S14 retrieve to[T][X]", "main(): void\n    print(to[str][i64] != nil)\nend\n", "true")
 
-    # THE CANONICAL ANCHOR is POSTFIX `X@rel` (Pass 48 §2.1, Pass 100 §2).
+    # THE CANONICAL ANCHOR is POSTFIX `X@rel`.
     #
     # The SPELLING exists now: glued `X@rel` is a postfix anchor rather than
     # the matmul operator, so this row compiles instead of dying on "use of
@@ -148,9 +148,9 @@ main(): i64
     # red on purpose and now names one gap instead of two.
     record("P48 anchor X@to(T)", "main(): void\n    print(i64@to(str) != nil)\nend\n", "true")
 
-    # `value.@name` is IN PASS 48'S GRAVEYARD (Part VI), alongside `point:@to`
+    # `value.@name` is IN THE GRAVEYARD (Part VI), alongside `point:@to`
     # and `Point.@to`. It was implemented anyway — added in 7af9a66 from the
-    # Pass 38 catalog, which Pass 48 supersedes — so this row asserted the form
+    # earlier catalog, superseded since — so this row asserted the form
     # ABSENT and FAILED on purpose for a day. It passes now: the parser rejects
     # `.@name` outright and codegen's metafield re-derivation went with it.
     #
@@ -159,7 +159,7 @@ main(): i64
     # wrong-value spelling had a name to be closed under.
     record("GRAVEYARD .@name absent", "e(a: any, b: any): bool\n    true\nend\nmain(): void\n    p = {}\n    setmetatable(p, { __eq = e })\n    print(p.@eq == nil)\nend\n", "ABSENT")
 
-    # Pass 67 §4 — face rows that DO work, pinned so they cannot regress.
+    # Face rows that DO work, pinned so they cannot regress.
     record("face brace call f{}", "srv(o: any): i64\n    o.port\nend\nmain(): void\n    print(srv{ port = 8080 })\nend\n", "8080")
 
     # PIPE-1 — the pinned pipeline surface

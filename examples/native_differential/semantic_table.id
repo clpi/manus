@@ -1,16 +1,13 @@
-semantic = {
-    vocab = "lib/semantic/vocabulary.id"
+home = {
+    idiom = "gate/idiom.id"
 }
 
-router(semantic) = (home: str)
-    io:read(home)
-
 main: i64 = ()
-    path = semantic["vocab"]
+    path = home.idiom
     if path == nil
         print("path nil")
         return 1
-    body = router(semantic)(path)
+    body = io:read(path)
     if body == nil
         print("body nil")
         return 2

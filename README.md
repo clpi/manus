@@ -64,18 +64,16 @@ universal namespace.
 
 ## Build And Evidence
 
-The physical bootstrap executable is currently named `duo`; that name is a
-bootstrap alias, not the current language identity or evidence that the future
-`idol` command has entered production. Build the seed transport with:
+The bootstrap executable is `./zig-out/bin/idol` (`idol check`, `idol run`). Build the seed transport with:
 
 ```bash
 zig build
 ```
 
-Then canonical source can be checked through the bootstrap transport:
+Then canonical source can be checked:
 
 ```bash
-./zig-out/bin/duo check main.id
+./zig-out/bin/idol check main.id
 ```
 
 Use repository-locked gates for evidence. Process completion, a focused fixture,

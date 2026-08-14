@@ -43,7 +43,7 @@ result_calculate_stats(result: any): void
   sorted:sort()
   sum = 0
   for v in sorted
-    sum = sum + v
+    sum += v
   end
   result.mean_latency = sum / n
   result.median_latency = sorted[n / 2:floor() + 1]
@@ -73,7 +73,7 @@ runner_run(runner: any, model_fn: any, input_generator: any): any
     while i < config.warmup_runs
       input = input_generator(batch_size)
       model_fn(input)
-      i = i + 1
+      i += 1
     end
     i = 0
     while i < config.num_runs
@@ -82,11 +82,11 @@ runner_run(runner: any, model_fn: any, input_generator: any): any
       output = model_fn(input)
       end_time = os.clock()
       result_add_latency(result, end_time - start_time)
-      i = i + 1
+      i += 1
     end
     result_calculate_stats(result)
     results[batch_idx] = result
-    batch_idx = batch_idx + 1
+    batch_idx += 1
   end
   runner.results = results
   results
@@ -96,7 +96,7 @@ throughput(model_fn: any, input_generator: any, batch_size: i64, duration: f64):
   while i < 5
     input = input_generator(batch_size)
     model_fn(input)
-    i = i + 1
+    i += 1
   end
   start_time = os.clock()
   tokens = 0
@@ -104,8 +104,8 @@ throughput(model_fn: any, input_generator: any, batch_size: i64, duration: f64):
   while os.clock() - start_time < duration
     input = input_generator(batch_size)
     output = model_fn(input)
-    tokens = tokens + batch_size
-    runs = runs + 1
+    tokens += batch_size
+    runs += 1
   end
   elapsed = os.clock() - start_time
   {
@@ -122,7 +122,7 @@ latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): an
   while i < 5
     input = input_generator(batch_size)
     model_fn(input)
-    i = i + 1
+    i += 1
   end
   latencies = {}
   i = 0
@@ -132,12 +132,12 @@ latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): an
     model_fn(input)
     end_time = os.clock()
     latencies[latencies:len() + 1] = end_time - start_time
-    i = i + 1
+    i += 1
   end
   latencies:sort()
   sum = 0
   for v in latencies
-    sum = sum + v
+    sum += v
   end
   {
     batch_size = batch_size,
@@ -187,7 +187,7 @@ rank(results: any, metric: str): any
       value = result[metric] or 0
     }
   end
-  table.sort(ranked, (a: any, b: any): any
+  ranked:sort((a: any, b: any): any
     a.value > b.value
   end)
   ranked

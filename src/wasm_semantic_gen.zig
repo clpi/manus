@@ -1,4 +1,4 @@
-//! Pass 9 — compile-time generator artifacts from `wasm_semantic.zig` (P9-WS5).
+//! — compile-time generator artifacts from `wasm_semantic.zig` (P9-WS5).
 //!
 //! Produces decoder-adjacent validator metadata and immediate-reader dispatch
 //! tables. Canonical opcode facts remain in wasm_semantic only.
@@ -139,7 +139,7 @@ pub fn writeCatalogJson(w: *std.Io.Writer) !void {
     try w.print("}}", .{});
 }
 
-/// Emit `lib/std/wasm/opcode_lookup.id` — generated opcode → semantic id dispatch (P9-M1).
+/// Emit `lib/wasm/opcode_lookup.id` — generated opcode → semantic id dispatch (P9-M1).
 pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
     try w.writeAll(
         \\-- GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
@@ -236,7 +236,7 @@ fn wardOpcodeFieldName(id: []const u8) []const u8 {
     return local;
 }
 
-/// Emit `lib/std/wasm/ward_mvp_opcodes.id` — Ward-compatible OP_* for MVP subset only.
+/// Emit `lib/wasm/ward_mvp_opcodes.id` — Ward-compatible OP_* for MVP subset only.
 pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
     try w.writeAll(
         \\-- GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
@@ -265,7 +265,7 @@ pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
         const field = buf[0..len];
         try w.print("{s} = {d}\n", .{ field, inst.opcode });
     }
-    // File-as-module-scope (Pass 48 canonical): the file's top-level bindings
+    // File-as-module-scope (canonical): the file's top-level bindings
     // ARE the module. No `M = {}` wrapper and no trailing bare `M` — both are
     // graveyard idiom. With no tail expression duo already exports an implicit
     // table of every module-level binding, which is exactly the right shape.

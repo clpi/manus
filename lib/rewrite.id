@@ -4,7 +4,7 @@
 #
 # **Ergonomic entry point:** use `@meta.rewrite.bundle("algebraic")` or
 # `@meta.rewrite.bundle("fast")` at module scope — one line registers the
-# full rule set in the compiler (see examples/meta_algebra_showcase.id).
+# full rule set in the compiler (see examples/parity/map.id).
 # The functions below are for inspection, documentation, and future
 # user-defined rule registration via `@meta.rewrite(...)`.
 
@@ -33,7 +33,7 @@ global rule_count = 0
 # define: register a rewrite rule.
 define(name: str, pattern: str, replacement: str, priority: i64)
     if priority == nil priority = 0 end
-    rule_count = rule_count + 1
+    rule_count += 1
     rules[rule_count] = {
         name = name,
         pattern = pattern,
@@ -131,7 +131,7 @@ apply_all(): str
         if rules[i].enabled
             r = rules[i]
             lines[lines:len() + 1] = "  [" .. r.priority:to(str) .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
-            applied = applied + 1
+            applied += 1
         end
     end
     "/* [rewrite] " .. applied:to(str) .. " rules registered */\n" .. str_join(lines, "\n")

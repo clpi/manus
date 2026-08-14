@@ -13,7 +13,7 @@
 #
 # WHAT THIS PROVES END TO END. The descriptor edge of `apply` (law.apply.one)
 # emits C that a C compiler accepts and that answers correctly. That is rung
-# (a) of the constructor ladder working, in duon, for the first time — the form
+# (a) of the constructor ladder working, in idol, for the first time — the form
 # gap[088] measured as not lowering.
 #
 # Exit 0 pass · 1 an answer was wrong · 3 the harness could not run.
@@ -28,7 +28,7 @@ q = "'"
 chomp: str = (s: str)
     n: i64 = s:len()
     while n > 0 and (s:byte(n) == 10 or s:byte(n) == 13 or s:byte(n) == 32)
-        n = n - 1
+        n -= 1
     s:sub(1, n)
 
 runs: str = (decl: str, apply: str, read: str)
@@ -46,9 +46,9 @@ runs: str = (decl: str, apply: str, read: str)
     std.proc.capture(cmd)
 
 # `s:trim()` RETURNS NIL SILENTLY — measured 2026-08-09. It is not a method
-# duon has, and a missing method resolves to nil rather than diagnosing, which
+# idol has, and a missing method resolves to nil rather than diagnosing, which
 # is the `std.string.byte` failure class over again. `chomp` above is written
-# out rather than reached for; `std.script` is not an option (Pass 100 §15).
+# out rather than reached for; `std.script` is not an option.
 
 fail = 0
 
@@ -58,7 +58,7 @@ check = (what: str, got: str, want: str)
         print("  ok   {what} -> {g}")
     else
         print("  FAIL {what} -> {g}, wanted {want}")
-        fail = fail + 1
+        fail += 1
 
 main: i64 = ()
     print("")
@@ -108,7 +108,7 @@ main: i64 = ()
         print("  ok   named and positional agree at 3 (law.apply.one)")
     else
         print("  FAIL named and positional disagree — two constructors, not one")
-        fail = fail + 1
+        fail += 1
 
     print("")
     if fail > 0

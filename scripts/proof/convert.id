@@ -48,10 +48,10 @@ answer: str = (name: str, src: str, flags: str)
     bin: str = "{work}/{name}.out"
     std.script.run("printf {q}%s{q} {q}{src}{q} > {path}")
     rc: i64 = std.script.run("{idol} compile {path} {flags} --emit exe -o {bin} > {work}/{name}.log 2>&1")
-    out = "DID NOT BUILD"
-    if rc == 0
-        out = std.script.chomp(std.script.capture(bin))
-    out
+    if rc > 0
+        "DID NOT BUILD"
+    else
+        std.script.chomp(std.script.capture(bin))
 
 # and its exit status, which is the only way to see a FAULT.
 verdict: i64 = (name: str, src: str, flags: str)
@@ -59,10 +59,10 @@ verdict: i64 = (name: str, src: str, flags: str)
     bin: str = "{work}/{name}.out"
     std.script.run("printf {q}%s{q} {q}{src}{q} > {path}")
     rc: i64 = std.script.run("{idol} compile {path} {flags} --emit exe -o {bin} > {work}/{name}.log 2>&1")
-    code = -1
-    if rc == 0
-        code = std.script.status("{bin} > /dev/null 2>&1")
-    code
+    if rc > 0
+        -1
+    else
+        std.script.status("{bin} > /dev/null 2>&1")
 
 row: i64 = (label: str, got: str, want: str)
     mark = "  ok"
@@ -78,7 +78,7 @@ main: i64 = ()
     std.script.run("rm -rf {work} && mkdir -p {work}")
 
     # The two faces of one edge. `opfirst` is the form 250 files are written
-    # in; `subjfirst` is the form Pass 121 §9 makes canonical. They must agree
+    # in; `subjfirst` is the form the result-demand rule makes canonical. They must agree
     # on the value, or the canonicalizer in this same diff is unsound.
     opfirst = "main = (): i64\n    s: str = \"17\"\n    n: i64 = to(i64)(s)\n    print(n)\n    0\n"
     subjfirst = "main = (): i64\n    s: str = \"17\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
@@ -106,21 +106,21 @@ main: i64 = ()
 
     print("")
     print("  str -> i64, both faces, default lowering")
-    fails = fails + row("opfirst    ", answer("a", opfirst, ""), "17")
-    fails = fails + row("subjfirst  ", answer("b", subjfirst, ""), "17")
-    fails = fails + row("opcall     ", answer("c", opcall, ""), "17")
-    fails = fails + row("subjcall   ", answer("d", subjcall, ""), "17")
+    fails += row("opfirst    ", answer("a", opfirst, ""), "17")
+    fails += row("subjfirst  ", answer("b", subjfirst, ""), "17")
+    fails += row("opcall     ", answer("c", opcall, ""), "17")
+    fails += row("subjcall   ", answer("d", subjcall, ""), "17")
 
     print("")
     print("  the same, through the C backend")
-    fails = fails + row("opfirst  c ", answer("e", opfirst, "--backend=c"), "17")
-    fails = fails + row("subjfirst c", answer("f", subjfirst, "--backend=c"), "17")
+    fails += row("opfirst  c ", answer("e", opfirst, "--backend=c"), "17")
+    fails += row("subjfirst c", answer("f", subjfirst, "--backend=c"), "17")
 
     print("")
     print("  a string holding no number must not come back as one")
-    fails = fails + row("zero       ", answer("g", zero, ""), "0")
-    fails = fails + row("junk       ", answer("h", junk, ""), "")
-    fails = fails + row("tail       ", answer("i", tail, ""), "")
+    fails += row("zero       ", answer("g", zero, ""), "0")
+    fails += row("junk       ", answer("h", junk, ""), "")
+    fails += row("tail       ", answer("i", tail, ""), "")
 
     # `answer` reads stdout, and an empty stdout is also what a program that
     # failed to BUILD produces. The status separates them: a build failure
@@ -136,12 +136,12 @@ main: i64 = ()
     print("  and it must FAULT rather than exit clean")
     if junkcode <= 0
         print("  FAIL  junk exit  want a nonzero fault, got {junkcode}")
-        fails = fails + 1
+        fails += 1
     else
         print("    ok  junk exit  {junkcode}")
     if tailcode <= 0
         print("  FAIL  tail exit  want a nonzero fault, got {tailcode}")
-        fails = fails + 1
+        fails += 1
     else
         print("    ok  tail exit  {tailcode}")
 

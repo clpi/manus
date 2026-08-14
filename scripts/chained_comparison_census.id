@@ -1,4 +1,4 @@
-# Pass 57 C3 — corpus census for chained comparisons (`0 <= i < n`).
+# Corpus census for chained comparisons (`0 <= i < n`).
 #
 # C3 rules that the surface form stays behind the escape hatch unless corpus
 # frequency clears the bar, and that this be "a measurement, not a debate".

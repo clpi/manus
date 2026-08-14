@@ -1,6 +1,6 @@
-# gates/catalog.id — admitted native relation census (projection producer).
+# gate/catalog.id — admitted native relation census (projection producer).
 #
-# Consumed by gates/admission.id (tables inlined there — no req). Constitution
+# Consumed by gate/admission.id (tables inlined there — no req). Constitution
 # this table is the text projection until GAP-124 graph queries replace it.
 #
 # Each row: relation id, typical subject class, world/effect hints, law, owner.

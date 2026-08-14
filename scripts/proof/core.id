@@ -1,71 +1,61 @@
 # GAP-157 core proof router — no std, no sym_ / duo_fn_ mangling proofs.
 
-semantic = { census = "lib/semantic/census.id", ingest = "lib/semantic/ingest.id" }
-proof = { record = "scripts/proof/record.id", world = "scripts/proof/worldreach.id", bit = "scripts/proof/bit.id" }
+record = "scripts/proof/record.id"
+world = "scripts/proof/worldreach.id"
+bit = "scripts/proof/bit.id"
 
 len(path) = (min: i64)
     path:read()
         :len() >= min
 
-
 audit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 hit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 main: i64 = ()
-    code: i64 = 0
-    if !len(proof["record"])(32)
-        code = 1
-    if code == 0 and !len(proof["world"])(16)
-        code = 2
-    if code == 0 and !len(proof["bit"])(32)
-        code = 3
-    if code == 0 and hit(proof["record"])("std%.[a-z]")
-        code = 4
-    if code == 0 and hit(proof["record"])("duo_fn_")
-        code = 5
-    if code == 0 and hit(proof["record"])("sym_")
-        code = 6
-    if code == 0 and hit(proof["world"])("std%.[a-z]")
-        code = 7
-    if code == 0 and hit(proof["bit"])("std%.[a-z]")
-        code = 8
-    if code == 0 and hit(proof["bit"])("bitcast")
-        code = 9
-    if code == 0 and hit(proof["bit"])("bit%.f64")
-        code = 10
-    if code == 0 and !audit(proof["bit"])(":to%(bit%)")
-        code = 11
-    if code == 0 and !audit(proof["bit"])("to%(bit%)%(f64%)")
-        code = 12
-    if code == 0 and !audit(proof["bit"])("to%(f64%)%(bit%)")
-        code = 13
-    if code == 0 and !audit(proof["bit"])("to%(i64%)%(bit%)")
-        code = 14
-    if code == 0 and !audit(proof["bit"])("type bit = i64")
-        code = 15
-    if code == 0 and !audit(proof["bit"])("@view")
-        code = 16
-    if code == 0 and hit(proof["bit"])("unpack@view")
-        code = 17
-    if code == 0 and hit(proof["bit"])("bit%.")
-        code = 18
-    if code == 0 and !len(semantic["census"])(16)
-        code = 19
-    if code == 0 and !len(semantic["ingest"])(32)
-        code = 20
-    if code == 0 and hit(semantic["census"])("viewedges")
-        code = 21
-    if code == 0 and !audit(semantic["census"])("view%(edges%)")
-        code = 22
-    if code == 0 and !audit(semantic["ingest"])("view%(edges%)")
-        code = 23
-    if code == 0 and hit(semantic["ingest"])("viewedges")
-        code = 24
-    if code == 0
-        print("proof/core: pass")
-    code
+    if !record:len(32)
+        return 1
+    if !world:len(16)
+        return 2
+    if !bit:len(32)
+        return 3
+    if record:hit("std.")
+        return 4
+    if record:hit("duo_fn_")
+        return 5
+    if record:hit("sym_")
+        return 6
+    if world:hit("std.")
+        return 7
+    if bit:hit("std.")
+        return 8
+    if bit:hit("bitcast")
+        return 9
+    if bit:hit("bit.f64")
+        return 10
+    if !bit:audit(":to(bit)")
+        return 11
+    if !bit:audit("to(bit)(f64)")
+        return 12
+    if !bit:audit("to(f64)(bit)")
+        return 13
+    if !bit:audit("to(i64)(bit)")
+        return 14
+    if !bit:audit("type bit = i64")
+        return 15
+    if !bit:audit("@view")
+        return 16
+    if bit:hit("unpack@view")
+        return 17
+    if bit:hit("bit.")
+        return 18
+    if bit:hit("viewedges")
+        return 21
+    if bit:hit("callable = true")
+        return 22
+    print("proof/core: pass")
+    0

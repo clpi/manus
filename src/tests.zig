@@ -5,10 +5,14 @@ const std = @import("std");
 
 test {
     _ = @import("lexer.zig");
+    _ = @import("lexer_bridge.zig");
+    _ = @import("lexical_identity.zig");
     _ = @import("lexer_dispatch.zig");
     _ = @import("ast.zig");
     _ = @import("types.zig");
     _ = @import("parser.zig");
+    _ = @import("grammar_roles.zig");
+    _ = @import("token_view.zig");
     _ = @import("sema.zig");
     _ = @import("comptime.zig");
     _ = @import("macro_expand.zig");

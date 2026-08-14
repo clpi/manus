@@ -66,28 +66,26 @@ glyph: {
     area: f64
 }
 
-main: i64 = ()
-    n = 0
-    k = token.kind.eof
-    f = glyph.form.number
+n = 0
+k = token.kind.eof
+f = glyph.form.number
 
-    if k == eof
-        n = n + 1
-    if eof == k
-        n = n + 10
-    if k != number
-        n = n + 5
+if k == eof
+    n += 1
+if eof == k
+    n += 10
+if k != number
+    n += 5
 
-    # Same spelling, other home. Decided by `f`, not by an index.
-    if f == number
-        n = n + 200
+# Same spelling, other home. Decided by `f`, not by an index.
+if f == number
+    n += 200
 
-    # Both of these resolve and are FALSE. A fixture that only asserted the
-    # true rows would pass on a resolver that answered "equal" to everything.
-    if f == circle
-        n = n + 30000
-    if k == number
-        n = n + 1000
+# Both of these resolve and are FALSE. A fixture that only asserted the
+# true rows would pass on a resolver that answered "equal" to everything.
+if f == circle
+    n += 30000
+if k == number
+    n += 1000
 
-    print("{n}")
-    0
+print("{n}")

@@ -113,7 +113,7 @@ parse_c_params(params_str: str): any
         part = part:gsub("^%s+", "")
         part = part:gsub("%s+$", "")
         tokens = {}
-        for token in part:gmatch("%S+") do
+        for token in part:gmatch("%S+")
             tokens[tokens:len() + 1] = token
         end
         if tokens:len() >= 2
@@ -195,11 +195,11 @@ emit_ffi_binding(func: any): str
 
     call_args = build_c_call_args(func.params)
     sig = "@ffi(\"" .. func.name .. "\")\nfun " .. func.name:lower() .. "(" .. params_str .. "): " .. duo_ret
-    body = "    @c.call(\"" .. func.name .. "\"" .. (func:len().params > 0 and ", " or "") .. call_args .. ")"
+    body = "    @comp.c.call(\"" .. func.name .. "\"" .. (func:len().params > 0 and ", " or "") .. call_args .. ")"
     sig .. "\n" .. body .. "\nend"
 end
 
-# build_c_call_args: generate the argument list for @c.call
+# build_c_call_args: generate the argument list for @comp.c.call
 build_c_call_args(params: any): str
     args = {}
     for _, p in params

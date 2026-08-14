@@ -1,6 +1,6 @@
 # `duo explain` contract + enrichment gate.
 #
-# PORTED from src/pass7_contract_tests.zig and src/pass7_explain_tests.zig,
+# PORTED from the deleted contract and explain test files,
 # both deleted in the same commit. Four Zig tests drove Lexer -> Parser ->
 # sema -> explain pipeline in process and asserted on in-memory structs. Every
 # one of those assertions is already a field of the JSON `duo explain` prints,
@@ -13,12 +13,12 @@
 #   explain:  a sealed record reaches the snapshot with a nonzero fingerprint
 #             and an assumption whose subject is that record
 #
-# The fixtures were already on disk at examples/pass7/ — the Zig files carried
+# The fixtures were already on disk — the Zig files carried
 # byte-identical copies as string literals, which is the second source of
 # truth this repo keeps paying for. There is now one.
 #
-# WHAT THE PORT FOUND. examples/pass7/explain smoke.id began with a C-style
-# comment marker, which the duon lexer refuses. `duo explain` did not
+# WHAT THE PORT FOUND. The explain smoke fixture began with a C-style
+# comment marker, which the idol lexer refuses. `duo explain` did not
 # DIAGNOSE it: it printed a raw Zig stack trace and exited 1. The fixture had
 # been broken for as long as nothing ran it, because the Zig test that owned
 # its content never opened the file. The marker is repaired in this commit;
@@ -72,9 +72,9 @@ main: i64 = ()
         bad += 1
     end
 
-    ok = "{root}/examples/pass7/noalloc_ok.id"
-    bust = "{root}/examples/pass7/noalloc_fail.id"
-    shape = "{root}/examples/pass7/explain_smoke.id"
+    ok = "{root}/examples/noalloc_ok.id"
+    bust = "{root}/examples/noalloc_fail.id"
+    shape = "{root}/examples/explain_smoke.id"
 
     # CONTROL 3 — the fixtures are here. A `says` over a missing file is
     # false for every want, which reads as a wall of real failures.

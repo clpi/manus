@@ -1,5 +1,5 @@
 # @corpus current
-# Pass 108 R2 / R1 and Pass 100 §2 — the leading `.` and the leading `:`,
+# The R1/R2 rulings and the anchor ruling — the leading `.` and the leading `:`,
 # decided BY POSITION.
 #
 # R2: a leading `.name` "is a lens in ARGUMENT position always; the CASE in
@@ -50,24 +50,18 @@ node: { at: span, tag: i64 }
 
 use = (f, v) f(v)
 
-peek(l: lexer): i64
+peek: i64 = (l: lexer)
     l.tab
-end
 
-bump(l: lexer): i64
+bump: i64 = (l: lexer)
     rec = { tab = 2 }
     .pos * 100 + :peek() * 10 + use(.tab, rec)
-end
 
-reach(n: node): i64
+reach: i64 = (n: node)
     .at.hi
-end
 
-main: i64 = ()
-    l: lexer = { pos = 4, tab = 2 }
-    n: node = { at = { lo = 1, hi = 7 }, tag = 9 }
-    total = bump(l)
-    total = total + reach(n)
-    print("{total}")
-    0
-end
+l: lexer = { pos = 4, tab = 2 }
+n: node = { at = { lo = 1, hi = 7 }, tag = 9 }
+total = bump(l)
+total += reach(n)
+print("{total}")

@@ -97,7 +97,7 @@ start(proc: any, config: any): any
         pid_str = io.read(handle, "*l")
         io.close(handle)
         if pid_str
-            proc.pid = tonumber(pid_str) or 0
+            proc.pid = pid_str:to(i64) or 0
             proc.running = true
             proc.exit_code = nil
             proc.config = config
@@ -120,7 +120,7 @@ wait(proc: any): any
         if handle
             code_str = io.read(handle, "*l")
             io.close(handle)
-            proc.exit_code = tonumber(code_str) or 0
+            proc.exit_code = code_str:to(i64) or 0
         else
             proc.exit_code = 0
         end
@@ -226,7 +226,7 @@ run(cmd: str, args: any): any
     if last_nl
         stdout = raw:sub(1, last_nl - 1)
         exit_str = raw:sub(last_nl + 1)
-        code = tonumber(exit_str:match("%d+")) or 0
+        code = exit_str:match("%d+":to(i64)) or 0
     end
 
     {
@@ -260,7 +260,7 @@ run_with_input(cmd: str, args: any, input: str): any
     if last_nl
         stdout = raw:sub(1, last_nl - 1)
         exit_str = raw:sub(last_nl + 1)
-        code = tonumber(exit_str:match("%d+")) or 0
+        code = exit_str:match("%d+":to(i64)) or 0
     end
 
     {
@@ -316,7 +316,7 @@ end
 
 env_set(name: str, value: str): any
     # Use C setenv for persistent environment changes in the current process
-    @c.emit("setenv(" .. name .. ", " .. value .. ", 1)")
+    @comp.c.emit("setenv(" .. name .. ", " .. value .. ", 1)")
     # Also update Lua's environment table
     os.setenv(name, value)
     {ok = true}
@@ -324,7 +324,7 @@ end
 
 env_unset(name: str): any
     # Use C unsetenv for persistent environment changes
-    @c.emit("unsetenv(" .. name .. ")")
+    @comp.c.emit("unsetenv(" .. name .. ")")
     os.setenv(name, nil)
     {ok = true}
 end

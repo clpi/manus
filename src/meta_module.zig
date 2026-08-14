@@ -1345,7 +1345,7 @@ pub fn agentHooksText() []const u8 {
     \\docs/bootstrap.md — executed compiler frontier
     \\gaps/GAP-0NN.md — open obligations; verify the live census
     \\MCP duo_agent_session_start and duo_dev_claim_* — live state and ownership
-    \\Canonical implementation is .id; historical .id and host code are migration debt
+    \\Canonical implementation is .id; new canonical .id is admitted; host code is migration debt
     \\std is migration distribution and std.script is frozen debt
     \\Missing relation or world vocabulary is SEMANTIC-VOCABULARY-BLOCKED
     ;
@@ -1591,7 +1591,7 @@ fn goalContains(goal: []const u8, needle: []const u8) bool {
     return std.mem.indexOf(u8, lower, needle) != null;
 }
 
-/// Goal-specific multiplier hint (mirrors lib/std/agent.id multiplier_for).
+/// Goal-specific multiplier hint (mirrors lib/agent.id multiplier_for).
 pub fn agentMultiplierFor(goal: []const u8) []const u8 {
     if (goalContains(goal, "trait") or goalContains(goal, "derive") or goalContains(goal, "impl"))
         return "@comp.derive / @comp.derive.all / @comp.derive.bundle — O(types×fields)";

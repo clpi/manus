@@ -10,25 +10,40 @@ is compiler B, not a sovereign backend. No compiler B exists.
 in [`docs/METRICS.md`](METRICS.md). Subordinate diagnostics (file counts, Zig
 counts, keyword counts) must not headline status reports.
 
+**Evidence-subject (`law.evidence.subject`):** live tree is not automatically
+the measured program. `59093d7b` is an evidence revision whose subject is
+`29f62035`. Do not report FTCFTW or unit aggregates “at HEAD” unless the
+measured subject equals the live tree. FTCFTW is **invalid** as a performance
+claim. No compiler B exists.
+
+**Critical path to B:** source-family → lexical identity (GAP-145) → grammar
+role (GAP-134) → parser → exact graph → demand → **one representation
+decision** → specialization (budgeted) → direct realization → object →
+evidence → B → C. Eight production lanes live in
+`.agents/AGENT_COORDINATION.md`. Do not start parser SHC before GAP-145.
+Do not let later passes re-decide boxing/stack/register/heap.
+
 ## Current stage: S0
 
 **S0 (active):** the pinned Zig seed produces the host compiler.
 
-No Idol-built compiler binary or production `idol` command exists yet.
+A production host-built `idol` executable exists. No compiler B built from
+canonical Idol compiler source exists. Host `idol check` / `idol run` are
+not self-host proof.
 
 The production front end nevertheless has one executed Idol-owned boundary:
-the physically renamed historical distribution file
-`lib/std/compiler/lexer.id` owns legacy token-kind production, token content,
+the executed production file
+`lib/compiler/lexer.id` owns token-kind production, token content,
 and exact source spans. Its `.id` suffix is not evidence of canonical source or
 compiler B. The host bounds-checks those spans and projects them into its
 temporary parser representation. It does not reconstruct token text or source
 locations.
-Canonical lexical identity is not closed: text, bytes, Lua long text, comments,
-shebang, and reserved backtick still lack the distinct law-bearing identities
-required by `GAP-145`. The `std` path is migration distribution, not semantic
-ownership. This tracked project-owned source must move semantically into
-canonical `.id` and the old file must be deleted in the same proven production
-slice; compatibility support does not justify retaining it as a pattern source.
+Canonical lexical identity is not closed (`GAP-145` OPEN): producer identities
+for text/bytes/compat/long, `#` comment, shebang, dash comments, and reserved
+backtick now cross `tokenize()`, but dead `KIND_STRING_LIT`, AST
+`.string_lit`, Tree-sitter, and suffix `sourceFacts`
+remain. The historical `lib/` distribution path is retired filesystem
+provenance (GAP-157), not semantic ownership.
 
 The production route is now fail-closed. Allocation, record-buffer, and token
 projection failures leave no accepted token stream and return an error to the
@@ -43,13 +58,17 @@ failure.
 
 Source ingress remains the earliest host-owned entry seam: Zig still derives
 source law and provenance from suffix/path text instead of consuming an
-executed Idol source-family fact. It is migration debt, but the current
-executable blocker is `GAP-145`: the lexer must publish the distinct canonical
-lexical identities needed by `GAP-134`. Generated grammar roles and an
-immutable token view can then move the first production parser recognition
-into executed Idol. Porting the host recognizer would duplicate grammar
-authority through token-text lists and mutable lookahead, so S0 remains the
-honest stage until those facts cross the frontier.
+executed Idol source-family fact (`is_canonical_source` is still suffix
+bytes `.id`). Production lexing now goes through the Idol lexer
+(`tokenize()`); host `tokenizeHost()` is differential-only. The identity
+blocker is `GAP-145` remaining consumers (Tree-sitter, dead
+`KIND_STRING_LIT` ordinal, AST `.string_lit`) before parser SHC.
+Parser long-bracket reconstruction is deleted (level in `int_val`).
+`GAP-134` now has generated roles (`ROLECOUNT` 114, `body_start`, infix)
+consumed for expression-start / body-start / header-infix; it is not closed. Porting the host
+recognizer would duplicate grammar authority through token-text lists and
+mutable lookahead, so S0 remains the honest stage until those facts cross
+the frontier.
 
 The transfer must also preserve PREDICATE-ZERO. Parser and resolver output
 retain cases, refinements, descriptor and world facts, unknowns, demands, and
@@ -60,12 +79,14 @@ sentinel, or query-then-mutate helpers as Idol semantic architecture.
 
 | Boundary | Current state | Exact remaining authority |
 | --- | --- | --- |
-| Source ingress | HOST OWNED | Zig currently classifies suffix/path text into source law and provenance. The helper is centralized but remains host authority and does not consume the complete corpus classification. |
-| Lexer | IDOL OWNED | Executed Idol lexer owns legacy token-kind, content, and span production and now fails closed; canonical lexical-law closure remains `GAP-145`. |
-| Lexical identity | BLOCKED | Distinct text, bytes, compatibility literal/comment, shebang, and reserved-backtick facts do not yet cross the token boundary (`GAP-145`). |
+| Source ingress | HOST OWNED | `admit(law, path)` produces family (path is provenance). Corpus homes in `docs/spec/corpus.md` admit in-tree family; unlisted paths fall back to `discover` (`law.bridge.death`). Not an executed Idol source-family producer. |
+| Lexer producer | IDOL OWNED | `lib/compiler/lexer.id` owns token-kind, content, and span production and fails closed. Canonical lexical-law closure remains `GAP-145`. |
+| Canonical `.id` lex route | IDOL OWNED | `src/lexer_dispatch.zig` `route()` calls `tokenize()` for every source. Host `tokenizeHost()` is differential-only (legacy-equivalent subset; must not veto intentional Idol divergence; `law.bridge.death`). Generated `src/lexer_tokenize.c` is from current `lib/compiler/lexer.id` via `dump-c --lib`. Every lexer export takes `family` as an operand (`law.family.one`); `new()` does not read suffix bytes. Production compile, fmt, and embed classify once via `sourceFacts` then `Lexer.initFacts`. `route()`, parse, sema, and token-view consume `lex.family`. `Lexer.init` is a test convenience. Host `sourceFacts` remains the one ingress. CLI file filter uses the same `sourceFacts.law`. |
+| Lexer ABI schema | HOST OWNED (bridge) | `RECORD_SLOTS` / `lexErrorFromCode` / `tokenKindFromOrdinal` deleted. Consumer queries `recordslots()` / `field*()` / `rejectionname()` / `kindname()` / `kindcount()`; `bindKindSchema` binds ordinals once. `bindKindSchema` is a deletion-gated bridge (`law.bridge.death`): endpoint is token-role-id, not producer-name → runtime bind → host enum. Remaining: host `TokenKind` enum, `duo_lexer_*` / `useDuoTokens` names (`law.schema.one`, `law.magic.zero`, GAP-107). |
+| Lexical identity | IDOL OWNED, GAP-145 OPEN | Text/bytes/compat/long, `#` comment, shebang, `--` / `--[[` comments, and reserved backtick cross `tokenize()`. Long-text delimiter level is `int_val`; parser no longer scans `[[`. Dead `KIND_STRING_LIT` ordinal, Tree-sitter, and suffix `sourceFacts` remain. Do not start parser SHC. |
 | Token/span | IDOL OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. |
-| Grammar projection | BLOCKED | No complete machine-readable canonical role projection or immutable token view exists (`GAP-134`, `GAP-145`). |
-| Parser recognition | HOST OWNED | `src/parser.zig` still decides callable headers, expressions, bindings, and source structure. |
+| Grammar projection | HOST OWNED, GAP-134 OPEN | `src/grammar_roles.zig` is the **current transitional** role table (host executable). Destination: one Idol grammar-fact owner → generated Zig/C tables + `grammar.md` + Tree-sitter. `grammar_roles.zig` and `lib/token/grammarrole.id` are bridges (`law.bridge.death`). Pratt consumes roles; parser `BinOp` map remains reconstruction debt. Do not add `grammar.id` until it *replaces* the Zig table as the one executable owner. |
+| Parser recognition | HOST OWNED | `src/parser.zig` still decides expressions, bindings, and source structure. `parse_module` installs the producer pack when missing (`route()`); header recognition is one `headerSignal` over that pack. Host save/scan/restore snapshot walk is deleted. Not parser SHC. |
 | Binding/scope | HOST OWNED | Production binding and scope construction remain in the host parser and semantic producer. |
 | Semantic construction | HOST OWNED | The graph work is an improving host implementation, not executed compiler-B source. |
 | Relation/application resolution | HOST OWNED | Production resolution remains host-executed; exact graph application authority is still under integration. |
@@ -82,26 +103,30 @@ For the fail-closed lexer transfer:
   token pack, so the next parser read silently resumed the host scanner.
 - **AFTER:** the same failure propagates, partial route storage is released, and
   no host token stream is accepted by that route.
-- **NEXT:** `GAP-145` must publish distinct canonical lexical identities;
-  `GAP-134` can then project generated grammar roles to an immutable token view
-  and replace the first host parser recognition. The source-family projection
-  must replace suffix-derived ingress authority before compiler-B source ingress
-  can be called Idol-owned.
+- **NEXT:** `GAP-145` remaining is Tree-sitter `grammar.json`, AST
+  `.string_lit` value node, the dead `KIND_STRING_LIT` ordinal, and suffix
+  `sourceFacts`. Do not start parser SHC. `GAP-134` remaining is closing
+  grammar.md as the generatable owner. Header recognition is one
+  `headerSignal` over the producer pack (snapshot walk deleted); Pratt
+  left/right come from roles; BinOp map remains.
+  Replace suffix ingress with an Idol source-family fact before compiler-B
+  source ingress can be called fully Idol-owned.
 
-Canonical source ingress now recognizes `.id` as Idol and temporarily accepts
-`.id` compatibility input with noncanonical provenance. Both suffixes select
-the same lexer, parser law, semantic production, and realization path. Tracked
-project-owned `.id` source remains SOURCE-ZERO debt and must reach zero;
-compatibility testing must move to generated, structured, or external material
-rather than an in-tree stale source library. `src/duo_lexer_bridge.zig` is one
-bootstrap helper, not the constitutional source-family authority: it still
-decides from suffix text and maps every `.id` to the same law/provenance pair even though
-the corpus distinguishes compatibility, historical, generated, and current
-migration inputs. Build entry, embedded module discovery, and direct-native
-module metadata discovery prefer `.id` and fall back to `.id`. The native
-metadata path consumes the source-family constants rather than maintaining its
-own suffix spelling. Tooling and corpus gates that still enumerate `.id`
-independently remain migration bridges, not bootstrap evidence.
+Canonical source ingress recognizes `.id` as Idol. New canonical `.id` is
+admitted. Retired `.duo` / `.duon` / `.idsem` are not source suffixes.
+`.lua` remains foreign compatibility input. Tracked noncanonical `.id`
+content remains SOURCE-ZERO debt and must reach zero; the `.id` extension
+itself is not debt. Compatibility testing must move to generated, structured,
+or external material rather than an in-tree stale source library.
+`src/lexer_bridge.zig` is one bootstrap helper, not the constitutional
+source-family authority: it still decides from suffix text and maps every
+`.id` to the same law/provenance pair even though the corpus distinguishes
+compatibility, historical, generated, and current migration inputs. Build
+entry, embedded module discovery, and direct-native module metadata discovery
+prefer `.id`. The native metadata path consumes the source-family constants
+rather than maintaining its own suffix spelling. Tooling and corpus gates
+that still enumerate `.id` independently remain migration bridges, not
+bootstrap evidence.
 
 Suffix-independent semantic identity is not closed by the existing differential.
 Byte-identical object output demonstrates only one realization result; it does
@@ -121,21 +146,47 @@ numeric coordinates. A real bootstrap projection must consume exact graph ids,
 facts, witnesses, provenance, and observations from an execution world before
 the contract can accept B or C.
 
-The physically renamed SOURCE-ZERO inventory file
-`lib/compiler/application.id` records application and pack facts required by
-the next bootstrap transfer. Its suffix does not transfer semantic or
-production authority. It is not a complete identity owner: its three-coordinate
-`identity` record conflicts with the rule that the graph entity is identity,
-and unconditional identity fields cannot represent unknown, absent, and empty
-facts honestly. Production authority begins when exact graph entities and
-explicit fact cardinality survive graph, demand, realization, and machine
-lineage without source-name reconstruction.
+`lib/compiler/application.id` is **role documentation only** (decomposed;
+APPLICATION-CONSUMER-ZERO). The graph entity is identity. A coordinate
+`identity` record or parallel application schema is forbidden. Agents must
+not treat that file as canonical application schema or extend it with tables.
+Production authority is graph accessors (`applicationRelation`, …).
+Production authority begins when exact graph entities and explicit fact
+cardinality survive graph, demand, realization, and machine lineage without
+source-name reconstruction. Audit: `scripts/ledger/application.id`.
+Lowering that reads `ApplicationFact.relation` from the graph must not
+reconstruct subject, operand, result, descriptor, effect, world, witness,
+demand, or target downstream (`law.application.consumer`).
+
+**Graph sovereignty (P0, not closed):** `NodeKind` tags are physical indexes
+only (`law.tag.authority`). Production query/validity must use published
+facts (`callable`, `hasDescriptorFacts`, graph accessors) — never
+`kind == .func` / `.table_shape` / `.module` for meaning. Audits:
+`scripts/ledger/graph.id`, `scripts/ledger/application.id`, `gate/graph.id`.
+Open: `Card` cardinality on application facts; `ast_ref` semantic reads → 0;
+columnar fact storage; graph core imports AST/sema/transform — endpoint is
+GRAPH-SOVEREIGNTY. Partial: caller-indexed `home_apps` adjacency;
+`applicationsIn` / `relationsReferencedBy` query API; zero-copy operand views;
+`nested` reverse index for scope/contains; `descriptor_refs` for recursion walks.
+
+Generated `src/lexer_tokenize.c` plus host `Token` rematerialization is a
+**physical** bridge. Semantic authority is Idol `tokenize()`; compile-time
+FTCFTW still needs Idol lexer → immutable token view → Idol parser without
+generated-C call, oversized records, or host token copies. `lib/` remains
+retired filesystem provenance (GAP-157), not a semantic namespace.
+
+Do not claim combined CI green from local ledgers or focused unit runs.
+Remeasure the integrated build at the current revision. Crash count is
+qualitatively above pass-count (`law.crash.first`). Every compiler refusal
+(parser, resolver, world, descriptor, realization, specialization) names
+application, missing fact, producer, and consumer — not only DNB backend
+bail.
 
 ## Target chain
 
 | Stage | Input | Output | Proof |
 | --- | --- | --- | --- |
-| **S0** | Zig + repo source | Host `duo` binary | CI, unit tests, bench gates |
+| **S0** | Zig + repo source | Host-built `idol` binary (not compiler B) | Remeasured CI/unit/bench at the revision — not assumed from local ledgers |
 | **S1 / B** | S0 + canonical Idol compiler source | First Idol-built compiler | Exact graph facts, witnessed correspondence, and behavior vs the seed oracle |
 | **S2 / C** | B + identical source | Self-built compiler | Semantic, diagnostic, and behavioral parity with B |
 | **S3** | C + identical source | Fixed-point candidate | Artifact comparison and reproducibility bundle |
@@ -172,9 +223,22 @@ never establish B/C semantic identity, correspondence, or lineage.
 The minimum Idol subset required to compile the next stage is a staged
 capability level of canonical Idol, not a permanent second language.
 
-The candidate compiler-critical basis is: bytes, views, strings, arenas,
-vectors, maps, interning, bitsets, source/span, filesystem read, and diagnostic
-output. No graph/world-backed projection currently records or observes that
+The compiler-critical basis is required capabilities and facts, not named
+container kingdoms:
+
+- element width and sequence shape
+- view lifetime and alias facts
+- table shape
+- arena realization option
+- vector realization option
+- intern correspondence
+- bit representation
+- source and span provenance
+- filesystem read as a subject / world / effect application
+- diagnostic output as a subject / world / effect application
+
+Do not resurrect bytes, strings, vectors, maps, or bitsets as permanent native
+ontologies. No graph/world-backed projection currently records or observes that
 basis for B and C. Filesystem read and diagnostic output still need their
 subject, world, and effect facts, and production reachability must be observed
 rather than asserted. `GAP-139` owns that missing evidence boundary. Adding

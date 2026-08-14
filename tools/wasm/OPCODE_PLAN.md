@@ -1,4 +1,4 @@
-# duon wasm — remaining opcode work, in execution order
+# idol wasm — remaining opcode work, in execution order
 
 Written blind (no shell) so a fresh session can execute mechanically. Every item lists
 the stack effect and, where relevant, the ARM64 encoding, so no rediscovery is needed.

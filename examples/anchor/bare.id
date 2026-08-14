@@ -27,12 +27,9 @@ box: {
 
 size: i64 = (b: box)b.n
 
-main: i64 = ()
-    small: box = { n = 5 }
-    large: box = { n = 9 }
-    one = small:viaat()
-    two = large:viaat()
-    plain = small:direct()
-    print("{one} {two} {plain}")
-    0
-end
+small: box = { n = 5 }
+large: box = { n = 9 }
+one = small:viaat()
+two = large:viaat()
+plain = small:direct()
+print("{one} {two} {plain}")

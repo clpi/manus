@@ -214,7 +214,7 @@ fun vs_holds(b, r: i64): bool
   i: i64 = 1
   while i <= b.vsn
     if b.vs[i] == r return true end
-    i = i + 1
+    i += 1
   end
   return false
 end
@@ -228,7 +228,7 @@ fun vs_alloc_not(b, a1: i64, a2: i64): i64
   while i <= 8
     r: i64 = POOL[i]
     if not vs_holds(b, r) and r ~= a1 and r ~= a2 return r end
-    i = i + 1
+    i += 1
   end
   return POOL[1]
 end
@@ -239,7 +239,7 @@ fun vs_alloc(b): i64
   while i <= 8
     r: i64 = POOL[i]
     if not vs_holds(b, r) return r end
-    i = i + 1
+    i += 1
   end
   return POOL[1]
 end
@@ -252,7 +252,7 @@ fun vs_spill_deepest(b)
   i: i64 = 1
   while i < b.vsn
     b.vs[i] = b.vs[i + 1]
-    i = i + 1
+    i += 1
   end
   b.vsn = b.vsn - 1
 end
@@ -307,9 +307,9 @@ fun leb_u(body: any, pc: i64)
   byte: i64 = 0
   repeat
     byte = body:byte(pc)
-    pc = pc + 1
-    result = result | ((byte & 0x7F) << shift)
-    shift = shift + 7
+    pc += 1
+    result |= ((byte & 0x7F) << shift)
+    shift += 7
   until (byte & 0x80) == 0
   return result, pc
 end
@@ -319,13 +319,13 @@ fun leb_s(body: any, pc: i64)
   byte: i64 = 0
   repeat
     byte = body:byte(pc)
-    pc = pc + 1
-    result = result | ((byte & 0x7F) << shift)
-    shift = shift + 7
+    pc += 1
+    result |= ((byte & 0x7F) << shift)
+    shift += 7
   until (byte & 0x80) == 0
   if shift < 64 and (byte & 0x40) ~= 0
     ones: i64 = -1
-    result = result | (ones << shift)
+    result |= (ones << shift)
   end
   return result, pc
 end
@@ -336,7 +336,7 @@ fun emit_epilogue(b)
   ei: i64 = 0
   while ei < b.pinned
     put(b, str_imm(X23 + ei, X21, ei * 8))
-    ei = ei + 1
+    ei += 1
   end
   put(b, str_imm(X20, X0, RT_SP))
   put(b, 0xAA1403E0)                           # mov x0, x20
@@ -359,7 +359,7 @@ fun can_compile(body: any, body_len: i64): bool
   pc: i64 = 1
   while pc <= body_len
     op: i64 = body:byte(pc)
-    pc = pc + 1
+    pc += 1
     if BIN[op] ~= nil or CMP[op] ~= nil or REM[op] ~= nil or CONV[op] ~= nil or op == 0x1B
       # no immediate
     elseif op == 0x45 or op == 0x50 or op == 0x1A or op == 0x0B or op == 0x0F or op == 0x01
@@ -368,7 +368,7 @@ fun can_compile(body: any, body_len: i64): bool
       _, pc = leb_u(body, pc)          # align
       _, pc = leb_u(body, pc)          # offset
     elseif op == 0x02 or op == 0x03
-      pc = pc + 1                      # blocktype byte
+      pc += 1                      # blocktype byte
     elseif LEB1[op] ~= nil
       _, pc = leb_s(body, pc)
     else
@@ -403,7 +403,7 @@ fun locals_touched(body: any, body_len: i64): i64
   hi: i64 = 0
   while pc <= body_len
     op: i64 = body:byte(pc)
-    pc = pc + 1
+    pc += 1
     if op == 0x20 or op == 0x21 or op == 0x22
       idx, np = leb_u(body, pc)
       pc = np
@@ -411,7 +411,7 @@ fun locals_touched(body: any, body_len: i64): i64
     elseif BIN[op] ~= nil or CMP[op] ~= nil or REM[op] ~= nil or CONV[op] ~= nil or op == 0x1B
     elseif op == 0x45 or op == 0x50 or op == 0x1A or op == 0x0B or op == 0x0F or op == 0x01
     elseif op == 0x02 or op == 0x03
-      pc = pc + 1
+      pc += 1
     elseif MEM[op] ~= nil
       _, pc = leb_u(body, pc)
       _, pc = leb_u(body, pc)
@@ -450,7 +450,7 @@ fun compile(body: any, body_len: i64)
   li: i64 = 0
   while li < b.pinned
     put(b, ldr_imm(X23 + li, X21, li * 8))
-    li = li + 1
+    li += 1
   end
 
   labels = {}          # control stack: { kind, target_insn, patches }
@@ -459,7 +459,7 @@ fun compile(body: any, body_len: i64)
 
   while pc <= body_len
     op: i64 = body:byte(pc)
-    pc = pc + 1
+    pc += 1
 
     if BIN[op] ~= nil
       spec = BIN[op]
@@ -621,8 +621,8 @@ fun compile(body: any, body_len: i64)
 
     elseif op == 0x02 or op == 0x03            # block / loop
       flush_tos(b)
-      pc = pc + 1
-      depth = depth + 1
+      pc += 1
+      depth += 1
       labels[depth] = { kind = op, target = b.n, patches = {} }
 
     elseif op == 0x0B                          # end
@@ -635,7 +635,7 @@ fun compile(body: any, body_len: i64)
           end
         end
         labels[depth] = nil
-        depth = depth - 1
+        depth -= 1
       end
 
     elseif op == 0x0C                          # br

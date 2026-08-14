@@ -1,4 +1,4 @@
-# std.proof — Pass 27 proof helpers (codegen-safe; no json.decode/inspect on hot path).
+# std.proof — proof helpers (codegen-safe; no json.decode/inspect on hot path).
 sha256(data: str): str
     p = std.script.fs_tmp():gsub("\n", "")
     std.script.fs_write(p, data)
@@ -47,7 +47,7 @@ proof_field_int(text: str, key: str): i64
     if val == nil
         return 0
     end
-    tonumber(val)
+    val:to(i64)
 end
 
 proof_field_str(text: str, key: str): str

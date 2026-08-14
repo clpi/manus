@@ -1,31 +1,31 @@
-# SH-10 — the duon-native owner of C SYMBOL emission.
+# SH-10 — the idol-native owner of C SYMBOL emission.
 #
 # WHY THIS FILE EXISTS. Three separate canonical repairs — gap[083] name
 # mangling, gap[087] bare-identity resolution, gap[088] constructor rung (a) —
-# all terminate at ONE missing capability: there is no duon-native owner of
-# code emission. `lib/std/compiler/` has a lexer, a parser and a projection,
+# all terminate at ONE missing capability: there is no idol-native owner of
+# code emission. `lib/compiler/` has a lexer, a parser and a projection,
 # and `emit_c.id` covers integer EXPRESSIONS only. Nothing here owns a symbol.
 #
 # So the repair for all three is only expressible in the bootstrap, which the
 # owner directive excludes. This file is the smallest piece that changes that:
-# it owns the NAME, in duon, provably.
+# it owns the NAME, in idol, provably.
 #
 # WHAT IT IS NOT. Not a code generator. It emits no declarations, no bodies, no
-# records. It answers exactly one question — what C symbol does this duon name
+# records. It answers exactly one question — what C symbol does this idol name
 # take — and that is the question gap[083] is about.
 #
-# THE DEFECT IT CLOSES, measured 2026-08-08: a duon function named `read`,
+# THE DEFECT IT CLOSES, measured 2026-08-08: a idol function named `read`,
 # `write`, `open` or `abs` emitted its name UNMANGLED into C, where libc had
 # already declared it. `abs(21)` compiled clean and printed **21** — libc's
-# answer, not duon's. Not a build failure. A wrong number.
+# answer, not idol's. Not a build failure. A wrong number.
 #
 # WHY UNCONDITIONAL RATHER THAN A KEYWORD LIST. libc's namespace is OPEN: any
-# symbol it declares next release can capture a duon name, so the colliding set
+# symbol it declares next release can capture a idol name, so the colliding set
 # is unknowable from inside the compiler. A list is a census that goes stale
 # and reports a confident zero. Prefixing every root-file function needs no
 # list and cannot go stale.
 
-# The C symbol for a root-file, single-word, non-method duon function.
+# The C symbol for a root-file, single-word, non-method idol function.
 #
 # `duo_fn_` is chosen for the reason any prefix is chosen: C reserves
 # identifiers beginning `_` at file scope, and `duo_` is already this

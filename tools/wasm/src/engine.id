@@ -12,7 +12,7 @@ iom = io
 # The JIT also falls back to the interpreter whenever it meets an opcode it
 # cannot yet emit, so adding architectures or opcodes never changes observable
 # behaviour # only speed. `--interp` forces the fallback path, which is how
-# the two are checked against each other (pass14 s2.4 cross-architecture parity).
+# the two are checked against each other (cross-architecture parity).
 
 # the engine WASM interpreter — PURE DUO, zero @c.emit/@c.include.
 #
@@ -25,7 +25,7 @@ iom = io
 #
 # tools/opcodes.id is in turn answerable to duo's canonical table
 # (src/wasm_semantic_gen.zig -> `duo wasm-tables emit` ->
-# lib/std/wasm/ward_mvp_opcodes.id): it re-parses that file and refuses to
+# lib/wasm/ward_mvp_opcodes.id): it re-parses that file and refuses to
 # project on any disagreement over the 63 opcodes it holds. the engine needs 170,
 # which is why the extension table lives here rather than there.
 #
@@ -254,7 +254,7 @@ uleb_val(s: str, i: i64, n: i64): i64
   while cont == 1 and p <= n
     b: i64 = s:byte(p)
     p += 1
-    v = v | ((b & 0x7F) << sh)
+    v |= ((b & 0x7F) << sh)
     sh += 7
     if b < 0x80
       cont = 0
@@ -1127,7 +1127,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           dk += 1
         end
       end
-      dq = dq + dlen
+      dq += dlen
       dv += 1
     end
   end
@@ -1223,7 +1223,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       while cont == 1
         ib = mem.read_byte(code, pc)
         pc += 1
-        imm = imm | ((ib & 0x7F) << sh)
+        imm |= ((ib & 0x7F) << sh)
         sh += 7
         if ib < 0x80
           cont = 0
@@ -1234,7 +1234,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       # without this. Requires a correct 64-bit variable shift, which the
       # compiler now performs.
       if sh < 64 and (ib & 0x40) != 0
-        imm = imm | (0 - (1 << sh))
+        imm |= (0 - (1 << sh))
       end
       imm = imm & M32
       sp += 1
@@ -1248,7 +1248,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       while cont == 1
         ib: i64 = mem.read_byte(code, pc)
         pc += 1
-        imm = imm | ((ib & 0x7F) << sh)
+        imm |= ((ib & 0x7F) << sh)
         sh += 7
         if ib < 0x80
           cont = 0
@@ -1298,7 +1298,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         # previously unhandled inside this range, i.e. silently 0.
         sa: i64 = a & M32
         if sa >= 0x80000000
-          sa = sa - 0x100000000
+          sa -= 0x100000000
         end
         r = (sa >> (b & 31)) & M32
       else
@@ -1315,7 +1315,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       while cont == 1
         ib: i64 = mem.read_byte(code, pc)
         pc += 1
-        imm = imm | ((ib & 0x7F) << sh)
+        imm |= ((ib & 0x7F) << sh)
         sh += 7
         if ib < 0x80
           cont = 0
@@ -1334,7 +1334,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         while c2 == 1
           jb: i64 = mem.read_byte(code, pc)
           pc += 1
-          imm2 = imm2 | ((jb & 0x7F) << sh2)
+          imm2 |= ((jb & 0x7F) << sh2)
           sh2 += 7
           if jb < 0x80
             c2 = 0
@@ -1406,10 +1406,10 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             as2: i64 = a2 & M32
             bs2: i64 = b2 & M32
             if as2 >= 2147483648
-              as2 = as2 - 4294967296
+              as2 -= 4294967296
             end
             if bs2 >= 2147483648
-              bs2 = bs2 - 4294967296
+              bs2 -= 4294967296
             end
             if as2 < bs2
               r2 = 1
@@ -1495,7 +1495,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
                 io.write(mem.read_byte(lin, bp + k3):char())
                 k3 += 1
               end
-              tot = tot + bl
+              tot += bl
               q3 += 1
             end
             if npw + 4 <= linsz
@@ -1504,7 +1504,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
               mem.write_byte(lin, npw + 2, (tot >> 16) & 255)
               mem.write_byte(lin, npw + 3, (tot >> 24) & 255)
             end
-            sp = sp - 4
+            sp -= 4
             sp += 1
             mem.write_i64(st, sp * 8, 0)
           else
@@ -1514,7 +1514,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           if ipn > sp
             return bail(op, pc)
           end
-          sp = sp - ipn
+          sp -= ipn
           iz: i64 = 0
           while iz < irn
             sp += 1
@@ -1614,7 +1614,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             while cc2 == 1 and sc < cur_end
               cb: i64 = mem.read_byte(code, sc)
               sc += 1
-              ncase = ncase | ((cb & 0x7F) << shc)
+              ncase |= ((cb & 0x7F) << shc)
               shc += 7
               if cb < 0x80
                 cc2 = 0
@@ -1656,7 +1656,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             while fc2 == 1 and sc < cur_end
               fb2: i64 = mem.read_byte(code, sc)
               sc += 1
-              fsub = fsub | ((fb2 & 0x7F) << fsh)
+              fsub |= ((fb2 & 0x7F) << fsh)
               fsh += 7
               if fb2 < 0x80
                 fc2 = 0
@@ -1685,7 +1685,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             while vq == 1 and sc < cur_end
               vy: i64 = mem.read_byte(code, sc)
               sc += 1
-              vs2 = vs2 | ((vy & 0x7F) << vh2)
+              vs2 |= ((vy & 0x7F) << vh2)
               vh2 += 7
               if vy < 0x80
                 vq = 0
@@ -1748,7 +1748,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         while cn == 1
           nb: i64 = mem.read_byte(code, pc)
           pc += 1
-          nt = nt | ((nb & 0x7F) << shn)
+          nt |= ((nb & 0x7F) << shn)
           shn += 7
           if nb < 0x80
             cn = 0
@@ -1765,7 +1765,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           while cd2 == 1
             db: i64 = mem.read_byte(code, pc)
             pc += 1
-            dv = dv | ((db & 0x7F) << shd2)
+            dv |= ((db & 0x7F) << shd2)
             shd2 += 7
             if db < 0x80
               cd2 = 0
@@ -1823,7 +1823,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         else
           bk: i64 = 0
           while bk < 32
-            rr = rr + ((xv >> bk) & 1)
+            rr += ((xv >> bk) & 1)
             bk += 1
           end
         end
@@ -1847,7 +1847,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         while co == 1
           ob: i64 = mem.read_byte(code, pc)
           pc += 1
-          offv = offv | ((ob & 0x7F) << sho)
+          offv |= ((ob & 0x7F) << sho)
           sho += 7
           if ob < 0x80
             co = 0
@@ -1882,13 +1882,13 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         if op == OP_i32_load8_s or op == OP_i32_load16_s or op == OP_i64_load8_s or op == OP_i64_load16_s or op == OP_i64_load32_s
           # signed sub-width: sign-extend from the loaded width
           if wl == 1 and lv >= 128
-            lv = lv - 256
+            lv -= 256
           end
           if wl == 2 and lv >= 32768
-            lv = lv - 65536
+            lv -= 65536
           end
           if wl == 4 and lv >= 2147483648
-            lv = lv - 4294967296
+            lv -= 4294967296
           end
         end
         # i32-typed results occupy 32 bits; i64/f64 keep the full slot.
@@ -1917,7 +1917,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         while cs2 == 1
           sb2: i64 = mem.read_byte(code, pc)
           pc += 1
-          offs = offs | ((sb2 & 0x7F) << shs)
+          offs |= ((sb2 & 0x7F) << shs)
           shs += 7
           if sb2 < 0x80
             cs2 = 0
@@ -2039,14 +2039,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         while cq == 1
           qb = mem.read_byte(code, pc)
           pc += 1
-          vq = vq | ((qb & 0x7F) << shq)
+          vq |= ((qb & 0x7F) << shq)
           shq += 7
           if qb < 0x80
             cq = 0
           end
         end
         if shq < 64 and (qb & 0x40) != 0
-          vq = vq | (0 - (1 << shq))
+          vq |= (0 - (1 << shq))
         end
         sp += 1
         mem.write_i64(st, sp * 8, vq)
@@ -2167,7 +2167,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         xw: i64 = mem.read_i64(st, sp * 8)
         yw: i64 = xw & M32
         if op == OP_i64_extend_i32_s and yw >= 0x80000000
-          yw = yw - 0x100000000
+          yw -= 0x100000000
         end
         mem.write_i64(st, sp * 8, yw)
         sp = sp
@@ -2258,7 +2258,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         qs: i64 = asi // bsi
         if qs * bsi != asi
           if (asi < 0) != (bsi < 0)
-            qs = qs + 1
+            qs += 1
           end
         end
         sgn: i64 = op
@@ -2423,7 +2423,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
         mem.store(f64)(fb, dr)
         mem.write_i64(st, (sp - ar + 1) * 8, mem.read_i64(fb, 0))
-        sp = sp - ar + 1
+        sp -= ar + 1
 
       elseif op >= OP_f32_abs and op <= OP_f32_copysign
         # f32 unary (139-145) and binary (146-152), mirroring the f64 arm.
@@ -2510,7 +2510,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         mem.write_i64(fb, 0, 0)
         mem.store(f32)(fb, er)
         mem.write_i64(st, (sp - sr + 1) * 8, mem.read_i64(fb, 0))
-        sp = sp - sr + 1
+        sp -= sr + 1
 
       elseif op >= OP_f32_eq and op <= OP_f32_ge
         # f32 comparisons -> i32 0/1
@@ -2573,7 +2573,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
         iv: i64 = mem.read_i64(st, sp * 8) & M32
         if iv >= 2147483648
-          iv = iv - 4294967296
+          iv -= 4294967296
         end
         mem.store(f64)(fb, iv * 1.0)
         mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
@@ -2627,7 +2627,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             iv2 = raw & M32
             if op == OP_f32_convert_i32_s or op == OP_f64_convert_i32_s
               if iv2 >= 0x80000000
-                iv2 = iv2 - 0x100000000
+                iv2 -= 0x100000000
               end
             end
           end
@@ -2686,7 +2686,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           end
         else
           while bq2 < 64
-            cr2 = cr2 + ((yv >> bq2) & 1)
+            cr2 += ((yv >> bq2) & 1)
             bq2 += 1
           end
         end
@@ -2729,17 +2729,17 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         if we == 1
           ev3 = ev3 & 255
           if ev3 >= 128
-            ev3 = ev3 - 256
+            ev3 -= 256
           end
         elseif we == 2
           ev3 = ev3 & 65535
           if ev3 >= 32768
-            ev3 = ev3 - 65536
+            ev3 -= 65536
           end
         else
           ev3 = ev3 & M32
           if ev3 >= 2147483648
-            ev3 = ev3 - 4294967296
+            ev3 -= 4294967296
           end
         end
         if op <= OP_i32_extend16_s
@@ -2934,7 +2934,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           sp += 1
           mem.write_i64(st, sp * 8, tbsize)
           if tbsize + gdl <= 4096
-            tbsize = tbsize + gdl
+            tbsize += gdl
           end
         elseif sub == 16
           # table.size: tableidx
@@ -3019,7 +3019,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         while vc == 1
           vb: i64 = mem.read_byte(code, pc)
           pc += 1
-          vsub = vsub | ((vb & 0x7F) << vsh)
+          vsub |= ((vb & 0x7F) << vsh)
           vsh += 7
           if vb < 0x80
             vc = 0
@@ -3059,7 +3059,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             eone: i64 = 1
             esb: i64 = eone << (ew * 8 - 1)
             if (ev & esb) != 0
-              ev = ev - (eone << (ew * 8))
+              ev -= (eone << (ew * 8))
             end
           end
           mem.write_i64(st, sp * 8, ev)
@@ -3914,8 +3914,8 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
 
     # Register budget: stack slots occupy w0..w8, locals w9..w16. Emitting
     # past either would silently alias a local, so refuse and let the caller
-    # fall back to the interpreter. Correctness before speed (pass14 s1.1:
-    # a fast path that changes semantics is not proof).
+    # fall back to the interpreter. Correctness before speed:
+    # a fast path that changes semantics is not proof.
     if sp > 8 or sp < 0 or n > 260000
       return jitbail("operand stack deeper than 8 slots, or code buffer full", op, pc)
     end
@@ -3978,7 +3978,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       while vmore == 1
         vb = s:byte(off + pc)
         pc += 1
-        v = v | ((vb & 0x7F) << vsh)
+        v |= ((vb & 0x7F) << vsh)
         vsh += 7
         if vb < 0x80
           vmore = 0
@@ -3986,7 +3986,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       if vsh < 64 and (vb & 0x40) != 0
         vone: i64 = 1
-        v = v - (vone << vsh)
+        v -= (vone << vsh)
       end
       v = v & 0xFFFFFFFF
       nx: i64 = s:byte(off + pc)
@@ -4095,7 +4095,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         msw = 0x9B008000
       end
       if op == OP_i32_rem_s or op == OP_i64_rem_s
-        dvw = dvw | 0x00000400          # SDIV rather than UDIV
+        dvw |= 0x00000400          # SDIV rather than UDIV
       end
       jitm.w32(code, n, dvw | (b4 << 16) | (a4 << 5) | t4)
       n += 1
@@ -4115,7 +4115,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       fv: i64 = 0
       fk: i64 = 0
       while fk < fw
-        fv = fv | (s:byte(off + pc) << (fk * 8))
+        fv |= (s:byte(off + pc) << (fk * 8))
         pc += 1
         fk += 1
       end
@@ -4283,7 +4283,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       while qmore == 1
         qb = s:byte(off + pc)
         pc += 1
-        q = q | ((qb & 0x7F) << qsh)
+        q |= ((qb & 0x7F) << qsh)
         qsh += 7
         if qb < 0x80
           qmore = 0
@@ -4291,7 +4291,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       if qsh < 64 and (qb & 0x40) != 0
         qone: i64 = 1
-        q = q - (qone << qsh)
+        q -= (qone << qsh)
       end
       dq: i64 = sp
       jitm.w32(code, n, 0xD2800000 | ((q & 0xFFFF) << 5) | dq)
@@ -5516,7 +5516,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
           n += 1
           isr -= 1
         end
-        sp = sp - 3
+        sp -= 3
       else
         # Every other import: consume the declared parameters and leave the
         # declared results as zero. Byte for byte the interpreter's stub, so a
@@ -5526,7 +5526,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         if imnp > sp
           return jitbail("imported call passes more arguments than are on the stack", op, pc)
         end
-        sp = sp - imnp
+        sp -= imnp
         imz: i64 = 0
         while imz < imnr
           if sp > 8
@@ -5582,7 +5582,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         n += 1
         cz += 1
       end
-      sp = sp - cnp
+      sp -= cnp
       mem.write_i64(inl_pcs, inl_d * 8, pc)
       mem.write_i64(inl_offs, inl_d * 8, off)
       mem.write_i64(inl_bls, inl_d * 8, blen)
@@ -5670,7 +5670,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         n += 1
         spj -= 1
       end
-      sp = sp - cnp + cnr
+      sp -= cnp + cnr
       # Queue the callee. A function is compiled once however many call it,
       # and the entry was queued before this loop began.
       if mem.read_i64(jqs, cfx * 8) == 0
@@ -5854,7 +5854,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         n += 1
         xsj -= 1
       end
-      sp = sp - 1 - xnp + xnr
+      sp -= 1 - xnp + xnr
       last_alu = -1
       last_cset = -1
 
@@ -6219,7 +6219,7 @@ main(): void
                 jdk += 1
               end
             end
-            jdq = jdq + jdl
+            jdq += jdl
             jdv += 1
           end
         end

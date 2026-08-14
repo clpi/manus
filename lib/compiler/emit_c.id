@@ -1,6 +1,6 @@
 # SH-10 — the C emission backend, seed.
 #
-# SH-10 is the row Pass 16 calls "canonical path today; must become explicit
+# SH-10 is the row the plan calls "canonical path today; must become explicit
 # bootstrap backend". It has no Duo implementation at all. This is one, for the
 # integer-expression subset, and it is checked the only way a backend can
 # honestly be checked: the emitted C is COMPILED AND RUN, and its answer must
@@ -21,7 +21,7 @@
 # subset that is PROVEN by execution is worth more than a broader one that is
 # argued.
 #
-# The emitted C is an artifact, never source (Pass 60): it is written to a temp
+# The emitted C is an artifact, never source: it is written to a temp
 # path, compiled, run, and deleted. Nothing under version control is generated.
 
 
@@ -33,7 +33,7 @@
 # xor in C, and `~`, which is xor in Duo when infix. Those two are the whole
 # job — and getting them wrong is exactly what the execution differential
 # catches.
-_expr_to_c: str = (src: str)
+translate: str = (src: str)
     n: i64 = src:len()
     out = ""
     i: i64 = 1
@@ -80,8 +80,8 @@ end
 # failure, not the child's raw status, so an exit-code differential silently
 # compared 1 against 14. Standard output also removes the 8-bit ceiling, so the
 # comparison is over the whole i64 range instead of a masked slice of it.
-program_for: str = (expr: str)
-    body = _expr_to_c(expr)
+program: str = (expr: str)
+    body = translate(expr)
     if body == ""
         return ""
     end
@@ -92,23 +92,23 @@ end
 # Emit, compile and run; returns the value the emitted C computes.
 # `ok` is false when the subset does not cover the expression or the toolchain
 # refuses, so a caller never mistakes a refusal for a result.
-eval_ok: bool = (expr: str)
-    prog = program_for(expr)
+ok: bool = (expr: str)
+    prog = program(expr)
     if prog == ""
         return false
     end
     true
 end
 
-eval_via_c: i64 = (expr: str)
-    prog = program_for(expr)
+eval: i64 = (expr: str)
+    prog = program(expr)
     if prog == ""
         return 0 - 1
     end
     base = "/tmp/duo_emit_c_" .. to(str)(os.time())
-    csrc = base .. ".c"
+    src = base .. ".c"
     exe = base .. ".out"
-    fh = io.open(csrc, "w")
+    fh = io.open(src, "w")
     if !fh
         return 0 - 1
     end
@@ -119,12 +119,12 @@ eval_via_c: i64 = (expr: str)
     # the proof report SKIP rather than fail — exactly the silent-degradation
     # mode the proof's own skip branch exists to make visible.
     cc = std.script.getenv("DUO_EMIT_CC", "xcrun cc")
-    if std.script.run(cc .. " -O0 -o " .. exe .. " " .. csrc .. " 2>/dev/null") != 0
-        os.remove(csrc)
+    if std.script.run(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null") != 0
+        os.remove(src)
         return 0 - 1
     end
     out = std.script.capture(exe)
-    os.remove(csrc)
+    os.remove(src)
     os.remove(exe)
     to(i64)(out)
 end

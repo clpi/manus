@@ -1,4 +1,4 @@
-//! Pass 7 — structured diagnostic repair candidates for agents and LSP code actions.
+//! — structured diagnostic repair candidates for agents and LSP code actions.
 //!
 //! Diagnostics describe failure; repairs propose semantically safe next steps.
 const std = @import("std");

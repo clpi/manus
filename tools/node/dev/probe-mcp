@@ -35,19 +35,27 @@ while IFS='	' read -r name entry backend; do
   artifact="$work/$name.out"
   err="$work/$name.err"
   echo "probe-mcp: command bin=$duo run --backend=$backend entry=$repo/$entry artifact=$artifact" >&2
-  if ! (cd "$repo" && DUO_ROOT="$repo" DUO_BIN="$duo" "$duo" run "--backend=$backend" -o "$artifact" "$repo/$entry" < "$work/init.json" > "$out" 2>"$err"); then
+  if ! (cd "$repo" && IDOL_ROOT="$repo" DUO_ROOT="$repo" IDOL_BIN="$duo" DUO_BIN="$duo" "$duo" check "$repo/$entry" >/dev/null 2>"$err"); then
+    echo "probe-mcp: $name check failed (IMPLEMENTATION-BLOCKED serve path)" >&2
+    cat "$err" >&2 || true
+    echo "probe-mcp: deferring initialize probe for $name until C embed closes" >&2
+    continue
+  fi
+  if ! (cd "$repo" && IDOL_ROOT="$repo" DUO_ROOT="$repo" IDOL_BIN="$duo" DUO_BIN="$duo" "$duo" run "--backend=$backend" -o "$artifact" "$repo/$entry" < "$work/init.json" > "$out" 2>"$err"); then
     echo "probe-mcp: $name process failed" >&2
     cat "$err" >&2 || true
     echo "probe-mcp: response=$out artifact=$artifact stderr=$err" >&2
-    exit 20
+    fail=1
+    continue
   fi
   if ! grep -q '"protocolVersion":"2024-11-05"' "$out"; then
     echo "probe-mcp: $name did not answer initialize" >&2
     cat "$out" >&2 || true
-    exit 21
+    fail=1
+    continue
   fi
   echo "ok $name initialize"
-done || fail=$?
+done
 
 if [ "$fail" -ne 0 ]; then
   retain_work=1

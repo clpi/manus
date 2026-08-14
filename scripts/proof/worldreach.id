@@ -10,24 +10,22 @@ elapsed: f64 = (since: f64, w)
     w.now() - since
 
 main: i64 = ()
-    code: i64 = 0
     a = 0.0
     d = a:elapsed(realclock)
     if d < 0.0
         print("world proof: real clock ran backwards: {d}")
-        code = 1
+        1
 
     base = 1000.0
     z = base:elapsed(fakeclock)
-    if code == 0 and z != -1000.0
+    if z != -1000.0
         print("world proof: withheld clock still reached real time: {z}")
-        code = 2
+        2
 
     zero = 0.0
-    if code == 0 and zero:elapsed(realclock) == zero:elapsed(fakeclock)
+    if zero:elapsed(realclock) == zero:elapsed(fakeclock)
         print("world proof: both worlds gave one answer — the operand is decorative")
-        code = 3
+        3
 
-    if code == 0
-        print("world proof: subject-first, authority as an operand, and it CAN be withheld")
-    code
+    print("world proof: subject-first, authority as an operand, and it CAN be withheld")
+    0

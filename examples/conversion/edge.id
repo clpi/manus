@@ -17,20 +17,14 @@
 
 step(u64) = (c: i64): i64
     c + 1
-end
 
 step(u32) = (c: i64): i64
     c + 100
-end
 
 step(wide) = (c: i64): i64
     c + 1000
-end
 
-main: i64 = ()
-    a = step(u64)(41)
-    b = step(u32)(41)
-    c = step(wide)(41)
-    print("{a} {b} {c}")
-    0
-end
+a = step(u64)(41)
+b = step(u32)(41)
+c = step(wide)(41)
+print("{a} {b} {c}")

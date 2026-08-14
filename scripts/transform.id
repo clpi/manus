@@ -4,7 +4,7 @@
 #
 #   src/meta_transform_tests.zig       444 lines, 6 tests
 #   src/call_transform_tests.zig       102 lines, 4 tests
-#   src/pass6_dispatch_tests.zig        45 lines, 4 tests
+#   the dispatch tests                  45 lines, 4 tests
 #
 # All fourteen reached `transform_engine` state that no verb printed: the
 # registry, its contracts, the dispatch gate, and the provenance log. That
@@ -34,7 +34,7 @@
 # two fixtures differ ONLY by the attribute, and the gate asserts
 # simd_lower observed on one and NOT observed on the other.
 #
-# WHAT THE PORT COULD NOT KEEP. One assertion, from pass6 test 4: that
+# WHAT THE PORT COULD NOT KEEP. One assertion, from dispatch test 4: that
 # `dispatchMetaCombinator` called with a hook name that is in no registry
 # appends nothing. Rendering it would mean printing a row for a hook that does
 # not exist, which is fabricated data in a projection. What is kept is its

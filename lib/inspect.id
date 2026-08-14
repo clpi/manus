@@ -37,7 +37,7 @@ std_inspect_hash(value: any): str
     # is not re-introducible in the enclosing scope after the loop ends.
     while i <= ks:len()
         key = ks[i]
-        val = value[tonumber(key)]
+        val = value[key:to(i64)]
         if val == nil val = value[key] end
         # `=` not `..`: this line was a concat EXPRESSION with no assignment,
         # so `parts` never grew and std_inspect_hash returned "{}" for every

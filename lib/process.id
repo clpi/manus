@@ -29,7 +29,7 @@ evidence: str = (line: str)
 trim: str = (text: str)
     n = text:len()
     while n > 0
-        c = string.byte(text, n)
+        c = text:byte(n)
         if c != 10 and c != 13 and c != 32 and c != 9
             break
         n -= 1

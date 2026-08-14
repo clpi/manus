@@ -1,6 +1,6 @@
 # SH-09 — the transformation registry, seed.
 #
-# Pass 48 §2.8 and §5.1: transformations are EDGES, not a pass pipeline. The
+# Transformations are EDGES, not a pass pipeline. The
 # compiler is browsable as data — `rewrite[idiom]` is a query — and every
 # transformation record declares what it requires, what it produces, and what
 # it invalidates, so a schedule can be derived rather than hand-ordered.
@@ -110,7 +110,7 @@ _fold_once: str = (src: str)
             # NARROWED, deliberately. A run is a candidate only when it is
             # the whole right-hand side of an assignment: preceded by `= ` and
             # ending at the newline. Anything looser kept corrupting
-            # lib/std/encoding/varint.id — the SAFE property caught it three
+            # lib/encoding/varint.id — the SAFE property caught it three
             # times and I could not make the general scanner safe by argument.
             # A transformation that is provably correct on a small shape beats
             # one that is probably correct on a large one, and the registry and
@@ -166,7 +166,7 @@ end
 # legitimate rather than a bug in the scanner: folding a sub-expression can
 # create a new foldable site — `(1 << 7) - 1` becomes `128 - 1` becomes `127`.
 # A transformation that is not a fixed point cannot be scheduled, because its
-# result depends on how many times it ran. lib/std/encoding/varint.id is the
+# result depends on how many times it ran. lib/encoding/varint.id is the
 # file that proved it.
 #
 # Bounded, so a transformation that oscillates terminates instead of hanging —

@@ -7,7 +7,7 @@ parse_value(s: str): any
     end
     if s == "true" return true end
     if s == "false" return false end
-    num = tonumber(s)
+    num = s:to(i64)
     if num != nil return num end
     s
 end

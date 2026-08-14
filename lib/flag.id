@@ -85,9 +85,9 @@ parse(fs: any, argv: any): any
                     fval = argv[i]
                 end
                 if f.kind == "int"
-                    f.value = tonumber(fval)
+                    f.value = fval:to(i64)
                 elseif f.kind == "float"
-                    f.value = tonumber(fval)
+                    f.value = fval:to(i64)
                 else
                     f.value = fval
                 end
@@ -124,9 +124,9 @@ parse(fs: any, argv: any): any
                     fval = argv[i]
                 end
                 if f.kind == "int"
-                    f.value = tonumber(fval)
+                    f.value = fval:to(i64)
                 elseif f.kind == "float"
-                    f.value = tonumber(fval)
+                    f.value = fval:to(i64)
                 else
                     f.value = fval
                 end

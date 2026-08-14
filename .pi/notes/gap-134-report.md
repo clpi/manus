@@ -1,5 +1,14 @@
 # GAP-134 report — one generatable grammar authority
 
+> **SUPERSEDED for ownership routing.** Live ONE-PRODUCER ruling:
+> `gaps/GAP-134.md` § ONE-PRODUCER (`law.grammar.one`) and
+> `docs/bootstrap.md` production authority ledger. **Current transitional
+> owner:** `src/grammar_roles.zig` → `lib/token/grammarrole.id` projection.
+> **Destination:** canonical Idol grammar facts (single executable owner) →
+> generated Zig/C + `grammar.md` + Tree-sitter. Do **not** treat the
+> `lib/compiler/grammar.id` proposal below as parallel authority — migrate
+> ownership, do not add beside the Zig table.
+
 Analysis by the grammar-authority lane. **Not Idol authority.** This is a
 design + status report produced from reading AGENTS.md, C0, GAP-134, GAP-145,
 docs/spec/grammar.md, the current token/grammar projections, the Tree-sitter
@@ -19,13 +28,13 @@ Tree: `clpi/duo` @ HEAD `a44a088`, dirty (concurrent lanes active).
 - `docs/spec/grammar.md` is **authored prose**, explicitly "not a second
   grammar authority and must not be used to hand-build parser tables"; it
   defers all machine-readability to GAP-134.
-- Token identities `lib/std/compiler/token.id`: partial GAP-145 work present
+- Token identities `lib/compiler/token.id`: partial GAP-145 work present
   (`KIND_TEXT_LIT`/`BYTES_LIT`/`COMPAT_TEXT_LIT`/`COMPAT_LONG_TEXT_LIT` =
   105–108) **alongside** the collapsed legacy `KIND_STRING_LIT = 3`. **No
   grammar-role projection at all.**
 - Generation pattern already exists and is the right shape:
   `src/token_semantic.zig` (host keyword facts) → `src/token_classify_gen.zig`
-  (generator) → `lib/std/token/classify.id` (generated projection, 54 keywords,
+  (generator) → `lib/token/classify.id` (generated projection, 54 keywords,
   3 category bitsets). It classifies **keywords only**; it emits **no** roles.
 - `src/token_semantic.zig` carries **no** precedence/associativity/prefix/
   postfix/expr-start/param-slot/body-start facts (confirmed by grep).
@@ -45,9 +54,9 @@ C0 already owns. It is the **first** machine-readable grammar authority, not a
 second ontology (recognition/provenance facts are explicitly "syntax provenance
 after resolution" per grammar.md, not semantic identity).
 
-- Owner path (proposed): `lib/std/compiler/grammar.id` — one concept per file
+- Owner path (proposed): `lib/compiler/grammar.id` — one concept per file
   (the grammar authority). Consumes token **identities** from
-  `lib/std/compiler/token.id` (Devin's boundary) as inputs. Never reads
+  `lib/compiler/token.id` (Devin's boundary) as inputs. Never reads
   spelling.
 - Constitutional hook: C0 line 3037 — *"grammar supplies orientation
   precedence and provenance"*; line 2999 — *"operator -> ordinary relation
@@ -57,7 +66,7 @@ after resolution" per grammar.md, not semantic identity).
 - Generator (transitional host bridge, same shape as
   `token_classify_gen.zig`): reads `grammar.id` facts, emits (a) the human
   `docs/spec/grammar.md` projection (**generated**, replacing authored prose +
-  ellipses) and (b) compact role tables `lib/std/compiler/grammar/roles.id`.
+  ellipses) and (b) compact role tables `lib/compiler/grammar/roles.id`.
   The **facts** live in `.id`; the Zig file is only the emitter (a generator,
   not a registry — admissible under the monoglot boundary as the smallest
   bridge to its Idol replacement).
@@ -71,12 +80,12 @@ a second semantic grammar ontology."
 ## 2. Generated projections
 
 ```
-C0 (law)  ──►  lib/std/compiler/grammar.id   (canonical machine-readable owner)
+C0 (law)  ──►  lib/compiler/grammar.id   (canonical machine-readable owner)
                      │ consumes token identities (GAP-145 boundary)
                      ▼
                grammar_role_gen  (host generator; bridge)
                      ├──► docs/spec/grammar.md        (generated human projection)
-                     └──► lib/std/compiler/grammar/roles.id
+                     └──► lib/compiler/grammar/roles.id
                               (compact token-role tables + bitsets)
                                      │
               ┌──────────────────────┼───────────────────────┐
@@ -180,7 +189,7 @@ Mirror the proven `classify.id` shape, extended from keyword categories to
    (BLOCKER-B)
 3. **Repair the MCP transport** (BLOCKER-C) so serialized builds, claims, and
    gates are reachable for the authority edit and its differentials.
-4. **Then** author `lib/std/compiler/grammar.id` (canonical machine-readable
+4. **Then** author `lib/compiler/grammar.id` (canonical machine-readable
    owner, identity as input boundary) + the generator emitting grammar.md and
    `roles.id`; rewire `scripts/treesitter_emit.id` and the parser to consume
    them; land the six differentials above as positive/negative/fuzz controls.

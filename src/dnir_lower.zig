@@ -30,10 +30,18 @@ pub const Diagnostic = struct {
     site: ?std.builtin.SourceLocation = null,
     note_buffer: [96]u8 = undefined,
     note_len: u8 = 0,
+    /// Exact application id when the refusal is about one occurrence.
+    /// Null is unknown — never a sentinel zero.
+    application: ?semantic_graph.id = null,
+    /// Diagnostic projection of the occurrence's relation/method face.
+    /// Borrowed from the resident graph or AST; not a second identity.
+    relation: ?[]const u8 = null,
 
     pub fn reset(self: *Diagnostic) void {
         self.site = null;
         self.note_len = 0;
+        self.application = null;
+        self.relation = null;
     }
 
     pub fn note(self: *const Diagnostic) ?[]const u8 {
@@ -68,6 +76,73 @@ fn invalidGraphFacts(diagnostic: *Diagnostic, site: std.builtin.SourceLocation, 
     return error.GraphFactsInvalid;
 }
 
+fn applicationFace(graph: *const semantic_graph.SemanticGraph, entity: semantic_graph.id) ?[]const u8 {
+    const node = graph.get(entity) orelse return null;
+    if (node.ast_ref) |raw| {
+        const expr: *const Expr = @ptrCast(@alignCast(raw));
+        return switch (expr.*) {
+            .call => |c| switch (c.func.*) {
+                .name => |n| n.ident,
+                .field => |f| f.field,
+                else => node.name,
+            },
+            .method_call => |mc| mc.method,
+            else => node.name,
+        };
+    }
+    if (graph.application(entity)) |fact| {
+        const relation_id = graph.applicationRelation(fact.application) orelse return node.name;
+        const relation = graph.get(relation_id) orelse return node.name;
+        return relation.name;
+    }
+    return node.name;
+}
+
+fn bindOccurrence(
+    diagnostic: *Diagnostic,
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) void {
+    diagnostic.application = occurrence;
+    if (diagnostic.relation == null) diagnostic.relation = applicationFace(graph, occurrence);
+}
+
+fn refuseApplication(
+    diagnostic: *Diagnostic,
+    graph: *const semantic_graph.SemanticGraph,
+    site: std.builtin.SourceLocation,
+    note: []const u8,
+    application: semantic_graph.id,
+) Error {
+    bindOccurrence(diagnostic, graph, application);
+    return invalidGraphFacts(diagnostic, site, note);
+}
+
+fn exprFace(expr: *const Expr) ?[]const u8 {
+    return switch (expr.*) {
+        .call => |c| switch (c.func.*) {
+            .name => |n| n.ident,
+            .field => |f| f.field,
+            else => null,
+        },
+        .method_call => |mc| mc.method,
+        else => null,
+    };
+}
+
+fn refuseMissingApplication(
+    ctx: *LowerCtx,
+    site: std.builtin.SourceLocation,
+    expr: *const Expr,
+) Error {
+    if (ctx.occurrences.get(expr)) |application| {
+        bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
+    } else if (ctx.diagnostic.relation == null) {
+        ctx.diagnostic.relation = exprFace(expr);
+    }
+    return invalidGraphFacts(ctx.diagnostic, site, "missing-application-id");
+}
+
 /// Module-level compile-time bindings, split by the DNIR value they fold to.
 ///
 /// `ints` came first and was the whole table; a module-level STRING constant
@@ -99,6 +174,7 @@ const ModuleConsts = struct {
 
 const empty_module_consts: ModuleConsts = .{};
 const empty_fp_params: std.StringHashMapUnmanaged([]bool) = .empty;
+const empty_relation_edges: std.StringHashMapUnmanaged([]const u8) = .empty;
 
 fn deinitRecord(alloc: std.mem.Allocator, record: dnir.RecordDesc) void {
     alloc.free(record.name);
@@ -161,16 +237,21 @@ const OccurrenceBridge = struct {
             if (graph.application(application) == null) {
                 if (graph.isBootstrapApplicationNode(application)) continue;
                 index.unresolved += 1;
+                if (diagnostic.application == null) {
+                    bindOccurrence(diagnostic, graph, application);
+                }
                 continue;
             }
             const results = graph.applicationResults(application) orelse
-                return invalidGraphFacts(diagnostic, @src(), "application-result-pack");
-            if (results.len != 1) return invalidGraphFacts(diagnostic, @src(), "application-result-pack");
+                return refuseApplication(diagnostic, graph, @src(), "application-result-pack", application);
+            if (results.len != 1)
+                return refuseApplication(diagnostic, graph, @src(), "application-result-pack", application);
             const expression_raw = node.ast_ref orelse
-                return invalidGraphFacts(diagnostic, @src(), "application-provenance");
+                return refuseApplication(diagnostic, graph, @src(), "application-provenance", application);
             const expression: *const Expr = @ptrCast(@alignCast(expression_raw));
             const slot = try index.by_expression.getOrPut(alloc, expression);
-            if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "application-provenance-collision");
+            if (slot.found_existing)
+                return refuseApplication(diagnostic, graph, @src(), "application-provenance-collision", application);
             slot.value_ptr.* = application;
         }
         return index;
@@ -304,6 +385,136 @@ pub fn lowerModuleObserved(
     return detached;
 }
 
+/// relation level edge `len(path) = (min) …` → symbol `len__path`.
+fn relationEdgeLevel(symbol: []const u8) ?[]const u8 {
+    if (std.mem.indexOf(u8, symbol, "__")) |sep| {
+        if (sep + 2 < symbol.len) return symbol[sep + 2 ..];
+    }
+    return null;
+}
+
+/// Does an expression subtree name `ident` anywhere? Used to decide whether a
+/// relation-edge projection level (`family(level) = (…)`, mangled `family__level`)
+/// is a runtime subject parameter or a compile-time-only qualifier.
+///
+///   `len(path) = (min)` body reads `path` → the level is a runtime subject slot;
+///     it is applied `len(value)(min)` / `value:len(min)` (level passed as an arg).
+///   `subject(tail) = (code)` body never reads `tail` → the level is a pure
+///     compile-time marker baked into the mangled callee `subject__tail`; the call
+///     `subject(tail)(code)` lowers to `subject__tail(code)` with the level absent
+///     from the operand list, so allocating a level slot would misplace `code`.
+fn exprMentionsIdent(expr: *const ast.Expr, ident: []const u8) bool {
+    return switch (expr.*) {
+        .name => |n| std.mem.eql(u8, n.ident, ident),
+        .index => |x| exprMentionsIdent(x.obj, ident) or exprMentionsIdent(x.key, ident),
+        .field => |x| exprMentionsIdent(x.obj, ident),
+        .call => |c| blk: {
+            if (exprMentionsIdent(c.func, ident)) break :blk true;
+            for (c.args) |a| if (exprMentionsIdent(a, ident)) break :blk true;
+            break :blk false;
+        },
+        .method_call => |m| blk: {
+            if (exprMentionsIdent(m.obj, ident)) break :blk true;
+            for (m.args) |a| if (exprMentionsIdent(a, ident)) break :blk true;
+            break :blk false;
+        },
+        .binop => |b| exprMentionsIdent(b.lhs, ident) or exprMentionsIdent(b.rhs, ident),
+        .unop => |u| exprMentionsIdent(u.operand, ident),
+        .if_expr => |ie| exprMentionsIdent(ie.cond, ident) or
+            exprMentionsIdent(ie.then_expr, ident) or exprMentionsIdent(ie.else_expr, ident),
+        .try_expr => |x| exprMentionsIdent(x.operand, ident),
+        .unwrap_expr => |x| exprMentionsIdent(x.operand, ident),
+        .await_expr => |x| exprMentionsIdent(x.operand, ident),
+        .contains_expr => |x| exprMentionsIdent(x.lhs, ident) or exprMentionsIdent(x.rhs, ident),
+        .sequence => |s| blk: {
+            for (s.exprs) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        .range => |r| exprMentionsIdent(r.start, ident) or exprMentionsIdent(r.end, ident) or
+            (if (r.step) |st| exprMentionsIdent(st, ident) else false),
+        else => false,
+    };
+}
+
+fn blockMentionsIdent(block: *const ast.Block, ident: []const u8) bool {
+    for (block.stmts) |*s| if (stmtMentionsIdent(s, ident)) return true;
+    if (block.tail_expr) |t| return exprMentionsIdent(t, ident);
+    return false;
+}
+
+fn stmtMentionsIdent(stmt: *const ast.Stmt, ident: []const u8) bool {
+    return switch (stmt.*) {
+        .local_decl => |d| blk: {
+            for (d.inits) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        .const_decl => |d| exprMentionsIdent(d.val, ident),
+        .global_decl => |d| blk: {
+            for (d.inits) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        .assign => |a| blk: {
+            for (a.targets) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            for (a.values) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        .call_stmt => |c| exprMentionsIdent(c.expr, ident),
+        .expr_stmt => |c| exprMentionsIdent(c.expr, ident),
+        .do_block => |d| blockMentionsIdent(&d.body, ident),
+        .while_loop => |w| exprMentionsIdent(w.cond, ident) or blockMentionsIdent(&w.body, ident),
+        .repeat_loop => |r| blockMentionsIdent(&r.body, ident) or exprMentionsIdent(r.cond, ident),
+        .if_stmt => |f| blk: {
+            if (f.binding) |b| if (exprMentionsIdent(b.expr, ident)) break :blk true;
+            if (exprMentionsIdent(f.cond, ident)) break :blk true;
+            if (blockMentionsIdent(&f.then, ident)) break :blk true;
+            for (f.elseifs) |ei| {
+                if (exprMentionsIdent(ei.cond, ident)) break :blk true;
+                if (blockMentionsIdent(&ei.body, ident)) break :blk true;
+            }
+            if (f.else_body) |eb| if (blockMentionsIdent(&eb, ident)) break :blk true;
+            break :blk false;
+        },
+        .num_for => |n| exprMentionsIdent(n.start, ident) or exprMentionsIdent(n.stop, ident) or
+            (if (n.step) |st| exprMentionsIdent(st, ident) else false) or blockMentionsIdent(&n.body, ident),
+        .gen_for => |g| blk: {
+            for (g.iters) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk blockMentionsIdent(&g.body, ident);
+        },
+        .ret => |r| blk: {
+            for (r.vals) |e| if (exprMentionsIdent(e, ident)) break :blk true;
+            break :blk false;
+        },
+        else => false,
+    };
+}
+
+fn collectRelationEdges(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+) Error!std.StringHashMapUnmanaged([]const u8) {
+    var edges: std.StringHashMapUnmanaged([]const u8) = .empty;
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        const fd = &stmt.func_decl;
+        if (fd.path.len != 1) continue;
+        const sym = fd.path[0];
+        if (relationEdgeLevel(sym)) |level| {
+            _ = level;
+            if (std.mem.indexOf(u8, sym, "__")) |sep| {
+                const family = try alloc.dupe(u8, sym[0..sep]);
+                errdefer alloc.free(family);
+                const gop = try edges.getOrPut(alloc, family);
+                if (gop.found_existing) {
+                    alloc.free(family);
+                } else {
+                    gop.value_ptr.* = sym;
+                }
+            }
+        }
+    }
+    return edges;
+}
+
 fn lowerModuleFromGraph(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -323,17 +534,42 @@ fn lowerModuleFromGraph(
     }
     try collectRecords(alloc, &records, mod);
 
-    // Join declarations to graph ids by exact provenance. The exported
-    // function name remains a linker/debug symbol; it is not an id key.
+    var relation_edges = try collectRelationEdges(alloc, mod);
+    defer {
+        var edge_it = relation_edges.iterator();
+        while (edge_it.next()) |entry| alloc.free(entry.key_ptr.*);
+        relation_edges.deinit(alloc);
+    }
+
+    // Join declarations to graph ids by exact provenance.
     var declarations: std.AutoHashMapUnmanaged(*const ast.FuncDecl, semantic_graph.id) = .empty;
     defer declarations.deinit(alloc);
+    var entity_linkage: std.AutoHashMapUnmanaged(semantic_graph.id, []const u8) = .empty;
+    defer {
+        var linkage_it = entity_linkage.iterator();
+        while (linkage_it.next()) |entry| alloc.free(entry.value_ptr.*);
+        entity_linkage.deinit(alloc);
+    }
     for (graph.nodes.items, 0..) |node, i| {
-        if (node.kind != .func) continue;
+        if (node.result_descriptor == null) continue;
         const raw = node.ast_ref orelse continue;
         const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
         const slot = try declarations.getOrPut(alloc, declaration);
         if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "function-provenance-collision");
         slot.value_ptr.* = @intCast(i);
+    }
+    var decl_it = declarations.iterator();
+    while (decl_it.next()) |entry| {
+        const fd = entry.key_ptr.*;
+        const entity_id = entry.value_ptr.*;
+        const export_name = try funcExportName(alloc, fd);
+        errdefer alloc.free(export_name);
+        const slot = try entity_linkage.getOrPut(alloc, entity_id);
+        if (slot.found_existing) {
+            alloc.free(export_name);
+            return invalidGraphFacts(diagnostic, @src(), "function-linkage-collision");
+        }
+        slot.value_ptr.* = export_name;
     }
 
     // GAP-056: which ABI slots each callee expects in v0..v7, so the CALLER
@@ -459,14 +695,44 @@ fn lowerModuleFromGraph(
             &func_record_returns,
             &fp_params,
             &module_consts,
+            &entity_linkage,
+            &relation_edges,
         );
         functions.append(alloc, f) catch |err| {
             deinitFunction(alloc, f);
             return err;
         };
     }
+    const want = mod.program() and !wrap(mod);
+    if (want) {
+        const module_id = if (require_graph_facts)
+            (home(graph) orelse return invalidGraphFacts(diagnostic, @src(), "missing-function-id"))
+        else
+            null;
+        const body = try root(
+            alloc,
+            mod,
+            module_id,
+            records.items,
+            graph,
+            occurrences,
+            diagnostic,
+            require_graph_facts,
+            &externs,
+            &func_record_returns,
+            &fp_params,
+            &module_consts,
+            &entity_linkage,
+            &relation_edges,
+        );
+        functions.append(alloc, body) catch |err| {
+            deinitFunction(alloc, body);
+            return err;
+        };
+    }
     if (functions.items.len == 0) return bail(diagnostic, @src());
-    if (functions.items.len != countModuleFunctions(mod))
+    const expected = countModuleFunctions(mod) + @as(usize, @intFromBool(want));
+    if (functions.items.len != expected)
         return bailWith(diagnostic, @src(), skipped orelse "?");
 
     const owned_functions = try functions.toOwnedSlice(alloc);
@@ -518,8 +784,10 @@ pub fn lowerModuleWithGraphObserved(
     diagnostic.reset();
     var occurrences = try OccurrenceBridge.init(alloc, graph, diagnostic);
     defer occurrences.deinit();
-    if (occurrences.unresolved != 0) return invalidGraphFacts(diagnostic, @src(), "missing-application-id");
-    var m = try lowerModuleFromGraph(alloc, mod, graph, &occurrences, diagnostic, true);
+    if (!graph.gateTransportModule() and occurrences.unresolved != 0)
+        return invalidGraphFacts(diagnostic, @src(), "missing-application-id");
+    const require_graph_facts = !graph.gateTransportModule();
+    var m = try lowerModuleFromGraph(alloc, mod, graph, &occurrences, diagnostic, require_graph_facts);
     errdefer dnir.deinitModule(alloc, m);
     try applyGraphToModule(alloc, graph, &m, diagnostic);
     return m;
@@ -531,6 +799,7 @@ fn applyGraphToModule(
     m: *dnir.Module,
     diagnostic: *Diagnostic,
 ) Error!void {
+    if (graph.gateTransportModule()) return;
     try reorderFunctionsByGraphFacts(alloc, graph, m, diagnostic);
 }
 
@@ -604,7 +873,7 @@ fn shouldIncludeFuncDecl(fd: *const ast.FuncDecl) bool {
     if (funcFfiName(fd.attributes) != null) return false;
     if (fd.path.len == 1 and !fd.method) return true;
     if (fd.method and fd.path.len >= 2) return true;
-    // Pass 23 §3 — math.add = (a, b) … static module members (dot, not colon).
+    // §3 — math.add = (a, b) … static module members (dot, not colon).
     if (fd.path.len >= 2 and !fd.method) return true;
     return false;
 }
@@ -616,6 +885,23 @@ fn countModuleFunctions(mod: *const ast.Module) usize {
         if (shouldIncludeFuncDecl(&stmt.func_decl)) n += 1;
     }
     return n;
+}
+
+fn wrap(mod: *const ast.Module) bool {
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        const fd = &stmt.func_decl;
+        if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], "main") and shouldIncludeFuncDecl(fd))
+            return true;
+    }
+    return false;
+}
+
+fn home(graph: *const semantic_graph.SemanticGraph) ?semantic_graph.id {
+    for (graph.nodes.items, 0..) |node, i| {
+        if (node.scope == null) return @intCast(i);
+    }
+    return null;
 }
 
 fn isFloatType(t: ast.TypeExpr) bool {
@@ -697,6 +983,16 @@ pub const max_reg_record_fields = 8;
 /// reservation stays a small `sub sp` immediate.
 pub const max_record_fields = 32;
 
+/// AAPCS64 passes the first eight general-purpose scalar arguments in x0..x7;
+/// arguments past the eighth travel on the stack at [sp,#(i-8)*8] (see
+/// `emitPushVarargs` on the caller and the callee prologue's stack-arg load).
+/// Sixteen is the total the backend's stack-arg block (`pending_varargs[8]`)
+/// can carry: eight registers plus eight stack slots. This retires the
+/// application-argument-pack refusal for wide integer relations (e.g. a general
+/// order-k linear recurrence passing k coefficients + k seeds + N) — no packing.
+/// Floating-point and record arguments stay capped at the eight-register file.
+pub const max_direct_scalar_args = 16;
+
 /// True when a record return must use the x8 indirect-result convention rather
 /// than the x0..x7 explosion.
 pub fn recordReturnIsIndirect(rec: dnir.RecordDesc) bool {
@@ -742,14 +1038,16 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) bool
         if (isFloatType(p.typ) or isF64Record(recs, p.typ) != null) return false;
         if (findRecordName(recs, p.typ)) |r| {
             gp_slots += r.fields.len;
-            if (gp_slots > 8) return false;
+            // A record parameter is homed from the argument registers only; its
+            // fields are never stacked, so it must fit inside x0..x7.
+            if (gp_slots > max_reg_record_fields) return false;
             continue;
         }
         // `ptr` rides x0..x7 like an i64 — it is the base address of a
         // memory-backed positional table (SH-04).
         if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ)) return false;
         gp_slots += 1;
-        if (gp_slots > 8) return false;
+        if (gp_slots > max_direct_scalar_args) return false;
     }
     return true;
 }
@@ -835,6 +1133,12 @@ pub const LowerCtx = struct {
     /// GAP-056: this function's own f64 parameters are homed in d0..d7, so
     /// staging an outgoing f64 argument would overwrite one of them.
     self_fp_params: bool = false,
+    /// Whether the block currently being lowered is a return context — i.e. its
+    /// value is the function's answer. A guard `if` in NON-tail position uses
+    /// this to know its value-carrying branches are function exits (guard
+    /// clauses) that must early-return, without disturbing the tail-slot rule
+    /// that keeps trailing assignments/effects falling through.
+    block_answering: bool = false,
     /// When set, tail/table returns lower to `ret_record` for this record name.
     ret_record: ?[]const u8 = null,
     /// Local slots that hold f64 values inside integer kernels.
@@ -861,6 +1165,8 @@ pub const LowerCtx = struct {
     next_temp: u32 = 0,
     locals: std.StringHashMapUnmanaged(u32) = .empty,
     instrs: std.ArrayList(dnir.Instr) = .empty,
+    /// Exact function entity being lowered. Name resolve walks this home only.
+    function: ?semantic_graph.id = null,
     /// The function being lowered, when a self-call in TAIL position can be
     /// turned into a jump. Empty disables the rewrite — see `tryEmitSelfTail`.
     self_name: []const u8 = "",
@@ -872,6 +1178,10 @@ pub const LowerCtx = struct {
     loop_breaks: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u32)) = .empty,
     /// Back-edge targets for `continue` in the innermost loop.
     loop_heads: std.ArrayListUnmanaged(u32) = .empty,
+    /// Module-level graph entity id → linker symbol from declaration provenance.
+    entity_linkage: *const std.AutoHashMapUnmanaged(semantic_graph.id, []const u8),
+    /// Relation level edges declared as `family(level) = (…) …` → `family__level`.
+    relation_edges: *const std.StringHashMapUnmanaged([]const u8) = &empty_relation_edges,
 
     pub fn deinit(self: *LowerCtx) void {
         var it = self.locals.iterator();
@@ -953,17 +1263,22 @@ fn lowerFunction(
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     fp_params: *const std.StringHashMapUnmanaged([]bool),
     module_consts: *const ModuleConsts,
+    entity_linkage: *const std.AutoHashMapUnmanaged(semantic_graph.id, []const u8),
+    relation_edges: *const std.StringHashMapUnmanaged([]const u8),
 ) Error!dnir.Function {
     var ctx: LowerCtx = .{
         .alloc = alloc,
         .diagnostic = diagnostic,
         .records = records,
         .graph = graph,
+        .function = id,
         .occurrences = occurrences,
         .require_graph_facts = require_graph_facts,
         .externs = externs,
         .func_record_returns = func_record_returns,
         .fp_params = fp_params,
+        .entity_linkage = entity_linkage,
+        .relation_edges = relation_edges,
         .self_fp_params = blk: {
             const slots = f64AbiParamSlots(fd, records) orelse break :blk false;
             break :blk slots > 0;
@@ -977,6 +1292,33 @@ fn lowerFunction(
     // registers — the same shape records already have as locals — so it consumes
     // one slot per field and shifts the slots of every later parameter.
     var param_slot_cursor: u32 = 0;
+    // A relation-edge / projection variant (`subject(tail) = (code)`, mangled to
+    // `subject__tail`) receives the projection level (`tail`) as an implicit
+    // slot-0 parameter. It occupies a real slot, so the flat-frame test below and
+    // the self-param set must count it alongside the declared operand params.
+    var edge_level_slots: u32 = 0;
+    // A relation-edge projection level (`family(level) = (…)`, mangled
+    // `family__level`) is a runtime subject parameter ONLY when the body actually
+    // reads the level identifier — e.g. `len(path) = (min)` whose body uses
+    // `path`, applied `len(value)(min)` / `value:len(min)` with the level passed
+    // as an argument. A compile-time-only projection marker — `subject(tail)`,
+    // `dot(io)`, `rules(q)` whose bodies never mention the level — is baked into
+    // the mangled callee and the call passes only the real operands, so a level
+    // slot here would shift every operand by one register.
+    if (fd.path.len == 1) {
+        if (relationEdgeLevel(fd.path[0])) |level| {
+            if (blockMentionsIdent(&fd.func.body, level)) {
+                const owned = try alloc.dupe(u8, level);
+                ctx.locals.put(alloc, owned, param_slot_cursor) catch |err| {
+                    alloc.free(owned);
+                    return err;
+                };
+                try ctx.str_slots.put(alloc, param_slot_cursor, {});
+                param_slot_cursor += 1;
+                edge_level_slots = 1;
+            }
+        }
+    }
     for (fd.func.params) |par| {
         if (findRecordName(records, par.typ)) |rec| {
             var all_scalar = rec.fields.len > 0;
@@ -1021,11 +1363,19 @@ fn lowerFunction(
     // the slots actually assigned above, so this equality IS the test for "one
     // slot per parameter" — a record parameter exploded into several and the
     // cursor runs ahead of the parameter list.
-    if (fd.path.len == 1 and param_slot_cursor == fd.func.params.len) {
-        const slots = try alloc.alloc(u32, fd.func.params.len);
-        for (0..fd.func.params.len) |i| slots[i] = @intCast(i);
-        ctx.self_name = fd.path[0];
+    // The flat scalar frame is "one slot per declared operand plus the implicit
+    // projection level, if any" — a record parameter exploded into several fields
+    // runs the cursor ahead of that and disqualifies the frame.
+    if (param_slot_cursor == fd.func.params.len + edge_level_slots) {
+        const slots = try alloc.alloc(u32, param_slot_cursor);
+        for (0..param_slot_cursor) |i| slots[i] = @intCast(i);
         ctx.self_param_slots = slots;
+        // Bare-name self-tail-recursion applies only to a single-path relation;
+        // a method or projection-variant body reaches its own entity through a
+        // mangled/qualified name, never a bare identifier, so leaving self_name
+        // unset for those keeps isSelfTailCall() unchanged while operand-ABI
+        // recognition (self_param_slots) still covers every declared operand.
+        if (fd.path.len == 1 and edge_level_slots == 0) ctx.self_name = fd.path[0];
     }
 
     try lowerBlock(&ctx, &fd.func.body, true);
@@ -1042,6 +1392,21 @@ fn lowerFunction(
     var params: std.ArrayList(dnir.Param) = .empty;
     defer params.deinit(alloc);
     errdefer for (params.items) |param| deinitParam(alloc, param);
+    if (fd.path.len == 1) {
+        if (relationEdgeLevel(fd.path[0])) |level| {
+            if (blockMentionsIdent(&fd.func.body, level)) {
+                const param_name = try alloc.dupe(u8, level);
+                params.append(alloc, .{
+                    .name = param_name,
+                    .ty = .str,
+                    .record = null,
+                }) catch |err| {
+                    alloc.free(param_name);
+                    return err;
+                };
+            }
+        }
+    }
     for (fd.func.params) |par| {
         const rec_name = if (findRecordName(records, par.typ)) |r| try alloc.dupe(u8, r.name) else null;
         const param_name = alloc.dupe(u8, par.name) catch |err| {
@@ -1103,6 +1468,93 @@ fn lowerFunction(
     };
 }
 
+/// Physical process entry from the file-scope tail. The DNIR name `main` is
+/// the linker ABI, not a source binding.
+fn root(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    id: ?semantic_graph.id,
+    records: []const dnir.RecordDesc,
+    graph: *const semantic_graph.SemanticGraph,
+    occurrences: *const OccurrenceBridge,
+    diagnostic: *Diagnostic,
+    require_graph_facts: bool,
+    externs: *std.ArrayList(dnir.Extern),
+    func_record_returns: *std.StringHashMapUnmanaged([]const u8),
+    fp_params: *const std.StringHashMapUnmanaged([]bool),
+    module_consts: *const ModuleConsts,
+    entity_linkage: *const std.AutoHashMapUnmanaged(semantic_graph.id, []const u8),
+    relation_edges: *const std.StringHashMapUnmanaged([]const u8),
+) Error!dnir.Function {
+    var ctx: LowerCtx = .{
+        .alloc = alloc,
+        .diagnostic = diagnostic,
+        .records = records,
+        .graph = graph,
+        .function = id,
+        .occurrences = occurrences,
+        .require_graph_facts = require_graph_facts,
+        .externs = externs,
+        .func_record_returns = func_record_returns,
+        .fp_params = fp_params,
+        .entity_linkage = entity_linkage,
+        .relation_edges = relation_edges,
+        .module_consts = module_consts,
+        .ret_record = null,
+    };
+    defer ctx.deinit();
+    for (mod.body.stmts) |*stmt| switch (stmt.*) {
+        .func_decl,
+        .const_decl,
+        .global_decl,
+        .alias_def,
+        .enum_def,
+        .macro_def,
+        .concept_def,
+        .cinclude,
+        .directive,
+        => {},
+        else => try lowerStmt(&ctx, stmt, false),
+    };
+    if (tail_result_demand.blockTailResult(&mod.body)) |tail| {
+        if (status(&ctx, tail.expr)) {
+            _ = try tryEmitTailDemandReturn(&ctx, &mod.body);
+        } else {
+            _ = try lowerExprCons(&ctx, tail.expr, .discard);
+        }
+    }
+    if (ctx.instrs.items.len == 0 or ctx.instrs.items[ctx.instrs.items.len - 1].op != .ret) {
+        try ctx.emit(.{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .any });
+    }
+    const owned_instrs = try ctx.instrs.toOwnedSlice(alloc);
+    var strings_interned = false;
+    errdefer {
+        if (strings_interned) {
+            for (owned_instrs) |instruction| dnir.deinitInstr(alloc, instruction);
+        } else {
+            for (owned_instrs) |instruction| {
+                if (instruction.vals.len > 0) alloc.free(instruction.vals);
+            }
+        }
+        alloc.free(owned_instrs);
+    }
+    try internInstrStrings(alloc, owned_instrs);
+    strings_interned = true;
+    const blocks = try alloc.alloc(dnir.Block, 1);
+    errdefer alloc.free(blocks);
+    blocks[0] = .{ .instrs = owned_instrs };
+    const export_name = try alloc.dupe(u8, "main");
+    errdefer alloc.free(export_name);
+    return .{
+        .name = export_name,
+        .ret = .i64,
+        .params = &.{},
+        .ret_record = null,
+        .id = id,
+        .blocks = blocks,
+    };
+}
+
 fn resolveType(t: ast.TypeExpr) RT {
     return switch (t) {
         .named => |n| blk: {
@@ -1122,7 +1574,7 @@ fn resolveType(t: ast.TypeExpr) RT {
 /// `int` and `integer` ARE `i64`, and this is not a courtesy: `types.zig`
 /// resolves both to `.i64` under "Common aliases", so they are the same type by
 /// the language's own answer. This pass matched the two spellings `i64` and
-/// `i32` literally, so `exit(code: int)` in `lib/std/os.id` was ineligible —
+/// `i32` literally, so `exit(code: int)` in `lib/os.id` was ineligible —
 /// and because `lowerModule` requires EVERY function in a module to lower, one
 /// spliced `os.exit` refused the whole program. Two spellings of one type, and
 /// the narrower reading cost every program that touches `std.os`.
@@ -1168,23 +1620,38 @@ fn isVoidType(t: ast.TypeExpr) bool {
     return t == .named and std.mem.eql(u8, t.named, "void");
 }
 
+/// True when the file-scope tail *is* the process status (integer, bool, or
+/// f64 that the ABI widens). A str or other value is produced for its effects
+/// and must not leak a register as `_main`'s i64.
+fn status(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    if (effect(expr)) return false;
+    if (exprIsStr(ctx, expr)) return false;
+    return exprIsIntegral(ctx, expr) or exprIsBoolish(ctx, expr) or exprIsF64(ctx, expr);
+}
+
 /// A tail call that yields nothing — its value is not a result, it is an effect.
 ///
 /// DEMAND (rule 3) makes the last expression of a block its result, which is
-/// right for every expression that HAS one. `print` does not: it is a void
-/// runtime global, so an if-body ending in `print(" ")` is a discarded
-/// statement that happens to sit in tail position.
+/// right for every expression that HAS one. `print` and `stdout:write` do not:
+/// they are egress. An if-body ending in `print(" ")` or a file whose tail is
+/// `stdout:write("hi")` is a discarded statement in tail position. Returning
+/// the `puts` register made write-only roots exit 61.
 ///
-/// Syntactic rather than type-directed because `LowerCtx` carries no type map;
-/// this is the one builtin whose voidness is unconditional. A general rule
-/// wants the callee's declared return type, which arrives with the same work
-/// that would let user `: void` functions land here too.
-fn isVoidTailCall(expr: *const ast.Expr) bool {
-    const callee = switch (expr.*) {
-        .call => |c| c.func,
+/// Syntactic rather than type-directed because `LowerCtx` carries no type map.
+/// A general rule wants the callee's declared return type.
+fn effect(expr: *const ast.Expr) bool {
+    switch (expr.*) {
+        .call => |c| {
+            const callee = c.func;
+            return callee.* == .name and std.mem.eql(u8, callee.name.ident, "print");
+        },
+        .method_call => |mc| {
+            if (mc.obj.* != .name or mc.args.len != 1) return false;
+            return std.mem.eql(u8, mc.obj.name.ident, "stdout") and
+                std.mem.eql(u8, mc.method, "write");
+        },
         else => return false,
-    };
-    return callee.* == .name and std.mem.eql(u8, callee.name.ident, "print");
+    }
 }
 
 /// §12 TAIL — a self-call in tail position is a JUMP, not a frame.
@@ -1212,7 +1679,7 @@ fn tryEmitSelfTail(ctx: *LowerCtx, expr: *const ast.Expr) Error!bool {
     // the callee spelling.
     if (ctx.occurrences.get(expr) != null) return false;
     if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr))
-        return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
+        return refuseMissingApplication(ctx, @src(), expr);
     const c = expr.call;
     if (c.func.* != .name) return false;
     if (!std.mem.eql(u8, c.func.name.ident, ctx.self_name)) return false;
@@ -1243,7 +1710,7 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
     // `return print(" ")`, returning whatever register the void call left —
     // exit 59, and 224 with an else, where the C backend exits 0. Lower it as
     // the effect it is and report "no return", so the branch falls through.
-    if (isVoidTailCall(r.expr)) {
+    if (effect(r.expr)) {
         _ = try lowerExprCons(ctx, r.expr, .discard);
         return false;
     }
@@ -1290,6 +1757,9 @@ fn compoundTargetSlot(ctx: *LowerCtx, target: *const ast.Expr) ?u32 {
 }
 
 fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error!void {
+    const saved_answering = ctx.block_answering;
+    ctx.block_answering = allow_return;
+    defer ctx.block_answering = saved_answering;
     for (block.stmts, 0..) |*stmt, i| {
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
@@ -1363,7 +1833,9 @@ fn functionResultIs(
     name: []const u8,
     expected: std.meta.Tag(types.ResolvedType),
 ) bool {
-    const descriptor = ctx.graph.funcResultDescriptor(name) orelse return false;
+    const start = ctx.function orelse return false;
+    const entity = ctx.graph.resolveInHome(start, name, .func) orelse return false;
+    const descriptor = ctx.graph.functionResultDescriptor(entity) orelse return false;
     return std.meta.activeTag(descriptor) == expected;
 }
 
@@ -1396,7 +1868,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // unguarded pack panicked the compiler outright
             // ("for loop over objects with non-equal lengths"). Decline the
             // construct instead: DNIR lowering fails, the module falls back to the
-            // C backend, and the program still compiles. Pass 42 §3.1 (correlated
+            // C backend, and the program still compiles. §3.1 (correlated
             // packs with a native ABI) is what will let this lower here.
             if (as.targets.len != as.values.len) return bail(ctx.diagnostic, @src());
             for (as.targets, as.values) |target, value| {
@@ -1419,7 +1891,14 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             var fail_idx = ctx.instrs.items.len;
             try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
 
-            const then_ret = try lowerBlockReturns(ctx, &is.then, allow_return);
+            // A branch early-returns when the `if` is itself the block's tail
+            // slot (`allow_return`), OR when the enclosing block is a return
+            // context and the branch is a value guard — `if n < 2 \n n` exits
+            // the function even though the recursive tail follows it. Trailing
+            // assignments/effects still fall through (see `branchIsValueGuard`).
+            const answering = ctx.block_answering;
+            const then_gate = allow_return or (answering and branchIsValueGuard(&is.then));
+            const then_ret = try lowerBlockReturns(ctx, &is.then, then_gate);
             if (!then_ret) {
                 try end_branches.append(ctx.alloc, @intCast(ctx.instrs.items.len));
                 try ctx.emit(.{ .op = .br, .branch_target = 0 });
@@ -1431,7 +1910,8 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 const econd = try lowerExpr(ctx, elseif.cond);
                 fail_idx = ctx.instrs.items.len;
                 try ctx.emit(.{ .op = .br, .lhs = econd, .branch_target = 0, .branch_condition = .when_false });
-                const branch_ret = try lowerBlockReturns(ctx, &elseif.body, allow_return);
+                const ei_gate = allow_return or (answering and branchIsValueGuard(&elseif.body));
+                const branch_ret = try lowerBlockReturns(ctx, &elseif.body, ei_gate);
                 if (!branch_ret) {
                     try end_branches.append(ctx.alloc, @intCast(ctx.instrs.items.len));
                     try ctx.emit(.{ .op = .br, .branch_target = 0 });
@@ -1440,7 +1920,10 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
 
             const else_start: u32 = @intCast(ctx.instrs.items.len);
             ctx.instrs.items[fail_idx].branch_target = else_start;
-            if (is.else_body) |*eb| _ = try lowerBlockReturns(ctx, eb, allow_return);
+            if (is.else_body) |*eb| {
+                const else_gate = allow_return or (answering and branchIsValueGuard(eb));
+                _ = try lowerBlockReturns(ctx, eb, else_gate);
+            }
 
             const end_idx: u32 = @intCast(ctx.instrs.items.len);
             for (end_branches.items) |*br_off| {
@@ -1511,6 +1994,9 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
 }
 
 fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error!bool {
+    const saved_answering = ctx.block_answering;
+    ctx.block_answering = allow_return;
+    defer ctx.block_answering = saved_answering;
     for (block.stmts, 0..) |*stmt, i| {
         const tail_here = allow_return and stmtIsTailSlot(block, i);
         if (stmt.* == .ret) {
@@ -1595,6 +2081,22 @@ fn lowerBlockTailEffect(ctx: *LowerCtx, block: *const ast.Block) Error!void {
 fn stmtIsTailSlot(block: *const ast.Block, i: usize) bool {
     if (block.tail_expr != null) return false;
     return i + 1 == block.stmts.len;
+}
+
+/// A branch is a value guard when its tail is an explicit value-carrying
+/// expression — `if n < 2 \n n`, `if x < 0 \n -x`. Taking such a branch is a
+/// function exit whose value is the answer, even when the `if` is not the
+/// block's syntactic tail (a guard clause preceding the fall-through result).
+///
+/// This is deliberately narrow. A branch whose tail is a trailing ASSIGNMENT
+/// (`if r == 0 \n r = 5`) or a void-shaped effect (`if c \n print(" ")`) is NOT
+/// a guard: it must fall through so the rest of the enclosing block still runs
+/// (see the miscompiles catalogued at `stmtIsTailSlot`). Only an explicit
+/// `tail_expr` that carries a value qualifies; an assignment lives in
+/// `block.stmts` and has no `tail_expr`.
+fn branchIsValueGuard(block: *const ast.Block) bool {
+    const e = block.tail_expr orelse return false;
+    return !tail_result_demand.isVoidShapedCall(e);
 }
 
 fn intLiteralStep(expr: *const ast.Expr) ?i64 {
@@ -1873,6 +2375,14 @@ fn concatOperandOk(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return exprIsIntegral(ctx, expr);
 }
 
+fn sameIndex(a: *const ast.Expr, b: *const ast.Expr) bool {
+    if (a.* == .name and b.* == .name)
+        return std.mem.eql(u8, a.name.ident, b.name.ident);
+    if (a.* == .int_lit and b.* == .int_lit)
+        return a.int_lit.val == b.int_lit.val;
+    return false;
+}
+
 /// True when `expr` is known to produce a `str` (a `const char*`), so `#expr`
 /// can lower to a `strlen` call rather than a dynamic length probe.
 fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
@@ -1898,7 +2408,16 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         //     does not recognize its own argument and falls through to an
         //     undefined `string_byte` symbol.
         .call => |c| switch (c.func.*) {
-            .name => |n| functionResultIs(ctx, n.ident, .str),
+            .name => |n| blk: {
+                if (std.mem.eql(u8, n.ident, "to") and c.args.len == 2 and
+                    c.args[1].* == .name and std.mem.eql(u8, c.args[1].name.ident, "str") and
+                    exprIsIntegral(ctx, c.args[0]))
+                    break :blk true;
+                // `gatecap(cmd)` captures process stdout as text (GAP-155).
+                if (std.mem.eql(u8, n.ident, "gatecap") and c.args.len == 1)
+                    break :blk true;
+                break :blk functionResultIs(ctx, n.ident, .str);
+            },
             // `to(str)(n)` — the relation surface's own producer of str. It is
             // spelled as a call whose CALLEE is a call, so neither the
             // declared-return arm nor the `string.char` arm sees it, and every
@@ -1925,6 +2444,7 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // `Kind.owner` where the descriptor field holds a string literal — the
         // qualified spelling of the same module-level constant.
         .field => |f| blk: {
+            if (cwd(expr)) break :blk true;
             if (f.obj.* != .name) break :blk false;
             var buf: [512]u8 = undefined;
             const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ f.obj.name.ident, f.field }) catch break :blk false;
@@ -1934,18 +2454,51 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // and one integer arm is a slot whose type depends on the branch taken,
         // which no consumer downstream can read correctly.
         .if_expr => |ie| exprIsStr(ctx, ie.then_expr) and exprIsStr(ctx, ie.else_expr),
+        .index => |ix| argv(ix.obj) or env(ix.obj),
         .method_call => |mc| blk: {
             if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "io") and
                 std.mem.eql(u8, mc.method, "read"))
                 break :blk true;
-            if (std.mem.eql(u8, mc.method, "len") and mc.args.len == 0)
-                break :blk exprIsStr(ctx, mc.obj);
+            if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
+                std.mem.eql(u8, mc.method, "read") and mc.args.len == 0)
+                break :blk true;
+            if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
+                std.mem.eql(u8, mc.method, "line") and mc.args.len == 0)
+                break :blk true;
+            if (std.mem.eql(u8, mc.method, "read") and mc.args.len == 0 and
+                exprIsStr(ctx, mc.obj))
+                break :blk true;
+            if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and
+                mc.args[0].* == .name and std.mem.eql(u8, mc.args[0].name.ident, "str") and
+                exprIsIntegral(ctx, mc.obj))
+                break :blk true;
             if (std.mem.eql(u8, mc.method, "sub") and mc.args.len >= 1 and mc.args.len <= 2)
                 break :blk exprIsStr(ctx, mc.obj);
             if (std.mem.eql(u8, mc.method, "has") and mc.args.len == 1)
                 break :blk exprIsStr(ctx, mc.obj);
             break :blk false;
         },
+        else => false,
+    };
+}
+
+/// The realized value is text. Print/write must not reconstruct i64 from a
+/// pointer just because the AST classifier missed a producer.
+fn holds(ctx: *const LowerCtx, v: dnir.Value) bool {
+    return switch (v) {
+        .str => true,
+        .temp => |t| blk: {
+            var i = ctx.instrs.items.len;
+            while (i > 0) {
+                i -= 1;
+                const ins = ctx.instrs.items[i];
+                if (ins.result) |r| {
+                    if (r == t) break :blk ins.ty == .str;
+                }
+            }
+            break :blk false;
+        },
+        .local => |slot| ctx.str_slots.contains(slot),
         else => false,
     };
 }
@@ -1959,7 +2512,7 @@ fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) 
 
 fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!void {
     if (applicationNeedsGraphOccurrence(ctx, value)) {
-        return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
+        return refuseMissingApplication(ctx, @src(), value);
     }
     // `Alias = req "std.compiler.token"` binds a module at compile time; the
     // alias exists only so `Alias.CONST` can fold and `Alias.fn` can resolve to
@@ -1968,11 +2521,13 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
     if (isReqCall(value)) return;
     if (value.* == .call) {
         if (ctx.occurrences.get(value)) |application| {
-            if (recordForDescriptor(ctx.records, application.descriptor)) |record| {
+            bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
+            const descriptor = try publishedDescriptor(ctx, application);
+            if (recordForDescriptor(ctx.records, descriptor)) |record| {
                 try lowerCheckedRecordCallAssign(ctx, name, application, record);
                 return;
             }
-            try checkedScalarResult(ctx.diagnostic, application.descriptor);
+            try checkedScalarResult(ctx.diagnostic, descriptor);
         }
     }
     if (!ctx.require_graph_facts and value.* == .call and value.call.func.* == .name) {
@@ -2067,33 +2622,49 @@ fn checkedRecordResultSupported(record: dnir.RecordDesc) bool {
     return true;
 }
 
+/// Selected callable entity id. Producer is the occurrence binding edge.
+fn applicationTarget(
+    ctx: *const LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+) Error!semantic_graph.id {
+    return ctx.graph.applicationRelation(application.application) orelse
+        invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-relation");
+}
+
+fn linkageForTarget(ctx: *LowerCtx, target: semantic_graph.id) Error![]const u8 {
+    return ctx.entity_linkage.get(target) orelse
+        invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-target");
+}
+
 fn lowerCheckedRecordCallAssign(
     ctx: *LowerCtx,
     name: []const u8,
     application: *const semantic_graph.ApplicationFact,
     record: dnir.RecordDesc,
 ) Error!void {
-    const relation = ctx.graph.get(application.relation) orelse
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-relation");
-    const callee = relation.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-link-symbol");
-    var operand_storage: [8]CheckedScalarOperand = undefined;
+    bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
+    const target = try applicationTarget(ctx, application);
+    const callee = try linkageForTarget(ctx, target);
+    var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage);
-    var values: [8]dnir.Value = undefined;
+    var values: [max_direct_scalar_args]dnir.Value = undefined;
     const floating = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
     const result = try checkedApplicationResult(ctx, application);
+    const descriptor = try publishedDescriptor(ctx, application);
     try ctx.emit(.{
         .op = .call_direct,
-        .relation = application.relation,
+        .relation = target,
         .application = application.application,
         .value = result,
-        .subject = application.subject,
+        .subject = ctx.graph.applicationSubject(application.application),
+        .target = target,
         .realization_start = realization_start,
         .callee = callee,
         .record = record.name,
         .field = name,
-        .ty = application.descriptor,
+        .ty = descriptor,
     });
 }
 
@@ -2572,7 +3143,7 @@ fn lowerExprCons(
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
     if (applicationNeedsGraphOccurrence(ctx, expr)) {
-        return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
+        return refuseMissingApplication(ctx, @src(), expr);
     }
     return switch (expr.*) {
         .nil => .{ .i64 = 0 },
@@ -2630,11 +3201,33 @@ fn lowerExprCons(
             return bailWith(ctx.diagnostic, @src(), @tagName(u.op));
         },
         .index => |ix| blk: {
+            if (argv(ix.obj)) {
+                try ensureExtern(ctx, "os", "args", "idol_os_arg");
+                const i = try lowerExpr(ctx, ix.key);
+                if (consumption == .discard) {
+                    try ctx.emit(.{ .op = .call_extern, .callee = "idol_os_arg", .lhs = i, .ty = .str });
+                    break :blk .void;
+                }
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_arg", .lhs = i, .ty = .str });
+                break :blk .{ .temp = t };
+            }
+            if (env(ix.obj)) {
+                try ensureExtern(ctx, "os", "env", "getenv");
+                const k = try lowerExpr(ctx, ix.key);
+                if (consumption == .discard) {
+                    try ctx.emit(.{ .op = .call_extern, .callee = "getenv", .lhs = k, .ty = .str });
+                    break :blk .void;
+                }
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "getenv", .lhs = k, .ty = .str });
+                break :blk .{ .temp = t };
+            }
             // `t[2]` on a positional table resolves to the element's own local,
             // so a constant index costs nothing at runtime. A non-constant index
             // needs a base pointer and computed offset — the native table
             // milestone — and is refused rather than mis-lowered.
-            // Pass 101 §2: `s[i]` IS the byte, 0-based — there is no string
+            // §2: `s[i]` IS the byte, 0-based — there is no string
             // library, only a string descriptor. This is the CANONICAL byte
             // access, and it did not lower while the deny-listed
             // `string.byte(s, i)` did. Sixth instance of that pattern this
@@ -2739,7 +3332,15 @@ fn applicationResultIs(
 
 fn applicationDescriptor(ctx: *const LowerCtx, expr: *const Expr) ?types.ResolvedType {
     const application = ctx.occurrences.get(expr) orelse return null;
-    return application.descriptor;
+    return ctx.graph.applicationDescriptor(application.application);
+}
+
+fn publishedDescriptor(
+    ctx: *const LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+) Error!types.ResolvedType {
+    return ctx.graph.applicationDescriptor(application.application) orelse
+        invalidGraphFacts(ctx.diagnostic, @src(), "application-result-descriptor");
 }
 
 const CheckedScalarOperand = struct {
@@ -2816,10 +3417,10 @@ fn checkedScalarResult(diagnostic: *Diagnostic, descriptor: types.ResolvedType) 
 fn checkedScalarOperands(
     ctx: *LowerCtx,
     application: *const semantic_graph.ApplicationFact,
-    storage: *[8]CheckedScalarOperand,
+    storage: *[max_direct_scalar_args]CheckedScalarOperand,
 ) Error![]const CheckedScalarOperand {
     var count: usize = 0;
-    if (application.subject) |subject| {
+    if (ctx.graph.applicationSubject(application.application)) |subject| {
         storage[count] = try checkedScalarOperand(ctx, subject);
         count += 1;
     }
@@ -2846,7 +3447,7 @@ fn checkedApplicationResult(
 fn evaluateCheckedScalarOperands(
     ctx: *LowerCtx,
     operands: []const CheckedScalarOperand,
-    values: *[8]dnir.Value,
+    values: *[max_direct_scalar_args]dnir.Value,
 ) Error!bool {
     var fp_count: usize = 0;
     for (operands, 0..) |operand, i| {
@@ -2854,6 +3455,11 @@ fn evaluateCheckedScalarOperands(
         if (operand.descriptor == .f64) fp_count += 1;
     }
     if (fp_count != 0 and fp_count != operands.len) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+    }
+    // Only the eight FP argument registers (v0..v7) are marshaled; wide integer
+    // relations get the stack-arg extension, floating-point ones do not.
+    if (fp_count != 0 and operands.len > 8) {
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
     }
     return fp_count != 0;
@@ -2877,22 +3483,22 @@ fn stageCheckedScalarOperands(
 
 /// Realize one checked scalar application. Source call orientation has already
 /// disappeared: relation, subject role, ordered operands, result and occurrence
-/// all come from the graph. The relation's name is retained only as the current
-/// physical link-symbol projection and is validated against the target
-/// callable id before machine emission.
+/// all come from the graph. Physical linkage resolves from the target entity id
+/// through the module linkage map — never from relation node names here.
 fn lowerCheckedScalarCall(
     ctx: *LowerCtx,
     application: *const semantic_graph.ApplicationFact,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
-    const relation = ctx.graph.get(application.relation) orelse
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-relation");
-    const callee = relation.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-link-symbol");
-    try checkedScalarResult(ctx.diagnostic, application.descriptor);
+    bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
+    const target = try applicationTarget(ctx, application);
+    const callee = try linkageForTarget(ctx, target);
+    const descriptor = try publishedDescriptor(ctx, application);
+    try checkedScalarResult(ctx.diagnostic, descriptor);
 
-    var operand_storage: [8]CheckedScalarOperand = undefined;
+    var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage);
-    var values: [8]dnir.Value = undefined;
+    var values: [max_direct_scalar_args]dnir.Value = undefined;
     const floating = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     // Admit only the fixed-width integer contract with byte-equivalence proof.
@@ -2900,38 +3506,64 @@ fn lowerCheckedScalarCall(
     // operand laws have the same focused control.
     const direct_gp = operands.len == 1 and
         operands[0].descriptor == .i64 and
-        application.descriptor == .i64 and
+        descriptor == .i64 and
         checkedOperandAdmitsDirectGp(ctx, operands[0].expression);
     for (operands) |operand| {
         if (checkedOperandUsesRecordStorage(ctx, operand.expression)) {
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
-        if (operand.expression.* == .name) {
-            const ident = operand.expression.name.ident;
-            if (ctx.locals.get(ident)) |_| {
-                if (!nameIsCurrentParam(ctx, ident)) {
-                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                }
-            }
-        }
+        // A scalar local passed as an operand (`word(before)` where `before` is a
+        // body binding) is safe: any body containing a call spills all GP locals
+        // to the stack frame (`planGpStackLocals`, gate_spill_all_locals =
+        // body_has_call), so the operand load/reload survives the call's
+        // caller-saved clobber. Non-scalar operands already bailed above and in
+        // `checkedScalarOperand`.
     }
     if (!direct_gp) try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
-    const has_result = consumption != .discard and application.descriptor != .void;
+    const has_result = consumption != .discard and descriptor != .void;
     const result = if (has_result) ctx.freshTemp() else null;
     const value = try checkedApplicationResult(ctx, application);
     try ctx.emit(.{
         .op = .call_direct,
-        .relation = application.relation,
+        .relation = target,
         .application = application.application,
         .value = value,
-        .subject = application.subject,
+        .subject = ctx.graph.applicationSubject(application.application),
+        .target = target,
         .realization_start = realization_start,
         .result = result,
         .callee = callee,
         .lhs = if (direct_gp) values[0] else .void,
-        .ty = application.descriptor,
+        .ty = descriptor,
     });
     return if (result) |temp| .{ .temp = temp } else .void;
+}
+
+/// `os.args` — the root-projected argument table, not a call.
+fn argv(expr: *const ast.Expr) bool {
+    if (expr.* != .field) return false;
+    const f = expr.field;
+    return f.obj.* == .name and
+        std.mem.eql(u8, f.obj.name.ident, "os") and
+        std.mem.eql(u8, f.field, "args");
+}
+
+/// `os.env` — the root-projected environment table, not `getenv` / `os.env()`.
+fn env(expr: *const ast.Expr) bool {
+    if (expr.* != .field) return false;
+    const f = expr.field;
+    return f.obj.* == .name and
+        std.mem.eql(u8, f.obj.name.ident, "os") and
+        std.mem.eql(u8, f.field, "env");
+}
+
+/// `os.cwd` — the root-projected working directory, not `getcwd` / `os.cwd()`.
+fn cwd(expr: *const ast.Expr) bool {
+    if (expr.* != .field) return false;
+    const f = expr.field;
+    return f.obj.* == .name and
+        std.mem.eql(u8, f.obj.name.ident, "os") and
+        std.mem.eql(u8, f.field, "cwd");
 }
 
 fn lowerStdinRead(
@@ -2942,6 +3574,19 @@ fn lowerStdinRead(
     try ensureExtern(ctx, "stdin", "read", "idol_io_read_stdin");
     const t = ctx.freshTemp();
     try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_io_read_stdin", .ty = .str });
+    return .{ .temp = t };
+}
+
+/// `stdin:line()` — one newline-delimited message for a persistent server loop.
+/// End of input is the empty string, not a null sentinel (GAP-155).
+fn lowerStdinLine(
+    ctx: *LowerCtx,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    _ = consumption;
+    try ensureExtern(ctx, "stdin", "line", "idol_io_read_line");
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_io_read_line", .ty = .str });
     return .{ .temp = t };
 }
 
@@ -2982,6 +3627,31 @@ fn lowerSubjectHas(
     return .{ .temp = t };
 }
 
+fn lowerSubjectFind(
+    ctx: *LowerCtx,
+    expr: *const Expr,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    const mc = expr.method_call;
+    if (mc.args.len != 3) return bail(ctx.diagnostic, @src());
+    const hay = try lowerExpr(ctx, mc.obj);
+    const needle = try lowerExpr(ctx, mc.args[0]);
+    const start = try lowerExpr(ctx, mc.args[1]);
+    const plain = try lowerExpr(ctx, mc.args[2]);
+    try ensureExtern(ctx, "idol", "find", "idol_str_find");
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = hay });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = needle });
+    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = start });
+    try ctx.emit(.{ .op = .mov_arg, .result = 3, .lhs = plain });
+    if (consumption == .discard) {
+        try ctx.emit(.{ .op = .call_extern, .callee = "idol_str_find", .ty = .i64 });
+        return .void;
+    }
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_str_find", .ty = .i64 });
+    return .{ .temp = t };
+}
+
 fn lowerSubjectTail(
     ctx: *LowerCtx,
     expr: *const Expr,
@@ -3003,20 +3673,40 @@ fn lowerSubjectCall(
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
     if (ctx.occurrences.get(expr)) |application| {
-        if (application.subject == null) return invalidGraphFacts(ctx.diagnostic, @src(), "application-subject");
-        if (!ctx.graph.bootstrapApplicationExpr(expr)) {
+        if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr)) {
+            if (ctx.graph.applicationSubject(application.application) == null) {
+                bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-subject");
+            }
             return lowerCheckedScalarCall(ctx, application, consumption);
         }
     }
     if (expr.* == .method_call) {
         const mc = expr.method_call;
+        if (try tryLowerSubjectRelationEdgeCall(ctx, expr, consumption)) |value| return value;
         if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
             std.mem.eql(u8, mc.method, "read") and mc.args.len == 0)
         {
             return lowerStdinRead(ctx, consumption);
         }
+        if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
+            std.mem.eql(u8, mc.method, "line") and mc.args.len == 0)
+        {
+            return lowerStdinLine(ctx, consumption);
+        }
+        if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdout") and
+            std.mem.eql(u8, mc.method, "write") and mc.args.len == 1)
+        {
+            return lowerPrint(ctx, mc.args);
+        }
         if (std.mem.eql(u8, mc.method, "read") and mc.args.len == 0 and exprIsStr(ctx, mc.obj)) {
             return lowerSubjectRead(ctx, expr, consumption);
+        }
+        if (!ctx.require_graph_facts and mc.args.len == 1) {
+            if (ctx.relation_edges.get(mc.method)) |sym| {
+                const args = [_]*ast.Expr{ mc.obj, mc.args[0] };
+                return try lowerNamedDirectCall(ctx, sym, &args, consumption);
+            }
         }
         if (std.mem.eql(u8, mc.method, "len") and mc.args.len == 0) {
             const base = try lowerExpr(ctx, mc.obj);
@@ -3031,8 +3721,14 @@ fn lowerSubjectCall(
         if (std.mem.eql(u8, mc.method, "has") and mc.args.len == 1) {
             return lowerSubjectHas(ctx, expr, consumption);
         }
+        if (std.mem.eql(u8, mc.method, "find") and mc.args.len == 3) {
+            return lowerSubjectFind(ctx, expr, consumption);
+        }
         if (std.mem.eql(u8, mc.method, "tail") and mc.args.len == 0 and exprIsStr(ctx, mc.obj)) {
             return lowerSubjectTail(ctx, expr, consumption);
+        }
+        if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and ctx.graph.bootstrapApplicationExpr(expr)) {
+            return lowerSubjectTo(ctx, mc.obj, mc.args[0], consumption);
         }
         // String descriptor primitives are bootstrap lowering rules, not
         // declared ordinary relations yet. Admit them before graph-fact bail
@@ -3047,9 +3743,7 @@ fn lowerSubjectCall(
             return lowerCall(ctx, try faceAsCall(ctx, expr), consumption);
         }
     }
-    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
-
-    return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
+    return refuseMissingApplication(ctx, @src(), expr);
 }
 
 /// Whether any part of `expr` involves f64. `exprIsF64` only inspects the node
@@ -3094,7 +3788,7 @@ fn lowerShortCircuit(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *
     // Integer contexts only. When an operand's subtree touches f64 — an f64
     // kernel call, a float literal, an f64 slot — the AST backend already lowers
     // the whole `cond and a or b` ternary correctly against f64 records, and
-    // taking it over here regressed Pass 11 WP-04. Refusing keeps that fallback.
+    // taking it over here regressed WP-04. Refusing keeps that fallback.
     if (exprTouchesF64(ctx, lhs) or exprTouchesF64(ctx, rhs)) return bail(ctx.diagnostic, @src());
 
     const slot = ctx.freshTemp();
@@ -3270,6 +3964,7 @@ fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) 
     try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = plan.fmt } });
     try stageConcatHoles(ctx, vals[0..plan.count]);
     try ctx.emit(.{ .op = .call_extern, .callee = "snprintf" });
+    try ctx.str_slots.put(ctx.alloc, buf, {});
     return .{ .temp = buf };
 }
 
@@ -3368,7 +4063,7 @@ fn calleeWantsFpSlots(ctx: *LowerCtx, callee: ?[]const u8) bool {
 
 fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) Error!void {
     if (args.len == 0) return;
-    if (args.len > 8) return bail(ctx.diagnostic, @src());
+    if (args.len > max_direct_scalar_args) return bail(ctx.diagnostic, @src());
 
     // Two phases, deliberately. `mov_arg` writes x0..x7, and evaluating a later
     // argument may itself contain a call that clobbers them: in
@@ -3379,7 +4074,7 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const 
     //
     // A record argument contributes one slot per field, so the slot count is not
     // the argument count.
-    var values: [8]dnir.Value = undefined;
+    var values: [max_direct_scalar_args]dnir.Value = undefined;
     var count: u32 = 0;
     for (args) |arg| {
         if (arg.* == .name) {
@@ -3404,7 +4099,7 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const 
                 continue;
             }
         }
-        if (count >= 8) return bail(ctx.diagnostic, @src());
+        if (count >= max_direct_scalar_args) return bail(ctx.diagnostic, @src());
         values[count] = try lowerExpr(ctx, arg);
         count += 1;
     }
@@ -3420,6 +4115,8 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const 
     var i: u32 = 0;
     while (i < count) : (i += 1) {
         if (i < fp_slots.len and fp_slots[i]) {
+            // Only v0..v7 are marshaled; there is no FP stack-arg extension.
+            if (fp >= 8) return bail(ctx.diagnostic, @src());
             try ctx.emit(.{ .op = .fp_mov_arg, .result = fp, .lhs = values[i] });
             fp += 1;
         } else {
@@ -3516,8 +4213,48 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                 !nameIsPositionalTable(ctx, n.ident);
         },
         .if_expr => |ie| exprIsIntegral(ctx, ie.then_expr) and exprIsIntegral(ctx, ie.else_expr),
+        .method_call => |mc| blk: {
+            if (std.mem.eql(u8, mc.method, "len") and mc.args.len == 0)
+                break :blk exprIsStr(ctx, mc.obj);
+            if (std.mem.eql(u8, mc.method, "byte") and mc.args.len >= 1 and mc.args.len <= 2)
+                break :blk exprIsStr(ctx, mc.obj);
+            break :blk false;
+        },
         else => false,
     };
+}
+
+/// `value:to(i64)` — bootstrap text-to-integer edge for gate transport scripts.
+fn lowerSubjectTo(
+    ctx: *LowerCtx,
+    subject: *const ast.Expr,
+    target: *const ast.Expr,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    if (target.* != .name) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
+    }
+    if (std.mem.eql(u8, target.name.ident, "i64")) {
+        const s = try lowerExpr(ctx, subject);
+        try ensureExtern(ctx, "compat", "str", "duo_str_to_i64");
+        if (consumption == .discard) {
+            try ctx.emit(.{ .op = .call_extern, .callee = "duo_str_to_i64", .lhs = s, .ty = .i64 });
+            return .void;
+        }
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "duo_str_to_i64", .lhs = s, .ty = .i64 });
+        return .{ .temp = t };
+    }
+    if (std.mem.eql(u8, target.name.ident, "str")) {
+        if (!exprIsIntegral(ctx, subject)) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
+        }
+        const n = try lowerExpr(ctx, subject);
+        const buf = try emitIntToStr(ctx, n);
+        if (consumption == .discard) return .void;
+        return .{ .temp = buf };
+    }
+    return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
 }
 
 /// `to(str)(n)` — integer to decimal text. malloc(24) + snprintf(buf, 24,
@@ -3582,17 +4319,66 @@ fn flattenNames(alloc: std.mem.Allocator, e: *const ast.Expr, out: *std.ArrayLis
     }
 }
 
+fn lowerNamedDirectCall(
+    ctx: *LowerCtx,
+    callee: []const u8,
+    args: []const *ast.Expr,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    const discard = consumption == .discard;
+    try emitScalarCallArgs(ctx, args, callee);
+    if (discard) {
+        try ctx.emit(.{ .op = .call_direct, .callee = callee, .lhs = .void });
+        return .void;
+    }
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_direct, .result = t, .callee = callee, .lhs = .void });
+    return .{ .temp = t };
+}
+
+fn tryLowerRelationEdgeCall(
+    ctx: *LowerCtx,
+    expr: *const ast.Expr,
+    consumption: types.ReturnConsumption,
+) Error!?dnir.Value {
+    if (ctx.require_graph_facts) return null;
+    if (expr.* != .call) return null;
+    const c = expr.call;
+    if (c.func.* != .call) return null;
+    const inner = c.func.call;
+    if (inner.func.* != .name or inner.args.len != 1 or c.args.len != 1) return null;
+    const sym = ctx.relation_edges.get(inner.func.name.ident) orelse return null;
+    const args = [_]*ast.Expr{ inner.args[0], c.args[0] };
+    return try lowerNamedDirectCall(ctx, sym, &args, consumption);
+}
+
+/// Subject-first relation edge — `path:len(min)` fuses to `len__path(path, min)`.
+fn tryLowerSubjectRelationEdgeCall(
+    ctx: *LowerCtx,
+    expr: *const ast.Expr,
+    consumption: types.ReturnConsumption,
+) Error!?dnir.Value {
+    if (ctx.require_graph_facts) return null;
+    if (expr.* != .method_call) return null;
+    const mc = expr.method_call;
+    const sym = ctx.relation_edges.get(mc.method) orelse return null;
+    if (mc.args.len != 1) return null;
+    const args = [_]*ast.Expr{ mc.obj, mc.args[0] };
+    return try lowerNamedDirectCall(ctx, sym, &args, consumption);
+}
+
 fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnConsumption) Error!dnir.Value {
     if (expr.* != .call) return bail(ctx.diagnostic, @src());
     if (ctx.occurrences.get(expr)) |application| {
-        if (!ctx.graph.bootstrapApplicationExpr(expr)) {
+        if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr)) {
             return lowerCheckedScalarCall(ctx, application, consumption);
         }
     }
     if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr)) {
-        return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
+        return refuseMissingApplication(ctx, @src(), expr);
     }
     const c = expr.call;
+    if (try tryLowerRelationEdgeCall(ctx, expr, consumption)) |value| return value;
     const discard = consumption == .discard;
     if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "gatecap") and c.args.len == 1) {
         const arg = try lowerExpr(ctx, c.args[0]);
@@ -3602,6 +4388,9 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         return .{ .temp = t };
     }
     if (try lowerToStr(ctx, c)) |v| return v;
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "to") and c.args.len == 2) {
+        return lowerSubjectTo(ctx, c.args[0], c.args[1], consumption);
+    }
     if (c.func.* == .field) {
         const f = c.func.field;
         // A DOTTED callee — `std.compiler.lexer.new` has `f.obj` as a `.field`,
@@ -3766,6 +4555,16 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             {
                 const s = try lowerExpr(ctx, c.args[0]);
                 const i = try lowerExpr(ctx, c.args[1]);
+                const one = sameIndex(c.args[1], c.args[2]);
+                if (one) {
+                    try ensureExtern(ctx, "str", "at", "idol_str_at");
+                    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = s });
+                    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = i });
+                    const t = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_str_at", .ty = .str });
+                    try ctx.str_slots.put(ctx.alloc, t, {});
+                    return .{ .temp = t };
+                }
                 const j = try lowerExpr(ctx, c.args[2]);
                 try ensureExtern(ctx, "str", "sub", "duo_str_sub");
                 try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = s });
@@ -3773,6 +4572,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = j });
                 const t = ctx.freshTemp();
                 try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "duo_str_sub", .ty = .str });
+                try ctx.str_slots.put(ctx.alloc, t, {});
                 return .{ .temp = t };
             }
             if (std.mem.eql(u8, f.obj.name.ident, "string") and
@@ -3842,7 +4642,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         });
         return .{ .temp = t };
     }
-    if (ctx.require_graph_facts) return invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-id");
+    if (ctx.require_graph_facts) return refuseMissingApplication(ctx, @src(), expr);
     // Name the callee. Every row this session that reported only a location
     // turned out to be covering more than one cause, and a call site's whole
     // content is "I could not resolve this callee" — the name IS the finding.
@@ -3915,7 +4715,7 @@ fn lowerPrint(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     const arg = args[0];
     if (try lowerPrintFormat(ctx, arg)) |v| return v;
     const v = try lowerExpr(ctx, arg);
-    const ty: RT = if (exprIsStr(ctx, arg)) .str else if (exprIsF64Value(ctx, arg)) .f64 else .i64;
+    const ty: RT = if (exprIsStr(ctx, arg) or holds(ctx, v)) .str else if (exprIsF64Value(ctx, arg)) .f64 else .i64;
     try ctx.emit(.{ .op = .print_value, .lhs = v, .ty = ty });
     return .void;
 }
@@ -4015,6 +4815,12 @@ fn ensureExtern(ctx: *LowerCtx, alias: []const u8, field: []const u8, sym: []con
 
 fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
     if (expr.* != .field) return bail(ctx.diagnostic, @src());
+    if (cwd(expr)) {
+        try ensureExtern(ctx, "os", "cwd", "idol_os_cwd");
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_cwd", .ty = .str });
+        return .{ .temp = t };
+    }
     const fld = expr.field;
     if (fld.obj.* == .name) {
         // Module-level descriptor constant: `Kind.ident` folds to an immediate.
@@ -4320,7 +5126,7 @@ test "dnir_lower: to(str)(n) stages the value as a variadic tail argument" {
     const src =
         \\main(): i64
         \\    s = to(str)(42)
-        \\    return #s
+        \\    return s:len()
         \\end
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "to_str.id");
@@ -4354,7 +5160,7 @@ test "dnir_lower: to(str) declines a non-integer argument rather than mis-loweri
         \\main(): i64
         \\    x: f64 = 1.5
         \\    s = to(str)(x)
-        \\    return #s
+        \\    return s:len()
         \\end
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "to_str_f64.id");
@@ -4471,6 +5277,8 @@ test "dnir_lower: checked aggregate operand requires graph ABI facts" {
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("application-operand-abi", diagnostic.note().?);
+    try std.testing.expect(diagnostic.application != null);
+    try std.testing.expectEqualStrings("distance", diagnostic.relation.?);
 }
 
 test "dnir_lower: checked aggregate result requires graph ABI facts" {
@@ -4506,6 +5314,8 @@ test "dnir_lower: checked aggregate result requires graph ABI facts" {
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("application-result-abi", diagnostic.note().?);
+    try std.testing.expect(diagnostic.application != null);
+    try std.testing.expectEqualStrings("make", diagnostic.relation.?);
 }
 
 test "dnir_lower: no mandatory main — entry function lowers uniformly" {
@@ -4799,7 +5609,12 @@ test "dnir_lower: uncensused condition call refuses in graph mode" {
     var diagnostic: Diagnostic = .{};
     var occurrences = try OccurrenceBridge.init(alloc, &graph, &diagnostic);
     defer occurrences.deinit();
-    try std.testing.expectEqual(@as(usize, 0), occurrences.unresolved);
+    // The uncensused lift (`liftModuleWithCalls`, no sema census) cannot mint an
+    // application id for the `ready()` condition call, so the bridge flags exactly
+    // that one occurrence as unresolved — and the lowering refuses it with
+    // `missing-application-id`. Both facts together are the guard: the call is not
+    // silently transported without a resolved application identity.
+    try std.testing.expectEqual(@as(usize, 1), occurrences.unresolved);
     try std.testing.expectError(
         error.GraphFactsInvalid,
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
@@ -5000,11 +5815,11 @@ test "dnir_lower: checked subject call retains semantic facts" {
     try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
     const fact = &graph.applications()[0];
     const application = fact.application;
-    const relation = fact.relation;
+    const relation = graph.applicationRelation(application) orelse return error.TestExpectedEqual;
     const results = graph.applicationResults(application) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 1), results.len);
     const value = results[0];
-    const expected_subject = fact.subject orelse return error.TestExpectedEqual;
+    const expected_subject = graph.applicationSubject(fact.application) orelse return error.TestExpectedEqual;
 
     const module = try lowerModuleWithGraph(alloc, &mod, &graph);
     defer dnir.deinitModule(alloc, module);

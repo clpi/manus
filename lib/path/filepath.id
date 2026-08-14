@@ -7,7 +7,7 @@ separator = "/"
 list_separator = ":"
 
 # IsSeparator reports whether c is a directory separator.
-is_separator(c: str): bool
+sep(c: str): bool
     if c == "/" or c == "\\" return true end
     false
 end
@@ -21,7 +21,7 @@ clean(path: str): str
     parts = {}
     i = 1
     len = result:len()
-    while i <= len do
+    while i <= len
         nxt = result:find("/", i, true)
         if nxt == nil
             part = result:sub(i)
@@ -33,7 +33,7 @@ clean(path: str): str
         i = nxt + 1
     end
     stack = {}
-    for _, part in parts do
+    for _, part in parts
         if part == ".."
             stack:remove()
         elseif part != "." and part != ""
@@ -54,11 +54,11 @@ end
 # Base returns the last element of path.
 base(path: str): str
     dot = path:len()
-    while dot > 1 and path:sub(dot, dot) == "/" do
+    while dot > 1 and path:sub(dot, dot) == "/"
         dot -= 1
     end
     last = dot
-    while dot > 1 and path:sub(dot - 1, dot - 1) != "/" do
+    while dot > 1 and path:sub(dot - 1, dot - 1) != "/"
         dot -= 1
     end
     path:sub(dot, last)
@@ -67,10 +67,10 @@ end
 # Dir returns the directory part of path.
 dir(path: str): str
     dot = path:len()
-    while dot > 1 and path:sub(dot, dot) == "/" do
+    while dot > 1 and path:sub(dot, dot) == "/"
         dot -= 1
     end
-    while dot > 1 and path:sub(dot - 1, dot - 1) != "/" do
+    while dot > 1 and path:sub(dot - 1, dot - 1) != "/"
         dot -= 1
     end
     if dot <= 1 return "." end
@@ -78,7 +78,7 @@ dir(path: str): str
 end
 
 # IsAbs reports whether path is absolute.
-is_abs(path: str): bool
+abs(path: str): bool
     if path:sub(1, 1) == "/" return true end
     if path:len() >= 2 and path:sub(2, 2) == ":" return true end
     false

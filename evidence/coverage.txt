@@ -1,0 +1,115 @@
+FTCFTW coverage ledger — the actual backlog (GAP-172 FTC-017 / K6 / K5)
+=======================================================================
+
+This is the search-space coverage graph made concrete: for every semantic
+optimization opportunity, does a CANDIDATE PROVIDER, a VERIFIER, a TARGET model,
+and a BENCHMARK exist? An opportunity with ZERO candidate providers is FTCFTW
+debt made visible BEFORE any benchmark regression (law.optimization.open,
+GAP-172 §"search-space gap"; manifesto K6/N-last). No benchmark loss is required
+to prove the gap — the absence of a provider is itself the gap.
+
+law.evidence.subject.one:
+  subject revision : 2d3f1e7fef8e5c510eb6af053f9b5679f3dd1acd  (== HEAD)
+  captured (UTC)   : 2026-08-13T21:05:00Z
+  scope            : coordination/canonicality lane — STRUCTURAL coverage, not a
+                     measured-capability claim. Producers/verifiers are graph and
+                     realization lane work (GAP-173..179, GAP-169).
+
+Coverage status enum (distinct from the debt-row status win|bound|open|unknownbound):
+  nostructure  no candidate provider AND/OR no protocol to host one — structural debt
+  protocol     a producer/verifier protocol is specified (GAP filed) but not executed
+  seeded       at least one executed row/data point exists (evidence/frontier.txt)
+  live         provider executes on the semantic graph and emits candidates today
+
+Reading at 2026-08-13: the compiler is S0. The semantic graph carries none of the
+observation/demand/law/place/cardinality columns the providers below consume
+(GAP-170/171 floors). Therefore ALMOST EVERY opportunity is `nostructure` — which
+is the honest FTCFTW state: the constitution defines R(S,O,W,D,K,E,H,P,F,B) but
+no executable provider populates it. The single exception with executed data is
+affine closed-form (measured as debt row 3, evidence/frontier.txt).
+
+Schema: id | opportunity | candidate-provider | verifier | target | benchmark | coverage
+        (provider/verifier/target GAPs named; "-" = none exists)
+
+=== A. Falls-out-of-design (cash-now candidates; each needs graph facts) =========
+F1  demand derivative → operand demands   | GAP-174        | GAP-179 | any   | sort(x):first→select        | nostructure
+F2  result-pack erasure (undemanded ret)  | GAP-174        | GAP-179 | any   | b=f() drops a,c             | nostructure
+F3  table non-materialization             | GAP-175,176    | GAP-179 | any   | local record across 3 calls | nostructure
+F4  place-on-demand                       | GAP-176        | GAP-179 | any   | immutable local table       | nostructure
+F5  exact alias provenance                | GAP-176        | GAP-179 | any   | 2 indep fields in loop      | nostructure
+F6  application-specific ABI              | GAP-169        | GAP-179 | arm64 | callee uses 2 of 8 fields   | nostructure
+F7  cross-call register allocation        | GAP-169        | GAP-179 | arm64 | leaf internal call          | nostructure
+F8  semantic rematerialization            | GAP-176        | GAP-179 | arm64 | const/addr across call      | nostructure
+F9  exact failure coldness                | GAP-170,174    | GAP-179 | any   | parser hot success path     | nostructure
+F10 world zero (erase world object)       | GAP-170        | GAP-179 | any   | job@prod()                  | nostructure
+F11 witness zero (static authority)       | GAP-177        | GAP-179 | any   | known stdout authority      | nostructure
+F12 closure zero (capture/lifetime)       | GAP-176        | GAP-179 | any   | nonescaping lambda          | nostructure
+F13 metatable devirtualization            | GAP-177        | GAP-179 | any   | x+y on callable table       | nostructure
+F14 static-key specialization             | GAP-175,177    | GAP-179 | any   | 32 known text keys          | nostructure
+F15 known-cardinality loop specialization | GAP-175        | GAP-179 | any   | N=3/16/1024                 | nostructure
+F16 bounds elimination                    | GAP-175,176    | GAP-179 | any   | i proven in count           | nostructure
+F17 semantic DSE                          | GAP-176        | GAP-179 | any   | x.a=1; x.a=2                | nostructure
+F18 cross-call load elimination           | GAP-176        | GAP-179 | any   | load;pure call;load         | nostructure
+F19 text view preservation                | GAP-176        | GAP-179 | any   | substring→parse             | nostructure
+F20 interpolation→I/O fusion              | GAP-174        | GAP-179 | any   | "a{x}b"→stdout              | nostructure
+F21 semantic link DCE                     | GAP-170,174    | GAP-179 | any   | tiny CLI                    | nostructure
+F22 startup-zero                          | GAP-170        | GAP-179 | any   | hello CLI init calls=0      | nostructure
+
+=== C. Algorithm / data-structure blank checks ==================================
+C1  lawful nonexecution (none realization)| GAP-178        | GAP-179 | any   | cached/absent-observer      | nostructure
+C2  automatic asymptotic improvement      | GAP-178,186*   | GAP-179 | any   | sort:first→select           | nostructure
+C6  closed-form synthesis (AFFINE)        | GAP-178,186*   | GAP-179 | arm64 | 8 affine accumulators       | seeded (debt row 3, open)
+C3  automatic indexing                    | GAP-186*       | GAP-179 | any   | repeated projection lookup  | nostructure
+C4  automatic memoization                 | GAP-186*       | GAP-179 | any   | pure expensive repeated     | nostructure
+C5  automatic incrementalization          | GAP-178(delta) | GAP-179 | any   | sum(map f table) Δ=O(1)     | nostructure
+C7  partial parsing (demand projection)   | GAP-174        | GAP-179 | any   | parse→field path only       | nostructure
+C8  partial serialization                 | GAP-174        | GAP-179 | any   | serialize demanded only     | nostructure
+
+=== D/E/L. Machine / loop / array / table =======================================
+M1  whole-region instruction synthesis    | GAP-184*       | GAP-179 | arm64 | region enumerate+verify     | nostructure
+M2  joint isel/sched/regalloc/ABI solver  | GAP-184*       | GAP-179 | arm64 | Pareto{lat,thru,size,spill} | nostructure
+M4  address-generation synthesis          | GAP-184*       | GAP-179 | arm64 | projection chain→addr mode  | nostructure
+M6  machine-result noncreation            | GAP-174        | GAP-179 | arm64 | demand(result)=none         | nostructure
+M7  microarch-calibrated cost (PMU)       | GAP-172 FTC-016| n/a     | arm64 | cycles/uops/ports           | protocol (wall-clock only)
+madd fusion + copy coalescing (residual)  | GAP-169        | GAP-179 | arm64 | rec/lanes (non-observable)  | bound (rows 1/2; not time-debt)
+L1  polyhedral candidate provider         | GAP-185*       | GAP-179 | any   | iteration domain/deps       | nostructure
+L2  dense+sparse schedule search          | GAP-185*       | GAP-179 | any   | bitmap/CSR/RLE/skip         | nostructure
+L3  layout × schedule co-search           | GAP-185*       | GAP-179 | any   | AoS/SoA/tile/width          | nostructure
+L4  loop↔library↔accelerator equivalence  | GAP-185*,189*  | GAP-179 | multi | scalar/vector/BLAS/GPU      | nostructure
+
+=== F/G/H/I. JIT / profile / binary / OS ========================================
+J*  lazy/adaptive materialization         | GAP-187*       | GAP-179 | any   | per-application state        | nostructure
+P1-P4 active profiling / learned ranking  | GAP-172 FTC-012,018 | GAP-179 | any | ROI fact / try-first order | nostructure
+P3  automated competitor mining           | GAP-188*       | GAP-179 | any   | trace diff→candidate         | nostructure
+B*  post-link (BOLT-eq)/reloc/page/bytes   | GAP-172 FTC-011| GAP-179 | arm64 | pages before first obs      | nostructure
+S*  I/O portfolio / zero-copy / syscall    | GAP-189*       | GAP-179 | os    | source→transform→sink       | nostructure
+
+=== R. Foundational rearchitectures =============================================
+R1  candidate realization graph (vs registry) | GAP-178     | -       | -     | replace transform_engine     | protocol (GAP-178)
+R2  persistent equivalence space              | GAP-179eq*  | GAP-179 | -     | int/addr arithmetic first    | protocol (GAP-179 store)
+R3  fact/demand/realization fixed point       | GAP-172 loop| -       | -     | worklist by expected ΔROI    | protocol
+R4  transformation laws as graph facts        | GAP-177     | GAP-179 | -     | law(rel, associative)        | protocol (GAP-177)
+R5  observation graph                         | GAP-173     | -       | -     | not-observed→freedom         | protocol (GAP-173)
+R6  change/delta graph                        | GAP-178dl*  | GAP-179 | -     | one edit→affected closure    | protocol
+R7  resource graph (vs target triple)         | GAP-172 FTC-011 | -   | -     | alu/lane/cache/dram/gpu/nic  | protocol
+
+Legend: `GAP-18x*` = P2-P5 workstream NOT yet filed as a standalone GAP; indexed
+in GAP-172 §"execution split (M)" as blocked on the P0/P1 producer backbone
+(GAP-173..179). Filing them now would be speculative prose (manifesto K warning),
+so they are tracked here as coverage rows until the backbone provides their input
+facts.
+
+Structural summary (the honest count)
+--------------------------------------
+opportunities inventoried : 50+
+coverage = live           : 0   (no provider executes on the graph)
+coverage = seeded         : 1   (C6 affine closed-form — one measured debt row)
+coverage = protocol       : R1-R7 + M7 (interfaces specified, not executed)
+coverage = nostructure    : the rest — each is FTCFTW debt by absence of provider
+
+This ledger is the FTCFTW backlog referenced by law.cost.closure / GAP-172. It is
+regenerated, not hand-scored; no aggregate "percent optimized" is computed (that
+would hide the open rows). The backlog shrinks only when a provider goes
+`nostructure → protocol → seeded → live` with a verifier and a benchmark, each
+transition gated by GAP-179 (verifier) and GAP-172 FTC-020 (no aggregate hides a
+loss).

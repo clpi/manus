@@ -1,4 +1,4 @@
-/// Unified meta-combinator dispatch (Pass 6 — architectural reconciliation).
+/// Unified meta-combinator dispatch (— architectural reconciliation).
 ///
 /// This module provides ONE entry point for evaluating comptime combinators.
 /// Previously, codegen.zig had THREE parallel dispatch paths:

@@ -32,11 +32,8 @@ token: {
     plain: i64 = (extra: i64)self.span * extra
 }
 
-main: i64 = ()
-    t: token = { span = 4 }
-    a = width(pad)(t, 3)
-    b = width(trim)(t, 3)
-    c = t:plain(3)
-    print("{a} {b} {c}")
-    0
-end
+t: token = { span = 4 }
+a = width(pad)(t, 3)
+b = width(trim)(t, 3)
+c = t:plain(3)
+print("{a} {b} {c}")

@@ -11,9 +11,11 @@ Every resolved application must become one **application record** in the graph.
 The record carries a **projection pack** as first-class facts — not curry stages,
 not nested callable intermediates, not namespace-selected meaning.
 
-Source elision (`value:to()` → graph-inferred target) must **not** erase
+Source elision (omitted `to` → graph-inferred target) must **not** erase
 projection pack facts. Omitted syntax is provenance; the graph retains inferred
-projection with causal link to demand and binding context.
+projection with causal link to demand and binding context. `value:to()` is not
+a canonical rung — elision covers the general case where target is uniquely
+inferable from demand.
 
 ## Record shape
 
@@ -77,7 +79,7 @@ operand      pack()
 result       demand(str)     # or continuation demand per binding site
 ```
 
-Graph record for `n:to()` when `str` is uniquely demanded:
+Graph record when source omits `to` and `str` is uniquely demanded:
 
 ```text
 relation     to
@@ -85,7 +87,7 @@ projection   str             # inferred — same field as explicit case
 projectionexplicit false
 projectioninferred str
 subject      n
-sourceelided to()
+sourceelided to
 provenance   result demand on binding + direct bridge witness
 ```
 
@@ -128,16 +130,16 @@ not recover projection from:
 Tooling (LSP, MCP, diagnostics) displays inferred projection when source elided,
 with provenance chain — same facts the graph retains (`law.infer.one`).
 
-## Bootstrap catalog
+## No bootstrap catalog
 
-Until graph ingestion executes live queries, the interim catalog lives at
-`lib/semantic/application.id`. It documents sample records and pack roles for
-Codex graph work and census alignment. Passing that gate proves schema presence
-only — not graph enforcement.
+`lib/semantic/application.id` is deleted (`law.catalog.zero`). Application
+records are graph facts published by the resolver (GAP-124). Until that
+boundary executes, missing records are `IMPLEMENTATION-BLOCKED` — not
+permission to revive a hand-authored schema.
 
 ## Census linkage
 
-`scripts/projection_census.id` reports source-level debt classes. When step 4
+`scripts/census/projection.id` reports source-level debt classes. When step 4
 lands in the resolver, `law.projection.census` requires a parallel **graph
 census** counting:
 
@@ -176,8 +178,9 @@ projection, the resolver records:
 | `inferredprojection` | projection pack when elided in source |
 
 Inference mints the same application record as step 4; it only populates
-`projectioninferred` and provenance when source omits `:to()` or `:to(T)`.
-See `examples/infer/direct.id` and `law.infer.one`.
+`projectioninferred` and provenance when source omits `:to(T)` (or elides `to`
+entirely when target is uniquely inferable). See `examples/infer/direct.id` and
+`law.infer.one`.
 
 Blocked on GAP-124 resolver implementation. Debt census:
 `docs/spec/projection-debt.md`.

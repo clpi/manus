@@ -158,7 +158,7 @@ ws_decode_frame(data: any, pos: i64): any
         payload_len = 0
         i = 0
         while i < 8
-            payload_len = payload_len | (data[offset + i] << (56 - i * 8))
+            payload_len |= (data[offset + i] << (56 - i * 8))
             i += 1
         end
         offset += 8

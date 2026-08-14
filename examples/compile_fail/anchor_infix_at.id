@@ -1,5 +1,5 @@
 # @corpus current
-# Pass 100 §2 THE ANCHOR — the half of the `@` token that adjacency did NOT
+# THE ANCHOR — the half of the `@` token that adjacency did NOT
 # reconcile, and that still has no meaning.
 #
 # GAP-059 row 2 was closed by giving the GLUED spelling to the anchor:

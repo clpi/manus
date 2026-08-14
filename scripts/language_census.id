@@ -9,7 +9,7 @@
 #                 canonical today. Not debt, a schedule — but a schedule with
 #                 no ceiling is a wish, so it ratchets now too. See below.
 #   SANCTIONED    the bootstrap ledger (generated C: the compiled Duo lexer and
-#                 keyword table), .lua fixtures (duon HOSTS Lua as a first-class
+#                 keyword table), .lua fixtures (idol HOSTS Lua as a first-class
 #                 source language, so Lua is INPUT), and C test fixtures. Canon XI: generated artifacts
 #                 are outputs and the ledger only shrinks.
 #   (all three categories above were LIVENESS-CHECKED, not taken on their
@@ -51,29 +51,29 @@
 # non-production side. Eleven were DELETED: each was a hand-written table plus
 # one test asserting that table had the length the same file declared. Three
 # were PORTED rather than dropped — lua_superset_corpus.zig became
-# scripts/luahost.id + examples/luahost/, and the two pass7 test files became
+# scripts/luahost.id + examples/luahost/, and the two contract test files became
 # scripts/explain.id, both wired into agent-smoke and both asserting through
 # the shipping CLI, which is wider than what the Zig originals reached.
 #
 # LOWERED 121 -> 115 on 2026-08-09, and all six came off by PORTING. They were
 # the whole "blocked on in-process state with no CLI projection" class in
-# gaps/GAP-090: meta_transform_tests, call_transform_tests, pass6_dispatch_tests,
-# pass5_golden_tests, pass8_realization_tests, pass8_codegen_realization_tests.
+# gaps/GAP-090: meta_transform_tests, call_transform_tests, and the dispatch,
+# golden, realization, and codegen-realization suites.
 # One move unblocked all six — `duo explain` grew `transform_provenance` and
 # `transform_registry`, and `optimization_outcome` grew the entity / repr fields
 # it already carried — after which the assertions could be made from outside the
-# process. They became scripts/realize.id, scripts/sim.id and
+# binary. They became scripts/realize.id, scripts/sim.id and
 # scripts/transform.id, all three wired into agent-smoke, each carrying four or
 # five positive controls the Zig originals did not have. `zig build unit-test`
 # went 1147 -> 1122: exactly the 25 tests those six files declared, so nothing
 # was lost by accident.
 #
-# LOWERED 115 -> 114 on 2026-08-09 by porting pass5_foreign_tests.zig into
+# LOWERED 115 -> 114 on 2026-08-09 by porting the foreign SIM tests into
 # scripts/sim.id. The public gate now checks both SIM ABI projections, emitted
 # unboxed C, native clang linkage, and the tracked point/rectangle oracle values
 # 25 and 10. `zig build unit-test` loses exactly the four replaced tests.
 #
-# LOWERED 114 -> 113 on 2026-08-10 by deleting pass5_fixtures.zig after its
+# LOWERED 114 -> 113 on 2026-08-10 by deleting the SIM fixtures after its
 # duplicate header constants and five consuming Zig tests moved behind the
 # public SIM boundary. scripts/sim.id now checks exact clang/SIM record
 # layouts, native and C ABI selection, P26-B02 attachment, the large by-value

@@ -1,12 +1,12 @@
-global __sync_run_queue = {}
+global pending = {}
 spawn(fn: any, ...args): any
-  args_list = {
+  args = {
     args
   }
   co = coroutine.create(()
-    fn(args_list:unpack())
+    fn(args:unpack())
   end)
-  __sync_run_queue[__sync_run_queue:len() + 1] = {
+  pending[pending:len() + 1] = {
     co = co
   }
   return nil
@@ -15,135 +15,135 @@ yield(): void
   coroutine.yield()
 end
 run(): void
-  while __sync_run_queue:len() > 0
-    task = __sync_run_queue:remove(1)
+  while pending:len() > 0
+    task = pending:remove(1)
     ok, err = coroutine.resume(task.co)
     if not ok
       io.write("sync: task error: " .. err:to(str) .. "\n")
     elseif coroutine.status(task.co) == "suspended"
-      __sync_run_queue[__sync_run_queue:len() + 1] = task
+      pending[pending:len() + 1] = task
     end
   end
 end
 step(): bool
-  if __sync_run_queue:len() == 0
+  if pending:len() == 0
     return false
   end
-  task = __sync_run_queue:remove(1)
+  task = pending:remove(1)
   ok, err = coroutine.resume(task.co)
   if not ok
     io.write("sync: task error: " .. err:to(str) .. "\n")
   elseif coroutine.status(task.co) == "suspended"
-    __sync_run_queue[__sync_run_queue:len() + 1] = task
+    pending[pending:len() + 1] = task
   end
-  return __sync_run_queue:len() > 0
+  return pending:len() > 0
 end
 channel(capacity: i64): any
   return {
-    _cap = capacity or 0,
-    _queue = {},
-    _send_waiters = {},
-    _recv_waiters = {},
-    _closed = false
+    cap = capacity or 0,
+    queue = {},
+    sendwait = {},
+    recvwait = {},
+    closed = false
   }
 end
-channel_send(ch: any, val: any): void
-  if ch._closed
+send(ch: any, val: any): void
+  if ch.closed
     error("send on closed channel")
   end
-  if ch:len()._recv_waiters > 0
-    w = ch._recv_waiters:remove(1)
-    w._slot[1] = val
-    w._slot[2] = true
-    __sync_run_queue[__sync_run_queue:len() + 1] = w
+  if ch:len().recvwait > 0
+    w = ch.recvwait:remove(1)
+    w.slot[1] = val
+    w.slot[2] = true
+    pending[pending:len() + 1] = w
   end
-  if ch._cap == 0 or ch:len()._queue < ch._cap
-    ch._queue[ch:len()._queue + 1] = val
+  if ch.cap == 0 or ch:len().queue < ch.cap
+    ch.queue[ch:len().queue + 1] = val
     return
   end
   co = coroutine.running()
   entry = {
     co = co,
-    _val = val
+    val = val
   }
-  ch._send_waiters[ch:len()._send_waiters + 1] = entry
+  ch.sendwait[ch:len().sendwait + 1] = entry
   coroutine.yield()
 end
-channel_recv(ch: any): any
-  if ch:len()._queue > 0
-    val = ch._queue:remove(1)
-    if ch:len()._send_waiters > 0
-      w = ch._send_waiters:remove(1)
-      ch._queue[ch:len()._queue + 1] = w._val
-      __sync_run_queue[__sync_run_queue:len() + 1] = w
+recv(ch: any): any
+  if ch:len().queue > 0
+    val = ch.queue:remove(1)
+    if ch:len().sendwait > 0
+      w = ch.sendwait:remove(1)
+      ch.queue[ch:len().queue + 1] = w.val
+      pending[pending:len() + 1] = w
     end
     return val
   end
-  if ch._closed
+  if ch.closed
     return nil
   end
   co = coroutine.running()
   slot = {
-    _val = nil
+    val = nil
   }
   entry = {
     co = co,
-    _slot = slot
+    slot = slot
   }
-  ch._recv_waiters[ch:len()._recv_waiters + 1] = entry
+  ch.recvwait[ch:len().recvwait + 1] = entry
   coroutine.yield()
-  return slot._val
+  return slot.val
 end
-channel_try_recv(ch: any): any
-  if ch:len()._queue > 0
-    val = ch._queue:remove(1)
-    if ch:len()._send_waiters > 0
-      w = ch._send_waiters:remove(1)
-      ch._queue[ch:len()._queue + 1] = w._val
-      __sync_run_queue[__sync_run_queue:len() + 1] = w
+peek(ch: any): any
+  if ch:len().queue > 0
+    val = ch.queue:remove(1)
+    if ch:len().sendwait > 0
+      w = ch.sendwait:remove(1)
+      ch.queue[ch:len().queue + 1] = w.val
+      pending[pending:len() + 1] = w
     end
     return val
   end
   return nil
 end
-channel_close(ch: any): void
-  ch._closed = true
-  for _, w in ch._recv_waiters
-    w._slot[1] = nil
-    w._slot[2] = true
-    __sync_run_queue[__sync_run_queue:len() + 1] = w
+close(ch: any): void
+  ch.closed = true
+  for _, w in ch.recvwait
+    w.slot[1] = nil
+    w.slot[2] = true
+    pending[pending:len() + 1] = w
   end
-  ch._recv_waiters = {}
+  ch.recvwait = {}
 end
-channel_drain(ch: any): any
+drain(ch: any): any
   out = {}
-  while ch:len()._queue > 0
-    out[out:len() + 1] = ch._queue:remove(1)
+  while ch:len().queue > 0
+    out[out:len() + 1] = ch.queue:remove(1)
   end
   return out
 end
-waitgroup_new(): any
+waitgroup(): any
   {
     count = 0,
     waiters = {}
   }
 end
-waitgroup_add(wg: any, n: i64): void
+add(wg: any, n: i64): void
   if n == nil
     n = 1
   end
   wg.count = wg.count + n
 end
-waitgroup_done(wg: any): void
+done(wg: any): void
   wg.count = wg.count - 1
   if wg.count <= 0
     for _, w in wg.waiters
-      __sync_run_queue[__sync_run_queue:len() + 1] = w
+      pending[pending:len() + 1] = w
     end
     wg.waiters = {}
   end
 end
-waitgroup_wait(wg: any): void
+wait(wg: any): void
   if wg.count <= 0
     return
   end
@@ -159,7 +159,7 @@ once(fn: any): any
     done = false
   }
 end
-once_do(o: any): void
+fire(o: any): void
   if o.done
     return
   end
@@ -172,16 +172,15 @@ M.yield = yield
 M.run = run
 M.step = step
 M.channel = channel
-M.channel_new = channel
-M.channel_send = channel_send
-M.channel_recv = channel_recv
-M.channel_try_recv = channel_try_recv
-M.channel_close = channel_close
-M.channel_drain = channel_drain
-M.waitgroup_new = waitgroup_new
-M.waitgroup_add = waitgroup_add
-M.waitgroup_done = waitgroup_done
-M.waitgroup_wait = waitgroup_wait
+M.send = send
+M.recv = recv
+M.peek = peek
+M.close = close
+M.drain = drain
+M.waitgroup = waitgroup
+M.add = add
+M.done = done
+M.wait = wait
 M.once = once
-M.once_do = once_do
+M.fire = fire
 return M

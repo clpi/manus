@@ -12,8 +12,8 @@
 #
 #     H-2 RULES CLOSURE, NOT A COUNT. FINE SPLITS ARE CARDS, NOT ROLES, and the
 #     discriminator is HUE — a split that changes hue is a role, a split within
-#     one hue is a card, EXCEPT where the law names a role outright (Pass 118
-#     §4 does, for the space walk). The ordinary binding is `place`.
+#     one hue is a card, EXCEPT where the law names a role outright (§4 does,
+#     for the space walk). The ordinary binding is `place`.
 #
 # So the winning enumeration is the one in `tools/lsp/src/highlight.id`, and
 # this file reads it through that file's own published interface —
@@ -31,7 +31,10 @@
 # Exit 0 wrote or already current · 2 the taxonomy source could not be read or
 # enumerated no roles at all — no file was touched.
 
-root = std.os.getenv("DUO_ROOT")
+root = std.os.getenv("IDOL_ROOT")
+if root == nil or root == ""
+    root = std.os.getenv("DUO_ROOT")
+end
 if root == nil or root == ""
     root = std.os.getenv("PWD")
 end
@@ -55,7 +58,7 @@ lines(s: str): any
         else
             cur = cur .. s:sub(i, i)
         end
-        i = i + 1
+        i += 1
     end
     out[out:len() + 1] = cur
     out
@@ -71,12 +74,12 @@ field(rec: str, want: i64): str
     start = 0
     while i <= n
         if rec:byte(i) == 32
-            i = i + 1
+            i += 1
         else
-            seen = seen + 1
+            seen += 1
             start = i
             while i <= n and rec:byte(i) != 32
-                i = i + 1
+                i += 1
             end
             if seen == want
                 return rec:sub(start, i - 1)
@@ -113,21 +116,21 @@ findat(hay: str, needle: str): i64
                 ok = false
                 j = nn
             end
-            j = j + 1
+            j += 1
         end
         if ok
             return i
         end
-        i = i + 1
+        i += 1
     end
     0
 end
 
 main(): i64
     src = "{root}/tools/lsp/src/highlight.id"
-    dump = "/tmp/duo-lsp-legend.txt"
-    os.execute("cd /tmp && hlmode=legend DUO_ROOT='" .. root .. "' '" .. root
-        .. "/zig-out/bin/duo' run --backend=c '" .. src .. "' > '" .. dump .. "' 2>/dev/null")
+    dump = "/tmp/idol-lsp-legend.txt"
+    os.execute("cd /tmp && hlmode=legend IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. root
+        .. "/zig-out/bin/idol' run --backend=c '" .. src .. "' > '" .. dump .. "' 2>/dev/null")
     text = std.fs.read_file(dump)
     if text == nil or text == ""
         print("legend: FAIL — {src} printed no legend under hlmode=legend")
@@ -152,13 +155,13 @@ main(): i64
                 mods[mods:len() + 1] = md
             end
         end
-        i = i + 1
+        i += 1
     end
 
     # H-2 rules CLOSURE, not a count (gaps/GAP-078.md), so no number is asserted
     # here. What this generator refuses is a legend with nothing behind it: an
     # empty enumeration, or one whose rows carry no modifier axis. A fixed count
-    # would have refused the taxonomy the moment Pass 118 §4 named a nineteenth
+    # would have refused the taxonomy the moment §4 named a nineteenth
     # role, which is exactly the event closure is supposed to survive.
     nclosed = closed:len()
     nmods = mods:len()
@@ -190,7 +193,7 @@ main(): i64
         if i < nclosed
             body = body .. ", "
         end
-        i = i + 1
+        i += 1
     end
     body = body .. "}\n"
     body = body .. "io.lsp.mods = {"
@@ -200,7 +203,7 @@ main(): i64
         if i < nmods
             body = body .. ", "
         end
-        i = i + 1
+        i += 1
     end
     body = body .. "}\n"
     body = body .. "-- Roles 1.." .. nclosed:to(str) .. " are the closed set coverage is measured over;\n"

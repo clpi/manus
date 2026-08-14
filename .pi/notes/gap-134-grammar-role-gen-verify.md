@@ -14,8 +14,8 @@ All three files are **untracked working-tree** creations of a concurrent agent
 | Path | Role |
 | --- | --- |
 | `src/grammar_roles.zig` | canonical grammar-role **owner** (facts keyed by `lexer.TokenKind` ordinal) |
-| `src/grammar_role_gen.zig` | **emitter** → `lib/std/token/grammar_role.id` |
-| `lib/std/token/grammar_role.id` | generated compact **projection** (7 tables + 7 role_* lookups) |
+| `src/grammar_role_gen.zig` | **emitter** → `lib/token/grammar_role.id` |
+| `lib/token/grammar_role.id` | generated compact **projection** (7 tables + 7 role_* lookups) |
 
 No live claim overlaps these paths (checked `.agents/session/claims/`). The
 `codex_treesitter_projection` claim covers only `scripts/treesitter_emit.id`
@@ -49,7 +49,7 @@ Evidence the grammar files compile under the pinned Zig
 ## Emission verified faithful to the owner
 
 `grammar_role.id` regenerated at 16:29 (after the 16:20/16:22 source edits →
-current). `ROLE_COUNT=110`, `KIND_EOF=109` (match `lib/std/compiler/token.id`).
+current). `ROLE_COUNT=110`, `KIND_EOF=109` (match `lib/compiler/token.id`).
 Spot-checks of emitted tables vs `grammar_roles.zig` owner all pass:
 
 - `BEGIN_EXPR[name=0,int_lit=1]=1`; `[dot=80,backtick=84]=0`
@@ -114,5 +114,5 @@ graph.
 **No Idol-source edit.** The generator is already real and correct in the
 working tree; editing correct concurrent work would violate "do not overwrite
 concurrent work." This note is the verification deliverable. Cursor (parser
-lane) can consume `lib/std/token/grammar_role.id` (`role_*` lookups) with no
+lane) can consume `lib/token/grammar_role.id` (`role_*` lookups) with no
 local spelling knowledge — the goal's STOP condition is met for this lane.

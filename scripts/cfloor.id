@@ -15,8 +15,8 @@
 #
 # WHAT IT DOES NOT CLAIM, stated first so no reader has to infer it:
 #
-#   * Nothing here is a duon-versus-C dominance claim. The comparison is
-#     duon's DIRECT lowering against duon's own C-EQUIVALENT lowering of the
+#   * Nothing here is a idol-versus-C dominance claim. The comparison is
+#     idol's DIRECT lowering against idol's own C-EQUIVALENT lowering of the
 #     same graph. awk appears once, as an answer oracle.
 #   * The measured latency verdict on the fixture is UNRESOLVED and the gate
 #     says so. Under §3 and GAP-096 a difference smaller than the run-to-run
@@ -74,7 +74,7 @@ note: void = (tag: str, ok: bool, detail: str)
     if ok
         mark = "ok  "
     if !ok
-        failed = failed + 1
+        failed += 1
     rows = "{rows}  {mark} {tag}  {detail}\n"
 
 # An integer read out of a shell pipeline. `to(i64)` never fails and `tonumber`
@@ -122,7 +122,7 @@ timed: i64 = (cmd: str, n: i64, pos: i64)
     i = 0
     while i < n
         shell("/usr/bin/time -p {cmd} >/dev/null 2>>{log}")
-        i = i + 1
+        i += 1
     centi = count("grep real {log} | tr -s ' ' | cut -d' ' -f2 | sort -n | head -{pos} | tail -1 | tr -d '.'")
     ms = -1
     if centi >= 0
@@ -234,7 +234,7 @@ main: i64 = ()
     #
     # The oracle is awk running the same recurrence. Not C — a `.c` file in the
     # tree is a §0f MONOGLOT finding, and the point of an oracle is that it was
-    # not built by the thing under test, which awk satisfies and a duon-hosted
+    # not built by the thing under test, which awk satisfies and a idol-hosted
     # Lua run would not. It costs about ten seconds and it is the row that
     # makes every number below it mean anything.
     _ = quiet("{bin} compile {strong} -o {work}/sc.bin")
@@ -295,8 +295,8 @@ main: i64 = ()
 
     print("law.c.floor — constitution §47, plan and measurement")
     print(rows)
-    print("  comparison: duon's DIRECT lowering vs duon's own C-EQUIVALENT lowering.")
-    print("  awk is the answer oracle only. No duon-vs-C claim is made here.")
+    print("  comparison: idol's DIRECT lowering vs idol's own C-EQUIVALENT lowering.")
+    print("  awk is the answer oracle only. No idol-vs-C claim is made here.")
     print("  cost facts the compiler attaches to either candidate today: 0 of 12.")
     if failed > 0
         print("cfloor: FAIL ({failed} rows)")

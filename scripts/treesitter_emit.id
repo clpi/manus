@@ -1,9 +1,9 @@
 # treesitter emit — the grammar projection, as far as it honestly goes today.
 #
-# Pass 101 §"The host" requires tree-sitter to be "a generated grammar
+# The host requires tree-sitter to be "a generated grammar
 # projection (output, never authored)". gaps/GAP-049 records why it was not:
 # three pieces were missing — a declarative production source, an emitter, and
-# a differential. Pass 108 landed the first as docs/spec/grammar.md. THIS FILE
+# a differential. The first landed as docs/spec/grammar.md. THIS FILE
 # is the second. `zig build tree-sitter-coverage` is the third.
 #
 # WHAT THIS EMITS, and what it does not. The output file
@@ -107,7 +107,7 @@ tile(s: str, n: i64): str
     i: i64 = 0
     while i < n
         acc = "{acc}{s}"
-        i = i + 1
+        i += 1
     end
     acc
 end
@@ -118,7 +118,7 @@ lines(s: str): i64
     if n > 0
         last: str = parts[n]
         if last == ""
-            n = n - 1
+            n -= 1
         end
     end
     n
@@ -336,9 +336,9 @@ conflicts(): str
                 b = "{b}, "
             sym: str = field(row, j)
             b = "{b}$.{sym}"
-            j = j + 1
+            j += 1
         b = "{b}],\n"
-        i = i + 1
+        i += 1
     b = "{b}  ],\n"
     b = "{b}\n"
     b
@@ -1318,7 +1318,7 @@ longlevel(lv: i64): str
     while k < lv
         run: str = tile("=", k)
         body = "{body}, /\\]{run}[^=]/"
-        k = k + 1
+        k += 1
     end
     body = "{body}, /\\]{eqs}[^\\]]/"
     "      seq('[{eqs}[', repeat(choice({body})), ']{eqs}]'),\n"
@@ -1393,7 +1393,7 @@ tokens(): str
     while lv <= 2
         row: str = longlevel(lv)
         b = "{b}{row}"
-        lv = lv + 1
+        lv += 1
     end
     b = "{b}    )),\n"
     b = "{b}\n"
@@ -1496,7 +1496,7 @@ operators(): str
         pw: str = field(lv, i)
         side: str = field(ac, i)
         b = "{b}      prec.{side}({pw}, seq($.expression, '{op}', $.expression)),\n"
-        i = i + 1
+        i += 1
     end
     b = "{b}    ),\n"
     b = "{b}\n"
@@ -1513,7 +1513,7 @@ operators(): str
     while i <= m
         op: str = field(pre, i)
         b = "{b}      prec(12, seq('{op}', $.expression)),\n"
-        i = i + 1
+        i += 1
     end
     b = "{b}    ),\n"
     b
@@ -1546,7 +1546,7 @@ tail(): str
     b = "{b}  return seq(rule, repeat(seq(',', rule)));\n"
     b = "{b}}\n"
     b = "{b}\n"
-    b = "{b}// Pass 100 §7 X8: the NEWLINE is the canonical separator inside a braced group\n"
+    b = "{b}// The NEWLINE is the canonical separator inside a braced group\n"
     b = "{b}// and the comma is the optional one. `extras` already consumes the newline, so\n"
     b = "{b}// \"optional comma between elements, optional trailing comma\" is the whole rule.\n"
     b = "{b}function sepBy(rule) {\n"
@@ -1573,9 +1573,9 @@ specrows(body: str): i64
         digit: bool = one == "1" or one == "2" or one == "3" or one == "4" or one == "5"
         digit = digit or one == "6" or one == "7" or one == "8" or one == "9"
         if digit and (two:sub(2, 2) == " " or two:sub(2, 2) == "0" or two:sub(2, 2) == "1" or two:sub(2, 2) == "2" or two:sub(2, 2) == "3" or two:sub(2, 2) == "4")
-            seen = seen + 1
+            seen += 1
         end
-        i = i + 1
+        i += 1
     end
     seen
 end
@@ -1616,7 +1616,7 @@ report(): i64
                 sa: i64 = to(i64)(field(sc, i))
                 sb: i64 = to(i64)(field(sc, i + 1))
                 if sa == 0 or sb == 0
-                    unlisted = unlisted + 1
+                    unlisted += 1
                 else
                     la: i64 = to(i64)(field(lv, i))
                     lb: i64 = to(i64)(field(lv, i + 1))
@@ -1627,11 +1627,11 @@ report(): i64
                             opa: str = field(sp, i)
                             opb: str = field(sp, i + 1)
                             print("  DIVERGENCE  `{opa}` vs `{opb}` — tree-sitter and §2 disagree on which binds tighter")
-                            flips = flips + 1
+                            flips += 1
                         end
                     end
                 end
-                i = i + 1
+                i += 1
             end
             nflips: str = flips:to(str)
             nunlisted: str = unlisted:to(str)
@@ -1665,7 +1665,7 @@ carve(body: str): str
                 inside = true
             end
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -1681,11 +1681,11 @@ rulesonly(body: str): str
             seen = true
         if seen
             out = "{out}{row}\n"
-        i = i + 1
+        i += 1
     if out != ""
         n: i64 = out:len()
         while n > 0 and out:sub(n, n) == "\n"
-            n = n - 1
+            n -= 1
         out:sub(1, n) .. "\n"
     else
         ""

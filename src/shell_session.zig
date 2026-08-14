@@ -1,4 +1,4 @@
-//! Pass 15 §15 — persistent semantic shell session (history, export, snapshot).
+//! §15 — persistent semantic shell session (history, export, snapshot).
 const std = @import("std");
 const builtin = @import("builtin");
 const shell_host = @import("shell_host.zig");

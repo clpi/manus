@@ -8,24 +8,27 @@ const std = @import("std");
 /// overrides the weak one in src/keyword_classify.c — that file was written
 /// weak for exactly this case.
 fn linkProductionKeywordClassify(b: *std.Build, mod: *std.Build.Module) void {
-    // src/keyword_classify.c retired 2026-08-07: it declared
-    // duo_keyword_classify `weak` precisely so a full Duo artifact could
-    // override it, and src/lexer_tokenize.c now provides the strong
-    // definition (both are generated from lib/std/token/classify.id, so this
-    // is one source of truth, not two). Its ledger deletion gate — "delete once
-    // nothing links the weak fallback" — is met.
+    // Weak `duo_keyword_classify` from the classify C projection. The lexer
+    // artifact currently emits a strong definition of the same symbol; weak
+    // loses. Delete this unit when classify.id is the sole linked producer.
+    mod.addCSourceFile(.{
+        .file = b.path("src/keyword_classify.c"),
+        .flags = &.{ "-std=c11", "-w" },
+    });
     linkProductionDuoLexer(b, mod);
     mod.link_libc = true;
 }
 
-/// SH-03 production dispatch: the Duo lexer, generated from
-/// lib/std/compiler/host.id. Provides duo_lexer_tokenize_full and friends for
-/// src/lexer_dispatch.zig, and a STRONG duo_keyword_classify that overrides
-/// the weak one above — which is why that one is weak.
+/// SH-03 production dispatch: Idol lexer regenerated from
+/// `lib/compiler/lexer.id`. Provides `duo_lexer_tokenize_full`.
+/// Keyword classify is the separate generated unit above.
 fn linkProductionDuoLexer(b: *std.Build, mod: *std.Build.Module) void {
     mod.addCSourceFile(.{
         .file = b.path("src/lexer_tokenize.c"),
-        .flags = &.{ "-std=c11", "-w" },
+        // The generated lexer artifact carries an executable `main` from the
+        // C-backend generator; we link it as a library, so rename that
+        // symbol to avoid collision with the Zig test runner / exe root.
+        .flags = &.{ "-std=c11", "-w", "-Dmain=duo_lexer_tokenize_main" },
     });
     mod.link_libc = true;
 }
@@ -74,7 +77,7 @@ pub fn build(b: *std.Build) void {
     // condition, or CI oracle -- and anything else is a violation. Rules live in
     // docs/spec/foreign.md, the same no-silent-default mechanism corpus.md uses
     // for .id.
-    const foreign_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/foreign_census.id" });
+    const foreign_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--entry", "census", "scripts/census/foreign.id" });
     foreign_cmd.setCwd(b.path("."));
     foreign_cmd.step.dependOn(b.getInstallStep());
     const foreign_step = b.step("foreign-census", "U8: every foreign file classified ledger or oracle; ratchets violations");
@@ -120,7 +123,7 @@ pub fn build(b: *std.Build) void {
     // the encode plan names it as the precedent to extend downward: "Generating
     // ISA property tests per instruction is the same move one level down."
     //
-    // `lib/std/target/arm64.id` is the instruction set as DATA: 45 forms, each
+    // `lib/target/arm64.id` is the instruction set as DATA: 45 forms, each
     // a base word plus `field@hi:lo` layout facts, with ONE derived encoder over
     // all of them and no per-instruction code. This step expands every row into
     // 16 operand tuples, hands the assembler text to clang, disassembles the
@@ -268,7 +271,7 @@ pub fn build(b: *std.Build) void {
     // to print a score until its own controls pass (exit 3).
     //
     // It used to live at `ext/ward/` and be called ward. It is not a separate
-    // product any more -- it is duon's wasm capability, so it sits beside the
+    // product any more -- it is idol's wasm capability, so it sits beside the
     // other toolchain parts that version-lock to the compiler (`tools/lsp`,
     // `tools/mcp`). `docs/wasm-integration.md` records why NOT `lib/std/wasm/`:
     // the engine is a program, `capability-scan` has zero slack on a
@@ -337,12 +340,12 @@ pub fn build(b: *std.Build) void {
     const semantic_harness_step = b.step("semantic-harness", "Every projection target must agree on stdout, not just exit status");
     semantic_harness_step.dependOn(&semantic_harness_cmd.step);
 
-    const repo_hygiene_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/repo_hygiene.id" });
+    const repo_hygiene_cmd = b.addSystemCommand(&.{ "./tools/node/dev/repo-hygiene" });
     repo_hygiene_cmd.setCwd(b.path("."));
     const repo_hygiene_step = b.step("repo-hygiene", "forbidden root artifacts and tracked agent noise");
     repo_hygiene_step.dependOn(&repo_hygiene_cmd.step);
 
-    const pathcensus_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "gates/census.id" });
+    const pathcensus_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "gate/census.id" });
     pathcensus_cmd.setCwd(b.path("."));
     pathcensus_cmd.step.dependOn(b.getInstallStep());
     const pathcensus_step = b.step("path-census", "law.path.name: tracked name debt census");
@@ -350,11 +353,11 @@ pub fn build(b: *std.Build) void {
 
     const pathgate_cmd = b.addSystemCommand(&.{
         "sh", "-c",
-        \\tmp=$(mktemp -t idolpath) && printf '%s\n' graph.id > "$tmp" && dif=$(mktemp -t idolname) && printf '%s\n' '--- a/x.id' '+++ b/x.id' '@@ -0,0 +1,1 @@' '+bad = nativebackend' > "$dif" && IDOLPATHLIST="$tmp" IDOLNAMEDIFF="$dif" ./zig-out/bin/idol run gates/path.id; rc=$?; rm -f "$tmp" "$dif"; exit $rc
+        \\tmp=$(mktemp -t idolpath) && printf '%s\n' graph.id > "$tmp" && dif=$(mktemp -t idolname) && printf '%s\n' '--- a/x.id' '+++ b/x.id' '@@ -0,0 +1,1 @@' '+bad = nativebackend' > "$dif" && IDOLPATHLIST="$tmp" IDOLNAMEDIFF="$dif" ./zig-out/bin/idol run gate/path.id; rc=$?; rm -f "$tmp" "$dif"; exit $rc
     });
     pathgate_cmd.setCwd(b.path("."));
     pathgate_cmd.step.dependOn(b.getInstallStep());
-    const pathgate_step = b.step("path-gate", "law.path.name: gates/path admission firewall");
+    const pathgate_step = b.step("path-gate", "law.path.name: gate/path admission firewall");
     pathgate_step.dependOn(&pathgate_cmd.step);
 
     // tree-sitter-coverage -- section 19's editor front-end, measured.
@@ -397,7 +400,7 @@ pub fn build(b: *std.Build) void {
     const cfloor_step = b.step("c-floor", "constitution §47: the C-equivalent realization is a costed candidate; plan vs measurement");
     cfloor_step.dependOn(&cfloor_cmd.step);
 
-    const ftcftw_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/ftcftwledger.id" });
+    const ftcftw_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/ledger/ftcftw.id" });
     ftcftw_cmd.setCwd(b.path("."));
     ftcftw_cmd.step.dependOn(b.getInstallStep());
     const ftcftw_step = b.step("ftcftw-ledger", "law.project.ftcftw: Idol-only native > c-equivalent > wasm evidence chain index");
@@ -445,7 +448,7 @@ pub fn build(b: *std.Build) void {
     //
     // highlight-corpus -- CLAUDE.md section 0d, executable. Highlighting is a
     // PROJECTION OF THE GRAPH, not a lexer, and the only way to tell those two
-    // apart from outside is a corpus containing the glyphs duon overloads: `:`
+    // apart from outside is a corpus containing the glyphs idol overloads: `:`
     // is copula OR invoke and `|` is union OR pipe, and no lexer separates
     // either pair. The gate asserts the role AND the card at named byte
     // offsets, so "it produced highlighting" is not a passing answer.
@@ -524,7 +527,7 @@ pub fn build(b: *std.Build) void {
     const bootstrap_scan_step = b.step("bootstrap-scan", "gap[080]: the deny table over src/*.zig, the corpus audit100 excludes; ratchets");
     bootstrap_scan_step.dependOn(&bootstrap_scan_cmd.step);
 
-    const semantic_architecture_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "gates/architecture.id" });
+    const semantic_architecture_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "gate/architecture.id" });
     semantic_architecture_cmd.setCwd(b.path("."));
     semantic_architecture_cmd.step.dependOn(b.getInstallStep());
     const semantic_architecture_step = b.step("semantic-architecture", "C0 §65: syntax faces erase into semantic relations, facts and demand; debt ratchets");
@@ -649,7 +652,7 @@ pub fn build(b: *std.Build) void {
     // and a scan pins the quarantine — resolving a spelling is the one place a
     // byte comparison is correct, and it lives in `Names`. The scan's zero
     // carries its own positive control, because a blind scanner also reads 0.
-    const relation_id_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/relationid.id" });
+    const relation_id_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/proof/relation.id" });
     relation_id_cmd.step.dependOn(b.getInstallStep());
     relation_id_cmd.setCwd(b.path("."));
     const relation_id_step = b.step("relation-id", "constitution §21: relation-store semantic identity — SER by value + the byte-comparison quarantine");
@@ -731,7 +734,7 @@ pub fn build(b: *std.Build) void {
     const resident_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "check", "scripts/proof/resident.id" });
     resident_proof_cmd.step.dependOn(b.getInstallStep());
     resident_proof_cmd.setCwd(b.path("."));
-    const resident_proof_step = b.step("resident-proof", "GAP-124/GAP-157: lib/semantic resident vocabulary proof (static check)");
+    const resident_proof_step = b.step("resident-proof", "CATALOG-ZERO: lib/semantic relation registry must not exist");
     resident_proof_step.dependOn(&resident_proof_cmd.step);
 
     const semantic_proof_cmd = b.addSystemCommand(&.{
@@ -743,13 +746,40 @@ pub fn build(b: *std.Build) void {
         "scripts/proof/view.id",
         "scripts/proof/fs.id",
         "scripts/proof/core.id",
+        "scripts/proof/graph.id",
+        "scripts/proof/zerostd.id",
+        "scripts/proof/resident.id",
+        "gate/graph.id",
     });
     semantic_proof_cmd.step.dependOn(b.getInstallStep());
     semantic_proof_cmd.setCwd(b.path("."));
     const semantic_proof_step = b.step("semantic-proof", "SH-10: proof suite orchestrator and sub-proof routers (static check)");
     semantic_proof_step.dependOn(&semantic_proof_cmd.step);
 
-    const closure_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/proof/closure.id" });
+    const graph_proof_cmd = b.addSystemCommand(&.{
+        "./zig-out/bin/idol",
+        "check",
+        "scripts/canon.id",
+        "scripts/proof/graph.id",
+        "gate/graph.id",
+    });
+    graph_proof_cmd.step.dependOn(b.getInstallStep());
+    graph_proof_cmd.setCwd(b.path("."));
+
+    const graph_proof_run_cmd = b.addSystemCommand(&.{
+        "./zig-out/bin/idol",
+        "run",
+        "scripts/proof/graph.id",
+        "scripts/ledger/semantic.id",
+    });
+    graph_proof_run_cmd.step.dependOn(b.getInstallStep());
+    graph_proof_run_cmd.setCwd(b.path("."));
+
+    const graph_proof_step = b.step("graph-proof", "GAP-124: graph identity / edge closure static proof and migration gate");
+    graph_proof_step.dependOn(&graph_proof_cmd.step);
+    graph_proof_step.dependOn(&graph_proof_run_cmd.step);
+
+    const closure_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/proof/closure.id" });
     closure_proof_cmd.step.dependOn(b.getInstallStep());
     closure_proof_cmd.setCwd(b.path("."));
     const closure_proof_step = b.step("closure-proof", "SHC + FTCFTW: semantic proof, ftcftw contracts, shc cheap gates at HEAD");
@@ -764,7 +794,7 @@ pub fn build(b: *std.Build) void {
 
     const idiom_cmd = b.addSystemCommand(&.{
         "sh", "-c",
-        "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gates/idiom.id || test $? -eq 3",
+        "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gate/idiom.id || test $? -eq 3",
     });
     idiom_cmd.setCwd(b.path("."));
     const idiom_step = b.step("idiom-gate", "Every .id file must use canonical Duo idioms");
@@ -776,16 +806,17 @@ pub fn build(b: *std.Build) void {
     const bench_proof_step = b.step("bench-proof-gate", "P0 benchmark 3-profile correctness + proof artifacts");
     bench_proof_step.dependOn(&bench_proof_cmd.step);
 
-    const duo_idiom_cmd = b.addSystemCommand(&.{
+    const idiom_gate_cmd = b.addSystemCommand(&.{
         "sh", "-c",
-        "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gates/idiom.id || test $? -eq 3",
+        "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gate/idiom.id || test $? -eq 3",
     });
-    duo_idiom_cmd.setCwd(b.path("."));
-    duo_idiom_cmd.step.dependOn(b.getInstallStep());
-    const duo_idiom_step = b.step("duo-idiom-gate", "Enforce compact idiomatic .id in scripts/ and examples/");
-    duo_idiom_step.dependOn(&duo_idiom_cmd.step);
+    idiom_gate_cmd.setCwd(b.path("."));
+    idiom_gate_cmd.step.dependOn(b.getInstallStep());
+    idiom_step.dependOn(&idiom_gate_cmd.step);
+    const duo_idiom_step = b.step("duo-idiom-gate", "Alias for idiom-gate (bootstrap name — use idiom-gate)");
+    duo_idiom_step.dependOn(&idiom_gate_cmd.step);
 
-    const agent_smoke_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/duo_lock.id", "--", "./zig-out/bin/idol", "run", "scripts/agent_smoke.id" });
+    const agent_smoke_cmd = b.addSystemCommand(&.{ "./tools/node/dev/idol-lock", "--", "./zig-out/bin/idol", "run", "scripts/agent_smoke.id" });
     agent_smoke_cmd.setCwd(b.path("."));
     agent_smoke_cmd.step.dependOn(b.getInstallStep());
     const agent_smoke_step = b.step("agent-smoke", "Run tier-0 agent-smoke gate (public safety, coordination, stdlib, meta)");
@@ -801,7 +832,7 @@ pub fn build(b: *std.Build) void {
     // as a wrong answer, not an error. Long strings hash a SAMPLE, so the two
     // spellings are no longer trivially the same loop. This fixture differences
     // them on both sides of the 32-byte boundary and carries its own controls.
-    const hash_agreement_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "examples/hash_agreement.id" });
+    const hash_agreement_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "examples/hash/agreement.id" });
     hash_agreement_cmd.setCwd(b.path("."));
     hash_agreement_cmd.step.dependOn(b.getInstallStep());
     const hash_agreement_step = b.step("hash-agreement", "Compile-time vs runtime string hash must agree (intern pool)");
@@ -824,8 +855,8 @@ pub fn build(b: *std.Build) void {
     // that must keep its shape, the failure pack that must not regress, and
     // the trailing-effect body whose answer really is the preceding binding.
     const semantics_paths = [_][]const u8{
-        "examples/simultaneous_assign_proof.id",
-        "examples/tail_demand_call_proof.id",
+        "examples/demand/swap.id",
+        "examples/demand/tail.id",
     };
     const semantics_step = b.step("semantics-gate", "Simultaneous assignment and tail-demand return, by value");
     semantics_step.dependOn(b.getInstallStep());
@@ -851,7 +882,7 @@ pub fn build(b: *std.Build) void {
     // owner, and by-name calls to seven handlers that used to answer nothing at
     // all. It spawns the servers in a scratch cwd, because `duo run x.id`
     // drops `x.out` beside itself and this gate guards the tree it runs in.
-    const mcp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "tools/mcp/gate.id" });
+    const mcp_gate_cmd = b.addSystemCommand(&.{ "./tools/node/dev/mcp-gate" });
     mcp_gate_cmd.setCwd(b.path("."));
     mcp_gate_cmd.step.dependOn(b.getInstallStep());
     const mcp_gate_step = b.step("mcp-gate", "MCP servers must handshake, serve their full tool census, and answer by value");
@@ -876,7 +907,7 @@ pub fn build(b: *std.Build) void {
     // counts. Everything scored happens AFTER a close, so a server that dies
     // mid-session cannot score. Positive-controlled by driving it at corrupted
     // copies via LSPGATE_SERVER — see the file header for the three runs.
-    const lsp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "tools/lsp/gate.id" });
+    const lsp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "tools/lsp/gate.id" });
     lsp_gate_cmd.setCwd(b.path("."));
     lsp_gate_cmd.step.dependOn(b.getInstallStep());
     const lsp_gate_step = b.step("lsp-gate", "The LSP must handshake, survive a document close, and answer by value");
@@ -887,19 +918,29 @@ pub fn build(b: *std.Build) void {
 
     // G-061 tier-0 metaprogramming smokes (combinator dispatch + derive bundles)
     const meta_smoke_paths = [_][]const u8{
-        "examples/metaprogramming_test.id",
-        "examples/derive_bundle_smoke.id",
-        "examples/meta_derive_power_cascade.id",
-        "examples/comptime_map_satisfies_smoke.id",
-        "examples/meta_expand_showcase.id",
-        "examples/meta_match_showcase.id",
-        "examples/meta_power_permute_showcase.id",
-        "examples/std_metaprogramming_modules_smoke.id",
+        "examples/json/iteration.id",
+        "examples/boring/anagram.id",
+        "examples/boring/fizzbuzz.id",
+        "examples/boring/fib.id",
+        "examples/boring/primes.id",
+        "examples/boring/sort/quick.id",
+        "examples/boring/search/binary.id",
+        "examples/boring/mat/mul.id",
+        "examples/layout/guard.id",
+        "examples/layout/loop/body.id",
+        "examples/demand/result.id",
+        "examples/demand/swap.id",
+        "examples/demand/tail.id",
+        "examples/pack/consume.id",
+        "examples/projection/descriptor.id",
+        "examples/read/stream.id",
+        "examples/native/record.id",
+        "examples/control/default.id",
     };
-    const meta_smoke_step = b.step("meta-smoke", "Run G-061 tier-0 @comp.* metaprogramming smokes");
+    const meta_smoke_step = b.step("meta-smoke", "Run canonical teaching examples under idol run");
     meta_smoke_step.dependOn(b.getInstallStep());
     inline for (meta_smoke_paths) |path| {
-        const cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/duo_lock.id", "--", "./zig-out/bin/idol", "run", path });
+        const cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/idol_lock.id", "--", "./zig-out/bin/idol", "run", path });
         cmd.setCwd(b.path("."));
         meta_smoke_step.dependOn(&cmd.step);
     }
@@ -907,7 +948,7 @@ pub fn build(b: *std.Build) void {
     // G-061 strict dispatch gate: metaprogramming smoke under DUO_TRANSFORM_GATE=1
     const meta_gate_cmd = b.addSystemCommand(&.{
         "bash",                                                                                                                                        "-c",
-        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./zig-out/bin/idol run scripts/duo_lock.id -- ./zig-out/bin/idol run examples/metaprogramming_test.id",
+        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./zig-out/bin/idol run scripts/idol_lock.id -- ./zig-out/bin/idol run examples/parity/each.id",
     });
     meta_gate_cmd.setCwd(b.path("."));
     meta_gate_cmd.step.dependOn(b.getInstallStep());

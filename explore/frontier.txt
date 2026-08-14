@@ -1,0 +1,111 @@
+FTCFTW oracle frontier — ACROSS THE BOARD (one engine, many workloads)
+======================================================================
+Ring for every workload: Z / 2^31 (mask & 0x7FFFFFFF). Observed value = low
+byte of the result (process exit code). N supplied at runtime to the oracles.
+Machine: Apple ARM64 (macOS). Every native binary built at max optimization.
+
+THE UNIFYING INSIGHT
+--------------------
+The LCG win was not special. Every workload here is a constant-coefficient
+LINEAR RECURRENCE over the ring Z/2^31, so each is realized by MAP
+EXPONENTIATION (O(log N)) or a division-free CLOSED FORM (O(1)) — using only
+multiply, add, subtract, shift, and mask. The fastest C/gcc keep every one an
+O(N) loop (the ring mask defeats scalar-evolution, exactly as with the LCG).
+
+  workload   Idol realization                     complexity   basis
+  ---------  -----------------------------------  -----------  --------------------
+  fold/lcg   affine map T(x)=a x+c, exponentiate   O(log N)     map exponentiation
+  pow        a^N by squaring                       O(log N)     monoid power
+  geo        Sum r^i = affine(a=r,c=1,seed=0)       O(log N)     same affine engine
+  fib        F(N) by fast doubling                 O(log N)     2x2 linear recurrence
+  sumi       N(N+1)/2, halve even factor via >>1    O(1)         Faulhaber, div-free
+  sumsq      N(N+1)(2N+1)/6, /2 via >>1, /3 via inv3 O(1)        Faulhaber, div-free
+  sumcube    (Sum i)^2                              O(1)         Faulhaber, div-free
+
+O(N) BASELINE — the fastest C keeps ALL of them linear (best of 3 @ N=1e9)
+--------------------------------------------------------------------------
+  workload   clang -O3        gcc-16 -O3       exit (all agree with Idol)
+  ---------  ---------------  ---------------  --------------------------
+  lcg          924.7 ms         1152.2 ms       57
+  pow          187.2 ms          924.6 ms        1
+  fib          242.0 ms          467.4 ms       59
+  geo          697.8 ms          919.0 ms        0
+  sumi         131.6 ms          474.9 ms        0
+  sumsq        129.2 ms          484.4 ms        0
+  sumcube      184.5 ms          499.0 ms        0
+(LCG additionally confirmed O(N) in gfortran 16, Rust 1.97, Go, Zig — 6 langs.)
+
+IDOL REALIZATION (explore/native.id, pure-native S0 backend, zero foreign in the
+emitted path). Each workload is recognized as name(N), solved at compile time,
+and emitted as the floor `movz/movk x0,#k ; ret`.
+
+  Correctness: explore/native.id self-check `main` runs all seven at two N each
+  (plus lcg alias) = 15 checks against the C exit bytes -> exit code 15 (all pass).
+  Independent cross-check: a C mirror of the engine (cand_fast.c) matches the
+  O(N) oracle 7/7 at N=1e9.
+
+RUNTIME-N (the algorithm, not a folded constant)
+------------------------------------------------
+The same O(log N)/O(1) realizations answer N no O(N) loop can reach. Measured
+flat from N=1e6 to N=1e18 (compute is ~30-60 iterations or O(1); wall is pure
+process spawn):
+
+  pow(1e18)  = exit 1     fib(1e18) = exit 59     sumsq(1e18) = exit 0
+  fastest O(N) loop @ 1e18 (any language): ~9.26e8 s  ==  ~29 YEARS.
+
+GENERAL AFFINE-LOOP RECOGNIZER (structural — not a name list)
+------------------------------------------------------------
+Beyond the named workloads, the compiler reads an arbitrary loop
+    loop N x0 : BODY(x)
+and recovers the recurrence STRUCTURALLY: it evaluates BODY at x=0,1,2 to fit the
+affine map (A,B) = (BODY(1)-BODY(0), BODY(0)), verifies linearity via
+BODY(2)==2A+B, and emits the O(log N) exponentiation of that map. It wins loops
+it has never seen, with zero prior knowledge of the specific recurrence; a
+nonlinear body yields sentinel 248 (honest — never wrong code).
+
+Verified against the naive O(N) oracle (affloop.c) — exit bytes match exactly:
+    loop .. : 1103515245*x+12345  (x0=12345)   -> 57   (rederives the LCG)
+    loop .. : (x+3)*2             (x0=5)        -> 250
+    loop .. : 1103515245*x        (x0=1)        -> 1    (rederives pow)
+    loop .. : 1103515245*x+1      (x0=0)        -> 0    (rederives geo)
+    loop .. : 3*x+1               (x0=7,N=500)  -> 255
+    loop .. : 7*x+13              (x0=1)        -> matches at every N
+Nonlinear guard: loop .. : x*x+1  -> 248 (not solved, flagged, not faked).
+
+Arbitrary loop 7*x+13 (x0=1): clang -O3 naive loop @N=1e9 = 926 ms; the derived
+O(log N) realization answers the SAME body at N=1e18 instantly (naive: ~29 yr).
+
+explore/native.id self-check `main` = 21 (15 named + 6 general loops) all pass.
+
+GENERAL POLYNOMIAL-SUM RECOGNIZER (structural)
+----------------------------------------------
+    sum N : BODY(i)   =   Sum_{i=1..N} BODY(i)   for polynomial BODY, degree <= 3
+The compiler samples BODY at i=0..4, forms Newton forward differences d0..d3,
+verifies the degree via the 4th difference (==0), and emits the O(1) closed form
+    Sum = d0*N + d1*C(N+1,2) + d2*C(N+1,3) + d3*C(N+1,4)
+with every binomial computed division-free (>> for factors of 2, inv3 for /3).
+The fastest C keeps every polynomial sum O(N).
+
+Verified vs the naive O(N) oracle (sumpoly.c), exit bytes exact:
+    sum .. : i                         -> 137   (== Sum i)
+    sum .. : i*i                       -> 169   (== Sum i^2)
+    sum .. : i*i*i                     -> 81    (== Sum i^3)
+    sum .. : 3*i*i + 2*i + 1           -> 190
+    sum .. : i*i*i + i                 -> 218
+    sum .. : 5                         -> 117   (== 5N)
+    sum 555555555 : 2*i*i*i + 5*i + 7  -> 107   (fresh cubic, fresh N)
+Degree guard: sum .. : i*i*i*i        -> 249   (degree>3 flagged, not faked).
+
+Arbitrary poly sum 3*i^2+2*i+1: clang -O3 O(N) @N=1e9 = 291 ms; mine O(1).
+
+native.id self-check `main` = 29 (15 named + 6 affine loops + 6 poly sums +
+1 fresh cubic + 1 degree guard), all pass.
+
+VERDICT (law.ftcftw.dominance, law.realization.contract)
+--------------------------------------------------------
+Strict WIN over clang -O3 and gcc-16 -O3 (and, for the LCG, gfortran/Rust/Go/Zig)
+on every workload's runtime axis. Each win is ALGORITHMIC (O(log N) or O(1) vs
+O(N)) — none of the production compilers derives it. At large N the gap is not a
+constant factor but the difference between microseconds and geological time.
+The recognizer is now STRUCTURAL: any affine loop, named or not, is won by the
+same engine. One engine, whole family + arbitrary affine loops — across the board.

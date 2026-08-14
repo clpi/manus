@@ -1,4 +1,4 @@
-//! Pass 11 WP-18 — structured target triple + emit kind (replaces ambiguous "native-*" names).
+//! WP-18 — structured target triple + emit kind (replaces ambiguous "native-*" names).
 const std = @import("std");
 const builtin = @import("builtin");
 
@@ -118,7 +118,7 @@ pub const EmitKind = enum {
     }
 };
 
-/// Windows COFF/PE status for Pass 11 release scope.
+/// Windows COFF/PE status for release scope.
 pub const WindowsStatus = enum {
     supported,
     experimental,
@@ -162,7 +162,7 @@ pub const TargetTriple = struct {
         };
     }
 
-    /// Direct backend support matrix (Pass 11 honest status).
+    /// Direct backend support matrix (honest status).
     pub fn directBackendSupported(self: TargetTriple) bool {
         return self.arch == .aarch64 and self.os == .macos;
     }
@@ -316,7 +316,7 @@ pub const ArchitectureCell = struct {
     status: []const u8,
 };
 
-/// Pass 14 P14-A4 — honest feature×target×backend matrix (subset; grows with proofs).
+/// P14-A4 — honest feature×target×backend matrix (subset; grows with proofs).
 pub const architecture_matrix: []const ArchitectureCell = &.{
     .{ .feature_id = "native_scalar_codegen", .target = "aarch64-macos", .backend = "c", .status = "partial" },
     .{ .feature_id = "native_scalar_codegen", .target = "aarch64-macos", .backend = "direct", .status = "partial" },

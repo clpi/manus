@@ -1,22 +1,36 @@
-# MCP servers — canonical implementation in sibling `duo-mcp` repo
+# MCP servers — in-tree implementation
 
-All Duo MCP servers are implemented in **pure Duo** and live in the **duo-mcp**
-companion repository (sibling to this repo under the same parent directory).
+Project MCP servers live under **`tools/mcp/`** and are declared in
+**`tools/node/dev/mcp.manifest.json`**.
 
-| Server | Entry point |
-| --- | --- |
-| duo-bench | `duo-mcp/duo_bench.id` |
-| duo-lsp | `duo-mcp/duo_lsp.id` |
-| zls | `duo-mcp/zls.id` |
-| shared tool impl | `duo-mcp/duo_shared.id` |
+| Server | Entry | Purpose |
+|---|---|---|
+| `idol-bench` | `tools/mcp/bench.id` | claims, gaps, serialized gates, performance evidence |
+| `idol-lsp` | `tools/mcp/lsp.id` | diagnostics and language intelligence |
+| `zls` | `tools/mcp/zls.id` | Zig bootstrap navigation through zls |
 
-Run them from the Duo repo root (set `DUO_ROOT` to this checkout):
+Legacy **`duo-bench`** / **`duo-lsp`** / **`duo_*`** tool names are deleted; clients use **`idol_*`** only.
+
+Run from the repository root:
 
 ```sh
-export DUO_ROOT="$(pwd)"
-duo run "$DUO_ROOT/../duo-mcp/duo_bench.id"
-duo run "$DUO_ROOT/../duo-mcp/duo_lsp.id"
-duo run "$DUO_ROOT/../duo-mcp/zls.id"
+export IDOL_ROOT="$(git rev-parse --show-toplevel)"
+export IDOL_BIN="$IDOL_ROOT/zig-out/bin/idol"
+"$IDOL_BIN" run "$IDOL_ROOT/tools/mcp/bench.id"
+"$IDOL_BIN" run "$IDOL_ROOT/tools/mcp/lsp.id"
+"$IDOL_BIN" run "$IDOL_ROOT/tools/mcp/zls.id"
 ```
 
-See `duo-mcp/README.md` (in the companion repo) and `.agents/AGENT_INTEGRATION.md`.
+Generate client configs:
+
+```sh
+./tools/node/dev/generate-configs
+```
+
+Integration gate (C emit compiles; full JSON-RPC round trip blocked until S0 runtime entry resolves):
+
+```sh
+zig build mcp-gate
+```
+
+See `.agents/AGENT_INTEGRATION.md` and `tools/node/dev/README.md`.

@@ -30,19 +30,15 @@ to(micron)(foot) = expand@lossless
 to(foot)(micron) = compress@lossless
 
 main: i64 = ()
-    # Hub-derived spoke conversions — subject-first to, not from (law.from.zero)
-    feet: f64 = 3.0:to(inch)
-    bore: f64 = 5.0:to(milli)
-    span: f64 = 254.0:to(inch)
-
-    n = 0
+    feet: f64 = 3.0:to(inch)(foot)
+    bore: f64 = 5.0:to(milli)(inch)
+    span: f64 = 254.0:to(inch)(milli)
+    n: i64 = 0
     n = n + feet:to(i64)
     n = n + bore:to(i64)
     n = n + span:to(i64)
-
     for src, conv in to[micron]
         n = n + 1
         n = n + src:len()
-
     print("{n}")
-    0
+    n

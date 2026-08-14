@@ -4,11 +4,17 @@ alwaysApply: true
 
 # Idol authority router
 
-Start every substantive session at `AGENTS.md`, then read
-`.agents/HARNESS.md` (generated harness boot payload from
-`docs/spec/harness-projection.md`). Follow the chain to
-`docs/spec/constitution.md` (sole semantic law; **Idol algebra closure is
-§67 only** — no independent algebra prompt is authority). `CLAUDE.md`,
+`docs/spec/law.md` is the **SUPREME one-page law**. It is authoritative over
+every other document and supersedes any stale projection wherever they diverge;
+where C0 or a projection conflicts with `docs/spec/law.md`, that text is corrected
+to match `docs/spec/law.md`.
+
+Start every substantive session at `docs/spec/law.md`, then `AGENTS.md`, then read
+`docs/spec/canonical.md` (**blind-start** — before repository code),
+`docs/spec/agent.md`, and `.agents/HARNESS.md` (generated harness boot payload
+from `docs/spec/harness-projection.md`). Follow the chain to
+`docs/spec/constitution.md` (structured long-form expansion of `docs/spec/law.md`;
+sole home of the `law.*` identities; **Idol algebra closure is §67**). `CLAUDE.md`,
 `docs/spec/source.md`, `docs/spec/host.md` (host/shell/capability closure),
 `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, `.agents/AGENT_CANONICAL.md`,
 `.agents/AGENT_COORDINATION.md`, and `.agents/RELEASE_READINESS.md` are

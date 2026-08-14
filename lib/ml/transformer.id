@@ -1,16 +1,16 @@
 # std.ml.transformer — Transformer blocks (attention + FFN) for LLM-style workloads
 
 block(heads, dim): any
-    spec = std.ml.shape.transformer_block(heads, dim)
+    spec = std.ml.shape.block(heads, dim)
     return {
         type = "transformer_block",
         heads = spec.heads,
         dim = spec.dim,
-        head_dim = spec.head_dim,
-        ffn_dim = spec.ffn_dim,
+        hd = spec.hd,
+        fd = spec.fd,
         attn = { type = "attention", heads = heads },
-        ffn1 = { type = "linear", in_features = dim, out_features = spec.ffn_dim },
-        ffn2 = { type = "linear", in_features = spec.ffn_dim, out_features = dim },
+        up = { type = "linear", input = dim, output = spec.fd },
+        down = { type = "linear", input = spec.fd, output = dim },
     }
 end
 
@@ -30,29 +30,28 @@ end
 
 # Hot path: native attention kernel checksum (pairs with ml.attention)
 @hot
-bench_attention(): f64
+attn(): f64
     return ml.attention()
 end
 
 # Reference FFN (compiler may fuse linear+gelu+linear later)
-ffn_forward(block, x): any
-    h = std.ml.tensor.matmul(x, block.ffn1.weight)
+feed(block, x): any
+    h = std.ml.tensor.matmul(x, block.up.weight)
     h = std.ml.ops.gelu(h)
-    return std.ml.tensor.matmul(h, block.ffn2.weight)
+    return std.ml.tensor.matmul(h, block.down.weight)
 end
 
-forward_block(block, x): any
+step(block, x): any
     # Residual + attention: native kernel validates hot path; full MHA in stdlib later
-    _ = bench_attention()
+    _ = attn()
     h = x
-    return std.ml.tensor.add(h, ffn_forward(block, h))
+    return std.ml.tensor.add(h, feed(block, h))
 end
 
 forward(model, x): any
     h = x
     for i = 1, model.layers
-        h = forward_block(model.blocks[i], h)
+        h = step(model.blocks[i], h)
     end
     return h
 end
-

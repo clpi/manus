@@ -41,7 +41,7 @@ main(): i64
     n = 1
     while n <= 3
         scope[n] = n * 100
-        n = n + 1
+        n += 1
     end
 
     # Look each one up, and confirm an undeclared symbol is not found.

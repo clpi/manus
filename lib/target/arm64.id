@@ -1,6 +1,6 @@
 # std.target.arm64 — the ARM64 instruction set as DATA.
 #
-# Pass 103 §2 and Pass 104 §3 make one structural claim about the descent:
+# The descent model makes one structural claim about the descent:
 #
 #   > The ISA is a descriptor family with layout facts, so machine encoding is
 #   > the same codec derivation that encodes wire structs. encode(arm64) is not
@@ -36,7 +36,7 @@
 #
 # `base` is the hex word with every operand field zero. `layout` is a
 # space-separated list of `field@hi:lo` facts, hi and lo being bit positions
-# INCLUSIVE, exactly as Pass 103 writes them. `form` is the assembler text,
+# INCLUSIVE. `form` is the assembler text,
 # with `%x` naming a field so an oracle assembler can be handed the same
 # instruction and asked what it thinks the bytes are.
 #
@@ -81,7 +81,7 @@ end
 # nothing else.
 rows(): any
     {
-        # Register arithmetic and logic, 64-bit. The model form in Pass 103 §2:
+        # Register arithmetic and logic, 64-bit. The model form:
         # three register fields at 20:16, 9:5 and 4:0, and the mnemonic is the
         # only thing that changes between ten of these rows.
         "add|8b000000|m@20:16 n@9:5 d@4:0|add x%d, x%n, x%m",
@@ -216,7 +216,7 @@ layout(row: str): str
     parts[3]
 end
 
-# THE DERIVATION. Pass 103 §2 writes it `encode(arm64)(i: instr): u32 =
+# THE DERIVATION. It is written `encode(arm64)(i: instr): u32 =
 # i:to(arm64[i.mnem])`; this is that, spelled in what the compiler accepts
 # today. Note what is NOT here: any mnemonic, any special case, any
 # per-instruction arm. The base word ORs with each layout fact's contribution
@@ -227,7 +227,7 @@ encode(row: str, ops: any): i64
     lay: str = parts[3]
     if lay:len() > 0
         for i, fact in lay:split(" ")
-            word = word | place(fact, ops)
+            word |= place(fact, ops)
         end
     end
     word
@@ -250,7 +250,7 @@ slot(k: str, ops: any): str
 end
 
 # The same instruction, as assembler text, so a foreign assembler can be asked
-# the same question `encode` was asked. Pass 103 §5 licenses exactly this use
+# the same question `encode` was asked. This licenses exactly this use
 # and no other: the oracle is CI equipment, never a stage.
 text(row: str, ops: any): str
     parts = row:split("|")

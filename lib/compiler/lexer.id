@@ -1,10 +1,8 @@
 # std.compiler.lexer
 # Duo-native lexer implementation
 
-# Native string slicing: string.sub allocates, and the direct backend emits
-# only read-only __TEXT. std.str exports the allocation as a @comp.c.export
-# primitive, so a qualified call lowers to a relocation instead (SH-03).
-strm = str
+# Slice is the subject's :sub / :len. Do not alias `str` into a binding —
+# C emit materializes that as a text literal and then table-walks `.sub`.
 
 Loc: {
     file: str,
@@ -36,6 +34,7 @@ Lexer: {
     line: i64,
     col: i64,
     file: str,
+    family: i64,
     has_peeked: bool,
     peeked_token: Tok,
     has_error: bool,
@@ -52,9 +51,10 @@ Lexer: {
     hint_7: str
 }
 
-new(src: str, file: str): Lexer
+new(src: str, file: str, family: i64): Lexer
     dummy_loc: Loc = { file = "", line = 0, col = 0 }
     dummy_tok: Tok = { kind = 0, loc = dummy_loc, text = "", int_val = 0, float_val = 0.0 }
+    # Family is an operand (`law.family.one`). Path is provenance only.
     return {
         src = src,
         pos = 1,
@@ -62,6 +62,7 @@ new(src: str, file: str): Lexer
         line = 1,
         col = 1,
         file = file,
+        family = family,
         has_peeked = false,
         peeked_token = dummy_tok,
         has_error = false,
@@ -100,7 +101,7 @@ consume_hints(self: Lexer): any
         elseif i == 6 hints[hints:len() + 1] = self.hint_6
         elseif i == 7 hints[hints:len() + 1] = self.hint_7
         end
-        i = i + 1
+        i += 1
     end
     self.hint_count = 0
     self.hint_0 = ""
@@ -152,45 +153,143 @@ is_hex(c: i64): bool
     is_digit(c) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102)
 end
 
-is_canonical_source(file: str): bool
-    n = file:len()
-    if n < 3 return false end
-    return file:byte(n - 2) == 46 and file:byte(n - 1) == 105 and file:byte(n) == 100
-end
 
-# GAP-145: distinct literal identities keyed by quote and source law, never by
-# delimiter text alone. Canonical `.id` uses `"` text and `'` bytes; historical
-# and foreign inputs keep compatibility provenance on single quotes and long
-# strings.
-classify_quote(file: str, quote: i64): i64
+# Keyword ordinals are token's. Spelling → ordinal here so generated C
+# does not walk a `std` table or call a missing home.
+lookup(w: str): i64
+    if w == "and"
+        return 4
+    if w == "break"
+        return 5
+    if w == "continue"
+        return 6
+    if w == "do"
+        return 7
+    if w == "else"
+        return 8
+    if w == "elseif"
+        return 9
+    if w == "end"
+        return 10
+    if w == "false"
+        return 11
+    if w == "for"
+        return 12
+    if w == "function"
+        return 13
+    if w == "fun"
+        return 14
+    if w == "global"
+        return 15
+    if w == "goto"
+        return 16
+    if w == "if"
+        return 17
+    if w == "in"
+        return 18
+    if w == "local"
+        return 19
+    if w == "nil"
+        return 20
+    if w == "not"
+        return 21
+    if w == "or"
+        return 22
+    if w == "repeat"
+        return 23
+    if w == "return"
+        return 24
+    if w == "then"
+        return 25
+    if w == "true"
+        return 26
+    if w == "until"
+        return 27
+    if w == "while"
+        return 28
+    if w == "const"
+        return 29
+    if w == "enum"
+        return 30
+    if w == "i8"
+        return 31
+    if w == "i16"
+        return 32
+    if w == "i32"
+        return 33
+    if w == "i64"
+        return 34
+    if w == "u8"
+        return 35
+    if w == "u16"
+        return 36
+    if w == "u32"
+        return 37
+    if w == "u64"
+        return 38
+    if w == "f32"
+        return 39
+    if w == "f64"
+        return 40
+    if w == "bool"
+        return 41
+    if w == "void"
+        return 42
+    if w == "str"
+        return 43
+    if w == "match"
+        return 44
+    if w == "try"
+        return 45
+    if w == "catch"
+        return 46
+    if w == "defer"
+        return 47
+    if w == "async"
+        return 48
+    if w == "await"
+        return 49
+    if w == "concept"
+        return 50
+    if w == "alias"
+        return 51
+    if w == "private"
+        return 52
+    if w == "extends"
+        return 53
+    if w == "macro"
+        return 54
+    if w == "comptime"
+        return 55
+    if w == "by"
+        return 56
+    if w == "let"
+        return 57
+    0
+
+# GAP-145: distinct literal identities keyed by quote and source-family fact,
+# never by delimiter text or path suffix. family 1 = canon, 2 = compat.
+classify_quote(family: i64, quote: i64): i64
     if quote == 34
-        return std.compiler.token.KIND_TEXT_LIT
+        return 105
     end
     if quote == 39
-        if is_canonical_source(file)
-            return std.compiler.token.KIND_BYTES_LIT
+        if family == 1
+            return 106
         end
-        return std.compiler.token.KIND_COMPAT_TEXT_LIT
+        return 107
     end
-    std.compiler.token.KIND_COMPAT_TEXT_LIT
-end
-
-hash_operator_allowed(file: str): bool
-    !is_canonical_source(file)
-end
-
-backtick_allowed(file: str): bool
-    !is_canonical_source(file)
+    107
 end
 
 long_bracket_level(self: Lexer): i64
     i = self.pos
     if i > self.src:len() or self.src:byte(i) != 91 return -1 end
-    i = i + 1
+    i += 1
     lvl = 0
     while i <= self.src:len() and self.src:byte(i) == 61
-        lvl = lvl + 1
-        i = i + 1
+        lvl += 1
+        i += 1
     end
     if i > self.src:len() or self.src:byte(i) != 91 return -1 end
     lvl
@@ -220,7 +319,7 @@ skip_long(self: Lexer, level: i64)
     i = 0
     while i < level
         self:adv()
-        i = i + 1
+        i += 1
     end
     self:adv()
     while self.pos <= self.src:len()
@@ -229,7 +328,7 @@ skip_long(self: Lexer, level: i64)
             self:adv()
             while self:peek_char() == 61
                 self:adv()
-                eq = eq + 1
+                eq += 1
             end
             if eq == level and self:peek_char() == 93
                 self:adv()
@@ -247,48 +346,6 @@ skip_ws(self: Lexer)
         c = self:peek_char()
         if c == 32 or c == 9 or c == 13 or c == 10
             self:adv()
-        elseif c == 35 and self.pos == 1 and self:peek_char2() == 33
-            # C0 law.comment.one: byte-zero `#!` is launch provenance only.
-            while self.pos <= self.src:len() and self:peek_char() != 10
-                self:adv()
-            end
-        elseif c == 35 and is_canonical_source(self.file)
-            # Canonical `#` comments; `#!` elsewhere stays comment, not shebang.
-            while self.pos <= self.src:len() and self:peek_char() != 10
-                self:adv()
-            end
-        elseif c == 45 and self:peek_char2() == 45
-            self.pos = self.pos + 2
-            self.col = self.col + 2
-            lvl = self:long_bracket_level()
-            if lvl >= 0
-                self:skip_long(lvl)
-            else
-                is_triple = (self.pos <= self.src:len() and self:peek_char() == 45)
-                if is_triple
-                    self:adv()
-                end
-                start = self.pos
-                while self.pos <= self.src:len() and self:peek_char() != 10
-                    self:adv()
-                end
-                if is_triple and self.hint_count < 8
-                    comment_text = strm.sub(self.src, start, self.pos - 1)
-                    if comment_text:len() > 0 and comment_text:byte(1) == 64
-                        h = strm.sub(comment_text, 2, -1)
-                        if self.hint_count == 0 self.hint_0 = h
-                        elseif self.hint_count == 1 self.hint_1 = h
-                        elseif self.hint_count == 2 self.hint_2 = h
-                        elseif self.hint_count == 3 self.hint_3 = h
-                        elseif self.hint_count == 4 self.hint_4 = h
-                        elseif self.hint_count == 5 self.hint_5 = h
-                        elseif self.hint_count == 6 self.hint_6 = h
-                        elseif self.hint_count == 7 self.hint_7 = h
-                        end
-                        self.hint_count = self.hint_count + 1
-                    end
-                end
-            end
         else
             break
         end
@@ -300,7 +357,7 @@ read_long_str(self: Lexer, level: i64): str
     i = 0
     while i < level
         self:adv()
-        i = i + 1
+        i += 1
     end
     self:adv()
     if self:peek_char() == 10
@@ -320,10 +377,10 @@ read_long_str(self: Lexer, level: i64): str
             eq = 0
             while self:peek_char() == 61
                 self:adv()
-                eq = eq + 1
+                eq += 1
             end
             if eq == level and self:peek_char() == 93
-                content = strm.sub(self.src, start, close_start - 1)
+                content = self.src:sub( start, close_start - 1)
                 self:adv()
                 return content
             end
@@ -342,7 +399,7 @@ read_str(self: Lexer, quote: i64): str
     while self.pos <= self.src:len()
         c = self:peek_char()
         if c == quote
-            s = strm.sub(self.src, start, self.pos - 1)
+            s = self.src:sub( start, self.pos - 1)
             self:adv()
             return s
         end
@@ -437,9 +494,9 @@ _int_of(text: str): i64
         #     panic: signed integer overflow: 576460752303423488 * 16 cannot
         #     be represented in type 'int64_t'
         #
-        # `lib/std/heap.id` writes `0xcbf29ce484222325` (the FNV-1a offset
-        # basis) and `0xFFFFFFFFFFFFFFFF`; `lib/std/encoding/varint.id` and
-        # `lib/std/ml/gguf.id` write `0x8000000000000000`. src/lexer.zig
+        # `lib/heap.id` writes `0xcbf29ce484222325` (the FNV-1a offset
+        # basis) and `0xFFFFFFFFFFFFFFFF`; `lib/encoding/varint.id` and
+        # `lib/ml/gguf.id` write `0x8000000000000000`. src/lexer.zig
         # already treats a hex literal as a BIT PATTERN — it retries as u64
         # and bitcasts — so accumulating unsigned here is what makes the two
         # lexers agree rather than a new convention.
@@ -546,7 +603,7 @@ read_num(self: Lexer): Tok
         end
     end
     
-    text = strm.sub(self.src, start, self.pos - 1)
+    text = self.src:sub( start, self.pos - 1)
     # `to(f64)`/`to(i64)`, NOT `tonumber(text) or 0.0`. The `or` truncated the
     # float: `tonumber("1.5")` is 1.5, and `tonumber("1.5") or 0.0` is **1**.
     # Measured 2026-08-07, filed as GAP-021.
@@ -561,17 +618,26 @@ read_num(self: Lexer): Tok
     # after read_number has already scanned a well-formed literal, so `or 0.0`
     # was defending an unreachable case while corrupting the reachable one.
     if is_float
-        return { kind = std.compiler.token.KIND_FLOAT_LIT, loc = l, text = text, int_val = 0, float_val = to(f64)(text) }
+        return { kind = 2, loc = l, text = text, int_val = 0, float_val = to(f64)(text) }
     else
-        return { kind = std.compiler.token.KIND_INT_LIT, loc = l, text = text, int_val = _int_of(text), float_val = 0.0 }
+        return { kind = 1, loc = l, text = text, int_val = _int_of(text), float_val = 0.0 }
     end
 end
 
 next_tok(self: Lexer): Tok
+    if self.pos == 1 and self:peek_char() == 35 and self:peek_char2() == 33
+        l = self:cur_loc()
+        start = self.pos
+        while self.pos <= self.src:len() and self:peek_char() != 10
+            self:adv()
+        end
+        text = self.src:sub(start, self.pos - 1)
+        return { kind = 110, loc = l, text = text, int_val = 0, float_val = 0.0 }
+    end
     self:skip_ws()
     self.start = self.pos
     if self.pos > self.src:len()
-        return { kind = std.compiler.token.KIND_EOF, loc = self:cur_loc(), text = "", int_val = 0, float_val = 0.0 }
+        return { kind = 109, loc = self:cur_loc(), text = "", int_val = 0, float_val = 0.0 }
     end
     
     l = self:cur_loc()
@@ -591,16 +657,16 @@ next_tok(self: Lexer): Tok
                 break
             end
         end
-        text = strm.sub(self.src, start, self.pos - 1)
-        kind = std.token.classify.classify(text)
+        text = self.src:sub( start, self.pos - 1)
+        kind = lookup(text)
         if kind == 0
-            kind = std.compiler.token.KIND_NAME
+            kind = 0
         end
         return { kind = kind, loc = l, text = text, int_val = 0, float_val = 0.0 }
     end
     
     if c == 39 or c == 34
-        lit_kind = classify_quote(self.file, c)
+        lit_kind = classify_quote(self.family, c)
         s = self:read_str(c)
         return { kind = lit_kind, loc = l, text = s, int_val = 0, float_val = 0.0 }
     end
@@ -609,18 +675,54 @@ next_tok(self: Lexer): Tok
         lvl = self:long_bracket_level()
         if lvl >= 0
             s = self:read_long_str(lvl)
-            return { kind = std.compiler.token.KIND_COMPAT_LONG_TEXT_LIT, loc = l, text = s, int_val = 0, float_val = 0.0 }
+            return { kind = 108, loc = l, text = s, int_val = lvl, float_val = 0.0 }
         end
     end
     
-    if c == 35 and !hash_operator_allowed(self.file)
-        self:_fail(4)
-        return { kind = std.compiler.token.KIND_EOF, loc = l, text = "", int_val = 0, float_val = 0.0 }
+    if c == 35 and self.family == 1
+        start = self.pos
+        while self.pos <= self.src:len() and self:peek_char() != 10
+            self:adv()
+        end
+        text = self.src:sub(start, self.pos - 1)
+        return { kind = 111, loc = l, text = text, int_val = 0, float_val = 0.0 }
     end
-    
-    if c == 96 and !backtick_allowed(self.file)
-        self:_fail(4)
-        return { kind = std.compiler.token.KIND_EOF, loc = l, text = "", int_val = 0, float_val = 0.0 }
+
+    if c == 45 and self:peek_char2() == 45
+        start = self.pos
+        self:adv()
+        self:adv()
+        lvl = self:long_bracket_level()
+        if lvl >= 0
+            self:skip_long(lvl)
+            text = self.src:sub(start, self.pos - 1)
+            return { kind = 113, loc = l, text = text, int_val = 0, float_val = 0.0 }
+        end
+        is_triple = (self.pos <= self.src:len() and self:peek_char() == 45)
+        if is_triple
+            self:adv()
+        end
+        body = self.pos
+        while self.pos <= self.src:len() and self:peek_char() != 10
+            self:adv()
+        end
+        if is_triple and self.hint_count < 8
+            if body <= self.src:len() and self.src:byte(body) == 64
+                h = self.src:sub(body + 1, self.pos - 1)
+                if self.hint_count == 0 self.hint_0 = h
+                elseif self.hint_count == 1 self.hint_1 = h
+                elseif self.hint_count == 2 self.hint_2 = h
+                elseif self.hint_count == 3 self.hint_3 = h
+                elseif self.hint_count == 4 self.hint_4 = h
+                elseif self.hint_count == 5 self.hint_5 = h
+                elseif self.hint_count == 6 self.hint_6 = h
+                elseif self.hint_count == 7 self.hint_7 = h
+                end
+                self.hint_count = self.hint_count + 1
+            end
+        end
+        text = self.src:sub(start, self.pos - 1)
+        return { kind = 112, loc = l, text = text, int_val = 0, float_val = 0.0 }
     end
     
     self:adv()
@@ -629,144 +731,148 @@ next_tok(self: Lexer): Tok
     if c == 43
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_PLUS_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 99, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_PLUS, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 64, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 42
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_STAR_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 101, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_STAR, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 66, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 37
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_PERCENT_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 103, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_PERCENT, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 68, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 94
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_CARET_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 104, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_CARET, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 69, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 35
         if self:peek_char() == 35
             self:adv()
-            return { kind = std.compiler.token.KIND_HASH_HASH, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 87, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_HASH, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 70, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 38
-        return { kind = std.compiler.token.KIND_AMP, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 71, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 124
         if self.pos <= self.src:len() and self.src:byte(self.pos) == 62
             self.pos = self.pos + 1
-            return { kind = std.compiler.token.KIND_PIPE_GT, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 97, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_PIPE, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 72, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 40
-        return { kind = std.compiler.token.KIND_LPAREN, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 58, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 41
-        return { kind = std.compiler.token.KIND_RPAREN, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 59, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 91
-        return { kind = std.compiler.token.KIND_LBRACKET, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 60, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 93
-        return { kind = std.compiler.token.KIND_RBRACKET, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 61, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 123
-        return { kind = std.compiler.token.KIND_LBRACE, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 62, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 125
-        return { kind = std.compiler.token.KIND_RBRACE, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 63, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 59
-        return { kind = std.compiler.token.KIND_SEMI, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 77, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 44
-        return { kind = std.compiler.token.KIND_COMMA, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 79, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 45
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_MINUS_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 100, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if self:peek_char() == 62
             self:adv()
-            return { kind = std.compiler.token.KIND_ARROW, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 96, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_MINUS, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 65, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 47
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_SLASH_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 102, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if self:peek_char() == 47
             self:adv()
-            return { kind = std.compiler.token.KIND_IDIV, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 94, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_SLASH, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 67, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 46
         if self:peek_char() == 46
             self:adv()
             if self:peek_char() == 46
                 self:adv()
-                return { kind = std.compiler.token.KIND_DOTS, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+                return { kind = 86, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
             end
-            return { kind = std.compiler.token.KIND_CONCAT, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 85, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_DOT, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 80, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 61
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_EQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 88, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if self:peek_char() == 62
             self:adv()
-            return { kind = std.compiler.token.KIND_FAT_ARROW, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 98, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_ASSIGN, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 75, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 126
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_NEQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 89, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_TILDE, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 76, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 60
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_LEQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 90, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if self:peek_char() == 60
             self:adv()
-            return { kind = std.compiler.token.KIND_LSHIFT, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 92, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_LT, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 73, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 62
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_GEQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 91, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if self:peek_char() == 62
             self:adv()
-            return { kind = std.compiler.token.KIND_RSHIFT, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 93, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_GT, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 74, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 58
         if self:peek_char() == 58
             self:adv()
-            return { kind = std.compiler.token.KIND_DCOLON, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 95, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_COLON, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 78, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 64
-        return { kind = std.compiler.token.KIND_AT, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 81, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 63
-        return { kind = std.compiler.token.KIND_QUESTION, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 82, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 33
         if self:peek_char() == 61
             self:adv()
-            return { kind = std.compiler.token.KIND_NEQ, loc = l, text = strm.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = 89, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = std.compiler.token.KIND_BANG, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = 83, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 96
-        return { kind = std.compiler.token.KIND_BACKTICK, loc = l, text = strm.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        if self.family == 1
+            self:_fail(4)
+            return { kind = 109, loc = l, text = "", int_val = 0, float_val = 0.0 }
+        end
+        return { kind = 84, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     else
         self:_fail(4)
-        return { kind = std.compiler.token.KIND_EOF, loc = l, text = "", int_val = 0, float_val = 0.0 }
+        return { kind = 109, loc = l, text = "", int_val = 0, float_val = 0.0 }
     end
 end
 
@@ -807,17 +913,16 @@ restore_state(self: Lexer, state: State)
     self.peeked_token = state.peeked_token
 end
 
-# ── Pass 16 MP4-B02 — sovereign tokenize surface ──────────────────────────────
+# ── sovereign tokenize surface ───────────────────────────────────────────────
 #
 # Two entries, because two is all the power needs: a streaming primitive the host
 # tokenizer loop consumes, and the differential that proves this lexer agrees with
-# the production one token-for-std.compiler.token. Everything else (counts, kinds at an index,
+# the production one token-for- Everything else (counts, kinds at an index,
 # spans) derives from `step` in the caller, and deriving it there is also the only
 # way to keep it O(n) — a `kind_at(index)` entry must re-lex per call.
 #
 # Both lower through DNIR to native machine code: no C backend, no runtime helper.
-# `@c.export` sets the wasm export name; the native symbol is the Duo function
-# name, so each is named exactly what the ABI must see.
+# The native symbol is the function name.
 
 # Lex one token at 1-based byte offset `pos`; return `kind * 2^40 + next_pos`.
 # Feed `next_pos` back to walk the stream in O(n). Packing keeps this a single
@@ -849,16 +954,24 @@ end
 #
 # Six i64 per token: kind, line, col, int_val, text_off, text_len.
 # Returns the token count including EOF, or -1 if either buffer is too small.
-@c.export("duo_lexer_tokenize_text")
-duo_lexer_tokenize_text(src: str, file: str, out: i64, cap: i64, txt: i64, txtcap: i64): i64
-    lex = new(src, file)
+duo_lexer_tokenize_text(src: str, file: str, family: i64, out: i64, cap: i64, txt: i64, txtcap: i64): i64
+    lex = new(src, file, family)
     buf = mem.ptr_from_addr(i64, out)
     tbuf = mem.ptr_from_addr(i64, txt)
     n: i64 = 0
     toff: i64 = 0
     while n < cap
         tok = next_tok(lex)
-        tlen: i64 = strm.len(tok.text)
+        tlen: i64 = lex.pos - lex.start
+        if tok.kind == 105 or tok.kind == 106 or tok.kind == 107
+            tlen = tlen - 1
+        end
+        if tok.kind == 108
+            tlen = tlen - 2 - tok.int_val
+        end
+        if tlen < 0
+            tlen = 0
+        end
         if toff + tlen > txtcap return -1 end
         k: i64 = 0
         while k < tlen
@@ -871,9 +984,9 @@ duo_lexer_tokenize_text(src: str, file: str, out: i64, cap: i64, txt: i64, txtca
         mem.write_i64(buf, (n * 6 + 3) * 8, tok.int_val)
         mem.write_i64(buf, (n * 6 + 4) * 8, toff)
         mem.write_i64(buf, (n * 6 + 5) * 8, tlen)
-        toff = toff + tlen
+        toff += tlen
         n += 1
-        if tok.kind == std.compiler.token.KIND_EOF return n end
+        if tok.kind == 109 return n end
     end
     -1
 end
@@ -884,7 +997,9 @@ end
 # kind-based differential stayed green. That is the same shape as the token-TEXT
 # gap this file already records, so the field is carried rather than recomputed.
 #
-# Seven slots per token, byte offsets, `float_val` written as f64 bits:
+# Positional seven-i64 records are SCHEMA-ONE debt. Host RECORD_SLOTS and
+# slot decode are a second copy of this law. Deletion: producer-projected
+# record or immutable token view — not a named Zig slot map.
 #     0 kind   1 line   2 col   3 int_val   4 source offset   5 text length   6 float value
 #
 # Returns the token count, or -1 if `cap` is too small. The final two arguments
@@ -893,29 +1008,40 @@ end
 # the one failure a parser cannot detect.
 # The rejection's location, for a host that has just been handed a negative
 # code. Re-lexes: this is the cold path, taken once per failed file.
-@c.export("duo_lexer_error_line")
-duo_lexer_error_line(src: str, file: str): i64
-    lex = new(src, file)
+duo_lexer_error_line(src: str, file: str, family: i64): i64
+    lex = new(src, file, family)
     n: i64 = 0
     while n < 10000000
         tok = next_tok(lex)
         n += 1
         if lex.has_error return lex.error_loc.line end
-        if tok.kind == std.compiler.token.KIND_EOF return 0 end
+        if tok.kind == 109 return 0 end
     end
     0
 end
 
-@c.export("duo_lexer_tokenize_full")
-duo_lexer_tokenize_full(src: str, file: str, out: i64, cap: i64, txt: i64, txtcap: i64): i64
-    lex = new(src, file)
+duo_lexer_tokenize_full(src: str, file: str, family: i64, out: i64, cap: i64, txt: i64, txtcap: i64): i64
+    lex = new(src, file, family)
     buf = mem.ptr_from_addr(i64, out)
     n: i64 = 0
     toff: i64 = 0
     while n < cap
         tok = next_tok(lex)
-        tlen: i64 = strm.len(tok.text)
+        # Cursor span, not tok.text:len(). dump-c lowers :len() to strlen
+        # on the native char* field — a full walk of every token on the
+        # compile hot path. start/pos already bound the published bytes:
+        # quoted content excludes the closer still sitting in pos.
         toff = lex.start - 1
+        tlen: i64 = lex.pos - lex.start
+        if tok.kind == 105 or tok.kind == 106 or tok.kind == 107
+            tlen = tlen - 1
+        end
+        if tok.kind == 108
+            tlen = tlen - 2 - tok.int_val
+        end
+        if tlen < 0
+            tlen = 0
+        end
         mem.write_i64(buf, (n * 7) * 8, tok.kind)
         mem.write_i64(buf, (n * 7 + 1) * 8, tok.loc.line)
         mem.write_i64(buf, (n * 7 + 2) * 8, tok.loc.col)
@@ -924,19 +1050,17 @@ duo_lexer_tokenize_full(src: str, file: str, out: i64, cap: i64, txt: i64, txtca
         mem.write_i64(buf, (n * 7 + 5) * 8, tlen)
         mem.write_f64(buf, (n * 7 + 6) * 8, tok.float_val)
         n += 1
-        # GAP-017: a rejection is returned, not raised. Negative codes are
-        # offset by 100 so they cannot collide with -1 (buffer too small):
-        # -101 UnterminatedString, -102 UnterminatedLongString,
-        # -103 InvalidEscape, -104 UnexpectedChar.
+        # GAP-017: a rejection is returned, not raised. Negative codes offset
+        # by 100 so they cannot collide with -1 (buffer too small) are
+        # MAGIC-CODE-ZERO debt. Deletion: carry rejection-id, never -101…-105.
         if lex.has_error return 0 - 100 - lex.error_code end
-        if tok.kind == std.compiler.token.KIND_EOF return n end
+        if tok.kind == 109 return n end
     end
     -1
 end
 
-@c.export("duo_lexer_tokenize_all")
-duo_lexer_tokenize_all(src: str, file: str, out: i64, cap: i64): i64
-    lex = new(src, file)
+duo_lexer_tokenize_all(src: str, file: str, family: i64, out: i64, cap: i64): i64
+    lex = new(src, file, family)
     buf = mem.ptr_from_addr(i64, out)
     n: i64 = 0
     while n < cap
@@ -947,14 +1071,13 @@ duo_lexer_tokenize_all(src: str, file: str, out: i64, cap: i64): i64
         mem.write_i64(buf, (n * 4 + 3) * 8, tok.int_val)
         n += 1
         if lex.has_error return 0 - 100 - lex.error_code end
-        if tok.kind == std.compiler.token.KIND_EOF return n end
+        if tok.kind == 109 return n end
     end
     -1
 end
 
-@c.export("duo_lexer_step")
-duo_lexer_step(src: str, file: str, pos: i64): i64
-    lex = new(src, file)
+duo_lexer_step(src: str, file: str, family: i64, pos: i64): i64
+    lex = new(src, file, family)
     lex.pos = pos
     tok = next_tok(lex)
     tok.kind * 1099511627776 + lex.pos
@@ -976,9 +1099,8 @@ end
 # Mixes the LENGTH before the bytes so that concatenation cannot alias: "ab"
 # then "c" must not hash like "a" then "bc". Includes the terminating EOF
 # (length 0), matching `lexer_differential.textFingerprintSource`.
-@c.export("duo_lexer_text_fingerprint")
-duo_lexer_text_fingerprint(src: str, file: str): u64
-    lex = new(src, file)
+duo_lexer_text_fingerprint(src: str, file: str, family: i64): u64
+    lex = new(src, file, family)
     h: u64 = 0
     while true
         tok = next_tok(lex)
@@ -989,19 +1111,198 @@ duo_lexer_text_fingerprint(src: str, file: str): u64
             h = h * 31 + tok.text:byte(bi)
             bi += 1
         end
-        if tok.kind == std.compiler.token.KIND_EOF return h end
+        if tok.kind == 109 return h end
     end
     h
 end
 
-@c.export("duo_lexer_kind_fingerprint")
-duo_lexer_kind_fingerprint(src: str, file: str): u64
-    lex = new(src, file)
+duo_lexer_kind_fingerprint(src: str, file: str, family: i64): u64
+    lex = new(src, file, family)
     h: u64 = 0
     while true
         tok = next_tok(lex)
         h = h * 31 + tok.kind
-        if tok.kind == std.compiler.token.KIND_EOF return h end
+        if tok.kind == 109 return h end
     end
     h
+end
+
+# ── producer-projected schema (SCHEMA-ONE, MAGIC-CODE-ZERO) ───────────────
+# Host must not independently know slot positions, rejection codes, or token
+# kind ordinals. Query these facts instead of hardcoding.
+
+recordslots(): i64
+    7
+end
+
+fieldkind(): i64
+    0
+end
+
+fieldline(): i64
+    1
+end
+
+fieldcol(): i64
+    2
+end
+
+fieldint(): i64
+    3
+end
+
+fieldoff(): i64
+    4
+end
+
+fieldlen(): i64
+    5
+end
+
+fieldfloat(): i64
+    6
+end
+
+rejectioncount(): i64
+    5
+end
+
+rejectioncode(i: i64): i64
+    if i == 1 return -101 end
+    if i == 2 return -102 end
+    if i == 3 return -103 end
+    if i == 4 return -104 end
+    if i == 5 return -105 end
+    -1
+end
+
+rejectionname(code: i64): str
+    if code == -101 return "UnterminatedString" end
+    if code == -102 return "UnterminatedLongString" end
+    if code == -103 return "InvalidEscape" end
+    if code == -104 return "UnexpectedChar" end
+    if code == -105 return "InsufficientIndent" end
+    ""
+end
+
+kindcount(): i64
+    114
+end
+
+kindname(i: i64): str
+    if i == 0 return "name" end
+    if i == 1 return "int_lit" end
+    if i == 2 return "float_lit" end
+    if i == 3 return "" end
+    if i == 4 return "and" end
+    if i == 5 return "break" end
+    if i == 6 return "continue" end
+    if i == 7 return "do" end
+    if i == 8 return "else" end
+    if i == 9 return "elseif" end
+    if i == 10 return "end" end
+    if i == 11 return "false" end
+    if i == 12 return "for" end
+    if i == 13 return "function" end
+    if i == 14 return "fun" end
+    if i == 15 return "global" end
+    if i == 16 return "goto" end
+    if i == 17 return "if" end
+    if i == 18 return "in" end
+    if i == 19 return "local" end
+    if i == 20 return "nil" end
+    if i == 21 return "not" end
+    if i == 22 return "or" end
+    if i == 23 return "repeat" end
+    if i == 24 return "return" end
+    if i == 25 return "then" end
+    if i == 26 return "true" end
+    if i == 27 return "until" end
+    if i == 28 return "while" end
+    if i == 29 return "const" end
+    if i == 30 return "enum" end
+    if i == 31 return "i8" end
+    if i == 32 return "i16" end
+    if i == 33 return "i32" end
+    if i == 34 return "i64" end
+    if i == 35 return "u8" end
+    if i == 36 return "u16" end
+    if i == 37 return "u32" end
+    if i == 38 return "u64" end
+    if i == 39 return "f32" end
+    if i == 40 return "f64" end
+    if i == 41 return "bool" end
+    if i == 42 return "void" end
+    if i == 43 return "str" end
+    if i == 44 return "match" end
+    if i == 45 return "try" end
+    if i == 46 return "catch" end
+    if i == 47 return "defer" end
+    if i == 48 return "async" end
+    if i == 49 return "await" end
+    if i == 50 return "concept" end
+    if i == 51 return "alias" end
+    if i == 52 return "private" end
+    if i == 53 return "extends" end
+    if i == 54 return "macro" end
+    if i == 55 return "comptime" end
+    if i == 56 return "by" end
+    if i == 57 return "let" end
+    if i == 58 return "lparen" end
+    if i == 59 return "rparen" end
+    if i == 60 return "lbracket" end
+    if i == 61 return "rbracket" end
+    if i == 62 return "lbrace" end
+    if i == 63 return "rbrace" end
+    if i == 64 return "plus" end
+    if i == 65 return "minus" end
+    if i == 66 return "star" end
+    if i == 67 return "slash" end
+    if i == 68 return "percent" end
+    if i == 69 return "caret" end
+    if i == 70 return "hash" end
+    if i == 71 return "amp" end
+    if i == 72 return "pipe" end
+    if i == 73 return "lt" end
+    if i == 74 return "gt" end
+    if i == 75 return "assign" end
+    if i == 76 return "tilde" end
+    if i == 77 return "semi" end
+    if i == 78 return "colon" end
+    if i == 79 return "comma" end
+    if i == 80 return "dot" end
+    if i == 81 return "at" end
+    if i == 82 return "question" end
+    if i == 83 return "bang" end
+    if i == 84 return "backtick" end
+    if i == 85 return "concat" end
+    if i == 86 return "dots" end
+    if i == 87 return "hash_hash" end
+    if i == 88 return "eq" end
+    if i == 89 return "neq" end
+    if i == 90 return "leq" end
+    if i == 91 return "geq" end
+    if i == 92 return "lshift" end
+    if i == 93 return "rshift" end
+    if i == 94 return "idiv" end
+    if i == 95 return "dcolon" end
+    if i == 96 return "arrow" end
+    if i == 97 return "pipe_gt" end
+    if i == 98 return "fat_arrow" end
+    if i == 99 return "plus_assign" end
+    if i == 100 return "minus_assign" end
+    if i == 101 return "star_assign" end
+    if i == 102 return "slash_assign" end
+    if i == 103 return "percent_assign" end
+    if i == 104 return "caret_assign" end
+    if i == 105 return "text_lit" end
+    if i == 106 return "bytes_lit" end
+    if i == 107 return "compat_text_lit" end
+    if i == 108 return "long_text_lit" end
+    if i == 109 return "eof" end
+    if i == 110 return "shebang" end
+    if i == 111 return "comment" end
+    if i == 112 return "compat_comment" end
+    if i == 113 return "compat_long_comment" end
+    ""
 end

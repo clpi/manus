@@ -1,4 +1,4 @@
-# Aggregate non-duon source ledger for the self-hosting target.
+# Aggregate non-idol source ledger for the self-hosting target.
 #
 # This is intentionally standalone evidence. It does !change any ratchet or
 # build step; it prints the current queues that must reach zero.
@@ -149,43 +149,44 @@ shownum: i64 = (name: str, value: i64)
     print("{name} {value}")
     value
 
-root = cap("git rev-parse --show-toplevel 2>/dev/null")
-if root == ""
-    print("ledger/debt: fail no git root")
-    return 3
+main: i64 = ()
+    root = cap("git rev-parse --show-toplevel 2>/dev/null")
+    if root == ""
+        print("ledger/debt: fail no git root")
+        return 3
 
-zig = list(root, "git ls-files '*.zig' | sort")
-c = list(root, "git ls-files '*.[ch]' | sort")
-cboot = pickc(c, "boot")
-coracle = pickc(c, "oracle")
-js = list(root, "git ls-files '*.js' | sort")
-jsgen = pickjs(root, js, "generated")
-jspart = pickjs(root, js, "partial")
-jsauth = pickjs(root, js, "authored")
-scratch = list(root, "find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort")
-embedded = num(root, "git ls-files '*.id' | grep -v '^scripts/census/foreign.id$' | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*--' | grep -o -E '@(comp\\.)?c\\.(emit|include)' | wc -l")
+    zig = list(root, "git ls-files '*.zig' | sort")
+    c = list(root, "git ls-files '*.[ch]' | sort")
+    cboot = pickc(c, "boot")
+    coracle = pickc(c, "oracle")
+    js = list(root, "git ls-files '*.js' | sort")
+    jsgen = pickjs(root, js, "generated")
+    jspart = pickjs(root, js, "partial")
+    jsauth = pickjs(root, js, "authored")
+    scratch = list(root, "find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort")
+    embedded = num(root, "git ls-files '*.id' | grep -v '^scripts/census/foreign.id$' | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*--' | grep -o -E '@(comp\\.)?c\\.(emit|include)' | wc -l")
 
-total = 0
-bad = zigcontrol()
-total += show("zig", zig)
-showzig("zigbuild", zig)
-showzig("zigfront", zig)
-showzig("zigback", zig)
-showzig("zignative", zig)
-showzig("zigwasm", zig)
-showzig("zigsemantic", zig)
-showzig("zigtest", zig)
-showzig("zigsupport", zig)
-total += show("cboot", cboot)
-show("coracle", coracle)
-total += show("jsgenerated", jsgen)
-total += show("jspartial", jspart)
-total += show("jsauthored", jsauth)
-total += show("scratch", scratch)
-total += shownum("embeddedc", embedded)
+    total = 0
+    bad = zigcontrol()
+    total += show("zig", zig)
+    showzig("zigbuild", zig)
+    showzig("zigfront", zig)
+    showzig("zigback", zig)
+    showzig("zignative", zig)
+    showzig("zigwasm", zig)
+    showzig("zigsemantic", zig)
+    showzig("zigtest", zig)
+    showzig("zigsupport", zig)
+    total += show("cboot", cboot)
+    show("coracle", coracle)
+    total += show("jsgenerated", jsgen)
+    total += show("jspartial", jspart)
+    total += show("jsauthored", jsauth)
+    total += show("scratch", scratch)
+    total += shownum("embeddedc", embedded)
 
-if total == 0
-    print("ledger/debt: pass total 0")
-    return bad
-print("ledger/debt: fail total {total}")
-1
+    if total == 0
+        print("ledger/debt: pass total 0")
+        return bad
+    print("ledger/debt: fail total {total}")
+    1

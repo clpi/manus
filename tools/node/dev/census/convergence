@@ -68,11 +68,11 @@ else
   echo "census/convergence: pass native_ir present"
 fi
 
-if rg -n '\.duo' gates/census.id 2>/dev/null | rg -q '.'; then
-  echo "census/convergence: FAIL gates/census.id references .duo"
+if rg -n '\.duo' gate/census.id 2>/dev/null | rg -q '.'; then
+  echo "census/convergence: FAIL gate/census.id references .duo"
   fail=$((fail + 1))
 else
-  echo "census/convergence: pass gates/census.id .id only"
+  echo "census/convergence: pass gate/census.id .id only"
 fi
 
 if git ls-files --error-unmatch .agents/session/ENVELOPE.md >/dev/null 2>&1; then

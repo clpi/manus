@@ -1,0 +1,19 @@
+# A singly linked list built from a descriptor with a self-referencing field.
+# Asserts the length and the head value, so an empty list cannot pass.
+# expect: 3 10
+# @corpus current
+node: {
+    value: i64
+    next: node
+}
+
+third: node = { value = 30 }
+second: node = { value = 20, next = third }
+first: node = { value = 10, next = second }
+count = 0
+cur = first
+while cur
+    count += 1
+    cur = cur.next
+head = first.value
+print("{count} {head}")

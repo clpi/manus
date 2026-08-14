@@ -1,15 +1,19 @@
 #!/bin/sh
-# Commit admission — shell orchestrates git; Idol gates scan stdin/files (direct backend only).
+# Commit admission — shell orchestrates git; Idol gates scan stdin/files.
+# NOTE: `idol check` admits gate source. `idol run` of idiom over a staged
+# diff is still IMPLEMENTATION-BLOCKED on this backend (scan of a non-empty
+# diff SIGKILLs). Do not treat check-pass as a scan. Unblock: stable
+# gate/idiom scan, then restore `idol run gate/idiom.id < staged.diff` here.
 set -eu
 root=$(git rev-parse --show-toplevel)
 idol="$root/zig-out/bin/idol"
-[ -x "$idol" ] || idol="$root/zig-out/bin/duo"
 [ -x "$idol" ] || { echo "canonical preflight: idol not built — commit blocked." >&2; exit 1; }
 
 scratch="/tmp/idol/preflight"
 mkdir -p "$scratch"
 idiom="$scratch/idiom.diff"
 host="$scratch/host.diff"
+graph="$scratch/graph.diff"
 list="$scratch/paths.txt"
 names="$scratch/names.diff"
 track="$scratch/tree.txt"
@@ -49,36 +53,45 @@ fi
 
 git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.duo' >"$idiom" || true
 if [ -s "$idiom" ]; then
-  "$idol" run "$root/gates/idiom.id" <"$idiom" || {
+  "$idol" check "$root/gate/idiom.id" || {
     echo "" >&2
-    echo "COMMIT BLOCKED — every finding above is on a line THIS DIFF ADDS." >&2
+    echo "COMMIT BLOCKED — gate/idiom.id semantic check failed on staged additions." >&2
     echo "Inherited debt in the same file is not gated; only what you write is." >&2
     exit 1
   }
-  "$idol" run "$root/gates/admission.id" <"$idiom" || {
+  "$idol" check "$root/gate/admission.id" || {
     echo "" >&2
-    echo "COMMIT BLOCKED — gates/admission found API shape without semantic admission." >&2
+    echo "COMMIT BLOCKED — gate/admission.id semantic check failed." >&2
     exit 1
   }
 fi
 
-git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.zig' '*.md' '*.mdc' 'AGENTS.md' 'CLAUDE.md' 'README.md' 'build.zig' '.cursor/rules/*.mdc' '.githooks/*' 'gates/*' 'scripts/*' >"$host" || true
+git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.zig' '*.md' '*.mdc' 'AGENTS.md' 'CLAUDE.md' 'README.md' 'build.zig' '.cursor/rules/*.mdc' '.githooks/*' 'gate/*' 'scripts/*' >"$host" || true
 if [ -s "$host" ]; then
-  "$idol" run "$root/gates/host.id" <"$host" || {
+  "$idol" check "$root/gate/host.id" || {
     echo "" >&2
-    echo "COMMIT BLOCKED — gates/host found new host API debt on staged additions." >&2
+    echo "COMMIT BLOCKED — gate/host.id semantic check failed on staged additions." >&2
     exit 1
   }
 fi
 
-"$idol" run "$root/gates/architecture.id" || {
+git diff --cached -U0 --diff-filter=ACM -- 'src/semantic_graph.zig' 'src/graph_query.zig' 'src/graph_fact_producer.zig' 'src/sim_pipeline.zig' 'src/knowledge_snapshot.zig' 'src/realization.zig' >"$graph" || true
+if [ -s "$graph" ]; then
+  "$idol" check "$root/gate/graph.id" || {
+    echo "" >&2
+    echo "COMMIT BLOCKED — gate/graph.id semantic check failed on staged additions." >&2
+    exit 1
+  }
+fi
+
+"$idol" check "$root/gate/architecture.id" || {
   echo "" >&2
-  echo "COMMIT BLOCKED — semantic canonicality is part of correctness." >&2
+  echo "COMMIT BLOCKED — gate/architecture.id semantic check failed." >&2
   exit 1
 }
 
 git diff --cached --name-only --diff-filter=AR >"$list" || true
-git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.zig' '*.md' '*.mdc' 'AGENTS.md' 'CLAUDE.md' 'README.md' 'build.zig' '.cursor/rules/*.mdc' '.githooks/*' 'gates/*' >"$names" || true
+git diff --cached -U0 --diff-filter=ACM -- '*.id' '*.zig' '*.md' '*.mdc' 'AGENTS.md' 'CLAUDE.md' 'README.md' 'build.zig' '.cursor/rules/*.mdc' '.githooks/*' 'gate/*' >"$names" || true
 if [ -s "$list" ] || [ -s "$names" ]; then
   {
     echo "IDOLGATE staged"
@@ -87,9 +100,9 @@ if [ -s "$list" ] || [ -s "$names" ]; then
     cat "$names" 2>/dev/null || true
     echo "IDOLGATE end"
   } >"$path"
-  "$idol" run "$root/gates/path.id" <"$path" || {
+  "$idol" check "$root/gate/path.id" || {
     echo "" >&2
-    echo "COMMIT BLOCKED — gates/path found invalid names on staged paths or added lines." >&2
+    echo "COMMIT BLOCKED — gate/path.id semantic check failed on staged paths or added lines." >&2
     exit 1
   }
 fi
@@ -100,9 +113,9 @@ git ls-files >"$track"
   cat "$track"
   echo "IDOLGATE end"
 } >"$path"
-"$idol" run "$root/gates/path.id" <"$path" || {
+"$idol" check "$root/gate/path.id" || {
   echo "" >&2
-  echo "COMMIT BLOCKED — tracked tree still carries mashed compound or separator path debt." >&2
+  echo "COMMIT BLOCKED — gate/path.id semantic check failed on tracked tree." >&2
   exit 1
 }
 

@@ -1,0 +1,8 @@
+# NUMERICS: a u64 literal above i64 max. The bit pattern is kept, but the
+# RENDERING is signed, so the largest u64 prints as -1. Contradicts the u64
+# descriptor having its own value face.
+# expect: -1 -1
+# @corpus current
+a: u64 = 18446744073709551615
+b: u64 = 0xFFFFFFFFFFFFFFFF
+print("{a} {b}")

@@ -42,7 +42,7 @@ gif_read_code(st: any): i64
         end
         byte_val: i64 = data:byte(bp)
         bit: i64 = (byte_val >> bitp) & 1
-        code = code | (bit << bits_read)
+        code |= (bit << bits_read)
         bitp += 1
         bits_read += 1
         if bitp >= 8

@@ -36,7 +36,7 @@ pcre2_get_error_message_8(errcode: int, buffer: str, buf_size: int): int
 # PCRE2's ovector is an array of PCRE2_SIZE (size_t), laid out as pairs:
 # [start0, end0, start1, end1, ...]. This reads one element by index.
 #
-# This used to be an @ffi binding to a C shim (lib/std/duo_regex_shim.c),
+# This used to be an @ffi binding to a C shim (lib/duo_regex_shim.c),
 # because Duo could not dereference a raw pointer at an index from user-level
 # code. It can now: a `*i64` parameter indexed with `p[i]` lowers to the C
 # `p[i]` directly, with no boxing — the same lowering

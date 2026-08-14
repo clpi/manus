@@ -1,4 +1,4 @@
-# Pass 57 C2 — exports are scope.
+# Exports are scope.
 #
 # The rule, pinned: a module's top-level bindings ARE its surface. There is no
 # export keyword and there never was one. Privacy is a policy fact, not syntax:

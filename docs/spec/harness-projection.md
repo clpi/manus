@@ -306,17 +306,53 @@ subject-first orientation and omit redundant conversions per law.infer.one.
 
 ---
 
-## inference (INFER-ONE)
+## inference (SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE / INTERMEDIATE-ZERO)
 
-**Endpoint:** `to` is a semantic relation that should usually exist in the **graph**
-without existing in **source**. The goal is not “make `to` shorter.”
+No source spelling should survive merely to restate a semantic fact the compiler
+can already recover uniquely. This applies uniformly to `to`, relation/method
+names, projections, explicit subjects, world/protocol witnesses, capture
+declarations, and projection/injection composition — not conversion alone.
 
-Agents must query semantic demand before adding `:to(T)`, `:to()`, projection
-qualifiers, or world plumbing.
+**SOURCE-INFER-ONE:** Every source token must contribute semantic information
+that is **not** already uniquely recoverable from: subject; operands; result
+demand; descriptor demand; reachable exact facts; relation constraints;
+world/effect requirements; stage; provenance; control-flow refinement.
+
+If a spelling contributes no new semantic information: omit it. If omission
+leaves more than one lawful solution: spell only the minimum disambiguating
+fact. If omission is compiler-unique but human-ambiguous: retain the meaningful
+irreducible relation name. Source is a disambiguation surface, not a transcript
+of graph facts.
+
+**FACT-COMPOSITION-INFER-ONE:** projection, injection, capture, protocol
+satisfaction, world satisfaction, descriptor refinement, and target selection
+are graph facts. Do not require source syntax when uniquely derivable. Explicit
+world/protocol/injection declarations normally do not exist. Example:
+`stdout:write(env("HOME"))` — not `@{ os.env io.stdout }` merely because the
+graph needs those facts.
+
+**Source-density order:**
+
+```text
+1. omit redundant binding
+2. omit redundant relation
+3. omit redundant projection
+4. omit redundant conversion
+5. omit redundant world/protocol composition
+6. retain only minimum spelling for uniqueness + human meaning
+```
+
+Agents must query semantic demand before adding `:to(T)`, projection qualifiers,
+world plumbing, or naming an intermediate binding.
 
 Forbidden: insert `value:to(i64)` because a parameter expects `i64` without
 checking whether the resolver already supplies a unique bridge or direct
-satisfaction.
+satisfaction. Forbidden: `value:to()` — there is no canonical empty-projection
+rung. Forbidden: single-use bridge bindings between chained relations when direct
+chaining preserves identity. Forbidden: `f:call(x)` or `table:get(key)` when
+application conveys the relation. Forbidden: `os.env("HOME")` when
+`env("HOME")` is uniquely resolved and human-obvious. Forbidden: `@{...}`
+dependency/world lists when use already determines the dependency.
 
 Required workflow:
 
@@ -324,25 +360,63 @@ Required workflow:
 2. Does the supplied value already satisfy it? (descriptor satisfaction — no `to`)
 3. Is exactly one direct bridge relation admissible? (`law.direct.bridge.one`)
 4. Are failure, effect, and world obligations preserved?
-5. Spell conversion or projection only if ambiguity remains.
+5. Spell conversion, relation, or projection only if ambiguity remains.
 
-Repair classes (`law.repair.infer`): census with `scripts/infer_census.id`;
+Repair classes (`law.repair.infer`): census with `scripts/census/infer.id`;
 classify A–L per site; never bulk-delete.
 
 Canonicalization endpoint is the **shortest uniquely resolving source**, not
 subject-form alone:
 
 ```text
-to(str)(x) → x:to(str) → x:to() → x
+to(str)(x) → x:to(str) → x
 ```
 
-Stop where graph re-resolution proves semantic identity. Never bulk-delete `to`
-without that proof (`law.gate.infer`). If compiler inference is missing, report
+Stop where graph re-resolution proves semantic identity. There is no canonical
+`value:to()` rung. Never bulk-delete spelling without that proof
+(`law.gate.infer`). If compiler inference is missing, report
 `IMPLEMENTATION-BLOCKED` — do not canonize redundant explicit casts as workaround.
 
 **Absolute new-code rule:** no new explicit conversion/projection/curry/world
-plumbing until the author proves the fact cannot be uniquely recovered from
-existing context.
+plumbing, and no new single-use intermediate binding, until the author proves
+the fact cannot be uniquely recovered from existing context.
+
+### INTERMEDIATE-ZERO (`law.intermediate.zero`)
+
+Do not name intermediate values used once when the chain preserves semantic
+identity. A single-use binding exists only to control the next branch or call
+and carries no independent semantic identity.
+
+Canonical:
+
+```id
+value:validate():normalize()
+source:read():parse(json)
+xs:first():to(str)
+```
+
+Non-canonical: a single-use bridge binding inserted between relations that the
+chain could express directly (`text = source:read()` then `:parse` on the next
+line; or `x = f(y)` used only to call `x:z()`).
+
+Retain a named intermediate only when the name contributes semantic information
+the chain does not — e.g. a binding observed by multiple consumers, or a place
+whose identity matters for human clarity. The canonicalizer collapses
+single-use intermediates by proving chain re-resolution preserves semantic
+identity before removing the binding — never regex-delete bindings without
+graph proof. Intermediate elision does not erase the graph fact.
+
+### Density gate
+
+Gate every explicit source: `.to(`, explicit projection chain, helper binding
+used once, `.get(`, `:call(`, world/injection declaration. Ask: WHAT INFORMATION
+HERE COULD NOT HAVE BEEN INFERRED? No answer: delete spelling.
+
+```text
+MINIMUM SOURCE SPELLING
+MAXIMUM GRAPH SEMANTICS
+ZERO REDUNDANT REALIZATION
+```
 
 ---
 
@@ -355,10 +429,14 @@ Do not build parallel projection subsystems.
 Canonical density ladder (shortest unique form wins):
 
 ```text
-implicit relation + implicit projection
-< explicit relation + implicit projection   # value:to()
-< explicit relation + explicit projection   # value:to(str)
+fully inferred (graph-owned relation + projection when unique)
+→ smallest static projection/relation spelling required for uniqueness
+→ value:to(target) only when target is not inferable
 ```
+
+There is no canonical `value:to()` rung. Never teach fully-qualified-everything
+by default — projection/injection source spelling is zero when exact fact
+composition is inferable from use.
 
 **Rulings agents must not neglect:**
 
@@ -549,6 +627,8 @@ Mandatory pre-edit audit for every agent harness. Constitutional authority:
 - no structured value implies aggregate
 - no physical cast implies semantic `to`
 - every physical object can explain the demand that forced it
+- one realization owner decides width/layout/location/boxing/ABI — later passes do not re-decide (`law.representation.one`)
+- a guard is an unresolved alternative with witness + recovery, not a reason to box (`law.guard.one`)
 
 ### foreign
 
@@ -682,10 +762,12 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 `law.canonical.semantic`, `law.infer.contract`, `law.world.capability`,
 `law.closure.semantic`, `law.shc.scheduler`, `law.delta.budget`,
 `law.coordination.fact`, `law.representation.demand`,
+`law.representation.one`, `law.guard.one`, `law.specialize.budget`,
+`law.abi.internal`, `law.error.cold`, `law.crash.first`, `law.cost.explain`,
 `law.projection.one`, `law.from.zero`, `law.lib.zero`, `law.home.projection`,
 `law.shell.not.world`, `law.cross.one`, `law.conversion.derive`, `law.conversion.decl`,
 `law.zero.history`, `law.backend.c.zero`,
-`law.gate.convergence`. Adversarial controls: `law.gate.convergence`.
+`law.gate.convergence`, `law.intermediate.zero`. Adversarial controls: `law.gate.convergence`.
 
 **Before writing code, audit these seams.**
 
@@ -728,6 +810,8 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 - no structured value implies aggregate
 - no physical cast implies semantic `to`
 - every physical object can explain the demand that forced it
+- one realization owner decides width/layout/location/boxing/ABI — later passes do not re-decide (`law.representation.one`)
+- a guard is an unresolved alternative with witness + recovery, not a reason to box (`law.guard.one`)
 
 ### FOREIGN
 

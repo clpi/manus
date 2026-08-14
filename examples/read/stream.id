@@ -1,5 +1,8 @@
 # @corpus current
-reader = std.compiler.reader
+# Document read — subject-first; relation lives at lib/compiler/reader.id.
+document: { value: i64 }
 
-main: i64 = ()
-    reader.document{ value = 42 }:read()
+read: i64 = (subject: document)
+    subject.value
+
+print(document{ value = 42 }:read())

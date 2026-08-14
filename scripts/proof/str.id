@@ -42,7 +42,7 @@ main: i64 = ()
         return fail("missing emitted std.str C module")
     end
     n = std.script.chomp(std.script.capture(
-        "awk '/len\\(s: str\\)/,/^end$/' lib/std/str.id | grep -c '@.*c\\.emit'"))
+        "awk '/len\\(s: str\\)/,/^end$/' lib/str.id | grep -c '@.*c\\.emit'"))
     if n != "" and n != "0"
         return fail("std.str.len still uses embedded C")
     end

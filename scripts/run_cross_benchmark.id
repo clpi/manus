@@ -1,5 +1,10 @@
 # Cross-language benchmark: Duo (Lua AOT) vs C vs Lua vs LuaJIT.
 #
+# ledger/perf contract: cross benchmark
+# oracle: cross: FAIL
+# negative: cross: PASS
+# verdict: LuaJIT cross-language timing axis
+#
 # Duo replacement for scripts/run_cross_benchmark.sh (monoglot census).
 #
 # examples/benchmark_c.c and examples/benchmark_pure.lua stay as they are:
@@ -88,7 +93,7 @@ _numeric(s: str): bool
                 return false
             end
         end
-        i = i + 1
+        i += 1
     end
     seen_digit
 end
@@ -154,9 +159,9 @@ _min_times(cmd: str): any
             if best[i] == nil or ts[i] < best[i]
                 best[i] = ts[i]
             end
-            i = i + 1
+            i += 1
         end
-        r = r + 1
+        r += 1
     end
     best
 end
@@ -177,14 +182,14 @@ _compare_strict(ref: any, got: any): void
             if _is_int(a) and _is_int(b)
                 if a != b
                     print("    MISMATCH " .. k .. ":" .. a .. " vs" .. b)
-                    bad = bad + 1
+                    bad += 1
                 end
             else
                 d = to(f64)(a) - to(f64)(b)
                 if d < 0.0 d = -d end
                 if d > 0.0001
                     print("    FLOAT DIFF " .. k .. ":" .. a .. " vs" .. b)
-                    bad = bad + 1
+                    bad += 1
                 end
             end
         end
@@ -205,7 +210,7 @@ _compare_loose(label: str, ref: any, got: any): void
         b = got[k]
         if b != nil and _is_int(a) and _is_int(b) and a != b
             print("    MISMATCH " .. k .. ":" .. a .. " vs" .. b)
-            bad = bad + 1
+            bad += 1
         end
     end
     if bad == 0 print("    PASS") end
@@ -309,13 +314,13 @@ main: i64 = ()
             # An arithmetic mean of speedups is dominated by whichever
             # benchmark happens to be most lopsided.
             if d > 0.0 and c > 0.0
-                dc = dc + c / d:log()
-                dl = dl + l / d:log()
-                dj = dj + j / d:log()
-                cnt = cnt + 1
+                dc += c / d:log()
+                dl += l / d:log()
+                dj += j / d:log()
+                cnt += 1
             end
         end
-        i = i + 1
+        i += 1
     end
 
     print("")

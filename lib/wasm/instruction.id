@@ -1,12 +1,10 @@
-# std.wasm.instruction — Wasm instruction semantic descriptors (Pass 9 P9-04).
+# std.wasm.instruction — Wasm instruction semantic descriptors.
 #
 # CANONICAL OWNER: src/wasm_semantic.zig (compiler catalog + tests).
 # Do NOT add parallel opcode constant tables here. Ward should req this module
 # and use semantic ids (wasm.i32.add) instead of duplicating OP_* constants.
 #
 # P9-05: decoder/validator tables generated in src/wasm_semantic.zig + wasm_semantic_gen.zig
-#   duo catalog | jq '.pass9.wasm_semantic.decoder_table'
-#   duo catalog | jq '.pass9.wasm_semantic_gen'
 
 SEMANTIC_OWNER = "src/wasm_semantic.zig"
 GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
@@ -14,7 +12,7 @@ SCHEMA = "wasm-instruction-v0"
 MVP_FEATURE = "wasm1.0-mvp"
 OPCODE_TABLE_SIZE = 256
 DECODER_TABLE_OWNER = "src/wasm_semantic.zig:mvp_opcode_index"
-LOOKUP_TABLE_OWNER = "lib/std/wasm/opcode_lookup.id"
+LOOKUP_TABLE_OWNER = "lib/wasm/opcode_lookup.id"
 
 # Bounded MVP count (must match wasm_semantic.zig mvp_instructions.len).
 MVP_INSTRUCTION_COUNT = 63

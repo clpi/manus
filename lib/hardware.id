@@ -6,17 +6,17 @@
 # Compiler memory fence (prevents reordering across this point)
 @hot
 fence(): void
-    @c.emit("__asm__ volatile(\"\" ::: \"memory\");")
+    @comp.c.emit("__asm__ volatile(\"\" ::: \"memory\");")
 end
 
 # Spin loop hint: x86 `pause`, AArch64 `yield`
 @hot
 spinwait(): void
-    @c.emit("if:len() defined(__x86_64__) || defined(__i386__)")
-    @c.emit("__asm__ volatile(\"pause\");")
-    @c.emit("elif:len() defined(__aarch64__)")
-    @c.emit("__asm__ volatile(\"yield\");")
-    @c.emit("endif:len()")
+    @comp.c.emit("if:len() defined(__x86_64__) || defined(__i386__)")
+    @comp.c.emit("__asm__ volatile(\"pause\");")
+    @comp.c.emit("elif:len() defined(__aarch64__)")
+    @comp.c.emit("__asm__ volatile(\"yield\");")
+    @comp.c.emit("endif:len()")
 end
 
 # Re-export ML device placement helpers (@device runtime table)

@@ -1,5 +1,5 @@
 # surface: dnir
-# ONE COLOUR LANGUAGE, second surface. A dnir opcode and a duon method call are
+# ONE COLOUR LANGUAGE, second surface. A dnir opcode and a idol method call are
 # the SAME edge, so they take the same role — `callable` — and the card
 # `opcode` is what keeps the two surfaces apart. Registers are PLACES (§0b).
 place %0: i64

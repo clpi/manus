@@ -1935,7 +1935,7 @@ pub const CallShape = struct {
     }
 };
 
-/// Classify return consumption from assignment target count (Pass 23 §6).
+/// Classify return consumption from assignment target count (§6).
 pub fn returnConsumptionForTargets(target_count: usize) ReturnConsumption {
     return switch (target_count) {
         0 => .unknown,

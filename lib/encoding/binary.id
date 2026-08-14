@@ -123,7 +123,7 @@ end
 
 # decode_f32: decode a float from encode_f32 output.
 decode_f32(s: str): f64
-    tonumber(s)
+    s:to(i64)
 end
 
 # encode_f64: encode a double as an 8-byte string (big-endian, using %.17g).
@@ -133,7 +133,7 @@ end
 
 # decode_f64: decode a double from encode_f64 output.
 decode_f64(s: str): f64
-    tonumber(s)
+    s:to(i64)
 end
 
 # ----- Variable-length encoding (LEB128, used in protobuf etc.) -----

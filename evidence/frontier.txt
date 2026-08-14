@@ -1,0 +1,226 @@
+FTCFTW frontier — graph-E optimization-debt rows (FTC-009 seed)
+==============================================================
+
+Machine-readable seed of the optimization-debt graph (GAP-172 graph E) in the
+acceptance-contract schema (C0 `law.cost.closure`). Rows are executed
+measurements, not projections. Status enum is closed: win | bound | open |
+unknownbound. No aggregate is computed over these rows (a mean would hide a loss).
+
+law.evidence.subject.one:
+  subject revision : 2d3f1e7fef8e5c510eb6af053f9b5679f3dd1acd  (== HEAD)
+  compiler binary  : zig-out/bin/idol (zig build no-op at this revision)
+  target           : Apple M4, arm64, macOS
+  competitor       : Apple clang 21.0.0 -O3 via idol --backend=c (same front-end graph)
+  measurer         : idol compile (compile-only) + /usr/bin/time -p best-of-5 warm
+                     USER seconds; static otool -tv. gtimeout-bounded differential.
+  captured (UTC)   : 2026-08-13T20:55:00Z
+  note             : FTC-016 wall-clock/user only; PMU counters (cycles/uops/port
+                     pressure/energy) need Instruments/sudo on macOS — recorded as
+                     an unfilled column, not faked.
+
+CORRECTION (law.repair.class): the previous seed carried two OPEN rows claiming
+~8% and ~15% losses caused by "loop-invariant 64-bit constant not hoisted / 16
+movk per iteration / no madd." Re-measured from the emitted binaries at the SAME
+subject revision, that disassembly is FALSE: constant-LICM already works (the
+multiplier and all literals are hoisted to the prologue), and both nonlinear
+kernels are at PARITY with clang -O3. Those rows are replaced. The one genuine
+reproducible loss (affine closed-form) is row 3.
+
+Verification machinery (FTC-010): fast hang-proof differential oracle —
+compile-only both backends, bounded run (gtimeout 8), compare exit-code
+observation. Baseline over 60-file corpus + 3 kernels: agree=52 diverge=4 skip=7.
+The 4 diverges are PRE-EXISTING (rec9/rec10 spin->124; tokenizer* crash->139),
+a known-bad allowlist. Admission rule for any codegen change: agree>=52, no NEW
+divergence.
+
+Schema: subject | world | target | workload | observations | competitor |
+        lowerbound | idol | delta | cause | producer | consumer | proof |
+        evidence | status
+
+--- row 1: nonlinear dependent recurrence (latency-bound) -----------------------
+subject      : recurrence kernel A (serial nonlinear recurrence, 5e8 iters)
+world        : ordinary (no timing/address/order observation)
+target       : Apple M4 arm64
+workload     : single run, compile-time-constant trip count
+observations : exit code (i64 result) only
+competitor   : clang -O3 best-user 0.97 s (2 madd + subs/b.ne, cannot close-form)
+lowerbound   : dependent i64-multiply latency (nonlinear i64-wrapping chain) — WORK axis
+idol         : direct-native best-user 0.98 s (12 instr/iter, constants hoisted)
+delta        : ~0 (parity within run-to-run noise)
+cause        : none observable. Residual instruction-count delta (madd fusion,
+               3 home-copy coalesces, down-count IV) retires in the multiply-
+               latency shadow -> NOT time-observable. May appear as energy (PMU
+               unmeasured).
+producer     : src/native_backend.zig direct emitter
+consumer     : native realization
+proof        : differential oracle AGREE (native=c=90)
+evidence     : evidence/recurrence.txt (kernel A)
+status       : bound
+gap          : at the shared multiply-latency lower bound; both backends pinned.
+
+--- row 2: four independent nonlinear LCG lanes (throughput-bound) --------------
+subject      : recurrence kernel B (4 independent nonlinear LCG lanes, 3e8 iters)
+world        : ordinary
+target       : Apple M4 arm64
+workload     : single run, compile-time-constant trip count
+observations : exit code (i64 result) only
+competitor   : clang -O3 best-user 0.30 s (4 hoisted madd + subs/b.ne)
+lowerbound   : integer-multiply port throughput (4 independent muls/iter) — WORK axis
+idol         : direct-native best-user 0.30 s (mul+add+home-copy/lane; C hoisted)
+delta        : ~0 (parity)
+cause        : none observable. Multiplier constant IS hoisted (x15 prologue),
+               addends hoisted; residual is madd fusion + one home copy per lane,
+               not time-observable at the throughput bound.
+producer     : src/native_backend.zig direct emitter
+consumer     : native realization
+proof        : differential oracle AGREE (native=c=203)
+evidence     : evidence/recurrence.txt (kernel B)
+status       : bound
+
+--- row 3: eight independent AFFINE accumulators (the one genuine loss) ----------
+subject      : recurrence kernel C (8 affine accumulators, 4e8 iters)
+world        : ordinary
+target       : Apple M4 arm64
+workload     : single run, compile-time-constant trip count
+observations : exit code (i64 result) only — a compile-time constant
+competitor   : clang -O3 best-user 0.00 s (inner loop has ZERO adds — folded)
+lowerbound   : O(1) — the sole observation is a compile-time constant
+idol         : direct-native best-user 0.40 s (65 instr/iter, runs all 4e8 iters)
+delta        : +0.40 s (unbounded ratio; competitor is at the O(1) bound)
+cause        : missing SCALAR EVOLUTION / affine closed-form. Each accumulator is
+               affine (final = init + N*stride); the program result is closed-form
+               in O(1). clang's scalar evolution recognizes this and emits the
+               constant; the direct backend does not. This is a SEMANTIC-GRAPH /
+               ALGORITHM-axis transformation, NOT a peephole. It does NOT apply to
+               rows 1-2: their recurrence is nonlinear and i64-wrapping, so no
+               backend can close it — which is precisely why 1-2 are at parity.
+producer     : semantic graph / demand (affine induction recognition) + realization
+consumer     : native realization
+proof        : differential oracle AGREE (native=c=179)
+evidence     : evidence/recurrence.txt (kernel C)
+status       : open
+gap          : optimality gap = 0.40 s to a NAMED O(1) lower bound; not
+               unknownbound. Elimination = affine scalar-evolution + closed-form
+               loop elimination, gated by the differential oracle above.
+
+=== 2026-08-13 addendum — closed-form surface vs clang, MEASURED (disjoint) =====
+
+Competitor baselines measured directly (Apple clang 21.0.0 -O3, M4 arm64, bare C,
+best-of-3 /usr/bin/time real). These are COMPETITOR-only numbers (no idol subject
+revision dependency), taken to test the `native.id` closed-form surface's headline
+"faster than C on fold/lcg/pow/geo/fib/sums" claim SKEPTICALLY. Result: the claim
+is NOT uniform — it holds exactly where clang's reassociation/vectorization/folder
+gives up, and ties where it does not.
+
+--- row 4: LCG fold, serial modular-affine chain (fold/lcg family) --------------
+workload     : x = (1103515245*x + 12345) & (2^31-1), 1e9 iters, seed 12345 (&0xFF)
+competitor   : clang -O3 = 0.90 s. Emitted a REAL O(N) loop: `madd; subs; b.ne`.
+               Reassociation is ILLEGAL (serial data dependency + modular wrap), so
+               clang cannot vectorize or fold — it runs all 1e9 iters.
+idol/native  : native.id solves the affine recurrence by MAP EXPONENTIATION,
+               O(log N); the emitted program is `movz/movk x0,#k ; ret` (~1 ns).
+delta        : 0.90 s -> ~1 ns. Unbounded ratio.
+cause        : serial dependency defeats C; closed-form recurrence solve wins.
+status       : win   (the ROBUST class — serial-dependent recurrences)
+
+--- row 5: modular power / geometric (pow, geo family) --------------------------
+workload     : x = (x * 1103515245) & (2^31-1), 1e9 iters (&0xFF)
+competitor   : clang -O3 = 0.04 s. Emitted `mul.4s` — clang REASSOCIATED the
+               product reduction into 4 SIMD lanes + horizontal combine (legal:
+               multiplication is associative), i.e. O(N/lane) ~instant at this N.
+idol/native  : O(log N) powmod; emitted `movz;ret`.
+delta        : ~tie at this scale. Native's O(log N) is only an ASYMPTOTIC edge;
+               clang's vectorized O(N) is already ~instant here.
+cause        : commutative/associative reduction -> clang vectorizes. The closed
+               form is not a clean measured win until N or a true modmul (where
+               reassociation is blocked) makes clang's constant factor bite.
+status       : bound (competitive; asymptotic-only edge, not a measured win)
+
+--- row 6: polynomial sums Σi^p (sumi/sumsq/sumcube family) ----------------------
+workload     : Σ_{i=1..1e9} i^3 mod 2^31 (&0xFF)
+competitor   : clang -O3 = 0.16 s. Kept a loop (partial reduction); did NOT apply
+               Faulhaber closed form.
+idol/native  : O(1) division-free Faulhaber; emitted `movz;ret`.
+delta        : 0.16 s -> ~1 ns for the emitted constant. Asymptotic O(1) win.
+cause        : clang lacks Faulhaber closed-form for Σi^p; native has it.
+status       : win (asymptotic; measured competitor loss 0.16 s at 1e9)
+
+--- STRUCTURAL CAVEAT (the honest frame for rows 4-6) ---------------------------
+Every `native.id` workload is INPUT-FREE (constant N, constant seed). So the
+theoretically-correct competitor is a CONSTANT — clang SHOULD fold each to
+`mov;ret`. Where it does (small N; pow via vectorize), it TIES. Where its
+folder/vectorizer gives up (fold @1e9 = 0.90s; cube @1e9 = 0.16s), native's
+recurrence solver still folds -> WIN. That win is real but FRAGILE: it exploits a
+budget limit in clang, not an asymptotic impossibility.
+
+The ROBUST, unbounded FTCFTW win is RUNTIME-PARAMETERIZED recurrences: `fold(N)`
+with N from input. Then NO compiler can fold (N unknown) and clang must run O(N);
+a closed-form / O(log N) realization is a clean asymptotic dominance for ALL N.
+native.id is exit-code / string-literal only (S0), so this class is POTENTIAL, not
+yet measured. Realizing it (accept a runtime arg, keep the closed-form) is the
+highest-value next FTCFTW step for the surface.
+
+=== FULL PROBLEM-SPACE MAP — ALL performance FTCFTW classes ======================
+Enumerated across the realization axes (law.physical.open). Verdict per class:
+WIN = strict dominance; OPT = at/ties the lower bound; LOSS = named debt.
+
+ A. Serial-dependent recurrences (LCG/affine fold, fib)      WIN   rows 1,4 — O(logN)
+    closed form; clang cannot reassociate a serial modular chain.
+ B. Commutative/associative reductions (pow, geo, Σ)         OPT/bound rows 5,6 —
+    clang already reassociates + SIMD-vectorizes; native edge is asymptotic only.
+ C. Polynomial sums Σi^p, p<=5                               WIN(asym) row 6 —
+    Faulhaber O(1); clang keeps O(N).
+ D. Affine accumulator loops (scalar evolution)              LOSS  row 3 — 0.40s to
+    O(1) bound; missing scalar-evolution in the direct backend (clang HAS it).
+ E. GENERAL-CODE CODEGEN QUALITY  (measured, MODEST)         bound/LOSS — see below.
+ F. Data-dependent array kernels (Game of Life, Fenwick)     BLOCKED — no materialized
+    array on S0 (0-based store miscompile, GAP-101) + no byte output.
+ G. Memory layout / cache / TLB / page (large working sets)  UNKNOWNBOUND — unmeasured;
+    no workload exercises it yet.
+ H. Startup / artifact / compile-time                        UNKNOWNBOUND — native.id
+    compiles in ~0.66 s for 49 checks; not yet compared to clang compile cost.
+
+CLASS E — MEASURED (idol direct-native `.out` vs clang -O3 `.out`, best-of-3 real,
+serial non-foldable kernels so both run O(N); this isolates CODEGEN, not algorithm):
+
+  multiply-bound   s=(s*1103515245+i)&R, 1e8   idol 0.11  clang 0.09  ~parity
+  cheap-op         s=((s*2)+i)&R,        3e8   idol 0.34  clang 0.20  ~1.7x LOSS
+
+So class E is NOT an "elephant" / large constant factor — that was an unmeasured
+overstatement, now corrected (law.repair.class). It is MODEST and BOUNDED:
+- On latency-bound code (a real multiply per iter) idol is at ~parity: the naive
+  load/store + copy overhead retires in the multiply-latency shadow.
+- On cheap-op code (shift/add) it is ~1.5-1.7x, and the emitted asm names the cause:
+  redundant register-to-register copies (`mov x10,x16 ; mov x11,x15` per iter) — a
+  missing COPY-COALESCING / register-allocation pass, plus stack reloads. NOT a
+  vectorization gap (these serial kernels are unvectorizable for clang too).
+
+So the honest ordering of MEASURED performance debt (law.repair.class):
+  1. D — affine scalar-evolution: +0.40 s to a NAMED O(1) bound (row 3). Largest,
+     cleanly attributed, algorithm-axis. clang has it; the direct backend does not.
+  2. runtime-parameterized recurrences: converts class A from a fragile
+     "clang's folder gave up" win into a ROBUST asymptotic win for all N. Requires
+     the surface to accept a runtime argument (S0: exit-code/string-literal only).
+  3. E — copy-coalescing / register allocation: ~1.5-1.7x on cheap-op code only,
+     ~0 on latency-bound code. Real but bounded; lives in realization/codegen and
+     is gated by the differential oracle.
+  4. F — data-dependent array materialization (GAP-101 0-based store + byte output).
+  5. G/H — memory/cache/TLB, startup/artifact/compile: UNMEASURED; need workloads.
+
+All of D/E/codegen live in the S0 Zig backend (non-canonical bootstrap) or the
+graph/demand layer; the canonical repair is the ground-up `.id` surface, not a Zig
+patch. These rows are the measured targets, not the Zig edit path.
+
+--- reading ---------------------------------------------------------------------
+The corrected picture: the direct backend is at PARITY with clang -O3 on both
+nonlinear kernels (rows 1-2) — the earlier "8-15% loss / not-hoisted" debt was a
+mismeasurement; constant-LICM works and the remaining madd/copy residual is not
+time-observable because those kernels are multiply-bound. The ONE reproducible
+loss is row 3: an AFFINE loop whose closed form clang computes at compile time
+(O(1)) and the direct backend runs to completion. So the real, correctly-attributed
+FTCFTW debt is not a codegen peephole but SCALAR EVOLUTION / affine closed-form at
+the graph/demand layer. Closing row 3 requires: (D) recognize the affine induction
+and demand only the closed-form result; (proof) differential oracle still AGREE;
+(cost) delta -> ~0 at the O(1) bound, flipping status open -> win|bound. Rows 1-2
+stay bound unless a front-end-bound or energy observation exposes the madd/copy
+residual, at which point they reopen with that named cause.

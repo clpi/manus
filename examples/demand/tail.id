@@ -1,0 +1,51 @@
+# @corpus current
+# gap[102] proof: a body's value is its FINAL EXPRESSION's (§0.7
+# DEMAND-RETURN), even when that final expression is a call.
+#
+# The parser promotes ANY trailing call to the block's tail expression, and
+# tail resolution then called every one of them a discard and walked BACK onto
+# the preceding statement. Two harms, and the second is the worse one:
+#
+#   sema      type-checked the BINDING as the return, so `p = Point { … }`
+#             followed by `distance2(p)` was rejected as "expected 'i64', got
+#             'Point'" — a diagnostic naming a line that returns nothing.
+#             That held tier-0 `agent-smoke` red for every session.
+#   lowering  RETURNED the binding. `p = 5` then `d2(p)` answered 5 through
+#             #backend=direct where #backend=c answered 25. A SILENT WRONG
+#             ANSWER in the default backend, and no differential caught it
+#             because nothing ran the pair.
+#
+# The walk-back is still owed to the effect case — `value = x * 2` then
+# `print value` yields `value` — so the discriminator is VOID-NESS, not
+# call-ness. This fixture pins both sides of that discriminator.
+#
+# Verified BY VALUE.
+
+square: i64 = (x: i64)
+    x * x
+
+want: i64 = (what: str, got: i64, wanted: i64)
+    if got != wanted
+        print("tail demand: {what} got {got}, want {wanted}")
+        os.exit(1)
+    0
+
+throughbinding: i64 = ()
+    p = 5
+    square(p)
+
+throughtwo: i64 = ()
+    a = 3
+    b = a + 1
+    square(b)
+
+througheffect: i64 = ()
+    value = 6 * 7
+    print("tail demand: effect trailer ran")
+    value
+
+want("binding then call", throughbinding(), 25)
+want("two bindings then call", throughtwo(), 16)
+want("effect trailer keeps the binding", througheffect(), 42)
+print("tail demand: OK")
+

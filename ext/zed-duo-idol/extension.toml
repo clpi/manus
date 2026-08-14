@@ -1,0 +1,22 @@
+id = "idol"
+name = "Idol"
+description = "Idol language support for Zed"
+version = "0.1.0"
+repository = ""
+authors = [""]
+
+[grammars.idol]
+repository = "https://github.com/user/tree-sitter-idol"
+rev = "main"
+
+[languages.idol]
+name = "Idol"
+grammar = "idol"
+language_servers = ["idol-lsp"]
+formatter = "external"
+command = "idol"
+args = ["fmt"]
+
+[languages.idol.language_servers.idol-lsp]
+name = "Idol LSP"
+language = "Idol"

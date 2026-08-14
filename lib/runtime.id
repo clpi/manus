@@ -7,7 +7,7 @@ num_cpu(): i64
     out = f:read("*a")
     f:close()
     if out == nil or out == "" return 1 end
-    return tonumber(out) or 1
+    return out:to(i64) or 1
 end
 
 # Caller returns information about the caller of the calling function.

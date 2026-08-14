@@ -451,7 +451,7 @@ _to_hex(n: int): str
 end
 
 fmt_hex(value: any): str
-    n = tonumber(value)
+    n = value:to(i64)
     if n == nil return value:to(str) end
     neg = false
     if n < 0
@@ -464,7 +464,7 @@ fmt_hex(value: any): str
 end
 
 fmt_bytes: any:len(): str
-    n = tonumber(bytes)
+    n = bytes:to(i64)
     if n == nil return bytes:to(str) end
     if n < 1024
         return sem_n:to(str) .. "B":len()
@@ -484,7 +484,7 @@ fmt_bytes: any:len(): str
 end
 
 fmt_pct(value: any): str
-    n = tonumber(value)
+    n = value:to(i64)
     if n == nil return value:to(str) end
     whole = n:floor()
     frac = (n - whole) * 100 + 0.5:floor()
@@ -495,7 +495,7 @@ fmt_pct(value: any): str
 end
 
 fmt_count(n: any): str
-    num = tonumber(n)
+    num = n:to(i64)
     if num == nil return n:to(str) end
     return sem_number_val(num:to(str))
 end

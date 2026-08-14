@@ -1,4 +1,4 @@
-# Pass 11 WP-13: build the compiler twice and compare ReleaseFast binary hashes.
+# Build the compiler twice and compare ReleaseFast binary hashes.
 #
 # Duo replacement for scripts/reproducibility_smoke.sh (monoglot census).
 #

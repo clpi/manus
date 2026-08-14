@@ -1,35 +1,32 @@
-# SH-10 proof router — resident + suite orchestrator.
+# SH-10 proof router - resident + suite; no ingest.resident catalog.
 
-proof = {
-    resident = "scripts/proof/resident.id"
-    suite = "scripts/proof/semantic.id"
-}
+resident = "scripts/proof/resident.id"
+suite = "scripts/proof/semantic.id"
 
 len(path) = (min: i64)
     path:read()
         :len() >= min
 
-
 audit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 hit(path) = (pattern: str)
     path:read()
-        :match(pattern)
+        :has(pattern)
 
 main: i64 = ()
-    code: i64 = 0
-    if !len(proof["resident"])(32)
-        code = 1
-    if code == 0 and !audit(proof["resident"])("path:read%(")
-        code = 2
-    if code == 0 and !len(proof["suite"])(16)
-        code = 3
-    if code == 0 and !audit(proof["suite"])("path:read%(")
-        code = 4
-    if code == 0 and !audit(proof["resident"])("ingest.resident")
-        code = 5
-    if code == 0
-        print("semantic proof router: pass")
-    code
+    if !resident:len(32)
+        return 1
+    if !resident:audit("path:read(")
+        return 2
+    if !suite:len(16)
+        return 3
+    if !suite:audit("path:read(")
+        return 4
+    if resident:hit("ingest.resident")
+        return 5
+    if !resident:audit("CATALOG-ZERO")
+        return 6
+    print("semantic proof router: pass")
+    0

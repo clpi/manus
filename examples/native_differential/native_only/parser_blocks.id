@@ -7,7 +7,7 @@
 # open and close blocks, and reports the maximum nesting depth — the same
 # bookkeeping `src/parser.zig` does to match `end` against its opener.
 #
-# Keyword identity comes from `lib/std/token/classify.id` (SH-02,
+# Keyword identity comes from `lib/token/classify.id` (SH-02,
 # `duo_canonical`) via `req`, so "what counts as `if`" is the compiler's own
 # fact, folded to an immediate — not a copy that could drift.
 #
@@ -85,7 +85,7 @@ nextspan: span = (src: str, pos: i64)
     n = src:len()
     i = pos
     while i <= n and is_space(src:byte(i)) == 1
-        i = i + 1
+        i += 1
     end
     if i > n
         return { kind = 0 - 1, start = i, len = 0 }
@@ -93,7 +93,7 @@ nextspan: span = (src: str, pos: i64)
     if is_alpha(src:byte(i)) == 1
         j = i
         while j <= n and is_alpha(src:byte(j)) == 1
-            j = j + 1
+            j += 1
         end
         return { kind = word_kind(src, i, j - i), start = i, len = j - i }
     end
@@ -114,7 +114,7 @@ max_depth: i64 = (src: str)
             return best
         end
         if s.kind == Classify.KIND_IF or s.kind == Classify.KIND_WHILE or s.kind == Classify.KIND_FUNCTION
-            depth = depth + 1
+            depth += 1
             if depth > best
                 best = depth
             end
@@ -123,7 +123,7 @@ max_depth: i64 = (src: str)
             if depth == 0
                 return 0 - 1
             end
-            depth = depth - 1
+            depth -= 1
         end
         pos = s.start + s.len
     end

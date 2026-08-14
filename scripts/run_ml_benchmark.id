@@ -1,5 +1,10 @@
 # ML benchmark: Duo vs C on matmul / conv2d / softmax / attention / mlp.
 #
+# ledger/perf contract: ml benchmark
+# oracle: ml: FAIL
+# negative: ml: PASS
+# verdict: ML kernel correctness and timing axis
+#
 # Duo replacement for scripts/run_ml_benchmark.sh (monoglot census).
 #
 # examples/bench_ml_c.c stays C: it is the reference this measures against.
@@ -39,7 +44,7 @@ _fx(x: f64, places: i64): str
     i = 0
     while i < places
         scale = scale * 10
-        i = i + 1
+        i += 1
     end
     n = to(i64)(x * to(f64)(scale) + 0.5)
     whole = n / scale
@@ -66,7 +71,7 @@ _numeric(s: str): bool
                 return false
             end
         end
-        i = i + 1
+        i += 1
     end
     d
 end
@@ -100,7 +105,7 @@ _results(text: str): any
         f = _fields(l)
         if f:len() >= 3 and f[1] == "RESULT"
             r[f[2]] = f[3]
-            n = n + 1
+            n += 1
         end
     end
     r["__count"] = n:to(str)
@@ -186,7 +191,7 @@ main: i64 = ()
         c = cres[name]
         if d == nil or c == nil
             print("MISMATCH: " .. name .. " missing from one side")
-            bad = bad + 1
+            bad += 1
         else
             dv = to(f64)(d)
             cv = to(f64)(c)
@@ -199,7 +204,7 @@ main: i64 = ()
                 print("  OK: " .. name .. " = " .. d)
             else
                 print("MISMATCH: " .. name .. ": Duo=" .. d .. " vs C=" .. c)
-                bad = bad + 1
+                bad += 1
             end
         end
     end
@@ -223,7 +228,7 @@ main: i64 = ()
         for k, v in _times(std.script.capture(duo_bin .. " 2>/dev/null"))
             if dmin[k] == nil or v < dmin[k] dmin[k] = v end
         end
-        r = r + 1
+        r += 1
     end
     print("Running C (" .. runs:to(str) .. " times)...")
     r = 0
@@ -231,7 +236,7 @@ main: i64 = ()
         for k, v in _times(std.script.capture(c_bin .. " 2>/dev/null"))
             if cmin[k] == nil or v < cmin[k] cmin[k] = v end
         end
-        r = r + 1
+        r += 1
     end
 
     print("")
@@ -248,7 +253,7 @@ main: i64 = ()
         c = cmin[name]
         if d == nil or c == nil
             print(_pad(name, 16) .. " " .. _lpad("no Time reported", 36))
-            timing_fail = timing_fail + 1
+            timing_fail += 1
         else
             ratio = "N/A"
             if c > 0.0 ratio = _fx(d / c, 3) .. "x" end
@@ -257,7 +262,7 @@ main: i64 = ()
             if d > c * _SLACK
                 print("  *** WARN: Duo (" .. _fx(d, 6) .. ") slower than C ("
                     .. _fx(c, 6) .. ") — optimization target")
-                timing_fail = timing_fail + 1
+                timing_fail += 1
             end
         end
     end

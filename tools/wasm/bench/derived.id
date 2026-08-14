@@ -1,8 +1,8 @@
-# Pass 101 §4: derived-lines / total-lines for the engine, target >= 80%.
+# Derived-lines / total-lines for the engine, target >= 80%.
 #
 #   duo run bench/derived.id
 #
-# Pass 101 calls hand-written serialization in the engine "a violation with a
+# The mandate calls hand-written serialization in the engine "a violation with a
 # derivation repair", and asks for the repair to be MEASURED rather than
 # asserted. This is that measurement. It had no implementation before
 # 2026-08-08; the first honest reading of it is 0%.
@@ -74,7 +74,7 @@ end
 
 # Lines that hard-code a WASM-format fact the canonical descriptor table
 # already carries: an opcode number used as a dispatch predicate. This is the
-# specific population Pass 101 names, so it is reported on its own rather than
+# specific population the mandate names, so it is reported on its own rather than
 # folded into "everything hand-written".
 #
 # Two qualifications, both added 2026-08-08 when the population went 241 -> 2
@@ -180,7 +180,7 @@ main(): i64
     orphan = 0
     for _i, f in std.script.fs_glob("src/wasm/*.id")
         o = _count(f)
-        orphan = orphan + _part(o, 1)
+        orphan += _part(o, 1)
         print(_pad(f, 30) .. _pad(to(str)(_part(o, 1)), 8) .. _pad(to(str)(_part(o, 2)), 9) .. "no")
     end
 
@@ -189,7 +189,7 @@ main(): i64
     print("derived code lines   " .. derived:to(str))
     if code > 0
         print("derived ratio        " .. to(str)(derived * 100 / code)
-            .. "%   (Pass 101 target >= 80%)")
+            .. "%   (target >= 80%)")
     end
     print("orphan code lines    " .. orphan:to(str) .. "  (in src/wasm/, required by nothing)")
 

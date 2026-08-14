@@ -20,7 +20,7 @@ const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
 
-/// Pass 103 §7 makes "how much of a compile goes through C" a NUMBER this
+/// §7 makes "how much of a compile goes through C" a NUMBER this
 /// repository owes, so the code that routes each `req`'d module says which way
 /// it sent it. One line per module on stderr under `DUO_WAIST_REPORT=1`, which
 /// is what a corpus sweep can count; silent otherwise, because this is a
@@ -55,6 +55,7 @@ const benchmark_evidence = @import("benchmark_evidence.zig");
 const representation_manifest = @import("representation_manifest.zig");
 const target_model = @import("target_model.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const table_apply = @import("table_apply.zig");
 const sim = @import("sim.zig");
 const sim_pipeline = @import("sim_pipeline.zig");
 const knowledge_snapshot = @import("knowledge_snapshot.zig");
@@ -362,10 +363,10 @@ const usage =
     \\             list     show all @build.* targets (or: duo build --list)
     \\             all      build every compile target in stage order
     \\             stage S  build targets in stage S (or: duo build all --stage S)
-    \\  compile    [file]   compile .id (historical .id and foreign .lua remain accepted)
+    \\  compile    [file]   compile Idol .id (foreign .lua remains accepted)
     \\  run        [file]   compile and run immediately, or run @build target
     \\  check      <file>   type-check only, no output
-    \\  fmt        <file>   format an .id, historical .id, or foreign .lua file
+    \\  fmt        <file>   format an Idol .id or foreign .lua file
     \\  test       [file]   run inline @test functions (or @build.test target)
     \\  bench      [file]   run @bench-marked functions (or @build.bench target)
     \\  prove               reproduce the seven release proofs and write a proof bundle
@@ -383,7 +384,7 @@ const usage =
     \\  catalog audit summary audit without open_items (medium)
     \\  dev        <sub>    Pass 13 development control plane (snapshot|audit|context|summary|claim|persist|session|validate|integration|coordination)
     \\  semantic   <sub>    Pass 12 semantic projections (intent|compare|proof|preview|validate|transforms|…)
-    \\  wasm-tables emit    regenerate lib/std/wasm/opcode_lookup.id + ward_mvp_opcodes.id
+    \\  wasm-tables emit    regenerate lib/wasm/opcode_lookup.id + ward_mvp_opcodes.id
     \\  completion <shell>  generate shell completions (bash, zsh, fish, nu)
     \\
     \\options:
@@ -709,7 +710,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "run")) {
         if (input_file) |maybe_target| {
-            if (!is_idol_source_path(maybe_target) and !is_lua_source_path(maybe_target)) {
+            if (lexer_bridge.sourceFacts(maybe_target).law == .unknown) {
                 try do_project_build(alloc, io, maybe_target, output_file, cc, opt_level, target, backend_mode, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, true);
                 return;
             }
@@ -816,8 +817,8 @@ pub fn main(init: std.process.Init) !void {
         }
         try wasm_semantic_gen.emitDuoOpcodeLookupFile(alloc, io, "lib/wasm/opcode_lookup.id");
         try wasm_semantic_gen.emitWardMvpOpcodesFile(alloc, io, "lib/wasm/ward_mvp_opcodes.id");
-        term.print("wrote lib/std/wasm/opcode_lookup.id\n", .{});
-        term.print("wrote lib/std/wasm/ward_mvp_opcodes.id\n", .{});
+        term.print("wrote lib/wasm/opcode_lookup.id\n", .{});
+        term.print("wrote lib/wasm/ward_mvp_opcodes.id\n", .{});
         return;
     }
 
@@ -833,9 +834,9 @@ pub fn main(init: std.process.Init) !void {
         try token_classify_gen.emitTokenClassifyFile(alloc, io, "lib/token/classify.id");
         try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "src/keyword_classify.c");
         try grammar_role_gen.emitGrammarRoleFile(alloc, io, "lib/token/grammarrole.id");
-        term.print("wrote lib/std/token/classify.id\n", .{});
+        term.print("wrote lib/token/classify.id\n", .{});
         term.print("wrote src/keyword_classify.c\n", .{});
-        term.print("wrote lib/std/token/grammarrole.id\n", .{});
+        term.print("wrote lib/token/grammarrole.id\n", .{});
         return;
     }
 
@@ -899,7 +900,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, cmd, "fmt")) {
         try do_fmt(alloc, io, file, fmt_canonical);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
-        try do_dump_c(alloc, io, file, target);
+        try do_dump_c(alloc, io, file, target, lib_mode);
     } else {
         term.err("unknown command '{s}'", .{cmd});
         term.printRaw("{s}", .{usage});
@@ -913,7 +914,7 @@ fn read_source(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]u8 {
 }
 
 fn is_source_path(path: []const u8) bool {
-    return is_idol_source_path(path) or is_lua_source_path(path);
+    return lexer_bridge.sourceFacts(path).law != .unknown;
 }
 
 fn usesProjectWorkspace(cmd: []const u8, input_file: ?[]const u8) bool {
@@ -929,6 +930,7 @@ fn usesProjectWorkspace(cmd: []const u8, input_file: ?[]const u8) bool {
 }
 
 fn absPathExists(io: Io, path: []const u8) bool {
+    if (!std.fs.path.isAbsolute(path)) return false;
     Io.Dir.accessAbsolute(io, path, .{}) catch return false;
     return true;
 }
@@ -1046,7 +1048,7 @@ fn buildSourcePath(io: Io, requested: ?[]const u8) []const u8 {
     const cwd = Io.Dir.cwd();
     cwd.access(io, path, .{}) catch {
         term.err("no build source found", .{});
-        term.hint("expected build.id, src/build.id, src/main.id, main.id, a historical .id source, or a Lua source", .{});
+        term.hint("expected build.id, src/build.id, src/main.id, or main.id; .lua remains foreign compatibility input", .{});
         std.process.exit(1);
     };
     return path;
@@ -1058,7 +1060,7 @@ fn resolveDefaultSource(alloc: std.mem.Allocator, io: Io) ![]const u8 {
         return try alloc.dupe(u8, path);
     }
     term.err("no input file and no default source found", .{});
-    term.hint("create src/main.id or main.id; historical .id and Lua entrypoints remain migration inputs", .{});
+    term.hint("create src/main.id or main.id; .lua entrypoints remain foreign compatibility input", .{});
     std.process.exit(1);
 }
 
@@ -1342,9 +1344,8 @@ fn scanInlineTestDir(
             continue;
         }
         if (entry.kind != .file) continue;
-        const is_lua = is_lua_source_path(entry.name);
-        const is_idol = is_idol_source_path(entry.name);
-        if (!is_lua and !is_idol) continue;
+        const facts = lexer_bridge.sourceFacts(entry.name);
+        if (facts.law == .unknown) continue;
         const path = if (std.mem.eql(u8, rel_dir, "."))
             try alloc.dupe(u8, entry.name)
         else
@@ -1355,7 +1356,7 @@ fn scanInlineTestDir(
             continue;
         };
         defer alloc.free(bytes);
-        if (fileMayContainInlineTest(bytes, is_lua, bench_only)) {
+        if (fileMayContainInlineTest(bytes, facts.law == .lua, bench_only)) {
             try out.append(alloc, path);
         } else {
             alloc.free(path);
@@ -1580,7 +1581,7 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
 
-    var snap = try knowledge_snapshot.buildFromModule(alloc, &ps.mod, &ps.sem, &graph, src_path);
+    var snap = try knowledge_snapshot.buildFromModule(alloc, &ps.sem, &graph, src_path);
     defer snap.deinit(alloc);
 
     var assumptions = try assumption_guard.buildFromModule(alloc, &ps.mod, &ps.sem, &graph);
@@ -2026,7 +2027,7 @@ fn run_shell_line(
             term.kv("!ls -la", "run host shell command");
             term.kv(":time", "show total shell execution time");
             term.kv(":reset", "clear session state (counter)");
-            term.kv(":export", "write historical .id session source");
+            term.kv(":export", "write .id session source");
             term.kv(":snapshot", "print semantic session JSON");
             term.kv(":quit / :exit", "leave the shell");
             term.divider();
@@ -2077,7 +2078,7 @@ fn run_shell_line(
         return true;
     }
 
-    // Handle host shell commands (explicit raw shell — Pass 15 §7.3)
+    // Handle host shell commands (explicit raw shell — §7.3)
     if (line[0] == '!') {
         const cmd = std.mem.trim(u8, line[1..], " \t");
         const canonical = try std.fmt.allocPrint(alloc, "shell(\"{s}\")\n", .{cmd});
@@ -2341,14 +2342,6 @@ const ParsedModule = struct {
     sem: Sema,
 };
 
-fn is_lua_source_path(path: []const u8) bool {
-    return lexer_bridge.isLuaSourcePath(path);
-}
-
-fn is_idol_source_path(path: []const u8) bool {
-    return lexer_bridge.isIdolSourcePath(path);
-}
-
 fn module_has_macro_syntax(mod: *const ast.Module) bool {
     return block_has_macro_syntax(mod.body);
 }
@@ -2517,13 +2510,13 @@ fn alias_has_macro_syntax(alias: ast.AliasDef) bool {
 // one place: `codegen.zig`'s `guardNoAlloc`, which only fires while the C
 // backend is writing the allocation. Measured 2026-08-09 on `canonical-to-relation`:
 //
-//     duo check   examples/pass7/noalloc_fail.id      -> exit 0
-//     duo compile examples/pass7/noalloc_fail.id      -> exit 0   (default backend)
+//     duo check   examples/noalloc_fail.id      -> exit 0
+//     duo compile examples/noalloc_fail.id      -> exit 0   (default backend)
 //     duo compile --backend=c  … noalloc_fail.id      -> exit 1   (the ONLY red)
-//     duo explain examples/pass7/noalloc_fail.id      -> exit 0, with the
+//     duo explain examples/noalloc_fail.id      -> exit 0, with the
 //                                                        rejection as JSON
 //
-// The default backend is `direct` (Pass 103 §0b: `--backend=direct` IS the path,
+// The default backend is `direct` (§0b: `--backend=direct` IS the path,
 // not an alternative), and the direct backend never runs `emit_module`, so the
 // guard was unreachable from the shipping default. A contract that only holds on
 // the oracle path is decorative — a user can write `@noalloc`, violate it and
@@ -2924,7 +2917,7 @@ fn contractScanModule(alloc: std.mem.Allocator, mod: *const ast.Module, sem: *co
 }
 
 /// SH-03 production dispatch. When the tokenize authority is Duo, lex the whole
-/// source through `lib/std/compiler/lexer.id` and drive the parser from that
+/// source through `lib/compiler/lexer.id` and drive the parser from that
 /// stream instead of the host scanner.
 ///
 /// The body moved to `lexer_dispatch.route` so codegen's module-embed paths
@@ -3006,11 +2999,11 @@ fn diagnoseLexRejection(lex: *const Lexer, src: []const u8, src_path: []const u8
                 term.locErr(loc, "'//' does not begin a comment in Idol", .{});
                 term.hint("a canonical Idol comment starts with `#`; `//` is the floor-division operator, so the rest of this line lexed as code", .{});
             } else if (offender) |b| {
-                term.locErr(loc, "no token starts with byte 0x{x:0>2} — a non-ASCII character outside a string or a `--` comment", .{b});
-                term.hint("move the text into a `--` comment or a string literal, or delete the character", .{});
+                term.locErr(loc, "no token starts with byte 0x{x:0>2} — a non-ASCII character outside a string or a `#` comment", .{b});
+                term.hint("move the text into a `#` comment or a string literal, or delete the character", .{});
             } else {
                 term.locErr(loc, "the lexer refused this line ({s})", .{@errorName(e)});
-                term.hint("run `duo fmt` on the file, or reduce the line until the rejected construct is isolated", .{});
+                term.hint("run `idol fmt` on the file, or reduce the line until the rejected construct is isolated", .{});
             }
         },
     }
@@ -3020,13 +3013,14 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     const src = try read_source(alloc, io, src_path);
     term.setSource(src_path, src);
 
-    var lex = Lexer.init(src, src_path);
+    const facts = lexer_bridge.sourceFacts(src_path);
+    var lex = Lexer.initFacts(src, src_path, facts);
     routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
         diagnoseLexRejection(&lex, src, src_path, e);
         std.process.exit(1);
     };
     var parser = Parser.init(&lex, alloc);
-    parser.idol_mode = is_idol_source_path(src_path);
+    parser.idol_mode = lex.family == lexer_bridge.family_canon;
     var mod = parser.parse_module() catch |e| {
         // Parser already emitted a source-span diagnostic for token-edge
         // failures; never leak Zig enum names (docs/spec/diagnostics.md §2).
@@ -3042,8 +3036,8 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     };
 
     var sem = Sema.init(alloc);
-    sem.lua55_mode = is_lua_source_path(src_path);
-    sem.idol_mode = is_idol_source_path(src_path);
+    sem.lua55_mode = lex.source_law == .lua;
+    sem.idol_mode = lex.family == lexer_bridge.family_canon;
     sem.source_path = try alloc.dupe(u8, src_path);
     sem.hints_enabled = term.hints;
     sem.info_enabled = term.info;
@@ -3148,7 +3142,7 @@ fn link_native_object(
             try argv.append(alloc, flag);
         }
     }
-    try argv.appendSlice(alloc, &.{ "-o", out_path, "-lm" });
+    try argv.appendSlice(alloc, &.{ "-o", out_path, "-lm", "-Wl,-dead_strip" });
     for (link_flags) |lib| {
         try argv.append(alloc, try std.fmt.allocPrint(alloc, "-l{s}", .{lib}));
     }
@@ -3270,7 +3264,7 @@ fn machineTargetForBackend(target: []const u8) []const u8 {
 /// The prior cross-module story had exactly one shape: a module marked its
 /// functions with `@comp.c.export`, `directLinkInputs` built a C object from
 /// it, and the linker joined the two. A module written in plain canonical Duo
-/// — no directives, which is what Pass 100 asks for — exported nothing, got no
+/// — no directives, which is what asks for — exported nothing, got no
 /// object, and every call into it died in `patchCalls` as an undefined symbol.
 /// `std.wasm.instruction` is the representative case: four accessors, all bare
 /// declarations, all unreachable from native code.
@@ -3538,7 +3532,7 @@ fn collectBareCallsInExpr(
 /// program that spliced the module cannot change what the program does.
 ///
 /// A TABLE OF LITERALS is one too, and it is the class the splice used to
-/// decline. `lib/std/wasm/opcodes.id` opens with `TYPES = { "i32", … }` and
+/// decline. `lib/wasm/opcodes.id` opens with `TYPES = { "i32", … }` and
 /// every function in the file indexes it; `opcode_lookup.id` is 63 rows of the
 /// same shape. Neither could ever be absorbed, so a program calling one lost
 /// the whole native path over a constant array. Two properties make hoisting it
@@ -3831,6 +3825,26 @@ fn compileReqModuleObject(
 /// inputs are module objects whose C emit went through the Lua runtime. That
 /// count — not the input count — is what a native `main` cannot host, because a
 /// native main never runs `lua_package_init`. See the `too_many_modules` site.
+fn boot(symbol: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, symbol, "duo_keyword_classify")) return "src/keyword_classify.c";
+    if (std.mem.eql(u8, symbol, "idol_io_read_stdin") or
+        std.mem.eql(u8, symbol, "idol_io_read_line") or
+        std.mem.eql(u8, symbol, "idol_io_read_path") or
+        std.mem.eql(u8, symbol, "idol_os_arg") or
+        std.mem.eql(u8, symbol, "idol_os_cwd") or
+        std.mem.eql(u8, symbol, "idol_os_execute") or
+        std.mem.eql(u8, symbol, "idol_process_capture"))
+        return "src/idol_io_bootstrap.c";
+    if (std.mem.eql(u8, symbol, "duo_str_sub") or
+        std.mem.eql(u8, symbol, "duo_str_to_i64") or
+        std.mem.eql(u8, symbol, "idol_str_at") or
+        std.mem.eql(u8, symbol, "idol_str_find") or
+        std.mem.eql(u8, symbol, "idol_str_has") or
+        std.mem.eql(u8, symbol, "idol_str_match"))
+        return "src/idol_str_bootstrap.c";
+    return null;
+}
+
 fn directLinkInputs(
     alloc: std.mem.Allocator,
     io: Io,
@@ -3838,32 +3852,31 @@ fn directLinkInputs(
     target: []const u8,
     cc: []const u8,
     runtime_needing: ?*usize,
+    needed: []const []const u8,
 ) ![]const []const u8 {
     _ = cc;
     _ = target;
     _ = mod;
     if (runtime_needing) |slot| slot.* = 0;
     var inputs: std.ArrayListUnmanaged([]const u8) = .empty;
-
-    // This file is GENERATED (see emitKeywordClassifyNativeCFile above), and it
-    // was deleted from the tree in 32643ed as monoglot-census work. The link
-    // line still named it, so every `--backend=direct --emit exe` compile died
-    // with `clang: no such file or directory: 'src/keyword_classify.c'` —
-    // the direct ARM64 backend could not produce an executable at all, which
-    // took the direct-native smoke gates and the native differential with it.
-    //
-    // Regenerating it is the right repair rather than restoring a checked-in
-    // artifact: a generated file absent from the tree is a build step that has
-    // not run yet, not an error. The census stays correct — nothing foreign is
-    // committed — and the backend keeps its keyword classifier.
-    const classify_c = "src/keyword_classify.c";
-    if (Io.Dir.cwd().statFile(io, classify_c, .{})) |_| {} else |_| {
-        token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, classify_c) catch {};
+    var classify = false;
+    var io_boot = false;
+    var str_boot = false;
+    for (needed) |symbol| {
+        const source = boot(symbol) orelse continue;
+        if (std.mem.eql(u8, source, "src/keyword_classify.c")) classify = true;
+        if (std.mem.eql(u8, source, "src/idol_io_bootstrap.c")) io_boot = true;
+        if (std.mem.eql(u8, source, "src/idol_str_bootstrap.c")) str_boot = true;
     }
-    try inputs.append(alloc, classify_c);
-    try inputs.append(alloc, "src/idol_io_bootstrap.c");
-    try inputs.append(alloc, "src/idol_str_bootstrap.c");
-
+    if (classify) {
+        const classify_c = "src/keyword_classify.c";
+        if (Io.Dir.cwd().statFile(io, classify_c, .{})) |_| {} else |_| {
+            token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, classify_c) catch {};
+        }
+        try inputs.append(alloc, classify_c);
+    }
+    if (io_boot) try inputs.append(alloc, "src/idol_io_bootstrap.c");
+    if (str_boot) try inputs.append(alloc, "src/idol_str_bootstrap.c");
     return inputs.toOwnedSlice(alloc);
 }
 
@@ -3877,7 +3890,7 @@ fn reportDirectBackendError(
     native_scalar_precheck: *const CodeGen,
 ) void {
     var buf: [512]u8 = undefined;
-    const msg = native_backend.describeError(err, target, &buf);
+    const msg = native_backend.describeCause(err, target, &buf, diagnostic);
     term.err("direct backend: {s}", .{msg});
     term.hint("{s}", .{native_backend.unsupportedReason(target)});
     // The error name is always reported. Lowering and machine evidence belong
@@ -3968,6 +3981,12 @@ fn do_compile(
         return;
     }
 
+    // APPLICATION-ONE (C0 §67): converge canonical `table(key)` onto the `[]`
+    // table-access realization before the native suitability precheck, graph
+    // lift, and native emit each walk the module — one bounded bridge, deleted
+    // when the graph owns the `()` table-access application directly.
+    table_apply.normalizeModule(&ps.mod, &ps.sem.type_map);
+
     var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);
     native_scalar_precheck.src_path = src_path;
     native_scalar_precheck.stdlib_root = compiler_lib_root;
@@ -4011,7 +4030,7 @@ fn do_compile(
             std.process.exit(1);
         } else {
             if (native_backend.isNativeExecutableTarget(mt)) {
-                if (native_backend.resolveNativeEntrySymbol(&ps.mod, entry_override)) |entry| {
+                if (native_backend.abi(&ps.mod, entry_override)) |entry| {
                     // A NATIVE `main` DOES NOT INITIALISE THE LUA RUNTIME. The
                     // C backend's main opens with `package = lua_package_init()`;
                     // the direct backend emits no equivalent, and it cannot --
@@ -4020,7 +4039,7 @@ fn do_compile(
                     //
                     // That is fine for a module that needs no runtime, and fatal
                     // for one that does. Measured: a program calling into
-                    // lib/std/compiler/lexer.id linked and then SIGSEGV'd,
+                    // lib/compiler/lexer.id linked and then SIGSEGV'd,
                     //
                     //     main -> duo_lexer_text_fingerprint -> next_tok
                     //          -> lua_require -> lua_table_get_raw_str_lit
@@ -4077,7 +4096,7 @@ fn do_compile(
                     const spliced: usize = 0;
                     if (spliced != 0 and term.trace) term.traceStep("req-splice", .{});
                     var runtime_needing_modules: usize = 0;
-                    const runtime_linked_modules = try directLinkInputs(alloc, io, &ps.mod, mt, cc, &runtime_needing_modules);
+                    const runtime_linked_modules = try directLinkInputs(alloc, io, &ps.mod, mt, cc, &runtime_needing_modules, &.{});
                     // Three ways to end up here and only two of them had a
                     // reason attached. The precheck records its own, the
                     // backend now records its own, and this arm's SECOND
@@ -4107,7 +4126,7 @@ fn do_compile(
                     //
                     // THE OLD `.len > 1` STAYS AS A CONJUNCT, deliberately, so
                     // this change can only ever ACCEPT MORE. Dropping it cost
-                    // three programs immediately — `pass16_m1_lexer_proof`,
+                    // three programs immediately — the M1 lexer proof,
                     // `native_only/lexer_native`, `native_only/parser_blocks` —
                     // and the reason is the `token/classify.id` swap in
                     // directLinkInputs: that module's object REPLACES the
@@ -4126,6 +4145,19 @@ fn do_compile(
                     defer direct_graph.deinit();
                     _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
                     var native_diagnostic: native_backend.Diagnostic = .{};
+                    if (!(native_scalar_candidate and !too_many_modules)) {
+                        if (direct_graph.firstUnresolvedApplicationExcludingBootstrap(null)) |occurrence| {
+                            native_diagnostic.bindOccurrence(&direct_graph, occurrence);
+                        }
+                        var reason_buf: [64]u8 = undefined;
+                        if (native_scalar_precheck.nativeScalarReason(&reason_buf)) |why| {
+                            native_diagnostic.remember(why);
+                        } else if (too_many_modules) {
+                            native_diagnostic.remember("runtime-linked-modules");
+                        } else {
+                            native_diagnostic.remember("native-scalar-precheck");
+                        }
+                    }
                     const artifact_result = if (native_scalar_candidate and !too_many_modules)
                         native_backend.emitObjectForExecutableWithGraphLineageObserved(alloc, &ps.mod, entry, &direct_graph, &native_diagnostic)
                     else
@@ -4133,7 +4165,7 @@ fn do_compile(
                     if (artifact_result) |artifact_value| {
                         var artifact = artifact_value;
                         defer artifact.deinit(alloc);
-                        const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null);
+                        const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null, artifact.need);
                         const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
                         const cwd = Io.Dir.cwd();
                         try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = artifact.bytes });
@@ -4192,7 +4224,7 @@ fn do_compile(
                         term.err("--entry '{s}': no zero-arg i64/void/f64 function with that name", .{name});
                         std.process.exit(1);
                     } else {
-                        term.err("no native linker entry: add @export on one zero-arg function, use a sole zero-arg i64/void/f64 function, pass --entry <name>, or explicitly select --backend=c", .{});
+                        term.err("no process: a file-scope tail is the program, or one zero-arg function, or --entry <name>", .{});
                         std.process.exit(1);
                     }
                 }
@@ -4508,7 +4540,7 @@ fn do_compile(
         const profdata_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.profdata", .{stem});
         const instr_out = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_instr.out", .{stem});
 
-        // Pass 1: instrument.
+        // instrument.
         var p1_args: std.ArrayList([]const u8) = .empty;
         defer p1_args.deinit(alloc);
         try p1_args.appendSlice(alloc, base_cc_flags.items);
@@ -4533,7 +4565,7 @@ fn do_compile(
         };
         try run_child_process(io, &profdata_argv, "llvm-profdata merge", silent);
 
-        // Pass 2: optimise with profile.
+        // optimise with profile.
         var p2_args: std.ArrayList([]const u8) = .empty;
         defer p2_args.deinit(alloc);
         try p2_args.appendSlice(alloc, base_cc_flags.items);
@@ -4802,7 +4834,7 @@ const nu_completion =
     \\
 ;
 
-fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []const u8) !void {
+fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []const u8, lib_mode: bool) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
 
@@ -4851,6 +4883,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     cg.stdlib_root = compiler_lib_root;
     cg.target = target;
     cg.idol_mode = ps.sem.idol_mode;
+    cg.lib_mode = lib_mode;
     cg.foreign_records = &ps.sem.foreign_records;
     cg.foreign_functions = &ps.sem.foreign_functions;
     cg.emit_module(&ps.mod) catch |e| {
@@ -4871,13 +4904,14 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
         std.process.exit(1);
     };
     term.setSource(src_path, src);
-    var lex = Lexer.init(src, src_path);
+    const facts = lexer_bridge.sourceFacts(src_path);
+    var lex = Lexer.initFacts(src, src_path, facts);
     routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
         diagnoseLexRejection(&lex, src, src_path, e);
         std.process.exit(1);
     };
     var parser = Parser.init(&lex, alloc);
-    parser.idol_mode = is_idol_source_path(src_path);
+    parser.idol_mode = lex.family == lexer_bridge.family_canon;
     const mod = parser.parse_module() catch |err| {
         if (lex.last_error_loc) |loc| {
             term.locErr(loc, "lexer failed with {s}", .{@errorName(err)});

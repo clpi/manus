@@ -1,6 +1,6 @@
-# Pass 106 — THE BORING CORPUS, run.
+# THE BORING CORPUS, run.
 #
-# Pass 106 named the blind spot: "the corpus is lexers and LEB128 —
+# The corpus mandate named the blind spot: "the corpus is lexers and LEB128 —
 # expert-flavored. People calibrate on MUNDANE programs." Every fixture this
 # repository had was shaped like a compiler, so every construct a compiler
 # does not need went unexercised. Twenty everyday programs is the instrument
@@ -9,7 +9,7 @@
 # THE POINT IS THE FAILURES. A boring program that will not compile is a hole
 # in the canonical surface, and the diagnostic names the construct. The
 # passing count is the ratchet; the FAIL rows are the work list. No program
-# here may be bent away from canonical Pass 100 spelling to make it pass —
+# here may be bent away from canonical spelling to make it pass —
 # if `str{ b }` does not exist, the fixture keeps writing `str{ b }` and the
 # row stays red until the compiler grows it.
 #
@@ -24,7 +24,7 @@
 #            the spec says it should, so the set is a CHANGE DETECTOR: a row
 #            going red means the behaviour moved and the page must be
 #            re-measured. `docs/numerics_and_text.md` carries the readings
-#            and marks which of them contradict Pass 100 §12.
+#            and marks which of them contradict the overflow rule.
 #
 # VERIFY BY VALUE. A program is not passing because it compiled — it passes
 # when its stdout equals the `-- expect:` line it carries. Two of the twenty
@@ -146,12 +146,12 @@ record: void = (which: str, row: str)
     if which == "page"
         pagerows = "{pagerows}{row}"
 
-# Every .id under a directory, measured. The list travels as a FILE rather
-# than through a splitter, so no row of this gate depends on a splitter's
-# behaviour at the end of its input.
+# Every .id under a directory tree, measured. Nested canonical homes
+# (`boring/sort/quick.id`, `table/str/split.id`) travel through find, not a
+# flat `ls`, so no row depends on everything living at depth one.
 sweep: void = (duo: str, dir: str, which: str)
     list = "{work}/{which}.list"
-    status("ls {dir}/*.id > {list} 2>/dev/null")
+    status("find {dir} -name '*.id' | sort > {list}")
     j = 1
     n = count(list)
     while j <= n
@@ -211,7 +211,7 @@ verdict: i64 = ()
 
 report: void = ()
     print("")
-    print("  Pass 106 — THE BORING CORPUS ({boring})")
+    print("  THE BORING CORPUS ({boring})")
     print("")
     print(boringrows)
     print("")

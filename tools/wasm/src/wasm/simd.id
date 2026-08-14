@@ -26,7 +26,7 @@ lane_get: i64 = (v: any, w: i64, i: i64)
   half: i64 = v.lo
   if off >= 64
     half = v.hi
-    off = off - 64
+    off -= 64
   end
   if w == 64 return half end
   # A bare `1` is a 32-bit literal, so `1 << 32` is undefined and yields 0,
@@ -43,7 +43,7 @@ lane_put: any = (v: any, w: i64, i: i64, x: i64)
     m: i64 = (one << w) - 1
     return { lo = (v.lo & (~(m << off))) | ((x & m) << off), hi = v.hi }
   end
-  off = off - 64
+  off -= 64
   if w == 64 return { lo = v.lo, hi = x } end
   one2: i64 = 1
   m2: i64 = (one2 << w) - 1
@@ -94,7 +94,7 @@ for sh in { { w = I8, b = 35 }, { w = I16, b = 45 }, { w = I32, b = 55 } }
   ci: i64 = 1
   while ci <= 10
     OPS[sh.b + ci - 1] = { w = sh.w, k = icmp_k[ci], n = 2, sg = icmp_s[ci], fl = false, c = true }
-    ci = ci + 1
+    ci += 1
   end
 end
 
@@ -104,7 +104,7 @@ for sh in { { w = I32, b = 65 }, { w = I64, b = 71 } }
   fi: i64 = 1
   while fi <= 6
     OPS[sh.b + fi - 1] = { w = sh.w, k = fcmp_k[fi], n = 2, sg = true, fl = true, c = true }
-    fi = fi + 1
+    fi += 1
   end
 end
 
@@ -133,7 +133,7 @@ for sh in { { w = I32, b = 228 }, { w = I64, b = 240 } }
   bi: i64 = 1
   while bi <= 8
     OPS[sh.b + bi - 1] = { w = sh.w, k = fbin_k[bi], n = 2, sg = true, fl = true, c = false }
-    bi = bi + 1
+    bi += 1
   end
 end
 
@@ -230,7 +230,7 @@ run: any = (spec: any, a: any, b: any)
       end
     end
     out = lane_put(out, w, i, v)
-    i = i + 1
+    i += 1
   end
   return out
 end
@@ -258,7 +258,7 @@ run_splat: any = (w: i64, x: i64)
   i: i64 = 0
   while i < n
     out = lane_put(out, w, i, sign_wrap(x, w))
-    i = i + 1
+    i += 1
   end
   return out
 end

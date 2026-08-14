@@ -1,4 +1,4 @@
-# Pass 2.5 call-algebra fixture: a `@hot` callee, bound the same way as
+# Call-algebra fixture: a `@hot` callee, bound the same way as
 # call.id so the only difference between the two is the attribute.
 
 @hot

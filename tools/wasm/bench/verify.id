@@ -10,7 +10,7 @@
 #   duo run bench/verify.id
 #   DUO_WASM_ENGINE=jit duo run bench/verify.id
 
-_is_numeric(s: str): bool
+numeric(s: str): bool
     if s == "" return false end
     s:match("^%-?%d+%.?%d*$") != nil
 end
@@ -24,7 +24,7 @@ end
 # passes.
 _norm(s: str): str
     t = std.script.chomp(s)
-    if not _is_numeric(t)
+    if not numeric(t)
         return t
     end
     f: f64 = to(f64)(t)
@@ -40,7 +40,7 @@ _norm(s: str): str
         # dropped out of the passing set.
         u = i % 4294967296
         if u < 0
-            u = u + 4294967296
+            u += 4294967296
         end
         return u:to(str)
     end
@@ -114,7 +114,7 @@ main(): i64
     pass = 0
     fail = 0
     skip = 0
-    void_ok = 0
+    voids = 0
     jitn = 0
 
     _row("MODULE", "WASMTIME", "WARD", "ENGINE", "VERDICT")
@@ -161,7 +161,7 @@ main(): i64
             eng = "?"
         end
         # Text-answer modules: prefer the emitted bytes over the numeric field.
-        if not _is_numeric(ref)
+        if not numeric(ref)
             em = _emitted(raw)
             if em != ""
                 got = em
@@ -177,7 +177,7 @@ main(): i64
             # evidence than "matched the oracle".
             if got != "" and got != "-1"
                 _row(name, "<void>", got, eng, "OK(void)")
-                void_ok += 1
+            voids += 1
             else
                 shown = got
                 if shown == "" shown = "none" end
@@ -201,7 +201,7 @@ main(): i64
     _rule()
     print("the engine agrees with wasmtime on " .. pass:to(str) .. " module(s); "
         .. fail:to(str) .. " unsupported-or-wrong; "
-        .. void_ok:to(str) .. " void-export completed; "
+        .. voids:to(str) .. " void-export completed; "
         .. skip:to(str) .. " skipped")
 
     # JIT COVERAGE FLOOR. A JIT that stops compiling falls back to the

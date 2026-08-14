@@ -1,18 +1,21 @@
 # std.concurrent — high-level concurrency primitives (Requirement 20.9)
 # Builds on std.sync's scheduler.  Provides go/wait/select/all patterns.
 
+# Projections for channel operations
+send = sync.send
+recv = sync.recv
 
 # Spawn a task and return a future channel (capacity 1) for its result.
 # result shape: {ok=bool, val=any, err=any}
 go(fn: any, ...args): any
     fut = sync.channel(1)
-    args_list = {args}
+    args = {args}
     closure: void = ()
-        ok, result = pcall(fn, args_list:unpack())
+        ok, result = pcall(fn, args:unpack())
         if ok
-            sync.channel_send(fut, {ok = true, val = result})
+            send(fut, {ok = true, val = result})
         else
-            sync.channel_send(fut, {ok = false, err = result})
+            send(fut, {ok = false, err = result})
         end
     end
     sync.spawn(closure)
@@ -21,7 +24,7 @@ end
 
 # Await a future (blocks/yields until result available).
 wait(fut: any): any
-    r = sync.channel_recv(fut)
+    r = recv(fut)
     if r == nil return nil end
     if r.ok
         r.val
@@ -35,8 +38,8 @@ all(tasks: any, ...args): any
     futs = {}
     # tasks can be a list, or varargs
     if type(tasks) == "function"
-        args_list = {args}
-        futs[1] = go(tasks, args_list:unpack())
+        args = {args}
+        futs[1] = go(tasks, args:unpack())
     else
         for _, t in tasks
             if type(t) == "function"
@@ -58,24 +61,24 @@ end
 race(futs: any): any
     winner = sync.channel(1)
     for i, fut in futs
-        race_closure: void = ()
-            val = sync.channel_recv(fut)
-            sync.channel_try_recv(winner)  # drain if already won
-            sync.channel_send(winner, {idx = i, val = val})
+        clo: void = ()
+            val = sync.recv(fut)
+            sync.peek(winner)  # drain if already won
+            send(winner, {idx = i, val = val})
         end
-        sync.spawn(race_closure)
+        sync.spawn(clo)
     end
     sync.run()
-    sync.channel_try_recv(winner)
+    sync.peek(winner)
 end
 
 # Select: poll channels round-robin until one has data.
-# cases = {{ch=channel, fn=handler_fn}, ...}
+# cases = {{ch=channel, fn=handler}, ...}
 # Returns when one case fires; calls its fn with the value.
 select(cases: any): any
     while true
         for _, c in cases
-            val = sync.channel_try_recv(c.ch)
+            val = sync.peek(c.ch)
             if val != nil
                 if c.fn c.fn(val) end
                 return val, c.ch
@@ -88,11 +91,11 @@ end
 # Semaphore: counting semaphore built on a buffered channel.
 semaphore(n: i64): any
     s = sync.channel(n)
-    for _ = 1, n sync.channel_send(s, true) end
+    for _ = 1, n send(s, true) end
     {
-        acquire: any = ()sync.channel_recv(s),
-        release: void = ()sync.channel_send(s, true),
-        try_acquire: bool = ()sync.channel_try_recv(s) != nil,
+        acquire: any = ()sync.recv(s),
+        release: void = ()send(s, true),
+        probe: bool = ()sync.peek(s) != nil,
     }
 end
 
@@ -100,14 +103,14 @@ end
 waitgroup(n: i64): any
     ch = sync.channel(n)
     return {
-        done: void = ()sync.channel_send(ch, true),
+        done: void = ()send(ch, true),
         wait: void = ()
-            for _ = 1, n sync.channel_recv(ch) end
+            for _ = 1, n sync.recv(ch) end
         end,
     }
 end
 
-# LV-2 / Pass 64 SCOPE: a module's top-level bindings ARE its surface, so these
+# SCOPE: a module's top-level bindings ARE its surface, so these
 # self-assignments (`go = go`) published nothing that was not already public.
 # They were also const violations — the binding exists by the time the line is
 # reached — which took the whole module down. The re-exports below are kept
@@ -117,5 +120,5 @@ spawn = sync.spawn
 run = sync.run
 yield = sync.yield
 channel = sync.channel
-channel_send = sync.channel_send
-channel_recv = sync.channel_recv
+send = sync.send
+recv = sync.recv

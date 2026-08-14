@@ -1,7 +1,7 @@
-#!/usr/bin/env duo
-# duo-mcp/zls.id — MCP server: Zig LSP bridge (zls subprocess).
-# Pure Duo. Run from the Duo repo root:
-#   duo run tools/mcp/zls.id
+-- tools/mcp/zls.id  -  MCP server: Zig LSP bridge (zls subprocess).
+-- Run: idol run tools/mcp/zls.id
+# Bootstrap Lua/Duo faces remain until MCP migrates to Idol. Run from repo root:
+#   idol run tools/mcp/zls.id
 #
 # THIS SERVER HAD NEVER BUILT. Measured at HEAD on 2026-08-08, before any
 # change here: `ensure_zls()` and `zls_request()` were file-scope `fun`s
@@ -14,7 +14,7 @@
 # Project module bindings live at file scope. Worlds are referenced directly.
 bridge = tools.mcp.zls.bridge
 
-# Tool: zig_diagnostics — get diagnostics for a Zig file
+# Tool: zig_diagnostics  -  get diagnostics for a Zig file
 mcp:register_tool("zig_diagnostics", "Get LSP diagnostics for a .zig file via zls", {
     type = "object",
     properties = {
@@ -36,7 +36,7 @@ mcp:register_tool("zig_diagnostics", "Get LSP diagnostics for a .zig file via zl
     json:encode({ diagnostics = {}, file = args.file_path, note = "publishDiagnostics is a notification; not captured by the one-shot bridge" })
 end)
 
-# Tool: zig_hover — get hover info for a symbol
+# Tool: zig_hover  -  get hover info for a symbol
 mcp:register_tool("zig_hover", "Get hover/type info for a symbol at a position in a .zig file", {
     type = "object",
     properties = {
@@ -52,7 +52,7 @@ mcp:register_tool("zig_hover", "Get hover/type info for a symbol at a position i
     }))
 end)
 
-# Tool: zig_definition — go-to-definition
+# Tool: zig_definition  -  go-to-definition
 mcp:register_tool("zig_definition", "Go-to-definition for a symbol in a .zig file", {
     type = "object",
     properties = {
@@ -68,7 +68,7 @@ mcp:register_tool("zig_definition", "Go-to-definition for a symbol in a .zig fil
     }))
 end)
 
-# Tool: zig_format — format a .zig file with `zig fmt`
+# Tool: zig_format  -  format a .zig file with `zig fmt`
 mcp:register_tool("zig_format", "Format a .zig file with zig fmt", {
     type = "object",
     properties = {

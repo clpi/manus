@@ -37,34 +37,23 @@ token: {
 
 mode: { fast, slow }
 
-main: i64 = ()
-    n = 0
-    k = token.kind.eof
-    if k == .eof
-        n = n + 1
-    end
-    if k == .number
-        n = n + 100
-    end
-    if k != .number
-        n = n + 8
-    end
-    if k != .eof
-        n = n + 400
-    end
-    if token.kind.symbol == .symbol
-        n = n + 32
-    end
-    if token.kind.name == .symbol
-        n = n + 700
-    end
-    m = mode.slow
-    if m == .slow
-        n = n + 64
-    end
-    if m == .fast
-        n = n + 200
-    end
-    print("{n}")
-    0
-end
+n = 0
+k = token.kind.eof
+if k == .eof
+    n += 1
+if k == .number
+    n += 100
+if k != .number
+    n += 8
+if k != .eof
+    n += 400
+if token.kind.symbol == .symbol
+    n += 32
+if token.kind.name == .symbol
+    n += 700
+m = mode.slow
+if m == .slow
+    n += 64
+if m == .fast
+    n += 200
+print("{n}")

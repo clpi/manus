@@ -135,6 +135,9 @@ pub const Instr = struct {
     /// applications whose relation has no subject role; it is never inferred
     /// here from argument position or source spelling.
     subject: ?semantic_graph.id = null,
+    /// Selected callable entity id for direct realization. Distinct from
+    /// relation identity once overload resolution publishes both upstream.
+    target: ?semantic_graph.id = null,
     /// First flattened DNIR instruction whose emitted bytes belong to this
     /// application realization. Present exactly when an application id is.
     realization_start: ?u32 = null,
@@ -218,7 +221,7 @@ pub const Function = struct {
     ret: RT,
     params: []const Param = &.{},
     ret_record: ?[]const u8 = null,
-    /// Pure f64 kernel — params/return use FP registers (Pass 4 M1).
+    /// Pure f64 kernel — params/return use FP registers (M1).
     is_float_kernel: bool = false,
     /// Exact authoritative graph id for the callable declaration.
     id: ?semantic_graph.id = null,
@@ -313,14 +316,21 @@ pub fn isBootstrapForeignCall(callee: []const u8) bool {
         "ceil",
         "cos",
         "duo_str_sub",
+        "duo_str_to_i64",
         "exit",
         "fabs",
         "floor",
         "free",
+        "getenv",
+        "idol_io_read_line",
         "idol_io_read_path",
         "idol_io_read_stdin",
+        "idol_os_arg",
+        "idol_os_cwd",
         "idol_os_execute",
         "idol_process_capture",
+        "idol_str_at",
+        "idol_str_find",
         "idol_str_has",
         "idol_str_match",
         "malloc",
@@ -365,8 +375,9 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     const application = i.application orelse return false;
                     const relation = i.relation orelse return false;
                     const value = i.value orelse return false;
-                    const fact = graph.application(application) orelse return false;
-                    if (fact.relation != relation or fact.subject != i.subject) return false;
+                    if (graph.application(application) == null) return false;
+                    if (graph.applicationRelation(application) != relation or
+                        graph.applicationSubject(application) != i.subject) return false;
                     const results = graph.applicationResults(application) orelse return false;
                     if (results.len != 1 or results[0] != value) return false;
                 }

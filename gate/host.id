@@ -1,4 +1,4 @@
-# gates/host — TEMPORARY MIGRATION FIREWALL for host API debt on ADDED lines.
+# gate/host — TEMPORARY MIGRATION FIREWALL for host API debt on ADDED lines.
 #
 # Classification: TEMPORARY MIGRATION FIREWALL (docs/spec/host.md, GAP-155).
 # Authority: semantic gate + graph host-boundary obligations (GAP-124, GAP-155).
@@ -14,6 +14,24 @@ transport: str = ()
     if text:len() == 0
         return ""
     text
+
+cited: bool = (path: str)
+    path:len() >= 5 and path:sub(1, 5) == "gate/"
+
+sigil: bool = (code: str)
+    if !code:has("@")
+        return false
+    n = code:len()
+    i = 1
+    while i <= n
+        if code:sub(i, i) == "@"
+            if i == n
+                return true
+            nxt = code:sub(i + 1, i + 1)
+            if nxt != "{" and nxt != "(" and nxt != "@"
+                return true
+        i += 1
+    false
 
 alpha: bool = (c: str)
     c >= "a" and c <= "z"
@@ -84,36 +102,44 @@ dot(std) = (world: str, code: str)
 ingress: bool = (path: str)
     path:len() >= 17 and path:sub(1, 17) == "scripts/ingress/"
 
-hostrow: i64 = (path: str, no: i64, code: str, id: str, needle: str, law: str, fix: str)
+rowh: i64 = (path: str, no: i64, code: str, id: str, needle: str, law: str, fix: str)
     if code:has(needle)
         print("({path}, {no}, violation, {id}, {law}, {fix})")
         1
     else
         0
 
-hostrules: i64 = (path: str, no: i64, code: str)
+hostr: i64 = (path: str, no: i64, code: str)
     hits = 0
-    hits += hostrow(path, no, code, "host.args", "os.args(", "law.host.root", "os.args[n] under os world; foreign argv only at scripts/ingress/")
-    hits += hostrow(path, no, code, "host.getenv", "os.getenv(", "law.host.root", "os.env[key] — environment is not a thing")
-    hits += hostrow(path, no, code, "host.environment", "environment[", "law.host.root", "environment is not a thing — use os.env[key]")
-    hits += hostrow(path, no, code, "host.environment.colon", "environment:", "law.host.root", "environment is not a thing — use os.env[key]")
-    hits += hostrow(path, no, code, "host.popen", "io.popen(", "law.host.process", "command(line) then c:open(mode) — never popen")
-    hits += hostrow(path, no, code, "host.popen.colon", "io:popen(", "law.host.process", "command(line) then c:open(mode) across process boundary")
-    hits += hostrow(path, no, code, "host.popen.word", "popen(", "law.host.process", "c:open(mode) on command subject — never popen")
-    hits += hostrow(path, no, code, "host.execute", "os.execute(", "law.host.process", "structured command + run relation + process world")
-    hits += hostrow(path, no, code, "host.write", "io.write(", "law.host.endpoint", "subject:write() — never io.write()")
-    hits += hostrow(path, no, code, "host.open", "io.open(", "law.world.dot", "path:open(mode) — subject-first; never io.open()")
-    hits += hostrow(path, no, code, "host.exit", "os.exit(", "law.world.dot", "never os.exit() — admitted demand transition; docs/spec/world.md")
-    hits += hostrow(path, no, code, "host.stdin.arch", "stdin-only", "law.host.endpoint", "endpoint polymorphism; never stdin-only language architecture")
-    hits += hostrow(path, no, code, "host.backend", "--backend=", "law.host.target", "launcher target fact; not canonical source switch")
-    hits += hostrow(path, no, code, "host.std", "std\x2E", "law.host.namespace", "std is not a thing — use root/home/world facts")
-    hits += hostrow(path, no, code, "host.proc", "proc.", "law.host.namespace", "proc is not a thing — structured command + process world")
-    hits += hostrow(path, no, code, "host.ir", "ir.", "law.host.namespace", "ir is not source vocabulary — graph/realization only")
-    hits += hostrow(path, no, code, "host.core", "core.", "law.host.namespace", "core is vocabulary authority not a runtime table")
-    hits += hostrow(path, no, code, "host.cemit", "@c.", "foreign-zero", "no @c.emit — compiler-owned realization")
-    hits += hostrow(path, no, code, "host.compc", "@comp.c.", "foreign-zero", "no @comp.c.emit — compiler-owned realization")
-    hits += hostrow(path, no, code, "host.lua", "lua_", "foreign-zero", "no lua intermediaries in Idol source")
-    hits += hostrow(path, no, code, "host.bracket", "[[", "lexical", "use \\\" — double quotes admit multiline content")
+    hits += rowh(path, no, code, "host.args", "os.args(", "law.host.root", "os.args[n] under os world; foreign argv only at scripts/ingress/")
+    hits += rowh(path, no, code, "host.getenv", "os.getenv(", "law.host.root", "os.env[key] — environment is not a thing")
+    hits += rowh(path, no, code, "host.environment", "environment[", "law.host.root", "environment is not a thing — use os.env[key]")
+    hits += rowh(path, no, code, "host.environment.colon", "environment:", "law.host.root", "environment is not a thing — use os.env[key]")
+    hits += rowh(path, no, code, "host.popen", "io.popen(", "law.host.process", "command(line) then c:open(mode) — never popen")
+    hits += rowh(path, no, code, "host.popen.colon", "io:popen(", "law.host.process", "command(line) then c:open(mode) across process boundary")
+    hits += rowh(path, no, code, "host.popen.word", "popen(", "law.host.process", "c:open(mode) on command subject — never popen")
+    hits += rowh(path, no, code, "host.execute", "os.execute(", "law.host.process", "structured command + run relation + process world")
+    if !cited(path) and !ingress(path) and code:has("echo $?")
+        print("({path}, {no}, violation, host.echo, law.host.outcome, run outcome is a fact — never echo $? text status)")
+        hits += 1
+    hits += rowh(path, no, code, "host.write", "io.write(", "law.host.endpoint", "subject:write() — never io.write()")
+    hits += rowh(path, no, code, "host.open", "io.open(", "law.world.dot", "path:open(mode) — subject-first; never io.open()")
+    hits += rowh(path, no, code, "host.exit", "os.exit(", "law.world.dot", "never os.exit() — admitted demand transition; docs/spec/world.md")
+    hits += rowh(path, no, code, "host.stdin.arch", "stdin-only", "law.host.endpoint", "endpoint polymorphism; never stdin-only language architecture")
+    hits += rowh(path, no, code, "host.backend", "--backend=", "law.host.target", "launcher target fact; not canonical source switch")
+    hits += rowh(path, no, code, "host.slots", "RECORD_SLOTS", "law.schema.one", "producer projects record law — never host RECORD_SLOTS")
+    hits += rowh(path, no, code, "host.lexerr", "lexErrorFromCode", "law.magic.zero", "rejection-id not a numeric host switch")
+    hits += rowh(path, no, code, "host.ordinal", "tokenKindFromOrdinal", "law.magic.zero", "token-role-id not ordinal reconstruct")
+    hits += rowh(path, no, code, "host.family", "is_canonical_source(", "law.family.one", "source-family is one ingress fact — never suffix re-query")
+    hits += rowh(path, no, code, "host.std", "std\x2E", "law.host.namespace", "std is not a thing — use root/home/world facts")
+    hits += rowh(path, no, code, "host.proc", "proc.", "law.host.namespace", "proc is not a thing — structured command + process world")
+    hits += rowh(path, no, code, "host.ir", "ir.", "law.host.namespace", "ir is not source vocabulary — graph/realization only")
+    hits += rowh(path, no, code, "host.core", "core.", "law.host.namespace", "core is vocabulary authority not a runtime table")
+    if !cited(path) and !ingress(path) and sigil(code)
+        print("({path}, {no}, violation, host.sigil, law.anchor.one, at-sigil is anchor only)")
+        hits += 1
+    hits += rowh(path, no, code, "host.lua", "lua_", "foreign-zero", "no lua intermediaries in Idol source")
+    hits += rowh(path, no, code, "host.bracket", "[[", "lexical", "use \\\" — double quotes admit multiline content")
     hits
 
 
@@ -139,18 +165,18 @@ strip: str = (line: str)
         i += 1
     out
 
-readscan: i64 = (path: str, no: i64, code: str)
+scandr: i64 = (path: str, no: i64, code: str)
     hits = 0
-    hits += hostrow(path, no, code, "host.read.colon", "io:read(", "law.relation.read", "stdin:read() or path:read() — read relation on subject; never io:read")
-    hits += hostrow(path, no, code, "host.read", "io.read(", "law.relation.read", "stdin:read() or path:read() — never io.read")
+    hits += rowh(path, no, code, "host.read.colon", "io:read(", "law.relation.read", "stdin:read() or path:read() — read relation on subject; never io:read")
+    hits += rowh(path, no, code, "host.read", "io.read(", "law.relation.read", "stdin:read() or path:read() — never io.read")
     hits
 
 audit = (path: str, no: i64, line: str): i64
     code = strip(line)
-    hits = readscan(path, no, code)
+    hits = scandr(path, no, code)
     if ingress(path)
         return hits
-    hits += hostrules(path, no, code)
+    hits += hostr(path, no, code)
     if dot(io)(code)
         print("({path}, {no}, violation, law.world.dot, io is a world — stdin:read() / path:read() / subject:relation(); never io.method())")
         hits += 1
@@ -171,7 +197,7 @@ num: i64 = (s: str, i: i64)
     j = i
     while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
         v *= 10
-        v += (s:sub(j, j):byte() - 48)
+        v += (s:byte(j) - 48)
         j += 1
     v
 
@@ -255,24 +281,44 @@ control: bool = ()
     if audit("probe.id", 10, "f = std\x2Eio.open(p)") == 0
         print("control FAIL: std\x2Eio.open / qual did not fire")
         ok = false
+    if audit("probe.id", 11, "@comp.c.export(\"x\")") == 0
+        print("control FAIL: host.sigil did not fire on directive")
+        ok = false
+    if audit("probe.id", 12, "x = @{ name = 1 }") != 0
+        print("control FAIL: host.sigil fired on lawful injection literal")
+        ok = false
+    if audit("probe.id", 13, "pub const RECORD_SLOTS: usize = 7;") == 0
+        print("control FAIL: host.slots did not fire")
+        ok = false
+    if audit("probe.id", 14, "fn lexErrorFromCode(code: i64)") == 0
+        print("control FAIL: host.lexerr did not fire")
+        ok = false
+    if audit("probe.id", 15, "fn tokenKindFromOrdinal(raw: i64)") == 0
+        print("control FAIL: host.ordinal did not fire")
+        ok = false
+    if audit("probe.id", 16, "if is_canonical_source(file)") == 0
+        print("control FAIL: host.family did not fire")
+        ok = false
     ok
 
-main: i64 = ()
-    if !control()
-        print("gates/host: POSITIVE CONTROL FAILED")
-        return 3
+code = 0
+if !control()
+    print("gate/host: POSITIVE CONTROL FAILED")
+    code = 3
+if !code
     body = transport()
     if body:len() == 0
-        print("gates/host: empty input — pipe unified diff or pass diff path in os.args[1]")
-        print("Usage: git diff -U0 ... | idol run gates/host.id")
-        print("       idol run gates/host.id < /path/to.diff")
-        return 3
-    total = scan(body)
-    print("")
-    print("gates/host: {total} finding(s) on ADDED lines  [control: pass]")
-    if total > 0
+        print("gate/host: empty input — pipe unified diff or pass diff path in os.args[1]")
+        print("Usage: git diff -U0 ... | idol run gate/host.id")
+        print("       idol run gate/host.id < /path/to.diff")
+        code = 3
+    if !code
+        total = scan(body)
         print("")
-        print("The law: docs/spec/host.md · docs/spec/world.md · GAP-155")
-        print("Host APIs belong at ingress/egress only — use root projection and worlds.")
-        return 1
-    0
+        print("gate/host: {total} finding(s) on ADDED lines  [control: pass]")
+        if total > 0
+            print("")
+            print("The law: docs/spec/host.md · docs/spec/world.md · GAP-155")
+            print("Host APIs belong at ingress/egress only — use root projection and worlds.")
+            code = 1
+code

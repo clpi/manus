@@ -1,4 +1,4 @@
-//! Pass 9 P9-WS7 — differential conformance between decode tables and wasm_semantic.
+//! P9-WS7 — differential conformance between decode tables and wasm_semantic.
 //!
 //! Validates opcode index, validator metadata, and immediate dispatch stay aligned.
 const std = @import("std");

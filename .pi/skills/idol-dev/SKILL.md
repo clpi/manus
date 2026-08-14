@@ -1,6 +1,6 @@
 ---
 name: idol-dev
-description: Idol language development loop in clpi/duo. Use whenever editing .id/.id source, the constitution or spec projections, the compiler, gates, gaps, or claims. Encodes the authority read-order, the monoglot boundary, the closed lexical/grammar law, claim coordination, serialized builds, and the gates/ preflight chain. Run orient + doctor first; claim paths before editing; commit explicit pathspecs only.
+description: Idol language development loop in clpi/duo. Use whenever editing .id source, the constitution or spec projections, the compiler, gates, gaps, or claims. Encodes the authority read-order, the monoglot boundary, the closed lexical/grammar law, claim coordination, serialized builds, and the gates/preflight chain. Run orient + doctor first; claim paths before editing; commit explicit pathspecs only.
 license: MIT
 ---
 
@@ -40,7 +40,7 @@ former project branding for current Idol work.
 repo="$(git rev-parse --show-toplevel)"
 "$repo/tools/node/dev/orient"     # regenerates .agents/HARNESS.md + current state
 "$repo/tools/node/dev/doctor"     # pre-agent admission check (rejects stale/broken state)
-# claims: inspect .agents/session/claims or duo_dev_claim_files via MCP
+# claims: inspect .agents/session/claims or idol_dev_claim_files via MCP
 "$repo/tools/node/dev/orient"     # includes activep0; read exact gaps/GAP-*.md until GAP-131 closes
 ```
 
@@ -52,9 +52,10 @@ session-start P0 summary is incomplete — read the exact gap files.
 This repository runs **concurrent agent lanes** (Cursor, Codex, Poolside,
 Devin, AGY). Never edit a path owned by another live session.
 
-- Acquire claims through the `duo-bench` MCP server: `duo_dev_claim_acquire`,
-  `duo_dev_claim_files`, `duo_agent_session_start`, `duo_agent_gaps_update`.
+- Acquire claims through the `idol-bench` MCP server: `idol_dev_claim_acquire`,
+  `idol_dev_claim_files`, `idol_agent_session_start`, `idol_agent_gaps_update`.
   From pi these are exposed by `extensions/idol-mcp.ts` as `idol__*` tools.
+  Legacy `duo_*` names remain registered as bootstrap aliases only.
 - If the MCP servers are unreachable, fall back to the durable claim view from
   `scripts/claims.sh`, but **do not edit** paths another session shows as
   locked. Coordination is the authority for safety, not a convenience.
@@ -69,12 +70,12 @@ cd "$repo" && zig build --summary all && zig build unit-test
 ```
 
 For serialized builds and benchmarks, use the locked MCP build tools
-(`duo-bench`), not a bare concurrent run. The serialization wrapper is
-`scripts/duo_lock.id`:
+(`idol-bench`), not a bare concurrent run. The serialization wrapper is
+`scripts/idol_lock.id`:
 
 ```sh
 repo="$(git rev-parse --show-toplevel)"
-"$repo/zig-out/bin/duo" run --backend=c "$repo/scripts/duo_lock.id" -- <command>
+"$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- <command>
 ```
 
 ## 5. Mechanical preflight — the grammar is closed
@@ -136,13 +137,20 @@ canonical `std.*` is forbidden. Missing admitted vocabulary is
 Canonicality has four states: `canonical`, `migratable`, `vocabularyblocked`,
 `invalid`. Do not invent vocabulary to silence a gate.
 
-**INFER-ONE (`law.infer.one`):** write only facts not uniquely recoverable from
-descriptor/demand/world context. Query the resolver before adding `:to(T)`.
-Shortest uniquely resolving source wins (`value` → `value:to()` → `value:to(T)`).
+**SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE / INTERMEDIATE-ZERO
+(`law.infer.one`, `law.intermediate.zero`):** no source spelling restates facts
+uniquely recoverable from subject, operands, result/descriptor demand, reachable
+facts, relation constraints, world/effect requirements, stage, provenance, or
+control-flow refinement. Projection, injection, capture, protocol/world
+satisfaction are graph facts with normally zero source syntax. Query resolver
+before adding `:to(T)`, projection qualifiers, or world plumbing. No canonical
+`value:to()` rung. Shortest uniquely resolving source wins (`value` →
+`value:to(target)` only when target not inferable). Chain relations directly —
+no single-use bridge bindings. No `@{...}` when use determines dependency.
 
 **Seam audit (mandatory before code):** read `docs/spec/harness-projection.md`
 § seam audit — `law.bridge.death`, `law.fallback.zero`, `law.fact.producer.one`,
-`law.gate.convergence`, etc. `duo_agent_session_start` returns `harness_context`.
+`law.gate.convergence`, etc. `idol_agent_session_start` returns `harness_context`.
 
 Before writing a nontrivial Idol expression, answer the 12 preflight questions
 in `AGENTS.md` (subject? relation? indirect info? sentinel? value-relation

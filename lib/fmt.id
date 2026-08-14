@@ -21,7 +21,7 @@ end
 boolean(v: any): str
     if v == nil return "false" end
     # A guard, not `if v "true" else "false" end`. The endless one-liner clause
-    # must be SELF-DELIMITED (Pass 48 2.4), and `v "true"` reads as PARENLESS
+    # must be SELF-DELIMITED, and `v "true"` reads as PARENLESS
     # APPLICATION # it called `v("true")` and returned that. Because `v` is
     # `any` the bogus call TYPE-CHECKS, so unlike strconv's `b: bool` version
     # this compiled and shipped: boolean(true) returned "false".
@@ -91,8 +91,8 @@ format(fmt: str, args: any): str
                 if spec == ""
                     out = out .. v:to(str)
                 elseif spec:sub(1, 2) == ":."
-                    prec = tonumber(spec:sub(3))
-                    if prec and tonumber(v)
+                    prec = spec:sub(3:to(i64))
+                    if prec and v:to(i64)
                         out = out .. "%." .. prec:to(str) .. "f":format(v)
                     else
                         out = out .. v:to(str)
@@ -100,15 +100,15 @@ format(fmt: str, args: any): str
                 else
                     out = out .. v:to(str)
                 end
-                arg_idx = arg_idx + 1
+                arg_idx += 1
                 i = j + 1
             else
                 out = out .. fmt:sub(i, i)
-                i = i + 1
+                i += 1
             end
         else
             out = out .. fmt:sub(i, i)
-            i = i + 1
+            i += 1
         end
     end
     out

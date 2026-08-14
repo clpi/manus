@@ -30,7 +30,7 @@ spawn(cmd: str): i64
         pid_str = io.read(handle, "*l")
         io.close(handle)
         if pid_str
-            return tonumber(pid_str) or 0
+            return pid_str:to(i64) or 0
         end
     end
     0

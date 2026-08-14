@@ -440,7 +440,7 @@ decode_float16(b0: i64, b1: i64): f64
     sign = 1
     if b0 >= 128
         sign = -1
-        b0 = b0 - 128
+        b0 -= 128
     end
     exp = b0 / 4:floor()
     mantissa = (b0 % 4) * 256 + b1
@@ -458,7 +458,7 @@ decode_float32(b0: i64, b1: i64, b2: i64, b3: i64): f64
     sign = 1
     if b0 >= 128
         sign = -1
-        b0 = b0 - 128
+        b0 -= 128
     end
     exp = b0 / 2:floor() * 16 + b1 / 16:floor()
     mantissa = (b0 % 2) * 16777216 + b1 * 65536 + b2 * 256 + b3
@@ -476,7 +476,7 @@ decode_float64(b0: i64, b1: i64, b2: i64, b3: i64, b4: i64, b5: i64, b6: i64, b7
     sign = 1
     if b0 >= 128
         sign = -1
-        b0 = b0 - 128
+        b0 -= 128
     end
     exp = b0 / 16:floor() * 128 + b1 / 2:floor()
     hi_mantissa = (b0 % 16) * (2^48) + b1 * (2^40) + b2 * (2^32) + b3 * (2^24)

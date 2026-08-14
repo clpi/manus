@@ -107,9 +107,9 @@ s.env_set("DUO_EMIT_PROOF", "1")
 root = s.capture("git rev-parse --show-toplevel 2>/dev/null"):gsub("\n", "")
 idol = s.getenv("IDOL", root .. "/zig-out/bin/idol")
 cc = s.getenv("CC", "clang")
-mainpath = s.getenv("BENCH_PROOF_SOURCE", "examples/pass27_proof_matrix.id")
-nativepath = s.getenv("BENCH_PROOF_DIRECT_SOURCE", "examples/pass27_proof_matrix_direct.id")
-cpath = s.getenv("BENCH_PROOF_C_SOURCE", "examples/pass27_proof_matrix_c.c")
+mainpath = s.getenv("BENCH_PROOF_SOURCE", "examples/proof_matrix.id")
+nativepath = s.getenv("BENCH_PROOF_DIRECT_SOURCE", "examples/proof_matrix_direct.id")
+cpath = s.getenv("BENCH_PROOF_C_SOURCE", "examples/proof_matrix_c.c")
 work = s.getenv("BENCH_PROOF_DIR", "")
 clean = 0
 if work == ""
@@ -127,7 +127,7 @@ if sdk != ""
     cflags = cflags .. " -isysroot " .. sdk
 end
 
-s.echo("=== Pass 27 benchmark proof matrix (Idol-native) ===")
+s.echo("=== Benchmark proof matrix (Idol-native) ===")
 s.echo("source: " .. mainpath)
 s.echo("direct: " .. nativepath)
 s.echo("work:   " .. work)
@@ -197,7 +197,7 @@ end
 
 summary = work .. "/proofmatrixsummary.json"
 sum = summary:open("w")
-sum:write("{\"schema\":\"pass27-proof-matrix-v0\",\"canonical_hash\":\"" .. canonical .. "\"}")
+sum:write("{\"schema\":\"proof-matrix-v0\",\"canonical_hash\":\"" .. canonical .. "\"}")
 sum:close()
 
 if fail != 0

@@ -1,7 +1,7 @@
 /// Attribute parsing for @test.*, @build.*, @time, @bench, and related
 /// debugging/benchmark annotations.
 ///
-/// EPOCH 2: every predicate here answers a question that Pass 100 wants asked
+/// EPOCH 2: every predicate here answers a question that wants asked
 /// of the graph instead. See `docs/directive_erasure.md` for the per-directive
 /// edge fact each one is standing in for, and the order in which they go.
 /// Do not add new names here — add the fact to its owning relation.

@@ -2,7 +2,7 @@ encode(s: str): str
   if s == nil
     return ""
   end
-  string.gsub(s, "([^%w%.%-~_])", (c: str): str
+  s:gsub("([^%w%.%-~_])", (c: str): str
     "%%%02X":format(c:byte())
   end)
 end
@@ -11,7 +11,7 @@ decode(s: str): str
     return ""
   end
   s = s:gsub("+", " ")
-  string.gsub(s, "%%(%x%x)", (h: str): str
+  s:gsub("%%(%x%x)", (h: str): str
     tonumber(h, 16):char()
   end)
 end
@@ -24,28 +24,28 @@ parse(url: str): any
     scheme = "https"
     rest = rest:sub(9)
   end
-  default_port = 80
+  default = 80
   if scheme == "https"
-    default_port = 443
+    default = 443
   end
   host = rest
   path = "/"
-  slash_pos = rest:find("/")
-  if slash_pos
-    host = rest:sub(1, slash_pos - 1)
-    path = rest:sub(slash_pos)
+  slash = rest:find("/")
+  if slash
+    host = rest:sub(1, slash - 1)
+    path = rest:sub(slash)
   end
-  colon_pos = host:find(":")
-  port = default_port
-  if colon_pos
-    port = tonumber(host:sub(colon_pos + 1)) or default_port
-    host = host:sub(1, colon_pos - 1)
+  colon = host:find(":")
+  port = default
+  if colon
+    port = host:sub(colon + 1:to(i64)) or default
+    host = host:sub(1, colon - 1)
   end
   query = ""
-  q_pos = path:find("?")
-  if q_pos
-    query = path:sub(q_pos + 1)
-    path = path:sub(1, q_pos - 1)
+  mark = path:find("?")
+  if mark
+    query = path:sub(mark + 1)
+    path = path:sub(1, mark - 1)
   end
   {
     scheme = scheme,

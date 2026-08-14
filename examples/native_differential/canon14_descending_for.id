@@ -16,7 +16,7 @@
 down_sum(n: i64): i64
     t = 0
     for i = n, 1, -1
-        t = t + i
+        t += i
     end
     t
 end
@@ -24,7 +24,7 @@ end
 down_by_two(n: i64): i64
     t = 0
     for i = n, 1, -2
-        t = t + i
+        t += i
     end
     t
 end
@@ -34,7 +34,7 @@ end
 runtime_step(a: i64, b: i64, k: i64): i64
     t = 0
     for i = a, b, 0 - k
-        t = t + i
+        t += i
     end
     t
 end
@@ -44,17 +44,17 @@ end
 empty_range(): i64
     t = 0
     for i = 1, 4, -1
-        t = t + 1000
+        t += 1000
     end
     t
 end
 
 main(): i64
     total = 0
-    total = total + down_sum(4)          # 4+3+2+1        = 10
-    total = total + down_by_two(6)       # 6+4+2          = 12
-    total = total + runtime_step(5, 1, 2) # 5+3+1         = 9
-    total = total + empty_range()        # 0
+    total += down_sum(4)          # 4+3+2+1        = 10
+    total += down_by_two(6)       # 6+4+2          = 12
+    total += runtime_step(5, 1, 2) # 5+3+1         = 9
+    total += empty_range()        # 0
     # 31, and it must be identical under every backend column.
     total
 end

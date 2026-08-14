@@ -1,4 +1,4 @@
-//! Pass 25 §5.1 — tail-demand propagation / result lineage (design authority).
+//! §5.1 — tail-demand propagation / result lineage (design authority).
 //!
 //! NOT "search backward for last variable whose type fits."
 //! IS: explicit result demand + tail region + unique proven value lineage + control-flow proof.
@@ -19,7 +19,7 @@ pub const ResultDemand = struct {
     stable_principal_required: bool = false,
 };
 
-/// Value-producing forms that always have a semantic result (Pass 25 §5.1 §1).
+/// Value-producing forms that always have a semantic result (§5.1 §1).
 pub const ValueProductionKind = enum {
     assign,
     compound_assign,
@@ -44,7 +44,7 @@ pub const TailRegionKind = enum {
     }
 };
 
-/// How a tail region may satisfy result demand (Pass 25 §5.1 rules A–H).
+/// How a tail region may satisfy result demand (§5.1 rules A–H).
 pub const TailResultRule = enum {
     /// Rule A — tail assignment yields assigned value.
     tail_assignment,
@@ -125,7 +125,7 @@ pub const RejectedHeuristic = struct {
     reason: []const u8,
 };
 
-/// Patterns explicitly rejected (Pass 25 §5.1 "What not to do").
+/// Patterns explicitly rejected (§5.1 "What not to do").
 pub const rejected_heuristics: []const RejectedHeuristic = &.{
     .{ .id = "P25-T01", .pattern = "last compatible local backward search", .reason = "fragile; use tail-demand graph only" },
     .{ .id = "P25-T02", .pattern = "result = magic binding name", .reason = "no special result variables" },

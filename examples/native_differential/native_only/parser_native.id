@@ -31,7 +31,7 @@ skip_spaces: i64 = (src: str, pos: i64)
     n = src:len()
     i = pos
     while i <= n and src:byte(i) == 32
-        i = i + 1
+        i += 1
     end
     i
 end
@@ -61,7 +61,7 @@ parsefactor: res = (src: str, pos: i64)
     j = i
     while j <= n and is_digit(src:byte(j)) == 1
         acc = acc * 10 + src:byte(j) - 48
-        j = j + 1
+        j += 1
     end
     { val = acc, pos = j }
 end
@@ -101,12 +101,12 @@ parseexpr: res = (src: str, pos: i64)
         op = src:byte(i)
         if op == 43
             rhs: res = parseterm(src, i + 1)
-            acc = acc + rhs.val
+            acc += rhs.val
             i = skip_spaces(src, rhs.pos)
         end
         if op == 45
             rhs2: res = parseterm(src, i + 1)
-            acc = acc - rhs2.val
+            acc -= rhs2.val
             i = skip_spaces(src, rhs2.pos)
         end
         if op != 43 and op != 45

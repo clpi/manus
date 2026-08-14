@@ -21,17 +21,17 @@ _skip = 0
 
 _ok(m: str): void
     print("  PASS: " .. m)
-    _pass = _pass + 1
+    _pass += 1
 end
 
 _bad(m: str): void
     print("  FAIL: " .. m)
-    _fail = _fail + 1
+    _fail += 1
 end
 
 _skipped(m: str, why: str): void
     print("  SKIP: " .. m .. " (" .. why .. ")")
-    _skip = _skip + 1
+    _skip += 1
 end
 
 _have(t: str): bool

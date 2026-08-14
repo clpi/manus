@@ -10,7 +10,8 @@
 # descriptor could not be attached to a value at all. The conversion algebra
 # had already landed and was deriving `feet -> micron -> inch`; it was deriving
 # edges between descriptors NO RUNTIME VALUE COULD CARRY. The trie could only
-# be reached when the call site SPELLED the source (`inch:from(feet)(v)`) or
+# be reached when the call site SPELLED the conversion direction (the inverse
+# projection face) or
 # when the source was a primitive, which is why 1647 conversion sites in the
 # tree reach exactly six destinations. §46 calls this the milestone the algebra
 # is waiting on, and it is not a conversion feature: it is representation
@@ -69,21 +70,19 @@ to(inch)(micron) = shrink@lossless
 to(micron)(feet) = grow@lossless
 to(feet)(micron) = shrivel@lossless
 
-main: i64 = ()
-    # The binding a descriptor could not inhabit. `3.0` carries no descriptor
-    # of its own, so CDR (B-13) lets the contract name it — the same rule that
-    # makes `n: u8 = 3` a u8. A value that ALREADY carries a descriptor is
-    # refused instead; that half is `examples/compile_fail/nominal_bare.id`.
-    d: feet = 3.0
+# The binding a descriptor could not inhabit. `3.0` carries no descriptor
+# of its own, so CDR (B-13) lets the contract name it — the same rule that
+# makes `n: u8 = 3` a u8. A value that ALREADY carries a descriptor is
+# refused instead; that half is `examples/compile_fail/nominal_bare.id`.
+d: feet = 3.0
 
-    # Subject-first, canonical (§0.5 FACE-CALL). `feet -> inch` was never
-    # declared: it is composed through the `micron` hub, and the witness rides
-    # inside the emitted artifact.
-    n: inch = d:to(inch)
+# Subject-first, canonical (§0.5 FACE-CALL). `feet -> inch` was never
+# declared: it is composed through the `micron` hub, and the witness rides
+# inside the emitted artifact.
+n: inch = d:to(inch)
 
-    # The authored edge, so the fixture measures BOTH answers the trie gives.
-    q: micron = d:to(micron)
+# The authored edge, so the fixture measures BOTH answers the trie gives.
+q: micron = d:to(micron)
 
-    total = n:to(i64) + q:to(i64)
-    print("{total}")
-    0
+total = n:to(i64) + q:to(i64)
+print("{total}")

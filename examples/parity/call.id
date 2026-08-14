@@ -1,4 +1,4 @@
-# Pass 2.5 call-algebra fixture: a plain typed direct call.
+# Call-algebra fixture: a plain typed direct call.
 # `call.inline` must dispatch and the C must hold a direct `add(...)` with no
 # `lua_invoke` anywhere in the translation unit. The result is BOUND rather
 # than returned: a call in tail position dispatches the whole call algebra,

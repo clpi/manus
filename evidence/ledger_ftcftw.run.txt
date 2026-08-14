@@ -1,0 +1,37 @@
+  > compile (scripts/ledger/ftcftw.id) …
+  ok compile (95 ms — ./ftcftw.out)
+ledger/ftcftw: control ok
+present native scripts/census/native.id
+  direct-native coverage over the reachable Idiom examples corpus
+  ok contract
+  ok oracle
+  ok negative
+  ok verdict
+present cfloor scripts/cfloor.id
+  direct vs c-equivalent lowering plan and measurement (law.c.floor, law.perf.dominance)
+  ok contract
+  ok oracle
+  ok negative
+  ok verdict
+present diff scripts/native_differential.id
+  direct and c backends agree on stdout and exit for blocking fixtures
+  ok contract
+  ok oracle
+  ok negative
+  ok verdict
+present bench scripts/run_benchmark.id
+  Idiom-hosted kernels match reference C before any speed comparison
+  ok contract
+  ok oracle
+  ok negative
+  ok verdict
+present runtime scripts/runtime_bench.id
+  Idiom Wasm runtime measured against wasmtime with answer-checked exec axis
+  ok contract
+  ok oracle
+  ok negative
+  ok verdict
+present shc scripts/ledger/shc.id
+  live bootstrap blockers to 100% Idiom self-hosting authority
+  ok contract
+  miss oracle: audit     scripts/ledger/embed

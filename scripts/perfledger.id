@@ -1,6 +1,6 @@
 # Performance evidence ledger.
 #
-# This is a read-only index, not a benchmark runner. It names the duon scripts
+# This is a read-only index, not a benchmark runner. It names the idol scripts
 # whose results are needed before broad speed, wasm, startup, or size claims.
 
 chomp: str = (text: str)
@@ -26,7 +26,7 @@ capture: str = (cmd: str)
 cap: str = (cmd: str)
     chomp(capture(cmd))
 
-shellstatus: i64 = (cmd: str)
+status: i64 = (cmd: str)
     to(i64)(cap("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
 
 lines: any = (text: str)
@@ -49,7 +49,7 @@ has: bool = (text: str, part: str)
     pos != nil and pos > 0
 
 present: bool = (path: str)
-    shellstatus("test -e '" .. path .. "'") == 0
+    status("test -e '" .. path .. "'") == 0
 
 grepfile: bool = (path: str, pat: str)
     has(cap("cat '" .. path .. "' 2>/dev/null"), pat)
@@ -93,13 +93,13 @@ row: i64 = (name: str, path: str, proof: str, a: str, b: str, c: str, d: str)
 main: i64 = ()
     missing = control()
     missing += row("bench", "scripts/run_benchmark.id",
-        "duon and hosted lua results match reference c and meet the c speed floor",
+        "idol and hosted lua results match reference c and meet the c speed floor",
         "benchmark results match reference C",
         "reference C benchmark",
         "RESULT_FAIL_FLAG = 1",
         "Duo .lua/.id >= C")
     missing += row("cross", "scripts/run_cross_benchmark.id",
-        "duon compared against c lua and luajit without changing kernels",
+        "idol compared against c lua and luajit without changing kernels",
         "Correctness (RESULT lines vs reference C)",
         "reference C binary",
         "Cross-language benchmark FAILED",

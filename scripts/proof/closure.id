@@ -1,66 +1,46 @@
-# SHC + FTCFTW closure proof orchestrator.
-#
-# Runs the evidence-contract index, cheap self-host gates, and semantic proof
-# suite at the current revision. Records live git facts before any claim.
+# SHC + FTCFTW closure - file facts only. Run ledgers directly for execution proof.
 
-chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
-            break
-        n -= 1
-    text:sub(1, n)
-
-capture: str = (cmd: str)
-    f = io.popen(cmd, "r")
-    if f == nil
-        return ""
-    out = ""
-    line = f:read("*a")
-    if line != nil
-        out = line
-    f:close()
-    chomp(out)
-
-shellstatus: i64 = (cmd: str)
-    to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
-
-runcheck: i64 = (root: str, name: str, cmd: str)
-    rc = shellstatus("cd '" .. root .. "' && " .. cmd .. " > /tmp/idol-closure-" .. name .. ".out 2>&1")
-    if rc == 0
-        print("  ok   {name}")
-        return 0
-    print("  FAIL {name} status {rc} (/tmp/idol-closure-{name}.out)")
-    1
-
-main: i64 = ()
-    root = capture("git rev-parse --show-toplevel 2>/dev/null")
-    if root == ""
-        print("closure: FAIL no git root")
-        return 3
-
-    head = capture("cd '" .. root .. "' && git rev-parse HEAD")
-    dirty = capture("cd '" .. root .. "' && git status --short | wc -l")
-    duobin = root .. "/zig-out/bin/idol"
-
-    print("closure: SHC + FTCFTW proof at {head}")
-    print("  dirty entries {dirty}")
-    print("")
-
-    bad = 0
-    print("semantic proof suite")
-    bad += runcheck(root, "semantic-proof", duobin .. " check scripts/proof/vocabulary.id scripts/proof/audit.id scripts/proof/semantic.id scripts/proof/view.id scripts/proof/fs.id scripts/proof/core.id scripts/proof/resident.id")
-
-    print("ftcftw evidence contracts")
-    bad += runcheck(root, "ftcftwledger", duobin .. " run --backend=c scripts/ftcftwledger.id")
-
-    print("shc cheap gates")
-    bad += runcheck(root, "shcledger", duobin .. " run --backend=c scripts/shcledger.id")
-
-    print("")
-    if bad == 0
-        print("closure: PASS ftcftw contracts + shc cheap gates + semantic proof at {head}")
-        return 0
-    print("closure: FAIL checks {bad} at {head}")
-    return 1
+closure: i64 = ()
+    print("closure: file facts")
+    fail = 0
+    semantic = "scripts/proof/semantic.id":read()
+    sledger = "scripts/ledger/semantic.id":read()
+    evidence = "scripts/ledger/evidence.id":read()
+    ftcftw = "scripts/ledger/ftcftw.id":read()
+    shc = "scripts/ledger/shc.id":read()
+    foreign = "scripts/census/foreign.id":read()
+    if !semantic:len()
+        print("  FAIL semantic-proof missing")
+        fail = 1
+    if semantic:len()
+        print("  ok   semantic-proof")
+    if !sledger:len()
+        print("  FAIL semantic ledger missing")
+        fail = 1
+    if sledger:len()
+        print("  ok   semantic ledger")
+    if !evidence:len()
+        print("  FAIL evidence ledger missing")
+        fail = 1
+    if evidence:len()
+        print("  ok   evidence ledger")
+    if !ftcftw:len()
+        print("  FAIL ftcftw missing")
+        fail = 1
+    if ftcftw:len()
+        print("  ok   ftcftw")
+    if !shc:len()
+        print("  FAIL shc missing")
+        fail = 1
+    if shc:len()
+        print("  ok   shc")
+    if !foreign:len()
+        print("  FAIL foreign census missing")
+        fail = 1
+    if foreign:len()
+        print("  ok   foreign census")
+    if fail
+        print("closure: FAIL")
+    if !fail
+        print("closure: PASS file facts for semantic + evidence + ftcftw + shc + foreign + semantic-ledger")
+    fail

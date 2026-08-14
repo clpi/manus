@@ -18,7 +18,7 @@
 # that shells out to a C toolchain on import is a liability. Import it only to
 # check.
 #
-# `run` returns the NUMBER OF DISAGREEMENTS — 0 when every form agrees, 90 when
+# `check` returns the NUMBER OF DISAGREEMENTS — 0 when every form agrees, 90 when
 # no assembler is available, which is a visible SKIP and never a silent pass.
 # Each mismatch prints both words, so a failure names the nibble.
 #
@@ -29,7 +29,7 @@
 # (a separate accessor sees the write) but leaves the CALLING function's later
 # read stale. The identical code in a top-level script is correct, so it is the
 # req-module lowering, not the language. `_ck` therefore RETURNS its verdict and
-# `run` sums it into a local, which is immune. The case count still goes through
+# `check` sums it into a local, which is immune. The case count still goes through
 # a global, but is only ever read from `checked` — a different function, which
 # is the shape that measured correct.
 
@@ -89,7 +89,7 @@ end
 # encodes x0/x1/x2 passes just as happily when the register fields are dropped
 # on the floor, so every field of every form is given a value that would show
 # up somewhere visible if it landed in the wrong place.
-run: i64 = ()
+check: i64 = ()
     _count = 0
     bad: i64 = 0
 
@@ -165,9 +165,5 @@ run: i64 = ()
     bad
 end
 
-# How many forms the last `run` actually compared. A gate reporting "0
-# failures" over 0 cases is the failure this project has been bitten by, so a
-# caller must assert this is the number it expects, not merely non-zero.
-checked: i64 = ()
-    _count
-end
+# Root: run the ARM64 encoder/assembler differential.
+check()

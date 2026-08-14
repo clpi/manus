@@ -1,4 +1,4 @@
-# vscodeemit — project the vscode extension host from duon.
+# vscodeemit — project the vscode extension host from idol.
 
 script = std.script
 targetpath = "ext/vscode-duo/extension.js"

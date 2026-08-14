@@ -1,4 +1,4 @@
-# duon wasm — handoff
+# idol wasm — handoff
 
 ## 2026-08-08 (latest) — `call_indirect` compiles, and it found a wrong answer
 
@@ -175,7 +175,7 @@ for every buffer.
 
 ## 2026-08-08 — the JIT can leave its own code buffer
 
-The named architectural blocker is closed, and it was **in `lib/std/jit.id`,
+The named architectural blocker is closed, and it was **in `lib/jit.id`,
 not in the engine**. `alloc`/`w32`/`seal`/`call*` let Duo emit code and ENTER it;
 nothing let emitted code LEAVE it. So a body reaching an imported function took
 the whole module to the interpreter — which is every wasi-libc `_start`, because
@@ -330,7 +330,7 @@ The trace produced a chain of four refusals, three of which are now fixed:
 **#4 is what is missing, stated exactly.** `hot_big`'s `_start` reaches
 `fd_write` and `proc_exit` through `__original_main` and `__wasi_proc_exit`, so
 compiling that body means compiling a call to an imported host function. Nothing
-in `lib/std/jit.id` can express one: its surface is
+in `lib/jit.id` can express one: its surface is
 `alloc / w32 / r32 / w8 / seal / call0..call2 / release / arch`, and **none of
 those yields the ADDRESS of a host function**, so emitted code has no way to
 call back into the engine. The two ways out are both larger than a fix:
@@ -438,13 +438,13 @@ table; do not quote a number that did not come out of a harness.
 | `bench/hash.wasm` `run` export | 388 ms | not reachable | 392 ms | — |
 | `benchmarks/wasm_rt/hot_big.wasm` | 3400 ms (**interp**) | — | 119 ms | — |
 
-So: **the engine is ~1-3% slower than wart, not faster.** Pass 101 §4 asks for
+So: **the engine is ~1-3% slower than wart, not faster.** The mandate asks for
 measurably faster; that criterion is UNMET and `bench/wart.id` exits non-zero
 saying so. the engine is at parity with wasmtime on `hash.wasm`, 19% behind it on the
 same kernel written by hand, and **28x** behind it on `hot_big.wasm`, where the
 JIT does not engage at all and the engine falls back to the interpreter.
 
-**Derived-lines ratio (Pass 101 §4, target >= 80%): `9%`** — was `0%` before
+**Derived-lines ratio (target >= 80%): `9%`** — was `0%` before
 2026-08-08. Measured by `duo run bench/derived.id`, which positive-controls
 its own marker detection before reporting, because a scanner that reports 0 is
 usually broken.
@@ -462,7 +462,7 @@ reads below 3, because a detector tuned until it says 0 cannot be told apart
 from a broken one.
 
 **9%, not 80%.** The 80% criterion is still UNMET and the harness still exits
-non-zero saying so. What closed is the population Pass 101 actually names —
+non-zero saying so. What closed is the population the mandate actually names —
 opcode numbers hard-coded across the interpreter arms *and* the JIT emitters.
 The remaining ~3900 hand-written lines are the interpreter and JIT *semantics*
 (what each arm does), not format facts; projecting those is a rewrite, not a
@@ -808,8 +808,8 @@ dispatch predicates. All 184 are now projected — see below.
 ### The projection landed, 2026-08-08
 
 **`duo wasm-tables emit` is idempotent now.** It used to re-write
-`lib/std/wasm/opcode_lookup.id` with `then`-keyword `if` bodies that Pass 100
-§1 forbids, so the file could not be regenerated without failing the deny list
+`lib/wasm/opcode_lookup.id` with `then`-keyword `if` bodies the deny list
+forbids, so the file could not be regenerated without tripping it
 — eight lines, all in a Zig multiline literal in `src/wasm_semantic_gen.zig`.
 Fixed there; two consecutive `duo wasm-tables emit` runs on a clean tree now
 produce no diff. Positive-controlled: perturb the file first and the same
@@ -825,7 +825,7 @@ DUO_WASM_DERIVE=1 duo run tools/opcodes.id # fail if src/engine.id drifted
 ```
 
 It is not a second source of truth: it re-parses
-`lib/std/wasm/ward_mvp_opcodes.id` and refuses to project on any disagreement
+`lib/wasm/ward_mvp_opcodes.id` and refuses to project on any disagreement
 over the 63 opcodes duo's canonical table holds (it reports the count it
 checked — 63 — so a parser that matched nothing cannot read as unanimous).
 the engine needs 170, which is why the extension lives here. Both gates are

@@ -1,7 +1,7 @@
 # SH-04 coverage — what fraction of real Idol source can the SELF-HOSTED parser
 # parse?
 #
-# examples/pass16_parser_corpus_proof.id proves the projection is CORRECT on 55
+# The parser corpus proof shows the projection is CORRECT on 55
 # hand-written cases. It cannot say how much of the language those cases reach.
 # This walks lib/std and reports how many files parse_status accepts. That
 # number has to reach 100% before SH-04 is anything but `porting`, and it is the
@@ -22,7 +22,7 @@
 #     a token, now fixed structurally by the `stalled` guard in parser.id. A
 #     scripts/ entry that hangs is worse than no measurement, because the next
 #     agent wires it into a gate.
-#   * `lib/std/os/linux.id` is NO LONGER skipped. GAP-017 is closed: a lexer
+#   * `lib/os/linux.id` is NO LONGER skipped. GAP-017 is closed: a lexer
 #     error is now a rejection the caller can count, not a process abort, so a
 #     bad file costs one row instead of truncating the run. The skip existed
 #     only to keep that truncation visible; with the cause gone, the file
@@ -56,7 +56,7 @@ main: i64 = ()
                 if fs.exists(path)
                     src = fs.read_file(path)
                     total += 1
-                    if compiler.parser.parse_status(src, path) == 0
+                    if compiler.parser.parse_status(src, path, 1) == 0
                         ok += 1
                     else
                         print("  REJECT {path}")

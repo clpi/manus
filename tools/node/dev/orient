@@ -32,10 +32,10 @@ echo "head: $head"
 echo "branch: $branch"
 echo "dirtyentries: $dirty"
 echo "host: $(uname -s) $(uname -m)"
-echo "authority: AGENTS.md -> docs/spec/constitution.md -> CLAUDE.md -> docs/spec/source.md -> docs/spec/host.md -> docs/spec/AUTHORITY.md -> docs/bootstrap.md"
-echo "skill: idol-dev (.pi/skills/idol-dev; not duon-development)"
+echo "authority: docs/spec/law.md (SUPREME one-page) -> AGENTS.md -> docs/spec/canonical.md -> docs/spec/agent.md -> docs/spec/constitution.md -> CLAUDE.md -> docs/spec/source.md -> docs/spec/host.md -> docs/spec/AUTHORITY.md -> docs/bootstrap.md"
+echo "skill: idol-dev (.devin/skills/idol-dev/SKILL.md) and idol (.devin/skills/idol/SKILL.md); installed to Codex/Claude/OpenCode/Devin by tools/node/dev/install-skills"
 echo "pipeline: source/import -> graph -> demand -> realization -> machine"
-echo "updateface: AGENTS.md -> scripts/idiomgate.id (bootstrap candidate gate; graph witness required)"
+echo "updateface: AGENTS.md -> gate/idiom.id (migration firewall; graph witness required)"
 echo "bootstrapstage: S0 pinned Zig seed builds host compiler; executed lexer boundary; parser and later stages remain host-owned"
 echo "activep0: $p0"
 echo "frontier: close GAP-145 lexical identities, then GAP-134 generated grammar roles and immutable token view"
@@ -49,7 +49,7 @@ else
   detail="$(sed -n '1p' "$mcp_log" | tr '\n' ' ')"
   [ -n "$detail" ] && echo "mcphealthdetail: $detail"
 fi
-echo "coordination: use duo_dev_claim_acquire for exact paths; never stash or hard reset; commit explicit pathspecs only"
+echo "coordination: use idol_dev_claim_acquire for exact paths; never stash or hard reset; commit explicit pathspecs only"
 echo "evidence: exact tree, command, executed path, outcome, and positive controls"
 echo "avoid: historical .id semantics, pass documents as law, copied machine state, shadow specs, source-text identity reconstruction"
 echo "harnesslaw: docs/spec/harness-projection.md"
@@ -59,12 +59,20 @@ else
   echo "harnesscontext: generate-harness failed — run tools/node/dev/generate-harness"
 fi
 echo "nextboundary: smallest owned slice on lexical identity or grammar-role frontier after claiming paths"
-duo="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-${DUO_BIN:-$repo/zig-out/bin/idol}}}"
+idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-$repo/zig-out/bin/idol}}"
 if [ -x "$repo/tools/node/dev/hostcensus" ]; then
-  hosttotal="$("$repo/tools/node/dev/hostcensus" 2>/dev/null | sed -n 's/^total hits: //p' | tail -1)"
+  hosttotal="$("$repo/tools/node/dev/hostcensus" 2>/dev/null | sed -n 's/^total violation+migration hits: //p' | tail -1)"
   if [ -n "$hosttotal" ]; then
     echo "hostdebt: $hosttotal classified hits (tools/node/dev/hostcensus · GAP-154)"
   else
     echo "hostdebt: census unavailable — run tools/node/dev/hostcensus"
   fi
 fi
+mkdir -p "$repo/evidence"
+{
+  echo "HEAD: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
+  echo "Date: $(date -Iseconds 2>/dev/null || date)"
+  echo "Dirty: $dirty"
+  echo "Branch: $branch"
+  echo "Derived: tools/node/dev/orient (law.control.derived — do not hand-edit)"
+} >"$repo/evidence/HEAD.txt"

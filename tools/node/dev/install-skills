@@ -3,25 +3,41 @@ set -eu
 
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 codex_home="${CODEX_HOME:-$HOME/.codex}"
-skill_src="$repo/.pi/skills/idol-dev"
-skill_dst="$codex_home/skills/idol-dev"
-legacy_dst="$codex_home/skills/duon-development"
+devin_home="${DEVIN_HOME:-$HOME/.config/devin}"
+claude_home="${CLAUDE_HOME:-$HOME/.claude}"
+opencode_home="${OPENCODE_HOME:-$HOME/.opencode}"
 
-if [ ! -f "$skill_src/SKILL.md" ]; then
-  echo "install-skills: missing $skill_src/SKILL.md" >&2
-  exit 1
-fi
+install_skill() {
+  name="$1"
+  src="$repo/.devin/skills/$name"
+  dst_dir="$2/skills/$name"
 
-mkdir -p "$codex_home/skills"
-rm -rf "$skill_dst"
-cp -R "$skill_src" "$skill_dst"
-echo "installed $skill_dst"
+  if [ ! -f "$src/SKILL.md" ]; then
+    echo "install-skills: missing $src/SKILL.md" >&2
+    return 1
+  fi
 
+  mkdir -p "$2/skills"
+  rm -rf "$dst_dir"
+  cp -R "$src" "$dst_dir"
+  echo "installed $dst_dir"
+}
+
+install_skill idol-dev "$codex_home" || exit 1
+install_skill idol "$codex_home" || exit 1
+install_skill idol-dev "$devin_home" || exit 1
+install_skill idol "$devin_home" || exit 1
+install_skill idol-dev "$claude_home" || true
+install_skill idol "$claude_home" || true
+install_skill idol-dev "$opencode_home" || true
+install_skill idol "$opencode_home" || true
+
+legacy_dst="$codex_home/skills/idol-development"
 if [ -d "$legacy_dst" ] || [ -f "$legacy_dst/SKILL.md" ]; then
   mkdir -p "$legacy_dst"
   cat >"$legacy_dst/SKILL.md" <<'EOF'
 ---
-name: duon-development
+name: idol-development
 description: RETIRED — use idol-dev instead. Historical alias for Idol development in clpi/duo.
 ---
 
@@ -32,7 +48,24 @@ Idol (`idol`, `.id`) work in the active development repository.
 
 Read `AGENTS.md`, then `docs/spec/constitution.md`, `CLAUDE.md`, and
 `docs/spec/source.md`. Run `./tools/node/dev/orient` and claim paths through
-`duo_dev_claim_acquire` before editing.
+`idol_dev_claim_acquire` before editing.
 EOF
   echo "retired $legacy_dst (redirect stub installed)"
+fi
+
+legacy_devin_dst="$devin_home/skills/idol-development"
+if [ -d "$legacy_devin_dst" ] || [ -f "$legacy_devin_dst/SKILL.md" ]; then
+  mkdir -p "$legacy_devin_dst"
+  cat >"$legacy_devin_dst/SKILL.md" <<'EOF'
+---
+name: idol-development
+description: RETIRED — use idol-dev instead. Historical alias for Idol development in clpi/duo.
+---
+
+# Retired
+
+This skill name is migration provenance only. Use **idol-dev** for all current
+Idol (`idol`, `.id`) work in the active development repository.
+EOF
+  echo "retired $legacy_devin_dst (redirect stub installed)"
 fi

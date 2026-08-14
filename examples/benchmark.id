@@ -8,19 +8,19 @@ fib(n: i64)
 end
 
 # 2. Prime counting (trial division in source; Eratosthenes sieve in codegen)
-count_primes(limit: i64)
+primes(limit: i64)
     count = 0
     n = 2
     while n <= limit do
-        is_prime = true
+        prime = true
         d = 2
         while d * d <= n do
             if n % d == 0
-                is_prime = false
+                prime = false
             end
             d += 1
         end
-        if is_prime
+        if prime
             count += 1
         end
         n += 1
@@ -29,7 +29,7 @@ count_primes(limit: i64)
 end
 
 # 3. Mandelbrot core iteration
-mandel_iter(cx: f64, cy: f64): i64
+mandel(cx: f64, cy: f64): i64
     zx: f64 = 0.0
     zy: f64 = 0.0
     i: i64 = 0
@@ -47,17 +47,17 @@ mandel_iter(cx: f64, cy: f64): i64
 end
 
 # 4. Spectral-norm style grid
-eval_A(i: i64, j: i64): f64
+entry(i: i64, j: i64): f64
     return 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1)
 end
 
-compute_grid_sum(size: i64): f64
+grid(size: i64): f64
     total: f64 = 0.0
     i: i64 = 0
     while i < size do
         j: i64 = 0
         while j < size do
-            total += eval_A(i, j)
+            total += entry(i, j)
             j += 1
         end
         i += 1
@@ -66,7 +66,7 @@ compute_grid_sum(size: i64): f64
 end
 
 # 5. N-body physics
-simulate_nbody(steps: i64): f64
+nbody(steps: i64): f64
     x1: f64 = 0.0
     y1: f64 = 0.0
     vx1: f64 = 0.0
@@ -87,18 +87,18 @@ simulate_nbody(steps: i64): f64
     while i < steps do
         dx12: f64 = x2 - x1
         dy12: f64 = y2 - y1
-        dist12_sq: f64 = dx12 * dx12 + dy12 * dy12 + 0.001
-        dist12: f64 = dist12_sq:sqrt()
-        f12: f64 = (m1 * m2) / dist12_sq
+        sq12: f64 = dx12 * dx12 + dy12 * dy12 + 0.001
+        dist12: f64 = sq12:sqrt()
+        f12: f64 = (m1 * m2) / sq12
         vx1 += (f12 * dx12 / dist12) * dt / m1
         vy1 += (f12 * dy12 / dist12) * dt / m1
         vx2 -= (f12 * dx12 / dist12) * dt / m2
         vy2 -= (f12 * dy12 / dist12) * dt / m2
         dx13: f64 = x3 - x1
         dy13: f64 = y3 - y1
-        dist13_sq: f64 = dx13 * dx13 + dy13 * dy13 + 0.001
-        dist13: f64 = dist13_sq:sqrt()
-        f13: f64 = (m1 * m3) / dist13_sq
+        sq13: f64 = dx13 * dx13 + dy13 * dy13 + 0.001
+        dist13: f64 = sq13:sqrt()
+        f13: f64 = (m1 * m3) / sq13
         vx1 += (f13 * dx13 / dist13) * dt / m1
         vy1 += (f13 * dy13 / dist13) * dt / m1
         vx3 -= (f13 * dx13 / dist13) * dt / m3
@@ -115,7 +115,7 @@ simulate_nbody(steps: i64): f64
 end
 
 # 6. String stdlib: rep + len + byte checksum
-string_byte_sum(n: i64)
+bytes(n: i64)
     s = "The quick brown fox jumps over the lazy dog. ":rep(n)
     sum = 0
     i = 1
@@ -128,7 +128,7 @@ string_byte_sum(n: i64)
 end
 
 # 7. Table stdlib pattern: fill indexed table and sum (dense array lowering)
-table_array_sum(n: i64)
+array(n: i64)
     t = {}
     i = 1
     while i <= n do
@@ -145,7 +145,7 @@ table_array_sum(n: i64)
 end
 
 # 8. Math stdlib: sin/cos accumulation
-trig_sum(n: i64)
+trig(n: i64)
     sum = 0.0
     i = 0
     while i < n do
@@ -156,7 +156,7 @@ trig_sum(n: i64)
 end
 
 # 9. String stdlib chain: len + rep in a hot loop
-string_len_chain(n: i64): i64
+chain(n: i64): i64
     s = "a":rep(1000)
     total = 0
     i = 1
@@ -168,7 +168,7 @@ string_len_chain(n: i64): i64
 end
 
 # 10. Integer hash using string.byte on a long literal
-string_hash_roll(n: i64)
+hash(n: i64)
     s = "benchmark":rep(n)
     h = 0
     i = 1
@@ -181,7 +181,7 @@ string_hash_roll(n: i64)
 end
 
 # 11. Math stdlib mix: floor + max (common game / layout logic)
-math_floor_max(n: i64)
+mix(n: i64)
     acc = 0.0
     peak = 0.0
     i = 0
@@ -195,7 +195,7 @@ math_floor_max(n: i64)
 end
 
 # 12. Dense table scan: max value (table-as-array pattern)
-table_max_scan(n: i64)
+maximum(n: i64)
     t = {}
     i = 1
     while i <= n do
@@ -214,7 +214,7 @@ table_max_scan(n: i64)
 end
 
 # 13. Math stdlib: pow + sqrt accumulation
-math_pow_sqrt(n: i64)
+power(n: i64)
     sum = 0.0
     i = 1
     while i <= n do
@@ -225,7 +225,7 @@ math_pow_sqrt(n: i64)
 end
 
 # 14. Sorted-array binary search (config lookup / game entity ID)
-binary_search_scan(n: i64)
+search(n: i64)
     t = {}
     i = 1
     while i <= n do
@@ -255,7 +255,7 @@ binary_search_scan(n: i64)
 end
 
 # 15. Filter / predicate count (analytics, log filtering)
-filter_count(n: i64)
+filter(n: i64)
     count = 0
     i = 1
     while i <= n do
@@ -269,7 +269,7 @@ filter_count(n: i64)
 end
 
 # 16. Dot product of two vectors (ML features, physics, graphics)
-dot_product(n: i64)
+dot(n: i64)
     a = {}
     b = {}
     i = 1
@@ -288,7 +288,7 @@ dot_product(n: i64)
 end
 
 # 17. Clamp / saturate accumulation (color, audio, game stats)
-clamp_sum(n: i64)
+clamp(n: i64)
     sum = 0
     i = 0
     while i < n do
@@ -299,7 +299,7 @@ clamp_sum(n: i64)
 end
 
 # 18. Bucket / histogram key hash (sharding, metrics tags)
-bucket_hash(n: i64)
+bucket(n: i64)
     sum = 0
     i = 1
     while i <= n do
@@ -310,7 +310,7 @@ bucket_hash(n: i64)
 end
 
 # 19. Exponential moving average (metrics, smoothing)
-ema_smooth(n: i64)
+ema(n: i64)
     avg = 0.0
     i = 0
     while i < n do
@@ -321,7 +321,7 @@ ema_smooth(n: i64)
 end
 
 # 20. Token / word count (log parsing, CSV fields)
-token_count(n: i64)
+token(n: i64)
     s = "alpha beta gamma ":rep(n)
     count = 0
     i = 1
@@ -336,7 +336,7 @@ token_count(n: i64)
 end
 
 # 21. Config / JSON-ish delimiter scan
-config_parse_sum(n: i64)
+parse(n: i64)
     s = '{"id":1,"name":"item","ok":true},':rep(n)
     sum = 0
     i = 1
@@ -352,7 +352,7 @@ config_parse_sum(n: i64)
 end
 
 # 22. Indexed table lookup accumulation (cache / entity table)
-table_lookup_sum(n: i64)
+lookup(n: i64)
     t = {}
     i = 1
     while i <= n do
@@ -370,7 +370,7 @@ table_lookup_sum(n: i64)
 end
 
 # 23. Table insert churn then aggregate (metrics buffers)
-table_insert_churn(n: i64)
+churn(n: i64)
     t = {}
     i = 1
     while i <= n do
@@ -387,7 +387,7 @@ table_insert_churn(n: i64)
 end
 
 # 24. Small matrix multiply (nested loop + indexed table access)
-matmul(n: i64): i64
+matrix(n: i64): i64
     size: i64 = 200
     a = {}
     b = {}
@@ -428,7 +428,7 @@ matmul(n: i64): i64
 end
 
 # 25. Prefix sum scan (serial scan pattern)
-prefix_sum(n: i64)
+prefix(n: i64)
     t = {}
     i = 1
     while i <= n do
@@ -444,7 +444,7 @@ prefix_sum(n: i64)
 end
 
 # 26. GCD reduction (Euclidean algorithm, branch-heavy)
-gcd_reduce(n: i64)
+gcd(n: i64)
     sum = 0
     i = 1
     while i <= n do
@@ -462,7 +462,7 @@ gcd_reduce(n: i64)
 end
 
 # 27. Collatz chain length accumulation (unpredictable branching)
-collatz_sum(n: i64): i64
+collatz(n: i64): i64
     total: i64 = 0
     i: i64 = 1
     while i <= n do
@@ -483,7 +483,7 @@ collatz_sum(n: i64): i64
 end
 
 # 28. XOR fold / bit manipulation reduction
-xor_fold(n: i64)
+xor(n: i64)
     acc = 0
     i = 1
     while i <= n do
@@ -494,7 +494,7 @@ xor_fold(n: i64)
 end
 
 # 29. Ring buffer write/read simulation (modulo indexing)
-ring_buffer(n: i64)
+ring(n: i64)
     size = 1024
     buf = {}
     i = 1
@@ -514,7 +514,7 @@ ring_buffer(n: i64)
 end
 
 # 30. Conditional swap reduce (sorting-kernel pattern)
-cond_swap(n: i64)
+swap(n: i64)
     t = {}
     i = 1
     while i <= n do
@@ -556,24 +556,24 @@ leven(n: i64)
     sum = 0
     rep = 0
     while rep < n do
-        len_a = 12
-        len_b = 13
+        la = 12
+        lb = 13
         prev = {}
         curr = {}
         j = 0
-        while j <= len_b do
+        while j <= lb do
             prev[j] = j
             j += 1
         end
         i = 1
-        while i <= len_a do
+        while i <= la do
             curr[0] = i
             j = 1
-            while j <= len_b do
-                a_char = ((rep * 7 + i * 3) % 26)
-                b_char = ((rep * 13 + j * 5) % 26)
+            while j <= lb do
+                ca = ((rep * 7 + i * 3) % 26)
+                cb = ((rep * 13 + j * 5) % 26)
                 cost = 0
-                if a_char != b_char cost = 1 end
+                if ca != cb cost = 1 end
                 del = prev[j] + 1
                 ins = curr[j - 1] + 1
                 sub = prev[j - 1] + cost
@@ -588,7 +588,7 @@ leven(n: i64)
             curr = tmp
             i += 1
         end
-        sum += prev[len_b]
+        sum += prev[lb]
         rep += 1
     end
     return sum
@@ -596,20 +596,20 @@ end
 
 # 33. Sieve of Eratosthenes (boolean array)
 sieve(n: i64): i64
-    is_prime = {}
+    prime = {}
     i: i64 = 0
     while i <= n do
-        is_prime[i] = true
+        prime[i] = true
         i += 1
     end
-    is_prime[0] = false
-    is_prime[1] = false
+    prime[0] = false
+    prime[1] = false
     i = 2
     while i * i <= n do
-        if is_prime[i]
+        if prime[i]
             j: i64 = i * i
             while j <= n do
-                is_prime[j] = false
+                prime[j] = false
                 j += i
             end
         end
@@ -618,7 +618,7 @@ sieve(n: i64): i64
     count: i64 = 0
     i = 2
     while i <= n do
-        if is_prime[i] count += 1 end
+        if prime[i] count += 1 end
         i += 1
     end
     return count
@@ -657,17 +657,17 @@ end
 
 # 35. Linear interpolation table lookup
 interp(n: i64)
-    tbl_size = 1024
+    cap = 1024
     tbl = {}
     i = 0
-    while i < tbl_size do
+    while i < cap do
         tbl[i] = i * 0.01:sin()
         i += 1
     end
     sum = 0.0
     i = 0
     while i < n do
-        x = (i * 0.0073) % (tbl_size - 1)
+        x = (i * 0.0073) % (cap - 1)
         idx = x:floor()
         frac = x - idx
         sum += tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
@@ -692,7 +692,7 @@ run_n: i64:len()
 end
 
 # 37. Population count / Hamming weight reduction
-bitcount(n: i64): i64
+weight(n: i64): i64
     sum: i64 = 0
     i: i64 = 1
     while i <= n do
@@ -729,7 +729,7 @@ cordic(n: i64)
 end
 
 # 39. Sparse vector dot (stride access pattern)
-sparse_dot(n: i64)
+sparse(n: i64)
     stride = 16
     len = n * stride
     a = {}
@@ -762,11 +762,11 @@ life(steps: i64)
     W = 128
     H = 128
     grid = {}
-    next_grid = {}
+    fresh = {}
     i = 0
     while i < W * H do
         grid[i] = (i * 31337) % 3 == 0 and 1 or 0
-        next_grid[i] = 0
+        fresh[i] = 0
         i += 1
     end
     s = 0
@@ -778,17 +778,17 @@ life(steps: i64)
                 neighbors = grid[(y-1)*W + (x-1)] + grid[(y-1)*W + x] + grid[(y-1)*W + (x+1)] + grid[y*W + (x-1)] + grid[y*W + (x+1)] + grid[(y+1)*W + (x-1)] + grid[(y+1)*W + x] + grid[(y+1)*W + (x+1)]
                 cell = grid[y * W + x]
                 if cell == 1
-                    next_grid[y * W + x] = (neighbors == 2 or neighbors == 3) and 1 or 0
+                    fresh[y * W + x] = (neighbors == 2 or neighbors == 3) and 1 or 0
                 else
-                    next_grid[y * W + x] = neighbors == 3 and 1 or 0
+                    fresh[y * W + x] = neighbors == 3 and 1 or 0
                 end
                 x += 1
             end
             y += 1
         end
         tmp = grid
-        grid = next_grid
-        next_grid = tmp
+        grid = fresh
+        fresh = tmp
         s += 1
     end
     sum = 0
@@ -805,11 +805,11 @@ print("     COMPREHENSIVE BENCHMARK SUITE      ")
 print("========================================")
 
 print("Running Fibonacci(40)...")
-t_start1 = os.clock()
-fib_res = fib(40)
-t_end1 = os.clock()
-print("Fibonacci(40) Result:", fib_res)
-print("RESULT fib", fib_res)
+ts1 = os.clock()
+r1 = fib(40)
+te1 = os.clock()
+print("Fibonacci(40) Result:", r1)
+print("RESULT fib", r1)
 # gap[096] NO TIME LINE — removed from the speed table, RESULT kept.
 # Duo's codegen substitutes an O(n) iteration for the O(phi^n) recursion, so
 # this row compares two ALGORITHMS, not two codegens. Neither a larger bound
@@ -819,65 +819,65 @@ print("RESULT fib", fib_res)
 print("----------------------------------------")
 
 print("Running Prime Sieve (limit 100,000)...")
-t_start2 = os.clock()
-prime_res = count_primes(100000)
-t_end2 = os.clock()
-print("Primes Found       ", prime_res)
-print("RESULT primes", prime_res)
-print("Prime Sieve Time   ", t_end2 - t_start2, "seconds")
+ts2 = os.clock()
+r2 = primes(100000)
+te2 = os.clock()
+print("Primes Found       ", r2)
+print("RESULT primes", r2)
+print("Prime Sieve Time   ", te2 - ts2, "seconds")
 print("----------------------------------------")
 
 print("Running Mandelbrot iterations...")
-t_start3 = os.clock()
-sum_iters = 0
+ts3 = os.clock()
+r3 = 0
 y = -100
 while y <= 100 do
     x = -100
     while x <= 100 do
-        sum_iters += mandel_iter(x / 100.0, y / 100.0)
+        r3 += mandel(x / 100.0, y / 100.0)
         x += 1
     end
     y += 1
 end
-t_end3 = os.clock()
-print("Mandel Iterations  ", sum_iters)
-print("RESULT mandel", sum_iters)
-print("Mandelbrot Time    ", t_end3 - t_start3, "seconds")
+te3 = os.clock()
+print("Mandel Iterations  ", r3)
+print("RESULT mandel", r3)
+print("Mandelbrot Time    ", te3 - ts3, "seconds")
 print("----------------------------------------")
 
 print("Running Grid Matrix solver (size 5,000)...")
-t_start4 = os.clock()
-grid_res = compute_grid_sum(5000)
-t_end4 = os.clock()
-print("Grid Matrix Result ", grid_res)
-print("RESULT grid", grid_res)
-print("Grid Matrix Time   ", t_end4 - t_start4, "seconds")
+ts4 = os.clock()
+r4 = grid(5000)
+te4 = os.clock()
+print("Grid Matrix Result ", r4)
+print("RESULT grid", r4)
+print("Grid Matrix Time   ", te4 - ts4, "seconds")
 print("----------------------------------------")
 
 print("Running N-Body Physics (5,000,000 steps)...")
-t_start5 = os.clock()
-nbody_res = simulate_nbody(5000000)
-t_end5 = os.clock()
-print("N-Body Coord Sum   ", nbody_res)
-print("RESULT nbody", nbody_res)
-print("N-Body Physics Time", t_end5 - t_start5, "seconds")
+ts5 = os.clock()
+r5 = nbody(5000000)
+te5 = os.clock()
+print("N-Body Coord Sum   ", r5)
+print("RESULT nbody", r5)
+print("N-Body Physics Time", te5 - ts5, "seconds")
 print("----------------------------------------")
 
 print("Running String byte checksum (rep x500)...")
-t_start6 = os.clock()
-str_res = string_byte_sum(500)
-t_end6 = os.clock()
-print("String Byte Sum    ", str_res)
-print("RESULT str_bytes", str_res)
-print("String Bench Time  ", t_end6 - t_start6, "seconds")
+ts6 = os.clock()
+r6 = bytes(500)
+te6 = os.clock()
+print("String Byte Sum    ", r6)
+print("RESULT str_bytes", r6)
+print("String Bench Time  ", te6 - ts6, "seconds")
 print("----------------------------------------")
 
 print("Running Table array sum (n=500,000)...")
-t_start7 = os.clock()
-tbl_res = table_array_sum(500000)
-t_end7 = os.clock()
-print("Table Array Sum    ", tbl_res)
-print("RESULT table_sum", tbl_res)
+ts7 = os.clock()
+r7 = array(500000)
+te7 = os.clock()
+print("Table Array Sum    ", r7)
+print("RESULT table_sum", r7)
 # gap[096] NO TIME LINE — removed from the speed table, RESULT kept.
 # Duo's codegen substitutes the closed form n(n+1)/2 for the O(n) fill-and-sum,
 # so this row compares two ALGORITHMS, not two codegens. A bound raise cannot
@@ -885,272 +885,272 @@ print("RESULT table_sum", tbl_res)
 print("----------------------------------------")
 
 print("Running Trig sum (n=5,000,000)...")
-t_start8 = os.clock()
-trig_res = trig_sum(5000000)
-t_end8 = os.clock()
-print("Trig Sum Result    ", trig_res)
-print("RESULT trig", trig_res)
-print("Trig Bench Time    ", t_end8 - t_start8, "seconds")
+ts8 = os.clock()
+r8 = trig(5000000)
+te8 = os.clock()
+print("Trig Sum Result    ", r8)
+print("RESULT trig", r8)
+print("Trig Bench Time    ", te8 - ts8, "seconds")
 print("----------------------------------------")
 
 print("Running String len/rep chain (n=5,000)...")
-t_start9 = os.clock()
-chain_res = string_len_chain(5000)
-t_end9 = os.clock()
-print("String Chain Sum   ", chain_res)
-print("RESULT str_chain", chain_res)
-print("String Chain Time  ", t_end9 - t_start9, "seconds")
+ts9 = os.clock()
+r9 = chain(5000)
+te9 = os.clock()
+print("String Chain Sum   ", r9)
+print("RESULT str_chain", r9)
+print("String Chain Time  ", te9 - ts9, "seconds")
 print("----------------------------------------")
 
 print("Running Rolling string hash (rep x8000)...")
-t_start10 = os.clock()
-hash_res = string_hash_roll(8000)
-t_end10 = os.clock()
-print("String Hash Result ", hash_res)
-print("RESULT str_hash", hash_res)
-print("String Hash Time   ", t_end10 - t_start10, "seconds")
+ts10 = os.clock()
+r10 = hash(8000)
+te10 = os.clock()
+print("String Hash Result ", r10)
+print("RESULT str_hash", r10)
+print("String Hash Time   ", te10 - ts10, "seconds")
 print("----------------------------------------")
 
 print("Running Math floor/max (n=5,000,000)...")
-t_start11 = os.clock()
-math_res = math_floor_max(5000000)
-t_end11 = os.clock()
-print("Math Floor/Max     ", math_res)
-print("RESULT floor_max", math_res)
-print("Math Floor/Max Time", t_end11 - t_start11, "seconds")
+ts11 = os.clock()
+r11 = mix(5000000)
+te11 = os.clock()
+print("Math Floor/Max     ", r11)
+print("RESULT floor_max", r11)
+print("Math Floor/Max Time", te11 - ts11, "seconds")
 print("----------------------------------------")
 
 print("Running Table max scan (n=500,000)...")
-t_start12 = os.clock()
-max_res = table_max_scan(500000)
-t_end12 = os.clock()
-print("Table Max Result   ", max_res)
-print("RESULT table_max", max_res)
-print("Table Max Time     ", t_end12 - t_start12, "seconds")
+ts12 = os.clock()
+r12 = maximum(500000)
+te12 = os.clock()
+print("Table Max Result   ", r12)
+print("RESULT table_max", r12)
+print("Table Max Time     ", te12 - ts12, "seconds")
 print("----------------------------------------")
 
 print("Running Math pow/sqrt (n=2,000,000)...")
-t_start13 = os.clock()
-pow_res = math_pow_sqrt(2000000)
-t_end13 = os.clock()
-print("Pow/Sqrt Result    ", pow_res)
-print("RESULT pow_sqrt", pow_res)
-print("Pow/Sqrt Time      ", t_end13 - t_start13, "seconds")
+ts13 = os.clock()
+r13 = power(2000000)
+te13 = os.clock()
+print("Pow/Sqrt Result    ", r13)
+print("RESULT pow_sqrt", r13)
+print("Pow/Sqrt Time      ", te13 - ts13, "seconds")
 print("----------------------------------------")
 
 print("Running Binary search (500k table, 200k queries)...")
-t_start14 = os.clock()
-bsearch_res = binary_search_scan(500000)
-t_end14 = os.clock()
-print("Binary Search Hits ", bsearch_res)
-print("RESULT bsearch", bsearch_res)
-print("Binary Search Time ", t_end14 - t_start14, "seconds")
+ts14 = os.clock()
+r14 = search(500000)
+te14 = os.clock()
+print("Binary Search Hits ", r14)
+print("RESULT bsearch", r14)
+print("Binary Search Time ", te14 - ts14, "seconds")
 print("----------------------------------------")
 
 print("Running Filter count (n=500,000)...")
-t_start15 = os.clock()
-filter_res = filter_count(500000)
-t_end15 = os.clock()
-print("Filter Count       ", filter_res)
-print("RESULT filter", filter_res)
-print("Filter Count Time  ", t_end15 - t_start15, "seconds")
+ts15 = os.clock()
+r15 = filter(500000)
+te15 = os.clock()
+print("Filter Count       ", r15)
+print("RESULT filter", r15)
+print("Filter Count Time  ", te15 - ts15, "seconds")
 print("----------------------------------------")
 
 print("Running Dot product (n=500,000)...")
-t_start16 = os.clock()
-dot_res = dot_product(500000)
-t_end16 = os.clock()
-print("Dot Product Sum    ", dot_res)
-print("RESULT dot", dot_res)
-print("Dot Product Time   ", t_end16 - t_start16, "seconds")
+ts16 = os.clock()
+r16 = dot(500000)
+te16 = os.clock()
+print("Dot Product Sum    ", r16)
+print("RESULT dot", r16)
+print("Dot Product Time   ", te16 - ts16, "seconds")
 print("----------------------------------------")
 
 print("Running Clamp sum (n=5,000,000)...")
-t_start17 = os.clock()
-clamp_res = clamp_sum(5000000)
-t_end17 = os.clock()
-print("Clamp Sum Result   ", clamp_res)
-print("RESULT clamp", clamp_res)
-print("Clamp Sum Time     ", t_end17 - t_start17, "seconds")
+ts17 = os.clock()
+r17 = clamp(5000000)
+te17 = os.clock()
+print("Clamp Sum Result   ", r17)
+print("RESULT clamp", r17)
+print("Clamp Sum Time     ", te17 - ts17, "seconds")
 print("----------------------------------------")
 
 print("Running Bucket hash (n=1,000,000)...")
-t_start18 = os.clock()
-bucket_res = bucket_hash(1000000)
-t_end18 = os.clock()
-print("Bucket Hash Sum    ", bucket_res)
-print("RESULT bucket", bucket_res)
-print("Bucket Hash Time   ", t_end18 - t_start18, "seconds")
+ts18 = os.clock()
+r18 = bucket(1000000)
+te18 = os.clock()
+print("Bucket Hash Sum    ", r18)
+print("RESULT bucket", r18)
+print("Bucket Hash Time   ", te18 - ts18, "seconds")
 print("----------------------------------------")
 
 print("Running EMA smooth (n=5,000,000)...")
-t_start19 = os.clock()
-ema_res = ema_smooth(5000000)
-t_end19 = os.clock()
-print("EMA Result         ", ema_res)
-print("RESULT ema", ema_res)
-print("EMA Smooth Time    ", t_end19 - t_start19, "seconds")
+ts19 = os.clock()
+r19 = ema(5000000)
+te19 = os.clock()
+print("EMA Result         ", r19)
+print("RESULT ema", r19)
+print("EMA Smooth Time    ", te19 - ts19, "seconds")
 print("----------------------------------------")
 
 print("Running Token count (rep x50,000)...")
-t_start20 = os.clock()
-token_res = token_count(50000)
-t_end20 = os.clock()
-print("Token Count        ", token_res)
-print("RESULT token", token_res)
-print("Token Count Time   ", t_end20 - t_start20, "seconds")
+ts20 = os.clock()
+r20 = token(50000)
+te20 = os.clock()
+print("Token Count        ", r20)
+print("RESULT token", r20)
+print("Token Count Time   ", te20 - ts20, "seconds")
 print("----------------------------------------")
 
 print("Running Config parse sum (rep x20,000)...")
-t_start21 = os.clock()
-parse_res = config_parse_sum(20000)
-t_end21 = os.clock()
-print("Config Parse Sum   ", parse_res)
-print("RESULT parse", parse_res)
-print("Config Parse Time  ", t_end21 - t_start21, "seconds")
+ts21 = os.clock()
+r21 = parse(20000)
+te21 = os.clock()
+print("Config Parse Sum   ", r21)
+print("RESULT parse", r21)
+print("Config Parse Time  ", te21 - ts21, "seconds")
 print("----------------------------------------")
 
 print("Running Table lookup sum (n=500,000)...")
-t_start22 = os.clock()
-lookup_res = table_lookup_sum(500000)
-t_end22 = os.clock()
-print("Table Lookup Sum   ", lookup_res)
-print("RESULT lookup", lookup_res)
-print("Table Lookup Time  ", t_end22 - t_start22, "seconds")
+ts22 = os.clock()
+r22 = lookup(500000)
+te22 = os.clock()
+print("Table Lookup Sum   ", r22)
+print("RESULT lookup", r22)
+print("Table Lookup Time  ", te22 - ts22, "seconds")
 print("----------------------------------------")
 
 print("Running Table insert churn (n=500,000)...")
-t_start23 = os.clock()
-churn_res = table_insert_churn(500000)
-t_end23 = os.clock()
-print("Table Churn Sum    ", churn_res)
-print("RESULT churn", churn_res)
-print("Table Churn Time   ", t_end23 - t_start23, "seconds")
+ts23 = os.clock()
+r23 = churn(500000)
+te23 = os.clock()
+print("Table Churn Sum    ", r23)
+print("RESULT churn", r23)
+print("Table Churn Time   ", te23 - ts23, "seconds")
 print("----------------------------------------")
 
 print("Running Matrix multiply (200x200, 50 reps)...")
-t_start24 = os.clock()
-matmul_res = matmul(50)
-t_end24 = os.clock()
-print("MatMul Checksum    ", matmul_res)
-print("RESULT matmul", matmul_res)
-print("MatMul Time        ", t_end24 - t_start24, "seconds")
+ts24 = os.clock()
+r24 = matrix(50)
+te24 = os.clock()
+print("MatMul Checksum    ", r24)
+print("RESULT matrix", r24)
+print("MatMul Time        ", te24 - ts24, "seconds")
 print("----------------------------------------")
 
 print("Running Prefix sum (n=2,000,000)...")
-t_start25 = os.clock()
-prefix_res = prefix_sum(2000000)
-t_end25 = os.clock()
-print("Prefix Sum Result  ", prefix_res)
-print("RESULT prefix", prefix_res)
-print("Prefix Sum Time    ", t_end25 - t_start25, "seconds")
+ts25 = os.clock()
+r25 = prefix(2000000)
+te25 = os.clock()
+print("Prefix Sum Result  ", r25)
+print("RESULT prefix", r25)
+print("Prefix Sum Time    ", te25 - ts25, "seconds")
 print("----------------------------------------")
 
 print("Running GCD reduce (n=2,000,000)...")
-t_start26 = os.clock()
-gcd_res = gcd_reduce(2000000)
-t_end26 = os.clock()
-print("GCD Reduce Sum     ", gcd_res)
-print("RESULT gcd", gcd_res)
-print("GCD Reduce Time    ", t_end26 - t_start26, "seconds")
+ts26 = os.clock()
+r26 = gcd(2000000)
+te26 = os.clock()
+print("GCD Reduce Sum     ", r26)
+print("RESULT gcd", r26)
+print("GCD Reduce Time    ", te26 - ts26, "seconds")
 print("----------------------------------------")
 
 print("Running Collatz sum (n=500,000)...")
-t_start27 = os.clock()
-collatz_res = collatz_sum(500000)
-t_end27 = os.clock()
-print("Collatz Sum        ", collatz_res)
-print("RESULT collatz", collatz_res)
-print("Collatz Sum Time   ", t_end27 - t_start27, "seconds")
+ts27 = os.clock()
+r27 = collatz(500000)
+te27 = os.clock()
+print("Collatz Sum        ", r27)
+print("RESULT collatz", r27)
+print("Collatz Sum Time   ", te27 - ts27, "seconds")
 print("----------------------------------------")
 
 print("Running XOR fold (n=5,000,000)...")
-t_start28 = os.clock()
-xor_res = xor_fold(5000000)
-t_end28 = os.clock()
-print("XOR Fold Result    ", xor_res)
-print("RESULT xorfold", xor_res)
-print("XOR Fold Time      ", t_end28 - t_start28, "seconds")
+ts28 = os.clock()
+r28 = xor(5000000)
+te28 = os.clock()
+print("XOR Fold Result    ", r28)
+print("RESULT xorfold", r28)
+print("XOR Fold Time      ", te28 - ts28, "seconds")
 print("----------------------------------------")
 
 print("Running Ring buffer (n=5,000,000)...")
-t_start29 = os.clock()
-ring_res = ring_buffer(5000000)
-t_end29 = os.clock()
-print("Ring Buffer Sum    ", ring_res)
-print("RESULT ringbuf", ring_res)
-print("Ring Buffer Time   ", t_end29 - t_start29, "seconds")
+ts29 = os.clock()
+r29 = ring(5000000)
+te29 = os.clock()
+print("Ring Buffer Sum    ", r29)
+print("RESULT ringbuf", r29)
+print("Ring Buffer Time   ", te29 - ts29, "seconds")
 print("----------------------------------------")
 
 print("Running Cond swap (n=100,000)...")
-t_start30 = os.clock()
-swap_res = cond_swap(100000)
-t_end30 = os.clock()
-print("Cond Swap Sum      ", swap_res)
-print("RESULT cond_swap", swap_res)
-print("Cond Swap Time     ", t_end30 - t_start30, "seconds")
+ts30 = os.clock()
+r30 = swap(100000)
+te30 = os.clock()
+print("Cond Swap Sum      ", r30)
+print("RESULT swap", r30)
+print("Cond Swap Time     ", te30 - ts30, "seconds")
 print("----------------------------------------")
 
 print("Running Ackermann(3,11)...")
-t_start31 = os.clock()
-ack_res = ack(3, 11)
-t_end31 = os.clock()
-print("Ackermann Result   ", ack_res)
-print("RESULT ack", ack_res)
-print("Ackermann Time     ", t_end31 - t_start31, "seconds")
+ts31 = os.clock()
+r31 = ack(3, 11)
+te31 = os.clock()
+print("Ackermann Result   ", r31)
+print("RESULT ack", r31)
+print("Ackermann Time     ", te31 - ts31, "seconds")
 print("----------------------------------------")
 
 print("Running Levenshtein (n=200,000)...")
-t_start32 = os.clock()
-leven_res = leven(200000)
-t_end32 = os.clock()
-print("Levenshtein Sum    ", leven_res)
-print("RESULT leven", leven_res)
-print("Levenshtein Time   ", t_end32 - t_start32, "seconds")
+ts32 = os.clock()
+r32 = leven(200000)
+te32 = os.clock()
+print("Levenshtein Sum    ", r32)
+print("RESULT leven", r32)
+print("Levenshtein Time   ", te32 - ts32, "seconds")
 print("----------------------------------------")
 
 print("Running Sieve (n=2,000,000)...")
-t_start33 = os.clock()
-sieve_res = sieve(2000000)
-t_end33 = os.clock()
-print("Sieve Count        ", sieve_res)
-print("RESULT sieve", sieve_res)
-print("Sieve Time         ", t_end33 - t_start33, "seconds")
+ts33 = os.clock()
+r33 = sieve(2000000)
+te33 = os.clock()
+print("Sieve Count        ", r33)
+print("RESULT sieve", r33)
+print("Sieve Time         ", te33 - ts33, "seconds")
 print("----------------------------------------")
 
 print("Running Fenwick tree (n=500,000)...")
-t_start34 = os.clock()
-fenwick_res = fenwick(500000)
-t_end34 = os.clock()
-print("Fenwick Sum        ", fenwick_res)
-print("RESULT fenwick", fenwick_res)
-print("Fenwick Time       ", t_end34 - t_start34, "seconds")
+ts34 = os.clock()
+r34 = fenwick(500000)
+te34 = os.clock()
+print("Fenwick Sum        ", r34)
+print("RESULT fenwick", r34)
+print("Fenwick Time       ", te34 - ts34, "seconds")
 print("----------------------------------------")
 
 print("Running Interpolation (n=5,000,000)...")
-t_start35 = os.clock()
-interp_res = interp(5000000)
-t_end35 = os.clock()
-print("Interp Sum         ", interp_res)
-print("RESULT interp", interp_res)
-print("Interp Time        ", t_end35 - t_start35, "seconds")
+ts35 = os.clock()
+r35 = interp(5000000)
+te35 = os.clock()
+print("Interp Sum         ", r35)
+print("RESULT interp", r35)
+print("Interp Time        ", te35 - ts35, "seconds")
 print("----------------------------------------")
 
 print("Running Run-length count (rep x50,000)...")
-t_start36 = os.clock()
-rle_res = run_50000:len()
-t_end36 = os.clock()
-print("Run-Length Count   ", rle_res)
-print("RESULT run_len", rle_res)
-print("Run-Length Time    ", t_end36 - t_start36, "seconds")
+ts36 = os.clock()
+r36 = run_50000:len()
+te36 = os.clock()
+print("Run-Length Count   ", r36)
+print("RESULT run_len", r36)
+print("Run-Length Time    ", te36 - ts36, "seconds")
 print("----------------------------------------")
 
 print("Running Bitcount (n=5,000,000)...")
-t_start37 = os.clock()
-bitcount_res = bitcount(5000000)
-t_end37 = os.clock()
-print("Bitcount Sum       ", bitcount_res)
-print("RESULT bitcount", bitcount_res)
+ts37 = os.clock()
+r37 = weight(5000000)
+te37 = os.clock()
+print("Bitcount Sum       ", r37)
+print("RESULT weight", r37)
 # gap[096] NO TIME LINE — removed from the speed table, RESULT kept.
 # Duo's codegen substitutes an O(log n) per-bit duty-cycle identity for the
 # O(n log n) loop, so this row compares two ALGORITHMS, not two codegens.
@@ -1158,28 +1158,28 @@ print("RESULT bitcount", bitcount_res)
 print("----------------------------------------")
 
 print("Running CORDIC sin (n=5,000,000)...")
-t_start38 = os.clock()
-cordic_res = cordic(5000000)
-t_end38 = os.clock()
-print("CORDIC Sum         ", cordic_res)
-print("RESULT cordic", cordic_res)
-print("CORDIC Time        ", t_end38 - t_start38, "seconds")
+ts38 = os.clock()
+r38 = cordic(5000000)
+te38 = os.clock()
+print("CORDIC Sum         ", r38)
+print("RESULT cordic", r38)
+print("CORDIC Time        ", te38 - ts38, "seconds")
 print("----------------------------------------")
 
 print("Running Sparse dot (n=200,000)...")
-t_start39 = os.clock()
-sparse_res = sparse_dot(200000)
-t_end39 = os.clock()
-print("Sparse Dot Sum     ", sparse_res)
-print("RESULT sparse", sparse_res)
-print("Sparse Dot Time    ", t_end39 - t_start39, "seconds")
+ts39 = os.clock()
+r39 = sparse(200000)
+te39 = os.clock()
+print("Sparse Dot Sum     ", r39)
+print("RESULT sparse", r39)
+print("Sparse Dot Time    ", te39 - ts39, "seconds")
 print("----------------------------------------")
 
 print("Running Game of Life (500 steps)...")
-t_start40 = os.clock()
-life_res = life(500)
-t_end40 = os.clock()
-print("Life Population    ", life_res)
-print("RESULT life", life_res)
-print("Life Time          ", t_end40 - t_start40, "seconds")
+ts40 = os.clock()
+r40 = life(500)
+te40 = os.clock()
+print("Life Population    ", r40)
+print("RESULT life", r40)
+print("Life Time          ", te40 - ts40, "seconds")
 print("========================================")

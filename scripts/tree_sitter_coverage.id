@@ -1,6 +1,6 @@
 # tree-sitter recognition gate — `zig build tree-sitter-coverage`.
 #
-# Pass 100 §19 names tree-sitter as one of the toolchain hosts. gaps/GAP-049
+# Tree-sitter is one of the toolchain hosts. gaps/GAP-049
 # records that the grammar did not build at all until 2026-08-08, and that the
 # setup script had been printing `-- tree-sitter generate failed` in the same
 # shape it uses for genuinely optional steps, which is how a dead grammar
@@ -154,8 +154,8 @@ main: i64 = ()
     # role corpus for `zig build highlight-corpus`,
     # and several of them deliberately carry dnir, arm64 assembly, ebnf and C —
     # one colour language over five surfaces is the point of them. Counting
-    # non-duon text as unrecognised duon does not measure the grammar, it
-    # dilutes the metric with files nobody claimed it should parse. The duon
+    # non-idol text as unrecognised idol does not measure the grammar, it
+    # dilutes the metric with files nobody claimed it should parse. The idol
     # fixtures among them DO fail here, and that is a real signal — the same
     # GAP-049 offside hole `examples/layout/offside.id` already reports, so
     # dropping them costs no information this gate was carrying.

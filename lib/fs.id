@@ -8,7 +8,7 @@ exists(path: any): bool
     true
 end
 
-read_file(path: any): any
+read(path: any): any
     f = io.open(path, "r")
     if f == nil return "" end
     # Read the WHOLE file in one C-level call (f:read("*a")). The previous
@@ -22,7 +22,7 @@ read_file(path: any): any
     data
 end
 
-write_file(path: any, data: any): bool
+write(path: any, data: any): bool
     f = io.open(path, "w")
     if f == nil return false end
     if data == nil data = "" end
@@ -31,7 +31,7 @@ write_file(path: any, data: any): bool
     true
 end
 
-append_file(path: any, data: any): bool
+append(path: any, data: any): bool
     f = io.open(path, "a")
     if f == nil return false end
     if data == nil data = "" end
@@ -40,7 +40,7 @@ append_file(path: any, data: any): bool
     true
 end
 
-read_lines(path: any): any
+lines(path: any): any
     out = {}
     f = io.open(path, "r")
     if f == nil return out end
@@ -65,67 +65,49 @@ rename(src: any, dst: any): bool
     os.rename(src, dst)
 end
 
-mkdir(path: str): bool
-    if path == nil return false end
-    return @c.emit("mkdir(path, 0777) == 0")
+make(path: str): bool
+    # IMPLEMENTATION-BLOCKED: directory create needs world/effect/witness
+    # (path:make). Not os.execute, not a C emit directive.
+    false
 end
 
-mkdirall(path: str): bool
-    if path == nil return false end
-    os.execute("mkdir -p '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null")
-end
+# VOCABULARY-BLOCKED: filesystem mutation/query below requires admitted
+# process world with subject-first relations (path:make(), src:copy(dst)).
+# Do not use os.execute, io.popen, Lua .., or shell-string construction.
+# Unblock: GAP-154 (host boundary), process world admission.
+
+tree(path: str): bool
+    # IMPLEMENTATION-BLOCKED: recursive make needs admitted process world
+    false
 
 copy(src: str, dest: str): bool
-    if src == nil or dest == nil return false end
-    os.execute("cp '" .. src:gsub("'", "'\\''") .. "' '" .. dest:gsub("'", "'\\''") .. "' 2>/dev/null")
-end
+    # IMPLEMENTATION-BLOCKED: copy needs admitted process world
+    false
 
-read_dir(path: str): any
-    out = {}
-    if path == nil return out end
-    f = io.popen("ls -1A '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null", "r")
-    if f == nil return out end
-    line = f:read()
-    while line != nil
-        out[out:len() + 1] = line
-        line = f:read()
-    end
-    f:close()
-    out
-end
+list(path: str): any
+    # IMPLEMENTATION-BLOCKED: directory iteration requires admitted world
+    {}
 
-is_dir(path: str): bool
-    if path == nil return false end
-    os.execute("test -d '" .. path:gsub("'", "'\\''") .. "'")
-end
+dir(path: str): bool
+    # IMPLEMENTATION-BLOCKED: directory query requires admitted world
+    false
 
-is_file(path: str): bool
-    if path == nil return false end
-    os.execute("test -f '" .. path:gsub("'", "'\\''") .. "'")
-end
+file(path: str): bool
+    # IMPLEMENTATION-BLOCKED: file query requires admitted world
+    false
 
-rmdir(path: str): bool
-    if path == nil return false end
-    os.execute("rmdir '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null")
+drop(path: str): bool
+    # IMPLEMENTATION-BLOCKED: directory remove needs world/effect/witness
+    false
 end
 
 chmod(path: str, mode: str): bool
-    if path == nil or mode == nil return false end
-    os.execute("chmod " .. mode .. " '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null")
+    # IMPLEMENTATION-BLOCKED: permission change requires admitted world
+    false
 end
 
-path: str:len(): i64
-    if path == nil return 0 - 1 end
-    f = io.popen("stat -c%s '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null", "r")
-    if f == nil
-        f = io.popen("stat -f%z '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null", "r")
-        if f == nil return 0 - 1 end
-    end
-    out = f:read("*a")
-    f:close()
-    if out == nil or out == "" return 0 - 1 end
-    s = tonumber(out)
-    if s == nil return 0 - 1 end
-    s
+size(path: str): i64
+    # IMPLEMENTATION-BLOCKED: stat requires admitted world
+    0 - 1
 end
 

@@ -11,7 +11,7 @@ loc: {
 KIND_NAME = 0
 KIND_INT_LIT = 1
 KIND_FLOAT_LIT = 2
-KIND_STRING_LIT = 3
+# Slot 3 is unpublished. Not an identity. Do not renumber 4–113.
 
 # Keywords from classify.id
 KIND_AND = 4
@@ -124,6 +124,10 @@ KIND_BYTES_LIT = 106
 KIND_COMPAT_TEXT_LIT = 107
 KIND_COMPAT_LONG_TEXT_LIT = 108
 KIND_EOF = 109
+KIND_SHEBANG = 110
+KIND_COMMENT = 111
+KIND_COMPAT_COMMENT = 112
+KIND_COMPAT_LONG_COMMENT = 113
 
 token: {
     kind: i64,

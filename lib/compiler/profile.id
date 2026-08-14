@@ -19,7 +19,7 @@
 # rules are syntactic.
 
 
-_contains: bool = (hay: str, needle: str)
+contains: bool = (hay: str, needle: str)
     hn: i64 = hay:len()
     nn: i64 = needle:len()
     i: i64 = 1
@@ -47,31 +47,31 @@ end
 # wrongly claims "freestanding" would have the build drop runtime support a
 # program needs; one that wrongly claims "needs runtime" costs only size. The
 # asymmetry is real, so the default leans to yes.
-needs_runtime: bool = (src: str)
+dynamic: bool = (src: str)
     # an `any`-typed parameter or binding: the native-scalar path refuses the
     # whole module on this one, with no diagnostic
-    if _contains(src, ": any")
+    if contains(src, ": any")
         return true
     end
     # a table literal or index: no native memory representation for a table
     # crossing a call boundary
-    if _contains(src, "{") 
+    if contains(src, "{")
         return true
     end
     # varargs
-    if _contains(src, "...")
+    if contains(src, "...")
         return true
     end
     # string values beyond literals passed straight through
-    if _contains(src, ": str")
+    if contains(src, ": str")
         return true
     end
     false
 end
 
 # The profile name, so a build can key on it rather than on a bool.
-profile_of: str = (src: str)
-    if needs_runtime(src)
+profile: str = (src: str)
+    if dynamic(src)
         return "dynamic"
     end
     "freestanding"

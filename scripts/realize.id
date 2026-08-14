@@ -1,7 +1,7 @@
-# Pass 8 realization plan + persistent semantic cache gate.
+# The realization plan + persistent semantic cache gate.
 #
-# PORTED from src/pass8_realization_tests.zig (158 lines, 6 tests) and
-# src/pass8_codegen_realization_tests.zig (55 lines, 1 test), both deleted in
+# PORTED from the deleted realization tests (158 lines, 6 tests) and
+# the codegen-realization tests (55 lines, 1 test), both deleted in
 # the same commit. Every one of those tests drove Lexer -> Parser -> sema ->
 # realization.buildFromGraph / compile_semantic_cache.refreshFromCheckedModule
 # IN PROCESS and asserted on Zig structs. Two shipping verbs already print
@@ -101,9 +101,9 @@ main: i64 = ()
         bad += 1
     end
 
-    one = "{root}/examples/pass8/realization_smoke.id"
-    two = "{root}/examples/pass8/realization_point_v2.id"
-    gone = "{root}/examples/pass8/realization_norecord.id"
+    one = "{root}/examples/realization_smoke.id"
+    two = "{root}/examples/realization_point_v2.id"
+    gone = "{root}/examples/realization_norecord.id"
 
     # CONTROL 3 — the fixtures are here. Held over a missing file is false for
     # every want, which reads as a wall of real failures.
@@ -139,45 +139,35 @@ main: i64 = ()
         bad += 1
     end
 
-    # R1 — the sealed Point plans one representation variable, four candidates
-    # are offered, and the register/native aggregate is the one selected.
+    # R1 — one representation variable; storage class does not select or catalog.
     if !held(plan, "\"variable_count\":1")
         shout("FAIL — R1: the sealed record produced no realization variable")
         bad += 1
     end
-    if !held(plan, "\"selected_id\":\"repr.native_aggregate\"")
-        shout("FAIL — R1: the plan did not select repr.native_aggregate")
+    if held(plan, "\"selected_id\":\"repr.")
+        shout("FAIL — R1: storage class selected a representation")
         bad += 1
     end
-    if !held(plan, "\"selected_index\":3")
-        shout("FAIL — R1: the selection carried no index")
+    if held(plan, "repr.dynamic_table")
+        shout("FAIL — R1: lua_Table catalog restored as a representation candidate")
         bad += 1
     end
-    if !held(plan, "\"id\":\"repr.dynamic_table\"")
-        shout("FAIL — R1: the dynamic-table candidate was never offered")
+    if held(plan, "repr.native_sealed")
+        shout("FAIL — R1: storage-class representation catalog restored")
         bad += 1
     end
-    if !held(plan, "\"id\":\"repr.native_sealed\"")
-        shout("FAIL — R1: the sealed-struct candidate was never offered")
+    if held(plan, "repr.native_aggregate")
+        shout("FAIL — R1: storage-class representation catalog restored")
         bad += 1
     end
 
-    # R6 — codegen logged the representation it actually emitted, naming the
-    # entity and the representation as FIELDS, not as prose inside a reason.
-    if !held(plan, "\"transformation\":\"realization.representation\"")
-        shout("FAIL — R6: codegen logged no realization.representation outcome")
+    # R6 — C-emit must not log a representation it does not own.
+    if held(plan, "\"transformation\":\"realization.representation\"")
+        shout("FAIL — R6: C-emit logged a representation it did not own")
         bad += 1
     end
-    if !held(plan, "\"status\":\"applied\"")
-        shout("FAIL — R6: the realization outcome was not applied")
-        bad += 1
-    end
-    if !held(plan, "\"entity\":\"duo:record:Point\"")
-        shout("FAIL — R6: the outcome named no entity")
-        bad += 1
-    end
-    if !held(plan, "\"after_repr\":\"native_aggregate\"")
-        shout("FAIL — R6: the outcome did not report native_aggregate")
+    if held(plan, "\"after_repr\":\"native_aggregate\"")
+        shout("FAIL — R6: C-emit claimed native_aggregate from storage class")
         bad += 1
     end
 

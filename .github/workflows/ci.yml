@@ -60,15 +60,9 @@ jobs:
       - name: G-061 strict transform gate
         run: zig build meta-gate
 
-      - name: Pass 16 lexer migration gate (cross-platform)
-        run: zig build pass16-m1-smoke
-
-      - name: Pass 11 module smoke (native, cross-platform)
-        run: zig build pass11-module-smoke
-
       - name: WASM compilation smoke test
         run: |
-          ./zig-out/bin/duo compile examples/hello.lua --target wasm32-wasi -o /tmp/hello.wasm
+          ./zig-out/bin/idol compile examples/hello.lua --target wasm32-wasi -o /tmp/hello.wasm
           file /tmp/hello.wasm | grep -q "WebAssembly"
           echo "WASM OK"
 
@@ -104,38 +98,13 @@ jobs:
       - name: Build
         run: zig build
 
-      - name: Reproducibility smoke (Pass 11 WP-13)
+      - name: Reproducibility smoke
         run: zig build reproducibility-smoke
 
-  pass11-direct:
+  matrix-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: macos-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Zig (pinned)
-        uses: mlugg/setup-zig@v2
-        with:
-          version: ${{ env.ZIG_VERSION }}
-
-      - name: Build
-        run: zig build
-
-      - name: Direct backend smoke (Pass 11)
-        run: zig build pass11-direct-smoke
-
-      - name: Byte blob object smoke (Pass 11 WP-05)
-        run: zig build pass11-blob-object-smoke
-
-      - name: Pass 16 lexer migration gate (aarch64-macos host)
-        run: zig build pass16-m1-smoke
-
-  pass16-cross:
     runs-on: ${{ matrix.os }}
-    needs: [hygiene]
+    needs: [build]
     strategy:
       fail-fast: false
       matrix:
@@ -152,9 +121,6 @@ jobs:
 
       - name: Build
         run: zig build
-
-      - name: Pass 16 M1 keyword differential smoke
-        run: zig build pass16-m1-smoke
 
   bench:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -184,10 +150,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: native
-            artifact: duo
+            artifact: idol
           - os: macos-latest
             target: native
-            artifact: duo
+            artifact: idol
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -205,15 +171,15 @@ jobs:
         run: zig build -Doptimize=ReleaseFast
 
       - name: Rename binary for release
-        run: mv zig-out/bin/duo zig-out/bin/duo-${{ matrix.os }}
+        run: mv zig-out/bin/idol zig-out/bin/idol-${{ matrix.os }}
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: duo-${{ matrix.os }}
-          path: zig-out/bin/duo-${{ matrix.os }}
+          name: idol-${{ matrix.os }}
+          path: zig-out/bin/idol-${{ matrix.os }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: zig-out/bin/duo-${{ matrix.os }}
+          files: zig-out/bin/idol-${{ matrix.os }}

@@ -20,19 +20,14 @@
 pick: i64 = (n: i64)
     k = if n > 3 10 else 20
     k
-end
 
 grade: i64 = (n: i64)
     k = if n > 8 3 else if n > 4 2 else 1
     k
-end
 
-main: i64 = ()
-    hi = pick(5)
-    lo = pick(1)
-    top = grade(9)
-    mid = grade(5)
-    low = grade(1)
-    print("{hi} {lo} {top} {mid} {low}")
-    0
-end
+hi = pick(5)
+lo = pick(1)
+top = grade(9)
+mid = grade(5)
+low = grade(1)
+print("{hi} {lo} {top} {mid} {low}")
