@@ -2,13 +2,11 @@
 # Run: duo run examples/meta_exponential_stack.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 concept HasTag
-    tag: str
-end
+  tag: str
 
 Point: { x: f64, y: f64, tag: str }
 Pair: { x: f64, y: f64, tag: str }
@@ -23,15 +21,14 @@ Label: { tag: str }
     acc
 end)
 
+
 @comp.derive.all("HasXY", TouchApi)
 
-pair_sig(a, b): str
-    a.name .. "x" .. b.name .. ";"
-end
+pair_sig: str = (a, b)
+  a.name .. "x" .. b.name .. ";"
 
-mark(meta): str
-    meta.name .. ";"
-end
+mark: str = (meta)
+  meta.name .. ";"
 
 PAIRS = @comp.product("HasXY", "HasTag", pair_sig)
 SWEEP = @comp.map("HasXY", mark)

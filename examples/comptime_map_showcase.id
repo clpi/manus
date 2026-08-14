@@ -2,9 +2,8 @@
 # Run: duo run examples/comptime_map_showcase.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 Point: { x: f64, y: f64 }
 Pair: { x: f64, y: f64 }
@@ -13,15 +12,13 @@ IdOnly: { id: i64 }
 @comp.assert(@comp.satisfies(Point, "HasXY"), "Point has x and y")
 @comp.assert(not @comp.satisfies(IdOnly, "HasXY"), "IdOnly lacks x/y")
 
-c_type_comment(meta): str
-    "/* " .. meta.name .. " */\n"
-end
+c_type_comment: str = (meta)
+  "/* " .. meta.name .. " */\n"
 
-type_registry_line(meta): str
-    meta.name .. ";"
-end
+type_registry_line: str = (meta)
+  meta.name .. ";"
 
-@c.emit(@comp.map("HasXY", c_type_comment))
+__emit(@comp.map("HasXY", c_type_comment))
 
 TYPE_MARKS = @comp.map("HasXY", type_registry_line)
 

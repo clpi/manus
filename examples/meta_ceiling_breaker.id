@@ -2,18 +2,17 @@
 # Run: duo run examples/meta_ceiling_breaker.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 concept HasTag
-    tag: str
-end
+  tag: str
 
 Point: { x: f64, y: f64, tag: str }
 Pair: { x: f64, y: f64, tag: str }
 Label: { tag: str }
 
+# One @comp.ceiling line → O(types × fields) + O(types² × fields) C
 @comp.define.derive("PairApi", generate(meta) -> str
     acc = "/* pair " .. meta.name .. " */\n"
     if meta.left != nil
@@ -27,12 +26,10 @@ Label: { tag: str }
     acc
 end)
 
-# One @comp.ceiling line → O(types × fields) + O(types² × fields) C
-@c.emit(@comp.ceiling("HasXY", PairApi, "HasTag"))
+__emit(@comp.ceiling("HasXY", PairApi, "HasTag"))
 
-pair_sig(a, b): str
-    a.name .. "x" .. b.name .. ";"
-end
+pair_sig: str = (a, b)
+  a.name .. "x" .. b.name .. ";"
 
 PAIRS = @comp.product("HasXY", "HasTag", pair_sig)
 NAMES = @comp.type.names()

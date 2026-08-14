@@ -2,9 +2,8 @@
 # Run: duo run examples/derive_map_showcase.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 Point: { x: f64, y: f64 }
 Pair: { x: f64, y: f64 }
@@ -18,7 +17,7 @@ Pair: { x: f64, y: f64 }
     acc
 end)
 
-@c.emit(@comp.derive("HasXY", TouchApi))
+__emit(@comp.derive("HasXY", TouchApi))
 
 API_LEN = @comp.derive("HasXY", TouchApi)
 

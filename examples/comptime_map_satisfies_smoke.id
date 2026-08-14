@@ -2,9 +2,8 @@
 # Run: duo run examples/comptime_map_satisfies_smoke.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 Point: { x: f64, y: f64 }
 IdOnly: { id: i64 }
@@ -12,9 +11,8 @@ IdOnly: { id: i64 }
 @comp.assert(@comp.satisfies(Point, "HasXY"), "Point has x and y")
 @comp.assert(not @comp.satisfies(IdOnly, "HasXY"), "IdOnly lacks x/y")
 
-mark(meta): str
-    meta.name .. ";"
-end
+mark: str = (meta)
+  meta.name .. ";"
 
 MARKS = @comp.map("HasXY", mark)
 

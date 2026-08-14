@@ -2,9 +2,8 @@
 # Run: duo run examples/derive_map_bundle_showcase.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 Point: { x: f64, y: f64 }
 Pair: { x: f64, y: f64 }
@@ -12,6 +11,7 @@ Pair: { x: f64, y: f64 }
 @comp.define.derive("TouchApi", generate(meta) -> str
     "static inline void duo_" .. meta.name .. "_touch(const duo_" .. meta.name .. "* v) { (void)v->x; (void)v->y; }\n"
 end)
+
 
 @comp.define.derive("LayoutApi", generate(meta) -> str
     acc = ""
@@ -22,9 +22,10 @@ end)
     acc
 end)
 
+
 @comp.define.bundle("FullApi", TouchApi, LayoutApi)
 
-@c.emit(@comp.derive("HasXY", FullApi))
+__emit(@comp.derive("HasXY", FullApi))
 
 BUNDLE_LEN = @comp.derive("HasXY", FullApi)
 

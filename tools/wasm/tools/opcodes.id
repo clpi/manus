@@ -301,8 +301,7 @@ _const: str = (name: str)
 _num: i64 = (name: str)
   for _i, row in OPS
     if row[2] == name
-      return row[1]
-  -1
+      return row[1] - 1
 
 _pad: str = (s: str, w: i64)
   out = s
@@ -402,34 +401,34 @@ _agree: i64 = (path: str)
 #
 # Three things could each read "green" while broken, so each gets a probe that
 # must FAIL for the harness to trust the one that must pass.
-_selfcheck: bool = ()
-  # 1. the region rewriter round-trips a buffer byte for byte
-  src = "a\n-- derived(t) begin\nold\n-- derived end\nb\n"
-  if _render(src, "t", "old\n") != src
-    print("selfcheck: _render is not an identity on an already-current body")
-    return false
-  # 2. and actually replaces when the body differs
-  if _render(src, "t", "new\n") != "a\n-- derived(t) begin\nnew\n-- derived end\nb\n"
-    print("selfcheck: _render did not replace the region body")
-    return false
-  # 3. name mangling, including the reserved-word suffix
-  if _const("i32.load8_s") != "OP_i32_load8_s"
-    print("selfcheck: _const mangled i32.load8_s wrongly")
-    return false
-  if _const("end") != "OP_end_"
-    print("selfcheck: _const did not suffix the reserved word `end`")
-    return false
-  # 4. the number lookup rejects an unknown name instead of inventing one
-  if _num("i32.nonesuch") != -1
-    print("selfcheck: _num invented a number for an unknown opcode")
-    return false
-  if _num("i32.add") != 106
-    print("selfcheck: _num lost a known opcode")
-    return false
-  if _hex8(184549376) != "0x0B000000"
-    print("selfcheck: _hex8 is not round-tripping")
-    return false
-  true
+_selfcheck: bool = {}
+# 1. the region rewriter round-trips a buffer byte for byte
+src = "a\n-- derived(t) begin\nold\n-- derived end\nb\n"
+if _render(src, "t", "old\n") != src
+  print("selfcheck: _render is not an identity on an already-current body")
+  return false
+# 2. and actually replaces when the body differs
+if _render(src, "t", "new\n") != "a\n-- derived(t) begin\nnew\n-- derived end\nb\n"
+  print("selfcheck: _render did not replace the region body")
+  return false
+# 3. name mangling, including the reserved-word suffix
+if _const("i32.load8_s") != "OP_i32_load8_s"
+  print("selfcheck: _const mangled i32.load8_s wrongly")
+  return false
+if _const("end") != "OP_end_"
+  print("selfcheck: _const did not suffix the reserved word `end`")
+  return false
+# 4. the number lookup rejects an unknown name instead of inventing one
+if _num("i32.nonesuch") != -1
+  print("selfcheck: _num invented a number for an unknown opcode")
+  return false
+if _num("i32.add") != 106
+  print("selfcheck: _num lost a known opcode")
+  return false
+if _hex8(184549376) != "0x0B000000"
+  print("selfcheck: _hex8 is not round-tripping")
+  return false
+true
 
 # Every JIT row must resolve through OPS. This is the property that makes OPS
 # the single source: a row that could not resolve would otherwise be silently
@@ -468,28 +467,28 @@ main: i64 = ()
     print("*** parsed 0 rows out of " .. canon .. "; the agreement check is broken ***")
     return 1
   print("agrees with duo's canonical table on " .. n:to(str) .. " opcode(s)")
-  
+
 target = "src/engine.id"
-  before = std.script.fs_read(target)
-  after = _render(before, "wasm.opcodes.constants", _body_consts())
-  after = _render(after, "wasm.opcodes.names", _body_names())
-  after = _render(after, "wasm.opcodes.aluword", _body_alu())
-  after = _render(after, "wasm.opcodes.cmpcond", _body_cmp())
-  
+before = std.script.fs_read(target)
+after = _render(before, "wasm.opcodes.constants", _body_consts())
+after = _render(after, "wasm.opcodes.names", _body_names())
+after = _render(after, "wasm.opcodes.aluword", _body_alu())
+after = _render(after, "wasm.opcodes.cmpcond", _body_cmp())
+
 # Mode selection is an ENV VAR, not argv: duo-compiled binaries do not
-  # populate Lua's `arg`, and an argv-driven flag would silently take the
-  # write path in a gate that meant to check.
-  if std.script.getenv("DUO_WASM_DERIVE", "") != ""
-    if after != before
-      print("*** " .. target .. " is STALE against tools/opcodes.id ***")
-      print("    run: duo run tools/opcodes.id")
-      return 1
-    print(target .. " is current (" .. to(str)(OPS:len()) .. " opcodes, " .. to(str)(ALUWORD:len()) .. " alu rows, " .. to(str)(CMPCOND:len()) .. " cmp rows)")
-    return 0
-  
+# populate Lua's `arg`, and an argv-driven flag would silently take the
+# write path in a gate that meant to check.
+if std.script.getenv("DUO_WASM_DERIVE", "") != ""
+  if after != before
+    print("*** " .. target .. " is STALE against tools/opcodes.id ***")
+    print("    run: duo run tools/opcodes.id")
+    return 1
+  print(target .. " is current (" .. to(str)(OPS:len()) .. " opcodes, " .. to(str)(ALUWORD:len()) .. " alu rows, " .. to(str)(CMPCOND:len()) .. " cmp rows)")
+  return 0
+
 if after == before
-    print(target .. " already current -- no write")
-    return 0
-  std.script.fs_write(target, after)
-  print("projected " .. to(str)(OPS:len()) .. " opcodes into " .. target)
-  0
+  print(target .. " already current -- no write")
+  return 0
+std.script.fs_write(target, after)
+print("projected " .. to(str)(OPS:len()) .. " opcodes into " .. target)
+0

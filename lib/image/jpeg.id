@@ -110,11 +110,11 @@ decode: any = (data: str)
       for x = 0, info.width - 1
         c = image.color.rgba(32768, 32768, 32768, 65335)
         image.img_set(img, x, y, c)
-  
+
 {
-    image = img,
-    width = info.width,
-    height = info.height,
-    components = info.components,
-    precision = info.precision
-  }
+  image = img,
+  width = info.width,
+  height = info.height,
+  components = info.components,
+  precision = info.precision
+}

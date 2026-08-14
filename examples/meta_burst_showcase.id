@@ -2,17 +2,16 @@
 # Run: duo run examples/meta_burst_showcase.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 concept HasTag
-    tag: str
-end
+  tag: str
 
 Point: { x: f64, y: f64, tag: str }
 Pair: { x: f64, y: f64, tag: str }
 
+# One line: apply TouchApi to all HasXY types AND emit omni C (ceiling + sweep comment).
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
     for i = 1, meta:len().fields
@@ -22,12 +21,10 @@ Pair: { x: f64, y: f64, tag: str }
     acc
 end)
 
-# One line: apply TouchApi to all HasXY types AND emit omni C (ceiling + sweep comment).
 @comp.burst("HasXY", TouchApi, "HasTag")
 
-mark(meta): str
-    meta.name .. ";"
-end
+mark: str = (meta)
+  meta.name .. ";"
 
 COMBOS = @comp.catalog("combinators")
 SWEEP = @comp.map("HasXY", mark)

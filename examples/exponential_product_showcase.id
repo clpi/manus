@@ -2,13 +2,11 @@
 # Run: duo run examples/exponential_product_showcase.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 concept HasId
-    id: i64
-end
+  id: i64
 
 Point: { x: f64, y: f64 }
 Pair: { x: f64, y: f64 }
@@ -25,15 +23,14 @@ Node: { id: i64, next: i64 }
     acc
 end)
 
+
 @comp.derive.all("HasXY", TouchApi)
 
-pair_line(a, b): str
-    a.name .. "x" .. b.name .. ";"
-end
+pair_line: str = (a, b)
+  a.name .. "x" .. b.name .. ";"
 
-type_line(meta): str
-    meta.name .. ":"
-end
+type_line: str = (meta)
+  meta.name .. ":"
 
 PAIRS = @comp.product("HasXY", "HasId", pair_line)
 FILTERED = @comp.map("HasXY+HasId", type_line)

@@ -146,46 +146,46 @@ main: i64 = ()
     return 1
   print("selfcheck OK (marker detection proved on a synthetic buffer)")
   print("")
-  
+
 built = "src/engine.id"
-  r = _count(built)
-  code = _part(r, 1)
-  derived = _part(r, 2)
-  
+r = _count(built)
+code = _part(r, 1)
+derived = _part(r, 2)
+
 print(_pad("FILE", 30) .. _pad("CODE", 8) .. _pad("DERIVED", 9) .. "SHIPS")
-  print(_pad(built, 30) .. _pad(code:to(str), 8) .. _pad(derived:to(str), 9) .. "yes")
-  
+print(_pad(built, 30) .. _pad(code:to(str), 8) .. _pad(derived:to(str), 9) .. "yes")
+
 # Everything under src/ that is NOT required by the built artifact. These
-  # are reported so the number cannot be flattered by counting dead trees
-  # (src/wasm/jit_arm64.id is 701 lines of a register-allocating JIT whose
-  # host modules # runtime.id, init.id # were deleted; it compiles and
-  # runs nowhere).
-  orphan = 0
-  for _i, f in script.fs_glob("src/wasm/*.id")
-    o = _count(f)
-    orphan = orphan + _part(o, 1)
-    print(_pad(f, 30) .. _pad(to(str)(_part(o, 1)), 8) .. _pad(to(str)(_part(o, 2)), 9) .. "no")
-  
+# are reported so the number cannot be flattered by counting dead trees
+# (src/wasm/jit_arm64.id is 701 lines of a register-allocating JIT whose
+# host modules # runtime.id, init.id # were deleted; it compiles and
+# runs nowhere).
+orphan = 0
+for _i, f in script.fs_glob("src/wasm/*.id")
+  o = _count(f)
+  orphan = orphan + _part(o, 1)
+  print(_pad(f, 30) .. _pad(to(str)(_part(o, 1)), 8) .. _pad(to(str)(_part(o, 2)), 9) .. "no")
+
 print("")
-  print("shipped code lines   " .. code:to(str))
-  print("derived code lines   " .. derived:to(str))
-  if code > 0
-    print("derived ratio        " .. to(str)(derived * 100 / code) .. "%   (target >= 80%)")
-  print("orphan code lines    " .. orphan:to(str) .. "  (in src/wasm/, required by nothing)")
-  
+print("shipped code lines   " .. code:to(str))
+print("derived code lines   " .. derived:to(str))
+if code > 0
+  print("derived ratio        " .. to(str)(derived * 100 / code) .. "%   (target >= 80%)")
+print("orphan code lines    " .. orphan:to(str) .. "  (in src/wasm/, required by nothing)")
+
 facts = _format_facts(script.fs_read(built))
-  print("")
-  print("hand-encoded WASM opcode predicates in the shipped file: " .. facts:to(str))
-  print("  was 241 on 2026-08-08, before the dispatch was projected from")
-  print("  tools/opcodes.id. The residue is 3 known false positives on the")
-  print("  `f64op` width flag, kept as the scanner's floor -- see the comment")
-  print("  on _format_facts. A reading of 0 means the scanner broke.")
-  if facts < 3
-    print("*** opcode-predicate scanner reads below its known floor; it is broken ***")
-    return 1
-  
+print("")
+print("hand-encoded WASM opcode predicates in the shipped file: " .. facts:to(str))
+print("  was 241 on 2026-08-08, before the dispatch was projected from")
+print("  tools/opcodes.id. The residue is 3 known false positives on the")
+print("  `f64op` width flag, kept as the scanner's floor -- see the comment")
+print("  on _format_facts. A reading of 0 means the scanner broke.")
+if facts < 3
+  print("*** opcode-predicate scanner reads below its known floor; it is broken ***")
+  return 1
+
 if derived * 100 < code * 80
-    print("")
-    print("*** PASS 101 §4 UNMET: derived/total is below 80% ***")
-    return 1
-  0
+  print("")
+  print("*** PASS 101 §4 UNMET: derived/total is below 80% ***")
+  return 1
+0

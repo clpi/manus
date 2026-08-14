@@ -142,119 +142,119 @@ main: i64 = ()
   # floor all three runtimes pay. At 4M every row read 14/14/16 ms and the
   # ratio column was measuring `fork` and dyld, not code generation.
   iters: i64 = to(i64)(script.getenv("ITERS", "100000000"))
-  
+
 if not script.fs_exists(binary)
-    print("no the engine binary at " .. binary .. " -- build it with bench/run.id first")
-    return 1
-  if not script.fs_exists(wart)
-    print("no wart binary at " .. wart)
-    print("wart is the differential baseline; without it this table cannot be produced.")
-    return 1
-  if script.status("command -v wat2wasm >/dev/null 2>&1") != 0
-    print("wat2wasm not found -- the generated differential needs it")
-    return 1
-  
+  print("no the engine binary at " .. binary .. " -- build it with bench/run.id first")
+  return 1
+if not script.fs_exists(wart)
+  print("no wart binary at " .. wart)
+  print("wart is the differential baseline; without it this table cannot be produced.")
+  return 1
+if script.status("command -v wat2wasm >/dev/null 2>&1") != 0
+  print("wat2wasm not found -- the generated differential needs it")
+  return 1
+
 dir = script.fs_tmpdir() .. "/_delta"
-  script.fs_mkdir(dir)
-  
+script.fs_mkdir(dir)
+
 # ── CONTROLS ─────────────────────────────────────────────────────────
-  # A trap-on-mismatch oracle that cannot detect a mismatch reports a clean
-  # sweep for a runtime that computes garbage. Prove both directions before
-  # believing a single row below.
-  cbody = _body(_next(seed0), 200000)
-  crun = _build(dir, "ctl_run", _run_wat(cbody))
-  if crun == ""
-    print("control module failed to assemble")
-    return 1
-  cref = script.chomp(script.capture(wasmtime .. " --invoke run " .. crun .. " 2>/dev/null | tail -1"))
-  if cref == ""
-    print("wasmtime produced no reference value for the control")
-    return 1
-  cpos = _build(dir, "ctl_pos", _assert_wat(cbody, cref))
-  # "1" is not the answer to a 200000-iteration FNV-ish chain; if it reads as
-  # one, the check is not checking.
-  cneg = _build(dir, "ctl_neg", _assert_wat(cbody, "1"))
-  
+# A trap-on-mismatch oracle that cannot detect a mismatch reports a clean
+# sweep for a runtime that computes garbage. Prove both directions before
+# believing a single row below.
+cbody = _body(_next(seed0), 200000)
+crun = _build(dir, "ctl_run", _run_wat(cbody))
+if crun == ""
+  print("control module failed to assemble")
+  return 1
+cref = script.chomp(script.capture(wasmtime .. " --invoke run " .. crun .. " 2>/dev/null | tail -1"))
+if cref == ""
+  print("wasmtime produced no reference value for the control")
+  return 1
+cpos = _build(dir, "ctl_pos", _assert_wat(cbody, cref))
+# "1" is not the answer to a 200000-iteration FNV-ish chain; if it reads as
+# one, the check is not checking.
+cneg = _build(dir, "ctl_neg", _assert_wat(cbody, "1"))
+
 print("== controls ==")
-  pw = _wart_assert(wart, cpos)
-  nw = _wart_assert(wart, cneg)
-  pd = _expect(binary, cpos)
-  nd = _expect(binary, cneg)
-  print("  wart  correct-assert=" .. pw .. "  wrong-assert=" .. nw)
-  print("  the engine  correct-assert=" .. pd .. "  wrong-assert=" .. nd)
-  if pw != "agree" or nw == "agree"
-    print("*** wart control FAILED -- its exit status is not evidence; nothing below is reportable ***")
-    return 1
-  if pd != "agree" or nd == "agree"
-    print("*** the engine control FAILED -- its result field is not evidence; nothing below is reportable ***")
-    return 1
-  print("  both directions proved; the table below is evidence.")
-  print("")
-  
+pw = _wart_assert(wart, cpos)
+nw = _wart_assert(wart, cneg)
+pd = _expect(binary, cpos)
+nd = _expect(binary, cneg)
+print("  wart  correct-assert=" .. pw .. "  wrong-assert=" .. nw)
+print("  the engine  correct-assert=" .. pd .. "  wrong-assert=" .. nd)
+if pw != "agree" or nw == "agree"
+  print("*** wart control FAILED -- its exit status is not evidence; nothing below is reportable ***")
+  return 1
+if pd != "agree" or nd == "agree"
+  print("*** the engine control FAILED -- its result field is not evidence; nothing below is reportable ***")
+  return 1
+print("  both directions proved; the table below is evidence.")
+print("")
+
 # ── GENERATED DIFFERENTIAL + TIMING ──────────────────────────────────
-  print(_pad("KERNEL", 10) .. _pad("WASMTIME", 14) .. _pad("WARD", 14) .. _pad("wart", 10) .. _pad("the engine", 10) .. _pad("the engine ms", 9) .. _pad("wart ms", 9) .. _pad("wtime ms", 9) .. "the engine/wart")
-  _rule(104)
-  
-seed = seed0
-  bad = 0
-  sidol = 0
-  swart = 0
-  i = 1
-  while i <= kn
-    seed = _next(seed)
-    body = _body(seed, iters)
-    rmod = _build(dir, "k" .. i:to(str) .. "_run", _run_wat(body))
-    ref = script.chomp(script.capture(wasmtime .. " --invoke run " .. rmod .. " 2>/dev/null | tail -1"))
-    amod = _build(dir, "k" .. i:to(str) .. "_assert", _assert_wat(body, ref))
-    
-vwart = _wart_assert(wart, amod)
-    vidol = _expect(binary, amod)
-    
-# the engine's own value, read the way bench/verify.id reads it, so the row
-    # carries a number and not only a verdict. wasmtime prints i32 signed
-    # and the engine prints it unsigned; the two columns are the same 32-bit
-    # value when they differ only by 2^32.
-    wraw = std.script.capture("DUO_WASM_MODULE=" .. rmod .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit timeout 300 " .. binary .. " 2>/dev/null")
-    got = _field(wraw, "result")
-    
-# Interleaved, min of `reps`. Interleaving matters: this box drifts
-    # measurably under sustained load, and a sequential sweep charges the
-    # drift to whichever runtime ran last.
-    tidol = 9999999
-    twart = 9999999
-    twt = 9999999
-    j = 1
-    while j <= reps
-      a = _time_ms("DUO_WASM_MODULE=" .. rmod .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit " .. binary .. " >/dev/null 2>&1")
-      if a < tidol
-        tidol = a
-      b = _time_ms(wart .. " run --jit " .. amod .. " >/dev/null 2>&1")
-      if b < twart
-        twart = b
-      c = _time_ms(wasmtime .. " --invoke run " .. rmod .. " >/dev/null 2>&1")
-      if c < twt
-        twt = c
-      j = j + 1
-    sidol = sidol + tidol
-    swart = swart + twart
-    
-ratio = "-"
-    if twart > 0
-      ratio = to(str)(tidol * 100 / twart) .. "%"
-    if vwart != "agree" or vidol != "agree"
-      bad = bad + 1
-    print(_pad("k" .. i:to(str), 10) .. _pad(ref, 14) .. _pad(got, 14) .. _pad(vwart, 10) .. _pad(vidol, 10) .. _pad(tidol:to(str), 9) .. _pad(twart:to(str), 9) .. _pad(twt:to(str), 9) .. ratio)
-    i = i + 1
-  
+print(_pad("KERNEL", 10) .. _pad("WASMTIME", 14) .. _pad("WARD", 14) .. _pad("wart", 10) .. _pad("the engine", 10) .. _pad("the engine ms", 9) .. _pad("wart ms", 9) .. _pad("wtime ms", 9) .. "the engine/wart")
 _rule(104)
-  if swart > 0
-    print("aggregate the engine/wart = " .. to(str)(sidol * 100 / swart) .. "%   (<100% means the engine is faster -- the target asks for < 100%)")
-  print("kernels where a runtime disagreed with the oracle: " .. bad:to(str) .. "/" .. kn:to(str))
-  
+
+seed = seed0
+bad = 0
+sidol = 0
+swart = 0
+i = 1
+while i <= kn
+  seed = _next(seed)
+  body = _body(seed, iters)
+  rmod = _build(dir, "k" .. i:to(str) .. "_run", _run_wat(body))
+  ref = script.chomp(script.capture(wasmtime .. " --invoke run " .. rmod .. " 2>/dev/null | tail -1"))
+  amod = _build(dir, "k" .. i:to(str) .. "_assert", _assert_wat(body, ref))
+
+vwart = _wart_assert(wart, amod)
+vidol = _expect(binary, amod)
+
+# the engine's own value, read the way bench/verify.id reads it, so the row
+# carries a number and not only a verdict. wasmtime prints i32 signed
+# and the engine prints it unsigned; the two columns are the same 32-bit
+# value when they differ only by 2^32.
+wraw = std.script.capture("DUO_WASM_MODULE=" .. rmod .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit timeout 300 " .. binary .. " 2>/dev/null")
+got = _field(wraw, "result")
+
+# Interleaved, min of `reps`. Interleaving matters: this box drifts
+# measurably under sustained load, and a sequential sweep charges the
+# drift to whichever runtime ran last.
+tidol = 9999999
+twart = 9999999
+twt = 9999999
+j = 1
+while j <= reps
+  a = _time_ms("DUO_WASM_MODULE=" .. rmod .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit " .. binary .. " >/dev/null 2>&1")
+  if a < tidol
+    tidol = a
+  b = _time_ms(wart .. " run --jit " .. amod .. " >/dev/null 2>&1")
+  if b < twart
+    twart = b
+  c = _time_ms(wasmtime .. " --invoke run " .. rmod .. " >/dev/null 2>&1")
+  if c < twt
+    twt = c
+  j = j + 1
+sidol = sidol + tidol
+swart = swart + twart
+
+ratio = "-"
+if twart > 0
+  ratio = to(str)(tidol * 100 / twart) .. "%"
+if vwart != "agree" or vidol != "agree"
+  bad = bad + 1
+print(_pad("k" .. i:to(str), 10) .. _pad(ref, 14) .. _pad(got, 14) .. _pad(vwart, 10) .. _pad(vidol, 10) .. _pad(tidol:to(str), 9) .. _pad(twart:to(str), 9) .. _pad(twt:to(str), 9) .. ratio)
+i = i + 1
+
+_rule(104)
+if swart > 0
+  print("aggregate the engine/wart = " .. to(str)(sidol * 100 / swart) .. "%   (<100% means the engine is faster -- the target asks for < 100%)")
+print("kernels where a runtime disagreed with the oracle: " .. bad:to(str) .. "/" .. kn:to(str))
+
 if bad != 0
-    return 1
-  if swart > 0 and sidol >= swart
-    print("")
-    print("*** PASS 101 §4 UNMET: the engine is not faster than wart on this corpus ***")
-    return 1
-  0
+  return 1
+if swart > 0 and sidol >= swart
+  print("")
+  print("*** PASS 101 §4 UNMET: the engine is not faster than wart on this corpus ***")
+  return 1
+0

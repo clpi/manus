@@ -2,9 +2,8 @@
 # Run via: examples/meta_weave_showcase.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 Point: { x: f64, y: f64 }
 Pair: { x: f64, y: f64 }

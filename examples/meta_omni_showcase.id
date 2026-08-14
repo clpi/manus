@@ -2,13 +2,11 @@
 # Run: duo run examples/meta_omni_showcase.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 concept HasTag
-    tag: str
-end
+  tag: str
 
 Point: { x: f64, y: f64, tag: str }
 Pair: { x: f64, y: f64, tag: str }
@@ -27,12 +25,11 @@ Label: { tag: str }
     end
 end)
 
-registry_line(meta): str
-    meta.name .. ";"
-end
+registry_line: str = (meta)
+  meta.name .. ";"
 
 # Expression form: ceiling + sweep comment in one call
-@c.emit(@comp.omni("HasXY", PairApi, "HasTag", registry_line))
+__emit(@comp.omni("HasXY", PairApi, "HasTag", registry_line))
 
 print("=== meta omni showcase ===")
 print("Point ok = true")

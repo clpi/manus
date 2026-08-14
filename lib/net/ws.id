@@ -36,20 +36,20 @@ base64_encode: str = (data: any)
       b1 = data[i + 1]
     if i + 2 <= data:len()
       b2 = data[i + 2]
-    
+
 triplet = b0 << 16 | b1 << 8 | b2
-    result = result .. chars:byte(triplet >> 18 & 63 + 1):char()
-    result = result .. chars:byte(triplet >> 12 & 63 + 1):char()
-    if i + 1 <= data:len()
-      result = result .. chars:byte(triplet >> 6 & 63 + 1):char()
-    else
-      result = result .. "="
-    if i + 2 <= data:len()
-      result = result .. chars:byte(triplet & 63 + 1):char()
-    else
-      result = result .. "="
-    i = i + 3
-  result
+result = result .. chars:byte(triplet >> 18 & (63 + 1)):char()
+result = result .. chars:byte(triplet >> 12 & (63 + 1)):char()
+if i + 1 <= data:len()
+  result = result .. chars:byte(triplet >> 6 & (63 + 1)):char()
+else
+  result = result .. "="
+if i + 2 <= data:len()
+  result = result .. chars:byte(triplet & (63 + 1)):char()
+else
+  result = result .. "="
+i = i + 3
+result
 
 base64_sha1: str = (data: str)
   # WebSocket handshake requires base64(SHA-1(data + magic))
@@ -120,7 +120,7 @@ ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
     else
       bytes[bytes:len() + 1] = payload[i]
     i = i + 1
-  
+
 bytes
 
 # ═══════════════════════════════════════════════════════════════
@@ -130,52 +130,52 @@ bytes
 ws_decode_frame: any = (data: any, pos: i64)
   if pos > data:len()
     return nil
-  
+
 byte1 = data[pos]
-  byte2 = data[pos + 1]
-  
+byte2 = data[pos + 1]
+
 fin = byte1 & 128 != 0
-  opcode = byte1 & 15
-  masked = byte2 & 128 != 0
-  payload_len = byte2 & 127
-  
+opcode = byte1 & 15
+masked = byte2 & 128 != 0
+payload_len = byte2 & 127
+
 offset = pos + 2
-  
+
 # Extended payload length
-  if payload_len == 126
-    payload_len = data[offset] << 8 | data[offset + 1]
-    offset = offset + 2
-  elseif payload_len == 127
-    payload_len = 0
-    i = 0
-    while i < 8
-      payload_len = payload_len | data[offset + i] << (56 - i * 8)
-      i = i + 1
-    offset = offset + 8
-  
-# Masking key
-  mask_key = nil
-  if masked
-    mask_key = { data[offset], data[offset + 1], data[offset + 2], data[offset + 3] }
-    offset = offset + 4
-  
-# Payload
-  payload = {}
+if payload_len == 126
+  payload_len = data[offset] << 8 | data[offset + 1]
+  offset = offset + 2
+elseif payload_len == 127
+  payload_len = 0
   i = 0
-  while i < payload_len
-    b = data[offset + i]
-    if masked
-      b = b ~ mask_key[i % 4]
-    payload[payload:len() + 1] = b
+  while i < 8
+    payload_len = payload_len | data[offset + i] << (56 - i * 8)
     i = i + 1
-  
+  offset = offset + 8
+
+# Masking key
+mask_key = nil
+if masked
+  mask_key = { data[offset], data[offset + 1], data[offset + 2], data[offset + 3] }
+  offset = offset + 4
+
+# Payload
+payload = {}
+i = 0
+while i < payload_len
+  b = data[offset + i]
+  if masked
+    b = b ~ mask_key[i % 4]
+  payload[payload:len() + 1] = b
+  i = i + 1
+
 {
-    fin = fin,
-    opcode = opcode,
-    masked = masked,
-    payload = payload,
-    next = offset + payload_len
-  }
+  fin = fin,
+  opcode = opcode,
+  masked = masked,
+  payload = payload,
+  next = offset + payload_len
+}
 
 # ═══════════════════════════════════════════════════════════════
 # WebSocket handshake (client side)
@@ -190,7 +190,7 @@ ws_client_handshake: str = (host: str, port: i64, path: str)
     key_bytes[i] = key_data:byte(i)
     i = i + 1
   key = base64_encode(key_bytes)
-  
+
 "GET " .. path .. " HTTP/1.1\r\n" .. "Host: " .. host .. ":" .. port:to(str) .. "\r\n" .. "Upgrade: websocket\r\n" .. "Connection: Upgrade\r\n" .. "Sec-WebSocket-Key: " .. key .. "\r\n" .. "Sec-WebSocket-Version: 13\r\n" .. "Origin: http://" .. host .. ":" .. port:to(str) .. "\r\n" .. "\r\n"
 
 # ═══════════════════════════════════════════════════════════════
@@ -206,7 +206,7 @@ ws_server_handshake: str = (request: str)
 # Compute accept hash
   magic = "258EAFA5-E914-47DA-95CA-5AB9FC1B5B09"
   accept = base64_sha1(key .. magic)
-  
+
 "HTTP/1.1 101 Switching Protocols\r\n" .. "Upgrade: websocket\r\n" .. "Connection: Upgrade\r\n" .. "Sec-WebSocket-Accept: " .. accept .. "\r\n" .. "\r\n"
 
 # ═══════════════════════════════════════════════════════════════
@@ -305,7 +305,7 @@ ws_connection_receive: any = (conn: any, data: any)
     return { type = "text", data = parts:concat() }
   elseif frame.opcode == OP_BINARY
     return { type = "binary", data = frame.payload }
-  
+
 nil
 
 # ═══════════════════════════════════════════════════════════════

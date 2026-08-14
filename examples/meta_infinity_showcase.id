@@ -2,26 +2,23 @@
 # Run: duo run examples/meta_infinity_showcase.id
 
 concept HasXY
-    x: f64
-    y: f64
-end
+  x: f64
+  y: f64
 
 concept HasTag
-    tag: str
-end
+  tag: str
 
 concept HasId
-    id: i64
-end
+  id: i64
 
 concept HasExtra
-    extra: i64
-end
+  extra: i64
 
 Point: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
 Pair: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
 Label: { tag: str, id: i64, extra: i64 }
 
+# One line: derive.all + quadratic + cubic + quartic emit
 @comp.define.derive("QuadApi", generate(meta) -> str
     if meta.parts != nil and meta:len().parts >= 4
         "/* quad " .. meta.name .. " */\n"
@@ -35,12 +32,10 @@ Label: { tag: str, id: i64, extra: i64 }
     end
 end)
 
-# One line: derive.all + quadratic + cubic + quartic emit
 @comp.infinity("HasXY", QuadApi, "HasTag", "HasId", "HasExtra")
 
-quad_sig(a, b, c, d): str
-    a.name .. "x" .. b.name .. "x" .. c.name .. "x" .. d.name .. ";"
-end
+quad_sig: str = (a, b, c, d)
+  a.name .. "x" .. b.name .. "x" .. c.name .. "x" .. d.name .. ";"
 
 NFOLD = @comp.nfold({ "HasXY", "HasTag", "HasId", "HasExtra" }, quad_sig)
 LADDER = @comp.ladder()

@@ -73,49 +73,49 @@ reconstruct_row: any = (raw_data: any, row: i64, stride: i64, bpp: i64)
   while i <= stride
     row_bytes[i] = raw_data[row_start + i]
     i = i + 1
-  
+
 if filter_type == 0
-    # None: no reconstruction needed
-    return row_bytes
-  
+  # None: no reconstruction needed
+  return row_bytes
+
 # For Sub/Up/Average/Paeth, we need the previous reconstructed row
-  prev = {}
-  if row > 0
-    prev_start = (row - 1) * stride + 1
-    i = 1
-    while i <= stride
-      prev[i] = raw_data[prev_start + i]
-      i = i + 1
-  else
-    i = 1
-    while i <= stride
-      prev[i] = 0
-      i = i + 1
-  
-recon = {}
+prev = {}
+if row > 0
+  prev_start = (row - 1) * stride + 1
   i = 1
   while i <= stride
-    raw_byte = row_bytes[i]
-    if filter_type == 1
-      # Sub: recon(x) = raw(x) + recon(a)
-      left = i > bpp and recon[i - bpp] or 0
-      recon[i] = (raw_byte + left) % 256
-    elseif filter_type == 2
-      # Up: recon(x) = raw(x) + recon(b)
-      recon[i] = (raw_byte + prev[i]) % 256
-    elseif filter_type == 3
-      # Average: recon(x) = raw(x) + floor((a + b) / 2)
-      left = i > bpp and recon[i - bpp] or 0
-      recon[i] = (raw_byte + (left + prev[i]) / 2:floor()) % 256
-    elseif filter_type == 4
-      # Paeth: recon(x) = raw(x) + paeth(a, b, c)
-      left = i > bpp and recon[i - bpp] or 0
-      upper_left = i > bpp and prev[i - bpp] or 0
-      recon[i] = (raw_byte + paeth_predictor(left, prev[i], upper_left)) % 256
-    else
-      recon[i] = raw_byte
+    prev[i] = raw_data[prev_start + i]
     i = i + 1
-  
+else
+  i = 1
+  while i <= stride
+    prev[i] = 0
+    i = i + 1
+
+recon = {}
+i = 1
+while i <= stride
+  raw_byte = row_bytes[i]
+  if filter_type == 1
+    # Sub: recon(x) = raw(x) + recon(a)
+    left = i > bpp and recon[i - bpp] or 0
+    recon[i] = (raw_byte + left) % 256
+  elseif filter_type == 2
+    # Up: recon(x) = raw(x) + recon(b)
+    recon[i] = (raw_byte + prev[i]) % 256
+  elseif filter_type == 3
+    # Average: recon(x) = raw(x) + floor((a + b) / 2)
+    left = i > bpp and recon[i - bpp] or 0
+    recon[i] = (raw_byte + (left + prev[i]) / 2:floor()) % 256
+  elseif filter_type == 4
+    # Paeth: recon(x) = raw(x) + paeth(a, b, c)
+    left = i > bpp and recon[i - bpp] or 0
+    upper_left = i > bpp and prev[i - bpp] or 0
+    recon[i] = (raw_byte + paeth_predictor(left, prev[i], upper_left)) % 256
+  else
+    recon[i] = raw_byte
+  i = i + 1
+
 recon
 
 # ═══════════════════════════════════════════════════════════════
@@ -131,56 +131,56 @@ decode: any = (data: str)
   for i = 1, 8
     if data:byte(i) != sig:byte(i)
       return nil
-  
+
 off = 9
-  img = nil
-  width = 0
-  height = 0
-  bit_depth = 8
-  color_type = 6
-  idat_data = ""
-  
+img = nil
+width = 0
+height = 0
+bit_depth = 8
+color_type = 6
+idat_data = ""
+
 # First pass: read IHDR and collect IDAT chunks
-  while off + 8 <= data:len()
-    chunk_len = read_u32(data, off)
-    chunk_type = data:sub(off + 4, off + 7)
-    chunk_data = data:sub(off + 8, off + 7 + chunk_len)
-    
+while off + 8 <= data:len()
+  chunk_len = read_u32(data, off)
+  chunk_type = data:sub(off + 4, off + 7)
+  chunk_data = data:sub(off + 8, off + 7 + chunk_len)
+
 if chunk_type == "IHDR"
-      width = read_u32(chunk_data, 1)
-      height = read_u32(chunk_data, 5)
-      bit_depth = chunk_data:byte(9)
-      color_type = chunk_data:byte(10)
-      compression = chunk_data:byte(11)
-      filter_method = chunk_data:byte(12)
-      interlace = chunk_data:byte(13)
-      
+  width = read_u32(chunk_data, 1)
+  height = read_u32(chunk_data, 5)
+  bit_depth = chunk_data:byte(9)
+  color_type = chunk_data:byte(10)
+  compression = chunk_data:byte(11)
+  filter_method = chunk_data:byte(12)
+  interlace = chunk_data:byte(13)
+  
 # Create image based on color type
-      if color_type == 6
-        # RGBA
-        img = image.new_rgba(image.rect(0, 0, width, height))
-      elseif color_type == 2
-        # RGB (will set alpha to 255)
-        img = image.new_rgba(image.rect(0, 0, width, height))
-      elseif color_type == 0
-        # Grayscale
-        img = image.new_gray(image.rect(0, 0, width, height))
-      elseif color_type == 4
-        # Gray + Alpha
-        img = image.new_rgba(image.rect(0, 0, width, height))
-      else
-        # Unsupported: create RGBA as fallback
-        img = image.new_rgba(image.rect(0, 0, width, height))
-    elseif chunk_type == "IDAT"
-      
+  if color_type == 6
+    # RGBA
+    img = image.new_rgba(image.rect(0, 0, width, height))
+  elseif color_type == 2
+    # RGB (will set alpha to 255)
+    img = image.new_rgba(image.rect(0, 0, width, height))
+  elseif color_type == 0
+    # Grayscale
+    img = image.new_gray(image.rect(0, 0, width, height))
+  elseif color_type == 4
+    # Gray + Alpha
+    img = image.new_rgba(image.rect(0, 0, width, height))
+  else
+    # Unsupported: create RGBA as fallback
+    img = image.new_rgba(image.rect(0, 0, width, height))
+elseif chunk_type == "IDAT"
+  
 # Concatenate all IDAT data
-      idat_data = idat_data .. chunk_data
-    elseif chunk_type == "IEND"
-      
+  idat_data = idat_data .. chunk_data
+elseif chunk_type == "IEND"
+  
 break
-    
+  
 # Skip to next chunk (4 len + 4 type + chunk_len data + 4 CRC)
-    off = off + 12 + chunk_len
+  off = off + 12 + chunk_len
   
 # Second pass: decompress and reconstruct
   if img != nil and idat_data:len() > 0
@@ -238,53 +238,53 @@ break
       row = row + 1
   
 img
-
+  
 # ═══════════════════════════════════════════════════════════════
-# PNG encoder
-# ═══════════════════════════════════════════════════════════════
-
+  # PNG encoder
+  # ═══════════════════════════════════════════════════════════════
+  
 encode: str = (img: any)
-  out = "137PNG\r\n26\n"
-  w = image.rect_dx(img.rect)
-  h = image.rect_dy(img.rect)
-  
+    out = "137PNG\r\n26\n"
+    w = image.rect_dx(img.rect)
+    h = image.rect_dy(img.rect)
+    
 # IHDR chunk (13 bytes)
-  ihdr_data = string.char(w / 16777216 % 256, w / 65536 % 256, w / 256 % 256, w % 256, h / 16777216 % 256, h / 65536 % 256, h / 256 % 256, h % 256, 8, 6, 0, 0, 0)
-  out = out .. 0:char(0, 0, 13) .. "IHDR" .. ihdr_data
-  ihdr_crc = crc32_bytes("IHDR" .. ihdr_data)
-  out = out .. string.char(ihdr_crc / 16777216 % 256, ihdr_crc / 65536 % 256, ihdr_crc / 256 % 256, ihdr_crc % 256)
-  
+    ihdr_data = string.char(w / 16777216 % 256, w / 65536 % 256, w / 256 % 256, w % 256, h / 16777216 % 256, h / 65536 % 256, h / 256 % 256, h % 256, 8, 6, 0, 0, 0)
+    out = out .. 0:char(0, 0, 13) .. "IHDR" .. ihdr_data
+    ihdr_crc = crc32_bytes("IHDR" .. ihdr_data)
+    out = out .. string.char(ihdr_crc / 16777216 % 256, ihdr_crc / 65536 % 256, ihdr_crc / 256 % 256, ihdr_crc % 256)
+    
 # IDAT chunk: build raw filtered data (filter type 0 = None for each row)
-  raw = ""
-  for y = 0, h - 1
-    # filter: none
-    raw = raw .. 0:char()
-    for x = 0, w - 1
-      c = image.img_at(img, x, y)
-      r = c.r / 257 % 256
-      g = c.g / 257 % 256
-      b = c.b / 257 % 256
-      a = c.a / 257 % 256
-      raw = raw .. r:char(g, b, a)
-  
+    raw = ""
+    for y = 0, h - 1
+      # filter: none
+      raw = raw .. 0:char()
+      for x = 0, w - 1
+        c = image.img_at(img, x, y)
+        r = c.r / 257 % 256
+        g = c.g / 257 % 256
+        b = c.b / 257 % 256
+        a = c.a / 257 % 256
+        raw = raw .. r:char(g, b, a)
+    
 # Zlib wrapper: store block (uncompressed deflate)
-  zlib_header = 120:char(1)
-  # BFINAL=1, BTYPE=00 (stored)
-  deflate_block = 1:char()
-  len = raw:len()
-  # LEN is the 16-bit length, NLEN is its one's complement
-  nlen = 65535 ~ len
-  deflate_block = deflate_block .. len % 256:char(len / 256:floor() % 256, nlen % 256, nlen / 256:floor() % 256)
-  deflate_block = deflate_block .. raw
-  
+    zlib_header = 120:char(1)
+    # BFINAL=1, BTYPE=00 (stored)
+    deflate_block = 1:char()
+    len = raw:len()
+    # LEN is the 16-bit length, NLEN is its one's complement
+    nlen = 65535 ~ len
+    deflate_block = deflate_block .. len % 256:char(len / 256:floor() % 256, nlen % 256, nlen / 256:floor() % 256)
+    deflate_block = deflate_block .. raw
+    
 # Adler-32 checksum
-  adler_a = 1
-  adler_b = 0
-  for i = 1, raw:len()
-    adler_a = (adler_a + raw:byte(i)) % 65521
-    adler_b = (adler_b + adler_a) % 65521
-  # Adler-32 is stored as (A << 16) | B in big-endian
-  adler32_check = adler_a * 65536 + adler_b
+    adler_a = 1
+    adler_b = 0
+    for i = 1, raw:len()
+      adler_a = (adler_a + raw:byte(i)) % 65521
+      adler_b = (adler_b + adler_a) % 65521
+    # Adler-32 is stored as (A << 16) | B in big-endian
+    adler32_check = adler_a * 65536 + adler_b
   
 idat_data = zlib_header .. deflate_block .. string.char(adler32_check / 16777216 % 256, adler32_check / 65536 % 256, adler32_check / 256 % 256, adler32_check % 256)
   
