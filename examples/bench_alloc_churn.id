@@ -25,15 +25,12 @@ _bench_alloc_churn: i64 = (n: i64)
     while i <= n
         t[i] = i
         i = i + 1
-    end
     i = 1
     while i <= n
         t[i] = nil
         i = i + 1
-    end
     collectgarbage("restart")
     1
-end
 
 main: i64 = ()
     n = 10000000
@@ -48,4 +45,3 @@ main: i64 = ()
     print("RESULT alloc_churn")
     print(time_taken)
     0
-end

@@ -1,15 +1,11 @@
 tok: @{ kind: i64, start: i64, len: i64 }
 pred: i64 = (c: i64)
     2
-end
 scan: tok = (pos: i64)
     k = pred(pos)
     if k == 1
         return { kind = 1, start = pos, len = 1 }
-    end
     { kind = 2, start = pos, len = 1 }
-end
 main(): i64
     t: tok = scan(9)
     t.kind
-end

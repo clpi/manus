@@ -6,4 +6,3 @@ main: i64 = ()
     n = s:len()
     print("{n}")
     0
-end

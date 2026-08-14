@@ -15,9 +15,7 @@ linear(in_features: i64, out_features: i64): any
         while c < out_features
             weight.data[r * out_features + c] = (weight.data[r * out_features + c] - 0.5) * 2 * scale
             c += 1
-        end
         r += 1
-    end
     return {
         type = "linear",
         weight = weight,
@@ -30,25 +28,21 @@ linear(in_features: i64, out_features: i64): any
         # Cache for backward pass
         input_cache = nil,
     }
-end
 
 relu(): any
     return {
         type = "relu",
         mask_cache = nil,
     }
-end
 
 gelu(): any
     return { type = "gelu" }
-end
 
 softmax(): any
     return {
         type = "softmax",
         output_cache = nil,
     }
-end
 
 dropout(rate: f64): any
     return {
@@ -56,7 +50,6 @@ dropout(rate: f64): any
         rate = rate,
         training = true,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Model construction
@@ -69,7 +62,6 @@ sequential(...): any
         layers = layers,
         n_layers = layers:len(),
     }
-end
 
 # Alias for `nn { ... }` design doc syntax (varargs table today)
 build = sequential
@@ -84,7 +76,6 @@ mnist_classifier(): any
         linear(128, 10),
         softmax()
     )
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Forward pass
@@ -97,29 +88,25 @@ forward_linear(layer, x): any
     # y = x @ W + b
     y = ml.tensor.matmul(x, layer.weight)
     return ml.tensor.add(y, layer.bias)
-end
 
 @hot
 forward_relu(layer, x): any
     return ml.tensor.relu(x)
-end
 
 @hot
 forward_gelu(layer, x): any
     Ops = ops
     return Ops.gelu(x)
-end
 
 @hot
 forward_softmax(layer, x): any
     out = ml.tensor.softmax(x)
     layer.output_cache = out
     return out
-end
 
 forward_dropout(layer, x): any
     # During training, randomly zero out elements
-    if not layer.training return x end
+    if not layer.training return x
     
     rate = layer.rate or 0.5
     scale = 1.0 / (1.0 - rate)
@@ -138,28 +125,22 @@ forward_dropout(layer, x): any
         bit_set = (mask_byte >> bit_idx) & 1
         if bit_set == 1
             result.data[i] = x.data[i] * scale
-        end
         i += 1
-    end
     result
-end
 
 forward_layer(layer, x): any
-    if layer.type == "linear" return forward_linear(layer, x) end
-    if layer.type == "relu" return forward_relu(layer, x) end
-    if layer.type == "gelu" return forward_gelu(layer, x) end
-    if layer.type == "softmax" return forward_softmax(layer, x) end
-    if layer.type == "dropout" return forward_dropout(layer, x) end
+    if layer.type == "linear" return forward_linear(layer, x)
+    if layer.type == "relu" return forward_relu(layer, x)
+    if layer.type == "gelu" return forward_gelu(layer, x)
+    if layer.type == "softmax" return forward_softmax(layer, x)
+    if layer.type == "dropout" return forward_dropout(layer, x)
     return x
-end
 
 forward(model, x): any
     h = x
     for i = 1, model.n_layers
         h = forward_layer(model.layers[i], h)
-    end
     return h
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Loss functions
@@ -171,11 +152,9 @@ cross_entropy(pred, target): f64
     for i = 1, pred.rows
         idx = ml.tensor.get(target, i, 1)
         p = ml.tensor.get(pred, i, idx)
-        if p < 1e-7 p = 1e-7 end
+        if p < 1e-7 p = 1e-7
         loss -= p:log()
-    end
     return loss / pred.rows
-end
 
 mse_loss(pred, target): f64
     diff = ml.tensor.add(pred, ml.tensor.mul_scalar(target, -1))
@@ -183,28 +162,25 @@ mse_loss(pred, target): f64
     for i = 1, diff.size
         v = diff.data[i]
         sum += v * v
-    end
     return sum / diff.size
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Optimizer (SGD with momentum)
 # ═══════════════════════════════════════════════════════════════
 
 sgd(lr: any, momentum: any)
-    if momentum == nil momentum = 0.0 end
+    if momentum == nil momentum = 0.0
     return {
         type = "sgd",
         lr = lr,
         momentum = momentum,
         velocities = {},
     }
-end
 
 adam(lr: any, beta1: any, beta2: any, eps: any)
-    if beta1 == nil beta1 = 0.9 end
-    if beta2 == nil beta2 = 0.999 end
-    if eps == nil eps = 1e-8 end
+    if beta1 == nil beta1 = 0.9
+    if beta2 == nil beta2 = 0.999
+    if eps == nil eps = 1e-8
     return {
         type = "adam",
         lr = lr,
@@ -215,7 +191,6 @@ adam(lr: any, beta1: any, beta2: any, eps: any)
         m = {},
         v = {},
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

@@ -150,14 +150,12 @@ space = " "
 # module census with it.
 head(root: str): str
     "cd {root} && git ls-files 'lib/*.id' | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
-end
 
 # Matched lines, comment lines dropped, world-mediated lines dropped.
 ambient(root: str, pat: str): i64
     pre: str = head(root)
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
     to(i64)(script.chomp(script.capture(cmd)))
-end
 
 # gap[100]: the same reach measured OUTSIDE lib/std. Every number above it is
 # lib/std ONLY, and a budget that states no denominator reads as though it
@@ -175,14 +173,12 @@ threaded(root: str, pat: str): i64
     pre: str = head(root)
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -E {q}{mediator}{q} | wc -l"
     to(i64)(script.chomp(script.capture(cmd)))
-end
 
 # Distinct modules holding at least one ambient reach of this class.
 modules(root: str, pat: str): i64
     pre: str = head(root)
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort -u | wc -l"
     to(i64)(script.chomp(script.capture(cmd)))
-end
 
 # One synthetic line through the ENTIRE filter chain. This is the control
 # surface: it asks whether a class still recognises the call it was written
@@ -191,7 +187,6 @@ end
 probe(pat: str, line: str): i64
     cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -n -E {q}{pat}{q} | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
     to(i64)(script.chomp(script.capture(cmd)))
-end
 
 # The same line with NO filters. `probe` alone cannot tell "the filter
 # deleted it" from "the pattern never matched it", and the first draft of
@@ -203,15 +198,12 @@ end
 raw(pat: str, line: str): i64
     cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
     to(i64)(script.chomp(script.capture(cmd)))
-end
 
 pad(s: str, width: i64): str
     out = s
     while out:len() < width
         out = out .. space
-    end
     out
-end
 
 row(name: str, sites: i64, mods: i64, thru: i64, note: str): void
     a = pad(name, 8)
@@ -219,7 +211,6 @@ row(name: str, sites: i64, mods: i64, thru: i64, note: str): void
     c = pad(mods:to(str), 7)
     d = pad(thru:to(str), 10)
     print("  {a}{b}{c}{d}   {note}")
-end
 
 # A class detector must see its own example and decline ordinary Duo. Both
 # halves, or the row is either dead or noise.
@@ -227,7 +218,6 @@ sound(pat: str, example: str): bool
     good: i64 = probe(pat, example)
     bad: i64 = probe(pat, "  x = f(y) + 1")
     good == 1 and bad == 0
-end
 
 main(): i64
     root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
@@ -236,7 +226,6 @@ main(): i64
     if root == ""
         print("capability_scan: FAIL — not inside a git work tree; std cannot be listed")
         code = 3
-    end
 
     if code == 0
         total = to(i64)(script.chomp(script.capture("cd {root} && git ls-files 'lib/*.id' | wc -l")))
@@ -246,8 +235,6 @@ main(): i64
         if total == 0
             print("capability_scan: FAIL — 0 std modules found; the scan did not run")
             code = 3
-        end
-    end
 
     # Control 1: the pipeline itself. Every count below rides this exact
     # shell; if the control reads 0 the pipeline is broken and every class row
@@ -257,66 +244,47 @@ main(): i64
         if alive == 0
             print("capability_scan: FAIL — the control pattern matched 0 lines of std; the grep pipeline is broken and every class row below would read a confident 0")
             code = 3
-        end
-    end
 
     # Control 2: every detector, both halves.
     if code == 0
         broken = ""
         if !sound(fspat, "  h = io.open(path)")
             broken = "fs"
-        end
         if !sound(netpat, "  s = connect(host, port)")
             broken = "net"
-        end
         if !sound(clockpat, "  t = os.clock()")
             broken = "clock"
-        end
         if !sound(randpat, "  r = math.random()")
             broken = "rand"
-        end
         if !sound(procpat, "  v = os.getenv(name)")
             broken = "proc"
-        end
         if !sound(faultpat, "  abort()")
             broken = "fault"
-        end
         if !sound(stdiopat, "  io.write(line)")
             broken = "stdio"
-        end
         if broken != ""
             print("capability_scan: FAIL — class {broken} either missed its own example call or matched ordinary Duo; a 0 from it would be a broken detector, not a clean module")
             code = 3
-        end
-    end
 
     # Control 3a: the comment filter, paired.
     if code == 0
         if raw(clockpat, "-- t = os.clock()") != 1
             print("capability_scan: FAIL — the comment control line is not matched by the clock pattern at all, so what follows would test nothing")
             code = 3
-        end
-    end
     if code == 0
         if probe(clockpat, "-- t = os.clock()") != 0
             print("capability_scan: FAIL — the comment filter does not delete a commented reach; every count would be inflated by prose")
             code = 3
-        end
-    end
 
     # Control 3b: the mediation filter, paired.
     if code == 0
         if raw(clockpat, "  t = world.now(os.clock())") != 1
             print("capability_scan: FAIL — the mediation control line is not matched by the clock pattern at all, so a green mediation check would prove nothing")
             code = 3
-        end
-    end
     if code == 0
         if probe(clockpat, "  t = world.now(os.clock())") != 0
             print("capability_scan: FAIL — the mediation filter does not delete a world-threaded reach; the ratchet could never fall")
             code = 3
-        end
-    end
 
     if code == 0
         anypat = "{fspat}{bar}{netpat}{bar}{clockpat}{bar}{randpat}{bar}{procpat}{bar}{faultpat}"
@@ -381,7 +349,6 @@ main(): i64
             print("")
             print("  modules by ambient site count:")
             io:write(script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
-        end
 
         # THE RATCHET. Measured 2026-08-08 at 878e0d1 in a detached worktree,
         # so no session's uncommitted edits are inside the number. Both
@@ -394,11 +361,9 @@ main(): i64
         if sites > sitecap
             print("capability_scan: FAIL — ambient sites {sites} exceeds the ratchet {sitecap}")
             over += 1
-        end
         if reached > modcap
             print("capability_scan: FAIL — ambient modules {reached} exceeds the ratchet {modcap}")
             over += 1
-        end
         # gap[100] rung 5, the shippable increment. Full enforcement — `duo
         # check` REFUSING an ambient reach — cannot land while 616 sites still
         # make one; it would red the tree on the day it shipped, and a gate
@@ -424,13 +389,9 @@ main(): i64
         if over > 0
             print("  U1 is `nothing ships with ambient reach, ever`. Thread the world, or say in the commit message why the budget was wrong.")
             code = 1
-        end
         if over == 0
             slacks: i64 = sitecap - sites
             slackm: i64 = modcap - reached
             print("capability_scan: PASS — {sites} sites (budget {sitecap}, slack {slacks}), {reached} modules (budget {modcap}, slack {slackm})")
             print("  PASS does not claim U1 holds. It claims the distance to U1 did not grow; gaps/GAP-061.md holds the distance.")
-        end
-    end
     code
-end

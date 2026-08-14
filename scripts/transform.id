@@ -43,42 +43,34 @@
 
 here(): str
     script.chomp(script.capture("pwd"))
-end
 
 compiler(root: str): str
     "{root}/zig-out/bin/idol"
-end
 
 shout(msg: str): void
     print("transform: {msg}")
-end
 
 present(path: str): bool
     script.status("test -e {path}") == 0
-end
 
 capture(cmd: str, out: str): bool
     script.status("{cmd} >{out} 2>/dev/null") == 0
-end
 
 # A whole-line regex over the raw JSON. The registry rows are flat objects, so
 # `[^}]*` cannot cross an object boundary — which is what lets one grep tie a
 # transform's NAME to its own fields instead of to a neighbour's.
 row(path: str, want: str): bool
     script.status("grep -q -E '{want}' {path}") == 0
-end
 
 # Substring, comma-split so a value cannot be matched across two fields.
 held(path: str, want: str): bool
     script.status("tr ',' '\\n' < {path} | grep -q -F '{want}'") == 0
-end
 
 # The C string literal bound to `name` in emitted C, e.g. `TOP`. The binding's
 # own name is stripped here so the three sites compare as VALUES — they are
 # bound to three different names and would never be equal otherwise.
 literal(path: str, name: str): str
     std.script.chomp(std.script.capture("grep -o 'const char\\* {name} = \"[^\"]*\"' {path} | head -1 | sed 's/.*= //'"))
-end
 
 # The literal returned by the block-body site's function. Anchored on the
 # callee name rather than on the opening brace: `duo explain` and this gate
@@ -86,7 +78,6 @@ end
 # stays brace-free on purpose.
 blocklit(path: str): str
     std.script.chomp(std.script.capture("grep -A1 'const char\\* parity()' {path} | grep -o 'return \"[^\"]*\"' | head -1 | sed 's/^return //'"))
-end
 
 main: i64 = ()
     root = here()
@@ -98,18 +89,15 @@ main: i64 = ()
     if script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
-    end
 
     # CONTROL 2 — the compiler is here.
     if !present(bin)
         shout("FAIL — no compiler at {bin}; run `zig build` first")
         bad += 1
-    end
 
     if script.status("rm -rf {dir} && mkdir -p {dir}") != 0
         shout("FAIL — could not build the sandbox at {dir}")
         bad += 1
-    end
 
     tier = { "match", "map", "each", "tabulate", "interpolate", "power", "derivepower", "fixpoint", "zip", "permute" }
     named = { "comp.match", "comp.map", "comp.each", "comp.tabulate", "comp.interpolate", "comp.power", "comp.derive.power", "comp.fixpoint", "comp.zip", "comp.permute" }
@@ -125,16 +113,12 @@ main: i64 = ()
         if !present(f)
             shout("FAIL — missing parity fixture {f}")
             bad += 1
-        end
         i += 1
-    end
     for extra in { "call", "hot", "pipeline" }
         f = "{root}/examples/parity/{extra}.id"
         if !present(f)
             shout("FAIL — missing fixture {f}")
             bad += 1
-        end
-    end
 
     # One strict-mode explain over one fixture answers every registry and
     # dispatch-gate question: the registry is static, the gate is a mode.
@@ -142,46 +126,37 @@ main: i64 = ()
     if !capture("DUO_TRANSFORM_GATE=1 {bin} explain {root}/examples/parity/map.id", reg)
         shout("FAIL — `duo explain` did not run under DUO_TRANSFORM_GATE=1")
         bad += 1
-    end
 
     # CONTROL 4 — held() can answer NO.
     if held(reg, "duo-transform-this-string-does-not-exist")
         shout("FAIL — control: held() matched a string that is not in the output")
         bad += 1
-    end
 
     # D1 — the tier-1 registry is exactly ten, and every entry is registered,
     # native-only, and declares all three parity sites.
     if !held(reg, "\"tier1_count\":10")
         shout("FAIL — D1: the tier-1 registry is not ten transforms")
         bad += 1
-    end
     i = 1
     while i <= named:len()
         n = named[i]
         if !row(reg, "\"transform\":\"{n}\"[^}}]*\"registered\":true")
             shout("FAIL — D1: {n} is not registered")
             bad += 1
-        end
         if !row(reg, "\"transform\":\"{n}\"[^}}]*\"requires_parity\":true")
             shout("FAIL — D1: {n} does not require a parity test")
             bad += 1
-        end
         if !row(reg, "\"transform\":\"{n}\"[^}}]*\"native_only\":true")
             shout("FAIL — D1: {n} has no native-only contract")
             bad += 1
-        end
         if !row(reg, "\"transform\":\"{n}\"[^}}]*\"parity_contract_satisfied\":true")
             shout("FAIL — D1: {n} does not declare all three parity sites")
             bad += 1
-        end
         # M2 — and it must parse as an EXPRESSION, never as a block directive.
         if !row(reg, "\"transform\":\"{n}\"[^}}]*\"parse_as_expression\":true")
             shout("FAIL — M2: {n} would parse as a directive, not an expression")
             bad += 1
-        end
         i += 1
-    end
 
     # D2/D3 — every mapped internal hook clears the dispatch gate, under
     # STRICT mode. `__metacatalog` is in the list on purpose: it is mapped but
@@ -193,20 +168,16 @@ main: i64 = ()
         if !row(reg, "\"hook\":\"{h}\"[^}}]*\"dispatch_allowed\":true")
             shout("FAIL — D2: internal hook {h} is refused by the strict dispatch gate")
             bad += 1
-        end
         i += 1
-    end
 
     # D4 — the log names public registry ids only. An internal hook reaching
     # provenance means dispatch logged something the registry never admitted.
     if script.status("sed 's/.*\"transform_provenance\"//; s/\"transform_registry\".*//' {reg} | grep -q '\"transform\":\"__'") == 0
         shout("FAIL — D4: an internal __ hook name reached the provenance log")
         bad += 1
-    end
     if !held(reg, "\"schema\":\"transform-provenance-v0\"")
         shout("FAIL — D4: no provenance was projected at all")
         bad += 1
-    end
 
     # C1 — the whole call algebra is registered, native-only, and declares
     # exactly the emit_call site. Enumerated from the enum, so an unregistered
@@ -217,21 +188,16 @@ main: i64 = ()
         if !row(reg, "\"transform\":\"{c}\"[^}}]*\"is_call\":true")
             shout("FAIL — C1: {c} is not classed a call transform")
             bad += 1
-        end
         if !row(reg, "\"transform\":\"{c}\"[^}}]*\"registered\":true")
             shout("FAIL — C1: {c} is not registered")
             bad += 1
-        end
         if !row(reg, "\"transform\":\"{c}\"[^}}]*\"native_only\":true")
             shout("FAIL — C1: {c} has no native-only contract")
             bad += 1
-        end
         if !row(reg, "\"transform\":\"{c}\"[^}}]*\"parity_sites\":\\[\"emit_call\"\\]")
             shout("FAIL — C1: {c} does not declare exactly the emit_call site")
             bad += 1
-        end
         i += 1
-    end
 
     # C2/C3 — a plain typed call dispatches call.inline and lowers to a direct
     # C call with no boxed invoke anywhere in the translation unit.
@@ -240,23 +206,18 @@ main: i64 = ()
     if !capture("{bin} explain {root}/examples/parity/call.id", plain)
         shout("FAIL — C3: `duo explain` did not run on the call fixture")
         bad += 1
-    end
     if !capture("{bin} dump-c {root}/examples/parity/call.id", plainc)
         shout("FAIL — C2: `duo dump-c` did not run on the call fixture")
         bad += 1
-    end
     if script.status("grep -q -F 'add(' {plainc}") != 0
         shout("FAIL — C2: the emitted C holds no direct add( call")
         bad += 1
-    end
     if script.status("grep -q -F 'lua_invoke' {plainc}") == 0
         shout("FAIL — C2: the direct call still emitted lua_invoke")
         bad += 1
-    end
     if !row(plain, "\"transform\":\"call.inline\"[^}}]*\"observed\":true")
         shout("FAIL — C3: call.inline never dispatched")
         bad += 1
-    end
 
     # C4 — the `@hot` discrimination, kept falsifiable. The two fixtures
     # differ only by the attribute, so simd_lower must split them.
@@ -264,30 +225,24 @@ main: i64 = ()
     if !capture("{bin} explain {root}/examples/parity/hot.id", hot)
         shout("FAIL — C4: `duo explain` did not run on the @hot fixture")
         bad += 1
-    end
     if !row(hot, "\"transform\":\"call.simd_lower\"[^}}]*\"observed\":true")
         shout("FAIL — C4: the @hot callee did not dispatch call.simd_lower")
         bad += 1
-    end
     if row(plain, "\"transform\":\"call.simd_lower\"[^}}]*\"observed\":true")
         shout("FAIL — C4: the NON-@hot twin also dispatched call.simd_lower, so the attribute proves nothing")
         bad += 1
-    end
 
     # C5 — the native pipeline lowers to a direct call, by the exact C line.
     pipec = "{dir}/pipeline.c"
     if !capture("{bin} dump-c {root}/examples/parity/pipeline.id", pipec)
         shout("FAIL — C5: `duo dump-c` did not run on the pipeline fixture")
         bad += 1
-    end
     if script.status("grep -q -F 'int64_t y = double(21);' {pipec}") != 0
         shout("FAIL — C5: `21 |> double` did not lower to the direct call double(21)")
         bad += 1
-    end
     if script.status("grep -q -F 'lua_invoke' {pipec}") == 0
         shout("FAIL — C5: the pipeline call site emitted lua_invoke")
         bad += 1
-    end
 
     # M3/M4 — three-site parity, per combinator, on the tracked fixture: the
     # top-level, nested-callback and block-body sites must fold to the SAME C
@@ -302,48 +257,37 @@ main: i64 = ()
         if !capture("{bin} dump-c {src}", out)
             shout("FAIL — M3: {stem}.id did not compile")
             bad += 1
-        end
         top = literal(out, "TOP")
         nested = literal(out, "NESTED")
         block = blocklit(out)
         if top == ""
             shout("FAIL — M3: {n} produced no top-level literal (did it parse as a directive?)")
             bad += 1
-        end
         if block == ""
             shout("FAIL — M3: {n} produced no block-body literal")
             bad += 1
-        end
         if top != nested
             shout("FAIL — M3: {n} folded differently at top-level and nested-callback sites")
             bad += 1
-        end
         if top != block
             shout("FAIL — M3: {n} folded differently at top-level and block-body sites")
             bad += 1
-        end
         if !capture("{bin} explain {src}", seen)
             shout("FAIL — M4: `duo explain` did not run on {stem}.id")
             bad += 1
-        end
         if !row(seen, "\"transform\":\"{n}\"[^}}]*\"parity_observed\":true")
             shout("FAIL — M4: {n} did not dispatch at all three parity sites")
             bad += 1
-        end
         i += 1
-    end
 
     # CONTROL 5 — `parity_observed` can answer NO. Without it M4 would pass
     # for a field frozen at true, and ten assertions would be one constant.
     if !row("{dir}/match.json", "\"transform\":\"comp.zip\"[^}}]*\"parity_observed\":false")
         shout("FAIL — control: a combinator the match fixture never calls still reported full parity")
         bad += 1
-    end
 
     if bad == 0
         shout("PASS — 10 tier-1 registry rows, 9 dispatch hooks, 6 call transforms, 10 three-site parities, 5 controls held")
-    end
     bad
-end
 
 os.exit(main())

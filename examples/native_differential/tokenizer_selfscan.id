@@ -20,62 +20,45 @@ tok: @{ kind: i64, start: i64, len: i64 }
 is_digit: i64 = (c: i64)
     if c >= 48 and c <= 57
         return 1
-    end
     0
-end
 
 is_alpha: i64 = (c: i64)
     if c >= 97 and c <= 122
         return 1
-    end
     if c >= 65 and c <= 90
         return 1
-    end
     if c == 95
         return 1
-    end
     0
-end
 
 is_space: i64 = (c: i64)
     if c == 32
         return 1
-    end
     if c == 9
         return 1
-    end
     if c == 10
         return 1
-    end
     0
-end
 
 scanone: tok = (src: str, pos: i64)
     n = src:len()
     i = pos
     while i <= n and is_space(src:byte(i)) == 1
         i += 1
-    end
     if i > n
         return { kind = Kind.eof, start = i, len = 0 }
-    end
     c = src:byte(i)
     if is_alpha(c) == 1
         j = i
         while j <= n and is_alpha(src:byte(j)) == 1
             j += 1
-        end
         return { kind = Kind.ident, start = i, len = j - i }
-    end
     if is_digit(c) == 1
         j = i
         while j <= n and is_digit(src:byte(j)) == 1
             j += 1
-        end
         return { kind = Kind.number, start = i, len = j - i }
-    end
     { kind = Kind.punct, start = i, len = 1 }
-end
 
 # Count the tokens in `src`, so the result is a structural fact about the
 # scanned Duo source rather than an arbitrary fold.
@@ -87,15 +70,11 @@ count_tokens: i64 = (src: str)
         t: tok = scanone(src, pos)
         if t.kind == Kind.eof
             return total
-        end
         total += 1
         pos = t.start + t.len
-    end
     total
-end
 
 main(): i64
     # Verbatim source of this file's own `is_digit`, scanned by this file's own
     # scanner, in a binary this file was compiled into.
     count_tokens("is_digit = (c: i64): i64 if c >= 48 and c <= 57 return 1 end 0 end")
-end

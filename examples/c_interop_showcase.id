@@ -42,12 +42,10 @@ print("\n-- 2. Duo + C interop --")
 
 fast_sum(a: i64, b: i64): i64
     return a + b
-end
 
 print_sum(a: i64, b: i64): i64
     result: i64 = fast_sum(a, b)
     return @c.call("printf", "  fast_sum(%lld, %lld) = %lld\n", a, b, result)
-end
 
 print_sum(@(10), @(20))
 print_sum(@(100), @(200))
@@ -71,11 +69,9 @@ demo_malloc_free(): i64
     ptr: *@c.type("void") = @c.call("malloc", @(64))
     if ptr == nil
         return -1
-    end
     @c.call("memset", ptr, @(0), @(64))
     @c.call("free", ptr)
     return 0
-end
 
 mem_result: i64 = demo_malloc_free()
 @c.call("printf", "  malloc/memset/free result: %lld\n", mem_result)
@@ -88,11 +84,9 @@ print("\n-- 5. C math in a tight loop --")
 
 sqrt_sum(n: i64): i64
     result: i64 = 0
-    for i = 1, n do
+    for i = 1, n
         result = result + i
-    end
     return result
-end
 
 n: i64 = @(1000)
 result: i64 = sqrt_sum(n)

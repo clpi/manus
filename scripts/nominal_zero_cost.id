@@ -46,21 +46,16 @@ controlok = 0
 
 quiet(cmd: str): i64
     std.script.status("{cmd} >/dev/null 2>&1")
-end
 
 record(row: str): void
     rows = "{rows}{row}"
-end
 
 check(label: str, ok: i64): void
     if ok == 1
         record("  pass  {label}\n")
-    end
     if ok != 1
         record("  FAIL  {label}\n")
         failed += 1
-    end
-end
 
 # The body of `duo_entry_main`, isolated. Scanning the WHOLE translation unit
 # would find `lua_Value` in the runtime prelude every time and report a
@@ -74,11 +69,9 @@ end
 body(cfile: str, out: str): i64
     script.run("sed -n '/duo_entry_main() \x7b/,/^\x7d/p' {cfile} > {out}")
     to(i64)(script.chomp(script.capture("wc -l < {out}")))
-end
 
 hits(path: str, pattern: str): i64
     to(i64)(script.chomp(script.capture("grep -c '{pattern}' {path} || true")))
-end
 
 # The one predicate both the fixture and the control are judged by, so the
 # control actually controls something. A boxed value in this compiler is a
@@ -89,9 +82,7 @@ boxes(bodyfile: str): i64
     v = 0
     if n > 0
         v = 1
-    end
     v
-end
 
 # RENDERING IS A PHYSICAL QUESTION TOO, and it is checked here rather than in
 # the fixture because the fixture asserts one line and this needs its own.
@@ -123,11 +114,9 @@ writecontrol(path: str): void
     line(path, "    n: any = d")
     line(path, "    print(n)")
     line(path, "    0")
-end
 
 line(path: str, text: str): void
     std.script.run("printf '%s\\n' '{text}' >> {path}")
-end
 
 measure(duo: str): i64
     std.script.run("rm -rf {work} && mkdir -p {work}")
@@ -139,7 +128,6 @@ measure(duo: str): i64
     if quiet("{duo} compile {fixture} -o {bin}") != 0
         print("nominal zero cost: FAIL — {fixture} does not compile")
         return 1
-    end
 
     # Value first. A cost claim about a program that computes the wrong number
     # is a claim about the wrong program.
@@ -147,7 +135,6 @@ measure(duo: str): i64
     okval = 0
     if got == want
         okval = 1
-    end
     check("value {want} (got {got})", okval)
 
     cfile = "/tmp/duo_nominal.c"
@@ -156,7 +143,6 @@ measure(duo: str): i64
     if lines == 0
         print("nominal zero cost: FAIL — no duo_entry_main body found in {cfile}")
         return 1
-    end
 
     # Storage: three descriptor-typed bindings, three doubles.
     check("feet binding lowers to double", hits(b, "double d ="))
@@ -168,14 +154,12 @@ measure(duo: str): i64
     nobox = 0
     if boxes(b) == 0
         nobox = 1
-    end
     check("no lua_Value and no lua_val_from in the function", nobox)
 
     # No drop ladder. A scalar is not owned, so nothing retains it.
     noarc = 0
     if hits(b, "duo_retain") == 0 and hits(b, "duo_release") == 0
         noarc = 1
-    end
     check("no duo_retain / duo_release", noarc)
 
     # The derived conversion is two direct calls. If this row goes red while
@@ -203,12 +187,9 @@ measure(duo: str): i64
         cb = "{work}/controlbody.c"
         if body("/tmp/duo_control.c", cb) > 0
             controlok = boxes(cb)
-        end
-    end
 
     report()
     verdict()
-end
 
 report(): void
     print("")
@@ -216,7 +197,6 @@ report(): void
     print("")
     io.write(rows)
     print("")
-end
 
 verdict(): i64
     code = 0
@@ -225,20 +205,15 @@ verdict(): i64
         print("  The box predicate is measuring nothing, so every green row")
         print("  above is unearned. Fix the predicate before reading a verdict.")
         code = 1
-    end
     if code == 0 and failed > 0
         print("nominal zero cost: FAIL — {failed} row(s) red.")
         print("  §46 binds 'a nominal descriptor over a primitive costs no")
         print("  boxing'. A red row here is that clause, not a style note.")
         code = 1
-    end
     if code == 0
         print("nominal zero cost: PASS — control boxes, fixture does not")
-    end
     code
-end
 
 main: i64 = ()
     duo = std.script.getenv("DUO", "./zig-out/bin/idol")
     measure(duo)
-end

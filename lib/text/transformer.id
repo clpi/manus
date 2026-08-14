@@ -14,11 +14,8 @@ lower(s: str): str
             result = result .. c + 32:char()
         else
             result = result .. c:char()
-        end
         i += 1
-    end
     result
-end
 
 upper(s: str): str
     result = ""
@@ -29,11 +26,8 @@ upper(s: str): str
             result = result .. c - 32:char()
         else
             result = result .. c:char()
-        end
         i += 1
-    end
     result
-end
 
 title(s: str): str
     capitalize_next = true
@@ -44,26 +38,21 @@ title(s: str): str
         if c == 32 or c == 9 or c == 10  # whitespace
             capitalize_next = true
             result = result .. c:char()
-        elseif capitalize_next and c >= 97 and c <= 122
+        else if capitalize_next and c >= 97 and c <= 122
             result = result .. c - 32:char()
             capitalize_next = false
         else
             result = result .. c:char()
             capitalize_next = false
-        end
         i += 1
-    end
     result
-end
 
 capitalize(s: str): str
-    if s:len() == 0 return s end
+    if s:len() == 0 return s
     first = s:byte(1)
     if first >= 97 and first <= 122
         return first - 32:char() .. s:sub(2)
-    end
     s
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Whitespace Handling
@@ -74,40 +63,33 @@ trim(s: str): str
     start = 1
     while start <= s:len()
         c = s:byte(start)
-        if c != 32 and c != 9 and c != 10 and c != 13 break end
+        if c != 32 and c != 9 and c != 10 and c != 13 break
         start += 1
-    end
 
     # Trim trailing whitespace
     finish = s:len()
     while finish >= start
         c = s:byte(finish)
-        if c != 32 and c != 9 and c != 10 and c != 13 break end
+        if c != 32 and c != 9 and c != 10 and c != 13 break
         finish -= 1
-    end
 
     s:sub(start, finish)
-end
 
 trim_left(s: str): str
     start = 1
     while start <= s:len()
         c = s:byte(start)
-        if c != 32 and c != 9 and c != 10 and c != 13 break end
+        if c != 32 and c != 9 and c != 10 and c != 13 break
         start += 1
-    end
     s:sub(start)
-end
 
 trim_right(s: str): str
     finish = s:len()
     while finish >= 1
         c = s:byte(finish)
-        if c != 32 and c != 9 and c != 10 and c != 13 break end
+        if c != 32 and c != 9 and c != 10 and c != 13 break
         finish -= 1
-    end
     s:sub(1, finish)
-end
 
 compress_whitespace(s: str): str
     result = ""
@@ -119,19 +101,14 @@ compress_whitespace(s: str): str
             if not in_whitespace
                 result = result .. " "
                 in_whitespace = true
-            end
         else
             result = result .. c:char()
             in_whitespace = false
-        end
         i += 1
-    end
     result
-end
 
 normalize_whitespace(s: str): str
     compress_whitespace(trim(s))
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Text Cleaning (for NLP)
@@ -166,15 +143,10 @@ remove_accents(s: str): str
                 i += plen
                 found = true
                 break
-            end
-        end
         if not found
             result = result .. s:byte(i):char()
             i += 1
-        end
-    end
     result
-end
 
 remove_punctuation(s: str): str
     result = ""
@@ -187,28 +159,23 @@ remove_punctuation(s: str): str
            (c >= 97 and c <= 122) or # a-z
            c == 32              # space
             result = result .. c:char()
-        end
         i += 1
-    end
     result
-end
 
 collapse_whitespace(s: str): str
     normalize_whitespace(s)
-end
 
 normalize_unicode(s: str): str
     # Simple Unicode normalization (NFKD approximation)
     # Remove combining characters, normalize forms
     remove_accents(s)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Text Analysis
 # ═══════════════════════════════════════════════════════════════
 
 word_count(s: str): i64
-    if s:len() == 0 return 0 end
+    if s:len() == 0 return 0
     count = 1
     in_word = true
     i = 1
@@ -218,19 +185,14 @@ word_count(s: str): i64
             if in_word
                 count += 1
                 in_word = false
-            end
         else
             in_word = true
-        end
         i += 1
-    end
-    if not in_word count -= 1 end
+    if not in_word count -= 1
     count
-end
 
 char_count(s: str): i64
     s:len()
-end
 
 sentence_count(s: str): i64
     count = 0
@@ -239,21 +201,16 @@ sentence_count(s: str): i64
         c = s:byte(i)
         if c == 46 or c == 33 or c == 63  # . ! ?
             count += 1
-        end
         i += 1
-    end
     count
-end
 
 avg_word_length(s: str): f64
     words = split_words(s)
-    if words:len() == 0 return 0.0 end
+    if words:len() == 0 return 0.0
     total = 0
     for word in words
         total += word:len()
-    end
     total / words:len()
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Text Splitting
@@ -268,18 +225,14 @@ split_lines(s: str): any
         if c == 10  # newline
             lines[lines:len() + 1] = current
             current = ""
-        elseif c == 13  # carriage return
+        else if c == 13  # carriage return
             # Skip, handle \r\n
         else
             current = current .. c:char()
-        end
         i += 1
-    end
     if current:len() > 0
         lines[lines:len() + 1] = current
-    end
     lines
-end
 
 split_words(s: str): any
     words = {}
@@ -291,17 +244,12 @@ split_words(s: str): any
             if current:len() > 0
                 words[words:len() + 1] = current
                 current = ""
-            end
         else
             current = current .. c:char()
-        end
         i += 1
-    end
     if current:len() > 0
         words[words:len() + 1] = current
-    end
     words
-end
 
 split_sentences(s: str): any
     sentences = {}
@@ -313,14 +261,10 @@ split_sentences(s: str): any
         if c == 46 or c == 33 or c == 63  # . ! ?
             sentences[sentences:len() + 1] = trim(current)
             current = ""
-        end
         i += 1
-    end
     if trim(current):len() > 0
         sentences[sentences:len() + 1] = trim(current)
-    end
     sentences
-end
 
 split_tokens(s: str, max_length: i64): any
     words = split_words(s)
@@ -333,20 +277,14 @@ split_tokens(s: str, max_length: i64): any
                 current = word
             else
                 tokens[tokens:len() + 1] = word
-            end
         else
             if current:len() > 0
                 current = current .. " " .. word
             else
                 current = word
-            end
-        end
-    end
     if current:len() > 0
         tokens[tokens:len() + 1] = current
-    end
     tokens
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Text Search & Replace
@@ -363,14 +301,10 @@ replace(s: str, old: str, new: str): str
         else
             result = result .. s:byte(i):char()
             i += 1
-        end
-    end
     result
-end
 
 replace_all(s: str, old: str, new: str): str
     replace(s, old, new)
-end
 
 count_occurrences(s: str, pattern: str): i64
     count = 0
@@ -382,10 +316,7 @@ count_occurrences(s: str, pattern: str): i64
             i += pat_len
         else
             i += 1
-        end
-    end
     count
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Text Encoding Detection (simplified)
@@ -394,16 +325,13 @@ end
 is_ascii(s: str): bool
     i = 1
     while i <= s:len()
-        if s:byte(i) > 127 return false end
+        if s:byte(i) > 127 return false
         i += 1
-    end
     true
-end
 
 is_utf8(s: str): bool
     # Simplified check
     is_ascii(s)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

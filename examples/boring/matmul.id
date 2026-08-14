@@ -12,19 +12,12 @@ main: i64 = ()
                 x = a[i * 3 + k + 1]
                 y = b[k * 3 + j + 1]
                 sum = sum + x * y
-            end
             c[i * 3 + j + 1] = sum
-        end
-    end
     out = ""
     for v in c
         if out == ""
             out = "{v}"
-        end
         if out != "{v}"
             out = "{out} {v}"
-        end
-    end
     print("{out}")
     0
-end

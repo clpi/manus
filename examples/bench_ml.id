@@ -4,27 +4,22 @@
 @hot
 matmul_256(): f64
     return ml.matmul_256()
-end
 
 @hot
 conv2d(): f64
     return ml.conv2d()
-end
 
 @hot
 softmax_1k(): f64
     return ml.softmax_1k()
-end
 
 @hot
 attention(): f64
     return ml.attention()
-end
 
 @hot
 mlp_forward(): f64
     return ml.mlp_forward()
-end
 
 # Six decimals, assembled from integer millionths.
 #
@@ -46,24 +41,20 @@ _f6(x: f64): str
     if v < 0.0
         neg = true
         v = -v
-    end
     n = to(i64)(v * 1000000.0 + 0.5)
     w = n / 1000000
     f = n % 1000000
     fs = to(str)(f)
     while fs:len() < 6
         fs = "0" .. fs
-    end
     s = to(str)(w) .. "." .. fs
-    if neg return "-" .. s end
+    if neg return "-" .. s
     s
-end
 
 _report(name: str, elapsed: f64, value: f64): void
     print("Time: " .. _f6(elapsed) .. " seconds")
     print("RESULT " .. name .. " " .. _f6(value))
     print("----------------------------------------")
-end
 
 print("========================================")
 print("       ML BENCHMARK SUITE (Duo)         ")

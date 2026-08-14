@@ -19,23 +19,18 @@ material_new(): any
         normal_texture = nil,
         emissive_texture = nil,
     }
-end
 
 material_set_albedo(mat: any, r: f64, g: f64, b: f64, a: f64): void
     mat.albedo = {r = r, g = g, b = b, a = a or 1}
-end
 
 material_set_metallic(mat: any, metallic: f64): void
     mat.metallic = 0:max(1:min(metallic))
-end
 
 material_set_roughness(mat: any, roughness: f64): void
     mat.roughness = 0.04:max(1:min(roughness))
-end
 
 material_set_emissive(mat: any, r: f64, g: f64, b: f64): void
     mat.emissive = {r = r, g = g, b = b}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # BRDF Functions
@@ -54,8 +49,6 @@ distribution_ggx(n_dot_h: f64, roughness: f64): f64
         a2 / denom
     else
         0
-    end
-end
 
 # Geometry Function (Smith's method)
 geometry_schlick_ggx(n_dot_v: f64, roughness: f64): f64
@@ -63,13 +56,11 @@ geometry_schlick_ggx(n_dot_v: f64, roughness: f64): f64
     k = (r * r) / 8
     denom = n_dot_v * (1 - k) + k
     n_dot_v / denom
-end
 
 geometry_smith(n_dot_v: f64, n_dot_l: f64, roughness: f64): f64
     ggx1 = geometry_schlick_ggx(n_dot_v, roughness)
     ggx2 = geometry_schlick_ggx(n_dot_l, roughness)
     ggx1 * ggx2
-end
 
 # Fresnel Equation (Schlick approximation)
 fresnel_schlick(cos_theta: f64, f0: any): any
@@ -79,7 +70,6 @@ fresnel_schlick(cos_theta: f64, f0: any): any
         g = f0.g + (1 - f0.g) * power,
         b = f0.b + (1 - f0.b) * power,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # PBR Shading
@@ -93,7 +83,6 @@ calculate_f0(mat: any): any
         g = 0.04 + mat.metallic * (mat.albedo.g - 0.04),
         b = 0.04 + mat.metallic * (mat.albedo.b - 0.04),
     }
-end
 
 shade(mat: any, n: any, v: any, l: any, light_color: any, light_intensity: f64): any
     # Calculate F0
@@ -143,7 +132,6 @@ shade(mat: any, n: any, v: any, l: any, light_color: any, light_intensity: f64):
     }
 
     lo
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Vector Utilities
@@ -151,23 +139,18 @@ end
 
 vec3_new(x: f64, y: f64, z: f64): any
     {x = x, y = y, z = z}
-end
 
 vec3_add(a: any, b: any): any
     {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
-end
 
 vec3_sub(a: any, b: any): any
     {x = a.x - b.x, y = a.y - b.y, z = a.z - b.z}
-end
 
 vec3_scale(v: any, s: f64): any
     {x = v.x * s, y = v.y * s, z = v.z * s}
-end
 
 vec3_dot(a: any, b: any): f64
     a.x * b.x + a.y * b.y + a.z * b.z
-end
 
 vec3_cross(a: any, b: any): any
     {
@@ -175,11 +158,9 @@ vec3_cross(a: any, b: any): any
         y = a.z * b.x - a.x * b.z,
         z = a.x * b.y - a.y * b.x,
     }
-end
 
 vec3_length(v: any): f64
     v.x * v.x + v.y * v.y + v.z * v.z:sqrt()
-end
 
 vec3_normalize(v: any): any
     len = vec3_length(v)
@@ -187,8 +168,6 @@ vec3_normalize(v: any): any
         {x = v.x / len, y = v.y / len, z = v.z / len}
     else
         {x = 0, y = 0, z = 0}
-    end
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

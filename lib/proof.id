@@ -5,7 +5,6 @@ sha256(data: str): str
     h = script.capture("shasum -a 256 '" .. p .. "' 2>/dev/null"):match("(%x+)") or ""
     script.fs_rm(p)
     h
-end
 
 result_rows(output: str): any
     rows = {}
@@ -13,50 +12,37 @@ result_rows(output: str): any
         rid, val = line:match("^RESULT%s+(%S+)%s+(.*)$")
         if rid != nil
             rows[rows:len() + 1] = rid .. " " .. val
-        end
-    end
     rows:sort()
     rows
-end
 
 result_hash(output: str): str
     sha256(result_rows(output):concat("\n"))
-end
 
 count_results(output: str): i64
     n = 0
     for line in output:gmatch("[^\n]+")
         if line:match("^RESULT%s+") != nil
             n += 1
-        end
-    end
     n
-end
 
 artifact_path(stem: str, prefer_native: bool): str
     native = "/tmp/duo_" .. stem .. "_native.o.proof.json"
     cpath = "/tmp/duo_" .. stem .. ".c.proof.json"
     if prefer_native and script.fs_exists(native)
         return native
-    end
     cpath
-end
 
 proof_field_int(text: str, key: str): i64
     _, _, val = text:find('"' .. key .. '":(%d+)')
     if val == nil
         return 0
-    end
     val:to(i64)
-end
 
 proof_field_str(text: str, key: str): str
     _, _, val = text:find('"' .. key .. '":"([^"]+)"')
     if val == nil
         return ""
-    end
     val
-end
 
 load_emission(path: str): any
     text = script.fs_read(path)
@@ -67,11 +53,9 @@ load_emission(path: str): any
         evidence_class = proof_field_str(text, "evidence_class"),
     }
     out
-end
 
 artifact_fingerprint(path: str): str
     sha256(script.fs_read(path))
-end
 
 bench_profiles(): any
     out = {}
@@ -79,7 +63,6 @@ bench_profiles(): any
     out[2] = { id = "c-specialized", native = 0, expect_results = 10 }
     out[3] = { id = "direct", native = 1, expect_results = 0 }
     out
-end
 
 M = {
     sha256 = sha256,

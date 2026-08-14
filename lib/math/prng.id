@@ -25,7 +25,6 @@ chacha20_quarter(state: any, a: i64, b: i64, c: i64, d: i64): void
     state[c] = state[c] + state[d]
     state[b] = state[b] ~ state[c]
     state[b] = (state[b] << 7) | (state[b] >> 25)
-end
 
 chacha20_block(key: any, counter: i64, nonce: any): any
     # "expand 32-byte k" constant
@@ -41,7 +40,6 @@ chacha20_block(key: any, counter: i64, nonce: any): any
             (key:byte(off + 3) << 16) |
             (key:byte(off + 4) << 24)
         i += 1
-    end
     # Counter
     state[state:len() + 1] = counter & 0xFFFFFFFF
     # Nonce (3 x 32-bit words)
@@ -53,11 +51,10 @@ chacha20_block(key: any, counter: i64, nonce: any): any
             (nonce:byte(off + 3) << 16) |
             (nonce:byte(off + 4) << 24)
         i += 1
-    end
 
     # Working state = copy of initial state
     working = {}
-    for i = 1, 16 do working[i] = state[i] end
+    for i = 1, 16 do working[i] = state[i]
 
     # 20 rounds (10 double rounds)
     round = 0
@@ -73,7 +70,6 @@ chacha20_block(key: any, counter: i64, nonce: any): any
         chacha20_quarter(working, 3, 8, 9, 14)
         chacha20_quarter(working, 4, 5, 10, 15)
         round += 1
-    end
 
     # Add initial state and serialize
     result = {}
@@ -85,9 +81,7 @@ chacha20_block(key: any, counter: i64, nonce: any): any
         result[result:len() + 1] = (val >> 16) & 0xFF:char()
         result[result:len() + 1] = (val >> 24) & 0xFF:char()
         i += 1
-    end
     return result:concat()
-end
 
 # ChaCha20 stream cipher: XOR keystream with plaintext
 chacha20_crypt(key: str, nonce: str, data: str): str
@@ -98,7 +92,6 @@ chacha20_crypt(key: str, nonce: str, data: str): str
     # Pad nonce to 12 bytes
     while nonce12:len() < 12
         nonce12 = nonce12 .. 0:char()
-    end
 
     while pos <= data:len()
         block = chacha20_block(key, counter, nonce12)
@@ -107,11 +100,8 @@ chacha20_crypt(key: str, nonce: str, data: str): str
             out[out:len() + 1] = data:byte(pos) ~ block:byte(i):char()
             pos += 1
             i += 1
-        end
         counter += 1
-    end
     return out:concat()
-end
 
 # ═══════════════════════════════════════════════════════════════
 # HMAC-DRBG (NIST SP 800-90A)
@@ -140,7 +130,6 @@ hmac_drbg_new(entropy: str, nonce: str, personalization: str): any
         k = K,
         reseed_counter = 0,
     }
-end
 
 hmac_drbg_generate(state: any, num_bytes: i64): str
     temp = {}
@@ -152,14 +141,12 @@ hmac_drbg_generate(state: any, num_bytes: i64): str
 
         # Take min(remaining, 32) bytes from V
         take = remaining
-        if take > 32 take = 32 end
+        if take > 32 take = 32
         temp[temp:len() + 1] = state.v:sub(1, take)
         remaining -= take
-    end
 
     state.reseed_counter += 1
     return temp:concat()
-end
 
 hmac_drbg_reseed(state: any, entropy: str): void
     # K = HMAC(K, V || 0x00 || entropy)
@@ -173,7 +160,6 @@ hmac_drbg_reseed(state: any, entropy: str): void
     state.v = std.crypto.hmac.hmac_sha256_bytes(state.k, state.v)
 
     state.reseed_counter = 0
-end
 
 # ═══════════════════════════════════════════════════════════════
 # High-level random helpers
@@ -186,8 +172,7 @@ random_bytes(n: i64): str
     if handle
         data = handle:read(n) or ""
         handle:close()
-        if data:len() == n return data end
-    end
+        if data:len() == n return data
     # Fallback: ChaCha20 with time-based entropy (not all zeros!)
     time_seed = to(str)(os.clock()) .. to(str)(os.time()) .. to(str)(1:random(999999))
     key = {}
@@ -197,9 +182,7 @@ random_bytes(n: i64): str
             key[i] = time_seed:byte(i)
         else
             key[i] = (i * 7 + 13) % 256  # deterministic but non-zero
-        end
         i += 1
-    end
     nonce = {}
     i = 1
     while i <= 12
@@ -207,13 +190,10 @@ random_bytes(n: i64): str
             nonce[i] = time_seed:byte(((i - 1) % time_seed:len()) + 1) ~ i
         else
             nonce[i] = (i * 11 + 3) % 256
-        end
         i += 1
-    end
     key_str = key:concat("")
     nonce_str = nonce:concat("")
     return chacha20_crypt(key_str, nonce_str, 0:char():rep(n))
-end
 
 # Generate a random integer in [min, max]
 random_int(min: i64, max: i64): i64
@@ -224,9 +204,7 @@ random_int(min: i64, max: i64): i64
     while i < 8
         val = (val << 8) | bytes:byte(i + 1)
         i += 1
-    end
     return min + (val % range)
-end
 
 # Generate a random float in [0.0, 1.0)
 random_float(): f64
@@ -236,9 +214,7 @@ random_float(): f64
     while i < 8
         val = (val << 8) | bytes:byte(i + 1)
         i += 1
-    end
     return val / 1.8446744073709552e19
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

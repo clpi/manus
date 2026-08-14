@@ -236,16 +236,12 @@ weave(lines: any): str
     for i, line in lines
         out = out .. line
         out = out .. "\n"
-    end
     out
-end
 
 remember(files: any, seen: any, path: str): void
     if seen[path] == nil
         seen[path] = 1
         files[files:len() + 1] = path
-    end
-end
 
 # A path flattened into a filename, so two fixtures with the same basename in
 # different directories cannot share a work file. `parser_native.id` and a
@@ -261,11 +257,8 @@ slot(path: str): str
             out = out .. "_"
         else
             out = out .. path:sub(i, i)
-        end
         i += 1
-    end
     out
-end
 
 # The per-fixture probe, emitted as shell for the same reason
 # scripts/capability_matrix.id emits one: measuring a fixture is six or seven
@@ -347,7 +340,6 @@ probetext(duo: str, tprefix: str): str
         "rm -f $t.cb $t.db $t.co $t.do $t.fmt.id"
     }
     weave(lines)
-end
 
 # The self-hosted front end, driven over a list file so the Duo-written parser
 # is loaded once rather than once per fixture. `global P = std.compiler.parser`
@@ -394,20 +386,16 @@ hosttext(): str
         "end"
     }
     weave(lines)
-end
 
 digit(rec: str, at: i64): i64
     to(i64)(rec:sub(at, at))
-end
 
 tab(rec: str): i64
     i: i64 = 1
     n: i64 = rec:len()
     while i <= n and rec:byte(i) != 9
         i += 1
-    end
     i
-end
 
 # Display-width padding. Every cell is seven columns wide, and every cell text
 # is ASCII or one of four fixed glyphs, so the pad is chosen by the glyph
@@ -415,18 +403,13 @@ end
 cellof(reach: i64, total: i64, gap: bool): str
     if gap
         return "   ?   "
-    end
     if total == 0
         return "   —   "
-    end
     if reach == total
         return "   ✓   "
-    end
     if reach == 0
         return "   —   "
-    end
     "partial"
-end
 
 pad(s: str, w: i64): str
     out = s
@@ -434,9 +417,7 @@ pad(s: str, w: i64): str
     while i < w
         out = out .. " "
         i += 1
-    end
     out
-end
 
 main: i64 = ()
     files = {}
@@ -450,7 +431,6 @@ main: i64 = ()
     if !std.script.fs_exists(duo)
         print("capability_rows: FAIL — no compiler at {duo}; run `zig build`")
         return 3
-    end
     # A matrix measured with yesterday's binary is a confident report about a
     # build nobody has. capability_matrix.id caught a stale binary twice while
     # it was being written; this is the same refusal, not a nested `zig build`,
@@ -461,15 +441,12 @@ main: i64 = ()
         print("capability_rows: FAIL — {duo} is older than src/; run `zig build`")
         print("  newer than the binary: {stale}")
         return 3
-    end
 
     tprefix = ""
     for i, cand in {"timeout", "gtimeout"}
         if tprefix == "" and script.chomp(script.capture(
             "command -v {cand} 2>/dev/null")) != ""
             tprefix = "{cand} {limit} "
-        end
-    end
 
     script.run("rm -rf {work} && mkdir -p {work}/w {work}/g {work}/c")
 
@@ -484,21 +461,15 @@ main: i64 = ()
             if !script.fs_exists(f)
                 print("capability_rows: FAIL — row '{r[1]}' names a missing fixture {f}")
                 return 3
-            end
             remember(files, seen, f)
-        end
         for fi, f in r[4]
             if !script.fs_exists(f)
                 print("capability_rows: FAIL — row '{r[1]}' names a missing deny fixture {f}")
                 return 3
-            end
             remember(files, seen, f)
-        end
-    end
     if files:len() == 0
         print("capability_rows: FAIL — no fixtures at all; the report is not wired")
         return 3
-    end
 
     # THE THREE CONTROLS. Built from the corpus so they exercise the same
     # probe, damaged in three different places so they fail three different
@@ -508,7 +479,6 @@ main: i64 = ()
     if !script.fs_exists(good)
         print("capability_rows: FAIL — the control source {good} is gone")
         return 3
-    end
     ctlsyntax = "{work}/c/ctlsyntax.id"
     ctltype = "{work}/c/ctltype.id"
     ctlvalue = "{work}/c/ctlvalue.id"
@@ -523,7 +493,6 @@ main: i64 = ()
     listing = ""
     for i, f in files
         listing = listing .. f .. "\n"
-    end
     script.fs_write(listpath, listing)
 
     script.fs_write("{work}/probe.sh", probetext(duo, tprefix))
@@ -533,7 +502,6 @@ main: i64 = ()
     joined = ""
     for i, f in files
         joined = joined .. f .. "\n" .. slot(f) .. "\n"
-    end
     script.fs_write("{work}/pairs.list", joined)
     script.run(
         "xargs -P {jobs} -n 2 sh {work}/probe.sh < {work}/pairs.list > {work}/records.tsv 2>/dev/null")
@@ -545,14 +513,11 @@ main: i64 = ()
             t = tab(rec)
             probe[rec:sub(t + 1, rec:len())] = rec:sub(1, t - 1)
             nrec += 1
-        end
-    end
     if nrec != files:len()
         got = nrec:to(str)
         want = to(str)(files:len())
         print("capability_rows: FAIL — {got} records for {want} fixtures; the sweep lost files")
         return 3
-    end
 
     # The hosted column. The self-hosted front end is compiled once; a rebuild
     # costs about eight seconds and doing it per fixture would dominate the run.
@@ -563,7 +528,6 @@ main: i64 = ()
         print("capability_rows: FAIL — the self-hosted front end probe did not build;")
         print("  H cannot be measured, and an unmeasured column must not print as `—`")
         return 3
-    end
     script.env_set("CAPROWS_LIST", listpath)
     script.run("CAPROWS_LIST={listpath} {hostbin} > {work}/host.tsv 2>/dev/null")
     nhost = 0
@@ -573,14 +537,11 @@ main: i64 = ()
             t = tab(rec)
             host[rec:sub(t + 1, rec:len())] = rec:sub(1, t - 1)
             nhost += 1
-        end
-    end
     if nhost != files:len()
         got = nhost:to(str)
         want = to(str)(files:len())
         print("capability_rows: FAIL — hosted probe answered {got} of {want}; H is not measured")
         return 3
-    end
 
     # CONTROLS FIRST, table second. A report that prints its matrix before
     # checking that it can detect a failure has already told the reader
@@ -592,22 +553,18 @@ main: i64 = ()
     if digit(cs, 2) != 0
         print("capability_rows: FAIL — the syntax control still PARSES; the P probe is broken")
         return 3
-    end
     if digit(ct, 2) != 1 or digit(ct, 3) != 0
         print("capability_rows: FAIL — the type control did not fail sema alone; the S probe is broken")
         print("  wanted parse 1 check 0, got record {ct}")
         return 3
-    end
     if digit(gb, 5) != 2
         print("capability_rows: FAIL — {good} does not match its own `-- expect:`;")
         print("  the value control cannot mean anything until it does. record {gb}")
         return 3
-    end
     if digit(cv, 5) != 1
         print("capability_rows: FAIL — the value control still MATCHES a falsified")
         print("  `-- expect:`; the C column is not checking values. record {cv}")
         return 3
-    end
     # H's control is that the column is NOT CONSTANT, not that a chosen pair
     # differs. The pair form was tried and was wrong: it compared the syntax
     # control against examples/layout/offside.id, which the self-hosted
@@ -622,15 +579,12 @@ main: i64 = ()
             hostyes += 1
         else
             hostno += 1
-        end
-    end
     if hostyes == 0 or hostno == 0
         hy = hostyes:to(str)
         hn = hostno:to(str)
         print("capability_rows: FAIL — the hosted probe answered the same for every")
         print("  fixture ({hy} accepted, {hn} rejected); H is not discriminating")
         return 3
-    end
 
     print("")
     print("  capability matrix, PER CAPABILITY, generated from fixtures")
@@ -643,7 +597,6 @@ main: i64 = ()
     for i, cn in {"D", "P", "S", "G", "C", "N", "W", "H"}
         head = head .. " " .. pad("   " .. cn, 7)
         rule = rule .. " " .. "-------"
-    end
     print(head)
     print(rule)
 
@@ -668,32 +621,23 @@ main: i64 = ()
             rec = probe[f]
             if digit(rec, 1) == 1
                 d += 1
-            end
             if digit(rec, 2) == 1
                 p += 1
-            end
             if digit(rec, 3) == 1
                 s += 1
-            end
             # G asks two things and both must hold: the graph ran, and the
             # key it would have to carry is in what it emitted.
             if digit(rec, 4) == 1 and std.script.status(
                 "grep -qF '{gk}' {work}/g/" .. slot(f) .. ".json 2>/dev/null") == 0
                 g += 1
-            end
             if digit(rec, 5) == 2
                 c += 1
-            end
             if digit(rec, 6) == 1
                 n += 1
-            end
             if digit(rec, 7) == 1
                 w += 1
-            end
             if host[f] == "0"
                 h += 1
-            end
-        end
         # C is three-valued at the fixture too: matched a declared value, or
         # merely ran. `partial` at the row can therefore mean "some fixtures
         # matched" or "every fixture ran and none declared anything", and the
@@ -702,12 +646,9 @@ main: i64 = ()
         for fi, f in fs
             if digit(probe[f], 5) >= 1
                 cran += 1
-            end
-        end
         ccell = cellof(c, nf, false)
         if nf > 0 and c < nf and cran > c
             ccell = "partial"
-        end
         print("  " .. pad(nm, 24) .. " "
             .. cellof(d, nf, false) .. " "
             .. cellof(p, nf, false) .. " "
@@ -719,7 +660,6 @@ main: i64 = ()
             .. cellof(h, nf, false))
         if nf == 0
             nofixture = nofixture .. "    {nm}\n"
-        end
 
         # A deny fixture is rejected when SEMA rejects it, and the row also
         # records whether the PARSER did, because those are different claims
@@ -731,15 +671,11 @@ main: i64 = ()
             at = "rejected at sema "
             if digit(rec, 2) == 0
                 at = "rejected at parse"
-            end
             if digit(rec, 3) == 0
                 denyrows = denyrows .. "    {at}  {nm}  {f}\n"
             else
                 denyrows = denyrows .. "    ACCEPTED         {nm}  {f}  <- the diagnostic is gone\n"
                 denyfail += 1
-            end
-        end
-    end
 
     print("")
     print("  D described (first line states intent) · P parsed (`duo fmt` on a copy)")
@@ -753,13 +689,11 @@ main: i64 = ()
         print("  NO FIXTURE — asserted somewhere, demonstrated nowhere")
         io.write(nofixture)
         print("")
-    end
 
     if denytotal > 0
         print("  DENY FIXTURES — the diagnostic IS the capability; these must be rejected")
         io.write(denyrows)
         print("")
-    end
 
     # The G column's repo-wide caveat, measured rather than remembered. The
     # pipeline stage these columns come from is "relations / trie / worlds /
@@ -769,8 +703,6 @@ main: i64 = ()
         if script.status(
             "grep -qF '\"edges\"' {work}/g/" .. slot(f) .. ".json 2>/dev/null") == 0
             edges += 1
-        end
-    end
     ec = edges:to(str)
     fc = to(str)(files:len())
     print("  G NOTES — `duo graph` emits an `edges` array for {ec} of {fc} fixtures.")
@@ -780,8 +712,6 @@ main: i64 = ()
     for ri, r in rows
         if r:len()[3] > 0
             print("    " .. pad(r[1], 24) .. "  " .. r[2])
-        end
-    end
     print("")
 
     hy = hostyes:to(str)
@@ -797,9 +727,7 @@ main: i64 = ()
         df = denyfail:to(str)
         print("capability_rows: FAIL — {df} deny fixture(s) were ACCEPTED")
         return 1
-    end
     nr = to(str)(rows:len())
     nfx = to(str)(files:len())
     print("capability_rows: PASS ({nr} capabilities over {nfx} fixtures)")
     0
-end

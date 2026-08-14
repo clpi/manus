@@ -6,7 +6,6 @@
   for i = 1, meta:len().fields
     f = meta.fields[i]
     acc = acc .. "// field " .. f.name .. " : " .. f.type .. "\n"
-  end
   acc
 end)
 
@@ -15,7 +14,6 @@ end)
   for i = 1, meta:len().fields
     f = meta.fields[i]
     acc = acc .. "// offset of " .. f.name .. " = " .. to(str)(i - 1) .. "\n"
-  end
   acc
 end)
 
@@ -28,8 +26,6 @@ end)
     if dname != "ComposeAll"
       acc = acc .. "/* === from " .. dname .. " === */\n"
       acc = acc .. @comp.derive.eval(dname, meta)
-    end
-  end
   self_src = @comp.derive.lookup("ComposeAll")
   acc = acc .. "// ComposeAll source length: " .. to(str)(self_src:len()) .. "\n"
   acc

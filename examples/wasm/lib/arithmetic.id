@@ -3,78 +3,61 @@
 @export
 add(a: int, b: int): int
     a + b
-end
 
 @export
 sub(a: int, b: int): int
     a - b
-end
 
 @export
 mul(a: int, b: int): int
     a * b
-end
 
 @export
 idiv(a: int, b: int): int
     a // b
-end
 
 @export
 imod(a: int, b: int): int
     a % b
-end
 
 @export
 neg(a: int): int
     0 - a
-end
 
 @export
 band(a: int, b: int): int
     a & b
-end
 
 @export
 bor(a: int, b: int): int
     a | b
-end
 
 @export
 bxor(a: int, b: int): int
     a ~ b
-end
 
 @export
 lshift(a: int, b: int): int
     a << b
-end
 
 @export
 rshift(a: int, b: int): int
     a >> b
-end
 
 @export
 abs_val(a: int): int
     if a < 0
         0 - a
-    end
     a
-end
 
 @export
 max_val(a: int, b: int): int
     if a > b
         a
-    end
     b
-end
 
 @export
 min_val(a: int, b: int): int
     if a < b
         a
-    end
     b
-end

@@ -2,24 +2,20 @@
 
 format_msg(id: str, kind: str): str
     "ok: " .. id .. " (" .. kind .. ")"
-end
 
 with_side_effect(id: str, kind: str): str
     print("side")
     "ok: " .. id .. " (" .. kind .. ")"
-end
 
 same_line(id: str, kind: str): str
     print("side") "ok: " .. id .. " (" .. kind .. ")"
-end
 
 main(): i64
     msg = format_msg("F-1", "ergonomic_gap")
-    if msg:len() != 23 return 1 end
+    if msg:len() != 23 return 1
     msg2 = with_side_effect("F-1", "ergonomic_gap")
-    if msg2:len() != 23 return 2 end
+    if msg2:len() != 23 return 2
     msg3 = same_line("F-1", "ergonomic_gap")
-    if msg3:len() != 23 return 3 end
+    if msg3:len() != 23 return 3
     print("PASS implicit_concat_tail")
     return 0
-end

@@ -7,38 +7,30 @@
 
 complex_new(re: f64, im: f64): any
     {re = re, im = im}
-end
 
 complex_add(a: any, b: any): any
     {re = a.re + b.re, im = a.im + b.im}
-end
 
 complex_sub(a: any, b: any): any
     {re = a.re - b.re, im = a.im - b.im}
-end
 
 complex_mul(a: any, b: any): any
     {
         re = a.re * b.re - a.im * b.im,
         im = a.re * b.im + a.im * b.re,
     }
-end
 
 complex_scale(a: any, s: f64): any
     {re = a.re * s, im = a.im * s}
-end
 
 complex_conjugate(a: any): any
     {re = a.re, im = -a.im}
-end
 
 complex_abs(a: any): f64
     a.re * a.re + a.im * a.im:sqrt()
-end
 
 complex_phase(a: any): f64
     math.atan2(a.im, a.re)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # FFT (Cooley-Tukey algorithm)
@@ -46,7 +38,7 @@ end
 
 fft(x: any): any
     n = x:len()
-    if n == 0 return {} end
+    if n == 0 return {}
 
     # Check if power of 2
     if n & (n - 1) != 0
@@ -54,21 +46,17 @@ fft(x: any): any
         new_n = 1
         while new_n < n
             new_n *= 2
-        end
         padded = {}
         i = 1
         while i <= n
             padded[i] = x[i]
             i += 1
-        end
         while padded:len() < new_n
             padded[padded:len() + 1] = {re = 0, im = 0}
-        end
         x = padded
         n = new_n
-    end
 
-    if n == 1 return x end
+    if n == 1 return x
 
     # Bit-reversal permutation
     j = 0
@@ -78,16 +66,13 @@ fft(x: any): any
         while j & bit != 0
             j = j ~ bit
             bit = bit >> 1
-        end
         j = j ~ bit
 
         if i < j
             temp = x[i + 1]
             x[i + 1] = x[j + 1]
             x[j + 1] = temp
-        end
         i += 1
-    end
 
     # FFT butterfly
     length = 2
@@ -107,14 +92,10 @@ fft(x: any): any
                 x[i + j + half + 1] = complex_sub(u, t)
                 w = complex_mul(w, wlen)
                 j += 1
-            end
             i += length
-        end
         length *= 2
-    end
 
     x
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Inverse FFT
@@ -122,7 +103,7 @@ end
 
 ifft(x: any): any
     n = x:len()
-    if n == 0 return {} end
+    if n == 0 return {}
 
     # Conjugate input
     conjugated = {}
@@ -130,7 +111,6 @@ ifft(x: any): any
     while i <= n
         conjugated[i] = complex_conjugate(x[i])
         i += 1
-    end
 
     # Forward FFT
     result = fft(conjugated)
@@ -141,9 +121,7 @@ ifft(x: any): any
     while i <= n
         scaled[i] = complex_scale(complex_conjugate(result[i]), 1.0 / n)
         i += 1
-    end
     scaled
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Real-valued FFT (for real signals)
@@ -156,21 +134,17 @@ rfft(signal: any): any
     while i <= n
         complex_input[i] = complex_new(signal[i], 0)
         i += 1
-    end
     fft(complex_input)
-end
 
 irfft(spectrum: any, n: i64): any
-    if n == nil n = spectrum:len() end
+    if n == nil n = spectrum:len()
     result = ifft(spectrum)
     signal = {}
     i = 1
     while i <= n
         signal[i] = result[i].re
         i += 1
-    end
     signal
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Power Spectrum
@@ -182,9 +156,7 @@ power_spectrum(spectrum: any): any
     while i <= spectrum:len()
         ps[i] = complex_abs(spectrum[i]) ^ 2
         i += 1
-    end
     ps
-end
 
 magnitude_spectrum(spectrum: any): any
     mag = {}
@@ -192,9 +164,7 @@ magnitude_spectrum(spectrum: any): any
     while i <= spectrum:len()
         mag[i] = complex_abs(spectrum[i])
         i += 1
-    end
     mag
-end
 
 phase_spectrum(spectrum: any): any
     phase = {}
@@ -202,9 +172,7 @@ phase_spectrum(spectrum: any): any
     while i <= spectrum:len()
         phase[i] = complex_phase(spectrum[i])
         i += 1
-    end
     phase
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Convolution via FFT
@@ -217,7 +185,6 @@ convolve(a: any, b: any): any
     fft_size = 1
     while fft_size < n
         fft_size *= 2
-    end
 
     # Zero-pad inputs
     fa = {}
@@ -228,14 +195,11 @@ convolve(a: any, b: any): any
             fa[i] = complex_new(a[i], 0)
         else
             fa[i] = {re = 0, im = 0}
-        end
         if i <= b:len()
             fb[i] = complex_new(b[i], 0)
         else
             fb[i] = {re = 0, im = 0}
-        end
         i += 1
-    end
 
     # FFT both
     fa_fft = fft(fa)
@@ -247,7 +211,6 @@ convolve(a: any, b: any): any
     while i <= fft_size
         product[i] = complex_mul(fa_fft[i], fb_fft[i])
         i += 1
-    end
 
     # Inverse FFT
     result = ifft(product)
@@ -258,9 +221,7 @@ convolve(a: any, b: any): any
     while i <= a:len() + b:len() - 1
         output[i] = result[i].re
         i += 1
-    end
     output
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Correlation via FFT
@@ -273,13 +234,10 @@ correlate(a: any, b: any): any
     while i >= 1
         b_rev[b_rev:len() + 1] = b[i]
         i -= 1
-    end
     convolve(a, b_rev)
-end
 
 autocorrelate(x: any): any
     correlate(x, x)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # DFT (Discrete Fourier Transform) - for small sizes
@@ -297,12 +255,9 @@ dft(x: any): any
             w = complex_new(angle:cos(), angle:sin())
             sum = complex_add(sum, complex_mul(x[j + 1], w))
             j += 1
-        end
         result[k + 1] = sum
         k += 1
-    end
     result
-end
 
 idft(x: any): any
     n = x:len()
@@ -316,12 +271,9 @@ idft(x: any): any
             w = complex_new(angle:cos(), angle:sin())
             sum = complex_add(sum, complex_mul(x[j + 1], w))
             j += 1
-        end
         result[k + 1] = complex_scale(sum, 1.0 / n)
         k += 1
-    end
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

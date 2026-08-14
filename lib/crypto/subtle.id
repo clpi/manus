@@ -1,18 +1,15 @@
 # crypto.subtle — constant-time operations (mirrors Go's crypto/subtle)
 
 constant_time_compare(x: str, y: str): bool
-    if x:len() != y:len() return false end
+    if x:len() != y:len() return false
     v = 0
     for i = 1, x:len()
         v |= (x:byte(i) ~ y:byte(i))
-    end
     return v == 0
-end
 
 constant_time_select(v: i64, a: i64, b: i64): i64
     m = -(v % 2)
     return (a & m) | (b & ~m)
-end
 
 constant_time_byte_eq(x: i64, y: i64): i64
     v = x ~ y
@@ -20,7 +17,6 @@ constant_time_byte_eq(x: i64, y: i64): i64
     v |= (v >> 2)
     v |= (v >> 1)
     return (v & 1) ~ 1
-end
 
 constant_time_eq(x: i64, y: i64): i64
     v = x ~ y
@@ -30,15 +26,12 @@ constant_time_eq(x: i64, y: i64): i64
     v |= (v >> 2)
     v |= (v >> 1)
     return (v & 1) ~ 1
-end
 
 xor_bytes(dst: any, a: any, b: any): i64
     n = dst:len()
-    if a:len() < n n = a:len() end
-    if b:len() < n n = b:len() end
+    if a:len() < n n = a:len()
+    if b:len() < n n = b:len()
     for i = 1, n
         dst[i] = a[i] ~ b[i]
-    end
     return n
-end
 

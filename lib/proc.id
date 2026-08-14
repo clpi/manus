@@ -2,22 +2,17 @@ exec(cmd: str): i64
     rc = os.execute(cmd)
     if rc == nil
         return -1
-    end
     rc
-end
 
 capture(cmd: str): str
     f = io.popen(cmd, "r")
     if f == nil
         ""
-    end
     out = ""
     line = f:read()
     while line != nil
         out = out .. line .. "\n"
         line = f:read()
-    end
     f:close()
     out
-end
 

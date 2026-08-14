@@ -19,9 +19,7 @@ _pad(s: str, w: i64): str
     out = s
     while out:len() < w
         out = out .. " "
-    end
     out
-end
 
 _rule(n: i64): void
     line = ""
@@ -29,26 +27,20 @@ _rule(n: i64): void
     while i <= n
         line = line .. "-"
         i += 1
-    end
     print(line)
-end
 
 _field(raw: str, key: str): str
     m = raw:match("\n" .. key .. "=([^\n]*)")
     if m == nil
         m = raw:match("^" .. key .. "=([^\n]*)")
-    end
     if m == nil
         return "none"
-    end
     v = script.chomp(m)
-    if v == "" return "none" end
+    if v == "" return "none"
     v
-end
 
 _ms(a: i64, b: i64): i64
     to(i64)((b - a) / 1000000)
-end
 
 # Run one engine on one module. Returns "<result>|<ms>|<engine>".
 # the engine is invoked via DUO_WASM_MODULE; anything else is a lie (see header).
@@ -63,22 +55,18 @@ _engine(root: str, binary: str, mod: str, engine: str): str
                 .. " DUO_WASM_INVOKE=" .. want .. " DUO_WASM_ENGINE=" .. engine
                 .. " timeout 120 " .. binary .. " 2>&1")
             res = _field(raw, "result")
-        end
-    end
     # Report the engine that ACTUALLY ran: the JIT falls back to the
     # interpreter on any opcode it cannot emit, so "jit" requested is not
     # "jit" used.
     res .. "|" .. _field(raw, "seconds") .. "|" .. _field(raw, "engine")
-end
 
 _wasmtime_run(wasmtime: str, mod: str): str
     a: i64 = std.time.monotonic()
     out = std.script.chomp(std.script.capture(
         wasmtime .. " --invoke run " .. mod .. " 2>/dev/null | tail -1"))
     b: i64 = std.time.monotonic()
-    if out == "" out = "none" end
+    if out == "" out = "none"
     out .. "|" .. to(str)(_ms(a, b)) .. "ms"
-end
 
 # Which wart produced the numbers in this table.
 #
@@ -107,11 +95,7 @@ provenance(repo: str): str
             out = sha
             if dirt != "0"
                 out = "{sha}+{dirt} uncommitted — NOT REPRODUCIBLE"
-            end
-        end
-    end
     out
-end
 
 # A nonzero exit from wart is REPORTED, never mapped to a name.
 #
@@ -128,15 +112,12 @@ _wartrun(wart: str, mod: str): str
     out = "ok|" .. to(str)(_ms(a, b)) .. "ms"
     if rc != 0
         out = "exit{rc}|-"
-    end
     out
-end
 
 _head(s: str): str
     i = s:find("|", 1, true)
-    if i == nil return s end
+    if i == nil return s
     s:sub(1, i - 1)
-end
 
 main(): i64
     idol_bin = std.script.getenv("IDOL", std.script.getenv("DUO", std.script.getenv("HOME", ".") .. "/x/idol/zig-out/bin/idol"))
@@ -150,11 +131,9 @@ main(): i64
     if std.script.status(idol_bin .. " compile src/engine.id --backend=c --emit exe -o " .. binary) != 0
         print("BUILD FAILED")
         return 1
-    end
     if not std.script.fs_exists(binary)
         print("BUILD FAILED: no binary at " .. binary)
         return 1
-    end
 
     # PROVENANCE, before any number. A wart column with no wart commit beside
     # it is not reproducible, and the reader cannot tell that by looking at it.
@@ -162,7 +141,6 @@ main(): i64
         repo = std.script.getenv("WARTREPO", std.script.getenv("HOME", ".") .. "/x/wart")
         print("wart      {repo}")
         print("wart at   " .. provenance(repo))
-    end
 
     print("")
     print(_pad("MODULE", 32) .. " " .. _pad("the engine-jit (res|s|eng)", 26) .. " "
@@ -182,7 +160,6 @@ main(): i64
         if mode != "cover"
             wt = _wasmtime_run(wasmtime, m)
             wr = _wartrun(wart, m)
-        end
         print(_pad(std.script.path_stem(m), 32) .. " " .. _pad(jt, 26) .. " "
             .. _pad(itp, 26) .. " " .. _pad(wt, 18) .. " " .. wr)
 
@@ -193,11 +170,8 @@ main(): i64
         ir = _head(itp)
         if jr == ir and jr != "none" and jr != "-1"
             pass += 1
-        end
-    end
 
     _rule(126)
     print("the engine-wasm covers " .. pass:to(str) .. "/" .. total:to(str)
         .. " modules (both engines agree, non-sentinel result)")
     0
-end

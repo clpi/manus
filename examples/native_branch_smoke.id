@@ -2,15 +2,13 @@ pick(n: i64): i64
     out = 0
     if n < 0
         out = 11
-    elseif n == 0
+    else if n == 0
         out = 13
-    elseif n > 10
+    else if n > 10
         out = 17
     else
         out = 19
-    end
     out
-end
 
 main(): i64
     a = pick(-1)
@@ -18,4 +16,3 @@ main(): i64
     c = pick(11)
     d = pick(5)
     a + b + c + d
-end

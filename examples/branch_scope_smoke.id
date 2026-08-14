@@ -5,24 +5,19 @@ branch_sum(cond: bool): i64
         v = 10
     else
         v = 20
-    end
     v
-end
 
 branch_str(cond: bool): str
     if cond
         msg = "yes"
     else
         msg = "no"
-    end
     msg
-end
 
 main(): i64
-    if branch_sum(true) != 10 return 1 end
-    if branch_sum(false) != 20 return 2 end
-    if branch_str(true) != "yes" return 3 end
-    if branch_str(false) != "no" return 4 end
+    if branch_sum(true) != 10 return 1
+    if branch_sum(false) != 20 return 2
+    if branch_str(true) != "yes" return 3
+    if branch_str(false) != "no" return 4
     print("PASS branch_scope_smoke")
     0
-end

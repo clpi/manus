@@ -13,19 +13,15 @@ fields_map(fields: any, tmpl: str): str
         row = row:gsub("%t", f.type)
         row = row:gsub("%i", to(str)(i - 1))
         acc = acc .. row
-    end
     acc
-end
 
 # Generate C struct typedef from field descriptors (for @c.emit injection).
 c_struct(name: str, fields: any): str
     lines = { "typedef struct " .. name .. " {" }
     for _, f in fields
         lines[lines:len() + 1] = "    " .. f.type .. " " .. f.name .. ";"
-    end
     lines[lines:len() + 1] = "} " .. name .. ";"
     lines:concat("\n")
-end
 
 # Generate field-wise hash combine (FNV-style) for @derive(Hash) style macros.
 c_hash_combine(type_name: str, fields: any): str
@@ -36,31 +32,24 @@ c_hash_combine(type_name: str, fields: any): str
             acc = acc .. "    h ^= (uint64_t)v->" .. f.name .. "; h *= 1099511628211ULL;\n"
         else
             acc = acc .. "    h ^= (uint64_t)(*(uint64_t*)&v->" .. f.name .. "); h *= 1099511628211ULL;\n"
-        end
-    end
     acc = acc .. "    return h;\n}\n"
     acc
-end
 
 # Generate getters: one static inline per field.
 c_getters(type_name: str, fields: any): str
     fields_map(fields, "static inline %t get_%n(const " .. type_name .. "* self) { return self->%n; }\n")
-end
 
 # Canonical @meta.map callback: emit a C comment per matching type.
 c_type_comment(meta): str
     "/* " .. meta.name .. " */\n"
-end
 
 # Canonical @meta.map callback: semicolon-separated type registry line.
 type_registry_line(meta): str
     meta.name .. ";"
-end
 
 # Canonical @meta.product callback: cross-product type pair signature.
 type_pair_line(a, b): str
     a.name .. "x" .. b.name .. ";"
-end
 
 # Document @meta.expand / @meta.pow / @meta.ceiling stacking.
 # Usage:
@@ -69,88 +58,67 @@ end
 #   @meta.emit.derive("Concept", DeriveApi)
 expand_hint(): str
     "@meta.pow(concept, derive[, map_fn])"
-end
 
 ceiling_hint(): str
     "@meta.ceiling(concept_a, derive, concept_b)"
-end
 
 burst_hint(): str
     "@meta.burst(concept_a, derive, concept_b) — derive.all + emit.omni"
-end
 
 transcend_hint(): str
     "@meta.transcend(concept_a, derive, concept_b, concept_c) — burst + cubic derive.tensor"
-end
 
 infinity_hint(): str
     "@meta.infinity(concept_a, derive, concept_b, concept_c, concept_d) — transcend + quartic derive.nfold"
-end
 
 nfold_hint(): str
     "@meta.nfold({ concepts... }, fn) — O(types^k); @meta.derive.nfold({ ... }, Derive)"
-end
 
 str_contains_hint(): str
     "@meta.str.contains(haystack, needle) — native strstr / comptime fold, no lua_str_find"
-end
 
 str_prefix_suffix_hint(): str
     "@meta.str.starts.with(s, prefix) / @meta.str.ends.with(s, suffix) — native C predicates / comptime fold"
-end
 
 catalog_hint(): str
     "@meta.catalog([category|grouped]) — combinators | define | emit | introspection | transform | compile | all | grouped"
-end
 
 ladder_hint(): str
     "@meta.ladder() — exponential scaling ladder (map → derive → product → tensor → transcend)"
-end
 
 agent_catalog_hint(): str
     "@meta.agent.catalog() — grouped @meta.* paths for agent discoverability"
-end
 
 agent_hooks_hint(): str
     "@comp.agent.hooks() + std.agent — coordination, recipes, build_gates, multiplier_for"
-end
 
 template_hint(): str
     "@comp.template(instances, body[, fn]) — O(n) parametric axis; $0/$1/$name/$ctype placeholders"
-end
 
 generate_hint(): str
     "@comp.generate(spec, body[, fn]) — comma-list alias or ops×types constraint cartesian"
-end
 
 scheme_hint(): str
     "@comp.scheme(declarations, template[, fn]) — pipe-separated type/fn units; $kind/$fields/$params"
-end
 
 scheme_clauses_hint(): str
     "@comp.scheme.clauses(\"name: body; name2: body2\"[, fn]) — O(clauses) named clause emission"
-end
 
 grammar_hint(): str
     "@comp.grammar(spec, fn) — EBNF → O(b^d) expansion fragments"
-end
 
 weave_hint(): str
     "@comp.weave(module, concept, fn) — cross-module concept sweep O(N×M)"
-end
 
 each_hint(): str
     "@comp.each(source, fn) / @comp.chain(source, fn) — split combinator output; chain generate→each, power→each, etc."
-end
 
 chain_hint(): str
     "@comp.chain(source, fn) — alias of @comp.each; composition glue for exponential combinator algebra"
-end
 
 # Canonical @meta.tensor callback: triple cross-product signature line.
 type_triple_line(a, b, c): str
     a.name .. "x" .. b.name .. "x" .. c.name .. ";"
-end
 
 M = {
     fields_map = fields_map,

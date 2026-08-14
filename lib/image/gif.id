@@ -39,7 +39,6 @@ gif_read_code(st: any): i64
             st.byte_pos = bp
             st.bit_pos = bitp
             return eoi
-        end
         byte_val: i64 = data:byte(bp)
         bit: i64 = (byte_val >> bitp) & 1
         code |= (bit << bits_read)
@@ -48,12 +47,9 @@ gif_read_code(st: any): i64
         if bitp >= 8
             bitp = 0
             bp += 1
-        end
-    end
     st.byte_pos = bp
     st.bit_pos = bitp
     code
-end
 
 lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
     clear_code = 2 ^ min_code_size
@@ -65,7 +61,6 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
     while i < clear_code
         dict[i] = {i}
         i += 1
-    end
     dict_size = eoi_code + 1
     code_size = min_code_size + 1
     next_code = dict_size
@@ -94,16 +89,15 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
             while i < clear_code
                 dict[i] = {i}
                 i += 1
-            end
             dict_size = eoi_code + 1
             st.code_size = min_code_size + 1
             next_code = dict_size
             prev = nil
 
-        elseif code == eoi_code
+        else if code == eoi_code
             break
 
-        elseif code < dict_size
+        else if code < dict_size
             # Code is in the table
             entry = dict[code]
             # Output the entry
@@ -111,7 +105,6 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
             while i <= entry:len()
                 output[output:len() + 1] = entry[i]
                 i += 1
-            end
 
             if prev != nil
                 # Add new entry: prev + first byte of current entry
@@ -120,10 +113,8 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
                 while j <= dict:len()[prev]
                     new_entry[j] = dict[prev][j]
                     j += 1
-                end
                 if entry:len() > 0
                     new_entry[j] = entry[1]
-                end
                 if next_code < 4096
                     dict[next_code] = new_entry
                     next_code += 1
@@ -134,14 +125,11 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
                     cs: i64 = st.code_size
                     if next_code > to(i64)(2 ^ cs) and cs < 12
                         st.code_size = cs + 1
-                    end
-                end
-            end
             prev = code
 
         else
             # code >= dict_size: special case
-            if prev == nil break end
+            if prev == nil break
             entry = dict[prev]
             # Output entry + first byte of entry
             new_entry = {}
@@ -150,7 +138,6 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
                 new_entry[j] = entry[j]
                 output[output:len() + 1] = entry[j]
                 j += 1
-            end
             first = entry[1]
             new_entry[j] = first
             output[output:len() + 1] = first
@@ -161,16 +148,11 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
                 cs: i64 = st.code_size
                 if next_code > to(i64)(2 ^ cs) and cs < 12
                     st.code_size = cs + 1
-                end
-            end
             prev = next_code - 1
-        end
 
-        if output:len() >= pixel_count break end
-    end
+        if output:len() >= pixel_count break
 
     output
-end
 
 # ═══════════════════════════════════════════════════════════════
 # GIF Decoder
@@ -178,14 +160,13 @@ end
 
 read_u16_le(s: str, off: i64): i64
     s:byte(off) + s:byte(off + 1) * 256
-end
 
 decode(data: str): any
-    if data == nil return nil end
+    if data == nil return nil
 
     # Verify signature
     sig = data:sub(1, 6)
-    if sig != "GIF87a" and sig != "GIF89a" return nil end
+    if sig != "GIF87a" and sig != "GIF89a" return nil
 
     # Logical Screen Descriptor
     width = read_u16_le(data, 7)
@@ -209,9 +190,7 @@ decode(data: str): any
                 b = data:byte(off + i * 3 + 2),
             }
             i += 1
-        end
         off += gct_size * 3
-    end
 
     img = image.new_rgba(image.rect(0, 0, width, height))
     transparent_idx = -1
@@ -234,20 +213,16 @@ decode(data: str): any
                     transparent_flag = packed & 1
                     if transparent_flag == 1
                         transparent_idx = data:byte(off + 4)
-                    end
-                end
-            end
             off += sub_len + 1
 
             # Skip remaining sub-blocks
             while off < data:len()
                 sub_len = data:byte(off)
                 off += 1
-                if sub_len == 0 break end
+                if sub_len == 0 break
                 off += sub_len
-            end
 
-        elseif byte == 0x2C
+        else if byte == 0x2C
             # Image Descriptor
             left = read_u16_le(data, off + 1)
             top = read_u16_le(data, off + 3)
@@ -270,9 +245,7 @@ decode(data: str): any
                         b = data:byte(off + i * 3 + 2),
                     }
                     i += 1
-                end
                 off += lct_size * 3
-            end
 
             # Use LCT if present, otherwise GCT
             palette = lct or gct
@@ -286,10 +259,9 @@ decode(data: str): any
             while off < data:len()
                 sub_len = data:byte(off)
                 off += 1
-                if sub_len == 0 break end
+                if sub_len == 0 break
                 lzw_data = lzw_data .. data:sub(off, off + sub_len - 1)
                 off += sub_len
-            end
 
             # Decompress
             pixels = lzw_decompress(lzw_data, min_code_size, img_w * img_h)
@@ -308,23 +280,15 @@ decode(data: str): any
                                 image.img_set(img, x, y, image.color.rgba(
                                     c.r * 257, c.g * 257, c.b * 257, 65535
                                 ))
-                            end
-                        end
-                    end
                     idx += 1
                     x += 1
-                end
                 y += 1
-            end
 
-        elseif byte == 0x3B
+        else if byte == 0x3B
             # Trailer
             break
         else
             break
-        end
-    end
 
     img
-end
 

@@ -3,8 +3,7 @@
 # a pure C fun with zero dynamic dispatch overhead.
 
 fib(n: i64): i64
-    if n <= 1 return n end
+    if n <= 1 return n
     fib(n - 1) + fib(n - 2)
-end
 
 print(fib(40))

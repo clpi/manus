@@ -7,9 +7,7 @@
     f = meta.fields[i]
     if i > 1
       acc = acc .. ", "
-    end
     acc = acc .. f.name .. "="
-  end
   acc = acc .. ")\";\n}\n"
   acc
 end)

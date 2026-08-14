@@ -32,19 +32,15 @@ calls = 0
 bump(k: i64): i64
   calls = calls + 1
   k
-end
 
 two(x: i64): any
   return x * 2, x * 3
-end
 
 want(what: str, got: i64, wanted: i64): i64
   if got != wanted
     print("simultaneous assign: {what} got {got}, want {wanted}")
     os.exit(1)
-  end
   0
-end
 
 main(): i64
   t = { 3, 7 }
@@ -82,4 +78,3 @@ main(): i64
 
   print("simultaneous assign: OK")
   0
-end

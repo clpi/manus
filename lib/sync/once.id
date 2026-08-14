@@ -4,25 +4,21 @@
 # once: create a new Once.
 once(): any
     {done = false, f = nil}
-end
 
 # run: call fn exactly once. Subsequent calls are no-ops.
 run(o: any, fn: any): any
-    if o.done return nil end
+    if o.done return nil
     o.done = true
     fn()
-end
 
 # call: call fn once and cache its result.
 call(o: any, fn: any): any
-    if o.done return o.result end
+    if o.done return o.result
     o.done = true
     o.result = fn()
     o.result
-end
 
 # reset: reset the Once so it can fire again.
 reset(o: any): void
     o.done = false
     o.result = nil
-end

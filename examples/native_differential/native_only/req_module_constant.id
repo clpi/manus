@@ -5,4 +5,3 @@
 main(): i64
     Token = token
     return Token.KIND_FUN
-end

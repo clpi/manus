@@ -22,7 +22,6 @@ _EX = "examples"
 # colours were the only thing lost in this port.
 _step(msg: str): void
     print(msg)
-end
 
 main: i64 = ()
     print("=== Duo GPU (Metal) Benchmark ===")
@@ -31,14 +30,12 @@ main: i64 = ()
     if std.script.chomp(std.script.capture("uname")) != "Darwin"
         print("SKIP: This benchmark requires macOS with Metal support. Skipping gracefully.")
         return 0
-    end
 
     duo = "./zig-out/bin/idol"
     if !std.script.fs_exists(duo)
         print("ERROR: Duo compiler not found at " .. duo)
         print("  Run 'zig build' first")
         return 1
-    end
 
     std.script.run("mkdir -p " .. _OUT_DIR)
     sdk = std.script.chomp(std.script.capture("xcrun --show-sdk-path"))
@@ -49,7 +46,6 @@ main: i64 = ()
     if rc != 0
         print("ERROR: Metal helper failed to compile")
         return 1
-    end
     print("      -> " .. _OUT_DIR .. "/metal_compute.o")
 
     _step("[2/3] Compiling bench_gpu_metal.id...")
@@ -60,7 +56,6 @@ main: i64 = ()
     if std.script.run(duo .. " dump-c " .. _EX .. "/bench_gpu_metal.id > " .. csrc) != 0
         print("ERROR: duo dump-c failed")
         return 1
-    end
     print("      -> Generated C: " .. csrc)
 
     bin = _OUT_DIR .. "/bench_gpu_metal"
@@ -69,7 +64,6 @@ main: i64 = ()
     if rc != 0
         print("ERROR: benchmark failed to link")
         return 1
-    end
     print("      -> Binary: " .. bin)
 
     print("")
@@ -83,9 +77,7 @@ main: i64 = ()
     if code != 0
         print("ERROR: benchmark failed (nonzero exit)")
         return 1
-    end
 
     print("")
     print("Done.")
     0
-end

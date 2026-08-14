@@ -35,9 +35,8 @@ print("comptime_result = " .. to(str)(comptime_result))
 
 # @constexpr for compile-time function evaluation
 factorial(n: i64): i64
-    if n <= 1 return 1 end
+    if n <= 1 return 1
     return n * factorial(n - 1)
-end
 
 fact10 = @(factorial(10))
 print("factorial(10) = " .. to(str)(fact10))

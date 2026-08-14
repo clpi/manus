@@ -23,10 +23,8 @@ atomic_demo(): i64
     bonus: i64 = 0
     if swapped
         bonus = 1
-    end
 
     mem.free(raw)
     return old_add + old_sub + old_or + old_and + old_xor + old_exchange + final_value + expected_value + bonus
-end
 
 print(atomic_demo())

@@ -2,33 +2,25 @@
 
 create(f: any): any
     coroutine.create(f)
-end
 
 resume(co: any, arg: any): any
     coroutine.resume(co, arg)
-end
 
 yield(arg: any): any
     coroutine.yield(arg)
-end
 
 status(co: any): str
     coroutine.status(co)
-end
 
 running(): any
     coroutine.running()
-end
 
 wrap(f: any): any
     coroutine.wrap(f)
-end
 
 isyieldable(): bool
     coroutine.isyieldable()
-end
 
 close(co: any): any
     coroutine.close(co)
-end
 

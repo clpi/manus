@@ -10,18 +10,11 @@ main: i64 = ()
                 t = xs[j]
                 xs[j] = xs[j + 1]
                 xs[j + 1] = t
-            end
-        end
-    end
     out = ""
     for v in xs
         if out == ""
             out = "{v}"
-        end
         if out != "{v}"
             out = "{out} {v}"
-        end
-    end
     print("{out}")
     0
-end

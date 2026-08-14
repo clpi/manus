@@ -4,4 +4,3 @@ llabs(n: i64): i64
 main(): i64
     x = llabs(-37)
     x + 5
-end

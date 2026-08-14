@@ -29,7 +29,6 @@
 
 box(x: any): any
     return x
-end
 
 main(): i64
     fails = 0
@@ -40,7 +39,6 @@ main(): i64
     if shortlit != shortbuilt
         print("FAIL short: literal and runtime-built are different objects")
         fails += 1
-    end
 
     # > 32 bytes: sampled on a stride, on both sides.
     longlit = box("a very long table key that is definitely more than thirty-two bytes long")
@@ -48,7 +46,6 @@ main(): i64
     if longlit != longbuilt
         print("FAIL long: literal and runtime-built are different objects")
         fails += 1
-    end
 
     # Inserted under the runtime hash, read back under the compile-time one.
     t = {}
@@ -57,11 +54,9 @@ main(): i64
     if t[shortlit] != 11
         print("FAIL short key: inserted by runtime hash, read by literal hash")
         fails += 1
-    end
     if t[longlit] != 22
         print("FAIL long key: inserted by runtime hash, read by literal hash")
         fails += 1
-    end
 
     # 200 long strings identical for their first 500 bytes, differing only in a
     # suffix the sample stride may step over. The pool confirms with a length
@@ -69,29 +64,24 @@ main(): i64
     # merge two distinct keys.
     u = {}
     i = 0
-    while i < 200 do
+    while i < 200
         u["x":rep(500) .. tostring(i)] = i
         i += 1
-    end
     bad = 0
     i = 0
-    while i < 200 do
+    while i < 200
         if u["x":rep(500) .. tostring(i)] != i
             bad += 1
-        end
         i += 1
-    end
     if bad != 0
         print("FAIL long distinct keys: " .. tostring(bad) .. " of 200 merged")
         fails += 1
-    end
 
     # Negative control: a long key never inserted must miss. Without this, a
     # table that answered every lookup would score 200/200 above.
     if u["x":rep(500) .. "999"] != nil
         print("FAIL control: a long key never inserted answered non-nil")
         fails += 1
-    end
 
     # Positive control on the counter itself: this fixture reports 0/6 only
     # because six checks ran, not because none did.
@@ -99,7 +89,5 @@ main(): i64
     if fails == 0
         print("hash agreement: PASS")
         return 0
-    end
     print("hash agreement: FAIL " .. tostring(fails))
     return 1
-end

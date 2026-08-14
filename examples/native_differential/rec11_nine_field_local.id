@@ -2,4 +2,3 @@ big: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64 }
 main(): i64
     x: big = { a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8, i = 9 }
     return x.a + x.i
-end

@@ -117,7 +117,6 @@ main: i64 = ()
             print("  {row.sites} sites {row.payload} payload-lines {path}")
             total += row.sites
             payload += row.payload
-    end
 
     print("embedledger: enforce zero embedded @c sites for self-hosting")
     if total == 0

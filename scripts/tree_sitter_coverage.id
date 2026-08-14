@@ -41,9 +41,7 @@ _sdkroot(): str
     fromenv = script.chomp(os.getenv("SDKROOT"))
     if fromenv != ""
         return fromenv
-    end
     script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))
-end
 
 # Every shell command the gate runs goes through here, so the SDK path is
 # never accidentally dropped from one of them.
@@ -55,11 +53,9 @@ end
 # result for every command, which `to(i64)("")` turned into a confident 0.
 _sh(sdk: str, cmd: str): str
     script.capture("export SDKROOT='" .. sdk .. "'; " .. cmd)
-end
 
 _shstatus(sdk: str, cmd: str): i64
     script.status("export SDKROOT='" .. sdk .. "'; " .. cmd)
-end
 
 # Count files whose tree carries an ERROR / MISSING / UNEXPECTED node.
 # `tree-sitter parse #quiet #paths` prints one line per FAILING file and
@@ -67,7 +63,6 @@ end
 _failures(sdk: str, listfile: str): i64
     out: str = _sh(sdk, "cd " .. grammardir .. " && tree-sitter parse --quiet --paths '" .. listfile .. "' 2>/dev/null | sort -u | grep -c . ")
     return to(i64)(script.chomp(out))
-end
 
 # Prove the detector can distinguish a good file from a bad one BEFORE
 # believing anything it says about the corpus. A gate that reports 0/N is
@@ -93,15 +88,12 @@ _control(sdk: str, dir: str): bool
         io:write("tree_sitter_coverage: CONTROL FAILED — a valid file was reported unrecognised\n")
         io:write("  this means the measurement is broken, not that the grammar regressed\n")
         return false
-    end
     if badfails != 1
         io:write("tree_sitter_coverage: CONTROL FAILED — a file with a deliberate syntax error was reported RECOGNISED\n")
         io:write("  the detector cannot fail, so its count proves nothing\n")
         return false
-    end
     print("tree_sitter_coverage: control ok — valid file recognised, broken file rejected")
     true
-end
 
 main: i64 = ()
     sdk = _sdkroot()
@@ -109,14 +101,12 @@ main: i64 = ()
         io:write("tree_sitter_coverage: FAIL — cannot resolve SDKROOT (xcrun --show-sdk-path returned nothing)\n")
         io:write("  without it the tree-sitter CLI cannot compile parser.c and reports EVERY file unparseable\n")
         return 1
-    end
     print("tree_sitter_coverage: SDKROOT=" .. sdk)
 
     if !script.ok("command -v tree-sitter >/dev/null 2>&1")
         io:write("tree_sitter_coverage: FAIL — tree-sitter CLI not found on PATH\n")
         io:write("  the grammar cannot be built or measured; install it rather than skipping this gate\n")
         return 1
-    end
 
     # The generator, checked. This is the step scripts/setup-nvim.id used to
     # swallow with `>/dev/null 2>&1`.
@@ -125,7 +115,6 @@ main: i64 = ()
         io:write("tree_sitter_coverage: FAIL — tree-sitter generate exited " .. genstatus:to(str) .. "\n")
         io:write(_sh(sdk, "cd " .. grammardir .. " && tree-sitter generate 2>&1 | head -40"))
         return 1
-    end
     print("tree_sitter_coverage: tree-sitter generate ok")
 
     # The generator warns rather than fails on a conflict entry that is no
@@ -137,12 +126,10 @@ main: i64 = ()
         io:write(genout)
         io:write("  drop the entries it names; every conflict must be provably necessary\n")
         return 1
-    end
 
     tmp = script.fs_tmpdir()
     if !_control(sdk, tmp)
         return 1
-    end
 
     # git ls-files is the authority on what is tracked; the `-f` test drops
     # entries that are staged-deleted so a mid-rebase tree cannot fake a
@@ -165,7 +152,6 @@ main: i64 = ()
     if total < 1
         io:write("tree_sitter_coverage: FAIL — no tracked .id files found; the corpus list is empty\n")
         return 1
-    end
 
     fails = _failures(sdk, listfile)
     recognised = total - fails
@@ -179,12 +165,9 @@ main: i64 = ()
         io:write("  the files that failed:\n")
         io:write(_sh(sdk, "cd " .. grammardir .. " && tree-sitter parse --quiet --paths '" .. listfile .. "' 2>/dev/null | sort -u | head -40"))
         return 1
-    end
 
     if fails < ceiling
         print("tree_sitter_coverage: ratchet may be lowered to " .. fails:to(str))
-    end
 
     print("tree_sitter_coverage: PASS")
     0
-end

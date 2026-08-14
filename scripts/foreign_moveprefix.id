@@ -75,4 +75,3 @@ main(): i64
         hits = count("grep -cxF '{prefix}' {into} 2>/dev/null")
     print(hits:to(str))
     0
-end

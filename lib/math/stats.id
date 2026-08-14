@@ -6,20 +6,17 @@
 # ═══════════════════════════════════════════════════════════════
 
 stats_mean(data: any): f64
-    if data:len() == 0 return 0.0 end
+    if data:len() == 0 return 0.0
     sum = 0
     for v in data
         sum += v
-    end
     sum / data:len()
-end
 
 stats_median(data: any): f64
-    if data:len() == 0 return 0.0 end
+    if data:len() == 0 return 0.0
     sorted = {}
     for v in data
         sorted[sorted:len() + 1] = v
-    end
     sorted:sort()
 
     n = sorted:len()
@@ -27,16 +24,13 @@ stats_median(data: any): f64
         return sorted[n / 2:floor() + 1]
     else
         return (sorted[n / 2] + sorted[n / 2 + 1]) / 2
-    end
-end
 
 stats_mode(data: any): any
-    if data:len() == 0 return nil end
+    if data:len() == 0 return nil
 
     counts = {}
     for v in data
         counts[v] = (counts[v] or 0) + 1
-    end
 
     max_count = 0
     mode = nil
@@ -44,55 +38,45 @@ stats_mode(data: any): any
         if count > max_count
             max_count = count
             mode = v
-        end
-    end
     {value = mode, count = max_count}
-end
 
 stats_variance(data: any, population: bool): f64
     n = data:len()
-    if n == 0 return 0.0 end
+    if n == 0 return 0.0
 
     mean = stats_mean(data)
     sum_sq = 0
     for v in data
         diff = v - mean
         sum_sq += diff * diff
-    end
 
     if population
         return sum_sq / n
     else
         return sum_sq / (n - 1)
-    end
-end
 
 stats_std_dev(data: any, population: bool): f64
     stats_variance(data, population):sqrt()
-end
 
 stats_standardize(data: any): any
     mean = stats_mean(data)
     std = stats_std_dev(data, false)
-    if std < 1e-10 std = 1 end
+    if std < 1e-10 std = 1
 
     result = {}
     for v in data
         result[result:len() + 1] = (v - mean) / std
-    end
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Percentiles & Quartiles
 # ═══════════════════════════════════════════════════════════════
 
 stats_percentile(data: any, p: f64): f64
-    if data:len() == 0 return 0.0 end
+    if data:len() == 0 return 0.0
     sorted = {}
     for v in data
         sorted[sorted:len() + 1] = v
-    end
     sorted:sort()
 
     k = (p / 100) * (sorted:len() - 1)
@@ -100,11 +84,9 @@ stats_percentile(data: any, p: f64): f64
     c = k:ceil()
     if f == c
         return sorted[f + 1]
-    end
     d0 = sorted[f + 1] * (c - k)
     d1 = sorted[c + 1] * (k - f)
     d0 + d1
-end
 
 stats_quartiles(data: any): any
     {
@@ -112,12 +94,10 @@ stats_quartiles(data: any): any
         q2 = stats_percentile(data, 50),
         q3 = stats_percentile(data, 75),
     }
-end
 
 stats_iqr(data: any): f64
     q = stats_quartiles(data)
     q.q3 - q.q1
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Covariance & Correlation
@@ -125,7 +105,7 @@ end
 
 stats_covariance(x: any, y: any): f64
     n = x:len()
-    if n == 0 or n != y:len() return 0.0 end
+    if n == 0 or n != y:len() return 0.0
 
     mean_x = stats_mean(x)
     mean_y = stats_mean(y)
@@ -133,87 +113,74 @@ stats_covariance(x: any, y: any): f64
     sum = 0
     for i = 1, n
         sum += (x[i] - mean_x) * (y[i] - mean_y)
-    end
     sum / (n - 1)
-end
 
 stats_correlation(x: any, y: any): f64
     cov = stats_covariance(x, y)
     std_x = stats_std_dev(x, false)
     std_y = stats_std_dev(y, false)
 
-    if std_x < 1e-10 or std_y < 1e-10 return 0.0 end
+    if std_x < 1e-10 or std_y < 1e-10 return 0.0
     cov / (std_x * std_y)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Distribution Functions
 # ═══════════════════════════════════════════════════════════════
 
 stats_normal_pdf(x: f64, mean: f64, std: f64): f64
-    if std < 1e-10 return 0.0 end
+    if std < 1e-10 return 0.0
     z = (x - mean) / std
     (1 / (std * 2 * math.pi:sqrt())) * -0.5 * z * z:exp()
-end
 
 stats_normal_cdf(x: f64, mean: f64, std: f64): f64
-    if std < 1e-10 return x >= mean and 1.0 or 0.0 end
+    if std < 1e-10 return x >= mean and 1.0 or 0.0
     z = (x - mean) / std
     0.5 * (1 + math.erf(z / 2:sqrt()))
-end
 
 stats_uniform_pdf(x: f64, a: f64, b: f64): f64
-    if x < a or x > b return 0.0 end
+    if x < a or x > b return 0.0
     1 / (b - a)
-end
 
 stats_uniform_cdf(x: f64, a: f64, b: f64): f64
-    if x < a return 0.0 end
-    if x > b return 1.0 end
+    if x < a return 0.0
+    if x > b return 1.0
     (x - a) / (b - a)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Histogram
 # ═══════════════════════════════════════════════════════════════
 
 stats_histogram(data: any, bins: i64): any
-    if data:len() == 0 return {bins = {}, edges = {}} end
-    if bins == nil bins = 10 end
+    if data:len() == 0 return {bins = {}, edges = {}}
+    if bins == nil bins = 10
 
     min_val = data[1]
     max_val = data[1]
     for v in data
-        if v < min_val min_val = v end
-        if v > max_val max_val = v end
-    end
+        if v < min_val min_val = v
+        if v > max_val max_val = v
 
     if min_val == max_val
         return {
             bins = {data:len()},
             edges = {min_val, max_val},
         }
-    end
 
     bin_width = (max_val - min_val) / bins
     counts = {}
     for i = 1, bins
         counts[i] = 0
-    end
 
     for v in data
         bin = (v - min_val) / bin_width:floor() + 1
-        if bin > bins bin = bins end
+        if bin > bins bin = bins
         counts[bin] = counts[bin] + 1
-    end
 
     edges = {}
     for i = 0, bins
         edges[i + 1] = min_val + i * bin_width
-    end
 
     {bins = counts, edges = edges}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Summary Statistics
@@ -222,12 +189,10 @@ end
 stats_summary(data: any): any
     if data:len() == 0
         return {count = 0}
-    end
 
     sorted = {}
     for v in data
         sorted[sorted:len() + 1] = v
-    end
     sorted:sort()
 
     {
@@ -241,7 +206,6 @@ stats_summary(data: any): any
         q1 = stats_percentile(data, 25),
         q3 = stats_percentile(data, 75),
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Outlier Detection
@@ -257,26 +221,20 @@ stats_outliers_iqr(data: any): any
     for v in data
         if v < lower or v > upper
             outliers[outliers:len() + 1] = v
-        end
-    end
     {lower = lower, upper = upper, outliers = outliers}
-end
 
 stats_outliers_zscore(data: any, threshold: f64): any
-    if threshold == nil threshold = 3 end
+    if threshold == nil threshold = 3
     mean = stats_mean(data)
     std = stats_std_dev(data, false)
-    if std < 1e-10 return {outliers = {}} end
+    if std < 1e-10 return {outliers = {}}
 
     outliers = {}
     for v in data
         z = (v - mean) / std:abs()
         if z > threshold
             outliers[outliers:len() + 1] = {value = v, zscore = z}
-        end
-    end
     {outliers = outliers}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

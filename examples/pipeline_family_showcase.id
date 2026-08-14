@@ -14,11 +14,9 @@ static const double floats[] = { 1.5, 2.0, 2.5 };
 
 int_sum(): i64
     @c.call("sum_i64", @(ints), @(4))
-end
 
 float_sum(): f64
     @c.call("sum_f64", @(floats), @(3))
-end
 
 print("=== @comp.pipeline family showcase ===")
 print("sum_i64 = " .. to(str)(int_sum()))

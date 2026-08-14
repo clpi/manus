@@ -6,52 +6,44 @@ bytecursor: @{ data: str, pos: i64, len: i64 }
 
 new(data: str): bytecursor
     bytecursor { data = data, pos = 1, len = data:len() }
-end
 
 remaining(c: bytecursor): i64
-    if c.pos > c.len return 0 end
+    if c.pos > c.len return 0
     c.len - c.pos + 1
-end
 
 eof(c: bytecursor): bool
     c.pos > c.len
-end
 
 position(c: bytecursor): i64
     c.pos
-end
 
 skip(c: bytecursor, n: i64)
     c.pos = c.pos + n
-end
 
 # Read one byte; returns -1 on EOF.
 readu8(c: bytecursor): i64
-    if c.pos > c.len return -1 end
+    if c.pos > c.len return -1
     b = c.data:byte(c.pos)
     c.pos = c.pos + 1
     b
-end
 
 readu16le(c: bytecursor): i64
     b0 = readu8(c)
-    if b0 < 0 return -1 end
+    if b0 < 0 return -1
     b1 = readu8(c)
-    if b1 < 0 return -1 end
+    if b1 < 0 return -1
     b0 | (b1 << 8)
-end
 
 readu32le(c: bytecursor): i64
     b0 = readu8(c)
-    if b0 < 0 return -1 end
+    if b0 < 0 return -1
     b1 = readu8(c)
-    if b1 < 0 return -1 end
+    if b1 < 0 return -1
     b2 = readu8(c)
-    if b2 < 0 return -1 end
+    if b2 < 0 return -1
     b3 = readu8(c)
-    if b3 < 0 return -1 end
+    if b3 < 0 return -1
     b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-end
 
 # Wasm LEB128 unsigned (P9-M1 kernel primitive).
 readlebu(c: bytecursor): i64
@@ -59,14 +51,12 @@ readlebu(c: bytecursor): i64
     shift = 0
     while true
         b = readu8(c)
-        if b < 0 return -1 end
+        if b < 0 return -1
         result |= ((b & 0x7F) << shift)
-        if (b & 0x80) == 0 return result end
+        if (b & 0x80) == 0 return result
         shift += 7
-        if shift >= 35 return -1 end
-    end
+        if shift >= 35 return -1
     return -1
-end
 
 # Wasm LEB128 signed.
 readlebs(c: bytecursor): i64
@@ -75,34 +65,28 @@ readlebs(c: bytecursor): i64
     b = 0
     while true
         b = readu8(c)
-        if b < 0 return -1 end
+        if b < 0 return -1
         result |= ((b & 0x7F) << shift)
         shift += 7
         if (b & 0x80) == 0
             if shift < 64 and (b & 0x40) != 0
                 result |= (~0 << shift)
-            end
             return result
-        end
-        if shift >= 70 return -1 end
-    end
+        if shift >= 70 return -1
     return -1
-end
 
 readbytes(c: bytecursor, n: i64): str
-    if n < 0 or c.pos + n - 1 > c.len return "" end
+    if n < 0 or c.pos + n - 1 > c.len return ""
     s = c.data:sub(c.pos, c.pos + n - 1)
     c.pos = c.pos + n
     s
-end
 
 # Wasm module header: magic (0x6D736100) + version (1).
 readwasmheader(c: bytecursor): i64
     magic = readu32le(c)
-    if magic < 0 return -1 end
+    if magic < 0 return -1
     version = readu32le(c)
-    if version < 0 return -1 end
-    if magic != 0x6D736100 return -2 end
-    if version != 1 return -3 end
+    if version < 0 return -1
+    if magic != 0x6D736100 return -2
+    if version != 1 return -3
     version
-end

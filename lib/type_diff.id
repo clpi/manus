@@ -25,19 +25,14 @@ str_join(parts: any, sep: str): str
     for i, part in parts
         if i > 1
             result = result .. sep
-        end
         result = result .. part
-    end
     result
-end
 
 count_fields(t: any): i64
     count = 0
     for _ in t
         count += 1
-    end
     count
-end
 
 default_value(type_name: str): str
     defaults = {
@@ -49,7 +44,6 @@ default_value(type_name: str): str
         ["any"] = "NULL",
     }
     defaults[type_name] or "0"
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Type compatibility analysis
@@ -71,17 +65,13 @@ is_widening(old_type: str, new_type: str): bool
     allowed = widenings[old_type]
     if allowed
         for _, w in allowed
-            if w == new_type return true end
-        end
-    end
+            if w == new_type return true
     false
-end
 
 # is_compatible: check if two types are compatible (same or widening)
 is_compatible(old_type: str, new_type: str): bool
-    if old_type == new_type return true end
+    if old_type == new_type return true
     is_widening(old_type, new_type)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Type diffing engine
@@ -99,7 +89,7 @@ diff_types(old_type: any, new_type: any): any
     for name, new_typ in new_type
         if old_type[name] == nil
             added[added:len() + 1] = { name = name, type = new_typ }
-        elseif old_type[name] != new_typ
+        else if old_type[name] != new_typ
             changed[changed:len() + 1] = {
                 name = name,
                 old_type = old_type[name],
@@ -107,15 +97,11 @@ diff_types(old_type: any, new_type: any): any
             }
         else
             unchanged[unchanged:len() + 1] = { name = name, type = new_typ }
-        end
-    end
 
     # Find removed fields
     for name, old_typ in old_type
         if new_type[name] == nil
             removed[removed:len() + 1] = { name = name, type = old_typ }
-        end
-    end
 
     # Determine compatibility:
     # - Compatible if only additions (no removals, no type changes)
@@ -126,8 +112,6 @@ diff_types(old_type: any, new_type: any): any
     for _, c in changed
         if is_widening(c.old_type, c.new_type)
             compatible = true
-        end
-    end
 
     return {
         added = added,
@@ -138,7 +122,6 @@ diff_types(old_type: any, new_type: any): any
         old_count = count_fields(old_type),
         new_count = count_fields(new_type),
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Migration code generation
@@ -158,7 +141,6 @@ emit_migration(type_name: str, changes: any): str
     # Copy unchanged fields
     for _, u in changes.unchanged
         parts[parts:len() + 1] = "    new." .. u.name .. " = old->" .. u.name .. ";"
-    end
 
     # Copy widened fields (safe widening)
     for _, c in changes.changed
@@ -167,19 +149,15 @@ emit_migration(type_name: str, changes: any): str
         else
             # Type narrowing: use a default value
             parts[parts:len() + 1] = "    new." .. c.name .. " = (" .. c.new_type .. ")0;  /* WARNING: " .. c.old_type .. " → " .. c.new_type .. " is narrowing, using default */"
-        end
-    end
 
     # Initialize added fields with defaults
     for _, a in changes.added
         parts[parts:len() + 1] = "    new." .. a.name .. " = (" .. a.type .. ")" .. default_value(a.type) .. ";  /* added field */"
-    end
 
     parts[parts:len() + 1] = "    return new;"
     parts[parts:len() + 1] = "}"
 
     str_join(parts, "\n")
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Diff reporting
@@ -197,16 +175,12 @@ format_diff(type_name: str, changes: any): str
         lines[lines:len() + 1] = "+ Added fields:"
         for _, a in changes.added
             lines[lines:len() + 1] = "  + " .. a.name .. ": " .. a.type
-        end
-    end
 
     if changes:len().removed > 0
         lines[lines:len() + 1] = ""
         lines[lines:len() + 1] = "- Removed fields:"
         for _, r in changes.removed
             lines[lines:len() + 1] = "  - " .. r.name .. ": " .. r.type
-        end
-    end
 
     if changes:len().changed > 0
         lines[lines:len() + 1] = ""
@@ -214,19 +188,14 @@ format_diff(type_name: str, changes: any): str
         for _, c in changes.changed
             compat = is_widening(c.old_type, c.new_type) and "widening" or "narrowing"
             lines[lines:len() + 1] = "  ~ " .. c.name .. ": " .. c.old_type .. " → " .. c.new_type .. " (" .. compat .. ")"
-        end
-    end
 
     if changes:len().unchanged > 0
         lines[lines:len() + 1] = ""
         lines[lines:len() + 1] = "= Unchanged fields:"
         for _, u in changes.unchanged
             lines[lines:len() + 1] = "  = " .. u.name .. ": " .. u.type
-        end
-    end
 
     str_join(lines, "\n")
-end
 
 M = {
     diff_types = diff_types,

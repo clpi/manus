@@ -22,6 +22,5 @@ raw_demo(): i64
     mem.free(out)
     mem.free(raw)
     return got0 + got1 + cmp
-end
 
 print(raw_demo())

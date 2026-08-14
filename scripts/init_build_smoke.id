@@ -25,20 +25,16 @@
 # reads as "the compiler is broken" rather than "the gate is".
 cwd(): str
     script.chomp(script.capture("pwd"))
-end
 
 duobin(root: str): str
     "{root}/zig-out/bin/idol"
-end
 
 fail(msg: str): void
     print("init_build_smoke: FAIL — {msg}")
-end
 
 # Run `cmd` with cwd set to `dir`, returning the exact exit status.
 at(dir: str, cmd: str): i64
     script.status("cd {dir} && {cmd}")
-end
 
 # NOT script.exists: script's whole block of ergonomic aliases (exists,
 # is_file, is_dir, read, ...) returns nil for EVERY input, because a module-scope
@@ -49,14 +45,12 @@ end
 # that path. See gap[43].
 present(path: str): bool
     std.script.status("test -e {path}") == 0
-end
 
 # Run `cmd` in `dir` and report whether its combined output contains `want`.
 # Exit status alone cannot distinguish "the program ran and printed the right
 # thing" from "the program was optimized down to nothing"; this can.
 says(dir: str, cmd: str, want: str): bool
     std.script.status("cd {dir} && {cmd} 2>&1 | grep -q {want}") == 0
-end
 
 main: i64 = ()
     root = cwd()
@@ -67,17 +61,14 @@ main: i64 = ()
     if !present(bin)
         fail("no duo binary at {bin} (run `zig build` first)")
         return 1
-    end
     if std.script.status("false") == 0
         fail("positive control: status() reported success for `false`")
         return 1
-    end
 
     work = std.script.chomp(std.script.capture("mktemp -d"))
     if work == ""
         fail("could not create a scratch directory")
         return 1
-    end
     proj = "{work}/demo"
     std.script.run("mkdir -p {proj}")
     print("init_build_smoke: scratch {proj}")
@@ -88,53 +79,43 @@ main: i64 = ()
     if at(proj, "{bin} init demo") != 0
         fail("duo init exited nonzero")
         fails += 1
-    end
     if !present("{proj}/src/main.id")
         fail("duo init did not write src/main.id")
         fails += 1
-    end
 
     # 2. The generated template must satisfy the front end. This is the exact
     #    step that returned `macro expansion error: UnknownMacro`.
     if at(proj, "{bin} check src/main.id") != 0
         fail("duo check rejected the file duo init just generated")
         fails += 1
-    end
 
     # 3. build must succeed and produce the binary it names.
     if at(proj, "{bin} build") != 0
         fail("duo build exited nonzero on a freshly initialized project")
         fails += 1
-    end
     if !present("{proj}/zig-out/bin/demo")
         fail("duo build reported success but wrote no zig-out/bin/demo")
         fails += 1
-    end
 
     # 4. run must print the template's greeting, not merely exit 0.
     if !says(proj, "{bin} run", "'hello from Duo'")
         fail("idol run did not print the template's greeting")
         fails += 1
-    end
 
     # 5. test must actually execute the template's @test case.
     if at(proj, "{bin} test") != 0
         fail("duo test exited nonzero on a freshly initialized project")
         fails += 1
-    end
     if !says(proj, "{bin} test", "'1 pass'")
         fail("duo test ran no passing case from the generated template")
         fails += 1
-    end
 
     std.script.run("rm -rf {work}")
 
     if fails != 0
         print("init_build_smoke: {fails} failing step(s)")
         return 1
-    end
     print("init_build_smoke: PASS — init, check, build, run, test on a clean directory")
     0
-end
 
 std.os.exit(main())

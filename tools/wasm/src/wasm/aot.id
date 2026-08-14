@@ -2,9 +2,8 @@
 
 M = {}
 
-fun compile(mod: any, path: str): str
+compile(mod: any, path: str): str
   ""
-end
 
 M.compile = compile
 M

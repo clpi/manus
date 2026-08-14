@@ -1,25 +1,21 @@
 # fmt — formatting utilities
 
 int(v: any): str
-    if v == nil return "nil" end
+    if v == nil return "nil"
     v:to(str)
-end
 
 float(v: any, precision: i64): str
-    if v == nil return "nil" end
+    if v == nil return "nil"
     if precision == nil
         "%g":format(v)
-    end
     "%." .. precision:to(str) .. "f":format(v)
-end
 
 to_str(v: any): str
-    if v == nil return "nil" end
+    if v == nil return "nil"
     v
-end
 
 boolean(v: any): str
-    if v == nil return "false" end
+    if v == nil return "false"
     # A guard, not `if v "true" else "false" end`. The endless one-liner clause
     # must be SELF-DELIMITED, and `v "true"` reads as PARENLESS
     # APPLICATION # it called `v("true")` and returned that. Because `v` is
@@ -27,58 +23,48 @@ boolean(v: any): str
     # this compiled and shipped: boolean(true) returned "false".
     if v
         return "true"
-    end
     "false"
-end
 
 hex(v: any): str
-    if v == nil return "nil" end
+    if v == nil return "nil"
     "0x%X":format(v)
-end
 
 bin(v: any): str
-    if v == nil return "nil" end
+    if v == nil return "nil"
     digits = {}
     n = v
     if n == 0
         "0b0"
-    end
     while n > 0
         digits:insert(1, to(str)(n % 2))
         n = n / 2:floor()
-    end
     "0b" .. digits:concat()
-end
 
 trim(s: str, chars: str): str
-    if s == nil return "" end
+    if s == nil return ""
     if chars == nil
         string["match"](s, "^%s*(.-)%s*$")
-    end
     string["match"](s, "^[" .. chars .. "]*(.-)[" .. chars .. "]*$")
-end
 
 pad(s: str, width: i64, pad_char: str): str
-    if s == nil s = "" end
-    if pad_char == nil pad_char = " " end
+    if s == nil s = ""
+    if pad_char == nil pad_char = " "
     len = s:len()
     w = width
-    if w == nil or w <= len return s end
+    if w == nil or w <= len return s
     pad_str = pad_char:rep(w - len)
     s .. pad_str
-end
 
 trunc(s: str, width: i64): str
-    if s == nil return "" end
-    if width == nil return s end
+    if s == nil return ""
+    if width == nil return s
     len = s:len()
-    if len <= width return s end
+    if len <= width return s
     s:sub(1, width)
-end
 
 format(fmt: str, args: any): str
-    if fmt == nil return "" end
-    if args == nil args = {} end
+    if fmt == nil return ""
+    if args == nil args = {}
     out = ""
     i = 1
     arg_idx = 1
@@ -90,71 +76,60 @@ format(fmt: str, args: any): str
                 v = args[arg_idx]
                 if spec == ""
                     out = out .. v:to(str)
-                elseif spec:sub(1, 2) == ":."
+                else if spec:sub(1, 2) == ":."
                     prec = spec:sub(3:to(i64))
                     if prec and v:to(i64)
                         out = out .. "%." .. prec:to(str) .. "f":format(v)
                     else
                         out = out .. v:to(str)
-                    end
                 else
                     out = out .. v:to(str)
-                end
                 arg_idx += 1
                 i = j + 1
             else
                 out = out .. fmt:sub(i, i)
                 i += 1
-            end
         else
             out = out .. fmt:sub(i, i)
             i += 1
-        end
-    end
     out
-end
 
 println(fmt_str: str, ...args): void
     s = format(fmt_str, args)
     io.write(s)
     io.write("\n")
-end
 
 bytes(size: any): str
-    if size == nil return "0 B" end
+    if size == nil return "0 B"
     if size < 1024
         return size:to(str) .. " B"
-    elseif size < 1024 * 1024
+    else if size < 1024 * 1024
         return "%.1f KB":format(size / 1024)
-    elseif size < 1024 * 1024 * 1024
+    else if size < 1024 * 1024 * 1024
         return "%.1f MB":format(size / (1024 * 1024))
     else
         return "%.2f GB":format(size / (1024 * 1024 * 1024))
-    end
-end
 
 join(parts: any, sep: str): str
-    if parts == nil return "" end
-    if sep == nil sep = ", " end
+    if parts == nil return ""
+    if sep == nil sep = ", "
     strs = {}
     i = 1
     while i <= parts:len()
         strs[strs:len() + 1] = to(str)(parts[i])
         i += 1
-    end
     strs:concat(sep)
-end
 
 repr(v: any): str
-    if v == nil return "nil" end
+    if v == nil return "nil"
     t = type(v)
     if t == "string"
         return "\"" .. v:gsub("\"", "\\\"") .. "\""
-    elseif t == "boolean"
-        if v return "true" else return "false" end
-    elseif t == "number"
+    else if t == "boolean"
+        if v return "true" else return "false"
+    else if t == "number"
         return v:to(str)
-    elseif t == "table"
+    else if t == "table"
         parts = {}
         n = v:len()
         if n > 0
@@ -162,16 +137,11 @@ repr(v: any): str
             while i <= n
                 parts[parts:len() + 1] = repr(v[i])
                 i += 1
-            end
             return "{" .. parts:concat(", ") .. "}"
         else
             for k, val in v
                 parts[parts:len() + 1] = k:to(str) .. "=" .. repr(val)
-            end
             return "{" .. parts:concat(", ") .. "}"
-        end
     else
         return v:to(str)
-    end
-end
 

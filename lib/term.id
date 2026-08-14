@@ -10,85 +10,64 @@ is_tty(): bool
     ok, val = pcall(os.getenv, "DUO_COLOR")
     if ok and val != nil and val != "" and val != "0"
         return true
-    end
     ok2, val2 = pcall(os.getenv, "NO_COLOR")
     if ok2 and val2 != nil and val2 != ""
         return false
-    end
     true
-end
 
 styled(prefix, text, suffix): str
     if is_tty()
         prefix .. text .. suffix
     else
         text
-    end
-end
 
 bold(text: str): str
     styled(color.BOLD, text, color.RESET)
-end
 
 dim(text: str): str
     styled(color.DIM, text, color.RESET)
-end
 
 green(text: str): str
     color.green(text)
-end
 
 red(text: str): str
     color.red(text)
-end
 
 yellow(text: str): str
     color.yellow(text)
-end
 
 cyan(text: str): str
     color.blue(text)
-end
 
 banner(title: str): str
     if is_tty()
         color.CYAN .. "╭─ " .. title .. color.RESET
     else
         "== " .. title .. " =="
-    end
-end
 
 kv(key: str, value: str): str
     if is_tty()
         color.DIM .. key .. color.RESET .. " " .. color.CYAN .. value .. color.RESET
     else
         key .. " " .. value
-    end
-end
 
 divider(): str
     if is_tty()
         color.DIM .. "────────────────────────────────────────" .. color.RESET
     else
         "----------------------------------------"
-    end
-end
 
 ok_msg(text: str): str
     if is_tty()
         color.GREEN .. "✓ " .. text .. color.RESET
     else
         "ok: " .. text
-    end
-end
 
 err_msg(text: str): str
     if is_tty()
         color.RED .. "● error: " .. text .. color.RESET
     else
         "error: " .. text
-    end
-end
 
 M.is_tty = is_tty
 M.styled = styled

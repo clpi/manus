@@ -18,37 +18,30 @@ config_new(): any
         seed = nil,
         logprobs = false,
     }
-end
 
 config_set_max_tokens(config: any, max_tokens: i64): any
     config.max_tokens = max_tokens
     config
-end
 
 config_set_temperature(config: any, temperature: f64): any
     config.temperature = temperature
     config
-end
 
 config_set_top_k(config: any, top_k: i64): any
     config.top_k = top_k
     config
-end
 
 config_set_top_p(config: any, top_p: f64): any
     config.top_p = top_p
     config
-end
 
 config_set_stop(config: any, stop: any): any
     config.stop = stop
     config
-end
 
 config_set_seed(config: any, seed: i64): any
     config.seed = seed
     config
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Sampling Strategies
@@ -62,36 +55,30 @@ sample_greedy(logits: any): i64
         if logits[i] > max_val
             max_val = logits[i]
             max_idx = i
-        end
         i += 1
-    end
     max_idx
-end
 
 sample_temperature(logits: any, temperature: f64): i64
-    if temperature < 0.01 return sample_greedy(logits) end
+    if temperature < 0.01 return sample_greedy(logits)
 
     # Apply temperature
     scaled = {}
     for i = 1, logits:len()
         scaled[i] = logits[i] / temperature
-    end
 
     # Softmax
     probs = softmax(scaled)
 
     # Sample from distribution
     return sample_from_probs(probs)
-end
 
 sample_top_k(logits: any, k: i64, temperature: f64): i64
-    if temperature < 0.01 return sample_greedy(logits) end
+    if temperature < 0.01 return sample_greedy(logits)
 
     # Find top k
     indexed = {}
     for i = 1, logits:len()
         indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
-    end
 
     # Sort by logit descending
     indexed:sort((a: any, b: any): any a.logit > b.logit)
@@ -102,13 +89,11 @@ sample_top_k(logits: any, k: i64, temperature: f64): i64
     while i <= k and i <= indexed:len()
         top_k[top_k:len() + 1] = indexed[i]
         i += 1
-    end
 
     # Apply temperature to top k
     scaled = {}
     for item in top_k
         scaled[scaled:len() + 1] = item.logit / temperature
-    end
 
     # Softmax
     probs = softmax(scaled)
@@ -116,23 +101,20 @@ sample_top_k(logits: any, k: i64, temperature: f64): i64
     # Sample
     chosen = sample_from_probs(probs)
     top_k[chosen].idx
-end
 
 sample_top_p(logits: any, top_p: f64, temperature: f64): i64
-    if temperature < 0.01 return sample_greedy(logits) end
+    if temperature < 0.01 return sample_greedy(logits)
 
     # Sort logits
     indexed = {}
     for i = 1, logits:len()
         indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
-    end
     indexed:sort((a: any, b: any): any a.logit > b.logit)
 
     # Apply temperature and softmax
     scaled = {}
     for item in indexed
         scaled[scaled:len() + 1] = item.logit / temperature
-    end
     probs = softmax(scaled)
 
     # Accumulate until top_p
@@ -144,11 +126,9 @@ sample_top_p(logits: any, top_p: f64, temperature: f64): i64
         if cumulative >= top_p
             cutoff = i
             break
-        end
         i += 1
-    end
 
-    if cutoff == 0 cutoff = probs:len() end
+    if cutoff == 0 cutoff = probs:len()
 
     # Renormalize and sample
     truncated_probs = {}
@@ -156,11 +136,9 @@ sample_top_p(logits: any, top_p: f64, temperature: f64): i64
     while i <= cutoff
         truncated_probs[i] = probs[i]
         i += 1
-    end
 
     chosen = sample_from_probs(truncated_probs)
     indexed[chosen].idx
-end
 
 sample_beam_search(logits: any, beams: i64, sequence: any): any
     # Beam search: maintain top-k candidates across decoding steps
@@ -170,12 +148,10 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         beam_scores = {}
         for i = 1, beams
             beam_scores[i] = {score = 0, tokens = {}}
-        end
 
         indexed = {}
         for i = 1, logits:len()
             indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
-        end
         indexed:sort((a: any, b: any): any a.logit > b.logit)
 
         i = 1
@@ -183,9 +159,7 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
             beam_scores[i].tokens[1] = indexed[i].idx
             beam_scores[i].score = indexed[i].logit
             i += 1
-        end
         return beam_scores
-    end
 
     # Subsequent steps: expand each beam, keep top beams
     all_candidates = {}
@@ -195,7 +169,6 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         indexed = {}
         for i = 1, logits:len()
             indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
-        end
         indexed:sort((a: any, b: any): any a.logit > b.logit)
 
         top_n = beams:min(indexed:len())
@@ -204,15 +177,12 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
             new_tokens = {}
             for t in beam.tokens
                 new_tokens[new_tokens:len() + 1] = t
-            end
             new_tokens[new_tokens:len() + 1] = indexed[i].idx
             all_candidates[all_candidates:len() + 1] = {
                 score = beam.score + indexed[i].logit,
                 tokens = new_tokens,
             }
             i += 1
-        end
-    end
 
     # Sort all candidates by score and keep top beams
     all_candidates:sort((a: any, b: any): any a.score > b.score)
@@ -221,67 +191,55 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
     while i <= beams and i <= all_candidates:len()
         result[i] = all_candidates[i]
         i += 1
-    end
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Repetition Penalty
 # ═══════════════════════════════════════════════════════════════
 
 apply_repetition_penalty(logits: any, generated: any, penalty: f64): any
-    if penalty <= 1.0 return logits end
+    if penalty <= 1.0 return logits
 
     result = {}
     for i = 1, logits:len()
         result[i] = logits[i]
-    end
 
     for token in generated
         if result[token + 1] > 0
             result[token + 1] = result[token + 1] / penalty
         else
             result[token + 1] = result[token + 1] * penalty
-        end
-    end
 
     result
-end
 
 apply_frequency_penalty(logits: any, token_counts: any, penalty: f64): any
-    if penalty == 0.0 return logits end
+    if penalty == 0.0 return logits
 
     result = {}
     for i = 1, logits:len()
         count = token_counts[i] or 0
         result[i] = logits[i] - penalty * count
-    end
     result
-end
 
 apply_presence_penalty(logits: any, generated: any, penalty: f64): any
-    if penalty == 0.0 return logits end
+    if penalty == 0.0 return logits
 
     result = {}
     for i = 1, logits:len()
         result[i] = logits[i]
-    end
 
     for token in generated
         if result[token + 1] > 0
             result[token + 1] = result[token + 1] - penalty
-        end
-    end
 
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Stop Conditions
 # ═══════════════════════════════════════════════════════════════
 
 check_stop_tokens(generated: any, stop_tokens: any): bool
-    if stop_tokens:len() == 0 return false end
+    if stop_tokens:len() == 0 return false
     # Check if any stop token appears at the end
     for stop in stop_tokens
         stop_len = stop:len()
@@ -292,23 +250,15 @@ check_stop_tokens(generated: any, stop_tokens: any): bool
                 if generated[generated:len() - stop_len + i] != stop[i]
                     matched = false
                     break
-                end
                 i += 1
-            end
-            if matched return true end
-        end
-    end
+            if matched return true
     false
-end
 
 check_stop_strings(generated_text: str, stop_strings: any): bool
     for stop in stop_strings
         if generated_text:find(stop, 1, true)
             return true
-        end
-    end
     false
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Utility Functions
@@ -317,8 +267,7 @@ end
 softmax(logits: any): any
     max_logit = -1e30
     for v in logits
-        if v > max_logit max_logit = v end
-    end
+        if v > max_logit max_logit = v
 
     exp_sum = 0
     probs = {}
@@ -326,13 +275,10 @@ softmax(logits: any): any
         exp_val = logits[i] - max_logit:exp()
         probs[i] = exp_val
         exp_sum += exp_val
-    end
 
     for i = 1, probs:len()
         probs[i] = probs[i] / exp_sum
-    end
     probs
-end
 
 sample_from_probs(probs: any): i64
     r = math.random()
@@ -341,16 +287,12 @@ sample_from_probs(probs: any): i64
         cumulative += probs[i]
         if r <= cumulative
             return i
-        end
-    end
     probs:len()
-end
 
 top_k_logits(logits: any, k: i64): any
     indexed = {}
     for i = 1, logits:len()
         indexed[indexed:len() + 1] = {idx = i, logit = logits[i]}
-    end
     indexed:sort((a: any, b: any): any a.logit > b.logit)
 
     result = {}
@@ -358,9 +300,7 @@ top_k_logits(logits: any, k: i64): any
     while i <= k and i <= indexed:len()
         result[result:len() + 1] = indexed[i]
         i += 1
-    end
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

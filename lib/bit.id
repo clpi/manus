@@ -7,52 +7,43 @@ popcount(x: i64): i64
     while n > 0
         count += (n & 1)
         n = n >> 1
-    end
     count
-end
 
 # Count leading zeros
 clz(x: i64): i64
-    if x == 0 return 64 end
+    if x == 0 return 64
     n = 0
     mask = 1 << 63
     while (x & mask) == 0
         n += 1
         mask = mask >> 1
-    end
     n
-end
 
 # Count trailing zeros
 ctz(x: i64): i64
-    if x == 0 return 64 end
+    if x == 0 return 64
     n = 0
     while (x & 1) == 0
         n += 1
         x = x >> 1
-    end
     n
-end
 
 # Bit length (position of highest set bit + 1)
 bit_length(x: i64): i64
-    if x == 0 return 0 end
+    if x == 0 return 0
     64 - clz(x)
-end
 
 # Rotate left (for hash functions, ciphers)
 rotl(x: i64, k: i64): i64
     k = k & 63
-    if k == 0 return x end
+    if k == 0 return x
     (x << k) | (x >> (64 - k))
-end
 
 # Rotate right
 rotr(x: i64, k: i64): i64
     k = k & 63
-    if k == 0 return x end
+    if k == 0 return x
     (x >> k) | (x << (64 - k))
-end
 
 # Reverse all bits (for bitfield encoding)
 reverse(x: i64): i64
@@ -61,9 +52,7 @@ reverse(x: i64): i64
     while i < 64
         r |= ((x >> i) & 1) << (63 - i)
         i += 1
-    end
     r
-end
 
 # Reverse bytes (endianness conversion)
 reverse_bytes(x: i64): i64
@@ -75,14 +64,12 @@ reverse_bytes(x: i64): i64
     ((x >> 24) & 0xFF0000) |
     ((x >> 40) & 0xFF00) |
     ((x >> 56) & 0xFF)
-end
 
 # Extract a bitfield: extract bits [hi:lo] from x (inclusive, 0-indexed)
 extract(x: i64, hi: i64, lo: i64): i64
     width = hi - lo + 1
     mask = (1 << width) - 1
     (x >> lo) & mask
-end
 
 # Insert a bitfield: insert value into bits [hi:lo] of x
 insert(x: i64, hi: i64, lo: i64, value: i64): i64
@@ -90,40 +77,34 @@ insert(x: i64, hi: i64, lo: i64, value: i64): i64
     mask = (1 << width) - 1
     cleared = x & ~(mask << lo)
     cleared | ((value & mask) << lo)
-end
 
 # Set a single bit
 set_bit(x: i64, pos: i64): i64
     x | (1 << pos)
-end
 
 # Clear a single bit
 clear_bit(x: i64, pos: i64): i64
     x & ~(1 << pos)
-end
 
 # Toggle a single bit
 toggle_bit(x: i64, pos: i64): i64
     # `~` is XOR; `^` is exponentiation and yields f64, which made this fail
     # to typecheck against the declared i64 return.
     x ~ (1 << pos)
-end
 
 # Test if bit at pos is set
 test_bit(x: i64, pos: i64): bool
     (x & (1 << pos)) != 0
-end
 
 # Count set bits in range [hi:lo]
 popcount_range(x: i64, hi: i64, lo: i64): i64
     width = hi - lo + 1
     mask = (1 << width) - 1
     popcount((x >> lo) & mask)
-end
 
 # Next power of two
 next_pow2(x: i64): i64
-    if x <= 1 return 1 end
+    if x <= 1 return 1
     x -= 1
     x |= (x >> 1)
     x |= (x >> 2)
@@ -132,13 +113,11 @@ next_pow2(x: i64): i64
     x |= (x >> 16)
     x |= (x >> 32)
     x + 1
-end
 
 # Previous power of two
 prev_pow2(x: i64): i64
-    if x <= 1 return 1 end
+    if x <= 1 return 1
     1 << (bit_length(x) - 1)
-end
 
 # LEB128 unsigned encode (used in WASM binary format)
 leb128_encode_u(value: i64): any
@@ -148,11 +127,9 @@ leb128_encode_u(value: i64): any
         value = value >> 7
         if value != 0
             byte |= 0x80
-        end
         bytes[bytes:len() + 1] = byte
     until value == 0
     bytes
-end
 
 # LEB128 unsigned decode
 leb128_decode_u(bytes: any, pos: i64): any
@@ -163,11 +140,9 @@ leb128_decode_u(bytes: any, pos: i64): any
         byte = bytes[i]
         result |= ((byte & 0x7F) << shift)
         shift += 7
-        if (byte & 0x80) == 0 break end
+        if (byte & 0x80) == 0 break
         i += 1
-    end
     {value = result, next = i + 1}
-end
 
 # LEB128 signed encode
 leb128_encode_s(value: i64): any
@@ -180,11 +155,8 @@ leb128_encode_s(value: i64): any
             more = false
         else
             byte |= 0x80
-        end
         bytes[bytes:len() + 1] = byte
-    end
     bytes
-end
 
 # LEB128 signed decode
 leb128_decode_s(bytes: any, pos: i64): any
@@ -198,50 +170,40 @@ leb128_decode_s(bytes: any, pos: i64): any
         if (byte & 0x80) == 0
             if shift < 64 and (byte & 0x40) != 0
                 result |= (~0 << shift)
-            end
             break
-        end
         i += 1
-    end
     {value = result, next = i + 1}
-end
 
 # Binary AND/OR/XOR arrays element-wise (for SIMD-like ops on byte arrays)
 and_bytes(a: any, b: any): any
     out = {}
     n = a:len()
-    if b:len() < n n = b:len() end
+    if b:len() < n n = b:len()
     i = 1
     while i <= n
         out[out:len() + 1] = a[i] & b[i]
         i += 1
-    end
     out
-end
 
 or_bytes(a: any, b: any): any
     out = {}
     n = a:len()
-    if b:len() < n n = b:len() end
+    if b:len() < n n = b:len()
     i = 1
     while i <= n
         out[out:len() + 1] = a[i] | b[i]
         i += 1
-    end
     out
-end
 
 xor_bytes(a: any, b: any): any
     out = {}
     n = a:len()
-    if b:len() < n n = b:len() end
+    if b:len() < n n = b:len()
     i = 1
     while i <= n
         out[out:len() + 1] = a[i] ^ b[i]
         i += 1
-    end
     out
-end
 
 not_bytes(a: any): any
     out = {}
@@ -249,9 +211,7 @@ not_bytes(a: any): any
     while i <= a:len()
         out[out:len() + 1] = ~a[i] & 0xFF
         i += 1
-    end
     out
-end
 
 # ── IEEE-754 bit reinterpretation ─────────────────────────────────────
 # Reinterpret (not convert) between floats and their bit patterns. Needed by
@@ -261,18 +221,14 @@ end
 
 f64_to_bits(x: f64): i64
     @comp.bit.bitcast(x, "int64_t")
-end
 
 f64_from_bits(b: i64): f64
     @comp.bit.bitcast(b, "double")
-end
 
 f32_to_bits(x: f64): i64
     y: f32 = x
     @comp.bit.bitcast(y, "uint32_t")
-end
 
 f32_from_bits(b: i64): f64
     y: u32 = b
     @comp.bit.bitcast(y, "float")
-end

@@ -4,7 +4,6 @@ content = fs.read_file("benchmark_evidence.json")
 if content == nil
     print("No benchmark evidence found. Run scripts/run_benchmark.id first.")
     os.exit(1)
-end
 
 evidence = json.decode(content)
 

@@ -1,7 +1,7 @@
 # ml.data — Batching, shuffling, and dataset iterators (training pipelines)
 
 batch(samples, batch_size): any
-    if batch_size == nil batch_size = 32 end
+    if batch_size == nil batch_size = 32
     batches = {}
     n = samples:len()
     i = 1
@@ -14,20 +14,15 @@ batch(samples, batch_size): any
             j += 1
             chunk[j] = samples[i]
             i += 1
-        end
         batches[bi] = { x = chunk, size = j }
-    end
     return { type = "batches", items = batches, n = bi, batch_size = batch_size }
-end
 
 from_pairs(xs, ys): any
     assert(xs:len() == ys:len(), "from_pairs: length mismatch")
     samples = {}
     for i = 1, xs:len()
         samples[i] = { x = xs[i], y = ys[i] }
-    end
     return samples
-end
 
 # Fisher–Yates shuffle (in-place on array table)
 shuffle(samples): any
@@ -39,12 +34,10 @@ shuffle(samples): any
         samples[i] = samples[j]
         samples[j] = tmp
         i -= 1
-    end
     return samples
-end
 
 dataloader(samples, batch_size, shuffle): any
-    if shuffle == nil shuffle = true end
+    if shuffle == nil shuffle = true
     return {
         type = "dataloader",
         samples = samples,
@@ -52,12 +45,10 @@ dataloader(samples, batch_size, shuffle): any
         shuffle = shuffle,
         epoch = 0,
     }
-end
 
 iter_epoch(loader): any
     loader.epoch = loader.epoch + 1
     data = loader.samples
-    if loader.shuffle data = shuffle(data) end
+    if loader.shuffle data = shuffle(data)
     return batch(data, loader.batch_size)
-end
 

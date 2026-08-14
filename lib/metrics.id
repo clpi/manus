@@ -13,20 +13,16 @@ counter_new(name: str, help: str): any
         value = 0,
         labels = {},
     }
-end
 
 counter_inc(c: any, amount: f64): void
-    if amount == nil amount = 1 end
+    if amount == nil amount = 1
     c.value += amount
-end
 
 counter_get(c: any): f64
     c.value
-end
 
 counter_reset(c: any): void
     c.value = 0
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Gauge (can go up and down)
@@ -39,25 +35,20 @@ gauge_new(name: str, help: str): any
         help = help,
         value = 0,
     }
-end
 
 gauge_set(g: any, value: f64): void
     g.value = value
-end
 
 gauge_inc(g: any, amount: f64): void
-    if amount == nil amount = 1 end
+    if amount == nil amount = 1
     g.value += amount
-end
 
 gauge_dec(g: any, amount: f64): void
-    if amount == nil amount = 1 end
+    if amount == nil amount = 1
     g.value -= amount
-end
 
 gauge_get(g: any): f64
     g.value
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Histogram (value distribution)
@@ -66,11 +57,9 @@ end
 histogram_new(name: str, help: str, buckets: any): any
     if buckets == nil
         buckets = {0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0}
-    end
     bucket_counts = {}
     for i = 1, buckets:len()
         bucket_counts[i] = 0
-    end
     {
         type = "histogram",
         name = name,
@@ -82,20 +71,16 @@ histogram_new(name: str, help: str, buckets: any): any
         min = 1e30,
         max = -1e30,
     }
-end
 
 histogram_observe(h: any, value: f64): void
     h.count += 1
     h.sum += value
-    if value < h.min h.min = value end
-    if value > h.max h.max = value end
+    if value < h.min h.min = value
+    if value > h.max h.max = value
 
     for i = 1, h:len().buckets
         if value <= h.buckets[i]
             h.bucket_counts[i] += 1
-        end
-    end
-end
 
 histogram_get(h: any): any
     {
@@ -107,20 +92,16 @@ histogram_get(h: any): any
         buckets = h.buckets,
         bucket_counts = h.bucket_counts,
     }
-end
 
 histogram_quantile(h: any, q: f64): f64
-    if h.count == 0 return 0.0 end
+    if h.count == 0 return 0.0
     target = h.count * q:floor()
     cumulative = 0
     for i = 1, h:len().buckets
         cumulative += h.bucket_counts[i]
         if cumulative >= target
             return h.buckets[i]
-        end
-    end
     h.buckets[h:len().buckets]
-end
 
 histogram_reset(h: any): void
     h.count = 0
@@ -129,8 +110,6 @@ histogram_reset(h: any): void
     h.max = -1e30
     for i = 1, h:len().buckets
         h.bucket_counts[i] = 0
-    end
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Timer (measure elapsed time)
@@ -145,26 +124,22 @@ timer_new(name: str): any
         call_count = 0,
         start_time = nil,
     }
-end
 
 timer_start(t: any): void
     t.start_time = os.clock()
-end
 
 timer_stop(t: any): f64
-    if t.start_time == nil return 0.0 end
+    if t.start_time == nil return 0.0
     elapsed = os.clock() - t.start_time
     t.total_time += elapsed
     t.call_count += 1
     histogram_observe(t.histogram, elapsed)
     t.start_time = nil
     elapsed
-end
 
 timer_elapsed(t: any): f64
-    if t.start_time == nil return 0.0 end
+    if t.start_time == nil return 0.0
     os.clock() - t.start_time
-end
 
 timer_get(t: any): any
     {
@@ -174,7 +149,6 @@ timer_get(t: any): any
         mean_time = t.call_count > 0 and t.total_time / t.call_count or 0,
         histogram = histogram_get(t.histogram),
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Registry (collect all metrics)
@@ -187,48 +161,38 @@ registry_new(): any
         histograms = {},
         timers = {},
     }
-end
 
 registry_register_counter(reg: any, name: str, help: str): any
     c = counter_new(name, help)
     reg.counters[name] = c
     c
-end
 
 registry_register_gauge(reg: any, name: str, help: str): any
     g = gauge_new(name, help)
     reg.gauges[name] = g
     g
-end
 
 registry_register_histogram(reg: any, name: str, help: str, buckets: any): any
     h = histogram_new(name, help, buckets)
     reg.histograms[name] = h
     h
-end
 
 registry_register_timer(reg: any, name: str): any
     t = timer_new(name)
     reg.timers[name] = t
     t
-end
 
 registry_summary(reg: any): any
     summary = {}
     for name, c in reg.counters
         summary[name] = {type = "counter", value = c.value}
-    end
     for name, g in reg.gauges
         summary[name] = {type = "gauge", value = g.value}
-    end
     for name, h in reg.histograms
         summary[name] = {type = "histogram", value = histogram_get(h)}
-    end
     for name, t in reg.timers
         summary[name] = {type = "timer", value = timer_get(t)}
-    end
     summary
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

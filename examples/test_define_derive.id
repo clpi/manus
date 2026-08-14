@@ -2,15 +2,13 @@
     out = "static void duo_" .. type_info.name .. "_print(duo_" .. type_info.name .. " val) {\n"
     out = out .. "    printf(\"" .. type_info.name .. " { \");\n"
     i = 1
-    while i <= type_info:len().fields do
+    while i <= type_info:len().fields
         f = type_info.fields[i]
         if f.type == "int64_t"
             out = out .. "    printf(\"" .. f.name .. ": %lld \", val." .. f.name .. ");\n"
-        elseif f.type == "const char*"
+        else if f.type == "const char*"
             out = out .. "    printf(\"" .. f.name .. ": %s \", val." .. f.name .. ");\n"
-        end
         i = i + 1
-    end
     out = out .. "    printf(\"}\\n\");\n"
     out = out .. "}\n"
     return out

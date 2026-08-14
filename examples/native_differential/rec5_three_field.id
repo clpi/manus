@@ -2,4 +2,3 @@ tri: { a: i64, b: i64, c: i64 }
 main(): i64
     t: tri = { a = 20, b = 15, c = 7 }
     return t.a + t.b + t.c
-end

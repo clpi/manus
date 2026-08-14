@@ -19,9 +19,7 @@
 fib(k: i32): i32
     if k < 2
         return k
-    end
     fib(k - 1) + fib(k - 2)
-end
 
 # GAP-12: `@c.export` does not attach to a value-form binding, and it binds to
 # the NEXT bare declaration # so it must sit directly above `run`, not above
@@ -29,8 +27,6 @@ end
 @comp.c.export("run")
 run(): i32
     fib(32)
-end
 
 main: i32 = ()
     run()
-end

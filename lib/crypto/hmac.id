@@ -7,15 +7,13 @@ h = hash
 # hmac: compute HMAC of message m using key k and hash function hash.
 # hash(s) should return a hex string. block is the hash's block size.
 hmac(hash: any, key: str, message: str, block: i64): str
-    if block == nil block = 64 end
+    if block == nil block = 64
     # if key is longer than block, hash it
     if key:len() > block
         key = hash(key)
-    end
     # pad key to block
     while key:len() < block
         key = key .. 0:char()
-    end
     # create inner and outer pads
     inner = ""
     outer = ""
@@ -25,17 +23,14 @@ hmac(hash: any, key: str, message: str, block: i64): str
         inner = inner .. k ~ 0x36:char()
         outer = outer .. k ~ 0x5C:char()
         i += 1
-    end
     # compute inner hash
     digest = hash(inner .. message)
     # compute outer hash
     hash(outer .. digest)
-end
 
 # hmac_sha256: HMAC-SHA-256 using the crypto sha256.
 hmac_sha256(key: str, message: str): str
     hmac(crypto.sha256, key, message, 64)
-end
 
 # hmac_sha256_bytes: HMAC-SHA-256 returning raw 32-byte binary string.
 hmac_sha256_bytes(key: str, message: str): str
@@ -46,33 +41,26 @@ hmac_sha256_bytes(key: str, message: str): str
         val = tonumber(hex:sub(i, i + 1), 16)
         bytes[bytes:len() + 1] = val:char()
         i += 2
-    end
     return bytes:concat()
-end
 
 # hmac_sha1: HMAC-SHA-1.
 hmac_sha1(key: str, message: str): str
     hmac(crypto.sha1, key, message, 64)
-end
 
 # hmac_md5: HMAC-MD5.
 hmac_md5(key: str, message: str): str
     hmac(h.md5, key, message, 64)
-end
 
 # hmac_fnv1a: HMAC using FNV-1a (non-standard but available).
 hmac_fnv1a(key: str, message: str): str
     hmac(h.fnv1a, key, message, 64)
-end
 
 # equal: constant-time comparison of two hex strings (length-checked).
 equal(a: str, b: str): bool
-    if a:len() != b:len() return false end
+    if a:len() != b:len() return false
     result = 0
     i = 1
     while i <= a:len()
         result |= (a:byte(i) ~ b:byte(i))
         i += 1
-    end
     result == 0
-end

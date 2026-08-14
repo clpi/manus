@@ -1,19 +1,17 @@
 # toml — TOML parser with section support
 
 parse_value(s: str): any
-    if s == nil return nil end
+    if s == nil return nil
     if s:len() >= 2 and s:sub(1, 1) == '"' and s:sub(s:len(), s:len()) == '"'
         return s:sub(2, s:len() - 1)
-    end
-    if s == "true" return true end
-    if s == "false" return false end
+    if s == "true" return true
+    if s == "false" return false
     num = s:to(i64)
-    if num != nil return num end
+    if num != nil return num
     s
-end
 
 parse(data: str): any
-    if data == nil return {} end
+    if data == nil return {}
     res = {}
     current = res
     current_path = {}
@@ -31,26 +29,17 @@ parse(data: str): any
                     part = part:trim()
                     if current[part] == nil
                         current[part] = {}
-                    end
                     current_path[current_path:len() + 1] = part
                     current = current[part]
-                end
             else
                 eq_pos = nil
                 for j = 1, line:len()
                     if line:byte(j) == 61
                         eq_pos = j
                         break
-                    end
-                end
                 if eq_pos != nil
                     key = line:sub(1, eq_pos - 1):trim()
                     val_str = line:sub(eq_pos + 1):trim()
                     current[key] = parse_value(val_str)
-                end
-            end
-        end
-    end
     res
-end
 

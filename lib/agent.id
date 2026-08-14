@@ -7,7 +7,6 @@ discover(): str
     "comp.template comp.generate comp.scheme comp.grammar comp.weave comp.each comp.pipeline\n" ..
     "comp.agent.catalog comp.agent.ladder comp.agent.hooks comp.agent.dedupe comp.agent.gaps comp.agent.grammar\n" ..
     "meta.* and compiler.* are compatibility aliases; prefer comp.*"
-end
 
 scaling_ladder(): str
     "map:O(n)\n" ..
@@ -20,7 +19,6 @@ scaling_ladder(): str
     "permute:O(n!)\n" ..
     "grammar:O(b^d)\n" ..
     "each:composition glue"
-end
 
 hook_index(): str
     ".agents/AGENT_CANONICAL.md — single router for all agents\n" ..
@@ -28,7 +26,6 @@ hook_index(): str
     "idol_agent_session_start / idol_coordination_update / idol_agent_gaps_update\n" ..
     "lib/agent — recipes, build_gates, native_policy, multiplier_for, smoke_targets\n" ..
     "Host scripting remains bootstrap debt; prefer Idol sources under tools/ and scripts/"
-end
 
 dedupe_policy(): str
     "1. Read .agents/AGENT_COORDINATION.md and claim before editing\n" ..
@@ -36,30 +33,24 @@ dedupe_policy(): str
     "3. Extend lib/agent, tools/mcp/, and existing @comp.* hooks; do not fork parallel buffers\n" ..
     "4. Serialize builds with scripts/idol_lock.id\n" ..
     "5. Use idol_coordination_update and idol_agent_gaps_update for coordination"
-end
 
 gaps_file(): str
     ".agents/AGENT_COORDINATION.md#cross-agent-gap-buffer"
-end
 
 gaps_index(): str
     "Cross-Agent Gap Buffer: .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer\n" ..
     "Categories: perf native meta script agent backend\n" ..
     "MCP: idol_agent_gaps_read / idol_agent_gaps_update (duo_* legacy aliases retained)\n" ..
     "Policy: file expressiveness, native-lowering, scripting, backend, and coordination gaps before one-off work"
-end
 
 coordination_file(): str
     ".agents/AGENT_COORDINATION.md"
-end
 
 canonical_index_file(): str
     ".agents/AGENT_CANONICAL.md"
-end
 
 grammar_spec_file(): str
     "docs/GRAMMAR_SPEC.md"
-end
 
 grammar_index(): str
     "docs/GRAMMAR_SPEC.md — canonical GR-* rules\n" ..
@@ -67,67 +58,48 @@ grammar_index(): str
     "GR-002 if-expressions\n" ..
     "GR-004 quoted table keys without brackets\n" ..
     "MCP: idol_grammar_spec_read / idol_grammar_spec_update (bootstrap duo_* aliases)"
-end
 
 multiplier_for(goal: str): str
     g = goal:lower()
     if g:find("trait") or g:find("derive") or g:find("impl")
         return "@comp.derive / @comp.derive.all / @comp.derive.bundle — O(types×fields)"
-    end
     if g:find("pair") or g:find("cartesian") or g:find("product")
         return "@comp.product / @comp.derive.product — O(types²)"
-    end
     if g:find("triple") or g:find("tensor")
         return "@comp.tensor / @comp.derive.tensor — O(types³)"
-    end
     if g:find("subset") or g:find("powerset") or g:find("power")
         return "@comp.power / @comp.derive.power — O(2^n)"
-    end
     if g:find("combination") or g:find("choose") or g:find("fixed subset")
         return "@comp.choose / @comp.derive.choose — O(n choose k), controlled exponential subset generation"
-    end
     if g:find("permute") or g:find("order")
         return "@comp.permute / @comp.derive.permute — O(n!)"
-    end
     if g:find("compose") or g:find("chain") or g:find("nest") or g:find("combine") or g:find("glue")
         return "@comp.each(src, fn) / @comp.chain(src, fn) — composition glue: split any combinator output into fragments, re-expand each; chains any two combinators (closes the algebra)"
-    end
     if g:find("module") or g:find("file") or g:find("emit")
         return "@comp.burst → @comp.transcend → @comp.infinity → @comp.hyper"
-    end
     if g:find("pipeline") or g:find("fuse")
         return "@comp.pipeline({ variants = ... }) — typed kernel family"
-    end
     if g:find("rewrite") or g:find("rule")
         return "@comp.rewrite / @comp.rewrite.bundle — pattern → infinite instances"
-    end
     if g:find("template") or g:find("parametric")
         return "@comp.template / @comp.generate — O(n) or O(ops×types) native C fragments; chain with @comp.each"
-    end
     if g:find("scheme") or g:find("declarative")
         return "@comp.scheme(declarations, template) — pipe-separated type/fn units → O(units) C"
-    end
     if g:find("grammar") or g:find("ebnf") or g:find("language")
         return "@comp.grammar(spec, fn) — O(b^d) EBNF expansion"
-    end
     if g:find("weave") or g:find("cross-module") or g:find("cross module")
         return "@comp.weave(module, concept, fn) — O(N×M) cross-module concept sweep"
-    end
     if g:find("dedupe") or g:find("duplicate") or g:find("coord")
         return "@comp.agent.dedupe() + read .agents/AGENT_COORDINATION.md; claim before edit"
-    end
     if g:find("gap") or g:find("script") or g:find("ergonomic")
         return "@comp.agent.gaps() + .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; record finding before adding one-off tooling"
-    end
     "@comp.map / @comp.sweep — O(types); stack @comp.ceiling / @comp.omni for quadratic+"
-end
 
 build_gates(): str
     "tier0: ./zig-out/bin/idol run scripts/public_safety_scan.id && scripts/idol_lock.sh -- ./zig-out/bin/idol run scripts/agent_smoke.id\n" ..
     "tier1: scripts/idol_lock.sh -- zig build unit-test --summary all\n" ..
     "tier2: scripts/idol_lock.sh -- zig build test\n" ..
     "tier3: scripts/idol_lock.sh -- zig build bench  (claim benchmarks/perf; never parallel tier3)"
-end
 
 native_policy(): str
     "NO lua_Value intermediaries on typed/comptime paths\n" ..
@@ -136,7 +108,6 @@ native_policy(): str
     "Comptime callbacks: @comp.compile.only or comptime-only detection\n" ..
     "@comp.embed.json / @comp.wasm: module directives → const uint8_t[] globals\n" ..
     "Ultimate target: optimal machine code, not C-as-ceiling (LTO/PGO/@asm/@device)"
-end
 
 recipes(): str
     "N types one macro: @comp.derive.all(\"Concept\", MyDerive)\n" ..
@@ -156,7 +127,6 @@ recipes(): str
     "Coordination: .agents/AGENT_COORDINATION.md; @comp.agent.dedupe(); claim before edit\n" ..
     "Gaps ledger: .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; @comp.agent.gaps(); MCP idol_agent_gaps_*\n" ..
     "Coordination lock: scripts/idol_lock.id"
-end
 
 # GAP-blocked teaching fixtures (idol check fails; owned by other gates):
 #   examples/pack/apply.id      — GAP-092 brace/descriptor rows
@@ -168,7 +138,6 @@ gap_blocked(): any
         "examples/conversion/slot.id",
         "examples/anchor/bare.id",
     }
-end
 
 smoke_targets(): any
     {
@@ -195,7 +164,6 @@ smoke_targets(): any
         "examples/table/str/split.id",
         "examples/table/float/render.id",
     }
-end
 
 M = {
     discover = discover,

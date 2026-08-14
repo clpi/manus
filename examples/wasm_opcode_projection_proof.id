@@ -18,9 +18,7 @@ chk(label: str, got: i64, want: i64): i64
   if got != want
     print("MISMATCH " .. label .. ": got " .. to(str)(got) .. ", want " .. to(str)(want))
     return 1
-  end
   0
-end
 
 main(): i64
   n: i64 = 0
@@ -82,7 +80,5 @@ main(): i64
   if n != 0
     print("wasm opcode projection: " .. to(str)(n) .. " MISMATCH(es)")
     os.exit(1)
-  end
   print("wasm opcode projection: OK (38 checks)")
   0
-end

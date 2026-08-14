@@ -6,7 +6,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 simple_rnn(input_size: i64, hidden_size: i64, activation: str): any
-    if activation == nil activation = "tanh" end
+    if activation == nil activation = "tanh"
     scale = 1.0 / hidden_size:sqrt()
     {
         type = "simple_rnn",
@@ -19,7 +19,6 @@ simple_rnn(input_size: i64, hidden_size: i64, activation: str): any
         b_hh = std.ml.tensor.zeros(1, hidden_size),
         state = nil,
     }
-end
 
 @hot
 simple_rnn_forward(layer: any, x: any, state: any): any
@@ -35,26 +34,19 @@ simple_rnn_forward(layer: any, x: any, state: any): any
             s = layer.b_ih.data[j] + layer.b_hh.data[j]
             for k = 1, layer.input_size
                 s += x.data[(t-1)*layer.input_size + k] * layer.w_ih.data[(k-1)*layer.hidden_size + j]
-            end
             for k = 1, layer.hidden_size
                 s += h.data[(k-1)] * layer.w_hh.data[(k-1)*layer.hidden_size + j]
-            end
             if layer.activation == "tanh"
                 input_gate.data[j] = s:tanh()
-            elseif layer.activation == "relu"
+            else if layer.activation == "relu"
                 input_gate.data[j] = 0:max(s)
             else
                 input_gate.data[j] = s:tanh()
-            end
-        end
         h = input_gate
         for j = 1, layer.hidden_size
             outputs.data[(t-1)*layer.hidden_size + j] = h.data[j]
-        end
-    end
     layer.state = h
     outputs
-end
 
 # ═══════════════════════════════════════════════════════════════
 # GRU (Gated Recurrent Unit)
@@ -83,7 +75,6 @@ gru(input_size: i64, hidden_size: i64): any
         b_hn = std.ml.tensor.zeros(1, hidden_size),
         state = nil,
     }
-end
 
 @hot
 gru_forward(layer: any, x: any, state: any): any
@@ -101,22 +92,16 @@ gru_forward(layer: any, x: any, state: any): any
             s = layer.b_in.data[j] + layer.b_hn.data[j]
             for k = 1, layer.input_size
                 s += x.data[(t-1)*layer.input_size + k] * layer.w_in.data[(k-1)*layer.hidden_size + j]
-            end
             for k = 1, layer.hidden_size
                 s += r.data[k] * h.data[k] * layer.w_hn.data[(k-1)*layer.hidden_size + j]
-            end
             h_candidate.data[j] = s:tanh()
-        end
 
         # h = (1 - z) * h_candidate + z * h
         for j = 1, layer.hidden_size
             h.data[j] = (1 - z.data[j]) * h_candidate.data[j] + z.data[j] * h.data[j]
             outputs.data[(t-1)*layer.hidden_size + j] = h.data[j]
-        end
-    end
     layer.state = h
     outputs
-end
 
 gru_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_size: i64, hidden_size: i64): any
     result = std.ml.tensor.zeros(1, hidden_size)
@@ -124,22 +109,16 @@ gru_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_s
         s = b_i.data[j] + b_h.data[j]
         for k = 1, input_size
             s += x.data[(t-1)*input_size + k] * w_i.data[(k-1)*hidden_size + j]
-        end
         for k = 1, hidden_size
             s += h.data[k] * w_h.data[(k-1)*hidden_size + j]
-        end
         result.data[j] = s
-    end
     result
-end
 
 sigmoid_vec(v: any): any
     result = std.ml.tensor.zeros(v.rows, v.cols)
     for i = 1, v.size
         result.data[i] = 1.0 / (1.0 + -v.data[i]:exp())
-    end
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # LSTM (Long Short-Term Memory)
@@ -174,7 +153,6 @@ lstm(input_size: i64, hidden_size: i64): any
         state = nil,
         cell = nil,
     }
-end
 
 @hot
 lstm_forward(layer: any, x: any, state: any, cell: any): any
@@ -194,30 +172,23 @@ lstm_forward(layer: any, x: any, state: any, cell: any): any
             s = layer.b_ic.data[j] + layer.b_hc.data[j]
             for k = 1, layer.input_size
                 s += x.data[(t-1)*layer.input_size + k] * layer.w_ic.data[(k-1)*layer.hidden_size + j]
-            end
             for k = 1, layer.hidden_size
                 s += h.data[k] * layer.w_hc.data[(k-1)*layer.hidden_size + j]
-            end
             c_gate.data[j] = s:tanh()
-        end
         # Output gate
         o_gate = sigmoid_vec(lstm_gate(x, t, h, layer.w_io, layer.w_ho, layer.b_io, layer.b_ho, layer.input_size, layer.hidden_size))
 
         # Update cell state: c = f * c + i * c_gate
         for j = 1, layer.hidden_size
             c.data[j] = f_gate.data[j] * c.data[j] + i_gate.data[j] * c_gate.data[j]
-        end
 
         # Update hidden state: h = o * tanh(c)
         for j = 1, layer.hidden_size
             h.data[j] = o_gate.data[j] * c.data[j]:tanh()
             outputs.data[(t-1)*layer.hidden_size + j] = h.data[j]
-        end
-    end
     layer.state = h
     layer.cell = c
     outputs
-end
 
 lstm_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_size: i64, hidden_size: i64): any
     result = std.ml.tensor.zeros(1, hidden_size)
@@ -225,14 +196,10 @@ lstm_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_
         s = b_i.data[j] + b_h.data[j]
         for k = 1, input_size
             s += x.data[(t-1)*input_size + k] * w_i.data[(k-1)*hidden_size + j]
-        end
         for k = 1, hidden_size
             s += h.data[k] * w_h.data[(k-1)*hidden_size + j]
-        end
         result.data[j] = s
-    end
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Bidirectional RNN
@@ -246,7 +213,6 @@ bidirectional(rnn_layer: any): any
         hidden_size = rnn_layer.hidden_size,
         output_size = rnn_layer.hidden_size * 2,
     }
-end
 
 bidirectional_forward(layer: any, x: any): any
     # Forward pass
@@ -257,19 +223,14 @@ bidirectional_forward(layer: any, x: any): any
     for t = 1, seq_len
         for j = 1, x.cols
             rev.data[(t-1)*x.cols + j] = x.data[(seq_len-t)*x.cols + j]
-        end
-    end
     bwd = simple_rnn_forward(layer.backward, rev, nil)
     # Reverse bwd to align with fwd
     bwd_rev = std.ml.tensor.zeros(seq_len, bwd.cols)
     for t = 1, seq_len
         for j = 1, bwd.cols
             bwd_rev.data[(t-1)*bwd.cols + j] = bwd.data[(seq_len-t)*bwd.cols + j]
-        end
-    end
     # Concatenate
     std.ml.tensor.hstack({fwd, bwd_rev})
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

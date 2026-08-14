@@ -6,7 +6,6 @@
 escape(s: str): str
     # Replace dangerous shell characters
     s:gsub("[;&|`$(){}]", "")
-end
 
 # mail: send a plain-text email.
 # addr: "host:port" of the SMTP server (or just "host" for port 25).
@@ -17,7 +16,6 @@ end
 mail(addr: str, from: str, to: any, msg: str): any
     if addr == nil or from == nil or to == nil or msg == nil
         return false, "missing arguments"
-    end
     # build a sendmail command with sanitized arguments
     from = escape(from)
     recipients = ""
@@ -25,27 +23,22 @@ mail(addr: str, from: str, to: any, msg: str): any
     while i <= to:len()
         recipients = recipients .. " " .. escape(to(str)(to[i]))
         i += 1
-    end
     cmd = "sendmail -f " .. from .. recipients
     f = io.popen(cmd .. " 2>&1", "w")
     if f == nil
         return false, "failed to start sendmail"
-    end
     f:write(msg)
     f:close()
     return true, nil
-end
 
 # plain: create a PLAIN SMTP auth credential.
 plain(username: str, password: str): any
     return {mechanism = "PLAIN", username = username, password = password}
-end
 
 # send: send email with SMTP AUTH (using curl as transport).
 send(addr: str, auth: any, from: str, to: any, msg: str): any
     if addr == nil or from == nil or to == nil or msg == nil
         return false, "missing arguments"
-    end
     # use curl #url smtp://host:port #mail-from ... #mail-rcpt ...
     host = addr
     port = 25
@@ -53,7 +46,6 @@ send(addr: str, auth: any, from: str, to: any, msg: str): any
     if colon != nil
         host = addr:sub(1, colon - 1)
         port = tonumber(addr:sub(colon + 1))
-    end
     # Sanitize host to prevent shell injection
     host = escape(host)
     url = "smtp://" .. host .. ":" .. port:to(str)
@@ -63,35 +55,29 @@ send(addr: str, auth: any, from: str, to: any, msg: str): any
         user = escape(auth.username)
         pass = escape(auth.password)
         cmd = cmd .. " --user " .. user .. ":" .. pass
-    end
     from = escape(from)
     cmd = cmd .. " --mail-from " .. from
     i = 1
     while i <= to:len()
         cmd = cmd .. " --mail-rcpt " .. escape(to(str)(to[i]))
         i += 1
-    end
     cmd = cmd .. " -T -"
     f = io.popen(cmd .. " 2>&1", "w")
     if f == nil
         return false, "failed to start curl"
-    end
     f:write(msg)
     result = f:close()
     return true, nil
-end
 
 # message: build an RFC 5322 message from parts.
 # headers: table of header name -> value.
 # body: message body string.
 message(headers: any, body: str): str
-    if headers == nil headers = {} end
-    if body == nil body = "" end
+    if headers == nil headers = {}
+    if body == nil body = ""
     out = {}
     for k, v in headers
         out[out:len() + 1] = k .. ": " .. v:to(str) .. "\r\n"
-    end
     out[out:len() + 1] = "\r\n"
     out[out:len() + 1] = body
     out:concat()
-end

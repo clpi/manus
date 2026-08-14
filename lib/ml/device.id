@@ -5,29 +5,23 @@
 
 cpu(): any
     return { kind = "cpu", id = 0 }
-end
 
 auto(): any
     return { kind = "auto", id = -1 }
-end
 
 metal(id): any
-    if id == nil id = 0 end
+    if id == nil id = 0
     return { kind = "metal", id = id }
-end
 
 cuda(id): any
-    if id == nil id = 0 end
+    if id == nil id = 0
     return { kind = "cuda", id = id }
-end
 
 webgpu(): any
     return { kind = "webgpu", id = 0 }
-end
 
 wasm_simd(): any
     return { kind = "wasm", id = 0 }
-end
 
 # Pick best device for current host (Metal on Apple, CUDA on NVIDIA, else CPU)
 best(): any
@@ -35,7 +29,6 @@ best(): any
     cuda_env = os.getenv("CUDA_VISIBLE_DEVICES")
     if cuda_env and cuda_env != ""
         return cuda(0)
-    end
     # Check for Apple Silicon / Metal via uname
     handle = io.popen("uname -m 2>/dev/null")
     if handle
@@ -49,11 +42,7 @@ best(): any
                 metal_handle:close()
                 if info:find("Metal") or info:find("Apple")
                     return metal(0)
-                end
-            end
             return metal(0)  # Default to Metal on ARM
-        end
-    end
     # Check for NVIDIA GPU
     nvidia_handle = io.popen("nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1")
     if nvidia_handle
@@ -61,23 +50,17 @@ best(): any
         nvidia_handle:close()
         if gpu_name != ""
             return cuda(0)
-        end
-    end
     cpu()
-end
 
 # Place a tensor descriptor on a device (metadata only until GPU buffers land)
 on(tensor, dev): any
     out = {}
     for k, v in tensor
         out[k] = v
-    end
     out.device = dev
     return out
-end
 
 # Pipeline stage placement: { encoder = metal(), llm = cuda(0), ... }
 place(stages): any
     return { type = "placement", stages = stages }
-end
 

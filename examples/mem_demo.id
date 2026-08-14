@@ -9,27 +9,22 @@ arena_new(size: i64)
         _capacity = size or 65536,
         _total = 0,
     }
-end
 
 arena_alloc(self, bytes: i64)
     if self._offset + bytes > self._capacity
         self._bufs[self:len()._bufs + 1] = ".":rep(bytes)
         self._offset = 0
-    end
     ptr = { addr = self._total + self._offset, size = bytes }
     self._offset = self._offset + bytes
     ptr
-end
 
 arena_used(self): i64
     self._total + self._offset
-end
 
 arena_free_all(self): void
     self._bufs = {}
     self._offset = 0
     self._total = 0
-end
 
 # Test arena
 arena = arena_new(4096)
@@ -41,22 +36,18 @@ print("Arena after free: " .. to(str)(arena_used(arena)))
 
 # Alignment utilities
 align_up(n: i64, alignment: i64): i64
-    if n % alignment == 0 return n end
+    if n % alignment == 0 return n
     n + alignment - (n % alignment)
-end
 
 align_down(n: i64, alignment: i64): i64
     n - (n % alignment)
-end
 
 is_power_of_two(n: i64): bool
-    if n <= 0 return false end
-    while n > 1 do
-        if n % 2 != 0 return false end
+    if n <= 0 return false
+    while n > 1
+        if n % 2 != 0 return false
         n = n // 2
-    end
     true
-end
 
 print("align_up(13, 8): " .. to(str)(align_up(13, 8)))
 print("align_down(13, 8): " .. to(str)(align_down(13, 8)))

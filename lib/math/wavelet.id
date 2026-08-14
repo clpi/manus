@@ -7,14 +7,13 @@
 
 haar_forward(data: any): any
     n = data:len()
-    if n <= 1 return data end
+    if n <= 1 return data
 
     # Pad to even length if needed
     padded = {data:unpack()}
     if n % 2 != 0
         padded[n + 1] = padded[n]
         n += 1
-    end
 
     result = {}
     temp = {padded:unpack()}
@@ -29,22 +28,18 @@ haar_forward(data: any): any
             result[half + i - 1] = diff
             result[i] = avg
             i += 1
-        end
         i = 1
         while i <= level
             temp[i] = result[i]
             i += 1
-        end
         level = half
-    end
 
     # Reorder: store as [cA_n, cD_n, cD_{n-1}, ..., cD_1]
     result
-end
 
 haar_inverse(data: any): any
     n = data:len()
-    if n <= 1 return data end
+    if n <= 1 return data
 
     temp = {data:unpack()}
 
@@ -56,12 +51,9 @@ haar_inverse(data: any): any
             temp[2 * i - 1] = temp[i] + temp[half + i]
             temp[2 * i] = temp[i] - temp[half + i]
             i += 1
-        end
         level *= 2
-    end
 
     temp
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Daubechies Wavelet (db4)
@@ -105,14 +97,10 @@ convolve(signal: any, filter: any): any
             idx = i - j + 1
             if idx >= 1 and idx <= n
                 sum += signal[idx] * filter[j]
-            end
             j += 1
-        end
         result[i] = sum
         i += 1
-    end
     result
-end
 
 downsample(data: any, factor: i64): any
     result = {}
@@ -120,9 +108,7 @@ downsample(data: any, factor: i64): any
     while i <= data:len()
         result[result:len() + 1] = data[i]
         i += factor
-    end
     result
-end
 
 upsample(data: any, factor: i64): any
     result = {}
@@ -133,11 +119,8 @@ upsample(data: any, factor: i64): any
         while j < factor
             result[result:len() + 1] = 0
             j += 1
-        end
         i += 1
-    end
     result
-end
 
 db4_forward(data: any): any
     approx = convolve(data, DB4_LO_DE)
@@ -148,7 +131,6 @@ db4_forward(data: any): any
         approx = approx_ds,
         detail = detail_ds,
     }
-end
 
 db4_inverse(approx: any, detail: any): any
     approx_us = upsample(approx, 2)
@@ -161,9 +143,7 @@ db4_inverse(approx: any, detail: any): any
     while i <= n
         result[i] = a[i] + d[i]
         i += 1
-    end
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Multi-level Decomposition
@@ -177,13 +157,11 @@ decompose(data: any, levels: i64): any
         coeffs[i] = result.detail
         coeffs[i + 1] = result.approx
         i += 1
-    end
     {
         approx = coeffs[levels + 1],
         details = {},
         levels = levels,
     }
-end
 
 reconstruct(decomp: any): any
     signal = decomp.approx
@@ -191,9 +169,7 @@ reconstruct(decomp: any): any
     while i >= 1
         signal = db4_inverse(signal, decomp.details[i])
         i -= 1
-    end
     signal
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Denoising
@@ -212,14 +188,10 @@ denoise(signal: any, threshold: f64): any
                 decomp.details[i][j] = 0
             else
                 decomp.details[i][j] = coeff - coeff:sign() * threshold
-            end
             j += 1
-        end
         i += 1
-    end
 
     reconstruct(decomp)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

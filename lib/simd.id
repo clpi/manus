@@ -4,22 +4,17 @@
 
 dot_f32(a: ptr, b: ptr, n: i64): f32
     return simd.dot_f32(a, b, n)
-end
 
 dot_f64(a: ptr, b: ptr, n: i64): f64
     return simd.dot_f64(a, b, n)
-end
 
 matmul_f32(a: ptr, b: ptr, c: ptr, m: i64, n: i64, k: i64)
     simd.matmul_f32(a, b, c, m, n, k)
-end
 
 matmul_f64(a: ptr, b: ptr, c: ptr, m: i64, n: i64, k: i64)
     simd.matmul_f64(a, b, c, m, n, k)
-end
 
 # Tiny 4-lane vector sanity (discoverability)
 add4(a: v4f64, b: v4f64): v4f64
     a + b
-end
 

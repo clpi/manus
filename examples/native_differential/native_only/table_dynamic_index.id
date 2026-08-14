@@ -18,6 +18,4 @@ main(): i64
     while i <= 3
         total += t[i]
         i += 1
-    end
     total
-end

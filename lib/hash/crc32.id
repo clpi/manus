@@ -8,29 +8,21 @@ for i = 0, 255
             crc = crc >> 1 ~ 0xEDB88320
         else
             crc = crc >> 1
-        end
-    end
     table[i + 1] = crc % (2^32)
-end
 
 new(): any
     {crc = 0xFFFFFFFF}
-end
 
 update(state: any, data: str): void
     for i = 1, data:len()
         idx = ((state.crc % (2^32)) ~ data:byte(i)) % 256
         state.crc = ((state.crc >> 8) ~ table[idx + 1]) % (2^32)
-    end
-end
 
 final(state: any): i64
     (~state.crc) % (2^32)
-end
 
 checksum(data: str): i64
     s = new()
     update(s, data)
     final(s)
-end
 

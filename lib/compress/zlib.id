@@ -2,17 +2,16 @@
 # Uses the flate module for actual DEFLATE data
 
 decompress(data: any)
-    if data == nil or data:len() < 2 return "" end
+    if data == nil or data:len() < 2 return ""
     cmf = data:byte(1)
     flg = data:byte(2)
-    if cmf % 16 != 8 return "" end
-    if (cmf * 256 + flg) % 31 != 0 return "" end
+    if cmf % 16 != 8 return ""
+    if (cmf * 256 + flg) % 31 != 0 return ""
     dlen = data:byte(2)
-    if dlen % 32 >= 8 return "" end
+    if dlen % 32 >= 8 return ""
     deflate_start = 3
-    if deflate_start > data:len() return "" end
+    if deflate_start > data:len() return ""
     deflate_data = data:sub(deflate_start)
     flate_mod = flate
     return flate_mod.decompress(deflate_data)
-end
 

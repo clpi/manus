@@ -8,5 +8,4 @@ NESTED = @comp.map("q", fun(seed)
 end)
 parity(): str
     @comp.interpolate("x={v}", { v = "1" })
-end
 BLOCK = parity()

@@ -5,7 +5,6 @@
 
 tape_new(): any
     return { ops = {}, n = 0 }
-end
 
 tape_push(tape, op, inputs, output): any
     tape.n = tape.n + 1
@@ -15,7 +14,6 @@ tape_push(tape, op, inputs, output): any
         output = output,
     }
     return tape
-end
 
 backward_relu(tape, idx, grad_out): any
     op = tape.ops[idx]
@@ -26,10 +24,7 @@ backward_relu(tape, idx, grad_out): any
             g.data[i] = grad_out.data[i]
         else
             g.data[i] = 0.0
-        end
-    end
     return g
-end
 
 backward_linear(tape, idx, grad_out): any
     op = tape.ops[idx]
@@ -40,24 +35,18 @@ backward_linear(tape, idx, grad_out): any
     if layer.grad_weight == nil
         layer.grad_weight = ml.tensor.zeros(layer.in_features, layer.out_features)
         layer.grad_bias = ml.tensor.zeros(1, layer.out_features)
-    end
     for j = 1, layer.out_features
         gb = 0.0
         for i = 1, x.rows
             gb += grad_out.data[(i - 1) * layer.out_features + j]
-        end
         layer.grad_bias.data[j] = gb
         for i = 1, layer.in_features
             s = 0.0
             for r = 1, x.rows
                 s += x.data[(r - 1) * layer.in_features + i] *
                     grad_out.data[(r - 1) * layer.out_features + j]
-            end
             layer.grad_weight.data[(i - 1) * layer.out_features + j] = s
-        end
-    end
     return dx
-end
 
 backward_softmax(tape, idx, grad_out): any
     # Softmax backward: dL/dx_i = sum_j (dL/dy_j * (delta_ij * y_i - y_i * y_j))
@@ -72,23 +61,18 @@ backward_softmax(tape, idx, grad_out): any
         for col = 1, y.cols
             idx_flat = (row - 1) * y.cols + col
             dot += grad_out.data[idx_flat] * y.data[idx_flat]
-        end
         # g_i = y_i * (grad_out_i - dot)
         for col = 1, y.cols
             idx_flat = (row - 1) * y.cols + col
             g.data[idx_flat] = y.data[idx_flat] * (grad_out.data[idx_flat] - dot)
-        end
-    end
     return g
-end
 
 backward_layer(tape, idx, grad_out): any
     op = tape.ops[idx]
-    if op.type == "linear" return backward_linear(tape, idx, grad_out) end
-    if op.type == "relu" return backward_relu(tape, idx, grad_out) end
-    if op.type == "softmax" return backward_softmax(tape, idx, grad_out) end
+    if op.type == "linear" return backward_linear(tape, idx, grad_out)
+    if op.type == "relu" return backward_relu(tape, idx, grad_out)
+    if op.type == "softmax" return backward_softmax(tape, idx, grad_out)
     return grad_out
-end
 
 backward(tape, grad_out): any
     g = grad_out
@@ -96,20 +80,16 @@ backward(tape, grad_out): any
     while i >= 1
         g = backward_layer(tape, i, g)
         i -= 1
-    end
     return g
-end
 
 # Finite-difference check for scalar losses (debug / tests)
 grad_check(f, x, eps): f64
-    if eps == nil eps = 1e-4 end
+    if eps == nil eps = 1e-4
     y0 = f(x)
     y1 = f(x + eps)
     return (y1 - y0) / eps
-end
 
 # `@grad(loss_fn, wrt)` companion: returns gradient descriptor for autodiff / tape
 grad(loss_fn, wrt): any
     return { fn = loss_fn, wrt = wrt }
-end
 

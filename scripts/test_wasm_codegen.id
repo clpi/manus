@@ -4,7 +4,6 @@ s = script
 global DUO: str = tostring(s.getenv_or("DUO"))
 if DUO:len() == 0
     DUO = "./zig-out/bin/idol"
-end
 
 global PASS: i64 = 0
 global FAIL: i64 = 0
@@ -12,28 +11,22 @@ global FAIL: i64 = 0
 pass(label: str)
     s.echo("  PASS: " .. label)
     PASS = PASS + 1
-end
 
 fail(label: str)
     s.echo("  FAIL: " .. label)
     FAIL = FAIL + 1
-end
 
 assert_contains(label: str, text: str, pattern: str)
     if text:find(pattern, 1, true) != nil
         pass(label)
     else
         fail(label .. " — expected to find: " .. pattern)
-    end
-end
 
 assert_not_contains(label: str, text: str, pattern: str)
     if text:find(pattern, 1, true) != nil
         fail(label .. " — expected NOT to find: " .. pattern)
     else
         pass(label)
-    end
-end
 
 global TMPDIR_TEST: str = tostring(s.fs_tmpdir()):gsub("\n", "")
 
@@ -41,15 +34,12 @@ write_src(name: str, src: str): str
     path: str = tostring(s.path_join(TMPDIR_TEST, name))
     s.fs_write(path, src)
     return path
-end
 
 dump_native(file: str): str
     return tostring(s.capture(DUO .. " dump-c " .. file))
-end
 
 dump_wasm(file: str): str
     return tostring(s.capture(DUO .. " dump-c " .. file .. " --target wasm32-wasi"))
-end
 
 s.echo("=== WASM/WASI Codegen Tests ===")
 s.echo("")
@@ -152,13 +142,10 @@ if s.ok(DUO .. " compile " .. HELLO .. " --target wasm32-wasi -o " .. OUT_WASM)
             pass("wasm: output is valid WebAssembly binary")
         else
             fail("wasm: output is not valid WebAssembly binary")
-        end
     else
         fail("wasm: output file not created")
-    end
 else
     pass("wasm: compile step skipped (zig cc unavailable)")
-end
 
 s.echo("")
 s.echo("--- 9. WASM target rejects --threads (validateTarget) ---")
@@ -175,4 +162,3 @@ s.echo("=== Results: " .. tostring(PASS) .. " passed, " .. tostring(FAIL) .. " f
 s.run("rm -rf " .. TMPDIR_TEST)
 if FAIL > 0
     os.exit(1)
-end

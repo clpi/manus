@@ -35,15 +35,13 @@ hash32(s: str): i64
     while i <= n
         h = (h * 33 + s:byte(i)) % 4294967296
         i += 1
-    end
     h
-end
 
 # Split text into lowercase identifier-ish word tokens (alnum runs, len >= 2).
 # Chars scanned directly (no Lua patterns) to dodge the F-13813-5 bugs.
 tokens(text: str): any
     out = {}
-    if text == nil return out end
+    if text == nil return out
     n = text:len()
     i = 1
     cur = ""
@@ -57,31 +55,24 @@ tokens(text: str): any
         else
             if cur:len() >= 2
                 out[out:len() + 1] = cur:lower()
-            end
             cur = ""
-        end
         i += 1
-    end
     if cur:len() >= 2
         out[out:len() + 1] = cur:lower()
-    end
     out
-end
 
 # Char 3-grams of a token, edge-padded with sentinels so prefix/suffix matter.
 trigrams(token: str): any
     out = {}
-    if token == nil return out end
+    if token == nil return out
     s = "^" .. token .. "$"
     n = s:len()
-    if n < 3 return out end
+    if n < 3 return out
     i = 1
     while i <= n - 2
         out[out:len() + 1] = s:sub(i, i + 2)
         i += 1
-    end
     out
-end
 
 # Embed text into a fixed `dim`-dim sparse vector (string-keyed table; see top).
 embed(text: str, dim: i64): any
@@ -94,12 +85,9 @@ embed(text: str, dim: i64): any
             gidx = hash32(tg) % dim
             gk = "f" .. gidx
             vec[gk] = (vec[gk] or 0) + NGRAM_W
-        end
-    end
     sumsq = 0.0
     for k, w in vec
         sumsq += w * w
-    end
     # Store the L2 norm as a SCALED INTEGER (norm * 1e6), NOT a float. The C
     # runtime's tonumber crashes (heap corruption, EXIT 128) on long (>=15 sig-
     # digit) float reprs, which truncated json.decode of the symbol index at
@@ -107,24 +95,19 @@ embed(text: str, dim: i64): any
     vec.norm = sumsq:sqrt() * 1000000 + 0.5:floor()
     vec.dim = dim
     vec
-end
 
 # Cosine similarity between two sparse vectors from embed(). Iterates the
 # (usually smaller) query vector and probes `s` by shared feature key.
 cosine(q: any, s: any): float
-    if q == nil or s == nil return 0.0 end
-    if q.norm == 0 or s.norm == 0 return 0.0 end
+    if q == nil or s == nil return 0.0
+    if q.norm == 0 or s.norm == 0 return 0.0
     dot = 0.0
     for k, qw in q
         if k != "norm" and k != "dim"
             sw = s[k]
             if sw != nil
                 dot += qw * sw
-            end
-        end
-    end
     dot / ((q.norm / 1000000.0) * (s.norm / 1000000.0))
-end
 
 # Rank records (each with a `vec` field) against query vector `q`, returning the
 # top_k records with an added `score` field, best-first.
@@ -138,12 +121,10 @@ rank(q: any, records: any, topk: i64): any
         if sc > 0
             all[all:len() + 1] = { name = rec.name, file = rec.file,
                               kind = rec.kind, doc = rec.doc, score = sc }
-        end
-    end
     n = all:len()
     k = topk
-    if k > n k = n end
-    if k < 0 k = 0 end
+    if k > n k = n
+    if k < 0 k = 0
     out = {}
     taken = {}
     round = 1
@@ -156,17 +137,12 @@ rank(q: any, records: any, topk: i64): any
                 if all[i].score > bestsc
                     bestsc = all[i].score
                     besti = i
-                end
-            end
             i += 1
-        end
-        if besti == 0 break end
+        if besti == 0 break
         taken[besti] = true
         out[out:len() + 1] = all[besti]
         round += 1
-    end
     out
-end
 
 M = {
     hash32   = hash32,

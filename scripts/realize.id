@@ -46,42 +46,34 @@
 
 here(): str
     script.chomp(script.capture("pwd"))
-end
 
 compiler(root: str): str
     "{root}/zig-out/bin/idol"
-end
 
 shout(msg: str): void
     print("realize: {msg}")
-end
 
 present(path: str): bool
     script.status("test -e {path}") == 0
-end
 
 # One `duo realize` run, captured. Captured rather than re-run per assertion
 # because each run MUTATES the cache: greping the same command three times
 # would advance the fresh/invalidated sequence three times.
 record(bin: str, dir: str, fixture: str, out: str): bool
     script.status("cd {dir} && {bin} realize {fixture} >{out} 2>/dev/null") == 0
-end
 
 explained(bin: str, fixture: str, out: str): bool
     script.status("{bin} explain {fixture} >{out} 2>/dev/null") == 0
-end
 
 # Does a captured JSON document hold `want`? Split on commas first so a
 # field's own value cannot be matched across a neighbouring field.
 held(path: str, want: str): bool
     std.script.status("tr ',' '\\n' < {path} | grep -q -F '{want}'") == 0
-end
 
 # The FIRST fingerprint in an explain document: the sealed record's shape
 # identity. Two modules differing only in a field must not agree here.
 mark(path: str): str
     script.chomp(script.capture("tr ',' '\\n' < {path} | grep -o '\"fingerprint\":\"[0-9a-f]*\"' | head -1"))
-end
 
 main: i64 = ()
     root = here()
@@ -93,13 +85,11 @@ main: i64 = ()
     if script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
-    end
 
     # CONTROL 2 — the compiler is here.
     if !present(bin)
         shout("FAIL — no compiler at {bin}; run `zig build` first")
         bad += 1
-    end
 
     one = "{root}/examples/realization_smoke.id"
     two = "{root}/examples/realization_point_v2.id"
@@ -110,66 +100,53 @@ main: i64 = ()
     if !present(one)
         shout("FAIL — missing fixture {one}")
         bad += 1
-    end
     if !present(two)
         shout("FAIL — missing fixture {two}")
         bad += 1
-    end
     if !present(gone)
         shout("FAIL — missing fixture {gone}")
         bad += 1
-    end
 
     if script.status("rm -rf {dir} && mkdir -p {dir}") != 0
         shout("FAIL — could not build the sandbox at {dir}")
         bad += 1
-    end
 
     # The plan, and what codegen did with it. One explain run, two ports.
     plan = "{dir}/plan.json"
     if !explained(bin, one, plan)
         shout("FAIL — `duo explain` did not run on the sealed-record fixture")
         bad += 1
-    end
 
     # CONTROL 4 — held() can answer NO. Without this a grep that has stopped
     # matching, or an explain that has stopped printing, scores a clean sweep.
     if held(plan, "duo-realize-this-string-does-not-exist")
         shout("FAIL — control: held() matched a string that is not in the output")
         bad += 1
-    end
 
     # R1 — one representation variable; storage class does not select or catalog.
     if !held(plan, "\"variable_count\":1")
         shout("FAIL — R1: the sealed record produced no realization variable")
         bad += 1
-    end
     if held(plan, "\"selected_id\":\"repr.")
         shout("FAIL — R1: storage class selected a representation")
         bad += 1
-    end
     if held(plan, "repr.dynamic_table")
         shout("FAIL — R1: lua_Table catalog restored as a representation candidate")
         bad += 1
-    end
     if held(plan, "repr.native_sealed")
         shout("FAIL — R1: storage-class representation catalog restored")
         bad += 1
-    end
     if held(plan, "repr.native_aggregate")
         shout("FAIL — R1: storage-class representation catalog restored")
         bad += 1
-    end
 
     # R6 — C-emit must not log a representation it does not own.
     if held(plan, "\"transformation\":\"realization.representation\"")
         shout("FAIL — R6: C-emit logged a representation it did not own")
         bad += 1
-    end
     if held(plan, "\"after_repr\":\"native_aggregate\"")
         shout("FAIL — R6: C-emit claimed native_aggregate from storage class")
         bad += 1
-    end
 
     # R2 — shape identity moves when the shape moves. A third field on Point
     # must change the fingerprint the snapshot publishes.
@@ -177,17 +154,14 @@ main: i64 = ()
     if !explained(bin, two, drift)
         shout("FAIL — R2: `duo explain` did not run on the drifted fixture")
         bad += 1
-    end
     before = mark(plan)
     after = mark(drift)
     if before == ""
         shout("FAIL — R2: no fingerprint was published for the sealed record")
         bad += 1
-    end
     if before == after
         shout("FAIL — R2: adding a field left the fingerprint at {before}")
         bad += 1
-    end
 
     # R3 — an empty cache admits the entry FRESH; the same entity at a drifted
     # shape is INVALIDATED, and the reason names the fingerprint.
@@ -195,38 +169,30 @@ main: i64 = ()
     if !record(bin, dir, one, fresh)
         shout("FAIL — R3: `duo realize` did not run on the sealed-record fixture")
         bad += 1
-    end
     if !held(fresh, "\"action\":\"fresh\"")
         shout("FAIL — R3: the first realize did not admit the entry fresh")
         bad += 1
-    end
     if !held(fresh, "\"edge_count\":0")
         shout("FAIL — R3: the first realize invalidated something")
         bad += 1
-    end
 
     # R4 — and the drift raises exactly one fingerprint_change edge.
     stale = "{dir}/stale.json"
     if !record(bin, dir, two, stale)
         shout("FAIL — R4: `duo realize` did not run on the drifted fixture")
         bad += 1
-    end
     if !held(stale, "\"action\":\"invalidated\"")
         shout("FAIL — R4: the drifted shape was reused instead of invalidated")
         bad += 1
-    end
     if !held(stale, "\"reason\":\"semantic fingerprint mismatch\"")
         shout("FAIL — R4: the invalidation named no fingerprint")
         bad += 1
-    end
     if !held(stale, "\"edge_count\":1")
         shout("FAIL — R4: the drift raised no invalidation edge")
         bad += 1
-    end
     if !held(stale, "\"kind\":\"fingerprint_change\"")
         shout("FAIL — R4: the edge was not a fingerprint change")
         bad += 1
-    end
 
     # R5 — realizing a module the entity has LEFT marks the cached entry stale
     # and raises an entity_removed edge. This is the one assertion that needs
@@ -235,20 +201,15 @@ main: i64 = ()
     if !record(bin, dir, gone, dropped)
         shout("FAIL — R5: `duo realize` did not run on the record-free fixture")
         bad += 1
-    end
     if !held(dropped, "\"stale\":true")
         shout("FAIL — R5: the removed entity's cache entry stayed fresh")
         bad += 1
-    end
     if !held(dropped, "\"kind\":\"entity_removed\"")
         shout("FAIL — R5: removal raised no entity_removed edge")
         bad += 1
-    end
 
     if bad == 0
         shout("PASS — plan, codegen outcome, fingerprint drift, invalidation and removal, 4 controls held")
-    end
     bad
-end
 
 os.exit(main())

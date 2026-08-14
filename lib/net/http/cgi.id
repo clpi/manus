@@ -7,13 +7,10 @@ serve(handler: any): void
     body = ""
     if method == "POST" or method == "PUT"
         body = io.read()
-    end
     resp = handler(method, path, query, body)
     io.write("Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n")
     io.write(resp)
-end
 
 request(): any
     {method = os.getenv("REQUEST_METHOD") or "GET", path = os.getenv("PATH_INFO") or "/", query = os.getenv("QUERY_STRING") or ""}
-end
 

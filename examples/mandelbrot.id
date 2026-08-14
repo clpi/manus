@@ -12,13 +12,11 @@ mandel(cx: f64, cy: f64): i64
     while i < MAX_ITER
         x2: f64 = x * x
         y2: f64 = y * y
-        if x2 + y2 > 4.0 return i end
+        if x2 + y2 > 4.0 return i
         y = 2.0 * x * y + cy
         x = x2 - y2 + cx
         i += 1
-    end
     MAX_ITER
-end
 
 render(): void
     row: i64 = 0
@@ -32,12 +30,8 @@ render(): void
                 print(" ")
             else
                 print(".")
-            end
             col += 1
-        end
         print("\n")
         row += 1
-    end
-end
 
 render()

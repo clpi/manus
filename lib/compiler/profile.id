@@ -30,16 +30,11 @@ contains: bool = (hay: str, needle: str)
             if hay:byte(i + j) != needle:byte(j + 1)
                 hit = false
                 j = nn
-            end
             j += 1
-        end
         if hit
             return true
-        end
         i += 1
-    end
     false
-end
 
 # Does this source need the boxed runtime?
 #
@@ -52,27 +47,20 @@ dynamic: bool = (src: str)
     # whole module on this one, with no diagnostic
     if contains(src, ": any")
         return true
-    end
     # a table literal or index: no native memory representation for a table
     # crossing a call boundary
     if contains(src, "{")
         return true
-    end
     # varargs
     if contains(src, "...")
         return true
-    end
     # string values beyond literals passed straight through
     if contains(src, ": str")
         return true
-    end
     false
-end
 
 # The profile name, so a build can key on it rather than on a bool.
 profile: str = (src: str)
     if dynamic(src)
         return "dynamic"
-    end
     "freestanding"
-end

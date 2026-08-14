@@ -12,7 +12,6 @@ v4(): str
     # Variant 1 (bits 6-7 of clock_seq_hi_and_reserved = 10)
     hex: str = (b: i64)
         "%02x":format(b)
-    end
     
     result = ""
     # Bytes 0-3 (time_low)
@@ -40,8 +39,6 @@ v4(): str
     while i <= 16
         result = result .. hex(bytes:byte(i))
         i += 1
-    end
     
     result
-end
 

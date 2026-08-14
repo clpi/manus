@@ -28,26 +28,21 @@
 # Absolute, because `duo check` is invoked with a repo-relative fixture path.
 here(): str
     std.script.chomp(std.script.capture("pwd"))
-end
 
 # The compiler under test. std.script.id bin() is relative and would resolve
 # to nothing if this gate is ever run with a cwd outside the repo.
 compiler(root: str): str
     "{root}/zig-out/bin/idol"
-end
 
 shout(msg: str): void
     print("luahost: {msg}")
-end
 
 # One shell integer, chomped and converted subject-first.
 tally(cmd: str): i64
     std.script.chomp(std.script.capture(cmd)):to(i64)
-end
 
 present(path: str): bool
     std.script.status("test -e {path}") == 0
-end
 
 main: i64 = ()
     root = here()
@@ -59,14 +54,12 @@ main: i64 = ()
     if std.script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
-    end
 
     # CONTROL 2 — the compiler exists. A missing binary makes every check
     # fail for a reason that has nothing to do with the corpus.
     if !present(bin)
         shout("FAIL — no compiler at {bin}; run `zig build` first")
         bad += 1
-    end
 
     # CONTROL 3 — the corpus is not empty. The Zig original could not fail
     # this way because its cases were compiled in; a globbing gate can, and
@@ -75,7 +68,6 @@ main: i64 = ()
     if total < 12
         shout("FAIL — corpus holds {total} case(s), fewer than the 12 ported")
         bad += 1
-    end
 
     # CONTROL 4 — `duo check` still convicts. An unterminated long string is
     # the tightest negative for this corpus: it is the SAME lexer path every
@@ -86,7 +78,6 @@ main: i64 = ()
     if std.script.status("{bin} check {deny} >/dev/null 2>&1") == 0
         shout("FAIL — control: an unterminated long string was ACCEPTED")
         bad += 1
-    end
     std.script.run("rm -rf {work}")
 
     # The corpus itself. Every case must be accepted; the shell counts the
@@ -97,12 +88,9 @@ main: i64 = ()
         shout("the rejected cases, with their diagnostics:")
         std.script.run("cd {root} && for f in examples/luahost/*.id; do {bin} check $f >/dev/null 2>&1 || {bin} check $f 2>&1 | grep error: | head -2; done")
         bad += 1
-    end
 
     if bad == 0
         shout("PASS — {total} hosted-language cases accepted, 4 controls held")
-    end
     bad
-end
 
 std.os.exit(main())

@@ -8,7 +8,6 @@ s.run("rm -f benchmark_evidence.json")
 global DUO_BUILD_REPORT = tostring(s.getenv_or("DUO_BUILD_REPORT"))
 if DUO_BUILD_REPORT:len() == 0
     s.env_set("DUO_BUILD_REPORT", "plain")
-end
 
 # gap[027]: the parameter must NOT be named `s` — a parameter does not shadow
 # a global of the same name, so `s` here resolved to the module global above and
@@ -16,9 +15,8 @@ end
 #
 # gap[014] keeps the body manual: `text:trim()` resolves and returns nil.
 trim(text: str): str
-    if text:sub(-1) == "\n" return text:sub(1, text:len() - 1) end
+    if text:sub(-1) == "\n" return text:sub(1, text:len() - 1)
     text
-end
 
 global ROOT = trim(s.capture("git rev-parse --show-toplevel"))
 
@@ -31,28 +29,23 @@ global ROOT = trim(s.capture("git rev-parse --show-toplevel"))
 say(line: str): i64
     s.must("printf \"%s\\n\" \"" .. line .. "\"")
     0
-end
 
 global DUO = tostring(s.getenv_or("DUO"))
 if DUO:len() == 0
     DUO = ROOT .. "/zig-out/bin/idol"
-end
 DUO = "env DUO_BUILD_REPORT=plain " .. DUO
 
 global CC = tostring(s.getenv_or("CC"))
 if CC:len() == 0
     CC = "clang"
-end
 
 global CFLAGS = "-O3 -ffast-math -march=native -flto -fomit-frame-pointer -funroll-loops -ffp-contract=fast -fno-trapping-math -fno-math-errno -ffunction-sections -fdata-sections -Wl,-dead_strip -std=c99 -lm"
 
 global SDKROOT = tostring(s.getenv_or("SDKROOT"))
 if SDKROOT:len() == 0
     SDKROOT = trim(s.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null || true"))
-end
 if SDKROOT:len() != 0
     CFLAGS = CFLAGS .. " -isysroot " .. SDKROOT
-end
 
 s.must("cd " .. ROOT .. " && if [ ! -x zig-out/bin/idol ]; then ${ZIG:-zig} build; fi")
 
@@ -66,11 +59,9 @@ s.must("cd " .. ROOT .. " && if [ ! -x zig-out/bin/idol ]; then ${ZIG:-zig} buil
 BENCH_BACKEND = s.getenv_or("BENCH_BACKEND")
 if BENCH_BACKEND:len() == 0
     BENCH_BACKEND = "c-specialized"
-end
 duover = trim(s.capture(DUO .. " --version 2>/dev/null || echo unknown"))
 if duover:len() == 0
     duover = "unknown"
-end
 BENCH_MANIFEST = "backend=" .. BENCH_BACKEND .. " representation=specialized runtime=dynamic intermediate=generated-c external_compiler=" .. CC .. " duo=" .. duover
 print("BENCH_MANIFEST " .. BENCH_MANIFEST)
 s.env_set("DUO_BENCH_MANIFEST", BENCH_MANIFEST)
@@ -95,7 +86,6 @@ else
     s.must("cd " .. ROOT .. " && " .. cinstr)
     s.run(cprof)
     s.must("cd " .. ROOT .. " && " .. copt)
-end
 
 # Compile the .id mirror
 s.must("cd " .. ROOT .. " && /usr/bin/time -l " .. DUO .. " compile --pgo -O3 examples/benchmark.id -o /tmp/duo_bench_duo.out 2> /tmp/duoduo_compile_time.txt")
@@ -159,10 +149,7 @@ extract_times(out: str): table
         num = line:match("Time%s+([0-9%.eE%+%-]+)")
         if num != nil
             times:insert(tonumber(num))
-        end
-    end
     times
-end
 
 extract_results(out: str): table
     res = {}
@@ -170,16 +157,12 @@ extract_results(out: str): table
         id, val = line:match("^RESULT%s+([^%s]+)%s+([^%s]+)")
         if id != nil
             res:insert({ id = id, val = val })
-        end
-    end
     res
-end
 
 compare_results(name: str, duo_res: table, c_res: table): bool
     if duo_res:len() != BENCHES or c_res:len() != BENCHES
         print("RESULT count mismatch for " .. name .. ": Duo=" .. tostring(duo_res:len()) .. " C=" .. tostring(c_res:len()) .. " (expected " .. tostring(BENCHES) .. ")")
         return false
-    end
     fail = false
     for i = 1, BENCHES
         if duo_res[i].id != c_res[i].id
@@ -203,7 +186,7 @@ compare_results(name: str, duo_res: table, c_res: table): bool
                 if is_int
                     print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                     fail = true
-                elseif da == nil or db == nil
+                else if da == nil or db == nil
                     print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                     fail = true
                 else
@@ -223,27 +206,18 @@ compare_results(name: str, duo_res: table, c_res: table): bool
                         if da - db:abs() > 1e-12
                             print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                             fail = true
-                        end
                     else
                         diff = da - db:abs()
                         base = abs_a:max(abs_b)
                         tol = 1e-9
                         if base != 0
                             tol = base * 1e-6
-                        end
-                        if tol < 1e-9 tol = 1e-9 end
-                        if base > 1e6 and tol < 1 tol = 1 end
+                        if tol < 1e-9 tol = 1e-9
+                        if base > 1e6 and tol < 1 tol = 1
                         if diff > tol
                             print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                             fail = true
-                        end
-                    end
-                end
-            end
-        end
-    end
     !fail
-end
 
 _collect_min_times_impl(cmd: str, min_times: table): table
     runs = 10
@@ -263,15 +237,10 @@ _collect_min_times_impl(cmd: str, min_times: table): table
             m = min_times[j]
             if m == nil or t < m
                 min_times[j] = t
-            end
-        end
-    end
     min_times
-end
 
 collect_min_times(cmd: str): table
     _collect_min_times_impl(cmd, {})
-end
 
 capture(label: str, cmd: str): table
     status = 0
@@ -281,15 +250,11 @@ capture(label: str, cmd: str): table
         res = extract_results(out)
         if res:len() == BENCHES
             return res
-        end
         if attempt == 1
             s.echo("warning: " .. label .. " produced " .. tostring(res:len()) .. "/" .. tostring(BENCHES) .. " RESULT rows, retrying...")
-        end
-    end
     s.echo("error: " .. label .. " produced " .. tostring(res:len()) .. "/" .. tostring(BENCHES) .. " RESULT rows after retry")
     os.exit(1)
     res
-end
 
 # ── The folded-row classifier ───────────────────────────────────────────────
 #
@@ -340,12 +305,9 @@ folded(dt: f64, ct: f64): bool
     out = false
     if dt <= cutoff
         out = true
-    end
     if ct > cutoff and ct >= dt * ratio
         out = true
-    end
     out
-end
 
 # WHICH rule fired, and it is not cosmetic. `folded` returns one bool for two
 # causes that need OPPOSITE repairs:
@@ -372,35 +334,26 @@ foldreason(dt: f64, ct: f64): str
     r2 = false
     if dt <= cutoff
         r1 = true
-    end
     if ct > cutoff and ct >= dt * ratio
         r2 = true
-    end
     out = ""
     if r1 and r2
         out = "both"
-    end
     if r1 and !r2
         out = "res"
-    end
     if r2 and !r1
         out = "form"
-    end
     out
-end
 
 # One place formats a duration, so one line in this file names a Lua library.
 sec(v: f64): str
     "%g":format(v)
-end
 
 yesno(b: bool): str
     out = "no"
     if b
         out = "yes"
-    end
     out
-end
 
 probe(label: str, dt: f64, ct: f64, want: bool): i64
     got = folded(dt, ct)
@@ -409,11 +362,9 @@ probe(label: str, dt: f64, ct: f64, want: bool): i64
     if got != want
         mark = "BROKEN"
         bad = 1
-    end
     say(mark .. "  " .. label .. "  duo=" .. sec(dt) .. "  c=" .. sec(ct)
         .. "  folded=" .. yesno(got) .. "  want=" .. yesno(want))
     bad
-end
 
 # POSITIVE CONTROL, run before any benchmark data exists. A classifier that
 # never fires is indistinguishable from one that is broken # this repository
@@ -447,13 +398,11 @@ control(): i64
     bad += probe("both sides under the cutoff   ", 0.0,      0.0,    true)
     bad += probe("slower than C                 ", 0.02,     0.01,   false)
     bad
-end
 
 if control() != 0
     say("")
     say("Benchmark failed: the fold classifier disagrees with its own control table.")
     os.exit(1)
-end
 say("fold classifier control: 11/11 agree (cutoff=" .. sec(cutoff)
     .. "s = 10 x " .. sec(tick) .. "s reporting resolution; ratio=" .. sec(ratio) .. "x)")
 say("")
@@ -471,16 +420,13 @@ cbenchres = capture("reference C benchmark", "/tmp/c_bench.out")
 global RESULT_FAIL: bool = false
 if !compare_results("Duo .lua", duamark, cbenchres)
     RESULT_FAIL = true
-end
 if !compare_results("Duo .id", duobenchduores, cbenchres)
     RESULT_FAIL = true
-end
 
 if RESULT_FAIL
     print("")
     print("Benchmark failed: Duo .lua and .id results must match reference C.")
     os.exit(1)
-end
 print("All " .. tostring(BENCHES) .. " benchmark results match reference C for .lua and .id.")
 
 s.must("cat << 'EOF' > /tmp/timer.c\n#include <sys/time.h>\n#include <lua.h>\n#include <lauxlib.h>\nstatic int l_now(lua_State *L) {\n    struct timeval tv;\n    gettimeofday(&tv, NULL);\n    lua_pushnumber(L, (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0);\n    return 1;\n}\nint luaopen_timer(lua_State *L) {\n    lua_pushcfunction(L, l_now);\n    return 1;\n}\nEOF")
@@ -512,7 +458,6 @@ if RUN_NELUA_BENCH == "1" and s.run("command -v nelua >/dev/null 2>&1") == 0
     NELUA_TIMES = collect_min_times("nelua /tmp/lua_bench.lua 2>/dev/null || true")
 else
     print("=== Nelua (skipped; set RUN_NELUA_BENCH=1 to enable) ===")
-end
 
 # TIMED rows, in Time-line order. Fibonacci(40), Table array and Bitcount are
 # absent BY REMOVAL, not by oversight: see the TIMED note at the top of this
@@ -541,9 +486,7 @@ checktimes(label: str, t: table): i64
         say("error: " .. label .. " produced " .. tostring(n) .. "/" .. TIMED:to(str)
             .. " Time lines; the timing table cannot be trusted.")
         os.exit(1)
-    end
     0
-end
 
 checktimes("Duo benchmark.lua", DUO_TIMES)
 checktimes("Duo benchmark.id", DUOFILETIMES)
@@ -594,7 +537,7 @@ s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"----------------
 
 for i = 1, TIMED
     name = NAMES[i]
-    if name == nil name = "bench-" .. tostring(i) end
+    if name == nil name = "bench-" .. tostring(i)
     
     d = DUO_TIMES[i]
     duofile = DUOFILETIMES[i]
@@ -605,16 +548,13 @@ for i = 1, TIMED
     
     eps = 1e-7
     if c != nil
-        if c > 0 eps = c * 0.05 end
-        if c < 0.01 and eps < 5e-5 eps = 5e-5 end
-    end
+        if c > 0 eps = c * 0.05
+        if c < 0.01 and eps < 5e-5 eps = 5e-5
     
     c_wins = 1
     if d != nil and duofile != nil and c != nil
         if (d <= c + eps) and (duofile <= c + eps)
             c_wins = 0
-        end
-    end
     
     if d != nil and duofile != nil and c != nil
         luadur: f64 = d
@@ -625,32 +565,22 @@ for i = 1, TIMED
             why = foldreason(luadur, cdur)
             if why != ""
                 foldsites += 1
-            end
             if why == "res"
                 foldresall += 1
-            end
             if why == "form"
                 foldformall += 1
-            end
             if why == "both"
                 foldbothall += 1
-            end
 
             why = foldreason(filedur, cdur)
             if why != ""
                 foldsites += 1
-            end
             if why == "res"
                 foldresall += 1
-            end
             if why == "form"
                 foldformall += 1
-            end
             if why == "both"
                 foldbothall += 1
-            end
-        end
-    end
 
     # Verdict. `folded` only ever reclassifies a row that would otherwise have
     # been called a Duo win, so the loss column is unaffected by the rule.
@@ -668,14 +598,11 @@ for i = 1, TIMED
         slower: f64 = d
         if duofile > slower
             slower = duofile
-        end
         ct: f64 = c
         if slower > 0.0 and slower < least
             least = slower
-        end
         if ct > cutoff and folded(ct, ct)
             impossible += 1
-        end
         if folded(slower, ct)
             # EVALUATED, NOT RUN. Not a win: the pass/fail criterion is
             # "Duo must beat or tie C on every test", and a row whose kernel
@@ -685,38 +612,32 @@ for i = 1, TIMED
             why = foldreason(slower, ct)
             if why == "res"
                 foldres += 1
-            end
             if why == "form"
                 foldform += 1
-            end
             if why == "both"
                 foldboth += 1
-            end
             RESULT_FAIL_FLAG = 1
         else
             measured += 1
-        end
-    end
     d_fmt = "N/A"
-    if d != nil d_fmt = "%g":format(d) end
+    if d != nil d_fmt = "%g":format(d)
     
     duofilefmt = "N/A"
-    if duofile != nil duofilefmt = "%g":format(duofile) end
+    if duofile != nil duofilefmt = "%g":format(duofile)
     
     c_fmt = "N/A"
-    if c != nil c_fmt = "%g":format(c) end
+    if c != nil c_fmt = "%g":format(c)
     
     lj_fmt = "N/A"
-    if lj != nil lj_fmt = "%g":format(lj) end
+    if lj != nil lj_fmt = "%g":format(lj)
     
     l5_fmt = "N/A"
-    if l5 != nil l5_fmt = "%g":format(l5) end
+    if l5 != nil l5_fmt = "%g":format(l5)
     
     n_fmt = "N/A"
-    if n != nil n_fmt = "%g":format(n) end
+    if n != nil n_fmt = "%g":format(n)
     
     s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"" .. name .. "\" \"" .. d_fmt .. "\" \"" .. duofilefmt .. "\" \"" .. c_fmt .. "\" \"" .. lj_fmt .. "\" \"" .. l5_fmt .. "\" \"" .. n_fmt .. "\" \"" .. winner .. "\"")
-end
 
 say("")
 say("-- Speed verdict, three ways --------------------------------------------------")
@@ -747,7 +668,6 @@ if impossible != 0
     say("  CONTROL FAILED: the rule fired on the C column against itself on "
         .. impossible:to(str) .. " row(s); a ratio of 1 can never be a fold.")
     os.exit(1)
-end
 say("  negative control on real data: the rule fires on 0 rows when the C column")
 say("  is classified against itself.")
 say("")
@@ -771,14 +691,12 @@ if RESULT_FAIL_FLAG == 1
     say("")
     say("FAIL: Duo .lua and .id must beat or tie reference C on every test, and the")
     say("      beating must be MEASURED. Folded rows count against this verdict.")
-end
 
 extract(file: str): table
     out = s.capture("cat " .. file .. " 2>/dev/null || echo ''")
     latency = out:match("([0-9%.]+)%s+real")
     mem = out:match("([0-9]+)%s+maximum resident set size")
     { latency = tonumber(latency) or -1.0, mem = tonumber(mem) or -1 }
-end
 
 duamet = extract("/tmp/duolua_compile_time.txt")
 duodu = extract("/tmp/duoduo_compile_time.txt")
@@ -810,7 +728,6 @@ if RESULT_FAIL_FLAG == 0
     evidence = evidence .. "true,\n"
 else
     evidence = evidence .. "false,\n"
-end
 evidence = evidence .. "  \"compilation\": {\n"
 evidence = evidence .. "    \"duo_lua\": {\"latency_s\": " .. tostring(duolua.latency) .. ", \"peak_mem_bytes\": " .. tostring(duolua.mem) .. ", \"artifact_size_bytes\": " .. tostring(duasize) .. "},\n"
 evidence = evidence .. "    \"duo_duo\": {\"latency_s\": " .. tostring(duoduo.latency) .. ", \"peak_mem_bytes\": " .. tostring(duoduo.mem) .. ", \"artifact_size_bytes\": " .. tostring(duosize) .. "},\n"
@@ -821,11 +738,11 @@ evidence = evidence .. "  \"measurements\": [\n"
 for i = 1, TIMED
     name = NAMES[i]
     d = DUO_TIMES[i]
-    if d == nil d = -1.0 end
+    if d == nil d = -1.0
     duofile = DUOFILETIMES[i]
-    if duofile == nil duofile = -1.0 end
+    if duofile == nil duofile = -1.0
     c = C_TIMES[i]
-    if c == nil c = -1.0 end
+    if c == nil c = -1.0
     
     evidence = evidence .. "    {\n"
     evidence = evidence .. "      \"name\": \"" .. name .. "\",\n"
@@ -837,15 +754,12 @@ for i = 1, TIMED
         evidence = evidence .. ",\n"
     else
         evidence = evidence .. "\n"
-    end
-end
 evidence = evidence .. "  ]\n}\n"
 
 fs.write_file("benchmark_evidence.json", evidence)
 
 if RESULT_FAIL_FLAG == 1
     os.exit(1)
-end
 
 print("══════════════════════════════════════════════════════════════════════════════")
 print("✓ All benchmarks: results match and Duo .lua/.id >= C on measured time")

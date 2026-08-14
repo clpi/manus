@@ -2,7 +2,6 @@
 
 greet(name: str): str
     "Hello, " .. name
-end
 
 # Traditional Lua-style call
 print(greet("World"))
@@ -13,7 +12,6 @@ print greet "Duo"
 # Bash-style call with numbers
 add(a: i64, b: i64): i64
     a + b
-end
 
 print add 10 20
 

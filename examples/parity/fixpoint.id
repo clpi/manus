@@ -8,5 +8,4 @@ NESTED = @comp.map("q", fun(seed)
 end)
 parity(): str
     @comp.fixpoint("s", fun(state) "i" .. tostring(state.iteration) .. "\n" end, 2)
-end
 BLOCK = parity()

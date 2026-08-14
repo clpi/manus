@@ -28,13 +28,11 @@ fails = ""
 fail(msg: str): void
     fails = fails .. "  " .. msg .. "\n"
     diverge += 1
-end
 
 envval(name: str, fallback: str): str
     v = std.script.getenv_or(name)
-    if v == "" return fallback end
+    if v == "" return fallback
     v
-end
 
 # A miscompiled loop does not fail, it spins. Every run is bounded, and 124 is
 # the timeout marker the caller checks for.
@@ -42,7 +40,6 @@ bounded = ""
 
 rc(bin: str): i64
     std.script.status(bounded .. bin)
-end
 
 # gap[067] part 2. Exit status alone is structurally blind to a DROPPED EFFECT:
 # `for i = 1, 3 / print(i)` exited 0 on both backends and printed `1 2 3` under
@@ -74,19 +71,14 @@ listfiles(dir: str): any
         t = script.chomp(line)
         if t != ""
             files[files:len() + 1] = t
-        end
-    end
     files
-end
 
 stem(path: str): str
     script.chomp(script.capture("basename " .. path .. " .id"))
-end
 
 compileok(idol: str, src: str, backend: str, out: str): bool
     script.run(idol .. " compile " .. src .. " --backend=" .. backend
         .. " --emit exe -o " .. out .. " >/dev/null 2>&1") == 0
-end
 
 # gap[108]. One `unsupported/` row's verdict. The folder used to be LISTED and
 # nothing more — the name printed, the program never compiled — which made its
@@ -144,15 +136,11 @@ main: i64 = ()
         if std.script.run(zig .. " build") != 0
             print("native_differential: FAIL — zig build")
             return 1
-        end
-    end
 
     for i, cand in {"timeout", "gtimeout"}
         if bounded == "" and std.script.chomp(std.script.capture(
             "command -v " .. cand .. " 2>/dev/null")) != ""
             bounded = cand .. " " .. bound .. " "
-        end
-    end
 
     std.script.run("rm -rf " .. work .. " && mkdir -p " .. work)
 
@@ -180,11 +168,6 @@ main: i64 = ()
                         # and the half that catches dropped effects. Status
                         # agreement is necessary, never sufficient.
                         judgeout(name, outtext(cbin), outtext(dbin))
-                    end
-                end
-            end
-        end
-    end
 
     # `native_only/` gates capabilities where the C backend is not a valid
     # oracle (it cannot compile them at all), so the expected exit status is
@@ -207,10 +190,6 @@ main: i64 = ()
                         .. " (native_only)")
                 else
                     agree += 1
-                end
-            end
-        end
-    end
 
     # Frontier reporting. `unsupported/` holds programs the direct backend
     # refuses to compile (a capability gap — honest, not a miscompilation).
@@ -222,11 +201,9 @@ main: i64 = ()
     for i, src in listfiles(corpus .. "/unsupported")
         unsupported_count += 1
         frontier(idol, "unsupported", true, src)
-    end
 
     for i, src in listfiles(corpus .. "/knowndivergent")
         frontier(idol, "knowndivergent", false, src)
-    end
 
     print("native_differential: " .. agree:to(str) .. " agree, " .. diverge:to(str)
         .. " diverge, " .. unsupported_count:to(str) .. " unsupported (corpus: " .. corpus .. ")")
@@ -235,13 +212,10 @@ main: i64 = ()
         print("native_differential: FAIL")
         io.write(fails)
         return 1
-    end
     # An empty corpus passing every check is the failure mode this catches:
     # a mistyped corpus path would otherwise report a clean run.
     if agree == 0
         print("native_differential: FAIL (empty corpus)")
         return 1
-    end
     print("native_differential: PASS")
     0
-end

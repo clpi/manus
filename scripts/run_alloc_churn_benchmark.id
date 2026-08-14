@@ -18,15 +18,12 @@ _fmt2(x: f64): str
     frac = n % 100
     if frac < 10
         return whole:to(str) .. ".0" .. frac:to(str)
-    end
     whole:to(str) .. "." .. frac:to(str)
-end
 
 _sdk_flag(): str
     sdk = script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))
-    if sdk == "" return "" end
+    if sdk == "" return ""
     "-isysroot " .. sdk
-end
 
 main: i64 = ()
     print("=== Duo Alloc Churn Benchmark ===")
@@ -37,7 +34,6 @@ main: i64 = ()
         print("ERROR: Duo compiler not found at " .. duo)
         print("  Run 'zig build' first")
         return 1
-    end
 
     script.run("mkdir -p " .. _OUT_DIR)
     sysroot = _sdk_flag()
@@ -48,7 +44,6 @@ main: i64 = ()
         .. _EX .. "/bench_alloc_churn_c.c -o " .. cbin) != 0
         print("ERROR: C reference failed to compile")
         return 1
-    end
     print("      -> " .. cbin)
 
     print("[2/3] Compiling bench_alloc_churn.id...")
@@ -56,7 +51,6 @@ main: i64 = ()
     if script.run(duo .. " compile " .. _EX .. "/bench_alloc_churn.id -o " .. dbin .. " -O3") != 0
         print("ERROR: Duo benchmark failed to compile")
         return 1
-    end
     print("      -> " .. dbin)
 
     print("")
@@ -80,11 +74,9 @@ main: i64 = ()
         print("Ratio (Duo/C): unavailable — could not read both times")
         print("-----------------------------------------------")
         return 1
-    end
 
     print("Ratio (Duo/C): " .. _fmt2(dt / ct) .. "x")
     print("-----------------------------------------------")
     print("")
     print("Done.")
     0
-end

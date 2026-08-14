@@ -17,99 +17,82 @@ CURSOR_SUBSTRATE = "decode-local-table"
 
 decoder_owner(): str
     DECODER_OWNER
-end
 
 semantic_table_owner(): str
     SEMANTIC_TABLE
-end
 
 lookup_table_owner(): str
     LOOKUP_TABLE
-end
 
 cursor_substrate(): str
     CURSOR_SUBSTRATE
-end
 
 new_cursor(data): any
     return { data = data, pos = 1, len = data:len() }
-end
 
 read_byte(c): i64
-    if c.pos > c.len return -1 end
+    if c.pos > c.len return -1
     b = c.data:byte(c.pos)
     c.pos = c.pos + 1
     b
-end
 
 read_i32_imm(c): i64
     result = 0
     shift = 0
     while true
         b = read_byte(c)
-        if b < 0 return -1 end
+        if b < 0 return -1
         result |= ((b & 0x7F) << shift)
         shift += 7
         if (b & 0x80) == 0
             if shift < 64 and (b & 0x40) != 0
                 result |= (~0 << shift)
-            end
             return result
-        end
-        if shift >= 70 return -1 end
-    end
+        if shift >= 70 return -1
     return -1
-end
 
 read_u32_imm(c): i64
     result = 0
     shift = 0
     while true
         b = read_byte(c)
-        if b < 0 return -1 end
+        if b < 0 return -1
         result |= ((b & 0x7F) << shift)
-        if (b & 0x80) == 0 return result end
+        if (b & 0x80) == 0 return result
         shift += 7
-        if shift >= 35 return -1 end
-    end
+        if shift >= 35 return -1
     return -1
-end
 
 read_i64_imm(c): i64
     read_i32_imm(c)
-end
 
 read_mem_arg(c): any
     mem_align = read_u32_imm(c)
     offset = read_u32_imm(c)
-    if mem_align < 0 or offset < 0 return nil end
+    if mem_align < 0 or offset < 0 return nil
     return { align = mem_align, offset = offset }
-end
 
 read_immediate(c, form): any
-    if form == "none" return nil end
-    if form == "i32_imm" return read_i32_imm(c) end
-    if form == "i64_imm" return read_i64_imm(c) end
+    if form == "none" return nil
+    if form == "i32_imm" return read_i32_imm(c)
+    if form == "i64_imm" return read_i64_imm(c)
     if form == "u32_imm" or form == "label_idx" or form == "local_idx" or form == "global_idx" or form == "func_idx"
         return read_u32_imm(c)
-    end
-    if form == "mem_arg" return read_mem_arg(c) end
+    if form == "mem_arg" return read_mem_arg(c)
     nil
-end
 
 decode_opcode(c): any
     op = read_byte(c)
-    if op < 0 return { status = "eof" } end
+    if op < 0 return { status = "eof" }
     return { status = "ok", opcode = op }
-end
 
 # Reads opcode once on c (mutates cursor). Avoid nested decode_opcode call — embedded
 # modules may not propagate table mutation through nested req calls.
 decode_instruction(c): any
     op = read_byte(c)
-    if op < 0 return { status = "eof" } end
+    if op < 0 return { status = "eof" }
     idx = Lookup.instruction_index_for_opcode(op)
-    if idx < 0 return { status = "unknown_opcode", opcode = op } end
+    if idx < 0 return { status = "unknown_opcode", opcode = op }
     sid = Lookup.semantic_id_for_index(idx)
     form = Lookup.immediate_form_for_index(idx)
     imm = read_immediate(c, form)
@@ -123,12 +106,10 @@ decode_instruction(c): any
         stack_pop = Lookup.stack_pop_for_index(idx),
         stack_push = Lookup.stack_push_for_index(idx),
     }
-end
 
 decode_i32_const(c): any
     d = decode_instruction(c)
-    if d.status != "ok" return d end
-    if d.id != "wasm.i32.const" return { status = "bad_opcode", opcode = d.opcode, id = d.id } end
-    if d.immediate == nil return { status = "truncated" } end
+    if d.status != "ok" return d
+    if d.id != "wasm.i32.const" return { status = "bad_opcode", opcode = d.opcode, id = d.id }
+    if d.immediate == nil return { status = "truncated" }
     return { status = "ok", opcode = d.opcode, id = d.id, imm = d.immediate }
-end

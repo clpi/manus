@@ -20,18 +20,13 @@
 lookup: i64 = (t0: i64, t1: i64, t2: i64, t3: i64, sym: i64)
     if t0 == sym
         return 1
-    end
     if t1 == sym
         return 2
-    end
     if t2 == sym
         return 3
-    end
     if t3 == sym
         return 4
-    end
     0
-end
 
 main(): i64
     # A four-slot scope, empty (0 = unbound).
@@ -42,7 +37,6 @@ main(): i64
     while n <= 3
         scope[n] = n * 100
         n += 1
-    end
 
     # Look each one up, and confirm an undeclared symbol is not found.
     a = lookup(scope[1], scope[2], scope[3], scope[4], 100)   # 1
@@ -56,4 +50,3 @@ main(): i64
 
     # 1 + 2 + 3 + 0 + 1 = 7, times the 3 declared symbols = 21
     (a + b + c + d + e) * 3
-end

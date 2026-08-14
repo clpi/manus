@@ -8,66 +8,54 @@ leading_zeros_8(x: i64): i64
     n = 8
     i = 7
     while i >= 0
-        if (x >> i) % 2 == 1 return n end
+        if (x >> i) % 2 == 1 return n
         n -= 1
         i -= 1
-    end
     n
-end
 
 # leading_zeros_32: count leading zero bits in a 32-bit value.
 leading_zeros_32(x: i64): i64
     n = 32
     i = 31
     while i >= 0
-        if (x >> i) % 2 == 1 return n end
+        if (x >> i) % 2 == 1 return n
         n -= 1
         i -= 1
-    end
     n
-end
 
 # leading_zeros_64: count leading zero bits in a 64-bit value.
 leading_zeros_64(x: i64): i64
     n = 64
     i = 63
     while i >= 0
-        if (x >> i) % 2 == 1 return n end
+        if (x >> i) % 2 == 1 return n
         n -= 1
         i -= 1
-    end
     n
-end
 
 # trailing_zeros_8: count trailing zero bits in an 8-bit value.
 trailing_zeros_8(x: i64): i64
-    if x == 0 return 8 end
+    if x == 0 return 8
     n = 0
     while (x >> n) % 2 == 0
         n += 1
-    end
     n
-end
 
 # trailing_zeros_32: count trailing zero bits in a 32-bit value.
 trailing_zeros_32(x: i64): i64
-    if x == 0 return 32 end
+    if x == 0 return 32
     n = 0
     while (x >> n) % 2 == 0
         n += 1
-    end
     n
-end
 
 # trailing_zeros_64: count trailing zero bits in a 64-bit value.
 trailing_zeros_64(x: i64): i64
-    if x == 0 return 64 end
+    if x == 0 return 64
     n = 0
     while (x >> n) % 2 == 0
         n += 1
-    end
     n
-end
 
 # ones_count_8: count set bits in an 8-bit value.
 ones_count_8(x: i64): i64
@@ -76,9 +64,7 @@ ones_count_8(x: i64): i64
     while i < 8
         c += (x >> i) % 2
         i += 1
-    end
     c
-end
 
 # ones_count_32: count set bits in a 32-bit value.
 ones_count_32(x: i64): i64
@@ -87,9 +73,7 @@ ones_count_32(x: i64): i64
     while i < 32
         c += (x >> i) % 2
         i += 1
-    end
     c
-end
 
 # ones_count_64: count set bits in a 64-bit value.
 ones_count_64(x: i64): i64
@@ -98,62 +82,52 @@ ones_count_64(x: i64): i64
     while i < 64
         c += (x >> i) % 2
         i += 1
-    end
     c
-end
 
 # len_8: length of an 8-bit value (position of highest set bit + 1).
 len_8(x: i64): i64
     8 - leading_zeros_8(x)
-end
 
 # len_32: length of a 32-bit value.
 len_32(x: i64): i64
     32 - leading_zeros_32(x)
-end
 
 # len_64: length of a 64-bit value.
 len_64(x: i64): i64
     64 - leading_zeros_64(x)
-end
 
 # rotate_left_8: rotate bits left by k positions (8-bit).
 rotate_left_8(x: i64, k: i64): i64
     k = k % 8
-    if k < 0 k += 8 end
+    if k < 0 k += 8
     ((x << k) | (x >> (8 - k))) % 256
-end
 
 # rotate_left_32: rotate bits left by k positions (32-bit).
 rotate_left_32(x: i64, k: i64): i64
     k = k % 32
-    if k < 0 k += 32 end
-    if k == 0 return x end
+    if k < 0 k += 32
+    if k == 0 return x
     hi = (x << k) % (2^32)
     lo = x >> (32 - k)
     return (hi | lo) % (2^32)
-end
 
 # rotate_left_64: rotate bits left by k positions (64-bit).
 rotate_left_64(x: i64, k: i64): i64
     k = k % 64
-    if k < 0 k += 64 end
-    if k == 0 return x end
+    if k < 0 k += 64
+    if k == 0 return x
     # approximate for 64-bit using Lua's integer arithmetic
     hi = x << k
     lo = x >> (64 - k)
     hi | lo
-end
 
 # rotate_right_32: rotate bits right by k positions (32-bit).
 rotate_right_32(x: i64, k: i64): i64
     rotate_left_32(x, 0 - k)
-end
 
 # rotate_right_64: rotate bits right by k positions (64-bit).
 rotate_right_64(x: i64, k: i64): i64
     rotate_left_64(x, 0 - k)
-end
 
 # reverse_8: reverse the bits of an 8-bit value.
 reverse_8(x: i64): i64
@@ -162,9 +136,7 @@ reverse_8(x: i64): i64
     while i < 8
         r |= (((x >> i) % 2) << (7 - i))
         i += 1
-    end
     r % 256
-end
 
 # reverse_32: reverse the bits of a 32-bit value.
 reverse_32(x: i64): i64
@@ -173,9 +145,7 @@ reverse_32(x: i64): i64
     while i < 32
         r |= (((x >> i) % 2) << (31 - i))
         i += 1
-    end
     r % (2^32)
-end
 
 # reverse_bytes_32: reverse the byte order of a 32-bit value.
 reverse_bytes_32(x: i64): i64
@@ -184,7 +154,6 @@ reverse_bytes_32(x: i64): i64
     b2 = (x / 65536) % 256
     b3 = (x / 16777216) % 256
     b0 * 16777216 + b1 * 65536 + b2 * 256 + b3
-end
 
 # reverse_bytes_64: reverse the byte order of a 64-bit value.
 reverse_bytes_64(x: i64): i64
@@ -194,15 +163,12 @@ reverse_bytes_64(x: i64): i64
         parts[8 - i] = x % 256
         x /= 256
         i += 1
-    end
     v = 0
     i = 1
     while i <= 8
         v = v * 256 + parts[i]
         i += 1
-    end
     v
-end
 
 # mul_32: multiply two 32-bit values, returning (hi, lo) as a 64-bit result split.
 mul_32(x: i64, y: i64): any
@@ -210,7 +176,6 @@ mul_32(x: i64, y: i64): any
     lo = p % (2^32)
     hi = p / (2^32)
     return {hi = hi, lo = lo}
-end
 
 # add_32: add two 32-bit values, returning (sum, carry).
 add_32(x: i64, y: i64): any
@@ -218,14 +183,11 @@ add_32(x: i64, y: i64): any
     lo = s % (2^32)
     carry = s / (2^32)
     return {sum = lo, carry = carry}
-end
 
 # sub_32: subtract y from x (32-bit), returning (diff, borrow).
 sub_32(x: i64, y: i64): any
     d = x - y
     if d < 0
         return {diff = d + (2^32), borrow = 1}
-    end
     {diff = d, borrow = 0}
-end
 

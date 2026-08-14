@@ -11,19 +11,15 @@ fnv_prime64_lo = 0x000001B3
 
 new32(): any
     {hash = fnv_offset32, bits = 32, kind = "fnv1"}
-end
 
 new32a(): any
     {hash = fnv_offset32, bits = 32, kind = "fnv1a"}
-end
 
 new64(): any
     {hash_hi = fnv_offset64_hi, hash_lo = fnv_offset64_lo, bits = 64, kind = "fnv1"}
-end
 
 new64a(): any
     {hash_hi = fnv_offset64_hi, hash_lo = fnv_offset64_lo, bits = 64, kind = "fnv1a"}
-end
 
 update(state: any, data: str): void
     for i = 1, data:len()
@@ -34,9 +30,6 @@ update(state: any, data: str): void
         else
             state.hash = (state.hash * fnv_prime32) % (2^32)
             state.hash = (state.hash ~ b) % (2^32)
-        end
-    end
-end
 
 mul64(hi: i64, lo: i64, m_hi: i64, m_lo: i64): any
     # Multiply two 64-bit numbers stored as {hi, lo}, return {hi, lo}
@@ -49,7 +42,6 @@ mul64(hi: i64, lo: i64, m_hi: i64, m_lo: i64): any
     hi_part = (hi_hi + (hi_lo >> 32) + (lo_hi >> 32) + (carry >> 32)) % (2^32)
     lo_part = ((carry % (2^32)) * (2^32) + lo_part)
     {hi = hi_part, lo = lo_part}
-end
 
 update64(state: any, data: str): void
     for i = 1, data:len()
@@ -61,9 +53,6 @@ update64(state: any, data: str): void
             state.hash_hi = prod.hi
             state.hash_lo = prod.lo
             state.hash_lo = (state.hash_lo ~ b) % (2^32)
-        end
-    end
-end
 
 final(state: any): i64
     # `2^state.bits` is a dynamic exponent, so it lowers to a boxed lua_Value
@@ -71,35 +60,28 @@ final(state: any): i64
     # the wrap is the identity because i64 arithmetic already wraps mod 2^64.
     if state.bits == 32
         return state.hash % 4294967296
-    end
     state.hash
-end
 
 final64(state: any): i64
     (state.hash_hi * (2^32) + state.hash_lo)
-end
 
 sum32(data: str): i64
     s = new32()
     update(s, data)
     final(s)
-end
 
 sum32a(data: str): i64
     s = new32a()
     update(s, data)
     final(s)
-end
 
 sum64(data: str): i64
     s = new64()
     update64(s, data)
     final64(s)
-end
 
 sum64a(data: str): i64
     s = new64a()
     update64(s, data)
     final64(s)
-end
 

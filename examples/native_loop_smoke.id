@@ -5,15 +5,10 @@ sum_to(n: i64): i64
         i = i + 1
         if i == 3
             continue
-        end
         if i > 5
             break
-        end
         total = total + i
-    end
     total
-end
 
 main(): i64
     sum_to(8)
-end

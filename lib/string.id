@@ -2,219 +2,179 @@
 
 std_string_is_empty(s: any): bool
     s == nil or s:len() == 0
-end
 
 std_string_starts_with(s: any, prefix: any): bool
-    if s == nil or prefix == nil return false end
+    if s == nil or prefix == nil return false
     s:sub(1, prefix:len()) == prefix
-end
 
 std_string_ends_with(s: any, suffix: any): bool
-    if s == nil or suffix == nil return false end
+    if s == nil or suffix == nil return false
     n = suffix:len()
-    if n == 0 return true end
-    if n > s:len() return false end
+    if n == 0 return true
+    if n > s:len() return false
     s:sub(-n, -1) == suffix
-end
 
 std_string_contains(s: any, needle: any): bool
-    if s == nil or needle == nil return false end
+    if s == nil or needle == nil return false
     s:find(needle, 1, true) != nil
-end
 
 std_string_is_space(ch: any): bool
     ch == " " or ch == "\t" or ch == "\n" or ch == "\r"
-end
 
 std_string_trim(s: any): any
-    if s == nil return "" end
+    if s == nil return ""
     first = 1
     last = s:len()
     while first <= last and std_string_is_space(s:sub(first, first))
         first += 1
-    end
     while last >= first and std_string_is_space(s:sub(last, last))
         last -= 1
-    end
-    if last < first return "" end
+    if last < first return ""
     s:sub(first, last)
-end
 
 std_string_ltrim(s: any): any
-    if s == nil return "" end
+    if s == nil return ""
     first = 1
     last = s:len()
     while first <= last and std_string_is_space(s:sub(first, first))
         first += 1
-    end
     s:sub(first)
-end
 
 std_string_rtrim(s: any): any
-    if s == nil return "" end
+    if s == nil return ""
     last = s:len()
     while last >= 1 and std_string_is_space(s:sub(last, last))
         last -= 1
-    end
-    if last < 1 return "" end
+    if last < 1 return ""
     s:sub(1, last)
-end
 
 std_string_split(s: any, sep: any): any
     out = {}
-    if s == nil return out end
+    if s == nil return out
     if sep == nil or sep == ""
         for i = 1, s:len()
             out[out:len() + 1] = s:sub(i, i)
-        end
         return out
-    end
     rest = s
     while true
         pos = rest:find(sep)
         if pos == nil
             out[out:len() + 1] = rest
             break
-        end
         out[out:len() + 1] = rest:sub(1, pos - 1)
         rest = rest:sub(pos + sep:len())
-    end
     out
-end
 
 std_string_join(parts: any, sep: any): any
-    if sep == nil sep = "" end
+    if sep == nil sep = ""
     parts:concat(sep)
-end
 
 std_string_replace_all(s: any, needle: any, repl: any): any
-    if s == nil return "" end
-    if needle == nil or needle == "" return s end
-    if repl == nil repl = "" end
+    if s == nil return ""
+    if needle == nil or needle == "" return s
+    if repl == nil repl = ""
     parts = std_string_split(s, needle)
     parts:concat(repl)
-end
 
 std_string_repeat_str(s: any, n: any): any
-    if s == nil return "" end
-    if n == nil or n <= 0 return "" end
+    if s == nil return ""
+    if n == nil or n <= 0 return ""
     s:rep(n)
-end
 
 std_string_lines(s: any): any
-    if s == nil or s == "" return {} end
+    if s == nil or s == "" return {}
     std_string_split(s, "\n")
-end
 
 std_string_to_upper(s: any): any
-    if s == nil return "" end
+    if s == nil return ""
     s:upper()
-end
 
 std_string_to_lower(s: any): any
-    if s == nil return "" end
+    if s == nil return ""
     s:lower()
-end
 
 std_string_capitalize(s: any): any
-    if s == nil or s == "" return "" end
+    if s == nil or s == "" return ""
     s:sub(1, 1):upper() .. s:sub(2):lower()
-end
 
 std_string_pad_left(s: any, width: any, pad: any): any
-    if s == nil s = "" end
-    if pad == nil or pad == "" pad = " " end
+    if s == nil s = ""
+    if pad == nil or pad == "" pad = " "
     n = width - s:len()
-    if n <= 0 return s end
+    if n <= 0 return s
     pad:rep(n) .. s
-end
 
 std_string_pad_right(s: any, width: any, pad: any): any
-    if s == nil s = "" end
-    if pad == nil or pad == "" pad = " " end
+    if s == nil s = ""
+    if pad == nil or pad == "" pad = " "
     n = width - s:len()
-    if n <= 0 return s end
+    if n <= 0 return s
     s .. pad:rep(n)
-end
 
 std_string_reverse(s: any): any
-    if s == nil return "" end
+    if s == nil return ""
     s:reverse()
-end
 
 std_string_count(s: any, pat: any): i64
-    if s == nil or pat == nil or pat == "" return 0 end
+    if s == nil or pat == nil or pat == "" return 0
     c = 0
     start = 1
     while true
         pos = s:find(pat, start, true)
-        if pos == nil break end
+        if pos == nil break
         c += 1
         start = pos + pat:len()
-    end
     c
-end
 
 std_string_index_of(s: any, pat: any): any
-    if s == nil or pat == nil return nil end
+    if s == nil or pat == nil return nil
     pos = s:find(pat, 1, true)
-    if pos == nil return -1 end
+    if pos == nil return -1
     pos
-end
 
 std_string_last_index_of(s: any, pat: any): any
-    if s == nil or pat == nil return nil end
+    if s == nil or pat == nil return nil
     last = -1
     start = 1
     while true
         pos = s:find(pat, start, true)
-        if pos == nil break end
+        if pos == nil break
         last = pos
         start = pos + 1
-    end
     last
-end
 
 std_string_char_at(s: any, index: any): any
-    if s == nil or index == nil return "" end
-    if index < 1 or index > s:len() return "" end
+    if s == nil or index == nil return ""
+    if index < 1 or index > s:len() return ""
     s:sub(index, index)
-end
 
 std_string_trim_prefix(s: any, prefix: any): any
-    if s == nil or prefix == nil return s or "" end
+    if s == nil or prefix == nil return s or ""
     if std_string_starts_with(s, prefix)
         return s:sub(prefix:len() + 1)
-    end
     s
-end
 
 std_string_trim_suffix(s: any, suffix: any): any
-    if s == nil or suffix == nil return s or "" end
+    if s == nil or suffix == nil return s or ""
     if std_string_ends_with(s, suffix)
         return s:sub(1, s:len() - suffix:len())
-    end
     s
-end
 
 std_string_is_alpha(s: any): bool
-    if s == nil or s == "" return false end
+    if s == nil or s == "" return false
     return string["match"](s, "^[%a]+$") != nil
-end
 
 std_string_is_digit(s: any): bool
-    if s == nil or s == "" return false end
+    if s == nil or s == "" return false
     return string["match"](s, "^%d+$") != nil
-end
 
 std_string_is_alphanumeric(s: any): bool
-    if s == nil or s == "" return false end
+    if s == nil or s == "" return false
     return string["match"](s, "^[%w]+$") != nil
-end
 
 std_string_split_n(s: any, sep: any, n: any): any
-    if s == nil return {} end
-    if n == nil or n <= 0 return std_string_split(s, sep) end
+    if s == nil return {}
+    if n == nil or n <= 0 return std_string_split(s, sep)
     out = {}
     rest = s
     count = 0
@@ -223,17 +183,14 @@ std_string_split_n(s: any, sep: any, n: any): any
         if pos == nil
             out[out:len() + 1] = rest
             return out
-        end
         out[out:len() + 1] = rest:sub(1, pos - 1)
         rest = rest:sub(pos + sep:len())
         count += 1
-    end
     out[out:len() + 1] = rest
     out
-end
 
 std_string_to_title_case(s: any): any
-    if s == nil return "" end
+    if s == nil return ""
     result = ""
     capitalize_next = true
     for i = 1, s:len()
@@ -241,32 +198,26 @@ std_string_to_title_case(s: any): any
         if ch == " " or ch == "-" or ch == "_"
             result = result .. ch
             capitalize_next = true
-        elseif capitalize_next
+        else if capitalize_next
             result = result .. ch:upper()
             capitalize_next = false
         else
             result = result .. ch:lower()
-        end
-    end
     result
-end
 
 std_string_repeat(s: any, n: any): any
-    if s == nil return "" end
-    if n == nil or n <= 0 return "" end
+    if s == nil return ""
+    if n == nil or n <= 0 return ""
     s:rep(n)
-end
 
 std_string_replace(s: any, old: any, repl: any, n: any): any
-    if s == nil return "" end
-    if old == nil or old == "" return s end
-    if repl == nil repl = "" end
+    if s == nil return ""
+    if old == nil or old == "" return s
+    if repl == nil repl = ""
     if n == nil or n <= 0
         return s:gsub(old:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"), repl)
-    end
     result, _ = s:gsub(old:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"), repl, n)
     result
-end
 
 M = {}
 M.is_empty = std_string_is_empty
@@ -329,11 +280,9 @@ M.is_alphanumeric = std_string_is_alphanumeric
 # lib/image/png.id) use the host `string.char` directly instead.
 char(c: any): any
     c:char()
-end
 
 rep(s: any, n: any): any
     s:rep(n)
-end
 
 M.byte = string.byte
 M.char = char

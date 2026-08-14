@@ -64,26 +64,20 @@
 root = os.getenv("IDOL_ROOT")
 if root == nil or root == ""
     root = os.getenv("DUO_ROOT")
-end
 if root == nil or root == ""
     root = os.getenv("PWD")
-end
 if root == nil or root == ""
     root = "."
-end
 
 idolbin = os.getenv("IDOL_BIN")
 if idolbin == nil or idolbin == ""
     idolbin = os.getenv("DUO_BIN")
-end
 if idolbin == nil or idolbin == ""
     idolbin = root .. "/zig-out/bin/idol"
-end
 
 server = os.getenv("LSPGATE_SERVER")
 if server == nil or server == ""
     server = root .. "/tools/lsp/src/server.id"
-end
 
 # `idol run x.id` drops `x.out` in the CURRENT directory. Run from the repo
 # root and the gate litters the root with server.out, which `zig build
@@ -97,8 +91,6 @@ report(ok: bool, what: str, detail: str): void
         io:write("  ok   " .. what .. "\n")
     else
         io:write("  FAIL " .. what .. " — " .. detail .. "\n")
-    end
-end
 
 # LSP framing. Not newline-delimited JSON: the server reads a header, parses
 # Content-Length, and then reads exactly that many bytes. A gate that spoke
@@ -107,7 +99,6 @@ end
 frame(body: str): str
     n = body:len()
     "Content-Length: " .. n:to(str) .. "\r\n\r\n" .. body
-end
 
 # Feed the server a session on stdin, hand back everything it wrote. stdin is
 # a FILE, not a pipe: a half-written pipe would look like a hang rather than a
@@ -119,14 +110,12 @@ drive(lines: str): str
     os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idolbin
         .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
     std.fs.read_file(respf) or ""
-end
 
 has(blob: str, needle: str): bool
     hn = blob:len()
     nn = needle:len()
     if nn == 0 or nn > hn
         return false
-    end
     i = 1
     while i + nn - 1 <= hn
         j = 1
@@ -135,27 +124,19 @@ has(blob: str, needle: str): bool
             if blob:byte(i + j - 1) != needle:byte(j)
                 ok = false
                 j = nn
-            end
             j += 1
-        end
         if ok
             return true
-        end
         i += 1
-    end
     false
-end
 
 hasnot(blob: str, needle: str): bool
     not has(blob, needle)
-end
 
 check(ok: bool, what: str, detail: str): void
     report(ok, what, detail)
     if not ok
         fails += 1
-    end
-end
 
 # The fixture, as one JSON string literal. It is `fixtures/highlight/copula.id`
 # byte for byte, because that file is the one the golden corpus uses to
@@ -178,16 +159,13 @@ cdruri = "file:///tmp/duo-lsp-gate/cdr.id"
 msg(id: i64, method: str, params: str): str
     frame("{\"jsonrpc\":\"2.0\",\"id\":" .. id:to(str) .. ",\"method\":\"" .. method
         .. "\",\"params\":" .. params .. "}")
-end
 
 note(method: str, params: str): str
     frame("{\"jsonrpc\":\"2.0\",\"method\":\"" .. method .. "\",\"params\":" .. params .. "}")
-end
 
 at(line: i64, col: i64): str
     "{\"textDocument\":{\"uri\":\"" .. uri .. "\"},\"position\":{\"line\":" .. line:to(str)
         .. ",\"character\":" .. col:to(str) .. "}}"
-end
 
 main(): i64
     std.fs.mkdirall(work)
@@ -229,7 +207,6 @@ main(): i64
         io.write("\nlsp-gate: FAIL — no session\n")
         std.os.exit(1)
         return 1
-    end
 
     # ── handshake and the capability set ─────────────────────────────────
     check(has(out, "\"serverInfo\":{\"name\":\"idol-lsp\""), "initialize handshakes",
@@ -242,7 +219,6 @@ main(): i64
             "codeLensProvider"}
         check(has(out, "\"" .. cap .. "\""), "initialize advertises " .. cap,
             "absent from capabilities — a client will never send the request")
-    end
 
     # The legend, EXACTLY, in order. It is GENERATED from the ONE taxonomy in
     # tools/lsp/src/highlight.id by tools/lsp/legend.id; a hand edit in it is
@@ -375,7 +351,6 @@ main(): i64
             "regenerating changed the block — commit the regeneration, do not hand-edit it")
     else
         io:write("  OWED docs/spec/roles.md is absent — the legend cannot be re-derived, so H-1 drift is UNCHECKED this run\n")
-    end
 
     os.execute("rm -f ./gate.out")
 
@@ -383,11 +358,9 @@ main(): i64
     if fails == 0
         io:write("lsp-gate: PASS — the server handshakes, survives a close, and answers by value\n")
         return 0
-    end
     io:write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
     # `os.exit`, NOT `return 1`. A Duo script's `main` return value is
     # DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
     # mcp-gate learned this by printing 13 failures into a green build.
     std.os.exit(1)
     1
-end

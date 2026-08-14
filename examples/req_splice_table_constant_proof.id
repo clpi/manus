@@ -20,7 +20,5 @@ main(): i64
   if v != 42
     print("req splice table constant: got {v}, want 42")
     os.exit(1)
-  end
   print("req splice table constant: OK")
   0
-end

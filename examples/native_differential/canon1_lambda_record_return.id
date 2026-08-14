@@ -1,8 +1,6 @@
 tok: @{ kind: i64, start: i64, len: i64 }
 mk: tok = (pos: i64)
     return { kind = 1, start = pos, len = 2 }
-end
 main(): i64
     t: tok = mk(5)
     t.start + t.len
-end

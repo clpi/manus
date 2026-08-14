@@ -2,7 +2,6 @@
 
 greet(name: str): str
     "Hello, " .. name
-end
 
 # Bash-style call
 print greet "World"

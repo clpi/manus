@@ -22,35 +22,25 @@ span: @{ start: i64, len: i64 }
 is_alpha: i64 = (c: i64)
     if c >= 97 and c <= 122
         return 1
-    end
     if c >= 65 and c <= 90
         return 1
-    end
     if c == 95
         return 1
-    end
     0
-end
 
 is_ident_byte: i64 = (c: i64)
     if is_alpha(c) == 1
         return 1
-    end
     if c >= 48 and c <= 57
         return 1
-    end
     0
-end
 
 is_space: i64 = (c: i64)
     if c == 32
         return 1
-    end
     if c == 10
         return 1
-    end
     0
-end
 
 # Compare src[a_start .. a_start+len) against scope[b_start .. b_start+len).
 bytes_equal: i64 = (src: str, a_start: i64, scope: str, b_start: i64, len: i64)
@@ -58,11 +48,8 @@ bytes_equal: i64 = (src: str, a_start: i64, scope: str, b_start: i64, len: i64)
     while k < len
         if src:byte(a_start + k) != scope:byte(b_start + k)
             return 0
-        end
         k += 1
-    end
     1
-end
 
 # Is the identifier src[start..start+len) present in the space-delimited scope?
 # Each scope entry is matched whole: a candidate must be the same length, so
@@ -73,24 +60,17 @@ scope_has: i64 = (scope: str, src: str, start: i64, len: i64)
     while i <= m
         while i <= m and is_space(scope:byte(i)) == 1
             i += 1
-        end
         if i > m
             return 0
-        end
         j = i
         while j <= m and is_ident_byte(scope:byte(j)) == 1
             j += 1
-        end
         if j - i == len and bytes_equal(src, start, scope, i, len) == 1
             return 1
-        end
         i = j
         if i <= m and is_space(scope:byte(i)) == 0
             i += 1
-        end
-    end
     0
-end
 
 # Count identifiers in `src` that are not bound in `scope`.
 count_unbound: i64 = (src: str, scope: str)
@@ -100,24 +80,17 @@ count_unbound: i64 = (src: str, scope: str)
     while i <= n
         while i <= n and is_alpha(src:byte(i)) == 0
             i += 1
-        end
         if i > n
             return unbound
-        end
         j = i
         while j <= n and is_ident_byte(src:byte(j)) == 1
             j += 1
-        end
         if scope_has(scope, src, i, j - i) == 0
             unbound += 1
-        end
         i = j
-    end
     unbound
-end
 
 main(): i64
     # Scope binds `x` and `total`. The expression references x, total, y, z —
     # so `y` and `z` are unbound: 2 diagnostics a real binder would emit.
     count_unbound("x + total + y + z", "x total")
-end

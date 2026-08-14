@@ -23,7 +23,6 @@ static const int64_t pipeline_data[] = { 1, 2, 3, 4, 5 };
 
 total(): i64
     @c.call("sum_mapped", @(pipeline_data), @(5))
-end
 
 print("=== @comp.pipeline table showcase ===")
 print("sum_mapped(1..5, map*2, >0) = " .. to(str)(total()))

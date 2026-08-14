@@ -37,19 +37,15 @@ _u8: str = (v: i64)
     hi: i64 = (b >> 4) & 0xF
     lo: i64 = b & 0xF
     digits:sub(hi + 1, hi + 1) .. digits:sub(lo + 1, lo + 1)
-end
 
 _u16: str = (v: i64)
     _u8(v) .. _u8(v >> 8)
-end
 
 _u32: str = (v: i64)
     _u8(v) .. _u8(v >> 8) .. _u8(v >> 16) .. _u8(v >> 24)
-end
 
 _u64: str = (v: i64)
     _u32(v) .. _u32(v >> 32)
-end
 
 # A fixed-width, NUL-padded name field (segname/sectname are char[16]).
 _name16: str = (s: str)
@@ -60,11 +56,8 @@ _name16: str = (s: str)
             out = out .. _u8(s:byte(i))
         else
             out = out .. _u8(0)
-        end
         i += 1
-    end
     out
-end
 
 # Instruction words -> little-endian code bytes, as hex. ARM64 is fixed-width 4.
 words_to_bytes: str = (words: any)
@@ -73,9 +66,7 @@ words_to_bytes: str = (words: any)
     while i <= words:len()
         out = out .. _u32(words[i])
         i += 1
-    end
     out
-end
 
 # Build a complete relocatable object exporting one global symbol at offset 0.
 #
@@ -101,7 +92,6 @@ object_hex: str = (symbol: str, code: str)
     while si <= s:len()ymbol
         strtab = strtab .. _u8(symbol:byte(si))
         si += 1
-    end
     strtab = strtab .. _u8(0)
     str_len: i64 = s:len()trtab // 2
 
@@ -162,4 +152,3 @@ object_hex: str = (symbol: str, code: str)
     out = out .. _u64(0)                   # n_value
 
     out .. strtab
-end

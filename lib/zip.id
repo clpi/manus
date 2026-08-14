@@ -6,30 +6,26 @@ fs = fs
 create(archive_path: str, source_dir: str): bool
     cmd = "cd " .. source_dir .. " && zip -r -q " .. archive_path .. " ."
     proc.exec(cmd) == 0
-end
 
 create_files(archive_path: str, files: any): bool
-    if files == nil or files:len() == 0 return false end
+    if files == nil or files:len() == 0 return false
     file_args = files:concat(" ")
     cmd = "zip -q " .. archive_path .. " " .. file_args
     proc.exec(cmd) == 0
-end
 
 extract(archive_path: str, dest_dir: str): bool
     proc.exec("mkdir -p " .. dest_dir)
     cmd = "unzip -q " .. archive_path .. " -d " .. dest_dir
     proc.exec(cmd) == 0
-end
 
 extract_overwrite(archive_path: str, dest_dir: str): bool
     proc.exec("mkdir -p " .. dest_dir)
     cmd = "unzip -o -q " .. archive_path .. " -d " .. dest_dir
     proc.exec(cmd) == 0
-end
 
 list(archive_path: str): any
     handle = io.popen("unzip -l " .. archive_path .. " 2>/dev/null")
-    if handle == nil return {} end
+    if handle == nil return {}
     output = handle:read("*a")
     handle:close()
     files = {}
@@ -38,22 +34,16 @@ list(archive_path: str): any
         if in_listing
             if line:match("^%-")
                 break
-            end
             name = line:match("^%s+%d+%s+%S+%s+(.+)$")
             if name and name != ""
                 files[files:len() + 1] = name
-            end
-        end
         if line:match("^%s+Length")
             in_listing = true
-        end
-    end
     files
-end
 
 list_detailed(archive_path: str): any
     handle = io.popen("unzip -l " .. archive_path .. " 2>/dev/null")
-    if handle == nil return {} end
+    if handle == nil return {}
     output = handle:read("*a")
     handle:close()
     files = {}
@@ -62,7 +52,6 @@ list_detailed(archive_path: str): any
         if in_listing
             if line:match("^%-")
                 break
-            end
             size, date, time, name = line:match("^%s+(%d+)%s+(%S+)%s+(%S+)%s+(.+)$")
             if name and name != ""
                 files[files:len() + 1] = {
@@ -71,19 +60,14 @@ list_detailed(archive_path: str): any
                     date = date,
                     time = time,
                 }
-            end
-        end
         if line:match("^%s+Length")
             in_listing = true
-        end
-    end
     files
-end
 
 info(archive_path: str): any
-    if not fs.exists(archive_path) return nil end
+    if not fs.exists(archive_path) return nil
     handle = io.popen("unzip -l " .. archive_path .. " 2>/dev/null")
-    if handle == nil return nil end
+    if handle == nil return nil
     output = handle:read("*a")
     handle:close()
     total_size, file_count = output:match("(%d+)%s+files?$")
@@ -93,20 +77,16 @@ info(archive_path: str): any
         file_count = file_count:to(i64) or 0,
         total_size = total_size:to(i64) or 0,
     }
-end
 
 add_file(archive_path: str, file_path: str): bool
     cmd = "zip -q " .. archive_path .. " " .. file_path
     proc.exec(cmd) == 0
-end
 
 remove_file(archive_path: str, file_path: str): bool
     cmd = "zip -d -q " .. archive_path .. " " .. file_path
     proc.exec(cmd) == 0
-end
 
 test(archive_path: str): bool
     cmd = "unzip -t " .. archive_path .. " 2>/dev/null"
     proc.exec(cmd) == 0
-end
 

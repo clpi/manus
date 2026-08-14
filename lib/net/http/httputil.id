@@ -2,22 +2,17 @@
 # Provides reverse proxy and dump helpers
 
 dump(x: any): str
-    if x == nil return "" end
+    if x == nil return ""
     if has(.method)(x)
         out = {x.method or "GET", " ", x.path or "/", " HTTP/1.1\r\n"}
     else
         out = {"HTTP/1.1 ", to(str)(x.status or 200), " OK\r\n"}
-    end
     if x.headers
         for k, v in x.headers
             out[out:len() + 1] = k .. ": " .. v .. "\r\n"
-        end
-    end
     out[out:len() + 1] = "\r\n"
-    if x.body out[out:len() + 1] = x.body end
+    if x.body out[out:len() + 1] = x.body
     out:concat()
-end
 
 proxy(target: str): any
     {target = target}
-end

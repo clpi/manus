@@ -47,14 +47,12 @@ _assemble: str = (mnemonic: str)
     fh = io.open(_asmpath, "w")
     if !fh
         return ""
-    end
     fh:write(".text\n.global _start\n_start:\n    " .. mnemonic .. "\n")
     fh:close()
     cc = script.getenv("DUO_ARM64_CC", "xcrun clang")
     if script.run(cc .. " -c -o " .. _objpath .. " " .. _asmpath .. " 2>/dev/null") != 0
         os.remove(_asmpath)
         return ""
-    end
     out = script.capture("xcrun otool -t " .. _objpath
         .. " 2>/dev/null | tail -1 | awk '{print $2}'")
     os.remove(_asmpath)
@@ -62,9 +60,7 @@ _assemble: str = (mnemonic: str)
     n: i64 = out:len()
     while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
         n -= 1
-    end
     out:sub(1, n)
-end
 
 # 1 when the encoder and the assembler disagree, 0 when they agree. An
 # assembler that refuses the mnemonic counts as a disagreement: a case that
@@ -75,15 +71,12 @@ _ck: i64 = (mnemonic: str, word: i64)
     if want == ""
         print("arm64check: REFUSED [" .. mnemonic .. "]")
         return 1
-    end
     got = A.word_to_hex(word)
     if got != want
         print("arm64check: MISMATCH [" .. mnemonic .. "] assembler " .. want
             .. ", encoder " .. got)
         return 1
-    end
     0
-end
 
 # The register operands deliberately differ per case. A proof that only ever
 # encodes x0/x1/x2 passes just as happily when the register fields are dropped
@@ -96,7 +89,6 @@ check: i64 = ()
     if _assemble("ret") == ""
         print("arm64check: SKIP — no working assembler")
         return 90
-    end
 
     # the original register-register set, still checked
     bad += _ck("add x0, x1, x2", A.encode_add_reg(0, 1, 2))
@@ -163,7 +155,6 @@ check: i64 = ()
     bad += _ck("sxth x21, w22", A.encode_sxth(21, 22))
 
     bad
-end
 
 # Root: run the ARM64 encoder/assembler differential.
 check()

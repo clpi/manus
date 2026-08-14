@@ -3,7 +3,6 @@
 
 frag(meta): str
     "/* grammar[" .. to(str)(meta.index) .. "/" .. to(str)(meta.count) .. "]: " .. meta.expansion .. " */\n"
-end
 
 # Tiny expr grammar: S → num | S + S | ( S )
 GRAMMAR = "S: num | S plus S | lpar S rpar ; plus: + ; lpar: ( ; rpar: ) ; num: 0 | 1 | 2"

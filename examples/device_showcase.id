@@ -22,7 +22,6 @@ cuda_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): void
       ((float*)c)[row * N + col] = sum;
     }
   ]])
-end
 
 # Metal kernel: vector addition
 @device(.metal)
@@ -33,7 +32,6 @@ metal_vecadd(a: ptr, b: ptr, c: ptr, n: i32): void
       ((float*)c)[idx] = ((float*)a)[idx] + ((float*)b)[idx];
     }
   ]])
-end
 
 # Regular CPU function
 @device(.cpu)
@@ -44,7 +42,6 @@ cpu_dot(a: ptr, b: ptr, n: i32): float
       sum += ((float*)a)[i] * ((float*)b)[i];
     return sum;
   ]])
-end
 
 # Auto-detected device (runtime selection)
 @device(.auto)
@@ -55,7 +52,6 @@ auto_relu(x: ptr, n: i32): void
       ((float*)x)[i] = val > 0.0f ? val : 0.0f;
     }
   ]])
-end
 
 print("=== @device Multi-Target Code Generation ===")
 print("")

@@ -20,12 +20,9 @@ BASE = 40
 
 bump(n: i64): i64
     n + 1
-end
 
 twice(n: i64): i64
     bump(bump(n))
-end
 
 answer(): i64
     BASE + twice(0)
-end

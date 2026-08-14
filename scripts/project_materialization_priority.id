@@ -5,7 +5,6 @@ main: i64 = ()
     if args:len() < 2
         print("Usage: idol run project_materialization_priority.id <manifest.json>")
         return 1
-    end
 
     manifest_path = args[2]
     print("Trying to read: '" .. manifest_path .. "'")
@@ -13,13 +12,11 @@ main: i64 = ()
     if content == nil or content == ""
         print("error: could not read manifest from " .. manifest_path)
         return 1
-    end
 
     evidence = json.decode(content)
     if evidence == nil or evidence.emission == nil
         print("error: invalid manifest schema")
         return 1
-    end
 
     print("=== Materialization Cost Priority ===")
     print("Semantic Identity: " .. manifest_path)
@@ -37,4 +34,3 @@ main: i64 = ()
     print("multiplied by frequency to establish optimization priority.")
     print("Requesting Poolside interface: 'graph -> machine range -> runtime execution count'.")
     0
-end

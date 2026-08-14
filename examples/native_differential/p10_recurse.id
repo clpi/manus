@@ -1,7 +1,5 @@
 fib(n: i64): i64
-    if n < 2 return n end
+    if n < 2 return n
     return fib(n - 1) + fib(n - 2)
-end
 main(): i64
     return fib(10)
-end

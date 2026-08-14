@@ -3,7 +3,6 @@
 # Define a simple fun
 greet(name: str, greeting: str): str
     greeting .. ", " .. name
-end
 
 # Traditional Lua-style call
 print(greet("World", "Hello"))
@@ -14,7 +13,6 @@ print greet "Duo" "Welcome to"
 # Multiple arguments
 add(a: i64, b: i64, c: i64): i64
     a + b + c
-end
 
 # Bash-style call with multiple arguments
 print add 1 2 3
@@ -22,7 +20,6 @@ print add 1 2 3
 # Mixed style in the same program
 multiply(x: i64, y: i64): i64
     x * y
-end
 
 print multiply 5 6
 print(multiply(7, 8))

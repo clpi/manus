@@ -1,45 +1,36 @@
 # ml.train — Training loop helpers (forward / loss / backward / step)
 
 sgd(model, optimizer, lr): any
-    if lr == nil lr = optimizer.lr end
+    if lr == nil lr = optimizer.lr
     for i = 1, model.depth
         layer = model.layers[i]
         if layer.type == "linear" and layer.dw != nil
             for j = 1, layer.weight.size
                 layer.weight.data[j] = layer.weight.data[j] -
                     lr * layer.dw.data[j]
-            end
             for j = 1, layer.bias.size
                 layer.bias.data[j] = layer.bias.data[j] -
                     lr * layer.db.data[j]
-            end
-        end
-    end
     return model
-end
 
 # One supervised step with cross-entropy on softmax output
 @profile
 step(model, x, target, lr): f64
-    if lr == nil lr = 0.01 end
+    if lr == nil lr = 0.01
     tape = ml.autodiff.tape_new()
     pred = ml.nn.forward(model, x)
     loss = ml.nn.cross(pred, target)
     # Backward pass: compute gradients via autodiff tape
     grad = ml.autodiff.backward(tape, loss)
     return loss
-end
 
 # Epoch over a list of { x, y } batches
 fit(model, batches, epochs, lr): any
-    if epochs == nil epochs = 1 end
+    if epochs == nil epochs = 1
     for e = 1, epochs
         total = 0.0
         for i = 1, batches:len()
             b = batches[i]
             total += step(model, b.x, b.y, lr)
-        end
         print("epoch %d loss %.4f":format(e, total / batches:len()))
-    end
     return model
-end

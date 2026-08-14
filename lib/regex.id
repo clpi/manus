@@ -44,7 +44,6 @@ pcre2_get_error_message_8(errcode: int, buffer: str, buf_size: int): int
 # the manual "compile this .c alongside your program" step are both gone.
 _read_size_t(p: *i64, i: i64): i64
     return p[i]
-end
 
 # ===========================================================================
 # PCRE2 constants (option flags)
@@ -69,9 +68,7 @@ error_message(errcode: int): str
     rc = pcre2_get_error_message_8(errcode, buf, 256)
     if rc < 0
         return "PCRE2 error " .. errcode:to(str)
-    end
     buf:sub(1, rc)
-end
 
 # read_ovector_pair: read a single (start, end) pair from the ovector pointer
 # at the given pair index.  pcre2_match returns the number of pairs; each
@@ -83,7 +80,6 @@ read_ovector_pair(ovptr: any, pair_index: int): any
     s_val = _read_size_t(ovptr, s_off)
     e_val = _read_size_t(ovptr, e_off)
     return {start = s_val, end_ = e_val}
-end
 
 # quote: escape special regex characters in s so it matches literally.
 quote(s: str): str
@@ -100,11 +96,8 @@ quote(s: str): str
             out = out .. "\\" .. ch
         else
             out = out .. ch
-        end
         i += 1
-    end
     out
-end
 
 # ===========================================================================
 # Public API
@@ -121,26 +114,23 @@ compile(pattern: str, options: int): any
     code = pcre2_compile_8(pattern, plen, options, errcode_buf, erroffset_buf, nil)
     if code == nil
         return nil
-    end
     code
-end
 
 # match: match subject against compiled code starting at startoffset.
 # Returns a table of {start=n, end_=m} pairs (one per capture group + whole),
 # or nil if no match.
 regex_match(code: any, subject: str, startoffset: int): any
-    if code == nil return nil end
+    if code == nil return nil
     md = pcre2_match_data_create_from_pattern_8(code, nil)
-    if md == nil return nil end
+    if md == nil return nil
     slen = subject:len()
     rc = pcre2_match_8(code, subject, slen, startoffset, 0, md, nil)
     if rc < 0
         pcre2_match_data_free_8(md)
         return nil
-    end
     # rc = number of pairs (0 = match only with no groups, 1+ = capture groups)
     npairs = rc
-    if npairs == 0 npairs = 1 end
+    if npairs == 0 npairs = 1
     ovptr = pcre2_get_ovector_pointer_8(md)
     result = {}
     i = 0
@@ -148,60 +138,55 @@ regex_match(code: any, subject: str, startoffset: int): any
         pair = read_ovector_pair(ovptr, i)
         result[result:len() + 1] = pair
         i += 1
-    end
     pcre2_match_data_free_8(md)
     result
-end
 
 # match_str: convenience — returns the first matched substring or nil.
 match_str(code: any, subject: str): any
     m = regex_match(code, subject, 0)
-    if m == nil return nil end
-    if m:len() == 0 return nil end
+    if m == nil return nil
+    if m:len() == 0 return nil
     p = m[1]
-    if p.start == nil or p.end_ == nil return nil end
+    if p.start == nil or p.end_ == nil return nil
     # PCRE2 offsets are 0-based byte offsets; convert to 1-based Lua string
     s = p.start + 1
     e = p.end_
-    if e <= s return "" end
+    if e <= s return ""
     subject:sub(s, e - 1)
-end
 
 # find: find the first match in subject starting from init (1-based).
 # Returns {start=n, end_=m} with 1-based positions, or nil.
 find(code: any, subject: str, init: int): any
-    if code == nil return nil end
-    if init == nil init = 1 end
+    if code == nil return nil
+    if init == nil init = 1
     # Convert 1-based Lua init to 0-based PCRE2 startoffset
     startoffset = init - 1
-    if startoffset < 0 startoffset = 0 end
+    if startoffset < 0 startoffset = 0
     m = regex_match(code, subject, startoffset)
-    if m == nil return nil end
-    if m:len() == 0 return nil end
+    if m == nil return nil
+    if m:len() == 0 return nil
     p = m[1]
-    if p.start == nil return nil end
+    if p.start == nil return nil
     # Convert 0-based PCRE2 offsets to 1-based; end_ is exclusive (0-based)
     # which equals inclusive end (1-based)
     s = p.start + 1
     e = p.end_
     return {start = s, end_ = e}
-end
 
 # find_all: find all non-overlapping matches in subject.
 # Returns a table of {start, end_} pairs.
 find_all(code: any, subject: str): any
-    if code == nil return {} end
+    if code == nil return {}
     results = {}
     slen = subject:len()
     startoffset = 0
     while startoffset <= slen
         md = pcre2_match_data_create_from_pattern_8(code, nil)
-        if md == nil break end
+        if md == nil break
         rc = pcre2_match_8(code, subject, slen, startoffset, 0, md, nil)
         if rc < 0
             pcre2_match_data_free_8(md)
             break
-        end
         ovptr = pcre2_get_ovector_pointer_8(md)
         pair = read_ovector_pair(ovptr, 0)
         pcre2_match_data_free_8(md)
@@ -214,20 +199,17 @@ find_all(code: any, subject: str): any
             startoffset = e0
         else
             startoffset += 1
-        end
-    end
     results
-end
 
 # replace: global replacement.  Replaces all matches of code in subject
 # with replacement string.  Returns the resulting string.
 # Uses a manual scan + string assembly rather than pcre2_substring_replace_byname
 # (which does single replacement and needs a pre-allocated buffer).
 replace(code: any, subject: str, replacement: str): str
-    if code == nil return subject end
+    if code == nil return subject
     slen = subject:len()
     results = find_all(code, subject)
-    if results:len() == 0 return subject end
+    if results:len() == 0 return subject
     out = ""
     last = 1
     i = 1
@@ -238,26 +220,20 @@ replace(code: any, subject: str, replacement: str): str
         # Append text before this match (1-based, up to s-1)
         if s > last
             out = out .. subject:sub(last, s - 1)
-        end
         # Append replacement
         out = out .. replacement
         # Advance last past the match (end_ is exclusive 0-based = 1-based inclusive end)
         last = e + 1
         i += 1
-    end
     # Append trailing text
     if last <= slen
         out = out .. subject:sub(last)
-    end
     out
-end
 
 # free: free a compiled pattern handle.
 free(code: any): void
     if code != nil
         pcre2_code_free_8(code)
-    end
-end
 
 # ===========================================================================
 # Module export

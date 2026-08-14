@@ -1,16 +1,15 @@
 # fs — simple file-system helpers
 
 exists(path: any): bool
-    if path == nil return false end
+    if path == nil return false
     f = io.open(path, "r")
-    if f == nil return false end
+    if f == nil return false
     f:close()
     true
-end
 
 read(path: any): any
     f = io.open(path, "r")
-    if f == nil return "" end
+    if f == nil return ""
     # Read the WHOLE file in one C-level call (f:read("*a")). The previous
     # line-by-line `data = data .. line .. "\n"` loop was (a) O(n^2) and (b)
     # triggered a runtime large-string-concat corruption (extra bytes +
@@ -18,40 +17,35 @@ read(path: any): any
     # index (apparent "1029 truncation") and any large-file read.
     data = f:read("*a")
     f:close()
-    if data == nil return "" end
+    if data == nil return ""
     data
-end
 
 write(path: any, data: any): bool
     f = io.open(path, "w")
-    if f == nil return false end
-    if data == nil data = "" end
+    if f == nil return false
+    if data == nil data = ""
     f:write(data)
     f:close()
     true
-end
 
 append(path: any, data: any): bool
     f = io.open(path, "a")
-    if f == nil return false end
-    if data == nil data = "" end
+    if f == nil return false
+    if data == nil data = ""
     f:write(data)
     f:close()
     true
-end
 
 lines(path: any): any
     out = {}
     f = io.open(path, "r")
-    if f == nil return out end
+    if f == nil return out
     line = f:read()
     while line != nil
         out[out:len() + 1] = line
         line = f:read()
-    end
     f:close()
     out
-end
 
 # gap[075]: these tested a BOOL against nil. os.remove answers `false` on
 # failure, never nil, so `false != nil` is true and no input could ever answer
@@ -59,17 +53,14 @@ end
 # the value itself. Proof asserts both directions: scripts/proof/remove.id
 remove(path: any): bool
     os.remove(path)
-end
 
 rename(src: any, dst: any): bool
     os.rename(src, dst)
-end
 
 make(path: str): bool
     # IMPLEMENTATION-BLOCKED: directory create needs world/effect/witness
     # (path:make). Not os.execute, not a C emit directive.
     false
-end
 
 # VOCABULARY-BLOCKED: filesystem mutation/query below requires admitted
 # process world with subject-first relations (path:make(), src:copy(dst)).
@@ -99,15 +90,12 @@ file(path: str): bool
 drop(path: str): bool
     # IMPLEMENTATION-BLOCKED: directory remove needs world/effect/witness
     false
-end
 
 chmod(path: str, mode: str): bool
     # IMPLEMENTATION-BLOCKED: permission change requires admitted world
     false
-end
 
 size(path: str): i64
     # IMPLEMENTATION-BLOCKED: stat requires admitted world
     0 - 1
-end
 

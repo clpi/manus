@@ -2,7 +2,6 @@
 
 greet(name: str): str
     "Hello, " .. name
-end
 
 # Bash-style call with string
 print greet "World"
@@ -10,6 +9,5 @@ print greet "World"
 # Bash-style call with numbers
 add(a: i64, b: i64): i64
     a + b
-end
 
 print add 5 3

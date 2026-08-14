@@ -3,7 +3,6 @@
 
 wide(hi: i64, lo: i64): any
     {hi = hi % (4294967296), lo = lo % (4294967296)}
-end
 
 wide_add(a: any, b: any): any
     lo = a.lo + b.lo
@@ -11,63 +10,48 @@ wide_add(a: any, b: any): any
     if lo >= (4294967296)
         lo -= (4294967296)
         hi += 1
-    end
     {hi = hi % (4294967296), lo = lo % (4294967296)}
-end
 
 wide_not(a: any): any
     {hi = (~a.hi) % (4294967296), lo = (~a.lo) % (4294967296)}
-end
 
 wide_and(a: any, b: any): any
     {hi = (a.hi & b.hi) % (4294967296), lo = (a.lo & b.lo) % (4294967296)}
-end
 
 wide_or(a: any, b: any): any
     {hi = (a.hi | b.hi) % (4294967296), lo = (a.lo | b.lo) % (4294967296)}
-end
 
 wide_xor(a: any, b: any): any
     {hi = (a.hi ~ b.hi) % (4294967296), lo = (a.lo ~ b.lo) % (4294967296)}
-end
 
 wide_shr(a: any, n: i64): any
     if n >= 32
         return {hi = 0, lo = a.hi >> (n - 32)}
-    end
     hi = a.hi >> n
     lo = ((a.hi % (1 << n)) * (1 << (32 - n)) + a.lo >> n) % (4294967296)
     return {hi = hi, lo = lo}
-end
 
 wide_shl(a: any, n: i64): any
     if n >= 32
         return {hi = (a.lo << (n - 32)) % (4294967296), lo = 0}
-    end
     hi = ((a.hi << n) + (a.lo >> (32 - n))) % (4294967296)
     lo = (a.lo << n) % (4294967296)
     return {hi = hi, lo = lo}
-end
 
 wide_ror(a: any, n: i64): any
     wide_or(wide_shr(a, n), wide_shl(a, 64 - n))
-end
 
 wide_to_hex(a: any): str
     "%08x%08x":format(a.hi, a.lo)
-end
 
 wide_from_bytes(data: str, off: i64): any
     hi = 0
     for k = 0, 3
         hi = (hi * 256 + data:byte(off + k)) % (4294967296)
-    end
     lo = 0
     for k = 0, 3
         lo = (lo * 256 + data:byte(off + 4 + k)) % (4294967296)
-    end
     {hi = hi, lo = lo}
-end
 
 K = {
     {hi = 0x428a2f98, lo = 0xd728ae22}, {hi = 0x71374491, lo = 0x23ef65cd},
@@ -120,30 +104,25 @@ H_init = {
 }
 
 sha512(s: str): str
-    if s == nil s = "" end
+    if s == nil s = ""
     msg = s .. 0x80:char()
     while msg:len() % 128 != 112
         msg = msg .. 0:char()
-    end
     bits = s:len() * 8
     for i = 1, 16
         msg = msg .. (bits >> (16 - i) * 8) % 256:char()
-    end
     H = {}
     for i = 1, 8
         H[i] = {hi = H_init[i].hi, lo = H_init[i].lo}
-    end
     for block = 0, msg:len() / 128 - 1
         w = {}
         for j = 0, 15
             off: i64 = block * 128 + j * 8 + 1
             w[j + 1] = wide_from_bytes(msg:to(str), off)
-        end
         for j = 16, 79
             s0 = wide_xor(wide_xor(wide_ror(w[j - 14 + 1], 1), wide_ror(w[j - 14 + 1], 8)), wide_shr(w[j - 14 + 1], 7))
             s1 = wide_xor(wide_xor(wide_ror(w[j - 2 + 1], 19), wide_ror(w[j - 2 + 1], 61)), wide_shr(w[j - 2 + 1], 6))
             w[j + 1] = wide_add(wide_add(wide_add(w[j - 16 + 1], s0), w[j - 7 + 1]), s1)
-        end
         a = {hi = H[1].hi, lo = H[1].lo}
         b = {hi = H[2].hi, lo = H[2].lo}
         c = {hi = H[3].hi, lo = H[3].lo}
@@ -167,7 +146,6 @@ sha512(s: str): str
             c = b
             b = a
             a = wide_add(temp1, temp2)
-        end
         H[1] = wide_add(H[1], a)
         H[2] = wide_add(H[2], b)
         H[3] = wide_add(H[3], c)
@@ -176,8 +154,6 @@ sha512(s: str): str
         H[6] = wide_add(H[6], f)
         H[7] = wide_add(H[7], g)
         H[8] = wide_add(H[8], hh)
-    end
     string.format("%s%s%s%s%s%s%s%s", wide_to_hex(H[1]), wide_to_hex(H[2]), wide_to_hex(H[3]), wide_to_hex(H[4]),
                                        wide_to_hex(H[5]), wide_to_hex(H[6]), wide_to_hex(H[7]), wide_to_hex(H[8]))
-end
 

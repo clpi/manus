@@ -1,7 +1,7 @@
 # compress_flate — DEFLATE compression (mirrors Go's compress/flate)
 
 compress(data: any)
-    if data == nil or data == "" return "" end
+    if data == nil or data == "" return ""
     out = {}
     i = 1
     n = data:len()
@@ -12,27 +12,23 @@ compress(data: any)
         while j <= n and data:sub(j, j) == ch and run < 255
             run += 1
             j += 1
-        end
         if run >= 3
             out[out:len() + 1] = 0xFE:char() .. run:char() .. ch
             i += run
         else
             out[out:len() + 1] = ch
             i += 1
-        end
-    end
     return out:concat()
-end
 
 decompress(data: any)
-    if data == nil or data == "" return "" end
+    if data == nil or data == "" return ""
     out = {}
     i = 1
     n = data:len()
     while i <= n
         b = data:byte(i)
         if b == 0xFE
-            if i + 2 > n break end
+            if i + 2 > n break
             run = data:byte(i + 1)
             ch = data:sub(i + 2, i + 2)
             out[out:len() + 1] = ch:rep(run)
@@ -40,35 +36,26 @@ decompress(data: any)
         else
             out[out:len() + 1] = data:sub(i, i)
             i += 1
-        end
-    end
     return out:concat()
-end
 
 compress_level(data: any, level: any)
     return compress(data)
-end
 
 new_writer(fh: any, level: any)
     return {fh = fh, buf = "", level = level}
-end
 
 writer_write(w: any, data: any)
     w.buf = w.buf .. data
     return w
-end
 
 writer_flush(w: any)
     if w:len().buf > 0
         w.fh:write(compress(w.buf))
         w.buf = ""
-    end
     return w
-end
 
 writer_close(w: any)
     writer_flush(w)
     w.fh:close()
     return w
-end
 

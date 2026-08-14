@@ -31,7 +31,6 @@
 # never broken, only mis-probed. See the FF-1 note in main().
 baseline(): i64
     15
-end
 
 # An open brace, built rather than written. Interpolation has NO ESCAPE: there
 # is no way to spell a literal `{name}` in an Idol string, so a file like this
@@ -46,7 +45,6 @@ end
 # interpolation hole, and nothing in the language currently lets you say so.
 lb(): str
     "{"
-end
 
 fails = 0
 implemented = 0
@@ -64,9 +62,7 @@ probe(id: str, src: str, want: str): bool
     trimmed = std.script.chomp(got)
     if trimmed == want
         return true
-    end
     return false
-end
 
 record(id: str, src: str, want: str): void
     checked += 1
@@ -75,8 +71,6 @@ record(id: str, src: str, want: str): void
         report = report .. "  ok      " .. id .. "\n"
     else
         report = report .. "  MISSING " .. id .. "\n"
-    end
-end
 
 main(): i64
     # PART II 2.2 — functions, control
@@ -173,11 +167,8 @@ main(): i64
     if implemented < baseline()
         print("spec_conformance: FAIL — a form that used to work has regressed")
         return 1
-    end
     if implemented > baseline()
         print("spec_conformance: forms gained since the floor was set — RAISE baseline() to "
             .. implemented:to(str) .. " and narrow the interim advice in CLAUDE.md")
-    end
     print("spec_conformance: PASS")
     0
-end

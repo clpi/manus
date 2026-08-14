@@ -5,7 +5,6 @@ emit42(unused: i64): i64
   if not buf
     print("jit: mmap refused")
     return -1
-  end
   # MOVZ W0, #42   => 0x52800000 | (imm16 << 5) | Rd
   jit.w32(buf, 0, 0x52800000 | (42 << 5) | 0)
   # RET
@@ -14,11 +13,9 @@ emit42(unused: i64): i64
   if not ok
     print("jit: seal failed")
     return -1
-  end
   r: i64 = jit.call0(buf)
   jit.release(buf, 4096)
   r
-end
 
 print("arch=" .. jit.arch())
 print("jit result=" .. tostring(emit42(0)) .. "  expect 42")

@@ -12,13 +12,11 @@ block(heads, dim): any
         up = { type = "linear", input = dim, output = spec.fd },
         down = { type = "linear", input = spec.fd, output = dim },
     }
-end
 
 stack(layers, heads, dim): any
     blocks = {}
     for i = 1, layers
         blocks[i] = block(heads, dim)
-    end
     return {
         type = "transformer",
         layers = layers,
@@ -26,32 +24,26 @@ stack(layers, heads, dim): any
         dim = dim,
         blocks = blocks,
     }
-end
 
 # Hot path: native attention kernel checksum (pairs with ml.attention)
 @hot
 attn(): f64
     return ml.attention()
-end
 
 # Reference FFN (compiler may fuse linear+gelu+linear later)
 feed(block, x): any
     h = ml.tensor.matmul(x, block.up.weight)
     h = ml.ops.gelu(h)
     return ml.tensor.matmul(h, block.down.weight)
-end
 
 step(block, x): any
     # Residual + attention: native kernel validates hot path; full MHA in stdlib later
     _ = attn()
     h = x
     return ml.tensor.add(h, feed(block, h))
-end
 
 forward(model, x): any
     h = x
     for i = 1, model.layers
         h = step(model.blocks[i], h)
-    end
     return h
-end

@@ -1,31 +1,21 @@
 eval_constant(expr: i64): i64
   expr
-end
 template_str(fmt: str): str
   fmt
-end
 for_range(start: i64, stop: i64, body_fn: any): void
   for i = start, stop - 1
     body_fn(i)
-  end
-end
 gen_vars(prefix: str, count: i64): any
   vars = {}
   for i = 0, count - 1
     vars[vars:len() + 1] = prefix .. i:to(str)
-  end
   vars
-end
 when(cond: bool, block: any): void
   if cond
     block()
-  end
-end
 unroll(count: i64, body_fn: any): void
   for i = 0, count - 1
     body_fn(i)
-  end
-end
 sizeof(T: str): i64
   sizes = {}
   sizes["i8"] = 1
@@ -42,7 +32,6 @@ sizeof(T: str): i64
   sizes["str"] = 8
   sizes["ptr"] = 8
   sizes[T] or 0
-end
 alignof(T: str): i64
   aligns = {}
   aligns["i8"] = 1
@@ -59,16 +48,12 @@ alignof(T: str): i64
   aligns["str"] = 8
   aligns["ptr"] = 8
   aligns[T] or 1
-end
 static_assert(cond: bool, msg: str): void
   if not cond
     error("compile-time assertion failed: " .. msg)
-  end
-end
 gen_field_accessor(struct_name: str, field_name: str, field_type: str): any
   {
     name = struct_name,
     field = field_name,
     typ = field_type
   }
-end

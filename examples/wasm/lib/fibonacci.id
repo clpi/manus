@@ -4,32 +4,25 @@
 fib(n: int): int
     if n <= 1
         n
-    end
     fib(n - 1) + fib(n - 2)
-end
 
 @export
 fib_iter(n: int): int
     if n <= 1
         n
-    end
     a: int = 0
     b: int = 1
     for i = 2, n
         c: int = a + b
         a = b
         b = c
-    end
     b
-end
 
 @export
 factorial(n: int): int
     if n <= 1
         1
-    end
     n * factorial(n - 1)
-end
 
 @export
 gcd(a: int, b: int): int
@@ -37,14 +30,11 @@ gcd(a: int, b: int): int
         t: int = b
         b = a % b
         a = t
-    end
     a
-end
 
 @export
 lcm(a: int, b: int): int
     (a // gcd(a, b)) * b
-end
 
 @export
 pow_int(base: int, exp: int): int
@@ -52,9 +42,6 @@ pow_int(base: int, exp: int): int
     while exp > 0
         if exp % 2 == 1
             result *= base
-        end
         base *= base
         exp = exp >> 1
-    end
     result
-end

@@ -25,27 +25,21 @@
 
 scaling_ladder(): str
     @comp.ladder()
-end
 
 agent_catalog(): str
     @comp.agent.catalog()
-end
 
 agent_hooks(): str
     @comp.agent.hooks()
-end
 
 agent_dedupe(): str
     @comp.agent.dedupe()
-end
 
 agent_gaps(): str
     @comp.agent.gaps()
-end
 
 catalog_categories(): str
     "combinators, define, emit, introspection, transform, compile, all"
-end
 
 M = {
     scaling_ladder = scaling_ladder,

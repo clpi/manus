@@ -6,12 +6,8 @@ scan: tok = (src: str, pos: i64)
         j = i
         while j < n
             j += 1
-        end
         return { kind = 1, start = j, len = 1 }
-    end
     { kind = 2, start = i, len = 1 }
-end
 main(): i64
     t: tok = scan("abcd", 1)
     t.start
-end

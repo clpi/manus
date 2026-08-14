@@ -13,4 +13,3 @@ slots = { 40, 41, 42 }
 
 pick(i: i64): i64
   slots[i]
-end

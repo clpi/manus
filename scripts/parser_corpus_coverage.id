@@ -49,7 +49,6 @@ main: i64 = ()
         eol = false
         if !at_end
             eol = listing:byte(i) == 10
-        end
         if at_end or eol
             if i > start
                 path = listing:sub(start, i - 1)
@@ -60,22 +59,15 @@ main: i64 = ()
                         ok += 1
                     else
                         print("  REJECT {path}")
-                    end
-                end
-            end
             start = i + 1
-        end
         i += 1
-    end
     print("parser_coverage: {ok}/{total} lib/std files parse clean")
     floor = env.or("PARSER_COVERAGE_FLOOR", "256"):to(i64)
     if total == 0
         print("parser_coverage: FAIL (empty corpus)")
         return 1
-    end
     if ok < floor
         print("parser_coverage: FAIL — floor is {floor}")
         return 1
-    end
     print("parser_coverage: PASS")
     0

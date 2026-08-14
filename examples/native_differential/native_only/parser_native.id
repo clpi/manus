@@ -23,18 +23,14 @@ res: @{ val: i64, pos: i64 }
 is_digit: i64 = (c: i64)
     if c >= 48 and c <= 57
         return 1
-    end
     0
-end
 
 skip_spaces: i64 = (src: str, pos: i64)
     n = src:len()
     i = pos
     while i <= n and src:byte(i) == 32
         i += 1
-    end
     i
-end
 
 # factor := NUMBER | '(' expr ')'
 #
@@ -47,24 +43,19 @@ parsefactor: res = (src: str, pos: i64)
     i = skip_spaces(src, pos)
     if i > n
         return { val = 0, pos = i }
-    end
     c = src:byte(i)
     if c == 40
         inner: res = parseexpr(src, i + 1)
         j = skip_spaces(src, inner.pos)
         if j <= n and src:byte(j) == 41
             return { val = inner.val, pos = j + 1 }
-        end
         return { val = inner.val, pos = j }
-    end
     acc = 0
     j = i
     while j <= n and is_digit(src:byte(j)) == 1
         acc = acc * 10 + src:byte(j) - 48
         j += 1
-    end
     { val = acc, pos = j }
-end
 
 # term := factor (('*' | '/') factor)*
 parseterm: res = (src: str, pos: i64)
@@ -78,18 +69,13 @@ parseterm: res = (src: str, pos: i64)
             rhs: res = parsefactor(src, i + 1)
             acc = acc * rhs.val
             i = skip_spaces(src, rhs.pos)
-        end
         if op == 47
             rhs2: res = parsefactor(src, i + 1)
             acc = acc / rhs2.val
             i = skip_spaces(src, rhs2.pos)
-        end
         if op != 42 and op != 47
             return { val = acc, pos = i }
-        end
-    end
     { val = acc, pos = i }
-end
 
 # expr := term (('+' | '-') term)*
 parseexpr: res = (src: str, pos: i64)
@@ -103,21 +89,15 @@ parseexpr: res = (src: str, pos: i64)
             rhs: res = parseterm(src, i + 1)
             acc += rhs.val
             i = skip_spaces(src, rhs.pos)
-        end
         if op == 45
             rhs2: res = parseterm(src, i + 1)
             acc -= rhs2.val
             i = skip_spaces(src, rhs2.pos)
-        end
         if op != 43 and op != 45
             return { val = acc, pos = i }
-        end
-    end
     { val = acc, pos = i }
-end
 
 main(): i64
     # Precedence must bind `*` tighter than `+`: 1 + 2*3 = 7, not 9.
     r: res = parseexpr("1 + 2 * 3", 1)
     r.val
-end

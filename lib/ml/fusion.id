@@ -9,23 +9,21 @@ rules(): any
         { pattern = { "softmax", "cross_entropy" }, fused = "fused_softmax_ce" },
         { pattern = { "layernorm", "linear" }, fused = "fused_ln_linear" },
     }
-end
 
 can_fuse(layer_a, layer_b): bool
-    if layer_a.type == "linear" and layer_b.type == "relu" return true end
-    if layer_a.type == "linear" and layer_b.type == "gelu" return true end
+    if layer_a.type == "linear" and layer_b.type == "relu" return true
+    if layer_a.type == "linear" and layer_b.type == "gelu" return true
     return false
-end
 
 fuse_sequential(model): any
-    if model.type != "sequential" return model end
+    if model.type != "sequential" return model
     fused = {}
     i = 1
     fi = 0
     while i <= model.n_layers
         a = model.layers[i]
         b = nil
-        if i < model.n_layers b = model.layers[i + 1] end
+        if i < model.n_layers b = model.layers[i + 1]
         if b != nil and can_fuse(a, b)
             fi += 1
             fused[fi] = {
@@ -39,8 +37,5 @@ fuse_sequential(model): any
             fi += 1
             fused[fi] = a
             i += 1
-        end
-    end
     return { type = "sequential", layers = fused, n_layers = fi }
-end
 

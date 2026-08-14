@@ -10,4 +10,3 @@ main: i64 = ()
     d = 1e3
     print("{a} {b} {c} {d}")
     0
-end

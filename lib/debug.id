@@ -2,25 +2,19 @@
 
 traceback(message: str, level: int): str
     debug.traceback(message, level)
-end
 
 getinfo(f: any, what: str): any
     debug.getinfo(f, what)
-end
 
 getlocal(f: any, local_: int): any
     debug.getlocal(f, local_)
-end
 
 getupvalue(f: any, up: int): any
     debug.getupvalue(f, up)
-end
 
 setlocal(thread: any, level: int, local_: int, value: any): any
     debug.setlocal(thread, level, local_, value)
-end
 
 setupvalue(f: any, up: int, value: any): any
     debug.setupvalue(f, up, value)
-end
 

@@ -45,7 +45,6 @@ quic_connection_new(config: any): any
         created_at = os.time() * 1000,
         last_activity = os.time() * 1000,
     }
-end
 
 quic_connection_connect(conn: any, address: str): any
     conn.remote_address = address
@@ -58,7 +57,6 @@ quic_connection_connect(conn: any, address: str): any
         ok = true,
         connection_id = conn.connection_id,
     }
-end
 
 quic_connection_accept(conn: any): any
     conn.state = "connected"
@@ -67,17 +65,14 @@ quic_connection_accept(conn: any): any
         ok = true,
         connection_id = conn.connection_id,
     }
-end
 
 quic_connection_close(conn: any, error_code: i64, reason: str): void
     conn.state = "closed"
     conn.close_error = error_code
     conn.close_reason = reason
-end
 
 quic_connection_is_open(conn: any): bool
     conn.state != "closed"
-end
 
 # ═══════════════════════════════════════════════════════════════
 # QUIC Stream
@@ -95,17 +90,14 @@ quic_stream_new(conn: any, stream_id: i64): any
         max_stream_data = 65536,
         data_available = false,
     }
-end
 
 quic_stream_write(stream: any, data: any): any
     if stream.state != "open"
         return {ok = false, error = "stream closed"}
-    end
 
     # Add to send buffer
     for byte in data
         stream.send_buffer[stream:len().send_buffer + 1] = byte
-    end
     stream.send_offset = stream.send_offset + data:len()
 
     # Would send STREAM frame
@@ -113,12 +105,10 @@ quic_stream_write(stream: any, data: any): any
         ok = true,
         bytes_sent = data:len(),
     }
-end
 
 quic_stream_read(stream: any, max_bytes: i64): any
     if stream:len().recv_buffer == 0
         return {ok = false, error = "no data"}
-    end
 
     bytes = {}
     count = max_bytes:min(stream:len().recv_buffer)
@@ -126,20 +116,17 @@ quic_stream_read(stream: any, max_bytes: i64): any
     while i <= count
         bytes[i] = stream.recv_buffer[i]
         i += 1
-    end
 
     # Remove from buffer
     i = 1
     while i <= stream:len().recv_buffer - count
         stream.recv_buffer[i] = stream.recv_buffer[i + count]
         i += 1
-    end
 
     # Resize buffer
     new_size = stream:len().recv_buffer - count
     while stream:len().recv_buffer > new_size
         stream.recv_buffer[stream:len().recv_buffer] = nil
-    end
 
     stream.recv_offset = stream.recv_offset + count
 
@@ -148,15 +135,12 @@ quic_stream_read(stream: any, max_bytes: i64): any
         data = bytes,
         size = count,
     }
-end
 
 quic_stream_close(stream: any): void
     stream.state = "closed"
-end
 
 quic_stream_is_open(stream: any): bool
     stream.state == "open"
-end
 
 # ═══════════════════════════════════════════════════════════════
 # QUIC Packet Encoding
@@ -178,7 +162,6 @@ quic_packet_header_encode(packet_type: i64, connection_id: i64, packet_number: i
     while i <= 8
         bytes[5 + i] = bit.band(bit.rshift(connection_id, (8 - i) * 8), 0xFF)
         i += 1
-    end
 
     # Packet number (4 bytes)
     offset = 14
@@ -188,7 +171,6 @@ quic_packet_header_encode(packet_type: i64, connection_id: i64, packet_number: i
     bytes[offset + 3] = bit.band(packet_number, 0xFF)
 
     bytes
-end
 
 quic_frame_stream_encode(stream_id: i64, offset: i64, data: any): any
     bytes = {}
@@ -210,10 +192,8 @@ quic_frame_stream_encode(stream_id: i64, offset: i64, data: any): any
     while i <= data:len()
         bytes[4 + i] = data[i]
         i += 1
-    end
 
     bytes
-end
 
 quic_frame_ack_encode(largest_acknowledged: i64, ack_delay: i64): any
     bytes = {}
@@ -231,7 +211,6 @@ quic_frame_ack_encode(largest_acknowledged: i64, ack_delay: i64): any
     bytes[4] = 0
 
     bytes
-end
 
 # ═══════════════════════════════════════════════════════════════
 # QUIC Config
@@ -247,19 +226,15 @@ quic_config_new(): any
         initial_max_streams_bidi = 100,
         initial_max_streams_uni = 100,
     }
-end
 
 quic_config_set_max_data(config: any, max_data: i64): void
     config.max_data = max_data
-end
 
 quic_config_set_max_streams(config: any, max_streams: i64): void
     config.max_streams = max_streams
-end
 
 quic_config_set_idle_timeout(config: any, timeout: i64): void
     config.idle_timeout = timeout
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Utility
@@ -273,19 +248,17 @@ generate_connection_id(): any
     while i <= 8
         bytes[i] = data:byte(i)
         i += 1
-    end
     bytes
-end
 
 quic_varint_encode(value: i64): any
     if value < 0x40
         return {bit.band(value, 0xFF)}
-    elseif value < 0x4000
+    else if value < 0x4000
         return {
             bit.bor(0x40, bit.rshift(value, 8)),
             bit.band(value, 0xFF),
         }
-    elseif value < 0x40000000
+    else if value < 0x40000000
         return {
             bit.bor(0x80, bit.rshift(value, 24)),
             bit.band(bit.rshift(value, 16), 0xFF),
@@ -303,8 +276,6 @@ quic_varint_encode(value: i64): any
             bit.band(bit.rshift(value, 8), 0xFF),
             bit.band(value, 0xFF),
         }
-    end
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

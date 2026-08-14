@@ -10,22 +10,19 @@ global crypto_rand = rand
 # compilation unit.
 sha1(s: str): str
     crypto_sha.sha1(s)
-end
 
 sha256(s: str): str
     crypto_sha.sha256(s)
-end
 
 sha512(s: str): str
     hash_sha512.sha512(s)
-end
 
 # ── Base64 ──────────────────────────────────────────────────────────────
 
 B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 base64_encode(s: str): str
-    if s == nil return "" end
+    if s == nil return ""
     # Partial groups are handled EXPLICITLY rather than by padding the input
     # with "\0". Null bytes do not survive runtime string concatenation #
     # duo_str_concat is C-string based, so `padded = padded .. "\0"` appends
@@ -45,7 +42,6 @@ base64_encode(s: str): str
         out[out:len() + 1] = B64_CHARS:sub((triple % 4096) / 64:floor() + 1, (triple % 4096) / 64:floor() + 1)
         out[out:len() + 1] = B64_CHARS:sub((triple % 64) + 1, (triple % 64) + 1)
         i += 3
-    end
 
     rem = n - i + 1
     if rem == 1
@@ -55,7 +51,6 @@ base64_encode(s: str): str
         out[out:len() + 1] = B64_CHARS:sub((triple % 262144) / 4096:floor() + 1, (triple % 262144) / 4096:floor() + 1)
         out[out:len() + 1] = "="
         out[out:len() + 1] = "="
-    end
     if rem == 2
         b1 = s:byte(i)
         b2 = s:byte(i + 1)
@@ -64,20 +59,16 @@ base64_encode(s: str): str
         out[out:len() + 1] = B64_CHARS:sub((triple % 262144) / 4096:floor() + 1, (triple % 262144) / 4096:floor() + 1)
         out[out:len() + 1] = B64_CHARS:sub((triple % 4096) / 64:floor() + 1, (triple % 4096) / 64:floor() + 1)
         out[out:len() + 1] = "="
-    end
     out:concat()
-end
 
 base64_decode(s: str): str
-    if s == nil return "" end
+    if s == nil return ""
     clean = s:gsub("[^A-Za-z0-9+/=]", "")
     while clean:len() % 4 != 0
         clean = clean .. "="
-    end
     lookup = {}
     for i = 1, 64
         lookup[B64_CHARS:sub(i, i)] = i - 1
-    end
     out = {}
     for i = 1, clean:len(), 4
         c1v = lookup[clean:sub(i, i)] or 0
@@ -98,13 +89,9 @@ base64_decode(s: str): str
         out[out:len() + 1] = b1:char()
         if clean:sub(i + 2, i + 2) != "="
             out[out:len() + 1] = b2:char()
-        end
         if clean:sub(i + 3, i + 3) != "="
             out[out:len() + 1] = b3:char()
-        end
-    end
     out:concat()
-end
 
 B64URL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
@@ -114,7 +101,6 @@ base64_url_encode(s: str): str
     result = result:gsub("/", "_")
     result = result:gsub("=", "")
     result
-end
 
 base64_url_decode(s: str): str
     padded = s:gsub("-", "+")
@@ -122,89 +108,75 @@ base64_url_decode(s: str): str
     pad = (4 - (padded:len() % 4)) % 4
     for _ = 1, pad
         padded = padded .. "="
-    end
     base64_decode(padded:to(str))
-end
 
 # ── Hex ─────────────────────────────────────────────────────────────────
 
 HEX_CHARS = "0123456789abcdef"
 
 hex_encode(s: str): str
-    if s == nil return "" end
+    if s == nil return ""
     out = ""
     for i = 1, s:len()
         b = s:byte(i)
         hi = b / 16:floor() + 1
         lo = (b % 16) + 1
         out = out .. HEX_CHARS:sub(hi, hi) .. HEX_CHARS:sub(lo, lo)
-    end
     out
-end
 
 hex_decode(s: str): str
-    if s == nil return "" end
+    if s == nil return ""
     clean = s:gsub("[^0-9a-fA-F]", "")
-    if clean:len() % 2 != 0 clean = "0" .. clean end
+    if clean:len() % 2 != 0 clean = "0" .. clean
     out = ""
     map = {}
     for i = 1, 16
         map[HEX_CHARS:sub(i, i)] = i - 1
         map["ABCDEF":sub(i - 10, i - 10)] = i - 1
-    end
     for i = 1, clean:len(), 2
         hi = clean:sub(i, i)
         lo = clean:sub(i + 1, i + 1)
         h = map[hi:lower()] or 0
         l = map[lo:lower()] or 0
         out = out .. h * 16 + l:char()
-    end
     out
-end
 
 # ── XOR encryption ──────────────────────────────────────────────────────
 
 xor_encrypt(s: str, key: str): str
-    if s == nil or key == nil return "" end
+    if s == nil or key == nil return ""
     out = ""
     len = key:len()
     for i = 1, s:len()
         sc = s:byte(i)
         kc = key:byte(((i - 1) % len) + 1)
         out = out .. sc ~ kc:char()
-    end
     out
-end
 
 # ── Secure random ───────────────────────────────────────────────────────
 
 secure_random_bytes(n: i64): str
-    if n == nil or n <= 0 return "" end
+    if n == nil or n <= 0 return ""
     crypto_rand.bytes(n)
-end
 
 secure_random_hex(n: i64): str
     hex_encode(secure_random_bytes(n))
-end
 
 secure_random_int(): i64
     # `int` takes a required bound and returns `r % max`; calling it with no
     # argument did not compile, which took std.crypto and its four dependents
     # down. Unbounded here means the full i64 range.
     crypto_rand.int(9223372036854775807)
-end
 
 # ── Constant-time comparison (timing-attack safe) ───────────────────────
 
 compare_digest(a: str, b: str): bool
-    if a == nil or b == nil return false end
-    if a:len() != b:len() return false end
+    if a == nil or b == nil return false
+    if a:len() != b:len() return false
     result = 0
     for i = 1, a:len()
         result |= (a:byte(i) ~ b:byte(i))
-    end
     result == 0
-end
 
 # ── HMAC (RFC 2104) ────────────────────────────────────────────────────
 
@@ -213,16 +185,12 @@ hmac_sha256(key: str, message: str): str
     k = key
     if k:len() > block
         k = sha256(k)
-    end
     while k:len() < block
         k = k .. "\0"
-    end
     opad = ""
     ipad = ""
     for i = 1, block
         opad = opad .. k:byte(i) ~ 0x5c:char()
         ipad = ipad .. k:byte(i) ~ 0x36:char()
-    end
     sha256(opad .. sha256(ipad .. message))
-end
 

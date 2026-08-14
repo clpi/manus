@@ -1,30 +1,27 @@
 # compress.gzip — Gzip decompression (mirrors Go's compress/gzip)
 
 is_gzipped(data: any)
-    if data == nil or data:len() < 2 return false end
+    if data == nil or data:len() < 2 return false
     return data:byte(1) == 31 and data:byte(2) == 139
-end
 
 gunzip(data: any)
-    if not is_gzipped(data) return data end
+    if not is_gzipped(data) return data
     f = io.popen("gzip -d 2>/dev/null", "w")
-    if f == nil return data end
+    if f == nil return data
     f:write(data)
     f:close()
     f = io.popen("", "r")
     result = f:read("*a")
     f:close()
     return result or data
-end
 
 compress(data: any)
     f = io.popen("gzip -c 2>/dev/null", "w")
-    if f == nil return data end
+    if f == nil return data
     f:write(data)
     f:close()
     f = io.popen("", "r")
     result = f:read("*a")
     f:close()
     return result or data
-end
 

@@ -2,7 +2,6 @@
 
 greet(name: str): str
     "Hello, " .. name
-end
 
 # Bash-style call with string
 print greet "World"
@@ -10,6 +9,5 @@ print greet "World"
 # Multiple string arguments
 concat(a: str, b: str): str
     a .. b
-end
 
 print concat "Hello" "Duo"

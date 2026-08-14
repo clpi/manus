@@ -75,7 +75,6 @@ conds(): any
         "eq", "ne", "hs", "lo", "mi", "pl", "vs", "vc",
         "hi", "ls", "ge", "lt", "gt", "le", "al", "nv",
     }
-end
 
 # The ISA. 45 rows; every one of them is consumed by `encode` below and by
 # nothing else.
@@ -156,7 +155,6 @@ rows(): any
         "dmb|d5033bbf||dmb ish",
         "yield|d503203f||yield",
     }
-end
 
 # One hex digit. Written without a branch ladder: subtracting 48 lands digits
 # on 0..9 and letters above 9, and the second subtraction only runs for those.
@@ -164,9 +162,7 @@ digit(ch: i64): i64
     v: i64 = ch - 48
     if v > 9
         v = ch - 87
-    end
     v
-end
 
 hex(s: str): i64
     v: i64 = 0
@@ -174,9 +170,7 @@ hex(s: str): i64
     while j <= s:len()
         v = (v << 4) | digit(s:byte(j))
         j += 1
-    end
     v
-end
 
 # `field@hi:lo` applied to an operand map, as the shifted contribution to the
 # word. `hi` is read by `width` and deliberately not used to mask here: an
@@ -188,7 +182,6 @@ place(fact: str, ops: any): i64
     lo: i64 = to(i64)(span[2])
     v: i64 = ops[at[1]]
     v << lo
-end
 
 # How many bits a layout fact spends. A generator uses this to pick operands
 # that fit rather than guessing per row.
@@ -198,23 +191,19 @@ width(fact: str): i64
     hi: i64 = to(i64)(span[1])
     lo: i64 = to(i64)(span[2])
     hi - lo + 1
-end
 
 # The name a layout fact fills.
 holds(fact: str): str
     at = fact:split("@")
     at[1]
-end
 
 name(row: str): str
     parts = row:split("|")
     parts[1]
-end
 
 layout(row: str): str
     parts = row:split("|")
     parts[3]
-end
 
 # THE DERIVATION. It is written `encode(arm64)(i: instr): u32 =
 # i:to(arm64[i.mnem])`; this is that, spelled in what the compiler accepts
@@ -228,10 +217,7 @@ encode(row: str, ops: any): i64
     if lay:len() > 0
         for i, fact in lay:split(" ")
             word |= place(fact, ops)
-        end
-    end
     word
-end
 
 # One `%x` placeholder, rendered. `%s` and `%h` are the two fields whose text
 # form is a multiple of the encoded form; `%c` is the one that is a name.
@@ -239,15 +225,13 @@ slot(k: str, ops: any): str
     out: str = ""
     if k == "s"
         out = to(str)(ops["i"] * 8)
-    elseif k == "h"
+    else if k == "h"
         out = to(str)(ops["h"] * 16)
-    elseif k == "c"
+    else if k == "c"
         out = conds()[ops["c"] + 1]
     else
         out = to(str)(ops[k])
-    end
     out
-end
 
 # The same instruction, as assembler text, so a foreign assembler can be asked
 # the same question `encode` was asked. This licenses exactly this use
@@ -265,7 +249,4 @@ text(row: str, ops: any): str
         else
             out = out .. ch
             j += 1
-        end
-    end
     out
-end

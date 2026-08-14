@@ -8,4 +8,3 @@ main: i64 = ()
     a = p[2]
     print("{n} [{a}]")
     0
-end

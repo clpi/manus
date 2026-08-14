@@ -22,22 +22,18 @@
 
 square(x: i64): i64
   x * x
-end
 
 want(what: str, got: i64, wanted: i64): i64
   if got != wanted
     print("tail demand: {what} got {got}, want {wanted}")
     os.exit(1)
-  end
   0
-end
 
 # THE REPAIR. A binding, then a value-producing call as the tail. The tail is
 # the call; the binding is not the answer.
 throughbinding(): i64
   p = 5
   square(p)
-end
 
 # Two bindings deep, so a walk-back that moved only one statement would still
 # be convicted.
@@ -45,7 +41,6 @@ throughtwo(): i64
   a = 3
   b = a + 1
   square(b)
-end
 
 # THE CONTROL THE REPAIR MUST NOT BREAK. A trailing effect carries no value,
 # so the answer is still the binding it was computed into. If void-ness ever
@@ -54,7 +49,6 @@ througheffect(): i64
   value = 6 * 7
   print("tail demand: effect trailer ran")
   value
-end
 
 main(): i64
   want("binding then call", throughbinding(), 25)
@@ -62,4 +56,3 @@ main(): i64
   want("effect trailer keeps the binding", througheffect(), 42)
   print("tail demand: OK")
   0
-end

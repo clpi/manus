@@ -4,6 +4,6 @@ same = 4 == 4
 different = 4 != 5
 ok = different and not (4 != 4) and not false and same
 
-grade = if ok 1 else 0 end
+grade = if ok 1 else 0
 
 print("RESULT syntax_not_neq = " .. to(str)(grade))

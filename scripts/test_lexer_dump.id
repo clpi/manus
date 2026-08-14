@@ -1,3 +1,2 @@
 test(bytes: str)
     { bytes = bytes, pos = 1 }
-end

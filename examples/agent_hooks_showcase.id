@@ -49,4 +49,3 @@ print("multiplier_hint = " .. HINT)
 print("RESULT agent_hooks_ok = " .. to(str)(ok))
 if not ok
     error("agent hook discovery failed")
-end

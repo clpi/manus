@@ -41,32 +41,23 @@ global _bad: bool = false
 _at: i64 = ()
     if _pos > _src:len()
         return 0
-    end
     _src:byte(_pos)
-end
 
 _skip_ws: void = ()
     while _pos <= _src:len() and (_at() == 32 or _at() == 9 or _at() == 10)
         _pos += 1
-    end
-end
 
 _is_digit: bool = (c: i64)
     c >= 48 and c <= 57
-end
 
 _hex_val: i64 = (c: i64)
     if c >= 48 and c <= 57
         return c - 48
-    end
     if c >= 97 and c <= 102
         return c - 87
-    end
     if c >= 65 and c <= 70
         return c - 55
-    end
     0 - 1
-end
 
 # Consume the operator at the cursor. `b == 0` means a one-byte operator, and
 # it refuses when the byte actually begins a two-byte one, so `<` never eats
@@ -75,30 +66,22 @@ _eat: bool = (a: i64, b: i64)
     _skip_ws()
     if _at() != a
         return false
-    end
     if b == 0
         nxt: i64 = 0
         if _pos + 1 <= _src:len()
             nxt = _src:byte(_pos + 1)
-        end
         if a == 60 and nxt == 60
             return false
-        end
         if a == 62 and nxt == 62
             return false
-        end
         _pos += 1
         return true
-    end
     if _pos + 1 > _src:len()
         return false
-    end
     if _src:byte(_pos + 1) != b
         return false
-    end
     _pos += 2
     true
-end
 
 _number: i64 = ()
     _skip_ws()
@@ -110,40 +93,29 @@ _number: i64 = ()
             while _pos <= _src:len() and _hex_val(_at()) >= 0
                 v = v * 16 + _hex_val(_at())
                 _pos += 1
-            end
             return v
-        end
-    end
     if !_is_digit(_at())
         _bad = true
         return 0
-    end
     v2: i64 = 0
     while _pos <= _src:len() and _is_digit(_at())
         v2 = v2 * 10 + (_at() - 48)
         _pos += 1
-    end
     v2
-end
 
 _prim: i64 = ()
     _skip_ws()
     if _eat(45, 0)
         return 0 - _prim()
-    end
     if _at() == 126
         _pos += 1
         return ~_prim()
-    end
     if _eat(40, 0)
         v: i64 = _expr()
         if !_eat(41, 0)
             _bad = true
-        end
         return v
-    end
     _number()
-end
 
 # `^` binds tighter than unary minus and is right-associative
 _pow: i64 = ()
@@ -155,70 +127,54 @@ _pow: i64 = ()
         while i < e
             r = r * base
             i += 1
-        end
         return r
-    end
     base
-end
 
 _term: i64 = ()
     left: i64 = _pow()
     while true
         if _eat(42, 0)
             left = left * _pow()
-        elseif _eat(47, 0)
+        else if _eat(47, 0)
             d: i64 = _pow()
             if d == 0
                 _bad = true
                 return 0
-            end
             left = left / d
-        elseif _eat(37, 0)
+        else if _eat(37, 0)
             m: i64 = _pow()
             if m == 0
                 _bad = true
                 return 0
-            end
             left = left % m
         else
             return left
-        end
-    end
-end
 
 _addsub: i64 = ()
     left: i64 = _term()
     while true
         if _eat(43, 0)
             left += _term()
-        elseif _eat(45, 0)
+        else if _eat(45, 0)
             left -= _term()
         else
             return left
-        end
-    end
-end
 
 _shift: i64 = ()
     left: i64 = _addsub()
     while true
         if _eat(60, 60)
             left = left << _addsub()
-        elseif _eat(62, 62)
+        else if _eat(62, 62)
             left = left >> _addsub()
         else
             return left
-        end
-    end
-end
 
 _band: i64 = ()
     left: i64 = _shift()
     while _eat(38, 0)
         left = left & _shift()
-    end
     left
-end
 
 _bxor: i64 = ()
     left: i64 = _band()
@@ -228,19 +184,14 @@ _bxor: i64 = ()
         _skip_ws()
         if _at() != 126
             return left
-        end
         _pos += 1
         left = left ~ _band()
-    end
-end
 
 _expr: i64 = ()
     left: i64 = _bxor()
     while _eat(124, 0)
         left |= _bxor()
-    end
     left
-end
 
 # Reset is its own function because a `bool` assignment inside a body whose
 # declared return is `i64` is reported as a return-type mismatch — the last
@@ -249,12 +200,10 @@ _reset: void = (src: str)
     _src = src
     _pos = 1
     _bad = false
-end
 
 fold: i64 = (src: str)
     _reset(src)
     _expr()
-end
 
 # Did the last fold consume the whole input without failing? Lets a caller tell
 # a legitimate 0 from a refusal.
@@ -264,6 +213,4 @@ foldable: bool = (src: str)
     _skip_ws()
     if _bad
         return false
-    end
     _pos > _src:len()
-end

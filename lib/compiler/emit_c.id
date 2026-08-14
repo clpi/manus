@@ -44,7 +44,6 @@ translate: str = (src: str)
             # would COMPILE and return the wrong number, which is strictly
             # worse than refusing, so the backend refuses.
             return ""
-        end
         if c == 126
             # `~` is prefix bitwise-NOT in both languages, but INFIX xor in Duo
             # and nothing at all in C — `12 ~ 10` is not a C expression. C
@@ -53,26 +52,20 @@ translate: str = (src: str)
             j: i64 = i - 1
             while j >= 1 and src:byte(j) == 32
                 j -= 1
-            end
             prev: i64 = 0
             if j >= 1
                 prev = src:byte(j)
-            end
             infix = (prev >= 48 and prev <= 57) or prev == 41
                 or (prev >= 97 and prev <= 122) or (prev >= 65 and prev <= 90)
             if infix
                 out = out .. "^"
             else
                 out = out .. "~"
-            end
             i += 1
         else
             out = out .. src:sub(i, i)
             i += 1
-        end
-    end
     out
-end
 
 # A complete C program that PRINTS the expression's value.
 #
@@ -84,10 +77,8 @@ program: str = (expr: str)
     body = translate(expr)
     if body == ""
         return ""
-    end
     "include:len() <stdio.h>\nint main(void) { printf(\"%lld\\n\", (long long)("
         .. body .. ")); return 0; }\n"
-end
 
 # Emit, compile and run; returns the value the emitted C computes.
 # `ok` is false when the subset does not cover the expression or the toolchain
@@ -96,22 +87,18 @@ ok: bool = (expr: str)
     prog = program(expr)
     if prog == ""
         return false
-    end
     true
-end
 
 eval: i64 = (expr: str)
     prog = program(expr)
     if prog == ""
         return 0 - 1
-    end
     base = "/tmp/duo_emit_c_" .. to(str)(os.time())
     src = base .. ".c"
     exe = base .. ".out"
     fh = io.open(src, "w")
     if !fh
         return 0 - 1
-    end
     fh:write(prog)
     fh:close()
     # `xcrun cc`, not bare `cc`: on this machine a bare `cc` link fails with
@@ -122,9 +109,7 @@ eval: i64 = (expr: str)
     if std.script.run(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null") != 0
         os.remove(src)
         return 0 - 1
-    end
     out = std.script.capture(exe)
     os.remove(src)
     os.remove(exe)
     to(i64)(out)
-end

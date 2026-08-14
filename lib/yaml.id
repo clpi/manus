@@ -5,24 +5,19 @@ parse_value(data: str, start: i64, indent: i64): any
     len = data:len()
     while i <= len and (data:byte(i) == 32 or data:byte(i) == 9)
         i += 1
-    end
     current_indent = i - start
     if current_indent < indent
         return nil, i, nil
-    end
     line_start = i
     while i <= len and data:byte(i) != 10 and data:byte(i) != 13
         i += 1
-    end
     line = data:sub(line_start, i - 1)
-    if data:byte(i) == 10 i += 1 end
-    if data:byte(i) == 13 i += 1 end
+    if data:byte(i) == 10 i += 1
+    if data:byte(i) == 13 i += 1
     if line:sub(1, 1) == "#" or line:sub(1, 3) == "---"
         return parse_value(data, i, indent)
-    end
     if line:len() == 0
         return parse_value(data, i, indent)
-    end
     colon_pos = nil
     for j = 1, line:len()
         if line:byte(j) == 58
@@ -30,9 +25,6 @@ parse_value(data: str, start: i64, indent: i64): any
             if after:sub(1, 1) == " " or after:len() == 0
                 colon_pos = j
                 break
-            end
-        end
-    end
     if colon_pos != nil
         key = line:sub(1, colon_pos - 1):trim()
         val_str = line:sub(colon_pos + 1):trim()
@@ -43,79 +35,63 @@ parse_value(data: str, start: i64, indent: i64): any
                 nv, ni, ns = parse_value(data, i, current_indent + 1)
                 if nv == nil and ns == nil
                     break
-                end
                 if type(nv) == "table" and nv._key != nil
                     nkey = nv._key
                     nval = nv._value
                 else
                     nkey = nv
                     nval = ns
-                end
                 nested[nkey] = nval
                 i = ni
-            end
             return {_key = key, _value = nested}, i, nested
         else
             val = val_str
             if val_str:len() >= 2 and ((val_str:sub(1, 1) == '"' and val_str:sub(val_str:len(), val_str:len()) == '"') or
                                              (val_str:sub(1, 1) == "'" and val_str:sub(val_str:len(), val_str:len()) == "'"))
                 val = val_str:sub(2, val_str:len() - 1)
-            elseif val_str == "true"
+            else if val_str == "true"
                 val = true
-            elseif val_str == "false"
+            else if val_str == "false"
                 val = false
-            elseif val_str == "null" or val_str == "~"
+            else if val_str == "null" or val_str == "~"
                 val = nil
             else
                 num = val_str:to(i64)
                 if num != nil
                     val = num
-                end
-            end
             return {_key = key, _value = val}, i, val
-        end
     else
         # List item or scalar
         if line:sub(1, 2) == "- " or line:sub(1, 2) == "-"
             item_val = line:sub(2):trim()
             if item_val:len() == 0
                 item_val = nil
-            end
             if item_val != nil and item_val:len() >= 2 and item_val:sub(1, 1) == '"' and item_val:sub(item_val:len(), item_val:len()) == '"'
                 item_val = item_val:sub(2, item_val:len() - 1)
-            end
             return item_val, i, nil
         else
             val = line
             if val:len() >= 2 and ((val:sub(1, 1) == '"' and val:sub(val:len(), val:len()) == '"') or
                                          (val:sub(1, 1) == "'" and val:sub(val:len(), val:len()) == "'"))
                 val = val:sub(2, val:len() - 1)
-            end
             num = val:to(i64)
-            if num != nil val = num end
+            if num != nil val = num
             return val, i, nil
-        end
-    end
-end
 
 parse(data: str): any
-    if data == nil return nil end
+    if data == nil return nil
     res = {}
     i = 1
     while i <= data:len()
         kv, ni, val = parse_value(data, i, 0)
         if kv == nil
-            if val == nil break end
+            if val == nil break
             # List item at root
             res[res:len() + 1] = kv
             i = ni
         else
             if type(kv) == "table" and kv._key != nil
                 res[kv._key] = kv._value
-            end
             i = ni
-        end
-    end
     res
-end
 

@@ -34,7 +34,6 @@ zig_to_c(code: str): str
     result = result:gsub("*[%d+]u8", "char*")
     result = result:gsub("*const u8", "const char*")
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Rust → C transpilation
@@ -63,7 +62,6 @@ rust_to_c(code: str): str
     result = result:gsub("&[%d+]u8", "const uint8_t*")
     result = result:gsub("*mut u8", "uint8_t*")
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Python → C helper
@@ -79,21 +77,16 @@ python_func(name: str, params: any, body: str, ret_type: str): str
         for i, p in params
             if i > 1
                 parts[parts:len() + 1] = ","
-            end
             if type(p) == "table"
                 parts[parts:len() + 1] = "    " .. p[2] .. " " .. p[1]
             else
                 parts[parts:len() + 1] = "    double " .. p
-            end
-        end
     else
         parts[parts:len() + 1] = "    void"
-    end
     parts[parts:len() + 1] = ") {"
     parts[parts:len() + 1] = body
     parts[parts:len() + 1] = "}"
     str_join(parts, "\n")
-end
 
 # ═══════════════════════════════════════════════════════════════
 # String joining helper
@@ -104,11 +97,8 @@ str_join(parts: any, sep: str): str
     for i, part in parts
         if i > 1
             result = result .. sep
-        end
         result = result .. part
-    end
     result
-end
 
 M = {
     zig_to_c = zig_to_c,

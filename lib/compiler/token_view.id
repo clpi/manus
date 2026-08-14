@@ -11,32 +11,24 @@ Pack: {
 
 view: Pack = (pack: Pack)
     pack
-end
 
 len: i64 = (pack: Pack)
     pack.count
-end
 
 kindat: i64 = (pack: Pack, index: i64)
     if index < 1 or index > pack.count
         token.KINDEOF
     else
         pack.kinds[index]
-    end
-end
 
 peek: i64 = (pack: Pack, index: i64)
     kindat(pack, index)
-end
 
 canbeginexpr: bool = (pack: Pack, index: i64)
     grammar.rolebeginexpr(kindat(pack, index))
-end
 
 roleprecedence: i64 = (pack: Pack, index: i64)
     grammar.roleprecedence(kindat(pack, index))
-end
 
 rolecompatonly: bool = (pack: Pack, index: i64)
     grammar.rolecompatonly(kindat(pack, index))
-end

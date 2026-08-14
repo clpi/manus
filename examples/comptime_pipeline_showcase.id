@@ -16,7 +16,6 @@ FUSED_CHARS = @(@(@comp.pipeline("{ fn = \"probe\", source = \"range\", start = 
 
 total(): i64
     @c.call("sum_n")
-end
 
 print("=== comptime @comp.pipeline showcase ===")
 print("sum 1..10 = " .. to(str)(total()))

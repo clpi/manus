@@ -37,23 +37,16 @@ has: bool = (set: str, name: str)
             if set:byte(i + j) != needle:byte(j + 1)
                 hit = false
                 j = nn
-            end
             j += 1
-        end
         if hit
             return true
-        end
         i += 1
-    end
     false
-end
 
 add: str = (set: str, name: str)
     if has(set, name)
         return set
-    end
     set .. name .. "|"
-end
 
 # Top-level binding names, as "|a|b|". A binding is at top level when its name
 # token sits in column 1 — the same layout signal the parser uses to recognise
@@ -65,16 +58,11 @@ nodes: str = (src: str, file: str, family: i64)
         t = lexer.next(lx)
         if t.kind == token.KIND_EOF
             break
-        end
         if t.kind == token.KIND_NAME and t.loc.col == 1
             nxt = lexer.peek(lx)
             if nxt.kind == token.KIND_ASSIGN or nxt.kind == token.KIND_LPAREN or nxt.kind == token.KIND_COLON
                 acc = add(acc, t.text)
-            end
-        end
-    end
     acc
-end
 
 # Private nodes with in-degree 0: declared `_name`, never referenced in the
 # file that declares them, and unreachable from outside it by policy.
@@ -88,7 +76,6 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
         t = lexer.next(lx)
         if t.kind == token.KIND_EOF
             break
-        end
         # gap[025]: a RECEIVER FACE is a reference. `self:_fail(2)` calls the
         # top-level `_fail`, so excluding names after `:` made every converted
         # call site invisible and reported live privates as unreachable.
@@ -104,11 +91,8 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
             decl = t.loc.col == 1
             if !decl
                 used = add(used, t.text)
-            end
-        end
         kind = t.kind
         col = t.loc.col
-    end
 
     # walk the declared set and count private names never used
     n: i64 = declared:len()
@@ -123,12 +107,6 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
                     count += 1
                     if report
                         print("  dead private " .. file .. ": " .. name)
-                    end
-                end
-            end
             start = i + 1
-        end
         i += 1
-    end
     count
-end

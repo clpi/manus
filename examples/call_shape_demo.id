@@ -10,11 +10,9 @@
 # Direct calls with typed arguments (specializable: typed_args_mask != 0)
 add(a: i64, b: i64): i64
     return a + b
-end
 
 mul(a: i64, b: i64): i64
     return a * b
-end
 
 # Same function, different call shapes at each site:
 main(): i64
@@ -32,6 +30,5 @@ main(): i64
     print(y)
 
     return y
-end
 
 main()

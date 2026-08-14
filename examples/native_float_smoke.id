@@ -7,19 +7,15 @@
 @export
 duo_fadd(a: f64, b: f64): f64
     a + b
-end
 
 @export
 duo_fmul(a: f64, b: f64): f64
     a * b
-end
 
 @export
 duo_scale(a: f64): f64
     a * 3.14
-end
 
 @export
 duo_wrap(a: f64, b: f64): f64
     duo_fadd(a, b)
-end

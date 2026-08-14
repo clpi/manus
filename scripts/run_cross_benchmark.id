@@ -40,25 +40,20 @@ _fail = 0
 
 _env_or(n: str, d: str): str
     v = script.getenv_or(n)
-    if v == "" return d end
+    if v == "" return d
     v
-end
 
 _pad(s: str, w: i64): str
     out = s
     while out:len() < w
         out = out .. " "
-    end
     out
-end
 
 _lpad(s: str, w: i64): str
     out = s
     while out:len() < w
         out = " " .. out
-    end
     out
-end
 
 # Six decimals, from integer millionths. `to(str)` on an f64 does not compile
 # (it lowers to an undeclared `tostring`), so every float shown here is
@@ -70,9 +65,7 @@ _f6(x: f64): str
     fs = frac:to(str)
     while fs:len() < 6
         fs = "0" .. fs
-    end
     whole:to(str) .. "." .. fs
-end
 
 # `to(f64)` is NOT a validating parse: to(f64)("Fibonacci(40)"), to(f64)("Time")
 # and to(f64)("seconds") all return 0.0, not nil. Testing `!= nil` to find "the
@@ -81,7 +74,7 @@ end
 # instead of a parse failure. This is the shell awk's
 # ^[0-9]+(\.[0-9]+)?(e-?[0-9]+)?$ written out.
 _numeric(s: str): bool
-    if s == "" return false end
+    if s == "" return false
     seen_digit = false
     i = 1
     while i <= s:len()
@@ -91,12 +84,8 @@ _numeric(s: str): bool
         else
             if c != "." and c != "-" and c != "+" and c != "e" and c != "E"
                 return false
-            end
-        end
         i += 1
-    end
     seen_digit
-end
 
 _lines(text: str): any
     out = {}
@@ -104,10 +93,7 @@ _lines(text: str): any
         t = std.script.chomp(l)
         if t != ""
             out[out:len() + 1] = t
-        end
-    end
     out
-end
 
 # "RESULT <name> <value>" -> a name->value table. This is the correctness
 # channel; the timing channel is separate and must not be confused with it.
@@ -118,11 +104,7 @@ _results(text: str): any
             parts = l:split(" ")
             if parts:len() >= 3
                 r[parts[2]] = parts[3]
-            end
-        end
-    end
     r
-end
 
 # Every numeric field on a line mentioning "Time". The shell awk took the
 # FIRST numeric field, so this does too # taking the last would silently
@@ -140,12 +122,7 @@ _times(text: str): any
                 if ts:len() < _BENCHES and _numeric(w)
                     ts[ts:len() + 1] = to(f64)(w)
                     break
-                end
-            end
-        end
-    end
     ts
-end
 
 # Minimum across runs, per benchmark slot. The MINIMUM, not the mean: slow
 # samples are machine noise.
@@ -158,19 +135,14 @@ _min_times(cmd: str): any
         while i <= ts:len()
             if best[i] == nil or ts[i] < best[i]
                 best[i] = ts[i]
-            end
             i += 1
-        end
         r += 1
-    end
     best
-end
 
 _is_int(s: str): bool
     v = to(f64)(s)
-    if v == nil return false end
+    if v == nil return false
     to(f64)(to(i64)(v)) == v
-end
 
 # Strict: integers must match exactly, floats within 1e-4. Duo must agree with
 # reference C or the gate fails # that is the whole contract.
@@ -183,23 +155,16 @@ _compare_strict(ref: any, got: any): void
                 if a != b
                     print("    MISMATCH " .. k .. ":" .. a .. " vs" .. b)
                     bad += 1
-                end
             else
                 d = to(f64)(a) - to(f64)(b)
-                if d < 0.0 d = -d end
+                if d < 0.0 d = -d
                 if d > 0.0001
                     print("    FLOAT DIFF " .. k .. ":" .. a .. " vs" .. b)
                     bad += 1
-                end
-            end
-        end
-    end
     if bad == 0
         print("    PASS")
     else
         _fail = 1
-    end
-end
 
 # Loose: Lua and LuaJIT are reported, never gating. Their float formatting
 # differs legitimately, so only integers are compared.
@@ -211,10 +176,7 @@ _compare_loose(label: str, ref: any, got: any): void
         if b != nil and _is_int(a) and _is_int(b) and a != b
             print("    MISMATCH " .. k .. ":" .. a .. " vs" .. b)
             bad += 1
-        end
-    end
-    if bad == 0 print("    PASS") end
-end
+    if bad == 0 print("    PASS")
 
 main: i64 = ()
     duo = "./zig-out/bin/idol"
@@ -227,8 +189,6 @@ main: i64 = ()
         if std.script.run("zig build") != 0
             print("cross_benchmark: FAIL — zig build")
             return 1
-        end
-    end
 
     std.script.run("rm -rf " .. _OUT .. " && mkdir -p " .. _OUT)
 
@@ -236,7 +196,6 @@ main: i64 = ()
     if std.script.run(duo .. " compile examples/benchmark.lua -o " .. _OUT .. "/duo.out 2>/dev/null") != 0
         print("cross_benchmark: FAIL — Duo binary did not compile")
         return 1
-    end
 
     print("Compiling reference C binary...")
     sdk = std.script.chomp(std.script.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null"))
@@ -248,7 +207,6 @@ main: i64 = ()
     if std.script.run(ccmd) != 0
         print("cross_benchmark: FAIL — reference C did not compile")
         return 1
-    end
 
     # Lua 5.5 removed math.pow; the corpus still calls it. Rewritten to `^`
     # into a temp copy rather than edited in place # the corpus is shared
@@ -275,7 +233,6 @@ main: i64 = ()
         print("")
         print("Cross-language benchmark FAILED: Duo must match reference C.")
         return 1
-    end
 
     print("")
     print("=== Timing (minimum of 3 runs, seconds) ===")
@@ -307,7 +264,7 @@ main: i64 = ()
         j = jt[i]
         if d != nil and c != nil and l != nil and j != nil
             name = _names[i]
-            if name == nil name = "bench-" .. i:to(str) end
+            if name == nil name = "bench-" .. i:to(str)
             print(_pad(name, 16) .. " " .. _lpad(_f6(d), 10) .. " " .. _lpad(_f6(c), 10)
                 .. " " .. _lpad(_f6(l), 10) .. " " .. _lpad(_f6(j), 10))
             # Geometric mean of the ratios: the mean of logs, exponentiated.
@@ -318,20 +275,15 @@ main: i64 = ()
                 dl += l / d:log()
                 dj += j / d:log()
                 cnt += 1
-            end
-        end
         i += 1
-    end
 
     print("")
     print("=== Summary (geometric mean speedup) ===")
     if cnt == 0
         print("no comparable benchmarks")
         return 1
-    end
     n = to(f64)(cnt)
     print("Duo vs C:       " .. to(str)(to(i64)(dc / n:exp() + 0.5)) .. "x faster")
     print("Duo vs Lua:     " .. to(str)(to(i64)(dl / n:exp() + 0.5)) .. "x faster")
     print("Duo vs LuaJIT:  " .. to(str)(to(i64)(dj / n:exp() + 0.5)) .. "x faster")
     0
-end

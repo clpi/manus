@@ -19,34 +19,24 @@ parse_line(line: any): any
                         else
                             i += 1
                             break
-                        end
                     else
                         field = field .. c2
                         i += 1
-                    end
-                end
                 res:insert(field)
                 if i <= len and line:sub(i, i) == ','
                     i += 1
-                end
             else
                 # unquoted field
                 start = i
                 while i <= len and line:sub(i, i) != ','
                     i += 1
-                end
                 res:insert(line:sub(start, i - 1))
                 if i <= len
                     i += 1 # skip comma
-                end
-            end
-        end
         # Handle trailing comma
         if len > 0 and line:sub(len, len) == ','
             res:insert("")
-        end
         res
-end
 
 parse(data: any): any
     lines = data:split("\n")
@@ -54,36 +44,26 @@ parse(data: any): any
     for _, line in lines
         if line:len() > 0 and line:sub(line:len(), line:len()) == "\r"
             line = line:sub(1, line:len() - 1)
-        end
         if line:len() > 0
             res:insert(parse_line(line))
-        end
-    end
     res
-end
 
 escape_field(field: any): any
     s = field:to(str)
     if s:find(",") or s:find('"') or s:find("\n")
         s = s:gsub('"', '""')
         return '"' .. s .. '"'
-    end
     s
-end
 
 format_line(row: any): any
     parts = {}
     for _, v in row
         parts:insert(escape_field(v))
-    end
     parts:concat(",")
-end
 
 format(rows: any): any
     lines = {}
     for _, row in rows
         lines:insert(format_line(row))
-    end
     lines:concat("\n")
-end
 

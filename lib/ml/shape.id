@@ -5,7 +5,6 @@
 matmul(ar: any, ac: any, br: any, bc: any)
     assert(ac == br, string.format(
         "matmul shape mismatch: (%d,%d) @ (%d,%d)", ar, ac, br, bc))
-end
 
 broadcast(ar: any, ac: any, br: any, bc: any)
     ok = (ar == br and ac == bc) or
@@ -13,11 +12,9 @@ broadcast(ar: any, ac: any, br: any, bc: any)
          (ar == br and ac == 1) or
          (ar == 1 and bc == 1)
     assert(ok, "broadcast incompatible shapes")
-end
 
 numel(rows, cols): i64
     return rows * cols
-end
 
 # MNIST-style MLP shape bundle
 mnist(): any
@@ -27,7 +24,6 @@ mnist(): any
         latent = { rows = 128, cols = 1 },
         output = { rows = 10, cols = 1 },
     }
-end
 
 # Transformer block shape template (batch, seq, dim)
 block(heads, dim): any
@@ -37,4 +33,3 @@ block(heads, dim): any
         hd = dim / heads,
         fd = dim * 4,
     }
-end

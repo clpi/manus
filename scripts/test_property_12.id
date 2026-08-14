@@ -17,7 +17,6 @@ _seed = 305419896
 _next_rand(): i64
     _seed = (_seed * 1103515245 + 12345) & 0x7fffffff
     _seed
-end
 
 main: i64 = ()
     print("[Property 12] Testing bitwise correctness...")
@@ -79,7 +78,6 @@ main: i64 = ()
             .. "    printf(\"%lld\\n\", (long long)(p" .. si .. " >> s" .. si .. "));\n"
 
         i += 1
-    end
 
     c = c .. "    return 0;\n}\n"
 
@@ -90,20 +88,16 @@ main: i64 = ()
     if script.run(duo .. " run " .. duo_src .. " > " .. duo_out) != 0
         print("[Property 12] FAIL — Duo program did not run")
         return 1
-    end
 
     cc = "clang"
     if script.chomp(script.capture("uname")) == "Darwin"
         cc = "xcrun clang"
-    end
     if script.run(cc .. " -Wall -Wextra -pedantic -std=c11 " .. c_src .. " -o " .. c_bin) != 0
         print("[Property 12] FAIL — C reference did not compile")
         return 1
-    end
     if script.run(c_bin .. " > " .. c_out) != 0
         print("[Property 12] FAIL — C reference did not run")
         return 1
-    end
 
     # diff's STATUS is the assertion; its output is the report. The shell
     # version ran `diff -u` under `set -e`, so a divergence aborted before the
@@ -111,8 +105,6 @@ main: i64 = ()
     if std.script.run("diff -u " .. c_out .. " " .. duo_out) != 0
         print("[Property 12] FAIL — Duo and C disagree on bitwise results")
         return 1
-    end
 
     print("[Property 12] SUCCESS")
     0
-end

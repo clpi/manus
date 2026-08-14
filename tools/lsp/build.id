@@ -7,39 +7,30 @@ _first_executable(candidates: any): str
     for _i, c in candidates
         if c != "" and script.fs_exists(c)
             return c
-        end
-    end
     ""
-end
 
 _locate_idol(): str
     # Explicit override wins, then the sibling checkout, then PATH.
     override = script.getenv_or("IDOL_LSP_BIN")
     if override == ""
         override = script.getenv_or("DUO_LSP_DUO_BIN")
-    end
     on_path = script.chomp(script.capture("command -v idol 2>/dev/null"))
     if on_path == ""
         on_path = script.chomp(script.capture("command -v duo 2>/dev/null"))
-    end
     _first_executable({ override, "../duo/zig-out/bin/idol", "../../zig-out/bin/idol", on_path })
-end
 
 main: i64 = ()
     idol = _locate_idol()
     if idol == ""
         print("error: idol compiler not found. Build it with 'zig build' or set IDOL_LSP_BIN.")
         return 1
-    end
 
     print("compiling duo-lsp with: " .. idol)
     rc = script.run(idol .. " compile -o duo-lsp src/server.id")
     if rc != 0
         print("error: compile failed (exit " .. rc:to(str) .. ")")
         return rc
-    end
 
     script.run("chmod +x duo-lsp")
     print("built: duo-lsp")
     0
-end

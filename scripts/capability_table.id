@@ -60,16 +60,14 @@ can = 0
 
 envval(name: str, fallback: str): str
     v = script.getenv_or(name)
-    if v == "" return fallback end
+    if v == "" return fallback
     v
 
 status(cmd: str): i64
     script.status(timeprep .. cmd)
-end
 
 quiet(cmd: str): i64
     script.status(cmd .. " >/dev/null 2>&1")
-end
 
 files(dir: str): any
     out = script.capture("ls " .. dir .. "/*.id 2>/dev/null")
@@ -78,7 +76,6 @@ files(dir: str): any
         t = script.chomp(line)
         if t != ""
             acc[acc:len() + 1] = t
-        end
     acc
 
 name(path: str): str
@@ -104,7 +101,7 @@ declared(src: str): str
         "sed -n 's/^-- expect: *\\([0-9][0-9]*\\).*/\\1/p' " .. src .. " | head -1"))
 
 rung(reached: bool): str
-    if reached return "  x" end
+    if reached return "  x"
     "  ." end
 
 # One fixture, one row. `blocking` says whether this directory's failures fail
@@ -140,13 +137,13 @@ measure(idol: str, src: str, group: str, blocking: bool, declaredans: bool): voi
 
     cbuilt = quiet(idol .. " compile " .. src .. " --emit exe -o " .. bindir_c) == 0
     crc = -1
-    if cbuilt crc = status(bindir_c) end
+    if cbuilt crc = status(bindir_c)
     # Compiled is not run. A binary that hangs has no answer to compare.
     iscp = cbuilt and crc != 124
 
     isnat = quiet(idol .. " compile " .. src .. " --backend=direct --emit exe -o " .. bindir_d) == 0
     drc = -1
-    if isnat drc = status(bindir_d) end
+    if isnat drc = status(bindir_d)
 
     want = declared(src)
     isprv = false
@@ -155,19 +152,17 @@ measure(idol: str, src: str, group: str, blocking: bool, declaredans: bool): voi
             isprv = want != "" and drc:to(str) == want
         else
             isprv = iscp and drc == crc
-        end
-    end
 
     iscan = isprv and blocking
 
     total += 1
-    if isdesc desc = desc + 1 end
-    if ispars pars = pars + 1 end
-    if ischk chk = chk + 1 end
-    if iscp cp = cp + 1 end
-    if isnat natcnt = natcnt + 1 end
-    if isprv prv = prv + 1 end
-    if iscan can = can + 1 end
+    if isdesc desc = desc + 1
+    if ispars pars = pars + 1
+    if ischk chk = chk + 1
+    if iscp cp = cp + 1
+    if isnat natcnt = natcnt + 1
+    if isprv prv = prv + 1
+    if iscan can = can + 1
 
     output = output .. rung(isdesc) .. rung(ispars) .. rung(ischk)
         .. rung(iscp) .. rung(isnat) .. rung(isprv) .. rung(iscan)
@@ -181,29 +176,22 @@ main: i64 = ()
     if !script.fs_exists(idol)
         print("capability_table: FAIL — no compiler at " .. idol)
         return 1
-    end
 
     for i, cand in {"timeout", "gtimeout"}
         if timeprep == "" and script.chomp(script.capture(
             "command -v " .. cand .. " 2>/dev/null")) != ""
             timeprep = cand .. " " .. run_timeout .. " "
-        end
-    end
 
     script.run("rm -rf " .. work .. " && mkdir -p " .. work)
 
     for i, src in files(corpus)
         measure(idol, src, "corpus", true, false)
-    end
     for i, src in files(corpus .. "/native_only")
         measure(idol, src, "native_only", true, true)
-    end
     for i, src in files(corpus .. "/unsupported")
         measure(idol, src, "unsupported", false, false)
-    end
     for i, src in files(corpus .. "/known_divergent")
         measure(idol, src, "known_divergent", false, false)
-    end
 
     print("")
     print("  GENERATED capability table (" .. corpus .. ")")
@@ -226,11 +214,8 @@ main: i64 = ()
     if total == 0
         print("capability_table: FAIL (empty corpus — nothing was measured)")
         return 1
-    end
     if can == 0
         print("capability_table: FAIL (no row reached canonical — the ladder is not wired)")
         return 1
-    end
     print("capability_table: PASS")
     0
-end

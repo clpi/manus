@@ -2,18 +2,15 @@
 # Provides comparison functions for ordered types.
 
 compare(a: any, b: any): i64
-    if a < b return -1 end
-    if a > b return 1 end
+    if a < b return -1
+    if a > b return 1
     0
-end
 
 less(a: any, b: any): bool
     a < b
-end
 
 ordered(a: any, b: any): i64
     compare(a, b)
-end
 
 # Guards, not `if a < b a else b end`. The endless one-liner clause must be
 # SELF-DELIMITED: in `a < b a` the trailing `b a` reads as
@@ -26,20 +23,15 @@ end
 min(a: any, b: any): any
     if a < b
         return a
-    end
     b
-end
 
 max(a: any, b: any): any
     if a > b
         return a
-    end
     b
-end
 
 clamp(val: any, lo: any, hi: any): any
-    if val < lo return lo end
-    if val > hi return hi end
+    if val < lo return lo
+    if val > hi return hi
     val
-end
 

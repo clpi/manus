@@ -4,30 +4,24 @@ s = script
 global DUO: str = tostring(s.getenv_or("DUO"))
 if DUO:len() == 0
     DUO = "./zig-out/bin/idol"
-end
 DUO = "env DUO_BUILD_REPORT=plain " .. DUO
 
 global any_failed: i64 = 0
 
 pass(msg: str): void
     s.echo("OK:   " .. msg)
-end
 
 fail(msg: str, out: str)
     s.echo("FAIL: " .. msg)
     if out:len() > 0
         s.echo(out)
-    end
     any_failed = 1
-end
 
 temp_file(): str
     tmp = tostring(s.fs_tmp())
     if tmp:len() == 0
         tmp = "/tmp/duo_test_" .. tostring(os.time())
-    end
     return tmp:gsub("\n", "")
-end
 
 run_fail(file: str, pattern: str)
     tmp = temp_file()
@@ -37,12 +31,10 @@ run_fail(file: str, pattern: str)
     
     if rc == 0
         fail(file .. " should not compile", out)
-    elseif out:find(pattern, 1, true) != nil
+    else if out:find(pattern, 1, true) != nil
         pass(file .. "  (expected error found)")
     else
         fail(file .. "  expected pattern: " .. pattern, out)
-    end
-end
 
 # gap[082]: a refusal that only CODEGEN can make. `run_fail` runs `duo check`,
 # which stops before lowering, so a judgment made while emitting is invisible
@@ -61,12 +53,10 @@ refuses(file: str, pattern: str)
 
     if rc == 0
         fail("{file} should not compile", out)
-    elseif out:find(pattern, 1, true) != nil
+    else if out:find(pattern, 1, true) != nil
         pass("{file}  (expected error found)")
     else
         fail("{file}  expected pattern: {pattern}", out)
-    end
-end
 
 run_ok(file: str)
     tmp = temp_file()
@@ -78,8 +68,6 @@ run_ok(file: str)
         pass(file .. "  (check passes)")
     else
         fail(file .. "  should compile but got:", out)
-    end
-end
 
 run_output(file: str, expected: str)
     tmp = temp_file()
@@ -92,11 +80,8 @@ run_output(file: str, expected: str)
             pass(file .. "  (run output matches)")
         else
             fail(file .. "  output mismatch\n--- want ---\n" .. expected .. "\n--- got ---\n" .. out, "")
-        end
     else
         fail(file .. "  should compile+run but got:", out)
-    end
-end
 
 run_shell_ok(label: str, script: str)
     tmp = temp_file()
@@ -108,8 +93,6 @@ run_shell_ok(label: str, script: str)
         pass(label)
     else
         fail(label .. " failed:", out)
-    end
-end
 
 run_duo_ok(label: str, script: str)
     tmp = temp_file()
@@ -121,8 +104,6 @@ run_duo_ok(label: str, script: str)
         pass(label)
     else
         fail(label .. " failed:", out)
-    end
-end
 
 run_fail("examples/compile_fail/global_star_read.lua",    "use of undeclared global")
 run_fail("examples/compile_fail/implicit_global_read.lua", "use of undeclared global")
@@ -225,4 +206,3 @@ if any_failed == 0
 else
     s.echo("Some tests FAILED")
     os.exit(1)
-end

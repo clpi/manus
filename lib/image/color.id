@@ -2,56 +2,42 @@
 
 rgba(r: any, g: any, b: any, a: any): any
     {r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "rgba"}
-end
 
 nrgba(r: any, g: any, b: any, a: any): any
     {r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "nrgba"}
-end
 
 gray(y: any): any
     {y = y % 65536, kind = "gray"}
-end
 
 model_rgba(c: any): any
     c.kind == "rgba"
-end
 
 model_nrgba(c: any): any
     c.kind == "nrgba"
-end
 
 model_gray(c: any): any
     c.kind == "gray"
-end
 
 to_rgba(c: any): any
-    if c.kind == "rgba" return c end
+    if c.kind == "rgba" return c
     if c.kind == "nrgba"
         return rgba(c.r, c.g, c.b, c.a)
-    end
     if c.kind == "gray"
         return rgba(c.y, c.y, c.y, 65535)
-    end
     rgba(0, 0, 0, 65535)
-end
 
 to_nrgba(c: any): any
-    if c.kind == "nrgba" return c end
+    if c.kind == "nrgba" return c
     if c.kind == "rgba"
         return nrgba(c.r, c.g, c.b, c.a)
-    end
     if c.kind == "gray"
         return nrgba(c.y, c.y, c.y, 65535)
-    end
     nrgba(0, 0, 0, 65535)
-end
 
 to_gray(c: any): any
-    if c.kind == "gray" return c end
+    if c.kind == "gray" return c
     if c.kind == "rgba" or c.kind == "nrgba"
         y = (299 * c.r + 587 * c.g + 114 * c.b) / 1000
         return gray(y)
-    end
     gray(0)
-end
 

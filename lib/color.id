@@ -28,23 +28,18 @@ M.BG_WHITE = "\x1b[47m"
 
 red(text: str): str
     M.RED .. text .. M.RESET
-end
 
 green(text: str): str
     M.GREEN .. text .. M.RESET
-end
 
 yellow(text: str): str
     M.YELLOW .. text .. M.RESET
-end
 
 blue(text: str): str
     M.BLUE .. text .. M.RESET
-end
 
 bold(text: str): str
     M.BOLD .. text .. M.RESET
-end
 
 M.red = red
 M.green = green

@@ -3,77 +3,63 @@
 
 new_one_byte_reader(data: str): any
     {data = data, pos = 1}
-end
 
 one_byte_read(r: any): any
-    if r.pos > r.data:len() return nil end
+    if r.pos > r.data:len() return nil
     b = r.data:sub(r.pos, r.pos)
     r.pos = r.pos + 1
     b
-end
 
 new_half_reader(data: str): any
     {data = data, pos = 1}
-end
 
 half_read(r: any): any
-    if r.pos > r.data:len() return nil end
+    if r.pos > r.data:len() return nil
     remaining = r.data:len() - r.pos + 1
     chunk_size = 1:max(remaining / 2:floor())
     chunk = r.data:sub(r.pos, r.pos + chunk_size - 1)
     r.pos = r.pos + chunk_size
     chunk
-end
 
 new_data_err_reader(data: str, err_at: i64): any
     {data = data, pos = 1, err_at = err_at, erred = false}
-end
 
 data_err_read(r: any): any
-    if r.erred return nil end
+    if r.erred return nil
     if r.pos >= r.err_at
         r.erred = true
         return nil
-    end
-    if r.pos > r.data:len() return nil end
+    if r.pos > r.data:len() return nil
     chunk = r.data:sub(r.pos, r.pos)
     r.pos = r.pos + 1
     chunk
-end
 
 new_timeout_reader(data: str, timeout_after: i64): any
     {data = data, pos = 1, timeout_after = timeout_after, reads = 0}
-end
 
 timeout_read(r: any): any
     r.reads = r.reads + 1
-    if r.reads > r.timeout_after return nil end
-    if r.pos > r.data:len() return nil end
+    if r.reads > r.timeout_after return nil
+    if r.pos > r.data:len() return nil
     chunk = r.data:sub(r.pos, r.pos)
     r.pos = r.pos + 1
     chunk
-end
 
 new_trunc_writer(): any
     {written = {}, max = 0, truncated = false}
-end
 
 trunc_write(w: any, data: str): i64
     w.written[w.written:len() + 1] = data
     w.max = w.max + data:len()
     data:len()
-end
 
 trunc_bytes(w: any): str
     w.written:concat()
-end
 
 new_error_writer(): any
     {erred = false}
-end
 
 error_write(w: any, data: str): any
     w.erred = true
     nil
-end
 

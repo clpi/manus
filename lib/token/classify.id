@@ -243,143 +243,134 @@ SORTEDCATEGORY = {
 
 -- Candidate 1: branch chain (production).
 classifybranchchain: i64 = (w: str)
-    if w == "and" then return 4 end
-    if w == "break" then return 5 end
-    if w == "continue" then return 6 end
-    if w == "do" then return 7 end
-    if w == "else" then return 8 end
-    if w == "elseif" then return 9 end
-    if w == "end" then return 10 end
-    if w == "false" then return 11 end
-    if w == "for" then return 12 end
-    if w == "function" then return 13 end
-    if w == "fun" then return 14 end
-    if w == "global" then return 15 end
-    if w == "goto" then return 16 end
-    if w == "if" then return 17 end
-    if w == "in" then return 18 end
-    if w == "local" then return 19 end
-    if w == "nil" then return 20 end
-    if w == "not" then return 21 end
-    if w == "or" then return 22 end
-    if w == "repeat" then return 23 end
-    if w == "return" then return 24 end
-    if w == "then" then return 25 end
-    if w == "true" then return 26 end
-    if w == "until" then return 27 end
-    if w == "while" then return 28 end
-    if w == "const" then return 29 end
-    if w == "enum" then return 30 end
-    if w == "i8" then return 31 end
-    if w == "i16" then return 32 end
-    if w == "i32" then return 33 end
-    if w == "i64" then return 34 end
-    if w == "u8" then return 35 end
-    if w == "u16" then return 36 end
-    if w == "u32" then return 37 end
-    if w == "u64" then return 38 end
-    if w == "f32" then return 39 end
-    if w == "f64" then return 40 end
-    if w == "bool" then return 41 end
-    if w == "void" then return 42 end
-    if w == "str" then return 43 end
-    if w == "match" then return 44 end
-    if w == "try" then return 45 end
-    if w == "catch" then return 46 end
-    if w == "defer" then return 47 end
-    if w == "async" then return 48 end
-    if w == "await" then return 49 end
-    if w == "concept" then return 50 end
-    if w == "alias" then return 51 end
-    if w == "private" then return 52 end
-    if w == "extends" then return 53 end
-    if w == "macro" then return 54 end
-    if w == "comptime" then return 55 end
-    if w == "by" then return 56 end
-    if w == "let" then return 57 end
+    if w == "and" then return 4
+    if w == "break" then return 5
+    if w == "continue" then return 6
+    if w == "do" then return 7
+    if w == "else" then return 8
+    if w == "elseif" then return 9
+    if w == "end" then return 10
+    if w == "false" then return 11
+    if w == "for" then return 12
+    if w == "function" then return 13
+    if w == "fun" then return 14
+    if w == "global" then return 15
+    if w == "goto" then return 16
+    if w == "if" then return 17
+    if w == "in" then return 18
+    if w == "local" then return 19
+    if w == "nil" then return 20
+    if w == "not" then return 21
+    if w == "or" then return 22
+    if w == "repeat" then return 23
+    if w == "return" then return 24
+    if w == "then" then return 25
+    if w == "true" then return 26
+    if w == "until" then return 27
+    if w == "while" then return 28
+    if w == "const" then return 29
+    if w == "enum" then return 30
+    if w == "i8" then return 31
+    if w == "i16" then return 32
+    if w == "i32" then return 33
+    if w == "i64" then return 34
+    if w == "u8" then return 35
+    if w == "u16" then return 36
+    if w == "u32" then return 37
+    if w == "u64" then return 38
+    if w == "f32" then return 39
+    if w == "f64" then return 40
+    if w == "bool" then return 41
+    if w == "void" then return 42
+    if w == "str" then return 43
+    if w == "match" then return 44
+    if w == "try" then return 45
+    if w == "catch" then return 46
+    if w == "defer" then return 47
+    if w == "async" then return 48
+    if w == "await" then return 49
+    if w == "concept" then return 50
+    if w == "alias" then return 51
+    if w == "private" then return 52
+    if w == "extends" then return 53
+    if w == "macro" then return 54
+    if w == "comptime" then return 55
+    if w == "by" then return 56
+    if w == "let" then return 57
     0
-end
 
 -- Candidate 2: length bucket (filter then equality chain).
 classifylengthbucket: i64 = (w: str)
     n = string.len(w)
-    if n == 2 then
-        if w == "do" then return 7 end
-        if w == "if" then return 17 end
-        if w == "in" then return 18 end
-        if w == "or" then return 22 end
-        if w == "i8" then return 31 end
-        if w == "u8" then return 35 end
-        if w == "by" then return 56 end
+    if n == 2
+        if w == "do" then return 7
+        if w == "if" then return 17
+        if w == "in" then return 18
+        if w == "or" then return 22
+        if w == "i8" then return 31
+        if w == "u8" then return 35
+        if w == "by" then return 56
         0
-    end
-    if n == 3 then
-        if w == "and" then return 4 end
-        if w == "end" then return 10 end
-        if w == "for" then return 12 end
-        if w == "fun" then return 14 end
-        if w == "nil" then return 20 end
-        if w == "not" then return 21 end
-        if w == "i16" then return 32 end
-        if w == "i32" then return 33 end
-        if w == "i64" then return 34 end
-        if w == "u16" then return 36 end
-        if w == "u32" then return 37 end
-        if w == "u64" then return 38 end
-        if w == "f32" then return 39 end
-        if w == "f64" then return 40 end
-        if w == "str" then return 43 end
-        if w == "try" then return 45 end
-        if w == "let" then return 57 end
+    if n == 3
+        if w == "and" then return 4
+        if w == "end" then return 10
+        if w == "for" then return 12
+        if w == "fun" then return 14
+        if w == "nil" then return 20
+        if w == "not" then return 21
+        if w == "i16" then return 32
+        if w == "i32" then return 33
+        if w == "i64" then return 34
+        if w == "u16" then return 36
+        if w == "u32" then return 37
+        if w == "u64" then return 38
+        if w == "f32" then return 39
+        if w == "f64" then return 40
+        if w == "str" then return 43
+        if w == "try" then return 45
+        if w == "let" then return 57
         0
-    end
-    if n == 4 then
-        if w == "else" then return 8 end
-        if w == "goto" then return 16 end
-        if w == "then" then return 25 end
-        if w == "true" then return 26 end
-        if w == "enum" then return 30 end
-        if w == "bool" then return 41 end
-        if w == "void" then return 42 end
+    if n == 4
+        if w == "else" then return 8
+        if w == "goto" then return 16
+        if w == "then" then return 25
+        if w == "true" then return 26
+        if w == "enum" then return 30
+        if w == "bool" then return 41
+        if w == "void" then return 42
         0
-    end
-    if n == 5 then
-        if w == "break" then return 5 end
-        if w == "false" then return 11 end
-        if w == "local" then return 19 end
-        if w == "until" then return 27 end
-        if w == "while" then return 28 end
-        if w == "const" then return 29 end
-        if w == "match" then return 44 end
-        if w == "catch" then return 46 end
-        if w == "defer" then return 47 end
-        if w == "async" then return 48 end
-        if w == "await" then return 49 end
-        if w == "alias" then return 51 end
-        if w == "macro" then return 54 end
+    if n == 5
+        if w == "break" then return 5
+        if w == "false" then return 11
+        if w == "local" then return 19
+        if w == "until" then return 27
+        if w == "while" then return 28
+        if w == "const" then return 29
+        if w == "match" then return 44
+        if w == "catch" then return 46
+        if w == "defer" then return 47
+        if w == "async" then return 48
+        if w == "await" then return 49
+        if w == "alias" then return 51
+        if w == "macro" then return 54
         0
-    end
-    if n == 6 then
-        if w == "elseif" then return 9 end
-        if w == "global" then return 15 end
-        if w == "repeat" then return 23 end
-        if w == "return" then return 24 end
+    if n == 6
+        if w == "elseif" then return 9
+        if w == "global" then return 15
+        if w == "repeat" then return 23
+        if w == "return" then return 24
         0
-    end
-    if n == 7 then
-        if w == "concept" then return 50 end
-        if w == "private" then return 52 end
-        if w == "extends" then return 53 end
+    if n == 7
+        if w == "concept" then return 50
+        if w == "private" then return 52
+        if w == "extends" then return 53
         0
-    end
-    if n == 8 then
-        if w == "continue" then return 6 end
-        if w == "function" then return 13 end
-        if w == "comptime" then return 55 end
+    if n == 8
+        if w == "continue" then return 6
+        if w == "function" then return 13
+        if w == "comptime" then return 55
         0
-    end
     0
-end
 
 -- Candidate 3: sorted lookup (binary search over descriptor).
 classifysortedlookup: i64 = (w: str)
@@ -387,40 +378,31 @@ classifysortedlookup: i64 = (w: str)
     hi = 54
     while lo <= hi
         mid = (lo + hi) // 2
-        if w == SORTEDTEXT[mid] then return SORTEDID[mid] end
-        if w < SORTEDTEXT[mid] then
+        if w == SORTEDTEXT[mid] then return SORTEDID[mid]
+        if w < SORTEDTEXT[mid]
             hi = mid - 1
         else
             lo = mid + 1
-        end
-    end
     0
-end
 
 -- Production entry (mirrors token_semantic.production_classifier).
 @c.export("duo_keyword_classify")
 classify: i64 = (w: str)
     classifybranchchain(w)
-end
 
 iskeyword: bool = (w: str)
     classify(w) != 0
-end
 
 categoryof: i64 = (id: i64)
     i = 1
     while i <= KEYWORDCOUNT
-        if SORTEDID[i] == id then return SORTEDCATEGORY[i] end
+        if SORTEDID[i] == id then return SORTEDCATEGORY[i]
         i += 1
-    end
     0
-end
 
 spellingof: str = (id: i64)
     i = 1
     while i <= KEYWORDCOUNT
-        if SORTEDID[i] == id then return SORTEDTEXT[i] end
+        if SORTEDID[i] == id then return SORTEDTEXT[i]
         i += 1
-    end
     ""
-end

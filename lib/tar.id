@@ -6,7 +6,6 @@ create(archive_path: str, source_dir: str): bool
     cmd = "tar -cf " .. archive_path .. " -C " .. source_dir .. " ."
     rc = proc.exec(cmd)
     rc == 0
-end
 
 extract(archive_path: str, dest_dir: str): bool
     # Ensure destination exists
@@ -14,5 +13,4 @@ extract(archive_path: str, dest_dir: str): bool
     cmd = "tar -xf " .. archive_path .. " -C " .. dest_dir
     rc = proc.exec(cmd)
     rc == 0
-end
 

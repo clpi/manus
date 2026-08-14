@@ -1,11 +1,9 @@
 # Test the new 'fun' keyword
 add(a: i64, b: i64): i64
     a + b
-end
 
 greet(name: str): str
     "Hello, " .. name
-end
 
 print(add(5, 3))
 print(greet("World"))

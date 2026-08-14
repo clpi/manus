@@ -46,15 +46,12 @@
 
 shell: str = (cmd: str)
     script.capture("cd " .. script.getenv("DUO_ROOT", ".") .. " && " .. cmd)
-end
 
 num: i64 = (out: str)
     n: i64 = out:len()
     while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
         n -= 1
-    end
     to(i64)(out:sub(1, n))
-end
 
 # One shell pass. Each program is compiled with the direct backend; the three
 # buckets are printed as a single line of counts so Duo parses numbers, not
@@ -68,14 +65,12 @@ sweep: str = ()
         .. "  if grep -qE '^global [A-Za-z_]* = std.compiler\\.|= *req *\"std.compiler' \"$f\"; then "
         .. "    un=$((un+1)); else bail=$((bail+1)); fi; "
         .. "done; echo \"$ok $bail $un $noent\"")
-end
 
 main(): i64
     counts = sweep()
     if counts:len() == 0
         print("native_census: FAIL — sweep produced no output; census did not run")
         return 3
-    end
 
     ok: i64 = num(counts:match("^%d+"))
     rest = counts:gsub("^%d+%s+", "")
@@ -89,7 +84,6 @@ main(): i64
     if ok == 0
         print("native_census: FAIL — 0 programs compiled natively; the sweep is broken")
         return 3
-    end
 
     reachable: i64 = ok + bail
     print("native census (--backend=direct over examples/, compile_fail excluded)")
@@ -103,8 +97,6 @@ main(): i64
         print("native_census: FAIL — native " .. ok:to(str)
             .. " fell below the ratchet " .. floor:to(str))
         return 1
-    end
     print("native_census: PASS (native " .. ok:to(str) .. " >= " .. floor:to(str)
         .. ", " .. to(str)(reachable - ok) .. " reachable programs remain)")
     0
-end

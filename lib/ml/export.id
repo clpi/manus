@@ -13,7 +13,6 @@ onnx_graph_new(name: str): any
         outputs = {},
         initializers = {},
     }
-end
 
 onnx_graph_add_node(graph: any, op_type: str, inputs: any, outputs: any, name: str): void
     graph.nodes[graph:len().nodes + 1] = {
@@ -22,7 +21,6 @@ onnx_graph_add_node(graph: any, op_type: str, inputs: any, outputs: any, name: s
         outputs = outputs,
         name = name or "node_" .. to(str)(graph:len().nodes),
     }
-end
 
 onnx_graph_add_input(graph: any, name: str, shape: any, dtype: str): void
     graph.inputs[graph:len().inputs + 1] = {
@@ -30,7 +28,6 @@ onnx_graph_add_input(graph: any, name: str, shape: any, dtype: str): void
         shape = shape,
         dtype = dtype or "float32",
     }
-end
 
 onnx_graph_add_output(graph: any, name: str, shape: any, dtype: str): void
     graph.outputs[graph:len().outputs + 1] = {
@@ -38,7 +35,6 @@ onnx_graph_add_output(graph: any, name: str, shape: any, dtype: str): void
         shape = shape,
         dtype = dtype or "float32",
     }
-end
 
 onnx_graph_add_initializer(graph: any, name: str, shape: any, data: any): void
     graph.initializers[graph:len().initializers + 1] = {
@@ -46,7 +42,6 @@ onnx_graph_add_initializer(graph: any, name: str, shape: any, data: any): void
         shape = shape,
         data = data,
     }
-end
 
 onnx_model_new(graph: any, opset: i64): any
     {
@@ -56,7 +51,6 @@ onnx_model_new(graph: any, opset: i64): any
         producer_name = "duo",
         producer_version = "1.0",
     }
-end
 
 onnx_model_encode(model: any): any
     # Encode model as JSON (ONNX protobuf would require a protobuf encoder)
@@ -74,7 +68,6 @@ onnx_model_encode(model: any): any
             outputs = node.outputs,
             name = node.name,
         }
-    end
     payload = {
         ir_version = model.ir_version,
         opset_import = {{version = model.opset}},
@@ -83,18 +76,15 @@ onnx_model_encode(model: any): any
         graph = graph_summary,
     }
     encoding.json.encode(payload)
-end
 
 onnx_model_save(model: any, path: str): any
     data = onnx_model_encode(model)
     f = io.open(path, "w")
     if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
-    end
     io.write(f, data)
     io.close(f)
     {ok = true, path = path, size = data:len()}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # PyTorch Export (state dict)
@@ -105,11 +95,9 @@ pytorch_state_dict_new(): any
         tensors = {},
         metadata = {},
     }
-end
 
 pytorch_state_dict_add(state_dict: any, name: str, tensor: any): void
     state_dict.tensors[name] = tensor
-end
 
 pytorch_state_dict_save(state_dict: any, path: str): any
     # Encode state dict as JSON
@@ -120,16 +108,13 @@ pytorch_state_dict_save(state_dict: any, path: str): any
             dtype = tensor.dtype or "f32",
             data_len = tensor.size or 0,
         }
-    end
     encoded = encoding.json.encode(payload)
     f = io.open(path, "w")
     if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
-    end
     io.write(f, encoded)
     io.close(f)
     {ok = true, path = path, size = encoded:len()}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # SafeTensors Export
@@ -140,7 +125,6 @@ safetensors_new(): any
         tensors = {},
         metadata = {},
     }
-end
 
 safetensors_add_tensor(st: any, name: str, tensor: any, dtype: str): void
     st.tensors[name] = {
@@ -148,7 +132,6 @@ safetensors_add_tensor(st: any, name: str, tensor: any, dtype: str): void
         dtype = dtype or "f32",
         shape = tensor.shape or {tensor.size},
     }
-end
 
 safetensors_encode(st: any): any
     # SafeTensors format: JSON header mapping tensor names to dtype/shape/offsets
@@ -161,7 +144,6 @@ safetensors_encode(st: any): any
             data_offsets = {offset, offset + tensor.size},
         }
         offset += tensor.size
-    end
     header_json = encoding.json.encode(header)
     {
         format = "safetensors",
@@ -169,21 +151,18 @@ safetensors_encode(st: any): any
         header_size = header_json:len(),
         data_size = offset,
     }
-end
 
 safetensors_save(st: any, path: str): any
     data = safetensors_encode(st)
     f = io.open(path, "w")
     if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
-    end
     # Write 8-byte header length prefix, then header JSON
     header_len = data.header_size
     io.write(f, string.pack("<I8", header_len))
     io.write(f, data.header)
     io.close(f)
     {ok = true, path = path, size = 8 + data.header_size + data.data_size}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # GGUF Export
@@ -195,18 +174,15 @@ gguf_writer_new(quantization: str): any
         metadata = {},
         quantization = quantization or "f16",
     }
-end
 
 gguf_writer_add_tensor(gw: any, name: str, tensor: any, shape: any): void
     gw.tensors[name] = {
         data = tensor,
         shape = shape,
     }
-end
 
 gguf_writer_add_metadata(gw: any, key: str, value: any): void
     gw.metadata[key] = value
-end
 
 gguf_writer_encode(gw: any): any
     # GGUF header as JSON (simplified; real GGUF uses binary format)
@@ -221,7 +197,6 @@ gguf_writer_encode(gw: any): any
         payload.tensors[name] = {
             shape = tensor.shape,
         }
-    end
     encoded = encoding.json.encode(payload)
     {
         format = "gguf",
@@ -229,18 +204,15 @@ gguf_writer_encode(gw: any): any
         data = encoded,
         size = encoded:len(),
     }
-end
 
 gguf_writer_save(gw: any, path: str): any
     data = gguf_writer_encode(gw)
     f = io.open(path, "w")
     if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
-    end
     io.write(f, data.data)
     io.close(f)
     {ok = true, path = path, size = data.size}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Model Conversion
@@ -250,25 +222,19 @@ convert_onnx_to_safetensors(onnx_model: any): any
     st = safetensors_new()
     for init in onnx_model.graph.initializers
         safetensors_add_tensor(st, init.name, init.data, "f32")
-    end
     st
-end
 
 convert_pytorch_to_onnx(state_dict: any, input_shapes: any): any
     graph = onnx_graph_new("model")
     for name, tensor in state_dict.tensors
         onnx_graph_add_initializer(graph, name, tensor.shape, tensor.data)
-    end
     onnx_model_new(graph)
-end
 
 convert_gguf_to_safetensors(gguf_model: any): any
     st = safetensors_new()
     for name, tensor in gguf_model.tensors
         safetensors_add_tensor(st, name, tensor.data, "f32")
-    end
     st
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

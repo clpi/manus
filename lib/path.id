@@ -3,53 +3,38 @@
 join(a: str, b: str): str
     if a == ""
         b
-    end
     if b == ""
         return a
-    end
     if b:sub(1, 1) == "/"
         return b
-    end
     if a:sub(-1, -1) == "/"
         return a .. b
-    end
     a .. "/" .. b
-end
 
 basename(p: str): str
     if p == ""
         ""
-    end
     i = p:len()
     while i > 1 and p:sub(i, i) == "/"
         i -= 1
-    end
     last = i
     while i > 1 and p:sub(i - 1, i - 1) != "/"
         i -= 1
-    end
     p:sub(i, last)
-end
 
 dirname(p: str): str
     if p == ""
         "."
-    end
     i = p:len()
     while i > 1 and p:sub(i, i) == "/"
         i -= 1
-    end
     while i > 1 and p:sub(i - 1, i - 1) != "/"
         i -= 1
-    end
     if i <= 1
         if p:sub(1, 1) == "/"
             return "/"
-        end
         return "."
-    end
     p:sub(1, i - 1)
-end
 
 extname(p: str): str
     base = basename(p)
@@ -57,25 +42,18 @@ extname(p: str): str
     while i > 1
         if base:sub(i, i) == "."
             base:sub(i, base:len())
-        end
         i -= 1
-    end
     ""
-end
 
 absolute(p: str): bool
-    if p == nil or p == "" return false end
+    if p == nil or p == "" return false
     p:sub(1, 1) == "/"
-end
 
 normalize(p: str): str
-    if p == nil or p == "" return "." end
+    if p == nil or p == "" return "."
     while p:find("//")
         p = p:gsub("//", "/")
-    end
     if p != "/" and p:sub(-1, -1) == "/"
         p = p:sub(1, -2)
-    end
     p
-end
 

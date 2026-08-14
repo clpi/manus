@@ -2,10 +2,9 @@
 
 new_node(kind: any)
     return {kind = kind, children = {}, text = "", pos = 0}
-end
 
 parse(template: any)
-    if template == nil return new_node("module") end
+    if template == nil return new_node("module")
     root = new_node("module")
     i = 1
     n = template:len()
@@ -18,29 +17,24 @@ parse(template: any)
                 text_node = new_node("text")
                 text_node.text = before
                 root.children[root.children:len() + 1] = text_node
-            end
             i = template:find("{", i + 1)
-            if i == nil break end
+            if i == nil break
             d3, d4, expr = template:find("{{(.-)}}", i)
             if expr != nil
                 action_node = new_node("action")
                 action_node.text = expr
                 root.children[root.children:len() + 1] = action_node
                 d5, ni = template:find("}}", i)
-                if ni i = ni + 1 end
+                if ni i = ni + 1
             else
                 text_node = new_node("text")
                 text_node.text = template:sub(i, i)
                 root.children[root.children:len() + 1] = text_node
                 i += 1
-            end
         else
             text_node = new_node("text")
             text_node.text = template:sub(i)
             root.children[root.children:len() + 1] = text_node
             break
-        end
-    end
     return root
-end
 

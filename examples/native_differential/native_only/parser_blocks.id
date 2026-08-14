@@ -24,28 +24,20 @@ KIND_OTHER = 0
 is_alpha: i64 = (c: i64)
     if c >= 97 and c <= 122
         return 1
-    end
     if c >= 65 and c <= 90
         return 1
-    end
     if c == 95
         return 1
-    end
     0
-end
 
 is_space: i64 = (c: i64)
     if c == 32
         return 1
-    end
     if c == 9
         return 1
-    end
     if c == 10
         return 1
-    end
     0
-end
 
 # Recognise the block-structuring reserved words by length then bytes.
 # `if`/`while`/`function` open a block; `end` closes one. `do` is deliberately
@@ -56,28 +48,18 @@ word_kind: i64 = (src: str, start: i64, len: i64)
     if len == 2
         if b0 == 105 and src:byte(start + 1) == 102
             return Classify.KIND_IF
-        end
         if b0 == 100 and src:byte(start + 1) == 111
             return Classify.KIND_DO
-        end
-    end
     if len == 3
         if b0 == 101 and src:byte(start + 1) == 110 and src:byte(start + 2) == 100
             return Classify.KIND_END
-        end
-    end
     if len == 5
         if b0 == 119 and src:byte(start + 1) == 104 and src:byte(start + 4) == 101
             return Classify.KIND_WHILE
-        end
-    end
     if len == 8
         if b0 == 102 and src:byte(start + 1) == 117 and src:byte(start + 7) == 110
             return Classify.KIND_FUNCTION
-        end
-    end
     KIND_OTHER
-end
 
 # Next word-or-symbol span. Non-word bytes are returned as single-byte spans so
 # the scan always advances.
@@ -86,19 +68,14 @@ nextspan: span = (src: str, pos: i64)
     i = pos
     while i <= n and is_space(src:byte(i)) == 1
         i += 1
-    end
     if i > n
         return { kind = 0 - 1, start = i, len = 0 }
-    end
     if is_alpha(src:byte(i)) == 1
         j = i
         while j <= n and is_alpha(src:byte(j)) == 1
             j += 1
-        end
         return { kind = word_kind(src, i, j - i), start = i, len = j - i }
-    end
     { kind = KIND_OTHER, start = i, len = 1 }
-end
 
 # Maximum block nesting depth. Returns 0 - 1 if an `end` ever closes a block
 # that was never opened, so an unbalanced source is reported rather than
@@ -112,26 +89,18 @@ max_depth: i64 = (src: str)
         s: span = nextspan(src, pos)
         if s.kind == 0 - 1
             return best
-        end
         if s.kind == Classify.KIND_IF or s.kind == Classify.KIND_WHILE or s.kind == Classify.KIND_FUNCTION
             depth += 1
             if depth > best
                 best = depth
-            end
-        end
         if s.kind == Classify.KIND_END
             if depth == 0
                 return 0 - 1
-            end
             depth -= 1
-        end
         pos = s.start + s.len
-    end
     best
-end
 
 main(): i64
     # Real Duo source in canonical form (no `do`, no `then`), three levels deep:
     #   function -> while -> if,  closed by three matching `end`s
     max_depth("function f(n) while n > 0 if n == 1 return 1 end end end")
-end

@@ -4,5 +4,4 @@ crypto_sha = sha
 
 sha256(s: str): str
     crypto_sha.sha256(s)
-end
 

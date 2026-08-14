@@ -3,9 +3,7 @@
 
 encode(s: str): str
     crypto.base64_encode(s)
-end
 
 decode(s: str): str
     crypto.base64_decode(s)
-end
 

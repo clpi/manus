@@ -11,4 +11,3 @@ main: i64 = ()
     front = q[1]
     print("{top} {front}")
     0
-end

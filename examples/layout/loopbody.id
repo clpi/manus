@@ -34,4 +34,3 @@ main: i64 = ()
     fill(xs)
     print("{before} {after} {grid}")
     0
-end

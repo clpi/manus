@@ -4,90 +4,67 @@
 
 default_config(): any
     {max_count = 100, max_count_scale = 10}
-end
 
 gen_bool(): bool
     random.int(0, 1) == 0
-end
 
 gen_int(max: i64): i64
     random.int(-max, max)
-end
 
 gen_float(): any
     random.float() * 1000
-end
 
 gen_string(max_len: i64): str
     len = random.int(0, max_len)
     s = ""
     for i = 1, len
         s = s .. random.int(32, 126):char()
-    end
     s
-end
 
 gen_table(max_entries: i64): any
     n = random.int(0, max_entries)
     t = {}
     for i = 1, n
         t[random.int(0, 1000)] = random.int(-1000, 1000)
-    end
     t
-end
 
 gen(typ: str, max: i64, gen_config: any): any
     if typ == "bool"
         return gen_bool()
-    end
     if typ == "int" or typ == "i64"
         return gen_int(max)
-    end
     if typ == "float"
         return gen_float()
-    end
     if typ == "str" or typ == "string"
         return gen_string(max)
-    end
     if typ == "table"
         return gen_table(max)
-    end
     nil
-end
 
 check(fn: any, config: any): bool
-    if config == nil config = default_config() end
+    if config == nil config = default_config()
     max_count = config.max_count
     if has(.max_count_scale)(config)
         max_count *= config.max_count_scale
-    end
     for i = 1, max_count
         ok, err = pcall(fn)
         if not ok
             return false, err
-        end
-    end
     true
-end
 
 check_equal(fn: any, ref: any, config: any): bool
-    if config == nil config = default_config() end
+    if config == nil config = default_config()
     max_count = config.max_count * (config.max_count_scale or 1)
     for i = 1, max_count
         args = {}
         for j = 1, 10
             args[j] = gen("int", 100, config)
-        end
         result = fn(args)
         expected = ref(args)
         if result != expected
             return false, "mismatch at iteration " .. i
-        end
-    end
     true
-end
 
 value(t: any): any
     t
-end
 

@@ -9,16 +9,11 @@ find: i64 = (xs, n: i64, key: i64)
         v = xs[mid]
         if v == key
             return mid
-        end
         if v < key
             lo = mid + 1
-        end
         if v >= key
             hi = mid - 1
-        end
-    end
     0
-end
 
 main: i64 = ()
     xs = { 2, 4, 6, 8, 10, 12, 14 }
@@ -27,4 +22,3 @@ main: i64 = ()
     c = find(xs, 7, 2)
     print("{a} {b} {c}")
     0
-end

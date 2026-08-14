@@ -17,7 +17,6 @@
 
 _ms_per_ns(): i64
     1000000
-end
 
 # Wall-clock milliseconds for one command. Monotonic, so it is unaffected by
 # clock adjustments during a long sweep.
@@ -27,7 +26,6 @@ _time_ms(cmd: str): i64
     b: i64 = time.monotonic()
     # `/` yields f64 even on two i64 operands, so the narrowing is stated.
     to(i64)((b - a) / _ms_per_ns())
-end
 
 # Median of a positional list of i64. Sorted in place; n is small (7 by
 # default), so an insertion sort is the honest shape # no pipeline surface
@@ -40,12 +38,9 @@ _median(xs: any, n: i64): i64
         while j >= 1 and xs[j] > key
             xs[j + 1] = xs[j]
             j -= 1
-        end
         xs[j + 1] = key
         i += 1
-    end
     xs[(n + 1) / 2]
-end
 
 _min_of(xs: any, n: i64): i64
     m = xs[1]
@@ -53,11 +48,8 @@ _min_of(xs: any, n: i64): i64
     while i <= n
         if xs[i] < m
             m = xs[i]
-        end
         i += 1
-    end
     m
-end
 
 main(): i64
     binary = script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
@@ -67,7 +59,6 @@ main(): i64
     if not script.fs_exists(mod)
         print("perf: module not found: " .. mod)
         return 1
-    end
     abs = script.chomp(script.capture("cd \"$(dirname " .. mod .. ")\" && pwd"))
         .. "/" .. script.path_basename(mod)
 
@@ -84,7 +75,6 @@ main(): i64
         w[i] = _time_ms(invocation)
         m[i] = _time_ms(wasmtime_cmd)
         i += 1
-    end
 
     wmin = _min_of(w, n)
     mmin = _min_of(m, n)
@@ -96,6 +86,4 @@ main(): i64
     print("wasmtime median " .. mmed:to(str) .. " ms  min " .. mmin:to(str))
     if mmed > 0
         print("ratio    " .. to(str)(wmed * 100 / mmed) .. "%  (<100 means the engine is faster)")
-    end
     0
-end

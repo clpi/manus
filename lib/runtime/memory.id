@@ -15,26 +15,21 @@ stats_new(): any
         gc_paused = 0,
         allocations_by_type = {},
     }
-end
 
 stats_record_alloc(stats: any, size: i64, type: str): void
     stats.allocated = stats.allocated + size
     stats.current = stats.current + size
     if stats.current > stats.peak
         stats.peak = stats.current
-    end
     stats.allocations_by_type[type] = (stats.allocations_by_type[type] or 0) + size
-end
 
 stats_record_free(stats: any, size: i64): void
     stats.freed = stats.freed + size
     stats.current = stats.current - size
-end
 
 stats_record_gc(stats: any, paused: f64): void
     stats.gc_count = stats.gc_count + 1
     stats.gc_paused = stats.gc_paused + paused
-end
 
 stats_summary(stats: any): any
     {
@@ -46,7 +41,6 @@ stats_summary(stats: any): any
         gc_total_paused = stats.gc_paused,
         gc_avg_pause = stats.gc_count > 0 and stats.gc_paused / stats.gc_count or 0,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Memory Arena (per-isolate)
@@ -59,7 +53,6 @@ arena_new(initial_size: i64): any
         used = 0,
         block_size = 4096,
     }
-end
 
 arena_alloc(arena: any, size: i64): any
     # Check if current block has enough space
@@ -71,7 +64,6 @@ arena_alloc(arena: any, size: i64): any
             size = block_size,
             used = 0,
         }
-    end
 
     block = arena.blocks[arena:len().blocks]
     offset = block.used
@@ -83,12 +75,10 @@ arena_alloc(arena: any, size: i64): any
         offset = offset,
         size = size,
     }
-end
 
 arena_reset(arena: any): void
     arena.blocks = {}
     arena.used = 0
-end
 
 arena_stats(arena: any): any
     {
@@ -97,7 +87,6 @@ arena_stats(arena: any): any
         used = arena.used,
         utilization = arena.total_size > 0 and arena.used / arena.total_size or 0,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # GC Configuration
@@ -114,29 +103,24 @@ gc_config_new(): any
         marking_threshold = 0.8,
         sweep_threshold = 0.5,
     }
-end
 
 gc_config_set_mode(config: any, mode: str): any
     config.mode = mode
     config
-end
 
 gc_config_set_pause_target(config: any, target_ms: f64): any
     config.pause_target = target_ms
     config
-end
 
 gc_config_set_heap_limits(config: any, min_size: i64, max_size: i64): any
     config.min_heap_size = min_size
     config.max_heap_size = max_size
     config
-end
 
 gc_config_set_growth(config: any, factor: f64, heap_growth: f64): any
     config.growth_factor = factor
     config.heap_growth = heap_growth
     config
-end
 
 # ═══════════════════════════════════════════════════════════════
 # GC State
@@ -153,38 +137,30 @@ gc_state_new(config: any): any
         collections = 0,
         bytes_since_gc = 0,
     }
-end
 
 gc_state_should_collect(gc: any): bool
     gc.allocated >= gc.threshold
-end
 
 gc_state_start_collection(gc: any): void
     gc.phase = "marking"
     gc.pause_start = os.clock()
-end
 
 gc_state_end_collection(gc: any): void
     if gc.pause_start
         gc.pause_total = gc.pause_total + (os.clock() - gc.pause_start)
-    end
     gc.phase = "idle"
     gc.collections = gc.collections + 1
     gc.bytes_since_gc = 0
     gc.threshold = gc.allocated * gc.config.growth_factor
     if gc.threshold < gc.config.min_heap_size
         gc.threshold = gc.config.min_heap_size
-    end
-end
 
 gc_state_record_alloc(gc: any, size: i64): void
     gc.allocated = gc.allocated + size
     gc.bytes_since_gc = gc.bytes_since_gc + size
-end
 
 gc_state_record_free(gc: any, size: i64): void
     gc.allocated = gc.allocated - size
-end
 
 gc_state_stats(gc: any): any
     {
@@ -195,7 +171,6 @@ gc_state_stats(gc: any): any
         pause_total = gc.pause_total,
         avg_pause = gc.collections > 0 and gc.pause_total / gc.collections or 0,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Memory Pressure Monitor
@@ -209,37 +184,29 @@ pressure_new(low_threshold: f64, high_threshold: f64): any
         peak_pressure = 0,
         warnings = 0,
     }
-end
 
 pressure_update(pressure: any, allocated: i64, max_size: i64): void
     if max_size > 0
         pressure.current_pressure = allocated / max_size
     else
         pressure.current_pressure = 0
-    end
 
     if pressure.current_pressure > pressure.peak_pressure
         pressure.peak_pressure = pressure.current_pressure
-    end
 
     if pressure.current_pressure > pressure.high_threshold
         pressure.warnings = pressure.warnings + 1
-    end
-end
 
 pressure_level(pressure: any): str
     if pressure.current_pressure < pressure.low_threshold
         "low"
-    elseif pressure.current_pressure < pressure.high_threshold
+    else if pressure.current_pressure < pressure.high_threshold
         "medium"
     else
         "high"
-    end
-end
 
 pressure_should_gc(pressure: any): bool
     pressure.current_pressure > pressure.high_threshold
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Object Pool (for frequently allocated objects)
@@ -256,7 +223,6 @@ pool_new(factory: any, initial_size: i64): any
             returned = 0,
         },
     }
-end
 
 pool_acquire(pool: any): any
     if pool:len().available > 0
@@ -265,21 +231,17 @@ pool_acquire(pool: any): any
         pool.in_use[obj] = true
         pool.stats.reused = pool.stats.reused + 1
         return obj
-    end
 
     obj = pool.factory()
     pool.in_use[obj] = true
     pool.stats.created = pool.stats.created + 1
     obj
-end
 
 pool_release(pool: any, obj: any): void
     if pool.in_use[obj]
         pool.in_use[obj] = nil
         pool.available[pool:len().available + 1] = obj
         pool.stats.returned = pool.stats.returned + 1
-    end
-end
 
 pool_stats(pool: any): any
     {
@@ -289,7 +251,6 @@ pool_stats(pool: any): any
         reused = pool.stats.reused,
         returned = pool.stats.returned,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

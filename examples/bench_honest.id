@@ -32,7 +32,6 @@ bench_matmul(n: i64, s: i64): f64
     result: f64 = 0.0
     @c.emit("result = cksum")
     return result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # 2. Int64 radix sort
@@ -77,7 +76,6 @@ bench_qsort(n: i64, s: i64): i64
     result: i64 = 0
     @c.emit("result = cksum ^ sorted")
     return result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════════
@@ -135,7 +133,6 @@ bench_hashtable(n: i64, s: i64): i64
     result: i64 = 0
     @c.emit("result = hits")
     return result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # 4. Binary search — branchless comparison
@@ -196,7 +193,6 @@ bench_bsearch(n: i64, s: i64): i64
     result: i64 = 0
     @c.emit("result = found")
     return result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # 5. N-body — direct force summation
@@ -242,7 +238,6 @@ bench_nbody_real(steps: i64, s: i64): f64
     result: f64 = 0.0
     @c.emit("result = energy")
     return result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # 6. FNV hash — interleaved for ILP
@@ -372,11 +367,9 @@ bench_fnv_hash(n: i64, s: i64): i64
     result: i64 = 0
     @c.emit("result = hash_sum")
     return result
-end
 
 print_fnv_result(v: i64): void
     @c.emit([[printf("RESULT fnv %lld\n", (long long)v);]])
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Driver

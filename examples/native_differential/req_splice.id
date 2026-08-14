@@ -6,4 +6,3 @@ P = nativespliceprobe
 
 main(): i64
     P.answer() + P.bump(0)
-end

@@ -22,25 +22,20 @@ _WORK = "/tmp/duo-honest"
 
 _env_or(n: str, d: str): str
     v = script.getenv_or(n)
-    if v == "" return d end
+    if v == "" return d
     v
-end
 
 _pad(s: str, w: i64): str
     o = s
     while o:len() < w
         o = o .. " "
-    end
     o
-end
 
 _lpad(s: str, w: i64): str
     o = s
     while o:len() < w
         o = " " .. o
-    end
     o
-end
 
 # `to(str)` on an f64 does not compile (undeclared `tostring`), so fixed-point
 # output is assembled from integers.
@@ -50,31 +45,24 @@ _fx(x: f64, places: i64): str
     while i < places
         scale = scale * 10
         i += 1
-    end
     n = to(i64)(x * to(f64)(scale) + 0.5)
     w = n / scale
     f = n % scale
     fs = f:to(str)
     while fs:len() < places
         fs = "0" .. fs
-    end
     w:to(str) .. "." .. fs
-end
 
 _fields(l: str): any
     o = {}
     for _i, w in l:gsub("\t", " "):split(" ")
-        if w != "" o[o:len() + 1] = w end
-    end
+        if w != "" o[o:len() + 1] = w
     o
-end
 
 _known(name: str): bool
     for _i, n in _NAMES
-        if n == name return true end
-    end
+        if n == name return true
     false
-end
 
 # Rows tagged `tag` as name->value. Used for both RESULT (correctness) and
 # Time (timing); keeping one reader means the two channels cannot drift.
@@ -86,16 +74,12 @@ _rows(text: str, tag: str): any
         if f:len() >= 3 and f[1] == tag
             r[f[2]] = f[3]
             n += 1
-        end
-    end
     r["__n"] = n:to(str)
     r
-end
 
 _fail(msg: str): i64
     print(msg)
     1
-end
 
 main: i64 = ()
     duo = "./zig-out/bin/idol"
@@ -108,15 +92,13 @@ main: i64 = ()
     print("Compiling Duo...")
     if script.run(duo .. " compile examples/bench_honest.id -o " .. dbin) != 0
         return _fail("honest_benchmark: FAIL — bench_honest.id did not compile")
-    end
 
     print("Compiling C reference...")
     sdk = script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))
     cflags = "-O3 -ffast-math -march=native -flto -lm"
-    if sdk != "" cflags = cflags .. " -isysroot " .. sdk end
+    if sdk != "" cflags = cflags .. " -isysroot " .. sdk
     if script.run("clang " .. cflags .. " -o " .. cbin .. " examples/bench_honest_c.c") != 0
         return _fail("honest_benchmark: FAIL — bench_honest_c.c did not compile")
-    end
 
     seed = _env_or("HONEST_SEED", "123456789")
     script.env_set("HONEST_SEED", seed)
@@ -134,8 +116,6 @@ main: i64 = ()
         if p[2]["__n"] != _ROWS:to(str)
             return _fail(p[1] .. " RESULT count mismatch: got " .. p[2]["__n"]
                 .. " expected " .. _ROWS:to(str))
-        end
-    end
 
     # matmul and nbody are floating point and compared within 1e-9; the other
     # four are integer checksums and must match EXACTLY. A blanket tolerance
@@ -153,21 +133,16 @@ main: i64 = ()
         v = cres[c[1]]
         if d == nil or v == nil
             return _fail("RESULT " .. c[1] .. " missing")
-        end
         if c[3]
             diff = to(f64)(d) - to(f64)(v)
-            if diff < 0.0 diff = -diff end
+            if diff < 0.0 diff = -diff
             if diff > 0.000000001
                 return _fail("RESULT " .. c[1] .. " mismatch: Duo=" .. d .. " C=" .. v)
-            end
             print(c[2] .. " matches C within 1e-9.")
         else
             if d != v
                 return _fail("RESULT " .. c[1] .. " mismatch: Duo=" .. d .. " C=" .. v)
-            end
             print(c[2] .. " matches C exactly.")
-        end
-    end
 
     print("")
     dmin = {}
@@ -180,23 +155,16 @@ main: i64 = ()
             if t["__n"] != _ROWS:to(str)
                 return _fail(pair[1] .. " timing run " .. to(str)(r + 1)
                     .. " Time count mismatch: got " .. t["__n"] .. " expected " .. _ROWS:to(str))
-            end
             for k, v in t
                 if k != "__n"
                     # An unrecognised name means the corpus changed under the
                     # harness; silently binning it would drop a benchmark.
                     if !_known(k)
                         return _fail(pair[1] .. " timing run reported unknown benchmark: " .. k)
-                    end
                     fv = to(f64)(v)
                     if pair[3][k] == nil or fv < pair[3][k]
                         pair[3][k] = fv
-                    end
-                end
-            end
             r += 1
-        end
-    end
 
     print("")
     print("--- Results (min of " .. _RUNS:to(str) .. " runs) ---")
@@ -216,22 +184,18 @@ main: i64 = ()
                 .. " " .. _lpad("N/A", 10) .. " " .. _lpad("SKIP", 8))
         else
             ratio = "N/A"
-            if cv > 0.0 ratio = _fx(d / cv, 3) .. "x" end
+            if cv > 0.0 ratio = _fx(d / cv, 3) .. "x"
             winner = "Duo/Tie"
             if d > cv * _SLACK
                 winner = "C"
                 overall = false
-            end
             print(_pad(name, 16) .. " " .. _lpad(_fx(d, 6), 12) .. " " .. _lpad(_fx(cv, 6), 12)
                 .. " " .. _lpad(ratio, 10) .. " " .. _lpad(winner, 8))
-        end
-    end
 
     print("")
     if !overall
         print("Some benchmarks show C faster — investigating codegen overhead.")
         os.exit(1)
-    end
     print("PASS: Duo matches or beats C on all honest benchmarks.")
     print("  (Duo uses runtime inputs and optimized native kernels without fixed-result folding)")
     print("")
@@ -239,4 +203,3 @@ main: i64 = ()
     print("constant-folded. Duo rows may use stronger algorithms or kernels when")
     print("the observable result allows it; C rows remain straightforward baselines.")
     0
-end

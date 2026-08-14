@@ -21,25 +21,20 @@ _SRC = "examples/benchmark_wasm.lua"
 
 _env_or(n: str, d: str): str
     v = script.getenv_or(n)
-    if v == "" return d end
+    if v == "" return d
     v
-end
 
 _pad(s: str, w: i64): str
     o = s
     while o:len() < w
         o = o .. " "
-    end
     o
-end
 
 _lpad(s: str, w: i64): str
     o = s
     while o:len() < w
         o = " " .. o
-    end
     o
-end
 
 # `to(str)` on an f64 does not compile, so fixed-point comes from integers.
 # Negative values matter here: a delta percentage can be either sign, and
@@ -50,36 +45,29 @@ _fx(x: f64, places: i64): str
     if v < 0.0
         neg = true
         v = -v
-    end
     scale = 1
     i = 0
     while i < places
         scale = scale * 10
         i += 1
-    end
     n = to(i64)(v * to(f64)(scale) + 0.5)
     w = n / scale
     f = n % scale
     fs = f:to(str)
     while fs:len() < places
         fs = "0" .. fs
-    end
     s = w:to(str) .. "." .. fs
-    if neg return "-" .. s end
+    if neg return "-" .. s
     s
-end
 
 _have(t: str): bool
     script.chomp(script.capture("command -v " .. t .. " 2>/dev/null")) != ""
-end
 
 _fields(l: str): any
     o = {}
     for _i, w in l:gsub("\t", " "):split(" ")
-        if w != "" o[o:len() + 1] = w end
-    end
+        if w != "" o[o:len() + 1] = w
     o
-end
 
 # "RESULT <id> <value>" lines, joined, so two runtimes can be compared as one
 # string rather than field by field.
@@ -91,20 +79,14 @@ _result_block(text: str): str
         if f:len() >= 3 and f[1] == "RESULT"
             out = out .. f[2] .. " " .. f[3] .. "\n"
             n += 1
-        end
-    end
     out .. "__n " .. n:to(str)
-end
 
 _result_count(block: str): i64
     for _i, l in block:split("\n")
         f = _fields(l)
         if f:len() == 2 and f[1] == "__n"
             return to(i64)(f[2])
-        end
-    end
     0
-end
 
 # Wall clock via time.monotonic. The shell version needed a two-stage
 # fallback # `/usr/bin/time -f %e`, and if that produced something
@@ -114,37 +96,30 @@ _wall_seconds(cmd: str): f64
     t0 = std.time.monotonic()
     std.script.run(cmd .. " >/dev/null 2>&1")
     to(f64)(std.time.monotonic() - t0) / 1000000000.0
-end
 
 _min_wall(cmd: str, runs: i64): f64
     best = 0.0
     i = 0
     while i < runs
         t = _wall_seconds(cmd)
-        if best == 0.0 or t < best best = t end
+        if best == 0.0 or t < best best = t
         i += 1
-    end
     best
-end
 
 _baseline_for(path: str, rt: str): f64
-    if !std.script.fs_exists(path) return 0.0 end
+    if !std.script.fs_exists(path) return 0.0
     for _i, l in std.script.capture("cat " .. path):split("\n")
         c = std.script.chomp(l)
         if c != "" and c:sub(1, 1) != "#"
             f = _fields(c)
             if f:len() >= 2 and f[1] == rt
                 return to(f64)(f[2])
-            end
-        end
-    end
     0.0
-end
 
 _save_baseline(path: str, names: any, times: any, runs: i64): void
     std.script.run("mkdir -p $(dirname " .. path .. ")")
     commit = std.script.chomp(std.script.capture("git rev-parse --short HEAD 2>/dev/null"))
-    if commit == "" commit = "unknown" end
+    if commit == "" commit = "unknown"
     body = "# Duo WASM Runtime Benchmark Baseline\n"
         .. "# Generated: " .. std.script.chomp(std.script.capture("date -u '+%Y-%m-%d %H:%M:%S UTC'")) .. "\n"
         .. "# Commit: " .. commit .. "\n"
@@ -152,16 +127,14 @@ _save_baseline(path: str, names: any, times: any, runs: i64): void
         .. "# runtime  total_wall_seconds\n"
     for i, n in names
         body = body .. _pad(n, 12) .. "  " .. _fx(times[i], 3) .. "\n"
-    end
     std.script.fs_write(path, body)
     print("  INFO Baseline saved -> " .. path)
-end
 
 main: i64 = ()
     args = std.os.args()
     reset = false
     runs = to(i64)(_env_or("WASM_BENCH_RUNS", "3"))
-    if runs == nil or runs < 1 runs = 3 end
+    if runs == nil or runs < 1 runs = 3
 
     i = 1
     while i <= args:len()
@@ -173,22 +146,16 @@ main: i64 = ()
                 if i + 1 > args:len()
                     print("ERROR: --runs requires a value")
                     os.exit(1)
-                end
                 runs = to(i64)(args[i + 1])
                 i += 1
             else
                 if a != "--"
                     print("ERROR: unknown argument: " .. a)
                     os.exit(1)
-                end
-            end
-        end
         i += 1
-    end
     if runs == nil or runs < 1
         print("ERROR: runs must be a positive integer")
         os.exit(1)
-    end
 
     std.script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
     wasm = _WORK .. "/duo_wasm_bench.wasm"
@@ -210,15 +177,12 @@ main: i64 = ()
             names[names:len() + 1] = c[1]
             cmds[names:len()] = c[3] .. wasm
             print("  INFO Found runtime: " .. c[1])
-        end
-    end
     if names:len() == 0
         print("ERROR: No WASM runtimes found. Install at least one of:")
         print("  wasmtime  https://wasmtime.dev")
         print("  wazero    go install github.com/tetratelabs/wazero/cmd/wazero@latest")
         print("  iwasm     https://github.com/bytecodealliance/wasm-micro-runtime/releases")
         os.exit(1)
-    end
 
     print("")
     print("=== Compiling benchmark to WASM ===")
@@ -229,7 +193,6 @@ main: i64 = ()
     if !std.script.fs_exists(wasm)
         print("ERROR: WASM compilation failed — " .. wasm .. " not produced.")
         os.exit(1)
-    end
     print("  INFO Produced: " .. wasm .. " ("
         .. std.script.chomp(std.script.capture("du -sh " .. wasm .. " | cut -f1")) .. ")")
 
@@ -240,7 +203,6 @@ main: i64 = ()
     if n != _BENCHES
         print("ERROR: Expected " .. _BENCHES:to(str) .. " RESULT lines, got " .. n:to(str) .. ".")
         os.exit(1)
-    end
     print("  PASS All " .. _BENCHES:to(str) .. " RESULT lines present")
 
     # Two runtimes disagreeing on a RESULT is a wasm codegen bug, not a
@@ -252,8 +214,6 @@ main: i64 = ()
         else
             print("  FAIL Result mismatch between " .. names[1] .. " and " .. names[2])
             os.exit(1)
-        end
-    end
 
     print("")
     print("=== Timing (min of " .. runs:to(str) .. " runs, wall-clock seconds) ===")
@@ -262,7 +222,6 @@ main: i64 = ()
         print("  INFO Timing " .. nm .. "...")
         times[i2] = _min_wall(cmds[i2], runs)
         print("  " .. _pad(nm, 12) .. "  " .. _fx(times[i2], 3) .. "s")
-    end
 
     print("")
     if reset or !std.script.fs_exists(baseline)
@@ -270,15 +229,12 @@ main: i64 = ()
             print("=== Resetting baseline ===")
         else
             print("=== No baseline found — writing initial baseline ===")
-        end
         _save_baseline(baseline, names, times, runs)
         print("")
         for i2, nm in names
             print(_pad(nm, 12) .. "  " .. _lpad(_fx(times[i2], 3), 10) .. "  "
                 .. _lpad("(new)", 11) .. "  " .. _lpad("baseline", 8))
-        end
         return 0
-    end
 
     print(_pad("Runtime", 12) .. "  " .. _lpad("Current(s)", 10) .. "  "
         .. _lpad("Baseline(s)", 11) .. "  " .. _lpad("Delta", 8))
@@ -299,20 +255,16 @@ main: i64 = ()
                 status = "REGRESSED"
                 gate_fail = true
             else
-                if cur < base * 0.98 status = "IMPROVED" end
-            end
+                if cur < base * 0.98 status = "IMPROVED"
             print(_pad(nm, 12) .. "  " .. _lpad(_fx(cur, 3), 10) .. "  "
                 .. _lpad(_fx(base, 3), 11) .. "  " .. _lpad(_fx(delta, 1) .. "%", 8)
                 .. "  " .. status)
-        end
-    end
 
     # The baseline only moves on a PASSING run. Saving after a regression
     # would ratchet the slowdown in and the gate would never fire again.
     if !gate_fail
         print("")
         _save_baseline(baseline, names, times, runs)
-    end
 
     if names:len() >= 2
         print("")
@@ -323,9 +275,6 @@ main: i64 = ()
                 print("  " .. _pad(nm, 12) .. "  N/A")
             else
                 print("  " .. _pad(nm, 12) .. "  " .. _fx(times[i2] / ref, 2) .. "x")
-            end
-        end
-    end
 
     print("")
     if gate_fail
@@ -333,7 +282,5 @@ main: i64 = ()
             .. to(str)(to(i64)(_REGRESS_PCT)) .. "%.")
         print("Run with --reset-baseline to accept the new times as the new baseline.")
         os.exit(1)
-    end
     print("WASM benchmark PASSED: all runtimes at or better than baseline.")
     0
-end

@@ -6,7 +6,6 @@
 # (In the full runtime, req is provided by the standard library)
 req(module: str)
     return "loaded: " .. module
-end
 
 # Standard require pattern
 print("sync module loaded: " .. to(str)(type(sync)))
@@ -14,7 +13,6 @@ print("sync module loaded: " .. to(str)(type(sync)))
 # req can be used as a function name
 my_req(module: str): str
     "loaded: " .. module
-end
 
 print(my_req("custom_module"))
 

@@ -14,7 +14,6 @@ parse_factor(toks: ptr, st: ptr): i64
     v: i64 = toks[p]
     st[1] = p + 1
     v
-end
 
 parse_term(toks: ptr, st: ptr, n: i64): i64
     acc: i64 = parse_factor(toks, st)
@@ -22,9 +21,7 @@ parse_term(toks: ptr, st: ptr, n: i64): i64
         st[1] = st[1] + 1
         rhs: i64 = parse_factor(toks, st)
         acc = acc * rhs
-    end
     acc
-end
 
 parse_expr(toks: ptr, st: ptr, n: i64): i64
     acc: i64 = parse_term(toks, st, n)
@@ -32,13 +29,10 @@ parse_expr(toks: ptr, st: ptr, n: i64): i64
         st[1] = st[1] + 1
         rhs: i64 = parse_term(toks, st, n)
         acc += rhs
-    end
     acc
-end
 
 main(): i64
     toks = { 2, -1, 3, -2, 4, -1, 1 }
     st = { 1 }
     r: i64 = parse_expr(toks, st, 7)
     r
-end

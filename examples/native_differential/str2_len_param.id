@@ -1,6 +1,4 @@
 n(s: str): i64
     return s:len()
-end
 main(): i64
     return n("hello")
-end

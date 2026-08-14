@@ -2,7 +2,6 @@
 
 greet(name: str): str
     "Hello, " .. name
-end
 
 # Bash-style call with string literal
 print(greet("World"))
@@ -14,13 +13,11 @@ print(greet(name))
 # Bash-style call with number
 double(x: i64): i64
     x * 2
-end
 
 print(double(21))
 
 # Multiple arguments
 add(a: i64, b: i64): i64
     a + b
-end
 
 print(add(10, 20))

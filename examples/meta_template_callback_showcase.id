@@ -3,7 +3,6 @@
 
 tmpl_unit(m): str
     "/* tmpl[" .. m.name .. ":" .. m.ctype .. "] */\n"
-end
 
 INST = "i64:int64_t|f64:double"
 CODE = @comp.template(INST, "", tmpl_unit)

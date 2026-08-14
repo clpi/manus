@@ -4,5 +4,4 @@ crypto_sha = sha
 
 sha1(s: str): str
     crypto_sha.sha1(s)
-end
 

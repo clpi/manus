@@ -98,11 +98,9 @@ envor: str = (name: str, fallback: str)
 
 sh(cmd: str): i64
     status(cmd)
-end
 
 count(cmd: str): i64
     to(i64)(cap(cmd))
-end
 
 # The foreign population: tracked files whose extension is authored source in
 # another language. `.md`, `.json`, `.toml`, `.zon`, `.wat` and friends are
@@ -113,11 +111,9 @@ exts = "\\.(zig|c|h|hpp|cpp|cc|lua|sh|bash|zsh|fish|py|js|ts|rs|go|m|mm|java|rb|
 # of the line, which is where the termination condition or the licence lives.
 field(rules: str, i: i64, n: i64): str
     cap("sed -n '{i}p' {rules} | tr -s ' ' | cut -d' ' -f{n}")
-end
 
 reason(rules: str, i: i64): str
     cap("sed -n '{i}p' {rules} | tr -s ' ' | cut -d' ' -f3-")
-end
 
 # Move every file matching this prefix out of `rest` and into `into`. The
 # prefix is escaped before it becomes a regex — `build.zig` must not match
@@ -127,15 +123,12 @@ take(prefix: str, rest: str, into: str): i64
     hits: i64 = count("grep -E \"^$(printf '%s' '{prefix}' | sed -e 's/[.[*^$]/\\\\&/g')\" {rest} 2>/dev/null | tee -a {into} | wc -l")
     sh("grep -v -E \"^$(printf '%s' '{prefix}' | sed -e 's/[.[*^$]/\\\\&/g')\" {rest} > {rest}.keep 2>/dev/null; mv {rest}.keep {rest}")
     hits
-end
 
 pad(s: str, width: i64): str
     out = s
     while out:len() < width
         out = out .. space
-    end
     out
-end
 
 # Classify a whole list against the whole rule set, first match wins, and
 # report what fell through. Used for the repository and, on a copy, for the
@@ -151,15 +144,11 @@ sweep(rules: str, n: i64, work: str, list: str, tag: str): i64
         got: i64 = 0
         if cls == "ledger"
             got = take(pre, "{work}/rest{tag}", "{work}/ledger{tag}")
-        end
         if cls == "oracle"
             got = take(pre, "{work}/rest{tag}", "{work}/oracle{tag}")
-        end
         sh("printf '%s\\n' {got} >> {work}/counts{tag}")
         i += 1
-    end
     count("wc -l < {work}/rest{tag}")
-end
 
 main(): i64
     root = cap("git rev-parse --show-toplevel 2>/dev/null")
@@ -167,7 +156,6 @@ main(): i64
     if root == ""
         print("foreign_census: FAIL — not inside a git work tree; the population cannot be listed")
         code = 3
-    end
 
     work = ""
     if code == 0
@@ -175,8 +163,6 @@ main(): i64
         if work == ""
             print("foreign_census: FAIL — could not make a scratch directory")
             code = 3
-        end
-    end
 
     manifest = "{root}/docs/spec/foreign.md"
     population: i64 = 0
@@ -195,12 +181,9 @@ main(): i64
         if population == 0
             print("foreign_census: FAIL — 0 foreign files found; the census did not run and a perfect score here would mean nothing")
             code = 3
-        end
         if code == 0 and rulecount == 0
             print("foreign_census: FAIL — docs/spec/foreign.md yielded 0 rules; the parse is broken")
             code = 3
-        end
-    end
 
     # Rule wellformedness. A ledger row with no termination condition is the
     # thing docs/foreign_code_ledger.md calls architectural debt by name.
@@ -210,12 +193,9 @@ main(): i64
         if noend > 0
             print("foreign_census: FAIL — {noend} ledger rule(s) carry no `until:` termination condition. A bootstrap exception with no stated end is not an exception, it is a permanent dependency.")
             code = 1
-        end
         if nolicence > 0
             print("foreign_census: FAIL — {nolicence} oracle rule(s) carry no `license:` authority. A licence with nobody granting it is a preference.")
             code = 1
-        end
-    end
 
     # Controls 3 and 4, on a copy: the matcher must say no, and must say yes.
     if code == 0
@@ -227,15 +207,11 @@ main(): i64
         if left != base + 1
             print("foreign_census: FAIL — the negative control did not land in unclassified ({left} against a baseline of {base}); the matcher cannot say `no` and its 0 violations would be meaningless")
             code = 3
-        end
         if code == 0
             planted: i64 = count("grep -c zzzprobe {work}/ledgerp")
             if planted != 1
                 print("foreign_census: FAIL — the positive control did not land in `ledger`; the matcher is not assigning by rule")
                 code = 3
-            end
-        end
-    end
 
     if code == 0
         unclassified: i64 = sweep("{work}/rules", rulecount, work, "{work}/all", "r")
@@ -246,7 +222,6 @@ main(): i64
         if ledger + oracle + unclassified != population
             print("foreign_census: FAIL — the accounting does not close: {ledger} ledger + {oracle} oracle + {unclassified} unclassified is not {population}. A file fell out of the classifier.")
             code = 3
-        end
 
         if code == 0
             print("")
@@ -274,7 +249,6 @@ main(): i64
                 pn: str = pad(n:to(str), 6)
                 print("    {pc}{pp}{pn}{why}")
                 i += 1
-            end
 
             if unclassified > 0
                 print("")
@@ -283,7 +257,6 @@ main(): i64
                     print(cap("head -10 {work}/restr | sed -e 's/^/    /'"))
                 if envor("FOREIGN_SHOW", "") != ""
                     print(cap("sed -e 's/^/    /' {work}/restr"))
-            end
 
             # The row no file census can see.
             # Comment lines are stripped, and this file excludes ITSELF, for
@@ -305,7 +278,6 @@ main(): i64
             if embedded == 0
                 print("foreign_census: FAIL — 0 embedded @c sites. The compiler tokenizes with a generated @comp.c.emit artifact, so a zero is a broken grep, not a milestone.")
                 code = 3
-            end
 
             floor = to(i64)(envor("FOREIGN_FLOOR", "2"))
             embedfloor = to(i64)(envor("FOREIGN_EMBED_FLOOR", "181"))
@@ -313,20 +285,14 @@ main(): i64
             if unclassified > floor
                 print("foreign_census: FAIL — {unclassified} unclassified foreign files, over the ratchet {floor}. Classify it as ledger with a termination condition, classify it as oracle with the authority that licenses it, or delete it.")
                 over += 1
-            end
             if embedded > embedfloor
                 print("foreign_census: FAIL — {embedded} embedded @c sites, over the ratchet {embedfloor}. C-as-intermediary is graveyarded; the count only goes down.")
                 over += 1
-            end
             if over > 0
                 code = 1
-            end
             if over == 0
                 print("foreign_census: PASS — {ledger} ledger, {oracle} oracle, {unclassified} unclassified (budget {floor}), {embedded} embedded @c sites (budget {embedfloor})")
                 print("  PASS is not a claim that the foreign code is fine. It is a claim that every file has a licence on record and the debt did not grow.")
-            end
-        end
-    end
 
     # BOUND, not called bare. A trailing side-effecting call at the end of
     # `main` overwrites the process exit status with ITS status: this gate
@@ -336,6 +302,4 @@ main(): i64
     # landed this. See gaps/GAP-070.md.
     if work != ""
         swept: i64 = sh("rm -rf {work}")
-    end
     code
-end

@@ -15,26 +15,19 @@ names(): any
     out = {}
     for name, _ in bundles
         out[out:len() + 1] = name
-    end
     out
-end
 
 traits(bundle_name: str): any
     bundles[bundle_name] or {}
-end
 
 contains(bundle_name: str, trait: str): bool
     rows = traits(bundle_name)
     for _, t in rows
         if t == trait
             return true
-        end
-    end
     false
-end
 
 describe(bundle_name: str): str
     rows = traits(bundle_name)
     bundle_name .. " => " .. rows:concat(", ")
-end
 

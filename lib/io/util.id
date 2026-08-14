@@ -3,60 +3,53 @@
 
 # all: read all data from a file handle until EOF.
 all(fh: any): str
-    if fh == nil return "" end
+    if fh == nil return ""
     out = {}
     while true
         chunk = fh:read(4096)
-        if chunk == nil break end
+        if chunk == nil break
         out[out:len() + 1] = chunk
-    end
     out:concat()
-end
 
 # read: read the entire contents of a file path.
 read(path: str): str
-    if path == nil return "" end
+    if path == nil return ""
     f = io.open(path, "r")
-    if f == nil return "", "file not found: " .. path end
+    if f == nil return "", "file not found: " .. path
     data = all(f)
     f:close()
     return data, nil
-end
 
 # write: write data to a file path (truncating if it exists).
 write(path: str, data: str): any
-    if path == nil return false, "nil path" end
-    if data == nil data = "" end
+    if path == nil return false, "nil path"
+    if data == nil data = ""
     f = io.open(path, "w")
-    if f == nil return false, "cannot open: " .. path end
+    if f == nil return false, "cannot open: " .. path
     f:write(data)
     f:close()
     return true, nil
-end
 
 # append: append data to a file path (creating if it doesn't exist).
 append(path: str, data: str): any
-    if path == nil return false, "nil path" end
-    if data == nil data = "" end
+    if path == nil return false, "nil path"
+    if data == nil data = ""
     f = io.open(path, "a")
-    if f == nil return false, "cannot open: " .. path end
+    if f == nil return false, "cannot open: " .. path
     f:write(data)
     f:close()
     return true, nil
-end
 
 # list: list directory entries.
 list(dir: str): any
-    if dir == nil return {} end
+    if dir == nil return {}
     f = io.popen("ls -1 " .. dir .. " 2>/dev/null", "r")
-    if f == nil return {} end
+    if f == nil return {}
     out = {}
-    for line in f:lines() do
+    for line in f:lines()
         out[out:len() + 1] = line
-    end
     f:close()
     out
-end
 
 # temp: create a temporary file and return its handle and path.
 temp(): any
@@ -67,16 +60,13 @@ temp(): any
     while i <= 8
         hex = hex .. "%02x":format(blob:byte(i))
         i += 1
-    end
     path = "/tmp/duo_" .. to(str)(os.time()) .. "_" .. hex
     f = io.open(path, "w+")
     return {fh = f, path = path}
-end
 
 # scratch: temp directory. IMPLEMENTATION-BLOCKED until process world admits make.
 scratch(): str
     ""
-end
 
 # discard: a writer that discards all data (returns count written).
 discard(): any
@@ -84,10 +74,8 @@ discard(): any
         self.n = self.n + s:len()
         self
     end}
-end
 
 # wrap: a reader with a no-op close method.
 wrap(fh: any): any
     fh.close = (self: any) nil
     fh
-end

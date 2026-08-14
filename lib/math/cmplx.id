@@ -3,81 +3,63 @@
 
 new(re: any, im: any): any
     {re = re, im = im}
-end
 
 add(a: any, b: any): any
     {re = a.re + b.re, im = a.im + b.im}
-end
 
 sub(a: any, b: any): any
     {re = a.re - b.re, im = a.im - b.im}
-end
 
 mul(a: any, b: any): any
     {re = a.re * b.re - a.im * b.im, im = a.re * b.im + a.im * b.re}
-end
 
 div(a: any, b: any): any
     denom = b.re * b.re + b.im * b.im
     return {re = (a.re * b.re + a.im * b.im) / denom, im = (a.im * b.re - a.re * b.im) / denom}
-end
 
 neg(a: any): any
     {re = -a.re, im = -a.im}
-end
 
 conj(a: any): any
     {re = a.re, im = -a.im}
-end
 
 abs(a: any): any
     a.re * a.re + a.im * a.im:sqrt()
-end
 
 phase(a: any): any
     math.atan2(a.im, a.re)
-end
 
 polar(r: any, theta: any): any
     {re = r * theta:cos(), im = r * theta:sin()}
-end
 
 rect(r: any, theta: any): any
     polar(r, theta)
-end
 
 exp(a: any): any
     er = a.re:exp()
     return {re = er * a.im:cos(), im = er * a.im:sin()}
-end
 
 log(a: any): any
     r = abs(a)
     theta = phase(a)
     return {re = r:log(), im = theta}
-end
 
 sin(a: any): any
     {re = a.re:sin() * a.im:cosh(), im = a.re:cos() * math.sinh(a.im)}
-end
 
 cos(a: any): any
     {re = a.re:cos() * a.im:cosh(), im = -a.re:sin() * math.sinh(a.im)}
-end
 
 tan(a: any): any
     s = sin(a)
     c = cos(a)
     div(s, c)
-end
 
 sqrt(a: any): any
     if a.im == 0 and a.re >= 0
         return {re = a.re:sqrt(), im = 0}
-    end
     r = abs(a)
     return {re = (r + a.re) / 2:sqrt(), im = a.im:sign() * (r - a.re) / 2:sqrt()}
-end
 
 pow(a: any, b: any): any
     if b.im == 0 and b.re == b.re:floor()
@@ -87,20 +69,14 @@ pow(a: any, b: any): any
         if n < 0
             base = div({re = 1, im = 0}, base)
             n = -n
-        end
         for _ = 1, n
             result = mul(result, base)
-        end
         return result
-    end
     exp(mul(b, log(a)))
-end
 
 nan(a: any): bool
     a.re != a.re or a.im != a.im
-end
 
 inf(a: any): bool
     a.re == math.huge or a.re == -math.huge or a.im == math.huge or a.im == -math.huge
-end
 

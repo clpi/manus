@@ -12,15 +12,10 @@ count_primes(limit: i64): i64
         while d * d <= n
             if n % d == 0
                 is_prime = false
-            end
             d += 1
-        end
         if is_prime
             count += 1
-        end
         n += 1
-    end
     count
-end
 
 print(count_primes(LIMIT))

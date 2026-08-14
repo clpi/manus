@@ -8,5 +8,4 @@ NESTED = @comp.map("q", fun(seed)
 end)
 parity(): str
     @comp.match("a|b", fun(m) m.pattern .. "\n" end)
-end
 BLOCK = parity()

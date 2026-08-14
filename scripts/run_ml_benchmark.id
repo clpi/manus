@@ -17,25 +17,20 @@ _WORK = "/tmp/duo_ml_bench"
 
 _env_or(n: str, d: str): str
     v = script.getenv_or(n)
-    if v == "" return d end
+    if v == "" return d
     v
-end
 
 _pad(s: str, w: i64): str
     o = s
     while o:len() < w
         o = o .. " "
-    end
     o
-end
 
 _lpad(s: str, w: i64): str
     o = s
     while o:len() < w
         o = " " .. o
-    end
     o
-end
 
 # Fixed-point formatting from integer scaling: `to(str)` on an f64 does not
 # compile (it lowers to an undeclared `tostring`).
@@ -45,21 +40,18 @@ _fx(x: f64, places: i64): str
     while i < places
         scale = scale * 10
         i += 1
-    end
     n = to(i64)(x * to(f64)(scale) + 0.5)
     whole = n / scale
     frac = n % scale
     fs = frac:to(str)
     while fs:len() < places
         fs = "0" .. fs
-    end
     whole:to(str) .. "." .. fs
-end
 
 # `to(f64)` is not a validating parse # to(f64)("Time:") returns 0.0, not nil
 # # so numeric fields are recognised structurally.
 _numeric(s: str): bool
-    if s == "" return false end
+    if s == "" return false
     d = false
     i = 1
     while i <= s:len()
@@ -69,22 +61,15 @@ _numeric(s: str): bool
         else
             if c != "." and c != "-" and c != "+" and c != "e" and c != "E"
                 return false
-            end
-        end
         i += 1
-    end
     d
-end
 
 _fields(line: str): any
     out = {}
     for _i, w in line:gsub("\t", " "):split(" ")
         if w != ""
             out[out:len() + 1] = w
-        end
-    end
     out
-end
 
 _lines(t: str): any
     out = {}
@@ -92,10 +77,7 @@ _lines(t: str): any
         c = script.chomp(l)
         if c != ""
             out[out:len() + 1] = c
-        end
-    end
     out
-end
 
 # "RESULT <id> <value>" -> id->value.
 _results(text: str): any
@@ -106,11 +88,8 @@ _results(text: str): any
         if f:len() >= 3 and f[1] == "RESULT"
             r[f[2]] = f[3]
             n += 1
-        end
-    end
     r["__count"] = n:to(str)
     r
-end
 
 # "Running <name>..." then a later "Time: <t>" # the name line SETS the
 # current benchmark and the Time line reads it. Matching Time lines alone
@@ -122,19 +101,15 @@ _times(text: str): any
         f = _fields(l)
         if f:len() >= 2 and f[1] == "Running"
             cur = f[2]:gsub("%.%.%.", "")
-        end
         if f:len() >= 2 and f[1] == "Time:" and cur != "" and _numeric(f[2])
             t[cur] = to(f64)(f[2])
-        end
-    end
     t
-end
 
 main: i64 = ()
     duo = "./zig-out/bin/idol"
     cc = _env_or("CC", "clang")
     runs = to(i64)(_env_or("RUNS", _RUNS:to(str)))
-    if runs == nil or runs < 1 runs = _RUNS end
+    if runs == nil or runs < 1 runs = _RUNS
 
     print("========================================")
     print("     ML BENCHMARK: Duo vs C             ")
@@ -144,8 +119,6 @@ main: i64 = ()
         print("Building Duo compiler...")
         if script.run(_env_or("ZIG", "zig") .. " build") != 0
             return 1
-        end
-    end
 
     script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
     duo_bin = _WORK .. "/duo_ml_bench"
@@ -155,7 +128,6 @@ main: i64 = ()
     if script.run(duo .. " compile examples/bench_ml.id -o " .. duo_bin) != 0
         print("ml_benchmark: FAIL — bench_ml.id did not compile")
         return 1
-    end
 
     print("Compiling bench_ml_c.c...")
     sdk = script.chomp(script.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null"))
@@ -163,7 +135,6 @@ main: i64 = ()
         .. " -O3 -ffast-math -march=native -flto -lm -o " .. c_bin .. " examples/bench_ml_c.c") != 0
         print("ml_benchmark: FAIL — bench_ml_c.c did not compile")
         return 1
-    end
 
     print("")
     print("--- Correctness Check ---")
@@ -178,8 +149,6 @@ main: i64 = ()
             print(pair[1] .. " correctness run emitted " .. pair[2]["__count"]
                 .. " RESULT row(s), expected " .. _BENCHES:to(str))
             return 1
-        end
-    end
 
     # The shell version compared inside `paste ... | while ...`, which runs in
     # a SUBSHELL: its `exit 1` left the subshell only, and the `FAIL` it set was
@@ -196,23 +165,19 @@ main: i64 = ()
             dv = to(f64)(d)
             cv = to(f64)(c)
             diff = dv - cv
-            if diff < 0.0 diff = -diff end
+            if diff < 0.0 diff = -diff
             denom = cv
-            if denom < 0.0 denom = -denom end
-            if denom < 0.0000000001 denom = 1.0 end
+            if denom < 0.0 denom = -denom
+            if denom < 0.0000000001 denom = 1.0
             if diff / denom < 0.0001
                 print("  OK: " .. name .. " = " .. d)
             else
                 print("MISMATCH: " .. name .. ": Duo=" .. d .. " vs C=" .. c)
                 bad += 1
-            end
-        end
-    end
     if bad != 0
         print("")
         print("ML BENCHMARK: FAIL — " .. bad:to(str) .. " result(s) differ from C")
         return 1
-    end
 
     print("")
     print("All " .. _BENCHES:to(str) .. " results match.")
@@ -226,18 +191,14 @@ main: i64 = ()
     r = 0
     while r < runs
         for k, v in _times(script.capture(duo_bin .. " 2>/dev/null"))
-            if dmin[k] == nil or v < dmin[k] dmin[k] = v end
-        end
+            if dmin[k] == nil or v < dmin[k] dmin[k] = v
         r += 1
-    end
     print("Running C (" .. runs:to(str) .. " times)...")
     r = 0
     while r < runs
         for k, v in _times(script.capture(c_bin .. " 2>/dev/null"))
-            if cmin[k] == nil or v < cmin[k] cmin[k] = v end
-        end
+            if cmin[k] == nil or v < cmin[k] cmin[k] = v
         r += 1
-    end
 
     print("")
     print("--- Results (min of " .. runs:to(str) .. " runs) ---")
@@ -256,16 +217,13 @@ main: i64 = ()
             timing_fail += 1
         else
             ratio = "N/A"
-            if c > 0.0 ratio = _fx(d / c, 3) .. "x" end
+            if c > 0.0 ratio = _fx(d / c, 3) .. "x"
             print(_pad(name, 16) .. " " .. _lpad(_fx(d, 6), 12) .. " "
                 .. _lpad(_fx(c, 6), 12) .. " " .. _lpad(ratio, 10))
             if d > c * _SLACK
                 print("  *** WARN: Duo (" .. _fx(d, 6) .. ") slower than C ("
                     .. _fx(c, 6) .. ") — optimization target")
                 timing_fail += 1
-            end
-        end
-    end
 
     print("")
     # Timing shortfalls are optimization targets, not gate failures: exit 0
@@ -276,7 +234,5 @@ main: i64 = ()
             .. " workload(s) slower than C (optimization targets).")
         print("  (Core 40-benchmark gate: zig build bench)")
         return 0
-    end
     print("ALL ML BENCHMARKS PASSED: Duo beats or ties C on all ML workloads.")
     0
-end

@@ -33,4 +33,3 @@ print("locked_run_ok = " .. to(str)(ran))
 print("RESULT script_lock_ok = " .. to(str)(ok))
 if not ok
     error("script lock smoke failed")
-end

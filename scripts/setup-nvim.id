@@ -25,9 +25,8 @@ _NVIM_LUA = [[-- Duo language support (auto-loaded by Neovim)
 
 # Add duo.nvim to runtime path
 local duo_nvim_path = vim.fn.expand("~/x/duo/ext/duo.nvim")
-if vim.fn.isdirectory(duo_nvim_path) == 1 then
+if vim.fn.isdirectory(duo_nvim_path) == 1
   vim.opt.runtimepath:append(duo_nvim_path)
-end
 
 # Filetype detection
 vim.filetype.add({
@@ -48,7 +47,7 @@ vim.api.nvim_create_autocmd("FileType", {
 
 # LSP setup
 local duo_lsp_bin = vim.fn.expand("~/x/duo-lsp/duo-lsp")
-if vim.fn.filereadable(duo_lsp_bin) == 1 then
+if vim.fn.filereadable(duo_lsp_bin) == 1
   vim.api.nvim_create_autocmd("FileType", {
     pattern = "duo",
     callback = function(args)
@@ -62,7 +61,6 @@ if vim.fn.filereadable(duo_lsp_bin) == 1 then
       })
     end,
   })
-end
 
 # Key mappings for Duo
 vim.api.nvim_create_autocmd("FileType", {
@@ -83,13 +81,11 @@ vim.api.nvim_create_autocmd("FileType", {
 
 _home(): str
     std.script.getenv_or("HOME")
-end
 
 _nvim_config(): str
     x = std.script.getenv_or("XDG_CONFIG_HOME")
-    if x == "" return _home() .. "/.config/nvim" end
+    if x == "" return _home() .. "/.config/nvim"
     x .. "/nvim"
-end
 
 # Copy one file, reporting only when it lands. The shell version chained
 # `cp ... && echo` so a missing source was silent; this says which one.
@@ -98,8 +94,6 @@ _install(src: str, dir: str, label: str): void
         print("  ok " .. label .. " installed")
     else
         print("  -- " .. label .. " not found (" .. src .. ")")
-    end
-end
 
 main: i64 = ()
     duo_root = std.script.chomp(std.script.capture("pwd"))
@@ -116,8 +110,6 @@ main: i64 = ()
         print("  Building...")
         if std.script.run("zig build") != 0
             print("  -- build failed (may need zig 0.17)")
-        end
-    end
 
     print("-> Building duo-lsp...")
     if !std.script.fs_exists(lsp_root)
@@ -137,10 +129,6 @@ main: i64 = ()
                     print("  ok built duo-lsp")
                 else
                     print("  -- duo-lsp build failed")
-                end
-            end
-        end
-    end
 
     print("-> Setting up duo.nvim plugin...")
     after_dir = nvim_config .. "/after/plugin"
@@ -171,8 +159,6 @@ main: i64 = ()
             print("  FAIL tree-sitter generate exited {code} in {ts}")
             print("  the editors have NO working parser until this exits 0.")
             print("  see gaps/GAP-049.")
-        end
-    end
 
     print("-> Installing highlight queries...")
     queries = nvim_config .. "/queries/duo"
@@ -200,6 +186,4 @@ main: i64 = ()
         print("  <leader>df  — Format file")
         print("")
         print("LSP features: diagnostics, hover, go-to-definition, completions")
-    end
     broken
-end

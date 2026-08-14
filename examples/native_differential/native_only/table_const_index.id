@@ -5,4 +5,3 @@
 main(): i64
     t = { 10, 20, 30 }
     return t[1] + t[2]
-end

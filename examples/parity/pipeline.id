@@ -3,9 +3,7 @@
 
 double(x: i64): i64
     x * 2
-end
 
 main(): i64
     y = 21 |> double
     y
-end

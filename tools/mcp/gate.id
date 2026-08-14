@@ -49,35 +49,27 @@ exact_capture: any = (cmd: str)
     mark = "duoexit:"
     code = -1
     clean = out
-    for i = 1, out:len() do
-        if string.sub(out, i, i + mark:len() - 1) == mark then
+    for i = 1, out:len()
+        if string.sub(out, i, i + mark:len() - 1) == mark
             rest = string.sub(out, i + mark:len(), out:len())
             code = tonumber(string.gsub(rest, "%s+", "")) or -1
             clean = string.sub(out, 1, i - 1)
             break
-        end
-    end
     { outcome = verdict(passed(code)), status = code, output = clean }
-end
 
 root = os.getenv("IDOL_ROOT") or ""
 if root:len() == 0
     root = os.getenv("DUO_ROOT") or ""
-end
 if root:len() == 0
     root = os.getenv("PWD") or ""
-end
 if root:len() == 0
     root = "."
-end
 
 idol_bin = os.getenv("IDOL_BIN") or ""
 if idol_bin:len() == 0
     idol_bin = os.getenv("DUO_BIN") or ""
-end
 if idol_bin:len() == 0
     idol_bin = "{root}/zig-out/bin/idol"
-end
 
 -- `idol run x.id` drops `x.out` in the CURRENT directory. Run from the repo
 -- root and the gate litters the root with bench/lsp out files, which
@@ -89,8 +81,6 @@ report(outcome: str, what: str, detail: str): void
         io:write("  ok   " .. what .. "\n")
     else
         io:write("  FAIL " .. what .. "  -  " .. detail .. "\n")
-    end
-end
 
 -- Drive a server: feed it `lines` on stdin, hand back everything it wrote.
 -- stdin is a FILE, not a pipe, because the transport is newline-delimited
@@ -106,7 +96,6 @@ drive(server: str, tag: str, lines: str): str
     os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idol_bin
         .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
     fs.read_file(respf) or ""
-end
 
 -- Count tool entries two INDEPENDENT ways and require them to agree. One
 -- counter keying on `"name":"` could be fooled by a description containing
@@ -117,22 +106,17 @@ count_names(blob: str): int
     n = 0
     for hit in string.gmatch(blob, "\"name\":\"idol_")
         n += 1
-    end
     n
-end
 
 count_schemas(blob: str): int
     n = 0
     for hit in string.gmatch(blob, "\"inputSchema\"")
         n += 1
-    end
     n
-end
 
 member(blob: str, needle: str): bool
     pos = string.find(blob, needle, 1, true)
     pos != nil and pos > 0
-end
 
 main = (): i64
     fails = 0
@@ -201,19 +185,17 @@ main = (): i64
         fails += 1
     else
         report("ok", "duo_bench initialize", "")
-    end
 
     bn = count_names(bout)
     bs = count_schemas(bout)
     if bn != bs
         report("failed", "duo_bench tool census agrees", "name count " .. bn:to(str) .. " vs schema count " .. bs:to(str))
         fails += 1
-    elseif bn != 35
+    else if bn != 35
         report("failed", "idol-bench serves 35 tools", "served " .. bn:to(str) .. "  -  update ON PURPOSE when adding a tool")
         fails += 1
     else
         report("ok", "idol-bench serves 70 tools", "")
-    end
 
     if member(bout, "bench_output")
         report("failed", "benchmark proof rejects detached transcripts", "duo_bench_regressions still accepts caller-supplied output")
@@ -228,8 +210,6 @@ main = (): i64
             fails += 1
         else
             report("ok", "duo_bench lists " .. name, "")
-        end
-    end
 
     -- VALUE round trip #1: the claim is GRANTED.
     if !member(bout, "\\\"granted\\\":true")
@@ -237,7 +217,6 @@ main = (): i64
         fails += 1
     else
         report("ok", "duo_dev_claim_acquire grants", "")
-    end
 
     -- VALUE round trip #2  -  THE POSITIVE CONTROL. A second owner asking for
     -- the same path must be REFUSED, and the refusal must name the holder.
@@ -246,12 +225,11 @@ main = (): i64
     if !member(bout, "\\\"granted\\\":false")
         report("failed", "duo_dev_claim_acquire refuses a second owner", "the lock granted the same path twice")
         fails += 1
-    elseif !member(bout, "\\\"held_by\\\":\\\"mcpgate\\\"")
+    else if !member(bout, "\\\"held_by\\\":\\\"mcpgate\\\"")
         report("failed", "refusal names the holder", "granted:false but held_by is not mcpgate")
         fails += 1
     else
         report("ok", "duo_dev_claim_acquire refuses a second owner (held_by: mcpgate)", "")
-    end
 
     -- VALUE round trip #3: the live claim is visible by owner, and the
     -- release clears it. A release that reports success on a claim still on
@@ -261,14 +239,12 @@ main = (): i64
         fails += 1
     else
         report("ok", "duo_dev_claim_files shows the live claim", "")
-    end
 
     if !member(bout, "\\\"released\\\":true")
         report("failed", "duo_dev_claim_release clears the claim", "release did not confirm; a stuck claim blocks every later session")
         fails += 1
     else
         report("ok", "duo_dev_claim_release clears the claim", "")
-    end
 
     -- And the claim really is gone from the filesystem, not just from a
     -- return value. Verify by VALUE on disk.
@@ -279,7 +255,6 @@ main = (): i64
         fails += 1
     else
         report("ok", "released claim leaves no directory", "")
-    end
 
     -- A read-only tool that must return a non-empty body. `duo_coordination_read`
     -- answers even when the buffer is missing, so an empty body here means the
@@ -289,33 +264,30 @@ main = (): i64
         fails += 1
     else
         report("ok", "duo_coordination_read answers", "")
-    end
 
     if !member(bout, "\"id\":9")
         report("failed", "duo_bench_regressions answers", "no response for id 9")
         fails += 1
-    elseif !member(bout, "benchmark proof supports only the release bench suite")
+    else if !member(bout, "benchmark proof supports only the release bench suite")
         report("failed", "duo_bench_regressions rejects unsupported suites", "handler did not return its fail-closed result")
         fails += 1
     else
         report("ok", "duo_bench_regressions rejects unsupported suites without running a benchmark", "")
-    end
 
     if !member(bout, "\"id\":10")
         report("failed", "idol_agent_session_start answers", "no response for id 10")
         fails += 1
-    elseif member(bout, "\"open_p0_count\":0") or member(bout, "\"open_p0_count\": 0")
+    else if member(bout, "\"open_p0_count\":0") or member(bout, "\"open_p0_count\": 0")
         report("failed", "session start reports live P0 census", "open_p0_count is zero")
         fails += 1
-    elseif !member(bout, "GAP-124") or !member(bout, "GAP-131")
+    else if !member(bout, "GAP-124") or !member(bout, "GAP-131")
         report("failed", "session start lists known open P0 gaps", "missing GAP-124 or GAP-131")
         fails += 1
-    elseif !member(bout, "gaps/GAP-*.md")
+    else if !member(bout, "gaps/GAP-*.md")
         report("failed", "session start cites gap file census source", "missing open_p0_census_source")
         fails += 1
     else
         report("ok", "session start reports live P0 census", "")
-    end
 
     -- ---------------------------------------------------------------
     -- duo-lsp
@@ -339,19 +311,17 @@ main = (): i64
         fails += 1
     else
         report("ok", "duo_lsp initialize", "")
-    end
 
     ln = count_names(lout)
     ls = count_schemas(lout)
     if ln != ls
         report("failed", "duo_lsp tool census agrees", "name count " .. ln:to(str) .. " vs schema count " .. ls:to(str))
         fails += 1
-    elseif ln != 32
+    else if ln != 32
         report("failed", "idol-lsp serves 32 tools", "served " .. ln:to(str) .. "  -  update ON PURPOSE when adding a tool")
         fails += 1
     else
         report("ok", "idol-lsp serves 64 tools", "")
-    end
 
     for pos, name in {"idol_agent_gaps_update", "idol_diagnostics", "idol_file_finding", "idol_agent_canonical_index"}
         if !member("{lout, \"\\\"name\\\":\\\"\"}{name}\"")
@@ -359,8 +329,6 @@ main = (): i64
             fails += 1
         else
             report("ok", "duo_lsp lists " .. name, "")
-        end
-    end
 
     -- VALUE: duo_language_features must come back with real content, and the
     -- session must SURVIVE it  -  id 4 is the proof that the handler returned
@@ -371,14 +339,12 @@ main = (): i64
         fails += 1
     else
         report("ok", "duo_language_features answers", "")
-    end
 
     if !member(lout, "\"id\":4")
         report("failed", "duo_lsp survives a tool call", "id 4 never answered  -  a handler ended the session")
         fails += 1
     else
         report("ok", "duo_lsp survives a tool call", "")
-    end
 
     -- The seven-tool regression guard. Each of these was silently dead.
     revived = { "idol_meta_catalog", "idol_complexity", "idol_grammar_spec_read", "idol_directive_hierarchy_read", "idol_table_shapes", "idol_multiplier_opportunities" }
@@ -389,9 +355,7 @@ main = (): i64
             fails += 1
         else
             report("ok", rname .. " answers", "")
-        end
         rid += 1
-    end
 
     -- ---------------------------------------------------------------
     -- zls: the THIRD dead server. It had never built  -  `ensure_zls()` and
@@ -411,18 +375,15 @@ main = (): i64
         fails += 1
     else
         report("ok", "zls initialize", "")
-    end
 
     zn = 0
     for hit in string.gmatch(zout, "\"name\":\"zig_")
         zn += 1
-    end
     if zn != 4
         report("failed", "zls serves 4 tools", "served " .. zn:to(str))
         fails += 1
     else
         report("ok", "zls serves 4 tools", "")
-    end
 
     -- VALUE: `zig fmt /dev/null` must FAIL, and the handler must say so with
     -- the exit status rather than dying. A bridge that reports success on an
@@ -432,7 +393,6 @@ main = (): i64
         fails += 1
     else
         report("ok", "zls zig_format reports a real exit status", "")
-    end
 
     -- `duo run tools/mcp/gate.id` from the repo root drops gate.out
     -- BESIDE THE REPO ROOT, not beside the source. It is gitignored, so
@@ -444,7 +404,6 @@ main = (): i64
     if fails == 0
         io.write("mcp-gate: PASS  -  all three servers handshake, serve their full tool census, and answer by value\n")
         return 0
-    end
     io.write("mcp-gate: FAIL  -  " .. fails:to(str) .. " check(s) failed\n")
     -- `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is
     -- DROPPED  -  measured here: the gate printed 13 failures and the process
@@ -453,4 +412,3 @@ main = (): i64
     -- nothing was watching the MCP servers.
     os.exit(1)
     1
-end

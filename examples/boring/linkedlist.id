@@ -15,8 +15,6 @@ main: i64 = ()
     while cur
         count = count + 1
         cur = cur.next
-    end
     head = first.value
     print("{count} {head}")
     0
-end

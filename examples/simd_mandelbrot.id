@@ -17,14 +17,11 @@ mandel_v4(cx: v4f64, cy: v4f64): v4i64
         active = active & still
         if not simd.any(active)
             iters
-        end
         zy = 2.0 * zx * zy + cy
         zx = zx2 - zy2 + cx
         iters += active
         i += 1
-    end
     iters
-end
 
 print("Starting SIMD Mandelbrot...")
 t_start = os.clock()
@@ -39,9 +36,7 @@ while y <= 1.0
         res: v4i64 = mandel_v4(cxs, cys)
         sum += simd.sum(res)
         x += 0.04
-    end
     y += 0.01
-end
 
 t_end = os.clock()
 print("SIMD Mandelbrot Sum:", sum)

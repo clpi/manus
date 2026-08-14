@@ -7,12 +7,10 @@ s = script
 global DUO: str = tostring(s.getenv_or("DUO"))
 if DUO:len() == 0
     DUO = "./zig-out/bin/idol"
-end
 
 # Build if needed
 if !s.fs_exists(DUO)
     s.must("zig build")
-end
 
 # ESC_GREP: grep pattern that matches a literal ESC (0x1b) byte via $'...' bash quoting
 global ESC_GREP: str = "$'\\033'"
@@ -21,9 +19,7 @@ temp_file(): str
     tmp = tostring(s.fs_tmp())
     if tmp:len() == 0
         tmp = "/tmp/duo_ansi_test_" .. tostring(os.time())
-    end
     return tmp:gsub("\n", "")
-end
 
 # assert_escape_free: fail if ESC bytes appear in the captured output file
 assert_escape_free_file(label: str, tmpfile: str): void
@@ -31,9 +27,7 @@ assert_escape_free_file(label: str, tmpfile: str): void
     if found == 0
         s.echo("ANSI escape sequence leaked in " .. label)
         os.exit(1)
-    end
     s.echo("ok no-ansi " .. label)
-end
 
 # assert_has_escape: fail if ESC bytes do NOT appear in the captured output file
 assert_has_escape_file(label: str, tmpfile: str): void
@@ -41,30 +35,25 @@ assert_has_escape_file(label: str, tmpfile: str): void
     if found != 0
         s.echo("ANSI styling missing in " .. label)
         os.exit(1)
-    end
     s.echo("ok ansi " .. label)
-end
 
 check_flag_report(style: str): void
     tmp = temp_file()
     s.run(DUO .. " test examples/directives_test.id --no-color --test-report " .. style .. " >" .. tmp .. " 2>&1")
     assert_escape_free_file("--no-color " .. style, tmp)
     os.remove(tmp)
-end
 
 check_env_report(style: str): void
     tmp = temp_file()
     s.run("NO_COLOR=1 " .. DUO .. " test examples/directives_test.id --test-report " .. style .. " >" .. tmp .. " 2>&1")
     assert_escape_free_file("NO_COLOR=1 " .. style, tmp)
     os.remove(tmp)
-end
 
 check_forced_color_report(style: str): void
     tmp = temp_file()
     s.run("DUO_COLOR=1 " .. DUO .. " test examples/directives_test.id --test-report " .. style .. " >" .. tmp .. " 2>&1")
     assert_has_escape_file("DUO_COLOR=1 " .. style, tmp)
     os.remove(tmp)
-end
 
 check_json_report(): void
     tmp = temp_file()
@@ -87,7 +76,6 @@ check_json_report(): void
         eol = false
         if !at_end
             eol = text:byte(i) == 10
-        end
         if at_end or eol
             if i > start
                 line = text:sub(start, i - 1)
@@ -95,32 +83,22 @@ check_json_report(): void
                     ev = json.decode(line)
                     if ev == nil
                         error("json report line did not decode: " .. line)
-                    end
                     events += 1
                     if ev.event == "summary"
                         saw_summary = true
-                    end
-                end
-            end
             start = i + 1
-        end
         i += 1
-    end
     if events == 0
         error("json report produced no events")
-    end
     if !saw_summary
         error("json report missing summary event")
-    end
     print("ok json DUO_COLOR=1 json")
     os.remove(tmp)
-end
 
 styles = {"pretty", "compact", "verbose"}
 for _, style in styles
     check_flag_report(style)
     check_env_report(style)
     check_forced_color_report(style)
-end
 
 check_json_report()

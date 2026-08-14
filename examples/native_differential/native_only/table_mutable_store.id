@@ -9,6 +9,4 @@ main(): i64
     while i <= 4
         t[i] = i * 10
         i += 1
-    end
     t[1] + t[2] + t[3] + t[4]
-end

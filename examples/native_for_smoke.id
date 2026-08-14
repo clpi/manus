@@ -3,18 +3,12 @@ counted(n: i64): i64
     for i = 1, n
         if i == 3
             continue
-        end
         total = total + i
-    end
     for j = n, 1, -2
         if j < 2
             break
-        end
         total = total + j
-    end
     total
-end
 
 main(): i64
     counted(5)
-end

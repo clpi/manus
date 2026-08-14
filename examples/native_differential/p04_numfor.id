@@ -1,7 +1,5 @@
 main(): i64
     total = 0
-    for i = 1, 10 do
+    for i = 1, 10
         total += i
-    end
     return total
-end

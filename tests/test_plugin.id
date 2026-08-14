@@ -18,19 +18,16 @@ _fail = 0
 _ok(msg: str): void
     print("OK:   " .. msg)
     _pass = _pass + 1
-end
 
 _bad(msg: str): void
     print("FAIL: " .. msg)
     _fail = _fail + 1
-end
 
 # grep -c exits nonzero on no match, so the COUNT is what is read, not the
 # status: capture keeps stdout either way and "" means no match.
 _grep(pattern: str, path: str): bool
     n = script.chomp(script.capture("grep -cE \"" .. pattern .. "\" " .. path .. " 2>/dev/null"))
     n != "" and n != "0"
-end
 
 main: i64 = ()
     for _i, f in {"ftdetect/duo.vim", "syntax/duo.vim", "plugin/duo.vim", "lua/duo/init.lua"}
@@ -39,22 +36,18 @@ main: i64 = ()
             _ok(f .. " exists")
         else
             _bad(f .. " is missing")
-        end
-    end
 
     syn = _ROOT .. "/syntax/duo.vim"
     if _grep("syntax keyword|syn keyword", syn)
         _ok("syntax/duo.vim defines keywords")
     else
         _bad("syntax/duo.vim has no 'syntax keyword' definitions")
-    end
 
     ftd = _ROOT .. "/ftdetect/duo.vim"
     if _grep("\\.id", ftd)
         _ok("ftdetect/duo.vim references .id extension")
     else
         _bad("ftdetect/duo.vim does not reference .id extension")
-    end
 
     if script.chomp(script.capture("command -v nvim 2>/dev/null")) != ""
         cmd = "nvim --headless -c \"set rtp+=" .. _ROOT .. "\" -c \"source " .. ftd
@@ -63,15 +56,11 @@ main: i64 = ()
             _ok("nvim loads ftdetect without errors")
         else
             _bad("nvim exited non-zero loading ftdetect")
-        end
     else
         print("SKIP: nvim not found — skipping live Neovim test")
-    end
 
     print("")
     print("Results: " .. _pass:to(str) .. " passed, " .. _fail:to(str) .. " failed")
     if _fail > 0
         return 1
-    end
     0
-end

@@ -7,20 +7,20 @@
 # emitted C. Keeping them function-local is the minimal fix.
 
 encode_with_alphabet(data: str, tab: str): str
-    if data == nil return "" end
+    if data == nil return ""
     res = {}
     len = data:len()
     i = 1
     while i <= len
         b1 = data:byte(i)
         b2 = 0
-        if i + 1 <= len b2 = data:byte(i + 1) end
+        if i + 1 <= len b2 = data:byte(i + 1)
         b3 = 0
-        if i + 2 <= len b3 = data:byte(i + 2) end
+        if i + 2 <= len b3 = data:byte(i + 2)
         b4 = 0
-        if i + 3 <= len b4 = data:byte(i + 3) end
+        if i + 3 <= len b4 = data:byte(i + 3)
         b5 = 0
-        if i + 4 <= len b5 = data:byte(i + 4) end
+        if i + 4 <= len b5 = data:byte(i + 4)
         c1 = (b1 >> 3) + 1
         c2 = (((b1 & 0x07) << 2) | (b2 >> 6)) + 1
         c3 = ((b2 >> 1) & 0x1F) + 1
@@ -45,42 +45,33 @@ encode_with_alphabet(data: str, tab: str): str
         if rem >= 2
             res[res:len() + 1] = tab:sub(c3, c3)
             res[res:len() + 1] = tab:sub(c4, c4)
-        end
         if rem >= 3
             res[res:len() + 1] = tab:sub(c5, c5)
-        end
         if rem >= 4
             res[res:len() + 1] = tab:sub(c6, c6)
             res[res:len() + 1] = tab:sub(c7, c7)
-        end
         if rem >= 5
             res[res:len() + 1] = tab:sub(c8, c8)
-        end
         pad = 0
-        if rem == 1 pad = 6 end
-        if rem == 2 pad = 4 end
-        if rem == 3 pad = 3 end
-        if rem == 4 pad = 1 end
+        if rem == 1 pad = 6
+        if rem == 2 pad = 4
+        if rem == 3 pad = 3
+        if rem == 4 pad = 1
         pj = 0
         while pj < pad
             res[res:len() + 1] = "="
             pj += 1
-        end
         i += 5
-    end
     res:concat()
-end
 
 encode(data: str): str
     encode_with_alphabet(data, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
-end
 
 encode_hex(data: str): str
     encode_with_alphabet(data, "0123456789ABCDEFGHIJKLMNOPQRSTUV")
-end
 
 decode_with_alphabet(data: str, tab: any): str
-    if data == nil return "" end
+    if data == nil return ""
     res = {}
     len = data:len()
     i = 1
@@ -104,10 +95,6 @@ decode_with_alphabet(data: str, tab: any): str
                     else
                         vals[j + 1] = 0
                         pad_count += 1
-                    end
-                end
-            end
-        end
         b1 = (vals[1] << 3) | (vals[2] >> 2)
         b2 = ((vals[2] & 0x03) << 6) | (vals[3] << 1) | (vals[4] >> 4)
         b3 = ((vals[4] & 0x0F) << 4) | (vals[5] >> 1)
@@ -116,36 +103,26 @@ decode_with_alphabet(data: str, tab: any): str
         res[res:len() + 1] = b1:char()
         if pad_count < 6
             res[res:len() + 1] = b2:char()
-        end
         if pad_count < 4
             res[res:len() + 1] = b3:char()
-        end
         if pad_count < 3
             res[res:len() + 1] = b4:char()
-        end
         if pad_count < 1
             res[res:len() + 1] = b5:char()
-        end
         i += 8
-    end
     res:concat()
-end
 
 decode(data: str): str
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
     dec_table = {}
     for i = 1, 32
         dec_table[alphabet:byte(i)] = i - 1
-    end
     decode_with_alphabet(data, dec_table)
-end
 
 decode_hex(data: str): str
     hex_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
     hex_dec_table = {}
     for i = 1, 32
         hex_dec_table[hex_alphabet:byte(i)] = i - 1
-    end
     decode_with_alphabet(data, hex_dec_table)
-end
 

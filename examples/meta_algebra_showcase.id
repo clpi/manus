@@ -6,19 +6,15 @@
 dot_like(a: i64, b: i64, c: i64): i64
     # mul×2/×4/×8 → shifts; add+0 folded; x-x → 0
     (a * 2) + (b * 4) + (c * 8) + (a - a) + 0
-end
 
 neg_twice(x: i64): i64
     -(-x)
-end
 
 scale(n: i64): i64
     (n * 1) + (2 * n)
-end
 
 sum(): i64
     dot_like(3, 5, 7) + neg_twice(11) + scale(4)
-end
 
 print("=== @comp.rewrite.bundle showcase ===")
 print("bundle = " .. @comp.rewrite.describe("algebraic"))

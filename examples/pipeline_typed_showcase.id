@@ -3,15 +3,12 @@
 
 twice(x: i64): i64
     x * 2
-end
 
 inc(x: i64): i64
     x + 1
-end
 
 run_chain(n: i64): i64
     n |> twice |> inc
-end
 
 print("=== pipeline typed showcase ===")
 print("3 |> twice |> inc = " .. to(str)(run_chain(3)))

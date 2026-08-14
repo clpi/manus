@@ -3,32 +3,24 @@
 
 read(file: any, arg: any): any
     file:read(arg)
-end
 
 write(file: any, arg: any): any
     file:write(arg)
-end
 
 close(file: any): void
     file:close()
-end
 
 flush(file: any): void
     file:flush()
-end
 
 bytes(file: any, n: int): str
     file:read(n)
-end
 
 put(file: any, data: str): void
     file:write(data)
-end
 
 line(file: any): any
     file:read("*l")
-end
 
 all(file: any): any
     file:read("*a")
-end

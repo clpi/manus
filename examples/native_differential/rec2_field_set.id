@@ -3,4 +3,3 @@ main(): i64
     p: pair = { a = 1, b = 2 }
     p.a = 40
     return p.a + p.b
-end

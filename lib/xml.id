@@ -2,20 +2,18 @@
 
 xml_entity_to_char(c: any): any
     c:char()
-end
 
 escape(s: str): str
-    if s == nil return "" end
+    if s == nil return ""
     s = s:gsub("&", "&amp;")
     s = s:gsub("<", "&lt;")
     s = s:gsub(">", "&gt;")
     s = s:gsub("\"", "&quot;")
     s = s:gsub("'", "&apos;")
     s
-end
 
 unescape(s: str): str
-    if s == nil return "" end
+    if s == nil return ""
     s = s:gsub("&amp;", "&")
     s = s:gsub("&lt;", "<")
     s = s:gsub("&gt;", ">")
@@ -28,7 +26,6 @@ unescape(s: str): str
     # by name.
     s = s:gsub("&#(%d+);", xml_entity_to_char)
     s
-end
 
 parse_attributes(data: str, start: i64): any
     attrs = {}
@@ -37,14 +34,11 @@ parse_attributes(data: str, start: i64): any
     while i <= len
         while i <= len and (data:byte(i) == 32 or data:byte(i) == 9 or data:byte(i) == 10 or data:byte(i) == 13)
             i += 1
-        end
         if i > len or data:byte(i) == 62 or data:byte(i) == 47
             break
-        end
         key_start = i
         while i <= len and data:byte(i) != 61 and data:byte(i) != 32 and data:byte(i) != 9 and data:byte(i) != 10 and data:byte(i) != 13 and data:byte(i) != 62 and data:byte(i) != 47
             i += 1
-        end
         key = data:sub(key_start, i - 1)
         if data:byte(i) == 61
             i += 1
@@ -53,63 +47,47 @@ parse_attributes(data: str, start: i64): any
             val_start = i
             while i <= len and data:byte(i) != delim
                 i += 1
-            end
             val = data:sub(val_start, i - 1)
             i += 1
             attrs[key] = unescape(val)
-        end
-    end
     return attrs, i
-end
 
 parse_elem(data: str, start: i64): any
     i = start
     len = data:len()
     while i <= len and data:byte(i) != 60
         i += 1
-    end
-    if i > len return nil end
+    if i > len return nil
     i += 1
     if i <= len and data:byte(i) == 63
         while i <= len
             if data:byte(i) == 63 and i + 1 <= len and data:byte(i + 1) == 62
                 break
-            end
             i += 1
-        end
-        if i <= len i += 2 end
+        if i <= len i += 2
         return parse_elem(data, i)
-    end
     if i <= len and data:byte(i) == 33
         while i <= len
             if data:byte(i) == 93 and i + 2 <= len and data:byte(i + 1) == 93 and data:byte(i + 2) == 62
                 break
-            end
             i += 1
-        end
-        if i <= len i += 3 end
+        if i <= len i += 3
         return parse_elem(data, i)
-    end
     if i <= len and data:byte(i) == 47
         return nil
-    end
     tag_start = i
     while i <= len and data:byte(i) != 32 and data:byte(i) != 9 and data:byte(i) != 10 and data:byte(i) != 13 and data:byte(i) != 62 and data:byte(i) != 47
         i += 1
-    end
     tag = data:sub(tag_start, i - 1)
     attrs = {}
     self_closing = false
     if data:byte(i) == 47 or data:byte(i) == 32 or data:byte(i) == 9 or data:byte(i) == 10 or data:byte(i) == 13
         attrs, i = parse_attributes(data, i)
-    end
     if i <= len and data:byte(i) == 47
         self_closing = true
         i += 1
-    end
     if i <= len and data:byte(i) == 62
         i += 1
-    end
     elem = {tag = tag, attrs = attrs, children = {}}
     if not self_closing
         while true
@@ -117,71 +95,54 @@ parse_elem(data: str, start: i64): any
             while i <= len and data:byte(i) != 60
                 sp = sp .. data:sub(i, i)
                 i += 1
-            end
             trimmed = sp:trim()
             if trimmed:len() > 0
                 elem.children[elem.children:len() + 1] = {kind = "text", text = unescape(sp)}
-            end
-            if i > len break end
+            if i > len break
             peek_byte = data:byte(i + 1)
             if peek_byte == 47
                 i += 2
                 while i <= len and data:byte(i) != 62
                     i += 1
-                end
-                if i <= len i += 1 end
+                if i <= len i += 1
                 break
-            end
             child = parse_elem(data, i)
-            if child == nil break end
+            if child == nil break
             elem.children[elem.children:len() + 1] = child
             i = child._end
-        end
-    end
     elem._end = i
     return elem
-end
 
 parse(data: str): any
-    if data == nil return nil end
+    if data == nil return nil
     i = 1
     while i <= data:len() and data:byte(i) != 60
         i += 1
-    end
-    if i > data:len() return nil end
+    if i > data:len() return nil
     doc = parse_elem(data, i)
     if doc != nil
         doc._end = nil
-    end
     return doc
-end
 
 format_node(node: any, indent: i64): str
     if node.kind == "text"
         return escape(node.text)
-    end
     tag = node.tag
     attr_str = ""
     if has(.attrs)(node)
         for k, v in node.attrs
             attr_str = attr_str .. " " .. k .. "=\"" .. escape(v) .. "\""
-        end
-    end
     children = node.children
     if children == nil or children:len() == 0
         return "<" .. tag .. attr_str .. " />"
-    end
     inner = ""
     pad = "  ":rep(indent)
     for _, child in children
         inner = inner .. "\n" .. pad .. "  " .. format_node(child, indent + 1)
-    end
     inner = inner .. "\n" .. pad
     return "<" .. tag .. attr_str .. ">" .. inner .. "</" .. tag .. ">"
-end
 
 format(doc: any): str
-    if doc == nil return "" end
+    if doc == nil return ""
     return format_node(doc, 0)
-end
 
