@@ -5493,6 +5493,56 @@ pub const Parser = struct {
     /// There is deliberately no separate constructor syntax. A descriptor and a
     /// relation cannot share a name, so after resolution the meaning is unique
     /// and the two faces converge on one application architecture.
+    /// True when every alternative names a case of ONE sealed case-set and the
+    /// pack covers all of them. Reports the missing cases when it covers only
+    /// some, which is the diagnosis the ruling asks for — and note that this
+    /// needs no exhaustiveness machinery of its own: the knowledge comes from
+    /// the subject descriptor and the pack.
+    fn packCoversCaseSet(self: *Parser, l: ast.Loc, fields: []const ast.TableField) ParseError!bool {
+        var home: ?[]const u8 = null;
+        var named_count: usize = 0;
+        for (fields) |fld| {
+            const key = switch (fld) {
+                .named => |nm| nm.key,
+                else => return false, // a computed slot is not a case name
+            };
+            const h = self.caseset_cases.get(key) orelse return false;
+            if (h.len == 0) return false; // two homes claim this spelling
+            if (home) |existing| {
+                if (!std.mem.eql(u8, existing, h)) return false;
+            } else home = h;
+            named_count += 1;
+        }
+        const h = home orelse return false;
+
+        var total: usize = 0;
+        var it = self.caseset_cases.iterator();
+        while (it.next()) |e| {
+            if (std.mem.eql(u8, e.value_ptr.*, h)) total += 1;
+        }
+        if (named_count == total) return true;
+
+        // Covers some but not all: name what is missing rather than demanding
+        // an `else` the writer may not want.
+        var missing: std.ArrayList(u8) = .empty;
+        var it2 = self.caseset_cases.iterator();
+        while (it2.next()) |e| {
+            if (!std.mem.eql(u8, e.value_ptr.*, h)) continue;
+            var found = false;
+            for (fields) |fld| switch (fld) {
+                .named => |nm| if (std.mem.eql(u8, nm.key, e.key_ptr.*)) {
+                    found = true;
+                },
+                else => {},
+            };
+            if (found) continue;
+            if (missing.items.len > 0) try missing.appendSlice(self.alloc, ", ");
+            try missing.appendSlice(self.alloc, e.key_ptr.*);
+        }
+        term.locErr(l, "`:match` on `{s}` does not name: {s}", .{ h, missing.items });
+        return error.UnexpectedToken;
+    }
+
     fn descriptorApplication(self: *Parser, l: ast.Loc, callee: *ast.Expr, args: []*ast.Expr) ParseError!?*ast.Expr {
         if (callee.* != .name) return null;
         const field_names = self.record_descriptors.get(callee.name.ident) orelse return null;
@@ -5750,17 +5800,38 @@ pub const Parser = struct {
             }
         }
         // §17: a missing remaining alternative must not mint a nil/zero result.
-        // Exhaustiveness over a sealed descriptor is knowledge this pass does
-        // not have, so the honest requirement here is an explicit `else`.
-        if (else_val == null) {
-            term.locErr(l, "`:match` needs an `else` alternative, or a value is invented for the cases it does not name", .{});
+        // An explicit `else` supplies one. So does EXHAUSTIVENESS over a sealed
+        // case-set — if the alternatives name every case of one home, there is
+        // no remaining alternative to invent a value for.
+        //
+        // The alternatives themselves determine the home; the subject's declared
+        // type is not consulted and does not need to be. That keeps the check
+        // sound at parse time: a pack naming every case of `colour` is
+        // exhaustive whatever the subject was annotated as.
+        var exhaustive = false;
+        if (else_val == null and n > 0) {
+            if (try self.packCoversCaseSet(l, fields)) exhaustive = true else {
+                term.locErr(l, "`:match` needs an `else` alternative, or a value is invented for the cases it does not name", .{});
+                return error.UnexpectedToken;
+            }
+        }
+        if (else_val == null and !exhaustive) {
+            term.locErr(l, "`:match` has no alternatives to select", .{});
             return error.UnexpectedToken;
         }
 
         // Build from the last alternative backwards, so the first-written
         // alternative ends up outermost and the arms are tried in source order.
-        var acc: *ast.Expr = else_val.?;
-        var idx: usize = n;
+        //
+        // When the pack is exhaustive the LAST alternative becomes the final
+        // arm directly: its case is the only one left, so testing for it would
+        // be a comparison whose answer is already known.
+        var acc: *ast.Expr = if (else_val) |e| e else switch (fields[n - 1]) {
+            .named => |nm| nm.val,
+            .indexed => |ix| ix.val,
+            else => unreachable,
+        };
+        var idx: usize = if (else_val == null) n - 1 else n;
         while (idx > 0) {
             idx -= 1;
             const fld = fields[idx];
