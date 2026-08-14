@@ -1,4 +1,4 @@
-# std.slices — slice helper utilities (mirrors Go 1.21 slices package)
+# slices — slice helper utilities (mirrors Go 1.21 slices package)
 
 clip(arr: any, n: i64): any
     if arr == nil return arr end

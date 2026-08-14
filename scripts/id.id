@@ -17,7 +17,7 @@
 #   ROW 5..6  THE QUARANTINE RATCHET. Resolving a spelling to an identity is
 #             the one place a byte comparison is correct, and it lives in
 #             `Names`. Everything from `pub const Relation` down compares
-#             `Id`. A `std.mem.eql` reappearing in the algebra is the text key
+#             `Id`. A `mem.eql` reappearing in the algebra is the text key
 #             growing back, and it would grow back silently — the tests would
 #             still pass, because a single-origin single-lawset compilation
 #             unit cannot tell the two keys apart. Only a scan can see it.
@@ -59,7 +59,7 @@ at(pattern: str): i64
 
 eqlin(lo: i64, hi: i64): i64
     to(i64)(std.script.chomp(std.script.capture(
-        "sed -n '{lo},{hi}p' {file} | grep -c 'std.mem.eql' | head -1")))
+        "sed -n '{lo},{hi}p' {file} | grep -c 'mem.eql' | head -1")))
 
 census(path: str): str
     std.script.chomp(std.script.capture(

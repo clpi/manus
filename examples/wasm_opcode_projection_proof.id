@@ -1,4 +1,4 @@
-# Proof that std.wasm.opcodes projects real Wasm opcodes.
+# Proof that wasm.opcodes projects real Wasm opcodes.
 #
 # Every expected value below was extracted from wasm-tools by assembling a
 # minimal module per instruction and reading the opcode byte — NOT copied from

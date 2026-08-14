@@ -156,7 +156,7 @@ end
 ambient(root: str, pat: str): i64
     pre: str = head(root)
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+    to(i64)(script.chomp(script.capture(cmd)))
 end
 
 # gap[100]: the same reach measured OUTSIDE lib/std. Every number above it is
@@ -168,20 +168,20 @@ end
 beyond(root: str, pat: str): i64
     pre: str = "cd {root} && git ls-files '*.id' | grep -v {q}^lib/{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+    to(i64)(script.chomp(script.capture(cmd)))
 
 # The complement: matched, non-comment, and DOES carry a world receiver.
 threaded(root: str, pat: str): i64
     pre: str = head(root)
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -E {q}{mediator}{q} | wc -l"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+    to(i64)(script.chomp(script.capture(cmd)))
 end
 
 # Distinct modules holding at least one ambient reach of this class.
 modules(root: str, pat: str): i64
     pre: str = head(root)
     cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort -u | wc -l"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+    to(i64)(script.chomp(script.capture(cmd)))
 end
 
 # One synthetic line through the ENTIRE filter chain. This is the control
@@ -190,7 +190,7 @@ end
 # without depending on the corpus containing any particular text.
 probe(pat: str, line: str): i64
     cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -n -E {q}{pat}{q} | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | wc -l"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+    to(i64)(script.chomp(script.capture(cmd)))
 end
 
 # The same line with NO filters. `probe` alone cannot tell "the filter
@@ -202,7 +202,7 @@ end
 # PAIR — raw must see it, probe must not.
 raw(pat: str, line: str): i64
     cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+    to(i64)(script.chomp(script.capture(cmd)))
 end
 
 pad(s: str, width: i64): str
@@ -230,7 +230,7 @@ sound(pat: str, example: str): bool
 end
 
 main(): i64
-    root = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
     code: i64 = 0
     total: i64 = 0
     if root == ""
@@ -239,7 +239,7 @@ main(): i64
     end
 
     if code == 0
-        total = to(i64)(std.script.chomp(std.script.capture("cd {root} && git ls-files 'lib/*.id' | wc -l")))
+        total = to(i64)(script.chomp(script.capture("cd {root} && git ls-files 'lib/*.id' | wc -l")))
         print("capability_scan — U1: std@ ambient = false")
         print("  root      {root}")
         print("  modules   {total} tracked lib/**/*.id")
@@ -376,11 +376,11 @@ main(): i64
         print("  enforced — every row above is COUNTED, and the budget is the only pressure")
         print("  on it. Enforcement is the anchor `std@ ambient = false`, which §22 still owes.")
 
-        if std.script.getenv("CAPABILITY_SHOW", "") != ""
+        if script.getenv("CAPABILITY_SHOW", "") != ""
             pre: str = head(root)
             print("")
             print("  modules by ambient site count:")
-            io.write(std.script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
+            io.write(script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
         end
 
         # THE RATCHET. Measured 2026-08-08 at 878e0d1 in a detached worktree,

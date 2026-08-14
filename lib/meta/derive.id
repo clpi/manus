@@ -1,150 +1,150 @@
-# std.meta.derive — derivable concept descriptors for the Duo standard library
+# meta.derive — derivable concept descriptors for the Duo standard library
 # These descriptors are ordinary Lua-shaped meta tables, not `concept`
 # declarations. They are suitable for runtime reflection and
-# std.meta.satisfies_concept checks today, while compile-time @implements support
+# meta.satisfies_concept checks today, while compile-time @implements support
 # still uses parser-level concept declarations.
 
-Clone = std.meta.make_concept("Clone", {
+Clone = meta.make_concept("Clone", {
     methods = { "clone" },
 })
 
-Eq = std.meta.make_concept("Eq", {
+Eq = meta.make_concept("Eq", {
     methods = { "eq" },
 })
 
-Ord = std.meta.make_concept("Ord", {
+Ord = meta.make_concept("Ord", {
     methods = { "compare" },
 })
 
-Hash = std.meta.make_concept("Hash", {
+Hash = meta.make_concept("Hash", {
     methods = { "hash" },
 })
 
-Display = std.meta.make_concept("Display", {
+Display = meta.make_concept("Display", {
     methods = { "to_string" },
 })
 
-Default = std.meta.make_concept("Default", {
+Default = meta.make_concept("Default", {
     methods = { "default" },
 })
 
-Iterable = std.meta.make_concept("Iterable", {
+Iterable = meta.make_concept("Iterable", {
     methods = { "iter", "next" },
 })
 
-Index = std.meta.make_concept("Index", {
+Index = meta.make_concept("Index", {
     methods = { "at", "len" },
 })
 
-Into = std.meta.make_concept("Into", {
+Into = meta.make_concept("Into", {
     methods = { "into" },
 })
 
-From = std.meta.make_concept("From", {
+From = meta.make_concept("From", {
     methods = { "from" },
 })
 
-Add = std.meta.make_concept("Add", {
+Add = meta.make_concept("Add", {
     methods = { "add" },
 })
 
-Sub = std.meta.make_concept("Sub", {
+Sub = meta.make_concept("Sub", {
     methods = { "sub" },
 })
 
-Mul = std.meta.make_concept("Mul", {
+Mul = meta.make_concept("Mul", {
     methods = { "mul" },
 })
 
-Div = std.meta.make_concept("Div", {
+Div = meta.make_concept("Div", {
     methods = { "div" },
 })
 
-Rem = std.meta.make_concept("Rem", {
+Rem = meta.make_concept("Rem", {
     methods = { "rem" },
 })
 
-Pow = std.meta.make_concept("Pow", {
+Pow = meta.make_concept("Pow", {
     methods = { "pow" },
 })
 
-Neg = std.meta.make_concept("Neg", {
+Neg = meta.make_concept("Neg", {
     methods = { "neg" },
 })
 
-BitAnd = std.meta.make_concept("BitAnd", {
+BitAnd = meta.make_concept("BitAnd", {
     methods = { "bit_and" },
 })
 
-BitOr = std.meta.make_concept("BitOr", {
+BitOr = meta.make_concept("BitOr", {
     methods = { "bit_or" },
 })
 
-BitXor = std.meta.make_concept("BitXor", {
+BitXor = meta.make_concept("BitXor", {
     methods = { "bit_xor" },
 })
 
-BitNot = std.meta.make_concept("BitNot", {
+BitNot = meta.make_concept("BitNot", {
     methods = { "bit_not" },
 })
 
-Shl = std.meta.make_concept("Shl", {
+Shl = meta.make_concept("Shl", {
     methods = { "shl" },
 })
 
-Shr = std.meta.make_concept("Shr", {
+Shr = meta.make_concept("Shr", {
     methods = { "shr" },
 })
 
-Concat = std.meta.make_concept("Concat", {
+Concat = meta.make_concept("Concat", {
     methods = { "concat" },
 })
 
-Len = std.meta.make_concept("Len", {
+Len = meta.make_concept("Len", {
     methods = { "len" },
 })
 
-Call = std.meta.make_concept("Call", {
+Call = meta.make_concept("Call", {
     methods = { "call" },
 })
 
-Contains = std.meta.make_concept("Contains", {
+Contains = meta.make_concept("Contains", {
     methods = { "contains" },
 })
 
-Try = std.meta.make_concept("Try", {
+Try = meta.make_concept("Try", {
     methods = { "attempt" },
 })
 
-Unwrap = std.meta.make_concept("Unwrap", {
+Unwrap = meta.make_concept("Unwrap", {
     methods = { "unwrap" },
 })
 
-Tag = std.meta.make_concept("Tag", {
+Tag = meta.make_concept("Tag", {
     methods = { "tag" },
 })
 
-Close = std.meta.make_concept("Close", {
+Close = meta.make_concept("Close", {
     methods = { "close" },
 })
 
-Iter = std.meta.make_concept("Iter", {
+Iter = meta.make_concept("Iter", {
     methods = { "iter" },
 })
 
-Format = std.meta.make_concept("Format", {
+Format = meta.make_concept("Format", {
     methods = { "fmt" },
 })
 
-Serialize = std.meta.make_concept("Serialize", {
+Serialize = meta.make_concept("Serialize", {
     methods = { "serialize" },
 })
 
-Deserialize = std.meta.make_concept("Deserialize", {
+Deserialize = meta.make_concept("Deserialize", {
     methods = { "deserialize" },
 })
 
-DeepClone = std.meta.make_concept("DeepClone", {
+DeepClone = meta.make_concept("DeepClone", {
     methods = { "deep_clone" },
 })
 

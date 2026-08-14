@@ -1,4 +1,4 @@
-# std.hash.sha1 — SHA-1 hash (re-exports from std.crypto.sha)
+# hash.sha1 — SHA-1 hash (re-exports from crypto.sha)
 
 crypto_sha = sha
 

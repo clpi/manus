@@ -1,4 +1,4 @@
-# std.package — package utilities
+# package — package utilities
 
 loadlib(libname: str, funcname: str): any
     package.loadlib(libname, funcname)

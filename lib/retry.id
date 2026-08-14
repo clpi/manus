@@ -1,4 +1,4 @@
-# std.retry — retry with configurable backoff strategies
+# retry — retry with configurable backoff strategies
 # Provides retry, backoff, and circuit breaker patterns for
 # resilient operations that may fail transiently.
 

@@ -20,11 +20,11 @@
 # were another. Both are lexical; neither changed a single assertion.
 
 # Absolute, because every command below runs with cwd inside a scratch project.
-# std.script.id_bin() is RELATIVE ("./zig-out/bin/idol") and would resolve to
-# nothing there, and std.os.execute would hand back a confident nonzero that
+# script.id_bin() is RELATIVE ("./zig-out/bin/idol") and would resolve to
+# nothing there, and os.execute would hand back a confident nonzero that
 # reads as "the compiler is broken" rather than "the gate is".
 cwd(): str
-    std.script.chomp(std.script.capture("pwd"))
+    script.chomp(script.capture("pwd"))
 end
 
 duobin(root: str): str
@@ -37,10 +37,10 @@ end
 
 # Run `cmd` with cwd set to `dir`, returning the exact exit status.
 at(dir: str, cmd: str): i64
-    std.script.status("cd {dir} && {cmd}")
+    script.status("cd {dir} && {cmd}")
 end
 
-# NOT std.script.exists: std.script's whole block of ergonomic aliases (exists,
+# NOT script.exists: script's whole block of ergonomic aliases (exists,
 # is_file, is_dir, read, ...) returns nil for EVERY input, because a module-scope
 # function re-exported under a SECOND name does not survive lowering. The
 # underlying fs_exists works; the short name does not. nil is falsy, so

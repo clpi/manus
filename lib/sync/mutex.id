@@ -1,4 +1,4 @@
-# std.sync_mutex — Mutex and RWMutex (mirrors Go's sync)
+# sync_mutex — Mutex and RWMutex (mirrors Go's sync)
 # In Duo (cooperative single-thread), a Mutex is a simple flag. Since there
 # is no true OS-level preemption, these are advisory locks for coordinating
 # coroutines rather than threads.

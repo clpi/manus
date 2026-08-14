@@ -1,4 +1,4 @@
-# std.bit — bit manipulation primitives for WASM, low-level, and cryptographic work
+# bit — bit manipulation primitives for WASM, low-level, and cryptographic work
 
 # Population count (Hamming weight)
 popcount(x: i64): i64

@@ -1,4 +1,4 @@
-# std.meta.hierarchy — @meta.* compiler module reference for agents and humans
+# meta.hierarchy — @meta.* compiler module reference for agents and humans
 # Canonical dotted paths; do not add public flat names such as @foo_bar.
 # Legacy flat spellings are parser compatibility only, not the documented surface.
 

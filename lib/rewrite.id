@@ -1,4 +1,4 @@
-# std.rewrite — User-Definable Compile-Time Rewrite Rules
+# rewrite — User-Definable Compile-Time Rewrite Rules
 # Define algebraic simplification and loop transformation rules
 # that the compiler applies at compile time.
 #

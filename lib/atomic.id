@@ -1,4 +1,4 @@
-# std.atomic — atomic operations on table-backed memory
+# atomic — atomic operations on table-backed memory
 # Uses compare swap for CAS-based mutexes and hardware spinwait for CPU yielding.
 
 

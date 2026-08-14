@@ -1,4 +1,4 @@
-# std.hash.crc64 — CRC-64 checksum (mirrors Go's hash/crc64)
+# hash.crc64 — CRC-64 checksum (mirrors Go's hash/crc64)
 # Uses the ECMA-182 polynomial with 32-bit wide arithmetic.
 
 make_poly_hi(lo: i64): i64

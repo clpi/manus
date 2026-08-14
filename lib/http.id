@@ -1,4 +1,4 @@
-# std.http — high-level HTTP client and server (wraps net.id)
+# http — high-level HTTP client and server (wraps net.id)
 
 # Projections for HTTP operations
 get = net.get

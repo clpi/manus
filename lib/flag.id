@@ -1,4 +1,4 @@
-# std.flag — command-line flag parsing (mirrors Go's flag package)
+# flag — command-line flag parsing (mirrors Go's flag package)
 # Provides a simple flag parser supporting #name=value, #name value, and
 # boolean flags. Sub-arguments after # are treated as positional args.
 

@@ -144,8 +144,8 @@ end
 _expect(binary: str, wasm: str): str
     cmd = "DUO_WASM_MODULE=" .. wasm
         .. " DUO_WASM_INVOKE=_start DUO_WASM_ENGINE=jit timeout 300 " .. binary
-    rc = std.script.status(cmd .. " >/dev/null 2>&1")
-    raw = std.script.capture(cmd .. " 2>/dev/null")
+    rc = script.status(cmd .. " >/dev/null 2>&1")
+    raw = script.capture(cmd .. " 2>/dev/null")
     r = _field(raw, "result")
     if rc == 0 and r == "0"
         return "agree"
@@ -157,40 +157,40 @@ _expect(binary: str, wasm: str): str
 end
 
 _wart_assert(wart: str, wasm: str): str
-    if std.script.status("timeout 300 " .. wart .. " run --jit " .. wasm) == 0
+    if script.status("timeout 300 " .. wart .. " run --jit " .. wasm) == 0
         return "agree"
     end
     "DISAGREE"
 end
 
 main(): i64
-    binary = std.script.getenv("IDOL_WASM_BIN", "/tmp/idolwasm")
-    wart = std.script.getenv("WART", std.script.getenv("HOME", ".") .. "/x/wart/zig-out/bin/wart")
-    wasmtime = std.script.getenv("WASMTIME", "wasmtime")
-    kn: i64 = to(i64)(std.script.getenv("K", "8"))
-    reps: i64 = to(i64)(std.script.getenv("N", "3"))
-    seed0: i64 = to(i64)(std.script.getenv("SEED", "20260808"))
+    binary = script.getenv("IDOL_WASM_BIN", "/tmp/idolwasm")
+    wart = script.getenv("WART", script.getenv("HOME", ".") .. "/x/wart/zig-out/bin/wart")
+    wasmtime = script.getenv("WASMTIME", "wasmtime")
+    kn: i64 = to(i64)(script.getenv("K", "8"))
+    reps: i64 = to(i64)(script.getenv("N", "3"))
+    seed0: i64 = to(i64)(script.getenv("SEED", "20260808"))
     # 100M keeps the kernel an order of magnitude above the ~13 ms process
     # floor all three runtimes pay. At 4M every row read 14/14/16 ms and the
     # ratio column was measuring `fork` and dyld, not code generation.
-    iters: i64 = to(i64)(std.script.getenv("ITERS", "100000000"))
+    iters: i64 = to(i64)(script.getenv("ITERS", "100000000"))
 
-    if not std.script.fs_exists(binary)
+    if not script.fs_exists(binary)
         print("no the engine binary at " .. binary .. " -- build it with bench/run.id first")
         return 1
     end
-    if not std.script.fs_exists(wart)
+    if not script.fs_exists(wart)
         print("no wart binary at " .. wart)
         print("wart is the differential baseline; without it this table cannot be produced.")
         return 1
     end
-    if std.script.status("command -v wat2wasm >/dev/null 2>&1") != 0
+    if script.status("command -v wat2wasm >/dev/null 2>&1") != 0
         print("wat2wasm not found -- the generated differential needs it")
         return 1
     end
 
-    dir = std.script.fs_tmpdir() .. "/_delta"
-    std.script.fs_mkdir(dir)
+    dir = script.fs_tmpdir() .. "/_delta"
+    script.fs_mkdir(dir)
 
     # ── CONTROLS ─────────────────────────────────────────────────────────
     # A trap-on-mismatch oracle that cannot detect a mismatch reports a clean
@@ -202,7 +202,7 @@ main(): i64
         print("control module failed to assemble")
         return 1
     end
-    cref = std.script.chomp(std.script.capture(
+    cref = script.chomp(script.capture(
         wasmtime .. " --invoke run " .. crun .. " 2>/dev/null | tail -1"))
     if cref == ""
         print("wasmtime produced no reference value for the control")
@@ -246,7 +246,7 @@ main(): i64
         seed = _next(seed)
         body = _body(seed, iters)
         rmod = _build(dir, "k" .. i:to(str) .. "_run", _run_wat(body))
-        ref = std.script.chomp(std.script.capture(
+        ref = script.chomp(script.capture(
             wasmtime .. " --invoke run " .. rmod .. " 2>/dev/null | tail -1"))
         amod = _build(dir, "k" .. i:to(str) .. "_assert", _assert_wat(body, ref))
 

@@ -1,4 +1,4 @@
-# std.fs — simple file-system helpers
+# fs — simple file-system helpers
 
 exists(path: any): bool
     if path == nil return false end

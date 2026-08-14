@@ -1,4 +1,4 @@
-# std.graphics.shader — Shader compilation and management
+# graphics.shader — Shader compilation and management
 # Data-structure API for WebGPU/Vulkan/Metal shaders.
 # compile/link/use are no-ops in pure Duo — actual GPU compilation
 # happens in the rendering backend (wgpu, Metal, Vulkan driver).

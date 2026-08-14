@@ -1,4 +1,4 @@
-# std.compress.zlib — Zlib decompression (mirrors Go's compress/zlib)
+# compress.zlib — Zlib decompression (mirrors Go's compress/zlib)
 # Uses the flate module for actual DEFLATE data
 
 decompress(data: any)

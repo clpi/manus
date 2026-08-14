@@ -1,4 +1,4 @@
-# std.compiler.lexer
+# compiler.lexer
 # Duo-native lexer implementation
 
 # Slice is the subject's :sub / :len. Do not alias `str` into a binding —

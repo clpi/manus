@@ -1,4 +1,4 @@
-# Stdlib req at comptime: @comp.map with std.meta.codegen callbacks
+# Stdlib req at comptime: @comp.map with meta.codegen callbacks
 # Run: duo run examples/stdlib_comptime_showcase.id
 
 meta = codegen

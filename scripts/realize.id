@@ -45,7 +45,7 @@
 # — so the coverage is kept and only the synthetic inputs are lost.
 
 here(): str
-    std.script.chomp(std.script.capture("pwd"))
+    script.chomp(script.capture("pwd"))
 end
 
 compiler(root: str): str
@@ -57,18 +57,18 @@ shout(msg: str): void
 end
 
 present(path: str): bool
-    std.script.status("test -e {path}") == 0
+    script.status("test -e {path}") == 0
 end
 
 # One `duo realize` run, captured. Captured rather than re-run per assertion
 # because each run MUTATES the cache: greping the same command three times
 # would advance the fresh/invalidated sequence three times.
 record(bin: str, dir: str, fixture: str, out: str): bool
-    std.script.status("cd {dir} && {bin} realize {fixture} >{out} 2>/dev/null") == 0
+    script.status("cd {dir} && {bin} realize {fixture} >{out} 2>/dev/null") == 0
 end
 
 explained(bin: str, fixture: str, out: str): bool
-    std.script.status("{bin} explain {fixture} >{out} 2>/dev/null") == 0
+    script.status("{bin} explain {fixture} >{out} 2>/dev/null") == 0
 end
 
 # Does a captured JSON document hold `want`? Split on commas first so a
@@ -80,7 +80,7 @@ end
 # The FIRST fingerprint in an explain document: the sealed record's shape
 # identity. Two modules differing only in a field must not agree here.
 mark(path: str): str
-    std.script.chomp(std.script.capture("tr ',' '\\n' < {path} | grep -o '\"fingerprint\":\"[0-9a-f]*\"' | head -1"))
+    script.chomp(script.capture("tr ',' '\\n' < {path} | grep -o '\"fingerprint\":\"[0-9a-f]*\"' | head -1"))
 end
 
 main: i64 = ()
@@ -90,7 +90,7 @@ main: i64 = ()
     bad = 0
 
     # CONTROL 1 — the runner convicts.
-    if std.script.status("false") == 0
+    if script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
     end
@@ -120,7 +120,7 @@ main: i64 = ()
         bad += 1
     end
 
-    if std.script.status("rm -rf {dir} && mkdir -p {dir}") != 0
+    if script.status("rm -rf {dir} && mkdir -p {dir}") != 0
         shout("FAIL — could not build the sandbox at {dir}")
         bad += 1
     end
@@ -251,4 +251,4 @@ main: i64 = ()
     bad
 end
 
-std.os.exit(main())
+os.exit(main())

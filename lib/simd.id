@@ -1,4 +1,4 @@
-# std.simd — SIMD helpers and documentation for Duo's vector types.
+# simd — SIMD helpers and documentation for Duo's vector types.
 # Vector literals and ops use the global `simd.*` builtins; this module
 # adds buffer-level kernels (dot / matmul) for numeric workloads.
 

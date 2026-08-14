@@ -33,7 +33,7 @@
 # This gate therefore asserts the JSON, and the enforcement gap is filed.
 
 here(): str
-    std.script.chomp(std.script.capture("pwd"))
+    script.chomp(script.capture("pwd"))
 end
 
 compiler(root: str): str
@@ -45,14 +45,14 @@ shout(msg: str): void
 end
 
 present(path: str): bool
-    std.script.status("test -e {path}") == 0
+    script.status("test -e {path}") == 0
 end
 
 # Does `duo explain fixture` print a line holding `want`? Exit status cannot
 # answer this: explain exits 0 on the violating module too, which is the whole
 # reason these assertions read the output rather than the status.
 says(bin: str, fixture: str, want: str): bool
-    std.script.status("{bin} explain {fixture} 2>/dev/null | tr ',' '\\n' | grep -q -F '{want}'") == 0
+    script.status("{bin} explain {fixture} 2>/dev/null | tr ',' '\\n' | grep -q -F '{want}'") == 0
 end
 
 main: i64 = ()
@@ -61,7 +61,7 @@ main: i64 = ()
     bad = 0
 
     # CONTROL 1 — the runner convicts.
-    if std.script.status("false") == 0
+    if script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
     end
@@ -152,4 +152,4 @@ main: i64 = ()
     bad
 end
 
-std.os.exit(main())
+os.exit(main())

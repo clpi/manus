@@ -1,4 +1,4 @@
-# std.pipeline — Compile-Time Data Processing Pipeline Fusion
+# pipeline — Compile-Time Data Processing Pipeline Fusion
 # Chains of map/filter/reduce/collect are analyzed at compile time
 # and fused into a single, allocation-free C loop.
 #

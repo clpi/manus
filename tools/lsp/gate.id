@@ -61,26 +61,26 @@
 #
 # LSPGATE_SERVER   drive a different server file (the controls use it).
 
-root = std.os.getenv("IDOL_ROOT")
+root = os.getenv("IDOL_ROOT")
 if root == nil or root == ""
-    root = std.os.getenv("DUO_ROOT")
+    root = os.getenv("DUO_ROOT")
 end
 if root == nil or root == ""
-    root = std.os.getenv("PWD")
+    root = os.getenv("PWD")
 end
 if root == nil or root == ""
     root = "."
 end
 
-idolbin = std.os.getenv("IDOL_BIN")
+idolbin = os.getenv("IDOL_BIN")
 if idolbin == nil or idolbin == ""
-    idolbin = std.os.getenv("DUO_BIN")
+    idolbin = os.getenv("DUO_BIN")
 end
 if idolbin == nil or idolbin == ""
     idolbin = root .. "/zig-out/bin/idol"
 end
 
-server = std.os.getenv("LSPGATE_SERVER")
+server = os.getenv("LSPGATE_SERVER")
 if server == nil or server == ""
     server = root .. "/tools/lsp/src/server.id"
 end
@@ -367,10 +367,10 @@ main(): i64
     # Re-derive from the taxonomy and require no change. This is the H-1 drift
     # check with teeth: it runs the real generator against the real document.
     src = root .. "/docs/spec/roles.md"
-    if std.fs.exists(src)
+    if fs.exists(src)
         rc = os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. idolbin
             .. "' run --backend=c '" .. root .. "/tools/lsp/legend.id' > '" .. work .. "/legend.txt' 2>/dev/null")
-        gen = std.fs.read_file(work .. "/legend.txt") or ""
+        gen = fs.read_file(work .. "/legend.txt") or ""
         check(has(gen, "already current"), "the committed legend re-derives from docs/spec/roles.md",
             "regenerating changed the block — commit the regeneration, do not hand-edit it")
     else
@@ -385,7 +385,7 @@ main(): i64
         return 0
     end
     io.write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
-    # `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is
+    # `os.exit`, NOT `return 1`. A Duo script's `main` return value is
     # DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
     # mcp-gate learned this by printing 13 failures into a green build.
     std.os.exit(1)

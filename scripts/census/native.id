@@ -25,14 +25,14 @@
 #      failures put the real number at 1/60 in an earlier reading; the real
 #      denominator is the programs that BUILD, !the files that exist.
 #   3. Some programs cannot be native BY CONSTRUCTION. A compiler proof fixture
-#      whose body is `global C = std.compiler.emit_c` exists to drive the C
+#      whose body is `global C = compiler.emit_c` exists to drive the C
 #      emitter — asking it to compile to native ARM64 is asking a test of the C
 #      backend to stop using the C backend. 14 of them are in the corpus, and
 #      counting them made a 90% ceiling look like a 61% failure.
 #
 # So the census reports three numbers, and the RATIO IS OVER THE REACHABLE SET.
-# A program is unreachable when it binds a `std.compiler.*` module — EITHER as
-# `global A = std.compiler.arm64` OR as `L = lexer`. Both
+# A program is unreachable when it binds a `compiler.*` module — EITHER as
+# `global A = compiler.arm64` OR as `L = lexer`. Both
 # spellings mean the same thing: this program's purpose is exercising the
 # compiler's own emitter, which is !a native-lowering target.
 #

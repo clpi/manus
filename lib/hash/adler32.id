@@ -1,4 +1,4 @@
-# std.hash.adler32 — Adler-32 checksum (mirrors Go's hash/adler32)
+# hash.adler32 — Adler-32 checksum (mirrors Go's hash/adler32)
 
 new(): any
     {s1 = 1, s2 = 0}

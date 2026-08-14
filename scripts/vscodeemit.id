@@ -1,6 +1,6 @@
 # vscodeemit — project the vscode extension host from idol.
 
-script = std.script
+script = script
 targetpath = "ext/vscode-duo/extension.js"
 
 body: str = ()
@@ -116,6 +116,6 @@ main: i64 = ()
     out = script.getenv("VSCODEOUT", targetpath)
     if !spill(out, body())
         print("vscodeemit: fail write {out}")
-        std.os.exit(3)
+        os.exit(3)
     print("vscodeemit: wrote {out}")
     0

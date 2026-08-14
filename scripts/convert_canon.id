@@ -187,7 +187,7 @@ body: str = (row: str)
 # One file. Answers the sed program that performs its rewrites, "" when there
 # are none.
 walk: str = (path: str, talk: i64)
-    rows: str = std.script.capture("grep -n -E {q}{probe}{q} {path} 2>/dev/null")
+    rows: str = script.capture("grep -n -E {q}{probe}{q} {path} 2>/dev/null")
     n: i64 = rows:len()
     start: i64 = 1
     edits: str = ""
@@ -257,22 +257,22 @@ controls: i64 = ()
     bad
 
 main: i64 = ()
-    list = std.script.getenv("CONVERTCANON", "/tmp/duo_audit100_canonical.list")
-    apply = std.script.getenv("CONVERTCANON_APPLY", "")
+    list = script.getenv("CONVERTCANON", "/tmp/duo_audit100_canonical.list")
+    apply = script.getenv("CONVERTCANON_APPLY", "")
 
     bad = controls()
     if bad > 0
         print("")
         print("convert canon: CONTROLS BROKEN — {bad} of them. Nothing was")
         print("  scanned and nothing was written.")
-        std.os.exit(3)
+        os.exit(3)
 
-    if !std.fs.exists(list)
+    if !fs.exists(list)
         print("convert canon: FAIL — no corpus list at {list}")
         print("  run audit100 with AUDIT100_LIST pointed there first")
-        std.os.exit(3)
+        os.exit(3)
 
-    text: str = std.script.capture("cat {list}")
+    text: str = script.capture("cat {list}")
     n: i64 = text:len()
     start: i64 = 1
     i: i64 = 1
@@ -288,14 +288,14 @@ main: i64 = ()
                 if edits != ""
                     touched += 1
                     if apply == "1"
-                        std.script.run("sed -i '' -E{edits} {path}")
+                        script.run("sed -i '' -E{edits} {path}")
             start = i + 1
         i += 1
 
     print("")
     if seen == 0
         print("convert canon: FAIL — the corpus list is empty; nothing was measured")
-        std.os.exit(3)
+        os.exit(3)
     print("  corpus     {seen} canonical files")
     print("  rewrites   {rewrites} to(str) sites in {touched} files")
     print("  declined   {declined} lines carrying a site inside a string literal")

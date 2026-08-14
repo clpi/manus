@@ -20,7 +20,7 @@
 # a transformation is discovered without reading this file, which is what
 # "the compiler is data" has to mean at the smallest scale.
 
-global C = std.compiler.comptime
+global C = compiler.comptime
 
 # The registry. One row per transformation; adding one is a table entry, not a
 # new pass and !a new call site in a driver.

@@ -1,4 +1,4 @@
-# std.image.gif — GIF image decoder with LZW decompression
+# image.gif — GIF image decoder with LZW decompression
 # Decodes GIF87a/GIF89a images including LZW-compressed image data.
 
 # ═══════════════════════════════════════════════════════════════
@@ -213,7 +213,7 @@ decode(data: str): any
         off += gct_size * 3
     end
 
-    img = std.image.new_rgba(std.image.rect(0, 0, width, height))
+    img = image.new_rgba(image.rect(0, 0, width, height))
     transparent_idx = -1
     lct = nil
 
@@ -305,7 +305,7 @@ decode(data: str): any
                         if color_idx != transparent_idx and palette != nil
                             c = palette[color_idx]
                             if c != nil
-                                std.image.img_set(img, x, y, std.image.color.rgba(
+                                image.img_set(img, x, y, image.color.rgba(
                                     c.r * 257, c.g * 257, c.b * 257, 65535
                                 ))
                             end

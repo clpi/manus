@@ -1,7 +1,7 @@
 # the engine wasm benchmark + coverage harness.
 #
 # Duo replacement for bench/run.sh, which shelled out to python3 four times per
-# module just to read a clock. Timing is std.time.monotonic() now.
+# module just to read a clock. Timing is time.monotonic() now.
 #
 # Every perf/coverage claim about the engine must come from this harness. It exists
 # because two earlier "baselines" were wrong for the same reason: the engine reads
@@ -41,7 +41,7 @@ _field(raw: str, key: str): str
     if m == nil
         return "none"
     end
-    v = std.script.chomp(m)
+    v = script.chomp(m)
     if v == "" return "none" end
     v
 end

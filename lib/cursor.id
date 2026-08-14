@@ -1,4 +1,4 @@
-# std.cursor — typed byte cursor for binary parsing.
+# cursor — typed byte cursor for binary parsing.
 # Blockers: (1) embedded-module record ctor codegen, (2) C str cannot hold NUL — need slice+len.
 # Proof: numeric LEB128 + u32 le decode through it.
 

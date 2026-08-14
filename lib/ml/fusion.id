@@ -1,4 +1,4 @@
-# std.ml.fusion — Kernel fusion rules (compile-time rewrite targets)
+# ml.fusion — Kernel fusion rules (compile-time rewrite targets)
 
 # Adjacent op patterns the compiler should merge (documented contract for @trace)
 rules(): any

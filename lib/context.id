@@ -1,4 +1,4 @@
-# std.context — cancellation and timeout (mirrors Go's context package)
+# context — cancellation and timeout (mirrors Go's context package)
 # In Duo (single-threaded with cooperative async), context is a table carrying
 # a deadline, a cancellation flag, and a parent chain. There are no real
 # OS-level cancellation signals; cancellation propagates by checking the flag.

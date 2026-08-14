@@ -1,4 +1,4 @@
-# std.mime — MIME type detection (mirrors Go's mime package)
+# mime — MIME type detection (mirrors Go's mime package)
 # Uses a module-level table for persistence across calls.
 
 # MOD-1: the file IS the module. Identity re-exports deleted; exports

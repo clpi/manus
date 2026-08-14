@@ -1,4 +1,4 @@
-# std.text_scanner — text scanning (mirrors Go's text/scanner)
+# text_scanner — text scanning (mirrors Go's text/scanner)
 # Provides a simple tokenizer for source-like text: identifiers, numbers,
 # strings, punctuation, and comments.
 

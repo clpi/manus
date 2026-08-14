@@ -8,7 +8,7 @@ raw_demo(): i64
     second: *i64 = mem.add(ints, 1)
     mem.volatile_store(i64)(second, 58)
 
-    out: *u8 = std.mem.calloc(64, 1)
+    out: *u8 = mem.calloc(64, 1)
     raw_was_null: bool = mem.is_null(raw)
     mem.copy(out, raw, mem.sizeof(i64) * 2)
 

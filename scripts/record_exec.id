@@ -36,19 +36,19 @@ runs: str = (decl: str, apply: str, read: str)
     src = "include:len() <stdio.h>\ntypedef struct { double x; double y; } duo_point;\nint main(void){ duo_point p = " .. apply .. "; printf(\"%g\\n\", p." .. read .. "); return 0; }\n"
     path: str = "/tmp/duorecexec.c"
     bin: str = "/tmp/duorecexec.bin"
-    std.fs.write_file(path, src)
+    fs.write_file(path, src)
     # `cc` alone finds no `stdio.h` in this environment: there is no default
     # sysroot, and the failure is a COMPILE error rather than a wrong answer,
     # so it reads as "the emitted C is broken" when the emitted C is fine.
     # Measured, and the sysroot is what the compiler itself passes.
-    sdk: str = chomp(std.proc.capture("xcrun --show-sdk-path 2>/dev/null"))
+    sdk: str = chomp(proc.capture("xcrun --show-sdk-path 2>/dev/null"))
     cmd: str = "clang -isysroot {sdk} -O0 -o {bin} {path} 2>/dev/null && {bin}"
-    std.proc.capture(cmd)
+    proc.capture(cmd)
 
 # `s:trim()` RETURNS NIL SILENTLY — measured 2026-08-09. It is not a method
 # idol has, and a missing method resolves to nil rather than diagnosing, which
-# is the `std.string.byte` failure class over again. `chomp` above is written
-# out rather than reached for; `std.script` is not an option.
+# is the `string.byte` failure class over again. `chomp` above is written
+# out rather than reached for; `script` is not an option.
 
 fail = 0
 
@@ -74,13 +74,13 @@ main: i64 = ()
     # was fine. A control that cannot see the actual failure mode is decoration.
     if bad == nil
         print("CONTROL FAILED: the harness returned nil — it cannot run C")
-        std.os.exit(3)
+        os.exit(3)
     if chomp(bad) == ""
         print("CONTROL FAILED: the harness produced no output")
-        std.os.exit(3)
+        os.exit(3)
     if chomp(bad) == "3"
         print("CONTROL FAILED: a literal filling .y reported 3 for .x")
-        std.os.exit(3)
+        os.exit(3)
 
     # The named pack — rung (a) with designators.
     named: str = rec.applynamed("point", ".x = 3.0, .y = 4.0")

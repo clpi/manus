@@ -122,14 +122,14 @@ zig: str = (root: str)
     "cd {root} && git ls-files 'src/*.zig' | tr '\\n' '\\0' | xargs -0 cat"
 
 lines: i64 = (cmd: str)
-    to(i64)(std.proc.capture("{cmd} | wc -l"))
+    to(i64)(proc.capture("{cmd} | wc -l"))
 
 # Set difference without a temp file and without a brace group, which would
 # collide with interpolation: emit the right side TWICE, so a name present on
 # both sides appears three times and a left-only name appears once. `uniq -u`
 # keeps the ones seen once.
 minus: i64 = (a: str, b: str)
-    to(i64)(std.proc.capture("( {a} ; {b} ; {b} ) | sort | uniq -u | wc -l"))
+    to(i64)(proc.capture("( {a} ; {b} ; {b} ) | sort | uniq -u | wc -l"))
 
 pad: str = (s: str, width: i64)
     out = s
@@ -153,7 +153,7 @@ row: i64 = (name: str, n: i64, budget: i64)
     0
 
 main: i64 = ()
-    root = std.os.getenv("DUO_ROOT")
+    root = os.getenv("DUO_ROOT")
     if root == ""
         root = "."
 
@@ -208,7 +208,7 @@ main: i64 = ()
         print("")
         print("bootstrap scan: CONTROLS BROKEN — every number below would be")
         print("  meaningless, so none is printed. Fix the patterns first.")
-        std.os.exit(3)
+        os.exit(3)
 
     upper = count(root, upperpat)
     companion = count(root, companionpat)
@@ -237,7 +237,7 @@ main: i64 = ()
 
     if over > 0
         print("bootstrap scan: FAIL — {over} row(s) rose. The ratchet runs DOWN.")
-        std.os.exit(1)
+        os.exit(1)
 
     total: i64 = upper + companion + relation
     print("bootstrap scan: PASS — {total} sites, none rising")

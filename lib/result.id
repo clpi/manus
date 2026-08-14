@@ -1,4 +1,4 @@
-# std.result — Result and Option types for safe error handling
+# result — Result and Option types for safe error handling
 # Provides Result (ok/err) and Option (some/none) with chaining,
 # unwrapping, and transformation. Enables composable pipelines
 # without explicit nil checks at every step.

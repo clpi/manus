@@ -72,7 +72,7 @@ check_json_report(): void
     assert_escape_free_file("DUO_COLOR=1 json", tmp)
     # Validate the JSON stream in Duo. This used to shell out to a python3
     # one-liner, which is an FF-0 (monoglot) violation in a repo whose whole
-    # point is that Duo is the best choice for every job — and std.json.decode
+    # point is that Duo is the best choice for every job — and json.decode
     # has existed the entire time.
     fh = io.open(tmp, "r")
     text = fh:read("a")

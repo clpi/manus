@@ -21,22 +21,22 @@ anchor = symbol
 
 main: i64 = ()
     viareq = anchor.root("q")
-    ambient = std.compiler.symbol.root("q")
+    ambient = compiler.symbol.root("q")
 
     if viareq != "duo_fn_q"
         print("ambient fold: the req spelling itself broke: {viareq}")
-        std.os.exit(1)
+        os.exit(1)
 
     if ambient != viareq
         print("ambient fold: req gave {viareq}, ambient gave {ambient}")
-        std.os.exit(2)
+        os.exit(2)
 
     # A second arity, because a one-argument fold could pass on a coincidence
     # of the calling convention while a two-argument one did not.
-    two = std.compiler.symbol.module("h", "n")
+    two = compiler.symbol.module("h", "n")
     if two != anchor.module("h", "n")
         print("ambient fold: two-arg disagreed: {two}")
-        std.os.exit(3)
+        os.exit(3)
 
     print("ambient fold: both spellings fold to the same direct call")
     0

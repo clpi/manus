@@ -21,7 +21,7 @@ _fmt2(x: f64): str
 end
 
 _sdk_flag(): str
-    sdk = std.script.chomp(std.script.capture("xcrun --show-sdk-path 2>/dev/null"))
+    sdk = script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))
     if sdk == "" return "" end
     "-isysroot " .. sdk
 end
@@ -29,7 +29,7 @@ end
 # Output shape is: RESULT simd_matmul / <time> / Checksum: <csum>, so the time
 # is the line AFTER the marker # not the last line, which is the checksum.
 _time_after_marker(bin: str): str
-    std.script.chomp(std.script.capture(bin .. " | grep -A 1 \"RESULT simd_matmul\" | tail -n 1"))
+    script.chomp(script.capture(bin .. " | grep -A 1 \"RESULT simd_matmul\" | tail -n 1"))
 end
 
 main: i64 = ()
@@ -37,18 +37,18 @@ main: i64 = ()
     print("")
 
     duo = "./zig-out/bin/idol"
-    if !std.script.fs_exists(duo)
+    if !script.fs_exists(duo)
         print("ERROR: Duo compiler not found at " .. duo)
         print("  Run 'zig build' first")
         return 1
     end
 
-    std.script.run("mkdir -p " .. _OUT_DIR)
+    script.run("mkdir -p " .. _OUT_DIR)
     sysroot = _sdk_flag()
 
     print("[1/3] Compiling C reference...")
     cbin = _OUT_DIR .. "/bench_simd_matmul_c"
-    if std.script.run("clang -O3 -flto -ffast-math -march=native " .. sysroot .. " "
+    if script.run("clang -O3 -flto -ffast-math -march=native " .. sysroot .. " "
         .. _EX .. "/bench_simd_matmul_c.c -o " .. cbin) != 0
         print("ERROR: C reference failed to compile")
         return 1
@@ -57,7 +57,7 @@ main: i64 = ()
 
     print("[2/3] Compiling bench_simd_matmul.id...")
     dbin = _OUT_DIR .. "/bench_simd_matmul_duo"
-    if std.script.run(duo .. " compile " .. _EX .. "/bench_simd_matmul.id -o " .. dbin .. " -O3") != 0
+    if script.run(duo .. " compile " .. _EX .. "/bench_simd_matmul.id -o " .. dbin .. " -O3") != 0
         print("ERROR: Duo benchmark failed to compile")
         return 1
     end

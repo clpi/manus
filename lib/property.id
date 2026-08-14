@@ -1,4 +1,4 @@
-# std.property — dot-path property access on nested tables
+# property — dot-path property access on nested tables
 # Enables getting, setting, deleting, and checking deeply nested
 # values using dot-separated string paths like "a.b.c".
 # Supports array indices in paths: "users.0.name"

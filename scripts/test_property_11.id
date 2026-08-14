@@ -23,7 +23,7 @@ _TMP = "/tmp/duo-prop11"
 _fails = 0
 
 _clang(): str
-    if std.script.chomp(std.script.capture("uname")) == "Darwin"
+    if script.chomp(script.capture("uname")) == "Darwin"
         return "xcrun clang"
     end
     "clang"
@@ -38,8 +38,8 @@ _check_module(name: str, src: str, cc: str): str
     c_file = _TMP .. "/" .. name .. ".c"
     log = _TMP .. "/" .. name .. ".clang.log"
 
-    std.script.fs_write(duo_file, src)
-    if std.script.run("./zig-out/bin/idol dump-c " .. duo_file .. " > " .. c_file .. " 2>/dev/null") != 0
+    script.fs_write(duo_file, src)
+    if script.run("./zig-out/bin/idol dump-c " .. duo_file .. " > " .. c_file .. " 2>/dev/null") != 0
         print("FAIL " .. name .. ": duo dump-c failed")
         _fails += 1
         return ""
@@ -47,9 +47,9 @@ _check_module(name: str, src: str, cc: str): str
 
     cmd = cc .. " -Wall -Wextra -pedantic -std=c11 -Wno-unused-variable"
         .. " -Wno-strict-prototypes -fsyntax-only " .. c_file .. " > " .. log .. " 2>&1"
-    if std.script.run(cmd) != 0
+    if script.run(cmd) != 0
         print("FAIL " .. name .. ": generated C does not compile")
-        print(std.script.capture("head -6 " .. log))
+        print(script.capture("head -6 " .. log))
         _fails += 1
         return ""
     end
@@ -62,7 +62,7 @@ end
 # because these patterns contain `(*f)` and `[i]`.
 _c_contains(path: str, needle: str, why: str): void
     if path == "" return end
-    n = std.script.chomp(std.script.capture(
+    n = script.chomp(script.capture(
         "grep -Fc \"" .. needle .. "\" " .. path .. " 2>/dev/null"))
     if n == "" or n == "0"
         print("FAIL " .. why)
@@ -72,7 +72,7 @@ end
 
 main: i64 = ()
     print("[Property 11] Testing C codegen...")
-    std.script.run("rm -rf " .. _TMP .. " && mkdir -p " .. _TMP)
+    script.run("rm -rf " .. _TMP .. " && mkdir -p " .. _TMP)
     cc = _clang()
 
     _check_module("arithmetic", [[function add(a: i64, b: i64) -> i64

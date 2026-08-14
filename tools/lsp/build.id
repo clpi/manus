@@ -5,7 +5,7 @@
 
 _first_executable(candidates: any): str
     for _i, c in candidates
-        if c != "" and std.script.fs_exists(c)
+        if c != "" and script.fs_exists(c)
             return c
         end
     end
@@ -14,13 +14,13 @@ end
 
 _locate_idol(): str
     # Explicit override wins, then the sibling checkout, then PATH.
-    override = std.script.getenv_or("IDOL_LSP_BIN")
+    override = script.getenv_or("IDOL_LSP_BIN")
     if override == ""
-        override = std.script.getenv_or("DUO_LSP_DUO_BIN")
+        override = script.getenv_or("DUO_LSP_DUO_BIN")
     end
-    on_path = std.script.chomp(std.script.capture("command -v idol 2>/dev/null"))
+    on_path = script.chomp(script.capture("command -v idol 2>/dev/null"))
     if on_path == ""
-        on_path = std.script.chomp(std.script.capture("command -v duo 2>/dev/null"))
+        on_path = script.chomp(script.capture("command -v duo 2>/dev/null"))
     end
     _first_executable({ override, "../duo/zig-out/bin/idol", "../../zig-out/bin/idol", on_path })
 end
@@ -33,13 +33,13 @@ main: i64 = ()
     end
 
     print("compiling duo-lsp with: " .. idol)
-    rc = std.script.run(idol .. " compile -o duo-lsp src/server.id")
+    rc = script.run(idol .. " compile -o duo-lsp src/server.id")
     if rc != 0
         print("error: compile failed (exit " .. rc:to(str) .. ")")
         return rc
     end
 
-    std.script.run("chmod +x duo-lsp")
+    script.run("chmod +x duo-lsp")
     print("built: duo-lsp")
     0
 end

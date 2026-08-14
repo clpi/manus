@@ -35,13 +35,13 @@ rows = ""
 failed = 0
 
 here: str = ()
-    std.script.chomp(std.script.capture("pwd"))
+    script.chomp(script.capture("pwd"))
 
 quiet: i64 = (cmd: str)
-    std.script.status("{cmd} >/dev/null 2>&1")
+    script.status("{cmd} >/dev/null 2>&1")
 
 grab: str = (cmd: str)
-    std.script.chomp(std.script.capture(cmd))
+    script.chomp(script.capture(cmd))
 
 note: void = (tag: str, ok: bool, detail: str)
     mark = "FAIL"
@@ -68,7 +68,7 @@ run: str = (bin: str, work: str, name: str, backend: str)
     built = quiet("{bin} compile {src} --backend={backend} -o {exe}")
     if built != 0
         return "BUILD-FAILED"
-    code = std.script.status("{exe} >{out} 2>/dev/null")
+    code = script.status("{exe} >{out} 2>/dev/null")
     body = grab("tr '\\n' '|' <{out}")
     "rc={code} {body}"
 

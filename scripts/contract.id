@@ -57,7 +57,7 @@ end
 # Does the verb's combined output hold `want`? Diagnostics go to stderr and the
 # explain render goes to stdout, so both are folded in.
 mentions(bin: str, verb: str, fixture: str, want: str): bool
-    std.script.status("{bin} {verb} {fixture} 2>&1 | grep -q -F '{want}'") == 0
+    script.status("{bin} {verb} {fixture} 2>&1 | grep -q -F '{want}'") == 0
 end
 
 # The same question for a `want` that contains an APOSTROPHE — a diagnostic
@@ -66,7 +66,7 @@ end
 # confident NO. Two helpers rather than one escaping rule, because the JSON
 # assertions carry double quotes and these carry single ones.
 mentionsq(bin: str, verb: str, fixture: str, want: str): bool
-    std.script.status("{bin} {verb} {fixture} 2>&1 | grep -q -F \"{want}\"") == 0
+    script.status("{bin} {verb} {fixture} 2>&1 | grep -q -F \"{want}\"") == 0
 end
 
 # `compile` under an explicit backend, asserting on the MESSAGE and !only on
@@ -77,7 +77,7 @@ end
 # wrong reason under its own break control, which is a false green with a
 # positive control attached. Naming the diagnostic is what makes the row real.
 compilesays(bin: str, flags: str, fixture: str, want: str): bool
-    std.script.status("{bin} compile {flags} {fixture} -o /dev/null 2>&1 | grep -q -F '{want}'") == 0
+    script.status("{bin} compile {flags} {fixture} -o /dev/null 2>&1 | grep -q -F '{want}'") == 0
 end
 
 main: i64 = ()
@@ -86,14 +86,14 @@ main: i64 = ()
     bad = 0
 
     # CONTROL 1 — the runner can convict.
-    if std.script.status("false") == 0
+    if script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
     end
 
     # CONTROL 2 — and can acquit. A `status` stuck at nonzero would turn every
     # rejection assertion below into a free pass.
-    if std.script.status("true") != 0
+    if script.status("true") != 0
         shout("FAIL — control: status() called `true` a failure")
         bad += 1
     end

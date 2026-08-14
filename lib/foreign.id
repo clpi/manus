@@ -1,4 +1,4 @@
-# std.foreign — Cross-Language AST Bridge
+# foreign — Cross-Language AST Bridge
 # Transpile snippets from Python, Rust, Zig, and other languages into C
 # at compile time via @run, then inject the result with @c.emit.
 #

@@ -1,4 +1,4 @@
-# std.compiler.token_view
+# compiler.token_view
 # Immutable observation over a production token pack (GAP-134 prerequisite).
 
 Pack: {

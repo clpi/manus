@@ -1,4 +1,4 @@
-# std.sort — sorting utilities (mirrors Go's sort package)
+# sort — sorting utilities (mirrors Go's sort package)
 # Provides generic sort, stable sort, binary search, and convenience wrappers
 # for ascending/descending order on homogeneous array-like tables.
 

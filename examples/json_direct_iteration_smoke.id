@@ -1,8 +1,8 @@
-encoded_obj = std.json.encode({ id = 7, name = "duo" })
-decoded_obj = std.json.decode(encoded_obj)
+encoded_obj = json.encode({ id = 7, name = "duo" })
+decoded_obj = json.decode(encoded_obj)
 
-encoded_arr = std.json.encode({ 1, 2, 3 })
-decoded_arr = std.json.decode(encoded_arr)
+encoded_arr = json.encode({ 1, 2, 3 })
+decoded_arr = json.decode(encoded_arr)
 
 ok = decoded_obj.id == 7 and decoded_obj.name == "duo" and
     decoded_arr[1] == 1 and decoded_arr[2] == 2 and decoded_arr[3] == 3

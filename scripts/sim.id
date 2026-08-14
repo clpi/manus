@@ -11,7 +11,7 @@
 # public replacements exactly.
 
 here: str = ()
-    std.script.chomp(std.script.capture("pwd"))
+    script.chomp(script.capture("pwd"))
 
 compiler: str = (root: str)
     "{root}/zig-out/bin/idol"
@@ -20,10 +20,10 @@ shout: void = (msg: str)
     print("sim: {msg}")
 
 present: bool = (path: str)
-    std.script.status("test -e {path}") == 0
+    script.status("test -e {path}") == 0
 
 capture: bool = (cmd: str, out: str)
-    std.script.status("{cmd} >{out} 2>/dev/null") == 0
+    script.status("{cmd} >{out} 2>/dev/null") == 0
 
 isolated: bool = (cmd: str)
     capture("d=$(mktemp -d) || exit 1; trap 'rm -rf $d' EXIT; {cmd}", "/dev/null")
@@ -193,4 +193,4 @@ main: i64 = ()
 
     bad
 
-std.os.exit(main())
+os.exit(main())

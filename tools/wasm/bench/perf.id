@@ -10,7 +10,7 @@
 # the engine once and faked a 55% regression later. Interleave, and take the median
 # # this box drifts measurably under sustained load.
 #
-# Timing is std.time.monotonic(), which returned 0 for every call until
+# Timing is time.monotonic(), which returned 0 for every call until
 # 2026-08-07: a no-argument function with a bare @c.emit body drops its value,
 # so `now_ns` needed an explicit return. Without that fix this harness would
 # have reported every run as instantaneous # worse than the bash it replaces.
@@ -22,9 +22,9 @@ end
 # Wall-clock milliseconds for one command. Monotonic, so it is unaffected by
 # clock adjustments during a long sweep.
 _time_ms(cmd: str): i64
-    a: i64 = std.time.monotonic()
-    std.script.status(cmd)
-    b: i64 = std.time.monotonic()
+    a: i64 = time.monotonic()
+    script.status(cmd)
+    b: i64 = time.monotonic()
     # `/` yields f64 even on two i64 operands, so the narrowing is stated.
     to(i64)((b - a) / _ms_per_ns())
 end
@@ -60,16 +60,16 @@ _min_of(xs: any, n: i64): i64
 end
 
 main(): i64
-    binary = std.script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
-    mod = std.script.arg(1, "bench/hash.wasm")
-    n: i64 = to(i64)(std.script.getenv("N", "7"))
+    binary = script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
+    mod = script.arg(1, "bench/hash.wasm")
+    n: i64 = to(i64)(script.getenv("N", "7"))
 
-    if not std.script.fs_exists(mod)
+    if not script.fs_exists(mod)
         print("perf: module not found: " .. mod)
         return 1
     end
-    abs = std.script.chomp(std.script.capture("cd \"$(dirname " .. mod .. ")\" && pwd"))
-        .. "/" .. std.script.path_basename(mod)
+    abs = script.chomp(script.capture("cd \"$(dirname " .. mod .. ")\" && pwd"))
+        .. "/" .. script.path_basename(mod)
 
     # the engine reads DUO_WASM_MODULE, NOT argv (src/engine.id entry) and silently falls
     # back to a hardcoded /tmp/hash.wasm. Passing the module as an argument

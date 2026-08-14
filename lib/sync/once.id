@@ -1,4 +1,4 @@
-# std.sync_once — Once (mirrors Go's sync.Once)
+# sync_once — Once (mirrors Go's sync.Once)
 # Ensures a function is called exactly once, even across concurrent calls.
 
 # once: create a new Once.

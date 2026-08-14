@@ -1,4 +1,4 @@
-# std.wasm.instruction — Wasm instruction semantic descriptors.
+# wasm.instruction — Wasm instruction semantic descriptors.
 #
 # CANONICAL OWNER: src/wasm_semantic.zig (compiler catalog + tests).
 # Do NOT add parallel opcode constant tables here. Ward should req this module

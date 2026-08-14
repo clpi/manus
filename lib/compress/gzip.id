@@ -1,4 +1,4 @@
-# std.compress.gzip — Gzip decompression (mirrors Go's compress/gzip)
+# compress.gzip — Gzip decompression (mirrors Go's compress/gzip)
 
 is_gzipped(data: any)
     if data == nil or data:len() < 2 return false end

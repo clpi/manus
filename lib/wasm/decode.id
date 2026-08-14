@@ -1,11 +1,11 @@
-# std.wasm.decode — cursor-integrated Wasm opcode + immediate decoding.
+# wasm.decode — cursor-integrated Wasm opcode + immediate decoding.
 #
-# Uses std.bytes (any-buffer) until std.cursor ByteCursor native lowering lands (P9-WS3).
-# Semantic opcode facts: src/wasm_semantic.zig via std.wasm.opcode_lookup (generated).
+# Uses bytes (any-buffer) until cursor ByteCursor native lowering lands (P9-WS3).
+# Semantic opcode facts: src/wasm_semantic.zig via wasm.opcode_lookup (generated).
 #
 # Regenerate lookup: duo wasm-tables emit
 
-# Cursor: local { data, pos, len } table (mutates in-module; std.cursor when native).
+# Cursor: local { data, pos, len } table (mutates in-module; cursor when native).
 
 Inst = instruction
 Lookup = opcode_lookup

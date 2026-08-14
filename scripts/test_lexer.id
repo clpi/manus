@@ -2,11 +2,11 @@ print("0")
 req "std"
 print("1")
 
-source = std.compiler.source
+source = compiler.source
 print("2")
-token = std.compiler.token
+token = compiler.token
 print("3")
-lexer = std.compiler.lexer
+lexer = compiler.lexer
 print("4")
 
 print("Starting test")

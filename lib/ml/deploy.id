@@ -1,4 +1,4 @@
-# std.ml.deploy — Edge / WASM / static-binary deploy helpers
+# ml.deploy — Edge / WASM / static-binary deploy helpers
 
 static_binary_opts(): any
     return {
@@ -21,8 +21,8 @@ end
 edge_pipeline(model): any
     return {
         type = "edge_pipeline",
-        quant = std.ml.quant.amp_policy(),
-        device = std.ml.device.wasm_simd(),
+        quant = ml.quant.amp_policy(),
+        device = ml.device.wasm_simd(),
         steps = { "quantize", "strip", "wasm" },
         model = model,
     }

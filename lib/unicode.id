@@ -1,4 +1,4 @@
-# std.unicode — Unicode character classification (mirrors Go's unicode package)
+# unicode — Unicode character classification (mirrors Go's unicode package)
 # Provides basic rune/byte classification: IsDigit, IsLetter, IsSpace, etc.
 # Since Duo operates on byte strings, these functions take a byte value (0-255)
 # and classify based on ASCII/Latin-1 ranges. Full Unicode would require UTF-8

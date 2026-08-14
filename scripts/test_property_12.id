@@ -83,24 +83,24 @@ main: i64 = ()
 
     c = c .. "    return 0;\n}\n"
 
-    std.script.fs_write(duo_src, d)
-    std.script.fs_write(c_src, c)
+    script.fs_write(duo_src, d)
+    script.fs_write(c_src, c)
 
     duo = "./zig-out/bin/idol"
-    if std.script.run(duo .. " run " .. duo_src .. " > " .. duo_out) != 0
+    if script.run(duo .. " run " .. duo_src .. " > " .. duo_out) != 0
         print("[Property 12] FAIL — Duo program did not run")
         return 1
     end
 
     cc = "clang"
-    if std.script.chomp(std.script.capture("uname")) == "Darwin"
+    if script.chomp(script.capture("uname")) == "Darwin"
         cc = "xcrun clang"
     end
-    if std.script.run(cc .. " -Wall -Wextra -pedantic -std=c11 " .. c_src .. " -o " .. c_bin) != 0
+    if script.run(cc .. " -Wall -Wextra -pedantic -std=c11 " .. c_src .. " -o " .. c_bin) != 0
         print("[Property 12] FAIL — C reference did not compile")
         return 1
     end
-    if std.script.run(c_bin .. " > " .. c_out) != 0
+    if script.run(c_bin .. " > " .. c_out) != 0
         print("[Property 12] FAIL — C reference did not run")
         return 1
     end

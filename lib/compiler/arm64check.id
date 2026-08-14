@@ -1,6 +1,6 @@
 # SH-11 — the ARM64 encoder differential, against the SYSTEM ASSEMBLER.
 #
-# std.compiler.arm64 grew from 9 register-register encoders to 46 by
+# compiler.arm64 grew from 9 register-register encoders to 46 by
 # transcribing tools/wasm/src/wasm/jit_arm64.id; the 50 cases below check them
 # (some forms twice, with different operands). A transcription is exactly the
 # kind of change that looks right and is wrong in one nibble, so it does not
@@ -50,12 +50,12 @@ _assemble: str = (mnemonic: str)
     end
     fh:write(".text\n.global _start\n_start:\n    " .. mnemonic .. "\n")
     fh:close()
-    cc = std.script.getenv("DUO_ARM64_CC", "xcrun clang")
-    if std.script.run(cc .. " -c -o " .. _objpath .. " " .. _asmpath .. " 2>/dev/null") != 0
+    cc = script.getenv("DUO_ARM64_CC", "xcrun clang")
+    if script.run(cc .. " -c -o " .. _objpath .. " " .. _asmpath .. " 2>/dev/null") != 0
         os.remove(_asmpath)
         return ""
     end
-    out = std.script.capture("xcrun otool -t " .. _objpath
+    out = script.capture("xcrun otool -t " .. _objpath
         .. " 2>/dev/null | tail -1 | awk '{print $2}'")
     os.remove(_asmpath)
     os.remove(_objpath)

@@ -72,12 +72,12 @@ end
 # matches nothing — a gate that finds no body and could be misread as a gate
 # that found no box.
 body(cfile: str, out: str): i64
-    std.script.run("sed -n '/duo_entry_main() \x7b/,/^\x7d/p' {cfile} > {out}")
-    to(i64)(std.script.chomp(std.script.capture("wc -l < {out}")))
+    script.run("sed -n '/duo_entry_main() \x7b/,/^\x7d/p' {cfile} > {out}")
+    to(i64)(script.chomp(script.capture("wc -l < {out}")))
 end
 
 hits(path: str, pattern: str): i64
-    to(i64)(std.script.chomp(std.script.capture("grep -c '{pattern}' {path} || true")))
+    to(i64)(script.chomp(script.capture("grep -c '{pattern}' {path} || true")))
 end
 
 # The one predicate both the fixture and the control are judged by, so the
@@ -143,7 +143,7 @@ measure(duo: str): i64
 
     # Value first. A cost claim about a program that computes the wrong number
     # is a claim about the wrong program.
-    got = std.script.chomp(std.script.capture("{bin}"))
+    got = script.chomp(script.capture("{bin}"))
     okval = 0
     if got == want
         okval = 1
@@ -189,7 +189,7 @@ measure(duo: str): i64
     writerender(rpath)
     rendered = "no output"
     if quiet("{duo} compile {rpath} -o {work}/render.out") == 0
-        rendered = std.script.chomp(std.script.capture("{work}/render.out | xargs"))
+        rendered = script.chomp(script.capture("{work}/render.out | xargs"))
     okrender = 0
     if rendered == "2.5 41"
         okrender = 1

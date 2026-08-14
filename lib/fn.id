@@ -1,4 +1,4 @@
-# std.fn — functional programming utilities
+# fn — functional programming utilities
 # Higher-order functions and data transformations.
 # Note: closure-returning combinators are not supported by the compiler;
 # this module focuses on functions that compose without creating new closures.

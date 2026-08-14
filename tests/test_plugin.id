@@ -28,14 +28,14 @@ end
 # grep -c exits nonzero on no match, so the COUNT is what is read, not the
 # status: capture keeps stdout either way and "" means no match.
 _grep(pattern: str, path: str): bool
-    n = std.script.chomp(std.script.capture("grep -cE \"" .. pattern .. "\" " .. path .. " 2>/dev/null"))
+    n = script.chomp(script.capture("grep -cE \"" .. pattern .. "\" " .. path .. " 2>/dev/null"))
     n != "" and n != "0"
 end
 
 main: i64 = ()
     for _i, f in {"ftdetect/duo.vim", "syntax/duo.vim", "plugin/duo.vim", "lua/duo/init.lua"}
         path = _ROOT .. "/" .. f
-        if std.script.fs_exists(path)
+        if script.fs_exists(path)
             _ok(f .. " exists")
         else
             _bad(f .. " is missing")
@@ -56,10 +56,10 @@ main: i64 = ()
         _bad("ftdetect/duo.vim does not reference .id extension")
     end
 
-    if std.script.chomp(std.script.capture("command -v nvim 2>/dev/null")) != ""
+    if script.chomp(script.capture("command -v nvim 2>/dev/null")) != ""
         cmd = "nvim --headless -c \"set rtp+=" .. _ROOT .. "\" -c \"source " .. ftd
             .. "\" -c \"qa\" 2>/dev/null"
-        if std.script.run(cmd) == 0
+        if script.run(cmd) == 0
             _ok("nvim loads ftdetect without errors")
         else
             _bad("nvim exited non-zero loading ftdetect")

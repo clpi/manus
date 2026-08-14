@@ -1,6 +1,6 @@
-# std.html — basic HTML escaping and unescaping
+# html — basic HTML escaping and unescaping
 
-string = std.string
+string = string
 escape(s: str): str
     s = s:gsub("&", "&amp;")
     s = s:gsub("<", "&lt;")

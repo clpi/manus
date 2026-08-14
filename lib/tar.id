@@ -1,4 +1,4 @@
-# std.tar — basic TAR archive wrapper
+# tar — basic TAR archive wrapper
 
 proc = proc
 

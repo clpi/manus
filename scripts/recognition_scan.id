@@ -22,7 +22,7 @@
 #
 #           THE OBVIOUS SHORTCUT IS FORECLOSED, and it is worth writing down
 #           because it is what a hurried migration would reach for: moving the
-#           pure ops into some other namespace — `std.numeric`, `num.`, a
+#           pure ops into some other namespace — `numeric`, `num.`, a
 #           renamed `math` — is NOT a repair. The prelude ruling says std has NO
 #           MODULE TREE and that WORLDS ARE THE ONLY NAMESPACES, so a fresh
 #           namespace for capability-free ops is the same defect respelled,
@@ -37,7 +37,7 @@
 #           MODULE references, not ops. They ride the `math.` spelling but the
 #           ruling is about op namespaces, so they are reported and not
 #           ratcheted — a ratchet on them would be measuring a directory name.
-#   ns      std.mem / std.fmt / std.math — the three the ruling names outright.
+#   ns      mem / fmt / math — the three the ruling names outright.
 #
 # THE LEVERAGE, and it is the reason this file exists on the same night as the
 # capability scan: `rand` is not a side note. It is the ENTIRE `rand` class of
@@ -48,7 +48,7 @@
 # instrument that proves it: every converted site must lower ITS number too.
 #
 # WHAT GAP-071 MEASURED AND WHAT IT MISSED. GAP-071 records this ruling's
-# distance as `std.math. 16 files / std.mem. 1 / std.fmt. 1`. Those are the
+# distance as `math. 16 files / mem. 1 / fmt. 1`. Those are the
 # DOTTED-NAMESPACE counts. The dominant spelling in this tree is BARE `math.`,
 # which GAP-071 never counted and which AUDIT v4 denies by name. It is 79
 # files. A deny row measured at 16 that is really 79 reads as nearly-satisfied
@@ -256,7 +256,7 @@ main(): i64
 
     if code == 0
         total = to(i64)(std.script.chomp(std.script.capture("cd {root} && git ls-files 'lib/*.id' | wc -l")))
-        print("recognition scan — §0a: no std.mem / std.fmt / std.math")
+        print("recognition scan — §0a: no mem / fmt / math")
         print("  root      {root}")
         print("  modules   {total} tracked lib/**/*.id")
         if total == 0
@@ -287,7 +287,7 @@ main(): i64
         if !sound(subpat, "  f = math.fft.forward(v)")
             broken = "sub"
         end
-        if !sound(nspat, "  c = std.math.clamp(x, a, b)")
+        if !sound(nspat, "  c = math.clamp(x, a, b)")
             broken = "ns"
         end
         if broken != ""
@@ -300,7 +300,7 @@ main(): i64
     # and `ns` would move together and neither budget would mean anything.
     if code == 0
         if probe(purepat, "  y = x:floor()") != 0
-            print("recognition scan: FAIL — the pure pattern also matches std.math.; the pure and ns budgets would double-count the same site")
+            print("recognition scan: FAIL — the pure pattern also matches math.; the pure and ns budgets would double-count the same site")
             code = 3
         end
     end
@@ -423,7 +423,7 @@ main(): i64
             over += 1
         end
         if ns > nscap
-            print("recognition scan: FAIL — std.mem/fmt/math sites {ns} exceeds the ratchet {nscap}")
+            print("recognition scan: FAIL — mem/fmt/math sites {ns} exceeds the ratchet {nscap}")
             over += 1
         end
         if over > 0

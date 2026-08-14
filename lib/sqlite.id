@@ -1,4 +1,4 @@
-# std.sqlite — SQLite database interface via native C API (@ffi bindings)
+# sqlite — SQLite database interface via native C API (@ffi bindings)
 # Replaces the previous sqlite3 CLI shell wrapper with direct C library calls.
 # Link with: duo compile myapp.id #link sqlite3
 # The @ffi declarations bind directly to the libsqlite3 C API.

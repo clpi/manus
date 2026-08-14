@@ -1,5 +1,5 @@
-# std.iter — functional iterators and higher-order functions
-# This module delegates core operations to std.fn for consistency.
+# iter — functional iterators and higher-order functions
+# This module delegates core operations to fn for consistency.
 # Adds iterator-specific utilities (zip, enumerate, flat_map) that
 # don't belong in the pure functional programming module.
 

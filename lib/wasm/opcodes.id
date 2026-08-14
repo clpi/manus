@@ -1,4 +1,4 @@
-# std.wasm.opcodes — CANONICAL Wasm opcode algebra, owned in Duo.
+# wasm.opcodes — CANONICAL Wasm opcode algebra, owned in Duo.
 #
 # Supersedes the Zig-generated flat tables (ward_mvp_opcodes.id,
 # opcode_lookup.id) as the source of truth. Those list constants one by one,

@@ -7,13 +7,13 @@
 # tier-0 path: it pays for two full ReleaseFast builds.
 
 _zig(): str
-    z = std.script.getenv_or("ZIG")
+    z = script.getenv_or("ZIG")
     if z == "" return "zig" end
     z
 end
 
 _opt(): str
-    o = std.script.getenv_or("REPRO_OPT")
+    o = script.getenv_or("REPRO_OPT")
     if o == "" return "ReleaseFast" end
     o
 end

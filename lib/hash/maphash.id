@@ -1,4 +1,4 @@
-# std.hash.maphash — Hash for tables/maps (mirrors Go's hash/maphash)
+# hash.maphash — Hash for tables/maps (mirrors Go's hash/maphash)
 # A non-cryptographic hash function suitable for use in hash tables.
 # Uses a seed-based FNV-like approach to resist hash-collision attacks.
 

@@ -42,7 +42,7 @@
 # internal `__` hook — every logged transform is a public registry id.
 
 here(): str
-    std.script.chomp(std.script.capture("pwd"))
+    script.chomp(script.capture("pwd"))
 end
 
 compiler(root: str): str
@@ -54,23 +54,23 @@ shout(msg: str): void
 end
 
 present(path: str): bool
-    std.script.status("test -e {path}") == 0
+    script.status("test -e {path}") == 0
 end
 
 capture(cmd: str, out: str): bool
-    std.script.status("{cmd} >{out} 2>/dev/null") == 0
+    script.status("{cmd} >{out} 2>/dev/null") == 0
 end
 
 # A whole-line regex over the raw JSON. The registry rows are flat objects, so
 # `[^}]*` cannot cross an object boundary — which is what lets one grep tie a
 # transform's NAME to its own fields instead of to a neighbour's.
 row(path: str, want: str): bool
-    std.script.status("grep -q -E '{want}' {path}") == 0
+    script.status("grep -q -E '{want}' {path}") == 0
 end
 
 # Substring, comma-split so a value cannot be matched across two fields.
 held(path: str, want: str): bool
-    std.script.status("tr ',' '\\n' < {path} | grep -q -F '{want}'") == 0
+    script.status("tr ',' '\\n' < {path} | grep -q -F '{want}'") == 0
 end
 
 # The C string literal bound to `name` in emitted C, e.g. `TOP`. The binding's
@@ -95,7 +95,7 @@ main: i64 = ()
     bad = 0
 
     # CONTROL 1 — the runner convicts.
-    if std.script.status("false") == 0
+    if script.status("false") == 0
         shout("FAIL — control: status() called `false` a success")
         bad += 1
     end
@@ -106,7 +106,7 @@ main: i64 = ()
         bad += 1
     end
 
-    if std.script.status("rm -rf {dir} && mkdir -p {dir}") != 0
+    if script.status("rm -rf {dir} && mkdir -p {dir}") != 0
         shout("FAIL — could not build the sandbox at {dir}")
         bad += 1
     end
@@ -199,7 +199,7 @@ main: i64 = ()
 
     # D4 — the log names public registry ids only. An internal hook reaching
     # provenance means dispatch logged something the registry never admitted.
-    if std.script.status("sed 's/.*\"transform_provenance\"//; s/\"transform_registry\".*//' {reg} | grep -q '\"transform\":\"__'") == 0
+    if script.status("sed 's/.*\"transform_provenance\"//; s/\"transform_registry\".*//' {reg} | grep -q '\"transform\":\"__'") == 0
         shout("FAIL — D4: an internal __ hook name reached the provenance log")
         bad += 1
     end
@@ -245,11 +245,11 @@ main: i64 = ()
         shout("FAIL — C2: `duo dump-c` did not run on the call fixture")
         bad += 1
     end
-    if std.script.status("grep -q -F 'add(' {plainc}") != 0
+    if script.status("grep -q -F 'add(' {plainc}") != 0
         shout("FAIL — C2: the emitted C holds no direct add( call")
         bad += 1
     end
-    if std.script.status("grep -q -F 'lua_invoke' {plainc}") == 0
+    if script.status("grep -q -F 'lua_invoke' {plainc}") == 0
         shout("FAIL — C2: the direct call still emitted lua_invoke")
         bad += 1
     end
@@ -280,11 +280,11 @@ main: i64 = ()
         shout("FAIL — C5: `duo dump-c` did not run on the pipeline fixture")
         bad += 1
     end
-    if std.script.status("grep -q -F 'int64_t y = double(21);' {pipec}") != 0
+    if script.status("grep -q -F 'int64_t y = double(21);' {pipec}") != 0
         shout("FAIL — C5: `21 |> double` did not lower to the direct call double(21)")
         bad += 1
     end
-    if std.script.status("grep -q -F 'lua_invoke' {pipec}") == 0
+    if script.status("grep -q -F 'lua_invoke' {pipec}") == 0
         shout("FAIL — C5: the pipeline call site emitted lua_invoke")
         bad += 1
     end
@@ -346,4 +346,4 @@ main: i64 = ()
     bad
 end
 
-std.os.exit(main())
+os.exit(main())

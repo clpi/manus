@@ -2,7 +2,7 @@
 #
 # Reports projection-related spellings in tracked .id. Classify before rewrite.
 #
-# Bootstrap shell ingress via gatecap (GAP-155) — not std.script / process.*.
+# Bootstrap shell ingress via gatecap (GAP-155) — not script / process.*.
 # Uses grep for patterns containing '(' — gatecap strips rg regex escapes.
 #
 # Run from repository root: idol run scripts/projection_census.id

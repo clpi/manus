@@ -38,11 +38,11 @@ grammardir = "ext/tree-sitter-duo"
 # macOS SDK on its include path. `xcrun` is the authority; an already-exported
 # SDKROOT wins so a CI image can pin one.
 _sdkroot(): str
-    fromenv = std.script.chomp(std.os.getenv("SDKROOT"))
+    fromenv = script.chomp(os.getenv("SDKROOT"))
     if fromenv != ""
         return fromenv
     end
-    std.script.chomp(std.script.capture("xcrun --show-sdk-path 2>/dev/null"))
+    script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))
 end
 
 # Every shell command the gate runs goes through here, so the SDK path is
@@ -54,11 +54,11 @@ end
 # side of the `&&` without it. The prefix form silently produced an empty
 # result for every command, which `to(i64)("")` turned into a confident 0.
 _sh(sdk: str, cmd: str): str
-    std.script.capture("export SDKROOT='" .. sdk .. "'; " .. cmd)
+    script.capture("export SDKROOT='" .. sdk .. "'; " .. cmd)
 end
 
 _shstatus(sdk: str, cmd: str): i64
-    std.script.status("export SDKROOT='" .. sdk .. "'; " .. cmd)
+    script.status("export SDKROOT='" .. sdk .. "'; " .. cmd)
 end
 
 # Count files whose tree carries an ERROR / MISSING / UNEXPECTED node.
@@ -66,7 +66,7 @@ end
 # nothing at all for a clean one, so the failure count is the line count.
 _failures(sdk: str, listfile: str): i64
     out: str = _sh(sdk, "cd " .. grammardir .. " && tree-sitter parse --quiet --paths '" .. listfile .. "' 2>/dev/null | sort -u | grep -c . ")
-    return to(i64)(std.script.chomp(out))
+    return to(i64)(script.chomp(out))
 end
 
 # Prove the detector can distinguish a good file from a bad one BEFORE
@@ -75,16 +75,16 @@ end
 _control(sdk: str, dir: str): bool
     good = dir .. "/control_good.id"
     bad = dir .. "/control_bad.id"
-    std.script.capture("printf 'add(a: i64, b: i64): i64\\n    a + b\\nend\\n' > '" .. good .. "'")
+    script.capture("printf 'add(a: i64, b: i64): i64\\n    a + b\\nend\\n' > '" .. good .. "'")
     # An unclosed parenthesis and a dangling operator: not a Duo program under
     # any reading, so the parser must produce an error node for it.
-    std.script.capture("printf 'add(a: i64, b: i64: i64\\n    a + +\\nend\\n' > '" .. bad .. "'")
+    script.capture("printf 'add(a: i64, b: i64: i64\\n    a + +\\nend\\n' > '" .. bad .. "'")
 
     # `fs_tmpdir` is already absolute, so these paths must NOT be prefixed
     # with $PWD: an unreadable path makes tree-sitter print nothing to stdout,
     # which the counter would read as "recognised" for both controls.
-    std.script.capture("printf '%s\\n' '" .. good .. "' > '" .. dir .. "/good.txt'")
-    std.script.capture("printf '%s\\n' '" .. bad .. "' > '" .. dir .. "/bad.txt'")
+    script.capture("printf '%s\\n' '" .. good .. "' > '" .. dir .. "/good.txt'")
+    script.capture("printf '%s\\n' '" .. bad .. "' > '" .. dir .. "/bad.txt'")
 
     goodfails = _failures(sdk, dir .. "/good.txt")
     badfails = _failures(sdk, dir .. "/bad.txt")
@@ -112,7 +112,7 @@ main: i64 = ()
     end
     print("tree_sitter_coverage: SDKROOT=" .. sdk)
 
-    if !std.script.ok("command -v tree-sitter >/dev/null 2>&1")
+    if !script.ok("command -v tree-sitter >/dev/null 2>&1")
         io.write("tree_sitter_coverage: FAIL — tree-sitter CLI not found on PATH\n")
         io.write("  the grammar cannot be built or measured; install it rather than skipping this gate\n")
         return 1
@@ -132,14 +132,14 @@ main: i64 = ()
     # longer needed. Left alone those accumulate until nobody knows which of
     # them are load-bearing, so the gate treats one as a failure.
     genout = _sh(sdk, "cd " .. grammardir .. " && tree-sitter generate 2>&1")
-    if std.script.chomp(genout) != ""
+    if script.chomp(genout) != ""
         io.write("tree_sitter_coverage: FAIL — tree-sitter generate emitted warnings\n")
         io.write(genout)
         io.write("  drop the entries it names; every conflict must be provably necessary\n")
         return 1
     end
 
-    tmp = std.script.fs_tmpdir()
+    tmp = script.fs_tmpdir()
     if !_control(sdk, tmp)
         return 1
     end
@@ -160,8 +160,8 @@ main: i64 = ()
     # GAP-049 offside hole `examples/layout/offside.id` already reports, so
     # dropping them costs no information this gate was carrying.
     listfile = tmp .. "/corpus.txt"
-    std.script.capture("git ls-files '*.id' | grep -v '^fixtures/highlight/' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")
-    total = to(i64)(std.script.chomp(std.script.capture("grep -c . '" .. listfile .. "'")))
+    script.capture("git ls-files '*.id' | grep -v '^fixtures/highlight/' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")
+    total = to(i64)(script.chomp(script.capture("grep -c . '" .. listfile .. "'")))
     if total < 1
         io.write("tree_sitter_coverage: FAIL — no tracked .id files found; the corpus list is empty\n")
         return 1

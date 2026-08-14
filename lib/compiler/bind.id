@@ -29,7 +29,7 @@
 # `lx: Lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
 # this file uses ambient roots. Measured, not assumed.
 
-# Membership over a "|a|b|" set. std.str is `sub` and `len`, so this is spelled
+# Membership over a "|a|b|" set. str is `sub` and `len`, so this is spelled
 # out rather than borrowed.
 has: bool = (set: str, name: str)
     hay = set

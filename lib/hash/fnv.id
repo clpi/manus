@@ -1,4 +1,4 @@
-# std.hash.fnv — FNV-1/FNV-1a hash (mirrors Go's hash/fnv)
+# hash.fnv — FNV-1/FNV-1a hash (mirrors Go's hash/fnv)
 
 fnv_offset32 = 0x811C9DC5
 fnv_prime32 = 0x01000193

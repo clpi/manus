@@ -6,9 +6,9 @@
 # clean can still be unreachable to every program that names it.
 #
 # The distinction cost real work to learn. Two MOD-1 unwraps passed `duo check`
-# and shipped broken (std.result, std.ml.optim, restored in ad39dfe), and
+# and shipped broken (result, ml.optim, restored in ad39dfe), and
 # lib/image/gif.id once loaded cleanly while every byte it read was nil.
-# So this gate exercises the AMBIENT PATH — `std.mod` from a fresh program —
+# So this gate exercises the AMBIENT PATH — `mod` from a fresh program —
 # which is the thing callers actually do.
 #
 # It is a RATCHET. The floor is the measured failure count; a run that fails
@@ -19,19 +19,19 @@
 # says tooling is Duo. Run it with `idol run scripts/stdlib_embed_gate.id`.
 
 # Measured floor. Lower it when modules are repaired; never raise it to quiet
-# the gate. Verified 2026-08-07: 30 of 246 — was 38, and the std.wasm.* family
+# the gate. Verified 2026-08-07: 30 of 246 — was 38, and the wasm.* family
 # accounted for the drop. Note 30 rather than the 32 I predicted: modules
-# outside that family depended on std.wasm transitively, so repairing one root
+# outside that family depended on wasm transitively, so repairing one root
 # freed more than the direct dependents. Estimate the floor and you will be
 # wrong in both directions; run it and pin what it says.
 ceiling(): i64
     30
 end
 
-# Turn `lib/net/ws.id` into the ambient path `std.net.ws`.
+# Turn `lib/net/ws.id` into the ambient path `net.ws`.
 module_path(file: str): str
-    inner = std.script.capture("printf '%s' \"" .. file .. "\" | sed 's|^lib/|std.|; s|/|.|g; s|\\.id$||; s|^std\\.std\\.|std.|'")
-    std.script.chomp(inner)
+    inner = script.capture("printf '%s' \"" .. file .. "\" | sed 's|^lib/|std.|; s|/|.|g; s|\\.id$||; s|^std\\.std\\.|std.|'")
+    script.chomp(inner)
 end
 
 # A module is REACHABLE when a fresh program naming it compiles and runs.
@@ -39,12 +39,12 @@ end
 # is where these failures live.
 reachable(mod: str): bool
     src = "main(): void\n    print(" .. mod .. " != nil)\nend\n"
-    std.script.fs_write("/tmp/duo_embedgate.id", src)
-    std.script.status("timeout 20 " .. std.script.id_bin() .. " run /tmp/duo_embedgate.id") == 0
+    script.fs_write("/tmp/duo_embedgate.id", src)
+    script.status("timeout 20 " .. script.id_bin() .. " run /tmp/duo_embedgate.id") == 0
 end
 
 main(): i64
-    listing = std.script.capture("find lib/std -name '*.id' | sort")
+    listing = script.capture("find lib/std -name '*.id' | sort")
     total = 0
     broken = 0
     report = ""

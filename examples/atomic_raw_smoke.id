@@ -11,7 +11,7 @@ atomic_demo(): i64
     old_or: i64 = atomic.fetch_or("i64", slot, 3, "acq_rel")
     old_and: i64 = atomic.fetch_and("i64", slot, 14, "acq_rel")
     old_xor: i64 = atomic.fetch_xor("i64", slot, 6, "acq_rel")
-    old_exchange: i64 = std.atomic.exchange("i64", slot, 7, "acq_rel")
+    old_exchange: i64 = atomic.exchange("i64", slot, 7, "acq_rel")
 
     mem.store(i64)(expected, 7)
     swapped: bool = atomic.compare_exchange("i64", slot, expected, 11, "acq_rel", "acquire")

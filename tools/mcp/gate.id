@@ -45,7 +45,7 @@ verdict: str = (ok: bool)
 exact_capture: any = (cmd: str)
     capf = "{work}/capture.txt"
     os.execute("(" .. cmd .. ") > '" .. capf .. "' 2>&1; echo duoexit:$? >> '" .. capf .. "'")
-    out = std.fs.read_file(capf) or ""
+    out = fs.read_file(capf) or ""
     mark = "duoexit:"
     code = -1
     clean = out
@@ -60,20 +60,20 @@ exact_capture: any = (cmd: str)
     { outcome = verdict(passed(code)), status = code, output = clean }
 end
 
-root = std.os.getenv("IDOL_ROOT") or ""
+root = os.getenv("IDOL_ROOT") or ""
 if root:len() == 0
-    root = std.os.getenv("DUO_ROOT") or ""
+    root = os.getenv("DUO_ROOT") or ""
 end
 if root:len() == 0
-    root = std.os.getenv("PWD") or ""
+    root = os.getenv("PWD") or ""
 end
 if root:len() == 0
     root = "."
 end
 
-idol_bin = std.os.getenv("IDOL_BIN") or ""
+idol_bin = os.getenv("IDOL_BIN") or ""
 if idol_bin:len() == 0
-    idol_bin = std.os.getenv("DUO_BIN") or ""
+    idol_bin = os.getenv("DUO_BIN") or ""
 end
 if idol_bin:len() == 0
     idol_bin = "{root}/zig-out/bin/idol"
@@ -102,10 +102,10 @@ end
 drive(server: str, tag: str, lines: str): str
     reqf = "{work}/{tag}.req.json"
     respf = "{work}/{tag}.resp.json"
-    std.fs.write_file(reqf, lines)
+    fs.write_file(reqf, lines)
     os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idol_bin
         .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
-    std.fs.read_file(respf) or ""
+    fs.read_file(respf) or ""
 end
 
 -- Count tool entries two INDEPENDENT ways and require them to agree. One
@@ -136,7 +136,7 @@ end
 
 main = (): i64
     fails = 0
-    std.fs.mkdirall(work)
+    fs.mkdirall(work)
     io.write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
 
     capturegood = exact_capture("printf capturegood")
@@ -451,6 +451,6 @@ main = (): i64
     -- still exited 0, which `zig build` reads as success. A gate that cannot
     -- fail the build is decoration, and this one exists precisely because
     -- nothing was watching the MCP servers.
-    std.os.exit(1)
+    os.exit(1)
     1
 end

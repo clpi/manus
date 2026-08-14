@@ -31,7 +31,7 @@
 # real code emitter needs for constants and symbols), and the load/store pair
 # forms other than the pre/post-index stack push and pop.
 #
-# The proof lives in std.compiler.arm64check, not in this file: a stdlib module
+# The proof lives in compiler.arm64check, not in this file: a stdlib module
 # that shells out to a C toolchain merely to be imported is a liability.
 
 # ARM64 is little-endian and fixed-width: every instruction is exactly 4 bytes.

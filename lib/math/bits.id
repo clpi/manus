@@ -1,4 +1,4 @@
-# std.math_bits — bit manipulation (mirrors Go's math/bits package)
+# math_bits — bit manipulation (mirrors Go's math/bits package)
 # Provides bit-counting, leading/trailing zeros, rotation, and length functions.
 # Duo integers are 64-bit; these operate using arithmetic since Duo has no
 # direct bit-shift intrinsics beyond << and >>.

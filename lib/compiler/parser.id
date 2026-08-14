@@ -1,4 +1,4 @@
-# std.compiler.parser — SH-04: a recursive-descent parser in Duo.
+# compiler.parser — SH-04: a recursive-descent parser in Duo.
 #
 # Three layers, in increasing fidelity to the production `src/parser.zig`:
 #
@@ -6,7 +6,7 @@
 #       recursion, ABI-register record result). This is the part the direct
 #       ARM64 backend can lower today, and `eval` (below) is its exported
 #       proof entry point — keep it pristine.
-#   L2  Token-driven expression parser over the `std.compiler.lexer` token
+#   L2  Token-driven expression parser over the `compiler.lexer` token
 #       stream (`next`/`peek`), the interface `src/parser.zig` itself uses.
 #   L3  Statement-level recursive descent over the same token stream that
 #       produces s-expression syntax-graph projections (the spine of P16-WS5,
@@ -655,7 +655,7 @@ proj_params: str = (lx: Lexer)
 end
 
 # Type reference: primitive keyword kinds or a NAME (record type).
-# ONE type, optionally dotted: `i64`, `Lexer`, `std.str`.
+# ONE type, optionally dotted: `i64`, `Lexer`, `str`.
 #
 # This used to loop while the next token was a type kind, and `is_type_kind`
 # accepts KIND_NAME — so a return type ran on into the body and swallowed its
@@ -670,7 +670,7 @@ proj_params_from_lparen: str = (lx: Lexer)
     proj_params(lx)
 end
 
-# One type ATOM: a dotted name (`str`, `std.str`, `Lexer`) or a parenthesised
+# One type ATOM: a dotted name (`str`, `str`, `Lexer`) or a parenthesised
 # tuple (`(str, i64)`). No `|` here — the union level is above, so the
 # recursion cannot make `|` bind tighter than a comma.
 proj_type_atom: str = (lx: Lexer)

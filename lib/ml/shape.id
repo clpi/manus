@@ -1,4 +1,4 @@
-# std.ml.shape — Compile-time-friendly shape helpers (const dims + runtime checks)
+# ml.shape — Compile-time-friendly shape helpers (const dims + runtime checks)
 #
 # `Tensor[M,N,T]` types are resolved in the compiler; use these helpers for runtime bundles and asserts.
 

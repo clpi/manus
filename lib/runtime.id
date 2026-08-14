@@ -1,4 +1,4 @@
-# std.runtime — runtime information (mirrors Go's runtime package)
+# runtime — runtime information (mirrors Go's runtime package)
 
 # NumCPU returns the number of logical CPUs.
 num_cpu(): i64

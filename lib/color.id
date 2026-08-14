@@ -1,4 +1,4 @@
-# std.color — ANSI terminal color codes
+# color — ANSI terminal color codes
 
 global M = {}
 

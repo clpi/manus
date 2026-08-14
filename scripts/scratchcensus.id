@@ -4,7 +4,7 @@
 # local-root case that git ls-files cannot see: throwaway foreign scripts left
 # beside the compiler checkout.
 
-script = std.script
+script = script
 
 lines: any = (text: str)
     out = {}
@@ -25,17 +25,17 @@ main: i64 = ()
     root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
     if root == ""
         print("scratchcensus: fail no git root")
-        std.os.exit(3)
+        os.exit(3)
 
     cmd = "cd '{root}' && find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort"
     found = lines(script.capture(cmd))
     count = found:len()
     if count == 0
         print("scratchcensus: pass root foreign scratch 0")
-        std.os.exit(0)
+        os.exit(0)
 
     print("scratchcensus: fail root foreign scratch {count}")
     for i = 1, found:len()
         print("  {found[i]}")
-    std.os.exit(1)
+    os.exit(1)
     0

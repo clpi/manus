@@ -1,4 +1,4 @@
-# std.compiler.host — SH-03's production-dispatch anchor.
+# compiler.host — SH-03's production-dispatch anchor.
 #
 # WHY THIS MODULE EXISTS — and what changed 2026-08-08.
 #
@@ -36,6 +36,6 @@ end
 # for a fixed source, so a host can distinguish "linked and live" from "linked
 # and reading uninitialized state" without knowing any Duo.
 duo_lexer_host_probe(out: i64, cap: i64): i64
-    std.compiler.lexer.id_lexer_tokenize_all("fun add(a: i64): i64 = a + 1 end",
+    compiler.lexer.id_lexer_tokenize_all("fun add(a: i64): i64 = a + 1 end",
         "probe.id", 1, out, cap)
 end

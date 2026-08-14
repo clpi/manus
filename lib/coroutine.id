@@ -1,4 +1,4 @@
-# std.coroutine — coroutine utilities
+# coroutine — coroutine utilities
 
 create(f: any): any
     coroutine.create(f)

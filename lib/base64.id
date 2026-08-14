@@ -1,4 +1,4 @@
-# std.base64 — Base64 encoding and decoding utilities
+# base64 — Base64 encoding and decoding utilities
 
 
 encode(s: str): str

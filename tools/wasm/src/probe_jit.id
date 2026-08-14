@@ -1,4 +1,4 @@
-# Prove the std.jit substrate: emit ARM64 `MOVZ W0,#42; RET`, seal, call.
+# Prove the jit substrate: emit ARM64 `MOVZ W0,#42; RET`, seal, call.
 
 emit42(unused: i64): i64
   buf = jit.alloc(4096)

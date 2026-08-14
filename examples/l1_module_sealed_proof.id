@@ -5,13 +5,13 @@ expected = "module_sealed=true; req binding frozen after load; cross-module call
 if why != expected
     print("FAIL: module_sealed witness mismatch")
     print("  got: " .. why)
-    std.os.exit(1)
+    os.exit(1)
 end
 
 result: i64 = helper.add(40, 2)
 if result != 42
     print("FAIL: helper.add returned wrong value")
-    std.os.exit(2)
+    os.exit(2)
 end
 
 print("pass34_l1_module_sealed: PASS")

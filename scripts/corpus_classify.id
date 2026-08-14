@@ -311,7 +311,7 @@ main(): i64
     nc1 = 0
     c2: str = ""
     nc2 = 0
-    emit: bool = std.script.getenv("CORPUS_CLASSIFY_EMIT", "") != ""
+    emit: bool = script.getenv("CORPUS_CLASSIFY_EMIT", "") != ""
     rows: str = ""
 
     for i, f in files

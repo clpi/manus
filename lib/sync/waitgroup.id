@@ -1,4 +1,4 @@
-# std.sync_waitgroup — WaitGroup (mirrors Go's sync.WaitGroup)
+# sync_waitgroup — WaitGroup (mirrors Go's sync.WaitGroup)
 # In Duo (cooperative concurrency), a WaitGroup tracks pending tasks and
 # allows waiting for all to complete. Since Duo has cooperative async, the
 # "wait" is a busy-check loop yielding to the scheduler.

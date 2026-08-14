@@ -1,4 +1,4 @@
-# std.bytes — Native byte slices and cursors for binary parsing.
+# bytes — Native byte slices and cursors for binary parsing.
 # Ward blocker: Duo needs byte buffers for Wasm binary decoding.
 # This is a general-purpose capability, not Ward-specific.
 
