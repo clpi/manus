@@ -422,7 +422,7 @@ main(): i64
         snone: str = nnone:to(str)
         print("")
         print("corpus_classify: FAIL — {snone} tracked .id files match no rule in docs/spec/corpus.md:")
-        io.write(unclassified)
+        io:write(unclassified)
         print("  Classify them; there is deliberately no silent default.")
         return 1
     end
@@ -491,20 +491,20 @@ main(): i64
     end
     print("  C2  canonical, unreferenced, outside lib {sc2}")
     if nc2 != 0
-        io.write(c2)
+        io:write(c2)
         print("      (first 12; scratch inside the partition the deny table enforces)")
     end
     print("  C3  canonical yet carries a generator marker  {sc3}")
     if nc3 != 0
-        io.write(c3)
+        io:write(c3)
     end
     print("  C4  canonical yet embeds another language     {sc4}")
     print("      (named, not failed: lib/std embedding C is sanctioned, while")
     print("       examples/c_emit_* is `foreign` for the same act — one of these is wrong)")
 
     if emit
-        io.write("\n-- MANIFEST ROWS (class tier ref path) --\n")
-        io.write(rows)
+        io:write("\n-- MANIFEST ROWS (class tier ref path) --\n")
+        io:write(rows)
     end
 
     print("")

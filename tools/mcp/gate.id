@@ -86,9 +86,9 @@ work = "/tmp/idol-mcp-gate"
 
 report(outcome: str, what: str, detail: str): void
     if outcome == "ok"
-        io.write("  ok   " .. what .. "\n")
+        io:write("  ok   " .. what .. "\n")
     else
-        io.write("  FAIL " .. what .. "  -  " .. detail .. "\n")
+        io:write("  FAIL " .. what .. "  -  " .. detail .. "\n")
     end
 end
 
@@ -137,7 +137,7 @@ end
 main = (): i64
     fails = 0
     fs.mkdirall(work)
-    io.write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
+    io:write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
 
     capturegood = exact_capture("printf capturegood")
     if capturegood.outcome != "ok" or !member(capturegood.output, "capturegood")
@@ -157,7 +157,7 @@ main = (): i64
     -- duo-bench: handshake, exact tool census, named coordination tools,
     -- and a VALUE round trip through the file-claim lock.
     -- ---------------------------------------------------------------
-    io.write("bench.id\n")
+    io:write("bench.id\n")
     bench = "{root}/tools/mcp/bench.id"
 
     -- A scratch path for the claim probe. Claims are repo-relative, and this

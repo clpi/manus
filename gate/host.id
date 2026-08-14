@@ -167,8 +167,13 @@ strip: str = (line: str)
 
 scandr: i64 = (path: str, no: i64, code: str)
     hits = 0
-    hits += rowh(path, no, code, "host.read.colon", "io:read(", "law.relation.read", "stdin:read() or path:read() — read relation on subject; never io:read")
-    hits += rowh(path, no, code, "host.read", "io.read(", "law.relation.read", "stdin:read() or path:read() — never io.read")
+    # RETRACTED under world reconciliation v2. This rule failed on `io:read(`
+    # and demanded `stdin:read()`. v2 rules the other way: `io` is an ordinary
+    # world VALUE and a legitimate subject, while `stdin`/`stdout`/`stderr` are
+    # host provenance and not native semantic concepts. The dot form stays a
+    # violation — a home is not a namespace — so only the colon rule is dropped.
+    hits += rowh(path, no, code, "host.read", "io.read(", "law.relation.read", "io:read() — subject-first; a home is not a namespace")
+    hits += rowh(path, no, code, "host.write", "io.write(", "law.relation.write", "io:write(x) or endpoint:write(x) — subject-first")
     hits
 
 audit = (path: str, no: i64, line: str): i64

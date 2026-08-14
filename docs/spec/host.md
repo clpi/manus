@@ -172,8 +172,17 @@ out:write(result)
 ```
 
 Relation is protocol: `source: read` not `source: readable` (`law.protocol.one`).
-World dot forms such as `io:read()` are ingress debt — subject-first
-`stdin:read()` / `path:read()` / `sink:write(value)` only.
+RETRACTED under world reconciliation v2. This read: "World dot forms such as
+`io:read()` are ingress debt — subject-first `stdin:read()` / `path:read()` /
+`sink:write(value)` only." v2 rules the other way: `io` is an ordinary world
+VALUE, a table, and a legitimate subject, so `io:read()` and `io:write(x)` are
+canonical. `stdin`/`stdout`/`stderr` are host provenance and realization, not
+native semantic concepts.
+
+What survives unchanged is the part that was never about `io`: the DOT form is
+still wrong, because a home is not a namespace. `io.read(x)` is debt;
+`io:read()` is not. Where a stream is the real subject, it stays the subject —
+`file:write(data)`, not `io:write(file, data)`.
 
 MCP stdin/stdout pipes are realization choices for an invocation — not
 language architecture.

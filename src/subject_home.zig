@@ -18,7 +18,7 @@
 
 const std = @import("std");
 
-pub const Home = enum { string, math, table };
+pub const Home = enum { string, math, table, io };
 
 const string_members = [_][]const u8{
     "sub",   "match", "byte",    "len",    "char",   "rep",
@@ -30,7 +30,42 @@ const string_members = [_][]const u8{
 const math_members = [_][]const u8{
     "sqrt", "sin",  "cos",   "tan", "exp",   "log",
     "ceil", "max",  "min",   "abs", "floor", "fmod",
-    "pow",  "sign", "round",
+    "pow",  "sign", "round", "random", "sinh", "cosh", "tanh",
+    "asin", "acos", "atan", "atan2",
+};
+
+/// `io` is an ordinary world VALUE and a legitimate subject (world
+/// reconciliation v2), so its relations resolve subject-first like any other.
+///
+/// These were held out while the ruling was open, because the checked-in spec
+/// and the incoming ruling disagreed and a live gate failed on `io:read(`.
+/// Settling that here, in a table nobody would think to look in, would have
+/// decided a language question as a side effect. The ruling is now closed and
+/// the three conflicting sites are retracted, so they resolve.
+///
+/// WHAT THIS TABLE IS, AND WHAT IT IS NOT. `io:write(x)` is not a world-specific
+/// call. `io` PROJECTS to whatever writable-conformant instance the world
+/// supplies, and `:write` dispatches on that instance's conformance — so
+/// `io:write(x)` and `file:write(x)` are ONE relation applied to different
+/// subjects, and the compiler infers which instance.
+///
+/// That means the right model is conformance, not a name list: a subject
+/// answers `:write` because its descriptor conforms to a writable protocol, not
+/// because "write" appears in a table keyed by home. This list is therefore a
+/// BOOTSTRAP BRIDGE with the same shape as the namespace it replaces, one level
+/// up — it resolves the face without yet resolving it for the right reason.
+///
+/// The distinction is observable, not academic: two files reverted during the
+/// io migration precisely because `io.write(stream, x)` already had the concrete
+/// instance as its subject and meant `stream:write(x)`. A conformance-driven
+/// resolver would have taken those without a per-site rescue.
+///
+/// DELETION CONDITION: delete this table once descriptor conformance drives
+/// subject-first dispatch. Until then a stream that genuinely IS the subject
+/// still takes the relation directly — `file:write(data)`, never
+/// `io:write(file, data)`.
+const io_members = [_][]const u8{
+    "flush", "seek", "lines", "setvbuf",
 };
 
 const table_members = [_][]const u8{
@@ -64,6 +99,7 @@ pub fn homeOf(method: []const u8) ?Home {
     if (has(&string_members, method)) return .string;
     if (has(&math_members, method)) return .math;
     if (has(&table_members, method)) return .table;
+    if (has(&io_members, method)) return .io;
     return null;
 }
 
@@ -82,6 +118,7 @@ pub fn homeName(h: Home) []const u8 {
         .string => "string",
         .math => "math",
         .table => "table",
+        .io => "io",
     };
 }
 

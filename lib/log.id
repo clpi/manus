@@ -20,33 +20,33 @@ end
 
 debug(msg: str): void
     if log_level <= 0
-        io.write("[DEBUG] %s\n":format(msg))
+        io:write("[DEBUG] %s\n":format(msg))
     end
 end
 
 info(msg: str): void
     if log_level <= 1
-        io.write("[INFO] %s\n":format(msg))
+        io:write("[INFO] %s\n":format(msg))
     end
 end
 
 warn(msg: str): void
     if log_level <= 2
-        io.write("[WARN] %s\n":format(msg))
+        io:write("[WARN] %s\n":format(msg))
     end
 end
 
 error(msg: str): void
     if log_level <= 3
-        io.write("[ERROR] %s\n":format(msg))
+        io:write("[ERROR] %s\n":format(msg))
     end
 end
 
 print(level: str, msg: str): void
     if level == nil
-        io.write("%s\n":format(msg))
+        io:write("%s\n":format(msg))
     else
-        io.write("[%s] %s\n":format(level:upper(), msg))
+        io:write("[%s] %s\n":format(level:upper(), msg))
     end
 end
 
@@ -60,6 +60,6 @@ with_fields(level: str, fields: any, msg: str): void
             parts[parts:len() + 1] = "%s=%s":format(k, v:to(str))
         end
     end
-    io.write(parts:concat(" ") .. "\n")
+    io:write(parts:concat(" ") .. "\n")
 end
 

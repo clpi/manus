@@ -1,57 +1,57 @@
 start(msg: str): void
-    io.write("=== %s ===\n":format(msg))
+    io:write("=== %s ===\n":format(msg))
 end
 
 assert_eq(actual: any, expected: any, msg: str): void
     if actual == expected
-        io.write("  PASS: %s\n":format(msg or ""))
+        io:write("  PASS: %s\n":format(msg or ""))
     else
-        io.write("  FAIL: %s (expected %s, got %s)\n":format(msg or "", expected:to(str), actual:to(str)))
+        io:write("  FAIL: %s (expected %s, got %s)\n":format(msg or "", expected:to(str), actual:to(str)))
     end
 end
 
 assert_ne(actual: any, not_expected: any, msg: str): void
     if actual != not_expected
-        io.write("  PASS: %s\n":format(msg or ""))
+        io:write("  PASS: %s\n":format(msg or ""))
     else
-        io.write("  FAIL: %s (expected not %s)\n":format(msg or "", not_expected:to(str)))
+        io:write("  FAIL: %s (expected not %s)\n":format(msg or "", not_expected:to(str)))
     end
 end
 
 assert_true(val: any, msg: str): void
     if val == true
-        io.write("  PASS: %s\n":format(msg or ""))
+        io:write("  PASS: %s\n":format(msg or ""))
     else
-        io.write("  FAIL: %s\n":format(msg or ""))
+        io:write("  FAIL: %s\n":format(msg or ""))
     end
 end
 
 assert_false(val: any, msg: str): void
     if val == false
-        io.write("  PASS: %s\n":format(msg or ""))
+        io:write("  PASS: %s\n":format(msg or ""))
     else
-        io.write("  FAIL: %s\n":format(msg or ""))
+        io:write("  FAIL: %s\n":format(msg or ""))
     end
 end
 
 assert_nil(val: any, msg: str): void
     if val == nil
-        io.write("  PASS: %s\n":format(msg or ""))
+        io:write("  PASS: %s\n":format(msg or ""))
     else
-        io.write("  FAIL: %s (expected nil, got %s)\n":format(msg or "", val:to(str)))
+        io:write("  FAIL: %s (expected nil, got %s)\n":format(msg or "", val:to(str)))
     end
 end
 
 assert_not_nil(val: any, msg: str): void
     if val != nil
-        io.write("  PASS: %s\n":format(msg or ""))
+        io:write("  PASS: %s\n":format(msg or ""))
     else
-        io.write("  FAIL: %s (expected not nil)\n":format(msg or ""))
+        io:write("  FAIL: %s (expected not nil)\n":format(msg or ""))
     end
 end
 
 done(): void
-    io.write("=== tests done ===\n")
+    io:write("=== tests done ===\n")
 end
 
 # Supported @test.* / @bench / @time attributes (see also bench.attrs).

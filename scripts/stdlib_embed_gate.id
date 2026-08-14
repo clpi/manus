@@ -73,7 +73,7 @@ main(): i64
         i += 1
     end
 
-    io.write(report)
+    io:write(report)
     print("stdlib_embed: " .. broken:to(str) .. " unreachable of " .. total:to(str)
         .. " (ceiling " .. to(str)(ceiling()) .. ")")
 

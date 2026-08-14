@@ -142,9 +142,9 @@ end
 http_serve(port: i64, handler: any): void
     srv = listen("0.0.0.0", port, 128)
     if srv == nil
-        io.write("net.http_serve: listen failed on port " .. port:to(str) .. "\n")
+        io:write("net.http_serve: listen failed on port " .. port:to(str) .. "\n")
     end
-    io.write("net: listening on :" .. port:to(str) .. "\n")
+    io:write("net: listening on :" .. port:to(str) .. "\n")
     while true
         cli = accept(srv)
         if cli == nil break end

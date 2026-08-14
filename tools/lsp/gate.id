@@ -94,9 +94,9 @@ fails = 0
 
 report(ok: bool, what: str, detail: str): void
     if ok
-        io.write("  ok   " .. what .. "\n")
+        io:write("  ok   " .. what .. "\n")
     else
-        io.write("  FAIL " .. what .. " — " .. detail .. "\n")
+        io:write("  FAIL " .. what .. " — " .. detail .. "\n")
     end
 end
 
@@ -374,17 +374,17 @@ main(): i64
         check(has(gen, "already current"), "the committed legend re-derives from docs/spec/roles.md",
             "regenerating changed the block — commit the regeneration, do not hand-edit it")
     else
-        io.write("  OWED docs/spec/roles.md is absent — the legend cannot be re-derived, so H-1 drift is UNCHECKED this run\n")
+        io:write("  OWED docs/spec/roles.md is absent — the legend cannot be re-derived, so H-1 drift is UNCHECKED this run\n")
     end
 
     os.execute("rm -f ./gate.out")
 
-    io.write("\n")
+    io:write("\n")
     if fails == 0
-        io.write("lsp-gate: PASS — the server handshakes, survives a close, and answers by value\n")
+        io:write("lsp-gate: PASS — the server handshakes, survives a close, and answers by value\n")
         return 0
     end
-    io.write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
+    io:write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
     # `os.exit`, NOT `return 1`. A Duo script's `main` return value is
     # DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
     # mcp-gate learned this by printing 13 failures into a green build.

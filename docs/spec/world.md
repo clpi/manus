@@ -266,8 +266,13 @@ os.env("KEY")
 io:write(text)
 ```
 
-**`stdout` is a possessed endpoint subject** — legitimate receiver for `write`.
-**`io` is organizational authority** — not a substitute subject.
+RETRACTED under world reconciliation v2. This read: "**`stdout` is a possessed
+endpoint subject** — legitimate receiver for `write`. **`io` is organizational
+authority** — not a substitute subject." v2 rules that `io` IS an ordinary world
+value and a legitimate subject, and that `stdout` is host provenance rather than
+a native semantic concept. A stream that genuinely is the subject still takes
+the relation — `file:write(data)` — but `io:write(x)` is canonical for a
+stream-less write.
 
 Bootstrap ingress may still use `io:read()` in gate transport until root
 projection executes; that is not canonical teaching.

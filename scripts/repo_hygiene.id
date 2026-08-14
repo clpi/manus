@@ -19,7 +19,7 @@ end
 
 _report(bad: bool, msg: str): bool
     if bad
-        io.write("repo_hygiene: FAIL — " .. msg .. "\n")
+        io:write("repo_hygiene: FAIL — " .. msg .. "\n")
     end
     bad
 end
