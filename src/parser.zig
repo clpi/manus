@@ -948,6 +948,68 @@ pub const Parser = struct {
         return layout;
     }
 
+    /// `i(64)` / `u(16)` / `f(32)` — the width applied rather than spelled into
+    /// the identity. Returns the canonical descriptor spelling, or null when the
+    /// shape is not this (leaving every ordinary named type untouched).
+    ///
+    /// Only the widths that exist are admitted; `i(63)` is not silently accepted
+    /// and then mismatched later. Adjacency is required, so `i (64)` — a name
+    /// applied to a group — still means what it meant.
+    fn appliedWidthType(self: *Parser) ParseError!?[]const u8 {
+        const t = try self.pk();
+        if (t.kind != .name) return null;
+        if (t.text.len != 1) return null;
+        const stem = t.text[0];
+        if (stem != 'i' and stem != 'u' and stem != 'f') return null;
+        const saved = self.lex.saveState();
+        const saved_line = self.prev_line;
+        const saved_end = self.prev_end_col;
+        var ok = false;
+        defer if (!ok) {
+            self.lex.restoreState(saved);
+            self.prev_line = saved_line;
+            self.prev_end_col = saved_end;
+        };
+        _ = try self.adv();
+        const lp = try self.pk();
+        if (lp.kind != .lparen) return null;
+        if (lp.loc.line != t.loc.line or lp.loc.col != t.loc.col + 1) return null;
+        _ = try self.adv();
+        const w = try self.pk();
+        if (w.kind != .int_lit) return null;
+        _ = try self.adv();
+        if ((try self.pk()).kind != .rparen) return null;
+        _ = try self.adv();
+        const named: ?[]const u8 = switch (stem) {
+            'i' => switch (w.int_val) {
+                8 => "i8",
+                16 => "i16",
+                32 => "i32",
+                64 => "i64",
+                else => null,
+            },
+            'u' => switch (w.int_val) {
+                8 => "u8",
+                16 => "u16",
+                32 => "u32",
+                64 => "u64",
+                else => null,
+            },
+            'f' => switch (w.int_val) {
+                32 => "f32",
+                64 => "f64",
+                else => null,
+            },
+            else => null,
+        };
+        const n = named orelse {
+            term.locErr(t.loc, "`{c}({d})` is not a width that exists", .{ stem, w.int_val });
+            return error.UnexpectedToken;
+        };
+        ok = true;
+        return n;
+    }
+
     fn parse_type_primary(self: *Parser) ParseError!ast.TypeExpr {
         const tok = try self.pk();
         if (grammar_roles.isDescriptor(tok.kind)) {
@@ -965,6 +1027,17 @@ pub const Parser = struct {
                 return .{ .named = try std.mem.concat(self.alloc, u8, &.{ types.c_type_marker_prefix, cname }) };
             },
             .name => {
+                // WIDTH AS AN OPERAND, not as a suffix on the name. `i64` bakes
+                // a numeric taxonomy into an identity, which LAW-16 forbids for
+                // the same reason `rec2` did: the specializer belongs in the
+                // operand position. `i(64)` says the same thing with the width
+                // applied, and resolves to the SAME descriptor — one identity
+                // `i`, specialized by a width, rather than ten unrelated
+                // keywords that happen to share a prefix.
+                //
+                // Additive: `i(64)` was a parse error before, so nothing that
+                // compiled can change meaning, and `i64` keeps working.
+                if (try self.appliedWidthType()) |named| return .{ .named = named };
                 const t = try self.adv();
                 // `T: Concept` is a constraint on the type just named, so it is
                 // written beside it. On a NEW line the `:` is the next
@@ -6437,10 +6510,34 @@ pub const Parser = struct {
                         // Could be name : UserType = ... or obj : method ( args )
                         _ = try self.lex.next(); // consume the name
                         const after_name = try self.lex.peek();
-                        self.lex.restoreState(saved);
                         if (after_name.kind == .assign) {
                             // name : TypeName = ...  —  typed binding; don't consume
+                            self.lex.restoreState(saved);
                             break;
+                        }
+                        // `x: i(64) = 5` — an APPLIED type, not the subject call
+                        // `x:i(64)`. Both shapes are `name : name ( … )`, so the
+                        // `=` after the closing paren is what separates them:
+                        // assigning to the result of a call is never valid, so a
+                        // trailing `=` admits only the binding reading. Scanning
+                        // the parens balanced keeps `x:f(g(1))` working.
+                        if (after_name.kind == .lparen) {
+                            _ = try self.lex.next();
+                            var depth: usize = 1;
+                            while (depth > 0) {
+                                const t = try self.lex.next();
+                                switch (t.kind) {
+                                    .lparen => depth += 1,
+                                    .rparen => depth -= 1,
+                                    .eof => break,
+                                    else => {},
+                                }
+                            }
+                            const after_paren = try self.lex.peek();
+                            self.lex.restoreState(saved);
+                            if (after_paren.kind == .assign) break;
+                        } else {
+                            self.lex.restoreState(saved);
                         }
                     } else {
                         self.lex.restoreState(saved);
