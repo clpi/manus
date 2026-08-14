@@ -6481,7 +6481,7 @@ lua_table_set_raw_lit(_a0, "hint_7", 3029469142, 6, lua_val_from_str(_p0.hint_7)
 }
 
 __attribute__((visibility("default"))) int64_t peek_char2(duo_rec_aeb6f9c305fc80b9 *self) {
-    if (((self->pos + 1) > ((int64_t)strlen(self->src)))) {
+    if ((self->src[self->pos - 1] == 0)) {
         return 0;
     }
     return ((int64_t)(unsigned char)(self->src[(self->pos + 1) - 1]));
@@ -6804,16 +6804,16 @@ lua_table_set_raw_lit(_a0, "hint_7", 3029469142, 6, lua_val_from_str(_p0.hint_7)
 
 __attribute__((visibility("default"))) int64_t long_bracket_level(duo_rec_aeb6f9c305fc80b9 *self) {
     int64_t i = self->pos;
-    if (((i > ((int64_t)strlen(self->src))) || (((int64_t)(unsigned char)(self->src[i - 1])) != 91))) {
+    if (((((int64_t)(unsigned char)(self->src[i - 1])) != 91))) {
         return (-1);
     }
         i = (i + 1);
     int64_t lvl = INT64_C(0);
-    while (((i <= ((int64_t)strlen(self->src))) && (((int64_t)(unsigned char)(self->src[i - 1])) == 61))) {
+    while (((((int64_t)(unsigned char)(self->src[i - 1])) == 61))) {
                 lvl = (lvl + 1);
                 i = (i + 1);
     }
-    if (((i > ((int64_t)strlen(self->src))) || (((int64_t)(unsigned char)(self->src[i - 1])) != 91))) {
+    if (((((int64_t)(unsigned char)(self->src[i - 1])) != 91))) {
         return (-1);
     }
     return lvl;
@@ -6908,7 +6908,7 @@ __attribute__((visibility("default"))) lua_Value skip_long(duo_rec_aeb6f9c305fc8
                 i = (i + 1);
     }
     adv(self);
-    while ((self->pos <= ((int64_t)strlen(self->src)))) {
+    while ((self->src[self->pos - 1] != 0)) {
         if ((peek_char(self) == 93)) {
             int64_t eq = INT64_C(0);
             adv(self);
@@ -7028,7 +7028,7 @@ __attribute__((visibility("default"))) const char* read_long_str(duo_rec_aeb6f9c
     }
     int64_t start = self->pos;
     self->start = start;
-    while ((self->pos <= ((int64_t)strlen(self->src)))) {
+    while ((self->src[self->pos - 1] != 0)) {
         if ((peek_char(self) == 93)) {
             int64_t close_start = self->pos;
             adv(self);
@@ -7090,7 +7090,7 @@ __attribute__((visibility("default"))) const char* read_str(duo_rec_aeb6f9c305fc
     adv(self);
     int64_t start = self->pos;
     self->start = start;
-    while ((self->pos <= ((int64_t)strlen(self->src)))) {
+    while ((self->src[self->pos - 1] != 0)) {
         int64_t c = peek_char(self);
         if ((c == quote)) {
             const char* s = duo_str_sub_cstr(self->src, (int64_t)(start), (int64_t)((self->pos - 1)));
@@ -7103,19 +7103,19 @@ __attribute__((visibility("default"))) const char* read_str(duo_rec_aeb6f9c305fc
         }
         if ((c == 92)) {
             adv(self);
-            if ((self->pos > ((int64_t)strlen(self->src)))) {
+            if ((self->src[self->pos - 1] == 0)) {
                 _fail(self, 1);
                 return "";
             }
             int64_t esc = peek_char(self);
             if ((esc == 120)) {
                 adv(self);
-                if (((self->pos > ((int64_t)strlen(self->src))) || (!is_hex(peek_char(self))))) {
+                if (((self->src[self->pos - 1] == 0) || (!is_hex(peek_char(self))))) {
                     _fail(self, 3);
                     return "";
                 }
                 adv(self);
-                if (((self->pos <= ((int64_t)strlen(self->src))) && is_hex(peek_char(self)))) {
+                if (((self->src[self->pos - 1] != 0) && is_hex(peek_char(self)))) {
                     adv(self);
                 }
             } else if ((esc == 117)) {
@@ -7126,7 +7126,7 @@ __attribute__((visibility("default"))) const char* read_str(duo_rec_aeb6f9c305fc
                 }
                 adv(self);
                 bool has_digit = false;
-                while (((self->pos <= ((int64_t)strlen(self->src))) && (peek_char(self) != 125))) {
+                while (((self->src[self->pos - 1] != 0) && (peek_char(self) != 125))) {
                     if ((!is_hex(peek_char(self)))) {
                         _fail(self, 3);
                         return "";
@@ -7134,14 +7134,14 @@ __attribute__((visibility("default"))) const char* read_str(duo_rec_aeb6f9c305fc
                                         has_digit = true;
                     adv(self);
                 }
-                if ((((!has_digit) || (self->pos > ((int64_t)strlen(self->src)))) || (peek_char(self) != 125))) {
+                if ((((!has_digit) || (self->src[self->pos - 1] == 0)) || (peek_char(self) != 125))) {
                     _fail(self, 3);
                     return "";
                 }
                 adv(self);
             } else if ((esc == 122)) {
                 adv(self);
-                while ((self->pos <= ((int64_t)strlen(self->src)))) {
+                while ((self->src[self->pos - 1] != 0)) {
                     int64_t ws = peek_char(self);
                     if (((((ws == 32) || (ws == 9)) || (ws == 13)) || (ws == 10))) {
                         adv(self);
@@ -7151,7 +7151,7 @@ __attribute__((visibility("default"))) const char* read_str(duo_rec_aeb6f9c305fc
                 }
             } else if ((esc == 13)) {
                 adv(self);
-                if (((self->pos <= ((int64_t)strlen(self->src))) && (peek_char(self) == 10))) {
+                if (((self->src[self->pos - 1] != 0) && (peek_char(self) == 10))) {
                     adv(self);
                 }
             } else {
@@ -7389,7 +7389,7 @@ __attribute__((visibility("default"))) duo_rec_59c700cbb43a8f9d next_tok(duo_rec
     if ((((self->pos == 1) && (peek_char(self) == 35)) && (peek_char2(self) == 33))) {
                 l = cur_loc(self);
                 start = self->pos;
-        while (((self->pos <= ((int64_t)strlen(self->src))) && (peek_char(self) != 10))) {
+        while (((self->src[self->pos - 1] != 0) && (peek_char(self) != 10))) {
             adv(self);
         }
                 text = duo_str_sub_cstr(self->src, (int64_t)(start), (int64_t)((self->pos - 1)));
@@ -7403,7 +7403,7 @@ __attribute__((visibility("default"))) duo_rec_59c700cbb43a8f9d next_tok(duo_rec
     }
     skip_ws(self);
     self->start = self->pos;
-    if ((self->pos > ((int64_t)strlen(self->src)))) {
+    if ((self->src[self->pos - 1] == 0)) {
         return (duo_rec_59c700cbb43a8f9d){
             .kind = 109,
             .loc = cur_loc(self),
@@ -7420,7 +7420,7 @@ __attribute__((visibility("default"))) duo_rec_59c700cbb43a8f9d next_tok(duo_rec
         int64_t p = 0;
     if ((is_alpha(c) || (c == 95))) {
                 start = self->pos;
-        while ((self->pos <= ((int64_t)strlen(self->src)))) {
+        while ((self->src[self->pos - 1] != 0)) {
                         p = peek_char(self);
             if ((is_alnum(p) || (p == 95))) {
                 adv(self);
@@ -7469,7 +7469,7 @@ __attribute__((visibility("default"))) duo_rec_59c700cbb43a8f9d next_tok(duo_rec
     }
     if (((c == 35) && (self->family == 1))) {
                 start = self->pos;
-        while (((self->pos <= ((int64_t)strlen(self->src))) && (peek_char(self) != 10))) {
+        while (((self->src[self->pos - 1] != 0) && (peek_char(self) != 10))) {
             adv(self);
         }
                 text = duo_str_sub_cstr(self->src, (int64_t)(start), (int64_t)((self->pos - 1)));
@@ -7497,16 +7497,16 @@ __attribute__((visibility("default"))) duo_rec_59c700cbb43a8f9d next_tok(duo_rec
                 .float_val = 0e0
             };
         }
-        bool is_triple = ((self->pos <= ((int64_t)strlen(self->src))) && (peek_char(self) == 45));
+        bool is_triple = ((self->src[self->pos - 1] != 0) && (peek_char(self) == 45));
         if (is_triple) {
             adv(self);
         }
         int64_t body = self->pos;
-        while (((self->pos <= ((int64_t)strlen(self->src))) && (peek_char(self) != 10))) {
+        while (((self->src[self->pos - 1] != 0) && (peek_char(self) != 10))) {
             adv(self);
         }
         if ((is_triple && (self->hint_count < 8))) {
-            if (((body <= ((int64_t)strlen(self->src))) && (((int64_t)(unsigned char)(self->src[body - 1])) == 64))) {
+            if (((((int64_t)(unsigned char)(self->src[body - 1])) == 64))) {
                 const char* h = duo_str_sub_cstr(self->src, (int64_t)((body + 1)), (int64_t)((self->pos - 1)));
                 if ((self->hint_count == 0)) {
                     self->hint_0 = h;
@@ -7638,7 +7638,7 @@ __attribute__((visibility("default"))) duo_rec_59c700cbb43a8f9d next_tok(duo_rec
             .float_val = 0e0
         };
     } else if ((c == 124)) {
-        if (((self->pos <= ((int64_t)strlen(self->src))) && (((int64_t)(unsigned char)(self->src[self->pos - 1])) == 62))) {
+        if (((self->src[self->pos - 1] != 0) && (((int64_t)(unsigned char)(self->src[self->pos - 1])) == 62))) {
             self->pos = (self->pos + 1);
             return (duo_rec_59c700cbb43a8f9d){
                 .kind = 97,
