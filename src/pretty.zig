@@ -265,7 +265,10 @@ pub const PrettyPrinter = struct {
             },
             .field => |x| {
                 try self.printExpr(x.obj, 0);
-                try self.print(".{s}", .{x.field});
+                // `a@b` and `a.b` are the same node; `anchored` is the only
+                // record of which was written, and they are different
+                // operators.
+                try self.print("{s}{s}", .{ if (x.anchored) "@" else ".", x.field });
             },
             .call => |x| {
                 try self.printExpr(x.func, 0);

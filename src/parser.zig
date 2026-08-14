@@ -55,6 +55,11 @@ pub const Parser = struct {
     match_arm_depth: u32 = 0,
     /// When true (.id source), emit deprecation warnings for `then` and `local`.
     idol_mode: bool = false,
+    /// Parsing in order to REPRINT. Parse-time desugars are skipped, because a
+    /// formatter can only write back what the tree still holds: interpolation
+    /// desugared to `..` came back out as `"" .. n`, which is not what was
+    /// written and is the form the design is retiring.
+    formatting: bool = false,
     /// Nesting inside function bodies; bare `name()` func decls are module-scope only.
     func_body_depth: u32 = 0,
     /// R2/R1 and §2 THE ANCHOR — the two pieces of POSITION a
@@ -5047,7 +5052,7 @@ pub const Parser = struct {
 
     /// §9 — string interpolation holes desugar to `..` concat at parse time (idol_mode).
     fn desugar_string_interpolation(self: *Parser, loc: ast.Loc, s: []const u8, quote: ast.Quote) ParseError!*ast.Expr {
-        if (self.directive_arg_depth > 0 or !self.idol_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
+        if (self.formatting or self.directive_arg_depth > 0 or !self.idol_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
             return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = s, .quote = quote } });
         }
         var parts: std.ArrayList(*ast.Expr) = .empty;
@@ -6452,7 +6457,7 @@ pub const Parser = struct {
                     if (!try self.at_is_glued_anchor(tok)) break;
                     _ = try self.adv();
                     const rel = try self.expect_name_like();
-                    e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = rel } });
+                    e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = rel, .anchored = true } });
                 },
                 .lbracket => {
                     _ = try self.adv();

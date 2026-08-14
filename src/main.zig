@@ -5039,6 +5039,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
     };
     var parser = Parser.init(&lex, alloc);
     parser.idol_mode = lex.family == lexer_bridge.family_canon;
+    parser.formatting = true;
     const mod = parser.parse_module() catch |err| {
         if (lex.last_error_loc) |loc| {
             term.locErr(loc, "lexer failed with {s}", .{@errorName(err)});

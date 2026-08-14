@@ -510,7 +510,12 @@ pub const Expr = union(enum) {
     vararg: Loc,
     name: struct { loc: Loc, ident: []const u8 },
     index: struct { loc: Loc, obj: *Expr, key: *Expr },
-    field: struct { loc: Loc, obj: *Expr, field: []const u8 },
+    /// `a.b` and `a@b` build the SAME node — the value of `b` at `a` — so the
+    /// AST could not tell them apart and the formatter rewrote every `p@x` into
+    /// `p.x`. That is a different operator: the anchor MOVES and retrieves.
+    /// `anchored` records the spelling so the printer can write back what was
+    /// written; nothing downstream reads it.
+    field: struct { loc: Loc, obj: *Expr, field: []const u8, anchored: bool = false },
     call: struct { loc: Loc, func: *Expr, args: []*Expr, form: InvocationForm = .parenthesized },
     method_call: struct { loc: Loc, obj: *Expr, method: []const u8, args: []*Expr, form: InvocationForm = .receiver_parenthesized },
     binop: struct { loc: Loc, op: BinOp, lhs: *Expr, rhs: *Expr },
