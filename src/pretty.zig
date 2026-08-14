@@ -17,12 +17,35 @@ pub const Mode = enum {
 
 const Error = error{OutOfMemory};
 
+pub const SourceComment = struct { line: u32, text: []const u8 };
+
+/// A statement's source line, for deciding which comments precede it.
+fn stmtLine(stmt: *const Stmt) u32 {
+    return switch (stmt.*) {
+        .brk, .cont => |l| l.line,
+        inline else => |v| if (@hasField(@TypeOf(v), "loc")) v.loc.line else 0,
+    };
+}
+
 pub const PrettyPrinter = struct {
     alloc: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     mode: Mode,
     /// When true in .id mode, omit deprecated keywords (`then`, `do`, bare `fun`).
     canonical: bool = false,
+    /// Source comments, in source order, so the formatter does not DELETE them.
+    ///
+    /// Comments never enter the AST — the parser retains no trivia — so a
+    /// formatter built only on the AST silently drops every one. That is not a
+    /// cosmetic loss: `# expect: 3 10` lines are load-bearing test directives,
+    /// and `idol check` cannot notice their absence, so the obvious oracle
+    /// passes a file it has gutted.
+    ///
+    /// They do not need to be in the AST. The lexer already produces `.comment`
+    /// tokens and merely SKIPS them on read, so the whole token stream still
+    /// holds them with their locations. This is that stream, filtered.
+    comments: []const SourceComment = &.{},
+    comment_at: usize = 0,
     indent_level: usize,
     indent_str: []const u8,
 
@@ -775,10 +798,12 @@ pub const PrettyPrinter = struct {
         self.indent();
         for (block.stmts) |*s| {
             try self.nl();
+            try self.flushCommentsBefore(stmtLine(s));
             try self.printStmt(s);
         }
         if (block.tail_expr) |te| {
             try self.nl();
+            try self.flushCommentsBefore(te.loc().line);
             try self.printExpr(te, 0);
         }
         self.dedent();
@@ -808,9 +833,51 @@ pub const PrettyPrinter = struct {
                 try self.write(p);
             }
         }
-        try self.printFuncSig(&fd.func);
+        if (self.mode == .idol and self.canonical) {
+            // CANONICAL BINDING FACE. A relation is `name: result = (params)`,
+            // not `name(params) -> result`. The arrow form is a declaration
+            // shape; the binding form is what the canon actually writes, and a
+            // formatter that emits the other one cannot be used to canonicalise
+            // a tree — it would rewrite every relation in the repo into a face
+            // the surface does not use.
+            if (fd.func.ret_type != .inferred) {
+                try self.write(": ");
+                try self.printTypeExpr(fd.func.ret_type);
+            }
+            try self.write(" = ");
+            try self.printFuncParamsOnly(&fd.func);
+        } else {
+            try self.printFuncSig(&fd.func);
+        }
         try self.printBlock(&fd.func.body);
         try self.closeBlock();
+    }
+
+    /// The parameter pack alone — the result descriptor belongs to the binding
+    /// in the canonical face, so it is written before the `=`, not after `)`.
+    fn printFuncParamsOnly(self: *PrettyPrinter, fb: *const ast.FuncBody) !void {
+        if (fb.type_params) |tps| {
+            try self.write("<");
+            for (tps, 0..) |tp, i| {
+                if (i > 0) try self.write(", ");
+                try self.printTypeExpr(tp);
+            }
+            try self.write(">");
+        }
+        try self.write("(");
+        for (fb.params, 0..) |param, i| {
+            if (i > 0) try self.write(", ");
+            try self.write(param.name);
+            if (param.typ != .inferred) {
+                try self.write(": ");
+                try self.printTypeExpr(param.typ);
+            }
+        }
+        if (fb.vararg) {
+            if (fb.params.len > 0) try self.write(", ");
+            if (fb.vararg_name) |vn| try self.print("...{s}", .{vn}) else try self.write("...");
+        }
+        try self.write(")");
     }
 
     pub fn printFuncBody(self: *PrettyPrinter, fb: *const ast.FuncBody) Error!void {
@@ -1028,15 +1095,40 @@ pub const PrettyPrinter = struct {
 
     // ── Module ──────────────────────────────────────────────────────────────────
 
+    /// Emit every comment that belongs above line `line`, at the current
+    /// indent. Statement granularity: a comment trailing code on its own line
+    /// keeps its place, one that trailed code on a SHARED line moves onto its
+    /// own line above it. That is a formatting change, not a loss.
+    fn flushCommentsBefore(self: *PrettyPrinter, line: u32) Error!void {
+        while (self.comment_at < self.comments.len and self.comments[self.comment_at].line <= line) {
+            const c = self.comments[self.comment_at];
+            self.comment_at += 1;
+            try self.write(c.text);
+            try self.nl();
+        }
+    }
+
+    fn flushRemainingComments(self: *PrettyPrinter) Error!void {
+        while (self.comment_at < self.comments.len) {
+            const c = self.comments[self.comment_at];
+            self.comment_at += 1;
+            try self.write(c.text);
+            try self.nl();
+        }
+    }
+
     pub fn printModule(self: *PrettyPrinter, mod: *const Module) !void {
         for (mod.body.stmts) |*stmt| {
+            try self.flushCommentsBefore(stmtLine(stmt));
             try self.printStmt(stmt);
             try self.nl();
         }
         if (mod.body.tail_expr) |te| {
+            try self.flushCommentsBefore(te.loc().line);
             try self.printExpr(te, 0);
             try self.nl();
         }
+        try self.flushRemainingComments();
     }
 };
 
@@ -1253,8 +1345,12 @@ test "pretty: canonical mode strips fun, then, and every block terminator" {
     // delimits and there is no terminator, so no `end` survives canonical
     // output for ANY block form. The dedent before `print` is what closes both
     // the `if` and the relation.
+    // The CANONICAL BINDING FACE: a relation is `name: result = (params)`, not
+    // `name(params) -> result`. The arrow is a declaration shape; this is what
+    // the surface writes, and a formatter emitting the other one could not be
+    // used to canonicalise a tree.
     try testing.expectEqualStrings(
-        \\add(x: i64, y: i64) -> i64
+        \\add: i64 = (x: i64, y: i64)
         \\  if x < y
         \\    return x
         \\  else

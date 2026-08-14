@@ -13,6 +13,7 @@ const MacroExpand = @import("macro_expand.zig");
 const Arc = @import("arc.zig");
 const AsyncLower = @import("async_lower.zig");
 const escape = @import("escape.zig");
+const pretty = @import("pretty.zig");
 const PrettyPrinter = @import("pretty.zig").PrettyPrinter;
 const term = @import("term.zig");
 const debug_trace = @import("debug_trace.zig");
@@ -5047,9 +5048,28 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
         std.process.exit(1);
     };
 
+    // The comment tokens are still in the producer stream — the reader SKIPS
+    // them, it does not drop them — so the formatter can preserve them without
+    // trivia in the AST. Without this the formatter deletes every comment in
+    // the file, including `# expect:` test directives, and `idol check` cannot
+    // notice, so the obvious oracle passes a gutted file.
+    var comments: std.ArrayList(pretty.SourceComment) = .empty;
+    defer comments.deinit(alloc);
+    if (lex.duo_tokens) |toks| {
+        for (toks) |t| {
+            switch (t.kind) {
+                .comment, .compat_comment, .compat_long_comment => {
+                    try comments.append(alloc, .{ .line = t.loc.line, .text = t.text });
+                },
+                else => {},
+            }
+        }
+    }
+
     var buf: std.ArrayList(u8) = .empty;
     var pp = PrettyPrinter.init(alloc, &buf, .idol);
     pp.canonical = canonical and parser.idol_mode;
+    pp.comments = comments.items;
     pp.printModule(&mod) catch {
         term.err("failed to format '{s}'", .{src_path});
         std.process.exit(1);
