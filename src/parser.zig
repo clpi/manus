@@ -5365,6 +5365,165 @@ pub const Parser = struct {
         }) });
     }
 
+    /// The indented labeled pack a relation demands directly:
+    ///
+    ///     color:match
+    ///         red = one
+    ///         green = two
+    ///         else = other
+    ///
+    /// Offside structure is admitted only where an INTRODUCER already fixes
+    /// what the region means — here `:match`, which cannot take anything but a
+    /// pack of alternatives. That is what keeps this from being generic
+    /// significant whitespace: indentation never decides a role on its own, it
+    /// only supplies contents for a role already established.
+    ///
+    /// This loop owns its own layout frame rather than reusing the statement
+    /// block, because `else` CLOSES a statement block — it is a control-clause
+    /// opener there — while here it is an ordinary key naming the remaining
+    /// alternative.
+    fn parse_offside_pack(self: *Parser, open: ast.Loc) ParseError![]ast.TableField {
+        var fields: std.ArrayList(ast.TableField) = .empty;
+        // The first alternative establishes the region's column; every later one
+        // must begin at exactly that column, and anything else closes the
+        // region. `open_layout` cannot serve here because it measures against
+        // the INTRODUCER's own column — for `r = c:match` the `:` sits further
+        // right than the arms below it, so the frame never went offside and the
+        // loop ran on past the pack and swallowed the tail expression.
+        var col: u32 = 0;
+        while (true) {
+            const tok = try self.pk();
+            if (tok.kind == .eof) break;
+            if (fields.items.len == 0) {
+                // A pack is a region, so it has to start on a later line.
+                if (tok.loc.line == open.line) break;
+                col = tok.loc.col;
+            } else if (tok.loc.col != col or tok.loc.line == self.prev_line) break;
+            if (tok.kind == .lbracket) {
+                // `[expr] = value` — the computed slot keeps its brackets.
+                _ = try self.adv();
+                const key = try self.parse_expr();
+                _ = try self.expect(.rbracket);
+                _ = try self.expect(.assign);
+                const val = try self.parse_expr();
+                try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
+                continue;
+            }
+            if (tok.kind == .int_lit) {
+                const key = try self.parse_prec(0);
+                _ = try self.expect(.assign);
+                const val = try self.parse_expr();
+                try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
+                continue;
+            }
+            if (tok.kind != .name and tok.kind != .kw_else and !grammar_roles.isDescriptor(tok.kind)) break;
+            const key_text = if (tok.kind == .name) tok.text else tok.kind.spelling();
+            _ = try self.adv();
+            _ = try self.expect(.assign);
+            const val = try self.parse_expr();
+            try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
+        }
+        return fields.toOwnedSlice(self.alloc);
+    }
+
+    /// `subject:match{ one = a, two = b, else = c }` — finite dispatch as an
+    /// ORDINARY subject-first relation, not a control construct.
+    ///
+    /// It desugars right here into the same `if_expr` chain `else(condition)`
+    /// builds, which is what keeps the claim honest: there is no MatchStmt, no
+    /// CaseArm, no pattern AST and no `case`/`end` grammar. Everything it needs
+    /// already exists — a subject, a relation applied from it, a structured
+    /// pack, and the descriptor identities naming the alternatives.
+    ///
+    /// SELECTIVE DEMAND comes free rather than being bolted on. An alternative
+    /// pack must not evaluate every arm; because this lowers to `if_expr`, and
+    /// `if_expr` demands only the branch it takes (verified: an untaken arm may
+    /// divide by zero without trapping), only the selected arm is evaluated.
+    /// Lowering to a materialized table instead WOULD have evaluated all of
+    /// them, which is the whole reason the desugar happens at parse time.
+    ///
+    /// The subject must be a plain name, because it is repeated once per
+    /// comparison. Rather than silently re-evaluate `f()` per arm, that is
+    /// refused and the caller is told to bind it.
+    fn desugarMatch(self: *Parser, l: ast.Loc, subject: *ast.Expr, pack: *const ast.Expr) ParseError!*ast.Expr {
+        return self.desugarMatchFields(l, subject, pack.table.fields);
+    }
+
+    /// The pack may arrive parenthesized/braced or as an offside region; by
+    /// here it is just the alternatives, so both faces share one lowering and
+    /// cannot drift apart.
+    fn desugarMatchFields(self: *Parser, l: ast.Loc, subject: *ast.Expr, fields: []const ast.TableField) ParseError!*ast.Expr {
+        if (subject.* != .name) {
+            term.locErr(l, "`:match` needs a bound subject: each alternative compares against it, so bind the value first", .{});
+            return error.UnexpectedToken;
+        }
+        if (fields.len == 0) {
+            term.locErr(l, "`:match` has no alternatives", .{});
+            return error.UnexpectedToken;
+        }
+
+        var else_val: ?*ast.Expr = null;
+        var n: usize = 0;
+        for (fields, 0..) |fld, i| {
+            switch (fld) {
+                .named => |nm| {
+                    if (std.mem.eql(u8, nm.key, "else")) {
+                        // `else` is the REMAINING alternative, so anything after
+                        // it is unreachable. Refuse rather than silently drop.
+                        if (i != fields.len - 1) {
+                            term.locErr(l, "`else` is the remaining alternative and must come last", .{});
+                            return error.UnexpectedToken;
+                        }
+                        else_val = nm.val;
+                    } else n += 1;
+                },
+                .indexed => n += 1,
+                .positional => {
+                    term.locErr(l, "`:match` alternatives are named — write `name = value`", .{});
+                    return error.UnexpectedToken;
+                },
+                else => {
+                    term.locErr(l, "unsupported alternative in `:match`", .{});
+                    return error.UnexpectedToken;
+                },
+            }
+        }
+        // §17: a missing remaining alternative must not mint a nil/zero result.
+        // Exhaustiveness over a sealed descriptor is knowledge this pass does
+        // not have, so the honest requirement here is an explicit `else`.
+        if (else_val == null) {
+            term.locErr(l, "`:match` needs an `else` alternative, or a value is invented for the cases it does not name", .{});
+            return error.UnexpectedToken;
+        }
+
+        // Build from the last alternative backwards, so the first-written
+        // alternative ends up outermost and the arms are tried in source order.
+        var acc: *ast.Expr = else_val.?;
+        var idx: usize = n;
+        while (idx > 0) {
+            idx -= 1;
+            const fld = fields[idx];
+            const key: *ast.Expr = switch (fld) {
+                .named => |nm| try self.new_expr(.{ .name = .{ .loc = l, .ident = nm.key } }),
+                .indexed => |ix| ix.key,
+                else => unreachable,
+            };
+            const val: *ast.Expr = switch (fld) {
+                .named => |nm| nm.val,
+                .indexed => |ix| ix.val,
+                else => unreachable,
+            };
+            const cond = try self.new_expr(.{ .binop = .{
+                .loc = l,
+                .op = .eq,
+                .lhs = subject,
+                .rhs = key,
+            } });
+            acc = try self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, val, acc) });
+        }
+        return acc;
+    }
+
     fn parse_if_expr(self: *Parser) ParseError!*ast.Expr {
         const l = (try self.expect(.kw_if)).loc;
         // §15 comma-packed application face: `if(c, yes, no)` is a SOURCE
@@ -5399,29 +5558,25 @@ pub const Parser = struct {
                 _ = try self.expect(.rparen);
                 return self.new_expr(.{ .if_expr = try self.new_if_expr(l, first, then_e, else_e) });
             }
-            _ = try self.expect(.rparen);
-            // §2/§48 CURRIED FACE. Three parenthesized groups after `if` is
-            // `if(c)(yes)(no)`; two is a condition that is itself a call chain
-            // (`if (f)(x) then …`); one is a plain parenthesized condition. That
-            // count disambiguates without guessing, so the curried face resolves
-            // to the SAME if_expr node as the block face — one relation, one
-            // application architecture, as §30 requires.
-            if ((try self.pk()).kind == .lparen) {
+            const rp = try self.expect(.rparen);
+            // §2/§48 CURRIED FACE, decided by ADJACENCY rather than by counting
+            // groups. `if(c)(yes)(no)` — groups glued together — is the curried
+            // face; `if(c) (arm)` with a space is the canonical application face
+            // whose arm merely happens to be parenthesized.
+            //
+            // Counting alone could not tell those apart, so the count rule had
+            // to reject `if(c) (a) else (b)` under §42. Adjacency decides it
+            // without guessing, which is strictly better than rejecting: the
+            // same rule already separates `else(cond)` from `else (value)` and
+            // `>>=` from `>> =`.
+            if ((try self.pk()).kind == .lparen and self.glued_lparen(rp)) {
                 _ = try self.adv();
                 const second = try self.parse_expr();
-                _ = try self.expect(.rparen);
-                if ((try self.pk()).kind == .lparen) {
+                const rp2 = try self.expect(.rparen);
+                if ((try self.pk()).kind == .lparen and self.glued_lparen(rp2)) {
                     _ = try self.adv();
                     const third = try self.parse_expr();
                     _ = try self.expect(.rparen);
-                    // §42: if a control keyword still follows, the spelling is
-                    // genuinely ambiguous between curried control and a call
-                    // condition. Reject rather than pick one.
-                    const after = try self.pk();
-                    if (after.kind == .kw_then or after.kind == .kw_else) {
-                        term.locErr(l, "ambiguous `if`: three applied groups read as the curried face `if(c)(yes)(no)`, but `then`/`else` follows", .{});
-                        return error.UnexpectedToken;
-                    }
                     return self.new_expr(.{ .if_expr = try self.new_if_expr(l, first, second, third) });
                 }
                 // Two groups: the condition was a call chain `first(second)`.
@@ -5950,13 +6105,30 @@ pub const Parser = struct {
                     // Not a typed binding — treat as method call
                     _ = try self.adv(); // consume ':'
                     const method = try self.expect_name_like();
+                    // `subject:match` with the alternatives offside rather than
+                    // delimited. The introducer settles the role, so no opener
+                    // is needed to say "a pack follows".
+                    if (std.mem.eql(u8, method, "match")) {
+                        const nxt = try self.pk();
+                        if (nxt.kind != .lparen and nxt.kind != .lbrace) {
+                            const fields = try self.parse_offside_pack(tok.loc);
+                            e = try self.desugarMatchFields(tok.loc, e, fields);
+                            continue;
+                        }
+                    }
                     const callargs = try self.parse_call_args();
-                    e = try self.new_expr(.{ .method_call = .{
-                        .loc = tok.loc,
-                        .obj = e,
-                        .method = method,
-                        .args = callargs,
-                    } });
+                    if (std.mem.eql(u8, method, "match") and
+                        callargs.len == 1 and callargs[0].* == .table)
+                    {
+                        e = try self.desugarMatch(tok.loc, e, callargs[0]);
+                    } else {
+                        e = try self.new_expr(.{ .method_call = .{
+                            .loc = tok.loc,
+                            .obj = e,
+                            .method = method,
+                            .args = callargs,
+                        } });
+                    }
                 },
                 .lbrace => {
                     // Same rule as `(` and a string literal below (F-13813-1): a
@@ -6235,10 +6407,16 @@ pub const Parser = struct {
                     }
                     try fields.append(self.alloc, .{ .positional = val });
                 }
-            } else if (tok.kind == .name or grammar_roles.isDescriptor(tok.kind)) {
+            } else if (tok.kind == .name or tok.kind == .kw_else or grammar_roles.isDescriptor(tok.kind)) {
                 // Speculate: name '=' and name ':' Type '=' mean named fields;
                 // otherwise the entry is positional. A type name is an ORDINARY
                 // name here, so `{ i32 = 69 }` parses like `{ foo = 69 }`.
+                //
+                // `else` is admitted as a KEY so a structured alternative pack
+                // can name its remaining alternative — `subject:match{ … else =
+                // z }` — giving `else` the same meaning inside a pack that it
+                // has in a conditional chain. It is a key only; nothing here
+                // makes `else` a name anywhere else.
                 const key_text = if (tok.kind == .name) tok.text else tok.kind.spelling();
                 const saved = self.lex.saveState();
                 _ = try self.adv();
@@ -6285,10 +6463,17 @@ pub const Parser = struct {
             // Field separator: comma and semicolon are optional when the next
             // token can start another field (name, [, .., string, number, or }).
             // Without this check, the parser would consume past the table end.
+            //
+            // `else` and descriptor keywords are in the set because they are
+            // admitted KEYS above. Leaving them out made a newline-separated
+            // pack stop at its own last alternative and then demand the `}` it
+            // was standing on — `subject:match{ … else = z }` written one arm
+            // per line, which is the canonical shape.
             if (try self.eat(.comma) == null and try self.eat(.semi) == null) {
                 const next = try self.pk();
                 if (next.kind != .name and next.kind != .lbracket and next.kind != .concat and
-                    next.kind != .int_lit and next.kind != .rbrace and
+                    next.kind != .int_lit and next.kind != .rbrace and next.kind != .kw_else and
+                    !grammar_roles.isDescriptor(next.kind) and
                     !grammar_roles.isQuotedKind(next.kind)) break;
             }
         }
