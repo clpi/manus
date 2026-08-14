@@ -5,383 +5,336 @@
 # Assertion Context
 # ═══════════════════════════════════════════════════════════════
 
-assert_context_new(test_name: str): any
-    {
-        name = test_name,
-        passed = 0,
-        failed = 0,
-        errors = {},
-    }
-end
+assert_context_new: any = (test_name: str)
+  {
+    name = test_name,
+    passed = 0,
+    failed = 0,
+    errors = {}
+  }
 
-assert_context_report(ctx: any): any
-    {
-        name = ctx.name,
-        passed = ctx.passed,
-        failed = ctx.failed,
-        total = ctx.passed + ctx.failed,
-        success_rate = (ctx.passed + ctx.failed) > 0
-            and ctx.passed / (ctx.passed + ctx.failed) or 0,
-        errors = ctx.errors,
-    }
-end
+assert_context_report: any = (ctx: any)
+  {
+    name = ctx.name,
+    passed = ctx.passed,
+    failed = ctx.failed,
+    total = ctx.passed + ctx.failed,
+    success_rate = ctx.passed + ctx.failed > 0 and ctx.passed / (ctx.passed + ctx.failed) or 0,
+    errors = ctx.errors
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Basic Assertions
 # ═══════════════════════════════════════════════════════════════
 
-assert_true(ctx: any, value: bool, msg: str): void
-    if value
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_true",
-            message = msg or "Expected true",
-            expected = true,
-            got = value,
-        }
-    end
-end
+assert_true: void = (ctx: any, value: bool, msg: str)
+  if value
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_true",
+      message = msg or "Expected true",
+      expected = true,
+      got = value
+    }
 
-assert_false(ctx: any, value: bool, msg: str): void
-    if not value
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_false",
-            message = msg or "Expected false",
-            expected = false,
-            got = value,
-        }
-    end
-end
+assert_false: void = (ctx: any, value: bool, msg: str)
+  if not value
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_false",
+      message = msg or "Expected false",
+      expected = false,
+      got = value
+    }
 
-assert_equal(ctx: any, got: any, expected: any, msg: str): void
-    if got == expected
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_equal",
-            message = msg or "Values not equal",
-            expected = expected,
-            got = got,
-        }
-    end
-end
+assert_equal: void = (ctx: any, got: any, expected: any, msg: str)
+  if got == expected
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_equal",
+      message = msg or "Values not equal",
+      expected = expected,
+      got = got
+    }
 
-assert_not_equal(ctx: any, got: any, expected: any, msg: str): void
-    if got != expected
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_not_equal",
-            message = msg or "Values should not be equal",
-            expected = "not " .. expected:to(str),
-            got = got,
-        }
-    end
-end
+assert_not_equal: void = (ctx: any, got: any, expected: any, msg: str)
+  if got != expected
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_not_equal",
+      message = msg or "Values should not be equal",
+      expected = "not " .. expected:to(str),
+      got = got
+    }
 
 # ═══════════════════════════════════════════════════════════════
 # Numeric Assertions
 # ═══════════════════════════════════════════════════════════════
 
-assert_near(ctx: any, got: f64, expected: f64, tolerance: f64, msg: str): void
-    if tolerance == nil tolerance = 1e-6 end
-    if got - expected:abs() <= tolerance
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_near",
-            message = msg or "Values not within tolerance",
-            expected = expected,
-            got = got,
-            tolerance = tolerance,
-        }
-    end
-end
+assert_near: void = (ctx: any, got: f64, expected: f64, tolerance: f64, msg: str)
+  if tolerance == nil
+    tolerance = 0.000001
+  if got - expected:abs() <= tolerance
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_near",
+      message = msg or "Values not within tolerance",
+      expected = expected,
+      got = got,
+      tolerance = tolerance
+    }
 
-assert_greater(ctx: any, got: f64, expected: f64, msg: str): void
-    if got > expected
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_greater",
-            message = msg or "Expected greater than",
-            expected = "> " .. expected:to(str),
-            got = got,
-        }
-    end
-end
+assert_greater: void = (ctx: any, got: f64, expected: f64, msg: str)
+  if got > expected
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_greater",
+      message = msg or "Expected greater than",
+      expected = "> " .. expected:to(str),
+      got = got
+    }
 
-assert_less(ctx: any, got: f64, expected: f64, msg: str): void
-    if got < expected
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_less",
-            message = msg or "Expected less than",
-            expected = "< " .. expected:to(str),
-            got = got,
-        }
-    end
-end
+assert_less: void = (ctx: any, got: f64, expected: f64, msg: str)
+  if got < expected
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_less",
+      message = msg or "Expected less than",
+      expected = "< " .. expected:to(str),
+      got = got
+    }
 
-assert_in_range(ctx: any, got: f64, min: f64, max: f64, msg: str): void
-    if got >= min and got <= max
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_in_range",
-            message = msg or "Value not in range",
-            expected = "[" .. min:to(str) .. ", " .. max:to(str) .. "]",
-            got = got,
-        }
-    end
-end
+assert_in_range: void = (ctx: any, got: f64, min: f64, max: f64, msg: str)
+  if got >= min and got <= max
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_in_range",
+      message = msg or "Value not in range",
+      expected = "[" .. min:to(str) .. ", " .. max:to(str) .. "]",
+      got = got
+    }
 
 # ═══════════════════════════════════════════════════════════════
 # Type Assertions
 # ═══════════════════════════════════════════════════════════════
 
-assert_type(ctx: any, got: any, expected_type: str, msg: str): void
-    actual_type = type(got)
-    if actual_type == expected_type
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_type",
-            message = msg or "Wrong type",
-            expected = expected_type,
-            got = actual_type,
-        }
-    end
-end
+assert_type: void = (ctx: any, got: any, expected_type: str, msg: str)
+  actual_type = type(got)
+  if actual_type == expected_type
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_type",
+      message = msg or "Wrong type",
+      expected = expected_type,
+      got = actual_type
+    }
 
-assert_is_nil(ctx: any, got: any, msg: str): void
-    if got == nil
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_is_nil",
-            message = msg or "Expected nil",
-            expected = nil,
-            got = got,
-        }
-    end
-end
+assert_is_nil: void = (ctx: any, got: any, msg: str)
+  if got == nil
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_is_nil",
+      message = msg or "Expected nil",
+      expected = nil,
+      got = got
+    }
 
-assert_is_not_nil(ctx: any, got: any, msg: str): void
-    if got != nil
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_is_not_nil",
-            message = msg or "Expected non-nil value",
-            expected = "not nil",
-            got = got,
-        }
-    end
-end
+assert_is_not_nil: void = (ctx: any, got: any, msg: str)
+  if got != nil
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_is_not_nil",
+      message = msg or "Expected non-nil value",
+      expected = "not nil",
+      got = got
+    }
 
 # ═══════════════════════════════════════════════════════════════
 # Collection Assertions
 # ═══════════════════════════════════════════════════════════════
 
-assert_table_equal(ctx: any, got: any, expected: any, msg: str): void
-    # Check length
-    if got:len() != expected:len()
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_table_equal",
-            message = msg or "Table lengths differ",
-            expected = expected:len(),
-            got = got:len(),
-        }
-        return
-    end
-
-    # Check elements
-    i = 1
-    while i <= got:len()
-        if got[i] != expected[i]
-            ctx.failed += 1
-            ctx.errors[ctx:len().errors + 1] = {
-                type = "assert_table_equal",
-                message = msg or "Tables differ at index " .. i:to(str),
-                expected = expected[i],
-                got = got[i],
-                index = i,
-            }
-            return
-        end
-        i += 1
-    end
-    ctx.passed += 1
-end
-
-assert_table_contains(ctx: any, table: any, value: any, msg: str): void
-    for v in table
-        if v == value
-            ctx.passed += 1
-            return
-        end
-    end
-    ctx.failed += 1
+assert_table_equal: void = (ctx: any, got: any, expected: any, msg: str)
+  # Check length
+  if got:len() != expected:len()
+    ctx.failed = ctx.failed + 1
     ctx.errors[ctx:len().errors + 1] = {
-        type = "assert_table_contains",
-        message = msg or "Table does not contain value",
-        expected = value,
-        got = table,
+      type = "assert_table_equal",
+      message = msg or "Table lengths differ",
+      expected = expected:len(),
+      got = got:len()
     }
-end
+    return
 
-assert_table_empty(ctx: any, table: any, msg: str): void
-    if table:len() == 0
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_table_empty",
-            message = msg or "Table is not empty",
-            expected = "empty table",
-            got = table:len() .. " elements",
-        }
-    end
-end
+  # Check elements
+  i = 1
+  while i <= got:len()
+    if got[i] != expected[i]
+      ctx.failed = ctx.failed + 1
+      ctx.errors[ctx:len().errors + 1] = {
+        type = "assert_table_equal",
+        message = msg or "Tables differ at index " .. i:to(str),
+        expected = expected[i],
+        got = got[i],
+        index = i
+      }
+      return
+    i = i + 1
+  ctx.passed = ctx.passed + 1
+
+assert_table_contains: void = (ctx: any, table: any, value: any, msg: str)
+  for v in table
+    if v == value
+      ctx.passed = ctx.passed + 1
+      return
+  ctx.failed = ctx.failed + 1
+  ctx.errors[ctx:len().errors + 1] = {
+    type = "assert_table_contains",
+    message = msg or "Table does not contain value",
+    expected = value,
+    got = table
+  }
+
+assert_table_empty: void = (ctx: any, table: any, msg: str)
+  if table:len() == 0
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_table_empty",
+      message = msg or "Table is not empty",
+      expected = "empty table",
+      got = table:len() .. " elements"
+    }
 
 # ═══════════════════════════════════════════════════════════════
 # String Assertions
 # ═══════════════════════════════════════════════════════════════
 
-assert_string_contains(ctx: any, got: str, expected: str, msg: str): void
-    if got:find(expected, 1, true)
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_string_contains",
-            message = msg or "String does not contain expected substring",
-            expected = expected,
-            got = got,
-        }
-    end
-end
+assert_string_contains: void = (ctx: any, got: str, expected: str, msg: str)
+  if got:find(expected, 1, true)
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_string_contains",
+      message = msg or "String does not contain expected substring",
+      expected = expected,
+      got = got
+    }
 
-assert_string_starts_with(ctx: any, got: str, expected: str, msg: str): void
-    if got:sub(1, expected:len()) == expected
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_string_starts_with",
-            message = msg or "String does not start with expected prefix",
-            expected = expected,
-            got = got,
-        }
-    end
-end
+assert_string_starts_with: void = (ctx: any, got: str, expected: str, msg: str)
+  if got:sub(1, expected:len()) == expected
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_string_starts_with",
+      message = msg or "String does not start with expected prefix",
+      expected = expected,
+      got = got
+    }
 
-assert_string_ends_with(ctx: any, got: str, expected: str, msg: str): void
-    if got:sub(-expected:len()) == expected
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_string_ends_with",
-            message = msg or "String does not end with expected suffix",
-            expected = expected,
-            got = got,
-        }
-    end
-end
+assert_string_ends_with: void = (ctx: any, got: str, expected: str, msg: str)
+  if got:sub(-expected:len()) == expected
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_string_ends_with",
+      message = msg or "String does not end with expected suffix",
+      expected = expected,
+      got = got
+    }
 
-assert_string_matches(ctx: any, got: str, pattern: str, msg: str): void
-    if got:find(pattern)
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_string_matches",
-            message = msg or "String does not match pattern",
-            expected = pattern,
-            got = got,
-        }
-    end
-end
+assert_string_matches: void = (ctx: any, got: str, pattern: str, msg: str)
+  if got:find(pattern)
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_string_matches",
+      message = msg or "String does not match pattern",
+      expected = pattern,
+      got = got
+    }
 
 # ═══════════════════════════════════════════════════════════════
 # Error Assertions
 # ═══════════════════════════════════════════════════════════════
 
-assert_errors(ctx: any, func: any, msg: str): void
-    ok, err = pcall(func)
-    if not ok
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_errors",
-            message = msg or "Expected function to error",
-            got = "no error",
-        }
-    end
-end
+assert_errors: void = (ctx: any, func: any, msg: str)
+  ok, err = pcall(func)
+  if not ok
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_errors",
+      message = msg or "Expected function to error",
+      got = "no error"
+    }
 
-assert_errors_with(ctx: any, func: any, expected_err: str, msg: str): void
-    ok, err = pcall(func)
-    if not ok and err:find(expected_err, 1, true)
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_errors_with",
-            message = msg or "Expected function to error with specific message",
-            expected = expected_err,
-            got = ok and "no error" or err,
-        }
-    end
-end
+assert_errors_with: void = (ctx: any, func: any, expected_err: str, msg: str)
+  ok, err = pcall(func)
+  if not ok and err:find(expected_err, 1, true)
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_errors_with",
+      message = msg or "Expected function to error with specific message",
+      expected = expected_err,
+      got = ok and "no error" or err
+    }
 
 # ═══════════════════════════════════════════════════════════════
 # Performance Assertions
 # ═══════════════════════════════════════════════════════════════
 
-assert_faster_than(ctx: any, func: any, max_time: f64, iterations: i64, msg: str): void
-    if iterations == nil iterations = 100 end
+assert_faster_than: void = (ctx: any, func: any, max_time: f64, iterations: i64, msg: str)
+  if iterations == nil
+    iterations = 100
 
-    start = os.clock()
-    i = 0
-    while i < iterations
-        func()
-        i += 1
-    end
-    elapsed = os.clock() - start
+  start = os.clock()
+  i = 0
+  while i < iterations
+    func()
+    i = i + 1
+  elapsed = os.clock() - start
 
-    avg_time = elapsed / iterations
-    if avg_time <= max_time
-        ctx.passed += 1
-    else
-        ctx.failed += 1
-        ctx.errors[ctx:len().errors + 1] = {
-            type = "assert_faster_than",
-            message = msg or "Function too slow",
-            expected = "< " .. max_time:to(str) .. "s",
-            got = avg_time:to(str) .. "s",
-        }
-    end
-end
+  avg_time = elapsed / iterations
+  if avg_time <= max_time
+    ctx.passed = ctx.passed + 1
+  else
+    ctx.failed = ctx.failed + 1
+    ctx.errors[ctx:len().errors + 1] = {
+      type = "assert_faster_than",
+      message = msg or "Function too slow",
+      expected = "< " .. max_time:to(str) .. "s",
+      got = avg_time:to(str) .. "s"
+    }
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

@@ -5,554 +5,578 @@
 # Vector Math (3D)
 # ═══════════════════════════════════════════════════════════════
 
-vec3_new(x: f64, y: f64, z: f64): any
-    {x = x, y = y, z = z}
-end
+vec3_new: any = (x: f64, y: f64, z: f64)
+  { x = x, y = y, z = z }
 
-vec3_add(a: any, b: any): any
-    {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
-end
+vec3_add: any = (a: any, b: any)
+  { x = a.x + b.x, y = a.y + b.y, z = a.z + b.z }
 
-vec3_sub(a: any, b: any): any
-    {x = a.x - b.x, y = a.y - b.y, z = a.z - b.z}
-end
+vec3_sub: any = (a: any, b: any)
+  { x = a.x - b.x, y = a.y - b.y, z = a.z - b.z }
 
-vec3_scale(v: any, s: f64): any
-    {x = v.x * s, y = v.y * s, z = v.z * s}
-end
+vec3_scale: any = (v: any, s: f64)
+  { x = v.x * s, y = v.y * s, z = v.z * s }
 
-vec3_dot(a: any, b: any): f64
-    a.x * b.x + a.y * b.y + a.z * b.z
-end
+vec3_dot: f64 = (a: any, b: any)
+  a.x * b.x + a.y * b.y + a.z * b.z
 
-vec3_cross(a: any, b: any): any
-    {
-        x = a.y * b.z - a.z * b.y,
-        y = a.z * b.x - a.x * b.z,
-        z = a.x * b.y - a.y * b.x,
-    }
-end
+vec3_cross: any = (a: any, b: any)
+  {
+    x = a.y * b.z - a.z * b.y,
+    y = a.z * b.x - a.x * b.z,
+    z = a.x * b.y - a.y * b.x
+  }
 
-vec3_length(v: any): f64
-    v.x * v.x + v.y * v.y + v.z * v.z:sqrt()
-end
+vec3_length: f64 = (v: any)
+  v.x * v.x + v.y * v.y + v.z * v.z:sqrt()
 
-vec3_normalize(v: any): any
-    len = vec3_length(v)
-    if len < 1e-10 return {x = 0, y = 0, z = 0} end
-    vec3_scale(v, 1.0 / len)
-end
+vec3_normalize: any = (v: any)
+  len = vec3_length(v)
+  if len < 0.0000000001
+    return { x = 0, y = 0, z = 0 }
+  vec3_scale(v, 1.0 / len)
 
-vec3_negate(v: any): any
-    {x = -v.x, y = -v.y, z = -v.z}
-end
+vec3_negate: any = (v: any)
+  { x = -v.x, y = -v.y, z = -v.z }
 
-vec3_lerp(a: any, b: any, t: f64): any
-    {
-        x = a.x + (b.x - a.x) * t,
-        y = a.y + (b.y - a.y) * t,
-        z = a.z + (b.z - a.z) * t,
-    }
-end
+vec3_lerp: any = (a: any, b: any, t: f64)
+  {
+    x = a.x + (b.x - a.x) * t,
+    y = a.y + (b.y - a.y) * t,
+    z = a.z + (b.z - a.z) * t
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Matrix 4x4 (column-major)
 # ═══════════════════════════════════════════════════════════════
 
-mat4_identity(): any
-    {
-        m = {
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 1, 0,
-            0, 0, 0, 1,
-        }
+mat4_identity: any = ()
+  {
+    m = {
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1
     }
-end
+  }
 
-mat4_translate(tx: f64, ty: f64, tz: f64): any
-    m = mat4_identity()
-    m.m[13] = tx
-    m.m[14] = ty
-    m.m[15] = tz
-    m
-end
+mat4_translate: any = (tx: f64, ty: f64, tz: f64)
+  m = mat4_identity()
+  m.m[13] = tx
+  m.m[14] = ty
+  m.m[15] = tz
+  m
 
-mat4_scale(sx: f64, sy: f64, sz: f64): any
-    {
-        m = {
-            sx, 0, 0, 0,
-            0, sy, 0, 0,
-            0, 0, sz, 0,
-            0, 0, 0, 1,
-        }
+mat4_scale: any = (sx: f64, sy: f64, sz: f64)
+  {
+    m = {
+      sx,
+      0,
+      0,
+      0,
+      0,
+      sy,
+      0,
+      0,
+      0,
+      0,
+      sz,
+      0,
+      0,
+      0,
+      0,
+      1
     }
-end
+  }
 
-mat4_rotate_x(angle: f64): any
-    c = angle:cos()
-    s = angle:sin()
-    {
-        m = {
-            1, 0, 0, 0,
-            0, c, s, 0,
-            0, -s, c, 0,
-            0, 0, 0, 1,
-        }
+mat4_rotate_x: any = (angle: f64)
+  c = angle:cos()
+  s = angle:sin()
+  {
+    m = {
+      1,
+      0,
+      0,
+      0,
+      0,
+      c,
+      s,
+      0,
+      0,
+      -s,
+      c,
+      0,
+      0,
+      0,
+      0,
+      1
     }
-end
+  }
 
-mat4_rotate_y(angle: f64): any
-    c = angle:cos()
-    s = angle:sin()
-    {
-        m = {
-            c, 0, -s, 0,
-            0, 1, 0, 0,
-            s, 0, c, 0,
-            0, 0, 0, 1,
-        }
+mat4_rotate_y: any = (angle: f64)
+  c = angle:cos()
+  s = angle:sin()
+  {
+    m = {
+      c,
+      0,
+      -s,
+      0,
+      0,
+      1,
+      0,
+      0,
+      s,
+      0,
+      c,
+      0,
+      0,
+      0,
+      0,
+      1
     }
-end
+  }
 
-mat4_rotate_z(angle: f64): any
-    c = angle:cos()
-    s = angle:sin()
-    {
-        m = {
-            c, s, 0, 0,
-            -s, c, 0, 0,
-            0, 0, 1, 0,
-            0, 0, 0, 1,
-        }
+mat4_rotate_z: any = (angle: f64)
+  c = angle:cos()
+  s = angle:sin()
+  {
+    m = {
+      c,
+      s,
+      0,
+      0,
+      -s,
+      c,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1
     }
-end
+  }
 
-mat4_multiply(a: any, b: any): any
-    result = {m = {}}
-    j = 0
-    while j < 4
-        i = 0
-        while i < 4
-            idx = j * 4 + i
-            result.m[idx + 1] = 0
-            k = 0
-            while k < 4
-                result.m[idx + 1] += a.m[k * 4 + i + 1] * b.m[j * 4 + k + 1]
-                k += 1
-            end
-            i += 1
-        end
-        j += 1
-    end
-    result
-end
+mat4_multiply: any = (a: any, b: any)
+  result = { m = {} }
+  j = 0
+  while j < 4
+    i = 0
+    while i < 4
+      idx = j * 4 + i
+      result.m[idx + 1] = 0
+      k = 0
+      while k < 4
+        result.m[idx + 1] = result.m[idx + 1] + a.m[k * 4 + i + 1] * b.m[j * 4 + k + 1]
+        k = k + 1
+      i = i + 1
+    j = j + 1
+  result
 
-mat4_transform_point(m: any, v: any): any
-    x = v.x * m.m[1] + v.y * m.m[5] + v.z * m.m[9] + m.m[13]
-    y = v.x * m.m[2] + v.y * m.m[6] + v.z * m.m[10] + m.m[14]
-    z = v.x * m.m[3] + v.y * m.m[7] + v.z * m.m[11] + m.m[15]
-    {x = x, y = y, z = z}
-end
+mat4_transform_point: any = (m: any, v: any)
+  x = v.x * m.m[1] + v.y * m.m[5] + v.z * m.m[9] + m.m[13]
+  y = v.x * m.m[2] + v.y * m.m[6] + v.z * m.m[10] + m.m[14]
+  z = v.x * m.m[3] + v.y * m.m[7] + v.z * m.m[11] + m.m[15]
+  { x = x, y = y, z = z }
 
 # ═══════════════════════════════════════════════════════════════
 # Camera
 # ═══════════════════════════════════════════════════════════════
 
-camera_new(): any
-    {
-        position = vec3_new(0, 0, 5),
-        target = vec3_new(0, 0, 0),
-        up = vec3_new(0, 1, 0),
-        fov = 60.0,
-        aspect = 1.0,
-        near = 0.1,
-        far = 1000.0,
-        view_matrix = mat4_identity(),
-        projection_matrix = mat4_identity(),
-    }
-end
+camera_new: any = ()
+  {
+    position = vec3_new(0, 0, 5),
+    target = vec3_new(0, 0, 0),
+    up = vec3_new(0, 1, 0),
+    fov = 60.0,
+    aspect = 1.0,
+    near = 0.1,
+    far = 1000.0,
+    view_matrix = mat4_identity(),
+    projection_matrix = mat4_identity()
+  }
 
-camera_look_at(cam: any, position: any, target: any, up: any): void
-    cam.position = position
-    cam.target = target
-    cam.up = up
-end
+camera_look_at: void = (cam: any, position: any, target: any, up: any)
+  cam.position = position
+  cam.target = target
+  cam.up = up
 
-camera_set_fov(cam: any, fov: f64): void
-    cam.fov = fov
-end
+camera_set_fov: void = (cam: any, fov: f64)
+  cam.fov = fov
 
-camera_set_aspect(cam: any, aspect: f64): void
-    cam.aspect = aspect
-end
+camera_set_aspect: void = (cam: any, aspect: f64)
+  cam.aspect = aspect
 
-camera_set_near_far(cam: any, near: f64, far: f64): void
-    cam.near = near
-    cam.far = far
-end
+camera_set_near_far: void = (cam: any, near: f64, far: f64)
+  cam.near = near
+  cam.far = far
 
-camera_update(cam: any): void
-    # View matrix (lookAt)
-    f = vec3_normalize(vec3_sub(cam.target, cam.position))
-    s = vec3_normalize(vec3_cross(f, cam.up))
-    u = vec3_cross(s, f)
+camera_update: void = (cam: any)
+  # View matrix (lookAt)
+  f = vec3_normalize(vec3_sub(cam.target, cam.position))
+  s = vec3_normalize(vec3_cross(f, cam.up))
+  u = vec3_cross(s, f)
 
-    cam.view_matrix.m = {
-        s.x, u.x, -f.x, 0,
-        s.y, u.y, -f.y, 0,
-        s.z, u.z, -f.z, 0,
-        -vec3_dot(s, cam.position), -vec3_dot(u, cam.position), vec3_dot(f, cam.position), 1,
-    }
+  cam.view_matrix.m = {
+    s.x,
+    u.x,
+    -f.x,
+    0,
+    s.y,
+    u.y,
+    -f.y,
+    0,
+    s.z,
+    u.z,
+    -f.z,
+    0,
+    -vec3_dot(s, cam.position),
+    -vec3_dot(u, cam.position),
+    vec3_dot(f, cam.position),
+    1
+  }
 
-    # Projection matrix (perspective)
-    tan_half_fov = cam.fov * math.pi / 360.0:tan()
-    cam.projection_matrix.m = {
-        1.0 / (cam.aspect * tan_half_fov), 0, 0, 0,
-        0, 1.0 / tan_half_fov, 0, 0,
-        0, 0, -(cam.far + cam.near) / (cam.far - cam.near), -1,
-        0, 0, -(2 * cam.far * cam.near) / (cam.far - cam.near), 0,
-    }
-end
+  # Projection matrix (perspective)
+  tan_half_fov = cam.fov * math.pi / 360.0:tan()
+  cam.projection_matrix.m = {
+    1.0 / cam.aspect * tan_half_fov,
+    0,
+    0,
+    0,
+    0,
+    1.0 / tan_half_fov,
+    0,
+    0,
+    0,
+    0,
+    -(cam.far + cam.near) / (cam.far - cam.near),
+    -1,
+    0,
+    0,
+    -(2 * cam.far * cam.near) / (cam.far - cam.near),
+    0
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Mesh
 # ═══════════════════════════════════════════════════════════════
 
-mesh_new(): any
-    {
-        vertices = {},
-        normals = {},
-        uvs = {},
-        indices = {},
-        materials = {},
-        transform = mat4_identity(),
-    }
-end
+mesh_new: any = ()
+  {
+    vertices = {},
+    normals = {},
+    uvs = {},
+    indices = {},
+    materials = {},
+    transform = mat4_identity()
+  }
 
-mesh_add_vertex(mesh: any, x: f64, y: f64, z: f64): i64
-    idx = mesh:len().vertices / 3
-    mesh.vertices[mesh:len().vertices + 1] = x
-    mesh.vertices[mesh:len().vertices + 1] = y
-    mesh.vertices[mesh:len().vertices + 1] = z
-    idx
-end
+mesh_add_vertex: i64 = (mesh: any, x: f64, y: f64, z: f64)
+  idx = mesh:len().vertices / 3
+  mesh.vertices[mesh:len().vertices + 1] = x
+  mesh.vertices[mesh:len().vertices + 1] = y
+  mesh.vertices[mesh:len().vertices + 1] = z
+  idx
 
-mesh_add_triangle(mesh: any, i0: i64, i1: i64, i2: i64): void
-    mesh.indices[mesh:len().indices + 1] = i0
-    mesh.indices[mesh:len().indices + 1] = i1
-    mesh.indices[mesh:len().indices + 1] = i2
-end
+mesh_add_triangle: void = (mesh: any, i0: i64, i1: i64, i2: i64)
+  mesh.indices[mesh:len().indices + 1] = i0
+  mesh.indices[mesh:len().indices + 1] = i1
+  mesh.indices[mesh:len().indices + 1] = i2
 
-mesh_add_normal(mesh: any, x: f64, y: f64, z: f64): void
-    mesh.normals[mesh:len().normals + 1] = x
-    mesh.normals[mesh:len().normals + 1] = y
-    mesh.normals[mesh:len().normals + 1] = z
-end
+mesh_add_normal: void = (mesh: any, x: f64, y: f64, z: f64)
+  mesh.normals[mesh:len().normals + 1] = x
+  mesh.normals[mesh:len().normals + 1] = y
+  mesh.normals[mesh:len().normals + 1] = z
 
-mesh_add_uv(mesh: any, u: f64, v: f64): void
-    mesh.uvs[mesh:len().uvs + 1] = u
-    mesh.uvs[mesh:len().uvs + 1] = v
-end
+mesh_add_uv: void = (mesh: any, u: f64, v: f64)
+  mesh.uvs[mesh:len().uvs + 1] = u
+  mesh.uvs[mesh:len().uvs + 1] = v
 
-mesh_compute_normals(mesh: any): void
-    # Initialize normals to zero
-    num_verts = mesh:len().vertices / 3
-    mesh.normals = {}
-    i = 0
-    while i < num_verts * 3
-        mesh.normals[mesh:len().normals + 1] = 0
-        i += 1
-    end
+mesh_compute_normals: void = (mesh: any)
+  # Initialize normals to zero
+  num_verts = mesh:len().vertices / 3
+  mesh.normals = {}
+  i = 0
+  while i < num_verts * 3
+    mesh.normals[mesh:len().normals + 1] = 0
+    i = i + 1
 
-    # Accumulate face normals
-    i = 1
-    while i <= mesh:len().indices
-        i0 = mesh.indices[i]
-        i1 = mesh.indices[i + 1]
-        i2 = mesh.indices[i + 2]
+  # Accumulate face normals
+  i = 1
+  while i <= mesh:len().indices
+    i0 = mesh.indices[i]
+    i1 = mesh.indices[i + 1]
+    i2 = mesh.indices[i + 2]
 
-        v0 = vec3_new(mesh.vertices[i0 * 3 + 1], mesh.vertices[i0 * 3 + 2], mesh.vertices[i0 * 3 + 3])
-        v1 = vec3_new(mesh.vertices[i1 * 3 + 1], mesh.vertices[i1 * 3 + 2], mesh.vertices[i1 * 3 + 3])
-        v2 = vec3_new(mesh.vertices[i2 * 3 + 1], mesh.vertices[i2 * 3 + 2], mesh.vertices[i2 * 3 + 3])
+    v0 = vec3_new(mesh.vertices[i0 * 3 + 1], mesh.vertices[i0 * 3 + 2], mesh.vertices[i0 * 3 + 3])
+    v1 = vec3_new(mesh.vertices[i1 * 3 + 1], mesh.vertices[i1 * 3 + 2], mesh.vertices[i1 * 3 + 3])
+    v2 = vec3_new(mesh.vertices[i2 * 3 + 1], mesh.vertices[i2 * 3 + 2], mesh.vertices[i2 * 3 + 3])
 
-        edge1 = vec3_sub(v1, v0)
-        edge2 = vec3_sub(v2, v0)
-        face_normal = vec3_cross(edge1, edge2)
+    edge1 = vec3_sub(v1, v0)
+    edge2 = vec3_sub(v2, v0)
+    face_normal = vec3_cross(edge1, edge2)
 
-        mesh.normals[i0 * 3 + 1] += face_normal.x
-        mesh.normals[i0 * 3 + 2] += face_normal.y
-        mesh.normals[i0 * 3 + 3] += face_normal.z
+    mesh.normals[i0 * 3 + 1] = mesh.normals[i0 * 3 + 1] + face_normal.x
+    mesh.normals[i0 * 3 + 2] = mesh.normals[i0 * 3 + 2] + face_normal.y
+    mesh.normals[i0 * 3 + 3] = mesh.normals[i0 * 3 + 3] + face_normal.z
 
-        mesh.normals[i1 * 3 + 1] += face_normal.x
-        mesh.normals[i1 * 3 + 2] += face_normal.y
-        mesh.normals[i1 * 3 + 3] += face_normal.z
+    mesh.normals[i1 * 3 + 1] = mesh.normals[i1 * 3 + 1] + face_normal.x
+    mesh.normals[i1 * 3 + 2] = mesh.normals[i1 * 3 + 2] + face_normal.y
+    mesh.normals[i1 * 3 + 3] = mesh.normals[i1 * 3 + 3] + face_normal.z
 
-        mesh.normals[i2 * 3 + 1] += face_normal.x
-        mesh.normals[i2 * 3 + 2] += face_normal.y
-        mesh.normals[i2 * 3 + 3] += face_normal.z
+    mesh.normals[i2 * 3 + 1] = mesh.normals[i2 * 3 + 1] + face_normal.x
+    mesh.normals[i2 * 3 + 2] = mesh.normals[i2 * 3 + 2] + face_normal.y
+    mesh.normals[i2 * 3 + 3] = mesh.normals[i2 * 3 + 3] + face_normal.z
 
-        i += 3
-    end
+    i = i + 3
 
-    # Normalize
-    i = 0
-    while i < num_verts
-        nx = mesh.normals[i * 3 + 1]
-        ny = mesh.normals[i * 3 + 2]
-        nz = mesh.normals[i * 3 + 3]
-        len = nx * nx + ny * ny + nz * nz:sqrt()
-        if len > 1e-10
-            mesh.normals[i * 3 + 1] = nx / len
-            mesh.normals[i * 3 + 2] = ny / len
-            mesh.normals[i * 3 + 3] = nz / len
-        end
-        i += 1
-    end
-end
+  # Normalize
+  i = 0
+  while i < num_verts
+    nx = mesh.normals[i * 3 + 1]
+    ny = mesh.normals[i * 3 + 2]
+    nz = mesh.normals[i * 3 + 3]
+    len = nx * nx + ny * ny + nz * nz:sqrt()
+    if len > 0.0000000001
+      mesh.normals[i * 3 + 1] = nx / len
+      mesh.normals[i * 3 + 2] = ny / len
+      mesh.normals[i * 3 + 3] = nz / len
+    i = i + 1
 
 # ═══════════════════════════════════════════════════════════════
 # Primitive Meshes
 # ═══════════════════════════════════════════════════════════════
 
-mesh_cube(size: f64): any
-    mesh = mesh_new()
-    s = size / 2
+mesh_cube: any = (size: f64)
+  mesh = mesh_new()
+  s = size / 2
 
-    # 8 vertices
-    mesh_add_vertex(mesh, -s, -s, -s)
-    mesh_add_vertex(mesh,  s, -s, -s)
-    mesh_add_vertex(mesh,  s,  s, -s)
-    mesh_add_vertex(mesh, -s,  s, -s)
-    mesh_add_vertex(mesh, -s, -s,  s)
-    mesh_add_vertex(mesh,  s, -s,  s)
-    mesh_add_vertex(mesh,  s,  s,  s)
-    mesh_add_vertex(mesh, -s,  s,  s)
+  # 8 vertices
+  mesh_add_vertex(mesh, -s, -s, -s)
+  mesh_add_vertex(mesh, s, -s, -s)
+  mesh_add_vertex(mesh, s, s, -s)
+  mesh_add_vertex(mesh, -s, s, -s)
+  mesh_add_vertex(mesh, -s, -s, s)
+  mesh_add_vertex(mesh, s, -s, s)
+  mesh_add_vertex(mesh, s, s, s)
+  mesh_add_vertex(mesh, -s, s, s)
 
-    # 6 faces (12 triangles)
-    # Front
-    mesh_add_triangle(mesh, 0, 1, 2)
-    mesh_add_triangle(mesh, 0, 2, 3)
-    # Back
-    mesh_add_triangle(mesh, 4, 6, 5)
-    mesh_add_triangle(mesh, 4, 7, 6)
-    # Left
-    mesh_add_triangle(mesh, 0, 3, 7)
-    mesh_add_triangle(mesh, 0, 7, 4)
-    # Right
-    mesh_add_triangle(mesh, 1, 5, 6)
-    mesh_add_triangle(mesh, 1, 6, 2)
-    # Top
-    mesh_add_triangle(mesh, 3, 2, 6)
-    mesh_add_triangle(mesh, 3, 6, 7)
-    # Bottom
-    mesh_add_triangle(mesh, 0, 4, 5)
-    mesh_add_triangle(mesh, 0, 5, 1)
+  # 6 faces (12 triangles)
+  # Front
+  mesh_add_triangle(mesh, 0, 1, 2)
+  mesh_add_triangle(mesh, 0, 2, 3)
+  # Back
+  mesh_add_triangle(mesh, 4, 6, 5)
+  mesh_add_triangle(mesh, 4, 7, 6)
+  # Left
+  mesh_add_triangle(mesh, 0, 3, 7)
+  mesh_add_triangle(mesh, 0, 7, 4)
+  # Right
+  mesh_add_triangle(mesh, 1, 5, 6)
+  mesh_add_triangle(mesh, 1, 6, 2)
+  # Top
+  mesh_add_triangle(mesh, 3, 2, 6)
+  mesh_add_triangle(mesh, 3, 6, 7)
+  # Bottom
+  mesh_add_triangle(mesh, 0, 4, 5)
+  mesh_add_triangle(mesh, 0, 5, 1)
 
-    mesh_compute_normals(mesh)
-    mesh
-end
+  mesh_compute_normals(mesh)
+  mesh
 
-mesh_sphere(radius: f64, segments: i64, rings: i64): any
-    mesh = mesh_new()
+mesh_sphere: any = (radius: f64, segments: i64, rings: i64)
+  mesh = mesh_new()
 
-    # Generate vertices
-    phi = 0
-    while phi <= rings
-        theta = 0
-        while theta <= segments
-            u = theta / segments
-            v = phi / rings
+  # Generate vertices
+  phi = 0
+  while phi <= rings
+    theta = 0
+    while theta <= segments
+      u = theta / segments
+      v = phi / rings
 
-            x = radius * 2 * math.pi * u:cos() * math.pi * v:sin()
-            y = radius * math.pi * v:cos()
-            z = radius * 2 * math.pi * u:sin() * math.pi * v:sin()
+      x = radius * 2 * math.pi * u:cos() * math.pi * v:sin()
+      y = radius * math.pi * v:cos()
+      z = radius * 2 * math.pi * u:sin() * math.pi * v:sin()
 
-            mesh_add_vertex(mesh, x, y, z)
-            mesh_add_uv(mesh, u, v)
-            theta += 1
-        end
-        phi += 1
-    end
+      mesh_add_vertex(mesh, x, y, z)
+      mesh_add_uv(mesh, u, v)
+      theta = theta + 1
+    phi = phi + 1
 
-    # Generate indices
-    i = 0
-    while i < rings
-        j = 0
-        while j < segments
-            a = i * (segments + 1) + j
-            b = a + segments + 1
+  # Generate indices
+  i = 0
+  while i < rings
+    j = 0
+    while j < segments
+      a = i * (segments + 1) + j
+      b = a + segments + 1
 
-            mesh_add_triangle(mesh, a, b, a + 1)
-            mesh_add_triangle(mesh, a + 1, b, b + 1)
+      mesh_add_triangle(mesh, a, b, a + 1)
+      mesh_add_triangle(mesh, a + 1, b, b + 1)
 
-            j += 1
-        end
-        i += 1
-    end
+      j = j + 1
+    i = i + 1
 
-    mesh_compute_normals(mesh)
-    mesh
-end
+  mesh_compute_normals(mesh)
+  mesh
 
-mesh_plane(size: f64, segments: i64): any
-    mesh = mesh_new()
-    half = size / 2
-    step = size / segments
+mesh_plane: any = (size: f64, segments: i64)
+  mesh = mesh_new()
+  half = size / 2
+  step = size / segments
 
-    i = 0
-    while i <= segments
-        j = 0
-        while j <= segments
-            x = -half + j * step
-            z = -half + i * step
-            mesh_add_vertex(mesh, x, 0, z)
-            mesh_add_uv(mesh, j / segments, i / segments)
-            j += 1
-        end
-        i += 1
-    end
+  i = 0
+  while i <= segments
+    j = 0
+    while j <= segments
+      x = -half + j * step
+      z = -half + i * step
+      mesh_add_vertex(mesh, x, 0, z)
+      mesh_add_uv(mesh, j / segments, i / segments)
+      j = j + 1
+    i = i + 1
 
-    i = 0
-    while i < segments
-        j = 0
-        while j < segments
-            a = i * (segments + 1) + j
-            b = a + segments + 1
+  i = 0
+  while i < segments
+    j = 0
+    while j < segments
+      a = i * (segments + 1) + j
+      b = a + segments + 1
 
-            mesh_add_triangle(mesh, a, b, a + 1)
-            mesh_add_triangle(mesh, a + 1, b, b + 1)
+      mesh_add_triangle(mesh, a, b, a + 1)
+      mesh_add_triangle(mesh, a + 1, b, b + 1)
 
-            j += 1
-        end
-        i += 1
-    end
+      j = j + 1
+    i = i + 1
 
-    mesh_compute_normals(mesh)
-    mesh
-end
+  mesh_compute_normals(mesh)
+  mesh
 
 # ═══════════════════════════════════════════════════════════════
 # Scene Graph
 # ═══════════════════════════════════════════════════════════════
 
-scene_node_new(name: str): any
-    {
-        name = name,
-        children = {},
-        mesh = nil,
-        material = nil,
-        transform = mat4_identity(),
-        world_transform = mat4_identity(),
-        visible = true,
-    }
-end
+scene_node_new: any = (name: str)
+  {
+    name = name,
+    children = {},
+    mesh = nil,
+    material = nil,
+    transform = mat4_identity(),
+    world_transform = mat4_identity(),
+    visible = true
+  }
 
-scene_add_child(parent: any, child: any): void
-    parent.children[parent:len().children + 1] = child
-end
+scene_add_child: void = (parent: any, child: any)
+  parent.children[parent:len().children + 1] = child
 
-scene_remove_child(parent: any, child: any): void
-    i = 1
-    while i <= parent:len().children
-        if parent.children[i] == child
-            parent.children:remove(i)
-            return
-        end
-        i += 1
-    end
-end
+scene_remove_child: void = (parent: any, child: any)
+  i = 1
+  while i <= parent:len().children
+    if parent.children[i] == child
+      parent.children:remove(i)
+      return
+    i = i + 1
 
-scene_update_transforms(node: any, parent_transform: any): void
-    if parent_transform == nil
-        node.world_transform = node.transform
-    else
-        node.world_transform = mat4_multiply(parent_transform, node.transform)
-    end
+scene_update_transforms: void = (node: any, parent_transform: any)
+  if parent_transform == nil
+    node.world_transform = node.transform
+  else
+    node.world_transform = mat4_multiply(parent_transform, node.transform)
 
+  for child in node.children
+    scene_update_transforms(child, node.world_transform)
+
+scene_traverse: void = (node: any, callback: any)
+  if node.visible
+    callback(node)
     for child in node.children
-        scene_update_transforms(child, node.world_transform)
-    end
-end
-
-scene_traverse(node: any, callback: any): void
-    if node.visible
-        callback(node)
-        for child in node.children
-            scene_traverse(child, callback)
-        end
-    end
-end
+      scene_traverse(child, callback)
 
 # ═══════════════════════════════════════════════════════════════
 # Lighting
 # ═══════════════════════════════════════════════════════════════
 
-light_new(light_type: str): any
-    {
-        type = light_type,  # "point", "directional", "spot"
-        position = vec3_new(0, 0, 0),
-        direction = vec3_new(0, -1, 0),
-        color = vec3_new(1, 1, 1),
-        intensity = 1.0,
-        range = 100.0,
-        cutoff = 45.0,
-    }
-end
+light_new: any = (light_type: str)
+  {
+    type = light_type,
+    position = vec3_new(0, 0, 0),
+    direction = vec3_new(0, -1, 0),
+    color = vec3_new(1, 1, 1),
+    intensity = 1.0,
+    range = 100.0,
+    cutoff = 45.0
+  }
+# "point", "directional", "spot"
 
-light_calculate(light: any, point: any, normal: any): any
-    if light.type == "point"
-        light_dir = vec3_normalize(vec3_sub(light.position, point))
-        distance = vec3_length(vec3_sub(light.position, point))
+light_calculate: any = (light: any, point: any, normal: any)
+  if light.type == "point"
+    light_dir = vec3_normalize(vec3_sub(light.position, point))
+    distance = vec3_length(vec3_sub(light.position, point))
 
-        # Attenuation
-        attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance)
+    # Attenuation
+    attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance)
 
-        # Diffuse
-        diff = vec3_dot(normal, light_dir):max(0)
-        diffuse = vec3_scale(light.color, diff * light.intensity * attenuation)
+    # Diffuse
+    diff = vec3_dot(normal, light_dir):max(0)
+    diffuse = vec3_scale(light.color, diff * light.intensity * attenuation)
 
-        # Specular (Blinn-Phong)
-        view_dir = vec3_new(0, 0, 1)  # Simplified
-        half_dir = vec3_normalize(vec3_add(light_dir, view_dir))
-        spec = vec3_dot(normal, half_dir):max(0):pow(32)
-        specular = vec3_scale(light.color, spec * light.intensity * attenuation)
+    # Specular (Blinn-Phong)
+    # Simplified
+    view_dir = vec3_new(0, 0, 1)
+    half_dir = vec3_normalize(vec3_add(light_dir, view_dir))
+    spec = vec3_dot(normal, half_dir):max(0):pow(32)
+    specular = vec3_scale(light.color, spec * light.intensity * attenuation)
 
-        {diffuse = diffuse, specular = specular}
+    { diffuse = diffuse, specular = specular }
+  elseif light.type == "directional"
 
-    elseif light.type == "directional"
-        light_dir = vec3_normalize(vec3_negate(light.direction))
+    light_dir = vec3_normalize(vec3_negate(light.direction))
 
-        diff = vec3_dot(normal, light_dir):max(0)
-        diffuse = vec3_scale(light.color, diff * light.intensity)
+    diff = vec3_dot(normal, light_dir):max(0)
+    diffuse = vec3_scale(light.color, diff * light.intensity)
 
-        view_dir = vec3_new(0, 0, 1)
-        half_dir = vec3_normalize(vec3_add(light_dir, view_dir))
-        spec = vec3_dot(normal, half_dir):max(0):pow(32)
-        specular = vec3_scale(light.color, spec * light.intensity)
+    view_dir = vec3_new(0, 0, 1)
+    half_dir = vec3_normalize(vec3_add(light_dir, view_dir))
+    spec = vec3_dot(normal, half_dir):max(0):pow(32)
+    specular = vec3_scale(light.color, spec * light.intensity)
 
-        {diffuse = diffuse, specular = specular}
+    { diffuse = diffuse, specular = specular }
+  else
 
-    else
-        {diffuse = vec3_new(0, 0, 0), specular = vec3_new(0, 0, 0)}
-    end
-end
+    { diffuse = vec3_new(0, 0, 0), specular = vec3_new(0, 0, 0) }
 
 # ═══════════════════════════════════════════════════════════════
 # Material
 # ═══════════════════════════════════════════════════════════════
 
-material_new(name: str): any
-    {
-        name = name,
-        albedo = vec3_new(0.8, 0.8, 0.8),
-        metallic = 0.0,
-        roughness = 0.5,
-        emissive = vec3_new(0, 0, 0),
-        texture = nil,
-        normal_map = nil,
-    }
-end
+material_new: any = (name: str)
+  {
+    name = name,
+    albedo = vec3_new(0.8, 0.8, 0.8),
+    metallic = 0.0,
+    roughness = 0.5,
+    emissive = vec3_new(0, 0, 0),
+    texture = nil,
+    normal_map = nil
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports
@@ -562,29 +586,28 @@ end
 # exports that carried real content are ordinary top-level bindings now.
 # Vector 3
 vec3 = {
-    new = vec3_new,
-    add = vec3_add,
-    sub = vec3_sub,
-    scale = vec3_scale,
-    dot = vec3_dot,
-    cross = vec3_cross,
-    length = vec3_length,
-    normalize = vec3_normalize,
-    lerp = vec3_lerp,
+  new = vec3_new,
+  add = vec3_add,
+  sub = vec3_sub,
+  scale = vec3_scale,
+  dot = vec3_dot,
+  cross = vec3_cross,
+  length = vec3_length,
+  normalize = vec3_normalize,
+  lerp = vec3_lerp
 }
 
 # Matrix 4x4
 mat4 = {
-    identity = mat4_identity,
-    translate = mat4_translate,
-    scale = mat4_scale,
-    rotate_x = mat4_rotate_x,
-    rotate_y = mat4_rotate_y,
-    rotate_z = mat4_rotate_z,
-    multiply = mat4_multiply,
-    transform_point = mat4_transform_point,
+  identity = mat4_identity,
+  translate = mat4_translate,
+  scale = mat4_scale,
+  rotate_x = mat4_rotate_x,
+  rotate_y = mat4_rotate_y,
+  rotate_z = mat4_rotate_z,
+  multiply = mat4_multiply,
+  transform_point = mat4_transform_point
 }
-
 # Camera
 # Mesh
 # Scene

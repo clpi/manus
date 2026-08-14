@@ -5,346 +5,339 @@
 # Permutation Table
 # ═══════════════════════════════════════════════════════════════
 
-permutation_new(seed: i64): any
-    perm = {}
-    i = 0
-    while i < 256
-        perm[i] = i
-        i += 1
-    end
+permutation_new: any = (seed: i64)
+  perm = {}
+  i = 0
+  while i < 256
+    perm[i] = i
+    i = i + 1
 
-    # Shuffle with seed
-    rng = seed
-    i = 255
-    while i > 0
-        rng = (rng * 1103515245 + 12345) & 0x7FFFFFFF
-        j = rng % (i + 1)
-        temp = perm[i]
-        perm[i] = perm[j]
-        perm[j] = temp
-        i -= 1
-    end
+  # Shuffle with seed
+  rng = seed
+  i = 255
+  while i > 0
+    rng = (rng * 1103515245 + 12345) & 2147483647
+    j = rng % (i + 1)
+    temp = perm[i]
+    perm[i] = perm[j]
+    perm[j] = temp
+    i = i - 1
 
-    # Duplicate
-    p = {}
-    i = 0
-    while i < 512
-        p[i] = perm[i % 256]
-        i += 1
-    end
-    p
-end
+  # Duplicate
+  p = {}
+  i = 0
+  while i < 512
+    p[i] = perm[i % 256]
+    i = i + 1
+  p
 
 # ═══════════════════════════════════════════════════════════════
 # Perlin Noise (2D)
 # ═══════════════════════════════════════════════════════════════
 
-perlin_fade(t: f64): f64
-    t * t * t * (t * (t * 6 - 15) + 10)
-end
+perlin_fade: f64 = (t: f64)
+  t * t * t * (t * (t * 6 - 15) + 10)
 
-perlin_lerp(a: f64, b: f64, t: f64): f64
-    a + t * (b - a)
-end
+perlin_lerp: f64 = (a: f64, b: f64, t: f64)
+  a + t * (b - a)
 
-perlin_grad_2d(hash: i64, x: f64, y: f64): f64
-    h = hash & 3
-    if h == 0 return x + y end
-    if h == 1 return -x + y end
-    if h == 2 return x - y end
-    return -x - y
-end
+perlin_grad_2d: f64 = (hash: i64, x: f64, y: f64)
+  h = hash & 3
+  if h == 0
+    return x + y
+  if h == 1
+    return -x + y
+  if h == 2
+    return x - y
+  return -x - y
 
-perlin_2d(perm: any, x: f64, y: f64): f64
-    xi = x:floor() & 255
-    yi = y:floor() & 255
-    xf = x - x:floor()
-    yf = y - y:floor()
+perlin_2d: f64 = (perm: any, x: f64, y: f64)
+  xi = x:floor() & 255
+  yi = y:floor() & 255
+  xf = x - x:floor()
+  yf = y - y:floor()
 
-    u = perlin_fade(xf)
-    v = perlin_fade(yf)
+  u = perlin_fade(xf)
+  v = perlin_fade(yf)
 
-    aa = perm[perm[xi] + yi]
-    ab = perm[perm[xi] + yi + 1]
-    ba = perm[perm[xi + 1] + yi]
-    bb = perm[perm[xi + 1] + yi + 1]
+  aa = perm[perm[xi] + yi]
+  ab = perm[perm[xi] + yi + 1]
+  ba = perm[perm[xi + 1] + yi]
+  bb = perm[perm[xi + 1] + yi + 1]
 
-    x1 = perlin_lerp(perlin_grad_2d(aa, xf, yf), perlin_grad_2d(ba, xf - 1, yf), u)
-    x2 = perlin_lerp(perlin_grad_2d(ab, xf, yf - 1), perlin_grad_2d(bb, xf - 1, yf - 1), u)
-    perlin_lerp(x1, x2, v)
-end
+  x1 = perlin_lerp(perlin_grad_2d(aa, xf, yf), perlin_grad_2d(ba, xf - 1, yf), u)
+  x2 = perlin_lerp(perlin_grad_2d(ab, xf, yf - 1), perlin_grad_2d(bb, xf - 1, yf - 1), u)
+  perlin_lerp(x1, x2, v)
 
 # ═══════════════════════════════════════════════════════════════
 # Perlin Noise (3D)
 # ═══════════════════════════════════════════════════════════════
 
-perlin_grad_3d(hash: i64, x: f64, y: f64, z: f64): f64
-    h = hash & 15
-    u = h < 8 and x or y
-    v = h < 4 and y or (h == 12 or h == 14) and x or z
-    if h < 4 v = x end
-    if h == 12 or h == 14 v = x end
-    if h & 1 != 0 u = -u end
-    if h & 2 != 0 v = -v end
-    u + v
-end
+perlin_grad_3d: f64 = (hash: i64, x: f64, y: f64, z: f64)
+  h = hash & 15
+  u = h < 8 and x or y
+  v = h < 4 and y or (h == 12 or h == 14) and x or z
+  if h < 4
+    v = x
+  if h == 12 or h == 14
+    v = x
+  if h & 1 != 0
+    u = -u
+  if h & 2 != 0
+    v = -v
+  u + v
 
-perlin_3d(perm: any, x: f64, y: f64, z: f64): f64
-    xi = x:floor() & 255
-    yi = y:floor() & 255
-    zi = z:floor() & 255
-    xf = x - x:floor()
-    yf = y - y:floor()
-    zf = z - z:floor()
+perlin_3d: f64 = (perm: any, x: f64, y: f64, z: f64)
+  xi = x:floor() & 255
+  yi = y:floor() & 255
+  zi = z:floor() & 255
+  xf = x - x:floor()
+  yf = y - y:floor()
+  zf = z - z:floor()
 
-    u = perlin_fade(xf)
-    v = perlin_fade(yf)
-    w = perlin_fade(zf)
+  u = perlin_fade(xf)
+  v = perlin_fade(yf)
+  w = perlin_fade(zf)
 
-    aaa = perm[perm[perm[xi] + yi] + zi]
-    aba = perm[perm[perm[xi] + yi + 1] + zi]
-    aab = perm[perm[perm[xi] + yi] + zi + 1]
-    abb = perm[perm[perm[xi] + yi + 1] + zi + 1]
-    baa = perm[perm[perm[xi + 1] + yi] + zi]
-    bba = perm[perm[perm[xi + 1] + yi + 1] + zi]
-    bab = perm[perm[perm[xi + 1] + yi] + zi + 1]
-    bbb = perm[perm[perm[xi + 1] + yi + 1] + zi + 1]
+  aaa = perm[perm[perm[xi] + yi] + zi]
+  aba = perm[perm[perm[xi] + yi + 1] + zi]
+  aab = perm[perm[perm[xi] + yi] + zi + 1]
+  abb = perm[perm[perm[xi] + yi + 1] + zi + 1]
+  baa = perm[perm[perm[xi + 1] + yi] + zi]
+  bba = perm[perm[perm[xi + 1] + yi + 1] + zi]
+  bab = perm[perm[perm[xi + 1] + yi] + zi + 1]
+  bbb = perm[perm[perm[xi + 1] + yi + 1] + zi + 1]
 
-    x1 = perlin_lerp(perlin_grad_3d(aaa, xf, yf, zf), perlin_grad_3d(baa, xf - 1, yf, zf), u)
-    x2 = perlin_lerp(perlin_grad_3d(aba, xf, yf - 1, zf), perlin_grad_3d(bba, xf - 1, yf - 1, zf), u)
-    y1 = perlin_lerp(x1, x2, v)
+  x1 = perlin_lerp(perlin_grad_3d(aaa, xf, yf, zf), perlin_grad_3d(baa, xf - 1, yf, zf), u)
+  x2 = perlin_lerp(perlin_grad_3d(aba, xf, yf - 1, zf), perlin_grad_3d(bba, xf - 1, yf - 1, zf), u)
+  y1 = perlin_lerp(x1, x2, v)
 
-    x1 = perlin_lerp(perlin_grad_3d(aab, xf, yf, zf - 1), perlin_grad_3d(bab, xf - 1, yf, zf - 1), u)
-    x2 = perlin_lerp(perlin_grad_3d(abb, xf, yf - 1, zf - 1), perlin_grad_3d(bbb, xf - 1, yf - 1, zf - 1), u)
-    y2 = perlin_lerp(x1, x2, v)
+  x1 = perlin_lerp(perlin_grad_3d(aab, xf, yf, zf - 1), perlin_grad_3d(bab, xf - 1, yf, zf - 1), u)
+  x2 = perlin_lerp(perlin_grad_3d(abb, xf, yf - 1, zf - 1), perlin_grad_3d(bbb, xf - 1, yf - 1, zf - 1), u)
+  y2 = perlin_lerp(x1, x2, v)
 
-    perlin_lerp(y1, y2, w)
-end
+  perlin_lerp(y1, y2, w)
 
 # ═══════════════════════════════════════════════════════════════
 # Simplex Noise (2D)
 # ═══════════════════════════════════════════════════════════════
 
 SIMPLEX_GRAD2 = {
-    {1, 1}, {-1, 1}, {1, -1}, {-1, -1},
-    {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+  { 1, 1 },
+  { -1, 1 },
+  { 1, -1 },
+  { -1, -1 },
+  { 1, 0 },
+  { -1, 0 },
+  { 0, 1 },
+  { 0, -1 }
 }
 
-simplex_2d(perm: any, x: f64, y: f64): f64
-    # Skewing factors
-    F2 = 0.5 * (3:sqrt() - 1)
-    G2 = (3 - 3:sqrt()) / 6
+simplex_2d: f64 = (perm: any, x: f64, y: f64)
+  # Skewing factors
+  F2 = 0.5 * (3:sqrt() - 1)
+  G2 = (3 - 3:sqrt()) / 6
 
-    # Skew input space
-    s = (x + y) * F2
-    i = x + s:floor()
-    j = y + s:floor()
+  # Skew input space
+  s = (x + y) * F2
+  i = x + s:floor()
+  j = y + s:floor()
 
-    # Unskew
-    t = (i + j) * G2
-    x0 = x - (i - t)
-    y0 = y - (j - t)
+  # Unskew
+  t = (i + j) * G2
+  x0 = x - i - t
+  y0 = y - j - t
 
-    # Determine simplex
-    if x0 > y0
-        i1 = 1
-        j1 = 0
-    else
-        i1 = 0
-        j1 = 1
-    end
+  # Determine simplex
+  if x0 > y0
+    i1 = 1
+    j1 = 0
+  else
+    i1 = 0
+    j1 = 1
 
-    # Offsets
-    x1 = x0 - i1 + G2
-    y1 = y0 - j1 + G2
-    x2 = x0 - 1 + 2 * G2
-    y2 = y0 - 1 + 2 * G2
+  # Offsets
+  x1 = x0 - i1 + G2
+  y1 = y0 - j1 + G2
+  x2 = x0 - 1 + 2 * G2
+  y2 = y0 - 1 + 2 * G2
 
-    # Hash
-    ii = i & 255
-    jj = j & 255
-    gi0 = perm[ii + perm[jj]] % 8
-    gi1 = perm[ii + i1 + perm[jj + j1]] % 8
-    gi2 = perm[ii + 1 + perm[jj + 1]] % 8
+  # Hash
+  ii = i & 255
+  jj = j & 255
+  gi0 = perm[ii + perm[jj]] % 8
+  gi1 = perm[ii + i1 + perm[jj + j1]] % 8
+  gi2 = perm[ii + 1 + perm[jj + 1]] % 8
 
-    # Contributions
-    n0 = 0
-    n1 = 0
-    n2 = 0
+  # Contributions
+  n0 = 0
+  n1 = 0
+  n2 = 0
 
-    t0 = 0.5 - x0 * x0 - y0 * y0
-    if t0 >= 0
-        t0 *= t0
-        n0 = t0 * t0 * (SIMPLEX_GRAD2[gi0 + 1][1] * x0 + SIMPLEX_GRAD2[gi0 + 1][2] * y0)
-    end
+  t0 = 0.5 - x0 * x0 - y0 * y0
+  if t0 >= 0
+    t0 = t0 * t0
+    n0 = t0 * t0 * (SIMPLEX_GRAD2[gi0 + 1][1] * x0 + SIMPLEX_GRAD2[gi0 + 1][2] * y0)
 
-    t1 = 0.5 - x1 * x1 - y1 * y1
-    if t1 >= 0
-        t1 *= t1
-        n1 = t1 * t1 * (SIMPLEX_GRAD2[gi1 + 1][1] * x1 + SIMPLEX_GRAD2[gi1 + 1][2] * y1)
-    end
+  t1 = 0.5 - x1 * x1 - y1 * y1
+  if t1 >= 0
+    t1 = t1 * t1
+    n1 = t1 * t1 * (SIMPLEX_GRAD2[gi1 + 1][1] * x1 + SIMPLEX_GRAD2[gi1 + 1][2] * y1)
 
-    t2 = 0.5 - x2 * x2 - y2 * y2
-    if t2 >= 0
-        t2 *= t2
-        n2 = t2 * t2 * (SIMPLEX_GRAD2[gi2 + 1][1] * x2 + SIMPLEX_GRAD2[gi2 + 1][2] * y2)
-    end
+  t2 = 0.5 - x2 * x2 - y2 * y2
+  if t2 >= 0
+    t2 = t2 * t2
+    n2 = t2 * t2 * (SIMPLEX_GRAD2[gi2 + 1][1] * x2 + SIMPLEX_GRAD2[gi2 + 1][2] * y2)
 
-    70 * (n0 + n1 + n2)
-end
+  70 * (n0 + n1 + n2)
 
 # ═══════════════════════════════════════════════════════════════
 # Fractal Brownian Motion (fBM)
 # ═══════════════════════════════════════════════════════════════
 
-fbm_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): f64
-    if octaves == nil octaves = 6 end
-    if lacunarity == nil lacunarity = 2 end
-    if gain == nil gain = 0.5 end
+fbm_2d: f64 = (perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64)
+  if octaves == nil
+    octaves = 6
+  if lacunarity == nil
+    lacunarity = 2
+  if gain == nil
+    gain = 0.5
 
-    value = 0
-    amplitude = 1
-    frequency = 1
-    max_value = 0
+  value = 0
+  amplitude = 1
+  frequency = 1
+  max_value = 0
 
-    i = 0
-    while i < octaves
-        value += amplitude * perlin_2d(perm, x * frequency, y * frequency)
-        max_value += amplitude
-        amplitude *= gain
-        frequency *= lacunarity
-        i += 1
-    end
+  i = 0
+  while i < octaves
+    value = value + amplitude * perlin_2d(perm, x * frequency, y * frequency)
+    max_value = max_value + amplitude
+    amplitude = amplitude * gain
+    frequency = frequency * lacunarity
+    i = i + 1
 
-    value / max_value
-end
+  value / max_value
 
-fbm_3d(perm: any, x: f64, y: f64, z: f64, octaves: i64, lacunarity: f64, gain: f64): f64
-    if octaves == nil octaves = 6 end
-    if lacunarity == nil lacunarity = 2 end
-    if gain == nil gain = 0.5 end
+fbm_3d: f64 = (perm: any, x: f64, y: f64, z: f64, octaves: i64, lacunarity: f64, gain: f64)
+  if octaves == nil
+    octaves = 6
+  if lacunarity == nil
+    lacunarity = 2
+  if gain == nil
+    gain = 0.5
 
-    value = 0
-    amplitude = 1
-    frequency = 1
-    max_value = 0
+  value = 0
+  amplitude = 1
+  frequency = 1
+  max_value = 0
 
-    i = 0
-    while i < octaves
-        value += amplitude * perlin_3d(perm, x * frequency, y * frequency, z * frequency)
-        max_value += amplitude
-        amplitude *= gain
-        frequency *= lacunarity
-        i += 1
-    end
+  i = 0
+  while i < octaves
+    value = value + amplitude * perlin_3d(perm, x * frequency, y * frequency, z * frequency)
+    max_value = max_value + amplitude
+    amplitude = amplitude * gain
+    frequency = frequency * lacunarity
+    i = i + 1
 
-    value / max_value
-end
+  value / max_value
 
 # ═══════════════════════════════════════════════════════════════
 # Ridged Noise
 # ═══════════════════════════════════════════════════════════════
 
-ridged_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): f64
-    if octaves == nil octaves = 6 end
-    if lacunarity == nil lacunarity = 2 end
-    if gain == nil gain = 0.5 end
+ridged_2d: f64 = (perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64)
+  if octaves == nil
+    octaves = 6
+  if lacunarity == nil
+    lacunarity = 2
+  if gain == nil
+    gain = 0.5
 
-    value = 0
-    amplitude = 1
-    frequency = 1
-    max_value = 0
+  value = 0
+  amplitude = 1
+  frequency = 1
+  max_value = 0
 
-    i = 0
-    while i < octaves
-        n = 1 - perlin_2d(perm, x * frequency, y * frequency):abs()
-        n *= n
-        value += amplitude * n
-        max_value += amplitude
-        amplitude *= gain
-        frequency *= lacunarity
-        i += 1
-    end
+  i = 0
+  while i < octaves
+    n = 1 - perlin_2d(perm, x * frequency, y * frequency):abs()
+    n = n * n
+    value = value + amplitude * n
+    max_value = max_value + amplitude
+    amplitude = amplitude * gain
+    frequency = frequency * lacunarity
+    i = i + 1
 
-    value / max_value
-end
+  value / max_value
 
 # ═══════════════════════════════════════════════════════════════
 # Domain Warping
 # ═══════════════════════════════════════════════════════════════
 
-domain_warp_2d(perm: any, x: f64, y: f64, strength: f64): f64
-    if strength == nil strength = 1 end
-    qx = fbm_2d(perm, x, y, 4)
-    qy = fbm_2d(perm, x + 5.2, y + 1.3, 4)
-    fbm_2d(perm, x + strength * qx, y + strength * qy, 4)
-end
+domain_warp_2d: f64 = (perm: any, x: f64, y: f64, strength: f64)
+  if strength == nil
+    strength = 1
+  qx = fbm_2d(perm, x, y, 4)
+  qy = fbm_2d(perm, x + 5.2, y + 1.3, 4)
+  fbm_2d(perm, x + strength * qx, y + strength * qy, 4)
 
 # ═══════════════════════════════════════════════════════════════
 # Voronoi Noise
 # ═══════════════════════════════════════════════════════════════
 
-voronoi_2d(x: f64, y: f64, seed: i64): any
-    xi = x:floor()
-    yi = y:floor()
+voronoi_2d: any = (x: f64, y: f64, seed: i64)
+  xi = x:floor()
+  yi = y:floor()
 
-    min_dist = 1e10
-    second_min = 1e10
-    closest_cell = {x = 0, y = 0}
+  min_dist = 10000000000.0
+  second_min = 10000000000.0
+  closest_cell = { x = 0, y = 0 }
 
-    dy = -1
-    while dy <= 1
-        dx = -1
-        while dx <= 1
-            cx = xi + dx
-            cy = yi + dy
+  dy = -1
+  while dy <= 1
+    dx = -1
+    while dx <= 1
+      cx = xi + dx
+      cy = yi + dy
 
-            # Hash for cell
-            h = (cx * 374761393 + cy * 668265263 + seed) & 0x7FFFFFFF
-            px = cx + (h % 1000) / 1000
-            h = (h * 1103515245 + 12345) & 0x7FFFFFFF
-            py = cy + (h % 1000) / 1000
+      # Hash for cell
+      h = (cx * 374761393 + cy * 668265263 + seed) & 2147483647
+      px = cx + h % 1000 / 1000
+      h = (h * 1103515245 + 12345) & 2147483647
+      py = cy + h % 1000 / 1000
 
-            dist = (x - px) * (x - px) + (y - py) * (y - py):sqrt()
+      dist = (x - px) * (x - px) + (y - py) * y - py:sqrt()
 
-            if dist < min_dist
-                second_min = min_dist
-                min_dist = dist
-                closest_cell = {x = px, y = py}
-            elseif dist < second_min
-                second_min = dist
-            end
+      if dist < min_dist
+        second_min = min_dist
+        min_dist = dist
+        closest_cell = { x = px, y = py }
+      elseif dist < second_min
+        second_min = dist
 
-            dx += 1
-        end
-        dy += 1
-    end
+      dx = dx + 1
+    dy = dy + 1
 
-    {
-        distance = min_dist,
-        cell = closest_cell,
-        edge = second_min - min_dist,
-    }
-end
+  {
+    distance = min_dist,
+    cell = closest_cell,
+    edge = second_min - min_dist
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Worley Noise
 # ═══════════════════════════════════════════════════════════════
 
-worley_2d(x: f64, y: f64, seed: i64): f64
-    result = voronoi_2d(x, y, seed)
-    result.distance
-end
+worley_2d: f64 = (x: f64, y: f64, seed: i64)
+  result = voronoi_2d(x, y, seed)
+  result.distance
 
-worley_edge_2d(x: f64, y: f64, seed: i64): f64
-    result = voronoi_2d(x, y, seed)
-    result.edge
-end
-
+worley_edge_2d: f64 = (x: f64, y: f64, seed: i64)
+  result = voronoi_2d(x, y, seed)
+  result.edge
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Permutation
 # Perlin
 # Simplex

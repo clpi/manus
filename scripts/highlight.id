@@ -60,31 +60,37 @@ indent = "    "
 # The corpus. `kind` decides what the diagnostic count is allowed to be:
 # `clean` fixtures must have none, `control` must have some.
 srcs = {
-    "fixtures/highlight/idol/copula.id",
-    "fixtures/highlight/idol/union.id",
-    "fixtures/highlight/idol/splits.id",
-    "fixtures/highlight/idol/linelaw.id",
-    "fixtures/highlight/surface/dnir.id",
-    "fixtures/highlight/surface/asm.id",
-    "fixtures/highlight/surface/ebnf.id",
-    "fixtures/highlight/surface/foreign.id",
-    "fixtures/highlight/mixed/dot.id",
+  "fixtures/highlight/idol/copula.id",
+  "fixtures/highlight/idol/union.id",
+  "fixtures/highlight/idol/splits.id",
+  "fixtures/highlight/idol/linelaw.id",
+  "fixtures/highlight/surface/dnir.id",
+  "fixtures/highlight/surface/asm.id",
+  "fixtures/highlight/surface/ebnf.id",
+  "fixtures/highlight/surface/foreign.id",
+  "fixtures/highlight/mixed/dot.id"
 }
 golds = {
-    "fixtures/highlight/roles/copula.id",
-    "fixtures/highlight/roles/union.id",
-    "fixtures/highlight/roles/splits.id",
-    "fixtures/highlight/roles/linelaw.id",
-    "fixtures/highlight/roles/dnir.id",
-    "fixtures/highlight/roles/asm.id",
-    "fixtures/highlight/roles/ebnf.id",
-    "fixtures/highlight/roles/foreign.id",
-    "fixtures/highlight/roles/dot.id",
+  "fixtures/highlight/roles/copula.id",
+  "fixtures/highlight/roles/union.id",
+  "fixtures/highlight/roles/splits.id",
+  "fixtures/highlight/roles/linelaw.id",
+  "fixtures/highlight/roles/dnir.id",
+  "fixtures/highlight/roles/asm.id",
+  "fixtures/highlight/roles/ebnf.id",
+  "fixtures/highlight/roles/foreign.id",
+  "fixtures/highlight/roles/dot.id"
 }
 kinds = {
-    "clean", "clean", "clean", "clean",
-    "clean", "clean", "clean", "clean",
-    "control",
+  "clean",
+  "clean",
+  "clean",
+  "clean",
+  "clean",
+  "clean",
+  "clean",
+  "clean",
+  "control"
 }
 
 # ── THE SPAN CORPUS (gap[078]) ───────────────────────────────────────────────
@@ -108,13 +114,13 @@ kinds = {
 # adjacent tokens that take the same pair are ONE span; stated because
 # `(a + b) * c` yields one `layout` span for `((` shapes if they ever meet.
 spansrcs = {
-    "fixtures/highlight/anchor.id",
-    "fixtures/highlight/bind.id",
-    "fixtures/highlight/copula.id",
-    "fixtures/highlight/literal.id",
-    "fixtures/highlight/paren.id",
-    "fixtures/highlight/union.id",
-    "fixtures/highlight/walk.id",
+  "fixtures/highlight/anchor.id",
+  "fixtures/highlight/bind.id",
+  "fixtures/highlight/copula.id",
+  "fixtures/highlight/literal.id",
+  "fixtures/highlight/paren.id",
+  "fixtures/highlight/union.id",
+  "fixtures/highlight/walk.id"
 }
 # `union.id` is a CONTROL: line 3 is `out = xs | ys`, which §0g reads as a
 # stream place composed by `|` and the retrieval ruling reads it as `bor` over integers.
@@ -122,79 +128,84 @@ spansrcs = {
 # DIAGNOSES. The GAP-078 ruling does not reach that span — recorded as a
 # finding about the ruling, and gated as a control rather than guessed green.
 spankinds = {
-    "clean", "clean", "clean", "clean",
-    "clean", "control", "clean",
+  "clean",
+  "clean",
+  "clean",
+  "clean",
+  "clean",
+  "control",
+  "clean"
 }
 
 # THE ASSERTIONS, written from the law rather than from the output.
 #   fixture-index  line  byte  role  card  what it proves
 proofs = {
-    # H-1, THE FOUR THAT ARE THE WHOLE POINT. Two glyphs, four roles.
-    "1 5 2 copula ascribe H-1 the SPACED colon is the copula, `x: f64`",
-    "1 7 7 invoke apply H-1 the TIGHT colon is invoke, `lx:read` — same glyph",
-    "2 6 24 union alt H-1 a bar ON a descriptor edge is the union, `file | error`",
-    "2 8 9 pipe stream H-1 the same bar with no edge open is the pipe, `sh .. | ..`",
-    # and the chain: the union above is a union BECAUSE of this copula.
-    "2 6 17 copula ascribe the copula that OPENED the edge the union reads",
-    "2 7 15 union alt a literal union, still on the edge the copula opened",
-    "2 9 14 pipe stream the second pipe, so the pipe reading is not a one-off",
-    "1 9 9 invoke apply the first invoke of a chain",
-    "1 9 16 invoke apply the second, after a void realization",
-    "1 7 5 place value the receiver left of an invoke is a place, not a callee",
-    # §0g FINE SPLITS: one role, several cards.
-    "3 4 8 operator bind = BINDS, asserting a fact",
-    "3 5 3 operator update += is an UPDATE edge, not a binding",
-    "3 6 10 operator relation == is a RELATION query, not either",
-    "3 7 5 layout strata level parens are a strata boundary",
-    "3 7 16 layout param parameter parens are not, on the same line",
-    "3 10 6 layout group and grouping parens are neither",
-    "3 7 19 layout stratify the comma STRATIFIES a group",
-    "3 8 6 walk write a walk left of a binding WRITES",
-    "3 9 9 operator unit a product on a descriptor edge is a UNIT",
-    "3 10 14 operator arith the same glyph off the edge is arithmetic",
-    "3 11 19 case inferred a leading dot in descriptor-expected position",
-    "3 11 12 descriptor slot a bound name inside a descriptor brace is a slot",
-    "3 11 5 descriptor shape a name before a brace heads a descriptor, ladder (a)",
-    "3 11 10 layout brace and the brace itself is a descriptor brace",
-    # LINE-LAW (§0i).
-    "4 5 9 operator bind the binder that lets the clause one-line legally",
-    "4 10 1 keyword control the guard that cannot be one-lined without a token",
-    "4 10 6 operator relation and the relation inside it",
-    # ONE COLOUR LANGUAGE across five surfaces.
-    "5 5 1 callable opcode a dnir opcode and a method call are ONE role",
-    "5 5 7 place reg registers are PLACES",
-    "5 7 1 callable opcode the same, two lines down",
-    # §4 per-language totalization: a dnir leftover NAMES a node in
-    # the flattened graph. It used to reach the generic `value` card, which is
-    # no more than its lexical class and so a §0g SPECIFICITY finding rather
-    # than coverage. These two rows are the difference: the golden stores only
-    # the ROLE letter, so without them `fact` and `value` are indistinguishable
-    # and the repair could silently regress.
-    "5 9 6 place fact a dnir leftover is a FACT NAME, never a generic value",
-    "5 9 11 place fact the second leftover on the line, so it is not a one-off",
-    "6 4 5 callable opcode an asm mnemonic takes the opcode card too",
-    "6 4 9 place reg and a register the same place role as a dnir temporary",
-    "6 5 13 number imm a machine immediate is a number",
-    "7 5 6 copula ascribe ebnf ::= IS the ascription edge",
-    "7 6 17 union alt ebnf alternation IS the descriptor union",
-    "7 7 12 literal term an ebnf terminal is a literal",
-    "8 6 1 foreign opaque the trust boundary is typographic",
-    # G-TOTAL: two candidates DIAGNOSE.
-    "9 11 1 ambiguous ambiguous a leading dot at a clause head has two readings",
-    "9 13 6 ambiguous ambiguous the semicolon names no edge",
-    # gap[078] Q1, THE RULED LINE. `count:u32` is TIGHT and carries NO call
-    # group. grammar.md R1 — normative — says COPULA; §0d's spacing
-    # sentence says invoke and is a RENDERING corollary, not the decider. These
-    # two rows are the ruling made falsifiable at the byte: a projector that
-    # reads spacing answers `invoke` at 12:6 and `callable` at 12:7.
-    "1 13 6 copula ascribe R1 DECIDES: a tight colon with no call group IS",
-    "1 13 7 descriptor shape and what follows it is therefore a descriptor",
-    # §4, the one place the law names a ROLE where the hue
-    # discriminator would have named a card.
-    "3 15 9 retrieve walk `to[str]` is a SPACE WALK, not a bracket",
-    "3 16 7 retrieve index the same glyph over a value key RETRIEVES",
-    "9 16 7 ambiguous ambiguous and over a bare name it has two candidates",
+  "1 5 2 copula ascribe H-1 the SPACED colon is the copula, `x: f64`",
+  "1 7 7 invoke apply H-1 the TIGHT colon is invoke, `lx:read` — same glyph",
+  "2 6 24 union alt H-1 a bar ON a descriptor edge is the union, `file | error`",
+  "2 8 9 pipe stream H-1 the same bar with no edge open is the pipe, `sh .. | ..`",
+  "2 6 17 copula ascribe the copula that OPENED the edge the union reads",
+  "2 7 15 union alt a literal union, still on the edge the copula opened",
+  "2 9 14 pipe stream the second pipe, so the pipe reading is not a one-off",
+  "1 9 9 invoke apply the first invoke of a chain",
+  "1 9 16 invoke apply the second, after a void realization",
+  "1 7 5 place value the receiver left of an invoke is a place, not a callee",
+  "3 4 8 operator bind = BINDS, asserting a fact",
+  "3 5 3 operator update += is an UPDATE edge, not a binding",
+  "3 6 10 operator relation == is a RELATION query, not either",
+  "3 7 5 layout strata level parens are a strata boundary",
+  "3 7 16 layout param parameter parens are not, on the same line",
+  "3 10 6 layout group and grouping parens are neither",
+  "3 7 19 layout stratify the comma STRATIFIES a group",
+  "3 8 6 walk write a walk left of a binding WRITES",
+  "3 9 9 operator unit a product on a descriptor edge is a UNIT",
+  "3 10 14 operator arith the same glyph off the edge is arithmetic",
+  "3 11 19 case inferred a leading dot in descriptor-expected position",
+  "3 11 12 descriptor slot a bound name inside a descriptor brace is a slot",
+  "3 11 5 descriptor shape a name before a brace heads a descriptor, ladder (a)",
+  "3 11 10 layout brace and the brace itself is a descriptor brace",
+  "4 5 9 operator bind the binder that lets the clause one-line legally",
+  "4 10 1 keyword control the guard that cannot be one-lined without a token",
+  "4 10 6 operator relation and the relation inside it",
+  "5 5 1 callable opcode a dnir opcode and a method call are ONE role",
+  "5 5 7 place reg registers are PLACES",
+  "5 7 1 callable opcode the same, two lines down",
+  "5 9 6 place fact a dnir leftover is a FACT NAME, never a generic value",
+  "5 9 11 place fact the second leftover on the line, so it is not a one-off",
+  "6 4 5 callable opcode an asm mnemonic takes the opcode card too",
+  "6 4 9 place reg and a register the same place role as a dnir temporary",
+  "6 5 13 number imm a machine immediate is a number",
+  "7 5 6 copula ascribe ebnf ::= IS the ascription edge",
+  "7 6 17 union alt ebnf alternation IS the descriptor union",
+  "7 7 12 literal term an ebnf terminal is a literal",
+  "8 6 1 foreign opaque the trust boundary is typographic",
+  "9 11 1 ambiguous ambiguous a leading dot at a clause head has two readings",
+  "9 13 6 ambiguous ambiguous the semicolon names no edge",
+  "1 13 6 copula ascribe R1 DECIDES: a tight colon with no call group IS",
+  "1 13 7 descriptor shape and what follows it is therefore a descriptor",
+  "3 15 9 retrieve walk `to[str]` is a SPACE WALK, not a bracket",
+  "3 16 7 retrieve index the same glyph over a value key RETRIEVES",
+  "9 16 7 ambiguous ambiguous and over a bare name it has two candidates"
 }
+# H-1, THE FOUR THAT ARE THE WHOLE POINT. Two glyphs, four roles.
+# and the chain: the union above is a union BECAUSE of this copula.
+# §0g FINE SPLITS: one role, several cards.
+# LINE-LAW (§0i).
+# ONE COLOUR LANGUAGE across five surfaces.
+# §4 per-language totalization: a dnir leftover NAMES a node in
+# the flattened graph. It used to reach the generic `value` card, which is
+# no more than its lexical class and so a §0g SPECIFICITY finding rather
+# than coverage. These two rows are the difference: the golden stores only
+# the ROLE letter, so without them `fact` and `value` are indistinguishable
+# and the repair could silently regress.
+# G-TOTAL: two candidates DIAGNOSE.
+# gap[078] Q1, THE RULED LINE. `count:u32` is TIGHT and carries NO call
+# group. grammar.md R1 — normative — says COPULA; §0d's spacing
+# sentence says invoke and is a RENDERING corollary, not the decider. These
+# two rows are the ruling made falsifiable at the byte: a projector that
+# reads spacing answers `invoke` at 12:6 and `callable` at 12:7.
+# §4, the one place the law names a ROLE where the hue
+# discriminator would have named a card.
 
 # MEASURED floors, never estimated. Raise when a row goes green; lowering one
 # needs a sentence saying why the ROW, not the code, was wrong.
@@ -208,78 +219,62 @@ spanfloor = 96
 # unusable: LAW-ONE puts `[a-z]_[a-z]` at zero and the deny table counts every
 # call site. Asked of the shell instead, which also answers the question this
 # gate actually has — not "is there a file" but "can I run it".
-runnable(path: str): bool
-    std.script.status("test -x {path}") == 0
-end
+runnable: bool = (path: str)
+  std.script.status("test -x {path}") == 0
 
-slurp(path: str): str
-    f = io.open(path, "r")
-    body: str = ""
-    if f
-        body = f:read("a")
-        f:close()
-    end
-    body
-end
+slurp: str = (path: str)
+  f = io.open(path, "r")
+  body: str = ""
+  if f
+    body = f:read("a")
+    f:close()
+  body
 
-field(line: str, n: i64): str
-    out: str = ""
-    got: i64 = 0
-    i: i64 = 1
-    inword: bool = false
-    start: i64 = 0
-    while i <= line:len()
-        b: i64 = line:byte(i)
-        if b == 32 or b == 9
-            if inword
-                got += 1
-                if got == n
-                    out = line:sub(start, i - 1)
-                end
-                inword = false
-            end
-        else
-            if !inword
-                inword = true
-                start = i
-            end
-        end
-        i += 1
-    end
-    if inword
-        got += 1
+field: str = (line: str, n: i64)
+  out: str = ""
+  got: i64 = 0
+  i: i64 = 1
+  inword: bool = false
+  start: i64 = 0
+  while i <= line:len()
+    b: i64 = line:byte(i)
+    if b == 32 or b == 9
+      if inword
+        got = got + 1
         if got == n
-            out = line:sub(start, line:len())
-        end
-    end
-    out
-end
+          out = line:sub(start, i - 1)
+        inword = false
+    else
+      if not inword
+        inword = true
+        start = i
+    i = i + 1
+  if inword
+    got = got + 1
+    if got == n
+      out = line:sub(start, line:len())
+  out
 
 # Lines of `body`, with a single trailing empty one dropped. Built by COPYING
 # rather than by assigning nil past the end: shrinking a table by assignment is
 # not something this compilation path does reliably, and a length that silently
 # stays high turns every per-line count into a confident wrong number.
-cut(body: str): any
-    all = {}
-    for i, ln in body:split("\n")
-        all[all:len() + 1] = ln
-    end
-    last: i64 = all:len()
-    if last > 0 and all[last] == ""
-        last -= 1
-    end
-    out = {}
-    i: i64 = 1
-    while i <= last
-        out[out:len() + 1] = all[i]
-        i += 1
-    end
-    out
-end
+cut: any = (body: str)
+  all = {}
+  for i, ln in body:split("\n")
+    all[all:len() + 1] = ln
+  last: i64 = all:len()
+  if last > 0 and all[last] == ""
+    last = last - 1
+  out = {}
+  i: i64 = 1
+  while i <= last
+    out[out:len() + 1] = all[i]
+    i = i + 1
+  out
 
-quote(): str
-    "\""
-end
+quote: str = ()
+  "\""
 
 # The quoted rows of a golden file, in order. The golden is a idol table; this
 # reads it as TEXT on purpose, so a golden that stops being valid idol still
@@ -288,102 +283,77 @@ end
 # Only INDENTED rows are data. The header prose quotes phrases too, and reading
 # those as golden rows shifted every subsequent row by one — which surfaces as
 # "every line differs", the least informative form a real off-by-one can take.
-goldrows(body: str): any
-    out = {}
-    q: str = quote()
-    head: str = indent .. q
-    for i, ln in body:split("\n")
-        if ln:sub(1, 5) == head
-            rest: str = ln:sub(6, ln:len())
-            b: i64 = rest:find(q)
-            if b > 0
-                out[out:len() + 1] = rest:sub(1, b - 1)
-            end
-        end
-    end
-    out
-end
+goldrows: any = (body: str)
+  out = {}
+  q: str = quote()
+  head: str = indent .. q
+  for i, ln in body:split("\n")
+    if ln:sub(1, 5) == head
+      rest: str = ln:sub(6, ln:len())
+      b: i64 = rest:find(q)
+      if b > 0
+        out[out:len() + 1] = rest:sub(1, b - 1)
+  out
 
-pad(s: str, width: i64): str
-    out: str = s
-    while out:len() < width
-        out = "{out} "
-    end
-    out
-end
+pad: str = (s: str, width: i64)
+  out: str = s
+  while out:len() < width
+    out = "{out} "
+  out
 
-blank(b: i64): bool
-    b == 32 or b == 9
-end
+blank: bool = (b: i64)
+  b == 32 or b == 9
 
-wordy(b: i64): bool
-    (b >= 97 and b <= 122) or (b >= 65 and b <= 90) or b == 95 or (b >= 48 and b <= 57)
-end
+wordy: bool = (b: i64)
+  b >= 97 and b <= 122 or b >= 65 and b <= 90 or b == 95 or b >= 48 and b <= 57
 
-held(acc: str, one: str): bool
-    found: bool = false
-    for i, w in acc:split(" ")
-        if w == one
-            found = true
-        end
-    end
-    found
-end
+held: bool = (acc: str, one: str)
+  found: bool = false
+  for i, w in acc:split(" ")
+    if w == one
+      found = true
+  found
 
-tally(acc: str): i64
-    n: i64 = 0
-    for i, w in acc:split(" ")
-        if w != ""
-            n += 1
-        end
-    end
-    n
-end
+tally: i64 = (acc: str)
+  n: i64 = 0
+  for i, w in acc:split(" ")
+    if w != ""
+      n = n + 1
+  n
 
 # Column `want` of the taxonomy row whose column `key` equals `code`. Read from
 # the projector's own rendered table rather than restated here: a second copy
 # of the taxonomy is how a gate starts agreeing with a bug.
-lookup(want: i64, key: i64, code: str): str
-    out: str = ""
-    body: str = slurp("{work}/table")
-    for i, ln in body:split("\n")
-        if field(ln, key) == code and field(ln, 3) != "" and field(ln, 9) != ""
-            out = field(ln, want)
-        end
-    end
-    out
-end
+lookup: str = (want: i64, key: i64, code: str)
+  out: str = ""
+  body: str = slurp("{work}/table")
+  for i, ln in body:split("\n")
+    if field(ln, key) == code and field(ln, 3) != "" and field(ln, 9) != ""
+      out = field(ln, want)
+  out
 
-rolename(code: str): str
-    out: str = "-"
-    if code == "!"
-        out = "ambiguous"
-    end
-    named: str = lookup(1, 2, code)
-    if named != ""
-        out = named
-    end
-    out
-end
+rolename: str = (code: str)
+  out: str = "-"
+  if code == "!"
+    out = "ambiguous"
+  named: str = lookup(1, 2, code)
+  if named != ""
+    out = named
+  out
 
-cardname(role: str, card: str): str
-    out: str = "-"
-    if role == "!"
-        out = "ambiguous"
-    end
-    rname: str = lookup(1, 2, role)
-    body: str = slurp("{work}/table")
-    for i, ln in body:split("\n")
-        if field(ln, 2) == rname and field(ln, 3) == card
-            out = field(ln, 1)
-        end
-    end
-    out
-end
+cardname: str = (role: str, card: str)
+  out: str = "-"
+  if role == "!"
+    out = "ambiguous"
+  rname: str = lookup(1, 2, role)
+  body: str = slurp("{work}/table")
+  for i, ln in body:split("\n")
+    if field(ln, 2) == rname and field(ln, 3) == card
+      out = field(ln, 1)
+  out
 
 digit: bool = (b: i64)
-    b >= 48 and b <= 57
-end
+  b >= 48 and b <= 57
 
 # One sidecar line to the record `ln col wide role`, or "" when the line is not
 # a span row. Prose MUST come back "" — a reader that accepted everything would
@@ -391,732 +361,618 @@ end
 # corpus is more comment than data. Positive-controlled in `main` on both
 # halves: a real row must parse, and a comment must not.
 sidespan: str = (raw: str)
-    out: str = ""
-    n: i64 = raw:len()
-    got: i64 = 0
-    nums: str = ""
-    i: i64 = 1
-    while i <= n and blank(raw:byte(i))
-        i += 1
-    end
-    if i <= n and raw:byte(i) == 123
-        i += 1
-        while i <= n and got < 3
-            if digit(raw:byte(i))
-                start: i64 = i
-                while i <= n and digit(raw:byte(i))
-                    i += 1
-                end
-                piece: str = raw:sub(start, i - 1)
-                if nums == ""
-                    nums = piece
-                else
-                    nums = "{nums} {piece}"
-                end
-                got += 1
-            else
-                i += 1
-            end
-        end
-        a: i64 = 0
-        while i <= n and a == 0
-            if raw:byte(i) == 34
-                a = i
-            end
-            i += 1
-        end
-        b: i64 = 0
-        while i <= n and b == 0
-            if raw:byte(i) == 34
-                b = i
-            end
-            i += 1
-        end
-        if got == 3 and a > 0 and b > a
-            role: str = raw:sub(a + 1, b - 1)
-            out = "{nums} {role}"
-        end
-    end
-    out
-end
+  out: str = ""
+  n: i64 = raw:len()
+  got: i64 = 0
+  nums: str = ""
+  i: i64 = 1
+  while i <= n and blank(raw:byte(i))
+    i = i + 1
+  if i <= n and raw:byte(i) == 123
+    i = i + 1
+    while i <= n and got < 3
+      if digit(raw:byte(i))
+        start: i64 = i
+        while i <= n and digit(raw:byte(i))
+          i = i + 1
+        piece: str = raw:sub(start, i - 1)
+        if nums == ""
+          nums = piece
+        else
+          nums = "{nums} {piece}"
+        got = got + 1
+      else
+        i = i + 1
+    a: i64 = 0
+    while i <= n and a == 0
+      if raw:byte(i) == 34
+        a = i
+      i = i + 1
+    b: i64 = 0
+    while i <= n and b == 0
+      if raw:byte(i) == 34
+        b = i
+      i = i + 1
+    if got == 3 and a > 0 and b > a
+      role: str = raw:sub(a + 1, b - 1)
+      out = "{nums} {role}"
+  out
 
 # A capture name: `@` then word bytes, stopping at the first byte that cannot
 # be part of one. `] @operator)` and `] @operator` are the SAME capture, and
 # counting the trailing paren as part of the name reported two where the
 # grammar has one — which would have overstated the baseline this beats.
-capname(tok: str): str
-    i: i64 = 2
-    while i <= tok:len() and (wordy(tok:byte(i)) or tok:byte(i) == 46)
-        i += 1
-    end
-    tok:sub(1, i - 1)
-end
+capname: str = (tok: str)
+  i: i64 = 2
+  while i <= tok:len() and (wordy(tok:byte(i)) or tok:byte(i) == 46)
+    i = i + 1
+  tok:sub(1, i - 1)
 
 # Distinct tree-sitter captures reachable from a quoted glyph: for each place
 # the glyph appears quoted, scan forward to the first `@name` and record it.
 # That is exactly how a reader of the query file would answer the question.
-captures(body: str, glyph: str): i64
-    q: str = quote()
-    needle: str = "{q}{glyph}{q}"
-    acc: str = ""
-    lines = cut(body)
-    i: i64 = 1
-    while i <= lines:len()
-        ln: str = lines[i]
-        if ln:sub(1, 1) != ";" and ln:find(needle) > 0
-            j: i64 = i
-            found: str = ""
-            while j <= lines:len() and found == ""
-                cur: str = lines[j]
-                at: i64 = cur:find("@")
-                if at > 0
-                    rest: str = cur:sub(at, cur:len())
-                    found = capname(field(rest, 1))
-                end
-                j += 1
-            end
-            if found != "" and !held(acc, found)
-                acc = "{acc} {found}"
-            end
-        end
-        i += 1
-    end
-    tally(acc)
-end
+captures: i64 = (body: str, glyph: str)
+  q: str = quote()
+  needle: str = "{q}{glyph}{q}"
+  acc: str = ""
+  lines = cut(body)
+  i: i64 = 1
+  while i <= lines:len()
+    ln: str = lines[i]
+    if ln:sub(1, 1) != ";" and ln:find(needle) > 0
+      j: i64 = i
+      found: str = ""
+      while j <= lines:len() and found == ""
+        cur: str = lines[j]
+        at: i64 = cur:find("@")
+        if at > 0
+          rest: str = cur:sub(at, cur:len())
+          found = capname(field(rest, 1))
+        j = j + 1
+      if found != "" and not held(acc, found)
+        acc = "{acc} {found}"
+    i = i + 1
+  tally(acc)
 
-main(): i64
-    duo: str = os.getenv("hlduo")
-    if duo == ""
-        duo = "./zig-out/bin/idol"
-    end
-    print("highlight corpus — the role projection, measured")
-    print("  duo        {duo}")
+main: i64 = ()
+  duo: str = os.getenv("hlduo")
+  if duo == ""
+    duo = "./zig-out/bin/idol"
+  print("highlight corpus — the role projection, measured")
+  print("  duo        {duo}")
 
-    # POSITIVE CONTROL ON THE TOOLCHAIN. A gate that cannot find its compiler
-    # scores every row zero and reads exactly like a clean run.
-    if !runnable(duo)
-        print("highlight corpus: FAIL — no duo binary at {duo}; set hlduo")
-        os.exit(3)
-    end
-    if slurp(projector) == ""
-        print("highlight corpus: FAIL — no projector at {projector}")
-        os.exit(3)
-    end
+  # POSITIVE CONTROL ON THE TOOLCHAIN. A gate that cannot find its compiler
+  # scores every row zero and reads exactly like a clean run.
+  if not runnable(duo)
+    print("highlight corpus: FAIL — no duo binary at {duo}; set hlduo")
+    os.exit(3)
+  if slurp(projector) == ""
+    print("highlight corpus: FAIL — no projector at {projector}")
+    os.exit(3)
 
-    script.run("mkdir -p {work}")
-    bin: str = "{work}/hl"
-    build: i64 = script.status("{duo} compile {projector} -o {bin} 2>/dev/null")
-    if build != 0 or !runnable(bin)
-        print("highlight corpus: FAIL — the projector did not compile: {projector}")
-        os.exit(3)
-    end
-    print("  projector  {bin}")
+  script.run("mkdir -p {work}")
+  bin: str = "{work}/hl"
+  build: i64 = script.status("{duo} compile {projector} -o {bin} 2>/dev/null")
+  if build != 0 or not runnable(bin)
+    print("highlight corpus: FAIL — the projector did not compile: {projector}")
+    os.exit(3)
+  print("  projector  {bin}")
 
-    # The taxonomy must pass its own closure check before any number it
-    # produces is worth reading. Exit 3 from the projector IS that check.
-    tax: i64 = script.status("hlmode=table {bin} > {work}/table 2>/dev/null")
-    if tax != 0
-        print("highlight corpus: FAIL — the taxonomy failed its closure check")
-        print("  {work}/table carries what it said")
-        os.exit(3)
-    end
-    nroles: i64 = 0
-    ncards: i64 = 0
-    incards: bool = false
-    for i, ln in cut(slurp("{work}/table"))
-        if ln:find("cards, ") > 0
-            incards = true
-        end
-        if ln:sub(1, 2) == "  " and field(ln, 2) != ""
-            if incards
-                ncards += 1
+  # The taxonomy must pass its own closure check before any number it
+  # produces is worth reading. Exit 3 from the projector IS that check.
+  tax: i64 = script.status("hlmode=table {bin} > {work}/table 2>/dev/null")
+  if tax != 0
+    print("highlight corpus: FAIL — the taxonomy failed its closure check")
+    print("  {work}/table carries what it said")
+    os.exit(3)
+  nroles: i64 = 0
+  ncards: i64 = 0
+  incards: bool = false
+  for i, ln in cut(slurp("{work}/table"))
+    if ln:find("cards, ") > 0
+      incards = true
+    if ln:sub(1, 2) == "  " and field(ln, 2) != ""
+      if incards
+        ncards = ncards + 1
+      else
+        nroles = nroles + 1
+  nroles = nroles - 1
+  ncards = ncards - 1
+  print("  taxonomy   {nroles} roles, {ncards} cards")
+  # H-2 rules CLOSURE, not a count (gap[078]), so no number is asserted here.
+  # The projector's own `closed()` is what convicts a drifted taxonomy, and it
+  # has already run — `hlmode=table` exits 3 if it failed, which is the check
+  # above. What IS asserted is that the set is non-empty and that every role
+  # carries at least one card, both of which a count would have hidden.
+  if nroles < 1 or ncards < nroles
+    print("highlight corpus: FAIL — {nroles} roles and {ncards} cards; a closed set is enumerated and every role is refined")
+    std.os.exit(1)
+
+  if srcs:len() != golds:len() or srcs:len() != kinds:len()
+    print("highlight corpus: FAIL — the fixture rows are not parallel")
+    std.os.exit(3)
+
+  nlines: i64 = 0
+  nbytes: i64 = 0
+  nsolid: i64 = 0
+  nroled: i64 = 0
+  nagree: i64 = 0
+  ndiag: i64 = 0
+  ncontrol: i64 = 0
+  nfix: i64 = 0
+  bad: i64 = 0
+
+  lexs = {}
+  pairsof = {}
+  rolelines = {}
+  cardlines = {}
+  firstline = {}
+  # PROVENANCE (H-7, G-TOTAL): every role a corpus byte actually takes must
+  # answer `why()` with a rule citation and a dnir edge. Tallied by BYTE so
+  # the number weights what the corpus really contains rather than what the
+  # table could contain.
+  codes = {}
+  codebytes = {}
+
+  f: i64 = 1
+  while f <= srcs:len()
+    src: str = srcs[f]
+    gold: str = golds[f]
+    kind: str = kinds[f]
+    if slurp(src) == ""
+      print("  !! missing or empty fixture {src}")
+      bad = bad + 1
+    else
+      std.script.run("hlpath={src} {bin} > {work}/r 2>/dev/null")
+      std.script.run("hlmode=cards hlpath={src} {bin} > {work}/c 2>/dev/null")
+      rl = cut(slurp("{work}/r"))
+      cl = cut(slurp("{work}/c"))
+      sl = cut(slurp(src))
+      gl = goldrows(slurp(gold))
+      nfix = nfix + 1
+      firstline[f] = rolelines:len() + 1
+
+      if rl:len() != sl:len()
+        nl: str = to(str)(sl:len())
+        nr: str = to(str)(rl:len())
+        print("  !! {src}: {nl} source lines, {nr} role lines")
+        bad = bad + 1
+      if gl:len() != rl:len()
+        ng: str = to(str)(gl:len())
+        nr: str = to(str)(rl:len())
+        print("  !! {gold}: {ng} golden rows against {nr} projected")
+        bad = bad + 1
+
+      i: i64 = 1
+      while i <= rl:len()
+        srcln: str = ""
+        if i <= sl:len()
+          srcln = sl[i]
+        roleln: str = rl[i]
+        cardln: str = ""
+        if i <= cl:len()
+          cardln = cl[i]
+        rolelines[rolelines:len() + 1] = roleln
+        cardlines[cardlines:len() + 1] = cardln
+        nlines = nlines + 1
+        nbytes = nbytes + srcln:len()
+
+        # TOTALITY, by length. This is the whole H-6 check.
+        if roleln:len() != srcln:len()
+          a: str = to(str)(srcln:len())
+          c: str = to(str)(roleln:len())
+          n: str = i:to(str)
+          print("  !! {src}:{n} totality — {a} source bytes, {c} roles")
+          bad = bad + 1
+        if i <= gl:len() and gl[i] == roleln
+          nagree = nagree + 1
+        elseif i <= gl:len()
+          n: str = i:to(str)
+          want: str = gl[i]
+          print("  !! {src}:{n} golden mismatch")
+          print("     want {want}")
+          print("     got  {roleln}")
+          bad = bad + 1
+
+        j: i64 = 1
+        while j <= roleln:len()
+          rb: str = roleln:sub(j, j)
+          sb: i64 = 32
+          if j <= srcln:len()
+            sb = srcln:byte(j)
+          if not blank(sb)
+            nsolid = nsolid + 1
+            if rb == "!"
+              ndiag = ndiag + 1
+              if kind == "control"
+                ncontrol = ncontrol + 1
             else
-                nroles += 1
-            end
-        end
-    end
-    nroles -= 1
-    ncards -= 1
-    print("  taxonomy   {nroles} roles, {ncards} cards")
-    # H-2 rules CLOSURE, not a count (gap[078]), so no number is asserted here.
-    # The projector's own `closed()` is what convicts a drifted taxonomy, and it
-    # has already run — `hlmode=table` exits 3 if it failed, which is the check
-    # above. What IS asserted is that the set is non-empty and that every role
-    # carries at least one card, both of which a count would have hidden.
-    if nroles < 1 or ncards < nroles
-        print("highlight corpus: FAIL — {nroles} roles and {ncards} cards; a closed set is enumerated and every role is refined")
-        std.os.exit(1)
-    end
+              nroled = nroled + 1
+              slot: i64 = 0
+              z: i64 = 1
+              while z <= codes:len()
+                if codes[z] == rb
+                  slot = z
+                z = z + 1
+              if slot == 0
+                codes[codes:len() + 1] = rb
+                codebytes[codes:len()] = 0
+                slot = codes:len()
+              codebytes[slot] = codebytes[slot] + 1
+          j = j + 1
 
-    if srcs:len() != golds:len() or srcs:len() != kinds:len()
-        print("highlight corpus: FAIL — the fixture rows are not parallel")
-        std.os.exit(3)
-    end
+        # SPECIFICITY. Measured over PROGRAM lexemes only: comment,
+        # text and foreign spans are excluded, because a per-byte
+        # lexeme inside a comment would swamp the count with letters
+        # that were never in question. Stated rather than silently
+        # filtered.
+        j = 1
+        while j <= roleln:len()
+          rb: str = roleln:sub(j, j)
+          cb: str = cardln:sub(j, j)
+          sb: i64 = 32
+          if j <= srcln:len()
+            sb = srcln:byte(j)
+          if blank(sb) or rb == "m" or rb == "t" or rb == "g"
+            j = j + 1
+          else
+            lex: str = srcln:sub(j, j)
+            step: i64 = 1
+            if wordy(sb)
+              e: i64 = j
+              while e <= srcln:len() and wordy(srcln:byte(e))
+                e = e + 1
+              lex = srcln:sub(j, e - 1)
+              step = e - j
+            one: str = "{rb}{cb}"
+            slot: i64 = 0
+            k: i64 = 1
+            while k <= lexs:len()
+              if lexs[k] == lex
+                slot = k
+              k = k + 1
+            if slot == 0
+              lexs[lexs:len() + 1] = lex
+              pairsof[lexs:len()] = one
+            else
+              prior: str = pairsof[slot]
+              if not held(prior, one)
+                pairsof[slot] = "{prior} {one}"
+            j = j + step
+        i = i + 1
+    f = f + 1
 
-    nlines: i64 = 0
-    nbytes: i64 = 0
-    nsolid: i64 = 0
-    nroled: i64 = 0
-    nagree: i64 = 0
-    ndiag: i64 = 0
-    ncontrol: i64 = 0
-    nfix: i64 = 0
-    bad: i64 = 0
+  print("")
+  print("  TOTALITY (H-6, G-TOTAL coverage)")
+  print("    fixtures        {nfix}")
+  print("    lines           {nlines}")
+  print("    bytes           {nbytes}")
+  print("    nonspace bytes  {nsolid}")
+  print("    carrying a role {nroled}")
+  print("    golden agree    {nagree} of {nlines} lines")
 
-    lexs = {}
-    pairsof = {}
-    rolelines = {}
-    cardlines = {}
-    firstline = {}
-    # PROVENANCE (H-7, G-TOTAL): every role a corpus byte actually takes must
-    # answer `why()` with a rule citation and a dnir edge. Tallied by BYTE so
-    # the number weights what the corpus really contains rather than what the
-    # table could contain.
-    codes = {}
-    codebytes = {}
+  print("")
+  print("  NO GUESSES (G-TOTAL: unresolved-ambiguity spans = 0)")
+  canon: i64 = ndiag - ncontrol
+  print("    canonical fixtures  {canon} diagnostic bytes")
+  print("    negative control    {ncontrol} diagnostic bytes")
+  if canon != 0
+    print("    !! a canonical fixture defaulted where it should have diagnosed")
+    bad = bad + 1
+  if ncontrol == 0
+    print("    !! the negative control produced NO diagnostic — the machinery")
+    print("       is not wired, and every zero above is meaningless")
+    bad = bad + 1
+  clean: i64 = nsolid - ncontrol
+  if nroled != clean
+    m: i64 = clean - nroled
+    print("    !! {m} nonspace bytes carry neither a role nor a diagnostic")
+    bad = bad + 1
 
-    f: i64 = 1
-    while f <= srcs:len()
-        src: str = srcs[f]
-        gold: str = golds[f]
-        kind: str = kinds[f]
-        if slurp(src) == ""
-            print("  !! missing or empty fixture {src}")
-            bad += 1
-        else
-            std.script.run("hlpath={src} {bin} > {work}/r 2>/dev/null")
-            std.script.run("hlmode=cards hlpath={src} {bin} > {work}/c 2>/dev/null")
-            rl = cut(slurp("{work}/r"))
-            cl = cut(slurp("{work}/c"))
-            sl = cut(slurp(src))
-            gl = goldrows(slurp(gold))
-            nfix += 1
-            firstline[f] = rolelines:len() + 1
-
-            if rl:len() != sl:len()
-                nl: str = to(str)(sl:len())
-                nr: str = to(str)(rl:len())
-                print("  !! {src}: {nl} source lines, {nr} role lines")
-                bad += 1
-            end
-            if gl:len() != rl:len()
-                ng: str = to(str)(gl:len())
-                nr: str = to(str)(rl:len())
-                print("  !! {gold}: {ng} golden rows against {nr} projected")
-                bad += 1
-            end
-
-            i: i64 = 1
-            while i <= rl:len()
-                srcln: str = ""
-                if i <= sl:len()
-                    srcln = sl[i]
-                end
-                roleln: str = rl[i]
-                cardln: str = ""
-                if i <= cl:len()
-                    cardln = cl[i]
-                end
-                rolelines[rolelines:len() + 1] = roleln
-                cardlines[cardlines:len() + 1] = cardln
-                nlines += 1
-                nbytes += srcln:len()
-
-                # TOTALITY, by length. This is the whole H-6 check.
-                if roleln:len() != srcln:len()
-                    a: str = to(str)(srcln:len())
-                    c: str = to(str)(roleln:len())
-                    n: str = i:to(str)
-                    print("  !! {src}:{n} totality — {a} source bytes, {c} roles")
-                    bad += 1
-                end
-                if i <= gl:len() and gl[i] == roleln
-                    nagree += 1
-                elseif i <= gl:len()
-                    n: str = i:to(str)
-                    want: str = gl[i]
-                    print("  !! {src}:{n} golden mismatch")
-                    print("     want {want}")
-                    print("     got  {roleln}")
-                    bad += 1
-                end
-
-                j: i64 = 1
-                while j <= roleln:len()
-                    rb: str = roleln:sub(j, j)
-                    sb: i64 = 32
-                    if j <= srcln:len()
-                        sb = srcln:byte(j)
-                    end
-                    if !blank(sb)
-                        nsolid += 1
-                        if rb == "!"
-                            ndiag += 1
-                            if kind == "control"
-                                ncontrol += 1
-                            end
-                        else
-                            nroled += 1
-                            slot: i64 = 0
-                            z: i64 = 1
-                            while z <= codes:len()
-                                if codes[z] == rb
-                                    slot = z
-                                end
-                                z += 1
-                            end
-                            if slot == 0
-                                codes[codes:len() + 1] = rb
-                                codebytes[codes:len()] = 0
-                                slot = codes:len()
-                            end
-                            codebytes[slot] = codebytes[slot] + 1
-                        end
-                    end
-                    j += 1
-                end
-
-                # SPECIFICITY. Measured over PROGRAM lexemes only: comment,
-                # text and foreign spans are excluded, because a per-byte
-                # lexeme inside a comment would swamp the count with letters
-                # that were never in question. Stated rather than silently
-                # filtered.
-                j = 1
-                while j <= roleln:len()
-                    rb: str = roleln:sub(j, j)
-                    cb: str = cardln:sub(j, j)
-                    sb: i64 = 32
-                    if j <= srcln:len()
-                        sb = srcln:byte(j)
-                    end
-                    if blank(sb) or rb == "m" or rb == "t" or rb == "g"
-                        j += 1
-                    else
-                        lex: str = srcln:sub(j, j)
-                        step: i64 = 1
-                        if wordy(sb)
-                            e: i64 = j
-                            while e <= srcln:len() and wordy(srcln:byte(e))
-                                e += 1
-                            end
-                            lex = srcln:sub(j, e - 1)
-                            step = e - j
-                        end
-                        one: str = "{rb}{cb}"
-                        slot: i64 = 0
-                        k: i64 = 1
-                        while k <= lexs:len()
-                            if lexs[k] == lex
-                                slot = k
-                            end
-                            k += 1
-                        end
-                        if slot == 0
-                            lexs[lexs:len() + 1] = lex
-                            pairsof[lexs:len()] = one
-                        else
-                            prior: str = pairsof[slot]
-                            if !held(prior, one)
-                                pairsof[slot] = "{prior} {one}"
-                            end
-                        end
-                        j += step
-                    end
-                end
-                i += 1
-            end
-        end
-        f += 1
-    end
-
-    print("")
-    print("  TOTALITY (H-6, G-TOTAL coverage)")
-    print("    fixtures        {nfix}")
-    print("    lines           {nlines}")
-    print("    bytes           {nbytes}")
-    print("    nonspace bytes  {nsolid}")
-    print("    carrying a role {nroled}")
-    print("    golden agree    {nagree} of {nlines} lines")
-
-    print("")
-    print("  NO GUESSES (G-TOTAL: unresolved-ambiguity spans = 0)")
-    canon: i64 = ndiag - ncontrol
-    print("    canonical fixtures  {canon} diagnostic bytes")
-    print("    negative control    {ncontrol} diagnostic bytes")
-    if canon != 0
-        print("    !! a canonical fixture defaulted where it should have diagnosed")
-        bad += 1
-    end
-    if ncontrol == 0
-        print("    !! the negative control produced NO diagnostic — the machinery")
-        print("       is not wired, and every zero above is meaningless")
-        bad += 1
-    end
-    clean: i64 = nsolid - ncontrol
-    if nroled != clean
-        m: i64 = clean - nroled
-        print("    !! {m} nonspace bytes carry neither a role nor a diagnostic")
-        bad += 1
-    end
-
-    print("")
-    print("  THE PROOFS, by value — role AND card at a named byte")
-    npass: i64 = 0
-    p: i64 = 1
-    while p <= proofs:len()
-        row: str = proofs[p]
-        fi: i64 = to(i64)(field(row, 1))
-        li: i64 = to(i64)(field(row, 2))
-        bi: i64 = to(i64)(field(row, 3))
-        wantrole: str = field(row, 4)
-        wantcard: str = field(row, 5)
-        base: i64 = 0
-        if fi >= 1 and fi <= srcs:len()
-            base = firstline[fi]
-        end
-        gotrole: str = "-"
-        gotcard: str = "-"
-        if base > 0 and base + li - 1 <= rolelines:len()
-            rr: str = rolelines[base + li - 1]
-            cc: str = cardlines[base + li - 1]
-            if bi <= rr:len()
-                gotrole = rolename(rr:sub(bi, bi))
-                gotcard = cardname(rr:sub(bi, bi), cc:sub(bi, bi))
-            end
-        end
-        mark: str = "!!"
-        if gotrole == wantrole and gotcard == wantcard
-            npass += 1
-            mark = "ok"
-        else
-            bad += 1
-        end
-        src: str = "?"
-        if fi >= 1 and fi <= srcs:len()
-            src = srcs[fi]
-        end
-        loc: str = "{src}:{li}:{bi}"
-        cell: str = pad(loc, 43)
-        rcell: str = pad(gotrole, 11)
-        ccell: str = pad(gotcard, 10)
-        note: str = field(row, 6)
-        j: i64 = 7
-        word: str = field(row, j)
-        while word != ""
-            note = "{note} {word}"
-            j += 1
-            word = field(row, j)
-        end
-        print("    {mark} {cell}{rcell}{ccell}{note}")
-        p += 1
-    end
-    nproofs: str = to(str)(proofs:len())
-    print("    {npass} of {nproofs} proofs hold")
-
-    # ── THE SPAN CORPUS, gap[078] ───────────────────────────────────────────
-    # The losing taxonomy's corpus, measured by the surviving one. Role NAMES
-    # at SPAN granularity against hand-written sidecars, which convicts a
-    # rename where a per-byte golden of role letters cannot.
-    print("")
-    print("  THE SPAN CORPUS (gap[078]) — role names against hand-written sidecars")
-    goodrow: str = sidespan("    { 4, 12, 1, \"invoke\" },")
-    badrow: str = sidespan("-- this line is prose, not a span")
-    if goodrow != "4 12 1 invoke"
-        print("    !! the sidecar reader did not parse a real span row; it returned ({goodrow})")
-        bad += 1
-    end
-    if badrow != ""
-        print("    !! the sidecar reader accepted prose as a span; every comment would assert")
-        bad += 1
-    end
-    nsfix: i64 = 0
-    nspan: i64 = 0
-    smiss: i64 = 0
-    sdiag: i64 = 0
-    scontrol: i64 = 0
-    s: i64 = 1
-    while s <= spansrcs:len()
-        src: str = spansrcs[s]
-        base: str = src:sub(1, src:len() - 4)
-        side: str = "{base}.roles.id"
-        kind: str = spankinds[s]
-        script.run("hlpath={src} {bin} > {work}/sr 2>/dev/null")
-        script.run("hlmode=cards hlpath={src} {bin} > {work}/sc 2>/dev/null")
-        rl = cut(slurp("{work}/sr"))
-        cl = cut(slurp("{work}/sc"))
-        got = {}
-        i: i64 = 1
-        while i <= rl:len()
-            roleln: str = rl[i]
-            cardln: str = cl[i]
-            j: i64 = 1
-            while j <= roleln:len()
-                rb: str = roleln:sub(j, j)
-                cb: str = cardln:sub(j, j)
-                e: i64 = j
-                while e <= roleln:len() and roleln:sub(e, e) == rb and cardln:sub(e, e) == cb
-                    e += 1
-                end
-                wide: i64 = e - j
-                if rb != "l" or cb != "s"
-                    nm: str = rolename(rb)
-                    got[got:len() + 1] = "{i} {j} {wide} {nm}"
-                    nsolid += wide
-                    if rb == "!"
-                        ndiag += wide
-                        sdiag += wide
-                        if kind == "control"
-                            ncontrol += wide
-                            scontrol += wide
-                        end
-                    else
-                        nroled += wide
-                        slot: i64 = 0
-                        z: i64 = 1
-                        while z <= codes:len()
-                            if codes[z] == rb
-                                slot = z
-                            end
-                            z += 1
-                        end
-                        if slot == 0
-                            codes[codes:len() + 1] = rb
-                            codebytes[codes:len()] = 0
-                            slot = codes:len()
-                        end
-                        codebytes[slot] = codebytes[slot] + wide
-                    end
-                end
-                j = e
-            end
-            i += 1
-        end
-        want = {}
-        for k, ln in slurp(side):split("\n")
-            rec: str = sidespan(ln)
-            if rec != ""
-                want[want:len() + 1] = rec
-            end
-        end
-        if want:len() == 0
-            print("    !! {side} parsed to 0 spans; the sidecar is unreadable, not empty")
-            bad += 1
-        end
-        wide2: i64 = got:len()
-        if want:len() > wide2
-            wide2 = want:len()
-        end
-        i = 1
-        while i <= wide2
-            sa: str = "-"
-            sb: str = "-"
-            if i <= got:len()
-                sa = got[i]
-            end
-            if i <= want:len()
-                sb = want[i]
-            end
-            if sa != sb
-                print("    !! {src}  scan({sa})  sidecar({sb})")
-                smiss += 1
-                bad += 1
-            end
-            i += 1
-        end
-        nspan += got:len()
-        nsfix += 1
-        s += 1
-    end
-    print("    fixtures  {nsfix}")
-    print("    spans     {nspan}")
-    print("    mismatch  {smiss}")
-    print("    diagnostic bytes  {sdiag}, of which {scontrol} in a control fixture")
-    if sdiag != scontrol
-        print("    !! a canonical span fixture defaulted where it should have diagnosed")
-        bad += 1
-    end
-    if scontrol == 0
-        print("    !! no span fixture produced a diagnostic — the machinery is unproven here")
-        bad += 1
-    end
-
-    print("")
-    print("  SPECIFICITY (the bar coverage is not)")
-    edge: i64 = 0
-    lexer: i64 = 0
-    k: i64 = 1
-    while k <= lexs:len()
-        one: str = pairsof[k]
-        if tally(one) > 1
-            edge += 1
-        else
-            lexer += 1
-        end
-        k += 1
-    end
-    nlex: str = to(str)(lexs:len())
-    print("    program lexemes     {nlex}")
-    print("    EDGE-decided        {edge}   (two or more role/card pairs)")
-    print("    spelling-decided    {lexer}   (a lexer could have answered)")
-    print("    the edge-decided lexemes, which is the artifact:")
-    k = 1
-    while k <= lexs:len()
-        acc: str = pairsof[k]
-        if tally(acc) > 1
-            named: str = ""
-            for z, pr in acc:split(" ")
-                if pr != ""
-                    rn: str = rolename(pr:sub(1, 1))
-                    cn: str = cardname(pr:sub(1, 1), pr:sub(2, 2))
-                    if named == ""
-                        named = "{rn}/{cn}"
-                    else
-                        named = "{named}, {rn}/{cn}"
-                    end
-                end
-            end
-            cell: str = pad(lexs[k], 12)
-            print("      {cell}{named}")
-        end
-        k += 1
-    end
-
-    # ── G-TOTAL, THE THREE GATED NUMBERS (§0g) ──────────────────────────────
-    # Reported here as three numbers over BOTH corpora, because gap[078]'s
-    # falsifier is precisely a coverage percentage published without naming the
-    # taxonomy that produced it. There is now one taxonomy, so there is one set
-    # of numbers, and SPECIFICITY is reported separately below because the ruling
-    # makes it the bar coverage is not.
-    print("")
-    print("  G-TOTAL (§0g) — coverage, ambiguity, provenance")
-    provbytes: i64 = 0
-    provroles: i64 = 0
-    k = 1
-    while k <= codes:len()
-        one: str = codes[k]
-        std.script.run("hlmode=why hlrole={one} {bin} > {work}/w 2>/dev/null")
-        chain: str = slurp("{work}/w")
-        cited: i64 = chain:find("rule     §")
-        edged: i64 = chain:find("dnir     dnir[.]")
-        if cited > 0 and edged > 0
-            provbytes += codebytes[k]
-            provroles += 1
-        else
-            nm: str = rolename(one)
-            print("    !! role {nm} answers `why` with no rule citation or no dnir edge")
-            bad += 1
-        end
-        k += 1
-    end
-    # Coverage is measured over the CANONICAL fixtures. The negative controls
-    # exist to produce diagnostics; counting a deliberate diagnostic against
-    # coverage would make the control self-defeating, so their bytes leave both
-    # sides of the ratio and are reported on their own line instead.
-    canonbytes: i64 = nsolid - ncontrol
-    cov: i64 = 0
-    if canonbytes > 0
-        cov = to(i64)(nroled * 100 / canonbytes)
-    end
-    unresolved: i64 = ndiag - ncontrol
-    prov: i64 = 0
-    if nroled > 0
-        prov = to(i64)(provbytes * 100 / nroled)
-    end
-    nrolesused: str = to(str)(codes:len())
-    print("    coverage    {cov}%   ({nroled} of {canonbytes} canonical non-whitespace bytes carry a role)")
-    print("    ambiguity   {unresolved}     unresolved spans outside the negative controls")
-    print("    provenance  {prov}%   ({provroles} of {nrolesused} roles used answer `why` with rule + dnir)")
-    print("    controls    {ncontrol} bytes deliberately diagnosed, which is what makes the two zeros readable")
-    if cov != 100
-        print("    !! G-TOTAL requires coverage = 100%")
-        bad += 1
-    end
-    if unresolved != 0
-        print("    !! G-TOTAL requires ambiguity = 0")
-        bad += 1
-    end
-    if prov != 100
-        print("    !! G-TOTAL requires provenance = 100%")
-        bad += 1
-    end
-
-    print("")
-    print("  BASELINE: {scm}")
-    scmbody: str = slurp(scm)
-    if scmbody == ""
-        print("    !! could not read it; the baseline is unmeasured")
-        bad += 1
+  print("")
+  print("  THE PROOFS, by value — role AND card at a named byte")
+  npass: i64 = 0
+  p: i64 = 1
+  while p <= proofs:len()
+    row: str = proofs[p]
+    fi: i64 = to(i64)(field(row, 1))
+    li: i64 = to(i64)(field(row, 2))
+    bi: i64 = to(i64)(field(row, 3))
+    wantrole: str = field(row, 4)
+    wantcard: str = field(row, 5)
+    base: i64 = 0
+    if fi >= 1 and fi <= srcs:len()
+      base = firstline[fi]
+    gotrole: str = "-"
+    gotcard: str = "-"
+    if base > 0 and base + li - 1 <= rolelines:len()
+      rr: str = rolelines[base + li - 1]
+      cc: str = cardlines[base + li - 1]
+      if bi <= rr:len()
+        gotrole = rolename(rr:sub(bi, bi))
+        gotcard = cardname(rr:sub(bi, bi), cc:sub(bi, bi))
+    mark: str = "!!"
+    if gotrole == wantrole and gotcard == wantcard
+      npass = npass + 1
+      mark = "ok"
     else
-        c1: i64 = captures(scmbody, ":")
-        c2: i64 = captures(scmbody, "|")
-        print("    `:` distinct captures  {c1}")
-        print("    `|` distinct captures  {c2}")
-        print("    this projection        2 roles for `:`, 2 for `|`")
-        if c1 > 1 or c2 > 1
-            print("    (the grammar has learned the split; raise the claim above)")
-        end
-    end
+      bad = bad + 1
+    src: str = "?"
+    if fi >= 1 and fi <= srcs:len()
+      src = srcs[fi]
+    loc: str = "{src}:{li}:{bi}"
+    cell: str = pad(loc, 43)
+    rcell: str = pad(gotrole, 11)
+    ccell: str = pad(gotcard, 10)
+    note: str = field(row, 6)
+    j: i64 = 7
+    word: str = field(row, j)
+    while word != ""
+      note = "{note} {word}"
+      j = j + 1
+      word = field(row, j)
+    print("    {mark} {cell}{rcell}{ccell}{note}")
+    p = p + 1
+  nproofs: str = to(str)(proofs:len())
+  print("    {npass} of {nproofs} proofs hold")
 
-    # §0d: a hand edit to a generated artifact is an H-1 drift finding.
-    print("")
-    print("  GENERATED FRONT-END (§0d: a hand edit is an H-1 drift finding)")
-    std.script.run("hlmode=scm {bin} > {work}/scm 2>/dev/null")
-    fresh: str = slurp("{work}/scm")
-    tracked: str = slurp(scm)
-    if fresh == ""
-        print("    !! the generator produced nothing")
-        bad += 1
-    elseif fresh == tracked
-        nb: str = to(str)(tracked:len())
-        print("    {scm}")
-        print("    regenerates byte-identically, {nb} bytes")
+  # ── THE SPAN CORPUS, gap[078] ───────────────────────────────────────────
+  # The losing taxonomy's corpus, measured by the surviving one. Role NAMES
+  # at SPAN granularity against hand-written sidecars, which convicts a
+  # rename where a per-byte golden of role letters cannot.
+  print("")
+  print("  THE SPAN CORPUS (gap[078]) — role names against hand-written sidecars")
+  goodrow: str = sidespan("    { 4, 12, 1, \"invoke\" },")
+  badrow: str = sidespan("-- this line is prose, not a span")
+  if goodrow != "4 12 1 invoke"
+    print("    !! the sidecar reader did not parse a real span row; it returned ({goodrow})")
+    bad = bad + 1
+  if badrow != ""
+    print("    !! the sidecar reader accepted prose as a span; every comment would assert")
+    bad = bad + 1
+  nsfix: i64 = 0
+  nspan: i64 = 0
+  smiss: i64 = 0
+  sdiag: i64 = 0
+  scontrol: i64 = 0
+  s: i64 = 1
+  while s <= spansrcs:len()
+    src: str = spansrcs[s]
+    base: str = src:sub(1, src:len() - 4)
+    side: str = "{base}.roles.id"
+    kind: str = spankinds[s]
+    script.run("hlpath={src} {bin} > {work}/sr 2>/dev/null")
+    script.run("hlmode=cards hlpath={src} {bin} > {work}/sc 2>/dev/null")
+    rl = cut(slurp("{work}/sr"))
+    cl = cut(slurp("{work}/sc"))
+    got = {}
+    i: i64 = 1
+    while i <= rl:len()
+      roleln: str = rl[i]
+      cardln: str = cl[i]
+      j: i64 = 1
+      while j <= roleln:len()
+        rb: str = roleln:sub(j, j)
+        cb: str = cardln:sub(j, j)
+        e: i64 = j
+        while e <= roleln:len() and roleln:sub(e, e) == rb and cardln:sub(e, e) == cb
+          e = e + 1
+        wide: i64 = e - j
+        if rb != "l" or cb != "s"
+          nm: str = rolename(rb)
+          got[got:len() + 1] = "{i} {j} {wide} {nm}"
+          nsolid = nsolid + wide
+          if rb == "!"
+            ndiag = ndiag + wide
+            sdiag = sdiag + wide
+            if kind == "control"
+              ncontrol = ncontrol + wide
+              scontrol = scontrol + wide
+          else
+            nroled = nroled + wide
+            slot: i64 = 0
+            z: i64 = 1
+            while z <= codes:len()
+              if codes[z] == rb
+                slot = z
+              z = z + 1
+            if slot == 0
+              codes[codes:len() + 1] = rb
+              codebytes[codes:len()] = 0
+              slot = codes:len()
+            codebytes[slot] = codebytes[slot] + wide
+        j = e
+      i = i + 1
+    want = {}
+    for k, ln in slurp(side):split("\n")
+      rec: str = sidespan(ln)
+      if rec != ""
+        want[want:len() + 1] = rec
+    if want:len() == 0
+      print("    !! {side} parsed to 0 spans; the sidecar is unreadable, not empty")
+      bad = bad + 1
+    wide2: i64 = got:len()
+    if want:len() > wide2
+      wide2 = want:len()
+    i = 1
+    while i <= wide2
+      sa: str = "-"
+      sb: str = "-"
+      if i <= got:len()
+        sa = got[i]
+      if i <= want:len()
+        sb = want[i]
+      if sa != sb
+        print("    !! {src}  scan({sa})  sidecar({sb})")
+        smiss = smiss + 1
+        bad = bad + 1
+      i = i + 1
+    nspan = nspan + got:len()
+    nsfix = nsfix + 1
+    s = s + 1
+  print("    fixtures  {nsfix}")
+  print("    spans     {nspan}")
+  print("    mismatch  {smiss}")
+  print("    diagnostic bytes  {sdiag}, of which {scontrol} in a control fixture")
+  if sdiag != scontrol
+    print("    !! a canonical span fixture defaulted where it should have diagnosed")
+    bad = bad + 1
+  if scontrol == 0
+    print("    !! no span fixture produced a diagnostic — the machinery is unproven here")
+    bad = bad + 1
+
+  print("")
+  print("  SPECIFICITY (the bar coverage is not)")
+  edge: i64 = 0
+  lexer: i64 = 0
+  k: i64 = 1
+  while k <= lexs:len()
+    one: str = pairsof[k]
+    if tally(one) > 1
+      edge = edge + 1
     else
-        na: str = to(str)(tracked:len())
-        nb: str = to(str)(fresh:len())
-        print("    !! {scm} is not what the taxonomy produces")
-        print("       tracked {na} bytes, regenerated {nb}")
-        print("       either a query was hand-edited or the taxonomy moved. Run:")
-        print("           hlmode=scm {bin} > {scm}")
-        bad += 1
-    end
-    std.script.run("hlmode=legend {bin} > {work}/legend 2>/dev/null")
-    nleg: i64 = cut:len()(slurp("{work}/legend"))
-    print("    LSP legend  {nleg} semantic-token types, from the same rows")
-    # Not "18": the legend must carry EXACTLY the roles the taxonomy enumerates.
-    # That is the drift check a fixed number was standing in for, and it keeps
-    # working when the binding moves — which it just did (gap[078]).
-    if nleg != nroles
-        print("    !! the legend carries {nleg} types against {nroles} roles")
-        bad += 1
-    end
+      lexer = lexer + 1
+    k = k + 1
+  nlex: str = to(str)(lexs:len())
+  print("    program lexemes     {nlex}")
+  print("    EDGE-decided        {edge}   (two or more role/card pairs)")
+  print("    spelling-decided    {lexer}   (a lexer could have answered)")
+  print("    the edge-decided lexemes, which is the artifact:")
+  k = 1
+  while k <= lexs:len()
+    acc: str = pairsof[k]
+    if tally(acc) > 1
+      named: str = ""
+      for z, pr in acc:split(" ")
+        if pr != ""
+          rn: str = rolename(pr:sub(1, 1))
+          cn: str = cardname(pr:sub(1, 1), pr:sub(2, 2))
+          if named == ""
+            named = "{rn}/{cn}"
+          else
+            named = "{named}, {rn}/{cn}"
+      cell: str = pad(lexs[k], 12)
+      print("      {cell}{named}")
+    k = k + 1
 
-    print("")
-    if nfix < fixturefloor
-        print("  !! fixtures {nfix} under floor {fixturefloor}")
-        bad += 1
-    end
-    if npass < prooffloor
-        print("  !! proofs {npass} under floor {prooffloor}")
-        bad += 1
-    end
-    if edge < edgefloor
-        print("  !! edge-decided lexemes {edge} under floor {edgefloor}")
-        bad += 1
-    end
-    if nsfix < spanfixturefloor
-        print("  !! span fixtures {nsfix} under floor {spanfixturefloor}")
-        bad += 1
-    end
-    if nspan < spanfloor
-        print("  !! spans {nspan} under floor {spanfloor}")
-        bad += 1
-    end
-    if bad > 0
-        print("highlight corpus: FAIL — {bad} findings")
-        std.os.exit(1)
-    end
-    print("highlight corpus: PASS — {nfix} fixtures, {nlines} lines, {nsolid} nonspace")
-    print("  bytes, all roled or deliberately diagnosed; {npass} proofs by value;")
-    print("  {edge} lexemes decided by the EDGE rather than by their spelling.")
-    0
-end
+  # ── G-TOTAL, THE THREE GATED NUMBERS (§0g) ──────────────────────────────
+  # Reported here as three numbers over BOTH corpora, because gap[078]'s
+  # falsifier is precisely a coverage percentage published without naming the
+  # taxonomy that produced it. There is now one taxonomy, so there is one set
+  # of numbers, and SPECIFICITY is reported separately below because the ruling
+  # makes it the bar coverage is not.
+  print("")
+  print("  G-TOTAL (§0g) — coverage, ambiguity, provenance")
+  provbytes: i64 = 0
+  provroles: i64 = 0
+  k = 1
+  while k <= codes:len()
+    one: str = codes[k]
+    std.script.run("hlmode=why hlrole={one} {bin} > {work}/w 2>/dev/null")
+    chain: str = slurp("{work}/w")
+    cited: i64 = chain:find("rule     §")
+    edged: i64 = chain:find("dnir     dnir[.]")
+    if cited > 0 and edged > 0
+      provbytes = provbytes + codebytes[k]
+      provroles = provroles + 1
+    else
+      nm: str = rolename(one)
+      print("    !! role {nm} answers `why` with no rule citation or no dnir edge")
+      bad = bad + 1
+    k = k + 1
+  # Coverage is measured over the CANONICAL fixtures. The negative controls
+  # exist to produce diagnostics; counting a deliberate diagnostic against
+  # coverage would make the control self-defeating, so their bytes leave both
+  # sides of the ratio and are reported on their own line instead.
+  canonbytes: i64 = nsolid - ncontrol
+  cov: i64 = 0
+  if canonbytes > 0
+    cov = to(i64)(nroled * 100 / canonbytes)
+  unresolved: i64 = ndiag - ncontrol
+  prov: i64 = 0
+  if nroled > 0
+    prov = to(i64)(provbytes * 100 / nroled)
+  nrolesused: str = to(str)(codes:len())
+  print("    coverage    {cov}%   ({nroled} of {canonbytes} canonical non-whitespace bytes carry a role)")
+  print("    ambiguity   {unresolved}     unresolved spans outside the negative controls")
+  print("    provenance  {prov}%   ({provroles} of {nrolesused} roles used answer `why` with rule + dnir)")
+  print("    controls    {ncontrol} bytes deliberately diagnosed, which is what makes the two zeros readable")
+  if cov != 100
+    print("    !! G-TOTAL requires coverage = 100%")
+    bad = bad + 1
+  if unresolved != 0
+    print("    !! G-TOTAL requires ambiguity = 0")
+    bad = bad + 1
+  if prov != 100
+    print("    !! G-TOTAL requires provenance = 100%")
+    bad = bad + 1
+
+  print("")
+  print("  BASELINE: {scm}")
+  scmbody: str = slurp(scm)
+  if scmbody == ""
+    print("    !! could not read it; the baseline is unmeasured")
+    bad = bad + 1
+  else
+    c1: i64 = captures(scmbody, ":")
+    c2: i64 = captures(scmbody, "|")
+    print("    `:` distinct captures  {c1}")
+    print("    `|` distinct captures  {c2}")
+    print("    this projection        2 roles for `:`, 2 for `|`")
+    if c1 > 1 or c2 > 1
+      print("    (the grammar has learned the split; raise the claim above)")
+
+  # §0d: a hand edit to a generated artifact is an H-1 drift finding.
+  print("")
+  print("  GENERATED FRONT-END (§0d: a hand edit is an H-1 drift finding)")
+  std.script.run("hlmode=scm {bin} > {work}/scm 2>/dev/null")
+  fresh: str = slurp("{work}/scm")
+  tracked: str = slurp(scm)
+  if fresh == ""
+    print("    !! the generator produced nothing")
+    bad = bad + 1
+  elseif fresh == tracked
+    nb: str = to(str)(tracked:len())
+    print("    {scm}")
+    print("    regenerates byte-identically, {nb} bytes")
+  else
+    na: str = to(str)(tracked:len())
+    nb: str = to(str)(fresh:len())
+    print("    !! {scm} is not what the taxonomy produces")
+    print("       tracked {na} bytes, regenerated {nb}")
+    print("       either a query was hand-edited or the taxonomy moved. Run:")
+    print("           hlmode=scm {bin} > {scm}")
+    bad = bad + 1
+  std.script.run("hlmode=legend {bin} > {work}/legend 2>/dev/null")
+  nleg: i64 = cut:len()(slurp("{work}/legend"))
+  print("    LSP legend  {nleg} semantic-token types, from the same rows")
+  # Not "18": the legend must carry EXACTLY the roles the taxonomy enumerates.
+  # That is the drift check a fixed number was standing in for, and it keeps
+  # working when the binding moves — which it just did (gap[078]).
+  if nleg != nroles
+    print("    !! the legend carries {nleg} types against {nroles} roles")
+    bad = bad + 1
+
+  print("")
+  if nfix < fixturefloor
+    print("  !! fixtures {nfix} under floor {fixturefloor}")
+    bad = bad + 1
+  if npass < prooffloor
+    print("  !! proofs {npass} under floor {prooffloor}")
+    bad = bad + 1
+  if edge < edgefloor
+    print("  !! edge-decided lexemes {edge} under floor {edgefloor}")
+    bad = bad + 1
+  if nsfix < spanfixturefloor
+    print("  !! span fixtures {nsfix} under floor {spanfixturefloor}")
+    bad = bad + 1
+  if nspan < spanfloor
+    print("  !! spans {nspan} under floor {spanfloor}")
+    bad = bad + 1
+  if bad > 0
+    print("highlight corpus: FAIL — {bad} findings")
+    std.os.exit(1)
+  print("highlight corpus: PASS — {nfix} fixtures, {nlines} lines, {nsolid} nonspace")
+  print("  bytes, all roled or deliberately diagnosed; {npass} proofs by value;")
+  print("  {edge} lexemes decided by the EDGE rather than by their spelling.")
+  0

@@ -5,244 +5,212 @@
 # GUI State
 # ═══════════════════════════════════════════════════════════════
 
-state_new(): any
-    {
-        mouse_x = 0,
-        mouse_y = 0,
-        mouse_pressed = false,
-        mouse_down = false,
-        mouse_released = false,
-        hot_item = nil,
-        active_item = nil,
-        last_z_index = 0,
-        layout = {
-            x = 0,
-            y = 0,
-            width = 0,
-            height = 0,
-            item_spacing = 4,
-            group_spacing = 8,
-        },
-        draw_commands = {},
-    }
-end
+state_new: any = ()
+  {
+    mouse_x = 0,
+    mouse_y = 0,
+    mouse_pressed = false,
+    mouse_down = false,
+    mouse_released = false,
+    hot_item = nil,
+    active_item = nil,
+    last_z_index = 0,
+    layout = {
+      x = 0,
+      y = 0,
+      width = 0,
+      height = 0,
+      item_spacing = 4,
+      group_spacing = 8
+    },
+    draw_commands = {}
+  }
 
-state_set_mouse(state: any, x: f64, y: f64, pressed: bool, down: bool, released: bool): void
-    state.mouse_x = x
-    state.mouse_y = y
-    state.mouse_pressed = pressed
-    state.mouse_down = down
-    state.mouse_released = released
-end
+state_set_mouse: void = (state: any, x: f64, y: f64, pressed: bool, down: bool, released: bool)
+  state.mouse_x = x
+  state.mouse_y = y
+  state.mouse_pressed = pressed
+  state.mouse_down = down
+  state.mouse_released = released
 
 # ═══════════════════════════════════════════════════════════════
 # GUI ID
 # ═══════════════════════════════════════════════════════════════
 
-gui_id_hash(s: str): i64
-    hash = 5381
-    i = 1
-    while i <= s:len()
-        hash = ((hash * 33) + s:byte(i)) % 2147483647
-        i += 1
-    end
-    hash
-end
+gui_id_hash: i64 = (s: str)
+  hash = 5381
+  i = 1
+  while i <= s:len()
+    hash = (hash * 33 + s:byte(i)) % 2147483647
+    i = i + 1
+  hash
 
 # ═══════════════════════════════════════════════════════════════
 # GUI Drawing
 # ═══════════════════════════════════════════════════════════════
 
-gui_draw_rect(state: any, x: f64, y: f64, w: f64, h: f64, color: any): void
-    state.draw_commands[state:len().draw_commands + 1] = {
-        type = "rect",
-        x = x,
-        y = y,
-        width = w,
-        height = h,
-        color = color,
-    }
-end
+gui_draw_rect: void = (state: any, x: f64, y: f64, w: f64, h: f64, color: any)
+  state.draw_commands[state:len().draw_commands + 1] = {
+    type = "rect",
+    x = x,
+    y = y,
+    width = w,
+    height = h,
+    color = color
+  }
 
-gui_draw_text(state: any, text: str, x: f64, y: f64, color: any): void
-    state.draw_commands[state:len().draw_commands + 1] = {
-        type = "text",
-        text = text,
-        x = x,
-        y = y,
-        color = color,
-    }
-end
+gui_draw_text: void = (state: any, text: str, x: f64, y: f64, color: any)
+  state.draw_commands[state:len().draw_commands + 1] = {
+    type = "text",
+    text = text,
+    x = x,
+    y = y,
+    color = color
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # GUI Widgets
 # ═══════════════════════════════════════════════════════════════
 
-label(state: any, text: str): void
-    gui_draw_text(state, text, state.layout.x, state.layout.y, {r = 1, g = 1, b = 1, a = 1})
-    state.layout.y = state.layout.y + 16 + state.layout.item_spacing
-end
+label: void = (state: any, text: str)
+  gui_draw_text(state, text, state.layout.x, state.layout.y, { r = 1, g = 1, b = 1, a = 1 })
+  state.layout.y = state.layout.y + 16 + state.layout.item_spacing
 
-button(state: any, label: str): bool
-    id = gui_id_hash(label)
-    x = state.layout.x
-    y = state.layout.y
-    w = 100
-    h = 24
+button: bool = (state: any, label: str)
+  id = gui_id_hash(label)
+  x = state.layout.x
+  y = state.layout.y
+  w = 100
+  h = 24
 
-    # Check hover
-    hover = x <= state.mouse_x and state.mouse_x <= x + w and
-            y <= state.mouse_y and state.mouse_y <= y + h
+  # Check hover
+  hover = x <= state.mouse_x and state.mouse_x <= x + w and y <= state.mouse_y and state.mouse_y <= y + h
 
-    # Check click
-    clicked = false
-    if hover and state.mouse_pressed
-        state.active_item = id
-    end
+  # Check click
+  clicked = false
+  if hover and state.mouse_pressed
+    state.active_item = id
 
-    if state.active_item == id and state.mouse_released and hover
-        clicked = true
-        state.active_item = nil
-    end
+  if state.active_item == id and state.mouse_released and hover
+    clicked = true
+    state.active_item = nil
 
-    # Draw
-    if state.active_item == id and hover
-        gui_draw_rect(state, x, y, w, h, {r = 0.3, g = 0.3, b = 0.8, a = 1})
-    elseif hover
-        gui_draw_rect(state, x, y, w, h, {r = 0.4, g = 0.4, b = 0.4, a = 1})
-    else
-        gui_draw_rect(state, x, y, w, h, {r = 0.2, g = 0.2, b = 0.2, a = 1})
-    end
+  # Draw
+  if state.active_item == id and hover
+    gui_draw_rect(state, x, y, w, h, { r = 0.3, g = 0.3, b = 0.8, a = 1 })
+  elseif hover
+    gui_draw_rect(state, x, y, w, h, { r = 0.4, g = 0.4, b = 0.4, a = 1 })
+  else
+    gui_draw_rect(state, x, y, w, h, { r = 0.2, g = 0.2, b = 0.2, a = 1 })
 
-    gui_draw_text(state, label, x + 8, y + 4, {r = 1, g = 1, b = 1, a = 1})
+  gui_draw_text(state, label, x + 8, y + 4, { r = 1, g = 1, b = 1, a = 1 })
 
-    state.layout.y = state.layout.y + h + state.layout.item_spacing
-    clicked
-end
+  state.layout.y = state.layout.y + h + state.layout.item_spacing
+  clicked
 
-checkbox(state: any, label: str, value: bool): bool
-    id = gui_id_hash(label)
-    x = state.layout.x
-    y = state.layout.y
-    box_size = 16
+checkbox: bool = (state: any, label: str, value: bool)
+  id = gui_id_hash(label)
+  x = state.layout.x
+  y = state.layout.y
+  box_size = 16
 
-    # Toggle on click
-    if state.mouse_pressed
-        if x <= state.mouse_x and state.mouse_x <= x + box_size and
-           y <= state.mouse_y and state.mouse_y <= y + box_size
-            value = not value
-        end
-    end
+  # Toggle on click
+  if state.mouse_pressed
+    if x <= state.mouse_x and state.mouse_x <= x + box_size and y <= state.mouse_y and state.mouse_y <= y + box_size
+      value = not value
 
-    # Draw box
-    if value
-        gui_draw_rect(state, x, y, box_size, box_size, {r = 0.2, g = 0.6, b = 0.2, a = 1})
-    else
-        gui_draw_rect(state, x, y, box_size, box_size, {r = 0.3, g = 0.3, b = 0.3, a = 1})
-    end
+  # Draw box
+  if value
+    gui_draw_rect(state, x, y, box_size, box_size, { r = 0.2, g = 0.6, b = 0.2, a = 1 })
+  else
+    gui_draw_rect(state, x, y, box_size, box_size, { r = 0.3, g = 0.3, b = 0.3, a = 1 })
 
-    # Draw label
-    gui_draw_text(state, label, x + box_size + 8, y + 2, {r = 1, g = 1, b = 1, a = 1})
+  # Draw label
+  gui_draw_text(state, label, x + box_size + 8, y + 2, { r = 1, g = 1, b = 1, a = 1 })
 
-    state.layout.y = state.layout.y + box_size + state.layout.item_spacing
-    value
-end
+  state.layout.y = state.layout.y + box_size + state.layout.item_spacing
+  value
 
-slider(state: any, label: str, value: f64, min: f64, max: f64): f64
-    id = gui_id_hash(label)
-    x = state.layout.x
-    y = state.layout.y
-    w = 150
-    h = 16
+slider: f64 = (state: any, label: str, value: f64, min: f64, max: f64)
+  id = gui_id_hash(label)
+  x = state.layout.x
+  y = state.layout.y
+  w = 150
+  h = 16
 
-    # Handle drag
-    if state.mouse_pressed
-        if x <= state.mouse_x and state.mouse_x <= x + w and
-           y <= state.mouse_y and state.mouse_y <= y + h
-            state.active_item = id
-        end
-    end
+  # Handle drag
+  if state.mouse_pressed
+    if x <= state.mouse_x and state.mouse_x <= x + w and y <= state.mouse_y and state.mouse_y <= y + h
+      state.active_item = id
 
-    if state.active_item == id
-        ratio = 0:max(1:min((state.mouse_x - x) / w))
-        value = min + ratio * (max - min)
-    end
+  if state.active_item == id
+    ratio = 0:max(1:min((state.mouse_x - x) / w))
+    value = min + ratio * (max - min)
 
-    if state.active_item == id and state.mouse_released
-        state.active_item = nil
-    end
+  if state.active_item == id and state.mouse_released
+    state.active_item = nil
 
-    # Draw track
-    gui_draw_rect(state, x, y, w, h, {r = 0.2, g = 0.2, b = 0.2, a = 1})
+  # Draw track
+  gui_draw_rect(state, x, y, w, h, { r = 0.2, g = 0.2, b = 0.2, a = 1 })
 
-    # Draw fill
-    ratio = (value - min) / (max - min)
-    gui_draw_rect(state, x, y, w * ratio, h, {r = 0.3, g = 0.5, b = 0.8, a = 1})
+  # Draw fill
+  ratio = (value - min) / (max - min)
+  gui_draw_rect(state, x, y, w * ratio, h, { r = 0.3, g = 0.5, b = 0.8, a = 1 })
 
-    # Draw handle
-    handle_x = x + w * ratio - 4
-    gui_draw_rect(state, handle_x, y - 2, 8, h + 4, {r = 0.8, g = 0.8, b = 0.8, a = 1})
+  # Draw handle
+  handle_x = x + w * ratio - 4
+  gui_draw_rect(state, handle_x, y - 2, 8, h + 4, { r = 0.8, g = 0.8, b = 0.8, a = 1 })
 
-    # Draw label
-    gui_draw_text(state, label .. ": " .. to(str)(value:floor()), x + w + 8, y + 2, {r = 1, g = 1, b = 1, a = 1})
+  # Draw label
+  gui_draw_text(state, label .. ": " .. to(str)(value:floor()), x + w + 8, y + 2, { r = 1, g = 1, b = 1, a = 1 })
 
-    state.layout.y = state.layout.y + h + state.layout.item_spacing
-    value
-end
+  state.layout.y = state.layout.y + h + state.layout.item_spacing
+  value
 
-text_input(state: any, label: str, text: str): str
-    id = gui_id_hash(label)
-    x = state.layout.x
-    y = state.layout.y
-    w = 200
-    h = 24
+text_input: str = (state: any, label: str, text: str)
+  id = gui_id_hash(label)
+  x = state.layout.x
+  y = state.layout.y
+  w = 200
+  h = 24
 
-    # Focus on click
-    if state.mouse_pressed
-        if x <= state.mouse_x and state.mouse_x <= x + w and
-           y <= state.mouse_y and state.mouse_y <= y + h
-            state.active_item = id
-        elseif state.active_item == id
-            state.active_item = nil
-        end
-    end
+  # Focus on click
+  if state.mouse_pressed
+    if x <= state.mouse_x and state.mouse_x <= x + w and y <= state.mouse_y and state.mouse_y <= y + h
+      state.active_item = id
+    elseif state.active_item == id
+      state.active_item = nil
 
-    # Draw background
-    if state.active_item == id
-        gui_draw_rect(state, x, y, w, h, {r = 0.1, g = 0.1, b = 0.3, a = 1})
-    else
-        gui_draw_rect(state, x, y, w, h, {r = 0.15, g = 0.15, b = 0.15, a = 1})
-    end
+  # Draw background
+  if state.active_item == id
+    gui_draw_rect(state, x, y, w, h, { r = 0.1, g = 0.1, b = 0.3, a = 1 })
+  else
+    gui_draw_rect(state, x, y, w, h, { r = 0.15, g = 0.15, b = 0.15, a = 1 })
 
-    # Draw text
-    gui_draw_text(state, text, x + 4, y + 4, {r = 1, g = 1, b = 1, a = 1})
+  # Draw text
+  gui_draw_text(state, text, x + 4, y + 4, { r = 1, g = 1, b = 1, a = 1 })
 
-    # Draw label
-    gui_draw_text(state, label, x, y - 16, {r = 0.7, g = 0.7, b = 0.7, a = 1})
+  # Draw label
+  gui_draw_text(state, label, x, y - 16, { r = 0.7, g = 0.7, b = 0.7, a = 1 })
 
-    state.layout.y = state.layout.y + h + state.layout.item_spacing + 16
-    text
-end
+  state.layout.y = state.layout.y + h + state.layout.item_spacing + 16
+  text
 
 # ═══════════════════════════════════════════════════════════════
 # GUI Layout
 # ═══════════════════════════════════════════════════════════════
 
-begin_group(state: any, x: f64, y: f64): void
-    state.layout.x = x
-    state.layout.y = y
-end
+begin_group: void = (state: any, x: f64, y: f64)
+  state.layout.x = x
+  state.layout.y = y
 
-end_group(state: any): void
-    state.layout.y = state.layout.y + state.layout.group_spacing
-end
+end_group: void = (state: any)
+  state.layout.y = state.layout.y + state.layout.group_spacing
 
-get_draw_commands(state: any): any
-    commands = state.draw_commands
-    state.draw_commands = {}
-    commands
-end
-
+get_draw_commands: any = (state: any)
+  commands = state.draw_commands
+  state.draw_commands = {}
+  commands
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════

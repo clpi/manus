@@ -8,333 +8,271 @@ png_mod = png
 # Image I/O
 # ═══════════════════════════════════════════════════════════════
 
-load(path: str): any
-    f = io.open(path, "rb")
-    if f == nil
-        return {ok = false, error = "Cannot open file: " .. path}
-    end
-    raw = io.read(f, "*a")
-    io.close(f)
-    if raw == nil or raw:len() == 0
-        return {ok = false, error = "Empty file: " .. path}
-    end
-    png_result = png_mod.decode(raw)
-    if png_result.error
-        return {ok = false, error = png_result.error}
-    end
-    img = new(png_result.width, png_result.height, png_result.channels)
-    img.data = png_result.data
-    {ok = true, image = img, format = "png"}
-end
+load: any = (path: str)
+  f = io.open(path, "rb")
+  if f == nil
+    return { ok = false, error = "Cannot open file: " .. path }
+  raw = io.read(f, "*a")
+  io.close(f)
+  if raw == nil or raw:len() == 0
+    return { ok = false, error = "Empty file: " .. path }
+  png_result = png_mod.decode(raw)
+  if png_result.error
+    return { ok = false, error = png_result.error }
+  img = new(png_result.width, png_result.height, png_result.channels)
+  img.data = png_result.data
+  { ok = true, image = img, format = "png" }
 
-save(image: any, path: str, format: str): any
-    fmt = format or "png"
-    if fmt != "png"
-        return {ok = false, error = "Unsupported format: " .. fmt .. " (only png supported)"}
-    end
-    png_data = png_mod.encode(image.data, image.width, image.height, image.channels)
-    if png_data.error
-        return {ok = false, error = png_data.error}
-    end
-    f = io.open(path, "wb")
-    if f == nil
-        return {ok = false, error = "Cannot create file: " .. path}
-    end
-    io.write(f, png_data.data)
-    io.close(f)
-    {ok = true, path = path, format = "png"}
-end
+save: any = (image: any, path: str, format: str)
+  fmt = format or "png"
+  if fmt != "png"
+    return { ok = false, error = "Unsupported format: " .. fmt .. " (only png supported)" }
+  png_data = png_mod.encode(image.data, image.width, image.height, image.channels)
+  if png_data.error
+    return { ok = false, error = png_data.error }
+  f = io.open(path, "wb")
+  if f == nil
+    return { ok = false, error = "Cannot create file: " .. path }
+  io.write(f, png_data.data)
+  io.close(f)
+  { ok = true, path = path, format = "png" }
 
-new(width: i64, height: i64, channels: i64): any
-    data = {}
-    total = width * height * channels
-    i = 1
-    while i <= total
-        data[i] = 0
-        i += 1
-    end
-    {
-        width = width,
-        height = height,
-        channels = channels,
-        data = data,
-    }
-end
+new: any = (width: i64, height: i64, channels: i64)
+  data = {}
+  total = width * height * channels
+  i = 1
+  while i <= total
+    data[i] = 0
+    i = i + 1
+  {
+    width = width,
+    height = height,
+    channels = channels,
+    data = data
+  }
 
-get_pixel(image: any, x: i64, y: i64): any
-    if x < 0 or x >= image.width or y < 0 or y >= image.height
-        return nil
-    end
-    idx = (y * image.width + x) * image.channels + 1
-    pixel = {}
-    i = 0
-    while i < image.channels
-        pixel[i + 1] = image.data[idx + i]
-        i += 1
-    end
-    pixel
-end
+get_pixel: any = (image: any, x: i64, y: i64)
+  if x < 0 or x >= image.width or y < 0 or y >= image.height
+    return nil
+  idx = (y * image.width + x) * image.channels + 1
+  pixel = {}
+  i = 0
+  while i < image.channels
+    pixel[i + 1] = image.data[idx + i]
+    i = i + 1
+  pixel
 
-set_pixel(image: any, x: i64, y: i64, pixel: any): void
-    if x < 0 or x >= image.width or y < 0 or y >= image.height
-        return
-    end
-    idx = (y * image.width + x) * image.channels + 1
-    i = 0
-    while i < image.channels
-        image.data[idx + i] = pixel[i + 1] or 0
-        i += 1
-    end
-end
+set_pixel: void = (image: any, x: i64, y: i64, pixel: any)
+  if x < 0 or x >= image.width or y < 0 or y >= image.height
+    return
+  idx = (y * image.width + x) * image.channels + 1
+  i = 0
+  while i < image.channels
+    image.data[idx + i] = pixel[i + 1] or 0
+    i = i + 1
 
 # ═══════════════════════════════════════════════════════════════
 # Image Conversion
 # ═══════════════════════════════════════════════════════════════
 
-to_rgba(image: any): any
-    if image.channels == 4 return image end
+to_rgba: any = (image: any)
+  if image.channels == 4
+    return image
 
-    result = new(image.width, image.height, 4)
-    y = 0
-    while y < image.height
-        x = 0
-        while x < image.width
-            src_idx = (y * image.width + x) * image.channels + 1
-            dst_idx = (y * image.width + x) * 4 + 1
+  result = new(image.width, image.height, 4)
+  y = 0
+  while y < image.height
+    x = 0
+    while x < image.width
+      src_idx = (y * image.width + x) * image.channels + 1
+      dst_idx = (y * image.width + x) * 4 + 1
 
-            i = 0
-            while i < image.channels
-                result.data[dst_idx + i] = image.data[src_idx + i]
-                i += 1
-            end
+      i = 0
+      while i < image.channels
+        result.data[dst_idx + i] = image.data[src_idx + i]
+        i = i + 1
 
-            # Add alpha if RGB
-            if image.channels == 3
-                result.data[dst_idx + 3] = 255
-            end
-            x += 1
-        end
-        y += 1
-    end
-    result
-end
+      # Add alpha if RGB
+      if image.channels == 3
+        result.data[dst_idx + 3] = 255
+      x = x + 1
+    y = y + 1
+  result
 
-to_grayscale(image: any): any
-    result = new(image.width, image.height, 1)
-    y = 0
-    while y < image.height
-        x = 0
-        while x < image.width
-            idx = (y * image.width + x) * image.channels + 1
-            gray = 0
-            if image.channels >= 3
-                gray = 0.299 * image.data[idx] + 0.587 * image.data[idx + 1] + 0.114 * image.data[idx + 2]
-            else
-                gray = image.data[idx]
-            end
-            result.data[(y * image.width + x) + 1] = gray:floor()
-            x += 1
-        end
-        y += 1
-    end
-    result
-end
+to_grayscale: any = (image: any)
+  result = new(image.width, image.height, 1)
+  y = 0
+  while y < image.height
+    x = 0
+    while x < image.width
+      idx = (y * image.width + x) * image.channels + 1
+      gray = 0
+      if image.channels >= 3
+        gray = 0.299 * image.data[idx] + 0.587 * image.data[idx + 1] + 0.114 * image.data[idx + 2]
+      else
+        gray = image.data[idx]
+      result.data[y * image.width + x + 1] = gray:floor()
+      x = x + 1
+    y = y + 1
+  result
 
 # ═══════════════════════════════════════════════════════════════
 # Image Resize
 # ═══════════════════════════════════════════════════════════════
 
-resize_nearest(image: any, new_width: i64, new_height: i64): any
-    result = new(new_width, new_height, image.channels)
-    x_ratio = image.width / new_width
-    y_ratio = image.height / new_height
+resize_nearest: any = (image: any, new_width: i64, new_height: i64)
+  result = new(new_width, new_height, image.channels)
+  x_ratio = image.width / new_width
+  y_ratio = image.height / new_height
 
-    y = 0
-    while y < new_height
-        x = 0
-        while x < new_width
-            src_x = x * x_ratio:floor()
-            src_y = y * y_ratio:floor()
-            pixel = get_pixel(image, src_x, src_y)
-            if pixel
-                set_pixel(result, x, y, pixel)
-            end
-            x += 1
-        end
-        y += 1
-    end
-    result
-end
+  y = 0
+  while y < new_height
+    x = 0
+    while x < new_width
+      src_x = x * x_ratio:floor()
+      src_y = y * y_ratio:floor()
+      pixel = get_pixel(image, src_x, src_y)
+      if pixel
+        set_pixel(result, x, y, pixel)
+      x = x + 1
+    y = y + 1
+  result
 
-resize_bilinear(image: any, new_width: i64, new_height: i64): any
-    result = new(new_width, new_height, image.channels)
-    x_ratio = image.width / new_width
-    y_ratio = image.height / new_height
+resize_bilinear: any = (image: any, new_width: i64, new_height: i64)
+  result = new(new_width, new_height, image.channels)
+  x_ratio = image.width / new_width
+  y_ratio = image.height / new_height
 
-    y = 0
-    while y < new_height
-        x = 0
-        while x < new_width
-            src_x = x * x_ratio
-            src_y = y * y_ratio
-            x0 = src_x:floor()
-            y0 = src_y:floor()
-            x1 = x0 + 1:min(image.width - 1)
-            y1 = y0 + 1:min(image.height - 1)
+  y = 0
+  while y < new_height
+    x = 0
+    while x < new_width
+      src_x = x * x_ratio
+      src_y = y * y_ratio
+      x0 = src_x:floor()
+      y0 = src_y:floor()
+      x1 = x0 + 1:min(image.width - 1)
+      y1 = y0 + 1:min(image.height - 1)
 
-            fx = src_x - x0
-            fy = src_y - y0
+      fx = src_x - x0
+      fy = src_y - y0
 
-            p00 = get_pixel(image, x0, y0)
-            p10 = get_pixel(image, x1, y0)
-            p01 = get_pixel(image, x0, y1)
-            p11 = get_pixel(image, x1, y1)
+      p00 = get_pixel(image, x0, y0)
+      p10 = get_pixel(image, x1, y0)
+      p01 = get_pixel(image, x0, y1)
+      p11 = get_pixel(image, x1, y1)
 
-            if p00 and p10 and p01 and p11
-                pixel = {}
-                c = 1
-                while c <= image.channels
-                    pixel[c] = math.floor(
-                        p00[c] * (1 - fx) * (1 - fy) +
-                        p10[c] * fx * (1 - fy) +
-                        p01[c] * (1 - fx) * fy +
-                        p11[c] * fx * fy
-                    )
-                    c += 1
-                end
-                set_pixel(result, x, y, pixel)
-            end
-            x += 1
-        end
-        y += 1
-    end
-    result
-end
+      if p00 and p10 and p01 and p11
+        pixel = {}
+        c = 1
+        while c <= image.channels
+          pixel[c] = math.floor(p00[c] * (1 - fx) * (1 - fy) + p10[c] * fx * (1 - fy) + p01[c] * (1 - fx) * fy + p11[c] * fx * fy)
+          c = c + 1
+        set_pixel(result, x, y, pixel)
+      x = x + 1
+    y = y + 1
+  result
 
 # ═══════════════════════════════════════════════════════════════
 # Image Filters
 # ═══════════════════════════════════════════════════════════════
 
-blur(image: any, radius: i64): any
-    result = new(image.width, image.height, image.channels)
-    kernel_size = 2 * radius + 1
-    kernel_area = kernel_size * kernel_size
+blur: any = (image: any, radius: i64)
+  result = new(image.width, image.height, image.channels)
+  kernel_size = 2 * radius + 1
+  kernel_area = kernel_size * kernel_size
 
-    y = 0
-    while y < image.height
-        x = 0
-        while x < image.width
-            sum = {}
+  y = 0
+  while y < image.height
+    x = 0
+    while x < image.width
+      sum = {}
+      c = 1
+      while c <= image.channels
+        sum[c] = 0
+        c = c + 1
+
+      ky = -radius
+      while ky <= radius
+        kx = -radius
+        while kx <= radius
+          pixel = get_pixel(image, x + kx, y + ky)
+          if pixel
             c = 1
             while c <= image.channels
-                sum[c] = 0
-                c += 1
-            end
+              sum[c] = sum[c] + pixel[c]
+              c = c + 1
+          kx = kx + 1
+        ky = ky + 1
 
-            ky = -radius
-            while ky <= radius
-                kx = -radius
-                while kx <= radius
-                    pixel = get_pixel(image, x + kx, y + ky)
-                    if pixel
-                        c = 1
-                        while c <= image.channels
-                            sum[c] = sum[c] + pixel[c]
-                            c += 1
-                        end
-                    end
-                    kx += 1
-                end
-                ky += 1
-            end
+      pixel = {}
+      c = 1
+      while c <= image.channels
+        pixel[c] = sum[c] / kernel_area:floor()
+        c = c + 1
+      set_pixel(result, x, y, pixel)
+      x = x + 1
+    y = y + 1
+  result
 
-            pixel = {}
+sharpen: any = (image: any, strength: f64)
+  # Sharpen kernel: [0, -1, 0; -1, 5, -1; 0, -1, 0]
+  result = new(image.width, image.height, image.channels)
+  kernel = {
+    { 0, -1 * strength, 0 },
+    { -1 * strength, 1 + 4 * strength, -1 * strength },
+    { 0, -1 * strength, 0 }
+  }
+
+  y = 1
+  while y < image.height - 1
+    x = 1
+    while x < image.width - 1
+      sum = {}
+      c = 1
+      while c <= image.channels
+        sum[c] = 0
+        c = c + 1
+
+      ky = 0
+      while ky <= 2
+        kx = 0
+        while kx <= 2
+          pixel = get_pixel(image, x + kx - 1, y + ky - 1)
+          if pixel
             c = 1
             while c <= image.channels
-                pixel[c] = sum[c] / kernel_area:floor()
-                c += 1
-            end
-            set_pixel(result, x, y, pixel)
-            x += 1
-        end
-        y += 1
-    end
-    result
-end
+              sum[c] = sum[c] + pixel[c] * kernel[ky + 1][kx + 1]
+              c = c + 1
+          kx = kx + 1
+        ky = ky + 1
 
-sharpen(image: any, strength: f64): any
-    # Sharpen kernel: [0, -1, 0; -1, 5, -1; 0, -1, 0]
-    result = new(image.width, image.height, image.channels)
-    kernel = {
-        {0, -1 * strength, 0},
-        {-1 * strength, 1 + 4 * strength, -1 * strength},
-        {0, -1 * strength, 0},
-    }
+      pixel = {}
+      c = 1
+      while c <= image.channels
+        pixel[c] = 0:max(255:min(sum[c]:floor()))
+        c = c + 1
+      set_pixel(result, x, y, pixel)
+      x = x + 1
+    y = y + 1
+  result
 
-    y = 1
-    while y < image.height - 1
-        x = 1
-        while x < image.width - 1
-            sum = {}
-            c = 1
-            while c <= image.channels
-                sum[c] = 0
-                c += 1
-            end
+adjust_brightness: any = (image: any, factor: f64)
+  result = new(image.width, image.height, image.channels)
+  i = 1
+  while i <= result:len().data
+    result.data[i] = 0:max(255:min(image.data[i] * factor:floor()))
+    i = i + 1
+  result
 
-            ky = 0
-            while ky <= 2
-                kx = 0
-                while kx <= 2
-                    pixel = get_pixel(image, x + kx - 1, y + ky - 1)
-                    if pixel
-                        c = 1
-                        while c <= image.channels
-                            sum[c] = sum[c] + pixel[c] * kernel[ky + 1][kx + 1]
-                            c += 1
-                        end
-                    end
-                    kx += 1
-                end
-                ky += 1
-            end
-
-            pixel = {}
-            c = 1
-            while c <= image.channels
-                pixel[c] = 0:max(255:min(sum[c]:floor()))
-                c += 1
-            end
-            set_pixel(result, x, y, pixel)
-            x += 1
-        end
-        y += 1
-    end
-    result
-end
-
-adjust_brightness(image: any, factor: f64): any
-    result = new(image.width, image.height, image.channels)
-    i = 1
-    while i <= result:len().data
-        result.data[i] = 0:max(255:min(image.data[i] * factor:floor()))
-        i += 1
-    end
-    result
-end
-
-adjust_contrast(image: any, factor: f64): any
-    result = new(image.width, image.height, image.channels)
-    i = 1
-    while i <= result:len().data
-        value = image.data[i]
-        result.data[i] = 0:max(255:min((value - 128) * factor + 128:floor()))
-        i += 1
-    end
-    result
-end
-
+adjust_contrast: any = (image: any, factor: f64)
+  result = new(image.width, image.height, image.channels)
+  i = 1
+  while i <= result:len().data
+    value = image.data[i]
+    result.data[i] = 0:max(255:min((value - 128) * factor + 128:floor()))
+    i = i + 1
+  result
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-

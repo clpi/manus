@@ -1165,7 +1165,18 @@ pub const PrettyPrinter = struct {
         if (self.last_src_line == 0 or line == 0) return;
         for (self.blank_lines) |b| {
             if (b > self.last_src_line and b < line) {
+                // The caller already emitted a newline AND this line's indent,
+                // so the indent is now sitting on what is about to become a
+                // blank line. Trim it, break the line, and put the indent back
+                // — otherwise the blank keeps trailing spaces and the statement
+                // after it starts at column 0. That mis-indent silently
+                // reparented statements into the previous relation, and the
+                // symptom was a TYPE error ("expected 'Tok', got 'bool'")
+                // hundreds of lines away from the blank line that caused it.
+                while (self.buf.items.len > 0 and self.buf.items[self.buf.items.len - 1] == ' ')
+                    _ = self.buf.pop();
                 try self.write("\n");
+                for (0..self.indent_level) |_| try self.write(self.indent_str);
                 return;
             }
             if (b >= line) return;

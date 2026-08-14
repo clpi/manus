@@ -7,450 +7,415 @@ Tensor = tensor
 # ═══════════════════════════════════════════════════════════════
 
 # SGD with optional momentum and weight decay
-sgd(lr: f64, momentum: f64, weight_decay: f64): any
-    if momentum == nil momentum = 0 end
-    if weight_decay == nil weight_decay = 0 end
-    {
-        type = "sgd",
-        lr = lr,
-        momentum = momentum,
-        weight_decay = weight_decay,
-        velocities = {},
-        step_count = 0,
-    }
-end
+sgd: any = (lr: f64, momentum: f64, weight_decay: f64)
+  if momentum == nil
+    momentum = 0
+  if weight_decay == nil
+    weight_decay = 0
+  {
+    type = "sgd",
+    lr = lr,
+    momentum = momentum,
+    weight_decay = weight_decay,
+    velocities = {},
+    step_count = 0
+  }
 
 # Adam optimizer
-adam(lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64): any
-    if beta1 == nil beta1 = 0.9 end
-    if beta2 == nil beta2 = 0.999 end
-    if eps == nil eps = 1e-8 end
-    if weight_decay == nil weight_decay = 0 end
-    {
-        type = "adam",
-        lr = lr,
-        beta1 = beta1,
-        beta2 = beta2,
-        eps = eps,
-        weight_decay = weight_decay,
-        m = {},
-        v = {},
-        step_count = 0,
-    }
-end
+adam: any = (lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64)
+  if beta1 == nil
+    beta1 = 0.9
+  if beta2 == nil
+    beta2 = 0.999
+  if eps == nil
+    eps = 0.00000001
+  if weight_decay == nil
+    weight_decay = 0
+  {
+    type = "adam",
+    lr = lr,
+    beta1 = beta1,
+    beta2 = beta2,
+    eps = eps,
+    weight_decay = weight_decay,
+    m = {},
+    v = {},
+    step_count = 0
+  }
 
 # AdamW optimizer (decoupled weight decay)
-adamw(lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64): any
-    if beta1 == nil beta1 = 0.9 end
-    if beta2 == nil beta2 = 0.999 end
-    if eps == nil eps = 1e-8 end
-    if weight_decay == nil weight_decay = 0.01 end
-    {
-        type = "adamw",
-        lr = lr,
-        beta1 = beta1,
-        beta2 = beta2,
-        eps = eps,
-        weight_decay = weight_decay,
-        m = {},
-        v = {},
-        step_count = 0,
-    }
-end
+adamw: any = (lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64)
+  if beta1 == nil
+    beta1 = 0.9
+  if beta2 == nil
+    beta2 = 0.999
+  if eps == nil
+    eps = 0.00000001
+  if weight_decay == nil
+    weight_decay = 0.01
+  {
+    type = "adamw",
+    lr = lr,
+    beta1 = beta1,
+    beta2 = beta2,
+    eps = eps,
+    weight_decay = weight_decay,
+    m = {},
+    v = {},
+    step_count = 0
+  }
 
 # AdaGrad
-adagrad(lr: f64, eps: f64, weight_decay: f64): any
-    if eps == nil eps = 1e-8 end
-    if weight_decay == nil weight_decay = 0 end
-    {
-        type = "adagrad",
-        lr = lr,
-        eps = eps,
-        weight_decay = weight_decay,
-        accum = {},
-        step_count = 0,
-    }
-end
+adagrad: any = (lr: f64, eps: f64, weight_decay: f64)
+  if eps == nil
+    eps = 0.00000001
+  if weight_decay == nil
+    weight_decay = 0
+  {
+    type = "adagrad",
+    lr = lr,
+    eps = eps,
+    weight_decay = weight_decay,
+    accum = {},
+    step_count = 0
+  }
 
 # RMSprop
-rmsprop(lr: f64, alpha: f64, eps: f64, momentum: f64, weight_decay: f64): any
-    if alpha == nil alpha = 0.99 end
-    if eps == nil eps = 1e-8 end
-    if momentum == nil momentum = 0 end
-    if weight_decay == nil weight_decay = 0 end
-    {
-        type = "rmsprop",
-        lr = lr,
-        alpha = alpha,
-        eps = eps,
-        momentum = momentum,
-        weight_decay = weight_decay,
-        cache = {},
-        velocity = {},
-        step_count = 0,
-    }
-end
+rmsprop: any = (lr: f64, alpha: f64, eps: f64, momentum: f64, weight_decay: f64)
+  if alpha == nil
+    alpha = 0.99
+  if eps == nil
+    eps = 0.00000001
+  if momentum == nil
+    momentum = 0
+  if weight_decay == nil
+    weight_decay = 0
+  {
+    type = "rmsprop",
+    lr = lr,
+    alpha = alpha,
+    eps = eps,
+    momentum = momentum,
+    weight_decay = weight_decay,
+    cache = {},
+    velocity = {},
+    step_count = 0
+  }
 
 # LAMB (Layer-wise Adaptive Moments for Batch training)
-lamb(lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64): any
-    if beta1 == nil beta1 = 0.9 end
-    if beta2 == nil beta2 = 0.999 end
-    if eps == nil eps = 1e-6 end
-    if weight_decay == nil weight_decay = 0.01 end
-    {
-        type = "lamb",
-        lr = lr,
-        beta1 = beta1,
-        beta2 = beta2,
-        eps = eps,
-        weight_decay = weight_decay,
-        m = {},
-        v = {},
-        step_count = 0,
-    }
-end
+lamb: any = (lr: f64, beta1: f64, beta2: f64, eps: f64, weight_decay: f64)
+  if beta1 == nil
+    beta1 = 0.9
+  if beta2 == nil
+    beta2 = 0.999
+  if eps == nil
+    eps = 0.000001
+  if weight_decay == nil
+    weight_decay = 0.01
+  {
+    type = "lamb",
+    lr = lr,
+    beta1 = beta1,
+    beta2 = beta2,
+    eps = eps,
+    weight_decay = weight_decay,
+    m = {},
+    v = {},
+    step_count = 0
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Optimizer step
 # ═══════════════════════════════════════════════════════════════
 
 @hot
-optimizer_step(opt: any, params: any, grads: any): void
-    opt.step_count = opt.step_count + 1
+optimizer_step: void = (opt: any, params: any, grads: any)
+  opt.step_count = opt.step_count + 1
 
-    if opt.type == "sgd"
-        step_sgd(opt, params, grads)
-    elseif opt.type == "adam"
-        step_adam(opt, params, grads)
-    elseif opt.type == "adamw"
-        step_adamw(opt, params, grads)
-    elseif opt.type == "adagrad"
-        step_adagrad(opt, params, grads)
-    elseif opt.type == "rmsprop"
-        step_rmsprop(opt, params, grads)
-    elseif opt.type == "lamb"
-        step_lamb(opt, params, grads)
-    end
-end
+  if opt.type == "sgd"
+    step_sgd(opt, params, grads)
+  elseif opt.type == "adam"
+    step_adam(opt, params, grads)
+  elseif opt.type == "adamw"
+    step_adamw(opt, params, grads)
+  elseif opt.type == "adagrad"
+    step_adagrad(opt, params, grads)
+  elseif opt.type == "rmsprop"
+    step_rmsprop(opt, params, grads)
+  elseif opt.type == "lamb"
+    step_lamb(opt, params, grads)
 
-step_sgd(opt: any, params: any, grads: any): void
-    for i = 1, params:len()
-        p = params[i]
-        g = grads[i]
-        key = p:to(str)
+step_sgd: void = (opt: any, params: any, grads: any)
+  for i = 1, params:len()
+    p = params[i]
+    g = grads[i]
+    key = p:to(str)
 
-        if opt.momentum != 0
-            if opt.velocities[key] == nil
-                opt.velocities[key] = Tensor.zeros(p.rows, p.cols)
-            end
-            v = opt.velocities[key]
-            for j = 1, p.size
-                v.data[j] = opt.momentum * v.data[j] + g.data[j]
-                p.data[j] = p.data[j] - opt.lr * v.data[j]
-            end
-        else
-            for j = 1, p.size
-                p.data[j] = p.data[j] - opt.lr * g.data[j]
-            end
-        end
-    end
-end
+    if opt.momentum != 0
+      if opt.velocities[key] == nil
+        opt.velocities[key] = Tensor.zeros(p.rows, p.cols)
+      v = opt.velocities[key]
+      for j = 1, p.size
+        v.data[j] = opt.momentum * v.data[j] + g.data[j]
+        p.data[j] = p.data[j] - opt.lr * v.data[j]
+    else
+      for j = 1, p.size
+        p.data[j] = p.data[j] - opt.lr * g.data[j]
 
 @hot
-step_adam(opt: any, params: any, grads: any): void
-    bc1 = 1 - opt.beta1:pow(opt.step_count)
-    bc2 = 1 - opt.beta2:pow(opt.step_count)
+step_adam: void = (opt: any, params: any, grads: any)
+  bc1 = 1 - opt.beta1:pow(opt.step_count)
+  bc2 = 1 - opt.beta2:pow(opt.step_count)
 
-    for i = 1, params:len()
-        p = params[i]
-        g = grads[i]
-        key = p:to(str)
+  for i = 1, params:len()
+    p = params[i]
+    g = grads[i]
+    key = p:to(str)
 
-        if opt.m[key] == nil
-            opt.m[key] = Tensor.zeros(p.rows, p.cols)
-            opt.v[key] = Tensor.zeros(p.rows, p.cols)
-        end
-        m = opt.m[key]
-        v = opt.v[key]
+    if opt.m[key] == nil
+      opt.m[key] = Tensor.zeros(p.rows, p.cols)
+      opt.v[key] = Tensor.zeros(p.rows, p.cols)
+    m = opt.m[key]
+    v = opt.v[key]
 
-        for j = 1, p.size
-            m.data[j] = opt.beta1 * m.data[j] + (1 - opt.beta1) * g.data[j]
-            v.data[j] = opt.beta2 * v.data[j] + (1 - opt.beta2) * g.data[j] * g.data[j]
-            m_hat = m.data[j] / bc1
-            v_hat = v.data[j] / bc2
-            p.data[j] = p.data[j] - opt.lr * m_hat / (v_hat:sqrt() + opt.eps)
-        end
-    end
-end
+    for j = 1, p.size
+      m.data[j] = opt.beta1 * m.data[j] + (1 - opt.beta1) * g.data[j]
+      v.data[j] = opt.beta2 * v.data[j] + (1 - opt.beta2) * g.data[j] * g.data[j]
+      m_hat = m.data[j] / bc1
+      v_hat = v.data[j] / bc2
+      p.data[j] = p.data[j] - opt.lr * m_hat / (v_hat:sqrt() + opt.eps)
 
 @hot
-step_adamw(opt: any, params: any, grads: any): void
-    bc1 = 1 - opt.beta1:pow(opt.step_count)
-    bc2 = 1 - opt.beta2:pow(opt.step_count)
+step_adamw: void = (opt: any, params: any, grads: any)
+  bc1 = 1 - opt.beta1:pow(opt.step_count)
+  bc2 = 1 - opt.beta2:pow(opt.step_count)
 
-    for i = 1, params:len()
-        p = params[i]
-        g = grads[i]
-        key = p:to(str)
+  for i = 1, params:len()
+    p = params[i]
+    g = grads[i]
+    key = p:to(str)
 
-        if opt.m[key] == nil
-            opt.m[key] = Tensor.zeros(p.rows, p.cols)
-            opt.v[key] = Tensor.zeros(p.rows, p.cols)
-        end
-        m = opt.m[key]
-        v = opt.v[key]
+    if opt.m[key] == nil
+      opt.m[key] = Tensor.zeros(p.rows, p.cols)
+      opt.v[key] = Tensor.zeros(p.rows, p.cols)
+    m = opt.m[key]
+    v = opt.v[key]
 
-        for j = 1, p.size
-            # Decoupled weight decay
-            p.data[j] = p.data[j] * (1 - opt.lr * opt.weight_decay)
-            m.data[j] = opt.beta1 * m.data[j] + (1 - opt.beta1) * g.data[j]
-            v.data[j] = opt.beta2 * v.data[j] + (1 - opt.beta2) * g.data[j] * g.data[j]
-            m_hat = m.data[j] / bc1
-            v_hat = v.data[j] / bc2
-            p.data[j] = p.data[j] - opt.lr * m_hat / (v_hat:sqrt() + opt.eps)
-        end
-    end
-end
+    for j = 1, p.size
+      # Decoupled weight decay
+      p.data[j] = p.data[j] * (1 - opt.lr * opt.weight_decay)
+      m.data[j] = opt.beta1 * m.data[j] + (1 - opt.beta1) * g.data[j]
+      v.data[j] = opt.beta2 * v.data[j] + (1 - opt.beta2) * g.data[j] * g.data[j]
+      m_hat = m.data[j] / bc1
+      v_hat = v.data[j] / bc2
+      p.data[j] = p.data[j] - opt.lr * m_hat / (v_hat:sqrt() + opt.eps)
 
-step_adagrad(opt: any, params: any, grads: any): void
-    for i = 1, params:len()
-        p = params[i]
-        g = grads[i]
-        key = p:to(str)
+step_adagrad: void = (opt: any, params: any, grads: any)
+  for i = 1, params:len()
+    p = params[i]
+    g = grads[i]
+    key = p:to(str)
 
-        if opt.accum[key] == nil
-            opt.accum[key] = Tensor.zeros(p.rows, p.cols)
-        end
-        acc = opt.accum[key]
+    if opt.accum[key] == nil
+      opt.accum[key] = Tensor.zeros(p.rows, p.cols)
+    acc = opt.accum[key]
 
-        for j = 1, p.size
-            acc.data[j] = acc.data[j] + g.data[j] * g.data[j]
-            p.data[j] = p.data[j] - opt.lr * g.data[j] / (acc.data[j]:sqrt() + opt.eps)
-        end
-    end
-end
+    for j = 1, p.size
+      acc.data[j] = acc.data[j] + g.data[j] * g.data[j]
+      p.data[j] = p.data[j] - opt.lr * g.data[j] / (acc.data[j]:sqrt() + opt.eps)
 
-step_rmsprop(opt: any, params: any, grads: any): void
-    for i = 1, params:len()
-        p = params[i]
-        g = grads[i]
-        key = p:to(str)
+step_rmsprop: void = (opt: any, params: any, grads: any)
+  for i = 1, params:len()
+    p = params[i]
+    g = grads[i]
+    key = p:to(str)
 
-        if opt.cache[key] == nil
-            opt.cache[key] = Tensor.zeros(p.rows, p.cols)
-            opt.velocity[key] = Tensor.zeros(p.rows, p.cols)
-        end
-        cache = opt.cache[key]
-        vel = opt.velocity[key]
+    if opt.cache[key] == nil
+      opt.cache[key] = Tensor.zeros(p.rows, p.cols)
+      opt.velocity[key] = Tensor.zeros(p.rows, p.cols)
+    cache = opt.cache[key]
+    vel = opt.velocity[key]
 
-        for j = 1, p.size
-            cache.data[j] = opt.alpha * cache.data[j] + (1 - opt.alpha) * g.data[j] * g.data[j]
-            vel.data[j] = opt.momentum * vel.data[j] + opt.lr * g.data[j] / (cache.data[j]:sqrt() + opt.eps)
-            p.data[j] = p.data[j] - vel.data[j]
-        end
-    end
-end
+    for j = 1, p.size
+      cache.data[j] = opt.alpha * cache.data[j] + (1 - opt.alpha) * g.data[j] * g.data[j]
+      vel.data[j] = opt.momentum * vel.data[j] + opt.lr * g.data[j] / (cache.data[j]:sqrt() + opt.eps)
+      p.data[j] = p.data[j] - vel.data[j]
 
-step_lamb(opt: any, params: any, grads: any): void
-    bc1 = 1 - opt.beta1:pow(opt.step_count)
-    bc2 = 1 - opt.beta2:pow(opt.step_count)
+step_lamb: void = (opt: any, params: any, grads: any)
+  bc1 = 1 - opt.beta1:pow(opt.step_count)
+  bc2 = 1 - opt.beta2:pow(opt.step_count)
 
-    for i = 1, params:len()
-        p = params[i]
-        g = grads[i]
-        key = p:to(str)
+  for i = 1, params:len()
+    p = params[i]
+    g = grads[i]
+    key = p:to(str)
 
-        if opt.m[key] == nil
-            opt.m[key] = Tensor.zeros(p.rows, p.cols)
-            opt.v[key] = Tensor.zeros(p.rows, p.cols)
-        end
-        m = opt.m[key]
-        v = opt.v[key]
+    if opt.m[key] == nil
+      opt.m[key] = Tensor.zeros(p.rows, p.cols)
+      opt.v[key] = Tensor.zeros(p.rows, p.cols)
+    m = opt.m[key]
+    v = opt.v[key]
 
-        # Adam update
-        for j = 1, p.size
-            m.data[j] = opt.beta1 * m.data[j] + (1 - opt.beta1) * g.data[j]
-            v.data[j] = opt.beta2 * v.data[j] + (1 - opt.beta2) * g.data[j] * g.data[j]
-        end
+    # Adam update
+    for j = 1, p.size
+      m.data[j] = opt.beta1 * m.data[j] + (1 - opt.beta1) * g.data[j]
+      v.data[j] = opt.beta2 * v.data[j] + (1 - opt.beta2) * g.data[j] * g.data[j]
 
-        # Compute trust ratio
-        weight_norm = 0
-        for j = 1, p.size
-            weight_norm += p.data[j] * p.data[j]
-        end
-        weight_norm = weight_norm:sqrt()
+    # Compute trust ratio
+    weight_norm = 0
+    for j = 1, p.size
+      weight_norm = weight_norm + p.data[j] * p.data[j]
+    weight_norm = weight_norm:sqrt()
 
-        update_norm = 0
-        for j = 1, p.size
-            m_hat = m.data[j] / bc1
-            v_hat = v.data[j] / bc2
-            update = m_hat / (v_hat:sqrt() + opt.eps) + opt.weight_decay * p.data[j]
-            update_norm += update * update
-        end
-        update_norm = update_norm:sqrt()
+    update_norm = 0
+    for j = 1, p.size
+      m_hat = m.data[j] / bc1
+      v_hat = v.data[j] / bc2
+      update = m_hat / (v_hat:sqrt() + opt.eps) + opt.weight_decay * p.data[j]
+      update_norm = update_norm + update * update
+    update_norm = update_norm:sqrt()
 
-        ratio = weight_norm / (update_norm + opt.eps)
+    ratio = weight_norm / (update_norm + opt.eps)
 
-        for j = 1, p.size
-            m_hat = m.data[j] / bc1
-            v_hat = v.data[j] / bc2
-            p.data[j] = p.data[j] - opt.lr * ratio * (m_hat / (v_hat:sqrt() + opt.eps) + opt.weight_decay * p.data[j])
-        end
-    end
-end
+    for j = 1, p.size
+      m_hat = m.data[j] / bc1
+      v_hat = v.data[j] / bc2
+      p.data[j] = p.data[j] - opt.lr * ratio * (m_hat / (v_hat:sqrt() + opt.eps) + opt.weight_decay * p.data[j])
 
 # ═══════════════════════════════════════════════════════════════
 # Learning Rate Schedulers
 # ═══════════════════════════════════════════════════════════════
 
 # Step decay: multiply lr by gamma every step_size epochs
-step_scheduler(initial_lr: f64, step_size: i64, gamma: f64): any
-    {
-        type = "step",
-        initial_lr = initial_lr,
-        step_size = step_size,
-        gamma = gamma,
-        last_epoch = 0,
-    }
-end
+step_scheduler: any = (initial_lr: f64, step_size: i64, gamma: f64)
+  {
+    type = "step",
+    initial_lr = initial_lr,
+    step_size = step_size,
+    gamma = gamma,
+    last_epoch = 0
+  }
 
 # Exponential decay: lr = initial_lr * gamma^epoch
-exponential_scheduler(initial_lr: f64, gamma: f64): any
-    {
-        type = "exponential",
-        initial_lr = initial_lr,
-        gamma = gamma,
-        last_epoch = 0,
-    }
-end
+exponential_scheduler: any = (initial_lr: f64, gamma: f64)
+  {
+    type = "exponential",
+    initial_lr = initial_lr,
+    gamma = gamma,
+    last_epoch = 0
+  }
 
 # Cosine annealing
-cosine_scheduler(initial_lr: f64, T_max: i64, eta_min: f64): any
-    if eta_min == nil eta_min = 0 end
-    {
-        type = "cosine",
-        initial_lr = initial_lr,
-        T_max = T_max,
-        eta_min = eta_min,
-        last_epoch = 0,
-    }
-end
+cosine_scheduler: any = (initial_lr: f64, T_max: i64, eta_min: f64)
+  if eta_min == nil
+    eta_min = 0
+  {
+    type = "cosine",
+    initial_lr = initial_lr,
+    T_max = T_max,
+    eta_min = eta_min,
+    last_epoch = 0
+  }
 
 # Warmup + cosine decay (used in transformer training)
-warmup_cosine(warmup_steps: i64, total_steps: i64, peak_lr: f64, min_lr: f64): any
-    if min_lr == nil min_lr = 0 end
-    {
-        type = "warmup_cosine",
-        warmup_steps = warmup_steps,
-        total_steps = total_steps,
-        peak_lr = peak_lr,
-        min_lr = min_lr,
-        step = 0,
-    }
-end
+warmup_cosine: any = (warmup_steps: i64, total_steps: i64, peak_lr: f64, min_lr: f64)
+  if min_lr == nil
+    min_lr = 0
+  {
+    type = "warmup_cosine",
+    warmup_steps = warmup_steps,
+    total_steps = total_steps,
+    peak_lr = peak_lr,
+    min_lr = min_lr,
+    step = 0
+  }
 
 # Linear warmup then constant
-warmup_constant(warmup_steps: i64, peak_lr: f64): any
-    {
-        type = "warmup_constant",
-        warmup_steps = warmup_steps,
-        peak_lr = peak_lr,
-        step = 0,
-    }
-end
+warmup_constant: any = (warmup_steps: i64, peak_lr: f64)
+  {
+    type = "warmup_constant",
+    warmup_steps = warmup_steps,
+    peak_lr = peak_lr,
+    step = 0
+  }
 
 # One cycle policy (super-convergence)
-one_cycle(max_lr: f64, total_steps: i64, pct_start: f64): any
-    if pct_start == nil pct_start = 0.3 end
-    {
-        type = "one_cycle",
-        max_lr = max_lr,
-        total_steps = total_steps,
-        pct_start = pct_start,
-        step = 0,
-    }
-end
+one_cycle: any = (max_lr: f64, total_steps: i64, pct_start: f64)
+  if pct_start == nil
+    pct_start = 0.3
+  {
+    type = "one_cycle",
+    max_lr = max_lr,
+    total_steps = total_steps,
+    pct_start = pct_start,
+    step = 0
+  }
 
 # Get current learning rate
-scheduler_get_lr(scheduler: any): f64
-    scheduler.step = scheduler.step + 1
-    step = scheduler.step
+scheduler_get_lr: f64 = (scheduler: any)
+  scheduler.step = scheduler.step + 1
+  step = scheduler.step
 
-    if scheduler.type == "step"
-        epochs = step / scheduler.step_size:floor()
-        return scheduler.initial_lr * scheduler.gamma:pow(epochs)
+  if scheduler.type == "step"
+    epochs = step / scheduler.step_size:floor()
+    return scheduler.initial_lr * scheduler.gamma:pow(epochs)
+  elseif scheduler.type == "exponential"
 
-    elseif scheduler.type == "exponential"
-        return scheduler.initial_lr * scheduler.gamma:pow(step)
+    return scheduler.initial_lr * scheduler.gamma:pow(step)
+  elseif scheduler.type == "cosine"
 
-    elseif scheduler.type == "cosine"
-        t = step / scheduler.T_max
-        return scheduler.eta_min + 0.5 * (scheduler.initial_lr - scheduler.eta_min) * (1 + math.pi * t:cos())
+    t = step / scheduler.T_max
+    return scheduler.eta_min + 0.5 * (scheduler.initial_lr - scheduler.eta_min) * (1 + math.pi * t:cos())
+  elseif scheduler.type == "warmup_cosine"
 
-    elseif scheduler.type == "warmup_cosine"
-        if step < scheduler.warmup_steps
-            return scheduler.peak_lr * step / scheduler.warmup_steps
-        end
-        progress = (step - scheduler.warmup_steps) / (scheduler.total_steps - scheduler.warmup_steps)
-        return scheduler.min_lr + 0.5 * (scheduler.peak_lr - scheduler.min_lr) * (1 + math.pi * progress:cos())
+    if step < scheduler.warmup_steps
+      return scheduler.peak_lr * step / scheduler.warmup_steps
+    progress = (step - scheduler.warmup_steps) / (scheduler.total_steps - scheduler.warmup_steps)
+    return scheduler.min_lr + 0.5 * (scheduler.peak_lr - scheduler.min_lr) * (1 + math.pi * progress:cos())
+  elseif scheduler.type == "warmup_constant"
 
-    elseif scheduler.type == "warmup_constant"
-        if step < scheduler.warmup_steps
-            return scheduler.peak_lr * step / scheduler.warmup_steps
-        end
-        return scheduler.peak_lr
+    if step < scheduler.warmup_steps
+      return scheduler.peak_lr * step / scheduler.warmup_steps
+    return scheduler.peak_lr
+  elseif scheduler.type == "one_cycle"
 
-    elseif scheduler.type == "one_cycle"
-        div = scheduler.total_steps * scheduler.pct_start
-        if step <= div
-            return scheduler.max_lr * step / div
-        end
-        progress = (step - div) / (scheduler.total_steps - div)
-        return scheduler.max_lr * 0.5 * (1 + math.pi * progress:cos())
-    end
+    div = scheduler.total_steps * scheduler.pct_start
+    if step <= div
+      return scheduler.max_lr * step / div
+    progress = (step - div) / (scheduler.total_steps - div)
+    return scheduler.max_lr * 0.5 * (1 + math.pi * progress:cos())
 
-    scheduler.initial_lr
-end
+  scheduler.initial_lr
 
 # ═══════════════════════════════════════════════════════════════
 # Gradient clipping
 # ═══════════════════════════════════════════════════════════════
 
-clip_grad_norm(params: any, grads: any, max_norm: f64): f64
-    total_norm = 0
+clip_grad_norm: f64 = (params: any, grads: any, max_norm: f64)
+  total_norm = 0
+  for i = 1, params:len()
+    g = grads[i]
+    for j = 1, g.size
+      total_norm = total_norm + g.data[j] * g.data[j]
+  total_norm = total_norm:sqrt()
+
+  if total_norm > max_norm
+    scale = max_norm / total_norm
     for i = 1, params:len()
-        g = grads[i]
-        for j = 1, g.size
-            total_norm += g.data[j] * g.data[j]
-        end
-    end
-    total_norm = total_norm:sqrt()
+      g = grads[i]
+      for j = 1, g.size
+        g.data[j] = g.data[j] * scale
 
-    if total_norm > max_norm
-        scale = max_norm / total_norm
-        for i = 1, params:len()
-            g = grads[i]
-            for j = 1, g.size
-                g.data[j] = g.data[j] * scale
-            end
-        end
-    end
+  total_norm
 
-    total_norm
-end
-
-clip_grad_value(grads: any, max_value: f64): void
-    for i = 1, grads:len()
-        g = grads[i]
-        for j = 1, g.size
-            if g.data[j] > max_value
-                g.data[j] = max_value
-            elseif g.data[j] < -max_value
-                g.data[j] = -max_value
-            end
-        end
-    end
-end
+clip_grad_value: void = (grads: any, max_value: f64)
+  for i = 1, grads:len()
+    g = grads[i]
+    for j = 1, g.size
+      if g.data[j] > max_value
+        g.data[j] = max_value
+      elseif g.data[j] < -max_value
+        g.data[j] = -max_value
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports
