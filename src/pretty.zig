@@ -17,6 +17,19 @@ pub const Mode = enum {
 
 const Error = error{OutOfMemory};
 
+/// A table every one of whose fields carries a LABEL. Only these can be written
+/// offside: an unlabelled sequence written that way is indistinguishable from an
+/// executable region, so it keeps an explicit delimiter.
+fn allLabelledPack(e: *const Expr) bool {
+    if (e.* != .table) return false;
+    if (e.table.fields.len == 0) return false;
+    for (e.table.fields) |f| switch (f) {
+        .named, .indexed => {},
+        else => return false,
+    };
+    return true;
+}
+
 pub const SourceComment = struct { line: u32, text: []const u8 };
 
 fn isVoidType(t: TypeExpr) bool {
@@ -527,6 +540,40 @@ pub const PrettyPrinter = struct {
     ///
     /// One origin for every block form, so `end` cannot come back for one
     /// construct and not another.
+    /// Write a labelled pack as an offside slot region — the canonical face.
+    ///
+    /// BRACES ARE NOT CANONICAL. Structure comes from layout; `{ … }` survives
+    /// only as an explicit disambiguation escape hatch, so the formatter erases
+    /// it wherever the layout form is unambiguous — which is exactly the
+    /// all-labelled case. An UNLABELLED sequence is not converted: offside
+    /// cannot serve there, because an unlabelled region is indistinguishable
+    /// from an executable one.
+    fn printOffsidePack(self: *PrettyPrinter, e: *const Expr) Error!void {
+        // The caller has already written `= `, leaving a trailing space on what
+        // is about to become an empty line.
+        while (self.buf.items.len > 0 and self.buf.items[self.buf.items.len - 1] == ' ')
+            _ = self.buf.pop();
+        self.indent();
+        for (e.table.fields) |f| {
+            try self.nl();
+            switch (f) {
+                .named => |nm| {
+                    try self.print("{s} = ", .{nm.key});
+                    if (allLabelledPack(nm.val)) try self.printOffsidePack(nm.val)
+                    else try self.printExpr(nm.val, 0);
+                },
+                .indexed => |ix| {
+                    try self.write("[");
+                    try self.printExpr(ix.key, 0);
+                    try self.write("] = ");
+                    try self.printExpr(ix.val, 0);
+                },
+                else => unreachable,
+            }
+        }
+        self.dedent();
+    }
+
     fn closeBlock(self: *PrettyPrinter) !void {
         if (self.mode == .idol and self.canonical) return;
         try self.nl();
@@ -607,9 +654,15 @@ pub const PrettyPrinter = struct {
                 }
                 if (ld.inits.len > 0) {
                     try self.write(" = ");
-                    for (ld.inits, 0..) |inits_val, i| {
-                        if (i > 0) try self.write(", ");
-                        try self.printExpr(inits_val, 0);
+                    if (ld.inits.len == 1 and self.mode == .idol and self.canonical and
+                        allLabelledPack(ld.inits[0]))
+                    {
+                        try self.printOffsidePack(ld.inits[0]);
+                    } else {
+                        for (ld.inits, 0..) |inits_val, i| {
+                            if (i > 0) try self.write(", ");
+                            try self.printExpr(inits_val, 0);
+                        }
                     }
                 }
             },
@@ -648,9 +701,15 @@ pub const PrettyPrinter = struct {
                     try self.printExpr(t, 0);
                 }
                 try self.write(" = ");
-                for (as.values, 0..) |v, i| {
-                    if (i > 0) try self.write(", ");
-                    try self.printExpr(v, 0);
+                if (as.values.len == 1 and self.mode == .idol and self.canonical and
+                    allLabelledPack(as.values[0]))
+                {
+                    try self.printOffsidePack(as.values[0]);
+                } else {
+                    for (as.values, 0..) |v, i| {
+                        if (i > 0) try self.write(", ");
+                        try self.printExpr(v, 0);
+                    }
                 }
             },
             .call_stmt => |cs| try self.printExpr(cs.expr, 0),
