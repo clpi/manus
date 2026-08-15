@@ -106,6 +106,16 @@ pub fn target(
     return fact.target;
 }
 
+/// Three-way census of this module's application surface: how many call sites
+/// the graph identified, how many it did not but a bootstrap SPELLING carries
+/// anyway, and how many refuse the module outright. See
+/// `SemanticGraph.factCoverage` for why two of those are not one number.
+pub fn factCoverage(
+    graph: *const semantic_graph.SemanticGraph,
+) semantic_graph.SemanticGraph.FactCoverage {
+    return graph.factCoverage();
+}
+
 /// Evaluation stage when known on the application. Null is unknown.
 pub fn stage(
     graph: *const semantic_graph.SemanticGraph,

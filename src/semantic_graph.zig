@@ -843,6 +843,63 @@ pub const SemanticGraph = struct {
         return self.bootstrapApplicationExpr(expr);
     }
 
+    /// HOW MUCH OF THIS MODULE'S APPLICATION SURFACE THE GRAPH ACTUALLY OWNS.
+    ///
+    /// Three answers, not two, and the middle one is the whole point:
+    ///
+    ///   published  the graph identified the relation. Lowering consumes an
+    ///              exact id and every downstream fact (effect, emit order,
+    ///              fold licence) is available.
+    ///   bootstrap  the graph identified NOTHING and lowering proceeds anyway,
+    ///              by recognizing the callee's SPELLING in
+    ///              `native_bootstrap.applicationExprInModule`. `s:len()`,
+    ///              `print(v)`, `mem.read_i64(p,o)`. The code emitted is real;
+    ///              the fact behind it is not in the graph, so nothing
+    ///              downstream can reason about it.
+    ///   blocking   the graph identified nothing and no bootstrap face claims
+    ///              it. This is the set `native_backend` refuses the module on
+    ///              (`unresolved-application-facts`) and `dnir_lower` refuses
+    ///              it on second (`missing-application-id`).
+    ///
+    /// Before this, an outside consumer could see `applications` and
+    /// `unresolved_applications` and had no way to tell the middle column from
+    /// the right one — so "the graph does not know what this call is" and "the
+    /// graph does not know what this call is AND that stops the compiler" read
+    /// as the same number. They are 4:1 apart corpus-wide, and only one of them
+    /// is a refusal. A census that cannot separate them cannot rank any work.
+    pub const FactCoverage = struct {
+        /// Every `.call`/`.method_call` the lift marked as an application site.
+        candidates: usize = 0,
+        /// Candidates carrying a published `ApplicationFact`.
+        published: usize = 0,
+        /// Unpublished, but recognized by a bootstrap face — lowered by spelling.
+        bootstrap: usize = 0,
+        /// Unpublished and unrecognized — the refusal set.
+        blocking: usize = 0,
+
+        pub fn unresolved(self: FactCoverage) usize {
+            return self.bootstrap + self.blocking;
+        }
+    };
+
+    pub fn factCoverage(self: *const SemanticGraph) FactCoverage {
+        var out: FactCoverage = .{};
+        var candidates = self.application_candidates.iterator(.{});
+        while (candidates.next()) |candidate| {
+            const entity = std.math.cast(id, candidate) orelse continue;
+            if (self.get(entity) == null) continue;
+            out.candidates += 1;
+            if (self.application(entity) != null) {
+                out.published += 1;
+            } else if (self.isBootstrapApplicationNode(entity)) {
+                out.bootstrap += 1;
+            } else {
+                out.blocking += 1;
+            }
+        }
+        return out;
+    }
+
     pub fn gateTransportModule(self: *const SemanticGraph) bool {
         if (self.module_path) |path| return native_bootstrap.gateTransport(path);
         return false;
@@ -2782,7 +2839,12 @@ pub const SemanticGraph = struct {
         // a v3 export sees keys it did not expect, and a v3 reader pointed at a
         // v2 export sees a MISSING card rather than silently reading absence as
         // agreement. The bump is what lets it tell those apart.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":3,\"file\":\"");
+        //
+        // version 4: `blocking_applications` and `fact_coverage`. Same argument
+        // one level up — v3 published `unresolved_applications` and nothing that
+        // said which of those entries the backend would actually refuse on, so a
+        // reader had to guess, and the guess is wrong by 4:1 corpus-wide.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":4,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         if (source_hash) |h| {
@@ -2997,7 +3059,33 @@ pub const SemanticGraph = struct {
             first_unresolved = false;
             try appendJsonInt(out, alloc, candidate);
         }
-        try out.appendSlice(alloc, "],\"table_shapes\":[");
+        // THE ONE UNRESOLVED CANDIDATE THAT REFUSES THE MODULE, listed by id, and
+        // the three-way census behind it. `unresolved_applications` above lumps
+        // together a call the compiler lowers happily by spelling and a call that
+        // stops it dead; those are different facts and a consumer that cannot
+        // separate them cannot rank the gap. See `factCoverage`.
+        try out.appendSlice(alloc, "],\"blocking_applications\":[");
+        var first_blocking = true;
+        var blocking_candidates = self.application_candidates.iterator(.{});
+        while (blocking_candidates.next()) |candidate| {
+            const entity = std.math.cast(id, candidate) orelse return error.InvalidApplicationFact;
+            if (self.get(entity) == null) return error.InvalidApplicationFact;
+            if (self.application(entity) != null) continue;
+            if (self.isBootstrapApplicationNode(entity)) continue;
+            if (!first_blocking) try out.append(alloc, ',');
+            first_blocking = false;
+            try appendJsonInt(out, alloc, entity);
+        }
+        const coverage = self.factCoverage();
+        try out.appendSlice(alloc, "],\"fact_coverage\":{\"candidates\":");
+        try appendJsonInt(out, alloc, coverage.candidates);
+        try out.appendSlice(alloc, ",\"published\":");
+        try appendJsonInt(out, alloc, coverage.published);
+        try out.appendSlice(alloc, ",\"bootstrap\":");
+        try appendJsonInt(out, alloc, coverage.bootstrap);
+        try out.appendSlice(alloc, ",\"blocking\":");
+        try appendJsonInt(out, alloc, coverage.blocking);
+        try out.appendSlice(alloc, "},\"table_shapes\":[");
         var first_table = true;
         for (self.nodes.items, 0..) |node, node_index| {
             const shape: id = @intCast(node_index);
@@ -4521,6 +4609,76 @@ test "semantic_graph: four calls to one callee in one body are four identities" 
     // assertion below vacuously true.
     try std.testing.expectEqual(@as(usize, 4), calls);
     try std.testing.expectEqual(@as(usize, 4), seen.count());
+}
+
+test "semantic_graph: fact coverage separates a bootstrap face from a blocking one" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THREE CANDIDATES, ONE OF EACH KIND, IN ONE BODY — because a census that
+    // cannot tell them apart is the defect this projection exists to fix, and
+    // three separate one-column fixtures would each pass against a reader that
+    // collapses two of the columns into one.
+    //
+    //   helper()   PUBLISHED  — a module relation sema identified.
+    //   s:len()    BOOTSTRAP  — no fact, but `native_bootstrap` lowers it by
+    //                           spelling, so the module still compiles.
+    //   f()        BLOCKING   — `f` is a LOCAL binding, so `callable_defs` (a
+    //                           module-level map) never sees it and no fact is
+    //                           recorded. Nothing lowers it either. This is the
+    //                           shape that refuses the module.
+    const src =
+        \\helper: i64 = ()
+        \\    1
+        \\entry: i64 = (s: str)
+        \\    f = () 2
+        \\    helper() + s:len() + f()
+    ;
+    var lex = Lexer.init(src, "coverage.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&mod);
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    _ = try g.liftModuleWithCheckedCalls(&mod, &checked, "coverage.id");
+
+    const coverage = g.factCoverage();
+    // POSITIVE CONTROL FIRST. Every assertion below is vacuous at zero, and a
+    // lift that stopped marking candidates would satisfy the partition.
+    try std.testing.expectEqual(@as(usize, 3), coverage.candidates);
+    try std.testing.expectEqual(@as(usize, 1), coverage.published);
+    try std.testing.expectEqual(@as(usize, 1), coverage.bootstrap);
+    try std.testing.expectEqual(@as(usize, 1), coverage.blocking);
+
+    // THE PARTITION. `candidates` is exactly the three columns and nothing
+    // falls outside them.
+    try std.testing.expectEqual(
+        coverage.candidates,
+        coverage.published + coverage.bootstrap + coverage.blocking,
+    );
+    try std.testing.expectEqual(coverage.bootstrap + coverage.blocking, coverage.unresolved());
+
+    // AND THE MIDDLE COLUMN IS NOT THE RIGHT ONE. The backend refuses on
+    // `firstUnresolvedApplicationExcludingBootstrap`, so `blocking` must agree
+    // with it exactly — one number, two readers, and this is the seam where
+    // they could drift.
+    try std.testing.expect(g.firstUnresolvedApplicationExcludingBootstrap(null) != null);
+    try std.testing.expectEqual(
+        coverage.blocking,
+        g.unresolvedApplicationCountExcludingBootstrap(null),
+    );
+    // The count that does NOT exclude bootstrap is strictly larger here, which
+    // is the whole point: reading it as the refusal set overstates by one.
+    try std.testing.expectEqual(coverage.unresolved(), g.unresolvedApplicationCount(null));
+    try std.testing.expect(g.unresolvedApplicationCount(null) > coverage.blocking);
 }
 
 /// Lift `src` the way the native path lifts it — sema first, then checked
