@@ -283,7 +283,7 @@ main: i64 = ()
     # gate that is red on the day it ships is a gate people learn to skip;
     # one that says "1 known-divergent artifact, here is why, and it must
     # not become 2" gets read. Measured 2026-08-08 at 878e0d1: 1 of 1.
-    cap0: i64 = os.env("DETERMINISM_ARTIFACT_FLOOR") or "1":to(i64)
+    cap0: i64 = (os.env("DETERMINISM_ARTIFACT_FLOOR") or "1"):to(i64)
     print("")
     if differing > cap0
       print("build_determinism: FAIL — {differing} of {counta} artifacts differ, over the ratchet {cap0}. U2 says bit-reproducible; the sources are named above.")

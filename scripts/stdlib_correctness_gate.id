@@ -119,7 +119,7 @@ main: i64 = ()
     check("string.repeat_str", string.repeat_str("ab", 3), "ababab")
     check("table.index_of", table.index_of({5, 6, 7}, 6):to(str), "2")
     check("table.reverse", table.reverse({1, 2, 3})[1]:to(str), "3")
-    check("table.concat", {"a":concat("b"}, "-"), "a-b")
+    check("table.concat", table.concat({"a", "b"}, "-"), "a-b")
     check("math.floor", 2.7:floor():to(str), "2")
     check("math.min", 3:min(7):to(str), "3")
 
@@ -161,7 +161,7 @@ main: i64 = ()
     # math.geometry — vec2_dot of (3,4).(1,0) is 3. Arithmetic, not lookup.
     check("geometry.vec2_dot", math.geometry.vec2_dot(
         math.geometry.vec2_new(3.0, 4.0),
-        math.geometry.vec2_new(1.0, 0.0):to(str)), "3")
+        math.geometry.vec2_new(1.0, 0.0)):to(str), "3")
 
     # encoding.ascii85 — ceiling of n/4 in 4-byte groups: 2*5 + 4.
     check("ascii85.max_encoded_len", encoding.ascii85.max_encoded_len(8):to(str), "14")

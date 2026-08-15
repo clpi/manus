@@ -234,7 +234,7 @@ main: i64 = ()
     else
         n = nrows:to(str)
         tup = each():to(str)
-        total = nrows * each():to(str)
+        total = (nrows * each()):to(str)
         print("ISA fidelity — descriptors vs clang, byte for byte (G-D3)")
         print("  descriptors   {n} instruction forms")
         print("  tuples        {tup} operand combinations each — {total} instructions")
@@ -264,7 +264,7 @@ main: i64 = ()
         cb = cbase:to(str)
         cs = cshift:to(str)
         cw = cswap:to(str)
-        agreed = nrows * each() - bad:to(str)
+        agreed = (nrows * each() - bad):to(str)
         b = bad:to(str)
 
         if bad < 0
