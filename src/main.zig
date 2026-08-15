@@ -4544,11 +4544,41 @@ fn do_compile(
                     _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
                     var native_diagnostic: native_backend.Diagnostic = .{};
                     if (!(native_scalar_candidate and !too_many_modules)) {
-                        if (direct_graph.firstUnresolvedApplicationExcludingBootstrap(null)) |occurrence| {
-                            native_diagnostic.bindOccurrence(&direct_graph, occurrence);
-                        }
+                        // THESE TWO FACTS ARE INDEPENDENT AND USED TO BE SPLICED
+                        // INTO ONE SENTENCE THAT READ AS CAUSAL.
+                        //
+                        // `relation:` came from the first unresolved application
+                        // in the graph; `missing:` came from whatever the scalar
+                        // precheck last recorded. Neither consulted the other, so
+                        // `relation: req missing: keyed-table-export` asserted a
+                        // dependency that did not exist. MEASURED, three programs,
+                        // one line each:
+                        //
+                        //   req + a keyed table   relation: req missing: keyed-table-export
+                        //   req alone             relation: req missing: unresolved-application-facts
+                        //   keyed table alone                 missing: keyed-table-export
+                        //
+                        // The second line is `req`'s real blocker. The first is
+                        // two unrelated facts wearing one comma, and it cost this
+                        // project three separate false findings — a lane
+                        // concluded the WASM engine failed to lower "because of
+                        // `req`", a corpus survey ranked `keyed-table-export` as
+                        // the largest import blocker, and I briefed a lane to fix
+                        // a dependency that was never there.
+                        //
+                        // So the occurrence is bound ONLY when the precheck has no
+                        // reason of its own. When it does, that reason IS the
+                        // blocker and the unresolved application is a different
+                        // true fact about the same program — worth having, not
+                        // worth implying causation between.
                         var reason_buf: [64]u8 = undefined;
-                        if (native_scalar_precheck.nativeScalarReason(&reason_buf)) |why| {
+                        const precheck_reason = native_scalar_precheck.nativeScalarReason(&reason_buf);
+                        if (precheck_reason == null) {
+                            if (direct_graph.firstUnresolvedApplicationExcludingBootstrap(null)) |occurrence| {
+                                native_diagnostic.bindOccurrence(&direct_graph, occurrence);
+                            }
+                        }
+                        if (precheck_reason) |why| {
                             native_diagnostic.remember(why);
                         } else if (too_many_modules) {
                             native_diagnostic.remember("runtime-linked-modules");
