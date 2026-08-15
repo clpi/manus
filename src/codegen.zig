@@ -12503,7 +12503,12 @@ pub const CodeGen = struct {
             .macro_def => {},
             .cinclude => {},
             .directive => |dir| {
-                if (std.mem.eql(u8, dir.attr.name, "c.emit")) {
+                // The parser records the canonical spelling `comp.c.emit`; this
+                // compared against the LEGACY SHORT name only, so every
+                // statement-position `@comp.c.emit` had its payload DROPPED and
+                // the enclosing function compiled to `return lua_val_nil();`.
+                // `isCEmitDirectiveName` normalises both spellings.
+                if (CodeGen.isCEmitDirectiveName(dir.attr.name)) {
                     const code = @import("directives.zig").extractAndUnescapeCRawCode(self.alloc, dir.attr.args orelse "") catch "";
                     self.ind();
                     const trimmed = std.mem.trim(u8, code, " \t\r\n");
@@ -25341,7 +25346,14 @@ pub const CodeGen = struct {
             switch (stmt.*) {
                 .func_decl, .const_decl => {},
                 .directive => |dir| {
-                    if (std.mem.eql(u8, dir.attr.name, "c.emit")) continue;
+                    // Module-level c.emit was already written at file scope by
+                    // the loop above (which spells the test correctly), so it
+                    // must be skipped here. The legacy-short-name compare let
+                    // `comp.c.emit` fall through to `emit_stmt` — harmless only
+                    // while `emit_stmt` also dropped it. Now that `emit_stmt`
+                    // honours the payload, this test has to normalise too or
+                    // the payload lands twice.
+                    if (CodeGen.isCEmitDirectiveName(dir.attr.name)) continue;
                     self.emit_stmt(stmt) catch |e| {
                         term.err("emit_embedded_module: stmt emit failed: {}", .{e});
                         return false;
@@ -28781,22 +28793,35 @@ const duo_runtime =
     \\    lua_Value pre = lua_table_get_raw(preload, name_val);
     \\    if (pre.type == VAL_FUNC || pre.type == VAL_CLOSURE) {
     \\        mod = lua_invoke(pre, 0, NULL);
-    \\    } else if (strcmp(name, "math") == 0) mod = math;
-    \\    else if (strcmp(name, "package") == 0) mod = package;
-    \\    else if (strcmp(name, "utf8") == 0) mod = utf8;
-    \\    else if (strcmp(name, "debug") == 0) mod = debug;
-    \\    else if (strcmp(name, "coroutine") == 0) mod = coroutine;
-    \\    else if (strcmp(name, "string") == 0) mod = string;
-    \\    else if (strcmp(name, "table") == 0) mod = table;
-    \\    else if (strcmp(name, "io") == 0) mod = io;
-    \\    else if (strcmp(name, "os") == 0) mod = os;
-    \\    else if (strcmp(name, "jit") == 0) mod = jit;
-    \\    else if (strcmp(name, "ffi") == 0) mod = ffi;
-    \\    else {
+    \\    } else {
+    \\        /* `duo_modules` IS CONSULTED BEFORE THE BUILTIN NAMES, and the order
+    \\         * is the whole point. `duo_modules` holds exactly the modules THIS
+    \\         * compilation embedded — a name only appears there because the
+    \\         * compiler resolved it to a real `lib/*.id` (or project) module and
+    \\         * lowered it. Every CALL through such a binding is already compiled
+    \\         * against that module. Binding the builtin stub table instead left
+    \\         * the two halves disagreeing: `req "jit"` bound the nine-row builtin
+    \\         * stub while `jitm.alloc(...)` compiled against `lib/jit.id`, so
+    \\         * `jitm.alloc == nil` was permanently true and no substrate gate
+    \\         * could answer. The builtins stay as the FALLBACK, which is what
+    \\         * they are for: a name with no embedded module behind it. */
     \\        mod = lua_table_get(duo_modules, name_val);
     \\        if (mod.type == VAL_FUNC || mod.type == VAL_CLOSURE) {
     \\            _duo_mod_registered = 1;
     \\            mod = lua_invoke(mod, 0, NULL);
+    \\        }
+    \\        if (mod.type == VAL_NIL && !_duo_mod_registered) {
+    \\            if (strcmp(name, "math") == 0) mod = math;
+    \\            else if (strcmp(name, "package") == 0) mod = package;
+    \\            else if (strcmp(name, "utf8") == 0) mod = utf8;
+    \\            else if (strcmp(name, "debug") == 0) mod = debug;
+    \\            else if (strcmp(name, "coroutine") == 0) mod = coroutine;
+    \\            else if (strcmp(name, "string") == 0) mod = string;
+    \\            else if (strcmp(name, "table") == 0) mod = table;
+    \\            else if (strcmp(name, "io") == 0) mod = io;
+    \\            else if (strcmp(name, "os") == 0) mod = os;
+    \\            else if (strcmp(name, "jit") == 0) mod = jit;
+    \\            else if (strcmp(name, "ffi") == 0) mod = ffi;
     \\        }
     \\    }
     \\    if (mod.type == VAL_NIL) {

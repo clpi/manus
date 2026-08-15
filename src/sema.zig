@@ -2596,7 +2596,17 @@ pub const Sema = struct {
             .macro_def => {},
             .cinclude => {},
             .directive => |*dir| {
-                if (directives.isCInterfaceDirective(dir.attr.name)) return;
+                // `isCInterfaceDirective` only knows the LEGACY SHORT spellings
+                // (`c.emit`, `c.include`, …). The canonical form the parser
+                // records is `comp.c.emit`, which failed every one of those
+                // string compares and fell through to `validateModuleDirective`,
+                // which rejected it — `unknown module directive '@comp.c.emit'`.
+                // `meta_module.isCEmitDirective` / `isCHeaderImportDirective`
+                // normalise both spellings, so consult them too.
+                const meta_module = @import("meta_module.zig");
+                if (directives.isCInterfaceDirective(dir.attr.name) or
+                    meta_module.isCEmitDirective(dir.attr.name) or
+                    meta_module.isCHeaderImportDirective(dir.attr.name)) return;
                 if (directives.validateModuleDirective(dir.attr)) |bad| {
                     self.err(dir.loc, "unknown module directive '@{s}'", .{bad});
                 } else if (std.mem.eql(u8, dir.attr.name, "specialize")) {

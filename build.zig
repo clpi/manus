@@ -296,10 +296,35 @@ pub fn build(b: *std.Build) void {
     });
     wasm_engine_cmd.setCwd(b.path("tools/wasm"));
     wasm_engine_cmd.step.dependOn(b.getInstallStep());
-    const wasm_test_cmd = b.addSystemCommand(&.{ duo_bin_path, "run", "test/conform.id" });
+    // COMPILE THEN RUN, never `duo run`. `run` routes to the DIRECT backend,
+    // and the harness is outside that backend's subset — it reads its engine
+    // path from the environment, so the direct backend refused it outright:
+    //
+    //   DNB001 application: 92 relation: getenv missing: runtime-global:string
+    //
+    // The step therefore exited 1 before executing a single fixture and had
+    // NEVER RUN. That is how a differential harness came to report perfect
+    // agreement: nothing was differencing anything, and the only engine that
+    // ever answered was the interpreter, twice.
+    //
+    // The harness itself (`tools/wasm/test/`) is UNTRACKED — root
+    // `.gitignore` line 7 is a bare `test`, which matches that directory at
+    // any depth, so `git ls-files tools/wasm/test` is empty. Nothing here
+    // fights that; the step simply names the file it runs.
+    const wasm_conform_test_bin = "../../zig-out/bin/wasm-conform-test";
+    const wasm_test_build_cmd = b.addSystemCommand(&.{
+        duo_bin_path,  "compile",             "test/conform.id",
+        "--backend=c", "--emit",              "exe",
+        "-o",          wasm_conform_test_bin,
+    });
+    wasm_test_build_cmd.setCwd(b.path("tools/wasm"));
+    wasm_test_build_cmd.step.dependOn(&wasm_engine_cmd.step);
+    // cwd stays tools/wasm so the fixture paths the harness opens resolve, and
+    // DUO_WASM_BIN stays the same relative path the engine step wrote to.
+    const wasm_test_cmd = b.addSystemCommand(&.{wasm_conform_test_bin});
     wasm_test_cmd.setEnvironmentVariable("DUO_WASM_BIN", wasm_conform_bin);
     wasm_test_cmd.setCwd(b.path("tools/wasm"));
-    wasm_test_cmd.step.dependOn(&wasm_engine_cmd.step);
+    wasm_test_cmd.step.dependOn(&wasm_test_build_cmd.step);
     const wasm_test_step = b.step("wasm-test", "wasm conformance: every fixture, both engines, differenced against wasmtime");
     wasm_test_step.dependOn(&wasm_test_cmd.step);
 
