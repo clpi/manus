@@ -14,9 +14,9 @@ assert(h1 >= 0 and h1 < 4294967296, "hash in u32 range")
 toks = vector.tokens("Parse_TheThing!! 42 x")
 # expect: parse, thething (underscore is a boundary), x dropped (len 1), 42 dropped (len 2? "42" len2 kept)
 assert(toks:len() == 3, "token count: got " .. toks:len())
-assert(toks[1] == "parse", "tok1: " .. toks[1])
-assert(toks[2] == "thething", "tok2: " .. toks[2])
-assert(toks[3] == "42", "tok3: " .. toks[3])
+assert(toks(1) == "parse", "tok1: " .. toks(1))
+assert(toks(2) == "thething", "tok2: " .. toks(2))
+assert(toks(3) == "42", "tok3: " .. toks(3))
 
 # 3. embed produces a sparse string-keyed vector with norm > 0 and features.
 e = vector.embed("parse bare function declaration", 256)
@@ -25,28 +25,28 @@ assert(e.dim == 256, "dim recorded")
 # at least one "f".. feature key must be present (not just norm/dim metadata)
 has_feat = false
 for k, _v in e
-    if k:len() > 1 and k:sub(1, 1) == "f"
-        has_feat = true
+  if k:len() > 1 and k:sub(1, 1) == "f"
+    has_feat = true
 assert(has_feat, "embed produced feature keys")
 
 # 4. cosine: a query about "function parsing" should match a symbol whose text
 #    mentions "parse function decl" far better than an unrelated symbol.
 q = vector.embed("how does the parser handle function declarations", 256)
 sym_parse = vector.embed("parse bare function declaration (GR-001)", 256)
-sym_net   = vector.embed("tcp socket connect retry backoff", 256)
+sym_net = vector.embed("tcp socket connect retry backoff", 256)
 score_parse = vector.cosine(q, sym_parse)
-score_net   = vector.cosine(q, sym_net)
+score_net = vector.cosine(q, sym_net)
 assert(score_parse > score_net, "related ranks above unrelated: " .. score_parse .. " vs " .. score_net)
 assert(score_parse > 0.1, "related similarity positive & nontrivial: " .. score_parse)
 
 # 5. rank() returns best-first with score field.
 recs = {
-    { name = "parse_bare_func", file = "parser.zig", kind = "fn", doc = "parse bare function declaration", vec = sym_parse },
-    { name = "socket_connect",   file = "net.id",    kind = "fn", doc = "tcp socket connect retry backoff", vec = sym_net },
+  { name = "parse_bare_func", file = "parser.zig", kind = "fn", doc = "parse bare function declaration", vec = sym_parse },
+  { name = "socket_connect", file = "net.id", kind = "fn", doc = "tcp socket connect retry backoff", vec = sym_net }
 }
 ranked = vector.rank(q, recs, 5)
 assert(ranked:len() == 2, "rank count")
-assert(ranked[1].name == "parse_bare_func", "top result is parser fn: " .. ranked[1].name)
-assert(ranked[1].score >= ranked[2].score, "sorted desc")
+assert(ranked(1).name == "parse_bare_func", "top result is parser fn: " .. ranked(1).name)
+assert(ranked(1).score >= ranked(2).score, "sorted desc")
 
 print("vector_embed_smoke: PASS  (parse=" .. score_parse .. " net=" .. score_net .. ")")

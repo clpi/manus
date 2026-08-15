@@ -29,13 +29,13 @@ base64_encode: str = (data: any)
   result = ""
   i = 1
   while i <= data:len()
-    b0 = data[i]
+    b0 = data(i)
     b1 = 0
     b2 = 0
     if i + 1 <= data:len()
-      b1 = data[i + 1]
+      b1 = data(i + 1)
     if i + 2 <= data:len()
-      b2 = data[i + 2]
+      b2 = data(i + 2)
 
 triplet = b0 << 16 | b1 << 8 | b2
 result = result .. chars:byte(triplet >> 18 & (63 + 1)):char()
@@ -59,7 +59,7 @@ base64_sha1: str = (data: str)
   i = 1
   while i <= sha1_hex:len()
     hex_pair = sha1_hex:sub(i, i + 1)
-    sha1_bytes[sha1_bytes:len() + 1] = tonumber(hex_pair, 16)
+    sha1_bytes(sha1_bytes:len() + 1) = tonumber(hex_pair, 16)
     i = i + 2
   base64_encode(sha1_bytes)
 
@@ -67,7 +67,7 @@ base64_encode_string: str = (s: str)
   bytes = {}
   i = 1
   while i <= s:len()
-    bytes[bytes:len() + 1] = s:byte(i)
+    bytes(bytes:len() + 1) = s:byte(i)
     i = i + 1
   base64_encode(bytes)
 
@@ -78,27 +78,27 @@ base64_encode_string: str = (s: str)
 ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
   bytes = {}
   # First byte: FIN bit + opcode
-  bytes[1] = 128 | opcode
+  bytes(1) = 128 | opcode
 
   # Payload length
   len = payload:len()
   if len < 126
-    bytes[2] = len
+    bytes(2) = len
     if mask
-      bytes[2] = bytes[2] | 128
+      bytes(2) = bytes(2) | 128
   else(len < 65536)
-    bytes[2] = 126
+    bytes(2) = 126
     if mask
-      bytes[2] = bytes[2] | 128
-    bytes[3] = len >> 8 & 255
-    bytes[4] = len & 255
+      bytes(2) = bytes(2) | 128
+    bytes(3) = len >> 8 & 255
+    bytes(4) = len & 255
   else
-    bytes[2] = 127
+    bytes(2) = 127
     if mask
-      bytes[2] = bytes[2] | 128
+      bytes(2) = bytes(2) | 128
     i = 0
     while i < 8
-      bytes[3 + i] = len >> (56 - i * 8) & 255
+      bytes(3 + i) = len >> (56 - i * 8) & 255
       i = i + 1
 
   # Masking key (if client->server) using CSPRNG
@@ -108,17 +108,17 @@ ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
     mask_key = {}
     i = 1
     while i <= 4
-      mask_key[i] = key_data:byte(i)
-      bytes[bytes:len() + 1] = mask_key[i]
+      mask_key(i) = key_data:byte(i)
+      bytes(bytes:len() + 1) = mask_key(i)
       i = i + 1
 
   # Payload
   i = 1
   while i <= payload:len()
     if mask
-      bytes[bytes:len() + 1] = payload[i] ~ mask_key[(i - 1) % 4 + 1]
+      bytes(bytes:len() + 1) = payload(i) ~ mask_key((i - 1) % 4 + 1)
     else
-      bytes[bytes:len() + 1] = payload[i]
+      bytes(bytes:len() + 1) = payload(i)
     i = i + 1
 
 bytes
@@ -131,8 +131,8 @@ ws_decode_frame: any = (data: any, pos: i64)
   if pos > data:len()
     return nil
 
-byte1 = data[pos]
-byte2 = data[pos + 1]
+byte1 = data(pos)
+byte2 = data(pos + 1)
 
 fin = byte1 & 128 != 0
 opcode = byte1 & 15
@@ -143,30 +143,30 @@ offset = pos + 2
 
 # Extended payload length
 if payload_len == 126
-  payload_len = data[offset] << 8 | data[offset + 1]
+  payload_len = data(offset) << 8 | data(offset + 1)
   offset = offset + 2
 else(payload_len == 127)
   payload_len = 0
   i = 0
   while i < 8
-    payload_len = payload_len | data[offset + i] << (56 - i * 8)
+    payload_len = payload_len | data(offset + i) << (56 - i * 8)
     i = i + 1
   offset = offset + 8
 
 # Masking key
 mask_key = nil
 if masked
-  mask_key = { data[offset], data[offset + 1], data[offset + 2], data[offset + 3] }
+  mask_key = { data(offset), data(offset + 1), data(offset + 2), data(offset + 3) }
   offset = offset + 4
 
 # Payload
 payload = {}
 i = 0
 while i < payload_len
-  b = data[offset + i]
+  b = data(offset + i)
   if masked
-    b = b ~ mask_key[i % 4]
-  payload[payload:len() + 1] = b
+    b = b ~ mask_key(i % 4)
+  payload(payload:len() + 1) = b
   i = i + 1
 
 {
@@ -187,7 +187,7 @@ ws_client_handshake: str = (host: str, port: i64, path: str)
   key_data = std.crypto.rand.bytes(16)
   i = 1
   while i <= 16
-    key_bytes[i] = key_data:byte(i)
+    key_bytes(i) = key_data:byte(i)
     i = i + 1
   key = base64_encode(key_bytes)
 
@@ -199,7 +199,7 @@ ws_client_handshake: str = (host: str, port: i64, path: str)
 
 ws_server_handshake: str = (request: str)
   # Extract Sec-WebSocket-Key
-  key = string["match"](request, "Sec%-WebSocket%-Key: ([%w%+/=]+)")
+  key = string("match")(request, "Sec%-WebSocket%-Key: ([%w%+/=]+)")
   if key == nil
     return "HTTP/1.1 400 Bad Request\r\n\r\n"
 
@@ -217,7 +217,7 @@ ws_text_frame: any = (text: str)
   bytes = {}
   i = 1
   while i <= text:len()
-    bytes[bytes:len() + 1] = text:byte(i)
+    bytes(bytes:len() + 1) = text:byte(i)
     i = i + 1
   ws_encode_frame(OP_TEXT, bytes, false)
 
@@ -226,12 +226,12 @@ ws_binary_frame: any = (data: any)
 
 ws_close_frame: any = (code: i64, reason: str)
   payload = {}
-  payload[1] = code >> 8 & 255
-  payload[2] = code & 255
+  payload(1) = code >> 8 & 255
+  payload(2) = code & 255
   if reason
     i = 1
     while i <= reason:len()
-      payload[payload:len() + 1] = reason:byte(i)
+      payload(payload:len() + 1) = reason:byte(i)
       i = i + 1
   ws_encode_frame(OP_CLOSE, payload, false)
 
@@ -267,7 +267,7 @@ ws_connection_send: any = (conn: any, opcode: i64, payload: any)
 ws_connection_receive: any = (conn: any, data: any)
   # Append to buffer
   for b in data
-    conn.buffer[conn:len().buffer + 1] = b
+    conn.buffer(conn:len().buffer + 1) = b
 
   # Try to decode
   if conn:len().buffer < 2
@@ -280,7 +280,7 @@ ws_connection_receive: any = (conn: any, data: any)
   new_buf = {}
   i = frame.next
   while i <= conn:len().buffer
-    new_buf[new_buf:len() + 1] = conn.buffer[i]
+    new_buf(new_buf:len() + 1) = conn.buffer(i)
     i = i + 1
   conn.buffer = new_buf
 
@@ -293,14 +293,14 @@ ws_connection_receive: any = (conn: any, data: any)
   else(frame.opcode == OP_CLOSE)
     conn.state = "closed"
     if frame:len().payload >= 2
-      conn.close_code = frame.payload[1] << 8 | frame.payload[2]
+      conn.close_code = frame.payload(1) << 8 | frame.payload(2)
     return { type = "close", code = conn.close_code }
   else(frame.opcode == OP_TEXT)
     # Convert payload to string
     parts = {}
     i = 1
     while i <= frame:len().payload
-      parts[parts:len() + 1] = frame.payload[i]:char()
+      parts(parts:len() + 1) = frame.payload(i):char()
       i = i + 1
     return { type = "text", data = parts:concat() }
   else(frame.opcode == OP_BINARY)

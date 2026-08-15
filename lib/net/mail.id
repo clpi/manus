@@ -1,108 +1,118 @@
 # net_mail — email address and message parsing (mirrors Go's net/mail)
 
 # address: parse a single email address string.
-address(s: str): any
-    if s == nil or s == "" return nil
-    s = s:gsub("^%s+", "")
-    s = s:gsub("%s+$", "")
-    lt = s:find("<", 1, true)
-    if lt != nil
-        gt = s:find(">", lt + 1, true)
-        if gt == nil return nil
-        addr = s:sub(lt + 1, gt - 1)
-        name = s:sub(1, lt - 1)
-        name = name:gsub("^%s+", "")
-        name = name:gsub("%s+$", "")
-        if name:len() >= 2 and name:sub(1, 1) == "\"" and name:sub(name:len(), name:len()) == "\""
-            name = name:sub(2, name:len() - 1)
-        return {name = name, address = addr}
-    at = s:find("@", 1, true)
-    if at == nil return nil
-    {name = "", address = s}
+address: any = (s: str)
+  if s == nil or s == ""
+    return nil
+  s = s:gsub("^%s+", "")
+  s = s:gsub("%s+$", "")
+  lt = s:find("<", 1, true)
+  if lt != nil
+    gt = s:find(">", lt + 1, true)
+    if gt == nil
+      return nil
+    addr = s:sub(lt + 1, gt - 1)
+    name = s:sub(1, lt - 1)
+    name = name:gsub("^%s+", "")
+    name = name:gsub("%s+$", "")
+    if name:len() >= 2 and name:sub(1, 1) == "\"" and name:sub(name:len(), name:len()) == "\""
+      name = name:sub(2, name:len() - 1)
+    return { name = name, address = addr }
+  at = s:find("@", 1, true)
+  if at == nil
+    return nil
+  { name = "", address = s }
 
 # list: parse a comma-separated list of addresses.
-list(s: str): any
-    if s == nil or s == "" return {}
-    out = {}
-    parts = {}
-    depth = 0
-    start = 1
-    i = 1
-    while i <= s:len()
-        ch = s:sub(i, i)
-        if ch == "<" depth += 1
-        if ch == ">" depth -= 1
-        if ch == "," and depth == 0
-            parts[parts:len() + 1] = s:sub(start, i - 1)
-            start = i + 1
-        i += 1
-    parts[parts:len() + 1] = s:sub(start)
-    i = 1
-    while i <= parts:len()
-        addr = address(parts[i])
-        if addr != nil out[out:len() + 1] = addr
-        i += 1
-    out
+list: any = (s: str)
+  if s == nil or s == ""
+    return {}
+  out = {}
+  parts = {}
+  depth = 0
+  start = 1
+  i = 1
+  while i <= s:len()
+    ch = s:sub(i, i)
+    if ch == "<"
+      depth = depth + 1
+    if ch == ">"
+      depth = depth - 1
+    if ch == "," and depth == 0
+      parts(parts:len() + 1) = s:sub(start, i - 1)
+      start = i + 1
+    i = i + 1
+  parts(parts:len() + 1) = s:sub(start)
+  i = 1
+  while i <= parts:len()
+    addr = address(parts(i))
+    if addr != nil
+      out(out:len() + 1) = addr
+    i = i + 1
+  out
 
 # format: format an address table as "Name <addr>" or "addr".
-format(addr: any): str
-    if addr == nil return ""
-    if has(.name)(addr) and addr.name != ""
-        return "\"" .. addr.name .. "\" <" .. addr.address .. ">"
-    addr.address
+format: str = (addr: any)
+  if addr == nil
+    return ""
+  if has(.name)(addr) and addr.name != ""
+    return "\"" .. addr.name .. "\" <" .. addr.address .. ">"
+  addr.address
 
 # split: helper to split a string on newlines.
-split(s: str): any
-    if s == nil return {}
-    out = {}
-    start = 1
-    i = 1
-    while i <= s:len()
-        if s:byte(i) == 10
-            line = s:sub(start, i - 1)
-            if line:len() > 0 and line:byte(line:len()) == 13
-                line = line:sub(1, line:len() - 1)
-            out[out:len() + 1] = line
-            start = i + 1
-        i += 1
-    if start <= s:len()
-        out[out:len() + 1] = s:sub(start)
-    out
+split: any = (s: str)
+  if s == nil
+    return {}
+  out = {}
+  start = 1
+  i = 1
+  while i <= s:len()
+    if s:byte(i) == 10
+      line = s:sub(start, i - 1)
+      if line:len() > 0 and line:byte(line:len()) == 13
+        line = line:sub(1, line:len() - 1)
+      out(out:len() + 1) = line
+      start = i + 1
+    i = i + 1
+  if start <= s:len()
+    out(out:len() + 1) = s:sub(start)
+  out
 
 # read: parse an RFC 5322 message into {headers = {...}, body = "..."}.
-read(raw: str): any
-    if raw == nil return {headers = {}, body = ""}
-    sep = raw:find("\r\n\r\n", 1, true)
-    block = ""
-    body = ""
+read: any = (raw: str)
+  if raw == nil
+    return { headers = {}, body = "" }
+  sep = raw:find("\r\n\r\n", 1, true)
+  block = ""
+  body = ""
+  if sep == nil
+    sep = raw:find("\n\n", 1, true)
     if sep == nil
-        sep = raw:find("\n\n", 1, true)
-        if sep == nil
-            return {headers = {}, body = raw}
-        block = raw:sub(1, sep - 1)
-        body = raw:sub(sep + 2)
+      return { headers = {}, body = raw }
+    block = raw:sub(1, sep - 1)
+    body = raw:sub(sep + 2)
+  else
+    block = raw:sub(1, sep - 1)
+    body = raw:sub(sep + 4)
+  headers = {}
+  lines = split(block)
+  key = nil
+  val = ""
+  i = 1
+  while i <= lines:len()
+    line = lines(i)
+    if line:sub(1, 1) == " " or line:sub(1, 1) == "\t"
+      val = val .. " " .. line:gsub("^%s+", "")
     else
-        block = raw:sub(1, sep - 1)
-        body = raw:sub(sep + 4)
-    headers = {}
-    lines = split(block)
-    key = nil
-    val = ""
-    i = 1
-    while i <= lines:len()
-        line = lines[i]
-        if line:sub(1, 1) == " " or line:sub(1, 1) == "\t"
-            val = val .. " " .. line:gsub("^%s+", "")
-        else
-            if key != nil
-                headers[key:lower()] = val:gsub("^%s+", "")
-            colon = line:find(":", 1, true)
-            if colon != nil
-                key = line:sub(1, colon - 1)
-                val = line:sub(colon + 1)
-            else
-                key = nil
-        i += 1
-    if key != nil
-        headers[key:lower()] = val:gsub("^%s+", "")
-    return {headers = headers, body = body}
+      if key != nil
+        headers(key:lower()) = val:gsub("^%s+", "")
+      colon = line:find(":", 1, true)
+      if colon != nil
+        key = line:sub(1, colon - 1)
+        val = line:sub(colon + 1)
+      else
+        key = nil
+    i = i + 1
+  if key != nil
+    headers(key:lower()) = val:gsub("^%s+", "")
+  return { headers = headers, body = body }

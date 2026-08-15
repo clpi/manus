@@ -5,176 +5,189 @@
 # execute: render a template string against a data table.
 # Supports: {{.key}} for field access, {{range .key}}...{{end}} for iteration,
 # and {{if .key}}...{{end}} for conditional blocks.
-execute(tmpl: str, data: any): str
-    if tmpl == nil return ""
-    if data == nil data = {}
-    return render(tmpl, data)
+execute: str = (tmpl: str, data: any)
+  if tmpl == nil
+    return ""
+  if data == nil
+    data = {}
+  return render(tmpl, data)
 
 # render: internal recursive renderer.
-render(tmpl: str, data: any): str
-    out = {}
-    i = 1
-    n = tmpl:len()
-    while i <= n
-        # look for {{
-        if i + 1 <= n and tmpl:sub(i, i + 1) == "{{"
-            close = tmpl:find("}}", i + 2, true)
-            if close == nil
-                out[out:len() + 1] = tmpl:sub(i)
-                break
-            expr = tmpl:sub(i + 2, close - 1):gsub("^%s+", "")
-            expr = expr:gsub("%s+$", "")
-            result = eval_expr(expr, data)
-            out[out:len() + 1] = result:to(str)
-            i = close + 2
-        else
-            out[out:len() + 1] = tmpl:sub(i, i)
-            i += 1
-    out:concat()
+render: str = (tmpl: str, data: any)
+  out = {}
+  i = 1
+  n = tmpl:len()
+  while i <= n
+    # look for {{
+    if i + 1 <= n and tmpl:sub(i, i + 1) == "{{"
+      close = tmpl:find("}}", i + 2, true)
+      if close == nil
+        out(out:len() + 1) = tmpl:sub(i)
+        break
+      expr = tmpl:sub(i + 2, close - 1):gsub("^%s+", "")
+      expr = expr:gsub("%s+$", "")
+      result = eval_expr(expr, data)
+      out(out:len() + 1) = result:to(str)
+      i = close + 2
+    else
+      out(out:len() + 1) = tmpl:sub(i, i)
+      i = i + 1
+  out:concat()
 
 # eval_expr: evaluate a template expression against data.
-eval_expr(expr: str, data: any): any
-    # handle range
-    if expr:sub(1, 6) == "range "
-        # this is handled in the block parser, not here
-        return ""
-    # handle if
-    if expr:sub(1, 3) == "if "
-        return ""
-    # handle end
-    if expr == "end" return ""
-    # handle field access: .key or .key.subkey
-    if expr:sub(1, 1) == "."
-        path = expr:sub(2)
-        return resolve_path(path, data)
-    # literal
-    expr
+eval_expr: any = (expr: str, data: any)
+  # handle range
+  if expr:sub(1, 6) == "range "
+    # this is handled in the block parser, not here
+    return ""
+  # handle if
+  if expr:sub(1, 3) == "if "
+    return ""
+  # handle end
+  if expr == "end"
+    return ""
+  # handle field access: .key or .key.subkey
+  if expr:sub(1, 1) == "."
+    path = expr:sub(2)
+    return resolve_path(path, data)
+  # literal
+  expr
 
 # resolve_path: resolve a dotted path against a data table.
-resolve_path(path: str, data: any): any
-    if path == "" return data
-    # split on .
-    parts = {}
-    rest = path
-    while true
-        dot = rest:find(".", 1, true)
-        if dot == nil
-            parts[parts:len() + 1] = rest
-            break
-        parts[parts:len() + 1] = rest:sub(1, dot - 1)
-        rest = rest:sub(dot + 1)
-    cur = data
-    i = 1
-    while i <= parts:len()
-        if cur == nil return ""
-        cur = cur[parts[i]]
-        i += 1
-    if cur == nil return ""
-    cur
+resolve_path: any = (path: str, data: any)
+  if path == ""
+    return data
+  # split on .
+  parts = {}
+  rest = path
+  while true
+    dot = rest:find(".", 1, true)
+    if dot == nil
+      parts(parts:len() + 1) = rest
+      break
+    parts(parts:len() + 1) = rest:sub(1, dot - 1)
+    rest = rest:sub(dot + 1)
+  cur = data
+  i = 1
+  while i <= parts:len()
+    if cur == nil
+      return ""
+    cur = cur(parts(i))
+    i = i + 1
+  if cur == nil
+    return ""
+  cur
 
 # execute_blocks: render with range/if block support.
 # This handles {{range .key}}...{{end}} and {{if .key}}...{{end}}.
-execute_blocks(tmpl: str, data: any): str
-    if tmpl == nil return ""
-    if data == nil data = {}
-    render_blocks(tmpl, data, 1)
+execute_blocks: str = (tmpl: str, data: any)
+  if tmpl == nil
+    return ""
+  if data == nil
+    data = {}
+  render_blocks(tmpl, data, 1)
 
 # render_blocks: render with block support, returns the rendered string.
-render_blocks(tmpl: str, data: any, start: i64): str
-    out = {}
-    i = start
-    n = tmpl:len()
-    while i <= n
-        if i + 1 <= n and tmpl:sub(i, i + 1) == "{{"
-            close = tmpl:find("}}", i + 2, true)
-            if close == nil
-                out[out:len() + 1] = tmpl:sub(i)
-                break
-            expr = tmpl:sub(i + 2, close - 1):gsub("^%s+", "")
-            expr = expr:gsub("%s+$", "")
-            # range block
-            if expr:sub(1, 6) == "range "
-                key = expr:sub(7):gsub("^%.", "")
-                collection = data[key]
-                # find matching {{end}}
-                depth = 1
-                j = close + 2
-                block_start = j
-                block_end = nil
-                while j <= n
-                    if j + 1 <= n and tmpl:sub(j, j + 1) == "{{"
-                        c2 = tmpl:find("}}", j + 2, true)
-                        if c2 != nil
-                            inner = tmpl:sub(j + 2, c2 - 1):gsub("^%s+", "")
-                            inner = inner:gsub("%s+$", "")
-                            if inner:sub(1, 6) == "range "
-                                depth += 1
-                            else if inner == "end"
-                                depth -= 1
-                                if depth == 0
-                                    block_end = j
-                                    break
-                            j = c2 + 2
-                        else
-                            j += 1
-                    else
-                        j += 1
-                if block_end != nil and collection != nil
-                    block_text = tmpl:sub(block_start, block_end - 1)
-                    k = 1
-                    if type(collection) == "table"
-                        # iterate array part
-                        while k <= collection:len()
-                            out[out:len() + 1] = render_blocks(block_text, collection[k], 1)
-                            k += 1
-                        # also iterate hash parts
-                        for hk, hv in collection
-                            if type(hk) != "number"
-                                item = hv
-                                if type(hv) != "table"
-                                    item = {value = hv, key = hk}
-                                out[out:len() + 1] = render_blocks(block_text, item, 1)
-                i = block_end + 2
-                if block_end == nil i = n + 1
-            else if expr:sub(1, 3) == "if "
-                key = expr:sub(4):gsub("^%.", "")
-                cond = data[key]
-                # find matching {{end}}
-                depth = 1
-                j = close + 2
-                block_start = j
-                block_end = nil
-                while j <= n
-                    if j + 1 <= n and tmpl:sub(j, j + 1) == "{{"
-                        c2 = tmpl:find("}}", j + 2, true)
-                        if c2 != nil
-                            inner = tmpl:sub(j + 2, c2 - 1):gsub("^%s+", "")
-                            inner = inner:gsub("%s+$", "")
-                            if inner:sub(1, 3) == "if "
-                                depth += 1
-                            else if inner == "end"
-                                depth -= 1
-                                if depth == 0
-                                    block_end = j
-                                    break
-                            j = c2 + 2
-                        else
-                            j += 1
-                    else
-                        j += 1
-                if block_end != nil and cond != nil and cond != false
-                    block_text = tmpl:sub(block_start, block_end - 1)
-                    out[out:len() + 1] = render_blocks(block_text, data, 1)
-                i = block_end + 2
-                if block_end == nil i = n + 1
+render_blocks: str = (tmpl: str, data: any, start: i64)
+  out = {}
+  i = start
+  n = tmpl:len()
+  while i <= n
+    if i + 1 <= n and tmpl:sub(i, i + 1) == "{{"
+      close = tmpl:find("}}", i + 2, true)
+      if close == nil
+        out(out:len() + 1) = tmpl:sub(i)
+        break
+      expr = tmpl:sub(i + 2, close - 1):gsub("^%s+", "")
+      expr = expr:gsub("%s+$", "")
+      # range block
+      if expr:sub(1, 6) == "range "
+        key = expr:sub(7):gsub("^%.", "")
+        collection = data(key)
+        # find matching {{end}}
+        depth = 1
+        j = close + 2
+        block_start = j
+        block_end = nil
+        while j <= n
+          if j + 1 <= n and tmpl:sub(j, j + 1) == "{{"
+            c2 = tmpl:find("}}", j + 2, true)
+            if c2 != nil
+              inner = tmpl:sub(j + 2, c2 - 1):gsub("^%s+", "")
+              inner = inner:gsub("%s+$", "")
+              if inner:sub(1, 6) == "range "
+                depth = depth + 1
+              else
+                if inner == "end"
+                  depth = depth - 1
+                  if depth == 0
+                    block_end = j
+                    break
+                  j = c2 + 2
+                else
+                  j = j + 1
+          else
+            j = j + 1
+        if block_end != nil and collection != nil
+          block_text = tmpl:sub(block_start, block_end - 1)
+          k = 1
+          if type(collection) == "table"
+            # iterate array part
+            while k <= collection:len()
+              out(out:len() + 1) = render_blocks(block_text, collection(k), 1)
+              k = k + 1
+            # also iterate hash parts
+            for hk, hv in collection
+              if type(hk) != "number"
+                item = hv
+                if type(hv) != "table"
+                  item = { value = hv, key = hk }
+                out(out:len() + 1) = render_blocks(block_text, item, 1)
+        i = block_end + 2
+        if block_end == nil
+          i = n + 1
+      else
+        if expr:sub(1, 3) == "if "
+          key = expr:sub(4):gsub("^%.", "")
+          cond = data(key)
+          # find matching {{end}}
+          depth = 1
+          j = close + 2
+          block_start = j
+          block_end = nil
+          while j <= n
+            if j + 1 <= n and tmpl:sub(j, j + 1) == "{{"
+              c2 = tmpl:find("}}", j + 2, true)
+              if c2 != nil
+                inner = tmpl:sub(j + 2, c2 - 1):gsub("^%s+", "")
+                inner = inner:gsub("%s+$", "")
+                if inner:sub(1, 3) == "if "
+                  depth = depth + 1
+                else
+                  if inner == "end"
+                    depth = depth - 1
+                    if depth == 0
+                      block_end = j
+                      break
+                    j = c2 + 2
+                  else
+                    j = j + 1
             else
-                result = eval_expr(expr, data)
-                out[out:len() + 1] = result:to(str)
-                i = close + 2
+              j = j + 1
+          if block_end != nil and cond != nil and cond != false
+            block_text = tmpl:sub(block_start, block_end - 1)
+            out(out:len() + 1) = render_blocks(block_text, data, 1)
+          i = block_end + 2
+          if block_end == nil
+            i = n + 1
         else
-            out[out:len() + 1] = tmpl:sub(i, i)
-            i += 1
-    out:concat()
+          result = eval_expr(expr, data)
+          out(out:len() + 1) = result:to(str)
+          i = close + 2
+    else
+      out(out:len() + 1) = tmpl:sub(i, i)
+      i = i + 1
+  out:concat()
 
 M = {}
 M.execute = execute_blocks

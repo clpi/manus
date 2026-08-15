@@ -18,11 +18,11 @@
 -- `os.getenv` answers "" and NOT nil for an unset name, so `getenv(x) or
 -- default` hands back "" and every path built from it resolves against the
 -- filesystem root. The `== ""` test is the whole point of this binding.
-root = os.env["IDOL_ROOT"] or ""
+root = os.env("IDOL_ROOT") or ""
 if root:len() == 0
-  root = os.env["DUO_ROOT"] or ""
+  root = os.env("DUO_ROOT") or ""
 if root:len() == 0
-  root = os.env["PWD"] or ""
+  root = os.env("PWD") or ""
 if root:len() == 0
   root = "."
 
@@ -95,7 +95,7 @@ audit_smokes: str = ()
   results = {}
   i = 1
   while i <= paths:len()
-    results:push(shared.audit_native_boxing(paths[i]))
+    results:push(shared.audit_native_boxing(paths(i)))
     i = i + 1
   tallies = audit_tally(results)
   total = paths:len()

@@ -3,174 +3,192 @@
 # Adds iterator-specific utilities (zip, enumerate, flat_map) that
 # don't belong in the pure functional programming module.
 
-
 # map: apply a function to each element, return results.
-map(list: any, fn_ref: any): any
-    fn.map_filter(list, fn_ref)
+map: any = (list: any, fn_ref: any)
+  fn.map_filter(list, fn_ref)
 
 # filter: keep elements where the predicate returns true.
-filter(list: any, fn_ref: any): any
-    out = {}
-    if list == nil return out
-    i = 1
-    while i <= list:len()
-        if fn_ref(list[i])
-            out[out:len() + 1] = list[i]
-        i += 1
-    out
+filter: any = (list: any, fn_ref: any)
+  out = {}
+  if list == nil
+    return out
+  i = 1
+  while i <= list:len()
+    if fn_ref(list(i))
+      out(out:len() + 1) = list(i)
+    i = i + 1
+  out
 
 # reduce: fold a list with an accumulator.
-reduce(list: any, init: any, fn_ref: any): any
-    fn.foldl(list, init, fn_ref)
+reduce: any = (list: any, init: any, fn_ref: any)
+  fn.foldl(list, init, fn_ref)
 
 # any: return true if any element satisfies the predicate.
-any(list: any, fn_ref: any): bool
-    if list == nil return false
-    i = 1
-    while i <= list:len()
-        if fn_ref(list[i]) return true
-        i += 1
-    false
+any: bool = (list: any, fn_ref: any)
+  if list == nil
+    return false
+  i = 1
+  while i <= list:len()
+    if fn_ref(list(i))
+      return true
+    i = i + 1
+  false
 
 # all: return true if all elements satisfy the predicate.
-all(list: any, fn_ref: any): bool
-    if list == nil return true
-    i = 1
-    while i <= list:len()
-        if not fn_ref(list[i]) return false
-        i += 1
-    true
+all: bool = (list: any, fn_ref: any)
+  if list == nil
+    return true
+  i = 1
+  while i <= list:len()
+    if not fn_ref(list(i))
+      return false
+    i = i + 1
+  true
 
 # find: return the first element satisfying the predicate.
-find(list: any, fn_ref: any): any
-    if list == nil return nil
-    i = 1
-    while i <= list:len()
-        if fn_ref(list[i]) return list[i]
-        i += 1
-    nil
+find: any = (list: any, fn_ref: any)
+  if list == nil
+    return nil
+  i = 1
+  while i <= list:len()
+    if fn_ref(list(i))
+      return list(i)
+    i = i + 1
+  nil
 
 # find_index: return the 1-based index of the first matching element, or nil.
-find_index(list: any, fn_ref: any): any
-    if list == nil return nil
-    i = 1
-    while i <= list:len()
-        if fn_ref(list[i]) return i
-        i += 1
-    nil
+find_index: any = (list: any, fn_ref: any)
+  if list == nil
+    return nil
+  i = 1
+  while i <= list:len()
+    if fn_ref(list(i))
+      return i
+    i = i + 1
+  nil
 
 # count: count elements satisfying the predicate.
-count(list: any, fn_ref: any): i64
-    if list == nil return 0
-    n = 0
-    i = 1
-    while i <= list:len()
-        if fn_ref(list[i]) n += 1
-        i += 1
-    n
+count: i64 = (list: any, fn_ref: any)
+  if list == nil
+    return 0
+  n = 0
+  i = 1
+  while i <= list:len()
+    if fn_ref(list(i))
+      n = n + 1
+    i = i + 1
+  n
 
 # zip: combine two lists into a list of pairs.
-zip(l1: any, l2: any): any
-    out = {}
-    if l1 == nil or l2 == nil return out
-    n = l1:len()
-    if l2:len() < n n = l2:len()
-    i = 1
-    while i <= n
-        pair = {}
-        pair[1] = l1[i]
-        pair[2] = l2[i]
-        out[out:len() + 1] = pair
-        i += 1
-    out
+zip: any = (l1: any, l2: any)
+  out = {}
+  if l1 == nil or l2 == nil
+    return out
+  n = l1:len()
+  if l2:len() < n
+    n = l2:len()
+  i = 1
+  while i <= n
+    pair = {}
+    pair(1) = l1(i)
+    pair(2) = l2(i)
+    out(out:len() + 1) = pair
+    i = i + 1
+  out
 
 # zip_with: combine two lists using a function.
-zip_with(l1: any, l2: any, fn_ref: any): any
-    out = {}
-    if l1 == nil or l2 == nil return out
-    n = l1:len()
-    if l2:len() < n n = l2:len()
-    i = 1
-    while i <= n
-        out[out:len() + 1] = fn_ref(l1[i], l2[i])
-        i += 1
-    out
+zip_with: any = (l1: any, l2: any, fn_ref: any)
+  out = {}
+  if l1 == nil or l2 == nil
+    return out
+  n = l1:len()
+  if l2:len() < n
+    n = l2:len()
+  i = 1
+  while i <= n
+    out(out:len() + 1) = fn_ref(l1(i), l2(i))
+    i = i + 1
+  out
 
 # enumerate: return a list of {index, value} pairs (1-based).
-enumerate(list: any): any
-    out = {}
-    if list == nil return out
-    i = 1
-    while i <= list:len()
-        pair = {}
-        pair[1] = i
-        pair[2] = list[i]
-        out[out:len() + 1] = pair
-        i += 1
-    out
+enumerate: any = (list: any)
+  out = {}
+  if list == nil
+    return out
+  i = 1
+  while i <= list:len()
+    pair = {}
+    pair(1) = i
+    pair(2) = list(i)
+    out(out:len() + 1) = pair
+    i = i + 1
+  out
 
 # flat_map: apply a function that returns a list, then flatten.
-flat_map(list: any, fn_ref: any): any
-    fn.flatten(fn.map_filter(list, fn_ref))
+flat_map: any = (list: any, fn_ref: any)
+  fn.flatten(fn.map_filter(list, fn_ref))
 
 # sliding_window: return all contiguous sub-lists of size n.
-sliding_window(list: any, n: i64): any
-    out = {}
-    if list == nil or n <= 0 return out
-    len = list:len()
-    i = 1
-    while i + n - 1 <= len
-        window = {}
-        j = 0
-        while j < n
-            window[window:len() + 1] = list[i + j]
-            j += 1
-        out[out:len() + 1] = window
-        i += 1
-    out
+sliding_window: any = (list: any, n: i64)
+  out = {}
+  if list == nil or n <= 0
+    return out
+  len = list:len()
+  i = 1
+  while i + n - 1 <= len
+    window = {}
+    j = 0
+    while j < n
+      window(window:len() + 1) = list(i + j)
+      j = j + 1
+    out(out:len() + 1) = window
+    i = i + 1
+  out
 
 # take: return the first n elements.
-take(list: any, n: i64): any
-    out = {}
-    if list == nil or n <= 0 return out
-    len = list:len()
-    if n > len n = len
-    i = 1
-    while i <= n
-        out[out:len() + 1] = list[i]
-        i += 1
-    out
+take: any = (list: any, n: i64)
+  out = {}
+  if list == nil or n <= 0
+    return out
+  len = list:len()
+  if n > len
+    n = len
+  i = 1
+  while i <= n
+    out(out:len() + 1) = list(i)
+    i = i + 1
+  out
 
 # drop: return everything except the first n elements.
-drop(list: any, n: i64): any
-    out = {}
-    if list == nil or n <= 0 return list
-    len = list:len()
-    i = n + 1
-    while i <= len
-        out[out:len() + 1] = list[i]
-        i += 1
-    out
+drop: any = (list: any, n: i64)
+  out = {}
+  if list == nil or n <= 0
+    return list
+  len = list:len()
+  i = n + 1
+  while i <= len
+    out(out:len() + 1) = list(i)
+    i = i + 1
+  out
 
 # unique: return list with duplicates removed (first occurrence wins).
-unique(list: any): any
-    fn.unique_by(list, fn.identity)
+unique: any = (list: any)
+  fn.unique_by(list, fn.identity)
 
 # group_by: partition list into groups keyed by function result.
-group_by(list: any, fn_ref: any): any
-    fn.group_by(list, fn_ref)
+group_by: any = (list: any, fn_ref: any)
+  fn.group_by(list, fn_ref)
 
 # min_by / max_by / sort_by: delegate to fn module.
-min_by(list: any, fn_ref: any): any
-    fn.min_by(list, fn_ref)
+min_by: any = (list: any, fn_ref: any)
+  fn.min_by(list, fn_ref)
 
-max_by(list: any, fn_ref: any): any
-    fn.max_by(list, fn_ref)
+max_by: any = (list: any, fn_ref: any)
+  fn.max_by(list, fn_ref)
 
-sort_by(list: any, fn_ref: any): void
-    fn.sort_by(list, fn_ref)
+sort_by = (list: any, fn_ref: any)
+  fn.sort_by(list, fn_ref)
 
 # partition: split list by predicate into {yes, no}.
-partition(list: any, fn_ref: any): any
-    fn.partition(list, fn_ref)
-
+partition: any = (list: any, fn_ref: any)
+  fn.partition(list, fn_ref)

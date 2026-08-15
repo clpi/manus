@@ -3,17 +3,17 @@
 # expect: 1 0
 # @corpus current
 check: i64 = (s: str)
-    ok = 1
-    i = 0
-    j = s:len() - 1
-    while i < j and ok == 1
-        a = s[i]
-        b = s[j]
-        if a != b
-            ok = 0
-        i += 1
-        j -= 1
-    ok
+  ok = 1
+  i = 0
+  j = s:len() - 1
+  while i < j and ok == 1
+    a = s(i)
+    b = s(j)
+    if a != b
+      ok = 0
+    i = i + 1
+    j = j - 1
+  ok
 
 a = check("racecar")
 b = check("racecars")

@@ -4,75 +4,88 @@
 LSB = "lsb"
 MSB = "msb"
 
-new_reader(order: str, lit_width: i64): any
-    {order = order, lit_width = lit_width, clear_code = 1 << lit_width,
-     eoi_code = (1 << lit_width) + 1, width = lit_width + 1,
-     table = {}, next_code = (1 << lit_width) + 2,
-     buf = 0, bits = 0, data = "", pos = 1}
+new_reader: any = (order: str, lit_width: i64)
+  {
+    order = order,
+    lit_width = lit_width,
+    clear_code = 1 << lit_width,
+    eoi_code = 1 << lit_width + 1,
+    width = lit_width + 1,
+    table = {},
+    next_code = 1 << lit_width + 2,
+    buf = 0,
+    bits = 0,
+    data = "",
+    pos = 1
+  }
 
-read_bit(r: any): any
-    if r.bits == 0
-        if r.pos > r.data:len() return nil
-        r.buf = r.data:byte(r.pos)
-        r.pos = r.pos + 1
-        r.bits = 8
-    r.bits = r.bits - 1
-    (r.buf >> r.bits) & 1
+read_bit: any = (r: any)
+  if r.bits == 0
+    if r.pos > r.data:len()
+      return nil
+    r.buf = r.data:byte(r.pos)
+    r.pos = r.pos + 1
+    r.bits = 8
+  r.bits = r.bits - 1
+  r.buf >> r.bits & 1
 
-read_bits(r: any, n: i64): any
-    v = 0
-    for i = 0, n - 1
-        b = read_bit(r)
-        if b == nil return nil
-        if r.order == MSB
-            v = (v << 1) | b
+read_bits: any = (r: any, n: i64)
+  v = 0
+  for i = 0, n - 1
+    b = read_bit(r)
+    if b == nil
+      return nil
+    if r.order == MSB
+      v = v << 1 | b
+    else
+      v = v | b << i
+  v
+
+init_table = (r: any)
+  r.table = {}
+  r.next_code = r.clear_code + 2
+  for i = 0, 1 << r.lit_width - 1
+    r.table(i) = i:char()
+
+decompress: str = (data: str, order: str, lit_width: i64)
+  if data == nil
+    return ""
+  r = new_reader(order, lit_width)
+  r.data = data
+  out_parts = {}
+  init_table(r)
+  max_width = 12
+  prev = nil
+  while true
+    code = read_bits(r, r.width)
+    if code == nil or code == r.eoi_code
+      break
+    if code == r.clear_code
+      init_table(r)
+      r.width = r.lit_width + 1
+      prev = nil
+    else
+      entry = nil
+      if code < r.next_code
+        entry = r.table(code)
+      else
+        if code == r.next_code
+          entry = r.table(prev) .. r.table(prev):sub(1, 1)
         else
-            v |= (b << i)
-    v
+          break
+      if entry != nil
+        out_parts(out_parts:len() + 1) = entry
+      if prev != nil and entry != nil
+        new_entry = r.table(prev) .. entry:sub(1, 1)
+        r.table(r.next_code) = new_entry
+        r.next_code = r.next_code + 1
+        if r.next_code > 1 << r.width and r.width < max_width
+          r.width = r.width + 1
+      prev = code
+  out_parts:concat()
 
-init_table(r: any): void
-    r.table = {}
-    r.next_code = r.clear_code + 2
-    for i = 0, (1 << r.lit_width) - 1
-        r.table[i] = i:char()
+decompress_gif: str = (data: str)
+  decompress(data, LSB, 8)
 
-decompress(data: str, order: str, lit_width: i64): str
-    if data == nil return ""
-    r = new_reader(order, lit_width)
-    r.data = data
-    out_parts = {}
-    init_table(r)
-    max_width = 12
-    prev = nil
-    while true
-        code = read_bits(r, r.width)
-        if code == nil or code == r.eoi_code break
-        if code == r.clear_code
-            init_table(r)
-            r.width = r.lit_width + 1
-            prev = nil
-        else
-            entry = nil
-            if code < r.next_code
-                entry = r.table[code]
-            else if code == r.next_code
-                entry = r.table[prev] .. r.table[prev]:sub(1, 1)
-            else
-                break
-            if entry != nil
-                out_parts[out_parts:len() + 1] = entry
-            if prev != nil and entry != nil
-                new_entry = r.table[prev] .. entry:sub(1, 1)
-                r.table[r.next_code] = new_entry
-                r.next_code = r.next_code + 1
-                if r.next_code > (1 << r.width) and r.width < max_width
-                    r.width = r.width + 1
-            prev = code
-    out_parts:concat()
-
-decompress_gif(data: str): str
-    decompress(data, LSB, 8)
-
-decompress_pdf(data: str): str
-    decompress(data, MSB, 8)
-
+decompress_pdf: str = (data: str)
+  decompress(data, MSB, 8)

@@ -8,17 +8,17 @@ scan = { world = "", possessed = false, callable = true, operation = false, clas
 dot = { world = "", possessed = false, callable = true, operation = false, class = "gate", slot = "world" }
 
 main: i64 = ()
-    code: i64 = 0
-    if len["class"] != "gate"
-        code = 1
-    if code == 0 and audit["slot"] != "path"
-        code = 2
-    if code == 0 and hit["callable"] != true
-        code = 3
-    if code == 0 and scan["slot"] != "diff"
-        code = 4
-    if code == 0 and dot["slot"] != "world"
-        code = 5
-    if code == 0
-        print("semantic gate: pass")
-    code
+  code: i64 = 0
+  if len("class") != "gate"
+    code = 1
+  if code == 0 and audit("slot") != "path"
+    code = 2
+  if code == 0 and hit("callable") != true
+    code = 3
+  if code == 0 and scan("slot") != "diff"
+    code = 4
+  if code == 0 and dot("slot") != "world"
+    code = 5
+  if code == 0
+    print("semantic gate: pass")
+  code

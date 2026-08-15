@@ -15,75 +15,74 @@
 # so `now_ns` needed an explicit return. Without that fix this harness would
 # have reported every run as instantaneous # worse than the bash it replaces.
 
-_ms_per_ns(): i64
-    1000000
+_ms_per_ns: i64 = ()
+  1000000
 
 # Wall-clock milliseconds for one command. Monotonic, so it is unaffected by
 # clock adjustments during a long sweep.
-_time_ms(cmd: str): i64
-    a: i64 = time.monotonic()
-    script.status(cmd)
-    b: i64 = time.monotonic()
-    # `/` yields f64 even on two i64 operands, so the narrowing is stated.
-    to(i64)((b - a) / _ms_per_ns())
+_time_ms: i64 = (cmd: str)
+  a: i64 = time.monotonic()
+  script.status(cmd)
+  b: i64 = time.monotonic()
+  # `/` yields f64 even on two i64 operands, so the narrowing is stated.
+  to(i64)((b - a) / _ms_per_ns())
 
 # Median of a positional list of i64. Sorted in place; n is small (7 by
 # default), so an insertion sort is the honest shape # no pipeline surface
 # exists for this yet (GAP-14).
-_median(xs: any, n: i64): i64
-    i = 2
-    while i <= n
-        key = xs[i]
-        j = i - 1
-        while j >= 1 and xs[j] > key
-            xs[j + 1] = xs[j]
-            j -= 1
-        xs[j + 1] = key
-        i += 1
-    xs[(n + 1) / 2]
+_median: i64 = (xs: any, n: i64)
+  i = 2
+  while i <= n
+    key = xs(i)
+    j = i - 1
+    while j >= 1 and xs(j) > key
+      xs(j + 1) = xs(j)
+      j = j - 1
+    xs(j + 1) = key
+    i = i + 1
+  xs((n + 1) / 2)
 
-_min_of(xs: any, n: i64): i64
-    m = xs[1]
-    i = 2
-    while i <= n
-        if xs[i] < m
-            m = xs[i]
-        i += 1
-    m
+_min_of: i64 = (xs: any, n: i64)
+  m = xs(1)
+  i = 2
+  while i <= n
+    if xs(i) < m
+      m = xs(i)
+    i = i + 1
+  m
 
-main(): i64
-    binary = script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
-    mod = script.arg(1, "bench/hash.wasm")
-    n: i64 = to(i64)(script.getenv("N", "7"))
+main: i64 = ()
+  binary = script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
+  mod = script.arg(1, "bench/hash.wasm")
+  n: i64 = to(i64)(script.getenv("N", "7"))
 
-    if not script.fs_exists(mod)
-        print("perf: module not found: " .. mod)
-        return 1
-    abs = script.chomp(script.capture("cd \"$(dirname " .. mod .. ")\" && pwd"))
-        .. "/" .. script.path_basename(mod)
+  if not script.fs_exists(mod)
+    print("perf: module not found: " .. mod)
+    return 1
+  abs = script.chomp(script.capture("cd \"$(dirname " .. mod .. ")\" && pwd")) .. "/" .. script.path_basename(mod)
 
-    # the engine reads DUO_WASM_MODULE, NOT argv (src/engine.id entry) and silently falls
-    # back to a hardcoded /tmp/hash.wasm. Passing the module as an argument
-    # measures nothing # the env var is the only thing that binds.
-    invocation = "DUO_WASM_MODULE=" .. abs .. " " .. binary
-    wasmtime_cmd = "wasmtime --invoke run " .. mod
+  # the engine reads DUO_WASM_MODULE, NOT argv (src/engine.id entry) and silently falls
+  # back to a hardcoded /tmp/hash.wasm. Passing the module as an argument
+  # measures nothing # the env var is the only thing that binds.
+  invocation = "DUO_WASM_MODULE=" .. abs .. " " .. binary
+  wasmtime_cmd = "wasmtime --invoke run " .. mod
 
-    w = {}
-    m = {}
-    i = 1
-    while i <= n
-        w[i] = _time_ms(invocation)
-        m[i] = _time_ms(wasmtime_cmd)
-        i += 1
+  w = {}
+  m = {}
+  i = 1
+  while i <= n
+    w(i) = _time_ms(invocation)
+    m(i) = _time_ms(wasmtime_cmd)
+    i = i + 1
 
-    wmin = _min_of(w, n)
-    mmin = _min_of(m, n)
-    wmed = _median(w, n)
-    mmed = _median(m, n)
+  wmin = _min_of(w, n)
+  mmin = _min_of(m, n)
+  wmed = _median(w, n)
+  mmed = _median(m, n)
 
-    print("module   " .. mod)
-    print("the engine     median " .. wmed:to(str) .. " ms  min " .. wmin:to(str))
-    print("wasmtime median " .. mmed:to(str) .. " ms  min " .. mmin:to(str))
-    if mmed > 0
-        print("ratio    " .. to(str)(wmed * 100 / mmed) .. "%  (<100 means the engine is faster)")
-    0
+  print("module   " .. mod)
+  print("the engine     median " .. wmed:to(str) .. " ms  min " .. wmin:to(str))
+  print("wasmtime median " .. mmed:to(str) .. " ms  min " .. mmin:to(str))
+  if mmed > 0
+    print("ratio    " .. to(str)(wmed * 100 / mmed) .. "%  (<100 means the engine is faster)")
+  0

@@ -4,15 +4,15 @@
 # Value form with an annotation. A bare `run_bench()` with no type annotation
 # parses as a CALL, not a declaration (GR-001), which orphaned the closing
 # `end` at the bottom of the file and made the whole benchmark unparseable.
-_run_bench: void = ()
-    print("STARTING")
-    n = 512
+_run_bench = ()
+  print("STARTING")
+  n = 512
 
-    a_ptr: ptr = nil
-    b_ptr: ptr = nil
-    c_ptr: ptr = nil
+  a_ptr: ptr = nil
+  b_ptr: ptr = nil
+  c_ptr: ptr = nil
 
-    @c.emit([[
+  @c.emit([[
         int N = 512;
         float* a = (float*)malloc(N * N * sizeof(float));
         float* b = (float*)malloc(N * N * sizeof(float));
@@ -33,20 +33,21 @@ _run_bench: void = ()
         b_ptr = (void*)b;
         c_ptr = (void*)c;
     ]])
-    
-    # Warmup
-    simd.matmul_f32(a_ptr, b_ptr, c_ptr, 128, 128, 128)
+  
+
+  # Warmup
+  simd.matmul_f32(a_ptr, b_ptr, c_ptr, 128, 128, 128)
+  dummy = 0
+
+  start = os.clock()
+  # 10 iterations of 512x512 to get a measurable time
+  for i = 1, 10
+    simd.matmul_f32(a_ptr, b_ptr, c_ptr, n, n, n)
     dummy = 0
+  time_taken = os.clock() - start
 
-    start = os.clock()
-    # 10 iterations of 512x512 to get a measurable time
-    for i = 1, 10
-        simd.matmul_f32(a_ptr, b_ptr, c_ptr, n, n, n)
-        dummy = 0
-    time_taken = os.clock() - start
-
-    checksum: f64 = 0.0
-    @c.emit([[
+  checksum: f64 = 0.0
+  @c.emit([[
         double sum = 0.0;
         for(int i=0; i<N*N; i++) {
             sum += c[i];
@@ -54,11 +55,12 @@ _run_bench: void = ()
         checksum = sum;
         free(a); free(b); free(c);
     ]])
-    
-    print("RESULT simd_matmul")
-    print(time_taken)
-    print("Checksum:", checksum)
+  
+
+  print("RESULT simd_matmul")
+  print(time_taken)
+  print("Checksum:", checksum)
 
 main: i64 = ()
-    _run_bench()
-    0
+  _run_bench()
+  0

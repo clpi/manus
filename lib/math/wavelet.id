@@ -5,55 +5,57 @@
 # Haar Wavelet Transform
 # ═══════════════════════════════════════════════════════════════
 
-haar_forward(data: any): any
-    n = data:len()
-    if n <= 1 return data
+haar_forward: any = (data: any)
+  n = data:len()
+  if n <= 1
+    return data
 
-    # Pad to even length if needed
-    padded = {data:unpack()}
-    if n % 2 != 0
-        padded[n + 1] = padded[n]
-        n += 1
+  # Pad to even length if needed
+  padded = { data:unpack() }
+  if n % 2 != 0
+    padded(n + 1) = padded(n)
+    n = n + 1
 
-    result = {}
-    temp = {padded:unpack()}
+  result = {}
+  temp = { padded:unpack() }
 
-    level = n
-    while level > 1
-        half = level / 2
-        i = 1
-        while i <= half
-            avg = (temp[2 * i - 1] + temp[2 * i]) / 2
-            diff = (temp[2 * i - 1] - temp[2 * i]) / 2
-            result[half + i - 1] = diff
-            result[i] = avg
-            i += 1
-        i = 1
-        while i <= level
-            temp[i] = result[i]
-            i += 1
-        level = half
+  level = n
+  while level > 1
+    half = level / 2
+    i = 1
+    while i <= half
+      avg = (temp(2 * i - 1) + temp(2 * i)) / 2
+      diff = (temp(2 * i - 1) - temp(2 * i)) / 2
+      result(half + i - 1) = diff
+      result(i) = avg
+      i = i + 1
+    i = 1
+    while i <= level
+      temp(i) = result(i)
+      i = i + 1
+    level = half
 
-    # Reorder: store as [cA_n, cD_n, cD_{n-1}, ..., cD_1]
-    result
+  # Reorder: store as [cA_n, cD_n, cD_{n-1}, ..., cD_1]
+  result
 
-haar_inverse(data: any): any
-    n = data:len()
-    if n <= 1 return data
+haar_inverse: any = (data: any)
+  n = data:len()
+  if n <= 1
+    return data
 
-    temp = {data:unpack()}
+  temp = { data:unpack() }
 
-    level = 2
-    while level <= n
-        half = level / 2
-        i = 1
-        while i <= half
-            temp[2 * i - 1] = temp[i] + temp[half + i]
-            temp[2 * i] = temp[i] - temp[half + i]
-            i += 1
-        level *= 2
+  level = 2
+  while level <= n
+    half = level / 2
+    i = 1
+    while i <= half
+      temp(2 * i - 1) = temp(i) + temp(half + i)
+      temp(2 * i) = temp(i) - temp(half + i)
+      i = i + 1
+    level = level * 2
 
-    temp
+  temp
 
 # ═══════════════════════════════════════════════════════════════
 # Daubechies Wavelet (db4)
@@ -61,142 +63,140 @@ haar_inverse(data: any): any
 
 # Filter coefficients for Daubechies-4
 DB4_LO_DE = {
-    0.4829629131446902,
-    0.8365163037378077,
-    0.2241438680420134,
-    -0.1294095225512603,
+  0.4829629131446902,
+  0.8365163037378077,
+  0.2241438680420134,
+  -0.1294095225512603
 }
 DB4_HI_DE = {
-    -0.1294095225512603,
-    -0.2241438680420134,
-    0.8365163037378077,
-    -0.4829629131446902,
+  -0.1294095225512603,
+  -0.2241438680420134,
+  0.8365163037378077,
+  -0.4829629131446902
 }
 DB4_LO_RE = {
-    -0.1294095225512603,
-    0.2241438680420134,
-    0.8365163037378077,
-    0.4829629131446902,
+  -0.1294095225512603,
+  0.2241438680420134,
+  0.8365163037378077,
+  0.4829629131446902
 }
 DB4_HI_RE = {
-    0.4829629131446902,
-    -0.8365163037378077,
-    0.2241438680420134,
-    0.1294095225512603,
+  0.4829629131446902,
+  -0.8365163037378077,
+  0.2241438680420134,
+  0.1294095225512603
 }
 
-convolve(signal: any, filter: any): any
-    n = signal:len()
-    f = filter:len()
-    result = {}
-    i = 1
-    while i <= n
-        sum = 0
-        j = 1
-        while j <= f
-            idx = i - j + 1
-            if idx >= 1 and idx <= n
-                sum += signal[idx] * filter[j]
-            j += 1
-        result[i] = sum
-        i += 1
-    result
+convolve: any = (signal: any, filter: any)
+  n = signal:len()
+  f = filter:len()
+  result = {}
+  i = 1
+  while i <= n
+    sum = 0
+    j = 1
+    while j <= f
+      idx = i - j + 1
+      if idx >= 1 and idx <= n
+        sum = sum + signal(idx) * filter(j)
+      j = j + 1
+    result(i) = sum
+    i = i + 1
+  result
 
-downsample(data: any, factor: i64): any
-    result = {}
-    i = 1
-    while i <= data:len()
-        result[result:len() + 1] = data[i]
-        i += factor
-    result
+downsample: any = (data: any, factor: i64)
+  result = {}
+  i = 1
+  while i <= data:len()
+    result(result:len() + 1) = data(i)
+    i = i + factor
+  result
 
-upsample(data: any, factor: i64): any
-    result = {}
-    i = 1
-    while i <= data:len()
-        result[result:len() + 1] = data[i]
-        j = 1
-        while j < factor
-            result[result:len() + 1] = 0
-            j += 1
-        i += 1
-    result
+upsample: any = (data: any, factor: i64)
+  result = {}
+  i = 1
+  while i <= data:len()
+    result(result:len() + 1) = data(i)
+    j = 1
+    while j < factor
+      result(result:len() + 1) = 0
+      j = j + 1
+    i = i + 1
+  result
 
-db4_forward(data: any): any
-    approx = convolve(data, DB4_LO_DE)
-    detail = convolve(data, DB4_HI_DE)
-    approx_ds = downsample(approx, 2)
-    detail_ds = downsample(detail, 2)
-    {
-        approx = approx_ds,
-        detail = detail_ds,
-    }
+db4_forward: any = (data: any)
+  approx = convolve(data, DB4_LO_DE)
+  detail = convolve(data, DB4_HI_DE)
+  approx_ds = downsample(approx, 2)
+  detail_ds = downsample(detail, 2)
+  {
+    approx = approx_ds,
+    detail = detail_ds
+  }
 
-db4_inverse(approx: any, detail: any): any
-    approx_us = upsample(approx, 2)
-    detail_us = upsample(detail, 2)
-    a = convolve(approx_us, DB4_LO_RE)
-    d = convolve(detail_us, DB4_HI_RE)
-    n = a:len():min(d:len())
-    result = {}
-    i = 1
-    while i <= n
-        result[i] = a[i] + d[i]
-        i += 1
-    result
+db4_inverse: any = (approx: any, detail: any)
+  approx_us = upsample(approx, 2)
+  detail_us = upsample(detail, 2)
+  a = convolve(approx_us, DB4_LO_RE)
+  d = convolve(detail_us, DB4_HI_RE)
+  n = a:len():min(d:len())
+  result = {}
+  i = 1
+  while i <= n
+    result(i) = a(i) + d(i)
+    i = i + 1
+  result
 
 # ═══════════════════════════════════════════════════════════════
 # Multi-level Decomposition
 # ═══════════════════════════════════════════════════════════════
 
-decompose(data: any, levels: i64): any
-    coeffs = {data}
-    i = 1
-    while i <= levels
-        result = db4_forward(coeffs[i])
-        coeffs[i] = result.detail
-        coeffs[i + 1] = result.approx
-        i += 1
-    {
-        approx = coeffs[levels + 1],
-        details = {},
-        levels = levels,
-    }
+decompose: any = (data: any, levels: i64)
+  coeffs = { data }
+  i = 1
+  while i <= levels
+    result = db4_forward(coeffs(i))
+    coeffs(i) = result.detail
+    coeffs(i + 1) = result.approx
+    i = i + 1
+  {
+    approx = coeffs(levels + 1),
+    details = {},
+    levels = levels
+  }
 
-reconstruct(decomp: any): any
-    signal = decomp.approx
-    i = decomp.levels
-    while i >= 1
-        signal = db4_inverse(signal, decomp.details[i])
-        i -= 1
-    signal
+reconstruct: any = (decomp: any)
+  signal = decomp.approx
+  i = decomp.levels
+  while i >= 1
+    signal = db4_inverse(signal, decomp.details(i))
+    i = i - 1
+  signal
 
 # ═══════════════════════════════════════════════════════════════
 # Denoising
 # ═══════════════════════════════════════════════════════════════
 
-denoise(signal: any, threshold: f64): any
-    decomp = decompose(signal, 3)
+denoise: any = (signal: any, threshold: f64)
+  decomp = decompose(signal, 3)
 
-    # Soft threshold detail coefficients
-    i = 1
-    while i <= decomp:len().details
-        j = 1
-        while j <= decomp:len().details[i]
-            coeff = decomp.details[i][j]
-            if coeff:abs() < threshold
-                decomp.details[i][j] = 0
-            else
-                decomp.details[i][j] = coeff - coeff:sign() * threshold
-            j += 1
-        i += 1
+  # Soft threshold detail coefficients
+  i = 1
+  while i <= decomp:len().details
+    j = 1
+    while j <= decomp:len().details(i)
+      coeff = decomp.details(i)(j)
+      if coeff:abs() < threshold
+        decomp.details(i)(j) = 0
+      else
+        decomp.details(i)(j) = coeff - coeff:sign() * threshold
+      j = j + 1
+    i = i + 1
 
-    reconstruct(decomp)
-
+  reconstruct(decomp)
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Haar
 # Daubechies
 # Multi-level

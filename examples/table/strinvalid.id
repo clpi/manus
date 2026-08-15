@@ -3,9 +3,9 @@
 # ordinary two-byte string and indexes fine.
 # expect: 2 255 254
 main: i64 = ()
-    s = "\xff\xfe"
-    n = s:len()
-    a = s[0]
-    b = s[1]
-    print("{n} {a} {b}")
-    0
+  s = "ÿþ"
+  n = s:len()
+  a = s(0)
+  b = s(1)
+  print("{n} {a} {b}")
+  0

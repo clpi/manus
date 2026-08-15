@@ -11,11 +11,11 @@
 # a select over the element slots — O(n) compares, zero memory traffic, which is
 # the right trade for the small fixed-size tables a compiler actually uses.
 # An out-of-range index yields 0 rather than reading adjacent storage.
-main(): i64
-    t = { 10, 20, 30 }
-    total = 0
-    i = 1
-    while i <= 3
-        total += t[i]
-        i += 1
-    total
+main: i64 = ()
+  t = { 10, 20, 30 }
+  total = 0
+  i = 1
+  while i <= 3
+    total = total + t(i)
+    i = i + 1
+  total

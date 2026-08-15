@@ -15,224 +15,226 @@ _BENCHES = 5
 _NAMES = { "matmul_256", "conv2d", "softmax_1k", "attention", "mlp_forward" }
 _WORK = "/tmp/duo_ml_bench"
 
-_env_or(n: str, d: str): str
-    v = script.getenv_or(n)
-    if v == "" return d
-    v
+_env_or: str = (n: str, d: str)
+  v = script.getenv_or(n)
+  if v == ""
+    return d
+  v
 
-_pad(s: str, w: i64): str
-    o = s
-    while o:len() < w
-        o = o .. " "
-    o
+_pad: str = (s: str, w: i64)
+  o = s
+  while o:len() < w
+    o = o .. " "
+  o
 
-_lpad(s: str, w: i64): str
-    o = s
-    while o:len() < w
-        o = " " .. o
-    o
+_lpad: str = (s: str, w: i64)
+  o = s
+  while o:len() < w
+    o = " " .. o
+  o
 
 # Fixed-point formatting from integer scaling: `to(str)` on an f64 does not
 # compile (it lowers to an undeclared `tostring`).
-_fx(x: f64, places: i64): str
-    scale = 1
-    i = 0
-    while i < places
-        scale = scale * 10
-        i += 1
-    n = to(i64)(x * to(f64)(scale) + 0.5)
-    whole = n / scale
-    frac = n % scale
-    fs = frac:to(str)
-    while fs:len() < places
-        fs = "0" .. fs
-    whole:to(str) .. "." .. fs
+_fx: str = (x: f64, places: i64)
+  scale = 1
+  i = 0
+  while i < places
+    scale = scale * 10
+    i = i + 1
+  n = to(i64)(x * to(f64)(scale) + 0.5)
+  whole = n / scale
+  frac = n % scale
+  fs = frac:to(str)
+  while fs:len() < places
+    fs = "0" .. fs
+  whole:to(str) .. "." .. fs
 
 # `to(f64)` is not a validating parse # to(f64)("Time:") returns 0.0, not nil
 # # so numeric fields are recognised structurally.
-_numeric(s: str): bool
-    if s == "" return false
-    d = false
-    i = 1
-    while i <= s:len()
-        c = s:sub(i, i)
-        if c >= "0" and c <= "9"
-            d = true
-        else
-            if c != "." and c != "-" and c != "+" and c != "e" and c != "E"
-                return false
-        i += 1
-    d
+_numeric: bool = (s: str)
+  if s == ""
+    return false
+  d = false
+  i = 1
+  while i <= s:len()
+    c = s:sub(i, i)
+    if c >= "0" and c <= "9"
+      d = true
+    else
+      if c != "." and c != "-" and c != "+" and c != "e" and c != "E"
+        return false
+    i = i + 1
+  d
 
-_fields(line: str): any
-    out = {}
-    for _i, w in line:gsub("\t", " "):split(" ")
-        if w != ""
-            out[out:len() + 1] = w
-    out
+_fields: any = (line: str)
+  out = {}
+  for _i, w in line:gsub("\t", " "):split(" ")
+    if w != ""
+      out(out:len() + 1) = w
+  out
 
-_lines(t: str): any
-    out = {}
-    for _i, l in t:split("\n")
-        c = script.chomp(l)
-        if c != ""
-            out[out:len() + 1] = c
-    out
+_lines: any = (t: str)
+  out = {}
+  for _i, l in t:split("\n")
+    c = script.chomp(l)
+    if c != ""
+      out(out:len() + 1) = c
+  out
 
 # "RESULT <id> <value>" -> id->value.
-_results(text: str): any
-    r = {}
-    n = 0
-    for _i, l in _lines(text)
-        f = _fields(l)
-        if f:len() >= 3 and f[1] == "RESULT"
-            r[f[2]] = f[3]
-            n += 1
-    r["__count"] = n:to(str)
-    r
+_results: any = (text: str)
+  r = {}
+  n = 0
+  for _i, l in _lines(text)
+    f = _fields(l)
+    if f:len() >= 3 and f(1) == "RESULT"
+      r(f(2)) = f(3)
+      n = n + 1
+  r("__count") = n:to(str)
+  r
 
 # "Running <name>..." then a later "Time: <t>" # the name line SETS the
 # current benchmark and the Time line reads it. Matching Time lines alone
 # would attribute every time to whichever benchmark sorted first.
-_times(text: str): any
-    t = {}
-    cur = ""
-    for _i, l in _lines(text)
-        f = _fields(l)
-        if f:len() >= 2 and f[1] == "Running"
-            cur = f[2]:gsub("%.%.%.", "")
-        if f:len() >= 2 and f[1] == "Time:" and cur != "" and _numeric(f[2])
-            t[cur] = to(f64)(f[2])
-    t
+_times: any = (text: str)
+  t = {}
+  cur = ""
+  for _i, l in _lines(text)
+    f = _fields(l)
+    if f:len() >= 2 and f(1) == "Running"
+      cur = f(2):gsub("%.%.%.", "")
+    if f:len() >= 2 and f(1) == "Time:" and cur != "" and _numeric(f(2))
+      t(cur) = to(f64)(f(2))
+  t
 
 main: i64 = ()
-    duo = "./zig-out/bin/idol"
-    cc = _env_or("CC", "clang")
-    runs = to(i64)(_env_or("RUNS", _RUNS:to(str)))
-    if runs == nil or runs < 1 runs = _RUNS
+  duo = "./zig-out/bin/idol"
+  cc = _env_or("CC", "clang")
+  runs = to(i64)(_env_or("RUNS", _RUNS:to(str)))
+  if runs == nil or runs < 1
+    runs = _RUNS
 
-    print("========================================")
-    print("     ML BENCHMARK: Duo vs C             ")
-    print("========================================")
+  print("========================================")
+  print("     ML BENCHMARK: Duo vs C             ")
+  print("========================================")
 
-    if !script.fs_exists(duo)
-        print("Building Duo compiler...")
-        if script.run(_env_or("ZIG", "zig") .. " build") != 0
-            return 1
+  if not script.fs_exists(duo)
+    print("Building Duo compiler...")
+    if script.run(_env_or("ZIG", "zig") .. " build") != 0
+      return 1
 
-    script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
-    duo_bin = _WORK .. "/duo_ml_bench"
-    c_bin = _WORK .. "/c_ml_bench"
+  script.run("rm -rf " .. _WORK .. " && mkdir -p " .. _WORK)
+  duo_bin = _WORK .. "/duo_ml_bench"
+  c_bin = _WORK .. "/c_ml_bench"
 
-    print("Compiling bench_ml.id...")
-    if script.run(duo .. " compile examples/bench_ml.id -o " .. duo_bin) != 0
-        print("ml_benchmark: FAIL — bench_ml.id did not compile")
-        return 1
+  print("Compiling bench_ml.id...")
+  if script.run(duo .. " compile examples/bench_ml.id -o " .. duo_bin) != 0
+    print("ml_benchmark: FAIL — bench_ml.id did not compile")
+    return 1
 
-    print("Compiling bench_ml_c.c...")
-    sdk = script.chomp(script.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null"))
-    if script.run("SDKROOT=" .. sdk .. " " .. cc
-        .. " -O3 -ffast-math -march=native -flto -lm -o " .. c_bin .. " examples/bench_ml_c.c") != 0
-        print("ml_benchmark: FAIL — bench_ml_c.c did not compile")
-        return 1
+  print("Compiling bench_ml_c.c...")
+  sdk = script.chomp(script.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null"))
+  if script.run("SDKROOT=" .. sdk .. " " .. cc .. " -O3 -ffast-math -march=native -flto -lm -o " .. c_bin .. " examples/bench_ml_c.c") != 0
+    print("ml_benchmark: FAIL — bench_ml_c.c did not compile")
+    return 1
 
+  print("")
+  print("--- Correctness Check ---")
+
+  dres = _results(script.capture(duo_bin .. " 2>/dev/null"))
+  cres = _results(script.capture(c_bin .. " 2>/dev/null"))
+
+  # A short RESULT set is a failed run wearing the costume of a passing one:
+  # with zero rows every comparison below is vacuously satisfied.
+  for _i, pair in { { "Duo", dres }, { "C", cres } }
+    if pair(2)("__count") != _BENCHES:to(str)
+      print(pair(1) .. " correctness run emitted " .. pair(2)("__count") .. " RESULT row(s), expected " .. _BENCHES:to(str))
+      return 1
+
+  # The shell version compared inside `paste ... | while ...`, which runs in
+  # a SUBSHELL: its `exit 1` left the subshell only, and the `FAIL` it set was
+  # never read. A mismatch printed and the script went on to announce "All 5
+  # results match." This returns instead.
+  bad = 0
+  for _i, name in _NAMES
+    d = dres(name)
+    c = cres(name)
+    if d == nil or c == nil
+      print("MISMATCH: " .. name .. " missing from one side")
+      bad = bad + 1
+    else
+      dv = to(f64)(d)
+      cv = to(f64)(c)
+      diff = dv - cv
+      if diff < 0.0
+        diff = -diff
+      denom = cv
+      if denom < 0.0
+        denom = -denom
+      if denom < 0.0000000001
+        denom = 1.0
+      if diff / denom < 0.0001
+        print("  OK: " .. name .. " = " .. d)
+      else
+        print("MISMATCH: " .. name .. ": Duo=" .. d .. " vs C=" .. c)
+        bad = bad + 1
+  if bad != 0
     print("")
-    print("--- Correctness Check ---")
+    print("ML BENCHMARK: FAIL — " .. bad:to(str) .. " result(s) differ from C")
+    return 1
 
-    dres = _results(script.capture(duo_bin .. " 2>/dev/null"))
-    cres = _results(script.capture(c_bin .. " 2>/dev/null"))
+  print("")
+  print("All " .. _BENCHES:to(str) .. " results match.")
+  print("")
+  print("--- Timing (" .. runs:to(str) .. " runs each) ---")
+  print("")
 
-    # A short RESULT set is a failed run wearing the costume of a passing one:
-    # with zero rows every comparison below is vacuously satisfied.
-    for _i, pair in {{"Duo", dres}, {"C", cres}}
-        if pair[2]["__count"] != _BENCHES:to(str)
-            print(pair[1] .. " correctness run emitted " .. pair[2]["__count"]
-                .. " RESULT row(s), expected " .. _BENCHES:to(str))
-            return 1
+  dmin = {}
+  cmin = {}
+  print("Running Duo (" .. runs:to(str) .. " times)...")
+  r = 0
+  while r < runs
+    for k, v in _times(script.capture(duo_bin .. " 2>/dev/null"))
+      if dmin(k) == nil or v < dmin(k)
+        dmin(k) = v
+    r = r + 1
+  print("Running C (" .. runs:to(str) .. " times)...")
+  r = 0
+  while r < runs
+    for k, v in _times(script.capture(c_bin .. " 2>/dev/null"))
+      if cmin(k) == nil or v < cmin(k)
+        cmin(k) = v
+    r = r + 1
 
-    # The shell version compared inside `paste ... | while ...`, which runs in
-    # a SUBSHELL: its `exit 1` left the subshell only, and the `FAIL` it set was
-    # never read. A mismatch printed and the script went on to announce "All 5
-    # results match." This returns instead.
-    bad = 0
-    for _i, name in _NAMES
-        d = dres[name]
-        c = cres[name]
-        if d == nil or c == nil
-            print("MISMATCH: " .. name .. " missing from one side")
-            bad += 1
-        else
-            dv = to(f64)(d)
-            cv = to(f64)(c)
-            diff = dv - cv
-            if diff < 0.0 diff = -diff
-            denom = cv
-            if denom < 0.0 denom = -denom
-            if denom < 0.0000000001 denom = 1.0
-            if diff / denom < 0.0001
-                print("  OK: " .. name .. " = " .. d)
-            else
-                print("MISMATCH: " .. name .. ": Duo=" .. d .. " vs C=" .. c)
-                bad += 1
-    if bad != 0
-        print("")
-        print("ML BENCHMARK: FAIL — " .. bad:to(str) .. " result(s) differ from C")
-        return 1
+  print("")
+  print("--- Results (min of " .. runs:to(str) .. " runs) ---")
+  print("")
+  print(_pad("Benchmark", 16) .. " " .. _lpad("Duo(s)", 12) .. " " .. _lpad("C(s)", 12) .. " " .. _lpad("Ratio", 10))
+  print(_pad("----------------", 16) .. " " .. _lpad("------------", 12) .. " " .. _lpad("------------", 12) .. " " .. _lpad("----------", 10))
 
-    print("")
-    print("All " .. _BENCHES:to(str) .. " results match.")
-    print("")
-    print("--- Timing (" .. runs:to(str) .. " runs each) ---")
-    print("")
+  timing_fail = 0
+  for _i, name in _NAMES
+    d = dmin(name)
+    c = cmin(name)
+    if d == nil or c == nil
+      print(_pad(name, 16) .. " " .. _lpad("no Time reported", 36))
+      timing_fail = timing_fail + 1
+    else
+      ratio = "N/A"
+      if c > 0.0
+        ratio = _fx(d / c, 3) .. "x"
+      print(_pad(name, 16) .. " " .. _lpad(_fx(d, 6), 12) .. " " .. _lpad(_fx(c, 6), 12) .. " " .. _lpad(ratio, 10))
+      if d > c * _SLACK
+        print("  *** WARN: Duo (" .. _fx(d, 6) .. ") slower than C (" .. _fx(c, 6) .. ") — optimization target")
+        timing_fail = timing_fail + 1
 
-    dmin = {}
-    cmin = {}
-    print("Running Duo (" .. runs:to(str) .. " times)...")
-    r = 0
-    while r < runs
-        for k, v in _times(script.capture(duo_bin .. " 2>/dev/null"))
-            if dmin[k] == nil or v < dmin[k] dmin[k] = v
-        r += 1
-    print("Running C (" .. runs:to(str) .. " times)...")
-    r = 0
-    while r < runs
-        for k, v in _times(script.capture(c_bin .. " 2>/dev/null"))
-            if cmin[k] == nil or v < cmin[k] cmin[k] = v
-        r += 1
-
-    print("")
-    print("--- Results (min of " .. runs:to(str) .. " runs) ---")
-    print("")
-    print(_pad("Benchmark", 16) .. " " .. _lpad("Duo(s)", 12) .. " " .. _lpad("C(s)", 12)
-        .. " " .. _lpad("Ratio", 10))
-    print(_pad("----------------", 16) .. " " .. _lpad("------------", 12) .. " "
-        .. _lpad("------------", 12) .. " " .. _lpad("----------", 10))
-
-    timing_fail = 0
-    for _i, name in _NAMES
-        d = dmin[name]
-        c = cmin[name]
-        if d == nil or c == nil
-            print(_pad(name, 16) .. " " .. _lpad("no Time reported", 36))
-            timing_fail += 1
-        else
-            ratio = "N/A"
-            if c > 0.0 ratio = _fx(d / c, 3) .. "x"
-            print(_pad(name, 16) .. " " .. _lpad(_fx(d, 6), 12) .. " "
-                .. _lpad(_fx(c, 6), 12) .. " " .. _lpad(ratio, 10))
-            if d > c * _SLACK
-                print("  *** WARN: Duo (" .. _fx(d, 6) .. ") slower than C ("
-                    .. _fx(c, 6) .. ") — optimization target")
-                timing_fail += 1
-
-    print("")
-    # Timing shortfalls are optimization targets, not gate failures: exit 0
-    # either way, as the shell version did. The 40-benchmark gate is
-    # `zig build bench`.
-    if timing_fail > 0
-        print("ML BENCHMARK: " .. timing_fail:to(str)
-            .. " workload(s) slower than C (optimization targets).")
-        print("  (Core 40-benchmark gate: zig build bench)")
-        return 0
-    print("ALL ML BENCHMARKS PASSED: Duo beats or ties C on all ML workloads.")
-    0
+  print("")
+  # Timing shortfalls are optimization targets, not gate failures: exit 0
+  # either way, as the shell version did. The 40-benchmark gate is
+  # `zig build bench`.
+  if timing_fail > 0
+    print("ML BENCHMARK: " .. timing_fail:to(str) .. " workload(s) slower than C (optimization targets).")
+    print("  (Core 40-benchmark gate: zig build bench)")
+    return 0
+  print("ALL ML BENCHMARKS PASSED: Duo beats or ties C on all ML workloads.")
+  0

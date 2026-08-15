@@ -2,8 +2,8 @@
 # indices are the encoding units, not characters or graphemes. §0.8, B-1.
 # expect: 2 195 169
 # @corpus current
-s = "\xc3\xa9"
+s = "é"
 n = s:len()
-a = s[0]
-b = s[1]
+a = s(0)
+b = s(1)
 print("{n} {a} {b}")

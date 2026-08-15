@@ -35,19 +35,19 @@ new_rgba: any = (r: any)
 new_gray: any = (r: any)
   { rect = r, pix = {}, stride = rect_dx(r), kind = "gray_img" }
 
-img_set: void = (img: any, x: i64, y: i64, c: any)
+img_set = (img: any, x: i64, y: i64, c: any)
   r = img.rect
   if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y
     return
   off = (y - r.min.y) * img.stride + (x - r.min.x) * 4
-  img.pix[off + 1] = c.r / 257
-  img.pix[off + 2] = c.g / 257
-  img.pix[off + 3] = c.b / 257
-  img.pix[off + 4] = c.a / 257
+  img.pix(off + 1) = c.r / 257
+  img.pix(off + 2) = c.g / 257
+  img.pix(off + 3) = c.b / 257
+  img.pix(off + 4) = c.a / 257
 
 img_at: any = (img: any, x: i64, y: i64)
   r = img.rect
   if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y
     return color.rgba(0, 0, 0, 0)
   off = (y - r.min.y) * img.stride + (x - r.min.x) * 4
-  color.rgba(img.pix[off + 1] * 257, img.pix[off + 2] * 257, img.pix[off + 3] * 257, img.pix[off + 4] * 257)
+  color.rgba(img.pix(off + 1) * 257, img.pix(off + 2) * 257, img.pix(off + 3) * 257, img.pix(off + 4) * 257)

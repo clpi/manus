@@ -4,16 +4,16 @@
 # expect: 16
 
 eq_f64_i64: i64 = (v: f64)
-    v:to(i64)
+  v:to(i64)
 
 eq_i64_f64: f64 = (v: i64)
-    v:to(f64)
+  v:to(f64)
 
 eq_f64_str: str = (v: f64)
-    v:to(str)
+  v:to(str)
 
 eq_str_f64: f64 = (v: str)
-    v:to(f64)
+  v:to(f64)
 
 eq(i64)(f64) = eq_f64_i64@lossless
 eq(f64)(i64) = eq_i64_f64@lossless
@@ -21,15 +21,15 @@ eq(str)(f64) = eq_f64_str@lossless
 eq(f64)(str) = eq_str_f64@lossless
 
 main: i64 = ()
-    n: i64 = 0
-    for src, conv in eq[str]
-        n += 1
-        n += src:len()
-    for src, conv in eq[f64]
-        n += 1
-        n += src:len()
-    for src, conv in eq[i64]
-        n += 1
-        n += src:len()
-    print("{n}")
-    n
+  n: i64 = 0
+  for src, conv in eq(str)
+    n = n + 1
+    n = n + src:len()
+  for src, conv in eq(f64)
+    n = n + 1
+    n = n + src:len()
+  for src, conv in eq(i64)
+    n = n + 1
+    n = n + src:len()
+  print("{n}")
+  n

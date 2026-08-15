@@ -19,32 +19,32 @@ marshal: str = (v: any)
   return out:concat()
 
 # encode: internal encoder that appends to the out array.
-encode: void = (v: any, out: any)
+encode = (v: any, out: any)
   if v == nil
-    out[out:len() + 1] = TAG_NIL:char()
+    out(out:len() + 1) = TAG_NIL:char()
     return
   t = type(v)
   if t == "boolean"
-    out[out:len() + 1] = TAG_BOOL:char()
+    out(out:len() + 1) = TAG_BOOL:char()
     if v
-      out[out:len() + 1] = 1:char()
+      out(out:len() + 1) = 1:char()
     else
-      out[out:len() + 1] = 0:char()
+      out(out:len() + 1) = 0:char()
     return
   if t == "number"
     if v:floor() == v and v:abs() < 2 ^ 53
-      out[out:len() + 1] = TAG_INT:char()
+      out(out:len() + 1) = TAG_INT:char()
       encode_int(v, out)
     else
-      out[out:len() + 1] = TAG_FLOAT:char()
-      out[out:len() + 1] = "%.17g":format(v)
+      out(out:len() + 1) = TAG_FLOAT:char()
+      out(out:len() + 1) = "%.17g":format(v)
       # null terminator
-      out[out:len() + 1] = 0:char()
+      out(out:len() + 1) = 0:char()
     return
   if t == "string"
-    out[out:len() + 1] = TAG_STRING:char()
+    out(out:len() + 1) = TAG_STRING:char()
     encode_int(v:len(), out)
-    out[out:len() + 1] = v
+    out(out:len() + 1) = v
     return
   if t == "table"
     # check if array
@@ -53,26 +53,26 @@ encode: void = (v: any, out: any)
     for _ in v
       count = count + 1
     if count == n and n > 0
-      out[out:len() + 1] = TAG_ARRAY:char()
+      out(out:len() + 1) = TAG_ARRAY:char()
       encode_int(n, out)
       i = 1
       while i <= n
-        encode(v[i], out)
+        encode(v(i), out)
         i = i + 1
     else
-      out[out:len() + 1] = TAG_TABLE:char()
+      out(out:len() + 1) = TAG_TABLE:char()
       encode_int(count, out)
       for k, val in v
         encode(k:to(str), out)
         encode(val, out)
     return
   # unsupported type
-  out[out:len() + 1] = TAG_NIL:char()
+  out(out:len() + 1) = TAG_NIL:char()
 
 # encode_int: encode an integer as a variable-length string.
-encode_int: void = (v: i64, out: any)
+encode_int = (v: i64, out: any)
   if v == 0
-    out[out:len() + 1] = 0:char()
+    out(out:len() + 1) = 0:char()
     return
   parts = {}
   n = v
@@ -80,11 +80,11 @@ encode_int: void = (v: i64, out: any)
     # encode sign as complement
     n = 0 - n
   while n > 0
-    parts[parts:len() + 1] = n % 256:char()
+    parts(parts:len() + 1) = n % 256:char()
     n = n / 256
   i = parts:len()
   while i >= 1
-    out[out:len() + 1] = parts[i]
+    out(out:len() + 1) = parts(i)
     i = i - 1
 
 # unmarshal: decode a binary string into a Duo value.
@@ -128,7 +128,7 @@ decode: any = (p: any)
     arr = {}
     i = 1
     while i <= n
-      arr[i] = decode(p)
+      arr(i) = decode(p)
       i = i + 1
     return arr
   if tag == TAG_TABLE
@@ -138,7 +138,7 @@ decode: any = (p: any)
     while i <= n
       k = decode(p)
       v = decode(p)
-      tbl[k] = v
+      tbl(k) = v
       i = i + 1
     return tbl
   nil

@@ -66,55 +66,55 @@
 space = " "
 
 chomp: str = (text: str)
-    if text:len() == 0
-        return ""
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
+  if text:len() == 0
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
 
 capture: str = (shellline: str)
-    gatecap(shellline)
+  gatecap(shellline)
 
 cap: str = (shellline: str)
-    chomp(gatecap(shellline))
+  chomp(gatecap(shellline))
 
 status: i64 = (cmd: str)
-    cap("( {cmd} ) >/dev/null 2>&1\necho $?"):to(i64)
+  cap("( {cmd} ) >/dev/null 2>&1\necho $?"):to(i64)
 
 sh: i64 = (cmd: str)
-    status("{cmd}")
+  status("{cmd}")
 
 # `test -f` rather than the std helper, deliberately: the helper is spelled
 # with an underscore and this gate adds zero deny points to audit100.
 here: bool = (path: str)
-    sh("test -f {path}") == 0
+  sh("test -f {path}") == 0
 
 # Byte identity. `cmp -s` is the comparator the whole gate rests on, which is
 # why it is fired at a known-equal and a known-different pair below.
 same: bool = (a: str, b: str)
-    sh("cmp -s {a} {b}") == 0
+  sh("cmp -s {a} {b}") == 0
 
 count: i64 = (cmd: str)
-    cap(cmd):to(i64)
+  cap(cmd):to(i64)
 
 # One clean build into its own prefix with its own cache. Returns the number
 # of installed files, or -1 if the build failed — a failed build must never
 # read as "the artifacts differ", which is a claim about determinism rather
 # than about a broken tree.
 build: i64 = (zig: str, opt: str, work: str, tag: str)
-    out: str = "{work}/out{tag}"
-    cache: str = "{work}/cache{tag}"
-    rc: i64 = sh("{zig} build -Doptimize={opt} --prefix {out} --cache-dir {cache} > {work}/log{tag} 2>&1")
-    made: i64 = 0
-    if rc == 0
-        made = count("find {out} -type f | wc -l")
-    if rc != 0
-        made = 0 - 1
-    made
+  out: str = "{work}/out{tag}"
+  cache: str = "{work}/cache{tag}"
+  rc: i64 = sh("{zig} build -Doptimize={opt} --prefix {out} --cache-dir {cache} > {work}/log{tag} 2>&1")
+  made: i64 = 0
+  if rc == 0
+    made = count("find {out} -type f | wc -l")
+  if rc != 0
+    made = 0 - 1
+  made
 
 # Everything the two artifacts can tell us about WHY they differ, as an
 # ACCOUNTING rather than a label: every differing byte is attributed to a
@@ -127,178 +127,178 @@ build: i64 = (zig: str, opt: str, work: str, tag: str)
 # held `/cachea/o/…` against `/cacheb/o/…` in plain ASCII. It classified a
 # textbook build-path dependence as mystery ordering because it never looked
 # at the segment the paths were in.
-diagnose: void = (a: str, b: str, work: str, path: str)
-    sizea: i64 = count("wc -c < {a}")
-    sizeb: i64 = count("wc -c < {b}")
-    bytes: i64 = count("cmp -l {a} {b} 2>/dev/null | wc -l")
-    firstat: str = cap("cmp {a} {b} 2>&1 | head -1 | sed -e 's/.*differ: //'")
+diagnose = (a: str, b: str, work: str, path: str)
+  sizea: i64 = count("wc -c < {a}")
+  sizeb: i64 = count("wc -c < {b}")
+  bytes: i64 = count("cmp -l {a} {b} 2>/dev/null | wc -l")
+  firstat: str = cap("cmp {a} {b} 2>&1 | head -1 | sed -e 's/.*differ: //'")
 
-    # Mach-O: the linker's UUID, and the ad-hoc code signature that hashes it.
-    uuida: str = cap("otool -l {a} 2>/dev/null | grep -m1 uuid | tr -d ' ' | sed -e 's/uuid//'")
-    uuidb: str = cap("otool -l {b} 2>/dev/null | grep -m1 uuid | tr -d ' ' | sed -e 's/uuid//'")
-    uuidbytes: i64 = 0
-    if uuida != "" and uuida != uuidb
-        uuidbytes = 16
-    sigoff: str = cap("otool -l {a} 2>/dev/null | grep -A2 LC_CODE_SIGNATURE | grep dataoff | tr -s ' ' | cut -d' ' -f3")
-    sigbytes: i64 = 0
-    if sigoff != ""
-        sigbytes = count("cmp -l {a} {b} 2>/dev/null | awk -v s={sigoff} '$1 > s' | wc -l")
+  # Mach-O: the linker's UUID, and the ad-hoc code signature that hashes it.
+  uuida: str = cap("otool -l {a} 2>/dev/null | grep -m1 uuid | tr -d ' ' | sed -e 's/uuid//'")
+  uuidb: str = cap("otool -l {b} 2>/dev/null | grep -m1 uuid | tr -d ' ' | sed -e 's/uuid//'")
+  uuidbytes: i64 = 0
+  if uuida != "" and uuida != uuidb
+    uuidbytes = 16
+  sigoff: str = cap("otool -l {a} 2>/dev/null | grep -A2 LC_CODE_SIGNATURE | grep dataoff | tr -s ' ' | cut -d' ' -f3")
+  sigbytes: i64 = 0
+  if sigoff != ""
+    sigbytes = count("cmp -l {a} {b} 2>/dev/null | awk -v s={sigoff} '$1 > s' | wc -l")
 
-    # The build directory, in the raw bytes of each artifact.
-    patha: i64 = count("grep -a -o {work}/cachea {a} 2>/dev/null | wc -l")
-    pathb: i64 = count("grep -a -o {work}/cacheb {b} 2>/dev/null | wc -l")
-    outa: i64 = count("grep -a -o {work}/outa {a} 2>/dev/null | wc -l")
-    outb: i64 = count("grep -a -o {work}/outb {b} 2>/dev/null | wc -l")
-    embedded: i64 = patha + pathb + outa + outb
-    residue: i64 = bytes - uuidbytes - sigbytes
+  # The build directory, in the raw bytes of each artifact.
+  patha: i64 = count("grep -a -o {work}/cachea {a} 2>/dev/null | wc -l")
+  pathb: i64 = count("grep -a -o {work}/cacheb {b} 2>/dev/null | wc -l")
+  outa: i64 = count("grep -a -o {work}/outa {a} 2>/dev/null | wc -l")
+  outb: i64 = count("grep -a -o {work}/outb {b} 2>/dev/null | wc -l")
+  embedded: i64 = patha + pathb + outa + outb
+  residue: i64 = bytes - uuidbytes - sigbytes
 
-    # The line that decides whether this is a compiler problem or a metadata
-    # problem: differing bytes BELOW __LINKEDIT, less the 16-byte LC_UUID that
-    # sits in the Mach-O header. If that is zero, the code and the data agree
-    # and only the wrapper disagrees — a much narrower claim than "the build
-    # is nondeterministic", and a much cheaper one to fix.
-    linkedit: str = cap("otool -l {a} 2>/dev/null | grep -A4 __LINKEDIT | grep -m1 fileoff | tr -s ' ' | cut -d' ' -f3")
-    codebytes: i64 = 0 - 1
-    if linkedit != ""
-        codebytes = count("cmp -l {a} {b} 2>/dev/null | awk -v s={linkedit} '$1 < s' | wc -l") - uuidbytes
+  # The line that decides whether this is a compiler problem or a metadata
+  # problem: differing bytes BELOW __LINKEDIT, less the 16-byte LC_UUID that
+  # sits in the Mach-O header. If that is zero, the code and the data agree
+  # and only the wrapper disagrees — a much narrower claim than "the build
+  # is nondeterministic", and a much cheaper one to fix.
+  linkedit: str = cap("otool -l {a} 2>/dev/null | grep -A4 __LINKEDIT | grep -m1 fileoff | tr -s ' ' | cut -d' ' -f3")
+  codebytes: i64 = 0 - 1
+  if linkedit != ""
+    codebytes = count("cmp -l {a} {b} 2>/dev/null | awk -v s={linkedit} '$1 < s' | wc -l") - uuidbytes
 
-    print("    {path}")
-    print("      size        {sizea} vs {sizeb}")
-    print("      bytes       {bytes} differ, first at {firstat}")
-    print("      accounting  {uuidbytes} in LC_UUID · {sigbytes} in the ad-hoc code signature · {residue} elsewhere")
-    if codebytes == 0
-        print("      code+data   IDENTICAL — 0 differing bytes below __LINKEDIT once LC_UUID is set aside. The compiler agreed with itself; the wrapper did not.")
-    if codebytes > 0
-        print("      code+data   {codebytes} differing bytes below __LINKEDIT. This is not metadata — two independent compiles emitted different code or data.")
+  print("    {path}")
+  print("      size        {sizea} vs {sizeb}")
+  print("      bytes       {bytes} differ, first at {firstat}")
+  print("      accounting  {uuidbytes} in LC_UUID · {sigbytes} in the ad-hoc code signature · {residue} elsewhere")
+  if codebytes == 0
+    print("      code+data   IDENTICAL — 0 differing bytes below __LINKEDIT once LC_UUID is set aside. The compiler agreed with itself; the wrapper did not.")
+  if codebytes > 0
+    print("      code+data   {codebytes} differing bytes below __LINKEDIT. This is not metadata — two independent compiles emitted different code or data.")
 
-    if embedded > 0
-        print("      SOURCE      BUILD PATH — the artifact embeds its own build directory ({embedded} occurrences). Reproducible only from the same absolute path; this is what a same-path rebuild can never see:")
-        print(cap("grep -a -o '[-a-zA-Z0-9_/.]*cachea[-a-zA-Z0-9_/.]*' {a} 2>/dev/null | head -2 | sed -e 's/^/                  /'"))
-        print(cap("grep -a -o '[-a-zA-Z0-9_/.]*cacheb[-a-zA-Z0-9_/.]*' {b} 2>/dev/null | head -2 | sed -e 's/^/                  /'"))
-    if uuidbytes > 0
-        print("      SOURCE      LC_UUID — {uuida} vs {uuidb}. The linker's UUID is not derived from the content alone.")
-    if sigbytes > 0
-        print("      NOTE        the {sigbytes} signature bytes are CONSEQUENTIAL: the ad-hoc signature hashes everything above, so it cannot match while anything else differs. It is not an independent source.")
-    if embedded > 0 and residue > 0
-        print("      SOURCE      TIMESTAMP is the likely residue: the records that carry an object path also carry that object's mtime, so two builds seconds apart differ there too. Check the residue offsets against the debug stabs.")
-    if embedded == 0 and uuidbytes == 0 and sizea == sizeb
-        print("      SOURCE      ORDERING — same size, scattered bytes, no embedded path, no UUID delta. Iteration order, hash traversal, or parallel emission.")
-    if embedded == 0 and uuidbytes == 0 and sizea != sizeb
-        print("      SOURCE      CONTENT — the artifacts are not the same length, so this is not ordering.")
+  if embedded > 0
+    print("      SOURCE      BUILD PATH — the artifact embeds its own build directory ({embedded} occurrences). Reproducible only from the same absolute path; this is what a same-path rebuild can never see:")
+    print(cap("grep -a -o '[-a-zA-Z0-9_/.]*cachea[-a-zA-Z0-9_/.]*' {a} 2>/dev/null | head -2 | sed -e 's/^/                  /'"))
+    print(cap("grep -a -o '[-a-zA-Z0-9_/.]*cacheb[-a-zA-Z0-9_/.]*' {b} 2>/dev/null | head -2 | sed -e 's/^/                  /'"))
+  if uuidbytes > 0
+    print("      SOURCE      LC_UUID — {uuida} vs {uuidb}. The linker's UUID is not derived from the content alone.")
+  if sigbytes > 0
+    print("      NOTE        the {sigbytes} signature bytes are CONSEQUENTIAL: the ad-hoc signature hashes everything above, so it cannot match while anything else differs. It is not an independent source.")
+  if embedded > 0 and residue > 0
+    print("      SOURCE      TIMESTAMP is the likely residue: the records that carry an object path also carry that object's mtime, so two builds seconds apart differ there too. Check the residue offsets against the debug stabs.")
+  if embedded == 0 and uuidbytes == 0 and sizea == sizeb
+    print("      SOURCE      ORDERING — same size, scattered bytes, no embedded path, no UUID delta. Iteration order, hash traversal, or parallel emission.")
+  if embedded == 0 and uuidbytes == 0 and sizea != sizeb
+    print("      SOURCE      CONTENT — the artifacts are not the same length, so this is not ordering.")
 
 main: i64 = ()
-    zig = os.env["ZIG"] or "zig"
-    opt = os.env["DETERMINISM_OPT"] or "ReleaseFast"
-    code: i64 = 0
+  zig = os.env("ZIG") or "zig"
+  opt = os.env("DETERMINISM_OPT") or "ReleaseFast"
+  code: i64 = 0
 
-    work = cap("mktemp -d")
-    if work == ""
-        print("build_determinism: FAIL — could not make a scratch directory")
+  work = cap("mktemp -d")
+  if work == ""
+    print("build_determinism: FAIL — could not make a scratch directory")
+    code = 3
+  if code == 0
+    ver = cap("{zig} version 2>/dev/null")
+    if ver == ""
+      print("build_determinism: FAIL — no zig on PATH; set ZIG")
+      code = 3
+    print("build_determinism — U2: build@deterministic")
+    print("  zig       {ver}")
+    print("  optimize  {opt}")
+    print("  scratch   {work}")
+    print("  two independent compiles, two caches, neither can see the other's output")
+  counta: i64 = 0
+  countb: i64 = 0
+  if code == 0
+    counta = build(zig, opt, work, "a")
+    if counta < 0
+      print("build_determinism: FAIL — the first build did not complete; this is a broken tree, not a determinism finding. Log: {work}/loga")
+      code = 3
+  if code == 0
+    countb = build(zig, opt, work, "b")
+    if countb < 0
+      print("build_determinism: FAIL — the second build did not complete; this is a broken tree, not a determinism finding. Log: {work}/logb")
+      code = 3
+
+  # Control 1: the population. "Every artifact matched" over zero artifacts
+  # is the confident zero this repository keeps paying for.
+  if code == 0
+    print("  artifacts {counta} and {countb} installed files")
+    if counta == 0
+      print("build_determinism: FAIL — the build installed 0 files; there is nothing to compare and a green here would mean nothing")
+      code = 3
+  if code == 0
+    if not here("{work}/outa/bin/idol")
+      print("build_determinism: FAIL — no bin/idol in the first prefix; the compiler itself is not among the artifacts being compared")
+      code = 3
+
+  # Controls 2 and 3: the comparator, both directions.
+  if code == 0
+    witness: str = "{work}/outa/bin/idol"
+    if not same(witness, witness)
+      print("build_determinism: FAIL — the comparator says a file differs from itself; every `identical` below would be worthless")
+      code = 3
+    if code == 0
+      sh("cp {witness} {work}/mutant")
+      sh("printf x >> {work}/mutant")
+      if same(witness, "{work}/mutant")
+        print("build_determinism: FAIL — the comparator says a mutated copy is identical; it cannot see a difference and would report a perfect green forever")
         code = 3
-    if code == 0
-        ver = cap("{zig} version 2>/dev/null")
-        if ver == ""
-            print("build_determinism: FAIL — no zig on PATH; set ZIG")
-            code = 3
-        print("build_determinism — U2: build@deterministic")
-        print("  zig       {ver}")
-        print("  optimize  {opt}")
-        print("  scratch   {work}")
-        print("  two independent compiles, two caches, neither can see the other's output")
-    counta: i64 = 0
-    countb: i64 = 0
-    if code == 0
-        counta = build(zig, opt, work, "a")
-        if counta < 0
-            print("build_determinism: FAIL — the first build did not complete; this is a broken tree, not a determinism finding. Log: {work}/loga")
-            code = 3
-    if code == 0
-        countb = build(zig, opt, work, "b")
-        if countb < 0
-            print("build_determinism: FAIL — the second build did not complete; this is a broken tree, not a determinism finding. Log: {work}/logb")
-            code = 3
 
-    # Control 1: the population. "Every artifact matched" over zero artifacts
-    # is the confident zero this repository keeps paying for.
-    if code == 0
-        print("  artifacts {counta} and {countb} installed files")
-        if counta == 0
-            print("build_determinism: FAIL — the build installed 0 files; there is nothing to compare and a green here would mean nothing")
-            code = 3
-    if code == 0
-        if !here("{work}/outa/bin/idol")
-            print("build_determinism: FAIL — no bin/idol in the first prefix; the compiler itself is not among the artifacts being compared")
-            code = 3
+  if code == 0
+    sh("cd {work}/outa && find . -type f | sort > {work}/lista")
+    sh("cd {work}/outb && find . -type f | sort > {work}/listb")
+    missing: i64 = count("comm -3 {work}/lista {work}/listb | wc -l")
+    if missing != 0
+      print("build_determinism: FAIL — the two builds installed DIFFERENT FILE SETS; that is a determinism failure one level above bytes:")
+      print(cap("comm -3 {work}/lista {work}/listb | head -20"))
+      code = 1
 
-    # Controls 2 and 3: the comparator, both directions.
-    if code == 0
-        witness: str = "{work}/outa/bin/idol"
-        if !same(witness, witness)
-            print("build_determinism: FAIL — the comparator says a file differs from itself; every `identical` below would be worthless")
-            code = 3
-        if code == 0
-            sh("cp {witness} {work}/mutant")
-            sh("printf x >> {work}/mutant")
-            if same(witness, "{work}/mutant")
-                print("build_determinism: FAIL — the comparator says a mutated copy is identical; it cannot see a difference and would report a perfect green forever")
-                code = 3
+  if code == 0
+    sh("cd {work}/outa && find . -type f | sort | xargs shasum -a 256 > {work}/hasha")
+    sh("cd {work}/outb && find . -type f | sort | xargs shasum -a 256 > {work}/hashb")
+    differing: i64 = count("diff {work}/hasha {work}/hashb | grep -c '^<'")
+    identical: i64 = counta - differing
 
-    if code == 0
-        sh("cd {work}/outa && find . -type f | sort > {work}/lista")
-        sh("cd {work}/outb && find . -type f | sort > {work}/listb")
-        missing: i64 = count("comm -3 {work}/lista {work}/listb | wc -l")
-        if missing != 0
-            print("build_determinism: FAIL — the two builds installed DIFFERENT FILE SETS; that is a determinism failure one level above bytes:")
-            print(cap("comm -3 {work}/lista {work}/listb | head -20"))
-            code = 1
+    print("")
+    print("  identical {identical}")
+    print("  differing {differing}")
 
-    if code == 0
-        sh("cd {work}/outa && find . -type f | sort | xargs shasum -a 256 > {work}/hasha")
-        sh("cd {work}/outb && find . -type f | sort | xargs shasum -a 256 > {work}/hashb")
-        differing: i64 = count("diff {work}/hasha {work}/hashb | grep -c '^<'")
-        identical: i64 = counta - differing
+    if differing > 0
+      print("")
+      print("  DIVERGENT ARTIFACTS — the source of each, named:")
+      sh("diff {work}/hasha {work}/hashb | grep '^<' | sed -e 's/^< //' -e 's/^[0-9a-f]*  //' > {work}/bad")
+      # Read back by line index rather than splitting in Duo: the split
+      # would need `string.`, which this gate does not use.
+      i: i64 = 1
+      while i <= differing and i <= 5
+        line: str = cap("sed -n '{i}p' {work}/bad")
+        if line != ""
+          diagnose("{work}/outa/{line}", "{work}/outb/{line}", work, line)
+        i = i + 1
+      if differing > 5
+        print("    … and {differing} in total; the rest are listed in {work}/bad with DETERMINISM_KEEP=1")
 
-        print("")
-        print("  identical {identical}")
-        print("  differing {differing}")
+    # THE RATCHET, and it is the same shape as U1's: the honest state is
+    # RED, so the budget is the measured baseline and the job of the gate
+    # is to stop it growing while the sources named above are fixed. A
+    # gate that is red on the day it ships is a gate people learn to skip;
+    # one that says "1 known-divergent artifact, here is why, and it must
+    # not become 2" gets read. Measured 2026-08-08 at 878e0d1: 1 of 1.
+    cap0: i64 = os.env("DETERMINISM_ARTIFACT_FLOOR") or "1":to(i64)
+    print("")
+    if differing > cap0
+      print("build_determinism: FAIL — {differing} of {counta} artifacts differ, over the ratchet {cap0}. U2 says bit-reproducible; the sources are named above.")
+      code = 1
+    if differing == cap0 and differing > 0
+      print("build_determinism: AT BUDGET — {differing} of {counta} artifacts differ, ratchet {cap0}. U2 IS NOT HELD: this build is not bit-reproducible, and the report above names why. Fix a source, then lower the budget.")
+    if differing < cap0
+      print("build_determinism: PASS — {differing} of {counta} artifacts differ, under the ratchet {cap0}. LOWER THE BUDGET to {differing} in this commit; a ratchet nobody lowers is a ceiling.")
+    if differing == 0
+      print("build_determinism: PASS — {counta} artifacts byte-identical across two independent compiles with separate caches ({opt}). U2 holds for this build.")
 
-        if differing > 0
-            print("")
-            print("  DIVERGENT ARTIFACTS — the source of each, named:")
-            sh("diff {work}/hasha {work}/hashb | grep '^<' | sed -e 's/^< //' -e 's/^[0-9a-f]*  //' > {work}/bad")
-            # Read back by line index rather than splitting in Duo: the split
-            # would need `string.`, which this gate does not use.
-            i: i64 = 1
-            while i <= differing and i <= 5
-                line: str = cap("sed -n '{i}p' {work}/bad")
-                if line != ""
-                    diagnose("{work}/outa/{line}", "{work}/outb/{line}", work, line)
-                i += 1
-            if differing > 5
-                print("    … and {differing} in total; the rest are listed in {work}/bad with DETERMINISM_KEEP=1")
-
-        # THE RATCHET, and it is the same shape as U1's: the honest state is
-        # RED, so the budget is the measured baseline and the job of the gate
-        # is to stop it growing while the sources named above are fixed. A
-        # gate that is red on the day it ships is a gate people learn to skip;
-        # one that says "1 known-divergent artifact, here is why, and it must
-        # not become 2" gets read. Measured 2026-08-08 at 878e0d1: 1 of 1.
-        cap0: i64 = (os.env["DETERMINISM_ARTIFACT_FLOOR"] or "1"):to(i64)
-        print("")
-        if differing > cap0
-            print("build_determinism: FAIL — {differing} of {counta} artifacts differ, over the ratchet {cap0}. U2 says bit-reproducible; the sources are named above.")
-            code = 1
-        if differing == cap0 and differing > 0
-            print("build_determinism: AT BUDGET — {differing} of {counta} artifacts differ, ratchet {cap0}. U2 IS NOT HELD: this build is not bit-reproducible, and the report above names why. Fix a source, then lower the budget.")
-        if differing < cap0
-            print("build_determinism: PASS — {differing} of {counta} artifacts differ, under the ratchet {cap0}. LOWER THE BUDGET to {differing} in this commit; a ratchet nobody lowers is a ceiling.")
-        if differing == 0
-            print("build_determinism: PASS — {counta} artifacts byte-identical across two independent compiles with separate caches ({opt}). U2 holds for this build.")
-
-    # BOUND, not called bare: a trailing side-effecting call at the close of
-    # `main` overwrites the process exit status with ITS status. See
-    # gaps/GAP-070.md — this gate printed FAIL and exited 0 until the cleanup
-    # result was bound to a name.
-    if (os.env["DETERMINISM_KEEP"] or "") == ""
-        swept: i64 = sh("rm -rf {work}")
-    code
+  # BOUND, not called bare: a trailing side-effecting call at the close of
+  # `main` overwrites the process exit status with ITS status. See
+  # gaps/GAP-070.md — this gate printed FAIL and exited 0 until the cleanup
+  # result was bound to a name.
+  if (os.env("DETERMINISM_KEEP") or "") == ""
+    swept: i64 = sh("rm -rf {work}")
+  code

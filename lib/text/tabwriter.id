@@ -3,67 +3,73 @@
 
 # new_writer: create a tabwriter with the given parameters.
 # minwidth: minimum cell width, tabwidth: width of tab chars, padding: cell padding, padchar: fill char.
-new_writer(minwidth: i64, tabwidth: i64, padding: i64, padchar: str): any
-    if minwidth == nil minwidth = 0
-    if tabwidth == nil tabwidth = 8
-    if padding == nil padding = 1
-    if padchar == nil padchar = " "
-    {rows = {}, minwidth = minwidth, tabwidth = tabwidth, padding = padding, padchar = padchar, cur_row = {}, col_widths = {}}
+new_writer: any = (minwidth: i64, tabwidth: i64, padding: i64, padchar: str)
+  if minwidth == nil
+    minwidth = 0
+  if tabwidth == nil
+    tabwidth = 8
+  if padding == nil
+    padding = 1
+  if padchar == nil
+    padchar = " "
+  { rows = {}, minwidth = minwidth, tabwidth = tabwidth, padding = padding, padchar = padchar, cur_row = {}, col_widths = {} }
 
 # write: add a string to the current row. Tabs delimit columns.
-write(w: any, s: str): any
-    # split on tabs
-    i = 1
-    start = 1
-    while i <= s:len()
-        if s:byte(i) == 9  # tab
-            w.cur_row[w.cur_row:len() + 1] = s:sub(start, i - 1)
-            start = i + 1
-        i += 1
-    w.cur_row[w.cur_row:len() + 1] = s:sub(start)
-    w
+write: any = (w: any, s: str)
+  # split on tabs
+  i = 1
+  start = 1
+  while i <= s:len()
+    # tab
+    if s:byte(i) == 9
+      w.cur_row(w.cur_row:len() + 1) = s:sub(start, i - 1)
+      start = i + 1
+    i = i + 1
+  w.cur_row(w.cur_row:len() + 1) = s:sub(start)
+  w
 
 # write_col: add a single cell to the current row.
-write_col(w: any, s: str): any
-    w.cur_row[w.cur_row:len() + 1] = s
-    w
+write_col: any = (w: any, s: str)
+  w.cur_row(w.cur_row:len() + 1) = s
+  w
 
 # newline: finalize the current row and start a new one.
-newline(w: any): any
-    # update column widths
-    i = 1
-    while i <= w.cur_row:len()
-        cell_len = to(str)(w.cur_row[i]):len()
-        if w.col_widths[i] == nil or cell_len > w.col_widths[i]
-            w.col_widths[i] = cell_len
-        i += 1
-    w.rows[w.rows:len() + 1] = w.cur_row
-    w.cur_row = {}
-    w
+newline: any = (w: any)
+  # update column widths
+  i = 1
+  while i <= w.cur_row:len()
+    cell_len = to(str)(w.cur_row(i)):len()
+    if w.col_widths(i) == nil or cell_len > w.col_widths(i)
+      w.col_widths(i) = cell_len
+    i = i + 1
+  w.rows(w.rows:len() + 1) = w.cur_row
+  w.cur_row = {}
+  w
 
 # flush: render the aligned table as a single string.
-flush(w: any): str
-    # if there is a pending row, add it
-    if w.cur_row:len() > 0
-        newline(w)
-    out = {}
-    r = 1
-    while r <= w.rows:len()
-        row = w.rows[r]
-        line = ""
-        c = 1
-        while c <= row:len()
-            cell = to(str)(row[c])
-            width = w.col_widths[c] + w.padding
-            if width < w.minwidth width = w.minwidth
-            # pad the cell
-            pad_len = width - cell:len()
-            if pad_len < 0 pad_len = 0
-            line = line .. cell .. w.padchar:rep(pad_len)
-            c += 1
-        # trim trailing pad
-        line = line:gsub(w.padchar .. "*$", "")
-        out[out:len() + 1] = line
-        r += 1
-    out:concat("\n")
-
+flush: str = (w: any)
+  # if there is a pending row, add it
+  if w.cur_row:len() > 0
+    newline(w)
+  out = {}
+  r = 1
+  while r <= w.rows:len()
+    row = w.rows(r)
+    line = ""
+    c = 1
+    while c <= row:len()
+      cell = to(str)(row(c))
+      width = w.col_widths(c) + w.padding
+      if width < w.minwidth
+        width = w.minwidth
+      # pad the cell
+      pad_len = width - cell:len()
+      if pad_len < 0
+        pad_len = 0
+      line = line .. cell .. w.padchar:rep(pad_len)
+      c = c + 1
+    # trim trailing pad
+    line = line:gsub(w.padchar .. "*$", "")
+    out(out:len() + 1) = line
+    r = r + 1
+  out:concat("\n")

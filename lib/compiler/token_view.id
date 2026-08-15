@@ -1,34 +1,28 @@
 # compiler.token_view
 # Immutable observation over a production token pack (GAP-134 prerequisite).
 
-Pack: {
-    kinds: any,
-    lines: any,
-    cols: any,
-    texts: any,
-    count: i64
-}
+Pack: { kinds: any, lines: any, cols: any, texts: any, count: i64 }
 
 view: Pack = (pack: Pack)
-    pack
+  pack
 
 len: i64 = (pack: Pack)
-    pack.count
+  pack.count
 
 kindat: i64 = (pack: Pack, index: i64)
-    if index < 1 or index > pack.count
-        token.KINDEOF
-    else
-        pack.kinds[index]
+  if index < 1 or index > pack.count
+    token.KINDEOF
+  else
+    pack.kinds(index)
 
 peek: i64 = (pack: Pack, index: i64)
-    kindat(pack, index)
+  kindat(pack, index)
 
 canbeginexpr: bool = (pack: Pack, index: i64)
-    grammar.rolebeginexpr(kindat(pack, index))
+  grammar.rolebeginexpr(kindat(pack, index))
 
 roleprecedence: i64 = (pack: Pack, index: i64)
-    grammar.roleprecedence(kindat(pack, index))
+  grammar.roleprecedence(kindat(pack, index))
 
 rolecompatonly: bool = (pack: Pack, index: i64)
-    grammar.rolecompatonly(kindat(pack, index))
+  grammar.rolecompatonly(kindat(pack, index))

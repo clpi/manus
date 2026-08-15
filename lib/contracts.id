@@ -1,102 +1,102 @@
-str_join(parts: any, sep: str): str
+str_join: str = (parts: any, sep: str)
   result = ""
   for i, part in parts
     if i > 1
       result = result .. sep
     result = result .. part
   result
-push(out: any, value: any): any
-  out[out:len() + 1] = value
+push: any = (out: any, value: any)
+  out(out:len() + 1) = value
   out
-member_name(member: any): str
+member_name: str = (member: any)
   if member.name
     return member.name
-  to(str)(member[1] or "")
-member_kind(member: any): str
+  to(str)(member(1) or "")
+member_kind: str = (member: any)
   member.kind or "field"
-field_type(field: any): str
+field_type: str = (field: any)
   field.type or "any"
-method_ret(method: any): str
+method_ret: str = (method: any)
   method.ret or "any"
-method_param_count(method: any): str
+method_param_count: str = (method: any)
   to(str)(method.param_count or 0)
-method_params(method: any): any
+method_params: any = (method: any)
   method.params or {}
-method_params_text(method: any): str
+method_params_text: str = (method: any)
   params = method_params(method)
   if params:len() == 0
     return method_param_count(method) .. " params"
   else
     parts: any = {}
     for i = 1, params:len()
-      parts[parts:len() + 1] = to(str)(params[i])
+      parts(parts:len() + 1) = to(str)(params(i))
     return str_join(parts, ", ")
-bool_text(value: bool): str
+bool_text: str = (value: bool)
   if value
     return "true"
   else
     return "false"
 global contract_stack = {}
 global contract_count = 0
-pre(condition: str, message: str)
-  contract_count += 1
-  contract_stack[contract_count] = {
+pre = (condition: str, message: str)
+  contract_count = contract_count + 1
+  contract_stack(contract_count) = {
     kind = "pre",
     condition = condition,
     message = message or "precondition failed"
   }
-post(condition: str, message: str)
-  contract_count += 1
-  contract_stack[contract_count] = {
+post = (condition: str, message: str)
+  contract_count = contract_count + 1
+  contract_stack(contract_count) = {
     kind = "post",
     condition = condition,
     message = message or "postcondition failed"
   }
-invariant(condition: str, message: str)
-  contract_count += 1
-  contract_stack[contract_count] = {
+invariant = (condition: str, message: str)
+  contract_count = contract_count + 1
+  contract_stack(contract_count) = {
     kind = "invariant",
     condition = condition,
     message = message or "invariant violated"
   }
-assert_const(condition: bool, message: str)
+assert_const = (condition: bool, message: str)
   condition
-emit_preconditions(): void
+emit_preconditions = ()
   contract_stack = {}
   contract_count = 0
-emit_postconditions(): void
+emit_postconditions = ()
   contract_stack = {}
   contract_count = 0
-emit_invariants(): void
+emit_invariants = ()
   contract_stack = {}
   contract_count = 0
-debug_check(condition_str: str, message: str): void
+debug_check = (condition_str: str, message: str)
   message
-profile_check(condition_str: str, message: str): void
+profile_check = (condition_str: str, message: str)
   message
-all(conditions: any): str
+all: str = (conditions: any)
   parts = {}
   for i = 1, conditions:len()
-    parts[i] = "(" .. conditions[i] .. ")"
+    parts(i) = "(" .. conditions(i) .. ")"
   str_join(parts, " && ")
-any(conditions: any): str
+any: str = (conditions: any)
   parts = {}
   for i = 1, conditions:len()
-    parts[i] = "(" .. conditions[i] .. ")"
+    parts(i) = "(" .. conditions(i) .. ")"
   str_join(parts, " || ")
-implies(antecedent: str, consequent: str): str
+implies: str = (antecedent: str, consequent: str)
   "(!(" .. antecedent .. ") || (" .. consequent .. "))"
-between(value: str, lo: str, hi: str): str
+between: str = (value: str, lo: str, hi: str)
   "(" .. value .. " >= " .. lo .. " && " .. value .. " <= " .. hi .. ")"
-not_nil(value: str): str
+not_nil: str = (value: str)
   "(" .. value .. " != nil)"
-positive(value: str): str
+positive: str = (value: str)
   "(" .. value .. " > 0)"
-non_negative(value: str): str
+non_negative: str = (value: str)
   "(" .. value .. " >= 0)"
-in_range(value: str, lo: str, hi: str): str
+in_range: str = (value: str, lo: str, hi: str)
   between(value, lo, hi)
-field_check(value_expr: str, field: any): any
+field_check: any = (value_expr: str, field: any)
   field_name = member_name(field)
   type_name = field_type(field)
   access = str_join({
@@ -111,7 +111,7 @@ field_check(value_expr: str, field: any): any
     condition = not_nil(access),
     message = access .. " must exist as " .. type_name
   }
-method_check(value_expr: str, method: any): any
+method_check: any = (value_expr: str, method: any)
   method_name = member_name(method)
   ret = method_ret(method)
   params = method_param_count(method)
@@ -128,78 +128,78 @@ method_check(value_expr: str, method: any): any
     condition = not_nil(access),
     message = access .. " must be a method with " .. params .. " params -> " .. ret
   }
-concept_field_checks(value_expr: str, fields: any): any
+concept_field_checks: any = (value_expr: str, fields: any)
   checks = {}
   for i = 1, fields:len()
-    checks[checks:len() + 1] = field_check(value_expr, fields[i])
+    checks(checks:len() + 1) = field_check(value_expr, fields(i))
   checks
-concept_method_checks(value_expr: str, methods: any): any
+concept_method_checks: any = (value_expr: str, methods: any)
   checks = {}
   for i = 1, methods:len()
-    checks[checks:len() + 1] = method_check(value_expr, methods[i])
+    checks(checks:len() + 1) = method_check(value_expr, methods(i))
   checks
-concept_member_checks(value_expr: str, members: any): any
+concept_member_checks: any = (value_expr: str, members: any)
   checks = {}
   for i = 1, members:len()
-    member = members[i]
+    member = members(i)
     if member_kind(member) == "method"
-      checks[checks:len() + 1] = method_check(value_expr, member)
+      checks(checks:len() + 1) = method_check(value_expr, member)
     else
-      checks[checks:len() + 1] = field_check(value_expr, member)
+      checks(checks:len() + 1) = field_check(value_expr, member)
   checks
-checks_expression(checks: any): str
+checks_expression: str = (checks: any)
   if checks:len() == 0
     return "true"
   else
     conditions = {}
     for i = 1, checks:len()
-      conditions[i] = checks[i].condition
+      conditions(i) = checks(i).condition
     return all(conditions)
-checks_report(checks: any): str
+checks_report: str = (checks: any)
   if checks:len() == 0
     return "no concept requirements"
   else
     messages = {}
     for i = 1, checks:len()
-      messages[i] = checks[i].message
+      messages(i) = checks(i).message
     return str_join(messages, "; ")
-concept_contract_from_checks(checks: any): any
+concept_contract_from_checks: any = (checks: any)
   return {
     count = checks:len(),
     checks = checks,
     expression = checks_expression(checks),
     report = checks_report(checks)
   }
-concept_contract(value_expr: str, fields: any, methods: any): any
+concept_contract: any = (value_expr: str, fields: any, methods: any)
   checks = concept_field_checks(value_expr, fields)
   method_checks = concept_method_checks(value_expr, methods)
   for i = 1, method_checks:len()
-    checks[checks:len() + 1] = method_checks[i]
+    checks(checks:len() + 1) = method_checks(i)
   concept_contract_from_checks(checks)
-concept_member_contract(value_expr: str, members: any): any
+concept_member_contract: any = (value_expr: str, members: any)
   concept_contract_from_checks(concept_member_checks(value_expr, members))
-method_signature(method: any): str
+method_signature: str = (method: any)
   name_text = member_name(method)
   params = method_params_text(method)
   ret = method_ret(method)
   name_text .. "(" .. params .. ") -> " .. ret
-member_doc_line(member: any): str
+member_doc_line: str = (member: any)
   if member_kind(member) == "method"
     return "- method " .. method_signature(member)
   else
     return "- field " .. member_name(member) .. ": " .. field_type(member)
-concept_markdown(concept_name: str, members: any): str
+concept_markdown: str = (concept_name: str, members: any)
   lines: any = {}
-  lines[1] = "# " .. concept_name
+  lines(1) = "# " .. concept_name
   if members:len() == 0
-    lines[2] = "- no requirements"
+    lines(2) = "- no requirements"
   else
     for i = 1, members:len()
-      lines[lines:len() + 1] = member_doc_line(members[i])
+      lines(lines:len() + 1) = member_doc_line(members(i))
   str_join(lines, "\n")
-wrapper_name(target_name: str, method: any): str
+wrapper_name: str = (target_name: str, method: any)
   target_name .. "_" .. member_name(method)
-method_wrapper_plan(target_name: str, receiver_expr: str, method: any): any
+method_wrapper_plan: any = (target_name: str, receiver_expr: str, method: any)
   method_name = member_name(method)
   return {
     kind = "method_wrapper",
@@ -210,9 +210,9 @@ method_wrapper_plan(target_name: str, receiver_expr: str, method: any): any
     param_count = method_param_count(method),
     params = method_params(method)
   }
-field_accessor_name(target_name: str, field: any): str
+field_accessor_name: str = (target_name: str, field: any)
   target_name .. "_get_" .. member_name(field)
-field_accessor_plan(target_name: str, receiver_expr: str, field: any): any
+field_accessor_plan: any = (target_name: str, receiver_expr: str, field: any)
   field_name = member_name(field)
   return {
     kind = "field_accessor",
@@ -221,9 +221,9 @@ field_accessor_plan(target_name: str, receiver_expr: str, field: any): any
     access = receiver_expr .. "." .. field_name,
     ret = field_type(field)
   }
-c_type_eq(type_name: str, expected: str): bool
+c_type_eq: bool = (type_name: str, expected: str)
   return type_name:find(expected, 1, true) == 1 and type_name:len() == expected:len()
-c_type(type_name: str): str
+c_type: str = (type_name: str)
   if c_type_eq(type_name, "i64") or c_type_eq(type_name, "integer")
     return "int64_t"
   if c_type_eq(type_name, "i32")
@@ -245,26 +245,26 @@ c_type(type_name: str): str
   if c_type_eq(type_name, "any")
     return "void*"
   type_name
-c_param_decl(param_type: str, param_name: str): str
+c_param_decl: str = (param_type: str, param_name: str)
   c_type(param_type) .. " " .. param_name
-c_wrapper_params(wrapper: any): any
+c_wrapper_params: any = (wrapper: any)
   params = wrapper.params or {}
   out: any = {}
-  out[1] = "void* self"
+  out(1) = "void* self"
   for i = 2, params:len()
-    out[out:len() + 1] = c_param_decl(to(str)(params[i]), "arg" .. to(str)(i - 1))
+    out(out:len() + 1) = c_param_decl(to(str)(params(i)), "arg" .. to(str)(i - 1))
   out
-c_wrapper_call_args(wrapper: any): str
+c_wrapper_call_args: str = (wrapper: any)
   params = wrapper.params or {}
   args: any = {}
   if params:len() == 0
-    args[1] = "self"
+    args(1) = "self"
   else
-    args[1] = "self"
+    args(1) = "self"
     for i = 2, params:len()
-      args[args:len() + 1] = "arg" .. to(str)(i - 1)
+      args(args:len() + 1) = "arg" .. to(str)(i - 1)
   str_join(args, ", ")
-c_method_wrapper(receiver_c_type: str, wrapper: any): str
+c_method_wrapper: str = (receiver_c_type: str, wrapper: any)
   ret = c_type(wrapper.ret or "void")
   params = str_join(c_wrapper_params(wrapper), ", ")
   target = "((" .. receiver_c_type .. "*)self)->" .. wrapper.name
@@ -275,36 +275,36 @@ c_method_wrapper(receiver_c_type: str, wrapper: any): str
   else
     body = "    return " .. call .. "\n"
   "static inline " .. ret .. " " .. wrapper.wrapper .. "(" .. params .. ") {\n" .. body .. "}\n"
-c_field_accessor(receiver_c_type: str, accessor: any): str
+c_field_accessor: str = (receiver_c_type: str, accessor: any)
   ret = c_type(accessor.ret or "any")
   field_name = accessor.name
   wrapper = accessor.wrapper
   target = "((" .. receiver_c_type .. "*)self)->" .. field_name
   header = "static inline " .. ret .. " " .. wrapper .. "(void* self) {\n"
   return header .. "    return " .. target .. ";\n}\n"
-concept_c_wrappers(receiver_c_type: str, wrappers: any): str
+concept_c_wrappers: str = (receiver_c_type: str, wrappers: any)
   parts: any = {}
   for i = 1, wrappers:len()
-    parts[parts:len() + 1] = c_method_wrapper(receiver_c_type, wrappers[i])
+    parts(parts:len() + 1) = c_method_wrapper(receiver_c_type, wrappers(i))
   str_join(parts, "\n")
-concept_c_accessors(receiver_c_type: str, accessors: any): str
+concept_c_accessors: str = (receiver_c_type: str, accessors: any)
   parts: any = {}
   for i = 1, accessors:len()
-    parts[parts:len() + 1] = c_field_accessor(receiver_c_type, accessors[i])
+    parts(parts:len() + 1) = c_field_accessor(receiver_c_type, accessors(i))
   str_join(parts, "\n")
-concept_wrapper_plan(target_name: str, receiver_expr: str, members: any): any
+concept_wrapper_plan: any = (target_name: str, receiver_expr: str, members: any)
   wrappers: any = {}
   for i = 1, members:len()
-    if member_kind(members[i]) == "method"
-      wrappers[wrappers:len() + 1] = method_wrapper_plan(target_name, receiver_expr, members[i])
+    if member_kind(members(i)) == "method"
+      wrappers(wrappers:len() + 1) = method_wrapper_plan(target_name, receiver_expr, members(i))
   wrappers
-concept_accessor_plan(target_name: str, receiver_expr: str, members: any): any
+concept_accessor_plan: any = (target_name: str, receiver_expr: str, members: any)
   accessors: any = {}
   for i = 1, members:len()
-    if member_kind(members[i]) != "method"
-      accessors[accessors:len() + 1] = field_accessor_plan(target_name, receiver_expr, members[i])
+    if member_kind(members(i)) != "method"
+      accessors(accessors:len() + 1) = field_accessor_plan(target_name, receiver_expr, members(i))
   accessors
-concept_target_report(concept_name: str, target_name: str, receiver_expr: str, members: any): any
+concept_target_report: any = (concept_name: str, target_name: str, receiver_expr: str, members: any)
   return {
     concept_name = concept_name,
     target = target_name,
@@ -313,32 +313,33 @@ concept_target_report(concept_name: str, target_name: str, receiver_expr: str, m
     wrappers = concept_wrapper_plan(target_name, receiver_expr, members),
     accessors = concept_accessor_plan(target_name, receiver_expr, members)
   }
-concept_target_c_report(concept_name: str, target_name: str, receiver_expr: str, receiver_c_type: str, members: any): any
+concept_target_c_report: any = (concept_name: str, target_name: str, receiver_expr: str, receiver_c_type: str, members: any)
   report = concept_target_report(concept_name, target_name, receiver_expr, members)
   report.receiver_c_type = receiver_c_type
   report.c_wrappers = concept_c_wrappers(receiver_c_type, report.wrappers)
   report.c_accessors = concept_c_accessors(receiver_c_type, report.accessors)
   if report:len().c_wrappers == 0
     report.c_source = report.c_accessors
-  else if report:len().c_accessors == 0
-    report.c_source = report.c_wrappers
   else
-    report.c_source = report.c_accessors .. "\n" .. report.c_wrappers
+    if report:len().c_accessors == 0
+      report.c_source = report.c_wrappers
+    else
+      report.c_source = report.c_accessors .. "\n" .. report.c_wrappers
   report
-member_signature(member: any): str
+member_signature: str = (member: any)
   if member_kind(member) == "method"
     return "method:" .. method_signature(member)
   else
     return "field:" .. member_name(member) .. ":" .. field_type(member)
-concept_signature(concept_name: str, members: any): str
+concept_signature: str = (concept_name: str, members: any)
   parts: any = {}
-  parts[1] = concept_name
+  parts(1) = concept_name
   for i = 1, members:len()
-    parts[parts:len() + 1] = member_signature(members[i])
+    parts(parts:len() + 1) = member_signature(members(i))
   str_join(parts, "|")
-concept_specialization_key(concept_name: str, target_name: str, members: any): str
+concept_specialization_key: str = (concept_name: str, target_name: str, members: any)
   target_name .. "::" .. concept_signature(concept_name, members)
-member_matches(required: any, provided: any): bool
+member_matches: bool = (required: any, provided: any)
   if member_kind(required) != member_kind(provided)
     return false
   if member_name(required) != member_name(provided)
@@ -351,28 +352,28 @@ member_matches(required: any, provided: any): bool
     if required_params:len() != provided_params:len()
       return false
     for i = 1, required_params:len()
-      if to(str)(required_params[i]) != to(str)(provided_params[i])
+      if to(str)(required_params(i)) != to(str)(provided_params(i))
         return false
     return method_ret(required) == method_ret(provided)
   else
     return field_type(required) == field_type(provided)
-find_member(members: any, required: any): any
+find_member: any = (members: any, required: any)
   for i = 1, members:len()
-    if member_matches(required, members[i])
-      return members[i]
+    if member_matches(required, members(i))
+      return members(i)
   nil
-concept_coverage(required_members: any, provided_members: any): any
+concept_coverage: any = (required_members: any, provided_members: any)
   missing_parts: any = {}
   missing_count = 0
   matched_count = 0
   for i = 1, required_members:len()
-    required = required_members[i]
+    required = required_members(i)
     provided = find_member(provided_members, required)
     if provided
-      matched_count += 1
+      matched_count = matched_count + 1
     else
-      missing_count += 1
-      missing_parts[missing_parts:len() + 1] = member_signature(required)
+      missing_count = missing_count + 1
+      missing_parts(missing_parts:len() + 1) = member_signature(required)
   missing_text = str_join(missing_parts, ", ")
   return {
     ok = missing_count == 0,
@@ -380,13 +381,13 @@ concept_coverage(required_members: any, provided_members: any): any
     missing_count = missing_count,
     missing = missing_text
   }
-coverage_report(coverage: any): str
+coverage_report: str = (coverage: any)
   lines: any = {}
-  lines[1] = "ok=" .. bool_text(coverage.ok)
-  lines[2] = "matched=" .. coverage.matched_count:to(str)
-  lines[3] = "missing=" .. coverage.missing_count:to(str)
+  lines(1) = "ok=" .. bool_text(coverage.ok)
+  lines(2) = "matched=" .. coverage.matched_count:to(str)
+  lines(3) = "missing=" .. coverage.missing_count:to(str)
   if coverage.missing_count > 0
-    lines[lines:len() + 1] = "missing " .. coverage.missing
+    lines(lines:len() + 1) = "missing " .. coverage.missing
   str_join(lines, "; ")
 M = {
   pre = pre,

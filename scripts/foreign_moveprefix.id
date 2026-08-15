@@ -3,75 +3,75 @@
 # share a function body; this minimal script keeps the classifier honest.
 
 chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
-            break
-        n -= 1
-    text:sub(1, n)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32
+      break
+    n = n - 1
+  text:sub(1, n)
 
 capture: str = (cmd: str)
-    f = io.popen(cmd, "r")
-    if f == nil
-        return ""
-    out = ""
-    line = f:read("*a")
-    if line != nil
-        out = line
-    f:close()
-    chomp(out)
+  f = io.popen(cmd, "r")
+  if f == nil
+    return ""
+  out = ""
+  line = f:read("*a")
+  if line != nil
+    out = line
+  f:close()
+  chomp(out)
 
 lines: any = (text: str)
-    out = {}
-    start = 1
-    i = 1
-    n = text:len()
-    while i <= n
-        if text:byte(i) == 10
-            if i > start
-                out[out:len() + 1] = text:sub(start, i - 1)
-            start = i + 1
-        i += 1
-    if start <= n
-        out[out:len() + 1] = text:sub(start, n)
-    out
+  out = {}
+  start = 1
+  i = 1
+  n = text:len()
+  while i <= n
+    if text:byte(i) == 10
+      if i > start
+        out(out:len() + 1) = text:sub(start, i - 1)
+      start = i + 1
+    i = i + 1
+  if start <= n
+    out(out:len() + 1) = text:sub(start, n)
+  out
 
 status: i64 = (cmd: str)
-    to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
+  to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
 
 cap: str = (cmd: str)
-    chomp(capture(cmd))
+  chomp(capture(cmd))
 
-count(cmd: str): i64
-    to(i64)(cap(cmd))
+count: i64 = (cmd: str)
+  to(i64)(cap(cmd))
 
-sh(cmd: str): i64
-    status(cmd)
+sh: i64 = (cmd: str)
+  status(cmd)
 
 envor: str = (name: str, fallback: str)
-    capture("printenv " .. name .. " 2>/dev/null || echo " .. fallback)
+  capture("printenv " .. name .. " 2>/dev/null || echo " .. fallback)
 
-main(): i64
-    prefix: str = envor("FOREIGN_PREFIX", "")
-    rest: str = envor("FOREIGN_REST", "")
-    into: str = envor("FOREIGN_INTO", "")
-    if prefix == "" or rest == "" or into == ""
-        print("0")
-        return 1
+main: i64 = ()
+  prefix: str = envor("FOREIGN_PREFIX", "")
+  rest: str = envor("FOREIGN_REST", "")
+  into: str = envor("FOREIGN_INTO", "")
+  if prefix == "" or rest == "" or into == ""
+    print("0")
+    return 1
 
-    trail: str = prefix:sub(prefix:len(), prefix:len())
-    cmd: str = ""
-    if trail == "/"
-        cmd = "grep '^{prefix}' {rest} 2>/dev/null | tee -a {into} >/dev/null; grep -v '^{prefix}' {rest} > {rest}.keep 2>/dev/null; mv {rest}.keep {rest}"
-    else
-        cmd = "grep -xF '{prefix}' {rest} 2>/dev/null | tee -a {into} >/dev/null; grep -vxF '{prefix}' {rest} > {rest}.keep 2>/dev/null; mv {rest}.keep {rest}"
-    sh(cmd)
+  trail: str = prefix:sub(prefix:len(), prefix:len())
+  cmd: str = ""
+  if trail == "/"
+    cmd = "grep '^{prefix}' {rest} 2>/dev/null | tee -a {into} >/dev/null; grep -v '^{prefix}' {rest} > {rest}.keep 2>/dev/null; mv {rest}.keep {rest}"
+  else
+    cmd = "grep -xF '{prefix}' {rest} 2>/dev/null | tee -a {into} >/dev/null; grep -vxF '{prefix}' {rest} > {rest}.keep 2>/dev/null; mv {rest}.keep {rest}"
+  sh(cmd)
 
-    hits: i64 = 0
-    if trail == "/"
-        hits = count("grep '^{prefix}' {into} 2>/dev/null | wc -l")
-    else
-        hits = count("grep -cxF '{prefix}' {into} 2>/dev/null")
-    print(hits:to(str))
-    0
+  hits: i64 = 0
+  if trail == "/"
+    hits = count("grep '^{prefix}' {into} 2>/dev/null | wc -l")
+  else
+    hits = count("grep -cxF '{prefix}' {into} 2>/dev/null")
+  print(hits:to(str))
+  0

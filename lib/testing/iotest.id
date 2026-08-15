@@ -1,65 +1,70 @@
 # testing.iotest — I/O test helpers (mirrors Go's testing/iotest)
 # Provides readers/writers that simulate errors, slow reads, etc.
 
-new_one_byte_reader(data: str): any
-    {data = data, pos = 1}
+new_one_byte_reader: any = (data: str)
+  { data = data, pos = 1 }
 
-one_byte_read(r: any): any
-    if r.pos > r.data:len() return nil
-    b = r.data:sub(r.pos, r.pos)
-    r.pos = r.pos + 1
-    b
+one_byte_read: any = (r: any)
+  if r.pos > r.data:len()
+    return nil
+  b = r.data:sub(r.pos, r.pos)
+  r.pos = r.pos + 1
+  b
 
-new_half_reader(data: str): any
-    {data = data, pos = 1}
+new_half_reader: any = (data: str)
+  { data = data, pos = 1 }
 
-half_read(r: any): any
-    if r.pos > r.data:len() return nil
-    remaining = r.data:len() - r.pos + 1
-    chunk_size = 1:max(remaining / 2:floor())
-    chunk = r.data:sub(r.pos, r.pos + chunk_size - 1)
-    r.pos = r.pos + chunk_size
-    chunk
+half_read: any = (r: any)
+  if r.pos > r.data:len()
+    return nil
+  remaining = r.data:len() - r.pos + 1
+  chunk_size = 1:max(remaining / 2:floor())
+  chunk = r.data:sub(r.pos, r.pos + chunk_size - 1)
+  r.pos = r.pos + chunk_size
+  chunk
 
-new_data_err_reader(data: str, err_at: i64): any
-    {data = data, pos = 1, err_at = err_at, erred = false}
+new_data_err_reader: any = (data: str, err_at: i64)
+  { data = data, pos = 1, err_at = err_at, erred = false }
 
-data_err_read(r: any): any
-    if r.erred return nil
-    if r.pos >= r.err_at
-        r.erred = true
-        return nil
-    if r.pos > r.data:len() return nil
-    chunk = r.data:sub(r.pos, r.pos)
-    r.pos = r.pos + 1
-    chunk
+data_err_read: any = (r: any)
+  if r.erred
+    return nil
+  if r.pos >= r.err_at
+    r.erred = true
+    return nil
+  if r.pos > r.data:len()
+    return nil
+  chunk = r.data:sub(r.pos, r.pos)
+  r.pos = r.pos + 1
+  chunk
 
-new_timeout_reader(data: str, timeout_after: i64): any
-    {data = data, pos = 1, timeout_after = timeout_after, reads = 0}
+new_timeout_reader: any = (data: str, timeout_after: i64)
+  { data = data, pos = 1, timeout_after = timeout_after, reads = 0 }
 
-timeout_read(r: any): any
-    r.reads = r.reads + 1
-    if r.reads > r.timeout_after return nil
-    if r.pos > r.data:len() return nil
-    chunk = r.data:sub(r.pos, r.pos)
-    r.pos = r.pos + 1
-    chunk
+timeout_read: any = (r: any)
+  r.reads = r.reads + 1
+  if r.reads > r.timeout_after
+    return nil
+  if r.pos > r.data:len()
+    return nil
+  chunk = r.data:sub(r.pos, r.pos)
+  r.pos = r.pos + 1
+  chunk
 
-new_trunc_writer(): any
-    {written = {}, max = 0, truncated = false}
+new_trunc_writer: any = ()
+  { written = {}, max = 0, truncated = false }
 
-trunc_write(w: any, data: str): i64
-    w.written[w.written:len() + 1] = data
-    w.max = w.max + data:len()
-    data:len()
+trunc_write: i64 = (w: any, data: str)
+  w.written(w.written:len() + 1) = data
+  w.max = w.max + data:len()
+  data:len()
 
-trunc_bytes(w: any): str
-    w.written:concat()
+trunc_bytes: str = (w: any)
+  w.written:concat()
 
-new_error_writer(): any
-    {erred = false}
+new_error_writer: any = ()
+  { erred = false }
 
-error_write(w: any, data: str): any
-    w.erred = true
-    nil
-
+error_write: any = (w: any, data: str)
+  w.erred = true
+  nil

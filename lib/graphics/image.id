@@ -42,7 +42,7 @@ new: any = (width: i64, height: i64, channels: i64)
   total = width * height * channels
   i = 1
   while i <= total
-    data[i] = 0
+    data(i) = 0
     i = i + 1
   {
     width = width,
@@ -58,17 +58,17 @@ get_pixel: any = (image: any, x: i64, y: i64)
   pixel = {}
   i = 0
   while i < image.channels
-    pixel[i + 1] = image.data[idx + i]
+    pixel(i + 1) = image.data(idx + i)
     i = i + 1
   pixel
 
-set_pixel: void = (image: any, x: i64, y: i64, pixel: any)
+set_pixel = (image: any, x: i64, y: i64, pixel: any)
   if x < 0 or x >= image.width or y < 0 or y >= image.height
     return
   idx = (y * image.width + x) * image.channels + 1
   i = 0
   while i < image.channels
-    image.data[idx + i] = pixel[i + 1] or 0
+    image.data(idx + i) = pixel(i + 1) or 0
     i = i + 1
 
 # ═══════════════════════════════════════════════════════════════
@@ -89,12 +89,12 @@ to_rgba: any = (image: any)
 
       i = 0
       while i < image.channels
-        result.data[dst_idx + i] = image.data[src_idx + i]
+        result.data(dst_idx + i) = image.data(src_idx + i)
         i = i + 1
 
       # Add alpha if RGB
       if image.channels == 3
-        result.data[dst_idx + 3] = 255
+        result.data(dst_idx + 3) = 255
       x = x + 1
     y = y + 1
   result
@@ -108,10 +108,10 @@ to_grayscale: any = (image: any)
       idx = (y * image.width + x) * image.channels + 1
       gray = 0
       if image.channels >= 3
-        gray = 0.299 * image.data[idx] + 0.587 * image.data[idx + 1] + 0.114 * image.data[idx + 2]
+        gray = 0.299 * image.data(idx) + 0.587 * image.data(idx + 1) + 0.114 * image.data(idx + 2)
       else
-        gray = image.data[idx]
-      result.data[y * image.width + x + 1] = gray:floor()
+        gray = image.data(idx)
+      result.data(y * image.width + x + 1) = gray:floor()
       x = x + 1
     y = y + 1
   result
@@ -166,7 +166,7 @@ resize_bilinear: any = (image: any, new_width: i64, new_height: i64)
         pixel = {}
         c = 1
         while c <= image.channels
-          pixel[c] = math.floor(p00[c] * (1 - fx) * (1 - fy) + p10[c] * fx * (1 - fy) + p01[c] * (1 - fx) * fy + p11[c] * fx * fy)
+          pixel(c) = math.floor(p00(c) * (1 - fx) * (1 - fy) + p10(c) * fx * (1 - fy) + p01(c) * (1 - fx) * fy + p11(c) * fx * fy)
           c = c + 1
         set_pixel(result, x, y, pixel)
       x = x + 1
@@ -189,7 +189,7 @@ blur: any = (image: any, radius: i64)
       sum = {}
       c = 1
       while c <= image.channels
-        sum[c] = 0
+        sum(c) = 0
         c = c + 1
 
       ky = -radius
@@ -200,7 +200,7 @@ blur: any = (image: any, radius: i64)
           if pixel
             c = 1
             while c <= image.channels
-              sum[c] = sum[c] + pixel[c]
+              sum(c) = sum(c) + pixel(c)
               c = c + 1
           kx = kx + 1
         ky = ky + 1
@@ -208,7 +208,7 @@ blur: any = (image: any, radius: i64)
       pixel = {}
       c = 1
       while c <= image.channels
-        pixel[c] = sum[c] / kernel_area:floor()
+        pixel(c) = sum(c) / kernel_area:floor()
         c = c + 1
       set_pixel(result, x, y, pixel)
       x = x + 1
@@ -231,7 +231,7 @@ sharpen: any = (image: any, strength: f64)
       sum = {}
       c = 1
       while c <= image.channels
-        sum[c] = 0
+        sum(c) = 0
         c = c + 1
 
       ky = 0
@@ -242,7 +242,7 @@ sharpen: any = (image: any, strength: f64)
           if pixel
             c = 1
             while c <= image.channels
-              sum[c] = sum[c] + pixel[c] * kernel[ky + 1][kx + 1]
+              sum(c) = sum(c) + pixel(c) * kernel(ky + 1)(kx + 1)
               c = c + 1
           kx = kx + 1
         ky = ky + 1
@@ -250,7 +250,7 @@ sharpen: any = (image: any, strength: f64)
       pixel = {}
       c = 1
       while c <= image.channels
-        pixel[c] = 0:max(255:min(sum[c]:floor()))
+        pixel(c) = 0:max(255:min(sum(c):floor()))
         c = c + 1
       set_pixel(result, x, y, pixel)
       x = x + 1
@@ -261,7 +261,7 @@ adjust_brightness: any = (image: any, factor: f64)
   result = new(image.width, image.height, image.channels)
   i = 1
   while i <= result:len().data
-    result.data[i] = 0:max(255:min(image.data[i] * factor:floor()))
+    result.data(i) = 0:max(255:min(image.data(i) * factor:floor()))
     i = i + 1
   result
 
@@ -269,8 +269,8 @@ adjust_contrast: any = (image: any, factor: f64)
   result = new(image.width, image.height, image.channels)
   i = 1
   while i <= result:len().data
-    value = image.data[i]
-    result.data[i] = 0:max(255:min((value - 128) * factor + 128:floor()))
+    value = image.data(i)
+    result.data(i) = 0:max(255:min((value - 128) * factor + 128:floor()))
     i = i + 1
   result
 # ═══════════════════════════════════════════════════════════════

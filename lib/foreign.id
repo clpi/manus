@@ -16,24 +16,24 @@
 
 # zig_to_c: translate common Zig patterns to C.
 # Returns the C equivalent as a string.
-zig_to_c(code: str): str
-    result = code
-    result = result:gsub(": u64", ": uint64_t")
-    result = result:gsub(": u32", ": uint32_t")
-    result = result:gsub(": u16", ": uint16_t")
-    result = result:gsub(": u8", ": uint8_t")
-    result = result:gsub(": i64", ": int64_t")
-    result = result:gsub(": i32", ": int32_t")
-    result = result:gsub(": i16", ": int16_t")
-    result = result:gsub(": i8", ": int8_t")
-    result = result:gsub(": f64", ": double")
-    result = result:gsub(": f32", ": float")
-    result = result:gsub(": bool", ": int")
-    result = result:gsub(": void", ": void")
-    result = result:gsub("*const [%d+]u8", "const char*")
-    result = result:gsub("*[%d+]u8", "char*")
-    result = result:gsub("*const u8", "const char*")
-    result
+zig_to_c: str = (code: str)
+  result = code
+  result = result:gsub(": u64", ": uint64_t")
+  result = result:gsub(": u32", ": uint32_t")
+  result = result:gsub(": u16", ": uint16_t")
+  result = result:gsub(": u8", ": uint8_t")
+  result = result:gsub(": i64", ": int64_t")
+  result = result:gsub(": i32", ": int32_t")
+  result = result:gsub(": i16", ": int16_t")
+  result = result:gsub(": i8", ": int8_t")
+  result = result:gsub(": f64", ": double")
+  result = result:gsub(": f32", ": float")
+  result = result:gsub(": bool", ": int")
+  result = result:gsub(": void", ": void")
+  result = result:gsub("*const [%d+]u8", "const char*")
+  result = result:gsub("*[%d+]u8", "char*")
+  result = result:gsub("*const u8", "const char*")
+  result
 
 # ═══════════════════════════════════════════════════════════════
 # Rust → C transpilation
@@ -41,27 +41,27 @@ zig_to_c(code: str): str
 
 # rust_to_c: translate common Rust patterns to C.
 # Returns the C equivalent as a string.
-rust_to_c(code: str): str
-    result = code
-    result = result:gsub("pub fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
-    result = result:gsub("fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
-    result = result:gsub(": u64", ": uint64_t")
-    result = result:gsub(": u32", ": uint32_t")
-    result = result:gsub(": u16", ": uint16_t")
-    result = result:gsub(": u8", ": uint8_t")
-    result = result:gsub(": i64", ": int64_t")
-    result = result:gsub(": i32", ": int32_t")
-    result = result:gsub(": i16", ": int16_t")
-    result = result:gsub(": i8", ": int8_t")
-    result = result:gsub(": f64", ": double")
-    result = result:gsub(": f32", ": float")
-    result = result:gsub(": bool", ": int")
-    result = result:gsub(": usize", ": size_t")
-    result = result:gsub(": isize", ": ssize_t")
-    result = result:gsub("&str", "const char*")
-    result = result:gsub("&[%d+]u8", "const uint8_t*")
-    result = result:gsub("*mut u8", "uint8_t*")
-    result
+rust_to_c: str = (code: str)
+  result = code
+  result = result:gsub("pub fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
+  result = result:gsub("fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
+  result = result:gsub(": u64", ": uint64_t")
+  result = result:gsub(": u32", ": uint32_t")
+  result = result:gsub(": u16", ": uint16_t")
+  result = result:gsub(": u8", ": uint8_t")
+  result = result:gsub(": i64", ": int64_t")
+  result = result:gsub(": i32", ": int32_t")
+  result = result:gsub(": i16", ": int16_t")
+  result = result:gsub(": i8", ": int8_t")
+  result = result:gsub(": f64", ": double")
+  result = result:gsub(": f32", ": float")
+  result = result:gsub(": bool", ": int")
+  result = result:gsub(": usize", ": size_t")
+  result = result:gsub(": isize", ": ssize_t")
+  result = result:gsub("&str", "const char*")
+  result = result:gsub("&[%d+]u8", "const uint8_t*")
+  result = result:gsub("*mut u8", "uint8_t*")
+  result
 
 # ═══════════════════════════════════════════════════════════════
 # Python → C helper
@@ -69,41 +69,41 @@ rust_to_c(code: str): str
 
 # python_func: generate a C function declaration from Python-style metadata.
 # Returns the C function as a string (caller can pass to @c.emit).
-python_func(name: str, params: any, body: str, ret_type: str): str
-    parts = {}
-    parts[parts:len() + 1] = "/* [foreign.python] " .. name .. " */"
-    parts[parts:len() + 1] = ret_type .. " " .. name .. "("
-    if params:len() > 0
-        for i, p in params
-            if i > 1
-                parts[parts:len() + 1] = ","
-            if type(p) == "table"
-                parts[parts:len() + 1] = "    " .. p[2] .. " " .. p[1]
-            else
-                parts[parts:len() + 1] = "    double " .. p
-    else
-        parts[parts:len() + 1] = "    void"
-    parts[parts:len() + 1] = ") {"
-    parts[parts:len() + 1] = body
-    parts[parts:len() + 1] = "}"
-    str_join(parts, "\n")
+python_func: str = (name: str, params: any, body: str, ret_type: str)
+  parts = {}
+  parts(parts:len() + 1) = "/* [foreign.python] " .. name .. " */"
+  parts(parts:len() + 1) = ret_type .. " " .. name .. "("
+  if params:len() > 0
+    for i, p in params
+      if i > 1
+        parts(parts:len() + 1) = ","
+      if type(p) == "table"
+        parts(parts:len() + 1) = "    " .. p(2) .. " " .. p(1)
+      else
+        parts(parts:len() + 1) = "    double " .. p
+  else
+    parts(parts:len() + 1) = "    void"
+  parts(parts:len() + 1) = ") {"
+  parts(parts:len() + 1) = body
+  parts(parts:len() + 1) = "}"
+  str_join(parts, "\n")
 
 # ═══════════════════════════════════════════════════════════════
 # String joining helper
 # ═══════════════════════════════════════════════════════════════
 
-str_join(parts: any, sep: str): str
-    result = ""
-    for i, part in parts
-        if i > 1
-            result = result .. sep
-        result = result .. part
-    result
+str_join: str = (parts: any, sep: str)
+  result = ""
+  for i, part in parts
+    if i > 1
+      result = result .. sep
+    result = result .. part
+  result
 
 M = {
-    zig_to_c = zig_to_c,
-    rust_to_c = rust_to_c,
-    python_func = python_func,
-    str_join = str_join,
+  zig_to_c = zig_to_c,
+  rust_to_c = rust_to_c,
+  python_func = python_func,
+  str_join = str_join
 }
 M

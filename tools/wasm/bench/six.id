@@ -35,11 +35,11 @@ _time_ms: i64 = (cmd: str)
   to(i64)((b - a) / _msns())
 
 _min_of: i64 = (xs: any, n: i64)
-  m = xs[1]
+  m = xs(1)
   i = 2
   while i <= n
-    if xs[i] < m
-      m = xs[i]
+    if xs(i) < m
+      m = xs(i)
     i = i + 1
   m
 
@@ -177,22 +177,22 @@ main: i64 = ()
   # column, never a silent zero.
   have = {}
   for _i, r in { "wasmtime", "wasmer", "wasm3", "iwasm" }
-    have[r] = std.script.status(r .. " --help >/dev/null 2>&1") == 0
-    if not have[r]
-      have[r] = std.script.status("command -v " .. r .. " >/dev/null 2>&1") == 0
-  have["the engine"] = std.script.fs_is_file(binary)
-  have["wart"] = std.script.fs_is_file(wart)
+    have(r) = std.script.status(r .. " --help >/dev/null 2>&1") == 0
+    if not have(r)
+      have(r) = std.script.status("command -v " .. r .. " >/dev/null 2>&1") == 0
+  have("the engine") = std.script.fs_is_file(binary)
+  have("wart") = std.script.fs_is_file(wart)
   line = "runtimes:"
   for _i, r in { "the engine", "wart", "wasmtime", "wasmer", "wasm3", "iwasm" }
     mark = " MISSING"
-    if have[r]
+    if have(r)
       mark = " ok"
     line = line .. "  " .. r .. mark
   print(line)
-  if not have["the engine"]
+  if not have("the engine")
     print("refusing to measure: no the engine binary at " .. binary)
     return 3
-  if not have["wasmtime"]
+  if not have("wasmtime")
     print("refusing to measure: wasmtime is the oracle and it is missing")
     return 3
 
@@ -204,7 +204,7 @@ main: i64 = ()
   }
     for _i, m in std.script.fs_glob(pat)
       nfix = nfix + 1
-      fixtures[nfix] = m
+      fixtures(nfix) = m
   if nfix == 0
     print("refusing to measure: the fixture globs matched nothing")
     return 3
@@ -245,66 +245,66 @@ main: i64 = ()
 
         # ── commands, one per runtime ────────────────────────────
         cmd = {}
-        cmd["the engine"] = "DUO_WASM_MODULE=" .. abs .. " DUO_WASM_INVOKE=" .. entry .. " DUO_WASM_ENGINE=" .. engine .. " timeout " .. secs .. " " .. binary
-        cmd["wasmtime"] = "timeout " .. secs .. " wasmtime --invoke " .. entry .. " " .. mod
-        cmd["wasmer"] = "timeout " .. secs .. " wasmer run -i " .. entry .. " " .. mod
-        cmd["wasm3"] = "timeout " .. secs .. " wasm3 --func " .. entry .. " " .. mod
-        cmd["iwasm"] = "timeout " .. secs .. " iwasm -f " .. entry .. " " .. mod
+        cmd("the engine") = "DUO_WASM_MODULE=" .. abs .. " DUO_WASM_INVOKE=" .. entry .. " DUO_WASM_ENGINE=" .. engine .. " timeout " .. secs .. " " .. binary
+        cmd("wasmtime") = "timeout " .. secs .. " wasmtime --invoke " .. entry .. " " .. mod
+        cmd("wasmer") = "timeout " .. secs .. " wasmer run -i " .. entry .. " " .. mod
+        cmd("wasm3") = "timeout " .. secs .. " wasm3 --func " .. entry .. " " .. mod
+        cmd("iwasm") = "timeout " .. secs .. " iwasm -f " .. entry .. " " .. mod
         # wart's CLI has no export selector: `wart run` enters _start
         # and nothing else. A `run`-only fixture is UNREACHABLE for it,
         # which is not the same as slow and is not counted as a loss.
-        cmd["wart"] = "timeout " .. secs .. " " .. wart .. " run " .. mod
+        cmd("wart") = "timeout " .. secs .. " " .. wart .. " run " .. mod
         # Where each runtime writes its answer. wasm3 and iwasm use
         # stderr; wasmtime's stdout must stay clean because it is the
         # oracle and it prints a `--invoke` warning on stderr.
         errpol = {}
-        errpol["the engine"] = " 2>/dev/null"
-        errpol["wasmtime"] = " 2>/dev/null"
-        errpol["wasmer"] = " 2>/dev/null"
-        errpol["wasm3"] = " 2>&1"
-        errpol["iwasm"] = " 2>&1"
-        errpol["wart"] = " 2>&1"
+        errpol("the engine") = " 2>/dev/null"
+        errpol("wasmtime") = " 2>/dev/null"
+        errpol("wasmer") = " 2>/dev/null"
+        errpol("wasm3") = " 2>&1"
+        errpol("iwasm") = " 2>&1"
+        errpol("wart") = " 2>&1"
 
         # ── verify before timing ─────────────────────────────────
         okrt = {}
         miss = {}
         errd = {}
         for _k, r in { "the engine", "wart", "wasmtime", "wasmer", "wasm3", "iwasm" }
-          okrt[r] = false
-          miss[r] = false
-          errd[r] = false
-          if have[r]
+          okrt(r) = false
+          miss(r) = false
+          errd(r) = false
+          if have(r)
             if r == "wart" and entry != "_start"
-              okrt[r] = false
+              okrt(r) = false
             else
-              raw = script.capture(cmd[r] .. errpol[r])
+              raw = script.capture(cmd(r) .. errpol(r))
               got = _norm(_answer(raw))
               if oracle == ""
                 # a void export: there is no value to agree on,
                 # so agreement cannot be claimed and the row is
                 # skipped rather than timed on exit status
-                okrt[r] = false
+                okrt(r) = false
               else(got == oracle)
-                okrt[r] = true
+                okrt(r) = true
               else(got == "" or _errored(raw))
                 # produced nothing at all: this runtime cannot
                 # be driven to this export, which is different
                 # from computing the wrong thing and must not
                 # be reported as if it were
-                miss[r] = true
+                miss(r) = true
                 if _errored(raw)
-                  errd[r] = true
+                  errd(r) = true
 
-        if okrt["the engine"] or okrt["wasmtime"]
+        if okrt("the engine") or okrt("wasmtime")
           # ── interleaved min-of-N over the verified runtimes ──
           t = {}
           for _k, r in { "the engine", "wart", "wasmtime", "wasmer", "wasm3", "iwasm" }
-            t[r] = {}
+            t(r) = {}
           q = 1
           while q <= n
             for _k, r in { "the engine", "wart", "wasmtime", "wasmer", "wasm3", "iwasm" }
-              if okrt[r]
-                t[r][q] = _time_ms(cmd[r] .. " >/dev/null 2>&1")
+              if okrt(r)
+                t(r)(q) = _time_ms(cmd(r) .. " >/dev/null 2>&1")
             q = q + 1
 
           best = -1
@@ -317,8 +317,8 @@ main: i64 = ()
             w = 9
             if r == "wasmtime"
               w = 10
-            if okrt[r]
-              v = _min_of(t[r], n)
+            if okrt(r)
+              v = _min_of(t(r), n)
               if r == "the engine"
                 idolms = v
               cells = cells .. _lpad(v:to(str), w)
@@ -327,11 +327,11 @@ main: i64 = ()
                 bestr = r
             else
               mark = "WRONG"
-              if miss[r] or r == "wart"
+              if miss(r) or r == "wart"
                 mark = "n/a"
-              if errd[r]
+              if errd(r)
                 mark = "err"
-              if not have[r]
+              if not have(r)
                 mark = "-"
               cells = cells .. _lpad(mark, w)
           rows = rows + 1
@@ -343,9 +343,9 @@ main: i64 = ()
           else
             nloss = nloss + 1
             wv = "n/a"
-            if okrt["the engine"]
-              wv = to(str)(_min_of(t["the engine"], n))
-            losses[nloss] = _pad(name .. " (" .. entry .. ")", 34) .. " the engine " .. _lpad(wv, 6) .. " ms vs " .. bestr .. " " .. _lpad(best:to(str), 6) .. " ms"
+            if okrt("the engine")
+              wv = to(str)(_min_of(t("the engine"), n))
+            losses(nloss) = _pad(name .. " (" .. entry .. ")", 34) .. " the engine " .. _lpad(wv, 6) .. " ms vs " .. bestr .. " " .. _lpad(best:to(str), 6) .. " ms"
           print(_pad(name, 30) .. " " .. _pad(entry, 7) .. cells .. "   " .. bestr)
 
   print(rule)

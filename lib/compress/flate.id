@@ -1,61 +1,63 @@
 # compress_flate — DEFLATE compression (mirrors Go's compress/flate)
 
-compress(data: any)
-    if data == nil or data == "" return ""
-    out = {}
-    i = 1
-    n = data:len()
-    while i <= n
-        ch = data:sub(i, i)
-        run = 1
-        j = i + 1
-        while j <= n and data:sub(j, j) == ch and run < 255
-            run += 1
-            j += 1
-        if run >= 3
-            out[out:len() + 1] = 0xFE:char() .. run:char() .. ch
-            i += run
-        else
-            out[out:len() + 1] = ch
-            i += 1
-    return out:concat()
+compress = (data: any)
+  if data == nil or data == ""
+    return ""
+  out = {}
+  i = 1
+  n = data:len()
+  while i <= n
+    ch = data:sub(i, i)
+    run = 1
+    j = i + 1
+    while j <= n and data:sub(j, j) == ch and run < 255
+      run = run + 1
+      j = j + 1
+    if run >= 3
+      out(out:len() + 1) = 254:char() .. run:char() .. ch
+      i = i + run
+    else
+      out(out:len() + 1) = ch
+      i = i + 1
+  return out:concat()
 
-decompress(data: any)
-    if data == nil or data == "" return ""
-    out = {}
-    i = 1
-    n = data:len()
-    while i <= n
-        b = data:byte(i)
-        if b == 0xFE
-            if i + 2 > n break
-            run = data:byte(i + 1)
-            ch = data:sub(i + 2, i + 2)
-            out[out:len() + 1] = ch:rep(run)
-            i += 3
-        else
-            out[out:len() + 1] = data:sub(i, i)
-            i += 1
-    return out:concat()
+decompress = (data: any)
+  if data == nil or data == ""
+    return ""
+  out = {}
+  i = 1
+  n = data:len()
+  while i <= n
+    b = data:byte(i)
+    if b == 254
+      if i + 2 > n
+        break
+      run = data:byte(i + 1)
+      ch = data:sub(i + 2, i + 2)
+      out(out:len() + 1) = ch:rep(run)
+      i = i + 3
+    else
+      out(out:len() + 1) = data:sub(i, i)
+      i = i + 1
+  return out:concat()
 
-compress_level(data: any, level: any)
-    return compress(data)
+compress_level = (data: any, level: any)
+  return compress(data)
 
-new_writer(fh: any, level: any)
-    return {fh = fh, buf = "", level = level}
+new_writer = (fh: any, level: any)
+  return { fh = fh, buf = "", level = level }
 
-writer_write(w: any, data: any)
-    w.buf = w.buf .. data
-    return w
+writer_write = (w: any, data: any)
+  w.buf = w.buf .. data
+  return w
 
-writer_flush(w: any)
-    if w:len().buf > 0
-        w.fh:write(compress(w.buf))
-        w.buf = ""
-    return w
+writer_flush = (w: any)
+  if w:len().buf > 0
+    w.fh:write(compress(w.buf))
+    w.buf = ""
+  return w
 
-writer_close(w: any)
-    writer_flush(w)
-    w.fh:close()
-    return w
-
+writer_close = (w: any)
+  writer_flush(w)
+  w.fh:close()
+  return w

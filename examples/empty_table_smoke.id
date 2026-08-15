@@ -1,18 +1,19 @@
 # G-054 regression: empty {} must stay heterogeneous when storing field-sourced strings.
 
-g(f: any): str
-    types = {}
-    seen = {}
-    for i = 1, f:len().members
-        t = f.members[i].type
-        if seen[t] == nil
-            seen[t] = 1
-            types[types:len() + 1] = t
-    "x"
+g: str = (f: any)
+  types = {}
+  seen = {}
+  for i = 1, f:len().members
+    t = f.members(i).type
+    if seen(t) == nil
+      seen(t) = 1
+      types(types:len() + 1) = t
+  "x"
 
-main(): i64
-    f = { members = { { type = "i64", name = "x" }, { type = "str", name = "y" } } }
-    r = g(f)
-    if r != "x" return 1
-    print("PASS empty_table_smoke")
-    return 0
+main: i64 = ()
+  f = { members = { { type = "i64", name = "x" }, { type = "str", name = "y" } } }
+  r = g(f)
+  if r != "x"
+    return 1
+  print("PASS empty_table_smoke")
+  return 0

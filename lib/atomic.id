@@ -2,53 +2,53 @@
 # Uses compare swap for CAS-based mutexes and hardware spinwait for CPU yielding.
 
 store: any = (t: any, key: any, value: any)
-  old = t[key]
-  t[key] = value
+  old = t(key)
+  t(key) = value
   old
 
 swap: any = (t: any, key: any, expected: any, new: any)
-  old = t[key]
+  old = t(key)
   if old == expected
-    t[key] = new
+    t(key) = new
     return true, new
   return false, old
 
 add: any = (t: any, key: any, delta: any)
-  old = t[key]
+  old = t(key)
   if type(old) == "number"
-    t[key] = old + delta
+    t(key) = old + delta
   else
-    t[key] = delta
+    t(key) = delta
   old
 
 sub: any = (t: any, key: any, delta: any)
-  old = t[key]
+  old = t(key)
   if type(old) == "number"
-    t[key] = old - delta
+    t(key) = old - delta
   else
-    t[key] = -delta
+    t(key) = -delta
   old
 
 inc: any = (t: any, key: any)
-  old = t[key]
+  old = t(key)
   if type(old) == "number"
-    t[key] = old + 1
+    t(key) = old + 1
   else
-    t[key] = 1
+    t(key) = 1
   old
 
 dec: any = (t: any, key: any)
-  old = t[key]
+  old = t(key)
   if type(old) == "number"
-    t[key] = old - 1
+    t(key) = old - 1
   else
-    t[key] = -1
+    t(key) = -1
   old
 
 mutex: any = ()
   { locked = false, owner = nil, count = 0 }
 
-lock: void = (m: any)
+lock = (m: any)
   while true
     ok, _ = swap(m, "locked", false, true)
     if ok
@@ -57,7 +57,7 @@ lock: void = (m: any)
       return
     hardware.spinwait()
 
-unlock: void = (m: any)
+unlock = (m: any)
   m.owner = nil
   m.count = 0
   m.locked = false
@@ -73,7 +73,7 @@ probe: bool = (m: any)
 held: bool = (m: any)
   m.locked
 
-signal: void = (sp: any)
+signal = (sp: any)
   if sp == nil
     return
   sp.notify = true

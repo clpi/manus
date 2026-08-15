@@ -6,38 +6,38 @@
 
 # Initialize defaults
 defaults = {
-    [".txt"] = "text/plain",
-    [".html"] = "text/html",
-    [".htm"] = "text/html",
-    [".css"] = "text/css",
-    [".js"] = "text/javascript",
-    [".json"] = "application/json",
-    [".xml"] = "application/xml",
-    [".pdf"] = "application/pdf",
-    [".zip"] = "application/zip",
-    [".gz"] = "application/gzip",
-    [".png"] = "image/png",
-    [".jpg"] = "image/jpeg",
-    [".jpeg"] = "image/jpeg",
-    [".gif"] = "image/gif",
-    [".svg"] = "image/svg+xml",
-    [".mp3"] = "audio/mpeg",
-    [".mp4"] = "video/mp4",
-    [".wav"] = "audio/wav",
-    [".woff"] = "font/woff",
-    [".woff2"] = "font/woff2",
-    [".ttf"] = "font/ttf",
-    [".otf"] = "font/otf",
-    [".wasm"] = "application/wasm",
+  [".txt"] = "text/plain",
+  [".html"] = "text/html",
+  [".htm"] = "text/html",
+  [".css"] = "text/css",
+  [".js"] = "text/javascript",
+  [".json"] = "application/json",
+  [".xml"] = "application/xml",
+  [".pdf"] = "application/pdf",
+  [".zip"] = "application/zip",
+  [".gz"] = "application/gzip",
+  [".png"] = "image/png",
+  [".jpg"] = "image/jpeg",
+  [".jpeg"] = "image/jpeg",
+  [".gif"] = "image/gif",
+  [".svg"] = "image/svg+xml",
+  [".mp3"] = "audio/mpeg",
+  [".mp4"] = "video/mp4",
+  [".wav"] = "audio/wav",
+  [".woff"] = "font/woff",
+  [".woff2"] = "font/woff2",
+  [".ttf"] = "font/ttf",
+  [".otf"] = "font/otf",
+  [".wasm"] = "application/wasm"
 }
 
-
 # TypeByExtension returns the MIME type for the extension.
-type_by_extension(ext: str): str
-    t = defaults[ext]
-    if t == nil return "application/octet-stream"
-    t
+type_by_extension: str = (ext: str)
+  t = defaults(ext)
+  if t == nil
+    return "application/octet-stream"
+  t
 
 # AddExtension adds a MIME type for an extension (persists across calls).
-add_extension(ext: str, mime: str): void
-    defaults[ext] = mime
+add_extension = (ext: str, mime: str)
+  defaults(ext) = mime

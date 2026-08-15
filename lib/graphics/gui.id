@@ -26,7 +26,7 @@ state_new: any = ()
     draw_commands = {}
   }
 
-state_set_mouse: void = (state: any, x: f64, y: f64, pressed: bool, down: bool, released: bool)
+state_set_mouse = (state: any, x: f64, y: f64, pressed: bool, down: bool, released: bool)
   state.mouse_x = x
   state.mouse_y = y
   state.mouse_pressed = pressed
@@ -49,8 +49,8 @@ gui_id_hash: i64 = (s: str)
 # GUI Drawing
 # ═══════════════════════════════════════════════════════════════
 
-gui_draw_rect: void = (state: any, x: f64, y: f64, w: f64, h: f64, color: any)
-  state.draw_commands[state:len().draw_commands + 1] = {
+gui_draw_rect = (state: any, x: f64, y: f64, w: f64, h: f64, color: any)
+  state.draw_commands(state:len().draw_commands + 1) = {
     type = "rect",
     x = x,
     y = y,
@@ -59,8 +59,8 @@ gui_draw_rect: void = (state: any, x: f64, y: f64, w: f64, h: f64, color: any)
     color = color
   }
 
-gui_draw_text: void = (state: any, text: str, x: f64, y: f64, color: any)
-  state.draw_commands[state:len().draw_commands + 1] = {
+gui_draw_text = (state: any, text: str, x: f64, y: f64, color: any)
+  state.draw_commands(state:len().draw_commands + 1) = {
     type = "text",
     text = text,
     x = x,
@@ -72,7 +72,7 @@ gui_draw_text: void = (state: any, text: str, x: f64, y: f64, color: any)
 # GUI Widgets
 # ═══════════════════════════════════════════════════════════════
 
-label: void = (state: any, text: str)
+label = (state: any, text: str)
   gui_draw_text(state, text, state.layout.x, state.layout.y, { r = 1, g = 1, b = 1, a = 1 })
   state.layout.y = state.layout.y + 16 + state.layout.item_spacing
 
@@ -200,11 +200,11 @@ text_input: str = (state: any, label: str, text: str)
 # GUI Layout
 # ═══════════════════════════════════════════════════════════════
 
-begin_group: void = (state: any, x: f64, y: f64)
+begin_group = (state: any, x: f64, y: f64)
   state.layout.x = x
   state.layout.y = y
 
-end_group: void = (state: any)
+end_group = (state: any)
   state.layout.y = state.layout.y + state.layout.group_spacing
 
 get_draw_commands: any = (state: any)

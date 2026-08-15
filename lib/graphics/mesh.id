@@ -74,9 +74,9 @@ mat4_identity: any = ()
 
 mat4_translate: any = (tx: f64, ty: f64, tz: f64)
   m = mat4_identity()
-  m.m[13] = tx
-  m.m[14] = ty
-  m.m[15] = tz
+  m.m(13) = tx
+  m.m(14) = ty
+  m.m(15) = tz
   m
 
 mat4_scale: any = (sx: f64, sy: f64, sz: f64)
@@ -180,19 +180,19 @@ mat4_multiply: any = (a: any, b: any)
     i = 0
     while i < 4
       idx = j * 4 + i
-      result.m[idx + 1] = 0
+      result.m(idx + 1) = 0
       k = 0
       while k < 4
-        result.m[idx + 1] = result.m[idx + 1] + a.m[k * 4 + i + 1] * b.m[j * 4 + k + 1]
+        result.m(idx + 1) = result.m(idx + 1) + a.m(k * 4 + i + 1) * b.m(j * 4 + k + 1)
         k = k + 1
       i = i + 1
     j = j + 1
   result
 
 mat4_transform_point: any = (m: any, v: any)
-  x = v.x * m.m[1] + v.y * m.m[5] + v.z * m.m[9] + m.m[13]
-  y = v.x * m.m[2] + v.y * m.m[6] + v.z * m.m[10] + m.m[14]
-  z = v.x * m.m[3] + v.y * m.m[7] + v.z * m.m[11] + m.m[15]
+  x = v.x * m.m(1) + v.y * m.m(5) + v.z * m.m(9) + m.m(13)
+  y = v.x * m.m(2) + v.y * m.m(6) + v.z * m.m(10) + m.m(14)
+  z = v.x * m.m(3) + v.y * m.m(7) + v.z * m.m(11) + m.m(15)
   { x = x, y = y, z = z }
 
 # ═══════════════════════════════════════════════════════════════
@@ -212,22 +212,22 @@ camera_new: any = ()
     projection_matrix = mat4_identity()
   }
 
-camera_look_at: void = (cam: any, position: any, target: any, up: any)
+camera_look_at = (cam: any, position: any, target: any, up: any)
   cam.position = position
   cam.target = target
   cam.up = up
 
-camera_set_fov: void = (cam: any, fov: f64)
+camera_set_fov = (cam: any, fov: f64)
   cam.fov = fov
 
-camera_set_aspect: void = (cam: any, aspect: f64)
+camera_set_aspect = (cam: any, aspect: f64)
   cam.aspect = aspect
 
-camera_set_near_far: void = (cam: any, near: f64, far: f64)
+camera_set_near_far = (cam: any, near: f64, far: f64)
   cam.near = near
   cam.far = far
 
-camera_update: void = (cam: any)
+camera_update = (cam: any)
   # View matrix (lookAt)
   f = vec3_normalize(vec3_sub(cam.target, cam.position))
   s = vec3_normalize(vec3_cross(f, cam.up))
@@ -289,74 +289,74 @@ mesh_new: any = ()
 
 mesh_add_vertex: i64 = (mesh: any, x: f64, y: f64, z: f64)
   idx = mesh:len().vertices / 3
-  mesh.vertices[mesh:len().vertices + 1] = x
-  mesh.vertices[mesh:len().vertices + 1] = y
-  mesh.vertices[mesh:len().vertices + 1] = z
+  mesh.vertices(mesh:len().vertices + 1) = x
+  mesh.vertices(mesh:len().vertices + 1) = y
+  mesh.vertices(mesh:len().vertices + 1) = z
   idx
 
-mesh_add_triangle: void = (mesh: any, i0: i64, i1: i64, i2: i64)
-  mesh.indices[mesh:len().indices + 1] = i0
-  mesh.indices[mesh:len().indices + 1] = i1
-  mesh.indices[mesh:len().indices + 1] = i2
+mesh_add_triangle = (mesh: any, i0: i64, i1: i64, i2: i64)
+  mesh.indices(mesh:len().indices + 1) = i0
+  mesh.indices(mesh:len().indices + 1) = i1
+  mesh.indices(mesh:len().indices + 1) = i2
 
-mesh_add_normal: void = (mesh: any, x: f64, y: f64, z: f64)
-  mesh.normals[mesh:len().normals + 1] = x
-  mesh.normals[mesh:len().normals + 1] = y
-  mesh.normals[mesh:len().normals + 1] = z
+mesh_add_normal = (mesh: any, x: f64, y: f64, z: f64)
+  mesh.normals(mesh:len().normals + 1) = x
+  mesh.normals(mesh:len().normals + 1) = y
+  mesh.normals(mesh:len().normals + 1) = z
 
-mesh_add_uv: void = (mesh: any, u: f64, v: f64)
-  mesh.uvs[mesh:len().uvs + 1] = u
-  mesh.uvs[mesh:len().uvs + 1] = v
+mesh_add_uv = (mesh: any, u: f64, v: f64)
+  mesh.uvs(mesh:len().uvs + 1) = u
+  mesh.uvs(mesh:len().uvs + 1) = v
 
-mesh_compute_normals: void = (mesh: any)
+mesh_compute_normals = (mesh: any)
   # Initialize normals to zero
   num_verts = mesh:len().vertices / 3
   mesh.normals = {}
   i = 0
   while i < num_verts * 3
-    mesh.normals[mesh:len().normals + 1] = 0
+    mesh.normals(mesh:len().normals + 1) = 0
     i = i + 1
 
   # Accumulate face normals
   i = 1
   while i <= mesh:len().indices
-    i0 = mesh.indices[i]
-    i1 = mesh.indices[i + 1]
-    i2 = mesh.indices[i + 2]
+    i0 = mesh.indices(i)
+    i1 = mesh.indices(i + 1)
+    i2 = mesh.indices(i + 2)
 
-    v0 = vec3_new(mesh.vertices[i0 * 3 + 1], mesh.vertices[i0 * 3 + 2], mesh.vertices[i0 * 3 + 3])
-    v1 = vec3_new(mesh.vertices[i1 * 3 + 1], mesh.vertices[i1 * 3 + 2], mesh.vertices[i1 * 3 + 3])
-    v2 = vec3_new(mesh.vertices[i2 * 3 + 1], mesh.vertices[i2 * 3 + 2], mesh.vertices[i2 * 3 + 3])
+    v0 = vec3_new(mesh.vertices(i0 * 3 + 1), mesh.vertices(i0 * 3 + 2), mesh.vertices(i0 * 3 + 3))
+    v1 = vec3_new(mesh.vertices(i1 * 3 + 1), mesh.vertices(i1 * 3 + 2), mesh.vertices(i1 * 3 + 3))
+    v2 = vec3_new(mesh.vertices(i2 * 3 + 1), mesh.vertices(i2 * 3 + 2), mesh.vertices(i2 * 3 + 3))
 
     edge1 = vec3_sub(v1, v0)
     edge2 = vec3_sub(v2, v0)
     face_normal = vec3_cross(edge1, edge2)
 
-    mesh.normals[i0 * 3 + 1] = mesh.normals[i0 * 3 + 1] + face_normal.x
-    mesh.normals[i0 * 3 + 2] = mesh.normals[i0 * 3 + 2] + face_normal.y
-    mesh.normals[i0 * 3 + 3] = mesh.normals[i0 * 3 + 3] + face_normal.z
+    mesh.normals(i0 * 3 + 1) = mesh.normals(i0 * 3 + 1) + face_normal.x
+    mesh.normals(i0 * 3 + 2) = mesh.normals(i0 * 3 + 2) + face_normal.y
+    mesh.normals(i0 * 3 + 3) = mesh.normals(i0 * 3 + 3) + face_normal.z
 
-    mesh.normals[i1 * 3 + 1] = mesh.normals[i1 * 3 + 1] + face_normal.x
-    mesh.normals[i1 * 3 + 2] = mesh.normals[i1 * 3 + 2] + face_normal.y
-    mesh.normals[i1 * 3 + 3] = mesh.normals[i1 * 3 + 3] + face_normal.z
+    mesh.normals(i1 * 3 + 1) = mesh.normals(i1 * 3 + 1) + face_normal.x
+    mesh.normals(i1 * 3 + 2) = mesh.normals(i1 * 3 + 2) + face_normal.y
+    mesh.normals(i1 * 3 + 3) = mesh.normals(i1 * 3 + 3) + face_normal.z
 
-    mesh.normals[i2 * 3 + 1] = mesh.normals[i2 * 3 + 1] + face_normal.x
-    mesh.normals[i2 * 3 + 2] = mesh.normals[i2 * 3 + 2] + face_normal.y
-    mesh.normals[i2 * 3 + 3] = mesh.normals[i2 * 3 + 3] + face_normal.z
+    mesh.normals(i2 * 3 + 1) = mesh.normals(i2 * 3 + 1) + face_normal.x
+    mesh.normals(i2 * 3 + 2) = mesh.normals(i2 * 3 + 2) + face_normal.y
+    mesh.normals(i2 * 3 + 3) = mesh.normals(i2 * 3 + 3) + face_normal.z
 
     i = i + 3
 
   # Normalize
   i = 0
   while i < num_verts
-    nx = mesh.normals[i * 3 + 1]
-    ny = mesh.normals[i * 3 + 2]
-    nz = mesh.normals[i * 3 + 3]
+    nx = mesh.normals(i * 3 + 1)
+    ny = mesh.normals(i * 3 + 2)
+    nz = mesh.normals(i * 3 + 3)
     len = nx * nx + ny * ny + nz * nz:sqrt()
     if len > 0.0000000001
-      mesh.normals[i * 3 + 1] = nx / len
-      mesh.normals[i * 3 + 2] = ny / len
-      mesh.normals[i * 3 + 3] = nz / len
+      mesh.normals(i * 3 + 1) = nx / len
+      mesh.normals(i * 3 + 2) = ny / len
+      mesh.normals(i * 3 + 3) = nz / len
     i = i + 1
 
 # ═══════════════════════════════════════════════════════════════
@@ -484,18 +484,18 @@ scene_node_new: any = (name: str)
     visible = true
   }
 
-scene_add_child: void = (parent: any, child: any)
-  parent.children[parent:len().children + 1] = child
+scene_add_child = (parent: any, child: any)
+  parent.children(parent:len().children + 1) = child
 
-scene_remove_child: void = (parent: any, child: any)
+scene_remove_child = (parent: any, child: any)
   i = 1
   while i <= parent:len().children
-    if parent.children[i] == child
+    if parent.children(i) == child
       parent.children:remove(i)
       return
     i = i + 1
 
-scene_update_transforms: void = (node: any, parent_transform: any)
+scene_update_transforms = (node: any, parent_transform: any)
   if parent_transform == nil
     node.world_transform = node.transform
   else
@@ -504,7 +504,7 @@ scene_update_transforms: void = (node: any, parent_transform: any)
   for child in node.children
     scene_update_transforms(child, node.world_transform)
 
-scene_traverse: void = (node: any, callback: any)
+scene_traverse = (node: any, callback: any)
   if node.visible
     callback(node)
     for child in node.children

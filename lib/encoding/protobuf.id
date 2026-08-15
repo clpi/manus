@@ -21,78 +21,78 @@ WIRE_32BIT = 5
 writer_new: any = ()
   { bytes = {} }
 
-write_varint: void = (w: any, value: i64)
+write_varint = (w: any, value: i64)
   while value >= 128
-    w.bytes[w:len().bytes + 1] = value & 127 | 128
+    w.bytes(w:len().bytes + 1) = value & 127 | 128
     value = value >> 7
-  w.bytes[w:len().bytes + 1] = value
+  w.bytes(w:len().bytes + 1) = value
 
-write_tag: void = (w: any, field: i64, wire_type: i64)
+write_tag = (w: any, field: i64, wire_type: i64)
   write_varint(w, field << 3 | wire_type)
 
-write_field_varint: void = (w: any, field: i64, value: i64)
+write_field_varint = (w: any, field: i64, value: i64)
   write_tag(w, field, WIRE_VARINT)
   write_varint(w, value)
 
-write_field_bytes: void = (w: any, field: i64, data: any)
+write_field_bytes = (w: any, field: i64, data: any)
   write_tag(w, field, WIRE_LENGTH_DELIMITED)
   write_varint(w, data:len())
   for b in data
-    w.bytes[w:len().bytes + 1] = b
+    w.bytes(w:len().bytes + 1) = b
 
-write_field_string: void = (w: any, field: i64, value: str)
+write_field_string = (w: any, field: i64, value: str)
   write_tag(w, field, WIRE_LENGTH_DELIMITED)
   bytes = string_to_bytes(value)
   write_varint(w, bytes:len())
   for b in bytes
-    w.bytes[w:len().bytes + 1] = b
+    w.bytes(w:len().bytes + 1) = b
 
-write_field_fixed32: void = (w: any, field: i64, value: i64)
+write_field_fixed32 = (w: any, field: i64, value: i64)
   write_tag(w, field, WIRE_32BIT)
-  w.bytes[w:len().bytes + 1] = value & 255
-  w.bytes[w:len().bytes + 1] = value >> 8 & 255
-  w.bytes[w:len().bytes + 1] = value >> 16 & 255
-  w.bytes[w:len().bytes + 1] = value >> 24 & 255
+  w.bytes(w:len().bytes + 1) = value & 255
+  w.bytes(w:len().bytes + 1) = value >> 8 & 255
+  w.bytes(w:len().bytes + 1) = value >> 16 & 255
+  w.bytes(w:len().bytes + 1) = value >> 24 & 255
 
-write_field_fixed64: void = (w: any, field: i64, value: i64)
+write_field_fixed64 = (w: any, field: i64, value: i64)
   write_tag(w, field, WIRE_64BIT)
   i = 0
   while i < 8
-    w.bytes[w:len().bytes + 1] = value >> (i * 8) & 255
+    w.bytes(w:len().bytes + 1) = value >> (i * 8) & 255
     i = i + 1
 
-write_field_float: void = (w: any, field: i64, value: f64)
+write_field_float = (w: any, field: i64, value: f64)
   # IEEE 754 single-precision float encoding
   write_tag(w, field, WIRE_32BIT)
   # Convert to IEEE 754 float32 bytes
   if value != value
     # NaN
-    w.bytes[w:len().bytes + 1] = 127
-    w.bytes[w:len().bytes + 1] = 192
-    w.bytes[w:len().bytes + 1] = 0
-    w.bytes[w:len().bytes + 1] = 0
+    w.bytes(w:len().bytes + 1) = 127
+    w.bytes(w:len().bytes + 1) = 192
+    w.bytes(w:len().bytes + 1) = 0
+    w.bytes(w:len().bytes + 1) = 0
     return
   if value == math.huge
-    w.bytes[w:len().bytes + 1] = 127
-    w.bytes[w:len().bytes + 1] = 128
-    w.bytes[w:len().bytes + 1] = 0
-    w.bytes[w:len().bytes + 1] = 0
+    w.bytes(w:len().bytes + 1) = 127
+    w.bytes(w:len().bytes + 1) = 128
+    w.bytes(w:len().bytes + 1) = 0
+    w.bytes(w:len().bytes + 1) = 0
     return
   if value == -math.huge
-    w.bytes[w:len().bytes + 1] = 255
-    w.bytes[w:len().bytes + 1] = 128
-    w.bytes[w:len().bytes + 1] = 0
-    w.bytes[w:len().bytes + 1] = 0
+    w.bytes(w:len().bytes + 1) = 255
+    w.bytes(w:len().bytes + 1) = 128
+    w.bytes(w:len().bytes + 1) = 0
+    w.bytes(w:len().bytes + 1) = 0
     return
   sign = 0
   if value < 0
     sign = 1
     value = -value
   if value == 0
-    w.bytes[w:len().bytes + 1] = sign * 128
-    w.bytes[w:len().bytes + 1] = 0
-    w.bytes[w:len().bytes + 1] = 0
-    w.bytes[w:len().bytes + 1] = 0
+    w.bytes(w:len().bytes + 1) = sign * 128
+    w.bytes(w:len().bytes + 1) = 0
+    w.bytes(w:len().bytes + 1) = 0
+    w.bytes(w:len().bytes + 1) = 0
     return
   # Decompose
   exp = 0
@@ -108,19 +108,19 @@ write_field_float: void = (w: any, field: i64, value: f64)
   b1 = mantissa / 2 ^ 15:floor() % 256
   b2 = mantissa / 2 ^ 7:floor() % 256
   b3 = mantissa * 2 % 256
-  w.bytes[w:len().bytes + 1] = b0
-  w.bytes[w:len().bytes + 1] = b1
-  w.bytes[w:len().bytes + 1] = b2
-  w.bytes[w:len().bytes + 1] = b3
+  w.bytes(w:len().bytes + 1) = b0
+  w.bytes(w:len().bytes + 1) = b1
+  w.bytes(w:len().bytes + 1) = b2
+  w.bytes(w:len().bytes + 1) = b3
 
 read_field_float: f64 = (r: any)
   # Read IEEE 754 single-precision float
   if r.pos + 3 > r.len
     return 0.0
-  b0 = r.data[r.pos]
-  b1 = r.data[r.pos + 1]
-  b2 = r.data[r.pos + 2]
-  b3 = r.data[r.pos + 3]
+  b0 = r.data(r.pos)
+  b1 = r.data(r.pos + 1)
+  b2 = r.data(r.pos + 2)
+  b3 = r.data(r.pos + 3)
   r.pos = r.pos + 4
   sign = 1
   if b0 >= 128
@@ -152,7 +152,7 @@ reader_varint: any = (r: any)
   while true
     if r.pos > r.len
       return nil
-    byte = r.data[r.pos]
+    byte = r.data(r.pos)
     r.pos = r.pos + 1
     result = result | (byte & 127) << shift
     shift = shift + 7
@@ -166,7 +166,7 @@ reader_tag: any = (r: any)
     return nil
   { field = val >> 3, wire_type = val & 7 }
 
-reader_skip_field: void = (r: any, wire_type: i64)
+reader_skip_field = (r: any, wire_type: i64)
   if wire_type == WIRE_VARINT
     reader_varint(r)
   else(wire_type == WIRE_64BIT)
@@ -184,7 +184,7 @@ reader_field_bytes: any = (r: any, wire_type: i64)
   out = {}
   i = 0
   while i < len
-    out[out:len() + 1] = r.data[r.pos]
+    out(out:len() + 1) = r.data(r.pos)
     r.pos = r.pos + 1
     i = i + 1
   out
@@ -198,10 +198,10 @@ reader_field_string: str = (r: any, wire_type: i64)
 reader_field_fixed32: any = (r: any, wire_type: i64)
   if wire_type != WIRE_32BIT
     return nil
-  b0 = r.data[r.pos]
-  b1 = r.data[r.pos + 1]
-  b2 = r.data[r.pos + 2]
-  b3 = r.data[r.pos + 3]
+  b0 = r.data(r.pos)
+  b1 = r.data(r.pos + 1)
+  b2 = r.data(r.pos + 2)
+  b3 = r.data(r.pos + 3)
   r.pos = r.pos + 4
   b0 | b1 << 8 | b2 << 16 | b3 << 24
 
@@ -211,7 +211,7 @@ reader_field_fixed64: any = (r: any, wire_type: i64)
   result = 0
   i = 0
   while i < 8
-    result = result | r.data[r.pos + i] << (i * 8)
+    result = result | r.data(r.pos + i) << (i * 8)
     i = i + 1
   r.pos = r.pos + 8
   result
@@ -224,7 +224,7 @@ string_to_bytes: any = (s: str)
   out = {}
   i = 1
   while i <= s:len()
-    out[out:len() + 1] = s:byte(i)
+    out(out:len() + 1) = s:byte(i)
     i = i + 1
   out
 
@@ -232,7 +232,7 @@ bytes_to_string: str = (bytes: any)
   parts = {}
   i = 1
   while i <= bytes:len()
-    parts[parts:len() + 1] = bytes[i]:char()
+    parts(parts:len() + 1) = bytes(i):char()
     i = i + 1
   parts:concat()
 
@@ -254,7 +254,7 @@ field_def: any = (field_num: i64, wire_type: i64, type_name: str)
 message_encode: any = (schema: any, values: any)
   w = writer_new()
   for name, field_def in schema.fields
-    value = values[name]
+    value = values(name)
     if value != nil
       if field_def.type == "varint"
         write_field_varint(w, field_def.field_num, value)

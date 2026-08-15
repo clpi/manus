@@ -4,7 +4,6 @@ decoded_obj = json.decode(encoded_obj)
 encoded_arr = json.encode({ 1, 2, 3 })
 decoded_arr = json.decode(encoded_arr)
 
-ok = decoded_obj.id == 7 and decoded_obj.name == "duo" and
-    decoded_arr[1] == 1 and decoded_arr[2] == 2 and decoded_arr[3] == 3
+ok = decoded_obj.id == 7 and decoded_obj.name == "duo" and decoded_arr(1) == 1 and decoded_arr(2) == 2 and decoded_arr(3) == 3
 
 print("RESULT json_direct_iteration = " .. to(str)(ok))

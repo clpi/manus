@@ -2,9 +2,9 @@
 # index 2 answers 0 — the NUL terminator, read without a bounds check.
 # expect: 97 98 0
 main: i64 = ()
-    s = "ab"
-    a = s[0]
-    b = s[1]
-    c = s[2]
-    print("{a} {b} {c}")
-    0
+  s = "ab"
+  a = s(0)
+  b = s(1)
+  c = s(2)
+  print("{a} {b} {c}")
+  0

@@ -1,49 +1,49 @@
 # ml.transformer — Transformer blocks (attention + FFN) for LLM-style workloads
 
-block(heads, dim): any
-    spec = ml.shape.block(heads, dim)
-    return {
-        type = "transformer_block",
-        heads = spec.heads,
-        dim = spec.dim,
-        hd = spec.hd,
-        fd = spec.fd,
-        attn = { type = "attention", heads = heads },
-        up = { type = "linear", input = dim, output = spec.fd },
-        down = { type = "linear", input = spec.fd, output = dim },
-    }
+block: any = (heads, dim)
+  spec = ml.shape.block(heads, dim)
+  return {
+    type = "transformer_block",
+    heads = spec.heads,
+    dim = spec.dim,
+    hd = spec.hd,
+    fd = spec.fd,
+    attn = { type = "attention", heads = heads },
+    up = { type = "linear", input = dim, output = spec.fd },
+    down = { type = "linear", input = spec.fd, output = dim }
+  }
 
-stack(layers, heads, dim): any
-    blocks = {}
-    for i = 1, layers
-        blocks[i] = block(heads, dim)
-    return {
-        type = "transformer",
-        layers = layers,
-        heads = heads,
-        dim = dim,
-        blocks = blocks,
-    }
+stack: any = (layers, heads, dim)
+  blocks = {}
+  for i = 1, layers
+    blocks(i) = block(heads, dim)
+  return {
+    type = "transformer",
+    layers = layers,
+    heads = heads,
+    dim = dim,
+    blocks = blocks
+  }
 
 # Hot path: native attention kernel checksum (pairs with ml.attention)
 @hot
-attn(): f64
-    return ml.attention()
+attn: f64 = ()
+  return ml.attention()
 
 # Reference FFN (compiler may fuse linear+gelu+linear later)
-feed(block, x): any
-    h = ml.tensor.matmul(x, block.up.weight)
-    h = ml.ops.gelu(h)
-    return ml.tensor.matmul(h, block.down.weight)
+feed: any = (block, x)
+  h = ml.tensor.matmul(x, block.up.weight)
+  h = ml.ops.gelu(h)
+  return ml.tensor.matmul(h, block.down.weight)
 
-step(block, x): any
-    # Residual + attention: native kernel validates hot path; full MHA in stdlib later
-    _ = attn()
-    h = x
-    return ml.tensor.add(h, feed(block, h))
+step: any = (block, x)
+  # Residual + attention: native kernel validates hot path; full MHA in stdlib later
+  _ = attn()
+  h = x
+  return ml.tensor.add(h, feed(block, h))
 
-forward(model, x): any
-    h = x
-    for i = 1, model.layers
-        h = step(model.blocks[i], h)
-    return h
+forward: any = (model, x)
+  h = x
+  for i = 1, model.layers
+    h = step(model.blocks(i), h)
+  return h

@@ -11,5 +11,5 @@
 # `std.wasm.opcodes` has, in twelve lines instead of two hundred.
 slots = { 40, 41, 42 }
 
-pick(i: i64): i64
-  slots[i]
+pick: i64 = (i: i64)
+  slots(i)

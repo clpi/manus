@@ -5,152 +5,167 @@
 # ═══════════════════════════════════════════════════════════════
 
 # Cross-entropy loss (softmax output + class indices)
-cross_entropy(pred: any, target: any, eps: f64): f64
-    if eps == nil eps = 1e-7
-    loss = 0
-    for i = 1, pred.rows
-        idx = target.data[i]
-        p = pred.data[(i - 1) * pred.cols + idx]
-        if p < eps p = eps
-        loss -= p:log()
-    loss / pred.rows
+cross_entropy: f64 = (pred: any, target: any, eps: f64)
+  if eps == nil
+    eps = 0.0000001
+  loss = 0
+  for i = 1, pred.rows
+    idx = target.data(i)
+    p = pred.data((i - 1) * pred.cols + idx)
+    if p < eps
+      p = eps
+    loss = loss - p:log()
+  loss / pred.rows
 
 # Binary cross-entropy
-binary_cross_entropy(pred: any, target: any, eps: f64): f64
-    if eps == nil eps = 1e-7
-    loss = 0
-    for i = 1, pred.size
-        p = pred.data[i]
-        t = target.data[i]
-        if p < eps p = eps
-        if p > 1 - eps p = 1 - eps
-        loss -= (t * p:log() + (1 - t) * 1 - p:log())
-    loss / pred.size
+binary_cross_entropy: f64 = (pred: any, target: any, eps: f64)
+  if eps == nil
+    eps = 0.0000001
+  loss = 0
+  for i = 1, pred.size
+    p = pred.data(i)
+    t = target.data(i)
+    if p < eps
+      p = eps
+    if p > 1 - eps
+      p = 1 - eps
+    loss = loss - t * p:log() + (1 - t) * 1 - p:log()
+  loss / pred.size
 
 # Focal loss (for class imbalance)
-focal_loss(pred: any, target: any, gamma: f64, eps: f64): f64
-    if gamma == nil gamma = 2.0
-    if eps == nil eps = 1e-7
-    loss = 0
-    for i = 1, pred.rows
-        idx = target.data[i]
-        p = pred.data[(i - 1) * pred.cols + idx]
-        if p < eps p = eps
-        loss -= 1 - p:pow(gamma) * p:log()
-    loss / pred.rows
+focal_loss: f64 = (pred: any, target: any, gamma: f64, eps: f64)
+  if gamma == nil
+    gamma = 2.0
+  if eps == nil
+    eps = 0.0000001
+  loss = 0
+  for i = 1, pred.rows
+    idx = target.data(i)
+    p = pred.data((i - 1) * pred.cols + idx)
+    if p < eps
+      p = eps
+    loss = loss - 1 - p:pow(gamma) * p:log()
+  loss / pred.rows
 
 # Label smoothing cross-entropy
-label_smoothing_ce(pred: any, target: any, smoothing: f64): f64
-    n = pred.rows
-    d = pred.cols
-    loss = 0
-    for i = 1, n
-        idx = target.data[i]
-        for j = 1, d
-            if j == idx
-                t = 1 - smoothing + smoothing / d
-            else
-                t = smoothing / d
-            p = pred.data[(i - 1) * d + j]
-            if p < 1e-7 p = 1e-7
-            loss -= t * p:log()
-    loss / n
+label_smoothing_ce: f64 = (pred: any, target: any, smoothing: f64)
+  n = pred.rows
+  d = pred.cols
+  loss = 0
+  for i = 1, n
+    idx = target.data(i)
+    for j = 1, d
+      if j == idx
+        t = 1 - smoothing + smoothing / d
+      else
+        t = smoothing / d
+      p = pred.data((i - 1) * d + j)
+      if p < 0.0000001
+        p = 0.0000001
+      loss = loss - t * p:log()
+  loss / n
 
 # ═══════════════════════════════════════════════════════════════
 # Regression losses
 # ═══════════════════════════════════════════════════════════════
 
 # Mean squared error
-mse(pred: any, target: any): f64
-    sum = 0
-    for i = 1, pred.size
-        diff = pred.data[i] - target.data[i]
-        sum += diff * diff
-    sum / pred.size
+mse: f64 = (pred: any, target: any)
+  sum = 0
+  for i = 1, pred.size
+    diff = pred.data(i) - target.data(i)
+    sum = sum + diff * diff
+  sum / pred.size
 
 # Mean absolute error
-mae(pred: any, target: any): f64
-    sum = 0
-    for i = 1, pred.size
-        diff = pred.data[i] - target.data[i]
-        sum += diff:abs()
-    sum / pred.size
+mae: f64 = (pred: any, target: any)
+  sum = 0
+  for i = 1, pred.size
+    diff = pred.data(i) - target.data(i)
+    sum = sum + diff:abs()
+  sum / pred.size
 
 # Huber loss (smooth L1)
-huber(pred: any, target: any, delta: f64): f64
-    if delta == nil delta = 1.0
-    sum = 0
-    for i = 1, pred.size
-        diff = pred.data[i] - target.data[i]
-        abs_diff = diff:abs()
-        if abs_diff <= delta
-            sum += 0.5 * diff * diff
-        else
-            sum += delta * (abs_diff - 0.5 * delta)
-    sum / pred.size
+huber: f64 = (pred: any, target: any, delta: f64)
+  if delta == nil
+    delta = 1.0
+  sum = 0
+  for i = 1, pred.size
+    diff = pred.data(i) - target.data(i)
+    abs_diff = diff:abs()
+    if abs_diff <= delta
+      sum = sum + 0.5 * diff * diff
+    else
+      sum = sum + delta * (abs_diff - 0.5 * delta)
+  sum / pred.size
 
 # Log-Cosh loss (smooth L1 alternative)
-log_cosh(pred: any, target: any): f64
-    sum = 0
-    for i = 1, pred.size
-        diff = pred.data[i] - target.data[i]
-        sum += diff:cosh():log()
-    sum / pred.size
+log_cosh: f64 = (pred: any, target: any)
+  sum = 0
+  for i = 1, pred.size
+    diff = pred.data(i) - target.data(i)
+    sum = sum + diff:cosh():log()
+  sum / pred.size
 
 # ═══════════════════════════════════════════════════════════════
 # Ranking losses
 # ═══════════════════════════════════════════════════════════════
 
 # Hinge loss (SVM)
-hinge_loss(pred: any, target: any): f64
-    sum = 0
-    for i = 1, pred.size
-        t = target.data[i]
-        if t == 0 t = -1
-        val = 1 - t * pred.data[i]
-        if val > 0 sum += val
-    sum / pred.size
+hinge_loss: f64 = (pred: any, target: any)
+  sum = 0
+  for i = 1, pred.size
+    t = target.data(i)
+    if t == 0
+      t = -1
+    val = 1 - t * pred.data(i)
+    if val > 0
+      sum = sum + val
+  sum / pred.size
 
 # Triplet loss
-triplet_loss(anchor: any, positive: any, negative: any, margin: f64): f64
-    if margin == nil margin = 1.0
-    sum = 0
-    for i = 1, anchor.size
-        d_pos = (anchor.data[i] - positive.data[i])
-        d_pos *= d_pos
-        d_neg = (anchor.data[i] - negative.data[i])
-        d_neg *= d_neg
-        loss = d_pos - d_neg + margin
-        if loss > 0 sum += loss
-    sum / anchor.size
+triplet_loss: f64 = (anchor: any, positive: any, negative: any, margin: f64)
+  if margin == nil
+    margin = 1.0
+  sum = 0
+  for i = 1, anchor.size
+    d_pos = anchor.data(i) - positive.data(i)
+    d_pos = d_pos * d_pos
+    d_neg = anchor.data(i) - negative.data(i)
+    d_neg = d_neg * d_neg
+    loss = d_pos - d_neg + margin
+    if loss > 0
+      sum = sum + loss
+  sum / anchor.size
 
 # Cosine similarity loss
-cosine_loss(pred: any, target: any): f64
-    dot = 0
-    norm_pred = 0
-    norm_target = 0
-    for i = 1, pred.size
-        dot += pred.data[i] * target.data[i]
-        norm_pred += pred.data[i] * pred.data[i]
-        norm_target += target.data[i] * target.data[i]
-    1 - dot / (norm_pred:sqrt() * norm_target:sqrt() + 1e-8)
+cosine_loss: f64 = (pred: any, target: any)
+  dot = 0
+  norm_pred = 0
+  norm_target = 0
+  for i = 1, pred.size
+    dot = dot + pred.data(i) * target.data(i)
+    norm_pred = norm_pred + pred.data(i) * pred.data(i)
+    norm_target = norm_target + target.data(i) * target.data(i)
+  1 - dot / (norm_pred:sqrt() * norm_target:sqrt() + 0.00000001)
 
 # ═══════════════════════════════════════════════════════════════
 # KL divergence
 # ═══════════════════════════════════════════════════════════════
 
-kl_divergence(pred: any, target: any, eps: f64): f64
-    if eps == nil eps = 1e-7
-    sum = 0
-    for i = 1, pred.size
-        p = pred.data[i]
-        q = target.data[i]
-        if p < eps p = eps
-        if q < eps q = eps
-        sum += p * p / q:log()
-    sum
-
+kl_divergence: f64 = (pred: any, target: any, eps: f64)
+  if eps == nil
+    eps = 0.0000001
+  sum = 0
+  for i = 1, pred.size
+    p = pred.data(i)
+    q = target.data(i)
+    if p < eps
+      p = eps
+    if q < eps
+      q = eps
+    sum = sum + p * p / q:log()
+  sum
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-

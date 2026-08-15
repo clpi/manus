@@ -2,9 +2,9 @@
 # separators is KEPT, and the part count includes it.
 # expect: 3 []
 main: i64 = ()
-    s = "a,,b"
-    p = s:split(",")
-    n = p:len()
-    a = p[2]
-    print("{n} [{a}]")
-    0
+  s = "a,,b"
+  p = s:split(",")
+  n = p:len()
+  a = p(2)
+  print("{n} [{a}]")
+  0

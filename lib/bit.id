@@ -1,217 +1,221 @@
 # bit — bit manipulation primitives for WASM, low-level, and cryptographic work
 
 # Population count (Hamming weight)
-popcount(x: i64): i64
-    n = x
-    count = 0
-    while n > 0
-        count += (n & 1)
-        n = n >> 1
-    count
+popcount: i64 = (x: i64)
+  n = x
+  count = 0
+  while n > 0
+    count = count + n & 1
+    n = n >> 1
+  count
 
 # Count leading zeros
-clz(x: i64): i64
-    if x == 0 return 64
-    n = 0
-    mask = 1 << 63
-    while (x & mask) == 0
-        n += 1
-        mask = mask >> 1
-    n
+clz: i64 = (x: i64)
+  if x == 0
+    return 64
+  n = 0
+  mask = 1 << 63
+  while x & mask == 0
+    n = n + 1
+    mask = mask >> 1
+  n
 
 # Count trailing zeros
-ctz(x: i64): i64
-    if x == 0 return 64
-    n = 0
-    while (x & 1) == 0
-        n += 1
-        x = x >> 1
-    n
+ctz: i64 = (x: i64)
+  if x == 0
+    return 64
+  n = 0
+  while x & 1 == 0
+    n = n + 1
+    x = x >> 1
+  n
 
 # Bit length (position of highest set bit + 1)
-bit_length(x: i64): i64
-    if x == 0 return 0
-    64 - clz(x)
+bit_length: i64 = (x: i64)
+  if x == 0
+    return 0
+  64 - clz(x)
 
 # Rotate left (for hash functions, ciphers)
-rotl(x: i64, k: i64): i64
-    k = k & 63
-    if k == 0 return x
-    (x << k) | (x >> (64 - k))
+rotl: i64 = (x: i64, k: i64)
+  k = k & 63
+  if k == 0
+    return x
+  x << k | x >> (64 - k)
 
 # Rotate right
-rotr(x: i64, k: i64): i64
-    k = k & 63
-    if k == 0 return x
-    (x >> k) | (x << (64 - k))
+rotr: i64 = (x: i64, k: i64)
+  k = k & 63
+  if k == 0
+    return x
+  x >> k | x << (64 - k)
 
 # Reverse all bits (for bitfield encoding)
-reverse(x: i64): i64
-    r = 0
-    i = 0
-    while i < 64
-        r |= ((x >> i) & 1) << (63 - i)
-        i += 1
-    r
+reverse: i64 = (x: i64)
+  r = 0
+  i = 0
+  while i < 64
+    r = r | (x >> i & 1) << (63 - i)
+    i = i + 1
+  r
 
 # Reverse bytes (endianness conversion)
-reverse_bytes(x: i64): i64
-    ((x & 0xFF) << 56) |
-    ((x & 0xFF00) << 40) |
-    ((x & 0xFF0000) << 24) |
-    ((x & 0xFF000000) << 8) |
-    ((x >> 8) & 0xFF000000) |
-    ((x >> 24) & 0xFF0000) |
-    ((x >> 40) & 0xFF00) |
-    ((x >> 56) & 0xFF)
+reverse_bytes: i64 = (x: i64)
+  (x & 255) << 56 | (x & 65280) << 40 | (x & 16711680) << 24 | (x & 4278190080) << 8 | x >> 8 & 4278190080 | x >> 24 & 16711680 | x >> 40 & 65280 | x >> 56 & 255
 
 # Extract a bitfield: extract bits [hi:lo] from x (inclusive, 0-indexed)
-extract(x: i64, hi: i64, lo: i64): i64
-    width = hi - lo + 1
-    mask = (1 << width) - 1
-    (x >> lo) & mask
+extract: i64 = (x: i64, hi: i64, lo: i64)
+  width = hi - lo + 1
+  mask = 1 << width - 1
+  x >> lo & mask
 
 # Insert a bitfield: insert value into bits [hi:lo] of x
-insert(x: i64, hi: i64, lo: i64, value: i64): i64
-    width = hi - lo + 1
-    mask = (1 << width) - 1
-    cleared = x & ~(mask << lo)
-    cleared | ((value & mask) << lo)
+insert: i64 = (x: i64, hi: i64, lo: i64, value: i64)
+  width = hi - lo + 1
+  mask = 1 << width - 1
+  cleared = x & ~(mask << lo)
+  cleared | (value & mask) << lo
 
 # Set a single bit
-set_bit(x: i64, pos: i64): i64
-    x | (1 << pos)
+set_bit: i64 = (x: i64, pos: i64)
+  x | 1 << pos
 
 # Clear a single bit
-clear_bit(x: i64, pos: i64): i64
-    x & ~(1 << pos)
+clear_bit: i64 = (x: i64, pos: i64)
+  x & ~(1 << pos)
 
 # Toggle a single bit
-toggle_bit(x: i64, pos: i64): i64
-    # `~` is XOR; `^` is exponentiation and yields f64, which made this fail
-    # to typecheck against the declared i64 return.
-    x ~ (1 << pos)
+toggle_bit: i64 = (x: i64, pos: i64)
+  # `~` is XOR; `^` is exponentiation and yields f64, which made this fail
+  # to typecheck against the declared i64 return.
+  x ~ 1 << pos
 
 # Test if bit at pos is set
-test_bit(x: i64, pos: i64): bool
-    (x & (1 << pos)) != 0
+test_bit: bool = (x: i64, pos: i64)
+  x & 1 << pos != 0
 
 # Count set bits in range [hi:lo]
-popcount_range(x: i64, hi: i64, lo: i64): i64
-    width = hi - lo + 1
-    mask = (1 << width) - 1
-    popcount((x >> lo) & mask)
+popcount_range: i64 = (x: i64, hi: i64, lo: i64)
+  width = hi - lo + 1
+  mask = 1 << width - 1
+  popcount(x >> lo & mask)
 
 # Next power of two
-next_pow2(x: i64): i64
-    if x <= 1 return 1
-    x -= 1
-    x |= (x >> 1)
-    x |= (x >> 2)
-    x |= (x >> 4)
-    x |= (x >> 8)
-    x |= (x >> 16)
-    x |= (x >> 32)
-    x + 1
+next_pow2: i64 = (x: i64)
+  if x <= 1
+    return 1
+  x = x - 1
+  x = x | x >> 1
+  x = x | x >> 2
+  x = x | x >> 4
+  x = x | x >> 8
+  x = x | x >> 16
+  x = x | x >> 32
+  x + 1
 
 # Previous power of two
-prev_pow2(x: i64): i64
-    if x <= 1 return 1
-    1 << (bit_length(x) - 1)
+prev_pow2: i64 = (x: i64)
+  if x <= 1
+    return 1
+  1 << (bit_length(x) - 1)
 
 # LEB128 unsigned encode (used in WASM binary format)
-leb128_encode_u(value: i64): any
-    bytes = {}
-    repeat
-        byte = value & 0x7F
-        value = value >> 7
-        if value != 0
-            byte |= 0x80
-        bytes[bytes:len() + 1] = byte
-    until value == 0
-    bytes
+leb128_encode_u: any = (value: i64)
+  bytes = {}
+  repeat
+    byte = value & 127
+    value = value >> 7
+    if value != 0
+      byte = byte | 128
+    bytes(bytes:len() + 1) = byte
+  until value == 0
+  bytes
 
 # LEB128 unsigned decode
-leb128_decode_u(bytes: any, pos: i64): any
-    result = 0
-    shift = 0
-    i = pos
-    while true
-        byte = bytes[i]
-        result |= ((byte & 0x7F) << shift)
-        shift += 7
-        if (byte & 0x80) == 0 break
-        i += 1
-    {value = result, next = i + 1}
+leb128_decode_u: any = (bytes: any, pos: i64)
+  result = 0
+  shift = 0
+  i = pos
+  while true
+    byte = bytes(i)
+    result = result | (byte & 127) << shift
+    shift = shift + 7
+    if byte & 128 == 0
+      break
+    i = i + 1
+  { value = result, next = i + 1 }
 
 # LEB128 signed encode
-leb128_encode_s(value: i64): any
-    bytes = {}
-    more = true
-    while more
-        byte = value & 0x7F
-        value = value >> 7
-        if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) != 0)
-            more = false
-        else
-            byte |= 0x80
-        bytes[bytes:len() + 1] = byte
-    bytes
+leb128_encode_s: any = (value: i64)
+  bytes = {}
+  more = true
+  while more
+    byte = value & 127
+    value = value >> 7
+    if value == 0 and byte & 64 == 0 or value == -1 and byte & 64 != 0
+      more = false
+    else
+      byte = byte | 128
+    bytes(bytes:len() + 1) = byte
+  bytes
 
 # LEB128 signed decode
-leb128_decode_s(bytes: any, pos: i64): any
-    result = 0
-    shift = 0
-    i = pos
-    while true
-        byte = bytes[i]
-        result |= ((byte & 0x7F) << shift)
-        shift += 7
-        if (byte & 0x80) == 0
-            if shift < 64 and (byte & 0x40) != 0
-                result |= (~0 << shift)
-            break
-        i += 1
-    {value = result, next = i + 1}
+leb128_decode_s: any = (bytes: any, pos: i64)
+  result = 0
+  shift = 0
+  i = pos
+  while true
+    byte = bytes(i)
+    result = result | (byte & 127) << shift
+    shift = shift + 7
+    if byte & 128 == 0
+      if shift < 64 and byte & 64 != 0
+        result = result | ~0 << shift
+      break
+    i = i + 1
+  { value = result, next = i + 1 }
 
 # Binary AND/OR/XOR arrays element-wise (for SIMD-like ops on byte arrays)
-and_bytes(a: any, b: any): any
-    out = {}
-    n = a:len()
-    if b:len() < n n = b:len()
-    i = 1
-    while i <= n
-        out[out:len() + 1] = a[i] & b[i]
-        i += 1
-    out
+and_bytes: any = (a: any, b: any)
+  out = {}
+  n = a:len()
+  if b:len() < n
+    n = b:len()
+  i = 1
+  while i <= n
+    out(out:len() + 1) = a(i) & b(i)
+    i = i + 1
+  out
 
-or_bytes(a: any, b: any): any
-    out = {}
-    n = a:len()
-    if b:len() < n n = b:len()
-    i = 1
-    while i <= n
-        out[out:len() + 1] = a[i] | b[i]
-        i += 1
-    out
+or_bytes: any = (a: any, b: any)
+  out = {}
+  n = a:len()
+  if b:len() < n
+    n = b:len()
+  i = 1
+  while i <= n
+    out(out:len() + 1) = a(i) | b(i)
+    i = i + 1
+  out
 
-xor_bytes(a: any, b: any): any
-    out = {}
-    n = a:len()
-    if b:len() < n n = b:len()
-    i = 1
-    while i <= n
-        out[out:len() + 1] = a[i] ^ b[i]
-        i += 1
-    out
+xor_bytes: any = (a: any, b: any)
+  out = {}
+  n = a:len()
+  if b:len() < n
+    n = b:len()
+  i = 1
+  while i <= n
+    out(out:len() + 1) = a(i) ^ b(i)
+    i = i + 1
+  out
 
-not_bytes(a: any): any
-    out = {}
-    i = 1
-    while i <= a:len()
-        out[out:len() + 1] = ~a[i] & 0xFF
-        i += 1
-    out
+not_bytes: any = (a: any)
+  out = {}
+  i = 1
+  while i <= a:len()
+    out(out:len() + 1) = ~a(i) & 255
+    i = i + 1
+  out
 
 # ── IEEE-754 bit reinterpretation ─────────────────────────────────────
 # Reinterpret (not convert) between floats and their bit patterns. Needed by
@@ -219,16 +223,16 @@ not_bytes(a: any): any
 # only as a primitive, so it lives here in the stdlib rather than in callers.
 # This is the sanctioned home for C-level primitives; callers stay pure Duo.
 
-f64_to_bits(x: f64): i64
-    @comp.bit.bitcast(x, "int64_t")
+f64_to_bits: i64 = (x: f64)
+  @comp.bit.bitcast(x, "int64_t")
 
-f64_from_bits(b: i64): f64
-    @comp.bit.bitcast(b, "double")
+f64_from_bits: f64 = (b: i64)
+  @comp.bit.bitcast(b, "double")
 
-f32_to_bits(x: f64): i64
-    y: f32 = x
-    @comp.bit.bitcast(y, "uint32_t")
+f32_to_bits: i64 = (x: f64)
+  y: f32 = x
+  @comp.bit.bitcast(y, "uint32_t")
 
-f32_from_bits(b: i64): f64
-    y: u32 = b
-    @comp.bit.bitcast(y, "float")
+f32_from_bits: f64 = (b: i64)
+  y: u32 = b
+  @comp.bit.bitcast(y, "float")

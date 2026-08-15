@@ -19,13 +19,13 @@
 
 shared = tools.mcp.shared
 
-mode = os.env["gapmode"]
+mode = os.env("gapmode")
 if mode == nil or mode == ""
-    mode = "report"
+  mode = "report"
 
 if mode == "alloc"
-    print(shared.gapallocate():to(str))
+  print(shared.gapallocate():to(str))
 else
-    print("ledger  {shared.gapledger}")
-    print("high    {shared.gaphigh():to(str)}")
-    print("next    {(shared.gaphigh() + 1):to(str)}")
+  print("ledger  {shared.gapledger}")
+  print("high    {shared.gaphigh():to(str)}")
+  print("next    {(shared.gaphigh() + 1):to(str)}")

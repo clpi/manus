@@ -7,274 +7,277 @@ M = {}
 # QUIC Constants
 # ═══════════════════════════════════════════════════════════════
 
-M.QUIC_VERSION = 0x00000001
+M.QUIC_VERSION = 1
 M.MAX_UDP_PAYLOAD = 1200
 M.MAX_STREAMS = 256
 M.DEFAULT_IDLE_TIMEOUT = 30000
 
 # Packet Types
-M.PACKET_TYPE_INITIAL = 0x00
-M.PACKET_TYPE_0RTT = 0x01
-M.PACKET_TYPE_HANDSHAKE = 0x02
-M.PACKET_TYPE_RETRY = 0x03
-M.PACKET_TYPE_1RTT = 0x04
+M.PACKET_TYPE_INITIAL = 0
+M.PACKET_TYPE_0RTT = 1
+M.PACKET_TYPE_HANDSHAKE = 2
+M.PACKET_TYPE_RETRY = 3
+M.PACKET_TYPE_1RTT = 4
 
 # Frame Types
-M.FRAME_CRYPTO = 0x06
-M.FRAME_STREAM = 0x08
-M.FRAME_ACK = 0x0A
-M.FRAME_MAX_DATA = 0x10
-M.FRAME_MAX_STREAMS = 0x12
-M.FRAME_CONNECTION_CLOSE = 0x1C
+M.FRAME_CRYPTO = 6
+M.FRAME_STREAM = 8
+M.FRAME_ACK = 10
+M.FRAME_MAX_DATA = 16
+M.FRAME_MAX_STREAMS = 18
+M.FRAME_CONNECTION_CLOSE = 28
 
 # ═══════════════════════════════════════════════════════════════
 # QUIC Connection
 # ═══════════════════════════════════════════════════════════════
 
-quic_connection_new(config: any): any
-    {
-        connection_id = config.connection_id or generate_connection_id(),
-        remote_address = config.remote_address or "0.0.0.0:0",
-        state = "idle",
-        streams = {},
-        next_stream_id = 0,
-        packet_number = 0,
-        max_data = 1048576,
-        max_streams = M.MAX_STREAMS,
-        idle_timeout = M.DEFAULT_IDLE_TIMEOUT,
-        created_at = os.time() * 1000,
-        last_activity = os.time() * 1000,
-    }
+quic_connection_new: any = (config: any)
+  {
+    connection_id = config.connection_id or generate_connection_id(),
+    remote_address = config.remote_address or "0.0.0.0:0",
+    state = "idle",
+    streams = {},
+    next_stream_id = 0,
+    packet_number = 0,
+    max_data = 1048576,
+    max_streams = M.MAX_STREAMS,
+    idle_timeout = M.DEFAULT_IDLE_TIMEOUT,
+    created_at = os.time() * 1000,
+    last_activity = os.time() * 1000
+  }
 
-quic_connection_connect(conn: any, address: str): any
-    conn.remote_address = address
-    conn.state = "connecting"
-    conn.last_activity = os.time() * 1000
+quic_connection_connect: any = (conn: any, address: str)
+  conn.remote_address = address
+  conn.state = "connecting"
+  conn.last_activity = os.time() * 1000
 
-    # Would initiate handshake with Initial packet
-    # For now, simulate connection
-    {
-        ok = true,
-        connection_id = conn.connection_id,
-    }
+  # Would initiate handshake with Initial packet
+  # For now, simulate connection
+  {
+    ok = true,
+    connection_id = conn.connection_id
+  }
 
-quic_connection_accept(conn: any): any
-    conn.state = "connected"
-    conn.last_activity = os.time() * 1000
-    {
-        ok = true,
-        connection_id = conn.connection_id,
-    }
+quic_connection_accept: any = (conn: any)
+  conn.state = "connected"
+  conn.last_activity = os.time() * 1000
+  {
+    ok = true,
+    connection_id = conn.connection_id
+  }
 
-quic_connection_close(conn: any, error_code: i64, reason: str): void
-    conn.state = "closed"
-    conn.close_error = error_code
-    conn.close_reason = reason
+quic_connection_close = (conn: any, error_code: i64, reason: str)
+  conn.state = "closed"
+  conn.close_error = error_code
+  conn.close_reason = reason
 
-quic_connection_is_open(conn: any): bool
-    conn.state != "closed"
+quic_connection_is_open: bool = (conn: any)
+  conn.state != "closed"
 
 # ═══════════════════════════════════════════════════════════════
 # QUIC Stream
 # ═══════════════════════════════════════════════════════════════
 
-quic_stream_new(conn: any, stream_id: i64): any
-    {
-        stream_id = stream_id or conn.next_stream_id,
-        conn = conn,
-        state = "open",
-        send_buffer = {},
-        recv_buffer = {},
-        send_offset = 0,
-        recv_offset = 0,
-        max_stream_data = 65536,
-        data_available = false,
-    }
+quic_stream_new: any = (conn: any, stream_id: i64)
+  {
+    stream_id = stream_id or conn.next_stream_id,
+    conn = conn,
+    state = "open",
+    send_buffer = {},
+    recv_buffer = {},
+    send_offset = 0,
+    recv_offset = 0,
+    max_stream_data = 65536,
+    data_available = false
+  }
 
-quic_stream_write(stream: any, data: any): any
-    if stream.state != "open"
-        return {ok = false, error = "stream closed"}
+quic_stream_write: any = (stream: any, data: any)
+  if stream.state != "open"
+    return { ok = false, error = "stream closed" }
 
-    # Add to send buffer
-    for byte in data
-        stream.send_buffer[stream:len().send_buffer + 1] = byte
-    stream.send_offset = stream.send_offset + data:len()
+  # Add to send buffer
+  for byte in data
+    stream.send_buffer(stream:len().send_buffer + 1) = byte
+  stream.send_offset = stream.send_offset + data:len()
 
-    # Would send STREAM frame
-    {
-        ok = true,
-        bytes_sent = data:len(),
-    }
+  # Would send STREAM frame
+  {
+    ok = true,
+    bytes_sent = data:len()
+  }
 
-quic_stream_read(stream: any, max_bytes: i64): any
-    if stream:len().recv_buffer == 0
-        return {ok = false, error = "no data"}
+quic_stream_read: any = (stream: any, max_bytes: i64)
+  if stream:len().recv_buffer == 0
+    return { ok = false, error = "no data" }
 
-    bytes = {}
-    count = max_bytes:min(stream:len().recv_buffer)
-    i = 1
-    while i <= count
-        bytes[i] = stream.recv_buffer[i]
-        i += 1
+  bytes = {}
+  count = max_bytes:min(stream:len().recv_buffer)
+  i = 1
+  while i <= count
+    bytes(i) = stream.recv_buffer(i)
+    i = i + 1
 
-    # Remove from buffer
-    i = 1
-    while i <= stream:len().recv_buffer - count
-        stream.recv_buffer[i] = stream.recv_buffer[i + count]
-        i += 1
+  # Remove from buffer
+  i = 1
+  while i <= stream:len().recv_buffer - count
+    stream.recv_buffer(i) = stream.recv_buffer(i + count)
+    i = i + 1
 
-    # Resize buffer
-    new_size = stream:len().recv_buffer - count
-    while stream:len().recv_buffer > new_size
-        stream.recv_buffer[stream:len().recv_buffer] = nil
+  # Resize buffer
+  new_size = stream:len().recv_buffer - count
+  while stream:len().recv_buffer > new_size
+    stream.recv_buffer(stream:len().recv_buffer) = nil
 
-    stream.recv_offset = stream.recv_offset + count
+  stream.recv_offset = stream.recv_offset + count
 
-    {
-        ok = true,
-        data = bytes,
-        size = count,
-    }
+  {
+    ok = true,
+    data = bytes,
+    size = count
+  }
 
-quic_stream_close(stream: any): void
-    stream.state = "closed"
+quic_stream_close = (stream: any)
+  stream.state = "closed"
 
-quic_stream_is_open(stream: any): bool
-    stream.state == "open"
+quic_stream_is_open: bool = (stream: any)
+  stream.state == "open"
 
 # ═══════════════════════════════════════════════════════════════
 # QUIC Packet Encoding
 # ═══════════════════════════════════════════════════════════════
 
-quic_packet_header_encode(packet_type: i64, connection_id: i64, packet_number: i64): any
-    # Simplified header encoding
-    bytes = {}
+quic_packet_header_encode: any = (packet_type: i64, connection_id: i64, packet_number: i64)
+  # Simplified header encoding
+  bytes = {}
 
-    # Version (4 bytes)
-    bytes[1] = bit.band(bit.rshift(M.QUIC_VERSION, 24), 0xFF)
-    bytes[2] = bit.band(bit.rshift(M.QUIC_VERSION, 16), 0xFF)
-    bytes[3] = bit.band(bit.rshift(M.QUIC_VERSION, 8), 0xFF)
-    bytes[4] = bit.band(M.QUIC_VERSION, 0xFF)
+  # Version (4 bytes)
+  bytes(1) = bit.band(bit.rshift(M.QUIC_VERSION, 24), 255)
+  bytes(2) = bit.band(bit.rshift(M.QUIC_VERSION, 16), 255)
+  bytes(3) = bit.band(bit.rshift(M.QUIC_VERSION, 8), 255)
+  bytes(4) = bit.band(M.QUIC_VERSION, 255)
 
-    # Connection ID length + connection ID
-    bytes[5] = 8  # ID length
-    i = 1
-    while i <= 8
-        bytes[5 + i] = bit.band(bit.rshift(connection_id, (8 - i) * 8), 0xFF)
-        i += 1
+  # Connection ID length + connection ID
+  # ID length
+  bytes(5) = 8
+  i = 1
+  while i <= 8
+    bytes(5 + i) = bit.band(bit.rshift(connection_id, (8 - i) * 8), 255)
+    i = i + 1
 
-    # Packet number (4 bytes)
-    offset = 14
-    bytes[offset] = bit.band(bit.rshift(packet_number, 24), 0xFF)
-    bytes[offset + 1] = bit.band(bit.rshift(packet_number, 16), 0xFF)
-    bytes[offset + 2] = bit.band(bit.rshift(packet_number, 8), 0xFF)
-    bytes[offset + 3] = bit.band(packet_number, 0xFF)
+  # Packet number (4 bytes)
+  offset = 14
+  bytes(offset) = bit.band(bit.rshift(packet_number, 24), 255)
+  bytes(offset + 1) = bit.band(bit.rshift(packet_number, 16), 255)
+  bytes(offset + 2) = bit.band(bit.rshift(packet_number, 8), 255)
+  bytes(offset + 3) = bit.band(packet_number, 255)
 
-    bytes
+  bytes
 
-quic_frame_stream_encode(stream_id: i64, offset: i64, data: any): any
-    bytes = {}
+quic_frame_stream_encode: any = (stream_id: i64, offset: i64, data: any)
+  bytes = {}
 
-    # Frame type
-    bytes[1] = M.FRAME_STREAM
+  # Frame type
+  bytes(1) = M.FRAME_STREAM
 
-    # Stream ID (varint)
-    bytes[2] = bit.band(stream_id, 0xFF)
+  # Stream ID (varint)
+  bytes(2) = bit.band(stream_id, 255)
 
-    # Offset (varint)
-    bytes[3] = bit.band(offset, 0xFF)
+  # Offset (varint)
+  bytes(3) = bit.band(offset, 255)
 
-    # Data length
-    bytes[4] = data:len()
+  # Data length
+  bytes(4) = data:len()
 
-    # Data
-    i = 1
-    while i <= data:len()
-        bytes[4 + i] = data[i]
-        i += 1
+  # Data
+  i = 1
+  while i <= data:len()
+    bytes(4 + i) = data(i)
+    i = i + 1
 
-    bytes
+  bytes
 
-quic_frame_ack_encode(largest_acknowledged: i64, ack_delay: i64): any
-    bytes = {}
+quic_frame_ack_encode: any = (largest_acknowledged: i64, ack_delay: i64)
+  bytes = {}
 
-    # Frame type
-    bytes[1] = M.FRAME_ACK
+  # Frame type
+  bytes(1) = M.FRAME_ACK
 
-    # Largest acknowledged (varint)
-    bytes[2] = bit.band(largest_acknowledged, 0xFF)
+  # Largest acknowledged (varint)
+  bytes(2) = bit.band(largest_acknowledged, 255)
 
-    # ACK delay (varint)
-    bytes[3] = bit.band(ack_delay, 0xFF)
+  # ACK delay (varint)
+  bytes(3) = bit.band(ack_delay, 255)
 
-    # ACK range count
-    bytes[4] = 0
+  # ACK range count
+  bytes(4) = 0
 
-    bytes
+  bytes
 
 # ═══════════════════════════════════════════════════════════════
 # QUIC Config
 # ═══════════════════════════════════════════════════════════════
 
-quic_config_new(): any
-    {
-        max_data = 1048576,
-        max_streams = M.MAX_STREAMS,
-        idle_timeout = M.DEFAULT_IDLE_TIMEOUT,
-        max_udp_payload = M.MAX_UDP_PAYLOAD,
-        initial_max_data = 1048576,
-        initial_max_streams_bidi = 100,
-        initial_max_streams_uni = 100,
-    }
+quic_config_new: any = ()
+  {
+    max_data = 1048576,
+    max_streams = M.MAX_STREAMS,
+    idle_timeout = M.DEFAULT_IDLE_TIMEOUT,
+    max_udp_payload = M.MAX_UDP_PAYLOAD,
+    initial_max_data = 1048576,
+    initial_max_streams_bidi = 100,
+    initial_max_streams_uni = 100
+  }
 
-quic_config_set_max_data(config: any, max_data: i64): void
-    config.max_data = max_data
+quic_config_set_max_data = (config: any, max_data: i64)
+  config.max_data = max_data
 
-quic_config_set_max_streams(config: any, max_streams: i64): void
-    config.max_streams = max_streams
+quic_config_set_max_streams = (config: any, max_streams: i64)
+  config.max_streams = max_streams
 
-quic_config_set_idle_timeout(config: any, timeout: i64): void
-    config.idle_timeout = timeout
+quic_config_set_idle_timeout = (config: any, timeout: i64)
+  config.idle_timeout = timeout
 
 # ═══════════════════════════════════════════════════════════════
 # Utility
 # ═══════════════════════════════════════════════════════════════
 
-generate_connection_id(): any
-    crypto_rand = rand
-    bytes = {}
-    data = crypto_rand.bytes(8)
-    i = 1
-    while i <= 8
-        bytes[i] = data:byte(i)
-        i += 1
-    bytes
+generate_connection_id: any = ()
+  crypto_rand = rand
+  bytes = {}
+  data = crypto_rand.bytes(8)
+  i = 1
+  while i <= 8
+    bytes(i) = data:byte(i)
+    i = i + 1
+  bytes
 
-quic_varint_encode(value: i64): any
-    if value < 0x40
-        return {bit.band(value, 0xFF)}
-    else if value < 0x4000
-        return {
-            bit.bor(0x40, bit.rshift(value, 8)),
-            bit.band(value, 0xFF),
-        }
-    else if value < 0x40000000
-        return {
-            bit.bor(0x80, bit.rshift(value, 24)),
-            bit.band(bit.rshift(value, 16), 0xFF),
-            bit.band(bit.rshift(value, 8), 0xFF),
-            bit.band(value, 0xFF),
-        }
+quic_varint_encode: any = (value: i64)
+  if value < 64
+    return { bit.band(value, 255) }
+  else
+    if value < 16384
+      return {
+        bit.bor(64, bit.rshift(value, 8)),
+        bit.band(value, 255)
+      }
     else
+      if value < 1073741824
         return {
-            bit.bor(0xC0, bit.rshift(value, 56)),
-            bit.band(bit.rshift(value, 48), 0xFF),
-            bit.band(bit.rshift(value, 40), 0xFF),
-            bit.band(bit.rshift(value, 32), 0xFF),
-            bit.band(bit.rshift(value, 24), 0xFF),
-            bit.band(bit.rshift(value, 16), 0xFF),
-            bit.band(bit.rshift(value, 8), 0xFF),
-            bit.band(value, 0xFF),
+          bit.bor(128, bit.rshift(value, 24)),
+          bit.band(bit.rshift(value, 16), 255),
+          bit.band(bit.rshift(value, 8), 255),
+          bit.band(value, 255)
+        }
+      else
+        return {
+          bit.bor(192, bit.rshift(value, 56)),
+          bit.band(bit.rshift(value, 48), 255),
+          bit.band(bit.rshift(value, 40), 255),
+          bit.band(bit.rshift(value, 32), 255),
+          bit.band(bit.rshift(value, 24), 255),
+          bit.band(bit.rshift(value, 16), 255),
+          bit.band(bit.rshift(value, 8), 255),
+          bit.band(value, 255)
         }
 
 # ═══════════════════════════════════════════════════════════════

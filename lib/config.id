@@ -14,7 +14,7 @@ deep_get: any = (t: any, key: any)
   while i <= parts:len()
     if current == nil
       return nil
-    current = current[parts[i]]
+    current = current(parts(i))
     i = i + 1
   current
 
@@ -23,44 +23,44 @@ deep_has: bool = (t: any, key: any)
   deep_get(t, key) != nil
 
 # deep_set: set a value in a nested table by dot-path.
-deep_set: void = (t: any, key: any, value: any)
+deep_set = (t: any, key: any, value: any)
   parts = key:split(".")
   current = t
   i = 1
   while i < parts:len()
-    if current[parts[i]] == nil
-      current[parts[i]] = {}
-    current = current[parts[i]]
+    if current(parts(i)) == nil
+      current(parts(i)) = {}
+    current = current(parts(i))
     i = i + 1
-  current[parts[parts:len()]] = value
+  current(parts(parts:len())) = value
 
 # deep_merge_into: recursively merge src into dst.
-deep_merge_into: void = (dst: any, src: any)
+deep_merge_into = (dst: any, src: any)
   if src == nil
     return
   for k, v in src
-    if type(v) == "table" and type(dst[k]) == "table"
-      deep_merge_into(dst[k], v)
+    if type(v) == "table" and type(dst(k)) == "table"
+      deep_merge_into(dst(k), v)
     else
-      dst[k] = v
+      dst(k) = v
 
 # collect_keys: collect dot-path keys from a nested table.
-collect_keys: void = (seen: any, out: any, t: any, prefix: any)
+collect_keys = (seen: any, out: any, t: any, prefix: any)
   if t == nil
     return
   for k, v in t
     full_key = k
     if prefix:len() > 0
       full_key = prefix .. "." .. k
-    if seen[full_key] == nil
-      seen[full_key] = true
+    if seen(full_key) == nil
+      seen(full_key) = true
       if type(v) != "table"
-        out[out:len() + 1] = full_key
+        out(out:len() + 1) = full_key
       else
         collect_keys(seen, out, v, full_key)
 
 # deep_copy_flat: copy nested values as dot-path keys into a flat table.
-deep_copy_flat: void = (dst: any, prefix: any, src: any)
+deep_copy_flat = (dst: any, prefix: any, src: any)
   if src == nil
     return
   for k, v in src
@@ -70,8 +70,8 @@ deep_copy_flat: void = (dst: any, prefix: any, src: any)
     if type(v) == "table"
       deep_copy_flat(dst, full_key, v)
     else
-      if dst[full_key] == nil
-        dst[full_key] = v
+      if dst(full_key) == nil
+        dst(full_key) = v
 
 # ---- Constructors ----
 
@@ -103,7 +103,7 @@ get_or: any = (cfg: any, key: any, fallback: any)
   fallback
 
 # set: set a value by dot-path key.
-set: void = (cfg: any, key: any, value: any)
+set = (cfg: any, key: any, value: any)
   deep_set(cfg.values, key, value)
 
 # has: check if a key exists (values or defaults).
@@ -115,21 +115,21 @@ has: bool = (cfg: any, key: any)
 # ---- Merge ----
 
 # merge: deep-merge another config or table into this config's values.
-merge: void = (cfg: any, overlay: any)
+merge = (cfg: any, overlay: any)
   deep_merge_into(cfg.values, overlay)
 
 # merge_defaults: merge overrides into the defaults schema.
-merge_defaults: void = (cfg: any, overlay: any)
+merge_defaults = (cfg: any, overlay: any)
   deep_merge_into(cfg.defaults, overlay)
 
 # ---- Environment ----
 
 # set_env_prefix: set a prefix for env var overrides (e.g. "APP").
-set_env_prefix: void = (cfg: any, prefix: str)
+set_env_prefix = (cfg: any, prefix: str)
   cfg.env_prefix = prefix
 
 # load_env: populate config values from environment variables.
-load_env: void = (cfg: any)
+load_env = (cfg: any)
   env_data = os.getenv()
   if env_data == nil
     return
@@ -171,8 +171,8 @@ require_keys: any = (cfg: any, keys: any)
   missing = {}
   i = 1
   while i <= keys:len()
-    if not has(cfg, keys[i])
-      missing[missing:len() + 1] = keys[i]
+    if not has(cfg, keys(i))
+      missing(missing:len() + 1) = keys(i)
     i = i + 1
   missing
 
@@ -190,8 +190,8 @@ to_string: str = (cfg: any)
   all_keys = keys(cfg)
   i = 1
   while i <= all_keys:len()
-    val = get(cfg, all_keys[i])
-    parts[parts:len() + 1] = all_keys[i] .. " = " .. val:to(str)
+    val = get(cfg, all_keys(i))
+    parts(parts:len() + 1) = all_keys(i) .. " = " .. val:to(str)
     i = i + 1
   parts:sort()
   parts:concat("\n")

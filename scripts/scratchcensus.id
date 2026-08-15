@@ -7,35 +7,35 @@
 script = script
 
 lines: any = (text: str)
-    out = {}
-    start = 1
-    i = 1
-    n = text:len()
-    while i <= n
-        if text:byte(i) == 10
-            if i > start
-                out[out:len() + 1] = text:sub(start, i - 1)
-            start = i + 1
-        i += 1
-    if start <= n
-        out[out:len() + 1] = text:sub(start, n)
-    out
+  out = {}
+  start = 1
+  i = 1
+  n = text:len()
+  while i <= n
+    if text:byte(i) == 10
+      if i > start
+        out(out:len() + 1) = text:sub(start, i - 1)
+      start = i + 1
+    i = i + 1
+  if start <= n
+    out(out:len() + 1) = text:sub(start, n)
+  out
 
 main: i64 = ()
-    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
-    if root == ""
-        print("scratchcensus: fail no git root")
-        os.exit(3)
+  root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+  if root == ""
+    print("scratchcensus: fail no git root")
+    os.exit(3)
 
-    cmd = "cd '{root}' && find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort"
-    found = lines(script.capture(cmd))
-    count = found:len()
-    if count == 0
-        print("scratchcensus: pass root foreign scratch 0")
-        os.exit(0)
+  cmd = "cd '{root}' && find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort"
+  found = lines(script.capture(cmd))
+  count = found:len()
+  if count == 0
+    print("scratchcensus: pass root foreign scratch 0")
+    os.exit(0)
 
-    print("scratchcensus: fail root foreign scratch {count}")
-    for i = 1, found:len()
-        print("  {found[i]}")
-    os.exit(1)
-    0
+  print("scratchcensus: fail root foreign scratch {count}")
+  for i = 1, found:len()
+    print("  {found[i]}")
+  os.exit(1)
+  0

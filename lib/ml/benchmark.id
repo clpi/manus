@@ -28,7 +28,7 @@ result_new: any = (model_name: str, batch_size: i64)
     tokens_per_second = 0
   }
 result_add_latency = (result: any, latency: f64)
-  result.latencies[result:len().latencies + 1] = latency
+  result.latencies(result:len().latencies + 1) = latency
 result_calculate_stats = (result: any)
   n = result:len().latencies
   if n == 0
@@ -41,11 +41,11 @@ result_calculate_stats = (result: any)
   for v in sorted
     sum = sum + v
   result.mean_latency = sum / n
-  result.median_latency = sorted[n / 2:floor() + 1]
-  result.p95_latency = sorted[n * 0.95:floor() + 1]
-  result.p99_latency = sorted[n * 0.99:floor() + 1]
-  result.min_latency = sorted[1]
-  result.max_latency = sorted[n]
+  result.median_latency = sorted(n / 2:floor() + 1)
+  result.p95_latency = sorted(n * 0.95:floor() + 1)
+  result.p99_latency = sorted(n * 0.99:floor() + 1)
+  result.min_latency = sorted(1)
+  result.max_latency = sorted(n)
   if result.mean_latency > 0
     result.throughput = result.batch_size / result.mean_latency
     result.tokens_per_second = result.throughput
@@ -59,7 +59,7 @@ runner_run: any = (runner: any, model_fn: any, input_generator: any)
   results = {}
   batch_idx = 1
   while batch_idx <= config:len().batch_sizes
-    batch_size = config.batch_sizes[batch_idx]
+    batch_size = config.batch_sizes(batch_idx)
     result = result_new("model", batch_size)
     i = 0
     while i < config.warmup_runs
@@ -75,7 +75,7 @@ runner_run: any = (runner: any, model_fn: any, input_generator: any)
       result_add_latency(result, end_time - start_time)
       i = i + 1
     result_calculate_stats(result)
-    results[batch_idx] = result
+    results(batch_idx) = result
     batch_idx = batch_idx + 1
   runner.results = results
   results
@@ -115,7 +115,7 @@ latency: any = (model_fn: any, input_generator: any, batch_size: i64, num_runs: 
     input = input_generator(batch_size)
     model_fn(input)
     end_time = os.clock()
-    latencies[latencies:len() + 1] = end_time - start_time
+    latencies(latencies:len() + 1) = end_time - start_time
     i = i + 1
   latencies:sort()
   sum = 0
@@ -125,11 +125,11 @@ latency: any = (model_fn: any, input_generator: any, batch_size: i64, num_runs: 
     batch_size = batch_size,
     num_runs = num_runs,
     mean = sum / num_runs,
-    median = latencies[num_runs / 2:floor() + 1],
-    p95 = latencies[num_runs * 0.95:floor() + 1],
-    p99 = latencies[num_runs * 0.99:floor() + 1],
-    min = latencies[1],
-    max = latencies[num_runs]
+    median = latencies(num_runs / 2:floor() + 1),
+    p95 = latencies(num_runs * 0.95:floor() + 1),
+    p99 = latencies(num_runs * 0.99:floor() + 1),
+    min = latencies(1),
+    max = latencies(num_runs)
   }
 memory: any = (model_fn: any, input_generator: any, batch_size: i64)
   input = input_generator(batch_size)
@@ -149,7 +149,7 @@ memory: any = (model_fn: any, input_generator: any, batch_size: i64)
 compare: any = (results: any)
   comparison = {}
   for name, result in results
-    comparison[name] = {
+    comparison(name) = {
       mean_latency = result.mean_latency or 0,
       throughput = result.throughput or 0,
       tokens_per_second = result.tokens_per_second or 0
@@ -158,9 +158,9 @@ compare: any = (results: any)
 rank: any = (results: any, metric: str)
   ranked = {}
   for name, result in results
-    ranked[ranked:len() + 1] = {
+    ranked(ranked:len() + 1) = {
       name = name,
-      value = result[metric] or 0
+      value = result(metric) or 0
     }
   ranked:sort(fun(a: any, b: any) -> any
     a.value > b.value
@@ -168,16 +168,16 @@ rank: any = (results: any, metric: str)
   ranked
 report: str = (results: any)
   lines = {}
-  lines[lines:len() + 1] = "=== Benchmark Report ==="
-  lines[lines:len() + 1] = ""
+  lines(lines:len() + 1) = "=== Benchmark Report ==="
+  lines(lines:len() + 1) = ""
   for name, result in results
-    lines[lines:len() + 1] = "Model: " .. name
-    lines[lines:len() + 1] = "  Batch Size: " .. result.batch_size:to(str)
-    lines[lines:len() + 1] = "  Mean Latency: " .. result.mean_latency:to(str) .. "s"
-    lines[lines:len() + 1] = "  Median Latency: " .. result.median_latency:to(str) .. "s"
-    lines[lines:len() + 1] = "  P95 Latency: " .. result.p95_latency:to(str) .. "s"
-    lines[lines:len() + 1] = "  P99 Latency: " .. result.p99_latency:to(str) .. "s"
-    lines[lines:len() + 1] = "  Throughput: " .. result.throughput:to(str) .. " batches/s"
-    lines[lines:len() + 1] = "  Tokens/sec: " .. result.tokens_per_second:to(str)
-    lines[lines:len() + 1] = ""
+    lines(lines:len() + 1) = "Model: " .. name
+    lines(lines:len() + 1) = "  Batch Size: " .. result.batch_size:to(str)
+    lines(lines:len() + 1) = "  Mean Latency: " .. result.mean_latency:to(str) .. "s"
+    lines(lines:len() + 1) = "  Median Latency: " .. result.median_latency:to(str) .. "s"
+    lines(lines:len() + 1) = "  P95 Latency: " .. result.p95_latency:to(str) .. "s"
+    lines(lines:len() + 1) = "  P99 Latency: " .. result.p99_latency:to(str) .. "s"
+    lines(lines:len() + 1) = "  Throughput: " .. result.throughput:to(str) .. " batches/s"
+    lines(lines:len() + 1) = "  Tokens/sec: " .. result.tokens_per_second:to(str)
+    lines(lines:len() + 1) = ""
   lines:concat("\n")

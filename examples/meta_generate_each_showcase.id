@@ -1,16 +1,12 @@
 # @comp.generate → @comp.each — O(ops×types) cartesian then per-fragment re-expansion
 # Run: duo run examples/meta_generate_each_showcase.id
 
-CONSTRAINTS = [[
-ops: add|sub
-types: i64:int64_t|f64:double
-template: /* gen[$0:$1] */
-]]
+CONSTRAINTS = "ops: add|sub\ntypes: i64:int64_t|f64:double\ntemplate: /* gen[$0:$1] */\n"
 
 GEN = @comp.generate(CONSTRAINTS, "")
 
-stamp(frag: str): str
-    "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
+stamp: str = (frag: str)
+  "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 
 EXPANDED = @comp.each(GEN, stamp)
 
@@ -18,11 +14,12 @@ EXPANDED = @comp.each(GEN, stamp)
 # while the body used it as a string: `strs:len()` and `duo_str_sub_cstr(s, ...)`
 # on an int64_t, three -Wint-conversion errors, and the whole translation unit
 # was rejected. A bare parameter is not "untyped" here, it is typed WRONG.
-count_lines(s: str): i64
-    n = 0
-    for i = 1, s:len()
-        if s:sub(i, i) == "\n" n += 1
-    n
+count_lines: i64 = (s: str)
+  n = 0
+  for i = 1, s:len()
+    if s:sub(i, i) == "\n"
+      n = n + 1
+  n
 
 LINES = count_lines(EXPANDED)
 

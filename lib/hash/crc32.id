@@ -2,27 +2,26 @@
 
 table = 0
 for i = 0, 255
-    crc = i
-    for j = 1, 8
-        if crc % 2 == 1
-            crc = crc >> 1 ~ 0xEDB88320
-        else
-            crc = crc >> 1
-    table[i + 1] = crc % (2^32)
+  crc = i
+  for j = 1, 8
+    if crc % 2 == 1
+      crc = crc >> 1 ~ 3988292384
+    else
+      crc = crc >> 1
+  table(i + 1) = crc % 2 ^ 32
 
-new(): any
-    {crc = 0xFFFFFFFF}
+new: any = ()
+  { crc = 4294967295 }
 
-update(state: any, data: str): void
-    for i = 1, data:len()
-        idx = ((state.crc % (2^32)) ~ data:byte(i)) % 256
-        state.crc = ((state.crc >> 8) ~ table[idx + 1]) % (2^32)
+update = (state: any, data: str)
+  for i = 1, data:len()
+    idx = (state.crc % 2 ^ 32 ~ data:byte(i)) % 256
+    state.crc = (state.crc >> 8 ~ table(idx + 1)) % 2 ^ 32
 
-final(state: any): i64
-    (~state.crc) % (2^32)
+final: i64 = (state: any)
+  ~state.crc % 2 ^ 32
 
-checksum(data: str): i64
-    s = new()
-    update(s, data)
-    final(s)
-
+checksum: i64 = (data: str)
+  s = new()
+  update(s, data)
+  final(s)

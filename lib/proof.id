@@ -1,75 +1,75 @@
 # proof — proof helpers (codegen-safe; no json.decode/inspect on hot path).
-sha256(data: str): str
-    p = script.fs_tmp():gsub("\n", "")
-    script.fs_write(p, data)
-    h = script.capture("shasum -a 256 '" .. p .. "' 2>/dev/null"):match("(%x+)") or ""
-    script.fs_rm(p)
-    h
+sha256: str = (data: str)
+  p = script.fs_tmp():gsub("\n", "")
+  script.fs_write(p, data)
+  h = script.capture("shasum -a 256 '" .. p .. "' 2>/dev/null"):match("(%x+)") or ""
+  script.fs_rm(p)
+  h
 
-result_rows(output: str): any
-    rows = {}
-    for line in output:gmatch("[^\n]+")
-        rid, val = line:match("^RESULT%s+(%S+)%s+(.*)$")
-        if rid != nil
-            rows[rows:len() + 1] = rid .. " " .. val
-    rows:sort()
-    rows
+result_rows: any = (output: str)
+  rows = {}
+  for line in output:gmatch("[^\n]+")
+    rid, val = line:match("^RESULT%s+(%S+)%s+(.*)$")
+    if rid != nil
+      rows(rows:len() + 1) = rid .. " " .. val
+  rows:sort()
+  rows
 
-result_hash(output: str): str
-    sha256(result_rows(output):concat("\n"))
+result_hash: str = (output: str)
+  sha256(result_rows(output):concat("\n"))
 
-count_results(output: str): i64
-    n = 0
-    for line in output:gmatch("[^\n]+")
-        if line:match("^RESULT%s+") != nil
-            n += 1
-    n
+count_results: i64 = (output: str)
+  n = 0
+  for line in output:gmatch("[^\n]+")
+    if line:match("^RESULT%s+") != nil
+      n = n + 1
+  n
 
-artifact_path(stem: str, prefer_native: bool): str
-    native = "/tmp/duo_" .. stem .. "_native.o.proof.json"
-    cpath = "/tmp/duo_" .. stem .. ".c.proof.json"
-    if prefer_native and script.fs_exists(native)
-        return native
-    cpath
+artifact_path: str = (stem: str, prefer_native: bool)
+  native = "/tmp/duo_" .. stem .. "_native.o.proof.json"
+  cpath = "/tmp/duo_" .. stem .. ".c.proof.json"
+  if prefer_native and script.fs_exists(native)
+    return native
+  cpath
 
-proof_field_int(text: str, key: str): i64
-    _, _, val = text:find('"' .. key .. '":(%d+)')
-    if val == nil
-        return 0
-    val:to(i64)
+proof_field_int: i64 = (text: str, key: str)
+  _, _, val = text:find("\"" .. key .. "\":(%d+)")
+  if val == nil
+    return 0
+  val:to(i64)
 
-proof_field_str(text: str, key: str): str
-    _, _, val = text:find('"' .. key .. '":"([^"]+)"')
-    if val == nil
-        return ""
-    val
+proof_field_str: str = (text: str, key: str)
+  _, _, val = text:find("\"" .. key .. "\":\"([^\"]+)\"")
+  if val == nil
+    return ""
+  val
 
-load_emission(path: str): any
-    text = script.fs_read(path)
-    out = {
-        boxes = proof_field_int(text, "boxes"),
-        unboxes = proof_field_int(text, "unboxes"),
-        generic_table_ops = proof_field_int(text, "generic_table_ops"),
-        evidence_class = proof_field_str(text, "evidence_class"),
-    }
-    out
+load_emission: any = (path: str)
+  text = script.fs_read(path)
+  out = {
+    boxes = proof_field_int(text, "boxes"),
+    unboxes = proof_field_int(text, "unboxes"),
+    generic_table_ops = proof_field_int(text, "generic_table_ops"),
+    evidence_class = proof_field_str(text, "evidence_class")
+  }
+  out
 
-artifact_fingerprint(path: str): str
-    sha256(script.fs_read(path))
+artifact_fingerprint: str = (path: str)
+  sha256(script.fs_read(path))
 
-bench_profiles(): any
-    out = {}
-    out[1] = { id = "c-dynamic", native = 0, expect_results = 10 }
-    out[2] = { id = "c-specialized", native = 0, expect_results = 10 }
-    out[3] = { id = "direct", native = 1, expect_results = 0 }
-    out
+bench_profiles: any = ()
+  out = {}
+  out(1) = { id = "c-dynamic", native = 0, expect_results = 10 }
+  out(2) = { id = "c-specialized", native = 0, expect_results = 10 }
+  out(3) = { id = "direct", native = 1, expect_results = 0 }
+  out
 
 M = {
-    sha256 = sha256,
-    result_hash = result_hash,
-    count_results = count_results,
-    artifact_path = artifact_path,
-    load_emission = load_emission,
-    artifact_fingerprint = artifact_fingerprint,
-    bench_profiles = bench_profiles,
+  sha256 = sha256,
+  result_hash = result_hash,
+  count_results = count_results,
+  artifact_path = artifact_path,
+  load_emission = load_emission,
+  artifact_fingerprint = artifact_fingerprint,
+  bench_profiles = bench_profiles
 }

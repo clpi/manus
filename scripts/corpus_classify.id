@@ -77,11 +77,11 @@ cut: any = (s: str)
   while i <= n
     if s:byte(i) == 10
       if i > start
-        out[out:len() + 1] = s:sub(start, i - 1)
+        out(out:len() + 1) = s:sub(start, i - 1)
       start = i + 1
     i = i + 1
   if start <= n
-    out[out:len() + 1] = s:sub(start, n)
+    out(out:len() + 1) = s:sub(start, n)
   out
 
 starts: bool = (s: str, prefix: str)
@@ -191,10 +191,10 @@ main: i64 = ()
     c: str = field(line, 1)
     p: str = field(line, 2)
     if known(c) and p != "" and field(line, 3) == ""
-      rcls[rcls:len() + 1] = c
-      rpre[rpre:len() + 1] = p
-      rpin[rpin:len() + 1] = tier(p)
-      rhit[rhit:len() + 1] = 0
+      rcls(rcls:len() + 1) = c
+      rpre(rpre:len() + 1) = p
+      rpin(rpin:len() + 1) = tier(p)
+      rhit(rhit:len() + 1) = 0
   if rcls:len() == 0
     print("corpus_classify: FAIL — docs/spec/corpus.md yielded 0 rules; the parse is broken")
     return 3
@@ -239,7 +239,7 @@ main: i64 = ()
   std.script.fs_write(needles, pats)
   refs = {}
   for i, h in cut(shell("grep -o -F -f {needles} {haystack} 2>/dev/null | sort -u"))
-    refs[h] = 1
+    refs(h) = 1
 
   # A subtree carrying its own `build.id` is an APPLICATION. It is reached
   # by its own build entry point, not by duo's gates, so "no inbound
@@ -251,7 +251,7 @@ main: i64 = ()
     if base(f) == "build.id"
       d: str = parent(f)
       if d != ""
-        approot[d] = 1
+        approot(d) = 1
         napp = napp + 1
   napps: str = napp:to(str)
   print("  apps      {napps} in-tree application roots (own build.id)")
@@ -280,16 +280,16 @@ main: i64 = ()
     pin: str = ""
     j: i64 = 1
     while j <= rpre:len() and cls == ""
-      if starts(f, rpre[j])
-        cls = rcls[j]
-        pin = rpin[j]
-        rhit[j] = rhit[j] + 1
+      if starts(f, rpre(j))
+        cls = rcls(j)
+        pin = rpin(j)
+        rhit(j) = rhit(j) + 1
       j = j + 1
 
-    referenced: bool = refs[f] == 1 or refs[base(f)] == 1
+    referenced: bool = refs(f) == 1 or refs(base(f)) == 1
     fdir: str = parent(f)
     while depth(fdir) >= 1
-      if refs[fdir] == 1
+      if refs(fdir) == 1
         referenced = true
       fdir = parent(fdir)
     mark: str = "UNREF"
@@ -306,7 +306,7 @@ main: i64 = ()
       inapp: bool = false
       adir: str = parent(f)
       while adir != ""
-        if approot[adir] == 1
+        if approot(adir) == 1
           inapp = true
         adir = parent(adir)
       if not referenced and not starts(f, "lib/") and not inapp
@@ -390,13 +390,13 @@ main: i64 = ()
   k: i64 = 1
   while k <= rpre:len()
     flag: str = "  "
-    if rhit[k] == 0
+    if rhit(k) == 0
       flag = "!!"
       dead = dead + 1
-    cell: str = pad(rcls[k], 14)
-    pincell: str = pad(rpin[k], 9)
-    hits: str = pad(to(str)(rhit[k]), 8)
-    pre: str = rpre[k]
+    cell: str = pad(rcls(k), 14)
+    pincell: str = pad(rpin(k), 9)
+    hits: str = pad(to(str)(rhit(k)), 8)
+    pre: str = rpre(k)
     print("  {flag} {cell}{pincell}{hits}{pre}")
     k = k + 1
   if dead != 0

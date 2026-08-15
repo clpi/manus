@@ -16,15 +16,15 @@
 # writes instead of stale element registers.
 #
 # The C backend cannot compile this, so it is gated on the declared answer.
-bump(t: ptr): i64
-    t[2] = 99
-    0
+bump: i64 = (t: ptr)
+  t(2) = 99
+  0
 
-at(t: ptr, i: i64): i64
-    t[i]
+at: i64 = (t: ptr, i: i64)
+  t(i)
 
-main(): i64
-    a = { 10, 20, 30 }
-    z: i64 = bump(a)
-    r: i64 = at(a, 2)
-    r + z
+main: i64 = ()
+  a = { 10, 20, 30 }
+  z: i64 = bump(a)
+  r: i64 = at(a, 2)
+  r + z

@@ -3,93 +3,96 @@
 # Pair with `@autodiff` on loss functions; compiler marks bodies for future
 # comptime reverse-mode. This module provides a working tape today.
 
-tape_new(): any
-    return { ops = {}, n = 0 }
+tape_new: any = ()
+  return { ops = {}, n = 0 }
 
-tape_push(tape, op, inputs, output): any
-    tape.n = tape.n + 1
-    tape.ops[tape.n] = {
-        type = op,
-        inputs = inputs,
-        output = output,
-    }
-    return tape
+tape_push: any = (tape, op, inputs, output)
+  tape.n = tape.n + 1
+  tape.ops(tape.n) = {
+    type = op,
+    inputs = inputs,
+    output = output
+  }
+  return tape
 
-backward_relu(tape, idx, grad_out): any
-    op = tape.ops[idx]
-    x = op.inputs[1]
-    g = ml.tensor.zeros(x.rows, x.cols)
-    for i = 1, x.size
-        if x.data[i] > 0
-            g.data[i] = grad_out.data[i]
-        else
-            g.data[i] = 0.0
-    return g
+backward_relu: any = (tape, idx, grad_out)
+  op = tape.ops(idx)
+  x = op.inputs(1)
+  g = ml.tensor.zeros(x.rows, x.cols)
+  for i = 1, x.size
+    if x.data(i) > 0
+      g.data(i) = grad_out.data(i)
+    else
+      g.data(i) = 0.0
+  return g
 
-backward_linear(tape, idx, grad_out): any
-    op = tape.ops[idx]
-    x = op.inputs[1]
-    layer = op.inputs[2]
-    # dW = x^T @ grad_out, db = sum(grad_out), dx = grad_out @ W^T
-    dx = ml.tensor.matmul(grad_out, ml.tensor.transpose(layer.weight))
-    if layer.grad_weight == nil
-        layer.grad_weight = ml.tensor.zeros(layer.in_features, layer.out_features)
-        layer.grad_bias = ml.tensor.zeros(1, layer.out_features)
-    for j = 1, layer.out_features
-        gb = 0.0
-        for i = 1, x.rows
-            gb += grad_out.data[(i - 1) * layer.out_features + j]
-        layer.grad_bias.data[j] = gb
-        for i = 1, layer.in_features
-            s = 0.0
-            for r = 1, x.rows
-                s += x.data[(r - 1) * layer.in_features + i] *
-                    grad_out.data[(r - 1) * layer.out_features + j]
-            layer.grad_weight.data[(i - 1) * layer.out_features + j] = s
-    return dx
+backward_linear: any = (tape, idx, grad_out)
+  op = tape.ops(idx)
+  x = op.inputs(1)
+  layer = op.inputs(2)
+  # dW = x^T @ grad_out, db = sum(grad_out), dx = grad_out @ W^T
+  dx = ml.tensor.matmul(grad_out, ml.tensor.transpose(layer.weight))
+  if layer.grad_weight == nil
+    layer.grad_weight = ml.tensor.zeros(layer.in_features, layer.out_features)
+    layer.grad_bias = ml.tensor.zeros(1, layer.out_features)
+  for j = 1, layer.out_features
+    gb = 0.0
+    for i = 1, x.rows
+      gb = gb + grad_out.data((i - 1) * layer.out_features + j)
+    layer.grad_bias.data(j) = gb
+    for i = 1, layer.in_features
+      s = 0.0
+      for r = 1, x.rows
+        s = s + x.data((r - 1) * layer.in_features + i) * grad_out.data((r - 1) * layer.out_features + j)
+      layer.grad_weight.data((i - 1) * layer.out_features + j) = s
+  return dx
 
-backward_softmax(tape, idx, grad_out): any
-    # Softmax backward: dL/dx_i = sum_j (dL/dy_j * (delta_ij * y_i - y_i * y_j))
-    # For a single sample (row), this simplifies to: grad_out * softmax_output - softmax_output * sum(grad_out * softmax_output)
-    op = tape.ops[idx]
-    y = op.output  # softmax output from forward pass
-    n = y.rows * y.cols
-    g = ml.tensor.zeros(y.rows, y.cols)
-    # Compute sum(grad_out * y) for each row
-    for row = 1, y.rows
-        dot = 0.0
-        for col = 1, y.cols
-            idx_flat = (row - 1) * y.cols + col
-            dot += grad_out.data[idx_flat] * y.data[idx_flat]
-        # g_i = y_i * (grad_out_i - dot)
-        for col = 1, y.cols
-            idx_flat = (row - 1) * y.cols + col
-            g.data[idx_flat] = y.data[idx_flat] * (grad_out.data[idx_flat] - dot)
-    return g
+backward_softmax: any = (tape, idx, grad_out)
+  # Softmax backward: dL/dx_i = sum_j (dL/dy_j * (delta_ij * y_i - y_i * y_j))
+  # For a single sample (row), this simplifies to: grad_out * softmax_output - softmax_output * sum(grad_out * softmax_output)
+  op = tape.ops(idx)
+  # softmax output from forward pass
+  y = op.output
+  n = y.rows * y.cols
+  g = ml.tensor.zeros(y.rows, y.cols)
+  # Compute sum(grad_out * y) for each row
+  for row = 1, y.rows
+    dot = 0.0
+    for col = 1, y.cols
+      idx_flat = (row - 1) * y.cols + col
+      dot = dot + grad_out.data(idx_flat) * y.data(idx_flat)
+    # g_i = y_i * (grad_out_i - dot)
+    for col = 1, y.cols
+      idx_flat = (row - 1) * y.cols + col
+      g.data(idx_flat) = y.data(idx_flat) * (grad_out.data(idx_flat) - dot)
+  return g
 
-backward_layer(tape, idx, grad_out): any
-    op = tape.ops[idx]
-    if op.type == "linear" return backward_linear(tape, idx, grad_out)
-    if op.type == "relu" return backward_relu(tape, idx, grad_out)
-    if op.type == "softmax" return backward_softmax(tape, idx, grad_out)
-    return grad_out
+backward_layer: any = (tape, idx, grad_out)
+  op = tape.ops(idx)
+  if op.type == "linear"
+    return backward_linear(tape, idx, grad_out)
+  if op.type == "relu"
+    return backward_relu(tape, idx, grad_out)
+  if op.type == "softmax"
+    return backward_softmax(tape, idx, grad_out)
+  return grad_out
 
-backward(tape, grad_out): any
-    g = grad_out
-    i = tape.n
-    while i >= 1
-        g = backward_layer(tape, i, g)
-        i -= 1
-    return g
+backward: any = (tape, grad_out)
+  g = grad_out
+  i = tape.n
+  while i >= 1
+    g = backward_layer(tape, i, g)
+    i = i - 1
+  return g
 
 # Finite-difference check for scalar losses (debug / tests)
-grad_check(f, x, eps): f64
-    if eps == nil eps = 1e-4
-    y0 = f(x)
-    y1 = f(x + eps)
-    return (y1 - y0) / eps
+grad_check: f64 = (f, x, eps)
+  if eps == nil
+    eps = 0.0001
+  y0 = f(x)
+  y1 = f(x + eps)
+  return (y1 - y0) / eps
 
 # `@grad(loss_fn, wrt)` companion: returns gradient descriptor for autodiff / tape
-grad(loss_fn, wrt): any
-    return { fn = loss_fn, wrt = wrt }
-
+grad: any = (loss_fn, wrt)
+  return { fn = loss_fn, wrt = wrt }

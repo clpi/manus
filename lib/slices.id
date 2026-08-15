@@ -10,7 +10,7 @@ clip: any = (arr: any, n: i64)
     n = 0
   i = n + 1
   while i <= len
-    arr[i] = nil
+    arr(i) = nil
     i = i + 1
   arr
 
@@ -20,7 +20,7 @@ clone: any = (arr: any)
   out = {}
   i = 1
   while i <= arr:len()
-    out[i] = arr[i]
+    out(i) = arr(i)
     i = i + 1
   out
 
@@ -31,13 +31,13 @@ compact: any = (arr: any, eq: any)
   if n <= 1
     return clone(arr)
   out = {}
-  out[1] = arr[1]
+  out(1) = arr(1)
   j = 1
   i = 2
   while i <= n
-    if not eq(arr[i], out[j])
+    if not eq(arr(i), out(j))
       j = j + 1
-      out[j] = arr[i]
+      out(j) = arr(i)
     i = i + 1
   out
 
@@ -46,7 +46,7 @@ contains: bool = (arr: any, v: any)
     return false
   i = 1
   while i <= arr:len()
-    if arr[i] == v
+    if arr(i) == v
       return true
     i = i + 1
   false
@@ -56,7 +56,7 @@ index: i64 = (arr: any, v: any)
     return 0 - 1
   i = 1
   while i <= arr:len()
-    if arr[i] == v
+    if arr(i) == v
       return i
     i = i + 1
   0 - 1
@@ -66,7 +66,7 @@ where: i64 = (arr: any, f: any)
     return 0 - 1
   i = 1
   while i <= arr:len()
-    if f(arr[i])
+    if f(arr(i))
       return i
     i = i + 1
   0 - 1
@@ -82,12 +82,12 @@ insert: any = (arr: any, i: i64, v: any)
   out = {}
   j = 1
   while j < i
-    out[j] = arr[j]
+    out(j) = arr(j)
     j = j + 1
-  out[i] = v
+  out(i) = v
   j = i
   while j <= n
-    out[j + 1] = arr[j]
+    out(j + 1) = arr(j)
     j = j + 1
   out
 
@@ -101,7 +101,7 @@ delete: any = (arr: any, i: i64)
   j = 1
   while j <= n
     if j != i
-      out[out:len() + 1] = arr[j]
+      out(out:len() + 1) = arr(j)
     j = j + 1
   out
 
@@ -111,21 +111,21 @@ reject: any = (arr: any, f: any)
   out = {}
   i = 1
   while i <= arr:len()
-    if not f(arr[i])
-      out[out:len() + 1] = arr[i]
+    if not f(arr(i))
+      out(out:len() + 1) = arr(i)
     i = i + 1
   out
 
-reverse: void = (arr: any)
+reverse = (arr: any)
   if arr == nil
     return
   n = arr:len()
   i = 1
   j = n
   while i < j
-    tmp = arr[i]
-    arr[i] = arr[j]
-    arr[j] = tmp
+    tmp = arr(i)
+    arr(i) = arr(j)
+    arr(j) = tmp
     i = i + 1
     j = j - 1
 
@@ -142,12 +142,12 @@ replace: any = (arr: any, i: i64, j: i64, v: any)
   out = {}
   k = 1
   while k < i
-    out[k] = arr[k]
+    out(k) = arr(k)
     k = k + 1
-  out[i] = v
+  out(i) = v
   k = j + 1
   while k <= n
-    out[out:len() + 1] = arr[k]
+    out(out:len() + 1) = arr(k)
     k = k + 1
   out
 
@@ -161,9 +161,9 @@ bsearch: any = (arr: any, v: any, less: any)
   hi = arr:len()
   while lo < hi
     mid = lo + (hi - lo) / 2
-    if less(v, arr[mid + 1])
+    if less(v, arr(mid + 1))
       hi = mid
-    else(less(arr[mid + 1], v))
+    else(less(arr(mid + 1), v))
       lo = mid + 1
     else
       return mid + 1, true
@@ -175,11 +175,11 @@ max: any = (arr: any, less: any)
   n = arr:len()
   if n == 0
     return nil
-  m = arr[1]
+  m = arr(1)
   i = 2
   while i <= n
-    if less(m, arr[i])
-      m = arr[i]
+    if less(m, arr(i))
+      m = arr(i)
     i = i + 1
   m
 
@@ -189,11 +189,11 @@ min: any = (arr: any, less: any)
   n = arr:len()
   if n == 0
     return nil
-  m = arr[1]
+  m = arr(1)
   i = 2
   while i <= n
-    if less(arr[i], m)
-      m = arr[i]
+    if less(arr(i), m)
+      m = arr(i)
     i = i + 1
   m
 
@@ -203,7 +203,7 @@ sorted: bool = (arr: any, less: any)
   n = arr:len()
   i = 2
   while i <= n
-    if less(arr[i], arr[i - 1])
+    if less(arr(i), arr(i - 1))
       return false
     i = i + 1
   true
@@ -219,8 +219,8 @@ chunk: any = (arr: any, n: i64)
     c = {}
     j = 0
     while j < n and i + j <= arr:len()
-      c[j + 1] = arr[i + j]
+      c(j + 1) = arr(i + j)
       j = j + 1
-    out[out:len() + 1] = c
+    out(out:len() + 1) = c
     i = i + n
   out

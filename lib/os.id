@@ -1,26 +1,26 @@
 # os home — world table projection only.
 # No @c.emit. No lua. Use os.args[n], os.env[key], io:read(path) at call sites.
 
-read_file(path: str): any
-    if path == nil
-        return ""
-    io:read(path)
+read_file: any = (path: str)
+  if path == nil
+    return ""
+  io:read(path)
 
-write_file(path: str, data: any): bool
-    if path == nil
-        return false
-    if data == nil
-        return false
-    io:write(data)
-    true
+write_file: bool = (path: str, data: any)
+  if path == nil
+    return false
+  if data == nil
+    return false
+  io:write(data)
+  true
 
-getenv(name: str): any
-    if name == nil
-        return ""
-    v = os.env[name]
-    if v == nil
-        return ""
-    v
+getenv: any = (name: str)
+  if name == nil
+    return ""
+  v = os.env(name)
+  if v == nil
+    return ""
+  v
 
-args(): any
-    os.args
+args: any = ()
+  os.args

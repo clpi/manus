@@ -19,15 +19,15 @@ _pass = 0
 _fail = 0
 _skip = 0
 
-_ok: void = (m: str)
+_ok = (m: str)
   print("  PASS: " .. m)
   _pass = _pass + 1
 
-_bad: void = (m: str)
+_bad = (m: str)
   print("  FAIL: " .. m)
   _fail = _fail + 1
 
-_skipped: void = (m: str, why: str)
+_skipped = (m: str, why: str)
   print("  SKIP: " .. m .. " (" .. why .. ")")
   _skip = _skip + 1
 
@@ -59,7 +59,7 @@ _compile: str = (duo: str, src: str)
 _contains: bool = (hay: str, needle: str)
   hay:find(needle, 1, true) != nil
 
-_assert_output: void = (duo: str, wasmtime: str, label: str, src: str, expected: str)
+_assert_output = (duo: str, wasmtime: str, label: str, src: str, expected: str)
   if not _have(wasmtime)
     _skipped(label, "wasmtime not found")
     return
@@ -76,7 +76,7 @@ _assert_output: void = (duo: str, wasmtime: str, label: str, src: str, expected:
     print("      expected: " .. expected:gsub("\n", "\\n"))
     print("      got:      " .. actual:gsub("\n", "\\n"))
 
-_assert_structure: void = (duo: str, wasmtime: str, objdump: str, label: str, src: str)
+_assert_structure = (duo: str, wasmtime: str, objdump: str, label: str, src: str)
   if not _have(wasmtime)
     _skipped(label .. " (structure: compile)", "wasmtime not found")
     return
@@ -177,13 +177,13 @@ main: i64 = ()
 
   for _i, c in cases
     print("")
-    print("--- " .. c[2] .. " ---")
-    if not std.script.fs_exists(c[1])
-      _bad(c[2] .. " — missing source " .. c[1])
+    print("--- " .. c(2) .. " ---")
+    if not std.script.fs_exists(c(1))
+      _bad(c(2) .. " — missing source " .. c(1))
     else
-      _assert_output(duo, wasmtime, c[2], c[1], c[3])
-      if c[4]
-        _assert_structure(duo, wasmtime, objdump, _stem(c[1]), c[1])
+      _assert_output(duo, wasmtime, c(2), c(1), c(3))
+      if c(4)
+        _assert_structure(duo, wasmtime, objdump, _stem(c(1)), c(1))
 
   # A validate sweep over the WHOLE corpus, not just the eight cases above.
   # The named cases assert behaviour; this asserts that nothing in

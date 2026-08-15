@@ -20,12 +20,12 @@ format_int: str = (v: any, base: any)
     n = 0 - n
   out = {}
   while n > 0
-    out[out:len() + 1] = digits:sub(n % base + 1, n % base + 1)
+    out(out:len() + 1) = digits:sub(n % base + 1, n % base + 1)
     n = n / base:floor()
   s = ""
   i = out:len()
   while i >= 1
-    s = s .. out[i]
+    s = s .. out(i)
     i = i - 1
   if neg
     s = "-" .. s
@@ -120,9 +120,9 @@ parse_float: any = (s: str)
     s = s:sub(2)
   # match numeric pattern: digits . digits [eE [+-] digits]
   # Use Lua pattern to validate
-  m = string["match"](s, "^(%d+%.?%d*[eE]?[+-]?%d*)$")
+  m = string("match")(s, "^(%d+%.?%d*[eE]?[+-]?%d*)$")
   if m == nil
-    m = string["match"](s, "^(%d*%.%d+[eE]?[+-]?%d*)$")
+    m = string("match")(s, "^(%d*%.%d+[eE]?[+-]?%d*)$")
   if m == nil
     return 0.0, false
   v = s:to(i64)
@@ -155,21 +155,21 @@ quote: str = (s: str)
     ch = s:sub(i, i)
     b = s:byte(i)
     if ch == "\\"
-      out[out:len() + 1] = "\\\\"
+      out(out:len() + 1) = "\\\\"
     else(ch == "\"")
-      out[out:len() + 1] = "\\\""
+      out(out:len() + 1) = "\\\""
     else(ch == "\n")
-      out[out:len() + 1] = "\\n"
+      out(out:len() + 1) = "\\n"
     else(ch == "\r")
-      out[out:len() + 1] = "\\r"
+      out(out:len() + 1) = "\\r"
     else(ch == "\t")
-      out[out:len() + 1] = "\\t"
+      out(out:len() + 1) = "\\t"
     else(b < 32)
-      out[out:len() + 1] = "\\x%02X":format(b)
+      out(out:len() + 1) = "\\x%02X":format(b)
     else
-      out[out:len() + 1] = ch
+      out(out:len() + 1) = ch
     i = i + 1
-  out[out:len() + 1] = "\""
+  out(out:len() + 1) = "\""
   out:concat()
 
 # unquote: remove surrounding quotes and interpret escape sequences.
@@ -191,24 +191,24 @@ unquote: str = (s: str)
     if ch == "\\" and i < inner:len()
       nxt = inner:sub(i + 1, i + 1)
       if nxt == "n"
-        out[out:len() + 1] = "\n"
+        out(out:len() + 1) = "\n"
       else(nxt == "t")
-        out[out:len() + 1] = "\t"
+        out(out:len() + 1) = "\t"
       else(nxt == "r")
-        out[out:len() + 1] = "\r"
+        out(out:len() + 1) = "\r"
       else(nxt == "\\")
-        out[out:len() + 1] = "\\"
+        out(out:len() + 1) = "\\"
       else(nxt == "\"")
-        out[out:len() + 1] = "\""
+        out(out:len() + 1) = "\""
       else(nxt == "'")
-        out[out:len() + 1] = "'"
+        out(out:len() + 1) = "'"
       else(nxt == "0")
-        out[out:len() + 1] = 0:char()
+        out(out:len() + 1) = 0:char()
       else
-        out[out:len() + 1] = nxt
+        out(out:len() + 1) = nxt
       i = i + 2
     else
-      out[out:len() + 1] = ch
+      out(out:len() + 1) = ch
       i = i + 1
   out:concat()
 

@@ -1,70 +1,70 @@
 # testing.quick — property-based testing (mirrors Go's testing/quick)
 # Generates random test values and checks that properties hold for all of them.
 
+default_config: any = ()
+  { max_count = 100, max_count_scale = 10 }
 
-default_config(): any
-    {max_count = 100, max_count_scale = 10}
+gen_bool: bool = ()
+  random.int(0, 1) == 0
 
-gen_bool(): bool
-    random.int(0, 1) == 0
+gen_int: i64 = (max: i64)
+  random.int(-max, max)
 
-gen_int(max: i64): i64
-    random.int(-max, max)
+gen_float: any = ()
+  random.float() * 1000
 
-gen_float(): any
-    random.float() * 1000
+gen_string: str = (max_len: i64)
+  len = random.int(0, max_len)
+  s = ""
+  for i = 1, len
+    s = s .. random.int(32, 126):char()
+  s
 
-gen_string(max_len: i64): str
-    len = random.int(0, max_len)
-    s = ""
-    for i = 1, len
-        s = s .. random.int(32, 126):char()
-    s
+gen_table: any = (max_entries: i64)
+  n = random.int(0, max_entries)
+  t = {}
+  for i = 1, n
+    t(random.int(0, 1000)) = random.int(-1000, 1000)
+  t
 
-gen_table(max_entries: i64): any
-    n = random.int(0, max_entries)
-    t = {}
-    for i = 1, n
-        t[random.int(0, 1000)] = random.int(-1000, 1000)
-    t
+gen: any = (typ: str, max: i64, gen_config: any)
+  if typ == "bool"
+    return gen_bool()
+  if typ == "int" or typ == "i64"
+    return gen_int(max)
+  if typ == "float"
+    return gen_float()
+  if typ == "str" or typ == "string"
+    return gen_string(max)
+  if typ == "table"
+    return gen_table(max)
+  nil
 
-gen(typ: str, max: i64, gen_config: any): any
-    if typ == "bool"
-        return gen_bool()
-    if typ == "int" or typ == "i64"
-        return gen_int(max)
-    if typ == "float"
-        return gen_float()
-    if typ == "str" or typ == "string"
-        return gen_string(max)
-    if typ == "table"
-        return gen_table(max)
-    nil
+check: bool = (fn: any, config: any)
+  if config == nil
+    config = default_config()
+  max_count = config.max_count
+  if has(.max_count_scale)(config)
+    max_count = max_count * config.max_count_scale
+  for i = 1, max_count
+    ok, err = pcall(fn)
+    if not ok
+      return false, err
+  true
 
-check(fn: any, config: any): bool
-    if config == nil config = default_config()
-    max_count = config.max_count
-    if has(.max_count_scale)(config)
-        max_count *= config.max_count_scale
-    for i = 1, max_count
-        ok, err = pcall(fn)
-        if not ok
-            return false, err
-    true
+check_equal: bool = (fn: any, ref: any, config: any)
+  if config == nil
+    config = default_config()
+  max_count = config.max_count * (config.max_count_scale or 1)
+  for i = 1, max_count
+    args = {}
+    for j = 1, 10
+      args(j) = gen("int", 100, config)
+    result = fn(args)
+    expected = ref(args)
+    if result != expected
+      return false, "mismatch at iteration " .. i
+  true
 
-check_equal(fn: any, ref: any, config: any): bool
-    if config == nil config = default_config()
-    max_count = config.max_count * (config.max_count_scale or 1)
-    for i = 1, max_count
-        args = {}
-        for j = 1, 10
-            args[j] = gen("int", 100, config)
-        result = fn(args)
-        expected = ref(args)
-        if result != expected
-            return false, "mismatch at iteration " .. i
-    true
-
-value(t: any): any
-    t
-
+value: any = (t: any)
+  t

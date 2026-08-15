@@ -9,212 +9,213 @@ M = {}
 # ChaCha20 (RFC 8439)
 # ═══════════════════════════════════════════════════════════════
 
-chacha20_quarter(state: any, a: i64, b: i64, c: i64, d: i64): void
-    state[a] = state[a] + state[b]
-    state[d] = state[d] ~ state[a]
-    state[d] = (state[d] << 16) | (state[d] >> 16)
+chacha20_quarter = (state: any, a: i64, b: i64, c: i64, d: i64)
+  state(a) = state(a) + state(b)
+  state(d) = state(d) ~ state(a)
+  state(d) = state(d) << 16 | state(d) >> 16
 
-    state[c] = state[c] + state[d]
-    state[b] = state[b] ~ state[c]
-    state[b] = (state[b] << 12) | (state[b] >> 20)
+  state(c) = state(c) + state(d)
+  state(b) = state(b) ~ state(c)
+  state(b) = state(b) << 12 | state(b) >> 20
 
-    state[a] = state[a] + state[b]
-    state[d] = state[d] ~ state[a]
-    state[d] = (state[d] << 8) | (state[d] >> 24)
+  state(a) = state(a) + state(b)
+  state(d) = state(d) ~ state(a)
+  state(d) = state(d) << 8 | state(d) >> 24
 
-    state[c] = state[c] + state[d]
-    state[b] = state[b] ~ state[c]
-    state[b] = (state[b] << 7) | (state[b] >> 25)
+  state(c) = state(c) + state(d)
+  state(b) = state(b) ~ state(c)
+  state(b) = state(b) << 7 | state(b) >> 25
 
-chacha20_block(key: any, counter: i64, nonce: any): any
-    # "expand 32-byte k" constant
-    state = {
-        0x65787061, 0x6E642033, 0x322D6279, 0x7465206B,
-    }
-    # Load key (8 x 32-bit words)
-    i = 0
-    while i < 8
-        off = i * 4
-        state[state:len() + 1] = key:byte(off + 1) |
-            (key:byte(off + 2) << 8) |
-            (key:byte(off + 3) << 16) |
-            (key:byte(off + 4) << 24)
-        i += 1
-    # Counter
-    state[state:len() + 1] = counter & 0xFFFFFFFF
-    # Nonce (3 x 32-bit words)
-    i = 0
-    while i < 3
-        off = i * 4
-        state[state:len() + 1] = nonce:byte(off + 1) |
-            (nonce:byte(off + 2) << 8) |
-            (nonce:byte(off + 3) << 16) |
-            (nonce:byte(off + 4) << 24)
-        i += 1
+chacha20_block: any = (key: any, counter: i64, nonce: any)
+  # "expand 32-byte k" constant
+  state = {
+    1702391905,
+    1852055603,
+    841835129,
+    1952784491
+  }
+  # Load key (8 x 32-bit words)
+  i = 0
+  while i < 8
+    off = i * 4
+    state(state:len() + 1) = key:byte(off + 1) | key:byte(off + 2) << 8 | key:byte(off + 3) << 16 | key:byte(off + 4) << 24
+    i = i + 1
+  # Counter
+  state(state:len() + 1) = counter & 4294967295
+  # Nonce (3 x 32-bit words)
+  i = 0
+  while i < 3
+    off = i * 4
+    state(state:len() + 1) = nonce:byte(off + 1) | nonce:byte(off + 2) << 8 | nonce:byte(off + 3) << 16 | nonce:byte(off + 4) << 24
+    i = i + 1
 
-    # Working state = copy of initial state
-    working = {}
-    for i = 1, 16 do working[i] = state[i]
+  # Working state = copy of initial state
+  working = {}
+  for i = 1, 16
+    working(i) = state(i)
 
-    # 20 rounds (10 double rounds)
-    round = 0
-    while round < 10
-        # Column rounds
-        chacha20_quarter(working, 1, 5, 9, 13)
-        chacha20_quarter(working, 2, 6, 10, 14)
-        chacha20_quarter(working, 3, 7, 11, 15)
-        chacha20_quarter(working, 4, 8, 12, 16)
-        # Diagonal rounds
-        chacha20_quarter(working, 1, 6, 11, 16)
-        chacha20_quarter(working, 2, 7, 12, 13)
-        chacha20_quarter(working, 3, 8, 9, 14)
-        chacha20_quarter(working, 4, 5, 10, 15)
-        round += 1
+  # 20 rounds (10 double rounds)
+  round = 0
+  while round < 10
+    # Column rounds
+    chacha20_quarter(working, 1, 5, 9, 13)
+    chacha20_quarter(working, 2, 6, 10, 14)
+    chacha20_quarter(working, 3, 7, 11, 15)
+    chacha20_quarter(working, 4, 8, 12, 16)
+    # Diagonal rounds
+    chacha20_quarter(working, 1, 6, 11, 16)
+    chacha20_quarter(working, 2, 7, 12, 13)
+    chacha20_quarter(working, 3, 8, 9, 14)
+    chacha20_quarter(working, 4, 5, 10, 15)
+    round = round + 1
 
-    # Add initial state and serialize
-    result = {}
-    i = 1
-    while i <= 16
-        val = (working[i] + state[i]) & 0xFFFFFFFF
-        result[result:len() + 1] = val & 0xFF:char()
-        result[result:len() + 1] = (val >> 8) & 0xFF:char()
-        result[result:len() + 1] = (val >> 16) & 0xFF:char()
-        result[result:len() + 1] = (val >> 24) & 0xFF:char()
-        i += 1
-    return result:concat()
+  # Add initial state and serialize
+  result = {}
+  i = 1
+  while i <= 16
+    val = (working(i) + state(i)) & 4294967295
+    result(result:len() + 1) = val & 255:char()
+    result(result:len() + 1) = val >> 8 & 255:char()
+    result(result:len() + 1) = val >> 16 & 255:char()
+    result(result:len() + 1) = val >> 24 & 255:char()
+    i = i + 1
+  return result:concat()
 
 # ChaCha20 stream cipher: XOR keystream with plaintext
-chacha20_crypt(key: str, nonce: str, data: str): str
-    out = {}
-    pos = 1
-    counter = 1
-    nonce12 = nonce
-    # Pad nonce to 12 bytes
-    while nonce12:len() < 12
-        nonce12 = nonce12 .. 0:char()
+chacha20_crypt: str = (key: str, nonce: str, data: str)
+  out = {}
+  pos = 1
+  counter = 1
+  nonce12 = nonce
+  # Pad nonce to 12 bytes
+  while nonce12:len() < 12
+    nonce12 = nonce12 .. 0:char()
 
-    while pos <= data:len()
-        block = chacha20_block(key, counter, nonce12)
-        i = 1
-        while i <= 64 and pos <= data:len()
-            out[out:len() + 1] = data:byte(pos) ~ block:byte(i):char()
-            pos += 1
-            i += 1
-        counter += 1
-    return out:concat()
+  while pos <= data:len()
+    block = chacha20_block(key, counter, nonce12)
+    i = 1
+    while i <= 64 and pos <= data:len()
+      out(out:len() + 1) = data:byte(pos) ~ block:byte(i):char()
+      pos = pos + 1
+      i = i + 1
+    counter = counter + 1
+  return out:concat()
 
 # ═══════════════════════════════════════════════════════════════
 # HMAC-DRBG (NIST SP 800-90A)
 # Uses HMAC-SHA256 as the underlying primitive
 # ═══════════════════════════════════════════════════════════════
 
-hmac_drbg_new(entropy: str, nonce: str, personalization: str): any
-    # V = 0x00 * 32, K = 0x00 * 32
-    V = 0:char():rep(32)
-    K = 0:char():rep(32)
+hmac_drbg_new: any = (entropy: str, nonce: str, personalization: str)
+  # V = 0x00 * 32, K = 0x00 * 32
+  V = 0:char():rep(32)
+  K = 0:char():rep(32)
 
-    # entropy_input = entropy || nonce || personalization
-    entropy_input = entropy .. nonce .. personalization
+  # entropy_input = entropy || nonce || personalization
+  entropy_input = entropy .. nonce .. personalization
 
-    # Initial seeding: K = HMAC(K, V || 0x00 || entropy_input)
-    K = crypto.hmac.hmac_sha256_bytes(K, V .. 0:char() .. entropy_input)
-    # V = HMAC(K, V)
-    V = crypto.hmac.hmac_sha256_bytes(K, V)
+  # Initial seeding: K = HMAC(K, V || 0x00 || entropy_input)
+  K = crypto.hmac.hmac_sha256_bytes(K, V .. 0:char() .. entropy_input)
+  # V = HMAC(K, V)
+  V = crypto.hmac.hmac_sha256_bytes(K, V)
 
-    # Additional entropy rounds
-    K = crypto.hmac.hmac_sha256_bytes(K, V .. 1:char() .. entropy_input)
-    V = crypto.hmac.hmac_sha256_bytes(K, V)
+  # Additional entropy rounds
+  K = crypto.hmac.hmac_sha256_bytes(K, V .. 1:char() .. entropy_input)
+  V = crypto.hmac.hmac_sha256_bytes(K, V)
 
-    {
-        v = V,
-        k = K,
-        reseed_counter = 0,
-    }
+  {
+    v = V,
+    k = K,
+    reseed_counter = 0
+  }
 
-hmac_drbg_generate(state: any, num_bytes: i64): str
-    temp = {}
-    remaining = num_bytes
+hmac_drbg_generate: str = (state: any, num_bytes: i64)
+  temp = {}
+  remaining = num_bytes
 
-    while remaining > 0
-        # V = HMAC(K, V)
-        state.v = crypto.hmac.hmac_sha256_bytes(state.k, state.v)
-
-        # Take min(remaining, 32) bytes from V
-        take = remaining
-        if take > 32 take = 32
-        temp[temp:len() + 1] = state.v:sub(1, take)
-        remaining -= take
-
-    state.reseed_counter += 1
-    return temp:concat()
-
-hmac_drbg_reseed(state: any, entropy: str): void
-    # K = HMAC(K, V || 0x00 || entropy)
-    state.k = crypto.hmac.hmac_sha256_bytes(state.k, state.v .. 0:char() .. entropy)
+  while remaining > 0
     # V = HMAC(K, V)
     state.v = crypto.hmac.hmac_sha256_bytes(state.k, state.v)
 
-    # K = HMAC(K, V || 0x01 || entropy)
-    state.k = crypto.hmac.hmac_sha256_bytes(state.k, state.v .. 1:char() .. entropy)
-    # V = HMAC(K, V)
-    state.v = crypto.hmac.hmac_sha256_bytes(state.k, state.v)
+    # Take min(remaining, 32) bytes from V
+    take = remaining
+    if take > 32
+      take = 32
+    temp(temp:len() + 1) = state.v:sub(1, take)
+    remaining = remaining - take
 
-    state.reseed_counter = 0
+  state.reseed_counter = state.reseed_counter + 1
+  return temp:concat()
+
+hmac_drbg_reseed = (state: any, entropy: str)
+  # K = HMAC(K, V || 0x00 || entropy)
+  state.k = crypto.hmac.hmac_sha256_bytes(state.k, state.v .. 0:char() .. entropy)
+  # V = HMAC(K, V)
+  state.v = crypto.hmac.hmac_sha256_bytes(state.k, state.v)
+
+  # K = HMAC(K, V || 0x01 || entropy)
+  state.k = crypto.hmac.hmac_sha256_bytes(state.k, state.v .. 1:char() .. entropy)
+  # V = HMAC(K, V)
+  state.v = crypto.hmac.hmac_sha256_bytes(state.k, state.v)
+
+  state.reseed_counter = 0
 
 # ═══════════════════════════════════════════════════════════════
 # High-level random helpers
 # ═══════════════════════════════════════════════════════════════
 
 # Generate cryptographically random bytes
-random_bytes(n: i64): str
-    # Use OS entropy if available, else ChaCha20 with time-based seed
-    handle = io.popen("cat /dev/urandom 2>/dev/null | head -c " .. n)
-    if handle
-        data = handle:read(n) or ""
-        handle:close()
-        if data:len() == n return data
-    # Fallback: ChaCha20 with time-based entropy (not all zeros!)
-    time_seed = to(str)(os.clock()) .. to(str)(os.time()) .. to(str)(1:random(999999))
-    key = {}
-    i = 1
-    while i <= 32
-        if i <= time_seed:len()
-            key[i] = time_seed:byte(i)
-        else
-            key[i] = (i * 7 + 13) % 256  # deterministic but non-zero
-        i += 1
-    nonce = {}
-    i = 1
-    while i <= 12
-        if i <= time_seed:len()
-            nonce[i] = time_seed:byte(((i - 1) % time_seed:len()) + 1) ~ i
-        else
-            nonce[i] = (i * 11 + 3) % 256
-        i += 1
-    key_str = key:concat("")
-    nonce_str = nonce:concat("")
-    return chacha20_crypt(key_str, nonce_str, 0:char():rep(n))
+random_bytes: str = (n: i64)
+  # Use OS entropy if available, else ChaCha20 with time-based seed
+  handle = io.popen("cat /dev/urandom 2>/dev/null | head -c " .. n)
+  if handle
+    data = handle:read(n) or ""
+    handle:close()
+    if data:len() == n
+      return data
+  # Fallback: ChaCha20 with time-based entropy (not all zeros!)
+  time_seed = to(str)(os.clock()) .. to(str)(os.time()) .. to(str)(1:random(999999))
+  key = {}
+  i = 1
+  while i <= 32
+    if i <= time_seed:len()
+      key(i) = time_seed:byte(i)
+    else
+      # deterministic but non-zero
+      key(i) = (i * 7 + 13) % 256
+    i = i + 1
+  nonce = {}
+  i = 1
+  while i <= 12
+    if i <= time_seed:len()
+      nonce(i) = time_seed:byte((i - 1) % time_seed:len() + 1) ~ i
+    else
+      nonce(i) = (i * 11 + 3) % 256
+    i = i + 1
+  key_str = key:concat("")
+  nonce_str = nonce:concat("")
+  return chacha20_crypt(key_str, nonce_str, 0:char():rep(n))
 
 # Generate a random integer in [min, max]
-random_int(min: i64, max: i64): i64
-    range = max - min + 1
-    bytes = random_bytes(8)
-    val = 0
-    i = 0
-    while i < 8
-        val = (val << 8) | bytes:byte(i + 1)
-        i += 1
-    return min + (val % range)
+random_int: i64 = (min: i64, max: i64)
+  range = max - min + 1
+  bytes = random_bytes(8)
+  val = 0
+  i = 0
+  while i < 8
+    val = val << 8 | bytes:byte(i + 1)
+    i = i + 1
+  return min + val % range
 
 # Generate a random float in [0.0, 1.0)
-random_float(): f64
-    bytes = random_bytes(8)
-    val = 0
-    i = 0
-    while i < 8
-        val = (val << 8) | bytes:byte(i + 1)
-        i += 1
-    return val / 1.8446744073709552e19
+random_float: f64 = ()
+  bytes = random_bytes(8)
+  val = 0
+  i = 0
+  while i < 8
+    val = val << 8 | bytes:byte(i + 1)
+    i = i + 1
+  return val / 18446744073709552000.0
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

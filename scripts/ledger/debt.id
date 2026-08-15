@@ -4,189 +4,189 @@
 # build step; it prints the current queues that must reach zero.
 
 capture: str = (shellline: str)
-    gatecap(shellline)
+  gatecap(shellline)
 
 chomp: str = (text: str)
-    if text:len() == 0
-        return ""
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
+  if text:len() == 0
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
 
 cap: str = (shellline: str)
-    chomp(gatecap(shellline))
+  chomp(gatecap(shellline))
 
 status: i64 = (cmd: str)
-    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
+  cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
 
 lines: any = (text: str)
-    out = {}
-    start = 1
-    i = 1
-    n = text:len()
-    while i <= n
-        if text:byte(i) == 10
-            if i > start
-                out:push(text:sub(start, i - 1))
-            start = i + 1
-        i += 1
-    if start <= n
-        out:push(text:sub(start, n))
-    out
+  out = {}
+  start = 1
+  i = 1
+  n = text:len()
+  while i <= n
+    if text:byte(i) == 10
+      if i > start
+        out:push(text:sub(start, i - 1))
+      start = i + 1
+    i = i + 1
+  if start <= n
+    out:push(text:sub(start, n))
+  out
 
 list: any = (root: str, cmd: str)
-    lines(capture("cd '{root}' && {cmd}"))
+  lines(capture("cd '{root}' && {cmd}"))
 
 num: i64 = (root: str, cmd: str)
-    out = cap("cd '{root}' && {cmd}")
-    if out == ""
-        return 0
-    out:to(i64)
+  out = cap("cd '{root}' && {cmd}")
+  if out == ""
+    return 0
+  out:to(i64)
 
 starts: bool = (path: str, prefix: str)
-    path:len() >= prefix:len() and path:sub(1, prefix:len()) == prefix
+  path:len() >= prefix:len() and path:sub(1, prefix:len()) == prefix
 
 has: bool = (text: str, part: str)
-    pos = text:find(part, 1, true)
-    pos and pos > 0
+  pos = text:find(part, 1, true)
+  pos and pos > 0
 
 zigbucket: str = (path: str)
-    if path == "build.zig"
-        return "zigbuild"
-    if has(path, "test") or has(path, "fixture")
-        return "zigtest"
-    if has(path, "wasm")
-        return "zigwasm"
-    if has(path, "native") or has(path, "dnir") or has(path, "abi")
-        return "zignative"
-    if has(path, "semantic") or has(path, "graph") or has(path, "relation") or has(path, "realization")
-        return "zigsemantic"
-    if has(path, "lexer") or has(path, "parser") or has(path, "token") or has(path, "sema")
-        return "zigfront"
-    if has(path, "codegen") or has(path, "backend") or has(path, "lower") or has(path, "jit")
-        return "zigback"
-    "zigsupport"
+  if path == "build.zig"
+    return "zigbuild"
+  if has(path, "test") or has(path, "fixture")
+    return "zigtest"
+  if has(path, "wasm")
+    return "zigwasm"
+  if has(path, "native") or has(path, "dnir") or has(path, "abi")
+    return "zignative"
+  if has(path, "semantic") or has(path, "graph") or has(path, "relation") or has(path, "realization")
+    return "zigsemantic"
+  if has(path, "lexer") or has(path, "parser") or has(path, "token") or has(path, "sema")
+    return "zigfront"
+  if has(path, "codegen") or has(path, "backend") or has(path, "lower") or has(path, "jit")
+    return "zigback"
+  "zigsupport"
 
 zigcontrol: i64 = ()
-    bad = 0
-    if zigbucket("build.zig") != "zigbuild"
-        print("ledger/debt: fail control zigbuild")
-        bad += 1
-    if zigbucket("src/parser.zig") != "zigfront"
-        print("ledger/debt: fail control zigfront")
-        bad += 1
-    if zigbucket("src/native_backend.zig") != "zignative"
-        print("ledger/debt: fail control zignative")
-        bad += 1
-    if zigbucket("src/wasm_semantic.zig") != "zigwasm"
-        print("ledger/debt: fail control zigwasm")
-        bad += 1
-    if bad == 0
-        print("ledger/debt: control ok")
-    bad
+  bad = 0
+  if zigbucket("build.zig") != "zigbuild"
+    print("ledger/debt: fail control zigbuild")
+    bad = bad + 1
+  if zigbucket("src/parser.zig") != "zigfront"
+    print("ledger/debt: fail control zigfront")
+    bad = bad + 1
+  if zigbucket("src/native_backend.zig") != "zignative"
+    print("ledger/debt: fail control zignative")
+    bad = bad + 1
+  if zigbucket("src/wasm_semantic.zig") != "zigwasm"
+    print("ledger/debt: fail control zigwasm")
+    bad = bad + 1
+  if bad == 0
+    print("ledger/debt: control ok")
+  bad
 
 bootc: bool = (path: str)
-    starts(path, "src/") or starts(path, "lib/c/")
+  starts(path, "src/") or starts(path, "lib/c/")
 
 generated: bool = (root: str, path: str)
-    if path == "ext/vscode-duo/extension.js"
-        return status("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
-    if path == "ext/tree-sitter-duo/grammar.js"
-        return status("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
-    false
+  if path == "ext/vscode-duo/extension.js"
+    return status("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
+  if path == "ext/tree-sitter-duo/grammar.js"
+    return status("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
+  false
 
 partial: bool = (root: str, path: str)
-    false
+  false
 
 pickjs: any = (root: str, files: any, mode: str)
-    out = {}
-    for i = 1, files:len()
-        path = files[i]
-        isgen = generated(root, path)
-        ispart = partial(root, path)
-        if mode == "generated" and isgen
-            out:push(path)
-        if mode == "partial" and ispart
-            out:push(path)
-        if mode == "authored" and !isgen and !ispart
-            out:push(path)
-    out
+  out = {}
+  for i = 1, files:len()
+    path = files(i)
+    isgen = generated(root, path)
+    ispart = partial(root, path)
+    if mode == "generated" and isgen
+      out:push(path)
+    if mode == "partial" and ispart
+      out:push(path)
+    if mode == "authored" and not isgen and not ispart
+      out:push(path)
+  out
 
 pickc: any = (files: any, mode: str)
-    out = {}
-    for i = 1, files:len()
-        path = files[i]
-        isboot = bootc(path)
-        if mode == "boot" and isboot
-            out:push(path)
-        if mode == "oracle" and !isboot
-            out:push(path)
-    out
+  out = {}
+  for i = 1, files:len()
+    path = files(i)
+    isboot = bootc(path)
+    if mode == "boot" and isboot
+      out:push(path)
+    if mode == "oracle" and not isboot
+      out:push(path)
+  out
 
 show: i64 = (name: str, files: any)
-    count = files:len()
-    print("{name} {count}")
-    for i = 1, count
-        print("  {files[i]}")
-    count
+  count = files:len()
+  print("{name} {count}")
+  for i = 1, count
+    print("  {files[i]}")
+  count
 
 showzig: i64 = (name: str, files: any)
-    count = 0
-    for i = 1, files:len()
-        if zigbucket(files[i]) == name
-            count += 1
-    print("{name} {count}")
-    for i = 1, files:len()
-        if zigbucket(files[i]) == name
-            print("  {files[i]}")
-    count
+  count = 0
+  for i = 1, files:len()
+    if zigbucket(files(i)) == name
+      count = count + 1
+  print("{name} {count}")
+  for i = 1, files:len()
+    if zigbucket(files(i)) == name
+      print("  {files[i]}")
+  count
 
 shownum: i64 = (name: str, value: i64)
-    print("{name} {value}")
-    value
+  print("{name} {value}")
+  value
 
 main: i64 = ()
-    root = cap("git rev-parse --show-toplevel 2>/dev/null")
-    if root == ""
-        print("ledger/debt: fail no git root")
-        return 3
+  root = cap("git rev-parse --show-toplevel 2>/dev/null")
+  if root == ""
+    print("ledger/debt: fail no git root")
+    return 3
 
-    zig = list(root, "git ls-files '*.zig' | sort")
-    c = list(root, "git ls-files '*.[ch]' | sort")
-    cboot = pickc(c, "boot")
-    coracle = pickc(c, "oracle")
-    js = list(root, "git ls-files '*.js' | sort")
-    jsgen = pickjs(root, js, "generated")
-    jspart = pickjs(root, js, "partial")
-    jsauth = pickjs(root, js, "authored")
-    scratch = list(root, "find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort")
-    embedded = num(root, "git ls-files '*.id' | grep -v '^scripts/census/foreign.id$' | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*--' | grep -o -E '@(comp\\.)?c\\.(emit|include)' | wc -l")
+  zig = list(root, "git ls-files '*.zig' | sort")
+  c = list(root, "git ls-files '*.[ch]' | sort")
+  cboot = pickc(c, "boot")
+  coracle = pickc(c, "oracle")
+  js = list(root, "git ls-files '*.js' | sort")
+  jsgen = pickjs(root, js, "generated")
+  jspart = pickjs(root, js, "partial")
+  jsauth = pickjs(root, js, "authored")
+  scratch = list(root, "find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort")
+  embedded = num(root, "git ls-files '*.id' | grep -v '^scripts/census/foreign.id$' | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*--' | grep -o -E '@(comp\\.)?c\\.(emit|include)' | wc -l")
 
-    total = 0
-    bad = zigcontrol()
-    total += show("zig", zig)
-    showzig("zigbuild", zig)
-    showzig("zigfront", zig)
-    showzig("zigback", zig)
-    showzig("zignative", zig)
-    showzig("zigwasm", zig)
-    showzig("zigsemantic", zig)
-    showzig("zigtest", zig)
-    showzig("zigsupport", zig)
-    total += show("cboot", cboot)
-    show("coracle", coracle)
-    total += show("jsgenerated", jsgen)
-    total += show("jspartial", jspart)
-    total += show("jsauthored", jsauth)
-    total += show("scratch", scratch)
-    total += shownum("embeddedc", embedded)
+  total = 0
+  bad = zigcontrol()
+  total = total + show("zig", zig)
+  showzig("zigbuild", zig)
+  showzig("zigfront", zig)
+  showzig("zigback", zig)
+  showzig("zignative", zig)
+  showzig("zigwasm", zig)
+  showzig("zigsemantic", zig)
+  showzig("zigtest", zig)
+  showzig("zigsupport", zig)
+  total = total + show("cboot", cboot)
+  show("coracle", coracle)
+  total = total + show("jsgenerated", jsgen)
+  total = total + show("jspartial", jspart)
+  total = total + show("jsauthored", jsauth)
+  total = total + show("scratch", scratch)
+  total = total + shownum("embeddedc", embedded)
 
-    if total == 0
-        print("ledger/debt: pass total 0")
-        return bad
-    print("ledger/debt: fail total {total}")
-    1
+  if total == 0
+    print("ledger/debt: pass total 0")
+    return bad
+  print("ledger/debt: fail total {total}")
+  1

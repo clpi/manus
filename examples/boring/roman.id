@@ -3,17 +3,17 @@
 # expect: XIV XL MCMLXXXIV
 # @corpus current
 roman: str = (n: i64)
-    value = { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 }
-    glyph = { "M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I" }
-    out = ""
-    left = n
-    for i = 1, 13
-        v = value[i]
-        g = glyph[i]
-        while left >= v
-            out = "{out}{g}"
-            left -= v
-    out
+  value = { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 }
+  glyph = { "M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I" }
+  out = ""
+  left = n
+  for i = 1, 13
+    v = value(i)
+    g = glyph(i)
+    while left >= v
+      out = "{out}{g}"
+      left = left - v
+  out
 
 a = roman(14)
 b = roman(40)

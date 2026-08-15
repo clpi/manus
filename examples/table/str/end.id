@@ -3,7 +3,7 @@
 # expect: 97 98 0
 # @corpus current
 s = "ab"
-a = s[0]
-b = s[1]
-c = s[2]
+a = s(0)
+b = s(1)
+c = s(2)
 print("{a} {b} {c}")

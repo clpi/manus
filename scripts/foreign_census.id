@@ -64,43 +64,43 @@
 space = " "
 
 chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
-            break
-        n -= 1
-    text:sub(1, n)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32
+      break
+    n = n - 1
+  text:sub(1, n)
 
 capture: str = (cmd: str)
-    f = io.popen(cmd, "r")
-    if f == nil
-        return ""
-    out = ""
-    line = f:read("*a")
-    if line != nil
-        out = line
-    f:close()
-    chomp(out)
+  f = io.popen(cmd, "r")
+  if f == nil
+    return ""
+  out = ""
+  line = f:read("*a")
+  if line != nil
+    out = line
+  f:close()
+  chomp(out)
 
 cap: str = (cmd: str)
-    chomp(capture(cmd))
+  chomp(capture(cmd))
 
 status: i64 = (cmd: str)
-    to(i64)(cap("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
+  to(i64)(cap("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
 
 envor: str = (name: str, fallback: str)
-    v = os.env[name]
-    if v == nil or v == ""
-        fallback
-    else
-        v
+  v = os.env(name)
+  if v == nil or v == ""
+    fallback
+  else
+    v
 
-sh(cmd: str): i64
-    status(cmd)
+sh: i64 = (cmd: str)
+  status(cmd)
 
-count(cmd: str): i64
-    to(i64)(cap(cmd))
+count: i64 = (cmd: str)
+  to(i64)(cap(cmd))
 
 # The foreign population: tracked files whose extension is authored source in
 # another language. `.md`, `.json`, `.toml`, `.zon`, `.wat` and friends are
@@ -109,197 +109,197 @@ exts = "\\.(zig|c|h|hpp|cpp|cc|lua|sh|bash|zsh|fish|py|js|ts|rs|go|m|mm|java|rb|
 
 # One rule's field. Fields are whitespace-separated; field 3 runs to the end
 # of the line, which is where the termination condition or the licence lives.
-field(rules: str, i: i64, n: i64): str
-    cap("sed -n '{i}p' {rules} | tr -s ' ' | cut -d' ' -f{n}")
+field: str = (rules: str, i: i64, n: i64)
+  cap("sed -n '{i}p' {rules} | tr -s ' ' | cut -d' ' -f{n}")
 
-reason(rules: str, i: i64): str
-    cap("sed -n '{i}p' {rules} | tr -s ' ' | cut -d' ' -f3-")
+reason: str = (rules: str, i: i64)
+  cap("sed -n '{i}p' {rules} | tr -s ' ' | cut -d' ' -f3-")
 
 # Move every file matching this prefix out of `rest` and into `into`. The
 # prefix is escaped before it becomes a regex — `build.zig` must not match
 # `buildXzig`, and a classifier whose rules are quietly wildcards is a
 # classifier that assigns files nobody assigned.
-take(prefix: str, rest: str, into: str): i64
-    hits: i64 = count("grep -E \"^$(printf '%s' '{prefix}' | sed -e 's/[.[*^$]/\\\\&/g')\" {rest} 2>/dev/null | tee -a {into} | wc -l")
-    sh("grep -v -E \"^$(printf '%s' '{prefix}' | sed -e 's/[.[*^$]/\\\\&/g')\" {rest} > {rest}.keep 2>/dev/null; mv {rest}.keep {rest}")
-    hits
+take: i64 = (prefix: str, rest: str, into: str)
+  hits: i64 = count("grep -E \"^$(printf '%s' '{prefix}' | sed -e 's/[.[*^$]/\\\\&/g')\" {rest} 2>/dev/null | tee -a {into} | wc -l")
+  sh("grep -v -E \"^$(printf '%s' '{prefix}' | sed -e 's/[.[*^$]/\\\\&/g')\" {rest} > {rest}.keep 2>/dev/null; mv {rest}.keep {rest}")
+  hits
 
-pad(s: str, width: i64): str
-    out = s
-    while out:len() < width
-        out = out .. space
-    out
+pad: str = (s: str, width: i64)
+  out = s
+  while out:len() < width
+    out = out .. space
+  out
 
 # Classify a whole list against the whole rule set, first match wins, and
 # report what fell through. Used for the repository and, on a copy, for the
 # controls.
-sweep(rules: str, n: i64, work: str, list: str, tag: str): i64
-    sh("cp {list} {work}/rest{tag}")
-    sh("rm -f {work}/ledger{tag} {work}/oracle{tag} {work}/counts{tag}")
-    sh("touch {work}/ledger{tag} {work}/oracle{tag} {work}/counts{tag}")
-    i: i64 = 1
-    while i <= n
-        cls: str = field(rules, i, 1)
-        pre: str = field(rules, i, 2)
-        got: i64 = 0
-        if cls == "ledger"
-            got = take(pre, "{work}/rest{tag}", "{work}/ledger{tag}")
-        if cls == "oracle"
-            got = take(pre, "{work}/rest{tag}", "{work}/oracle{tag}")
-        sh("printf '%s\\n' {got} >> {work}/counts{tag}")
-        i += 1
-    count("wc -l < {work}/rest{tag}")
+sweep: i64 = (rules: str, n: i64, work: str, list: str, tag: str)
+  sh("cp {list} {work}/rest{tag}")
+  sh("rm -f {work}/ledger{tag} {work}/oracle{tag} {work}/counts{tag}")
+  sh("touch {work}/ledger{tag} {work}/oracle{tag} {work}/counts{tag}")
+  i: i64 = 1
+  while i <= n
+    cls: str = field(rules, i, 1)
+    pre: str = field(rules, i, 2)
+    got: i64 = 0
+    if cls == "ledger"
+      got = take(pre, "{work}/rest{tag}", "{work}/ledger{tag}")
+    if cls == "oracle"
+      got = take(pre, "{work}/rest{tag}", "{work}/oracle{tag}")
+    sh("printf '%s\\n' {got} >> {work}/counts{tag}")
+    i = i + 1
+  count("wc -l < {work}/rest{tag}")
 
-main(): i64
-    root = cap("git rev-parse --show-toplevel 2>/dev/null")
-    code: i64 = 0
-    if root == ""
-        print("foreign_census: FAIL — not inside a git work tree; the population cannot be listed")
+main: i64 = ()
+  root = cap("git rev-parse --show-toplevel 2>/dev/null")
+  code: i64 = 0
+  if root == ""
+    print("foreign_census: FAIL — not inside a git work tree; the population cannot be listed")
+    code = 3
+
+  work = ""
+  if code == 0
+    work = cap("mktemp -d")
+    if work == ""
+      print("foreign_census: FAIL — could not make a scratch directory")
+      code = 3
+
+  manifest = "{root}/docs/spec/foreign.md"
+  population: i64 = 0
+  rulecount: i64 = 0
+  if code == 0
+    sh("cd {root} && git ls-files | grep -E '{exts}' > {work}/all")
+    population = count("wc -l < {work}/all")
+    sh("grep -E '^(ledger|oracle)[[:space:]]' {manifest} > {work}/rules 2>/dev/null")
+    rulecount = count("wc -l < {work}/rules")
+
+    print("foreign_census — U8: toolchain@ foreign = ledger or oracle")
+    print("  root      {root}")
+    print("  rules     {rulecount} from docs/spec/foreign.md")
+    print("  foreign   {population} tracked files in another language")
+
+    if population == 0
+      print("foreign_census: FAIL — 0 foreign files found; the census did not run and a perfect score here would mean nothing")
+      code = 3
+    if code == 0 and rulecount == 0
+      print("foreign_census: FAIL — docs/spec/foreign.md yielded 0 rules; the parse is broken")
+      code = 3
+
+  # Rule wellformedness. A ledger row with no termination condition is the
+  # thing docs/foreign_code_ledger.md calls architectural debt by name.
+  if code == 0
+    noend: i64 = count("grep -c -E '^ledger' {work}/rules") - count("grep -E '^ledger' {work}/rules | grep -c 'until:'")
+    nolicence: i64 = count("grep -c -E '^oracle' {work}/rules") - count("grep -E '^oracle' {work}/rules | grep -c 'license:'")
+    if noend > 0
+      print("foreign_census: FAIL — {noend} ledger rule(s) carry no `until:` termination condition. A bootstrap exception with no stated end is not an exception, it is a permanent dependency.")
+      code = 1
+    if nolicence > 0
+      print("foreign_census: FAIL — {nolicence} oracle rule(s) carry no `license:` authority. A licence with nobody granting it is a preference.")
+      code = 1
+
+  # Controls 3 and 4, on a copy: the matcher must say no, and must say yes.
+  if code == 0
+    sh("cp {work}/all {work}/probe")
+    sh("printf 'zzznowhere/unclassified.py\\n' >> {work}/probe")
+    sh("printf 'src/zzzprobe.zig\\n' >> {work}/probe")
+    left: i64 = sweep("{work}/rules", rulecount, work, "{work}/probe", "p")
+    base: i64 = sweep("{work}/rules", rulecount, work, "{work}/all", "b")
+    if left != base + 1
+      print("foreign_census: FAIL — the negative control did not land in unclassified ({left} against a baseline of {base}); the matcher cannot say `no` and its 0 violations would be meaningless")
+      code = 3
+    if code == 0
+      planted: i64 = count("grep -c zzzprobe {work}/ledgerp")
+      if planted != 1
+        print("foreign_census: FAIL — the positive control did not land in `ledger`; the matcher is not assigning by rule")
         code = 3
 
-    work = ""
-    if code == 0
-        work = cap("mktemp -d")
-        if work == ""
-            print("foreign_census: FAIL — could not make a scratch directory")
-            code = 3
+  if code == 0
+    unclassified: i64 = sweep("{work}/rules", rulecount, work, "{work}/all", "r")
+    ledger: i64 = count("wc -l < {work}/ledgerr")
+    oracle: i64 = count("wc -l < {work}/oracler")
 
-    manifest = "{root}/docs/spec/foreign.md"
-    population: i64 = 0
-    rulecount: i64 = 0
-    if code == 0
-        sh("cd {root} && git ls-files | grep -E '{exts}' > {work}/all")
-        population = count("wc -l < {work}/all")
-        sh("grep -E '^(ledger|oracle)[[:space:]]' {manifest} > {work}/rules 2>/dev/null")
-        rulecount = count("wc -l < {work}/rules")
-
-        print("foreign_census — U8: toolchain@ foreign = ledger or oracle")
-        print("  root      {root}")
-        print("  rules     {rulecount} from docs/spec/foreign.md")
-        print("  foreign   {population} tracked files in another language")
-
-        if population == 0
-            print("foreign_census: FAIL — 0 foreign files found; the census did not run and a perfect score here would mean nothing")
-            code = 3
-        if code == 0 and rulecount == 0
-            print("foreign_census: FAIL — docs/spec/foreign.md yielded 0 rules; the parse is broken")
-            code = 3
-
-    # Rule wellformedness. A ledger row with no termination condition is the
-    # thing docs/foreign_code_ledger.md calls architectural debt by name.
-    if code == 0
-        noend: i64 = count("grep -c -E '^ledger' {work}/rules") - count("grep -E '^ledger' {work}/rules | grep -c 'until:'")
-        nolicence: i64 = count("grep -c -E '^oracle' {work}/rules") - count("grep -E '^oracle' {work}/rules | grep -c 'license:'")
-        if noend > 0
-            print("foreign_census: FAIL — {noend} ledger rule(s) carry no `until:` termination condition. A bootstrap exception with no stated end is not an exception, it is a permanent dependency.")
-            code = 1
-        if nolicence > 0
-            print("foreign_census: FAIL — {nolicence} oracle rule(s) carry no `license:` authority. A licence with nobody granting it is a preference.")
-            code = 1
-
-    # Controls 3 and 4, on a copy: the matcher must say no, and must say yes.
-    if code == 0
-        sh("cp {work}/all {work}/probe")
-        sh("printf 'zzznowhere/unclassified.py\\n' >> {work}/probe")
-        sh("printf 'src/zzzprobe.zig\\n' >> {work}/probe")
-        left: i64 = sweep("{work}/rules", rulecount, work, "{work}/probe", "p")
-        base: i64 = sweep("{work}/rules", rulecount, work, "{work}/all", "b")
-        if left != base + 1
-            print("foreign_census: FAIL — the negative control did not land in unclassified ({left} against a baseline of {base}); the matcher cannot say `no` and its 0 violations would be meaningless")
-            code = 3
-        if code == 0
-            planted: i64 = count("grep -c zzzprobe {work}/ledgerp")
-            if planted != 1
-                print("foreign_census: FAIL — the positive control did not land in `ledger`; the matcher is not assigning by rule")
-                code = 3
+    # Control 2: the accounting closes, or a file vanished.
+    if ledger + oracle + unclassified != population
+      print("foreign_census: FAIL — the accounting does not close: {ledger} ledger + {oracle} oracle + {unclassified} unclassified is not {population}. A file fell out of the classifier.")
+      code = 3
 
     if code == 0
-        unclassified: i64 = sweep("{work}/rules", rulecount, work, "{work}/all", "r")
-        ledger: i64 = count("wc -l < {work}/ledgerr")
-        oracle: i64 = count("wc -l < {work}/oracler")
+      print("")
+      print("  class          files   licence")
+      a: str = pad(ledger:to(str), 8)
+      b: str = pad(oracle:to(str), 8)
+      c: str = pad(unclassified:to(str), 8)
+      print("  ledger         {a}bootstrap debt; shrinks; every rule names its end")
+      print("  oracle         {b}test equipment; never on the shipping path")
+      print("  unclassified   {c}VIOLATION — neither licence applies")
+      print("")
+      # Per-rule counts are NET of the rules above them, because first
+      # match wins: printing raw prefix hits would double-count
+      # `examples/compile_fail/` under `examples/` and the column would
+      # not sum to the class totals.
+      print("  by rule (net of earlier rules; first match wins):")
+      i: i64 = 1
+      while i <= rulecount
+        cls: str = field("{work}/rules", i, 1)
+        pre: str = field("{work}/rules", i, 2)
+        why: str = reason("{work}/rules", i)
+        n: i64 = count("sed -n '{i}p' {work}/countsr")
+        pc: str = pad(cls, 9)
+        pp: str = pad(pre, 30)
+        pn: str = pad(n:to(str), 6)
+        print("    {pc}{pp}{pn}{why}")
+        i = i + 1
 
-        # Control 2: the accounting closes, or a file vanished.
-        if ledger + oracle + unclassified != population
-            print("foreign_census: FAIL — the accounting does not close: {ledger} ledger + {oracle} oracle + {unclassified} unclassified is not {population}. A file fell out of the classifier.")
-            code = 3
+      if unclassified > 0
+        print("")
+        print("  UNCLASSIFIED — authored source in another language with no bootstrap role and no oracle role:")
+        if envor("FOREIGN_SHOW", "") == ""
+          print(cap("head -10 {work}/restr | sed -e 's/^/    /'"))
+        if envor("FOREIGN_SHOW", "") != ""
+          print(cap("sed -e 's/^/    /' {work}/restr"))
 
-        if code == 0
-            print("")
-            print("  class          files   licence")
-            a: str = pad(ledger:to(str), 8)
-            b: str = pad(oracle:to(str), 8)
-            c: str = pad(unclassified:to(str), 8)
-            print("  ledger         {a}bootstrap debt; shrinks; every rule names its end")
-            print("  oracle         {b}test equipment; never on the shipping path")
-            print("  unclassified   {c}VIOLATION — neither licence applies")
-            print("")
-            # Per-rule counts are NET of the rules above them, because first
-            # match wins: printing raw prefix hits would double-count
-            # `examples/compile_fail/` under `examples/` and the column would
-            # not sum to the class totals.
-            print("  by rule (net of earlier rules; first match wins):")
-            i: i64 = 1
-            while i <= rulecount
-                cls: str = field("{work}/rules", i, 1)
-                pre: str = field("{work}/rules", i, 2)
-                why: str = reason("{work}/rules", i)
-                n: i64 = count("sed -n '{i}p' {work}/countsr")
-                pc: str = pad(cls, 9)
-                pp: str = pad(pre, 30)
-                pn: str = pad(n:to(str), 6)
-                print("    {pc}{pp}{pn}{why}")
-                i += 1
+      # The row no file census can see.
+      # Comment lines are stripped, and this file excludes ITSELF, for
+      # the reason audit100 gives for the same exclusion: a scanner
+      # whose subject is the text it greps for reports its own source.
+      # Both were paid for here. Tracking these three scripts took the
+      # count 236 -> 240 on their headers alone; adding a diagnostic
+      # that NAMES the token in a string took it to 184. Prose and
+      # error messages are not embedded C.
+      embedded: i64 = count("cd {root} && git ls-files '*.id' | grep -v 'scripts/foreign_census.id' | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*--' | grep -o -E '@(comp\\.)?c\\.(emit|include)' | wc -l")
+      print("")
+      print("  embedded       {embedded}    foreign code INSIDE .id (@comp.c.emit / @comp.c.include) — ledger by construction, invisible to any extension census")
 
-            if unclassified > 0
-                print("")
-                print("  UNCLASSIFIED — authored source in another language with no bootstrap role and no oracle role:")
-                if envor("FOREIGN_SHOW", "") == ""
-                    print(cap("head -10 {work}/restr | sed -e 's/^/    /'"))
-                if envor("FOREIGN_SHOW", "") != ""
-                    print(cap("sed -e 's/^/    /' {work}/restr"))
+      # Positive control on the embedded row: this tree demonstrably
+      # has embedded C — the compiler links a generated `@comp.c.emit`
+      # artifact to tokenize with — so a zero here is a broken grep, not
+      # a milestone. The day it is genuinely zero, this check is the
+      # thing to delete, in the commit that earns it.
+      if embedded == 0
+        print("foreign_census: FAIL — 0 embedded @c sites. The compiler tokenizes with a generated @comp.c.emit artifact, so a zero is a broken grep, not a milestone.")
+        code = 3
 
-            # The row no file census can see.
-            # Comment lines are stripped, and this file excludes ITSELF, for
-            # the reason audit100 gives for the same exclusion: a scanner
-            # whose subject is the text it greps for reports its own source.
-            # Both were paid for here. Tracking these three scripts took the
-            # count 236 -> 240 on their headers alone; adding a diagnostic
-            # that NAMES the token in a string took it to 184. Prose and
-            # error messages are not embedded C.
-            embedded: i64 = count("cd {root} && git ls-files '*.id' | grep -v 'scripts/foreign_census.id' | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*--' | grep -o -E '@(comp\\.)?c\\.(emit|include)' | wc -l")
-            print("")
-            print("  embedded       {embedded}    foreign code INSIDE .id (@comp.c.emit / @comp.c.include) — ledger by construction, invisible to any extension census")
+      floor = to(i64)(envor("FOREIGN_FLOOR", "2"))
+      embedfloor = to(i64)(envor("FOREIGN_EMBED_FLOOR", "181"))
+      over: i64 = 0
+      if unclassified > floor
+        print("foreign_census: FAIL — {unclassified} unclassified foreign files, over the ratchet {floor}. Classify it as ledger with a termination condition, classify it as oracle with the authority that licenses it, or delete it.")
+        over = over + 1
+      if embedded > embedfloor
+        print("foreign_census: FAIL — {embedded} embedded @c sites, over the ratchet {embedfloor}. C-as-intermediary is graveyarded; the count only goes down.")
+        over = over + 1
+      if over > 0
+        code = 1
+      if over == 0
+        print("foreign_census: PASS — {ledger} ledger, {oracle} oracle, {unclassified} unclassified (budget {floor}), {embedded} embedded @c sites (budget {embedfloor})")
+        print("  PASS is not a claim that the foreign code is fine. It is a claim that every file has a licence on record and the debt did not grow.")
 
-            # Positive control on the embedded row: this tree demonstrably
-            # has embedded C — the compiler links a generated `@comp.c.emit`
-            # artifact to tokenize with — so a zero here is a broken grep, not
-            # a milestone. The day it is genuinely zero, this check is the
-            # thing to delete, in the commit that earns it.
-            if embedded == 0
-                print("foreign_census: FAIL — 0 embedded @c sites. The compiler tokenizes with a generated @comp.c.emit artifact, so a zero is a broken grep, not a milestone.")
-                code = 3
-
-            floor = to(i64)(envor("FOREIGN_FLOOR", "2"))
-            embedfloor = to(i64)(envor("FOREIGN_EMBED_FLOOR", "181"))
-            over: i64 = 0
-            if unclassified > floor
-                print("foreign_census: FAIL — {unclassified} unclassified foreign files, over the ratchet {floor}. Classify it as ledger with a termination condition, classify it as oracle with the authority that licenses it, or delete it.")
-                over += 1
-            if embedded > embedfloor
-                print("foreign_census: FAIL — {embedded} embedded @c sites, over the ratchet {embedfloor}. C-as-intermediary is graveyarded; the count only goes down.")
-                over += 1
-            if over > 0
-                code = 1
-            if over == 0
-                print("foreign_census: PASS — {ledger} ledger, {oracle} oracle, {unclassified} unclassified (budget {floor}), {embedded} embedded @c sites (budget {embedfloor})")
-                print("  PASS is not a claim that the foreign code is fine. It is a claim that every file has a licence on record and the debt did not grow.")
-
-    # BOUND, not called bare. A trailing side-effecting call at the end of
-    # `main` overwrites the process exit status with ITS status: this gate
-    # printed FAIL and exited 0 until the result of the cleanup was bound to a
-    # name. A gate that reports failure and exits 0 is worse than no gate, and
-    # the two directions of the exit code are checked in the commit that
-    # landed this. See gaps/GAP-070.md.
-    if work != ""
-        swept: i64 = sh("rm -rf {work}")
-    code
+  # BOUND, not called bare. A trailing side-effecting call at the end of
+  # `main` overwrites the process exit status with ITS status: this gate
+  # printed FAIL and exited 0 until the result of the cleanup was bound to a
+  # name. A gate that reports failure and exits 0 is worse than no gate, and
+  # the two directions of the exit code are checked in the commit that
+  # landed this. See gaps/GAP-070.md.
+  if work != ""
+    swept: i64 = sh("rm -rf {work}")
+  code

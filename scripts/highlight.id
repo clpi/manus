@@ -262,14 +262,14 @@ field: str = (line: str, n: i64)
 cut: any = (body: str)
   all = {}
   for i, ln in body:split("\n")
-    all[all:len() + 1] = ln
+    all(all:len() + 1) = ln
   last: i64 = all:len()
-  if last > 0 and all[last] == ""
+  if last > 0 and all(last) == ""
     last = last - 1
   out = {}
   i: i64 = 1
   while i <= last
-    out[out:len() + 1] = all[i]
+    out(out:len() + 1) = all(i)
     i = i + 1
   out
 
@@ -292,7 +292,7 @@ goldrows: any = (body: str)
       rest: str = ln:sub(6, ln:len())
       b: i64 = rest:find(q)
       if b > 0
-        out[out:len() + 1] = rest:sub(1, b - 1)
+        out(out:len() + 1) = rest:sub(1, b - 1)
   out
 
 pad: str = (s: str, width: i64)
@@ -418,12 +418,12 @@ captures: i64 = (body: str, glyph: str)
   lines = cut(body)
   i: i64 = 1
   while i <= lines:len()
-    ln: str = lines[i]
+    ln: str = lines(i)
     if ln:sub(1, 1) != ";" and ln:find(needle) > 0
       j: i64 = i
       found: str = ""
       while j <= lines:len() and found == ""
-        cur: str = lines[j]
+        cur: str = lines(j)
         at: i64 = cur:find("@")
         if at > 0
           rest: str = cur:sub(at, cur:len())
@@ -516,9 +516,9 @@ main: i64 = ()
 
   f: i64 = 1
   while f <= srcs:len()
-    src: str = srcs[f]
-    gold: str = golds[f]
-    kind: str = kinds[f]
+    src: str = srcs(f)
+    gold: str = golds(f)
+    kind: str = kinds(f)
     if slurp(src) == ""
       print("  !! missing or empty fixture {src}")
       bad = bad + 1
@@ -530,7 +530,7 @@ main: i64 = ()
       sl = cut(slurp(src))
       gl = goldrows(slurp(gold))
       nfix = nfix + 1
-      firstline[f] = rolelines:len() + 1
+      firstline(f) = rolelines:len() + 1
 
       if rl:len() != sl:len()
         nl: str = to(str)(sl:len())
@@ -547,13 +547,13 @@ main: i64 = ()
       while i <= rl:len()
         srcln: str = ""
         if i <= sl:len()
-          srcln = sl[i]
-        roleln: str = rl[i]
+          srcln = sl(i)
+        roleln: str = rl(i)
         cardln: str = ""
         if i <= cl:len()
-          cardln = cl[i]
-        rolelines[rolelines:len() + 1] = roleln
-        cardlines[cardlines:len() + 1] = cardln
+          cardln = cl(i)
+        rolelines(rolelines:len() + 1) = roleln
+        cardlines(cardlines:len() + 1) = cardln
         nlines = nlines + 1
         nbytes = nbytes + srcln:len()
 
@@ -564,11 +564,11 @@ main: i64 = ()
           n: str = i:to(str)
           print("  !! {src}:{n} totality — {a} source bytes, {c} roles")
           bad = bad + 1
-        if i <= gl:len() and gl[i] == roleln
+        if i <= gl:len() and gl(i) == roleln
           nagree = nagree + 1
         else(i <= gl:len())
           n: str = i:to(str)
-          want: str = gl[i]
+          want: str = gl(i)
           print("  !! {src}:{n} golden mismatch")
           print("     want {want}")
           print("     got  {roleln}")
@@ -591,14 +591,14 @@ main: i64 = ()
               slot: i64 = 0
               z: i64 = 1
               while z <= codes:len()
-                if codes[z] == rb
+                if codes(z) == rb
                   slot = z
                 z = z + 1
               if slot == 0
-                codes[codes:len() + 1] = rb
-                codebytes[codes:len()] = 0
+                codes(codes:len() + 1) = rb
+                codebytes(codes:len()) = 0
                 slot = codes:len()
-              codebytes[slot] = codebytes[slot] + 1
+              codebytes(slot) = codebytes(slot) + 1
           j = j + 1
 
         # SPECIFICITY. Measured over PROGRAM lexemes only: comment,
@@ -628,16 +628,16 @@ main: i64 = ()
             slot: i64 = 0
             k: i64 = 1
             while k <= lexs:len()
-              if lexs[k] == lex
+              if lexs(k) == lex
                 slot = k
               k = k + 1
             if slot == 0
-              lexs[lexs:len() + 1] = lex
-              pairsof[lexs:len()] = one
+              lexs(lexs:len() + 1) = lex
+              pairsof(lexs:len()) = one
             else
-              prior: str = pairsof[slot]
+              prior: str = pairsof(slot)
               if not held(prior, one)
-                pairsof[slot] = "{prior} {one}"
+                pairsof(slot) = "{prior} {one}"
             j = j + step
         i = i + 1
     f = f + 1
@@ -674,7 +674,7 @@ main: i64 = ()
   npass: i64 = 0
   p: i64 = 1
   while p <= proofs:len()
-    row: str = proofs[p]
+    row: str = proofs(p)
     fi: i64 = to(i64)(field(row, 1))
     li: i64 = to(i64)(field(row, 2))
     bi: i64 = to(i64)(field(row, 3))
@@ -682,12 +682,12 @@ main: i64 = ()
     wantcard: str = field(row, 5)
     base: i64 = 0
     if fi >= 1 and fi <= srcs:len()
-      base = firstline[fi]
+      base = firstline(fi)
     gotrole: str = "-"
     gotcard: str = "-"
     if base > 0 and base + li - 1 <= rolelines:len()
-      rr: str = rolelines[base + li - 1]
-      cc: str = cardlines[base + li - 1]
+      rr: str = rolelines(base + li - 1)
+      cc: str = cardlines(base + li - 1)
       if bi <= rr:len()
         gotrole = rolename(rr:sub(bi, bi))
         gotcard = cardname(rr:sub(bi, bi), cc:sub(bi, bi))
@@ -699,7 +699,7 @@ main: i64 = ()
       bad = bad + 1
     src: str = "?"
     if fi >= 1 and fi <= srcs:len()
-      src = srcs[fi]
+      src = srcs(fi)
     loc: str = "{src}:{li}:{bi}"
     cell: str = pad(loc, 43)
     rcell: str = pad(gotrole, 11)
@@ -737,10 +737,10 @@ main: i64 = ()
   scontrol: i64 = 0
   s: i64 = 1
   while s <= spansrcs:len()
-    src: str = spansrcs[s]
+    src: str = spansrcs(s)
     base: str = src:sub(1, src:len() - 4)
     side: str = "{base}.roles.id"
-    kind: str = spankinds[s]
+    kind: str = spankinds(s)
     script.run("hlpath={src} {bin} > {work}/sr 2>/dev/null")
     script.run("hlmode=cards hlpath={src} {bin} > {work}/sc 2>/dev/null")
     rl = cut(slurp("{work}/sr"))
@@ -748,8 +748,8 @@ main: i64 = ()
     got = {}
     i: i64 = 1
     while i <= rl:len()
-      roleln: str = rl[i]
-      cardln: str = cl[i]
+      roleln: str = rl(i)
+      cardln: str = cl(i)
       j: i64 = 1
       while j <= roleln:len()
         rb: str = roleln:sub(j, j)
@@ -760,7 +760,7 @@ main: i64 = ()
         wide: i64 = e - j
         if rb != "l" or cb != "s"
           nm: str = rolename(rb)
-          got[got:len() + 1] = "{i} {j} {wide} {nm}"
+          got(got:len() + 1) = "{i} {j} {wide} {nm}"
           nsolid = nsolid + wide
           if rb == "!"
             ndiag = ndiag + wide
@@ -773,21 +773,21 @@ main: i64 = ()
             slot: i64 = 0
             z: i64 = 1
             while z <= codes:len()
-              if codes[z] == rb
+              if codes(z) == rb
                 slot = z
               z = z + 1
             if slot == 0
-              codes[codes:len() + 1] = rb
-              codebytes[codes:len()] = 0
+              codes(codes:len() + 1) = rb
+              codebytes(codes:len()) = 0
               slot = codes:len()
-            codebytes[slot] = codebytes[slot] + wide
+            codebytes(slot) = codebytes(slot) + wide
         j = e
       i = i + 1
     want = {}
     for k, ln in slurp(side):split("\n")
       rec: str = sidespan(ln)
       if rec != ""
-        want[want:len() + 1] = rec
+        want(want:len() + 1) = rec
     if want:len() == 0
       print("    !! {side} parsed to 0 spans; the sidecar is unreadable, not empty")
       bad = bad + 1
@@ -799,9 +799,9 @@ main: i64 = ()
       sa: str = "-"
       sb: str = "-"
       if i <= got:len()
-        sa = got[i]
+        sa = got(i)
       if i <= want:len()
-        sb = want[i]
+        sb = want(i)
       if sa != sb
         print("    !! {src}  scan({sa})  sidecar({sb})")
         smiss = smiss + 1
@@ -827,7 +827,7 @@ main: i64 = ()
   lexer: i64 = 0
   k: i64 = 1
   while k <= lexs:len()
-    one: str = pairsof[k]
+    one: str = pairsof(k)
     if tally(one) > 1
       edge = edge + 1
     else
@@ -840,7 +840,7 @@ main: i64 = ()
   print("    the edge-decided lexemes, which is the artifact:")
   k = 1
   while k <= lexs:len()
-    acc: str = pairsof[k]
+    acc: str = pairsof(k)
     if tally(acc) > 1
       named: str = ""
       for z, pr in acc:split(" ")
@@ -851,7 +851,7 @@ main: i64 = ()
             named = "{rn}/{cn}"
           else
             named = "{named}, {rn}/{cn}"
-      cell: str = pad(lexs[k], 12)
+      cell: str = pad(lexs(k), 12)
       print("      {cell}{named}")
     k = k + 1
 
@@ -867,13 +867,13 @@ main: i64 = ()
   provroles: i64 = 0
   k = 1
   while k <= codes:len()
-    one: str = codes[k]
+    one: str = codes(k)
     std.script.run("hlmode=why hlrole={one} {bin} > {work}/w 2>/dev/null")
     chain: str = slurp("{work}/w")
     cited: i64 = chain:find("rule     §")
     edged: i64 = chain:find("dnir     dnir[.]")
     if cited > 0 and edged > 0
-      provbytes = provbytes + codebytes[k]
+      provbytes = provbytes + codebytes(k)
       provroles = provroles + 1
     else
       nm: str = rolename(one)

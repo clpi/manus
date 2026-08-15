@@ -10,7 +10,7 @@ point: { x: f64, y: f64, z: f64 } = { x = 1.0, y = 2.0, z = 3.0 }
 fields = @comp.fields(point)
 print("field count = " .. to(str)(fields:len()))
 for i = 1, fields:len()
-  print("  field " .. to(str)(i) .. ": name=" .. fields[i].name .. " type=" .. fields[i].type)
+  print("  field " .. to(str)(i) .. ": name=" .. fields(i).name .. " type=" .. fields(i).type)
 
 # ═══════════════════════════════════════════════════════════════
 # @comp.has.field on typed records
@@ -53,7 +53,7 @@ c = Color.Red
 color_fields = @comp.fields(c)
 print("enum variant count = " .. to(str)(color_fields:len()))
 for i = 1, color_fields:len()
-  print("  variant " .. to(str)(i) .. ": name=" .. color_fields[i].name)
+  print("  variant " .. to(str)(i) .. ": name=" .. color_fields(i).name)
 
 # ═══════════════════════════════════════════════════════════════
 # @comp.variants on enums (more detailed)
@@ -62,7 +62,7 @@ for i = 1, color_fields:len()
 variants = @comp.variants(c)
 print("variants count = " .. to(str)(variants:len()))
 for i = 1, variants:len()
-  print("  " .. variants[i].name .. " tag=" .. to(str)(variants[i].tag) .. " arity=" .. to(str)(variants[i].arity))
+  print("  " .. variants(i).name .. " tag=" .. to(str)(variants(i).tag) .. " arity=" .. to(str)(variants(i).arity))
 
 # ═══════════════════════════════════════════════════════════════
 # @comp.bit.field — packed bitfield definition

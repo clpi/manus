@@ -6,123 +6,132 @@
 # top of the module produces "use of undeclared identifier" errors in the
 # emitted C. Keeping them function-local is the minimal fix.
 
-encode_with_alphabet(data: str, tab: str): str
-    if data == nil return ""
-    res = {}
-    len = data:len()
-    i = 1
-    while i <= len
-        b1 = data:byte(i)
-        b2 = 0
-        if i + 1 <= len b2 = data:byte(i + 1)
-        b3 = 0
-        if i + 2 <= len b3 = data:byte(i + 2)
-        b4 = 0
-        if i + 3 <= len b4 = data:byte(i + 3)
-        b5 = 0
-        if i + 4 <= len b5 = data:byte(i + 4)
-        c1 = (b1 >> 3) + 1
-        c2 = (((b1 & 0x07) << 2) | (b2 >> 6)) + 1
-        c3 = ((b2 >> 1) & 0x1F) + 1
-        c4 = (((b2 & 0x01) << 4) | (b3 >> 4)) + 1
-        c5 = (((b3 & 0x0F) << 1) | (b4 >> 7)) + 1
-        c6 = ((b4 >> 2) & 0x1F) + 1
-        c7 = (((b4 & 0x03) << 3) | (b5 >> 5)) + 1
-        c8 = (b5 & 0x1F) + 1
-        # RFC 4648 s6: a 5-byte group is always EIGHT characters, and how many
-        # of them are data depends on how many bytes are present:
-        #   1 byte -> 2 data + 6 '='      4 bytes -> 7 data + 1 '='
-        #   2      -> 4 data + 4 '='      5       -> 8 data, no padding
-        #   3      -> 5 data + 3 '='
-        #
-        # This emitted c1..c3 unconditionally and then branched, so EVERY
-        # partial group came out seven characters instead of eight, with the
-        # wrong data count for the 1- and 4-byte tails: encode("h") gave
-        # "NAA====" where the correct answer is "NA======".
-        rem = len - i + 1
-        res[res:len() + 1] = tab:sub(c1, c1)
-        res[res:len() + 1] = tab:sub(c2, c2)
-        if rem >= 2
-            res[res:len() + 1] = tab:sub(c3, c3)
-            res[res:len() + 1] = tab:sub(c4, c4)
-        if rem >= 3
-            res[res:len() + 1] = tab:sub(c5, c5)
-        if rem >= 4
-            res[res:len() + 1] = tab:sub(c6, c6)
-            res[res:len() + 1] = tab:sub(c7, c7)
-        if rem >= 5
-            res[res:len() + 1] = tab:sub(c8, c8)
-        pad = 0
-        if rem == 1 pad = 6
-        if rem == 2 pad = 4
-        if rem == 3 pad = 3
-        if rem == 4 pad = 1
-        pj = 0
-        while pj < pad
-            res[res:len() + 1] = "="
-            pj += 1
-        i += 5
-    res:concat()
+encode_with_alphabet: str = (data: str, tab: str)
+  if data == nil
+    return ""
+  res = {}
+  len = data:len()
+  i = 1
+  while i <= len
+    b1 = data:byte(i)
+    b2 = 0
+    if i + 1 <= len
+      b2 = data:byte(i + 1)
+    b3 = 0
+    if i + 2 <= len
+      b3 = data:byte(i + 2)
+    b4 = 0
+    if i + 3 <= len
+      b4 = data:byte(i + 3)
+    b5 = 0
+    if i + 4 <= len
+      b5 = data:byte(i + 4)
+    c1 = b1 >> 3 + 1
+    c2 = (b1 & 7) << 2 | b2 >> 6 + 1
+    c3 = b2 >> 1 & 31 + 1
+    c4 = (b2 & 1) << 4 | b3 >> 4 + 1
+    c5 = (b3 & 15) << 1 | b4 >> 7 + 1
+    c6 = b4 >> 2 & 31 + 1
+    c7 = (b4 & 3) << 3 | b5 >> 5 + 1
+    c8 = b5 & 31 + 1
+    # RFC 4648 s6: a 5-byte group is always EIGHT characters, and how many
+    # of them are data depends on how many bytes are present:
+    #   1 byte -> 2 data + 6 '='      4 bytes -> 7 data + 1 '='
+    #   2      -> 4 data + 4 '='      5       -> 8 data, no padding
+    #   3      -> 5 data + 3 '='
+    #
+    # This emitted c1..c3 unconditionally and then branched, so EVERY
+    # partial group came out seven characters instead of eight, with the
+    # wrong data count for the 1- and 4-byte tails: encode("h") gave
+    # "NAA====" where the correct answer is "NA======".
+    rem = len - i + 1
+    res(res:len() + 1) = tab:sub(c1, c1)
+    res(res:len() + 1) = tab:sub(c2, c2)
+    if rem >= 2
+      res(res:len() + 1) = tab:sub(c3, c3)
+      res(res:len() + 1) = tab:sub(c4, c4)
+    if rem >= 3
+      res(res:len() + 1) = tab:sub(c5, c5)
+    if rem >= 4
+      res(res:len() + 1) = tab:sub(c6, c6)
+      res(res:len() + 1) = tab:sub(c7, c7)
+    if rem >= 5
+      res(res:len() + 1) = tab:sub(c8, c8)
+    pad = 0
+    if rem == 1
+      pad = 6
+    if rem == 2
+      pad = 4
+    if rem == 3
+      pad = 3
+    if rem == 4
+      pad = 1
+    pj = 0
+    while pj < pad
+      res(res:len() + 1) = "="
+      pj = pj + 1
+    i = i + 5
+  res:concat()
 
-encode(data: str): str
-    encode_with_alphabet(data, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
+encode: str = (data: str)
+  encode_with_alphabet(data, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
 
-encode_hex(data: str): str
-    encode_with_alphabet(data, "0123456789ABCDEFGHIJKLMNOPQRSTUV")
+encode_hex: str = (data: str)
+  encode_with_alphabet(data, "0123456789ABCDEFGHIJKLMNOPQRSTUV")
 
-decode_with_alphabet(data: str, tab: any): str
-    if data == nil return ""
-    res = {}
-    len = data:len()
-    i = 1
-    while i <= len
-        vals = {}
-        pad_count = 0
-        for j = 0, 7
-            pos = i + j
-            if pos > len
-                vals[j + 1] = 0
-                pad_count += 1
-            else
-                c = data:byte(pos)
-                if c == 61
-                    vals[j + 1] = 0
-                    pad_count += 1
-                else
-                    v = tab[c]
-                    if v != nil
-                        vals[j + 1] = v
-                    else
-                        vals[j + 1] = 0
-                        pad_count += 1
-        b1 = (vals[1] << 3) | (vals[2] >> 2)
-        b2 = ((vals[2] & 0x03) << 6) | (vals[3] << 1) | (vals[4] >> 4)
-        b3 = ((vals[4] & 0x0F) << 4) | (vals[5] >> 1)
-        b4 = ((vals[5] & 0x01) << 7) | (vals[6] << 2) | (vals[7] >> 3)
-        b5 = ((vals[7] & 0x07) << 5) | vals[8]
-        res[res:len() + 1] = b1:char()
-        if pad_count < 6
-            res[res:len() + 1] = b2:char()
-        if pad_count < 4
-            res[res:len() + 1] = b3:char()
-        if pad_count < 3
-            res[res:len() + 1] = b4:char()
-        if pad_count < 1
-            res[res:len() + 1] = b5:char()
-        i += 8
-    res:concat()
+decode_with_alphabet: str = (data: str, tab: any)
+  if data == nil
+    return ""
+  res = {}
+  len = data:len()
+  i = 1
+  while i <= len
+    vals = {}
+    pad_count = 0
+    for j = 0, 7
+      pos = i + j
+      if pos > len
+        vals(j + 1) = 0
+        pad_count = pad_count + 1
+      else
+        c = data:byte(pos)
+        if c == 61
+          vals(j + 1) = 0
+          pad_count = pad_count + 1
+        else
+          v = tab(c)
+          if v != nil
+            vals(j + 1) = v
+          else
+            vals(j + 1) = 0
+            pad_count = pad_count + 1
+    b1 = vals(1) << 3 | vals(2) >> 2
+    b2 = (vals(2) & 3) << 6 | vals(3) << 1 | vals(4) >> 4
+    b3 = (vals(4) & 15) << 4 | vals(5) >> 1
+    b4 = (vals(5) & 1) << 7 | vals(6) << 2 | vals(7) >> 3
+    b5 = (vals(7) & 7) << 5 | vals(8)
+    res(res:len() + 1) = b1:char()
+    if pad_count < 6
+      res(res:len() + 1) = b2:char()
+    if pad_count < 4
+      res(res:len() + 1) = b3:char()
+    if pad_count < 3
+      res(res:len() + 1) = b4:char()
+    if pad_count < 1
+      res(res:len() + 1) = b5:char()
+    i = i + 8
+  res:concat()
 
-decode(data: str): str
-    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-    dec_table = {}
-    for i = 1, 32
-        dec_table[alphabet:byte(i)] = i - 1
-    decode_with_alphabet(data, dec_table)
+decode: str = (data: str)
+  alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+  dec_table = {}
+  for i = 1, 32
+    dec_table(alphabet:byte(i)) = i - 1
+  decode_with_alphabet(data, dec_table)
 
-decode_hex(data: str): str
-    hex_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
-    hex_dec_table = {}
-    for i = 1, 32
-        hex_dec_table[hex_alphabet:byte(i)] = i - 1
-    decode_with_alphabet(data, hex_dec_table)
-
+decode_hex: str = (data: str)
+  hex_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
+  hex_dec_table = {}
+  for i = 1, 32
+    hex_dec_table(hex_alphabet:byte(i)) = i - 1
+  decode_with_alphabet(data, hex_dec_table)

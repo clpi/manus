@@ -4,80 +4,80 @@
 # prints the exact queue so foreign C can retire under idol-visible evidence.
 
 capture: str = (shellline: str)
-    gatecap(shellline)
+  gatecap(shellline)
 
 chomp: str = (text: str)
-    if text:len() == 0
-        return ""
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
+  if text:len() == 0
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
 
 cap: str = (shellline: str)
-    chomp(gatecap(shellline))
+  chomp(gatecap(shellline))
 
 status: i64 = (cmd: str)
-    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
+  cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
 
 lines: any = (text: str)
-    out = {}
-    start = 1
-    i = 1
-    n = text:len()
-    while i <= n
-        if text:byte(i) == 10
-            if i > start
-                out:push(text:sub(start, i - 1))
-            start = i + 1
-        i += 1
-    if start <= n
-        out:push(text:sub(start, n))
-    out
+  out = {}
+  start = 1
+  i = 1
+  n = text:len()
+  while i <= n
+    if text:byte(i) == 10
+      if i > start
+        out:push(text:sub(start, i - 1))
+      start = i + 1
+    i = i + 1
+  if start <= n
+    out:push(text:sub(start, n))
+  out
 
 starts: bool = (path: str, prefix: str)
-    path:sub(1, prefix:len()) == prefix
+  path:sub(1, prefix:len()) == prefix
 
 boot: bool = (path: str)
-    starts(path, "src/") or starts(path, "lib/c/")
+  starts(path, "src/") or starts(path, "lib/c/")
 
 pick: any = (files: any, want: str)
-    out = {}
-    for i = 1, files:len()
-        path = files[i]
-        isboot = boot(path)
-        if want == "boot" and isboot
-            out:push(path)
-        if want == "oracle" and !isboot
-            out:push(path)
-    out
+  out = {}
+  for i = 1, files:len()
+    path = files(i)
+    isboot = boot(path)
+    if want == "boot" and isboot
+      out:push(path)
+    if want == "oracle" and not isboot
+      out:push(path)
+  out
 
 show: i64 = (name: str, files: any)
-    count = files:len()
-    print("{name} {count}")
-    for i = 1, count
-        print("  {files[i]}")
-    count
+  count = files:len()
+  print("{name} {count}")
+  for i = 1, count
+    print("  {files[i]}")
+  count
 
 main: i64 = ()
-    root = cap("git rev-parse --show-toplevel 2>/dev/null")
-    if root == ""
-        print("ledger/c: fail no git root")
-        return 3
+  root = cap("git rev-parse --show-toplevel 2>/dev/null")
+  if root == ""
+    print("ledger/c: fail no git root")
+    return 3
 
-    cmd = "cd '{root}' && git ls-files '*.[ch]' | sort"
-    files = lines(capture(cmd))
-    boots = pick(files, "boot")
-    oracles = pick(files, "oracle")
-    count = boots:len()
-    show("cboot", boots)
-    show("coracle", oracles)
-    if count == 0
-        print("ledger/c: pass bootstrap c 0")
-        return 0
+  cmd = "cd '{root}' && git ls-files '*.[ch]' | sort"
+  files = lines(capture(cmd))
+  boots = pick(files, "boot")
+  oracles = pick(files, "oracle")
+  count = boots:len()
+  show("cboot", boots)
+  show("coracle", oracles)
+  if count == 0
+    print("ledger/c: pass bootstrap c 0")
+    return 0
 
-    print("ledger/c: fail bootstrap c {count}")
-    1
+  print("ledger/c: fail bootstrap c {count}")
+  1

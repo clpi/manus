@@ -5,22 +5,22 @@
 # expect: 189
 
 stretch: f64 = (v: f64)
-    v * 25400.0
+  v * 25400.0
 
 shrink: f64 = (v: f64)
-    v / 25400.0
+  v / 25400.0
 
 swell: f64 = (v: f64)
-    v * 1000.0
+  v * 1000.0
 
 shrivel: f64 = (v: f64)
-    v / 1000.0
+  v / 1000.0
 
 expand: f64 = (v: f64)
-    v * 304800.0
+  v * 304800.0
 
 compress: f64 = (v: f64)
-    v / 304800.0
+  v / 304800.0
 
 to(micron)(inch) = stretch@lossless
 to(inch)(micron) = shrink@lossless
@@ -30,15 +30,15 @@ to(micron)(foot) = expand@lossless
 to(foot)(micron) = compress@lossless
 
 main: i64 = ()
-    feet: f64 = 3.0:to(inch)(foot)
-    bore: f64 = 5.0:to(milli)(inch)
-    span: f64 = 254.0:to(inch)(milli)
-    n: i64 = 0
-    n = n + feet:to(i64)
-    n = n + bore:to(i64)
-    n = n + span:to(i64)
-    for src, conv in to[micron]
-        n = n + 1
-        n = n + src:len()
-    print("{n}")
-    n
+  feet: f64 = 3.0:to(inch)(foot)
+  bore: f64 = 5.0:to(milli)(inch)
+  span: f64 = 254.0:to(inch)(milli)
+  n: i64 = 0
+  n = n + feet:to(i64)
+  n = n + bore:to(i64)
+  n = n + span:to(i64)
+  for src, conv in to(micron)
+    n = n + 1
+    n = n + src:len()
+  print("{n}")
+  n

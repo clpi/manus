@@ -7,7 +7,7 @@ descend: any = (f: any, df: any, x0: f64, lr: f64, iterations: i64)
   while i < iterations
     grad = df(x)
     x = x - lr * grad
-    history[history:len() + 1] = x
+    history(history:len() + 1) = x
     i = i + 1
   {
     x = x,
@@ -36,7 +36,7 @@ adam: any = (f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon:
     mh = m / (1 - beta1 ^ i)
     vh = v / (1 - beta2 ^ i)
     x = x - lr * mh / (vh:sqrt() + epsilon)
-    history[history:len() + 1] = x
+    history(history:len() + 1) = x
     i = i + 1
   {
     x = x,
@@ -55,7 +55,7 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
     sigma = 0.5
   n = x0:len()
   simplex = {}
-  simplex[1] = {
+  simplex(1) = {
     point = x0,
     value = f(x0)
   }
@@ -65,11 +65,11 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
     j = 1
     while j <= n
       if j == i
-        point[j] = x0[j] + 0.05
+        point(j) = x0(j) + 0.05
       else
-        point[j] = x0[j]
+        point(j) = x0(j)
       j = j + 1
-    simplex[simplex:len() + 1] = {
+    simplex(simplex:len() + 1) = {
       point = point,
       value = f(point)
     }
@@ -79,26 +79,26 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
     simplex:sort(fun(a: any, b: any) -> any
       a.value < b.value
     end)
-    best = simplex[1]
-    worst = simplex[n + 1]
+    best = simplex(1)
+    worst = simplex(n + 1)
     centroid = {}
     i = 1
     while i <= n
-      centroid[i] = 0
+      centroid(i) = 0
       j = 1
       while j <= n
-        centroid[i] = centroid[i] + simplex[j].point[i]
+        centroid(i) = centroid(i) + simplex(j).point(i)
         j = j + 1
-      centroid[i] = centroid[i] / n
+      centroid(i) = centroid(i) / n
       i = i + 1
     reflected = {}
     i = 1
     while i <= n
-      reflected[i] = centroid[i] + alpha * (centroid[i] - worst.point[i])
+      reflected(i) = centroid(i) + alpha * (centroid(i) - worst.point(i))
       i = i + 1
     rval = f(reflected)
-    if rval < simplex[n].value and rval >= best.value
-      simplex[n + 1] = {
+    if rval < simplex(n).value and rval >= best.value
+      simplex(n + 1) = {
         point = reflected,
         value = rval
       }
@@ -106,16 +106,16 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
       expanded = {}
       i = 1
       while i <= n
-        expanded[i] = centroid[i] + gamma * (reflected[i] - centroid[i])
+        expanded(i) = centroid(i) + gamma * (reflected(i) - centroid(i))
         i = i + 1
       eval = f(expanded)
       if eval < rval
-        simplex[n + 1] = {
+        simplex(n + 1) = {
           point = expanded,
           value = eval
         }
       else
-        simplex[n + 1] = {
+        simplex(n + 1) = {
           point = reflected,
           value = rval
         }
@@ -123,11 +123,11 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
       contracted = {}
       i = 1
       while i <= n
-        contracted[i] = centroid[i] + rho * (worst.point[i] - centroid[i])
+        contracted(i) = centroid(i) + rho * (worst.point(i) - centroid(i))
         i = i + 1
       cval = f(contracted)
       if cval < worst.value
-        simplex[n + 1] = {
+        simplex(n + 1) = {
           point = contracted,
           value = cval
         }
@@ -136,44 +136,44 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
         while i <= n + 1
           j = 1
           while j <= n
-            simplex[i].point[j] = best.point[j] + sigma * (simplex[i].point[j] - best.point[j])
+            simplex(i).point(j) = best.point(j) + sigma * (simplex(i).point(j) - best.point(j))
             j = j + 1
-          simplex[i].value = f(simplex[i].point)
+          simplex(i).value = f(simplex(i).point)
           i = i + 1
     iter = iter + 1
   simplex:sort(fun(a: any, b: any) -> any
     a.value < b.value
   end)
   {
-    x = simplex[1].point,
-    fx = simplex[1].value,
+    x = simplex(1).point,
+    fx = simplex(1).value,
     iterations = iterations
   }
 grid: any = (f: any, ranges: any, steps: i64)
   g = {}
   for name, range in ranges
-    lo = range[1]
-    hi = range[2]
+    lo = range(1)
+    hi = range(2)
     step = (hi - lo) / (steps - 1)
     points = {}
     i = 0
     while i < steps
-      points[points:len() + 1] = lo + i * step
+      points(points:len() + 1) = lo + i * step
       i = i + 1
-    g[name] = points
+    g(name) = points
   best = nil
   bestv = 1000000000000000000000000000000.0
   results = {}
   names = {}
   for name in ranges
-    names[names:len() + 1] = name
+    names(names:len() + 1) = name
   if names:len() == 1
-    for v in g[names[1]]
+    for v in g(names(1))
       params = {
-        [names[1]] = v
+        [names(1)] = v
       }
       value = f(params)
-      results[results:len() + 1] = {
+      results(results:len() + 1) = {
         params = params,
         value = value
       }
@@ -181,14 +181,14 @@ grid: any = (f: any, ranges: any, steps: i64)
         bestv = value
         best = params
   else(names:len() == 2)
-    for v1 in g[names[1]]
-      for v2 in g[names[2]]
+    for v1 in g(names(1))
+      for v2 in g(names(2))
         params = {
-          [names[1]] = v1,
-          [names[2]] = v2
+          [names(1)] = v1,
+          [names(2)] = v2
         }
         value = f(params)
-        results[results:len() + 1] = {
+        results(results:len() + 1) = {
           params = params,
           value = value
         }
@@ -208,11 +208,11 @@ random: any = (f: any, ranges: any, iterations: i64)
   while i < iterations
     params = {}
     for name, range in ranges
-      lo = range[1]
-      hi = range[2]
-      params[name] = lo + math.random() * (hi - lo)
+      lo = range(1)
+      hi = range(2)
+      params(name) = lo + math.random() * (hi - lo)
     value = f(params)
-    results[results:len() + 1] = {
+    results(results:len() + 1) = {
       params = params,
       value = value
     }

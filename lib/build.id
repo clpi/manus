@@ -3,92 +3,108 @@
 global _project = { name = "duo-app", version = "0.1.0", default = "app" }
 global _targets = {}
 
-info(): any
-    {
-        compiler = "duo",
-        version = "0.1.0",
-        host = os.getenv("HOSTNAME") or "unknown",
-        timestamp = os.date("%Y-%m-%dT%H:%M:%S"),
-    }
+info: any = ()
+  {
+    compiler = "duo",
+    version = "0.1.0",
+    host = os.getenv("HOSTNAME") or "unknown",
+    timestamp = os.date("%Y-%m-%dT%H:%M:%S")
+  }
 
-platform(): str
-    os.getenv("OSTYPE") or "unknown"
+platform: str = ()
+  os.getenv("OSTYPE") or "unknown"
 
-arch(): str
-    a = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
-    a
+arch: str = ()
+  a = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
+  a
 
-target(): str
-    "%s-%s":format(arch(), platform())
+target: str = ()
+  "%s-%s":format(arch(), platform())
 
-is_debug(): bool
-    os.getenv("DEBUG") == "1"
+is_debug: bool = ()
+  os.getenv("DEBUG") == "1"
 
-env(): str
-    os.getenv("BUILD_ENV") or "development"
+env: str = ()
+  os.getenv("BUILD_ENV") or "development"
 
-project(cfg: any): any
-    if cfg == nil
-        _project
-    else
-        if has(.name)(cfg) _project.name = cfg.name
-        if has(.version)(cfg) _project.version = cfg.version
-        if has(.default)(cfg) _project.default = cfg.default
-        _project
+project: any = (cfg: any)
+  if cfg == nil
+    _project
+  else
+    if has(.name)(cfg)
+      _project.name = cfg.name
+    if has(.version)(cfg)
+      _project.version = cfg.version
+    if has(.default)(cfg)
+      _project.default = cfg.default
+    _project
 
-exe(cfg: any): any
-    if cfg.name == nil cfg.name = "app"
-    if cfg.src == nil cfg.src = "src/main.id"
-    if cfg.out == nil cfg.out = "zig-out/bin/" .. cfg.name
-    if cfg.opt == nil cfg.opt = "-O3"
-    if cfg.target == nil cfg.target = "native"
-    cfg.kind = "exe"
-    _targets[_targets:len() + 1] = cfg
-    cfg
+exe: any = (cfg: any)
+  if cfg.name == nil
+    cfg.name = "app"
+  if cfg.src == nil
+    cfg.src = "src/main.id"
+  if cfg.out == nil
+    cfg.out = "zig-out/bin/" .. cfg.name
+  if cfg.opt == nil
+    cfg.opt = "-O3"
+  if cfg.target == nil
+    cfg.target = "native"
+  cfg.kind = "exe"
+  _targets(_targets:len() + 1) = cfg
+  cfg
 
-lib(cfg: any): any
-    t = exe(cfg)
-    t.kind = "lib"
-    t.lib = true
-    t
+lib: any = (cfg: any)
+  t = exe(cfg)
+  t.kind = "lib"
+  t.lib = true
+  t
 
-targets(): any
-    _targets
+targets: any = ()
+  _targets
 
-default_target(): str
-    _project.default
+default_target: str = ()
+  _project.default
 
-find(name: str): any
-    for _, t in _targets
-        if t.name == name
-            t
-    nil
+find: any = (name: str)
+  for _, t in _targets
+    if t.name == name
+      t
+  nil
 
-command(t: any): str
-    cmd = "duo compile " .. t.src
-    if has(.out)(t) cmd = cmd .. " -o " .. t.out
-    if has(.opt)(t) cmd = cmd .. " " .. t.opt
-    if has(.target)(t) and t.target != "native" cmd = cmd .. " --target " .. t.target
-    if has(.cc)(t) cmd = cmd .. " --cc " .. t.cc
-    if t.pgo cmd = cmd .. " --pgo"
-    if t.shared_memory cmd = cmd .. " --shared-memory"
-    if t.load_chunk cmd = cmd .. " --load-chunk"
-    if t.lib cmd = cmd .. " --lib"
-    cmd
+command: str = (t: any)
+  cmd = "duo compile " .. t.src
+  if has(.out)(t)
+    cmd = cmd .. " -o " .. t.out
+  if has(.opt)(t)
+    cmd = cmd .. " " .. t.opt
+  if has(.target)(t) and t.target != "native"
+    cmd = cmd .. " --target " .. t.target
+  if has(.cc)(t)
+    cmd = cmd .. " --cc " .. t.cc
+  if t.pgo
+    cmd = cmd .. " --pgo"
+  if t.shared_memory
+    cmd = cmd .. " --shared-memory"
+  if t.load_chunk
+    cmd = cmd .. " --load-chunk"
+  if t.lib
+    cmd = cmd .. " --lib"
+  cmd
 
-clean(): i64
-    os.execute("rm -rf zig-out/bin")
+clean: i64 = ()
+  os.execute("rm -rf zig-out/bin")
 
-log_target(t: any): void
-    print(term.banner("build target"))
-    print(term.kv("name", t.name))
-    print(term.kv("source", t.src))
-    if has(.out)(t) print(term.kv("output", t.out))
-    print(term.kv("command", command(t)))
+log_target = (t: any)
+  print(term.banner("build target"))
+  print(term.kv("name", t.name))
+  print(term.kv("source", t.src))
+  if has(.out)(t)
+    print(term.kv("output", t.out))
+  print(term.kv("command", command(t)))
 
-log_project(): void
-    print(term.banner("duo project"))
-    print(term.kv("name", _project.name))
-    print(term.kv("version", _project.version))
-    print(term.kv("default", _project.default))
-
+log_project = ()
+  print(term.banner("duo project"))
+  print(term.kv("name", _project.name))
+  print(term.kv("version", _project.version))
+  print(term.kv("default", _project.default))

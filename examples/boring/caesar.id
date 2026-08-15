@@ -4,20 +4,20 @@
 # expect: kdo hal
 # @corpus current
 shift: str = (s: str, delta: i64)
-    alpha = "abcdefghijklmnopqrstuvwxyz"
-    out = ""
-    i = 0
-    n = s:len()
-    while i < n
-        ch = s:sub(i + 1, i + 1)
-        piece = ch
-        b = s[i]
-        if b >= 97 and b <= 122
-            pos = (b - 97 + delta) % 26 + 1
-            piece = alpha:sub(pos, pos)
-        out = "{out}{piece}"
-        i += 1
-    out
+  alpha = "abcdefghijklmnopqrstuvwxyz"
+  out = ""
+  i = 0
+  n = s:len()
+  while i < n
+    ch = s:sub(i + 1, i + 1)
+    piece = ch
+    b = s(i)
+    if b >= 97 and b <= 122
+      pos = (b - 97 + delta) % 26 + 1
+      piece = alpha:sub(pos, pos)
+    out = "{out}{piece}"
+    i = i + 1
+  out
 
 a = shift("hal", 3)
 b = shift(a, 23)

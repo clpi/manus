@@ -14,198 +14,200 @@ NOTIFICATION = 4
 # RPC Message
 # ═══════════════════════════════════════════════════════════════
 
-request_new(id: i64, method: str, params: any): any
-    {
-        jsonrpc = "2.0",
-        id = id,
-        method = method,
-        params = params or {},
-    }
+request_new: any = (id: i64, method: str, params: any)
+  {
+    jsonrpc = "2.0",
+    id = id,
+    method = method,
+    params = params or {}
+  }
 
-response_new(id: i64, result: any): any
-    {
-        jsonrpc = "2.0",
-        id = id,
-        result = result,
-    }
+response_new: any = (id: i64, result: any)
+  {
+    jsonrpc = "2.0",
+    id = id,
+    result = result
+  }
 
-error_new(id: i64, code: i64, message: str, data: any): any
-    {
-        jsonrpc = "2.0",
-        id = id,
-        error = {
-            code = code,
-            message = message,
-            data = data,
-        },
+error_new: any = (id: i64, code: i64, message: str, data: any)
+  {
+    jsonrpc = "2.0",
+    id = id,
+    error = {
+      code = code,
+      message = message,
+      data = data
     }
+  }
 
-notification_new(method: str, params: any): any
-    {
-        jsonrpc = "2.0",
-        method = method,
-        params = params or {},
-    }
+notification_new: any = (method: str, params: any)
+  {
+    jsonrpc = "2.0",
+    method = method,
+    params = params or {}
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # RPC Server
 # ═══════════════════════════════════════════════════════════════
 
-server_new(): any
-    {
-        handlers = {},
-        middleware = {},
-        next_id = 1,
-    }
+server_new: any = ()
+  {
+    handlers = {},
+    middleware = {},
+    next_id = 1
+  }
 
-server_register(server: any, method: str, handler: any): void
-    server.handlers[method] = handler
+server_register = (server: any, method: str, handler: any)
+  server.handlers(method) = handler
 
-server_add_middleware(server: any, middleware: any): void
-    server.middleware[server:len().middleware + 1] = middleware
+server_add_middleware = (server: any, middleware: any)
+  server.middleware(server:len().middleware + 1) = middleware
 
-server_handle(server: any, request: any): any
-    # Validate JSON-RPC version
-    if request.jsonrpc != "2.0"
-        return error_new(request.id, -32600, "Invalid Request", "Invalid JSON-RPC version")
+server_handle: any = (server: any, request: any)
+  # Validate JSON-RPC version
+  if request.jsonrpc != "2.0"
+    return error_new(request.id, -32600, "Invalid Request", "Invalid JSON-RPC version")
 
-    # Check if method exists
-    handler = server.handlers[request.method]
-    if handler == nil
-        return error_new(request.id, -32601, "Method not found", request.method)
+  # Check if method exists
+  handler = server.handlers(request.method)
+  if handler == nil
+    return error_new(request.id, -32601, "Method not found", request.method)
 
-    # Run middleware
-    context = {
-        request = request,
-        server = server,
-    }
-    for mw in server.middleware
-        result = mw(context)
-        if result return result
+  # Run middleware
+  context = {
+    request = request,
+    server = server
+  }
+  for mw in server.middleware
+    result = mw(context)
+    if result
+      return result
 
-    # Call handler
-    ok, result = pcall(handler, request.params, context)
-    if not ok
-        return error_new(request.id, -32603, "Internal error", result:to(str))
+  # Call handler
+  ok, result = pcall(handler, request.params, context)
+  if not ok
+    return error_new(request.id, -32603, "Internal error", result:to(str))
 
-    response_new(request.id, result)
+  response_new(request.id, result)
 
-server_next_id(server: any): i64
-    id = server.next_id
-    server.next_id += 1
-    id
+server_next_id: i64 = (server: any)
+  id = server.next_id
+  server.next_id = server.next_id + 1
+  id
 
 # ═══════════════════════════════════════════════════════════════
 # RPC Client
 # ═══════════════════════════════════════════════════════════════
 
-client_new(transport: any): any
-    {
-        transport = transport,
-        next_id = 1,
-        pending = {},
+client_new: any = (transport: any)
+  {
+    transport = transport,
+    next_id = 1,
+    pending = {}
+  }
+
+client_call: any = (client: any, method: str, params: any)
+  id = client.next_id
+  client.next_id = client.next_id + 1
+
+  request = request_new(id, method, params)
+
+  # Send request
+  result = client.transport.send(request)
+  if result.error
+    return result
+
+  # Store pending request
+  client.pending(id) = {
+    method = method,
+    start_time = os.clock()
+  }
+
+  { id = id, request = request }
+
+client_notify: any = (client: any, method: str, params: any)
+  notification = notification_new(method, params)
+  client.transport.send(notification)
+
+client_handle_response: any = (client: any, response: any)
+  if response.id and client.pending(response.id)
+    pending = client.pending(response.id)
+    client.pending(response.id) = nil
+    return {
+      id = response.id,
+      method = pending.method,
+      result = response.result,
+      error = response.error
     }
+  { notification = response }
 
-client_call(client: any, method: str, params: any): any
-    id = client.next_id
-    client.next_id += 1
+client_cancel = (client: any, id: i64)
+  client.pending(id) = nil
 
-    request = request_new(id, method, params)
-
-    # Send request
-    result = client.transport.send(request)
-    if result.error return result
-
-    # Store pending request
-    client.pending[id] = {
-        method = method,
-        start_time = os.clock(),
-    }
-
-    {id = id, request = request}
-
-client_notify(client: any, method: str, params: any): any
-    notification = notification_new(method, params)
-    client.transport.send(notification)
-
-client_handle_response(client: any, response: any): any
-    if response.id and client.pending[response.id]
-        pending = client.pending[response.id]
-        client.pending[response.id] = nil
-        return {
-            id = response.id,
-            method = pending.method,
-            result = response.result,
-            error = response.error,
-        }
-    {notification = response}
-
-client_cancel(client: any, id: i64): void
-    client.pending[id] = nil
-
-client_pending_count(client: any): i64
-    count = 0
-    for _ in client.pending
-        count += 1
-    count
+client_pending_count: i64 = (client: any)
+  count = 0
+  for _ in client.pending
+    count = count + 1
+  count
 
 # ═══════════════════════════════════════════════════════════════
 # Transport Layer (pluggable)
 # ═══════════════════════════════════════════════════════════════
 
-transport_http_new(url: str): any
-    {
-        type = "http",
-        url = url,
-        timeout = 30,
-        headers = {},
-    }
+transport_http_new: any = (url: str)
+  {
+    type = "http",
+    url = url,
+    timeout = 30,
+    headers = {}
+  }
 
-transport_http_send(transport: any, message: any): any
-    payload = std.encoding.json.encode(message)
-    result = std.net.http_post(transport.url, payload, "application/json")
+transport_http_send: any = (transport: any, message: any)
+  payload = std.encoding.json.encode(message)
+  result = std.net.http_post(transport.url, payload, "application/json")
+  if result.error
+    return { ok = false, error = result.error }
+  { ok = true, data = result.body }
+
+transport_websocket_new: any = (url: str)
+  {
+    type = "websocket",
+    url = url,
+    connection = nil,
+    connected = false
+  }
+
+transport_websocket_send: any = (transport: any, message: any)
+  if transport.connection == nil
+    result = std.net.ws_connect(transport.url)
     if result.error
-        return {ok = false, error = result.error}
-    {ok = true, data = result.body}
+      return { ok = false, error = result.error }
+    transport.connection = result.conn
+    transport.connected = true
+  payload = std.encoding.json.encode(message)
+  std.net.ws_send(transport.connection, payload)
+  { ok = true }
 
-transport_websocket_new(url: str): any
-    {
-        type = "websocket",
-        url = url,
-        connection = nil,
-        connected = false,
-    }
+transport_tcp_new: any = (host: str, port: i64)
+  {
+    type = "tcp",
+    host = host,
+    port = port,
+    socket = nil,
+    connected = false
+  }
 
-transport_websocket_send(transport: any, message: any): any
-    if transport.connection == nil
-        result = std.net.ws_connect(transport.url)
-        if result.error
-            return {ok = false, error = result.error}
-        transport.connection = result.conn
-        transport.connected = true
-    payload = std.encoding.json.encode(message)
-    std.net.ws_send(transport.connection, payload)
-    {ok = true}
-
-transport_tcp_new(host: str, port: i64): any
-    {
-        type = "tcp",
-        host = host,
-        port = port,
-        socket = nil,
-        connected = false,
-    }
-
-transport_tcp_send(transport: any, message: any): any
-    if transport.socket == nil
-        result = std.net.connect(transport.host, transport.port)
-        if result.error
-            return {ok = false, error = result.error}
-        transport.socket = result.socket
-        transport.connected = true
-    payload = std.encoding.json.encode(message)
-    std.net.send(transport.socket, payload)
-    {ok = true}
+transport_tcp_send: any = (transport: any, message: any)
+  if transport.socket == nil
+    result = std.net.connect(transport.host, transport.port)
+    if result.error
+      return { ok = false, error = result.error }
+    transport.socket = result.socket
+    transport.connected = true
+  payload = std.encoding.json.encode(message)
+  std.net.send(transport.socket, payload)
+  { ok = true }
 
 # ═══════════════════════════════════════════════════════════════
 # Error Codes
@@ -218,54 +220,52 @@ INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
 SERVER_ERROR = -32000
 
-error_code_name(code: i64): str
-    codes = {
-        [PARSE_ERROR] = "Parse error",
-        [INVALID_REQUEST] = "Invalid Request",
-        [METHOD_NOT_FOUND] = "Method not found",
-        [INVALID_PARAMS] = "Invalid params",
-        [INTERNAL_ERROR] = "Internal error",
-        [SERVER_ERROR] = "Server error",
-    }
-    codes[code] or "Unknown error"
+error_code_name: str = (code: i64)
+  codes = {
+    [PARSE_ERROR] = "Parse error",
+    [INVALID_REQUEST] = "Invalid Request",
+    [METHOD_NOT_FOUND] = "Method not found",
+    [INVALID_PARAMS] = "Invalid params",
+    [INTERNAL_ERROR] = "Internal error",
+    [SERVER_ERROR] = "Server error"
+  }
+  codes(code) or "Unknown error"
 
 # ═══════════════════════════════════════════════════════════════
 # Service Discovery
 # ═══════════════════════════════════════════════════════════════
 
-registry_new(): any
-    {
-        services = {},
-    }
-
-registry_register(registry: any, name: str, address: str, metadata: any): void
-    registry.services[name] = {
-        address = address,
-        metadata = metadata or {},
-        registered_at = os.clock(),
-    }
-
-registry_unregister(registry: any, name: str): void
-    registry.services[name] = nil
-
-registry_discover(registry: any, name: str): any
-    registry.services[name]
-
-registry_discover_all(registry: any): any
+registry_new: any = ()
+  {
     services = {}
-    for name, service in registry.services
-        services[services:len() + 1] = {name = name, address = service.address, metadata = service.metadata}
-    services
+  }
 
-registry_heartbeat(registry: any, name: str): void
-    service = registry.services[name]
-    if service
-        service.last_heartbeat = os.clock()
+registry_register = (registry: any, name: str, address: str, metadata: any)
+  registry.services(name) = {
+    address = address,
+    metadata = metadata or {},
+    registered_at = os.clock()
+  }
 
+registry_unregister = (registry: any, name: str)
+  registry.services(name) = nil
+
+registry_discover: any = (registry: any, name: str)
+  registry.services(name)
+
+registry_discover_all: any = (registry: any)
+  services = {}
+  for name, service in registry.services
+    services(services:len() + 1) = { name = name, address = service.address, metadata = service.metadata }
+  services
+
+registry_heartbeat = (registry: any, name: str)
+  service = registry.services(name)
+  if service
+    service.last_heartbeat = os.clock()
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Constants
 # Messages
 # Server

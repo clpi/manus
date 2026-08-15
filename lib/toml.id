@@ -1,45 +1,49 @@
 # toml — TOML parser with section support
 
-parse_value(s: str): any
-    if s == nil return nil
-    if s:len() >= 2 and s:sub(1, 1) == '"' and s:sub(s:len(), s:len()) == '"'
-        return s:sub(2, s:len() - 1)
-    if s == "true" return true
-    if s == "false" return false
-    num = s:to(i64)
-    if num != nil return num
-    s
+parse_value: any = (s: str)
+  if s == nil
+    return nil
+  if s:len() >= 2 and s:sub(1, 1) == "\"" and s:sub(s:len(), s:len()) == "\""
+    return s:sub(2, s:len() - 1)
+  if s == "true"
+    return true
+  if s == "false"
+    return false
+  num = s:to(i64)
+  if num != nil
+    return num
+  s
 
-parse(data: str): any
-    if data == nil return {}
-    res = {}
-    current = res
-    current_path = {}
-    lines = data:split("\n")
-    for _, line in lines
-        line = line:trim()
-        if line:len() > 0 and line:sub(1, 1) != "#"
-            if line:sub(1, 1) == "["
-                section_name = line:sub(2, line:len() - 1)
-                section_name = section_name:trim()
-                current = res
-                current_path = {}
-                parts = section_name:split(".")
-                for _, part in parts
-                    part = part:trim()
-                    if current[part] == nil
-                        current[part] = {}
-                    current_path[current_path:len() + 1] = part
-                    current = current[part]
-            else
-                eq_pos = nil
-                for j = 1, line:len()
-                    if line:byte(j) == 61
-                        eq_pos = j
-                        break
-                if eq_pos != nil
-                    key = line:sub(1, eq_pos - 1):trim()
-                    val_str = line:sub(eq_pos + 1):trim()
-                    current[key] = parse_value(val_str)
-    res
-
+parse: any = (data: str)
+  if data == nil
+    return {}
+  res = {}
+  current = res
+  current_path = {}
+  lines = data:split("\n")
+  for _, line in lines
+    line = line:trim()
+    if line:len() > 0 and line:sub(1, 1) != "#"
+      if line:sub(1, 1) == "["
+        section_name = line:sub(2, line:len() - 1)
+        section_name = section_name:trim()
+        current = res
+        current_path = {}
+        parts = section_name:split(".")
+        for _, part in parts
+          part = part:trim()
+          if current(part) == nil
+            current(part) = {}
+          current_path(current_path:len() + 1) = part
+          current = current(part)
+      else
+        eq_pos = nil
+        for j = 1, line:len()
+          if line:byte(j) == 61
+            eq_pos = j
+            break
+        if eq_pos != nil
+          key = line:sub(1, eq_pos - 1):trim()
+          val_str = line:sub(eq_pos + 1):trim()
+          current(key) = parse_value(val_str)
+  res

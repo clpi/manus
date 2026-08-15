@@ -7,14 +7,14 @@ MapFS.__index = MapFS
 new_mapfs: any = ()
   { files = {} }
 
-mapfs_add: void = (fs: any, path: str, data: str)
-  fs.files[path] = { data = data, mode = 644 }
+mapfs_add = (fs: any, path: str, data: str)
+  fs.files(path) = { data = data, mode = 644 }
 
-mapfs_add_dir: void = (fs: any, path: str)
-  fs.files[path] = { data = nil, mode = 755, is_dir = true }
+mapfs_add_dir = (fs: any, path: str)
+  fs.files(path) = { data = nil, mode = 755, is_dir = true }
 
 mapfs_open: any = (fs: any, path: str)
-  entry = fs.files[path]
+  entry = fs.files(path)
   if entry == nil
     return nil
   { data = entry.data, pos = 1, mode = entry.mode, is_dir = entry.is_dir }
@@ -51,5 +51,5 @@ mapfs_glob: any = (fs: any, pattern: str)
   results = {}
   for path, _ in fs.files
     if path:find(pattern)
-      results[results:len() + 1] = path
+      results(results:len() + 1) = path
   results

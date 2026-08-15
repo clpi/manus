@@ -2,19 +2,19 @@
 # alone pass for a sort that only found the extremes.
 # expect: 1 4 12 25 33 38 55 71 88 97
 main: i64 = ()
-    xs = { 38, 97, 12, 1, 55, 25, 71, 4, 88, 33 }
-    n = 10
-    for i = 1, n - 1
-        for j = 1, n - i
-            if xs[j] > xs[j + 1]
-                t = xs[j]
-                xs[j] = xs[j + 1]
-                xs[j + 1] = t
-    out = ""
-    for v in xs
-        if out == ""
-            out = "{v}"
-        if out != "{v}"
-            out = "{out} {v}"
-    print("{out}")
-    0
+  xs = { 38, 97, 12, 1, 55, 25, 71, 4, 88, 33 }
+  n = 10
+  for i = 1, n - 1
+    for j = 1, n - i
+      if xs(j) > xs(j + 1)
+        t = xs(j)
+        xs(j) = xs(j + 1)
+        xs(j + 1) = t
+  out = ""
+  for v in xs
+    if out == ""
+      out = "{v}"
+    if out != "{v}"
+      out = "{out} {v}"
+  print("{out}")
+  0

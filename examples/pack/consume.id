@@ -7,9 +7,13 @@
 src = { 3, 5, 7, 11 }
 pos = 0
 pull = ()
-    pos += 1
-    src[pos]
+  pos = pos + 1
+  src(pos)
 total = 0
-while b = pull()
-    total += b
+while true
+  b = pull()
+  if b
+    total = total + b
+  else
+    break
 print(total)

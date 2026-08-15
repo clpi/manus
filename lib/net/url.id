@@ -9,11 +9,11 @@ escape: str = (s: str)
   while i <= s:len()
     b = s:byte(i)
     if b >= 65 and b <= 90 or b >= 97 and b <= 122 or b >= 48 and b <= 57 or b == 45 or b == 46 or b == 95 or b == 126
-      out[out:len() + 1] = s:sub(i, i)
+      out(out:len() + 1) = s:sub(i, i)
     else(b == 32)
-      out[out:len() + 1] = "+"
+      out(out:len() + 1) = "+"
     else
-      out[out:len() + 1] = "%%%02X":format(b)
+      out(out:len() + 1) = "%%%02X":format(b)
     i = i + 1
   out:concat()
 
@@ -26,9 +26,9 @@ path_escape: str = (s: str)
   while i <= s:len()
     b = s:byte(i)
     if b >= 65 and b <= 90 or b >= 97 and b <= 122 or b >= 48 and b <= 57 or b == 45 or b == 46 or b == 95 or b == 126 or b == 47
-      out[out:len() + 1] = s:sub(i, i)
+      out(out:len() + 1) = s:sub(i, i)
     else
-      out[out:len() + 1] = "%%%02X":format(b)
+      out(out:len() + 1) = "%%%02X":format(b)
     i = i + 1
   out:concat()
 
@@ -44,15 +44,15 @@ unescape: str = (s: str)
       hex = s:sub(i + 1, i + 2)
       code = tonumber(hex, 16)
       if code != nil
-        out[out:len() + 1] = code:char()
+        out(out:len() + 1) = code:char()
       else
-        out[out:len() + 1] = ch
+        out(out:len() + 1) = ch
       i = i + 3
     else(ch == "+")
-      out[out:len() + 1] = " "
+      out(out:len() + 1) = " "
       i = i + 1
     else
-      out[out:len() + 1] = ch
+      out(out:len() + 1) = ch
       i = i + 1
   out:concat()
 
@@ -66,13 +66,13 @@ parse_query: any = (query: str)
   i = 1
   while i <= query:len()
     if query:sub(i, i) == "&"
-      parts[parts:len() + 1] = query:sub(start, i - 1)
+      parts(parts:len() + 1) = query:sub(start, i - 1)
       start = i + 1
     i = i + 1
-  parts[parts:len() + 1] = query:sub(start)
+  parts(parts:len() + 1) = query:sub(start)
   j = 1
   while j <= parts:len()
-    pair = parts[j]
+    pair = parts(j)
     eq = pair:find("=", 1, true)
     k = ""
     v = ""
@@ -82,9 +82,9 @@ parse_query: any = (query: str)
     else
       k = unescape(pair)
       v = ""
-    if out[k] == nil
-      out[k] = {}
-    out[k][out[k]:len() + 1] = v
+    if out(k) == nil
+      out(k) = {}
+    out(k)(out(k):len() + 1) = v
     j = j + 1
   out
 
@@ -97,10 +97,10 @@ encode_query: str = (params: any)
     if type(vs) == "table"
       i = 1
       while i <= vs:len()
-        out[out:len() + 1] = escape(k) .. "=" .. escape(vs[i])
+        out(out:len() + 1) = escape(k) .. "=" .. escape(vs(i))
         i = i + 1
     else
-      out[out:len() + 1] = escape(k) .. "=" .. escape(vs)
+      out(out:len() + 1) = escape(k) .. "=" .. escape(vs)
   out:concat("&")
 
 # parse: parse a URL string into a structured table.

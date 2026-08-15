@@ -76,7 +76,7 @@ files: any = (dir: str)
   for i, line in out:split("\n")
     t = script.chomp(line)
     if t != ""
-      acc[acc:len() + 1] = t
+      acc(acc:len() + 1) = t
   acc
 
 name: str = (path: str)
@@ -115,7 +115,7 @@ rung: str = (reached: bool)
 # fixture just said does not apply. scripts/native_differential.id fails such
 # a file outright for the same reason, and this table must not disagree with
 # the gate about what counts.
-measure: void = (idol: str, src: str, group: str, blocking: bool, declaredans: bool)
+measure = (idol: str, src: str, group: str, blocking: bool, declaredans: bool)
   nm = name(src)
   bindir_d = work .. "/" .. nm .. ".direct"
   bindir_c = work .. "/" .. nm .. ".c"

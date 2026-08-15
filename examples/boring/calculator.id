@@ -4,26 +4,26 @@
 # expect: 5 12 14
 # @corpus current
 eval: i64 = (src: str)
-    total = 0
-    term = 1
-    op = 43
-    i = 0
-    n = src:len()
-    while i < n
-        b = src[i]
-        if b >= 48 and b <= 57
-            d = b - 48
-            if op == 43
-                term = d
-            if op == 42
-                term = term * d
-        if b == 43
-            total += term
-            op = 43
-        if b == 42
-            op = 42
-        i += 1
-    total + term
+  total = 0
+  term = 1
+  op = 43
+  i = 0
+  n = src:len()
+  while i < n
+    b = src(i)
+    if b >= 48 and b <= 57
+      d = b - 48
+      if op == 43
+        term = d
+      if op == 42
+        term = term * d
+    if b == 43
+      total = total + term
+      op = 43
+    if b == 42
+      op = 42
+    i = i + 1
+  total + term
 
 a = eval("2+3")
 b = eval("3*4")

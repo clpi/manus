@@ -220,29 +220,29 @@ canvas_new: any = (width: i64, height: i64)
   total = width * height
   i = 1
   while i <= total
-    pixels[i] = { r = 1, g = 1, b = 1, a = 1 }
+    pixels(i) = { r = 1, g = 1, b = 1, a = 1 }
     i = i + 1
   { width = width, height = height, pixels = pixels }
 
-canvas_clear: void = (canvas: any, color: any)
+canvas_clear = (canvas: any, color: any)
   total = canvas.width * canvas.height
   i = 1
   while i <= total
-    canvas.pixels[i] = color
+    canvas.pixels(i) = color
     i = i + 1
 
-canvas_set_pixel: void = (canvas: any, x: i64, y: i64, color: any)
+canvas_set_pixel = (canvas: any, x: i64, y: i64, color: any)
   if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height
     return
-  canvas.pixels[y * canvas.width + x + 1] = color
+  canvas.pixels(y * canvas.width + x + 1) = color
 
 canvas_get_pixel: any = (canvas: any, x: i64, y: i64)
   if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height
     return nil
-  canvas.pixels[y * canvas.width + x + 1]
+  canvas.pixels(y * canvas.width + x + 1)
 
 # Draw a filled rectangle
-canvas_fill_rect: void = (canvas: any, x: i64, y: i64, w: i64, h: i64, color: any)
+canvas_fill_rect = (canvas: any, x: i64, y: i64, w: i64, h: i64, color: any)
   dy = 0
   while dy < h
     dx = 0
@@ -252,7 +252,7 @@ canvas_fill_rect: void = (canvas: any, x: i64, y: i64, w: i64, h: i64, color: an
     dy = dy + 1
 
 # Draw a line (Bresenham's algorithm)
-canvas_line: void = (canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any)
+canvas_line = (canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any)
   dx = x1 - x0:abs()
   dy = -y1 - y0:abs()
   sx = 1
@@ -276,7 +276,7 @@ canvas_line: void = (canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any
       y = y + sy
 
 # Draw a circle (Midpoint circle algorithm)
-canvas_circle: void = (canvas: any, cx: i64, cy: i64, r: i64, color: any)
+canvas_circle = (canvas: any, cx: i64, cy: i64, r: i64, color: any)
   x = r
   y = 0
   err = 1 - r
@@ -301,7 +301,7 @@ canvas_to_ppm: str = (canvas: any)
   out = "P6\n" .. canvas.width:to(str) .. " " .. canvas.height:to(str) .. "\n255\n"
   i = 1
   while i <= canvas.width * canvas.height
-    c = canvas.pixels[i]
+    c = canvas.pixels(i)
     out = out .. c.r * 255:floor():char() .. c.g * 255:floor():char() .. c.b * 255:floor():char()
     i = i + 1
   out

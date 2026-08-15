@@ -112,86 +112,86 @@
 # ceiling, 3 the census could not run.
 
 chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
-            break
-        n -= 1
-    text:sub(1, n)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32
+      break
+    n = n - 1
+  text:sub(1, n)
 
 capture: str = (cmd: str)
-    f = io.popen(cmd, "r")
-    if f == nil
-        return ""
-    out = ""
-    line = f:read("*a")
-    if line != nil
-        out = line
-    f:close()
-    chomp(out)
+  f = io.popen(cmd, "r")
+  if f == nil
+    return ""
+  out = ""
+  line = f:read("*a")
+  if line != nil
+    out = line
+  f:close()
+  chomp(out)
 
 envor: str = (name: str, fallback: str)
-    v = os.env[name]
-    if v == nil or v == ""
-        fallback
-    else
-        v
+  v = os.env(name)
+  if v == nil or v == ""
+    fallback
+  else
+    v
 
 tally: i64 = (pattern: str)
-    home = envor("DUO_ROOT", ".")
-    out = capture("cd '" .. home .. "' && git ls-files | grep -c -E '" .. pattern .. "' 2>/dev/null")
-    n = out:len()
-    while n > 0
-        c = out:byte(n)
-        if c != 10
-            if c != 13
-                if c != 32
-                    break
-        n -= 1
-    to(i64)(out:sub(1, n))
+  home = envor("DUO_ROOT", ".")
+  out = capture("cd '" .. home .. "' && git ls-files | grep -c -E '" .. pattern .. "' 2>/dev/null")
+  n = out:len()
+  while n > 0
+    c = out:byte(n)
+    if c != 10
+      if c != 13
+        if c != 32
+          break
+    n = n - 1
+  to(i64)(out:sub(1, n))
 
 ratchet: i64 = (cap: i64)
-    if cap < 113
-        cap
-    else
-        113
+  if cap < 113
+    cap
+  else
+    113
 
 main: i64 = ()
-    duo = tally("\\.id$")
-    if duo == 0
-        print("language_census: FAIL — no .id files found; census did not run")
-        return 3
+  duo = tally("\\.id$")
+  if duo == 0
+    print("language_census: FAIL — no .id files found; census did not run")
+    return 3
 
-    zig = tally("\\.zig$")
-    lua = tally("\\.lua$")
-    csrc = tally("\\.(c|h)$")
-    debt = tally("\\.(sh|py)$")
-    js = tally("\\.js$")
+  zig = tally("\\.zig$")
+  lua = tally("\\.lua$")
+  csrc = tally("\\.(c|h)$")
+  debt = tally("\\.(sh|py)$")
+  js = tally("\\.js$")
 
-    print("language census (tracked files)")
-    print("  duo         {duo}   authored source")
-    print("  zig         {zig}   host compiler — retires with the matrix")
-    print("  lua         {lua}   hosted-language fixtures — INPUT, not source")
-    print("  c/h         {csrc}   bootstrap ledger + fixtures — sanctioned")
-    print("  sh/py       {debt}   DEBT — the number that must reach zero")
-    print("  js          {js}   DEBT — authored, none generated; gaps/GAP-049")
+  print("language census (tracked files)")
+  print("  duo         {duo}   authored source")
+  print("  zig         {zig}   host compiler — retires with the matrix")
+  print("  lua         {lua}   hosted-language fixtures — INPUT, not source")
+  print("  c/h         {csrc}   bootstrap ledger + fixtures — sanctioned")
+  print("  sh/py       {debt}   DEBT — the number that must reach zero")
+  print("  js          {js}   DEBT — authored, none generated; gaps/GAP-049")
 
-    over = 0
-    ceiling = to(i64)(envor("CENSUS_FLOOR", "0"))
-    if debt > ceiling
-        print("language_census: FAIL — sh/py debt {debt} exceeds the ratchet {ceiling}")
-        over += 1
-    jscap = to(i64)(envor("CENSUS_JS_FLOOR", "2"))
-    if js > jscap
-        print("language_census: FAIL — js debt {js} exceeds the ratchet {jscap}")
-        over += 1
-    zigcap = to(i64)(envor("CENSUS_ZIG_CEILING", "115"))
-    zigcap = ratchet(zigcap)
-    if zig > zigcap
-        print("language_census: FAIL — zig ledger {zig} files exceeds the ratchet {zigcap}")
-        over += 1
-    if over > 0
-        return 1
-    print("language_census: PASS (sh/py {debt} <= {ceiling}, js {js} <= {jscap}, zig {zig} <= {zigcap})")
-    0
+  over = 0
+  ceiling = to(i64)(envor("CENSUS_FLOOR", "0"))
+  if debt > ceiling
+    print("language_census: FAIL — sh/py debt {debt} exceeds the ratchet {ceiling}")
+    over = over + 1
+  jscap = to(i64)(envor("CENSUS_JS_FLOOR", "2"))
+  if js > jscap
+    print("language_census: FAIL — js debt {js} exceeds the ratchet {jscap}")
+    over = over + 1
+  zigcap = to(i64)(envor("CENSUS_ZIG_CEILING", "115"))
+  zigcap = ratchet(zigcap)
+  if zig > zigcap
+    print("language_census: FAIL — zig ledger {zig} files exceeds the ratchet {zigcap}")
+    over = over + 1
+  if over > 0
+    return 1
+  print("language_census: PASS (sh/py {debt} <= {ceiling}, js {js} <= {jscap}, zig {zig} <= {zigcap})")
+  0

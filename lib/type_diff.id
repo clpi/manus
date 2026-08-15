@@ -20,30 +20,30 @@
 # Helpers
 # ═══════════════════════════════════════════════════════════════
 
-str_join(parts: any, sep: str): str
-    result = ""
-    for i, part in parts
-        if i > 1
-            result = result .. sep
-        result = result .. part
-    result
+str_join: str = (parts: any, sep: str)
+  result = ""
+  for i, part in parts
+    if i > 1
+      result = result .. sep
+    result = result .. part
+  result
 
-count_fields(t: any): i64
-    count = 0
-    for _ in t
-        count += 1
-    count
+count_fields: i64 = (t: any)
+  count = 0
+  for _ in t
+    count = count + 1
+  count
 
-default_value(type_name: str): str
-    defaults = {
-        ["i64"] = "0",
-        ["f64"] = "0.0",
-        ["str"] = "\"\"",
-        ["bool"] = "0",
-        ["list"] = "NULL",
-        ["any"] = "NULL",
-    }
-    defaults[type_name] or "0"
+default_value: str = (type_name: str)
+  defaults = {
+    ["i64"] = "0",
+    ["f64"] = "0.0",
+    ["str"] = "\"\"",
+    ["bool"] = "0",
+    ["list"] = "NULL",
+    ["any"] = "NULL"
+  }
+  defaults(type_name) or "0"
 
 # ═══════════════════════════════════════════════════════════════
 # Type compatibility analysis
@@ -51,27 +51,29 @@ default_value(type_name: str): str
 
 # is_widening: check if the type change is a safe widening.
 # Widening: i32→i64, f32→f64, str→any, etc.
-is_widening(old_type: str, new_type: str): bool
-    widenings = {
-        ["i8"] = { "i16", "i32", "i64", "f64" },
-        ["i16"] = { "i32", "i64", "f64" },
-        ["i32"] = { "i64", "f64" },
-        ["u8"] = { "u16", "u32", "u64", "i64", "f64" },
-        ["u16"] = { "u32", "u64", "i64", "f64" },
-        ["u32"] = { "u64", "i64", "f64" },
-        ["f32"] = { "f64" },
-        ["str"] = { "any" },
-    }
-    allowed = widenings[old_type]
-    if allowed
-        for _, w in allowed
-            if w == new_type return true
-    false
+is_widening: bool = (old_type: str, new_type: str)
+  widenings = {
+    ["i8"] = { "i16", "i32", "i64", "f64" },
+    ["i16"] = { "i32", "i64", "f64" },
+    ["i32"] = { "i64", "f64" },
+    ["u8"] = { "u16", "u32", "u64", "i64", "f64" },
+    ["u16"] = { "u32", "u64", "i64", "f64" },
+    ["u32"] = { "u64", "i64", "f64" },
+    ["f32"] = { "f64" },
+    ["str"] = { "any" }
+  }
+  allowed = widenings(old_type)
+  if allowed
+    for _, w in allowed
+      if w == new_type
+        return true
+  false
 
 # is_compatible: check if two types are compatible (same or widening)
-is_compatible(old_type: str, new_type: str): bool
-    if old_type == new_type return true
-    is_widening(old_type, new_type)
+is_compatible: bool = (old_type: str, new_type: str)
+  if old_type == new_type
+    return true
+  is_widening(old_type, new_type)
 
 # ═══════════════════════════════════════════════════════════════
 # Type diffing engine
@@ -79,49 +81,50 @@ is_compatible(old_type: str, new_type: str): bool
 
 # diff_types: compare two type definitions (as tables of field→type).
 # Returns a diff descriptor with added, removed, and changed fields.
-diff_types(old_type: any, new_type: any): any
-    added = {}
-    removed = {}
-    changed = {}
-    unchanged = {}
+diff_types: any = (old_type: any, new_type: any)
+  added = {}
+  removed = {}
+  changed = {}
+  unchanged = {}
 
-    # Find added and changed fields
-    for name, new_typ in new_type
-        if old_type[name] == nil
-            added[added:len() + 1] = { name = name, type = new_typ }
-        else if old_type[name] != new_typ
-            changed[changed:len() + 1] = {
-                name = name,
-                old_type = old_type[name],
-                new_type = new_typ,
-            }
-        else
-            unchanged[unchanged:len() + 1] = { name = name, type = new_typ }
+  # Find added and changed fields
+  for name, new_typ in new_type
+    if old_type(name) == nil
+      added(added:len() + 1) = { name = name, type = new_typ }
+    else
+      if old_type(name) != new_typ
+        changed(changed:len() + 1) = {
+          name = name,
+          old_type = old_type(name),
+          new_type = new_typ
+        }
+      else
+        unchanged(unchanged:len() + 1) = { name = name, type = new_typ }
 
-    # Find removed fields
-    for name, old_typ in old_type
-        if new_type[name] == nil
-            removed[removed:len() + 1] = { name = name, type = old_typ }
+  # Find removed fields
+  for name, old_typ in old_type
+    if new_type(name) == nil
+      removed(removed:len() + 1) = { name = name, type = old_typ }
 
-    # Determine compatibility:
-    # - Compatible if only additions (no removals, no type changes)
-    # - Incompatible if anything was removed or changed
-    compatible = removed:len() == 0 and changed:len() == 0
+  # Determine compatibility:
+  # - Compatible if only additions (no removals, no type changes)
+  # - Incompatible if anything was removed or changed
+  compatible = removed:len() == 0 and changed:len() == 0
 
-    # Check type widening (widening is compatible)
-    for _, c in changed
-        if is_widening(c.old_type, c.new_type)
-            compatible = true
+  # Check type widening (widening is compatible)
+  for _, c in changed
+    if is_widening(c.old_type, c.new_type)
+      compatible = true
 
-    return {
-        added = added,
-        removed = removed,
-        changed = changed,
-        unchanged = unchanged,
-        compatible = compatible,
-        old_count = count_fields(old_type),
-        new_count = count_fields(new_type),
-    }
+  return {
+    added = added,
+    removed = removed,
+    changed = changed,
+    unchanged = unchanged,
+    compatible = compatible,
+    old_count = count_fields(old_type),
+    new_count = count_fields(new_type)
+  }
 
 # ═══════════════════════════════════════════════════════════════
 # Migration code generation
@@ -129,79 +132,79 @@ diff_types(old_type: any, new_type: any): any
 
 # emit_migration: build C migration source that converts from the old type to
 # the new type, handling added/removed/changed fields.
-emit_migration(type_name: str, changes: any): str
-    lower = type_name:lower()
-    parts = {}
+emit_migration: str = (type_name: str, changes: any)
+  lower = type_name:lower()
+  parts = {}
 
-    # Generate the migration function
-    parts[parts:len() + 1] = "/* [type_diff] migrate_" .. lower .. ": old → new */"
-    parts[parts:len() + 1] = type_name .. "_v2 migrate_" .. lower .. "(const " .. type_name .. "_v1* old) {"
-    parts[parts:len() + 1] = "    " .. type_name .. "_v2 new = {0};"
+  # Generate the migration function
+  parts(parts:len() + 1) = "/* [type_diff] migrate_" .. lower .. ": old → new */"
+  parts(parts:len() + 1) = type_name .. "_v2 migrate_" .. lower .. "(const " .. type_name .. "_v1* old) {"
+  parts(parts:len() + 1) = "    " .. type_name .. "_v2 new = {0};"
 
-    # Copy unchanged fields
-    for _, u in changes.unchanged
-        parts[parts:len() + 1] = "    new." .. u.name .. " = old->" .. u.name .. ";"
+  # Copy unchanged fields
+  for _, u in changes.unchanged
+    parts(parts:len() + 1) = "    new." .. u.name .. " = old->" .. u.name .. ";"
 
-    # Copy widened fields (safe widening)
-    for _, c in changes.changed
-        if is_widening(c.old_type, c.new_type)
-            parts[parts:len() + 1] = "    new." .. c.name .. " = (" .. c.new_type .. ")old->" .. c.name .. ";  /* " .. c.old_type .. " → " .. c.new_type .. " */"
-        else
-            # Type narrowing: use a default value
-            parts[parts:len() + 1] = "    new." .. c.name .. " = (" .. c.new_type .. ")0;  /* WARNING: " .. c.old_type .. " → " .. c.new_type .. " is narrowing, using default */"
+  # Copy widened fields (safe widening)
+  for _, c in changes.changed
+    if is_widening(c.old_type, c.new_type)
+      parts(parts:len() + 1) = "    new." .. c.name .. " = (" .. c.new_type .. ")old->" .. c.name .. ";  /* " .. c.old_type .. " → " .. c.new_type .. " */"
+    else
+      # Type narrowing: use a default value
+      parts(parts:len() + 1) = "    new." .. c.name .. " = (" .. c.new_type .. ")0;  /* WARNING: " .. c.old_type .. " → " .. c.new_type .. " is narrowing, using default */"
 
-    # Initialize added fields with defaults
-    for _, a in changes.added
-        parts[parts:len() + 1] = "    new." .. a.name .. " = (" .. a.type .. ")" .. default_value(a.type) .. ";  /* added field */"
+  # Initialize added fields with defaults
+  for _, a in changes.added
+    parts(parts:len() + 1) = "    new." .. a.name .. " = (" .. a.type .. ")" .. default_value(a.type) .. ";  /* added field */"
 
-    parts[parts:len() + 1] = "    return new;"
-    parts[parts:len() + 1] = "}"
+  parts(parts:len() + 1) = "    return new;"
+  parts(parts:len() + 1) = "}"
 
-    str_join(parts, "\n")
+  str_join(parts, "\n")
 
 # ═══════════════════════════════════════════════════════════════
 # Diff reporting
 # ═══════════════════════════════════════════════════════════════
 
 # format_diff: generate a human-readable diff report
-format_diff(type_name: str, changes: any): str
-    lines = {}
-    lines[lines:len() + 1] = "=== Type Diff: " .. type_name .. " ==="
-    lines[lines:len() + 1] = "Old fields: " .. changes.old_count:to(str) .. ", New fields: " .. changes.new_count:to(str)
-    lines[lines:len() + 1] = "Compatible: " .. changes.compatible:to(str)
+format_diff: str = (type_name: str, changes: any)
+  lines = {}
+  lines(lines:len() + 1) = "=== Type Diff: " .. type_name .. " ==="
+  lines(lines:len() + 1) = "Old fields: " .. changes.old_count:to(str) .. ", New fields: " .. changes.new_count:to(str)
+  lines(lines:len() + 1) = "Compatible: " .. changes.compatible:to(str)
 
-    if changes:len().added > 0
-        lines[lines:len() + 1] = ""
-        lines[lines:len() + 1] = "+ Added fields:"
-        for _, a in changes.added
-            lines[lines:len() + 1] = "  + " .. a.name .. ": " .. a.type
+  if changes:len().added > 0
+    lines(lines:len() + 1) = ""
+    lines(lines:len() + 1) = "+ Added fields:"
+    for _, a in changes.added
+      lines(lines:len() + 1) = "  + " .. a.name .. ": " .. a.type
 
-    if changes:len().removed > 0
-        lines[lines:len() + 1] = ""
-        lines[lines:len() + 1] = "- Removed fields:"
-        for _, r in changes.removed
-            lines[lines:len() + 1] = "  - " .. r.name .. ": " .. r.type
+  if changes:len().removed > 0
+    lines(lines:len() + 1) = ""
+    lines(lines:len() + 1) = "- Removed fields:"
+    for _, r in changes.removed
+      lines(lines:len() + 1) = "  - " .. r.name .. ": " .. r.type
 
-    if changes:len().changed > 0
-        lines[lines:len() + 1] = ""
-        lines[lines:len() + 1] = "~ Changed fields:"
-        for _, c in changes.changed
-            compat = is_widening(c.old_type, c.new_type) and "widening" or "narrowing"
-            lines[lines:len() + 1] = "  ~ " .. c.name .. ": " .. c.old_type .. " → " .. c.new_type .. " (" .. compat .. ")"
+  if changes:len().changed > 0
+    lines(lines:len() + 1) = ""
+    lines(lines:len() + 1) = "~ Changed fields:"
+    for _, c in changes.changed
+      compat = is_widening(c.old_type, c.new_type) and "widening" or "narrowing"
+      lines(lines:len() + 1) = "  ~ " .. c.name .. ": " .. c.old_type .. " → " .. c.new_type .. " (" .. compat .. ")"
 
-    if changes:len().unchanged > 0
-        lines[lines:len() + 1] = ""
-        lines[lines:len() + 1] = "= Unchanged fields:"
-        for _, u in changes.unchanged
-            lines[lines:len() + 1] = "  = " .. u.name .. ": " .. u.type
+  if changes:len().unchanged > 0
+    lines(lines:len() + 1) = ""
+    lines(lines:len() + 1) = "= Unchanged fields:"
+    for _, u in changes.unchanged
+      lines(lines:len() + 1) = "  = " .. u.name .. ": " .. u.type
 
-    str_join(lines, "\n")
+  str_join(lines, "\n")
 
 M = {
-    diff_types = diff_types,
-    is_widening = is_widening,
-    is_compatible = is_compatible,
-    emit_migration = emit_migration,
-    format_diff = format_diff,
+  diff_types = diff_types,
+  is_widening = is_widening,
+  is_compatible = is_compatible,
+  emit_migration = emit_migration,
+  format_diff = format_diff
 }
 M

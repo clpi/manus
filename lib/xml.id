@@ -1,148 +1,158 @@
 # xml — basic XML parsing and formatting
 
-xml_entity_to_char(c: any): any
-    c:char()
+xml_entity_to_char: any = (c: any)
+  c:char()
 
-escape(s: str): str
-    if s == nil return ""
-    s = s:gsub("&", "&amp;")
-    s = s:gsub("<", "&lt;")
-    s = s:gsub(">", "&gt;")
-    s = s:gsub("\"", "&quot;")
-    s = s:gsub("'", "&apos;")
-    s
+escape: str = (s: str)
+  if s == nil
+    return ""
+  s = s:gsub("&", "&amp;")
+  s = s:gsub("<", "&lt;")
+  s = s:gsub(">", "&gt;")
+  s = s:gsub("\"", "&quot;")
+  s = s:gsub("'", "&apos;")
+  s
 
-unescape(s: str): str
-    if s == nil return ""
-    s = s:gsub("&amp;", "&")
-    s = s:gsub("&lt;", "<")
-    s = s:gsub("&gt;", ">")
-    s = s:gsub("&quot;", "\"")
-    s = s:gsub("&apos;", "'")
-    # A named function, not a lambda. `to_char = (c) c:char()`
-    # lowered to `lua_Value to_char = c;` — the lambda BODY leaked into the
-    # initializer and its parameter `c` was undeclared at that scope, taking
-    # the module down. A file-scope declaration lowers correctly and is passed
-    # by name.
-    s = s:gsub("&#(%d+);", xml_entity_to_char)
-    s
+unescape: str = (s: str)
+  if s == nil
+    return ""
+  s = s:gsub("&amp;", "&")
+  s = s:gsub("&lt;", "<")
+  s = s:gsub("&gt;", ">")
+  s = s:gsub("&quot;", "\"")
+  s = s:gsub("&apos;", "'")
+  # A named function, not a lambda. `to_char = (c) c:char()`
+  # lowered to `lua_Value to_char = c;` — the lambda BODY leaked into the
+  # initializer and its parameter `c` was undeclared at that scope, taking
+  # the module down. A file-scope declaration lowers correctly and is passed
+  # by name.
+  s = s:gsub("&#(%d+);", xml_entity_to_char)
+  s
 
-parse_attributes(data: str, start: i64): any
-    attrs = {}
-    i = start
-    len = data:len()
+parse_attributes: any = (data: str, start: i64)
+  attrs = {}
+  i = start
+  len = data:len()
+  while i <= len
+    while i <= len and (data:byte(i) == 32 or data:byte(i) == 9 or data:byte(i) == 10 or data:byte(i) == 13)
+      i = i + 1
+    if i > len or data:byte(i) == 62 or data:byte(i) == 47
+      break
+    key_start = i
+    while i <= len and data:byte(i) != 61 and data:byte(i) != 32 and data:byte(i) != 9 and data:byte(i) != 10 and data:byte(i) != 13 and data:byte(i) != 62 and data:byte(i) != 47
+      i = i + 1
+    key = data:sub(key_start, i - 1)
+    if data:byte(i) == 61
+      i = i + 1
+      delim = data:byte(i)
+      i = i + 1
+      val_start = i
+      while i <= len and data:byte(i) != delim
+        i = i + 1
+      val = data:sub(val_start, i - 1)
+      i = i + 1
+      attrs(key) = unescape(val)
+  return attrs, i
+
+parse_elem: any = (data: str, start: i64)
+  i = start
+  len = data:len()
+  while i <= len and data:byte(i) != 60
+    i = i + 1
+  if i > len
+    return nil
+  i = i + 1
+  if i <= len and data:byte(i) == 63
     while i <= len
-        while i <= len and (data:byte(i) == 32 or data:byte(i) == 9 or data:byte(i) == 10 or data:byte(i) == 13)
-            i += 1
-        if i > len or data:byte(i) == 62 or data:byte(i) == 47
-            break
-        key_start = i
-        while i <= len and data:byte(i) != 61 and data:byte(i) != 32 and data:byte(i) != 9 and data:byte(i) != 10 and data:byte(i) != 13 and data:byte(i) != 62 and data:byte(i) != 47
-            i += 1
-        key = data:sub(key_start, i - 1)
-        if data:byte(i) == 61
-            i += 1
-            delim = data:byte(i)
-            i += 1
-            val_start = i
-            while i <= len and data:byte(i) != delim
-                i += 1
-            val = data:sub(val_start, i - 1)
-            i += 1
-            attrs[key] = unescape(val)
-    return attrs, i
+      if data:byte(i) == 63 and i + 1 <= len and data:byte(i + 1) == 62
+        break
+      i = i + 1
+    if i <= len
+      i = i + 2
+    return parse_elem(data, i)
+  if i <= len and data:byte(i) == 33
+    while i <= len
+      if data:byte(i) == 93 and i + 2 <= len and data:byte(i + 1) == 93 and data:byte(i + 2) == 62
+        break
+      i = i + 1
+    if i <= len
+      i = i + 3
+    return parse_elem(data, i)
+  if i <= len and data:byte(i) == 47
+    return nil
+  tag_start = i
+  while i <= len and data:byte(i) != 32 and data:byte(i) != 9 and data:byte(i) != 10 and data:byte(i) != 13 and data:byte(i) != 62 and data:byte(i) != 47
+    i = i + 1
+  tag = data:sub(tag_start, i - 1)
+  attrs = {}
+  self_closing = false
+  if data:byte(i) == 47 or data:byte(i) == 32 or data:byte(i) == 9 or data:byte(i) == 10 or data:byte(i) == 13
+    attrs, i = parse_attributes(data, i)
+  if i <= len and data:byte(i) == 47
+    self_closing = true
+    i = i + 1
+  if i <= len and data:byte(i) == 62
+    i = i + 1
+  elem = { tag = tag, attrs = attrs, children = {} }
+  if not self_closing
+    while true
+      sp = ""
+      while i <= len and data:byte(i) != 60
+        sp = sp .. data:sub(i, i)
+        i = i + 1
+      trimmed = sp:trim()
+      if trimmed:len() > 0
+        elem.children(elem.children:len() + 1) = { kind = "text", text = unescape(sp) }
+      if i > len
+        break
+      peek_byte = data:byte(i + 1)
+      if peek_byte == 47
+        i = i + 2
+        while i <= len and data:byte(i) != 62
+          i = i + 1
+        if i <= len
+          i = i + 1
+        break
+      child = parse_elem(data, i)
+      if child == nil
+        break
+      elem.children(elem.children:len() + 1) = child
+      i = child._end
+  elem._end = i
+  return elem
 
-parse_elem(data: str, start: i64): any
-    i = start
-    len = data:len()
-    while i <= len and data:byte(i) != 60
-        i += 1
-    if i > len return nil
-    i += 1
-    if i <= len and data:byte(i) == 63
-        while i <= len
-            if data:byte(i) == 63 and i + 1 <= len and data:byte(i + 1) == 62
-                break
-            i += 1
-        if i <= len i += 2
-        return parse_elem(data, i)
-    if i <= len and data:byte(i) == 33
-        while i <= len
-            if data:byte(i) == 93 and i + 2 <= len and data:byte(i + 1) == 93 and data:byte(i + 2) == 62
-                break
-            i += 1
-        if i <= len i += 3
-        return parse_elem(data, i)
-    if i <= len and data:byte(i) == 47
-        return nil
-    tag_start = i
-    while i <= len and data:byte(i) != 32 and data:byte(i) != 9 and data:byte(i) != 10 and data:byte(i) != 13 and data:byte(i) != 62 and data:byte(i) != 47
-        i += 1
-    tag = data:sub(tag_start, i - 1)
-    attrs = {}
-    self_closing = false
-    if data:byte(i) == 47 or data:byte(i) == 32 or data:byte(i) == 9 or data:byte(i) == 10 or data:byte(i) == 13
-        attrs, i = parse_attributes(data, i)
-    if i <= len and data:byte(i) == 47
-        self_closing = true
-        i += 1
-    if i <= len and data:byte(i) == 62
-        i += 1
-    elem = {tag = tag, attrs = attrs, children = {}}
-    if not self_closing
-        while true
-            sp = ""
-            while i <= len and data:byte(i) != 60
-                sp = sp .. data:sub(i, i)
-                i += 1
-            trimmed = sp:trim()
-            if trimmed:len() > 0
-                elem.children[elem.children:len() + 1] = {kind = "text", text = unescape(sp)}
-            if i > len break
-            peek_byte = data:byte(i + 1)
-            if peek_byte == 47
-                i += 2
-                while i <= len and data:byte(i) != 62
-                    i += 1
-                if i <= len i += 1
-                break
-            child = parse_elem(data, i)
-            if child == nil break
-            elem.children[elem.children:len() + 1] = child
-            i = child._end
-    elem._end = i
-    return elem
+parse: any = (data: str)
+  if data == nil
+    return nil
+  i = 1
+  while i <= data:len() and data:byte(i) != 60
+    i = i + 1
+  if i > data:len()
+    return nil
+  doc = parse_elem(data, i)
+  if doc != nil
+    doc._end = nil
+  return doc
 
-parse(data: str): any
-    if data == nil return nil
-    i = 1
-    while i <= data:len() and data:byte(i) != 60
-        i += 1
-    if i > data:len() return nil
-    doc = parse_elem(data, i)
-    if doc != nil
-        doc._end = nil
-    return doc
+format_node: str = (node: any, indent: i64)
+  if node.kind == "text"
+    return escape(node.text)
+  tag = node.tag
+  attr_str = ""
+  if has(.attrs)(node)
+    for k, v in node.attrs
+      attr_str = attr_str .. " " .. k .. "=\"" .. escape(v) .. "\""
+  children = node.children
+  if children == nil or children:len() == 0
+    return "<" .. tag .. attr_str .. " />"
+  inner = ""
+  pad = "  ":rep(indent)
+  for _, child in children
+    inner = inner .. "\n" .. pad .. "  " .. format_node(child, indent + 1)
+  inner = inner .. "\n" .. pad
+  return "<" .. tag .. attr_str .. ">" .. inner .. "</" .. tag .. ">"
 
-format_node(node: any, indent: i64): str
-    if node.kind == "text"
-        return escape(node.text)
-    tag = node.tag
-    attr_str = ""
-    if has(.attrs)(node)
-        for k, v in node.attrs
-            attr_str = attr_str .. " " .. k .. "=\"" .. escape(v) .. "\""
-    children = node.children
-    if children == nil or children:len() == 0
-        return "<" .. tag .. attr_str .. " />"
-    inner = ""
-    pad = "  ":rep(indent)
-    for _, child in children
-        inner = inner .. "\n" .. pad .. "  " .. format_node(child, indent + 1)
-    inner = inner .. "\n" .. pad
-    return "<" .. tag .. attr_str .. ">" .. inner .. "</" .. tag .. ">"
-
-format(doc: any): str
-    if doc == nil return ""
-    return format_node(doc, 0)
-
+format: str = (doc: any)
+  if doc == nil
+    return ""
+  return format_node(doc, 0)

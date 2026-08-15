@@ -405,7 +405,7 @@ rowof: str = (key: str)
   out: str = ""
   i: i64 = 1
   while i <= roles:len()
-    r: str = roles[i]
+    r: str = roles(i)
     if field(r, 1) == key or field(r, 2) == key
       out = r
     i = i + 1
@@ -426,7 +426,7 @@ carding: str = (role: str, card: str)
   nm: str = naming(role)
   i: i64 = 1
   while i <= cards:len()
-    c: str = cards[i]
+    c: str = cards(i)
     if field(c, 3) == card and (field(c, 2) == nm or field(c, 2) == "none")
       out = field(c, 1)
     i = i + 1
@@ -436,8 +436,8 @@ hexof: str = (hue: str)
   out: str = ""
   i: i64 = 1
   while i <= hues:len()
-    if field(hues[i], 1) == hue
-      out = field(hues[i], 2)
+    if field(hues(i), 1) == hue
+      out = field(hues(i), 2)
     i = i + 1
   out
 
@@ -445,7 +445,7 @@ citing: str = (id: str)
   out: str = ""
   i: i64 = 1
   while i <= rules:len()
-    r: str = rules[i]
+    r: str = rules(i)
     if field(r, 1) == id
       out = r:sub(id:len() + 1, r:len())
       while out:len() > 0 and out:byte(1) == 32
@@ -469,7 +469,7 @@ closed: str = ()
     bad = "the taxonomy is empty; a closed set is enumerated, not absent"
   i: i64 = 1
   while i <= roles:len()
-    r: str = roles[i]
+    r: str = roles(i)
     nm: str = field(r, 1)
     cd: str = field(r, 2)
     if cd:len() != 1
@@ -482,15 +482,15 @@ closed: str = ()
       bad = "role {nm} has no tree-sitter capture"
     j: i64 = 1
     while j <= roles:len()
-      if j != i and field(roles[j], 2) == cd
+      if j != i and field(roles(j), 2) == cd
         bad = "role code {cd} is claimed twice"
-      if j != i and field(roles[j], 1) == nm
+      if j != i and field(roles(j), 1) == nm
         bad = "role name {nm} appears twice"
       j = j + 1
     seen: i64 = 0
     j = 1
     while j <= cards:len()
-      if field(cards[j], 2) == nm
+      if field(cards(j), 2) == nm
         seen = seen + 1
       j = j + 1
     if seen == 0
@@ -499,7 +499,7 @@ closed: str = ()
   i = 1
   diag: i64 = 0
   while i <= cards:len()
-    c: str = cards[i]
+    c: str = cards(i)
     cn: str = field(c, 1)
     cr: str = field(c, 2)
     if cr != "none" and rowof(cr) == ""
@@ -1179,7 +1179,7 @@ why: str = (key: str)
     out = "{out}  capture  {cap}\n"
     i: i64 = 1
     while i <= cards:len()
-      c: str = cards[i]
+      c: str = cards(i)
       if field(c, 2) == nm
         ccode: str = field(c, 3)
         cname: str = field(c, 1)
@@ -1214,7 +1214,7 @@ spanwhy: str = ()
       if ln > lines:len()
         out = "why: {path} has no line {ln}"
       else
-        src: str = lines[ln]
+        src: str = lines(ln)
         rr: str = project(src, surface)
         cc: str = carded(src, surface)
         if col > rr:len()
@@ -1240,7 +1240,7 @@ legend: str = ()
   out: str = ""
   i: i64 = 1
   while i <= roles:len()
-    r: str = roles[i]
+    r: str = roles(i)
     mods: str = "-"
     if field(r, 4) == "heavy"
       mods = "declaration"
@@ -1293,7 +1293,7 @@ emitscm: str = ()
   b = "{b}; role -> capture -> github dark (Primer) colour:\n"
   i: i64 = 1
   while i <= roles:len()
-    r: str = roles[i]
+    r: str = roles(i)
     hx: str = hexof(field(r, 3))
     if field(r, 6) == "faint"
       hx = hexof("faint")
@@ -1316,7 +1316,7 @@ emitscm: str = ()
   b = "{b}] {ycap}\n\n"
   i = 1
   while i <= bindings:len()
-    row: str = bindings[i]
+    row: str = bindings(i)
     pat: str = field(row, 1)
     j: i64 = 2
     word: str = field(row, j)
@@ -1389,14 +1389,14 @@ main: i64 = ()
     print("  name code hue weight italic luminance rule dnir capture")
     i: i64 = 1
     while i <= roles:len()
-      r: str = roles[i]
+      r: str = roles(i)
       print("  {r}")
       i = i + 1
     print("cards, §0g fine splits — refinements WITHIN a role:")
     print("  name role code note")
     i = 1
     while i <= cards:len()
-      c: str = cards[i]
+      c: str = cards(i)
       print("  {c}")
       i = i + 1
     os.exit(0)
@@ -1445,11 +1445,11 @@ main: i64 = ()
   # one. Dropped here rather than in each consumer.
   lines = body:split("\n")
   last: i64 = lines:len()
-  if last > 0 and lines[last] == ""
+  if last > 0 and lines(last) == ""
     last = last - 1
   i: i64 = 1
   while i <= last
-    ln: str = lines[i]
+    ln: str = lines(i)
     if mode == "cards"
       print(carded(ln, surface))
     else

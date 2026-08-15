@@ -41,20 +41,20 @@ widget_new: any = (widget_type: str)
     focused = false
   }
 
-widget_add_child: void = (parent: any, child: any)
+widget_add_child = (parent: any, child: any)
   child.parent = parent
-  parent.children[parent:len().children + 1] = child
+  parent.children(parent:len().children + 1) = child
 
-widget_remove_child: void = (parent: any, child: any)
+widget_remove_child = (parent: any, child: any)
   i = 1
   while i <= parent:len().children
-    if parent.children[i] == child
+    if parent.children(i) == child
       parent.children:remove(i)
       child.parent = nil
       return
     i = i + 1
 
-widget_set_rect: void = (widget: any, x: f64, y: f64, width: f64, height: f64)
+widget_set_rect = (widget: any, x: f64, y: f64, width: f64, height: f64)
   widget.rect = rect_new(x, y, width, height)
 
 # ═══════════════════════════════════════════════════════════════
@@ -67,7 +67,7 @@ button_new: any = (label: str)
   widget.on_click = nil
   widget
 
-button_set_on_click: void = (button: any, callback: any)
+button_set_on_click = (button: any, callback: any)
   button.on_click = callback
 
 # ═══════════════════════════════════════════════════════════════
@@ -80,7 +80,7 @@ label_new: any = (text: str)
   widget.font_size = 14
   widget
 
-label_set_text: void = (label: any, text: str)
+label_set_text = (label: any, text: str)
   label.text = text
 
 # ═══════════════════════════════════════════════════════════════
@@ -98,14 +98,14 @@ text_input_new: any = (placeholder: str)
   widget.on_change = nil
   widget
 
-text_input_set_text: void = (input: any, text: str)
+text_input_set_text = (input: any, text: str)
   input.text = text
   input.cursor_pos = text:len()
 
 text_input_get_text: str = (input: any)
   input.text
 
-text_input_set_on_change: void = (input: any, callback: any)
+text_input_set_on_change = (input: any, callback: any)
   input.on_change = callback
 
 # ═══════════════════════════════════════════════════════════════
@@ -121,7 +121,7 @@ slider_new: any = (min: f64, max: f64, value: f64)
   widget.on_change = nil
   widget
 
-slider_set_value: void = (slider: any, value: f64)
+slider_set_value = (slider: any, value: f64)
   slider.value = slider.min:max(slider.max:min(value))
 
 slider_get_value: f64 = (slider: any)
@@ -138,7 +138,7 @@ checkbox_new: any = (label: str, checked: bool)
   widget.on_change = nil
   widget
 
-checkbox_set_checked: void = (checkbox: any, checked: bool)
+checkbox_set_checked = (checkbox: any, checked: bool)
   checkbox.checked = checked
 
 checkbox_is_checked: bool = (checkbox: any)
@@ -159,21 +159,21 @@ panel_new: any = ()
 # Layout
 # ═══════════════════════════════════════════════════════════════
 
-layout_vertical: void = (container: any, x: f64, y: f64, spacing: f64)
+layout_vertical = (container: any, x: f64, y: f64, spacing: f64)
   current_y = y
   for child in container.children
     child.rect.x = x
     child.rect.y = current_y
     current_y = current_y + child.rect.height + spacing
 
-layout_horizontal: void = (container: any, x: f64, y: f64, spacing: f64)
+layout_horizontal = (container: any, x: f64, y: f64, spacing: f64)
   current_x = x
   for child in container.children
     child.rect.x = current_x
     child.rect.y = y
     current_x = current_x + child.rect.width + spacing
 
-layout_grid: void = (container: any, x: f64, y: f64, cols: i64, spacing: f64)
+layout_grid = (container: any, x: f64, y: f64, cols: i64, spacing: f64)
   current_x = x
   current_y = y
   col = 0

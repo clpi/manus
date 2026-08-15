@@ -1,11 +1,7 @@
 # @comp.generate constraint block → O(ops×types) cartesian native C
 # Run: duo run examples/meta_generate_showcase.id
 
-CONSTRAINTS = [[
-ops: add|sub
-types: i64:int64_t|f64:double
-template: /* gen[$0:$1] */
-]]
+CONSTRAINTS = "ops: add|sub\ntypes: i64:int64_t|f64:double\ntemplate: /* gen[$0:$1] */\n"
 
 CODE = @comp.generate(CONSTRAINTS, "/* fallback $0:$1 */\n")
 

@@ -30,43 +30,42 @@
 # produces lowercase hex and the caller converts it (`xxd -r -p`). Filed as the
 # gap it is; the layout below is the deliverable and it is unaffected.
 
-
 _u8: str = (v: i64)
-    digits = "0123456789abcdef"
-    b: i64 = v & 0xFF
-    hi: i64 = (b >> 4) & 0xF
-    lo: i64 = b & 0xF
-    digits:sub(hi + 1, hi + 1) .. digits:sub(lo + 1, lo + 1)
+  digits = "0123456789abcdef"
+  b: i64 = v & 255
+  hi: i64 = b >> 4 & 15
+  lo: i64 = b & 15
+  digits:sub(hi + 1, hi + 1) .. digits:sub(lo + 1, lo + 1)
 
 _u16: str = (v: i64)
-    _u8(v) .. _u8(v >> 8)
+  _u8(v) .. _u8(v >> 8)
 
 _u32: str = (v: i64)
-    _u8(v) .. _u8(v >> 8) .. _u8(v >> 16) .. _u8(v >> 24)
+  _u8(v) .. _u8(v >> 8) .. _u8(v >> 16) .. _u8(v >> 24)
 
 _u64: str = (v: i64)
-    _u32(v) .. _u32(v >> 32)
+  _u32(v) .. _u32(v >> 32)
 
 # A fixed-width, NUL-padded name field (segname/sectname are char[16]).
 _name16: str = (s: str)
-    out = ""
-    i: i64 = 1
-    while i <= 16
-        if i <= s:len()
-            out = out .. _u8(s:byte(i))
-        else
-            out = out .. _u8(0)
-        i += 1
-    out
+  out = ""
+  i: i64 = 1
+  while i <= 16
+    if i <= s:len()
+      out = out .. _u8(s:byte(i))
+    else
+      out = out .. _u8(0)
+    i = i + 1
+  out
 
 # Instruction words -> little-endian code bytes, as hex. ARM64 is fixed-width 4.
 words_to_bytes: str = (words: any)
-    out = ""
-    i: i64 = 1
-    while i <= words:len()
-        out = out .. _u32(words[i])
-        i += 1
-    out
+  out = ""
+  i: i64 = 1
+  while i <= words:len()
+    out = out .. _u32(words(i))
+    i = i + 1
+  out
 
 # Build a complete relocatable object exporting one global symbol at offset 0.
 #
@@ -75,80 +74,117 @@ words_to_bytes: str = (words: any)
 # Hardcoding them is exactly the bug the link step would catch, so the code
 # says how they are derived.
 object_hex: str = (symbol: str, code: str)
-    hdr: i64 = 32
-    seg: i64 = 72 + 80
-    sym: i64 = 24
-    sizeofcmds: i64 = seg + sym
-    code_off: i64 = hdr + sizeofcmds
-    code_len: i64 = code:len() // 2
-    sym_off: i64 = code_off + code_len
-    nsyms: i64 = 1
-    str_off: i64 = sym_off + 16 * nsyms
-    # string table: leading NUL, then "_symbol", then NUL
-    # string table bytes: leading NUL, "_symbol", trailing NUL
-    strtab = _u8(0)
-    si: i64 = 1
-    strtab = strtab .. _u8(95)
-    while si <= s:len()ymbol
-        strtab = strtab .. _u8(symbol:byte(si))
-        si += 1
-    strtab = strtab .. _u8(0)
-    str_len: i64 = s:len()trtab // 2
+  hdr: i64 = 32
+  seg: i64 = 72 + 80
+  sym: i64 = 24
+  sizeofcmds: i64 = seg + sym
+  code_off: i64 = hdr + sizeofcmds
+  code_len: i64 = code:len() // 2
+  sym_off: i64 = code_off + code_len
+  nsyms: i64 = 1
+  str_off: i64 = sym_off + 16 * nsyms
+  # string table: leading NUL, then "_symbol", then NUL
+  # string table bytes: leading NUL, "_symbol", trailing NUL
+  strtab = _u8(0)
+  si: i64 = 1
+  strtab = strtab .. _u8(95)
+  while si <= s:len()
+    ymbol
+    strtab = strtab .. _u8(symbol:byte(si))
+    si = si + 1
+  strtab = strtab .. _u8(0)
+  str_len: i64 = s:len()
+  trtab // 2
 
-    out = ""
-    # mach_header_64
-    out = out .. _u32(0xFEEDFACF)          # magic
-    out = out .. _u32(0x0100000C)          # CPU_TYPE_ARM64
-    out = out .. _u32(0)                   # CPU_SUBTYPE_ARM64_ALL
-    out = out .. _u32(1)                   # MH_OBJECT
-    out = out .. _u32(2)                   # ncmds
-    out = out .. _u32(sizeofcmds)
-    out = out .. _u32(0)                   # flags
-    out = out .. _u32(0)                   # reserved
+  out = ""
+  # mach_header_64
+  # magic
+  out = out .. _u32(4277009103)
+  # CPU_TYPE_ARM64
+  out = out .. _u32(16777228)
+  # CPU_SUBTYPE_ARM64_ALL
+  out = out .. _u32(0)
+  # MH_OBJECT
+  out = out .. _u32(1)
+  # ncmds
+  out = out .. _u32(2)
+  out = out .. _u32(sizeofcmds)
+  # flags
+  out = out .. _u32(0)
+  # reserved
+  out = out .. _u32(0)
 
-    # LC_SEGMENT_64
-    out = out .. _u32(0x19)                # LC_SEGMENT_64
-    out = out .. _u32(seg)                 # cmdsize
-    out = out .. _name16("")               # segname: empty in an object
-    out = out .. _u64(0)                   # vmaddr
-    out = out .. _u64(code_len)            # vmsize
-    out = out .. _u64(code_off)            # fileoff
-    out = out .. _u64(code_len)            # filesize
-    out = out .. _u32(7)                   # maxprot rwx
-    out = out .. _u32(7)                   # initprot
-    out = out .. _u32(1)                   # nsects
-    out = out .. _u32(0)                   # flags
+  # LC_SEGMENT_64
+  # LC_SEGMENT_64
+  out = out .. _u32(25)
+  # cmdsize
+  out = out .. _u32(seg)
+  # segname: empty in an object
+  out = out .. _name16("")
+  # vmaddr
+  out = out .. _u64(0)
+  # vmsize
+  out = out .. _u64(code_len)
+  # fileoff
+  out = out .. _u64(code_off)
+  # filesize
+  out = out .. _u64(code_len)
+  # maxprot rwx
+  out = out .. _u32(7)
+  # initprot
+  out = out .. _u32(7)
+  # nsects
+  out = out .. _u32(1)
+  # flags
+  out = out .. _u32(0)
 
-    # section_64 __text,__TEXT
-    out = out .. _name16("__text")
-    out = out .. _name16("__TEXT")
-    out = out .. _u64(0)                   # addr
-    out = out .. _u64(code_len)            # size
-    out = out .. _u32(code_off)            # offset
-    out = out .. _u32(2)                   # align 2^2 = 4
-    out = out .. _u32(0)                   # reloff
-    out = out .. _u32(0)                   # nreloc
-    out = out .. _u32(0x80000400)          # PURE_INSTRUCTIONS|SOME_INSTRUCTIONS
-    out = out .. _u32(0)                   # reserved1
-    out = out .. _u32(0)                   # reserved2
-    out = out .. _u32(0)                   # reserved3
+  # section_64 __text,__TEXT
+  out = out .. _name16("__text")
+  out = out .. _name16("__TEXT")
+  # addr
+  out = out .. _u64(0)
+  # size
+  out = out .. _u64(code_len)
+  # offset
+  out = out .. _u32(code_off)
+  # align 2^2 = 4
+  out = out .. _u32(2)
+  # reloff
+  out = out .. _u32(0)
+  # nreloc
+  out = out .. _u32(0)
+  # PURE_INSTRUCTIONS|SOME_INSTRUCTIONS
+  out = out .. _u32(2147484672)
+  # reserved1
+  out = out .. _u32(0)
+  # reserved2
+  out = out .. _u32(0)
+  # reserved3
+  out = out .. _u32(0)
 
-    # LC_SYMTAB
-    out = out .. _u32(0x02)                # LC_SYMTAB
-    out = out .. _u32(sym)                 # cmdsize
-    out = out .. _u32(sym_off)
-    out = out .. _u32(nsyms)
-    out = out .. _u32(str_off)
-    out = out .. _u32(str_len)
+  # LC_SYMTAB
+  # LC_SYMTAB
+  out = out .. _u32(2)
+  # cmdsize
+  out = out .. _u32(sym)
+  out = out .. _u32(sym_off)
+  out = out .. _u32(nsyms)
+  out = out .. _u32(str_off)
+  out = out .. _u32(str_len)
 
-    # code
-    out = out .. code
+  # code
+  out = out .. code
 
-    # nlist_64: the exported symbol, defined in section 1 at offset 0
-    out = out .. _u32(1)                   # n_strx: past the leading NUL
-    out = out .. _u8(0x0F)                 # n_type: N_SECT | N_EXT
-    out = out .. _u8(1)                    # n_sect: 1-based
-    out = out .. _u16(0)                   # n_desc
-    out = out .. _u64(0)                   # n_value
+  # nlist_64: the exported symbol, defined in section 1 at offset 0
+  # n_strx: past the leading NUL
+  out = out .. _u32(1)
+  # n_type: N_SECT | N_EXT
+  out = out .. _u8(15)
+  # n_sect: 1-based
+  out = out .. _u8(1)
+  # n_desc
+  out = out .. _u16(0)
+  # n_value
+  out = out .. _u64(0)
 
-    out .. strtab
+  out .. strtab

@@ -1,16 +1,16 @@
 # hash.crc64 — CRC-64 checksum (mirrors Go's hash/crc64)
 # Uses the ECMA-182 polynomial with 32-bit wide arithmetic.
 
-make_poly_hi(lo: i64): i64
-    # ECMA-182 polynomial top 32 bits
-    0x42F0E1EB
+make_poly_hi: i64 = (lo: i64)
+  # ECMA-182 polynomial top 32 bits
+  1123082731
 
-make_poly_lo(lo: i64): i64
-    # ECMA-182 polynomial bottom 32 bits
-    (0xA9EA3693 + lo) % 4294967296
+make_poly_lo: i64 = (lo: i64)
+  # ECMA-182 polynomial bottom 32 bits
+  (2850698899 + lo) % 4294967296
 
-poly_hi = 0xC96C5795
-poly_lo = 0xD7870F42
+poly_hi = 3379320725
+poly_lo = 3615952706
 
 # NOT `table`: a module-level binding named `table` shadows the runtime
 # `table` global, and `update` then resolved `table[idx+1]` to the library
@@ -18,35 +18,34 @@ poly_lo = 0xD7870F42
 # happened and the checksum was pure byte-shifting (crc_hi stayed 0).
 crc_table = {}
 for i = 0, 255
-    crc_hi = 0
-    crc_lo = i
-    for j = 1, 8
-        if (crc_lo % 2) == 1
-            crc_lo = ((crc_lo >> 1) | (crc_hi << 31)) % 4294967296
-            crc_hi = crc_hi >> 1
-            crc_lo = crc_lo ~ poly_lo
-            crc_hi = (crc_hi ~ poly_hi) % 4294967296
-        else
-            crc_lo = ((crc_lo >> 1) | (crc_hi << 31)) % 4294967296
-            crc_hi = crc_hi >> 1
-    crc_table[i + 1] = {hi = crc_hi, lo = crc_lo}
+  crc_hi = 0
+  crc_lo = i
+  for j = 1, 8
+    if crc_lo % 2 == 1
+      crc_lo = (crc_lo >> 1 | crc_hi << 31) % 4294967296
+      crc_hi = crc_hi >> 1
+      crc_lo = crc_lo ~ poly_lo
+      crc_hi = (crc_hi ~ poly_hi) % 4294967296
+    else
+      crc_lo = (crc_lo >> 1 | crc_hi << 31) % 4294967296
+      crc_hi = crc_hi >> 1
+  crc_table(i + 1) = { hi = crc_hi, lo = crc_lo }
 
-new(): any
-    {crc_hi = 0, crc_lo = 0}
+new: any = ()
+  { crc_hi = 0, crc_lo = 0 }
 
-update(state: any, data: str): void
-    for i = 1, data:len()
-        idx = (state.crc_lo ~ data:byte(i)) % 256
-        new_hi = state.crc_hi >> 8
-        new_lo = ((state.crc_hi & 0xFF) << 24) + (state.crc_lo >> 8)
-        state.crc_hi = (new_hi ~ crc_table[idx + 1].hi) % 4294967296
-        state.crc_lo = (new_lo ~ crc_table[idx + 1].lo) % 4294967296
+update = (state: any, data: str)
+  for i = 1, data:len()
+    idx = (state.crc_lo ~ data:byte(i)) % 256
+    new_hi = state.crc_hi >> 8
+    new_lo = (state.crc_hi & 255) << 24 + state.crc_lo >> 8
+    state.crc_hi = (new_hi ~ crc_table(idx + 1).hi) % 4294967296
+    state.crc_lo = (new_lo ~ crc_table(idx + 1).lo) % 4294967296
 
-final(state: any): i64
-    (state.crc_hi * 4294967296 + state.crc_lo)
+final: i64 = (state: any)
+  state.crc_hi * 4294967296 + state.crc_lo
 
-checksum(data: str): i64
-    s = new()
-    update(s, data)
-    final(s)
-
+checksum: i64 = (data: str)
+  s = new()
+  update(s, data)
+  final(s)

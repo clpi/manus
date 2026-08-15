@@ -44,11 +44,11 @@ with_value: any = (parent: any, key: any, value: any)
   if parent == nil
     parent = background_ctx()
   child = { deadline = parent.deadline, cancelled = false, parent = parent, done = false }
-  child[key] = value
+  child(key) = value
   child
 
 # cancel: cancel a context (and all its children via propagation).
-cancel: void = (ctx: any)
+cancel = (ctx: any)
   if ctx == nil
     return
   ctx.cancelled = true
@@ -108,7 +108,7 @@ value: any = (ctx: any, key: any)
     return nil
   cur = ctx
   while cur != nil
-    v = cur[key]
+    v = cur(key)
     if v != nil
       return v
     cur = cur.parent

@@ -60,7 +60,7 @@ parse_fun_header_str: any = (line: str)
     pos = p_end + 1
     pt = string.match(p, "^%s*[%w_]+%s*:%s*([%w_]+)%s*$")
     if pt != nil
-      pset[pt] = 1
+      pset(pt) = 1
   ptypes_csv = ""
   first = 1
   for pt, _ in pset
@@ -83,7 +83,7 @@ uniform_numeric: any = (ptypes_csv: str)
     return nil
   if string.find(ptypes_csv, ",") != nil
     return nil
-  if NUMERIC[ptypes_csv] == nil
+  if NUMERIC(ptypes_csv) == nil
     return nil
   ptypes_csv
 
@@ -123,22 +123,22 @@ detect_op_families: str = (records_csv: str)
       if t != nil
         pre = string.match(name, "^([%w]+)_([%w]+)$")
         if pre != nil
-          cur = prefixes[pre]
+          cur = prefixes(pre)
           if cur == nil
             cur = ""
           if string.find("," .. cur .. ",", "," .. t .. ",") == nil
             if cur == ""
               cur = "{t else cur = cur},{t end}"
-          prefixes[pre] = cur
-          cc = counts[pre]
+          prefixes(pre) = cur
+          cc = counts(pre)
           if cc == nil
             cc = "0"
-          counts[pre] = tonumber(cc) + 1:to(str)
+          counts(pre) = tonumber(cc) + 1:to(str)
   out = ""
   first = 1
   for pre in prefixes
-    types_csv = prefixes[pre]
-    cnt = counts[pre]
+    types_csv = prefixes(pre)
+    cnt = counts(pre)
     if cnt == nil
       cnt = "0"
     if tonumber(cnt) >= 2
@@ -249,20 +249,20 @@ evaluate: str = (source: str, goal: str)
       if code != ""
         pre = string.match(row, "^([^;]+)")
         cnt = string.match(row, ";[^;]+;([^;]+)$")
-        transforms[pre] = code
-        applied[pre] = "@comp.generate (family '" .. pre .. "': " .. cnt .. " fns -> 1 line)"
+        transforms(pre) = code
+        applied(pre) = "@comp.generate (family '" .. pre .. "': " .. cnt .. " fns -> 1 line)"
         if intermediary_parts == ""
           intermediary_parts = "{code else intermediary_parts = intermediary_parts}\\n\\n{code end}"
   dcode = emit_derive_hint(eq_count)
   if dcode != ""
-    transforms["derive"] = dcode
-    applied["derive"] = "@derive (collapse " .. eq_count .. " eq fn(s))"
+    transforms("derive") = dcode
+    applied("derive") = "@derive (collapse " .. eq_count .. " eq fn(s))"
     if intermediary_parts == ""
       intermediary_parts = "{dcode else intermediary_parts = intermediary_parts}\\n\\n{dcode end}"
   if dispatch >= 3
     dcode2 = "-- detected {dispatch}-arm type-dispatch chain -> @comp.generate dispatch table\\nDISPATCH = @comp.generate([[ops: handle\\ntypes: A|B|C\\ntemplate: /* $0 handler */ ]])"
-    transforms["dispatch"] = dcode2
-    applied["dispatch"] = "@comp.generate dispatch (replace " .. dispatch .. "-arm if/elseif)"
+    transforms("dispatch") = dcode2
+    applied("dispatch") = "@comp.generate dispatch (replace " .. dispatch .. "-arm if/elseif)"
     if intermediary_parts == ""
       intermediary_parts = "{dcode2 else intermediary_parts = intermediary_parts}\\n\\n{dcode2 end}"
 

@@ -1,57 +1,57 @@
-eval_constant(expr: i64): i64
+eval_constant: i64 = (expr: i64)
   expr
-template_str(fmt: str): str
+template_str: str = (fmt: str)
   fmt
-for_range(start: i64, stop: i64, body_fn: any): void
+for_range = (start: i64, stop: i64, body_fn: any)
   for i = start, stop - 1
     body_fn(i)
-gen_vars(prefix: str, count: i64): any
+gen_vars: any = (prefix: str, count: i64)
   vars = {}
   for i = 0, count - 1
-    vars[vars:len() + 1] = prefix .. i:to(str)
+    vars(vars:len() + 1) = prefix .. i:to(str)
   vars
-when(cond: bool, block: any): void
+when = (cond: bool, block: any)
   if cond
     block()
-unroll(count: i64, body_fn: any): void
+unroll = (count: i64, body_fn: any)
   for i = 0, count - 1
     body_fn(i)
-sizeof(T: str): i64
+sizeof: i64 = (T: str)
   sizes = {}
-  sizes["i8"] = 1
-  sizes["i16"] = 2
-  sizes["i32"] = 4
-  sizes["i64"] = 8
-  sizes["u8"] = 1
-  sizes["u16"] = 2
-  sizes["u32"] = 4
-  sizes["u64"] = 8
-  sizes["f32"] = 4
-  sizes["f64"] = 8
-  sizes["bool"] = 1
-  sizes["str"] = 8
-  sizes["ptr"] = 8
-  sizes[T] or 0
-alignof(T: str): i64
+  sizes("i8") = 1
+  sizes("i16") = 2
+  sizes("i32") = 4
+  sizes("i64") = 8
+  sizes("u8") = 1
+  sizes("u16") = 2
+  sizes("u32") = 4
+  sizes("u64") = 8
+  sizes("f32") = 4
+  sizes("f64") = 8
+  sizes("bool") = 1
+  sizes("str") = 8
+  sizes("ptr") = 8
+  sizes(T) or 0
+alignof: i64 = (T: str)
   aligns = {}
-  aligns["i8"] = 1
-  aligns["i16"] = 2
-  aligns["i32"] = 4
-  aligns["i64"] = 8
-  aligns["u8"] = 1
-  aligns["u16"] = 2
-  aligns["u32"] = 4
-  aligns["u64"] = 8
-  aligns["f32"] = 4
-  aligns["f64"] = 8
-  aligns["bool"] = 1
-  aligns["str"] = 8
-  aligns["ptr"] = 8
-  aligns[T] or 1
-static_assert(cond: bool, msg: str): void
+  aligns("i8") = 1
+  aligns("i16") = 2
+  aligns("i32") = 4
+  aligns("i64") = 8
+  aligns("u8") = 1
+  aligns("u16") = 2
+  aligns("u32") = 4
+  aligns("u64") = 8
+  aligns("f32") = 4
+  aligns("f64") = 8
+  aligns("bool") = 1
+  aligns("str") = 8
+  aligns("ptr") = 8
+  aligns(T) or 1
+static_assert = (cond: bool, msg: str)
   if not cond
     error("compile-time assertion failed: " .. msg)
-gen_field_accessor(struct_name: str, field_name: str, field_type: str): any
+gen_field_accessor: any = (struct_name: str, field_name: str, field_type: str)
   {
     name = struct_name,
     field = field_name,

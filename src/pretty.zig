@@ -262,10 +262,22 @@ pub const PrettyPrinter = struct {
             .semantic => |x| try self.print("@{s}", .{x.op}),
             .semantic_scope => try self.write("@"),
             .index => |x| {
+                // DEMAGIX §4/§27: `[]` is compatibility syntax. Dynamic keyed
+                // projection is the ordinary application face, so canonical
+                // Idol writes `a(i)` and `a[i]` normalizes to it.
+                //
+                // The equivalence is not assumed: `table_apply.zig` already
+                // converges `t(key)` onto the SAME `.index` node this prints,
+                // so both spellings reach one application occurrence. And the
+                // conversion is only kept when `idol check` still passes on the
+                // result — §29 requires the semantics be preserved rather than
+                // the brackets be textually replaced.
                 try self.printExpr(x.obj, 0);
-                try self.write("[");
+                const open_c = if (self.mode == .idol and self.canonical) "(" else "[";
+                const close_c = if (self.mode == .idol and self.canonical) ")" else "]";
+                try self.write(open_c);
                 try self.printExpr(x.key, 0);
-                try self.write("]");
+                try self.write(close_c);
             },
             .field => |x| {
                 try self.printExpr(x.obj, 0);

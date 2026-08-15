@@ -2,20 +2,20 @@
 # Provides a registry of drivers and a generic DB handle.
 # Actual drivers (sqlite, postgres, mysql) register themselves.
 
-new(): void
-    return {drivers = {}}
+new = ()
+  return { drivers = {} }
 
-register(db: any, name: any, driver: any)
-    db.drivers[name] = driver
+register = (db: any, name: any, driver: any)
+  db.drivers(name) = driver
 
-open(db: any, driver_name: any, dsn: any)
-    d = db.drivers[driver_name]
-    if d == nil return nil, "unknown driver: " .. driver_name
-    return d.open(dsn)
+open = (db: any, driver_name: any, dsn: any)
+  d = db.drivers(driver_name)
+  if d == nil
+    return nil, "unknown driver: " .. driver_name
+  return d.open(dsn)
 
-databases(db: any)
-    out = {}
-    for k in db.drivers
-        out[out:len() + 1] = k
-    return out
-
+databases = (db: any)
+  out = {}
+  for k in db.drivers
+    out(out:len() + 1) = k
+  return out

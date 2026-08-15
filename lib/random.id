@@ -1,7 +1,7 @@
 # random — Random number generation and utilities
 
 # seed: seed the random number generator.
-seed: void = (s: int)
+seed = (s: int)
   math.randomseed(s)
 
 # float: return a random float in [0, 1).
@@ -28,7 +28,7 @@ bool_weighted: bool = (p: float)
 choice: any = (list: any)
   if list == nil or list:len() == 0
     return nil
-  list[1:random(list:len())]
+  list(1:random(list:len()))
 
 # sample: return n unique random elements from a list (without replacement).
 sample: any = (list: any, n: i64)
@@ -41,15 +41,15 @@ sample: any = (list: any, n: i64)
   indices = {}
   i = 1
   while i <= len
-    indices[i] = i
+    indices(i) = i
     i = i + 1
   picked = 0
   while picked < n
     swap_idx = picked + 1:random(len)
-    tmp = indices[picked + 1]
-    indices[picked + 1] = indices[swap_idx]
-    indices[swap_idx] = tmp
-    out[out:len() + 1] = list[indices[picked + 1]]
+    tmp = indices(picked + 1)
+    indices(picked + 1) = indices(swap_idx)
+    indices(swap_idx) = tmp
+    out(out:len() + 1) = list(indices(picked + 1))
     picked = picked + 1
   out
 
@@ -70,17 +70,17 @@ weighted_choice: any = (items: any, weights: any)
   total = 0
   i = 1
   while i <= len
-    total = total + weights[i]
+    total = total + weights(i)
     i = i + 1
   r = math.random() * total
   cumulative = 0
   i = 1
   while i <= len
-    cumulative = cumulative + weights[i]
+    cumulative = cumulative + weights(i)
     if r <= cumulative
-      return items[i]
+      return items(i)
     i = i + 1
-  items[len]
+  items(len)
 
 # range: return a list of integers from start to stop (exclusive), with optional step.
 range: any = (start: i64, stop: i64, step: i64)
@@ -92,12 +92,12 @@ range: any = (start: i64, stop: i64, step: i64)
   if step > 0
     i = start
     while i < stop
-      out[out:len() + 1] = i
+      out(out:len() + 1) = i
       i = i + step
   else
     i = start
     while i > stop
-      out[out:len() + 1] = i
+      out(out:len() + 1) = i
       i = i + step
   out
 
@@ -115,15 +115,15 @@ gauss: float = (mean: float, stddev: float)
   mean + stddev * z
 
 # shuffle: shuffle a list in-place (Fisher-Yates).
-shuffle: void = (list: any)
+shuffle = (list: any)
   if list == nil
     return
   n = list:len()
   while n > 1
     k = 1:random(n)
-    tmp = list[n]
-    list[n] = list[k]
-    list[k] = tmp
+    tmp = list(n)
+    list(n) = list(k)
+    list(k) = tmp
     n = n - 1
 
 # coin: flip a coin, return "heads" or "tails".
@@ -139,27 +139,27 @@ uuid_v4ish: str = ()
   i = 1
   while i <= 36
     if i == 9 or i == 14 or i == 19 or i == 24
-      parts[i] = "-"
+      parts(i) = "-"
     else(i == 15)
-      parts[i] = "4"
+      parts(i) = "4"
     else(i == 20)
       idx = 1:random(4)
       if idx == 1
-        parts[i] = "8"
+        parts(i) = "8"
       else(idx == 2)
-        parts[i] = "9"
+        parts(i) = "9"
       else(idx == 3)
-        parts[i] = "a"
+        parts(i) = "a"
       else
-        parts[i] = "b"
+        parts(i) = "b"
     else
       # Use single random call to get one hex character
       idx = 1:random(16)
-      parts[i] = hex_chars:sub(idx, idx)
+      parts(i) = hex_chars:sub(idx, idx)
     i = i + 1
   result = ""
   i = 1
   while i <= 36
-    result = result .. parts[i]
+    result = result .. parts(i)
     i = i + 1
   result

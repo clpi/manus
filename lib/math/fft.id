@@ -5,280 +5,282 @@
 # Complex Number Operations (for FFT)
 # ═══════════════════════════════════════════════════════════════
 
-complex_new(re: f64, im: f64): any
-    {re = re, im = im}
+complex_new: any = (re: f64, im: f64)
+  { re = re, im = im }
 
-complex_add(a: any, b: any): any
-    {re = a.re + b.re, im = a.im + b.im}
+complex_add: any = (a: any, b: any)
+  { re = a.re + b.re, im = a.im + b.im }
 
-complex_sub(a: any, b: any): any
-    {re = a.re - b.re, im = a.im - b.im}
+complex_sub: any = (a: any, b: any)
+  { re = a.re - b.re, im = a.im - b.im }
 
-complex_mul(a: any, b: any): any
-    {
-        re = a.re * b.re - a.im * b.im,
-        im = a.re * b.im + a.im * b.re,
-    }
+complex_mul: any = (a: any, b: any)
+  {
+    re = a.re * b.re - a.im * b.im,
+    im = a.re * b.im + a.im * b.re
+  }
 
-complex_scale(a: any, s: f64): any
-    {re = a.re * s, im = a.im * s}
+complex_scale: any = (a: any, s: f64)
+  { re = a.re * s, im = a.im * s }
 
-complex_conjugate(a: any): any
-    {re = a.re, im = -a.im}
+complex_conjugate: any = (a: any)
+  { re = a.re, im = -a.im }
 
-complex_abs(a: any): f64
-    a.re * a.re + a.im * a.im:sqrt()
+complex_abs: f64 = (a: any)
+  a.re * a.re + a.im * a.im:sqrt()
 
-complex_phase(a: any): f64
-    math.atan2(a.im, a.re)
+complex_phase: f64 = (a: any)
+  math.atan2(a.im, a.re)
 
 # ═══════════════════════════════════════════════════════════════
 # FFT (Cooley-Tukey algorithm)
 # ═══════════════════════════════════════════════════════════════
 
-fft(x: any): any
-    n = x:len()
-    if n == 0 return {}
+fft: any = (x: any)
+  n = x:len()
+  if n == 0
+    return {}
 
-    # Check if power of 2
-    if n & (n - 1) != 0
-        # Pad to next power of 2
-        new_n = 1
-        while new_n < n
-            new_n *= 2
-        padded = {}
-        i = 1
-        while i <= n
-            padded[i] = x[i]
-            i += 1
-        while padded:len() < new_n
-            padded[padded:len() + 1] = {re = 0, im = 0}
-        x = padded
-        n = new_n
-
-    if n == 1 return x
-
-    # Bit-reversal permutation
-    j = 0
+  # Check if power of 2
+  if n & (n - 1) != 0
+    # Pad to next power of 2
+    new_n = 1
+    while new_n < n
+      new_n = new_n * 2
+    padded = {}
     i = 1
+    while i <= n
+      padded(i) = x(i)
+      i = i + 1
+    while padded:len() < new_n
+      padded(padded:len() + 1) = { re = 0, im = 0 }
+    x = padded
+    n = new_n
+
+  if n == 1
+    return x
+
+  # Bit-reversal permutation
+  j = 0
+  i = 1
+  while i < n
+    bit = n >> 1
+    while j & bit != 0
+      j = j ~ bit
+      bit = bit >> 1
+    j = j ~ bit
+
+    if i < j
+      temp = x(i + 1)
+      x(i + 1) = x(j + 1)
+      x(j + 1) = temp
+    i = i + 1
+
+  # FFT butterfly
+  length = 2
+  while length <= n
+    half = length >> 1
+    angle = -2 * math.pi / length
+    wlen = complex_new(angle:cos(), angle:sin())
+
+    i = 0
     while i < n
-        bit = n >> 1
-        while j & bit != 0
-            j = j ~ bit
-            bit = bit >> 1
-        j = j ~ bit
+      w = { re = 1, im = 0 }
+      j = 0
+      while j < half
+        u = x(i + j + 1)
+        t = complex_mul(w, x(i + j + half + 1))
+        x(i + j + 1) = complex_add(u, t)
+        x(i + j + half + 1) = complex_sub(u, t)
+        w = complex_mul(w, wlen)
+        j = j + 1
+      i = i + length
+    length = length * 2
 
-        if i < j
-            temp = x[i + 1]
-            x[i + 1] = x[j + 1]
-            x[j + 1] = temp
-        i += 1
-
-    # FFT butterfly
-    length = 2
-    while length <= n
-        half = length >> 1
-        angle = -2 * math.pi / length
-        wlen = complex_new(angle:cos(), angle:sin())
-
-        i = 0
-        while i < n
-            w = {re = 1, im = 0}
-            j = 0
-            while j < half
-                u = x[i + j + 1]
-                t = complex_mul(w, x[i + j + half + 1])
-                x[i + j + 1] = complex_add(u, t)
-                x[i + j + half + 1] = complex_sub(u, t)
-                w = complex_mul(w, wlen)
-                j += 1
-            i += length
-        length *= 2
-
-    x
+  x
 
 # ═══════════════════════════════════════════════════════════════
 # Inverse FFT
 # ═══════════════════════════════════════════════════════════════
 
-ifft(x: any): any
-    n = x:len()
-    if n == 0 return {}
+ifft: any = (x: any)
+  n = x:len()
+  if n == 0
+    return {}
 
-    # Conjugate input
-    conjugated = {}
-    i = 1
-    while i <= n
-        conjugated[i] = complex_conjugate(x[i])
-        i += 1
+  # Conjugate input
+  conjugated = {}
+  i = 1
+  while i <= n
+    conjugated(i) = complex_conjugate(x(i))
+    i = i + 1
 
-    # Forward FFT
-    result = fft(conjugated)
+  # Forward FFT
+  result = fft(conjugated)
 
-    # Conjugate and scale
-    scaled = {}
-    i = 1
-    while i <= n
-        scaled[i] = complex_scale(complex_conjugate(result[i]), 1.0 / n)
-        i += 1
-    scaled
+  # Conjugate and scale
+  scaled = {}
+  i = 1
+  while i <= n
+    scaled(i) = complex_scale(complex_conjugate(result(i)), 1.0 / n)
+    i = i + 1
+  scaled
 
 # ═══════════════════════════════════════════════════════════════
 # Real-valued FFT (for real signals)
 # ═══════════════════════════════════════════════════════════════
 
-rfft(signal: any): any
-    n = signal:len()
-    complex_input = {}
-    i = 1
-    while i <= n
-        complex_input[i] = complex_new(signal[i], 0)
-        i += 1
-    fft(complex_input)
+rfft: any = (signal: any)
+  n = signal:len()
+  complex_input = {}
+  i = 1
+  while i <= n
+    complex_input(i) = complex_new(signal(i), 0)
+    i = i + 1
+  fft(complex_input)
 
-irfft(spectrum: any, n: i64): any
-    if n == nil n = spectrum:len()
-    result = ifft(spectrum)
-    signal = {}
-    i = 1
-    while i <= n
-        signal[i] = result[i].re
-        i += 1
-    signal
+irfft: any = (spectrum: any, n: i64)
+  if n == nil
+    n = spectrum:len()
+  result = ifft(spectrum)
+  signal = {}
+  i = 1
+  while i <= n
+    signal(i) = result(i).re
+    i = i + 1
+  signal
 
 # ═══════════════════════════════════════════════════════════════
 # Power Spectrum
 # ═══════════════════════════════════════════════════════════════
 
-power_spectrum(spectrum: any): any
-    ps = {}
-    i = 1
-    while i <= spectrum:len()
-        ps[i] = complex_abs(spectrum[i]) ^ 2
-        i += 1
-    ps
+power_spectrum: any = (spectrum: any)
+  ps = {}
+  i = 1
+  while i <= spectrum:len()
+    ps(i) = complex_abs(spectrum(i)) ^ 2
+    i = i + 1
+  ps
 
-magnitude_spectrum(spectrum: any): any
-    mag = {}
-    i = 1
-    while i <= spectrum:len()
-        mag[i] = complex_abs(spectrum[i])
-        i += 1
-    mag
+magnitude_spectrum: any = (spectrum: any)
+  mag = {}
+  i = 1
+  while i <= spectrum:len()
+    mag(i) = complex_abs(spectrum(i))
+    i = i + 1
+  mag
 
-phase_spectrum(spectrum: any): any
-    phase = {}
-    i = 1
-    while i <= spectrum:len()
-        phase[i] = complex_phase(spectrum[i])
-        i += 1
-    phase
+phase_spectrum: any = (spectrum: any)
+  phase = {}
+  i = 1
+  while i <= spectrum:len()
+    phase(i) = complex_phase(spectrum(i))
+    i = i + 1
+  phase
 
 # ═══════════════════════════════════════════════════════════════
 # Convolution via FFT
 # ═══════════════════════════════════════════════════════════════
 
-convolve(a: any, b: any): any
-    n = a:len() + b:len() - 1
+convolve: any = (a: any, b: any)
+  n = a:len() + b:len() - 1
 
-    # Pad to next power of 2
-    fft_size = 1
-    while fft_size < n
-        fft_size *= 2
+  # Pad to next power of 2
+  fft_size = 1
+  while fft_size < n
+    fft_size = fft_size * 2
 
-    # Zero-pad inputs
-    fa = {}
-    fb = {}
-    i = 1
-    while i <= fft_size
-        if i <= a:len()
-            fa[i] = complex_new(a[i], 0)
-        else
-            fa[i] = {re = 0, im = 0}
-        if i <= b:len()
-            fb[i] = complex_new(b[i], 0)
-        else
-            fb[i] = {re = 0, im = 0}
-        i += 1
+  # Zero-pad inputs
+  fa = {}
+  fb = {}
+  i = 1
+  while i <= fft_size
+    if i <= a:len()
+      fa(i) = complex_new(a(i), 0)
+    else
+      fa(i) = { re = 0, im = 0 }
+    if i <= b:len()
+      fb(i) = complex_new(b(i), 0)
+    else
+      fb(i) = { re = 0, im = 0 }
+    i = i + 1
 
-    # FFT both
-    fa_fft = fft(fa)
-    fb_fft = fft(fb)
+  # FFT both
+  fa_fft = fft(fa)
+  fb_fft = fft(fb)
 
-    # Multiply in frequency domain
-    product = {}
-    i = 1
-    while i <= fft_size
-        product[i] = complex_mul(fa_fft[i], fb_fft[i])
-        i += 1
+  # Multiply in frequency domain
+  product = {}
+  i = 1
+  while i <= fft_size
+    product(i) = complex_mul(fa_fft(i), fb_fft(i))
+    i = i + 1
 
-    # Inverse FFT
-    result = ifft(product)
+  # Inverse FFT
+  result = ifft(product)
 
-    # Extract real part
-    output = {}
-    i = 1
-    while i <= a:len() + b:len() - 1
-        output[i] = result[i].re
-        i += 1
-    output
+  # Extract real part
+  output = {}
+  i = 1
+  while i <= a:len() + b:len() - 1
+    output(i) = result(i).re
+    i = i + 1
+  output
 
 # ═══════════════════════════════════════════════════════════════
 # Correlation via FFT
 # ═══════════════════════════════════════════════════════════════
 
-correlate(a: any, b: any): any
-    # Cross-correlation: correlate(a, b) = convolve(a, reverse(b))
-    b_rev = {}
-    i = b:len()
-    while i >= 1
-        b_rev[b_rev:len() + 1] = b[i]
-        i -= 1
-    convolve(a, b_rev)
+correlate: any = (a: any, b: any)
+  # Cross-correlation: correlate(a, b) = convolve(a, reverse(b))
+  b_rev = {}
+  i = b:len()
+  while i >= 1
+    b_rev(b_rev:len() + 1) = b(i)
+    i = i - 1
+  convolve(a, b_rev)
 
-autocorrelate(x: any): any
-    correlate(x, x)
+autocorrelate: any = (x: any)
+  correlate(x, x)
 
 # ═══════════════════════════════════════════════════════════════
 # DFT (Discrete Fourier Transform) - for small sizes
 # ═══════════════════════════════════════════════════════════════
 
-dft(x: any): any
-    n = x:len()
-    result = {}
-    k = 0
-    while k < n
-        sum = {re = 0, im = 0}
-        j = 0
-        while j < n
-            angle = -2 * math.pi * k * j / n
-            w = complex_new(angle:cos(), angle:sin())
-            sum = complex_add(sum, complex_mul(x[j + 1], w))
-            j += 1
-        result[k + 1] = sum
-        k += 1
-    result
+dft: any = (x: any)
+  n = x:len()
+  result = {}
+  k = 0
+  while k < n
+    sum = { re = 0, im = 0 }
+    j = 0
+    while j < n
+      angle = -2 * math.pi * k * j / n
+      w = complex_new(angle:cos(), angle:sin())
+      sum = complex_add(sum, complex_mul(x(j + 1), w))
+      j = j + 1
+    result(k + 1) = sum
+    k = k + 1
+  result
 
-idft(x: any): any
-    n = x:len()
-    result = {}
-    k = 0
-    while k < n
-        sum = {re = 0, im = 0}
-        j = 0
-        while j < n
-            angle = 2 * math.pi * k * j / n
-            w = complex_new(angle:cos(), angle:sin())
-            sum = complex_add(sum, complex_mul(x[j + 1], w))
-            j += 1
-        result[k + 1] = complex_scale(sum, 1.0 / n)
-        k += 1
-    result
-
+idft: any = (x: any)
+  n = x:len()
+  result = {}
+  k = 0
+  while k < n
+    sum = { re = 0, im = 0 }
+    j = 0
+    while j < n
+      angle = 2 * math.pi * k * j / n
+      w = complex_new(angle:cos(), angle:sin())
+      sum = complex_add(sum, complex_mul(x(j + 1), w))
+      j = j + 1
+    result(k + 1) = complex_scale(sum, 1.0 / n)
+    k = k + 1
+  result
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Complex
 # FFT
 # Spectrum

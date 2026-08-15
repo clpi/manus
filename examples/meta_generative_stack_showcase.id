@@ -4,8 +4,8 @@
 # One author pattern per stage; @comp.each closes the algebra by re-expanding
 # every comptime fragment. Fragment counts use @comp.str.countlines (native i64).
 
-stamp(frag): str
-    "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
+stamp: str = (frag)
+  "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 
 # Stage A: O(n) template axis
 TMPL_VARIANTS = "i64:int64_t|f64:double"
@@ -15,11 +15,7 @@ TMPL_N = @comp.str.countlines(TMPL_EACH)
 TMPL_SPEC_N = @comp.str.splitcount(TMPL_VARIANTS, "|")
 
 # Stage B: O(ops×types) constraint cartesian
-GEN_SPEC = [[
-ops: add|sub
-types: i64:int64_t|f64:double
-template: /* gen[$0:$1] */
-]]
+GEN_SPEC = "ops: add|sub\ntypes: i64:int64_t|f64:double\ntemplate: /* gen[$0:$1] */\n"
 GEN = @comp.generate(GEN_SPEC, "")
 GEN_EACH = @comp.each(GEN, stamp)
 GEN_N = @comp.str.countlines(GEN_EACH)
@@ -30,7 +26,7 @@ SCHEME = @comp.scheme(DECLS, "/* scheme[$kind $name] */\n")
 SCHEME_EACH = @comp.each(SCHEME, stamp)
 SCHEME_N = @comp.str.countlines(SCHEME_EACH)
 
-ok = (TMPL_N == 2 and TMPL_SPEC_N == 2 and GEN_N == 4 and SCHEME_N == 2)
+ok = TMPL_N == 2 and TMPL_SPEC_N == 2 and GEN_N == 4 and SCHEME_N == 2
 
 print("=== generative stack (template / generate / scheme → each) ===")
 print("template→each fragments = " .. to(str)(TMPL_N) .. "  (expect 2)")

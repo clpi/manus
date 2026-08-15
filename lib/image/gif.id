@@ -25,270 +25,277 @@
 # arithmetic on an `any` field against integer literals truncates the field
 # before the operation — a silently-wrong-numbers trap. Typed locals sidestep
 # both, and the bit twiddling stays native.
-gif_read_code(st: any): i64
-    code: i64 = 0
-    bits_read: i64 = 0
-    cs: i64 = st.code_size
-    eoi: i64 = st.eoi_code
-    bp: i64 = st.byte_pos
-    bitp: i64 = st.bit_pos
-    data = st.data
-    n: i64 = data:len()
-    while bits_read < cs
-        if bp > n
-            st.byte_pos = bp
-            st.bit_pos = bitp
-            return eoi
-        byte_val: i64 = data:byte(bp)
-        bit: i64 = (byte_val >> bitp) & 1
-        code |= (bit << bits_read)
-        bitp += 1
-        bits_read += 1
-        if bitp >= 8
-            bitp = 0
-            bp += 1
-    st.byte_pos = bp
-    st.bit_pos = bitp
-    code
+gif_read_code: i64 = (st: any)
+  code: i64 = 0
+  bits_read: i64 = 0
+  cs: i64 = st.code_size
+  eoi: i64 = st.eoi_code
+  bp: i64 = st.byte_pos
+  bitp: i64 = st.bit_pos
+  data = st.data
+  n: i64 = data:len()
+  while bits_read < cs
+    if bp > n
+      st.byte_pos = bp
+      st.bit_pos = bitp
+      return eoi
+    byte_val: i64 = data:byte(bp)
+    bit: i64 = byte_val >> bitp & 1
+    code = code | bit << bits_read
+    bitp = bitp + 1
+    bits_read = bits_read + 1
+    if bitp >= 8
+      bitp = 0
+      bp = bp + 1
+  st.byte_pos = bp
+  st.bit_pos = bitp
+  code
 
-lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
-    clear_code = 2 ^ min_code_size
-    eoi_code = clear_code + 1
+lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
+  clear_code = 2 ^ min_code_size
+  eoi_code = clear_code + 1
 
-    # Initialize code table
-    dict = {}
-    i = 0
-    while i < clear_code
-        dict[i] = {i}
-        i += 1
-    dict_size = eoi_code + 1
-    code_size = min_code_size + 1
-    next_code = dict_size
+  # Initialize code table
+  dict = {}
+  i = 0
+  while i < clear_code
+    dict(i) = { i }
+    i = i + 1
+  dict_size = eoi_code + 1
+  code_size = min_code_size + 1
+  next_code = dict_size
 
-    # Bit reader state, shared with gif_read_code. `code_size` lives here too
-    # because the reader consumes it and the decoder grows it as the dictionary
-    # fills — one owner for one fact.
-    st = {
-        data = data,
-        eoi_code = eoi_code,
-        code_size = code_size,
-        byte_pos = 1,
-        bit_pos = 0
-    }
+  # Bit reader state, shared with gif_read_code. `code_size` lives here too
+  # because the reader consumes it and the decoder grows it as the dictionary
+  # fills — one owner for one fact.
+  st = {
+    data = data,
+    eoi_code = eoi_code,
+    code_size = code_size,
+    byte_pos = 1,
+    bit_pos = 0
+  }
 
-    # Output buffer
-    output = {}
-    prev = nil
+  # Output buffer
+  output = {}
+  prev = nil
 
-    while true
-        code = gif_read_code(st)
+  while true
+    code = gif_read_code(st)
 
-        if code == clear_code
-            # Reset
-            i = 0
-            while i < clear_code
-                dict[i] = {i}
-                i += 1
-            dict_size = eoi_code + 1
-            st.code_size = min_code_size + 1
-            next_code = dict_size
-            prev = nil
+    if code == clear_code
+      # Reset
+      i = 0
+      while i < clear_code
+        dict(i) = { i }
+        i = i + 1
+      dict_size = eoi_code + 1
+      st.code_size = min_code_size + 1
+      next_code = dict_size
+      prev = nil
+    else
 
-        else if code == eoi_code
-            break
+      if code == eoi_code
+        break
+      else
 
-        else if code < dict_size
-            # Code is in the table
-            entry = dict[code]
-            # Output the entry
-            i = 1
-            while i <= entry:len()
-                output[output:len() + 1] = entry[i]
-                i += 1
+        if code < dict_size
+          # Code is in the table
+          entry = dict(code)
+          # Output the entry
+          i = 1
+          while i <= entry:len()
+            output(output:len() + 1) = entry(i)
+            i = i + 1
 
-            if prev != nil
-                # Add new entry: prev + first byte of current entry
-                new_entry = {}
-                j = 1
-                while j <= dict:len()[prev]
-                    new_entry[j] = dict[prev][j]
-                    j += 1
-                if entry:len() > 0
-                    new_entry[j] = entry[1]
-                if next_code < 4096
-                    dict[next_code] = new_entry
-                    next_code += 1
-                    # Increase code size if needed
-                    # Typed local: `2 ^ st.code_size` on the `any` field
-                    # yields a lua_Value, and comparing it against the i64
-                    # next_code is "invalid operands to binary expression".
-                    cs: i64 = st.code_size
-                    if next_code > to(i64)(2 ^ cs) and cs < 12
-                        st.code_size = cs + 1
-            prev = code
-
-        else
-            # code >= dict_size: special case
-            if prev == nil break
-            entry = dict[prev]
-            # Output entry + first byte of entry
+          if prev != nil
+            # Add new entry: prev + first byte of current entry
             new_entry = {}
             j = 1
-            while j <= entry:len()
-                new_entry[j] = entry[j]
-                output[output:len() + 1] = entry[j]
-                j += 1
-            first = entry[1]
-            new_entry[j] = first
-            output[output:len() + 1] = first
-
+            while j <= dict:len()(prev)
+              new_entry(j) = dict(prev)(j)
+              j = j + 1
+            if entry:len() > 0
+              new_entry(j) = entry(1)
             if next_code < 4096
-                dict[next_code] = new_entry
-                next_code += 1
-                cs: i64 = st.code_size
-                if next_code > to(i64)(2 ^ cs) and cs < 12
-                    st.code_size = cs + 1
-            prev = next_code - 1
+              dict(next_code) = new_entry
+              next_code = next_code + 1
+              # Increase code size if needed
+              # Typed local: `2 ^ st.code_size` on the `any` field
+              # yields a lua_Value, and comparing it against the i64
+              # next_code is "invalid operands to binary expression".
+              cs: i64 = st.code_size
+              if next_code > to(i64)(2 ^ cs) and cs < 12
+                st.code_size = cs + 1
+          prev = code
+        else
 
-        if output:len() >= pixel_count break
+          # code >= dict_size: special case
+          if prev == nil
+            break
+          entry = dict(prev)
+          # Output entry + first byte of entry
+          new_entry = {}
+          j = 1
+          while j <= entry:len()
+            new_entry(j) = entry(j)
+            output(output:len() + 1) = entry(j)
+            j = j + 1
+          first = entry(1)
+          new_entry(j) = first
+          output(output:len() + 1) = first
 
-    output
+          if next_code < 4096
+            dict(next_code) = new_entry
+            next_code = next_code + 1
+            cs: i64 = st.code_size
+            if next_code > to(i64)(2 ^ cs) and cs < 12
+              st.code_size = cs + 1
+          prev = next_code - 1
+
+    if output:len() >= pixel_count
+      break
+
+  output
 
 # ═══════════════════════════════════════════════════════════════
 # GIF Decoder
 # ═══════════════════════════════════════════════════════════════
 
-read_u16_le(s: str, off: i64): i64
-    s:byte(off) + s:byte(off + 1) * 256
+read_u16_le: i64 = (s: str, off: i64)
+  s:byte(off) + s:byte(off + 1) * 256
 
-decode(data: str): any
-    if data == nil return nil
+decode: any = (data: str)
+  if data == nil
+    return nil
 
-    # Verify signature
-    sig = data:sub(1, 6)
-    if sig != "GIF87a" and sig != "GIF89a" return nil
+  # Verify signature
+  sig = data:sub(1, 6)
+  if sig != "GIF87a" and sig != "GIF89a"
+    return nil
 
-    # Logical Screen Descriptor
-    width = read_u16_le(data, 7)
-    height = read_u16_le(data, 9)
-    packed = data:byte(11)
-    gct_flag = (packed >> 7) & 1
-    color_res = ((packed >> 4) & 7) + 1
-    gct_size = 2 ^ ((packed & 7) + 1)
-    bg_color_idx = data:byte(12)
+  # Logical Screen Descriptor
+  width = read_u16_le(data, 7)
+  height = read_u16_le(data, 9)
+  packed = data:byte(11)
+  gct_flag = packed >> 7 & 1
+  color_res = packed >> 4 & 7 + 1
+  gct_size = 2 ^ (packed & 7 + 1)
+  bg_color_idx = data:byte(12)
 
-    off = 14
+  off = 14
 
-    # Global Color Table
-    gct = {}
-    if gct_flag == 1
-        i = 0
-        while i < gct_size
-            gct[i] = {
-                r = data:byte(off + i * 3),
-                g = data:byte(off + i * 3 + 1),
-                b = data:byte(off + i * 3 + 2),
+  # Global Color Table
+  gct = {}
+  if gct_flag == 1
+    i = 0
+    while i < gct_size
+      gct(i) = {
+        r = data:byte(off + i * 3),
+        g = data:byte(off + i * 3 + 1),
+        b = data:byte(off + i * 3 + 2)
+      }
+      i = i + 1
+    off = off + gct_size * 3
+
+  img = image.new_rgba(image.rect(0, 0, width, height))
+  transparent_idx = -1
+  lct = nil
+
+  while off < data:len()
+    byte = data:byte(off)
+
+    if byte == 33
+      # Extension block
+      ext_label = data:byte(off + 1)
+      off = off + 2
+
+      # Read sub-blocks
+      sub_len = data:byte(off)
+      if ext_label == 249
+        # Graphics Control Extension
+        if sub_len >= 4
+          packed = data:byte(off + 1)
+          transparent_flag = packed & 1
+          if transparent_flag == 1
+            transparent_idx = data:byte(off + 4)
+      off = off + sub_len + 1
+
+      # Skip remaining sub-blocks
+      while off < data:len()
+        sub_len = data:byte(off)
+        off = off + 1
+        if sub_len == 0
+          break
+        off = off + sub_len
+    else
+
+      if byte == 44
+        # Image Descriptor
+        left = read_u16_le(data, off + 1)
+        top = read_u16_le(data, off + 3)
+        img_w = read_u16_le(data, off + 5)
+        img_h = read_u16_le(data, off + 7)
+        local_packed = data:byte(off + 9)
+        lct_flag = local_packed >> 7 & 1
+        lct_size = 2 ^ (local_packed & 7 + 1)
+        off = off + 10
+
+        # Local Color Table
+        lct = nil
+        if lct_flag == 1
+          lct = {}
+          i = 0
+          while i < lct_size
+            lct(i) = {
+              r = data:byte(off + i * 3),
+              g = data:byte(off + i * 3 + 1),
+              b = data:byte(off + i * 3 + 2)
             }
-            i += 1
-        off += gct_size * 3
+            i = i + 1
+          off = off + lct_size * 3
 
-    img = image.new_rgba(image.rect(0, 0, width, height))
-    transparent_idx = -1
-    lct = nil
+        # Use LCT if present, otherwise GCT
+        palette = lct or gct
 
-    while off < data:len()
-        byte = data:byte(off)
+        # LZW Minimum Code Size
+        min_code_size = data:byte(off)
+        off = off + 1
 
-        if byte == 0x21
-            # Extension block
-            ext_label = data:byte(off + 1)
-            off += 2
-
-            # Read sub-blocks
-            sub_len = data:byte(off)
-            if ext_label == 0xF9
-                # Graphics Control Extension
-                if sub_len >= 4
-                    packed = data:byte(off + 1)
-                    transparent_flag = packed & 1
-                    if transparent_flag == 1
-                        transparent_idx = data:byte(off + 4)
-            off += sub_len + 1
-
-            # Skip remaining sub-blocks
-            while off < data:len()
-                sub_len = data:byte(off)
-                off += 1
-                if sub_len == 0 break
-                off += sub_len
-
-        else if byte == 0x2C
-            # Image Descriptor
-            left = read_u16_le(data, off + 1)
-            top = read_u16_le(data, off + 3)
-            img_w = read_u16_le(data, off + 5)
-            img_h = read_u16_le(data, off + 7)
-            local_packed = data:byte(off + 9)
-            lct_flag = (local_packed >> 7) & 1
-            lct_size = 2 ^ ((local_packed & 7) + 1)
-            off += 10
-
-            # Local Color Table
-            lct = nil
-            if lct_flag == 1
-                lct = {}
-                i = 0
-                while i < lct_size
-                    lct[i] = {
-                        r = data:byte(off + i * 3),
-                        g = data:byte(off + i * 3 + 1),
-                        b = data:byte(off + i * 3 + 2),
-                    }
-                    i += 1
-                off += lct_size * 3
-
-            # Use LCT if present, otherwise GCT
-            palette = lct or gct
-
-            # LZW Minimum Code Size
-            min_code_size = data:byte(off)
-            off += 1
-
-            # Collect LZW data from sub-blocks
-            lzw_data = ""
-            while off < data:len()
-                sub_len = data:byte(off)
-                off += 1
-                if sub_len == 0 break
-                lzw_data = lzw_data .. data:sub(off, off + sub_len - 1)
-                off += sub_len
-
-            # Decompress
-            pixels = lzw_decompress(lzw_data, min_code_size, img_w * img_h)
-
-            # Write pixels to image
-            idx = 1
-            y = top
-            while y < top + img_h and y < height
-                x = left
-                while x < left + img_w and x < width
-                    if idx <= pixels:len()
-                        color_idx = pixels[idx]
-                        if color_idx != transparent_idx and palette != nil
-                            c = palette[color_idx]
-                            if c != nil
-                                image.img_set(img, x, y, image.color.rgba(
-                                    c.r * 257, c.g * 257, c.b * 257, 65535
-                                ))
-                    idx += 1
-                    x += 1
-                y += 1
-
-        else if byte == 0x3B
-            # Trailer
+        # Collect LZW data from sub-blocks
+        lzw_data = ""
+        while off < data:len()
+          sub_len = data:byte(off)
+          off = off + 1
+          if sub_len == 0
             break
+          lzw_data = lzw_data .. data:sub(off, off + sub_len - 1)
+          off = off + sub_len
+
+        # Decompress
+        pixels = lzw_decompress(lzw_data, min_code_size, img_w * img_h)
+
+        # Write pixels to image
+        idx = 1
+        y = top
+        while y < top + img_h and y < height
+          x = left
+          while x < left + img_w and x < width
+            if idx <= pixels:len()
+              color_idx = pixels(idx)
+              if color_idx != transparent_idx and palette != nil
+                c = palette(color_idx)
+                if c != nil
+                  image.img_set(img, x, y, image.color.rgba(c.r * 257, c.g * 257, c.b * 257, 65535))
+            idx = idx + 1
+            x = x + 1
+          y = y + 1
+      else
+
+        if byte == 59
+          # Trailer
+          break
         else
-            break
+          break
 
-    img
-
+  img

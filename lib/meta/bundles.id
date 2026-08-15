@@ -3,31 +3,30 @@
 # Bare syntax + implicit module-scope table (G-033/G-039).
 
 bundles = {
-    Serializable = { "Display", "Eq", "Hash", "Serialize", "Deserialize" },
-    Comparable = { "Eq", "Ord", "Hash" },
-    Numeric = { "Add", "Sub", "Mul", "Div", "Neg", "Eq", "Default" },
-    Collection = { "Len", "Clone", "Eq", "Display" },
-    Debug = { "Display", "Eq", "Clone" },
-    Full = { "Debug", "Comparable", "Default" },
+  Serializable = { "Display", "Eq", "Hash", "Serialize", "Deserialize" },
+  Comparable = { "Eq", "Ord", "Hash" },
+  Numeric = { "Add", "Sub", "Mul", "Div", "Neg", "Eq", "Default" },
+  Collection = { "Len", "Clone", "Eq", "Display" },
+  Debug = { "Display", "Eq", "Clone" },
+  Full = { "Debug", "Comparable", "Default" }
 }
 
-names(): any
-    out = {}
-    for name, _ in bundles
-        out[out:len() + 1] = name
-    out
+names: any = ()
+  out = {}
+  for name, _ in bundles
+    out(out:len() + 1) = name
+  out
 
-traits(bundle_name: str): any
-    bundles[bundle_name] or {}
+traits: any = (bundle_name: str)
+  bundles(bundle_name) or {}
 
-contains(bundle_name: str, trait: str): bool
-    rows = traits(bundle_name)
-    for _, t in rows
-        if t == trait
-            return true
-    false
+contains: bool = (bundle_name: str, trait: str)
+  rows = traits(bundle_name)
+  for _, t in rows
+    if t == trait
+      return true
+  false
 
-describe(bundle_name: str): str
-    rows = traits(bundle_name)
-    bundle_name .. " => " .. rows:concat(", ")
-
+describe: str = (bundle_name: str)
+  rows = traits(bundle_name)
+  bundle_name .. " => " .. rows:concat(", ")
