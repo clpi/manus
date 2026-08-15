@@ -7,14 +7,25 @@ const std = @import("std");
 
 pub const SCHEMA_VERSION = "dnir-hardware-v0";
 
-/// Capability tier — ordered from portable scalar to OS/syscall class.
+/// Capability tier of a hardware intrinsic. ONE VARIANT, because the catalog
+/// below has one: every intrinsic this compiler can lower is a bit op, a fence
+/// or a yield, and all six `HwIntrinsic` variants report `.scalar`.
+///
+/// THIS ENUM PREVIOUSLY CARRIED `.vector` AND `.system` AND NOTHING PRODUCED
+/// EITHER. A tier nothing produces is not a policy, it is a description of one:
+/// `functionHardwareTier` provably returned `.scalar`, so the one comparison
+/// that read a tier (`region_graph.validateModuleProjection`) was `f(x) == f(x)`
+/// and raised `HardwareTierMismatch` for a mismatch that no reachable program
+/// state could produce. Both the variants and that check are deleted.
+///
+/// THE RULE FOR PUTTING A VARIANT BACK: land it in the same change as the first
+/// intrinsic that RETURNS it and the first check that REFUSES on it. Landing it
+/// earlier gives a refusal-only mechanism with no admit partner, which
+/// `gate/claim.sh` §1 measures and `gate/capability.sh` §1 declines to treat as
+/// evidence. `.vector` costs three lines the day `hw_simd` lands.
 pub const Tier = enum {
     /// Bit ops, fences, yield — every native target.
     scalar,
-    /// Vector/SIMD lanes (future DNIR `hw_simd` family).
-    vector,
-    /// Syscalls, MMIO, GPU dispatch (capability-gated).
-    system,
 
     pub fn name(self: Tier) []const u8 {
         return @tagName(self);
@@ -118,17 +129,13 @@ pub fn intrinsicOfOp(op: @import("native_ir.zig").Op, hw: HwIntrinsic) ?HwIntrin
     };
 }
 
-pub fn functionHardwareTier(f: @import("native_ir.zig").Function) Tier {
-    var tier: Tier = .scalar;
-    for (f.blocks) |b| {
-        for (b.instrs) |ins| {
-            const h = intrinsicOfOp(ins.op, ins.hw) orelse continue;
-            const t = h.tier();
-            if (@intFromEnum(t) > @intFromEnum(tier)) tier = t;
-        }
-    }
-    return tier;
-}
+// `functionHardwareTier` lived here. Its only caller was
+// `region_graph.validateModuleProjection`, which compared its result against a
+// field that `region_graph.buildFromDnirFunction` had just SET from the same
+// call on the same function — a tautology wearing the name of a hardware-policy
+// check. With `Tier` reduced to its one real variant the function could only
+// ever `return .scalar`, so both it and the check are gone. See `Tier` above for
+// the condition under which this comes back.
 
 /// Collect deduplicated hardware descriptors used in a DNIR module.
 pub fn collectModuleDescriptors(alloc: std.mem.Allocator, m: @import("native_ir.zig").Module) ![]Descriptor {

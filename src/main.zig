@@ -3832,8 +3832,67 @@ fn compileReqModuleObject(
 /// inputs are module objects whose C emit went through the Lua runtime. That
 /// count — not the input count — is what a native `main` cannot host, because a
 /// native main never runs `lua_package_init`. See the `too_many_modules` site.
+///
+/// THE BOOTSTRAP C TRAVELS INSIDE THE COMPILER, NOT BESIDE IT.
+///
+/// `boot` used to return `"src/idol_str_bootstrap.c"` — a path relative to the
+/// CURRENT WORKING DIRECTORY — and `directLinkInputs` handed that straight to
+/// clang. So `s:has()`, `s:sub()` and `s:to(i64)` linked when the cwd happened
+/// to be the compiler's own source tree and failed everywhere else with
+/// `clang: error: no such file or directory: 'src/idol_str_bootstrap.c'`,
+/// reported as `error: native linker failed (exit 1)`. Three edges the canon
+/// records as OWED were owed to a relative path.
+///
+/// EMBEDDED, not installation-relative and not vendored-at-build. `bin/idol` is
+/// vendored into other trees AS A SINGLE FILE and re-vendored by
+/// write-then-rename; a compiler that needs a sibling `lib/` to link `s:has()`
+/// breaks the moment it is copied, which is the same defect one level up.
+/// `build.zig` already compiles `src/keyword_classify.c` INTO this binary, so
+/// embedding it keeps ONE copy of that table rather than two that can drift.
+const bootstrap_classify_c = @embedFile("keyword_classify.c");
+const bootstrap_io_c = @embedFile("idol_io_bootstrap.c");
+const bootstrap_str_c = @embedFile("idol_str_bootstrap.c");
+
+fn bootstrapBytes(name: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, name, "keyword_classify.c")) return bootstrap_classify_c;
+    if (std.mem.eql(u8, name, "idol_io_bootstrap.c")) return bootstrap_io_c;
+    if (std.mem.eql(u8, name, "idol_str_bootstrap.c")) return bootstrap_str_c;
+    return null;
+}
+
+/// Write an embedded bootstrap source to a CONTENT-ADDRESSED absolute path and
+/// return it. The name carries the digest of the bytes, so: the same compiler
+/// always names the same path (the link line does not move between runs, which
+/// is what reproducibility needs), two compilers with different bootstrap
+/// sources cannot collide, and an existing file of the right size is already the
+/// right file. The write goes to a pid-suffixed temporary and is RENAMED into
+/// place — a concurrent compile must never read a half-written translation unit.
+/// NO SILENT FALLBACK: every failure here is an error, not a skipped input. The
+/// version this replaced appended a path that might not exist, and the program
+/// then failed at the LINKER with a message about a missing file — one level
+/// away from the decision that produced it.
+fn materializeBootstrapC(alloc: std.mem.Allocator, io: Io, name: []const u8) ![]const u8 {
+    const bytes = bootstrapBytes(name) orelse return error.UnknownBootstrapSource;
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
+    const hex = std.fmt.bytesToHex(digest, .lower);
+    const path = try std.fmt.allocPrint(alloc, "/tmp/idol-boot-{s}-{s}", .{ hex[0..16], name });
+    const cwd = Io.Dir.cwd();
+    if (Io.Dir.statFile(cwd, io, path, .{})) |stat| {
+        if (stat.size == bytes.len) return path;
+    } else |_| {}
+    const tmp_path = try std.fmt.allocPrint(alloc, "{s}.{d}.tmp", .{ path, std.Thread.getCurrentId() });
+    defer alloc.free(tmp_path);
+    try Io.Dir.writeFile(cwd, io, .{ .sub_path = tmp_path, .data = bytes });
+    Io.Dir.rename(cwd, tmp_path, cwd, path, io) catch |e| {
+        Io.Dir.deleteFile(cwd, io, tmp_path) catch {};
+        return e;
+    };
+    return path;
+}
+
 fn boot(symbol: []const u8) ?[]const u8 {
-    if (std.mem.eql(u8, symbol, "duo_keyword_classify")) return "src/keyword_classify.c";
+    if (std.mem.eql(u8, symbol, "duo_keyword_classify")) return "keyword_classify.c";
     if (std.mem.eql(u8, symbol, "idol_io_read_stdin") or
         std.mem.eql(u8, symbol, "idol_io_read_line") or
         std.mem.eql(u8, symbol, "idol_io_read_path") or
@@ -3841,14 +3900,14 @@ fn boot(symbol: []const u8) ?[]const u8 {
         std.mem.eql(u8, symbol, "idol_os_cwd") or
         std.mem.eql(u8, symbol, "idol_os_execute") or
         std.mem.eql(u8, symbol, "idol_process_capture"))
-        return "src/idol_io_bootstrap.c";
+        return "idol_io_bootstrap.c";
     if (std.mem.eql(u8, symbol, "duo_str_sub") or
         std.mem.eql(u8, symbol, "duo_str_to_i64") or
         std.mem.eql(u8, symbol, "idol_str_at") or
         std.mem.eql(u8, symbol, "idol_str_find") or
         std.mem.eql(u8, symbol, "idol_str_has") or
         std.mem.eql(u8, symbol, "idol_str_match"))
-        return "src/idol_str_bootstrap.c";
+        return "idol_str_bootstrap.c";
     return null;
 }
 
@@ -3871,19 +3930,17 @@ fn directLinkInputs(
     var str_boot = false;
     for (needed) |symbol| {
         const source = boot(symbol) orelse continue;
-        if (std.mem.eql(u8, source, "src/keyword_classify.c")) classify = true;
-        if (std.mem.eql(u8, source, "src/idol_io_bootstrap.c")) io_boot = true;
-        if (std.mem.eql(u8, source, "src/idol_str_bootstrap.c")) str_boot = true;
+        if (std.mem.eql(u8, source, "keyword_classify.c")) classify = true;
+        if (std.mem.eql(u8, source, "idol_io_bootstrap.c")) io_boot = true;
+        if (std.mem.eql(u8, source, "idol_str_bootstrap.c")) str_boot = true;
     }
-    if (classify) {
-        const classify_c = "src/keyword_classify.c";
-        if (Io.Dir.cwd().statFile(io, classify_c, .{})) |_| {} else |_| {
-            token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, classify_c) catch {};
-        }
-        try inputs.append(alloc, classify_c);
-    }
-    if (io_boot) try inputs.append(alloc, "src/idol_io_bootstrap.c");
-    if (str_boot) try inputs.append(alloc, "src/idol_str_bootstrap.c");
+    // Materialize from the EMBEDDED copy every time, never from the cwd. A
+    // compiler that answers differently depending on where the caller happens to
+    // be standing is not one answer, and the version that read the cwd refused
+    // three edges from every directory but one. See `materializeBootstrapC`.
+    if (classify) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "keyword_classify.c"));
+    if (io_boot) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_io_bootstrap.c"));
+    if (str_boot) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_str_bootstrap.c"));
     return inputs.toOwnedSlice(alloc);
 }
 

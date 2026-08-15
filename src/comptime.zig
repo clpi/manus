@@ -1451,7 +1451,31 @@ fn bodyHasLoop(b: *const ast.Block) bool {
 /// Bodies whose ONLY reader is the fold get a step budget rather than a proof
 /// of termination. A loop of 1e9 iterations hits it and falls through to
 /// ordinary lowering rather than folding for a minute.
-const fold_step_limit: usize = 200_000;
+///
+/// THE BUDGET IS A TIME BUDGET. It is spelled in steps only because steps are
+/// what this evaluator can count, so the constant is DERIVED and not chosen:
+///
+///     fold_step_limit = fold_target_ms * ns_per_ms / fold_ns_per_step
+///
+/// `fold_ns_per_step` is MEASURED, not estimated. Method: compile 20 relations
+/// each holding one `while` loop, at loop counts 1 and 16,665, cold build cache,
+/// minimum of seven runs; the difference is 3,999,360 evaluator steps and
+/// nothing else. Measured 59.2 ns/step on `idol 6c231a95` and 60.0 on
+/// `idol 48cfd928` (Apple Silicon). `gate/claim.sh` §3 re-measures it and fails
+/// in BOTH directions, so this number cannot rot silently.
+///
+/// `fold_target_ms` is the policy half and is the only chosen number here: a
+/// fold that runs to the limit and then FAILS is pure waste, and 12 ms is
+/// already ~15% of the 81 ms it takes this compiler to build a seven-line file.
+///
+/// A PRIOR ESTIMATE PUT THIS AT ~40x, i.e. 8,000,000 steps. That is 480 ms of
+/// wasted work per unfoldable relation — longer than a whole `native.id`
+/// compile (412 ms). The estimate is wrong by exactly the factor it assumed the
+/// evaluator was faster than it measures: 8,000,000 steps in 12 ms is
+/// 1.5 ns/step, and this evaluator runs at 60.
+const fold_target_ms: usize = 12;
+const fold_ns_per_step: usize = 60;
+const fold_step_limit: usize = fold_target_ms * std.time.ns_per_ms / fold_ns_per_step;
 
 /// Run a no-operand relation body at compile time. Null when it cannot be run —
 /// which is most bodies, and must stay cheap to discover.

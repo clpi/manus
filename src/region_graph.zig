@@ -2,10 +2,15 @@
 //!
 //! Semantic ids and their facts remain in the resident semantic graph and in
 //! DNIR lineage. Regions retain only the contiguous instruction coordinate
-//! range, value-flow dependencies, and hardware tier.
+//! range and value-flow dependencies.
+//!
+//! A `hardware_tier` field used to sit alongside them. Nothing read it except
+//! `validateModuleProjection`, which recomputed it from the same function
+//! `buildFromDnirFunction` had computed it from — so the check was `f(x) ==
+//! f(x)` and `error.HardwareTierMismatch` named a state no program could reach.
+//! The field, the check and the error are deleted; see `dnir_hardware.Tier`.
 const std = @import("std");
 const dnir = @import("native_ir.zig");
-const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
 
 pub const Dependency = struct {
@@ -17,7 +22,6 @@ pub const Dependency = struct {
 pub const Region = struct {
     dependencies: []Dependency,
     coordinate_limit: u32,
-    hardware_tier: dnir.HardwareTier = .scalar,
 
     pub fn deinit(self: *Region, alloc: std.mem.Allocator) void {
         alloc.free(self.dependencies);
@@ -42,7 +46,6 @@ pub const Error = error{
     RegionCountMismatch,
     CoordinateOutOfBounds,
     DependencyMismatch,
-    HardwareTierMismatch,
     CoordinateOverflow,
     OutOfMemory,
 };
@@ -119,7 +122,6 @@ pub fn buildFromDnirFunction(
     return .{
         .dependencies = owned_dependencies,
         .coordinate_limit = coordinate,
-        .hardware_tier = dnir_hardware.functionHardwareTier(function),
     };
 }
 
@@ -210,9 +212,6 @@ pub fn validateModuleProjection(
     if (projection.regions.len != module.functions.len) return error.RegionCountMismatch;
 
     for (module.functions, projection.regions) |function, region| {
-        if (region.hardware_tier != dnir_hardware.functionHardwareTier(function)) {
-            return error.HardwareTierMismatch;
-        }
         var definitions: std.AutoHashMapUnmanaged(u32, u32) = .empty;
         defer definitions.deinit(alloc);
         var coordinate: u32 = 1;
