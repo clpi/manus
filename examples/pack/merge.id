@@ -25,7 +25,7 @@
 # two positions shows up as the wrong branch rather than as a crash.
 # expect: 42 over trunc
 
-scan: i64 = (b: i64) | error
+scan: i64 | error = (b: i64)
     if b > 63
         nil, "over"
     if b > 0

@@ -680,23 +680,23 @@ max_by: any = (t: any, key_fn: any)
 pipe: any = (...)
     funcs = {...}
     return function(x)
-        result = x
-        i = 1
-        while i <= funcs:len()
-            result = funcs[i](result)
-            i += 1
-        return result
+                    result = x
+                    i = 1
+                    while i <= funcs:len()
+                        result = funcs[i](result)
+                        i += 1
+                    return result
 
 # compose: right-to-left function composition
 compose: any = (...)
     funcs = {...}
     return function(x)
-        result = x
-        i = funcs:len()
-        while i >= 1
-            result = funcs[i](result)
-            i -= 1
-        return result
+                    result = x
+                    i = funcs:len()
+                    while i >= 1
+                        result = funcs[i](result)
+                        i -= 1
+                    return result
 
 # partial: partially apply a function with leading args.
 #
@@ -838,20 +838,20 @@ notf: any = (pred: any)
 andf: any = (...)
     preds = {...}
     return function(x)
-        i = 1
-        while i <= preds:len()
-            if not preds[i](x) return false 
-            i += 1
-        return true
+                    i = 1
+                    while i <= preds:len()
+                        if not preds[i](x) return false 
+                        i += 1
+                    return true
 
 orf: any = (...)
     preds = {...}
     return function(x)
-        i = 1
-        while i <= preds:len()
-            if preds[i](x) return true 
-            i += 1
-        return false
+                    i = 1
+                    while i <= preds:len()
+                        if preds[i](x) return true 
+                        i += 1
+                    return false
 
 # ─────────────────────────────────────────────────────────────
 # Functional: utility

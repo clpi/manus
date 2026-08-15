@@ -103,15 +103,15 @@ pick: i64 = (f: str, w: i64, t: i64)
     v: i64 = 0
     if f == "d"
         v = regs()[(t % 16) + 1]
-    elif f == "n"
+    elseif f == "n"
         v = regs()[((t + 5) % 16) + 1]
-    elif f == "m"
+    elseif f == "m"
         v = regs()[((t + 9) % 16) + 1]
-    elif f == "a"
+    elseif f == "a"
         v = regs()[((t + 13) % 16) + 1]
-    elif f == "h"
+    elseif f == "h"
         v = t % 4
-    elif f == "c"
+    elseif f == "c"
         v = t % 16
     else
         # Immediates: both ends of the field, then a spread across it. A field
@@ -269,19 +269,19 @@ main: i64 = ()
 
         if bad < 0
             code = 3
-        elif cbase != each()
+        elseif cbase != each()
             print("isa_fidelity: FAIL — the corrupted-base control was caught {cb} times of {tup};")
             print("  a wrong base word must fail every tuple, so the comparison is not comparing")
             code = 3
-        elif cshift < 1
+        elseif cshift < 1
             print("isa_fidelity: FAIL — the shifted-field control was never caught;")
             print("  the encoder is not reading the layout's bit positions")
             code = 3
-        elif cswap < 1
+        elseif cswap < 1
             print("isa_fidelity: FAIL — the swapped-field control was never caught;")
             print("  operand identity is not reaching the encoding")
             code = 3
-        elif bad > 0
+        elseif bad > 0
             print("  controls      corrupted base {cb}/{tup} · shifted field {cs} · swapped fields {cw}")
             print("")
             print("  agree         {agreed}")

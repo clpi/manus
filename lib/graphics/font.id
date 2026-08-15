@@ -204,8 +204,8 @@ render_text: any = (font: any, text: str, x: f64, y: f64, color: any)
     render_items = {}
     for glyph in layout_get_glyphs(layout)
         render_items[render_items:len() + 1] = {
-            x += glyph.x,
-            y += glyph.y,
+            x = x + glyph.x,
+            y = y + glyph.y,
             glyph = glyph.glyph,
             color = color,
         }

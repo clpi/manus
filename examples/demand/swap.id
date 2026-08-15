@@ -34,7 +34,7 @@ bump: i64 = (k: i64)
     k
 
 two: any = (x: i64)
-    x * 2, x * 3
+    return x * 2, x * 3
 
 want: i64 = (what: str, got: i64, wanted: i64)
     if got != wanted
