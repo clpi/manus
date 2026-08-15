@@ -32,6 +32,31 @@ fn allLabelledPack(e: *const Expr) bool {
 
 pub const SourceComment = struct { line: u32, text: []const u8 };
 
+/// Which spelling of a text literal's bytes the AST being printed carries.
+///
+/// `docs/text-law.md` rules `\{` and `\}` the literal-brace spelling, and §4.4
+/// records the consequence for this file: after `Lexer.decodeText` an escaped
+/// brace and a hole brace ARE THE SAME BYTE, so `writeStringLit` cannot tell
+/// them apart from contents and must be handed the answer.
+pub const LitForm = enum {
+    /// `Parser.formatting` was on. `desugar_string_interpolation` left the holes
+    /// in place and re-spelled the two things a reprint cannot recover — a
+    /// protected brace as `\{` / `\}`, and a backslash byte abutting a brace as
+    /// `\\`. A BARE `{` here is therefore a HOLE OPENER and is printed bare.
+    source,
+    /// The value is fully decoded and holds no source spelling at all — the
+    /// post-desugar AST that `formatJitClosureSource` prints from, and every
+    /// literal this parser FABRICATES (`.host`: type names, C names, require
+    /// paths). Printed exactly as it was before the ruling.
+    ///
+    /// That is deliberate and it is not "the right answer": a literal brace in
+    /// a JIT chunk still reprints bare and would re-open a hole. Closing it
+    /// means changing what `duo compile --load-chunk` emits, and this lane has
+    /// no oracle for that path. Pinned as a known limit rather than changed
+    /// blind — the corpus reprint sweep this lane DID run covers `.source`.
+    decoded,
+};
+
 fn isVoidType(t: TypeExpr) bool {
     return t == .named and std.mem.eql(u8, t.named, "void");
 }
@@ -99,6 +124,15 @@ pub const PrettyPrinter = struct {
     /// are two apart because `else` sits on line 4, so a gap test invents a
     /// blank line inside an if. Only the source knows which lines are empty.
     blank_lines: []const u32 = &.{},
+    /// WHICH FORM `string_lit.val` IS IN. Not decoration — it decides whether a
+    /// `{` in the value is a hole opener or a literal brace, and after decoding
+    /// those are the same byte (`law.lexical.one`: the printer is TOLD the role,
+    /// it does not reconstruct it from contents).
+    ///
+    /// `.source` is the default because `do_fmt` — the only production caller of
+    /// this printer — always sets `Parser.formatting`, and that path now hands
+    /// over a value in source form.
+    lit_form: LitForm = .source,
     indent_level: usize,
     indent_str: []const u8,
 
@@ -138,7 +172,34 @@ pub const PrettyPrinter = struct {
 
     fn writeStringLit(self: *PrettyPrinter, s: []const u8) !void {
         try self.write("\"");
+        var skip: usize = 0;
         for (s, 0..) |c, i| {
+            if (skip > 0) {
+                skip -= 1;
+                continue;
+            }
+            // THE REPRINT MUST NOT UNSPELL THE ESCAPE. In `.source` form every
+            // backslash arrives as a TWO-BYTE RUN whose second byte says what
+            // it escapes: `\\` a backslash, `\{` / `\}` a LITERAL BRACE. Both
+            // are written straight out. Falling through to the `'\\'` prong
+            // below would print `\\{` for a literal brace, which decodes to a
+            // backslash followed by A HOLE OPENER — a formatter that changes
+            // what a program prints, the class `gate/fmt.sh` was built for
+            // after `idol fmt` changed the answer of three programs.
+            //
+            // For every literal with no protected brace this emits exactly what
+            // the old code emitted: a doubled `\\` in, a `\\` out.
+            //
+            // Guarded on `.source` because a `.decoded` value carries no source
+            // spelling: there, `\` then `{` is a genuine backslash beside a
+            // genuine brace and each is escaped on its own.
+            if (self.lit_form == .source and c == '\\' and i + 1 < s.len and
+                (s[i + 1] == '{' or s[i + 1] == '}' or s[i + 1] == '\\'))
+            {
+                try self.write(s[i .. i + 2]);
+                skip = 1;
+                continue;
+            }
             switch (c) {
                 '\n' => try self.write("\\n"),
                 '\r' => try self.write("\\r"),
@@ -1666,6 +1727,11 @@ pub fn formatJitClosureSource(alloc: std.mem.Allocator, fb: *const ast.FuncBody,
     var buf = std.ArrayList(u8).empty;
     errdefer buf.deinit(alloc);
     var pp = PrettyPrinter.init(alloc, &buf, mode);
+    // The JIT prints the POST-DESUGAR AST — `Parser.formatting` was never set,
+    // so its string values are fully decoded and carry no source spelling.
+    // Printing them as `.source` would read a decoded `\` beside a decoded `{`
+    // as the escape `\{` and drop a backslash. See `LitForm`.
+    pp.lit_form = .decoded;
     if (fb.upvalues.len > 0) {
         try pp.write("return ");
         if (mode == .idol) try pp.write("fun") else try pp.write("function");
@@ -2088,6 +2154,38 @@ test "pretty: NUL escape survives the round trip" {
     // directive kept passing over corrupted data.
     const src =
         \\s = "a\0b"
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: the literal-brace escape survives the round trip" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `docs/text-law.md` §4.4 — THE PREREQUISITE THAT WOULD HAVE BEEN MISSED.
+    // `idol fmt` DELETED the backslash from `"esc \{ brace"`, because
+    // `writeStringLit` had no `'{'` case. While `\{` and `{` both meant `{`
+    // that was harmless; under the ruling it is a formatter that converts a
+    // LITERAL BRACE INTO A HOLE OPENER, which is the `gate/fmt.sh` class.
+    //
+    // All four readings are in one fixture on purpose, because the three ways
+    // to get this wrong each pass a fixture that omits one of them:
+    //   * escape only            — an unconditional `'{' => "\\{"` also
+    //                              escapes the live hole on line `b`;
+    //   * hole only              — the pre-ruling printer;
+    //   * both, but not `\\{`    — a printer that reads any `\` before a brace
+    //                              as the escape drops line `d`'s backslash;
+    //   * both, but not `\\\\`   — a printer that pairs backslashes blindly
+    //                              halves line `e`.
+    const src =
+        \\a = "esc \{ brace"
+        \\b = "hole {x} keep"
+        \\c = "mixed {x} and \{x\} done"
+        \\d = "bs \\{x} live"
+        \\e = "two \\\\ backslashes"
         \\
     ;
     const out = try fmtCanonical(alloc, src);

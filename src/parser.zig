@@ -5590,12 +5590,26 @@ pub const Parser = struct {
     /// `}`" was a sound rule only while a hole could hold nothing but a path,
     /// which can contain neither; it cuts `{t{1, 2}:len()}` and `{f("}")}` in
     /// the wrong place.
-    fn interpolationHoleEnd(s: []const u8, open: usize) ?usize {
+    /// `protected[i]` — see `Lexer.decodeText`. A brace the author WROTE as
+    /// `\{` or `\}` is text: it can neither deepen this hole nor close it.
+    /// Without the second half, `"pair=\{\"k\": 1\}"` would open at the bare
+    /// `{` that is not there and close at a `\}` that is text.
+    ///
+    /// ONLY BRACES. Testing `isProtected` on every byte instead is wrong, and
+    /// measured wrong: a `"` inside a hole HAS to be written `\"` — it is
+    /// inside a text literal — so it arrives here protected, and skipping it
+    /// disables the quote-span rule this function exists for.
+    /// `"{f(\"}\")}"` then cuts at the `}` inside the nested string, which is
+    /// the exact defect the quote rule was added to fix. Caught by the corpus
+    /// STR-1 census moving on `scripts/sim.id`, not by a fixture, which is why
+    /// the census is run on both sides of a change to this file.
+    fn interpolationHoleEnd(s: []const u8, protected: []const bool, open: usize) ?usize {
         if (open >= s.len or s[open] != '{') return null;
         var depth: usize = 0;
         var i: usize = open;
         while (i < s.len) : (i += 1) {
             const c = s[i];
+            if ((c == '{' or c == '}') and isProtected(protected, i)) continue;
             if (c == '"' or c == '\'') {
                 i += 1;
                 while (i < s.len and s[i] != c) : (i += 1) {
@@ -5612,6 +5626,81 @@ pub const Parser = struct {
             }
         }
         return null;
+    }
+
+    /// The escape-provenance map is CO-INDEXED with the decoded bytes, so a
+    /// short map is a wrong answer, not a slow one. It can legitimately be
+    /// EMPTY — every caller that has no map passes `&.{}` — and reading an
+    /// absent map as "nothing is protected" is the pre-ruling behaviour, which
+    /// is the right answer for a literal that never went through `decodeText`.
+    fn isProtected(protected: []const bool, i: usize) bool {
+        return i < protected.len and protected[i];
+    }
+
+    /// The value `idol fmt` prints from: decoded EVERYWHERE EXCEPT the two
+    /// things a reprint cannot otherwise recover.
+    ///
+    ///   * a protected `{` or `}` is written back as `\{` / `\}` — it is text,
+    ///     and printing it bare would make the reprint open a hole;
+    ///   * EVERY backslash byte is doubled, so `"\\{x}"` (a backslash, then a
+    ///     live hole) cannot be read back as `\{` (a literal brace).
+    ///
+    /// The second rule is universal ON PURPOSE, and the narrower "double it only
+    /// when it abuts a brace" is WRONG: `"\\\\"` decodes to two backslash bytes,
+    /// and under the narrow rule those two bytes are indistinguishable from one
+    /// doubled backslash, so the reprint would drop one. Both spellings are
+    /// real — `docs/text-law.md` §4.2 found four `\\{` / `\\}` sites in the
+    /// corpus and zero genuine `\{` — and `"\x5C{x}"` produces the same bytes
+    /// with no backslash in the source at all, which is why the test is on the
+    /// BYTE and not on the source spelling.
+    ///
+    /// Everything else is left decoded so `writeStringLit` keeps re-escaping it
+    /// exactly as it does today, and the doubled backslashes reprint to the same
+    /// `\\` the undoubled ones did — so the reprint is BYTE-IDENTICAL to today
+    /// for every literal that carries no protected brace. That is the whole
+    /// reason the transform is this narrow.
+    fn respellForReprint(alloc: std.mem.Allocator, s: []const u8, protected: []const bool) ParseError![]const u8 {
+        var needed = false;
+        for (s, 0..) |c, i| {
+            if (c == '\\' or ((c == '{' or c == '}') and isProtected(protected, i))) {
+                needed = true;
+                break;
+            }
+        }
+        if (!needed) return s;
+        var out: std.ArrayList(u8) = .empty;
+        errdefer out.deinit(alloc);
+        for (s, 0..) |c, i| {
+            if (c == '\\' or ((c == '{' or c == '}') and isProtected(protected, i))) {
+                try out.append(alloc, '\\');
+            }
+            try out.append(alloc, c);
+        }
+        return try out.toOwnedSlice(alloc);
+    }
+
+    /// Decode a text literal's body, and LOCATE the refusal when it has one.
+    ///
+    /// `Lexer.decodeText` closed its unknown-escape fallback, so an undeclared
+    /// escape is now an error rather than a silently dropped backslash. Handed
+    /// back raw, that error surfaced as `parse failed: InvalidEscape` with no
+    /// file, no line and no hint — a refusal that does not teach, which is
+    /// worse than the warning it replaced. `src/main.zig` has a located
+    /// diagnostic for this error, but only on the LEXER's path; the decode
+    /// happens here.
+    ///
+    /// The hint names `\{` and `\}` because this is the diagnostic an author
+    /// reaches when they were reaching for a literal brace.
+    fn decodeLiteral(self: *Parser, tok: Token, protected: *std.ArrayList(bool)) ParseError![]u8 {
+        return Lexer.decodeText(self.alloc, tok.text, protected) catch |e| switch (e) {
+            error.InvalidEscape => {
+                term.locErr(tok.loc, "invalid escape sequence in text literal", .{});
+                term.locHint(tok.loc, "Idol escapes are \\a \\b \\f \\n \\r \\t \\v \\\\ \\\" \\' \\{{ \\}} \\<ddd> \\x<hex> \\u{{<hex>}} and \\z; a lone backslash is written \\\\", .{});
+                term.locHint(tok.loc, "`\\{{` and `\\}}` are the LITERAL BRACE — an unescaped `{{` in a text literal opens an interpolation hole; a payload that is all braces and no holes belongs in the byte face `'…'`, which decodes no escapes", .{});
+                return ParseError.UnexpectedToken;
+            },
+            else => return e,
+        };
     }
 
     /// The source position of byte `off` inside the DECODED literal `s`, given
@@ -5773,25 +5862,59 @@ pub const Parser = struct {
     /// and are unaffected; 75 holes in 21 files that emitted literal brace text
     /// yesterday interpolate today.
     ///
-    /// ===================== WHAT IS *NOT* REFUSED, AND WHY =====================
-    /// 537 further `{…}` occurrences in 82 files are brace TEXT: JSON bodies,
-    /// C struct bodies, `awk '{print $1}'`, shell `${…}`, and 184 lone `{` with
-    /// no `}` anywhere in the literal. Refusing those is the fail-closed reading
-    /// of "ambiguity diagnoses rather than picks", and it cannot be honoured
-    /// until a literal brace has a SPELLING:
+    /// ===================== THE SPELLING NOW EXISTS: `\{` =====================
+    /// `docs/text-law.md` rules `\{` and `\}` the literal brace, and the two
+    /// obstacles this comment used to record are both gone:
     ///
-    ///   * `\{` cannot serve. The lexer's unknown-escape fallback already
-    ///     decodes it to a bare `{` before this function is reached, so by here
-    ///     the escaped and unescaped forms are the same byte.
-    ///   * `{{` would be inventing lexical vocabulary locally, which is exactly
-    ///     what `SEMANTIC-VOCABULARY-BLOCKED` forbids, and it would silently
-    ///     change what 24 existing literals print.
+    ///   * `\{` DOES serve now. The lexer's unknown-escape fallback used to
+    ///     decode it to a bare `{` before this function was reached; it is a
+    ///     REFUSAL today, and `Lexer.decodeText` hands over the `protected` map
+    ///     so the escaped and unescaped forms are still distinguishable after
+    ///     they have become the same byte.
+    ///   * `{{` remains refused, and not on taste: `law.brace` makes `{` the
+    ///     structured-pack face and `law.literal.text` makes a hole an
+    ///     EXPRESSION, so `"n={{10, 20, 30}:len()}"` answers 3 today
+    ///     (`examples/text/brace/hole.id` pins it). `{{` is already the
+    ///     spelling of "a hole opening with a pack", and `lib/text/template`
+    ///     spends it a second time as its own action opener.
     ///
-    /// So the site is NAMED, LOCATED and WARNED instead — a mistyped hole can no
-    /// longer pass without a word — and the refusal waits on an admitted
-    /// literal-brace face rather than being smuggled in under a parser fix.
-    fn desugar_string_interpolation(self: *Parser, loc: ast.Loc, s: []const u8, quote: ast.Quote) ParseError!*ast.Expr {
-        if (self.formatting or self.directive_arg_depth > 0 or !self.idol_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
+    /// ===================== WHAT IS STILL *NOT* REFUSED =====================
+    /// A `{` that is not a well-formed hole is still WARNED, not refused, and
+    /// the reason is `docs/text-law.md` §4.5: the refusal is staged BEHIND the
+    /// migration, because it breaks this repo's own gate if it lands first.
+    /// `../idol-native/lex.id:643` is `scan("{", 1)`, `lex.id` is run by
+    /// `gate/all.sh` and must exit 119, and 547 further brace sites across 82
+    /// corpus files have not moved to `\{` or to the byte face yet. Landing the
+    /// error before them takes `gate/all.sh` from 0/41 to at least 1/41.
+    ///
+    /// So the site is NAMED, LOCATED and WARNED — and the hints below now name
+    /// the spelling, which is the half of stage 3 that can land early: the
+    /// diagnostic that will one day refuse is already the diagnostic that
+    /// teaches.
+    fn desugar_string_interpolation(self: *Parser, loc: ast.Loc, s: []const u8, protected: []const bool, quote: ast.Quote) ParseError!*ast.Expr {
+        // FORMATTING MODE IS NOT "SKIP THE WORK", it is a DIFFERENT VALUE.
+        //
+        // `docs/text-law.md` §4.4 measured the prerequisite that would
+        // otherwise have been missed: `idol fmt` DELETES the backslash from
+        // `"esc \{ brace"`, because `writeStringLit` has no `'{'` case. While
+        // both spellings meant `{` that was harmless. Under the ruling it is a
+        // formatter that converts a LITERAL BRACE INTO A HOLE OPENER — the
+        // exact class `gate/fmt.sh` exists for.
+        //
+        // The printer cannot infer the role: after decoding, `\{` and `{` are
+        // the same byte, and `law.lexical.one` forbids a consumer
+        // reconstructing role from contents. So the parser hands the printer a
+        // value that already carries the answer — the SOURCE SPELLING of every
+        // backslash and every protected brace, decoded in all other respects.
+        // `PrettyPrinter.lit_form` names the two forms; this is `.source`.
+        if (self.formatting) {
+            return self.new_expr(.{ .string_lit = .{
+                .loc = loc,
+                .val = try respellForReprint(self.alloc, s, protected),
+                .quote = quote,
+            } });
+        }
+        if (self.directive_arg_depth > 0 or !self.idol_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
             return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = s, .quote = quote } });
         }
         var parts: std.ArrayList(*ast.Expr) = .empty;
@@ -5800,15 +5923,28 @@ pub const Parser = struct {
         var holes: usize = 0;
         var i: usize = 0;
         while (i < s.len) {
-            if (s[i] != '{') {
+            // `\{` IS NOT A HOLE OPENER. The map comes from the lexer because
+            // the byte itself cannot carry the fact: `\{`, `\x7B`, `\123` and a
+            // bare `{` all decode to 0x7B. This is the one test that makes a
+            // literal brace sayable in the interpolating face, and it is why
+            // `"both {x} and \{x}"` still interpolates the first hole — the
+            // reading is per-brace, not per-literal.
+            if (s[i] != '{' or isProtected(protected, i)) {
                 try lit.append(self.alloc, s[i]);
                 i += 1;
                 continue;
             }
             const hole_loc = interpolationLoc(loc, s, i);
-            const close = interpolationHoleEnd(s, i) orelse {
+            const close = interpolationHoleEnd(s, protected, i) orelse {
                 term.locWarn(hole_loc, "STR-1: this `{{` opens an interpolation hole that never closes", .{});
-                term.locHint(hole_loc, "a `{{` in a text literal is a hole opener; write the matching `}}`, or move the brace text into `@comp.c.emit` where `{{…}}` is directive data", .{});
+                // THE DIAGNOSTIC THAT WILL REFUSE IS ALREADY THE ONE THAT
+                // TEACHES. `docs/text-law.md` §4.5 stages the refusal behind the
+                // migration, but the hint does not have to wait: naming `\{`
+                // here is what lets the 547 warned sites move before the error
+                // lands, and a hint that named only `@comp.c.emit` pointed at a
+                // directive most of those sites cannot be written inside.
+                term.locHint(hole_loc, "write the matching `}}`, or write the brace itself as `\\{{` — `\\{{` and `\\}}` are the literal-brace spelling", .{});
+                term.locHint(hole_loc, "a payload that is all braces and no holes — JSON, a C body, an awk program — belongs in the byte face `'…'`, which does not interpolate and decodes no escapes", .{});
                 try lit.append(self.alloc, s[i]);
                 i += 1;
                 continue;
@@ -5827,7 +5963,8 @@ pub const Parser = struct {
                 // which of the two readings the compiler took, and the preceding
                 // diagnostics from the sub-parse say exactly where it gave up.
                 term.locWarn(hole_loc, "STR-1: `{{{s}}}` is not one whole expression, so it is emitted as literal text", .{hole_text});
-                term.locHint(hole_loc, "an interpolation hole holds an EXPRESSION (`{{x}}`, `{{f(n)}}`, `{{x:len()}}`, `{{x + 1}}`); if these braces are meant as text, this is the site that has to say so", .{});
+                term.locHint(hole_loc, "an interpolation hole holds an EXPRESSION (`{{x}}`, `{{f(n)}}`, `{{x:len()}}`, `{{x + 1}}`); if these braces are meant as text, write them `\\{{` and `\\}}`", .{});
+                term.locHint(hole_loc, "a payload that is all braces and no holes — JSON, a C body, an awk program — belongs in the byte face `'…'`, which does not interpolate and decodes no escapes", .{});
                 try lit.appendSlice(self.alloc, s[i .. close + 1]);
             }
             i = close + 1;
@@ -5885,16 +6022,27 @@ pub const Parser = struct {
             .string_lit => error.UnexpectedToken,
             .compat_text_lit => blk: {
                 _ = try self.adv();
-                const decoded = try Lexer.decode_lua_short_string(self.alloc, tok.text);
-                break :blk try self.desugar_string_interpolation(tok.loc, decoded, .compat_text);
+                var protected: std.ArrayList(bool) = .empty;
+                defer protected.deinit(self.alloc);
+                const decoded = try self.decodeLiteral(tok, &protected);
+                break :blk try self.desugar_string_interpolation(tok.loc, decoded, protected.items, .compat_text);
             },
             .text_lit => blk: {
                 _ = try self.adv();
                 // The lexer already scans escape sequences to find the closing quote,
                 // so accepting `"a\nb"` while emitting the raw bytes made the escape
                 // syntax lex-only: canonical text had no way to spell a newline.
-                const val = try Lexer.decode_lua_short_string(self.alloc, tok.text);
-                break :blk try self.desugar_string_interpolation(tok.loc, val, .text);
+                //
+                // `protected` is which decoded bytes came from an ESCAPE, and it
+                // is the only thing that can tell `\{` from `{` — they are the
+                // same byte by the time the value exists. It does NOT outlive
+                // this block: `desugar_string_interpolation` reads it and either
+                // copies what it needs or returns a value that does not depend
+                // on it.
+                var protected: std.ArrayList(bool) = .empty;
+                defer protected.deinit(self.alloc);
+                const val = try self.decodeLiteral(tok, &protected);
+                break :blk try self.desugar_string_interpolation(tok.loc, val, protected.items, .text);
             },
             .bytes_lit => blk: {
                 _ = try self.adv();
@@ -9911,6 +10059,128 @@ test "parse: string interpolation indexed holes" {
     try testing.expect(c_hole.field.obj.* == .index);
     try testing.expectEqualStrings("rows", c_hole.field.obj.index.obj.name.ident);
     try testing.expectEqualStrings("i", c_hole.field.obj.index.key.name.ident);
+}
+
+test "parse: an escaped brace is TEXT and an unescaped one still opens a hole" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // `docs/text-law.md` — `\{` and `\}` are the literal brace. The reading is
+    // PER-BRACE, not per-literal, which is the property no raw face can give:
+    // 128 sites in 17 files of the compiler corpus carry a live hole and a
+    // literal brace in ONE literal, and a face with no holes cannot serve them.
+    const mod = try parseDuoSource(
+        \\a = "v=\{x}"
+        \\b = "both {x} and \{x}"
+        \\c = "hex \x7Bx}"
+    , &arena);
+
+    // (a) ALL text: no hole was opened, so the whole literal is one string.
+    const a = mod.body.stmts[0].assign.values[0];
+    try testing.expect(a.* == .string_lit);
+    try testing.expectEqualStrings("v={x}", a.string_lit.val);
+
+    // (b) THE CONTROL AGAINST AN OVER-BROAD FIX. A patch that made `\{`
+    // literal by making the literal non-interpolating passes (a) and fails
+    // here: the first hole must still be a live `x`.
+    const b = mod.body.stmts[1].assign.values[0];
+    try testing.expect(b.* == .binop and b.binop.op == .concat);
+    try testing.expectEqualStrings("both ", b.binop.lhs.binop.lhs.string_lit.val);
+    try testing.expectEqualStrings("x", b.binop.lhs.binop.rhs.name.ident);
+    try testing.expectEqualStrings(" and {x}", b.binop.rhs.string_lit.val);
+
+    // (c) THE FACT BELONGS TO THE DECODER, NOT TO THE SPELLING. `\x7B` is the
+    // byte `{` and opened a hole before the ruling — `print("A[\x7Bx}]")`
+    // printed `A[7]`. Protecting only the two characters `\{` would leave it
+    // wrong; the map is per DECODED BYTE for exactly this reason.
+    const c = mod.body.stmts[2].assign.values[0];
+    try testing.expect(c.* == .string_lit);
+    try testing.expectEqualStrings("hex {x}", c.string_lit.val);
+}
+
+test "parse: an escaped brace cannot close or deepen a hole" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // `interpolationHoleEnd` counts brace DEPTH, so a protected brace has to be
+    // invisible to it in both directions. Without the guard `"{f(\})}"` would
+    // close at the `\}` — text — and the hole would be cut in the wrong place.
+    const mod = try parseDuoSource(
+        \\a = "pair=\{\"k\": 1\}"
+        \\b = "n={ {1, 2, 3}:len() } \{end\}"
+    , &arena);
+
+    // (a) The control from `examples/text/brace/escape.id`: this literal
+    // already emitted its own source text before the ruling (with an STR-1
+    // warning). The ruling must not change it, only make it sayable.
+    const a = mod.body.stmts[0].assign.values[0];
+    try testing.expect(a.* == .string_lit);
+    try testing.expectEqualStrings("pair={\"k\": 1}", a.string_lit.val);
+
+    // (b) A pack inside a live hole — `law.brace` — beside protected braces in
+    // the same literal. The depth counting must still find the RIGHT `}`.
+    const b = mod.body.stmts[1].assign.values[0];
+    try testing.expect(b.* == .binop and b.binop.op == .concat);
+    try testing.expectEqualStrings(" {end}", b.binop.rhs.string_lit.val);
+}
+
+test "parse: an ESCAPED QUOTE inside a hole is still a quote, not a protected byte" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // THE REGRESSION THIS LANE INTRODUCED AND THEN MEASURED OUT.
+    //
+    // The first cut of the protection guard read `isProtected(protected, i)` on
+    // EVERY byte, not only on braces. A `"` inside a hole must be written `\"`
+    // — the hole is inside a text literal — so it arrives PROTECTED, and the
+    // guard skipped it, disabling the quoted-span rule that `interpolationHoleEnd`
+    // exists for. The hole below then cut at the `}` inside the nested string.
+    //
+    // No fixture caught it. The corpus STR-1 census did: `scripts/sim.id` went
+    // from 6 warned sites to 7, and the two on its line 182 changed CLASS. A
+    // change to this function is not measured until that census is run on both
+    // sides of it.
+    const mod = try parseDuoSource(
+        \\a = "{f(\"}\")}"
+    , &arena);
+    const a = mod.body.stmts[0].assign.values[0];
+    try testing.expect(a.* == .binop and a.binop.op == .concat);
+    const hole = a.binop.rhs;
+    try testing.expect(hole.* == .call);
+    try testing.expectEqualStrings("f", hole.call.func.name.ident);
+    try testing.expectEqual(@as(usize, 1), hole.call.args.len);
+    try testing.expectEqualStrings("}", hole.call.args[0].string_lit.val);
+}
+
+test "parse: `{{` is a hole opening with a PACK, which is why it cannot be the escape" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // THE MIGRATION PROOF FOR THE RULING, AT PARSE TIME.
+    //
+    // Five surveyed languages spell a literal brace `{{` and that is the
+    // strongest familiarity argument available. `docs/text-law.md` declines it
+    // because `{{` is ALREADY SPOKEN FOR: `law.brace` makes `{` the structured
+    // pack face, `law.literal.text` makes a hole an EXPRESSION, therefore a hole
+    // may open with a pack and `{{` is its spelling. Adopting `{{` as the escape
+    // would make brace-initial expressions unspellable inside a hole.
+    //
+    // `examples/text/brace/hole.id` is the running form of this fact, but it
+    // answers ONLY under `--backend=c`: the direct backend refuses
+    // `{10, 20, 30}:len()` with DNB001 `method-unresolved:len`, and no
+    // pack-initial hole was found that direct does lower. With `--backend=c`
+    // retired that oracle goes dark, so the fact is pinned HERE as well, where
+    // it belongs — it is a PARSE fact and needs no backend at all.
+    const mod = try parseDuoSource(
+        \\a = "n={{10, 20, 30}:len()}"
+    , &arena);
+    const a = mod.body.stmts[0].assign.values[0];
+    // `"n=" .. <hole>` — two parts, so the hole was taken as ONE expression and
+    // the second `{` was NOT read as an escaped brace.
+    try testing.expect(a.* == .binop and a.binop.op == .concat);
+    try testing.expectEqualStrings("n=", a.binop.lhs.string_lit.val);
+    // And the hole is a subject-first application whose SUBJECT is a pack.
+    const hole = a.binop.rhs;
+    try testing.expect(hole.* == .method_call);
+    try testing.expectEqualStrings("len", hole.method_call.method);
+    try testing.expect(hole.method_call.obj.* == .table);
+    try testing.expectEqual(@as(usize, 3), hole.method_call.obj.table.fields.len);
 }
 
 test "parse: field projection .name desugars to anonymous function" {

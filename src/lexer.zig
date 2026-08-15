@@ -615,118 +615,192 @@ pub const Lexer = struct {
     }
 
     /// Decode a short Lua string literal body (between quotes, escapes intact).
+    ///
+    /// The one-argument spelling every existing caller uses. `decodeText` is the
+    /// same decoder with the escape-provenance map exposed.
     pub fn decode_lua_short_string(alloc: std.mem.Allocator, raw: []const u8) LexError![]u8 {
+        return decodeText(alloc, raw, null);
+    }
+
+    /// Decode a short string literal body, and — when asked — record WHICH
+    /// DECODED BYTES CAME FROM AN ESCAPE.
+    ///
+    /// `protected`, when given, receives exactly one `bool` per byte appended to
+    /// the result: `true` if that byte was produced by a backslash escape,
+    /// `false` if it was copied verbatim out of the source.
+    ///
+    /// ===================== WHY THE MAP HAS TO EXIST =====================
+    /// `docs/text-law.md` rules `\{` and `\}` the literal-brace spelling in the
+    /// canonical text face, and the fact CANNOT BE RECOVERED AFTER DECODING:
+    /// `\{`, `\x7B`, `\123` and a bare `{` all produce the single byte 0x7B.
+    /// Measured before the ruling, `print("A[\x7Bx}]")` printed `A[7]` — the hex
+    /// escape opened a hole exactly as a bare brace does. A design that
+    /// protected only the two-character sequence `\{` and not the BYTE IT
+    /// PRODUCES would leave that case wrong, which is why the fact belongs to
+    /// the decoder and not to `desugar_string_interpolation`.
+    ///
+    /// `law.lexical.one`: the lexer records the role ONCE; no consumer
+    /// reconstructs it from delimiter text, source substring, flags or contents.
+    pub fn decodeText(
+        alloc: std.mem.Allocator,
+        raw: []const u8,
+        protected: ?*std.ArrayList(bool),
+    ) LexError![]u8 {
         var out: std.ArrayList(u8) = .empty;
         errdefer out.deinit(alloc);
         var i: usize = 0;
         while (i < raw.len) {
-            if (raw[i] != '\\') {
+            // Every branch below may append zero, one or several bytes (`\z`
+            // appends none, `\u{1F600}` appends four). Rather than thread the
+            // map through fifteen append sites — where one missed site is a
+            // silent one-bit desync between two arrays that must stay the same
+            // length — the flag is stamped ONCE PER SOURCE ELEMENT across
+            // however many bytes that element produced.
+            const mark = out.items.len;
+            const from_escape = raw[i] == '\\';
+            if (!from_escape) {
                 try out.append(alloc, raw[i]);
                 i += 1;
-                continue;
-            }
-            i += 1;
-            if (i >= raw.len) return LexError.InvalidEscape;
-            switch (raw[i]) {
-                'a' => {
-                    try out.append(alloc, 7);
-                    i += 1;
-                },
-                'b' => {
-                    try out.append(alloc, 8);
-                    i += 1;
-                },
-                'f' => {
-                    try out.append(alloc, 12);
-                    i += 1;
-                },
-                'n' => {
-                    try out.append(alloc, '\n');
-                    i += 1;
-                },
-                'r' => {
-                    try out.append(alloc, '\r');
-                    i += 1;
-                },
-                't' => {
-                    try out.append(alloc, '\t');
-                    i += 1;
-                },
-                'v' => {
-                    try out.append(alloc, 11);
-                    i += 1;
-                },
-                '\\', '"', '\'' => {
-                    try out.append(alloc, raw[i]);
-                    i += 1;
-                },
-                'z' => {
-                    i += 1;
-                    while (i < raw.len) {
-                        const ws = raw[i];
-                        if (ws == ' ' or ws == '\t' or ws == '\r' or ws == '\n') {
+            } else {
+                i += 1;
+                if (i >= raw.len) return LexError.InvalidEscape;
+                switch (raw[i]) {
+                    'a' => {
+                        try out.append(alloc, 7);
+                        i += 1;
+                    },
+                    'b' => {
+                        try out.append(alloc, 8);
+                        i += 1;
+                    },
+                    'f' => {
+                        try out.append(alloc, 12);
+                        i += 1;
+                    },
+                    'n' => {
+                        try out.append(alloc, '\n');
+                        i += 1;
+                    },
+                    'r' => {
+                        try out.append(alloc, '\r');
+                        i += 1;
+                    },
+                    't' => {
+                        try out.append(alloc, '\t');
+                        i += 1;
+                    },
+                    'v' => {
+                        try out.append(alloc, 11);
+                        i += 1;
+                    },
+                    '\\', '"', '\'' => {
+                        try out.append(alloc, raw[i]);
+                        i += 1;
+                    },
+                    'z' => {
+                        i += 1;
+                        while (i < raw.len) {
+                            const ws = raw[i];
+                            if (ws == ' ' or ws == '\t' or ws == '\r' or ws == '\n') {
+                                i += 1;
+                            } else break;
+                        }
+                    },
+                    'x' => {
+                        i += 1;
+                        if (i >= raw.len or !std.ascii.isHex(raw[i])) return LexError.InvalidEscape;
+                        var byte: u8 = std.fmt.parseInt(u8, raw[i .. i + 1], 16) catch return LexError.InvalidEscape;
+                        i += 1;
+                        if (i < raw.len and std.ascii.isHex(raw[i])) {
+                            byte = (byte << 4) | (std.fmt.parseInt(u8, raw[i .. i + 1], 16) catch return LexError.InvalidEscape);
                             i += 1;
-                        } else break;
-                    }
-                },
-                'x' => {
-                    i += 1;
-                    if (i >= raw.len or !std.ascii.isHex(raw[i])) return LexError.InvalidEscape;
-                    var byte: u8 = std.fmt.parseInt(u8, raw[i .. i + 1], 16) catch return LexError.InvalidEscape;
-                    i += 1;
-                    if (i < raw.len and std.ascii.isHex(raw[i])) {
-                        byte = (byte << 4) | (std.fmt.parseInt(u8, raw[i .. i + 1], 16) catch return LexError.InvalidEscape);
+                        }
+                        try out.append(alloc, byte);
+                    },
+                    'u' => {
                         i += 1;
-                    }
-                    try out.append(alloc, byte);
-                },
-                'u' => {
-                    i += 1;
-                    if (i >= raw.len or raw[i] != '{') return LexError.InvalidEscape;
-                    i += 1;
-                    var cp: u21 = 0;
-                    var digits: u32 = 0;
-                    while (i < raw.len and raw[i] != '}') {
-                        if (!std.ascii.isHex(raw[i])) return LexError.InvalidEscape;
-                        const digit = std.fmt.parseInt(u21, raw[i .. i + 1], 16) catch return LexError.InvalidEscape;
-                        cp *= 16;
-                        cp += digit;
-                        digits += 1;
+                        if (i >= raw.len or raw[i] != '{') return LexError.InvalidEscape;
                         i += 1;
-                    }
-                    if (digits == 0 or i >= raw.len or raw[i] != '}') return LexError.InvalidEscape;
-                    i += 1;
-                    var enc: [4]u8 = undefined;
-                    const n = std.unicode.utf8Encode(cp, &enc) catch return LexError.InvalidEscape;
-                    try out.appendSlice(alloc, enc[0..n]);
-                },
-                '\r' => {
-                    i += 1;
-                    if (i < raw.len and raw[i] == '\n') i += 1;
-                },
-                '\n' => i += 1,
-                // `\ddd` — up to three DECIMAL digits, one byte. Without this
-                // case `\0` fell to the fallback below, which drops the
-                // backslash and keeps the digit, so `"a\0b"` decoded to the
-                // bytes `a`, `0`, `b`. Both are 3 bytes long, so every
-                // length-based assertion over such a string kept passing while
-                // the NUL it was checking had quietly become an ASCII zero.
-                '0'...'9' => {
-                    var value: u32 = 0;
-                    var digits: u8 = 0;
-                    while (i < raw.len and digits < 3 and std.ascii.isDigit(raw[i])) {
-                        value = value * 10 + (raw[i] - '0');
-                        digits += 1;
+                        var cp: u21 = 0;
+                        var digits: u32 = 0;
+                        while (i < raw.len and raw[i] != '}') {
+                            if (!std.ascii.isHex(raw[i])) return LexError.InvalidEscape;
+                            const digit = std.fmt.parseInt(u21, raw[i .. i + 1], 16) catch return LexError.InvalidEscape;
+                            cp *= 16;
+                            cp += digit;
+                            digits += 1;
+                            i += 1;
+                        }
+                        if (digits == 0 or i >= raw.len or raw[i] != '}') return LexError.InvalidEscape;
                         i += 1;
-                    }
-                    if (value > 255) return LexError.InvalidEscape;
-                    try out.append(alloc, @intCast(value));
-                },
-                else => {
-                    try out.append(alloc, raw[i]);
-                    i += 1;
-                },
+                        var enc: [4]u8 = undefined;
+                        const n = std.unicode.utf8Encode(cp, &enc) catch return LexError.InvalidEscape;
+                        try out.appendSlice(alloc, enc[0..n]);
+                    },
+                    '\r' => {
+                        i += 1;
+                        if (i < raw.len and raw[i] == '\n') i += 1;
+                    },
+                    '\n' => i += 1,
+                    // `\ddd` — up to three DECIMAL digits, one byte. Without this
+                    // case `\0` fell to the fallback below, which drops the
+                    // backslash and keeps the digit, so `"a\0b"` decoded to the
+                    // bytes `a`, `0`, `b`. Both are 3 bytes long, so every
+                    // length-based assertion over such a string kept passing while
+                    // the NUL it was checking had quietly become an ASCII zero.
+                    '0'...'9' => {
+                        var value: u32 = 0;
+                        var digits: u8 = 0;
+                        while (i < raw.len and digits < 3 and std.ascii.isDigit(raw[i])) {
+                            value = value * 10 + (raw[i] - '0');
+                            digits += 1;
+                            i += 1;
+                        }
+                        if (value > 255) return LexError.InvalidEscape;
+                        try out.append(alloc, @intCast(value));
+                    },
+                    // `\{` and `\}` — THE LITERAL BRACE, per `docs/text-law.md`.
+                    //
+                    // Not new vocabulary. `src/main.zig` already ships a diagnostic
+                    // declaring the escape set CLOSED ("Idol escapes are \n \t \r
+                    // \\ \" \' \0 and \x<hex>"); this adds a member to a closed
+                    // enumeration that already has an error for non-members, which
+                    // is extension within admitted vocabulary. The alternative,
+                    // `{{`, would be a new LEXICAL RULE (doubling) that exists
+                    // nowhere else in the language — and it is already spoken for:
+                    // `law.brace` makes `{` the structured-pack face and
+                    // `law.literal.text` makes a hole an EXPRESSION, so
+                    // `"n={{10, 20, 30}:len()}"` answers 3 today, and
+                    // `lib/text/template` uses `{{` as its own action opener.
+                    //
+                    // The byte is ordinary; it is the `protected` flag stamped
+                    // beside it that makes it text rather than a hole opener.
+                    '{', '}' => {
+                        try out.append(alloc, raw[i]);
+                        i += 1;
+                    },
+                    // FAIL-CLOSED. This prong WAS
+                    //
+                    //     else => { try out.append(alloc, raw[i]); i += 1; },
+                    //
+                    // which silently DROPPED THE BACKSLASH on every undeclared
+                    // escape, so the set `src/main.zig` advertises as closed was
+                    // open in fact: `print("A[\q]")` printed `A[q]`. It is the same
+                    // fallback that decoded `"a\0b"` to the bytes `a`, `0`, `b` —
+                    // see the `\ddd` prong above, which exists only because of it,
+                    // and whose comment records that every length-based assertion
+                    // kept passing while the NUL had become an ASCII zero.
+                    //
+                    // Closing it is what makes `\{` safe to name. `"\{x}"` decoded
+                    // to a hole yesterday and is literal text today; a program can
+                    // only cross that line if some OTHER undeclared escape decays
+                    // silently, and after this prong none does. Either a literal
+                    // holds none but declared escapes — same bytes before and after
+                    // — or it stops compiling and names the site.
+                    else => return LexError.InvalidEscape,
+                }
             }
+            if (protected) |p| try p.appendNTimes(alloc, from_escape, out.items.len - mark);
         }
         return try out.toOwnedSlice(alloc);
     }
@@ -1592,6 +1666,56 @@ test "decode_lua_short_string: decimal escapes \\0 and \\65" {
     const bounded = try Lexer.decode_lua_short_string(testing.allocator, "\\0653");
     defer testing.allocator.free(bounded);
     try testing.expectEqualStrings("A3", bounded);
+}
+
+test "decodeText: \\{ and \\} are the literal brace, and the map says which bytes" {
+    const alloc = testing.allocator;
+    // `docs/text-law.md` — the ruled spelling. The BYTES are unremarkable; the
+    // whole content of the ruling is the flag stamped beside them, because
+    // `desugar_string_interpolation` has nothing else to read: after decoding,
+    // `\{` and `{` are both 0x7B.
+    var protected: std.ArrayList(bool) = .empty;
+    defer protected.deinit(alloc);
+    const out = try Lexer.decodeText(alloc, "a\\{b{c\\}d}", &protected);
+    defer alloc.free(out);
+    try testing.expectEqualStrings("a{b{c}d}", out);
+    try testing.expectEqual(out.len, protected.items.len);
+    //                            a      {     b      {      c     }      d      }
+    const want = [_]bool{ false, true, false, false, false, true, false, false };
+    try testing.expectEqualSlices(bool, &want, protected.items);
+}
+
+test "decodeText: the map is co-indexed through multi-byte and zero-byte escapes" {
+    const alloc = testing.allocator;
+    // The two shapes that break a naive one-flag-per-append implementation:
+    // `\u{...}` appends FOUR bytes for one escape, and `\z` appends NONE. A map
+    // that drifts by one here is worse than no map — it would move the
+    // protection onto the wrong brace and silently change what a literal
+    // prints, which is the class this whole ruling exists to close.
+    var protected: std.ArrayList(bool) = .empty;
+    defer protected.deinit(alloc);
+    const out = try Lexer.decodeText(alloc, "\\u{1F600}\\z   {", &protected);
+    defer alloc.free(out);
+    try testing.expectEqual(@as(usize, 5), out.len); // 4 bytes of emoji + `{`
+    try testing.expectEqual(out.len, protected.items.len);
+    try testing.expectEqualSlices(bool, &[_]bool{ true, true, true, true, false }, protected.items);
+}
+
+test "decodeText: an undeclared escape is REFUSED, not silently unwrapped" {
+    // `src/main.zig` ships a diagnostic declaring the escape set CLOSED. The
+    // implementation did not honour it: the trailing `else =>` dropped the
+    // backslash, so `print("A[\q]")` printed `A[q]`. That fail-open fallback is
+    // what made `\{` unsafe to name — a program could cross from "hole" to
+    // "literal text" with no word from the compiler. Fail-closed.
+    try testing.expectError(
+        error.InvalidEscape,
+        Lexer.decode_lua_short_string(testing.allocator, "A[\\q]"),
+    );
+    // And the members that ARE declared still decode, so the refusal is not a
+    // blanket one.
+    const ok = try Lexer.decode_lua_short_string(testing.allocator, "\\n\\t\\\\\\{\\}");
+    defer testing.allocator.free(ok);
+    try testing.expectEqualStrings("\n\t\\{}", ok);
 }
 
 test "decode_lua_short_string error: invalid hex escape" {
