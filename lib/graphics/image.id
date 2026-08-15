@@ -260,7 +260,7 @@ sharpen: any = (image: any, strength: f64)
 adjust_brightness: any = (image: any, factor: f64)
   result = new(image.width, image.height, image.channels)
   i = 1
-  while i <= result:len().data
+  while i <= result.data:len()
     result.data(i) = 0:max(255:min(image.data(i) * factor:floor()))
     i = i + 1
   result
@@ -268,7 +268,7 @@ adjust_brightness: any = (image: any, factor: f64)
 adjust_contrast: any = (image: any, factor: f64)
   result = new(image.width, image.height, image.channels)
   i = 1
-  while i <= result:len().data
+  while i <= result.data:len()
     value = image.data(i)
     result.data(i) = 0:max(255:min((value - 128) * factor + 128:floor()))
     i = i + 1

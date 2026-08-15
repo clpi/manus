@@ -267,10 +267,10 @@ ws_connection_send: any = (conn: any, opcode: i64, payload: any)
 ws_connection_receive: any = (conn: any, data: any)
   # Append to buffer
   for b in data
-    conn.buffer(conn:len().buffer + 1) = b
+    conn.buffer(conn.buffer:len() + 1) = b
 
   # Try to decode
-  if conn:len().buffer < 2
+  if conn.buffer:len() < 2
     return nil
   frame = ws_decode_frame(conn.buffer, 1)
   if frame == nil
@@ -279,7 +279,7 @@ ws_connection_receive: any = (conn: any, data: any)
   # Remove consumed bytes
   new_buf = {}
   i = frame.next
-  while i <= conn:len().buffer
+  while i <= conn.buffer:len()
     new_buf(new_buf:len() + 1) = conn.buffer(i)
     i = i + 1
   conn.buffer = new_buf
@@ -292,14 +292,14 @@ ws_connection_receive: any = (conn: any, data: any)
     return { type = "pong", payload = frame.payload }
   else(frame.opcode == OP_CLOSE)
     conn.state = "closed"
-    if frame:len().payload >= 2
+    if frame.payload:len() >= 2
       conn.close_code = frame.payload(1) << 8 | frame.payload(2)
     return { type = "close", code = conn.close_code }
   else(frame.opcode == OP_TEXT)
     # Convert payload to string
     parts = {}
     i = 1
-    while i <= frame:len().payload
+    while i <= frame.payload:len()
       parts(parts:len() + 1) = frame.payload(i):char()
       i = i + 1
     return { type = "text", data = parts:concat() }

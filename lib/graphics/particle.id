@@ -120,10 +120,10 @@ particle.rotation = config.rotation.min + math.random() * (config.rotation.max -
 particle.angular_velocity = config.angular_velocity.min + math.random() * (config.angular_velocity.max - config.angular_velocity.min)
 
 # Interpolate color
-if config:len().colors >= 2
+if config.colors:len() >= 2
   t = math.random()
   c1 = config.colors(1)
-  c2 = config.colors(config:len().colors)
+  c2 = config.colors(config.colors:len())
   particle.color =
     r = c1.r + (c2.r - c1.r) * t
     g = c1.g + (c2.g - c1.g) * t
@@ -131,7 +131,7 @@ if config:len().colors >= 2
     a = c1.a + (c2.a - c1.a) * t
 
 particle.acceleration = config.gravity
-emitter.particles(emitter:len().particles + 1) = particle
+emitter.particles(emitter.particles:len() + 1) = particle
 particle
 
 emitter_update = (emitter: any, delta_time: f64)
@@ -156,7 +156,7 @@ if config.burst > 0
 
 # Update particles
 i = 1
-while i <= emitter:len().particles
+while i <= emitter.particles:len()
   p = emitter.particles(i)
   p.age = p.age + delta_time
 
@@ -208,7 +208,7 @@ system_new: any = ()
   }
 
 system_add_emitter = (system: any, emitter: any)
-  system.emitters(system:len().emitters + 1) = emitter
+  system.emitters(system.emitters:len() + 1) = emitter
 
 system_update = (system: any, delta_time: f64)
   total_particles = 0

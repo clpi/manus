@@ -107,7 +107,7 @@ result.data = {}
 if q.bits == 4
   # Unpack 4-bit values
   idx = 1
-  for i = 1, q:len().data
+  for i = 1, q.data:len()
     byte = q.data[i]
     val1 = byte & 15
     if val1 >= 8

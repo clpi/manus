@@ -3,7 +3,7 @@
 
 @comp.define.derive("CStruct", generate: str = (meta)
     acc = "typedef struct " .. meta.name .. " {\n"
-    for i = 1, meta:len().fields
+    for i = 1, meta.fields:len()
         f = meta.fields[i]
         acc = acc .. "    " .. f.type .. " " .. f.name .. ";\n"
     acc .. "} " .. meta.name .. ";\n"
@@ -11,7 +11,7 @@ end)
 
 @comp.define.derive("GetterBundle", generate: str = (meta)
     acc = ""
-    for i = 1, meta:len().fields
+    for i = 1, meta.fields:len()
         f = meta.fields[i]
         acc = acc .. "static inline " .. f.type .. " " .. meta.name .. "_get_" .. f.name .. "(const " .. meta.name .. "* v) { return v->" .. f.name .. "; }\n"
     acc

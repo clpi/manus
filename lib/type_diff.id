@@ -173,26 +173,26 @@ format_diff: str = (type_name: str, changes: any)
   lines(lines:len() + 1) = "Old fields: " .. changes.old_count:to(str) .. ", New fields: " .. changes.new_count:to(str)
   lines(lines:len() + 1) = "Compatible: " .. changes.compatible:to(str)
 
-  if changes:len().added > 0
+  if changes.added:len() > 0
     lines(lines:len() + 1) = ""
     lines(lines:len() + 1) = "+ Added fields:"
     for _, a in changes.added
       lines(lines:len() + 1) = "  + " .. a.name .. ": " .. a.type
 
-  if changes:len().removed > 0
+  if changes.removed:len() > 0
     lines(lines:len() + 1) = ""
     lines(lines:len() + 1) = "- Removed fields:"
     for _, r in changes.removed
       lines(lines:len() + 1) = "  - " .. r.name .. ": " .. r.type
 
-  if changes:len().changed > 0
+  if changes.changed:len() > 0
     lines(lines:len() + 1) = ""
     lines(lines:len() + 1) = "~ Changed fields:"
     for _, c in changes.changed
       compat = is_widening(c.old_type, c.new_type) and "widening" or "narrowing"
       lines(lines:len() + 1) = "  ~ " .. c.name .. ": " .. c.old_type .. " → " .. c.new_type .. " (" .. compat .. ")"
 
-  if changes:len().unchanged > 0
+  if changes.unchanged:len() > 0
     lines(lines:len() + 1) = ""
     lines(lines:len() + 1) = "= Unchanged fields:"
     for _, u in changes.unchanged

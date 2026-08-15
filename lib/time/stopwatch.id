@@ -29,18 +29,18 @@ stopwatch_lap: f64 = (sw: any)
   if not sw.running
     return 0.0
   lap_time = os.clock() - sw.start_time
-  sw.laps(sw:len().laps + 1) = lap_time
+  sw.laps(sw.laps:len() + 1) = lap_time
   sw.start_time = os.clock()
   lap_time
 stopwatch_laps: any = (sw: any)
   sw.laps
 stopwatch_avg_lap: f64 = (sw: any)
-  if sw:len().laps == 0
+  if sw.laps:len() == 0
     return 0.0
   total = 0
   for lap in sw.laps
     total = total + lap
-  total / sw:len().laps
+  total / sw.laps:len()
 scoped_timer_new: any = (name: str)
   sw = stopwatch_new()
   stopwatch_start(sw)

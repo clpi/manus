@@ -41,27 +41,27 @@ channel: any = (capacity: i64)
 send = (ch: any, val: any)
   if ch.closed
     error("send on closed channel")
-  if ch:len().recvwait > 0
+  if ch.recvwait:len() > 0
     w = ch.recvwait:remove(1)
     w.slot[1] = val
     w.slot[2] = true
     pending[pending:len() + 1] = w
-  if ch.cap == 0 or ch:len().queue < ch.cap
-    ch.queue[ch:len().queue + 1] = val
+  if ch.cap == 0 or ch.queue:len() < ch.cap
+    ch.queue[ch.queue:len() + 1] = val
     return
   co = coroutine.running()
   entry = {
     co = co,
     val = val
   }
-  ch.sendwait[ch:len().sendwait + 1] = entry
+  ch.sendwait[ch.sendwait:len() + 1] = entry
   coroutine.yield()
 recv: any = (ch: any)
-  if ch:len().queue > 0
+  if ch.queue:len() > 0
     val = ch.queue:remove(1)
-    if ch:len().sendwait > 0
+    if ch.sendwait:len() > 0
       w = ch.sendwait:remove(1)
-      ch.queue[ch:len().queue + 1] = w.val
+      ch.queue[ch.queue:len() + 1] = w.val
       pending[pending:len() + 1] = w
     return val
   if ch.closed
@@ -74,15 +74,15 @@ recv: any = (ch: any)
     co = co,
     slot = slot
   }
-  ch.recvwait[ch:len().recvwait + 1] = entry
+  ch.recvwait[ch.recvwait:len() + 1] = entry
   coroutine.yield()
   return slot.val
 peek: any = (ch: any)
-  if ch:len().queue > 0
+  if ch.queue:len() > 0
     val = ch.queue:remove(1)
-    if ch:len().sendwait > 0
+    if ch.sendwait:len() > 0
       w = ch.sendwait:remove(1)
-      ch.queue[ch:len().queue + 1] = w.val
+      ch.queue[ch.queue:len() + 1] = w.val
       pending[pending:len() + 1] = w
     return val
   return nil
@@ -95,7 +95,7 @@ close = (ch: any)
   ch.recvwait = {}
 drain: any = (ch: any)
   out = {}
-  while ch:len().queue > 0
+  while ch.queue:len() > 0
     out[out:len() + 1] = ch.queue:remove(1)
   return out
 waitgroup: any = ()
@@ -117,7 +117,7 @@ wait = (wg: any)
   if wg.count <= 0
     return
   co = coroutine.running()
-  wg.waiters[wg:len().waiters + 1] = {
+  wg.waiters[wg.waiters:len() + 1] = {
     co = co
   }
   coroutine.yield()

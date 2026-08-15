@@ -32,7 +32,7 @@ if not shape_docs:find("method hash")
 wrapper_plan = contracts.concept_wrapper_plan("UserAdapter", "user", @comp.concepts.methods("ContractShape"))
 if wrapper_plan:len() != 1 or wrapper_plan[1].wrapper != "UserAdapter_hash"
     error("concept wrapper plan should derive stable wrapper names")
-if wrapper_plan:len()[1].params != 2 or wrapper_plan[1].params[2] != "i64"
+if wrapper_plan[1].params:len() != 2 or wrapper_plan[1].params[2] != "i64"
     error("concept wrapper plan should include parameter type vector")
 
 target_report = contracts.concept_target_report(
@@ -41,7 +41,7 @@ target_report = contracts.concept_target_report(
     "user",
     @comp.concepts.members("ContractShape")
 )
-if target_report.contract.count != 2 or target_report:len().wrappers != 1
+if target_report.contract.count != 2 or target_report.wrappers:len() != 1
     error("concept target report should include contract and wrapper plan")
 accessor_plan = contracts.concept_accessor_plan("UserAdapter", "user", @comp.concepts.members("ContractShape"))
 if accessor_plan:len() != 1 or accessor_plan[1].wrapper != "UserAdapter_get_id"
@@ -107,7 +107,7 @@ runtime_report = contracts.concept_target_report(
     "value",
     RuntimeShape.required_methods
 )
-if runtime_report:len().wrappers[1].params != 2 or runtime_report.wrappers[1].ret != "i64"
+if runtime_report.wrappers[1].params:len() != 2 or runtime_report.wrappers[1].ret != "i64"
     error("runtime meta concept should preserve method params and ret")
 
 iter_count = 0
@@ -127,7 +127,7 @@ if reflect_subject.profile.score != 3
     error("std.reflect.deep_copy should isolate nested tables")
 if not reflect.deep_equal(reflect_subject, { id = 7, profile = { score = 3 } })
     error("std.reflect.deep_equal should compare nested tables")
-if std:len().reflect.field_names(reflect_subject) != 2 or std:len().reflect.map_values(reflect_subject) != 2
+if std.reflect.field_names(reflect_subject):len() != 2 or std.reflect.map_values(reflect_subject):len() != 2
     error("std.reflect direct iteration helpers should expose table keys and values")
 if reflect.kind({ 1, 2, 3 }) != "array"
     error("std.reflect.kind should classify array-shaped tables")
@@ -146,9 +146,9 @@ map_eq = fun(a, b)
     a == b
 if not maps.equal_func(map_subject, map_clone, map_eq)
     error("std.maps.equal_func should compare direct table entries")
-if maps.size(map_subject) != 2 or std:len().maps.keys(map_subject) != 2
+if maps.size(map_subject) != 2 or std.maps.keys(map_subject):len() != 2
     error("std.maps size and keys should use direct table iteration")
-if std:len().maps.values(map_subject) != 2 or std:len().maps.entries(map_subject) != 2
+if std.maps.values(map_subject):len() != 2 or std.maps.entries(map_subject):len() != 2
     error("std.maps value views should use direct table iteration")
 map_merged = maps.merge({ id = 1 }, { id = 9, score = 3 })
 if map_merged.id != 1 or map_merged.score != 3
@@ -161,12 +161,12 @@ table_subject = { id = 7, score = 3 }
 table_clone = table.clone(table_subject)
 if table_clone.id != 7 or table_clone.score != 3
     error("std.table.clone should preserve direct table entries")
-if table_subject:len():keys() != 2 or std:len().table.values(table_subject) != 2
+if table_subject:keys():len() != 2 or std.table.values(table_subject):len() != 2
     error("std.table key/value views should use direct table iteration")
 table_merged = table.merge({ id = 1 }, { score = 3 })
 if table_merged.id != 1 or table_merged.score != 3
     error("std.table.merge should copy direct table entries")
-if std:len().table.to_pairs(table_subject) != 2
+if std.table.to_pairs(table_subject):len() != 2
     error("std.table.to_pairs should use direct table iteration")
 table_omit = table.omit({ id = 7, score = 3, stale = 1 }, { "stale" })
 if table_omit.stale != nil or table_omit.id != 7 or table_omit.score != 3
@@ -193,7 +193,7 @@ if not rules:find("add_zero")
 old_user = { id = "i64", name = "str" }
 new_user = { id = "i64", name = "str", email = "str" }
 changes = type_diff.diff_types(old_user, new_user)
-if not changes.compatible or changes:len().added != 1
+if not changes.compatible or changes.added:len() != 1
     error("type diff should treat additive schema change as compatible")
 
 styled = term.bold("ok")

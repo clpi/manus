@@ -62,7 +62,7 @@ server_register = (server: any, method: str, handler: any)
   server.handlers(method) = handler
 
 server_add_middleware = (server: any, middleware: any)
-  server.middleware(server:len().middleware + 1) = middleware
+  server.middleware(server.middleware:len() + 1) = middleware
 
 server_handle: any = (server: any, request: any)
   # Validate JSON-RPC version

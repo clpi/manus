@@ -28,9 +28,9 @@ result_new: any = (model_name: str, batch_size: i64)
     tokens_per_second = 0
   }
 result_add_latency = (result: any, latency: f64)
-  result.latencies(result:len().latencies + 1) = latency
+  result.latencies(result.latencies:len() + 1) = latency
 result_calculate_stats = (result: any)
-  n = result:len().latencies
+  n = result.latencies:len()
   if n == 0
     return
   sorted = {
@@ -58,7 +58,7 @@ runner_run: any = (runner: any, model_fn: any, input_generator: any)
   config = runner.config
   results = {}
   batch_idx = 1
-  while batch_idx <= config:len().batch_sizes
+  while batch_idx <= config.batch_sizes:len()
     batch_size = config.batch_sizes(batch_idx)
     result = result_new("model", batch_size)
     i = 0
@@ -136,10 +136,10 @@ memory: any = (model_fn: any, input_generator: any, batch_size: i64)
   output = model_fn(input)
   input_size = 0
   if input and input.data
-    input_size = input:len().data * 4
+    input_size = input.data:len() * 4
   output_size = 0
   if output and output.data
-    output_size = output:len().data * 4
+    output_size = output.data:len() * 4
   {
     batch_size = batch_size,
     input_size = input_size,

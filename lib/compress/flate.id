@@ -52,7 +52,7 @@ writer_write = (w: any, data: any)
   return w
 
 writer_flush = (w: any)
-  if w:len().buf > 0
+  if w.buf:len() > 0
     w.fh:write(compress(w.buf))
     w.buf = ""
   return w

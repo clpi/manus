@@ -83,13 +83,13 @@ check("hex_encode", crypto.hex_encode("Hi") == "4869")
 check("hex_decode", crypto.hex_decode("4869") == "Hi")
 check("hex_roundtrip", crypto.hex_decode(crypto.hex_encode("test")) == "test")
 check("base64 roundtrip", crypto.base64_decode(crypto.base64_encode("hello world")) == "hello world")
-check("base64_url encode", crypto:len().base64_url_encode("test?data&more") > 0)
+check("base64_url encode", crypto.base64_url_encode("test?data&more"):len() > 0)
 check("base64_url roundtrip", crypto.base64_url_decode(crypto.base64_url_encode("binary+data/here")) == "binary+data/here")
 check("compare_digest same", crypto.compare_digest("abc", "abc"))
 check("compare_digest diff", not crypto.compare_digest("abc", "abd"))
 check("compare_digest length", not crypto.compare_digest("abc", "abcd"))
-check("hmac_sha256", crypto:len().hmac_sha256("key", "message") == 64)
-check("secure_random_hex", crypto:len().secure_random_hex(16) == 32)
+check("hmac_sha256", crypto.hmac_sha256("key", "message"):len() == 64)
+check("secure_random_hex", crypto.secure_random_hex(16):len() == 32)
 
 # ── fmt ─────────────────────────────────────────────────────────────
 

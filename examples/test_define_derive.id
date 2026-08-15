@@ -2,7 +2,7 @@
     out = "static void duo_" .. type_info.name .. "_print(duo_" .. type_info.name .. " val) {\n"
     out = out .. "    printf(\"" .. type_info.name .. " { \");\n"
     i = 1
-    while i <= type_info:len().fields
+    while i <= type_info.fields:len()
         f = type_info.fields[i]
         if f.type == "int64_t"
             out = out .. "    printf(\"" .. f.name .. ": %lld \", val." .. f.name .. ");\n"

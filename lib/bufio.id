@@ -38,7 +38,7 @@ line: any = (r: any)
       # return whatever is left
       left = r.buf:sub(r.pos)
       if left:len() > 0
-        r.pos = r:len().buf + 1
+        r.pos = r.buf:len() + 1
         return left, true
       return "", false
   return "", false
@@ -50,7 +50,7 @@ read: any = (r: any, n: i64)
     if has(.err)(r)
       left = r.buf:sub(r.pos)
       if left:len() > 0
-        r.pos = r:len().buf + 1
+        r.pos = r.buf:len() + 1
         return left, true
       return "", false
   data = r.buf:sub(r.pos, r.pos + n - 1)
@@ -63,7 +63,7 @@ text: any = (r: any, n: i64)
 
 # byte: read a single byte value. Returns (byte, ok).
 byte: any = (r: any)
-  while r.pos > r:len().buf
+  while r.pos > r.buf:len()
     fill(r)
     if has(.err)(r)
       return 0, false
@@ -102,7 +102,7 @@ scan: bool = (s: any)
     pos = remaining:find(s.delim, 1, true)
     if pos != nil
       s.token = remaining:sub(1, pos - 1)
-      s.pos = s.pos + pos + s:len().delim - 1
+      s.pos = s.pos + pos + s.delim:len() - 1
       return true
     # need more data
     chunk = s.fh:read(s.size)
@@ -111,7 +111,7 @@ scan: bool = (s: any)
       left = s.buf:sub(s.pos)
       if left:len() > 0
         s.token = left
-        s.pos = s:len().buf + 1
+        s.pos = s.buf:len() + 1
         return true
       return false
     s.buf = s.buf:sub(s.pos) .. chunk
@@ -136,7 +136,7 @@ writer: any = (fh: any, size: i64)
 
 # flush: write all buffered data to the underlying handle.
 flush: any = (w: any)
-  if w:len().buf > 0
+  if w.buf:len() > 0
     w.fh:write(w.buf)
     w.buf = ""
   w
@@ -144,14 +144,14 @@ flush: any = (w: any)
 # write: buffer a string for later flushing.
 write: any = (w: any, s: str)
   w.buf = w.buf .. s
-  if w:len().buf >= w.size
+  if w.buf:len() >= w.size
     flush(w)
   w
 
 # put: buffer a single byte.
 put: any = (w: any, b: i64)
   w.buf = w.buf .. b:char()
-  if w:len().buf >= w.size
+  if w.buf:len() >= w.size
     flush(w)
   w
 

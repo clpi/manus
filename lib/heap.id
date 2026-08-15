@@ -230,7 +230,7 @@ lru_put = (cache: any, key: any, value: any)
         lru_touch(cache, key)
         return
     # Evict if at capacity
-    if cache:len().list >= cache.capacity
+    if cache.list:len() >= cache.capacity
         oldest = cache.list:remove()
         cache.map[oldest] = nil
     # Insert at front
@@ -239,7 +239,7 @@ lru_put = (cache: any, key: any, value: any)
 
 lru_touch = (cache: any, key: any)
     i = 1
-    while i <= cache:len().list
+    while i <= cache.list:len()
         if cache.list[i] == key
             cache.list:remove(i)
             cache.list:insert(1, key)
@@ -251,7 +251,7 @@ lru_remove: bool = (cache: any, key: any)
     if entry == nil return false 
     cache.map[key] = nil
     i = 1
-    while i <= cache:len().list
+    while i <= cache.list:len()
         if cache.list[i] == key
             cache.list:remove(i)
             return true

@@ -24,7 +24,7 @@ Label: { tag: str, id: i64 }
         "/* pair " .. meta.left.name .. " x " .. meta.right.name .. " */\n"
     else
         acc = ""
-        for i = 1, meta:len().fields
+        for i = 1, meta.fields:len()
             f = meta.fields[i]
             acc = acc .. "static inline void duo_" .. meta.name .. "_mark_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
         acc

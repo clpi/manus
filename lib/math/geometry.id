@@ -125,7 +125,7 @@ polygon_new: any = (vertices: any)
 
 polygon_area: f64 = (poly: any)
     area = 0
-    n = poly:len().vertices
+    n = poly.vertices:len()
     i = 1
     while i <= n
         j = (i % n) + 1
@@ -136,7 +136,7 @@ polygon_area: f64 = (poly: any)
 
 polygon_perimeter: f64 = (poly: any)
     perimeter = 0
-    n = poly:len().vertices
+    n = poly.vertices:len()
     i = 1
     while i <= n
         j = (i % n) + 1
@@ -146,7 +146,7 @@ polygon_perimeter: f64 = (poly: any)
 
 polygon_contains_point: bool = (poly: any, p: any)
     inside = false
-    n = poly:len().vertices
+    n = poly.vertices:len()
     i = 1
     while i <= n
         j = (i % n) + 1

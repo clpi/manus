@@ -751,7 +751,7 @@ main: i64 = ()
   print("  (`-` in the row's key), so no run of this report could turn it into a ✓.")
   print("  Graph keys, per row:")
   for ri, r in rows
-    if r:len()(3) > 0
+    if r(3):len() > 0
       print("    " .. pad(r(1), 24) .. "  " .. r(2))
   print("")
 

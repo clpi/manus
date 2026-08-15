@@ -169,7 +169,7 @@ emit_ffi_binding: str = (func: any)
 
     call_args = build_c_call_args(func.params)
     sig = "@ffi(\"" .. func.name .. "\")\nfun " .. func.name:lower() .. "(" .. params_str .. "): " .. duo_ret
-    body = "    @comp.c.call(\"" .. func.name .. "\"" .. (func:len().params > 0 and ", " or "") .. call_args .. ")"
+    body = "    @comp.c.call(\"" .. func.name .. "\"" .. (func.params:len() > 0 and ", " or "") .. call_args .. ")"
     sig .. "\n" .. body .. "\nend"
 
 # build_c_call_args: generate the argument list for @comp.c.call

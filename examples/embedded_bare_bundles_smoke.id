@@ -1,4 +1,4 @@
 # Smoke: embedded stdlib module with bare functions + implicit module-scope table.
 mb = bundles
 print(mb.describe("Full"))
-print(mb:len().names())
+print(mb.names():len())

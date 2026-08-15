@@ -944,7 +944,7 @@ main: i64 = ()
     print("           hlmode=scm {bin} > {scm}")
     bad = bad + 1
   std.script.run("hlmode=legend {bin} > {work}/legend 2>/dev/null")
-  nleg: i64 = cut:len()(slurp("{work}/legend"))
+  nleg: i64 = cut(slurp("{work}/legend")):len()
   print("    LSP legend  {nleg} semantic-token types, from the same rows")
   # Not "18": the legend must carry EXACTLY the roles the taxonomy enumerates.
   # That is the drift check a fixed number was standing in for, and it keeps

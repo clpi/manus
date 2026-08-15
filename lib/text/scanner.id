@@ -33,7 +33,7 @@ is_digit: bool = (b: i64)
 # scan_ident: scan an identifier starting at current position.
 scan_ident: any = (sc: any)
   start = sc.pos
-  while sc.pos <= sc:len().src and is_ident_part(sc.src:byte(sc.pos))
+  while sc.pos <= sc.src:len() and is_ident_part(sc.src:byte(sc.pos))
     sc.pos = sc.pos + 1
   sc.tok = sc.src:sub(start, sc.pos - 1)
   sc.kind = IDENT
@@ -43,27 +43,27 @@ scan_ident: any = (sc: any)
 scan_number: any = (sc: any)
   start = sc.pos
   is_float = false
-  while sc.pos <= sc:len().src and is_digit(sc.src:byte(sc.pos))
+  while sc.pos <= sc.src:len() and is_digit(sc.src:byte(sc.pos))
     sc.pos = sc.pos + 1
   # check for decimal point
-  if sc.pos <= sc:len().src and sc.src:byte(sc.pos) == 46
+  if sc.pos <= sc.src:len() and sc.src:byte(sc.pos) == 46
     is_float = true
     sc.pos = sc.pos + 1
-    while sc.pos <= sc:len().src and is_digit(sc.src:byte(sc.pos))
+    while sc.pos <= sc.src:len() and is_digit(sc.src:byte(sc.pos))
       sc.pos = sc.pos + 1
   # check for exponent
-  if sc.pos <= sc:len().src
+  if sc.pos <= sc.src:len()
     b = sc.src:byte(sc.pos)
     # 'e' or 'E'
     if b == 101 or b == 69
       is_float = true
       sc.pos = sc.pos + 1
-      if sc.pos <= sc:len().src
+      if sc.pos <= sc.src:len()
         b = sc.src:byte(sc.pos)
         # + or -
         if b == 43 or b == 45
           sc.pos = sc.pos + 1
-      while sc.pos <= sc:len().src and is_digit(sc.src:byte(sc.pos))
+      while sc.pos <= sc.src:len() and is_digit(sc.src:byte(sc.pos))
         sc.pos = sc.pos + 1
   sc.tok = sc.src:sub(start, sc.pos - 1)
   if is_float
@@ -77,7 +77,7 @@ scan_string: any = (sc: any)
   quote = sc.src:byte(sc.pos)
   sc.pos = sc.pos + 1
   start = sc.pos
-  while sc.pos <= sc:len().src
+  while sc.pos <= sc.src:len()
     b = sc.src:byte(sc.pos)
     if b == quote
       sc.tok = sc.src:sub(start, sc.pos - 1)
@@ -99,7 +99,7 @@ scan_comment: any = (sc: any)
   start = sc.pos
   # skip prefix
   sc.pos = sc.pos + 2
-  while sc.pos <= sc:len().src and sc.src:byte(sc.pos) != 10
+  while sc.pos <= sc.src:len() and sc.src:byte(sc.pos) != 10
     sc.pos = sc.pos + 1
   sc.tok = sc.src:sub(start, sc.pos - 1)
   sc.kind = COMMENT
@@ -107,12 +107,12 @@ scan_comment: any = (sc: any)
 
 # scan: advance to the next token. Returns the token kind (or EOF).
 scan: i64 = (sc: any)
-  if sc.pos > sc:len().src
+  if sc.pos > sc.src:len()
     sc.tok = ""
     sc.kind = EOF
     return EOF
   # skip whitespace but track newlines
-  while sc.pos <= sc:len().src
+  while sc.pos <= sc.src:len()
     b = sc.src:byte(sc.pos)
     if b == 32 or b == 9
       sc.pos = sc.pos + 1
@@ -125,15 +125,15 @@ scan: i64 = (sc: any)
         return NEWLINE
       else
         break
-  if sc.pos > sc:len().src
+  if sc.pos > sc.src:len()
     sc.tok = ""
     sc.kind = EOF
     return EOF
   b = sc.src:byte(sc.pos)
   # comment
-  if b == 45 and sc.pos + 1 <= sc:len().src and sc.src:byte(sc.pos + 1) == 45
+  if b == 45 and sc.pos + 1 <= sc.src:len() and sc.src:byte(sc.pos + 1) == 45
     return scan_comment(sc)
-  if b == 47 and sc.pos + 1 <= sc:len().src and sc.src:byte(sc.pos + 1) == 47
+  if b == 47 and sc.pos + 1 <= sc.src:len() and sc.src:byte(sc.pos + 1) == 47
     return scan_comment(sc)
   # identifier
   if is_ident_start(b)

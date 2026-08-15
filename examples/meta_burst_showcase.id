@@ -15,7 +15,7 @@ Pair: { x: f64, y: f64, tag: str }
 
 @comp.define.derive("TouchApi", generate: str = (meta)
     acc = ""
-    for i = 1, meta:len().fields
+    for i = 1, meta.fields:len()
         f = meta.fields[i]
         acc = acc .. "static inline void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
     acc

@@ -15,26 +15,26 @@ onnx_graph_new: any = (name: str)
   }
 
 onnx_graph_add_node = (graph: any, op_type: str, inputs: any, outputs: any, name: str)
-  graph.nodes(graph:len().nodes + 1) =
+  graph.nodes(graph.nodes:len() + 1) =
     op_type = op_type
     inputs = inputs
     outputs = outputs
-    name = name or "node_" .. to(str)(graph:len().nodes)
+    name = name or "node_" .. to(str)(graph.nodes:len())
 
 onnx_graph_add_input = (graph: any, name: str, shape: any, dtype: str)
-  graph.inputs(graph:len().inputs + 1) =
+  graph.inputs(graph.inputs:len() + 1) =
     name = name
     shape = shape
     dtype = dtype or "float32"
 
 onnx_graph_add_output = (graph: any, name: str, shape: any, dtype: str)
-  graph.outputs(graph:len().outputs + 1) =
+  graph.outputs(graph.outputs:len() + 1) =
     name = name
     shape = shape
     dtype = dtype or "float32"
 
 onnx_graph_add_initializer = (graph: any, name: str, shape: any, data: any)
-  graph.initializers(graph:len().initializers + 1) =
+  graph.initializers(graph.initializers:len() + 1) =
     name = name
     shape = shape
     data = data
@@ -57,7 +57,7 @@ onnx_model_encode: any = (model: any)
     inputs = model.graph.inputs
     outputs = model.graph.outputs
   for node in model.graph.nodes
-    graph_summary.nodes(graph_summary:len().nodes + 1) =
+    graph_summary.nodes(graph_summary.nodes:len() + 1) =
       op_type = node.op_type
       inputs = node.inputs
       outputs = node.outputs

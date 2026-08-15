@@ -20,12 +20,12 @@ config_new: any = (cmd: str)
   }
 
 config_arg: any = (config: any, arg: str)
-  config.args(config:len().args + 1) = arg
+  config.args(config.args:len() + 1) = arg
   config
 
 config_args: any = (config: any, args: any)
   for arg in args
-    config.args(config:len().args + 1) = arg
+    config.args(config.args:len() + 1) = arg
   config
 
 config_env: any = (config: any, key: str, value: str)
@@ -244,7 +244,7 @@ pipe_new: any = ()
   }
 
 pipe_read: any = (pipe: any)
-  if pipe:len().buffer == 0
+  if pipe.buffer:len() == 0
     return { data = "", eof = true }
 
   data = pipe.buffer(1)
@@ -252,7 +252,7 @@ pipe_read: any = (pipe: any)
   { data = data, eof = false }
 
 pipe_write: any = (pipe: any, data: str)
-  pipe.buffer(pipe:len().buffer + 1) = data
+  pipe.buffer(pipe.buffer:len() + 1) = data
   { ok = true }
 
 pipe_close = (pipe: any)

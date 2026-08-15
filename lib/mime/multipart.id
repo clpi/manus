@@ -25,7 +25,7 @@ next_part(r: any)
         sep = "--" .. r.boundary
         end_sep = "--" .. r.boundary .. "--"
         pos = r.pos
-        while pos <= r:len().data
+        while pos <= r.data:len()
             d1, e = r.data:find(sep, pos, true)
             if e == nil break 
             if r.data:sub(e + 1, e + 1) == "-" break 

@@ -4,7 +4,7 @@ argparse_key: str = (s: str)
   s or "":gsub("^%-+", "")
 
 add_positional = (parser, name: str, help: str, options: any)
-  parser.positionals(parser:len().positionals + 1) =
+  parser.positionals(parser.positionals:len() + 1) =
     name = name
     help = help or ""
     required = options and options.required
@@ -19,7 +19,7 @@ add_flag = (parser, short_or_long: str, long_or_help: str, help: str)
   else
     long_opt = short_or_long
     desc = long_or_help
-  parser.flags(parser:len().flags + 1) =
+  parser.flags(parser.flags:len() + 1) =
     key = argparse_key(long_opt or short_opt)
     short = short_opt
     long = long_opt
@@ -35,7 +35,7 @@ add_option = (parser, short_or_long: str, long_or_help: str, help: str)
   else
     long_opt = short_or_long
     desc = long_or_help
-  parser.options(parser:len().options + 1) =
+  parser.options(parser.options:len() + 1) =
     key = argparse_key(long_opt or short_opt)
     short = short_opt
     long = long_opt
@@ -121,15 +121,15 @@ parse_with: any = (parser, args: any)
               opts(name) = true
               i = i + 1
         else
-          if positional_idx <= parser:len().positionals
+          if positional_idx <= parser.positionals:len()
             def = parser.positionals(positional_idx)
             opts(def.name) = v
             positional_idx = positional_idx + 1
           else
-            opts.rest_args(opts:len().rest_args + 1) = v
+            opts.rest_args(opts.rest_args:len() + 1) = v
           i = i + 1
 
-  while positional_idx <= parser:len().positionals
+  while positional_idx <= parser.positionals:len()
     def = parser.positionals(positional_idx)
     if opts(def.name) == nil
       opts(def.name) = nil

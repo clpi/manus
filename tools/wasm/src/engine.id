@@ -1,4 +1,18 @@
-jitm = jit
+# THE JIT SUBSTRATE, reached through `req` rather than through the bare name.
+#
+# `jitm = jit` bound the HARDCODED BUILTIN module the compiler synthesises in
+# `src/jit.zig` (`lua_jit_init`), which holds exactly
+# on/off/flush/status/version/version_num/opt/os/arch — no `alloc`, no `w32`,
+# no `seal`, no `call2`, no `sym`, no `addr`. Every one of the six entry points
+# the ~1,700-line ARM64 emitter below calls was therefore nil, `jit_substrate_gap()`
+# named `jit.alloc`, and the emitter has never executed once. The bare name
+# SHADOWS `lib/jit.id`, which implements the whole substrate in Idol over
+# mmap/mprotect/dlsym; `req "jit"` reaches that file instead.
+#
+# Keep this spelled as a `req`. Reverting it to the bare name is not a cosmetic
+# change: it silently removes the JIT from the build and the only symptom is a
+# benchmark getting slower.
+jitm = req "jit"
 # The preview1 roster, numbering and errno policy, shared with
 # `src/wasm/wasi.id`. Scalars and strings only — see the header of that file
 # for why the two hosts cannot be merged into one.
@@ -767,24 +781,69 @@ jit_arch_name: str = ()
     r = to(str)(ac)
   r
 
-# Names the FIRST missing substrate entry, or "" when the substrate is whole.
-# Named rather than counted so the diagnostic tells the compiler side exactly
-# what to supply.
+# THE SUBSTRATE SELF-TEST. Names the first thing that does not WORK, or "" when
+# the substrate carries this engine end to end.
+#
+# It used to be six `jitm.X == nil` comparisons, and every one of them is a lie
+# in both directions on this toolchain:
+#
+#   * FALSE ABSENT. `req "jit"` registers `lib/jit.id` in `duo_modules`, but the
+#     generated `lua_require` tests the HARDCODED builtin names FIRST
+#     (`else if (strcmp(name, "jit") == 0) mod = jit;`), so the binding still
+#     holds the builtin table — which has no `alloc` — while every CALL through
+#     that binding was compiled to a direct `jit__alloc(...)` against the real
+#     Idol module and works. So the nil ladder reported `jit.alloc` missing for
+#     a substrate that answers correctly, and the emitter stayed switched off.
+#   * FALSE PRESENT, which is the dangerous direction. A member can be non-nil
+#     and still DO NOTHING: `lib/jit.id`'s `w32` was
+#     `static lua_Value jit__w32(...) { return lua_val_nil(); }` because
+#     `@comp.c.emit` in statement position is dropped by the C backend. Present,
+#     callable, and hollow. The JIT would have allocated a page, written 1,700
+#     lines of instructions into the void, sealed a page of ZEROS and BRANCHED
+#     INTO IT — an all-zero ARM64 word is `udf #0`, so the symptom is SIGILL
+#     from inside generated code with no line of Idol to blame.
+#
+# So nothing here is asked whether it EXISTS; each thing is asked to DO ITS JOB
+# and is checked by value. The order is load-bearing: the word writer is proved
+# by READ-BACK, before a single byte is executed, so a hollow writer is a clean
+# refusal and a fallback to the interpreter rather than a fault.
+#
+# Costs one 4 KiB mapping and two instructions, once per process, and only on a
+# run that was already going to compile — `--interp` and DUO_WASM_ARGS refuse
+# above this and never reach it.
 jit_substrate_gap: str = ()
-  r: str = ""
-  if jitm.sym == nil
-    r = "jit.sym"
-  if jitm.r32 == nil
-    r = "jit.r32"
-  if jitm.w32 == nil
-    r = "jit.w32"
-  if jitm.call2 == nil
-    r = "jit.call2"
-  if jitm.seal == nil
-    r = "jit.seal"
-  if jitm.alloc == nil
-    r = "jit.alloc"
-  r
+  probe = jitm.alloc(4096)
+  if not probe
+    return "jit.alloc refused the mapping"
+  # 1. THE WORD WRITER, proved by read-back before anything is executed.
+  #    ADD x0, x0, x1 / RET — chosen so the call below also proves that the
+  #    two arguments ARRIVE, which is what the compiled entry sequence depends
+  #    on (x0 = linear memory, x1 = globals).
+  jitm.w32(probe, 0, 0x8B010000)
+  jitm.w32(probe, 1, 0xD65F03C0)
+  if jitm.r32(probe, 0) != 0x8B010000
+    return "jit.w32 wrote nothing (jit.r32 read back " .. to(str)(jitm.r32(probe, 0)) .. ", expected 0x8B010000) -- the word writer is a no-op"
+  if jitm.r32(probe, 1) != 0xD65F03C0
+    return "jit.w32 wrote nothing at word 1 -- the word writer is a no-op"
+  # 2. The address of an emitted buffer, which `call_indirect` bakes into the
+  #    dispatch table it branches through.
+  if jitm.addr(probe) == 0
+    return "jit.addr answers 0 for a live buffer"
+  # 3. Host symbol resolution, which every emitted call to `write`/`exit` needs.
+  if jitm.sym("write") == 0
+    return "jit.sym cannot resolve `write`"
+  # 4. W^X publication.
+  if not jitm.seal(probe, 8)
+    return "jit.seal refused to make the buffer executable"
+  # 5. ENTRY, by value, through the exact arity the compiled body is entered
+  #    with. 40 + 2 is not a formality: it fails if the writer wrote garbage,
+  #    if the icache was not flushed, or if the arguments do not land in
+  #    x0/x1.
+  got: i64 = jitm.call2(probe, 40, 2)
+  if got != 42
+    return "jit.call2 returned " .. got:to(str) .. " for `ADD x0,x0,x1` on (40, 2) -- expected 42"
+  jitm.release(probe, 4096)
+  ""
 
 # Interprets function `target` of the module image `img`.
 #
@@ -3870,7 +3929,16 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
       jsv = jnf
     jsv += 1
   if jself < 0
-    return jitbail("entry body is not in the code section", -1, pc)
+    # The offsets are IN the message. This refusal fired for every module in
+    # both corpora the first time the gate was ever opened, and "entry body is
+    # not in the code section" is not a claim anyone can check — the two walks
+    # that must agree are 300 lines apart and each computes its own offset.
+    jdbg: str = ""
+    jdv: i64 = 0
+    while jdv < jnf and jdv < 8
+      jdbg = jdbg .. " " .. to(str)(mem.read_i64(jft, (jdv * 6) * 8))
+      jdv += 1
+    return jitbail("entry body is not in the code section (entry offset " .. off:to(str) .. ", " .. jnf:to(str) .. " code bodies at:" .. jdbg .. ") [jco=" .. jco:to(str) .. " jty=" .. jty:to(str) .. " jfo=" .. jfo:to(str) .. " mlen=" .. mlen:to(str) .. "]", -1, pc)
 
   # ── ENTRY TRAMPOLINE ────────────────────────────────────────────────────
   # jitm.call2 enters at word 0 under the C ABI, so this is the one place that
@@ -5999,10 +6067,15 @@ engine_main = ()
     jit_why = "DUO_WASM_ARGS is set and the emitted entry sequence takes no operands"
   elseif jit_is_arm64() == 0
     jit_why = "the host is not arm64 (jit.arch = " .. jit_arch_name() .. ")"
-  elseif jit_substrate_gap() != ""
-    jit_why = "the jit substrate is absent (" .. jit_substrate_gap() .. " is nil) -- the ARM64 emitter in this file has never executed"
   else
-    jit_ok = 1
+    # ONE call. The self-test maps, writes, seals and ENTERS a page, so calling
+    # it twice (once for the test, once to build the message) would pay for it
+    # twice on the failing path.
+    jit_gap: str = jit_substrate_gap()
+    if jit_gap != ""
+      jit_why = "the jit substrate does not work: " .. jit_gap
+    else
+      jit_ok = 1
   if jit_ok == 0
     jitbail(jit_why, -1, 0)
     if require_jit == 1

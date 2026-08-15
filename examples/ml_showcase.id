@@ -48,7 +48,7 @@ main = ()
   grad_hook = @grad(loss_mnist, model)
 
   fused = Fusion.fuse_sequential(model)
-  print("Fused layers: %d (rules: %d)":format(fused.n_layers, Fusion:len().rules()))
+  print("Fused layers: %d (rules: %d)":format(fused.n_layers, Fusion.rules():len()))
 
   tx = Transformer.stack(2, 8, 64)
   print(string.format("Transformer: %d layers x %d heads x dim %d", tx.layers, tx.heads, tx.dim))

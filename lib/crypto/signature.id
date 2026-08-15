@@ -189,7 +189,7 @@ ecdsa_verify: bool = (message: any, signature: any, public_key: any, curve: i64)
   if curve == ECDSA_P384
     expected_len = 48
 
-  if signature:len().r != expected_len or signature:len().s != expected_len
+  if signature.r:len() != expected_len or signature.s:len() != expected_len
     return false
   if public_key:len() != 65 and public_key:len() != 49
     return false
@@ -275,7 +275,7 @@ envelope_open: any = (envelope: any, recipient_private: any, sender_public: any)
 
   decrypted = {}
   i = 1
-  while i <= envelope:len().encrypted
+  while i <= envelope.encrypted:len()
     decrypted(i) = envelope.encrypted(i) ~ key((i - 1) % 32 + 1)
     i = i + 1
 
@@ -291,7 +291,7 @@ key_to_bytes: any = (key: any)
   result(result:len() + 1) = key.type >> 8 & 255
   result(result:len() + 1) = key.type & 255
   # Public key length
-  pub_len = key:len().public
+  pub_len = key.public:len()
   result(result:len() + 1) = pub_len >> 8 & 255
   result(result:len() + 1) = pub_len & 255
   # Public key

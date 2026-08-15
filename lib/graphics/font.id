@@ -156,13 +156,13 @@ layout_add_text = (layout: any, text: str)
     while i <= text:len()
         char = text:sub(i, i)
         if char == "\n"
-            layout.lines[layout:len().lines + 1] = layout.current_line
+            layout.lines[layout.lines:len() + 1] = layout.current_line
             layout.current_line = {}
             layout.cursor_x = 0
             layout.cursor_y = layout.cursor_y + layout.font.line_height
         else
             glyph = font_get_glyph(layout.font, char)
-            layout.current_line[layout:len().current_line + 1] = {
+            layout.current_line[layout.current_line:len() + 1] = {
                 glyph = glyph,
                 x = layout.cursor_x,
                 y = layout.cursor_y,

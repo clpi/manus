@@ -283,7 +283,7 @@ resolver_resolve: any = (resolver: any, name: str, qtype: i64)
       authority = {},
       additional = {}
     }
-    if result.header.rcode == 0 and result:len().answers > 0
+    if result.header.rcode == 0 and result.answers:len() > 0
       resolver.cache(cache_key) = result
     return result
   {

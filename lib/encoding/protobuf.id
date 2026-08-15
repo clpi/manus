@@ -23,9 +23,9 @@ writer_new: any = ()
 
 write_varint = (w: any, value: i64)
   while value >= 128
-    w.bytes(w:len().bytes + 1) = value & 127 | 128
+    w.bytes(w.bytes:len() + 1) = value & 127 | 128
     value = value >> 7
-  w.bytes(w:len().bytes + 1) = value
+  w.bytes(w.bytes:len() + 1) = value
 
 write_tag = (w: any, field: i64, wire_type: i64)
   write_varint(w, field << 3 | wire_type)
@@ -38,27 +38,27 @@ write_field_bytes = (w: any, field: i64, data: any)
   write_tag(w, field, WIRE_LENGTH_DELIMITED)
   write_varint(w, data:len())
   for b in data
-    w.bytes(w:len().bytes + 1) = b
+    w.bytes(w.bytes:len() + 1) = b
 
 write_field_string = (w: any, field: i64, value: str)
   write_tag(w, field, WIRE_LENGTH_DELIMITED)
   bytes = string_to_bytes(value)
   write_varint(w, bytes:len())
   for b in bytes
-    w.bytes(w:len().bytes + 1) = b
+    w.bytes(w.bytes:len() + 1) = b
 
 write_field_fixed32 = (w: any, field: i64, value: i64)
   write_tag(w, field, WIRE_32BIT)
-  w.bytes(w:len().bytes + 1) = value & 255
-  w.bytes(w:len().bytes + 1) = value >> 8 & 255
-  w.bytes(w:len().bytes + 1) = value >> 16 & 255
-  w.bytes(w:len().bytes + 1) = value >> 24 & 255
+  w.bytes(w.bytes:len() + 1) = value & 255
+  w.bytes(w.bytes:len() + 1) = value >> 8 & 255
+  w.bytes(w.bytes:len() + 1) = value >> 16 & 255
+  w.bytes(w.bytes:len() + 1) = value >> 24 & 255
 
 write_field_fixed64 = (w: any, field: i64, value: i64)
   write_tag(w, field, WIRE_64BIT)
   i = 0
   while i < 8
-    w.bytes(w:len().bytes + 1) = value >> (i * 8) & 255
+    w.bytes(w.bytes:len() + 1) = value >> (i * 8) & 255
     i = i + 1
 
 write_field_float = (w: any, field: i64, value: f64)
@@ -67,32 +67,32 @@ write_field_float = (w: any, field: i64, value: f64)
   # Convert to IEEE 754 float32 bytes
   if value != value
     # NaN
-    w.bytes(w:len().bytes + 1) = 127
-    w.bytes(w:len().bytes + 1) = 192
-    w.bytes(w:len().bytes + 1) = 0
-    w.bytes(w:len().bytes + 1) = 0
+    w.bytes(w.bytes:len() + 1) = 127
+    w.bytes(w.bytes:len() + 1) = 192
+    w.bytes(w.bytes:len() + 1) = 0
+    w.bytes(w.bytes:len() + 1) = 0
     return
   if value == math.huge
-    w.bytes(w:len().bytes + 1) = 127
-    w.bytes(w:len().bytes + 1) = 128
-    w.bytes(w:len().bytes + 1) = 0
-    w.bytes(w:len().bytes + 1) = 0
+    w.bytes(w.bytes:len() + 1) = 127
+    w.bytes(w.bytes:len() + 1) = 128
+    w.bytes(w.bytes:len() + 1) = 0
+    w.bytes(w.bytes:len() + 1) = 0
     return
   if value == -math.huge
-    w.bytes(w:len().bytes + 1) = 255
-    w.bytes(w:len().bytes + 1) = 128
-    w.bytes(w:len().bytes + 1) = 0
-    w.bytes(w:len().bytes + 1) = 0
+    w.bytes(w.bytes:len() + 1) = 255
+    w.bytes(w.bytes:len() + 1) = 128
+    w.bytes(w.bytes:len() + 1) = 0
+    w.bytes(w.bytes:len() + 1) = 0
     return
   sign = 0
   if value < 0
     sign = 1
     value = -value
   if value == 0
-    w.bytes(w:len().bytes + 1) = sign * 128
-    w.bytes(w:len().bytes + 1) = 0
-    w.bytes(w:len().bytes + 1) = 0
-    w.bytes(w:len().bytes + 1) = 0
+    w.bytes(w.bytes:len() + 1) = sign * 128
+    w.bytes(w.bytes:len() + 1) = 0
+    w.bytes(w.bytes:len() + 1) = 0
+    w.bytes(w.bytes:len() + 1) = 0
     return
   # Decompose
   exp = 0
@@ -108,10 +108,10 @@ write_field_float = (w: any, field: i64, value: f64)
   b1 = mantissa / 2 ^ 15:floor() % 256
   b2 = mantissa / 2 ^ 7:floor() % 256
   b3 = mantissa * 2 % 256
-  w.bytes(w:len().bytes + 1) = b0
-  w.bytes(w:len().bytes + 1) = b1
-  w.bytes(w:len().bytes + 1) = b2
-  w.bytes(w:len().bytes + 1) = b3
+  w.bytes(w.bytes:len() + 1) = b0
+  w.bytes(w.bytes:len() + 1) = b1
+  w.bytes(w.bytes:len() + 1) = b2
+  w.bytes(w.bytes:len() + 1) = b3
 
 read_field_float: f64 = (r: any)
   # Read IEEE 754 single-precision float

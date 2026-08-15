@@ -24,7 +24,7 @@ token_embed_forward: any = (layer: any, token_ids: any)
   seq_len = token_ids:len()
   if type(token_ids(1)) == "table"
     batch = token_ids:len()
-    seq_len = token_ids:len()(1)
+    seq_len = token_ids(1):len()
   result = ml.tensor.zeros(batch * seq_len, layer.embed_dim)
   for i = 1, batch * seq_len
     id = token_ids(i)

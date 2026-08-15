@@ -3,7 +3,7 @@
 @comp.define.derive("Printable", generate: str = (meta)
   acc = "static char* " .. meta.name .. "_to_string(void* self) {\n"
   acc = acc .. "  return \"" .. meta.name .. "("
-  for i = 1, meta:len().fields
+  for i = 1, meta.fields:len()
     f = meta.fields[i]
     if i > 1
       acc = acc .. ", "

@@ -90,11 +90,11 @@ anim_update = (anim: any, delta_time: f64)
   if anim.elapsed >= frame_duration
     anim.elapsed = anim.elapsed - frame_duration
     anim.current_frame = anim.current_frame + 1
-    if anim.current_frame > anim:len().frames
+    if anim.current_frame > anim.frames:len()
       if anim.loop
         anim.current_frame = 1
       else
-        anim.current_frame = anim:len().frames
+        anim.current_frame = anim.frames:len()
         anim.playing = false
 anim_get_frame: any = (anim: any)
   frame_index = anim.frames(anim.current_frame)
@@ -105,11 +105,11 @@ renderer_new: any = ()
     sorted = false
   }
 renderer_add = (renderer: any, sprite: any)
-  renderer.sprites(renderer:len().sprites + 1) = sprite
+  renderer.sprites(renderer.sprites:len() + 1) = sprite
   renderer.sorted = false
 renderer_remove = (renderer: any, sprite: any)
   i = 1
-  while i <= renderer:len().sprites
+  while i <= renderer.sprites:len()
     if renderer.sprites(i) == sprite
       renderer.sprites:remove(i)
       return

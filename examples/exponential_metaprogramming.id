@@ -32,7 +32,7 @@ print("add(3.0, 4.0) = " .. add(3.0, 4.0))
 # calls it to produce per-field code. (check-time only for now)
 @comp.define.derive("Getter", fun(meta)
   code = "// Getters for " .. meta.name .. "\n"
-  for i = 1, meta:len().fields
+  for i = 1, meta.fields:len()
     f = meta.fields[i]
     code = code .. "static inline " .. f.type .. " get_" .. f.name
     code = code .. "(" .. meta.name .. "* self) {\n"

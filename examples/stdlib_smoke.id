@@ -22,7 +22,7 @@ b64 = crypto.base64_encode("Hey!")
 count_result(b64 == "SGV5IA==")
 
 count_result(fmt.pad("x", 5) == "x    ")
-count_result(json:len().encode({1, 2, 3}) > 3)
+count_result(json.encode({1, 2, 3}):len() > 3)
 
 mem = memo.table_new()
 memo.table_set(mem, "k", 1)

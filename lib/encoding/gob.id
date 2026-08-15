@@ -100,7 +100,7 @@ unmarshal: any = (data: str)
 
 # decode: internal decoder.
 decode: any = (p: any)
-  if p.pos > p:len().s
+  if p.pos > p.s:len()
     return nil
   tag = p.s:byte(p.pos)
   p.pos = p.pos + 1
@@ -114,7 +114,7 @@ decode: any = (p: any)
     return decode_int(p)
   if tag == TAG_FLOAT
     start = p.pos
-    while p.pos <= p:len().s and p.s:byte(p.pos) != 0
+    while p.pos <= p.s:len() and p.s:byte(p.pos) != 0
       p.pos = p.pos + 1
     s = p.s:sub(start, p.pos - 1)
     # skip null terminator
@@ -148,7 +148,7 @@ decode: any = (p: any)
 # decode_int: decode a variable-length integer.
 decode_int: i64 = (p: any)
   v = 0
-  while p.pos <= p:len().s
+  while p.pos <= p.s:len()
     b = p.s:byte(p.pos)
     p.pos = p.pos + 1
     v = v * 256 + b

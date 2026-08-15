@@ -31,7 +31,7 @@ curve_new: any = (name: str)
 
 curve_add_keyframe = (curve: any, time: f64, value: any)
     kf = keyframe_new(time, value)
-    curve.keyframes[curve:len().keyframes + 1] = kf
+    curve.keyframes[curve.keyframes:len() + 1] = kf
 
     # Sort by time
     curve.keyframes:sort((a: any, b: any) a.time < b.time)
@@ -45,8 +45,8 @@ curve_set_keyframe_easing = (curve: any, index: i64, easing: str)
         curve.keyframes[index].easing = easing
 
 curve_evaluate: any = (curve: any, time: f64)
-    if curve:len().keyframes == 0 return nil
-    if curve:len().keyframes == 1 return curve.keyframes[1].value
+    if curve.keyframes:len() == 0 return nil
+    if curve.keyframes:len() == 1 return curve.keyframes[1].value
 
     # Handle loop/ping-pong
     if curve.loop
@@ -59,9 +59,9 @@ curve_evaluate: any = (curve: any, time: f64)
 
     # Find surrounding keyframes
     prev = curve.keyframes[1]
-    nxt = curve.keyframes[curve:len().keyframes]
+    nxt = curve.keyframes[curve.keyframes:len()]
 
-    for i = 1, curve:len().keyframes - 1
+    for i = 1, curve.keyframes:len() - 1
         if time >= curve.keyframes[i].time and time <= curve.keyframes[i + 1].time
             prev = curve.keyframes[i]
             nxt = curve.keyframes[i + 1]
@@ -176,7 +176,7 @@ player_update: any = (player: any, delta_time: f64)
     result
 
 player_add_callback = (player: any, callback: any)
-    player.callbacks[player:len().callbacks + 1] = callback
+    player.callbacks[player.callbacks:len() + 1] = callback
 
 player_get_time: f64 = (player: any)
     player.current_time
@@ -204,7 +204,7 @@ state_machine_add_state = (sm: any, name: str, clip_name: str)
 state_machine_add_transition = (sm: any, from: str, to: str, condition: any)
     if sm.transitions[from] == nil
         sm.transitions[from] = {}
-    sm.transitions[from][sm:len().transitions[from] + 1] = {
+    sm.transitions[from][sm.transitions[from]:len() + 1] = {
         to = to,
         condition = condition,
     }

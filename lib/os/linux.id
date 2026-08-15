@@ -439,7 +439,7 @@ timer_wheel_add: any = (wheel: any, timeout_ms: i64, callback: any)
   slots_forward = timeout_ms / wheel.resolution_ms:floor()
   target_slot = (wheel.current_slot - 1 + slots_forward) % wheel.slot_count + 1
 
-  wheel.slots(target_slot)(wheel:len().slots(target_slot) + 1) =
+  wheel.slots(target_slot)(wheel.slots(target_slot):len() + 1) =
     callback = callback
     timeout_ms = timeout_ms
 

@@ -23,7 +23,7 @@ lock = (m: any)
         return  # recursive: already owned
     while m.locked
         co = coroutine.running()
-        m.waiting[m:len().waiting + 1] = co
+        m.waiting[m.waiting:len() + 1] = co
         coroutine.yield()
     m.locked = true
     m.holder = coroutine.running()
@@ -43,7 +43,7 @@ unlock = (m: any)
         error("thread: unlock called by non-owner")
     m.locked = false
     m.holder = nil
-    if m:len().waiting > 0
+    if m.waiting:len() > 0
         co = m.waiting:remove(1)
         sync.spawn(() coroutine.resume(co))
 
@@ -65,14 +65,14 @@ rwlock: any = ()
 rlock = (rw: any)
     while rw.writing
         co = coroutine.running()
-        rw.rwait[rw:len().rwait + 1] = co
+        rw.rwait[rw.rwait:len() + 1] = co
         coroutine.yield()
     rw.readers = rw.readers + 1
 
 # Release a read lock.
 runlock = (rw: any)
     rw.readers = rw.readers - 1
-    if rw.readers == 0 and rw:len().wwait > 0
+    if rw.readers == 0 and rw.wwait:len() > 0
         co = rw.wwait:remove(1)
         sync.spawn(() coroutine.resume(co))
 
@@ -81,7 +81,7 @@ wlock = (rw: any)
     if rw.wholder == coroutine.running() return 
     while rw.writing or rw.readers > 0
         co = coroutine.running()
-        rw.wwait[rw:len().wwait + 1] = co
+        rw.wwait[rw.wwait:len() + 1] = co
         coroutine.yield()
     rw.writing = true
     rw.wholder = coroutine.running()
@@ -92,10 +92,10 @@ wunlock = (rw: any)
         error("thread: wunlock called by non-owner")
     rw.writing = false
     rw.wholder = nil
-    if rw:len().wwait > 0
+    if rw.wwait:len() > 0
         co = rw.wwait:remove(1)
         sync.spawn(() coroutine.resume(co))
-    elseif rw:len().rwait > 0
+    elseif rw.rwait:len() > 0
         for _, co in rw.rwait
             sync.spawn(() coroutine.resume(co))
         rw.rwait = {}
@@ -118,14 +118,14 @@ wait = (c: any)
     if m.holder != coroutine.running()
         error("thread: cond.wait without holding mutex")
     co = coroutine.running()
-    c.waiting[c:len().waiting + 1] = co
+    c.waiting[c.waiting:len() + 1] = co
     unlock(m)
     coroutine.yield()
     lock(m)
 
 # Wake one waiter on the condition.
 signal = (c: any)
-    if c:len().waiting > 0
+    if c.waiting:len() > 0
         co = c.waiting:remove(1)
         sync.spawn(() coroutine.resume(co))
 
@@ -173,7 +173,7 @@ acquire = (s: any)
     lock(s.guard)
     while s.permits <= 0
         co = coroutine.running()
-        s.waiting[s:len().waiting + 1] = co
+        s.waiting[s.waiting:len() + 1] = co
         unlock(s.guard)
         coroutine.yield()
         lock(s.guard)
@@ -194,7 +194,7 @@ probe: bool = (s: any)
 release = (s: any)
     lock(s.guard)
     s.permits = s.permits + 1
-    if s:len().waiting > 0
+    if s.waiting:len() > 0
         co = s.waiting:remove(1)
         sync.spawn(() coroutine.resume(co))
     unlock(s.guard)

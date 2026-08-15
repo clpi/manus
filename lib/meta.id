@@ -118,7 +118,7 @@ concept_member: any = (member: any, kind: str)
         return { name = member, kind = kind }
     if member.kind == nil member.kind = kind 
     if kind == "method" and member.param_count == nil and member.params != nil
-        member.param_count = member:len().params
+        member.param_count = member.params:len()
     member
 
 concept_member_list: any = (items: any, kind: str)
@@ -468,10 +468,10 @@ flat_map: any = (t: any, f: any)
 zip: any = (...)
     args = {...}
     if args:len() == 0 return {} 
-    min_len = args:len()[1]
+    min_len = args[1]:len()
     i = 2
     while i <= args:len()
-        if args:len()[i] < min_len min_len = args:len()[i] 
+        if args[i]:len() < min_len min_len = args[i]:len() 
         i += 1
     out = {}
     j = 1
@@ -714,7 +714,7 @@ partial_invoke: any = (self: any, ...)
     joined = {}
     n = 0
     i = 1
-    while i <= self:len().args
+    while i <= self.args:len()
         n += 1
         joined[n] = self.args[i]
         i += 1

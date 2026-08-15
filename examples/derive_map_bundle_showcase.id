@@ -15,7 +15,7 @@ end)
 
 @comp.define.derive("LayoutApi", generate: str = (meta)
     acc = ""
-    for i = 1, meta:len().fields
+    for i = 1, meta.fields:len()
         f = meta.fields[i]
         acc = acc .. "static inline size_t duo_" .. meta.name .. "_off_" .. f.name .. "(void) { return offsetof(duo_" .. meta.name .. ", " .. f.name .. "); }\n"
     acc

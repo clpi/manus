@@ -47,18 +47,44 @@ alloc: any = (bytes: i64)
   return @comp.c.emit("({ lua_Value _v; _v.type = VAL_BUFFER;\n        void* _p = mmap(NULL, (size_t)bytes, PROT_READ | PROT_WRITE,\n                        MAP_PRIVATE | MAP_ANON, -1, 0);\n        _v.as.tval = (_p == MAP_FAILED) ? NULL : _p; _v; })")
 
 # Store one 32-bit instruction word at instruction index `idx`.
-w32 = (buf: any, idx: i64, word: i64)
-  @comp.c.emit("((uint32_t*)buf.as.tval)[idx] = (uint32_t)word")
-  
+#
+# THE WRITE IS THE RETURN VALUE, and that is not a style choice. `@comp.c.emit`
+# in STATEMENT position — `w32 = (…)` then a bare `@comp.c.emit("…")` line — is
+# parsed into a `.directive` statement named `comp.c.emit`, and every consumer
+# of that statement in the C backend matches the LEGACY short name `c.emit`
+# instead (`src/codegen.zig` emit_stmt, and again in emit_embedded_module). The
+# names do not compare equal, so the payload is DROPPED and the function is
+# emitted as `static lua_Value jit__w32(…) { return lua_val_nil(); }` — a
+# silent no-op, with only a stray `unknown module directive '@comp.c.emit'`
+# from sema (which also tests the short name) to mark it.
+#
+# That is the worst possible shape for exactly this function. A JIT whose word
+# writer does nothing allocates a page, "emits" a body into the void, seals a
+# page of ZEROS and BRANCHES INTO IT — on ARM64 an all-zero word is `udf #0`,
+# so the observable failure is SIGILL from inside generated code, thousands of
+# lines away from the primitive that lied. Measured: a two-instruction
+# `MOVZ w0,#42; RET` probe through `req "jit"` died with signal 4 before
+# printing anything.
+#
+# In EXPRESSION position — behind `return` — the same payload is spliced
+# correctly, which is why `alloc`, `r32`, `seal`, `call0/1/2`, `sym`, `addr`
+# and `arch` were all fine and only the three void-returning primitives were
+# hollow. So the assignment is written as an expression and its value returned.
+# The C value of `a[i] = v` is the stored word; callers ignore it.
+#
+# Restore the statement form only once the backend matches the canonical
+# directive name; until then it compiles to nothing at all.
+w32: i64 = (buf: any, idx: i64, word: i64)
+  return @comp.c.emit("(int64_t)(((uint32_t*)buf.as.tval)[idx] = (uint32_t)word)")
 
 # Read back one 32-bit word (debugging emitted code).
 r32: i64 = (buf: any, idx: i64)
   return @comp.c.emit("(int64_t)((uint32_t*)buf.as.tval)[idx]")
 
-# Store one raw byte at byte offset `off`.
-w8 = (buf: any, off: i64, byte: i64)
-  @comp.c.emit("((uint8_t*)buf.as.tval)[off] = (uint8_t)byte")
-  
+# Store one raw byte at byte offset `off`. Expression position for the same
+# reason `w32` is — see the note there; the statement form emits nothing.
+w8: i64 = (buf: any, off: i64, byte: i64)
+  return @comp.c.emit("(int64_t)(((uint8_t*)buf.as.tval)[off] = (uint8_t)byte)")
 
 # Make the first `bytes` executable and flush the instruction cache.
 # Returns true on success.
@@ -74,9 +100,11 @@ call1: i64 = (buf: any, a0: i64)
 call2: i64 = (buf: any, a0: i64, a1: i64)
   return @comp.c.emit("((int64_t(*)(int64_t,int64_t))buf.as.tval)(a0, a1)")
 
-release = (buf: any, bytes: i64)
-  @comp.c.emit("munmap(buf.as.tval, (size_t)bytes)")
-  
+# Expression position for the same reason `w32` is: as a statement the munmap
+# is dropped and this leaks the whole mapping while reporting nothing.
+# Returns munmap's status, 0 on success.
+release: i64 = (buf: any, bytes: i64)
+  return @comp.c.emit("(int64_t)munmap(buf.as.tval, (size_t)bytes)")
 
 # Address of a host function already loaded in this process, or 0 when the
 # host does not export that name.

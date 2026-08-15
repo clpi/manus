@@ -202,12 +202,12 @@ system_new: any = (config: any)
 
 system_create_source: any = (system: any, buffer: any)
   source = source_new(buffer)
-  system.sources[system:len().sources + 1] = source
+  system.sources[system.sources:len() + 1] = source
   source
 
 system_destroy_source: void = (system: any, source: any)
   i = 1
-  while i <= system:len().sources
+  while i <= system.sources:len()
     if system.sources[i] == source
       system.sources:remove(i)
       return
@@ -233,7 +233,7 @@ max_samples = 0
 # Find the longest source
 for source in sources
   if source.playing and source.buffer
-    len = source:len().buffer.data
+    len = source.buffer.data:len()
     if len > max_samples
       max_samples = len
 
@@ -257,7 +257,7 @@ for source in sources
     while i <= max_samples
       # Get sample index with pitch adjustment
       sample_idx = (i - 1) * pitch:floor() + 1
-      if sample_idx <= source:len().buffer.data
+      if sample_idx <= source.buffer.data:len()
         sample = source.buffer.data[sample_idx]
         mixed[i] = mixed[i] + sample * vol
       i = i + 1

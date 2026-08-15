@@ -289,38 +289,38 @@ mesh_new: any = ()
   }
 
 mesh_add_vertex: i64 = (mesh: any, x: f64, y: f64, z: f64)
-  idx = mesh:len().vertices / 3
-  mesh.vertices(mesh:len().vertices + 1) = x
-  mesh.vertices(mesh:len().vertices + 1) = y
-  mesh.vertices(mesh:len().vertices + 1) = z
+  idx = mesh.vertices:len() / 3
+  mesh.vertices(mesh.vertices:len() + 1) = x
+  mesh.vertices(mesh.vertices:len() + 1) = y
+  mesh.vertices(mesh.vertices:len() + 1) = z
   idx
 
 mesh_add_triangle = (mesh: any, i0: i64, i1: i64, i2: i64)
-  mesh.indices(mesh:len().indices + 1) = i0
-  mesh.indices(mesh:len().indices + 1) = i1
-  mesh.indices(mesh:len().indices + 1) = i2
+  mesh.indices(mesh.indices:len() + 1) = i0
+  mesh.indices(mesh.indices:len() + 1) = i1
+  mesh.indices(mesh.indices:len() + 1) = i2
 
 mesh_add_normal = (mesh: any, x: f64, y: f64, z: f64)
-  mesh.normals(mesh:len().normals + 1) = x
-  mesh.normals(mesh:len().normals + 1) = y
-  mesh.normals(mesh:len().normals + 1) = z
+  mesh.normals(mesh.normals:len() + 1) = x
+  mesh.normals(mesh.normals:len() + 1) = y
+  mesh.normals(mesh.normals:len() + 1) = z
 
 mesh_add_uv = (mesh: any, u: f64, v: f64)
-  mesh.uvs(mesh:len().uvs + 1) = u
-  mesh.uvs(mesh:len().uvs + 1) = v
+  mesh.uvs(mesh.uvs:len() + 1) = u
+  mesh.uvs(mesh.uvs:len() + 1) = v
 
 mesh_compute_normals = (mesh: any)
   # Initialize normals to zero
-  num_verts = mesh:len().vertices / 3
+  num_verts = mesh.vertices:len() / 3
   mesh.normals = {}
   i = 0
   while i < num_verts * 3
-    mesh.normals(mesh:len().normals + 1) = 0
+    mesh.normals(mesh.normals:len() + 1) = 0
     i = i + 1
 
   # Accumulate face normals
   i = 1
-  while i <= mesh:len().indices
+  while i <= mesh.indices:len()
     i0 = mesh.indices(i)
     i1 = mesh.indices(i + 1)
     i2 = mesh.indices(i + 2)
@@ -486,11 +486,11 @@ scene_node_new: any = (name: str)
   }
 
 scene_add_child = (parent: any, child: any)
-  parent.children(parent:len().children + 1) = child
+  parent.children(parent.children:len() + 1) = child
 
 scene_remove_child = (parent: any, child: any)
   i = 1
-  while i <= parent:len().children
+  while i <= parent.children:len()
     if parent.children(i) == child
       parent.children:remove(i)
       return

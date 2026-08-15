@@ -182,9 +182,9 @@ denoise: any = (signal: any, threshold: f64)
 
   # Soft threshold detail coefficients
   i = 1
-  while i <= decomp:len().details
+  while i <= decomp.details:len()
     j = 1
-    while j <= decomp:len().details(i)
+    while j <= decomp.details(i):len()
       coeff = decomp.details(i)(j)
       if coeff:abs() < threshold
         decomp.details(i)(j) = 0

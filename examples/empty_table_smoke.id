@@ -3,7 +3,7 @@
 g: str = (f: any)
   types = {}
   seen = {}
-  for i = 1, f:len().members
+  for i = 1, f.members:len()
     t = f.members(i).type
     if seen(t) == nil
       seen(t) = 1

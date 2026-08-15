@@ -231,7 +231,7 @@ distill_accuracy: f64 = (student_logits: any, labels: any)
         max_idx = 1
         max_val = student_logits[i][1]
         j = 2
-        while j <= student_logits:len()[i]
+        while j <= student_logits[i]:len()
             if student_logits[i][j] > max_val
                 max_val = student_logits[i][j]
                 max_idx = j

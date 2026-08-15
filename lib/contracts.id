@@ -315,10 +315,10 @@ concept_target_c_report: any = (concept_name: str, target_name: str, receiver_ex
   report.receiver_c_type = receiver_c_type
   report.c_wrappers = concept_c_wrappers(receiver_c_type, report.wrappers)
   report.c_accessors = concept_c_accessors(receiver_c_type, report.accessors)
-  if report:len().c_wrappers == 0
+  if report.c_wrappers:len() == 0
     report.c_source = report.c_accessors
   else
-    if report:len().c_accessors == 0
+    if report.c_accessors:len() == 0
       report.c_source = report.c_wrappers
     else
       report.c_source = report.c_accessors .. "\n" .. report.c_wrappers

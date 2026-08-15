@@ -111,7 +111,7 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
             # Add new entry: prev + first byte of current entry
             new_entry = {}
             j = 1
-            while j <= dict:len()(prev)
+            while j <= dict(prev):len()
               new_entry(j) = dict(prev)(j)
               j = j + 1
             if entry:len() > 0
