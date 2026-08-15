@@ -25,23 +25,18 @@
 # For simplicity, we check the OS via os.execute.
 _platform = "poll"
 
-detect_platform(): str
-    # macOS: kqueue available
-    f = io.popen("uname -s 2>/dev/null", "r")
-    if f != nil
-        out = f:read("*a")
-        f:close()
-        if out != nil
-            if out:find("Darwin") != nil
-                return "kqueue"
-            end
-            if out:find("Linux") != nil
-                return "inotify"
-            end
-        end
-    end
-    "poll"
-end
+detect_platform: str = ()
+  # macOS: kqueue available
+  f = io.popen("uname -s 2>/dev/null", "r")
+  if f != nil
+    out = f:read("*a")
+    f:close()
+    if out != nil
+      if out:find("Darwin") != nil
+        return "kqueue"
+      if out:find("Linux") != nil
+        return "inotify"
+  "poll"
 
 _platform = detect_platform()
 
@@ -53,21 +48,21 @@ _platform = detect_platform()
 EVFILT_VNODE = 0 - 4
 
 # Event actions
-EV_ADD      = 0x0001
-EV_DELETE   = 0x0002
-EV_ENABLE   = 0x0004
-EV_DISABLE  = 0x0008
-EV_ONESHOT  = 0x0010
-EV_CLEAR    = 0x0020
+EV_ADD = 1
+EV_DELETE = 2
+EV_ENABLE = 4
+EV_DISABLE = 8
+EV_ONESHOT = 16
+EV_CLEAR = 32
 
 # NOTE_* flags for EVFILT_VNODE
-NOTE_DELETE  = 0x0001
-NOTE_WRITE   = 0x0002
-NOTE_EXTEND  = 0x0004
-NOTE_ATTRIB  = 0x0008
-NOTE_LINK    = 0x0010
-NOTE_RENAME  = 0x0020
-NOTE_REVOKE  = 0x0040
+NOTE_DELETE = 1
+NOTE_WRITE = 2
+NOTE_EXTEND = 4
+NOTE_ATTRIB = 8
+NOTE_LINK = 16
+NOTE_RENAME = 32
+NOTE_REVOKE = 64
 
 # O_RDONLY for open()
 O_RDONLY = 0
@@ -76,77 +71,77 @@ O_RDONLY = 0
 # Constants — inotify (Linux)
 # ─────────────────────────────────────────────────────────────
 
-IN_ACCESS        = 0x00000001
-IN_MODIFY        = 0x00000002
-IN_ATTRIB        = 0x00000004
-IN_CLOSE_WRITE   = 0x00000008
-IN_CLOSE_NOWRITE = 0x00000010
-IN_OPEN          = 0x00000020
-IN_MOVED_FROM    = 0x00000040
-IN_MOVED_TO      = 0x00000080
-IN_CREATE        = 0x00000100
-IN_DELETE        = 0x00000200
-IN_DELETE_SELF   = 0x00000400
-IN_MOVE_SELF     = 0x00000800
-IN_UNMOUNT       = 0x00002000
-IN_Q_OVERFLOW    = 0x00004000
-IN_IGNORED       = 0x00008000
-IN_ALL_EVENTS    = 0x00000FFF
-IN_CLOEXEC       = 0x00080000
-IN_NONBLOCK      = 0x00004000
+IN_ACCESS = 1
+IN_MODIFY = 2
+IN_ATTRIB = 4
+IN_CLOSE_WRITE = 8
+IN_CLOSE_NOWRITE = 16
+IN_OPEN = 32
+IN_MOVED_FROM = 64
+IN_MOVED_TO = 128
+IN_CREATE = 256
+IN_DELETE = 512
+IN_DELETE_SELF = 1024
+IN_MOVE_SELF = 2048
+IN_UNMOUNT = 8192
+IN_Q_OVERFLOW = 16384
+IN_IGNORED = 32768
+IN_ALL_EVENTS = 4095
+IN_CLOEXEC = 524288
+IN_NONBLOCK = 16384
 
 # inotify_init1 flags
-IN_INIT_CLOEXEC  = 0x00080000
-IN_INIT_NONBLOCK = 0x00004000
+IN_INIT_CLOEXEC = 524288
+IN_INIT_NONBLOCK = 16384
 
 # ─────────────────────────────────────────────────────────────
 # FFI declarations — kqueue path (macOS)
 # ─────────────────────────────────────────────────────────────
 
 @ffi("kqueue")
-ffi_kqueue(): i64
-
+ffi_kqueue: i64 = ()
+  void
 @ffi("kevent")
-ffi_kevent(kq: i64, changelist: any, nchanges: i64, eventlist: any, nevents: i64, timeout: any): i64
-
+ffi_kevent: i64 = (kq: i64, changelist: any, nchanges: i64, eventlist: any, nevents: i64, timeout: any)
+  void
 @ffi("open")
-ffi_open(path: str, flags: i64): i64
-
+ffi_open: i64 = (path: str, flags: i64)
+  void
 @ffi("close")
-ffi_close(fd: i64): i64
-
+ffi_close: i64 = (fd: i64)
+  void
 # ─────────────────────────────────────────────────────────────
 # FFI declarations — inotify path (Linux)
 # ─────────────────────────────────────────────────────────────
 
 @ffi("inotify_init1")
-ffi_inotify_init1(flags: i64): i64
-
+ffi_inotify_init1: i64 = (flags: i64)
+  void
 @ffi("inotify_add_watch")
-ffi_inotify_add_watch(fd: i64, path: str, mask: i64): i64
-
+ffi_inotify_add_watch: i64 = (fd: i64, path: str, mask: i64)
+  void
 @ffi("inotify_rm_watch")
-ffi_inotify_rm_watch(fd: i64, wd: i64): i64
-
+ffi_inotify_rm_watch: i64 = (fd: i64, wd: i64)
+  void
 @ffi("read")
-ffi_read(fd: i64, buf: any, count: i64): i64
-
+ffi_read: i64 = (fd: i64, buf: any, count: i64)
+  void
 # ─────────────────────────────────────────────────────────────
 # FFI declarations — shared
 # ─────────────────────────────────────────────────────────────
 
 @ffi("malloc")
-ffi_malloc(size: i64): any
-
+ffi_malloc: any = (size: i64)
+  void
 @ffi("free")
-ffi_free(ptr: any): void
-
+ffi_free: void = (ptr: any)
+  void
 @ffi("memset")
-ffi_memset(ptr: any, val: i64, size: i64): void
-
+ffi_memset: void = (ptr: any, val: i64, size: i64)
+  void
 @ffi("memcpy")
-ffi_memcpy(dst: any, src: any, size: i64): void
-
+ffi_memcpy: void = (dst: any, src: any, size: i64)
+  void
 # Write a uintptr-sized integer to a memory offset.
 # We use memset to zero, then write byte-by-byte for small values.
 # For the kevent struct, we need to write at specific offsets.
@@ -157,82 +152,75 @@ ffi_memcpy(dst: any, src: any, size: i64): void
 
 # Convert a string like "write|delete|rename" to a NOTE_* bitmask
 # (for kqueue) or IN_* bitmask (for inotify).
-flags_from_mask(mask: str): int
-    if mask == nil or mask == ""
-        return 0
-    end
-    result = 0
-    # Split on "|"
-    rest = mask
-    while true
-        pos = rest:find("|", 1, true)
-        token
-        if pos == nil
-            token = rest
-            rest = ""
-        else
-            token = rest:sub(1, pos - 1)
-            rest = rest:sub(pos + 1)
-        end
-        # Trim whitespace
-        token = token:gsub("^%s+", "")
-        token = token:gsub("%s+$", "")
-        if _platform == "kqueue"
-            if token == "delete"
-                result |= NOTE_DELETE
-            elseif token == "write"
-                result |= NOTE_WRITE
-            elseif token == "extend"
-                result |= NOTE_EXTEND
-            elseif token == "attrib"
-                result |= NOTE_ATTRIB
-            elseif token == "link"
-                result |= NOTE_LINK
-            elseif token == "rename"
-                result |= NOTE_RENAME
-            elseif token == "revoke"
-                result |= NOTE_REVOKE
-            elseif token == "all"
-                result |= NOTE_DELETE | NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_LINK | NOTE_RENAME | NOTE_REVOKE
-            end
-        elseif _platform == "inotify"
-            if token == "access"
-                result |= IN_ACCESS
-            elseif token == "modify" or token == "write"
-                result |= IN_MODIFY
-            elseif token == "attrib"
-                result |= IN_ATTRIB
-            elseif token == "close_write"
-                result |= IN_CLOSE_WRITE
-            elseif token == "close_nowrite"
-                result |= IN_CLOSE_NOWRITE
-            elseif token == "open"
-                result |= IN_OPEN
-            elseif token == "moved_from"
-                result |= IN_MOVED_FROM
-            elseif token == "moved_to"
-                result |= IN_MOVED_TO
-            elseif token == "create"
-                result |= IN_CREATE
-            elseif token == "delete"
-                result |= IN_DELETE
-            elseif token == "delete_self"
-                result |= IN_DELETE_SELF
-            elseif token == "move_self" or token == "rename"
-                result |= IN_MOVE_SELF
-            elseif token == "all"
-                result |= IN_ALL_EVENTS
-            end
-        else
-            # Polling: just use a sentinel
-            if token == "write" or token == "delete" or token == "rename" or token == "attrib" or token == "all"
-                result |= 1
-            end
-        end
-        if rest == "" break end
-    end
-    result
-end
+flags_from_mask: int = (mask: str)
+  if mask == nil or mask == ""
+    return 0
+  result = 0
+  # Split on "|"
+  rest = mask
+  while true
+    pos = rest:find("|", 1, true)
+    token
+    if pos == nil
+      token = rest
+      rest = ""
+    else
+      token = rest:sub(1, pos - 1)
+      rest = rest:sub(pos + 1)
+    # Trim whitespace
+    token = token:gsub("^%s+", "")
+    token = token:gsub("%s+$", "")
+    if _platform == "kqueue"
+      if token == "delete"
+        result = result | NOTE_DELETE
+      else(token == "write")
+        result = result | NOTE_WRITE
+      else(token == "extend")
+        result = result | NOTE_EXTEND
+      else(token == "attrib")
+        result = result | NOTE_ATTRIB
+      else(token == "link")
+        result = result | NOTE_LINK
+      else(token == "rename")
+        result = result | NOTE_RENAME
+      else(token == "revoke")
+        result = result | NOTE_REVOKE
+      else(token == "all")
+        result = result | NOTE_DELETE | NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_LINK | NOTE_RENAME | NOTE_REVOKE
+    else(_platform == "inotify")
+      if token == "access"
+        result = result | IN_ACCESS
+      else(token == "modify" or token == "write")
+        result = result | IN_MODIFY
+      else(token == "attrib")
+        result = result | IN_ATTRIB
+      else(token == "close_write")
+        result = result | IN_CLOSE_WRITE
+      else(token == "close_nowrite")
+        result = result | IN_CLOSE_NOWRITE
+      else(token == "open")
+        result = result | IN_OPEN
+      else(token == "moved_from")
+        result = result | IN_MOVED_FROM
+      else(token == "moved_to")
+        result = result | IN_MOVED_TO
+      else(token == "create")
+        result = result | IN_CREATE
+      else(token == "delete")
+        result = result | IN_DELETE
+      else(token == "delete_self")
+        result = result | IN_DELETE_SELF
+      else(token == "move_self" or token == "rename")
+        result = result | IN_MOVE_SELF
+      else(token == "all")
+        result = result | IN_ALL_EVENTS
+    else
+      # Polling: just use a sentinel
+      if token == "write" or token == "delete" or token == "rename" or token == "attrib" or token == "all"
+        result = result | 1
+    if rest == ""
+      break
+  result
 
 # ─────────────────────────────────────────────────────────────
 # kqueue implementation (macOS)
@@ -255,305 +243,280 @@ end
 KEVENT_SIZE = 32
 
 # Write a 16-bit value at a byte offset (little-endian)
-write_u16(buf: any, offset: int, val: int): void
-    b0 = val & 0xFF
-    b1 = (val >> 8) & 0xFF
-    # Use byte array access through the any pointer
-    ptr = buf
-    # We store bytes via a small temp buffer and memcpy
-    # Since we can't write individual bytes directly, use string.char + memcpy
-    tmp = ffi_malloc(2)
-    if tmp != nil
-        # Build 2-byte LE value using memset to zero, then set bytes
-        ffi_memset(tmp, 0, 2)
-        # Write bytes: we use a trick: create a small string and memcpy
-        # Actually, since we don't have byte-write, we use string approach:
-        s = b0:char(b1)
-        ffi_memcpy(tmp, s, 2)
-        ffi_memcpy(ptr + offset, tmp, 2)
-        ffi_free(tmp)
-    end
-end
+write_u16: void = (buf: any, offset: int, val: int)
+  b0 = val & 255
+  b1 = val >> 8 & 255
+  # Use byte array access through the any pointer
+  ptr = buf
+  # We store bytes via a small temp buffer and memcpy
+  # Since we can't write individual bytes directly, use string.char + memcpy
+  tmp = ffi_malloc(2)
+  if tmp != nil
+    # Build 2-byte LE value using memset to zero, then set bytes
+    ffi_memset(tmp, 0, 2)
+    # Write bytes: we use a trick: create a small string and memcpy
+    # Actually, since we don't have byte-write, we use string approach:
+    s = b0:char(b1)
+    ffi_memcpy(tmp, s, 2)
+    ffi_memcpy(ptr + offset, tmp, 2)
+    ffi_free(tmp)
 
 # Write a 32-bit value at a byte offset (little-endian)
-write_u32(buf: any, offset: int, val: int): void
-    b0 = val & 0xFF
-    b1 = (val >> 8) & 0xFF
-    b2 = (val >> 16) & 0xFF
-    b3 = (val >> 24) & 0xFF
-    s = b0:char(b1, b2, b3)
-    ffi_memcpy(buf + offset, s, 4)
-end
+write_u32: void = (buf: any, offset: int, val: int)
+  b0 = val & 255
+  b1 = val >> 8 & 255
+  b2 = val >> 16 & 255
+  b3 = val >> 24 & 255
+  s = b0:char(b1, b2, b3)
+  ffi_memcpy(buf + offset, s, 4)
 
 # Write a 64-bit value at a byte offset (little-endian)
 # val may be negative (e.g. EVFILT_VNODE = -4), handle as signed
-write_u64(buf: any, offset: int, val: int): void
-    # For negative values, write each byte using two's complement.
-    # We write 8 bytes little-endian.
-    bytes = {}
-    v = val
-    if v < 0
-        # Two's complement: for negative, each byte is (v >> (b*8)) & 0xFF
-        # which naturally produces the correct unsigned representation.
-        for i = 0, 7
-            byte_val = (v >> (i * 8)) & 0xFF
-            bytes[i + 1] = byte_val:char()
-        end
-    else
-        for i = 0, 7
-            byte_val = (v >> (i * 8)) & 0xFF
-            bytes[i + 1] = byte_val:char()
-        end
-    end
-    s = bytes:concat()
-    ffi_memcpy(buf + offset, s, 8)
-end
+write_u64: void = (buf: any, offset: int, val: int)
+  # For negative values, write each byte using two's complement.
+  # We write 8 bytes little-endian.
+  bytes = {}
+  v = val
+  if v < 0
+    # Two's complement: for negative, each byte is (v >> (b*8)) & 0xFF
+    # which naturally produces the correct unsigned representation.
+    for i = 0, 7
+      byte_val = v >> (i * 8) & 255
+      bytes[i + 1] = byte_val:char()
+  else
+    for i = 0, 7
+      byte_val = v >> (i * 8) & 255
+      bytes[i + 1] = byte_val:char()
+  s = bytes:concat()
+  ffi_memcpy(buf + offset, s, 8)
 
 # Read a 32-bit value at a byte offset (little-endian)
-read_u32(buf: any, offset: int): int
-    # We can't read individual bytes from C memory directly.
-    # Instead, we memcpy to a string and parse.
-    # Since we can't read C memory to Lua easily, we use an alternative approach:
-    # For kqueue, we read the event struct fields by copying to a Lua string.
-    # Actually, without byte-read FFI, we need a helper C function.
-    # For now, return 0 — the actual event reading will be done differently.
-    0
-end
+read_u32: int = (buf: any, offset: int)
+  # We can't read individual bytes from C memory directly.
+  # Instead, we memcpy to a string and parse.
+  # Since we can't read C memory to Lua easily, we use an alternative approach:
+  # For kqueue, we read the event struct fields by copying to a Lua string.
+  # Actually, without byte-read FFI, we need a helper C function.
+  # For now, return 0 — the actual event reading will be done differently.
+  0
 
 # Build a kevent change struct in a malloc'd buffer.
 # Returns a pointer to the allocated buffer (caller must free).
-build_kevent(ident: int, filter: int, flags: int, fflags: int): any
-    buf = ffi_malloc(KEVENT_SIZE)
-    if buf == nil return nil end
-    ffi_memset(buf, 0, KEVENT_SIZE)
-    # ident (uintptr_t, 8 bytes at offset 0)
-    write_u64(buf, 0, ident)
-    # filter (short, 2 bytes at offset 8)
-    write_u16(buf, 8, filter)
-    # flags (u_short, 2 bytes at offset 10)
-    write_u16(buf, 10, flags)
-    # fflags (u_int, 4 bytes at offset 12)
-    write_u32(buf, 12, fflags)
-    # data and udata remain zero
-    buf
-end
+build_kevent: any = (ident: int, filter: int, flags: int, fflags: int)
+  buf = ffi_malloc(KEVENT_SIZE)
+  if buf == nil
+    return nil
+  ffi_memset(buf, 0, KEVENT_SIZE)
+  # ident (uintptr_t, 8 bytes at offset 0)
+  write_u64(buf, 0, ident)
+  # filter (short, 2 bytes at offset 8)
+  write_u16(buf, 8, filter)
+  # flags (u_short, 2 bytes at offset 10)
+  write_u16(buf, 10, flags)
+  # fflags (u_int, 4 bytes at offset 12)
+  write_u32(buf, 12, fflags)
+  # data and udata remain zero
+  buf
 
 # Create a kqueue. Returns kq fd, or -1 on error.
-create(): int
-    if _platform == "kqueue"
-        kq = ffi_kqueue()
-        if kq < 0 return -1 end
-        return kq
-    elseif _platform == "inotify"
-        fd = ffi_inotify_init1(IN_INIT_CLOEXEC)
-        if fd < 0 return -1 end
-        return fd
-    else
-        # Polling: return a table-based watcher id
-        # We use a negative sentinel to distinguish from real fds
-        return 0
-    end
-end
+create: int = ()
+  if _platform == "kqueue"
+    kq = ffi_kqueue()
+    if kq < 0
+      return -1
+    return kq
+  else(_platform == "inotify")
+    fd = ffi_inotify_init1(IN_INIT_CLOEXEC)
+    if fd < 0
+      return -1
+    return fd
+  else
+    # Polling: return a table-based watcher id
+    # We use a negative sentinel to distinguish from real fds
+    return 0
 
 # Add a file watch. Returns the watch descriptor (file fd for kqueue,
 # watch id for inotify), or -1 on error.
-add_watch(kq: int, path: str, mask: int): int
-    if _platform == "kqueue"
-        # Open the file to get a file descriptor
-        fd = ffi_open(path, O_RDONLY)
-        if fd < 0 return -1 end
-        # Build kevent change: EV_ADD | EV_CLEAR, EVFILT_VNODE, fflags=mask
-        change = build_kevent(fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, mask)
-        if change == nil
-            ffi_close(fd)
-            return -1
-        end
-        # Register the change: kevent(kq, changelist, 1, nil, 0, nil)
-        ret = ffi_kevent(kq, change, 1, nil, 0, nil)
-        ffi_free(change)
-        if ret < 0
-            ffi_close(fd)
-            return -1
-        end
-        return fd
-    elseif _platform == "inotify"
-        wd = ffi_inotify_add_watch(kq, path, mask)
-        if wd < 0 return -1 end
-        return wd
-    else
-        # Polling: return a placeholder
-        return 0
-    end
-end
+add_watch: int = (kq: int, path: str, mask: int)
+  if _platform == "kqueue"
+    # Open the file to get a file descriptor
+    fd = ffi_open(path, O_RDONLY)
+    if fd < 0
+      return -1
+    # Build kevent change: EV_ADD | EV_CLEAR, EVFILT_VNODE, fflags=mask
+    change = build_kevent(fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, mask)
+    if change == nil
+      ffi_close(fd)
+      return -1
+    # Register the change: kevent(kq, changelist, 1, nil, 0, nil)
+    ret = ffi_kevent(kq, change, 1, nil, 0, nil)
+    ffi_free(change)
+    if ret < 0
+      ffi_close(fd)
+      return -1
+    return fd
+  else(_platform == "inotify")
+    wd = ffi_inotify_add_watch(kq, path, mask)
+    if wd < 0
+      return -1
+    return wd
+  else
+    # Polling: return a placeholder
+    return 0
 
 # Remove a watch.
-remove_watch(kq: int, fd: int): void
-    if _platform == "kqueue"
-        # Build kevent change: EV_DELETE for the vnode filter
-        change = build_kevent(fd, EVFILT_VNODE, EV_DELETE, 0)
-        if change != nil
-            ffi_kevent(kq, change, 1, nil, 0, nil)
-            ffi_free(change)
-        end
-        ffi_close(fd)
-    elseif _platform == "inotify"
-        ffi_inotify_rm_watch(kq, fd)
-    end
-end
+remove_watch: void = (kq: int, fd: int)
+  if _platform == "kqueue"
+    # Build kevent change: EV_DELETE for the vnode filter
+    change = build_kevent(fd, EVFILT_VNODE, EV_DELETE, 0)
+    if change != nil
+      ffi_kevent(kq, change, 1, nil, 0, nil)
+      ffi_free(change)
+    ffi_close(fd)
+  else(_platform == "inotify")
+    ffi_inotify_rm_watch(kq, fd)
 
 # Poll for events. Returns a table of {fd, flags} entries, or nil on timeout.
 # For kqueue: fd is the file descriptor, flags are NOTE_* bits.
 # For inotify: fd is the watch descriptor, flags are IN_* bits.
-poll(kq: int, timeout_ms: int): any
-    if _platform == "kqueue"
-        # Allocate space for up to 16 events
-        max_events = 16
-        eventlist = ffi_malloc(KEVENT_SIZE * max_events)
-        if eventlist == nil return nil end
-        ffi_memset(eventlist, 0, KEVENT_SIZE * max_events)
+poll: any = (kq: int, timeout_ms: int)
+  if _platform == "kqueue"
+    # Allocate space for up to 16 events
+    max_events = 16
+    eventlist = ffi_malloc(KEVENT_SIZE * max_events)
+    if eventlist == nil
+      return nil
+    ffi_memset(eventlist, 0, KEVENT_SIZE * max_events)
 
-        # Build a timespec for the timeout: {tv_sec, tv_nsec}
-        # struct timespec is 16 bytes on 64-bit: 8 sec + 8 nsec
-        ts = ffi_malloc(16)
-        if ts == nil
-            ffi_free(eventlist)
-            return nil
-        end
-        ffi_memset(ts, 0, 16)
-        sec = 0
-        if timeout_ms > 0
-            sec = timeout_ms / 1000
-            nsec = (timeout_ms % 1000) * 1000000
-            write_u64(ts, 0, sec)
-            write_u64(ts, 8, nsec)
-        end
+    # Build a timespec for the timeout: {tv_sec, tv_nsec}
+    # struct timespec is 16 bytes on 64-bit: 8 sec + 8 nsec
+    ts = ffi_malloc(16)
+    if ts == nil
+      ffi_free(eventlist)
+      return nil
+    ffi_memset(ts, 0, 16)
+    sec = 0
+    if timeout_ms > 0
+      sec = timeout_ms / 1000
+      nsec = timeout_ms % 1000 * 1000000
+      write_u64(ts, 0, sec)
+      write_u64(ts, 8, nsec)
 
-        # If timeout_ms == 0, use nil timeout for non-blocking
-        timeout_ptr = ts
-        if timeout_ms == 0
-            timeout_ptr = nil
-        end
+    # If timeout_ms == 0, use nil timeout for non-blocking
+    timeout_ptr = ts
+    if timeout_ms == 0
+      timeout_ptr = nil
 
-        n = ffi_kevent(kq, nil, 0, eventlist, max_events, timeout_ptr)
-        ffi_free(ts)
+    n = ffi_kevent(kq, nil, 0, eventlist, max_events, timeout_ptr)
+    ffi_free(ts)
 
-        if n <= 0
-            ffi_free(eventlist)
-            return nil
-        end
+    if n <= 0
+      ffi_free(eventlist)
+      return nil
 
-        # Parse events from the eventlist buffer.
-        # Each kevent is 32 bytes:
-        #   ident (8), filter (2), flags (2), fflags (4), data (8), udata (8)
-        # We need to read ident and fflags from each event.
-        #
-        # Since we can't read individual bytes from C memory directly,
-        # we use a workaround: copy each event to a Lua string via memcpy,
-        # then parse the string.
-        events = {}
-        for i = 0, n - 1
-            offset = i * KEVENT_SIZE
-            # Copy 32 bytes to a Lua string
-            tmp = "\0":rep(KEVENT_SIZE)
-            ffi_memcpy(tmp, eventlist + offset, KEVENT_SIZE)
+    # Parse events from the eventlist buffer.
+    # Each kevent is 32 bytes:
+    #   ident (8), filter (2), flags (2), fflags (4), data (8), udata (8)
+    # We need to read ident and fflags from each event.
+    #
+    # Since we can't read individual bytes from C memory directly,
+    # we use a workaround: copy each event to a Lua string via memcpy,
+    # then parse the string.
+    events = {}
+    for i = 0, n - 1
+      offset = i * KEVENT_SIZE
+      # Copy 32 bytes to a Lua string
+      tmp = "0":rep(KEVENT_SIZE)
+      ffi_memcpy(tmp, eventlist + offset, KEVENT_SIZE)
 
-            # Parse ident (bytes 0-7, little-endian u64)
-            ident = 0
-            for b = 0, 7
-                byte_val = tmp:byte(b + 1)
-                ident |= (byte_val << (b * 8))
-            end
+      # Parse ident (bytes 0-7, little-endian u64)
+      ident = 0
+      for b = 0, 7
+        byte_val = tmp:byte(b + 1)
+        ident = ident | byte_val << (b * 8)
 
-            # Parse fflags (bytes 12-15, little-endian u32)
-            fflags = 0
-            for b = 0, 3
-                byte_val = tmp:byte(12 + b + 1)
-                fflags |= (byte_val << (b * 8))
-            end
+      # Parse fflags (bytes 12-15, little-endian u32)
+      fflags = 0
+      for b = 0, 3
+        byte_val = tmp:byte(12 + b + 1)
+        fflags = fflags | byte_val << (b * 8)
 
-            events[events:len() + 1] = {fd = ident, flags = fflags}
-        end
-        ffi_free(eventlist)
-        return events
+      events[events:len() + 1] = { fd = ident, flags = fflags }
+    ffi_free(eventlist)
+    return events
+  else(_platform == "inotify")
 
-    elseif _platform == "inotify"
-        # Read inotify events from the fd.
-        # struct inotify_event {
-        #   int      wd;       // 4 bytes
-        #   u_int    mask;     // 4 bytes
-        #   u_int    cookie;   // 4 bytes
-        #   u_int    len;      // 4 bytes
-        #   char     name[];   // variable
-        # };
-        # Total fixed size: 16 bytes
+    # Read inotify events from the fd.
+    # struct inotify_event {
+    #   int      wd;       // 4 bytes
+    #   u_int    mask;     // 4 bytes
+    #   u_int    cookie;   // 4 bytes
+    #   u_int    len;      // 4 bytes
+    #   char     name[];   // variable
+    # };
+    # Total fixed size: 16 bytes
 
-        buf_size = 4096
-        buf = ffi_malloc(buf_size)
-        if buf == nil return nil end
-        ffi_memset(buf, 0, buf_size)
+    buf_size = 4096
+    buf = ffi_malloc(buf_size)
+    if buf == nil
+      return nil
+    ffi_memset(buf, 0, buf_size)
 
-        n = ffi_read(kq, buf, buf_size)
-        if n <= 0
-            ffi_free(buf)
-            return nil
-        end
+    n = ffi_read(kq, buf, buf_size)
+    if n <= 0
+      ffi_free(buf)
+      return nil
 
-        # Copy the read data to a Lua string for parsing
-        data = "\0":rep(n)
-        ffi_memcpy(data, buf, n)
-        ffi_free(buf)
+    # Copy the read data to a Lua string for parsing
+    data = "0":rep(n)
+    ffi_memcpy(data, buf, n)
+    ffi_free(buf)
 
-        # Parse inotify events from the string
-        events = {}
-        pos = 1  # 1-based for Lua strings
-        while pos <= n
-            if pos + 15 > n break end
+    # Parse inotify events from the string
+    events = {}
+    # 1-based for Lua strings
+    pos = 1
+    while pos <= n
+      if pos + 15 > n
+        break
 
-            # wd (4 bytes, little-endian)
-            wd = 0
-            for b = 0, 3
-                wd |= (data:byte(pos + b) << (b * 8))
-            end
+      # wd (4 bytes, little-endian)
+      wd = 0
+      for b = 0, 3
+        wd = wd | data:byte(pos + b) << (b * 8)
 
-            # mask (4 bytes, little-endian)
-            mask = 0
-            for b = 0, 3
-                mask |= (data:byte(pos + 4 + b) << (b * 8))
-            end
+      # mask (4 bytes, little-endian)
+      mask = 0
+      for b = 0, 3
+        mask = mask | data:byte(pos + 4 + b) << (b * 8)
 
-            # len (4 bytes, offset 12, little-endian) — name length
-            name_len = 0
-            for b = 0, 3
-                name_len |= (data:byte(pos + 12 + b) << (b * 8))
-            end
+      # len (4 bytes, offset 12, little-endian) — name length
+      name_len = 0
+      for b = 0, 3
+        name_len = name_len | data:byte(pos + 12 + b) << (b * 8)
 
-            if wd > 0
-                events[events:len() + 1] = {fd = wd, flags = mask}
-            end
+      if wd > 0
+        events[events:len() + 1] = { fd = wd, flags = mask }
 
-            # Advance past event + name (16 + name_len, aligned to 16? No, name is padded)
-            # Actually inotify events are not padded to 16; name is included inline.
-            # The total event size is 16 + name_len.
-            pos += 16 + name_len
-        end
+      # Advance past event + name (16 + name_len, aligned to 16? No, name is padded)
+      # Actually inotify events are not padded to 16; name is included inline.
+      # The total event size is 16 + name_len.
+      pos = pos + 16 + name_len
 
-        if events:len() == 0 return nil end
-        return events
+    if events:len() == 0
+      return nil
+    return events
+  else
 
-    else
-        # Polling doesn't use this API
-        return nil
-    end
-end
+    # Polling doesn't use this API
+    return nil
 
 # Close the watcher and release resources.
-close(kq: int): void
-    if _platform == "kqueue"
-        ffi_close(kq)
-    elseif _platform == "inotify"
-        ffi_close(kq)
-    end
-end
+close: void = (kq: int)
+  if _platform == "kqueue"
+    ffi_close(kq)
+  else(_platform == "inotify")
+    ffi_close(kq)
 
 # ─────────────────────────────────────────────────────────────
 # Polling fallback
@@ -561,76 +524,75 @@ end
 
 # Get the modification time of a file as a string (epoch seconds).
 # Uses stat command for portability.
-get_mtime(path: str): str
-    if path == nil return "" end
-    f = io.popen("stat -f%m '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null", "r")
+get_mtime: str = (path: str)
+  if path == nil
+    return ""
+  f = io.popen("stat -f%m '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null", "r")
+  if f == nil
+    # Try Linux stat
+    f = io.popen("stat -c %Y '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null", "r")
     if f == nil
-        # Try Linux stat
-        f = io.popen("stat -c %Y '" .. path:gsub("'", "'\\''") .. "' 2>/dev/null", "r")
-        if f == nil return "" end
-    end
-    out = f:read("*a")
-    f:close()
-    if out == nil return "" end
-    # Trim whitespace
-    out = out:gsub("%s+$", "")
-    out = out:gsub("^%s+", "")
-    out
-end
+      return ""
+  out = f:read("*a")
+  f:close()
+  if out == nil
+    return ""
+  # Trim whitespace
+  out = out:gsub("%s+$", "")
+  out = out:gsub("^%s+", "")
+  out
 
 # Poll a file for changes. Calls callback on each detected change.
 # The callback receives a table {path, event} where event is a string
 # like "modified", "deleted", or "renamed".
 # This function runs forever (blocking) until the callback returns false.
-poll_watch(path: str, callback: any, interval_ms: int): void
-    if path == nil return end
-    if callback == nil return end
-    if interval_ms == nil or interval_ms <= 0
-        interval_ms = 1000
-    end
+poll_watch: void = (path: str, callback: any, interval_ms: int)
+  if path == nil
+    return
+  if callback == nil
+    return
+  if interval_ms == nil or interval_ms <= 0
+    interval_ms = 1000
 
-    last_mtime = get_mtime(path)
-    last_exists = last_mtime != ""
+  last_mtime = get_mtime(path)
+  last_exists = last_mtime != ""
 
-    while true
-        # Sleep for interval
-        sec = interval_ms / 1000.0
-        os.execute("sleep " .. sec:to(str))
+  while true
+    # Sleep for interval
+    sec = interval_ms / 1000.0
+    os.execute("sleep " .. sec:to(str))
 
-        cur_mtime = get_mtime(path)
-        cur_exists = cur_mtime != ""
+    cur_mtime = get_mtime(path)
+    cur_exists = cur_mtime != ""
 
-        if cur_exists and last_exists
-            # Check for modification
-            if cur_mtime != last_mtime
-                cont = callback({path = path, event = "modified"})
-                if cont == false return end
-                last_mtime = cur_mtime
-            end
-        elseif cur_exists and not last_exists
-            # File was created
-            cont = callback({path = path, event = "created"})
-            if cont == false return end
-            last_mtime = cur_mtime
-        elseif not cur_exists and last_exists
-            # File was deleted
-            cont = callback({path = path, event = "deleted"})
-            if cont == false return end
-            last_mtime = ""
-        end
+    if cur_exists and last_exists
+      # Check for modification
+      if cur_mtime != last_mtime
+        cont = callback({ path = path, event = "modified" })
+        if cont == false
+          return
+        last_mtime = cur_mtime
+    else(cur_exists and not last_exists)
+      # File was created
+      cont = callback({ path = path, event = "created" })
+      if cont == false
+        return
+      last_mtime = cur_mtime
+    else(not cur_exists and last_exists)
+      # File was deleted
+      cont = callback({ path = path, event = "deleted" })
+      if cont == false
+        return
+      last_mtime = ""
 
-        last_exists = cur_exists
-    end
-end
+    last_exists = cur_exists
 
 # ─────────────────────────────────────────────────────────────
 # Platform info
 # ─────────────────────────────────────────────────────────────
 
-platform(): str
-    _platform
-end
-
+platform: str = ()
+  _platform
 # Expose constants for users
 # Constants
 # API

@@ -845,6 +845,24 @@ pub const PrettyPrinter = struct {
         }
     }
 
+    /// A relation whose body is EMPTY needs one written anyway.
+    ///
+    /// A block closes by dedent, and an empty block has nothing to dedent from
+    /// — so it never closes and swallows the rest of the file, reporting at EOF
+    /// far from the relation. `end` used to hide this: the terminator closed
+    /// the block, so the absence of a body was never a layout question.
+    ///
+    /// The canonical body for a relation that produces nothing is the `void`
+    /// value. No new syntax: the relation's result IS void, so its body is that
+    /// value, and any comments that lived in the body stay inside it.
+    fn printEmptyBodyAsVoid(self: *PrettyPrinter, at_line: u32) Error!void {
+        self.indent();
+        try self.nl();
+        try self.flushCommentsBefore(at_line);
+        try self.write("void");
+        self.dedent();
+    }
+
     fn printBlock(self: *PrettyPrinter, block: *const Block) Error!void {
         if (block.stmts.len == 0 and block.tail_expr == null) return;
         self.indent();
@@ -914,7 +932,15 @@ pub const PrettyPrinter = struct {
         } else {
             try self.printFuncSig(&fd.func);
         }
-        try self.printBlock(&fd.func.body);
+        if (self.mode == .idol and self.canonical and
+            fd.func.body.stmts.len == 0 and fd.func.body.tail_expr == null)
+        {
+            // Comments that lived in the body belong INSIDE it; the next
+            // top-level construct is the bound, so flush up to just before it.
+            try self.printEmptyBodyAsVoid(fd.loc.line + 1);
+        } else {
+            try self.printBlock(&fd.func.body);
+        }
         try self.closeBlock();
     }
 

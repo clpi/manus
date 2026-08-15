@@ -29,50 +29,50 @@
 
 # duo_onnx_init(const char* model_path): void* (session handle)
 @ffi("duo_onnx_init")
-duo_onnx_init(model_path: str): any
-
+duo_onnx_init: any = (model_path: str)
+  void
 # duo_onnx_run(void* session, const char* input_name,
 #              const float* input_data, size_t input_len,
 #              const char* output_name,
 #              float* output_data, size_t* output_len): int
 @ffi("duo_onnx_run")
-duo_onnx_run(session: any, input_name: str, input_data: any, input_len: int,
-                 output_name: str, output_data: any, output_len: any): int
+duo_onnx_run: int = (session: any, input_name: str, input_data: any, input_len: int, output_name: str, output_data: any, output_len: any)
+  void
 
 # duo_onnx_close(void* session): void
 @ffi("duo_onnx_close")
-duo_onnx_close(session: any): void
-
+duo_onnx_close: void = (session: any)
+  void
 # duo_onnx_input_count(void* session): int
 @ffi("duo_onnx_input_count")
-duo_onnx_input_count(session: any): int
-
+duo_onnx_input_count: int = (session: any)
+  void
 # duo_onnx_output_count(void* session): int
 @ffi("duo_onnx_output_count")
-duo_onnx_output_count(session: any): int
-
+duo_onnx_output_count: int = (session: any)
+  void
 # duo_onnx_input_name(void* session, int idx, char* buf, int buf_len): int
 @ffi("duo_onnx_input_name")
-duo_onnx_input_name(session: any, idx: int, buf: str, buf_len: int): int
-
+duo_onnx_input_name: int = (session: any, idx: int, buf: str, buf_len: int)
+  void
 # duo_onnx_output_name(void* session, int idx, char* buf, int buf_len): int
 @ffi("duo_onnx_output_name")
-duo_onnx_output_name(session: any, idx: int, buf: str, buf_len: int): int
-
+duo_onnx_output_name: int = (session: any, idx: int, buf: str, buf_len: int)
+  void
 # duo_onnx_input_shape(void* session, int idx, int64_t* dims, int max_dims): int
 @ffi("duo_onnx_input_shape")
-duo_onnx_input_shape(session: any, idx: int, dims: any, max_dims: int): int
-
+duo_onnx_input_shape: int = (session: any, idx: int, dims: any, max_dims: int)
+  void
 # duo_onnx_output_shape(void* session, int idx, int64_t* dims, int max_dims): int
 @ffi("duo_onnx_output_shape")
-duo_onnx_output_shape(session: any, idx: int, dims: any, max_dims: int): int
-
+duo_onnx_output_shape: int = (session: any, idx: int, dims: any, max_dims: int)
+  void
 # ===========================================================================
 # Constants
 # ===========================================================================
 
-NAME_BUF_SIZE  = 256
-SHAPE_MAX_DIMS  = 8
+NAME_BUF_SIZE = 256
+SHAPE_MAX_DIMS = 8
 EMBEDDING_MAX_OUTPUT = 4096
 
 # ===========================================================================
@@ -80,42 +80,35 @@ EMBEDDING_MAX_OUTPUT = 4096
 # ===========================================================================
 
 # read_name: query input or output name at idx into a string buffer.
-read_name(session: any, idx: int, is_input: bool): str
-    buf = " ":rep(NAME_BUF_SIZE)
-    rc
-    if is_input
-        rc = duo_onnx_input_name(session, idx, buf, NAME_BUF_SIZE)
-    else
-        rc = duo_onnx_output_name(session, idx, buf, NAME_BUF_SIZE)
-    end
-    if rc < 0
-        return ""
-    end
-    buf:sub(1, rc)
-end
+read_name: str = (session: any, idx: int, is_input: bool)
+  buf = " ":rep(NAME_BUF_SIZE)
+  rc
+  if is_input
+    rc = duo_onnx_input_name(session, idx, buf, NAME_BUF_SIZE)
+  else
+    rc = duo_onnx_output_name(session, idx, buf, NAME_BUF_SIZE)
+  if rc < 0
+    return ""
+  buf:sub(1, rc)
 
 # read_shape: query input or output shape at idx into a duo array.
-read_shape(session: any, idx: int, is_input: bool): any
-    # We use a table of 8 zero values as our int64_t buffer.
-    dims_buf = {0, 0, 0, 0, 0, 0, 0, 0}
-    rc
-    if is_input
-        rc = duo_onnx_input_shape(session, idx, dims_buf, SHAPE_MAX_DIMS)
-    else
-        rc = duo_onnx_output_shape(session, idx, dims_buf, SHAPE_MAX_DIMS)
-    end
-    if rc < 0
-        return {}
-    end
-    # rc = number of dimensions
-    shape = {}
-    i = 1
-    while i <= rc
-        shape[i] = dims_buf[i]
-        i += 1
-    end
-    shape
-end
+read_shape: any = (session: any, idx: int, is_input: bool)
+  # We use a table of 8 zero values as our int64_t buffer.
+  dims_buf = { 0, 0, 0, 0, 0, 0, 0, 0 }
+  rc
+  if is_input
+    rc = duo_onnx_input_shape(session, idx, dims_buf, SHAPE_MAX_DIMS)
+  else
+    rc = duo_onnx_output_shape(session, idx, dims_buf, SHAPE_MAX_DIMS)
+  if rc < 0
+    return {}
+  # rc = number of dimensions
+  shape = {}
+  i = 1
+  while i <= rc
+    shape[i] = dims_buf[i]
+    i = i + 1
+  shape
 
 # Append every leaf of a nested table into st.out, in order.
 #
@@ -126,38 +119,33 @@ end
 # Hoisted with explicit state rather than made a lambda: it is RECURSIVE and it
 # MUTATES two enclosing locals (`out`, `oi`). A lambda captures neither, and a
 # named function cannot call itself from a local binding either.
-onnx_flatten_into(st: any, t: any): void
-    n = t:len()
-    if n == 0 return end
-    i = 1
-    while i <= n
-        v = t[i]
-        if type(v) == "table"
-            onnx_flatten_into(st, v)
-        else
-            st.out[st.oi] = v
-            st.oi += 1
-        end
-        i += 1
-    end
-end
+onnx_flatten_into: void = (st: any, t: any)
+  n = t:len()
+  if n == 0
+    return
+  i = 1
+  while i <= n
+    v = t[i]
+    if type(v) == "table"
+      onnx_flatten_into(st, v)
+    else
+      st.out[st.oi] = v
+      st.oi = st.oi + 1
+    i = i + 1
 
 # flatten_array: convert a nested duo table into a flat float array.
 # e.g. {{1.0, 2.0}, {3.0, 4.0}} -> {1.0, 2.0, 3.0, 4.0}
-flatten_array(data: any): any
-    if type(data) == "number"
-        return {data}
-    end
-    if type(data) != "table"
-        return {}
-    end
-    st = { out = {}, oi = 1 }
-    onnx_flatten_into(st, data)
+flatten_array: any = (data: any)
+  if type(data) == "number"
+    return { data }
+  if type(data) != "table"
+    return {}
+  st = { out = {}, oi = 1 }
+  onnx_flatten_into(st, data)
 
-    # Compute total element count
-    count = st.out:len()
-    return {data = st.out, len = count}
-end
+  # Compute total element count
+  count = st.out:len()
+  return { data = st.out, len = count }
 
 # ===========================================================================
 # Public API
@@ -165,143 +153,135 @@ end
 
 # load: load an ONNX model file and create a session.
 # Returns an opaque session handle, or nil on failure.
-load(model_path: str): any
-    session = duo_onnx_init(model_path)
-    if session == nil
-        return nil
-    end
-    {handle = session, closed = false, model_path = model_path}
-end
+load: any = (model_path: str)
+  session = duo_onnx_init(model_path)
+  if session == nil
+    return nil
+  { handle = session, closed = false, model_path = model_path }
 
 # close: release a session handle and free resources.
-close(session: any): void
-    if session == nil return end
-    if type(session) == "table"
-        if session.closed return end
-        session.closed = true
-        if has(.handle)(session)
-            duo_onnx_close(session.handle)
-        end
-    else
-        # Assume raw pointer
-        duo_onnx_close(session)
-    end
-end
+close: void = (session: any)
+  if session == nil
+    return
+  if type(session) == "table"
+    if session.closed
+      return
+    session.closed = true
+    if has(.handle)(session)
+      duo_onnx_close(session.handle)
+  else
+    # Assume raw pointer
+    duo_onnx_close(session)
 
 # run: run inference on the model.
 # inputs is a table of {input_name = float_array_or_nested_array}.
 # Returns a table of {output_name = float_array}.
 # For simplicity, runs the first input/output pair.
-run(session: any, inputs: any): any
-    handle = session
-    if type(session) == "table" handle = session.handle end
-    if handle == nil return nil end
+run: any = (session: any, inputs: any)
+  handle = session
+  if type(session) == "table"
+    handle = session.handle
+  if handle == nil
+    return nil
 
-    # Get input name (index 0)
-    input_name = read_name(handle, 0, true)
-    if input_name == "" return nil end
+  # Get input name (index 0)
+  input_name = read_name(handle, 0, true)
+  if input_name == ""
+    return nil
 
-    # Get output name (index 0)
-    output_name = read_name(handle, 0, false)
-    if output_name == "" return nil end
+  # Get output name (index 0)
+  output_name = read_name(handle, 0, false)
+  if output_name == ""
+    return nil
 
-    # Find the input data: either by name from inputs table, or the first value
-    input_data_raw = nil
-    if inputs[input_name] != nil
-        input_data_raw = inputs[input_name]
-    else
-        # Try first value in the table
-        k, v = next(inputs, nil)
-        if v != nil
-            input_data_raw = v
-        end
-    end
-    if input_data_raw == nil return nil end
+  # Find the input data: either by name from inputs table, or the first value
+  input_data_raw = nil
+  if inputs[input_name] != nil
+    input_data_raw = inputs[input_name]
+  else
+    # Try first value in the table
+    k, v = next(inputs, nil)
+    if v != nil
+      input_data_raw = v
+  if input_data_raw == nil
+    return nil
 
-    # Flatten the input data into a single float array
-    flat = flatten_array(input_data_raw)
-    if flat.len == 0 return nil end
+  # Flatten the input data into a single float array
+  flat = flatten_array(input_data_raw)
+  if flat.len == 0
+    return nil
 
-    # Determine output size from shape info
-    output_shape = read_shape(handle, 0, false)
-    output_size = 1
-    i = 1
-    while i <= output_shape:len()
-        d = output_shape[i]
-        if d > 0
-            output_size *= d
-        end
-        i += 1
-    end
+  # Determine output size from shape info
+  output_shape = read_shape(handle, 0, false)
+  output_size = 1
+  i = 1
+  while i <= output_shape:len()
+    d = output_shape[i]
+    if d > 0
+      output_size = output_size * d
+    i = i + 1
 
-    # Allocate output buffer
-    output_data = {}
-    oi = 1
-    while oi <= output_size
-        output_data[oi] = 0.0
-        oi += 1
-    end
+  # Allocate output buffer
+  output_data = {}
+  oi = 1
+  while oi <= output_size
+    output_data[oi] = 0.0
+    oi = oi + 1
 
-    # output_len is passed as a table cell (output parameter)
-    output_len_buf = {output_size}
+  # output_len is passed as a table cell (output parameter)
+  output_len_buf = { output_size }
 
-    rc = duo_onnx_run(handle, input_name, flat.data, flat.len,
-                           output_name, output_data, output_len_buf)
-    if rc != 0
-        return nil
-    end
+  rc = duo_onnx_run(handle, input_name, flat.data, flat.len, output_name, output_data, output_len_buf)
+  if rc != 0
+    return nil
 
-    # Trim output_data to actual length
-    actual_len = output_len_buf[1]
-    if actual_len == nil actual_len = output_size end
+  # Trim output_data to actual length
+  actual_len = output_len_buf[1]
+  if actual_len == nil
+    actual_len = output_size
 
-    result_data = {}
-    ri = 1
-    while ri <= actual_len
-        result_data[ri] = output_data[ri]
-        ri += 1
-    end
+  result_data = {}
+  ri = 1
+  while ri <= actual_len
+    result_data[ri] = output_data[ri]
+    ri = ri + 1
 
-    result = {}
-    result[output_name] = result_data
-    result
-end
+  result = {}
+  result[output_name] = result_data
+  result
 
 # info: return model metadata (input/output names and shapes).
 # Returns: {inputs = {{name = str, shape = [int]}}, outputs = {...}}
-info(session: any): any
-    handle = session
-    if type(session) == "table" handle = session.handle end
-    if handle == nil return nil end
+info: any = (session: any)
+  handle = session
+  if type(session) == "table"
+    handle = session.handle
+  if handle == nil
+    return nil
 
-    result = {inputs = {}, outputs = {}}
+  result = { inputs = {}, outputs = {} }
 
-    # Query inputs
-    in_count = duo_onnx_input_count(handle)
-    if in_count > 0
-        i = 0
-        while i < in_count
-            name = read_name(handle, i, true)
-            shape = read_shape(handle, i, true)
-            result.inputs[i + 1] = {name = name, shape = shape}
-            i += 1
-        end
-    end
+  # Query inputs
+  in_count = duo_onnx_input_count(handle)
+  if in_count > 0
+    i = 0
+    while i < in_count
+      name = read_name(handle, i, true)
+      shape = read_shape(handle, i, true)
+      result.inputs[i + 1] = { name = name, shape = shape }
+      i = i + 1
 
-    # Query outputs
-    out_count = duo_onnx_output_count(handle)
-    if out_count > 0
-        i = 0
-        while i < out_count
-            name = read_name(handle, i, false)
-            shape = read_shape(handle, i, false)
-            result.outputs[i + 1] = {name = name, shape = shape}
-            i += 1
-        end
-    end
+  # Query outputs
+  out_count = duo_onnx_output_count(handle)
+  if out_count > 0
+    i = 0
+    while i < out_count
+      name = read_name(handle, i, false)
+      shape = read_shape(handle, i, false)
+      result.outputs[i + 1] = { name = name, shape = shape }
+      i = i + 1
 
-    result
-end
+  result
 
 # embedding: convenience function for sentence-transformer models.
 # Tokenizes text into character-level token IDs (simple wordpiece fallback),
@@ -310,42 +290,42 @@ end
 # NOTE: This uses a very basic tokenizer (character-level) suitable for
 # testing. For production use, you should pre-tokenize and pass the
 # token_ids array directly to run().
-embedding(session: any, text: str): any
-    handle = session
-    if type(session) == "table" handle = session.handle end
-    if handle == nil return nil end
+embedding: any = (session: any, text: str)
+  handle = session
+  if type(session) == "table"
+    handle = session.handle
+  if handle == nil
+    return nil
 
-    # Simple character-level tokenization: convert each byte to a float.
-    # Real tokenizers (WordPiece, BPE, etc.) should be implemented separately.
-    n = text:len()
-    if n == 0
-        return {}
-    end
+  # Simple character-level tokenization: convert each byte to a float.
+  # Real tokenizers (WordPiece, BPE, etc.) should be implemented separately.
+  n = text:len()
+  if n == 0
+    return {}
 
-    token_ids = {}
-    i = 1
-    while i <= n
-        token_ids[i] = text:byte(i:to(i64))
-        i += 1
-    end
+  token_ids = {}
+  i = 1
+  while i <= n
+    token_ids[i] = text:byte(i:to(i64))
+    i = i + 1
 
-    # Build the input table with the input name
-    input_name = read_name(handle, 0, true)
-    if input_name == "" return nil end
+  # Build the input table with the input name
+  input_name = read_name(handle, 0, true)
+  if input_name == ""
+    return nil
 
-    inputs = {}
-    inputs[input_name] = token_ids
+  inputs = {}
+  inputs[input_name] = token_ids
 
-    result = run(session, inputs)
-    if result == nil return nil end
+  result = run(session, inputs)
+  if result == nil
+    return nil
 
-    # Get the first output array
-    k, v = next(result, nil)
-    if v == nil return nil end
-    v
-end
-
+  # Get the first output array
+  k, v = next(result, nil)
+  if v == nil
+    return nil
+  v
 # ===========================================================================
 # Module export
 # ===========================================================================
-

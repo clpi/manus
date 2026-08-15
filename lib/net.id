@@ -5,171 +5,158 @@
 # A native C binding via FFI is planned (see duo_gap_analysis.md).
 
 # Parse a URL into {scheme, host, port, path}
-parse_url(url: str): any
-    scheme = "http"
-    rest = url
-    if rest:sub(1, 7) == "http://"
-        rest = rest:sub(8)
-    elseif rest:sub(1, 8) == "https://"
-        scheme = "https"
-        rest = rest:sub(9)
-    end
-    default_port = 80
-    if scheme == "https" default_port = 443 end
-    host = rest
-    path = "/"
-    slash_pos = rest:find("/")
-    if slash_pos
-        host = rest:sub(1, slash_pos - 1)
-        path = rest:sub(slash_pos)
-    end
-    colon_pos = host:find(":")
-    port = default_port
-    if colon_pos
-        port = host:sub(colon_pos + 1:to(i64)) or default_port
-        host = host:sub(1, colon_pos - 1)
-    end
-    {scheme = scheme, host = host, port = port, path = path}
-end
+parse_url: any = (url: str)
+  scheme = "http"
+  rest = url
+  if rest:sub(1, 7) == "http://"
+    rest = rest:sub(8)
+  else(rest:sub(1, 8) == "https://")
+    scheme = "https"
+    rest = rest:sub(9)
+  default_port = 80
+  if scheme == "https"
+    default_port = 443
+  host = rest
+  path = "/"
+  slash_pos = rest:find("/")
+  if slash_pos
+    host = rest:sub(1, slash_pos - 1)
+    path = rest:sub(slash_pos)
+  colon_pos = host:find(":")
+  port = default_port
+  if colon_pos
+    port = host:sub(colon_pos + 1:to(i64)) or default_port
+    host = host:sub(1, colon_pos - 1)
+  { scheme = scheme, host = host, port = port, path = path }
 
 # HTTP GET via curl (fallback when variable not named "net")
-http_get(url: str): str
-    # Sanitize URL to prevent shell injection
-    safe_url = url:gsub("[;&|`$]", "")
-    f = io.popen("curl -sL --max-time 30 -- " .. safe_url, "r")
-    if f == nil return "" end
-    body = f:read("*a") or ""
-    f:close()
-    return body
-end
+http_get: str = (url: str)
+  # Sanitize URL to prevent shell injection
+  safe_url = url:gsub("[;&|`$]", "")
+  f = io.popen("curl -sL --max-time 30 -- " .. safe_url, "r")
+  if f == nil
+    return ""
+  body = f:read("*a") or ""
+  f:close()
+  return body
 
 # HTTP POST via curl (fallback)
-http_post(url: str, body: str, content_type: str): str
-    ct = content_type
-    if ct == nil ct = "application/x-www-form-urlencoded" end
-    if body == nil body = "" end
-    # Sanitize URL and escape body for shell
-    safe_url = url:gsub("[;&|`$]", "")
-    escaped = body:gsub("'", "'\\''")
-    cmd = "curl -sL --max-time 30 -X POST"
-        .. " -H 'Content-Type: " .. ct .. "'"
-        .. " --data '" .. escaped .. "' -- " .. safe_url
-    f = io.popen(cmd, "r")
-    if f == nil return "" end
-    resp = f:read("*a") or ""
-    f:close()
-    return resp
-end
+http_post: str = (url: str, body: str, content_type: str)
+  ct = content_type
+  if ct == nil
+    ct = "application/x-www-form-urlencoded"
+  if body == nil
+    body = ""
+  # Sanitize URL and escape body for shell
+  safe_url = url:gsub("[;&|`$]", "")
+  escaped = body:gsub("'", "'\\''")
+  cmd = "curl -sL --max-time 30 -X POST" .. " -H 'Content-Type: " .. ct .. "'" .. " --data '" .. escaped .. "' -- " .. safe_url
+  f = io.popen(cmd, "r")
+  if f == nil
+    return ""
+  resp = f:read("*a") or ""
+  f:close()
+  return resp
 
 # HTTP request returning {body, status} via curl
-http_request(method: str, url: str, body: str, headers: any): any
-    # Sanitize URL to prevent shell injection
-    safe_url = url:gsub("[;&|`$]", "")
-    cmd = "curl -si --max-time 30 -X " .. method
-    if headers
-        for k, v in headers
-            # Also sanitize header values
-            safe_k = k:gsub("[;&|`$']", "")
-            safe_v = v:to(str):gsub("[;&|`$']", "")
-            cmd = cmd .. " -H '" .. safe_k .. ": " .. safe_v .. "'"
-        end
-    end
-    if body and body != ""
-        escaped = body:gsub("'", "'\\''")
-        cmd = cmd .. " --data '" .. escaped .. "'"
-    end
-    cmd = cmd .. " -- " .. safe_url
-    f = io.popen(cmd, "r")
-    if f == nil return {body = "", status = 0} end
-    raw = f:read("*a") or ""
-    f:close()
-    status = tonumber(string["match"](raw, "HTTP/%d+%.%d+ (%d+)")) or 0
-    sep = raw:find("\r\n\r\n", 1, true)
-    resp_b = raw
-    if sep
-        resp_b = raw:sub(sep + 4)
-    end
-    {body = resp_b, status = status}
-end
+http_request: any = (method: str, url: str, body: str, headers: any)
+  # Sanitize URL to prevent shell injection
+  safe_url = url:gsub("[;&|`$]", "")
+  cmd = "curl -si --max-time 30 -X " .. method
+  if headers
+    for k, v in headers
+      # Also sanitize header values
+      safe_k = k:gsub("[;&|`$']", "")
+      safe_v = v:to(str):gsub("[;&|`$']", "")
+      cmd = cmd .. " -H '" .. safe_k .. ": " .. safe_v .. "'"
+  if body and body != ""
+    escaped = body:gsub("'", "'\\''")
+    cmd = cmd .. " --data '" .. escaped .. "'"
+  cmd = cmd .. " -- " .. safe_url
+  f = io.popen(cmd, "r")
+  if f == nil
+    return { body = "", status = 0 }
+  raw = f:read("*a") or ""
+  f:close()
+  status = tonumber(string["match"](raw, "HTTP/%d+%.%d+ (%d+)")) or 0
+  sep = raw:find("\r\n\r\n", 1, true)
+  resp_b = raw
+  if sep
+    resp_b = raw:sub(sep + 4)
+  { body = resp_b, status = status }
 
 # Raw TCP connect — stub (real impl via codegen interception when var = "net")
-connect(host: str, port: i64): any
-    nil  # intercepted: duo_net_tcp_connect(host, port)
-end
+connect: any = (host: str, port: i64)
+  # intercepted: duo_net_tcp_connect(host, port)
+  nil
 
 # TCP listen — stub
-listen(host: str, port: i64, backlog: i64): any
-    nil  # intercepted: duo_net_tcp_listen(host, port, backlog)
-end
+listen: any = (host: str, port: i64, backlog: i64)
+  # intercepted: duo_net_tcp_listen(host, port, backlog)
+  nil
 
 # TCP accept — stub
-accept(srv_fd: any): any
-    nil  # intercepted: duo_net_tcp_accept(srv_fd)
-end
+accept: any = (srv_fd: any)
+  # intercepted: duo_net_tcp_accept(srv_fd)
+  nil
 
 # TCP send — stub
-send(fd: any, data: str): i64
-    0 - 1   # intercepted: duo_net_tcp_send(fd, data)
-end
+send: i64 = (fd: any, data: str)
+  # intercepted: duo_net_tcp_send(fd, data)
+  0 - 1
 
 # TCP recv — stub
-recv(fd: any, maxlen: i64): any
-    nil     # intercepted: duo_net_tcp_recv(fd, maxlen)
-end
+recv: any = (fd: any, maxlen: i64)
+  # intercepted: duo_net_tcp_recv(fd, maxlen)
+  nil
 
 # TCP close — stub
-close(fd: any): void
-    # intercepted: duo_net_tcp_close(fd)
-end
+close: void = (fd: any)
+  # intercepted: duo_net_tcp_close(fd)
+  void
 
 # UDP socket — stub
-udp_socket(host: str, port: i64): any
-    nil  # intercepted: duo_net_udp_socket_open(host, port)
-end
+udp_socket: any = (host: str, port: i64)
+  # intercepted: duo_net_udp_socket_open(host, port)
+  nil
 
 # UDP sendto — stub
-udp_sendto(fd: any, data: str, host: str, port: i64): i64
-    0 - 1   # intercepted: duo_net_udp_sendto(fd, data, host, port)
-end
+udp_sendto: i64 = (fd: any, data: str, host: str, port: i64)
+  # intercepted: duo_net_udp_sendto(fd, data, host, port)
+  0 - 1
 
 # UDP recvfrom — stub
-udp_recvfrom(fd: any, maxlen: i64): any
-    nil  # intercepted: duo_net_udp_recvfrom(fd, maxlen)
-end
+udp_recvfrom: any = (fd: any, maxlen: i64)
+  # intercepted: duo_net_udp_recvfrom(fd, maxlen)
+  nil
 
 # Simple blocking HTTP server (requires native socket support via codegen path)
 # handler(method, path, raw_request): response_body string
-http_serve(port: i64, handler: any): void
-    srv = listen("0.0.0.0", port, 128)
-    if srv == nil
-        io:write("net.http_serve: listen failed on port " .. port:to(str) .. "\n")
-    end
-    io:write("net: listening on :" .. port:to(str) .. "\n")
-    while true
-        cli = accept(srv)
-        if cli == nil break end
-        raw = recv(cli, 16384)
-        if raw != nil
-            method = ""
-            req_path = ""
-            method, req_path = string["match"](raw, "^(%u+) (/[^ ]*)")
-            if method == nil method = "GET" end
-            if req_path == nil req_path = "/" end
-            resp_body = handler(method, req_path, raw) or ""
-            response: str = "HTTP/1.0 200 OK\r\n"
-                .. "Content-Type: text/plain\r\n"
-                .. "Content-Length: " .. to(str)(resp_body:len()) .. "\r\n"
-                .. "Connection: close\r\n\r\n"
-                .. resp_body
-            send(cli, response)
-        end
-        close(cli)
-    end
-    close(srv)
-end
+http_serve: void = (port: i64, handler: any)
+  srv = listen("0.0.0.0", port, 128)
+  if srv == nil
+    io:write("net.http_serve: listen failed on port " .. port:to(str) .. "\n")
+  io:write("net: listening on :" .. port:to(str) .. "\n")
+  while true
+    cli = accept(srv)
+    if cli == nil
+      break
+    raw = recv(cli, 16384)
+    if raw != nil
+      method = ""
+      req_path = ""
+      method, req_path = string["match"](raw, "^(%u+) (/[^ ]*)")
+      if method == nil
+        method = "GET"
+      if req_path == nil
+        req_path = "/"
+      resp_body = handler(method, req_path, raw) or ""
+      response: str = "HTTP/1.0 200 OK\r\n" .. "Content-Type: text/plain\r\n" .. "Content-Length: " .. to(str)(resp_body:len()) .. "\r\n" .. "Connection: close\r\n\r\n" .. resp_body
+      send(cli, response)
+    close(cli)
+  close(srv)
 
 # DNS resolve — codegen-intercepted to use getaddrinfo
-dns_resolve(host: str): any
-    nil  # intercepted: duo_net_dns_resolve(host)
-end
-
+dns_resolve: any = (host: str)
+  # intercepted: duo_net_dns_resolve(host)
+  nil
