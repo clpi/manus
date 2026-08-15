@@ -328,7 +328,36 @@ pub const ResolvedType = union(enum) {
     nil,
     never, // function that never returns (e.g. error())
 
-    // SIMD vector types
+    // SIMD vector types.
+    //
+    // THESE FOUR ARE 32 BYTES WIDE AND THE CANONICAL BACKEND'S REGISTER IS 16.
+    // Measured, not inferred: `--backend=direct` emits AArch64 for Apple
+    // Silicon, where the NEON register file is 128 bits and there is no SVE
+    // (`hw.optional.arm.FEAT_SME` = 0, no SVE control at all on this part). So
+    // the native widths are v2f64 / v2i64 / v4f32 / v4i32, and every type below
+    // names TWO registers.
+    //
+    // They are not a mistake; they are C-backend types that outlived their
+    // backend. `codegen.zig` lowers each one to a clang `ext_vector_type(4)` /
+    // `ext_vector_type(8)`, where any width is legal because clang splits it —
+    // and `codegen.zig` also gives them a 32-byte alignment, which is the tell:
+    // 32 is the AVX register, not the NEON one. Read as a declaration of what
+    // the language can vectorize, they claim 4- and 8-wide on a machine whose
+    // widest lane group is 2 for f64/i64 and 4 for f32/i32.
+    //
+    // WHAT THE MEASUREMENT SAYS THE RIGHT ANSWER IS. `benchmarks/simd/` puts the
+    // i64 reduction ceiling at 4.06x scalar, reached at EIGHT i64 lanes — which
+    // on this machine is four q registers, not one v8i64 type. Width in the type
+    // system and width in a register are different facts, and fusing them is how
+    // a 32-byte type ends up describing a 16-byte machine. An honest native
+    // spelling declares the REGISTER (v2i64, v4i32, ...) and lets the unroll
+    // factor be an unroll factor.
+    //
+    // NOT DELETED HERE because `sema.zig` and `codegen.zig` both construct and
+    // consume them and neither is this change's to edit; the direct backend has
+    // no lowering for any of them, so no `--backend=direct` program can reach
+    // one today. Recorded so the next reader does not take `v8i32` as evidence
+    // that this compiler emits an eight-wide anything.
     v4f64,
     v4i64,
     v8f32,
