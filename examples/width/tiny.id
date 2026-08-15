@@ -1,0 +1,138 @@
+# @corpus current
+# DECLARED INTEGER WIDTH, at and around every boundary of i8.
+#
+# THE DEFECT THIS FIXTURE EXISTS FOR. The DIRECT backend — which
+# `--backend=auto`, i.e. plain `idol run`, selects — performed no truncation
+# for ANY sub-64-bit integer type. Every value stayed 64 bits wide from the
+# literal to the exit status, so `h: u32 = 4294967295` then `h = h + 5`
+# answered 4294967300 where `--backend=c`, which emits a real `uint32_t` and a
+# real `((uint32_t)(...))` cast on every store, answered 4. Two backends, one
+# source, two answers, `ok compile` and exit 0 both times.
+#
+# EVERY NUMBER ON THE `# expect:` LINE WAS COMPUTED BY HAND — in Python, from
+# the width and the signedness — and never read back from either backend. Two
+# backends can agree and both be wrong; this tree has hit that twice, so a
+# differential alone is not a proof.
+#
+# THE SEEDS ARE 2^n-1, 2^n, 2^n+1 AND THEIR NEGATIVE MIRRORS, passed as an
+# ARGUMENT rather than written as a literal beside the operation, so nothing
+# here can be folded into the answer it is checking.
+#
+# Signed: the store truncates and then SIGN-EXTENDS. A zero-extend here would turn
+# -1 into 255 and every comparison after it would answer the other way.
+# expect: 1 2 0 127 -128 -127 -126 -127 -128 0 1 -1 0 -2 125 126 127 -128 127 126 -2 -1 0 3 -3 122 125 -128 -125 -128 125 -3 0 0 2 -2 -4 -2 0 2 0 -2 -2 0 0 1 -1 126 127 -128 -127 -128 127 -1 0 1 1 -1 127 127 -127 -127 -127 127 -1 1 1 0 -2 127 126 -127 -128 -127 126 -2 1
+
+rise: i64 = (p: i64)
+  h: i8 = p
+  h = h + 1
+  h
+
+fall: i64 = (p: i64)
+  h: i8 = p
+  h = h - 1
+  h
+
+scale: i64 = (p: i64)
+  h: i8 = p
+  h = h * 3
+  h
+
+shift: i64 = (p: i64)
+  h: i8 = p
+  h = h << 1
+  h
+
+mask: i64 = (p: i64)
+  h: i8 = p
+  h = h & 255
+  h
+
+merge: i64 = (p: i64)
+  h: i8 = p
+  h = h | 1
+  h
+
+flip: i64 = (p: i64)
+  h: i8 = p
+  h = h ~ 1
+  h
+
+main: i64 = ()
+  print(rise(0))
+  print(rise(1))
+  print(rise(-1))
+  print(rise(126))
+  print(rise(127))
+  print(rise(128))
+  print(rise(-127))
+  print(rise(-128))
+  print(rise(-129))
+  print(rise(255))
+  print(rise(256))
+  print(fall(0))
+  print(fall(1))
+  print(fall(-1))
+  print(fall(126))
+  print(fall(127))
+  print(fall(128))
+  print(fall(-127))
+  print(fall(-128))
+  print(fall(-129))
+  print(fall(255))
+  print(fall(256))
+  print(scale(0))
+  print(scale(1))
+  print(scale(-1))
+  print(scale(126))
+  print(scale(127))
+  print(scale(128))
+  print(scale(-127))
+  print(scale(-128))
+  print(scale(-129))
+  print(scale(255))
+  print(scale(256))
+  print(shift(0))
+  print(shift(1))
+  print(shift(-1))
+  print(shift(126))
+  print(shift(127))
+  print(shift(128))
+  print(shift(-127))
+  print(shift(-128))
+  print(shift(-129))
+  print(shift(255))
+  print(shift(256))
+  print(mask(0))
+  print(mask(1))
+  print(mask(-1))
+  print(mask(126))
+  print(mask(127))
+  print(mask(128))
+  print(mask(-127))
+  print(mask(-128))
+  print(mask(-129))
+  print(mask(255))
+  print(mask(256))
+  print(merge(0))
+  print(merge(1))
+  print(merge(-1))
+  print(merge(126))
+  print(merge(127))
+  print(merge(128))
+  print(merge(-127))
+  print(merge(-128))
+  print(merge(-129))
+  print(merge(255))
+  print(merge(256))
+  print(flip(0))
+  print(flip(1))
+  print(flip(-1))
+  print(flip(126))
+  print(flip(127))
+  print(flip(128))
+  print(flip(-127))
+  print(flip(-128))
+  print(flip(-129))
+  print(flip(255))
+  print(flip(256))
+  0

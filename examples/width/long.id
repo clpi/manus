@@ -1,0 +1,138 @@
+# @corpus current
+# DECLARED INTEGER WIDTH, at and around every boundary of i32.
+#
+# THE DEFECT THIS FIXTURE EXISTS FOR. The DIRECT backend — which
+# `--backend=auto`, i.e. plain `idol run`, selects — performed no truncation
+# for ANY sub-64-bit integer type. Every value stayed 64 bits wide from the
+# literal to the exit status, so `h: u32 = 4294967295` then `h = h + 5`
+# answered 4294967300 where `--backend=c`, which emits a real `uint32_t` and a
+# real `((uint32_t)(...))` cast on every store, answered 4. Two backends, one
+# source, two answers, `ok compile` and exit 0 both times.
+#
+# EVERY NUMBER ON THE `# expect:` LINE WAS COMPUTED BY HAND — in Python, from
+# the width and the signedness — and never read back from either backend. Two
+# backends can agree and both be wrong; this tree has hit that twice, so a
+# differential alone is not a proof.
+#
+# THE SEEDS ARE 2^n-1, 2^n, 2^n+1 AND THEIR NEGATIVE MIRRORS, passed as an
+# ARGUMENT rather than written as a literal beside the operation, so nothing
+# here can be folded into the answer it is checking.
+#
+# Signed: the store truncates and then SIGN-EXTENDS. A zero-extend here would turn
+# -1 into 255 and every comparison after it would answer the other way.
+# expect: 1 2 0 2147483647 -2147483648 -2147483647 -2147483646 -2147483647 -2147483648 0 1 -1 0 -2 2147483645 2147483646 2147483647 -2147483648 2147483647 2147483646 -2 -1 0 3 -3 2147483642 2147483645 -2147483648 -2147483645 -2147483648 2147483645 -3 0 0 2 -2 -4 -2 0 2 0 -2 -2 0 0 1 255 254 255 0 1 0 255 255 0 1 1 -1 2147483647 2147483647 -2147483647 -2147483647 -2147483647 2147483647 -1 1 1 0 -2 2147483647 2147483646 -2147483647 -2147483648 -2147483647 2147483646 -2 1
+
+rise: i64 = (p: i64)
+  h: i32 = p
+  h = h + 1
+  h
+
+fall: i64 = (p: i64)
+  h: i32 = p
+  h = h - 1
+  h
+
+scale: i64 = (p: i64)
+  h: i32 = p
+  h = h * 3
+  h
+
+shift: i64 = (p: i64)
+  h: i32 = p
+  h = h << 1
+  h
+
+mask: i64 = (p: i64)
+  h: i32 = p
+  h = h & 255
+  h
+
+merge: i64 = (p: i64)
+  h: i32 = p
+  h = h | 1
+  h
+
+flip: i64 = (p: i64)
+  h: i32 = p
+  h = h ~ 1
+  h
+
+main: i64 = ()
+  print(rise(0))
+  print(rise(1))
+  print(rise(-1))
+  print(rise(2147483646))
+  print(rise(2147483647))
+  print(rise(2147483648))
+  print(rise(-2147483647))
+  print(rise(-2147483648))
+  print(rise(-2147483649))
+  print(rise(4294967295))
+  print(rise(4294967296))
+  print(fall(0))
+  print(fall(1))
+  print(fall(-1))
+  print(fall(2147483646))
+  print(fall(2147483647))
+  print(fall(2147483648))
+  print(fall(-2147483647))
+  print(fall(-2147483648))
+  print(fall(-2147483649))
+  print(fall(4294967295))
+  print(fall(4294967296))
+  print(scale(0))
+  print(scale(1))
+  print(scale(-1))
+  print(scale(2147483646))
+  print(scale(2147483647))
+  print(scale(2147483648))
+  print(scale(-2147483647))
+  print(scale(-2147483648))
+  print(scale(-2147483649))
+  print(scale(4294967295))
+  print(scale(4294967296))
+  print(shift(0))
+  print(shift(1))
+  print(shift(-1))
+  print(shift(2147483646))
+  print(shift(2147483647))
+  print(shift(2147483648))
+  print(shift(-2147483647))
+  print(shift(-2147483648))
+  print(shift(-2147483649))
+  print(shift(4294967295))
+  print(shift(4294967296))
+  print(mask(0))
+  print(mask(1))
+  print(mask(-1))
+  print(mask(2147483646))
+  print(mask(2147483647))
+  print(mask(2147483648))
+  print(mask(-2147483647))
+  print(mask(-2147483648))
+  print(mask(-2147483649))
+  print(mask(4294967295))
+  print(mask(4294967296))
+  print(merge(0))
+  print(merge(1))
+  print(merge(-1))
+  print(merge(2147483646))
+  print(merge(2147483647))
+  print(merge(2147483648))
+  print(merge(-2147483647))
+  print(merge(-2147483648))
+  print(merge(-2147483649))
+  print(merge(4294967295))
+  print(merge(4294967296))
+  print(flip(0))
+  print(flip(1))
+  print(flip(-1))
+  print(flip(2147483646))
+  print(flip(2147483647))
+  print(flip(2147483648))
+  print(flip(-2147483647))
+  print(flip(-2147483648))
+  print(flip(-2147483649))
+  print(flip(4294967295))
+  print(flip(4294967296))
+  0
