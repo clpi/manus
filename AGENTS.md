@@ -1,5 +1,95 @@
 # Agent Instructions
 
+## Read first — the decomposition
+
+Everything below this section is a consequence. Learn the decomposition and you
+will not need to recall the consequences, because the violating name will not
+occur to you.
+
+> **A name is a SUBJECT and an EDGE.** The edge is the relation; the subject is
+> the value the relation is about. You write `subject:edge(rest)`.
+
+    strlen(s)      wrong — but NOT because it is on a list
+    s:len()        right — `len` is the edge, `s` is the subject
+
+That is the whole rule, and it is generative in a way a rule list can never be.
+A list is checked against a name you have ALREADY CHOSEN, so its violations are
+by omission: the entry you needed is the one that was not on it. `strlen` has no
+underscore, no capital, no trailing digit, no plural — it passes nearly every
+lexical gate in this tree. No checker can save you. Knowing where the seam falls
+can.
+
+Four consequences worth having in hand before you write anything:
+
+1. **SUBJECT-ONE.** `r(subject, a)` IS `subject:r(a)` — one relation, two source
+   faces. Subject-first is preferred because it is the face that COMPOSES:
+   `v:scale(2):scale(3)` reads in the order the work happens, and having no
+   throwaway intermediate is what makes INTERMEDIATE-ZERO affordable. A
+   throwaway binding is where a glued compound gets born.
+2. **The edge already converged; the subject did not.** `:len` is universal here
+   and `:size` / `:length` do not occur. What survives is thousands of names that
+   glue a subject onto the front of an edge. Decompose to `subject:edge`.
+3. **An injected world adds REACH and never takes a NAME.** `os` is
+   default-injected, so `env(k)` and `arg(i)` are canonical and the anchored
+   `os.env(k)` only disambiguates a contested scope. A local, parameter, or
+   declared relation spelled `env` MUST WIN — this was violated and silently
+   returned a descriptor address.
+4. **LAW-16: one irreducible lowercase word, singular.** `arg`, not `args`. The
+   subject of `write` is the STREAM (`stdout:write(x)`, never `io.write`); `a[i]`
+   canonicalises to `a(i)` because access IS application; control words are
+   ordinary bindings (`return x` is `return(x)`); parentheses the author wrote
+   are KEPT and never relitigated by a printer; `void` is INFERRED, never
+   written; `end`, `then`, `elseif` and `fun` are Lua vestigials.
+
+**Read the executable version of this section before writing Idol:**
+
+    cd ../idol-native && ./bin/idol run subject.id    # agreement count IS the exit
+
+It puts each canonical form beside the retired one it replaces and requires them
+to AGREE on every input, so reading it teaches the decomposition and running it
+proves the teaching is current. Its companions — `gate/access.id`,
+`gate/control.id`, `gate/word.id`, `gate/shadow.id` — do the same for one ruling
+each. `sh gate/all.sh` runs the lot.
+
+### Numbers live in exactly one place, and that place runs
+
+Do not copy an expected count, exit code, or census total into prose. Every rule
+this project recorded as an ASSERTION has decayed, measured in one day: a sibling
+`AGENTS.md` claimed a gate exited 34 in two places while it exited 42;
+`gate/all.sh` claimed three counting gates agreed at 33 when they were 25, 35 and
+35; a comment asserted two constants "MUST equal" and their drift left ~1,700
+lines of JIT unreachable; `@comp.assert` was retired and kept 32 call sites; and
+`src/lexer_token_kind_abi.zig` is an ABI agreement test imported by nothing.
+What held instead was everything that RUNS AND COMPARES. So: state the COMMAND,
+not the number, and when you must pin a number put it in the runner that checks
+it.
+
+### Metaprogramming — accurate, not encouraging
+
+Reach for a **world relation over a directive** wherever one exists; the
+directive namespace is under active retirement, not expansion. Where a directive
+is unavoidable the canonical spelling is **`@comp.*`** —
+`src/parser.zig:warnDeprecatedAtQualified` names it as the replacement for
+`@meta.*`, `@compiler.*`, `@emit`, `@pipeline` and every `@c.*`, and the
+compiler's own diagnostic is the authority. This is not cosmetic: `@c.emit` and
+`@comp.c.emit` are one hook, three call sites compared against the short
+spelling only, and thirty-seven sites in `lib/` therefore did NOTHING — every
+raw-memory primitive was a no-op and `sleep()` slept zero, and all of it passed
+`idol check`. `@ffi` and `@comp.ffi` are DIFFERENT operations. Enforcement is
+`gate/dialect.sh`; get live counts by running it, not from this file.
+
+### Performance — decisions, not hints
+
+Representation is a **DECISION the compiler makes from FACTS**, never a hint you
+supply; fixed thresholds that select representation by size have been deleted for
+pretending otherwise. **Elimination beats optimisation** — the fastest form of a
+recomputed value is the one that never happens, and that has no size bound. And
+the largest measured win available is usually a **SOURCE** change: merging one
+prefix-plural family cut executed instructions 62.05% because 90.5% of the calls
+recomputed an identical product differing only in which component they returned.
+A gate proves EQUIVALENCE, which is the permission; the measurement is the
+reason; neither substitutes for the other.
+
 ## Authority
 
 `docs/spec/law.md` is the **SUPREME one-page law** of Idol. It is authoritative
@@ -415,11 +505,18 @@ debt for the compiler build, not gate admission).
 Commit admission runs through `.githooks/pre-commit` (shell orchestrator → direct-backend
 `idol run gate/*`). Never `--backend=c` on gates.
 
-Gate home (`gate/`):
+Gate home (`gate/`). **`ls gate/` is authoritative; this table is a projection**
+— it listed ten files while thirteen were present, so regenerate rather than
+trust it. Three currently unlisted, measured: `graph.id` (temporary migration
+firewall for graph identity / edge closure on added lines, GAP-124), `probe.id`
+(the body of `gate.idiom` — no `main`, no wrapper), and `bytetest.id`, which is
+itself a LAW-ONE path violation: `byte` + `test` glued into one stem, in the very
+home that enforces the rule. `preflight.id` is DEPRECATED in its own header —
+commit admission is `.githooks/pre-commit`.
 
 | Gate | Role |
 |---|---|
-| `preflight` | `.githooks/pre-commit` shell → direct `idol run gate/*` |
+| `preflight.id` | DEPRECATED; admission is `.githooks/pre-commit` shell → direct `idol run gate/*` |
 | `idiom.id` | Added-line lexical/canonical migration firewall |
 | `admission.id` | Semantic-admission firewall on added lines |
 | `host.id` | Host API debt on staged additions |
@@ -547,7 +644,7 @@ or algorithm family.
 - Executed SHC frontier is **S0** (lexer/token/span only); compiler B does not exist; next frontier is GAP-145 lexical identity → GAP-134 grammar roles.
 - Blind-start constitution: read `docs/spec/canonical.md` before repository code; do not infer language law from Git frequency.
 - Harness boot payload and dev tooling: `docs/spec/harness-projection.md` → `.agents/HARNESS.md` via `tools/node/dev/generate-harness`/`orient`; coordination under `tools/node/dev/`; Devin/Codex skills at `.devin/skills/idol-dev/SKILL.md` (dev loop) and `.devin/skills/idol/SKILL.md` (authority projection).
-- Bit view edges are the `to(bit)` relations in `scripts/proof/bit.id` (`@view`); the 24-file `lib/semantic/*` shadow registry was deleted and there is no `lib/semantic/` relation catalog (`law.catalog.zero`); graph `NodeKind`/`EdgeKind` are physical tags only — never decide semantic validity/meaning from tags: tag narrows the candidate, exact facts validate meaning, never `tag == func` → function semantics (C0 laws APPLICATION-CONSUMER-ZERO, FACT-LOCALITY-ONE, GRAMMAR-ONE, CONTROL-PLANE-DERIVED-ZERO, TAG-AUTHORITY-ZERO, MODULE-ZERO, and the world/application closure AT-ONE, APPLICATION-ONE, WORLD-CLOSED).
+- Bit view edges are the `to(bit)` relations in `scripts/proof/bit.id` (`@view`); a 24-file `lib/semantic/*` shadow registry was deleted, but **this claim no longer holds as written and must not be relied on**: measured today, `lib/semantic/` EXISTS with 26 tracked `.id` files (`application.id`, `graph.id`, `verdict.id`, `vocabulary.id`, `os.id`, `io.id`, `ffi.id`, …). Whether that is a re-grown catalog forbidden by `law.catalog.zero` or a different tree serving another purpose is UNRESOLVED — verify with `git ls-files lib/semantic` before asserting either, and do not quote the deletion as done; graph `NodeKind`/`EdgeKind` are physical tags only — never decide semantic validity/meaning from tags: tag narrows the candidate, exact facts validate meaning, never `tag == func` → function semantics (C0 laws APPLICATION-CONSUMER-ZERO, FACT-LOCALITY-ONE, GRAMMAR-ONE, CONTROL-PLANE-DERIVED-ZERO, TAG-AUTHORITY-ZERO, MODULE-ZERO, and the world/application closure AT-ONE, APPLICATION-ONE, WORLD-CLOSED).
 - Bootstrap/dev binary is `./zig-out/bin/idol` (`idol check`, `idol run`); `orient`, `doctor`, and `probe-mcp` default to it; `idol check` reliable for teaching paths; `idol run` may fail on native linker-entry debt — `scripts/agent_smoke.id` check-only until entry resolves; proof scripts use `IDOL`/`./zig-out/bin/idol`.
 - Native gate-transport ARM64 (`src/native_backend.zig`): when `gate_transport && body_has_call`, spill all GP locals to the prologue stack; run `materializePendingVarargs` before call setup (variadic holes like `snprintf` `%s`); regression at `scripts/proof/gatecap.id`. GAP-155 bootstrap faces live in `src/native_bootstrap.zig` (realization-owned); `dnir_lower` uses `native_bootstrap.applicationExpr` — ordinary module calls are not bootstrap.
 - Concurrent write lanes Codex, Poolside, and Devin are frequently stale/not-live; verify live `idol_dev_claim_files` before relying on them and aggressively clear/claim stale claims rather than waiting (user repeatedly directs clearing stale claims).
