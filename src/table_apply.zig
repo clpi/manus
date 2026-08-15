@@ -35,9 +35,15 @@ fn calleeIsArray(type_map: *const sema.TypeMap, func: *const ast.Expr) bool {
     return rt == .array;
 }
 
-/// True when this callee names the process-argument projection in any lawful
-/// spelling: canonical `arg`, explicit `os.arg`, subject-first `os:arg`, or the
-/// legacy plural of each.
+/// The ANCHORED argument projection — `os.arg(i)` and the legacy plural.
+///
+/// The bare spelling deliberately does NOT match here. It used to, and that was
+/// a defect: a user relation named `arg` was silently captured by the injected
+/// world and its calls became argument reads. Measured, a relation
+/// `arg(v) = v * 7` returned 0 rather than 42, with no diagnostic anywhere.
+///
+/// Bare names now go through `bareMember`, which refuses any name the program
+/// binds. An injected world ADDS reach; it never takes a name already in use.
 fn argProjection(func: *const ast.Expr) bool {
     const isArgName = struct {
         fn f(n: []const u8) bool {
@@ -45,18 +51,68 @@ fn argProjection(func: *const ast.Expr) bool {
         }
     }.f;
     return switch (func.*) {
-        .name => |n| isArgName(n.ident),
         .field => |f| f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "os") and isArgName(f.field),
         else => false,
     };
 }
 
-/// `os.env(k)` / `os:env(k)` — the environment projection. `os.env` is a root
-/// TABLE, so applying it with one key is access, not a call, exactly as with
-/// `os.args`. Only the ANCHORED spellings converge here: the ruling makes
-/// `arg(i)` canonical for arguments, but says nothing that would make a bare
-/// `env` a reserved name, and three files in this tree define their own
-/// `getenv` shim. Converging a bare name would capture those.
+/// THE OS WORLD'S MEMBER EDGES.
+///
+/// `os` is DEFAULT-INJECTED, so every member edge is reachable BARE from root
+/// scope, and the anchored spelling is the DISAMBIGUATOR rather than the
+/// canonical form — reserved for a world where the same name is also injected
+/// from elsewhere and resolution is genuinely contested:
+///
+///     env("HOME")       canonical
+///     os.env("HOME")    lawful where an anchor disambiguates
+///     os.env["HOME"]    legacy, retired `[` accessor
+///     os.getenv("HOME") not a lawful name at all — two words glued, a C
+///                       legacy name, and LAW-16 wants one irreducible word
+///
+/// `arg` was admitted bare when the argument ruling landed and the rule was
+/// never generalised, so five of the six members were unreachable bare. They
+/// are not all the same KIND, which is why this is a table and not a list:
+/// applying a member table is ACCESS, applying a member relation is a CALL, and
+/// a member value is neither.
+const Member = struct {
+    name: []const u8,
+    kind: enum { table, relation, value },
+    /// The node that already resolves end to end. For arguments that is the
+    /// PLURAL `os.args`, which is why the canonical singular has to be
+    /// converged onto it rather than the other way around.
+    target: []const u8,
+};
+
+const os_world = [_]Member{
+    .{ .name = "arg", .kind = .table, .target = "args" },
+    .{ .name = "args", .kind = .table, .target = "args" },
+    .{ .name = "env", .kind = .table, .target = "env" },
+    .{ .name = "cwd", .kind = .value, .target = "cwd" },
+    .{ .name = "exit", .kind = .relation, .target = "exit" },
+    .{ .name = "clock", .kind = .relation, .target = "clock" },
+    .{ .name = "time", .kind = .relation, .target = "time" },
+};
+
+fn osMember(name: []const u8) ?Member {
+    for (os_world) |m| {
+        if (std.mem.eql(u8, m.name, name)) return m;
+    }
+    return null;
+}
+
+/// A member edge is reachable bare only where the name is NOT BOUND by the
+/// program. A local, parameter or declared relation named `env` must win over
+/// the injected world — capturing it would be a silent wrong answer, and the
+/// whole point of deriving reach from injection is that it adds reach without
+/// changing what was already there.
+fn bareMember(func: *const ast.Expr) ?Member {
+    if (func.* != .name) return null;
+    const names = active_names orelse return null;
+    if (names.bound.contains(func.name.ident)) return null;
+    return osMember(func.name.ident);
+}
+
+/// `os.env(k)` / `os:env(k)` — the anchored spellings, which stay lawful.
 fn envAnchor(func: *const ast.Expr) bool {
     return func.* == .field and func.field.obj.* == .name and
         std.mem.eql(u8, func.field.obj.name.ident, "os") and
@@ -155,30 +211,52 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
                 expr.* = .{ .index = .{ .loc = c.loc, .obj = c.func, .key = c.args[0] } };
                 return;
             }
-            // THE ARGUMENT PROJECTION, whatever it was spelled.
+            // THE ANCHORED PROJECTIONS — `os.arg(i)`, `os.args(i)`, `os.env(k)`.
             //
-            // `arg(i)` at root scope is canonical — `os` is injected, so the
-            // anchor adds nothing, and an identity is singular so `args` is not
-            // a name this language admits. `os.arg(i)` and the legacy plural
-            // remain lawful where the anchor disambiguates.
+            // These stay lawful: the anchor is what a contested world needs in
+            // order to say WHICH `env` is meant. They converge onto the node
+            // that already resolves end to end, which for arguments is the
+            // PLURAL `os.args` — hence a target distinct from the name.
             //
-            // All of them ARE the projection `os.args[i]`, which already
-            // resolves end to end. Converging them here rather than teaching
-            // each spelling to the graph is why there is one projection and not
-            // four: without it `arg(1)` type-checked and then refused at the
-            // backend with `unresolved-application-facts`, because a `.call`
-            // carries no application fact the graph recognises.
+            // Without this, demagix's `a[i]` -> `a(i)` left `os.env["PATH"]`
+            // rewritten into a `.call` the graph could not resolve, because a
+            // `.call` carries no application fact it recognises.
             if (c.form == .parenthesized and c.args.len == 1 and argProjection(c.func)) {
                 expr.* = .{ .index = .{ .loc = c.loc, .obj = argTable(alloc, c.loc) catch return, .key = c.args[0] } };
                 return;
             }
-            // The ENVIRONMENT projection, for the same reason. Demagix made
-            // `a[i]` canonicalize to `a(i)`, which rewrote `os.env["PATH"]` into
-            // a `.call` the graph could not resolve — the projection is the
-            // `.index`. `os.env` is already the node that resolves, so the
-            // application face converges straight back onto it.
             if (c.form == .parenthesized and c.args.len == 1 and envAnchor(c.func)) {
                 expr.* = .{ .index = .{ .loc = c.loc, .obj = c.func, .key = c.args[0] } };
+                return;
+            }
+
+            // THE BARE MEMBER EDGES of the injected `os` world.
+            //
+            // `os` is default-injected, so the edge itself is the access point
+            // and the anchor is only for disambiguation. `arg` was admitted
+            // this way when the argument ruling landed and the rule was never
+            // generalised, leaving five of six members unreachable bare.
+            //
+            // The members are not one kind, and that is the whole reason this
+            // dispatches on kind rather than rewriting uniformly: applying a
+            // member TABLE is access, applying a member RELATION is a call.
+            // Collapsing those would turn `exit(1)` into an index.
+            if (bareMember(c.func)) |m| {
+                switch (m.kind) {
+                    .table => if (c.form == .parenthesized and c.args.len == 1) {
+                        expr.* = .{ .index = .{
+                            .loc = c.loc,
+                            .obj = worldTable(alloc, c.loc, m.target) catch return,
+                            .key = c.args[0],
+                        } };
+                    },
+                    .relation => {
+                        var call = c;
+                        call.func = worldTable(alloc, c.loc, m.target) catch return;
+                        expr.* = .{ .call = call };
+                    },
+                    .value => {},
+                }
             }
         },
         else => {},
@@ -262,6 +340,12 @@ fn normalizeStmt(alloc: std.mem.Allocator, stmt: *ast.Stmt, type_map: *const sem
 const TableNames = struct {
     positional: std.StringHashMap(void),
     callable: std.StringHashMap(void),
+    /// EVERY name the program binds — local, global, parameter, declared
+    /// relation, loop variable. Used only to REFUSE a world-member conversion:
+    /// an injected edge adds reach, it never takes a name the program already
+    /// uses. Deliberately over-broad, since a missed conversion is a readable
+    /// diagnostic and a wrong one is a silent wrong answer.
+    bound: std.StringHashMap(void),
 
     fn qualifies(self: *const TableNames, name: []const u8) bool {
         return self.positional.contains(name) and !self.callable.contains(name);
@@ -289,7 +373,11 @@ fn collectNamesStmt(names: *TableNames, stmt: *const ast.Stmt) void {
         },
         // A declared relation is callable by construction.
         .func_decl => |*fd| {
-            if (fd.path.len > 0) names.callable.put(fd.path[0], {}) catch {};
+            if (fd.path.len > 0) {
+                names.callable.put(fd.path[0], {}) catch {};
+                names.bound.put(fd.path[0], {}) catch {};
+            }
+            for (fd.func.params) |prm| names.bound.put(prm.name, {}) catch {};
             collectNamesBlock(names, &fd.func.body);
         },
         .do_block => |*db| collectNamesBlock(names, &db.body),
@@ -314,6 +402,7 @@ fn bindNames(names: *TableNames, idents: []const ast.LocalName, inits: []const *
 }
 
 fn note(names: *TableNames, name: []const u8, init: *const ast.Expr) void {
+    names.bound.put(name, {}) catch {};
     if (allPositional(init)) {
         names.positional.put(name, {}) catch {};
     } else {
@@ -331,9 +420,11 @@ pub fn normalizeModule(alloc: std.mem.Allocator, mod: *ast.Module, type_map: *co
     var names: TableNames = .{
         .positional = std.StringHashMap(void).init(alloc),
         .callable = std.StringHashMap(void).init(alloc),
+        .bound = std.StringHashMap(void).init(alloc),
     };
     defer names.positional.deinit();
     defer names.callable.deinit();
+    defer names.bound.deinit();
     collectNamesBlock(&names, &mod.body);
     active_names = &names;
     defer active_names = null;
