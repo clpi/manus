@@ -1606,7 +1606,6 @@ const Arm64Compiler = struct {
                 idx += 1;
             }
         }
-
     }
 
     /// Instructions a `mov`/`movk` chain needs to materialize `value` — the
@@ -1935,47 +1934,7 @@ const Arm64Compiler = struct {
         return false;
     }
 
-    fn dnirDumpValue(v: dnir.Value) void {
-        switch (v) {
-            .void => std.debug.print("void", .{}),
-            .i64 => |x| std.debug.print("#{d}", .{x}),
-            .f64 => |x| std.debug.print("f{d}", .{x}),
-            .str => |s| std.debug.print("\"{s}\"", .{s}),
-            .local => |i| std.debug.print("L{d}", .{i}),
-            .temp => |i| std.debug.print("T{d}", .{i}),
-            .record => |i| std.debug.print("R{d}", .{i}),
-        }
-    }
-
-    fn dnirDumpFunction(f: dnir.Function) void {
-        std.debug.print("== DNIR {s}\n", .{f.name});
-        var idx: u32 = 0;
-        for (f.blocks) |b| {
-            for (b.instrs) |ins| {
-                std.debug.print("  [{d}] {s}", .{ idx, @tagName(ins.op) });
-                if (ins.op == .binop) std.debug.print(".{s}", .{@tagName(ins.binop)});
-                if (ins.op == .br) std.debug.print(".{s}->{d}", .{ @tagName(ins.branch_condition), ins.branch_target });
-                if (ins.result) |r| std.debug.print(" res={d}", .{r});
-                std.debug.print(" lhs=", .{});
-                dnirDumpValue(ins.lhs);
-                std.debug.print(" rhs=", .{});
-                dnirDumpValue(ins.rhs);
-                if (ins.callee.len != 0) std.debug.print(" callee={s}", .{ins.callee});
-                std.debug.print(" ty={s}\n", .{@tagName(ins.ty)});
-                idx += 1;
-            }
-        }
-    }
-
-    // TEMPORARY, this lane only: measurement kill-switches so before/after for
-    // R15 and W7 can be taken with ONE binary while other lanes move the tree
-    // under them. Removed before the lane closes.
-    var lane_no_ifconv: bool = false;
-    var lane_no_namedfuse: bool = false;
-
     fn compileDnirFunction(self: *Arm64Compiler, f: dnir.Function) Error!void {
-        lane_no_ifconv = std.c.getenv("IDOL_NO_IFCONV") != null;
-        lane_no_namedfuse = std.c.getenv("IDOL_NO_NAMEDFUSE") != null;
         self.cur_func_name = f.name;
         self.fp_locals.clearRetainingCapacity();
         self.fp_temps.clearRetainingCapacity();
@@ -2019,8 +1978,6 @@ const Arm64Compiler = struct {
         self.cur_func_float = f.is_float_kernel;
         self.cur_func_ret_float = f.ret == .f64 and !f.is_float_kernel;
         self.cur_func_ret = f.ret;
-
-        if (std.c.getenv("IDOL_DNIR_DUMP") != null) dnirDumpFunction(f);
 
         const offset: u32 = @intCast(self.code.items.len);
         const link_name = try linkerSymbolName(self.alloc, f.name);
@@ -2457,7 +2414,7 @@ const Arm64Compiler = struct {
                 // `store_local` between the two, which the adjacency test above
                 // cannot see past; `namedCompareBranchFusible` counts the name's
                 // readers instead and folds to the identical `cmp; b.cond`.
-                const fuse_named = !fuse_branch and !lane_no_namedfuse and ins.op == .binop and bi + 2 < b.instrs.len and
+                const fuse_named = !fuse_branch and ins.op == .binop and bi + 2 < b.instrs.len and
                     self.namedCompareBranchFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], flat_idx);
                 // Peephole: fold `mul -> T ; add(T, c) -> D` into `madd D,a,b,c`
                 // when T's only reader is that add (FTCFTW debt (2)).
@@ -2465,9 +2422,7 @@ const Arm64Compiler = struct {
                     self.mulAddFusible(ins, b.instrs[bi + 1], flat_idx);
                 // W7: the whole one-sided `if` becomes `csel`, on top of
                 // whichever of the three condition shapes reached here.
-                const ifconv: ?IfConvPlan = if (lane_no_ifconv)
-                    null
-                else if (fuse_branch)
+                const ifconv: ?IfConvPlan = if (fuse_branch)
                     self.ifConversionArm(f, b.instrs[bi + 1 ..], flat_idx + 1, ins, 1)
                 else if (fuse_named)
                     self.ifConversionArm(f, b.instrs[bi + 2 ..], flat_idx + 2, ins, 2)
@@ -9783,6 +9738,35 @@ test "native backend: cset encodes the inverted condition in bits 15:12" {
         try std.testing.expectEqual(@as(u32, 0x1f), (word >> 5) & 0x1f);
         try std.testing.expectEqual(@as(u32, 0x1f), (word >> 16) & 0x1f);
         try std.testing.expectEqual(@as(u32, 0b01), (word >> 10) & 0b11);
+    }
+}
+
+// Same reasoning one instruction over: the listing says `csel` while the object
+// file carries the bits, and a `csel` with the condition inverted answers with
+// the WRONG ARM every time — a silent wrong answer, not a crash. Decode every
+// field back out, and cross-check the base against `encodeCset`'s own literal,
+// which is this encoding with Rn = Rm = 31 and the CSINC bit set. Note the
+// condition is NOT inverted here: `cset` is `csinc … invert(cond)` precisely
+// because it selects between 0 and 1; a general select takes the condition as
+// written.
+test "native backend: csel encodes dst/n/m and the UNinverted condition" {
+    const cases = [_]Condition{ .eq, .ne, .lt, .ge, .gt, .le, .hi, .ls };
+    for (cases) |c| {
+        const word = encodeCsel(9, 10, 11, c);
+        try std.testing.expectEqual(@as(u32, 9), word & 0x1f);
+        try std.testing.expectEqual(@as(u32, 10), (word >> 5) & 0x1f);
+        try std.testing.expectEqual(@as(u32, 11), (word >> 16) & 0x1f);
+        try std.testing.expectEqual(@intFromEnum(c), @as(u4, @truncate(word >> 12)));
+        // CSEL clears bit 10; CSINC (which CSET aliases) sets it.
+        try std.testing.expectEqual(@as(u32, 0b00), (word >> 10) & 0b11);
+        try std.testing.expectEqual(@as(u32, 0x9a800000), word & 0xffe00000);
+    }
+    // `CSET Xd, cond` IS `CSINC Xd, XZR, XZR, invert(cond)` — build it out of
+    // the general encoder and require the two constants to agree, so neither
+    // literal can drift on its own.
+    for ([_]Condition{ .eq, .ne, .lt, .ge, .gt, .le }) |c| {
+        const from_general = encodeCsel(10, 31, 31, conditionForCset(c)) | (1 << 10);
+        try std.testing.expectEqual(encodeCset(10, c), from_general);
     }
 }
 
