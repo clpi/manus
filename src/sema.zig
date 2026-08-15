@@ -1073,10 +1073,30 @@ pub const Sema = struct {
         }
     }
 
+    /// The scope entry for `name` that the PROGRAM wrote, or null.
+    ///
+    /// `seed_globals` defines every `seedGlobalNames()` entry into the root
+    /// scope with `.is_const = true, .seeded = true`, so a bare `scope.lookup`
+    /// answers for every program alive and cannot tell the environment's entry
+    /// apart from a binding the author wrote. AN INJECTED WORLD ADDS REACH, IT
+    /// NEVER TAKES A NAME — so every question of the form "is this name bound?"
+    /// has to ask this, not `lookup`. See `Symbol.seeded`.
+    fn userBinding(self: *const Sema, name: []const u8) ?Symbol {
+        const sym = self.scope.lookup(name) orelse return null;
+        if (sym.seeded) return null;
+        return sym;
+    }
+
     fn check_assign_target(self: *Sema, tgt: *ast.Expr) SemaError!void {
         switch (tgt.*) {
             .name => |n| {
-                if (self.scope.lookup(n.ident)) |sym| {
+                // A SEEDED name is not a binding, so it is not a const binding
+                // either. `io = 9` was refused with "attempt to assign to const
+                // variable 'io'" while the identical `zz = 9` bound a local —
+                // the seed's `.is_const = true` was being read as the author's
+                // intent. The world does not own the word; the assignment binds
+                // it, exactly as it would any other unbound name.
+                if (self.userBinding(n.ident)) |sym| {
                     if (sym.is_for_control) {
                         self.err(n.loc, "cannot assign to for loop control variable '{s}'", .{n.ident});
                     } else if (sym.is_const) {
@@ -2798,10 +2818,15 @@ pub const Sema = struct {
         method: []const u8,
         ot: RT,
     ) ?subject_home.Home {
-        if (obj.* == .name) {
-            if (subject_home.worldNamed(obj.name.ident)) |world| {
-                if (subject_home.homeProvides(world, method)) return world;
-            }
+        // Through `worldSubject`, NOT `worldNamed` — the same one question every
+        // other world rule asks, so a BOUND name is an ordinary subject here
+        // too. The doc above already promised this for a world that does not
+        // provide the relation; it was not true for one that does. Measured:
+        // `os: i64 = 5` then `os:arg(1)`, and `table: i64 = 5` then
+        // `table:concat("-")`, both resolved through the world, while the same
+        // program spelled `zz` was correctly refused.
+        if (self.worldSubject(obj)) |world| {
+            if (subject_home.homeProvides(world, method)) return world;
         }
         return subject_home.homeForConformance(self.subjectConformance(obj, ot), method);
     }
@@ -11908,6 +11933,7 @@ pub const Sema = struct {
 const testing = std.testing;
 const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
+const lexer_bridge = @import("lexer_bridge.zig");
 
 fn releaseForeignRecordRt(alloc: Allocator, rt: *RT) void {
     if (rt.* != .table_type) return;
@@ -14478,11 +14504,19 @@ test "sema: a bound name WINS over the injected world" {
 /// diagnostic TEXT rather than only on the error count — "it was refused" is
 /// not the claim; "it was refused for its ruling, naming the projection" is.
 fn checkSource(alloc: std.mem.Allocator, src: []const u8, path: []const u8) !Sema {
-    var lex = Lexer.init(src, path);
+    // MIRROR THE DRIVER (main.zig `parse_and_check`). The family comes from the
+    // path, and `idol_mode` is set on BOTH the parser and the sema from it —
+    // the parser's copy is what turns on §3 layout. Setting it only on the sema
+    // left a `.id` path parsing under Lua rules, so an offside body ran to
+    // `<eof>` looking for a written `end` and the test failed in the PARSER,
+    // before the ruling it was written to probe was ever consulted.
+    const facts = lexer_bridge.sourceFacts(path);
+    var lex = Lexer.initFacts(src, path, facts);
     var p = Parser.init(&lex, alloc);
+    p.idol_mode = lexer_bridge.familyCode(facts) == lexer_bridge.family_canon;
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
-    s.idol_mode = true;
+    s.idol_mode = p.idol_mode;
     s.source_path = path;
     try s.check_module(&mod);
     return s;

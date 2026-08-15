@@ -661,6 +661,26 @@ pub const PrettyPrinter = struct {
     /// all-labelled case. An UNLABELLED sequence is not converted: offside
     /// cannot serve there, because an unlabelled region is indistinguishable
     /// from an executable one.
+    /// Whether the GRAMMAR admits an offside pack where the printer currently
+    /// stands. It does inside a block and it does NOT at module top level:
+    ///
+    ///     main: i64 = ()              p: { x: i8, y: i64 } =
+    ///         p: { x: i8 } =            x = 3
+    ///           x = 3                   y = 4
+    ///         0
+    ///     ✓ checked — no errors       error: expected expression, got '='
+    ///
+    /// A FORMATTER MUST NEVER EMIT SOURCE THE PARSER REJECTS. Without this the
+    /// canonical face rewrote every top-level all-labelled binding into text
+    /// that no longer compiled — `fmt --canonical` destroying the program it
+    /// was asked to tidy, which is the one failure mode `gate/fmt.sh` exists
+    /// for. Kept beside `printOffsidePack` so the printer's admission condition
+    /// and the grammar's stay in step; widen this the day the grammar takes the
+    /// form at module level, not before.
+    fn offsidePackParses(self: *const PrettyPrinter) bool {
+        return self.indent_level > 0;
+    }
+
     fn printOffsidePack(self: *PrettyPrinter, e: *const Expr) Error!void {
         // The caller has already written `= `, leaving a trailing space on what
         // is about to become an empty line.
@@ -784,7 +804,7 @@ pub const PrettyPrinter = struct {
                 if (ld.inits.len > 0) {
                     try self.write(" = ");
                     if (ld.inits.len == 1 and self.mode == .idol and self.canonical and
-                        allLabelledPack(ld.inits[0]))
+                        self.offsidePackParses() and allLabelledPack(ld.inits[0]))
                     {
                         try self.printOffsidePack(ld.inits[0]);
                     } else {
@@ -2075,6 +2095,7 @@ test "pretty: binding attributes stay above the binding, not inside it" {
     // `p: { x: i8 } @packed @align(8) = …`, which is not the attribute
     // position. The same path swallowed a statement-level `@c.call(…)` into
     // the following binding's annotation.
+    //
     const src =
         \\@packed
         \\@align(8)
@@ -2084,6 +2105,59 @@ test "pretty: binding attributes stay above the binding, not inside it" {
     const out = try fmtCanonical(alloc, src);
     try testing.expectEqualStrings(src, out);
     try expectIdempotent(alloc, src);
+
+    // THE CLAIM, asserted directly rather than only inferred from a whole-file
+    // match. Each attribute is a line of its own ABOVE the binding...
+    try testing.expect(std.mem.indexOf(u8, out, "@packed\n@align(8)\np:") != null);
+    // ...and neither is trailed onto the binding line after the type, which is
+    // the exact shape the defect produced. These hold however the initializer
+    // is spelled, so an unrelated change to the pack's rendering cannot mask a
+    // real migration of the attributes back inside the binding.
+    try testing.expect(std.mem.indexOf(u8, out, "} @packed") == null);
+    try testing.expect(std.mem.indexOf(u8, out, "@align(8) =") == null);
+
+    // THE ROUND TRIP IS ALSO A PARSE CLAIM, and that is why the brace spelling
+    // has to come back at TOP LEVEL. Canonical Idol writes an all-labelled pack
+    // offside (`printOffsidePack`: braces are a disambiguation escape hatch),
+    // but the grammar only takes that form INSIDE A BLOCK — at module level
+    //
+    //     p: { x: i8, y: i64 } =
+    //       x = 3
+    //
+    // is `error: expected expression, got '='`. Converting here anyway made
+    // `fmt --canonical` emit source that no longer compiled. The same binding
+    // one scope in is converted, and must be:
+    const nested =
+        \\main: i64 = ()
+        \\  p: { x: i8, y: i64 } =
+        \\    x = 3
+        \\    y = 4
+        \\  0
+        \\
+    ;
+    const nested_out = try fmtCanonical(alloc, nested);
+    try testing.expectEqualStrings(nested, nested_out);
+    try expectIdempotent(alloc, nested);
+    // ...from the brace spelling too, so the canon itself stays covered.
+    const nested_braced =
+        \\main: i64 = ()
+        \\  p: { x: i8, y: i64 } = { x = 3, y = 4 }
+        \\  0
+        \\
+    ;
+    try testing.expectEqualStrings(nested, try fmtCanonical(alloc, nested_braced));
+
+    // The other half of the note above, which had no case at all: `@c.call(…)`
+    // is a STATEMENT, and it must not be absorbed as the annotation of the
+    // binding that follows it.
+    const stmt =
+        \\@c.call("f", 1)
+        \\q: i64 = 7
+        \\
+    ;
+    const stmt_out = try fmtCanonical(alloc, stmt);
+    try testing.expectEqualStrings(stmt, stmt_out);
+    try expectIdempotent(alloc, stmt);
 }
 
 test "pretty: parameter default values survive" {

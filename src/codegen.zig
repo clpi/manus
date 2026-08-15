@@ -1227,6 +1227,20 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// True when the PROGRAM bound `name` in the function the precheck is
+    /// walking — a parameter, or a local/global declaration in its body.
+    ///
+    /// AN INJECTED WORLD ADDS REACH, IT NEVER TAKES A NAME. `is_world_symbol`
+    /// and `is_runtime_global` below are pure NAME tests with no scope in them,
+    /// so `io`, `os`, `string`, `print` answered for the world no matter what
+    /// the author had bound. Measured: `main: i64 = () / string = 9 / return
+    /// string` bailed the whole module with `runtime-global:string`, while the
+    /// identical program spelled `zz` compiled and answered 9. A bound name is
+    /// an ORDINARY LOCAL and the native path lowers it as one.
+    fn precheck_name_is_bound(self: *const CodeGen, name: []const u8) bool {
+        return self.precheck_types.contains(name);
+    }
+
     /// World symbols used in `dot(io)(code)` / `dot(std)(io, code)` specialization
     /// slots are not runtime-global table access for native precheck purposes.
     fn is_world_symbol(name: []const u8) bool {
@@ -5009,9 +5023,13 @@ pub const CodeGen = struct {
         return switch (expr.*) {
             .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => true,
             .nil => true,
-            .name => |name| if (is_world_symbol(name.ident)) blk: {
-                break :blk true;
-            } else if (is_runtime_global(name.ident)) blk: {
+            // A name the program BOUND is an ordinary local — asked first, so
+            // neither world test below can take it away from the author.
+            .name => |name| if (self.precheck_name_is_bound(name.ident))
+                true
+            else if (is_world_symbol(name.ident))
+                true
+            else if (is_runtime_global(name.ident)) blk: {
                 self.nativeDiagFailFmt("runtime-global:{s}", .{name.ident});
                 break :blk false;
             } else true,
@@ -5163,7 +5181,11 @@ pub const CodeGen = struct {
                     // @c.emit / __emit / __asm: raw C injection — always native scalar.
                     if (std.mem.eql(u8, call.func.name.ident, "__emit") or
                         std.mem.eql(u8, call.func.name.ident, "__asm")) break :blk true;
-                    if (is_runtime_global(call.func.name.ident)) {
+                    // Same order as the `.name` arm: a bound name is the
+                    // author's, and applying it is an ordinary application.
+                    if (!self.precheck_name_is_bound(call.func.name.ident) and
+                        is_runtime_global(call.func.name.ident))
+                    {
                         self.nativeDiagFailFmt("runtime-global-call:{s}", .{call.func.name.ident});
                         break :blk false;
                     }
@@ -20923,7 +20945,43 @@ pub const CodeGen = struct {
         if (std.mem.eql(u8, f.field, "lower") or std.mem.eql(u8, f.field, "upper") or
             std.mem.eql(u8, f.field, "reverse")) return args.len == 1;
         if (std.mem.eql(u8, f.field, "sub")) return args.len >= 2 and args.len <= 3;
+        // `string.char` joined that family when it got a native arm, and was not
+        // registered here. The header read was then applied to a plain literal:
+        // `string.len(string.char(0))` emitted `duo_str_len_hdr("\000")`, which
+        // ran off the front of a .rodata literal (0 on the native backend) and
+        // did not even compile under --backend=c, where duo_str_len_hdr is not
+        // declared in a module that carries no boxed runtime.
+        if (std.mem.eql(u8, f.field, "char")) return self.native_char_arm_admits(args, .str);
         return false;
+    }
+
+    /// The admission test for the native `string.char(n)` arm in
+    /// try_emit_native_string_call, factored out so the emitter and the two
+    /// predicates that must agree with it cannot drift apart again.
+    ///
+    /// When it admits, the arm emits EXACTLY ONE BYTE: a folded one-character C
+    /// literal, or `duo_str_char_cstr`, which writes `code & 0xFF` and a
+    /// terminator. So the byte length is 1 for every code — INCLUDING 0, which
+    /// is the case NUL termination cannot report and which `strlen` reads as 0.
+    fn native_char_arm_admits(self: *CodeGen, args: []const *ast.Expr, result_rt: RT) bool {
+        if (args.len != 1 or result_rt != .str) return false;
+        if (self.moduleNeedsLuaRuntime()) return false;
+        if (args[0].* == .int_lit) return true;
+        return self.expr_type(args[0]).is_integer();
+    }
+
+    /// Byte length of `e` when it is a `string.char(n)` application that the
+    /// native arm will lower, else null. Always 1 — see native_char_arm_admits.
+    fn native_char_call_byte_len(self: *CodeGen, e: *const ast.Expr) ?usize {
+        if (e.* != .call or e.call.func.* != .field) return null;
+        const f = e.call.func.field;
+        if (!std.mem.eql(u8, f.field, "char")) return null;
+        // `string.char` only. `utf8.char` is a DIFFERENT relation with a
+        // different answer (it encodes, so it is 1..4 bytes), and it is routed
+        // elsewhere; it must never pick up this constant.
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "string")) return null;
+        if (!self.native_char_arm_admits(e.call.args, self.expr_type(e))) return null;
+        return 1;
     }
 
     fn expr_emits_lua_value(self: *CodeGen, e: *const ast.Expr) bool {
@@ -21802,6 +21860,16 @@ pub const CodeGen = struct {
             if (args.len == 0) return false;
             if (args[0].* == .string_lit) {
                 self.p("{d}", .{args[0].string_lit.val.len});
+                return true;
+            }
+            // A length KNOWN AT COMPILE TIME is emitted as that number, and NUL
+            // termination never enters the question. This is what makes
+            // `string.len(string.char(0))` answer 1 — Wasm opcode 0x00 is one
+            // byte long, and a loader that reads it as an empty string stops
+            // decoding. Neither `strlen` (0) nor a header read on a native
+            // char* (garbage) can answer it.
+            if (self.native_char_call_byte_len(args[0])) |n| {
+                self.p("{d}", .{n});
                 return true;
             }
             if (self.expr_type(args[0]) == .str) {
@@ -33229,28 +33297,83 @@ test "codegen: string.len uses byte length for char(0) (Wasm opcode 0x00)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lex = Lexer.init(
-        \\main(): i64
-        \\    string.len(string.char(0))
-        \\end
-    , "test.duo");
-    var parser = Parser.init(&lex, alloc);
-    var module = try parser.parse_module();
-    var semantic = sema.Sema.init(alloc);
-    defer semantic.deinit();
-    semantic.idol_mode = true;
-    try semantic.check_module(&module);
 
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
-    cg.idol_mode = true;
-    try cg.emit_module(&module);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "strlen(lua_to_str(lua_str_char") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "duo_str_len_hdr(lua_to_str(lua_str_char") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_Value wn = ") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_Value ch = ") == null);
+    // `string.len(string.char(0))` IS 1. That is Wasm opcode 0x00, and a loader
+    // that reads it as an empty string stops decoding.
+    //
+    // THE CLAIM IS THE ANSWER, NOT THE MECHANISM. There are two lowerings of
+    // `string.char`, picked by whether the module carries the boxed runtime,
+    // and the answer has to be 1 down BOTH — so both are emitted here. Pinning
+    // only the boxed one is what let the native one ship wrong: this test read
+    // as a failure when a native arm was added, and the arm really was wrong,
+    // but not in the way the single assertion described. On the native side it
+    // emitted `duo_str_len_hdr("\000")` — a lua_String header read off the
+    // front of a .rodata literal — which answered 0 on the native backend and
+    // did not compile at all under --backend=c, where duo_str_len_hdr is not
+    // declared in a module that carries no boxed runtime.
+    const Case = struct { src: []const u8, boxed: bool };
+    const cases = [_]Case{
+        // No boxed runtime: the native `string.char` arm lowers this, and it
+        // CANNOT use NUL termination to report the length, so the length has to
+        // come from the one thing that does know it — the emitter.
+        .{
+            .src =
+            \\main(): i64
+            \\    string.len(string.char(0))
+            \\end
+            ,
+            .boxed = false,
+        },
+        // With the boxed runtime: lua_str_char builds a lua_String, and the
+        // length comes off its header. This is the path the test pinned before,
+        // and it is still required to be exactly this.
+        .{
+            .src =
+            \\local t = {}
+            \\t.k = "v"
+            \\local n: i64 = string.len(string.char(0))
+            \\print(n, t.k)
+            ,
+            .boxed = true,
+        },
+    };
+
+    for (cases) |c| {
+        var lex = Lexer.init(c.src, "test.duo");
+        var parser = Parser.init(&lex, alloc);
+        var module = try parser.parse_module();
+        var semantic = sema.Sema.init(alloc);
+        defer semantic.deinit();
+        semantic.idol_mode = true;
+        try semantic.check_module(&module);
+
+        var aw: std.Io.Writer.Allocating = .init(alloc);
+        defer aw.deinit();
+        var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+        cg.idol_mode = true;
+        try cg.emit_module(&module);
+        const output = aw.written();
+
+        // The case really is the module class it claims to be — otherwise both
+        // rows could quietly become the same module and the other lowering
+        // would stop being tested at all, which is how this got through.
+        try testing.expectEqual(c.boxed, std.mem.indexOf(u8, output, "lua_str_char(") != null);
+
+        if (c.boxed) {
+            // The header length, off the lua_String lua_str_char built.
+            try testing.expect(std.mem.indexOf(u8, output, "duo_str_len_hdr(lua_to_str(lua_str_char") != null);
+            // NEVER strlen: it stops at the NUL that IS the character.
+            try testing.expect(std.mem.indexOf(u8, output, "strlen(lua_to_str(lua_str_char") == null);
+        } else {
+            // The constant 1, emitted directly. Not strlen (which answers 0),
+            // and not a header read (there is no header in front of a native
+            // char*, and duo_str_len_hdr is not even declared in this module).
+            try testing.expect(std.mem.indexOf(u8, output, "return 1;") != null);
+            try testing.expect(std.mem.indexOf(u8, output, "duo_str_len_hdr") == null);
+            try testing.expect(std.mem.indexOf(u8, output, "strlen(duo_str_char_cstr") == null);
+            try testing.expect(std.mem.indexOf(u8, output, "lua_Value ") == null);
+        }
+    }
 }
 
 test "codegen: typed table module calls unbox boxed runtime results" {
