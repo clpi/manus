@@ -1,5 +1,5 @@
 main: i64 = ()
-  body = io:read("gate/idiom.id")
+  body = "gate/idiom.id":read()
   if body == nil
     return 1
   if body:match("law.catalog.zero")

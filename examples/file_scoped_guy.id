@@ -3,10 +3,10 @@ y: i32 = 8
 exp: float = 99.3
 age: f32 = 29.0
 
-getAge = fun(self)
+getAge = (self)
     self.age
 
-setAge = fun(self, age: num)
+setAge = (self, age: num)
     self.age = age
 
 props = {
@@ -19,5 +19,5 @@ props = {
     end,
 }
 
-incExp = fun(self)
+incExp = (self)
     self.age += 0.1

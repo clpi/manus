@@ -366,7 +366,7 @@ main: i64 = ()
     snone: str = nnone:to(str)
     print("")
     print("corpus_classify: FAIL — {snone} tracked .id files match no rule in docs/spec/corpus.md:")
-    io:write(unclassified)
+    stdout:write(unclassified)
     print("  Classify them; there is deliberately no silent default.")
     return 1
 
@@ -424,22 +424,22 @@ main: i64 = ()
   print("contradictions — where the class and the evidence disagree")
   print("  C1  historical yet gate-referenced       {sc1}")
   if nc1 != 0
-    io.write(c1)
+    stdout:write(c1)
     print("      (first 12; \"unmaintained\" is false for a file build.zig runs)")
   print("  C2  canonical, unreferenced, outside lib {sc2}")
   if nc2 != 0
-    io:write(c2)
+    stdout:write(c2)
     print("      (first 12; scratch inside the partition the deny table enforces)")
   print("  C3  canonical yet carries a generator marker  {sc3}")
   if nc3 != 0
-    io:write(c3)
+    stdout:write(c3)
   print("  C4  canonical yet embeds another language     {sc4}")
   print("      (named, not failed: lib/std embedding C is sanctioned, while")
   print("       examples/c_emit_* is `foreign` for the same act — one of these is wrong)")
 
   if emit
-    io:write("\n-- MANIFEST ROWS (class tier ref path) --\n")
-    io:write(rows)
+    stdout:write("\n-- MANIFEST ROWS (class tier ref path) --\n")
+    stdout:write(rows)
 
   print("")
   print("corpus_classify: PASS — {nfiles} files, 0 unclassified, {sdefault} resolved by a top-level policy default")

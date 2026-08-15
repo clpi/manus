@@ -76,16 +76,16 @@ semaphore: any = (n: i64)
     s = sync.channel(n)
     for _ = 1, n send(s, true) 
     {
-        acquire: any = ()sync.recv(s),
-        release: void = ()send(s, true),
-        probe: bool = ()sync.peek(s) != nil,
+        acquire = (): any sync.recv(s),
+        release = (): void send(s, true),
+        probe = (): bool sync.peek(s) != nil,
     }
 
 # WaitGroup: wait for N tasks to complete.
 waitgroup: any = (n: i64)
     ch = sync.channel(n)
     return {
-        done: void = ()send(ch, true),
+        done = (): void send(ch, true),
         wait: void = ()
             for _ = 1, n sync.recv(ch) 
         end,

@@ -6,7 +6,7 @@ main: i64 = ()
   if path == nil
     print("path nil")
     return 1
-  body = io:read(path)
+  body = path:read()
   if body == nil
     print("body nil")
     return 2

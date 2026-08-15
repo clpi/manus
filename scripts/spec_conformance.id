@@ -160,7 +160,7 @@ main: i64 = ()
   record("PIPE map", "main(): void\n    vs = {1, 2}\n    print(vs:len():map(.x))\nend\n", "2")
   record("PIPE filter", "main(): void\n    vs = {1, 2}\n    print(vs:len():filter(.x))\nend\n", "2")
 
-  io:write(report)
+  stdout:write(report)
   print("spec_conformance: " .. implemented:to(str) .. "/" .. checked:to(str) .. " implemented (floor " .. to(str)(baseline()) .. ")")
 
   if implemented < baseline()

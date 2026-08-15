@@ -18,25 +18,25 @@ get_level: str = ()
 
 debug = (msg: str)
   if log_level <= 0
-    io:write("[DEBUG] %s\n":format(msg))
+    stdout:write("[DEBUG] %s\n":format(msg))
 
 info = (msg: str)
   if log_level <= 1
-    io:write("[INFO] %s\n":format(msg))
+    stdout:write("[INFO] %s\n":format(msg))
 
 warn = (msg: str)
   if log_level <= 2
-    io:write("[WARN] %s\n":format(msg))
+    stdout:write("[WARN] %s\n":format(msg))
 
 error = (msg: str)
   if log_level <= 3
-    io:write("[ERROR] %s\n":format(msg))
+    stdout:write("[ERROR] %s\n":format(msg))
 
 print = (level: str, msg: str)
   if level == nil
-    io:write("%s\n":format(msg))
+    stdout:write("%s\n":format(msg))
   else
-    io:write("[%s] %s\n":format(level:upper(), msg))
+    stdout:write("[%s] %s\n":format(level:upper(), msg))
 
 with_fields = (level: str, fields: any, msg: str)
   if level == nil
@@ -48,4 +48,4 @@ with_fields = (level: str, fields: any, msg: str)
   if fields != nil
     for k, v in fields
       parts(parts:len() + 1) = "%s=%s":format(k, v:to(str))
-  io:write(parts:concat(" ") .. "\n")
+  stdout:write(parts:concat(" ") .. "\n")

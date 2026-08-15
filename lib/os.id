@@ -4,14 +4,14 @@
 read_file: any = (path: str)
   if path == nil
     return ""
-  io:read(path)
+  path:read()
 
 write_file: bool = (path: str, data: any)
   if path == nil
     return false
   if data == nil
     return false
-  io:write(data)
+  stdout:write(data)
   true
 
 getenv: any = (name: str)

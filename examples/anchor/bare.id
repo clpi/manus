@@ -21,11 +21,11 @@
 
 box: {
     n: i64
-    viaat: i64 = ()@:len()
-    direct: i64 = ()self.n
+    viaat = (): i64 size(@)
+    direct = (): i64 self.n
 }
 
-size: i64 = (b: box)b.n
+size = (b: box): i64 b.n
 
 small: box = { n = 5 }
 large: box = { n = 9 }

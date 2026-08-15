@@ -205,7 +205,7 @@ main: i64 = ()
 
   if diverge != 0
     print("native_differential: FAIL")
-    io.write(fails)
+    stdout:write(fails)
     return 1
   # An empty corpus passing every check is the failure mode this catches:
   # a mistyped corpus path would otherwise report a clean run.

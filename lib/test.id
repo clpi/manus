@@ -1,44 +1,44 @@
 start = (msg: str)
-  io:write("=== %s ===\n":format(msg))
+  stdout:write("=== %s ===\n":format(msg))
 
 assert_eq = (actual: any, expected: any, msg: str)
   if actual == expected
-    io:write("  PASS: %s\n":format(msg or ""))
+    stdout:write("  PASS: %s\n":format(msg or ""))
   else
-    io:write("  FAIL: %s (expected %s, got %s)\n":format(msg or "", expected:to(str), actual:to(str)))
+    stdout:write("  FAIL: %s (expected %s, got %s)\n":format(msg or "", expected:to(str), actual:to(str)))
 
 assert_ne = (actual: any, not_expected: any, msg: str)
   if actual != not_expected
-    io:write("  PASS: %s\n":format(msg or ""))
+    stdout:write("  PASS: %s\n":format(msg or ""))
   else
-    io:write("  FAIL: %s (expected not %s)\n":format(msg or "", not_expected:to(str)))
+    stdout:write("  FAIL: %s (expected not %s)\n":format(msg or "", not_expected:to(str)))
 
 assert_true = (val: any, msg: str)
   if val == true
-    io:write("  PASS: %s\n":format(msg or ""))
+    stdout:write("  PASS: %s\n":format(msg or ""))
   else
-    io:write("  FAIL: %s\n":format(msg or ""))
+    stdout:write("  FAIL: %s\n":format(msg or ""))
 
 assert_false = (val: any, msg: str)
   if val == false
-    io:write("  PASS: %s\n":format(msg or ""))
+    stdout:write("  PASS: %s\n":format(msg or ""))
   else
-    io:write("  FAIL: %s\n":format(msg or ""))
+    stdout:write("  FAIL: %s\n":format(msg or ""))
 
 assert_nil = (val: any, msg: str)
   if val == nil
-    io:write("  PASS: %s\n":format(msg or ""))
+    stdout:write("  PASS: %s\n":format(msg or ""))
   else
-    io:write("  FAIL: %s (expected nil, got %s)\n":format(msg or "", val:to(str)))
+    stdout:write("  FAIL: %s (expected nil, got %s)\n":format(msg or "", val:to(str)))
 
 assert_not_nil = (val: any, msg: str)
   if val != nil
-    io:write("  PASS: %s\n":format(msg or ""))
+    stdout:write("  PASS: %s\n":format(msg or ""))
   else
-    io:write("  FAIL: %s (expected not nil)\n":format(msg or ""))
+    stdout:write("  FAIL: %s (expected not nil)\n":format(msg or ""))
 
 done = ()
-  io:write("=== tests done ===\n")
+  stdout:write("=== tests done ===\n")
 
 # Supported @test.* / @bench / @time attributes (see also bench.attrs).
 attrs =

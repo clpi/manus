@@ -106,7 +106,7 @@ main: i64 = ()
     if bad != ""
       diverged = diverged + 1
       print("semantic_harness: DIVERGE " .. stem)
-      io.write(bad)
+      stdout:write(bad)
 
   ncols = 0
   for ti, t in cols

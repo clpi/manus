@@ -186,7 +186,7 @@ main: i64 = ()
     check("script.chomp", script.chomp("x\n"), "x")
     check("script.getenv fallback", script.getenv("DEFINITELY_UNSET_XYZ", "fb"), "fb")
 
-    io.write(report)
+    stdout:write(report)
     print("stdlib_correctness: " .. fails:to(str) .. " wrong of " .. checked:to(str)
         .. " (floor " .. baseline():to(str) .. ")")
 

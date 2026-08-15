@@ -195,7 +195,7 @@ report = ()
   print("")
   print("  §46 law.nominal — ZERO PHYSICAL OVERHEAD, read off the emitted C")
   print("")
-  io.write(rows)
+  stdout:write(rows)
   print("")
 
 verdict: i64 = ()

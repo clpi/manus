@@ -16,18 +16,18 @@ english_greet: str = (name: str)
 
 # Module that satisfies Greeter via table (using : method syntax)
 english_greeter = {}
-english_greeter.greet = fun(self, name: str): str
+english_greeter.greet = (self, name: str): str
     "Hello, " .. name .. "!"
-english_greeter.lang = fun(self): str
+english_greeter.lang = (self): str
     "en"
 
 # Module that satisfies Counter
 tally = { _count = 0 }
-tally.value = fun(self): i64
+tally.value = (self): i64
     self._count
-tally.increment = fun(self): void
+tally.increment = (self): void
     self._count = self._count + 1
-tally.decrement = fun(self): void
+tally.decrement = (self): void
     self._count = self._count - 1
 
 # Use the concept implementations with : method syntax

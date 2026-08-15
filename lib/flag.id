@@ -82,7 +82,7 @@ parse: any = (fs: any, argv: any)
         fval = nil
       f = fs.flags(fname)
       if f == nil
-        io.write("flag: unknown flag --" .. fname .. "\n")
+        stdout:write("flag: unknown flag --" .. fname .. "\n")
         return fs, false
       if f.is_bool
         if fval != nil
@@ -93,7 +93,7 @@ parse: any = (fs: any, argv: any)
         if fval == nil
           i = i + 1
           if i > n
-            io.write("flag: --" .. fname .. " requires a value\n")
+            stdout:write("flag: --" .. fname .. " requires a value\n")
             return fs, false
           fval = argv(i)
         if f.kind == "int"
@@ -116,7 +116,7 @@ parse: any = (fs: any, argv: any)
           fval = nil
         f = fs.flags(fname)
         if f == nil
-          io.write("flag: unknown flag -" .. fname .. "\n")
+          stdout:write("flag: unknown flag -" .. fname .. "\n")
           return fs, false
         if f.is_bool
           if fval != nil
@@ -127,7 +127,7 @@ parse: any = (fs: any, argv: any)
           if fval == nil
             i = i + 1
             if i > n
-              io.write("flag: -" .. fname .. " requires a value\n")
+              stdout:write("flag: -" .. fname .. " requires a value\n")
               return fs, false
             fval = argv(i)
           if f.kind == "int"
@@ -165,7 +165,7 @@ print_defaults = (fs: any)
     prefix = "  -" .. name
     if not f.is_bool
       prefix = prefix .. " value"
-    io.write(prefix .. "\n        " .. f.usage:to(str) .. " (default: " .. f.default:to(str) .. ")\n")
+    stdout:write(prefix .. "\n        " .. f.usage:to(str) .. " (default: " .. f.default:to(str) .. ")\n")
 
 # ----- Global default flag set -----
 

@@ -412,7 +412,7 @@ main: i64 = ()
     inv = ninversions:to(str)
     print("  LADDER INVERSIONS — {inv} reached a rung while failing one below it")
     if inversions != ""
-        io.write(inversions)
+        stdout:write(inversions)
     print("")
 
     # Positive controls, one per rung this repo is known to reach. A rung that

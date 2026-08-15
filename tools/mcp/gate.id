@@ -78,9 +78,9 @@ work = "/tmp/idol-mcp-gate"
 
 report = (outcome: str, what: str, detail: str)
   if outcome == "ok"
-    io:write("  ok   " .. what .. "\n")
+    stdout:write("  ok   " .. what .. "\n")
   else
-    io:write("  FAIL " .. what .. "  -  " .. detail .. "\n")
+    stdout:write("  FAIL " .. what .. "  -  " .. detail .. "\n")
 
 -- Drive a server: feed it `lines` on stdin, hand back everything it wrote.
 -- stdin is a FILE, not a pipe, because the transport is newline-delimited
@@ -120,7 +120,7 @@ member: bool = (blob: str, needle: str)
 main: i64 = ()
   fails = 0
   fs.mkdirall(work)
-  io:write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
+  stdout:write("mcp-gate: the MCP servers must SERVE, not merely compile\n")
 
   capturegood = exact_capture("printf capturegood")
   if capturegood.outcome != "ok" or not member(capturegood.output, "capturegood")
@@ -140,7 +140,7 @@ main: i64 = ()
   -- duo-bench: handshake, exact tool census, named coordination tools,
   -- and a VALUE round trip through the file-claim lock.
   -- ---------------------------------------------------------------
-  io:write("bench.id\n")
+  stdout:write("bench.id\n")
   bench = "{root}/tools/mcp/bench.id"
 
   -- A scratch path for the claim probe. Claims are repo-relative, and this
@@ -286,7 +286,7 @@ main: i64 = ()
   -- ---------------------------------------------------------------
   -- duo-lsp
   -- ---------------------------------------------------------------
-  io.write("lsp.id\n")
+  stdout:write("lsp.id\n")
   lsp = "{root}/tools/mcp/lsp.id"
   lreq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_language_features\",\"arguments\":{}}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_agent_canonical_index\",\"arguments\":{}}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_meta_catalog\",\"arguments\":{}}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_complexity\",\"arguments\":{\"path\":\"comp.map\"}}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_grammar_spec_read\",\"arguments\":{}}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_directive_hierarchy_read\",\"arguments\":{}}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_table_shapes\",\"arguments\":{\"file_path\":\"examples/hello.id\"}}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{\"name\":\"idol_multiplier_opportunities\",\"arguments\":{\"file_path\":\"examples/hello.id\"}}}\n"
   lout = drive(lsp, "lsp", lreq)
@@ -349,7 +349,7 @@ main: i64 = ()
   -- is an upvalue call the C stage rejects. Nothing had ever run it, so
   -- nothing had ever said so.
   -- ---------------------------------------------------------------
-  io.write("zls.id\n")
+  stdout:write("zls.id\n")
   zls = "{root}/tools/mcp/zls.id"
   zreq = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n" .. "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"zig_format\",\"arguments\":{\"file_path\":\"/dev/null\"}}}\n"
   zout = drive(zls, "zls", zreq)
@@ -384,11 +384,11 @@ main: i64 = ()
   -- a bad neighbour. The server .out files land in work already.
   os.execute("rm -f ./gate.out")
 
-  io.write("\n")
+  stdout:write("\n")
   if fails == 0
-    io.write("mcp-gate: PASS  -  all three servers handshake, serve their full tool census, and answer by value\n")
+    stdout:write("mcp-gate: PASS  -  all three servers handshake, serve their full tool census, and answer by value\n")
     return 0
-  io.write("mcp-gate: FAIL  -  " .. fails:to(str) .. " check(s) failed\n")
+  stdout:write("mcp-gate: FAIL  -  " .. fails:to(str) .. " check(s) failed\n")
   -- `std.os.exit`, NOT `return 1`. A Duo script's `main` return value is
   -- DROPPED  -  measured here: the gate printed 13 failures and the process
   -- still exited 0, which `zig build` reads as success. A gate that cannot

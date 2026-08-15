@@ -16,7 +16,7 @@ Half = {}
 Half:hash() -> i64
     return 7
 
-use_both<T: Hashable + Counter>(target: T): i64
+fun use_both<T: Hashable + Counter>(target: T): i64
     target:hash() + target:value()
 
 @comp.assert(@satisfies(Both, "Hashable"), "Both is Hashable")

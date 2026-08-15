@@ -4,8 +4,8 @@ pid: str = ()
   # Get PID via /proc/self (Linux) or POSIX getpid
   f = io.open("/proc/self/stat", "r")
   if f
-    line = io.read(f, "*l")
-    io.close(f)
+    line = f:read("*l")
+    f:close()
     if line
       space_idx = line:find(" ")
       if space_idx
@@ -13,8 +13,8 @@ pid: str = ()
   # Fallback: use Lua's os.execute to capture $$
   handle = io.popen("echo $$", "r")
   if handle
-    result = io.read(handle, "*l")
-    io.close(handle)
+    result = handle:read("*l")
+    handle:close()
     if result
       return result
   "0"
@@ -22,8 +22,8 @@ pid: str = ()
 spawn: i64 = (cmd: str)
   handle = io.popen(cmd .. " 2>&1 & echo $!", "r")
   if handle
-    pid_str = io.read(handle, "*l")
-    io.close(handle)
+    pid_str = handle:read("*l")
+    handle:close()
     if pid_str
       return pid_str:to(i64) or 0
   0

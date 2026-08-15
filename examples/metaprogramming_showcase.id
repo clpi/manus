@@ -146,11 +146,11 @@ concept Counter
 
 # Create types that satisfy concepts
 counter = { _val = 0 }
-counter.increment = fun(self): void
+counter.increment = (self): void
     self._val = self._val + 1
-counter.value = fun(self): i64
+counter.value = (self): i64
     self._val
-counter.to_string = fun(self): str
+counter.to_string = (self): str
     "Counter(" .. to(str)(self._val) .. ")"
 
 # Use : method syntax
@@ -183,7 +183,7 @@ Bump = {}
 Bump:hash(): i64
     100
 
-bump<T: Hashable>(target: T): i64
+fun bump<T: Hashable>(target: T): i64
     target:hash() + 1
 
 @comp.assert(@satisfies(Bump, "Hashable"), "Bump satisfies Hashable")
@@ -254,13 +254,13 @@ print("\n-- 12. Runtime metamethods --")
 vector_mt = {}
 vector_mt.__index = vector_mt
 
-vector_mt.new = fun(x, y)
+vector_mt.new = (x, y)
     setmetatable({ x = x, y = y }, vector_mt)
 
-vector_mt.__add = fun(a, b)
+vector_mt.__add = (a, b)
     vector_mt.new(a.x + b.x, a.y + b.y)
 
-vector_mt.__tostring = fun(self)
+vector_mt.__tostring = (self)
     "Vec(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 
 v1 = vector_mt.new(1, 2)

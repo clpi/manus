@@ -894,8 +894,8 @@ if ends_with(uri, ".lua")
 send_message: void = t
 body = io.lsp.json.encode(t)
 header = "Content-Length: %d\r\n\r\n":format(body:len())
-io.write(header, body)
-io.flush()
+stdout:write(header, body)
+stdout:flush()
 reply: void = (id, result)
   m = {}
   m.jsonrpc = "2.0"
@@ -1198,7 +1198,7 @@ scan_workspace: void = ()
 read_line: any = ()
   out = {}
   while true
-    c = io.read(1)
+    c = stdin:read(1)
     if c == nil
       if out:len() == 0
         return nil
@@ -1224,7 +1224,7 @@ read_message: any = ()
         content_length = n
   if content_length < 0
     return nil
-  body = io.read(content_length)
+  body = stdin:read(content_length)
   if body == nil
     return nil
   io.lsp.json.decode(body)

@@ -8,15 +8,15 @@ concept Equatable
 point = {}
 point.x = 10.0
 point.y = 20.0
-point.clone = fun(self)
+point.clone = (self)
     c = {}
     c.x = self.x
     c.y = self.y
     c
-point.eq = fun(self, other): bool
+point.eq = (self, other): bool
     if other == nil return false 
     self.x == other.x and self.y == other.y
-point.to_string = fun(self): str
+point.to_string = (self): str
     "Point(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 
 # Use derive patterns with : method syntax

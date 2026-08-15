@@ -4,6 +4,6 @@
 # Physical realization may be pipe, terminal, socket, or memory.
 
 main: i64 = ()
-  line = io:read()
-  io:write(line)
+  line = stdin:read()
+  stdout:write(line)
   0

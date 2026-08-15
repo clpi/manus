@@ -729,12 +729,12 @@ main: i64 = ()
 
   if nofixture != ""
     print("  NO FIXTURE — asserted somewhere, demonstrated nowhere")
-    io.write(nofixture)
+    stdout:write(nofixture)
     print("")
 
   if denytotal > 0
     print("  DENY FIXTURES — the diagnostic IS the capability; these must be rejected")
-    io.write(denyrows)
+    stdout:write(denyrows)
     print("")
 
   # The G column's repo-wide caveat, measured rather than remembered. The

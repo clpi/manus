@@ -142,7 +142,7 @@ map_copy_dst = { id = 1 }
 if maps.copy(map_copy_dst, map_subject) != 2 or map_copy_dst.score != 3
     error("std.maps.copy should copy direct table entries")
 # A `fun` body must be on its own line; the single-line form never parses.
-map_eq = fun(a, b)
+map_eq = (a, b)
     a == b
 if not maps.equal_func(map_subject, map_clone, map_eq)
     error("std.maps.equal_func should compare direct table entries")

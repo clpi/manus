@@ -38,12 +38,12 @@ concept Combinable
 distance = {}
 distance.x = 3.0
 distance.y = 4.0
-distance.measure = fun(self, unit: str): f64
+distance.measure = (self, unit: str): f64
     mag = self.x * self.x + self.y * self.y:sqrt()
     if unit == "km"
         return mag / 1000.0
     mag
-distance.label = fun(self): str
+distance.label = (self): str
     "Distance(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 
 # ── Section 3: Meta Blocks (@ compile-time evaluation) ─────────────────────

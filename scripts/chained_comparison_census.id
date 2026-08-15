@@ -137,7 +137,7 @@ main: i64 = ()
         if at_end or sep
             if i > start
                 path = paths:sub(start, i - 1)
-                src = io:read(path)
+                src = path:read()
                 if src != nil and src != ""
                     census_files += 1
                     total += scan(src, path)

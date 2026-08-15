@@ -75,8 +75,8 @@ onnx_model_save: any = (model: any, path: str)
   f = io.open(path, "w")
   if f == nil
     return { ok = false, error = "Cannot create file: " .. path }
-  io.write(f, data)
-  io.close(f)
+  f:write(data)
+  f:close()
   { ok = true, path = path, size = data:len() }
 
 # ═══════════════════════════════════════════════════════════════
@@ -106,8 +106,8 @@ pytorch_state_dict_save: any = (state_dict: any, path: str)
   f = io.open(path, "w")
   if f == nil
     return { ok = false, error = "Cannot create file: " .. path }
-  io.write(f, encoded)
-  io.close(f)
+  f:write(encoded)
+  f:close()
   { ok = true, path = path, size = encoded:len() }
 
 # ═══════════════════════════════════════════════════════════════
@@ -151,9 +151,9 @@ safetensors_save: any = (st: any, path: str)
     return { ok = false, error = "Cannot create file: " .. path }
   # Write 8-byte header length prefix, then header JSON
   header_len = data.header_size
-  io.write(f, string.pack("<I8", header_len))
-  io.write(f, data.header)
-  io.close(f)
+  f:write(string.pack("<I8", header_len))
+  f:write(data.header)
+  f:close()
   { ok = true, path = path, size = 8 + data.header_size + data.data_size }
 
 # ═══════════════════════════════════════════════════════════════
@@ -199,8 +199,8 @@ gguf_writer_save: any = (gw: any, path: str)
   f = io.open(path, "w")
   if f == nil
     return { ok = false, error = "Cannot create file: " .. path }
-  io.write(f, data.data)
-  io.close(f)
+  f:write(data.data)
+  f:close()
   { ok = true, path = path, size = data.size }
 
 # ═══════════════════════════════════════════════════════════════

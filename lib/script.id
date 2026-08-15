@@ -106,7 +106,7 @@ capture: str = (cmd: str)
   path = "/tmp/duo-capture"
   run("rm -f '" .. path .. "'")
   run(cmd .. " > '" .. path .. "' 2>/dev/null")
-  body = io:read(path)
+  body = path:read()
   run("rm -f '" .. path .. "'")
   if body == nil
     return ""
@@ -242,7 +242,7 @@ fs_is_dir: bool = (p: str)
   ok("test -d '" .. p .. "'")
 
 fs_read: str = (p: str)
-  body = io:read(p)
+  body = p:read()
   if body == nil
     return ""
   body

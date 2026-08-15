@@ -65,7 +65,7 @@ main: i64 = ()
       start = i + 1
     i = i + 1
 
-  io:write(report)
+  stdout:write(report)
   print("stdlib_embed: " .. broken:to(str) .. " unreachable of " .. total:to(str) .. " (ceiling " .. to(str)(ceiling()) .. ")")
 
   if total == 0

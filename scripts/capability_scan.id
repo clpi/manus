@@ -348,7 +348,7 @@ main: i64 = ()
       pre: str = head(root)
       print("")
       print("  modules by ambient site count:")
-      io:write(script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
+      stdout:write(script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | grep -v -E {q}{mediator}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
 
     # THE RATCHET. Measured 2026-08-08 at 878e0d1 in a detached worktree,
     # so no session's uncommitted edits are inside the number. Both

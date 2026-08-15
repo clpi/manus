@@ -10,7 +10,7 @@ Good:hash() -> i64
 
 Bad = {}
 
-digest<T: Hashable>(value: T): i64
+fun digest<T: Hashable>(value: T): i64
     value:hash()
 
 @comp.assert(@satisfies(Good, "Hashable"), "Good satisfies Hashable")

@@ -369,7 +369,7 @@ main: i64 = ()
       anypat = "{purepat}|{randpat}|{subpat}"
       print("")
       print("  modules by math. site count:")
-      io.write(std.script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
+      stdout:write(std.script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
 
     # THE RATCHET. Measured 2026-08-08 in a detached worktree, so no
     # session's uncommitted edits are inside the number.

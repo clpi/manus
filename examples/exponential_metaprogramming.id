@@ -21,7 +21,7 @@ validate_numeric(type_args)
   return true
 
 @modify(validate_numeric)
-add<T>(a: T, b: T) -> T
+fun add<T>(a: T, b: T) -> T
   return a + b
 
 print("add(1, 2) = " .. add(1, 2))

@@ -29,7 +29,7 @@ token: {
     span: i64
     width(pad) = (extra: i64): i64 self.span + extra
     width(trim) = (extra: i64): i64 self.span - extra
-    plain: i64 = (extra: i64)self.span * extra
+    plain = (extra: i64): i64 self.span * extra
 }
 
 t: token = { span = 4 }

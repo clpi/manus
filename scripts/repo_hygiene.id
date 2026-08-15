@@ -18,7 +18,7 @@ _tracked: bool = (pattern: str)
 
 _report: bool = (bad: bool, msg: str)
   if bad
-    io:write("repo_hygiene: FAIL — " .. msg .. "\n")
+    stdout:write("repo_hygiene: FAIL — " .. msg .. "\n")
   bad
 
 main: i64 = ()

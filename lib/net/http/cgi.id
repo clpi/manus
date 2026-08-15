@@ -6,10 +6,10 @@ serve = (handler: any)
   query = os.getenv("QUERY_STRING") or ""
   body = ""
   if method == "POST" or method == "PUT"
-    body = io.read()
+    body = stdin:read()
   resp = handler(method, path, query, body)
-  io.write("Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n")
-  io.write(resp)
+  stdout:write("Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n")
+  stdout:write(resp)
 
 request: any = ()
   { method = os.getenv("REQUEST_METHOD") or "GET", path = os.getenv("PATH_INFO") or "/", query = os.getenv("QUERY_STRING") or "" }

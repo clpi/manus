@@ -112,8 +112,8 @@ format: str = (fmt: str, args: any)
 
 println = (fmt_str: str, ...args)
   s = format(fmt_str, args)
-  io.write(s)
-  io.write("\n")
+  stdout:write(s)
+  stdout:write("\n")
 
 bytes: str = (size: any)
   if size == nil

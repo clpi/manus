@@ -82,8 +82,8 @@ start: any = (proc: any, config: any)
   # Capture PID and run in background
   handle = io.popen(env_prefix .. full_cmd .. " 2>&1 & echo $!")
   if handle
-    pid_str = io.read(handle, "*l")
-    io.close(handle)
+    pid_str = handle:read("*l")
+    handle:close()
     if pid_str
       proc.pid = pid_str:to(i64) or 0
       proc.running = true
@@ -102,8 +102,8 @@ wait: any = (proc: any)
     # Get exit code via $?
     handle = io.popen("echo $?")
     if handle
-      code_str = io.read(handle, "*l")
-      io.close(handle)
+      code_str = handle:read("*l")
+      handle:close()
       proc.exit_code = code_str:to(i64) or 0
     else
       proc.exit_code = 0

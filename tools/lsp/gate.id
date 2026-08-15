@@ -88,9 +88,9 @@ fails = 0
 
 report = (ok: bool, what: str, detail: str)
   if ok
-    io:write("  ok   " .. what .. "\n")
+    stdout:write("  ok   " .. what .. "\n")
   else
-    io:write("  FAIL " .. what .. " — " .. detail .. "\n")
+    stdout:write("  FAIL " .. what .. " — " .. detail .. "\n")
 
 # LSP framing. Not newline-delimited JSON: the server reads a header, parses
 # Content-Length, and then reads exactly that many bytes. A gate that spoke
@@ -166,8 +166,8 @@ at: str = (line: i64, col: i64)
 
 main: i64 = ()
   std.fs.mkdirall(work)
-  io.write("lsp-gate: the LSP must SERVE, not merely compile\n")
-  io.write("  server: " .. server .. "\n")
+  stdout:write("lsp-gate: the LSP must SERVE, not merely compile\n")
+  stdout:write("  server: " .. server .. "\n")
 
   session = msg(1, "initialize", "{}") .. note("initialized", "{}") .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. uri .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. doc .. "\"}}") .. note("textDocument/didClose", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}") .. msg(2, "workspace/symbol", "{\"query\":\"total\"}") .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. uri .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. doc .. "\"}}") .. msg(3, "textDocument/documentSymbol", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}") .. msg(4, "textDocument/hover", at(1, 2)) .. msg(5, "textDocument/definition", at(1, 2)) .. msg(6, "textDocument/semanticTokens/full", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}") .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. cdr .. "\"}}") .. msg(7, "textDocument/inlayHint", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}") .. msg(8, "textDocument/codeLens", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}") .. msg(10, "textDocument/documentSymbol", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}") .. msg(11, "textDocument/codeLens", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}") .. msg(9, "textDocument/nosuch", "{}") .. msg(99, "shutdown", "{}") .. frame("{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}")
   # CLOSE THE DOCUMENT, THEN REOPEN IT. Everything scored below happens
@@ -181,7 +181,7 @@ main: i64 = ()
 
   if out:len() == 0
     check(false, "the server wrote anything at all", "zero bytes on stdout — it did not start, or it died before the first reply")
-    io.write("\nlsp-gate: FAIL — no session\n")
+    stdout:write("\nlsp-gate: FAIL — no session\n")
     std.os.exit(1)
     return 1
 
@@ -297,15 +297,15 @@ main: i64 = ()
     gen = fs.read_file(work .. "/legend.txt") or ""
     check(has(gen, "already current"), "the committed legend re-derives from docs/spec/roles.md", "regenerating changed the block — commit the regeneration, do not hand-edit it")
   else
-    io:write("  OWED docs/spec/roles.md is absent — the legend cannot be re-derived, so H-1 drift is UNCHECKED this run\n")
+    stdout:write("  OWED docs/spec/roles.md is absent — the legend cannot be re-derived, so H-1 drift is UNCHECKED this run\n")
 
   os.execute("rm -f ./gate.out")
 
-  io:write("\n")
+  stdout:write("\n")
   if fails == 0
-    io:write("lsp-gate: PASS — the server handshakes, survives a close, and answers by value\n")
+    stdout:write("lsp-gate: PASS — the server handshakes, survives a close, and answers by value\n")
     return 0
-  io:write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
+  stdout:write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
   # `os.exit`, NOT `return 1`. A Duo script's `main` return value is
   # DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
   # mcp-gate learned this by printing 13 failures into a green build.

@@ -12,8 +12,8 @@ load: any = (path: str)
   f = io.open(path, "rb")
   if f == nil
     return { ok = false, error = "Cannot open file: " .. path }
-  raw = io.read(f, "*a")
-  io.close(f)
+  raw = f:read("*a")
+  f:close()
   if raw == nil or raw:len() == 0
     return { ok = false, error = "Empty file: " .. path }
   png_result = png_mod.decode(raw)
@@ -33,8 +33,8 @@ save: any = (image: any, path: str, format: str)
   f = io.open(path, "wb")
   if f == nil
     return { ok = false, error = "Cannot create file: " .. path }
-  io.write(f, png_data.data)
-  io.close(f)
+  f:write(png_data.data)
+  f:close()
   { ok = true, path = path, format = "png" }
 
 new: any = (width: i64, height: i64, channels: i64)

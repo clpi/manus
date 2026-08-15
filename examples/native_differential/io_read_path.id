@@ -1,5 +1,5 @@
 main: i64 = ()
-  text = io:read("gate/idiom.id")
+  text = "gate/idiom.id":read()
   if text == nil
     print("nil")
     return 1
