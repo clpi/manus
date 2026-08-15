@@ -352,11 +352,13 @@ pub fn isBootstrapForeignCall(callee: []const u8) bool {
         "malloc",
         "memset",
         "printf",
+        "setenv",
         "sin",
         "snprintf",
         "sqrt",
         "strcmp",
         "strlen",
+        "unsetenv",
     };
     for (bootstrap) |name| {
         if (std.mem.eql(u8, callee, name)) return true;

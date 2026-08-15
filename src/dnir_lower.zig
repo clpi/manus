@@ -5166,6 +5166,30 @@ fn lowerEnvStore(ctx: *LowerCtx, key_expr: *const ast.Expr, value: *const ast.Ex
     try ctx.emit(.{ .op = .call_extern, .callee = "setenv", .ty = .i64 });
 }
 
+/// `env:remove(k)` — POSIX `unsetenv(k)`. THE REMOVAL EDGE.
+///
+/// `lowerEnvStore` above states that removal is `unsetenv`, "a different edge,
+/// and is deliberately not spelled as an assignment". It had nowhere to point;
+/// this is where. The distinction is observable and not stylistic:
+///
+///     env("K") = ""        K is PRESENT and empty      setenv(K, "", 1)
+///     env:remove("K")      K is ABSENT                 unsetenv(K)
+///
+/// Collapsing them onto `env("K") = nil` would destroy the one distinction the
+/// read face already cannot express (the §17 fake-nil identity written up in
+/// idol-native/docs/env-identity.md), so the assignment spelling is REFUSED in
+/// sema and names this edge in its diagnostic rather than being lowered here.
+///
+/// `unsetenv` returns int and the result is discarded, exactly as the `setenv`
+/// store's is: a store is a statement, not a value.
+fn lowerEnvRemove(ctx: *LowerCtx, key_expr: *const ast.Expr) Error!dnir.Value {
+    const k = try lowerExprCons(ctx, key_expr, .single);
+    try ensureExtern(ctx, "os", "unsetenv", "unsetenv");
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = k });
+    try ctx.emit(.{ .op = .call_extern, .callee = "unsetenv", .ty = .i64 });
+    return .void;
+}
+
 /// `os.cwd` — the root-projected working directory, not `getcwd` / `os.cwd()`.
 fn cwd(expr: *const ast.Expr) bool {
     if (expr.* != .field) return false;
@@ -5288,6 +5312,18 @@ fn lowerSubjectCall(
         std.mem.eql(u8, expr.method_call.obj.name.ident, "test"))
     {
         if (try lowerTestRelation(ctx, expr.method_call.method, expr.method_call.args)) |v| return v;
+    }
+    // THE ENVIRONMENT'S REMOVAL EDGE, asked before the graph-fact path for the
+    // same reason the test world's relations are: it is a WORLD projection, not
+    // an application of a relation the graph can see. `table_apply` has already
+    // converged `env:remove(k)` onto the anchored subject `os.env`, so exactly
+    // one shape arrives here — and the bare face reaches this only where the
+    // program does not bind `env`, which that pass decides.
+    if (expr.* == .method_call and env(expr.method_call.obj) and
+        std.mem.eql(u8, expr.method_call.method, "remove") and
+        expr.method_call.args.len == 1 and !ctx.locals.contains("os"))
+    {
+        return lowerEnvRemove(ctx, expr.method_call.args[0]);
     }
     if (ctx.occurrences.get(expr)) |application| {
         if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr)) {
@@ -6067,6 +6103,22 @@ fn lowerSubjectTo(
         return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
     }
     if (std.mem.eql(u8, target.name.ident, "i64")) {
+        // THE SUBJECT MUST BE TEXT, and this arm did not ask. `duo_str_to_i64`
+        // takes a `const char*` (`src/idol_str_bootstrap.c`), so a non-text
+        // subject is DEREFERENCED AS AN ADDRESS: `x = 42 ; x:to(i64)` built,
+        // linked, and SEGFAULTED (exit 139, reproduced 3 of 3 — measured in
+        // idol-native/docs/edge-canon.md §2.6).
+        //
+        // The `str` arm below is the template: it refuses a subject it cannot
+        // prove integral, for exactly this reason and with exactly this
+        // diagnostic. The two arms of one conversion table disagreed about
+        // whether checking the subject was their job, and the arm that did not
+        // check is the one that produced undefined behaviour rather than a
+        // refusal. A conversion that cannot be performed must be REFUSED, not
+        // emitted and left to the loader.
+        if (!exprIsStr(ctx, subject)) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
+        }
         const s = try lowerExpr(ctx, subject);
         try ensureExtern(ctx, "compat", "str", "duo_str_to_i64");
         if (consumption == .discard) {

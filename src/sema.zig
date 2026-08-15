@@ -1139,6 +1139,46 @@ pub const Sema = struct {
         return sym;
     }
 
+    /// The environment projection used as a PLACE, in any of its four lawful
+    /// spellings, or null. Used only to REFUSE `env(k) = nil`.
+    ///
+    ///     env(k) = v        canonical (the user's own ruling)
+    ///     env k = v         the string face of the same application
+    ///     os.env(k) = v     anchored
+    ///     os.env[k] = v     legacy bracket accessor
+    ///
+    /// AND IT NEVER TAKES A NAME. `userBinding` decides the bare face exactly
+    /// as `is_builtin_global` does for every other member edge of an injected
+    /// world: a program that binds `env` or `os` owns the word, and `env(2) =
+    /// 99` on a local table is an ordinary table store this must not touch.
+    fn envPlaceLoc(self: *const Sema, tgt: *const ast.Expr) ?ast.Loc {
+        const anchored = struct {
+            fn f(e: *const ast.Expr) bool {
+                return e.* == .field and e.field.obj.* == .name and
+                    std.mem.eql(u8, e.field.obj.name.ident, "os") and
+                    std.mem.eql(u8, e.field.field, "env");
+            }
+        }.f;
+        switch (tgt.*) {
+            .index => |ix| {
+                if (!anchored(ix.obj)) return null;
+                if (self.userBinding("os") != null) return null;
+                return ix.loc;
+            },
+            .call => |c| {
+                if (c.args.len != 1) return null;
+                if (anchored(c.func)) {
+                    return if (self.userBinding("os") != null) null else c.loc;
+                }
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "env")) {
+                    return if (self.userBinding("env") != null) null else c.loc;
+                }
+                return null;
+            },
+            else => return null,
+        }
+    }
+
     fn check_assign_target(self: *Sema, tgt: *ast.Expr) SemaError!void {
         switch (tgt.*) {
             .name => |n| {
@@ -2474,6 +2514,28 @@ pub const Sema = struct {
                 }
                 for (as.targets, 0..) |tgt, i| {
                     try self.check_assign_target(tgt);
+                    // REMOVAL IS A DIFFERENT EDGE, and this is where it is
+                    // said so. `env(k) = nil` reads as "set it to nothing" and
+                    // is not that: POSIX `setenv(k, "", 1)` leaves the variable
+                    // PRESENT and empty, `unsetenv(k)` makes it ABSENT, and the
+                    // write face is the only place on this surface where the
+                    // two are distinguishable at all — the read face collapses
+                    // them (idol-native/docs/env-identity.md, §17 fake nil).
+                    // Admitting the assignment spelling would make the
+                    // distinction unrecoverable rather than merely unobservable.
+                    //
+                    // REFUSED IN SEMA, not at a backend, because both backends
+                    // were wrong in DIFFERENT ways and neither said so: the
+                    // direct backend answered the generic `assign-value:nil`
+                    // and named nothing, and the C backend BUILT it — writing
+                    // `lua_val_nil()` into a detached Lua table with no
+                    // connection to the process environment, a silent no-op.
+                    // `idol check` reported no errors for both.
+                    if (i < as.values.len and as.values[i].* == .nil) {
+                        if (self.envPlaceLoc(tgt)) |loc| {
+                            self.err(loc, "removing an environment variable is a different edge from setting one: write `env:remove(k)`, not `env(k) = nil` — `env(k) = \"\"` sets it to the EMPTY value and keeps it present", .{});
+                        }
+                    }
                     // c0 §41 — AN IMPLICIT LOCAL TAKES THE CASE-SET OF THE
                     // VALUE THAT CREATED IT. `check_assign_target` binds an
                     // undeclared duo-mode name as `any`, discarding what the
@@ -3311,6 +3373,25 @@ pub const Sema = struct {
                 }
                 if (self.scope.needs_explicit_global() and !self.is_builtin_global(n.ident)) {
                     self.err(n.loc, "use of undeclared global '{s}'", .{n.ident});
+                    return .any;
+                }
+                // AN INJECTED WORLD'S MEMBER EDGE IS NOT A MODULE GLOBAL.
+                // `env(k)` reaches here as the bare name `env` — the world
+                // supplies the reach, so neither guard above fires — and
+                // recording it as a dynamic global made the C backend emit
+                // `static lua_Value duo_g_env;` into a translation unit that
+                // never declares `lua_Value`. MEASURED: every program that
+                // read OR wrote an environment variable failed to compile on
+                // `--backend=c` with "unknown type name 'lua_Value'", and the
+                // failing declaration was for a name with no runtime value at
+                // all. The projection consumes the name at compile time.
+                //
+                // `userBinding`, not `lookup`: a program that binds `env`
+                // itself owns the word and keeps its global, by the same rule
+                // that gives it the name everywhere else.
+                if (subject_home.injectedWorldProvidingFor(self.source_path, n.ident) != null and
+                    self.userBinding(n.ident) == null)
+                {
                     return .any;
                 }
                 // Unknown identifier → treat as dynamic global (Lua scripts)

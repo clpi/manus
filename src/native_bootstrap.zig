@@ -90,6 +90,19 @@ fn methodApplication(expr: *const Expr) bool {
     {
         return true;
     }
+    // `os.env:remove(k)` — THE ENVIRONMENT PROJECTION'S REMOVAL EDGE, the same
+    // class as `stdout:write` above: a world projection lowered to a foreign
+    // call (`unsetenv`), with no relation in the graph for the application to
+    // bind to. `table_apply` converges the bare `env:remove(k)` onto this
+    // anchored subject, so one shape is enough here — and the bare face is
+    // admitted there only where the program does not bind `env`.
+    if (std.mem.eql(u8, mc.method, "remove") and mc.args.len == 1 and
+        mc.obj.* == .field and mc.obj.field.obj.* == .name and
+        std.mem.eql(u8, mc.obj.field.obj.name.ident, "os") and
+        std.mem.eql(u8, mc.obj.field.field, "env"))
+    {
+        return true;
+    }
     if (std.mem.eql(u8, mc.method, "read") and mc.args.len == 0 and receiverLooksStrish(mc.obj)) {
         return true;
     }

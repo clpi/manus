@@ -406,6 +406,11 @@ pub const CodeGen = struct {
     /// active function carries @noalloc — heap emit sites call guardNoAlloc.
     current_func_noalloc: bool = false,
     noalloc_violation: ?[]const u8 = null,
+    /// First `std.<name>` reference whose module this compiler cannot find, and
+    /// the location that needs it. Recorded by `collect_require_names` and
+    /// refused by `refuseUnresolvableStdModule`. See that function for the
+    /// measurement — it is a SIGSEGV today, not a diagnostic.
+    unresolved_std_module: ?struct { path: []const u8, loc: ast.Loc } = null,
     /// Per-scope set of `lua_Value` locals known to hold numbers only (safe to
     /// unbox in binops without going through metamethod dispatch).
     numeric_lua_scopes: std.ArrayList(std.StringHashMapUnmanaged(void)) = .empty,
@@ -1278,6 +1283,57 @@ pub const CodeGen = struct {
         return null;
     }
 
+    /// `os.env:remove(k)` — THE ENVIRONMENT'S REMOVAL EDGE.
+    ///
+    /// `table_apply` converges the bare `env:remove(k)` onto this anchored
+    /// subject, so exactly one shape reaches both backends and the bare face is
+    /// admitted only where the program does not bind `env`.
+    ///
+    /// It is a distinct edge and not an assignment because `setenv(k, "", 1)`
+    /// and `unsetenv(k)` have different observable results: the first leaves
+    /// the variable PRESENT and empty. See `dnir_lower.lowerEnvRemove`.
+    fn env_remove_method(_: *const CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) bool {
+        if (!std.mem.eql(u8, method, "remove") or args.len != 1) return false;
+        if (obj.* != .field) return false;
+        const f = obj.field;
+        return f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "os") and
+            std.mem.eql(u8, f.field, "env");
+    }
+
+    /// THE ENVIRONMENT PROJECTION as a value or a place — `env(k)`, `env k`,
+    /// `os.env(k)`, `os.env[k]` — returning the KEY, or null.
+    ///
+    /// `table_apply` has already converged all four faces onto the single
+    /// `.index` node whose object is the anchored `os.env`, and it declines the
+    /// conversion for any name the program binds, so this recognizer sees the
+    /// world's own edge and never a user table named `env`.
+    ///
+    /// WHY THIS EXISTS. Without it the C backend had no environment projection
+    /// at all, and failed in TWO different ways depending on whether the module
+    /// happened to need the boxed runtime:
+    ///
+    ///   slim mode:  `static lua_Value duo_g_env;` plus `use of undeclared
+    ///               identifier 'os'` — a loud C compile failure.
+    ///   full mode:  `lua_table_set(lua_table_get_str_lit(os, "env", ...), ...)`
+    ///               — a store into a Lua table with NO connection to the
+    ///               process environment. MEASURED: `env("K") = "set"` followed
+    ///               by `os.getenv("K")` compiled, ran, and answered 0. A SILENT
+    ///               NO-OP, which is the failure class this tree has shipped
+    ///               nine of.
+    ///
+    /// `getenv`/`setenv`/`unsetenv` are plain libc and `<stdlib.h>` is already
+    /// unconditional in the prelude, so this needs no new include and no boxed
+    /// value in either mode.
+    fn env_projection_key(_: *const CodeGen, e: *const ast.Expr) ?*const ast.Expr {
+        if (e.* != .index) return null;
+        const o = e.index.obj;
+        if (o.* != .field) return null;
+        if (o.field.obj.* != .name) return null;
+        if (!std.mem.eql(u8, o.field.obj.name.ident, "os")) return null;
+        if (!std.mem.eql(u8, o.field.field, "env")) return null;
+        return e.index.key;
+    }
+
     /// Host egress: `stdout:write(text)` — never `io:write`. Dual of `stdin:read`.
     fn egress_method_result_type(_: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
         if (obj.* != .name) return null;
@@ -2069,6 +2125,10 @@ pub const CodeGen = struct {
             if (self.global_type(e.name.ident)) |rt| return rt;
         }
         if (e.* == .index) {
+            // The environment projection answers TEXT — `getenv` returns
+            // `char*`. Without this the read typed as `.any`, took the boxed
+            // path, and emitted `lua_to_str` against a value nothing produced.
+            if (self.env_projection_key(e) != null) return .str;
             const idx = e.index;
             if (idx.obj.* == .name) {
                 if (self.dense_literal_table(idx.obj.name.ident)) |nd| {
@@ -2758,6 +2818,42 @@ pub const CodeGen = struct {
             try self.emit_expr(b.rhs);
             self.p("))", .{});
         }
+        return true;
+    }
+
+    /// `a or b` / `a and b` on TEXT.
+    ///
+    /// Idol's `or` yields an OPERAND, not a truth value. The no-lua arm in
+    /// `emit_expr` emits C's `||`, whose value is `int` 0 or 1 — so
+    /// `stdout:write(env(k) or "FB")` emitted
+    /// `fprintf(stdout, "%s", (getenv("K") || "FB"))` and SEGFAULTED on every
+    /// run, with the variable set and with it unset. Numeric operands already
+    /// have this arm (`try_emit_native_and_or_operand` above); text had none,
+    /// and the tree's converged fallback idiom `env(k) or fallback` is text at
+    /// every one of its sites.
+    ///
+    /// TRUTH IS THE POINTER, NOT THE CONTENT. An EMPTY string is truthy, which
+    /// is the answer the direct backend gives and the one Lua gives: after
+    /// `env(k) = ""` the fallback must NOT be taken. That distinction —
+    /// present-and-empty versus absent — is the whole reason removal is a
+    /// separate edge (`env:remove(k)`) and not `env(k) = nil`.
+    fn try_emit_native_str_and_or(self: *CodeGen, b: anytype) E!bool {
+        if (b.op != .@"and" and b.op != .@"or") return false;
+        if (self.moduleNeedsLuaRuntime()) return false;
+        if (!self.expr_is_native_cstr(b.lhs)) return false;
+        if (!self.expr_is_native_cstr(b.rhs)) return false;
+        self.p("({{ const char* __so = ", .{});
+        try self.emit_expr(b.lhs);
+        self.p("; ", .{});
+        if (b.op == .@"or") {
+            self.p("__so ? __so : ", .{});
+            try self.emit_expr(b.rhs);
+        } else {
+            self.p("__so ? ", .{});
+            try self.emit_expr(b.rhs);
+            self.p(" : __so", .{});
+        }
+        self.p("; }})", .{});
         return true;
     }
 
@@ -3984,6 +4080,85 @@ pub const CodeGen = struct {
             if (contract_ret(&fd.func) != .inferred and !self.type_expr_is_native_scalar(contract_ret(&fd.func))) return true;
             for (fd.func.params) |param| {
                 if (!self.type_expr_is_native_scalar(param.typ)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// A MODULE THIS COMPILER CANNOT FIND MUST BE REFUSED, NOT EMITTED AS A NULL.
+    ///
+    /// MEASURED at HEAD, and it is the worst class this tree ships — a program
+    /// that type-checks clean and dies:
+    ///
+    ///     main: i64 = ()
+    ///         print(std.nosuch.f(1))
+    ///         0
+    ///
+    ///     idol check     ->  ✓ checked — no errors
+    ///     --backend=c    ->  BUILDS, and the artifact SEGFAULTS (139, 3 of 3)
+    ///
+    /// `collect_require_names` registers a module for an explicit `require` or
+    /// for a `std.`-dotted path that RESOLVES, and for nothing else. When
+    /// neither fires nothing registers the root, sema has already recorded
+    /// `std` as an ordinary dynamic global, and the emitter declares
+    /// `static lua_Value duo_g_std;` — zero initialised — which the next line
+    /// dereferences twice:
+    ///
+    ///     lua_table_get_str_lit(lua_table_get_str_lit(duo_g_std, "nosuch", …), "f", …)
+    ///
+    /// In a no-lua translation unit the same shape is a loud C failure instead
+    /// (`unknown type name 'lua_Value'`), which is why this went unnoticed: the
+    /// two lowering modes fail differently and only one of them is quiet.
+    ///
+    /// SCOPED TO `std`, deliberately. That is the root the resolver already
+    /// special-cases above, it is the one measured, and confining the refusal
+    /// to it means no user-chosen name can be captured by this check.
+    ///
+    /// AND IT NEVER TAKES A NAME. A program that binds `std` itself owns the
+    /// word — the same invariant that governs `env` — so a module that declares
+    /// `std` keeps its ordinary global and this declines.
+    fn refuseUnresolvableStdModule(self: *CodeGen, mod: *const ast.Module) E!void {
+        if (!self.idol_mode) return;
+        if (self.src_path.len == 0) return;
+        if (moduleBindsName(mod, "std")) return;
+
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        self.unresolved_std_module = null;
+        self.collect_require_names_block(&mod.body, &names) catch return;
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .func_decl) {
+                self.collect_require_names_block(&stmt.func_decl.func.body, &names) catch return;
+            }
+        }
+
+        const bad = self.unresolved_std_module orelse return;
+        term.locErr(bad.loc, "no module named '{s}': the compiler cannot find it, so this reference has no value", .{bad.path});
+        term.locHint(bad.loc, "check the spelling, or add the module — emitting it as a null global is how this became a segfault rather than an error", .{});
+        self.noalloc_violation = "codegen refused a reference to a module it cannot find";
+        return error.NoAllocViolation;
+    }
+
+    /// True when the module itself binds `name` at top level — a local, a
+    /// global, an assignment target or a declared relation. The world supplies
+    /// reach and never takes a name, so every "is this the world's word?"
+    /// question has to ask this first.
+    fn moduleBindsName(mod: *const ast.Module, name: []const u8) bool {
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*d| for (d.names) |n| {
+                    if (std.mem.eql(u8, n.ident, name)) return true;
+                },
+                .global_decl => |*d| for (d.names) |n| {
+                    if (std.mem.eql(u8, n.ident, name)) return true;
+                },
+                .assign => |*a| for (a.targets) |t| {
+                    if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) return true;
+                },
+                .func_decl => |*fd| {
+                    if (fd.path.len > 0 and std.mem.eql(u8, fd.path[0], name)) return true;
+                },
+                else => {},
             }
         }
         return false;
@@ -5437,7 +5612,12 @@ pub const CodeGen = struct {
                     (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1) or
                     // The test world's relations lower to a trap, not a call,
                     // so there is no declaration for this precheck to find.
-                    (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "test"));
+                    (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "test")) or
+                    // The environment projection's removal edge lowers to
+                    // `unsetenv`, not to a call into a declared relation, so
+                    // there is no declaration for this precheck to find —
+                    // exactly the test world's case above.
+                    self.env_remove_method(mc.method, mc.obj, mc.args);
                 if (!resolvable) {
                     self.nativeDiagFailFmt("method-unresolved:{s}", .{mc.method});
                     break :blk false;
@@ -6045,6 +6225,7 @@ pub const CodeGen = struct {
         } else {
             debug_trace.event(.codegen, .module, "emit module", .{});
         }
+        try self.refuseUnresolvableStdModule(mod);
         try self.populate_relation_edges(mod);
         try self.populate_alias_defs(mod);
         try self.collect_comptime_only_funcs(mod);
@@ -13683,6 +13864,22 @@ pub const CodeGen = struct {
                         continue;
                     }
 
+                    // `env(k) = v` — the world projection, WRITTEN. POSIX
+                    // `setenv(k, v, 1)`: the overwrite flag is 1 so a store
+                    // always takes effect, and the empty string is NOT special
+                    // — `env(k) = ""` sets the variable to the EMPTY value and
+                    // keeps it PRESENT. Removal is `env:remove(k)`, a different
+                    // edge, and `env(k) = nil` is refused in sema.
+                    if (self.env_projection_key(tgt)) |key| {
+                        self.ind();
+                        self.p("setenv(", .{});
+                        try self.emit_cstr_arg(key);
+                        self.p(", ", .{});
+                        if (i < as.values.len) try self.emit_cstr_arg(as.values[i]) else self.p("\"\"", .{});
+                        self.p(", 1);\n", .{});
+                        continue;
+                    }
+
                     var is_table_assign = false;
                     if (try self.try_emit_call_form_index_assign(
                         tgt,
@@ -15262,6 +15459,27 @@ pub const CodeGen = struct {
                 return true;
             },
             .index => |idx| {
+                // THE ENVIRONMENT PROJECTION IS NOT A TABLE LOOKUP, and this
+                // emitter is the one that did not know it. Asked ONCE, at the
+                // single entry of the arm rather than in each `want` branch
+                // below: the three branches differ only in which unboxer they
+                // name, so a per-`want` check would be reintroduced as a hole
+                // by the next specialization added.
+                //
+                // Without it a typed consumer of `env(k)` emitted
+                // `lua_table_get_key_cstr(lua_table_get_str_lit(os, "env", …), …)`
+                // — a lookup in an unpopulated Lua table, which answers NIL for
+                // a variable that is genuinely set. `emit_expr`'s own `.index`
+                // arm has carried the recognizer since the projection landed,
+                // but THIS function is consulted first by `emit_dynamic_unbox`,
+                // so it wins before that guard is ever reached.
+                if (self.env_projection_key(e) != null) {
+                    if (want == .str) {
+                        try self.emit_expr(e);
+                        return true;
+                    }
+                    return false;
+                }
                 if (self.req_module_dense_index_info(idx.obj)) |nd| {
                     self.p("{s}[", .{nd.c_symbol});
                     try self.emit_expr(idx.key);
@@ -15800,6 +16018,33 @@ pub const CodeGen = struct {
             try self.emit_expr(expr);
             return;
         }
+        // THE BOXED PROJECTION MUST NOT BOX A NULL. `getenv` answers NULL for an
+        // absent variable, and the generic `.str` boxing wrapper is
+        // `lua_val_from_str`, which dereferences it. MEASURED:
+        //
+        //     sh(env("IDOLPROBE"))   ->  lua_Value duo_args[1] =
+        //                                    {lua_val_from_str(getenv("IDOLPROBE"))};
+        //     IDOLPROBE=z ./a.out    ->  z, rc 0
+        //     env -u IDOLPROBE ./a.out -> SIGSEGV, rc 139
+        //
+        // ABSENCE IS A NORMAL ANSWER on this projection — it is the answer live
+        // corpus sites branch on — so the boxed face has to be able to carry it.
+        // `lua_os_getenv` is already unconditional in the boxed prelude and is
+        // exactly this function: it null-checks and answers `lua_val_nil()`.
+        // Calling it beats hand-rolling the box, which is how the null got in.
+        //
+        // The UNBOXED face keeps emitting a bare `getenv` — a `const char*`
+        // consumer wants the pointer, and NULL is what absence is there. The
+        // read face's own ruling (docs/env-identity.md: absence TRAPS, and
+        // `env(k, absent)` is the total form) is what finally removes that
+        // asymmetry; this stops the boxed half from being undefined behaviour in
+        // the meantime.
+        if (self.env_projection_key(expr)) |key| {
+            self.p("lua_os_getenv(", .{});
+            try self.emit_as_lua_value(key);
+            self.p(")", .{});
+            return;
+        }
         if (expr.* == .name) {
             if (self.is_native_dense_module_table(expr.name.ident)) {
                 try self.emit_native_dense_module_table_as_lua_value(expr.name.ident);
@@ -16299,6 +16544,15 @@ pub const CodeGen = struct {
                 }
             },
             .index => |idx| {
+                // `env(k)` — the world projection, READ. Plain libc in both
+                // modes; the boxed wrapper, where a consumer wants one, comes
+                // from `emit_as_lua_value` reading the `.str` type above.
+                if (self.env_projection_key(expr)) |key| {
+                    self.p("getenv(", .{});
+                    try self.emit_cstr_arg(key);
+                    self.p(")", .{});
+                    return;
+                }
                 if (self.req_module_dense_index_info(idx.obj)) |nd| {
                     self.p("{s}[", .{nd.c_symbol});
                     try self.emit_expr(idx.key);
@@ -17279,6 +17533,18 @@ pub const CodeGen = struct {
                     }
                 }
 
+                // `env:remove(k)` — the REMOVAL edge, POSIX `unsetenv(k)`.
+                // Asked before every other receiver face for the same reason
+                // `stdout:write` is: the subject is a WORLD, not a value with a
+                // metatable, and the fallback path emits
+                // `lua_table_get_str_lit(os, "env", ...)` against an identifier
+                // nothing declares.
+                if (self.env_remove_method(mc.method, mc.obj, mc.args)) {
+                    self.p("unsetenv(", .{});
+                    try self.emit_cstr_arg(mc.args[0]);
+                    self.p(")", .{});
+                    return;
+                }
                 if (try self.tryEmitSubjectRelation(mc)) return;
                 if (try self.try_emit_readable_protocol(mc)) return;
                 if (try self.try_emit_egress_protocol(mc)) return;
@@ -17856,6 +18122,8 @@ pub const CodeGen = struct {
                     return;
                 } else if (try self.try_emit_native_and_or_operand(b, expr)) {
                     return;
+                } else if (try self.try_emit_native_str_and_or(b)) {
+                    return;
                 } else if ((b.op == .@"and" or b.op == .@"or") and !self.moduleNeedsLuaRuntime()) {
                     const op_str: []const u8 = if (b.op == .@"and") " && " else " || ";
                     self.p("(", .{});
@@ -17904,6 +18172,35 @@ pub const CodeGen = struct {
                         try self.emit_expr(b.rhs);
                         self.p("))", .{});
                     }
+                } else if ((b.op == .eq or b.op == .neq) and
+                    ((b.lhs.* == .nil and self.expr_is_native_cstr(b.rhs)) or
+                        (b.rhs.* == .nil and self.expr_is_native_cstr(b.lhs))))
+                {
+                    // `s == nil` ON TEXT IS A PRESENCE TEST, NOT A COMPARISON.
+                    // It was emitted as one, and the string it compared against
+                    // was the STRINGIFICATION OF NIL:
+                    //
+                    //     label: str = (v: str)
+                    //         if v == nil
+                    //     ->  if ((strcmp(v, lua_to_str(NULL)) == 0))
+                    //
+                    // Two defects in one line. `lua_to_str` is not declared in a
+                    // no-lua translation unit, so the six-line program above
+                    // BUILDS on the direct backend and is a hard C error on the
+                    // bridge — a backend disagreement with no projection in it.
+                    // And the shape is wrong even where the runtime IS present:
+                    // `strcmp` dereferences its first argument, so the moment
+                    // the subject is a genuine miss — `getenv` on an unset key,
+                    // which is exactly what this idiom is written to test — the
+                    // presence test SEGFAULTS on absence.
+                    //
+                    // A pointer's presence is `!= NULL`. That is the answer the
+                    // direct backend already gives and the one Lua gives, and it
+                    // is the only one that is defined when the answer is "no".
+                    const subject = if (b.lhs.* == .nil) b.rhs else b.lhs;
+                    self.p("(", .{});
+                    try self.emit_expr(subject);
+                    self.p("{s}NULL)", .{if (b.op == .eq) " == " else " != "});
                 } else if ((b.op == .eq or b.op == .neq) and lt == .str and rt == .str) {
                     const lhs_c = self.expr_is_native_cstr(b.lhs);
                     const rhs_c = self.expr_is_native_cstr(b.rhs);
@@ -21491,8 +21788,12 @@ pub const CodeGen = struct {
         return switch (e.*) {
             .string_lit => true,
             .name => self.expr_type(e) == .str,
-            .index => self.expr_type(e) == .str and (self.is_native_dense_module_index(e.index.obj) or
-                self.req_module_dense_index_info(e.index.obj) != null),
+            // `env(k)` lowers to `getenv(k)`, which IS a `const char*`. Without
+            // this arm every consumer wrapped it in `lua_to_str(...)` — a
+            // function a no-lua translation unit never declares.
+            .index => self.env_projection_key(e) != null or
+                (self.expr_type(e) == .str and (self.is_native_dense_module_index(e.index.obj) or
+                    self.req_module_dense_index_info(e.index.obj) != null)),
             // A typed call returning str lowers to a native `const char*` when
             // the module uses native lowering (native_scalar_mode or module
             // knowledge >= native). In that mode emit directly; otherwise the
@@ -21521,6 +21822,19 @@ pub const CodeGen = struct {
                 if (self.moduleUsesFullNativeLowering()) break :blk true;
                 if (self.current_func_name) |name| break :blk self.funcUsesNativeLowering(name);
                 break :blk false;
+            },
+            // `a or b` / `a and b` yield an OPERAND, not a truth value, so the
+            // result is a `const char*` exactly when both arms are — which is
+            // what `try_emit_native_str_and_or` emits. Without this arm the
+            // comparison path wrapped that statement-expression in
+            // `lua_to_str(...)`, a name a no-lua translation unit never
+            // declares, so `env(k) or fallback` compared against a literal was
+            // a hard C error. The mirror of the arm `dnir_lower.exprIsStr`
+            // carries for the same two operators.
+            .binop => |bb| switch (bb.op) {
+                .@"and", .@"or" => self.expr_is_native_cstr(bb.lhs) and
+                    self.expr_is_native_cstr(bb.rhs),
+                else => false,
             },
             else => false,
         };
@@ -23791,6 +24105,23 @@ pub const CodeGen = struct {
                     if (std.mem.startsWith(u8, path, "std.") and self.find_module_file_for_req(path) != null) {
                         try names.append(self.alloc, try self.alloc.dupe(u8, path));
                         return;
+                    }
+                    // EXHAUSTION. The recursion below walks shorter and shorter
+                    // prefixes of the path, so `std.a.b.C` gets three chances to
+                    // resolve. This is the LAST one: the object is the bare root
+                    // `std`, the two-component path named no module, and there
+                    // is nothing shorter left to try. Recorded, not refused
+                    // here — this walker is also run speculatively, by
+                    // `req_deps_are_native_direct`, whose callers discard its
+                    // errors. `refuseUnresolvableStdModule` is where it is said.
+                    if (self.unresolved_std_module == null and
+                        std.mem.startsWith(u8, path, "std.") and
+                        f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "std"))
+                    {
+                        self.unresolved_std_module = .{
+                            .path = try self.alloc.dupe(u8, path),
+                            .loc = expr.loc(),
+                        };
                     }
                 }
                 try self.collect_require_names(f.obj, names);
