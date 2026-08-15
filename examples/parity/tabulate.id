@@ -4,14 +4,14 @@
 
 TOP = @comp.tabulate(2, fun(i)
   tostring(i) .. "\n"
-end)
+)
 NESTED = @comp.map("q", fun(seed)
   @comp.tabulate(2, fun(i)
     tostring(i) .. "\n"
-  end)
-end)
+  )
+)
 parity: str = {}
 @comp.tabulate(2, fun(i)
   tostring(i) .. "\n"
-end)
+)
 BLOCK = parity()

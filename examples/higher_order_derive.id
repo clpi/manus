@@ -9,7 +9,7 @@
     f = meta.fields[i]
     acc = acc .. "// field " .. f.name .. " : " .. f.type .. "\n"
   acc
-end)
+)
 
 
 @comp.define.derive("Offsets", generate: str = (meta)
@@ -18,7 +18,7 @@ end)
     f = meta.fields[i]
     acc = acc .. "// offset of " .. f.name .. " = " .. to(str)(i - 1) .. "\n"
   acc
-end)
+)
 
 
 @comp.define.derive("ComposeAll", generate: str = (meta)
@@ -32,7 +32,7 @@ end)
   self_src = @comp.derive.lookup("ComposeAll")
   acc = acc .. "// ComposeAll source length: " .. to(str)(self_src:len()) .. "\n"
   acc
-end)
+)
 
 @derive(ComposeAll)
 Point: { x: f64, y: f64 }

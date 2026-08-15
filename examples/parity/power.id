@@ -11,7 +11,7 @@ t.name .. "\n"
 TOP = @comp.power("Has1", sig)
 NESTED = @comp.map("q", fun(seed)
   @comp.power("Has1", sig)
-end)
+)
 parity: str = {}
 @comp.power("Has1", sig)
 BLOCK = parity()

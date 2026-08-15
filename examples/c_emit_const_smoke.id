@@ -1,3 +1,3 @@
-UNROLL = @(@comp.loop(0, 2, "/* slot %i */\n"))
-@c.emit(UNROLL)
+UNROLL = @(@comp.for(0, 2, "/* slot %i */\n"))
+@comp.c.emit(UNROLL)
 print("ok")

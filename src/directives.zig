@@ -49,14 +49,35 @@ pub const TestOptions = struct {
     warmup: u32 = 0,
 };
 
-/// `@c.emit`, `@c.include`, etc. — C interface metaprogramming under the `@` prefix.
+/// `@comp.c.emit`, `@comp.c.include`, … — C interface metaprogramming under the
+/// `@` prefix, in EVERY spelling rather than in the six that were written here.
+///
+/// THIS FUNCTION USED TO COMPARE AGAINST SIX SHORT LITERALS, and that is the
+/// defect the whole file now guards against. `@comp.c.emit` — the CANONICAL
+/// form, the one `parser.zig:warnDeprecatedAtQualified` tells you to write —
+/// failed all six compares, fell through to `validateModuleDirective`, and was
+/// rejected as `unknown module directive '@comp.c.emit'`. `sema.zig:2619`
+/// patched around it by calling two MORE predicates alongside this one, which
+/// is the same mistake one level up: three predicates that must be kept in
+/// agreement instead of one that cannot disagree with itself.
+///
+/// `resolveBuiltin` is the alias table, and the table is the only place the set
+/// of spellings is written down. Reading it answers for all twenty-eight at
+/// once, so there is nothing left for the next caller to forget.
+///
+/// `c.link` is deliberately NOT in the set: it was absent from the six literals
+/// this replaces, and widening the predicate is a separate ruling from
+/// normalising it.
 pub fn isCInterfaceDirective(name: []const u8) bool {
-    return std.mem.eql(u8, name, "c.emit") or
-        std.mem.eql(u8, name, "c.include") or
-        std.mem.eql(u8, name, "c.import") or
-        std.mem.eql(u8, name, "c.export") or
-        std.mem.eql(u8, name, "c.type") or
-        std.mem.eql(u8, name, "c.call");
+    const internal = meta_module.resolveBuiltin(name) orelse
+        // `@cinclude` is the one C-interface spelling with no table entry.
+        return std.mem.eql(u8, name, "cinclude");
+    return std.mem.eql(u8, internal, "__emit") or
+        std.mem.eql(u8, internal, "__c_include") or
+        std.mem.eql(u8, internal, "__c_import") or
+        std.mem.eql(u8, internal, "__c_export") or
+        std.mem.eql(u8, internal, "__c_type") or
+        std.mem.eql(u8, internal, "__c_call");
 }
 
 /// True when `@c.emit(...)` argument text is a raw C string/bracket literal,
@@ -667,6 +688,38 @@ test "directives: test options bench defaults" {
     }
     try std.testing.expect(opts.bench);
     try std.testing.expectEqual(@as(u32, 5), opts.iterations);
+}
+
+test "directives: the C interface answers to every spelling, not the six short ones" {
+    // The regression this pins: `@comp.c.emit` — the CANONICAL spelling — used
+    // to fail this predicate and be rejected as an unknown module directive,
+    // while `@c.emit` passed. One operation cannot have two answers here.
+    const one_operation = [_][2][]const u8{
+        .{ "c.emit", "comp.c.emit" },
+        .{ "c.include", "comp.c.include" },
+        .{ "c.import", "comp.c.import" },
+        .{ "c.export", "comp.c.export" },
+        .{ "c.type", "comp.c.type" },
+        .{ "c.call", "comp.c.call" },
+    };
+    for (one_operation) |pair| {
+        try std.testing.expect(isCInterfaceDirective(pair[0]));
+        try std.testing.expect(isCInterfaceDirective(pair[1]));
+    }
+    // `@meta.*` and `@compiler.*` are deprecated spellings of the same
+    // operations, not different ones — they were invisible here too.
+    try std.testing.expect(isCInterfaceDirective("meta.c.emit"));
+    try std.testing.expect(isCInterfaceDirective("compiler.c.export"));
+    try std.testing.expect(isCInterfaceDirective("comp.emit"));
+    try std.testing.expect(isCInterfaceDirective("emit"));
+    // `@cinclude` has no alias-table entry; the literal tail is what covers it.
+    try std.testing.expect(isCInterfaceDirective("cinclude"));
+    // NEGATIVE CONTROLS. A predicate that answers true for everything proves
+    // nothing, which is how the six-literal version looked green for months.
+    try std.testing.expect(!isCInterfaceDirective("comp.map"));
+    try std.testing.expect(!isCInterfaceDirective("c.link"));
+    try std.testing.expect(!isCInterfaceDirective("c.emitx"));
+    try std.testing.expect(!isCInterfaceDirective("test"));
 }
 
 test "directives: isRawCEmitLiteral distinguishes raw C from expressions" {

@@ -4,14 +4,14 @@
 
 TOP = @comp.map("a b", fun(t)
   t .. "\n"
-end)
+)
 NESTED = @comp.map("q", fun(seed)
   @comp.map("a b", fun(t)
     t .. "\n"
-  end)
-end)
+  )
+)
 parity: str = {}
 @comp.map("a b", fun(t)
   t .. "\n"
-end)
+)
 BLOCK = parity()

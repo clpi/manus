@@ -1,13 +1,13 @@
 # Cross-compiler metaprogramming harness
-# Demonstrates @run composing with @c.emit and @embed
+# Demonstrates @comp.run composing with @comp.c.emit and @embed
 # Run: duo run examples/cross_compiler_harness.id
 
 print("=== Cross-compiler harness ===")
 
-@c.include("stdio.h")
+@comp.c.include("stdio.h")
 
 # Inject C discovered/generated at compile time
-@c.emit(@comp.run("printf 'static const char duo_harness_tag[] = {99,111,109,112,105,108,101,100,0};'"))
+@comp.c.emit(@comp.run("printf 'static const char duo_harness_tag[] = {99,111,109,112,105,108,101,100,0};'"))
 
 # Compile-time string from a host command
 BUILD_ID: str = @comp.run("printf duo-20260725")
@@ -17,7 +17,7 @@ print("BUILD_ID = " .. BUILD_ID)
 FIRST_BYTES: str = @comp.embed.str("examples/cross_compiler_harness.id")
 print("embedded starts with: " .. FIRST_BYTES:sub(1, 2))
 
-len: i64 = @c.call("strlen", BUILD_ID)
+len: i64 = @comp.c.call("strlen", BUILD_ID)
 print("BUILD_ID length = " .. to(str)(len))
 
 print("=== done ===")

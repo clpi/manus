@@ -7,9 +7,8 @@ concept Drawable
 
 shape =
   id = 7
-  draw = fun(self) -> str
+  draw = (self) -> str
     "shape-" .. to(str)(self.id)
-  end
 
 # Use : method syntax for calling
 print(shape:draw())

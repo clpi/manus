@@ -16,7 +16,7 @@ Pair: { x: f64, y: f64 }
         f = meta.fields[i]
         acc = acc .. "static inline void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
     acc
-end)
+)
 
 registry_line: str = meta
 meta.name .. ";"
@@ -25,7 +25,7 @@ meta.name .. ";"
 __emit(@comp.expand("HasXY", TouchApi))
 
 # Registry sweep separately (comptime string, not C)
-SWEEP = @comp.sweep("HasXY", registry_line)
+SWEEP = @comp.map("HasXY", registry_line)
 
 print("=== meta.expand showcase ===")
 print("Point ok = true")

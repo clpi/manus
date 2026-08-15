@@ -8,12 +8,10 @@ Drawable = meta.make_concept("Drawable", {
 
 shape =
   id = 7
-  draw = fun(self) -> str
+  draw = (self) -> str
     "shape"
-  end
-  to_string = fun(self) -> str
+  to_string = (self) -> str
     "drawable"
-  end
 
 # Runtime concept checking
 print("Drawable name: " .. Drawable.name)

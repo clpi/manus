@@ -11,11 +11,11 @@ Pt: { x: f64, y: f64 }
 
 @comp.define.derive("SubsetStub", generate: str = (meta)
     "/* subset " .. meta.name .. " mask=" .. to(str)(meta.mask) .. " */\n"
-end)
+)
 
 FRAGS = @comp.match("HasXY|Ordered", fun(c)
   @comp.derive.power(c.pattern, SubsetStub)
-end)
+)
 
 LINES = @comp.str.countlines(FRAGS)
 HAS_SUBSET = @comp.str.contains(FRAGS, "subset Vec2")

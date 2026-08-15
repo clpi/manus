@@ -9,7 +9,7 @@ CounterB: { n: i64, tag: str }
 
 @comp.define.derive("CountApi", generate: str = (meta)
     "static inline int64_t duo_" .. meta.name .. "_get_n(const duo_" .. meta.name .. "* v) { return v->n; }\n"
-end)
+)
 
 @comp.pipeline({
     fn = "sum_n",
@@ -24,13 +24,13 @@ end)
 registry_line: str = (meta)
     meta.name .. ";"
 
-@c.emit(@comp.derive("HasN", CountApi))
+@comp.c.emit(@comp.derive("HasN", CountApi))
 
 TYPED = @comp.map("HasN", registry_line)
 DERIVED = @comp.derive("HasN", CountApi)
 
 total: i64 = ()
-    @c.call("sum_n")
+    @comp.c.call("sum_n")
 
 print("=== exponential pipeline showcase ===")
 print("sum 1..100 = " .. to(str)(total()))

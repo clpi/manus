@@ -3,14 +3,12 @@
 # exit 0 all good; 1..3 names the direction that broke.
 
 realclock =
-  now = fun()
+  now = ()
     os.clock()
-  end
 
 fakeclock =
-  now = fun()
+  now = ()
     0.0
-  end
 
 elapsed: f64 = (since: f64, w)
   w.now() - since

@@ -1,11 +1,11 @@
-@cinclude("stdio.h")
+@comp.c.include("stdio.h")
 
 @comp.lua("print('int test_lua_foo();')")
 
 @comp.lua("print('int test_lua_foo() { return 42; }')")
 
 do_test = ()
-  @c.emit("printf(\"from lua: %d\\n\", test_lua_foo());")
+  @comp.c.emit("printf(\"from lua: %d\\n\", test_lua_foo());")
   
 
 do_test()

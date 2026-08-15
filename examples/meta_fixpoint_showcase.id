@@ -2,7 +2,7 @@
 result = @comp.fixpoint("start", fun(state)
   i = state.iteration
   "iter" .. to(str)(i) .. "\n"
-end, 3)
+, 3)
 
 LINES = @comp.str.countlines(result)
 ok = LINES == 3 and @comp.str.contains(result, "iter0")

@@ -8,7 +8,7 @@
         acc = acc .. "    " .. f.type .. " " .. f.name .. ";\n"
     acc = acc .. "} " .. meta.name .. ";\n"
     acc
-end)
+)
 
 @comp.define.derive("GetterBundle", generate: str = (meta)
     acc = ""
@@ -16,7 +16,7 @@ end)
         f = meta.fields[i]
         acc = acc .. "static inline " .. f.type .. " " .. meta.name .. "_get_" .. f.name .. "(const " .. meta.name .. "* v) { return v->" .. f.name .. "; }\n"
     acc
-end)
+)
 
 @derive(CStruct, GetterBundle)
 Vec3: { x: f64, y: f64, z: f64 }
@@ -29,7 +29,7 @@ rgb: RGB = { r = 1.0, g = 0.5, b = 0.0 }
 
 FIELD_MAP = @comp.fields.map(v3, "/* %n:%t */")
 
-UNROLL = @(@comp.loop(0, 5, "slot_%i=0;"))
+UNROLL = @(@comp.for(0, 5, "slot_%i=0;"))
 
 print("=== user derive showcase ===")
 print("field_map = " .. FIELD_MAP)

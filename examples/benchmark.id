@@ -207,7 +207,7 @@ search(n: i64)
             mid = (lo + hi) / 2:floor()
             if t[mid] < key
                 lo = mid + 1
-            elseif t[mid] > key
+            else(t[mid] > key)
                 hi = mid - 1
             else
                 hits += 1

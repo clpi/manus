@@ -15,7 +15,7 @@ Pair: { x: f64, y: f64 }
         f = meta.fields[i]
         acc = acc .. "void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
     acc
-end)
+)
 
 @comp.assert(@comp.satisfies(Point, "HasXY"))
 @comp.assert(not @comp.satisfies(BadXY, "HasXY"))
@@ -24,7 +24,7 @@ registry_line: str = (meta)
     meta.name .. ";"
 
 # One @comp.expand line → O(types × fields) C for every concept match
-@c.emit(@comp.expand("HasXY", TouchApi))
+@comp.c.emit(@comp.expand("HasXY", TouchApi))
 
 TYPED_SWEEP = @comp.map("HasXY", registry_line)
 
@@ -32,7 +32,7 @@ UserV1: { id: i64, nick: str }
 UserV2: { id: i64, email: str }
 
 MIGRATION = @comp.diff(UserV1, UserV2)
-@c.emit(MIGRATION)
+@comp.c.emit(MIGRATION)
 
 print("=== exponential ceiling showcase ===")
 print("typed_sweep = " .. TYPED_SWEEP)

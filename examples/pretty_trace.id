@@ -154,13 +154,13 @@ pretty_val: str = (value: any)
     t = type(value)
     if t:find("string") == 1
         return green('"' .. to(str)(value) .. '"')
-    elseif t:find("number") == 1
+    else(t:find("number") == 1)
         return yellow(to(str)(value))
-    elseif t:find("boolean") == 1
+    else(t:find("boolean") == 1)
         return magenta(to(str)(value))
-    elseif t:find("function") == 1
+    else(t:find("function") == 1)
         return cyan(italic("⟪fn⟫"))
-    elseif t:find("table") == 1
+    else(t:find("table") == 1)
         n = value:len()
         if n > 0
             return cyan("⟦array " .. to(str)(n) .. "⟧")
@@ -191,7 +191,7 @@ ts: str = ()
     ms = (os.clock() * 1000) % 1000:floor()
     frac = "." .. to(str)(ms)
     if ms < 10 frac = ".00" .. to(str)(ms)
-    elseif ms < 100 frac = ".0" .. to(str)(ms)
+    else(ms < 100) frac = ".0" .. to(str)(ms)
     return dim(os.date("%H:%M:%S", secs) .. frac)
 
 # ─── Level tag ─────────────────────────────────────────────────────
@@ -201,16 +201,16 @@ level_tag: str = (level: int)
     if level == M.LV_DEBUG
         glyph = M.G_DEBUG
         tag = "debug"
-    elseif level == M.LV_INFO
+    else(level == M.LV_INFO)
         glyph = M.G_INFO
         tag = " info"
-    elseif level == M.LV_WARN
+    else(level == M.LV_WARN)
         glyph = M.G_WARN
         tag = " warn"
-    elseif level == M.LV_ERROR
+    else(level == M.LV_ERROR)
         glyph = M.G_ERROR
         tag = "error"
-    elseif level == M.LV_FATAL
+    else(level == M.LV_FATAL)
         glyph = M.G_FATAL
         tag = "fatal"
     body = glyph .. " " .. tag
@@ -401,13 +401,13 @@ pretty_repr: str = (value: any, depth: int, seen: any)
     t = type(value)
     if t:find("string") == 1
         return '"' .. to(str)(value) .. '"'
-    elseif t:find("number") == 1
+    else(t:find("number") == 1)
         return to(str)(value)
-    elseif t:find("boolean") == 1
+    else(t:find("boolean") == 1)
         return to(str)(value)
-    elseif t:find("function") == 1
+    else(t:find("function") == 1)
         return "<function>"
-    elseif t:find("table") != 1
+    else(t:find("table") != 1)
         return to(str)(value)
     # table branch — use table identity (== by reference) stored in a
     # flat array, because the codegen's to(str)(table) always returns

@@ -7,7 +7,6 @@ custom_iter: any = (state: any, index: any)
 iterable = setmetatable({}, {
   __iter: any = (self: any)
     return custom_iter, nil, 0
-  end
 })
 
 sum = 0

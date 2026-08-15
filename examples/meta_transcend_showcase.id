@@ -28,7 +28,7 @@ Label: { tag: str, id: i64 }
             f = meta.fields[i]
             acc = acc .. "static inline void duo_" .. meta.name .. "_mark_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
         acc
-end)
+)
 
 @comp.transcend("HasXY", TripleApi, "HasTag", "HasId")
 

@@ -4,8 +4,8 @@
 OUT = @comp.match("alpha|beta", fun(m)
   @comp.fixpoint(m.pattern, fun(s)
     "tag=" .. m.pattern .. " iter=" .. to(str)(s.iteration) .. "\n"
-  end, 2)
-end)
+  , 2)
+)
 
 LINES = @comp.str.countlines(OUT)
 HAS_ALPHA = @comp.str.contains(OUT, "tag=alpha iter=0")

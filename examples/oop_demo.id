@@ -19,10 +19,10 @@ Float: f64
 point = {
     x = 3.0,
     y = 4.0,
-    distance = fun(self: any): f64
+    distance = (self: any): f64
         self.x * self.x + self.y * self.y:sqrt()
-    end,
-    move = fun(self: any, dx: f64, dy: f64): void
+    ,
+    move = (self: any, dx: f64, dy: f64): void
         self.x = self.x + dx
         self.y = self.y + dy
     end,
@@ -42,9 +42,9 @@ Point_base: any = (x: f64, y: f64)
     {
         x = x,
         y = y,
-        describe = fun(self): str
+        describe = (self): str
             "Point(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
-        end,
+        ,
     }
 
 # Derived "class" via metatable delegation
@@ -52,10 +52,10 @@ Point3D_base: any = (x: f64, y: f64, z: f64)
     base = Point_base(x, y)
     setmetatable(
         { z = z,
-          describe = fun(self): str
+          describe = (self): str
             "Point3D(" .. to(str)(self.x) .. ", " .. to(str)(self.y)
                 .. ", " .. to(str)(self.z) .. ")"
-          end,
+          ,
         },
         { __index = base }
     )
@@ -72,9 +72,9 @@ print(p2.describe(p2))
 Counter_new: any = ()
     {
         _value = 0,
-        increment = fun(self: any): void self._value = self._value + 1 end,
-        decrement = fun(self: any): void self._value = self._value - 1 end,
-        value = fun(self: any): i64 self._value end,
+        increment = (self: any): void self._value = self._value + 1 end,
+        decrement = (self: any): void self._value = self._value - 1 end,
+        value = (self: any): i64 self._value,
     }
 
 counter = Counter_new()
@@ -96,17 +96,14 @@ concept Measurable
 
 # A shape that implements both concepts
 shape = {}
-shape.describe = fun(self): str
+shape.describe = (self): str
     "Circle(radius=" .. to(str)(self.radius) .. ")"
-end
-shape.measure = fun(self, unit: str): f64
+shape.measure = (self, unit: str): f64
     area = 3.14159 * self.radius * self.radius
     if unit == "mm"
         area * 100.0
     else
         area
-    end
-end
 shape.radius = 5.0
 
 print(shape.describe(shape))

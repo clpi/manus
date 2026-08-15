@@ -12,7 +12,7 @@ _run_bench = ()
   b_ptr: ptr = nil
   c_ptr: ptr = nil
 
-  @c.emit([[
+  @comp.c.emit([[
         int N = 512;
         float* a = (float*)malloc(N * N * sizeof(float));
         float* b = (float*)malloc(N * N * sizeof(float));
@@ -47,7 +47,7 @@ _run_bench = ()
   time_taken = os.clock() - start
 
   checksum: f64 = 0.0
-  @c.emit([[
+  @comp.c.emit([[
         double sum = 0.0;
         for(int i=0; i<N*N; i++) {
             sum += c[i];

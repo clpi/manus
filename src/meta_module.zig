@@ -826,21 +826,70 @@ pub fn isCHeaderImportDirective(name: []const u8) bool {
 }
 
 /// Standalone raw C injection directives (`@comp.c.emit`, legacy `@c.emit`, …).
+///
+/// SEVEN SPELLINGS REACH `__emit`: `@comp.c.emit` (canonical), `@c.emit`,
+/// `@meta.c.emit`, `@compiler.c.emit`, `@comp.emit`, `@compiler.emit`, `@emit`.
+/// They are one operation — compiled and run, all seven give the same answer.
+/// The table is the only place that fact is written down, so this predicate
+/// reads the table instead of restating part of it; restating part of it is
+/// what discarded every `@comp.c.emit` statement in `lib/` while `idol check`
+/// reported the tree clean.
 pub fn isCEmitDirective(name: []const u8) bool {
     if (resolveBuiltin(name)) |internal| {
         return std.mem.eql(u8, internal, "__emit");
     }
-    return std.mem.eql(u8, name, "emit");
+    // No literal tail. `emit` HAS a table entry (`.{ .public = "emit",
+    // .internal = "__emit" }`), so the `std.mem.eql(u8, name, "emit")` that
+    // used to sit here was already unreachable — a literal kept for a spelling
+    // the table had absorbed. `isCHeaderImportDirective` above still needs its
+    // tail, because `cinclude` genuinely has no entry; this one did not.
+    return false;
 }
 
 /// C-interface attributes that attach to the following declaration (export, type, …).
+///
+/// `__c_call` IS IN THIS SET, and leaving it out cost a silent wrong answer of
+/// exactly the `@comp.c.emit` kind. `parser.zig` compensated with a literal
+/// `or std.mem.eql(u8, attr.name, "c.call")` beside the call to this predicate,
+/// so only the SHORT spelling attached. Measured, with `twice_c` emitted and a
+/// function body consisting of one call to it:
+///
+///     twice: i64 = ()
+///         @c.call("twice_c", @(21))        -> error: unknown or misplaced attribute
+///         @comp.c.call("twice_c", @(21))   -> compiles clean, `return 0;`
+///
+/// The canonical spelling — the one `warnDeprecatedAtQualified` tells you to
+/// write — fell through to `isMetaAttribute`, which resolves `comp.c.call` in
+/// the builtin table and answers "module directive", so the body was parsed as
+/// a standalone directive statement and the function was left empty. `idol
+/// check` reported no errors, because there were none: the function compiled,
+/// it just did nothing. Resolving `__c_call` here makes both spellings attach,
+/// and both then reach the same diagnostic.
 pub fn isAttachingCInterfaceAttribute(name: []const u8) bool {
     if (resolveBuiltin(name)) |internal| {
         return std.mem.eql(u8, internal, "__c_export") or
             std.mem.eql(u8, internal, "__c_type") or
             std.mem.eql(u8, internal, "__c_link") or
+            std.mem.eql(u8, internal, "__c_call") or
             std.mem.eql(u8, internal, "__ffi_gen");
     }
+    // `@ffi` AND `@c.ffi` HAVE NO ENTRY IN THE ALIAS TABLE, so this tail is
+    // load-bearing, not a leftover — but it is also the place the two `ffi`
+    // spellings come to look interchangeable, and they are NOT one operation:
+    //
+    //   @ffi("llabs")       binds the declaration to the external C symbol.
+    //                       Measured: the body is discarded, the call returns 5.
+    //   @comp.ffi("llabs")  resolves to `__ffi_gen` = the `ffi.gen` module
+    //                       directive, which SCANS A C HEADER
+    //                       (meta_directives.zig:83 registerFfiGen). Given a
+    //                       symbol name it finds no header, registers nothing,
+    //                       and the Idol body runs. Measured: returns 0.
+    //
+    // Both answer TRUE here, which is why nothing notices. 33 sites in
+    // `lib/os/linux.id` write the `@ffi` binding form as `@comp.ffi(name, ret,
+    // {args})`; `gate/dialect.sh` reports them as `divergent`. The real repair
+    // is a `@comp.*` spelling for the BINDING that does not collide with
+    // `ffi.gen` — it is not a rename, and it is not made here.
     return std.mem.eql(u8, name, "c.ffi") or std.mem.eql(u8, name, "ffi");
 }
 
@@ -1814,4 +1863,67 @@ test "meta_module: suggestNextCombinators" {
     try std.testing.expectEqualStrings("@comp.product, @comp.burst", suggestNextCombinators("comp.map"));
     try std.testing.expectEqualStrings("@comp.product, @comp.burst", suggestNextCombinators("meta.map"));
     try std.testing.expectEqualStrings("see @comp.ladder() for full scaling hierarchy", suggestNextCombinators("comp.unknown"));
+}
+
+test "meta_module: every spelling of one operation gets one answer" {
+    // ONE OPERATION, ONE ANSWER. Each row is a set of spellings the alias table
+    // resolves to a single internal hook. A predicate that says yes to some of
+    // a row and no to the rest is the shape of the `@comp.c.emit` defect: the
+    // function compiles, the payload is discarded, and `idol check` is clean.
+    const emit = [_][]const u8{ "comp.c.emit", "c.emit", "meta.c.emit", "compiler.c.emit", "emit", "comp.emit", "compiler.emit" };
+    for (emit) |s| try std.testing.expect(isCEmitDirective(s));
+    try std.testing.expect(!isCEmitDirective("comp.c.emit.file"));
+    try std.testing.expect(!isCEmitDirective("comp.c.include"));
+
+    const include = [_][]const u8{ "comp.c.include", "c.include", "meta.c.include", "compiler.c.include", "comp.c.import", "c.import", "cinclude" };
+    for (include) |s| try std.testing.expect(isCHeaderImportDirective(s));
+    try std.testing.expect(!isCHeaderImportDirective("comp.c.emit"));
+
+    // `__c_call` BELONGS IN THE ATTACHING SET. Without it `@comp.c.call` on a
+    // declaration was not an attribute at all — it resolved as a module
+    // directive and the function body vanished, compiling to `return 0` while
+    // `@c.call` in the same position raised "unknown or misplaced attribute".
+    const attaching = [_][]const u8{
+        "comp.c.export", "c.export",  "meta.c.export",
+        "comp.c.type",   "c.type",    "comp.c.link",
+        "c.link",        "comp.c.call", "c.call",
+        "meta.c.call",   "compiler.c.call",
+    };
+    for (attaching) |s| try std.testing.expect(isAttachingCInterfaceAttribute(s));
+    // Negative controls: the standalone C-interface statements must NOT attach,
+    // or every `@comp.c.emit(...)` becomes an attribute on the next declaration.
+    try std.testing.expect(!isAttachingCInterfaceAttribute("comp.c.emit"));
+    try std.testing.expect(!isAttachingCInterfaceAttribute("comp.c.include"));
+    try std.testing.expect(!isAttachingCInterfaceAttribute("comp.map"));
+
+    // `@ffi` AND `@comp.ffi` ARE NOT ONE OPERATION, measured by running:
+    // `@ffi("llabs")` binds the external symbol (answer 5); `@comp.ffi("llabs")`
+    // is `ffi.gen`, scans for a C HEADER, finds none, and lets the Idol body run
+    // (answer 0). Both answer true here — that is recorded, not endorsed, and it
+    // is why `gate/dialect.sh` reports the `@comp.ffi(name, ret, {args})` shape
+    // as `divergent` rather than renaming it.
+    try std.testing.expect(isAttachingCInterfaceAttribute("ffi"));
+    try std.testing.expect(isAttachingCInterfaceAttribute("comp.ffi"));
+    try std.testing.expect(!std.mem.eql(u8, resolveBuiltin("comp.ffi").?, "__c_call"));
+    try std.testing.expectEqualStrings("__ffi_gen", resolveBuiltin("comp.ffi").?);
+    try std.testing.expect(resolveBuiltin("ffi") == null);
+}
+
+test "meta_module: the alias table admits no spelling it cannot resolve back" {
+    // A DUPLICATE SPELLING IS A LATENT DEFECT, so the ones that exist should at
+    // least be reachable from the canonical name. Every `comp.*` public entry
+    // must resolve, and its internal must map back to a `comp.*` name — the
+    // property `publicNameForInternal` exists to provide and that
+    // `gate/dialect.sh` relies on when it names the canonical spelling.
+    var checked: usize = 0;
+    for (builtins) |entry| {
+        if (!std.mem.startsWith(u8, entry.public, "comp.")) continue;
+        checked += 1;
+        try std.testing.expectEqualStrings(entry.internal, resolveBuiltin(entry.public).?);
+        const back = publicNameForInternal(entry.internal) orelse return error.NoPublicName;
+        try std.testing.expect(std.mem.startsWith(u8, back, "comp."));
+    }
+    // A zero count here would make the loop above a vacuous pass — the same
+    // failure `gate/all.sh` refuses for a gate that examined no files.
+    try std.testing.expect(checked > 100);
 }

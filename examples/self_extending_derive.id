@@ -5,7 +5,7 @@
   child = "fun generate(meta) -> str return \"static int \" .. meta.name .. \"_magic() { return 42; }\" end"
   @comp.register.derive(meta.name .. "Kind", child)
   ""
-end)
+)
 
 @derive(Factory)
 Point: { x: f64, y: f64 }

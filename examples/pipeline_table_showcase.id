@@ -14,7 +14,7 @@
     reduce = "acc_add",
 })
 
-@c.emit([[
+@comp.c.emit([[
 static inline int64_t map_double(int64_t x) { return x * 2; }
 static inline int keep_positive(int64_t x) { return x > 0; }
 static inline int64_t acc_add(int64_t a, int64_t b) { return a + b; }
@@ -22,7 +22,7 @@ static const int64_t pipeline_data[] = { 1, 2, 3, 4, 5 };
 ]])
 
 total: i64 = ()
-    @c.call("sum_mapped", @(pipeline_data), @(5))
+    @comp.c.call("sum_mapped", @(pipeline_data), @(5))
 
 print("=== @comp.pipeline table showcase ===")
 print("sum_mapped(1..5, map*2, >0) = " .. to(str)(total()))

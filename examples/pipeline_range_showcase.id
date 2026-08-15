@@ -12,7 +12,7 @@
 })
 
 total: i64 = ()
-    @c.call("sum_range")
+    @comp.c.call("sum_range")
 
 print("=== @comp.pipeline range showcase ===")
 print("sum 1..100 = " .. to(str)(total()))

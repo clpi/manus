@@ -4,14 +4,14 @@
 
 TOP = @comp.match("a|b", fun(m)
   m.pattern .. "\n"
-end)
+)
 NESTED = @comp.map("q", fun(seed)
   @comp.match("a|b", fun(m)
     m.pattern .. "\n"
-  end)
-end)
+  )
+)
 parity: str = {}
 @comp.match("a|b", fun(m)
   m.pattern .. "\n"
-end)
+)
 BLOCK = parity()

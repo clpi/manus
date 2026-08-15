@@ -4,14 +4,14 @@
 
 TOP = @comp.each("a|b", fun(f)
   f.name .. "\n"
-end)
+)
 NESTED = @comp.map("q", fun(seed)
   @comp.each("a|b", fun(f)
     f.name .. "\n"
-  end)
-end)
+  )
+)
 parity: str = {}
 @comp.each("a|b", fun(f)
   f.name .. "\n"
-end)
+)
 BLOCK = parity()

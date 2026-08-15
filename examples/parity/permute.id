@@ -9,14 +9,14 @@ T2: { x: i64, y: i64 }
 
 TOP = @comp.permute("Has1", fun(ordered)
   ordered.name .. "\n"
-end)
+)
 NESTED = @comp.map("q", fun(seed)
   @comp.permute("Has1", fun(ordered)
     ordered.name .. "\n"
-  end)
-end)
+  )
+)
 parity: str = {}
 @comp.permute("Has1", fun(ordered)
   ordered.name .. "\n"
-end)
+)
 BLOCK = parity()

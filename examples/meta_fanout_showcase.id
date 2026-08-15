@@ -8,8 +8,7 @@ tree = @comp.fanout("root", fun(state)
     frag .. "_L\n" .. frag .. "_R"
   else
     frag
-  end
-end, 3)
+, 3)
 
 print("=== @comp.fanout binary tree (depth=3, 2^3=8 leaves) ===")
 # tree is a comptime-folded string, use print directly

@@ -5,13 +5,13 @@
 # Generate type x operation function names
 S = @comp.zip("i32|i64|f64", "add|sub|mul", fun(p)
   p.a .. "_" .. p.b .. " "
-end)
+)
 print("=== @comp.zip: type x operation ===")
 print(S)
 
 # Generate accessor functions for types x fields
 G = @comp.zip("Point|Rect|Circle", "x|y|radius", fun(p)
   "double " .. p.a .. "_get_" .. p.b .. "(struct " .. p.a .. "* s) { return s->" .. p.b .. "; }\n"
-end)
+)
 print("=== @comp.zip: accessor functions ===")
 print(G)

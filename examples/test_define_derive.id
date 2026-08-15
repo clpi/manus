@@ -12,7 +12,7 @@
     out = out .. "    printf(\"}\\n\");\n"
     out = out .. "}\n"
     return out
-end)
+)
 
 @derive(Printable)
 Foo: {
@@ -21,4 +21,4 @@ Foo: {
 }
 
 f: Foo = { x = 42, y = "hello metaprogramming" }
-@c.call("duo_Foo_print", f)
+@comp.c.call("duo_Foo_print", f)

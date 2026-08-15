@@ -1,8 +1,8 @@
-# Smoke test for @run: compile-time host command execution.
+# Smoke test for @comp.run: compile-time host command execution.
 #
 # `@comp.run("cmd")` is the cross-language metaprogramming harness:
 #   • at module-scope statement position it runs `cmd` at compile time and
-#     injects stdout as raw C (parallel to @c.emit, but piped from a tool);
+#     injects stdout as raw C (parallel to @comp.c.emit, but piped from a tool);
 #   • in expression position it returns the stdout as a comptime string.
 
 # Expression form: bake a shell command's stdout into a comptime string.
@@ -11,10 +11,10 @@ print("greeting = " .. greeting .. "\n")
 
 # Directive form at module scope: run a command, inject its stdout as C.
 # Here we synthesize a C declaration via `printf` at compile time.
-@c.include("stdio.h")
+@comp.c.include("stdio.h")
 @comp.run("printf 'static int side = 7;'")
 
-@c.call("printf", "side = %d\n", @(side))
+@comp.c.call("printf", "side = %d\n", @(side))
 
 # Harness another compiler/tool: bake build host into a Duo string.
 host = @comp.run("uname -s")

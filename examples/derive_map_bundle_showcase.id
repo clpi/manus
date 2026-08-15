@@ -10,7 +10,7 @@ Pair: { x: f64, y: f64 }
 
 @comp.define.derive("TouchApi", generate: str = (meta)
     "static inline void duo_" .. meta.name .. "_touch(const duo_" .. meta.name .. "* v) { (void)v->x; (void)v->y; }\n"
-end)
+)
 
 
 @comp.define.derive("LayoutApi", generate: str = (meta)
@@ -19,7 +19,7 @@ end)
         f = meta.fields[i]
         acc = acc .. "static inline size_t duo_" .. meta.name .. "_off_" .. f.name .. "(void) { return offsetof(duo_" .. meta.name .. ", " .. f.name .. "); }\n"
     acc
-end)
+)
 
 
 @comp.define.bundle("FullApi", TouchApi, LayoutApi)

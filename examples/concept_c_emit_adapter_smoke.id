@@ -3,7 +3,7 @@ concept ContractShape
     id: i64
     hash(self, salt: i64): i64
 
-@c.emit([[
+@comp.c.emit([[
 typedef struct UserAdapter {
     int64_t id;
     int64_t (*hash)(void* self, int64_t salt);
@@ -27,10 +27,10 @@ c_report = contracts.concept_target_c_report(
     }
 )
 
-@c.emit(c_report.c_source)
+@comp.c.emit(c_report.c_source)
 
-adapter_id: i64 = @c.emit("UserAdapter_get_id(&duo_user_adapter)")
-adapter_hash: i64 = @c.emit("UserAdapter_hash(&duo_user_adapter, 2)")
+adapter_id: i64 = @comp.c.emit("UserAdapter_get_id(&duo_user_adapter)")
+adapter_hash: i64 = @comp.c.emit("UserAdapter_hash(&duo_user_adapter, 2)")
 
 if adapter_id != 40
     error("concept adapter getter returned wrong id")

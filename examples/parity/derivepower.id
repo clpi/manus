@@ -6,14 +6,14 @@ concept Has1
   x: i64
 T1: { x: i64 }
 
-@comp.define.derive("Stub", fun generate: str = (meta)
+@comp.define.derive("Stub", generate: str = (meta)
     meta.name .. "\n"
-end)
+)
 
 TOP = @comp.derive.power("Has1", Stub)
 NESTED = @comp.map("q", fun(seed)
   @comp.derive.power("Has1", Stub)
-end)
+)
 parity: str = {}
 @comp.derive.power("Has1", Stub)
 BLOCK = parity()

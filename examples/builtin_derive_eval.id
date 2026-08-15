@@ -13,7 +13,7 @@
     acc = acc .. eq_src .. "\n"
     acc = acc .. hash_src .. "\n"
     return acc
-end)
+)
 
 @derive(ReportBuiltins)
 Point: { x: i64, y: i64 }

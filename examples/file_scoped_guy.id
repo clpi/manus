@@ -14,7 +14,7 @@ props = {
         "golf",
         "table tennis",
     },
-    hasHobby = fun(self, hobby: string)
+    hasHobby = (self, hobby: string)
         self.hobbies:contains(hobby)
     end,
 }

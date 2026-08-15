@@ -10,7 +10,7 @@
     acc = acc .. f.name .. "="
   acc = acc .. ")\";\n}\n"
   acc
-end)
+)
 
 @derive(Printable)
 Vec2: { x: f64, y: f64 }

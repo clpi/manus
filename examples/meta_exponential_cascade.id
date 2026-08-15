@@ -19,16 +19,16 @@ OPS = "add|" .. "sub"
 
 PAIRS = @comp.zip(TYPES, OPS, fun(p)
   p.a .. "_" .. p.b .. " "
-end)
+)
 
 # power(3 types) → 7 subset fragments; each re-expands; template emits C stub per type.
 SUBSETS = @comp.power("HasXY", fun(s)
   s.name .. ";"
-end)
+)
 
 CASCADE = @comp.each(SUBSETS, fun(frag)
   @comp.template(frag.name .. ":int64_t", "int64_t tag_$0() { return 0 }\n")
-end)
+)
 
 HINT = @comp.agent.multiplier("compose exponential cascade")
 

@@ -4,14 +4,14 @@
 
 TOP = @comp.fixpoint("s", fun(state)
   "i" .. tostring(state.iteration) .. "\n"
-end, 2)
+, 2)
 NESTED = @comp.map("q", fun(seed)
   @comp.fixpoint("s", fun(state)
     "i" .. tostring(state.iteration) .. "\n"
-  end, 2)
-end)
+  , 2)
+)
 parity: str = {}
 @comp.fixpoint("s", fun(state)
   "i" .. tostring(state.iteration) .. "\n"
-end, 2)
+, 2)
 BLOCK = parity()

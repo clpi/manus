@@ -28,11 +28,14 @@ POWER = @comp.power("HasXY", power_sig)
 print("=== @comp.power (2^3 - 1 = 7 subsets) ===")
 print(POWER)
 
-# 2. @comp.powerset # canonical alias of @comp.power (same O(2^n) hook).
-#    Exercised here because it is otherwise unused anywhere in the codebase.
-PSET = @comp.powerset("HasXY", power_sig)
-print("=== @comp.powerset (7 subsets, same hook as power) ===")
-print(PSET)
+# 2. WAS `@comp.powerset`, deleted. It resolved to the SAME internal hook
+#    (`__comptimepower`) as `@comp.power` above, and its own comment gave the
+#    only reason it existed: "exercised here because it is otherwise unused
+#    anywhere in the codebase". A spelling kept alive by the one file that
+#    demonstrates it is not a second operation, it is a second NAME — and the
+#    next call site in the compiler that compares against one of the two names
+#    reproduces the `@c.emit` / `@comp.c.emit` defect. `gate/dialect.sh` now
+#    refuses the spelling, so this section cannot come back by accident.
 
 # 3. @comp.permute # permutation enumeration: O(n!).
 #    For 3 matching types -> 3! = 6 permutations.
@@ -52,17 +55,15 @@ count_semicolons: i64 = (s: str)
   n
 
 POWER_COUNT = count_semicolons(POWER)
-PSET_COUNT = count_semicolons(PSET)
 PERMUTE_COUNT = count_semicolons(PERMUTE)
 print("power fragments   = " .. POWER_COUNT .. "  (expect 7 = 2^3-1)")
-print("powerset fragments = " .. PSET_COUNT .. "  (expect 7 = 2^3-1)")
 print("permute fragments  = " .. PERMUTE_COUNT .. "  (expect 6 = 3!)")
 
 # 5. @comp.derive.power # apply a derive macro to every non-empty subset.
 
 @comp.define.derive("SubsetStub", generate: str = (meta)
     "/* subset " .. meta.name .. " mask=" .. to(str)(meta.mask) .. " count=" .. to(str)(meta.count) .. " */\n"
-end)
+)
 
 SUBSET_CODE = @comp.derive.power("HasXY", SubsetStub)
 print("=== @comp.derive.power (7 derive fragments) ===")
@@ -73,6 +74,6 @@ LADDER = @comp.ladder()
 print("=== @comp.ladder (updated) ===")
 print(LADDER)
 
-ok = POWER_COUNT == 7 and PSET_COUNT == 7 and PERMUTE_COUNT == 6
+ok = POWER_COUNT == 7 and PERMUTE_COUNT == 6
 print("=== RESULT ===")
 print("power_and_permute_ok = " .. to(str)(ok))

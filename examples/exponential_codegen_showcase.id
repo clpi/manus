@@ -1,4 +1,4 @@
-# Exponential codegen: @comp.* bundles, @c.emit, concept sweeps
+# Exponential codegen: @comp.* bundles, @comp.c.emit, concept sweeps
 # Run: duo run examples/exponential_codegen_showcase.id
 
 @comp.define.derive("CStruct", generate: str = (meta)
@@ -7,7 +7,7 @@
         f = meta.fields[i]
         acc = acc .. "    " .. f.type .. " " .. f.name .. ";\n"
     acc .. "} " .. meta.name .. ";\n"
-end)
+)
 
 @comp.define.derive("GetterBundle", generate: str = (meta)
     acc = ""
@@ -15,7 +15,7 @@ end)
         f = meta.fields[i]
         acc = acc .. "static inline " .. f.type .. " " .. meta.name .. "_get_" .. f.name .. "(const " .. meta.name .. "* v) { return v->" .. f.name .. "; }\n"
     acc
-end)
+)
 
 @comp.define.bundle("Api", CStruct, GetterBundle, Debug)
 
@@ -33,10 +33,10 @@ type_mark: str = (meta)
 
 p: Point = { x = 3.0, y = 4.0 }
 
-@c.emit(@comp.fields.map(p, "/* field %n (%t) */\n"))
+@comp.c.emit(@comp.fields.map(p, "/* field %n (%t) */\n"))
 
 FIELD_SIGS = @comp.fields.map(p, "%n:%t;")
-UNROLL = @(@comp.loop(0, 4, "init_%i();"))
+UNROLL = @(@comp.for(0, 4, "init_%i();"))
 TYPE_MARKS = @comp.map("HasXY", type_mark)
 
 print("=== exponential codegen showcase ===")

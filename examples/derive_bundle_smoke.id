@@ -1,6 +1,6 @@
 @comp.define.derive("TagOnly", generate: str = (meta)
     "/* tagged " .. meta.name .. " */\n"
-end)
+)
 
 @comp.derive.bundle("Debug")
 Tiny: { n: i64 }

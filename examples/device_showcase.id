@@ -6,13 +6,13 @@
 #   @device(.cpu)   → regular C function
 #   @device(.auto)  → auto-detected device
 
-@c.include("stdio.h")
-@c.include("stdlib.h")
+@comp.c.include("stdio.h")
+@comp.c.include("stdlib.h")
 
 # CUDA kernel: matrix multiplication
 @device(.cuda)
 cuda_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): void
-  @c.emit([[
+  @comp.c.emit([[
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if (row < M && col < N) {
@@ -26,7 +26,7 @@ cuda_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): void
 # Metal kernel: vector addition
 @device(.metal)
 metal_vecadd(a: ptr, b: ptr, c: ptr, n: i32): void
-  @c.emit([[
+  @comp.c.emit([[
     int idx = thread_position_in_grid().x;
     if (idx < n) {
       ((float*)c)[idx] = ((float*)a)[idx] + ((float*)b)[idx];
@@ -36,7 +36,7 @@ metal_vecadd(a: ptr, b: ptr, c: ptr, n: i32): void
 # Regular CPU function
 @device(.cpu)
 cpu_dot: float = (a: ptr, b: ptr, n: i32)
-  @c.emit([[
+  @comp.c.emit([[
     float sum = 0.0f;
     for (int i = 0; i < n; i++)
       sum += ((float*)a)[i] * ((float*)b)[i];
@@ -46,7 +46,7 @@ cpu_dot: float = (a: ptr, b: ptr, n: i32)
 # Auto-detected device (runtime selection)
 @device(.auto)
 auto_relu(x: ptr, n: i32): void
-  @c.emit([[
+  @comp.c.emit([[
     for (int i = 0; i < n; i++) {
       float val = ((float*)x)[i];
       ((float*)x)[i] = val > 0.0f ? val : 0.0f;

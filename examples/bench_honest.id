@@ -1,5 +1,5 @@
 # bench_honest.id — Runtime-seeded benchmarks vs optimized C reference.
-# Hot paths use @c.emit (canonical @c.* metaprogramming) for explicit native C.
+# Hot paths use @comp.c.emit (canonical @c.* metaprogramming) for explicit native C.
 # C reference (bench_honest_c.c) keeps straightforward native baselines under
 # the same Clang -O3 -flto toolchain.
 
@@ -8,7 +8,7 @@
 # ═══════════════════════════════════════════════════════════════
 @hot
 bench_matmul: f64 = (n: i64, s: i64)
-    @c.emit([[
+    @comp.c.emit([[
         double a_col[128] __attribute__((aligned(32))) = {0};
         double b_row[128] __attribute__((aligned(32))) = {0};
         for(int i=0;i<128;i++) {
@@ -30,7 +30,7 @@ bench_matmul: f64 = (n: i64, s: i64)
         for(int k=0;k<128;k++) cksum+=a_col[k]*b_row[k];
     ]])
     result: f64 = 0.0
-    @c.emit("result = cksum")
+    @comp.c.emit("result = cksum")
     return result
 
 # ═══════════════════════════════════════════════════════════════
@@ -38,7 +38,7 @@ bench_matmul: f64 = (n: i64, s: i64)
 # ═══════════════════════════════════════════════════════════════
 @hot
 bench_qsort: i64 = (n: i64, s: i64)
-    @c.emit([[
+    @comp.c.emit([[
         int64_t* arr = (int64_t*)malloc(n * sizeof(int64_t));
         if(!arr) return 0;
         for(int64_t i=0;i<n;i++){s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);arr[i]=s;}
@@ -74,7 +74,7 @@ bench_qsort: i64 = (n: i64, s: i64)
         free(arr);
     ]])
     result: i64 = 0
-    @c.emit("result = cksum ^ sorted")
+    @comp.c.emit("result = cksum ^ sorted")
     return result
 
 # ═══════════════════════════════════════════════════════════════
@@ -84,7 +84,7 @@ bench_qsort: i64 = (n: i64, s: i64)
 # ═══════════════════════════════════════════════════════════════
 @hot
 bench_hashtable: i64 = (n: i64, s: i64)
-    @c.emit([[
+    @comp.c.emit([[
         #define HT_SIZE 65536
         #define HT_MASK (HT_SIZE-1)
         // Bitset occupancy: 8KB (65536/8 bytes) fits in L1 with room to spare.
@@ -131,7 +131,7 @@ bench_hashtable: i64 = (n: i64, s: i64)
         #undef HT_MASK
     ]])
     result: i64 = 0
-    @c.emit("result = hits")
+    @comp.c.emit("result = hits")
     return result
 
 # ═══════════════════════════════════════════════════════════════
@@ -139,7 +139,7 @@ bench_hashtable: i64 = (n: i64, s: i64)
 # ═══════════════════════════════════════════════════════════════
 @hot
 bench_bsearch: i64 = (n: i64, s: i64)
-    @c.emit([[
+    @comp.c.emit([[
         #define BS_SIZE 100000
         #define BS_HT_SIZE 262144
         #define BS_HT_MASK (BS_HT_SIZE-1)
@@ -191,7 +191,7 @@ bench_bsearch: i64 = (n: i64, s: i64)
         #undef BS_SIZE
     ]])
     result: i64 = 0
-    @c.emit("result = found")
+    @comp.c.emit("result = found")
     return result
 
 # ═══════════════════════════════════════════════════════════════
@@ -200,7 +200,7 @@ bench_bsearch: i64 = (n: i64, s: i64)
 @hot
 @noinline
 bench_nbody_real: f64 = (steps: i64, s: i64)
-    @c.emit([[
+    @comp.c.emit([[
         #define NB 16
         double px[NB],py[NB],vx[NB],vy[NB],mass[NB];
         for(int i=0;i<NB;i++){
@@ -236,7 +236,7 @@ bench_nbody_real: f64 = (steps: i64, s: i64)
         #undef NB
     ]])
     result: f64 = 0.0
-    @c.emit("result = energy")
+    @comp.c.emit("result = energy")
     return result
 
 # ═══════════════════════════════════════════════════════════════
@@ -245,7 +245,7 @@ bench_nbody_real: f64 = (steps: i64, s: i64)
 @hot
 @noinline
 bench_fnv_hash: i64 = (n: i64, s: i64)
-    @c.emit([[
+    @comp.c.emit([[
         #define BUF_SZ (1024*1024)
         uint8_t* buf = (uint8_t*)malloc(BUF_SZ);
         if(__builtin_expect(!buf, 0)) return 0;
@@ -365,16 +365,16 @@ bench_fnv_hash: i64 = (n: i64, s: i64)
         #undef BUF_SZ
     ]])
     result: i64 = 0
-    @c.emit("result = hash_sum")
+    @comp.c.emit("result = hash_sum")
     return result
 
 print_fnv_result = (v: i64)
-    @c.emit([[printf("RESULT fnv %lld\n", (long long)v);]])
+    @comp.c.emit([[printf("RESULT fnv %lld\n", (long long)v);]])
 
 # ═══════════════════════════════════════════════════════════════
 # Driver
 # ═══════════════════════════════════════════════════════════════
-seed: i64 = @c.emit("getenv(\"HONEST_SEED\") ? (int64_t)atoll(getenv(\"HONEST_SEED\")) : (int64_t)(((double)clock()/(double)CLOCKS_PER_SEC) * 1000000) + 12345")
+seed: i64 = @comp.c.emit("getenv(\"HONEST_SEED\") ? (int64_t)atoll(getenv(\"HONEST_SEED\")) : (int64_t)(((double)clock()/(double)CLOCKS_PER_SEC) * 1000000) + 12345")
 print("=== Honest Benchmarks (runtime-seeded, no precomputation) ===")
 print("Seed: " .. to(str)(seed))
 

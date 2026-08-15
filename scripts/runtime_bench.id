@@ -249,7 +249,7 @@ number: i64 = (s: str)
         if b >= 48 and b <= 57
             if start == 0
                 start = i
-        elseif start > 0
+        else(start > 0)
             out = to(i64)(s:sub(start, i - 1))
         i += 1
     if start > 0 and out < 0
@@ -294,15 +294,15 @@ invocation: str = (rt: str, bin: str, path: str, entry: str)
             out = "WARD_WASM='{path}' WARD_INVOKE=_start '{bin}'"
         else
             out = "WARD_WASM='{path}' WARD_INVOKE=run '{bin}'"
-    elseif rt == "wart"
+    else(rt == "wart")
         if entry == "start"
             out = "'{bin}' run '{path}'"
-    elseif rt == "wasmtime"
+    else(rt == "wasmtime")
         if entry == "start"
             out = "'{bin}' '{path}'"
         else
             out = "'{bin}' --invoke run '{path}'"
-    elseif rt == "wasmer"
+    else(rt == "wasmer")
         if entry == "start"
             out = "'{bin}' run '{path}'"
     out
@@ -764,7 +764,7 @@ main: i64 = ()
                             if got == ref
                                 cells[j] = "ok"
                                 marks[j] = 1
-                            elseif wrapped(got, ref)
+                            else(wrapped(got, ref))
                                 cells[j] = "wrap"
                                 marks[j] = 1
                             else
@@ -885,7 +885,7 @@ main: i64 = ()
                 if pct >= 95 and pct <= 105
                     verdict = "tie"
                     ties += 1
-                elseif nsward < rival
+                else(nsward < rival)
                     verdict = "win"
                     wins += 1
                 else
@@ -944,7 +944,7 @@ main: i64 = ()
                     else
                         print(ind6 .. "over baseline {bs}s (limit {ls}s, measured {ms}s) — NOT")
                         print(ind6 .. "counted, the row is flagged and its number is not trusted")
-                elseif clean and nsward * 100 < baseline[i] * 70
+                else(clean and nsward * 100 < baseline[i] * 70)
                     bs: str = secs(baseline[i])
                     ms: str = secs(nsward)
                     print(ind6 .. "improved    baseline {bs}s, measured {ms}s — lower it here")
@@ -999,7 +999,7 @@ main: i64 = ()
             print("  NOT fail this gate; only getting slower than ward's own recorded")
             print("  number does.")
             code = 1
-        elseif eligible == 0
+        else(eligible == 0)
             print("runtime bench: INCONCLUSIVE — 0 of {total} rows were clean enough to")
             print("  ratchet. Every row carried a `floor` or `noisy` flag, which means")
             print("  this machine was too busy for the measurement to mean anything.")
