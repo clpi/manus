@@ -27,7 +27,6 @@ linear_backoff: any = (base: float, max_val: float)
         wait = base_c * attempt
         if wait > max_c wait = max_c
         wait
-end
 
 # exponential_backoff: wait doubles each attempt (with optional jitter).
 exponential_backoff: any = (base: float, max_val: float, jitter: bool)
@@ -48,7 +47,6 @@ exponential_backoff: any = (base: float, max_val: float, jitter: bool)
             variation = wait * 0.25
             wait -= variation + (math.random() * variation * 2)
         wait
-end
 
 # ===== Core retry =====
 

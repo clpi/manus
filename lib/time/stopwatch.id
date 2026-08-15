@@ -94,9 +94,9 @@ profiler_report: any = (profiler: any)
   report = {}
   for name, section in profiler.sections
     report(report:len() + 1) = profiler_stats(profiler, name)
-  report:sort(fun(a: any, b: any) -> any
+  report:sort((a: any, b: any) -> any
     a.total > b.total
-  end)
+  )
   report
 profiler_reset = (profiler: any)
   profiler.sections = {}

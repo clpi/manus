@@ -85,9 +85,9 @@ sample_top_k: i64 = (logits: any, k: i64, temperature: f64)
       logit = logits(i)
 
   # Sort by logit descending
-  indexed:sort(fun(a: any, b: any) -> any
+  indexed:sort((a: any, b: any) -> any
     a.logit > b.logit
-  end)
+  )
 
   # Keep top k
   top_k = {}
@@ -118,9 +118,9 @@ sample_top_p: i64 = (logits: any, top_p: f64, temperature: f64)
     indexed(indexed:len() + 1) =
       idx = i
       logit = logits(i)
-  indexed:sort(fun(a: any, b: any) -> any
+  indexed:sort((a: any, b: any) -> any
     a.logit > b.logit
-  end)
+  )
 
   # Apply temperature and softmax
   scaled = {}
@@ -168,9 +168,9 @@ sample_beam_search: any = (logits: any, beams: i64, sequence: any)
       indexed(indexed:len() + 1) =
         idx = i
         logit = logits(i)
-    indexed:sort(fun(a: any, b: any) -> any
+    indexed:sort((a: any, b: any) -> any
       a.logit > b.logit
-    end)
+    )
 
     i = 1
     while i <= beams and i <= indexed:len()
@@ -189,9 +189,9 @@ sample_beam_search: any = (logits: any, beams: i64, sequence: any)
       indexed(indexed:len() + 1) =
         idx = i
         logit = logits(i)
-    indexed:sort(fun(a: any, b: any) -> any
+    indexed:sort((a: any, b: any) -> any
       a.logit > b.logit
-    end)
+    )
 
     top_n = beams:min(indexed:len())
     i = 1
@@ -206,9 +206,9 @@ sample_beam_search: any = (logits: any, beams: i64, sequence: any)
       i = i + 1
 
   # Sort all candidates by score and keep top beams
-  all_candidates:sort(fun(a: any, b: any) -> any
+  all_candidates:sort((a: any, b: any) -> any
     a.score > b.score
-  end)
+  )
   result = {}
   i = 1
   while i <= beams and i <= all_candidates:len()
@@ -324,9 +324,9 @@ top_k_logits: any = (logits: any, k: i64)
     indexed(indexed:len() + 1) =
       idx = i
       logit = logits(i)
-  indexed:sort(fun(a: any, b: any) -> any
+  indexed:sort((a: any, b: any) -> any
     a.logit > b.logit
-  end)
+  )
 
   result = {}
   i = 1

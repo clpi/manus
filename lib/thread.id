@@ -95,7 +95,7 @@ wunlock = (rw: any)
     if rw.wwait:len() > 0
         co = rw.wwait:remove(1)
         sync.spawn(() coroutine.resume(co))
-    elseif rw.rwait:len() > 0
+    else(rw.rwait:len() > 0)
         for _, co in rw.rwait
             sync.spawn(() coroutine.resume(co))
         rw.rwait = {}
@@ -248,7 +248,7 @@ spawn: any = (fn: any, ...args)
             chan:send({ok = true, val = result})
         else
             chan:send({ok = false, err = result})
-    end)
+    )
     sync.spawn(() coroutine.resume(co))
     {
         co    = co,

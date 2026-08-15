@@ -160,9 +160,9 @@ rank: any = (results: any, metric: str)
     ranked(ranked:len() + 1) =
       name = name
       value = result(metric) or 0
-  ranked:sort(fun(a: any, b: any) -> any
+  ranked:sort((a: any, b: any) -> any
     a.value > b.value
-  end)
+  )
   ranked
 report: str = (results: any)
   lines = {}

@@ -304,7 +304,7 @@ apply_easing: f64 = (t: f64, easing: str)
 interpolate_values: any = (a: any, b: f64, t: f64)
     if type(a) == "number"
         return a + (b - a) * t
-    elseif type(a) == "table"
+    else(type(a) == "table")
         result = {}
         for k, v in a
             if b[k]

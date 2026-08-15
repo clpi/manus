@@ -170,13 +170,13 @@ material_set_emissive = (mat: any, r: f64, g: f64, b: f64, strength: f64)
 material_set_texture = (mat: any, texture_type: str, texture: any)
     if texture_type == "albedo"
         mat.albedo_texture = texture
-    elseif texture_type == "metallic_roughness"
+    else(texture_type == "metallic_roughness")
         mat.metallic_roughness_texture = texture
-    elseif texture_type == "normal"
+    else(texture_type == "normal")
         mat.normal_texture = texture
-    elseif texture_type == "ao"
+    else(texture_type == "ao")
         mat.ao_texture = texture
-    elseif texture_type == "emissive"
+    else(texture_type == "emissive")
         mat.emissive_texture = texture
 
 # ═══════════════════════════════════════════════════════════════

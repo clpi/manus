@@ -41,7 +41,7 @@ lookup: any = (store: any, pattern: str)
             prefix = suffix:sub(1, plen)
             if prefix < pattern
                 cmp = -1
-            elseif prefix > pattern
+            else(prefix > pattern)
                 cmp = 1
         if cmp < 0
             lo = mid + 1
@@ -62,7 +62,7 @@ lookup: any = (store: any, pattern: str)
             prefix = suffix:sub(1, plen)
             if prefix > pattern
                 cmp = 1
-            elseif prefix < pattern
+            else(prefix < pattern)
                 cmp = -1
         if cmp <= 0
             lo = mid + 1

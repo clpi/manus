@@ -73,7 +73,7 @@ discard: any = ()
     return {n = 0, write: any = (self: any, s: str)
         self.n = self.n + s:len()
         self
-    end}
+    }
 
 # wrap: a reader with a no-op close method.
 wrap: any = (fh: any)

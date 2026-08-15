@@ -37,11 +37,11 @@ export_onnx: any = (model, path)
             if layer.bias
                 std.ml.export.onnx_graph_add_node(graph, "Add", {layer.name .. "_output", layer.name .. "_bias"}, {layer.name .. "_final"}, layer.name .. "_add_bias")
                 std.ml.export.onnx_graph_add_initializer(graph, layer.name .. "_bias", {layer.out_features}, layer.bias)
-        elseif layer.type == "relu"
+        else(layer.type == "relu")
             std.ml.export.onnx_graph_add_node(graph, "Relu", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
-        elseif layer.type == "softmax"
+        else(layer.type == "softmax")
             std.ml.export.onnx_graph_add_node(graph, "Softmax", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
-        elseif layer.type == "embedding"
+        else(layer.type == "embedding")
             std.ml.export.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.vocab_size, layer.embed_dim}, layer.weight)
             std.ml.export.onnx_graph_add_node(graph, "Gather", {layer.name .. "_weight", layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
     # Set input/output specs

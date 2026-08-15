@@ -158,7 +158,7 @@ validate_into: bool = (value: any, schema: any, path: str, errors: any)
             if fval == nil and not is_optional(fschema)
                 errors[errors:len() + 1] = {path = fpath, message = "required field missing"}
                 ok = false
-            elseif fval != nil
+            else(fval != nil)
                 if not validate_into(fval, fschema, fpath, errors)
                     ok = false
         return ok

@@ -39,7 +39,7 @@ all: any = (tasks: any, ...args)
         for _, t in tasks
             if type(t) == "function"
                 futs[futs:len() + 1] = go(t)
-            elseif type(t) == "table" and t[1]
+            else(type(t) == "table" and t[1])
                 futs[futs:len() + 1] = go(t[1], t:unpack(2))
     sync.run()
     results = {}

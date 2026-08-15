@@ -53,7 +53,7 @@ next_part(r: any)
             part_body = r.data:sub(body_start, next_sep - 1)
             if part_body:sub(part_body:len() - 1) == "\r\n"
                 part_body = part_body:sub(1, part_body:len() - 2)
-            elseif part_body:sub(part_body:len()) == "\n"
+            else(part_body:sub(part_body:len()) == "\n")
                 part_body = part_body:sub(1, part_body:len() - 1)
             r.parts[r.parts:len() + 1] = {headers = parse_headers(hdr), body = part_body}
             pos = next_sep + 1

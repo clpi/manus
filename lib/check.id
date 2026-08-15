@@ -169,7 +169,7 @@ assert_len: bool = (value: any, expected_len: any, message: any)
     actual = 0
     if type(value) == "string"
         actual = value:len()
-    elseif type(value) == "table"
+    else(type(value) == "table")
         actual = value:len()
     if actual == expected_len return true 
     msg = "expected length " .. expected_len:to(str) .. ", got " .. actual:to(str)

@@ -8,11 +8,10 @@ table_has: bool = (m: any, key: any)
   m(key) != nil
 wrap: any = (fn: any)
   cache = {}
-  return fun(x: any) -> any
+  return (x: any) -> any
     if cache(x) == nil
       cache(x) = fn(x)
     cache(x)
-  end
 clear = (m: any)
   for k, _ in m
     m(k) = nil

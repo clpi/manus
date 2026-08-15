@@ -77,16 +77,16 @@ font_get_glyph: any = (font: any, char: str)
     if codepoint >= 65 and codepoint <= 90
         # Uppercase A-Z: wider
         glyph.width = font.config.size * 0.7:floor()
-    elseif codepoint >= 97 and codepoint <= 122
+    else(codepoint >= 97 and codepoint <= 122)
         # Lowercase a-z: medium
         glyph.width = font.config.size * 0.55:floor()
-    elseif codepoint >= 48 and codepoint <= 57
+    else(codepoint >= 48 and codepoint <= 57)
         # Digits 0-9: medium-wide
         glyph.width = font.config.size * 0.6:floor()
-    elseif codepoint == 32
+    else(codepoint == 32)
         # Space: half width
         glyph.width = font.config.size * 0.3:floor()
-    elseif codepoint == 46 or codepoint == 44 or codepoint == 39
+    else(codepoint == 46 or codepoint == 44 or codepoint == 39)
         # Punctuation: narrow
         glyph.width = font.config.size * 0.2:floor()
     else

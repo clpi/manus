@@ -176,9 +176,9 @@ diff_summary: str = (a: any, b: any)
         line = d.kind .. " " .. d.path
         if d.kind == "changed"
             line = line .. ": " .. d.old:to(str) .. " -> " .. d.new:to(str)
-        elseif d.kind == "added"
+        else(d.kind == "added")
             line = line .. ": " .. d.new:to(str)
-        elseif d.kind == "removed"
+        else(d.kind == "removed")
             line = line .. ": " .. d.old:to(str)
         parts[parts:len() + 1] = line
         i += 1

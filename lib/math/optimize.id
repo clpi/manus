@@ -76,9 +76,9 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
     i = i + 1
   iter = 0
   while iter < iterations
-    simplex:sort(fun(a: any, b: any) -> any
+    simplex:sort((a: any, b: any) -> any
       a.value < b.value
-    end)
+    )
     best = simplex(1)
     worst = simplex(n + 1)
     centroid = {}
@@ -141,9 +141,9 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
           simplex(i).value = f(simplex(i).point)
           i = i + 1
     iter = iter + 1
-  simplex:sort(fun(a: any, b: any) -> any
+  simplex:sort((a: any, b: any) -> any
     a.value < b.value
-  end)
+  )
   {
     x = simplex(1).point,
     fx = simplex(1).value,

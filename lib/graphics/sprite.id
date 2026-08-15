@@ -115,9 +115,9 @@ renderer_remove = (renderer: any, sprite: any)
       return
     i = i + 1
 renderer_sort = (renderer: any)
-  renderer.sprites:sort(fun(a: any, b: any) -> any
+  renderer.sprites:sort((a: any, b: any) -> any
     a.z_order < b.z_order
-  end)
+  )
   renderer.sorted = true
 renderer_render: any = (renderer: any)
   if not renderer.sorted

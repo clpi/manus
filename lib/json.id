@@ -37,19 +37,19 @@ escape: str = (s: any)
         b = s:byte(i)
         if b == 34
             out[out:len() + 1] = "\\\""
-        elseif b == 92
+        else(b == 92)
             out[out:len() + 1] = "\\\\"
-        elseif b == 10
+        else(b == 10)
             out[out:len() + 1] = "\\n"
-        elseif b == 13
+        else(b == 13)
             out[out:len() + 1] = "\\r"
-        elseif b == 9
+        else(b == 9)
             out[out:len() + 1] = "\\t"
-        elseif b == 8
+        else(b == 8)
             out[out:len() + 1] = "\\b"
-        elseif b == 12
+        else(b == 12)
             out[out:len() + 1] = "\\f"
-        elseif b < 32
+        else(b < 32)
             hi = b / 16:floor() + 1
             lo = (b % 16) + 1
             out[out:len() + 1] = "\\u00" .. hex:sub(hi, hi) .. hex:sub(lo, lo)
@@ -109,9 +109,9 @@ json_hex4: i64 = (s)
         d = 0
         if b >= 48 and b <= 57
             d = b - 48
-        elseif b >= 65 and b <= 70
+        else(b >= 65 and b <= 70)
             d = b - 55
-        elseif b >= 97 and b <= 102
+        else(b >= 97 and b <= 102)
             d = b - 87
         v = v * 16 + d
         i += 1
@@ -144,21 +144,21 @@ json_string: any = (cur)
             e = s:byte(cur.i)
             if e == 110
                 out[out:len() + 1] = "\n"
-            elseif e == 116
+            else(e == 116)
                 out[out:len() + 1] = "\t"
-            elseif e == 114
+            else(e == 114)
                 out[out:len() + 1] = "\r"
-            elseif e == 34
+            else(e == 34)
                 out[out:len() + 1] = "\""
-            elseif e == 92
+            else(e == 92)
                 out[out:len() + 1] = "\\"
-            elseif e == 47
+            else(e == 47)
                 out[out:len() + 1] = "/"
-            elseif e == 98
+            else(e == 98)
                 out[out:len() + 1] = 8:char()
-            elseif e == 102
+            else(e == 102)
                 out[out:len() + 1] = 12:char()
-            elseif e == 117
+            else(e == 117)
                 hex = s:sub(cur.i + 1, cur.i + 4)
                 cp = json_hex4(hex)
                 out[out:len() + 1] = json_utf8_char(cp)
@@ -216,7 +216,7 @@ json_value: any = (cur)
             b2 = cur.s:byte(cur.i)
             if b2 == 44
                 cur.i = cur.i + 1
-            elseif b2 == 125
+            else(b2 == 125)
                 cur.i = cur.i + 1
                 break
             else
@@ -238,7 +238,7 @@ json_value: any = (cur)
             b2 = cur.s:byte(cur.i)
             if b2 == 44
                 cur.i = cur.i + 1
-            elseif b2 == 93
+            else(b2 == 93)
                 cur.i = cur.i + 1
                 break
             else

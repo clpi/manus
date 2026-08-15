@@ -319,9 +319,9 @@ resolver_lookup_mx: any = (resolver: any, name: str)
   for answer in result.answers
     if answer.type == MX
       mx_records(mx_records:len() + 1) = answer.rdata
-  mx_records:sort(fun(a: any, b: any) -> any
+  mx_records:sort((a: any, b: any) -> any
     a.preference < b.preference
-  end)
+  )
   {
     records = mx_records
   }

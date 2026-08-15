@@ -110,7 +110,7 @@ parse_c_params: any = (params_str: str)
                 is_pointer = typ:find("*") != nil,
                 is_const = typ:find("const") != nil,
             }
-        elseif tokens:len() == 1
+        else(tokens:len() == 1)
             params[params:len() + 1] = {
                 c_type = tokens[1],
                 name = "arg" .. to(str)(params:len() + 1),

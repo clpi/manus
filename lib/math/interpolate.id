@@ -193,10 +193,10 @@ ease.inoutelastic = (t: f64): f64
 ease.outbounce = (t: f64): f64
     if t < 1 / 2.75
         7.5625 * t * t
-    elseif t < 2 / 2.75
+    else(t < 2 / 2.75)
         t -= 1.5 / 2.75
         7.5625 * t * t + 0.75
-    elseif t < 2.5 / 2.75
+    else(t < 2.5 / 2.75)
         t -= 2.25 / 2.75
         7.5625 * t * t + 0.9375
     else

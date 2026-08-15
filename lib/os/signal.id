@@ -157,16 +157,16 @@ shutdown_setup = (sh: any)
   register(sh.handler, SIGTERM, fun(sig)
     print("Received SIGTERM, shutting down...")
     shutdown_trigger(sh)
-  end)
+  )
 
   register(sh.handler, SIGINT, fun(sig)
     print("Received SIGINT, shutting down...")
     shutdown_trigger(sh)
-  end)
+  )
 
   register(sh.handler, SIGHUP, fun(sig)
     print("Received SIGHUP, reloading...")
-  end)
+  )
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════

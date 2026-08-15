@@ -1,16 +1,16 @@
 encode: str = (s: str)
   if s == nil
     return ""
-  s:gsub("([^%w%.%-~_])", fun(c: str) -> str
+  s:gsub("([^%w%.%-~_])", (c: str) -> str
     "%%%02X":format(c:byte())
-  end)
+  )
 decode: str = (s: str)
   if s == nil
     return ""
   s = s:gsub("+", " ")
-  s:gsub("%%(%x%x)", fun(h: str) -> str
+  s:gsub("%%(%x%x)", (h: str) -> str
     tonumber(h, 16):char()
-  end)
+  )
 parse: any = (url: str)
   scheme = "http"
   rest = url

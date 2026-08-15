@@ -5,7 +5,7 @@ spawn: any = (fn: any, ...args)
   }
   co = coroutine.create(()
     fn(args:unpack())
-  end)
+  )
   pending[pending:len() + 1] = {
     co = co
   }
@@ -18,7 +18,7 @@ run = ()
     ok, err = coroutine.resume(task.co)
     if not ok
       stdout:write("sync: task error: " .. err:to(str) .. "\n")
-    elseif coroutine.status(task.co) == "suspended"
+    else(coroutine.status(task.co) == "suspended")
       pending[pending:len() + 1] = task
 step: bool = ()
   if pending:len() == 0
@@ -27,7 +27,7 @@ step: bool = ()
   ok, err = coroutine.resume(task.co)
   if not ok
     stdout:write("sync: task error: " .. err:to(str) .. "\n")
-  elseif coroutine.status(task.co) == "suspended"
+  else(coroutine.status(task.co) == "suspended")
     pending[pending:len() + 1] = task
   return pending:len() > 0
 channel: any = (capacity: i64)
