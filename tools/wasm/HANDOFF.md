@@ -1,6 +1,73 @@
 # idol wasm — handoff
 
-## 2026-08-08 (latest) — `call_indirect` compiles, and it found a wrong answer
+## 2026-08-15 (latest) — five wrong answers in the ARM64 emitter, and the call/stack-depth grid
+
+The 2026-08-14 differential found three JIT/interpreter disagreements. There
+were **five**, and the two extra ones were invisible to that corpus. All five
+were in the emitter's operand-stack arithmetic or its import dispatch; every one
+of them produced a plausible number and exit 0.
+
+| # | site (`src/engine.id`) | was | is | symptom |
+|---|---|---|---|---|
+| 1 | `call_indirect` tail | `sp -= 1 - xnp + xnr` | `sp = sp - 1 - xnp + xnr` | signs of BOTH counts inverted; coincidentally right at one argument, so the arm looked correct. `call_indirect_typed` = 3 for 1034562941 |
+| 2 | import dispatch | `imk == 1` | `imk == wabi.i_fd_write` | `imk` had become the preview1 roster index; 1 is `args_get`. Every `fd_write` took the zero-filling stub and printed NOTHING |
+| 3 | import dispatch | (no arm) | emitted clamp + `exit` | `proc_exit` was a NO-OP; a probe that writes, exits 42 and writes again printed twice and exited 0 |
+| 4 | real (non-inlined) `call` | `sp -= cnp + cnr` | `sp = sp - cnp + cnr` | SUBTRACTED the result: two slots low after every real call returning a value. Answered 1200 for 46 |
+| 5 | — | — | — | consequence of 4: most of the 29 DECLINED bodies were that bug refusing itself. DECLINED 29 → 14, COMPILED 36 → 51 |
+
+**3 and 4 were found after the corpus had already gone green on 1 and 2.** The
+criterion the gate comment then stated — "delete the default-off arm when the
+differential reads DIFFER 0" — was satisfied at a moment when the emitter still
+answered 1200 for 46. That is why the sample was fixed too, not just the code.
+
+### the call/stack-depth grid
+
+`bench/jit_grid_<kind>_a<arity>_d<depth>_r<results>.wasm` — 18 points over the
+axis all four faults lie on: **call arity × operand-stack depth beneath the call
+× call kind (inlined leaf / real non-leaf / indirect) × result arity**. Each
+`.wat` carries its coordinates in its header. Plus three targeted fixtures:
+`jit_indirect2`, `jit_call_result`, `jit_proc_exit`.
+
+They are **negative-controlled**, which is the only thing that makes them
+evidence. Rebuild `src/engine.id` with the four lines above reverted and:
+
+* the three targeted fixtures answer `21`, `1200` and nothing;
+* 7 of the 18 grid points answer wrongly;
+* the same generator at full size — arity 0..4 × depth 0..4 × 3 kinds × 2
+  result arities, 150 points — finds **21 wrong** on the pre-fix emitter and
+  **0 wrong** on this one, with the interpreter correct on all 150 in both runs.
+
+To regenerate or extend the grid: emit one module per point whose `run` pushes
+`depth` constants, then `arity` arguments, then the call, then folds the
+survivors with `i32.add` and `return`; make the callee non-leaf to force the
+real-call path and leaf to force the inline path; assemble with `wat2wasm` and
+difference `DUO_WASM_ENGINE=interp` against `=jit` against `wasmtime --invoke`.
+The axis that still has no grid is memory (width × offset × alignment),
+`br_table`, globals and the float compare/convert families — see the JIT gate
+comment in `src/engine.id`, condition 3.
+
+### the suite grew a third column
+
+`test/conform.id` now runs `interp`, `jit` **and `default`** — the last with
+`env -u DUO_WASM_ENGINE`, i.e. the path a caller who asks for nothing takes.
+`interp` and `jit` are both requirements and neither exercises the engine's own
+selection, or the silent fallback a DECLINED body takes under the default. That
+column is what makes the gate decision checkable rather than argued.
+
+    before  rows 101  PASS  94  DIFF 3   jit COMPILED 36  DECLINED 29  DIFFER 3
+    after   rows 244  PASS 238  DIFF 0   jit COMPILED 69  DECLINED 14  DIFFER 0
+                                         default: interp=83, DIFFER 0
+
+`JIT_FLOOR` ratcheted 0 → 69 and `DUO_WASM_UNSUPPORTED` 2 → 0.
+
+**The JIT stays gated off.** With the arm removed the same run is green
+(`default path: jit-arm64=69, interp=14`, DIFFER 0) — that was measured, not
+predicted — but the grid covers only the call axis, and the axes it does not
+cover are at exactly the coverage level that let this morning's five faults
+through. The full argument, and the three conditions that would license the
+flip (two of which already hold), are in the gate comment in `src/engine.id`.
+
+## 2026-08-08 — `call_indirect` compiles, and it found a wrong answer
 
 `call_indirect` (0x11) has a JIT arm. It was 10 of the 18 refusals across both
 fixture corpora and the largest coverage gap left; **it is 0 of the 17 now.**
@@ -470,22 +537,64 @@ table, and nothing here pretends otherwise.
 
 Every parser / hang / `#s` / boxing blocker from earlier handoffs is **resolved**.
 
-## `src/wasm/*.id` is DEAD CODE — 1406 lines of it
+## `src/wasm/*.id` was DEAD CODE — DELETED 2026-08-15
 
-`src/engine.id` is self-contained: its only `req` is `std.jit`. Nothing in the
-repo requires anything under `src/wasm/`, and the modules that used to
-(`src/main.id`, `src/cli.id`, `src/wasm/runtime.id`, `src/wasm/init.id`)
-were deleted. `test/main.id` still requires `src.wasm`, `src.edge` and
-`src.lib`, none of which exist, and it fails to parse besides — **the engine has no
-running test suite**; `bench/verify.id` is doing that job.
+`src/engine.id` is self-contained: its only `req`s are `jit` and
+`src.wasm.wasi_abi`. Nothing in the repo required anything else under
+`src/wasm/`, and the modules that used to (`src/main.id`, `src/cli.id`,
+`src/wasm/runtime.id`, `src/wasm/init.id`) were already gone.
 
-This matters most for `src/wasm/jit_arm64.id` (701 lines). It is the
-**virtual-stack register-allocating JIT** landed in `55668dc` and written up in
+Nine modules and one harness were deleted on 2026-08-15, on this measurement:
+no `req` edge reaches any of them from `src/engine.id`, `test/conform.id`,
+`test/wasi_conform.id`, `test/wasi_diff.id`, `bench/*.id` or `tools/opcodes.id`;
+a repo-wide grep for `src.wasm.<name>` finds only prose; and a probe program
+whose only statement is `m = req "src.wasm.<name>"` FAILS TO BUILD for `jit`,
+`jit_arm64`, `stack`, `table` and `memory`.
+
+    src/wasm/jit.id 111   jit_arm64.id 623   stack.id 65   table.id 35
+    value.id 61   op.id 161   simd.id 230   aot.id 9   memory.id 68
+    bench/verify.id 197                              — 1560 lines
+
+All ten are tracked; recover any of them with
+`git show <pre-deletion-rev>:tools/wasm/<path>`. `op.id`'s 151 opcode constants
+were verified to be a strict subset of `src/engine.id`'s 184 derived constants,
+same names, same values, before it went.
+
+`src/wasm/jit_arm64.id` is the one worth naming. It was the **virtual-stack
+register-allocating JIT** landed in `55668dc` and written up in
 `docs/performance.md` — `vs_pop` / `vs_alloc_not` / `flush_tos`, pinned locals
-in x23..x28. It is a genuinely more advanced code generator than the one that
-ships, and it is unreachable: its host modules are gone. The shipping JIT is
-`jit_compile` inside `src/engine.id` (lines 2712-4418, 1366 code lines), which
-tracks two register aliases and has no liveness model.
+in x23..x28 — a more advanced code generator than the one that ships. Its host
+modules were gone, it did not compile, and its ARM64 encoders had already been
+lifted into `lib/compiler/arm64.id` (see that file's header). The shipping JIT
+is `jit_compile` inside `src/engine.id`.
+
+`test/main.id` remains, and remains DEAD: it requires `src.wasm` and `src.edge`,
+neither of which has ever existed, and it does not compile. It is UNTRACKED
+(root `.gitignore` line 7 is a bare `test`), so deleting it is unrecoverable and
+that call is left to its owner. The running test suite is `test/conform.id`,
+driven by `zig build wasm-test`; `bench/verify.id` was its unparseable
+predecessor and is gone.
+
+**`bench/derived.id`'s orphan report is now wrong**: it globs `src/wasm/*.id`
+and calls everything it finds an orphan, and the only two files left there
+(`wasi.id`, `wasi_abi.id`) are both live. It has not run in some time — see the
+`script` note below — so nothing currently reads that number.
+
+## Six more harnesses are dead on `script`, and it is not their fault
+
+Measured 2026-08-15, one compile each: `bench/derived.id`, `bench/perf.id`,
+`bench/run.id`, `bench/six.id`, `bench/wart.id` and `tools/opcodes.id` all fail
+with `use of undeclared identifier 'script'`. They reach the shell through a
+bare `script` / `std.script` binding, and at this revision `lib/script.id` does
+not compile (`lib/script.id:7`: `'execute' is neither a descriptor nor a
+callable`) while `std.script` segfaults a C-backend binary before its first
+statement. `test/conform.id` survived only because it was ported to ten local
+primitives over `io.popen`/`os.getenv`.
+
+This matters beyond the benchmarks: **`tools/opcodes.id` is the projector that
+keeps `src/engine.id`'s four `derived(wasm.opcodes.*)` regions honest**, and
+`DUO_WASM_DERIVE=1 duo run tools/opcodes.id` cannot currently run at all. The
+single upstream fix is `lib/script.id`.
 
 **Do not treat `docs/performance.md`'s the engine numbers as this the engine's numbers.**
 Its `hot_big` table (the engine JIT 0.21 s, "beats wasm3 by 2.2x and iwasm by 2.0x")

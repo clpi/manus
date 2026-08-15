@@ -1,9 +1,0 @@
-# the engine AOT compiler (stubbed for init)
-
-M = {}
-
-compile: str = (mod: any, path: str)
-  ""
-
-M.compile = compile
-M

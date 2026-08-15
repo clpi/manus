@@ -5430,7 +5430,18 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
           imy = mem.read_i64(jimx, cidx * 8)
         imnp: i64 = mem.read_i64(jtp, imy * 8)
         imnr: i64 = mem.read_i64(jtr, imy * 8)
-        if imk == 1 and imnp == 4 and imnr == 1 and sp >= 4 and jwr != 0
+        # `imk` is the ROSTER INDEX from `wasi_abi.id` (1-based, alphabetical),
+        # the same identity the interpreter dispatches on at `hid ==
+        # wabi.i_fd_write`. This test read `imk == 1`, left over from when
+        # `jimk` held a BOOLEAN "the field name matched the fd_write mask".
+        # When the mask became the shared roster lookup the flag became an
+        # index and the 1 stayed, so the arm now named `args_get` — which no
+        # module in either corpus imports — and EVERY `fd_write` fell through
+        # to the zero-filling stub below. Both wasi fixtures therefore emitted
+        # nothing under the jit and returned 0 while the interpreter printed
+        # their line. It is spelled as the constant, not the literal, so a
+        # roster edit cannot silently repoint it again.
+        if imk == wabi.i_fd_write and imnp == 4 and imnr == 1 and sp >= 4 and jwr != 0
           # fd_write(fd, iovs, iovslen, nwritten) -> errno.
           #
           # Everything the caller holds in a caller-saved register has to survive
@@ -5542,12 +5553,52 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
             n += 1
             isr -= 1
           sp -= 3
+        elseif imk == wabi.i_proc_exit and imnp == 1 and imnr == 0 and sp >= 1 and jex != 0
+          # proc_exit(code) TERMINATES, and it did not: `proc_exit` used to fall
+          # into the zero-filling stub below, which emits NO instruction at all.
+          # So under the jit the call was a no-op, everything after it still ran
+          # and the guest's status was unobservable. Measured against a probe
+          # that writes, calls `proc_exit(42)`, and writes again: interpreter and
+          # wasmtime print once and exit 42, the jit printed TWICE and exited 0.
+          # Same class as the three disagreements this arm was written beside,
+          # and invisible in the corpus only because both wasi fixtures call
+          # `proc_exit(0)` as their last instruction.
+          #
+          # THE STATUS IS NOT THE ARGUMENT. preview1 permits 0..125 and anything
+          # above is exit 1 — measured in `wasm/wasi_abi.id`, boundary included —
+          # so the clamp is emitted rather than passing the raw code through:
+          #
+          #   MOV  w17, w<code>     zero-extend the u32 argument
+          #   CMP  w17, #PROC_EXIT_MAX
+          #   MOV  w0, #1           the refused status
+          #   CSEL w0, w17, w0, LS  unsigned <= max keeps the code
+          #   BLR  x17 = exit
+          #
+          # STATED DIFFERENCE: the interpreter also writes one `wasm: ...` line
+          # to stderr naming a refused code. Emitting a formatted decimal from
+          # this template emitter is not worth its instruction budget, so the
+          # jit exits with the identical status and says nothing. The status is
+          # the observable; the line is engine chatter, and the harness strips
+          # every `wasm: ` line from both arms before comparing.
+          if wabi.PROC_EXIT_MAX < 0 or wabi.PROC_EXIT_MAX > 4095
+            return jitbail("proc_exit ceiling is outside the CMP immediate", op, pc)
+          jitm.w32(code, n, 0x2A0003E0 | ((sp - 1) << 16) | 17)
+          n += 1
+          jitm.w32(code, n, 0x7100001F | (wabi.PROC_EXIT_MAX << 10) | (17 << 5))
+          n += 1
+          jitm.w32(code, n, 0x52800000 | (1 << 5))
+          n += 1
+          jitm.w32(code, n, 0x1A800000 | (0 << 16) | (9 << 12) | (17 << 5))
+          n += 1
+          n = movabs(code, n, 17, jex)
+          jitm.w32(code, n, 0xD63F0000 | (17 << 5))
+          n += 1
+          sp -= 1
         else
           # Every other import: consume the declared parameters and leave the
           # declared results as zero. Byte for byte the interpreter's stub, so a
           # module calling an import the engine cannot perform still runs, and runs the
-          # same way on both engines. `proc_exit` is this shape # one parameter,
-          # no result, no emitted instruction at all.
+          # same way on both engines.
           if imnp > sp
             return jitbail("imported call passes more arguments than are on the stack", op, pc)
           sp -= imnp
@@ -5676,7 +5727,25 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
           jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, spj * 8))
           n += 1
           spj -= 1
-        sp -= cnp + cnr
+        # The call consumed cnp arguments and left cnr results, so the new depth
+        # is `sp - cnp + cnr` # the slot the result was just moved into, plus
+        # cnr.
+        #
+        # This said `sp -= cnp + cnr`, which SUBTRACTS the result instead of
+        # adding it: TWO slots low after every non-inlined call that returns a
+        # value. It survived because a body whose call is its last act reads x0
+        # directly (`if sp > 0` is false at sp == -1, so the fallthrough move is
+        # skipped and the callee's x0 is already the answer) — jit_nonleaf is
+        # exactly that shape and passed. Anything that USES the result declines
+        # (`operand stack shape`, which is why jit_nonleaf's sibling shapes were
+        # all JIT-DECLINED), and when the stack is deep enough to absorb the
+        # deficit it silently reads the WRONG REGISTERS: measured, a body that
+        # pushes 1000/200/30/5, calls, adds and returns answered 1200 under the
+        # jit against 46 from both the interpreter and wasmtime.
+        #
+        # Un-folded on purpose, for the reason given at `call_indirect`: the
+        # compound spelling is the one that was wrong at both call sites.
+        sp = sp - cnp + cnr
         # Queue the callee. A function is compiled once however many call it,
         # and the entry was queued before this loop began.
         if mem.read_i64(jqs, cfx * 8) == 0
@@ -5838,7 +5907,24 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
           jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, xsj * 8))
           n += 1
           xsj -= 1
-        sp -= 1 - xnp + xnr
+        # The call consumed the INDEX (1) and the ARGUMENTS (xnp) and left the
+        # RESULTS (xnr), so the new depth is `sp - 1 - xnp + xnr` # which is
+        # exactly the slot the result was just moved into, plus xnr.
+        #
+        # This said `sp -= 1 - xnp + xnr`, i.e. `sp - 1 + xnp - xnr`, which has
+        # the sign of BOTH operand counts inverted. At xnp == 1, xnr == 1 the
+        # two expressions coincide (1 - 1 + 1 == 1 + 1 - 1), so every one-
+        # argument `call_indirect` was right and the arm looked correct; at
+        # xnp == 2 it leaves sp TWO SLOTS HIGH and the value read back is the
+        # table index that was never popped. `call_indirect_typed` answered 3 #
+        # its second dispatch's index # instead of 1034562941.
+        #
+        # Written UN-FOLDED on purpose. `sp -= 1 + xnp - xnr` is the same
+        # number and is the spelling that was wrong here, and wrong again at
+        # the direct call below: folding the stack effect into one signed
+        # constant hides which term is a pop and which is a push. This form
+        # reads in the order the machine does it.
+        sp = sp - 1 - xnp + xnr
         last_alu = -1
         last_cset = -1
 
@@ -6116,36 +6202,100 @@ engine_main = ()
   elseif require_jit == 0
     # ── THE JIT IS OFF BY DEFAULT, AND HERE IS THE MEASUREMENT THAT DECIDED IT ─
     #
-    # The ARM64 emitter in this file executed for the first time on 2026-08-14.
-    # `test/conform.id`, run with both columns live and every row's `RAN`
-    # recorded, differenced 65 (module, entry) pairs against wasmtime BY VALUE:
+    # 2026-08-14. The ARM64 emitter in this file executed for the first time,
+    # and `test/conform.id` — 65 (module, entry) pairs, both columns live, every
+    # row's `RAN` recorded, differenced against wasmtime BY VALUE — reported
+    # COMPILED 36, DECLINED 29, AGREE 33, DIFFER 3. All three were WRONG
+    # ANSWERS: `call_indirect_typed` answered 3 for 1034562941, and the two wasi
+    # `_start` bodies printed NOTHING where the interpreter printed their line.
     #
-    #   jit asked 65, COMPILED 36, DECLINED 29
-    #   interp vs jit on the 36 compiled rows: AGREE 33, DIFFER 3
+    # 2026-08-15. FIVE faults, not three, all in the emitter's operand-stack
+    # arithmetic and its import dispatch, every one of them a plausible number
+    # and exit 0:
     #
-    # The three are WRONG ANSWERS, not refusals, and each is the shape this
-    # project has been caught by before — a plausible number, exit 0:
+    #   1. `call_indirect`, 2+ args   sp adjusted by `1 - xnp + xnr`, which
+    #                                 inverts the sign of both counts. Correct
+    #                                 at ONE argument by coincidence, so the arm
+    #                                 looked right. -> call_indirect_typed = 3.
+    #   2. `fd_write` dispatch        tested `imk == 1` against a slot that had
+    #                                 become the preview1 ROSTER INDEX; 1 is
+    #                                 `args_get`. Every fd_write took the
+    #                                 zero-filling stub. -> both wasi fixtures
+    #                                 printed nothing.
+    #   3. `proc_exit`                took the same stub, which emits NO
+    #                                 instruction: a no-op. Measured against a
+    #                                 probe that writes, exits 42 and writes
+    #                                 again — interpreter and wasmtime print
+    #                                 once and exit 42; the jit printed TWICE
+    #                                 and exited 0.
+    #   4. non-inlined `call`         sp adjusted by `cnp + cnr`, SUBTRACTING
+    #                                 the result: two slots low after every real
+    #                                 call that returns a value. Hidden because a
+    #                                 body whose call is its last act reads x0
+    #                                 anyway, and a shallow stack merely
+    #                                 DECLINES. On a deep enough stack it reads
+    #                                 the wrong registers: 1200 for 46.
+    #   5. (consequence of 4)         29 DECLINED bodies were mostly this bug
+    #                                 refusing itself. Fixing it took DECLINED
+    #                                 29 -> 14 and COMPILED 36 -> 51.
     #
-    #   call_indirect_typed (run)            wasmtime & interp 1034562941, jit 3
-    #   wart_wasi_preview1_comprehensive     interp prints "WASI Preview 1
-    #     (_start)                           Benchmark Complete", jit prints
-    #                                        NOTHING and returns 0
-    #   wart_wasix_extended (_start)         interp prints "Wasix Benchmark
-    #                                        Complete", jit prints NOTHING
+    # 3 AND 4 WERE NOT IN THE CORPUS. They were found by hand-writing the shapes
+    # the corpus lacked, AFTER the corpus had already gone green — that is, the
+    # criterion the previous version of this comment set ("delete this arm when
+    # the differential reads DIFFER 0") was satisfied at a moment when the
+    # emitter was still answering 1200 for 46. That is the fact this decision
+    # turns on: DIFFER 0 is a statement about a SAMPLE, and this sample has been
+    # wrong about this exact question three times in two days.
     #
-    # The first is a `loop`/`br_if` that leaves after one iteration where the
-    # interpreter runs a thousand; the other two are `_start` bodies whose
-    # emitted `fd_write` produced no output at all. Three wrong answers out of
-    # thirty-six is not a tuning gap, and 33 correct rows do not license the
-    # other 3: a runtime that is right 92% of the time is a runtime nobody can
-    # use. So the emitter stays reachable and stays OFF, and turning it on is
-    # an explicit act by someone who has read this.
+    # So the sample was fixed, not just the emitter. 21 fixtures were added:
+    # three targeted (`bench/jit_indirect2`, `jit_call_result`, `jit_proc_exit`)
+    # and an 18-point GRID over the axis all of 1..4 lie on — call arity x
+    # operand-stack depth beneath the call x call kind (inlined leaf / real
+    # non-leaf / indirect) x result arity. Every one is NEGATIVE-CONTROLLED:
+    # rebuilt against the pre-fix emitter, the three targeted fixtures answer
+    # 21, 1200 and nothing, and 7 of the 18 grid points answer wrongly. The same
+    # grid generator at full size (150 points, arity 0..4 x depth 0..4 x 3 kinds
+    # x 2 result arities) finds 21 wrong answers on the pre-fix emitter and ZERO
+    # on this one, with the interpreter correct on all 150 in both runs.
+    #
+    # TODAY'S RUN, 86 pairs x 3 columns:
+    #
+    #   rows 244  PASS 238  DIFF 0  UNSUPPORTED 0  BAIL 0  NORESULT 0
+    #   jit asked 86, COMPILED 69, DECLINED 14, AGREE 72, DIFFER 0
+    #   default path: interp=83 (this arm), interp-vs-default DIFFER 0
+    #
+    # ...and with this arm temporarily removed, MEASURED, not predicted:
+    #
+    #   default path: jit-arm64=69, interp=14 (the silent fallback, working),
+    #   interp-vs-default AGREE 86, DIFFER 0
+    #
+    # SO WHY IS IT STILL OFF. Because the grid covers the CALL axis, which is
+    # now the best-tested thing in this emitter — and every other axis is still
+    # at exactly the coverage level that let this morning's five faults through:
+    # one purpose-built fixture per family for memory widths and offsets,
+    # br_table, globals, float compare/convert, select. The axis that was swept
+    # is clean; the axes that were not are unmeasured, and the emitter they
+    # belong to was returning plausible wrong numbers eight hours ago. The cost
+    # of keeping this arm is speed on a path anyone can opt into with one
+    # environment variable. The cost of removing it wrongly is a WASM runtime
+    # that answers 1200 for 46 and exits 0.
+    #
+    # WHAT LICENSES DELETING IT — and the first two conditions ALREADY HOLD, so
+    # this is a short list, not a wall:
+    #
+    #   1. `zig build wasm-test` prints DIFFER 0 in BOTH cross-checks.  HOLDS.
+    #   2. With this arm deleted, the same run prints `default path:
+    #      jit-arm64=<n>` with n equal to the COMPILED count.            HOLDS.
+    #   3. The corpus sweeps memory (width x offset x alignment), br_table
+    #      (arity x default), globals, and the float compare/convert families
+    #      the same way `bench/jit_grid_*` sweeps calls, and that grid is
+    #      negative-controlled against a deliberately broken emitter.  DOES NOT
+    #      HOLD — nothing sweeps those axes.
     #
     # `DUO_WASM_ENGINE=jit` still compiles, still refuses (exit 4) rather than
     # answering under the interpreter's name, and is what `test/conform.id`
-    # drives. Delete this arm when the differential reads DIFFER 0 — and only
-    # then, and only with the run that says so.
-    jit_why = "the jit is gated off by default (3 of 36 compiled bodies answered differently from the interpreter -- ask for it with DUO_WASM_ENGINE=jit)"
+    # drives.
+    jit_why = "the jit is gated off by default (5 wrong-answer faults were fixed in it on 2026-08-15 and 2 of the 5 were outside the differential corpus -- ask for it with DUO_WASM_ENGINE=jit)"
   elseif os.getenv("DUO_WASM_ARGS") != nil
     # THE JIT HAS NO ARGUMENT CHANNEL. `jitm.call2(code, memory, globals)`
     # passes linear memory and the globals block and nothing else, so a
