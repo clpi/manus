@@ -1,0 +1,50 @@
+# @corpus current
+# ONE NAME IN PARENTHESES, TWO READINGS, and neither is inside the group.
+#
+#   `twice: i64 = (t)` over an indented line is a RELATION and `t` is its
+#   parameter — the shape the `fun` retirement produces every time it rewrites
+#   `fun(t)`.
+#   `else(flag)` over an indented line is an ELSE-IF and `flag` is its
+#   condition.
+#
+# The group is identical; what separates them is the keyword before it and the
+# offside line beneath it. `else(gate(n))` is the same else-if with an
+# APPLICATION under the name, which a recognizer counting only DEPTH-1 tokens
+# cannot see — it reads `(name)` and takes the else's own block as a lambda
+# body. That is how six tracked files stopped parsing in one afternoon:
+# lib/slices.id, lib/sort.id, lib/net/url.id, scripts/runtime_bench.id,
+# tools/lsp/src/highlight.id, tools/lsp/src/server.id.
+#
+# CHECKED BY VALUE, and it discriminates in BOTH directions, which is the only
+# reason the number proves anything:
+#
+#   * Read `(t)` as a grouped expression rather than a parameter list and
+#     `twice` binds the VALUE of `t` while `t + t` becomes a separate top-level
+#     statement — `twice(3)` then has nothing to apply. Measured before the fix:
+#     `idol fmt` reprinted this relation as `twice: i64 = t` on one line and
+#     `t + t` on the next, and `idol check` called that clean.
+#   * Read either `else(…)` as a relation header and the file never closes its
+#     parenthesis at all.
+#
+# No output: the process exit status is the observable, so no string literal
+# appears here and nothing about this file runs through interpolation.
+# expect: 11
+
+twice: i64 = (t)
+  t + t
+
+gate: i64 = (v: i64)
+  v
+
+pick: i64 = (n: i64, flag: i64)
+  if n > 5
+    1
+  else(gate(n))
+    twice(2)
+  else(flag)
+    3
+  else
+    9
+
+main: i64 = ()
+  pick(1, 0) + pick(9, 0) + twice(3)
