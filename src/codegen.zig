@@ -1265,6 +1265,89 @@ pub const CodeGen = struct {
         return null;
     }
 
+    /// The shape `try_emit_egress_protocol` claims — a VOID host write.
+    fn expr_is_host_egress_write(self: *CodeGen, e: *const ast.Expr) bool {
+        if (e.* != .method_call) return false;
+        const mc = e.method_call;
+        if (!std.mem.eql(u8, mc.method, "write") or mc.args.len != 1) return false;
+        if (mc.obj.* != .name) return false;
+        const stream = mc.obj.name.ident;
+        if (!std.mem.eql(u8, stream, "stdout") and !std.mem.eql(u8, stream, "stderr")) return false;
+        return self.local_type(stream) == null and self.global_type(stream) == null;
+    }
+
+    /// Host egress emit: `stdout:write(x)` / `stderr:write(x)`.
+    ///
+    /// This is the CANONICAL spelling since the io world law migrated 101
+    /// `io.write(x)` sites onto it, and the C backend had NO emitter for it at
+    /// all. The receiver fell through to the untyped `:write` face at the
+    /// bottom of `.method_call`, which emitted
+    /// `lua_file_write_method(stdout, x)` — passing C's `FILE* stdout` MACRO
+    /// where a `lua_Value` is expected. Measured on
+    /// `main: i64 = () / a = "AA\n" / stdout:write(a) / 0`:
+    /// `call to undeclared function 'lua_file_write_method'`, because such a
+    /// module is native-scalar and never emits the lua prelude that declares
+    /// it. `io.stdout:write(x)` compiled, so the gap was EXACTLY the projected
+    /// spelling — and `tools/lsp/gate.id` and `tools/mcp/gate.id` build
+    /// themselves with `--backend=c`.
+    ///
+    /// IT IS NOT `print`. `io.write` appended no newline and neither does
+    /// this; a stream write that ends a line is the caller's byte to spell.
+    fn try_emit_egress_protocol(self: *CodeGen, call: anytype) E!bool {
+        if (!std.mem.eql(u8, call.method, "write") or call.args.len != 1) return false;
+        if (call.obj.* != .name) return false;
+        const stream = call.obj.name.ident;
+        if (!std.mem.eql(u8, stream, "stdout") and !std.mem.eql(u8, stream, "stderr")) return false;
+        // DATA WINS THE NAME: a program that bound `stdout` itself owns it.
+        if (self.local_type(stream) != null or self.global_type(stream) != null) return false;
+
+        const arg = call.args[0];
+        const t = self.expr_type(arg);
+
+        // A boxed value: the runtime already renders every case, and
+        // `lua_write_value` is the exact byte path `io.write(x)` took.
+        if (self.moduleNeedsLuaRuntime() and (t == .any or self.expr_emits_lua_value(arg))) {
+            self.p("lua_write_value({s}, ", .{stream});
+            try self.emit_as_lua_value(arg);
+            self.p(")", .{});
+            return true;
+        }
+
+        if (t == .bool) {
+            self.p("fprintf({s}, \"%s\", (", .{stream});
+            try self.emit_expr(arg);
+            self.p(") ? \"true\" : \"false\")", .{});
+            return true;
+        }
+        if (self.enum_name_of(t)) |ename| {
+            if (self.enum_is_payload_free(ename) and self.enum_has_derive(ename, "Display")) {
+                self.p("fprintf({s}, \"%s\", duo_{s}_to_string(", .{ stream, ename });
+                try self.emit_expr(arg);
+                self.p("))", .{});
+                return true;
+            }
+        }
+        const phys = types.nominalReprOf(t) orelse t;
+        const spec: []const u8 = switch (phys) {
+            .i8, .i16, .i32 => "%d",
+            .i64 => "%lld",
+            .u8, .u16, .u32 => "%u",
+            .u64 => "%llu",
+            .f32, .f64 => "%.17g",
+            else => "%s",
+        };
+        self.p("fprintf({s}, \"{s}\", ", .{ stream, spec });
+        if (std.mem.eql(u8, spec, "%s") and self.expr_emits_lua_value(arg)) {
+            self.p("lua_to_str(", .{});
+            try self.emit_expr(arg);
+            self.p(")", .{});
+        } else {
+            try self.emit_expr(arg);
+        }
+        self.p(")", .{});
+        return true;
+    }
+
     /// Readable protocol: subject:read() on stdin or a path/str subject — never io:read().
     fn try_emit_readable_protocol(
         self: *CodeGen,
@@ -9875,7 +9958,9 @@ pub const CodeGen = struct {
             try self.emit_hoisted_dense_decls();
             try self.emit_block_stmts(&fb.body, .implicit_return);
         }
-        if (emitted_normal_body and !self.block_fallthrough_returns(&fb.body)) {
+        if (emitted_normal_body and !self.block_fallthrough_returns(&fb.body) and
+            !self.block_tail_is_c_emit_value(&fb.body))
+        {
             self.emit_default_return_for_type(ret);
         }
         if (fb.profile_attr) {
@@ -11366,6 +11451,62 @@ pub const CodeGen = struct {
         }
     }
 
+    /// A TRAILING `@comp.c.emit(payload)` IS THE RELATION'S TAIL EXPRESSION
+    /// when the relation was written with a return type.
+    ///
+    /// A bare directive parses as a STATEMENT, never into `blk.tail_expr`, so
+    /// once statement-position payloads started emitting the enclosing body
+    /// became `payload; return <default>;` — it did the work and then threw the
+    /// answer away. Measured before this: `mem__alloc` was
+    /// `({…malloc…}); return lua_val_nil();` — IT ALLOCATED AND RETURNED NIL,
+    /// leaking every block; `mem__read_byte` was `({…_p[_off];}); return 0;`,
+    /// answering 0 for every byte in the file. Both compile, and `idol check`
+    /// is blind to both.
+    ///
+    /// THE DISCRIMINATOR IS THE WRITTEN RETURN TYPE, NOT THE C ONE. `void` is
+    /// inferred, not written, so `free = (mem: any)` and
+    /// `mem_copy = (dst, src, bytes)` carry no annotation — and the C backend
+    /// boxes them as `lua_Value`-returning all the same. Keying on the emitted
+    /// C type would have turned `free(mem.as.tval)` and `memcpy(...)` into
+    /// `return <void expression>;` and broken the build of every module that
+    /// `req "mem"`. Keying on the annotation splits lib/mem.id exactly:
+    /// `alloc: any`, `read_byte: i64`, `mem_compare: i64` return their payload;
+    /// `free`, `mem_copy`, `mem_set`, `mem_zero`, `write_byte` stay statements.
+    ///
+    /// A `#`-leading payload is a preprocessor line and a `;`/`}`-terminated
+    /// one is a statement the author already spelled as one; neither is a value.
+    fn c_emit_tail_payload(self: *CodeGen, stmt: *const ast.Stmt) ?[]const u8 {
+        if (stmt.* != .directive) return null;
+        if (!CodeGen.isCEmitDirectiveName(stmt.directive.attr.name)) return null;
+        const fb = self.current_func_body orelse return null;
+        if (contract_ret(fb) == .inferred) return null;
+        if (self.current_ret == .void) return null;
+        const code = @import("directives.zig").extractAndUnescapeCRawCode(
+            self.alloc,
+            stmt.directive.attr.args orelse "",
+        ) catch "";
+        const trimmed = std.mem.trim(u8, code, " \t\r\n");
+        if (trimmed.len == 0) return null;
+        if (trimmed[0] == '#') return null;
+        if (trimmed[trimmed.len - 1] == ';' or trimmed[trimmed.len - 1] == '}') return null;
+        return trimmed;
+    }
+
+    /// The function body's last statement is a `@comp.c.emit` that
+    /// `try_emit_c_emit_tail_return` will turn into the return, so the default
+    /// return would be dead code after it.
+    fn block_tail_is_c_emit_value(self: *CodeGen, blk: *const ast.Block) bool {
+        if (blk.tail_expr != null or blk.stmts.len == 0) return false;
+        return self.c_emit_tail_payload(&blk.stmts[blk.stmts.len - 1]) != null;
+    }
+
+    fn try_emit_c_emit_tail_return(self: *CodeGen, stmt: *const ast.Stmt) E!bool {
+        const payload = self.c_emit_tail_payload(stmt) orelse return false;
+        self.ind();
+        self.p("return {s};\n", .{payload});
+        return true;
+    }
+
     fn emit_block_stmts(self: *CodeGen, blk: *const ast.Block, tail_mode: BlockTailMode) E!void {
         try self.poison_conditionally_assigned(blk);
         try self.note_str_list_disqualifications(blk);
@@ -11388,6 +11529,11 @@ pub const CodeGen = struct {
                 const prev = self.emit_stmt_blocks_as_returns;
                 self.emit_stmt_blocks_as_returns = true;
                 defer self.emit_stmt_blocks_as_returns = prev;
+                return;
+            }
+            if (tail_mode == .implicit_return and blk.tail_expr == null and i + 1 == blk.stmts.len and
+                try self.try_emit_c_emit_tail_return(&blk.stmts[i]))
+            {
                 return;
             }
             try self.hoist_control_implicit_locals(&blk.stmts[i], blk.stmts[i + 1 ..], blk.tail_expr);
@@ -11513,6 +11659,18 @@ pub const CodeGen = struct {
         {
             try self.emit_print_call(expr.call.args);
             self.p("return lua_val_nil();\n", .{});
+            return;
+        }
+        // `stdout:write(x)` IS VOID, exactly as `print` is. It lowers to
+        // `fprintf`, whose `int` is the count of bytes written and never the
+        // relation's answer. Returning it directly gave
+        // `returning 'int' from a function with incompatible result type
+        // 'lua_Value'` in `lib/test.id`, where the write is the last line of
+        // `start(msg)`. Emit the write, then the relation's own default.
+        if (self.current_ret != .void and self.expr_is_host_egress_write(expr)) {
+            try self.emit_expr(expr);
+            self.p(";\n", .{});
+            self.emit_default_return_for_type(self.current_ret);
             return;
         }
         // ── Multi-value implicit return: a, b ──
@@ -13192,6 +13350,12 @@ pub const CodeGen = struct {
                     }
 
                     var is_table_assign = false;
+                    if (try self.try_emit_call_form_index_assign(
+                        tgt,
+                        if (i < as.values.len) as.values[i] else null,
+                    )) {
+                        continue;
+                    }
                     if (tgt.* == .field) {
                         const f = &tgt.field;
                         if (self.expr_type(f.obj) == .any) {
@@ -16712,6 +16876,7 @@ pub const CodeGen = struct {
 
                 if (try self.tryEmitSubjectRelation(mc)) return;
                 if (try self.try_emit_readable_protocol(mc)) return;
+                if (try self.try_emit_egress_protocol(mc)) return;
 
                 // ═══════════════════════════════════════════════════════════
                 // Zero-cost metatable dispatch: if we know the object's type
@@ -22091,6 +22256,66 @@ pub const CodeGen = struct {
 
     fn expr_is_dynamic_table_field(self: *CodeGen, e: *const ast.Expr) bool {
         return e.* == .field and self.expr_is_dynamic_table(e.field.obj);
+    }
+
+    /// `a(i) = v` — the CANONICAL index-assign spelling, in PLACE position.
+    ///
+    /// Demagix ruled that `a[i]` canonicalizes to `a(i)` (762e2bff, 6065 ->
+    /// 2804 sites) and `src/table_apply.zig` converges the READ back onto
+    /// `.index`. It converts nothing in place position that its two
+    /// recognizers cannot see: `calleeIsArray` needs sema to have resolved the
+    /// callee to `.array`, and `nameIsPositionalTable` needs a bare name bound
+    /// to an ALL-POSITIONAL, NON-EMPTY table literal. So `xs = {}` (empty, and
+    /// therefore marked callable and disqualified) and `self._bufs` (a field,
+    /// which neither recognizer accepts at all) stayed `.call` — and a `.call`
+    /// place fell through `emit_lvalue` to `emit_expr`, emitting
+    /// `({ … lua_invoke(__fn, 1, duo_args); }) = v` and
+    /// "error: expression is not assignable". Measured: `xs = {} / xs(1) = "A"`
+    /// refused on BOTH backends while the retired `xs[1] = "A"` ran, and
+    /// `lib/mem.id` could not be `req`d at all because its arena and pool
+    /// allocators write `self._bufs(self._bufs:len() + 1) = new_buf`.
+    ///
+    /// NOTHING WORKING CAN REGRESS HERE. A `.call` in place position is a hard
+    /// C compile error today, in every shape, so any lowering is strictly an
+    /// improvement — this is not the silent-wrong-answer trade `table_apply`
+    /// declines to make on the READ side, where a genuine call would be
+    /// converted into an index. A DECLARED RELATION is still refused, so
+    /// `foo(1) = 2` keeps its diagnostic rather than becoming a no-op store.
+    fn try_emit_call_form_index_assign(
+        self: *CodeGen,
+        tgt: *const ast.Expr,
+        val: ?*const ast.Expr,
+    ) E!bool {
+        if (tgt.* != .call) return false;
+        const c = &tgt.call;
+        if (c.args.len != 1) return false;
+        if (c.func.* == .name) {
+            var tbuf: [256]u8 = undefined;
+            if (self.func_decls.get(c.func.name.ident) != null) return false;
+            if (self.func_decls.get(self.mangled_name(c.func.name.ident, &tbuf)) != null) return false;
+        }
+        if (!self.expr_is_dynamic_table(c.func)) return false;
+        const key = c.args[0];
+        if (positive_int_key(key)) |k| {
+            self.p("lua_table_set_i64(", .{});
+            try self.emit_expr(c.func);
+            self.p(", {d}, ", .{k});
+        } else if (self.is_integer_key(key)) {
+            self.p("lua_table_set_i64(", .{});
+            try self.emit_expr(c.func);
+            self.p(", ", .{});
+            try self.emit_i64_index_key(key);
+            self.p(", ", .{});
+        } else {
+            self.p("lua_table_set(", .{});
+            try self.emit_expr(c.func);
+            self.p(", ", .{});
+            try self.emit_as_lua_value(key);
+            self.p(", ", .{});
+        }
+        if (val) |v| try self.emit_as_lua_value(v) else self.p("lua_val_nil()", .{});
+        self.p(");\n", .{});
+        return true;
     }
 
     fn try_emit_native_net_send(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
