@@ -112,6 +112,25 @@ pub const Parser = struct {
     /// and the frame of the block most recently finished. See `LayoutFrame`.
     layout: LayoutFrame = .{},
     last_layout: LayoutFrame = .{},
+    /// §3 for the DEPRECATED `match`/`case` construct: the column of the line
+    /// the `match` was written on, or 0 outside one. `match` demanded a written
+    /// `end` — `parse_match_inner` ended in `expect(.kw_end)` — which in `.id`,
+    /// where `end` is deleted, left the whole construct with NO spelling: the
+    /// arm list ran to the file edge and reported "this line continues a block
+    /// that already closed by dedent" at EOF.
+    ///
+    /// It gets the SAME rule as every other block rather than a rule of its
+    /// own: an arm binds at or right of the `match` (that is `clause_binds` for
+    /// `else`/`elseif`, applied to `case`), and any other line back at or left
+    /// of it has left the construct. The `end` becomes accepted-and-deleted,
+    /// §3.4, so `tools/wasm/src/wasm/jit.id` keeps parsing exactly as written.
+    ///
+    /// NOT A REHABILITATION of the keyword. `gate/match.id` proves the
+    /// canonical form is the subject-first relation `c:match` over an offside
+    /// pack of alternatives, which has never needed an `end`; the deprecation
+    /// warning still fires on every `match` keyword. This only makes the
+    /// legacy face writable while it is still being migrated off.
+    match_open_col: u32 = 0,
     /// Line of the most recently consumed token. Layout speaks about LINE
     /// STARTS only: `;` is the one-line induction tail (§4), so
     /// `tmp = a[i]; a[i] = a[j]; a[j] = tmp` is three statements on one
@@ -344,6 +363,19 @@ pub const Parser = struct {
                 term.locHint(tok.loc, "the block already closed by dedent; align this 'end' with its opener or remove it", .{});
                 return ParseError.UnexpectedToken;
             }
+            // A LINE-LEADING `end` LEFT of this opener is not this block's. The
+            // block already closed by dedent — that is what put this line at a
+            // shallower column — so the `end` belongs to something enclosing,
+            // and consuming it here spends a terminator the outer block still
+            // needs. `lib/thread.id:251` is the shape: an `if` at column 9
+            // inside a lambda whose body is also at column 9 swallowed the
+            // lambda's own `end` at column 5, leaving `)` where a statement was
+            // expected. Only an inner `end` could have repaired it, and §3
+            // deletes inner `end`s — so the site had NO correct spelling.
+            //
+            // Guarded on `offside` alone: in the `end`-closed dialect every
+            // block still demands its own terminator and this cannot fire.
+            if (offside and tok.loc.line != self.prev_line and tok.loc.col < open.col) return;
             _ = try self.adv();
             return;
         }
@@ -455,6 +487,52 @@ pub const Parser = struct {
         self.prev_line = tok.loc.line;
         self.prev_end_col = tok.loc.col + @as(u32, @intCast(tok.text.len));
         return tok;
+    }
+
+    /// §3 — the block threshold for a function body. The declaration's own
+    /// first token, which is `l` for `parse = (lx: lexer)` and the enclosing
+    /// statement's head for a lambda written in argument position:
+    ///
+    ///     co = coroutine.create(()
+    ///         ok, result = pcall(fn, args:unpack())
+    ///
+    /// `l` there is the `(` at column 26, so the body at column 9 was not
+    /// "indented past its opener", the frame never went offside, and the block
+    /// could not close at all — the file parsed to its edge. The line's first
+    /// token is column 5, and against that the body is offside and closes on
+    /// the first line back at column 5, which is the rule every other block
+    /// already follows. `parse_func_body`'s own comment has stated this rule
+    /// all along; only the value passed to it disagreed.
+    ///
+    /// READ BACKWARD OFF THE TOKEN STREAM, not tracked in a field. A tracked
+    /// "first token of the current line" is wrong here for a reason worth
+    /// recording: about thirty-five speculative scans rewind the LEXER without
+    /// restoring the parser's line bookkeeping, so any such field can be left
+    /// holding a line the parse has not reached. Measured, not feared — the
+    /// tracked version reported `line_start = 4:3` while parsing a lambda on
+    /// line 2 of `examples/parity/map.id`, which handed the body an opener of
+    /// column 20 and (with the empty-body rule below) silently gave the lambda
+    /// an EMPTY body. `duo_tokens` is the same stream `headerSignal` already
+    /// scans and it cannot go stale.
+    ///
+    /// Only ever moves the threshold LEFT, and only within `l`'s own line: a
+    /// header that begins its line is its own line start and nothing changes.
+    ///
+    /// Shared with `match`, whose arm list has the same problem the moment the
+    /// construct is written in expression position (`x = match op`).
+    fn line_opener(self: *Parser, l: ast.Loc) ParseError!ast.Loc {
+        if (!self.idol_mode) return l;
+        try self.ensureProducerPack();
+        const toks = self.lex.duo_tokens orelse return l;
+        var i = @min(self.lex.duoStreamIndex(), toks.len);
+        var best = l;
+        while (i > 0) {
+            i -= 1;
+            const t = toks[i];
+            if (t.loc.line != l.line) break;
+            if (t.loc.col < best.col) best = t.loc;
+        }
+        return best;
     }
 
     /// Whether `tok` is written with no gap after the token just consumed.
@@ -1200,16 +1278,22 @@ pub const Parser = struct {
     /// A block layout does not govern: the module body, and the bodies whose
     /// closer is structural (a bracket) rather than a rendering.
     fn parse_block(self: *Parser) ParseError!ast.Block {
-        return self.parse_block_open(null);
+        return self.parse_block_open(null, false);
     }
 
     /// §3 — a block opened by the construct at `open`, closed by
     /// dedent. See `LayoutFrame`.
     fn parse_block_at(self: *Parser, open: ast.Loc) ParseError!ast.Block {
-        return self.parse_block_open(open);
+        return self.parse_block_open(open, false);
     }
 
-    fn parse_block_open(self: *Parser, open: ?ast.Loc) ParseError!ast.Block {
+    /// §3 — a RELATION'S body, which is the one block that may be EMPTY. See
+    /// the empty-body clause in `parse_block_open`.
+    fn parse_body_block_at(self: *Parser, open: ast.Loc) ParseError!ast.Block {
+        return self.parse_block_open(open, true);
+    }
+
+    fn parse_block_open(self: *Parser, open: ?ast.Loc, empty_ok: bool) ParseError!ast.Block {
         const saved_match_depth = self.match_arm_depth;
         self.match_arm_depth = 0;
         defer self.match_arm_depth = saved_match_depth;
@@ -1220,6 +1304,45 @@ pub const Parser = struct {
             self.layout = saved_layout;
         }
         const l = (try self.pk()).loc;
+
+        // §3 — THE EMPTY BODY. `Ctable:increment(): void` declares a relation
+        // and gives it nothing to do; before `end` was retired the `end` WAS
+        // the body marker, and deleting it left the shape with no spelling at
+        // all (`examples/metaprogramming_showcase.id:172`).
+        //
+        // Under offside binding it needs none. A block is the lines indented
+        // past its opener, and if the next line is back AT or LEFT of the
+        // opener then no line is inside it: the block is empty, and the dedent
+        // that proves it is the same dedent that closes every other block. No
+        // new sigil, and nothing to write — the absence IS the spelling.
+        //
+        // ONLY A RELATION'S BODY (`empty_ok`). An `if`/`while`/`for` whose body
+        // is empty means nothing, so there the same shape is far more likely to
+        // be a mis-indent, and §3 is explicit that a mis-indent must be a
+        // diagnostic rather than an alternate parse. Those keep the error they
+        // have.
+        //
+        // STRICTLY ADDITIVE: `open_layout` left this shape `offside = false`,
+        // which in `.id` means "only a written `end` closes it" — and `.id` has
+        // no `end`, so every such site today ends at "still open at the file
+        // edge". This admits programs that were refused; it cannot re-read one
+        // that was accepted.
+        if (empty_ok and self.idol_mode and !self.layout.offside) empty: {
+            const o = open orelse break :empty;
+            const first = try self.pk();
+            switch (first.kind) {
+                // A written terminator still closes the block it was written
+                // for, and still gets the diagnostic it gets today.
+                .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch => break :empty,
+                else => {},
+            }
+            if (first.loc.line <= o.line or first.loc.col > o.col) break :empty;
+            // Closed by that dedent, so `close_block` must not go looking for
+            // an `end` it will never find.
+            self.layout.offside = true;
+            return ast.Block{ .loc = l, .stmts = &.{}, .tail_expr = null };
+        }
+
         var stmts: std.ArrayList(ast.Stmt) = .empty;
         while (true) {
             while (try self.eat(.semi) != null) {}
@@ -1231,6 +1354,17 @@ pub const Parser = struct {
             };
             switch (tok.kind) {
                 .kw_end, .kw_until, .eof => break,
+                // A BRACKET CLOSER ends the block too. Layout cannot see it:
+                // `f(xs, (x: int)\n    x * 2)` puts the `)` on the same LINE as
+                // the last body statement, and layout speaks about line starts,
+                // so the loop fell through to `parse_stmt` and reported
+                // "expected expression, got ')'". No closer can begin a
+                // statement in any dialect, so breaking here never takes a
+                // parse away from anything — it hands the token to the
+                // construct that opened the bracket, which is the only thing
+                // that can consume it. This is what gives a lambda in argument
+                // position an `end`-free spelling at all.
+                .rparen, .rbrace, .rbracket => break,
                 .kw_else, .kw_elseif => {
                     // else/elseif close the block only when they bind at
                     // or left of the block opener (layout .close). When
@@ -2171,7 +2305,7 @@ pub const Parser = struct {
         // Otherwise it's a typed binding with attributes — or a canonical callable
         // `name: Ret = (params) body` when an export attribute precedes it.
         _ = try self.adv(); // consume '='
-        if (try self.starts_parenthesized_func_expr()) {
+        if (try self.starts_binding_func_expr()) {
             var fb = try self.parse_func_body(nm.loc);
             fb.ret_type = typ;
             const path = try self.alloc.alloc([]const u8, 1);
@@ -2712,6 +2846,56 @@ pub const Parser = struct {
         return self.scan_func_header_signal(true);
     }
 
+    /// The header test at a STATEMENT-LEVEL BINDING — `name = (…)`,
+    /// `name: Ret = (…)`, `a.b.c = (…)`. Everything
+    /// `starts_parenthesized_func_expr` accepts, plus the one shape that test
+    /// cannot decide on its own: `name = ()`.
+    ///
+    /// §42, THE COLLISION. Commit `22e956e6` converted every `name(): void`
+    /// into `name = ()`, so `name = ()` is the zero-parameter relation. `()` is
+    /// ALSO the empty pack. `headerSignal` separated them by asking whether the
+    /// token after `)` could start a body — which meant the SAME two characters
+    /// in the SAME position meant different things depending on what happened
+    /// to follow:
+    ///
+    ///     x = ()            relation, when a declaration follows
+    ///     …
+    ///     x = ()            empty pack, when it is the last line of the file
+    ///
+    /// Both type-check, and `x()` type-checks against both; `duo symbols`
+    /// reports `functions: 2` for the first and `functions: 1` for the second.
+    /// That is indistinguishability, not a subtlety, and §42 refuses it.
+    ///
+    /// DECIDED, not refused, and decided in favour of the RELATION — that is
+    /// the reading `22e956e6` already spent the spelling on, and the reading
+    /// the whole migrated corpus depends on. The empty pack keeps EXPRESSION
+    /// position, where no declaration can appear (`f(())`, `{ () }`,
+    /// `return ()`); `parse_primary` still routes it there, unchanged. Two
+    /// readings, separated by POSITION — the same way §4 separates glued `a.b`
+    /// from the leading `.b` anchor walk.
+    ///
+    /// Narrow on purpose: only `()` with NOTHING after it on its line. `x = ()`
+    /// followed on the same line by an operator is still the pack expression
+    /// `() + 1`, and followed by a body is still the one-line relation.
+    fn starts_binding_func_expr(self: *Parser) ParseError!bool {
+        if (try self.starts_parenthesized_func_expr()) return true;
+        if (!self.idol_mode) return false;
+        if ((try self.pk()).kind != .lparen) return false;
+        const saved = self.lex.saveState();
+        const saved_line = self.prev_line;
+        const saved_end = self.prev_end_col;
+        defer {
+            self.lex.restoreState(saved);
+            self.prev_line = saved_line;
+            self.prev_end_col = saved_end;
+        }
+        const lp = try self.adv();
+        if ((try self.pk()).kind != .rparen) return false;
+        _ = try self.adv();
+        const after = try self.pk();
+        return after.kind == .eof or after.loc.line != lp.loc.line;
+    }
+
     /// Backwards-compatible: parse function decl with no attributes.
     fn parse_func_decl(self: *Parser, is_local: bool) ParseError!ast.Stmt {
         return self.parse_func_decl_with_attrs(is_local, &.{});
@@ -2763,6 +2947,10 @@ pub const Parser = struct {
     }
 
     fn parse_func_body(self: *Parser, l: ast.Loc) ParseError!ast.FuncBody {
+        // Taken BEFORE the header is consumed: a header whose parameters run
+        // onto continuation lines would otherwise report the LAST of those
+        // lines as the declaration's start.
+        const body_open = try self.line_opener(l);
         // Check for type parameters: <T, U>
         var type_params: ?[]ast.TypeExpr = null;
         if (try self.eat(.lt) != null) {
@@ -2849,8 +3037,11 @@ pub const Parser = struct {
             // §3 — a function body's opener is the DECLARATION's own first
             // token: `parse = (lx: lexer): ast | error` at column 1 owns a body
             // at column 5, and the body closes when the file dedents back.
-            const b = try self.parse_block_at(l);
-            try self.close_block(l, self.last_layout.offside);
+            // `body_open` is that token; `l` alone is the `(`/`fun`, which for
+            // a lambda in argument position sits mid-line. See
+            // `line_opener`.
+            const b = try self.parse_body_block_at(body_open);
+            try self.close_block(body_open, self.last_layout.offside);
             break :blk b;
         } else blk: {
             // A one-line body that is a LOOP is a statement, not an expression
@@ -3568,6 +3759,11 @@ pub const Parser = struct {
         if (self.idol_mode) {
             term.locWarn(l, "warning: 'match'/'case' are deprecated in .id; use if/elseif or table dispatch", .{});
         }
+        const open = try self.line_opener(l);
+        const outer_match_col = self.match_open_col;
+        self.match_open_col = if (self.idol_mode) open.col else 0;
+        defer self.match_open_col = outer_match_col;
+
         const scrutinee = try self.parse_match_scrutinee();
 
         var arms: std.ArrayList(ast.MatchArm) = .empty;
@@ -3575,9 +3771,22 @@ pub const Parser = struct {
             while (try self.eat(.semi) != null) {}
             const tok = try self.pk();
             if (tok.kind == .kw_end or tok.kind == .eof) break;
+            // §3 — the arm list closes by dedent. An arm BINDS at or right of
+            // the `match` (`case`/`else` sit level with it in every migrated
+            // file); anything else back at or left of it belongs to whatever
+            // encloses the construct.
+            if (self.idol_mode and tok.loc.line != self.prev_line and tok.loc.col <= open.col) {
+                if (!(try self.startsMatchArm()) or tok.loc.col < open.col) break;
+            }
             try arms.append(self.alloc, try self.parse_match_arm());
         }
-        _ = try self.expect(.kw_end);
+        // ACCEPTED AND DELETED (§3.4), not demanded: the arm list may have
+        // closed by dedent above, in which case there is nothing to consume.
+        if (self.idol_mode) {
+            _ = try self.eat(.kw_end);
+        } else {
+            _ = try self.expect(.kw_end);
+        }
 
         return ast.MatchExpr{
             .loc = l,
@@ -3771,6 +3980,12 @@ pub const Parser = struct {
             const tok = try self.pk();
             // Stop at end of match block, or at 'case'/'else' which starts the next arm.
             if (tok.kind == .kw_end or tok.kind == .eof or try self.startsMatchArm()) break;
+            // …and at a DEDENT out of the whole construct. Without this the
+            // last arm swallowed the statement after the `match` — in
+            // `examples/repro_pointer_local_match_panic.id` that is the
+            // function's own tail expression, three columns to the left.
+            if (self.idol_mode and self.match_open_col != 0 and
+                tok.loc.line != self.prev_line and tok.loc.col <= self.match_open_col) break;
             if (tok.kind == .kw_return) {
                 // Use restricted return parsing that doesn't consume string/table/array
                 // suffixes (those start the next pattern arm).
@@ -4239,7 +4454,7 @@ pub const Parser = struct {
             return null;
         }
         _ = try self.adv(); // consume '='
-        if (!try self.starts_parenthesized_func_expr()) {
+        if (!try self.starts_binding_func_expr()) {
             self.lex.restoreState(saved);
             return null;
         }
@@ -4415,7 +4630,7 @@ pub const Parser = struct {
                 // a suffix on the callable face.  Preserve that demand on the
                 // ordinary function record so every later stage sees exactly
                 // the same semantic object as the legacy suffix form.
-                if (try self.starts_parenthesized_func_expr()) {
+                if (try self.starts_binding_func_expr()) {
                     var fb = try self.parse_func_body(first.loc());
                     fb.ret_type = typ;
                     fb.ret_fallible = binding_fallible;
@@ -4474,7 +4689,7 @@ pub const Parser = struct {
             if (first.* == .name and nxt.kind == .assign) {
                 const saved = self.lex.saveState();
                 _ = try self.adv();
-                const is_func_assign = try self.starts_parenthesized_func_expr();
+                const is_func_assign = try self.starts_binding_func_expr();
                 self.lex.restoreState(saved);
                 if (is_func_assign) {
                     _ = try self.adv();
