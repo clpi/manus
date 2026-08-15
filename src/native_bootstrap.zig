@@ -20,7 +20,8 @@
 //!   os.exit/execute                   → process world facts
 //!   math.sqrt/sin/...                 → relation + selected target id
 //!   gatecap(cmd)                      → command capture (host ingress only)
-//!   print(v)                          → host stdout egress (gate transport only)
+//!   print(v)                          → host stdout egress (one node with
+//!                                       `stdout:write`; recognized everywhere)
 //!   to(str)(integral)                 → demanded conversion (infer when unique)
 //!
 //! Ordinary module calls like `observe(41)` are NOT bootstrap. Checked lowering
@@ -198,12 +199,30 @@ pub fn applicationExpr(expr: *const Expr) bool {
     return applicationExprInModule(expr, null);
 }
 
-/// Module-aware bootstrap recognition. Gate transport homes admit `print` until
-/// graph vocabulary owns host egress facts.
+/// Module-aware bootstrap recognition. `to(…)` inference stays gate-transport
+/// only; host egress is admitted everywhere.
+///
+/// WHY `print` IS NO LONGER PATH-DEPENDENT. `stdout:write(text)` and `print(v)`
+/// are the SAME host egress — `dnir_lower` sends both to `lowerPrint`, and they
+/// emit byte-identical DNIR. Admitting one in every module and the other only
+/// under `gate/`, `scripts/ledger/` and friends did not make the second face
+/// safer; it made the direct backend unable to produce output at all outside a
+/// handful of directories. Measured over the 1005 tracked `.id` files: 308
+/// programs that `idol check` accepts and the C bootstrap compiles were refused
+/// by direct, 229 of them on `unresolved-application-facts`, and 110 of THOSE
+/// named exactly one relation — `print`. That is 36% of the whole bridge gap
+/// held open by a directory list.
+///
+/// The egress face is still a bootstrap face, not Idol semantics: the graph does
+/// not yet publish host-egress relation/target ids, which is why this lives here
+/// and not in the application vocabulary. What changed is only WHERE it is
+/// recognized. A module that declares its own `print` relation is unaffected —
+/// sema publishes application facts for that call, and `dnir_lower` prefers
+/// published facts over this face (see `lowerCall`).
 pub fn applicationExprInModule(expr: *const Expr, module_path: ?[]const u8) bool {
+    if (printApplication(expr)) return true;
     if (module_path) |path| {
         if (gateTransport(path)) {
-            if (printApplication(expr)) return true;
             if (toApplication(expr)) return true;
         }
     }
@@ -286,7 +305,7 @@ test "native_bootstrap: ordinary calls are not bootstrap faces" {
     try std.testing.expect(applicationExpr(stdout.?));
 }
 
-test "native_bootstrap: gate transport admits print without graph facts" {
+test "native_bootstrap: print is host egress in every module, not just gate transport" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -313,6 +332,10 @@ test "native_bootstrap: gate transport admits print without graph facts" {
         if (printApplication(expr)) print_expr = expr;
     }
     try std.testing.expect(print_expr != null);
-    try std.testing.expect(!applicationExprInModule(print_expr.?, "native.id"));
+    // The directory the file lives in is not a fact about the call. Both of
+    // these were once one true and one false, and the false one is what left
+    // the direct backend with no output path outside `gate/`.
+    try std.testing.expect(applicationExprInModule(print_expr.?, "native.id"));
     try std.testing.expect(applicationExprInModule(print_expr.?, "scripts/ledger/shc.id"));
+    try std.testing.expect(applicationExprInModule(print_expr.?, null));
 }

@@ -1722,6 +1722,12 @@ fn root(
     if (tail_result_demand.blockTailResult(&mod.body)) |tail| {
         if (status(&ctx, tail.expr)) {
             _ = try tryEmitTailDemandReturn(&ctx, &mod.body);
+        } else if (tailAnchoredAway(&mod.body, tail)) {
+            // The resolved value anchored to an earlier statement that has
+            // ALREADY been lowered by the loop above, so re-lowering it here
+            // buys nothing and re-evaluates it; the file's tail expression is
+            // the only thing still owed an emission. See `tailAnchoredAway`.
+            try lowerBlockTailEffect(&ctx, &mod.body);
         } else {
             _ = try lowerExprCons(&ctx, tail.expr, .discard);
         }
@@ -1909,6 +1915,9 @@ fn tryEmitSelfTail(ctx: *LowerCtx, expr: *const ast.Expr) Error!bool {
 
 fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
     const r = tail_result_demand.blockTailResult(block) orelse return false;
+    // The tail expression still runs even when the block's VALUE came from an
+    // earlier statement. See `tailAnchoredAway`.
+    if (tailAnchoredAway(block, r)) try lowerBlockTailEffect(ctx, block);
     // gap[033]: emitting `ret` here made `if c print(" ") end` compile to
     // `return print(" ")`, returning whatever register the void call left —
     // exit 59, and 224 with an else, where the C backend exits 0. Lower it as
@@ -2265,6 +2274,33 @@ fn lowerBlockTailEffect(ctx: *LowerCtx, block: *const ast.Block) Error!void {
     const e = block.tail_expr orelse return;
     if (e.* == .table) return;
     _ = try lowerExprCons(ctx, e, exprCallConsumption(e));
+}
+
+/// gap[104] at the ANSWERING end of a block — the third home of the same hole.
+///
+/// `blockTailResult` treats a void-shaped tail call as transparent and walks
+/// BACK to the preceding statement for the block's value, which is right: a
+/// file ending in `print(…)` still answers with whatever it computed. But the
+/// resolution it hands back then names that EARLIER statement, and both
+/// consumers used it as the whole answer — so the tail expression itself,
+/// which is not in `block.stmts` and is no longer the resolved result, was
+/// lowered by nobody:
+///
+///     a = 64
+///     print("{a}")
+///
+/// compiled, exited 64, and printed NOTHING, where the C oracle printed 64 and
+/// exited 0. Every shape in `examples/table/` is this: a binding, then a tail
+/// `print`. It stayed invisible while `print` refused outside gate transport —
+/// a refusal cannot answer wrong — and became a SILENT WRONG ANSWER the moment
+/// egress compiled everywhere.
+///
+/// `lowerBlockTailEffect` already states the rule for a non-answering block.
+/// This is the same rule where the block does answer: the anchored value is the
+/// result, and the tail expression is a discarded statement that still runs.
+fn tailAnchoredAway(block: *const ast.Block, r: tail_result_demand.Resolution) bool {
+    const tail = block.tail_expr orelse return false;
+    return tail != r.expr;
 }
 
 /// Whether statement `i` occupies the slot the block's result comes out of.
@@ -4527,19 +4563,33 @@ fn lowerExprCons(
         .true_lit => .{ .i64 = 1 },
         .false_lit => .{ .i64 = 0 },
         .string_lit => |s| .{ .str = s.val },
+        // AN INJECTED WORLD ADDS REACH; IT NEVER TAKES A NAME.
+        //
+        // The world test used to run BEFORE `ctx.locals`, so any program that
+        // bound `io`, `os` or `std` got the world DESCRIPTOR — whose address is
+        // what a `.str` value carries — returned in place of its own value:
+        //
+        //     io: i64 = 5 ; io                 direct 56, C 5
+        //     io: i64 = 5 ; io + 0             direct 64, C 5   (tracks layout)
+        //     f: i64 = (io: i64) io + 1 ; f(4) direct 121, C 5
+        //     zz: i64 = 5 ; zz                 direct 5,  C 5   (control)
+        //
+        // Compiled clean, ran, and answered a pointer. Sema resolves these
+        // correctly — the two backends disagreeing is what localized it here.
+        // Binding order is the whole fix: a local, a parameter or a module
+        // constant is a NAME THAT IS TAKEN, and only a free name can still mean
+        // the world. `tryLowerRelationEdgeCall` already asks the question this
+        // way (`if (ctx.locals.contains("os")) return null;`).
         .name => |n| blk: {
+            if (ctx.locals.get(n.ident)) |slot| break :blk dnir.Value{ .local = slot };
+            if (ctx.module_consts.ints.get(n.ident)) |mv| break :blk dnir.Value{ .i64 = mv };
+            if (ctx.module_consts.strs.get(n.ident)) |sv| break :blk dnir.Value{ .str = sv };
             if (std.mem.eql(u8, n.ident, "io") or std.mem.eql(u8, n.ident, "os") or
                 std.mem.eql(u8, n.ident, "std"))
             {
                 break :blk dnir.Value{ .str = n.ident };
             }
-            const slot = ctx.locals.get(n.ident) orelse {
-                // Not a local — a module-level integer constant folds here.
-                if (ctx.module_consts.ints.get(n.ident)) |mv| break :blk dnir.Value{ .i64 = mv };
-                if (ctx.module_consts.strs.get(n.ident)) |sv| break :blk dnir.Value{ .str = sv };
-                return bailWith(ctx.diagnostic, @src(), n.ident);
-            };
-            break :blk dnir.Value{ .local = slot };
+            return bailWith(ctx.diagnostic, @src(), n.ident);
         },
         .binop => |b| if (b.op == .@"and" or b.op == .@"or")
             try lowerShortCircuit(ctx, b.op, b.lhs, b.rhs)
@@ -5394,15 +5444,36 @@ fn stageConcatHoles(ctx: *LowerCtx, vals: []const dnir.Value) Error!void {
 /// live values drop to one per hole, and those ride the variadic tail, which
 /// Apple's ARM64 ABI passes in memory rather than in registers.
 ///
-/// One fixed-capacity buffer plus a single fill — the same shape as `emitIntToStr`.
-/// A measure-then-fill pair (`snprintf(nil, 0, …)` then `malloc(len+1)` then
-/// fill) assembled and lowered, but the native backend then handed `print` a
-/// register that held snprintf's integer return instead of the malloc pointer:
-/// `p = "{world}"` compiled yet `print(p)` segfaulted while `print("{world}")`
-/// and `print(to(str)(42))` did not. Re-staging holes for a second snprintf
-/// also evaluates each operand twice, which is wrong when a hole carries effect.
-const concat_heap_cap: i64 = 4096;
-
+/// MEASURE, THEN FILL — the buffer is the size of the answer.
+///
+/// It used to be `malloc(4096)` and `snprintf(buf, 4096, …)`, one fixed
+/// capacity for every chain in every program, and that is three defects in one
+/// line:
+///
+///   1. IT TRUNCATED AT 4095 BYTES, silently. Measured at the boundary: a
+///      4094-byte chain agreed with `--backend=c`, a 4096-byte chain produced
+///      4095 bytes where C produced 4096, and an 8192-byte chain produced 4095
+///      where C produced 8192. Exit 0 both times, `ok compile` both times. Two
+///      backends, one source, DIFFERENT ANSWERS — which is strictly worse than
+///      a bug, because neither side reports anything.
+///   2. IT ALLOCATED 4 KB PER EVALUATION regardless of the answer's size, so a
+///      loop concatenating short strings grew RSS by 4 KB an iteration.
+///   3. It made the cost of a chain independent of its length, which hid both.
+///
+/// C's `snprintf` answers question 1 itself: called with a null destination and
+/// a zero size it WRITES NOTHING and RETURNS THE LENGTH THE RESULT NEEDS. So
+/// the sequence is measure, allocate exactly that many bytes plus the NUL, fill.
+/// No cap, so nothing to exceed and nothing to refuse; the allocation is the
+/// size of the string, so a short chain costs a short buffer.
+///
+/// THE HOLES ARE LOWERED ONCE and staged twice. That distinction is the whole
+/// safety of the second call: `vals` holds already-computed DNIR values, and
+/// `stageConcatHoles` only moves them into the variadic tail, so an operand
+/// carrying an effect still runs exactly once. An earlier attempt at this shape
+/// was abandoned after `print(p)` segfaulted on a register that held snprintf's
+/// integer return instead of the malloc pointer; the boundary and byte
+/// comparisons below are what makes the difference between then and now
+/// checkable rather than remembered.
 fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
     var parts: std.ArrayListUnmanaged(*const ast.Expr) = .empty;
     defer parts.deinit(ctx.alloc);
@@ -5410,7 +5481,8 @@ fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) 
     try flattenConcat(ctx.alloc, rhs, &parts);
 
     const plan = (try planConcat(ctx, parts.items, false)) orelse return bailWith(ctx.diagnostic, @src(), "concat");
-    // Every part was a literal, so the chain IS its own answer.
+    // Every part was a literal, so the chain IS its own answer — determined at
+    // compile time, and it must not reach the allocator at all.
     if (plan.count == 0) return .{ .str = plan.literal };
 
     var vals: [max_concat_holes]dnir.Value = undefined;
@@ -5418,10 +5490,34 @@ fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) 
 
     try ensureExtern(ctx, "mem", "alloc", "malloc");
     try ensureExtern(ctx, "string", "format", "snprintf");
+
+    // MEASURE: `snprintf(NULL, 0, fmt, …)` writes nothing and answers the
+    // length. This is the C standard's own answer to "how big is it", not an
+    // estimate this pass invents.
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .i64 = 0 } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = 0 } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = plan.fmt } });
+    try stageConcatHoles(ctx, vals[0..plan.count]);
+    const need = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = need, .callee = "snprintf", .ty = .i64 });
+
+    // One more byte for the NUL `snprintf` excludes from its answer.
+    const size = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .binop,
+        .result = size,
+        .binop = .add,
+        .lhs = .{ .temp = need },
+        .rhs = .{ .i64 = 1 },
+    });
+
     const buf = ctx.freshTemp();
-    try ctx.emit(.{ .op = .call_extern, .result = buf, .callee = "malloc", .lhs = .{ .i64 = concat_heap_cap } });
+    try ctx.emit(.{ .op = .call_extern, .result = buf, .callee = "malloc", .lhs = .{ .temp = size } });
+
+    // FILL: the same format and the same already-lowered holes, into a buffer
+    // that cannot be too small because it was measured from them.
     try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = buf } });
-    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = concat_heap_cap } });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .temp = size } });
     try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = plan.fmt } });
     try stageConcatHoles(ctx, vals[0..plan.count]);
     try ctx.emit(.{ .op = .call_extern, .callee = "snprintf" });
@@ -5828,10 +5924,27 @@ fn tryLowerSubjectRelationEdgeCall(
     return try lowerNamedDirectCall(ctx, sym, &args, consumption);
 }
 
+/// `print(v)` spelled as host egress — the same node `stdout:write(v)` reaches.
+///
+/// This is a SHAPE test, never an identity. It is consulted only to decide
+/// which of two available lowerings wins, and THE PUBLISHED APPLICATION FACT
+/// ALWAYS WINS: `native_bootstrap` recognizes this shape in every module now,
+/// so a module that declares its own `print` relation would otherwise have its
+/// call answered with host output — one relation silently swapped for another,
+/// which is the class that passes `idol check`.
+fn hostEgressCall(expr: *const ast.Expr) bool {
+    if (expr.* != .call) return false;
+    const c = expr.call;
+    if (c.func.* != .name) return false;
+    return std.mem.eql(u8, c.func.name.ident, "print");
+}
+
 fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnConsumption) Error!dnir.Value {
     if (expr.* != .call) return bail(ctx.diagnostic, @src());
     if (ctx.occurrences.get(expr)) |application| {
-        if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr)) {
+        if (ctx.require_graph_facts and
+            (hostEgressCall(expr) or !ctx.graph.bootstrapApplicationExpr(expr)))
+        {
             return lowerCheckedScalarCall(ctx, application, consumption);
         }
     }
@@ -6611,6 +6724,133 @@ test "dnir_lower: to(str)(n) stages the value as a variadic tail argument" {
     // in x0..x3 is what made snprintf print a pointer.
     try std.testing.expectEqual(@as(u32, 3), named);
     try std.testing.expectEqual(@as(u32, 1), varargs);
+}
+
+// A `..` chain sizes its buffer from the ANSWER, and no constant appears in it.
+//
+// The differential this pins is a runtime one: the same source under
+// `--backend=c` and under direct produced different bytes past 4095, because
+// the chain lowered to `malloc(4096)` + `snprintf(buf, 4096, …)`. A DNIR-level
+// test is the part of that a unit test can hold — the SHAPE that made the
+// divergence possible. If a fixed capacity ever comes back, it comes back as a
+// literal size operand, and that is what this refuses.
+//
+// The behavioural half is measured by running both backends at 4094 / 4095 /
+// 4096 / 8192 / 40000 bytes and comparing the bytes, not the lengths.
+test "dnir_lower: a concat chain measures before it allocates" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    a = "left"
+        \\    s = a .. "right"
+        \\    return s:len()
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "concat_measure.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+
+    var snprintfs: u32 = 0;
+    var mallocs: u32 = 0;
+    var malloc_size_is_literal = false;
+    var measure_destination: ?dnir.Value = null;
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        for (f.blocks[0].instrs, 0..) |ins, i| {
+            if (ins.op != .call_extern) continue;
+            if (std.mem.eql(u8, ins.callee, "malloc")) {
+                mallocs += 1;
+                if (ins.lhs == .i64) malloc_size_is_literal = true;
+            }
+            if (!std.mem.eql(u8, ins.callee, "snprintf")) continue;
+            snprintfs += 1;
+            if (snprintfs != 1) continue;
+            // The measuring call's destination and size are the two arguments
+            // staged immediately before it.
+            // Skipping the variadic tail matters: `stageConcatHoles` numbers
+            // the holes from 0 too, so hole zero is also `result == 0`.
+            var j = i;
+            while (j > 0) : (j -= 1) {
+                const prev = f.blocks[0].instrs[j - 1];
+                if (prev.op == .mov_arg and prev.result == 0 and
+                    !std.mem.eql(u8, prev.field, "vararg"))
+                {
+                    measure_destination = prev.lhs;
+                    break;
+                }
+            }
+        }
+    }
+    // Measure, then fill.
+    try std.testing.expectEqual(@as(u32, 2), snprintfs);
+    try std.testing.expectEqual(@as(u32, 1), mallocs);
+    // The buffer is the size the measurement answered, never a constant.
+    try std.testing.expect(!malloc_size_is_literal);
+    // The measuring call writes nowhere: a null destination.
+    try std.testing.expect(measure_destination != null);
+    try std.testing.expectEqual(@as(i64, 0), measure_destination.?.i64);
+}
+
+// The other half of the same rule: a chain whose every part is a literal is
+// DETERMINED, so it must not reach the allocator at all.
+test "dnir_lower: a determined concat chain allocates nothing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    s = "abc" .. "def"
+        \\    return s:len()
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "concat_determined.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        for (f.blocks[0].instrs) |ins| {
+            if (ins.op != .call_extern) continue;
+            try std.testing.expect(!std.mem.eql(u8, ins.callee, "malloc"));
+            try std.testing.expect(!std.mem.eql(u8, ins.callee, "snprintf"));
+        }
+    }
+}
+
+// An injected world adds reach; it never takes a name. A bound `io` is the
+// binding, and the world spelling only survives where nothing is bound.
+test "dnir_lower: a local named io is the local, not the world descriptor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    io = 5
+        \\    return io
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "world_shadow.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+    var saw_ret = false;
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        for (f.blocks[0].instrs) |ins| {
+            if (ins.op != .ret) continue;
+            saw_ret = true;
+            // The world arm answers `.str`, whose ADDRESS is what reached the
+            // exit status: `io = 5 ; io` exited 56 rather than 5.
+            try std.testing.expect(ins.lhs != .str);
+        }
+    }
+    try std.testing.expect(saw_ret);
 }
 
 test "dnir_lower: to(str) declines a non-integer argument rather than mis-lowering" {
