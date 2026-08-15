@@ -20,7 +20,6 @@ fun valtype_to_c(vt: i64): str
   case 0x7D "float"
   case 0x7C "double"
   else "int64_t"
-  end
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -44,7 +43,6 @@ fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
   if n_results > 0
     r1: i64 = sig.results[1]
     ret_type = valtype_to_c(r1)
-  end
 
   # Build parameter list.
   params: any = {}
@@ -52,7 +50,6 @@ fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
     p: i64 = sig.params[i]
     c_type: str = valtype_to_c(p)
     params[i] = c_type .. " p" .. tostring(i - 1)
-  end
   params[params:len() + 1] = "uint8_t* memory"
   lines[lines:len() + 1] = ret_type .. " wasmjitf" .. tostring(func_idx) ..
     "(" .. params:concat(", ") .. ") {"
@@ -62,14 +59,12 @@ fun emit_c_function(mod: any, func_idx: i64, code: any, sig: any): str
     l: i64 = code.locals[i]
     l_type: str = valtype_to_c(l)
     lines[lines:len() + 1] = "  " .. l_type .. " l" .. tostring(i + n_params - 1) .. " = 0;"
-  end
 
   lines[lines:len() + 1] = "  // TODO: bytecode-to-C translation"
   lines[lines:len() + 1] = "  return 0;"
   lines[lines:len() + 1] = "}"
 
   lines:concat("\n")
-end
 
 # ═══════════════════════════════════════════════════════════════
 # compile_function — JIT: compile a hot WASM function to a .so.
@@ -91,7 +86,6 @@ fun compile_function(mod: any, func_idx: i64): any
   os.remove(tmp_c)
 
   { path = tmp_so, func_idx = func_idx }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Tiered JIT threshold.
@@ -102,7 +96,6 @@ fun tiered_new(): any
     threshold = 100,
     compiled = {},
   }
-end
 
 fun tiered_should_compile(jit: any, func_idx: i64): bool
   prev: i64 = jit.hot_counts[func_idx] or 0
@@ -110,7 +103,6 @@ fun tiered_should_compile(jit: any, func_idx: i64): bool
   jit.hot_counts[func_idx] = new_count
   thr: i64 = jit.threshold
   new_count >= thr
-end
 
 M = {}
 M.compile_function = compile_function

@@ -39,74 +39,54 @@ PINNED_MAX = 6
 # One shape for every three-register data-processing instruction.
 fun dp3(base: i64, d: i64, n: i64, m: i64): i64
   return base | (m << 16) | (n << 5) | d
-end
 fun ldr_imm(t: i64, n: i64, off: i64): i64
   return 0xF9400000 | ((off >> 3) << 10) | (n << 5) | t
-end
 fun str_imm(t: i64, n: i64, off: i64): i64
   return 0xF9000000 | ((off >> 3) << 10) | (n << 5) | t
-end
 fun ldr_reg(t: i64, n: i64, m: i64): i64   # ldr Xt,[Xn,Xm,LSL#3]
   return 0xF8607800 | (m << 16) | (n << 5) | t
-end
 fun str_reg(t: i64, n: i64, m: i64): i64
   return 0xF8207800 | (m << 16) | (n << 5) | t
-end
 fun add_imm(d: i64, n: i64, imm: i64): i64
   return 0x91000000 | ((imm & 0xFFF) << 10) | (n << 5) | d
-end
 fun sub_imm(d: i64, n: i64, imm: i64): i64
   return 0xD1000000 | ((imm & 0xFFF) << 10) | (n << 5) | d
-end
 fun movz(d: i64, imm16: i64, sh: i64): i64
   return 0xD2800000 | (sh << 21) | ((imm16 & 0xFFFF) << 5) | d
-end
 fun movk(d: i64, imm16: i64, sh: i64): i64
   return 0xF2800000 | (sh << 21) | ((imm16 & 0xFFFF) << 5) | d
-end
 fun sxtw(d: i64, n: i64): i64
   return 0x93407C00 | (n << 5) | d
-end
 fun cset(d: i64, cond: i64): i64
   return 0x9A9F07E0 | (((cond ~ 1) & 0xF) << 12) | d
-end
 fun b_imm(off: i64): i64
   return 0x14000000 | (off & 0x03FFFFFF)
-end
 fun cbz(n: i64, off: i64): i64
   return 0xB4000000 | ((off & 0x7FFFF) << 5) | n
-end
 fun cbnz(n: i64, off: i64): i64
   return 0xB5000000 | ((off & 0x7FFFF) << 5) | n
-end
 RET = 0xD65F03C0
 
 # Load/store with a register offset, LSL #0 (wasm addresses are byte counts).
 #   base | Rm<<16 | Rn<<5 | Rt
 fun msub(d: i64, n: i64, m: i64, a: i64, w: bool): i64
   base: i64 = 0x9B008000
-  if w base = 0x1B008000 end
+  if w base = 0x1B008000
   return base | (m << 16) | (a << 10) | (n << 5) | d
-end
 fun csel(d: i64, n: i64, m: i64, cond: i64): i64
   return 0x9A800000 | (m << 16) | (cond << 12) | (n << 5) | d
-end
 
 fun mem_rr(base: i64, t: i64, n: i64, m: i64): i64
   return base | (m << 16) | (n << 5) | t
-end
 # mov Wd, Wm — zero-extends into Xd, which is how a wasm i32 address must be
 # widened before it is added to the linear-memory base.
 fun uxtw(d: i64, m: i64): i64
   return 0x2A0003E0 | (m << 16) | d
-end
 # stp Xt,Xt2,[sp,#-16]!  /  ldp Xt,Xt2,[sp],#16 — imm7 is the offset in 8-byte units
 fun stp_pre(t: i64, t2: i64): i64
   return 0xA9800000 | (0x7E << 15) | (t2 << 10) | (31 << 5) | t
-end
 fun ldp_post(t: i64, t2: i64): i64
   return 0xA8C00000 | (0x02 << 15) | (t2 << 10) | (31 << 5) | t
-end
 
 # ── Instruction-selection tables ────────────────────────────────────────
 # wasm opcode → { base, is32 }. `is32` means: use the W-form then sign-extend
@@ -175,23 +155,18 @@ LEB1 = { [0x20]=true, [0x21]=true, [0x22]=true, [0x41]=true, [0x42]=true,
 # ── Code buffer ─────────────────────────────────────────────────────────
 fun buf_new(cap: i64)
   return { mem = jit.alloc(cap * 4), n = 0, cap = cap, ok = true, vs = {}, vsn = 0, pinned = 0 }
-end
 fun put(b, insn: i64)
   if b.n >= b.cap
     b.ok = false
     return
-  end
   jit.w32(b.mem, b.n, insn)
   b.n = b.n + 1
-end
 fun patch(b, at: i64, insn: i64)
   jit.w32(b.mem, at, insn)
-end
 
 # mov Xd, Xs  (orr Xd, XZR, Xs)
 fun mov_reg(d: i64, s: i64): i64
   return 0xAA0003E0 | (s << 16) | d
-end
 
 # Top-of-stack cache. `b.tos` is the register currently holding the logical
 # top of the operand stack, or -1 when the top lives in memory. A push
@@ -213,11 +188,9 @@ POOL = { 8, 9, 10, 11, 12, 13, 14, 15 }
 fun vs_holds(b, r: i64): bool
   i: i64 = 1
   while i <= b.vsn
-    if b.vs[i] == r return true end
+    if b.vs[i] == r return true
     i += 1
-  end
   return false
-end
 
 # Like vs_alloc but also avoids two registers the caller still holds live.
 # A popped register is no longer tracked by the virtual stack, so without this
@@ -227,43 +200,35 @@ fun vs_alloc_not(b, a1: i64, a2: i64): i64
   i: i64 = 1
   while i <= 8
     r: i64 = POOL[i]
-    if not vs_holds(b, r) and r != a1 and r != a2 return r end
+    if not vs_holds(b, r) and r != a1 and r != a2 return r
     i += 1
-  end
   return POOL[1]
-end
 
 # A pool register no live slot is using.
 fun vs_alloc(b): i64
   i: i64 = 1
   while i <= 8
     r: i64 = POOL[i]
-    if not vs_holds(b, r) return r end
+    if not vs_holds(b, r) return r
     i += 1
-  end
   return POOL[1]
-end
 
 # Spill the deepest cached slot to memory, keeping stack order.
 fun vs_spill_deepest(b)
-  if b.vsn <= 0 return end
+  if b.vsn <= 0 return
   put(b, add_imm(X20, X20, 1))
   put(b, str_reg(b.vs[1], X19, X20))
   i: i64 = 1
   while i < b.vsn
     b.vs[i] = b.vs[i + 1]
     i += 1
-  end
   b.vsn = b.vsn - 1
-end
 
 fun vs_push(b, r: i64)
   if b.vsn >= VS_MAX
     vs_spill_deepest(b)
-  end
   b.vsn = b.vsn + 1
   b.vs[b.vsn] = r
-end
 
 # Returns the register holding the top of stack.
 fun vs_pop(b): i64
@@ -271,34 +236,28 @@ fun vs_pop(b): i64
     r: i64 = b.vs[b.vsn]
     b.vsn = b.vsn - 1
     return r
-  end
   d: i64 = vs_alloc(b)
   put(b, ldr_reg(d, X19, X20))
   put(b, sub_imm(X20, X20, 1))
   return d
-end
 
 # Top without consuming (local.tee).
 fun vs_peek(b): i64
-  if b.vsn > 0 return b.vs[b.vsn] end
+  if b.vsn > 0 return b.vs[b.vsn]
   d: i64 = vs_alloc(b)
   put(b, ldr_reg(d, X19, X20))
   return d
-end
 
 # All cached slots to memory, deepest first. Required at every control-flow
 # edge, since the register mapping cannot span a branch.
 fun flush_tos(b)
   while b.vsn > 0
     vs_spill_deepest(b)
-  end
-end
 fun mov_imm(b, d: i64, v: i64)
   put(b, movz(d, v & 0xFFFF, 0))
-  if (v >> 16) & 0xFFFF != 0 put(b, movk(d, (v >> 16) & 0xFFFF, 1)) end
-  if (v >> 32) & 0xFFFF != 0 put(b, movk(d, (v >> 32) & 0xFFFF, 2)) end
-  if (v >> 48) & 0xFFFF != 0 put(b, movk(d, (v >> 48) & 0xFFFF, 3)) end
-end
+  if (v >> 16) & 0xFFFF != 0 put(b, movk(d, (v >> 16) & 0xFFFF, 1))
+  if (v >> 32) & 0xFFFF != 0 put(b, movk(d, (v >> 32) & 0xFFFF, 2))
+  if (v >> 48) & 0xFFFF != 0 put(b, movk(d, (v >> 48) & 0xFFFF, 3))
 
 # ── LEB128 over the body string ─────────────────────────────────────────
 fun leb_u(body: any, pc: i64)
@@ -312,7 +271,6 @@ fun leb_u(body: any, pc: i64)
     shift += 7
   until (byte & 0x80) == 0
   return result, pc
-end
 fun leb_s(body: any, pc: i64)
   result: i64 = 0
   shift: i64 = 0
@@ -326,9 +284,7 @@ fun leb_s(body: any, pc: i64)
   if shift < 64 and (byte & 0x40) != 0
     ones: i64 = -1
     result |= (ones << shift)
-  end
   return result, pc
-end
 
 # Store sp back, return it in x0, restore the spilled callee-saved registers.
 fun emit_epilogue(b)
@@ -337,18 +293,15 @@ fun emit_epilogue(b)
   while ei < b.pinned
     put(b, str_imm(X23 + ei, X21, ei * 8))
     ei += 1
-  end
   put(b, str_imm(X20, X0, RT_SP))
   put(b, 0xAA1403E0)                           # mov x0, x20
   if b.pinned > 0
     put(b, ldp_post(X23 + 4, X23 + 5))
     put(b, ldp_post(X23 + 2, X23 + 3))
     put(b, ldp_post(X23, X23 + 1))
-  end
   put(b, ldp_post(X21, X22))
   put(b, ldp_post(X19, X20))
   put(b, RET)
-end
 
 global trace_reject = os.getenv("DUO_WASM_JIT_TRACE")
 
@@ -374,24 +327,18 @@ fun can_compile(body: any, body_len: i64): bool
     else
       if trace_reject != nil
         print("JIT reject op=0x%02X len=%d":format(op, body_len))
-      end
       return false
-    end
-  end
   return true
-end
 
 # Debug: write the emitted words little-endian so llvm-objdump can read them.
 global dump_path = os.getenv("DUO_WASM_JIT_DUMP")
 fun dump(b, path: str)
   f = io.open(path, "wb")
-  if f == nil return end
+  if f == nil return
   for i = 0, b.n - 1
     wrd: i64 = jit.r32(b.mem, i)
     f:write(wrd & 0xFF:char((wrd >> 8) & 0xFF, (wrd >> 16) & 0xFF, (wrd >> 24) & 0xFF))
-  end
   f:close()
-end
 
 # ── Compile ─────────────────────────────────────────────────────────────
 # Returns a sealed buffer callable as fn(rtstate*, rtframe*) -> new sp,
@@ -407,7 +354,7 @@ fun locals_touched(body: any, body_len: i64): i64
     if op == 0x20 or op == 0x21 or op == 0x22
       idx, np = leb_u(body, pc)
       pc = np
-      if idx + 1 > hi hi = idx + 1 end
+      if idx + 1 > hi hi = idx + 1
     elseif BIN[op] != nil or CMP[op] != nil or REM[op] != nil or CONV[op] != nil or op == 0x1B
     elseif op == 0x45 or op == 0x50 or op == 0x1A or op == 0x0B or op == 0x0F or op == 0x01
     elseif op == 0x02 or op == 0x03
@@ -417,16 +364,13 @@ fun locals_touched(body: any, body_len: i64): i64
       _, pc = leb_u(body, pc)
     elseif LEB1[op] != nil
       _, pc = leb_s(body, pc)
-    end
-  end
   return hi
-end
 
 fun compile(body: any, body_len: i64)
-  if not can_compile(body, body_len) return nil end
+  if not can_compile(body, body_len) return nil
 
   b = buf_new(body_len * 8 + 64)
-  if b.mem == nil return nil end
+  if b.mem == nil return nil
 
   # Prologue: x19-x22 are callee-saved under AAPCS64, and we pin all four,
   # so they must be spilled before use or we corrupt our caller.
@@ -437,12 +381,11 @@ fun compile(body: any, body_len: i64)
   # when pinned > 0) leaves the stack unbalanced and the return goes wild.
   nloc: i64 = locals_touched(body, body_len)
   b.pinned = 0
-  if nloc > 0 and nloc <= PINNED_MAX b.pinned = nloc end
+  if nloc > 0 and nloc <= PINNED_MAX b.pinned = nloc
   if b.pinned > 0
     put(b, stp_pre(X23, X23 + 1))
     put(b, stp_pre(X23 + 2, X23 + 3))
     put(b, stp_pre(X23 + 4, X23 + 5))
-  end
   put(b, ldr_imm(X19, X0, RT_STACK))
   put(b, ldr_imm(X20, X0, RT_SP))
   put(b, ldr_imm(X21, X1, FR_LOCALS))
@@ -451,7 +394,6 @@ fun compile(body: any, body_len: i64)
   while li < b.pinned
     put(b, ldr_imm(X23 + li, X21, li * 8))
     li += 1
-  end
 
   labels = {}          # control stack: { kind, target_insn, patches }
   depth: i64 = 0
@@ -467,7 +409,7 @@ fun compile(body: any, body_len: i64)
       ra: i64 = vs_pop(b)
       rd: i64 = vs_alloc(b)
       put(b, dp3(spec.base, rd, ra, rb))
-      if spec.w put(b, sxtw(rd, rd)) end
+      if spec.w put(b, sxtw(rd, rd))
       vs_push(b, rd)
 
     elseif CMP[op] != nil
@@ -479,7 +421,6 @@ fun compile(body: any, body_len: i64)
         put(b, 0x6B00001F | (cb << 16) | (ca << 5))   # cmp Wn, Wm
       else
         put(b, 0xEB00001F | (cb << 16) | (ca << 5))   # cmp Xn, Xm
-      end
       put(b, cset(cd, spec.cond))
       vs_push(b, cd)
 
@@ -504,7 +445,6 @@ fun compile(body: any, body_len: i64)
         lg: i64 = vs_alloc(b)
         put(b, ldr_imm(lg, X21, idx * 8))
         vs_push(b, lg)
-      end
 
     elseif op == 0x21                          # local.set
       idx, pc = leb_u(body, pc)
@@ -513,7 +453,6 @@ fun compile(body: any, body_len: i64)
         put(b, mov_reg(X23 + idx, ls))
       else
         put(b, str_imm(ls, X21, idx * 8))
-      end
 
     elseif op == 0x22                          # local.tee
       idx, pc = leb_u(body, pc)
@@ -522,7 +461,6 @@ fun compile(body: any, body_len: i64)
         put(b, mov_reg(X23 + idx, lt))
       else
         put(b, str_imm(lt, X21, idx * 8))
-      end
 
     elseif op == 0x41                          # i32.const
       v, pc = leb_s(body, pc)
@@ -545,7 +483,7 @@ fun compile(body: any, body_len: i64)
       put(b, dp3(spec.div, mq, ma, mb))         # q = a / b
       md: i64 = vs_alloc_not(b, ma, mb)
       put(b, msub(md, mq, mb, ma, spec.w))      # a - q*b
-      if spec.w put(b, sxtw(md, md)) end
+      if spec.w put(b, sxtw(md, md))
       vs_push(b, md)
 
     elseif CONV[op] != nil
@@ -555,7 +493,6 @@ fun compile(body: any, body_len: i64)
         put(b, uxtw(cv, cv))
       else
         put(b, insn | (cv << 5) | cv)
-      end
       vs_push(b, cv)
 
     elseif op == 0x1B                          # select
@@ -579,9 +516,8 @@ fun compile(body: any, body_len: i64)
           ot: i64 = vs_alloc_not(b, ad, ad)
           mov_imm(b, ot, off)
           put(b, dp3(0x8B000000, ad, ad, ot))
-        end
         put(b, mem_rr(spec.base, ad, X22, ad))
-        if spec.ext == "s32" put(b, sxtw(ad, ad)) end
+        if spec.ext == "s32" put(b, sxtw(ad, ad))
         vs_push(b, ad)
       else
         sv: i64 = vs_pop(b)                    # value
@@ -591,9 +527,7 @@ fun compile(body: any, body_len: i64)
           ot2: i64 = vs_alloc_not(b, sa, sv)
           mov_imm(b, ot2, off)
           put(b, dp3(0x8B000000, sa, sa, ot2))
-        end
         put(b, mem_rr(spec.base, sv, X22, sa))
-      end
 
     elseif op == 0x23                          # global.get
       idx, pc = leb_u(body, pc)
@@ -617,7 +551,6 @@ fun compile(body: any, body_len: i64)
         b.vsn = b.vsn - 1
       else
         put(b, sub_imm(X20, X20, 1))
-      end
 
     elseif op == 0x02 or op == 0x03            # block / loop
       flush_tos(b)
@@ -632,28 +565,24 @@ fun compile(body: any, body_len: i64)
         if lb.kind == 0x02
           for _, at in ipairs(lb.patches)
             patch(b, at, b_imm(b.n - at))
-          end
-        end
         labels[depth] = nil
         depth -= 1
-      end
 
     elseif op == 0x0C                          # br
       d, pc = leb_u(body, pc)
       lb = labels[depth - d]
-      if lb == nil return nil end
+      if lb == nil return nil
       flush_tos(b)
       if lb.kind == 0x03
         put(b, b_imm(lb.target - b.n))
       else
         lb.patches[lb:len().patches + 1] = b.n
         put(b, 0)
-      end
 
     elseif op == 0x0D                          # br_if
       d, pc = leb_u(body, pc)
       lb = labels[depth - d]
-      if lb == nil return nil end
+      if lb == nil return nil
       bc: i64 = vs_pop(b)
       flush_tos(b)
       if lb.kind == 0x03
@@ -662,7 +591,6 @@ fun compile(body: any, body_len: i64)
         put(b, cbz(bc, 2))                     # skip the branch when false
         lb.patches[lb:len().patches + 1] = b.n
         put(b, 0)
-      end
 
     elseif op == 0x0F                          # return
       emit_epilogue(b)
@@ -672,22 +600,17 @@ fun compile(body: any, body_len: i64)
 
     else
       return nil
-    end
-    if not b.ok return nil end
-  end
+    if not b.ok return nil
 
   emit_epilogue(b)
-  if not b.ok return nil end
+  if not b.ok return nil
   if dump_path != nil and body_len > 40
     dump(b, dump_path)
-  end
-  if not jit.seal(b.mem, b.cap * 4) return nil end
+  if not jit.seal(b.mem, b.cap * 4) return nil
   return b
-end
 
 fun invoke(b, w_ptr: i64, frame_ptr: i64): i64
   return jit.call2(b.mem, w_ptr, frame_ptr)
-end
 
 M = {}
 M.compile = compile

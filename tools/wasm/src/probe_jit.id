@@ -1,21 +1,121 @@
-# Prove the jit substrate: emit ARM64 `MOVZ W0,#42; RET`, seal, call.
+# THE JIT SUBSTRATE GATE. Does the toolchain give this engine a way to run
+# native code at all?
+#
+# `src/engine.id` carries ~2,200 lines of ARM64 emitter behind
+# `if force_interp == 0 and jitm.arch() == "arm64"`. That test could never be
+# true and, worse, could never SAY so: `jit.arch` is a VALUE (`src/jit.zig`
+# emits `lua_table_init_lit(m, "arch", lua_val_lit("native"))`), calling a
+# string yields nil rather than faulting, and nil != "arm64" silently. So every
+# benchmark in this project attributing a 5x-18x gap to "the interpreter" was
+# measuring the only engine that has ever run.
+#
+# Fixing the string alone would NOT have made the jit run, and that is the
+# thing this file exists to state: the six entry points the emitter calls do
+# not exist. Measured at this revision, the `jit` table the compiler builds
+# holds exactly on / off / flush / status / version / version_num / opt / os /
+# arch — no alloc, no seal, no call, no word writer, no symbol lookup.
+#
+# EXIT STATUS IS THE ANSWER: 0 when the substrate is whole and the emitted
+# `MOVZ W0,#42; RET` really returns 42, 1 when it is not. A probe that prints
+# "mmap refused" and exits 0 is how this stayed invisible.
+#
+#   duo compile src/probe_jit.id --backend=c --emit exe -o /tmp/probe_jit
+#   /tmp/probe_jit ; echo $?
 
-emit42: i64 = (unused: i64)
-  buf = jit.alloc(4096)
-  if not buf
-    print("jit: mmap refused")
-    return -1
-  # MOVZ W0, #42   => 0x52800000 | (imm16 << 5) | Rd
-  jit.w32(buf, 0, 1384120320 | 42 << 5 | 0)
-  # RET
-  jit.w32(buf, 1, 3596551104)
-  ok = jit.seal(buf, 8)
-  if not ok
-    print("jit: seal failed")
-    return -1
-  r: i64 = jit.call0(buf)
-  jit.release(buf, 4096)
+j = jit
+
+# The arch string, read BOTH ways. `jit.arch` is a value today and is expected
+# to become a real accessor; accepting either shape, and either spelling of the
+# architecture, is what stops the next change from reproducing the silent
+# mismatch above.
+arch_name: str = ()
+  r: str = "nil"
+  av = j.arch
+  if av != nil
+    r = to(str)(av)
+  ac = j.arch()
+  if ac != nil
+    r = to(str)(ac)
   r
 
-print("arch=" .. jit.arch())
-print("jit result=" .. tostring(emit42(0)) .. "  expect 42")
+arch_is_arm64: i64 = ()
+  r: i64 = 0
+  av = j.arch
+  if av == "arm64" or av == "aarch64"
+    r = 1
+  ac = j.arch()
+  if ac == "arm64" or ac == "aarch64"
+    r = 1
+  r
+
+report: i64 = (name: str, present: i64)
+  if present == 1
+    print("  present  " .. name)
+  else
+    print("  MISSING  " .. name)
+  present
+
+probe_main = ()
+  print("jit.arch                 = " .. arch_name())
+  print("jit.arch names arm64     = " .. to(str)(arch_is_arm64()))
+  print("substrate the ARM64 emitter in src/engine.id calls:")
+  n: i64 = 0
+  # Each presence test is written out rather than passed through a helper: an
+  # UNTYPED parameter holding a module member does not compile here
+  # ("use of undeclared identifier"), and a typed one would have to name a
+  # type the missing members do not have.
+  h1: i64 = 0
+  if j.alloc != nil
+    h1 = 1
+  h2: i64 = 0
+  if j.w32 != nil
+    h2 = 1
+  h3: i64 = 0
+  if j.r32 != nil
+    h3 = 1
+  h4: i64 = 0
+  if j.seal != nil
+    h4 = 1
+  h5: i64 = 0
+  if j.call2 != nil
+    h5 = 1
+  h6: i64 = 0
+  if j.sym != nil
+    h6 = 1
+  n += report("jit.alloc(bytes) -> buf        # mmap RW", h1)
+  n += report("jit.w32(buf, i, word)          # write one instruction", h2)
+  n += report("jit.r32(buf, i) -> word        # read one back", h3)
+  n += report("jit.seal(buf, bytes) -> ok     # mprotect RX + icache", h4)
+  n += report("jit.call2(buf, a, b) -> i64    # enter under the C ABI", h5)
+  n += report("jit.sym(name) -> addr          # host symbol for an imported call", h6)
+  if n < 6
+    print("")
+    print("VERDICT: the jit substrate is INCOMPLETE (" .. n:to(str) .. " of 6).")
+    print("  The ARM64 emitter in src/engine.id cannot execute and never has.")
+    print("  `DUO_WASM_ENGINE=jit` refuses (exit 4) rather than running the")
+    print("  interpreter under the jit's name.")
+    os.exit(1)
+  # The substrate exists: prove it end to end rather than trusting the roster.
+  buf = j.alloc(4096)
+  if not buf
+    print("VERDICT: jit.alloc exists and REFUSED (mmap failed).")
+    os.exit(1)
+  # MOVZ W0, #42  => 0x52800000 | (imm16 << 5) | Rd
+  j.w32(buf, 0, 0x52800000 | (42 << 5))
+  # RET
+  j.w32(buf, 1, 0xD65F03C0)
+  if j.r32(buf, 0) != (0x52800000 | (42 << 5))
+    print("VERDICT: jit.w32/jit.r32 do not round-trip a word.")
+    os.exit(1)
+  if not j.seal(buf, 8)
+    print("VERDICT: jit.seal refused.")
+    os.exit(1)
+  r: i64 = j.call2(buf, 0, 0)
+  if r != 42
+    print("VERDICT: emitted MOVZ W0,#42; RET returned " .. r:to(str) .. ", not 42.")
+    os.exit(1)
+  print("")
+  print("VERDICT: the jit substrate is whole and executes emitted code (42).")
+  0
+
+probe_main()

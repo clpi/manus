@@ -6,14 +6,14 @@ table_new(size: i64)
     return { ptr = ptr, size = size }
 
 --- @inline
-table_get(t, idx: i64): i64
+table_get: i64 = (t, idx: i64)
     return __emit("((int64_t*)t.as.tval)[idx]")
 
 --- @inline
 table_set(t, idx: i64, func_idx: i64)
     __emit("((int64_t*)t.as.tval)[idx] = func_idx")
 
-table_grow(t, n: i64): i64
+table_grow: i64 = (t, n: i64)
     old_size: i64 = t.size
     new_size: i64 = old_size + n
     __emit("t.as.tval = realloc(t.as.tval, new_size * sizeof(int64_t))")

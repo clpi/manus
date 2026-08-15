@@ -4,35 +4,29 @@
 fun stack_new(capacity: i64)
     ptr = __emit("calloc(capacity, sizeof(int64_t))")
     return { ptr = ptr, sp = 0, cap = capacity }
-end
 
 --- @inline
 fun stack_push(s, val: i64)
     __emit("((int64_t*)s.as.tval)[s_sp] = val")
     s.sp = s.sp + 1
-end
 
 --- @inline
 fun stack_pop(s): i64
     s.sp = s.sp - 1
     return __emit("((int64_t*)s.as.tval)[s_sp]")
-end
 
 --- @inline
 fun stack_peek(s): i64
     return __emit("((int64_t*)s.as.tval)[s_sp - 1]")
-end
 
 --- @inline
 fun stack_peek_at(s, offset: i64): i64
     return __emit("((int64_t*)s.as.tval)[s_sp - 1 - offset]")
-end
 
 # Control stack: stores (pc, arity, stack_height) triples
 fun ctrl_new(capacity: i64)
     ptr = __emit("calloc(capacity * 3, sizeof(int64_t))")
     return { ptr = ptr, depth = 0, cap = capacity }
-end
 
 --- @inline
 fun ctrl_push(cs, pc: i64, arity: i64, stack_h: i64)
@@ -41,7 +35,6 @@ fun ctrl_push(cs, pc: i64, arity: i64, stack_h: i64)
     __emit("((int64_t*)cs.as.tval)[base+1] = arity")
     __emit("((int64_t*)cs.as.tval)[base+2] = stack_h")
     cs.depth = cs.depth + 1
-end
 
 --- @inline
 fun ctrl_pop(cs)
@@ -51,7 +44,6 @@ fun ctrl_pop(cs)
     arity: i64 = __emit("((int64_t*)cs.as.tval)[base+1]")
     stack_h: i64 = __emit("((int64_t*)cs.as.tval)[base+2]")
     return pc, arity, stack_h
-end
 
 --- @inline
 fun ctrl_peek(cs)
@@ -59,7 +51,6 @@ fun ctrl_peek(cs)
     return __emit("((int64_t*)cs.as.tval)[base]"),
            __emit("((int64_t*)cs.as.tval)[base+1]"),
            __emit("((int64_t*)cs.as.tval)[base+2]")
-end
 
 M = {}
 M.stack_new = stack_new

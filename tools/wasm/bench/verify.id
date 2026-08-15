@@ -10,7 +10,7 @@
 #   duo run bench/verify.id
 #   DUO_WASM_ENGINE=jit duo run bench/verify.id
 
-numeric(s: str): bool
+numeric: bool = (s: str)
     if s == "" return false 
     s:match("^%-?%d+%.?%d*$") != nil
 
@@ -21,7 +21,7 @@ numeric(s: str): bool
 # wasmtime and the engine print different digit counts for the same value
 # (4.436463668243931 vs 4.4364636682439311), which read as a DIFF and hid real
 # passes.
-_norm(s: str): str
+_norm: str = (s: str)
     t = script.chomp(s)
     if not numeric(t)
         return t
@@ -52,7 +52,7 @@ _norm(s: str): str
 # WASI/wasix modules report their result as text, and comparing them against a
 # numeric `result=` field read as a DIFF. Caught by differencing this harness
 # against the shell one it replaces, which is the only check that would have.
-_emitted(raw: str): str
+_emitted: str = (raw: str)
     out = ""
     for _i, line in raw:split("\n")
         keep = true
@@ -63,7 +63,7 @@ _emitted(raw: str): str
             out = out .. line
     out:trim()
 
-_field(raw: str, key: str): str
+_field: str = (raw: str, key: str)
     m = raw:match("\n" .. key .. "=([^\n]*)")
     if m == nil
         m = raw:match("^" .. key .. "=([^\n]*)")
@@ -71,17 +71,17 @@ _field(raw: str, key: str): str
         return ""
     std.script.chomp(m)
 
-_pad(s: str, w: i64): str
+_pad: str = (s: str, w: i64)
     out = s
     while out:len() < w
         out = out .. " "
     out
 
-_row(name: str, ref: str, got: str, eng: str, verdict: str): void
+_row = (name: str, ref: str, got: str, eng: str, verdict: str)
     print(_pad(name, 30) .. " " .. _pad(ref, 20) .. " " .. _pad(got, 20) .. " "
         .. _pad(eng, 10) .. " " .. verdict)
 
-_rule(): void
+_rule = ()
     line = ""
     i = 1
     while i <= 96
@@ -89,7 +89,7 @@ _rule(): void
         i += 1
     print(line)
 
-main(): i64
+main: i64 = ()
     binary = std.script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
     wasmtime = std.script.getenv("WASMTIME", "wasmtime")
     engine = std.script.getenv("DUO_WASM_ENGINE", "interp")
