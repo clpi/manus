@@ -58,6 +58,7 @@ const target_model = @import("target_model.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const table_apply = @import("table_apply.zig");
 const native_bootstrap = @import("native_bootstrap.zig");
+const subject_home = @import("subject_home.zig");
 const sim = @import("sim.zig");
 const sim_pipeline = @import("sim_pipeline.zig");
 const knowledge_snapshot = @import("knowledge_snapshot.zig");
@@ -3963,6 +3964,159 @@ fn reportDirectBackendError(
 /// what varies, the rule set is. If another path-dependent rule is ever added it
 /// must be hashed here too, which is why this is a named call and not a bool
 /// literal.
+/// The project root for module search: walk up from the source until a `src/`
+/// appears, exactly as `codegen.project_root_dir` does. Kept deliberately in
+/// step with it — see the note in `hashReqClosure` about why a DIVERGENT second
+/// answer here is worse than no answer at all.
+fn cacheProjectRoot(io: Io, src_path: []const u8) []const u8 {
+    if (src_path.len == 0) return ".";
+    var d = std.fs.path.dirname(src_path) orelse ".";
+    while (d.len > 0) {
+        var pbuf: [1024]u8 = undefined;
+        const probe = std.fmt.bufPrint(&pbuf, "{s}/src", .{d}) catch break;
+        const cwd = Io.Dir.cwd();
+        if (Io.Dir.openDir(cwd, io, probe, .{})) |fd| {
+            var m = fd;
+            m.close(io);
+            return d;
+        } else |_| {
+            if (std.mem.eql(u8, d, ".")) break;
+            d = std.fs.path.dirname(d) orelse ".";
+        }
+    }
+    return std.fs.path.dirname(src_path) orelse ".";
+}
+
+/// Read the next `req("...")` / `require("...")` target at or after `from`.
+/// Returns the module name and the index to continue scanning from.
+fn nextReqTarget(src: []const u8, from: usize) ?struct { name: []const u8, next: usize } {
+    var i = from;
+    while (i < src.len) {
+        const at = std.mem.indexOfPos(u8, src, i, "req") orelse return null;
+        i = at + 3;
+        // A bare word, not the tail of `unreq` or the head of `request`.
+        if (at > 0) {
+            const p = src[at - 1];
+            if (std.ascii.isAlphanumeric(p) or p == '_' or p == '.') continue;
+        }
+        var j = i;
+        if (std.mem.startsWith(u8, src[j..], "uire")) j += 4;
+        if (j < src.len and (std.ascii.isAlphanumeric(src[j]) or src[j] == '_')) continue;
+        while (j < src.len and (src[j] == ' ' or src[j] == '\t')) j += 1;
+        if (j >= src.len or src[j] != '(') continue;
+        j += 1;
+        while (j < src.len and (src[j] == ' ' or src[j] == '\t')) j += 1;
+        if (j >= src.len or (src[j] != '"' and src[j] != '\'')) continue;
+        const quote = src[j];
+        j += 1;
+        const start = j;
+        while (j < src.len and src[j] != quote and src[j] != '\n') j += 1;
+        if (j >= src.len or src[j] != quote) continue;
+        return .{ .name = src[start..j], .next = j + 1 };
+    }
+    return null;
+}
+
+/// Hash every file the entry can reach through `req`, transitively.
+///
+/// THE CACHE KEY HASHED THE ENTRY FILE AND NOTHING ELSE. A `req`'d module could
+/// change any way it liked and the key did not move, so the compiler handed back
+/// a binary built from the OLD module and printed `(cached)`. Minimal repro:
+/// `main.id` reqs `m.id`, `m.answer` goes 1 -> 2, `main.id` untouched — the
+/// rebuild answers 1. Purging the cache directory answers 2.
+///
+/// That is not a stale artifact in the harmless sense. It made a gate report
+/// GREEN against a tree that did not contain the feature under test, which is
+/// the same shape as the two defects already recorded at this site: the waiver
+/// (§40) and the injected-world set. Three times now, the thing missing from
+/// this key has been something that changes what the program MEANS.
+///
+/// TWO DELIBERATE CHOICES, both erring the safe way:
+///
+/// OVER-APPROXIMATE, DON'T RESOLVE. The real resolver is a `CodeGen` method and
+/// needs state this site does not have. Reimplementing its exact search would
+/// create two functions answering one question with different sets — precisely
+/// the defect that let `exprIsStr` and `codegen.expr_type` disagree, and it
+/// fails in the dangerous direction by construction. So this hashes EVERY
+/// candidate that exists under ANY root, not just the one that would win.
+/// Hashing a file the compile never reads costs an extra cache miss. Missing one
+/// costs a wrong answer.
+///
+/// A TEXTUAL SCAN, for the same reason: the key is built before the source is
+/// parsed. It will also match `req("x")` written inside a comment or a string,
+/// which again over-approximates.
+///
+/// FAIL CLOSED. A `req` target that resolves to no file at all means this key
+/// cannot be complete, so the caller declines to cache rather than storing an
+/// entry it cannot invalidate.
+fn hashReqClosure(
+    alloc: std.mem.Allocator,
+    io: Io,
+    root: []const u8,
+    src: []const u8,
+    h: *std.crypto.hash.sha2.Sha256,
+    seen: *std.StringHashMapUnmanaged(void),
+    depth: u8,
+) bool {
+    // A cycle is legal in this language; depth alone must not decide the key.
+    // `seen` stops the recursion, and this bound only guards runaway nesting.
+    if (depth > 64) return false;
+    const cwd = Io.Dir.cwd();
+    const roots = [_][]const u8{ root, ".", "lib", "vendor", "lib/core" };
+    // A tuple with `inline for`, not a slice: a format string must be comptime.
+    // Same four templates, same order, as `codegen.find_module_path`.
+    const templates = .{
+        "{s}/{s}" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
+        "{s}/{s}.lua",
+        "{s}/{s}/init" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
+        "{s}/{s}/init.lua",
+    };
+
+    var scan: usize = 0;
+    while (nextReqTarget(src, scan)) |hit| {
+        scan = hit.next;
+        if (hit.name.len == 0 or hit.name.len > 512) return false;
+
+        // `vendor.x` and `std.core.x` name a root as well as a module; strip the
+        // prefix so the plain name is tried under every root too.
+        var bare = hit.name;
+        if (std.mem.startsWith(u8, bare, "vendor.")) bare = bare["vendor.".len..];
+        if (std.mem.startsWith(u8, bare, "std.core.")) bare = bare["std.core.".len..];
+
+        var name_buf: [512]u8 = undefined;
+        for (bare, 0..) |c, i| name_buf[i] = if (c == '.') '/' else c;
+        const mod = name_buf[0..bare.len];
+
+        var found_any = false;
+        for (roots) |r| {
+            // No `continue` in here: this loop is `inline`, so a loop-targeting
+            // jump is comptime control flow inside a runtime block.
+            inline for (templates) |tmpl| {
+                const path = std.fmt.allocPrint(alloc, tmpl, .{ r, mod }) catch return false;
+                const exists = if (Io.Dir.access(cwd, io, path, .{})) |_| true else |_| false;
+                if (exists) {
+                    found_any = true;
+                    if (!seen.contains(path)) {
+                        seen.put(alloc, path, {}) catch return false;
+                        const body = Io.Dir.readFileAlloc(cwd, io, path, alloc, .unlimited) catch
+                            return false;
+                        // The PATH goes in as well as the bytes: two modules with
+                        // identical contents at different paths are different reaches.
+                        h.update(path);
+                        h.update(body);
+                        if (!hashReqClosure(alloc, io, root, body, h, seen, depth + 1)) return false;
+                    }
+                }
+            }
+        }
+        // A name nothing answers. Either the program is broken (and will be
+        // refused anyway) or the search order here is narrower than the real
+        // one. Both mean this key cannot be trusted.
+        if (!found_any) return false;
+    }
+    return true;
+}
+
 fn buildCacheKey(
     alloc: std.mem.Allocator,
     io: Io,
@@ -3990,6 +4144,40 @@ fn buildCacheKey(
     // cache serves a validation-waived artifact to a path that never waived it.
     const waived: u8 = if (native_bootstrap.gateTransport(src_path)) 1 else 0;
     h.update(std.mem.asBytes(&waived));
+    // ...AND WHICH WORLDS REACH IT, which is the second path-dependent rule the
+    // note above said would have to be hashed here. It was already live and was
+    // already wrong: the test world is injected by FILE STRUCTURE, so
+    // `test:assert(c, m)` resolves in `foo_test.id` and is REFUSED in `plain.id`
+    // — and with only the source bytes and the waiver in the key, two
+    // byte-identical files hit one entry. MEASURED, same bytes, same directory:
+    //
+    //     idol compile foo_test.id   ok compile        ./foo_test.out -> 2
+    //     idol check   plain.id      REFUSED
+    //     idol compile plain.id      cached            ./plain.out    -> 2
+    //
+    // The checker refuses the program and the compiler hands back a working
+    // binary for it. That is the §40 failure in its worst form — not a stale
+    // artifact but an artifact built under RULES THIS FILE DOES NOT HAVE.
+    //
+    // A SET, not a bool, and derived rather than listed: `injectedWorldsFor`
+    // answers from each world's own `Injection` declaration, so a world that
+    // grows a structure condition is hashed here the day it is declared and
+    // nobody has to remember this site. That is the whole reason the injection
+    // predicate moved out of sema and onto the world.
+    const worlds = subject_home.injectedWorldsFor(src_path);
+    for (worlds.slice()) |w| h.update(subject_home.homeName(w));
+    h.update(std.mem.asBytes(&worlds.len));
+    // ...AND EVERY MODULE THIS FILE CAN REACH. Third defect at this site, and
+    // the worst: the other two served a binary built under the wrong RULES,
+    // this one served a binary built from the wrong SOURCE.
+    {
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        const aa = arena.allocator();
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        const root = cacheProjectRoot(io, src_path);
+        if (!hashReqClosure(aa, io, root, src, &h, &seen, 0)) return null;
+    }
     var digest: [32]u8 = undefined;
     h.final(&digest);
     // Flat path: no directory to create, so one fewer failure mode.
