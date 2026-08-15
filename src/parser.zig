@@ -3033,6 +3033,10 @@ pub const Parser = struct {
 
     fn parse_if_clauses(self: *Parser, l: ast.Loc) ParseError!IfClauses {
         try self.eat_deprecated(.kw_then);
+        // COMPACT FACE in statement position: `if(c) = value`. Same optional
+        // association token as the expression path; the arm that follows is the
+        // clause body exactly as it would be without it.
+        _ = try self.eat(.assign);
         const then_body = try self.parse_block_at(l);
         var offside = self.last_layout.offside;
         var elseifs: std.ArrayList(ast.ElseIf) = .empty;
@@ -3066,11 +3070,13 @@ pub const Parser = struct {
                 // nothing has to be rejected under §42.
                 if (self.glued_lparen(kw)) {
                     const ec = try self.parse_expr();
+                    _ = try self.eat(.assign);
                     const eb = try self.parse_block_at(kw.loc);
                     offside = offside or self.last_layout.offside;
                     try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
                     continue;
                 }
+                _ = try self.eat(.assign);
                 else_body = try self.parse_block_at(kw.loc);
                 offside = offside or self.last_layout.offside;
                 break;
@@ -6041,6 +6047,14 @@ pub const Parser = struct {
         // terminated by the newline (§3.3), not by a closer. `then` is what
         // tells the two dialects apart, so it is recorded rather than dropped.
         const saw_then = (try self.eat(.kw_then)) != null;
+        // COMPACT CONDITIONAL FACE: `if(c) = value`. The `=` is the same
+        // association face it is everywhere else — binding, structured label,
+        // place write — with the surrounding grammar supplying the role. Here
+        // the role is "this is the alternative for that condition".
+        //
+        // It is optional, so `if(c) value` and the offside region form are
+        // unaffected; this only admits a spelling that was a parse error.
+        _ = try self.eat(.assign);
         const then_expr = try self.parse_expr();
 
         var else_expr: *ast.Expr = undefined;
@@ -6069,6 +6083,8 @@ pub const Parser = struct {
                 else_expr = try self.parse_if_expr_after_if(nested_l, consume_end);
                 return self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, then_expr, else_expr) });
             }
+            // `else = value`, the remaining alternative in the compact face.
+            _ = try self.eat(.assign);
             else_expr = try self.parse_expr();
         } else {
             else_expr = try self.new_expr(.{ .nil = l });
