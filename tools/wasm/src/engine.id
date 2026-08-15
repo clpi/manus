@@ -740,6 +740,28 @@ bailshape: i64 = (why: str)
   os.exit(1)
   DECLINED
 
+# THE OTHER EXIT-1 REFUSAL: an import this host cannot satisfy because it is
+# not a FUNCTION. It is a separate helper from `bailshape` for one reason —
+# `bailshape` says "cannot decode module", and a module with an imported memory
+# DECODES PERFECTLY WELL. Telling a guest its module is malformed when the
+# module is fine, and the host is simply not offering what it asked for, is the
+# same class of lie as collapsing exit 1 into exit 5. The text still carries the
+# words `unknown import`, because that is the event, and because it is the event
+# wasmtime reports for the identical module.
+bailimport: i64 = (mod: str, field: str, kd: i64)
+  kind: str = "entity of an unrecognised kind"
+  if kd == 1
+    kind = "table"
+  elseif kd == 2
+    kind = "memory"
+  elseif kd == 3
+    kind = "global"
+  io.stderr:write("wasm: unknown import \"" .. mod .. "\".\"" .. field .. "\": an imported " .. kind .. "\n")
+  io.stderr:write("      this host offers wasi_snapshot_preview1 functions to import and nothing else\n")
+  io.stderr:write("      refused at instantiation, before any guest code ran\n")
+  os.exit(1)
+  DECLINED
+
 # `len` bytes of the module image from `at`, as a `str`, for a DIAGNOSTIC only.
 # `string.sub` is never used on the image anywhere in this file: the image is a
 # `str` holding a wasm binary, whose first byte is 0x00, and a NUL-terminated
@@ -819,7 +841,7 @@ GRANT_DEFAULT = "all"
 # stated once. The guest cannot reach this: nothing in a .wasm file names an
 # environment variable of the host process.
 grant_spec: str = ()
-  os.getenv("DUO_WASM_GRANT") or GRANT_DEFAULT
+  env("DUO_WASM_GRANT") or GRANT_DEFAULT
 
 # 1 when a denied import should be admitted and answer `notcapable` at every
 # call, instead of being refused at instantiation.
@@ -833,7 +855,26 @@ grant_spec: str = ()
 # never the default.
 grant_errno_mode: i64 = ()
   r: i64 = 0
-  if os.getenv("DUO_WASM_GRANT_MODE") == "errno"
+  # THE `or ""` IS LOAD-BEARING AND IT IS NOT STYLE. `env(k)` answers nil for an
+  # unset key — that is the presence test, and the reason the retired spelling
+  # left this file — but comparing that nil against a STRING LITERAL SEGFAULTS
+  # the produced binary. Minimal repro, re-measured against idol ae8fb29f on
+  # 2026-08-15 after that defect was reported fixed:
+  #
+  #   main: void = ()
+  #     if env("NOT_SET") == "errno"
+  #       stdout:write("y\n")
+  #   -> exit 139, NO OUTPUT AT ALL, on --backend=direct
+  #
+  # `env(k) == nil` is fine and `env(k) == "lit"` with the key SET is fine; it
+  # is only the nil-against-a-literal comparison that dies. Binding first does
+  # not dodge it (`v = env(k)` then `v == "errno"` also exits 139); giving the
+  # binding a `str` type and a default does. So every comparison of an
+  # environment read against a literal in this file goes through `or ""`, which
+  # is what the retired spelling meant here — verified equal across unset /
+  # empty / matching / other. Do not "simplify" it back. Routed to the lead in
+  # docs/wasm-import-kinds.md §4.
+  if (env("DUO_WASM_GRANT_MODE") or "") == "errno"
     r = 1
   r
 
@@ -846,7 +887,7 @@ grant_errno_mode: i64 = ()
 # Unlike `bail`/`bailop` this does NOT exit: declining to compile is legal, the
 # interpreter still has to run. Only the silence was the bug.
 jitbail: i64 = (why: str, op: i64, pos: i64)
-  if os.getenv("DUO_WASM_JIT_TRACE")
+  if env("DUO_WASM_JIT_TRACE")
     if op >= 0
       io.stderr:write("wasm: jit declined -- " .. why .. " -- opcode " .. op:to(str) .. " " .. opname(op) .. " at body offset " .. pos:to(str) .. "\n")
     else
@@ -1207,17 +1248,51 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
             mem.write_i64(imtab, nimp * 8, ity)
           nimp += 1
           ij = uleb_end(img, ij, n)
-        elseif kd == 1
-          ij += 1
-          fl2: i64 = img:byte(ij)
-          ij += 1
-          _f: i64 = uleb_val(img, ij, n)
-          ij = uleb_end(img, ij, n)
-          if fl2 == 1
-            _g: i64 = uleb_val(img, ij, n)
-            ij = uleb_end(img, ij, n)
         else
-          ij += 2
+          # ── A NON-FUNCTION IMPORT IS REFUSED ────────────────────────────
+          #
+          # `kd` is 1 (table), 2 (memory) or 3 (global). This walk used to SKIP
+          # all three without reading their names: the table arm decoded the
+          # limits correctly and discarded them, and memory and global advanced
+          # by a hard-coded two bytes. So a guest importing
+          # `wasi_snapshot_preview1.memory` INSTANTIATED AND RAN under every
+          # grant including `none` — the one shape a capability system may not
+          # have — where wasmtime answers `unknown import:
+          # wasi_snapshot_preview1::memory has not been defined` and exit 1.
+          #
+          # It was never a capability LEAK: the host allocates its own linear
+          # memory from the memory section and ignores the import, so the guest
+          # received nothing the host held. Two measurements made refusing right
+          # rather than resolving.
+          #
+          # 1. THERE IS NOTHING TO RESOLVE TO. This host exports no memory, no
+          #    table and no global to a guest. Resolving would mean honouring an
+          #    imported memory's declared limits in place of the memory
+          #    section's — a feature, not a repair — and pretending to resolve
+          #    while ignoring the limits is a silent wrong answer of exactly the
+          #    kind the 1/5 split above exists to prevent.
+          #
+          # 2. THE SKIP WAS AN OUT-OF-BOUNDS READ. `ij += 2` is the right width
+          #    for a global (valtype, mut) and for a memory whose limits are a
+          #    zero flags byte and a one-byte minimum — and for nothing else. A
+          #    memory import carrying a MAXIMUM encodes three bytes, so the walk
+          #    resumed one byte early and read the next import's name length out
+          #    of the limits. Measured on `cap/imports/imp_mem_then_fn.wasm`
+          #    (`(memory 1 2)`, then a real `fd_write` import): the field length
+          #    decoded as 115 and the kind byte was read past the end of the
+          #    image, so 200 runs of ONE unchanged binary over ONE unchanged
+          #    module split 178 `result=95` / 22 `unknown import`. A
+          #    nondeterministic answer to a fixed question is an unowned read,
+          #    and `(memory N M)` is what emscripten emits by default.
+          #
+          # COST OF REFUSING, measured before choosing it: across 2435 wasm
+          # modules in this checkout and the gates' there are 2178 imports, of
+          # which 2172 are functions and 6 are not — and all 6 are fixtures
+          # written to ask this question. No module anyone runs is refused by
+          # this line. Pinned in both directions by `gate/import.sh`, whose
+          # negative control rebuilds the skip from this file and requires it to
+          # keep running `imp_memory` under grant `none`.
+          return bailimport(bytes_str(img, ms, la), bytes_str(img, fs, flen), kd)
         ik += 1
     si += ssz
   if cd_off <= 0
@@ -1576,7 +1651,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
   # `inf`. Eight parameters, which is what `tpty` retains.
   npar0: i64 = mem.read_i64(ftab, (target * 4 + 3) * 8)
   tix0: i64 = mem.read_i64(fty, target * 8)
-  argstr = os.getenv("DUO_WASM_ARGS")
+  argstr = env("DUO_WASM_ARGS")
   aidx: i64 = 0
   if argstr != nil
     asx: str = argstr
@@ -2040,7 +2115,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
             elseif hid == wabi.i_args_sizes_get
               # One argument, the module path — the same convention wasmtime
               # uses for argv[0].
-              av0: str = wabi.argv0_of(os.getenv("DUO_WASM_MODULE") or "module.wasm")
+              av0: str = wabi.argv0_of(env("DUO_WASM_MODULE") or "module.wasm")
               avl: i64 = string.len(av0) + 1
               asp: i64 = mem.read_i64(st, (ab + 1) * 8) & M32
               abp: i64 = mem.read_i64(st, (ab + 2) * 8) & M32
@@ -2054,7 +2129,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
                 asj += 1
               hrv = wabi.ERRNO_success
             elseif hid == wabi.i_args_get
-              ag0: str = wabi.argv0_of(os.getenv("DUO_WASM_MODULE") or "module.wasm")
+              ag0: str = wabi.argv0_of(env("DUO_WASM_MODULE") or "module.wasm")
               agp: i64 = mem.read_i64(st, (ab + 1) * 8) & M32
               agb: i64 = mem.read_i64(st, (ab + 2) * 8) & M32
               agi: i64 = 0
@@ -4304,7 +4379,7 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
     # One line per body under DUO_WASM_JIT_TRACE. The refusal trace names why a
     # body was declined; nothing said what the emitter was DOING when it did
     # not decline, which is how "engine=interp, no reason given" happened.
-    if os.getenv("DUO_WASM_JIT_TRACE")
+    if env("DUO_WASM_JIT_TRACE")
       io.stderr:write("wasm: jit body fn=" .. curfn:to(str) .. " off=" .. off:to(str) .. " blen=" .. blen:to(str) .. " params=" .. fnprm:to(str) .. " locals=" .. selfloc:to(str) .. " words-so-far=" .. n:to(str) .. " queue=" .. jqh:to(str) .. "/" .. jqn:to(str) .. "\n")
     # eight argument registers, seventeen local registers
     if selfloc > 17 or fnprm > 8 or n > 260000
@@ -6339,7 +6414,7 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
   # then asked mprotect to publish 2.8 billion words, was refused, and fell
   # back to the interpreter without a word. Every other exit from this function
   # is already an explicit `return`; this was the one that was not.
-  if os.getenv("DUO_WASM_JIT_TRACE")
+  if env("DUO_WASM_JIT_TRACE")
     io.stderr:write("wasm: jit emitted " .. n:to(str) .. " words for " .. jqn:to(str) .. " bod(y/ies)\n")
   return n
 end
@@ -6361,8 +6436,8 @@ end
 # `duo_entry_main__lua` by the C backend but CALLED as `main__lua`, so the
 # translation unit does not link. Any other name mangles consistently.
 engine_main = ()
-  path = os.getenv("DUO_WASM_MODULE")
-  invoke = os.getenv("DUO_WASM_INVOKE") or "run"
+  path = env("DUO_WASM_MODULE")
+  invoke = env("DUO_WASM_INVOKE") or "run"
   # Every failure below goes to STDERR and exits nonzero. It used to `print`
   # to stdout and fall off the end of main, i.e. exit 0 # so a harness that
   # ran the engine on the wrong path got a clean exit status and no `result=` line,
@@ -6375,7 +6450,9 @@ engine_main = ()
     io.stderr:write("      and refuses (exit 4) if it cannot run. DUO_WASM_JIT_TRACE=1 names every refusal.\n")
     os.exit(1)
   force_interp: i64 = 0
-  if os.getenv("DUO_WASM_ENGINE") == "interp"
+  # `or ""` per the note on `grant_errno_mode`: `env(k) == "<literal>"` on an
+  # unset key exits 139. Do not remove it.
+  if (env("DUO_WASM_ENGINE") or "") == "interp"
     force_interp = 1
   # DUO_WASM_ENGINE=jit is a REQUIREMENT, not a preference. It used to be
   # ignored entirely — only "interp" was tested — so `DUO_WASM_ENGINE=jit
@@ -6385,7 +6462,9 @@ engine_main = ()
   # and that is what has been hiding a JIT that never ran. Asking for the jit
   # and not getting it is now a refusal that names its reason.
   require_jit: i64 = 0
-  if os.getenv("DUO_WASM_ENGINE") == "jit"
+  # `or ""` per the note on `grant_errno_mode`: `env(k) == "<literal>"` on an
+  # unset key exits 139. Do not remove it.
+  if (env("DUO_WASM_ENGINE") or "") == "jit"
     require_jit = 1
 
   f = io.open(path, "rb")
@@ -6429,7 +6508,7 @@ engine_main = ()
   tRD2 = os.clock()
   tgt: i64 = find_run_body(bytes, nbytes, invoke, string.len(invoke), 1)
   tRD3 = os.clock()
-  if os.getenv("DUO_WASM_PHASES")
+  if env("DUO_WASM_PHASES")
     print("phase read=" .. to(str)(tRD1 - tRD0) .. " walk0=" .. to(str)(tRD2 - tRD1) .. " walk1=" .. to(str)(tRD3 - tRD2))
   boff: i64 = packed // 65536
   blen: i64 = packed - boff * 65536
@@ -6567,7 +6646,7 @@ engine_main = ()
     # cannot move the differential — verified, DIFF 0 unchanged, and the
     # `jit COMPILED` count is unchanged too.
     jit_why = "DUO_WASM_GRANT is not total, and a partial grant is enforced only by the interpreter"
-  elseif os.getenv("DUO_WASM_ARGS") != nil
+  elseif env("DUO_WASM_ARGS") != nil
     # THE JIT HAS NO ARGUMENT CHANNEL. `jitm.call2(code, memory, globals)`
     # passes linear memory and the globals block and nothing else, so a
     # compiled body would read its parameters as whatever the emitted prologue
@@ -6628,7 +6707,7 @@ engine_main = ()
       words: i64 = jit_compile(raw, boff, blen, code, nbytes)
       # DUO_WASM_DUMP=<path>: write the emitted words as hex, one per line, for
       # disassembly. Diagnostic only; off unless the env var is set.
-      dmp = os.getenv("DUO_WASM_DUMP")
+      dmp = env("DUO_WASM_DUMP")
       if dmp
         df = io.open(dmp, "w")
         if df
@@ -6639,7 +6718,7 @@ engine_main = ()
           df:close()
         print("jit_words=" .. words:to(str))
       tJ2 = os.clock()
-      if os.getenv("DUO_WASM_PHASES")
+      if env("DUO_WASM_PHASES")
         print("phase alloc=" .. to(str)(tJ1 - tJ0) .. " compile=" .. to(str)(tJ2 - tJ1))
       # SEALING IS A REFUSAL SITE TOO. `words <= 0` is a decline the emitter has
       # already explained on stderr; a failed `seal` is the host refusing to

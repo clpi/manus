@@ -1,0 +1,203 @@
+# THE IMPORT-KIND RULING, ASKED ON THE CANONICAL BACKEND.
+#
+#   IMPORT_UNIT_HEX=<hex of a .wasm> ./import_unit
+#     exit 0  every import in the module is a FUNCTION import   (admit)
+#     exit 1  the module imports a table, a memory or a global  (refuse)
+#     exit 2  the hex channel or the module shape is unusable   (no measurement)
+#
+# WHY THIS FILE EXISTS RATHER THAN A ROW AGAINST THE ENGINE.
+#
+# `tools/wasm/src/engine.id` DOES NOT LOWER ON `--backend=direct`. Measured, and
+# the blocker is not any line of the engine:
+#
+#   error: direct backend: DNB001 application: 944 relation: req
+#          missing: keyed-table-export consumer: native realization
+#
+# `req` itself is outside the direct subset — a `req` of a two-line local module
+# is refused the same way (DNB011 `req missing: unresolved-application-facts`).
+# So under the no-C ruling the engine cannot be built at all today, and a gate
+# that asserted the import ruling ONLY through the engine would assert it only
+# through a backend that is being retired. This unit carries the same ruling on
+# the canonical backend, in a program that lowers there.
+#
+# WHAT "the same ruling" IS ALLOWED TO MEAN. Nothing here is a paraphrase of the
+# engine's intent: `gate/import.sh` runs this unit and the engine over the SAME
+# fixtures and fails if their verdicts ever disagree, so the day `req` lowers on
+# direct, the engine rows are promoted and this file stops being load-bearing
+# without anyone having to notice that it drifted.
+#
+# THE HEX CHANNEL, AND WHY IT IS NOT LAZINESS. The direct backend today has no
+# `arg`/`args`, no `io.read`, no `io.open`-and-read (`f:read` is
+# `method-unresolved:read`) and no `io.stderr:write`. `env` lowers, `:len()` and
+# `:byte()` lower, `string.char` lowers, `os.exit` lowers. So the module arrives
+# as hex in an environment variable and every byte is decoded from two hex
+# characters on demand — the image is never materialised as a `str`, which also
+# sidesteps the NUL-termination problem that makes a wasm image unrepresentable
+# as a `str` in the first place (a wasm module's first byte is 0x00).
+
+# One hex character to its value, or -1 for anything that is not one. A hex
+# channel that silently accepted a non-hex character would decode a DIFFERENT
+# module than the one the gate meant to ask about, which is the shape of every
+# harness defect this directory exists to prevent.
+nib: i64 = (c: i64)
+  r: i64 = -1
+  if c >= 48 and c <= 57
+    r = c - 48
+  elseif c >= 97 and c <= 102
+    r = c - 87
+  elseif c >= 65 and c <= 70
+    r = c - 55
+  r
+
+# Byte `at` (0-based) of the image, or -1 past the end. Every read goes through
+# here, so a walk that runs off the module cannot read anything at all — which
+# is exactly what the pre-fix skip did do, off the end of the heap, in the
+# engine.
+ub: i64 = (h: str, at: i64, n: i64)
+  r: i64 = -1
+  if at >= 0 and at < n
+    hi: i64 = nib(h:byte(at * 2 + 1))
+    lo: i64 = nib(h:byte(at * 2 + 2))
+    if hi >= 0 and lo >= 0
+      r = hi * 16 + lo
+  r
+
+# LEB128, value and end, split the way `src/engine.id` splits them so the two
+# walks read the same shape. `uleb_end` answers the index one past the last byte
+# of the number, which is where a following name or payload begins.
+uleb_val: i64 = (h: str, at: i64, n: i64)
+  r: i64 = 0
+  m: i64 = 1
+  i: i64 = at
+  go: i64 = 1
+  while go == 1 and i < n
+    b: i64 = ub(h, i, n)
+    if b < 0
+      go = 0
+    else
+      lo: i64 = b - (b // 128) * 128
+      r += lo * m
+      m = m * 128
+      if b < 128
+        go = 0
+      i += 1
+  r
+
+uleb_end: i64 = (h: str, at: i64, n: i64)
+  i: i64 = at
+  go: i64 = 1
+  while go == 1 and i < n
+    b: i64 = ub(h, i, n)
+    if b < 0
+      go = 0
+    else
+      i += 1
+      if b < 128
+        go = 0
+  i
+
+# A name out of the image, for the diagnostic. Import names are UTF-8 and in
+# practice ASCII; this is only ever reached on a line the gate is about to
+# read, never in a loop that matters.
+namestr: str = (h: str, at: i64, ln: i64, n: i64)
+  out: str = ""
+  k: i64 = 0
+  while k < ln
+    b: i64 = ub(h, at + k, n)
+    if b >= 0
+      c: str = string.char(b)
+      out = out .. c
+    k += 1
+  out
+
+kindname: str = (kd: i64)
+  r: str = "entity of an unrecognised kind"
+  if kd == 0
+    r = "function"
+  elseif kd == 1
+    r = "table"
+  elseif kd == 2
+    r = "memory"
+  elseif kd == 3
+    r = "global"
+  r
+
+main: void = ()
+  h: str = env("IMPORT_UNIT_HEX") or ""
+  hl: i64 = h:len()
+  if hl == 0
+    stdout:write("unit: IMPORT_UNIT_HEX is empty -- nothing was measured\n")
+    os.exit(2)
+  half: i64 = hl // 2
+  if half * 2 != hl
+    stdout:write("unit: IMPORT_UNIT_HEX has an odd length -- nothing was measured\n")
+    os.exit(2)
+  n: i64 = half
+  # The magic, checked rather than assumed: a truncated or mis-shelled hex
+  # string would otherwise be walked as if it were a module and answered about.
+  m0: i64 = ub(h, 0, n)
+  m1: i64 = ub(h, 1, n)
+  m2: i64 = ub(h, 2, n)
+  m3: i64 = ub(h, 3, n)
+  if m0 != 0 or m1 != 97 or m2 != 115 or m3 != 109
+    stdout:write("unit: not a wasm image (magic) -- nothing was measured\n")
+    os.exit(2)
+
+  nfunc: i64 = 0
+  nimp: i64 = 0
+  si: i64 = 8
+  while si < n
+    sid: i64 = ub(h, si, n)
+    si += 1
+    ssz: i64 = uleb_val(h, si, n)
+    si = uleb_end(h, si, n)
+    if sid == 2
+      ic: i64 = uleb_val(h, si, n)
+      ij: i64 = uleb_end(h, si, n)
+      ik: i64 = 0
+      while ik < ic and ij < n
+        la: i64 = uleb_val(h, ij, n)
+        ms: i64 = uleb_end(h, ij, n)
+        ij = ms + la
+        flen: i64 = uleb_val(h, ij, n)
+        fs: i64 = uleb_end(h, ij, n)
+        ij = fs + flen
+        kd: i64 = ub(h, ij, n)
+        ij += 1
+        nimp += 1
+        if kd == 0
+          nfunc += 1
+          ij = uleb_end(h, ij, n)
+        else
+          # ── REFUSE-ARM-BEGIN ──────────────────────────────────────────────
+          # `gate/import.sh` rebuilds the PRE-FIX variant of this unit by
+          # replacing everything between these two markers with the skip the
+          # engine used to perform, and requires that variant to ADMIT
+          # `cap/imports/imp_memory.wasm`. If it does not, the reconstruction is
+          # wrong and the refusal below is proving nothing. If the markers ever
+          # stop matching, no variant is produced and that row fails loudly
+          # rather than passing quietly.
+          mn: str = namestr(h, ms, la, n)
+          fn: str = namestr(h, fs, flen, n)
+          kn: str = kindname(kd)
+          # ONE `stdout:write` PER LINE, and the line is assembled from LOCALS
+          # first. Both halves of that are load-bearing. Consecutive
+          # `stdout:write` calls do not concatenate identically across compiler
+          # revisions on the direct backend — measured across three vendored
+          # binaries in one session, the same program emitted
+          # `refuse memory env::x` under one and `refuse  memory   env :: x`
+          # under the next — so a gate that greps a marker must not be built on
+          # a sequence of writes. And a CALL used as a concat hole miscompiles
+          # on the direct backend today, so every piece is bound before it is
+          # joined.
+          line: str = "refuse " .. kn .. " " .. mn .. "::" .. fn .. "\n"
+          stdout:write(line)
+          os.exit(1)
+          # ── REFUSE-ARM-END ────────────────────────────────────────────────
+        ik += 1
+    si += ssz
+  ns: str = nimp:to(str)
+  fsx: str = nfunc:to(str)
+  line: str = "admit " .. fsx .. " function import(s) of " .. ns .. " import(s)\n"
+  stdout:write(line)
+  os.exit(0)
