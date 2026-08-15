@@ -9,6 +9,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const Expr = ast.Expr;
 const types = @import("types.zig");
+const comptime_eval = @import("comptime.zig");
 const subject_home = @import("subject_home.zig");
 const dnir = @import("native_ir.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
@@ -1291,6 +1292,111 @@ fn internInstrStrings(alloc: std.mem.Allocator, instrs: []dnir.Instr) Error!void
     }
 }
 
+/// Run a no-operand relation body at compile time. Null when it cannot be run —
+/// which is most bodies, and must stay cheap to discover.
+///
+/// The step limit is what keeps this from turning a compile into an execution:
+/// a loop of 1e9 iterations hits it and falls through to ordinary lowering
+/// rather than folding for a minute.
+/// True when the body contains no application of any kind.
+///
+/// Folding SKIPS `lowerBlock`, and `lowerBlock` is where applications get
+/// resolved and recorded against the graph. Fold a body containing a call and
+/// its application is never resolved — the graph reports an unresolved
+/// application, and worse, a call that could NOT have been resolved would be
+/// hidden rather than diagnosed. So the fold is confined to bodies that have
+/// nothing to resolve: arithmetic, bindings and loops over locals.
+///
+/// That is exactly the elimination case anyway. A body that calls something is
+/// not foldable here even if the callee is pure — resolving that is the
+/// interprocedural frontier, not this one.
+fn bodyHasNoApplication(b: *const ast.Block) bool {
+    for (b.stmts) |st| if (!stmtHasNoApplication(&st)) return false;
+    if (b.tail_expr) |te| return exprHasNoApplication(te);
+    return true;
+}
+
+fn stmtHasNoApplication(st: *const ast.Stmt) bool {
+    return switch (st.*) {
+        .local_decl => |d| for (d.inits) |e| {
+            if (!exprHasNoApplication(e)) break false;
+        } else true,
+        .assign => |a| blk: {
+            for (a.targets) |e| if (!exprHasNoApplication(e)) break :blk false;
+            for (a.values) |e| if (!exprHasNoApplication(e)) break :blk false;
+            break :blk true;
+        },
+        .while_loop => |w| exprHasNoApplication(w.cond) and bodyHasNoApplication(&w.body),
+        .num_for => |f| bodyHasNoApplication(&f.body),
+        .do_block => |d| bodyHasNoApplication(&d.body),
+        .if_stmt => |f| blk: {
+            if (!exprHasNoApplication(f.cond)) break :blk false;
+            if (!bodyHasNoApplication(&f.then)) break :blk false;
+            for (f.elseifs) |ei| {
+                if (!exprHasNoApplication(ei.cond)) break :blk false;
+                if (!bodyHasNoApplication(&ei.body)) break :blk false;
+            }
+            break :blk if (f.else_body) |eb| bodyHasNoApplication(&eb) else true;
+        },
+        .ret => |r| for (r.vals) |e| {
+            if (!exprHasNoApplication(e)) break false;
+        } else true,
+        .expr_stmt => |e| exprHasNoApplication(e.expr),
+        .brk, .cont => true,
+        else => false,
+    };
+}
+
+fn exprHasNoApplication(e: *const ast.Expr) bool {
+    return switch (e.*) {
+        .call, .method_call, .macro_call => false,
+        .binop => |b| exprHasNoApplication(b.lhs) and exprHasNoApplication(b.rhs),
+        .unop => |u| exprHasNoApplication(u.operand),
+        .if_expr => |ie| exprHasNoApplication(ie.cond) and
+            exprHasNoApplication(ie.then_expr) and exprHasNoApplication(ie.else_expr),
+        .index => |ix| exprHasNoApplication(ix.obj) and exprHasNoApplication(ix.key),
+        .field => |f| exprHasNoApplication(f.obj),
+        .name, .int_lit, .float_lit, .true_lit, .false_lit, .string_lit, .nil => true,
+        else => false,
+    };
+}
+
+/// True when the body contains a loop. Straight-line constant folding is
+/// already `region_transform`'s job, and it RECORDS the transformation as
+/// evidence; folding it here first would pre-empt that and silently delete the
+/// record. What this pass adds is the case region_transform does not cover — a
+/// bounded loop, which the compile-time evaluator can simply run.
+fn bodyHasLoop(b: *const ast.Block) bool {
+    for (b.stmts) |st| {
+        const has = switch (st) {
+            .while_loop, .num_for, .repeat_loop, .gen_for => true,
+            .do_block => |d| bodyHasLoop(&d.body),
+            .if_stmt => |f| blk: {
+                if (bodyHasLoop(&f.then)) break :blk true;
+                for (f.elseifs) |ei| if (bodyHasLoop(&ei.body)) break :blk true;
+                break :blk if (f.else_body) |eb| bodyHasLoop(&eb) else false;
+            },
+            else => false,
+        };
+        if (has) return true;
+    }
+    return false;
+}
+
+fn foldWholeBody(alloc: std.mem.Allocator, fb: *const ast.FuncBody) ?i64 {
+    if (!bodyHasLoop(&fb.body)) return null;
+    if (!bodyHasNoApplication(&fb.body)) return null;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const opts: comptime_eval.Options = .{ .step_limit = 200_000, .alloc = arena.allocator() };
+    const fv = comptime_eval.funcValue(fb, .{}, opts) catch return null;
+    const r = comptime_eval.callFunctionValue(fv, &.{}, .{}, opts) catch return null;
+    return switch (r) {
+        .int => |n| n,
+        else => null,
+    };
+}
+
 fn lowerFunction(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
@@ -1420,7 +1526,43 @@ fn lowerFunction(
         if (fd.path.len == 1 and edge_level_slots == 0) ctx.self_name = fd.path[0];
     }
 
+    // LAWFUL NONEXECUTION. A relation that takes no operands and whose body the
+    // compile-time evaluator can run to an integer does not need a body at
+    // runtime — the value IS the answer, so emit it and lower nothing.
+    //
+    // This is the elimination frontier's first instance: the evaluator already
+    // executes `while` and `for` (evalWhile / evalNumFor), so a bounded loop
+    // folds here even though the backend has no loop-folding pass of its own.
+    // Measured before this: `while i <= 100 : s += i` emitted 15 instructions
+    // and a real branch.
+    //
+    // Fails CLOSED: any evaluator error — an unsupported construct, a world
+    // effect, the step limit — falls through to ordinary lowering. Nothing is
+    // assumed foldable; it is folded only when it actually evaluated.
     try lowerBlock(&ctx, &fd.func.body, true);
+
+    // LAWFUL NONEXECUTION. A relation taking no operands whose body the
+    // compile-time evaluator runs to an integer does not need that body at
+    // runtime — the value IS the answer. The evaluator already executes `while`
+    // and `for`, so a bounded loop folds here although the backend has no
+    // loop-folding pass of its own. Measured before: `while i <= 100 : s += i`
+    // emitted 15 instructions and a real branch; now 2 and none.
+    //
+    // THE BODY IS LOWERED FIRST AND ONLY THEN DISCARDED. Skipping `lowerBlock`
+    // also skips the graph bookkeeping it performs, and an application that was
+    // never lowered is never resolved: a body reading `os.args` folded to a
+    // constant while leaving an unresolved application behind, and a call that
+    // could NOT resolve would have been hidden rather than diagnosed. Lowering
+    // first keeps every check; only the emitted instructions are replaced.
+    //
+    // Fails CLOSED: any evaluator error — an unsupported construct, an unbound
+    // name like `os.args`, the step limit — leaves the lowered body in place.
+    if (fd.func.params.len == 0 and !fd.func.vararg and fd.func.vararg_name == null) {
+        if (foldWholeBody(alloc, &fd.func)) |k| {
+            ctx.instrs.clearRetainingCapacity();
+            try ctx.emit(.{ .op = .ret, .lhs = .{ .i64 = k } });
+        }
+    }
 
     // A void body has no tail result to return from, so nothing emitted `ret`
     // and the backend's "did this function return?" check failed the module.
@@ -5213,9 +5355,9 @@ test "dnir_lower: while loop" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\main(): i64
+        \\main: i64 = (n: i64)
         \\    i = 0
-        \\    while i < 3
+        \\    while i < n
         \\        i += 1
         \\    end
         \\    i
@@ -5238,9 +5380,9 @@ test "dnir_lower: numeric for" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\main(): i64
+        \\main: i64 = (n: i64)
         \\    sum = 0
-        \\    for i = 0, 2
+        \\    for i = 0, n
         \\        sum += i
         \\    end
         \\    sum
@@ -5605,9 +5747,9 @@ test "dnir_lower: numeric for negative step" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\main(): i64
+        \\main: i64 = (n: i64)
         \\    sum = 0
-        \\    for i = 3, 1, -1
+        \\    for i = 3, n, -1
         \\        sum += i
         \\    end
         \\    sum
@@ -5630,10 +5772,10 @@ test "dnir_lower: numeric for const step binding" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\main(): i64
+        \\main: i64 = (n: i64)
         \\    step = -1
         \\    sum = 0
-        \\    for i = 3, 1, step
+        \\    for i = 3, n, step
         \\        sum += i
         \\    end
         \\    sum
