@@ -193,7 +193,7 @@ https_get: any = (url: str)
     close(conn)
 
     # Parse status
-    status = tonumber(string["match"](body, "HTTP/%d+%.%d+ (%d+)")) or 0
+    status = string["match"](body, "HTTP/%d+%.%d+ (%d+)"):to(i64) or 0
     sep = body:find("\r\n\r\n", 1, true)
     out = body
     if sep

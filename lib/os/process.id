@@ -263,7 +263,7 @@ pipe_close = (pipe: any)
 # ═══════════════════════════════════════════════════════════════
 
 env_get: any = (name: str)
-  os.getenv(name)
+  env(name)
 
 env_set: any = (name: str, value: str)
   # Use C setenv for persistent environment changes in the current process

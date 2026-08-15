@@ -26,7 +26,7 @@ wasm_simd: any = ()
 # Pick best device for current host (Metal on Apple, CUDA on NVIDIA, else CPU)
 best: any = ()
     # Check for CUDA
-    cuda_env = os.getenv("CUDA_VISIBLE_DEVICES")
+    cuda_env = env("CUDA_VISIBLE_DEVICES")
     if cuda_env and cuda_env != ""
         return cuda(0)
     # Check for Apple Silicon / Metal via uname

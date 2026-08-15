@@ -7,25 +7,25 @@ info: any = ()
   {
     compiler = "duo",
     version = "0.1.0",
-    host = os.getenv("HOSTNAME") or "unknown",
+    host = os.env("HOSTNAME") or "unknown",
     timestamp = os.date("%Y-%m-%dT%H:%M:%S")
   }
 
 platform: str = ()
-  os.getenv("OSTYPE") or "unknown"
+  os.env("OSTYPE") or "unknown"
 
 arch: str = ()
-  a = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
+  a = os.env("HOSTTYPE") or os.env("MACHTYPE") or "unknown"
   a
 
 target: str = ()
   "%s-%s":format(arch(), platform())
 
 is_debug: bool = ()
-  os.getenv("DEBUG") == "1"
+  os.env("DEBUG") == "1"
 
 env: str = ()
-  os.getenv("BUILD_ENV") or "development"
+  os.env("BUILD_ENV") or "development"
 
 project: any = (cfg: any)
   if cfg == nil

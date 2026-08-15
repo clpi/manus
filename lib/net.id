@@ -78,7 +78,7 @@ http_request: any = (method: str, url: str, body: str, headers: any)
     return { body = "", status = 0 }
   raw = f:read("*a") or ""
   f:close()
-  status = tonumber(string("match")(raw, "HTTP/%d+%.%d+ (%d+)")) or 0
+  status = string("match")(raw, "HTTP/%d+%.%d+ (%d+)"):to(i64) or 0
   sep = raw:find("\r\n\r\n", 1, true)
   resp_b = raw
   if sep

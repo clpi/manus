@@ -45,7 +45,7 @@ send: any = (addr: str, auth: any, from: str, to: any, msg: str)
   colon = addr:find(":", 1, true)
   if colon != nil
     host = addr:sub(1, colon - 1)
-    port = tonumber(addr:sub(colon + 1))
+    port = addr:sub(colon + 1):to(i64)
   # Sanitize host to prevent shell injection
   host = escape(host)
   url = "smtp://" .. host .. ":" .. port:to(str)
