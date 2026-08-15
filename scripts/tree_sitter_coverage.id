@@ -38,7 +38,10 @@ grammardir = "ext/tree-sitter-duo"
 # macOS SDK on its include path. `xcrun` is the authority; an already-exported
 # SDKROOT wins so a CI image can pin one.
 _sdkroot: str = ()
-  fromenv = script.chomp(os.getenv("SDKROOT"))
+  raw = os.env("SDKROOT")
+  if raw == nil
+    raw = ""
+  fromenv = script.chomp(raw)
   if fromenv != ""
     return fromenv
   script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))

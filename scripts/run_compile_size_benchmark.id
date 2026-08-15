@@ -491,7 +491,7 @@ main: i64 = ()
     if sdk == ""
         sdk = sh("xcrun --sdk macosx --show-sdk-path 2>/dev/null")
     if sdk != ""
-        os.setenv("SDKROOT", sdk, true)
+        os.env("SDKROOT") = sdk
 
     floor: i64 = spawnfloor()
     floortext: str = secs(floor)

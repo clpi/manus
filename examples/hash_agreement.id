@@ -65,16 +65,16 @@ main: i64 = ()
   u = {}
   i = 0
   while i < 200
-    u("x":rep(500) .. tostring(i)) = i
+    u("x":rep(500) .. i:to(str)) = i
     i = i + 1
   bad = 0
   i = 0
   while i < 200
-    if u("x":rep(500) .. tostring(i)) != i
+    if u("x":rep(500) .. i:to(str)) != i
       bad = bad + 1
     i = i + 1
   if bad != 0
-    print("FAIL long distinct keys: " .. tostring(bad) .. " of 200 merged")
+    print("FAIL long distinct keys: " .. bad:to(str) .. " of 200 merged")
     fails = fails + 1
 
   # Negative control: a long key never inserted must miss. Without this, a
@@ -89,5 +89,5 @@ main: i64 = ()
   if fails == 0
     print("hash agreement: PASS")
     return 0
-  print("hash agreement: FAIL " .. tostring(fails))
+  print("hash agreement: FAIL " .. fails:to(str))
   return 1

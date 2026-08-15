@@ -49,7 +49,7 @@ else
     cmd = parts:concat(" ")
 
     if !script.build_lock_acquire(timeout)
-        print("duo_lock: timed out after " .. tostring(timeout) .. "s waiting for " .. script.build_lock_dir())
+        print("duo_lock: timed out after " .. timeout:to(str) .. "s waiting for " .. script.build_lock_dir())
         os.exit(75)
 
     script.env_set("DUO_LOCK_HELD", "1")

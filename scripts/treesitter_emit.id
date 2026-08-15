@@ -1643,7 +1643,9 @@ rulesonly: str = (body: str)
         ""
 
 envor: str = (name: str, fallback: str)
-    v = os.getenv(name)
+    v = os.env(name)
+    if v == nil
+        return fallback
     s: str = v:to(str)
     return if s == "" fallback else s 
 

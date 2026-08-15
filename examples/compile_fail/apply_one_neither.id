@@ -2,8 +2,18 @@
 # APPLY-ONE, the THIRD outcome — c0 §43 `law.brace`:
 #
 #     "subject is a DESCRIPTOR -> descriptor application"
-#     "subject is a CALLABLE   -> ordinary application of a structured pack"
+#     "subject is a CALLABLE   -> REFUSED; a callable uses `name( … )`"
 #     "subject is NEITHER      -> diagnostic, never a guess"
+#
+# ROW 2 WAS RESTATED AFTER THIS FILE WAS WRITTEN, and the old wording is left
+# here only as a warning. It read "subject is a CALLABLE -> ordinary application
+# of a structured pack", which is the PROVISIONAL BRACE-CALL; §43
+# `audit.braceresolved` retired it ("brace-call retired; callable uses
+# parentheses"), and `law.brace` now `fails` on "letting a callable use braces".
+# `examples/compile_fail/callable_braces.id` is the fixture for that row, and it
+# refuses. A reader who trusted the quotation above would have concluded the
+# compiler was wrong and weakened the wrong file. Row 3 — this file's row — is
+# unchanged in both readings.
 #
 # This is the NEITHER row, and it is a rejection fixture rather than a value
 # fixture for the reason the law states in its own `fails` clause: the defect

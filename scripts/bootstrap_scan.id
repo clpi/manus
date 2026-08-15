@@ -153,8 +153,8 @@ row: i64 = (name: str, n: i64, budget: i64)
   0
 
 main: i64 = ()
-  root = os.getenv("DUO_ROOT")
-  if root == ""
+  root = os.env("DUO_ROOT")
+  if root == nil or root == ""
     root = "."
 
   # CONTROLS FIRST. A row printed before its control has been checked is a

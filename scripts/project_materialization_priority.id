@@ -21,9 +21,9 @@ main: i64 = ()
     print("=== Materialization Cost Priority ===")
     print("Semantic Identity: " .. manifest_path)
     print("Realization: " .. evidence.manifest.backend)
-    print("Allocations (Static): " .. tostring(evidence.emission.allocations))
-    print("Boxes (Static): " .. tostring(evidence.emission.boxes))
-    print("Dynamic Dispatches (Static): " .. tostring(evidence.emission.dynamic_dispatches))
+    print("Allocations (Static): " .. evidence.emission.allocations:to(str))
+    print("Boxes (Static): " .. evidence.emission.boxes:to(str))
+    print("Dynamic Dispatches (Static): " .. evidence.emission.dynamic_dispatches:to(str))
     print("")
 
     # Workstream 4: Optimization Priority Projection

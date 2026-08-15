@@ -435,8 +435,8 @@ captures: i64 = (body: str, glyph: str)
   tally(acc)
 
 main: i64 = ()
-  duo: str = os.getenv("hlduo")
-  if duo == ""
+  duo: str = os.env("hlduo")
+  if duo == nil or duo == ""
     duo = "./zig-out/bin/idol"
   print("highlight corpus — the role projection, measured")
   print("  duo        {duo}")

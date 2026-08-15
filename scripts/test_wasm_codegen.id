@@ -157,7 +157,7 @@ pass("pgo skip: covered by main.zig is_wasm flag logic")
 pass("run_after skip: covered by main.zig is_wasm flag logic")
 
 s.echo("")
-s.echo("=== Results: " .. tostring(PASS) .. " passed, " .. tostring(FAIL) .. " failed ===")
+s.echo("=== Results: " .. PASS:to(str) .. " passed, " .. FAIL:to(str) .. " failed ===")
 
 s.run("rm -rf " .. TMPDIR_TEST)
 if FAIL > 0

@@ -23,7 +23,12 @@
 # Pinned on the substring `has no field` plus the label `z`, so rewording the
 # sentence does not move the fixture.
 
-point: @{ x: f64, y: f64 }
+# `@{ … }` was WORLD INJECTION all along (§54 `law.injection.only`), and §43
+# `anchor.recover` retired its use as a descriptor sigil in as many words:
+# "a descriptor is an ordinary table `{ … }`". The spelling below is the
+# non-retired one and the diagnostic is byte-identical under both, which is
+# what makes this a spelling correction rather than a change of subject.
+point: { x: f64, y: f64 }
 
 main(): void
     q = point{ x = 1.0, z = 2.0 }
