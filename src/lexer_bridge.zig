@@ -102,9 +102,11 @@ const homes = [_]struct { class: HomeClass, pattern: []const u8 }{
     .{ .class = .foreign, .pattern = "examples/" },
 };
 
-/// Corpus home admission. Longest prefix wins. Compatibility homes are lua
-/// law; other listed homes are Idol law. Unlisted paths do not reconstruct
-/// family here.
+/// Corpus home admission. Longest prefix wins, over a path already resolved to
+/// the spelling corpus.md is written in (see `corpusRelative`). Compatibility
+/// homes are lua law; canonical and generated homes are Idol law; MIXED homes —
+/// `.foreign` and `.negative` — state a role and take law from the suffix.
+/// Unlisted paths do not reconstruct family here.
 fn homeFacts(path: []const u8) ?SourceFacts {
     var best_len: usize = 0;
     var best: ?HomeClass = null;
@@ -117,8 +119,27 @@ fn homeFacts(path: []const u8) ?SourceFacts {
     }
     const class = best orelse return null;
     return switch (class) {
-        .canonical, .generated, .negative => .{ .law = .idol, .provenance = .canonical },
+        .canonical, .generated => .{ .law = .idol, .provenance = .canonical },
         .compatibility => .{ .law = .lua, .provenance = .foreign },
+        // A NEGATIVE home is a corpus ROLE — "every file here must be refused
+        // for its own stated reason" — and corpus.md states the role only. It
+        // says nothing about which language the files are written in, and
+        // `examples/compile_fail/` holds both `.id` rows and `.lua`. The `.lua`
+        // half is the TWIN corpus: byte-identical files that must still
+        // COMPILE, because that pair is the only thing that can tell "Idol
+        // refuses it" apart from "the compiler lost the construct". Handing
+        // them Idol law because of the DIRECTORY is the bridge answering a
+        // question corpus.md never asked, and it killed the twin it was meant
+        // to protect: `sema.zig`'s `check_infix_at` guards on `idol_mode` and
+        // names `anchor_infix_at.lua` as "the positive control that fails if
+        // that guard is ever dropped" — the guard was never dropped, the file
+        // was carried across the language boundary underneath it, and the
+        // control reported an `.id` diagnostic about a `.lua` file. So a mixed
+        // negative home resolves law the same way `.foreign` does.
+        .negative => switch (discover(path)) {
+            .lua => .{ .law = .lua, .provenance = .foreign },
+            .idol, .unknown => .{ .law = .idol, .provenance = .canonical },
+        },
         // Foreign homes mix Idol `.id` and Lua fixtures. Layout admits the
         // home; discovery supplies only which law that file was handed as.
         .foreign => switch (discover(path)) {
@@ -140,11 +161,79 @@ fn pathMatches(path: []const u8, pattern: []const u8) bool {
     return false;
 }
 
-/// Corpus home first. Suffix `discover` is only the unlisted-path fallback
-/// (`law.bridge.death`). Later stages consume facts / `lex.family`.
+/// `docs/spec/corpus.md` IS the admission owner (`law.bridge.death`), and its
+/// rules are written repo-relative. So the tree a file is admitted by is the
+/// tree that CARRIES those rules, and this file is the anchor that finds it.
+/// Any other anchor (`.git`, a hardcoded root, the cwd) would be a second
+/// authority for a fact corpus.md already owns.
+const CORPUS_RULES = "docs/spec/corpus.md";
+
+/// The spelling the corpus rules are written in: the file's real location,
+/// relative to the root of the tree that carries `CORPUS_RULES`.
+///
+/// WHY THIS EXISTS. `homeFacts` compares the characters it was handed. Handed
+/// `examples/compile_fail/x.lua` it found the negative home; handed
+/// `./examples/compile_fail/x.lua`, the absolute path, or the bare name from a
+/// cwd inside that directory, it found nothing and `sourceFacts` fell through
+/// to suffix `discover` — a DIFFERENT policy for the same bytes, silently
+/// substituted. Measured on `examples/compile_fail/implicit_global_read.lua`:
+/// one spelling checked clean, three refused `use of undeclared global 'x'`.
+/// That is the shape `law.fallback.zero` forbids — the owner is uncertain, the
+/// old fallback answers, and execution continues as if it had been asked.
+///
+/// Resolution, not string surgery, because the bare-name spelling carries no
+/// directory at all and a symlink carries the wrong one. Identity of the FILE
+/// is the only thing all four spellings share.
+///
+/// Returns null at the two boundaries where corpus.md genuinely has nothing to
+/// say: the path does not resolve to anything on disk, or no ancestor of it
+/// carries the rules. Those are the owner REPORTING an unsupported boundary,
+/// which is the one fallback shape `law.fallback.zero` admits.
+fn corpusRelative(path: []const u8, out: []u8) ?[]const u8 {
+    var in_z: [std.fs.max_path_bytes]u8 = undefined;
+    if (path.len == 0 or path.len >= in_z.len) return null;
+    @memcpy(in_z[0..path.len], path);
+    in_z[path.len] = 0;
+
+    var real_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const resolved = std.c.realpath(in_z[0..path.len :0].ptr, &real_buf) orelse return null;
+    const real = std.mem.sliceTo(resolved, 0);
+
+    var probe: [std.fs.max_path_bytes]u8 = undefined;
+    var dir = std.fs.path.dirname(real) orelse return null;
+    while (true) {
+        const need = dir.len + 1 + CORPUS_RULES.len;
+        if (need + 1 > probe.len) return null;
+        @memcpy(probe[0..dir.len], dir);
+        probe[dir.len] = '/';
+        @memcpy(probe[dir.len + 1 ..][0..CORPUS_RULES.len], CORPUS_RULES);
+        probe[need] = 0;
+        if (std.c.access(probe[0..need :0].ptr, 0) == 0) {
+            // `dirname` of a top-level entry is "/", which carries no separator
+            // to step over. Getting this wrong eats the first byte of the name.
+            const cut = if (dir.len == 1 and dir[0] == '/') dir.len else dir.len + 1;
+            if (real.len <= cut) return null;
+            const rel = real[cut..];
+            if (rel.len > out.len) return null;
+            @memcpy(out[0..rel.len], rel);
+            return out[0..rel.len];
+        }
+        const parent = std.fs.path.dirname(dir) orelse return null;
+        if (parent.len == dir.len) return null;
+        dir = parent;
+    }
+}
+
+/// Corpus home first, asked in the ONE spelling corpus.md is written in.
+/// Suffix `discover` is only the unlisted-path fallback (`law.bridge.death`),
+/// and "unlisted" now means the corpus does not cover the file — never that the
+/// path happened to be spelled with a leading `./`. Later stages consume facts
+/// / `lex.family`.
 pub fn sourceFacts(path: []const u8) SourceFacts {
-    if (homeFacts(path)) |facts| return facts;
-    return admit(discover(path), path);
+    var rel_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const canon = corpusRelative(path, &rel_buf) orelse path;
+    if (homeFacts(canon)) |facts| return facts;
+    return admit(discover(canon), canon);
 }
 
 pub fn familyCode(facts: SourceFacts) i64 {
@@ -214,4 +303,76 @@ test "lexer bridge: corpus home admits family not suffix" {
     const foreign_id = sourceFacts("examples/shc/path.id");
     try std.testing.expectEqual(SourceLaw.idol, foreign_id.law);
     try std.testing.expectEqual(SourceProvenance.foreign, foreign_id.provenance);
+}
+
+test "lexer bridge: a negative home is a corpus role, not a language" {
+    // `negative examples/compile_fail/` in corpus.md states a ROLE — every file
+    // here must be refused for its own reason. It does not say the files are
+    // written in Idol, and eleven of them are the `.lua` twins that must still
+    // COMPILE. Promoting those to Idol law by directory killed the positive
+    // control `sema.zig` names in `check_infix_at`.
+    const twin = sourceFacts("examples/compile_fail/anchor_infix_at.lua");
+    try std.testing.expectEqual(SourceLaw.lua, twin.law);
+    try std.testing.expectEqual(SourceProvenance.foreign, twin.provenance);
+    try std.testing.expectEqual(family_compat, familyCode(twin));
+
+    const row = sourceFacts("examples/compile_fail/anchor_infix_at.id");
+    try std.testing.expectEqual(SourceLaw.idol, row.law);
+    try std.testing.expectEqual(SourceProvenance.canonical, row.provenance);
+    try std.testing.expectEqual(family_canon, familyCode(row));
+}
+
+test "lexer bridge: one file, one law, however the path is spelled" {
+    // `examples/luahost/lc0.id` is the sharpest witness in the tree: a
+    // COMPATIBILITY home holding an `.id` file, so the home says lua law and
+    // the suffix says idol law. Before this ingress normalized the spelling,
+    // `examples/luahost/lc0.id` was lua and `./examples/luahost/lc0.id` was
+    // idol — the same bytes under two languages, chosen by two characters.
+    //
+    // The test SKIPS rather than passes when the file cannot be resolved from
+    // the current directory: every spelling would then take the same
+    // raw-path fallback and agree for the wrong reason. An assertion that
+    // cannot fail is the shape this whole repair is about.
+    const rel = "examples/luahost/lc0.id";
+    var probe: [std.fs.max_path_bytes]u8 = undefined;
+    const anchored = corpusRelative(rel, &probe) orelse return error.SkipZigTest;
+    if (!std.mem.eql(u8, anchored, rel)) return error.SkipZigTest;
+
+    const want = sourceFacts(rel);
+    try std.testing.expectEqual(SourceLaw.lua, want.law);
+    try std.testing.expectEqual(SourceProvenance.foreign, want.provenance);
+
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    _ = std.c.getcwd(&cwd_buf, cwd_buf.len) orelse return error.SkipZigTest;
+    const cwd = std.mem.sliceTo(&cwd_buf, 0);
+    var abs_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const abs = try std.fmt.bufPrint(&abs_buf, "{s}/{s}", .{ cwd, rel });
+
+    const spellings = [_][]const u8{
+        "./examples/luahost/lc0.id",
+        "examples/./luahost/lc0.id",
+        "examples/luahost/../luahost/lc0.id",
+        "./examples/../examples/luahost/lc0.id",
+        abs,
+    };
+    for (spellings) |s| {
+        const got = sourceFacts(s);
+        try std.testing.expectEqual(want.law, got.law);
+        try std.testing.expectEqual(want.provenance, got.provenance);
+        try std.testing.expectEqual(familyCode(want), familyCode(got));
+    }
+}
+
+test "lexer bridge: an unresolvable path still reaches its unlisted fallback" {
+    // The two boundaries `corpusRelative` reports rather than guesses. Nothing
+    // named here exists on disk, so resolution fails and the raw path is used —
+    // which must still produce the documented `discover` answer and never a
+    // crash or an `unknown`.
+    const gone = sourceFacts("no/such/place/absent.lua");
+    try std.testing.expectEqual(SourceLaw.lua, gone.law);
+    try std.testing.expectEqual(SourceProvenance.foreign, gone.provenance);
+    const gone_id = sourceFacts("no/such/place/absent.id");
+    try std.testing.expectEqual(SourceLaw.idol, gone_id.law);
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("no/such/place/absent.txt").law);
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("").law);
 }

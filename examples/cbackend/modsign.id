@@ -1,0 +1,26 @@
+# NUMERICS: `%` on two integers TRUNCATES — the remainder takes the DIVIDEND's
+# sign — and it does so whatever shape the divisor arrives in. §12 B-4, quoted
+# in `docs/spec/cost.md`, says `i64/i64` truncates and `examples/table/
+# div/sign.id` records the four answers this rule gives.
+#
+# THE POINT OF THIS FILE IS THE DIVISOR'S SHAPE. The C backend used to choose
+# C's truncating `%` when the divisor was a POSITIVE LITERAL and Lua's FLOORING
+# helper otherwise, so one program got both rules: `-7 % 2` printed -1
+# (truncating) and `7 % -2` printed -1 (flooring, where truncating is 1). Every
+# row below is the same arithmetic reached through a different divisor shape —
+# literal, negative literal, and a value the emitter cannot read — so a rule
+# that holds for one shape and not another cannot pass.
+#
+# Computed by hand: -7 % 2 = -7 - (-3 * 2) = -1. 7 % -2 = 7 - (-3 * -2) = 1.
+# expect: -1 1 -1 1 -1 1
+# @corpus current
+two = 2
+neg = 0 - two
+a = -7 % 2
+b = 7 % -2
+c = -7 % two
+d = 7 % neg
+e = 0 - 7
+f = e % two
+g = 7 % neg
+print("{a} {b} {c} {d} {f} {g}")

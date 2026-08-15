@@ -21,23 +21,23 @@ M.EPOLLET = 2147483648
 # Linux syscalls via @c.emit
 # ═══════════════════════════════════════════════════════════════
 
-@comp.c.emit('include:len() <sys/epoll.h>')
+@comp.c.emit('#include <sys/epoll.h>')
 
-@comp.c.emit('include:len() <sys/inotify.h>')
+@comp.c.emit('#include <sys/inotify.h>')
 
-@comp.c.emit('include:len() <sys/eventfd.h>')
+@comp.c.emit('#include <sys/eventfd.h>')
 
-@comp.c.emit('include:len() <sys/timerfd.h>')
+@comp.c.emit('#include <sys/timerfd.h>')
 
-@comp.c.emit('include:len() <sys/mman.h>')
+@comp.c.emit('#include <sys/mman.h>')
 
-@comp.c.emit('include:len() <unistd.h>')
+@comp.c.emit('#include <unistd.h>')
 
-@comp.c.emit('include:len() <fcntl.h>')
+@comp.c.emit('#include <fcntl.h>')
 
-@comp.c.emit('include:len() <stdlib.h>')
+@comp.c.emit('#include <stdlib.h>')
 
-@comp.c.emit('include:len() <string.h>')
+@comp.c.emit('#include <string.h>')
 
 
 # C shim functions for Linux syscalls

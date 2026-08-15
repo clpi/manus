@@ -3,7 +3,7 @@
 # @corpus current
 default_step: i64 = 3
 
-score: i64 = (base: i64, step: i64, factor: i64)
+score: i64 = (base: i64, step: i64 = default_step, factor: i64 = 2)
   base + step * factor
 
 skipped_sum: i64 = (limit: i64)

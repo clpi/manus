@@ -210,6 +210,27 @@ pub const CodeGen = struct {
     /// (DNB007); without it the C backend emitted `static lua_Value duo_g_Kind`
     /// into a translation unit that had just decided to declare no runtime.
     native_const_descriptors: std.StringHashMapUnmanaged(NativeConstDescriptor) = .empty,
+    /// FUNCTION-LOCAL dense literal tables — the local twin of
+    /// `native_dense_module_tables`, and the reason it exists is a silent wrong
+    /// answer rather than a missing optimisation.
+    ///
+    /// A full-native function that binds a table of literals codegen could not
+    /// type used to emit `void* glyph = NULL` and DISCARD THE INITIALIZER, then
+    /// read every element back as NULL. `examples/boring/roman.id` is exactly
+    /// that: `glyph = { "M", "CM", … }` became `void* glyph = NULL`, `g =
+    /// glyph(i)` became `void* g = NULL`, and `duo_str_concat(out, g)` reached
+    /// `strlen(NULL)` — SIGSEGV 139 with no diagnostic anywhere. The module-level
+    /// form of the same table has been lowered natively for some time; only the
+    /// function-local one fell through.
+    native_dense_local_tables: std.StringHashMapUnmanaged(NativeDenseModuleTable) = .empty,
+    /// Dense tables whose literal initializer is entirely FLOAT, where the
+    /// upstream classification said integer. `parts = { 1.5, 2.5, 3.5 }` inside
+    /// a function emitted `int64_t* __dt_parts` and
+    /// `duo_dt_set_i64(&__dt_parts, …, 1, 1.5e0)`: three doubles truncated on
+    /// the way into an integer buffer, and `parts(2)` answered 2 instead of 2.5.
+    /// No diagnostic, exit 0. The initializer is right here at the declaration,
+    /// so the element kind does not have to be taken on trust.
+    dense_float_locals: std.StringHashMapUnmanaged(void) = .empty,
     /// Function-local `t = {}` lowered to `t_items[]` + `t_len` (no lua tables).
     native_str_list_locals: std.StringHashMapUnmanaged(void) = .empty,
     /// Names in the current block that must NOT take the `t_items[]` lowering
@@ -1355,12 +1376,12 @@ pub const CodeGen = struct {
     ) E!bool {
         if (!std.mem.eql(u8, call.method, "read") or call.args.len != 0) return false;
         if (call.obj.* == .name and std.mem.eql(u8, call.obj.name.ident, "stdin")) {
-            self.p("idol_io_read_stdin()", .{});
+            self.p("duo_io_read_stdin()", .{});
             return true;
         }
         const obj_ty = self.expr_type(call.obj);
         if (obj_ty == .str or call.obj.* == .string_lit or call.obj.* == .name) {
-            self.p("idol_io_read_path(", .{});
+            self.p("duo_io_read_path(", .{});
             try self.emit_expr(call.obj);
             self.p(")", .{});
             return true;
@@ -2050,7 +2071,7 @@ pub const CodeGen = struct {
         if (e.* == .index) {
             const idx = e.index;
             if (idx.obj.* == .name) {
-                if (self.native_dense_module_tables.get(idx.obj.name.ident)) |nd| {
+                if (self.dense_literal_table(idx.obj.name.ident)) |nd| {
                     return switch (nd.elem) {
                         .i64 => .i64,
                         .f64 => .f64,
@@ -2068,6 +2089,8 @@ pub const CodeGen = struct {
             if (self.is_dense_table_index(idx.obj)) return .i64;
             if (self.indexed_element_type(self.expr_type(idx.obj))) |t| return t;
         }
+        // `s(i)` on a `str` is a BYTE, and a byte is an integer.
+        if (self.str_byte_index(e) != null) return .i64;
         if (e.* == .call) {
             const c = e.call;
             // `to(T)(v)` yields T. Without this the type is unknown and a
@@ -2591,6 +2614,63 @@ pub const CodeGen = struct {
     /// Recover the result of native C indexing from the container type. Sema
     /// intentionally leaves general indexing dynamic, but fixed arrays,
     /// pointers, and SIMD vectors have statically-known element types.
+    /// `s(i)` where `s` is a `str` — the byte at `i`, ZERO-BASED, and returns
+    /// the index expression when that is what this is.
+    ///
+    /// THE BASE IS NOT A GUESS. Three fixtures in the corpus state it and each
+    /// one is checkable by hand against the bytes on disk:
+    /// `examples/table/str/bytes.id` says `s = "é"` (0xC3 0xA9) answers
+    /// `2 195 169` for `s:len()`, `s(0)`, `s(1)`; `str/end.id` says `"ab"`
+    /// answers `97 98 0`, which also pins reading ONE PAST the end as the NUL
+    /// terminator rather than a bounds fault; `str/invalid.id` holds the raw
+    /// bytes 0xFF 0xFE and says `2 255 254`. A table is 1-based and a `str` is
+    /// 0-based — `docs/state.md` records `xs(0)` on a table as REFUSED — so the
+    /// two indexings are different relations and this one may not borrow the
+    /// other's base.
+    ///
+    /// Before this arm the C backend emitted `void* a = NULL` for the whole
+    /// binding: the index expression was DISCARDED, and the NULL then reached
+    /// `duo_str_concat` -> `strlen(NULL)`. All three fixtures died with SIGSEGV
+    /// 139, which is how a dropped expression presents when the value it
+    /// dropped was a string.
+    /// BOTH SPELLINGS ARRIVE HERE. `s(i)` parses as `.index` when the parser
+    /// already knows `s` names a table and as a `.call` otherwise, and a `str`
+    /// receiver takes the second road every time. Measured: `examples/table/
+    /// str/end.id` produced twelve `.call` nodes on `s` and zero `.index`
+    /// nodes, which is why an `.index`-only arm changed nothing.
+    const StrByte = struct { obj: *const ast.Expr, key: *const ast.Expr };
+
+    fn str_byte_index(self: *CodeGen, e: *const ast.Expr) ?StrByte {
+        const pair: StrByte = switch (e.*) {
+            .index => |idx| .{ .obj = idx.obj, .key = idx.key },
+            .call => |c| blk: {
+                if (c.args.len != 1) return null;
+                // Only a plain name receiver. An arbitrary callee expression
+                // typed `str` is far more likely to be a relation returning a
+                // string than a string being indexed.
+                if (c.func.* != .name) return null;
+                // LAW-CALL: data wins the name only when the program has not
+                // bound that name to a relation.
+                if (self.func_decls.contains(c.func.name.ident)) return null;
+                if (self.func_bodies.contains(c.func.name.ident)) return null;
+                break :blk .{ .obj = c.func, .key = c.args[0] };
+            },
+            else => return null,
+        };
+        if (self.expr_type(pair.obj) != .str) return null;
+        if (!self.expr_type(pair.key).is_integer()) return null;
+        return pair;
+    }
+
+    fn emit_str_byte_index(self: *CodeGen, e: *const ast.Expr) E!void {
+        const pair = self.str_byte_index(e).?;
+        self.p("((int64_t)(unsigned char)(", .{});
+        try self.emit_expr(pair.obj);
+        self.p(")[", .{});
+        try self.emit_expr(pair.key);
+        self.p("])", .{});
+    }
+
     fn indexed_element_type(_: *CodeGen, container: RT) ?RT {
         return switch (container) {
             .array => |a| a.elem.*,
@@ -2767,10 +2847,31 @@ pub const CodeGen = struct {
         const strish = obj_ty == .str or obj.* == .string_lit or obj.* == .name;
         if (!strish) return null;
         if (std.mem.eql(u8, method, "len")) return .i64;
+        if (std.mem.eql(u8, method, "trim") and args.len == 0) return .str;
         if (std.mem.eql(u8, method, "sub") and args.len >= 1 and args.len <= 2) return .str;
-        if (std.mem.eql(u8, method, "match") and args.len >= 1 and args.len <= 2) return .bool;
+        // `match` AND `find` ANSWER A VALUE, NOT A YES/NO.
+        //
+        // Typed `.bool`, the emit wrapped the runtime call in `lua_to_bool` and
+        // threw the answer away at the point of production: `"abc123":match("%d+")`
+        // printed `true` instead of `123`, so no capture in the language was
+        // reachable, and `s:match(p) != nil` was ALWAYS TRUE because a `bool` is
+        // never nil — which turns the standard "did it match" test into a
+        // constant. `"hello":find("ll", 1, true)` printed `true` where a
+        // position was the whole point.
+        //
+        // The FUNCTION face of the same relation, in
+        // `string_builtin_result_type` directly above, already answered `.str`
+        // for `match`. So one relation had two types depending on which face
+        // was written, and the subject-first face — the canonical one — was the
+        // broken half.
+        //
+        // `.any` and not `.str`, because both of them answer NIL when there is
+        // no match, and that nil is the observable the caller tests. `.str`
+        // would send the nil through `lua_to_str` and lose the distinction a
+        // second time.
+        if (std.mem.eql(u8, method, "match") and args.len >= 1 and args.len <= 2) return .any;
         if (std.mem.eql(u8, method, "has") and args.len == 1) return .bool;
-        if (std.mem.eql(u8, method, "find") and args.len >= 1 and args.len <= 4) return .bool;
+        if (std.mem.eql(u8, method, "find") and args.len >= 1 and args.len <= 4) return .any;
         if (std.mem.eql(u8, method, "byte") and args.len <= 1) return .i64;
         return self.string_builtin_result_type(method, args);
     }
@@ -4461,6 +4562,24 @@ pub const CodeGen = struct {
     /// Module includes Lua runtime (dynamic paths or mixed native/dynamic).
     fn moduleNeedsLuaRuntime(self: *const CodeGen) bool {
         return !self.moduleUsesFullNativeLowering();
+    }
+
+    /// `%` ON TWO INTEGERS TRUNCATES, and the remainder takes the DIVIDEND's
+    /// sign. §12 B-4 — quoted in `docs/spec/cost.md` — says `i64/i64`
+    /// truncates and `examples/table/div/sign.id` records the four answers
+    /// `-3 -3 -1 1` for `-7/2`, `7/-2`, `-7%2`, `7%-2`.
+    ///
+    /// Before this predicate the C backend had NO single answer. The emit chose
+    /// C's truncating `%` when the divisor was a positive literal and Lua's
+    /// FLOORING `lua_imod_i64` otherwise, so one program got both: `-7 % 2`
+    /// printed -1 (truncating) and `7 % -2` printed -1 (flooring, where
+    /// truncating is 1). That split is not a Lua-compatibility choice either —
+    /// under Lua's floor rule `-7 % 2` is 1, and the positive-literal fast path
+    /// answers -1 — so the previous behaviour matched neither language on the
+    /// same line. Idol source gets the truncating rule everywhere; a Lua chunk
+    /// (`idol_mode == false`) keeps the flooring helper it was written against.
+    fn intModTruncates(self: *const CodeGen) bool {
+        return self.idol_mode;
     }
 
     /// True when `req` bindings in the current function may bypass lua_require.
@@ -6311,6 +6430,31 @@ pub const CodeGen = struct {
         self.p("    for (size_t i = 0; i < len; i++) res[i] = s[len - 1 - i];\n", .{});
         self.p("    res[len] = '\\0'; return res;\n", .{});
         self.p("}}\n", .{});
+        // duo_str_trim_cstr — `s:trim()` had NO IMPLEMENTATION ANYWHERE.
+        //
+        // It is not in the emitted string metatable, it had no arm in the
+        // native transform family, and it had no result type; `line:trim()`
+        // therefore read the field `trim` off the string, found nil, and
+        // `lua_invoke(nil, …)` answered NIL. That is the `push`/`pop`/`insert`
+        // shape again, one kingdom over. It is not hypothetical surface:
+        // `lib/ini.id` and `lib/toml.id` both parse with it, and every line
+        // they trimmed became nil.
+        //
+        // ASCII whitespace on both ends, which is what both callers want and
+        // what the isspace class already names. It allocates rather than
+        // returning an interior pointer, because the result outlives the
+        // receiver at every call site in `lib/`.
+        self.p("static inline char* duo_str_trim_cstr(const char* s) {{\n", .{});
+        self.p("    if (!s) s = \"\";\n", .{});
+        self.p("    const char* b = s;\n", .{});
+        self.p("    while (*b && isspace((unsigned char)*b)) b++;\n", .{});
+        self.p("    const char* e = b + strlen(b);\n", .{});
+        self.p("    while (e > b && isspace((unsigned char)e[-1])) e--;\n", .{});
+        self.p("    size_t len = (size_t)(e - b);\n", .{});
+        self.p("    char* res = (char*)malloc(len + 1);\n", .{});
+        self.p("    if (!res) return (char*)s;\n", .{});
+        self.p("    memcpy(res, b, len); res[len] = '\\0'; return res;\n", .{});
+        self.p("}}\n", .{});
         self.p("static inline __attribute__((noreturn)) void duo_fatal(const char* msg) {{\n", .{});
         // `self.p` is std.fmt, which does not treat `%` specially, so the old
         // `%%s` reached C as a literal `%%s`: duo_fatal printed "%s" and threw
@@ -6347,6 +6491,62 @@ pub const CodeGen = struct {
         self.p("    if (*endp != '\\0') duo_fatal(\"to(i64): trailing text after number\");\n", .{});
         self.p("    if (errno == ERANGE) duo_fatal(\"to(i64): out of range\");\n", .{});
         self.p("    return (int64_t)v;\n", .{});
+        self.p("}}\n", .{});
+        // duo_io_read_stdin / duo_io_read_path — the READABLE protocol,
+        // spelled in plain C, in the translation unit that uses them.
+        //
+        // `p:read()` used to emit `idol_io_read_path(p)` and `stdin:read()`
+        // `idol_io_read_stdin()`. Those symbols are real, but they live in
+        // `src/idol_io_bootstrap.c`, which only the DIRECT backend's
+        // `directLinkInputs` ever links. The C backend emitted the names into a
+        // translation unit that had never heard of them and clang answered
+        // "call to undeclared function 'idol_io_read_path'", followed by
+        // "incompatible integer to pointer conversion" as the implicit `int`
+        // return was stuffed into a `const char*`. The runtime this backend
+        // DOES emit spells the same edge `lua_io_read_path` and takes a
+        // `lua_Value`, so neither name was usable as written.
+        //
+        // Emitting them here rather than renaming to the `lua_` pair keeps the
+        // edge working in a FULL-NATIVE module, which declares no lua runtime
+        // at all — the same reason `duo_str_to_i64` above exists instead of the
+        // `lua_to_num` it replaced.
+        //
+        // A FILE THAT CANNOT BE READ FAULTS. Answering "" would make a missing
+        // file indistinguishable from an empty one, which is the silent-zero
+        // shape `duo_str_to_i64` was written to avoid; `idol_io_read_path`
+        // answers NULL for it, and NULL reaches `strlen` here.
+        self.p("static inline char* duo_io_read_stdin(void) {{\n", .{});
+        self.p("    size_t cap = 65536, len = 0;\n", .{});
+        self.p("    char* buf = (char*)malloc(cap);\n", .{});
+        self.p("    if (!buf) duo_fatal(\"read: out of memory\");\n", .{});
+        self.p("    for (;;) {{\n", .{});
+        self.p("        if (len + 4097 > cap) {{\n", .{});
+        self.p("            cap *= 2;\n", .{});
+        self.p("            char* next = (char*)realloc(buf, cap);\n", .{});
+        self.p("            if (!next) {{ free(buf); duo_fatal(\"read: out of memory\"); }}\n", .{});
+        self.p("            buf = next;\n", .{});
+        self.p("        }}\n", .{});
+        self.p("        size_t got = fread(buf + len, 1, 4096, stdin);\n", .{});
+        self.p("        len += got;\n", .{});
+        self.p("        if (got < 4096) break;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    buf[len] = '\\0';\n", .{});
+        self.p("    return buf;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline char* duo_io_read_path(const char* path) {{\n", .{});
+        self.p("    if (path == NULL || path[0] == '\\0') return duo_io_read_stdin();\n", .{});
+        self.p("    FILE* f = fopen(path, \"rb\");\n", .{});
+        self.p("    if (!f) duo_fatal(\"read: cannot open path\");\n", .{});
+        self.p("    if (fseek(f, 0, SEEK_END) != 0) {{ fclose(f); duo_fatal(\"read: cannot size path\"); }}\n", .{});
+        self.p("    long sz = ftell(f);\n", .{});
+        self.p("    if (sz < 0) {{ fclose(f); duo_fatal(\"read: cannot size path\"); }}\n", .{});
+        self.p("    rewind(f);\n", .{});
+        self.p("    char* buf = (char*)malloc((size_t)sz + 1);\n", .{});
+        self.p("    if (!buf) {{ fclose(f); duo_fatal(\"read: out of memory\"); }}\n", .{});
+        self.p("    size_t got = fread(buf, 1, (size_t)sz, f);\n", .{});
+        self.p("    fclose(f);\n", .{});
+        self.p("    buf[got] = '\\0';\n", .{});
+        self.p("    return buf;\n", .{});
         self.p("}}\n", .{});
         if (self.native_scalar_needs_int_floor_helpers(mod)) {
             // Floor division and floor modulo for typed int64 (Lua // and % semantics)
@@ -9850,11 +10050,13 @@ pub const CodeGen = struct {
         const prev_func_name = self.current_func_name;
         const prev_func_noalloc = self.current_func_noalloc;
         const prev_str_list_locals = self.native_str_list_locals;
+        const prev_dense_locals = self.native_dense_local_tables;
         self.current_ret = ret;
         self.current_func_body = fb;
         self.current_func_name = duo_func_name(fd);
         self.current_func_noalloc = funcRequiresNoalloc(fd.attributes);
         self.native_str_list_locals = .{};
+        self.native_dense_local_tables = .{};
         if (fb.use_dense_table) {
             self.dense_table = fb.dense_table;
             self.dense_table_cap = fb.dense_table_cap;
@@ -9870,6 +10072,14 @@ pub const CodeGen = struct {
             while (sl_it.next()) |key| self.alloc.free(key.*);
             self.native_str_list_locals.deinit(self.alloc);
             self.native_str_list_locals = prev_str_list_locals;
+            var dl_it = self.native_dense_local_tables.iterator();
+            while (dl_it.next()) |kv| {
+                self.alloc.free(kv.key_ptr.*);
+                self.alloc.free(kv.value_ptr.c_symbol);
+            }
+            self.native_dense_local_tables.deinit(self.alloc);
+            self.native_dense_local_tables = prev_dense_locals;
+            self.dense_float_locals.clearRetainingCapacity();
         }
         if (fb.use_fp_strict_always_inline) {
             self.p("#pragma GCC push_options\n", .{});
@@ -10343,6 +10553,71 @@ pub const CodeGen = struct {
         }
     }
 
+    /// A dense literal table bound inside a function body, lowered to a
+    /// `static const` C array and registered so reads resolve to it.
+    ///
+    /// The storage is `static` rather than automatic because every element is a
+    /// literal: the table is a constant, and a constant does not need to be
+    /// rebuilt on each entry. Slot 0 is a dummy, exactly as the module-level
+    /// emitter does it, so the C index IS the source index and no ±1 appears at
+    /// any read site.
+    ///
+    /// Returns false when the initializer is not a table of same-kind literals,
+    /// in which case the caller keeps whatever it was going to do.
+    fn try_emit_dense_local_table(self: *CodeGen, name: []const u8, init_expr: *const ast.Expr) E!bool {
+        if (init_expr.* != .table) return false;
+        if (self.native_dense_local_tables.contains(name)) return false;
+        if (self.native_dense_module_tables.contains(name)) return false;
+        const elem = classify_dense_literal_table(init_expr.table.fields) orelse return false;
+
+        var sym_buf: [256]u8 = undefined;
+        const sym = std.fmt.bufPrint(&sym_buf, "__dl_{s}_{s}", .{
+            self.current_func_name orelse "fn",
+            name,
+        }) catch return false;
+        const csym = try self.alloc.dupe(u8, sym);
+        errdefer self.alloc.free(csym);
+        const owned_name = try self.alloc.dupe(u8, name);
+        errdefer self.alloc.free(owned_name);
+
+        const elem_c: []const u8 = switch (elem) {
+            .i64 => "const int64_t",
+            .f64 => "const double",
+            // `const const char*` is legal C11 but reads as a mistake; the
+            // pointer itself is what wants to be const here.
+            .str => "const char* const",
+        };
+        self.p("static {s} {s}[{d}] = {{", .{ elem_c, csym, init_expr.table.fields.len + 1 });
+        if (elem == .str) self.p(" NULL", .{}) else self.p(" 0", .{});
+        for (init_expr.table.fields) |f| {
+            const v = switch (f) {
+                .positional => |val| val,
+                else => unreachable,
+            };
+            self.p(", ", .{});
+            try self.emit_dense_literal_elem(v, elem);
+        }
+        self.p(" }};\n", .{});
+
+        try self.native_dense_local_tables.put(self.alloc, owned_name, .{
+            .c_symbol = csym,
+            .module_cname = "",
+            .elem = elem,
+            .len = init_expr.table.fields.len,
+            .init = init_expr,
+        });
+        try self.note_local(name);
+        try self.note_local_type(name, .any);
+        try self.note_comptime_unavailable(name);
+        return true;
+    }
+
+    /// The dense array a name reads from, module-scope or function-local.
+    fn dense_literal_table(self: *const CodeGen, name: []const u8) ?NativeDenseModuleTable {
+        if (self.native_dense_local_tables.get(name)) |nd| return nd;
+        return self.native_dense_module_tables.get(name);
+    }
+
     fn register_native_dense_module_table(self: *CodeGen, name: []const u8, init_expr: *const ast.Expr, elem: NativeDenseElem) !void {
         var buf: [256]u8 = undefined;
         const csym = try self.alloc.dupe(u8, self.native_dense_c_symbol(name, &buf));
@@ -10387,6 +10662,10 @@ pub const CodeGen = struct {
     }
 
     fn is_native_dense_module_table(self: *CodeGen, name: []const u8) bool {
+        // A function-local dense literal is in scope for exactly the function
+        // being emitted, so it needs no module comparison — the map is cleared
+        // on the way out of every function body.
+        if (self.native_dense_local_tables.contains(name)) return true;
         const nd = self.native_dense_module_tables.get(name) orelse return false;
         return std.mem.eql(u8, nd.module_cname, self.current_module_cname);
     }
@@ -10678,17 +10957,18 @@ pub const CodeGen = struct {
     };
 
     fn dense_table_info(self: *CodeGen, name: []const u8) DenseInfo {
+        const forced_float = self.dense_float_locals.contains(name);
         if (self.current_func_body) |fb| {
             for (fb.dense_tables, 0..) |dt, i| {
                 if (!std.mem.eql(u8, name, dt)) continue;
                 return .{
-                    .is_float = i < fb.dense_table_floats.len and fb.dense_table_floats[i],
+                    .is_float = forced_float or (i < fb.dense_table_floats.len and fb.dense_table_floats[i]),
                     .cap = if (i < fb.dense_table_caps.len) fb.dense_table_caps[i] else "0",
                     .cap_safe = i < fb.dense_table_cap_safe.len and fb.dense_table_cap_safe[i],
                 };
             }
         }
-        return .{ .is_float = false, .cap = "0", .cap_safe = false };
+        return .{ .is_float = forced_float, .cap = "0", .cap_safe = false };
     }
 
     /// `int64_t* __dt_t` + `int64_t __dtc_t` (its capacity), plus a best-effort
@@ -13155,6 +13435,16 @@ pub const CodeGen = struct {
                                 }
                             }
                             if (self.is_dense_table_name(name)) {
+                                // The element kind is decided by the literals in
+                                // front of us, not only by the upstream flag. An
+                                // all-float initializer classified as integer
+                                // truncated every element into an `int64_t`
+                                // buffer, silently and at exit 0.
+                                if (i < as.values.len and as.values[i].* == .table) {
+                                    if (classify_dense_literal_table(as.values[i].table.fields)) |elem| {
+                                        if (elem == .f64) try self.dense_float_locals.put(self.alloc, name, {});
+                                    }
+                                }
                                 const info = self.dense_table_info(name);
                                 // `tmp = grid`: bind the same (pointer, capacity)
                                 // pair rather than allocating a second buffer.
@@ -13227,6 +13517,16 @@ pub const CodeGen = struct {
                             {
                                 continue;
                             }
+                            // A table of same-kind literals bound inside a
+                            // full-native function. This runs BEFORE the
+                            // `void* {s} = NULL` fallback below, which is where
+                            // such a table used to land — initializer discarded,
+                            // every read NULL, `roman.id` dying in strlen.
+                            if (!self.moduleNeedsLuaRuntime() and effective_tt == .any and i < as.values.len and
+                                try self.try_emit_dense_local_table(name, as.values[i]))
+                            {
+                                continue;
+                            }
                             try self.note_local(name);
                             if (effective_tt == .any) {
                                 if (i < as.values.len) {
@@ -13242,8 +13542,42 @@ pub const CodeGen = struct {
                                             self.p(" {s} = ", .{name});
                                             try self.emit_expr(as.values[i]);
                                         } else {
-                                            try self.note_local_type(name, .any);
-                                            self.p("void* {s} = NULL", .{name});
+                                            // A BINDING CODEGEN CANNOT REPRESENT
+                                            // IS REFUSED, NOT ZEROED.
+                                            //
+                                            // This arm used to emit
+                                            // `void* NAME = NULL` and DISCARD
+                                            // the initializer outright — no
+                                            // diagnostic, exit 0, `idol check`
+                                            // silent — so every later read of
+                                            // the name answered NULL. It is the
+                                            // single largest wrong-answer source
+                                            // found in this backend: it is why
+                                            // `examples/boring/roman.id` died in
+                                            // `strlen(NULL)` with SIGSEGV 139
+                                            // (and printed a DIFFERENT line on
+                                            // each run before that, which is
+                                            // uninitialised memory presenting as
+                                            // a formatting bug), why
+                                            // `examples/table/str/bytes.id`,
+                                            // `str/end.id` and `str/invalid.id`
+                                            // all exited 139, and why
+                                            // `examples/boring/jsonparse.id`
+                                            // reached clang with a call to an
+                                            // undeclared `lua_eq`.
+                                            //
+                                            // The representable cases above this
+                                            // line are the fix for most of those.
+                                            // What is left is genuinely outside
+                                            // what a full-native translation unit
+                                            // can hold, and the honest answer to
+                                            // that is a located refusal naming
+                                            // the binding — never a value that
+                                            // silently means nothing.
+                                            term.locErr(as.values[i].loc(), "'{s}' has no native representation in this module: the C backend would have to discard its value", .{name});
+                                            term.locHint(as.values[i].loc(), "give '{s}' a declared type the native path can hold, or keep the module on the dynamic path", .{name});
+                                            self.noalloc_violation = "codegen refused a binding whose value it cannot represent";
+                                            return error.NoAllocViolation;
                                         }
                                     } else {
                                         try self.note_local_type(name, .any);
@@ -13788,6 +14122,31 @@ pub const CodeGen = struct {
                 else
                     self.expr_type(nf.start);
                 const vt2 = if (vt == .any) RT.i64 else vt;
+                // THE LOOP VARIABLE IS SCOPED TO THE LOOP, and the C output has
+                // always said so — `for (int64_t i = 1; …)` ends `i` at the
+                // closing brace. Codegen's own scope model did not: the name was
+                // written into the ENCLOSING scope and left there, so a later
+                // `i = 0` was treated as an assignment to something already
+                // declared and emitted `i = 0;` with no declaration in reach.
+                // `examples/boring/anagram.id` does exactly that — a `for i = 1,
+                // 256` fill loop and then `i = 0` to walk the string — and died
+                // with "use of undeclared identifier 'i'". Restoring whatever
+                // the name meant before the loop is what makes the model agree
+                // with the C it emits; a program that already bound `i` outside
+                // keeps its binding, and one that did not gets a fresh
+                // declaration at the next assignment.
+                const outer_var_binding: ?RT = if (self.local_scopes.items.len > 0)
+                    self.local_scopes.items[self.local_scopes.items.len - 1].get(nf.var_name)
+                else
+                    null;
+                defer if (self.local_scopes.items.len > 0) {
+                    const scope = &self.local_scopes.items[self.local_scopes.items.len - 1];
+                    if (outer_var_binding) |prev| {
+                        scope.put(self.alloc, nf.var_name, prev) catch {};
+                    } else {
+                        _ = scope.remove(nf.var_name);
+                    }
+                };
                 try self.note_local_type(nf.var_name, vt2);
                 // The continuation test MUST follow the step's sign. This was an
                 // unconditional `<=`, so `for i = 4, 1, -1` emitted
@@ -13902,7 +14261,7 @@ pub const CodeGen = struct {
                     if (mode == .direct_table and tbl.* == .name and gf.vars.len >= 1 and
                         self.is_native_dense_module_table(tbl.name.ident))
                     {
-                        const nd = self.native_dense_module_tables.get(tbl.name.ident).?;
+                        const nd = self.dense_literal_table(tbl.name.ident).?;
                         // Module-scope dense literals are native C arrays — never box elements.
                         const native_for = true;
                         for (gf.vars) |vname| try self.note_local(vname);
@@ -14736,7 +15095,7 @@ pub const CodeGen = struct {
             // dense-table classification), but the value codegens to a raw C
             // array element, not a lua_Value. Emit it directly when the
             // requested type matches the element's natural representation.
-            const nd = self.native_dense_module_tables.get(e.index.obj.name.ident).?;
+            const nd = self.dense_literal_table(e.index.obj.name.ident).?;
             const matches = switch (nd.elem) {
                 .str => want == .str,
                 .i64, .f64 => want.is_numeric(),
@@ -14745,6 +15104,12 @@ pub const CodeGen = struct {
                 try self.emit_expr(e);
                 return;
             }
+        }
+        // A `str` byte is already a native integer; unboxing it would ask for a
+        // `lua_Value` that no full-native module has.
+        if (want.is_numeric() and self.str_byte_index(e) != null) {
+            try self.emit_expr(e);
+            return;
         }
         if (try self.try_emit_table_projection_unbox(e, want)) return;
         // A call into a req-module lowers to a direct C call returning a native
@@ -15941,10 +16306,14 @@ pub const CodeGen = struct {
                     return;
                 }
                 if (self.is_native_dense_module_index(idx.obj)) {
-                    const nd = self.native_dense_module_tables.get(idx.obj.name.ident).?;
+                    const nd = self.dense_literal_table(idx.obj.name.ident).?;
                     self.p("{s}[", .{nd.c_symbol});
                     try self.emit_expr(idx.key);
                     self.p("]", .{});
+                    return;
+                }
+                if (self.str_byte_index(expr) != null) {
+                    try self.emit_str_byte_index(expr);
                     return;
                 }
                 if (self.is_dense_table_index(idx.obj)) {
@@ -16030,6 +16399,17 @@ pub const CodeGen = struct {
                 }
             },
             .call => |c| {
+                // `s(i)` on a `str` subject is a BYTE READ, not an application.
+                // It precedes the callee arms for the same reason
+                // `emit_descriptor_application` does: `s` is DATA here, and
+                // every arm below assumes a callee. Emitted as a C call it
+                // became "called object type 'const char *' is not a function"
+                // in four corpus files, and where the binding was dropped
+                // instead it became `void* a = NULL` and a SIGSEGV in three.
+                if (self.str_byte_index(expr) != null) {
+                    try self.emit_str_byte_index(expr);
+                    return;
+                }
                 // APPLY-ONE, the EMITTING half — c0 §44 `apply.edge` row 1,
                 // gap[092]. A descriptor subject constructs. This must precede
                 // every other `.call` arm, because all of them assume a callee.
@@ -16042,6 +16422,31 @@ pub const CodeGen = struct {
                     {
                         const dest = inner.args[0].name.ident;
                         if (try self.emit_relation_convert_exhaustive(dest, c.loc, c.args[0], self.expr_type(expr))) return;
+                    }
+                }
+                // `v:to(dest)(src)` — the SUBJECT-FIRST face that SPELLS ITS
+                // SOURCE. `emit_relation_convert_exhaustive` only runs when the
+                // source is unspelled, and it refuses as soon as two descriptors
+                // admit a path — so `3.0:to(inch)(foot)` in
+                // `examples/conversion/relation.id`, which names `foot`
+                // explicitly, was diagnosed "ambiguous conversion to inch: spell
+                // the source with :from" while spelling the source. Worse, the
+                // diagnostic did not stop the run: emission continued and put
+                // `duo_fatal("unlowered native :to conversion")`, a `void`
+                // expression, in the initializer of a `lua_Value`, so the C
+                // compiler then produced three errors of its own on top.
+                if (c.func.* == .method_call and c.args.len == 1 and c.args[0].* == .name and
+                    !self.user_owns_name("to"))
+                {
+                    const mc2 = c.func.method_call;
+                    if (std.mem.eql(u8, mc2.method, "to") and mc2.args.len == 1 and mc2.args[0].* == .name) {
+                        if (try self.emit_convert_edge_from(
+                            mc2.args[0].name.ident,
+                            c.args[0].name.ident,
+                            c.loc,
+                            mc2.obj,
+                            self.expr_type(expr),
+                        )) return;
                     }
                 }
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
@@ -17062,6 +17467,30 @@ pub const CodeGen = struct {
                         self.p(", ", .{});
                         try self.emit_as_lua_value(mc.args[0]);
                         self.p(", lua_val_nil())", .{});
+                    } else if (std.mem.eql(u8, mc.method, "insert") and mc.args.len >= 1 and mc.args.len <= 2) {
+                        // THE THIRD INSTANCE OF THE SAME HOLE. `push` and `pop`
+                        // above each fell through to the generic method lookup,
+                        // read the field off the TABLE ITSELF, found nil, and
+                        // `lua_invoke(nil, …)` did nothing; `insert` did too and
+                        // was left. Measured: `u = {}` / `u:insert("q")` /
+                        // `u:len()` answers 0, exit 0, `idol check` silent — and
+                        // a library relation built this way returned `{}` for
+                        // every input it was ever given.
+                        //
+                        // `table.insert` is not the escape hatch, because §0.9
+                        // says `table.` does not exist; the subject-first
+                        // spelling is the only one a program can write, so it
+                        // has to be the one that is wired. Both arities go to
+                        // the same helper the `push` arm already uses: one
+                        // argument appends, two insert at a position, which is
+                        // exactly `lua_tbl_insert`'s own two arms.
+                        self.p("lua_tbl_insert(", .{});
+                        try self.emit_as_lua_value(mc.obj);
+                        self.p(", ", .{});
+                        try self.emit_as_lua_value(mc.args[0]);
+                        self.p(", ", .{});
+                        if (mc.args.len > 1) try self.emit_as_lua_value(mc.args[1]) else self.p("lua_val_nil()", .{});
+                        self.p(")", .{});
                     } else if (std.mem.eql(u8, mc.method, "pop") and mc.args.len == 0) {
                         // gap[068], the sibling the gap told us to look for:
                         // "One no-op found by hand usually means an untested
@@ -17341,12 +17770,24 @@ pub const CodeGen = struct {
                             self.p("{d}", .{lv ^ rv});
                             return;
                         },
-                        .lshift => if (rv >= 0 and rv < 64) {
-                            self.p("{d}", .{lv << @intCast(rv)});
+                        // THE FOLDED SHIFT AND THE EMITTED SHIFT MUST AGREE.
+                        // `.rshift` here was already unsigned while the emitted
+                        // form was a signed C `>>`, which is how one operator
+                        // came to give two answers for the same bits. Both
+                        // halves now go through `u64` and both mask the count
+                        // to 6 bits, so folding a shift can no longer change
+                        // what it means. `lv << rv` was also a checked Zig
+                        // shift: `1 << 63` on an `i64` is an overflow panic in
+                        // a safe build, and a compiler that panics on a legal
+                        // program is worse than one that answers wrongly.
+                        .lshift => if (rv >= 0) {
+                            const sh: u6 = @intCast(rv & 63);
+                            self.p("{d}", .{@as(i64, @bitCast(@as(u64, @bitCast(lv)) << sh))});
                             return;
                         },
-                        .rshift => if (rv >= 0 and rv < 64) {
-                            self.p("{d}", .{@as(i64, @bitCast(@as(u64, @bitCast(lv)) >> @intCast(rv)))});
+                        .rshift => if (rv >= 0) {
+                            const sh: u6 = @intCast(rv & 63);
+                            self.p("{d}", .{@as(i64, @bitCast(@as(u64, @bitCast(lv)) >> sh))});
                             return;
                         },
                         .eq => {
@@ -17701,10 +18142,12 @@ pub const CodeGen = struct {
                         .mod => {
                             if (lt.is_integer() and rt.is_integer()) {
                                 // Fast path: direct C modulo when divisor is a positive literal
-                                if (b.rhs.* == .int_lit and b.rhs.int_lit.val > 0) {
+                                if (self.intModTruncates() or (b.rhs.* == .int_lit and b.rhs.int_lit.val > 0)) {
                                     self.p("((int64_t)(", .{});
                                     try self.emit_expr(b.lhs);
-                                    self.p(") % {d})", .{b.rhs.int_lit.val});
+                                    self.p(") % (int64_t)(", .{});
+                                    try self.emit_expr(b.rhs);
+                                    self.p("))", .{});
                                 } else {
                                     self.p("lua_imod_i64((int64_t)(", .{});
                                     try self.emit_expr(b.lhs);
@@ -17738,7 +18181,44 @@ pub const CodeGen = struct {
                             // an int-typed literal shifts in 32 bits and only the
                             // result is widened — `1 << sh` with sh >= 32 wrapped
                             // (sh = 35 yielded 8). Duo integers are 64-bit.
-                            const widen_lhs = lt2.is_float() or b.op == .lshift or b.op == .rshift;
+                            if (b.op == .lshift or b.op == .rshift) {
+                                // A SHIFT IS UNSIGNED, AND THE COUNT IS MASKED.
+                                //
+                                // `>>` on a signed C `int64_t` is an ARITHMETIC
+                                // shift, so `-8 >> 1` answered `-4`. The
+                                // constant folder five hundred lines above this
+                                // one already does the shift through `u64` and
+                                // answers 9223372036854775804 for the same bits,
+                                // so ONE operator had TWO meanings depending on
+                                // whether its operand was a literal: measured on
+                                // this tree, `18446744073709551608 >> 1` printed
+                                // 9223372036854775804 and `a >> 1` on a variable
+                                // holding those bits printed -4, in the same
+                                // program. `examples/table/shifts.id` states the
+                                // logical answer in its own `# expect:` line and
+                                // the direct backend gives it.
+                                //
+                                // The count is masked to 6 bits because C leaves
+                                // a shift at or above the width UNDEFINED, and
+                                // clang used that licence: `c << 64` and
+                                // `c << 65` both emitted the value 8 — the value
+                                // of an unrelated earlier binding. Masking is
+                                // what both AArch64 and x86-64 register shifts
+                                // already do, so this makes the emitted program
+                                // agree with the machine it lowers to and with
+                                // the folded form of itself.
+                                self.p("(({s})(((uint64_t)(", .{t.c_type(&buf)});
+                                if (lt2.is_float()) self.p("(int64_t)(", .{});
+                                try self.emit_expr(b.lhs);
+                                if (lt2.is_float()) self.p(")", .{});
+                                self.p(")) {s} ((uint64_t)(", .{binop_str(b.op)});
+                                if (rt2.is_float()) self.p("(int64_t)(", .{});
+                                try self.emit_expr(b.rhs);
+                                if (rt2.is_float()) self.p(")", .{});
+                                self.p(") & 63u)))", .{});
+                                return;
+                            }
+                            const widen_lhs = lt2.is_float();
                             self.p("(({s})((", .{t.c_type(&buf)});
                             if (widen_lhs) self.p("(int64_t)(", .{});
                             try self.emit_expr(b.lhs);
@@ -17860,7 +18340,7 @@ pub const CodeGen = struct {
                             // compile-time constant, not something
                             // lua_len_num can read off the array.
                             if (u.operand.* == .name and self.is_native_dense_module_table(u.operand.name.ident)) {
-                                const nd = self.native_dense_module_tables.get(u.operand.name.ident).?;
+                                const nd = self.dense_literal_table(u.operand.name.ident).?;
                                 self.p("{d}", .{nd.len});
                                 return;
                             }
@@ -17880,9 +18360,20 @@ pub const CodeGen = struct {
                 } else {
                     switch (u.op) {
                         .neg => {
-                            self.p("(-", .{});
+                            // The operand is PARENTHESISED, and that is not
+                            // cosmetic. `emit_expr` const-folds, so any operand
+                            // whose value is a known negative prints its own
+                            // leading `-`: `-(2 - 7)` emitted `(--5)`, which C
+                            // reads as pre-decrement of a literal and clang
+                            // refuses with "expression is not assignable".
+                            // Measured on this tree, `-(0 - 5)`, `-(2 - 7)` and
+                            // `-(9223372036854775807 + 1)` all produced it. The
+                            // fault is the ADJACENCY of two minus signs, not the
+                            // magnitude of the literal, so the fix belongs here
+                            // and not in a special case for i64's minimum.
+                            self.p("(-(", .{});
                             try self.emit_expr(u.operand);
-                            self.p(")", .{});
+                            self.p("))", .{});
                         },
                         .not => {
                             self.p("(!", .{});
@@ -20225,21 +20716,39 @@ pub const CodeGen = struct {
     fn emit_relation_enumeration(self: *CodeGen, gf: *const @FieldType(ast.Stmt, "gen_for")) E!bool {
         if (gf.iters.len != 1 or gf.vars.len == 0 or gf.vars.len > 2) return false;
         const it = gf.iters[0];
-        if (it.* != .index) return false;
-        const idx = it.index;
-        if (idx.obj.* != .name or idx.key.* != .name) return false;
+        // BOTH FACES OF THE SAME ENUMERATION. `to[dest]` is an `.index` and
+        // `to(dest)` is a `.call`, and only the first was recognised here — so
+        // `for src, conv in to(micron)` fell through to the generic iterator
+        // emit, which printed the family name as a bare C identifier and clang
+        // answered "use of undeclared identifier 'to'". Measured on three
+        // corpus files: `examples/conversion/relation.id` (`to`),
+        // `examples/conversion/store.id` (`eq`) and
+        // `examples/vector_embed_smoke.id` (`vector`). The bracket face is
+        // RETIRED spelling in this tree — `docs/spec/law.md` retires `[` as an
+        // accessor — so the only face a current program can write was the one
+        // that did not work.
+        const fam_name: []const u8, const dest: []const u8 = switch (it.*) {
+            .index => |idx| blk: {
+                if (idx.obj.* != .name or idx.key.* != .name) return false;
+                break :blk .{ idx.obj.name.ident, idx.key.name.ident };
+            },
+            .call => |c| blk: {
+                if (c.func.* != .name or c.args.len != 1 or c.args[0].* != .name) return false;
+                break :blk .{ c.func.name.ident, c.args[0].name.ident };
+            },
+            else => return false,
+        };
         // LAW-CALL: data always wins the name. If the program bound the family
         // name itself, this is that value's index and not the relation's.
-        if (self.user_owns_name(idx.obj.name.ident)) return false;
-        const rel = self.relations.family(idx.obj.name.ident) orelse return false;
-        const dest = idx.key.name.ident;
+        if (self.user_owns_name(fam_name)) return false;
+        const rel = self.relations.family(fam_name) orelse return false;
 
         var edges: std.ArrayListUnmanaged(relation.Edge) = .empty;
         defer edges.deinit(self.alloc);
         try rel.intoDest(dest, &edges, self.alloc);
 
         self.ind();
-        self.p("/* {s}[{s}] enumerates {d} declared edge(s) */\n", .{ idx.obj.name.ident, dest, edges.items.len });
+        self.p("/* {s}({s}) enumerates {d} declared edge(s) */\n", .{ fam_name, dest, edges.items.len });
         for (gf.vars) |v| try self.note_local(v);
         for (edges.items) |e| {
             self.ind();
@@ -21996,7 +22505,9 @@ pub const CodeGen = struct {
 
     fn try_emit_native_string_transform(self: *CodeGen, fname: []const u8, obj: *ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
         if (result_rt != .str) return false;
-        if (std.mem.eql(u8, fname, "lower") or std.mem.eql(u8, fname, "upper") or std.mem.eql(u8, fname, "reverse")) {
+        if (std.mem.eql(u8, fname, "lower") or std.mem.eql(u8, fname, "upper") or
+            std.mem.eql(u8, fname, "reverse") or std.mem.eql(u8, fname, "trim"))
+        {
             if (args.len != 0) return false;
             self.p("duo_str_{s}_cstr(", .{fname});
             try self.emit_mem_value_as(obj, .str);
@@ -24958,7 +25469,7 @@ pub const CodeGen = struct {
     }
 
     fn emit_native_dense_module_table_as_lua_value(self: *CodeGen, name: []const u8) E!void {
-        const nd = self.native_dense_module_tables.get(name).?;
+        const nd = self.dense_literal_table(name).?;
         self.p("({{\n", .{});
         self.indent += 1;
         self.ind();

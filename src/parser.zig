@@ -12,6 +12,7 @@ const debug_trace = @import("debug_trace.zig");
 const grammar_roles = @import("grammar_roles.zig");
 const token_view = @import("token_view.zig");
 const lexer_dispatch = @import("lexer_dispatch.zig");
+const source_cursor = @import("source_cursor.zig");
 
 pub const ParseError = error{
     UnexpectedToken,
@@ -195,6 +196,12 @@ pub const Parser = struct {
 
     /// True when `parse_module` installed the producer pack on `alloc`.
     pack_owned: bool = false,
+
+    /// Byte offset of the last retired-`#` site `denyRetiredLengthHash` named.
+    /// About thirty-five speculative scans rewind the lexer and re-read the same
+    /// tokens, and the site is a property of the BYTES rather than of the parse,
+    /// so without this the same `#` is reported once per rewind.
+    hash_denied_off: ?usize = null,
 
     pub fn init(lex: *Lexer, alloc: Allocator) Parser {
         return .{ .lex = lex, .alloc = alloc };
@@ -486,7 +493,256 @@ pub const Parser = struct {
         const tok = try self.lex.next();
         self.prev_line = tok.loc.line;
         self.prev_end_col = tok.loc.col + @as(u32, @intCast(tok.text.len));
+        if (demandsOperand(tok.kind)) try self.denyRetiredLengthHash(tok);
         return tok;
+    }
+
+    /// Tokens that CANNOT END AN EXPRESSION, so the thing after them is an
+    /// operand and not a new statement. This is the whole precondition for
+    /// `denyRetiredLengthHash`, and it is what separates `n = #t` — where the
+    /// operand is missing — from `n = t #t`, where it is not.
+    ///
+    /// `.lbrace` is deliberately ABSENT. A brace opens a REGION whose body is a
+    /// sequence of slots, not one demanded operand, and a comment on its own
+    /// line inside a pack is ordinary.
+    fn demandsOperand(kind: TK) bool {
+        return switch (kind) {
+            .assign,
+            .lparen,
+            .lbracket,
+            .comma,
+            .plus,
+            .minus,
+            .star,
+            .slash,
+            .percent,
+            .caret,
+            .amp,
+            .pipe,
+            .lt,
+            .gt,
+            .tilde,
+            .colon,
+            .dot,
+            .at,
+            .bang,
+            .hash,
+            .hash_hash,
+            .concat,
+            .eq,
+            .neq,
+            .leq,
+            .geq,
+            .lshift,
+            .rshift,
+            .idiv,
+            .arrow,
+            .pipe_gt,
+            .fat_arrow,
+            .plus_assign,
+            .minus_assign,
+            .star_assign,
+            .slash_assign,
+            .percent_assign,
+            .caret_assign,
+            .kw_and,
+            .kw_or,
+            .kw_not,
+            .kw_in,
+            .kw_if,
+            .kw_elseif,
+            .kw_while,
+            .kw_until,
+            .kw_return,
+            .kw_by,
+            => true,
+            else => false,
+        };
+    }
+
+    /// The first byte a `#` would have to be followed by for `#…` to read as the
+    /// retired length operator rather than as comment prose. A canonical comment
+    /// is written `# text`; the space is what tells them apart, and it is the
+    /// only thing that can, because `#` IS the comment opener in canonical
+    /// source (`docs/spec/canonical.md`: "Comments use `#`").
+    fn opensExpression(c: u8) bool {
+        return std.ascii.isAlphanumeric(c) or c == '_' or c == '@' or c == '(' or c == '"';
+    }
+
+    /// `#` IS RETIRED AS A LENGTH OPERATOR, and this is where it is refused.
+    ///
+    /// ===================== WHAT WAS ACTUALLY WRONG =====================
+    /// It was reported as "`#` works in statement position and dies in argument
+    /// position". It does neither. In canonical source `#` opens a COMMENT
+    /// (`src/lexer.zig`, `c == '#' and family == family_canon`), so `#t` never
+    /// produces a `.hash` token at all and the two positions differ only in what
+    /// the swallowed line takes with it:
+    ///
+    ///     print(#t)      the comment eats the `)` too, so the call never closes
+    ///                    and the parse dies at `<eof>` — a bad message about
+    ///                    the wrong place, but at least a refusal.
+    ///
+    ///     n = #t         the comment eats only `#t`, the RHS is then taken from
+    ///                    the NEXT LINE, and a DIFFERENT PROGRAM compiles in
+    ///                    silence. Measured: `t = {1,2,3}` / `n = #t` /
+    ///                    `print(999)` emits `lua_Value n = printf("%lld\n",999)`.
+    ///
+    /// So the asymmetry was never "legal here, illegal there". It was silent
+    /// absorption on one side and a misplaced diagnostic on the other, and the
+    /// silent one is the worse half.
+    ///
+    /// ===================== WHY REFUSE RATHER THAN SUPPORT =====================
+    /// `#`-as-length is retired: the canonical spelling is `subject:len()`, the
+    /// repo-wide migration has already run, and `#` is the comment opener that
+    /// migration left behind. Reinstating `#` would need it to stop opening
+    /// comments, which is a lexical change to the one character the language
+    /// spends on comments. There is no second reading to preserve: measured over
+    /// the tracked corpus, `#` in operand position occurs at THREE sites, all
+    /// three in the two example files this refusal unblocks.
+    ///
+    /// ===================== WHY THIS IS NOT A GUESS =====================
+    /// The bytes between two visible tokens are whitespace and comments only —
+    /// the lexer skipped them — so a `#` found in that gap is a comment OPENER
+    /// and never text inside a literal. Three facts have to hold together, and
+    /// each one is a fact rather than a heuristic:
+    ///
+    ///   1. the token just consumed cannot end an expression (`demandsOperand`),
+    ///      so what follows is an OPERAND;
+    ///   2. the next visible token is on a LATER LINE, so that operand did not
+    ///      arrive — something swallowed the rest of this line;
+    ///   3. the swallowing comment is `#` ABUTTING an expression opener, which
+    ///      is the retired length spelling and is not how a comment is written.
+    ///
+    /// Drop any one and the refusal is wrong: without (1) `n = t #note` trips,
+    /// without (2) `n = t + 1 #note` trips, without (3) every trailing `# note`
+    /// trips.
+    fn denyRetiredLengthHash(self: *Parser, demand: Token) ParseError!void {
+        if (self.lex.family != @import("lexer_bridge.zig").family_canon) return;
+        const src = self.lex.cursor.bytes;
+        const from = sourceOffset(src, demand) orelse return;
+        const gap_start = from + demand.text.len;
+        const next = self.lex.peek() catch return;
+        if (next.loc.line <= demand.loc.line) return;
+        const gap_end = if (next.kind == .eof) src.len else (sourceOffset(src, next) orelse src.len);
+        if (gap_end < gap_start or gap_end > src.len) return;
+
+        const at = retiredHashOnLine(src[gap_start..gap_end]) orelse return;
+        const off = gap_start + at;
+        if (self.hash_denied_off) |seen| if (seen == off) return;
+        self.hash_denied_off = off;
+
+        var loc = demand.loc;
+        loc.col += @intCast(off - from);
+        term.locErr(loc, "`#` is not a length operator — write `subject:len()`", .{});
+        term.locHint(loc, "`#` OPENS A COMMENT in canonical source: everything after it on this line was discarded, and the operand this `{s}` demands never arrived", .{demand.text});
+        term.locHint(loc, "`#x` is `x:len()`, `#@comp.fields(p)` is `@comp.fields(p):len()`; if these bytes really are a comment, write `# ` with a space", .{});
+        return ParseError.UnexpectedToken;
+    }
+
+    /// §3 — **A TOKEN THAT CAN OPEN AN EXPRESSION, AT THE START OF A LINE, OPENS
+    /// ONE.** The exact dual of `demandsOperand` above, and the second half of
+    /// one ruling: that one says what a token cannot END, this one says what a
+    /// token can BEGIN, and between them they decide where an expression stops.
+    ///
+    /// ===================== WHAT THIS COST =====================
+    /// A block-tail expression beginning with unary minus was absorbed as a
+    /// BINARY minus across the newline and the dedent. Three shapes, one
+    /// differing character, measured under `--backend=c`:
+    ///
+    ///     v = n + 100 / `-1`        104   WRONG — parsed `v = (n + 100) - 1`,
+    ///                                     and the tail expression VANISHED
+    ///     v = n + 100 / `return -1`  -1   correct
+    ///     v = n + 100 / `99`         99   correct
+    ///
+    /// It is a wrong ANSWER, not a parse error, and `idol fmt` reprinted the
+    /// absorbed form faithfully — the formatter was innocent, which is why a
+    /// diff of `return row[1] - 1` looked like printer damage and was not.
+    ///
+    /// In `lib/compiler/lexer.id` — the EXECUTED production lexer — the shape is
+    /// `return n` then a dedented `-1`, so the relation returns its count ONE
+    /// LOW and its not-found sentinel does not exist. In `lib/wasm/opcodes.id`
+    /// the preceding statement is `i += 1`, which absorbs to `i += 1 - 1` — an
+    /// INFINITE LOOP in an opcode lookup.
+    ///
+    /// ===================== WHY THE TEST IS "CAN OPEN" =====================
+    /// Only an operator with a PREFIX meaning is ambiguous at the head of a
+    /// line. A line-leading `*` cannot begin an expression, so it can only be a
+    /// continuation, and
+    ///
+    ///     total = a
+    ///         * b
+    ///
+    /// keeps meaning what it means. `-`, `~` and `@` each have a prefix reading,
+    /// so for those the newline decides, exactly as §3 says a newline decides
+    /// everything else. `@` was ALREADY guarded here, against
+    /// `tok.loc.line > lhs.loc().line` — the right instinct with the wrong
+    /// operand: an `lhs` that itself spans lines makes that test true for an
+    /// operator sitting mid-line, so `1 +\n2 -\n3` would have lost its `- 3`.
+    /// The question is whether the OPERATOR begins a line, and nothing about
+    /// where its left operand started.
+    ///
+    /// Read off the SOURCE BYTES rather than tracked state, for the reason
+    /// `lineStartCol` records one screen up: about thirty-five speculative scans
+    /// rewind the lexer without restoring the parser's line bookkeeping, so a
+    /// tracked "previous line" can be left holding a line the parse has not
+    /// reached. A token's own text is a view into the source on both token
+    /// paths, so its offset cannot go stale.
+    fn opensLineAndExpression(self: *Parser, tok: Token) bool {
+        switch (tok.kind) {
+            .minus, .tilde, .at => {},
+            else => return false,
+        }
+        const src = self.lex.cursor.bytes;
+        const off = sourceOffset(src, tok) orelse return false;
+        var i = off;
+        while (i > 0) {
+            i -= 1;
+            switch (src[i]) {
+                ' ', '\t', '\r' => {},
+                '\n' => return true,
+                else => return false,
+            }
+        }
+        return true;
+    }
+
+    /// Offset of `tok` in `src`, or null when the token's text is not a view
+    /// into it — a synthesised `.eof`, or a pack whose text arena is elsewhere.
+    /// Production packs DO view the caller's source (`lexer_dispatch.route`:
+    /// "Decode writes views into the caller-owned source"), which is why this
+    /// works on the producer path and not only under the host scanner.
+    fn sourceOffset(src: []const u8, tok: Token) ?usize {
+        const base = @intFromPtr(src.ptr);
+        const p = @intFromPtr(tok.text.ptr);
+        if (p < base or p + tok.text.len > base + src.len) return null;
+        return p - base;
+    }
+
+    /// Index of a `#` that OPENS a comment and ABUTS an expression, on the FIRST
+    /// line of a span the lexer already skipped.
+    ///
+    /// The first line and no further, because only a comment on the DEMANDING
+    /// TOKEN'S OWN line can explain a missing operand. In
+    ///
+    ///     f(
+    ///       #x
+    ///       y)
+    ///
+    /// the operand `y` arrived; the comment cost nothing and is not this
+    /// ruling's business. Scanning the whole gap convicts that file.
+    ///
+    /// Only the FIRST opener on the line counts: in `-- note #x` the `#` is
+    /// prose inside a compat comment, not an opener.
+    fn retiredHashOnLine(gap: []const u8) ?usize {
+        const line = gap[0 .. std.mem.indexOfScalar(u8, gap, '\n') orelse gap.len];
+        var j: usize = 0;
+        while (j < line.len) : (j += 1) {
+            if (line[j] == '-' and j + 1 < line.len and line[j + 1] == '-') return null;
+            if (line[j] != '#') continue;
+            if (j + 1 < line.len and opensExpression(line[j + 1])) return j;
+            return null;
+        }
+        return null;
     }
 
     /// §3 — the block threshold for a function body. The declaration's own
@@ -3938,7 +4194,8 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = infix_prec(tok.kind) orelse break;
-            if (tok.kind == .at and tok.loc.line > lhs.loc().line) break;
+            // §3 — see `opensLineAndExpression`.
+            if (self.opensLineAndExpression(tok)) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             const rhs = try self.parse_match_scrutinee_prec(inf.right);
@@ -5186,9 +5443,11 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = infix_prec(tok.kind) orelse break;
-            // @ on a new line is an attribute prefix, not the matmul operator.
-            // Without this check, `x = 42\n@hot\nfun ...` parses as `x = 42 @ hot`.
-            if (tok.kind == .at and tok.loc.line > lhs.loc().line) break;
+            // §3 — see `opensLineAndExpression`. `@` on a new line is an
+            // attribute prefix and not the matmul operator (without which
+            // `x = 42\n@hot\nfun …` parses as `x = 42 @ hot`); `-` and `~` on a
+            // new line are unary and not a continuation of the line above.
+            if (self.opensLineAndExpression(tok)) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             if (self.idol_mode) {
@@ -5385,10 +5644,57 @@ pub const Parser = struct {
     /// file around it, which is why `{x:len()}` (a subject-first application)
     /// and `{x + 1}` (arithmetic) work here the day the real grammar does.
     ///
-    /// The text is PADDED with the newlines and spaces that precede it in the
-    /// file, so the sub-lexer's own position arithmetic lands every token at its
-    /// true `file:line:col`. Handing it the bare hole text instead reports every
-    /// diagnostic inside a hole at line 1.
+    /// Move a sub-lex of a fragment onto the enclosing file's coordinates: a
+    /// fragment token at 1-based `(line, col)` within the fragment sits at
+    /// `seat` offset by that much in the file.
+    ///
+    /// The first line is the only one that takes a COLUMN offset — everything
+    /// after the fragment's first newline starts its own line, so its column is
+    /// already the file's column. That is exactly the arithmetic the padding
+    /// performed by construction, which is why this is a rewrite of the same
+    /// answer and not a new one.
+    ///
+    /// BOTH TOKEN SOURCES ARE SEATED, and neither is decoration. `route` is what
+    /// the sub-parse actually runs on (`law.bridge.death` — the host scanner is
+    /// not a production path), so the token pack is the live one and seating
+    /// only the cursor would leave every hole diagnostic at line 1. The cursor
+    /// is seated too because it is what `Lexer` reports positions from whenever
+    /// a pack is not installed.
+    fn seatSubLexer(sub: *Lexer, seat: ast.Loc) void {
+        sub.cursor.line = seat.line;
+        sub.cursor.col = seat.col;
+        const toks = sub.duo_tokens orelse return;
+        for (@constCast(toks)) |*tok| {
+            if (tok.loc.line == 1) tok.loc.col = seat.col + tok.loc.col - 1;
+            tok.loc.line = seat.line + tok.loc.line - 1;
+            tok.loc.file = seat.file;
+        }
+    }
+
+    /// A diagnostic raised INSIDE a hole reports its true `file:line:col`, and
+    /// that property is not negotiable — the caret has to land in the string.
+    /// The position is carried as an OFFSET APPLIED TO LOCATIONS, never as bytes
+    /// the sub-lexer must walk.
+    ///
+    /// ===================== WHY THAT IS THE WHOLE POINT =====================
+    /// This function used to PAD the hole text with `line - 1` newlines and
+    /// `col - 1` spaces and hand the sub-lexer the result, so its own position
+    /// arithmetic arrived at the right answer by re-walking everything that
+    /// precedes the hole in the file. That is exact, and it is QUADRATIC in file
+    /// position: each hole re-scans its own offset, so the same holes cost more
+    /// the further down the file they sit. Measured, 600 holes of IDENTICAL
+    /// content, only the start line varying — hole term with the flat-string
+    /// control subtracted:
+    ///
+    ///     line     2   0.029s          line  8002   0.353s
+    ///     line  2002   0.147s          line 16002   0.667s
+    ///
+    /// Hole COUNT was already linear, so the count was never the term; the
+    /// padding was. `scripts/treesitter_emit.id` carries 1,208 holes.
+    ///
+    /// `seatSubLexer` applies the same offset arithmetic ONCE PER TOKEN in the
+    /// hole instead of once per byte before it, which is the same answer with
+    /// the file position taken out of the cost.
     ///
     /// Returns null when the text is not one whole expression. The CALLER
     /// decides what that means; it must not mean "quietly emit the braces".
@@ -5396,21 +5702,28 @@ pub const Parser = struct {
         const text = std.mem.trim(u8, raw, " \t\r\n");
         if (text.len == 0) return null;
 
-        // The buffer OUTLIVES this call on purpose. `parse_simple_expr` builds a
+        // The SEAT is the true position of `text[0]`, and that is not
+        // `hole_loc`: `hole_loc` is the `{`, the body starts one column right of
+        // it, and the trim above may have moved it further still. The padded
+        // form seated the body at the `{`'s own column and was one column short
+        // of the truth on every hole; walking the few skipped bytes here costs
+        // nothing and is exact.
+        var seat = hole_loc;
+        seat.col += 1; // step over `{`
+        const lead = @intFromPtr(text.ptr) - @intFromPtr(raw.ptr);
+        for (raw[0..lead]) |ch| source_cursor.advanceLoc(ch, &seat.line, &seat.col);
+
+        // `text` OUTLIVES this call on purpose. `parse_simple_expr` builds a
         // `.name` from `tok.text`, which is a slice INTO the source bytes, so a
         // scratch buffer freed here would leave every identifier in the hole
-        // pointing at reclaimed memory. It is owned by the parse arena instead.
-        var padded: std.ArrayList(u8) = .empty;
-        try padded.appendNTimes(self.alloc, '\n', hole_loc.line -| 1);
-        try padded.appendNTimes(self.alloc, ' ', hole_loc.col -| 1);
-        try padded.appendSlice(self.alloc, text);
-        const src = try padded.toOwnedSlice(self.alloc);
-
-        var sub = Lexer.initFamilyLaw(src, self.lex.cursor.file, self.lex.family, self.lex.source_law);
+        // pointing at reclaimed memory. It is a subslice of the decoded literal,
+        // which the parse arena owns.
+        var sub = Lexer.initFamilyLaw(text, self.lex.cursor.file, self.lex.family, self.lex.source_law);
         var p = Parser.init(&sub, self.alloc);
         p.idol_mode = self.idol_mode;
         p.ensureProducerPack() catch return null;
         defer p.releaseOwnedPack();
+        seatSubLexer(&sub, seat);
 
         const expr = p.parse_expr() catch return null;
         // The whole hole, or none of it. A hole that parses a PREFIX and leaves
@@ -9467,6 +9780,95 @@ test "parse: same-line void call then concat (F-13813-1)" {
     try testing.expect(tail.binop.op == .concat);
     try testing.expect(tail.binop.lhs.* == .string_lit);
     try testing.expectEqualStrings("ok: ", tail.binop.lhs.string_lit.val);
+}
+
+// `#` IS RETIRED AS A LENGTH OPERATOR, and this is the fixture that says so in
+// BOTH POSITIONS — which is the whole ruling, because the two positions is where
+// it came apart.
+//
+// The negative control is the second half and it is not optional: `#` is the
+// COMMENT OPENER in canonical source, so a refusal that convicts an ordinary
+// comment has replaced a silent wrong answer with a loud one. Remove the
+// `demandsOperand` guard and row 3 fails; remove the later-line guard and row 4
+// fails; remove the abutting-character guard and rows 5–8 fail.
+test "parse: `#` is refused in every position, and comments are not" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const refused = [_][]const u8{
+        "t = { 1, 2, 3 }\nn = #t\nprint(n)", // statement RHS — used to compile a DIFFERENT program
+        "t = { 1, 2, 3 }\nprint(#t)", // argument — used to die at `<eof>`
+        "t = { 1, 2, 3 }\nn = 1 + #t\nprint(n)", // binary operand
+        "t = { 1, 2, 3 }\nif #t < 1\n    n = 1", // condition
+        "t = { 1, 2, 3 }\nn = #@comp.fields(t)\nprint(n)", // the corpus shape
+    };
+    // The refusal, not the message: `term` has no capture hook, so the WORDING
+    // is pinned where a shell can read it — `gate/negative.sh` requires
+    // `examples/compile_fail/hash_length_comment.id` to be refused for
+    // `is not a length operator`, which is the same site as row 4 below.
+    for (refused) |src| {
+        if (parseDuoSource(src, &arena)) |_| {
+            return error.TestUnexpectedResult;
+        } else |err| switch (err) {
+            ParseError.UnexpectedToken, ParseError.ExpectedToken => {},
+            else => return err,
+        }
+    }
+
+    const admitted = [_][]const u8{
+        "n = 1 #note\nprint(n)", // 3: prev token ENDS an expression
+        "n = 1 + 2 #note\nprint(n)", // 4: the operand arrived on this line
+        "n = # note\n  2\nprint(n)", // 5: a space is a comment
+        "n = 1\n#note\nprint(n)", // 6: own-line comment
+        "n = 1\n#-------\nprint(n)", // 7: divider
+        "n = 1\nprint(\n  #note\n  n)", // 8: comment INSIDE a call, own line
+    };
+    for (admitted) |src| _ = try parseDuoSource(src, &arena);
+}
+
+// STR-1 — a hole's tokens carry the FILE's coordinates, and this is the fixture
+// that says so. It is the negative control for `seatSubLexer`, and it fails in
+// BOTH of the directions that matter:
+//
+//   * delete the seat entirely and every hole reports line 1 — the whole reason
+//     the padded form existed;
+//   * restore the padded form and the COLUMN is one short on every hole, because
+//     padding `col - 1` spaces seats the hole BODY at the `{`'s own column.
+//     Measured before this fixture existed: `"head{x + }tail"` on line 2002
+//     reported `2002:15` where the truth is `2002:16`.
+//
+// A hole at line 2002 is the point: a location carried as an OFFSET is exact at
+// any depth, so the fixture is deliberately deep enough that a fragment-local
+// line number could not be mistaken for the file's.
+test "parse: interpolation hole locations are the file's, not the fragment's" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(alloc, "x = 7\n");
+    for (0..2000) |_| try src.appendSlice(alloc, "# filler\n");
+    //                     1234567890123456789012
+    try src.appendSlice(alloc, "s = \"head{x}tail{  x }end\"\n");
+
+    const mod = try parseDuoSource(src.items, &arena);
+    const val = mod.body.stmts[mod.body.stmts.len - 1].assign.values[0];
+
+    // ("head" .. x) .. "tail") .. x) .. "end"
+    try testing.expect(val.* == .binop);
+    const second = val.binop.lhs.binop.rhs;
+    const first = val.binop.lhs.binop.lhs.binop.lhs.binop.rhs;
+
+    try testing.expectEqualStrings("x", first.name.ident);
+    try testing.expectEqual(@as(u32, 2002), first.loc().line);
+    try testing.expectEqual(@as(u32, 11), first.loc().col); // `{` is col 10
+
+    // The second hole is written `{  x }`: the seat is the body's true column,
+    // so the two leading spaces are STEPPED OVER rather than reported as part of
+    // the hole.
+    try testing.expectEqualStrings("x", second.name.ident);
+    try testing.expectEqual(@as(u32, 2002), second.loc().line);
+    try testing.expectEqual(@as(u32, 20), second.loc().col); // `{` is col 17
 }
 
 test "parse: string interpolation indexed holes" {

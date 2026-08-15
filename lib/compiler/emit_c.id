@@ -75,7 +75,7 @@ program: str = (expr: str)
   body = translate(expr)
   if body == ""
     return ""
-  "include:len() <stdio.h>\nint main(void) { printf(\"%lld\\n\", (long long)(" .. body .. ")); return 0; }\n"
+  "#include <stdio.h>\nint main(void) { printf(\"%lld\\n\", (long long)(" .. body .. ")); return 0; }\n"
 
 # Emit, compile and run; returns the value the emitted C computes.
 # `ok` is false when the subset does not cover the expression or the toolchain

@@ -3263,9 +3263,35 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // least one side must still be a str: two integers concatenated is a
         // shape this pass has never lowered, and claiming it here would let
         // `lowerConcat` produce text where the answer was never checked.
-        .binop => |bb| bb.op == .concat and
-            concatOperandOk(ctx, bb.lhs) and concatOperandOk(ctx, bb.rhs) and
-            (exprIsStr(ctx, bb.lhs) or exprIsStr(ctx, bb.rhs)),
+        // `and`/`or` SELECT A VALUE, they do not compute one, so the result is
+        // text exactly when every arm that can be selected is text. Without
+        // these two arms the value lowered CORRECTLY and was tagged `.i64`, and
+        // `lowerPrint` then chose `%lld` and printed the string's ADDRESS:
+        //
+        //     v = "set" or "FB"            print(v) -> 4304880776
+        //     v = c and "yes" or "no"      print(v) -> 4343350452
+        //
+        // Both are accepted by the native-scalar precheck, whose `expr_type`
+        // answers `.str` for the same two shapes (`codegen.zig`, the
+        // `.@"and"`/`.@"or"` arms) — so the precheck claimed the shape and the
+        // lowering disagreed, which is gap[034] (the precheck and the lowering
+        // must claim the SAME set) failing in its dangerous direction: not a
+        // refusal, a wrong answer that compiles and runs.
+        //
+        // The ternary `c and X or Y` needs its own case: it parses as
+        // `(c and X) or Y`, and the recursive rule asks whether `c and X` is
+        // text, which it is not — `c` is a bool. The reachable arms are X and
+        // Y, which is exactly the pair `codegen.expr_type` inspects.
+        .binop => |bb| switch (bb.op) {
+            .concat => concatOperandOk(ctx, bb.lhs) and concatOperandOk(ctx, bb.rhs) and
+                (exprIsStr(ctx, bb.lhs) or exprIsStr(ctx, bb.rhs)),
+            .@"or" => if (bb.lhs.* == .binop and bb.lhs.binop.op == .@"and")
+                exprIsStr(ctx, bb.lhs.binop.rhs) and exprIsStr(ctx, bb.rhs)
+            else
+                exprIsStr(ctx, bb.lhs) and exprIsStr(ctx, bb.rhs),
+            .@"and" => exprIsStr(ctx, bb.lhs) and exprIsStr(ctx, bb.rhs),
+            else => false,
+        },
         // Two producers of str, one arm. A producer the type tracker does not
         // know about breaks every consumer downstream, so both belong here:
         //   * a call to a function declared `: str` — without it,

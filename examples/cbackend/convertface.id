@@ -1,0 +1,48 @@
+# CONVERSION ALGEBRA: the two faces of a declared `to` edge that did not emit.
+#
+# `v:to(dest)(src)` SPELLS ITS SOURCE, and that is the whole point of the
+# second paren. The emitter only consulted the source-less path, which refuses
+# as soon as two descriptors admit a route — so `1.0:to(micron)(inch)` was
+# diagnosed "ambiguous conversion to micron: spell the source with :from"
+# WHILE SPELLING THE SOURCE. Worse, the diagnostic did not stop the run:
+# emission continued and put `duo_fatal(…)`, a `void` expression, into the
+# initializer of a value, so clang then added errors of its own on top of a
+# diagnosis that was already wrong. Two admitted sources are declared below
+# precisely so the source-less path cannot rescue this row.
+#
+# `for src, conv in to(dest)` is the enumeration face. Only the BRACKET
+# spelling `to[dest]` was recognised; the paren spelling fell through to the
+# generic iterator emit, which printed the family name as a bare C identifier
+# and clang answered "use of undeclared identifier 'to'". `[` as an accessor is
+# retired in this tree, so the only face a current program can write was the
+# one that did not work. Measured on three corpus files, under three different
+# family names: `to`, `eq` and `vector`.
+#
+# Computed by hand: one inch is 25400 micron. Two edges arrive at micron
+# (inch and milli), so the enumeration runs twice and `k` counts 2; `chars`
+# adds their spellings, 4 + 5 = 9.
+# expect: 25400 2 9
+# @corpus current
+grow: f64 = (v: f64)
+  v * 25400.0
+
+shrink: f64 = (v: f64)
+  v / 25400.0
+
+swell: f64 = (v: f64)
+  v * 1000.0
+
+to(micron)(inch) = grow@lossless
+to(inch)(micron) = shrink@lossless
+to(micron)(milli) = swell@lossless
+
+main: i64 = ()
+  m: f64 = 1.0:to(micron)(inch)
+  n: i64 = m:to(i64)
+  k: i64 = 0
+  chars: i64 = 0
+  for src, conv in to(micron)
+    k = k + 1
+    chars = chars + src:len()
+  print("{n} {k} {chars}")
+  0

@@ -141,6 +141,46 @@ fn envAnchor(func: *const ast.Expr) bool {
         std.mem.eql(u8, func.field.field, "env");
 }
 
+/// THE REMOVAL EDGE of the environment projection — `env:remove(k)`.
+///
+/// REMOVAL IS NOT AN ASSIGNMENT. `env(k) = v` is POSIX `setenv(k, v, 1)`;
+/// removal is `unsetenv(k)`, and the two have different observable results —
+/// `setenv(k, "", 1)` leaves the variable PRESENT and empty. Spelling removal
+/// as `env(k) = nil` would collapse that distinction at the exact place the
+/// read face already cannot express it (idol-native/docs/env-identity.md, the
+/// §17 fake-nil identity), making it unrecoverable rather than merely
+/// unobservable. `dnir_lower.lowerEnvStore` says this in its own header and
+/// then had no edge to point at; this is that edge.
+///
+/// `remove` IS NOT A NEW WORD. `subject_home.sequence_relations` already
+/// carries `tbl_("remove")`, and the corpus already spells removal
+/// `subject:remove(...)` — `path:remove()`, `trace_spans:remove(n)`. The
+/// environment table is a table; removing a key from it is that relation with
+/// the world's table as the SUBJECT.
+///
+/// AND IT TAKES NO NAME. `remove` is reachable only THROUGH a subject, so a
+/// user relation `remove(x)` — a bare application, a different node — is
+/// untouched, and the subject `env` is refused whenever the program binds it,
+/// by the same `bound` census every other bare member edge is refused by.
+///
+/// BOTH faces ask the binding question, and the anchored one asks it about the
+/// ANCHOR. A program that binds `os` owns that word too, so `os.env:remove(k)`
+/// on a user table named `os` is an ordinary receiver call and must stay one.
+/// The rewrite there would be a no-op today — `os.env` to `os.env` — but the
+/// guard belongs beside the recognizer rather than only in the lowering that
+/// happens to repeat it, or the next reader has to find both to know the rule.
+fn envRemovalSubject(obj: *const ast.Expr) bool {
+    const names = active_names orelse return false;
+    return switch (obj.*) {
+        // The anchored face, already canonical: `os.env:remove(k)`.
+        .field => |f| f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "os") and
+            std.mem.eql(u8, f.field, "env") and !names.bound.contains("os"),
+        // The bare face, admitted only where the program does not bind `env`.
+        .name => |n| std.mem.eql(u8, n.ident, "env") and !names.bound.contains("env"),
+        else => false,
+    };
+}
+
 /// The one node a world projection converges on — `os.args` / `os.env` — which
 /// already resolves end to end.
 fn worldTable(alloc: std.mem.Allocator, loc: ast.Loc, member: []const u8) !*ast.Expr {
@@ -210,6 +250,17 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
                     .obj = worldTable(alloc, mc.loc, "env") catch return,
                     .key = mc.args[0],
                 } };
+            } else if (mc.args.len == 1 and std.mem.eql(u8, mc.method, "remove") and
+                envRemovalSubject(mc.obj))
+            {
+                // `env:remove(k)` / `os.env:remove(k)` — the REMOVAL edge,
+                // converged onto the anchored subject so exactly one shape
+                // reaches lowering, the same convergence every other face of
+                // this projection gets. Only the SUBJECT is rewritten: the
+                // relation stays `remove`, because it already is one.
+                var call = mc;
+                call.obj = worldTable(alloc, mc.loc, "env") catch return;
+                expr.* = .{ .method_call = call };
             }
         },
         .table => |t| for (t.fields) |fld| switch (fld) {

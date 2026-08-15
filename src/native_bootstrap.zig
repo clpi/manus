@@ -26,8 +26,19 @@
 //!
 //! Ordinary module calls like `observe(41)` are NOT bootstrap. Checked lowering
 //! must consume graph application/relation/target ids — never callee spelling.
+//!
+//! NOTHING HERE IS DECIDED BY A DIRECTORY. It was, for four days, and
+//! `docs/transport.md` in the surface repo records what that cost. The short
+//! version: `gateTransport` returned true for any path under `gate/`, which set
+//! `require_graph_facts = false`, which made `dnir_lower.lowerSubjectCall` skip
+//! the CHECKED path even when the graph had published the fact — so
+//! `v:scale(7)` was refused in `gate/` and ran at the repo root, one directory
+//! apart, same bytes. The waiver is now REQUESTED BY THE FILE (see
+//! `gateTransport` below) and the request is part of the bytes, so every
+//! spelling of a path that names the same file gets the same law.
 const std = @import("std");
 const ast = @import("ast.zig");
+const subject_home = @import("subject_home.zig");
 const Expr = ast.Expr;
 
 pub fn receiverLooksStrish(obj: *const Expr) bool {
@@ -39,8 +50,31 @@ pub fn receiverLooksStrish(obj: *const Expr) bool {
     };
 }
 
+/// The injected TEST world reached on its own subject — `test:assert(c, m)`.
+///
+/// This is an application on a world, and it confers no reach that is not
+/// already conferred: `subject_home` injects the test world BY FILE STRUCTURE
+/// (`*_test.id`, `test_*`, `test/`), and sema refuses the same three lines in a
+/// file the world is not injected into — measured: "'assert' is neither a
+/// descriptor nor a callable". So by the time lowering sees this shape the file
+/// is a test file, and recognizing it here only stops `OccurrenceBridge`
+/// counting it as an unresolved fact. `dnir_lower.lowerTestRelation` already
+/// answered these calls unconditionally; the module-wide bail is what refused
+/// them, which is why `gate/injection_test.id` was the one file under `gate/`
+/// that the directory waiver was load-bearing for.
+///
+/// The roster comes from the world's own declaration, so an edge added there is
+/// recognized here with no edit — the mechanism `subject_home` exists to avoid
+/// duplicating.
+fn testWorldApplication(mc: anytype) bool {
+    if (mc.obj.* != .name) return false;
+    if (!std.mem.eql(u8, mc.obj.name.ident, "test")) return false;
+    return subject_home.homeProvides(.testing, mc.method);
+}
+
 fn methodApplication(expr: *const Expr) bool {
     const mc = expr.method_call;
+    if (testWorldApplication(mc)) return true;
     if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
         std.mem.eql(u8, mc.method, "read") and mc.args.len == 0)
     {
@@ -95,38 +129,107 @@ fn toApplication(expr: *const Expr) bool {
     };
 }
 
-fn inHome(path: []const u8, home: []const u8) bool {
-    if (std.mem.startsWith(u8, path, home)) return true;
-    if (std.mem.indexOf(u8, path, home)) |i| {
-        return i > 0 and path[i - 1] == '/';
+/// The exact text a module writes to REQUEST the graph-fact waiver.
+///
+/// Spelled as the directive it should become. When the parser learns
+/// `@bootstrap.waive(graph-facts)` for real, the text in every file that
+/// carries it does not change — only where this module reads it from.
+pub const waiver_request = "@bootstrap.waive(graph-facts)";
+
+/// How far into a file the request may appear. A waiver is a claim the reader
+/// of the file has to see, so it belongs in the header with everything else
+/// that governs the file. Buried at line 900 it is not a request, it is a
+/// hiding place, and this bound is what makes that distinction enforceable
+/// rather than a matter of style.
+const waiver_request_window = 4096;
+
+/// Does the module at `path` REQUEST to be lowered without graph application
+/// facts?
+///
+/// WHY THIS IS NOT A DIRECTORY ANY MORE. This predicate used to answer yes for
+/// anything under `gate/`, `scripts/ledger/`, `scripts/census/` or
+/// `scripts/proof/`, plus nine files named one by one. Nothing recorded who
+/// decided that or why; the whole list arrived in a commit whose message is
+/// about the lexer and does not mention this file. What it bought was real but
+/// small, and what it cost was a SECOND LANGUAGE in the directory this project
+/// keeps its executable rulings in: `require_graph_facts` was false there, and
+/// `dnir_lower.lowerSubjectCall` consults the graph's published application
+/// fact only when that flag is true — so subject-first application on a
+/// user-declared relation, the canonical face, was refused under `gate/` while
+/// the retired operand-first face ran. Measured, same bytes, one directory
+/// apart: `v:scale(7)` -> refused in `gate/`, 6 at the root.
+///
+/// Measured cost of the list itself, both trees, every file it covered: 86
+/// files, 52 of which compile at all, 12 of which the waiver was load-bearing
+/// for, 40 of which carried it for nothing. `docs/transport.md` has the rows.
+///
+/// A REQUEST, NOT AN INHERITANCE. The file that needs the waiver says so, in
+/// its own header, in one line. That line is a diff line: adding a waiver is
+/// now a reviewable edit to the file that takes it, and `gate/waive.sh`
+/// refuses any file that takes one without being on the ledger.
+///
+/// IDENTITY OF THE FILE, NOT SPELLING OF THE PATH — the same principle
+/// `lexer_bridge.corpusRelative` arrived at for the other path-dependent fork
+/// found this week ("Resolution, not string surgery... Identity of the FILE is
+/// the only thing all four spellings share"), taken one step further: the
+/// answer is read out of the file's own bytes, so there is no path spelling
+/// left to canonicalize. `gate/x.id`, `./gate/x.id`, the absolute path and a
+/// symlink to it all name one inode and therefore one answer, by construction
+/// rather than by test.
+///
+/// FAIL-SAFE DIRECTION. A path that cannot be opened answers NO, which means
+/// full graph-fact checking, which means a REFUSAL rather than a silent
+/// unchecked lowering. The unreadable case fails toward the strict law.
+///
+/// The name is kept for now because `semantic_graph`, `native_backend` and
+/// `main` call it and those files belong to other lanes; `docs/transport.md`
+/// carries the rename patch.
+pub fn gateTransport(path: []const u8) bool {
+    if (path.len == 0) return false;
+    var buf: [waiver_request_window]u8 = undefined;
+    const head = readHead(path, &buf) orelse return false;
+    return waiverRequestedIn(head);
+}
+
+/// True when `source` carries the request on a comment line of its own.
+///
+/// A COMMENT LINE, not a substring: `print("@bootstrap.waive(graph-facts)")` is
+/// a program printing a string and must not waive anything. Requiring the line
+/// to begin with `#` is what separates the two, and it is why this is a
+/// function with its own test rather than an `indexOf`.
+pub fn waiverRequestedIn(source: []const u8) bool {
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] != '#') continue;
+        const body = std.mem.trimStart(u8, line[1..], " \t");
+        if (std.mem.startsWith(u8, body, waiver_request)) return true;
     }
     return false;
 }
 
-fn named(path: []const u8, file: []const u8) bool {
-    return std.mem.eql(u8, path, file) or
-        (file.len < path.len and
-            std.mem.endsWith(u8, path, file) and
-            path[path.len - file.len - 1] == '/');
-}
-
-/// Gate and ledger transport modules may lower `print` without graph facts until
-/// the graph producer publishes host egress application ids (GAP-155 bridge).
-pub fn gateTransport(path: []const u8) bool {
-    if (inHome(path, "gate/") or
-        inHome(path, "scripts/ledger/") or
-        inHome(path, "scripts/census/") or
-        inHome(path, "scripts/proof/"))
-        return true;
-    return named(path, "scripts/agent_smoke.id") or
-        named(path, "scripts/public_safety_scan.id") or
-        named(path, "scripts/module_surface_gate.id") or
-        named(path, "scripts/luahost.id") or
-        named(path, "scripts/explain.id") or
-        named(path, "scripts/contract.id") or
-        named(path, "scripts/realize.id") or
-        named(path, "scripts/sim.id") or
-        named(path, "scripts/transform.id");
+/// The first `buf.len` bytes of `path`, or null if it cannot be read.
+///
+/// libc rather than `std.Io`: every other reader in this compiler is handed an
+/// `Io` and an allocator by its caller, and this predicate is called from three
+/// places that have neither. It reads a bounded prefix into the caller's
+/// buffer, so there is nothing to allocate and nothing to free.
+fn readHead(path: []const u8, buf: []u8) ?[]const u8 {
+    var z: [std.fs.max_path_bytes]u8 = undefined;
+    if (path.len == 0 or path.len >= z.len) return null;
+    @memcpy(z[0..path.len], path);
+    z[path.len] = 0;
+    const fd = std.c.open(z[0..path.len :0].ptr, .{ .ACCMODE = .RDONLY });
+    if (fd < 0) return null;
+    defer _ = std.c.close(fd);
+    var filled: usize = 0;
+    while (filled < buf.len) {
+        const n = std.c.read(fd, buf[filled..].ptr, buf.len - filled);
+        if (n < 0) return null;
+        if (n == 0) break;
+        filled += @intCast(n);
+    }
+    return buf[0..filled];
 }
 
 fn callApplication(expr: *const Expr) bool {
@@ -199,8 +302,24 @@ pub fn applicationExpr(expr: *const Expr) bool {
     return applicationExprInModule(expr, null);
 }
 
-/// Module-aware bootstrap recognition. `to(…)` inference stays gate-transport
-/// only; host egress is admitted everywhere.
+/// Bootstrap recognition. NO FACE HERE DEPENDS ON WHERE THE FILE LIVES.
+///
+/// `module_path` is still in the signature because `semantic_graph` passes it
+/// and that file belongs to another lane; it is no longer consulted, and
+/// `native_bootstrap: the face set does not depend on the module path` holds it
+/// to that.
+///
+/// WHY `to(…)` IS NO LONGER PATH-DEPENDENT — the same argument as `print`
+/// below, one step later. `subject:to(T)` was admitted only under the directory
+/// waiver, so `cap(cmd):to(i64)` in `scripts/agent_smoke.id` — a file `zig
+/// build test` runs — compiled because of the directory it sat in. The face is
+/// a CONVERSION, not a relation lookup, and the risk of admitting it everywhere
+/// is a module that declares its own relation named `to` having its call
+/// answered by the conversion instead. Measured across both trees: `:to(` is
+/// used 896 times and `to` is declared as a relation ZERO times, so that
+/// collision has no instance to protect. When it acquires one, the guard is the
+/// one `lowerCall` already uses for `print` — force the checked path when the
+/// graph published a fact — not a directory list.
 ///
 /// WHY `print` IS NO LONGER PATH-DEPENDENT. `stdout:write(text)` and `print(v)`
 /// are the SAME host egress — `dnir_lower` sends both to `lowerPrint`, and they
@@ -220,12 +339,9 @@ pub fn applicationExpr(expr: *const Expr) bool {
 /// sema publishes application facts for that call, and `dnir_lower` prefers
 /// published facts over this face (see `lowerCall`).
 pub fn applicationExprInModule(expr: *const Expr, module_path: ?[]const u8) bool {
+    _ = module_path;
     if (printApplication(expr)) return true;
-    if (module_path) |path| {
-        if (gateTransport(path)) {
-            if (toApplication(expr)) return true;
-        }
-    }
+    if (toApplication(expr)) return true;
     return switch (expr.*) {
         .method_call => methodApplication(expr),
         .call => callApplication(expr),
@@ -338,4 +454,149 @@ test "native_bootstrap: print is host egress in every module, not just gate tran
     try std.testing.expect(applicationExprInModule(print_expr.?, "native.id"));
     try std.testing.expect(applicationExprInModule(print_expr.?, "scripts/ledger/shc.id"));
     try std.testing.expect(applicationExprInModule(print_expr.?, null));
+}
+
+/// Parse `src` and hand back every call/method-call expression in `main`.
+fn facesOf(alloc: std.mem.Allocator, src: []const u8, file: []const u8) ![]const *const Expr {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var lex = Lexer.init(src, file);
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const module = try parser.parse_module();
+    var exprs: std.ArrayListUnmanaged(*const Expr) = .empty;
+    for (module.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        if (!std.mem.eql(u8, stmt.func_decl.path[0], "main")) continue;
+        try collectCallExprs(alloc, stmt.func_decl.func.body, &exprs);
+    }
+    return exprs.items;
+}
+
+test "native_bootstrap: the face set does not depend on the module path" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Every face this module recognizes, in one body, asked from four paths —
+    // one of which used to waive and three of which never did. A single
+    // disagreement here IS the fork this file was rewritten to remove.
+    const src =
+        \\main: i64 = ()
+        \\    print("x")
+        \\    stdin:read()
+        \\    stdout:write("hi")
+        \\    gatecap("echo 1")
+        \\    "12":to(i64)
+        \\    "abc":len()
+        \\    observe(41)
+        \\    0
+    ;
+    const paths = [_][]const u8{ "gate/probe.id", "probe.id", "./gate/probe.id", "/tmp/probe.id" };
+    for (try facesOf(alloc, src, "gate/probe.id")) |expr| {
+        const first = applicationExprInModule(expr, paths[0]);
+        for (paths[1..]) |p| {
+            try std.testing.expectEqual(first, applicationExprInModule(expr, p));
+        }
+        try std.testing.expectEqual(first, applicationExprInModule(expr, null));
+    }
+}
+
+test "native_bootstrap: the injected test world is a face, in any directory" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main: i64 = ()
+        \\    test:assert(1 == 1, "one")
+        \\    test:equal(1, 1, "one")
+        \\    other:assert(1 == 1, "one")
+        \\    0
+    ;
+    var seen: usize = 0;
+    for (try facesOf(alloc, src, "gate/injection_test.id")) |expr| {
+        if (expr.* != .method_call) continue;
+        const mc = expr.method_call;
+        if (mc.obj.* != .name) continue;
+        seen += 1;
+        // `test` is the world subject; `other` is an ordinary name that happens
+        // to spell one of the world's edges, and it must NOT be a face.
+        const want = std.mem.eql(u8, mc.obj.name.ident, "test");
+        try std.testing.expectEqual(want, applicationExprInModule(expr, "gate/injection_test.id"));
+        try std.testing.expectEqual(want, applicationExprInModule(expr, "injection_test.id"));
+    }
+    try std.testing.expectEqual(@as(usize, 3), seen);
+}
+
+test "native_bootstrap: the waiver is a request on a comment line, not a substring" {
+    // Asked for.
+    try std.testing.expect(waiverRequestedIn("# " ++ waiver_request ++ " — GAP-155\nmain: i64 = ()\n"));
+    try std.testing.expect(waiverRequestedIn("# header\n#" ++ waiver_request ++ "\n"));
+    try std.testing.expect(waiverRequestedIn("   #  " ++ waiver_request ++ "\r\n"));
+    // Not asked for. The third is the one that matters: a program that PRINTS
+    // the request has not made it, and an `indexOf` over the source would have
+    // said it had.
+    try std.testing.expect(!waiverRequestedIn("main: i64 = ()\n    0\n"));
+    try std.testing.expect(!waiverRequestedIn("# @bootstrap.waive(something-else)\n"));
+    try std.testing.expect(!waiverRequestedIn("main: i64 = ()\n    print(\"" ++ waiver_request ++ "\")\n"));
+    try std.testing.expect(!waiverRequestedIn("x = \"" ++ waiver_request ++ "\"\n"));
+}
+
+test "native_bootstrap: an unreadable path answers no, so it fails toward the strict law" {
+    // A waiver that cannot be read is not granted. The direction matters: the
+    // other direction turns a missing file into unchecked lowering.
+    try std.testing.expect(!gateTransport(""));
+    try std.testing.expect(!gateTransport("gate/"));
+    try std.testing.expect(!gateTransport("no/such/file/anywhere.id"));
+    var over_long: [std.fs.max_path_bytes + 8]u8 = undefined;
+    @memset(&over_long, 'a');
+    try std.testing.expect(!gateTransport(&over_long));
+}
+
+test "native_bootstrap: same bytes, every spelling — path, directory and symlink" {
+    // THE WHOLE RULING IN ONE TEST. Two files with the same name in two
+    // directories, one asking for the waiver and one not, then the asking one
+    // reached through four spellings and a symlink. The old predicate answered
+    // by directory and would fail the first pair; anything that answers by path
+    // spelling fails the second.
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "gate");
+
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "gate/quiet.id",
+        .data = "# an ordinary gate file\nmain: i64 = ()\n    0\n",
+    });
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "asking.id",
+        .data = "# asking.id\n# " ++ waiver_request ++ " — boundary-curried relation edges\nmain: i64 = ()\n    0\n",
+    });
+
+    var root_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const root = root_buf[0..try tmp.dir.realPath(io, &root_buf)];
+
+    var join: [std.fs.max_path_bytes]u8 = undefined;
+    const under_gate = try std.fmt.bufPrint(&join, "{s}/gate/quiet.id", .{root});
+    // Living under `gate/` is not a request. This is the line the old
+    // predicate got wrong, and it is the whole fork.
+    try std.testing.expect(!gateTransport(under_gate));
+
+    var join2: [std.fs.max_path_bytes]u8 = undefined;
+    const direct = try std.fmt.bufPrint(&join2, "{s}/asking.id", .{root});
+    try std.testing.expect(gateTransport(direct));
+
+    var join3: [std.fs.max_path_bytes]u8 = undefined;
+    const dotted = try std.fmt.bufPrint(&join3, "{s}/./asking.id", .{root});
+    try std.testing.expect(gateTransport(dotted));
+
+    var join4: [std.fs.max_path_bytes]u8 = undefined;
+    const round_trip = try std.fmt.bufPrint(&join4, "{s}/gate/../asking.id", .{root});
+    try std.testing.expect(gateTransport(round_trip));
+
+    // Through a symlink, and through one that lands INSIDE `gate/` — the
+    // spelling now says `gate/` and the answer must still come from the bytes.
+    try tmp.dir.symLink(io, "../asking.id", "gate/linked.id", .{});
+    var join5: [std.fs.max_path_bytes]u8 = undefined;
+    const linked = try std.fmt.bufPrint(&join5, "{s}/gate/linked.id", .{root});
+    try std.testing.expect(gateTransport(linked));
 }

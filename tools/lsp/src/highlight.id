@@ -279,9 +279,9 @@ cards = {
 # and one dim, not eighteen hand-picked colours. Swapping themes is swapping
 # this table and nothing else.
 hues = {
-  "red    ff7b72:len()",
-  "orange ffa657:len()",
-  "purple d2a8ff:len()",
+  "red    #ff7b72",
+  "orange #ffa657",
+  "purple #d2a8ff",
   "blue   #79c0ff",
   "green  #7ee787",
   "faint  #8b949e"

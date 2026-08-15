@@ -11,6 +11,30 @@ The constitution is structured law documentation, not executable source or a
 pattern library. Canonical implementation remains `.id`; `GAP-145` records the
 separate unclosed lexical and grammar projection.
 
+## The decomposition (read before writing Idol)
+
+> **A name is a SUBJECT and an EDGE.** The edge is the relation; the subject is
+> the value the relation is about. You write `subject:edge(rest)`.
+
+`strlen(s)` is wrong not because it appears on a list but because `len` is the
+edge and `s` is the subject, so it is `s:len()`. Every naming rule in this file
+is a consequence; learn the decomposition and the consequences stop needing
+recall, because the violating name does not occur to you. A rule list cannot do
+this — it is checked against a name you have already chosen, so its violations
+are by omission.
+
+The full statement and its four consequences are in `AGENTS.md` § "Read first —
+the decomposition". **The executable version is one command:**
+
+    cd ../idol-native && ./bin/idol run gate/subject.id   # agreement count IS the exit
+
+It places each canonical form beside the retired one it replaces and requires
+them to AGREE on every input, so it is simultaneously the lesson and its proof.
+Prefer it to this file wherever the two could disagree, and prefer running it to
+quoting it: **numbers live in the runner that checks them, never in prose.**
+Every rule this project recorded as an assertion has decayed — a sibling
+`AGENTS.md` asserted a gate exited 34 while it exited 42, in two places at once.
+
 ## Identity
 
 **Idol** is the language and project identity (`idol`, `.id`). Its sole semantic

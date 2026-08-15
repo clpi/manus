@@ -1,3 +1,11 @@
+# @bootstrap.waive(graph-facts) — this file reaches boundary-curried relation
+# edges: `audit__path` / `hit__path` / `len__path` declared here are invoked as
+# `path:audit(p)`, and `dnir_lower.tryLowerSubjectRelationEdgeCall` fuses that
+# pair only when graph facts are waived. The graph publishes no application id
+# for the fused edge, so without this request the file is refused with
+# `DNB011 unresolved-application-facts`. Measured — it is the ONLY thing this
+# file still needs the waiver for. Delete this line when the graph owns the
+# edge (GAP-155); `gate/waive.sh` in the surface repo pins the roster.
 len__path = (min: i64)
   path:read():len() >= min
 

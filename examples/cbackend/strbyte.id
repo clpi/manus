@@ -1,0 +1,31 @@
+# TEXT: `s(i)` on a `str` is the BYTE at `i`, zero-based.
+#
+# A table is 1-based — `docs/state.md` records `xs(0)` on a table as REFUSED —
+# and a `str` is 0-based, so the two indexings are different relations and the
+# emit may not borrow one base for the other. `examples/table/str/bytes.id`,
+# `str/end.id` and `str/invalid.id` each state one row of this; this file is
+# the same rule reached through a FUNCTION PARAMETER and through a receiver
+# that is a literal, which those three do not cover.
+#
+# Before the lowering existed the whole binding was discarded — `void* a = NULL`
+# — and the NULL reached `strlen`, so all three of those fixtures exited 139.
+# Where the name was also a module binding the same expression emitted a C
+# CALL of a `const char*` instead. One missing relation, two shapes of wreckage.
+#
+# Computed by hand: 'a' is 97, 'b' is 98, index 2 of a two-byte string is the
+# NUL terminator and reads 0, 'z' is 122, and "é" is the two bytes C3 A9.
+# expect: 97 98 0 122 195
+# @corpus current
+tail: i64 = (s: str)
+  s(s:len() - 1)
+
+lead: i64 = (s: str)
+  s(0)
+
+t = "ab"
+a = t(0)
+b = t(1)
+c = t(2)
+d = tail("xyz")
+e = lead("é")
+print("{a} {b} {c} {d} {e}")

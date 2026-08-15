@@ -1,0 +1,58 @@
+# @corpus current
+# REMOVAL IS A DIFFERENT EDGE — `env:remove(k)`, POSIX `unsetenv(k)`.
+#
+# `dnir_lower.lowerEnvStore` has said so in its own header since the store was
+# written: "REMOVAL is `unsetenv`, a different edge, and is deliberately not
+# spelled as an assignment." It had nowhere to point. This is that edge.
+#
+#     env:remove(k)        canonical — the subject-first face on the world's
+#                          own table, with the SUBJECT being the table
+#     os.env:remove(k)     lawful where an anchor disambiguates
+#     env(k) = nil         REFUSED — see examples/compile_fail/env_nil.id
+#
+# `remove` IS NOT A NEW WORD. It is already the language's table-removal
+# relation (`subject_home.sequence_relations` carries it) and the corpus
+# already spells removal `subject:remove(...)`. And it takes no name: `remove`
+# is reachable only THROUGH a subject, so a user relation `remove(x)` — a bare
+# application, a different node entirely — is untouched.
+#
+# WHY IT CANNOT BE AN ASSIGNMENT. `setenv(k, "", 1)` and `unsetenv(k)` have
+# different observable results, and this file is the proof: after the store the
+# variable is PRESENT and empty, and `or` does not take its fallback; after the
+# removal it is ABSENT, and `or` does. The read face alone cannot tell those
+# apart (the §17 fake-nil identity in idol-native/docs/env-identity.md), so
+# collapsing them at the write face would make the distinction unrecoverable
+# rather than merely unobservable.
+#
+#
+# CACHE NOTE, and it is not incidental. The compiler keys a build cache
+# (`/tmp/idol-cache-*`) on SOURCE TEXT, and with fifteen lanes compiling on one
+# machine an entry can be written by a compiler that no longer exists. While
+# this fixture was being measured, `gate/place.sh` alternated between the broken
+# and the fixed verdict across consecutive runs of the same script against the
+# same binary — the "fixed" readings were cache hits on artifacts built by a
+# patched compiler. `gate/place.sh` now gives every probe a per-run nonce for
+# exactly this reason; a corpus fixture cannot, so its ledger row in
+# `gate/expect.sh` is measured with the cache in whatever state it is in.
+# expect: 4
+
+main: i64 = ()
+    n = 0
+
+    env("IDOLREMOVE") = ""
+    if (env("IDOLREMOVE") or "ABSENT") == ""
+        n += 1
+
+    env:remove("IDOLREMOVE")
+    if (env("IDOLREMOVE") or "ABSENT") == "ABSENT"
+        n += 1
+
+    os.env("IDOLREMOVE") = "back"
+    if (env("IDOLREMOVE") or "ABSENT") == "back"
+        n += 1
+
+    os.env:remove("IDOLREMOVE")
+    if (env("IDOLREMOVE") or "ABSENT") == "ABSENT"
+        n += 1
+
+    n
