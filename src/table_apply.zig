@@ -150,7 +150,7 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
             normalizeExpr(alloc, c.func, type_map);
             for (c.args) |a| normalizeExpr(alloc, a, type_map);
             if (c.form == .parenthesized and c.args.len == 1 and
-                calleeIsArray(type_map, c.func))
+                (calleeIsArray(type_map, c.func) or nameIsPositionalTable(c.func)))
             {
                 expr.* = .{ .index = .{ .loc = c.loc, .obj = c.func, .key = c.args[0] } };
                 return;
@@ -236,9 +236,116 @@ fn normalizeStmt(alloc: std.mem.Allocator, stmt: *ast.Stmt, type_map: *const sem
     }
 }
 
+/// Names bound to a table literal whose fields are ALL positional — an
+/// array-style table — and never bound to anything callable.
+///
+/// WHY THIS EXISTS. Demagix rules that `a[i]` canonicalizes to `a(i)`, so `a(i)`
+/// is the spelling users are told to write. But `calleeIsArray` only converts
+/// when sema resolved the callee to `.array`, and a table literal like
+/// `xs = (10, 20, 30)` is typed `.any` at that point. The result was that the
+/// RETIRED spelling worked and the CANONICAL one was refused:
+///
+///     xs = (10, 20, 30)
+///     xs[2]   -> 20
+///     xs(2)   -> DNB011 unresolved-application-facts
+///
+/// Same shape as the `os.args` / `os.env` breakage: a recognizer keyed on
+/// `.index` while the ruling moved the surface to `.call`.
+///
+/// CONSERVATISM. A name qualifies only if it is bound to an all-positional table
+/// literal somewhere and bound to nothing callable anywhere. That is stricter
+/// than scope-accurate analysis and deliberately so: converting a genuine call
+/// into an index would be a silent wrong answer, whereas declining to convert
+/// leaves a diagnostic the user can read. Lua's `__call` is reachable only
+/// through the compatibility C backend (`codegen.zig`), never the direct one,
+/// so a qualifying table has no callable meaning to lose.
+const TableNames = struct {
+    positional: std.StringHashMap(void),
+    callable: std.StringHashMap(void),
+
+    fn qualifies(self: *const TableNames, name: []const u8) bool {
+        return self.positional.contains(name) and !self.callable.contains(name);
+    }
+};
+
+fn allPositional(e: *const ast.Expr) bool {
+    if (e.* != .table) return false;
+    if (e.table.fields.len == 0) return false;
+    for (e.table.fields) |f| if (f != .positional) return false;
+    return true;
+}
+
+fn collectNamesBlock(names: *TableNames, block: *const ast.Block) void {
+    for (block.stmts) |*stmt| collectNamesStmt(names, stmt);
+}
+
+fn collectNamesStmt(names: *TableNames, stmt: *const ast.Stmt) void {
+    switch (stmt.*) {
+        .local_decl => |ld| bindNames(names, ld.names, ld.inits),
+        .global_decl => |gd| bindNames(names, gd.names, gd.inits),
+        .assign => |as| for (as.targets, 0..) |t, i| {
+            if (t.* != .name or i >= as.values.len) continue;
+            note(names, t.name.ident, as.values[i]);
+        },
+        // A declared relation is callable by construction.
+        .func_decl => |*fd| {
+            if (fd.path.len > 0) names.callable.put(fd.path[0], {}) catch {};
+            collectNamesBlock(names, &fd.func.body);
+        },
+        .do_block => |*db| collectNamesBlock(names, &db.body),
+        .while_loop => |*wl| collectNamesBlock(names, &wl.body),
+        .repeat_loop => |*rl| collectNamesBlock(names, &rl.body),
+        .if_stmt => |*is| {
+            collectNamesBlock(names, &is.then);
+            for (is.elseifs) |*ei| collectNamesBlock(names, &ei.body);
+            if (is.else_body) |*eb| collectNamesBlock(names, eb);
+        },
+        .num_for => |*nf| collectNamesBlock(names, &nf.body),
+        .gen_for => |*gf| collectNamesBlock(names, &gf.body),
+        else => {},
+    }
+}
+
+fn bindNames(names: *TableNames, idents: []const ast.LocalName, inits: []const *ast.Expr) void {
+    for (idents, 0..) |n, i| {
+        if (i >= inits.len) continue;
+        note(names, n.ident, inits[i]);
+    }
+}
+
+fn note(names: *TableNames, name: []const u8, init: *const ast.Expr) void {
+    if (allPositional(init)) {
+        names.positional.put(name, {}) catch {};
+    } else {
+        // Anything else this name is ever bound to disqualifies it. A lambda is
+        // the case that matters; the rest is conservatism, not precision.
+        names.callable.put(name, {}) catch {};
+    }
+    if (init.* == .func_expr) collectNamesBlock(names, &init.func_expr.body);
+}
+
 /// Converge canonical `table(key)` onto the `[]` realization across the module,
 /// using sema's finalized type map. Runs after sema and before the native
 /// suitability precheck, graph lift, and native emit so all three see one face.
 pub fn normalizeModule(alloc: std.mem.Allocator, mod: *ast.Module, type_map: *const sema.TypeMap) void {
+    var names: TableNames = .{
+        .positional = std.StringHashMap(void).init(alloc),
+        .callable = std.StringHashMap(void).init(alloc),
+    };
+    defer names.positional.deinit();
+    defer names.callable.deinit();
+    collectNamesBlock(&names, &mod.body);
+    active_names = &names;
+    defer active_names = null;
     normalizeBlock(alloc, &mod.body, type_map);
+}
+
+/// Set for the duration of `normalizeModule`. The walker threads `alloc` and
+/// `type_map` positionally through a dozen functions; adding a third parameter
+/// to all of them to carry a read-only lookup earns nothing.
+var active_names: ?*const TableNames = null;
+
+fn nameIsPositionalTable(func: *const ast.Expr) bool {
+    const names = active_names orelse return false;
+    return func.* == .name and names.qualifies(func.name.ident);
 }
