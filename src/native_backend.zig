@@ -1286,7 +1286,16 @@ const Arm64Compiler = struct {
         try self.emitAsmHeader();
         if (m.functions.len == 0) return error.MissingMain;
         for (m.functions) |f| {
-            self.callee_save_plan = if (dnirNeedsCalleeSave(f)) self.probeCalleeSaveUse(f) else 0;
+            // `dnirNeedsCalleeSave` decides whether to MEASURE, and it is a census
+            // of DNIR names -- the same census `probeCalleeSaveUse`'s own comment
+            // says "is not a bound on it in either direction". The emitter's
+            // `ret_record` parallel move stages n field values into fresh scratch
+            // registers before committing them to x0..x7, a demand for ~2n
+            // registers that no census of names counts; at six fields the staging
+            // reaches x19 and the check below refuses a correct program. Measure
+            // every function: the probe already answers `callee_save_all` when it
+            // cannot compile, and a leaf that touches nothing still plans 0.
+            self.callee_save_plan = self.probeCalleeSaveUse(f);
             try self.compileDnirFunction(f);
             // The plan was measured, not guessed, so a body that reached outside
             // it means the measurement and the emission disagreed — and the
@@ -1926,7 +1935,47 @@ const Arm64Compiler = struct {
         return false;
     }
 
+    fn dnirDumpValue(v: dnir.Value) void {
+        switch (v) {
+            .void => std.debug.print("void", .{}),
+            .i64 => |x| std.debug.print("#{d}", .{x}),
+            .f64 => |x| std.debug.print("f{d}", .{x}),
+            .str => |s| std.debug.print("\"{s}\"", .{s}),
+            .local => |i| std.debug.print("L{d}", .{i}),
+            .temp => |i| std.debug.print("T{d}", .{i}),
+            .record => |i| std.debug.print("R{d}", .{i}),
+        }
+    }
+
+    fn dnirDumpFunction(f: dnir.Function) void {
+        std.debug.print("== DNIR {s}\n", .{f.name});
+        var idx: u32 = 0;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                std.debug.print("  [{d}] {s}", .{ idx, @tagName(ins.op) });
+                if (ins.op == .binop) std.debug.print(".{s}", .{@tagName(ins.binop)});
+                if (ins.op == .br) std.debug.print(".{s}->{d}", .{ @tagName(ins.branch_condition), ins.branch_target });
+                if (ins.result) |r| std.debug.print(" res={d}", .{r});
+                std.debug.print(" lhs=", .{});
+                dnirDumpValue(ins.lhs);
+                std.debug.print(" rhs=", .{});
+                dnirDumpValue(ins.rhs);
+                if (ins.callee.len != 0) std.debug.print(" callee={s}", .{ins.callee});
+                std.debug.print(" ty={s}\n", .{@tagName(ins.ty)});
+                idx += 1;
+            }
+        }
+    }
+
+    // TEMPORARY, this lane only: measurement kill-switches so before/after for
+    // R15 and W7 can be taken with ONE binary while other lanes move the tree
+    // under them. Removed before the lane closes.
+    var lane_no_ifconv: bool = false;
+    var lane_no_namedfuse: bool = false;
+
     fn compileDnirFunction(self: *Arm64Compiler, f: dnir.Function) Error!void {
+        lane_no_ifconv = std.c.getenv("IDOL_NO_IFCONV") != null;
+        lane_no_namedfuse = std.c.getenv("IDOL_NO_NAMEDFUSE") != null;
         self.cur_func_name = f.name;
         self.fp_locals.clearRetainingCapacity();
         self.fp_temps.clearRetainingCapacity();
@@ -1970,6 +2019,8 @@ const Arm64Compiler = struct {
         self.cur_func_float = f.is_float_kernel;
         self.cur_func_ret_float = f.ret == .f64 and !f.is_float_kernel;
         self.cur_func_ret = f.ret;
+
+        if (std.c.getenv("IDOL_DNIR_DUMP") != null) dnirDumpFunction(f);
 
         const offset: u32 = @intCast(self.code.items.len);
         const link_name = try linkerSymbolName(self.alloc, f.name);
@@ -2077,13 +2128,37 @@ const Arm64Compiler = struct {
                 if (f64RecordDesc(self.f64_records, ins.record) != null) has_f64_record = true;
             }
         }
+        // Does anything in this body address a record region under the FALLBACK
+        // base "rec"? `load_field` uses `req_alias` and falls back to "rec" when
+        // it is empty; `indirectResultBuffer` does the same with `.field`. Those
+        // are the only readers. A record LITERAL binding (dnir_lower.zig:4317,
+        // :4415) emits `init_record` with `.field` empty and keeps its fields in
+        // ordinary locals under `x.a`, so it reserves a region nothing can name.
+        // That region is not free: it costs `sub sp`/`add sp`, every table and
+        // GP-local offset is rebased around it, and a non-empty `fp_stack_slots`
+        // makes the mid-body spill path refuse outright.
+        var bare_rec_demand = false;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                switch (ins.op) {
+                    .load_field => if (ins.req_alias.len == 0) {
+                        bare_rec_demand = true;
+                    },
+                    .call_direct, .call_extern => if (ins.record.len > 0 and ins.field.len == 0) {
+                        bare_rec_demand = true;
+                    },
+                    else => {},
+                }
+            }
+        }
         if (!has_f64_record) {
             var record_frame: u16 = 0;
             for (f.blocks) |b| {
                 for (b.instrs) |ins| {
                     if (ins.record.len == 0) continue;
                     switch (ins.op) {
-                        .init_record, .call_direct, .call_extern => {},
+                        .init_record => if (ins.field.len == 0 and !bare_rec_demand) continue,
+                        .call_direct, .call_extern => {},
                         else => continue,
                     }
                     const rec = scalRecordDesc(self.scal_records, ins.record) orelse continue;
@@ -2328,6 +2403,21 @@ const Arm64Compiler = struct {
                             try pinned.put(self.alloc, slot, home);
                         }
                     } else {
+                        // A LEAF KEEPS ITS PARAMETER IN THE INCOMING REGISTER,
+                        // AND THAT REGISTER IS THEN LIVE FOR THE WHOLE BODY.
+                        // `pinned` stops the release paths from freeing it, but
+                        // `allocRegExcluding` does not read `pinned` -- when
+                        // x9..x28 are all busy it falls through to x0..x7 and asks
+                        // only `used_regs`. Nothing ever set `used_regs[x0]` here,
+                        // so the allocator handed out the live trip count: an
+                        // 8-field record literal in a `while` loop exhausted
+                        // x9..x28 on its fields, `s + x.a + x.h` was computed INTO
+                        // x0, and the back edge's `cmp i, x0` compared the
+                        // induction variable against the running sum. The loop ran
+                        // to signed overflow (~3e9 iterations, 3.8 s) and returned
+                        // a value INDEPENDENT OF ITS ARGUMENT. Claim it, and
+                        // exhaustion refuses instead.
+                        self.claimReg(arg_reg);
                         try temps.put(self.alloc, slot, arg_reg);
                         try pinned.put(self.alloc, slot, arg_reg);
                     }
@@ -2363,14 +2453,43 @@ const Arm64Compiler = struct {
                 // then consumed below with no bytes of its own.
                 const fuse_branch = ins.op == .binop and bi + 1 < b.instrs.len and
                     self.compareBranchFusible(ins, b.instrs[bi + 1], flat_idx);
+                // R15: the SAME compare, given a name. `c = a > b ; if c` puts a
+                // `store_local` between the two, which the adjacency test above
+                // cannot see past; `namedCompareBranchFusible` counts the name's
+                // readers instead and folds to the identical `cmp; b.cond`.
+                const fuse_named = !fuse_branch and !lane_no_namedfuse and ins.op == .binop and bi + 2 < b.instrs.len and
+                    self.namedCompareBranchFusible(f, ins, b.instrs[bi + 1], b.instrs[bi + 2], flat_idx);
                 // Peephole: fold `mul -> T ; add(T, c) -> D` into `madd D,a,b,c`
                 // when T's only reader is that add (FTCFTW debt (2)).
-                const fuse_madd = !fuse_branch and ins.op == .binop and bi + 1 < b.instrs.len and
+                const fuse_madd = !fuse_branch and !fuse_named and ins.op == .binop and bi + 1 < b.instrs.len and
                     self.mulAddFusible(ins, b.instrs[bi + 1], flat_idx);
-                if (fuse_branch) {
+                // W7: the whole one-sided `if` becomes `csel`, on top of
+                // whichever of the three condition shapes reached here.
+                const ifconv: ?IfConvPlan = if (lane_no_ifconv)
+                    null
+                else if (fuse_branch)
+                    self.ifConversionArm(f, b.instrs[bi + 1 ..], flat_idx + 1, ins, 1)
+                else if (fuse_named)
+                    self.ifConversionArm(f, b.instrs[bi + 2 ..], flat_idx + 2, ins, 2)
+                else if (ins.op == .br and ins.branch_condition != .unconditional)
+                    self.ifConversionArm(f, b.instrs[bi..], flat_idx, null, 0)
+                else
+                    null;
+                // DNIR instructions this iteration consumes BEYOND `ins`. Each
+                // one still gets a code offset below so branch targets resolve.
+                var extra_consumed: u32 = 0;
+                if (ifconv) |plan| {
+                    try self.emitIfConverted(&temps, &pinned, plan, &branch_patches);
+                    extra_consumed = plan.extra;
+                } else if (fuse_branch) {
                     try self.emitFusedCompareBranch(&temps, &pinned, ins, b.instrs[bi + 1], &branch_patches);
+                    extra_consumed = 1;
+                } else if (fuse_named) {
+                    try self.emitFusedCompareBranch(&temps, &pinned, ins, b.instrs[bi + 2], &branch_patches);
+                    extra_consumed = 2;
                 } else if (fuse_madd) {
                     try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1]);
+                    extra_consumed = 1;
                 } else {
                     try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches);
                 }
@@ -2450,12 +2569,15 @@ const Arm64Compiler = struct {
                     else => false,
                 };
                 flat_idx += 1;
-                if (fuse_branch or fuse_madd) {
-                    // The following instruction (a conditional `br` folded into
-                    // the compare, or the `add` folded into the `madd`) emitted
-                    // no bytes of its own. Consume it while preserving the
-                    // one-code-offset-per-instruction alignment that DNIR branch
-                    // targets resolve against.
+                var consumed: u32 = 0;
+                while (consumed < extra_consumed) : (consumed += 1) {
+                    // The following instructions (a conditional `br` folded into
+                    // the compare, the `add` folded into the `madd`, or the whole
+                    // arm of an if-converted `if`) emitted no bytes of their own.
+                    // Consume them while preserving the one-code-offset-per-
+                    // instruction alignment that DNIR branch targets resolve
+                    // against. Each recognizer has already proved that nothing
+                    // branches INTO the window it collapses.
                     bi += 1;
                     try code_offsets.append(self.alloc, @intCast(self.code.items.len));
                     self.sweepFpLive(flat_idx);
@@ -3009,9 +3131,17 @@ const Arm64Compiler = struct {
                         // literal whose fields already live in their own
                         // locals; copying eight argument registers over it
                         // would overwrite real data with call debris.
-                        if (rec.field_names.len <= dnir_lower.max_reg_record_fields) {
-                            const base = if (ins.field.len > 0) ins.field else "rec";
-                            try self.assignRecordFromAbiRegs(base, rec);
+                        //
+                        // NEITHER DID A NARROW LITERAL. `.field` is the fact, and it is
+                        // already in the IR: `lowerRecordCallAssign` (dnir_lower.zig:3484) is
+                        // the ONLY site that names the binding, and the only one that follows
+                        // a `call_direct` whose record result is really in x0..x7. The two
+                        // literal sites (:4317, :4415) leave `.field` empty and their fields
+                        // are already in their own locals under `x.a`, never under `rec.a`.
+                        // Copying the argument file over `rec.*` was n stores nothing can
+                        // load -- argc/argv/envp for `_main`, live call debris anywhere else.
+                        if (ins.field.len > 0 and rec.field_names.len <= dnir_lower.max_reg_record_fields) {
+                            try self.assignRecordFromAbiRegs(ins.field, rec);
                         }
                     } else return self.refuse(@src());
                 }
@@ -4898,6 +5028,22 @@ const Arm64Compiler = struct {
         try self.emitFmt(encodeCset(dst, cond), "cset x{d}, {s}", .{ dst, conditionName(cond) });
     }
 
+    /// `csel xd, xn, xm, cond` — `xd = cond ? xn : xm`.
+    ///
+    /// Nothing between the `cmp` that set the flags and this instruction may
+    /// write NZCV. `ensureRegLive` can only emit a reload (`ldr`), which does
+    /// not, so calling it here is safe; an emitter that could touch the flags
+    /// would not be.
+    fn emitCselReg(self: *Arm64Compiler, dst: u5, n: u5, m: u5, cond: Condition) Error!void {
+        try self.ensureRegLive(n);
+        try self.ensureRegLive(m);
+        try self.emitFmt(
+            encodeCsel(dst, n, m, cond),
+            "csel x{d}, x{d}, x{d}, {s}",
+            .{ dst, n, m, conditionName(cond) },
+        );
+    }
+
     /// Peephole precondition for folding `binop(cmp) -> T ; br when_x T` into a
     /// single `cmp; b.cond`. The stock lowering materializes the boolean with
     /// `cset` and then the branch re-tests it with `cmp T, #0` — four
@@ -4925,6 +5071,320 @@ const Arm64Compiler = struct {
         // keep the materialized boolean rather than erase a value still read.
         const last = self.value_free_at.get(t) orelse return false;
         return last == flat_idx + 1;
+    }
+
+    // ------------------------------------------------------------------
+    // R15 — A NAMED CONDITION IS THE SAME CONDITION.
+    //
+    // `compareBranchFusible` above states its precondition as "consumed by the
+    // IMMEDIATELY FOLLOWING conditional branch". That is a syntactic adjacency
+    // standing in for the fact it means — SINGLE READER, NO INTERVENING EFFECT
+    // — and the two come apart the moment the condition is given a name:
+    //
+    //     if a > b        ->  cmp ; b.le                    (2)
+    //     c = a > b       ->  cmp ; cset ; str ; ldr ; cmp ; b.eq   (6)
+    //     if c
+    //
+    // Measured on a 1e8-trip loop with identical answers: 1.26x instructions,
+    // 1.35x cycles (`docs/optimization-space.md` R15). The defect shape is the
+    // one this project has closed twice already — a fixed rule standing in for
+    // a fact — and the fact is available exactly: the DNIR of the whole
+    // function is in hand, so "read once, written once" can be COUNTED.
+    // ------------------------------------------------------------------
+
+    /// Reads of local slot `id` across the whole function, and `store_local`
+    /// writes to it. Counted rather than inferred: the naming store may only be
+    /// erased when this branch is the binding's ONLY reader.
+    fn dnirLocalUseCensus(f: dnir.Function, id: u32, reads: *u32, writes: *u32, read_at: *u32, write_at: *u32) void {
+        reads.* = 0;
+        writes.* = 0;
+        read_at.* = 0;
+        write_at.* = 0;
+        var idx: u32 = 0;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (dnirInstrReadsValue(ins, true, id)) {
+                    reads.* += 1;
+                    read_at.* = idx;
+                }
+                if (ins.op == .store_local and ins.result != null and ins.result.? == id) {
+                    writes.* += 1;
+                    write_at.* = idx;
+                }
+                idx += 1;
+            }
+        }
+    }
+
+    /// Does any branch in the function land strictly inside `[lo, hi]`? A fold
+    /// that erases instructions must not erase a landing site: every consumed
+    /// index collapses onto one code offset, so a branch INTO the window would
+    /// arrive somewhere the window never meant.
+    fn dnirBranchLandsWithin(f: dnir.Function, lo: u32, hi: u32) bool {
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.op != .br) continue;
+                if (ins.branch_target >= lo and ins.branch_target <= hi) return true;
+            }
+        }
+        return false;
+    }
+
+    /// Precondition for folding `binop(cmp) -> T ; store_local L <- T ;
+    /// br when_x L` into the same `cmp; b.cond` the unnamed form gets.
+    ///
+    /// Admissible only when, over the WHOLE function: `T`'s single reader is the
+    /// naming store, `L` is written exactly once (by that store) and read
+    /// exactly once (by this branch), and nothing branches into the two
+    /// instructions being erased. Then the stored boolean is dead the instant it
+    /// is written, and the name has no observer left to disagree with the flags.
+    ///
+    /// Where it stops: a binding read anywhere else — later in the body, on
+    /// another path, across a loop back edge — keeps its store, because the
+    /// value is then genuinely live and erasing it is the miscompile this repo
+    /// has already shipped once. `L`'s frame slot is still reserved either way,
+    /// so the frame layout does not move.
+    fn namedCompareBranchFusible(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        cmp_ins: dnir.Instr,
+        st: dnir.Instr,
+        br: dnir.Instr,
+        flat_idx: u32,
+    ) bool {
+        if (cmp_ins.op != .binop) return false;
+        if (comparisonCondition(cmp_ins.binop) == null) return false;
+        if (cmp_ins.ty == .f64) return false;
+        if (cmp_ins.application != null or cmp_ins.relation != null or cmp_ins.value != null) return false;
+        if (self.cur_func_float) return false;
+        if (self.valueIsFp(cmp_ins.lhs) or self.valueIsFp(cmp_ins.rhs)) return false;
+        const t = cmp_ins.result orelse return false;
+
+        if (st.op != .store_local) return false;
+        if (st.ty == .f64) return false;
+        // The naming store carries no application lineage of its own to lose.
+        if (st.application != null or st.relation != null or st.value != null) return false;
+        if (st.lhs != .temp or st.lhs.temp != t) return false;
+        const l = st.result orelse return false;
+
+        if (br.op != .br) return false;
+        switch (br.branch_condition) {
+            .when_true, .when_false => {},
+            .unconditional => return false,
+        }
+        if (br.lhs != .local or br.lhs.local != l) return false;
+
+        // The comparison result's only reader is the naming store.
+        const last = self.value_free_at.get(t) orelse return false;
+        if (last != flat_idx + 1) return false;
+
+        var reads: u32 = 0;
+        var writes: u32 = 0;
+        var read_at: u32 = 0;
+        var write_at: u32 = 0;
+        dnirLocalUseCensus(f, l, &reads, &writes, &read_at, &write_at);
+        if (reads != 1 or writes != 1) return false;
+        if (read_at != flat_idx + 2 or write_at != flat_idx + 1) return false;
+
+        if (dnirBranchLandsWithin(f, flat_idx + 1, flat_idx + 2)) return false;
+        return true;
+    }
+
+    // ------------------------------------------------------------------
+    // W7 — IF-CONVERSION.
+    //
+    // A one-sided `if` whose whole body assigns one pure value to one binding
+    // is a SELECT, and AArch64 has had the instruction all along: `csel`
+    // appears nowhere in this backend, yet `encodeCset` is already the same
+    // conditional-select family with `Rn`/`Rm` pinned to `xzr`.
+    //
+    // Measured worth, `docs/ftc.md` W7 written both ways by hand with identical
+    // answers over 0/1/7/1001/65535: 2.15x CYCLES on an unpredictable branch,
+    // where the instruction count barely moves. The whole difference is
+    // mispredicts — IPC doubles from 1.00 to 2.03.
+    //
+    // ADMISSION RULE, and it has two independent halves.
+    //
+    // SOUNDNESS. If-conversion executes the arm that the branch would have
+    // skipped, so anything the arm can do on a path it never took becomes real.
+    // Admitted: exactly one integer ALU `binop` from a closed whitelist —
+    // add, sub, mul, and, or, xor, shl, shr, and the six comparisons — feeding
+    // exactly one `store_local` of a scalar local. Everything else is refused,
+    // and the refusals are the point:
+    //   - `div`/`mod`: division is THE trapping arithmetic. This backend's
+    //     `sdiv` happens not to fault on zero today, which is precisely why it
+    //     must be excluded — the exclusion has to survive a future divide check.
+    //   - `load_index`/`store_index`: bounds-checked, and a check that fails
+    //     ends in `brk`. An out-of-range index in an untaken arm would become a
+    //     crash that did not exist.
+    //   - `load_field`/`store_field`/`str_len`/`alloc_slots`: memory that may
+    //     not be there on the untaken path.
+    //   - `call_direct`/`call_extern`/`print_value`/`hw_*`: effects, and a call
+    //     clobbers the flags between the compare and the select.
+    //   - f64 anywhere: `fcsel` is a different encoding and is not emitted here.
+    // The one store the arm does perform is made safe rather than forbidden:
+    // the select feeds it the binding's OWN CURRENT VALUE when the condition is
+    // false, so the write-back is a no-op on the path that used to skip it.
+    //
+    // PROFITABILITY, and it is a real boundary, not a formality. Converting
+    // pays for the arm on every iteration and saves a mispredict only when the
+    // branch is unpredictable. With the arm capped at ONE ALU op the trade is
+    // bounded on both sides: at most +3 executed instructions when the branch
+    // was never taken (~0.6 cycles at this stream's measured IPC of 4.74),
+    // against ~13 cycles per mispredict avoided. Break-even is a misprediction
+    // rate near 5%, so the conversion loses only on a branch predicted better
+    // than ~95% — and there it loses less than a cycle. A LONGER arm has no
+    // such bound: its cost grows with its length while the saving stays capped
+    // at one mispredict, which is why the cap is the rule and not a tuning knob.
+    // Idol has no edge-probability fact (`ApplicationFact.authority` is still
+    // unpopulated), so a profile-driven widening is a separate decision that
+    // needs a fact this compiler does not yet have.
+    // ------------------------------------------------------------------
+
+    const IfConvPlan = struct {
+        /// Comparison feeding the branch, when it is fusible into `cmp`.
+        cmp: ?dnir.Instr,
+        /// The conditional branch itself.
+        br: dnir.Instr,
+        /// The arm's single ALU operation.
+        op: dnir.Instr,
+        /// The arm's terminating `store_local`.
+        store: dnir.Instr,
+        /// DNIR instructions consumed AFTER the one the driver is holding.
+        extra: u32,
+    };
+
+    fn ifConvArmOpAdmissible(self: *const Arm64Compiler, ins: dnir.Instr) bool {
+        if (ins.op != .binop) return false;
+        if (ins.ty == .f64 or self.cur_func_float) return false;
+        if (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)) return false;
+        if (ins.application != null or ins.relation != null or ins.value != null) return false;
+        if (ins.result == null) return false;
+        return switch (ins.binop) {
+            .add, .sub, .mul, .band, .bor, .bxor, .shl, .shr => true,
+            .eq, .neq, .lt, .gt, .leq, .geq => true,
+            // Division is the trapping one. See the admission rule above.
+            .div, .mod => false,
+        };
+    }
+
+    /// Recognize `br when_x C -> J ; <one ALU op> ; store_local L ;
+    /// br unconditional -> J` with `J` the instruction just past the window.
+    ///
+    /// `at` is the flat index of `body[0]`; `body` is the remainder of the
+    /// current block starting there. Returns the plan, or null.
+    fn ifConversionArm(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        body: []const dnir.Instr,
+        at: u32,
+        cmp: ?dnir.Instr,
+        consumed_before: u32,
+    ) ?IfConvPlan {
+        if (body.len < 4) return null;
+        const br = body[0];
+        if (br.op != .br) return null;
+        switch (br.branch_condition) {
+            .when_true, .when_false => {},
+            .unconditional => return null,
+        }
+        const op = body[1];
+        if (!self.ifConvArmOpAdmissible(op)) return null;
+        const st = body[2];
+        if (st.op != .store_local) return null;
+        if (st.ty == .f64) return null;
+        if (st.application != null or st.relation != null or st.value != null) return null;
+        const t = op.result.?;
+        if (st.lhs != .temp or st.lhs.temp != t) return null;
+        const l = st.result orelse return null;
+        if (self.valueIsFp(.{ .local = l }) or self.valueIsFp(.{ .temp = t })) return null;
+        const join = body[3];
+        if (join.op != .br or join.branch_condition != .unconditional) return null;
+
+        // The join must be the instruction immediately past the window, and the
+        // conditional branch must go to the SAME place — otherwise there is an
+        // `else` arm this shape does not model.
+        const join_idx = at + 4;
+        if (join.branch_target != join_idx) return null;
+        if (br.branch_target != join_idx) return null;
+
+        // The arm's value has no reader outside the arm.
+        const last = self.value_free_at.get(t) orelse return null;
+        if (last != at + 2) return null;
+
+        // Nothing may branch into the arm.
+        if (dnirBranchLandsWithin(f, at + 1, at + 3)) return null;
+
+        return .{ .cmp = cmp, .br = br, .op = op, .store = st, .extra = consumed_before + 3 };
+    }
+
+    /// Emit the `csel` form of a recognized one-sided `if`.
+    ///
+    /// Emission ORDER is load-bearing. The flags are set last before the select
+    /// because the arm's own operation may write them (`emitCompareResult` is
+    /// `cmp` + `cset`), and the binding's old value is read first because a
+    /// reload between the compare and the select would be the same hazard. What
+    /// is left between `cmp` and `csel` is at most an `ldr` from
+    /// `ensureRegLive`, which does not touch NZCV.
+    fn emitIfConverted(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *std.AutoHashMapUnmanaged(u32, u5),
+        plan: IfConvPlan,
+        branch_patches: *std.ArrayList(DnirBranchPatch),
+    ) Error!void {
+        const l = plan.store.result.?;
+        const t = plan.op.result.?;
+
+        // (1) The binding's current value — the arm's "else".
+        const old = try self.evalDnirValue(temps, .{ .local = l });
+
+        // (2) The arm's operation, now unconditional. An accumulator update
+        //     (`a = a + k`) READS the same binding the select falls back to, so
+        //     that operand reuses the register already loaded rather than
+        //     emitting a second `ldr` of the same frame slot — which is what the
+        //     first version of this emitter did, and it is the redundant-reload
+        //     class this document measures at 8.9% of the program elsewhere.
+        const lhs_is_dest = plan.op.lhs == .local and plan.op.lhs.local == l;
+        const rhs_is_dest = plan.op.rhs == .local and plan.op.rhs.local == l;
+        const a = if (lhs_is_dest) old else try self.evalDnirValue(temps, plan.op.lhs);
+        const b = if (rhs_is_dest) old else try self.evalDnirValue(temps, plan.op.rhs);
+        const dst = try self.allocRegExcluding(old);
+        try self.emitCompareOrBinop(dst, a, b, plan.op.binop);
+        if (a != old and !Arm64Compiler.regIsPinned(pinned, a)) self.releaseReg(a);
+        if (b != old and !Arm64Compiler.regIsPinned(pinned, b)) self.releaseReg(b);
+
+        // (3) The condition. Nothing below this line may write the flags.
+        var arm_cond: Condition = undefined;
+        if (plan.cmp) |c| {
+            const clhs = try self.evalDnirValue(temps, c.lhs);
+            const crhs = try self.evalDnirValue(temps, c.rhs);
+            try self.emitCmpReg(clhs, crhs);
+            if (clhs != old and clhs != dst and !Arm64Compiler.regIsPinned(pinned, clhs)) self.releaseReg(clhs);
+            if (crhs != old and crhs != dst and !Arm64Compiler.regIsPinned(pinned, crhs)) self.releaseReg(crhs);
+            arm_cond = comparisonCondition(c.binop).?;
+        } else {
+            const cr = try self.evalDnirValue(temps, plan.br.lhs);
+            try self.emitCmpZero(cr);
+            if (cr != old and cr != dst and !Arm64Compiler.regIsPinned(pinned, cr)) self.releaseReg(cr);
+            arm_cond = .ne;
+        }
+        // `when_false -> join` skips the arm when the condition is FALSE, so the
+        // arm runs ON the condition; `when_true -> join` is its mirror.
+        if (plan.br.branch_condition == .when_true) arm_cond = invertCondition(arm_cond);
+
+        // (4) The select, in place of the branch.
+        try self.emitCselReg(dst, dst, old, arm_cond);
+        if (old != dst and !Arm64Compiler.regIsPinned(pinned, old)) self.releaseReg(old);
+
+        // (5) The write-back, through the ordinary `store_local` path so that a
+        //     register-homed local and a frame-homed one stay exactly as they
+        //     were — this fold changes WHAT is stored, never WHERE.
+        try temps.put(self.alloc, t, dst);
+        if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
+            self.gp_reg_owner[dst] = t;
+        }
+        try self.compileDnirInstr(temps, pinned, plan.store, branch_patches);
     }
 
     /// Peephole precondition for folding `mul -> T ; add(T, c) -> D` into a
@@ -5305,6 +5765,23 @@ fn conditionForCset(cond: Condition) Condition {
 fn encodeCset(dst: u5, cond: Condition) u32 {
     const CSINC_XZR_XZR: u32 = 0x9a9f07e0;
     return CSINC_XZR_XZR | (@as(u32, @intFromEnum(conditionForCset(cond))) << 12) | @as(u32, dst);
+}
+
+/// `CSEL Xd, Xn, Xm, cond` — `Xd = cond ? Xn : Xm`, no branch.
+///
+/// Same conditional-select family as `CSET` above and one bit away from it:
+/// `CSINC` sets bit 10, `CSEL` clears it. `0x9A800000 | Rm<<16 | cond<<12 |
+/// Rn<<5 | Rd`, and `encodeCset`'s own literal `0x9a9f07e0` is this base with
+/// `Rm = Rn = 31`, bit 10 set — which is the cross-check the unit test below
+/// runs rather than trusting either constant on its own.
+///
+/// The condition field must start at zero here for exactly the reason recorded
+/// above `encodeCset`: a pre-set bit ORs into the condition and corrupts every
+/// condition whose encoding has that bit clear.
+fn encodeCsel(dst: u5, n: u5, m: u5, cond: Condition) u32 {
+    const CSEL_BASE: u32 = 0x9a800000;
+    return CSEL_BASE | (@as(u32, m) << 16) |
+        (@as(u32, @intFromEnum(cond)) << 12) | (@as(u32, n) << 5) | @as(u32, dst);
 }
 
 fn conditionName(cond: Condition) []const u8 {
