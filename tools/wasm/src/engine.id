@@ -685,34 +685,60 @@ opname: str = (op: i64)
     i += 1
   "(unknown)"
 
+# -1 AS A NAME, AND WHY IT MAY NOT BE WRITTEN AS A LITERAL TAIL HERE.
+#
+# A function whose last statement is followed by a tail line that STARTS WITH
+# `-` has the two joined into one expression by this toolchain. `i += 1`
+# followed by a `-1` tail compiles to `i = (i + 0)`; `os.exit(70)` followed by a
+# `-1` tail compiles to `return lua_sub(lua_os_exit(70), 1)`. Both are silent.
+#
+# The first one cost the entire JIT. `cmp_cond` below is a linear scan whose
+# cursor is advanced by `i += 1` and whose miss value is `-1`, and its
+# increment therefore compiled to `+ 0` — an INFINITE LOOP, entered on the
+# first opcode that is not a comparison, i.e. on the first real body the
+# emitter ever walked. Measured: `alu_word`, the byte-identical function four
+# lines above it whose miss value is `0`, compiled correctly to `i = (i + 1)`.
+# One character of difference in the tail, one function that hangs.
+#
+# Minimal repro, for the compiler side (27 lines): two identical linear scans
+# ending `i += 1` / <tail>. tail `0` -> `i + 1`; tail `7` -> `i + 1`;
+# tail `-1` -> `i + 0`; tail `-2` -> `i + -1`. The tail literal is being
+# ADDED INTO the previous line's compound assignment, so the newline is not
+# terminating the statement.
+#
+# Naming the constant is what makes the tail start with a letter. Do not
+# inline these back to `-1`.
+DECLINED: i64 = -1
+NOCOND: i64 = -1
+
 # A guard inside an arm that DOES exist refused: operand-stack underflow, a
 # label/frame depth ceiling, a memory bound. The opcode is named because it
 # localises the refusal, not because the opcode is missing.
 bail: i64 = (op: i64, pos: i64)
   io.stderr:write("wasm: cannot execute opcode " .. op:to(str) .. " " .. opname(op) .. " at body offset " .. pos:to(str) .. " (unsupported operand shape, or an interpreter limit inside its arm)\n")
   os.exit(70)
-  -1
+  DECLINED
 
 # No arm at all. This is the ranked-worklist signal the old `-1` swallowed: a
 # corpus sweep now reports exactly which opcodes to implement next.
 bailop: i64 = (op: i64, pos: i64)
   io.stderr:write("wasm: unimplemented opcode " .. op:to(str) .. " " .. opname(op) .. " at body offset " .. pos:to(str) .. "\n")
   os.exit(70)
-  -1
+  DECLINED
 
 # `unreachable` is the MODULE trapping, which every conforming runtime does
 # too. It is not a gap in the engine and must not be counted as one.
 bailtrap: i64 = (pos: i64)
   io.stderr:write("wasm: wasm trap (unreachable) at body offset " .. pos:to(str) .. "\n")
   os.exit(71)
-  -1
+  DECLINED
 
 # The decoder gave up before any opcode was reached, so there is no opcode to
 # name # the module shape itself is what the engine cannot handle.
 bailshape: i64 = (why: str)
   io.stderr:write("wasm: cannot decode module (" .. why .. ")\n")
   os.exit(1)
-  -1
+  DECLINED
 
 # The JIT declines a whole body by returning -1, and `main` then runs the
 # interpreter without saying so. That is why `hot_big.wasm` could print a
@@ -729,7 +755,7 @@ jitbail: i64 = (why: str, op: i64, pos: i64)
     else
       io.stderr:write("wasm: jit declined -- " .. why .. "\n")
   end
-  -1
+  DECLINED
 
 # ── the JIT GATE, which is where the whole ARM64 emitter was lost ──────────
 #
@@ -3465,7 +3491,7 @@ cmp_cond: i64 = (op: i64)
     if row[1] == op
       return row[2]
     i += 1
-  -1
+  NOCOND
 
 # Local slot -> ARM64 register, and it depends on whether the body CALLS.
 #
@@ -3929,16 +3955,19 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
       jsv = jnf
     jsv += 1
   if jself < 0
-    # The offsets are IN the message. This refusal fired for every module in
-    # both corpora the first time the gate was ever opened, and "entry body is
-    # not in the code section" is not a claim anyone can check — the two walks
-    # that must agree are 300 lines apart and each computes its own offset.
+    # THE OFFSETS ARE IN THE MESSAGE, and they have to be. This refusal fired
+    # for every module in both corpora the first time the gate was ever opened,
+    # and "entry body is not in the code section" is not a claim anyone can
+    # check: the two walks that must agree are 300 lines apart and each computes
+    # its own offset. With the numbers printed it took one run to see `0 code
+    # bodies` — i.e. this walk had not found a code section at all — and one
+    # more to see that every `s:byte()` in this function was answering 0.
     jdbg: str = ""
     jdv: i64 = 0
     while jdv < jnf and jdv < 8
       jdbg = jdbg .. " " .. to(str)(mem.read_i64(jft, (jdv * 6) * 8))
       jdv += 1
-    return jitbail("entry body is not in the code section (entry offset " .. off:to(str) .. ", " .. jnf:to(str) .. " code bodies at:" .. jdbg .. ") [jco=" .. jco:to(str) .. " jty=" .. jty:to(str) .. " jfo=" .. jfo:to(str) .. " mlen=" .. mlen:to(str) .. "]", -1, pc)
+    return jitbail("entry body is not in the code section (entry offset " .. off:to(str) .. ", " .. jnf:to(str) .. " code bodies at:" .. jdbg .. ")", -1, pc)
 
   # ── ENTRY TRAMPOLINE ────────────────────────────────────────────────────
   # jitm.call2 enters at word 0 under the C ABI, so this is the one place that
@@ -3996,6 +4025,16 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
   cf: i64 = 0
   hwm: i64 = 0
   curfn: i64 = 0
+  # TERMINATION GUARD for the opcode walk below, counted across every queued
+  # body. The walk advances `pc` on every pass, so it cannot spin on a
+  # well-formed body — but it re-seats `pc`, `off` and `blen` from the inline
+  # stack and from ULEB immediates, and the first time it ever executed it did
+  # not come back. `n > 260000` above only catches a spin that EMITS; a decode
+  # loop that emits nothing is invisible to it and the process simply hangs,
+  # which for a runtime is worse than any wrong answer: there is nothing to
+  # difference and nothing to report. A refusal costs a fallback to the
+  # interpreter; a hang costs the run.
+  jspin: i64 = 0
 
   while jqh < jqn
     curfn = mem.read_i64(jq, jqh * 8)
@@ -4065,6 +4104,10 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
       ldep = mem.read_i64(inl_lds, inl_d * 8)
     op: i64 = s:byte(off + pc)
     pc += 1
+
+    jspin += 1
+    if jspin > 4000000
+      return jitbail("the emitter did not terminate (off=" .. off:to(str) .. " blen=" .. blen:to(str) .. " pc=" .. pc:to(str) .. " n=" .. n:to(str) .. " sp=" .. sp:to(str) .. " ldep=" .. ldep:to(str) .. " inl_d=" .. inl_d:to(str) .. " queue " .. jqh:to(str) .. "/" .. jqn:to(str) .. ")", op, pc)
 
     # Register budget: stack slots occupy w0..w8, locals w9..w16. Emitting
     # past either would silently alias a local, so refuse and let the caller
@@ -6088,7 +6131,32 @@ engine_main = ()
     code = jitm.alloc(1 << 20)
     tJ1 = os.clock()
     if code
-      words: i64 = jit_compile(bytes, boff, blen, code, nbytes)
+      # `raw`, NOT `bytes`, AND THE DIFFERENCE IS THE WHOLE MODULE.
+      #
+      # `jit_compile` takes the code buffer as an `any` parameter, and one
+      # non-scalar parameter is enough to make this toolchain route the call
+      # through `lua_invoke` instead of calling the C function directly. The
+      # boxing step is `lua_val_from_str(bytes)`, and `lua_val_from_str` sizes
+      # its argument with `strlen` — so a wasm image, whose FIRST BYTE IS 0x00,
+      # arrives at the callee as the EMPTY STRING. Measured: inside
+      # `jit_compile`, `s:byte(9)` answered 0 for a 70-byte module, the section
+      # walk found no code section, and every module in both corpora declined
+      # with "entry body is not in the code section" — the JIT's first act on
+      # being switched on for the first time was to read a module that was not
+      # there. Nothing said so; a truncated string has no error.
+      #
+      # `raw` is the UNTYPED binding `f:read("*a")` returned. It is already a
+      # length-carrying string value, so boxing it is the identity and the
+      # callee sees all `nbytes`. `bytes` is the same value re-annotated `str`,
+      # which is correct for `:byte()` here and fatal across a boxed call.
+      # `nbytes` is taken off `raw` for the mirror-image reason, ~60 lines up.
+      # Verified by value: `s:byte(9)`/`s:byte(10)` answer 1/5 through `raw`
+      # and 0/0 through `bytes`.
+      #
+      # `find_run_body` and `run_body` are handed `bytes` and are correct: their
+      # parameters are all native scalars, so those calls are direct and no
+      # re-interning happens. The trap is the boxed call, not the annotation.
+      words: i64 = jit_compile(raw, boff, blen, code, nbytes)
       # DUO_WASM_DUMP=<path>: write the emitted words as hex, one per line, for
       # disassembly. Diagnostic only; off unless the env var is set.
       dmp = os.getenv("DUO_WASM_DUMP")

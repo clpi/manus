@@ -164,7 +164,7 @@ main: i64 = ()
         math.geometry.vec2_new(1.0, 0.0):to(str)), "3")
 
     # encoding.ascii85 — ceiling of n/4 in 4-byte groups: 2*5 + 4.
-    check("ascii85.max_encoded_len", encoding.ascii85.max_encoded_8:len():to(str), "14")
+    check("ascii85.max_encoded_len", encoding.ascii85.max_encoded_len(8):to(str), "14")
 
     # timer — round-half-up.
     check("timer.round", timer.std_timer_round(2.6):to(str), "3")
