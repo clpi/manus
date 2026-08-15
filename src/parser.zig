@@ -1966,7 +1966,14 @@ pub const Parser = struct {
 
         // Parse variants until `end`
         var variants: std.ArrayList(ast.EnumVariant) = .empty;
+        // OFFSIDE CLOSES IT, like every other block. This ran until `kw_end`
+        // and nothing else, so an enum written without a terminator swallowed
+        // whatever followed. Same shape as the concept body: a variant sits
+        // right of the `enum` keyword, so anything at or left of it has closed
+        // the body.
         while ((try self.pk()).kind != .kw_end and (try self.pk()).kind != .eof) {
+            const probe = try self.pk();
+            if (self.idol_mode and probe.loc.line != l.line and probe.loc.col <= l.col) break;
             const vname = try self.expect(.name);
 
             // Optional payload: (name: Type, name: Type, ...)
@@ -1988,7 +1995,7 @@ pub const Parser = struct {
                 .payload = payload,
             });
         }
-        _ = try self.expect(.kw_end);
+        _ = try self.eat(.kw_end); // accepted and deleted; the body may have closed by dedent
 
         const variant_slice = try variants.toOwnedSlice(self.alloc);
         debug_trace.event(.parse, .enum_type, "enum {s} ({d} variants)", .{ nm.text, variant_slice.len });

@@ -13,249 +13,233 @@
 # ═══════════════════════════════════════════════════════════════════════
 
 enum Value
-    I32(i64)
-    I64(i64)
-    F32(f64)
-    F64(f64)
-    V128(i64, i64)
-    Ref(i64)
-end
+  I32(i64)
+  I64(i64)
+  F32(f64)
+  F64(f64)
+  V128(i64, i64)
+  Ref(i64)
 
 # ═══════════════════════════════════════════════════════════════════════
 # Opcode constants (subset — full WASM has ~500)
 # ═══════════════════════════════════════════════════════════════════════
 
-global OP_UNREACHABLE: i64 = 0x00
-global OP_NOP: i64 = 0x01
-global OP_BLOCK: i64 = 0x02
-global OP_LOOP: i64 = 0x03
-global OP_IF: i64 = 0x04
-global OP_ELSE: i64 = 0x05
-global OP_END: i64 = 0x0B
-global OP_BR: i64 = 0x0C
-global OP_BR_IF: i64 = 0x0D
-global OP_RETURN: i64 = 0x0F
-global OP_CALL: i64 = 0x10
-global OP_DROP: i64 = 0x1A
-global OP_SELECT: i64 = 0x1B
-global OP_LOCAL_GET: i64 = 0x20
-global OP_LOCAL_SET: i64 = 0x21
-global OP_LOCAL_TEE: i64 = 0x22
-global OP_I32_CONST: i64 = 0x41
-global OP_I64_CONST: i64 = 0x42
-global OP_F32_CONST: i64 = 0x43
-global OP_F64_CONST: i64 = 0x44
-global OP_I32_ADD: i64 = 0x6A
-global OP_I32_SUB: i64 = 0x6B
-global OP_I32_MUL: i64 = 0x6C
-global OP_I32_DIV_S: i64 = 0x6D
-global OP_I32_REM_S: i64 = 0x6F
-global OP_I32_AND: i64 = 0x71
-global OP_I32_OR: i64 = 0x72
-global OP_I32_XOR: i64 = 0x73
-global OP_I32_SHL: i64 = 0x74
-global OP_I32_SHR_S: i64 = 0x75
-global OP_I32_SHR_U: i64 = 0x76
-global OP_I32_ROTL: i64 = 0x77
-global OP_I32_ROTR: i64 = 0x78
-global OP_I32_CLZ: i64 = 0x67
-global OP_I32_CTZ: i64 = 0x68
-global OP_I32_POPCNT: i64 = 0x69
-global OP_I32_EQZ: i64 = 0x45
-global OP_I32_EQ: i64 = 0x46
-global OP_I32_NE: i64 = 0x47
-global OP_I32_LT_S: i64 = 0x48
-global OP_I32_GT_S: i64 = 0x4A
-global OP_I32_LE_S: i64 = 0x4C
-global OP_I32_GE_S: i64 = 0x4E
+global OP_UNREACHABLE: i64 = 0
+global OP_NOP: i64 = 1
+global OP_BLOCK: i64 = 2
+global OP_LOOP: i64 = 3
+global OP_IF: i64 = 4
+global OP_ELSE: i64 = 5
+global OP_END: i64 = 11
+global OP_BR: i64 = 12
+global OP_BR_IF: i64 = 13
+global OP_RETURN: i64 = 15
+global OP_CALL: i64 = 16
+global OP_DROP: i64 = 26
+global OP_SELECT: i64 = 27
+global OP_LOCAL_GET: i64 = 32
+global OP_LOCAL_SET: i64 = 33
+global OP_LOCAL_TEE: i64 = 34
+global OP_I32_CONST: i64 = 65
+global OP_I64_CONST: i64 = 66
+global OP_F32_CONST: i64 = 67
+global OP_F64_CONST: i64 = 68
+global OP_I32_ADD: i64 = 106
+global OP_I32_SUB: i64 = 107
+global OP_I32_MUL: i64 = 108
+global OP_I32_DIV_S: i64 = 109
+global OP_I32_REM_S: i64 = 111
+global OP_I32_AND: i64 = 113
+global OP_I32_OR: i64 = 114
+global OP_I32_XOR: i64 = 115
+global OP_I32_SHL: i64 = 116
+global OP_I32_SHR_S: i64 = 117
+global OP_I32_SHR_U: i64 = 118
+global OP_I32_ROTL: i64 = 119
+global OP_I32_ROTR: i64 = 120
+global OP_I32_CLZ: i64 = 103
+global OP_I32_CTZ: i64 = 104
+global OP_I32_POPCNT: i64 = 105
+global OP_I32_EQZ: i64 = 69
+global OP_I32_EQ: i64 = 70
+global OP_I32_NE: i64 = 71
+global OP_I32_LT_S: i64 = 72
+global OP_I32_GT_S: i64 = 74
+global OP_I32_LE_S: i64 = 76
+global OP_I32_GE_S: i64 = 78
 
 # ═══════════════════════════════════════════════════════════════════════
 # Binary reader (LEB128 decoding for WASM bytecode)
 # ═══════════════════════════════════════════════════════════════════════
 
 --- @inline
-read_u8(bytecode, pc: i64): i64
-    return bytecode[pc]
-end
+read_u8: i64 = (bytecode, pc: i64)
+  return bytecode[pc]
 
 --- @inline
-read_leb128_u32(bytecode, pc: i64): i64
-    result: i64 = 0
-    shift: i64 = 0
-    b: i64 = 0
-    pos: i64 = pc
-    for i = 0, 4
-        b = bytecode[pos]
-        pos += 1
-        result = result | ((b & 0x7F) << shift)
-        if (b & 0x80) == 0
-            return result
-        end
-        shift += 7
-    end
-    return result
-end
+read_leb128_u32: i64 = (bytecode, pc: i64)
+  result: i64 = 0
+  shift: i64 = 0
+  b: i64 = 0
+  pos: i64 = pc
+  for i = 0, 4
+    b = bytecode[pos]
+    pos = pos + 1
+    result = result | (b & 127) << shift
+    if b & 128 == 0
+      return result
+    shift = shift + 7
+  return result
 
 --- @inline
-read_leb128_i32(bytecode, pc: i64): i64
-    result: i64 = 0
-    shift: i64 = 0
-    b: i64 = 0
-    pos: i64 = pc
-    for i = 0, 4
-        b = bytecode[pos]
-        pos += 1
-        result = result | ((b & 0x7F) << shift)
-        shift += 7
-        if (b & 0x80) == 0
-            # Sign extend
-            if shift < 32 and (b & 0x40) != 0
-                result = result | ((-1) << shift)
-            end
-            return result
-        end
-    end
-    return result
-end
+read_leb128_i32: i64 = (bytecode, pc: i64)
+  result: i64 = 0
+  shift: i64 = 0
+  b: i64 = 0
+  pos: i64 = pc
+  for i = 0, 4
+    b = bytecode[pos]
+    pos = pos + 1
+    result = result | (b & 127) << shift
+    shift = shift + 7
+    if b & 128 == 0
+      # Sign extend
+      if shift < 32 and b & 64 != 0
+        result = result | -1 << shift
+      return result
+  return result
 
 # ═══════════════════════════════════════════════════════════════════════
 # Stack operations (hot path — must be fast)
 # ═══════════════════════════════════════════════════════════════════════
 
 --- @inline
-stack_push_i32(stack, sp: i64, val: i64): i64
-    stack[sp] = val
-    return sp + 1
-end
+stack_push_i32: i64 = (stack, sp: i64, val: i64)
+  stack[sp] = val
+  return sp + 1
 
 --- @inline
-stack_pop_i32(stack, sp: i64): i64
-    return sp - 1
-end
+stack_pop_i32: i64 = (stack, sp: i64)
+  return sp - 1
 
 --- @inline
-stack_peek_i32(stack, sp: i64): i64
-    return stack[sp - 1]
-end
+stack_peek_i32: i64 = (stack, sp: i64)
+  return stack[sp - 1]
 
 # ═══════════════════════════════════════════════════════════════════════
 # Interpreter dispatch loop (core hot loop)
 # ═══════════════════════════════════════════════════════════════════════
 
 --- @hot
-execute(bytecode, pc: i64, stack, sp: i64, locals): i64
-    running: bool = true
-    while running
-        op: i64 = bytecode[pc]
-        pc += 1
+execute: i64 = (bytecode, pc: i64, stack, sp: i64, locals)
+  running: bool = true
+  while running
+    op: i64 = bytecode[pc]
+    pc = pc + 1
 
-        if op == OP_NOP
-            # no-op
-        elseif op == OP_I32_CONST
-            val: i64 = read_leb128_i32(bytecode, pc)
-            pc += 1 # simplified: actual LEB128 advances variable bytes
-            sp = stack_push_i32(stack, sp, val)
-        elseif op == OP_I32_ADD
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = (a + b) & 0xFFFFFFFF
-        elseif op == OP_I32_SUB
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = (a - b) & 0xFFFFFFFF
-        elseif op == OP_I32_MUL
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = (a * b) & 0xFFFFFFFF
-        elseif op == OP_I32_AND
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = a & b
-        elseif op == OP_I32_OR
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = a | b
-        elseif op == OP_I32_XOR
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = a ~ b
-        elseif op == OP_I32_SHL
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = (a << (b & 31)) & 0xFFFFFFFF
-        elseif op == OP_I32_SHR_U
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = a >> (b & 31)
-        elseif op == OP_I32_CLZ
-            a: i64 = stack[sp - 1]
-            stack[sp - 1] = @clz(a) - 32 # adjust for 64-bit clz
-        elseif op == OP_I32_CTZ
-            a: i64 = stack[sp - 1]
-            if a == 0
-                stack[sp - 1] = 32
-            else
-                stack[sp - 1] = @ctz(a)
-            end
-        elseif op == OP_I32_POPCNT
-            a: i64 = stack[sp - 1]
-            stack[sp - 1] = @popcount(a & 0xFFFFFFFF)
-        elseif op == OP_I32_ROTL
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = @rotl(a & 0xFFFFFFFF, b & 31)
-        elseif op == OP_I32_ROTR
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            stack[sp - 1] = @comp.bit.rotr(a & 0xFFFFFFFF, b & 31)
-        elseif op == OP_I32_EQZ
-            a: i64 = stack[sp - 1]
-            if a == 0
-                stack[sp - 1] = 1
-            else
-                stack[sp - 1] = 0
-            end
-        elseif op == OP_I32_EQ
-            b: i64 = stack[sp - 1]
-            a: i64 = stack[sp - 2]
-            sp -= 1
-            if a == b
-                stack[sp - 1] = 1
-            else
-                stack[sp - 1] = 0
-            end
-        elseif op == OP_LOCAL_GET
-            idx: i64 = read_leb128_u32(bytecode, pc)
-            pc += 1
-            sp = stack_push_i32(stack, sp, locals[idx + 1])
-        elseif op == OP_LOCAL_SET
-            idx: i64 = read_leb128_u32(bytecode, pc)
-            pc += 1
-            sp -= 1
-            locals[idx + 1] = stack[sp]
-        elseif op == OP_DROP
-            sp -= 1
-        elseif op == OP_RETURN
-            running = false
-        elseif op == OP_END
-            running = false
-        else
-            # Unknown opcode
-            running = false
-        end
-    end
-    return sp
-end
+    if op == OP_NOP
+    else(op == OP_I32_CONST)
+      # no-op
+      val: i64 = read_leb128_i32(bytecode, pc)
+      # simplified: actual LEB128 advances variable bytes
+      pc = pc + 1
+      sp = stack_push_i32(stack, sp, val)
+    else(op == OP_I32_ADD)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = (a + b) & 4294967295
+    else(op == OP_I32_SUB)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = (a - b) & 4294967295
+    else(op == OP_I32_MUL)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = a * b & 4294967295
+    else(op == OP_I32_AND)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = a & b
+    else(op == OP_I32_OR)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = a | b
+    else(op == OP_I32_XOR)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = a ~ b
+    else(op == OP_I32_SHL)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = a << (b & 31) & 4294967295
+    else(op == OP_I32_SHR_U)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = a >> (b & 31)
+    else(op == OP_I32_CLZ)
+      a: i64 = stack[sp - 1]
+      # adjust for 64-bit clz
+      stack[sp - 1] = @clz(a) - 32
+    else(op == OP_I32_CTZ)
+      a: i64 = stack[sp - 1]
+      if a == 0
+        stack[sp - 1] = 32
+      else
+        stack[sp - 1] = @ctz(a)
+    else(op == OP_I32_POPCNT)
+      a: i64 = stack[sp - 1]
+      stack[sp - 1] = @popcount(a & 4294967295)
+    else(op == OP_I32_ROTL)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = @rotl(a & 4294967295, b & 31)
+    else(op == OP_I32_ROTR)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      stack[sp - 1] = @comp.bit.rotr(a & 4294967295, b & 31)
+    else(op == OP_I32_EQZ)
+      a: i64 = stack[sp - 1]
+      if a == 0
+        stack[sp - 1] = 1
+      else
+        stack[sp - 1] = 0
+    else(op == OP_I32_EQ)
+      b: i64 = stack[sp - 1]
+      a: i64 = stack[sp - 2]
+      sp = sp - 1
+      if a == b
+        stack[sp - 1] = 1
+      else
+        stack[sp - 1] = 0
+    else(op == OP_LOCAL_GET)
+      idx: i64 = read_leb128_u32(bytecode, pc)
+      pc = pc + 1
+      sp = stack_push_i32(stack, sp, locals[idx + 1])
+    else(op == OP_LOCAL_SET)
+      idx: i64 = read_leb128_u32(bytecode, pc)
+      pc = pc + 1
+      sp = sp - 1
+      locals[idx + 1] = stack[sp]
+    else(op == OP_DROP)
+      sp = sp - 1
+    else(op == OP_RETURN)
+      running = false
+    else(op == OP_END)
+      running = false
+    else
+      # Unknown opcode
+      running = false
+  return sp
 
 # ═══════════════════════════════════════════════════════════════════════
 # Test: simple computation (3 + 4) * 2
@@ -263,18 +247,20 @@ end
 
 # Bytecode: i32.const 3, i32.const 4, i32.add, i32.const 2, i32.mul, end
 bytecode = {
-    OP_I32_CONST, 3,
-    OP_I32_CONST, 4,
-    OP_I32_ADD,
-    OP_I32_CONST, 2,
-    OP_I32_MUL,
-    OP_END
+  OP_I32_CONST,
+  3,
+  OP_I32_CONST,
+  4,
+  OP_I32_ADD,
+  OP_I32_CONST,
+  2,
+  OP_I32_MUL,
+  OP_END
 }
 
 stack = {}
 for i = 1, 256
-    stack[i] = 0
-end
+  stack[i] = 0
 
 locals = {}
 
@@ -284,9 +270,10 @@ print("(3 + 4) * 2 = " .. to(str)(result))
 
 # Test bit ops
 bytecode2 = {
-    OP_I32_CONST, 255,
-    OP_I32_POPCNT,
-    OP_END
+  OP_I32_CONST,
+  255,
+  OP_I32_POPCNT,
+  OP_END
 }
 sp = execute(bytecode2, 1, stack, 1, locals)
 print("popcnt(255) = " .. to(str)(stack[1]))
