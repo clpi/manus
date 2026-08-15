@@ -705,6 +705,23 @@ pub const Lexer = struct {
                     if (i < raw.len and raw[i] == '\n') i += 1;
                 },
                 '\n' => i += 1,
+                // `\ddd` — up to three DECIMAL digits, one byte. Without this
+                // case `\0` fell to the fallback below, which drops the
+                // backslash and keeps the digit, so `"a\0b"` decoded to the
+                // bytes `a`, `0`, `b`. Both are 3 bytes long, so every
+                // length-based assertion over such a string kept passing while
+                // the NUL it was checking had quietly become an ASCII zero.
+                '0'...'9' => {
+                    var value: u32 = 0;
+                    var digits: u8 = 0;
+                    while (i < raw.len and digits < 3 and std.ascii.isDigit(raw[i])) {
+                        value = value * 10 + (raw[i] - '0');
+                        digits += 1;
+                        i += 1;
+                    }
+                    if (value > 255) return LexError.InvalidEscape;
+                    try out.append(alloc, @intCast(value));
+                },
                 else => {
                     try out.append(alloc, raw[i]);
                     i += 1;
@@ -1555,6 +1572,26 @@ test "decode_lua_short_string: empty string" {
     const result = try Lexer.decode_lua_short_string(testing.allocator, "");
     defer testing.allocator.free(result);
     try testing.expectEqualStrings("", result);
+}
+
+test "decode_lua_short_string: decimal escapes \\0 and \\65" {
+    // There was no decimal-escape case at all, so `\0` fell through to the
+    // "unknown escape" fallback, which DROPS the backslash and keeps the
+    // digit: `"a\0b"` decoded to the three bytes `a`, `0`, `b`. The length is
+    // 3 either way, so every `#s`-based assertion in the corpus kept passing
+    // while the NUL it was testing had silently become an ASCII zero.
+    const nul = try Lexer.decode_lua_short_string(testing.allocator, "a\\0b");
+    defer testing.allocator.free(nul);
+    try testing.expectEqualStrings(&[_]u8{ 'a', 0, 'b' }, nul);
+
+    const cap_a = try Lexer.decode_lua_short_string(testing.allocator, "\\65");
+    defer testing.allocator.free(cap_a);
+    try testing.expectEqualStrings("A", cap_a);
+
+    // At most three digits, and the next digit is literal text.
+    const bounded = try Lexer.decode_lua_short_string(testing.allocator, "\\0653");
+    defer testing.allocator.free(bounded);
+    try testing.expectEqualStrings("A3", bounded);
 }
 
 test "decode_lua_short_string error: invalid hex escape" {

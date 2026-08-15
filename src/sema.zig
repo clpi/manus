@@ -36,6 +36,18 @@ pub const Symbol = struct {
     is_global: bool = false,
     is_close: bool = false,
     is_vararg_rest: bool = false,
+    /// PRIMED BY THE ENVIRONMENT, not bound by the program. `io`, `os`, `math`,
+    /// `string`, `table` and the rest of `seedGlobalNames` are defined into the
+    /// root scope before the module is walked, so `scope.lookup("io")` answers
+    /// for every program alive and cannot on its own tell the world apart from a
+    /// binding the author wrote.
+    ///
+    /// It has to be told apart. AN INJECTED WORLD ADDS REACH, IT NEVER TAKES A
+    /// NAME: a local, parameter or declared relation spelled `io` is an ordinary
+    /// subject, and every world rule must decline on it. A top-level binding
+    /// lands in the SAME map as the seed and overwrites the entry, so scope
+    /// DEPTH cannot answer either — the fact has to travel on the symbol.
+    seeded: bool = false,
     /// If non-null, using this symbol emits a deprecation warning.
     deprecated_msg: ?[]const u8 = null,
     /// knowledge lattice position derived from `typ` (see `Symbol.knowledge`).
@@ -426,6 +438,10 @@ pub const Sema = struct {
     /// Updated on assignments, queried on field reads. Keys are
     /// `{func}.{table}.{field}` for top-level functions, or `{table}.{field}` otherwise.
     table_field_types: std.StringHashMapUnmanaged(RT) = .{},
+    /// Names bound to a table CONSTRUCTOR. The one conformance fact still
+    /// derivable when the descriptor is `any` — see `subjectConformance`.
+    /// Keys borrow the AST's identifier slices, which outlive the check.
+    sequence_bindings: std.StringHashMapUnmanaged(void) = .{},
     /// Metatable type tracking: maps variable name → known metatable fields.
     /// Populated when setmetatable(x, mt) is called and mt is a table literal
     /// with known __index. Enables compile-time method resolution.
@@ -498,6 +514,28 @@ pub const Sema = struct {
 
     fn is_builtin_global(self: *const Sema, name: []const u8) bool {
         if (std.mem.eql(u8, name, "test")) return self.inTestWorld();
+        // AN INJECTED WORLD CONFERS BARE REACH ON ITS MEMBER EDGES. `os` is
+        // default-injected, so `env("HOME")`, `cwd()`, `clock()`, `time()`,
+        // `exit(0)` and `arg(i)` are the CANONICAL faces and `os.env("HOME")`
+        // is the anchored disambiguator, not the other way round.
+        //
+        // `arg` used to sit in the Lua-globals list below, admitted by hand
+        // when the argument ruling landed while the other five members of the
+        // same world were not — so `arg(i)` resolved and `env(k)` reported
+        // "'env' is neither a descriptor nor a callable". Listing the missing
+        // five beside it would have been a name list in a second location;
+        // membership of the world is the fact that confers the reach, and it
+        // is asked here. See `subject_home.injectedWorlds`.
+        //
+        // A LOCAL WINS, and the check is made HERE rather than assumed. Two of
+        // this function's three callers ask only after `scope.lookup` failed,
+        // but `collect_upvalue_name` does NOT — it skips every builtin global
+        // outright, so a module binding or user relation spelled `env` would
+        // have stopped being captured as an upvalue and a closure would have
+        // read the world instead. That is a silent wrong answer, which is the
+        // one failure mode this whole convergence exists to avoid.
+        if (subject_home.injectedWorldProviding(name) != null)
+            return self.scope.lookup(name) == null;
         // Lua standard library globals
         if (std.mem.eql(u8, name, "string") or
             std.mem.eql(u8, name, "table") or
@@ -509,7 +547,6 @@ pub const Sema = struct {
             std.mem.eql(u8, name, "debug") or
             std.mem.eql(u8, name, "utf8") or
             std.mem.eql(u8, name, "bit") or
-            std.mem.eql(u8, name, "arg") or
             std.mem.eql(u8, name, "jit") or
             std.mem.eql(u8, name, "ffi") or
             std.mem.eql(u8, name, "mem") or
@@ -768,6 +805,7 @@ pub const Sema = struct {
         self.debug_directives.deinit(self.alloc);
         self.escape_names.deinit(self.alloc);
         self.table_field_types.deinit(self.alloc);
+        self.sequence_bindings.deinit(self.alloc);
         var tm_it = self.table_methods.iterator();
         while (tm_it.next()) |entry| {
             entry.value_ptr.deinit(self.alloc);
@@ -1881,7 +1919,7 @@ pub const Sema = struct {
     fn seed_globals(self: *Sema) void {
         const names = seedGlobalNames();
         for (names) |n| {
-            self.scope.define(n, .{ .typ = .any, .is_const = true }) catch {};
+            self.scope.define(n, .{ .typ = .any, .is_const = true, .seeded = true }) catch {};
         }
     }
 
@@ -2354,7 +2392,11 @@ pub const Sema = struct {
                             const val_t = self.type_map.get(as.values[i]) orelse .any;
                             self.track_table_field(f.obj.name.ident, f.field, val_t);
                         }
-                    } else if (tgt.* == .name and i < as.values.len and as.values[i].* == .table) {
+                    } else if (tgt.* == .name and i < as.values.len) {
+                        // Called for EVERY name target, not only constructors:
+                        // a rebinding to a non-constructor has to RETRACT the
+                        // sequence conformance fact, and the guard that used to
+                        // stand here made the retraction unreachable.
                         self.track_table_literal_fields(tgt.name.ident, as.values[i]);
                     }
                 }
@@ -2630,7 +2672,19 @@ pub const Sema = struct {
     }
 
     fn track_table_literal_fields(self: *Sema, table_name: []const u8, init_expr: *const ast.Expr) void {
-        if (init_expr.* != .table) return;
+        if (init_expr.* != .table) {
+            // Rebinding to something that is not a constructor RETRACTS the
+            // sequence fact. A stale conformance is worse than none: it would
+            // narrow a subject to the wrong protocol on the strength of an
+            // assignment that no longer holds.
+            _ = self.sequence_bindings.remove(table_name);
+            return;
+        }
+        // The subject-first conformance witness for `t = { … }`; see
+        // `subjectConformance`. Recorded HERE because this is already the one
+        // walk that knows a binding's initializer is a constructor — a second
+        // walk to learn the same fact is how the two faces drift.
+        self.sequence_bindings.put(self.alloc, table_name, {}) catch {};
         for (init_expr.table.fields) |fld| {
             switch (fld) {
                 .named => |nmd| {
@@ -2689,6 +2743,224 @@ pub const Sema = struct {
         return self.table_field_types.get(lookup_key);
     }
 
+    /// What the SUBJECT of `subject:relation(args)` conforms to.
+    ///
+    /// The descriptor answers first, and for a narrowed subject that is the
+    /// whole derivation — `subject_home.conformanceOf` reads structure and
+    /// never a name, so a descriptor this compiler has never heard of still
+    /// gets the right answer.
+    ///
+    /// THE MISSING FACT, when it answers `unknown`: sema types a table
+    /// constructor `any` (`check_expr` on `.table` returns `.any`), and an
+    /// unannotated binding inherits that, so most collections in real source
+    /// carry no descriptor to ask. One structural fact survives that and is
+    /// used rather than guessed around: a name bound to a table CONSTRUCTOR is
+    /// a sequence, which the binding walk already records for field tracking
+    /// (`track_table_literal_fields`). That is what lets `t = {…}` /
+    /// `t:concat("-")` resolve by what `t` IS.
+    ///
+    /// DELETION CONDITION for `sequence_bindings`: delete once a table
+    /// constructor's descriptor is `table_type` rather than `any`, at which
+    /// point the first line answers and this one is dead.
+    fn subjectConformance(
+        self: *const Sema,
+        obj: *const ast.Expr,
+        ot: RT,
+    ) subject_home.Conformance {
+        const from_descriptor = subject_home.conformanceOf(ot);
+        if (from_descriptor != .unknown) return from_descriptor;
+        if (obj.* == .table) return .sequence;
+        if (obj.* == .name and self.sequence_bindings.contains(obj.name.ident)) return .sequence;
+        return .unknown;
+    }
+
+    /// THE SUBJECT-FIRST DISPATCH. Which builtin home answers `subject:method`,
+    /// decided by what the subject IS.
+    ///
+    /// Two derivations, in this order:
+    ///
+    ///   1. The subject NAMES A WORLD. `os:arg(i)`, `test:assert(x)`,
+    ///      `io:flush()` reach their world because the subject is that world —
+    ///      its identity, not the relation's name. This is why `os_members` no
+    ///      longer leaks: `x:time()` on an ordinary subject has no answer,
+    ///      where the flat name list answered it for every receiver alive.
+    ///      A world that does not provide the relation falls through rather
+    ///      than refusing, so a user binding that happens to be spelled `table`
+    ///      is still an ordinary subject.
+    ///
+    ///   2. The subject CONFORMS. `conformanceOf(descriptor)` picks the one
+    ///      protocol in reach, and its roster answers. No name is consulted
+    ///      until after the subject has chosen the home, which is the whole
+    ///      difference from the mechanism this replaced.
+    fn subjectHome(
+        self: *const Sema,
+        obj: *const ast.Expr,
+        method: []const u8,
+        ot: RT,
+    ) ?subject_home.Home {
+        if (obj.* == .name) {
+            if (subject_home.worldNamed(obj.name.ident)) |world| {
+                if (subject_home.homeProvides(world, method)) return world;
+            }
+        }
+        return subject_home.homeForConformance(self.subjectConformance(obj, ot), method);
+    }
+
+    /// The builtin WORLD a bare name denotes — and NOTHING when the name is
+    /// bound.
+    ///
+    /// AN INJECTED WORLD ADDS REACH, IT NEVER TAKES A NAME. Every world question
+    /// below goes through this one function, so a local, a parameter or a
+    /// declared relation spelled `io` is an ORDINARY subject and no world rule
+    /// can fire on it. That is not a nicety: the same invariant was violated on
+    /// `os`, where a user relation `arg` was captured by the injected world and
+    /// silently answered 0 instead of 42.
+    fn worldSubject(self: *const Sema, expr: *const ast.Expr) ?subject_home.Home {
+        if (expr.* != .name) return null;
+        const ident = expr.name.ident;
+        // The seed is the ENVIRONMENT's entry, so it does not count as a
+        // binding; anything else in scope under this name does, and wins. See
+        // `Symbol.seeded` for why depth cannot answer this.
+        if (self.scope.lookup(ident)) |sym| {
+            if (!sym.seeded) return null;
+        }
+        return subject_home.worldNamed(ident);
+    }
+
+    /// THE `io` PROJECTION, refused at SEMA in both application faces.
+    ///
+    ///     stdout:write("A")      canonical, and it runs
+    ///     io:write("C")          REFUSED here
+    ///     io:write(stdout, "C")  REFUSED here
+    ///     io.write("C")          REFUSED here
+    ///
+    /// THE RULING: "in a world that algebraically injects io (standard),
+    /// io:write(stream...) should never be called unless specifically
+    /// disambiguating/directing the compiler, should instead be projected
+    /// stream:write(...)". THE SUBJECT OF `write` IS THE STREAM.
+    ///
+    /// THE LAW, which decides all four spellings without a new rule. C0
+    /// `law.subject.resolve` denies `io:open(path)`, `string:len(text)` and
+    /// `file:read(stream)`, and fails on "namespace receiver standing in for
+    /// subject"; `law.world.grant` states it again for the world: "io:open(path)
+    /// cannot become canonical merely because io is reachable", failing on
+    /// "world authority arriving through ... namespace receiver". `write` is the
+    /// same shape as `open` with the relation's name changed:
+    ///
+    ///   * `io:write(x)` — the world stands in for the subject. Refused.
+    ///   * `io:write(stream, x)` — the real subject arrives as OPERAND ZERO,
+    ///     which is `file:read(stream)` exactly, and it is the denied form
+    ///     rather than the disambiguating one. There is nothing left to
+    ///     disambiguate once the stream is written down: `stream:write(x)` names
+    ///     the same subject with no world in the way, so the anchored spelling
+    ///     carries no fact the projected one lacks. §42: syntax exists to
+    ///     RESOLVE UNCERTAINTY, not to RESTATE CERTAINTY.
+    ///   * `io.write(...)` — the anchored face. `os.env("HOME")` is lawful
+    ///     because `env` IS a member edge of the `os` world; `write` is NOT a
+    ///     member edge of `io` (the world supplies stream INSTANCES), so there
+    ///     is no anchored form to be lawful. Refused in both arities.
+    ///
+    /// WHY AT SEMA. All four spellings type-checked clean and died at the
+    /// direct backend with `DNB011 unresolved-application-facts` — `idol check`
+    /// said the program was fine and it could not be built. That shape has bitten
+    /// this project four times. A refusal that names the projection is a ruling;
+    /// a bail at emit is a wall.
+    ///
+    /// Answers TRUE when it refused, so the caller stops.
+    fn refuseWorldStreamFace(
+        self: *Sema,
+        loc: ast.Loc,
+        subject: *const ast.Expr,
+        relation: []const u8,
+        args: []const *ast.Expr,
+        /// The punctuation the author actually wrote — ":" or ".". Quoted back
+        /// verbatim: a refusal that reports a spelling the author did not write
+        /// is a refusal they have to translate before they can act on it.
+        face: []const u8,
+    ) bool {
+        if (!self.idol_mode) return false;
+        if (!subject_home.streamRelation(relation)) return false;
+        const world = self.worldSubject(subject) orelse return false;
+        // A world that PROVIDES the relation as its own member edge is not this
+        // case at all — `os:exit(0)` must keep working. Only a world standing in
+        // for a subject it merely supplies is refused.
+        if (subject_home.homeProvides(world, relation)) return false;
+
+        // NAME THE PROJECTION. With two or more operands the author already
+        // wrote the stream down and it is operand zero; with fewer, the standard
+        // environment's stream for this direction is named instead.
+        const world_name = subject_home.homeName(world);
+        if (args.len >= 2 and args[0].* == .name) {
+            self.err(
+                loc,
+                "'{s}' is a relation on a stream, and '{s}' is that stream: passing it as the first operand of '{s}{s}{s}' makes the world stand in for the subject it only supplies — write '{s}:{s}(…)' (c0 law.subject.resolve denies 'file:read(stream)'; law.world.grant fails on world authority arriving through a namespace receiver)",
+                .{ relation, args[0].name.ident, world_name, face, relation, args[0].name.ident, relation },
+            );
+            return true;
+        }
+        self.err(
+            loc,
+            "'{s}' is a relation on a stream, and the '{s}' world is not a stream — it SUPPLIES the stream, and the stream is the subject, so '{s}{s}{s}(…)' has none: write '{s}:{s}(…)' (c0 law.world.grant: 'io:open(path) cannot become canonical merely because io is reachable')",
+            .{ relation, world_name, world_name, face, relation, subject_home.exemplarStream(relation), relation },
+        );
+        return true;
+    }
+
+    /// A BARE stream relation — `write("B")`, `read()`, `flush()`.
+    ///
+    /// It stays refused, and the ruling says why in two independent ways:
+    ///
+    ///   1. AN INJECTED WORLD CONFERS BARE REACH ON ITS MEMBER EDGES, and only
+    ///      on those. `env("HOME")` is bare-reachable because `env` IS a member
+    ///      edge of the injected `os` world. `write` is a relation on a STREAM
+    ///      that `io` merely supplies instances of, so there is no member edge
+    ///      to confer reach — `subject_home.bareReach("write")` is `none`, and
+    ///      it is `none` structurally rather than by omission.
+    ///
+    ///   2. Even taking `io`'s injection as licence, `law.inject.algebra` admits
+    ///      an omitted fact only when its satisfaction is UNIQUE, and the
+    ///      standard environment supplies THREE standing streams. Ambiguous
+    ///      injection fails rather than picking, so there is no reading on which
+    ///      bare `write` resolves.
+    ///
+    /// Answers TRUE when it reported.
+    fn refuseBareStreamRelation(self: *Sema, loc: ast.Loc, name: []const u8) bool {
+        // TWO INJECTED WORLDS PROVIDING ONE NAME. Checked here because this is
+        // the site a bare name that resolved to nothing arrives at, and an
+        // ambiguity is precisely a name that COULD have resolved and must not.
+        // §42 / `law.inject.algebra`: "ambiguous injection fails rather than
+        // picking by declaration import or path priority" — the failure has to
+        // be readable, or the next reader concludes the name simply does not
+        // exist and adds it a third time.
+        switch (subject_home.bareReach(name)) {
+            .ambiguous => |pair| {
+                self.err(
+                    loc,
+                    "'{s}' is injected by two worlds — '{s}' and '{s}' both provide it — so bare '{s}' names no single edge: anchor the one you mean, '{s}.{s}' or '{s}.{s}' (c0 law.inject.algebra: ambiguous injection fails rather than picking by declaration, import or path priority)",
+                    .{
+                        name,
+                        subject_home.homeName(pair.first),
+                        subject_home.homeName(pair.second),
+                        name,
+                        subject_home.homeName(pair.first),
+                        name,
+                        subject_home.homeName(pair.second),
+                        name,
+                    },
+                );
+                return true;
+            },
+            .none, .one => {},
+        }
+        if (!subject_home.streamRelation(name)) return false;
+        self.err(
+            loc,
+            "'{s}' is a relation on a stream, not a member edge of the 'io' world, so an injected 'io' puts stream INSTANCES in reach and never this name — the subject is missing, not the relation: write '{s}:{s}(…)' (c0 law.inject.algebra: an omitted fact is admitted only where its satisfaction is unique, and 'stdin', 'stdout' and 'stderr' are three)",
+            .{ name, subject_home.exemplarStream(name), name },
+        );
+        return true;
+    }
+
     /// Whether `subject:relation(args)` resolves to a declared relation, builtin,
     /// or admitted bootstrap edge. gap[113]: absent relations must not compile
     /// as `.any` and answer nil at runtime.
@@ -2733,7 +3005,11 @@ pub const Sema = struct {
         // operation-first face resolved through the module tables, so
         // `math.floor(x)` compiled and `x:floor()` did not. One origin now
         // answers for both faces; see src/subject_home.zig.
-        if (subject_home.homeOfWithReceiver(method, ot == .str)) |owner| {
+        //
+        // The SUBJECT decides which home answers — see `subjectHome`. Asking the
+        // relation's name alone could not refuse `"hi":floor()`, because it
+        // never looked at `"hi"`.
+        if (self.subjectHome(obj, method, ot)) |owner| {
             // The test world is INJECTED BY STRUCTURE, so its relations resolve
             // only in a file that inhabits it. Without this the world was
             // admitted as a name in `test/` but `test:assert(...)` resolved
@@ -2746,9 +3022,14 @@ pub const Sema = struct {
             if (std.mem.eql(u8, method, "has") and args.len == 1) return true;
             if (std.mem.eql(u8, method, "find") and args.len == 3) return true;
             if (std.mem.eql(u8, method, "tail") and args.len == 0) return true;
-            if (std.mem.eql(u8, method, "read") and (args.len == 0 or args.len == 1)) return true;
-            if (std.mem.eql(u8, method, "write") and args.len == 1) return true;
-            if (std.mem.eql(u8, method, "close") and args.len == 0) return true;
+            // `read` / `write` / `close` USED TO BE HERE, admitted for any `str`
+            // or unnarrowed subject. They are stream relations and now live in
+            // the rosters keyed by what the subject IS (`subject_home.zig`):
+            // `read` under `text` because A STRING IS A PATH and `path:read()`
+            // lowers, `write` and `close` under `stream` only. Listed here they
+            // made `"hi":write(x)` and `"hi":close()` type-check clean and die
+            // at emit with `DNB001 method-unresolved` — the exact shape this
+            // convergence exists to remove.
             if (std.mem.eql(u8, method, "match") and args.len == 1) return true;
             if (std.mem.eql(u8, method, "sub") and (args.len == 1 or args.len == 2)) return true;
             if (std.mem.eql(u8, method, "byte") and args.len == 1) return true;
@@ -3164,6 +3445,20 @@ pub const Sema = struct {
                         return .any;
                     }
                 }
+                // THE ANCHORED FACE of the same edge: `io.write(x)` and
+                // `io.write(stream, x)`. Refused for the same reason and with
+                // the same words as `io:write(…)` — `write` is not a member edge
+                // of the `io` world, so there is no anchored spelling of it to
+                // be lawful. `os.env("HOME")` IS lawful because `env` is a
+                // member edge of `os`; the two cases differ in the world's
+                // membership, not in the punctuation.
+                if (c.func.* == .field) {
+                    const wf = &c.func.field;
+                    if (self.refuseWorldStreamFace(c.func.loc(), wf.obj, wf.field, c.args, ".")) {
+                        for (c.args) |arg| _ = try self.check_expr(arg);
+                        return .any;
+                    }
+                }
                 if (self.idol_mode and c.func.* == .name) {
                     const callee = c.func.name.ident;
                     if (self.foreign_functions.get(callee)) |ff| {
@@ -3212,7 +3507,14 @@ pub const Sema = struct {
                         // space and in CALLABLE space, and this diagnostic
                         // fires only when BOTH answered no; it says so, and it
                         // names each home with what it was asked for.
-                        self.err(
+                        //
+                        // ...EXCEPT where the answer is known and better. A
+                        // stream relation written bare is not a mystery name: it
+                        // is a relation whose SUBJECT was omitted, and saying so
+                        // is the difference between a ruling and a wall.
+                        if (self.refuseBareStreamRelation(c.func.name.loc, callee)) {
+                            // reported
+                        } else self.err(
                             c.func.name.loc,
                             "'{s}' is neither a descriptor nor a callable, so the {s} application has no subject: descriptor space holds no '{s}' and callable space holds no '{s}' (no declaration, no builtin, no foreign import)",
                             .{ callee, c.form.name(), callee, callee },
@@ -3361,6 +3663,14 @@ pub const Sema = struct {
                 return result;
             },
             .method_call => |mc| {
+                // THE PROJECTION, BEFORE THE SUBJECT IS CHECKED. `io:write(x)`
+                // otherwise resolves through the stream roster — an unnarrowed
+                // subject reaches every roster — and the refusal has to be the
+                // world question, not a missing name. See `refuseWorldStreamFace`.
+                if (self.refuseWorldStreamFace(mc.loc, mc.obj, mc.method, mc.args, ":")) {
+                    for (mc.args) |arg| _ = try self.check_expr(arg);
+                    return .any;
+                }
                 const ot = try self.check_expr(mc.obj);
                 for (mc.args) |arg| _ = try self.check_expr(arg);
                 if (std.mem.eql(u8, mc.method, "eq") and enum_type_has_derive(ot, "Eq")) {
@@ -13894,4 +14204,434 @@ test "sema: tensor add broadcast incompatible emits error" {
     s.idol_mode = true;
     try s.check_module(&mod);
     try testing.expect(s.errors > 0);
+}
+
+// ── SUBJECT-ONE by conformance ──────────────────────────────────────────────
+//
+// These assert on the RESOLVED TARGET — which home answered — not on the
+// absence of an error. `idol check` accepting a file is not evidence that the
+// relation was reached; every claim below names the home it landed on.
+
+/// Check a module and hand back the sema, so a test can interrogate the facts
+/// the check derived rather than only its error count.
+fn subjectHomeOfName(
+    s: *Sema,
+    ident: []const u8,
+    method: []const u8,
+    ot: RT,
+) ?subject_home.Home {
+    var obj = ast.Expr{ .name = .{
+        .loc = .{ .file = "test.id", .line = 1, .col = 1 },
+        .ident = ident,
+    } };
+    return s.subjectHome(&obj, method, ot);
+}
+
+test "sema: the subject settles `concat` — no tiebreak, no contested list" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // ONE file, BOTH receivers — the honest test case.
+    const src =
+        \\s: str = "ab"
+        \\t = {"x", "y", "z"}
+        \\print(t:concat("-"))
+        \\print(s:concat("cd"))
+    ;
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "test.id";
+    try s.check_module(&mod);
+
+    // The table receiver reaches `table.concat`, the relation that exists.
+    // `t` carries no descriptor (a table constructor types `any`), so this is
+    // the SEQUENCE fact the binding walk derived, not a name lookup.
+    try testing.expect(s.sequence_bindings.contains("t"));
+    try testing.expectEqual(
+        subject_home.Home.table,
+        subjectHomeOfName(&s, "t", "concat", .any).?,
+    );
+
+    // The string receiver reaches NOTHING: `string.concat` is not a relation in
+    // this compiler or its runtime. The previous mechanism called `concat`
+    // CONTESTED and guessed with a `receiver_is_str` boolean; there is no
+    // contested list left and nothing asked the receiver a boolean question.
+    try testing.expect(subjectHomeOfName(&s, "s", "concat", .str) == null);
+
+    // ...and the refusal is REPORTED, on the string line only.
+    try testing.expectEqual(@as(u32, 1), s.errors);
+}
+
+test "sema: a subject reaches its protocol and is refused everything else" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\s: str = "ab"
+        \\t = {1, 2}
+        \\n: i64 = 7
+    ;
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "test.id";
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+
+    try testing.expectEqual(subject_home.Home.string, subjectHomeOfName(&s, "s", "split", .str).?);
+    try testing.expectEqual(subject_home.Home.math, subjectHomeOfName(&s, "n", "floor", .i64).?);
+    try testing.expectEqual(subject_home.Home.table, subjectHomeOfName(&s, "t", "push", .any).?);
+
+    // `"hi":floor()`, `42:split(",")` and `"hi":push(1)` all type-checked CLEAN
+    // under the name list, measured with `idol check` before this change.
+    try testing.expect(subjectHomeOfName(&s, "s", "floor", .str) == null);
+    try testing.expect(subjectHomeOfName(&s, "n", "split", .i64) == null);
+    try testing.expect(subjectHomeOfName(&s, "s", "push", .str) == null);
+}
+
+test "sema: `char`'s subject is a codepoint, realized by the string home" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "n: i64 = 65";
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "test.id";
+    try s.check_module(&mod);
+    // `0:char()` / `255:char()` — 111 call sites across 15 files in lib/ — are
+    // NUMERIC subjects reaching a relation the string home realizes. The flat
+    // name list filed `char` under "string" and could not tell the two axes
+    // apart.
+    try testing.expectEqual(subject_home.Home.string, subjectHomeOfName(&s, "n", "char", .i64).?);
+    try testing.expect(subjectHomeOfName(&s, "n", "char", .str) == null);
+}
+
+test "sema: a world is reached by naming it, not by the relation's name" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "x = 5";
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "test.id";
+    try s.check_module(&mod);
+
+    try testing.expectEqual(subject_home.Home.os, subjectHomeOfName(&s, "os", "clock", .any).?);
+    // The same relation on an ordinary subject has no answer. The flat list
+    // answered `x:clock()`, `x:time()`, `x:arg(1)` and `x:exit(0)` for every
+    // receiver in the language.
+    try testing.expect(subjectHomeOfName(&s, "x", "clock", .any) == null);
+    try testing.expect(subjectHomeOfName(&s, "x", "time", .any) == null);
+    try testing.expect(subjectHomeOfName(&s, "x", "arg", .any) == null);
+    try testing.expect(subjectHomeOfName(&s, "x", "assert", .any) == null);
+}
+
+test "sema: a nominal descriptor over a number conforms with no edit to the compiler" {
+    // NOT AN ARENA, deliberately. `types.declareNominal` lands the descriptor
+    // in a PROCESS-GLOBAL map that outlives this test, so checking a `type
+    // feet = f64` under an arena leaves that map holding a freed backing store
+    // and the next test in the binary to read it segfaults — which is exactly
+    // what happened (`sim: export pass4 Point record deterministically`, a
+    // SIGSEGV in `nominal_reprs.get`) before this comment existed. A
+    // process-lifetime allocator is the one that matches the map's lifetime.
+    const alloc = std.heap.page_allocator;
+    // law.nominal. Nothing in `subject_home.zig` or this file mentions `feet`;
+    // the conformance is read off the representation behind the descriptor.
+    const src =
+        \\type feet = f64
+        \\d: feet = 3.7
+        \\print(d:floor())
+    ;
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "test.id";
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+
+    const feet = types.nominalNamed("feet").?;
+    try testing.expectEqual(subject_home.Home.math, subjectHomeOfName(&s, "d", "floor", feet).?);
+    try testing.expect(subjectHomeOfName(&s, "d", "split", feet) == null);
+}
+
+test "sema: a rebinding retracts the sequence fact rather than leaving a stale one" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\t = {1, 2}
+        \\t = 7
+    ;
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "test.id";
+    try s.check_module(&mod);
+    try testing.expect(!s.sequence_bindings.contains("t"));
+}
+
+test "sema: an injected world confers bare reach on its member edges" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "x = 5";
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "test.id";
+    try s.check_module(&mod);
+
+    // `os` is default-injected, so every member edge of the os world is
+    // reachable BARE — `env("HOME")`, `cwd()`, `clock()` — and `os.env("HOME")`
+    // is the anchored DISAMBIGUATOR, not the canonical form. Measured at HEAD
+    // before this change: only `arg` resolved; `env`, `cwd`, `exit`, `clock`
+    // and `time` all reported "is neither a descriptor nor a callable",
+    // because `arg` had been admitted by hand and the rule never generalised.
+    for ([_][]const u8{ "arg", "args", "env", "cwd", "exit", "clock", "time" }) |edge| {
+        try testing.expect(s.is_builtin_global(edge));
+        try testing.expectEqual(
+            subject_home.Home.os,
+            subject_home.injectedWorldProviding(edge).?,
+        );
+    }
+    // A world that is not injected confers nothing: `test`'s relations are
+    // reached through the world subject, never bare.
+    try testing.expect(subject_home.injectedWorldProviding("refute") == null);
+    try testing.expect(subject_home.injectedWorldProviding("differs") == null);
+    // ...and neither does a protocol roster.
+    try testing.expect(subject_home.injectedWorldProviding("split") == null);
+    try testing.expect(subject_home.injectedWorldProviding("floor") == null);
+}
+
+test "sema: a bound name WINS over the injected world" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // No `deinit`: the arena owns everything this Sema allocated, and the
+    // other tests in this file follow the same shape.
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "test.id";
+
+    // Unbound: the world confers the reach.
+    try testing.expect(s.is_builtin_global("env"));
+    try testing.expect(s.is_builtin_global("cwd"));
+
+    // Bound: the binding wins. Capturing a locally bound name would be a
+    // SILENT wrong answer — a closure would read the world instead of the
+    // binding it was written against. `is_builtin_global` is asked at three
+    // sites and `collect_upvalue_name` does NOT look the name up first, so the
+    // check lives inside `is_builtin_global` itself rather than at its callers.
+    try s.scope.push();
+    try s.scope.define("env", .{ .typ = .str, .is_const = false });
+    try s.scope.define("cwd", .{ .typ = .any, .is_const = false });
+    try testing.expect(!s.is_builtin_global("env"));
+    try testing.expect(!s.is_builtin_global("cwd"));
+    // An unbound member edge of the same world still reaches.
+    try testing.expect(s.is_builtin_global("clock"));
+    s.scope.pop();
+
+    // ...and the reach returns when the binding goes out of scope.
+    try testing.expect(s.is_builtin_global("env"));
+}
+
+// ── The `io` projection ─────────────────────────────────────────────────────
+//
+// THE RULING: "in a world that algebraically injects io (standard),
+// io:write(stream...) should never be called unless specifically
+// disambiguating/directing the compiler, should instead be projected
+// stream:write(...". THE SUBJECT OF `write` IS THE STREAM.
+//
+// MEASURED BEFORE, by compiling and running — not by `idol check`, which is the
+// defect here:
+//
+//     stdout:write("A")       -> A                          canonical, works
+//     write("B")              -> 'write' is neither a descriptor nor a callable
+//     io:write("C")           -> DNB011 at the direct backend
+//     io.write("D")           -> DNB011 at the direct backend
+//     io:write(stdout, "E")   -> DNB001 at the direct backend
+//     io.write(stdout, "F")   -> DNB011 at the direct backend
+//     "text":write("x")       -> DNB001 at the direct backend
+//     "text":close()          -> DNB001 at the direct backend
+//
+// Six of the eight TYPE-CHECKED CLEAN and died at emit: `idol check` said the
+// program was fine and it could not be built.
+
+/// Check one source and hand back the sema, so a test can assert on the
+/// diagnostic TEXT rather than only on the error count — "it was refused" is
+/// not the claim; "it was refused for its ruling, naming the projection" is.
+fn checkSource(alloc: std.mem.Allocator, src: []const u8, path: []const u8) !Sema {
+    var lex = Lexer.init(src, path);
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = path;
+    try s.check_module(&mod);
+    return s;
+}
+
+fn firstDiagnostic(s: *const Sema) []const u8 {
+    if (s.diagnostics.items.len == 0) return "";
+    return s.diagnostics.items[0].message;
+}
+
+test "sema: every world-as-receiver spelling of a stream relation is refused HERE" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // The four spellings the ruling covers, each refused at SEMA with the
+    // projected form in the message. Before this they reached the backend.
+    const cases = [_]struct { src: []const u8, want: []const u8 }{
+        .{ .src = "io:write(\"C\")", .want = "write 'stdout:write(…)'" },
+        .{ .src = "io.write(\"D\")", .want = "write 'stdout:write(…)'" },
+        .{ .src = "io:read()", .want = "write 'stdin:read(…)'" },
+        .{ .src = "io:flush()", .want = "write 'stdout:flush(…)'" },
+    };
+    for (cases) |c| {
+        var s = try checkSource(alloc, c.src, "probe.id");
+        try testing.expect(s.errors > 0);
+        try testing.expect(std.mem.indexOf(u8, firstDiagnostic(&s), c.want) != null);
+        // ...and the world, not the relation, is named as the thing that has no
+        // subject — the refusal is the projection ruling, not a missing name.
+        try testing.expect(std.mem.indexOf(u8, firstDiagnostic(&s), "is a relation on a stream") != null);
+    }
+}
+
+test "sema: the operand-subject face is the DENIED one, and names the operand" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // `io:write(stream, x)` is `law.subject.resolve`'s `file:read(stream)` with
+    // the relation's name changed: the real subject arrives as operand zero and
+    // the world stands in for it. It is not the disambiguating face — once the
+    // stream is written down there is nothing left to disambiguate, and
+    // `stream:write(x)` names the same subject with no world in the way.
+    var colon = try checkSource(alloc, "io:write(stdout, \"E\")", "probe.id");
+    try testing.expect(colon.errors > 0);
+    try testing.expect(std.mem.indexOf(u8, firstDiagnostic(&colon), "'stdout' is that stream") != null);
+    try testing.expect(std.mem.indexOf(u8, firstDiagnostic(&colon), "write 'stdout:write(…)'") != null);
+    // The face is quoted back AS WRITTEN: `io:write` for the colon face...
+    try testing.expect(std.mem.indexOf(u8, firstDiagnostic(&colon), "'io:write'") != null);
+
+    // ...and `io.write` for the anchored one. `os.env("HOME")` is lawful because
+    // `env` IS a member edge of `os`; `write` is not a member edge of `io`, so
+    // the anchored spelling of it does not exist to be lawful.
+    var dot = try checkSource(alloc, "io.write(stdout, \"F\")", "probe.id");
+    try testing.expect(dot.errors > 0);
+    try testing.expect(std.mem.indexOf(u8, firstDiagnostic(&dot), "'io.write'") != null);
+}
+
+test "sema: bare `write` stays refused, and the message says WHY" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var s = try checkSource(alloc, "write(\"B\")", "probe.id");
+    try testing.expect(s.errors > 0);
+    const msg = firstDiagnostic(&s);
+    // NOT "neither a descriptor nor a callable" — the subject is missing, not
+    // the relation, and an injected world confers bare reach on its MEMBER
+    // EDGES only. `write` is a relation on a stream that `io` supplies
+    // instances of, so there is no member edge to confer anything.
+    try testing.expect(std.mem.indexOf(u8, msg, "not a member edge of the 'io' world") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "write 'stdout:write(…)'") != null);
+    // Second, independent reason, stated: three standing streams is not a
+    // unique satisfaction, and `law.inject.algebra` fails closed on that.
+    try testing.expect(std.mem.indexOf(u8, msg, "law.inject.algebra") != null);
+}
+
+test "sema: a string is a PATH — `read` resolves on it, `write` and `close` do not" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // `path:read()` is `law.world.grant` canon and it lowers today.
+    const ok = try checkSource(alloc, "s: str = \"f.txt\"\nx = s:read()", "probe.id");
+    try testing.expectEqual(@as(u32, 0), ok.errors);
+
+    // `write` and `close` on a string used to type-check through an
+    // `ot == .str or .any` arity list and die at emit with
+    // `DNB001 method-unresolved`. A string is a path; a path is not a stream.
+    const w = try checkSource(alloc, "s: str = \"f.txt\"\ns:write(\"x\")", "probe.id");
+    try testing.expect(w.errors > 0);
+    const c = try checkSource(alloc, "s: str = \"f.txt\"\ns:close()", "probe.id");
+    try testing.expect(c.errors > 0);
+}
+
+test "sema: the canonical face is untouched — the stream is the subject" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const s = try checkSource(alloc, "stdout:write(\"A\")", "probe.id");
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: a BOUND `io` is an ordinary subject — injection never takes a name" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THE INVARIANT THAT MUST NOT BREAK. `io` is SEEDED into the root scope, so
+    // `scope.lookup("io")` answers for every program alive; a top-level binding
+    // lands in the same map and overwrites the seed, so scope DEPTH cannot tell
+    // them apart either. `Symbol.seeded` is the fact that can.
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "probe.id";
+    try s.scope.push();
+    s.seed_globals();
+
+    var io_expr = ast.Expr{ .name = .{
+        .loc = .{ .file = "probe.id", .line = 1, .col = 1 },
+        .ident = "io",
+    } };
+    // Seeded: `io` is the world, and the world-as-receiver rule applies.
+    try testing.expectEqual(subject_home.Home.io, s.worldSubject(&io_expr).?);
+    // Bound by the program: an ordinary subject, and every world rule declines.
+    try s.scope.push();
+    try s.scope.define("io", .{ .typ = .any, .is_const = false });
+    try testing.expect(s.worldSubject(&io_expr) == null);
+    s.scope.pop();
+    try testing.expectEqual(subject_home.Home.io, s.worldSubject(&io_expr).?);
+
+    // A TOP-LEVEL binding overwrites the seed entry in the SAME map — the case
+    // depth cannot see.
+    try s.scope.define("io", .{ .typ = .i64, .is_const = false });
+    try testing.expect(s.worldSubject(&io_expr) == null);
+}
+
+test "sema: a user relation named `write` wins, and is not refused" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // The bare-`write` refusal fires only where nothing declares the name. A
+    // declared relation is the subject of its own application, and the world
+    // has nothing to say about it. The same invariant, violated on `os`, made a
+    // user relation `arg(v) = v * 7` answer 0 instead of 42.
+    // A TRAILING NEWLINE, deliberately. An offside body is closed by the
+    // dedent, and a Zig multiline literal has no newline after its last line —
+    // the relation's body then runs into `<eof>` and the parse fails with
+    // `ExpectedToken`, which reads as "the ruling broke this" and is not.
+    const src = "write: i64 = (v: i64)\n    return v * 7\n\nmain: i64 = ()\n    write(6)\n";
+    const s = try checkSource(alloc, src, "probe.id");
+    try testing.expectEqual(@as(u32, 0), s.errors);
 }

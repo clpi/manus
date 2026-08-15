@@ -25,6 +25,7 @@ const sema_mod = @import("sema.zig");
 const debug_trace = @import("debug_trace.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const jit = @import("jit.zig");
+const subject_home = @import("subject_home.zig");
 const meta_codegen = @import("meta_codegen.zig");
 const meta_module = @import("meta_module.zig");
 const rewrite_rules = @import("rewrite_rules.zig");
@@ -1768,11 +1769,19 @@ pub const CodeGen = struct {
     /// Names already claimed by the file and str-buf faces in the `any` arm
     /// (`get`, `set`, `read`, `write`, `len`, `close`, ...) are deliberately
     /// absent — this only covers faces that have no other meaning on `any`.
+    ///
+    /// `result_rt` is the type the USE SITE demands. Both arms of the guard
+    /// answer a boxed value, so a native demand has to be coerced at the end of
+    /// the statement-expression; without it `b: i64 = bytes:byte(1)` emitted
+    /// `int64_t b = ({ … lua_Value … });` and clang refused the initializer.
+    /// The operation-first face (`string.byte(bytes, 1)`) had the coercion all
+    /// along — the same two-faces-of-one-fact divergence, one line lower down.
     fn try_emit_guarded_string_face(
         self: *CodeGen,
         method: []const u8,
         obj: *ast.Expr,
         args: []const *ast.Expr,
+        result_rt: RT,
     ) E!bool {
         if (!self.moduleNeedsLuaRuntime()) return false;
         const Face = struct { name: []const u8, cfn: []const u8, arity: usize };
@@ -1804,6 +1813,7 @@ pub const CodeGen = struct {
         if (args.len + 1 > f.arity) return false;
 
         const hash = calc_lua_hash(method);
+        const coerced = self.emit_lua_result_coerce_prefix(result_rt);
         self.p("({{\n", .{});
         self.indent += 1;
         self.ind();
@@ -1844,6 +1854,7 @@ pub const CodeGen = struct {
         self.indent -= 1;
         self.ind();
         self.p("}})", .{});
+        if (coerced) self.emit_lua_result_coerce_suffix(result_rt);
         return true;
     }
 
@@ -6134,6 +6145,26 @@ pub const CodeGen = struct {
         self.p("    *p = '\\0';\n", .{});
         self.p("    return out;\n", .{});
         self.p("}}\n", .{});
+        // duo_str_char_cstr — native `string.char(n)` / `n:char()`.
+        //
+        // The native-scalar PRECHECK already admits `string.char(x)` over a
+        // native-scalar argument (see the `string` arm of `expr_is_native_scalar`),
+        // so a module using it claims to need no Lua runtime — and then the
+        // emitter had no native arm and reached for `lua_str_char`, which in that
+        // module is not declared and takes lua_Value where an int64_t was passed.
+        // Measured on `n: i64 = 65; c = n:char()`: "call to undeclared function
+        // 'lua_str_char'", plus an int-to-pointer conversion on the result. Two
+        // ladders promising different things about the same application; this
+        // closes the emitter side so the precheck's promise is true.
+        //
+        // Lua's `string.char` accepts any number of codes; this is the arity-one
+        // native case, which is the one the precheck admits.
+        self.p("static inline char* duo_str_char_cstr(int64_t code) {{\n", .{});
+        self.p("    char* out = (char*)malloc(2);\n", .{});
+        self.p("    if (!out) return (char*)\"\";\n", .{});
+        self.p("    out[0] = (char)(unsigned char)(code & 0xFF); out[1] = '\\0';\n", .{});
+        self.p("    return out;\n", .{});
+        self.p("}}\n", .{});
         // Native substring (no lua_Value — used by embedded native modules).
         self.p("static inline char* duo_str_sub_cstr(const char* str, int64_t start, int64_t end) {{\n", .{});
         self.p("    if (!str) str = \"\";\n", .{});
@@ -6877,6 +6908,17 @@ pub const CodeGen = struct {
                         // unless they are multi-path (M.method) which are module exports.
                         const effectively_local = fd.is_local or (self.idol_mode and fd.path.len == 1 and !fd.method);
                         if (effectively_local) {} else {
+                            // A DOTTED declaration is assumed here to be a module
+                            // export (`M.method`), whose binding is built later by
+                            // emit_duo_module_return_table. That is right for a
+                            // module and wrong for a program whose receiver is an
+                            // ordinary table value: `t = {}` then `t.f = (a) …`
+                            // emitted the function `t__f` and then skipped this
+                            // statement, so nothing ever put `f` into `t`. `t.f(5)`
+                            // missed the lookup and `lua_invoke` on nil answers nil
+                            // instead of failing — measured as `nil` where `6` was
+                            // meant, with no diagnostic anywhere.
+                            try self.emit_table_field_func_install(&mod.body.stmts[i].func_decl);
                             i += 1;
                             continue;
                         }
@@ -10032,6 +10074,16 @@ pub const CodeGen = struct {
         }
         var name_buf: [256]u8 = undefined;
         const cname = self.mangled_name(raw_name, &name_buf);
+        try self.emit_native_func_cname_as_lua_value(cname, params, is_compile_only);
+    }
+
+    /// The same boxing, given the C symbol directly rather than a Duo name to
+    /// mangle. A path-qualified declaration (`t.f = (…)`) has C name `t__f`,
+    /// which `mangled_name` cannot produce — it only ever sees the last
+    /// segment. Split out rather than copied so the thunk-arity ladder below
+    /// stays the only one: two ladders that pick `__lua` vs `__lua2` are
+    /// exactly the shape that has already cost this tree a day.
+    fn emit_native_func_cname_as_lua_value(self: *CodeGen, cname: []const u8, params: []types.ResolvedType, is_compile_only: bool) E!void {
         const nparams = params.len;
         // A thunk only exists when every parameter is lua-convertible (see
         // should_emit_lua_thunk) and the function is not compile-only.
@@ -14052,6 +14104,7 @@ pub const CodeGen = struct {
                 if (fd.is_local) {
                     // Hoisted to file scope in emit_module.
                 }
+                try self.emit_table_field_func_install(fd);
             },
             // NOTE: there is no `.struct_def` case. Anonymous record
             // bindings don't need a top-level emission — they are handled
@@ -14091,6 +14144,59 @@ pub const CodeGen = struct {
             .goto_stmt => |g| self.pl("goto {s};", .{g.label}),
             .label_stmt => |l| self.pl("{s}:;", .{l.label}),
         }
+    }
+
+    /// `t.f = (a) …` where `t` is a runtime table: bind the emitted function
+    /// INTO the table at the point the declaration is written.
+    ///
+    /// A path-qualified declaration produces a C function (`t__f`, plus its
+    /// `t__f__lua` thunk) and, before this, nothing else at all — the statement
+    /// emitted zero bytes. So the table stayed empty and `t.f(5)` looked the
+    /// field up, missed, and `lua_invoke` on nil answers nil rather than
+    /// failing. Measured: `t = {}; t.f = (a: i64) a + 1; t.f(5)` printed `nil`.
+    /// A silent wrong answer, not a diagnostic — the function was compiled,
+    /// correct, and unreachable.
+    ///
+    /// SCOPE, deliberately narrow. Only `receiver.field`, only when the module
+    /// has a Lua runtime (without one there is no table to set), and only when
+    /// the receiver is an ordinary value binding. A stdlib global (`string.x`),
+    /// a `req` module binding and an embedded-module path all already have
+    /// their own emission and must keep it; installing over them would be a
+    /// second answer for a name that already has one.
+    fn emit_table_field_func_install(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
+        if (fd.path.len != 2 or fd.method) return;
+        if (!self.moduleNeedsLuaRuntime()) return;
+        if (self.skip_lua_thunk_emit()) return;
+        if (func_ffi_name(fd.attributes) != null) return;
+
+        const recv = fd.path[0];
+        const field = fd.path[1];
+        if (is_runtime_global(recv)) return;
+        if (self.req_module_bindings.get(recv) != null) return;
+        if (self.embedded_module_paths.contains(recv)) return;
+        if (self.function_c_names.get(recv) != null) return;
+
+        // The receiver must actually be a table-shaped binding that exists at
+        // this point. `.any` is what a `{}` literal binding carries; anything
+        // narrower is a native scalar and cannot take a field.
+        var recv_expr = ast.Expr{ .name = .{ .loc = fd.func.body.loc, .ident = recv } };
+        if (self.expr_type(&recv_expr) != .any) return;
+
+        const ft = self.func_expr_type(&fd.func);
+        if (ft != .func) return;
+
+        var name_buf: [256]u8 = undefined;
+        const cname = self.emit_func_c_name(fd, &name_buf);
+        const hash = calc_lua_hash(field);
+
+        self.ind();
+        self.p("lua_table_set_str_lit(", .{});
+        self.emit_var_name(recv);
+        self.p(", \"", .{});
+        try self.emit_string_escaped(field);
+        self.p("\", {d}u, {d}, ", .{ hash, field.len });
+        try self.emit_native_func_cname_as_lua_value(cname, ft.func.params, ft.func.is_compile_only);
+        self.p(");\n", .{});
     }
 
     fn derive_arg_count(args: ?[]const u8) usize {
@@ -16654,7 +16760,7 @@ pub const CodeGen = struct {
                     // because a string cannot carry a member — a table with its
                     // own `sub` is never hijacked, which is what sank the
                     // unconditional projection tried for gap[014].
-                    if (try self.try_emit_guarded_string_face(mc.method, mc.obj, mc.args)) return;
+                    if (try self.try_emit_guarded_string_face(mc.method, mc.obj, mc.args, self.expr_type(expr))) return;
                     if (std.mem.eql(u8, mc.method, "put") or std.mem.eql(u8, mc.method, "write")) {
                         self.p("lua_file_write_method(", .{});
                         try self.emit_expr(mc.obj);
@@ -16690,8 +16796,15 @@ pub const CodeGen = struct {
                         try self.emit_expr(mc.obj);
                         self.p(")", .{});
                     } else if (std.mem.eql(u8, mc.method, "len")) {
+                        // The receiver's RUNTIME type decides, because `any`
+                        // covers string, table and str-buf and the str-buf
+                        // face answers 0 for the other two. Measured: a file
+                        // read into an untyped local reported `bytes:len()`
+                        // == 0 where `string.len(bytes)` reported 27791, and
+                        // the wasm engine's `bytes:len() < 8` magic guard
+                        // therefore rejected every module it was given.
                         const result_rt = self.expr_type(expr);
-                        self.p("{s}(", .{if (result_rt.is_integer()) "lua_str_buf_len_i64" else "lua_str_buf_len"});
+                        self.p("{s}(", .{if (result_rt.is_integer()) "lua_any_len_i64" else "lua_any_len"});
                         try self.emit_expr(mc.obj);
                         self.p(")", .{});
                     } else if (std.mem.eql(u8, mc.method, "putf")) {
@@ -16955,10 +17068,21 @@ pub const CodeGen = struct {
                         return;
                     }
                     if (try self.tryEmitSubjectRelation(mc)) return;
+                    if (try self.tryEmitSubjectHomeFace(mc, self.expr_type(expr))) return;
                     if (std.mem.eql(u8, mc.method, "to")) {
                         self.p("duo_fatal(\"unlowered native :to conversion\")", .{});
                         return;
                     }
+                    // TERMINAL FALLBACK, and it is a defect generator: it
+                    // concatenates the EMITTED RECEIVER TEXT with `__method`,
+                    // so `x:floor()` printed `x__floor()` and a receiver that
+                    // is an expression printed things like `2.0math.floor(…)`.
+                    // Nothing downstream can recover from it — clang reports an
+                    // undeclared function at best, and silently binds some
+                    // other symbol at worst. It is kept only because a refusal
+                    // here is a codegen hard error with no source location; the
+                    // deletion condition is a diagnostic that names the subject
+                    // and the unresolved relation.
                     try self.emit_expr(mc.obj);
                     self.p("__{s}(", .{mc.method});
                     for (mc.args, 0..) |arg, i| {
@@ -21741,6 +21865,47 @@ pub const CodeGen = struct {
             }
             return false;
         }
+        // `string.char(n)` / `n:char()`. Both faces arrive here — the
+        // subject-first spelling is rebuilt into this one by
+        // tryEmitSubjectHomeFace — so there is a single lowering to be right or
+        // wrong about. A literal folds; anything else with an integer argument
+        // takes the native helper. Without this arm the native-scalar precheck
+        // admitted the call and the emitter then reached for `lua_str_char` in a
+        // module that has no Lua runtime.
+        if (std.mem.eql(u8, fname, "char") and result_rt == .str and args.len == 1) {
+            // ONLY when the module has no Lua runtime. A native string is a
+            // NUL-terminated `char*`, so it cannot carry `char(0)` — and
+            // `string.len(string.char(0))` must answer 1, because that is Wasm
+            // opcode 0x00 and a loader that reads it as an empty string stops
+            // decoding. Where the boxed runtime exists, `lua_str_char` plus the
+            // header-length read already gets that right and keeps it; this arm
+            // exists only for the modules where reaching for `lua_str_char`
+            // named an undeclared function. Same reason the rest of the
+            // `duo_str_*_cstr` family is confined to that mode.
+            if (self.moduleNeedsLuaRuntime()) return false;
+            if (args[0].* == .int_lit) {
+                const code = args[0].int_lit.val;
+                if (code >= 0 and code <= 255) {
+                    const byte: u8 = @intCast(code);
+                    // A one-byte literal: printable ASCII goes through verbatim,
+                    // everything else through an octal escape, so a quote, a
+                    // backslash or a NUL cannot end the literal early.
+                    if (byte >= 32 and byte < 127 and byte != '"' and byte != '\\') {
+                        self.p("\"{c}\"", .{byte});
+                    } else {
+                        self.p("\"\\{o:0>3}\"", .{byte});
+                    }
+                    return true;
+                }
+            }
+            if (self.expr_type(args[0]).is_integer()) {
+                self.p("duo_str_char_cstr((int64_t)(", .{});
+                try self.emit_expr(args[0]);
+                self.p("))", .{});
+                return true;
+            }
+            return false;
+        }
         if ((std.mem.eql(u8, fname, "starts_with") or std.mem.eql(u8, fname, "ends_with")) and
             result_rt == .bool and args.len == 2)
         {
@@ -23960,6 +24125,68 @@ pub const CodeGen = struct {
         return null;
     }
 
+    /// SUBJECT-ONE, in the emitter. `subject:relation(a)` and
+    /// `home.relation(subject, a)` are ONE edge — `src/subject_home.zig` is the
+    /// resolver's sole origin for which home answers, keyed on what the subject
+    /// conforms to.
+    ///
+    /// The emitter had its own ladder and never consulted that origin, so the
+    /// two faces of one fact disagreed: `math.floor(x)` lowered through
+    /// `maybe_emit_math_call` and `x:floor()` fell all the way past every
+    /// dispatch arm into the terminal fallback, which CONCATENATES the emitted
+    /// receiver text with `__method` and printed `x__floor()` — C that names
+    /// nothing. Measured on `x: f64 = 3.7; y = x:floor()`: "call to undeclared
+    /// function 'x__floor'". Same for `n:char()` and `n:ceil()`. The canonical
+    /// spelling was the one that did not build, which is how a corpus ends up
+    /// written in the other orientation.
+    ///
+    /// The repair is convergence, not a fourth ladder: rebuild the
+    /// operation-first face (`home.relation`, subject widened into argument
+    /// zero) and hand it to the SAME emitter the operation-first spelling uses,
+    /// so the two cannot emit different C by construction.
+    ///
+    /// ONLY A KNOWN CONFORMANCE dispatches here. `homeForConformance` lets an
+    /// `unknown` subject reach every roster, and on `any` this emitter already
+    /// has runtime-guarded faces (`try_emit_guarded_string_face`, the str-buf
+    /// arm) that decide by the value rather than by the descriptor. Routing
+    /// `any` here would replace a runtime answer with a static guess.
+    ///
+    /// Placement is load-bearing: this runs AFTER record-alias methods, module
+    /// members, declared faces and `tryEmitSubjectRelation`, so data still wins
+    /// the name and the only programs whose emission changes are the ones that
+    /// were emitting text that does not compile.
+    fn tryEmitSubjectHomeFace(self: *CodeGen, mc: anytype, result_rt: RT) E!bool {
+        const conf = subject_home.conformanceOf(self.expr_type(mc.obj));
+        if (conf == .unknown) return false;
+        const home = subject_home.homeForConformance(conf, mc.method) orelse return false;
+        const mod_name = switch (home) {
+            .math => "math",
+            .string => "string",
+            .table => "table",
+            // `io`, `os` and `testing` are worlds, not protocols; a conforming
+            // value never reaches them and there is nothing to widen.
+            else => return false,
+        };
+
+        // The operation-first face of the same application: `home.relation`
+        // applied to (subject, args...).
+        const mod_expr = try self.alloc.create(ast.Expr);
+        defer self.alloc.destroy(mod_expr);
+        mod_expr.* = .{ .name = .{ .loc = mc.loc, .ident = mod_name } };
+        const func_expr = try self.alloc.create(ast.Expr);
+        defer self.alloc.destroy(func_expr);
+        func_expr.* = .{ .field = .{ .loc = mc.loc, .obj = mod_expr, .field = mc.method } };
+
+        const argv = try self.alloc.alloc(*ast.Expr, mc.args.len + 1);
+        defer self.alloc.free(argv);
+        argv[0] = mc.obj;
+        @memcpy(argv[1..], mc.args);
+
+        if (try self.maybe_emit_math_call(func_expr, argv, result_rt)) return true;
+        if (try self.maybe_emit_stdlib_module_call(func_expr, argv, result_rt)) return true;
+        return false;
+    }
+
     fn tryEmitSubjectRelation(self: *CodeGen, call: anytype) E!bool {
         const resolved = self.subjectRelation(call.method, call.obj) orelse return false;
         self.p("{s}(", .{resolved.name});
@@ -24501,13 +24728,40 @@ pub const CodeGen = struct {
             } else if (self.is_native_dense_module_table(name)) {
                 try self.emit_native_dense_module_table_as_lua_value(name);
             } else if (self.module_globals) |globals| {
-                if (globals.get(name) != null) {
+                if (globals.get(name)) |grt| {
                     // `find_duo_module_func` above already handled declared
                     // functions; reaching here with a `.func`-typed global means
                     // it is a VARIABLE holding a function value (e.g. `build =
                     // sequential`). No `__lua` thunk exists — emit the binding
                     // directly, which is already a boxed lua_Value.
-                    try self.emit_as_lua_value(&name_expr);
+                    //
+                    // A NATIVE-SCALAR global is the case that did not work. It
+                    // is emitted as a plain C symbol (`static int64_t
+                    // duo_g_m_mod8_g`), but `name_expr` is synthesised here and
+                    // carries no binding, so `expr_type` answers `.any` — and
+                    // `.any` means "already boxed", so the raw symbol went
+                    // straight into `lua_Value` position. Measured on a module
+                    // holding `g: i64 = 0`: "passing 'int64_t' to parameter of
+                    // incompatible type 'lua_Value'", i.e. the module did not
+                    // compile at all once a scalar global was exported.
+                    //
+                    // The recorded global type is the authority — it is the same
+                    // fact the declaration emitter used to choose the C type, so
+                    // consulting it here cannot disagree with it. Deriving the
+                    // type a second time from the expression is what disagreed.
+                    const wrap: ?[]const u8 = switch (grt) {
+                        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => "lua_val_from_int((int64_t)",
+                        .f32, .f64 => "lua_val_from_num((double)",
+                        .bool => "lua_val_from_bool(",
+                        else => null,
+                    };
+                    if (wrap) |w| {
+                        self.p("{s}", .{w});
+                        self.emit_var_name(name);
+                        self.p(")", .{});
+                    } else {
+                        try self.emit_as_lua_value(&name_expr);
+                    }
                 } else {
                     try self.emit_as_lua_value(&name_expr);
                 }
@@ -25722,6 +25976,8 @@ const duo_runtime =
     \\static inline uint32_t calc_hash(const char* s, size_t len);
     \\static inline lua_Value lua_call_metamethod_lit(lua_Value obj, const char* name, uint32_t hash, size_t len, int argc, lua_Value* argv);
     \\#define lua_call_metamethod(obj, name, argc, argv) lua_call_metamethod_lit((obj), (name), calc_hash((name), sizeof(name) - 1), sizeof(name) - 1, (argc), (argv))
+    \\static inline lua_Value lua_get_metafield(lua_Value obj, const char* name);
+    \\static inline lua_Value lua_table_get(lua_Value table, lua_Value key);
     \\
     \\static inline lua_Value lua_invoke(lua_Value f, int argc, lua_Value* argv) {
     \\    if (f.type == VAL_CLOSURE && f.as.tval) {
@@ -25786,7 +26042,23 @@ const duo_runtime =
     \\    }
     \\    if (f.type == VAL_TABLE) {
     \\        lua_mret_clear();
-    \\        return lua_call_metamethod(f, "__call", argc, argv);
+    \\        /* APPLY-ONE at run time. `t(1)` and `t[1]` are ONE relation. When the
+    \\           receiver identity is known the emitter projects it directly
+    \\           (`lua_table_get_i64(t, 1)`); when the SAME table arrives through an
+    \\           `any` binding -- a parameter, a field, a container element -- the
+    \\           call site cannot see that and lands here. Answering nil made the two
+    \\           spellings of one fact disagree by how the value was routed. Measured:
+    \\           `h = (t: any) t(1)` answered nil where `t[1]` answered 11 for the
+    \\           same argument.
+    \\
+    \\           `__call` still wins wherever it exists, so a table that really is
+    \\           callable is untouched; projection answers only for the tables that
+    \\           had no `__call`, which is exactly the set that used to answer nil. */
+    \\        lua_Value __cm = lua_get_metafield(f, "__call");
+    \\        if (__cm.type == VAL_FUNC || __cm.type == VAL_CLOSURE)
+    \\            return lua_call_metamethod(f, "__call", argc, argv);
+    \\        if (argc == 1) return lua_table_get(f, argv[0]);
+    \\        return lua_val_nil();
     \\    }
     \\    return lua_val_nil();
     \\}
@@ -28321,6 +28593,21 @@ const duo_runtime =
     \\    if (buf.type != VAL_BUFFER) return 0;
     \\    lua_Buffer* b = (lua_Buffer*)buf.as.tval;
     \\    return (int64_t)b->len;
+    \\}
+    \\
+    \\/* `v:len()` where v's static type is `any`. The runtime type decides, the
+    \\   same rule the guarded string faces use. Emitting the str-buf face
+    \\   unconditionally answered 0 for every string, which is why a wasm loader
+    \\   whose guard is `bytes:len() < 8` rejected every module as bad magic. */
+    \\static inline int64_t lua_any_len_i64(lua_Value v) {
+    \\    if (v.type == VAL_STRING) return (int64_t)lua_str_byte_len(v);
+    \\    if (v.type == VAL_TABLE) return (int64_t)lua_table_len(v);
+    \\    if (v.type == VAL_BUFFER) return (int64_t)((lua_Buffer*)v.as.tval)->len;
+    \\    return 0;
+    \\}
+    \\
+    \\static inline lua_Value lua_any_len(lua_Value v) {
+    \\    return lua_val_from_num((double)lua_any_len_i64(v));
     \\}
     \\
     \\static inline lua_Value lua_str_buf_putf(lua_Value buf, lua_Value fmt, lua_Value a1, lua_Value a2, lua_Value a3) {
@@ -33311,9 +33598,19 @@ test "codegen: typed string buffer len lowers to native i64" {
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
     try cg.emit_module(&module);
     const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t n = lua_str_buf_len_i64(buf);") != null);
+    // `lua_any_len_i64`, not `lua_str_buf_len_i64`: the receiver's static type
+    // here is `any`, which covers string, table AND str-buf, and the str-buf
+    // face answers 0 for the other two. Emitting it unconditionally is what
+    // made a wasm loader whose guard is `bytes:len() < 8` reject every module
+    // as bad magic. What this test is FOR is unchanged and is carried by the
+    // two negatives below — the binding is a native `int64_t`, with no boxed
+    // value and no `lua_to_num` round-trip. The positive names whichever helper
+    // currently answers; it is the lowering's shape that is pinned, not the
+    // spelling of a helper that turned out to be the wrong one.
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t n = lua_any_len_i64(buf);") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value n = ") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_num(lua_str_buf_len(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_to_num(lua_any_len(") == null);
 }
 
 test "codegen: typed global builtins unbox boxed runtime results" {

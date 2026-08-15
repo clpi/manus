@@ -172,7 +172,68 @@ fn emitCStringLiteral(cg: anytype, s: []const u8) E!void {
     cg.p("\"", .{});
 }
 
+/// The host architecture and OS, as C the emitter can drop into either arm of
+/// `emitJitRuntime`.
+///
+/// WHY THIS EXISTS AT ALL, and its deletion condition. `lib/jit.id` is the
+/// canonical home of this substrate and already answers correctly —
+/// `req("jit")` measured `arch=arm64` and a live mmap. But the bare name `jit`
+/// is a hardcoded builtin module, so it binds to the table `lua_jit_init()`
+/// builds here and `lib/jit.id` is shadowed out of reach. That table declared
+/// `arch` as the LITERAL "native": wrong shape (a value where every consumer
+/// spells `jit.arch()`) and wrong content (a string naming no architecture).
+/// `lua_invoke` on a VAL_STRING answers nil rather than failing, so
+/// `jitm.arch() == "arm64"` was quietly false forever and the wasm engine's
+/// ~1,700-line ARM64 JIT never ran once.
+///
+/// SPELLING, settled against the canonical origin rather than minted here:
+/// `arm64` / `x86_64` / `unknown`, byte-identical to `duo_jit_arch()` in
+/// `lib/jit.id`, which is what `tools/wasm/src/engine.id`,
+/// `tools/wasm/src/wasm/jit_arm64.id` and `lib/ml/device.id` already test
+/// against. A second spelling here would reproduce the bug in the other
+/// direction.
+///
+/// The name is deliberately NOT `duo_jit_arch`: a program that reaches
+/// `lib/jit.id` gets both this table and that helper in one translation unit,
+/// and two definitions of one name would not compile.
+///
+/// DELETION CONDITION: when the bare `jit` name resolves to `lib/jit.id`
+/// instead of to a builtin table, this whole function and `lua_jit_init`'s
+/// `arch`/`os` rows go with it — the answer is already written in Idol, and
+/// this is a bootstrap restatement of it.
+const arch_os_helpers =
+    \\#ifndef DUO_JIT_ARCH_NAME
+    \\#define DUO_JIT_ARCH_NAME 1
+    \\static inline const char* lua_jit_arch_name(void) {
+    \\#if defined(__aarch64__) || defined(__arm64__)
+    \\    return "arm64";
+    \\#elif defined(__x86_64__)
+    \\    return "x86_64";
+    \\#else
+    \\    return "unknown";
+    \\#endif
+    \\}
+    \\static inline const char* lua_jit_os_name(void) {
+    \\#if defined(__APPLE__)
+    \\    return "OSX";
+    \\#elif defined(__linux__)
+    \\    return "Linux";
+    \\#elif defined(_WIN32)
+    \\    return "Windows";
+    \\#elif defined(__unix__)
+    \\    return "POSIX";
+    \\#else
+    \\    return "Other";
+    \\#endif
+    \\}
+    \\static inline lua_Value lua_jit_arch(void) { return lua_val_from_str(lua_jit_arch_name()); }
+    \\static inline lua_Value lua_jit_os(void) { return lua_val_from_str(lua_jit_os_name()); }
+    \\#endif
+    \\
+;
+
 pub fn emitJitRuntime(cg: anytype) E!void {
+    cg.p("{s}\n", .{arch_os_helpers});
     if (cg.load_chunk) {
         const stub =
             \\static inline lua_Value lua_jit_on(lua_Value f) { (void)f; return lua_val_nil(); }
@@ -195,8 +256,8 @@ pub fn emitJitRuntime(cg: anytype) E!void {
             \\    lua_table_init_lit(m, "version", lua_val_lit("Duo JIT 1.0"));
             \\    lua_table_init_lit(m, "version_num", lua_val_from_num(10000.0));
             \\    lua_table_init_lit(m, "opt", lua_val_from_func((lua_Value (*)(lua_Value, lua_Value))lua_jit_opt));
-            \\    lua_table_init_lit(m, "os", lua_val_lit("Other"));
-            \\    lua_table_init_lit(m, "arch", lua_val_lit("native"));
+            \\    lua_table_init_lit(m, "os", lua_val_from_func((lua_Value (*)(void))lua_jit_os));
+            \\    lua_table_init_lit(m, "arch", lua_val_from_func((lua_Value (*)(void))lua_jit_arch));
             \\    return m;
             \\}
             \\
@@ -367,8 +428,8 @@ pub fn emitJitRuntime(cg: anytype) E!void {
         \\    lua_table_init_lit(m, "version", lua_val_lit("Duo JIT 1.0"));
         \\    lua_table_init_lit(m, "version_num", lua_val_from_num(10000.0));
         \\    lua_table_init_lit(m, "opt", lua_val_from_func((lua_Value (*)(lua_Value, lua_Value))lua_jit_opt));
-        \\    lua_table_init_lit(m, "os", lua_val_lit("Other"));
-        \\    lua_table_init_lit(m, "arch", lua_val_lit("native"));
+        \\    lua_table_init_lit(m, "os", lua_val_from_func((lua_Value (*)(void))lua_jit_os));
+        \\    lua_table_init_lit(m, "arch", lua_val_from_func((lua_Value (*)(void))lua_jit_arch));
         \\    return m;
         \\}
         \\

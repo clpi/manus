@@ -79,6 +79,14 @@ pub const PrettyPrinter = struct {
     /// holds them with their locations. This is that stream, filtered.
     comments: []const SourceComment = &.{},
     comment_at: usize = 0,
+    /// The `#!` line, so the formatter does not DELETE it.
+    ///
+    /// A shebang is not a comment: the lexer gives it its own token identity
+    /// (`.shebang`, only ever at byte zero), so the comment channel above never
+    /// carries it and a printer built on that channel drops it. The loss is
+    /// silent in the worst way — the file still parses, still checks, still
+    /// runs under `idol run`, and has merely stopped being executable.
+    shebang: []const u8 = "",
     /// Last source line emitted, so a BLANK LINE in the source survives.
     ///
     /// Blank lines are paragraph structure, not whitespace: reflowing a file
@@ -130,17 +138,82 @@ pub const PrettyPrinter = struct {
 
     fn writeStringLit(self: *PrettyPrinter, s: []const u8) !void {
         try self.write("\"");
-        for (s) |c| {
+        for (s, 0..) |c, i| {
             switch (c) {
                 '\n' => try self.write("\\n"),
                 '\r' => try self.write("\\r"),
                 '\t' => try self.write("\\t"),
                 '\\' => try self.write("\\\\"),
                 '"' => try self.write("\\\""),
-                else => try self.write(&[_]u8{c}),
+                else => {
+                    // A CONTROL BYTE has no printable spelling. Writing it raw
+                    // put the byte itself into the source file — a literal NUL
+                    // in a `.id` file, which the next reader truncates at or
+                    // chokes on. `\ddd` is the escape that can say it.
+                    //
+                    // Padded to three digits on purpose: `\0` followed by a
+                    // literal digit would re-lex as a different code point
+                    // (`\0` then `5` reads as `\05`), so the width has to be
+                    // fixed whenever a digit could follow.
+                    if (c < 32 or c == 127) {
+                        const next_is_digit = i + 1 < s.len and
+                            s[i + 1] >= '0' and s[i + 1] <= '9';
+                        if (next_is_digit) {
+                            try self.print("\\{d:0>3}", .{c});
+                        } else {
+                            try self.print("\\{d}", .{c});
+                        }
+                    } else try self.write(&[_]u8{c});
+                },
             }
         }
         try self.write("\"");
+    }
+
+    /// Print a string literal in the QUOTE IT WAS WRITTEN IN.
+    ///
+    /// The quote is not decoration, it selects the literal's law:
+    ///
+    ///   `"..."`  text  — escapes are processed AND `{name}` interpolates
+    ///   `'...'`  bytes — raw; no escape processing, no interpolation
+    ///   `[[..]]` long  — raw; no escape processing, no interpolation
+    ///
+    /// Reprinting everything as `"..."` preserves the BYTES (the printer
+    /// re-escapes correctly) but not the MEANING: `'hole {y}'` prints those
+    /// eight characters, while `"hole {y}"` substitutes the value of `y`. The
+    /// file still checks, and prints something else.
+    fn writeStringLitQuoted(self: *PrettyPrinter, x: anytype) !void {
+        switch (x.quote) {
+            .bytes => {
+                // Raw between the quotes. The body came from between two `'`,
+                // so it cannot itself contain an unescaped `'`.
+                try self.write("'");
+                try self.write(x.val);
+                try self.write("'");
+            },
+            .compat_long => {
+                // Pick a bracket level whose closer does not occur in the body.
+                var level: usize = 0;
+                while (level < 8) : (level += 1) {
+                    var close: [10]u8 = undefined;
+                    close[0] = ']';
+                    for (0..level) |k| close[1 + k] = '=';
+                    close[1 + level] = ']';
+                    if (std.mem.indexOf(u8, x.val, close[0 .. level + 2]) == null) break;
+                }
+                try self.write("[");
+                for (0..level) |_| try self.write("=");
+                try self.write("[");
+                try self.write(x.val);
+                try self.write("]");
+                for (0..level) |_| try self.write("=");
+                try self.write("]");
+            },
+            // `.text` and `.compat_text` hold a DECODED value; `.host` is a
+            // fabricated byte sequence with no source quote. Both are spelled
+            // with the text quote, which is what `writeStringLit` escapes for.
+            else => try self.writeStringLit(x.val),
+        }
     }
 
     // ── Type expressions ──────────────────────────────────────────────────────
@@ -212,24 +285,60 @@ pub const PrettyPrinter = struct {
 
     // ── Expressions ─────────────────────────────────────────────────────────────
 
-    fn binOpPrecedence(op: BinOp) u8 {
-        return switch (op) {
-            .@"or" => 1,
-            .@"and" => 2,
-            .eq, .neq, .lt, .gt, .leq, .geq, .contains => 3,
-            .concat => 4,
-            .add, .sub, .bor, .bxor => 5,
-            .mul, .div, .idiv, .mod, .band => 6,
-            .matmul => 6,
-            .pipeline => 0,
-            .lshift, .rshift => 7,
-            .pow => 8,
-        };
-    }
+    // ── Grouping ──────────────────────────────────────────────────────────────
+    //
+    // GROUPING IS THE AUTHOR'S. A formatter normalises LAYOUT; it does not
+    // relitigate what the author grouped. So the printer KEEPS the grouping of
+    // every operator application it prints under another operator, and never
+    // asks whether the parentheses are "needed".
+    //
+    // This replaces a precedence model. The printer used to carry its own
+    // table of operator precedences and drop parentheses it judged redundant —
+    // and that table DISAGREED with the parser's (`grammar_roles`, read by
+    // `infix_prec`). It ranked `<<`/`>>` above `+`/`-`; the grammar ranks them
+    // below. So `(1 << w) - 1` reprinted as `1 << w - 1`, which reparses as
+    // `1 << (w - 1)`: 15 became 8, and `idol check` reported no errors.
+    // Associativity was ignored on top of that, so `10 - (3 - 2)` reprinted as
+    // `10 - 3 - 2`: 9 became 5.
+    //
+    // Two models that must agree is a standing invitation for them to diverge
+    // again, and every divergence is a silently wrong program. Keeping the
+    // parentheses means the printer consults NO precedence model, so there is
+    // nothing left to disagree about. Redundant parentheses cost a reader two
+    // characters; a dropped one costs a wrong answer nobody sees.
+    //
+    // What this cannot recover: parentheses that were ALREADY redundant in the
+    // source, like `(a) + b` or `((x))`. Those never reach the printer — the
+    // parser builds no node for a grouping that does not change the tree, so
+    // by the time anything is printed the information is gone. See the report
+    // accompanying this change.
+
+    /// Free position: nothing above this expression binds it.
+    const free_position: u8 = 0;
+    /// Directly under a binary operator.
+    const operand_position: u8 = 1;
+    /// Under `^` or a prefix operator — the two places that bind TIGHTER than
+    /// a prefix operator does, so a unary operand needs grouping there too.
+    /// `(-2) ^ 2` is 4; `-2 ^ 2` is -4, because the parser reads a prefix
+    /// operand with `parse_prec(20)` and `^` is 23, so `^` wins.
+    const tight_operand_position: u8 = 2;
 
     fn printExpr(self: *PrettyPrinter, expr: *const Expr, parent_prec: u8) Error!void {
         const needs_parens = switch (expr.*) {
-            .binop => |b| binOpPrecedence(b.op) < parent_prec,
+            .binop => parent_prec != free_position,
+            .unop => parent_prec == tight_operand_position,
+            // AN IF-EXPRESSION IS AMBIGUOUS WITH AN IF-STATEMENT. Written bare
+            // at the head of a line — which is exactly where a function's tail
+            // expression goes — `if c == 1 10 else 20 end` is read as a
+            // statement, and the parser then wants a block where the value is:
+            // "expected expression, got 'else'".
+            //
+            // `gate/match.id` reached that state without any `if` in the
+            // source: `c:match` desugars to an if-expression chain at PARSE
+            // time, so the printer, which sees only the desugared tree, emitted
+            // a face the parser cannot read back. The grouping removes the
+            // ambiguity in every position, so it is written in every position.
+            .if_expr => true,
             else => false,
         };
 
@@ -246,7 +355,7 @@ pub const PrettyPrinter = struct {
                     try self.print("{d}", .{x.val});
                 }
             },
-            .string_lit => |x| try self.writeStringLit(x.val),
+            .string_lit => |x| try self.writeStringLitQuoted(x),
             .vararg => try self.write("..."),
 
             .name => |x| try self.write(x.ident),
@@ -332,8 +441,8 @@ pub const PrettyPrinter = struct {
                 try self.write(")");
             },
             .binop => |x| {
-                const prec = binOpPrecedence(x.op);
-                try self.printExpr(x.lhs, prec);
+                const child_pos: u8 = if (x.op == .pow) tight_operand_position else operand_position;
+                try self.printExpr(x.lhs, child_pos);
                 const op_str = switch (x.op) {
                     .add => " + ",
                     .sub => " - ",
@@ -361,7 +470,7 @@ pub const PrettyPrinter = struct {
                     .pipeline => " |> ",
                 };
                 try self.write(op_str);
-                try self.printExpr(x.rhs, prec);
+                try self.printExpr(x.rhs, child_pos);
             },
             .unop => |x| {
                 const op_str = switch (x.op) {
@@ -372,7 +481,9 @@ pub const PrettyPrinter = struct {
                     .compile => "@",
                 };
                 try self.write(op_str);
-                try self.printExpr(x.operand, 9);
+                // A prefix operator's operand keeps its grouping, and a nested
+                // prefix does too: `- -x` must not become `--x`.
+                try self.printExpr(x.operand, tight_operand_position);
             },
             .func_expr => |f| try self.printFuncBody(f),
             .table => |x| {
@@ -461,9 +572,11 @@ pub const PrettyPrinter = struct {
                 try self.printExpr(x.operand, 0);
             },
             .contains_expr => |x| {
-                try self.printExpr(x.lhs, 3);
+                // `3` here was an index into the deleted precedence table.
+                // Both sides are operands of an infix operator like any other.
+                try self.printExpr(x.lhs, operand_position);
                 try self.write(" in ");
-                try self.printExpr(x.rhs, 3);
+                try self.printExpr(x.rhs, operand_position);
             },
             .range => |x| {
                 try self.printExpr(x.start, 0);
@@ -636,6 +749,21 @@ pub const PrettyPrinter = struct {
                 }
             },
             .local_decl => |ld| {
+                // Attributes go ABOVE the binding, on their own lines, which is
+                // where they were written and the only place they re-parse.
+                // Trailed after the type they produced
+                // `p: { … } @packed @align(8) = …` and, worse,
+                // `abs_val: i64 @c.call("printf", …) = …` — a statement-level
+                // directive swallowed into the next binding's annotation.
+                if (self.mode != .lua) {
+                    for (ld.names) |name| {
+                        for (name.attributes) |attr| {
+                            try self.print("@{s}", .{attr.name});
+                            if (attr.args) |args| try self.print("({s})", .{args});
+                            try self.nl();
+                        }
+                    }
+                }
                 if (self.mode == .lua) {
                     try self.write("local ");
                 }
@@ -646,10 +774,11 @@ pub const PrettyPrinter = struct {
                         try self.write(": ");
                         try self.printTypeExpr(name.typ);
                     }
-                    // attributes
-                    for (name.attributes) |attr| {
-                        try self.print(" @{s}", .{attr.name});
-                        if (attr.args) |args| try self.print("({s})", .{args});
+                    if (self.mode == .lua) {
+                        for (name.attributes) |attr| {
+                            try self.print(" @{s}", .{attr.name});
+                            if (attr.args) |args| try self.print("({s})", .{args});
+                        }
                     }
                 }
                 if (ld.inits.len > 0) {
@@ -677,6 +806,24 @@ pub const PrettyPrinter = struct {
                 try self.printExpr(cd.val, 0);
             },
             .global_decl => |gd| {
+                // Layout attributes are carried on the BINDING, and a global
+                // binding carries them just as a local one does. Only the local
+                // printer emitted them, so `@packed` / `@align(8)` written above
+                // a `global` were dropped and the record silently changed
+                // layout — a size and alignment change no type check can see.
+                //
+                // They are written on their OWN LINES, above the binding, which
+                // is where they were written and the only place they re-parse:
+                // trailing them after the type produced
+                // `p: { … } @packed @align(8) =`, which is not the attribute
+                // position.
+                for (gd.names) |name| {
+                    for (name.attributes) |attr| {
+                        try self.print("@{s}", .{attr.name});
+                        if (attr.args) |args| try self.print("({s})", .{args});
+                        try self.nl();
+                    }
+                }
                 try self.write("global ");
                 if (gd.star) try self.write("* ");
                 for (gd.names, 0..) |name, i| {
@@ -865,8 +1012,43 @@ pub const PrettyPrinter = struct {
                 }
                 if (ad.target) |target| {
                     if (target == .record) {
-                        try self.print("{s}: ", .{ad.name});
-                        try self.printTypeExpr(target);
+                        // A `..Parent` SPREAD has nowhere to live in a record
+                        // TYPE, so printing this through `printTypeExpr` — the
+                        // bare `{ … }` — silently deleted every inherited
+                        // field. `Derived: @{ ..Base, y: i64 }` came back as
+                        // `Derived: { y: i64 }`, and `x` was simply gone.
+                        //
+                        // The spread is only spellable on the DESCRIPTOR face,
+                        // so a descriptor with parents is written `@{ … }`.
+                        // Without parents the two faces build the identical
+                        // tree, and the bare one is used because `@{` is not
+                        // accepted after an attribute line (`@derive(…)` above
+                        // `Vec2: { … }`) — writing it there produced a file
+                        // that no longer parsed.
+                        const parents = ad.parent != null or ad.extra_parents.len > 0;
+                        if (!parents) {
+                            try self.print("{s}: ", .{ad.name});
+                            try self.printTypeExpr(target);
+                        } else {
+                            try self.print("{s}: @{{", .{ad.name});
+                            var wrote_any = false;
+                            if (ad.parent) |p| {
+                                try self.print(" ..{s}", .{p});
+                                wrote_any = true;
+                            }
+                            for (ad.extra_parents) |p| {
+                                try self.write(if (wrote_any) ", " else " ");
+                                try self.print("..{s}", .{p});
+                                wrote_any = true;
+                            }
+                            for (target.record.fields) |fld| {
+                                try self.write(if (wrote_any) ", " else " ");
+                                try self.print("{s}: ", .{fld.name});
+                                try self.printTypeExpr(fld.typ);
+                                wrote_any = true;
+                            }
+                            try self.write(" }");
+                        }
                     } else {
                         try self.write("type ");
                         try self.write(ad.name);
@@ -972,9 +1154,22 @@ pub const PrettyPrinter = struct {
             try self.write("fun");
         }
         if (fd.path.len > 0) {
+            // The path is a DOTTED NAME split into segments — `mix.v2` arrives
+            // as `{"mix","v2"}`. Joining the segments with a SPACE did not
+            // shorten the name, it produced two tokens where the source had one
+            // binding: `mix v2`. The file then failed to parse at the file
+            // edge, far from the damage.
+            //
+            // A trailing `:` segment is a METHOD (`obj:m`), which is a
+            // different edge from `obj.m` — the receiver is bound. `fd.method`
+            // records which, so the last separator has to ask.
             const needs_kw_space = self.mode == .lua or !self.canonical;
+            if (needs_kw_space) try self.write(" ");
             for (fd.path, 0..) |p, i| {
-                if (needs_kw_space or i > 0) try self.write(" ");
+                if (i > 0) {
+                    const last = i == fd.path.len - 1;
+                    try self.write(if (fd.method and last) ":" else ".");
+                }
                 try self.write(p);
             }
         }
@@ -1007,12 +1202,30 @@ pub const PrettyPrinter = struct {
             //
             // It stays legal to write, for the case where it is directing the
             // compiler on purpose; the printer just does not add it back.
-            if (fd.func.ret_type != .inferred and !isVoidType(fd.func.ret_type)) {
-                try self.write(": ");
-                try self.printTypeExpr(fd.func.ret_type);
+            //
+            // A QUALIFIED name is the exception, and it is a parse fact, not a
+            // taste one. `mix.v2: any = (…)` is not a declaration to the
+            // parser: after a dotted path it requires `=` immediately
+            // (`try_parse_qualified_func_assign`), so the binding face reads as
+            // an annotated expression and the body's block never closes —
+            // "this block opened at column 15 is still open at the file edge".
+            // For a path the result descriptor therefore stays on the right.
+            const qualified = fd.path.len > 1;
+            if (qualified) {
+                try self.write(" = ");
+                try self.printFuncParamsOnly(&fd.func);
+                if (fd.func.ret_type != .inferred and !isVoidType(fd.func.ret_type)) {
+                    try self.write(": ");
+                    try self.printTypeExpr(fd.func.ret_type);
+                }
+            } else {
+                if (fd.func.ret_type != .inferred and !isVoidType(fd.func.ret_type)) {
+                    try self.write(": ");
+                    try self.printTypeExpr(fd.func.ret_type);
+                }
+                try self.write(" = ");
+                try self.printFuncParamsOnly(&fd.func);
             }
-            try self.write(" = ");
-            try self.printFuncParamsOnly(&fd.func);
         } else {
             try self.printFuncSig(&fd.func);
         }
@@ -1039,6 +1252,14 @@ pub const PrettyPrinter = struct {
             if (param.typ != .inferred) {
                 try self.write(": ");
                 try self.printTypeExpr(param.typ);
+            }
+            // The DEFAULT is part of the signature: it is what a caller that
+            // omits the argument gets. Dropping it changed the arity the
+            // relation accepts, and every call that relied on it stopped
+            // compiling — or worse, bound something else.
+            if (param.default_val) |dv| {
+                try self.write(" = ");
+                try self.printExpr(dv, 0);
             }
         }
         if (fb.vararg) {
@@ -1186,6 +1407,11 @@ pub const PrettyPrinter = struct {
             if (param.typ != .inferred) {
                 try self.write(": ");
                 try self.printTypeExpr(param.typ);
+            }
+            // See printFuncParamsOnly: the default is part of the signature.
+            if (param.default_val) |dv| {
+                try self.write(" = ");
+                try self.printExpr(dv, 0);
             }
         }
         if (fb.vararg) {
@@ -1338,6 +1564,12 @@ pub const PrettyPrinter = struct {
     }
 
     pub fn printModule(self: *PrettyPrinter, mod: *const Module) !void {
+        // The `#!` line is only meaningful at byte zero, so it is written
+        // before anything else — including any line-1 comment.
+        if (self.shebang.len > 0) {
+            try self.write(self.shebang);
+            try self.write("\n");
+        }
         for (mod.body.stmts) |*stmt| {
             try self.flushCommentsBefore(stmtLine(stmt));
             try self.printStmt(stmt);
@@ -1579,4 +1811,293 @@ test "pretty: canonical mode strips fun, then, and every block terminator" {
         \\
         \\
     , out);
+}
+
+// ── Information-loss regressions ────────────────────────────────────────────
+//
+// `idol fmt --canonical` REWRITES THE FILE IN PLACE. Every one of the defects
+// below produced a file that still passed `idol check`, which is why they went
+// unnoticed: the obvious oracle cannot see a lost sigil, a lost parent, a lost
+// default, or a NUL that decayed into the digit `0`. So each test here asserts
+// on the REPRINTED BYTES, never on whether the result type-checks.
+
+/// Parse the way `do_fmt` does: canonical family, `formatting` on (so string
+/// interpolation is NOT desugared and the literal survives to the printer).
+fn parseForFmt(alloc: std.mem.Allocator, src: []const u8) !Module {
+    var lex = @import("lexer.zig").Lexer.init(src, "test.id");
+    var p = @import("parser.zig").Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    p.formatting = true;
+    return try p.parse_module();
+}
+
+fn fmtCanonical(alloc: std.mem.Allocator, src: []const u8) ![]u8 {
+    const mod = try parseForFmt(alloc, src);
+    return try prettyPrintCanonical(alloc, &mod, .idol, true);
+}
+
+/// `fmt` must be a FIXED POINT: whatever it prints, printing that again must
+/// give the same bytes. Used by the regressions below so a fix that merely
+/// moves the damage one pass later cannot pass.
+fn expectIdempotent(alloc: std.mem.Allocator, src: []const u8) !void {
+    const once = try fmtCanonical(alloc, src);
+    const twice = try fmtCanonical(alloc, once);
+    try testing.expectEqualStrings(once, twice);
+}
+
+test "pretty: parentheses survive when the grammar needs them" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // THE ONE THAT CHANGES ANSWERS. The printer carried its own precedence
+    // table, and it ranked the shifts ABOVE `+`/`-` while the grammar ranks
+    // them below. `(1 << w) - 1` reprinted as `1 << w - 1`, which reparses as
+    // `1 << (w - 1)`: 15 became 8, and `idol check` said "no errors".
+    const src =
+        \\a = (1 << w) - 1
+        \\b = (x >> 4) & ((1 << 4) - 1)
+        \\c = (a | b) * 2
+        \\d = (a + b) << 2
+        \\e = (a << 2) + b
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    // Every grouping the author wrote comes back, including the ones a
+    // precedence model would call redundant. The printer consults no such
+    // model, so there is no model to be wrong.
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: equal-precedence nesting keeps its grouping on either side" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Both children were handed the parent's own precedence, so an
+    // equal-precedence child never got parentheses: `10 - (3 - 2)` printed
+    // `10 - 3 - 2` (9 became 5) and `100 / (10 / 5)` printed `100 / 10 / 5`
+    // (50 became 2). A left-associative operator may share the level only on
+    // the LEFT.
+    const src =
+        \\a = 10 - (3 - 2)
+        \\b = 100 / (10 / 5)
+        \\c = 10 - (3 + 2)
+        \\d = 2 ^ (3 ^ 2)
+        \\e = (2 ^ 3) ^ 2
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    // Nesting on either side keeps its grouping, whatever the associativity —
+    // the printer does not consult one.
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: a unary operand keeps its grouping under ^" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `^` is the one operator that binds tighter than a prefix operator (the
+    // parser reads a prefix operand with `parse_prec(20)`, and `^` is 23). So
+    // `(-2) ^ 2` is 4 while `-2 ^ 2` is -4, and the grouping has to survive.
+    // Elsewhere a unary operand needs no parentheses: nothing can capture it.
+    const src =
+        \\a = (-2) ^ 2
+        \\b = -x * y
+        \\c = -(x * y)
+        \\d = -(-x)
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: the printer holds no precedence model to disagree with" {
+    // The defect was two precedence tables that had to agree and did not. The
+    // fix is that the printer has none: grouping is printed, never inferred.
+    // If a precedence table reappears here, this is the tripwire.
+    // The needles are split so this test does not match its own text.
+    const src = @embedFile("pretty.zig");
+    try testing.expect(std.mem.indexOf(u8, src, "fn binOp" ++ "Precedence") == null);
+    try testing.expect(std.mem.indexOf(u8, src, "fn child" ++ "Floor") == null);
+}
+
+test "pretty: descriptor keeps its @ sigil and its spread parents" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `Derived: @{ ..Base, y: i64 }` was reprinted `Derived: { y: i64 }`.
+    // The `..Base` spread vanished, so the reprinted record lost field `x`
+    // entirely — and still checked clean.
+    const src =
+        \\Base: @{ x: i64 }
+        \\Derived: @{ ..Base, y: i64 }
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    // The parent-bearing descriptor keeps the `@{ … }` face, which is the only
+    // one that can spell a spread. A descriptor with no parents builds the
+    // identical tree either way and is written bare — `@{` is not accepted
+    // after an attribute line, so emitting it unconditionally broke files.
+    try testing.expectEqualStrings(
+        \\Base: { x: i64 }
+        \\Derived: @{ ..Base, y: i64 }
+        \\
+    , out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: a descriptor under an attribute line still parses back" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `@derive(…)` above a descriptor: the `@{` face is rejected here, so the
+    // printer must write the bare one. Reprinting the reprint is the assertion
+    // that matters — it is what caught the over-application.
+    const src =
+        \\@derive(Display, Eq)
+        \\Vec2: { x: f64, y: f64 }
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: dotted binding name keeps its dot" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `mix.v2` was reprinted `mix v2` — the path segments were joined with a
+    // SPACE. The result is two tokens where there was one binding, and the
+    // file then fails to parse at the file edge.
+    const src =
+        \\mix = {}
+        \\mix.v2 = (a: any, t: f64): any
+        \\    a
+        \\end
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    // A qualified name keeps the result descriptor on the RIGHT: the parser
+    // requires `=` straight after a dotted path, so the binding face does not
+    // re-parse for this shape.
+    try testing.expectEqualStrings(
+        \\mix = {}
+        \\mix.v2 = (a: any, t: f64): any
+        \\  a
+        \\
+    , out);
+    // The reprinted file must itself reprint unchanged. Before the fix it did
+    // not even parse: `mix v2` left a block open to the file edge.
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: shebang survives formatting" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `#!/usr/bin/env duo` was deleted outright: the shebang is a distinct
+    // token identity, so the formatter's comment channel never saw it and the
+    // printer had nowhere to put it. An executable script silently stopped
+    // being executable.
+    const mod = try parseForFmt(alloc, "print(\"ok\")\n");
+    var buf: std.ArrayList(u8) = .empty;
+    var pp = PrettyPrinter.init(alloc, &buf, .idol);
+    pp.canonical = true;
+    pp.shebang = "#!/usr/bin/env duo";
+    try pp.printModule(&mod);
+    try testing.expectEqualStrings(
+        \\#!/usr/bin/env duo
+        \\print("ok")
+        \\
+    , buf.items);
+}
+
+test "pretty: NUL escape survives the round trip" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `"a\0b"` was reprinted `"a0b"`. The decoder had no decimal-escape case,
+    // so the backslash was dropped and the digit kept; the printer then had no
+    // way to spell a NUL back. `#s` stayed 3 either way, so the `# expect: 3`
+    // directive kept passing over corrupted data.
+    const src =
+        \\s = "a\0b"
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: non-interpolating literals are not requoted into interpolating ones" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `'...'` is the BYTES quote and `[[...]]` the long quote: neither
+    // processes escapes and neither interpolates. Reprinting them as `"..."`
+    // preserves the bytes but not the MEANING — `'hole {y}'` prints literally,
+    // `"hole {y}"` substitutes the value of `y`.
+    const src =
+        \\a = 'hole {y} here'
+        \\b = [[raw {y} here]]
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: global declarations keep their layout attributes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `local_decl` printed binding attributes; `global_decl` did not, so
+    // `@packed` / `@align(8)` on a global were dropped and the record silently
+    // changed layout.
+    const src =
+        \\@packed
+        \\@align(8)
+        \\global gp: { x: i8, y: i64 } = { x = 1, y = 2 }
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+}
+
+test "pretty: binding attributes stay above the binding, not inside it" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // A local binding's attributes were trailed after the TYPE:
+    // `p: { x: i8 } @packed @align(8) = …`, which is not the attribute
+    // position. The same path swallowed a statement-level `@c.call(…)` into
+    // the following binding's annotation.
+    const src =
+        \\@packed
+        \\@align(8)
+        \\p: { x: i8, y: i64 } = { x = 3, y = 4 }
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: parameter default values survive" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Neither parameter printer emitted `default_val`, so every default in the
+    // corpus was deleted. Calls that relied on the default then bound nothing.
+    const src =
+        \\greet: str = (name: str = "World", greeting: str = "Hello")
+        \\  greeting
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
 }
