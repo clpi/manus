@@ -614,6 +614,13 @@ const Arm64Output = struct {
     lineage: []MachineLineage = &.{},
     /// Borrowed physical context for the ids in `lineage`.
     graph: ?*const semantic_graph.SemanticGraph = null,
+    /// Published applications with a KNOWN-ABSENT realization — the ones inside
+    /// relations that were folded to their compile-time answer, so no machine
+    /// text exists for them to be attributed to. Carried here because
+    /// `validateMachineLineage` is handed this output and not the DNIR module
+    /// the fold was recorded on, and it is computed by the SAME helper the DNIR
+    /// check uses (`unrealizedApplicationCount`) so the two cannot disagree.
+    unrealized: usize = 0,
     /// Bytes of `__DATA,__bss` zerofill arena this module needs. 0 means the
     /// section is not emitted at all, which is the pre-arena behavior verbatim.
     bss_size: u64 = 0,
@@ -2319,6 +2326,15 @@ const Arm64Compiler = struct {
                         slots_for_param = @intCast(rec.field_names.len);
                     }
                 }
+                // A DECLARED narrow parameter arrives in a 64-bit register and
+                // the caller may not have narrowed it: `f(x: i32)` under the C
+                // backend receives an `int32_t`, truncated by C at the call.
+                // Refit on entry instead of at each call site — one place, one
+                // instruction, and it holds for callers this compilation never
+                // sees. Record parameters keep i64 fields, so only the
+                // one-slot (scalar) case carries a declared width.
+                const param_fit: native_types.ResolvedType =
+                    if (slots_for_param == 1) p.ty else .any;
                 var k: u32 = 0;
                 while (k < slots_for_param) : (k += 1) {
                     const slot = slot_cursor;
@@ -2334,6 +2350,7 @@ const Arm64Compiler = struct {
                         if (off > 32760) return self.refuse(@src());
                         const home = try self.allocReg();
                         try self.emitLdrSp(home, @intCast(off));
+                        _ = try self.emitNarrowFit(home, home, param_fit);
                         if (self.gpSlotUsesStack(slot)) {
                             const soff = try self.reserveGpStackLocal(slot);
                             try self.storeGpStackLocal(soff, home);
@@ -2349,7 +2366,7 @@ const Arm64Compiler = struct {
                     const arg_reg: u5 = @intCast(slot);
                     if (scalar_body_has_call) {
                         const home = try self.allocReg();
-                        try self.emitMovReg(home, arg_reg);
+                        try self.emitMovRegFit(home, arg_reg, param_fit);
                         if (self.gpSlotUsesStack(slot)) {
                             const off = try self.reserveGpStackLocal(slot);
                             try self.storeGpStackLocal(off, home);
@@ -2375,6 +2392,10 @@ const Arm64Compiler = struct {
                         // a value INDEPENDENT OF ITS ARGUMENT. Claim it, and
                         // exhaustion refuses instead.
                         self.claimReg(arg_reg);
+                        // The leaf keeps the incoming register, so the refit is
+                        // in place — the argument register belongs to this
+                        // frame from entry and has no other reader.
+                        _ = try self.emitNarrowFit(arg_reg, arg_reg, param_fit);
                         try temps.put(self.alloc, slot, arg_reg);
                         try pinned.put(self.alloc, slot, arg_reg);
                     }
@@ -2751,14 +2772,25 @@ const Arm64Compiler = struct {
                     }
                 } else {
                     const val_reg = try self.evalDnirValue(temps, ins.lhs);
+                    // A STORE IS WHERE THE DECLARED WIDTH APPLIES. The C
+                    // backend spells this `x = ((uint32_t)(expr))` on every
+                    // assignment to a narrow binding, and it is the assignment
+                    // — not the arithmetic — that C guarantees to truncate:
+                    // `uint8_t e = 250; print(e + 10)` prints 260 in C and
+                    // `e = e + 10; print(e)` prints 4. Refitting here
+                    // reproduces exactly that, and for the register-homed cases
+                    // it costs NOTHING, because the refit replaces the `mov`
+                    // that was already being emitted.
                     if (ins.result) |slot| {
                         if (self.gp_stack_locals.get(slot)) |off| {
-                            try self.storeGpStackLocal(off, val_reg);
+                            const src = try self.narrowedFrameSource(val_reg, ins.ty);
+                            try self.storeGpStackLocal(off, src);
+                            if (src != val_reg) self.releaseReg(src);
                             _ = pinned.remove(slot);
                             _ = temps.remove(slot);
                             if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
                         } else if (pinned.get(slot) orelse temps.get(slot)) |local_reg| {
-                            if (local_reg != val_reg) try self.emitMovReg(local_reg, val_reg);
+                            try self.emitMovRegFit(local_reg, val_reg, ins.ty);
                             if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) {
                                 self.releaseReg(val_reg);
                             }
@@ -2767,11 +2799,13 @@ const Arm64Compiler = struct {
                             try temps.put(self.alloc, slot, local_reg);
                         } else if (self.gpSlotUsesStack(slot)) {
                             const off = try self.reserveGpStackLocal(slot);
-                            try self.storeGpStackLocal(off, val_reg);
+                            const src = try self.narrowedFrameSource(val_reg, ins.ty);
+                            try self.storeGpStackLocal(off, src);
+                            if (src != val_reg) self.releaseReg(src);
                             if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
                         } else {
                             const local_reg = try self.allocReg();
-                            if (local_reg != val_reg) try self.emitMovReg(local_reg, val_reg);
+                            try self.emitMovRegFit(local_reg, val_reg, ins.ty);
                             if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) {
                                 self.releaseReg(val_reg);
                             }
@@ -2887,7 +2921,7 @@ const Arm64Compiler = struct {
                         const ilhs = try self.evalDnirValue(temps, ins.lhs);
                         const irhs = try self.evalDnirValue(temps, ins.rhs);
                         const idst = try self.allocReg();
-                        try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop);
+                        try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop, ins.ty);
                         if (!Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
                         if (!Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
                         if (ins.result) |t| try temps.put(self.alloc, t, idst);
@@ -2911,7 +2945,7 @@ const Arm64Compiler = struct {
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
                     const dst = try self.allocReg();
-                    try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop);
+                    try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop, ins.ty);
                     if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
@@ -3122,7 +3156,14 @@ const Arm64Compiler = struct {
                     if (d != 0) try self.emitFmovReg(0, d);
                     if (self.needsProcessExitF64Coerce()) try self.emitFcvtzsX0FromD0();
                     self.releaseFpReg(d);
-                } else if (constRetImm(self, ins.lhs)) |n| {
+                } else if (constRetImm(self, ins.lhs)) |imm| {
+                    // A DECLARED narrow return type truncates the answer, and a
+                    // literal answer truncates at compile time rather than
+                    // costing an instruction: `g: i32 = () \n h: u32 = ... \n h`
+                    // is `return (int32_t)h` under the C backend, and a folded
+                    // constant must land on the same value the register path
+                    // would have produced.
+                    const n = narrowFitConst(imm, self.cur_func_ret);
                     // A constant return materializes DIRECTLY into x0. Routing it
                     // through evalDnirValue allocates a scratch register first, so
                     // the emitted floor was `mov x9,#k ; mov x0,x9 ; ret` where the
@@ -3133,7 +3174,7 @@ const Arm64Compiler = struct {
                     try self.emitMovImm(0, n);
                 } else {
                     const reg = try self.evalDnirValue(temps, ins.lhs);
-                    if (reg != 0) try self.emitMovReg(0, reg);
+                    try self.emitMovRegFit(0, reg, self.cur_func_ret);
                     // Register allocation is linear over the instruction stream
                     // and does not model control flow, so freeing a pinned local
                     // here leaks across the branch: after an early `return n`
@@ -3861,11 +3902,28 @@ const Arm64Compiler = struct {
         self.used_fp_regs[reg] = false;
     }
 
-    fn emitCompareOrBinop(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag) Error!void {
+    /// `ty` is the DECLARED width of the operation's result, not of its
+    /// operands. A comparison answers 0 or 1 and is never refitted; every other
+    /// operation is refitted when the result type is narrower than the
+    /// register, which is what makes `h * 16777619` on a `u32` wrap the way the
+    /// C backend's `uint32_t` does.
+    fn emitCompareOrBinop(
+        self: *Arm64Compiler,
+        dst: u5,
+        lhs: u5,
+        rhs: u5,
+        op: dnir.BinOpTag,
+        ty: native_types.ResolvedType,
+    ) Error!void {
         if (comparisonCondition(op)) |condition| {
             try self.emitCompareResult(dst, lhs, rhs, condition);
             return;
         }
+        try self.emitCompareOrBinopWide(dst, lhs, rhs, op);
+        _ = try self.emitNarrowFit(dst, dst, ty);
+    }
+
+    fn emitCompareOrBinopWide(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag) Error!void {
         switch (op) {
             .add => try self.emitAddReg(dst, lhs, rhs),
             .sub => try self.emitSubReg(dst, lhs, rhs),
@@ -4378,6 +4436,76 @@ const Arm64Compiler = struct {
     fn emitMovReg(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
         try self.ensureRegLive(src);
         try self.emitFmt(0xaa0003e0 | (@as(u32, src) << 16) | @as(u32, dst), "mov x{d}, x{d}", .{ dst, src });
+    }
+
+    /// Refit a 64-bit register to a DECLARED sub-64-bit integer width.
+    ///
+    /// Every value in this backend lives in a 64-bit register, so a `u32` local
+    /// held its full 64-bit history and `h: u32 = 4294967295; h = h + 5`
+    /// answered 4294967300 where `--backend=c` — which emits a real
+    /// `uint32_t` and a real `((uint32_t)(...))` cast on every store — answered
+    /// 4. Same source, two backends, different answers, `ok compile` both
+    /// times. That is the whole defect: the register is wide and the TYPE is
+    /// not, and nothing ever narrowed it back.
+    ///
+    /// One instruction, and the signedness is the part that must not be
+    /// guessed: `u32` ZERO-extends (SBFM would make 0xFFFFFFFF into -1) and
+    /// `i32` SIGN-extends (UBFM would make -1 into 4294967295). Getting that
+    /// backwards trades one silent wrong answer for another, so the two use
+    /// physically different opcodes rather than a shared "mask" with a sign
+    /// flag applied afterwards.
+    ///
+    /// Returns false when `ty` is not a narrow integer, so callers can keep
+    /// their existing move rather than emitting a redundant one.
+    fn emitNarrowFit(self: *Arm64Compiler, dst: u5, src: u5, ty: native_types.ResolvedType) Error!bool {
+        const fit = narrowFit(ty) orelse return false;
+        try self.ensureRegLive(src);
+        const imms: u32 = @as(u32, fit.bits) - 1;
+        if (fit.signed) {
+            // SBFM Xd, Xn, #0, #(bits-1) — `sxtb`/`sxth`/`sxtw`.
+            const mnemonic = switch (fit.bits) {
+                8 => "sxtb",
+                16 => "sxth",
+                else => "sxtw",
+            };
+            try self.emitFmt(
+                0x93400000 | (imms << 10) | (@as(u32, src) << 5) | @as(u32, dst),
+                "{s} x{d}, w{d}",
+                .{ mnemonic, dst, src },
+            );
+        } else {
+            // UBFM Xd, Xn, #0, #(bits-1) — `ubfx xd, xn, #0, #bits`.
+            try self.emitFmt(
+                0xd3400000 | (imms << 10) | (@as(u32, src) << 5) | @as(u32, dst),
+                "ubfx x{d}, x{d}, #0, #{d}",
+                .{ dst, src, fit.bits },
+            );
+        }
+        return true;
+    }
+
+    /// `emitNarrowFit` when the width demands it, an ordinary `mov` otherwise,
+    /// and NOTHING when the register already is the destination and the width
+    /// does not demand a refit. The narrow case therefore costs zero extra
+    /// instructions wherever a move was already being emitted.
+    fn emitMovRegFit(self: *Arm64Compiler, dst: u5, src: u5, ty: native_types.ResolvedType) Error!void {
+        if (try self.emitNarrowFit(dst, src, ty)) return;
+        if (dst != src) try self.emitMovReg(dst, src);
+    }
+
+    /// A register holding `ty`'s value, refitted, for a store that has no
+    /// destination register to refit INTO — a frame-homed local.
+    ///
+    /// Never refits `src` in place. The value being stored may have further
+    /// readers (`a = t` followed by `b = t`), and truncating the shared
+    /// register would answer the second read with the first read's width. A
+    /// scratch costs one register; getting this wrong costs a wrong answer that
+    /// only appears under register pressure.
+    fn narrowedFrameSource(self: *Arm64Compiler, src: u5, ty: native_types.ResolvedType) Error!u5 {
+        if (narrowFit(ty) == null) return src;
+        const scratch = try self.allocRegExcluding(src);
+        _ = try self.emitNarrowFit(scratch, src, ty);
+        return scratch;
     }
 
     fn emitRet(self: *Arm64Compiler) Error!void {
@@ -5305,7 +5433,7 @@ const Arm64Compiler = struct {
         const a = if (lhs_is_dest) old else try self.evalDnirValue(temps, plan.op.lhs);
         const b = if (rhs_is_dest) old else try self.evalDnirValue(temps, plan.op.rhs);
         const dst = try self.allocRegExcluding(old);
-        try self.emitCompareOrBinop(dst, a, b, plan.op.binop);
+        try self.emitCompareOrBinop(dst, a, b, plan.op.binop, plan.op.ty);
         if (a != old and !Arm64Compiler.regIsPinned(pinned, a)) self.releaseReg(a);
         if (b != old and !Arm64Compiler.regIsPinned(pinned, b)) self.releaseReg(b);
 
@@ -5681,6 +5809,15 @@ fn returnsVoid(t: ast.TypeExpr) bool {
     };
 }
 
+/// The declared width of a sub-64-bit integer type, and the value a refit
+/// leaves behind for a literal that never reaches a register.
+///
+/// ONE DEFINITION, in `dnir_lower.zig`, where the width is established. A
+/// second copy here is the shape this tree keeps paying for: two spellings of
+/// one fact, and nothing that makes them agree.
+const narrowFit = dnir_lower.narrowFit;
+const narrowFitConst = dnir_lower.narrowFitConst;
+
 fn comparisonCondition(op: dnir.BinOpTag) ?Condition {
     return switch (op) {
         .eq => .eq,
@@ -5814,6 +5951,40 @@ fn isBootstrapForeignCall(callee: []const u8) bool {
     return dnir.isBootstrapForeignCall(callee);
 }
 
+/// Applications whose realization is KNOWN-ABSENT rather than missing.
+///
+/// `Card` has three values and the third was never written: an application can
+/// have a realization (`.one`), or not yet be known to have one (`.unknown`),
+/// or be known to have NONE. LAWFUL NONEXECUTION produces the third — a
+/// relation evaluated whole at compile time keeps its published applications
+/// but realizes none of them, because there is no body left for them to be
+/// realized in.
+///
+/// `dnir_lower` is the only producer of that fact and records it on the
+/// function it folded (`Function.folded_to_constant`); this reads it back and
+/// says how many applications it accounts for. ONE implementation, called from
+/// both count checks, because two would be two predicates for one question —
+/// the shape that has produced a defect on this surface already.
+///
+/// NOT A RELAXATION. It subtracts exactly the applications published inside
+/// folded relations and nothing else, so a call dropped anywhere else still
+/// leaves `seen` short and still fails. A body that folded cannot also have
+/// emitted a call — `validateDnirApplications` asserts that separately.
+fn unrealizedApplicationCount(module: dnir.Module) usize {
+    const graph = module.graph orelse return 0;
+    var count: usize = 0;
+    for (module.functions) |function| {
+        if (!function.folded_to_constant) continue;
+        const relation = function.id orelse continue;
+        for (graph.applicationsInCaller(relation)) |occurrence| {
+            if (graph.application(occurrence) == null) continue;
+            if (graph.isBootstrapApplicationNode(occurrence)) continue;
+            count += 1;
+        }
+    }
+    return count;
+}
+
 fn validateDnirApplications(
     alloc: std.mem.Allocator,
     module: dnir.Module,
@@ -5942,6 +6113,14 @@ fn validateDnirApplications(
                 } else if (instruction.record.len != 0) {
                     return invalidFactsWith(diagnostic, @src(), "application-result-abi");
                 }
+                // A FOLDED RELATION MAY NOT ALSO REALIZE SOMETHING. The fold
+                // replaces the whole body with its constant, so lineage
+                // surviving inside one means the body was only partly
+                // discarded — and the count subtraction below would then be
+                // excusing a call that really did go missing.
+                if (function.folded_to_constant) {
+                    return invalidFactsWith(diagnostic, @src(), "folded-application-lineage");
+                }
                 const use = try seen.getOrPut(alloc, application.application);
                 if (use.found_existing) return invalidFactsWith(diagnostic, @src(), "application-realization-count");
             }
@@ -5952,7 +6131,14 @@ fn validateDnirApplications(
     for (applications) |application| {
         if (!graph.isBootstrapApplicationNode(application.application)) expected += 1;
     }
-    if (seen.count() != expected) return invalidFactsWith(diagnostic, @src(), "application-realization-count");
+    // Applications inside a relation that folded to its answer are realized
+    // NOWHERE — known-absent, not missing. Everything else must still be
+    // realized exactly once.
+    const unrealized = unrealizedApplicationCount(module);
+    if (unrealized > expected) return invalidFactsWith(diagnostic, @src(), "application-realization-count");
+    if (seen.count() != expected - unrealized) {
+        return invalidFactsWith(diagnostic, @src(), "application-realization-count");
+    }
 }
 
 fn validateMachineLineage(
@@ -5967,6 +6153,12 @@ fn validateMachineLineage(
     for (applications) |application| {
         if (!graph.isBootstrapApplicationNode(application.application)) expected += 1;
     }
+    // Same subtraction as the DNIR check, from the same producer: a relation
+    // folded to its answer has no machine text, so its applications have no
+    // lineage row to be attributed to. `output.unrealized` was computed by
+    // `unrealizedApplicationCount` over the module this output was emitted from.
+    if (output.unrealized > expected) return invalidFactsWith(diagnostic, @src(), "machine-lineage-count");
+    expected -= output.unrealized;
     if (output.lineage.len == 0 and expected == 0) return;
     if (output.lineage.len != expected) {
         return invalidFactsWith(diagnostic, @src(), "machine-lineage-count");
@@ -6045,6 +6237,7 @@ fn emitArm64FromDnirLicensed(
     try compiler.compileDnirModule(m);
     var output = try compiler.finish();
     output.graph = m.graph;
+    output.unrealized = unrealizedApplicationCount(m);
     return output;
 }
 
@@ -6778,7 +6971,7 @@ test "native backend: compact checked call preserves staged machine realization"
     const source =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(40 + 2)
     ;
     var lexer = Lexer.init(source, "gp-inline.id");
@@ -6877,7 +7070,7 @@ test "native backend: nested compact checked calls retain direct region use and 
         \\    value
         \\outer: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    outer(inner(42))
     ;
     var lexer = Lexer.init(source, "nested-gp-inline.id");
@@ -6982,7 +7175,7 @@ test "native backend: checked subject fact reaches object bytes" {
     const source =
         \\observe: i64 = (subject: i64, left: i64, right: i64)
         \\    subject + left + right
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    40:observe(1, 1)
     ;
     var lexer = Lexer.init(source, "machine-lineage.id");
@@ -7102,7 +7295,7 @@ test "native backend: removing checked facts refuses before machine emission" {
     const source =
         \\observe: i64 = (subject: i64)
         \\    subject
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    42:observe()
     ;
     var lexer = Lexer.init(source, "missing-lineage.id");
@@ -7151,7 +7344,7 @@ test "native backend: graph coordinates stay in resident context" {
     const source =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
     var lexer = Lexer.init(source, "graph-context.id");
@@ -7278,7 +7471,7 @@ test "native backend: strict graph unresolved application stays semantic" {
     const source =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
     var lexer = Lexer.init(source, "unresolved.id");
@@ -7922,7 +8115,7 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
     const source =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(41)
         \\    observe(42)
     ;
@@ -8015,7 +8208,7 @@ test "native backend: checked record result keeps application lineage" {
         \\}
         \\make: pair = (value: i64)
         \\    { left = value, right = value + 1 }
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    result: pair = make(41)
         \\    result.left + 1
     ;
@@ -8131,7 +8324,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
         \\    value
         \\impostor: i64 = (value: i64)
         \\    value + 1
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
     var lexer = Lexer.init(source, "callee-mismatch.id");
@@ -8327,7 +8520,7 @@ test "native backend: nested checked call machine ranges do not overlap" {
         \\    value
         \\outer: i64 = (left: i64, right: i64)
         \\    left + right
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    outer(inner(40), inner(2))
     ;
     var lexer = Lexer.init(source, "nested-lineage.id");
@@ -8443,7 +8636,7 @@ test "native backend: discarded checked calls do not retain return registers" {
     const source =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(1)
         \\    observe(2)
         \\    observe(3)
@@ -9712,7 +9905,7 @@ test "native backend: every DNIR integer binop selects its exact machine operati
         compiler.used_regs[9] = true;
         compiler.used_regs[10] = true;
         compiler.used_regs[11] = true;
-        try compiler.emitCompareOrBinop(9, 10, 11, case.op);
+        try compiler.emitCompareOrBinop(9, 10, 11, case.op, .i64);
         try std.testing.expectEqualStrings(case.assembly, compiler.asm_text.items);
     }
 }
@@ -9875,7 +10068,7 @@ test "native backend assembly lists helper call labels" {
         \\    a + b
         \\end
         \\
-        \\main(): i64
+        \\main(seed: i64): i64
         \\    add(1, 2)
         \\end
     , "native.id");
@@ -10399,7 +10592,7 @@ test "record return wider than x0..x7 uses the AAPCS64 x8 indirect result" {
         \\mk(): big
         \\    return { a = 11, b = 22, c = 33, d = 44, e = 55, f = 66, g = 77, h = 88, i = 99 }
         \\end
-        \\main(): i64
+        \\main(seed: i64): i64
         \\    v = mk()
         \\    return v.a + v.i
         \\end
@@ -10461,7 +10654,7 @@ test "an eight-field record return still explodes into x0..x7" {
         \\mk(): eight
         \\    return { a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8 }
         \\end
-        \\main(): i64
+        \\main(seed: i64): i64
         \\    v = mk()
         \\    return v.a * 10 + v.h
         \\end

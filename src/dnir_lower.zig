@@ -1192,6 +1192,14 @@ pub const LowerCtx = struct {
     /// downstream can tell one from an i64 by its representation — only this
     /// set can, and `..` needs the answer to choose between `true` and `1`.
     bool_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Local slots whose DECLARED type is narrower than the register that holds
+    /// them, keyed slot -> declared width. Set at the declaration and NEVER
+    /// cleared: unlike `bool_slots`, which tracks what a slot currently holds,
+    /// this is what the source said the binding IS, and a later assignment does
+    /// not retype a C `uint32_t`. Every store into one of these carries the
+    /// width so the backend can refit — that store is the exact place
+    /// `--backend=c` writes `((uint32_t)(...))`.
+    narrow_slots: std.AutoHashMapUnmanaged(u32, RT) = .empty,
     /// Slots holding the base address of a memory-backed positional table —
     /// `ptr` parameters, and locals materialized by `materializeTableSlots`.
     /// `t[i]` on one of these is a scaled 8-byte load, not a select-chain.
@@ -1244,6 +1252,7 @@ pub const LowerCtx = struct {
         self.f64_slots.deinit(self.alloc);
         self.str_slots.deinit(self.alloc);
         self.bool_slots.deinit(self.alloc);
+        self.narrow_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
         self.table_lens.deinit(self.alloc);
         var ct = self.const_tables.iterator();
@@ -1310,110 +1319,14 @@ fn internInstrStrings(alloc: std.mem.Allocator, instrs: []dnir.Instr) Error!void
     }
 }
 
-/// Run a no-operand relation body at compile time. Null when it cannot be run —
-/// which is most bodies, and must stay cheap to discover.
-///
-/// The step limit is what keeps this from turning a compile into an execution:
-/// a loop of 1e9 iterations hits it and falls through to ordinary lowering
-/// rather than folding for a minute.
-/// True when the body contains no application of any kind.
-///
-/// Folding SKIPS `lowerBlock`, and `lowerBlock` is where applications get
-/// resolved and recorded against the graph. Fold a body containing a call and
-/// its application is never resolved — the graph reports an unresolved
-/// application, and worse, a call that could NOT have been resolved would be
-/// hidden rather than diagnosed. So the fold is confined to bodies that have
-/// nothing to resolve: arithmetic, bindings and loops over locals.
-///
-/// That is exactly the elimination case anyway. A body that calls something is
-/// not foldable here even if the callee is pure — resolving that is the
-/// interprocedural frontier, not this one.
-fn bodyHasNoApplication(b: *const ast.Block) bool {
-    for (b.stmts) |st| if (!stmtHasNoApplication(&st)) return false;
-    if (b.tail_expr) |te| return exprHasNoApplication(te);
-    return true;
-}
-
-fn stmtHasNoApplication(st: *const ast.Stmt) bool {
-    return switch (st.*) {
-        .local_decl => |d| for (d.inits) |e| {
-            if (!exprHasNoApplication(e)) break false;
-        } else true,
-        .assign => |a| blk: {
-            for (a.targets) |e| if (!exprHasNoApplication(e)) break :blk false;
-            for (a.values) |e| if (!exprHasNoApplication(e)) break :blk false;
-            break :blk true;
-        },
-        .while_loop => |w| exprHasNoApplication(w.cond) and bodyHasNoApplication(&w.body),
-        .num_for => |f| bodyHasNoApplication(&f.body),
-        .do_block => |d| bodyHasNoApplication(&d.body),
-        .if_stmt => |f| blk: {
-            if (!exprHasNoApplication(f.cond)) break :blk false;
-            if (!bodyHasNoApplication(&f.then)) break :blk false;
-            for (f.elseifs) |ei| {
-                if (!exprHasNoApplication(ei.cond)) break :blk false;
-                if (!bodyHasNoApplication(&ei.body)) break :blk false;
-            }
-            break :blk if (f.else_body) |eb| bodyHasNoApplication(&eb) else true;
-        },
-        .ret => |r| for (r.vals) |e| {
-            if (!exprHasNoApplication(e)) break false;
-        } else true,
-        .expr_stmt => |e| exprHasNoApplication(e.expr),
-        .brk, .cont => true,
-        else => false,
-    };
-}
-
-fn exprHasNoApplication(e: *const ast.Expr) bool {
-    return switch (e.*) {
-        .call, .method_call, .macro_call => false,
-        .binop => |b| exprHasNoApplication(b.lhs) and exprHasNoApplication(b.rhs),
-        .unop => |u| exprHasNoApplication(u.operand),
-        .if_expr => |ie| exprHasNoApplication(ie.cond) and
-            exprHasNoApplication(ie.then_expr) and exprHasNoApplication(ie.else_expr),
-        .index => |ix| exprHasNoApplication(ix.obj) and exprHasNoApplication(ix.key),
-        .field => |f| exprHasNoApplication(f.obj),
-        .name, .int_lit, .float_lit, .true_lit, .false_lit, .string_lit, .nil => true,
-        else => false,
-    };
-}
-
-/// True when the body contains a loop. Straight-line constant folding is
-/// already `region_transform`'s job, and it RECORDS the transformation as
-/// evidence; folding it here first would pre-empt that and silently delete the
-/// record. What this pass adds is the case region_transform does not cover — a
-/// bounded loop, which the compile-time evaluator can simply run.
-fn bodyHasLoop(b: *const ast.Block) bool {
-    for (b.stmts) |st| {
-        const has = switch (st) {
-            .while_loop, .num_for, .repeat_loop, .gen_for => true,
-            .do_block => |d| bodyHasLoop(&d.body),
-            .if_stmt => |f| blk: {
-                if (bodyHasLoop(&f.then)) break :blk true;
-                for (f.elseifs) |ei| if (bodyHasLoop(&ei.body)) break :blk true;
-                break :blk if (f.else_body) |eb| bodyHasLoop(&eb) else false;
-            },
-            else => false,
-        };
-        if (has) return true;
-    }
-    return false;
-}
-
-fn foldWholeBody(alloc: std.mem.Allocator, fb: *const ast.FuncBody) ?i64 {
-    if (!bodyHasLoop(&fb.body)) return null;
-    if (!bodyHasNoApplication(&fb.body)) return null;
-    var arena = std.heap.ArenaAllocator.init(alloc);
-    defer arena.deinit();
-    const opts: comptime_eval.Options = .{ .step_limit = 200_000, .alloc = arena.allocator() };
-    const fv = comptime_eval.funcValue(fb, .{}, opts) catch return null;
-    const r = comptime_eval.callFunctionValue(fv, &.{}, .{}, opts) catch return null;
-    return switch (r) {
-        .int => |n| n,
-        else => null,
-    };
-}
+// LAWFUL NONEXECUTION LIVES IN `comptime.zig`, NOT HERE.
+//
+// `bodyHasNoApplication` / `stmtHasNoApplication` / `exprHasNoApplication` /
+// `bodyHasLoop` / `foldWholeBody` stood here and stand there now, verbatim,
+// behind `comptime.foldRelationBody`. Keeping a copy on this side would be a
+// SECOND IMPLEMENTATION OF ONE PREDICATE — the shape that produced three
+// defects on this surface in a day — and the two would only have to disagree
+// once for a body to be folded under one rule and lowered under the other.
 
 fn lowerFunction(
     alloc: std.mem.Allocator,
@@ -1518,6 +1431,13 @@ fn lowerFunction(
         // A `ptr` parameter carries the base address of a caller's positional
         // table, so `p[i]` in the body is a scaled load off that register.
         if (typeIsPtr(par.typ)) try ctx.ptr_slots.put(alloc, param_slot_cursor, {});
+        // A parameter's declared width is a declared width like any other. Only
+        // `i32` can reach here — `functionEligible` refuses `u8`/`u16`/`u32`
+        // parameters outright — but the body's arithmetic must still see it as
+        // a 32-bit binding rather than as an i64.
+        if (narrowIntOfType(par.typ)) |width| {
+            try ctx.narrow_slots.put(alloc, param_slot_cursor, width);
+        }
         param_slot_cursor += 1;
     }
     // Locals and temps share one id space (`freshTemp` allocates both), but the
@@ -1576,10 +1496,27 @@ fn lowerFunction(
     //
     // Fails CLOSED: any evaluator error — an unsupported construct, an unbound
     // name like `os.args`, the step limit — leaves the lowered body in place.
+    //
+    // APPLICATIONS ARE ADMITTED NOW, and the predicate that decides it lives
+    // ONCE, in `comptime.zig`. `foldRelationBody` keeps the old behaviour
+    // VERBATIM for a body that applies nothing — same two guards, same budget,
+    // same evaluator, empty bindings — so routing it in here cannot move a case
+    // that folded before; the new capability is confined to the branch where the
+    // body does apply something, and that branch is gated on
+    // `ApplicationFact.effect` through `graph_query.effectFreeCalleeClosure`.
+    var folded = false;
     if (fd.func.params.len == 0 and !fd.func.vararg and fd.func.vararg_name == null) {
-        if (foldWholeBody(alloc, &fd.func)) |k| {
+        if (comptime_eval.foldRelationBody(alloc, graph, id, &fd.func)) |k| {
             ctx.instrs.clearRetainingCapacity();
             try ctx.emit(.{ .op = .ret, .lhs = .{ .i64 = k } });
+            // THE APPLICATIONS INSIDE THIS BODY ARE NOW REALIZED NOWHERE, and
+            // that has to be SAID. `native_backend` requires every published
+            // application to be realized exactly once; a folded relation
+            // realizes none of its own, and without this fact the count check
+            // reads the difference as a dropped call (DNB011). Published on the
+            // function rather than back onto the graph — see
+            // `native_ir.Function.folded_to_constant`.
+            folded = true;
         }
     }
 
@@ -1667,6 +1604,7 @@ fn lowerFunction(
             break :blk slots > 0 and slots <= 8;
         },
         .id = id,
+        .folded_to_constant = folded,
         .blocks = blocks,
     };
 }
@@ -1792,6 +1730,113 @@ fn resolveType(t: ast.TypeExpr) RT {
 /// and would need truncation this pass does not emit, so they stay out.
 fn isIntAlias(n: []const u8) bool {
     return std.mem.eql(u8, n, "int") or std.mem.eql(u8, n, "integer");
+}
+
+// ---------------------------------------------------------------------------
+// DECLARED INTEGER WIDTH
+//
+// `resolveType` above answers `.any` for `u8`/`u16`/`u32` and `.i32` for `i32`,
+// and until this section existed NOTHING downstream ever read a width: every
+// value lived at 64 bits from the literal to the exit status. So
+//
+//     h: u32 = 4294967295
+//     h = h + 5
+//
+// answered 4294967300 under the DEFAULT backend and 4 under `--backend=c`,
+// which emits a real `uint32_t` and a real `((uint32_t)(...))` cast. The same
+// silence produced 79 instead of 118 from `tools/wasm/bench/hash.id`, a
+// 200M-iteration FNV hash whose true answer (1899277430, low byte 118) is
+// recorded in its own header and was recomputed independently.
+//
+// THE WIDTH IS KNOWN HERE AND ONLY HERE. Sema types the binding, but the DNIR
+// instruction stream had no field carrying it to the arithmetic — `Instr.ty`
+// existed and was written `.any` for every integer op. These helpers put the
+// declared width INTO `Instr.ty`, and `native_backend.emitNarrowFit` reads it
+// back out. Nothing is reconstructed from context.
+// ---------------------------------------------------------------------------
+
+/// The declared width of a sub-64-bit integer type, and whether refitting it
+/// into a 64-bit register sign- or zero-extends.
+///
+/// `i64`, `u64` and `.any` answer NULL: they are already the register width, so
+/// nothing on the i64 path may gain an instruction from this repair. `u64` is
+/// out of scope for a different reason — it does not need TRUNCATION at all,
+/// only unsigned division/shift/compare, which is a separate defect.
+pub const NarrowFit = struct { bits: u7, signed: bool };
+
+pub fn narrowFit(ty: RT) ?NarrowFit {
+    return switch (ty) {
+        .u8 => .{ .bits = 8, .signed = false },
+        .u16 => .{ .bits = 16, .signed = false },
+        .u32 => .{ .bits = 32, .signed = false },
+        .i8 => .{ .bits = 8, .signed = true },
+        .i16 => .{ .bits = 16, .signed = true },
+        .i32 => .{ .bits = 32, .signed = true },
+        else => null,
+    };
+}
+
+/// The compile-time half of `native_backend.emitNarrowFit`: the value the refit
+/// instruction would produce, for a literal that never reaches a register.
+///
+/// The two MUST agree bit for bit. A folded constant that skipped the
+/// truncation the register path performs is a decision computed against one
+/// state and read against another — the shape behind every silent wrong answer
+/// in this tree. `native_backend` calls THIS function rather than carrying its
+/// own copy.
+pub fn narrowFitConst(v: i64, ty: RT) i64 {
+    const fit = narrowFit(ty) orelse return v;
+    const shift: u6 = @intCast(64 - @as(u7, fit.bits));
+    const kept: u64 = @as(u64, @bitCast(v)) << shift;
+    if (fit.signed) return @as(i64, @bitCast(kept)) >> shift;
+    return @bitCast(kept >> shift);
+}
+
+/// The declared narrow width of a type expression, or null for everything else.
+///
+/// `i32` is included even though `resolveType` already answers `.i32`: nothing
+/// downstream had ever acted on that answer, so `h: i32 = 2147483647; h = h + 1`
+/// printed 2147483648 where C printed -2147483648.
+fn narrowIntOfType(t: ast.TypeExpr) ?RT {
+    if (t != .named) return null;
+    const n = t.named;
+    if (std.mem.eql(u8, n, "u8")) return .u8;
+    if (std.mem.eql(u8, n, "u16")) return .u16;
+    if (std.mem.eql(u8, n, "u32")) return .u32;
+    if (std.mem.eql(u8, n, "i8")) return .i8;
+    if (std.mem.eql(u8, n, "i16")) return .i16;
+    if (std.mem.eql(u8, n, "i32")) return .i32;
+    return null;
+}
+
+/// C's integer-promotion rank for an operand, as `--backend=c` computes it —
+/// because that backend emits real C and real C types, so its arithmetic IS
+/// C's usual arithmetic conversions and the differential is decided by them.
+///
+/// Measured, not assumed. `uint8_t e = 250` then `print(e + 10)` prints **260**
+/// under `--backend=c`: `u8` and `u16` promote to `int`, so the addition is not
+/// narrow at all and must not be truncated. `uint32_t a` then `print(a + 5)`
+/// prints **4**: `u32` promotes to `unsigned int`, which is where the wrap
+/// lives. `int32_t b` then `print(b + 1)` prints 2147483648 — signed overflow
+/// is undefined in C and the emitted program does not wrap it, so neither does
+/// this. `.int32` therefore means "promoted to a 32-bit type whose overflow is
+/// not defined", and only `.uint32` earns a refit.
+const CRank = enum { int32, uint32, int64 };
+
+fn crankOfNarrow(ty: RT) CRank {
+    return switch (ty) {
+        .u32 => .uint32,
+        // `u8`, `u16`, `i8`, `i16`, `i32` all promote to `int`.
+        .u8, .u16, .i8, .i16, .i32 => .int32,
+        else => .int64,
+    };
+}
+
+/// C's usual arithmetic conversions over two promoted operands.
+fn crankJoin(a: CRank, b: CRank) CRank {
+    if (a == .int64 or b == .int64) return .int64;
+    if (a == .uint32 or b == .uint32) return .uint32;
+    return .int32;
 }
 
 fn isIntType(t: ast.TypeExpr) bool {
@@ -2061,6 +2106,24 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // a miscompile, which is worse than a refusal. Decline instead.
             if (ld.names.len != ld.inits.len and ld.inits.len == 1) return bail(ctx.diagnostic, @src());
             for (ld.names, 0..) |*ln, i| {
+                // The declared width has to be on record BEFORE the initializer
+                // is lowered, because the initializer's store is the first place
+                // it applies: `h: u8 = 300` is 44 under `--backend=c`, which
+                // writes `uint8_t h = ((uint8_t)(300))`. Marking the slot after
+                // `lowerAssignTarget` would have left exactly the first store
+                // unrefitted — a wrong answer visible only on the declaration.
+                if (narrowIntOfType(ln.typ)) |width| {
+                    const slot = ctx.locals.get(ln.ident) orelse blk: {
+                        const fresh = ctx.freshTemp();
+                        const owned = try ctx.alloc.dupe(u8, ln.ident);
+                        ctx.locals.put(ctx.alloc, owned, fresh) catch |err| {
+                            ctx.alloc.free(owned);
+                            return err;
+                        };
+                        break :blk fresh;
+                    };
+                    try ctx.narrow_slots.put(ctx.alloc, slot, width);
+                }
                 if (i < ld.inits.len) {
                     try lowerAssignTarget(ctx, ln.ident, ld.inits[i]);
                 }
@@ -3349,10 +3412,17 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         return;
     }
     const v = try lowerExprCons(ctx, value, .single);
-    const store_ty: RT = if (exprIsF64(ctx, value)) .f64 else .any;
+    const f64_store = exprIsF64(ctx, value);
     if (ctx.locals.get(name)) |slot| {
+        // THE STORE IS WHERE THE DECLARED WIDTH APPLIES — the exact place
+        // `--backend=c` writes `((uint32_t)(...))`. The declared type wins over
+        // whatever the initializer's own type is, which is the same rule the
+        // `bool` mark above follows for the same reason.
+        const store_ty: RT = if (f64_store)
+            .f64
+        else
+            ctx.narrow_slots.get(slot) orelse .any;
         if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
-        if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
         if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
         // Both directions. A slot REASSIGNED from a bool to an integer is no
         // longer a bool, and leaving the mark set would refuse a legal
@@ -3364,13 +3434,22 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         if (intLiteralStep(value)) |n| {
             const gop = try ctx.const_ints.getOrPut(ctx.alloc, name);
             if (!gop.found_existing) gop.key_ptr.* = try ctx.alloc.dupe(u8, name);
-            gop.value_ptr.* = n;
+            // The COMPILE-TIME copy of the binding's value has to be the value
+            // the store leaves behind, or a numeric-for step reads 300 from a
+            // `u8` that holds 44 — a decision computed against one state and
+            // read against another.
+            gop.value_ptr.* = narrowFitConst(n, store_ty);
         }
         try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
+        subsumeProducerRefit(ctx);
         return;
     }
     const slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), slot);
+    // A slot created HERE was never declared with a type, so it carries no
+    // width. `.local_decl` pre-creates the slot for every narrow declaration
+    // precisely so that path never reaches this one.
+    const store_ty: RT = if (f64_store) .f64 else .any;
     if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
     if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
     if (exprIsBoolish(ctx, value)) try ctx.bool_slots.put(ctx.alloc, slot, {});
@@ -3380,6 +3459,7 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         gop.value_ptr.* = n;
     }
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
+    subsumeProducerRefit(ctx);
 }
 
 fn recordForDescriptor(
@@ -5553,6 +5633,128 @@ fn lowerStrCompare(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *co
     return .{ .temp = t };
 }
 
+/// The C rank of an already-lowered operand's SOURCE expression.
+///
+/// Conservative in one direction only: anything this pass cannot type answers
+/// `.int64`, which never asks for a refit. A missing refit leaves today's
+/// behaviour; a spurious one would be a NEW wrong answer, so the unknown case
+/// has to fall on the side that changes nothing.
+///
+/// Known gap, recorded rather than guessed: a CALL answers `.int64` even when
+/// the callee is declared `i32`, so `u32_expr + i32_call()` is not wrapped
+/// where C would wrap it. Closing it needs the callee's declared return at this
+/// site; `u32` returns are already ineligible for this backend, so the gap is
+/// exactly one shape wide.
+fn exprCRank(ctx: *LowerCtx, e: *const ast.Expr) CRank {
+    return switch (e.*) {
+        .int_lit => |i| if (i.val >= std.math.minInt(i32) and i.val <= std.math.maxInt(i32))
+            .int32
+        else
+            .int64,
+        .true_lit, .false_lit => .int32,
+        .name => |n| blk: {
+            const slot = ctx.locals.get(n.ident) orelse break :blk .int64;
+            const declared = ctx.narrow_slots.get(slot) orelse break :blk .int64;
+            break :blk crankOfNarrow(declared);
+        },
+        .unop => |u| switch (u.op) {
+            .neg, .bnot => exprCRank(ctx, u.operand),
+            .not => .int32,
+            else => .int64,
+        },
+        .binop => |b| switch (b.op) {
+            // `--backend=c` emits `((int64_t)(x)) << k` and
+            // `lua_imod_i64((int64_t)(a), (int64_t)(b))` — the operands are
+            // WIDENED before the operation, so the result is not narrow and
+            // must not be refitted. Measured: `a << 4` on a `u32` holding
+            // 4294967295 prints 68719476720 under both backends today.
+            .lshift, .rshift, .div, .idiv, .mod, .pow => .int64,
+            .eq, .neq, .lt, .gt, .leq, .geq, .@"and", .@"or", .contains => .int32,
+            .add, .sub, .mul, .band, .bor, .bxor => crankJoin(
+                exprCRank(ctx, b.lhs),
+                exprCRank(ctx, b.rhs),
+            ),
+            else => .int64,
+        },
+        else => .int64,
+    };
+}
+
+/// The declared width an operation's RESULT carries, or `.any` when it carries
+/// none. Only `unsigned int` earns one — see `CRank`.
+fn binopResultWidth(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) RT {
+    switch (op) {
+        .add, .sub, .mul, .band, .bor, .bxor => {},
+        else => return .any,
+    }
+    const l = exprCRank(ctx, lhs);
+    const r = exprCRank(ctx, rhs);
+    if (crankJoin(l, r) != .uint32) return .any;
+    // BITWISE OPS THAT CANNOT LEAVE THE WIDTH ARE NOT REFITTED, and this is a
+    // proof rather than a tolerance. A `.uint32` operand is canonical — its top
+    // 32 bits are zero — so:
+    //   AND needs only ONE canonical operand: it cannot set a bit that operand
+    //   does not have.
+    //   OR and XOR need BOTH: a sign-extended negative on the other side would
+    //   otherwise leak its high bits through.
+    // Everything else (add, sub, mul) carries out of bit 31 and must be refit.
+    switch (op) {
+        .band => return .any,
+        .bor, .bxor => if (l == .uint32 and r == .uint32) return .any,
+        else => {},
+    }
+    return .u32;
+}
+
+/// A store's refit SUBSUMES the refit of the instruction that produced its
+/// value, when that producer is the instruction immediately before it and both
+/// refit to the same width.
+///
+/// This is what keeps the repair free on the shape it exists for. `h = h * K`
+/// on a `u32` lowers to `binop mul -> t` then `store_local h <- t`; refitting
+/// both emits two `ubfx` where the store's alone is enough, and on
+/// `tools/wasm/bench/hash.id` that is three extra instructions per iteration
+/// across 200 million iterations.
+///
+/// SINGLE-CONSUMER IS BY CONSTRUCTION, not by search: `t` was allocated by the
+/// expression just lowered and handed straight to this store, so no earlier
+/// instruction can name it and no later one exists yet. The two positional
+/// checks below (producer is at `len-2`, its result is exactly what the store
+/// reads) are the whole precondition.
+fn subsumeProducerRefit(ctx: *LowerCtx) void {
+    const items = ctx.instrs.items;
+    if (items.len < 2) return;
+    const store = items[items.len - 1];
+    if (store.op != .store_local) return;
+    if (store.lhs != .temp) return;
+    const want = narrowFit(store.ty) orelse return;
+    const producer = &items[items.len - 2];
+    if (producer.op != .binop) return;
+    const have = narrowFit(producer.ty) orelse return;
+    if (have.bits != want.bits or have.signed != want.signed) return;
+    const result = producer.result orelse return;
+    if (result != store.lhs.temp) return;
+    producer.ty = .any;
+}
+
+/// Refit a lowered value to a declared width, folding when it is a literal.
+///
+/// The register form is a `store_local` into a fresh slot, which the backend
+/// realizes as exactly one extend instruction — the same instruction any other
+/// refit emits, through the same code path, so there is one origin for the
+/// machine behaviour and not two.
+fn refitValue(ctx: *LowerCtx, v: dnir.Value, ty: RT) Error!dnir.Value {
+    if (narrowFit(ty) == null) return v;
+    switch (v) {
+        .i64 => |n| return .{ .i64 = narrowFitConst(n, ty) },
+        .void, .f64, .str, .record => return v,
+        else => {},
+    }
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .store_local, .result = t, .lhs = v, .ty = ty });
+    return .{ .temp = t };
+}
+
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
     if (op == .concat and concatOperandOk(ctx, lhs) and concatOperandOk(ctx, rhs) and
         (exprIsStr(ctx, lhs) or exprIsStr(ctx, rhs)))
@@ -5565,34 +5767,81 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     };
     if (str_cmp) return try lowerStrCompare(ctx, op, lhs, rhs);
     const f64_op = exprIsF64(ctx, lhs) or exprIsF64(ctx, rhs);
+    // Selected BEFORE either operand is lowered: an unsupported operator has to
+    // refuse without having emitted the operands' instructions, which is what
+    // the struct-literal field order used to guarantee.
+    const tag: dnir.BinOpTag = switch (op) {
+        .add => .add,
+        .sub => .sub,
+        .mul => .mul,
+        .div, .idiv => .div,
+        .mod => .mod,
+        .eq => .eq,
+        .neq => .neq,
+        .lt => .lt,
+        .gt => .gt,
+        .leq => .leq,
+        .geq => .geq,
+        .band => .band,
+        .bor => .bor,
+        .bxor => .bxor,
+        .lshift => .shl,
+        .rshift => .shr,
+        else => return bailWith(ctx.diagnostic, @src(), @tagName(op)),
+    };
     const t = ctx.freshTemp();
+    var a = try lowerExpr(ctx, lhs);
+    var b = try lowerExpr(ctx, rhs);
+    var result_ty: RT = if (f64_op) .f64 else .any;
+    if (!f64_op) {
+        if (unsignedComparison(ctx, op, lhs, rhs)) |conv| {
+            // C converts BOTH operands to the common type before comparing, so
+            // `a < -1` on a `uint32_t` is `a < 4294967295u` — true — and the
+            // 64-bit signed compare this backend emits answers false. Refit the
+            // operand that is not already canonical at the common width and the
+            // existing signed compare then gives C's answer, with no new
+            // condition codes to get backwards.
+            if (conv.fit_lhs) a = try refitValue(ctx, a, conv.ty);
+            if (conv.fit_rhs) b = try refitValue(ctx, b, conv.ty);
+        } else {
+            result_ty = binopResultWidth(ctx, op, lhs, rhs);
+        }
+    }
     try ctx.emit(.{
         .op = .binop,
         .result = t,
-        .binop = switch (op) {
-            .add => .add,
-            .sub => .sub,
-            .mul => .mul,
-            .div, .idiv => .div,
-            .mod => .mod,
-            .eq => .eq,
-            .neq => .neq,
-            .lt => .lt,
-            .gt => .gt,
-            .leq => .leq,
-            .geq => .geq,
-            .band => .band,
-            .bor => .bor,
-            .bxor => .bxor,
-            .lshift => .shl,
-            .rshift => .shr,
-            else => return bailWith(ctx.diagnostic, @src(), @tagName(op)),
-        },
-        .lhs = try lowerExpr(ctx, lhs),
-        .rhs = try lowerExpr(ctx, rhs),
-        .ty = if (f64_op) .f64 else .any,
+        .binop = tag,
+        .lhs = a,
+        .rhs = b,
+        .ty = result_ty,
     });
     return .{ .temp = t };
+}
+
+const UnsignedComparison = struct { ty: RT, fit_lhs: bool, fit_rhs: bool };
+
+/// A comparison whose C common type is `unsigned int`, and which of its
+/// operands is not already canonical at that width.
+///
+/// A `.uint32` operand IS canonical by construction: it is either a `u32`
+/// binding (every store refits) or a `u32`-ranked arithmetic result (every such
+/// result refits, and `band` is proven not to need one). So only the `.int32`
+/// side — a literal, an `i32`/`u8`/`i16` binding, a boolean — can carry bits
+/// the comparison must drop.
+fn unsignedComparison(
+    ctx: *LowerCtx,
+    op: ast.BinOp,
+    lhs: *const ast.Expr,
+    rhs: *const ast.Expr,
+) ?UnsignedComparison {
+    switch (op) {
+        .eq, .neq, .lt, .gt, .leq, .geq => {},
+        else => return null,
+    }
+    const l = exprCRank(ctx, lhs);
+    const r = exprCRank(ctx, rhs);
+    if (crankJoin(l, r) != .uint32) return null;
+    return .{ .ty = .u32, .fit_lhs = l != .uint32, .fit_rhs = r != .uint32 };
 }
 
 /// FP argument staging was UNSAFE until the backend stopped homing f64 values in
@@ -6742,7 +6991,7 @@ test "dnir_lower: a concat chain measures before it allocates" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\main(): i64
+        \\main(seed: i64): i64
         \\    a = "left"
         \\    s = a .. "right"
         \\    return s:len()
@@ -7266,7 +7515,7 @@ test "dnir_lower: call census without application facts refuses" {
     const source =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
     var lexer = @import("lexer.zig").Lexer.init(source, "missing-application.id");
@@ -7331,7 +7580,7 @@ test "dnir_lower: diagnostics are isolated and reset by their own run" {
     const application_source =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
     var application_lexer = @import("lexer.zig").Lexer.init(application_source, "application-failure.id");
@@ -7441,11 +7690,11 @@ test "dnir_lower: call result class comes from graph descriptor" {
         \\count: i64 = ()
         \\    1
         \\label: str = "ok"
-        \\length: i64 = ()
+        \\length: i64 = (seed: i64)
         \\    label:len()
         \\floating: f64 = ()
         \\    measure()
-        \\integer: i64 = ()
+        \\integer: i64 = (seed: i64)
         \\    count()
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "result_query.id");
@@ -7497,7 +7746,7 @@ test "dnir_lower: checked subject call retains semantic facts" {
     const src =
         \\read: i64 = (subject: i64)
         \\    subject
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    42:read()
     ;
     var lex = Lexer.init(src, "application.id");
@@ -7557,7 +7806,7 @@ test "dnir_lower: applications share relation without sharing occurrence id" {
     const src =
         \\read: i64 = (subject: i64)
         \\    subject
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    41:read()
         \\    42:read()
     ;
@@ -7609,7 +7858,7 @@ test "dnir_lower: checked ordinary calls consume graph facts" {
     const source =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(41)
         \\    observe(42)
     ;
@@ -7673,7 +7922,7 @@ test "dnir_lower: checked multi-operand call retains ABI staging" {
     const source =
         \\add: i64 = (left: i64, right: i64)
         \\    left + right
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    add(20, 22)
     ;
     var lexer = Lexer.init(source, "multi-application.id");
@@ -7725,7 +7974,7 @@ test "dnir_lower: checked scalar ABI boundaries retain staging" {
         \\    1.5
         \\count: i64 = (value: f64)
         \\    1
-        \\main: f64 = ()
+        \\main: f64 = (seed: i64)
         \\    count(2.5)
         \\    choose(1)
     ;
@@ -7871,7 +8120,7 @@ test "dnir_lower: checked ids use graph coordinates" {
     const src =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "hash-free.id");
@@ -7910,7 +8159,7 @@ test "dnir_lower: graphless convenience returns no orphan handles" {
     const src =
         \\observe: i64 = (value: i64)
         \\    value
-        \\main: i64 = ()
+        \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
     var lex = @import("lexer.zig").Lexer.init(src, "graphless.id");

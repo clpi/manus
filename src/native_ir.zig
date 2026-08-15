@@ -225,6 +225,22 @@ pub const Function = struct {
     is_float_kernel: bool = false,
     /// Exact authoritative graph id for the callable declaration.
     id: ?semantic_graph.id = null,
+    /// LAWFUL NONEXECUTION — this body IS its compile-time answer.
+    ///
+    /// The relation was evaluated whole at compile time and its blocks replaced
+    /// by the constant, so every application the graph publishes inside it is
+    /// realized NOWHERE. That is a KNOWN-ABSENT realization, not a missing one,
+    /// and the realization-count checks in `native_backend` need the two told
+    /// apart or a folded relation reads as a dropped call (DNB011).
+    ///
+    /// THE FACT LIVES HERE AND NOT ON THE GRAPH deliberately. Realization is
+    /// already a DNIR-carried fact — `Instr.realization_start` is where a
+    /// PRESENT realization is published — so its absence belongs in the same
+    /// representation rather than split across two stores. It is also a fact
+    /// about THIS lowering, not about the source: the graph is shared with
+    /// every other backend, and one that does not fold would read a realization
+    /// card written by one that does.
+    folded_to_constant: bool = false,
     blocks: []const Block,
 };
 
