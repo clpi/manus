@@ -36,6 +36,28 @@ ERRNO_inval = 28
 ERRNO_nosys = 52
 ERRNO_notsup = 58
 ERRNO_spipe = 70
+# THE WITHHOLD ERRNO, and it is chosen so a guest can tell "denied" from
+# "failed". Every other ordinal above already means something else in this
+# host: `badf` is what an fd this sandbox does not hold answers, `notsup` is
+# what a deprecated call answers, `nosys` is "no such function". If withholding
+# reused any of them the host would be LYING to the guest — a guest denied
+# `fd_write` would be indistinguishable from a guest whose fd was absent, and
+# a program that retries on `badf` would retry forever.
+#
+# `notcapable` is the one ordinal in the preview1 enumeration that means "the
+# capability you would need was not granted", and NO other path in this file
+# returns it (grep: `grant_errno` is its only producer), so the fact is
+# unambiguous by construction.
+#
+# NOT measured against wasmtime: this host has no way to make wasmtime emit it
+# (see §4 of docs/wasm-capability.md — wasmtime's only withhold is refusing to
+# instantiate, so it never returns an errno for a denial at all). It is instead
+# CROSS-CHECKED: the preview1 errno enumeration is alphabetical after
+# `success`, and the five ordinals above that WERE measured against wasmtime
+# 47.0.3 — badf 8, inval 28, nosys 52, notsup 58, spipe 70 — all land where
+# that enumeration puts them. `notcapable` is its last entry, 76. Five
+# independent agreements on one ordering is the evidence for the sixth.
+ERRNO_notcapable = 76
 
 # ── filetype ordinals ─────────────────────────────────────────────────────
 FILETYPE_unknown = 0
@@ -285,6 +307,173 @@ proc_exit_refused: i64 = (code: i64)
 # 2 and this says 0; that difference is stated, not hidden.
 STDIO_FILETYPE = FILETYPE_unknown
 
+# ══ THE GRANT SET ═════════════════════════════════════════════════════════
+#
+# BEFORE THIS: a guest that named `wasi_snapshot_preview1` correctly received
+# ALL 46 FUNCTIONS. Import resolution was SOUND (both names exact, unknown
+# import refused at load) and CARRIED NO POLICY: there was no knob anywhere in
+# `engine.id` to withhold one of them. That is name soundness without
+# capability, and `docs/capability-algebra.md` §6.3 measured it here before it
+# was fixed: "any guest naming wasi_snapshot_preview1 correctly receives all
+# 46 ... There is no way to instantiate a guest with fd_write withheld."
+#
+# WHO WRITES THE GRANT. §4.2 of that document rules that a capability is a
+# grant the grantee CANNOT WRITE, which disposes of the obvious shape here: the
+# guest's own import section is exactly an import, self-written, and confers
+# nothing. The grant is therefore stated by whatever CONSTRUCTS the guest — for
+# this engine that is the launcher, and the launcher's whole configuration
+# surface is `DUO_WASM_*`. So `DUO_WASM_GRANT` is the artefact. The guest
+# cannot alter it; nothing in a `.wasm` file can.
+#
+# GRANULARITY. `docs/spec/world.md:217` already rules against monolithic
+# bundles and names the decomposition: `filesystem · process · environment ·
+# clock · network · device`. The 46 preview1 functions partition EXACTLY onto
+# those six, which is why the ruling is obeyed here rather than re-argued.
+#
+# THE SPEC LANGUAGE, comma-separated, folded left to right:
+#   all              every roster entry
+#   none             the empty set
+#   <world>          one of the six above
+#   <function>       one preview1 name, exactly as the roster spells it
+#   -<world>         withhold a world from what is granted so far
+#   -<function>      withhold one function
+# so `all,-fd_write` grants everything but writing, and `clock,random_get`
+# grants two clocks and entropy and nothing else.
+
+# The world a roster index belongs to. A pure function of the index: the
+# roster is frozen (preview1 is), so this partition cannot go stale against a
+# name list the way a second table would.
+grant_world: str = (i: i64)
+  r: str = "device"
+  if i == 1 or i == 2 or i == 39 or i == 40 or i == 42
+    # args_get, args_sizes_get, proc_exit, proc_raise, sched_yield
+    r = "process"
+  elseif i == 3 or i == 4
+    # clock_res_get, clock_time_get
+    r = "clock"
+  elseif i == 5 or i == 6
+    # environ_get, environ_sizes_get
+    r = "environment"
+  elseif i >= 7 and i <= 37
+    # every fd_* and every path_*
+    r = "filesystem"
+  elseif i >= 43 and i <= 46
+    # every sock_*
+    r = "network"
+  elseif i == 38 or i == 41
+    # poll_oneoff, random_get
+    r = "device"
+  else
+    # out of roster: belongs to no world, so no world token can name it
+    r = ""
+  r
+
+# 1 when one token names roster index `i`. `all` names every index; a world
+# token names its members; a function token names itself.
+grant_token_covers: i64 = (tok: str, i: i64)
+  r: i64 = 0
+  if tok == "all"
+    r = 1
+  elseif tok == grant_world(i)
+    r = 1
+  elseif tok == wasi_name(i)
+    r = 1
+  r
+
+# 1 when a token names ANYTHING at all. A capability policy with a typo in it
+# must not silently deny: `DUO_WASM_GRANT=fd_wrote` would otherwise withhold
+# `fd_write` and the diagnostic would blame the guest. The host validates the
+# spec before it enforces it, and this is what it asks.
+grant_token_known: i64 = (tok: str)
+  r: i64 = 0
+  if tok == "all" or tok == "none"
+    r = 1
+  elseif tok == "process" or tok == "clock" or tok == "environment"
+    r = 1
+  elseif tok == "filesystem" or tok == "network" or tok == "device"
+    r = 1
+  else
+    k: i64 = 1
+    while k <= 46
+      if tok == wasi_name(k)
+        r = 1
+      k += 1
+  r
+
+# The token starting at byte `a`, up to the next comma or the end.
+grant_tok_at: str = (spec: str, a: i64)
+  n: i64 = string.len(spec)
+  b: i64 = a
+  while b <= n and string.byte(spec, b) != 44
+    b += 1
+  string.sub(spec, a, b - 1)
+
+# One past the comma that ended the token starting at `a`.
+grant_next_at: i64 = (spec: str, a: i64)
+  n: i64 = string.len(spec)
+  b: i64 = a
+  while b <= n and string.byte(spec, b) != 44
+    b += 1
+  b + 1
+
+# 1 when `spec` grants roster index `i`. Folded LEFT TO RIGHT so a later token
+# overrides an earlier one, which is what makes `all,-fd_write` mean what it
+# reads as.
+#
+# THE STARTING VALUE IS 0. An empty spec grants nothing. That is the
+# fail-closed direction and it is the direction `graph_query.zig` already chose
+# for graph facts ("a new node kind fails CLOSED"). The DEFAULT when the
+# variable is UNSET is a separate ruling and it lives in `engine.id`, not here,
+# because it is a property of the launcher and not of the ABI.
+grant_admits: i64 = (spec: str, i: i64)
+  r: i64 = 0
+  n: i64 = string.len(spec)
+  a: i64 = 1
+  while a <= n
+    raw: str = grant_tok_at(spec, a)
+    neg: i64 = 0
+    tok: str = raw
+    if string.len(raw) > 0 and string.byte(raw, 1) == 45
+      neg = 1
+      tok = string.sub(raw, 2, string.len(raw))
+    if tok == "none"
+      r = 0
+    elseif grant_token_covers(tok, i) == 1
+      if neg == 1
+        r = 0
+      else
+        r = 1
+    a = grant_next_at(spec, a)
+  r
+
+# "" when every token in `spec` names something; otherwise the FIRST token that
+# names nothing, so the diagnostic can quote it back.
+grant_bad_token: str = (spec: str)
+  r: str = ""
+  n: i64 = string.len(spec)
+  a: i64 = 1
+  while a <= n
+    raw: str = grant_tok_at(spec, a)
+    tok: str = raw
+    if string.len(raw) > 0 and string.byte(raw, 1) == 45
+      tok = string.sub(raw, 2, string.len(raw))
+    if r == "" and grant_token_known(tok) == 0
+      r = raw
+    a = grant_next_at(spec, a)
+  r
+
+# 1 when `spec` grants every one of the 46. The engine uses this to prove the
+# TOTAL-GRANT path is byte-identical to the path that existed before the grant
+# did: when this answers 1, nothing below the check may behave differently.
+grant_is_total: i64 = (spec: str)
+  r: i64 = 1
+  k: i64 = 1
+  while k <= 46
+    if grant_admits(spec, k) == 0
+      r = 0
+    k += 1
+  r
+
 M = {}
 M.count = 46
 M.module_name = "wasi_snapshot_preview1"
@@ -298,6 +487,12 @@ M.ERRNO_inval = ERRNO_inval
 M.ERRNO_nosys = ERRNO_nosys
 M.ERRNO_notsup = ERRNO_notsup
 M.ERRNO_spipe = ERRNO_spipe
+M.ERRNO_notcapable = ERRNO_notcapable
+M.grant_world = grant_world
+M.grant_admits = grant_admits
+M.grant_bad_token = grant_bad_token
+M.grant_is_total = grant_is_total
+M.grant_token_known = grant_token_known
 M.FILETYPE_unknown = FILETYPE_unknown
 M.FILETYPE_character_device = FILETYPE_character_device
 M.stdio_filetype = STDIO_FILETYPE

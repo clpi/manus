@@ -15,6 +15,12 @@
 # so `now_ns` needed an explicit return. Without that fix this harness would
 # have reported every run as instantaneous # worse than the bash it replaces.
 
+# `require("script")`, NOT `std.script` / bare `script`: a bare `std` reaches
+# the C emitter as an undeclared global and indexing it SEGFAULTS the binary
+# before its first statement (measured, exit 139); a bare module name registers
+# no module at all. `require` is the only spelling that embeds lib/script.id.
+script = require("script")
+
 _ms_per_ns: i64 = ()
   1000000
 

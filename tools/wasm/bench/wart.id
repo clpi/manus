@@ -31,6 +31,12 @@
 
 # Deterministic 32-bit LCG. The kernels must be arbitrary but the run must be
 # reproducible, so the seed is an input rather than a clock read.
+# `require("script")`, NOT `std.script` / bare `script`: a bare `std` reaches
+# the C emitter as an undeclared global and indexing it SEGFAULTS the binary
+# before its first statement (measured, exit 139); a bare module name registers
+# no module at all. `require` is the only spelling that embeds lib/script.id.
+script = require("script")
+
 _next: i64 = (s: i64)
   (s * 1103515245 + 12345) % 2147483648
 
@@ -81,8 +87,8 @@ _assert_wat: str = (body: str, want: str)
 _build: str = (dir: str, name: str, text: str)
   wat = dir .. "/" .. name .. ".wat"
   wasm = dir .. "/" .. name .. ".wasm"
-  std.script.fs_write(wat, text)
-  if std.script.status("wat2wasm " .. wat .. " -o " .. wasm .. " 2>/dev/null") != 0
+  script.fs_write(wat, text)
+  if script.status("wat2wasm " .. wat .. " -o " .. wasm .. " 2>/dev/null") != 0
     return ""
   wasm
 
@@ -91,7 +97,7 @@ _ms: i64 = (a: i64, b: i64)
 
 _time_ms: i64 = (cmd: str)
   a: i64 = std.time.monotonic()
-  std.script.status(cmd)
+  script.status(cmd)
   b: i64 = std.time.monotonic()
   _ms(a, b)
 
@@ -101,7 +107,7 @@ _field: str = (raw: str, key: str)
     m = raw:match("^" .. key .. "=([^\n]*)")
   if m == nil
     return ""
-  std.script.chomp(m)
+  script.chomp(m)
 
 # the engine's verdict on a trapping module. Both signals are required, because each
 # one alone has been wrong at some point:
@@ -214,7 +220,7 @@ vidol = _expect(binary, amod)
 # carries a number and not only a verdict. wasmtime prints i32 signed
 # and the engine prints it unsigned; the two columns are the same 32-bit
 # value when they differ only by 2^32.
-wraw = std.script.capture("DUO_WASM_MODULE=" .. rmod .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit timeout 300 " .. binary .. " 2>/dev/null")
+wraw = script.capture("DUO_WASM_MODULE=" .. rmod .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit timeout 300 " .. binary .. " 2>/dev/null")
 got = _field(wraw, "result")
 
 # Interleaved, min of `reps`. Interleaving matters: this box drifts

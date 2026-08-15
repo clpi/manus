@@ -740,6 +740,103 @@ bailshape: i64 = (why: str)
   os.exit(1)
   DECLINED
 
+# `len` bytes of the module image from `at`, as a `str`, for a DIAGNOSTIC only.
+# `string.sub` is never used on the image anywhere in this file: the image is a
+# `str` holding a wasm binary, whose first byte is 0x00, and a NUL-terminated
+# view of it is empty. Built a character at a time from `:byte()`, which is how
+# every other read of the image works, and only on a refusal path, so the O(n)
+# concatenation is paid once per refused module and never in a run.
+bytes_str: str = (img: str, at: i64, len: i64)
+  out: str = ""
+  k: i64 = 0
+  while k < len
+    out = out .. string.char(img:byte(at + k))
+    k += 1
+  out
+
+# A CAPABILITY REFUSAL, and it exits 5 so that it is not the same event as any
+# other refusal this engine can produce.
+#
+#   1   the module is malformed, or names an import this host does not HAVE
+#   4   the jit was required and could not run
+#   5   the module names an import this host HAS and was NOT GRANTED
+#   70  an opcode with no arm            71  the guest trapped
+#
+# The 1/5 split is the whole point. `unknown import` means the name does not
+# exist; `outside the grant` means it exists, this host can perform it, and the
+# policy said no. A guest — or a harness — that could not tell those apart
+# would be told a lie about why it did not run. wasmtime cannot draw this
+# distinction at all: its only withhold is declining to define the import, so
+# both cases arrive as one "unknown import" instantiation failure and exit 1.
+# That divergence is deliberate and is recorded in docs/wasm-capability.md §4.
+bailgrant: i64 = (mod: str, field: str, spec: str)
+  io.stderr:write("wasm: import \"" .. mod .. "\".\"" .. field .. "\" is outside this guest's grant\n")
+  io.stderr:write("      grant: DUO_WASM_GRANT=" .. spec .. "\n")
+  io.stderr:write("      refused at instantiation, before any guest code ran\n")
+  os.exit(5)
+  DECLINED
+
+# The written policy itself is wrong — a token that names no function and no
+# world. Refused BEFORE enforcement, because the alternative is that a typo
+# silently withholds and the diagnostic then blames the guest. `test_utils.id`
+# in docs/capability-algebra.md §3.2 is the same class of accident one level up:
+# a capability decided by a spelling nobody wrote on purpose.
+bailgrantspec: i64 = (tok: str, spec: str)
+  io.stderr:write("wasm: DUO_WASM_GRANT names nothing with '" .. tok .. "'\n")
+  io.stderr:write("      grant: DUO_WASM_GRANT=" .. spec .. "\n")
+  io.stderr:write("      a token is `all`, `none`, a world (filesystem, process, environment,\n")
+  io.stderr:write("      clock, network, device), or one wasi_snapshot_preview1 function name;\n")
+  io.stderr:write("      a leading `-` withholds. Refusing rather than withholding by accident.\n")
+  os.exit(5)
+  DECLINED
+
+# THE DEFAULT GRANT, and it is a RULING rather than a convenience.
+#
+# Deny-by-default is the safe reading and this is not it. The argument for
+# `all`, stated so it can be attacked:
+#
+#  1. THE DIFFERENTIAL IS THE CONTRACT. This engine's correctness claim is 244
+#     rows differenced against wasmtime by value. wasmtime grants the whole of
+#     preview1 to any guest that names it; a host that denied by default would
+#     disagree with the oracle on every row that touches an import, and the
+#     disagreement would be POLICY, not behaviour. The measured cost is in
+#     docs/wasm-capability.md §3: under `DUO_WASM_GRANT=none` the corpus loses
+#     rows to refusal, and every one of those losses is this host declining to
+#     be wasmtime.
+#  2. A CAPABILITY THAT IS ON BY DEFAULT IS STILL A CAPABILITY, so long as the
+#     default is WRITTEN and the withhold is REACHABLE. `none` is one token.
+#     What was wrong before was not the default; it was that there was no knob
+#     at any setting.
+#  3. THE HONEST COST, said out loud: an opt-in capability protects only the
+#     callers who ask. A guest run by a launcher that never sets
+#     DUO_WASM_GRANT gets all 46, exactly as before. If this project wants
+#     deny-by-default it is one constant below and 244 rows of oracle
+#     divergence to argue about — that is a RULING for the language, not a
+#     defect in this mechanism, and it is routed in docs/wasm-capability.md §6.
+GRANT_DEFAULT = "all"
+
+# The grant as WRITTEN by the launcher. Read in one place so the default is
+# stated once. The guest cannot reach this: nothing in a .wasm file names an
+# environment variable of the host process.
+grant_spec: str = ()
+  os.getenv("DUO_WASM_GRANT") or GRANT_DEFAULT
+
+# 1 when a denied import should be admitted and answer `notcapable` at every
+# call, instead of being refused at instantiation.
+#
+# WHY BOTH MODES EXIST. Refusing at instantiation is what wasmtime does with an
+# import it cannot satisfy, so it is the mode that keeps this host comparable
+# with the oracle. But it cannot answer the question a guest actually asks —
+# "may I write?" — because the guest never runs to ask it. `errno` mode lets
+# the guest run and DISCOVER the denial, which is the only way a program can
+# adapt to a partial grant. It has no wasmtime counterpart and is therefore
+# never the default.
+grant_errno_mode: i64 = ()
+  r: i64 = 0
+  if os.getenv("DUO_WASM_GRANT_MODE") == "errno"
+    r = 1
+  r
+
 # The JIT declines a whole body by returning -1, and `main` then runs the
 # interpreter without saying so. That is why `hot_big.wasm` could print a
 # correct answer 31x behind wasmtime for weeks: the answer was right and the
@@ -892,6 +989,29 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
   imfn  = mem.alloc(256 * 8)
   mem.zero(imtab, 256 * 8)
   mem.zero(imfn, 256 * 8)
+  # Per FUNCTION import: 1 when the grant DENIED it and `errno` mode admitted
+  # it anyway. Zero for every import under the default grant, which is what
+  # makes the total-grant path byte-identical to the path before the grant
+  # existed.
+  imgd = mem.alloc(256 * 8)
+  mem.zero(imgd, 256 * 8)
+
+  # ── THE GRANT, materialized once, before the section walk ───────────────
+  # `gmask[i]` is 1 when roster index `i` is granted. Built here rather than
+  # asked per import because the answer cannot change during instantiation:
+  # the spec is a host-side string and no guest byte can reach it.
+  gspec: str = grant_spec()
+  gbad: str = wabi.grant_bad_token(gspec)
+  if gbad != ""
+    return bailgrantspec(gbad, gspec)
+  gerrno: i64 = grant_errno_mode()
+  gmask = mem.alloc(64 * 8)
+  mem.zero(gmask, 64 * 8)
+  gi: i64 = 1
+  while gi <= wabi.count
+    if wabi.grant_admits(gspec, gi) == 1
+      mem.write_i64(gmask, gi * 8, 1)
+    gi += 1
 
   # ── section walk: locate the type / function / code sections ──────────
   ty_off: i64 = 0
@@ -1002,6 +1122,83 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
             # cannot satisfy. So does this: an unresolved import is a refusal
             # at load time, never a stub that returns zero at call time.
             return bailshape("unknown import (not a wasi_snapshot_preview1 function this host provides)")
+
+          # ── THE CAPABILITY CHECK, AND IT DOES NOT READ `hid` ────────────
+          #
+          # DEFENCE IN DEPTH IS A CLAIM ABOUT INDEPENDENCE, so this scan shares
+          # no value with the resolver above. It compares the guest's bytes
+          # against the GRANTED names only — a name that is withheld, and a
+          # name that is not in the roster at all, both fail the same loop —
+          # and it repeats the module-name test rather than trusting `modok`.
+          #
+          # THAT REPETITION IS THE MECHANISM, not an oversight. The defect this
+          # host actually had (fixed above, comment retained) was a FIELD-NAME
+          # MASK that never read the module name, and it handed
+          # `"totally_not_wasi" "fdxwrite"` the host's `fd_write`. Restore that
+          # mask and the resolver above is wrong again — but this loop still
+          # answers 0, because `fdxwrite` matches no granted name under ANY
+          # grant including `all`, and `totally_not_wasi` fails a module-name
+          # test the masking resolver does not perform. A single check cannot
+          # be defended in depth; two checks over the same bytes can, and the
+          # cost is one more exact match per import at load time.
+          #
+          # Measured: with the mask restored and this loop removed, the hijack
+          # module executes `fd_write` and prints. With the mask restored and
+          # this loop present, it is refused. See cap/hijack/ and
+          # docs/wasm-capability.md §5.
+          gadm: i64 = 0
+          gmok: i64 = 0
+          if la == string.len(wmodname)
+            gmok = 1
+            gz: i64 = 0
+            while gz < la
+              if img:byte(ms + gz) != wmodname:byte(gz + 1)
+                gmok = 0
+              gz += 1
+          if gmok == 1
+            gj: i64 = 1
+            while gj <= wabi.count and gadm == 0
+              if mem.read_i64(gmask, gj * 8) == 1
+                gnm: str = wabi.name(gj)
+                if flen == string.len(gnm)
+                  gsm: i64 = 1
+                  gp: i64 = 0
+                  while gp < flen
+                    if img:byte(fs + gp) != gnm:byte(gp + 1)
+                      gsm = 0
+                    gp += 1
+                  if gsm == 1
+                    gadm = gj
+              gj += 1
+          if gadm == 0
+            # `errno` mode admits the import and denies every CALL; the default
+            # refuses here, which is the shape wasmtime has. Either way the
+            # guest can tell what happened — exit 5 with a named import, or
+            # `notcapable` from a call that would otherwise have had an effect.
+            if gerrno == 0
+              return bailgrant(bytes_str(img, ms, la), bytes_str(img, fs, flen), gspec)
+            # A DENIAL THAT CANNOT BE RECORDED IS A DENIAL THAT DOES NOT HAPPEN.
+            # `imgd` holds 256 slots, so past the 256th function import there is
+            # nowhere to write the deny bit and the call would take the ORDINARY
+            # path — the host performing an effect it had just refused. Found by
+            # building a 300-import module and calling the 300th: it answered
+            # `20` where a denied call must answer 76. Refuse instead. This is
+            # the fail-closed arm and it is unreachable below 256 imports, which
+            # is every module in both corpora (largest: 6).
+            if nimp >= 256
+              return bailgrant(bytes_str(img, ms, la), bytes_str(img, fs, flen), gspec)
+            mem.write_i64(imgd, nimp * 8, 1)
+          if nimp >= 256
+            # THE SAME CAP, ON THE PATH THAT HAS NOTHING TO DO WITH THE GRANT,
+            # and it was answering wrongly rather than refusing. `imfn`/`imtab`
+            # are 256 slots and the walk used to keep counting past them, so
+            # import 257 and beyond resolved to `hid = 0` at dispatch — the
+            # 300-import module above answers `result=20` and prints NOTHING
+            # where wasmtime answers 0 and prints. MEASURED on the engine
+            # before this lane touched it, so it is not a regression here; it
+            # is a silent wrong answer this file's own doctrine forbids. A
+            # module the engine cannot represent is refused by shape.
+            return bailshape("more than 256 function imports (this host indexes imports in a 256-slot table)")
           if nimp < 256
             mem.write_i64(imfn, nimp * 8, hid)
           # remember the type index so an imported call knows its arity
@@ -1709,6 +1906,20 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
           # arg k, 1-based, is st[ab + k]
           ab: i64 = sp - ipn
           hrv: i64 = wabi.static_errno(hid)
+          # WITHHELD, AND THE GUEST IS TOLD SO. `imgd` is set only in `errno`
+          # mode and only for an import the grant denied, so under the default
+          # grant this reads zero for every import and `hrv` is untouched —
+          # which is what makes the total-grant path identical to the path that
+          # existed before the grant did.
+          #
+          # `notcapable` (76) and NOT `badf` (8): `badf` is already this host's
+          # answer for a descriptor the sandbox does not hold, so reusing it
+          # would make "you may not write" indistinguishable from "there is
+          # nothing to write to", and a guest that retries on `badf` would
+          # retry a denial forever. See the note on ERRNO_notcapable in
+          # src/wasm/wasi_abi.id for why 76 is the ordinal.
+          if mem.read_i64(imgd, imm2 * 8) == 1
+            hrv = wabi.ERRNO_notcapable
           if hrv < 0
             if hid == wabi.i_fd_write
               # fd_write(fd, iovs, iovs_len, nwritten) -> errno.
@@ -3562,6 +3773,11 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
   # The one module name whose functions this host provides, bound to a `str`
   # local so `:byte()` indexes it. Same source as the interpreter's.
   jwmod: str = wabi.module_name
+  # The grant as written by the launcher, read here for the same reason the
+  # interpreter reads it in `run_body`: a pointer local cannot cross a function
+  # boundary in this toolchain, so each site materializes the policy from the
+  # `str` it is stated in.
+  jgspec: str = grant_spec()
   n: i64 = 0                       # emitted instruction words
   sp: i64 = 0                      # compile-time operand-stack depth
   pc: i64 = 1                      # 1-based cursor into the body
@@ -3816,6 +4032,45 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
               jwk += 1
           if jhid == 0
             return jitbail("unknown import (not a wasi_snapshot_preview1 function this host provides)", -1, 0)
+          # The capability check, second copy, and independent of `jhid` for
+          # the same reason the interpreter's is independent of `hid`. It only
+          # ever fires under a TOTAL grant here, because a partial grant has
+          # already declined the whole jit (see the `grant_is_total` arm in
+          # `engine_main`) — so what this catches is the hijack shape, not a
+          # policy denial: a (module, field) pair that no grant contains.
+          jgad: i64 = 0
+          jgmk: i64 = 0
+          if jla == string.len(jwmod)
+            jgmk = 1
+            jgz: i64 = 0
+            while jgz < jla
+              if s:byte(jms + jgz) != jwmod:byte(jgz + 1)
+                jgmk = 0
+              jgz += 1
+          if jgmk == 1
+            jgj: i64 = 1
+            while jgj <= wabi.count and jgad == 0
+              if wabi.grant_admits(jgspec, jgj) == 1
+                jgn: str = wabi.name(jgj)
+                if jfl == string.len(jgn)
+                  jgs: i64 = 1
+                  jgp: i64 = 0
+                  while jgp < jfl
+                    if s:byte(jfs + jgp) != jgn:byte(jgp + 1)
+                      jgs = 0
+                    jgp += 1
+                  if jgs == 1
+                    jgad = jgj
+              jgj += 1
+          if jgad == 0
+            return jitbail("import is outside this guest's grant", -1, 0)
+          # The interpreter's 256-slot cap, on the emitter's copy of the same
+          # table. `jimk`/`jimx` are 256 entries and a body reaching import 257
+          # would dispatch on a zero the walk never wrote. Decline; `run_body`
+          # then refuses the module by shape, so the two engines agree that a
+          # module they cannot index is not a module they answer for.
+          if jimp >= 256
+            return jitbail("more than 256 function imports", -1, 0)
           if jimp < 256
             mem.write_i64(jimk, jimp * 8, jhid)
             mem.write_i64(jimx, jimp * 8, uleb_val(s, jij, mlen))
@@ -6296,6 +6551,22 @@ engine_main = ()
     # answering under the interpreter's name, and is what `test/conform.id`
     # drives.
     jit_why = "the jit is gated off by default (5 wrong-answer faults were fixed in it on 2026-08-15 and 2 of the 5 were outside the differential corpus -- ask for it with DUO_WASM_ENGINE=jit)"
+  elseif wabi.grant_is_total(grant_spec()) == 0
+    # A PARTIAL GRANT DECLINES THE JIT, by name, rather than being enforced
+    # twice in two emitters.
+    #
+    # The emitted import sequence dispatches on the roster index and calls the
+    # host directly; there is no point in it at which a per-import denial could
+    # be observed, and adding one would mean a second copy of the policy inside
+    # ~1,700 lines of ARM64 emission whose last five faults were all in exactly
+    # that code. A capability enforced in two places that can disagree is worse
+    # than one enforced in the slower place: the interpreter answers, and it
+    # answers the same on every host.
+    #
+    # This arm is UNREACHABLE under the default grant (`all` is total), so it
+    # cannot move the differential — verified, DIFF 0 unchanged, and the
+    # `jit COMPILED` count is unchanged too.
+    jit_why = "DUO_WASM_GRANT is not total, and a partial grant is enforced only by the interpreter"
   elseif os.getenv("DUO_WASM_ARGS") != nil
     # THE JIT HAS NO ARGUMENT CHANNEL. `jitm.call2(code, memory, globals)`
     # passes linear memory and the globals block and nothing else, so a

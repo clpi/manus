@@ -29,6 +29,12 @@
 # reported separately: nothing requires those files, so counting them would
 # inflate the denominator with code that does not ship.
 
+# `require("script")`, NOT `std.script` / bare `script`: a bare `std` reaches
+# the C emitter as an undeclared global and indexing it SEGFAULTS the binary
+# before its first statement (measured, exit 139); a bare module name registers
+# no module at all. `require` is the only spelling that embeds lib/script.id.
+script = require("script")
+
 _is_code: bool = (line: str)
   t = line:trim()
   if t == ""

@@ -25,6 +25,12 @@
 #   wart      `wart run <mod>` only, i.e. `_start` only — it cannot reach a
 #             `run` export at all, so those cells are `n/a` and not a loss.
 
+# `require("script")`, NOT `std.script` / bare `script`: a bare `std` reaches
+# the C emitter as an undeclared global and indexing it SEGFAULTS the binary
+# before its first statement (measured, exit 139); a bare module name registers
+# no module at all. `require` is the only spelling that embeds lib/script.id.
+script = require("script")
+
 _msns: i64 = ()
   1000000
 
@@ -150,7 +156,7 @@ _answer: str = (raw: str)
   # the engine row against its own timing line
   m = raw:match("result=([^\n]*)")
   if m != nil
-    return std.script.chomp(m)
+    return script.chomp(m)
   proto
 
 # The runtime refused the module rather than answering it — wasm3 cannot decode
@@ -164,12 +170,12 @@ _errored: bool = (raw: str)
   false
 
 main: i64 = ()
-  binary = std.script.getenv("IDOL_WASM_BIN", "/tmp/idolwasm")
-  engine = std.script.getenv("DUO_WASM_ENGINE", "jit")
-  wart = std.script.getenv("WART_BIN", std.script.getenv("HOME", "") .. "/x/wart/zig-out/bin/wart")
-  n: i64 = to(i64)(std.script.getenv("N", "5"))
-  secs = std.script.getenv("SIX_TIMEOUT", "120")
-  root = std.script.chomp(std.script.capture("pwd"))
+  binary = script.getenv("IDOL_WASM_BIN", "/tmp/idolwasm")
+  engine = script.getenv("DUO_WASM_ENGINE", "jit")
+  wart = script.getenv("WART_BIN", script.getenv("HOME", "") .. "/x/wart/zig-out/bin/wart")
+  n: i64 = to(i64)(script.getenv("N", "5"))
+  secs = script.getenv("SIX_TIMEOUT", "120")
+  root = script.chomp(script.capture("pwd"))
 
   # Every runtime is named and probed BEFORE anything is measured. A table
   # whose baseline binary had been deleted mid-run once reported a confident
@@ -177,11 +183,11 @@ main: i64 = ()
   # column, never a silent zero.
   have = {}
   for _i, r in { "wasmtime", "wasmer", "wasm3", "iwasm" }
-    have(r) = std.script.status(r .. " --help >/dev/null 2>&1") == 0
+    have(r) = script.status(r .. " --help >/dev/null 2>&1") == 0
     if not have(r)
-      have(r) = std.script.status("command -v " .. r .. " >/dev/null 2>&1") == 0
-  have("the engine") = std.script.fs_is_file(binary)
-  have("wart") = std.script.fs_is_file(wart)
+      have(r) = script.status("command -v " .. r .. " >/dev/null 2>&1") == 0
+  have("the engine") = script.fs_is_file(binary)
+  have("wart") = script.fs_is_file(wart)
   line = "runtimes:"
   for _i, r in { "the engine", "wart", "wasmtime", "wasmer", "wasm3", "iwasm" }
     mark = " MISSING"
@@ -199,10 +205,10 @@ main: i64 = ()
   fixtures = {}
   nfix = 0
   for _g, pat in {
-    std.script.getenv("SIX_FIXTURES", "bench/*.wasm"),
-    std.script.getenv("SIX_FIXTURES2", "../../benchmarks/wasm_rt/*.wasm")
+    script.getenv("SIX_FIXTURES", "bench/*.wasm"),
+    script.getenv("SIX_FIXTURES2", "../../benchmarks/wasm_rt/*.wasm")
   }
-    for _i, m in std.script.fs_glob(pat)
+    for _i, m in script.fs_glob(pat)
       nfix = nfix + 1
       fixtures(nfix) = m
   if nfix == 0
