@@ -112,6 +112,28 @@ fn bareMember(func: *const ast.Expr) ?Member {
     return osMember(func.name.ident);
 }
 
+/// APPLY-ONE (c0 §44 `law.apply.one`): "parenthesized, braced and string faces
+/// project onto the SAME application relation... Nothing may switch on it to
+/// pick a different object model."
+///
+/// This convergence was switching on `.parenthesized`, which is precisely what
+/// that forbids, and the ruling's own example proved it: `env("HOME")` resolved
+/// while `env "HOME"` — the same application through the string face, recorded
+/// as `.parenless` — was refused with DNB011. The face is a recorded FACT about
+/// how an application was written, never a reason to treat it as a different
+/// application.
+///
+/// `value_reference` and `indirect` are excluded because they are not
+/// applications at all: one names the relation without applying it, the other
+/// applies something not statically known.
+fn isApplicationFace(form: ast.InvocationForm) bool {
+    return switch (form) {
+        .parenthesized, .parenless, .braced, .command => true,
+        .receiver_parenthesized, .receiver_parenless => true,
+        .value_reference, .indirect => false,
+    };
+}
+
 /// `os.env(k)` / `os:env(k)` — the anchored spellings, which stay lawful.
 fn envAnchor(func: *const ast.Expr) bool {
     return func.* == .field and func.field.obj.* == .name and
@@ -221,11 +243,11 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
             // Without this, demagix's `a[i]` -> `a(i)` left `os.env["PATH"]`
             // rewritten into a `.call` the graph could not resolve, because a
             // `.call` carries no application fact it recognises.
-            if (c.form == .parenthesized and c.args.len == 1 and argProjection(c.func)) {
+            if (isApplicationFace(c.form) and c.args.len == 1 and argProjection(c.func)) {
                 expr.* = .{ .index = .{ .loc = c.loc, .obj = argTable(alloc, c.loc) catch return, .key = c.args[0] } };
                 return;
             }
-            if (c.form == .parenthesized and c.args.len == 1 and envAnchor(c.func)) {
+            if (isApplicationFace(c.form) and c.args.len == 1 and envAnchor(c.func)) {
                 expr.* = .{ .index = .{ .loc = c.loc, .obj = c.func, .key = c.args[0] } };
                 return;
             }
@@ -243,7 +265,7 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
             // Collapsing those would turn `exit(1)` into an index.
             if (bareMember(c.func)) |m| {
                 switch (m.kind) {
-                    .table => if (c.form == .parenthesized and c.args.len == 1) {
+                    .table => if (isApplicationFace(c.form) and c.args.len == 1) {
                         expr.* = .{ .index = .{
                             .loc = c.loc,
                             .obj = worldTable(alloc, c.loc, m.target) catch return,
