@@ -3850,13 +3850,20 @@ fn compileReqModuleObject(
 /// `build.zig` already compiles `src/keyword_classify.c` INTO this binary, so
 /// embedding it keeps ONE copy of that table rather than two that can drift.
 const bootstrap_classify_c = @embedFile("keyword_classify.c");
-const bootstrap_io_c = @embedFile("idol_io_bootstrap.c");
-const bootstrap_str_c = @embedFile("idol_str_bootstrap.c");
+// The direct backend's string and io runtime, PREBUILT FROM ZIG rather than
+// compiled from C on every link. `build.zig` compiles src/idol_str_runtime.zig
+// and src/idol_io_runtime.zig to aarch64-macos objects and hands them here as
+// anonymous imports, so nothing on the direct link line is C source any more.
+// TWO units, not one, because `boot()` selects between them per program and
+// only the io unit carries the pre-main constructor that line-buffers stdout;
+// merging them would change when a string-only program's output flushes.
+const bootstrap_io_obj = @embedFile("idol_io_runtime.o");
+const bootstrap_str_obj = @embedFile("idol_str_runtime.o");
 
 fn bootstrapBytes(name: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, name, "keyword_classify.c")) return bootstrap_classify_c;
-    if (std.mem.eql(u8, name, "idol_io_bootstrap.c")) return bootstrap_io_c;
-    if (std.mem.eql(u8, name, "idol_str_bootstrap.c")) return bootstrap_str_c;
+    if (std.mem.eql(u8, name, "idol_io_runtime.o")) return bootstrap_io_obj;
+    if (std.mem.eql(u8, name, "idol_str_runtime.o")) return bootstrap_str_obj;
     return null;
 }
 
@@ -3900,14 +3907,14 @@ fn boot(symbol: []const u8) ?[]const u8 {
         std.mem.eql(u8, symbol, "idol_os_cwd") or
         std.mem.eql(u8, symbol, "idol_os_execute") or
         std.mem.eql(u8, symbol, "idol_process_capture"))
-        return "idol_io_bootstrap.c";
+        return "idol_io_runtime.o";
     if (std.mem.eql(u8, symbol, "duo_str_sub") or
         std.mem.eql(u8, symbol, "duo_str_to_i64") or
         std.mem.eql(u8, symbol, "idol_str_at") or
         std.mem.eql(u8, symbol, "idol_str_find") or
         std.mem.eql(u8, symbol, "idol_str_has") or
         std.mem.eql(u8, symbol, "idol_str_match"))
-        return "idol_str_bootstrap.c";
+        return "idol_str_runtime.o";
     return null;
 }
 
@@ -3931,16 +3938,16 @@ fn directLinkInputs(
     for (needed) |symbol| {
         const source = boot(symbol) orelse continue;
         if (std.mem.eql(u8, source, "keyword_classify.c")) classify = true;
-        if (std.mem.eql(u8, source, "idol_io_bootstrap.c")) io_boot = true;
-        if (std.mem.eql(u8, source, "idol_str_bootstrap.c")) str_boot = true;
+        if (std.mem.eql(u8, source, "idol_io_runtime.o")) io_boot = true;
+        if (std.mem.eql(u8, source, "idol_str_runtime.o")) str_boot = true;
     }
     // Materialize from the EMBEDDED copy every time, never from the cwd. A
     // compiler that answers differently depending on where the caller happens to
     // be standing is not one answer, and the version that read the cwd refused
     // three edges from every directory but one. See `materializeBootstrapC`.
     if (classify) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "keyword_classify.c"));
-    if (io_boot) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_io_bootstrap.c"));
-    if (str_boot) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_str_bootstrap.c"));
+    if (io_boot) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_io_runtime.o"));
+    if (str_boot) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_str_runtime.o"));
     return inputs.toOwnedSlice(alloc);
 }
 

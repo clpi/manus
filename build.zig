@@ -33,6 +33,53 @@ fn linkProductionDuoLexer(b: *std.Build, mod: *std.Build.Module) void {
     mod.link_libc = true;
 }
 
+/// The direct backend's runtime support, COMPILED FROM ZIG AND CARRIED INSIDE
+/// THE COMPILER — the half of "no C backend" that nobody notices.
+///
+/// Retiring `--backend=c` does not make this compiler C-free while the DIRECT
+/// backend still hands C source to clang at link time, which is what it did:
+/// `s:has()`, `s:sub()`, `s:find()` and `s:to(i64)` were implemented in
+/// `src/idol_str_bootstrap.c`, and `io:read()` / `os.args` / `os.cwd` in
+/// `src/idol_io_bootstrap.c`. Both files were appended to the link line, so
+/// every direct-backend binary that touched a string was compiled from C.
+/// Deleting the emitter while keeping that would only have made the C
+/// invisible, which is worse than leaving it visible.
+///
+/// The ports are `src/idol_str_runtime.zig` and `src/idol_io_runtime.zig`. They
+/// are compiled HERE, to objects, and embedded into the compiler by
+/// `@embedFile` so that `bin/idol` remains ONE FILE that can be vendored into
+/// another tree by copying — the same property the embedded C had, and the
+/// reason it was embedded rather than resolved against the source tree.
+///
+/// TWO OBJECTS, NOT ONE, and that is deliberate. `boot()` in main.zig picks the
+/// str unit or the io unit per program, and only the io unit carries the
+/// pre-main constructor that sets stdout line-buffered. Merging them into a
+/// single object would link that constructor into every string-only program and
+/// silently change when its output flushes.
+///
+/// Built for aarch64-macos regardless of the host: the direct backend emits
+/// AArch64 Mach-O and nothing else, so the runtime it links against has exactly
+/// one shape. ReleaseFast and a fixed target also keep the bytes deterministic,
+/// which is what the content-addressed materialization in main.zig assumes.
+fn addDirectRuntimeObjects(b: *std.Build, mod: *std.Build.Module) void {
+    const rt_target = b.resolveTargetQuery(.{
+        .cpu_arch = .aarch64,
+        .os_tag = .macos,
+    });
+    const units = [_][]const u8{ "idol_str_runtime", "idol_io_runtime" };
+    inline for (units) |unit| {
+        const obj = b.addObject(.{
+            .name = unit,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/" ++ unit ++ ".zig"),
+                .target = rt_target,
+                .optimize = .ReleaseFast,
+            }),
+        });
+        mod.addAnonymousImport(unit ++ ".o", .{ .root_source_file = obj.getEmittedBin() });
+    }
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -46,6 +93,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     linkProductionKeywordClassify(b, exe.root_module);
+    addDirectRuntimeObjects(b, exe.root_module);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
