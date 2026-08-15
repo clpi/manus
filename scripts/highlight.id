@@ -486,11 +486,11 @@ main: i64 = ()
   # carries at least one card, both of which a count would have hidden.
   if nroles < 1 or ncards < nroles
     print("highlight corpus: FAIL — {nroles} roles and {ncards} cards; a closed set is enumerated and every role is refined")
-    std.os.exit(1)
+    os.exit(1)
 
   if srcs:len() != golds:len() or srcs:len() != kinds:len()
     print("highlight corpus: FAIL — the fixture rows are not parallel")
-    std.os.exit(3)
+    os.exit(3)
 
   nlines: i64 = 0
   nbytes: i64 = 0
@@ -971,7 +971,7 @@ main: i64 = ()
     bad = bad + 1
   if bad > 0
     print("highlight corpus: FAIL — {bad} findings")
-    std.os.exit(1)
+    os.exit(1)
   print("highlight corpus: PASS — {nfix} fixtures, {nlines} lines, {nsolid} nonspace")
   print("  bytes, all roled or deliberately diagnosed; {npass} proofs by value;")
   print("  {edge} lexemes decided by the EDGE rather than by their spelling.")

@@ -61,21 +61,21 @@
 #
 # LSPGATE_SERVER   drive a different server file (the controls use it).
 
-root = os.getenv("IDOL_ROOT")
+root = env("IDOL_ROOT")
 if root == nil or root == ""
-  root = os.getenv("DUO_ROOT")
+  root = env("DUO_ROOT")
 if root == nil or root == ""
-  root = os.getenv("PWD")
+  root = env("PWD")
 if root == nil or root == ""
   root = "."
 
-idolbin = os.getenv("IDOL_BIN")
+idolbin = env("IDOL_BIN")
 if idolbin == nil or idolbin == ""
-  idolbin = os.getenv("DUO_BIN")
+  idolbin = env("DUO_BIN")
 if idolbin == nil or idolbin == ""
   idolbin = root .. "/zig-out/bin/idol"
 
-server = os.getenv("LSPGATE_SERVER")
+server = env("LSPGATE_SERVER")
 if server == nil or server == ""
   server = root .. "/tools/lsp/src/server.id"
 
@@ -182,7 +182,7 @@ main: i64 = ()
   if out:len() == 0
     check(false, "the server wrote anything at all", "zero bytes on stdout — it did not start, or it died before the first reply")
     stdout:write("\nlsp-gate: FAIL — no session\n")
-    std.os.exit(1)
+    os.exit(1)
     return 1
 
   # ── handshake and the capability set ─────────────────────────────────
@@ -309,5 +309,5 @@ main: i64 = ()
   # `os.exit`, NOT `return 1`. A Duo script's `main` return value is
   # DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
   # mcp-gate learned this by printing 13 failures into a green build.
-  std.os.exit(1)
+  os.exit(1)
   1

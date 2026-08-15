@@ -276,6 +276,130 @@ const OccurrenceBridge = struct {
 /// module-level values; nothing registered them as locals, so `Kind.ident`
 /// inside a function resolved to a runtime field load and failed with DNB007.
 /// Both spellings are compile-time constants and belong as immediates.
+/// The module-scope bindings that need REAL STORAGE, and their initializers.
+///
+/// A file-scope binding nothing writes is correctly folded to its initializer —
+/// that is what `ModuleConsts` does and it stays. A binding a FUNCTION writes is
+/// one storage location shared by every reader, and folding it is a wrong
+/// answer: measured on `examples/native_differential/unsupported/`, `total` read
+/// 0 where C read 6, and 5 where C read 8, with exit 0 and no diagnostic.
+///
+/// THE SET IS EXACTLY `codegen.zig`'s `module_top_level_written_binding`, arm
+/// for arm, and that is a requirement rather than a convenience: that predicate
+/// is what refuses these programs today, so anything it names and this does not
+/// would be admitted with the old folding and answer wrongly again.
+const ModuleGlobals = struct {
+    /// Name -> the DNIR type its word holds.
+    types: std.StringHashMapUnmanaged(RT) = .empty,
+    /// Declaration order, so the entry's prologue runs initializers in source
+    /// order. A `__bss` word starts zeroed, so only a non-zero initializer
+    /// costs an instruction — but the store is emitted for all of them, because
+    /// "the zero case happens to need no code" is not a rule anyone can read
+    /// off the emitted text later.
+    order: std.ArrayListUnmanaged(GlobalInit) = .empty,
+
+    fn deinit(self: *ModuleGlobals, alloc: std.mem.Allocator) void {
+        self.types.deinit(alloc);
+        self.order.deinit(alloc);
+    }
+
+    fn has(self: *const ModuleGlobals, name: []const u8) bool {
+        return self.types.contains(name);
+    }
+};
+
+const GlobalInit = struct { name: []const u8, init: ?*const Expr };
+
+const empty_module_globals: ModuleGlobals = .{};
+
+/// Does any FUNCTION in this module assign `name`? Module-level code alone does
+/// not force storage: those statements run in order in one entry frame, where a
+/// register-resident binding is already correct.
+fn moduleFunctionsAssignName(mod: *const ast.Module, name: []const u8) bool {
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        if (stmtsAssignName(stmt.func_decl.func.body.stmts, name)) return true;
+    }
+    return false;
+}
+
+fn stmtsAssignName(stmts: []const ast.Stmt, name: []const u8) bool {
+    for (stmts) |*st| {
+        switch (st.*) {
+            .assign => |a| for (a.targets) |t| {
+                if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) return true;
+            },
+            // A `local`/parameter of the same name SHADOWS the global for the
+            // rest of that body, so a write to it is not a write to the global.
+            // Answering "true" here would give storage to a name that never
+            // needed it; answering "false" for the assign arm would miscompile.
+            .local_decl => |ld| for (ld.names) |n| {
+                if (std.mem.eql(u8, n.ident, name)) return false;
+            },
+            .do_block => |b| if (stmtsAssignName(b.body.stmts, name)) return true,
+            .while_loop => |w| if (stmtsAssignName(w.body.stmts, name)) return true,
+            .repeat_loop => |r| if (stmtsAssignName(r.body.stmts, name)) return true,
+            .num_for => |f| if (stmtsAssignName(f.body.stmts, name)) return true,
+            .gen_for => |f| if (stmtsAssignName(f.body.stmts, name)) return true,
+            .if_stmt => |is| {
+                if (stmtsAssignName(is.then.stmts, name)) return true;
+                for (is.elseifs) |ei| if (stmtsAssignName(ei.body.stmts, name)) return true;
+                if (is.else_body) |eb| if (stmtsAssignName(eb.stmts, name)) return true;
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+fn typeOfGlobal(t: ast.TypeExpr, init: ?*const Expr) RT {
+    const declared = resolveType(t);
+    if (declared != .any) return declared;
+    const e = init orelse return .i64;
+    return switch (e.*) {
+        .string_lit => .str,
+        .float_lit => .f64,
+        else => .i64,
+    };
+}
+
+fn collectModuleGlobals(alloc: std.mem.Allocator, mod: *const ast.Module) Error!ModuleGlobals {
+    var out: ModuleGlobals = .{};
+    errdefer out.deinit(alloc);
+    for (mod.body.stmts) |*stmt| {
+        switch (stmt.*) {
+            .local_decl => |ld| for (ld.names, 0..) |n, i| {
+                if (!moduleFunctionsAssignName(mod, n.ident)) continue;
+                const init: ?*const Expr = if (i < ld.inits.len) ld.inits[i] else null;
+                try out.types.put(alloc, n.ident, typeOfGlobal(n.typ, init));
+                try out.order.append(alloc, .{ .name = n.ident, .init = init });
+            },
+            .global_decl => |gd| for (gd.names, 0..) |n, i| {
+                if (!moduleFunctionsAssignName(mod, n.ident)) continue;
+                const init: ?*const Expr = if (i < gd.inits.len) gd.inits[i] else null;
+                try out.types.put(alloc, n.ident, typeOfGlobal(n.typ, init));
+                try out.order.append(alloc, .{ .name = n.ident, .init = init });
+            },
+            // gap[108]. `total = 5` with no annotation is not a declaration at
+            // all — idol has no `local` keyword, so module scope gets an
+            // `.assign`, the same node a function body produces. Missing this
+            // arm is what let the untyped spelling run natively and answer
+            // wrongly while the annotated one was refused.
+            .assign => |as| for (as.targets, 0..) |t, i| {
+                if (t.* != .name) continue;
+                const name = t.name.ident;
+                if (out.types.contains(name)) continue;
+                if (!moduleFunctionsAssignName(mod, name)) continue;
+                const init: ?*const Expr = if (i < as.values.len) as.values[i] else null;
+                try out.types.put(alloc, name, typeOfGlobal(.inferred, init));
+                try out.order.append(alloc, .{ .name = name, .init = init });
+            },
+            else => {},
+        }
+    }
+    return out;
+}
+
 fn collectModuleConsts(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -542,8 +666,22 @@ fn lowerModuleFromGraph(
     require_graph_facts: bool,
 ) Error!dnir.Module {
 
+    // ORDER MATTERS. The globals are collected FIRST and then removed from the
+    // constant pool: a name that is written is not a constant, and leaving it in
+    // both would let a read fold to the initializer while a write went to
+    // storage — the two halves of the same binding disagreeing, which is worse
+    // than either the old folding or the new storage alone.
+    var module_globals = try collectModuleGlobals(alloc, mod);
+    defer module_globals.deinit(alloc);
     var module_consts = try collectModuleConsts(alloc, mod);
     defer module_consts.deinit(alloc);
+    {
+        var it = module_globals.types.keyIterator();
+        while (it.next()) |name| {
+            if (module_consts.ints.fetchRemove(name.*)) |e| alloc.free(e.key);
+            if (module_consts.strs.fetchRemove(name.*)) |e| alloc.free(e.key);
+        }
+    }
 
     var records: std.ArrayList(dnir.RecordDesc) = .empty;
     errdefer {
@@ -713,6 +851,7 @@ fn lowerModuleFromGraph(
             &func_record_returns,
             &fp_params,
             &module_consts,
+            &module_globals,
             &entity_linkage,
             &relation_edges,
         );
@@ -740,6 +879,7 @@ fn lowerModuleFromGraph(
             &func_record_returns,
             &fp_params,
             &module_consts,
+            &module_globals,
             &entity_linkage,
             &relation_edges,
         );
@@ -1222,6 +1362,7 @@ pub const LowerCtx = struct {
     /// from top-level `N = <int>` and `N = @{ f = <int>, ... }` bindings, which
     /// are otherwise invisible inside a function body.
     module_consts: *const ModuleConsts = &empty_module_consts,
+    module_globals: *const ModuleGlobals = &empty_module_globals,
     /// Names bound to compile-time-known i64 literals (for numeric for step, etc.).
     const_ints: std.StringHashMapUnmanaged(i64) = .empty,
     next_temp: u32 = 0,
@@ -1341,6 +1482,7 @@ fn lowerFunction(
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     fp_params: *const std.StringHashMapUnmanaged([]bool),
     module_consts: *const ModuleConsts,
+    module_globals: *const ModuleGlobals,
     entity_linkage: *const std.AutoHashMapUnmanaged(semantic_graph.id, []const u8),
     relation_edges: *const std.StringHashMapUnmanaged([]const u8),
 ) Error!dnir.Function {
@@ -1362,6 +1504,7 @@ fn lowerFunction(
             break :blk slots > 0;
         },
         .module_consts = module_consts,
+        .module_globals = module_globals,
         .ret_record = if (findRecordName(records, fd.func.ret_type)) |r| r.name else null,
         .tables_in_memory = blockNeedsMemoryTables(&fd.func.body),
         .body = &fd.func.body,
@@ -1478,6 +1621,23 @@ fn lowerFunction(
     // Fails CLOSED: any evaluator error — an unsupported construct, a world
     // effect, the step limit — falls through to ordinary lowering. Nothing is
     // assumed foldable; it is folded only when it actually evaluated.
+    // THE MODULE'S INITIALIZERS RUN BEFORE ITS ENTRY DOES.
+    //
+    // A `__bss` word starts zeroed, which is already the answer for
+    // `total: i64 = 0` — but not for `total = 5`, and the two spellings must not
+    // differ in whether their initializer is honoured. When a module declares
+    // its own `main`, module-scope declarations are lowered NOWHERE ELSE: `root`
+    // builds an entry out of them only when there is no `main` to build one
+    // from. So the entry carries them, in source order, ahead of its own body.
+    if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], "main")) {
+        for (ctx.module_globals.order.items) |g| {
+            const ty = ctx.module_globals.types.get(g.name) orelse continue;
+            const init = g.init orelse continue;
+            const v = try lowerExprCons(&ctx, init, .single);
+            try ctx.emit(.{ .op = .store_global, .field = g.name, .lhs = v, .ty = ty });
+        }
+    }
+
     try lowerBlock(&ctx, &fd.func.body, true);
 
     // LAWFUL NONEXECUTION. A relation taking no operands whose body the
@@ -1624,6 +1784,7 @@ fn root(
     func_record_returns: *std.StringHashMapUnmanaged([]const u8),
     fp_params: *const std.StringHashMapUnmanaged([]bool),
     module_consts: *const ModuleConsts,
+    module_globals: *const ModuleGlobals,
     entity_linkage: *const std.AutoHashMapUnmanaged(semantic_graph.id, []const u8),
     relation_edges: *const std.StringHashMapUnmanaged([]const u8),
 ) Error!dnir.Function {
@@ -1641,6 +1802,7 @@ fn root(
         .entity_linkage = entity_linkage,
         .relation_edges = relation_edges,
         .module_consts = module_consts,
+        .module_globals = module_globals,
         .ret_record = null,
     };
     defer ctx.deinit();
@@ -3470,6 +3632,15 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         subsumeProducerRefit(ctx);
         return;
     }
+    // A WRITTEN MODULE-SCOPE BINDING GOES TO ITS STORAGE, and this arm must sit
+    // above the fresh-local fallback below — that fallback IS the defect. With
+    // no local of this name in scope it minted one, so `total = total + i`
+    // inside a function wrote a register nobody else could see, and the module's
+    // other readers went on folding the initializer.
+    if (ctx.module_globals.types.get(name)) |ty| {
+        try ctx.emit(.{ .op = .store_global, .field = name, .lhs = v, .ty = ty });
+        return;
+    }
     const slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), slot);
     // A slot created HERE was never declared with a type, so it carries no
@@ -4688,6 +4859,15 @@ fn lowerExprCons(
         // way (`if (ctx.locals.contains("os")) return null;`).
         .name => |n| blk: {
             if (ctx.locals.get(n.ident)) |slot| break :blk dnir.Value{ .local = slot };
+            // A WRITTEN module-scope binding is READ FROM ITS STORAGE, never
+            // folded. `ctx.locals` still wins: a parameter or local of the same
+            // name shadows the global, exactly as it shadows the world below.
+            if (ctx.module_globals.types.get(n.ident)) |ty| {
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .load_global, .result = t, .field = n.ident, .ty = ty });
+                if (ty == .str) try ctx.str_slots.put(ctx.alloc, t, {});
+                break :blk dnir.Value{ .temp = t };
+            }
             if (ctx.module_consts.ints.get(n.ident)) |mv| break :blk dnir.Value{ .i64 = mv };
             if (ctx.module_consts.strs.get(n.ident)) |sv| break :blk dnir.Value{ .str = sv };
             if (std.mem.eql(u8, n.ident, "io") or std.mem.eql(u8, n.ident, "os") or
@@ -5350,7 +5530,7 @@ fn lowerSubjectCall(
         if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdout") and
             std.mem.eql(u8, mc.method, "write") and mc.args.len == 1)
         {
-            return lowerPrint(ctx, mc.args);
+            return lowerWrite(ctx, mc.args);
         }
         if (std.mem.eql(u8, mc.method, "read") and mc.args.len == 0 and exprIsStr(ctx, mc.obj)) {
             return lowerSubjectRead(ctx, expr, consumption);
@@ -6587,7 +6767,7 @@ fn flattenConcat(alloc: std.mem.Allocator, e: *const ast.Expr, out: *std.ArrayLi
 ///
 /// Returns null — not a bail — when the shape is not one this can render. The
 /// caller then lowers the argument the ordinary way.
-fn lowerPrintFormat(ctx: *LowerCtx, arg: *const ast.Expr) Error!?dnir.Value {
+fn lowerPrintFormat(ctx: *LowerCtx, arg: *const ast.Expr, newline: bool) Error!?dnir.Value {
     if (arg.* != .binop or arg.binop.op != .concat) return null;
 
     var parts: std.ArrayListUnmanaged(*const ast.Expr) = .empty;
@@ -6595,8 +6775,8 @@ fn lowerPrintFormat(ctx: *LowerCtx, arg: *const ast.Expr) Error!?dnir.Value {
     try flattenConcat(ctx.alloc, arg, &parts);
 
     // `print` ends a line. `print_value` gets that from `puts`; here it is one
-    // more byte of format.
-    const plan = (try planConcat(ctx, parts.items, true)) orelse return null;
+    // more byte of format. `stdout:write` ends NOTHING — see `lowerWrite`.
+    const plan = (try planConcat(ctx, parts.items, newline)) orelse return null;
 
     var vals: [max_concat_holes]dnir.Value = undefined;
     for (plan.holes[0..plan.count], 0..) |h, i| vals[i] = try lowerExpr(ctx, h);
@@ -6614,10 +6794,41 @@ fn lowerPrint(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     }
     if (args.len != 1) return bail(ctx.diagnostic, @src());
     const arg = args[0];
-    if (try lowerPrintFormat(ctx, arg)) |v| return v;
+    if (try lowerPrintFormat(ctx, arg, true)) |v| return v;
     const v = try lowerExpr(ctx, arg);
     const ty: RT = if (exprIsStr(ctx, arg) or holds(ctx, v)) .str else if (exprIsF64Value(ctx, arg)) .f64 else .i64;
     try ctx.emit(.{ .op = .print_value, .lhs = v, .ty = ty });
+    return .void;
+}
+
+/// `stdout:write(v)` — the SAME egress as `print`, MINUS the line ending.
+///
+/// These two shared one lowering, and the shared one was `print`'s: `.str`
+/// reached `print_value`, `print_value` calls `puts`, and `puts` APPENDS A
+/// NEWLINE THE PROGRAM DID NOT WRITE. Measured on the canonical backend against
+/// `--backend=c`, one source, two answers:
+///
+///     stdout:write("A=V\n")      direct: A = V \n \n   c: A = V \n
+///     stdout:write("XY") ; …("Z")  direct: X Y \n Z \n   c: X Y Z
+///
+/// The second is the one that shows it is not a trailing-newline cosmetic: the
+/// bytes are INTERLEAVED wrongly, so a program that composes output from
+/// several writes cannot produce its answer at all under the canonical backend.
+/// `--backend=c` is right here — `write` writes what it is given, which is also
+/// what `io.write` means everywhere this dialect borrows from, and what the
+/// refuse gate's own note records (`stdout:write("A") -> A`).
+///
+/// The line ending was never a `print_value` property, so it is not removed by
+/// one: `.field = "nonl"` says the ending belongs to the CALLER, and `print`
+/// keeps `puts` untouched. A concat argument takes the same route it always
+/// took, with `newline` false, so the format string carries no `\n` either.
+fn lowerWrite(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
+    if (args.len != 1) return bail(ctx.diagnostic, @src());
+    const arg = args[0];
+    if (try lowerPrintFormat(ctx, arg, false)) |v| return v;
+    const v = try lowerExpr(ctx, arg);
+    const ty: RT = if (exprIsStr(ctx, arg) or holds(ctx, v)) .str else if (exprIsF64Value(ctx, arg)) .f64 else .i64;
+    try ctx.emit(.{ .op = .print_value, .lhs = v, .ty = ty, .field = "nonl" });
     return .void;
 }
 

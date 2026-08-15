@@ -218,4 +218,4 @@ main: i64 = ()
     shout("PASS — @noalloc across 6 verb paths, @pure both halves, the lexer diagnostic, 5 controls held")
   bad
 
-std.os.exit(main())
+os.exit(main())

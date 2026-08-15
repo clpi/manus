@@ -147,7 +147,7 @@ main: i64 = ()
   print("")
   if fails > 0
     print("convert proof: FAIL — {fails} row(s)")
-    std.os.exit(1)
+    os.exit(1)
   print("convert proof: PASS — one edge, two faces, and a refusal where there")
   print("  is no number to convert")
   0

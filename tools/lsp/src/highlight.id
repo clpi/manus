@@ -1198,9 +1198,9 @@ why: str = (key: str)
 # diagnosis rather than a role where the projector declined to decide, because
 # that IS the answer G-TOTAL wants a hover to give.
 spanwhy: str = ()
-  path: str = std.os.getenv("hlpath")
-  ln: i64 = to(i64)(std.os.getenv("hlline"))
-  col: i64 = to(i64)(std.os.getenv("hlbyte"))
+  path: str = env("hlpath") or ""
+  ln: i64 = to(i64)(env("hlline") or "")
+  col: i64 = to(i64)(env("hlbyte") or "")
   out: str = "why: needs hlpath, hlline and hlbyte"
   if path != "" and ln > 0 and col > 0
     f = io.open(path, "r")
@@ -1380,7 +1380,7 @@ main: i64 = ()
     print("highlight: FAIL — {bad}")
     os.exit(3)
 
-  mode: str = os.getenv("hlmode")
+  mode: str = env("hlmode") or ""
   if mode == ""
     mode = "roles"
 
@@ -1410,7 +1410,7 @@ main: i64 = ()
   # citation and the dnir edge. `hlrole` still answers for a bare role, which
   # is what the generated legend needs; a SPAN is what a hover needs.
   if mode == "why"
-    bare: str = os.getenv("hlrole")
+    bare: str = env("hlrole") or ""
     if bare != ""
       print(why(bare))
       os.exit(0)
@@ -1425,7 +1425,7 @@ main: i64 = ()
   # `hlpath` first: `duo run` hands the SCRIPT to argv, not the argument, so a
   # projector that only read argv answered "no path" under the interpreter and
   # correctly under a compiled binary. Env works under both.
-  path: str = os.getenv("hlpath")
+  path: str = env("hlpath") or ""
   if path == ""
     path = script.arg(1, "")
   if path == ""

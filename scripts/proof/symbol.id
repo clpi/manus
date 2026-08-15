@@ -55,16 +55,16 @@ main: i64 = ()
   # rule is not the identity function.
   if sym.root("read") == "read"
     print("CONTROL FAILED: root() is the identity — it mangles nothing")
-    std.os.exit(3)
+    os.exit(3)
   if sym.module("wire", "read") == sym.root("read")
     print("CONTROL FAILED: module and root symbols collide")
-    std.os.exit(3)
+    os.exit(3)
   if sym.mangles("main")
     print("CONTROL FAILED: main must NOT take the ordinary prefix")
-    std.os.exit(3)
+    os.exit(3)
   if not sym.mangles("read")
     print("CONTROL FAILED: an ordinary name must mangle")
-    std.os.exit(3)
+    os.exit(3)
 
   i: i64 = 1
   n: i64 = names:len()
@@ -94,6 +94,6 @@ main: i64 = ()
   print("")
   if fail > 0
     print("symbol proof: FAIL — {fail} row(s) disagreed")
-    std.os.exit(1)
+    os.exit(1)
   print("symbol proof: PASS — 13 rows, every idol name owns its C symbol")
   0

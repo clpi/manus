@@ -29,11 +29,11 @@ tool: void = (name: str, desc: str, schema: any, handler: any)
 -- DUO_ROOT as a VALUE at file scope, not a helper function: a named
 -- file-scope called from a handler lowers to an upvalue call Duo
 -- cannot make. `os.getenv` answers ""  -  never nil  -  for an unset name.
-root = os.getenv("IDOL_ROOT") or ""
+root = env("IDOL_ROOT") or ""
 if root:len() == 0
-    root = os.getenv("DUO_ROOT") or ""
+    root = env("DUO_ROOT") or ""
 if root:len() == 0
-    root = os.getenv("PWD") or ""
+    root = env("PWD") or ""
 if root:len() == 0
     root = "."
 

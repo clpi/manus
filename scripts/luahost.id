@@ -93,4 +93,4 @@ main: i64 = ()
     shout("PASS — {total} hosted-language cases accepted, 4 controls held")
   bad
 
-std.os.exit(main())
+os.exit(main())

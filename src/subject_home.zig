@@ -909,6 +909,171 @@ const os_members = [_][]const u8{
     "arg", "args", "env", "cwd", "exit", "clock", "time",
 };
 
+/// ── THE DOT FACE, AND WHAT DECIDED ITS ROSTER ──────────────────────────────
+///
+/// `os_members` is the SUBJECT-FIRST roster: what `os:relation(x)` reaches. The
+/// operation-first face `os.relation(x)` consulted no roster at all —
+/// `os.bogus(1)` type-checked clean and, on the retired C bridge, compiled clean
+/// and aborted at RUNTIME with `unlowered native call`. One face of one edge
+/// governed; the other wide open.
+///
+/// Closing it needs a roster, and the roster question is the one this file
+/// already states for `stream_relations`:
+///
+///     "A roster that omits a relation the backend realizes is the same defect
+///      as one that invents a relation the backend does not — the roster and
+///      the realization disagree, and only one of them runs."
+///
+/// THE BACKEND, SINGULAR. `--backend=c` is retired; the direct AArch64 backend
+/// is the only one. So "the realization" is no longer a question with two
+/// answers to be traded off, and the measurement that decides this roster is a
+/// single column. Measured per name, `--backend=direct`, every face, from the
+/// repo root (idol 48cfd928):
+///
+///     env(k)  env(k)=v  env:remove(k)  os.env(k)     LOWERS
+///     exit(n)  os.exit(n)                            LOWERS
+///     arg(i)  os.arg(i)  os.args[i]                  LOWERS
+///     os.cwd                                         LOWERS
+///     ─────────────────────────────────────────────────────────
+///     clock()  os.clock()                            DNB011
+///     time()   os.time()                             DNB011
+///     cwd()                    (bare face only)      DNB011
+///     ─────────────────────────────────────────────────────────
+///     getenv execute remove rename difftime          DNB011
+///     date tmpname setenv read_file write_file       DNB011
+///     pcall(os.getenv, k)                            DNB001
+///     bogus  — and every other name                  DNB011
+///
+/// THE ANSWER THE MEASUREMENT GAVE, and it is not the one the question assumed.
+/// NOT ONE off-roster `os.*` name lowers on the canonical backend. Not one. The
+/// roster therefore does not need COMPLETING — there is nothing realized outside
+/// it to complete it with — and the corpus does not need MIGRATING onto names
+/// that would be admitted, because there are none. Every off-roster site in the
+/// tree is a site the only backend cannot build.
+///
+/// Under the retired C bridge four of them (`execute`, `remove`, `rename`,
+/// `difftime`) lowered to real libc and answered correctly, and that is what
+/// made this look like a trade. It is not one any more. They are recorded here
+/// as refused with the rest.
+///
+/// AND THE ROSTER IS WRONG IN THE OTHER DIRECTION TOO, which is the finding
+/// worth more than the closure. `clock` and `time` are ON the roster, are
+/// reachable through both faces, and lower NOWHERE — 210 live corpus sites
+/// (`os.clock` 182, `os.time` 28) that the only backend cannot build. That is a
+/// LOWERING gap, not a naming gap: there is nothing wrong with the words and no
+/// repair to point an author at, so refusing them would be a wall. They are
+/// admitted, marked `.unrealized`, and COUNTED, so the debt is visible and
+/// cannot grow quietly.
+pub const Realization = enum {
+    /// Lowers on the direct backend — the only backend. Measured, end to end.
+    direct,
+    /// ON THE ROSTER AND UNREALIZED. Reachable through both faces, lowered by
+    /// nothing: `os.clock()` and `os.time()` answer DNB011 on the direct
+    /// backend, and so do their bare faces.
+    ///
+    /// NOT REFUSED, and the reason is the same standard this file applies to
+    /// `open` in `stream_relations` — "Recorded as owed, not enforced." A
+    /// refusal has to name a repair; there is no other spelling of "what time is
+    /// it", so a refusal here could only say "stop". The word is fine. The
+    /// lowering is missing.
+    ///
+    /// DELETION CONDITION: delete the tier when the direct backend lowers them.
+    /// It is a `dnir_lower`/`native_backend` change and this lane does not own
+    /// those files, so it is reported rather than attempted.
+    unrealized,
+    /// RETIRED BY NAME. Two words glued is not a lawful name (LAW-16 admits one
+    /// irreducible lowercase word), AND the lawful spelling lowers on the only
+    /// backend — measured, `env(k)` answers nil for an unset name, `""` for one
+    /// set and empty, `env(k) = v` writes and `env:remove(k)` unsets, all four
+    /// on `--backend=direct`.
+    ///
+    /// REFUSED IN EVERY FACE, including as a value. Under the C bridge
+    /// `pcall(os.getenv, k)` compiled and answered correctly, which was the one
+    /// argument for admitting the value face as debt; on the direct backend it
+    /// is DNB001, so there is nothing left to preserve and the retirement is
+    /// total.
+    retired,
+};
+
+pub const OsMember = struct {
+    name: []const u8,
+    how: Realization,
+    /// What to write instead. Non-empty only for `.retired`, because that is
+    /// the only tier where a repair exists to name.
+    repair: []const u8 = "",
+};
+
+/// THE OPERATION-FIRST ROSTER. Every `os.NAME` in the language is one of these
+/// or it is refused.
+///
+/// `gate/roster.sh` pins this table in BOTH directions: a name leaving is red,
+/// and a NEW name being silently admitted is red.
+pub const os_dot_members = [_]OsMember{
+    // LOWERS ON THE DIRECT BACKEND. Measured end to end, statement position,
+    // from the repo root: each compiles, runs, and answers correctly.
+    .{ .name = "arg", .how = .direct },
+    .{ .name = "args", .how = .direct },
+    .{ .name = "env", .how = .direct },
+    .{ .name = "cwd", .how = .direct },
+    .{ .name = "exit", .how = .direct },
+    // `os.execute("printf EXEC")` emits `EXEC` on `--backend=direct`. It was
+    // DNB011 earlier in this session and a lowering landed under this lane;
+    // the roster is derived from the measurement, so it moved with it.
+    .{ .name = "execute", .how = .direct },
+    // CLAIMED BY THE WORLD, LOWERED BY NOTHING. Counted debt; see `.unrealized`.
+    // Refusing these would refuse the corpus while naming no repair, which is a
+    // wall rather than a ruling — and it took down the compile-fail harness once
+    // already, which is how this tier came to be written down.
+    .{ .name = "clock", .how = .unrealized },
+    .{ .name = "time", .how = .unrealized },
+    .{ .name = "remove", .how = .unrealized },
+    .{ .name = "rename", .how = .unrealized },
+    .{ .name = "date", .how = .unrealized },
+    .{ .name = "tmpname", .how = .unrealized },
+    .{ .name = "difftime", .how = .unrealized },
+    // Retired, with the repair the refusal quotes back.
+    .{ .name = "getenv", .how = .retired, .repair = "env(k)" },
+    .{ .name = "setenv", .how = .retired, .repair = "env(k) = v" },
+};
+
+/// The `os` world's member edge for the OPERATION-FIRST face, or null when the
+/// world has no such member at all — the `os.bogus(1)` answer.
+pub fn osDotMember(name: []const u8) ?OsMember {
+    for (&os_dot_members) |m| {
+        if (std.mem.eql(u8, m.name, name)) return m;
+    }
+    return null;
+}
+
+/// The admitted member edges, comma-separated, for a refusal to quote back.
+///
+/// BUILT FROM THE TABLE at comptime rather than written out beside it: a
+/// diagnostic that lists a roster it is not generated from is the same rot as a
+/// gate quoting a number it did not measure, and this file has one of those in
+/// its history already.
+pub const os_dot_member_list: []const u8 = blk: {
+    var out: []const u8 = "";
+    for (&os_dot_members) |m| {
+        if (m.how == .retired) continue;
+        out = out ++ (if (out.len == 0) "" else ", ") ++ m.name;
+    }
+    break :blk out;
+};
+
+pub fn osDotMemberList() []const u8 {
+    return os_dot_member_list;
+}
+
+/// How many members sit in a tier. Read by the tests below and quoted by
+/// `gate/roster.sh`, so a tier cannot grow unnoticed.
+pub fn osDotTierCount(how: Realization) usize {
+    var n: usize = 0;
+    for (&os_dot_members) |m| {
+        if (m.how == how) n += 1;
+    }
+    return n;
+}
+
 /// The TEST world's relations. Reached as `test:assert(...)`, and only in a
 /// file the test world is injected into — which is now derived from the world's
 /// own `Injection.by_structure` predicate rather than from four `std.mem` calls

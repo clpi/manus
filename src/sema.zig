@@ -3113,6 +3113,149 @@ pub const Sema = struct {
         return true;
     }
 
+    /// THE OPERATION-FIRST FACE OF THE `os` WORLD — `os.NAME`.
+    ///
+    /// SUBJECT-ONE says `os:relation(x)` and `os.relation(x)` are ONE EDGE. Only
+    /// one of them was governed. `os:bogus(1)` was refused ("'bogus' is neither
+    /// a descriptor nor a callable"); `os.bogus(1)` type-checked clean, compiled
+    /// clean on `--backend=c`, and ABORTED AT RUNTIME with `unlowered native
+    /// call`, exit 134. `src/subject_home.zig` admitted this in its own doc
+    /// comment and named the blocker: the roster had to be complete first.
+    ///
+    /// It is complete now, on the only axis that can settle it — REALIZATION,
+    /// measured end to end per name. `subject_home.os_dot_members` carries the
+    /// measurement and the four tiers it forced; see the comment above it for
+    /// what each tier means and why the roster could not simply be extended.
+    ///
+    /// THREE ANSWERS, and each names its own reason:
+    ///
+    ///   on the roster   admitted, whatever tier — the caller goes on to type it
+    ///   retired         refused, QUOTING THE REPAIR (`getenv` -> `env(k)`)
+    ///   absent          refused, saying the world has no such member edge
+    ///
+    /// AND IT NEVER TAKES THE NAME. A program that binds `os` owns the word, by
+    /// exactly the rule `is_builtin_global` applies to every other member edge:
+    /// `userBinding`, not `lookup`, because `seed_globals` seeds `os` in root
+    /// scope for every program alive and a bare lookup would answer for all of
+    /// them.
+    ///
+    /// FOREIGN SOURCE IS UNTOUCHED. `idol_mode` is false for `.lua`, where
+    /// `os.date` and `os.getenv` are that language's own names and this compiler
+    /// has no standing to retire them.
+    ///
+    /// Answers TRUE when it refused, so the caller stops.
+    fn refuseOsDotFace(self: *Sema, loc: ast.Loc, obj: *const ast.Expr, field: []const u8) bool {
+        if (!self.idol_mode) return false;
+        // THE `os` WORLD REACHED THROUGH THE `std` NAMESPACE ROOT.
+        //
+        // `law.std.zero`: "std is migration distribution and foreign provenance,
+        // never semantic architecture or authority", and "canonical semantic
+        // namespace roots are zero". `os` is a world and is reachable by naming
+        // it; routing to it through `std.` adds a root that owns no meaning.
+        // `examples/compile_fail/world_std_os.id` has pinned this since it was
+        // written and has never enforced it.
+        //
+        // Refused for EVERY member, on or off the roster, because the objection
+        // is the ROOT and not the member — `std.os.exit(1)` is as refused as
+        // `std.os.getenv(k)`, and the repair for both is to drop four characters.
+        if (obj.* == .field and obj.field.obj.* == .name and
+            std.mem.eql(u8, obj.field.obj.name.ident, "std") and
+            std.mem.eql(u8, obj.field.field, "os") and
+            self.userBinding("std") == null)
+        {
+            self.err(
+                loc,
+                "'std' is not semantic authority, so 'std.os.{s}' routes the 'os' world through a namespace root that owns none (c0 law.std.zero: 'std is migration distribution and foreign provenance, never semantic architecture or authority'; 'canonical semantic namespace roots are zero'): drop the prefix — 'os.{s}' is the anchored face and, because 'os' is default-injected, bare '{s}' is the canonical one",
+                .{ field, field, field },
+            );
+            return true;
+        }
+        if (obj.* != .name) return false;
+        if (!std.mem.eql(u8, obj.name.ident, "os")) return false;
+        // The world has to REACH this file, and the program must not bind `os`.
+        const world = subject_home.worldNamedFor(self.source_path, "os") orelse return false;
+        if (world != .os) return false;
+        if (self.userBinding("os") != null) return false;
+
+        if (subject_home.osDotMember(field)) |m| {
+            if (m.how != .retired) return false;
+            self.err(
+                loc,
+                "'{s}' is not a lawful name — two words glued, and LAW-16 admits one irreducible lowercase word — so 'os.{s}' is not a member edge of the 'os' world, and the direct backend cannot lower it while the lawful spelling it does lower is: write '{s}' (bare, because 'os' is default-injected and the anchor only disambiguates). An unset name answers nil, so '== nil' is a real presence test",
+                .{ field, field, m.repair },
+            );
+            return true;
+        }
+        self.err(
+            loc,
+            "the 'os' world has no member edge '{s}', so 'os.{s}' names nothing and the direct backend cannot lower it (DNB011 unresolved-application-facts): it used to type-check clean and fail only at emit. The world's member edges are {s} (c0 law.subject.resolve: 'os:{s}(…)' is refused by the same roster, and one edge cannot be lawful through one face and absent through the other)",
+            .{ field, field, subject_home.osDotMemberList(), field },
+        );
+        return true;
+    }
+
+    /// `environment[k]` — THE OTHER RETIRED SPELLING of the environment
+    /// projection, and the exact sibling of `os.getenv`.
+    ///
+    /// `examples/compile_fail/host_environment.id` has pinned "environment is
+    /// not a thing — use the os.env table" since it was written, and it never
+    /// enforced: an undeclared name reached through `[` is not an application,
+    /// so the callable-space refusal that already catches bare `environment(k)`
+    /// never saw it. One name, two faces, one governed — the same defect as
+    /// `os.bogus` and refused for the same reason.
+    ///
+    /// MEASURED BLAST RADIUS, before writing it: across every tracked `.id`,
+    /// `environment` appears as a NAME at exactly one live site — the fixture.
+    /// Every other occurrence is a comment or a detector's string literal
+    /// (`gate/host.id`, `gate/idiom.id`, `gate/probe.id`, `scripts/idiomgate.id`),
+    /// and those are the corpus's own detectors for this bug class. Nothing to
+    /// migrate, so nothing was.
+    ///
+    /// NEVER TAKES THE NAME: a program that binds `environment` owns the word.
+    fn refuseEnvironmentSpelling(self: *Sema, loc: ast.Loc, obj: *const ast.Expr) bool {
+        if (!self.idol_mode) return false;
+        if (obj.* != .name) return false;
+        if (!std.mem.eql(u8, obj.name.ident, "environment")) return false;
+        if (self.userBinding("environment") != null) return false;
+        self.err(
+            loc,
+            "'environment' is not a name in this language — the environment is a member edge of the injected 'os' world, and the edge is 'env': write 'env(k)' (bare, canonical) or 'os.env(k)' (anchored). LAW-16 admits one irreducible lowercase word, and 'env' already is the word this one spells out",
+            .{},
+        );
+        return true;
+    }
+
+    /// `process.run(cmd)` — A NAMESPACE STANDING IN FOR A WORLD.
+    ///
+    /// `law.std.zero` names the root by hand: "canonical semantic namespace
+    /// roots are zero; std core system platform runtime base idol idol os fs
+    /// script process and env never own native meaning", and "homes navigate
+    /// concepts but never substitute for a subject relation or world".
+    /// `examples/compile_fail/process_namespace.id` pins it and never enforced.
+    ///
+    /// REFUSED ONLY WHERE IT IS APPLIED, and that is not a hedge — it is what
+    /// the ruling objects to. The fixture's own sentence is "run is a global
+    /// relation, not process home DISPATCH", and a dispatch is an application.
+    /// MEASURED: the only other live `process.` sites in the tree are
+    /// `lib/semantic/ingest.id:9-12`, where `run = process.run` builds a table
+    /// of world-home FACTS — names being recorded, not edges being taken. A rule
+    /// written against the name rather than the dispatch would have broken the
+    /// one file in this tree whose whole job is to write these names down.
+    fn refuseProcessNamespaceDispatch(self: *Sema, loc: ast.Loc, func: *const ast.Expr) bool {
+        if (!self.idol_mode) return false;
+        if (func.* != .field) return false;
+        const f = func.field;
+        if (f.obj.* != .name) return false;
+        if (!std.mem.eql(u8, f.obj.name.ident, "process")) return false;
+        if (self.userBinding("process") != null) return false;
+        self.err(
+            loc,
+            "'{s}' is a global relation, not 'process' home dispatch: the 'process' namespace owns no native meaning (c0 law.std.zero names it — 'std core system platform runtime base idol idol os fs script process and env never own native meaning'; 'homes navigate concepts but never substitute for a subject relation or world'), so write '{s}(…)' and let the demand on its result qualify it",
+            .{ f.field, f.field },
+        );
+        return true;
+    }
+
     /// A BARE stream relation — `write("B")`, `read()`, `flush()`.
     ///
     /// It stays refused, and the ruling says why in two independent ways:
@@ -3399,6 +3542,12 @@ pub const Sema = struct {
                 return .any;
             },
             .field => |f| {
+                // THE OPERATION-FIRST WORLD FACE, asked before the object is
+                // walked. `os` is a seeded global, so walking it first would
+                // succeed and this arm would fall through to "field access is
+                // dynamic" — which is exactly how `os.bogus(1)` came to
+                // type-check clean. See `refuseOsDotFace`.
+                if (self.refuseOsDotFace(f.loc, f.obj, f.field)) return .any;
                 var ot = try self.check_expr(f.obj);
                 // A DESCRIPTOR NAME DENOTES ITS DESCRIPTOR. `token.kind.eof`
                 // reported `any` because `token` is an `alias_def` and not a
@@ -3453,6 +3602,13 @@ pub const Sema = struct {
                 return .any; // otherwise, field access is dynamic
             },
             .index => |idx| {
+                // `environment["X"]` — the retired projection reached through
+                // `[`, which is not an application and so was never seen by the
+                // callable-space refusal that already catches `environment(k)`.
+                if (self.refuseEnvironmentSpelling(idx.loc, idx.obj)) {
+                    _ = try self.check_expr(idx.key);
+                    return .any;
+                }
                 const ot = try self.check_expr(idx.obj);
                 _ = try self.check_expr(idx.key);
                 if (ot.is_vector()) {
@@ -3476,6 +3632,15 @@ pub const Sema = struct {
                 return .any;
             },
             .call => |c| {
+                // `process.run(cmd)` — namespace dispatch standing in for a
+                // world. Asked at the APPLICATION, which is the shape the
+                // ruling objects to; a bare `process.run` value reference is a
+                // name being recorded and stays lawful. See
+                // `refuseProcessNamespaceDispatch`.
+                if (self.refuseProcessNamespaceDispatch(c.loc, c.func)) {
+                    for (c.args) |arg| _ = try self.check_expr(arg);
+                    return .any;
+                }
                 // Canonical curried form `mem.store("i64")(ptr, val)`: the type
                 // selector is its own curry level and never shares a parameter
                 // list with values (§2.6 application schemas). Must be

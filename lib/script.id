@@ -191,7 +191,7 @@ zig_test_file = (path: str)
 # SIGNATURE — a caller passing a fallback wants a usable value. Callers that
 # must tell the two apart use `getenv_or`, which does distinguish them.
 getenv: str = (name: str, fallback: str)
-  v = os.getenv(name)
+  v = env(name)
   if v == nil
     return fallback
   if v == ""
@@ -202,7 +202,7 @@ getenv: str = (name: str, fallback: str)
 # its signature can: both answer "", but that is the documented contract here
 # and ~32 call sites compare the result against "" expecting exactly that.
 getenv_or: str = (name: str)
-  v = os.getenv(name)
+  v = env(name)
   if v == nil
     return ""
   v
@@ -237,11 +237,12 @@ getenv_or: str = (name: str)
 # claim this note retracts), `scripts/proof/benchmark.id` (BENCH_BACKEND,
 # DUO_BENCH_MANIFEST, DUO_EMIT_PROOF).
 #
-# THE WORKING SHAPE, until `os.setenv` is repaired, is to put the assignment in
-# the command itself — `run("NAME=value " .. cmd)` — which reaches the child
-# because the shell, not this process, performs it.
+# THE WORKING SHAPE for a CHILD process is still to put the assignment in the
+# command itself — `run("NAME=value " .. cmd)` — which reaches the child because
+# the shell, not this process, performs it. `env(k) = v` below sets it in THIS
+# process, which is a different fact and the one this relation names.
 env_set = (name: str, value: str)
-  os.setenv(name, value)
+  env(name) = value
 
 # === Path manipulation (makes Duo ergonomic vs Python os.path) ===
 

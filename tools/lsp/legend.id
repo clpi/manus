@@ -31,11 +31,11 @@
 # Exit 0 wrote or already current · 2 the taxonomy source could not be read or
 # enumerated no roles at all — no file was touched.
 
-root = std.os.getenv("IDOL_ROOT")
+root = env("IDOL_ROOT")
 if root == nil or root == ""
-  root = std.os.getenv("DUO_ROOT")
+  root = env("DUO_ROOT")
 if root == nil or root == ""
-  root = std.os.getenv("PWD")
+  root = env("PWD")
 if root == nil or root == ""
   root = "."
 
@@ -115,7 +115,7 @@ main: i64 = ()
   if text == nil or text == ""
     print("legend: FAIL — {src} printed no legend under hlmode=legend")
     print("legend: the taxonomy is the SOURCE. Refusing to write a legend with no citation behind it.")
-    std.os.exit(2)
+    os.exit(2)
     return 2
 
   rows = lines(text)
@@ -144,11 +144,11 @@ main: i64 = ()
   if nclosed == 0
     print("legend: FAIL — {src} enumerates no roles at all under hlmode=legend.")
     print("legend: the taxonomy is the SOURCE. Refusing to write an empty legend.")
-    std.os.exit(2)
+    os.exit(2)
     return 2
   if nmods == 0
     print("legend: FAIL — the source names no modifiers; H-3 weight and H-5 italic are axes and must reach the client.")
-    std.os.exit(2)
+    os.exit(2)
     return 2
 
   body = ""
@@ -186,7 +186,7 @@ main: i64 = ()
   cur = std.fs.read_file(target)
   if cur == nil or cur == ""
     print("legend: FAIL — cannot read {target}")
-    std.os.exit(2)
+    os.exit(2)
     return 2
 
   # Splice between the markers. Both must be present: a generator that
@@ -197,7 +197,7 @@ main: i64 = ()
   if a == 0 or b == 0 or b < a
     print("legend: FAIL — the generated block markers are missing from {target}")
     print("legend: expected a line {opener}")
-    std.os.exit(2)
+    os.exit(2)
     return 2
   head = cur:sub(1, a - 1)
   tail = cur:sub(b + closer:len())

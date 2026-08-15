@@ -800,6 +800,32 @@ const Arm64Compiler = struct {
     const_words: std.ArrayList(i64) = .empty,
     const_tables: std.ArrayList(ConstTableSymbol) = .empty,
     next_const: u32 = 0,
+    /// A WRITTEN module-scope binding is ONE storage location, and this is where
+    /// it lives: one 8-byte `__DATA,__bss` word per name, module-wide.
+    ///
+    /// It had none. The native-scalar profile gave a file-scope binding no
+    /// storage at all — every function body treated the name as its own
+    /// register-resident local re-materialized from the initializer — so a write
+    /// landed nowhere the next read could see. Measured against `--backend=c` on
+    /// the two fixtures that record it:
+    ///
+    ///     g066  for i = 1,3 / total = total + i   direct 0 5 (exit 0)   c 6 5 (exit 6)
+    ///     g108  main writes 8, show() reads       direct 8 5            c 8 8
+    ///
+    /// Exit 0 both times, `ok compile` both times, no diagnostic. `codegen.zig`'s
+    /// `mod-global-written:` precheck exists ONLY to refuse that miscompile, and
+    /// it is load-bearing until this map is what answers the read.
+    ///
+    /// `__DATA,__bss` and not `__TEXT,__const`: the whole point is that it is
+    /// WRITABLE. Zerofill costs no file bytes, and a non-zero initializer is not
+    /// lost by that — a module-scope initializer is an executable statement, so
+    /// it is emitted as a store like any other write.
+    ///
+    /// Keys are borrowed from the DNIR instruction's `.field`, which outlives the
+    /// compile, exactly as `string_map` borrows its content.
+    globals: std.StringHashMapUnmanaged(u32) = .empty,
+    /// Symbol indices in word order: position `i` owns bss word `i`.
+    global_syms: std.ArrayList(u32) = .empty,
     // f64 native emission: per-function physical FP state. FP params arrive
     // in d0-d7 (caller-saved) and the result returns in d0.
     cur_func_float: bool = false,
@@ -1077,6 +1103,10 @@ const Arm64Compiler = struct {
         self.const_bases.deinit(self.alloc);
         self.const_words.deinit(self.alloc);
         self.const_tables.deinit(self.alloc);
+        // Keys are borrowed; the symbol NAMES are owned and freed with the
+        // symbol list, so only the containers go here.
+        self.globals.deinit(self.alloc);
+        self.global_syms.deinit(self.alloc);
         self.fp_locals.deinit(self.alloc);
         self.fp_temps.deinit(self.alloc);
         self.value_free_at.deinit(self.alloc);
@@ -1149,6 +1179,35 @@ const Arm64Compiler = struct {
                 try const_data.appendSlice(self.alloc, &buf);
             }
         }
+        // `__DATA,__bss` — the written module-scope bindings, as storage.
+        //
+        // THE SAME RULE `__const` OBEYS, and it has to be computed the same way
+        // on both sides: `emitMachOArm64ObjectWithConst` derives `bss_addr`
+        // independently, and if the two disagree ld resolves every global's
+        // adrp/add to the wrong word. Sections are laid out __text, __cstring,
+        // __const, __bss, each present only when non-empty, so the index is not
+        // a constant either.
+        var bss_size: u64 = 0;
+        if (self.global_syms.items.len > 0) {
+            var section_index: u8 = 2;
+            if (self.strings.items.len > 0) section_index += 1;
+            if (self.const_words.items.len > 0) section_index += 1;
+            const base_addr = bssBaseAddr(
+                self.code.items.len,
+                cstring.items.len,
+                self.const_words.items.len * 8,
+            );
+            try self.asm_text.appendSlice(self.alloc, "\n.section __DATA,__bss\n.p2align 3\n");
+            for (self.global_syms.items, 0..) |sidx, w| {
+                const sym = &self.symbols.items[sidx];
+                sym.offset = @intCast(base_addr + w * 8);
+                sym.section = section_index;
+                try self.asm_text.appendSlice(self.alloc, sym.name);
+                try self.asm_text.appendSlice(self.alloc, ":\n\t.zero 8\n");
+            }
+            bss_size = @as(u64, self.global_syms.items.len) * 8;
+        }
+
         const const_bytes = try const_data.toOwnedSlice(self.alloc);
         errdefer self.alloc.free(const_bytes);
 
@@ -1183,6 +1242,7 @@ const Arm64Compiler = struct {
             .symbols = symbols,
             .relocations = relocations,
             .lineage = lineage,
+            .bss_size = bss_size,
             .cost = cost,
         };
     }
@@ -1253,6 +1313,32 @@ const Arm64Compiler = struct {
             .word_off = word_off,
             .word_len = @intCast(values.len),
         });
+        return idx;
+    }
+
+    /// The `__DATA,__bss` symbol for a written module-scope binding, creating it
+    /// on first mention.
+    ///
+    /// NOT deduped by contents the way `internConstTable` is — that dedup is
+    /// sound only because nothing writes `__TEXT,__const`. Here two bindings that
+    /// happen to hold equal values are still two locations, and sharing one word
+    /// between them would be observable the instant either is written.
+    fn internGlobal(self: *Arm64Compiler, name: []const u8) Error!u32 {
+        if (self.globals.get(name)) |idx| return idx;
+        const idx: u32 = @intCast(self.symbols.items.len);
+        const owned_name = try std.fmt.allocPrint(self.alloc, "Lduo_g_{s}", .{name});
+        errdefer self.alloc.free(owned_name);
+        // `.section` and `.offset` are stamped in `finish`, the only place that
+        // knows which of __cstring and __const exist ahead of this one.
+        try self.symbols.append(self.alloc, .{
+            .name = owned_name,
+            .offset = 0,
+            .defined = true,
+            .section = 2,
+            .external = false,
+        });
+        try self.global_syms.append(self.alloc, idx);
+        try self.globals.put(self.alloc, name, idx);
         return idx;
     }
 
@@ -1556,6 +1642,58 @@ const Arm64Compiler = struct {
                     }
                 }
                 idx += 1;
+            }
+        }
+
+        // A VARIADIC-TAIL `mov_arg` DOES NOT READ ITS OPERAND. It records it —
+        // `pending_varargs[idx].operand = ins.lhs` — and the register is not
+        // read until `materializePendingVarargs`, which runs inside the CALL
+        // that consumes the tail. The scan above stops a value's range at the
+        // instruction that mentions it, so a staged operand died one instruction
+        // before its only real use, `sweepGpLive` handed the register back, and
+        // the call's own format string was allocated straight into it.
+        //
+        // MEASURED, on the canonical backend, `stdout:write("A=" .. idr(idr("V")) .. "\n")`:
+        //
+        //     mov  x9, x0                 ; outer idr result -> x9   (the hole)
+        //     adrp x9, … ; add x9, …      ; "A=%s\n\n"        -> x9   (CLOBBER)
+        //     mov  x0, x9                 ; format string to the format slot
+        //     str  x9, [sp]               ; …and the tail gets the format string
+        //
+        // which printed `A=A=%s\n\n\n\n`. The format string was passed as its own
+        // argument. One `..` hole that is a NESTED call is enough: the inner call
+        // puts x0 in the outer call's save set, so the outer result is homed at
+        // x9 instead of staying in x0, and x9 is exactly what `allocReg` hands
+        // out next.
+        //
+        // The fix is the liveness fact, not a register preference: a staged
+        // operand is live until the call reads it. Widen to the consuming call,
+        // which is the next call instruction at or after the staging — never
+        // past a block boundary, because `pending_varargs` is cleared per call.
+        var base: u32 = 0;
+        for (f.blocks) |block| {
+            const instrs = block.instrs;
+            defer base += @intCast(instrs.len);
+            for (instrs, 0..) |ins, i| {
+                if (ins.op != .mov_arg and ins.op != .fp_mov_arg) continue;
+                if (!std.mem.eql(u8, ins.field, "vararg")) continue;
+                const operand_id: u32 = switch (ins.lhs) {
+                    .local, .temp => |id| id,
+                    else => continue,
+                };
+                var j = i + 1;
+                const consumer: ?u32 = while (j < instrs.len) : (j += 1) {
+                    switch (instrs[j].op) {
+                        .call_direct, .call_extern => break base + @as(u32, @intCast(j)),
+                        // Anything that is not staging is not part of this tail;
+                        // an unterminated run stages nothing and needs no widening.
+                        .mov_arg, .fp_mov_arg => {},
+                        else => break null,
+                    }
+                } else null;
+                const at = consumer orelse continue;
+                const last = self.value_free_at.get(operand_id) orelse continue;
+                if (last < at) try self.value_free_at.put(self.alloc, operand_id, at);
             }
         }
 
@@ -3346,19 +3484,35 @@ const Arm64Compiler = struct {
                 // the save) and stored at [sp,#0] after reserving the vararg
                 // slot. w8 is NOT needed (Apple's printf ignores the AAPCS
                 // FP-count register for the stack convention).
+                //
+                // `.field = "nonl"` is `stdout:write`: THE SAME EGRESS WITHOUT
+                // THE LINE ENDING. It is a caller property, not a value one, so
+                // it selects the call shape rather than editing it — `puts`
+                // cannot be asked not to append, so the `.str` arm becomes
+                // `printf("%s", v)` and travels the stack-vararg path the
+                // numeric arms already use. `print` is untouched.
+                const nonl = std.mem.eql(u8, ins.field, "nonl");
+                // `puts` alone takes the value in x0 and no format. Every other
+                // shape is a `printf`: format in x0, value in x2 and then at
+                // [sp,#0]. A VALUELESS print is a `printf` with no value at all,
+                // and must reserve no slot — its emitted bytes are unchanged.
+                const use_puts = ins.ty == .str and !nonl;
+                const has_value = ins.ty == .str or ins.ty == .i64 or ins.ty == .f64;
+                const stack_arg = has_value and !use_puts;
                 var fmt_sym: u32 = 0;
                 switch (ins.ty) {
                     .str => {
                         const reg = try self.evalDnirValue(temps, ins.lhs);
-                        if (reg != 0) try self.emitMovReg(0, reg);
+                        const home: u5 = if (use_puts) 0 else 2;
+                        if (reg != home) try self.emitMovReg(home, reg);
                         self.releaseDnirTemp(pinned, ins.lhs, reg);
-                        fmt_sym = 0;
+                        fmt_sym = if (use_puts) 0 else try self.internString("%s");
                     },
                     .i64 => {
                         const reg = try self.evalDnirValue(temps, ins.lhs);
                         if (reg != 2) try self.emitMovReg(2, reg);
                         self.releaseDnirTemp(pinned, ins.lhs, reg);
-                        fmt_sym = try self.internString("%lld\n");
+                        fmt_sym = try self.internString(if (nonl) "%lld" else "%lld\n");
                     },
                     .f64 => switch (ins.lhs) {
                         // Literal: materialize the bit pattern directly into
@@ -3369,30 +3523,67 @@ const Arm64Compiler = struct {
                             try self.emitFmovToGpr(2, d);
                         },
                     },
-                    else => fmt_sym = try self.internString("\n"),
+                    // A valueless `print` is a blank line. A valueless WRITE is
+                    // nothing at all, and emitting `printf("")` for it would be
+                    // a call with no effect rather than no call.
+                    else => fmt_sym = if (nonl) 0 else try self.internString("\n"),
                 }
-                if (ins.ty == .f64) fmt_sym = try self.internString("%f\n");
+                if (ins.ty == .f64) fmt_sym = try self.internString(if (nonl) "%f" else "%f\n");
+                // A valueless WRITE is nothing at all — no call, not an empty one.
+                if (!has_value and nonl) {
+                    try self.syncGateLocalTempsAfterCall(temps, pinned);
+                    return;
+                }
                 if (fmt_sym != 0) try self.emitAdrpAdd(0, fmt_sym);
                 // Unknown str (NULL from missing os.args / os.env) is not a
-                // C "(null)" sentinel. Skip puts. Present empty still prints.
+                // C "(null)" sentinel. Skip the call. Present empty still prints.
+                // The guard reads WHERE THE STRING IS, which the shape above
+                // decided: x0 on the `puts` path, x2 on the `printf("%s")` one.
+                // Testing x0 unconditionally would have tested the FORMAT
+                // string — never null — and passed a null through to `%s`.
                 var skip: ?u32 = null;
                 if (ins.ty == .str) {
-                    try self.emitCmpZero(0);
+                    try self.emitCmpZero(if (use_puts) 0 else 2);
                     skip = try self.emitBCond(.eq, 0);
                 }
                 const save = try self.emitSaveCallerRegs();
-                if (ins.ty == .i64 or ins.ty == .f64) {
+                if (stack_arg) {
                     // Reserve a 16-byte slot so sp stays 16-byte aligned at the
                     // call; the vararg goes at [sp,#0], [sp,#8] is padding.
                     try self.emitSubSp(16);
                     try self.emitStrSp(2, 0);
                 }
-                try self.ensureExternalSymbol(if (ins.ty == .str) "puts" else "printf");
-                try self.emitBl(if (ins.ty == .str) "puts" else "printf");
-                if (ins.ty == .i64 or ins.ty == .f64) try self.emitAddSp(16);
+                try self.ensureExternalSymbol(if (use_puts) "puts" else "printf");
+                try self.emitBl(if (use_puts) "puts" else "printf");
+                if (stack_arg) try self.emitAddSp(16);
                 try self.emitRestoreCallerRegs(save);
                 if (skip) |off| try self.patchCondBranch(off, @intCast(self.code.items.len));
                 try self.syncGateLocalTempsAfterCall(temps, pinned);
+            },
+            .load_global => {
+                const t = ins.result orelse return self.refuse(@src());
+                if (ins.field.len == 0) return self.refuse(@src());
+                const sym = try self.internGlobal(ins.field);
+                const dst = try self.allocReg();
+                try self.emitAdrpAdd(dst, sym);
+                // The address register IS the destination: `adrp/add` computes
+                // the word's address into it and the load overwrites it with the
+                // word. One register, not two, and nothing else is live in it.
+                try self.emitLdrBaseImm(dst, dst, 0);
+                try temps.put(self.alloc, t, dst);
+            },
+            .store_global => {
+                if (ins.field.len == 0) return self.refuse(@src());
+                const sym = try self.internGlobal(ins.field);
+                // The VALUE is evaluated first. Materializing the address first
+                // would hold a register across whatever the value's own lowering
+                // needs, which for a call operand is the whole call.
+                const val = try self.evalDnirValue(temps, ins.lhs);
+                const addr = try self.allocReg();
+                try self.emitAdrpAdd(addr, sym);
+                try self.emitStrBaseImm(val, addr, 0);
+                self.releaseReg(addr);
+                self.releaseDnirTemp(pinned, ins.lhs, val);
             },
             .alloc_slots => {
                 const t = ins.result orelse return self.refuse(@src());
@@ -6403,6 +6594,24 @@ fn machOTextOffset(cstring_len: usize, const_len: usize, bss_size: u64) usize {
 /// The object writer at its established arity. Emits no `__TEXT,__const`, which
 /// is exactly what a module with no promoted table needs — kept so every DNIR-
 /// only caller and every oracle test below reads the same bytes it always did.
+/// THE ONE PLACE `__DATA,__bss` STARTS.
+///
+/// `Arm64Compiler.finish` stamps every global's `n_value` from this, and
+/// `emitMachOArm64ObjectWithConst` lays the section down at this address. Two
+/// derivations of one number is how a relocation resolves to the wrong word, so
+/// there is one derivation and both call it.
+///
+/// 8-ALIGNED UNCONDITIONALLY. The pre-existing expression aligned only on the
+/// path that had a `__const` section, and fell through to a bare
+/// `text.len + cstring.len` otherwise — which is 8-aligned only by luck. Every
+/// global is an 8-byte word reached by `ldr x, [x]`, so the unaligned case was
+/// a fault waiting for the first module with strings, globals and no promoted
+/// table. Nothing observed it before because nothing ever set `bss_size`.
+fn bssBaseAddr(text_len: usize, cstring_len: usize, const_len: usize) usize {
+    const after_cstring = alignForward(text_len + cstring_len, 8);
+    return alignForward(after_cstring + const_len, 8);
+}
+
 fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []const u8, symbols: []const Symbol, relocations: []const Relocation, bss_size: u64) Error![]u8 {
     return emitMachOArm64ObjectWithConst(alloc, text, cstring, &.{}, symbols, relocations, bss_size);
 }
@@ -6460,7 +6669,9 @@ fn emitMachOArm64ObjectWithConst(
     // word.
     const cstring_addr: usize = text.len;
     const const_addr: usize = alignForward(text.len + cstring.len, 8);
-    const bss_addr: usize = if (has_const) const_addr + const_data.len else text.len + cstring.len;
+    const bss_addr: usize = bssBaseAddr(text.len, cstring.len, const_data.len);
+    // `const_addr` and `bss_addr` must agree with `finish`; see `bssBaseAddr`.
+    std.debug.assert(!has_const or const_addr + const_data.len <= bss_addr);
 
     // Relocation entries live in the file between __text and __cstring but not
     // in the VM layout. llvm-objdump and ld reject LC_SEGMENT_64 when filesize >
@@ -7493,6 +7704,21 @@ test "native backend: strict graph unresolved application stays semantic" {
     try std.testing.expectEqualStrings("observe", diagnostic.relation.?);
 }
 
+/// `stdout:write(v)` reached libc, and reached the call that writes EXACTLY what
+/// it was given.
+///
+/// Both directions, because only the absence catches the defect this replaced:
+/// write shared `print`'s lowering, so it emitted `bl _puts`, and `puts` APPENDS
+/// A NEWLINE THE PROGRAM DID NOT WRITE. `stdout:write("XY")` then `("Z")`
+/// printed `XY\nZ\n` where `--backend=c` printed `XYZ` — one source, two
+/// answers, and the wrong one on the canonical backend. Asserting only that
+/// `_printf` is present would let a return to `puts` pass whenever anything else
+/// in the same module happened to printf.
+fn expectWriteEgress(asm_text: []const u8) !void {
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, "bl _printf") != null);
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, "bl _puts") == null);
+}
+
 test "native backend: stdout write is bootstrap egress not unresolved print" {
     var diagnostic: Diagnostic = .{};
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7516,7 +7742,7 @@ test "native backend: stdout write is bootstrap egress not unresolved print" {
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
     try std.testing.expect(output.text.len != 0);
-    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _puts") != null);
+    try expectWriteEgress(output.asm_text);
 }
 
 test "native backend: stdin read is bootstrap ingress not unresolved" {
@@ -7687,7 +7913,7 @@ test "native backend: shc write example is egress not exit" {
     try std.testing.expectEqual(@as(usize, 0), graph.unresolvedApplicationCountExcludingBootstrap(null));
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
-    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _puts") != null);
+    try expectWriteEgress(output.asm_text);
     try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
 
@@ -7752,7 +7978,7 @@ test "native backend: shc arg example is root argv not a call" {
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _idol_os_arg") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _puts") != null);
+    try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
     try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
@@ -7786,7 +8012,7 @@ test "native backend: shc env example is root table not getenv call" {
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _getenv") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _puts") != null);
+    try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
     try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
@@ -7821,7 +8047,7 @@ test "native backend: shc cwd example is root directory not getcwd call" {
     defer output.deinit(alloc);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _idol_os_cwd") != null);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _getcwd") == null);
-    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _puts") != null);
+    try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
     try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
@@ -7855,7 +8081,7 @@ test "native backend: shc compose example is ingress to egress not status" {
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _idol_io_read_stdin") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _puts") != null);
+    try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
     try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
@@ -7889,7 +8115,7 @@ test "native backend: shc path example is subject read not a pointer" {
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _idol_io_read_path") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _puts") != null);
+    try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
     try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
@@ -9398,6 +9624,255 @@ test "native backend refuses source conversion absent application facts and reta
     try std.testing.expect(std.mem.indexOf(u8, tail, ", [sp, #0]") != null);
 }
 
+/// The register number in the first `prefix` occurrence at or after `from`, or
+/// null. `prefix` ends immediately before the digits, e.g. `"mov x"`.
+fn asmRegAfter(text: []const u8, from: usize, prefix: []const u8) ?struct { reg: u8, at: usize } {
+    const rel = std.mem.indexOf(u8, text[from..], prefix) orelse return null;
+    const at = from + rel;
+    const digits = text[at + prefix.len ..];
+    var n: usize = 0;
+    while (n < digits.len and std.ascii.isDigit(digits[n])) n += 1;
+    if (n == 0) return null;
+    const reg = std.fmt.parseInt(u8, digits[0..n], 10) catch return null;
+    return .{ .reg = reg, .at = at };
+}
+
+// A VARIADIC-TAIL `mov_arg` DOES NOT READ ITS OPERAND — it records it, and the
+// register is not read until `materializePendingVarargs` runs INSIDE the call.
+// `computeValueLastUse` ended the operand's range at the staging instruction, so
+// `sweepGpLive` returned the register one instruction early and the call's own
+// format string was allocated straight into it.
+//
+// This is the DNIR of `stdout:write("A=" .. idr(idr("V")) .. "\n")`, the shape
+// that printed `A=A=%s\n\n\n\n` — THE FORMAT STRING PASSED AS ITS OWN ARGUMENT.
+// One `..` hole that is a NESTED call is the whole trigger: the inner call puts
+// x0 in the outer call's save set, so the outer result is homed above x8 instead
+// of staying in x0, and that home is exactly what `allocReg` hands out next.
+//
+// The assertion is on the REGISTER IDENTITY, not on the text around it: the
+// value written to the memory-argument area must be the register the outer call
+// left its result in, and the format string must have gone somewhere else.
+test "native backend keeps a staged vararg live through the call that reads it" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const idr_params = [_]dnir.Param{.{ .name = "x", .ty = .str }};
+    const idr_instructions = [_]dnir.Instr{
+        .{ .op = .ret, .lhs = .{ .temp = 0 }, .ty = .str },
+    };
+    const main_instructions = [_]dnir.Instr{
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .str = "V" }, .ty = .str },
+        .{ .op = .call_direct, .result = 1, .callee = "idr", .ty = .str },
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = 1 }, .ty = .str },
+        .{ .op = .call_direct, .result = 2, .callee = "idr", .ty = .str },
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = 2 }, .field = "vararg", .ty = .str },
+        .{ .op = .call_extern, .callee = "printf", .lhs = .{ .str = "A=%s\n" } },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const idr_blocks = [_]dnir.Block{.{ .instrs = &idr_instructions }};
+    const main_blocks = [_]dnir.Block{.{ .instrs = &main_instructions }};
+    const functions = [_]dnir.Function{
+        .{ .name = "idr", .ret = .str, .params = &idr_params, .blocks = &idr_blocks },
+        .{ .name = "main", .ret = .i64, .blocks = &main_blocks },
+    };
+    const module = dnir.Module{ .functions = &functions };
+
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+    const listing = output.asm_text;
+
+    const main_at = std.mem.indexOf(u8, listing, "_main:") orelse return error.TestExpectedEqual;
+    const call_at = main_at + (std.mem.indexOf(u8, listing[main_at..], "bl _printf") orelse
+        return error.TestExpectedEqual);
+    const window = listing[main_at..call_at];
+
+    // The OUTER `bl _idr` — the second one — and the register its result was
+    // moved into. `mov x{d}, x0` is emitted only because x0 is in the save set,
+    // which is the pressure this shape exists to create.
+    const first_idr = std.mem.indexOf(u8, window, "bl _idr") orelse return error.TestExpectedEqual;
+    const outer_idr = first_idr + 1 +
+        (std.mem.indexOf(u8, window[first_idr + 1 ..], "bl _idr") orelse return error.TestExpectedEqual);
+    const home = asmRegAfter(window, outer_idr, "mov x") orelse return error.TestExpectedEqual;
+    try std.testing.expect(home.reg >= 9);
+
+    // The format string is materialized somewhere ELSE. Reading it into `home`
+    // is the defect, and it is invisible in the bytes until the program runs.
+    const fmt_reg = asmRegAfter(window, home.at, "adrp x") orelse return error.TestExpectedEqual;
+    try std.testing.expect(fmt_reg.reg != home.reg);
+
+    // …and what lands in the memory-argument area is the CALL RESULT.
+    var buf: [32]u8 = undefined;
+    const store = try std.fmt.bufPrint(&buf, "str x{d}, [sp, #0]", .{home.reg});
+    try std.testing.expect(std.mem.indexOf(u8, window[fmt_reg.at..], store) != null);
+}
+
+// `stdout:write` is `print` MINUS THE LINE ENDING. They shared one lowering, and
+// the shared one appended: `.str` reached `print_value`, `print_value` called
+// `puts`, and `puts` writes a newline the program did not. `print` keeps `puts`;
+// write takes `printf("%s", v)`, which writes exactly what it was given.
+test "native backend write egress does not append a line ending" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const write_instructions = [_]dnir.Instr{
+        .{ .op = .print_value, .lhs = .{ .str = "XY" }, .ty = .str, .field = "nonl" },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const print_instructions = [_]dnir.Instr{
+        .{ .op = .print_value, .lhs = .{ .str = "XY" }, .ty = .str },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    inline for (.{
+        .{ &write_instructions, false },
+        .{ &print_instructions, true },
+    }) |case| {
+        const blocks = [_]dnir.Block{.{ .instrs = case[0] }};
+        const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
+        const module = dnir.Module{ .functions = &functions };
+        var diagnostic: Diagnostic = .{};
+        var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+        defer output.deinit(alloc);
+        const appends = case[1];
+        // Both directions on both spellings: a write that reaches `puts` has
+        // grown a newline, and a `print` that stops reaching it has lost one.
+        try std.testing.expectEqual(appends, std.mem.indexOf(u8, output.asm_text, "bl _puts") != null);
+        try std.testing.expectEqual(!appends, std.mem.indexOf(u8, output.asm_text, "bl _printf") != null);
+        // The line ending is not smuggled in through the format either.
+        if (!appends) {
+            try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "\"%s\"") != null);
+            try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "\"%s\\n\"") == null);
+        }
+    }
+}
+
+// A NULL string still writes nothing rather than libc's `(null)`, and the guard
+// has to read the register the STRING is in. `puts` takes it in x0; the write
+// path takes it in x2 and x0 holds the format, which is never null — testing x0
+// there would have passed every null straight through to `%s`.
+test "native backend write egress guards the value register not the format" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const write_instructions = [_]dnir.Instr{
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .str = "PATH" }, .ty = .str },
+        .{ .op = .call_extern, .result = 0, .callee = "getenv", .ty = .str },
+        .{ .op = .print_value, .lhs = .{ .temp = 0 }, .ty = .str, .field = "nonl" },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const print_instructions = [_]dnir.Instr{
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .str = "PATH" }, .ty = .str },
+        .{ .op = .call_extern, .result = 0, .callee = "getenv", .ty = .str },
+        .{ .op = .print_value, .lhs = .{ .temp = 0 }, .ty = .str },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    inline for (.{
+        .{ &write_instructions, "cmp x2, #0" },
+        .{ &print_instructions, "cmp x0, #0" },
+    }) |case| {
+        const blocks = [_]dnir.Block{.{ .instrs = case[0] }};
+        const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
+        const module = dnir.Module{ .functions = &functions };
+        var diagnostic: Diagnostic = .{};
+        var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+        defer output.deinit(alloc);
+        try std.testing.expect(std.mem.indexOf(u8, output.asm_text, case[1]) != null);
+    }
+}
+
+// A WRITTEN MODULE-SCOPE BINDING IS ONE STORAGE LOCATION.
+//
+// It had none: the native-scalar profile gave a file-scope binding no storage,
+// so each function treated the name as its own register-resident local, the
+// write landed nowhere the next read could see, and the read folded to the
+// initializer. Measured against `--backend=c` on the two fixtures that record
+// it, `examples/native_differential/unsupported/`:
+//
+//     g066  total = total + i in a loop     direct 0 5 exit 0   c 6 5 exit 6
+//     g108  main writes 8, show() reads     direct 8 5          c 8 8
+//
+// Two functions must therefore reach THE SAME WORD, and that is what this
+// asserts — not that a global "works", but that the store's symbol and the
+// load's symbol are one symbol, which is the only thing the old shape got wrong.
+test "native backend gives a written module global one shared word" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const bump_instructions = [_]dnir.Instr{
+        .{ .op = .load_global, .result = 0, .field = "total", .ty = .i64 },
+        .{ .op = .binop, .result = 1, .binop = .add, .lhs = .{ .temp = 0 }, .rhs = .{ .i64 = 1 }, .ty = .i64 },
+        .{ .op = .store_global, .field = "total", .lhs = .{ .temp = 1 }, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
+    };
+    const main_instructions = [_]dnir.Instr{
+        .{ .op = .store_global, .field = "total", .lhs = .{ .i64 = 5 }, .ty = .i64 },
+        .{ .op = .call_direct, .result = 2, .callee = "bump", .ty = .i64 },
+        .{ .op = .load_global, .result = 3, .field = "total", .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .temp = 3 }, .ty = .i64 },
+    };
+    const bump_blocks = [_]dnir.Block{.{ .instrs = &bump_instructions }};
+    const main_blocks = [_]dnir.Block{.{ .instrs = &main_instructions }};
+    const functions = [_]dnir.Function{
+        .{ .name = "bump", .ret = .i64, .blocks = &bump_blocks },
+        .{ .name = "main", .ret = .i64, .blocks = &main_blocks },
+    };
+    const module = dnir.Module{ .functions = &functions };
+    var diagnostic: Diagnostic = .{};
+    var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
+    defer output.deinit(alloc);
+
+    // ONE word of `__DATA,__bss`, however many times the name is mentioned. Four
+    // mentions across two functions is the point: `internGlobal` must answer with
+    // the same symbol every time, or each function gets a private location and
+    // the defect is back with storage attached.
+    try std.testing.expectEqual(@as(u64, 8), output.bss_size);
+    var globals: usize = 0;
+    var section: u8 = 0;
+    for (output.symbols) |sym| {
+        if (!std.mem.startsWith(u8, sym.name, "Lduo_g_")) continue;
+        globals += 1;
+        section = sym.section;
+        try std.testing.expectEqualStrings("Lduo_g_total", sym.name);
+        try std.testing.expect(!sym.external);
+    }
+    try std.testing.expectEqual(@as(usize, 1), globals);
+    // Sections are __text, then __cstring / __const when non-empty, then __bss.
+    // This module has neither string nor promoted table, so __bss is section 2 —
+    // and a wrong index here is a relocation resolved into the wrong section.
+    try std.testing.expectEqual(@as(u8, 2), section);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, ".section __DATA,__bss") != null);
+}
+
+// The address a global's word is stamped at must be the address the object
+// writer lays the section down at. Two derivations of one number is how a
+// relocation resolves to the wrong word, so there is one — `bssBaseAddr` — and
+// this pins the property that made it necessary: 8-byte alignment on EVERY
+// path, including the one with no `__const` section, which the original
+// expression left to luck.
+test "native backend bss base address is 8-aligned on every section layout" {
+    for ([_]usize{ 0, 1, 7, 8, 9, 4096, 4097 }) |text_len| {
+        for ([_]usize{ 0, 1, 5, 8, 13 }) |cstring_len| {
+            for ([_]usize{ 0, 8, 16 }) |const_len| {
+                const at = bssBaseAddr(text_len, cstring_len, const_len);
+                try std.testing.expectEqual(@as(usize, 0), at % 8);
+                try std.testing.expect(at >= text_len + cstring_len + const_len);
+            }
+        }
+    }
+}
+
 test "native backend lowers if elseif else branches" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
@@ -10127,7 +10602,10 @@ test "native backend lowers source print to host egress and retains physical pri
     try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "bl _printf") != null);
 
     // The subject-first spelling of the same egress, in a module with the same
-    // name, must produce the same call — one node, not two.
+    // name, must produce the same call — one node, not two. It used to produce
+    // `puts` against `print`'s `printf`, which is TWO nodes wearing one name and
+    // is why `stdout:write` carried a newline `print` is entitled to and write
+    // is not.
     var stream_lex = Lexer.init(
         \\main: i64 = ()
         \\    stdout:write("1")
@@ -10145,7 +10623,7 @@ test "native backend lowers source print to host egress and retains physical pri
     try liftCheckedTestGraph(&stream_mod, &stream_sem, &stream_graph);
     var stream_assembly = try emitCheckedTestAssembly(alloc, &stream_mod, &stream_graph, null);
     defer stream_assembly.deinit(alloc);
-    try std.testing.expect(std.mem.indexOf(u8, stream_assembly.assembly, "bl _puts") != null);
+    try expectWriteEgress(stream_assembly.assembly);
 
     const instructions = [_]dnir.Instr{
         .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = 1 }, .ty = .i64 },

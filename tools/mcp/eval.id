@@ -16,14 +16,14 @@
 -- getenv answers ""  -  NOT nil  -  for an unset name, so every read is guarded
 -- against "" explicitly. The old `os.getenv(name, default)` two-argument
 -- form silently DROPPED its default under the Lua 5.1 runtime.
-duo_root = os.getenv("IDOL_ROOT")
+duo_root = env("IDOL_ROOT")
 if duo_root == nil or duo_root == ""
-  duo_root = os.getenv("DUO_ROOT")
+  duo_root = env("DUO_ROOT")
 if duo_root == nil or duo_root == ""
   duo_root = "."
-duo_bin = os.getenv("IDOL_BIN")
+duo_bin = env("IDOL_BIN")
 if duo_bin == nil or duo_bin == ""
-  duo_bin = os.getenv("DUO_BIN")
+  duo_bin = env("DUO_BIN")
 if duo_bin == nil or duo_bin == ""
   duo_bin = "{duo_root}{\"/zig-out/bin/idol\" end}"
 

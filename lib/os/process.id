@@ -269,15 +269,14 @@ env_set: any = (name: str, value: str)
   # Use C setenv for persistent environment changes in the current process
   @comp.c.emit("setenv(" .. name .. ", " .. value .. ", 1)")
   
-  # Also update Lua's environment table
-  os.setenv(name, value)
+  env(name) = value
   { ok = true }
 
 env_unset: any = (name: str)
   # Use C unsetenv for persistent environment changes
   @comp.c.emit("unsetenv(" .. name .. ")")
   
-  os.setenv(name, nil)
+  env:remove(name)
   { ok = true }
 
 env_list: any = ()

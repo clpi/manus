@@ -118,4 +118,4 @@ main: i64 = ()
   print("init_build_smoke: PASS — init, check, build, run, test on a clean directory")
   0
 
-std.os.exit(main())
+os.exit(main())

@@ -57,17 +57,17 @@ exact_capture: any = (cmd: str)
       break
   { outcome = verdict(passed(code)), status = code, output = clean }
 
-root = os.getenv("IDOL_ROOT") or ""
+root = env("IDOL_ROOT") or ""
 if root:len() == 0
-  root = os.getenv("DUO_ROOT") or ""
+  root = env("DUO_ROOT") or ""
 if root:len() == 0
-  root = os.getenv("PWD") or ""
+  root = env("PWD") or ""
 if root:len() == 0
   root = "."
 
-idol_bin = os.getenv("IDOL_BIN") or ""
+idol_bin = env("IDOL_BIN") or ""
 if idol_bin:len() == 0
-  idol_bin = os.getenv("DUO_BIN") or ""
+  idol_bin = env("DUO_BIN") or ""
 if idol_bin:len() == 0
   idol_bin = "{root}/zig-out/bin/idol"
 

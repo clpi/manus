@@ -861,18 +861,18 @@ find_doc_highlights: any = (text, lo, syms, line, col)
 shell_quote: str = s
 "'" .. s:gsub("'", "'\\''") .. "'"
 resolve_check_flags: str = ()
-  f = os.getenv("DUO_LSP_CHECK_FLAGS")
+  f = env("DUO_LSP_CHECK_FLAGS")
   if f != nil and f != ""
     return f .. " "
-  h = os.getenv("DUO_LSP_HINTS")
+  h = env("DUO_LSP_HINTS")
   if h != nil and (h == "1" or h == "true" or h == "yes")
     return "--hints "
   ""
 resolve_duo_bin: any = ()
-  b = os.getenv("DUO_LSP_DUO_BIN")
+  b = env("DUO_LSP_DUO_BIN")
   if b != nil and b != ""
     return b
-  b = os.getenv("DUO_BIN")
+  b = env("DUO_BIN")
   if b != nil and b != ""
     return b
   f = io.popen("which duo 2>/dev/null", "r")

@@ -113,6 +113,6 @@ main: i64 = ()
   print("")
   if fail > 0
     print("record exec: FAIL — {fail} row(s) answered wrong")
-    std.os.exit(1)
+    os.exit(1)
   print("record exec: PASS — rung (a) emits C that compiles and answers")
   0

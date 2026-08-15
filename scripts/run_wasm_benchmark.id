@@ -131,7 +131,7 @@ _save_baseline = (path: str, names: any, times: any, runs: i64)
     print("  INFO Baseline saved -> " .. path)
 
 main: i64 = ()
-    args = std.os.args()
+    args = os.args()
     reset = false
     runs = to(i64)(_env_or("WASM_BENCH_RUNS", "3"))
     if runs == nil or runs < 1 runs = 3

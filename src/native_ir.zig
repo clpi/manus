@@ -84,7 +84,16 @@ pub const Op = enum {
     /// one local per element, so there is no contiguous storage and no pointer to
     /// pass (the SH-04 blocker in `selfhosting_matrix.zig`).
     alloc_slots,
+    /// Read a written module-scope binding out of its `__DATA,__bss` word.
+    /// `.field` names it; `.result` receives it.
     load_global,
+    /// Write one. `.field` names it, `.lhs` is the value.
+    ///
+    /// A file-scope binding is ONE storage location, and until this op existed
+    /// the direct backend had none: every function treated the name as its own
+    /// register-resident local, so the write landed nowhere the next read could
+    /// see and the read folded to the initializer. See `Arm64Compiler.globals`.
+    store_global,
     binop,
     cmp,
     call_direct,
@@ -426,6 +435,7 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .@"const",
                     .store_local,
                     .load_global,
+                    .store_global,
                     .mov_arg,
                     .fp_mov_arg,
                     .br,
