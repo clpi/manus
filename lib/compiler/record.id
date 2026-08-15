@@ -48,9 +48,17 @@ typename: str = (desc: str)
 # The outer parens are not decoration: a compound literal in expression
 # position binds looser than a cast, and `(duo_point){…}.x` without them
 # parses as a cast applied to a member access.
+#
+# SPELLING: the brace pair is concatenated, NOT written `{{fields}}`. `{{`/`}}`
+# is not a working escape — it is mis-lexed as an interpolation hole that never
+# closes (warning STR-1), and the node it produces lowers on NEITHER backend:
+# `--backend=direct` refuses at `lowerBinop() — concat`, `--backend=c` emits C
+# that clang rejects with 4 errors. Measured at idol 6caa1d5a. The concatenated
+# spelling emits the identical format string `((%s){%s})` — checked with `od -c`
+# on the object. Restore `{{ }}` only once both backends lower it.
 named: str = (desc: str, fields: str)
   ty: str = typename(desc)
-  "(({ty}){{fields}})"
+  "((" .. ty .. "){" .. fields .. "})"
 
 # Applying a descriptor to a POSITIONAL pack — spec §15.1's `point{ 3, 4 }`.
 #
@@ -60,7 +68,7 @@ named: str = (desc: str, fields: str)
 # whose field order is not stable cannot take this form.
 positional: str = (desc: str, values: str)
   ty: str = typename(desc)
-  "(({ty}){{values}})"
+  "((" .. ty .. "){" .. values .. "})"
 
 # One named field inside a pack. Separated so the caller assembles the pack
 # rather than this file learning about commas, which is the first step toward
