@@ -12,7 +12,7 @@ ssl_ctx_new(method: any): any
 
 # const SSL_METHOD *TLS_client_method(void)
 @ffi("TLS_client_method")
-tls_client_method(): any
+tls_client_method: any = ()
 
 # int SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
 @ffi("SSL_CTX_set_default_verify_paths")
@@ -58,7 +58,7 @@ ssl_shutdown(ssl: any): int
 # TLS Configuration
 # ═══════════════════════════════════════════════════════════════
 
-new_config(): any
+new_config: any = ()
     {
         insecure = false,
         cert = nil,
@@ -67,33 +67,28 @@ new_config(): any
         name = nil,
         version = "tls12",
     }
-end
 
-set_cert(config: any, cert: str, key: str): void
+set_cert = (config: any, cert: str, key: str)
     config.cert = cert
     config.key = key
-end
 
-set_ca(config: any, ca: str): void
+set_ca = (config: any, ca: str)
     config.ca = ca
-end
 
-set_name(config: any, name: str): void
+set_name = (config: any, name: str)
     config.name = name
-end
 
 # ═══════════════════════════════════════════════════════════════
 # TLS Client Connection
 # ═══════════════════════════════════════════════════════════════
 
-dial(host: str, port: i64, config: any): any
-    if config == nil config = new_config() end
+dial: any = (host: str, port: i64, config: any)
+    if config == nil config = new_config()
 
     # Establish TCP connection first
     fd = net.connect(host, port)
     if fd == nil
         return nil, "TCP connection failed"
-    end
 
     # Initialize OpenSSL
     method = tls_client_method()
@@ -101,7 +96,6 @@ dial(host: str, port: i64, config: any): any
     if ctx == nil
         net.close(fd)
         return nil, "Failed to create SSL context"
-    end
 
     # Set default CA paths
     ssl_ctx_set_default_verify_paths(ctx)
@@ -112,7 +106,6 @@ dial(host: str, port: i64, config: any): any
         ssl_ctx_free(ctx)
         net.close(fd)
         return nil, "Failed to create SSL connection"
-    end
 
     # Associate TCP fd with SSL
     ssl_set_fd(ssl, fd)
@@ -120,7 +113,6 @@ dial(host: str, port: i64, config: any): any
     # Set server name for SNI
     if config.name
         # Use the hostname for SNI
-    end
 
     # Perform TLS handshake
     ret = ssl_connect(ssl)
@@ -129,7 +121,6 @@ dial(host: str, port: i64, config: any): any
         ssl_ctx_free(ctx)
         net.close(fd)
         return nil, "TLS handshake failed"
-    end
 
     {
         ssl = ssl,
@@ -141,56 +132,49 @@ dial(host: str, port: i64, config: any): any
     }
 end
 
-write(conn: any, data: str): i64
-    if conn == nil or conn.ssl == nil return -1 end
+write: i64 = (conn: any, data: str)
+    if conn == nil or conn.ssl == nil return -1
     ssl_write(conn.ssl, data, data:len())
-end
 
-read(conn: any, maxlen: i64): any
-    if conn == nil or conn.ssl == nil return nil end
-    if maxlen == nil maxlen = 4096 end
+read: any = (conn: any, maxlen: i64)
+    if conn == nil or conn.ssl == nil return nil
+    if maxlen == nil maxlen = 4096
     # Allocate a buffer of the right size for SSL_read
     buf = "\0":rep(maxlen)
     n = ssl_read(conn.ssl, buf, maxlen)
-    if n <= 0 return nil end
+    if n <= 0 return nil
     buf:sub(1, n), nil
-end
 
-close(conn: any): void
-    if conn == nil return end
+close = (conn: any)
+    if conn == nil return
     if has(.ssl)(conn)
         ssl_shutdown(conn.ssl)
         ssl_free(conn.ssl)
         conn.ssl = nil
-    end
     if has(.ctx)(conn)
         ssl_ctx_free(conn.ctx)
         conn.ctx = nil
-    end
     if has(.fd)(conn)
         net.close(conn.fd)
         conn.fd = nil
-    end
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Convenience: HTTPS GET
 # ═══════════════════════════════════════════════════════════════
 
-https_get(url: str): any
+https_get: any = (url: str)
     # Parse URL
     parsed = net.parse_url(url)
     host = parsed.host
     port = parsed.port
     path = parsed.path
 
-    if port == nil or port == 0 port = 443 end
+    if port == nil or port == 0 port = 443
 
     # Connect with TLS
     conn, err = dial(host, port, nil)
     if conn == nil
         return {body = "", status = 0, error = err}
-    end
 
     # Send HTTP request
     request = "GET " .. path .. " HTTP/1.0\r\n"
@@ -203,9 +187,8 @@ https_get(url: str): any
     body = ""
     while true
         chunk, err = read(conn, 4096)
-        if chunk == nil break end
+        if chunk == nil break
         body = body .. chunk
-    end
 
     close(conn)
 
@@ -215,10 +198,8 @@ https_get(url: str): any
     out = body
     if sep
         out = body:sub(sep + 4)
-    end
 
     {body = out, status = status}
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

@@ -30,15 +30,15 @@ assert_not_contains(label: str, text: str, pattern: str)
 
 global TMPDIR_TEST: str = tostring(s.fs_tmpdir()):gsub("\n", "")
 
-write_src(name: str, src: str): str
+write_src: str = (name: str, src: str)
     path: str = tostring(s.path_join(TMPDIR_TEST, name))
     s.fs_write(path, src)
     return path
 
-dump_native(file: str): str
+dump_native: str = (file: str)
     return tostring(s.capture(DUO .. " dump-c " .. file))
 
-dump_wasm(file: str): str
+dump_wasm: str = (file: str)
     return tostring(s.capture(DUO .. " dump-c " .. file .. " --target wasm32-wasi"))
 
 s.echo("=== WASM/WASI Codegen Tests ===")

@@ -4,6 +4,6 @@ one: i64 = (x: i64)
 scan: tok = (pos: i64)
     k = one(pos)
     { kind = k, start = pos, len = 1 }
-main(): i64
+main: i64 = ()
     t: tok = scan(5)
     t.kind + t.start

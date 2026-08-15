@@ -20,8 +20,6 @@ sub: str = (s: str, i: i64, j: i64)
 type s = str
 fun(__proj_v)
   return __proj_v:len()
-end
 fun(__proj_v)
   return __proj_v:i64()
-end
 s:len()

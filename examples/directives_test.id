@@ -1,15 +1,15 @@
 @test.unit
-test_add(): void
+test_add = ()
     t = test
     t.assert_eq(1 + 1, 2, "addition")
 
 @test
-test_truth(): void
+test_truth = ()
     t = test
     t.assert_true(true, "true is true")
 
 @bench({ iterations = 100, warmup = 10 })
-bench_loop(): void
+bench_loop = ()
     sum: i64 = 0
     i: i64 = 0
     while i < 1000
@@ -17,14 +17,14 @@ bench_loop(): void
         i += 1
 
 @time
-timed_noop(): void
+timed_noop = ()
 
 @test.integration({ name = "smoke" })
-test_integration_tag(): void
+test_integration_tag = ()
     t = test
     t.assert_true(true, "integration smoke")
 
 @test({ iterations = 5 })
-test_with_iterations(): void
+test_with_iterations = ()
     t = test
     t.assert_eq(2 * 2, 4, "mul")

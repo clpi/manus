@@ -19,15 +19,15 @@
 
 _MASK32 = 0xFFFFFFFF
 
-_env_or(n: str, d: str): str
+_env_or: str = (n: str, d: str)
     v = std.script.getenv_or(n)
     if v == "" return d 
     v
 
-_sh(c: str): str
+_sh: str = (c: str)
     std.script.chomp(std.script.capture(c))
 
-_pad(s: str, w: i64): str
+_pad: str = (s: str, w: i64)
     o = s
     while #o < w
         o = o .. " "
@@ -42,7 +42,7 @@ _lpad(s: str, w: i64): str
 # True when bit pattern n is a NaN in type t. The spec gives NaN symbolically
 # ("nan:canonical" / "nan:arithmetic"); ward returns the bit pattern, so the
 # comparison has to happen in bits.
-_is_nan_bits(t: str, n: i64): bool
+_is_nan_bits: bool = (t: str, n: i64)
     if t == "f32"
         return (n & 0x7F800000) == 0x7F800000 and (n & 0x007FFFFF) != 0
     if t == "f64"
@@ -54,7 +54,7 @@ _is_nan_bits(t: str, n: i64): bool
 # patterns. Comparing in the type's own width is what makes 4294967295 and -1
 # the same i32 # without the mask this harness reports false failures on every
 # negative result.
-_norm(t: str, s: any): str
+_norm: str = (t: str, s: any)
     if type(s) == "table"
         parts = {}
         for _i, x in s
@@ -69,7 +69,7 @@ _norm(t: str, s: any): str
 # One argument as a scalar string. v128 lanes arrive as a list and are not
 # expressible through the env-var protocol; the caller reports those as
 # unrunnable rather than crashing or silently passing.
-_arg_str(v: any): str
+_arg_str: str = (v: any)
     if type(v) == "table" return "" 
     v:to(str)
 

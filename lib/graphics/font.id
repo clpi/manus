@@ -5,7 +5,7 @@
 # Font Config
 # ═══════════════════════════════════════════════════════════════
 
-config_new(): any
+config_new: any = ()
     {
         path = "",
         size = 16,
@@ -18,7 +18,7 @@ config_new(): any
 # Glyph
 # ═══════════════════════════════════════════════════════════════
 
-glyph_new(char: str): any
+glyph_new: any = (char: str)
     {
         char = char,
         codepoint = char:byte(),
@@ -35,7 +35,7 @@ glyph_new(char: str): any
 # Font
 # ═══════════════════════════════════════════════════════════════
 
-font_new(config: any): any
+font_new: any = (config: any)
     {
         config = config,
         glyphs = {},
@@ -45,7 +45,7 @@ font_new(config: any): any
         loaded = false,
     }
 
-font_load(font: any): any
+font_load: any = (font: any)
     # Load font with proper metrics
     if font.config.size == nil font.config.size = 16 
     
@@ -65,7 +65,7 @@ font_load(font: any): any
     
     {ok = true}
 
-font_get_glyph(font: any, char: str): any
+font_get_glyph: any = (font: any, char: str)
     codepoint = char:byte()
     if font.glyphs[codepoint]
         return font.glyphs[codepoint]
@@ -119,7 +119,7 @@ font_get_glyph(font: any, char: str): any
     font.glyphs[codepoint] = glyph
     glyph
 
-font_measure_text(font: any, text: str): any
+font_measure_text: any = (font: any, text: str)
     x = 0
     max_x = 0
     y = 0
@@ -142,7 +142,7 @@ font_measure_text(font: any, text: str): any
 # Text Layout
 # ═══════════════════════════════════════════════════════════════
 
-layout_new(font: any): any
+layout_new: any = (font: any)
     {
         font = font,
         lines = {},
@@ -151,7 +151,7 @@ layout_new(font: any): any
         cursor_y = 0,
     }
 
-layout_add_text(layout: any, text: str): void
+layout_add_text = (layout: any, text: str)
     i = 1
     while i <= text:len()
         char = text:sub(i, i)
@@ -170,7 +170,7 @@ layout_add_text(layout: any, text: str): void
             layout.cursor_x += glyph.advance_x
         i += 1
 
-layout_get_glyphs(layout: any): any
+layout_get_glyphs: any = (layout: any)
     glyphs = {}
     for line in layout.lines
         for item in line
@@ -197,7 +197,7 @@ layout_get_layout: any:len(): any
 # Text Rendering
 # ═══════════════════════════════════════════════════════════════
 
-render_text(font: any, text: str, x: f64, y: f64, color: any): any
+render_text: any = (font: any, text: str, x: f64, y: f64, color: any)
     layout = layout_new(font)
     layout_add_text(layout, text)
 

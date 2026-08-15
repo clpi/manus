@@ -5,7 +5,7 @@
 # Cache Configuration
 # ═══════════════════════════════════════════════════════════════
 
-config_new(): any
+config_new: any = ()
     {
         max_size = 1000,
         ttl = 300,  # seconds
@@ -18,11 +18,11 @@ config_set_max_config: any, max_size: i64:len(): any
     config.max_size = max_size
     config
 
-config_set_ttl(config: any, ttl: i64): any
+config_set_ttl: any = (config: any, ttl: i64)
     config.ttl = ttl
     config
 
-config_set_eviction(config: any, policy: str): any
+config_set_eviction: any = (config: any, policy: str)
     config.eviction_policy = policy
     config
 
@@ -30,7 +30,7 @@ config_set_eviction(config: any, policy: str): any
 # Inference Cache
 # ═══════════════════════════════════════════════════════════════
 
-cache_new(config: any): any
+cache_new: any = (config: any)
     {
         config = config,
         entries = {},
@@ -39,10 +39,10 @@ cache_new(config: any): any
         miss_count = 0,
     }
 
-cache_key(model_name: str, input_hash: str): str
+cache_key: str = (model_name: str, input_hash: str)
     model_name .. ":" .. input_hash
 
-cache_get(cache: any, key: str): any
+cache_get: any = (cache: any, key: str)
     entry = cache.entries[key]
     if entry == nil
         cache.miss_count = cache.miss_count + 1
@@ -68,7 +68,7 @@ cache_get(cache: any, key: str): any
 
     entry.value
 
-cache_set(cache: any, key: str, value: any): void
+cache_set = (cache: any, key: str, value: any)
     # Check if already exists
     if cache.entries[key]
         cache.entries[key].value = value
@@ -89,23 +89,23 @@ cache_set(cache: any, key: str, value: any): void
     }
     cache.access_order:insert(1, key)
 
-cache_evict(cache: any, key: str): void
+cache_evict = (cache: any, key: str)
     cache.entries[key] = nil
     for i, k in cache.access_order
         if k == key
             cache.access_order:remove(i)
             break
 
-inference_cache_evict_oldest(cache: any): void
+inference_cache_evict_oldest = (cache: any)
     if cache:len().access_order == 0 return 
     key = cache.access_order[cache:len().access_order]
     cache_evict(cache, key)
 
-cache_clear(cache: any): void
+cache_clear = (cache: any)
     cache.entries = {}
     cache.access_order = {}
 
-cache_stats(cache: any): any
+cache_stats: any = (cache: any)
     total = cache.hit_count + cache.miss_count
     {
         size = cache:len().entries,
@@ -119,7 +119,7 @@ cache_stats(cache: any): any
 # Attention Cache (for KV cache in transformers)
 # ═══════════════════════════════════════════════════════════════
 
-attention_cache_new(max_seq_len: i64, num_heads: i64, head_dim: i64): any
+attention_cache_new: any = (max_seq_len: i64, num_heads: i64, head_dim: i64)
     {
         max_seq_len = max_seq_len,
         num_heads = num_heads,
@@ -129,7 +129,7 @@ attention_cache_new(max_seq_len: i64, num_heads: i64, head_dim: i64): any
         current_len = 0,
     }
 
-attention_cache_append(cache: any, layer_idx: i64, keys: any, values: any): void
+attention_cache_append = (cache: any, layer_idx: i64, keys: any, values: any)
     if cache.keys[layer_idx] == nil
         cache.keys[layer_idx] = {}
         cache.values[layer_idx] = {}
@@ -138,32 +138,32 @@ attention_cache_append(cache: any, layer_idx: i64, keys: any, values: any): void
     cache.values[layer_idx][cache:len().values[layer_idx] + 1] = values
     cache.current_len = cache.current_len + 1
 
-attention_cache_get(cache: any, layer_idx: i64): any
+attention_cache_get: any = (cache: any, layer_idx: i64)
     {
         keys = cache.keys[layer_idx] or {},
         values = cache.values[layer_idx] or {},
     }
 
-attention_cache_reset(cache: any): void
+attention_cache_reset = (cache: any)
     cache.keys = {}
     cache.values = {}
     cache.current_len = 0
 
-attention_cache_is_full(cache: any): bool
+attention_cache_is_full: bool = (cache: any)
     cache.current_len >= cache.max_seq_len
 
 # ═══════════════════════════════════════════════════════════════
 # Embedding Cache
 # ═══════════════════════════════════════════════════════════════
 
-embedding_cache_new(max_entries: i64): any
+embedding_cache_new: any = (max_entries: i64)
     {
         max_entries = max_entries,
         embeddings = {},
         access_order = {},
     }
 
-embedding_cache_get(cache: any, token_id: i64): any
+embedding_cache_get: any = (cache: any, token_id: i64)
     entry = cache.embeddings[token_id]
     if entry == nil return nil 
 
@@ -176,7 +176,7 @@ embedding_cache_get(cache: any, token_id: i64): any
 
     entry.embedding
 
-embedding_cache_set(cache: any, token_id: i64, embedding: any): void
+embedding_cache_set = (cache: any, token_id: i64, embedding: any)
     if cache.embeddings[token_id]
         cache.embeddings[token_id].embedding = embedding
         return
@@ -193,7 +193,7 @@ embedding_cache_set(cache: any, token_id: i64, embedding: any): void
     }
     cache.access_order:insert(1, token_id)
 
-embedding_cache_stats(cache: any): any
+embedding_cache_stats: any = (cache: any)
     {
         size = cache:len().access_order,
         max_size = cache.max_entries,
@@ -203,14 +203,14 @@ embedding_cache_stats(cache: any): any
 # Result Cache (for caching function results)
 # ═══════════════════════════════════════════════════════════════
 
-result_cache_new(max_size: i64, ttl: i64): any
+result_cache_new: any = (max_size: i64, ttl: i64)
     {
         max_size = max_size or 100,
         ttl = ttl or 60,
         results = {},
     }
 
-result_cache_get(cache: any, key: str): any
+result_cache_get: any = (cache: any, key: str)
     entry = cache.results[key]
     if entry == nil return nil 
 
@@ -220,7 +220,7 @@ result_cache_get(cache: any, key: str): any
 
     entry.value
 
-result_cache_set(cache: any, key: str, value: any): void
+result_cache_set = (cache: any, key: str, value: any)
     # Evict oldest if full
     count = 0
     for _ in cache.results
@@ -239,7 +239,7 @@ result_cache_set(cache: any, key: str, value: any): void
         timestamp = os.clock(),
     }
 
-result_cache_clear(cache: any): void
+result_cache_clear = (cache: any)
     cache.results = {}
 
 # ═══════════════════════════════════════════════════════════════

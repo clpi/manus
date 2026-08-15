@@ -7,7 +7,7 @@ concept HasN
 CounterA: { n: i64 }
 CounterB: { n: i64, tag: str }
 
-@comp.define.derive("CountApi", generate(meta) -> str
+@comp.define.derive("CountApi", generate: str = (meta)
     "static inline int64_t duo_" .. meta.name .. "_get_n(const duo_" .. meta.name .. "* v) { return v->n; }\n"
 end)
 
@@ -21,7 +21,7 @@ end)
     init = "0",
 })
 
-registry_line(meta): str
+registry_line: str = (meta)
     meta.name .. ";"
 
 @c.emit(@comp.derive("HasN", CountApi))
@@ -29,7 +29,7 @@ registry_line(meta): str
 TYPED = @comp.map("HasN", registry_line)
 DERIVED = @comp.derive("HasN", CountApi)
 
-total(): i64
+total: i64 = ()
     @c.call("sum_n")
 
 print("=== exponential pipeline showcase ===")

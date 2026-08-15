@@ -109,7 +109,7 @@ tokenize_checksum: i64 = (src: str)
 # makes the direct backend fail that function's ARM64 emission
 # (`UnsupportedProgram`). It is a compile-time annotation and should lower to
 # nothing; that it does not is an open defect, tracked in the README.
-main(): i64
+main: i64 = ()
     # "fun add2 = x9 + 1"
     #   fun  ident  len 3 -> 13
     #   add  ident  len 3 -> 13   (the digit terminates the identifier run)

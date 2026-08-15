@@ -14,6 +14,5 @@ p: { x: i8, y: i64 } = { x = 3, y = 4 }
 enum E
   A
   B(i64)
-end
 
 print(gp.y + p.y)

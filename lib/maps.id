@@ -1,13 +1,13 @@
 # maps — map (table) helper utilities (mirrors Go 1.21 maps package)
 
-clone(m: any): any
+clone: any = (m: any)
     if m == nil return {} 
     out = {}
     for k, v in m
         out[k] = v
     out
 
-copy(dst: any, src: any): i64
+copy: i64 = (dst: any, src: any)
     if dst == nil return 0 
     if src == nil return 0 
     count = 0
@@ -16,13 +16,13 @@ copy(dst: any, src: any): i64
         count += 1
     count
 
-delete(m: any, k: any): any
+delete: any = (m: any, k: any)
     if m == nil return nil 
     v = m[k]
     m[k] = nil
     v
 
-equal(m1: any, m2: any): bool
+equal: bool = (m1: any, m2: any)
     if m1 == nil and m2 == nil return true 
     if m1 == nil or m2 == nil return false 
     c1 = 0
@@ -34,7 +34,7 @@ equal(m1: any, m2: any): bool
         if m2[k] != v return false 
     true
 
-equal_func(m1: any, m2: any, eq: any): bool
+equal_func: bool = (m1: any, m2: any, eq: any)
     if m1 == nil and m2 == nil return true 
     if m1 == nil or m2 == nil return false 
     c1 = 0
@@ -48,35 +48,35 @@ equal_func(m1: any, m2: any, eq: any): bool
         if not eq(v, v2) return false 
     true
 
-keys(m: any): any
+keys: any = (m: any)
     if m == nil return {} 
     out = {}
     for k, _ in m do out[out:len() + 1] = k 
     out
 
-values(m: any): any
+values: any = (m: any)
     if m == nil return {} 
     out = {}
     for _, v in m do out[out:len() + 1] = v 
     out
 
-entries(m: any): any
+entries: any = (m: any)
     if m == nil return {} 
     out = {}
     for k, v in m do out[out:len() + 1] = {key = k, value = v} 
     out
 
-has(m: any, k: any): bool
+has: bool = (m: any, k: any)
     if m == nil return false 
     m[k] != nil
 
-get(m: any, k: any, dflt: any): any
+get: any = (m: any, k: any, dflt: any)
     if m == nil return dflt 
     v = m[k]
     if v == nil return dflt 
     v
 
-set(m: any, k: any, v: any): any
+set: any = (m: any, k: any, v: any)
     if m == nil m = {} 
     m[k] = v
     m
@@ -87,14 +87,14 @@ m: any:len(): i64
     for _k, _v in m do c += 1 
     c
 
-merge(dst: any, src: any): any
+merge: any = (dst: any, src: any)
     if dst == nil dst = {} 
     if src == nil return dst 
     for k, v in src
         if dst[k] == nil dst[k] = v 
     dst
 
-merge_overwrite(dst: any, src: any): any
+merge_overwrite: any = (dst: any, src: any)
     if dst == nil dst = {} 
     if src == nil return dst 
     for k, v in src

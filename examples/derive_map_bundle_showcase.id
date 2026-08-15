@@ -8,12 +8,12 @@ concept HasXY
 Point: { x: f64, y: f64 }
 Pair: { x: f64, y: f64 }
 
-@comp.define.derive("TouchApi", generate(meta) -> str
+@comp.define.derive("TouchApi", generate: str = (meta)
     "static inline void duo_" .. meta.name .. "_touch(const duo_" .. meta.name .. "* v) { (void)v->x; (void)v->y; }\n"
 end)
 
 
-@comp.define.derive("LayoutApi", generate(meta) -> str
+@comp.define.derive("LayoutApi", generate: str = (meta)
     acc = ""
     for i = 1, meta:len().fields
         f = meta.fields[i]

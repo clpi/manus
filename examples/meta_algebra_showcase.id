@@ -3,17 +3,17 @@
 
 @comp.rewrite.bundle("algebraic")
 
-dot_like(a: i64, b: i64, c: i64): i64
+dot_like: i64 = (a: i64, b: i64, c: i64)
     # mul×2/×4/×8 → shifts; add+0 folded; x-x → 0
     (a * 2) + (b * 4) + (c * 8) + (a - a) + 0
 
-neg_twice(x: i64): i64
+neg_twice: i64 = (x: i64)
     -(-x)
 
-scale(n: i64): i64
+scale: i64 = (n: i64)
     (n * 1) + (2 * n)
 
-sum(): i64
+sum: i64 = ()
     dot_like(3, 5, 7) + neg_twice(11) + scale(4)
 
 print("=== @comp.rewrite.bundle showcase ===")

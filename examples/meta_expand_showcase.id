@@ -10,7 +10,7 @@ Pair: { x: f64, y: f64 }
 
 @comp.assert(@comp.satisfies(Point, "HasXY"))
 
-@comp.define.derive("TouchApi", generate(meta) -> str
+@comp.define.derive("TouchApi", generate: str = (meta)
     acc = ""
     for i = 1, meta:len().fields
         f = meta.fields[i]

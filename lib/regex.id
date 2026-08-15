@@ -42,7 +42,7 @@ pcre2_get_error_message_8(errcode: int, buffer: str, buf_size: int): int
 # `p[i]` directly, with no boxing — the same lowering
 # examples/native_indexing pins in the property-11 codegen suite. The shim and
 # the manual "compile this .c alongside your program" step are both gone.
-_read_size_t(p: *i64, i: i64): i64
+_read_size_t: i64 = (p: *i64, i: i64)
     return p[i]
 
 # ===========================================================================
@@ -63,7 +63,7 @@ PCRE2_NOTEMPTY = 0x00000004
 # ===========================================================================
 
 # error_message: convert a PCRE2 error code to a human-readable string.
-error_message(errcode: int): str
+error_message: str = (errcode: int)
     buf = " ":rep(256)
     rc = pcre2_get_error_message_8(errcode, buf, 256)
     if rc < 0
@@ -74,7 +74,7 @@ error_message(errcode: int): str
 # at the given pair index.  pcre2_match returns the number of pairs; each
 # pair is two PCRE2_SIZE (size_t) values: [start, end].
 # pair_index 0 = whole match, 1+ = capture groups.
-read_ovector_pair(ovptr: any, pair_index: int): any
+read_ovector_pair: any = (ovptr: any, pair_index: int)
     s_off = pair_index * 2
     e_off = s_off + 1
     s_val = _read_size_t(ovptr, s_off)
@@ -82,7 +82,7 @@ read_ovector_pair(ovptr: any, pair_index: int): any
     return {start = s_val, end_ = e_val}
 
 # quote: escape special regex characters in s so it matches literally.
-quote(s: str): str
+quote: str = (s: str)
     out = ""
     i = 1
     n = s:len()
@@ -105,7 +105,7 @@ quote(s: str): str
 
 # compile: compile a regex pattern with given option flags.
 # Returns the pcre2_code* handle, or nil on error.
-compile(pattern: str, options: int): any
+compile: any = (pattern: str, options: int)
     # errcode and erroffset are output parameters (int* in C).
     # We pass table cells that the FFI layer treats as pointer-to-int.
     errcode_buf = {0}
@@ -119,7 +119,7 @@ compile(pattern: str, options: int): any
 # match: match subject against compiled code starting at startoffset.
 # Returns a table of {start=n, end_=m} pairs (one per capture group + whole),
 # or nil if no match.
-regex_match(code: any, subject: str, startoffset: int): any
+regex_match: any = (code: any, subject: str, startoffset: int)
     if code == nil return nil
     md = pcre2_match_data_create_from_pattern_8(code, nil)
     if md == nil return nil
@@ -142,7 +142,7 @@ regex_match(code: any, subject: str, startoffset: int): any
     result
 
 # match_str: convenience — returns the first matched substring or nil.
-match_str(code: any, subject: str): any
+match_str: any = (code: any, subject: str)
     m = regex_match(code, subject, 0)
     if m == nil return nil
     if m:len() == 0 return nil
@@ -156,7 +156,7 @@ match_str(code: any, subject: str): any
 
 # find: find the first match in subject starting from init (1-based).
 # Returns {start=n, end_=m} with 1-based positions, or nil.
-find(code: any, subject: str, init: int): any
+find: any = (code: any, subject: str, init: int)
     if code == nil return nil
     if init == nil init = 1
     # Convert 1-based Lua init to 0-based PCRE2 startoffset
@@ -175,7 +175,7 @@ find(code: any, subject: str, init: int): any
 
 # find_all: find all non-overlapping matches in subject.
 # Returns a table of {start, end_} pairs.
-find_all(code: any, subject: str): any
+find_all: any = (code: any, subject: str)
     if code == nil return {}
     results = {}
     slen = subject:len()
@@ -205,7 +205,7 @@ find_all(code: any, subject: str): any
 # with replacement string.  Returns the resulting string.
 # Uses a manual scan + string assembly rather than pcre2_substring_replace_byname
 # (which does single replacement and needs a pre-allocated buffer).
-replace(code: any, subject: str, replacement: str): str
+replace: str = (code: any, subject: str, replacement: str)
     if code == nil return subject
     slen = subject:len()
     results = find_all(code, subject)
@@ -231,7 +231,7 @@ replace(code: any, subject: str, replacement: str): str
     out
 
 # free: free a compiled pattern handle.
-free(code: any): void
+free = (code: any)
     if code != nil
         pcre2_code_free_8(code)
 

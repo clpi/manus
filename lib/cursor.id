@@ -4,37 +4,37 @@
 
 bytecursor: @{ data: str, pos: i64, len: i64 }
 
-new(data: str): bytecursor
+new: bytecursor = (data: str)
     bytecursor { data = data, pos = 1, len = data:len() }
 
-remaining(c: bytecursor): i64
+remaining: i64 = (c: bytecursor)
     if c.pos > c.len return 0
     c.len - c.pos + 1
 
-eof(c: bytecursor): bool
+eof: bool = (c: bytecursor)
     c.pos > c.len
 
-position(c: bytecursor): i64
+position: i64 = (c: bytecursor)
     c.pos
 
 skip(c: bytecursor, n: i64)
     c.pos = c.pos + n
 
 # Read one byte; returns -1 on EOF.
-readu8(c: bytecursor): i64
+readu8: i64 = (c: bytecursor)
     if c.pos > c.len return -1
     b = c.data:byte(c.pos)
     c.pos = c.pos + 1
     b
 
-readu16le(c: bytecursor): i64
+readu16le: i64 = (c: bytecursor)
     b0 = readu8(c)
     if b0 < 0 return -1
     b1 = readu8(c)
     if b1 < 0 return -1
     b0 | (b1 << 8)
 
-readu32le(c: bytecursor): i64
+readu32le: i64 = (c: bytecursor)
     b0 = readu8(c)
     if b0 < 0 return -1
     b1 = readu8(c)
@@ -46,7 +46,7 @@ readu32le(c: bytecursor): i64
     b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 
 # Wasm LEB128 unsigned (P9-M1 kernel primitive).
-readlebu(c: bytecursor): i64
+readlebu: i64 = (c: bytecursor)
     result = 0
     shift = 0
     while true
@@ -59,7 +59,7 @@ readlebu(c: bytecursor): i64
     return -1
 
 # Wasm LEB128 signed.
-readlebs(c: bytecursor): i64
+readlebs: i64 = (c: bytecursor)
     result = 0
     shift = 0
     b = 0
@@ -75,14 +75,14 @@ readlebs(c: bytecursor): i64
         if shift >= 70 return -1
     return -1
 
-readbytes(c: bytecursor, n: i64): str
+readbytes: str = (c: bytecursor, n: i64)
     if n < 0 or c.pos + n - 1 > c.len return ""
     s = c.data:sub(c.pos, c.pos + n - 1)
     c.pos = c.pos + n
     s
 
 # Wasm module header: magic (0x6D736100) + version (1).
-readwasmheader(c: bytecursor): i64
+readwasmheader: i64 = (c: bytecursor)
     magic = readu32le(c)
     if magic < 0 return -1
     version = readu32le(c)

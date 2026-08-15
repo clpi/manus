@@ -3,7 +3,7 @@
 
 # Compose all other user-defined derives via @comp.derive.list / @comp.derive.eval.
 
-@comp.define.derive("TraceFields", generate(meta) -> str
+@comp.define.derive("TraceFields", generate: str = (meta)
   acc = "/* TraceFields for " .. meta.name .. " */\n"
   for i = 1, meta:len().fields
     f = meta.fields[i]
@@ -12,7 +12,7 @@
 end)
 
 
-@comp.define.derive("Offsets", generate(meta) -> str
+@comp.define.derive("Offsets", generate: str = (meta)
   acc = "/* Offsets for " .. meta.name .. " */\n"
   for i = 1, meta:len().fields
     f = meta.fields[i]
@@ -21,7 +21,7 @@ end)
 end)
 
 
-@comp.define.derive("ComposeAll", generate(meta) -> str
+@comp.define.derive("ComposeAll", generate: str = (meta)
   derives = @comp.derive.list()
   acc = "/* ComposeAll output for " .. meta.name .. " */\n"
   for i = 1, derives:len()

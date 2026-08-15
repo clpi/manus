@@ -90,7 +90,7 @@ count_unbound: i64 = (src: str, scope: str)
         i = j
     unbound
 
-main(): i64
+main: i64 = ()
     # Scope binds `x` and `total`. The expression references x, total, y, z —
     # so `y` and `z` are unbound: 2 diagnostics a real binder would emit.
     count_unbound("x + total + y + z", "x total")

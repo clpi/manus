@@ -14,7 +14,7 @@ if DUO_BUILD_REPORT:len() == 0
 # this file would not compile at all.
 #
 # gap[014] keeps the body manual: `text:trim()` resolves and returns nil.
-trim(text: str): str
+trim: str = (text: str)
     if text:sub(-1) == "\n" return text:sub(1, text:len() - 1)
     text
 
@@ -26,7 +26,7 @@ global ROOT = trim(s.capture("git rev-parse --show-toplevel"))
 # written with `print` lands in a different part of the transcript from the
 # numbers it qualifies # which is exactly how a win count gets quoted without
 # the caveat attached to it.
-say(line: str): i64
+say: i64 = (line: str)
     s.must("printf \"%s\\n\" \"" .. line .. "\"")
     0
 
@@ -143,7 +143,7 @@ global TIMED: i64 = 37
 #
 # Duo separates the fields with TABS and C with spaces, so the pattern spans
 # %s+ rather than a literal space.
-extract_times(out: str): table
+extract_times: table = (out: str)
     times = {}
     for line in out:gmatch("([^\n]+)")
         num = line:match("Time%s+([0-9%.eE%+%-]+)")
@@ -151,7 +151,7 @@ extract_times(out: str): table
             times:insert(tonumber(num))
     times
 
-extract_results(out: str): table
+extract_results: table = (out: str)
     res = {}
     for line in out:gmatch("([^\n]+)")
         id, val = line:match("^RESULT%s+([^%s]+)%s+([^%s]+)")
@@ -159,7 +159,7 @@ extract_results(out: str): table
             res:insert({ id = id, val = val })
     res
 
-compare_results(name: str, duo_res: table, c_res: table): bool
+compare_results: bool = (name: str, duo_res: table, c_res: table)
     if duo_res:len() != BENCHES or c_res:len() != BENCHES
         print("RESULT count mismatch for " .. name .. ": Duo=" .. tostring(duo_res:len()) .. " C=" .. tostring(c_res:len()) .. " (expected " .. tostring(BENCHES) .. ")")
         return false
@@ -219,7 +219,7 @@ compare_results(name: str, duo_res: table, c_res: table): bool
                             fail = true
     !fail
 
-_collect_min_times_impl(cmd: str, min_times: table): table
+_collect_min_times_impl: table = (cmd: str, min_times: table)
     runs = 10
     for i = 1, runs
         out = s.capture("cd " .. ROOT .. " && " .. cmd .. " 2>/dev/null")
@@ -239,10 +239,10 @@ _collect_min_times_impl(cmd: str, min_times: table): table
                 min_times[j] = t
     min_times
 
-collect_min_times(cmd: str): table
+collect_min_times: table = (cmd: str)
     _collect_min_times_impl(cmd, {})
 
-capture(label: str, cmd: str): table
+capture: table = (label: str, cmd: str)
     status = 0
     res = {}
     for attempt = 1, 2
@@ -301,7 +301,7 @@ global ratio: f64 = 100.0
 #
 # No early return: both clauses are evaluated every call, so neither can be
 # silently unreachable behind the other.
-folded(dt: f64, ct: f64): bool
+folded: bool = (dt: f64, ct: f64)
     out = false
     if dt <= cutoff
         out = true
@@ -329,7 +329,7 @@ folded(dt: f64, ct: f64): bool
 # The DECISION is unchanged: this reads the same two clauses and adds no third.
 # A reason function that could disagree with `folded` would be a second
 # classifier, and then the table would have two answers.
-foldreason(dt: f64, ct: f64): str
+foldreason: str = (dt: f64, ct: f64)
     r1 = false
     r2 = false
     if dt <= cutoff
@@ -346,16 +346,16 @@ foldreason(dt: f64, ct: f64): str
     out
 
 # One place formats a duration, so one line in this file names a Lua library.
-sec(v: f64): str
+sec: str = (v: f64)
     "%g":format(v)
 
-yesno(b: bool): str
+yesno: str = (b: bool)
     out = "no"
     if b
         out = "yes"
     out
 
-probe(label: str, dt: f64, ct: f64, want: bool): i64
+probe: i64 = (label: str, dt: f64, ct: f64, want: bool)
     got = folded(dt, ct)
     mark = "  ok  "
     bad: i64 = 0
@@ -383,7 +383,7 @@ probe(label: str, dt: f64, ct: f64, want: bool): i64
 #   for it, which is a perturbation this table was checked against;
 #   rows 8-9 are genuine wins (2x and 50x) and must NOT fire; row 11 is a
 #   loss and must not fire either.
-control(): i64
+control: i64 = ()
     bad: i64 = 0
     say("=== fold classifier control (synthetic; no benchmark data in scope) ===")
     bad += probe("zero against real work        ", 0.0,      0.01,   true)
@@ -480,7 +480,7 @@ global NAMES = {
 # a PARSE failure is published as a clean sweep of losses. This repository has
 # already shipped exactly that once # gap[031], every row N/A and every winner
 # C # so the count is asserted rather than assumed.
-checktimes(label: str, t: table): i64
+checktimes: i64 = (label: str, t: table)
     n = t:len()
     if n != TIMED
         say("error: " .. label .. " produced " .. tostring(n) .. "/" .. TIMED:to(str)
@@ -692,7 +692,7 @@ if RESULT_FAIL_FLAG == 1
     say("FAIL: Duo .lua and .id must beat or tie reference C on every test, and the")
     say("      beating must be MEASURED. Folded rows count against this verdict.")
 
-extract(file: str): table
+extract: table = (file: str)
     out = s.capture("cat " .. file .. " 2>/dev/null || echo ''")
     latency = out:match("([0-9%.]+)%s+real")
     mem = out:match("([0-9]+)%s+maximum resident set size")

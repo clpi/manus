@@ -41,16 +41,16 @@ IMPORT_TAG = 4
 # Binary reader
 # ═══════════════════════════════════════════════════════════════
 
-reader_new(data: any): any
+reader_new: any = (data: any)
     {data = data, pos = 1, len = data:len()}
 
-reader_u8(r: any): any
+reader_u8: any = (r: any)
     if r.pos > r.len return nil 
     b = r.data[r.pos]
     r.pos += 1
     b
 
-reader_u32(r: any): any
+reader_u32: any = (r: any)
     result = 0
     shift = 0
     while true
@@ -73,7 +73,7 @@ reader_u32(r: any): any
 # reader_u32 (and now this) decode LEB128. Fixing that is a semantic change
 # needing a real WASM fixture to validate, so it stays a separate concern from
 # the missing definition.
-reader_u64(r: any): any
+reader_u64: any = (r: any)
     result = 0
     shift = 0
     while true
@@ -84,7 +84,7 @@ reader_u64(r: any): any
         if (b & 0x80) == 0 break 
     result
 
-reader_i32(r: any): any
+reader_i32: any = (r: any)
     result = 0
     shift = 0
     b = 0
@@ -99,7 +99,7 @@ reader_i32(r: any): any
         result |= (~0 << shift)
     result
 
-reader_i64(r: any): any
+reader_i64: any = (r: any)
     result = 0
     shift = 0
     b = 0
@@ -113,7 +113,7 @@ reader_i64(r: any): any
         result |= (~0 << shift)
     result
 
-reader_bytes(r: any, n: i64): any
+reader_bytes: any = (r: any, n: i64)
     out = {}
     i = 0
     while i < n
@@ -123,7 +123,7 @@ reader_bytes(r: any, n: i64): any
         i += 1
     out
 
-reader_string(r: any): str
+reader_string: str = (r: any)
     len = reader_u32(r)
     if len == nil return "" 
     bytes = reader_bytes(r, len)
@@ -134,17 +134,17 @@ reader_string(r: any): str
         i += 1
     parts:concat()
 
-reader_skip(r: any, n: i64): void
+reader_skip = (r: any, n: i64)
     r.pos += n
 
-reader_remaining(r: any): i64
+reader_remaining: i64 = (r: any)
     r.len - r.pos + 1
 
 # ═══════════════════════════════════════════════════════════════
 # Module parsing
 # ═══════════════════════════════════════════════════════════════
 
-module_decode(data: any): any
+module_decode: any = (data: any)
     r = reader_new(data)
 
     # Read header
@@ -317,7 +317,7 @@ reader_limits(r: any): any
     {min = min, max = max, has_max = (flags & 1) == 1}
 
 # Read init expression (constant expression)
-reader_init_expr(r: any): any
+reader_init_expr: any = (r: any)
     opcode = reader_u8(r)
     value = nil
     if opcode == TYPE_I32
@@ -335,13 +335,13 @@ reader_init_expr(r: any): any
 # Module inspection
 # ═══════════════════════════════════════════════════════════════
 
-module_func_count(mod: any): i64
+module_func_count: i64 = (mod: any)
     mod.functions:len()
 
-module_memory_count(mod: any): i64
+module_memory_count: i64 = (mod: any)
     mod.memories:len()
 
-module_export_names(mod: any): any
+module_export_names: any = (mod: any)
     names = {}
     i = 1
     while i <= mod:len().exports
@@ -349,10 +349,10 @@ module_export_names(mod: any): any
         i += 1
     names
 
-module_import_count(mod: any): i64
+module_import_count: i64 = (mod: any)
     mod.imports:len()
 
-module_type_count(mod: any): i64
+module_type_count: i64 = (mod: any)
     mod.types:len()
 
 module_code_mod: any:len(): i64
@@ -367,7 +367,7 @@ module_code_mod: any:len(): i64
 # Module validation
 # ═══════════════════════════════════════════════════════════════
 
-module_validate(mod: any): any
+module_validate: any = (mod: any)
     errors = {}
 
     # Check type indices
@@ -402,7 +402,7 @@ module_validate(mod: any): any
 # Module serialization (encode to binary)
 # ═══════════════════════════════════════════════════════════════
 
-module_encode(mod: any): any
+module_encode: any = (mod: any)
     writer = {}
 
     # Header
@@ -432,10 +432,10 @@ module_encode(mod: any): any
         i += 1
     writer_data
 
-writer_bytes(writer: any, bytes: any): void
+writer_bytes = (writer: any, bytes: any)
     writer[writer:len() + 1] = bytes
 
-write_section(writer: any, id: i64, content: any): void
+write_section = (writer: any, id: i64, content: any)
     writer_bytes(writer, {id})
     writer_bytes(writer, std.bit.leb128_encode_u(content:len()))
     writer_bytes(writer, content)

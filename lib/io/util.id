@@ -2,7 +2,7 @@
 # Provides convenience functions for reading all data from files/streams.
 
 # all: read all data from a file handle until EOF.
-all(fh: any): str
+all: str = (fh: any)
     if fh == nil return ""
     out = {}
     while true
@@ -12,7 +12,7 @@ all(fh: any): str
     out:concat()
 
 # read: read the entire contents of a file path.
-read(path: str): str
+read: str = (path: str)
     if path == nil return ""
     f = io.open(path, "r")
     if f == nil return "", "file not found: " .. path
@@ -21,7 +21,7 @@ read(path: str): str
     return data, nil
 
 # write: write data to a file path (truncating if it exists).
-write(path: str, data: str): any
+write: any = (path: str, data: str)
     if path == nil return false, "nil path"
     if data == nil data = ""
     f = io.open(path, "w")
@@ -31,7 +31,7 @@ write(path: str, data: str): any
     return true, nil
 
 # append: append data to a file path (creating if it doesn't exist).
-append(path: str, data: str): any
+append: any = (path: str, data: str)
     if path == nil return false, "nil path"
     if data == nil data = ""
     f = io.open(path, "a")
@@ -41,7 +41,7 @@ append(path: str, data: str): any
     return true, nil
 
 # list: list directory entries.
-list(dir: str): any
+list: any = (dir: str)
     if dir == nil return {}
     f = io.popen("ls -1 " .. dir .. " 2>/dev/null", "r")
     if f == nil return {}
@@ -52,7 +52,7 @@ list(dir: str): any
     out
 
 # temp: create a temporary file and return its handle and path.
-temp(): any
+temp: any = ()
     rng = rand
     hex = ""
     blob = rng.bytes(8)
@@ -65,17 +65,17 @@ temp(): any
     return {fh = f, path = path}
 
 # scratch: temp directory. IMPLEMENTATION-BLOCKED until process world admits make.
-scratch(): str
+scratch: str = ()
     ""
 
 # discard: a writer that discards all data (returns count written).
-discard(): any
-    return {n = 0, write = (self: any, s: str): any
+discard: any = ()
+    return {n = 0, write: any = (self: any, s: str)
         self.n = self.n + s:len()
         self
     end}
 
 # wrap: a reader with a no-op close method.
-wrap(fh: any): any
+wrap: any = (fh: any)
     fh.close = (self: any) nil
     fh

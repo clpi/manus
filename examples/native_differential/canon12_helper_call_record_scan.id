@@ -13,6 +13,6 @@ scan: tok = (src: str, pos: i64)
             j += 1
         return { kind = 1, start = j, len = 1 }
     { kind = 2, start = i, len = 1 }
-main(): i64
+main: i64 = ()
     t: tok = scan("abcd", 1)
     t.start

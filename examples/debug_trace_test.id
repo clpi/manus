@@ -11,10 +11,10 @@ Point = struct
     y: i64
 
 @test.unit
-test_color_exists(): void
+test_color_exists = ()
   t = test
     t.assert_true(true, "enum compiled")
 
 @test.should_panic
-test_error_panics(): void
+test_error_panics = ()
     error("expected panic")

@@ -16,7 +16,6 @@ print("=== @comp.fanout binary tree (depth=3, 2^3=8 leaves) ===")
 count = 0
 for line in tree:gmatch("[^\n]+") do
   count = count + 1
-end
 print("fragment_count = " .. count .. " (expect 8 = 2^3)")
 print("=== RESULT ===")
 print("fanout_ok = true")

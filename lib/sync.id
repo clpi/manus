@@ -1,5 +1,5 @@
 global pending = {}
-spawn(fn: any, ...args): any
+spawn: any = (fn: any, ...args)
   args = {
     args
   }
@@ -10,9 +10,9 @@ spawn(fn: any, ...args): any
     co = co
   }
   return nil
-yield(): void
+yield = ()
   coroutine.yield()
-run(): void
+run = ()
   while pending:len() > 0
     task = pending:remove(1)
     ok, err = coroutine.resume(task.co)
@@ -20,7 +20,7 @@ run(): void
       io.write("sync: task error: " .. err:to(str) .. "\n")
     else if coroutine.status(task.co) == "suspended"
       pending[pending:len() + 1] = task
-step(): bool
+step: bool = ()
   if pending:len() == 0
     return false
   task = pending:remove(1)
@@ -30,7 +30,7 @@ step(): bool
   else if coroutine.status(task.co) == "suspended"
     pending[pending:len() + 1] = task
   return pending:len() > 0
-channel(capacity: i64): any
+channel: any = (capacity: i64)
   return {
     cap = capacity or 0,
     queue = {},
@@ -38,7 +38,7 @@ channel(capacity: i64): any
     recvwait = {},
     closed = false
   }
-send(ch: any, val: any): void
+send = (ch: any, val: any)
   if ch.closed
     error("send on closed channel")
   if ch:len().recvwait > 0
@@ -56,7 +56,7 @@ send(ch: any, val: any): void
   }
   ch.sendwait[ch:len().sendwait + 1] = entry
   coroutine.yield()
-recv(ch: any): any
+recv: any = (ch: any)
   if ch:len().queue > 0
     val = ch.queue:remove(1)
     if ch:len().sendwait > 0
@@ -77,7 +77,7 @@ recv(ch: any): any
   ch.recvwait[ch:len().recvwait + 1] = entry
   coroutine.yield()
   return slot.val
-peek(ch: any): any
+peek: any = (ch: any)
   if ch:len().queue > 0
     val = ch.queue:remove(1)
     if ch:len().sendwait > 0
@@ -86,34 +86,34 @@ peek(ch: any): any
       pending[pending:len() + 1] = w
     return val
   return nil
-close(ch: any): void
+close = (ch: any)
   ch.closed = true
   for _, w in ch.recvwait
     w.slot[1] = nil
     w.slot[2] = true
     pending[pending:len() + 1] = w
   ch.recvwait = {}
-drain(ch: any): any
+drain: any = (ch: any)
   out = {}
   while ch:len().queue > 0
     out[out:len() + 1] = ch.queue:remove(1)
   return out
-waitgroup(): any
+waitgroup: any = ()
   {
     count = 0,
     waiters = {}
   }
-add(wg: any, n: i64): void
+add = (wg: any, n: i64)
   if n == nil
     n = 1
   wg.count = wg.count + n
-done(wg: any): void
+done = (wg: any)
   wg.count = wg.count - 1
   if wg.count <= 0
     for _, w in wg.waiters
       pending[pending:len() + 1] = w
     wg.waiters = {}
-wait(wg: any): void
+wait = (wg: any)
   if wg.count <= 0
     return
   co = coroutine.running()
@@ -121,12 +121,12 @@ wait(wg: any): void
     co = co
   }
   coroutine.yield()
-once(fn: any): any
+once: any = (fn: any)
   {
     fn = fn,
     done = false
   }
-fire(o: any): void
+fire = (o: any)
   if o.done
     return
   o.fn()

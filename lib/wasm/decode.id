@@ -15,22 +15,22 @@ SEMANTIC_TABLE = Inst.decoder_table_owner()
 LOOKUP_TABLE = "lib/wasm/opcode_lookup.id"
 CURSOR_SUBSTRATE = "decode-local-table"
 
-decoder_owner(): str
+decoder_owner: str = ()
     DECODER_OWNER
 
-semantic_table_owner(): str
+semantic_table_owner: str = ()
     SEMANTIC_TABLE
 
-lookup_table_owner(): str
+lookup_table_owner: str = ()
     LOOKUP_TABLE
 
-cursor_substrate(): str
+cursor_substrate: str = ()
     CURSOR_SUBSTRATE
 
 new_cursor(data): any
     return { data = data, pos = 1, len = data:len() }
 
-read_byte(c): i64
+read_byte: i64 = (c)
     if c.pos > c.len return -1
     b = c.data:byte(c.pos)
     c.pos = c.pos + 1
@@ -63,7 +63,7 @@ read_u32_imm(c): i64
         if shift >= 35 return -1
     return -1
 
-read_i64_imm(c): i64
+read_i64_imm: i64 = (c)
     read_i32_imm(c)
 
 read_mem_arg(c): any
@@ -72,7 +72,7 @@ read_mem_arg(c): any
     if mem_align < 0 or offset < 0 return nil
     return { align = mem_align, offset = offset }
 
-read_immediate(c, form): any
+read_immediate: any = (c, form)
     if form == "none" return nil
     if form == "i32_imm" return read_i32_imm(c)
     if form == "i64_imm" return read_i64_imm(c)
@@ -107,7 +107,7 @@ decode_instruction(c): any
         stack_push = Lookup.stack_push_for_index(idx),
     }
 
-decode_i32_const(c): any
+decode_i32_const: any = (c)
     d = decode_instruction(c)
     if d.status != "ok" return d
     if d.id != "wasm.i32.const" return { status = "bad_opcode", opcode = d.opcode, id = d.id }

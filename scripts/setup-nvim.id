@@ -79,17 +79,17 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 ]]
 
-_home(): str
+_home: str = ()
     std.script.getenv_or("HOME")
 
-_nvim_config(): str
+_nvim_config: str = ()
     x = std.script.getenv_or("XDG_CONFIG_HOME")
     if x == "" return _home() .. "/.config/nvim"
     x .. "/nvim"
 
 # Copy one file, reporting only when it lands. The shell version chained
 # `cp ... && echo` so a missing source was silent; this says which one.
-_install(src: str, dir: str, label: str): void
+_install = (src: str, dir: str, label: str)
     if std.script.run("cp " .. src .. " " .. dir .. "/ 2>/dev/null") == 0
         print("  ok " .. label .. " installed")
     else

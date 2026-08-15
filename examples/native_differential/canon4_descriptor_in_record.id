@@ -2,6 +2,6 @@ Kind = @{ eof = 0, ident = 1 }
 tok: @{ kind: i64, start: i64, len: i64 }
 mk: tok = (pos: i64)
     { kind = Kind.ident, start = pos, len = 2 }
-main(): i64
+main: i64 = ()
     t: tok = mk(5)
     t.start + t.len

@@ -90,10 +90,10 @@ ind = "  "
 ind4 = "    "
 ind6 = "      "
 
-shell(cmd: str): str
+shell: str = (cmd: str)
     std.script.capture(cmd)
 
-cut(s: str): any
+cut: any = (s: str)
     out = {}
     n: i64 = s:len()
     start: i64 = 1
@@ -108,19 +108,19 @@ cut(s: str): any
         out[out:len() + 1] = s:sub(start, n)
     out
 
-pad(s: str, width: i64): str
+pad: str = (s: str, width: i64)
     out: str = s
     while out:len() < width
         out = "{out} "
     out
 
-lpad(s: str, width: i64): str
+lpad: str = (s: str, width: i64)
     out: str = s
     while out:len() < width
         out = " {out}"
     out
 
-starts(s: str, prefix: str): bool
+starts: bool = (s: str, prefix: str)
     #s >= #prefix and s:sub(1, #prefix) == prefix
 
 # Seconds to four decimals from integer nanoseconds. `to(str)` on an f64 does
@@ -137,7 +137,7 @@ secs(ns: i64): str
     ws: str = whole:to(str)
     "{ws}.{fs}"
 
-kib(n: i64): str
+kib: str = (n: i64)
     tenths: i64 = to(i64)((n * 10 + 512) / 1024)
     whole: i64 = to(i64)(tenths / 10)
     frac: i64 = tenths % 10
@@ -147,7 +147,7 @@ kib(n: i64): str
 
 # `to(i64)` answers 0 for text that is not a number, so every numeric parse in
 # this file is guarded by this rather than by a nil check that never fires.
-digits(s: str): bool
+digits: bool = (s: str)
     out: bool = s:len() > 0
     i: i64 = 1
     if out and s:byte(1) == 45
@@ -162,7 +162,7 @@ digits(s: str): bool
 
 # The one tolerated difference: a 32-bit integer printed signed by one runtime
 # and unsigned by another. See the header.
-wrapped(a: str, b: str): bool
+wrapped: bool = (a: str, b: str)
     out: bool = false
     if digits(a) and digits(b)
         x: i64 = to(i64)(a)
@@ -171,13 +171,13 @@ wrapped(a: str, b: str): bool
         out = x - y == width or y - x == width
     out
 
-same(a: str, b: str): bool
+same: bool = (a: str, b: str)
     a == b or wrapped(a, b)
 
 # ward appends `engine=`, `result=` and `seconds=` lines to stdout. The
 # module's own output is everything else. Newlines become spaces so a
 # multi-line answer is still one comparable token.
-answer(raw: str): str
+answer: str = (raw: str)
     out: str = ""
     for i, line in cut(raw)
         keep: bool = not starts(line, "engine=") and !starts(line, "result=")
@@ -192,7 +192,7 @@ answer(raw: str): str
 
 # ward's `result=` field, which is the answer for the invoke family: those
 # modules return a value rather than printing one.
-field(raw: str, key: str): str
+field: str = (raw: str, key: str)
     out: str = ""
     n: i64 = key:len()
     for i, line in cut(raw)
@@ -203,7 +203,7 @@ field(raw: str, key: str): str
 # One timed run. stdout and stderr go to /dev/null so no pipe sits inside the
 # timing window. The exit status is deliberately not read here: correctness was
 # settled before anything was timed.
-span(cmd: str): i64
+span: i64 = (cmd: str)
     t0: i64 = std.time.monotonic()
     std.script.run("{cmd} >/dev/null 2>&1")
     std.time.monotonic() - t0
@@ -222,7 +222,7 @@ span(cmd: str): i64
 # Both slots are seeded to -1 and the seed is checked by the caller: a
 # collector that never seeded its minimum is one of the three defects
 # CLAUDE.md §3 records, and it reported zero for everything.
-samples(cmd: str, runs: i64): any
+samples: any = (cmd: str, runs: i64)
     lo: i64 = -1
     hi: i64 = -1
     i: i64 = 0
@@ -235,12 +235,12 @@ samples(cmd: str, runs: i64): any
         i += 1
     { lo, hi }
 
-fastest(cmd: str, runs: i64): i64
+fastest: i64 = (cmd: str, runs: i64)
     samples(cmd, runs)[1]
 
 # First run of digits in a string, or -1. Used for both `wc` and `time -l`
 # output, neither of which has a stable column position worth trusting.
-number(s: str): i64
+number: i64 = (s: str)
     out: i64 = -1
     start: i64 = 0
     i: i64 = 1
@@ -259,7 +259,7 @@ number(s: str): i64
 # Peak resident set size in bytes. macOS `/usr/bin/time -l` reports bytes; GNU
 # `-v` reports kilobytes and is not what this parses, so a host without the
 # macOS spelling gets -1 and an `n/a` cell rather than a number off by 1024.
-peak(cmd: str): i64
+peak: i64 = (cmd: str)
     probe: str = "/usr/bin/time -l {cmd} 2>&1 >/dev/null | grep maximum"
     number(script.chomp(shell(probe)))
 
@@ -269,15 +269,15 @@ filepath: str:len(): i64
 
 # Tracked source lines under a pathspec, counted through git so untracked
 # scratch and build output cannot inflate a runtime's size.
-loc(root: str, spec: str): i64
+loc: i64 = (root: str, spec: str)
     probe: str = "cd '{root}' && git ls-files {spec} | tr '\\n' '\\0' | xargs -0 wc -l 2>/dev/null | tail -1"
     number(std.script.chomp(shell(probe)))
 
-filecount(root: str, spec: str): i64
+filecount: i64 = (root: str, spec: str)
     probe: str = "cd '{root}' && git ls-files {spec} | wc -l"
     number(std.script.chomp(shell(probe)))
 
-globcount(pattern: str): i64
+globcount: i64 = (pattern: str)
     probe: str = "ls {pattern} 2>/dev/null | wc -l"
     out: i64 = number(std.script.chomp(shell(probe)))
     if out < 0
@@ -287,7 +287,7 @@ globcount(pattern: str): i64
 # The command that runs `path` under runtime `rt`. Two entry conventions; see
 # the header. An unsupported pair answers "" and the caller prints `n/a` with
 # the reason rather than skipping the cell.
-invocation(rt: str, bin: str, path: str, entry: str): str
+invocation: str = (rt: str, bin: str, path: str, entry: str)
     out: str = ""
     if rt == "ward"
         if entry == "start"
@@ -309,7 +309,7 @@ invocation(rt: str, bin: str, path: str, entry: str): str
 
 # What a runtime answers. ward's invoke answer is its `result=` field; every
 # other cell is stdout with ward's trailer removed.
-observe(rt: str, cmd: str, entry: str): str
+observe: str = (rt: str, cmd: str, entry: str)
     probe: str = "{cmd} 2>/dev/null"
     raw: str = shell(probe)
     out: str = answer(raw)
@@ -322,19 +322,19 @@ observe(rt: str, cmd: str, entry: str): str
 # would otherwise carry into a ratchet with zero slack, and the underscore is
 # in the STDLIB's spelling, not in anything this file chose. Wrapping is the
 # repair available from here; renaming lib/std is somebody else's diff.
-exists(path: str): bool
+exists: bool = (path: str)
     probe: str = "test -e '{path}'"
     std.script.ok(probe)
 
-slurp(path: str): str
+slurp: str = (path: str)
     probe: str = "cat '{path}' 2>/dev/null"
     shell(probe)
 
-which(tool: str): str
+which: str = (tool: str)
     probe: str = "command -v {tool} 2>/dev/null"
     std.script.chomp(shell(probe))
 
-main(): i64
+main: i64 = ()
     root: str = std.script.chomp(shell("git rev-parse --show-toplevel 2>/dev/null"))
     code: i64 = 0
     if root == ""

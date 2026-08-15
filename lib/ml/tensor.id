@@ -125,43 +125,43 @@ t: any:to(str)
 # Extended operations
 # ═══════════════════════════════════════════════════════════════
 
-sub(a, b): any
+sub: any = (a, b)
     assert(a.size == b.size, "tensor size mismatch in sub")
     result = zeros(a.rows, a.cols)
     for i = 1, a.size
         result.data[i] = a.data[i] - b.data[i]
     result
 
-mul(a, b): any
+mul: any = (a, b)
     assert(a.size == b.size, "tensor size mismatch in mul")
     result = zeros(a.rows, a.cols)
     for i = 1, a.size
         result.data[i] = a.data[i] * b.data[i]
     result
 
-div(a, b): any
+div: any = (a, b)
     assert(a.size == b.size, "tensor size mismatch in div")
     result = zeros(a.rows, a.cols)
     for i = 1, a.size
         result.data[i] = a.data[i] / b.data[i]
     result
 
-neg(t): any
+neg: any = (t)
     result = zeros(t.rows, t.cols)
     for i = 1, t.size
         result.data[i] = -t.data[i]
     result
 
-sum(t): f64
+sum: f64 = (t)
     s = 0
     for i = 1, t.size
         s += t.data[i]
     s
 
-mean(t): f64
+mean: f64 = (t)
     sum(t) / t.size
 
-var(t, eps): any
+var: any = (t, eps)
     if eps == nil eps = 1e-8 
     m = mean(t)
     s = 0
@@ -170,22 +170,22 @@ var(t, eps): any
         s += d * d
     s / t.size + eps
 
-std(t, eps): any
+std: any = (t, eps)
     var(t, eps):sqrt()
 
-max(t): f64
+max: f64 = (t)
     best = t.data[1]
     for i = 2, t.size
         if t.data[i] > best best = t.data[i] 
     best
 
-min(t): f64
+min: f64 = (t)
     best = t.data[1]
     for i = 2, t.size
         if t.data[i] < best best = t.data[i] 
     best
 
-argmax(t): i64
+argmax: i64 = (t)
     best_idx = 1
     best_val = t.data[1]
     for i = 2, t.size
@@ -194,7 +194,7 @@ argmax(t): i64
             best_idx = i
     best_idx
 
-argmin(t): i64
+argmin: i64 = (t)
     best_idx = 1
     best_val = t.data[1]
     for i = 2, t.size
@@ -203,7 +203,7 @@ argmin(t): i64
             best_idx = i
     best_idx
 
-clamp(t, lo, hi): any
+clamp: any = (t, lo, hi)
     result = zeros(t.rows, t.cols)
     for i = 1, t.size
         v = t.data[i]
@@ -212,7 +212,7 @@ clamp(t, lo, hi): any
         result.data[i] = v
     result
 
-abs(t): any
+abs: any = (t)
     result = zeros(t.rows, t.cols)
     for i = 1, t.size
         v = t.data[i]
@@ -220,26 +220,26 @@ abs(t): any
         result.data[i] = v
     result
 
-log(t): any
+log: any = (t)
     result = zeros(t.rows, t.cols)
     for i = 1, t.size
         result.data[i] = t.data[i]:log()
     result
 
-exp(t): any
+exp: any = (t)
     result = zeros(t.rows, t.cols)
     for i = 1, t.size
         result.data[i] = t.data[i]:exp()
     result
 
-sqrt(t): any
+sqrt: any = (t)
     result = zeros(t.rows, t.cols)
     for i = 1, t.size
         result.data[i] = t.data[i]:sqrt()
     result
 
 # Broadcast add (handles shapes that can be broadcast)
-broadcast_add(a, b): any
+broadcast_add: any = (a, b)
     if a.rows == b.rows and a.cols == b.cols
         return add(a, b)
     if a.rows == 1 and a.cols == b.cols
@@ -255,7 +255,7 @@ broadcast_add(a, b): any
     assert(false, "incompatible shapes for broadcast")
 
 # Reshape (returns new tensor with same data, different shape)
-reshape(t, new_rows, new_cols): any
+reshape: any = (t, new_rows, new_cols)
     assert(new_rows * new_cols == t.size, "reshape size mismatch")
     {
         rows = new_rows,
@@ -265,7 +265,7 @@ reshape(t, new_rows, new_cols): any
     }
 
 # Slice: extract sub-tensor
-slice(t, row_start, row_end, col_start, col_end): any
+slice: any = (t, row_start, row_end, col_start, col_end)
     if row_start == nil row_start = 1 
     if row_end == nil row_end = t.rows 
     if col_start == nil col_start = 1 
@@ -279,7 +279,7 @@ slice(t, row_start, row_end, col_start, col_end): any
     result
 
 # Concatenate tensors along rows (vertical stack)
-vstack(tensors: any): any
+vstack: any = (tensors: any)
     if tensors:len() == 0 return zeros(0, 0) 
     total_rows = 0
     cols = tensors[1].cols
@@ -295,7 +295,7 @@ vstack(tensors: any): any
     result
 
 # Concatenate tensors along columns (horizontal stack)
-hstack(tensors: any): any
+hstack: any = (tensors: any)
     if tensors:len() == 0 return zeros(0, 0) 
     rows = tensors[1].rows
     total_cols = 0
@@ -312,14 +312,14 @@ hstack(tensors: any): any
     result
 
 # Eye: identity matrix
-eye(n: i64): any
+eye: any = (n: i64)
     t = zeros(n, n)
     for i = 1, n
         t.data[(i - 1) * n + i] = 1.0
     t
 
 # Diagonal: create diagonal matrix from vector
-diag(v): any
+diag: any = (v)
     n = v.size
     t = zeros(n, n)
     for i = 1, n
@@ -327,7 +327,7 @@ diag(v): any
     t
 
 # Arange: create tensor with evenly spaced values
-arange(start, stop, step): any
+arange: any = (start, stop, step)
     if step == nil step = 1 
     values = {}
     v = start
@@ -337,7 +337,7 @@ arange(start, stop, step): any
     from(values)
 
 # Linspace: create tensor with n evenly spaced values
-linspace(start, stop, n): any
+linspace: any = (start, stop, n)
     t = zeros(1, n)
     if n == 1
         t.data[1] = start
@@ -348,21 +348,21 @@ linspace(start, stop, n): any
     t
 
 # Fill: create tensor filled with a value
-fill(rows, cols, value): any
+fill: any = (rows, cols, value)
     t = zeros(rows, cols)
     for i = 1, t.size
         t.data[i] = value
     t
 
 # Copy: deep copy a tensor
-copy(t): any
+copy: any = (t)
     result = zeros(t.rows, t.cols)
     for i = 1, t.size
         result.data[i] = t.data[i]
     result
 
 # Flatten to 1D vector
-flatten(t): any
+flatten: any = (t)
     zeros(1, t.size)
     result = zeros(1, t.size)
     for i = 1, t.size
@@ -370,27 +370,27 @@ flatten(t): any
     result
 
 # Norm (L2)
-norm(t): f64
+norm: f64 = (t)
     s = 0
     for i = 1, t.size
         s += t.data[i] * t.data[i]
     s:sqrt()
 
 # Normalize (L2 normalize)
-normalize(t): any
+normalize: any = (t)
     n = norm(t)
     if n < 1e-10 n = 1 
     mul_scalar(t, 1.0 / n)
 
 # Cosine similarity between two vectors
-cosine_similarity(a, b): f64
+cosine_similarity: f64 = (a, b)
     dot = 0
     for i = 1, a.size
         dot += a.data[i] * b.data[i]
     dot / (norm(a) * norm(b) + 1e-10)
 
 # Cross product (for 3D vectors)
-cross(a, b): any
+cross: any = (a, b)
     assert(a.size == 3 and b.size == 3, "cross product requires 3D vectors")
     result = zeros(1, 3)
     result.data[1] = a.data[2] * b.data[3] - a.data[3] * b.data[2]
@@ -399,7 +399,7 @@ cross(a, b): any
     result
 
 # Cumulative sum along axis (axis=1 for rows, axis=2 for cols)
-cumsum(t, axis): any
+cumsum: any = (t, axis)
     if axis == nil axis = 1 
     result = zeros(t.rows, t.cols)
     if axis == 1
@@ -417,7 +417,7 @@ cumsum(t, axis): any
     result
 
 # Sort (returns sorted 1D tensor)
-sort(t): any
+sort: any = (t)
     values = {}
     for i = 1, t.size
         values[i] = t.data[i]
@@ -428,7 +428,7 @@ sort(t): any
     result
 
 # Unique values
-unique(t): any
+unique: any = (t)
     seen = {}
     values = {}
     for i = 1, t.size
@@ -443,7 +443,7 @@ unique(t): any
     result
 
 # Where (conditional selection)
-where(condition, x, y): any
+where: any = (condition, x, y)
     assert(condition.size == x.size and x.size == y.size, "where size mismatch")
     result = zeros(x.rows, x.cols)
     for i = 1, condition.size
@@ -454,26 +454,26 @@ where(condition, x, y): any
     result
 
 # Any (returns true if any element is non-zero)
-any(t): bool
+any: bool = (t)
     for i = 1, t.size
         if t.data[i] != 0 return true 
     false
 
 # All (returns true if all elements are non-zero)
-all(t): bool
+all: bool = (t)
     for i = 1, t.size
         if t.data[i] == 0 return false 
     true
 
 # Count non-zero elements
-nonzero_count(t): i64
+nonzero_count: i64 = (t)
     n = 0
     for i = 1, t.size
         if t.data[i] != 0 n += 1 
     n
 
 # Clamp gradient (for autodiff)
-clamp_grad(t, lo, hi): any
+clamp_grad: any = (t, lo, hi)
     result = zeros(t.rows, t.cols)
     for i = 1, t.size
         if t.data[i] >= lo and t.data[i] <= hi
@@ -483,7 +483,7 @@ clamp_grad(t, lo, hi): any
     result
 
 # Dropout mask (returns mask tensor)
-dropout_mask(rows, cols, rate): any
+dropout_mask: any = (rows, cols, rate)
     mask = zeros(rows, cols)
     for i = 1, mask.size
         if math.random() > rate
@@ -491,7 +491,7 @@ dropout_mask(rows, cols, rate): any
     mask
 
 # Scaled dot-product attention (for transformer)
-scaled_dot_attention(q, k, v): any
+scaled_dot_attention: any = (q, k, v)
     dk = k.cols:sqrt()
     # Attention scores: Q @ K^T / sqrt(dk)
     scores = matmul(q, transpose(k))
@@ -502,7 +502,7 @@ scaled_dot_attention(q, k, v): any
     matmul(attn, v)
 
 # Multi-head attention
-multi_head_attention(q, k, v, heads): any
+multi_head_attention: any = (q, k, v, heads)
     assert(q.cols % heads == 0, "dim must be divisible by heads")
     head_dim = q.cols / heads
 

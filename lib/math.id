@@ -1,32 +1,32 @@
 # math — numeric helper utilities
 
-clamp(x: any, lo: any, hi: any): any
+clamp: any = (x: any, lo: any, hi: any)
     if x < lo return lo
     if x > hi return hi
     x
 
-min(a: any, b: any): any
+min: any = (a: any, b: any)
     if a < b return a
     b
 
-max(a: any, b: any): any
+max: any = (a: any, b: any)
     if a > b return a
     b
 
-sign(x: any): i64
+sign: i64 = (x: any)
     if x > 0 return 1
     if x < 0 return -1
     0
 
-round(x: any): i64
+round: i64 = (x: any)
     if x >= 0
         return @as(i64, x + 0.5:floor())
     return @as(i64, 0 - (0 - x) + 0.5:floor())
 
-lerp(a: any, b: any, t: any): any
+lerp: any = (a: any, b: any, t: any)
     a + (b - a) * t
 
-remap(...args): any
+remap: any = (...args)
     x = args[1]
     ilo = args[2]
     ihi = args[3]
@@ -35,31 +35,31 @@ remap(...args): any
     if ihi == ilo return olo
     olo + (x - ilo) * (ohi - olo) / (ihi - ilo)
 
-sum(xs: any): any
+sum: any = (xs: any)
     total = 0
     for _, v in xs
         total += v
     total
 
-mean(xs: any): any
+mean: any = (xs: any)
     if xs == nil or xs:len() == 0 return 0
     sum(xs) / xs:len()
 
-even(n: i64): bool
+even: bool = (n: i64)
     n % 2 == 0
 
-odd(n: i64): bool
+odd: bool = (n: i64)
     n % 2 != 0
 
-distsq(x1: any, y1: any, x2: any, y2: any): any
+distsq: any = (x1: any, y1: any, x2: any, y2: any)
     dx = x2 - x1
     dy = y2 - y1
     dx * dx + dy * dy
 
-distance(x1: any, y1: any, x2: any, y2: any): any
+distance: any = (x1: any, y1: any, x2: any, y2: any)
     distsq(x1, y1, x2, y2):sqrt()
 
-gcd(a: i64, b: i64): i64
+gcd: i64 = (a: i64, b: i64)
     if a < 0 a = 0 - a
     if b < 0 b = 0 - b
     while b != 0
@@ -68,13 +68,13 @@ gcd(a: i64, b: i64): i64
         a = temp
     a
 
-lcm(a: i64, b: i64): i64
+lcm: i64 = (a: i64, b: i64)
     if a == 0 or b == 0 return 0
     n = a * b
     if n < 0 n = 0 - n
     n / gcd(a, b)
 
-median(xs: any): any
+median: any = (xs: any)
     if xs == nil or xs:len() == 0 return 0
     sorted = {}
     for _, v in xs
@@ -85,7 +85,7 @@ median(xs: any): any
         return sorted[n / 2:floor() + 1]
     (sorted[n / 2] + sorted[n / 2 + 1]) / 2
 
-variance(xs: any): any
+variance: any = (xs: any)
     if xs == nil or xs:len() <= 1 return 0
     m = mean(xs)
     ssq = 0
@@ -94,20 +94,20 @@ variance(xs: any): any
         ssq += diff * diff
     ssq / xs:len()
 
-stddev(xs: any): any
+stddev: any = (xs: any)
     variance(xs):sqrt()
 
-smoothstep(edge0: any, edge1: any, x: any): any
+smoothstep: any = (edge0: any, edge1: any, x: any)
     t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
     t * t * (3 - 2 * t)
 
-approx(a: any, b: any, eps: any): bool
+approx: bool = (a: any, b: any, eps: any)
     if eps == nil eps = 1e-9
     diff = a - b
     if diff < 0 diff = 0 - diff
     diff <= eps
 
-least(list: any): any
+least: any = (list: any)
     if list == nil or list:len() == 0 return nil
     result = list[1]
     i = 2
@@ -116,7 +116,7 @@ least(list: any): any
         i += 1
     result
 
-greatest(list: any): any
+greatest: any = (list: any)
     if list == nil or list:len() == 0 return nil
     result = list[1]
     i = 2

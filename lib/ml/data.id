@@ -1,6 +1,6 @@
 # ml.data — Batching, shuffling, and dataset iterators (training pipelines)
 
-batch(samples, batch_size): any
+batch: any = (samples, batch_size)
     if batch_size == nil batch_size = 32
     batches = {}
     n = samples:len()
@@ -17,7 +17,7 @@ batch(samples, batch_size): any
         batches[bi] = { x = chunk, size = j }
     return { type = "batches", items = batches, n = bi, batch_size = batch_size }
 
-from_pairs(xs, ys): any
+from_pairs: any = (xs, ys)
     assert(xs:len() == ys:len(), "from_pairs: length mismatch")
     samples = {}
     for i = 1, xs:len()
@@ -36,7 +36,7 @@ shuffle(samples): any
         i -= 1
     return samples
 
-dataloader(samples, batch_size, shuffle): any
+dataloader: any = (samples, batch_size, shuffle)
     if shuffle == nil shuffle = true
     return {
         type = "dataloader",
@@ -46,7 +46,7 @@ dataloader(samples, batch_size, shuffle): any
         epoch = 0,
     }
 
-iter_epoch(loader): any
+iter_epoch: any = (loader)
     loader.epoch = loader.epoch + 1
     data = loader.samples
     if loader.shuffle data = shuffle(data)

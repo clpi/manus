@@ -3,10 +3,10 @@
 # Use `@device(.auto)` on functions for backend selection at compile time.
 # This module tracks runtime placement for tensors and pipelines.
 
-cpu(): any
+cpu: any = ()
     return { kind = "cpu", id = 0 }
 
-auto(): any
+auto: any = ()
     return { kind = "auto", id = -1 }
 
 metal(id): any
@@ -17,14 +17,14 @@ cuda(id): any
     if id == nil id = 0
     return { kind = "cuda", id = id }
 
-webgpu(): any
+webgpu: any = ()
     return { kind = "webgpu", id = 0 }
 
-wasm_simd(): any
+wasm_simd: any = ()
     return { kind = "wasm", id = 0 }
 
 # Pick best device for current host (Metal on Apple, CUDA on NVIDIA, else CPU)
-best(): any
+best: any = ()
     # Check for CUDA
     cuda_env = os.getenv("CUDA_VISIBLE_DEVICES")
     if cuda_env and cuda_env != ""
@@ -53,7 +53,7 @@ best(): any
     cpu()
 
 # Place a tensor descriptor on a device (metadata only until GPU buffers land)
-on(tensor, dev): any
+on: any = (tensor, dev)
     out = {}
     for k, v in tensor
         out[k] = v
@@ -61,6 +61,6 @@ on(tensor, dev): any
     return out
 
 # Pipeline stage placement: { encoder = metal(), llm = cuda(0), ... }
-place(stages): any
+place: any = (stages)
     return { type = "placement", stages = stages }
 

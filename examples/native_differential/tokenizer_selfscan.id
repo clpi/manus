@@ -74,7 +74,7 @@ count_tokens: i64 = (src: str)
         pos = t.start + t.len
     total
 
-main(): i64
+main: i64 = ()
     # Verbatim source of this file's own `is_digit`, scanned by this file's own
     # scanner, in a binary this file was compiled into.
     count_tokens("is_digit = (c: i64): i64 if c >= 48 and c <= 57 return 1 end 0 end")

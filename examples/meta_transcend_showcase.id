@@ -17,7 +17,7 @@ Label: { tag: str, id: i64 }
 
 # One line: derive.all + quadratic product emit + cubic derive tensor emit
 
-@comp.define.derive("TripleApi", generate(meta) -> str
+@comp.define.derive("TripleApi", generate: str = (meta)
     if meta.right != nil
         "/* tensor " .. meta.left.name .. " x " .. meta.mid.name .. " x " .. meta.right.name .. " */\n"
     else if meta.left != nil

@@ -11,71 +11,71 @@
 # a numeric literal, so there is no application to mis-parse. The hazard is
 # specifically a clause ending in a bare name followed by a body beginning
 # with one.
-fast_min(a: i64, b: i64): i64
+fast_min: i64 = (a: i64, b: i64)
     if a < b
         return a
     b
 
-fast_max(a: i64, b: i64): i64
+fast_max: i64 = (a: i64, b: i64)
     if a > b
         return a
     b
 
-minf(a: float, b: float): float
+minf: float = (a: float, b: float)
     if a < b
         return a
     b
 
-maxf(a: float, b: float): float
+maxf: float = (a: float, b: float)
     if a > b
         return a
     b
 
-fast_abs(x: i64): i64
+fast_abs: i64 = (x: i64)
     if x < 0 0 - x else x 
 
-absf(x: float): float
+absf: float = (x: float)
     if x < 0.0 0.0 - x else x 
 
-fast_clamp(x: i64, lo: i64, hi: i64): i64
+fast_clamp: i64 = (x: i64, lo: i64, hi: i64)
     if x < lo lo else if x > hi hi else x 
 
-clampf(x: float, lo: float, hi: float): float
+clampf: float = (x: float, lo: float, hi: float)
     if x < lo lo else if x > hi hi else x 
 
-sign(x: i64): i64
+sign: i64 = (x: i64)
     (x > 0) - (x < 0)
 
-signf(x: float): i64
+signf: i64 = (x: float)
     if x > 0.0 1 else if x < 0.0 -1 else 0 
 
-lerp(a: float, b: float, t: float): float
+lerp: float = (a: float, b: float, t: float)
     a + (b - a) * t
 
-lerpi(a: i64, b: i64, numer: i64, denom: i64): i64
+lerpi: i64 = (a: i64, b: i64, numer: i64, denom: i64)
     a + (b - a) * numer // denom
 
-fast_popcount(x: i64): i64
+fast_popcount: i64 = (x: i64)
     @popcount(x)
 
-fast_clz(x: i64): i64
+fast_clz: i64 = (x: i64)
     if x == 0 64 else @clz(x) 
 
-fast_ctz(x: i64): i64
+fast_ctz: i64 = (x: i64)
     if x == 0 64 else @ctz(x) 
 
-fast_bit_length(x: i64): i64
+fast_bit_length: i64 = (x: i64)
     if x == 0 0 else 64 - @clz(x) 
 
-fast_rotl(x: i64, k: i64): i64
+fast_rotl: i64 = (x: i64, k: i64)
     kk = k & 63
     @rotl(x, kk)
 
-fast_rotr(x: i64, k: i64): i64
+fast_rotr: i64 = (x: i64, k: i64)
     kk = k & 63
     @comp.bit.rotr(x, kk)
 
-ceil2(x: i64): i64
+ceil2: i64 = (x: i64)
     if x <= 1 return 1 
     v = x - 1
     v |= (v >> 1)
@@ -86,31 +86,31 @@ ceil2(x: i64): i64
     v |= (v >> 32)
     v + 1
 
-fast_is_pow2(x: i64): bool
+fast_is_pow2: bool = (x: i64)
     x > 0 and (x & (x - 1)) == 0
 
-ceil(a: i64, b: i64): i64
+ceil: i64 = (a: i64, b: i64)
     (a + b - 1) // b
 
-avg(a: i64, b: i64): i64
+avg: i64 = (a: i64, b: i64)
     (a & b) + (((a | b) - (a & b)) >> 1)
 
-satadd(a: i64, b: i64): i64
+satadd: i64 = (a: i64, b: i64)
     r = a + b
     if r < a 9223372036854775807 else r 
 
-satsub(a: i64, b: i64): i64
+satsub: i64 = (a: i64, b: i64)
     r = a - b
     if r > a 0 else r 
 
-mod(a: i64, b: i64): i64
+mod: i64 = (a: i64, b: i64)
     r = a % b
     if r >= 0 return r 
     mag = b
     if b < 0 mag = 0 - b 
     r + mag
 
-fast_gcd(a: i64, b: i64): i64
+fast_gcd: i64 = (a: i64, b: i64)
     if a < 0 a = 0 - a 
     if b < 0 b = 0 - b 
     while b != 0
@@ -119,6 +119,6 @@ fast_gcd(a: i64, b: i64): i64
         a = temp
     a
 
-lcm(a: i64, b: i64): i64
+lcm: i64 = (a: i64, b: i64)
     if a == 0 or b == 0 return 0 
     (a // fast_gcd(a, b)) * b

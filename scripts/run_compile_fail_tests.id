@@ -8,7 +8,7 @@ DUO = "env DUO_BUILD_REPORT=plain " .. DUO
 
 global any_failed: i64 = 0
 
-pass(msg: str): void
+pass = (msg: str)
     s.echo("OK:   " .. msg)
 
 fail(msg: str, out: str)
@@ -17,7 +17,7 @@ fail(msg: str, out: str)
         s.echo(out)
     any_failed = 1
 
-temp_file(): str
+temp_file: str = ()
     tmp = tostring(s.fs_tmp())
     if tmp:len() == 0
         tmp = "/tmp/duo_test_" .. tostring(os.time())

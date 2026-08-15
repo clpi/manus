@@ -5,7 +5,7 @@ custom_iter: any = (state: any, index: any)
   return next, next * 10
 
 iterable = setmetatable({}, {
-  __iter = fun(self: any) -> any
+  __iter: any = (self: any)
     return custom_iter, nil, 0
   end
 })

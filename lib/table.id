@@ -4,35 +4,35 @@ t: any:len(): any
     if t == nil return 0 
     t:len()
 
-keys(t: any): any
+keys: any = (t: any)
     out = {}
     if t == nil return out 
     for k, _ in t
         out[out:len() + 1] = k
     out
 
-values(t: any): any
+values: any = (t: any)
     out = {}
     if t == nil return out 
     for _, v in t
         out[out:len() + 1] = v
     out
 
-clone(t: any): any
+clone: any = (t: any)
     out = {}
     if t == nil return out 
     for k, v in t
         out[k] = v
     out
 
-merge(a: any, b: any): any
+merge: any = (a: any, b: any)
     out = clone(a)
     if b != nil
         for k, v in b
             out[k] = v
     out
 
-contains(list: any, value: any): bool
+contains: bool = (list: any, value: any)
     if list == nil return false 
     i = 1
     while i <= list:len()
@@ -41,7 +41,7 @@ contains(list: any, value: any): bool
         i += 1
     false
 
-index_of(list: any, value: any): any
+index_of: any = (list: any, value: any)
     if list == nil return 0 
     i = 1
     while i <= list:len()
@@ -50,7 +50,7 @@ index_of(list: any, value: any): any
         i += 1
     0
 
-reverse(list: any): any
+reverse: any = (list: any)
     out = {}
     if list == nil return out 
     i = list:len()
@@ -59,7 +59,7 @@ reverse(list: any): any
         i -= 1
     out
 
-map(list: any, fn: any): any
+map: any = (list: any, fn: any)
     out = {}
     if list == nil return out 
     i = 1
@@ -69,7 +69,7 @@ map(list: any, fn: any): any
         i += 1
     out
 
-filter(list: any, fn: any): any
+filter: any = (list: any, fn: any)
     out = {}
     if list == nil return out 
     i = 1
@@ -80,7 +80,7 @@ filter(list: any, fn: any): any
         i += 1
     out
 
-reduce(list: any, fn: any, init: any): any
+reduce: any = (list: any, fn: any, init: any)
     acc = init
     if list == nil return acc 
     i = 1
@@ -90,7 +90,7 @@ reduce(list: any, fn: any, init: any): any
         i += 1
     acc
 
-clear(t: any): void
+clear = (t: any)
     if t == nil return 
     ks = keys(t)
     i = 1
@@ -98,13 +98,13 @@ clear(t: any): void
         rawset(t, ks[i], nil)
         i += 1
 
-is_empty(t: any): bool
+is_empty: bool = (t: any)
     if t == nil return true 
     for _, v in t
         if v != nil return false 
     true
 
-slice(t: any, start_idx: any, end_idx: any): any
+slice: any = (t: any, start_idx: any, end_idx: any)
     out = {}
     if t == nil return out 
     if start_idx == nil start_idx = 1 
@@ -117,37 +117,37 @@ slice(t: any, start_idx: any, end_idx: any): any
         i += 1
     out
 
-concat(t: any, sep: any): str
+concat: str = (t: any, sep: any)
     if t == nil return "" 
     if sep == nil sep = "" 
     t:concat(sep)
 
-sort(list: any, cmp: any): void
+sort = (list: any, cmp: any)
     if list == nil return 
     if cmp == nil
         list:sort()
     else
         list:sort(cmp)
 
-unpack(list: any, i: any, j: any): any
+unpack: any = (list: any, i: any, j: any)
     if list == nil return nil 
     if i == nil i = 1 
     if j == nil j = list:len() 
     list:unpack(i, j)
 
-insert(list: any, pos: any, value: any): void
+insert = (list: any, pos: any, value: any)
     if list == nil return 
     if value == nil
         list:insert(pos)
     else
         list:insert(pos, value)
 
-remove(list: any, pos: any): any
+remove: any = (list: any, pos: any)
     if list == nil return nil 
     if pos == nil pos = list:len() 
     list:remove(pos)
 
-count(list: any, fn: any): i64
+count: i64 = (list: any, fn: any)
     c = 0
     if list == nil return c 
     if fn == nil return list:len() 
@@ -157,7 +157,7 @@ count(list: any, fn: any): i64
         i += 1
     c
 
-flat(list: any): any
+flat: any = (list: any)
     out = {}
     if list == nil return out 
     i = 1
@@ -173,7 +173,7 @@ flat(list: any): any
         i += 1
     out
 
-unique(list: any): any
+unique: any = (list: any)
     out = {}
     if list == nil return out 
     seen = {}
@@ -187,7 +187,7 @@ unique(list: any): any
         i += 1
     out
 
-zip(lists: any): any
+zip: any = (lists: any)
     out = {}
     if lists == nil or lists:len() == 0 return out 
     min_len = lists[1]:len()
@@ -207,7 +207,7 @@ zip(lists: any): any
         j += 1
     out
 
-from_pairs(pairs: any): any
+from_pairs: any = (pairs: any)
     out = {}
     if pairs == nil return out 
     i = 1
@@ -218,14 +218,14 @@ from_pairs(pairs: any): any
         i += 1
     out
 
-to_pairs(t: any): any
+to_pairs: any = (t: any)
     out = {}
     if t == nil return out 
     for k, v in t
         out[out:len() + 1] = {k, v}
     out
 
-pick(t: any, keys: any): any
+pick: any = (t: any, keys: any)
     out = {}
     if t == nil or keys == nil return out 
     i = 1
@@ -236,7 +236,7 @@ pick(t: any, keys: any): any
         i += 1
     out
 
-omit(t: any, keys: any): any
+omit: any = (t: any, keys: any)
     out = {}
     if t == nil return out 
     omit_set = {}
@@ -250,7 +250,7 @@ omit(t: any, keys: any): any
             out[k] = v
     out
 
-find(list: any, fn: any): any
+find: any = (list: any, fn: any)
     if list == nil return nil 
     i = 1
     while i <= list:len()
@@ -258,7 +258,7 @@ find(list: any, fn: any): any
         i += 1
     nil
 
-every(list: any, fn: any): bool
+every: bool = (list: any, fn: any)
     if list == nil return true 
     i = 1
     while i <= list:len()
@@ -266,7 +266,7 @@ every(list: any, fn: any): bool
         i += 1
     true
 
-some(list: any, fn: any): bool
+some: bool = (list: any, fn: any)
     if list == nil return false 
     i = 1
     while i <= list:len()

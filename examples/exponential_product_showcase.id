@@ -14,7 +14,7 @@ Pair: { x: f64, y: f64 }
 Entity: { id: i64, name: str }
 Node: { id: i64, next: i64 }
 
-@comp.define.derive("TouchApi", generate(meta) -> str
+@comp.define.derive("TouchApi", generate: str = (meta)
     acc = "/* " .. meta.name .. " */\n"
     for i = 1, meta:len().fields
         f = meta.fields[i]

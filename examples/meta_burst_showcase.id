@@ -13,7 +13,7 @@ Pair: { x: f64, y: f64, tag: str }
 
 # One line: apply TouchApi to all HasXY types AND emit omni C (ceiling + sweep comment).
 
-@comp.define.derive("TouchApi", generate(meta) -> str
+@comp.define.derive("TouchApi", generate: str = (meta)
     acc = ""
     for i = 1, meta:len().fields
         f = meta.fields[i]

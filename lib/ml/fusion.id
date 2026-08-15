@@ -1,7 +1,7 @@
 # ml.fusion — Kernel fusion rules (compile-time rewrite targets)
 
 # Adjacent op patterns the compiler should merge (documented contract for @trace)
-rules(): any
+rules: any = ()
     return {
         { pattern = { "linear", "relu" }, fused = "fused_linear_relu" },
         { pattern = { "linear", "gelu" }, fused = "fused_linear_gelu" },
@@ -10,12 +10,12 @@ rules(): any
         { pattern = { "layernorm", "linear" }, fused = "fused_ln_linear" },
     }
 
-can_fuse(layer_a, layer_b): bool
+can_fuse: bool = (layer_a, layer_b)
     if layer_a.type == "linear" and layer_b.type == "relu" return true
     if layer_a.type == "linear" and layer_b.type == "gelu" return true
     return false
 
-fuse_sequential(model): any
+fuse_sequential: any = (model)
     if model.type != "sequential" return model
     fused = {}
     i = 1

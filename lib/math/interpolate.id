@@ -5,24 +5,20 @@
 # Linear Interpolation
 # ═══════════════════════════════════════════════════════════════
 
-lerp(a: f64, b: f64, t: f64): f64
+lerp: f64 = (a: f64, b: f64, t: f64)
     a + (b - a) * t
-end
 
-clamp(a: f64, b: f64, t: f64): f64
+clamp: f64 = (a: f64, b: f64, t: f64)
     t = 0:max(1:min(t))
     a + (b - a) * t
-end
 
-unlerp(a: f64, b: f64, value: f64): f64
-    if b - a:abs() < 1e-10 return 0.0 end
+unlerp: f64 = (a: f64, b: f64, value: f64)
+    if b - a:abs() < 1e-10 return 0.0
     (value - a) / (b - a)
-end
 
-remap(value: f64, flo: f64, fhi: f64, tlo: f64, thi: f64): f64
+remap: f64 = (value: f64, flo: f64, fhi: f64, tlo: f64, thi: f64)
     t = unlerp(flo, fhi, value)
     lerp(tlo, thi, t)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Vector Interpolation
@@ -34,7 +30,6 @@ mix.v2 = (a: any, b: any, t: f64): any
         x = lerp(a.x, b.x, t),
         y = lerp(a.y, b.y, t),
     }
-end
 
 mix.v3 = (a: any, b: any, t: f64): any
     {
@@ -42,7 +37,6 @@ mix.v3 = (a: any, b: any, t: f64): any
         y = lerp(a.y, b.y, t),
         z = lerp(a.z, b.z, t),
     }
-end
 
 mix.v4 = (a: any, b: any, t: f64): any
     {
@@ -51,7 +45,6 @@ mix.v4 = (a: any, b: any, t: f64): any
         z = lerp(a.z, b.z, t),
         w = lerp(a.w, b.w, t),
     }
-end
 
 mix.color = (a: any, b: any, t: f64): any
     {
@@ -59,31 +52,29 @@ mix.color = (a: any, b: any, t: f64): any
         g = lerp(a.g, b.g, t):floor(),
         b = lerp(a.b, b.b, t):floor(),
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Spline Interpolation
 # ═══════════════════════════════════════════════════════════════
 
-cubic(a: f64, b: f64, c: f64, d: f64, t: f64): f64
+cubic: f64 = (a: f64, b: f64, c: f64, d: f64, t: f64)
     t2 = t * t
     t3 = t2 * t
     a * (-0.5 * t3 + t2 - 0.5 * t)
         + b * (1.5 * t3 - 2.5 * t2 + 1)
         + c * (-1.5 * t3 + 2 * t2 + 0.5 * t)
         + d * (0.5 * t3 - 0.5 * t2)
-end
 
-catmull(points: any, t: f64): f64
+catmull: f64 = (points: any, t: f64)
     n = points:len()
-    if n < 4 return 0.0 end
+    if n < 4 return 0.0
 
     segment = t * (n - 1)
     idx = segment:floor()
     frac = segment - idx
 
-    if idx < 0 idx = 0 end
-    if idx > n - 4 idx = n - 4 end
+    if idx < 0 idx = 0
+    if idx > n - 4 idx = n - 4
 
     p0 = points[idx + 1]
     p1 = points[idx + 2]
@@ -91,7 +82,6 @@ catmull(points: any, t: f64): f64
     p3 = points[idx + 4]
 
     cubic(p0, p1, p2, p3, frac)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Easing Functions
@@ -100,49 +90,38 @@ end
 ease = {}
 ease.linear = (t: f64): f64
     t
-end
 
 ease.inquad = (t: f64): f64
     t * t
-end
 
 ease.outquad = (t: f64): f64
     t * (2 - t)
-end
 
 ease.inoutquad = (t: f64): f64
     if t < 0.5
         2 * t * t
     else
         -1 + (4 - 2 * t) * t
-    end
-end
 
 ease.incubic = (t: f64): f64
     t * t * t
-end
 
 ease.outcubic = (t: f64): f64
     t -= 1
     t * t * t + 1
-end
 
 ease.inoutcubic = (t: f64): f64
     if t < 0.5
         4 * t * t * t
     else
         (t - 1) * (2 * t - 2) * (2 * t - 2) + 1
-    end
-end
 
 ease.inquart = (t: f64): f64
     t * t * t * t
-end
 
 ease.outquart = (t: f64): f64
     t -= 1
     1 - t * t * t * t
-end
 
 ease.inoutquart = (t: f64): f64
     if t < 0.5
@@ -150,51 +129,40 @@ ease.inoutquart = (t: f64): f64
     else
         t -= 1
         1 - 8 * t * t * t * t
-    end
-end
 
 ease.inexpo = (t: f64): f64
-    if t == 0 return 0.0 end
+    if t == 0 return 0.0
     2:pow(10 * (t - 1))
-end
 
 ease.outexpo = (t: f64): f64
-    if t == 1 return 1.0 end
+    if t == 1 return 1.0
     1 - 2:pow(-10 * t)
-end
 
 ease.inoutexpo = (t: f64): f64
-    if t == 0 return 0.0 end
-    if t == 1 return 1.0 end
+    if t == 0 return 0.0
+    if t == 1 return 1.0
     if t < 0.5
         0.5 * 2:pow(20 * t - 10)
     else
         1 - 0.5 * 2:pow(-20 * t + 10)
-    end
-end
 
 ease.insine = (t: f64): f64
     1 - t * math.pi / 2:cos()
-end
 
 ease.outsine = (t: f64): f64
     t * math.pi / 2:sin()
-end
 
 ease.inoutsine = (t: f64): f64
     -0.5 * (math.pi * t:cos() - 1)
-end
 
 ease.inback = (t: f64): f64
     s = 1.70158
     t * t * ((s + 1) * t - s)
-end
 
 ease.outback = (t: f64): f64
     s = 1.70158
     t -= 1
     t * t * ((s + 1) * t + s) + 1
-end
 
 ease.inoutback = (t: f64): f64
     s = 1.70158 * 1.525
@@ -203,30 +171,24 @@ ease.inoutback = (t: f64): f64
     else
         t = 2 * t - 2
         0.5 * (t * t * ((s + 1) * t + s) + 2)
-    end
-end
 
 ease.inelastic = (t: f64): f64
-    if t == 0 return 0.0 end
+    if t == 0 return 0.0
     if t == 1 return 1.0 end
     -2:pow(10 * t - 10) * (t * 10 - 10.75) * (2 * math.pi / 3):sin()
-end
 
 ease.outelastic = (t: f64): f64
-    if t == 0 return 0.0 end
-    if t == 1 return 1.0 end
+    if t == 0 return 0.0
+    if t == 1 return 1.0
     2:pow(-10 * t) * (t * 10 - 0.75) * (2 * math.pi / 3):sin() + 1
-end
 
 ease.inoutelastic = (t: f64): f64
-    if t == 0 return 0.0 end
-    if t == 1 return 1.0 end
+    if t == 0 return 0.0
+    if t == 1 return 1.0
     if t < 0.5
         -0.5 * 2:pow(20 * t - 10) * (20 * t - 11.125) * (2 * math.pi / 4.5):sin()
     else
         0.5 * 2:pow(-20 * t + 10) * (20 * t - 11.125) * (2 * math.pi / 4.5):sin() + 1
-    end
-end
 
 ease.outbounce = (t: f64): f64
     if t < 1 / 2.75
@@ -240,20 +202,15 @@ ease.outbounce = (t: f64): f64
     else
         t -= 2.625 / 2.75
         7.5625 * t * t + 0.984375
-    end
-end
 
 ease.inbounce = (t: f64): f64
     1 - ease.outbounce(1 - t)
-end
 
 ease.inoutbounce = (t: f64): f64
     if t < 0.5
         0.5 * ease.inbounce(2 * t)
     else
         0.5 * ease.outbounce(2 * t - 1) + 0.5
-    end
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Spring Interpolation
@@ -261,19 +218,17 @@ end
 
 spring = {}
 spring.step = (t: f64, damping: f64, frequency: f64): f64
-    if damping == nil damping = 0.5 end
-    if frequency == nil frequency = 3 end
+    if damping == nil damping = 0.5
+    if frequency == nil frequency = 3
 
     decay = -damping * t * 10:exp()
     oscillation = frequency * t * math.pi * 2:cos()
     1 - decay * oscillation
-end
 
 spring.over = (t: f64, overshoot: f64): f64
-    if overshoot == nil overshoot = 1.70158 end
+    if overshoot == nil overshoot = 1.70158
     t -= 1
     t * t * ((overshoot + 1) * t + overshoot) + 1
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Bezier Curves
@@ -283,43 +238,36 @@ bezier = {}
 bezier.quad = (p0: f64, p1: f64, p2: f64, t: f64): f64
     mt = 1 - t
     mt * mt * p0 + 2 * mt * t * p1 + t * t * p2
-end
 
 bezier.cubic = (p0: f64, p1: f64, p2: f64, p3: f64, t: f64): f64
     mt = 1 - t
     mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Smooth Step
 # ═══════════════════════════════════════════════════════════════
 
-smoothstep(edge0: f64, edge1: f64, x: f64): f64
+smoothstep: f64 = (edge0: f64, edge1: f64, x: f64)
     t = 0:max(1:min((x - edge0) / (edge1 - edge0)))
     t * t * (3 - 2 * t)
-end
 
-smoother(edge0: f64, edge1: f64, x: f64): f64
+smoother: f64 = (edge0: f64, edge1: f64, x: f64)
     t = 0:max(1:min((x - edge0) / (edge1 - edge0)))
     t * t * t * (t * (6 * t - 15) + 10)
-end
 
-slope(edge0: f64, edge1: f64, x: f64): f64
+slope: f64 = (edge0: f64, edge1: f64, x: f64)
     t = 0:max(1:min((x - edge0) / (edge1 - edge0)))
     6 * t * (1 - t) / (edge1 - edge0)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Noise Interpolation
 # ═══════════════════════════════════════════════════════════════
 
-fade(t: f64): f64
+fade: f64 = (t: f64)
     t * t * t * (t * (t * 6 - 15) + 10)
-end
 
-noise(a: f64, b: f64, t: f64): f64
+noise: f64 = (a: f64, b: f64, t: f64)
     a + t * (b - a)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

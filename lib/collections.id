@@ -1,63 +1,63 @@
 # collections — basic data structures over Duo tables
 
-list_new(): any
+list_new: any = ()
     {}
 
-list_push(list: any, value: any): void
+list_push = (list: any, value: any)
     list:insert(value)
 
-list_pop(list: any): any
+list_pop: any = (list: any)
     list:remove()
 
-list_get(list: any, index: i64): any
+list_get: any = (list: any, index: i64)
     list[index]
 
 list_list: any:len(): i64
     return list:len()
 
-stack_new(): any
+stack_new: any = ()
     {}
 
-stack_push(stack: any, value: any): void
+stack_push = (stack: any, value: any)
     stack:insert(value)
 
-stack_pop(stack: any): any
+stack_pop: any = (stack: any)
     stack:remove()
 
-queue_new(): any
+queue_new: any = ()
     {}
 
-queue_enqueue(q: any, value: any): void
+queue_enqueue = (q: any, value: any)
     q:insert(value)
 
-queue_dequeue(q: any): any
+queue_dequeue: any = (q: any)
     n = q:len()
     if n == 0
         nil
     q:remove(1)
 
-map_new(): any
+map_new: any = ()
     {}
 
-map_set(m: any, key: any, value: any): void
+map_set = (m: any, key: any, value: any)
     m[key] = value
 
-map_get(m: any, key: any): any
+map_get: any = (m: any, key: any)
     m[key]
 
-map_has(m: any, key: any): bool
+map_has: bool = (m: any, key: any)
     m[key] != nil
 
-set_new(): any
+set_new: any = ()
     {}
 
-set_add(s: any, value: any): void
+set_add = (s: any, value: any)
     s[value] = true
 
-set_has(s: any, value: any): bool
+set_has: bool = (s: any, value: any)
     s[value] != nil
 
-is_array(t: any): bool
+is_array: bool = (t: any)
     if type(t) != "table" return false 
     if t[1] == nil return true 
     i = 2
@@ -67,47 +67,47 @@ is_array(t: any): bool
         if k < 1 return false 
     true
 
-remove_at(list: any, index: i64): any
+remove_at: any = (list: any, index: i64)
     list:remove(index)
 
-list_insert(list: any, index: i64, value: any): void
+list_insert = (list: any, index: i64, value: any)
     list:insert(index, value)
 
-list_clear(list: any): void
+list_clear = (list: any)
     if list == nil return 
     i = list:len()
     while i > 0
         list:remove(i)
         i -= 1
 
-map_delete(m: any, key: any): void
+map_delete = (m: any, key: any)
     if m == nil return 
     m[key] = nil
 
-map_keys(m: any): any
+map_keys: any = (m: any)
     out = {}
     if m == nil return out 
     for k, _ in m
         out:insert(k)
     out
 
-map_values(m: any): any
+map_values: any = (m: any)
     out = {}
     if m == nil return out 
     for _, v in m
         out:insert(v)
     out
 
-set_remove(s: any, value: any): void
+set_remove = (s: any, value: any)
     if s == nil return 
     s[value] = nil
 
-set_clear(s: any): void
+set_clear = (s: any)
     if s == nil return 
     for k, _ in s
         s[k] = nil
 
-set_union(s1: any, s2: any): any
+set_union: any = (s1: any, s2: any)
     out = {}
     if s1 != nil
         for k, _ in s1 out[k] = true 
@@ -115,14 +115,14 @@ set_union(s1: any, s2: any): any
         for k, _ in s2 out[k] = true 
     out
 
-set_intersection(s1: any, s2: any): any
+set_intersection: any = (s1: any, s2: any)
     out = {}
     if s1 == nil or s2 == nil return out 
     for k, _ in s1
         if s2[k] != nil out[k] = true 
     out
 
-set_difference(s1: any, s2: any): any
+set_difference: any = (s1: any, s2: any)
     out = {}
     if s1 == nil return out 
     for k, _ in s1

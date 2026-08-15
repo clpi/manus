@@ -12,7 +12,7 @@ Point: { x: f64, y: f64, tag: str }
 Pair: { x: f64, y: f64, tag: str }
 Label: { tag: str }
 
-@comp.define.derive("PairApi", generate(meta) -> str
+@comp.define.derive("PairApi", generate: str = (meta)
     if meta.left != nil
         "/* omni " .. meta.left.name .. " x " .. meta.right.name .. " */\n"
     else

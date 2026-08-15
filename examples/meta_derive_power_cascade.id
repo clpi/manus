@@ -9,7 +9,7 @@ Vec2: { x: f64, y: f64 }
 Vec3: { x: f64, y: f64, z: f64 }
 Pt: { x: f64, y: f64 }
 
-@comp.define.derive("SubsetStub", generate(meta) -> str
+@comp.define.derive("SubsetStub", generate: str = (meta)
     "/* subset " .. meta.name .. " mask=" .. to(str)(meta.mask) .. " */\n"
 end)
 

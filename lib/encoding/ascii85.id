@@ -123,8 +123,6 @@ decode: str = (src: str)
 max_encoded_n: i64
 fun(__proj_v)
   return __proj_v:len()
-end
 fun(__proj_v)
   return __proj_v:i64()
-end
 to(i64)((n + 3) / 4) * 5 + 4

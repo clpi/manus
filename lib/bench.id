@@ -3,18 +3,15 @@
 now(): float
     # Placeholder: native @bench uses compiler-injected timing in generated main.
     return 0.0
-end
 
-format_ns(ns: float): str
+format_ns: str = (ns: float)
     if ns >= 1e9
         return "%.3fs":format(ns / 1e9)
     elseif ns >= 1e6
         return "%.3fms":format(ns / 1e6)
     elseif ns >= 1e3
         return "%.3fus":format(ns / 1e3)
-    end
     return "%.0fns":format(ns)
-end
 
 # Registry of supported compiler directives (mirrors src/directives.zig).
 attrs = {

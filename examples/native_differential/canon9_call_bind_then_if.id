@@ -6,6 +6,6 @@ scan: tok = (pos: i64)
     if k == 1
         return { kind = 1, start = pos, len = 1 }
     { kind = 2, start = pos, len = 1 }
-main(): i64
+main: i64 = ()
     t: tok = scan(9)
     t.kind

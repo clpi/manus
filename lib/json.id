@@ -20,17 +20,15 @@ empty_object = {}
 # JSON arrays are tables whose every key is a positive integer. A table with
 # only string keys (an object) is not an array; an empty table is treated as
 # an empty array (matches Duo/Lua table usage where {} grows as a sequence).
-is_array(t: any): bool
-    if type(t) != "table" return false end
+is_array: bool = (t: any)
+    if type(t) != "table" return false
     for k, _ in t
-        if type(k) != "number" return false end
-        if k < 1 return false end
-    end
+        if type(k) != "number" return false
+        if k < 1 return false
     true
-end
 
-escape(s: any): str
-    if s == nil return "" end
+escape: str = (s: any)
+    if s == nil return ""
     out = {}
     n = s:len()
     i = 1
@@ -57,47 +55,35 @@ escape(s: any): str
             out[out:len() + 1] = "\\u00" .. hex:sub(hi, hi) .. hex:sub(lo, lo)
         else
             out[out:len() + 1] = s:sub(i, i)
-        end
         i += 1
-    end
     out:concat()
-end
 
-encode(val: any): str
-    if val == nil return "null" end
+encode: str = (val: any)
+    if val == nil return "null"
     if type(val) == "boolean"
-        if val return "true" else return "false" end
-    end
+        if val return "true" else return "false"
     if type(val) == "number"
-        if val != val return "null" end
-        if val == math.huge return "1e999" end
-        if val == -math.huge return "-1e999" end
+        if val != val return "null"
+        if val == math.huge return "1e999"
+        if val == -math.huge return "-1e999"
         return val:to(str)
-    end
     if type(val) == "string"
         return "\"" .. escape(val) .. "\""
-    end
     if type(val) == "table"
-        if val == empty_object return "{}" end
+        if val == empty_object return "{}"
         if is_array(val)
             parts = {}
             i = 1
             while val[i] != nil
                 parts[parts:len() + 1] = encode(val[i])
                 i += 1
-            end
             return "[" .. parts:concat(",") .. "]"
-        end
         parts = {}
         for k, v in val
             if type(k) == "string"
                 parts[parts:len() + 1] = encode(k) .. ":" .. encode(v)
-            end
-        end
         return "{" .. parts:concat(",") .. "}"
-    end
     "null"
-end
 
 
 
@@ -114,11 +100,8 @@ json_skip_ws(cur: any)
             cur.i = cur.i + 1
         else
             break
-        end
-    end
-end
 
-json_hex4(s): i64
+json_hex4: i64 = (s)
     v = 0
     i = 1
     while i <= 4
@@ -130,29 +113,23 @@ json_hex4(s): i64
             d = b - 55
         elseif b >= 97 and b <= 102
             d = b - 87
-        end
         v = v * 16 + d
         i += 1
-    end
     v
-end
 
 json_utf8_char(cp): str
     if cp < 128
         return cp:char()
-    end
     if cp < 2048
         b1 = cp / 64:floor() + 192
         b2 = (cp % 64) + 128
         return b1:char() .. b2:char()
-    end
     b1 = cp / 4096:floor() + 224
     b2 = (cp % 4096) / 64:floor() + 128
     b3 = (cp % 64) + 128
     return b1:char() .. b2:char() .. b3:char()
-end
 
-json_string(cur): any
+json_string: any = (cur)
     cur.i = cur.i + 1
     s = cur.s
     n = s:len()
@@ -162,7 +139,6 @@ json_string(cur): any
         if b == 34
             cur.i = cur.i + 1
             return out:concat()
-        end
         if b == 92
             cur.i = cur.i + 1
             e = s:byte(cur.i)
@@ -189,7 +165,6 @@ json_string(cur): any
                 cur.i = cur.i + 4
             else
                 out[out:len() + 1] = e:char()
-            end
             cur.i = cur.i + 1
         else
             # accumulate a run of plain chars up to the next quote/backslash
@@ -200,16 +175,12 @@ json_string(cur): any
             cur.i = cur.i + 1
             while cur.i <= n
                 b2 = s:byte(cur.i)
-                if b2 == 34 or b2 == 92 break end
+                if b2 == 34 or b2 == 92 break
                 cur.i = cur.i + 1
-            end
             out[out:len() + 1] = s:sub(start, cur.i - 1)
-        end
-    end
     out:concat()
-end
 
-json_number(cur): any
+json_number: any = (cur)
     s = cur.s
     start = cur.i
     n = s:len()
@@ -219,16 +190,13 @@ json_number(cur): any
             cur.i = cur.i + 1
         else
             break
-        end
-    end
     num_str = s:sub(start, cur.i - 1)
     num_str:to(i64)
-end
 
-json_value(cur): any
+json_value: any = (cur)
     json_skip_ws(cur)
     s = cur.s
-    if cur.i > s:len() return nil end
+    if cur.i > s:len() return nil
     b = s:byte(cur.i)
     if b == 123
         cur.i = cur.i + 1
@@ -237,7 +205,6 @@ json_value(cur): any
         if cur.s:byte(cur.i) == 125
             cur.i = cur.i + 1
             return obj
-        end
         while true
             json_skip_ws(cur)
             key = json_string(cur)
@@ -254,10 +221,7 @@ json_value(cur): any
                 break
             else
                 break
-            end
-        end
         return obj
-    end
     if b == 91
         cur.i = cur.i + 1
         arr = {}
@@ -266,7 +230,6 @@ json_value(cur): any
         if cur.s:byte(cur.i) == 93
             cur.i = cur.i + 1
             return arr
-        end
         while true
             val = json_value(cur)
             arrn += 1
@@ -280,34 +243,25 @@ json_value(cur): any
                 break
             else
                 break
-            end
-        end
         return arr
-    end
     if b == 34
         return json_string(cur)
-    end
     if b == 116
         cur.i = cur.i + 4
         return true
-    end
     if b == 102
         cur.i = cur.i + 5
         return false
-    end
     if b == 110
         cur.i = cur.i + 4
         return nil
-    end
     json_number(cur)
-end
 
-decode(s: str): any
-    if s == nil or s == "" return nil end
+decode: any = (s: str)
+    if s == nil or s == "" return nil
     cur = {}
     cur.s = s
     cur.i = 1
     json_skip_ws(cur)
     json_value(cur)
-end
 

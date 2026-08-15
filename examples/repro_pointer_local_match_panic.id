@@ -7,7 +7,7 @@
 # while, or the match each make it compile.
 #
 # Repro: duo compile examples/repro_pointer_local_match_panic.id
-f(n: i64): i64
+f: i64 = (n: i64)
   code = mem.alloc(64)
   mem.zero(code, 64)
   pc: i64 = 0

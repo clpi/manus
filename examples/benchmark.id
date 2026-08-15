@@ -23,7 +23,7 @@ primes(limit: i64)
     return count
 
 # 3. Mandelbrot core iteration
-mandel(cx: f64, cy: f64): i64
+mandel: i64 = (cx: f64, cy: f64)
     zx: f64 = 0.0
     zy: f64 = 0.0
     i: i64 = 0
@@ -38,10 +38,10 @@ mandel(cx: f64, cy: f64): i64
     return i
 
 # 4. Spectral-norm style grid
-entry(i: i64, j: i64): f64
+entry: f64 = (i: i64, j: i64)
     return 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1)
 
-grid(size: i64): f64
+grid: f64 = (size: i64)
     total: f64 = 0.0
     i: i64 = 0
     while i < size
@@ -53,7 +53,7 @@ grid(size: i64): f64
     return total
 
 # 5. N-body physics
-nbody(steps: i64): f64
+nbody: f64 = (steps: i64)
     x1: f64 = 0.0
     y1: f64 = 0.0
     vx1: f64 = 0.0
@@ -134,7 +134,7 @@ trig(n: i64)
     return sum
 
 # 9. String stdlib chain: len + rep in a hot loop
-chain(n: i64): i64
+chain: i64 = (n: i64)
     s = "a":rep(1000)
     total = 0
     i = 1
@@ -324,7 +324,7 @@ churn(n: i64)
     return sum
 
 # 24. Small matrix multiply (nested loop + indexed table access)
-matrix(n: i64): i64
+matrix: i64 = (n: i64)
     size: i64 = 200
     a = {}
     b = {}
@@ -386,7 +386,7 @@ gcd(n: i64)
     return sum
 
 # 27. Collatz chain length accumulation (unpredictable branching)
-collatz(n: i64): i64
+collatz: i64 = (n: i64)
     total: i64 = 0
     i: i64 = 1
     while i <= n
@@ -498,7 +498,7 @@ leven(n: i64)
     return sum
 
 # 33. Sieve of Eratosthenes (boolean array)
-sieve(n: i64): i64
+sieve: i64 = (n: i64)
     prime = {}
     i: i64 = 0
     while i <= n
@@ -522,7 +522,7 @@ sieve(n: i64): i64
     return count
 
 # 34. Fenwick tree (point update + prefix query)
-fenwick(size: i64): i64
+fenwick: i64 = (size: i64)
     tree = {}
     i: i64 = 0
     while i <= size
@@ -577,7 +577,7 @@ run_n: i64:len()
     return count + 1
 
 # 37. Population count / Hamming weight reduction
-weight(n: i64): i64
+weight: i64 = (n: i64)
     sum: i64 = 0
     i: i64 = 1
     while i <= n

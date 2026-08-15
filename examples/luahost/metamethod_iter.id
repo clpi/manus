@@ -1,4 +1,4 @@
-custom_iter(state: any, index: any): any
+custom_iter: any = (state: any, index: any)
     next = index + 1
     if next > 3
         return nil

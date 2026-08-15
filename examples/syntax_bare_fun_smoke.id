@@ -16,7 +16,7 @@ pick: i64 = (a: i64, b: i64, c: i64, value: i64)
       value * 3
 
 run_smoke: i64 = ()
-  x = if 1 < 2 10 else if 2 < 3 20 else 30 end end
+  x = if 1 < 2 10 else if 2 < 3 20 else 30
 add(1, 2) + mul(3, 4) + pick(1, 2, 3, 5) + x
 
 RESULT = run_smoke()

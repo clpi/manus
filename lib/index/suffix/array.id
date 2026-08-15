@@ -1,7 +1,7 @@
 # index/suffix/array — suffix array for substring search
 # Home topology: index/suffix/array.id projects the array table for suffix search.
 
-build(data: str): any
+build: any = (data: str)
     if data == nil return {data = "", sa = {}} 
     n = data:len()
     sa = {}
@@ -18,7 +18,7 @@ build(data: str): any
             j -= 1
     {data = data, sa = sa}
 
-lookup(store: any, pattern: str): any
+lookup: any = (store: any, pattern: str)
     data = store.data
     sa = store.sa
     n = data:len()
@@ -61,8 +61,8 @@ lookup(store: any, pattern: str): any
         results[results:len() + 1] = sa[i] - 1
     results
 
-findall(store: any, pattern: str): any
+findall: any = (store: any, pattern: str)
     lookup(store, pattern)
 
-contains(store: any, pattern: str): bool
+contains: bool = (store: any, pattern: str)
     lookup(store, pattern):len() > 0

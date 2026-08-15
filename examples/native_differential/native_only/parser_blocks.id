@@ -100,7 +100,7 @@ max_depth: i64 = (src: str)
         pos = s.start + s.len
     best
 
-main(): i64
+main: i64 = ()
     # Real Duo source in canonical form (no `do`, no `then`), three levels deep:
     #   function -> while -> if,  closed by three matching `end`s
     max_depth("function f(n) while n > 0 if n == 1 return 1 end end end")

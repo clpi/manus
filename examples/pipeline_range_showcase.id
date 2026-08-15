@@ -11,7 +11,7 @@
     init = "0",
 })
 
-total(): i64
+total: i64 = ()
     @c.call("sum_range")
 
 print("=== @comp.pipeline range showcase ===")

@@ -21,7 +21,7 @@ static inline int64_t acc_add(int64_t a, int64_t b) { return a + b; }
 static const int64_t pipeline_data[] = { 1, 2, 3, 4, 5 };
 ]])
 
-total(): i64
+total: i64 = ()
     @c.call("sum_mapped", @(pipeline_data), @(5))
 
 print("=== @comp.pipeline table showcase ===")

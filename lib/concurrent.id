@@ -7,7 +7,7 @@ recv = sync.recv
 
 # Spawn a task and return a future channel (capacity 1) for its result.
 # result shape: {ok=bool, val=any, err=any}
-go(fn: any, ...args): any
+go: any = (fn: any, ...args)
     fut = sync.channel(1)
     args = {args}
     closure: void = ()
@@ -20,7 +20,7 @@ go(fn: any, ...args): any
     fut
 
 # Await a future (blocks/yields until result available).
-wait(fut: any): any
+wait: any = (fut: any)
     r = recv(fut)
     if r == nil return nil 
     if r.ok
@@ -29,7 +29,7 @@ wait(fut: any): any
         error(r.err, 2)
 
 # Run N tasks concurrently; return table of results in order.
-all(tasks: any, ...args): any
+all: any = (tasks: any, ...args)
     futs = {}
     # tasks can be a list, or varargs
     if type(tasks) == "function"
@@ -62,7 +62,7 @@ race(futs: any): any
 # Select: poll channels round-robin until one has data.
 # cases = {{ch=channel, fn=handler}, ...}
 # Returns when one case fires; calls its fn with the value.
-select(cases: any): any
+select: any = (cases: any)
     while true
         for _, c in cases
             val = sync.peek(c.ch)
@@ -72,7 +72,7 @@ select(cases: any): any
         sync.yield()
 
 # Semaphore: counting semaphore built on a buffered channel.
-semaphore(n: i64): any
+semaphore: any = (n: i64)
     s = sync.channel(n)
     for _ = 1, n send(s, true) 
     {
@@ -82,7 +82,7 @@ semaphore(n: i64): any
     }
 
 # WaitGroup: wait for N tasks to complete.
-waitgroup(n: i64): any
+waitgroup: any = (n: i64)
     ch = sync.channel(n)
     return {
         done: void = ()send(ch, true),

@@ -5,24 +5,22 @@
 # Keyframe
 # ═══════════════════════════════════════════════════════════════
 
-keyframe_new(time: f64, value: any): any
+keyframe_new: any = (time: f64, value: any)
     {
         time = time,
         value = value,
         easing = "linear",
     }
-end
 
-keyframe_set_easing(kf: any, easing: str): any
+keyframe_set_easing: any = (kf: any, easing: str)
     kf.easing = easing
     kf
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Animation Curve
 # ═══════════════════════════════════════════════════════════════
 
-curve_new(name: str): any
+curve_new: any = (name: str)
     {
         name = name,
         keyframes = {},
@@ -30,9 +28,8 @@ curve_new(name: str): any
         loop = false,
         ping_pong = false,
     }
-end
 
-curve_add_keyframe(curve: any, time: f64, value: any): void
+curve_add_keyframe = (curve: any, time: f64, value: any)
     kf = keyframe_new(time, value)
     curve.keyframes[curve:len().keyframes + 1] = kf
 
@@ -42,18 +39,14 @@ curve_add_keyframe(curve: any, time: f64, value: any): void
     # Update duration
     if time > curve.duration
         curve.duration = time
-    end
-end
 
-curve_set_keyframe_easing(curve: any, index: i64, easing: str): void
+curve_set_keyframe_easing = (curve: any, index: i64, easing: str)
     if curve.keyframes[index]
         curve.keyframes[index].easing = easing
-    end
-end
 
-curve_evaluate(curve: any, time: f64): any
-    if curve:len().keyframes == 0 return nil end
-    if curve:len().keyframes == 1 return curve.keyframes[1].value end
+curve_evaluate: any = (curve: any, time: f64)
+    if curve:len().keyframes == 0 return nil
+    if curve:len().keyframes == 1 return curve.keyframes[1].value
 
     # Handle loop/ping-pong
     if curve.loop
@@ -63,8 +56,6 @@ curve_evaluate(curve: any, time: f64): any
         time = time % curve.duration
         if cycle % 2 == 1
             time = curve.duration - time
-        end
-    end
 
     # Find surrounding keyframes
     prev = curve.keyframes[1]
@@ -75,11 +66,9 @@ curve_evaluate(curve: any, time: f64): any
             prev = curve.keyframes[i]
             nxt = curve.keyframes[i + 1]
             break
-        end
-    end
 
     # Calculate interpolation factor
-    if nxt.time == prev.time return prev.value end
+    if nxt.time == prev.time return prev.value
     t = (time - prev.time) / (nxt.time - prev.time)
 
     # Apply easing
@@ -87,57 +76,47 @@ curve_evaluate(curve: any, time: f64): any
 
     # Interpolate value
     interpolate_values(prev.value, nxt.value, t)
-end
 
-curve_get_duration(curve: any): f64
+curve_get_duration: f64 = (curve: any)
     curve.duration
-end
 
-curve_set_loop(curve: any, loop: bool): void
+curve_set_loop = (curve: any, loop: bool)
     curve.loop = loop
-end
 
-curve_set_ping_pong(curve: any, ping_pong: bool): void
+curve_set_ping_pong = (curve: any, ping_pong: bool)
     curve.ping_pong = ping_pong
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Animation Clip
 # ═══════════════════════════════════════════════════════════════
 
-clip_new(name: str): any
+clip_new: any = (name: str)
     {
         name = name,
         curves = {},
         duration = 0,
         fps = 30,
     }
-end
 
-clip_add_curve(clip: any, curve: any): void
+clip_add_curve = (clip: any, curve: any)
     clip.curves[curve.name] = curve
     if curve.duration > clip.duration
         clip.duration = curve.duration
-    end
-end
 
-clip_evaluate(clip: any, time: f64): any
+clip_evaluate: any = (clip: any, time: f64)
     result = {}
     for name, curve in clip.curves
         result[name] = curve_evaluate(curve, time)
-    end
     result
-end
 
-clip_set_fps(clip: any, fps: i64): void
+clip_set_fps = (clip: any, fps: i64)
     clip.fps = fps
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Animation Player
 # ═══════════════════════════════════════════════════════════════
 
-player_new(): any
+player_new: any = ()
     {
         clips = {},
         current_clip = nil,
@@ -146,39 +125,32 @@ player_new(): any
         speed = 1.0,
         callbacks = {},
     }
-end
 
-player_add_clip(player: any, clip: any): void
+player_add_clip = (player: any, clip: any)
     player.clips[clip.name] = clip
-end
 
-player_play(player: any, clip_name: str, start_time: f64): void
+player_play = (player: any, clip_name: str, start_time: f64)
     player.current_clip = clip_name
     player.current_time = start_time or 0
     player.playing = true
-end
 
-player_stop(player: any): void
+player_stop = (player: any)
     player.playing = false
-end
 
-player_pause(player: any): void
+player_pause = (player: any)
     player.playing = false
-end
 
-player_resume(player: any): void
+player_resume = (player: any)
     player.playing = true
-end
 
-player_set_speed(player: any, speed: f64): void
+player_set_speed = (player: any, speed: f64)
     player.speed = speed
-end
 
-player_update(player: any, delta_time: f64): any
-    if not player.playing or player.current_clip == nil return nil end
+player_update: any = (player: any, delta_time: f64)
+    if not player.playing or player.current_clip == nil return nil
 
     clip = player.clips[player.current_clip]
-    if clip == nil return nil end
+    if clip == nil return nil
 
     player.current_time += delta_time * player.speed
 
@@ -190,13 +162,9 @@ player_update(player: any, delta_time: f64): any
                 if curve.loop
                     player.current_time = player.current_time % clip.duration
                     break
-                end
-            end
         else
             player.current_time = clip.duration
             player.playing = false
-        end
-    end
 
     # Evaluate clip
     result = clip_evaluate(clip, player.current_time)
@@ -204,58 +172,48 @@ player_update(player: any, delta_time: f64): any
     # Trigger callbacks
     for callback in player.callbacks
         callback(result, player.current_time)
-    end
 
     result
-end
 
-player_add_callback(player: any, callback: any): void
+player_add_callback = (player: any, callback: any)
     player.callbacks[player:len().callbacks + 1] = callback
-end
 
-player_get_time(player: any): f64
+player_get_time: f64 = (player: any)
     player.current_time
-end
 
-player_is_playing(player: any): bool
+player_is_playing: bool = (player: any)
     player.playing
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Animation State Machine
 # ═══════════════════════════════════════════════════════════════
 
-state_machine_new(): any
+state_machine_new: any = ()
     {
         states = {},
         current_state = nil,
         transitions = {},
     }
-end
 
-state_machine_add_state(sm: any, name: str, clip_name: str): void
+state_machine_add_state = (sm: any, name: str, clip_name: str)
     sm.states[name] = {
         clip_name = clip_name,
         transitions = {},
     }
-end
 
-state_machine_add_transition(sm: any, from: str, to: str, condition: any): void
+state_machine_add_transition = (sm: any, from: str, to: str, condition: any)
     if sm.transitions[from] == nil
         sm.transitions[from] = {}
-    end
     sm.transitions[from][sm:len().transitions[from] + 1] = {
         to = to,
         condition = condition,
     }
-end
 
-state_machine_set_state(sm: any, state_name: str): void
+state_machine_set_state = (sm: any, state_name: str)
     sm.current_state = state_name
-end
 
-state_machine_update(sm: any, params: any): any
-    if sm.current_state == nil return nil end
+state_machine_update: any = (sm: any, params: any)
+    if sm.current_state == nil return nil
 
     # Check transitions
     transitions = sm.transitions[sm.current_state]
@@ -268,9 +226,6 @@ state_machine_update(sm: any, params: any): any
                     from = sm.current_state,
                     to = transition.to,
                 }
-            end
-        end
-    end
 
     # Return current state info
     state = sm.states[sm.current_state]
@@ -278,23 +233,21 @@ state_machine_update(sm: any, params: any): any
         state = sm.current_state,
         clip_name = state.clip_name,
     }
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Procedural Animation
 # ═══════════════════════════════════════════════════════════════
 
-procedural_sine(time: f64, frequency: f64, amplitude: f64, phase: f64): f64
-    if frequency == nil frequency = 1 end
-    if amplitude == nil amplitude = 1 end
-    if phase == nil phase = 0 end
+procedural_sine: f64 = (time: f64, frequency: f64, amplitude: f64, phase: f64)
+    if frequency == nil frequency = 1
+    if amplitude == nil amplitude = 1
+    if phase == nil phase = 0
     amplitude * 2 * math.pi * frequency * time + phase:sin()
-end
 
-procedural_noise(time: f64, frequency: f64, amplitude: f64): f64
+procedural_noise: f64 = (time: f64, frequency: f64, amplitude: f64)
     # Value noise using hash-based interpolation
-    if frequency == nil frequency = 1 end
-    if amplitude == nil amplitude = 1 end
+    if frequency == nil frequency = 1
+    if amplitude == nil amplitude = 1
 
     t = time * frequency
     # Integer and fractional parts
@@ -309,55 +262,46 @@ procedural_noise(time: f64, frequency: f64, amplitude: f64): f64
         h = (n * 2654435761) & 0xFFFFFFFF
         h = ((h >> 16) ~ h) & 0xFFFFFFFF
         (h & 0xFFFF) / 65535.0
-    end
 
     v0 = _hash(i0)
     v1 = _hash(i0 + 1)
 
     amplitude * (v0 + fade * (v1 - v0))
-end
 
-procedural_bounce(time: f64, period: f64, height: f64): f64
-    if period == nil period = 1 end
-    if height == nil height = 1 end
+procedural_bounce: f64 = (time: f64, period: f64, height: f64)
+    if period == nil period = 1
+    if height == nil height = 1
     t = time % period
     # Parabola
     height * (1 - (2 * t / period - 1) ^ 2)
-end
 
-procedural_wobble(time: f64, frequency: f64, damping: f64): f64
-    if frequency == nil frequency = 5 end
+procedural_wobble: f64 = (time: f64, frequency: f64, damping: f64)
+    if frequency == nil frequency = 5
     if damping == nil damping = 2 end
     -damping * time:exp() * 2 * math.pi * frequency * time:cos()
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Utility Functions
 # ═══════════════════════════════════════════════════════════════
 
-apply_easing(t: f64, easing: str): f64
-    if easing == "linear" return t end
-    if easing == "ease_in" return t * t end
-    if easing == "ease_out" return t * (2 - t) end
+apply_easing: f64 = (t: f64, easing: str)
+    if easing == "linear" return t
+    if easing == "ease_in" return t * t
+    if easing == "ease_out" return t * (2 - t)
     if easing == "ease_in_out"
         if t < 0.5
             return 2 * t * t
         else
             return -1 + (4 - 2 * t) * t
-        end
-    end
     if easing == "bounce"
         if t < 0.5
             return 4 * t * t
         else
             t -= 0.5
             return 1 - 8 * t * t + 2 * t
-        end
-    end
     t
-end
 
-interpolate_values(a: any, b: f64, t: f64): any
+interpolate_values: any = (a: any, b: f64, t: f64)
     if type(a) == "number"
         return a + (b - a) * t
     elseif type(a) == "table"
@@ -367,12 +311,8 @@ interpolate_values(a: any, b: f64, t: f64): any
                 result[k] = v + (b[k] - v) * t
             else
                 result[k] = v
-            end
-        end
         return result
-    end
     a
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Module exports

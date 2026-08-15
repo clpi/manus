@@ -51,165 +51,122 @@ CONV_F64 = { "convert_i32_s", "convert_i32_u", "convert_i64_s", "convert_i64_u",
 # per type, contiguous, immediately after the conversion blocks.
 REINTERPRET_BASE = 188
 
-is_float(ty: str): i64
+is_float: i64 = (ty: str)
   if ty == "f32" or ty == "f64"
     return 1
-  end
   0
-end
 
-type_index(ty: str): i64
+type_index: i64 = (ty: str)
   i: i64 = 1
   while i <= TYPE_COUNT
     if TYPES[i] == ty
       return i
-    end
     i += 1
-  end
   0
-end
 
 # Position of `name` within its family order, or -1. Comparison and
 # arithmetic orders are disjoint per class, so a name determines its kind.
-cmp_index(ty: str, name: str): i64
+cmp_index: i64 = (ty: str, name: str)
   i: i64 = 1
   if is_float(ty) == 1
     while i <= 6
       if FLT_CMP[i] == name
         return i - 1
-      end
       i += 1
-    end
     return -1
-  end
   while i <= 11
     if INT_CMP[i] == name
       return i - 1
-    end
     i += 1
-  end
   -1
-end
 
-alu_index(ty: str, name: str): i64
+alu_index: i64 = (ty: str, name: str)
   i: i64 = 1
   if is_float(ty) == 1
     while i <= 14
       if FLT_ALU[i] == name
         return i - 1
-      end
       i += 1
-    end
     return -1
-  end
   while i <= 18
     if INT_ALU[i] == name
       return i - 1
-    end
     i += 1
-  end
   -1
-end
 
 # THE projection: opcode for a numeric-family instruction, or -1.
-op(ty: str, name: str): i64
+op: i64 = (ty: str, name: str)
   k: i64 = type_index(ty)
   if k == 0
     return -1
-  end
   c: i64 = cmp_index(ty, name)
   if c >= 0
     return CMP_BASE[k] + c
-  end
   a: i64 = alu_index(ty, name)
   if a >= 0
     return ALU_BASE[k] + a
   end
   -1
-end
 
 # Family bounds, so a consumer writes ONE range arm per family instead of
 # repeating the constants. This is what ward's dispatch is gated against.
-cmp_lo(ty: str): i64
+cmp_lo: i64 = (ty: str)
   k: i64 = type_index(ty)
   if k == 0
     return -1
-  end
   CMP_BASE[k]
-end
 
-cmp_hi(ty: str): i64
+cmp_hi: i64 = (ty: str)
   k: i64 = type_index(ty)
   if k == 0
     return -1
-  end
   CMP_BASE[k] + CMP_SIZE[k] - 1
-end
 
-alu_lo(ty: str): i64
+alu_lo: i64 = (ty: str)
   k: i64 = type_index(ty)
   if k == 0
     return -1
-  end
   ALU_BASE[k]
-end
 
-alu_hi(ty: str): i64
+alu_hi: i64 = (ty: str)
   k: i64 = type_index(ty)
   if k == 0
     return -1
-  end
   ALU_BASE[k] + ALU_SIZE[k] - 1
-end
 
 # Conversion projection: `to(target)` curried by source form, e.g.
 # convert_op("i32", "trunc_f64_s") -> 170.
-convert_op(target: str, name: str): i64
+convert_op: i64 = (target: str, name: str)
   k: i64 = type_index(target)
   if k == 0
     return -1
-  end
   i: i64 = 1
   if k == 1
     while i <= 5
       if CONV_I32[i] == name
         return CONV_BASE[k] + i - 1
-      end
       i += 1
-    end
     return -1
-  end
   if k == 2
     while i <= 6
       if CONV_I64[i] == name
         return CONV_BASE[k] + i - 1
-      end
       i += 1
-    end
     return -1
-  end
   if k == 3
     while i <= 5
       if CONV_F32[i] == name
         return CONV_BASE[k] + i - 1
-      end
       i += 1
-    end
     return -1
-  end
   while i <= 5
     if CONV_F64[i] == name
       return CONV_BASE[k] + i - 1
-    end
     i += 1
-  end
   -1
-end
 
-reinterpret_op(ty: str): i64
+reinterpret_op: i64 = (ty: str)
   k: i64 = type_index(ty)
   if k == 0
     return -1
-  end
   REINTERPRET_BASE + k - 1
-end

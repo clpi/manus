@@ -5,7 +5,7 @@
 # Image Utilities
 # ═══════════════════════════════════════════════════════════════
 
-new(width: i64, height: i64, channels: i64): any
+new: any = (width: i64, height: i64, channels: i64)
     {
         width = width,
         height = height,
@@ -14,7 +14,7 @@ new(width: i64, height: i64, channels: i64): any
         dtype = "u8",
     }
 
-from_array(data: any, width: i64, height: i64, channels: i64): any
+from_array: any = (data: any, width: i64, height: i64, channels: i64)
     {
         width = width,
         height = height,
@@ -23,7 +23,7 @@ from_array(data: any, width: i64, height: i64, channels: i64): any
         dtype = "u8",
     }
 
-get_pixel(img: any, x: i64, y: i64): any
+get_pixel: any = (img: any, x: i64, y: i64)
     idx = (y * img.width + x) * img.channels
     pixel = {}
     i = 0
@@ -32,7 +32,7 @@ get_pixel(img: any, x: i64, y: i64): any
         i += 1
     pixel
 
-set_pixel(img: any, x: i64, y: i64, pixel: any): void
+set_pixel = (img: any, x: i64, y: i64, pixel: any)
     idx = (y * img.width + x) * img.channels
     i = 0
     while i < img.channels
@@ -63,7 +63,7 @@ reimg: any, new_width: i64, new_height: i64:len(): any
         y += 1
     result
 
-crop(img: any, x: i64, y: i64, width: i64, height: i64): any
+crop: any = (img: any, x: i64, y: i64, width: i64, height: i64)
     result = new(width, height, img.channels)
     cy = 0
     while cy < height
@@ -75,7 +75,7 @@ crop(img: any, x: i64, y: i64, width: i64, height: i64): any
         cy += 1
     result
 
-flip_h(img: any): any
+flip_h: any = (img: any)
     result = new(img.width, img.height, img.channels)
     y = 0
     while y < img.height
@@ -87,7 +87,7 @@ flip_h(img: any): any
         y += 1
     result
 
-flip_v(img: any): any
+flip_v: any = (img: any)
     result = new(img.width, img.height, img.channels)
     y = 0
     while y < img.height
@@ -99,7 +99,7 @@ flip_v(img: any): any
         y += 1
     result
 
-rotate90(img: any, clockwise: bool): any
+rotate90: any = (img: any, clockwise: bool)
     result = new(img.height, img.width, img.channels)
     y = 0
     while y < img.height
@@ -117,7 +117,7 @@ rotate90(img: any, clockwise: bool): any
 # Color Transforms
 # ═══════════════════════════════════════════════════════════════
 
-grayscale(img: any): any
+grayscale: any = (img: any)
     if img.channels == 1 return img 
 
     result = new(img.width, img.height, 1)
@@ -132,7 +132,7 @@ grayscale(img: any): any
         y += 1
     result
 
-normalize(img: any, mean: any, std: any): any
+normalize: any = (img: any, mean: any, std: any)
     result = new(img.width, img.height, img.channels)
     y = 0
     while y < img.height
@@ -149,7 +149,7 @@ normalize(img: any, mean: any, std: any): any
         y += 1
     result
 
-to_float(img: any): any
+to_float: any = (img: any)
     result = new(img.width, img.height, img.channels)
     result.dtype = "f32"
     y = 0
@@ -171,20 +171,20 @@ to_float(img: any): any
 # Data Augmentation
 # ═══════════════════════════════════════════════════════════════
 
-augment_random_crop(img: any, crop_size: i64): any
+augment_random_crop: any = (img: any, crop_size: i64)
     max_x = img.width - crop_size
     max_y = img.height - crop_size
     x = 0:random(max_x)
     y = 0:random(max_y)
     crop(img, x, y, crop_size, crop_size)
 
-augment_random_flip(img: any, p: f64): any
+augment_random_flip: any = (img: any, p: f64)
     if math.random() < p
         flip_h(img)
     else
         img
 
-augment_random_rotation(img: any, max_angle: f64): any
+augment_random_rotation: any = (img: any, max_angle: f64)
     # Simple 90-degree rotations for now
     rotations = 0:random(3)
     result = img
@@ -194,7 +194,7 @@ augment_random_rotation(img: any, max_angle: f64): any
         i += 1
     result
 
-augment_color_jitter(img: any, brightness: f64, contrast: f64, saturation: f64): any
+augment_color_jitter: any = (img: any, brightness: f64, contrast: f64, saturation: f64)
     result = new(img.width, img.height, img.channels)
     y = 0
     while y < img.height
@@ -224,7 +224,7 @@ augment_color_jitter(img: any, brightness: f64, contrast: f64, saturation: f64):
         y += 1
     result
 
-augment_random_affine(img: any, translate_range: f64, scale_range: f64): any
+augment_random_affine: any = (img: any, translate_range: f64, scale_range: f64)
     # Simplified affine: just translate
     tx = (math.random() - 0.5) * translate_range * 2:floor()
     ty = (math.random() - 0.5) * translate_range * 2:floor()
@@ -247,7 +247,7 @@ augment_random_affine(img: any, translate_range: f64, scale_range: f64): any
 # Classification Helpers
 # ═══════════════════════════════════════════════════════════════
 
-softmax(logits: any): any
+softmax: any = (logits: any)
     max_logit = -1e30
     for v in logits
         if v > max_logit max_logit = v 
@@ -263,7 +263,7 @@ softmax(logits: any): any
         probs[i] = probs[i] / exp_sum
     probs
 
-top_k(probs: any, k: i64): any
+top_k: any = (probs: any, k: i64)
     indexed = {}
     for i = 1, probs:len()
         indexed[indexed:len() + 1] = {index = i, prob = probs[i]}
@@ -283,7 +283,7 @@ top_k(probs: any, k: i64): any
         i += 1
     result
 
-accuracy(predictions: any, labels: any): f64
+accuracy: f64 = (predictions: any, labels: any)
     correct = 0
     for i = 1, predictions:len()
         if predictions[i] == labels[i]

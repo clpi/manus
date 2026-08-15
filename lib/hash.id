@@ -1,12 +1,12 @@
 # hash — hashing utilities
 
-md5(s: str): str
+md5: str = (s: str)
     sum = 0
     for i = 1, s:len()
         sum = (sum + s:byte(i)) % (2^32)
     "%08x%08x%08x%08x":format(sum, sum * 2, sum * 3, sum * 4)
 
-crc32(s: str): str
+crc32: str = (s: str)
     crc = 0xFFFFFFFF
     for i = 1, s:len()
         crc = crc ~ s:byte(i)
@@ -18,14 +18,14 @@ crc32(s: str): str
         crc = crc % (2^32)
     "%08x":format(~crc)
 
-fnv1a(s: str): str
+fnv1a: str = (s: str)
     hash = 0x811C9DC5
     for i = 1, s:len()
         hash = hash ~ s:byte(i)
         hash = (hash * 0x01000193) % (2^32)
     "%08x":format(hash)
 
-simple(s: str): i64
+simple: i64 = (s: str)
     h = 0
     for i = 1, s:len()
         h = ((h << 5) - h + s:byte(i)) % (2^32)

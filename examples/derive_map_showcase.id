@@ -8,7 +8,7 @@ concept HasXY
 Point: { x: f64, y: f64 }
 Pair: { x: f64, y: f64 }
 
-@comp.define.derive("TouchApi", generate(meta) -> str
+@comp.define.derive("TouchApi", generate: str = (meta)
     acc = "/* " .. meta.name .. " touch API */\n"
     for i = 1, meta:len().fields
         f = meta.fields[i]

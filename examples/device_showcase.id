@@ -35,7 +35,7 @@ metal_vecadd(a: ptr, b: ptr, c: ptr, n: i32): void
 
 # Regular CPU function
 @device(.cpu)
-cpu_dot(a: ptr, b: ptr, n: i32): float
+cpu_dot: float = (a: ptr, b: ptr, n: i32)
   @c.emit([[
     float sum = 0.0f;
     for (int i = 0; i < n; i++)

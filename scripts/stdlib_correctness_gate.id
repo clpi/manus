@@ -22,10 +22,10 @@
 
 # Measured floor: rows currently failing. Lower when fixed; never raise to
 # quiet the gate. Verified 2026-08-07.
-baseline(): i64
+baseline: i64 = ()
     0
 
-fnv_hello(): i64
+fnv_hello: i64 = ()
     s = std.hash.fnv.new32a()
     std.hash.fnv.update(s, "hello")
     std.hash.fnv.final(s)
@@ -34,14 +34,14 @@ fails = 0
 checked = 0
 report = ""
 
-check(label: str, got: str, want: str): void
+check = (label: str, got: str, want: str)
     checked += 1
     if got == want
         return
     fails += 1
     report = report .. "  WRONG " .. label .. ": got " .. got .. ", want " .. want .. "\n"
 
-main(): i64
+main: i64 = ()
     # std.fmt — the boolean formatter that returned "false" for true.
     check("fmt.boolean(true)", std.fmt.boolean(true):to(str), "true")
     check("fmt.boolean(false)", std.fmt.boolean(false):to(str), "false")

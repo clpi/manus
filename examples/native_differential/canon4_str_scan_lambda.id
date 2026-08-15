@@ -5,6 +5,6 @@ scan: tok = (src: str, pos: i64)
     while i <= n and src:byte(i) == 32
         i += 1
     { kind = 1, start = i, len = 1 }
-main(): i64
+main: i64 = ()
     t: tok = scan("  ab", 1)
     t.start

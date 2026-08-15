@@ -6,7 +6,7 @@ concept Has1
   x: i64
 T1: { x: i64 }
 
-@comp.define.derive("Stub", fun generate(meta) -> str
+@comp.define.derive("Stub", fun generate: str = (meta)
     meta.name .. "\n"
 end)
 

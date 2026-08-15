@@ -33,10 +33,8 @@ read: i64 = (data: str, pos: any)
 value: i64
 fun(__proj_v)
   return __proj_v:len()
-end
 fun(__proj_v)
   return __proj_v:i64()
-end
 if value < 128
   return 1
 if value < 16384

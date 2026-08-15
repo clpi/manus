@@ -12,16 +12,13 @@
 # Helpers
 # ═══════════════════════════════════════════════════════════════
 
-str_join(parts: any, sep: str): str
+str_join: str = (parts: any, sep: str)
     result = ""
     for i, part in parts
         if i > 1
             result = result .. sep
-        end
         result = result .. part
-    end
     result
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Header parsing and binding generation
@@ -32,37 +29,33 @@ end
 # Example:
 #   local preprocessed = @run("echo '#include \"sqlite3.h\"' | cc -E -dM -x c - 2>/dev/null | head -500")
 #   local bindings = ffi.from_header_source(preprocessed, { prefix = "sqlite3_" })
-from_header(header: str, opts: any): str
+from_header: str = (header: str, opts: any)
     # NOTE: @run with string concat doesn't work inside function bodies.
     # Use from_header_source() with a preprocessed string instead.
     "/* from_header: use from_header_source() with @run at module scope */"
-end
 
 # from_source: parse a preprocessed header source string directly.
-from_source(source: str, opts: any): str
-    if opts == nil opts = {} end
+from_source: str = (source: str, opts: any)
+    if opts == nil opts = {}
     prefix = opts.prefix or ""
     includes = opts.include or nil
     excludes = opts.excludes or {}
     exclude_set = {}
     for _, e in excludes
         exclude_set[e] = true
-    end
 
     functions = parse_c_declarations(source, prefix, exclude_set, includes)
     parts = {}
     for _, func in functions
         parts[parts:len() + 1] = emit_ffi_binding(func)
-    end
     str_join(parts, "\n")
-end
 
 # ═══════════════════════════════════════════════════════════════
 # C declaration parser
 # ═══════════════════════════════════════════════════════════════
 
 # parse_c_declarations: extract function signatures from C source.
-parse_c_declarations(source: str, prefix: str, excludes: any, includes: any): any
+parse_c_declarations: any = (source: str, prefix: str, excludes: any, includes: any)
     funcs = {}
     lines = source:split("\n")
     for _, line in lines
@@ -86,27 +79,17 @@ parse_c_declarations(source: str, prefix: str, excludes: any, includes: any): an
                                 if name:sub(1, inc:len()) == inc
                                     include_match = true
                                     break
-                                end
-                            end
-                        end
                         if include_match
                             funcs[funcs:len() + 1] = {
                                 name = name,
                                 ret_type = ret_type,
                                 params = parse_c_params(params),
                             }
-                        end
-                    end
-                end
-            end
-        end
-    end
     funcs
-end
 
 # parse_c_params: parse a C parameter list string into a list of {type, name} pairs
-parse_c_params(params_str: str): any
-    if params_str == "void" or params_str == "" return {} end
+parse_c_params: any = (params_str: str)
+    if params_str == "void" or params_str == "" return {}
     params = {}
     parts = params_str:split(",")
     for _, part in parts
@@ -115,13 +98,11 @@ parse_c_params(params_str: str): any
         tokens = {}
         for token in part:gmatch("%S+")
             tokens[tokens:len() + 1] = token
-        end
         if tokens:len() >= 2
             name = tokens[tokens:len()]
             type_parts = {}
             for j = 1, tokens:len() - 1
                 type_parts[type_parts:len() + 1] = tokens[j]
-            end
             typ = str_join(type_parts, " ")
             params[params:len() + 1] = {
                 c_type = typ,
@@ -136,26 +117,22 @@ parse_c_params(params_str: str): any
                 is_pointer = false,
                 is_const = false,
             }
-        end
-    end
     params
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Type mapping: C types → Duo types
 # ═══════════════════════════════════════════════════════════════
 
-c_type_to_duo(c_type: str, is_pointer: bool): str
+c_type_to_duo: str = (c_type: str, is_pointer: bool)
     base = c_type:gsub("%*", "")
     base = base:gsub("const ", "")
     base = base:gsub("^%s+", "")
     base = base:gsub("%s+$", "")
 
     if is_pointer
-        if base == "char" return "str" end
-        if base == "void" return "any" end
+        if base == "char" return "str"
+        if base == "void" return "any"
         return "any"
-    end
 
     type_map = {
         ["int"] = "i64", ["unsigned int"] = "i64", ["long"] = "i64",
@@ -168,15 +145,13 @@ c_type_to_duo(c_type: str, is_pointer: bool): str
         ["long double"] = "f64", ["_Bool"] = "bool", ["bool"] = "bool", ["void"] = "void",
     }
     type_map[base] or "any"
-end
 
-c_ret_type_to_duo(c_type: str): str
+c_ret_type_to_duo: str = (c_type: str)
     cleaned = c_type:gsub("^%s+", "")
     cleaned = cleaned:gsub("%s+$", "")
-    if cleaned == "void" return "void" end
-    if cleaned:find("*") return "any" end
+    if cleaned == "void" return "void"
+    if cleaned:find("*") return "any"
     c_type_to_duo(cleaned, false)
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Binding generation
@@ -184,12 +159,11 @@ end
 
 # emit_ffi_binding: generate a Duo FFI binding string for a C function.
 # Returns the binding as a string (caller passes to @c.emit or uses directly).
-emit_ffi_binding(func: any): str
+emit_ffi_binding: str = (func: any)
     duo_params = {}
     for _, p in func.params
         duo_type = c_type_to_duo(p.c_type, p.is_pointer)
         duo_params[duo_params:len() + 1] = p.name .. ": " .. duo_type
-    end
     duo_ret = c_ret_type_to_duo(func.ret_type)
     params_str = duo_params:len() > 0 and str_join(duo_params, ", ") or ""
 
@@ -197,42 +171,35 @@ emit_ffi_binding(func: any): str
     sig = "@ffi(\"" .. func.name .. "\")\nfun " .. func.name:lower() .. "(" .. params_str .. "): " .. duo_ret
     body = "    @comp.c.call(\"" .. func.name .. "\"" .. (func:len().params > 0 and ", " or "") .. call_args .. ")"
     sig .. "\n" .. body .. "\nend"
-end
 
 # build_c_call_args: generate the argument list for @comp.c.call
-build_c_call_args(params: any): str
+build_c_call_args: str = (params: any)
     args = {}
     for _, p in params
         args[args:len() + 1] = p.name
-    end
     str_join(args, ", ")
-end
 
 # ═══════════════════════════════════════════════════════════════
 # Convenience: generate bindings for common libraries
 # ═══════════════════════════════════════════════════════════════
 
-bind_sqlite(): str
+bind_sqlite: str = ()
     from_header("sqlite3.h", {
         prefix = "sqlite3_",
         excludes = {"sqlite3_aggregate_context", "sqlite3_set_auxdata"},
     })
-end
 
-bind_cjson(): str
+bind_cjson: str = ()
     from_header("cJSON.h", {})
-end
 
-bind_sdl2(): str
+bind_sdl2: str = ()
     from_header("SDL2/SDL.h", {
         prefix = "SDL_",
         excludes = {"SDL_main", "SDL_malloc", "SDL_calloc", "SDL_realloc", "SDL_free"},
     })
-end
 
-bind_opengl(): str
+bind_opengl: str = ()
     from_header("GL/gl.h", {})
-end
 
 M = {
     from_header = from_header,

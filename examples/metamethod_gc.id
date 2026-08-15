@@ -1,7 +1,7 @@
 global finalized = 0
 
 object = setmetatable({}, {
-  __gc = fun(self: any) -> void
+  __gc = (self: any)
     finalized = finalized + 1
   end
 })

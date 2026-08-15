@@ -106,7 +106,7 @@ sum_keyword_kinds: i64 = (src: str)
         pos = t.start + t.len
     total
 
-main(): i64
+main: i64 = ()
     # Real Duo source. Reserved words present, with canonical ids:
     #   local(19) + if(17) + and(4) + return(24) + end(10) + end(10) = 84
     sum_keyword_kinds("local x = 1 if x and x return x end end")

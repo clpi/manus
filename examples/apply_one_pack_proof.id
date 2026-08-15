@@ -29,15 +29,15 @@ point: @{ x: f64, y: f64 }
 # §44 `apply.edge` enumerates, and these rows prove the brace face reaches its
 # subject and answers. Read against rows 6-7: the SAME face, a different
 # subject, and the subject is what decides which edge is taken.
-first(t: any): any
+first: any = (t: any)
     t.x
 
-second(t: any): any
+second: any = (t: any)
     t.y
 
 kind = @{ eof = 0, ident = 1 }
 
-main(): void
+main = ()
     # ROW 1 — the anonymous pack, applied to nothing. c0 §44a: "`{ x = 1,
     # y = 2 }` an ordinary anonymous structured value / `point{ x = 1, y = 2 }`
     # APPLICATION of `point` to that shape — different because one has a

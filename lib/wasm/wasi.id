@@ -2,225 +2,229 @@
 # Maps WASI preview1/preview2 types to Duo-native types for WASM targets.
 
 # WASI errno constants
-errno_success(): u16
+errno_success: u16 = ()
     0
 
-errno_badf(): u16
+errno_badf: u16 = ()
     8
 
-errno_exist(): u16
+errno_exist: u16 = ()
     20
 
-errno_noent(): u16
+errno_noent: u16 = ()
     44
 
-errno_perm(): u16
+errno_perm: u16 = ()
     63
 
-errno_inval(): u16
+errno_inval: u16 = ()
     28
 
-errno_notdir(): u16
+errno_notdir: u16 = ()
     54
 
-errno_overflow(): u16
+errno_overflow: u16 = ()
     61
 
 # WASI file descriptor types
-fd_stdin(): i32
+fd_stdin: i32 = ()
     0
 
-fd_stdout(): i32
+fd_stdout: i32 = ()
     1
 
-fd_stderr(): i32
+fd_stderr: i32 = ()
     2
 
 # WASI rights (capability flags)
-right_fd_read(): u64
+right_fd_read: u64 = ()
     1
 
-right_fd_write(): u64
+right_fd_write: u64 = ()
     2
 
-right_fd_seek(): u64
+right_fd_seek: u64 = ()
     4
 
-right_fd_fdstat_get(): u64
+right_fd_fdstat_get: u64 = ()
     16
 
-right_poll_oneoff(): u64
+right_poll_oneoff: u64 = ()
     256
 
-right_sock_accept(): u64
+right_sock_accept: u64 = ()
     65536
 
 # WASI lookup flags
-lookupflags_symlink_follow(): u32
+lookupflags_symlink_follow: u32 = ()
     1
 
 # WASI oflags (open flags)
-oflags_creat(): u16
+oflags_creat: u16 = ()
     1
 
-oflags_directory(): u16
+oflags_directory: u16 = ()
     2
 
-oflags_excl(): u16
+oflags_excl: u16 = ()
     4
 
-oflags_trunc(): u16
+oflags_trunc: u16 = ()
     8
 
 # WASI filetype constants
-filetype_unknown(): u8
+filetype_unknown: u8 = ()
     0
 
-filetype_block_device(): u8
+filetype_block_device: u8 = ()
     1
 
-filetype_character_device(): u8
+filetype_character_device: u8 = ()
     2
 
-filetype_directory(): u8
+filetype_directory: u8 = ()
     3
 
-filetype_regular_file(): u8
+filetype_regular_file: u8 = ()
     4
 
-filetype_socket_dgram(): u8
+filetype_socket_dgram: u8 = ()
     5
 
-filetype_socket_stream(): u8
+filetype_socket_stream: u8 = ()
     6
 
-filetype_symlink(): u8
+filetype_symlink: u8 = ()
     7
 
 # WASI dircookie (directory entry cookie)
-dircookie_start(): u64
+dircookie_start: u64 = ()
     0
 
 # WASI clockid constants
-clockid_realtime(): u32
+clockid_realtime: u32 = ()
     0
 
-clockid_monotonic(): u32
+clockid_monotonic: u32 = ()
     1
 
-clockid_process_cputime_id(): u32
+clockid_process_cputime_id: u32 = ()
     2
 
-clockid_thread_cputime_id(): u32
+clockid_thread_cputime_id: u32 = ()
     3
 
 # WASI event types for poll_oneoff
-eventtype_clock(): u8
+eventtype_clock: u8 = ()
     0
 
-eventtype_fd_read(): u8
+eventtype_fd_read: u8 = ()
     1
 
-eventtype_fd_write(): u8
+eventtype_fd_write: u8 = ()
     2
 
 # WASI advice constants
-advice_normal(): u8
+advice_normal: u8 = ()
     0
 
-advice_sequential(): u8
+advice_sequential: u8 = ()
     1
 
-advice_random(): u8
+advice_random: u8 = ()
     2
 
-advice_willneed(): u8
+advice_willneed: u8 = ()
     3
 
-advice_dontneed(): u8
+advice_dontneed: u8 = ()
     4
 
-advice_noreuse(): u8
+advice_noreuse: u8 = ()
     5
 
 # WASI whence (seek origin)
-whence_set(): u8
+whence_set: u8 = ()
     0
 
-whence_cur(): u8
+whence_cur: u8 = ()
     1
 
-whence_end(): u8
+whence_end: u8 = ()
     2
 
 # WASI signal constants
-signal_hup(): u8
+signal_hup: u8 = ()
     1
 
-signal_int(): u8
+signal_int: u8 = ()
     2
 
-signal_quit(): u8
+signal_quit: u8 = ()
     3
 
-signal_ill(): u8
+signal_ill: u8 = ()
     4
 
-signal_abrt(): u8
+signal_abrt: u8 = ()
     6
 
-signal_kill(): u8
+signal_kill: u8 = ()
     9
 
-signal_term(): u8
+signal_term: u8 = ()
     15
 
 # WASI exit code type
-exit_success(): u32
+exit_success: u32 = ()
     0
 
-exit_failure(): u32
+exit_failure: u32 = ()
     1
 
 # WASI dirent type (directory entry)
-dirent_type(buf: any, offset: i64): i64
+dirent_type: i64 = (buf: any, offset: i64)
     # dirent structure: u64 d_next, u64 d_ino, u32 d_namlen, u8 d_type, [namlen]u8 name
     # d_type is at offset 16 from start of dirent
     if buf == nil return 0 
     buf[offset + 16] or 0
 
-dirent_name_buf: any, offset: i64:len(): i64
-    if buf == nil return 0 
+# d_namlen is at offset 12 from the start of the dirent. The declaration was
+# `dirent_name_buf: any, offset: i64:len(): i64` — a signature mangled into a
+# subject-`len` application, which meant this whole file did not parse and no
+# consumer could `req` it.
+dirent_name_len: i64 = (buf: any, offset: i64)
+    if buf == nil return 0
     buf[offset + 12] or 0
 
 # WASI iovec structure helpers
-iovec_new(buf: any, buf_len: i64): any
+iovec_new: any = (buf: any, buf_len: i64)
     { buf = buf, buf_len = buf_len }
 
 # WASI ciovec structure helpers
-ciovec_new(buf: str): any
+ciovec_new: any = (buf: str)
     { buf = buf, buf_len = buf:len() }
 
 # WASI timestamp (nanosecond) utilities
-timestamp_now(): u64
+timestamp_now: u64 = ()
     0
 
-timestamp_second(): u64
+timestamp_second: u64 = ()
     1000000000
 
-timestamp_millisecond(): u64
+timestamp_millisecond: u64 = ()
     1000000
 
-timestamp_microsecond(): u64
+timestamp_microsecond: u64 = ()
     1000
 
 # WASI prestat helpers (preopened directory descriptor)
-prestat_dir_fd(prestat: any): i32
+prestat_dir_fd: i32 = (prestat: any)
     if prestat == nil return -1 
     prestat.fd or -1
 
 # WASI subscription helpers
-subscription_clock(id: u64, timeout: u64, precision: u64, flags: u16): any
+subscription_clock: any = (id: u64, timeout: u64, precision: u64, flags: u16)
     {
         userdata = id,
         type = eventtype_clock(),
@@ -230,7 +234,7 @@ subscription_clock(id: u64, timeout: u64, precision: u64, flags: u16): any
         flags = flags,
     }
 
-subscription_fd_read(fd: i32): any
+subscription_fd_read: any = (fd: i32)
     {
         userdata = 0,
         type = eventtype_fd_read(),

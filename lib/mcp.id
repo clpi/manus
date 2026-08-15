@@ -4,7 +4,7 @@
 global M = {}
 M.tools = {}
 
-mcp_read_message(): any
+mcp_read_message: any = ()
     # MCP stdio transport = newline-delimited JSON-RPC: one JSON object per
     # line, no embedded newlines (Model Context Protocol spec). This is NOT
     # LSP Content-Length framing — every real MCP client (Claude Code, Cursor,
@@ -17,21 +17,21 @@ mcp_read_message(): any
         if line != "" break 
     json:decode(line)
 
-mcp_send_message(obj: any): void
+mcp_send_message = (obj: any)
     # MCP stdio: one compact JSON object per line. json.encode emits no
     # embedded newlines, so the trailing "\n" is the sole delimiter.
     body = json:encode(obj)
     io:write_bytes(io:output(), body .. "\n")
     io:flush(io:output())
 
-mcp_send_response(id: any, result: any): void
+mcp_send_response = (id: any, result: any)
     mcp_send_message({
         jsonrpc = "2.0",
         id = id,
         result = result
     })
 
-mcp_send_error(id: any, code: int, message: str): void
+mcp_send_error = (id: any, code: int, message: str)
     mcp_send_message({
         jsonrpc = "2.0",
         id = id,
@@ -41,7 +41,7 @@ mcp_send_error(id: any, code: int, message: str): void
         }
     })
 
-mcp_handle_initialize(msg: any): void
+mcp_handle_initialize = (msg: any)
     mcp_send_response(msg.id, {
         protocolVersion = "2024-11-05",
         capabilities = {
@@ -55,7 +55,7 @@ mcp_handle_initialize(msg: any): void
         }
     })
 
-mcp_handle_tools_list(msg: any): void
+mcp_handle_tools_list = (msg: any)
     tools_list = {}
     for name, tool in M.tools
         # JSON Schema requires `properties` to be an object. A tool declaring
@@ -74,7 +74,7 @@ mcp_handle_tools_list(msg: any): void
         tools = tools_list
     })
 
-mcp_handle_tools_call(msg: any): void
+mcp_handle_tools_call = (msg: any)
     params = msg.params
     name = params.name
     args = params.arguments
@@ -113,7 +113,7 @@ mcp_handle_tools_call(msg: any): void
             }
         })
 
-mcp_serve(): void
+mcp_serve = ()
     while true
         msg = mcp_read_message()
         if msg == nil
@@ -131,7 +131,7 @@ mcp_serve(): void
         else if has(.id)(msg)
             mcp_send_error(msg.id, -32601, "Method not found: " .. msg.method:to(str))
 
-mcp_register_tool(name: str, p2: any, p3: any, p4: any): void
+mcp_register_tool = (name: str, p2: any, p3: any, p4: any)
     # Accept two calling conventions:
     #   3-arg: register_tool(name, inputSchema_with_description, handler)
     #   4-arg: register_tool(name, description, inputSchema, handler)

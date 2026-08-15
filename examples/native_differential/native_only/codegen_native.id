@@ -30,7 +30,7 @@ check: i64 = (got: i64, want: i64)
         return 1
     0
 
-main(): i64
+main: i64 = ()
     # Emit code for the program `return 42`, the same two instructions the Zig
     # backend produces for a constant-returning function.
     code = { 0, 0, 0, 0 }

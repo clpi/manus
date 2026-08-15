@@ -14,7 +14,7 @@ Label: { tag: str }
 
 # One @comp.ceiling line → O(types × fields) + O(types² × fields) C
 
-@comp.define.derive("PairApi", generate(meta) -> str
+@comp.define.derive("PairApi", generate: str = (meta)
     acc = "/* pair " .. meta.name .. " */\n"
     if meta.left != nil
         acc = acc .. "/* left=" .. meta.left.name .. " right=" .. meta.right.name .. " */\n"

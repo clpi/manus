@@ -142,7 +142,7 @@ global trace_spans = {}
 global trace_color = true
 
 # ─── tty detection ────────────────────────────────────────────────
-tty(): bool
+tty: bool = ()
     ok, val = pcall(os.getenv, "DUO_COLOR")
     if ok and val != nil and val != "" and val != "0"
         return true
@@ -153,184 +153,184 @@ tty(): bool
 
 # ─── Low-level style wrappers ────────────────────────────────────
 
-s(prefix: str, text: str, suffix: str): str
+s: str = (prefix: str, text: str, suffix: str)
     if prefix == nil prefix = "" 
     if suffix == nil suffix = M.RESET 
     if not tty()
         return text:to(str)
     return prefix .. text:to(str) .. suffix
 
-bold(text: str): str
+bold: str = (text: str)
     return M.BOLD .. text:to(str) .. M.RESET
 
-dim(text: str): str
+dim: str = (text: str)
     return M.DIM .. text:to(str) .. M.RESET
 
-italic(text: str): str
+italic: str = (text: str)
     return M.ITALIC .. text:to(str) .. M.RESET
 
-underline(text: str): str
+underline: str = (text: str)
     return M.UNDERLINE .. text:to(str) .. M.RESET
 
-strikethrough(text: str): str
+strikethrough: str = (text: str)
     return M.STRIKE .. text:to(str) .. M.RESET
 
-reverse(text: str): str
+reverse: str = (text: str)
     return M.REVERSE .. text:to(str) .. M.RESET
 
-blink(text: str): str
+blink: str = (text: str)
     return M.BLINK .. text:to(str) .. M.RESET
 
-red(text: str): str
+red: str = (text: str)
     return M.RED .. text:to(str) .. M.RESET
 
-green(text: str): str
+green: str = (text: str)
     return M.GREEN .. text:to(str) .. M.RESET
 
-yellow(text: str): str
+yellow: str = (text: str)
     return M.YELLOW .. text:to(str) .. M.RESET
 
-blue(text: str): str
+blue: str = (text: str)
     return M.BLUE .. text:to(str) .. M.RESET
 
-magenta(text: str): str
+magenta: str = (text: str)
     return M.MAGENTA .. text:to(str) .. M.RESET
 
-cyan(text: str): str
+cyan: str = (text: str)
     return M.CYAN .. text:to(str) .. M.RESET
 
-bright_red(text: str): str
+bright_red: str = (text: str)
     return M.BRIGHT_RED .. text:to(str) .. M.RESET
 
-bright_green(text: str): str
+bright_green: str = (text: str)
     return M.BRIGHT_GREEN .. text:to(str) .. M.RESET
 
-bright_yellow(text: str): str
+bright_yellow: str = (text: str)
     return M.BRIGHT_YELLOW .. text:to(str) .. M.RESET
 
-bright_blue(text: str): str
+bright_blue: str = (text: str)
     return M.BRIGHT_BLUE .. text:to(str) .. M.RESET
 
-bright_magenta(text: str): str
+bright_magenta: str = (text: str)
     return M.BRIGHT_MAGENTA .. text:to(str) .. M.RESET
 
-bright_cyan(text: str): str
+bright_cyan: str = (text: str)
     return M.BRIGHT_CYAN .. text:to(str) .. M.RESET
 
-bright_white(text: str): str
+bright_white: str = (text: str)
     return M.BRIGHT_WHITE .. text:to(str) .. M.RESET
 
-gray(text: str): str
+gray: str = (text: str)
     return M.BRIGHT_BLACK .. text:to(str) .. M.RESET
 
 # ─── Compound semantic styles ─────────────────────────────────────
 # These combine attributes for specific semantic roles.
 # Each one paints a single concept — use them to build readable output.
 
-sem_success(text: str): str
+sem_success: str = (text: str)
     return M.BOLD .. M.GREEN .. text:to(str) .. M.RESET
 
-sem_failure(text: str): str
+sem_failure: str = (text: str)
     return M.BOLD .. M.RED .. text:to(str) .. M.RESET
 
-sem_caution(text: str): str
+sem_caution: str = (text: str)
     return M.BOLD .. M.YELLOW .. text:to(str) .. M.RESET
 
-sem_identity(text: str): str
+sem_identity: str = (text: str)
     return M.ITALIC .. M.MAGENTA .. text:to(str) .. M.RESET
 
-sem_location(text: str): str
+sem_location: str = (text: str)
     return M.UNDERLINE .. text:to(str) .. M.RESET
 
-sem_meta(text: str): str
+sem_meta: str = (text: str)
     return M.DIM .. text:to(str) .. M.RESET
 
-sem_payload(text: str): str
+sem_payload: str = (text: str)
     return M.BOLD .. text:to(str) .. M.RESET
 
-sem_deleted(text: str): str
+sem_deleted: str = (text: str)
     return M.STRIKE .. M.RED .. text:to(str) .. M.RESET
 
-sem_added(text: str): str
+sem_added: str = (text: str)
     return M.BOLD .. M.GREEN .. text:to(str) .. M.RESET
 
-sem_changed_old(text: str): str
+sem_changed_old: str = (text: str)
     return M.DIM .. M.RED .. text:to(str) .. M.RESET
 
-sem_changed_new(text: str): str
+sem_changed_new: str = (text: str)
     return M.BOLD .. M.GREEN .. text:to(str) .. M.RESET
 
-sem_type(text: str): str
+sem_type: str = (text: str)
     return M.ITALIC .. M.CYAN .. text:to(str) .. M.RESET
 
-sem_constant(text: str): str
+sem_constant: str = (text: str)
     return M.BOLD .. M.BRIGHT_CYAN .. text:to(str) .. M.RESET
 
-sem_hex(text: str): str
+sem_hex: str = (text: str)
     return M.BRIGHT_BLACK .. M.UNDERLINE .. text:to(str) .. M.RESET
 
 sem_text: str:len(): str
     return M.BRIGHT_YELLOW .. text:to(str) .. M.RESET
 
-sem_percent(text: str): str
+sem_percent: str = (text: str)
     return M.BRIGHT_MAGENTA .. text:to(str) .. M.RESET
 
-sem_time_fast(text: str): str
+sem_time_fast: str = (text: str)
     return M.DIM .. M.GREEN .. text:to(str) .. M.RESET
 
-sem_time_normal(text: str): str
+sem_time_normal: str = (text: str)
     return M.YELLOW .. text:to(str) .. M.RESET
 
-sem_time_slow(text: str): str
+sem_time_slow: str = (text: str)
     return M.BOLD .. M.RED .. text:to(str) .. M.RESET
 
-sem_attention(text: str): str
+sem_attention: str = (text: str)
     return M.REVERSE .. M.BOLD .. text:to(str) .. M.RESET
 
-sem_deprecated(text: str): str
+sem_deprecated: str = (text: str)
     return M.STRIKE .. M.DIM .. text:to(str) .. M.RESET
 
-sem_key(text: str): str
+sem_key: str = (text: str)
     return M.UNDERLINE .. M.CYAN .. text:to(str) .. M.RESET
 
-sem_nil(text: str): str
+sem_nil: str = (text: str)
     return M.DIM .. M.ITALIC .. text:to(str) .. M.RESET
 
-sem_string_val(text: str): str
+sem_string_val: str = (text: str)
     return M.GREEN .. text:to(str) .. M.RESET
 
-sem_number_val(text: str): str
+sem_number_val: str = (text: str)
     return M.YELLOW .. text:to(str) .. M.RESET
 
-sem_bool_val(text: str): str
+sem_bool_val: str = (text: str)
     return M.MAGENTA .. text:to(str) .. M.RESET
 
-sem_table_val(text: str): str
+sem_table_val: str = (text: str)
     return M.CYAN .. text:to(str) .. M.RESET
 
-sem_function_val(text: str): str
+sem_function_val: str = (text: str)
     return M.ITALIC .. M.CYAN .. text:to(str) .. M.RESET
 
-sem_breakpoint(text: str): str
+sem_breakpoint: str = (text: str)
     return M.REVERSE .. M.RED .. M.BOLD .. text:to(str) .. M.RESET
 
-sem_banner_line(text: str): str
+sem_banner_line: str = (text: str)
     return M.BOLD .. M.CYAN .. text:to(str) .. M.RESET
 
-sem_frame(text: str): str
+sem_frame: str = (text: str)
     return M.BRIGHT_BLACK .. text:to(str) .. M.RESET
 
-sem_numbering(text: str): str
+sem_numbering: str = (text: str)
     return M.DIM .. M.BRIGHT_BLACK .. text:to(str) .. M.RESET
 
-sem_diff_hunk(text: str): str
+sem_diff_hunk: str = (text: str)
     return M.BOLD .. M.BRIGHT_WHITE .. text:to(str) .. M.RESET
 
-sem_context_line(text: str): str
+sem_context_line: str = (text: str)
     return M.DIM .. text:to(str) .. M.RESET
 
 # ─── Value formatting ─────────────────────────────────────────────
-tbl_summary(t: any): str
+tbl_summary: str = (t: any)
     if t == nil return "nil" 
     n = t:len()
     if n > 0
@@ -345,7 +345,7 @@ tbl_summary(t: any): str
         return "{" .. first .. ", ...}"
     return "{" .. count:to(str) .. " keys}"
 
-pretty_val(value: any): str
+pretty_val: str = (value: any)
     if value == nil
         return sem_nil("nil")
     t = type(value)
@@ -364,12 +364,12 @@ pretty_val(value: any): str
         return sem_table_val(italic("{" .. tbl_summary(value) .. "}"))
     return value:to(str)
 
-pretty_kv(k: str, v: any): str
+pretty_kv: str = (k: str, v: any)
     return sem_key(k:to(str)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
 
 # ─── Contextual formatters ───────────────────────────────────────
 
-_to_hex(n: int): str
+_to_hex: str = (n: int)
     digits = "0123456789abcdef"
     if n == 0 return "0" 
     result = ""
@@ -379,7 +379,7 @@ _to_hex(n: int): str
         n = n / 16:floor()
     return result
 
-fmt_hex(value: any): str
+fmt_hex: str = (value: any)
     n = value:to(i64)
     if n == nil return value:to(str) 
     neg = false
@@ -408,7 +408,7 @@ fmt_bytes: any:len(): str
         frac = (n - whole * 1073741824) * 10 / 1073741824:floor()
         return sem_whole:to(str) .. "." .. frac:to(str) .. "GB":len()
 
-fmt_pct(value: any): str
+fmt_pct: str = (value: any)
     n = value:to(i64)
     if n == nil return value:to(str) 
     whole = n:floor()
@@ -418,26 +418,26 @@ fmt_pct(value: any): str
     if frac < 10 frac_str = "0" .. frac:to(str) 
     return sem_percent(whole:to(str) .. "." .. frac_str .. "%")
 
-fmt_count(n: any): str
+fmt_count: str = (n: any)
     num = n:to(i64)
     if num == nil return n:to(str) 
     return sem_number_val(num:to(str))
 
-fmt_bool(b: any): str
+fmt_bool: str = (b: any)
     if b return sem_added("true") 
     return sem_deleted("false")
 
-fmt_nil(): str
+fmt_nil: str = ()
     return sem_nil("nil")
 
-fmt_ref(id: any): str
+fmt_ref: str = (id: any)
     return sem_hex(id:to(str))
 
-fmt_path(path: str): str
+fmt_path: str = (path: str)
     return sem_location(path:to(str))
 
 # ─── Caller info ───────────────────────────────────────────────────
-caller(level: int): str
+caller: str = (level: int)
     info = debug.getinfo(level, "Snl")
     if info == nil return "" 
     name_part = info.name
@@ -452,7 +452,7 @@ caller(level: int): str
     return sem_identity(name_part) .. dim(" " .. M.G_ARROW .. " ") .. sem_location(loc)
 
 # ─── Timestamp ─────────────────────────────────────────────────────
-ts(): str
+ts: str = ()
     secs = os.time()
     ms = (os.clock() * 1000) % 1000:floor()
     frac = "." .. ms:to(str)
@@ -461,7 +461,7 @@ ts(): str
     return sem_meta(os.date("%H:%M:%S", secs) .. frac)
 
 # ─── Level tag ─────────────────────────────────────────────────────
-level_tag(level: int): str
+level_tag: str = (level: int)
     glyph = M.G_TRACE
     tag = "trace"
     if level == M.LV_DEBUG
@@ -490,7 +490,7 @@ level_tag(level: int): str
     return body
 
 # ─── Span indent ───────────────────────────────────────────────────
-span_indent(): str
+span_indent: str = ()
     n = trace_spans:len()
     if n <= 0 return "" 
     rep = M.G_PIPE .. " ":rep(n)
@@ -498,7 +498,7 @@ span_indent(): str
     return dim(rep)
 
 # ─── Duration formatting with speed coloring ──────────────────────
-_fmt_dur(ms: float): str
+_fmt_dur: str = (ms: float)
     whole = ms:floor()
     frac = (ms - whole) * 100:floor()
     frac_str = frac:to(str)
@@ -512,7 +512,7 @@ _fmt_dur(ms: float): str
         return sem_time_slow(raw)
 
 # ─── Emit ──────────────────────────────────────────────────────────
-emit(level: int, msg: str, fields: any, skip: int): void
+emit = (level: int, msg: str, fields: any, skip: int)
     if level < trace_level return 
     parts = {}
     parts[parts:len() + 1] = level_tag(level)
@@ -531,7 +531,7 @@ emit(level: int, msg: str, fields: any, skip: int): void
     print(parts:concat(" "))
 
 # ─── Public API ─────────────────────────────────────────────────
-set_level(level: any): void
+set_level = (level: any)
     if type(level) == "string"
         v = M.level_value[level:lower()]
         if v != nil
@@ -541,38 +541,38 @@ set_level(level: any): void
         if level >= M.LV_TRACE and level <= M.LV_FATAL
             trace_level = level
 
-get_level(): str
+get_level: str = ()
     return M.level_name[trace_level] or "info"
 
-show_caller(on: bool): void
+show_caller = (on: bool)
     trace_show_caller = on and true or false
 
-show_timestamp(on: bool): void
+show_timestamp = (on: bool)
     trace_show_ts = on and true or false
 
-set_color(on: bool): void
+set_color = (on: bool)
     trace_color = on and true or false
 
-trace(msg: str, fields: any): void
+trace = (msg: str, fields: any)
     emit(M.LV_TRACE, msg, fields, 2)
 
-_debug(msg: str, fields: any): void
+_debug = (msg: str, fields: any)
     emit(M.LV_DEBUG, msg, fields, 2)
 
-info(msg: str, fields: any): void
+info = (msg: str, fields: any)
     emit(M.LV_INFO, msg, fields, 2)
 
-warn(msg: str, fields: any): void
+warn = (msg: str, fields: any)
     emit(M.LV_WARN, msg, fields, 2)
 
-error(msg: str, fields: any): void
+error = (msg: str, fields: any)
     emit(M.LV_ERROR, msg, fields, 2)
 
-fatal(msg: str, fields: any): void
+fatal = (msg: str, fields: any)
     emit(M.LV_FATAL, msg, fields, 2)
 
 # ─── Spans ────────────────────────────────────────────────────────
-span(name: str, fields: any): any
+span: any = (name: str, fields: any)
     h = {
         name = name or "span",
         start = os.clock(),
@@ -597,7 +597,7 @@ span(name: str, fields: any): any
     print(parts:concat(" "))
     return h
 
-span_end(h: any, fields: any): void
+span_end = (h: any, fields: any)
     if h == nil return 
     n = trace_spans:len()
     while n > 0
@@ -622,13 +622,13 @@ span_end(h: any, fields: any): void
 
 # ─── Assertion / check helpers ────────────────────────────────────
 
-assert_ok(condition: bool, msg: str): void
+assert_ok = (condition: bool, msg: str)
     if condition
         print(sem_success(M.G_CHECK .. " " .. to(str)(msg or "ok")))
     else
         print(sem_failure(M.G_CROSS_MARK .. " " .. to(str)(msg or "assertion failed")))
 
-assert_eq(actual: any, expected: any, msg: str): void
+assert_eq = (actual: any, expected: any, msg: str)
     if actual == expected
         print(sem_success(M.G_CHECK .. " " .. to(str)(msg or "eq")))
     else
@@ -642,7 +642,7 @@ assert_eq(actual: any, expected: any, msg: str): void
 
 # ─── Structured diff ──────────────────────────────────────────────
 
-diff_line(kind: str, key: str, old_val: any, new_val: any): str
+diff_line: str = (kind: str, key: str, old_val: any, new_val: any)
     prefix = ""
     line = ""
     if kind == "added"
@@ -661,7 +661,7 @@ diff_line(kind: str, key: str, old_val: any, new_val: any): str
         line = sem_context_line(key .. " " .. pretty_val(old_val))
     return prefix .. line
 
-print_diff(label: str, diffs: any): void
+print_diff = (label: str, diffs: any)
     if label == nil label = "diff" 
     n = diffs:len()
     if n == 0
@@ -679,7 +679,7 @@ print_diff(label: str, diffs: any): void
 
 # ─── Checkpoint / milestone markers ───────────────────────────────
 
-checkpoint(label: str): void
+checkpoint = (label: str)
     ind = span_indent()
     parts = {}
     parts[parts:len() + 1] = ind
@@ -693,7 +693,7 @@ checkpoint(label: str): void
             parts[parts:len() + 1] = dim("(") .. c .. dim(")")
     print(parts:concat(" "))
 
-milestone(label: str, value: any): void
+milestone = (label: str, value: any)
     ind = span_indent()
     parts = {}
     parts[parts:len() + 1] = ind
@@ -708,7 +708,7 @@ milestone(label: str, value: any): void
 
 # ─── Variable watch ───────────────────────────────────────────────
 
-watch(name: str, value: any): void
+watch = (name: str, value: any)
     ind = span_indent()
     parts = {}
     parts[parts:len() + 1] = ind
@@ -722,7 +722,7 @@ watch(name: str, value: any): void
 
 # ─── Event timeline entry ────────────────────────────────────────
 
-event(name: str, fields: any): void
+event = (name: str, fields: any)
     ind = span_indent()
     parts = {}
     parts[parts:len() + 1] = ind
@@ -736,7 +736,7 @@ event(name: str, fields: any): void
 
 # ─── Section / divider helpers ────────────────────────────────────
 
-banner(title: str, subtitle: str): void
+banner = (title: str, subtitle: str)
     if title == nil title = "trace" 
     if tty()
         w = 50
@@ -753,13 +753,13 @@ banner(title: str, subtitle: str): void
         if subtitle != nil and subtitle != ""
             print("    " .. subtitle)
 
-divider(): void
+divider = ()
     print(span_indent() .. dim(M.BOX_H:rep(60)))
 
-double_divider(): void
+double_divider = ()
     print(span_indent() .. dim("═":rep(60)))
 
-section(title: str): void
+section = (title: str)
     ind = span_indent()
     w = 50
     title_len = title:len()
@@ -770,7 +770,7 @@ section(title: str): void
 
 # ─── Legend ───────────────────────────────────────────────────────
 
-legend(): void
+legend = ()
     print(bold(italic("trace legend:")))
     print("")
     print("  " .. level_tag(M.LV_TRACE) .. "  " .. dim("fine-grained, usually off"))
@@ -814,7 +814,7 @@ legend(): void
           sem_function_val("⟪fn⟫"))
 
 # ─── Recursive pretty printer for dump() ───────────────────────────
-_seen(seen: any, value: any): bool
+_seen: bool = (seen: any, value: any)
     if seen == nil return false 
     i = 1
     n = seen:len()
@@ -823,10 +823,10 @@ _seen(seen: any, value: any): bool
         i += 1
     return false
 
-_seen_add(seen: any, value: any): void
+_seen_add = (seen: any, value: any)
     seen[seen:len() + 1] = value
 
-pretty_repr(value: any, depth: int, seen: any): str
+pretty_repr: str = (value: any, depth: int, seen: any)
     if depth == nil depth = 0 
     if seen == nil seen = {} 
     if value == nil return "nil" 
@@ -862,7 +862,7 @@ pretty_repr(value: any, depth: int, seen: any): str
     return "{\n" .. parts:concat("\n") .. "\n" ..
         "  ":rep(depth) .. "}"
 
-dump(label: str, value: any): void
+dump = (label: str, value: any)
     if label == nil label = "dump" 
     ind = span_indent()
     header = ind .. cyan(M.G_BULLET) .. " " .. bold(label) ..
@@ -889,7 +889,7 @@ dump(label: str, value: any): void
 
 # ─── Compact value table ──────────────────────────────────────────
 
-table_print(label: str, t: any): void
+table_print = (label: str, t: any)
     if t == nil or type(t) != "table"
         dump(label, t)
         return

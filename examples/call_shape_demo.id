@@ -8,10 +8,10 @@
 #   - return consumed vs discarded → elision opportunity
 
 # Direct calls with typed arguments (specializable: typed_args_mask != 0)
-add(a: i64, b: i64): i64
+add: i64 = (a: i64, b: i64)
     return a + b
 
-mul(a: i64, b: i64): i64
+mul: i64 = (a: i64, b: i64)
     return a * b
 
 # Same function, different call shapes at each site:

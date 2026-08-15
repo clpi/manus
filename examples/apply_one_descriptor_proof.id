@@ -22,10 +22,10 @@ point: @{ x: f64, y: f64 }
 
 # A parameter typed by the DESCRIPTOR. This is what makes ROW 2 a composition
 # proof rather than a second binding proof.
-sum(p: point): f64
+sum: f64 = (p: point)
     p.x + p.y
 
-main(): void
+main = ()
     # ROW 1 — the descriptor subject through the brace face, by value. Read
     # against `apply_one_pack_proof.id` ROW 1, which constructs the SAME value
     # through the two forms that always worked (a typed binding plus a bare

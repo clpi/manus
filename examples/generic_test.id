@@ -3,39 +3,31 @@
 # Basic generic identity
 fun identity<T>(value: T): T
     value
-end
 
 # Multi-param generic
 fun pair<A, B>(first: A, second: B)
     { first = first, second = second }
-end
 
 # Generic with early return in conditional
 # Early returns in conditionals ARE allowed and supported
 fun safe_div<T>(a: T, b: T): T
     if b == 0
         return a
-    end
     a // b
-end
 
 # Generic swap with explicit multi-return
 fun swap<T>(a: T, b: T): any
     return b, a
-end
 
 # Generic function with type constraints via runtime checks
 fun print_if_str<T>(val: T): void
     if type(val) == "string"
         print("str value: " .. val)
         return
-    end
     if type(val) == "number"
         print("num value: " .. to(str)(val))
         return
-    end
     print("other type")
-end
 
 # Test
 result = identity(42)

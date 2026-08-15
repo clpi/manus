@@ -5,48 +5,48 @@
 # 2D Geometry
 # ═══════════════════════════════════════════════════════════════
 
-vec2_new(x: f64, y: f64): any
+vec2_new: any = (x: f64, y: f64)
     {x = x, y = y}
 
-vec2_add(a: any, b: any): any
+vec2_add: any = (a: any, b: any)
     {x = a.x + b.x, y = a.y + b.y}
 
-vec2_sub(a: any, b: any): any
+vec2_sub: any = (a: any, b: any)
     {x = a.x - b.x, y = a.y - b.y}
 
-vec2_scale(v: any, s: f64): any
+vec2_scale: any = (v: any, s: f64)
     {x = v.x * s, y = v.y * s}
 
-vec2_dot(a: any, b: any): f64
+vec2_dot: f64 = (a: any, b: any)
     a.x * b.x + a.y * b.y
 
-vec2_cross(a: any, b: any): f64
+vec2_cross: f64 = (a: any, b: any)
     a.x * b.y - a.y * b.x
 
-vec2_length(v: any): f64
+vec2_length: f64 = (v: any)
     v.x * v.x + v.y * v.y:sqrt()
 
-vec2_length_squared(v: any): f64
+vec2_length_squared: f64 = (v: any)
     v.x * v.x + v.y * v.y
 
-vec2_normalize(v: any): any
+vec2_normalize: any = (v: any)
     len = vec2_length(v)
     if len < 1e-10 return {x = 0, y = 0} 
     vec2_scale(v, 1.0 / len)
 
-vec2_distance(a: any, b: any): f64
+vec2_distance: f64 = (a: any, b: any)
     vec2_length(vec2_sub(b, a))
 
-vec2_distance_squared(a: any, b: any): f64
+vec2_distance_squared: f64 = (a: any, b: any)
     vec2_length_squared(vec2_sub(b, a))
 
-vec2_lerp(a: any, b: any, t: f64): any
+vec2_lerp: any = (a: any, b: any, t: f64)
     {
         x = a.x + (b.x - a.x) * t,
         y = a.y + (b.y - a.y) * t,
     }
 
-vec2_rotate(v: any, angle: f64): any
+vec2_rotate: any = (v: any, angle: f64)
     c = angle:cos()
     s = angle:sin()
     {
@@ -54,76 +54,76 @@ vec2_rotate(v: any, angle: f64): any
         y = v.x * s + v.y * c,
     }
 
-vec2_perpendicular(v: any): any
+vec2_perpendicular: any = (v: any)
     {x = -v.y, y = v.x}
 
-vec2_angle(a: any, b: any): f64
+vec2_angle: f64 = (a: any, b: any)
     math.atan2(b.y - a.y, b.x - a.x)
 
 # ═══════════════════════════════════════════════════════════════
 # 2D Shapes
 # ═══════════════════════════════════════════════════════════════
 
-point_new(x: f64, y: f64): any
+point_new: any = (x: f64, y: f64)
     {x = x, y = y}
 
-segment_new(p1: any, p2: any): any
+segment_new: any = (p1: any, p2: any)
     {p1 = p1, p2 = p2}
 
-segment_length(seg: any): f64
+segment_length: f64 = (seg: any)
     vec2_distance(seg.p1, seg.p2)
 
-segment_midpoint(seg: any): any
+segment_midpoint: any = (seg: any)
     {
         x = (seg.p1.x + seg.p2.x) / 2,
         y = (seg.p1.y + seg.p2.y) / 2,
     }
 
-line_new(point: any, direction: any): any
+line_new: any = (point: any, direction: any)
     {point = point, direction = direction}
 
-line_from_points(p1: any, p2: any): any
+line_from_points: any = (p1: any, p2: any)
     {
         point = p1,
         direction = vec2_normalize(vec2_sub(p2, p1)),
     }
 
-ray_new(origin: any, direction: any): any
+ray_new: any = (origin: any, direction: any)
     {origin = origin, direction = direction}
 
-circle_new(center: any, radius: f64): any
+circle_new: any = (center: any, radius: f64)
     {center = center, radius = radius}
 
-circle_area(c: any): f64
+circle_area: f64 = (c: any)
     math.pi * c.radius * c.radius
 
-circle_perimeter(c: any): f64
+circle_perimeter: f64 = (c: any)
     2 * math.pi * c.radius
 
-rect_new(x: f64, y: f64, width: f64, height: f64): any
+rect_new: any = (x: f64, y: f64, width: f64, height: f64)
     {
         x = x, y = y,
         width = width, height = height,
     }
 
-rect_area(r: any): f64
+rect_area: f64 = (r: any)
     r.width * r.height
 
-rect_perimeter(r: any): f64
+rect_perimeter: f64 = (r: any)
     2 * (r.width + r.height)
 
-rect_contains_point(r: any, p: any): bool
+rect_contains_point: bool = (r: any, p: any)
     p.x >= r.x and p.x <= r.x + r.width and
     p.y >= r.y and p.y <= r.y + r.height
 
-rect_intersects(a: any, b: any): bool
+rect_intersects: bool = (a: any, b: any)
     a.x < b.x + b.width and a.x + a.width > b.x and
     a.y < b.y + b.height and a.y + a.height > b.y
 
-polygon_new(vertices: any): any
+polygon_new: any = (vertices: any)
     {vertices = vertices}
 
-polygon_area(poly: any): f64
+polygon_area: f64 = (poly: any)
     area = 0
     n = poly:len().vertices
     i = 1
@@ -134,7 +134,7 @@ polygon_area(poly: any): f64
         i += 1
     area:abs() / 2
 
-polygon_perimeter(poly: any): f64
+polygon_perimeter: f64 = (poly: any)
     perimeter = 0
     n = poly:len().vertices
     i = 1
@@ -144,7 +144,7 @@ polygon_perimeter(poly: any): f64
         i += 1
     perimeter
 
-polygon_contains_point(poly: any, p: any): bool
+polygon_contains_point: bool = (poly: any, p: any)
     inside = false
     n = poly:len().vertices
     i = 1
@@ -160,61 +160,61 @@ polygon_contains_point(poly: any, p: any): bool
 # 3D Geometry
 # ═══════════════════════════════════════════════════════════════
 
-vec3_new(x: f64, y: f64, z: f64): any
+vec3_new: any = (x: f64, y: f64, z: f64)
     {x = x, y = y, z = z}
 
-vec3_add(a: any, b: any): any
+vec3_add: any = (a: any, b: any)
     {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
 
-vec3_sub(a: any, b: any): any
+vec3_sub: any = (a: any, b: any)
     {x = a.x - b.x, y = a.y - b.y, z = a.z - b.z}
 
-vec3_scale(v: any, s: f64): any
+vec3_scale: any = (v: any, s: f64)
     {x = v.x * s, y = v.y * s, z = v.z * s}
 
-vec3_dot(a: any, b: any): f64
+vec3_dot: f64 = (a: any, b: any)
     a.x * b.x + a.y * b.y + a.z * b.z
 
-vec3_cross(a: any, b: any): any
+vec3_cross: any = (a: any, b: any)
     {
         x = a.y * b.z - a.z * b.y,
         y = a.z * b.x - a.x * b.z,
         z = a.x * b.y - a.y * b.x,
     }
 
-vec3_length(v: any): f64
+vec3_length: f64 = (v: any)
     v.x * v.x + v.y * v.y + v.z * v.z:sqrt()
 
-vec3_normalize(v: any): any
+vec3_normalize: any = (v: any)
     len = vec3_length(v)
     if len < 1e-10 return {x = 0, y = 0, z = 0} 
     vec3_scale(v, 1.0 / len)
 
-vec3_distance(a: any, b: any): f64
+vec3_distance: f64 = (a: any, b: any)
     vec3_length(vec3_sub(b, a))
 
-vec3_lerp(a: any, b: any, t: f64): any
+vec3_lerp: any = (a: any, b: any, t: f64)
     {
         x = a.x + (b.x - a.x) * t,
         y = a.y + (b.y - a.y) * t,
         z = a.z + (b.z - a.z) * t,
     }
 
-plane_new(normal: any, distance: f64): any
+plane_new: any = (normal: any, distance: f64)
     {normal = normal, distance = distance}
 
-plane_from_points(p1: any, p2: any, p3: any): any
+plane_from_points: any = (p1: any, p2: any, p3: any)
     normal = vec3_normalize(vec3_cross(vec3_sub(p2, p1), vec3_sub(p3, p1)))
     dist = vec3_dot(normal, p1)
     {normal = normal, distance = dist}
 
-plane_distance_to_point(plane: any, p: any): f64
+plane_distance_to_point: f64 = (plane: any, p: any)
     vec3_dot(plane.normal, p) - plane.distance
 
-aabb_new(min: any, max: any): any
+aabb_new: any = (min: any, max: any)
     {min = min, max = max}
 
-aabb_center(box: any): any
+aabb_center: any = (box: any)
     {
         x = (box.min.x + box.max.x) / 2,
         y = (box.min.y + box.max.y) / 2,
@@ -224,30 +224,30 @@ aabb_center(box: any): any
 aabb_box: any:len(): any
     vec3_sub(box.max, box.min)
 
-aabb_contains_point(box: any, p: any): bool
+aabb_contains_point: bool = (box: any, p: any)
     p.x >= box.min.x and p.x <= box.max.x and
     p.y >= box.min.y and p.y <= box.max.y and
     p.z >= box.min.z and p.z <= box.max.z
 
-aabb_intersects(a: any, b: any): bool
+aabb_intersects: bool = (a: any, b: any)
     a.min.x <= b.max.x and a.max.x >= b.min.x and
     a.min.y <= b.max.y and a.max.y >= b.min.y and
     a.min.z <= b.max.z and a.max.z >= b.min.z
 
-sphere_new(center: any, radius: f64): any
+sphere_new: any = (center: any, radius: f64)
     {center = center, radius = radius}
 
-sphere_contains_point(s: any, p: any): bool
+sphere_contains_point: bool = (s: any, p: any)
     vec3_distance(s.center, p) <= s.radius
 
-sphere_intersects_sphere(a: any, b: any): bool
+sphere_intersects_sphere: bool = (a: any, b: any)
     vec3_distance(a.center, b.center) <= a.radius + b.radius
 
 # ═══════════════════════════════════════════════════════════════
 # Intersection Tests
 # ═══════════════════════════════════════════════════════════════
 
-line_segment_intersection(p1: any, p2: any, p3: any, p4: any): any
+line_segment_intersection: any = (p1: any, p2: any, p3: any, p4: any)
     d1 = vec2_sub(p2, p1)
     d2 = vec2_sub(p4, p3)
     cross = d1.x * d2.y - d1.y * d2.x
@@ -264,7 +264,7 @@ line_segment_intersection(p1: any, p2: any, p3: any, p4: any): any
             u = u,
         }
 
-ray_sphere_intersection(ray_origin: any, ray_dir: any, sphere: any): any
+ray_sphere_intersection: any = (ray_origin: any, ray_dir: any, sphere: any)
     oc = vec3_sub(ray_origin, sphere.center)
     a = vec3_dot(ray_dir, ray_dir)
     b = 2 * vec3_dot(oc, ray_dir)
@@ -281,7 +281,7 @@ ray_sphere_intersection(ray_origin: any, ray_dir: any, sphere: any): any
     point = vec3_add(ray_origin, vec3_scale(ray_dir, t))
     {t = t, point = point}
 
-ray_plane_intersection(ray_origin: any, ray_dir: any, plane: any): any
+ray_plane_intersection: any = (ray_origin: any, ray_dir: any, plane: any)
     denom = vec3_dot(plane.normal, ray_dir)
     if denom:abs() < 1e-10 return nil 
 
@@ -295,27 +295,27 @@ ray_plane_intersection(ray_origin: any, ray_dir: any, plane: any): any
 # Triangle Operations
 # ═══════════════════════════════════════════════════════════════
 
-triangle_new(v0: any, v1: any, v2: any): any
+triangle_new: any = (v0: any, v1: any, v2: any)
     {v0 = v0, v1 = v1, v2 = v2}
 
-triangle_area(tri: any): f64
+triangle_area: f64 = (tri: any)
     e1 = vec3_sub(tri.v1, tri.v0)
     e2 = vec3_sub(tri.v2, tri.v0)
     0.5 * vec3_length(vec3_cross(e1, e2))
 
-triangle_normal(tri: any): any
+triangle_normal: any = (tri: any)
     e1 = vec3_sub(tri.v1, tri.v0)
     e2 = vec3_sub(tri.v2, tri.v0)
     vec3_normalize(vec3_cross(e1, e2))
 
-triangle_centroid(tri: any): any
+triangle_centroid: any = (tri: any)
     {
         x = (tri.v0.x + tri.v1.x + tri.v2.x) / 3,
         y = (tri.v0.y + tri.v1.y + tri.v2.y) / 3,
         z = (tri.v0.z + tri.v1.z + tri.v2.z) / 3,
     }
 
-triangle_barycentric(tri: any, p: any): any
+triangle_barycentric: any = (tri: any, p: any)
     v0 = vec3_sub(tri.v1, tri.v0)
     v1 = vec3_sub(tri.v2, tri.v0)
     v2 = vec3_sub(p, tri.v0)

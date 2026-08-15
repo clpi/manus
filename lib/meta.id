@@ -8,7 +8,7 @@
 # ─────────────────────────────────────────────────────────────
 
 # Get the type kind of a value as a string
-std_meta_typeof(x): str
+std_meta_typeof: str = (x)
     if x == nil return "nil" 
     if type(x) != "table" return type(x) 
     if getmetatable(x) != nil
@@ -17,10 +17,10 @@ std_meta_typeof(x): str
     "table"
 
 # Check if a value is of a specific type kind
-is(x, kind: str): bool
+is: bool = (x, kind: str)
     std_meta_typeof(x) == kind
 
-is_nil(x): bool
+is_nil: bool = (x)
     x == nil
 
 is_bool(x): bool
@@ -38,11 +38,11 @@ is_table(x): bool
 is_func(x): bool
     return type(x) == "function"
 
-is_integer(x): bool
+is_integer: bool = (x)
     if type(x) != "number" return false 
     x == x:floor()
 
-is_float(x): bool
+is_float: bool = (x)
     if type(x) != "number" return false 
     x != x:floor()
 
@@ -74,17 +74,17 @@ method_names(t: any)
     ms
 
 # Check if a table has a field
-has_field(t: any, name: str): bool
+has_field: bool = (t: any, name: str)
     if type(t) != "table" return false 
     t[name] != nil
 
 # Check if a table has a method (function-valued field)
-has_method(t: any, name: str): bool
+has_method: bool = (t: any, name: str)
     if type(t) != "table" return false 
     return type(t[name]) == "function"
 
 # Get the metatable type name
-type_name(t: any): str
+type_name: str = (t: any)
     if t == nil return "nil" 
     mt = getmetatable(t)
     if mt != nil and mt.type != nil return mt.type 
@@ -96,12 +96,12 @@ type_name(t: any): str
 
 # Check if a value satisfies a concept (has required fields/methods)
 # concept_def is a concept table with required_methods and required_fields
-concept_member_name(member: any): any
+concept_member_name: any = (member: any)
     if type(member) == "string" return member 
     if type(member) == "table" return member.name 
     nil
 
-satisfies_concept(val: any, concept_def: any): bool
+satisfies_concept: bool = (val: any, concept_def: any)
     if val == nil or concept_def == nil return false 
     if has(.required_fields)(concept_def)
         for _, f in concept_def.required_fields
@@ -113,7 +113,7 @@ satisfies_concept(val: any, concept_def: any): bool
             if name == nil or type(val[name]) != "function" return false 
     true
 
-concept_member(member: any, kind: str): any
+concept_member: any = (member: any, kind: str)
     if type(member) == "string"
         return { name = member, kind = kind }
     if member.kind == nil member.kind = kind 
@@ -121,14 +121,14 @@ concept_member(member: any, kind: str): any
         member.param_count = member:len().params
     member
 
-concept_member_list(items: any, kind: str): any
+concept_member_list: any = (items: any, kind: str)
     out = {}
     if items == nil return out 
     for _, item in items
         out[out:len() + 1] = concept_member(item, kind)
     out
 
-make_concept(name: str, spec: any): any
+make_concept: any = (name: str, spec: any)
     if spec == nil spec = {} 
     concept_fields = spec.required_fields
     if concept_fields == nil concept_fields = spec.fields 
@@ -165,7 +165,7 @@ values(t: any)
         vs[vs:len() + 1] = v
     vs
 
-has_key(t: any, key: any): bool
+has_key: bool = (t: any, key: any)
     if type(t) != "table" return false 
     t[key] != nil
 
@@ -176,7 +176,7 @@ clone(t: any)
         c[k] = v
     c
 
-merge(dst: any, src: any): any
+merge: any = (dst: any, src: any)
     for k, v in src
         dst[k] = v
     dst
@@ -192,7 +192,7 @@ deep_clone(t: any)
     c
 
 # Compare two tables for shallow equality
-shallow_eq(a: any, b: any): bool
+shallow_eq: bool = (a: any, b: any)
     if a == b return true 
     if type(a) != "table" or type(b) != "table" return false 
     for k, v in a
@@ -202,11 +202,11 @@ shallow_eq(a: any, b: any): bool
     true
 
 # Collect garbage (if available) — triggers cycle collector in ARC mode
-collect(): void
+collect = ()
     collectgarbage("collect")
 
 # Get memory usage stats
-memory_stats(): any
+memory_stats: any = ()
     return {
         total = collectgarbage("count"),
         step = collectgarbage("step"),
@@ -218,18 +218,18 @@ memory_stats(): any
 
 # Verify that a table-type binding satisfies a concept
 # returns true if satisfied, errors with details if not
-derive_clone(val: any): any
+derive_clone: any = (val: any)
     if type(val) != "table" return val 
     clone(val)
 
-derive_eq(a: any, b: any): bool
+derive_eq: bool = (a: any, b: any)
     if a == nil and b == nil return true 
     if a == nil or b == nil return false 
     if type(a) == "table" and type(b) == "table"
         return shallow_eq(a, b)
     a == b
 
-derive_display(val: any): str
+derive_display: str = (val: any)
     if val == nil return "nil" 
     if type(val) == "boolean"
         if val return "true" else return "false" 
@@ -243,7 +243,7 @@ derive_display(val: any): str
         return "{" .. parts:concat(", ") .. "}"
     val:to(str)
 
-derive_deep_clone(val: any): any
+derive_deep_clone: any = (val: any)
     if type(val) != "table" return val 
     c = {}
     for k, v in val
@@ -253,10 +253,10 @@ derive_deep_clone(val: any): any
             c[k] = v
     c
 
-derive_default(): any
+derive_default: any = ()
     {}
 
-derive_hash(val: any): u64
+derive_hash: u64 = (val: any)
     if val == nil return 0 
     if type(val) == "number"
         i = val:floor()
@@ -273,7 +273,7 @@ derive_hash(val: any): u64
         return h
     val:to(str):len()
 
-derive_ord(a: any, b: any): i64
+derive_ord: i64 = (a: any, b: any)
     if a == b return 0 
     if a == nil return -1 
     if b == nil return 1 
@@ -283,7 +283,7 @@ derive_ord(a: any, b: any): i64
     sb = b:to(str)
     if sa < sb return -1 else return 1 
 
-derive_format(val: any, spec: str): str
+derive_format: str = (val: any, spec: str)
     if spec == "d" or spec == "i"
         return to(str)(val:floor())
     if spec == "f"
@@ -302,13 +302,13 @@ derive_val: any:len(): i64
     if type(val) == "table" return val:len() 
     0
 
-derive_contains(val: any, elem: any): bool
+derive_contains: bool = (val: any, elem: any)
     if type(val) == "table"
         for _, v in val
             if v == elem return true 
     false
 
-derive_iter(val: any): any
+derive_iter: any = (val: any)
     if type(val) != "table"
         empty = () nil
         return empty
@@ -319,7 +319,7 @@ derive_iter(val: any): any
 # ─────────────────────────────────────────────────────────────
 
 # map: transform each element of an array
-map(t: any, f: any): any
+map: any = (t: any, f: any)
     out = {}
     i = 1
     while i <= t:len()
@@ -328,14 +328,14 @@ map(t: any, f: any): any
     out
 
 # mapk: transform each key-value pair
-mapk(t: any, f: any): any
+mapk: any = (t: any, f: any)
     out = {}
     for k, v in t
         out[k] = f(v, k)
     out
 
 # filter: keep elements where predicate returns true
-filter(t: any, pred: any): any
+filter: any = (t: any, pred: any)
     out = {}
     n = 0
     i = 1
@@ -347,7 +347,7 @@ filter(t: any, pred: any): any
     out
 
 # filterk: keep entries where predicate(value, key) returns true
-filterk(t: any, pred: any): any
+filterk: any = (t: any, pred: any)
     out = {}
     for k, v in t
         if pred(v, k)
@@ -355,7 +355,7 @@ filterk(t: any, pred: any): any
     out
 
 # reduce: fold array left-to-right with accumulator
-reduce(t: any, f: any, init: any): any
+reduce: any = (t: any, f: any, init: any)
     acc = init
     i = 1
     while i <= t:len()
@@ -364,26 +364,26 @@ reduce(t: any, f: any, init: any): any
     acc
 
 # reducek: fold table with (accumulator, value, key)
-reducek(t: any, f: any, init: any): any
+reducek: any = (t: any, f: any, init: any)
     acc = init
     for k, v in t
         acc = f(acc, v, k)
     acc
 
 # each: call side-effecting function on each element
-each(t: any, f: any): void
+each = (t: any, f: any)
     i = 1
     while i <= t:len()
         f(t[i], i)
         i += 1
 
 # eachk: call side-effecting function on each key-value pair
-eachk(t: any, f: any): void
+eachk = (t: any, f: any)
     for k, v in t
         f(v, k)
 
 # find: return first element matching predicate, or nil
-find(t: any, pred: any): any
+find: any = (t: any, pred: any)
     i = 1
     while i <= t:len()
         if pred(t[i], i) return t[i] 
@@ -391,13 +391,13 @@ find(t: any, pred: any): any
     nil
 
 # findk: return first key whose value matches predicate
-findk(t: any, pred: any): any
+findk: any = (t: any, pred: any)
     for k, v in t
         if pred(v, k) return k 
     nil
 
 # find_index: return 1-based index of first matching element, or 0
-find_index(t: any, pred: any): i64
+find_index: i64 = (t: any, pred: any)
     i = 1
     while i <= t:len()
         if pred(t[i], i) return i 
@@ -405,7 +405,7 @@ find_index(t: any, pred: any): i64
     0
 
 # includes: check if any element equals value
-includes(t: any, value: any): bool
+includes: bool = (t: any, value: any)
     i = 1
     while i <= t:len()
         if t[i] == value return true 
@@ -413,7 +413,7 @@ includes(t: any, value: any): bool
     false
 
 # count: count elements matching predicate
-count(t: any, pred: any): i64
+count: i64 = (t: any, pred: any)
     n = 0
     i = 1
     while i <= t:len()
@@ -422,7 +422,7 @@ count(t: any, pred: any): i64
     n
 
 # all: true if every element matches predicate
-all(t: any, pred: any): bool
+all: bool = (t: any, pred: any)
     i = 1
     while i <= t:len()
         if not pred(t[i], i) return false 
@@ -430,7 +430,7 @@ all(t: any, pred: any): bool
     true
 
 # any: true if at least one element matches predicate
-any(t: any, pred: any): bool
+any: bool = (t: any, pred: any)
     i = 1
     while i <= t:len()
         if pred(t[i], i) return true 
@@ -442,7 +442,7 @@ any(t: any, pred: any): bool
 # ─────────────────────────────────────────────────────────────
 
 # flatten: one-level flatten of array of arrays
-flatten(t: any): any
+flatten: any = (t: any)
     out = {}
     n = 0
     i = 1
@@ -461,11 +461,11 @@ flatten(t: any): any
     out
 
 # flat_map: map then flatten one level
-flat_map(t: any, f: any): any
+flat_map: any = (t: any, f: any)
     flatten(map(t, f))
 
 # zip: combine N arrays into array of tuples
-zip(...): any
+zip: any = (...)
     args = {...}
     if args:len() == 0 return {} 
     min_len = args:len()[1]
@@ -486,7 +486,7 @@ zip(...): any
     out
 
 # enumerate: array to array of {index, value} pairs
-enumerate(t: any): any
+enumerate: any = (t: any)
     out = {}
     i = 1
     while i <= t:len()
@@ -495,7 +495,7 @@ enumerate(t: any): any
     out
 
 # take: first n elements
-take(t: any, n: i64): any
+take: any = (t: any, n: i64)
     out = {}
     limit = n
     if limit > t:len() limit = t:len() 
@@ -506,7 +506,7 @@ take(t: any, n: i64): any
     out
 
 # drop: skip first n elements
-drop(t: any, n: i64): any
+drop: any = (t: any, n: i64)
     out = {}
     start = n + 1
     if start > t:len() return out 
@@ -519,7 +519,7 @@ drop(t: any, n: i64): any
     out
 
 # reverse: return new reversed array
-reverse(t: any): any
+reverse: any = (t: any)
     out = {}
     n = t:len()
     i = 1
@@ -529,7 +529,7 @@ reverse(t: any): any
     out
 
 # unique: remove duplicate elements (preserves first occurrence)
-unique(t: any): any
+unique: any = (t: any)
     seen = {}
     out = {}
     n = 0
@@ -545,7 +545,7 @@ unique(t: any): any
     out
 
 # partition: split array into {matching, rest} based on predicate
-partition(t: any, pred: any): any
+partition: any = (t: any, pred: any)
     yes = {}
     no = {}
     ny = 0
@@ -566,7 +566,7 @@ partition(t: any, pred: any): any
 # ─────────────────────────────────────────────────────────────
 
 # sort: return new sorted array (ascending)
-sort(t: any): any
+sort: any = (t: any)
     out = {}
     i = 1
     while i <= t:len()
@@ -584,7 +584,7 @@ sort(t: any): any
     out
 
 # sort_by: sort by key function
-sort_by(t: any, key_fn: any): any
+sort_by: any = (t: any, key_fn: any)
     indexed = {}
     i = 1
     while i <= t:len()
@@ -607,7 +607,7 @@ sort_by(t: any, key_fn: any): any
     out
 
 # sort_desc: descending order
-sort_desc(t: any): any
+sort_desc: any = (t: any)
     return reverse(sort(t))
 
 # ─────────────────────────────────────────────────────────────
@@ -615,7 +615,7 @@ sort_desc(t: any): any
 # ─────────────────────────────────────────────────────────────
 
 # group_by: group array elements by key function
-group_by(t: any, key_fn: any): any
+group_by: any = (t: any, key_fn: any)
     groups = {}
     i = 1
     while i <= t:len()
@@ -626,7 +626,7 @@ group_by(t: any, key_fn: any): any
     groups
 
 # count_by: count elements grouped by key function
-count_by(t: any, key_fn: any): any
+count_by: any = (t: any, key_fn: any)
     counts = {}
     i = 1
     while i <= t:len()
@@ -637,7 +637,7 @@ count_by(t: any, key_fn: any): any
     counts
 
 # sum_by: sum numeric values extracted by key function
-sum_by(t: any, key_fn: any): any
+sum_by: any = (t: any, key_fn: any)
     total = 0
     i = 1
     while i <= t:len()
@@ -646,7 +646,7 @@ sum_by(t: any, key_fn: any): any
     total
 
 # min_by / max_by: find element with min/max key
-min_by(t: any, key_fn: any): any
+min_by: any = (t: any, key_fn: any)
     if t:len() == 0 return nil 
     best = t[1]
     best_key = key_fn(t[1])
@@ -659,7 +659,7 @@ min_by(t: any, key_fn: any): any
         i += 1
     best
 
-max_by(t: any, key_fn: any): any
+max_by: any = (t: any, key_fn: any)
     if t:len() == 0 return nil 
     best = t[1]
     best_key = key_fn(t[1])
@@ -677,7 +677,7 @@ max_by(t: any, key_fn: any): any
 # ─────────────────────────────────────────────────────────────
 
 # pipe: left-to-right function composition
-pipe(...): any
+pipe: any = (...)
     funcs = {...}
     return function(x)
         result = x
@@ -688,7 +688,7 @@ pipe(...): any
         return result
 
 # compose: right-to-left function composition
-compose(...): any
+compose: any = (...)
     funcs = {...}
     return function(x)
         result = x
@@ -710,7 +710,7 @@ compose(...): any
 # `partial_invoke` is `_`-prefixed and unexported: it is this module's
 # private surface, reachable only through the value `partial`
 # hands back.
-partial_invoke(self: any, ...): any
+partial_invoke: any = (self: any, ...)
     joined = {}
     n = 0
     i = 1
@@ -726,13 +726,13 @@ partial_invoke(self: any, ...): any
         i += 1
     return self.fn(joined:unpack(1, n))
 
-partial(f: any, ...): any
+partial: any = (f: any, ...)
     bound = { fn = f, args = {...} }
     setmetatable(bound, { __call = partial_invoke })
     return bound
 
 # tap: side-effecting pass-through
-tap(value: any, f: any): any
+tap: any = (value: any, f: any)
     f(value)
     value
 
@@ -740,7 +740,7 @@ tap(value: any, f: any): any
 # Functional: numeric aggregation
 # ─────────────────────────────────────────────────────────────
 
-sum(t: any): any
+sum: any = (t: any)
     total = 0
     i = 1
     while i <= t:len()
@@ -748,7 +748,7 @@ sum(t: any): any
         i += 1
     total
 
-product(t: any): any
+product: any = (t: any)
     total = 1
     i = 1
     while i <= t:len()
@@ -756,7 +756,7 @@ product(t: any): any
         i += 1
     total
 
-min(t: any): any
+min: any = (t: any)
     if t:len() == 0 return nil 
     best = t[1]
     i = 2
@@ -765,7 +765,7 @@ min(t: any): any
         i += 1
     best
 
-max(t: any): any
+max: any = (t: any)
     if t:len() == 0 return nil 
     best = t[1]
     i = 2
@@ -779,21 +779,21 @@ max(t: any): any
 # ─────────────────────────────────────────────────────────────
 
 # map_values: transform only values, keep keys
-map_values(t: any, f: any): any
+map_values: any = (t: any, f: any)
     out = {}
     for k, v in t
         out[k] = f(v, k)
     out
 
 # map_keys: transform only keys, keep values
-map_keys(t: any, f: any): any
+map_keys: any = (t: any, f: any)
     out = {}
     for k, v in t
         out[f(v, k)] = v
     out
 
 # key_by: array to table keyed by extract function
-key_by(t: any, key_fn: any): any
+key_by: any = (t: any, key_fn: any)
     out = {}
     i = 1
     while i <= t:len()
@@ -803,7 +803,7 @@ key_by(t: any, key_fn: any): any
     out
 
 # invert: swap keys and values
-invert(t: any): any
+invert: any = (t: any)
     out = {}
     for k, v in t
         out[v:to(str)] = k
@@ -814,28 +814,28 @@ invert(t: any): any
 # ─────────────────────────────────────────────────────────────
 
 # eq: build equality predicate
-eq(val: any): any
+eq: any = (val: any)
     return (x: any): any x == val
 
 # gt / lt / gte / lte: comparison predicates
-gt(val: any): any
+gt: any = (val: any)
     return (x: any): any x > val
 
-lt(val: any): any
+lt: any = (val: any)
     return (x: any): any x < val
 
-gte(val: any): any
+gte: any = (val: any)
     return (x: any): any x >= val
 
-lte(val: any): any
+lte: any = (val: any)
     return (x: any): any x <= val
 
 # notf: negate a predicate
-notf(pred: any): any
+notf: any = (pred: any)
     return (x: any): any not pred(x)
 
 # andf / orf: combine predicates
-andf(...): any
+andf: any = (...)
     preds = {...}
     return function(x)
         i = 1
@@ -844,7 +844,7 @@ andf(...): any
             i += 1
         return true
 
-orf(...): any
+orf: any = (...)
     preds = {...}
     return function(x)
         i = 1
@@ -858,32 +858,32 @@ orf(...): any
 # ─────────────────────────────────────────────────────────────
 
 # identity: return value unchanged
-identity(x: any): any
+identity: any = (x: any)
     x
 
 # always / never: constant predicates
-always(): bool
+always: bool = ()
     true
 
-never(): bool
+never: bool = ()
     false
 
 # noop: do nothing
-noop(): void
+noop = ()
 
 # ─────────────────────────────────────────────────────────────
 # Functional: numeric helpers
 # ─────────────────────────────────────────────────────────────
 
-clamp(value: any, lo: any, hi: any): any
+clamp: any = (value: any, lo: any, hi: any)
     if value < lo return lo 
     if value > hi return hi 
     value
 
-lerp(a: any, b: any, t: any): any
+lerp: any = (a: any, b: any, t: any)
     a + (b - a) * t
 
-abs(x: any): any
+abs: any = (x: any)
     if x < 0 return -x 
     x
 

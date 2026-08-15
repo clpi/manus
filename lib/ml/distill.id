@@ -5,7 +5,7 @@
 # Distillation Config
 # ═══════════════════════════════════════════════════════════════
 
-distill_config_new(): any
+distill_config_new: any = ()
     {
         temperature = 4.0,
         alpha = 0.7,
@@ -16,20 +16,20 @@ distill_config_new(): any
         feature_weight = 0.5,
     }
 
-distill_config_set_temperature(config: any, temperature: f64): any
+distill_config_set_temperature: any = (config: any, temperature: f64)
     config.temperature = temperature
     config
 
-distill_config_set_alpha(config: any, alpha: f64): any
+distill_config_set_alpha: any = (config: any, alpha: f64)
     config.alpha = alpha
     config
 
-distill_config_set_weights(config: any, soft_weight: f64, hard_weight: f64): any
+distill_config_set_weights: any = (config: any, soft_weight: f64, hard_weight: f64)
     config.soft_label_weight = soft_weight
     config.hard_label_weight = hard_weight
     config
 
-distill_config_set_feature_matching(config: any, enabled: bool, layers: any, weight: f64): any
+distill_config_set_feature_matching: any = (config: any, enabled: bool, layers: any, weight: f64)
     config.feature_matching = enabled
     config.feature_layers = layers or {}
     config.feature_weight = weight or 0.5
@@ -39,7 +39,7 @@ distill_config_set_feature_matching(config: any, enabled: bool, layers: any, wei
 # Distillation Loss
 # ═══════════════════════════════════════════════════════════════
 
-distill_soft_loss(student_logits: any, teacher_logits: any, temperature: f64): f64
+distill_soft_loss: f64 = (student_logits: any, teacher_logits: any, temperature: f64)
     # KL divergence between softened distributions
     student_probs = softmax_temperature(student_logits, temperature)
     teacher_probs = softmax_temperature(teacher_logits, temperature)
@@ -51,7 +51,7 @@ distill_soft_loss(student_logits: any, teacher_logits: any, temperature: f64): f
 
     kl * temperature * temperature
 
-distill_hard_loss(student_logits: any, labels: any): f64
+distill_hard_loss: f64 = (student_logits: any, labels: any)
     # Cross-entropy loss
     loss = 0
     for i = 1, student_logits:len()
@@ -59,7 +59,7 @@ distill_hard_loss(student_logits: any, labels: any): f64
             loss -= student_logits[i]:max(1e-10):log()
     loss
 
-distill_combined_loss(student_logits: any, teacher_logits: any, labels: any, config: any): f64
+distill_combined_loss: f64 = (student_logits: any, teacher_logits: any, labels: any, config: any)
     soft_loss = distill_soft_loss(student_logits, teacher_logits, config.temperature)
     hard_loss = distill_hard_loss(student_logits, labels)
 
@@ -69,7 +69,7 @@ distill_combined_loss(student_logits: any, teacher_logits: any, labels: any, con
 # Feature Matching Loss
 # ═══════════════════════════════════════════════════════════════
 
-distill_feature_loss(student_features: any, teacher_features: any): f64
+distill_feature_loss: f64 = (student_features: any, teacher_features: any)
     loss = 0
     count = 0
 
@@ -88,7 +88,7 @@ distill_feature_loss(student_features: any, teacher_features: any): f64
 # Attention Transfer
 # ═══════════════════════════════════════════════════════════════
 
-distill_attention_transfer(student_attention: any, teacher_attention: any): f64
+distill_attention_transfer: f64 = (student_attention: any, teacher_attention: any)
     loss = 0
     count = 0
 
@@ -107,7 +107,7 @@ distill_attention_transfer(student_attention: any, teacher_attention: any): f64
 
     if count > 0 loss / count else 0 
 
-normalize_attention(attention: any): any
+normalize_attention: any = (attention: any)
     # Normalize attention map to unit norm
     norm = 0
     for v in attention
@@ -125,7 +125,7 @@ normalize_attention(attention: any): any
 # Layer-wise Distillation
 # ═══════════════════════════════════════════════════════════════
 
-distill_layer_mapping(student_layers: i64, teacher_layers: i64): any
+distill_layer_mapping: any = (student_layers: i64, teacher_layers: i64)
     # Create mapping from student layers to teacher layers
     mapping = {}
     ratio = teacher_layers / student_layers
@@ -138,7 +138,7 @@ distill_layer_mapping(student_layers: i64, teacher_layers: i64): any
         i += 1
     mapping
 
-distill_layer_loss(student_outputs: any, teacher_outputs: any, mapping: any): f64
+distill_layer_loss: f64 = (student_outputs: any, teacher_outputs: any, mapping: any)
     loss = 0
     count = 0
 
@@ -158,7 +158,7 @@ distill_layer_loss(student_outputs: any, teacher_outputs: any, mapping: any): f6
 # Self-Distillation
 # ═══════════════════════════════════════════════════════════════
 
-distill_self_distillation_loss(logits: any, labels: any, temperature: f64): f64
+distill_self_distillation_loss: f64 = (logits: any, labels: any, temperature: f64)
     # Self-distillation: use soft labels from same model
     soft_probs = softmax_temperature(logits, temperature)
     hard_loss = distill_hard_loss(logits, labels)
@@ -184,7 +184,7 @@ distill_self_distillation_loss(logits: any, labels: any, temperature: f64): f64
 # Progressive Distillation
 # ═══════════════════════════════════════════════════════════════
 
-distill_progressive_config(stages: i64): any
+distill_progressive_config: any = (stages: i64)
     configs = {}
     i = 1
     while i <= stages
@@ -203,7 +203,7 @@ distill_progressive_config(stages: i64): any
 # Utility Functions
 # ═══════════════════════════════════════════════════════════════
 
-softmax_temperature(logits: any, temperature: f64): any
+softmax_temperature: any = (logits: any, temperature: f64)
     scaled = {}
     for i = 1, logits:len()
         scaled[i] = logits[i] / temperature
@@ -223,7 +223,7 @@ softmax_temperature(logits: any, temperature: f64): any
         probs[i] = probs[i] / exp_sum
     probs
 
-distill_accuracy(student_logits: any, labels: any): f64
+distill_accuracy: f64 = (student_logits: any, labels: any)
     correct = 0
     total = 0
 

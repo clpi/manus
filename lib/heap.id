@@ -6,19 +6,19 @@
 # Binary Min-Heap
 # ═══════════════════════════════════════════════════════════════
 
-heap_new(cmp: any): any
+heap_new: any = (cmp: any)
     {
         data = {},
         n = 0,
         cmp = cmp or ((a, b) a < b),
     }
 
-heap_push(h: any, value: any): void
+heap_push = (h: any, value: any)
     h.n = h.n + 1
     h.data[h.n] = value
     heap_up(h, h.n)
 
-heap_pop(h: any): any
+heap_pop: any = (h: any)
     if h.n == 0 return nil 
     top = h.data[1]
     h.data[1] = h.data[h.n]
@@ -27,14 +27,14 @@ heap_pop(h: any): any
     if h.n > 0 heap_down(h, 1) 
     top
 
-heap_peek(h: any): any
+heap_peek: any = (h: any)
     if h.n == 0 return nil 
     h.data[1]
 
 heap_h: any:len(): i64
     h.n
 
-heap_up(h: any, i: i64): void
+heap_up = (h: any, i: i64)
     while i > 1
         parent = i / 2:floor()
         if h.cmp(h.data[i], h.data[parent])
@@ -43,7 +43,7 @@ heap_up(h: any, i: i64): void
         else
             break
 
-heap_down(h: any, i: i64): void
+heap_down = (h: any, i: i64)
     while true
         left = 2 * i
         right = 2 * i + 1
@@ -62,7 +62,7 @@ heap_down(h: any, i: i64): void
 # Priority Queue (keyed heap with decrease-key)
 # ═══════════════════════════════════════════════════════════════
 
-pq_new(cmp: any): any
+pq_new: any = (cmp: any)
     {
         data = {},
         index = {},
@@ -70,14 +70,14 @@ pq_new(cmp: any): any
         cmp = cmp or ((a, b) a.priority < b.priority),
     }
 
-pq_push(pq: any, key: any, priority: any): void
+pq_push = (pq: any, key: any, priority: any)
     entry = {key = key, priority = priority, pos = pq.n + 1}
     pq.n = pq.n + 1
     pq.data[pq.n] = entry
     pq.index[key] = entry
     heap_up_pq(pq, pq.n)
 
-pq_pop(pq: any): any
+pq_pop: any = (pq: any)
     if pq.n == 0 return nil 
     top = pq.data[1]
     pq.index[top.key] = nil
@@ -89,24 +89,24 @@ pq_pop(pq: any): any
         heap_down_pq(pq, 1)
     {key = top.key, priority = top.priority}
 
-pq_peek(pq: any): any
+pq_peek: any = (pq: any)
     if pq.n == 0 return nil 
     top = pq.data[1]
     {key = top.key, priority = top.priority}
 
-pq_decrease_key(pq: any, key: any, new_priority: any): void
+pq_decrease_key = (pq: any, key: any, new_priority: any)
     entry = pq.index[key]
     if entry == nil return 
     entry.priority = new_priority
     heap_up_pq(pq, entry.pos)
 
-pq_contains(pq: any, key: any): bool
+pq_contains: bool = (pq: any, key: any)
     pq.index[key] != nil
 
 pq_pq: any:len(): i64
     pq.n
 
-heap_up_pq(pq: any, i: i64): void
+heap_up_pq = (pq: any, i: i64)
     while i > 1
         parent = i / 2:floor()
         if pq.cmp(pq.data[i], pq.data[parent])
@@ -117,7 +117,7 @@ heap_up_pq(pq: any, i: i64): void
         else
             break
 
-heap_down_pq(pq: any, i: i64): void
+heap_down_pq = (pq: any, i: i64)
     while true
         left = 2 * i
         right = 2 * i + 1
@@ -138,7 +138,7 @@ heap_down_pq(pq: any, i: i64): void
 # Bloom Filter (probabilistic set membership)
 # ═══════════════════════════════════════════════════════════════
 
-bloom_new(expected_items: i64, fp_rate: any): any
+bloom_new: any = (expected_items: i64, fp_rate: any)
     if fp_rate == nil fp_rate = 0.01 
     # Optimal bit count: m = -n * ln(p) / (ln2)^2
     m = -expected_items * fp_rate:log() / (2:log() * 2:log()):ceil()
@@ -158,7 +158,7 @@ bloom_new(expected_items: i64, fp_rate: any): any
     }
 
 # FNV-1a hash for bloom filter
-bloom_hash(data: any, seed: i64): i64
+bloom_hash: i64 = (data: any, seed: i64)
     h = 0xcbf29ce484222325 + seed
     i = 1
     n = data:len()
@@ -174,7 +174,7 @@ bloom_hash(data: any, seed: i64): i64
         i += 1
     h
 
-bloom_add(bf: any, item: any): void
+bloom_add = (bf: any, item: any)
     data = item:to(str)
     i = 0
     while i < bf.num_hashes
@@ -185,7 +185,7 @@ bloom_add(bf: any, item: any): void
         i += 1
     bf.count = bf.count + 1
 
-bloom_may_contain(bf: any, item: any): bool
+bloom_may_contain: bool = (bf: any, item: any)
     data = item:to(str)
     i = 0
     while i < bf.num_hashes
@@ -197,14 +197,14 @@ bloom_may_contain(bf: any, item: any): bool
         i += 1
     true
 
-bloom_false_positive_rate(bf: any): f64
+bloom_false_positive_rate: f64 = (bf: any)
     1 - -bf.num_hashes * bf.count / bf.num_bits:exp():pow(bf.num_hashes)
 
 # ═══════════════════════════════════════════════════════════════
 # LRU Cache (fixed-size, O(1) get/put via hash map + doubly-linked list)
 # ═══════════════════════════════════════════════════════════════
 
-lru_new(capacity: i64): any
+lru_new: any = (capacity: i64)
     {
         capacity = capacity,
         map = {},
@@ -213,7 +213,7 @@ lru_new(capacity: i64): any
         misses = 0,
     }
 
-lru_get(cache: any, key: any): any
+lru_get: any = (cache: any, key: any)
     entry = cache.map[key]
     if entry == nil
         cache.misses = cache.misses + 1
@@ -223,7 +223,7 @@ lru_get(cache: any, key: any): any
     cache.hits = cache.hits + 1
     entry.value
 
-lru_put(cache: any, key: any, value: any): void
+lru_put = (cache: any, key: any, value: any)
     entry = cache.map[key]
     if entry != nil
         entry.value = value
@@ -237,7 +237,7 @@ lru_put(cache: any, key: any, value: any): void
     cache.list:insert(1, key)
     cache.map[key] = {key = key, value = value}
 
-lru_touch(cache: any, key: any): void
+lru_touch = (cache: any, key: any)
     i = 1
     while i <= cache:len().list
         if cache.list[i] == key
@@ -246,7 +246,7 @@ lru_touch(cache: any, key: any): void
             return
         i += 1
 
-lru_remove(cache: any, key: any): bool
+lru_remove: bool = (cache: any, key: any)
     entry = cache.map[key]
     if entry == nil return false 
     cache.map[key] = nil
@@ -261,12 +261,12 @@ lru_remove(cache: any, key: any): bool
 lru_cache: any:len(): i64
     cache.list:len()
 
-lru_hit_rate(cache: any): f64
+lru_hit_rate: f64 = (cache: any)
     total = cache.hits + cache.misses
     if total == 0 return 0.0 
     cache.hits / total
 
-lru_clear(cache: any): void
+lru_clear = (cache: any)
     cache.map = {}
     cache.list = {}
     cache.hits = 0

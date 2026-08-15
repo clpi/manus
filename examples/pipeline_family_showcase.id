@@ -12,10 +12,10 @@ static const int64_t ints[] = { 1, 2, 3, 4 };
 static const double floats[] = { 1.5, 2.0, 2.5 };
 ]])
 
-int_sum(): i64
+int_sum: i64 = ()
     @c.call("sum_i64", @(ints), @(4))
 
-float_sum(): f64
+float_sum: f64 = ()
     @c.call("sum_f64", @(floats), @(3))
 
 print("=== @comp.pipeline family showcase ===")

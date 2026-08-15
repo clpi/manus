@@ -19,18 +19,18 @@ _REGRESS_PCT = 10.0
 _WORK = "/tmp/duo_wasm_bench"
 _SRC = "examples/benchmark_wasm.lua"
 
-_env_or(n: str, d: str): str
+_env_or: str = (n: str, d: str)
     v = script.getenv_or(n)
     if v == "" return d
     v
 
-_pad(s: str, w: i64): str
+_pad: str = (s: str, w: i64)
     o = s
     while o:len() < w
         o = o .. " "
     o
 
-_lpad(s: str, w: i64): str
+_lpad: str = (s: str, w: i64)
     o = s
     while o:len() < w
         o = " " .. o
@@ -39,7 +39,7 @@ _lpad(s: str, w: i64): str
 # `to(str)` on an f64 does not compile, so fixed-point comes from integers.
 # Negative values matter here: a delta percentage can be either sign, and
 # flooring a negative toward zero would report an improvement as a regression.
-_fx(x: f64, places: i64): str
+_fx: str = (x: f64, places: i64)
     neg = false
     v = x
     if v < 0.0
@@ -60,10 +60,10 @@ _fx(x: f64, places: i64): str
     if neg return "-" .. s
     s
 
-_have(t: str): bool
+_have: bool = (t: str)
     script.chomp(script.capture("command -v " .. t .. " 2>/dev/null")) != ""
 
-_fields(l: str): any
+_fields: any = (l: str)
     o = {}
     for _i, w in l:gsub("\t", " "):split(" ")
         if w != "" o[o:len() + 1] = w
@@ -71,7 +71,7 @@ _fields(l: str): any
 
 # "RESULT <id> <value>" lines, joined, so two runtimes can be compared as one
 # string rather than field by field.
-_result_block(text: str): str
+_result_block: str = (text: str)
     out = ""
     n = 0
     for _i, l in text:split("\n")
@@ -81,7 +81,7 @@ _result_block(text: str): str
             n += 1
     out .. "__n " .. n:to(str)
 
-_result_count(block: str): i64
+_result_count: i64 = (block: str)
     for _i, l in block:split("\n")
         f = _fields(l)
         if f:len() == 2 and f[1] == "__n"
@@ -92,12 +92,12 @@ _result_count(block: str): i64
 # fallback # `/usr/bin/time -f %e`, and if that produced something
 # unparseable, bash's own TIMEFORMAT='%R' -- because GNU and BSD `time` differ.
 # An in-process clock has neither problem and no fork per sample.
-_wall_seconds(cmd: str): f64
+_wall_seconds: f64 = (cmd: str)
     t0 = std.time.monotonic()
     std.script.run(cmd .. " >/dev/null 2>&1")
     to(f64)(std.time.monotonic() - t0) / 1000000000.0
 
-_min_wall(cmd: str, runs: i64): f64
+_min_wall: f64 = (cmd: str, runs: i64)
     best = 0.0
     i = 0
     while i < runs
@@ -106,7 +106,7 @@ _min_wall(cmd: str, runs: i64): f64
         i += 1
     best
 
-_baseline_for(path: str, rt: str): f64
+_baseline_for: f64 = (path: str, rt: str)
     if !std.script.fs_exists(path) return 0.0
     for _i, l in std.script.capture("cat " .. path):split("\n")
         c = std.script.chomp(l)
@@ -116,7 +116,7 @@ _baseline_for(path: str, rt: str): f64
                 return to(f64)(f[2])
     0.0
 
-_save_baseline(path: str, names: any, times: any, runs: i64): void
+_save_baseline = (path: str, names: any, times: any, runs: i64)
     std.script.run("mkdir -p $(dirname " .. path .. ")")
     commit = std.script.chomp(std.script.capture("git rev-parse --short HEAD 2>/dev/null"))
     if commit == "" commit = "unknown"

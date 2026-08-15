@@ -6,7 +6,7 @@
 # OO-style objects are just table literals with method fields. Concept
 # satisfaction is declared via `@implements(...)` on the binding.
 
-greet(name: str): str
+greet: str = (name: str)
     "Hello, " .. name
 
 add<T>(a: T, b: T): T
@@ -15,7 +15,7 @@ add<T>(a: T, b: T): T
 result: i64 = ##1 + 2
 global counter: i64 = 0
 
-calculate(): void
+calculate = ()
     x: i64 = 10
     y: i64 = 20
 

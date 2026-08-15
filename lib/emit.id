@@ -25,13 +25,13 @@
 
 # Truncate (or create) `path`, so a fresh emission starts from an empty file.
 @comp.c.export("duo_emit_begin")
-emit_begin(path: str): bool
+emit_begin: bool = (path: str)
     return @comp.c.emit([[({ FILE* _f = fopen(path, "wb"); int _ok = _f != NULL; if (_f) fclose(_f); _ok; })]])
 
 # Append one 32-bit word, little-endian — the natural unit for a fixed-width
 # instruction set such as ARM64.
 @comp.c.export("duo_emit_u32")
-emit_u32(path: str, word: i64): bool
+emit_u32: bool = (path: str, word: i64)
     return @comp.c.emit([[({ FILE* _f = fopen(path, "ab"); int _ok = 0; if (_f) { unsigned char _b[4]; unsigned int _w = (unsigned int)word; _b[0] = (unsigned char)(_w & 0xff); _b[1] = (unsigned char)((_w >> 8) & 0xff); _b[2] = (unsigned char)((_w >> 16) & 0xff); _b[3] = (unsigned char)((_w >> 24) & 0xff); _ok = fwrite(_b, 1, 4, _f) == 4; fclose(_f); } _ok; })]])
 
 # Size of `path` in bytes, or 0 - 1 when it cannot be read. Lets a generator
@@ -42,7 +42,7 @@ emit_path: str:len(): i64
 
 # Read one 32-bit word back, little-endian, at word index `idx` (0-based).
 @comp.c.export("duo_emit_read_u32")
-emit_read_u32(path: str, idx: i64): i64
+emit_read_u32: i64 = (path: str, idx: i64)
     return @comp.c.emit([[({ FILE* _f = fopen(path, "rb"); int64_t _v = -1; if (_f) { if (fseek(_f, (long)idx * 4, SEEK_SET) == 0) { unsigned char _b[4]; if (fread(_b, 1, 4, _f) == 4) { _v = (int64_t)((unsigned int)_b[0] | ((unsigned int)_b[1] << 8) | ((unsigned int)_b[2] << 16) | ((unsigned int)_b[3] << 24)); } } fclose(_f); } _v; })]])
 
 # No `M` export table: the native export map is built by scanning

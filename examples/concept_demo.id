@@ -11,7 +11,7 @@ concept Counter
     decrement(self): void
 
 # Simple function that matches Greeter behavior
-english_greet(name: str): str
+english_greet: str = (name: str)
     "Hello, " .. name .. "!"
 
 # Module that satisfies Greeter via table (using : method syntax)

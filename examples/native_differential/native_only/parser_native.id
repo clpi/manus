@@ -97,7 +97,7 @@ parseexpr: res = (src: str, pos: i64)
             return { val = acc, pos = i }
     { val = acc, pos = i }
 
-main(): i64
+main: i64 = ()
     # Precedence must bind `*` tighter than `+`: 1 + 2*3 = 7, not 9.
     r: res = parseexpr("1 + 2 * 3", 1)
     r.val

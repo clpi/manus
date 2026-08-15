@@ -79,7 +79,7 @@ specpath = "docs/spec/grammar.md"
 markbegin = "@@residue:begin"
 markend = "@@residue:end"
 
-slurp(path: str): str
+slurp: str = (path: str)
     f = io.open(path, "r")
     body: str = ""
     if f
@@ -87,7 +87,7 @@ slurp(path: str): str
         f:close()
     body
 
-spill(path: str, body: str): bool
+spill: bool = (path: str, body: str)
     f = io.open(path, "w")
     done: bool = false
     if f
@@ -98,7 +98,7 @@ spill(path: str, body: str): bool
 
 # `n` copies of `s`. The long-string delimiters need exactly this: the number
 # of `=` signs IS the level.
-tile(s: str, n: i64): str
+tile: str = (s: str, n: i64)
     acc: str = ""
     i: i64 = 0
     while i < n
@@ -106,7 +106,7 @@ tile(s: str, n: i64): str
         i += 1
     acc
 
-lines(s: str): i64
+lines: i64 = (s: str)
     parts = s:split("\n")
     n: i64 = parts:len()
     if n > 0
@@ -119,7 +119,7 @@ lines(s: str): i64
 
 # The banner. `count` is the residue line count — the one number in this file
 # that is measured rather than declared.
-banner(count: i64): str
+banner: str = (count: i64)
     n: str = count:to(str)
     b: str = "/**\n"
     b = "{b} * @file tree-sitter grammar for Duo — GENERATED.\n"
@@ -186,7 +186,7 @@ banner(count: i64): str
     b = "{b} */\n"
     b
 
-head(count: i64): str
+head: str = (count: i64)
     b: str = banner(count)
     b = "{b}\n"
     b = "{b}module.exports = grammar({\n"
@@ -206,7 +206,7 @@ head(count: i64): str
     b = "{b}\n"
     b
 
-conflictrows(): str
+conflictrows: str = ()
     "struct_definition expression\n" ..
     "typed_binding call_expression\n" ..
     "assignment call_expression\n" ..
@@ -312,7 +312,7 @@ conflictrows(): str
     "try_expression await_expression\n" ..
     "unwrap_expression await_expression"
 
-conflicts(): str
+conflicts: str = ()
     b: str = "  conflicts: $ => [\n"
     rows = conflictrows():split("\n")
     i: i64 = 1
@@ -333,7 +333,7 @@ conflicts(): str
     b = "{b}\n"
     b
 
-ruleshead(): str
+ruleshead: str = ()
     b: str = "  // ── Rules ──────────────────────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}  rules: {\n"
@@ -389,7 +389,7 @@ ruleshead(): str
     b = "{b}\n"
     b
 
-attributes(): str
+attributes: str = ()
     b: str = "    // ── Attributes ──────────────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    // `@export`, `@ffi(\"puts\")`, legacy c emit, `@comp.define.derive(…)`,\n"
@@ -447,7 +447,7 @@ attributes(): str
     b = "{b}\n"
     b
 
-declarations(): str
+declarations: str = ()
     b: str = "    // ── Local declaration ───────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    local_declaration: $ => seq(\n"
@@ -515,7 +515,7 @@ declarations(): str
     b = "{b}\n"
     b
 
-controls(): str
+controls: str = ()
     b: str = "    // ── Do block ────────────────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    do_block: $ => seq(\n"
@@ -608,7 +608,7 @@ controls(): str
     b = "{b}\n"
     b
 
-forms(): str
+forms: str = ()
     b: str = "    // ── Function declaration ────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    function_declaration: $ => seq(\n"
@@ -715,7 +715,7 @@ forms(): str
     b = "{b}\n"
     b
 
-tails(): str
+tails: str = ()
     b: str = "    // ── Return ──────────────────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    return_statement: $ => prec.right(seq(\n"
@@ -746,7 +746,7 @@ tails(): str
     b = "{b}\n"
     b
 
-patterns(): str
+patterns: str = ()
     b: str = "    // ── Match statement ─────────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    match_statement: $ => seq(\n"
@@ -839,7 +839,7 @@ patterns(): str
     b = "{b}\n"
     b
 
-defs(): str
+defs: str = ()
     b: str = "    // ── Try statement ───────────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    try_statement: $ => seq(\n"
@@ -994,7 +994,7 @@ defs(): str
     b = "{b}\n"
     b
 
-types(): str
+types: str = ()
     b: str = "    // ── Types ───────────────────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    type: $ => choice(\n"
@@ -1091,7 +1091,7 @@ types(): str
     b = "{b}\n"
     b
 
-exprs(): str
+exprs: str = ()
     b: str = "    // ── Expressions ─────────────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    expression: $ => choice(\n"
@@ -1161,7 +1161,7 @@ exprs(): str
     b = "{b}\n"
     b
 
-exprtail(): str
+exprtail: str = ()
     b: str = "    // ── Table constructor ───────────────────────────────────────────────────\n"
     b = "{b}\n"
     b = "{b}    table_constructor: $ => seq(\n"
@@ -1287,7 +1287,7 @@ exprtail(): str
     b = "{b}\n"
     b
 
-residuemark(): str
+residuemark: str = ()
     # ONE LINE. The begin marker has to be a single line, because `carve`
     # starts capturing at the line AFTER it: a two-line marker puts its second
     # line inside the residue, where the next regeneration emits it again
@@ -1301,7 +1301,7 @@ residuemark(): str
 # closer". A single token DFA cannot remember how many `=` it opened with, so
 # the exclusion has to be spelled out per level — exactly the kind of thing a
 # generator should do and a person should not.
-longlevel(lv: i64): str
+longlevel: str = (lv: i64)
     eqs: str = tile("=", lv)
     body: str = "/[^\\]]/"
     k: i64 = 0
@@ -1314,7 +1314,7 @@ longlevel(lv: i64): str
 
 # One template, two quote characters. The escape class is the quote itself
 # plus the backslash, which is the only thing that differs between them.
-quoted(rulename: str, quote: str, wrap: str): str
+quoted: str = (rulename: str, quote: str, wrap: str)
     b: str = "    {rulename}: $ => token(seq(\n"
     b = "{b}      {wrap}{quote}{wrap},\n"
     b = "{b}      repeat(choice(\n"
@@ -1325,7 +1325,7 @@ quoted(rulename: str, quote: str, wrap: str): str
     b = "{b}    )),\n"
     b
 
-tokens(): str
+tokens: str = ()
     dq: str = "\""
     sq: str = "'"
     dot: str = "."
@@ -1405,34 +1405,34 @@ tokens(): str
 # that this file never places that spelling beside a quote — CLAUDE.md §1's
 # `concatlit` row is a text rule and applies to the generator too.
 
-spell(): str
+spell: str = ()
     "or and < > <= >= ~= != == in | & ~ << >> |> cat + - * / // % ^"
 
 # Tree-sitter binding power. Tighter binds higher. §2 order, translated:
 # ^ 13 · unary 12 · * / // % 11 · + - 10 · << >> 9 · & 8 · ~ | 7 · cat 6 ·
 # comparisons and `in` 5 · and 4 · or 3 · |> 2.
-level(): str
+level: str = ()
     "3 4 5 5 5 5 5 5 5 5 7 8 7 9 9 2 6 10 10 11 11 11 11 13"
 
-spec(): str
+spec: str = ()
     "12 11 10 10 10 10 10 10 10 0 8 7 8 6 6 0 9 5 5 4 4 0 4 3"
 
-assoc(): str
+assoc: str = ()
     "left left left left left left left left left left left left left left left left left left left left left left left right"
 
-field(row: str, n: i64): str
+field: str = (row: str, n: i64)
     parts = row:split(" ")
     got: str = ""
     if n >= 1 and n <= parts:len()
         got = parts[n]
     got
 
-width(row: str): i64
+width: i64 = (row: str)
     parts = row:split(" ")
     #parts
 
 # A note printed immediately above the row it explains.
-opnote(idx: i64): str
+opnote: str = (idx: i64)
     b: str = ""
     if idx == 8
         b = "{b}      // `!=` is the SAME token as `~=` in src/lexer.zig (both lex to `.neq`),\n"
@@ -1443,14 +1443,14 @@ opnote(idx: i64): str
         b = "{b}      // not in this one; `|` alone was.\n"
     b
 
-rule(bar: str): str
+rule: str = (bar: str)
     dot: str = "."
     out: str = bar
     if bar == "cat"
         out = "{dot}{dot}"
     out
 
-operators(): str
+operators: str = ()
     sp: str = spell()
     lv: str = level()
     ac: str = assoc()
@@ -1491,7 +1491,7 @@ operators(): str
 
 # ── The tail registry ────────────────────────────────────────────────────────
 
-tail(): str
+tail: str = ()
     dash: str = "\u{2500}"
     cbar: str = tile(dash, 51)
     hbar: str = tile(dash, 76)
@@ -1531,7 +1531,7 @@ tail(): str
 # TIGHTER. Compared by order, not by value, because the two tables count in
 # opposite directions. Nothing here changes a byte of the output.
 
-specrows(body: str): i64
+specrows: i64 = (body: str)
     rows = body:split("\n")
     seen: i64 = 0
     i: i64 = 1
@@ -1546,7 +1546,7 @@ specrows(body: str): i64
         i += 1
     seen
 
-report(): i64
+report: i64 = ()
     sp: str = spell()
     lv: str = level()
     sc: str = spec()
@@ -1603,7 +1603,7 @@ report(): i64
 
 # Everything between the two markers, verbatim, the marker lines themselves
 # excluded. Empty when the markers are absent, which is the bootstrap path.
-carve(body: str): str
+carve: str = (body: str)
     rows = body:split("\n")
     out: str = ""
     inside: bool = false
@@ -1622,7 +1622,7 @@ carve(body: str): str
         i += 1
     out
 
-rulesonly(body: str): str
+rulesonly: str = (body: str)
     rows = body:split("\n")
     out: str = ""
     seen: bool = false
@@ -1642,12 +1642,12 @@ rulesonly(body: str): str
     else
         ""
 
-envor(name: str, fallback: str): str
+envor: str = (name: str, fallback: str)
     v = os.getenv(name)
     s: str = v:to(str)
     if s == "" fallback else s 
 
-main(): i64
+main: i64 = ()
     out: str = envor("TSEMIT_OUT", grammarpath)
     check: str = envor("TSEMIT_CHECK", "")
     seed: str = envor("TSEMIT_RESIDUE", "")

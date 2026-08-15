@@ -12,7 +12,7 @@ Point: { x: f64, y: f64, tag: str }
 Pair: { x: f64, y: f64, tag: str }
 Label: { tag: str }
 
-@comp.define.derive("TouchApi", generate(meta) -> str
+@comp.define.derive("TouchApi", generate: str = (meta)
     acc = ""
     for i = 1, meta:len().fields
         f = meta.fields[i]

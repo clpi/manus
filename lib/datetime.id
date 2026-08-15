@@ -70,7 +70,7 @@ global SECS_PER_DAY = 86400
 global SECS_PER_WEEK = 604800
 
 # ---- Constructors ----
-new(year: any, month: any, day: any, hour: any, min: any, sec: any): any
+new: any = (year: any, month: any, day: any, hour: any, min: any, sec: any)
     d = {}
     d.year = year
     d.month = month
@@ -83,65 +83,65 @@ new(year: any, month: any, day: any, hour: any, min: any, sec: any): any
     d.isdst = false
     d
 
-now(): any
+now: any = ()
     os.date("*t")
 
-utc(): any
+utc: any = ()
     os.date("!*t")
 
-from_timestamp(ts: int): any
+from_timestamp: any = (ts: int)
     os.date("*t", ts)
 
-to_timestamp(d: any): int
+to_timestamp: int = (d: any)
     os.time(d)
 
 # ---- Queries ----
 
-is_leap_year(year: i64): bool
+is_leap_year: bool = (year: i64)
     if year % 400 == 0 return true 
     if year % 100 == 0 return false 
     if year % 4 == 0 return true 
     false
 
-days_in_month(year: i64, month: i64): i64
+days_in_month: i64 = (year: i64, month: i64)
     if month == 2 and is_leap_year(year) return 29 
     DT_DAYS_PER_MONTH[month]
 
-days_in_year(year: i64): i64
+days_in_year: i64 = (year: i64)
     if is_leap_year(year) return 366 
     365
 
-weekday_name(d: any): str
+weekday_name: str = (d: any)
     DT_DAY_NAMES[d.wday]
 
-weekday_abbr(d: any): str
+weekday_abbr: str = (d: any)
     DT_DAY_ABBR[d.wday]
 
-month_name(d: any): str
+month_name: str = (d: any)
     DT_MONTH_NAMES[d.month]
 
-month_abbr(d: any): str
+month_abbr: str = (d: any)
     DT_MONTH_ABBR[d.month]
 
-is_weekend(d: any): bool
+is_weekend: bool = (d: any)
     d.wday == 1 or d.wday == 7
 
 # ---- Arithmetic ----
 
-add(d: any, secs: int): any
+add: any = (d: any, secs: int)
     ts = os.time(d)
     os.date("*t", ts + secs)
 
-add_days(d: any, n: i64): any
+add_days: any = (d: any, n: i64)
     add(d, n * SECS_PER_DAY)
 
-add_hours(d: any, n: i64): any
+add_hours: any = (d: any, n: i64)
     add(d, n * SECS_PER_HOUR)
 
-add_minutes(d: any, n: i64): any
+add_minutes: any = (d: any, n: i64)
     add(d, n * SECS_PER_MINUTE)
 
-add_months(d: any, n: i64): any
+add_months: any = (d: any, n: i64)
     total_month = d.month + n
     new_year = d.year + total_month / 12:floor()
     new_month = total_month % 12
@@ -163,24 +163,24 @@ add_months(d: any, n: i64): any
     r.isdst = false
     r
 
-add_years(d: any, n: i64): any
+add_years: any = (d: any, n: i64)
     add_months(d, n * 12)
 
-diff(a: any, b: any): int
+diff: int = (a: any, b: any)
     os.time(a) - os.time(b)
 
-diff_days(a: any, b: any): i64
+diff_days: i64 = (a: any, b: any)
     diff(a, b) // SECS_PER_DAY
 
-diff_hours(a: any, b: any): i64
+diff_hours: i64 = (a: any, b: any)
     diff(a, b) // SECS_PER_HOUR
 
 # ---- Formatting ----
-dt_pad2(n: i64): str
+dt_pad2: str = (n: i64)
     if n < 10 return "0" .. n:to(str) 
     n:to(str)
 
-format(d: any, layout: str): str
+format: str = (d: any, layout: str)
     r = layout
     year4 = d.year:to(str)
     year2 = year4:sub(year4:len() - 1)
@@ -204,16 +204,16 @@ format(d: any, layout: str): str
         r = r:gsub("ampm", "pm")
     r
 
-iso8601(d: any): str
+iso8601: str = (d: any)
     format(d, "YYYY-MM-DDTHH:mm:ss")
 
-date_only(d: any): str
+date_only: str = (d: any)
     format(d, "YYYY-MM-DD")
 
-time_only(d: any): str
+time_only: str = (d: any)
     format(d, "HH:mm:ss")
 
-rfc2822(d: any): str
+rfc2822: str = (d: any)
     p = DT_DAY_ABBR[d.wday] .. ", "
     p = p .. d.day:to(str) .. " "
     p = p .. DT_MONTH_ABBR[d.month] .. " "
@@ -223,7 +223,7 @@ rfc2822(d: any): str
     p = p .. dt_pad2(d.sec) .. " +0000"
     p
 
-human_relative(d: any): str
+human_relative: str = (d: any)
     secs = diff(now(), d)
     future = false
     if secs < 0
@@ -258,18 +258,18 @@ human_relative(d: any): str
 # The codegen handles multi-return for direct call sites.
 # We pre-declare variables so the codegen emits proper C declarations.
 
-dt_parse_digit2(s: str, pos: any): any
+dt_parse_digit2: any = (s: str, pos: any)
     val = s:sub(pos, pos):to(i64) * 10 + s:sub(pos + 1, pos + 1):to(i64)
     return val, pos + 2
 
-dt_parse_digit4(s: str, pos: any): any
+dt_parse_digit4: any = (s: str, pos: any)
     val = s:sub(pos, pos):to(i64) * 1000
     val += s:sub(pos + 1, pos + 1):to(i64) * 100
     val += s:sub(pos + 2, pos + 2):to(i64) * 10
     val += s:sub(pos + 3, pos + 3):to(i64)
     return val, pos + 4
 
-parse_iso8601(s: str): any
+parse_iso8601: any = (s: str)
     if s:len() < 10 return nil 
     year = 0
     pos = 1
@@ -293,10 +293,10 @@ parse_iso8601(s: str): any
                 second, pos = dt_parse_digit2(s, pos + 1)
     new(year, month, day, hour, minute, second)
 
-parse_date(s: str): any
+parse_date: any = (s: str)
     parse_iso8601(s .. "T00:00:00")
 
-parse_time(s: str): any
+parse_time: any = (s: str)
     hour = 0
     pos = 1
     hour, pos = dt_parse_digit2(s, 1)
@@ -310,44 +310,44 @@ parse_time(s: str): any
 
 # ---- Comparison ----
 
-before(a: any, b: any): bool
+before: bool = (a: any, b: any)
     os.time(a) < os.time(b)
 
-after(a: any, b: any): bool
+after: bool = (a: any, b: any)
     os.time(a) > os.time(b)
 
-equal(a: any, b: any): bool
+equal: bool = (a: any, b: any)
     os.time(a) == os.time(b)
 
-min(a: any, b: any): any
+min: any = (a: any, b: any)
     if before(a, b) return a 
     b
 
-max(a: any, b: any): any
+max: any = (a: any, b: any)
     if after(a, b) return a 
     b
 
 # ---- Range & Truncation ----
-start_of_day(d: any): any
+start_of_day: any = (d: any)
     new(d.year, d.month, d.day, 0, 0, 0)
 
-end_of_day(d: any): any
+end_of_day: any = (d: any)
     new(d.year, d.month, d.day, 23, 59, 59)
 
-start_of_month(d: any): any
+start_of_month: any = (d: any)
     new(d.year, d.month, 1, 0, 0, 0)
 
-end_of_month(d: any): any
+end_of_month: any = (d: any)
     last_day = days_in_month(d.year, d.month)
     new(d.year, d.month, last_day, 23, 59, 59)
 
-start_of_year(d: any): any
+start_of_year: any = (d: any)
     new(d.year, 1, 1, 0, 0, 0)
 
-end_of_year(d: any): any
+end_of_year: any = (d: any)
     new(d.year, 12, 31, 23, 59, 59)
 
-truncate(d: any, precision: str): any
+truncate: any = (d: any, precision: str)
     if precision == "hour"
         return new(d.year, d.month, d.day, d.hour, 0, 0)
     if precision == "minute"

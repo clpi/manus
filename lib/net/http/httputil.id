@@ -1,7 +1,7 @@
 # net.http.httputil — HTTP utilities (mirrors Go's net/http/httputil)
 # Provides reverse proxy and dump helpers
 
-dump(x: any): str
+dump: str = (x: any)
     if x == nil return ""
     if has(.method)(x)
         out = {x.method or "GET", " ", x.path or "/", " HTTP/1.1\r\n"}
@@ -14,5 +14,5 @@ dump(x: any): str
     if x.body out[out:len() + 1] = x.body
     out:concat()
 
-proxy(target: str): any
+proxy: any = (target: str)
     {target = target}

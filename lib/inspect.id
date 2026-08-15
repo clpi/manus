@@ -3,7 +3,7 @@
 # for debugging complex data structures.
 
 # Internal: sort string array in-place.
-std_inspect_sort_strings(arr: any): void
+std_inspect_sort_strings = (arr: any)
     if arr == nil return 
     n = arr:len()
     i = 1
@@ -17,7 +17,7 @@ std_inspect_sort_strings(arr: any): void
         i += 1
 
 # Internal: recursive deep hash.
-std_inspect_hash(value: any): str
+std_inspect_hash: str = (value: any)
     if value == nil return "nil" 
     t = type(value)
     if t != "table" return t .. ":" .. value:to(str) 
@@ -44,7 +44,7 @@ std_inspect_hash(value: any): str
     "{" .. parts:concat(",") .. "}"
 
 # Internal: recursive to_str with cycle detection.
-std_inspect_to_str(value: any, indent: any, seen: any): str
+std_inspect_to_str: str = (value: any, indent: any, seen: any)
     if indent == nil indent = 0 
     if seen == nil seen = {} 
     if value == nil return "nil" 
@@ -96,7 +96,7 @@ std_inspect_to_str(value: any, indent: any, seen: any): str
     return "{\n" .. inner_prefix .. parts:concat(",\n" .. inner_prefix) .. "\n" .. prefix .. "}"
 
 # Internal: recursive diff helper.
-std_inspect_diff(a: any, b: any, prefix: any, diffs: any): void
+std_inspect_diff = (a: any, b: any, prefix: any, diffs: any)
     if a == nil and b == nil return 
     if a == nil or b == nil
         if a == nil
@@ -125,11 +125,11 @@ std_inspect_diff(a: any, b: any, prefix: any, diffs: any): void
             diffs[diffs:len() + 1] = {path = path, kind = "added", new = v}
 
 # to_str: deep-convert any value to a human-readable string.
-to_str(value: any, indent: any, seen: any): str
+to_str: str = (value: any, indent: any, seen: any)
     std_inspect_to_str(value, indent, seen)
 
 # deep_equal: recursively compare two values for structural equality.
-deep_equal(a: any, b: any): bool
+deep_equal: bool = (a: any, b: any)
     if a == b return true 
     if a == nil or b == nil return false 
     if type(a) != type(b) return false 
@@ -155,18 +155,18 @@ deep_equal(a: any, b: any): bool
     true
 
 # deep_hash: produce a consistent hash of any value.
-deep_hash(value: any): str
+deep_hash: str = (value: any)
     std_inspect_hash(value)
 
 # diff: compare two tables and return a list of differences.
-diff(a: any, b: any, prefix: any): any
+diff: any = (a: any, b: any, prefix: any)
     if prefix == nil prefix = "" 
     diffs = {}
     std_inspect_diff(a, b, prefix, diffs)
     diffs
 
 # diff_summary: return a human-readable summary of differences.
-diff_summary(a: any, b: any): str
+diff_summary: str = (a: any, b: any)
     diffs = diff(a, b)
     if diffs:len() == 0 return "no differences" 
     parts = {}
@@ -213,7 +213,7 @@ value: any:len(): i64
     return 1
 
 # keys_of: return sorted list of keys of a table.
-keys_of(t: any): any
+keys_of: any = (t: any)
     out = {}
     if t == nil or type(t) != "table" return out 
     for kk, _kv in t
@@ -222,7 +222,7 @@ keys_of(t: any): any
     out
 
 # summary: return a compact summary of a value's structure.
-summary(value: any): str
+summary: str = (value: any)
     if value == nil return "nil" 
     t = type(value)
     if t != "table" return t .. ": " .. value:to(str) 
@@ -240,7 +240,7 @@ summary(value: any): str
     return "table(" .. count:to(str) .. " keys)"
 
 # caller_info: return info about the calling function.
-caller_info(level: any): any
+caller_info: any = (level: any)
     if level == nil level = 2 
     info = debug.getinfo(level)
     if info == nil return nil 
@@ -256,7 +256,7 @@ caller_info(level: any): any
 #   stack_trace(level?, max_depth?, pretty?)
 #   pretty = true => ANSI-colored, icon-signed frames (cyan-underlined
 #   locations, magenta-italic function names, dim caller meta).
-stack_trace(level: any, max_depth: any, pretty: any): str
+stack_trace: str = (level: any, max_depth: any, pretty: any)
     if level == nil level = 2 
     if max_depth == nil max_depth = 20 
     color_ok = false

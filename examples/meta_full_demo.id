@@ -12,15 +12,15 @@ identity(value)
 make_pair(first, second)
     { first = first, second = second }
 
-swap(a, b): any
+swap: any = (a, b)
     return b, a
 
-safe_div(a, b): any
+safe_div: any = (a, b)
     if b == 0
         return a
     a // b
 
-map_list(xs, fn): any
+map_list: any = (xs, fn)
     result = {}
     for i = 1, xs:len()
         result[i] = fn(xs[i])
@@ -61,7 +61,7 @@ derive_clone(val)
     for k, v in val do c[k] = v 
     c
 
-derive_display(val): str
+derive_display: str = (val)
     if val == nil return "nil" 
     if type(val) == "boolean"
         if val return "true" else return "false" 
@@ -77,16 +77,16 @@ derive_display(val): str
 
 # ── Section 5: Memory Allocators ───────────────────────────────────────────
 
-demo_arena(): void
+demo_arena = ()
     arena = { _bufs = {}, _offset = 0, _capacity = 4096, _total = 0 }
     print("Arena created, capacity: " .. to(str)(arena._capacity))
 
-demo_pool(): void
+demo_pool = ()
     print("Pool created, block_size: 128, count: 64")
 
 # ── Section 6: WASI Types ──────────────────────────────────────────────────
 
-demo_wasi(): void
+demo_wasi = ()
     print("WASI stdin fd:  0")
     print("WASI stdout fd: 1")
     print("WASI stderr fd: 2")
@@ -95,7 +95,7 @@ demo_wasi(): void
 
 # ── Section 7: Reflection ───────────────────────────────────────────────────
 
-demo_reflection(val): void
+demo_reflection = (val)
     print("typeof: " .. type(val))
     print("is_nil: " .. to(str)(val == nil))
     print("is_str: " .. to(str)(type(val) == "string"))
@@ -116,14 +116,14 @@ typed_add(a: i64, b: i64): i64
 untyped_add(a, b)
     a + b
 
-classify(n: i64): str
+classify: str = (n: i64)
     if n < 0
         return "negative"
     if n == 0
         return "zero"
     "positive"
 
-validate_input(val): bool
+validate_input: bool = (val)
     if val == nil
         if true
             return false

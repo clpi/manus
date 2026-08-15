@@ -16,16 +16,16 @@
 
 _HERE = "benchmarks/wasm_rt"
 
-_env_or(name: str, fallback: str): str
+_env_or: str = (name: str, fallback: str)
     v = std.script.getenv_or(name)
     if v == "" return fallback 
     v
 
-_have(tool: str): bool
+_have: bool = (tool: str)
     std.script.chomp(std.script.capture("command -v " .. tool .. " 2>/dev/null")) != ""
 
 # Fixed-width column, so the table lines up without printf templates.
-_pad(s: str, w: i64): str
+_pad: str = (s: str, w: i64)
     out = s
     while #out < w
         out = out .. " "
@@ -45,12 +45,12 @@ _secs(ns: i64): str
 
 # One timed run. Returns ns; the OUTPUT is read separately by the caller,
 # because piping through `tail` would put the pipeline in the timing window.
-_time_run(cmd: str): i64
+_time_run: i64 = (cmd: str)
     t0 = std.time.monotonic()
     std.script.run("timeout 900 " .. cmd .. " >/dev/null 2>&1")
     std.time.monotonic() - t0
 
-_last_line(cmd: str): str
+_last_line: str = (cmd: str)
     std.script.chomp(std.script.capture("timeout 900 " .. cmd .. " 2>/dev/null | tail -1"))
 
 # Best of N: the MINIMUM, not the mean. A benchmark's slow samples are noise
@@ -59,7 +59,7 @@ _last_line(cmd: str): str
 # inside a nested function here # the emitted C carries an undeclared
 # `range` identifier # though it works at the top level of `main`. Filed
 # against the FF-11 conformance row, which only covers the latter.
-_best_of(cmd: str, runs: i64): i64
+_best_of: i64 = (cmd: str, runs: i64)
     best = 0
     i = 0
     while i < runs

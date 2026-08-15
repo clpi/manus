@@ -1,18 +1,18 @@
 # utf8 — utf-8 utilities
 
-char(codepoint: int): str
+char: str = (codepoint: int)
     utf8.char(codepoint)
 
-codes(s: str): any
+codes: any = (s: str)
     utf8.codes(s)
 
-codepoint(s: str, i: int, j: int): any
+codepoint: any = (s: str, i: int, j: int)
     utf8.codepoint(s, i, j)
 
 s: str, i: int, j: int:len(): any
     utf8.len(s, i, j)
 
-offset(s: str, n: int, i: int): any
+offset: any = (s: str, n: int, i: int)
     utf8.offset(s, n, i)
 
 # The only export that was not already a top-level binding: an alias onto the
