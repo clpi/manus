@@ -10,6 +10,7 @@ const native_types = @import("types.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const table_apply = @import("table_apply.zig");
 const region_graph = @import("region_graph.zig");
 
 pub const Error = error{
@@ -5225,11 +5226,23 @@ fn stageCompactGpApplication(
     return staged;
 }
 
+/// Graph lift has a PRECONDITION: the module has been canonicalized by
+/// `table_apply`, so that every lawful spelling of a world projection is the one
+/// node the recognizers look for. `os.args(1)` and `os.env("PATH")` parse as
+/// `.call`; the projection recognizers in `dnir_lower` only fire on `.index`.
+///
+/// This was driver-only (`main.zig`), so tests that build their own
+/// parse -> check -> lift pipeline skipped it and asserted against an AST no
+/// user ever compiles. Demagix (`a[i]` canonicalizes to `a(i)`) then rewrote
+/// two fixtures into the spelling only the driver could resolve, and the tests
+/// failed for a reason that had nothing to do with what they were testing.
+/// Normalizing here keeps the precondition attached to the stage that needs it.
 fn liftCheckedTestGraph(
-    module: *const ast.Module,
+    module: *ast.Module,
     checked: *const Sema,
     graph: *semantic_graph.SemanticGraph,
 ) !void {
+    table_apply.normalizeModule(checked.alloc, module, &checked.type_map);
     _ = try graph.liftModuleWithCheckedCalls(module, checked, module.file);
 }
 
@@ -5275,7 +5288,7 @@ fn emitCheckedTestObject(
 
 fn expectCheckedTestSemanticFailure(
     alloc: std.mem.Allocator,
-    module: *const ast.Module,
+    module: *ast.Module,
     checked: *const Sema,
     expected: []const u8,
     expected_lowering: ?[]const u8,
@@ -5310,7 +5323,7 @@ fn expectCheckedTestSemanticFailure(
 
 fn expectCheckedTestPhysicalRefusal(
     alloc: std.mem.Allocator,
-    module: *const ast.Module,
+    module: *ast.Module,
     checked: *const Sema,
     expected: []const u8,
 ) !void {

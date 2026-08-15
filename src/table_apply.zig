@@ -51,14 +51,30 @@ fn argProjection(func: *const ast.Expr) bool {
     };
 }
 
-/// The one node every argument spelling converges on: `os.args`, which already
-/// resolves end to end.
-fn argTable(alloc: std.mem.Allocator, loc: ast.Loc) !*ast.Expr {
+/// `os.env(k)` / `os:env(k)` — the environment projection. `os.env` is a root
+/// TABLE, so applying it with one key is access, not a call, exactly as with
+/// `os.args`. Only the ANCHORED spellings converge here: the ruling makes
+/// `arg(i)` canonical for arguments, but says nothing that would make a bare
+/// `env` a reserved name, and three files in this tree define their own
+/// `getenv` shim. Converging a bare name would capture those.
+fn envAnchor(func: *const ast.Expr) bool {
+    return func.* == .field and func.field.obj.* == .name and
+        std.mem.eql(u8, func.field.obj.name.ident, "os") and
+        std.mem.eql(u8, func.field.field, "env");
+}
+
+/// The one node a world projection converges on — `os.args` / `os.env` — which
+/// already resolves end to end.
+fn worldTable(alloc: std.mem.Allocator, loc: ast.Loc, member: []const u8) !*ast.Expr {
     const os_name = try alloc.create(ast.Expr);
     os_name.* = .{ .name = .{ .loc = loc, .ident = "os" } };
     const fld = try alloc.create(ast.Expr);
-    fld.* = .{ .field = .{ .loc = loc, .obj = os_name, .field = "args" } };
+    fld.* = .{ .field = .{ .loc = loc, .obj = os_name, .field = member } };
     return fld;
+}
+
+fn argTable(alloc: std.mem.Allocator, loc: ast.Loc) !*ast.Expr {
+    return worldTable(alloc, loc, "args");
 }
 
 fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sema.TypeMap) void {
@@ -106,6 +122,16 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
                     .obj = argTable(alloc, mc.loc) catch return,
                     .key = mc.args[0],
                 } };
+            } else if (mc.args.len == 1 and mc.obj.* == .name and
+                std.mem.eql(u8, mc.obj.name.ident, "os") and
+                std.mem.eql(u8, mc.method, "env"))
+            {
+                // `os:env(k)` — subject-first face of the same projection.
+                expr.* = .{ .index = .{
+                    .loc = mc.loc,
+                    .obj = worldTable(alloc, mc.loc, "env") catch return,
+                    .key = mc.args[0],
+                } };
             }
         },
         .table => |t| for (t.fields) |fld| switch (fld) {
@@ -144,6 +170,15 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
             // carries no application fact the graph recognises.
             if (c.form == .parenthesized and c.args.len == 1 and argProjection(c.func)) {
                 expr.* = .{ .index = .{ .loc = c.loc, .obj = argTable(alloc, c.loc) catch return, .key = c.args[0] } };
+                return;
+            }
+            // The ENVIRONMENT projection, for the same reason. Demagix made
+            // `a[i]` canonicalize to `a(i)`, which rewrote `os.env["PATH"]` into
+            // a `.call` the graph could not resolve — the projection is the
+            // `.index`. `os.env` is already the node that resolves, so the
+            // application face converges straight back onto it.
+            if (c.form == .parenthesized and c.args.len == 1 and envAnchor(c.func)) {
+                expr.* = .{ .index = .{ .loc = c.loc, .obj = c.func, .key = c.args[0] } };
             }
         },
         else => {},
