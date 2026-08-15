@@ -84,6 +84,80 @@ pub fn conformanceOf(t: RT) Conformance {
     };
 }
 
+// ── THE CONFORMANCE A BINDING CARRIES ───────────────────────────────────────
+//
+// THE HOLE THIS CLOSES, measured with `idol check` against the shipped binary:
+//
+//     s: str = "text" ; s:write("x")   REFUSED     — the annotated case is right
+//     s      = "text" ; s:write("x")   CLEAN       — and it is the same program
+//     s      = "text" ; s:floor()      CLEAN
+//     n      = 5      ; n:write("x")   CLEAN
+//     "text":write("x")                REFUSED     — the literal is right too
+//
+// ANNOTATE IT AND IT IS REFUSED; WRITE IT DOWN BARE AND IT IS ADMITTED. Nothing
+// about the subject changed between those two lines — only whether sema still
+// had the descriptor when the subject was asked. An IMPLICIT LOCAL (assignment
+// to an undeclared name) is bound `any` and the initializer's descriptor is
+// discarded, so `conformanceOf` answers `unknown` and the `unknown` arm — the
+// bridge that lets an unnarrowed subject reach every roster — admitted `write`
+// on a string and `floor` on a string alike.
+//
+// c0 §41 already rules this the other way: AN IMPLICIT LOCAL TAKES THE CASE-SET
+// OF THE VALUE THAT CREATED IT. The general form of that rule (the binding takes
+// the value's DESCRIPTOR) is recorded as owed at the assignment site in
+// `sema.zig` and is a representation change — a `str` local stops being a
+// `lua_Value` in the emitted C — so it is not this ruling's to make.
+//
+// WHAT IS THIS RULING'S: the CONFORMANCE, which is not a representation and
+// costs nothing to carry. sema already carries exactly this fact for exactly
+// this reason, for exactly one protocol — `sequence_bindings`, "a name bound to
+// a table CONSTRUCTOR is a sequence", recorded because a table constructor also
+// types `any`. The mechanism was right and its scope was one protocol wide. The
+// two functions below are that mechanism generalized to the whole lattice, kept
+// HERE so the derivation has one origin and sema spells out no protocol rule.
+
+/// The conformance a BINDING carries, derived from the value that created it.
+///
+/// `init_is_constructor` is the one fact a descriptor cannot supply today: a
+/// table constructor types `any`, so `t = { … }` has no descriptor to read and
+/// the AST shape is the only witness. It is passed as a BOOLEAN rather than
+/// read here because this file does not import the AST and must not start.
+///
+/// DELETION CONDITION: delete `init_is_constructor` once a table constructor's
+/// descriptor is `table_type`; delete the whole function once an implicit local
+/// carries its initializer's descriptor (c0 §41's general rule), at which point
+/// `conformanceOf(ot)` answers at the subject and nothing needs to be recorded.
+pub fn conformanceOfBinding(init_type: RT, init_is_constructor: bool) Conformance {
+    const from_descriptor = conformanceOf(init_type);
+    if (from_descriptor != .unknown) return from_descriptor;
+    if (init_is_constructor) return .sequence;
+    return .unknown;
+}
+
+/// What a name carries after being bound AGAIN — and it only ever WIDENS.
+///
+/// `null` means the name carries no conformance fact, which is the honest
+/// answer and NOT a third protocol: the subject falls back to `unknown` and
+/// reaches every roster, exactly as it does today.
+///
+/// WIDENING IS THE WHOLE SAFETY ARGUMENT. A witness on a name is keyed by the
+/// name, so it cannot see a branch merge, a loop back-edge or a shadowing inner
+/// scope. Every one of those can make a recorded conformance STALE, and a stale
+/// conformance that NARROWS would refuse a valid program — `f = "name"` early,
+/// `f = io.open(path)` later, `f:close()` refused because the first binding is
+/// what the name remembers. So two bindings that disagree retract to no fact at
+/// all, and the only way this mechanism can be wrong is by admitting something
+/// it could have refused. That direction is already today's behaviour.
+///
+/// `track_table_field` takes the same decision for the same reason ("on type
+/// mismatch, widens to .any (conservative)").
+pub fn mergedBindingConformance(prev: ?Conformance, next: Conformance) ?Conformance {
+    if (next == .unknown) return null;
+    const p = prev orelse return next;
+    if (p == next) return p;
+    return null;
+}
+
 /// The worlds INJECTED into root scope.
 ///
 /// A member edge of an injected world is reachable BARE, because the world is
@@ -311,6 +385,27 @@ const sequence_relations = [_]Provided{
 /// DELETION CONDITION: delete this roster once a stream carries a descriptor,
 /// at which point `conformanceOf` grows a `stream` arm and these become the
 /// `stream` protocol's relations like any other.
+///
+/// WHY THAT CONDITION IS THE ONLY ONE, and why the obvious shortcut is wrong.
+/// The tempting move is to stop `unknown` reaching this roster and be done: it
+/// would refuse `s = "text" ; s:write(x)` in one line. It would also refuse the
+/// corpus. MEASURED across every `.id` in this tree — 212 sites reach a stream
+/// relation on a subject that is NOT one of the three standing names, and the
+/// subject is unnarrowable at 51 of them in `lib/` alone plus 37 field
+/// subjects:
+///
+///     lib/io.id        `write: any = (file: any, arg: any)` / `file:write(arg)`
+///                      — seven relations, every one on an `any` PARAMETER
+///     lib/bufio.id:140 `w.fh:write(w.buf)`      — a table FIELD
+///     lib/fs.id:33     `f = io.open(path,"w")`  — a binding, `io.open` is `any`
+///
+/// A parameter and a table field have no binding to carry a witness and no
+/// descriptor to read, so the only way to narrow them is to WRITE THE
+/// DESCRIPTOR DOWN — `write: any = (file: stream, arg: any)`. That is the same
+/// condition stated above, seen from the corpus instead of from the compiler:
+/// the roster leaves `unknown`'s reach when `stream` is a descriptor an author
+/// can spell, not before. Refusing first and migrating after would refuse
+/// working programs in the interval, and this gate exists to stop exactly that.
 const stream_relations = [_]Provided{
     .{ .name = "write", .home = .io },
     .{ .name = "read", .home = .io },
@@ -433,6 +528,17 @@ pub fn homeProvides(home: Home, method: []const u8) bool {
 /// which is exactly today's behaviour, held only for the case where the
 /// descriptor is genuinely absent. `os` and `testing` are NOT in that fallback:
 /// a world is reached by naming it, and an unnarrowed subject is not a world.
+///
+/// THE BRIDGE IS NOW ONLY AS WIDE AS THE ABSENCE. It used to be much wider than
+/// that: an implicit local discarded its initializer's descriptor, so `s =
+/// "text"` arrived here as `unknown` and reached `write`, `close` and `floor` —
+/// while the SAME PROGRAM written `s: str = "text"` was correctly refused.
+/// `conformanceOfBinding` closes that, and what is left under `unknown` is the
+/// genuine article: a parameter, a table field, a call into an untyped relation.
+/// The stream roster is still in reach from here BY MEASUREMENT — see
+/// `stream_relations`, where 212 corpus sites say why — and that is the one
+/// remaining place where `unknown` stands in for a fact rather than reporting
+/// its absence.
 pub fn homeForConformance(c: Conformance, method: []const u8) ?Home {
     return switch (c) {
         .text => realizedBy(&text_relations, method),
@@ -555,6 +661,59 @@ test "a world is reached by naming it, not by the relation's name" {
     // no answer, where the name list answered both for every receiver alive.
     try std.testing.expect(homeForConformance(.unknown, "arg") == null);
     try std.testing.expect(homeForConformance(.unknown, "assert") == null);
+}
+
+test "a binding carries the conformance of the value that created it" {
+    // The four rows measured on the shipped binary, decided here instead of at
+    // the `unknown` fallthrough. `s = "text"` is `str` to everyone except the
+    // binding, and this is where the binding gets told.
+    try std.testing.expectEqual(Conformance.text, conformanceOfBinding(.str, false));
+    try std.testing.expectEqual(Conformance.numeric, conformanceOfBinding(.i64, false));
+    try std.testing.expectEqual(Conformance.numeric, conformanceOfBinding(.f64, false));
+
+    // ...and the roster that conformance reaches is the one the ANNOTATED
+    // spelling already reached, which is the whole point: two spellings of one
+    // program stop disagreeing.
+    const s = conformanceOfBinding(.str, false);
+    try std.testing.expect(homeForConformance(s, "write") == null); // s = "text" ; s:write(x)
+    try std.testing.expect(homeForConformance(s, "close") == null); // s = "text" ; s:close()
+    try std.testing.expect(homeForConformance(s, "floor") == null); // s = "text" ; s:floor()
+    try std.testing.expectEqual(Home.string, homeForConformance(s, "len").?); // still resolves
+    try std.testing.expectEqual(Home.io, homeForConformance(s, "read").?); // a string is a PATH
+
+    const n = conformanceOfBinding(.i64, false);
+    try std.testing.expect(homeForConformance(n, "write") == null); // n = 5 ; n:write(x)
+    try std.testing.expectEqual(Home.math, homeForConformance(n, "floor").?);
+
+    // A table CONSTRUCTOR types `any`, so the descriptor cannot answer and the
+    // AST shape is the witness — the one fact `sequence_bindings` was carrying
+    // before this generalized it.
+    try std.testing.expectEqual(Conformance.sequence, conformanceOfBinding(.any, true));
+    try std.testing.expectEqual(Conformance.unknown, conformanceOfBinding(.any, false));
+    // `io.open(…)` answers `any` and is not a constructor: NO witness, so a
+    // stream-valued binding keeps the bridge and `f:write(x)` keeps working.
+    // This is the row that makes the deletion condition on `stream_relations`
+    // load-bearing rather than decorative.
+    try std.testing.expectEqual(
+        Home.io,
+        homeForConformance(conformanceOfBinding(.any, false), "write").?,
+    );
+}
+
+test "a name bound twice WIDENS, so a stale witness can never refuse" {
+    // First binding: the fact is taken.
+    try std.testing.expectEqual(Conformance.text, mergedBindingConformance(null, .text).?);
+    // Bound again to the same thing: unchanged.
+    try std.testing.expectEqual(Conformance.text, mergedBindingConformance(.text, .text).?);
+    // DISAGREEMENT RETRACTS. `f = "name"` then `f = io.open(path)` must not
+    // leave `f` remembering `text`, or `f:close()` is refused for a program
+    // that is correct — the failure mode this rule exists to make impossible.
+    try std.testing.expect(mergedBindingConformance(.text, .unknown) == null);
+    try std.testing.expect(mergedBindingConformance(.text, .numeric) == null);
+    try std.testing.expect(mergedBindingConformance(.sequence, .text) == null);
+    // A first binding with nothing to say records nothing, rather than
+    // recording "unknown" as though it were a fact.
+    try std.testing.expect(mergedBindingConformance(null, .unknown) == null);
 }
 
 test "an unnarrowed subject still reaches every protocol — the bridge, marked" {

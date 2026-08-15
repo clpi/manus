@@ -438,10 +438,20 @@ pub const Sema = struct {
     /// Updated on assignments, queried on field reads. Keys are
     /// `{func}.{table}.{field}` for top-level functions, or `{table}.{field}` otherwise.
     table_field_types: std.StringHashMapUnmanaged(RT) = .{},
-    /// Names bound to a table CONSTRUCTOR. The one conformance fact still
-    /// derivable when the descriptor is `any` — see `subjectConformance`.
-    /// Keys borrow the AST's identifier slices, which outlive the check.
-    sequence_bindings: std.StringHashMapUnmanaged(void) = .{},
+    /// THE CONFORMANCE A BINDING CARRIES, keyed `{func}.{name}` or `{name}`.
+    ///
+    /// An implicit local is bound `any` and the initializer's descriptor is
+    /// discarded, so `s = "text"` reached `subjectConformance` with nothing to
+    /// say while `s: str = "text"` — the same program — was narrowed correctly.
+    /// This carries the conformance across that gap. It is the generalization
+    /// of `sequence_bindings`, which carried exactly this fact for exactly one
+    /// protocol because a table constructor types `any` for the same reason.
+    ///
+    /// Derived by `subject_home.conformanceOfBinding` and merged by
+    /// `subject_home.mergedBindingConformance`, so no protocol rule is spelled
+    /// out here; see those for the widening argument that makes a stale entry
+    /// unable to refuse a valid program.
+    binding_conformance: std.StringHashMapUnmanaged(subject_home.Conformance) = .{},
     /// Metatable type tracking: maps variable name → known metatable fields.
     /// Populated when setmetatable(x, mt) is called and mt is a table literal
     /// with known __index. Enables compile-time method resolution.
@@ -805,7 +815,9 @@ pub const Sema = struct {
         self.debug_directives.deinit(self.alloc);
         self.escape_names.deinit(self.alloc);
         self.table_field_types.deinit(self.alloc);
-        self.sequence_bindings.deinit(self.alloc);
+        var bc_it = self.binding_conformance.iterator();
+        while (bc_it.next()) |entry| self.alloc.free(entry.key_ptr.*);
+        self.binding_conformance.deinit(self.alloc);
         var tm_it = self.table_methods.iterator();
         while (tm_it.next()) |entry| {
             entry.value_ptr.deinit(self.alloc);
@@ -2701,20 +2713,55 @@ pub const Sema = struct {
         return std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch null;
     }
 
-    fn track_table_literal_fields(self: *Sema, table_name: []const u8, init_expr: *const ast.Expr) void {
-        if (init_expr.* != .table) {
-            // Rebinding to something that is not a constructor RETRACTS the
-            // sequence fact. A stale conformance is worse than none: it would
-            // narrow a subject to the wrong protocol on the strength of an
-            // assignment that no longer holds.
-            _ = self.sequence_bindings.remove(table_name);
+    /// THE CONFORMANCE WITNESS ON A BINDING. `name = <init>` records what the
+    /// value that created the binding conforms to, because the binding itself
+    /// does not carry it: an implicit local is bound `any` and the
+    /// initializer's descriptor is discarded, so `s = "text"` reached
+    /// `subjectConformance` with nothing to say and `s:write(x)` type-checked
+    /// clean — while `s: str = "text"` was correctly refused. Same program.
+    ///
+    /// Recorded HERE because this is already the one walk that knows a
+    /// binding's initializer; a second walk to learn the same fact is how the
+    /// two faces drift. It generalizes `sequence_bindings`, which recorded
+    /// exactly this for exactly one protocol.
+    ///
+    /// THE RULE ITSELF IS NOT HERE. `subject_home.conformanceOfBinding` derives
+    /// it and `subject_home.mergedBindingConformance` merges it, so no protocol
+    /// knowledge is spelled out in sema and the resolver keeps one origin.
+    /// Keyed by `{func}.{name}` so two functions binding the same name do not
+    /// share a witness — `f = "path"` in one relation must not be able to
+    /// refuse `f:close()` in another.
+    fn note_binding_conformance(self: *Sema, name: []const u8, init_expr: *const ast.Expr) void {
+        const init_t = self.type_map.get(init_expr) orelse RT.any;
+        const next = subject_home.conformanceOfBinding(init_t, init_expr.* == .table);
+
+        var lookup_buf: [384]u8 = undefined;
+        const lookup_key = (if (self.current_func_name) |fn_name|
+            std.fmt.bufPrint(&lookup_buf, "{s}.{s}", .{ fn_name, name })
+        else
+            std.fmt.bufPrint(&lookup_buf, "{s}", .{name})) catch return;
+
+        const existing = self.binding_conformance.getPtr(lookup_key);
+        const prev: ?subject_home.Conformance = if (existing) |p| p.* else null;
+        if (subject_home.mergedBindingConformance(prev, next)) |c| {
+            if (existing) |p| {
+                p.* = c;
+                return;
+            }
+            const owned = self.alloc.dupe(u8, lookup_key) catch return;
+            self.binding_conformance.put(self.alloc, owned, c) catch self.alloc.free(owned);
             return;
         }
-        // The subject-first conformance witness for `t = { … }`; see
-        // `subjectConformance`. Recorded HERE because this is already the one
-        // walk that knows a binding's initializer is a constructor — a second
-        // walk to learn the same fact is how the two faces drift.
-        self.sequence_bindings.put(self.alloc, table_name, {}) catch {};
+        // RETRACTION. Two bindings that disagree, or one that says nothing,
+        // leave the name carrying no fact — never a stale one. See
+        // `mergedBindingConformance` for why widening is the only safe
+        // direction for a witness keyed by name.
+        if (self.binding_conformance.fetchRemove(lookup_key)) |kv| self.alloc.free(kv.key);
+    }
+
+    fn track_table_literal_fields(self: *Sema, table_name: []const u8, init_expr: *const ast.Expr) void {
+        self.note_binding_conformance(table_name, init_expr);
+        if (init_expr.* != .table) return;
         for (init_expr.table.fields) |fld| {
             switch (fld) {
                 .named => |nmd| {
@@ -2780,18 +2827,28 @@ pub const Sema = struct {
     /// never a name, so a descriptor this compiler has never heard of still
     /// gets the right answer.
     ///
-    /// THE MISSING FACT, when it answers `unknown`: sema types a table
-    /// constructor `any` (`check_expr` on `.table` returns `.any`), and an
-    /// unannotated binding inherits that, so most collections in real source
-    /// carry no descriptor to ask. One structural fact survives that and is
-    /// used rather than guessed around: a name bound to a table CONSTRUCTOR is
-    /// a sequence, which the binding walk already records for field tracking
-    /// (`track_table_literal_fields`). That is what lets `t = {…}` /
-    /// `t:concat("-")` resolve by what `t` IS.
+    /// THE MISSING FACT, when it answers `unknown`: AN IMPLICIT LOCAL LOSES ITS
+    /// INITIALIZER'S DESCRIPTOR. `check_assign_target` binds an undeclared name
+    /// `any`, and sema types a table constructor `any` too, so most bindings in
+    /// real source arrive here with no descriptor to ask. Measured on the
+    /// shipped binary — the same program, twice:
     ///
-    /// DELETION CONDITION for `sequence_bindings`: delete once a table
-    /// constructor's descriptor is `table_type` rather than `any`, at which
-    /// point the first line answers and this one is dead.
+    ///     s: str = "text" ; s:write("x")   REFUSED, correctly
+    ///     s      = "text" ; s:write("x")   CLEAN — and it wrote nothing
+    ///     s      = "text" ; s:floor()      CLEAN
+    ///     n      = 5      ; n:write("x")   CLEAN
+    ///
+    /// So the descriptor is asked first, and when it has nothing to say the
+    /// BINDING is asked: `note_binding_conformance` recorded what the value
+    /// that created the name conformed to, on the same walk that already knew
+    /// it. `t = {…}` / `t:concat("-")` resolves through the identical path,
+    /// which is what it always did — `sequence_bindings` was this mechanism at
+    /// one protocol wide.
+    ///
+    /// DELETION CONDITION: delete once an implicit local carries its
+    /// initializer's descriptor (c0 §41's general rule, recorded as owed at the
+    /// `.assign` arm of `check_stmt`), at which point the first line answers
+    /// and the rest is dead.
     fn subjectConformance(
         self: *const Sema,
         obj: *const ast.Expr,
@@ -2800,7 +2857,14 @@ pub const Sema = struct {
         const from_descriptor = subject_home.conformanceOf(ot);
         if (from_descriptor != .unknown) return from_descriptor;
         if (obj.* == .table) return .sequence;
-        if (obj.* == .name and self.sequence_bindings.contains(obj.name.ident)) return .sequence;
+        if (obj.* == .name) {
+            var lookup_buf: [384]u8 = undefined;
+            const key = (if (self.current_func_name) |fn_name|
+                std.fmt.bufPrint(&lookup_buf, "{s}.{s}", .{ fn_name, obj.name.ident })
+            else
+                std.fmt.bufPrint(&lookup_buf, "{s}", .{obj.name.ident})) catch return .unknown;
+            if (self.binding_conformance.get(key)) |c| return c;
+        }
         return .unknown;
     }
 
@@ -14285,7 +14349,10 @@ test "sema: the subject settles `concat` — no tiebreak, no contested list" {
     // The table receiver reaches `table.concat`, the relation that exists.
     // `t` carries no descriptor (a table constructor types `any`), so this is
     // the SEQUENCE fact the binding walk derived, not a name lookup.
-    try testing.expect(s.sequence_bindings.contains("t"));
+    try testing.expectEqual(
+        subject_home.Conformance.sequence,
+        s.binding_conformance.get("t").?,
+    );
     try testing.expectEqual(
         subject_home.Home.table,
         subjectHomeOfName(&s, "t", "concat", .any).?,
@@ -14403,7 +14470,7 @@ test "sema: a nominal descriptor over a number conforms with no edit to the comp
     try testing.expect(subjectHomeOfName(&s, "d", "split", feet) == null);
 }
 
-test "sema: a rebinding retracts the sequence fact rather than leaving a stale one" {
+test "sema: a rebinding retracts the conformance fact rather than leaving a stale one" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -14418,7 +14485,45 @@ test "sema: a rebinding retracts the sequence fact rather than leaving a stale o
     s.idol_mode = true;
     s.source_path = "test.id";
     try s.check_module(&mod);
-    try testing.expect(!s.sequence_bindings.contains("t"));
+    try testing.expect(s.binding_conformance.get("t") == null);
+}
+
+test "sema: an implicit local carries what the value that created it conforms to" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // THE HOLE, in one file. `s: str = "text"` was refused and `s = "text"`
+    // was admitted, for the same relation on the same value.
+    const src =
+        \\s = "text"
+        \\n = 5
+    ;
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    s.source_path = "test.id";
+    try s.check_module(&mod);
+
+    try testing.expectEqual(subject_home.Conformance.text, s.binding_conformance.get("s").?);
+    try testing.expectEqual(subject_home.Conformance.numeric, s.binding_conformance.get("n").?);
+
+    // A STRING IS A PATH, NOT A STREAM — and now the unannotated spelling
+    // agrees with the annotated one. `ot` is `.any` at both call sites because
+    // the BINDING is what changed, not the type.
+    try testing.expect(subjectHomeOfName(&s, "s", "write", .any) == null);
+    try testing.expect(subjectHomeOfName(&s, "s", "close", .any) == null);
+    try testing.expect(subjectHomeOfName(&s, "s", "floor", .any) == null);
+    try testing.expect(subjectHomeOfName(&s, "n", "write", .any) == null);
+    // ...and the relations the protocol DOES provide still land on their home.
+    try testing.expectEqual(subject_home.Home.string, subjectHomeOfName(&s, "s", "len", .any).?);
+    try testing.expectEqual(subject_home.Home.io, subjectHomeOfName(&s, "s", "read", .any).?);
+    try testing.expectEqual(subject_home.Home.math, subjectHomeOfName(&s, "n", "floor", .any).?);
+    // A NAME NOTHING BOUND still reaches the bridge, which is what keeps
+    // `f = io.open(p)` / `f:write(x)` compiling: `io.open` answers `any`, so
+    // the binding carries no witness and the stream roster stays in reach.
+    try testing.expectEqual(subject_home.Home.io, subjectHomeOfName(&s, "f", "write", .any).?);
 }
 
 test "sema: an injected world confers bare reach on its member edges" {
