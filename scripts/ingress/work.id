@@ -3,7 +3,7 @@
 # Shell capture via gate/bootstrap only — no mashed gatecap binding.
 
 output: str = (line: str)
-    gate/bootstrap.cap(line)
+  gate / bootstrap.cap(line)
 
 tally: i64 = (line: str)
-    gate/bootstrap.count(line)
+  gate / bootstrap.count(line)

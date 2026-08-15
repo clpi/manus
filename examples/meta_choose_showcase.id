@@ -10,8 +10,8 @@ Vec3: { x: i64, y: i64, z: i64 }
 Pt: { x: i64, y: i64 }
 Ray: { x: i64, y: i64, dx: i64, dy: i64 }
 
-combo_sig: str = (meta)
-  meta.name .. ";"
+combo_sig: str = meta
+meta.name .. ";"
 
 CHOOSE2: str = @comp.choose("HasXY", 2, combo_sig)
 CHOOSE3: str = @comp.choose("HasXY", 3, combo_sig)

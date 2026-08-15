@@ -24,7 +24,6 @@
 # The emitted C is an artifact, never source: it is written to a temp
 # path, compiled, run, and deleted. Nothing under version control is generated.
 
-
 # Translate a closed Duo integer expression to a C expression.
 #
 # The subset is chosen so translation is the identity on almost everything:
@@ -34,38 +33,37 @@
 # job — and getting them wrong is exactly what the execution differential
 # catches.
 translate: str = (src: str)
-    n: i64 = src:len()
-    out = ""
-    i: i64 = 1
-    while i <= n
-        c: i64 = src:byte(i)
-        if c == 94
-            # `^` is exponentiation in Duo and xor in C. Emitting it unchanged
-            # would COMPILE and return the wrong number, which is strictly
-            # worse than refusing, so the backend refuses.
-            return ""
-        if c == 126
-            # `~` is prefix bitwise-NOT in both languages, but INFIX xor in Duo
-            # and nothing at all in C — `12 ~ 10` is not a C expression. C
-            # spells that `^`. Position decides, exactly as it does in the
-            # parser and the folder: a `~` after an operand is infix.
-            j: i64 = i - 1
-            while j >= 1 and src:byte(j) == 32
-                j -= 1
-            prev: i64 = 0
-            if j >= 1
-                prev = src:byte(j)
-            infix = (prev >= 48 and prev <= 57) or prev == 41
-                or (prev >= 97 and prev <= 122) or (prev >= 65 and prev <= 90)
-            if infix
-                out = out .. "^"
-            else
-                out = out .. "~"
-            i += 1
-        else
-            out = out .. src:sub(i, i)
-            i += 1
-    out
+  n: i64 = src:len()
+  out = ""
+  i: i64 = 1
+  while i <= n
+    c: i64 = src:byte(i)
+    if c == 94
+      # `^` is exponentiation in Duo and xor in C. Emitting it unchanged
+      # would COMPILE and return the wrong number, which is strictly
+      # worse than refusing, so the backend refuses.
+      return ""
+    if c == 126
+      # `~` is prefix bitwise-NOT in both languages, but INFIX xor in Duo
+      # and nothing at all in C — `12 ~ 10` is not a C expression. C
+      # spells that `^`. Position decides, exactly as it does in the
+      # parser and the folder: a `~` after an operand is infix.
+      j: i64 = i - 1
+      while j >= 1 and src:byte(j) == 32
+        j = j - 1
+      prev: i64 = 0
+      if j >= 1
+        prev = src:byte(j)
+      infix = prev >= 48 and prev <= 57 or prev == 41 or prev >= 97 and prev <= 122 or prev >= 65 and prev <= 90
+      if infix
+        out = out .. "^"
+      else
+        out = out .. "~"
+      i = i + 1
+    else
+      out = out .. src:sub(i, i)
+      i = i + 1
+  out
 
 # A complete C program that PRINTS the expression's value.
 #
@@ -74,42 +72,41 @@ translate: str = (src: str)
 # compared 1 against 14. Standard output also removes the 8-bit ceiling, so the
 # comparison is over the whole i64 range instead of a masked slice of it.
 program: str = (expr: str)
-    body = translate(expr)
-    if body == ""
-        return ""
-    "include:len() <stdio.h>\nint main(void) { printf(\"%lld\\n\", (long long)("
-        .. body .. ")); return 0; }\n"
+  body = translate(expr)
+  if body == ""
+    return ""
+  "include:len() <stdio.h>\nint main(void) { printf(\"%lld\\n\", (long long)(" .. body .. ")); return 0; }\n"
 
 # Emit, compile and run; returns the value the emitted C computes.
 # `ok` is false when the subset does not cover the expression or the toolchain
 # refuses, so a caller never mistakes a refusal for a result.
 ok: bool = (expr: str)
-    prog = program(expr)
-    if prog == ""
-        return false
-    true
+  prog = program(expr)
+  if prog == ""
+    return false
+  true
 
 eval: i64 = (expr: str)
-    prog = program(expr)
-    if prog == ""
-        return 0 - 1
-    base = "/tmp/duo_emit_c_" .. to(str)(os.time())
-    src = base .. ".c"
-    exe = base .. ".out"
-    fh = io.open(src, "w")
-    if !fh
-        return 0 - 1
-    fh:write(prog)
-    fh:close()
-    # `xcrun cc`, not bare `cc`: on this machine a bare `cc` link fails with
-    # `ld: library 'System' not found` outside the SDK environment, which made
-    # the proof report SKIP rather than fail — exactly the silent-degradation
-    # mode the proof's own skip branch exists to make visible.
-    cc = std.script.getenv("DUO_EMIT_CC", "xcrun cc")
-    if std.script.run(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null") != 0
-        os.remove(src)
-        return 0 - 1
-    out = std.script.capture(exe)
+  prog = program(expr)
+  if prog == ""
+    return 0 - 1
+  base = "/tmp/duo_emit_c_" .. to(str)(os.time())
+  src = base .. ".c"
+  exe = base .. ".out"
+  fh = io.open(src, "w")
+  if not fh
+    return 0 - 1
+  fh:write(prog)
+  fh:close()
+  # `xcrun cc`, not bare `cc`: on this machine a bare `cc` link fails with
+  # `ld: library 'System' not found` outside the SDK environment, which made
+  # the proof report SKIP rather than fail — exactly the silent-degradation
+  # mode the proof's own skip branch exists to make visible.
+  cc = std.script.getenv("DUO_EMIT_CC", "xcrun cc")
+  if std.script.run(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null") != 0
     os.remove(src)
-    os.remove(exe)
-    to(i64)(out)
+    return 0 - 1
+  out = std.script.capture(exe)
+  os.remove(src)
+  os.remove(exe)
+  to(i64)(out)

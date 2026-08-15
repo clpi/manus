@@ -35,7 +35,8 @@ PAIRS = @comp.product("HasXY", "HasId", pair_line)
 FILTERED = @comp.map("HasXY+HasId", type_line)
 TYPE_NAMES = @comp.type.names()
 
-_meta = { tag = "exponential_product" }
+_meta =
+  tag = "exponential_product"
 
 print("=== exponential product showcase ===")
 print("pairs = " .. PAIRS)

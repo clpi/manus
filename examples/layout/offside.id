@@ -21,29 +21,31 @@
 #
 # expect: 20 3 6
 
-bump: i64 = (n: i64)n + 10
+bump: i64 = (n: i64)
+  n + 10
 
 pick: i64 = (n: i64)
-    r = 0
-    if n > 30 r = 99
-    bump(n) + r
+  r = 0
+  if n > 30
+    r = 99
+  bump(n) + r
 
 rung: i64 = (a: i64, b: i64)
-    v = 3
-    if a > 4
-        if b > 4
-            v = 9
-    else
-        v = 1
-    v
+  v = 3
+  if a > 4
+    if b > 4
+      v = 9
+  else
+    v = 1
+  v
 
 sum: i64 = (n: i64)
-    acc = 0
-    i = 1
-    while i <= n
-        acc += i
-        i += 1
-    acc
+  acc = 0
+  i = 1
+  while i <= n
+    acc = acc + i
+    i = i + 1
+  acc
 
 p = pick(10)
 r = rung(5, 1)

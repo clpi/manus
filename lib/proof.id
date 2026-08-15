@@ -46,12 +46,11 @@ proof_field_str: str = (text: str, key: str)
 
 load_emission: any = (path: str)
   text = script.fs_read(path)
-  out = {
-    boxes = proof_field_int(text, "boxes"),
-    unboxes = proof_field_int(text, "unboxes"),
-    generic_table_ops = proof_field_int(text, "generic_table_ops"),
+  out =
+    boxes = proof_field_int(text, "boxes")
+    unboxes = proof_field_int(text, "unboxes")
+    generic_table_ops = proof_field_int(text, "generic_table_ops")
     evidence_class = proof_field_str(text, "evidence_class")
-  }
   out
 
 artifact_fingerprint: str = (path: str)
@@ -59,17 +58,25 @@ artifact_fingerprint: str = (path: str)
 
 bench_profiles: any = ()
   out = {}
-  out(1) = { id = "c-dynamic", native = 0, expect_results = 10 }
-  out(2) = { id = "c-specialized", native = 0, expect_results = 10 }
-  out(3) = { id = "direct", native = 1, expect_results = 0 }
+  out(1) =
+    id = "c-dynamic"
+    native = 0
+    expect_results = 10
+  out(2) =
+    id = "c-specialized"
+    native = 0
+    expect_results = 10
+  out(3) =
+    id = "direct"
+    native = 1
+    expect_results = 0
   out
 
-M = {
-  sha256 = sha256,
-  result_hash = result_hash,
-  count_results = count_results,
-  artifact_path = artifact_path,
-  load_emission = load_emission,
-  artifact_fingerprint = artifact_fingerprint,
+M =
+  sha256 = sha256
+  result_hash = result_hash
+  count_results = count_results
+  artifact_path = artifact_path
+  load_emission = load_emission
+  artifact_fingerprint = artifact_fingerprint
   bench_profiles = bench_profiles
-}

@@ -93,7 +93,10 @@ parse_elem: any = (data: str, start: i64)
     i = i + 1
   if i <= len and data:byte(i) == 62
     i = i + 1
-  elem = { tag = tag, attrs = attrs, children = {} }
+  elem =
+    tag = tag
+    attrs = attrs
+    children = {}
   if not self_closing
     while true
       sp = ""
@@ -102,7 +105,9 @@ parse_elem: any = (data: str, start: i64)
         i = i + 1
       trimmed = sp:trim()
       if trimmed:len() > 0
-        elem.children(elem.children:len() + 1) = { kind = "text", text = unescape(sp) }
+        elem.children(elem.children:len() + 1) =
+          kind = "text"
+          text = unescape(sp)
       if i > len
         break
       peek_byte = data:byte(i + 1)

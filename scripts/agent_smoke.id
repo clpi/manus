@@ -4,51 +4,51 @@
 # or:  idol run scripts/idol_lock.id -- ./zig-out/bin/idol run scripts/agent_smoke.id
 
 chomp: str = (text: str)
-    if !text:len()
-        return ""
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
+  if not text:len()
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
 
 cap: str = (shellline: str)
-    chomp(gatecap(shellline))
+  chomp(gatecap(shellline))
 
 status: i64 = (cmd: str)
-    cap("{cmd} >/dev/null 2>&1 && echo 0 || echo 1"):to(i64)
+  cap("{cmd} >/dev/null 2>&1 && echo 0 || echo 1"):to(i64)
 
 smoke: i64 = ()
-    bin = "./zig-out/bin/idol"
-    if status("{bin} run scripts/public_safety_scan.id") != 0
-        print("agent-smoke: public_safety_scan FAIL")
-        return 1
-    if status("{bin} run --backend=c scripts/module_surface_gate.id") != 0
-        print("agent-smoke: module_surface_gate FAIL")
-        return 1
-    if status("{bin} run --backend=c scripts/luahost.id") != 0
-        print("agent-smoke: luahost FAIL")
-        return 1
-    if status("{bin} run --backend=c scripts/explain.id") != 0
-        print("agent-smoke: explain FAIL")
-        return 1
-    if status("{bin} run --backend=c scripts/contract.id") != 0
-        print("agent-smoke: contract FAIL")
-        return 1
-    if status("{bin} run --backend=c scripts/realize.id") != 0
-        print("agent-smoke: realize FAIL")
-        return 1
-    if status("{bin} run --backend=c scripts/sim.id") != 0
-        print("agent-smoke: sim FAIL")
-        return 1
-    if status("{bin} run --backend=c scripts/transform.id") != 0
-        print("agent-smoke: transform FAIL")
-        return 1
-    ex = "sed -n '/smoke_targets(): any/,/^end/p' lib/agent.id | grep -o 'examples/[^\"]*' | while read -r f; do if [ -n \\\"$f\\\" ]; then {bin} check \\\"$f\\\" || exit 1; fi; done"
-    if status(ex) != 0
-        print("agent-smoke: examples check FAIL")
-        return 1
-    print("agent-smoke: PASS")
-    0
+  bin = "./zig-out/bin/idol"
+  if status("{bin} run scripts/public_safety_scan.id") != 0
+    print("agent-smoke: public_safety_scan FAIL")
+    return 1
+  if status("{bin} run --backend=c scripts/module_surface_gate.id") != 0
+    print("agent-smoke: module_surface_gate FAIL")
+    return 1
+  if status("{bin} run --backend=c scripts/luahost.id") != 0
+    print("agent-smoke: luahost FAIL")
+    return 1
+  if status("{bin} run --backend=c scripts/explain.id") != 0
+    print("agent-smoke: explain FAIL")
+    return 1
+  if status("{bin} run --backend=c scripts/contract.id") != 0
+    print("agent-smoke: contract FAIL")
+    return 1
+  if status("{bin} run --backend=c scripts/realize.id") != 0
+    print("agent-smoke: realize FAIL")
+    return 1
+  if status("{bin} run --backend=c scripts/sim.id") != 0
+    print("agent-smoke: sim FAIL")
+    return 1
+  if status("{bin} run --backend=c scripts/transform.id") != 0
+    print("agent-smoke: transform FAIL")
+    return 1
+  ex = "sed -n '/smoke_targets(): any/,/^end/p' lib/agent.id | grep -o 'examples/[^\"]*' | while read -r f; do if [ -n \\\"$f\\\" ]; then {bin} check \\\"$f\\\" || exit 1; fi; done"
+  if status(ex) != 0
+    print("agent-smoke: examples check FAIL")
+    return 1
+  print("agent-smoke: PASS")
+  0

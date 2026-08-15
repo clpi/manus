@@ -6,11 +6,11 @@ s = "hello"
 out = ""
 i = s:len() - 1
 while i >= 0
-    # §0.8 writes this `str{ b }`. Rung (a) of the constructor ladder does
-    # not lower — `call to undeclared function 'str'`, gap[088] — so the
-    # canonical spelling cannot be used here yet. A one-byte slice is the
-    # form that builds and it reads the same byte.
-    piece = s:sub(i + 1, i + 1)
-    out = "{out}{piece}"
-    i -= 1
+  # §0.8 writes this `str{ b }`. Rung (a) of the constructor ladder does
+  # not lower — `call to undeclared function 'str'`, gap[088] — so the
+  # canonical spelling cannot be used here yet. A one-byte slice is the
+  # form that builds and it reads the same byte.
+  piece = s:sub(i + 1, i + 1)
+  out = "{out}{piece}"
+  i = i - 1
 print("{out}")

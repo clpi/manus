@@ -6,8 +6,8 @@ print("Hello at startup")
 Vector3: { x: f64, y: f64, z: f64 }
 
 do_test()
-    req_str = json.encode({a=1})
-    print(req_str)
-    true
+req_str = json.encode({ a = 1 })
+print(req_str)
+true
 
 do_test()

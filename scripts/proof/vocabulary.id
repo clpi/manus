@@ -3,30 +3,27 @@
 resident = "scripts/proof/resident.id"
 suite = "scripts/proof/semantic.id"
 
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
+len__path = (min: i64)
+  path:read():len() >= min
 
-audit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+audit__path = (pattern: str)
+  path:read():has(pattern)
 
-hit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+hit__path = (pattern: str)
+  path:read():has(pattern)
 
 main: i64 = ()
-    if !resident:len(32)
-        return 1
-    if !resident:audit("path:read(")
-        return 2
-    if !suite:len(16)
-        return 3
-    if !suite:audit("path:read(")
-        return 4
-    if resident:hit("ingest.resident")
-        return 5
-    if !resident:audit("CATALOG-ZERO")
-        return 6
-    print("semantic proof router: pass")
-    0
+  if not resident:len(32)
+    return 1
+  if not resident:audit("path:read(")
+    return 2
+  if not suite:len(16)
+    return 3
+  if not suite:audit("path:read(")
+    return 4
+  if resident:hit("ingest.resident")
+    return 5
+  if not resident:audit("CATALOG-ZERO")
+    return 6
+  print("semantic proof router: pass")
+  0

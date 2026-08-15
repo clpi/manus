@@ -92,7 +92,9 @@ encode_int = (v: i64, out: any)
 unmarshal: any = (data: str)
   if data == nil or data == ""
     return nil, 0
-  parser = { s = data, pos = 1 }
+  parser =
+    s = data
+    pos = 1
   v = decode(parser)
   return v, parser.pos - 1
 

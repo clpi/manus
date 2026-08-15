@@ -339,12 +339,11 @@ M.connection_receive = ws_connection_receive
 # constant as absent. That is WRONG: a module with `ZERO = 0x00` and
 # `ONE = 0x01` referenced from `M.T = { z = ZERO, o = ONE }` fails on BOTH.
 # The value is irrelevant; the nesting and the embed path are what matter.
-M.OP = {
-  CONTINUATION = 0,
-  TEXT = 1,
-  BINARY = 2,
-  CLOSE = 8,
-  PING = 9,
+M.OP =
+  CONTINUATION = 0
+  TEXT = 1
+  BINARY = 2
+  CLOSE = 8
+  PING = 9
   PONG = 10
-}
 M

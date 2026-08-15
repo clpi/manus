@@ -8,4 +8,4 @@ lo: i64 = 0
 # cannot be one-lined; it is newline plus indent, and there is no `;` to buy
 # the shortcut back because THE SEMICOLON DOES NOT EXIST.
 if x < lo
-    lo
+  lo

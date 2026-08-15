@@ -12,263 +12,260 @@ pipeline = "src/sim_pipeline.zig"
 tests = "src/tests.zig"
 guard = "src/assumption_guard.zig"
 
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
+len__path = (min: i64)
+  path:read():len() >= min
 
-audit(path) = (pattern: str)
-    path:read()
-        :match(pattern)
+audit__path = (pattern: str)
+  path:read():match(pattern)
 
-hit(path) = (pattern: str)
-    path:read()
-        :match(pattern)
+hit__path = (pattern: str)
+  path:read():match(pattern)
 
 code = 0
-if !graph:len(4096)
-    code = 1
-if !code and !query:len(1024)
-    code = 2
-if !code and tests:hit("graph_fact_producer.zig")
-    code = 3
-if !code and graph:hit("referencesDescriptorName")
-    code = 4
-if !code and graph:hit("classifyDescriptorRecursion(")
-    code = 5
-if !code and graph:hit(".argument =>")
-    code = 6
-if !code and graph:hit("edge.kind == .relation")
-    code = 7
-if !code and !graph:audit("descriptor_ref")
-    code = 8
-if !code and !graph:audit("classifyDescriptorRecursionFromEdges")
-    code = 9
-if !code and !graph:audit("publishDescriptorRefEdges")
-    code = 10
-if !code and !graph:audit(".kind = .capture")
-    code = 11
-if !code and !graph:audit("functionsInModule")
-    code = 12
-if !code and !graph:audit(".kind = .member")
-    code = 16
-if !code and !graph:audit("publishTableShapeMembers")
-    code = 17
-if !code and !query:audit("MissingGraphEntity")
-    code = 13
-if !code and !query:audit("pub fn entity(")
-    code = 14
-if !code and !"gate/graph.id":len(256)
-    code = 18
-if !code and !"gate/graph.id":audit("classifyDescriptorRecursionFromEdges")
-    code = 19
-if !code and !"gate/graph.id":audit("law.graph.edge")
-    code = 20
-if !code and !graph:audit("descriptorRefsOf")
-    code = 21
-if !code and !query:audit("pub fn descriptorRef(")
-    code = 22
-if !code and !query:audit("pub fn descriptorRecursion(")
-    code = 23
-if !code and !graph:audit("projectionsOf")
-    code = 25
-if !code and !graph:audit("publishApplicationProjections")
-    code = 26
-if !code and !query:audit("pub fn projection(")
-    code = 27
-if !code and !query:audit("pub fn tableShapes(")
-    code = 28
-if !code and !query:audit("pub fn enumShapes(")
-    code = 29
-if !code and !graph:audit("tableShapeEntity")
-    code = 30
-if !code and !graph:audit("enumShapeEntity")
-    code = 31
-if !code and pipeline:hit("findTableShape")
-    code = 32
-if !code and !pipeline:audit("entitiesOfKind")
-    code = 33
-if !code and !"gate/idiom.id":len(8192)
-    code = 34
-if !code and !"gate/idiom.id":audit("callfirst:")
-    code = 35
-if !code and !"gate/idiom.id":audit("callfirstrel:")
-    code = 36
-if !code and !"gate/idiom.id":audit("subject(eq)")
-    code = 37
-if !code and !"gate/idiom.id":audit("findFunc(")
-    code = 38
-if !code and graph:hit("    source_file,")
-    code = 39
-if !code and graph:hit("    emit_artifact,")
-    code = 40
-if !code and graph:hit("    type_of,")
-    code = 41
-if !code and graph:hit("    transform_input,")
-    code = 42
-if !code and !graph:audit("NodeKind excludes unused shadow")
-    code = 43
-if !code and !"gate/graph.id":audit("law.graph.node")
-    code = 44
-if !code and graph:hit("    use,")
-    code = 45
-if !code and !graph:audit(".kind = .binding")
-    code = 46
-if !code and graph:hit("    type_node,")
-    code = 47
-if !code and graph:hit("findCallsBySourceCallee")
-    code = 48
-if !code and graph:hit("findCallsBySourceMethod")
-    code = 53
-if !code and query:hit("representationForRecord")
-    code = 54
-if !code and query:hit("eligibleFunctionNames")
-    code = 55
-if !code and !query:audit("pub fn effect(")
-    code = 49
-if !code and !query:audit("pub fn authority(")
-    code = 50
-if !code and !query:audit("pub fn witness(")
-    code = 51
-if !code and !graph:audit(".to = relation, .kind = .binding")
-    code = 52
-if !code and graph:hit(".kind = .home")
-    code = 56
-if !code and query:hit("findFunc(")
-    code = 57
-if !code and query:hit("hardwareDescriptorsOfModule")
-    code = 58
-if !code and !graph:audit("if (node.scope)")
-    code = 59
-if !code and graph:hit("shapeScopeLabel")
-    code = 60
-if !code and !graph:audit("requireHome")
-    code = 62
-if !code and graph:hit("resolveTableShapeType")
-    code = 63
-if !code and graph:hit(".c_type(")
-    code = 64
-if !code and !graph:audit("appendMembersJson")
-    code = 65
-if !code and graph:hit("explainStorageClass")
-    code = 66
-if !code and graph:hit("@shape")
-    code = 67
-if !code and !query:audit("pub fn target(")
-    code = 68
-if !code and !query:audit("pub fn stage(")
-    code = 69
-if !code and graph:hit(",\"why\":")
-    code = 70
-if !code and graph:hit("resolveDescriptorEntityAtLift")
-    code = 71
-if !code and !graph:audit("resolveInHome")
-    code = 72
-if !code and graph:hit(",\"method\":")
-    code = 73
-if !code and graph:hit("duo_name(")
-    code = 74
-if !code and graph:hit("descriptor_label")
-    code = 75
-if !code and dispatch:hit("fromOrdinal")
-    code = 76
-if !code and dispatch:hit("bindKindSchema")
-    code = 77
-if !code and !dispatch:audit("kindname(")
-    code = 78
-if !code and !dispatch:audit("fieldkind(")
-    code = 79
-if !code and lower:hit("funcResultDescriptor(")
-    code = 80
-if !code and realize:hit("findByNameOfKind")
-    code = 81
-if !code and realize:hit("fingerprintForRecordEntity")
-    code = 82
-if !code and realize:hit("duo:record:")
-    code = 83
-if !code and cache:hit("fingerprintForRecordEntity")
-    code = 84
-if !code and cache:hit("recordNameFromEntity")
-    code = 85
-if !code and realize:hit("realize.lowering:")
-    code = 86
-if !code and realize:hit("duo:func:")
-    code = 87
-if !code and snap:hit("findByNameOfKind")
-    code = 88
-if !code and snap:hit("mod.body.stmts")
-    code = 89
-if !code and !snap:audit("ast.zig")
-    code = 90
-if !code and graph:hit(".descriptor = types.ResolvedType.i64")
-    code = 91
-if !code and dispatch:hit("kind_at_name")
-    code = 92
-if !code and !graph:audit("applicationDescriptor")
-    code = 93
-if !code and !graph:audit("applicationDemand")
-    code = 94
-if !code and !graph:audit("applicationProvenance")
-    code = 95
-if !code and !graph:audit("applicationStage")
-    code = 96
-if !code and !graph:audit("applicationCaller")
-    code = 97
-if !code and !graph:audit("bindingRelation")
-    code = 98
-if !code and !graph:audit("hasField(ApplicationFact, \"relation\")")
-    code = 99
-if !code and !graph:audit("hasField(ApplicationFact, \"caller\")")
-    code = 100
-if !code and !graph:audit("hasField(ApplicationFact, \"descriptor\")")
-    code = 101
-if !code and !graph:audit("hasField(ApplicationFact, \"demand\")")
-    code = 102
-if !code and !graph:audit("hasField(ApplicationFact, \"provenance\")")
-    code = 103
-if !code and !graph:audit("hasField(ApplicationFact, \"stage\")")
-    code = 104
-if !code and graph:hit("node.kind != .func or node.ast_ref == null")
-    code = 105
-if !code and !graph:audit("rememberFunc")
-    code = 106
-if !code and graph:hit("fromStorageClass")
-    code = 107
-if !code and graph:hit("followupShapeOps(sc")
-    code = 108
-if !code and guard:hit("assumption_catalog")
-    code = 109
-if !code and guard:hit("orelse .dynamic")
-    code = 110
-if !code and !guard:audit("knowledge != .guarded")
-    code = 111
-if !code and !graph:audit("pub const Card")
-    code = 112
-if !code and !graph:audit("pub fn callable")
-    code = 113
-if !code and !graph:audit("pub fn hasDescriptorFacts")
-    code = 114
-if !code and query:hit("kind != .func")
-    code = 115
-if !code and query:hit("alloc.dupe(semantic_graph.id")
-    code = 116
-if !code and graph:hit("effect: ?id = null")
-    code = 117
-if !code and query:hit("fact.kind != .func")
-    code = 118
-if !code and !graph:audit("home_apps")
-    code = 119
-if !code and !graph:audit("pub fn applicationsIn")
-    code = 120
-if !code and !query:audit("pub fn applicationsIn")
-    code = 121
-if !code and !query:audit("pub fn relationsReferencedBy")
-    code = 122
-if !code and !graph:audit("DerivedContainsIndex")
-    code = 123
-if !code and !graph:audit("descriptor_refs.of")
-    code = 124
+if not graph:len(4096)
+  code = 1
+if not code and not query:len(1024)
+  code = 2
+if not code and tests:hit("graph_fact_producer.zig")
+  code = 3
+if not code and graph:hit("referencesDescriptorName")
+  code = 4
+if not code and graph:hit("classifyDescriptorRecursion(")
+  code = 5
+if not code and graph:hit(".argument =>")
+  code = 6
+if not code and graph:hit("edge.kind == .relation")
+  code = 7
+if not code and not graph:audit("descriptor_ref")
+  code = 8
+if not code and not graph:audit("classifyDescriptorRecursionFromEdges")
+  code = 9
+if not code and not graph:audit("publishDescriptorRefEdges")
+  code = 10
+if not code and not graph:audit(".kind = .capture")
+  code = 11
+if not code and not graph:audit("functionsInModule")
+  code = 12
+if not code and not graph:audit(".kind = .member")
+  code = 16
+if not code and not graph:audit("publishTableShapeMembers")
+  code = 17
+if not code and not query:audit("MissingGraphEntity")
+  code = 13
+if not code and not query:audit("pub fn entity(")
+  code = 14
+if not code and not "gate/graph.id":len(256)
+  code = 18
+if not code and not "gate/graph.id":audit("classifyDescriptorRecursionFromEdges")
+  code = 19
+if not code and not "gate/graph.id":audit("law.graph.edge")
+  code = 20
+if not code and not graph:audit("descriptorRefsOf")
+  code = 21
+if not code and not query:audit("pub fn descriptorRef(")
+  code = 22
+if not code and not query:audit("pub fn descriptorRecursion(")
+  code = 23
+if not code and not graph:audit("projectionsOf")
+  code = 25
+if not code and not graph:audit("publishApplicationProjections")
+  code = 26
+if not code and not query:audit("pub fn projection(")
+  code = 27
+if not code and not query:audit("pub fn tableShapes(")
+  code = 28
+if not code and not query:audit("pub fn enumShapes(")
+  code = 29
+if not code and not graph:audit("tableShapeEntity")
+  code = 30
+if not code and not graph:audit("enumShapeEntity")
+  code = 31
+if not code and pipeline:hit("findTableShape")
+  code = 32
+if not code and not pipeline:audit("entitiesOfKind")
+  code = 33
+if not code and not "gate/idiom.id":len(8192)
+  code = 34
+if not code and not "gate/idiom.id":audit("callfirst:")
+  code = 35
+if not code and not "gate/idiom.id":audit("callfirstrel:")
+  code = 36
+if not code and not "gate/idiom.id":audit("subject(eq)")
+  code = 37
+if not code and not "gate/idiom.id":audit("findFunc(")
+  code = 38
+if not code and graph:hit("    source_file,")
+  code = 39
+if not code and graph:hit("    emit_artifact,")
+  code = 40
+if not code and graph:hit("    type_of,")
+  code = 41
+if not code and graph:hit("    transform_input,")
+  code = 42
+if not code and not graph:audit("NodeKind excludes unused shadow")
+  code = 43
+if not code and not "gate/graph.id":audit("law.graph.node")
+  code = 44
+if not code and graph:hit("    use,")
+  code = 45
+if not code and not graph:audit(".kind = .binding")
+  code = 46
+if not code and graph:hit("    type_node,")
+  code = 47
+if not code and graph:hit("findCallsBySourceCallee")
+  code = 48
+if not code and graph:hit("findCallsBySourceMethod")
+  code = 53
+if not code and query:hit("representationForRecord")
+  code = 54
+if not code and query:hit("eligibleFunctionNames")
+  code = 55
+if not code and not query:audit("pub fn effect(")
+  code = 49
+if not code and not query:audit("pub fn authority(")
+  code = 50
+if not code and not query:audit("pub fn witness(")
+  code = 51
+if not code and not graph:audit(".to = relation, .kind = .binding")
+  code = 52
+if not code and graph:hit(".kind = .home")
+  code = 56
+if not code and query:hit("findFunc(")
+  code = 57
+if not code and query:hit("hardwareDescriptorsOfModule")
+  code = 58
+if not code and not graph:audit("if (node.scope)")
+  code = 59
+if not code and graph:hit("shapeScopeLabel")
+  code = 60
+if not code and not graph:audit("requireHome")
+  code = 62
+if not code and graph:hit("resolveTableShapeType")
+  code = 63
+if not code and graph:hit(".c_type(")
+  code = 64
+if not code and not graph:audit("appendMembersJson")
+  code = 65
+if not code and graph:hit("explainStorageClass")
+  code = 66
+if not code and graph:hit("@shape")
+  code = 67
+if not code and not query:audit("pub fn target(")
+  code = 68
+if not code and not query:audit("pub fn stage(")
+  code = 69
+if not code and graph:hit(",\"why\":")
+  code = 70
+if not code and graph:hit("resolveDescriptorEntityAtLift")
+  code = 71
+if not code and not graph:audit("resolveInHome")
+  code = 72
+if not code and graph:hit(",\"method\":")
+  code = 73
+if not code and graph:hit("duo_name(")
+  code = 74
+if not code and graph:hit("descriptor_label")
+  code = 75
+if not code and dispatch:hit("fromOrdinal")
+  code = 76
+if not code and dispatch:hit("bindKindSchema")
+  code = 77
+if not code and not dispatch:audit("kindname(")
+  code = 78
+if not code and not dispatch:audit("fieldkind(")
+  code = 79
+if not code and lower:hit("funcResultDescriptor(")
+  code = 80
+if not code and realize:hit("findByNameOfKind")
+  code = 81
+if not code and realize:hit("fingerprintForRecordEntity")
+  code = 82
+if not code and realize:hit("duo:record:")
+  code = 83
+if not code and cache:hit("fingerprintForRecordEntity")
+  code = 84
+if not code and cache:hit("recordNameFromEntity")
+  code = 85
+if not code and realize:hit("realize.lowering:")
+  code = 86
+if not code and realize:hit("duo:func:")
+  code = 87
+if not code and snap:hit("findByNameOfKind")
+  code = 88
+if not code and snap:hit("mod.body.stmts")
+  code = 89
+if not code and not snap:audit("ast.zig")
+  code = 90
+if not code and graph:hit(".descriptor = types.ResolvedType.i64")
+  code = 91
+if not code and dispatch:hit("kind_at_name")
+  code = 92
+if not code and not graph:audit("applicationDescriptor")
+  code = 93
+if not code and not graph:audit("applicationDemand")
+  code = 94
+if not code and not graph:audit("applicationProvenance")
+  code = 95
+if not code and not graph:audit("applicationStage")
+  code = 96
+if not code and not graph:audit("applicationCaller")
+  code = 97
+if not code and not graph:audit("bindingRelation")
+  code = 98
+if not code and not graph:audit("hasField(ApplicationFact, \"relation\")")
+  code = 99
+if not code and not graph:audit("hasField(ApplicationFact, \"caller\")")
+  code = 100
+if not code and not graph:audit("hasField(ApplicationFact, \"descriptor\")")
+  code = 101
+if not code and not graph:audit("hasField(ApplicationFact, \"demand\")")
+  code = 102
+if not code and not graph:audit("hasField(ApplicationFact, \"provenance\")")
+  code = 103
+if not code and not graph:audit("hasField(ApplicationFact, \"stage\")")
+  code = 104
+if not code and graph:hit("node.kind != .func or node.ast_ref == null")
+  code = 105
+if not code and not graph:audit("rememberFunc")
+  code = 106
+if not code and graph:hit("fromStorageClass")
+  code = 107
+if not code and graph:hit("followupShapeOps(sc")
+  code = 108
+if not code and guard:hit("assumption_catalog")
+  code = 109
+if not code and guard:hit("orelse .dynamic")
+  code = 110
+if not code and not guard:audit("knowledge != .guarded")
+  code = 111
+if not code and not graph:audit("pub const Card")
+  code = 112
+if not code and not graph:audit("pub fn callable")
+  code = 113
+if not code and not graph:audit("pub fn hasDescriptorFacts")
+  code = 114
+if not code and query:hit("kind != .func")
+  code = 115
+if not code and query:hit("alloc.dupe(semantic_graph.id")
+  code = 116
+if not code and graph:hit("effect: ?id = null")
+  code = 117
+if not code and query:hit("fact.kind != .func")
+  code = 118
+if not code and not graph:audit("home_apps")
+  code = 119
+if not code and not graph:audit("pub fn applicationsIn")
+  code = 120
+if not code and not query:audit("pub fn applicationsIn")
+  code = 121
+if not code and not query:audit("pub fn relationsReferencedBy")
+  code = 122
+if not code and not graph:audit("DerivedContainsIndex")
+  code = 123
+if not code and not graph:audit("descriptor_refs.of")
+  code = 124
 
 main: i64 = ()
-    if !code
-        print("graph proof: pass")
-    code
+  if not code
+    print("graph proof: pass")
+  code

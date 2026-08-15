@@ -1,21 +1,19 @@
 # Meta concept descriptor demo
 # Shows runtime concept creation via meta.make_concept
 
-
 Drawable = meta.make_concept("Drawable", {
-    fields = { "id" },
-    methods = { "draw" },
+  fields = { "id" },
+  methods = { "draw" }
 })
 
-shape = {
-    id = 7,
-    draw = fun(self): str
-        "shape"
-    end,
-    to_string = fun(self): str
-        "drawable"
-    end,
-}
+shape =
+  id = 7
+  draw = fun(self) -> str
+    "shape"
+  end
+  to_string = fun(self) -> str
+    "drawable"
+  end
 
 # Runtime concept checking
 print("Drawable name: " .. Drawable.name)

@@ -1,49 +1,51 @@
 # Boolean predicate exports for WAST testing.
 
 @export
-is_even(n: int): int
-    if n % 2 == 0
-        1
-    0
+is_even: int = (n: int)
+  if n % 2 == 0
+    1
+  0
 
 @export
-is_odd(n: int): int
-    if n % 2 != 0
-        1
-    0
+is_odd: int = (n: int)
+  if n % 2 != 0
+    1
+  0
 
 @export
-is_positive(n: int): int
-    if n > 0
-        1
-    0
+is_positive: int = (n: int)
+  if n > 0
+    1
+  0
 
 @export
-is_negative(n: int): int
+is_negative: int = (n: int)
+  if n < 0
+    1
+  0
+
+@export
+sign: int = (n: int)
+  if n > 0
+    1
+  else
     if n < 0
-        1
-    0
-
-@export
-sign(n: int): int
-    if n > 0
-        1
-    else if n < 0
-        0 - 1
+      0 - 1
     else
-        0
+      0
 
 @export
-clamp(val: int, lo: int, hi: int): int
-    if val < lo
-        lo
-    else if val > hi
-        hi
+clamp: int = (val: int, lo: int, hi: int)
+  if val < lo
+    lo
+  else
+    if val > hi
+      hi
     else
-        val
+      val
 
 @export
-in_range(val: int, lo: int, hi: int): int
-    if val >= lo and val <= hi
-        1
-    0
+in_range: int = (val: int, lo: int, hi: int)
+  if val >= lo and val <= hi
+    1
+  0

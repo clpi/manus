@@ -6,68 +6,68 @@ M.RESET = color.RESET
 M.BOLD = color.BOLD
 M.DIM = color.DIM
 
-is_tty(): bool
-    ok, val = pcall(os.getenv, "DUO_COLOR")
-    if ok and val != nil and val != "" and val != "0"
-        return true
-    ok2, val2 = pcall(os.getenv, "NO_COLOR")
-    if ok2 and val2 != nil and val2 != ""
-        return false
-    true
+is_tty: bool = ()
+  ok, val = pcall(os.getenv, "DUO_COLOR")
+  if ok and val != nil and val != "" and val != "0"
+    return true
+  ok2, val2 = pcall(os.getenv, "NO_COLOR")
+  if ok2 and val2 != nil and val2 != ""
+    return false
+  true
 
-styled(prefix, text, suffix): str
-    if is_tty()
-        prefix .. text .. suffix
-    else
-        text
+styled: str = (prefix, text, suffix)
+  if is_tty()
+    prefix .. text .. suffix
+  else
+    text
 
-bold(text: str): str
-    styled(color.BOLD, text, color.RESET)
+bold: str = (text: str)
+  styled(color.BOLD, text, color.RESET)
 
-dim(text: str): str
-    styled(color.DIM, text, color.RESET)
+dim: str = (text: str)
+  styled(color.DIM, text, color.RESET)
 
-green(text: str): str
-    color.green(text)
+green: str = (text: str)
+  color.green(text)
 
-red(text: str): str
-    color.red(text)
+red: str = (text: str)
+  color.red(text)
 
-yellow(text: str): str
-    color.yellow(text)
+yellow: str = (text: str)
+  color.yellow(text)
 
-cyan(text: str): str
-    color.blue(text)
+cyan: str = (text: str)
+  color.blue(text)
 
-banner(title: str): str
-    if is_tty()
-        color.CYAN .. "╭─ " .. title .. color.RESET
-    else
-        "== " .. title .. " =="
+banner: str = (title: str)
+  if is_tty()
+    color.CYAN .. "╭─ " .. title .. color.RESET
+  else
+    "== " .. title .. " =="
 
-kv(key: str, value: str): str
-    if is_tty()
-        color.DIM .. key .. color.RESET .. " " .. color.CYAN .. value .. color.RESET
-    else
-        key .. " " .. value
+kv: str = (key: str, value: str)
+  if is_tty()
+    color.DIM .. key .. color.RESET .. " " .. color.CYAN .. value .. color.RESET
+  else
+    key .. " " .. value
 
-divider(): str
-    if is_tty()
-        color.DIM .. "────────────────────────────────────────" .. color.RESET
-    else
-        "----------------------------------------"
+divider: str = ()
+  if is_tty()
+    color.DIM .. "────────────────────────────────────────" .. color.RESET
+  else
+    "----------------------------------------"
 
-ok_msg(text: str): str
-    if is_tty()
-        color.GREEN .. "✓ " .. text .. color.RESET
-    else
-        "ok: " .. text
+ok_msg: str = (text: str)
+  if is_tty()
+    color.GREEN .. "✓ " .. text .. color.RESET
+  else
+    "ok: " .. text
 
-err_msg(text: str): str
-    if is_tty()
-        color.RED .. "● error: " .. text .. color.RESET
-    else
-        "error: " .. text
+err_msg: str = (text: str)
+  if is_tty()
+    color.RED .. "● error: " .. text .. color.RESET
+  else
+    "error: " .. text
 
 M.is_tty = is_tty
 M.styled = styled

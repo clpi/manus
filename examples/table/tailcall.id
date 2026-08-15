@@ -4,9 +4,9 @@
 # expect: 10000000
 # @corpus current
 tail: i64 = (n: i64, acc: i64)
-    if n <= 0
-        acc
-    tail(n - 1, acc + 1)
+  if n <= 0
+    acc
+  tail(n - 1, acc + 1)
 
 a = tail(10000000, 0)
 print("{a}")

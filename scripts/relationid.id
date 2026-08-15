@@ -4,6 +4,6 @@
 # Build: zig build relation-id
 
 main: i64 = ()
-    print("relation gate moved to scripts/proof/relation.id")
-    print("run: ./zig-out/bin/idol run scripts/proof/relation.id")
-    return 1
+  print("relation gate moved to scripts/proof/relation.id")
+  print("run: ./zig-out/bin/idol run scripts/proof/relation.id")
+  return 1

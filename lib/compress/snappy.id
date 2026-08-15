@@ -78,7 +78,9 @@ decompress: any = (data: any)
   if data == nil or data:len() == 0
     return {}
 
-  r = { pos = 1, data = data }
+  r =
+    pos = 1
+    data = data
   src_len = read_varint(r)
   out = {}
 

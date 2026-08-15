@@ -174,7 +174,8 @@ mat4_rotate_z: any = (angle: f64)
   }
 
 mat4_multiply: any = (a: any, b: any)
-  result = { m = {} }
+  result =
+    m = {}
   j = 0
   while j < 4
     i = 0
@@ -585,29 +586,27 @@ material_new: any = (name: str)
 # MOD-1: the file IS the module. Identity re-exports deleted; the few
 # exports that carried real content are ordinary top-level bindings now.
 # Vector 3
-vec3 = {
-  new = vec3_new,
-  add = vec3_add,
-  sub = vec3_sub,
-  scale = vec3_scale,
-  dot = vec3_dot,
-  cross = vec3_cross,
-  length = vec3_length,
-  normalize = vec3_normalize,
+vec3 =
+  new = vec3_new
+  add = vec3_add
+  sub = vec3_sub
+  scale = vec3_scale
+  dot = vec3_dot
+  cross = vec3_cross
+  length = vec3_length
+  normalize = vec3_normalize
   lerp = vec3_lerp
-}
 
 # Matrix 4x4
-mat4 = {
-  identity = mat4_identity,
-  translate = mat4_translate,
-  scale = mat4_scale,
-  rotate_x = mat4_rotate_x,
-  rotate_y = mat4_rotate_y,
-  rotate_z = mat4_rotate_z,
-  multiply = mat4_multiply,
+mat4 =
+  identity = mat4_identity
+  translate = mat4_translate
+  scale = mat4_scale
+  rotate_x = mat4_rotate_x
+  rotate_y = mat4_rotate_y
+  rotate_z = mat4_rotate_z
+  multiply = mat4_multiply
   transform_point = mat4_transform_point
-}
 # Camera
 # Mesh
 # Scene

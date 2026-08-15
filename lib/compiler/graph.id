@@ -26,87 +26,87 @@
 # this file uses ambient roots. Measured, not assumed.
 
 has: bool = (set: str, name: str)
-    needle = "|" .. name .. "|"
-    hn: i64 = set:len()
-    nn: i64 = needle:len()
-    i: i64 = 1
-    while i + nn - 1 <= hn
-        j: i64 = 0
-        hit = true
-        while j < nn
-            if set:byte(i + j) != needle:byte(j + 1)
-                hit = false
-                j = nn
-            j += 1
-        if hit
-            return true
-        i += 1
-    false
+  needle = "|" .. name .. "|"
+  hn: i64 = set:len()
+  nn: i64 = needle:len()
+  i: i64 = 1
+  while i + nn - 1 <= hn
+    j: i64 = 0
+    hit = true
+    while j < nn
+      if set:byte(i + j) != needle:byte(j + 1)
+        hit = false
+        j = nn
+      j = j + 1
+    if hit
+      return true
+    i = i + 1
+  false
 
 add: str = (set: str, name: str)
-    if has(set, name)
-        return set
-    set .. name .. "|"
+  if has(set, name)
+    return set
+  set .. name .. "|"
 
 # Top-level binding names, as "|a|b|". A binding is at top level when its name
 # token sits in column 1 — the same layout signal the parser uses to recognise
 # a bodiless declaration.
 nodes: str = (src: str, file: str, family: i64)
-    lx: Lexer = lexer.new(src, file, family)
-    acc = "|"
-    while true
-        t = lexer.next(lx)
-        if t.kind == token.KIND_EOF
-            break
-        if t.kind == token.KIND_NAME and t.loc.col == 1
-            nxt = lexer.peek(lx)
-            if nxt.kind == token.KIND_ASSIGN or nxt.kind == token.KIND_LPAREN or nxt.kind == token.KIND_COLON
-                acc = add(acc, t.text)
-    acc
+  lx: Lexer = lexer.new(src, file, family)
+  acc = "|"
+  while true
+    t = lexer.next(lx)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME and t.loc.col == 1
+      nxt = lexer.peek(lx)
+      if nxt.kind == token.KIND_ASSIGN or nxt.kind == token.KIND_LPAREN or nxt.kind == token.KIND_COLON
+        acc = add(acc, t.text)
+  acc
 
 # Private nodes with in-degree 0: declared `_name`, never referenced in the
 # file that declares them, and unreachable from outside it by policy.
 dead: i64 = (src: str, file: str, family: i64, report: bool)
-    declared = nodes(src, file, family)
-    lx: Lexer = lexer.new(src, file, family)
-    used = "|"
-    kind: i64 = 0
-    col: i64 = 0
-    while true
-        t = lexer.next(lx)
-        if t.kind == token.KIND_EOF
-            break
-        # gap[025]: a RECEIVER FACE is a reference. `self:_fail(2)` calls the
-        # top-level `_fail`, so excluding names after `:` made every converted
-        # call site invisible and reported live privates as unreachable.
-        #
-        # `.` stays excluded: `a.b` is field access, not a call face.
-        #
-        # The residual error is in the SAFE direction. A genuine member call
-        # `a:m()` now also marks a same-named top-level binding as used, so the
-        # query can MISS a dead private — it can no longer invent one, which is
-        # the failure that would delete live code.
-        if t.kind == token.KIND_NAME and kind != token.KIND_DOT
-            # a declaration site is not a use of itself
-            decl = t.loc.col == 1
-            if !decl
-                used = add(used, t.text)
-        kind = t.kind
-        col = t.loc.col
+  declared = nodes(src, file, family)
+  lx: Lexer = lexer.new(src, file, family)
+  used = "|"
+  kind: i64 = 0
+  col: i64 = 0
+  while true
+    t = lexer.next(lx)
+    if t.kind == token.KIND_EOF
+      break
+    # gap[025]: a RECEIVER FACE is a reference. `self:_fail(2)` calls the
+    # top-level `_fail`, so excluding names after `:` made every converted
+    # call site invisible and reported live privates as unreachable.
+    #
+    # `.` stays excluded: `a.b` is field access, not a call face.
+    #
+    # The residual error is in the SAFE direction. A genuine member call
+    # `a:m()` now also marks a same-named top-level binding as used, so the
+    # query can MISS a dead private — it can no longer invent one, which is
+    # the failure that would delete live code.
+    if t.kind == token.KIND_NAME and kind != token.KIND_DOT
+      # a declaration site is not a use of itself
+      decl = t.loc.col == 1
+      if not decl
+        used = add(used, t.text)
+    kind = t.kind
+    col = t.loc.col
 
-    # walk the declared set and count private names never used
-    n: i64 = declared:len()
-    count: i64 = 0
-    start: i64 = 2
-    i: i64 = 2
-    while i <= n
-        if declared:byte(i) == 124
-            if i > start
-                name = declared:sub(start, i - 1)
-                if name:len() > 1 and name:byte(1) == 95 and !has(used, name)
-                    count += 1
-                    if report
-                        print("  dead private " .. file .. ": " .. name)
-            start = i + 1
-        i += 1
-    count
+  # walk the declared set and count private names never used
+  n: i64 = declared:len()
+  count: i64 = 0
+  start: i64 = 2
+  i: i64 = 2
+  while i <= n
+    if declared:byte(i) == 124
+      if i > start
+        name = declared:sub(start, i - 1)
+        if name:len() > 1 and name:byte(1) == 95 and not has(used, name)
+          count = count + 1
+          if report
+            print("  dead private " .. file .. ": " .. name)
+      start = i + 1
+    i = i + 1
+  count

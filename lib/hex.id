@@ -1,14 +1,13 @@
 # hex — Hexadecimal encoding and decoding utilities
 
+encode: str = (s: str)
+  crypto.hex_encode(s)
 
-encode(s: str): str
-    crypto.hex_encode(s)
-
-decode(s: str): str
-    if s == nil return ""
-    out = {}
-    for i = 1, s:len(), 2
-        byte_str = s:sub(i, i + 1)
-        out:insert(tonumber(byte_str, 16):char())
-    out:concat()
-
+decode: str = (s: str)
+  if s == nil
+    return ""
+  out = {}
+  for i = 1, s:len(), 2
+    byte_str = s:sub(i, i + 1)
+    out:insert(tonumber(byte_str, 16):char())
+  out:concat()

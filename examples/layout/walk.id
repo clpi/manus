@@ -29,10 +29,15 @@
 # it against a closure would be asserting the defect.
 # expect: 12 3 12
 
-use = (f, v) f(v)
+use = (f, v)
+  f(v)
 
-deep = { a = { b = 12 } }
-rec = { a = 3, b = 4 }
+deep =
+  a =
+    b = 12
+rec =
+  a = 3
+  b = 4
 arg = use(.a.b, deep)
 flat = rec.a
 walk = deep.a.b

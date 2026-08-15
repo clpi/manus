@@ -5,284 +5,286 @@
 # Process Configuration
 # ═══════════════════════════════════════════════════════════════
 
-config_new(cmd: str): any
-    {
-        cmd = cmd,
-        args = {},
-        env = {},
-        cwd = nil,
-        stdin = "pipe",
-        stdout = "pipe",
-        stderr = "pipe",
-        detached = false,
-        uid = nil,
-        gid = nil,
-    }
+config_new: any = (cmd: str)
+  {
+    cmd = cmd,
+    args = {},
+    env = {},
+    cwd = nil,
+    stdin = "pipe",
+    stdout = "pipe",
+    stderr = "pipe",
+    detached = false,
+    uid = nil,
+    gid = nil
+  }
 
-config_arg(config: any, arg: str): any
-    config.args[config:len().args + 1] = arg
-    config
+config_arg: any = (config: any, arg: str)
+  config.args(config:len().args + 1) = arg
+  config
 
-config_args(config: any, args: any): any
-    for arg in args
-        config.args[config:len().args + 1] = arg
-    config
+config_args: any = (config: any, args: any)
+  for arg in args
+    config.args(config:len().args + 1) = arg
+  config
 
-config_env(config: any, key: str, value: str): any
-    config.env[key] = value
-    config
+config_env: any = (config: any, key: str, value: str)
+  config.env(key) = value
+  config
 
-config_cwd(config: any, cwd: str): any
-    config.cwd = cwd
-    config
+config_cwd: any = (config: any, cwd: str)
+  config.cwd = cwd
+  config
 
-config_stdin(config: any, mode: str): any
-    config.stdin = mode  # "pipe", "inherit", "ignore", or file path
-    config
+config_stdin: any = (config: any, mode: str)
+  # "pipe", "inherit", "ignore", or file path
+  config.stdin = mode
+  config
 
-config_stdout(config: any, mode: str): any
-    config.stdout = mode
-    config
+config_stdout: any = (config: any, mode: str)
+  config.stdout = mode
+  config
 
-config_stderr(config: any, mode: str): any
-    config.stderr = mode
-    config
+config_stderr: any = (config: any, mode: str)
+  config.stderr = mode
+  config
 
-config_detached(config: any, detached: bool): any
-    config.detached = detached
-    config
+config_detached: any = (config: any, detached: bool)
+  config.detached = detached
+  config
 
 # ═══════════════════════════════════════════════════════════════
 # Process Handle
 # ═══════════════════════════════════════════════════════════════
 
-new(): any
-    {
-        pid = nil,
-        exit_code = nil,
-        stdin = nil,
-        stdout = nil,
-        stderr = nil,
-        running = false,
-        killed = false,
-    }
+new: any = ()
+  {
+    pid = nil,
+    exit_code = nil,
+    stdin = nil,
+    stdout = nil,
+    stderr = nil,
+    running = false,
+    killed = false
+  }
 
-start(proc: any, config: any): any
-    # Build command with arguments
-    full_cmd = config.cmd
-    for arg in config.args
-        full_cmd = full_cmd .. " " .. arg:to(str)
+start: any = (proc: any, config: any)
+  # Build command with arguments
+  full_cmd = config.cmd
+  for arg in config.args
+    full_cmd = full_cmd .. " " .. arg:to(str)
 
-    # Set environment variables for the child process
-    env_prefix = ""
-    for k, v in config.env
-        env_prefix = env_prefix .. k .. "=" .. v:to(str) .. " "
+  # Set environment variables for the child process
+  env_prefix = ""
+  for k, v in config.env
+    env_prefix = env_prefix .. k .. "=" .. v:to(str) .. " "
 
-    # Capture PID and run in background
-    handle = io.popen(env_prefix .. full_cmd .. " 2>&1 & echo $!")
+  # Capture PID and run in background
+  handle = io.popen(env_prefix .. full_cmd .. " 2>&1 & echo $!")
+  if handle
+    pid_str = io.read(handle, "*l")
+    io.close(handle)
+    if pid_str
+      proc.pid = pid_str:to(i64) or 0
+      proc.running = true
+      proc.exit_code = nil
+      proc.config = config
+      return { ok = true, pid = proc.pid }
+  { ok = false, error = "Failed to start process" }
+
+wait: any = (proc: any)
+  if not proc.running
+    return { exit_code = proc.exit_code }
+
+  # Wait for process and capture exit code
+  if proc.pid and proc.pid > 0
+    os.execute("wait " .. proc.pid:to(str) .. " 2>/dev/null")
+    # Get exit code via $?
+    handle = io.popen("echo $?")
     if handle
-        pid_str = io.read(handle, "*l")
-        io.close(handle)
-        if pid_str
-            proc.pid = pid_str:to(i64) or 0
-            proc.running = true
-            proc.exit_code = nil
-            proc.config = config
-            return {ok = true, pid = proc.pid}
-    {ok = false, error = "Failed to start process"}
-
-wait(proc: any): any
-    if not proc.running
-        return {exit_code = proc.exit_code}
-
-    # Wait for process and capture exit code
-    if proc.pid and proc.pid > 0
-        os.execute("wait " .. proc.pid:to(str) .. " 2>/dev/null")
-        # Get exit code via $?
-        handle = io.popen("echo $?")
-        if handle
-            code_str = io.read(handle, "*l")
-            io.close(handle)
-            proc.exit_code = code_str:to(i64) or 0
-        else
-            proc.exit_code = 0
+      code_str = io.read(handle, "*l")
+      io.close(handle)
+      proc.exit_code = code_str:to(i64) or 0
     else
-        proc.exit_code = 0
+      proc.exit_code = 0
+  else
+    proc.exit_code = 0
 
-    proc.running = false
-    {exit_code = proc.exit_code}
+  proc.running = false
+  { exit_code = proc.exit_code }
 
-kill(proc: any, signal: i64): any
-    if not proc.running
-        return {error = "Process not running"}
+kill: any = (proc: any, signal: i64)
+  if not proc.running
+    return { error = "Process not running" }
 
-    sig = signal or 15  # SIGTERM default
-    if proc.pid and proc.pid > 0
-        os.execute("kill -" .. sig:to(str) .. " " .. proc.pid:to(str) .. " 2>/dev/null")
-    proc.killed = true
-    proc.running = false
-    proc.exit_code = -sig
-    {ok = true}
+  # SIGTERM default
+  sig = signal or 15
+  if proc.pid and proc.pid > 0
+    os.execute("kill -" .. sig:to(str) .. " " .. proc.pid:to(str) .. " 2>/dev/null")
+  proc.killed = true
+  proc.running = false
+  proc.exit_code = -sig
+  { ok = true }
 
-write_stdin(proc: any, data: str): any
-    if proc.stdin == nil
-        return {error = "stdin not available"}
+write_stdin: any = (proc: any, data: str)
+  if proc.stdin == nil
+    return { error = "stdin not available" }
 
-    # Write to the process's stdin pipe
-    if type(proc.stdin) == "userdata"
-        proc.stdin:write(data)
-        proc.stdin:flush()
-    {ok = true}
+  # Write to the process's stdin pipe
+  if type(proc.stdin) == "userdata"
+    proc.stdin:write(data)
+    proc.stdin:flush()
+  { ok = true }
 
-read_stdout(proc: any): any
-    if proc.stdout == nil
-        return {error = "stdout not available"}
+read_stdout: any = (proc: any)
+  if proc.stdout == nil
+    return { error = "stdout not available" }
 
-    if type(proc.stdout) == "userdata"
-        data = proc.stdout:read("*a") or ""
-        return {data = data, eof = data:len() == 0}
-    {data = "", eof = true}
+  if type(proc.stdout) == "userdata"
+    data = proc.stdout:read("*a") or ""
+    return { data = data, eof = data:len() == 0 }
+  { data = "", eof = true }
 
-read_stderr(proc: any): any
-    if proc.stderr == nil
-        return {error = "stderr not available"}
+read_stderr: any = (proc: any)
+  if proc.stderr == nil
+    return { error = "stderr not available" }
 
-    if type(proc.stderr) == "userdata"
-        data = proc.stderr:read("*a") or ""
-        return {data = data, eof = data:len() == 0}
-    {data = "", eof = true}
+  if type(proc.stderr) == "userdata"
+    data = proc.stderr:read("*a") or ""
+    return { data = data, eof = data:len() == 0 }
+  { data = "", eof = true }
 
-is_running(proc: any): bool
-    proc.running
+is_running: bool = (proc: any)
+  proc.running
 
-exit_code(proc: any): any
-    proc.exit_code
+exit_code: any = (proc: any)
+  proc.exit_code
 
 # ═══════════════════════════════════════════════════════════════
 # Command Execution Helpers
 # ═══════════════════════════════════════════════════════════════
 
-run(cmd: str, args: any): any
-    # Build full command line
-    full_cmd = cmd
-    if args
-        for arg in args
-            full_cmd = full_cmd .. " " .. arg:to(str)
+run: any = (cmd: str, args: any)
+  # Build full command line
+  full_cmd = cmd
+  if args
+    for arg in args
+      full_cmd = full_cmd .. " " .. arg:to(str)
 
-    # Execute and capture output + exit code in one shot
-    f = io.popen(full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
-    if f == nil
-        return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
-    raw = f:read("*a") or ""
-    f:close()
+  # Execute and capture output + exit code in one shot
+  f = io.popen(full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
+  if f == nil
+    return { exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd }
+  raw = f:read("*a") or ""
+  f:close()
 
-    # Split output from exit code (last line after final newline).
-    #
-    # The local is `code`, not `exit_code`: `exit_code` is a TOP-LEVEL FUNCTION
-    # in this module (see above), so assigning that name inside a function
-    # shadows a frozen binding and fails with "attempt to assign to const
-    # variable" — which took the whole module down. Both names are introduced
-    # before the branch so neither arm is the first assignment.
-    stdout = raw
-    code = 0
-    last_nl = raw:find("\n[^\n]*$")
-    if last_nl
-        stdout = raw:sub(1, last_nl - 1)
-        exit_str = raw:sub(last_nl + 1)
-        code = exit_str:match("%d+":to(i64)) or 0
+  # Split output from exit code (last line after final newline).
+  #
+  # The local is `code`, not `exit_code`: `exit_code` is a TOP-LEVEL FUNCTION
+  # in this module (see above), so assigning that name inside a function
+  # shadows a frozen binding and fails with "attempt to assign to const
+  # variable" — which took the whole module down. Both names are introduced
+  # before the branch so neither arm is the first assignment.
+  stdout = raw
+  code = 0
+  last_nl = raw:find("\n[^\n]*$")
+  if last_nl
+    stdout = raw:sub(1, last_nl - 1)
+    exit_str = raw:sub(last_nl + 1)
+    code = exit_str:match("%d+":to(i64)) or 0
 
-    {
-        exit_code = code,
-        stdout = stdout,
-        stderr = "",
-    }
+  {
+    exit_code = code,
+    stdout = stdout,
+    stderr = ""
+  }
 
-run_with_input(cmd: str, args: any, input: str): any
-    full_cmd = cmd
-    if args
-        for arg in args
-            full_cmd = full_cmd .. " " .. arg:to(str)
+run_with_input: any = (cmd: str, args: any, input: str)
+  full_cmd = cmd
+  if args
+    for arg in args
+      full_cmd = full_cmd .. " " .. arg:to(str)
 
-    # Pipe input to command and capture output + exit code
-    escaped_input = input:gsub("'", "'\\''")
-    f = io.popen("echo '" .. escaped_input .. "' | " .. full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
-    if f == nil
-        return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
-    raw = f:read("*a") or ""
-    f:close()
+  # Pipe input to command and capture output + exit code
+  escaped_input = input:gsub("'", "'\\''")
+  f = io.popen("echo '" .. escaped_input .. "' | " .. full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
+  if f == nil
+    return { exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd }
+  raw = f:read("*a") or ""
+  f:close()
 
-    # Same shadowing hazard as run(): `exit_code` is a top-level function here.
-    stdout = raw
-    code = 0
-    last_nl = raw:find("\n[^\n]*$")
-    if last_nl
-        stdout = raw:sub(1, last_nl - 1)
-        exit_str = raw:sub(last_nl + 1)
-        code = exit_str:match("%d+":to(i64)) or 0
+  # Same shadowing hazard as run(): `exit_code` is a top-level function here.
+  stdout = raw
+  code = 0
+  last_nl = raw:find("\n[^\n]*$")
+  if last_nl
+    stdout = raw:sub(1, last_nl - 1)
+    exit_str = raw:sub(last_nl + 1)
+    code = exit_str:match("%d+":to(i64)) or 0
 
-    {
-        exit_code = code,
-        stdout = stdout,
-        stderr = "",
-    }
+  {
+    exit_code = code,
+    stdout = stdout,
+    stderr = ""
+  }
 
-output(cmd: str, args: any): any
-    result = run(cmd, args)
-    result.stdout
+output: any = (cmd: str, args: any)
+  result = run(cmd, args)
+  result.stdout
 
 # ═══════════════════════════════════════════════════════════════
 # Pipe (inter-process communication)
 # ═══════════════════════════════════════════════════════════════
 
-pipe_new(): any
-    {
-        read_end = nil,
-        write_end = nil,
-        buffer = {},
-    }
+pipe_new: any = ()
+  {
+    read_end = nil,
+    write_end = nil,
+    buffer = {}
+  }
 
-pipe_read(pipe: any): any
-    if pipe:len().buffer == 0
-        return {data = "", eof = true}
+pipe_read: any = (pipe: any)
+  if pipe:len().buffer == 0
+    return { data = "", eof = true }
 
-    data = pipe.buffer[1]
-    pipe.buffer:remove(1)
-    {data = data, eof = false}
+  data = pipe.buffer(1)
+  pipe.buffer:remove(1)
+  { data = data, eof = false }
 
-pipe_write(pipe: any, data: str): any
-    pipe.buffer[pipe:len().buffer + 1] = data
-    {ok = true}
+pipe_write: any = (pipe: any, data: str)
+  pipe.buffer(pipe:len().buffer + 1) = data
+  { ok = true }
 
-pipe_close(pipe: any): void
-    pipe.buffer = {}
+pipe_close = (pipe: any)
+  pipe.buffer = {}
 
 # ═══════════════════════════════════════════════════════════════
 # Environment Variables
 # ═══════════════════════════════════════════════════════════════
 
-env_get(name: str): any
-    os.getenv(name)
+env_get: any = (name: str)
+  os.getenv(name)
 
-env_set(name: str, value: str): any
-    # Use C setenv for persistent environment changes in the current process
-    @comp.c.emit("setenv(" .. name .. ", " .. value .. ", 1)")
-    # Also update Lua's environment table
-    os.setenv(name, value)
-    {ok = true}
+env_set: any = (name: str, value: str)
+  # Use C setenv for persistent environment changes in the current process
+  @comp.c.emit("setenv(" .. name .. ", " .. value .. ", 1)")
+  
+  # Also update Lua's environment table
+  os.setenv(name, value)
+  { ok = true }
 
-env_unset(name: str): any
-    # Use C unsetenv for persistent environment changes
-    @comp.c.emit("unsetenv(" .. name .. ")")
-    os.setenv(name, nil)
-    {ok = true}
+env_unset: any = (name: str)
+  # Use C unsetenv for persistent environment changes
+  @comp.c.emit("unsetenv(" .. name .. ")")
+  
+  os.setenv(name, nil)
+  { ok = true }
 
-env_list(): any
-    os.getenv()
-
+env_list: any = ()
+  os.getenv()
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════
-
 # Config
 # Process
 # Helpers

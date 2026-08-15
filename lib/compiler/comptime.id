@@ -39,178 +39,182 @@ global _pos: i64 = 1
 global _bad: bool = false
 
 _at: i64 = ()
-    if _pos > _src:len()
-        return 0
-    _src:byte(_pos)
+  if _pos > _src:len()
+    return 0
+  _src:byte(_pos)
 
-_skip_ws: void = ()
-    while _pos <= _src:len() and (_at() == 32 or _at() == 9 or _at() == 10)
-        _pos += 1
+_skip_ws = ()
+  while _pos <= _src:len() and (_at() == 32 or _at() == 9 or _at() == 10)
+    _pos = _pos + 1
 
 _is_digit: bool = (c: i64)
-    c >= 48 and c <= 57
+  c >= 48 and c <= 57
 
 _hex_val: i64 = (c: i64)
-    if c >= 48 and c <= 57
-        return c - 48
-    if c >= 97 and c <= 102
-        return c - 87
-    if c >= 65 and c <= 70
-        return c - 55
-    0 - 1
+  if c >= 48 and c <= 57
+    return c - 48
+  if c >= 97 and c <= 102
+    return c - 87
+  if c >= 65 and c <= 70
+    return c - 55
+  0 - 1
 
 # Consume the operator at the cursor. `b == 0` means a one-byte operator, and
 # it refuses when the byte actually begins a two-byte one, so `<` never eats
 # the first half of `<<`.
 _eat: bool = (a: i64, b: i64)
-    _skip_ws()
-    if _at() != a
-        return false
-    if b == 0
-        nxt: i64 = 0
-        if _pos + 1 <= _src:len()
-            nxt = _src:byte(_pos + 1)
-        if a == 60 and nxt == 60
-            return false
-        if a == 62 and nxt == 62
-            return false
-        _pos += 1
-        return true
-    if _pos + 1 > _src:len()
-        return false
-    if _src:byte(_pos + 1) != b
-        return false
-    _pos += 2
-    true
+  _skip_ws()
+  if _at() != a
+    return false
+  if b == 0
+    nxt: i64 = 0
+    if _pos + 1 <= _src:len()
+      nxt = _src:byte(_pos + 1)
+    if a == 60 and nxt == 60
+      return false
+    if a == 62 and nxt == 62
+      return false
+    _pos = _pos + 1
+    return true
+  if _pos + 1 > _src:len()
+    return false
+  if _src:byte(_pos + 1) != b
+    return false
+  _pos = _pos + 2
+  true
 
 _number: i64 = ()
-    _skip_ws()
-    if _at() == 48 and _pos + 1 <= _src:len()
-        n2: i64 = _src:byte(_pos + 1)
-        if n2 == 120 or n2 == 88
-            _pos += 2
-            v: i64 = 0
-            while _pos <= _src:len() and _hex_val(_at()) >= 0
-                v = v * 16 + _hex_val(_at())
-                _pos += 1
-            return v
-    if !_is_digit(_at())
-        _bad = true
-        return 0
-    v2: i64 = 0
-    while _pos <= _src:len() and _is_digit(_at())
-        v2 = v2 * 10 + (_at() - 48)
-        _pos += 1
-    v2
+  _skip_ws()
+  if _at() == 48 and _pos + 1 <= _src:len()
+    n2: i64 = _src:byte(_pos + 1)
+    if n2 == 120 or n2 == 88
+      _pos = _pos + 2
+      v: i64 = 0
+      while _pos <= _src:len() and _hex_val(_at()) >= 0
+        v = v * 16 + _hex_val(_at())
+        _pos = _pos + 1
+      return v
+  if not _is_digit(_at())
+    _bad = true
+    return 0
+  v2: i64 = 0
+  while _pos <= _src:len() and _is_digit(_at())
+    v2 = v2 * 10 + _at() - 48
+    _pos = _pos + 1
+  v2
 
 _prim: i64 = ()
-    _skip_ws()
-    if _eat(45, 0)
-        return 0 - _prim()
-    if _at() == 126
-        _pos += 1
-        return ~_prim()
-    if _eat(40, 0)
-        v: i64 = _expr()
-        if !_eat(41, 0)
-            _bad = true
-        return v
-    _number()
+  _skip_ws()
+  if _eat(45, 0)
+    return 0 - _prim()
+  if _at() == 126
+    _pos = _pos + 1
+    return ~_prim()
+  if _eat(40, 0)
+    v: i64 = _expr()
+    if not _eat(41, 0)
+      _bad = true
+    return v
+  _number()
 
 # `^` binds tighter than unary minus and is right-associative
 _pow: i64 = ()
-    base: i64 = _prim()
-    if _eat(94, 0)
-        e: i64 = _pow()
-        r: i64 = 1
-        i: i64 = 0
-        while i < e
-            r = r * base
-            i += 1
-        return r
-    base
+  base: i64 = _prim()
+  if _eat(94, 0)
+    e: i64 = _pow()
+    r: i64 = 1
+    i: i64 = 0
+    while i < e
+      r = r * base
+      i = i + 1
+    return r
+  base
 
 _term: i64 = ()
-    left: i64 = _pow()
-    while true
-        if _eat(42, 0)
-            left = left * _pow()
-        else if _eat(47, 0)
-            d: i64 = _pow()
-            if d == 0
-                _bad = true
-                return 0
-            left = left / d
-        else if _eat(37, 0)
-            m: i64 = _pow()
-            if m == 0
-                _bad = true
-                return 0
-            left = left % m
+  left: i64 = _pow()
+  while true
+    if _eat(42, 0)
+      left = left * _pow()
+    else
+      if _eat(47, 0)
+        d: i64 = _pow()
+        if d == 0
+          _bad = true
+          return 0
+        left = left / d
+      else
+        if _eat(37, 0)
+          m: i64 = _pow()
+          if m == 0
+            _bad = true
+            return 0
+          left = left % m
         else
-            return left
+          return left
 
 _addsub: i64 = ()
-    left: i64 = _term()
-    while true
-        if _eat(43, 0)
-            left += _term()
-        else if _eat(45, 0)
-            left -= _term()
-        else
-            return left
+  left: i64 = _term()
+  while true
+    if _eat(43, 0)
+      left = left + _term()
+    else
+      if _eat(45, 0)
+        left = left - _term()
+      else
+        return left
 
 _shift: i64 = ()
-    left: i64 = _addsub()
-    while true
-        if _eat(60, 60)
-            left = left << _addsub()
-        else if _eat(62, 62)
-            left = left >> _addsub()
-        else
-            return left
+  left: i64 = _addsub()
+  while true
+    if _eat(60, 60)
+      left = left << _addsub()
+    else
+      if _eat(62, 62)
+        left = left >> _addsub()
+      else
+        return left
 
 _band: i64 = ()
-    left: i64 = _shift()
-    while _eat(38, 0)
-        left = left & _shift()
-    left
+  left: i64 = _shift()
+  while _eat(38, 0)
+    left = left & _shift()
+  left
 
 _bxor: i64 = ()
-    left: i64 = _band()
-    # `~` here is INFIX xor; the prefix form is handled in _prim, and position
-    # separates them exactly as it does in the parser.
-    while true
-        _skip_ws()
-        if _at() != 126
-            return left
-        _pos += 1
-        left = left ~ _band()
+  left: i64 = _band()
+  # `~` here is INFIX xor; the prefix form is handled in _prim, and position
+  # separates them exactly as it does in the parser.
+  while true
+    _skip_ws()
+    if _at() != 126
+      return left
+    _pos = _pos + 1
+    left = left ~ _band()
 
 _expr: i64 = ()
-    left: i64 = _bxor()
-    while _eat(124, 0)
-        left |= _bxor()
-    left
+  left: i64 = _bxor()
+  while _eat(124, 0)
+    left = left | _bxor()
+  left
 
 # Reset is its own function because a `bool` assignment inside a body whose
 # declared return is `i64` is reported as a return-type mismatch — the last
 # statement is not the last expression, but the check reads it that way.
-_reset: void = (src: str)
-    _src = src
-    _pos = 1
-    _bad = false
+_reset = (src: str)
+  _src = src
+  _pos = 1
+  _bad = false
 
 fold: i64 = (src: str)
-    _reset(src)
-    _expr()
+  _reset(src)
+  _expr()
 
 # Did the last fold consume the whole input without failing? Lets a caller tell
 # a legitimate 0 from a refusal.
 foldable: bool = (src: str)
-    _reset(src)
-    _v: i64 = _expr()
-    _skip_ws()
-    if _bad
-        return false
-    _pos > _src:len()
+  _reset(src)
+  _v: i64 = _expr()
+  _skip_ws()
+  if _bad
+    return false
+  _pos > _src:len()

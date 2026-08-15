@@ -13,39 +13,43 @@
 # until run time (which needs a hoisted runtime test rather than a fixed
 # comparison operator).
 
-down_sum(n: i64): i64
-    t = 0
-    for i = n, 1, -1
-        t += i
-    t
+down_sum: i64 = (n: i64)
+  t = 0
+  for i = n, 1, -1
+    t = t + i
+  t
 
-down_by_two(n: i64): i64
-    t = 0
-    for i = n, 1, -2
-        t += i
-    t
+down_by_two: i64 = (n: i64)
+  t = 0
+  for i = n, 1, -2
+    t = t + i
+  t
 
 # Step arrives as a value, so the comparison direction cannot be chosen at
 # compile time. `0 - k` rather than a literal keeps it opaque to folding.
-runtime_step(a: i64, b: i64, k: i64): i64
-    t = 0
-    for i = a, b, 0 - k
-        t += i
-    t
+runtime_step: i64 = (a: i64, b: i64, k: i64)
+  t = 0
+  for i = a, b, 0 - k
+    t = t + i
+  t
 
 # An empty range must stay empty: a descending loop whose start is already
 # below its stop runs zero times, and must not wrap into a near-infinite one.
-empty_range(): i64
-    t = 0
-    for i = 1, 4, -1
-        t += 1000
-    t
+empty_range: i64 = ()
+  t = 0
+  for i = 1, 4, -1
+    t = t + 1000
+  t
 
-main(): i64
-    total = 0
-    total += down_sum(4)          # 4+3+2+1        = 10
-    total += down_by_two(6)       # 6+4+2          = 12
-    total += runtime_step(5, 1, 2) # 5+3+1         = 9
-    total += empty_range()        # 0
-    # 31, and it must be identical under every backend column.
-    total
+main: i64 = ()
+  total = 0
+  # 4+3+2+1        = 10
+  total = total + down_sum(4)
+  # 6+4+2          = 12
+  total = total + down_by_two(6)
+  # 5+3+1         = 9
+  total = total + runtime_step(5, 1, 2)
+  # 0
+  total = total + empty_range()
+  # 31, and it must be identical under every backend column.
+  total

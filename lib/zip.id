@@ -57,12 +57,11 @@ list_detailed: any = (archive_path: str)
         break
       size, date, time, name = line:match("^%s+(%d+)%s+(%S+)%s+(%S+)%s+(.+)$")
       if name and name != ""
-        files(files:len() + 1) = {
-          name = name,
-          size = size:to(i64),
-          date = date,
+        files(files:len() + 1) =
+          name = name
+          size = size:to(i64)
+          date = date
           time = time
-        }
     if line:match("^%s+Length")
       in_listing = true
   files

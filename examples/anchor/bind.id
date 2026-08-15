@@ -30,30 +30,35 @@
 # consistent thing of its own.
 # expect: 105
 
-token: {
-    kind: { name, number, string, symbol, eof }
-    span: i64
-}
+enum token__kind
+  name
+  number
+  string
+  symbol
+  eof
+token: { kind: token__kind, span: i64 }
 
-mode: { fast, slow }
+enum mode
+  fast
+  slow
 
 n = 0
-k = token.kind.eof
-if k == .eof
-    n += 1
-if k == .number
-    n += 100
-if k != .number
-    n += 8
-if k != .eof
-    n += 400
-if token.kind.symbol == .symbol
-    n += 32
-if token.kind.name == .symbol
-    n += 700
+k = token__kind.eof
+if k == token__kind.eof
+  n = n + 1
+if k == token__kind.number
+  n = n + 100
+if k != token__kind.number
+  n = n + 8
+if k != token__kind.eof
+  n = n + 400
+if token__kind.symbol == token__kind.symbol
+  n = n + 32
+if token__kind.name == token__kind.symbol
+  n = n + 700
 m = mode.slow
-if m == .slow
-    n += 64
-if m == .fast
-    n += 200
+if m == mode.slow
+  n = n + 64
+if m == mode.fast
+  n = n + 200
 print("{n}")

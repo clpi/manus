@@ -1,4 +1,4 @@
-add3(a: i64, b: i64, c: i64): i64
-    return a + b + c
-main(): i64
-    return add3(10, 20, 12)
+add3: i64 = (a: i64, b: i64, c: i64)
+  return a + b + c
+main: i64 = ()
+  return add3(10, 20, 12)

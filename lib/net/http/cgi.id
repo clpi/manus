@@ -1,16 +1,15 @@
 # net.http.cgi — CGI handler (mirrors Go's net/http/cgi)
 
-serve(handler: any): void
-    method = os.getenv("REQUEST_METHOD") or "GET"
-    path = os.getenv("PATH_INFO") or "/"
-    query = os.getenv("QUERY_STRING") or ""
-    body = ""
-    if method == "POST" or method == "PUT"
-        body = io.read()
-    resp = handler(method, path, query, body)
-    io.write("Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n")
-    io.write(resp)
+serve = (handler: any)
+  method = os.getenv("REQUEST_METHOD") or "GET"
+  path = os.getenv("PATH_INFO") or "/"
+  query = os.getenv("QUERY_STRING") or ""
+  body = ""
+  if method == "POST" or method == "PUT"
+    body = io.read()
+  resp = handler(method, path, query, body)
+  io.write("Status: 200 OK\r\nContent-Type: text/plain\r\n\r\n")
+  io.write(resp)
 
-request(): any
-    {method = os.getenv("REQUEST_METHOD") or "GET", path = os.getenv("PATH_INFO") or "/", query = os.getenv("QUERY_STRING") or ""}
-
+request: any = ()
+  { method = os.getenv("REQUEST_METHOD") or "GET", path = os.getenv("PATH_INFO") or "/", query = os.getenv("QUERY_STRING") or "" }

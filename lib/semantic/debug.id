@@ -1,4 +1,12 @@
 # debug world — observation relations.
 
-trace = { world = "debug", possessed = false, callable = true, operation = false }
-breakpoint = { world = "debug", possessed = false, callable = true, operation = false }
+trace =
+  world = "debug"
+  possessed = false
+  callable = true
+  operation = false
+breakpoint =
+  world = "debug"
+  possessed = false
+  callable = true
+  operation = false

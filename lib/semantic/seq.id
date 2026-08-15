@@ -1,30 +1,142 @@
 # Subject-first bindings — empty world; file stem `seq` projects this home.
 
-len = { world = "", possessed = true, callable = true, operation = false }
-sub = { world = "", possessed = true, callable = true, operation = false }
-find = { world = "", possessed = true, callable = true, operation = false }
-each = { world = "", possessed = true, callable = true, operation = false }
-sort = { world = "", possessed = true, callable = true, operation = false }
-eq = { world = "", possessed = true, callable = true, operation = false }
-ord = { world = "", possessed = true, callable = true, operation = false }
-hash = { world = "", possessed = true, callable = true, operation = false }
-push = { world = "", possessed = true, callable = true, operation = false }
-pop = { world = "", possessed = true, callable = true, operation = false }
-get = { world = "", possessed = true, callable = true, operation = false }
-set = { world = "", possessed = true, callable = true, operation = false }
-at = { world = "", possessed = true, callable = true, operation = false }
-format = { world = "", possessed = true, callable = true, operation = false }
-split = { world = "", possessed = true, callable = true, operation = false }
-join = { world = "", possessed = true, callable = true, operation = false }
-byte = { world = "", possessed = true, callable = true, operation = false }
-to = { world = "", possessed = true, callable = true, operation = false }
-from = { world = "", possessed = true, callable = true, operation = false }
-add = { world = "", possessed = true, callable = true, operation = false }
-mul = { world = "", possessed = true, callable = true, operation = false }
-div = { world = "", possessed = true, callable = true, operation = false }
-mod = { world = "", possessed = true, callable = true, operation = false }
-iter = { world = "", possessed = true, callable = true, operation = false }
-derive = { world = "", possessed = true, callable = true, operation = false }
-compose = { world = "", possessed = true, callable = true, operation = false }
-project = { world = "", possessed = true, callable = true, operation = false }
-realize = { world = "", possessed = true, callable = true, operation = false }
+len =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+sub =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+find =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+each =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+sort =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+eq =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+ord =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+hash =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+push =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+pop =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+get =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+set =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+at =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+format =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+split =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+join =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+byte =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+to =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+from =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+add =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+mul =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+div =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+mod =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+iter =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+derive =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+compose =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+project =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+realize =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false

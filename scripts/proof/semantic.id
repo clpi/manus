@@ -1,41 +1,38 @@
 # SH-10 + GAP-124 + GAP-157 proof suite orchestrator — idol check + direct run, no std.
 
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
+len__path = (min: i64)
+  path:read():len() >= min
 
-audit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+audit__path = (pattern: str)
+  path:read():has(pattern)
 
-hit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+hit__path = (pattern: str)
+  path:read():has(pattern)
 
 main: i64 = ()
-    if !"scripts/proof/resident.id":audit("path:read(")
-        return 2
-    if "scripts/proof/resident.id":hit("router(")
-        return 3
-    if !"scripts/proof/fs.id":audit("path:read(")
-        return 5
-    if "scripts/proof/remove.id":hit("std.")
-        return 6
-    if !"scripts/proof/core.id":audit("record:hit")
-        return 8
-    if "scripts/proof/bit.id":hit("bitcast")
-        return 10
-    if !"scripts/proof/bit.id":audit(":to(bit)")
-        return 11
-    if !"scripts/proof/view.id":audit("@view")
-        return 19
-    if !"scripts/proof/audit.id":audit("path:read(")
-        return 20
-    if !"scripts/proof/graph.id":audit("graph:hit")
-        return 22
-    if !"scripts/proof/graph.id":audit("descriptor_ref")
-        return 23
-    if !"scripts/proof/graph.id":audit("callfirst:")
-        return 29
-    print("semantic proof: pass")
-    0
+  if not "scripts/proof/resident.id":audit("path:read(")
+    return 2
+  if "scripts/proof/resident.id":hit("router(")
+    return 3
+  if not "scripts/proof/fs.id":audit("path:read(")
+    return 5
+  if "scripts/proof/remove.id":hit("std.")
+    return 6
+  if not "scripts/proof/core.id":audit("record:hit")
+    return 8
+  if "scripts/proof/bit.id":hit("bitcast")
+    return 10
+  if not "scripts/proof/bit.id":audit(":to(bit)")
+    return 11
+  if not "scripts/proof/view.id":audit("@view")
+    return 19
+  if not "scripts/proof/audit.id":audit("path:read(")
+    return 20
+  if not "scripts/proof/graph.id":audit("graph:hit")
+    return 22
+  if not "scripts/proof/graph.id":audit("descriptor_ref")
+    return 23
+  if not "scripts/proof/graph.id":audit("callfirst:")
+    return 29
+  print("semantic proof: pass")
+  0

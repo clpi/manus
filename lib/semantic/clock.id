@@ -1,5 +1,11 @@
 # clock world — semantic registry.
 
-now = { relation = "now", world = "clock" }
-utc = { relation = "utc", world = "clock" }
-stamp = { relation = "stamp", world = "clock" }
+now =
+  relation = "now"
+  world = "clock"
+utc =
+  relation = "utc"
+  world = "clock"
+stamp =
+  relation = "stamp"
+  world = "clock"

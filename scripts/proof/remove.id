@@ -7,40 +7,40 @@
 base = "/tmp/idolproofremove"
 
 main: i64 = ()
-    real = "{base}/present.id"
-    gone = "{base}/nosuchdir/cannotexist.txt"
-    seed = "scripts/proof/remove.id"
+  real = "{base}/present.id"
+  gone = "{base}/nosuchdir/cannotexist.txt"
+  seed = "scripts/proof/remove.id"
 
-    real:remove()
-    base:remove()
-    base:mkdir()
+  real:remove()
+  base:remove()
+  base:mkdir()
 
-    if real:exists()
-        print("fs remove proof: control failed — {real} exists before it was made")
-        1
+  if real:exists()
+    print("fs remove proof: control failed — {real} exists before it was made")
+    1
 
-    seed:copy(real)
+  seed:copy(real)
 
-    if !real:exists()
-        print("fs remove proof: control failed — exists() says no after the copy")
-        2
+  if not real:exists()
+    print("fs remove proof: control failed — exists() says no after the copy")
+    2
 
-    ok = real:remove()
+  ok = real:remove()
 
-    if real:exists()
-        print("fs remove proof: remove answered {ok} and the file is STILL ON DISK")
-        3
+  if real:exists()
+    print("fs remove proof: remove answered {ok} and the file is STILL ON DISK")
+    3
 
-    if !ok
-        print("fs remove proof: the file was removed and remove answered {ok}")
-        4
+  if not ok
+    print("fs remove proof: the file was removed and remove answered {ok}")
+    4
 
-    bad = gone:remove()
+  bad = gone:remove()
 
-    if bad
-        print("fs remove proof: remove answered {bad} for a path that cannot exist")
-        5
+  if bad
+    print("fs remove proof: remove answered {bad} for a path that cannot exist")
+    5
 
-    base:remove()
-    print("fs remove proof: both directions verified against the filesystem")
-    0
+  base:remove()
+  print("fs remove proof: both directions verified against the filesystem")
+  0

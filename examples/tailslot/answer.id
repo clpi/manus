@@ -17,21 +17,21 @@
 #
 # Prints ` ` (one space), then `30`, then exits 7.
 
-quiet: void = (m: i64)
-    if m == 2
-        print(" ")
+quiet = (m: i64)
+  if m == 2
+    print(" ")
 
 sum: i64 = ()
-    n: i64 = 0
-    t: i64 = 0
-    while n < 3
-        n += 1
-        t += 10
-    t
+  n: i64 = 0
+  t: i64 = 0
+  while n < 3
+    n = n + 1
+    t = t + 10
+  t
 
 main: i64 = ()
-    quiet(2)
-    print(sum())
-    if 42 > 10
-        return 7
-    3
+  quiet(2)
+  print(sum())
+  if 42 > 10
+    return 7
+  3

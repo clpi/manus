@@ -4,103 +4,53 @@
 # audit(path)(pattern) SIGSEGV on direct native. Restore when that run lives.
 
 look: bool = (path: str, pattern: str)
-    body = path:read()
-    body:has(pattern)
+  body = path:read()
+  body:has(pattern)
 
 need: i64 = (path: str, tag: str, pattern: str)
-    if look(path, pattern)
-        print("  ok {tag}")
-        return 0
-    print("  miss {tag}: {pattern}")
-    1
+  if look(path, pattern)
+    print("  ok {tag}")
+    return 0
+  print("  miss {tag}: {pattern}")
+  1
 
 row: i64 = (path: str, proof: str, a: str, b: str, c: str, d: str)
-    print("index {path}")
-    print("  {proof}")
-    fail = 0
-    fail += need(path, "contract", a)
-    fail += need(path, "oracle", b)
-    fail += need(path, "negative", c)
-    fail += need(path, "verdict", d)
-    fail
+  print("index {path}")
+  print("  {proof}")
+  fail = 0
+  fail = fail + need(path, "contract", a)
+  fail = fail + need(path, "oracle", b)
+  fail = fail + need(path, "negative", c)
+  fail = fail + need(path, "verdict", d)
+  fail
 
 control: i64 = ()
-    path = "scripts/ledger/perf.id"
-    if !look(path, "ledger/perf: pass all evidence contracts present")
-        print("ledger/perf: fail control present pattern")
-        return 1
-    if look(path, "ZZZ_" .. "PERF_NEG" .. "_CTRL")
-        print("ledger/perf: fail control absent pattern")
-        return 1
-    print("ledger/perf: control ok")
-    0
+  path = "scripts/ledger/perf.id"
+  if not look(path, "ledger/perf: pass all evidence contracts present")
+    print("ledger/perf: fail control present pattern")
+    return 1
+  if look(path, "ZZZ_" .. "PERF_NEG" .. "_CTRL")
+    print("ledger/perf: fail control absent pattern")
+    return 1
+  print("ledger/perf: control ok")
+  0
 
 main: i64 = ()
-    fail = control()
-    fail += row("scripts/run_benchmark.id",
-        "Idol-hosted kernels match reference C before any speed comparison",
-        "reference C benchmark",
-        "RESULT_FAIL_FLAG = 1",
-        "Benchmark failed:",
-        "Duo .lua/.id >= C")
-    fail += row("scripts/runtime_bench.id",
-        "Idol Wasm runtime measured against wasmtime with answer-checked exec axis",
-        "wasmtime is the oracle",
-        "answer mismatch",
-        "losses += 1",
-        "runtime bench: PASS")
-    fail += row("scripts/run_compile_size_benchmark.id",
-        "compile-time and artifact-size evidence for generated C vs direct native",
-        "compile size benchmark",
-        "compile_size: FAIL",
-        "compile_size: PASS",
-        "artifact")
-    fail += row("scripts/run_gpu_benchmark.id",
-        "GPU Metal benchmark axis remains wired",
-        "gpu benchmark",
-        "gpu: FAIL",
-        "gpu: PASS",
-        "Metal")
-    fail += row("scripts/run_cross_benchmark.id",
-        "cross-language benchmark axis remains wired",
-        "cross benchmark",
-        "cross: FAIL",
-        "cross: PASS",
-        "LuaJIT")
-    fail += row("scripts/run_wasm_benchmark.id",
-        "wasm runtime benchmark axis remains wired",
-        "wasm benchmark",
-        "wasm: FAIL",
-        "wasm: PASS",
-        "wasmtime")
-    fail += row("scripts/run_honest_benchmark.id",
-        "honest benchmark axis remains wired",
-        "honest benchmark",
-        "honest: FAIL",
-        "honest: PASS",
-        "no precomputation")
-    fail += row("scripts/run_ml_benchmark.id",
-        "ML benchmark axis remains wired",
-        "ml benchmark",
-        "ml: FAIL",
-        "ml: PASS",
-        "ML")
-    fail += row("scripts/ledger/ftcftw.id",
-        "Idol-only native > c-equivalent > wasm oracle evidence chain index",
-        "claim.refused faster than c across the board",
-        "claim.made    law.project.ftcftw",
-        "complete FTCFTW proof: NOT PROVEN",
-        "ledger/ftcftw: pass all evidence contracts present")
-    fail += row("scripts/ledger/evidence.id",
-        "EVIDENCE-SUBJECT-ONE binds subject and evidence revisions separately",
-        "subject revision: 29f62035",
-        "evidence revision: 59093d7b",
-        "FTCFTW complete proof: NOT PROVEN",
-        "ledger/evidence: PASS subject 29f62035 / evidence 59093d7b")
+  fail = control()
+  fail = fail + row("scripts/run_benchmark.id", "Idol-hosted kernels match reference C before any speed comparison", "reference C benchmark", "RESULT_FAIL_FLAG = 1", "Benchmark failed:", "Duo .lua/.id >= C")
+  fail = fail + row("scripts/runtime_bench.id", "Idol Wasm runtime measured against wasmtime with answer-checked exec axis", "wasmtime is the oracle", "answer mismatch", "losses += 1", "runtime bench: PASS")
+  fail = fail + row("scripts/run_compile_size_benchmark.id", "compile-time and artifact-size evidence for generated C vs direct native", "compile size benchmark", "compile_size: FAIL", "compile_size: PASS", "artifact")
+  fail = fail + row("scripts/run_gpu_benchmark.id", "GPU Metal benchmark axis remains wired", "gpu benchmark", "gpu: FAIL", "gpu: PASS", "Metal")
+  fail = fail + row("scripts/run_cross_benchmark.id", "cross-language benchmark axis remains wired", "cross benchmark", "cross: FAIL", "cross: PASS", "LuaJIT")
+  fail = fail + row("scripts/run_wasm_benchmark.id", "wasm runtime benchmark axis remains wired", "wasm benchmark", "wasm: FAIL", "wasm: PASS", "wasmtime")
+  fail = fail + row("scripts/run_honest_benchmark.id", "honest benchmark axis remains wired", "honest benchmark", "honest: FAIL", "honest: PASS", "no precomputation")
+  fail = fail + row("scripts/run_ml_benchmark.id", "ML benchmark axis remains wired", "ml benchmark", "ml: FAIL", "ml: PASS", "ML")
+  fail = fail + row("scripts/ledger/ftcftw.id", "Idol-only native > c-equivalent > wasm oracle evidence chain index", "claim.refused faster than c across the board", "claim.made    law.project.ftcftw", "complete FTCFTW proof: NOT PROVEN", "ledger/ftcftw: pass all evidence contracts present")
+  fail = fail + row("scripts/ledger/evidence.id", "EVIDENCE-SUBJECT-ONE binds subject and evidence revisions separately", "subject revision: 29f62035", "evidence revision: 59093d7b", "FTCFTW complete proof: NOT PROVEN", "ledger/evidence: PASS subject 29f62035 / evidence 59093d7b")
 
-    print("")
-    if fail > 0
-        print("ledger/perf: fail missing contracts {fail}")
-        return 1
-    print("ledger/perf: pass all evidence contracts present")
-    0
+  print("")
+  if fail > 0
+    print("ledger/perf: fail missing contracts {fail}")
+    return 1
+  print("ledger/perf: pass all evidence contracts present")
+  0

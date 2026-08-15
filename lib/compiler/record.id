@@ -36,7 +36,7 @@
 # prefixes would be two namespaces to keep disjoint, and the bootstrap already
 # spells every emitted type `duo_`.
 typename: str = (desc: str)
-    "duo_{desc}"
+  "duo_{desc}"
 
 # Applying a descriptor to a NAMED field pack.
 #
@@ -49,8 +49,8 @@ typename: str = (desc: str)
 # position binds looser than a cast, and `(duo_point){…}.x` without them
 # parses as a cast applied to a member access.
 named: str = (desc: str, fields: str)
-    ty: str = typename(desc)
-    "(({ty}){{fields}})"
+  ty: str = typename(desc)
+  "(({ty}){{fields}})"
 
 # Applying a descriptor to a POSITIONAL pack — spec §15.1's `point{ 3, 4 }`.
 #
@@ -59,14 +59,14 @@ named: str = (desc: str, fields: str)
 # positional construction is expressible at all, and it is why a descriptor
 # whose field order is not stable cannot take this form.
 positional: str = (desc: str, values: str)
-    ty: str = typename(desc)
-    "(({ty}){{values}})"
+  ty: str = typename(desc)
+  "(({ty}){{values}})"
 
 # One named field inside a pack. Separated so the caller assembles the pack
 # rather than this file learning about commas, which is the first step toward
 # accidentally owning expression emission.
 field: str = (name: str, value: str)
-    ".{name} = {value}"
+  ".{name} = {value}"
 
 # Whether a descriptor name can take the compound-literal form at all.
 #
@@ -75,6 +75,6 @@ field: str = (name: str, value: str)
 # ABI, dynamic storage class — this is where the refusal lives, and a refusal
 # is better than an emission that compiles and reads the wrong offsets.
 emits: bool = (desc: str)
-    if desc == ""
-        return false
-    true
+  if desc == ""
+    return false
+  true

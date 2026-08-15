@@ -4,40 +4,35 @@ work = "/tmp/idolproofstr"
 idol = "./zig-out/bin/idol"
 
 fail: i64 = (msg: str)
-    print("proof/str: " .. msg)
-    1
+  print("proof/str: " .. msg)
+  1
 
 main: i64 = ()
-    if "hello":len() != 5
-        return fail("len literal")
-    if "":len() != 0
-        return fail("len empty")
-    if "hello world":sub(7, 11):len() != 5
-        return fail("len sub")
+  if "hello":len() != 5
+    return fail("len literal")
+  if "":len() != 0
+    return fail("len empty")
+  if "hello world":sub(7, 11):len() != 5
+    return fail("len sub")
 
-    script.run("rm -rf " .. work .. " && mkdir -p " .. work)
-    src = work .. "/main.id"
-    f = src:open("w")
-    f:write("main: i64 = ()\n"
-        .. "    a: i64 = \"hello\":len()\n"
-        .. "    b: i64 = \"hello world\":sub(7, 11):len()\n"
-        .. "    a + b\n"
-        .. "end\n")
-    f:close()
+  script.run("rm -rf " .. work .. " && mkdir -p " .. work)
+  src = work .. "/main.id"
+  f = src:open("w")
+  f:write("main: i64 = ()\n" .. "    a: i64 = \"hello\":len()\n" .. "    b: i64 = \"hello world\":sub(7, 11):len()\n" .. "    a + b\n" .. "end\n")
+  f:close()
 
-    if script.run(idol .. " compile " .. src .. " --backend=direct --emit exe -o " .. work .. "/main") != 0
-        return fail("direct compile")
-    rc = script.status(work .. "/main")
-    if rc != 10
-        return fail("direct exit " .. rc:to(str))
+  if script.run(idol .. " compile " .. src .. " --backend=direct --emit exe -o " .. work .. "/main") != 0
+    return fail("direct compile")
+  rc = script.status(work .. "/main")
+  if rc != 10
+    return fail("direct exit " .. rc:to(str))
 
-    modc = "/tmp/duo_reqmod_str.c"
-    if !modc:exists()
-        return fail("missing emitted std.str C module")
-    n = script.chomp(script.capture(
-        "awk '/len\\(s: str\\)/,/^end$/' lib/str.id | grep -c '@.*c\\.emit'"))
-    if n != "" and n != "0"
-        return fail("std.str.len still uses embedded C")
+  modc = "/tmp/duo_reqmod_str.c"
+  if not modc:exists()
+    return fail("missing emitted std.str C module")
+  n = script.chomp(script.capture("awk '/len\\(s: str\\)/,/^end$/' lib/str.id | grep -c '@.*c\\.emit'"))
+  if n != "" and n != "0"
+    return fail("std.str.len still uses embedded C")
 
-    print("proof/str: pass")
-    0
+  print("proof/str: pass")
+  0

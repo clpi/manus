@@ -1,63 +1,63 @@
 # Typed arithmetic exports for WAST testing.
 
 @export
-add(a: int, b: int): int
-    a + b
+add: int = (a: int, b: int)
+  a + b
 
 @export
-sub(a: int, b: int): int
-    a - b
+sub: int = (a: int, b: int)
+  a - b
 
 @export
-mul(a: int, b: int): int
-    a * b
+mul: int = (a: int, b: int)
+  a * b
 
 @export
-idiv(a: int, b: int): int
-    a // b
+idiv: int = (a: int, b: int)
+  a // b
 
 @export
-imod(a: int, b: int): int
-    a % b
+imod: int = (a: int, b: int)
+  a % b
 
 @export
-neg(a: int): int
+neg: int = (a: int)
+  0 - a
+
+@export
+band: int = (a: int, b: int)
+  a & b
+
+@export
+bor: int = (a: int, b: int)
+  a | b
+
+@export
+bxor: int = (a: int, b: int)
+  a ~ b
+
+@export
+lshift: int = (a: int, b: int)
+  a << b
+
+@export
+rshift: int = (a: int, b: int)
+  a >> b
+
+@export
+abs_val: int = (a: int)
+  if a < 0
     0 - a
+  a
 
 @export
-band(a: int, b: int): int
-    a & b
-
-@export
-bor(a: int, b: int): int
-    a | b
-
-@export
-bxor(a: int, b: int): int
-    a ~ b
-
-@export
-lshift(a: int, b: int): int
-    a << b
-
-@export
-rshift(a: int, b: int): int
-    a >> b
-
-@export
-abs_val(a: int): int
-    if a < 0
-        0 - a
+max_val: int = (a: int, b: int)
+  if a > b
     a
+  b
 
 @export
-max_val(a: int, b: int): int
-    if a > b
-        a
-    b
-
-@export
-min_val(a: int, b: int): int
-    if a < b
-        a
-    b
+min_val: int = (a: int, b: int)
+  if a < b
+    a
+  b

@@ -1,6 +1,6 @@
 # @corpus current
 # expect: 42
 budget: i64 = (fallback: i64)
-    fallback
+  fallback
 
 print(budget(42))

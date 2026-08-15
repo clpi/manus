@@ -1,3 +1,4 @@
 # input endpoint — call as input:read() / input:read(path).
 
-input = { read = endpointread }
+input =
+  read = endpointread

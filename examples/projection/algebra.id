@@ -8,12 +8,12 @@
 #
 # expect: 17
 
-to(str) = (value)
-    value:to(str)
+to__str = (value)
+  value:to(str)
 
 # Declaration projection uses a concrete descriptor — not an adjective protocol.
-read(i64) = (lx, b)
-    lx:read(i64)(b)
+read__i64 = (lx, b)
+  lx:read(i64)(b)
 
 n: i64 = 17
 print(n:to(str))

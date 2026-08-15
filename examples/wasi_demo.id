@@ -2,75 +2,124 @@
 # Demonstrates WASI type constants and bindings
 
 # WASI errno constants
-errno_success(): u16    0
-errno_badf(): u16       8
-errno_exist(): u16      20
-errno_noent(): u16      44
-errno_perm(): u16       63
-errno_inval(): u16      28
-errno_notdir(): u16     54
-errno_overflow(): u16   61
+errno_success: u16 = ()
+  0
+errno_badf: u16 = ()
+  8
+errno_exist: u16 = ()
+  20
+errno_noent: u16 = ()
+  44
+errno_perm: u16 = ()
+  63
+errno_inval: u16 = ()
+  28
+errno_notdir: u16 = ()
+  54
+errno_overflow: u16 = ()
+  61
 
 # WASI file descriptor types
-fd_stdin(): i32    0
-fd_stdout(): i32   1
-fd_stderr(): i32   2
+fd_stdin: i32 = ()
+  0
+fd_stdout: i32 = ()
+  1
+fd_stderr: i32 = ()
+  2
 
 # WASI rights
-right_fd_read(): u64        1
-right_fd_write(): u64       2
-right_fd_seek(): u64        4
-right_fd_fdstat_get(): u64  16
-right_poll_oneoff(): u64    256
-right_sock_accept(): u64    65536
+right_fd_read: u64 = ()
+  1
+right_fd_write: u64 = ()
+  2
+right_fd_seek: u64 = ()
+  4
+right_fd_fdstat_get: u64 = ()
+  16
+right_poll_oneoff: u64 = ()
+  256
+right_sock_accept: u64 = ()
+  65536
 
 # WASI open flags
-oflags_creat(): u16      1
-oflags_directory(): u16  2
-oflags_excl(): u16       4
-oflags_trunc(): u16      8
+oflags_creat: u16 = ()
+  1
+oflags_directory: u16 = ()
+  2
+oflags_excl: u16 = ()
+  4
+oflags_trunc: u16 = ()
+  8
 
 # WASI file types
-filetype_unknown(): u8            0
-filetype_block_device(): u8       1
-filetype_character_device(): u8   2
-filetype_directory(): u8          3
-filetype_regular_file(): u8       4
-filetype_socket_dgram(): u8       5
-filetype_socket_stream(): u8      6
-filetype_symlink(): u8            7
+filetype_unknown: u8 = ()
+  0
+filetype_block_device: u8 = ()
+  1
+filetype_character_device: u8 = ()
+  2
+filetype_directory: u8 = ()
+  3
+filetype_regular_file: u8 = ()
+  4
+filetype_socket_dgram: u8 = ()
+  5
+filetype_socket_stream: u8 = ()
+  6
+filetype_symlink: u8 = ()
+  7
 
 # WASI clock IDs
-clockid_realtime(): u32               0
-clockid_monotonic(): u32              1
-clockid_process_cputime_id(): u32     2
-clockid_thread_cputime_id(): u32      3
+clockid_realtime: u32 = ()
+  0
+clockid_monotonic: u32 = ()
+  1
+clockid_process_cputime_id: u32 = ()
+  2
+clockid_thread_cputime_id: u32 = ()
+  3
 
 # WASI event types
-eventtype_clock(): u8     0
-eventtype_fd_read(): u8   1
-eventtype_fd_write(): u8  2
+eventtype_clock: u8 = ()
+  0
+eventtype_fd_read: u8 = ()
+  1
+eventtype_fd_write: u8 = ()
+  2
 
 # WASI whence (seek origin)
-whence_set(): u8  0
-whence_cur(): u8  1
-whence_end(): u8  2
+whence_set: u8 = ()
+  0
+whence_cur: u8 = ()
+  1
+whence_end: u8 = ()
+  2
 
 # WASI signal constants
-signal_hup(): u8   1
-signal_int(): u8   2
-signal_quit(): u8  3
-signal_kill(): u8  9
-signal_term(): u8  15
+signal_hup: u8 = ()
+  1
+signal_int: u8 = ()
+  2
+signal_quit: u8 = ()
+  3
+signal_kill: u8 = ()
+  9
+signal_term: u8 = ()
+  15
 
 # WASI exit codes
-exit_success(): u32  0
-exit_failure(): u32  1
+exit_success: u32 = ()
+  0
+exit_failure: u32 = ()
+  1
 
 # WASI timestamp helpers
-timestamp_second(): u64      1000000000
-timestamp_millisecond(): u64 1000000
-timestamp_microsecond(): u64 1000
+timestamp_second: u64 = ()
+  1000000000
+timestamp_millisecond: u64 = ()
+  1000000
+timestamp_microsecond: u64 = ()
+  1000
 
 print("=== WASI File Descriptors ===")
 print("stdin:  " .. to(str)(fd_stdin()))

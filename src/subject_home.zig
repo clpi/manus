@@ -18,7 +18,7 @@
 
 const std = @import("std");
 
-pub const Home = enum { string, math, table, io, testing };
+pub const Home = enum { string, math, table, io, testing, os };
 
 const string_members = [_][]const u8{
     "sub",   "match", "byte",    "len",    "char",   "rep",
@@ -74,6 +74,17 @@ const io_members = [_][]const u8{
 ///
 /// This is what `@comp.assert` should have been. A directive namespace is a
 /// namespace; a world is a subject, and an assertion is a relation on it.
+/// The `os` world's projections, reached subject-first as `os:arg(i)`.
+///
+/// Canonically these need no anchor: `os` is injected in the standard world, so
+/// `arg(i)` at root scope is the canonical face. The subject-first spelling
+/// exists for where the anchor disambiguates, and resolves to the SAME
+/// projection rather than being a second mechanism. `args` is the legacy plural
+/// — an identity is singular — kept only so existing source keeps working.
+const os_members = [_][]const u8{
+    "arg", "args", "env", "cwd", "exit", "clock", "time",
+};
+
 const testing_members = [_][]const u8{
     "assert", "refute", "equal", "differs", "raises", "near",
 };
@@ -111,6 +122,7 @@ pub fn homeOf(method: []const u8) ?Home {
     if (has(&table_members, method)) return .table;
     if (has(&io_members, method)) return .io;
     if (has(&testing_members, method)) return .testing;
+    if (has(&os_members, method)) return .os;
     return null;
 }
 
@@ -131,6 +143,7 @@ pub fn homeName(h: Home) []const u8 {
         .table => "table",
         .io => "io",
         .testing => "test",
+        .os => "os",
     };
 }
 

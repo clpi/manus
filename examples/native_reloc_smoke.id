@@ -1,6 +1,6 @@
 @ffi("llabs")
-llabs(n: i64): i64
-
-main(): i64
-    x = llabs(-37)
-    x + 5
+llabs: i64 = (n: i64)
+  void
+main: i64 = ()
+  x = llabs(-37)
+  x + 5

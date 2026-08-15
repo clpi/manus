@@ -1,12 +1,12 @@
 # Test traditional fun calls
 
-greet(name: str): str
-    "Hello, " .. name
+greet: str = (name: str)
+  "Hello, " .. name
 
 # Traditional Lua-style call
 print(greet("World"))
 
-add(a: i64, b: i64): i64
-    a + b
+add: i64 = (a: i64, b: i64)
+  a + b
 
 print(add(5, 7))

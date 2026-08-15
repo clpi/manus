@@ -10,224 +10,224 @@
 # Relation census projection: gate/catalog.id (documentation; lookups below — no req).
 
 transport: str = ()
-    text = stdin:read()
-    if text:len() == 0
-        return ""
-    text
+  text = stdin:read()
+  if text:len() == 0
+    return ""
+  text
 
 alpha: bool = (c: str)
-    c >= "a" and c <= "z"
+  c >= "a" and c <= "z"
 
 digit: bool = (c: str)
-    c >= "0" and c <= "9"
+  c >= "0" and c <= "9"
 
 wordc: bool = (c: str)
-    alpha(c) or digit(c) or c == "_"
+  alpha(c) or digit(c) or c == "_"
 
 strip: str = (line: str)
-    out = ""
-    n = line:len()
-    quote = ""
-    i = 1
-    while i <= n
-        c = line:sub(i, i)
-        if quote == ""
-            if c == "#"
-                return out
-            if c == "\"" or c == "'"
-                quote = c
-                out = "{out} "
-            else
-                out = "{out}{c}"
-        else
-            if c == quote
-                quote = ""
-            out = "{out} "
-        i += 1
-    out
+  out = ""
+  n = line:len()
+  quote = ""
+  i = 1
+  while i <= n
+    c = line:sub(i, i)
+    if quote == ""
+      if c == "#"
+        return out
+      if c == "\"" or c == "'"
+        quote = c
+        out = "{out} "
+      else
+        out = "{out}{c}"
+    else
+      if c == quote
+        quote = ""
+      out = "{out} "
+    i = i + 1
+  out
 
 peek: bool = (code: str, spell: str)
-    n = code:len()
-    m = spell:len()
-    i = 1
-    while i + m - 1 <= n
-        if code:sub(i, i + m - 1) == spell
-            before = ""
-            if i > 1
-                before = code:sub(i - 1, i - 1)
-            if before != ":" and (before == "" or !wordc(before))
-                j = i + m
-                while j <= n and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
-                    j += 1
-                if j <= n and code:sub(j, j) == "("
-                    return true
-        i += 1
-    false
+  n = code:len()
+  m = spell:len()
+  i = 1
+  while i + m - 1 <= n
+    if code:sub(i, i + m - 1) == spell
+      before = ""
+      if i > 1
+        before = code:sub(i - 1, i - 1)
+      if before != ":" and (before == "" or not wordc(before))
+        j = i + m
+        while j <= n and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
+          j = j + 1
+        if j <= n and code:sub(j, j) == "("
+          return true
+    i = i + 1
+  false
 
 find: bool = (code: str, needle: str)
-    n = code:len()
-    k = needle:len()
-    i = 1
-    while i + k - 1 <= n
-        if code:sub(i, i + k - 1) == needle
-            before = ""
-            if i > 1
-                before = code:sub(i - 1, i - 1)
-            if before != ":" and (before == "" or !wordc(before))
-                j = i + k
-                while j <= n and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
-                    j += 1
-                if j <= n and code:sub(j, j) == "("
-                    return true
-        i += 1
-    false
+  n = code:len()
+  k = needle:len()
+  i = 1
+  while i + k - 1 <= n
+    if code:sub(i, i + k - 1) == needle
+      before = ""
+      if i > 1
+        before = code:sub(i - 1, i - 1)
+      if before != ":" and (before == "" or not wordc(before))
+        j = i + k
+        while j <= n and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
+          j = j + 1
+        if j <= n and code:sub(j, j) == "("
+          return true
+    i = i + 1
+  false
 
 edge: bool = (code: str, needle: str)
-    find(code, needle)
+  find(code, needle)
 
 nspace: i64 = (path: str, no: i64, code: str, spell: str, law: str, fix: str)
-    if peek(code, spell)
-        print("({path}, {no}, namespace, {spell}, {law}, {fix})")
-        1
-    else
-        0
+  if peek(code, spell)
+    print("({path}, {no}, namespace, {spell}, {law}, {fix})")
+    1
+  else
+    0
 
 checkns: i64 = (path: str, no: i64, code: str)
-    h = 0
-    h += nspace(path, no, code, "table.", "law.lua.redirect", "xs:push xs:keys — subject-first collection relations")
-    h += nspace(path, no, code, "string.", "law.lua.redirect", "text:sub text:find — subject-first text relations")
-    h += nspace(path, no, code, "math.", "law.lua.redirect", "x:sqrt x:abs — subject-first numeric relations")
-    h += nspace(path, no, code, "list.", "law.gate.algebra", "collection namespace respelling — use xs:push not list.append")
-    h += nspace(path, no, code, "array.", "law.gate.algebra", "collection namespace respelling — use xs:push")
-    h = nspace(path, no, code, "std\x2E", "law.standard.environment", "no std namespace — admitted relations project directly")
-    h += nspace(path, no, code, "", "law.shell.run", "foo is namespace dispatch — run + world + demand facts")
-    h += nspace(path, no, code, "proc.", "law.shell.run", "proc is not semantic authority")
-    h += nspace(path, no, code, "fs.", "law.world.grant", "path:read path:exists — subject-first filesystem relations")
-    h += nspace(path, no, code, "io.", "law.world.grant", "path:open stream:read — subject + world facts")
-    h += nspace(path, no, code, "os.", "law.world.grant", "os.env os.args — world facts not namespace methods")
-    h += nspace(path, no, code, "core.", "law.standard.environment", "core is vocabulary authority not runtime table")
-    h += nspace(path, no, code, "ir.", "law.realization.only", "ir is realization authority not source vocabulary")
-    h
+  h = 0
+  h = h + nspace(path, no, code, "table.", "law.lua.redirect", "xs:push xs:keys — subject-first collection relations")
+  h = h + nspace(path, no, code, "string.", "law.lua.redirect", "text:sub text:find — subject-first text relations")
+  h = h + nspace(path, no, code, "math.", "law.lua.redirect", "x:sqrt x:abs — subject-first numeric relations")
+  h = h + nspace(path, no, code, "list.", "law.gate.algebra", "collection namespace respelling — use xs:push not list.append")
+  h = h + nspace(path, no, code, "array.", "law.gate.algebra", "collection namespace respelling — use xs:push")
+  h = nspace(path, no, code, "std.", "law.standard.environment", "no std namespace — admitted relations project directly")
+  h = h + nspace(path, no, code, "", "law.shell.run", "foo is namespace dispatch — run + world + demand facts")
+  h = h + nspace(path, no, code, "proc.", "law.shell.run", "proc is not semantic authority")
+  h = h + nspace(path, no, code, "fs.", "law.world.grant", "path:read path:exists — subject-first filesystem relations")
+  h = h + nspace(path, no, code, "io.", "law.world.grant", "path:open stream:read — subject + world facts")
+  h = h + nspace(path, no, code, "os.", "law.world.grant", "os.env os.args — world facts not namespace methods")
+  h = h + nspace(path, no, code, "core.", "law.standard.environment", "core is vocabulary authority not runtime table")
+  h = h + nspace(path, no, code, "ir.", "law.realization.only", "ir is realization authority not source vocabulary")
+  h
 
 checkpred: i64 = (path: str, no: i64, code: str)
-    h = 0
-    if peek(code, "isvalid") or peek(code, "is_valid")
-        print("({path}, {no}, invalid.predicate, isvalid, law.audit.conventional, consume owned fact/case — never predicate helper)")
-        h += 1
-    if edge(code, ":valid(")
-        print("({path}, {no}, invalid.predicate, valid, law.audit.conventional, consume owned fact/case — never predicate projection)")
-        h += 1
-    if edge(code, ":magicallyplausible(")
-        print("({path}, {no}, invalid.unresolved, magicallyplausible, law.binding.census, no admitted relation resolves — vocabulary blocked)")
-        h += 1
-    h
+  h = 0
+  if peek(code, "isvalid") or peek(code, "is_valid")
+    print("({path}, {no}, invalid.predicate, isvalid, law.audit.conventional, consume owned fact/case — never predicate helper)")
+    h = h + 1
+  if edge(code, ":valid(")
+    print("({path}, {no}, invalid.predicate, valid, law.audit.conventional, consume owned fact/case — never predicate projection)")
+    h = h + 1
+  if edge(code, ":magicallyplausible(")
+    print("({path}, {no}, invalid.unresolved, magicallyplausible, law.binding.census, no admitted relation resolves — vocabulary blocked)")
+    h = h + 1
+  h
 
 audit: i64 = (path: str, no: i64, code: str)
-    h = checkns(path, no, code)
-    if h != 0
-        return h
-    return checkpred(path, no, code)
+  h = checkns(path, no, code)
+  if h != 0
+    return h
+  return checkpred(path, no, code)
 
 head: bool = (line: str)
-    line:len() >= 6 and line:sub(1, 6) == "+++ b/"
+  line:len() >= 6 and line:sub(1, 6) == "+++ b/"
 
 num: i64 = (s: str, i: i64)
-    v = 0
-    n = s:len()
-    j = i
-    while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
-        v *= 10
-        v += (s:byte(j) - 48)
-        j += 1
-    v
+  v = 0
+  n = s:len()
+  j = i
+  while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
+    v = v * 10
+    v = v + s:byte(j) - 48
+    j = j + 1
+  v
 
 scan: i64 = (body: str)
-    hits = 0
-    path = ""
-    no = 0
-    line = ""
-    nl = "\n"
-    n = body:len()
-    i = 1
-    while i <= n + 1
-        c = nl
-        if i <= n
-            c = body:sub(i, i)
-        if c == nl
-            if head(line)
-                path = line:sub(7, line:len())
-                no = 0
-            else
-                if line:len() > 2 and line:sub(1, 2) == "@@"
-                    p = 1
-                    m = line:len()
-                    while p <= m and line:sub(p, p) != "+"
-                        p += 1
-                    no = num(line, p + 1)
-                else
-                    if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
-                        hits += audit(path, no, strip(line:sub(2, line:len())))
-                        no += 1
-            line = ""
+  hits = 0
+  path = ""
+  no = 0
+  line = ""
+  nl = "\n"
+  n = body:len()
+  i = 1
+  while i <= n + 1
+    c = nl
+    if i <= n
+      c = body:sub(i, i)
+    if c == nl
+      if head(line)
+        path = line:sub(7, line:len())
+        no = 0
+      else
+        if line:len() > 2 and line:sub(1, 2) == "@@"
+          p = 1
+          m = line:len()
+          while p <= m and line:sub(p, p) != "+"
+            p = p + 1
+          no = num(line, p + 1)
         else
-            line = "{line}{c}"
-        i += 1
-    hits
+          if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
+            hits = hits + audit(path, no, strip(line:sub(2, line:len())))
+            no = no + 1
+      line = ""
+    else
+      line = "{line}{c}"
+    i = i + 1
+  hits
 
 control: bool = ()
-    ok = true
-    if audit("probe.id", 1, "out = std\x2Escript.capture(\"echo\")") == 0
-        print("control A FAIL: std\x2Escript.capture not convicted")
-        ok = false
-    if audit("probe.id", 2, "out = capture(\"echo\")") == 0
-        print("control A FAIL: capture rename not convicted")
-        ok = false
-    if audit("probe.id", 3, "y = math.sqrt(x)") == 0
-        print("control B FAIL: math.sqrt namespace not convicted")
-        ok = false
-    if audit("probe.id", 4, "y = x:sqrt()") != 0
-        print("control B FAIL: canonical x:sqrt convicted")
-        ok = false
-    if audit("probe.id", 5, "table.insert(xs, v)") == 0
-        print("control C FAIL: table.insert not convicted")
-        ok = false
-    if audit("probe.id", 6, "list.append(xs, v)") == 0
-        print("control C FAIL: list.append ecosystem respelling not convicted")
-        ok = false
-    if audit("probe.id", 7, "path:magicallyplausible()") == 0
-        print("control D FAIL: unresolved relation not convicted")
-        ok = false
-    if audit("probe.id", 8, "if isvalid(x)") == 0
-        print("control E FAIL: isvalid predicate not convicted")
-        ok = false
-    if audit("probe.id", 9, "x:valid()") == 0
-        print("control E FAIL: subject valid predicate not convicted")
-        ok = false
-    if audit("probe.id", 10, "string.len(text)") == 0
-        print("control F FAIL: string.len namespace not convicted")
-        ok = false
-    if audit("probe.id", 11, "text:len()") != 0
-        print("control F FAIL: canonical text:len convicted")
-        ok = false
-    if audit("scripts/ingress/input/read.id", 12, "x = io:read()") != 0
-        print("control G FAIL: ingress compatibility path rejected")
-        ok = false
-    ok
+  ok = true
+  if audit("probe.id", 1, "out = std.script.capture(\"echo\")") == 0
+    print("control A FAIL: std.script.capture not convicted")
+    ok = false
+  if audit("probe.id", 2, "out = capture(\"echo\")") == 0
+    print("control A FAIL: capture rename not convicted")
+    ok = false
+  if audit("probe.id", 3, "y = math.sqrt(x)") == 0
+    print("control B FAIL: math.sqrt namespace not convicted")
+    ok = false
+  if audit("probe.id", 4, "y = x:sqrt()") != 0
+    print("control B FAIL: canonical x:sqrt convicted")
+    ok = false
+  if audit("probe.id", 5, "table.insert(xs, v)") == 0
+    print("control C FAIL: table.insert not convicted")
+    ok = false
+  if audit("probe.id", 6, "list.append(xs, v)") == 0
+    print("control C FAIL: list.append ecosystem respelling not convicted")
+    ok = false
+  if audit("probe.id", 7, "path:magicallyplausible()") == 0
+    print("control D FAIL: unresolved relation not convicted")
+    ok = false
+  if audit("probe.id", 8, "if isvalid(x)") == 0
+    print("control E FAIL: isvalid predicate not convicted")
+    ok = false
+  if audit("probe.id", 9, "x:valid()") == 0
+    print("control E FAIL: subject valid predicate not convicted")
+    ok = false
+  if audit("probe.id", 10, "string.len(text)") == 0
+    print("control F FAIL: string.len namespace not convicted")
+    ok = false
+  if audit("probe.id", 11, "text:len()") != 0
+    print("control F FAIL: canonical text:len convicted")
+    ok = false
+  if audit("scripts/ingress/input/read.id", 12, "x = io:read()") != 0
+    print("control G FAIL: ingress compatibility path rejected")
+    ok = false
+  ok
 
-if !control()
-    print("gate/admission: FAIL positive controls")
-    return 2
+if not control()
+  print("gate/admission: FAIL positive controls")
+  return 2
 body = transport()
 if body:len() == 0
-    print("gate/admission: FAIL empty input — pipe unified diff on stdin")
-    print("Usage: git diff -U0 --cached -- '*.id' | idol run gate/admission.id")
-    return 3
+  print("gate/admission: FAIL empty input — pipe unified diff on stdin")
+  print("Usage: git diff -U0 --cached -- '*.id' | idol run gate/admission.id")
+  return 3
 total = scan(body)
 print("")
 print("gate/admission: {total} finding(s) on ADDED lines  [controls: A-H pass]")
 if total > 0
-    print("")
-    print("Semantic admission: API-SHAPE-WITHOUT-SEMANTIC-ADMISSION is closed on added lines.")
-    print("Authority: C0 §67 law.binding.census · law.gate.algebra")
-    return 1
+  print("")
+  print("Semantic admission: API-SHAPE-WITHOUT-SEMANTIC-ADMISSION is closed on added lines.")
+  print("Authority: C0 §67 law.binding.census · law.gate.algebra")
+  return 1
 0

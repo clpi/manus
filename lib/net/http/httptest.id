@@ -1,20 +1,22 @@
 # net.http.httptest — HTTP test utilities (mirrors Go's net/http/httptest)
 
-server(handler: any): any
-    port = 0
-    port = 20000:random(30000)
-    {port = port, handler = handler}
+server: any = (handler: any)
+  port = 0
+  port = 20000:random(30000)
+  { port = port, handler = handler }
 
-request(method: str, path: str, body: str): any
-    if method == nil method = "GET"
-    if path == nil path = "/"
-    {method = method, path = path, body = body, headers = {["Content-Type"] = "text/plain"}}
+request: any = (method: str, path: str, body: str)
+  if method == nil
+    method = "GET"
+  if path == nil
+    path = "/"
+  { method = method, path = path, body = body, headers = { ["Content-Type"] = "text/plain" } }
 
-recorder(): any
-    {status = 200, headers = {}, body = ""}
+recorder: any = ()
+  { status = 200, headers = {}, body = "" }
 
-write(r: any, data: str): void
-    r.body = r.body .. data
+write = (r: any, data: str)
+  r.body = r.body .. data
 
-result(r: any): any
-    {status = r.status, headers = r.headers, body = r.body}
+result: any = (r: any)
+  { status = r.status, headers = r.headers, body = r.body }

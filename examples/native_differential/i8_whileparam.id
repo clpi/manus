@@ -1,9 +1,9 @@
-f(n: i64): i64
-    t = 0
-    i = 1
-    while i <= n
-        t += i
-        i += 1
-    return t
-main(): i64
-    return f(3)
+f: i64 = (n: i64)
+  t = 0
+  i = 1
+  while i <= n
+    t = t + i
+    i = i + 1
+  return t
+main: i64 = ()
+  return f(3)

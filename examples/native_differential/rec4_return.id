@@ -1,6 +1,6 @@
 pair: { a: i64, b: i64 }
-mk(): pair
-    return { a = 30, b = 12 }
-main(): i64
-    q: pair = mk()
-    return q.a + q.b
+mk: pair = ()
+  return { a = 30, b = 12 }
+main: i64 = ()
+  q: pair = mk()
+  return q.a + q.b

@@ -7,13 +7,13 @@
 packfields: i64 = 13
 
 check: i64 = ()
-    if packfields < 13
-        1
-    else
-        0
+  if packfields < 13
+    1
+  else
+    0
 
 main: i64 = ()
-    code = check()
-    if code == 0
-        print("semantic application: pass")
-    code
+  code = check()
+  if code == 0
+    print("semantic application: pass")
+  code

@@ -11,16 +11,15 @@ decode_header: any = (data: str)
   if data:byte(1) != 255 or data:byte(2) != 216
     return nil
   off = 3
-  info = {
-    width = 0,
-    height = 0,
-    components = 0,
-    precision = 8,
-    quant_tables = {},
-    huff_tables = {},
-    sos_data = nil,
+  info =
+    width = 0
+    height = 0
+    components = 0
+    precision = 8
+    quant_tables = {}
+    huff_tables = {}
+    sos_data = nil
     frame_marker = 192
-  }
   while off + 1 <= data:len()
     if data:byte(off) != 255
       break

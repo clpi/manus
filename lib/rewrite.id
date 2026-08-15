@@ -32,13 +32,12 @@ define = (name: str, pattern: str, replacement: str, priority: i64)
   if priority == nil
     priority = 0
   rule_count = rule_count + 1
-  rules(rule_count) = {
-    name = name,
-    pattern = pattern,
-    replacement = replacement,
-    priority = priority,
+  rules(rule_count) =
+    name = name
+    pattern = pattern
+    replacement = replacement
+    priority = priority
     enabled = true
-  }
 
 # disable: temporarily disable a rule by name
 disable = (name: str)
@@ -124,13 +123,15 @@ apply_all: str = ()
 
 # describe_bundle: compile-time bundle metadata (folds to native C string).
 describe_bundle: str = (name: str)
-  @comp.rewrite.describe(name)
 
-# active_rule_count: compiler-registered rewrite rules after @comp.rewrite.bundle.
-active_rule_count: i64 = ()
-  @comp.rewrite.rulecount()
+  # active_rule_count: compiler-registered rewrite rules after @comp.rewrite.bundle.
+  @comp.rewrite.describe(name)
+  
+active_rule_count: i64 = {}
 
 # summary: return a summary of all registered rules as a string
+@comp.rewrite.rulecount()
+
 summary: str = ()
   parts = {}
   for i = 1, rule_count
@@ -144,18 +145,17 @@ clear = ()
   rules = {}
   rule_count = 0
 
-M = {
-  define = define,
-  disable = disable,
-  enable = enable,
-  register_algebraic = register_algebraic,
-  register_loop_opts = register_loop_opts,
-  register_const_fold = register_const_fold,
-  apply_all = apply_all,
-  describe_bundle = describe_bundle,
-  active_rule_count = active_rule_count,
-  summary = summary,
-  clear = clear,
+M =
+  define = define
+  disable = disable
+  enable = enable
+  register_algebraic = register_algebraic
+  register_loop_opts = register_loop_opts
+  register_const_fold = register_const_fold
+  apply_all = apply_all
+  describe_bundle = describe_bundle
+  active_rule_count = active_rule_count
+  summary = summary
+  clear = clear
   str_join = str_join
-}
 M

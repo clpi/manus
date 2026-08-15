@@ -24,59 +24,57 @@
 # outside that family depended on wasm transitively, so repairing one root
 # freed more than the direct dependents. Estimate the floor and you will be
 # wrong in both directions; run it and pin what it says.
-ceiling(): i64
-    30
+ceiling: i64 = ()
+  30
 
 # Turn `lib/net/ws.id` into the ambient path `net.ws`.
-module_path(file: str): str
-    inner = script.capture("printf '%s' \"" .. file .. "\" | sed 's|^lib/|std.|; s|/|.|g; s|\\.id$||; s|^std\\.std\\.|std.|'")
-    script.chomp(inner)
+module_path: str = (file: str)
+  inner = script.capture("printf '%s' \"" .. file .. "\" | sed 's|^lib/|std.|; s|/|.|g; s|\\.id$||; s|^std\\.std\\.|std.|'")
+  script.chomp(inner)
 
 # A module is REACHABLE when a fresh program naming it compiles and runs.
 # Naming it is enough: embedding pulls the whole module through codegen, which
 # is where these failures live.
-reachable(mod: str): bool
-    src = "main(): void\n    print(" .. mod .. " != nil)\nend\n"
-    script.fs_write("/tmp/duo_embedgate.id", src)
-    script.status("timeout 20 " .. script.id_bin() .. " run /tmp/duo_embedgate.id") == 0
+reachable: bool = (mod: str)
+  src = "main(): void\n    print(" .. mod .. " != nil)\nend\n"
+  script.fs_write("/tmp/duo_embedgate.id", src)
+  script.status("timeout 20 " .. script.id_bin() .. " run /tmp/duo_embedgate.id") == 0
 
-main(): i64
-    listing = script.capture("find lib/std -name '*.id' | sort")
-    total = 0
-    broken = 0
-    report = ""
+main: i64 = ()
+  listing = script.capture("find lib/std -name '*.id' | sort")
+  total = 0
+  broken = 0
+  report = ""
 
-    n = listing:len()
-    start = 1
-    i = 1
-    while i <= n + 1
-        at_end = i > n
-        eol = false
-        if !at_end
-            eol = listing:byte(i) == 10
-        if at_end or eol
-            if i > start
-                file = listing:sub(start, i - 1)
-                mod = module_path(file)
-                total += 1
-                if !reachable(mod)
-                    broken += 1
-                    report = report .. "  UNREACHABLE " .. mod .. "\n"
-            start = i + 1
-        i += 1
+  n = listing:len()
+  start = 1
+  i = 1
+  while i <= n + 1
+    at_end = i > n
+    eol = false
+    if not at_end
+      eol = listing:byte(i) == 10
+    if at_end or eol
+      if i > start
+        file = listing:sub(start, i - 1)
+        mod = module_path(file)
+        total = total + 1
+        if not reachable(mod)
+          broken = broken + 1
+          report = report .. "  UNREACHABLE " .. mod .. "\n"
+      start = i + 1
+    i = i + 1
 
-    io:write(report)
-    print("stdlib_embed: " .. broken:to(str) .. " unreachable of " .. total:to(str)
-        .. " (ceiling " .. to(str)(ceiling()) .. ")")
+  io:write(report)
+  print("stdlib_embed: " .. broken:to(str) .. " unreachable of " .. total:to(str) .. " (ceiling " .. to(str)(ceiling()) .. ")")
 
-    if total == 0
-        print("stdlib_embed: FAIL (empty corpus)")
-        return 1
-    if broken > ceiling()
-        print("stdlib_embed: FAIL — more modules unreachable than the recorded floor")
-        return 1
-    if broken < ceiling()
-        print("stdlib_embed: modules repaired since the floor was set — LOWER ceiling() to "
-            .. broken:to(str))
-    print("stdlib_embed: PASS")
-    0
+  if total == 0
+    print("stdlib_embed: FAIL (empty corpus)")
+    return 1
+  if broken > ceiling()
+    print("stdlib_embed: FAIL — more modules unreachable than the recorded floor")
+    return 1
+  if broken < ceiling()
+    print("stdlib_embed: modules repaired since the floor was set — LOWER ceiling() to " .. broken:to(str))
+  print("stdlib_embed: PASS")
+  0

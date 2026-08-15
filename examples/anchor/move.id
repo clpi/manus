@@ -35,7 +35,11 @@
 point: { x: i64, y: i64 }
 box: { inner: point, tag: i64 }
 
-p: point = { x = 3, y = 4 }
-b: box = { inner = p, tag = 7 }
+p: point =
+  x = 3
+  y = 4
+b: box =
+  inner = p
+  tag = 7
 n = p@x * 100 + p@y * 10 + b@inner@x + b@tag + p.x
 print("{n}")

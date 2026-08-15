@@ -124,13 +124,12 @@ rank: any = (q: any, records: any, topk: i64)
   for _, rec in records
     sc = cosine(q, rec.vec)
     if sc > 0
-      all(all:len() + 1) = {
-        name = rec.name,
-        file = rec.file,
-        kind = rec.kind,
-        doc = rec.doc,
+      all(all:len() + 1) =
+        name = rec.name
+        file = rec.file
+        kind = rec.kind
+        doc = rec.doc
         score = sc
-      }
   n = all:len()
   k = topk
   if k > n
@@ -157,11 +156,10 @@ rank: any = (q: any, records: any, topk: i64)
     round = round + 1
   out
 
-M = {
-  hash32 = hash32,
-  tokens = tokens,
-  trigrams = trigrams,
-  embed = embed,
-  cosine = cosine,
+M =
+  hash32 = hash32
+  tokens = tokens
+  trigrams = trigrams
+  embed = embed
+  cosine = cosine
   rank = rank
-}

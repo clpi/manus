@@ -169,11 +169,11 @@ secure_random_bytes: str = (n: i64)
 secure_random_hex: str = (n: i64)
   hex_encode(secure_random_bytes(n))
 
-secure_random_int: i64 = ()
-  # `int` takes a required bound and returns `r % max`; calling it with no
-  # argument did not compile, which took std.crypto and its four dependents
-  # down. Unbounded here means the full i64 range.
-  crypto_rand.int(9223372036854775807)
+secure_random_int: i64 = {}
+# `int` takes a required bound and returns `r % max`; calling it with no
+# argument did not compile, which took std.crypto and its four dependents
+# down. Unbounded here means the full i64 range.
+crypto_rand.int(9223372036854775807)
 
 # ── Constant-time comparison (timing-attack safe) ───────────────────────
 

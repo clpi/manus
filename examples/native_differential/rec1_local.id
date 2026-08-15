@@ -1,4 +1,6 @@
 pair: { a: i64, b: i64 }
-main(): i64
-    p: pair = { a = 30, b = 12 }
-    return p.a + p.b
+main: i64 = ()
+  p: pair =
+    a = 30
+    b = 12
+  return p.a + p.b

@@ -4,7 +4,10 @@
 # @comp.fields on typed records
 # ═══════════════════════════════════════════════════════════════
 
-point: { x: f64, y: f64, z: f64 } = { x = 1.0, y = 2.0, z = 3.0 }
+point: { x: f64, y: f64, z: f64 } =
+  x = 1.0
+  y = 2.0
+  z = 3.0
 
 # @comp.fields returns a table of field descriptors
 fields = @comp.fields(point)

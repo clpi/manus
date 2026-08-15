@@ -13,6 +13,9 @@
 inner: { x: i64 }
 outer: { i: inner, y: i64 }
 
-main(): i64
-    o: outer = { i = { x = 40 }, y = 2 }
-    o.i.x + o.y
+main: i64 = ()
+  o: outer =
+    i =
+      x = 40
+    y = 2
+  o.i.x + o.y

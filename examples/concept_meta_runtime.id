@@ -1,24 +1,22 @@
 # Concept + runtime meta demo
 # Shows how parser-level concepts and runtime meta.satisfies_concept interact
 
-
 concept Drawable
-    id: i64
-    draw(self): str
+  draw(self) -> str
+  id: i64
 
-shape = {
-    id = 7,
-    draw = fun(self): str
-        "shape-" .. to(str)(self.id)
-    end,
-}
+shape =
+  id = 7
+  draw = fun(self) -> str
+    "shape-" .. to(str)(self.id)
+  end
 
 # Use : method syntax for calling
 print(shape:draw())
 
 # Runtime concept checking works with meta.make_concept descriptors
 DrawableConcept = meta.make_concept("Drawable", {
-    fields = { "id" },
-    methods = { "draw" },
+  fields = { "id" },
+  methods = { "draw" }
 })
 print("satisfies Drawable: " .. to(str)(meta.satisfies_concept(shape, DrawableConcept)))

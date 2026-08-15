@@ -8,7 +8,7 @@ leading_zeros_8: i64 = (x: i64)
   n = 8
   i = 7
   while i >= 0
-    if x >> i % 2 == 1
+    if x >> (i % 2) == 1
       return n
     n = n - 1
     i = i - 1
@@ -19,7 +19,7 @@ leading_zeros_32: i64 = (x: i64)
   n = 32
   i = 31
   while i >= 0
-    if x >> i % 2 == 1
+    if x >> (i % 2) == 1
       return n
     n = n - 1
     i = i - 1
@@ -30,7 +30,7 @@ leading_zeros_64: i64 = (x: i64)
   n = 64
   i = 63
   while i >= 0
-    if x >> i % 2 == 1
+    if x >> (i % 2) == 1
       return n
     n = n - 1
     i = i - 1
@@ -41,7 +41,7 @@ trailing_zeros_8: i64 = (x: i64)
   if x == 0
     return 8
   n = 0
-  while x >> n % 2 == 0
+  while x >> (n % 2) == 0
     n = n + 1
   n
 
@@ -50,7 +50,7 @@ trailing_zeros_32: i64 = (x: i64)
   if x == 0
     return 32
   n = 0
-  while x >> n % 2 == 0
+  while x >> (n % 2) == 0
     n = n + 1
   n
 
@@ -59,7 +59,7 @@ trailing_zeros_64: i64 = (x: i64)
   if x == 0
     return 64
   n = 0
-  while x >> n % 2 == 0
+  while x >> (n % 2) == 0
     n = n + 1
   n
 
@@ -68,7 +68,7 @@ ones_count_8: i64 = (x: i64)
   c = 0
   i = 0
   while i < 8
-    c = c + x >> i % 2
+    c = (c + x) >> (i % 2)
     i = i + 1
   c
 
@@ -77,7 +77,7 @@ ones_count_32: i64 = (x: i64)
   c = 0
   i = 0
   while i < 32
-    c = c + x >> i % 2
+    c = (c + x) >> (i % 2)
     i = i + 1
   c
 
@@ -86,7 +86,7 @@ ones_count_64: i64 = (x: i64)
   c = 0
   i = 0
   while i < 64
-    c = c + x >> i % 2
+    c = (c + x) >> (i % 2)
     i = i + 1
   c
 
@@ -116,7 +116,7 @@ rotate_left_32: i64 = (x: i64, k: i64)
     k = k + 32
   if k == 0
     return x
-  hi = x << k % 2 ^ 32
+  hi = x << (k % 2 ^ 32)
   lo = x >> (32 - k)
   return (hi | lo) % 2 ^ 32
 
@@ -145,7 +145,7 @@ reverse_8: i64 = (x: i64)
   r = 0
   i = 0
   while i < 8
-    r = r | (x >> i % 2) << (7 - i)
+    r = r | x >> (i % 2) << (7 - i)
     i = i + 1
   r % 256
 
@@ -154,7 +154,7 @@ reverse_32: i64 = (x: i64)
   r = 0
   i = 0
   while i < 32
-    r = r | (x >> i % 2) << (31 - i)
+    r = r | x >> (i % 2) << (31 - i)
     i = i + 1
   r % 2 ^ 32
 

@@ -48,7 +48,7 @@ main: i64 = ()
   duostage1 = t(1)
   t(1) = duostage0
   t(2) = duostage1
-  
+
   want("table swap first", t(1), 7)
   want("table swap second", t(2), 3)
 
@@ -58,7 +58,7 @@ main: i64 = ()
   duostage3 = a
   a = duostage2
   b = duostage3
-  
+
   want("local swap first", a, 2)
   want("local swap second", b, 1)
 
@@ -68,7 +68,7 @@ main: i64 = ()
   duostage5 = t(i)
   t(i) = duostage4
   t(j) = duostage5
-  
+
   want("computed index swap first", t(1), 3)
   want("computed index swap second", t(2), 7)
 
@@ -89,7 +89,7 @@ main: i64 = ()
   duostage9 = u(1)
   u(duostage6) = duostage8
   u(duostage7) = duostage9
-  
+
   want("effect index swap first", u(1), 7)
   want("effect index swap second", u(2), 3)
   want("effect index evaluated once each", calls, 2)

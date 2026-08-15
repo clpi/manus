@@ -1,6 +1,6 @@
 @comp.sql("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);")
 
-test_sql(): void
-    print("ok")
+test_sql = ()
+  print("ok")
 
 test_sql()

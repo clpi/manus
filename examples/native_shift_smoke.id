@@ -5,7 +5,7 @@
 #   duo run #target native-exe examples/native_shift_smoke.id ; echo $?
 #   -> 48   ((1 << 4) + (256 >> 3) == 16 + 32 == 48)
 
-main(): i64
-    a = 1 << 4
-    b = 256 >> 3
-    a + b
+main: i64 = ()
+  a = 1 << 4
+  b = 256 >> 3
+  a + b

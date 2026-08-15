@@ -59,11 +59,10 @@ arena_alloc: any = (arena: any, size: i64)
   if arena:len().blocks == 0 or arena.blocks(arena:len().blocks).used + size > arena.block_size
     # Allocate new block
     block_size = arena.block_size:max(size)
-    arena.blocks(arena:len().blocks + 1) = {
-      data = {},
-      size = block_size,
+    arena.blocks(arena:len().blocks + 1) =
+      data = {}
+      size = block_size
       used = 0
-    }
 
   block = arena.blocks(arena:len().blocks)
   offset = block.used

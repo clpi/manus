@@ -15,16 +15,16 @@
 # descriptors, and `to(hex)` is as legal as `to(str)`.
 # expect: 42 141 1041
 
-step(u64) = (c: i64): i64
-    c + 1
+step__u64: i64 = (c: i64)
+  c + 1
 
-step(u32) = (c: i64): i64
-    c + 100
+step__u32: i64 = (c: i64)
+  c + 100
 
-step(wide) = (c: i64): i64
-    c + 1000
+step__wide: i64 = (c: i64)
+  c + 1000
 
-a = step(u64)(41)
-b = step(u32)(41)
-c = step(wide)(41)
+a = step__u64(41)
+b = step__u32(41)
+c = step__wide(41)
 print("{a} {b} {c}")

@@ -9,10 +9,10 @@ the = 0
 other = 0
 total = 0
 for word in words
-    total += 1
-    if word == "the"
-        the += 1
-    if word == "cat"
-        other += 1
+  total = total + 1
+  if word == "the"
+    the = the + 1
+  if word == "cat"
+    other = other + 1
 rest = total
 print("{the} {other} {rest}")

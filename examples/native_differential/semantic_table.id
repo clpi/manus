@@ -1,15 +1,14 @@
-home = {
-    idiom = "gate/idiom.id"
-}
+home =
+  idiom = "gate/idiom.id"
 
 main: i64 = ()
-    path = home.idiom
-    if path == nil
-        print("path nil")
-        return 1
-    body = io:read(path)
-    if body == nil
-        print("body nil")
-        return 2
-    print(body:len())
-    0
+  path = home.idiom
+  if path == nil
+    print("path nil")
+    return 1
+  body = io:read(path)
+  if body == nil
+    print("body nil")
+    return 2
+  print(body:len())
+  0

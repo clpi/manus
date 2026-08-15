@@ -1,26 +1,25 @@
 # coroutine — coroutine utilities
 
-create(f: any): any
-    coroutine.create(f)
+create: any = (f: any)
+  coroutine.create(f)
 
-resume(co: any, arg: any): any
-    coroutine.resume(co, arg)
+resume: any = (co: any, arg: any)
+  coroutine.resume(co, arg)
 
-yield(arg: any): any
-    coroutine.yield(arg)
+yield: any = (arg: any)
+  coroutine.yield(arg)
 
-status(co: any): str
-    coroutine.status(co)
+status: str = (co: any)
+  coroutine.status(co)
 
-running(): any
-    coroutine.running()
+running: any = ()
+  coroutine.running()
 
-wrap(f: any): any
-    coroutine.wrap(f)
+wrap: any = (f: any)
+  coroutine.wrap(f)
 
-isyieldable(): bool
-    coroutine.isyieldable()
+isyieldable: bool = ()
+  coroutine.isyieldable()
 
-close(co: any): any
-    coroutine.close(co)
-
+close: any = (co: any)
+  coroutine.close(co)

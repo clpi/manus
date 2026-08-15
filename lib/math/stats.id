@@ -253,7 +253,9 @@ stats_outliers_zscore: any = (data: any, threshold: f64)
   for v in data
     z = (v - mean) / std:abs()
     if z > threshold
-      outliers(outliers:len() + 1) = { value = v, zscore = z }
+      outliers(outliers:len() + 1) =
+        value = v
+        zscore = z
   { outliers = outliers }
 
 # ═══════════════════════════════════════════════════════════════

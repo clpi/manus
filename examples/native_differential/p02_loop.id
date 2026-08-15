@@ -1,9 +1,9 @@
-sum_to(n: i64): i64
-    total = 0
-    i = 1
-    while i <= n
-        total += i
-        i += 1
-    return total
-main(): i64
-    return sum_to(9)
+sum_to: i64 = (n: i64)
+  total = 0
+  i = 1
+  while i <= n
+    total = total + i
+    i = i + 1
+  return total
+main: i64 = ()
+  return sum_to(9)

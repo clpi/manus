@@ -1,4 +1,4 @@
-area(r: f64): f64
-    return 3.14159 * r * r
-main(): i64
-    return i64(area(2.0))
+area: f64 = (r: f64)
+  return 3.14159 * r * r
+main: i64 = ()
+  return i64(area(2.0))

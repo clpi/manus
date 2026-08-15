@@ -1,10 +1,35 @@
 # process world — semantic registry (projection catalog, not executable authority).
 
-work = { kind = "value", possessed = true }
-run = { relation = "run", subject = "work", world = "process" }
-evidence = { relation = "evidence", subject = "work", world = "process", demand = "output" }
-read = { relation = "read", subject = "work", world = "process", demand = "output" }
-halt = { relation = "halt", world = "process", effect = "continuation" }
-status = { relation = "status", subject = "work", world = "process", role = "evidence" }
-trim = { relation = "trim", subject = "text" }
-verdict = { relation = "verdict", subject = "status", role = "outcome" }
+work =
+  kind = "value"
+  possessed = true
+run =
+  relation = "run"
+  subject = "work"
+  world = "process"
+evidence =
+  relation = "evidence"
+  subject = "work"
+  world = "process"
+  demand = "output"
+read =
+  relation = "read"
+  subject = "work"
+  world = "process"
+  demand = "output"
+halt =
+  relation = "halt"
+  world = "process"
+  effect = "continuation"
+status =
+  relation = "status"
+  subject = "work"
+  world = "process"
+  role = "evidence"
+trim =
+  relation = "trim"
+  subject = "text"
+verdict =
+  relation = "verdict"
+  subject = "status"
+  role = "outcome"

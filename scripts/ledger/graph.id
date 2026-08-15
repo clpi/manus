@@ -2,97 +2,97 @@
 # Entry graph: i64 = ().
 
 seen: bool = (text: str, needle: str)
-    n = text:len()
-    m = needle:len()
-    i = 1
-    while i + m - 1 <= n
-        if text:sub(i, i + m - 1) == needle
-            return true
-        i += 1
-    false
+  n = text:len()
+  m = needle:len()
+  i = 1
+  while i + m - 1 <= n
+    if text:sub(i, i + m - 1) == needle
+      return true
+    i = i + 1
+  false
 
 open: i64 = (label: str, needle: str, text: str)
-    if seen(text, needle)
-        print("  open {label} ({needle})")
-    0
+  if seen(text, needle)
+    print("  open {label} ({needle})")
+  0
 
 graph: i64 = ()
-    print("ledger/graph -- graph sovereignty")
-    fail = 0
-    query = "src/graph_query.zig":read()
-    sg = "src/semantic_graph.zig":read()
-    if !query:len() or !sg:len()
-        print("  FAIL graph owner files missing")
-        return 1
-    print("TAG-AUTHORITY-ZERO")
-    if seen(query, "entitiesOfKind")
-        open("tag scan", "entitiesOfKind", query)
-    if seen(query, "kind != .func")
-        open("func tag gate", "kind != .func", query)
-    if seen(query, "kind != .table_shape")
-        open("shape tag gate", "kind != .table_shape", query)
-    if seen(query, "graph.callable")
-        print("  ok   callable() fact gate in graph_query")
-    if seen(query, "hasDescriptorFacts")
-        print("  ok   hasDescriptorFacts in graph_query")
-    if !seen(sg, "pub fn callable")
-        fail = 1
-        print("  FAIL missing callable() on SemanticGraph")
-    if !seen(sg, "pub fn hasDescriptorFacts")
-        fail = 1
-        print("  FAIL missing hasDescriptorFacts on SemanticGraph")
-    print("MODULE-ZERO")
-    if seen(query, "functionsInModule")
-        open("functionsInModule alias", "functionsInModule", query)
-    if seen(sg, "callablesInHome")
-        print("  ok   callablesInHome home-centric API")
-    if seen(sg, "module_path")
-        open("module_path on graph", "module_path", sg)
-    print("FACT-CARDINALITY-ONE")
-    if seen(sg, "pub const Card = union")
-        print("  ok   Card unknown/none/one on ApplicationFact")
-    if !seen(sg, "pub const Card = union")
-        fail = 1
-        print("  FAIL Card union missing")
-    if seen(sg, "effect: ?id = null")
-        fail = 1
-        print("  FAIL nullable effect field restored")
-    print("APPLICATION-FACT-CLOSURE")
-    if seen(sg, "APPLICATION-FACT-CLOSURE")
-        print("  ok   closure manifest in semantic_graph")
-    print("AST-BACKEDGE-ZERO")
-    if seen(sg, "ast_ref")
-        open("ast_ref on Node", "ast_ref", sg)
-    print("FACT-COLUMN-ONE / TARGET-CONTAMINATION")
-    if seen(sg, "hardware_lowerings")
-        open("hardware on Node", "hardware_lowerings", sg)
-    if seen(sg, "storage_class")
-        open("storage_class on Node", "storage_class", sg)
-    print("GRAPH-SOVEREIGNTY")
-    if seen(sg, "@import(\"ast.zig\")")
-        open("ast import", "ast.zig", sg)
-    if seen(sg, "transform_engine")
-        open("transform import", "transform_engine", sg)
-    print("FACT-LOCALITY / ZERO-COPY")
-    if seen(query, "alloc.dupe(semantic_graph.id")
-        open("operand alloc dupe", "alloc.dupe(semantic_graph.id", query)
-    if seen(query, "for (graph.applications())")
-        open("full application scan", "for (graph.applications())", query)
-    if seen(sg, "home_apps")
-        print("  ok   caller application adjacency index")
-    if seen(sg, "applicationsInCaller")
-        print("  ok   O(out-degree) caller application lookup")
-    if seen(query, "applicationsIn(")
-        print("  ok   home-centric application query API")
-    if seen(query, "applicationArguments")
-        print("  ok   zero-copy operand/result views")
-    if !seen(query, "applicationArguments")
-        fail = 1
-        print("  FAIL zero-copy operand views missing")
-    if seen(sg, "application_presence")
-        open("application index triple", "application_presence", sg)
-    if fail
-        print("ledger/graph: FAIL sovereignty")
-        return 1
-    print("ledger/graph: PASS file audit (open debt listed)")
-    0
+  print("ledger/graph -- graph sovereignty")
+  fail = 0
+  query = "src/graph_query.zig":read()
+  sg = "src/semantic_graph.zig":read()
+  if not query:len() or not sg:len()
+    print("  FAIL graph owner files missing")
+    return 1
+  print("TAG-AUTHORITY-ZERO")
+  if seen(query, "entitiesOfKind")
+    open("tag scan", "entitiesOfKind", query)
+  if seen(query, "kind != .func")
+    open("func tag gate", "kind != .func", query)
+  if seen(query, "kind != .table_shape")
+    open("shape tag gate", "kind != .table_shape", query)
+  if seen(query, "graph.callable")
+    print("  ok   callable() fact gate in graph_query")
+  if seen(query, "hasDescriptorFacts")
+    print("  ok   hasDescriptorFacts in graph_query")
+  if not seen(sg, "pub fn callable")
+    fail = 1
+    print("  FAIL missing callable() on SemanticGraph")
+  if not seen(sg, "pub fn hasDescriptorFacts")
+    fail = 1
+    print("  FAIL missing hasDescriptorFacts on SemanticGraph")
+  print("MODULE-ZERO")
+  if seen(query, "functionsInModule")
+    open("functionsInModule alias", "functionsInModule", query)
+  if seen(sg, "callablesInHome")
+    print("  ok   callablesInHome home-centric API")
+  if seen(sg, "module_path")
+    open("module_path on graph", "module_path", sg)
+  print("FACT-CARDINALITY-ONE")
+  if seen(sg, "pub const Card = union")
+    print("  ok   Card unknown/none/one on ApplicationFact")
+  if not seen(sg, "pub const Card = union")
+    fail = 1
+    print("  FAIL Card union missing")
+  if seen(sg, "effect: ?id = null")
+    fail = 1
+    print("  FAIL nullable effect field restored")
+  print("APPLICATION-FACT-CLOSURE")
+  if seen(sg, "APPLICATION-FACT-CLOSURE")
+    print("  ok   closure manifest in semantic_graph")
+  print("AST-BACKEDGE-ZERO")
+  if seen(sg, "ast_ref")
+    open("ast_ref on Node", "ast_ref", sg)
+  print("FACT-COLUMN-ONE / TARGET-CONTAMINATION")
+  if seen(sg, "hardware_lowerings")
+    open("hardware on Node", "hardware_lowerings", sg)
+  if seen(sg, "storage_class")
+    open("storage_class on Node", "storage_class", sg)
+  print("GRAPH-SOVEREIGNTY")
+  if seen(sg, "@import(\"ast.zig\")")
+    open("ast import", "ast.zig", sg)
+  if seen(sg, "transform_engine")
+    open("transform import", "transform_engine", sg)
+  print("FACT-LOCALITY / ZERO-COPY")
+  if seen(query, "alloc.dupe(semantic_graph.id")
+    open("operand alloc dupe", "alloc.dupe(semantic_graph.id", query)
+  if seen(query, "for (graph.applications())")
+    open("full application scan", "for (graph.applications())", query)
+  if seen(sg, "home_apps")
+    print("  ok   caller application adjacency index")
+  if seen(sg, "applicationsInCaller")
+    print("  ok   O(out-degree) caller application lookup")
+  if seen(query, "applicationsIn(")
+    print("  ok   home-centric application query API")
+  if seen(query, "applicationArguments")
+    print("  ok   zero-copy operand/result views")
+  if not seen(query, "applicationArguments")
+    fail = 1
+    print("  FAIL zero-copy operand views missing")
+  if seen(sg, "application_presence")
+    open("application index triple", "application_presence", sg)
+  if fail
+    print("ledger/graph: FAIL sovereignty")
+    return 1
+  print("ledger/graph: PASS file audit (open debt listed)")
+  0

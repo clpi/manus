@@ -2,71 +2,71 @@
 # Tracked-file ratchet: sh/py 0, js <= 4, zig <= 106, c/h <= 23.
 
 chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
-            break
-        n -= 1
-    text:sub(1, n)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32
+      break
+    n = n - 1
+  text:sub(1, n)
 
 cap: str = (cmd: str)
-    chomp(gatecap(cmd))
+  chomp(gatecap(cmd))
 
 digits: i64 = (text: str)
-    if !text:len()
-        return 0
-    v = 0
-    i = 1
-    seen = 0
-    while i <= text:len()
-        c = text:byte(i)
-        if c >= 48 and c <= 57
-            v = v * 10 + (c - 48)
-            seen = 1
-        else
-            if seen > 0
-                break
-            return -1
-        i += 1
-    if seen == 0
-        return 0
-    v
+  if not text:len()
+    return 0
+  v = 0
+  i = 1
+  seen = 0
+  while i <= text:len()
+    c = text:byte(i)
+    if c >= 48 and c <= 57
+      v = v * 10 + c - 48
+      seen = 1
+    else
+      if seen > 0
+        break
+      return -1
+    i = i + 1
+  if seen == 0
+    return 0
+  v
 
 census: i64 = ()
-    duo = digits(cap("git ls-files '*.id' | wc -l | tr -d ' \\n'"))
-    if !duo
-        print("census/language: FAIL - no .id files found; census did !run")
-        return 3
-    zig = digits(cap("git ls-files '*.zig' | wc -l | tr -d ' \\n'"))
-    lua = digits(cap("git ls-files '*.lua' | wc -l | tr -d ' \\n'"))
-    csrc = digits(cap("git ls-files '*.c' '*.h' | wc -l | tr -d ' \\n'"))
-    debt = digits(cap("git ls-files '*.sh' '*.py' '*.bash' '*.zsh' | wc -l | tr -d ' \\n'"))
-    js = digits(cap("git ls-files '*.js' | wc -l | tr -d ' \\n'"))
+  duo = digits(cap("git ls-files '*.id' | wc -l | tr -d ' \\n'"))
+  if not duo
+    print("census/language: FAIL - no .id files found; census did !run")
+    return 3
+  zig = digits(cap("git ls-files '*.zig' | wc -l | tr -d ' \\n'"))
+  lua = digits(cap("git ls-files '*.lua' | wc -l | tr -d ' \\n'"))
+  csrc = digits(cap("git ls-files '*.c' '*.h' | wc -l | tr -d ' \\n'"))
+  debt = digits(cap("git ls-files '*.sh' '*.py' '*.bash' '*.zsh' | wc -l | tr -d ' \\n'"))
+  js = digits(cap("git ls-files '*.js' | wc -l | tr -d ' \\n'"))
 
-    print("language census (tracked files)")
-    print("  duo         {duo}   authored source")
-    print("  zig         {zig}   host compiler - retires with the matrix")
-    print("  lua         {lua}   hosted-language fixtures - INPUT, !source")
-    print("  c/h         {csrc}   bootstrap ledger + fixtures - sanctioned")
-    print("  sh/py       {debt}   DEBT - the number that must reach zero")
-    print("  js          {js}   DEBT - authored, none generated; gaps/GAP-049")
+  print("language census (tracked files)")
+  print("  duo         {duo}   authored source")
+  print("  zig         {zig}   host compiler - retires with the matrix")
+  print("  lua         {lua}   hosted-language fixtures - INPUT, !source")
+  print("  c/h         {csrc}   bootstrap ledger + fixtures - sanctioned")
+  print("  sh/py       {debt}   DEBT - the number that must reach zero")
+  print("  js          {js}   DEBT - authored, none generated; gaps/GAP-049")
 
-    if debt > 0
-        print("census/language: FAIL - sh/py debt over floor 0")
-        print("  sh/py {debt}")
-        return 1
-    if js > 4
-        print("census/language: FAIL - js debt over floor 4")
-        print("  js {js}")
-        return 1
-    if zig > 106
-        print("census/language: FAIL - zig over ceiling 106")
-        print("  zig {zig}")
-        return 1
-    if csrc > 23
-        print("census/language: FAIL - c/h over ceiling 23")
-        print("  c/h {csrc}")
-        return 1
-    print("census/language: PASS")
-    0
+  if debt > 0
+    print("census/language: FAIL - sh/py debt over floor 0")
+    print("  sh/py {debt}")
+    return 1
+  if js > 4
+    print("census/language: FAIL - js debt over floor 4")
+    print("  js {js}")
+    return 1
+  if zig > 106
+    print("census/language: FAIL - zig over ceiling 106")
+    print("  zig {zig}")
+    return 1
+  if csrc > 23
+    print("census/language: FAIL - c/h over ceiling 23")
+    print("  c/h {csrc}")
+    return 1
+  print("census/language: PASS")
+  0

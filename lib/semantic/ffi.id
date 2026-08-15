@@ -1,4 +1,12 @@
 # ffi world — foreign link relations (no sym_ mangling namespace).
 
-extern = { world = "ffi", possessed = false, callable = true, operation = false }
-link = { world = "ffi", possessed = false, callable = true, operation = false }
+extern =
+  world = "ffi"
+  possessed = false
+  callable = true
+  operation = false
+link =
+  world = "ffi"
+  possessed = false
+  callable = true
+  operation = false

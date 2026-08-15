@@ -43,7 +43,11 @@ with_timeout: any = (parent: any, timeout: any)
 with_value: any = (parent: any, key: any, value: any)
   if parent == nil
     parent = background_ctx()
-  child = { deadline = parent.deadline, cancelled = false, parent = parent, done = false }
+  child =
+    deadline = parent.deadline
+    cancelled = false
+    parent = parent
+    done = false
   child(key) = value
   child
 

@@ -41,13 +41,13 @@
 # The operands are ANNOTATED. Inferred ones make `print(a / b)` refuse native
 # lowering outright (`print-arg:any`), which would park this row in the
 # can't-compile bucket and hide the divergence it exists to publish.
-main(): i64
-    a: i64 = 7
-    b: i64 = 2
-    # 7/2 -> 3 truncated. C prints the bits of the double 3.0.
-    print(a / b)
-    # `%` must MATCH division (B-4). Under C, division truncates via a double
-    # while `lua_imod_i64` FLOORS, so (a/b)*b + (a%b) == a is false for every
-    # negative operand on the C path.
-    print(a % b)
-    0
+main: i64 = ()
+  a: i64 = 7
+  b: i64 = 2
+  # 7/2 -> 3 truncated. C prints the bits of the double 3.0.
+  print(a / b)
+  # `%` must MATCH division (B-4). Under C, division truncates via a double
+  # while `lua_imod_i64` FLOORS, so (a/b)*b + (a%b) == a is false for every
+  # negative operand on the C path.
+  print(a % b)
+  0

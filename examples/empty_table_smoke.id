@@ -11,7 +11,8 @@ g: str = (f: any)
   "x"
 
 main: i64 = ()
-  f = { members = { { type = "i64", name = "x" }, { type = "str", name = "y" } } }
+  f =
+    members = { { type = "i64", name = "x" }, { type = "str", name = "y" } }
   r = g(f)
   if r != "x"
     return 1

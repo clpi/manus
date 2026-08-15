@@ -21,55 +21,55 @@
 
 # Bootstrap capture — process home inlined (no shell wrapper).
 command: any = (line: str)
-    { line = line }
+  { line = line }
 
 capture: str = (shellline: str)
-    c = command(shellline)
-    stream = c:open("r")
-    if stream == nil
-        return ""
-    text = stream:read("*a")
-    if text == nil
-        return ""
-    stream:close()
-    text
+  c = command(shellline)
+  stream = c:open("r")
+  if stream == nil
+    return ""
+  text = stream:read("*a")
+  if text == nil
+    return ""
+  stream:close()
+  text
 
 q = "'"
 
 digits: i64 = (text: str)
-    if text == nil or text:len() == 0
+  if text == nil or text:len() == 0
+    return -1
+  v = 0
+  i = 1
+  n = text:len()
+  while i <= n
+    c = text:sub(i, i)
+    if c >= "0" and c <= "9"
+      v = v * 10 + c:byte() - 48
+      i = i + 1
+    else
+      if c == " " or c == "\n" or c == "\r" or c == "\t"
+        i = i + 1
+      else
         return -1
-    v = 0
-    i = 1
-    n = text:len()
-    while i <= n
-        c = text:sub(i, i)
-        if c >= "0" and c <= "9"
-            v = v * 10 + (c:byte() - 48)
-            i += 1
-        else
-            if c == " " or c == "\n" or c == "\r" or c == "\t"
-                i += 1
-            else
-                return -1
-    v
+  v
 
 ascount: i64 = (cmd: str)
-    digits(capture(cmd))
+  digits(capture(cmd))
 
 chomp: str = (text: str)
-    if text == nil
-        return ""
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
+  if text == nil
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
 
 tail: str = (cmd: str)
-    chomp(capture(cmd))
+  chomp(capture(cmd))
 
 all = "'src/*.zig'"
 front = "src/ast.zig src/parser.zig src/macro_expand.zig"
@@ -98,381 +98,402 @@ existpat = "^[[:space:]]*if .*exists\\("
 processpat = "(io\\.popen|io:popen|:popen\\(|popen\\(|std\\.proc\\.capture\\()"
 boxpat = "lua_Value|lua_invoke|lua_require"
 
-states = {
-    canonical = "canonical",
-    migratable = "migratable",
-    vocabularyblocked = "vocabularyblocked",
-    invalid = "invalid"
-}
+states =
+  canonical = "canonical"
+  migratable = "migratable"
+  vocabularyblocked = "vocabularyblocked"
+  invalid = "invalid"
 
-blocked = {
-    world = { id = "worldgate", state = states.vocabularyblocked, owner = "gap.124" },
-    subject = { id = "subjectgate", state = states.vocabularyblocked, owner = "gap.124" },
-    vocab = { id = "vocabgate", state = states.vocabularyblocked, owner = "gap.124" },
-    sentinel = { id = "sentinelgate", state = states.vocabularyblocked, owner = "gap.124" },
-    control = { id = "controlreduce", state = states.vocabularyblocked, owner = "gap.124" }
-}
+blocked =
+  world =
+    id = "worldgate"
+    state = states.vocabularyblocked
+    owner = "gap.124"
+  subject =
+    id = "subjectgate"
+    state = states.vocabularyblocked
+    owner = "gap.124"
+  vocab =
+    id = "vocabgate"
+    state = states.vocabularyblocked
+    owner = "gap.124"
+  sentinel =
+    id = "sentinelgate"
+    state = states.vocabularyblocked
+    owner = "gap.124"
+  control =
+    id = "controlreduce"
+    state = states.vocabularyblocked
+    owner = "gap.124"
 
-debt = {
-    syntax = {
-        id = "syntax.authority",
-        state = states.invalid,
-        law = "law.semantics.only",
-        owner = "normalization",
-        cap = 0,
-        positive = "pub const WhileStmt = struct {",
-        negative = "pub const Demand = struct {"
-    },
-    namespace = {
-        id = "namespace.activity",
-        state = states.vocabularyblocked,
-        law = "law.audit.conventional",
-        owner = "vocabulary",
-        cap = 179,
-        positive = "fs:exists(path)",
-        negative = "path:exists()",
-        rewrite = "none until subject relation world and demand are admitted"
-    },
-    standard = {
-        id = "distribution.authority",
-        state = states.vocabularyblocked,
-        law = "law.vocabulary.zero",
-        owner = "vocabulary",
-        cap = 2844,
-        positive = "json:encode(value)",
-        negative = "value:encode(json)",
-        rewrite = "only an admitted subject relation home or world"
-    },
-    result = {
-        id = "callable.result.suffix",
-        state = states.migratable,
-        law = "law.canonical.format",
-        owner = "canonicalizer",
-        cap = 296,
-        positive = "budget = (fallback: i64): i64",
-        negative = "budget: i64 = (fallback: i64)",
-        rewrite = "proved binding result migration"
-    },
-    empty = {
-        id = "absence.empty",
-        state = states.vocabularyblocked,
-        law = "law.audit.conventional",
-        owner = "presence",
-        cap = 20,
-        positive = "os.env[name] == \"\"",
-        negative = "present(empty)",
-        rewrite = "none until lookup preserves absent and present empty"
-    },
-    absence = {
-        id = "absence.nil",
-        state = states.vocabularyblocked,
-        law = "law.audit.conventional",
-        owner = "presence",
-        cap = 1540,
-        positive = "if value == nil",
-        negative = "value:case(.absent)",
-        rewrite = "none without the value descriptor law"
-    },
-    negation = {
-        id = "negation.keyword",
-        state = states.migratable,
-        law = "law.lexical.negation",
-        owner = "lexer",
-        cap = 264,
-        positive = "if !value",
-        negative = "if not value",
-        rewrite = "prefix ! — if !expr; never if not expr"
-    },
-    existence = {
-        id = "transition.existence",
-        state = states.vocabularyblocked,
-        law = "law.audit.conventional",
-        owner = "world",
-        cap = 86,
-        positive = "if path:exists()",
-        negative = "path:ensure(file)",
-        rewrite = "none until the atomic transition relation is admitted"
-    },
-    file = {
-        id = "file.word",
-        state = states.invalid,
-        law = "law.file.one",
-        owner = "corpus",
-        cap = 468,
-        positive = "bad_name.id",
-        negative = "concept.id"
-    },
-    process = {
-        id = "process.namespace",
-        state = states.vocabularyblocked,
-        law = "law.boundary.semantic",
-        owner = "gap.119",
-        cap = 34,
-        positive = "c:open(\"r\")",
-        negative = "io.popen(",
-        rewrite = "none until execution has subject world and structured result vocabulary"
-    },
-    vocab = {
-        id = "operation.qualifier",
-        state = states.migratable,
-        law = "law.vocab.same",
-        owner = "realization",
-        cap = 24,
-        positive = "    const_i64,",
-        negative = "    const,",
-        rewrite = "factor relation identity from descriptor place linkage abi and target facts"
-    },
-    taxonomy = {
-        id = "operation.taxonomy",
-        state = states.migratable,
-        law = "law.op.intern",
-        owner = "realization",
-        cap = 3,
-        positive = "pub const BinOpTag = enum {",
-        negative = "pub const RelationId = struct {",
-        rewrite = "replace semantic operation enums with reversible relation interning"
-    },
-    boxed = {
-        id = "runtime.boxed",
-        state = states.migratable,
-        law = "law.shc.native",
-        owner = "shc",
-        cap = 1271,
-        positive = "lua_Value value",
-        negative = "int64_t value",
-        rewrite = "retain typed semantic values through direct realization"
-    }
-}
+debt =
+  syntax =
+    id = "syntax.authority"
+    state = states.invalid
+    law = "law.semantics.only"
+    owner = "normalization"
+    cap = 0
+    positive = "pub const WhileStmt = struct {"
+    negative = "pub const Demand = struct {"
+  namespace =
+    id = "namespace.activity"
+    state = states.vocabularyblocked
+    law = "law.audit.conventional"
+    owner = "vocabulary"
+    cap = 179
+    positive = "fs:exists(path)"
+    negative = "path:exists()"
+    rewrite = "none until subject relation world and demand are admitted"
+  standard =
+    id = "distribution.authority"
+    state = states.vocabularyblocked
+    law = "law.vocabulary.zero"
+    owner = "vocabulary"
+    cap = 2844
+    positive = "json:encode(value)"
+    negative = "value:encode(json)"
+    rewrite = "only an admitted subject relation home or world"
+  result =
+    id = "callable.result.suffix"
+    state = states.migratable
+    law = "law.canonical.format"
+    owner = "canonicalizer"
+    cap = 296
+    positive = "budget = (fallback: i64): i64"
+    negative = "budget: i64 = (fallback: i64)"
+    rewrite = "proved binding result migration"
+  empty =
+    id = "absence.empty"
+    state = states.vocabularyblocked
+    law = "law.audit.conventional"
+    owner = "presence"
+    cap = 20
+    positive = "os.env[name] == \"\""
+    negative = "present(empty)"
+    rewrite = "none until lookup preserves absent and present empty"
+  absence =
+    id = "absence.nil"
+    state = states.vocabularyblocked
+    law = "law.audit.conventional"
+    owner = "presence"
+    cap = 1540
+    positive = "if value == nil"
+    negative = "value:case(.absent)"
+    rewrite = "none without the value descriptor law"
+  negation =
+    id = "negation.keyword"
+    state = states.migratable
+    law = "law.lexical.negation"
+    owner = "lexer"
+    cap = 264
+    positive = "if !value"
+    negative = "if not value"
+    rewrite = "prefix ! — if !expr; never if not expr"
+  existence =
+    id = "transition.existence"
+    state = states.vocabularyblocked
+    law = "law.audit.conventional"
+    owner = "world"
+    cap = 86
+    positive = "if path:exists()"
+    negative = "path:ensure(file)"
+    rewrite = "none until the atomic transition relation is admitted"
+  file =
+    id = "file.word"
+    state = states.invalid
+    law = "law.file.one"
+    owner = "corpus"
+    cap = 468
+    positive = "bad_name.id"
+    negative = "concept.id"
+  process =
+    id = "process.namespace"
+    state = states.vocabularyblocked
+    law = "law.boundary.semantic"
+    owner = "gap.119"
+    cap = 34
+    positive = "c:open(\"r\")"
+    negative = "io.popen("
+    rewrite = "none until execution has subject world and structured result vocabulary"
+  vocab =
+    id = "operation.qualifier"
+    state = states.migratable
+    law = "law.vocab.same"
+    owner = "realization"
+    cap = 24
+    positive = "    const_i64,"
+    negative = "    const,"
+    rewrite = "factor relation identity from descriptor place linkage abi and target facts"
+  taxonomy =
+    id = "operation.taxonomy"
+    state = states.migratable
+    law = "law.op.intern"
+    owner = "realization"
+    cap = 3
+    positive = "pub const BinOpTag = enum {"
+    negative = "pub const RelationId = struct {"
+    rewrite = "replace semantic operation enums with reversible relation interning"
+  boxed =
+    id = "runtime.boxed"
+    state = states.migratable
+    law = "law.shc.native"
+    owner = "shc"
+    cap = 1271
+    positive = "lua_Value value"
+    negative = "int64_t value"
+    rewrite = "retain typed semantic values through direct realization"
 
 main: i64 = ()
-    code = 0
-    cmd = "git grep -n {q}if not suffix({q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, suffix substring detector antipattern)")
-        code = 3
-    cmd = "git grep -n {q}if suffix({q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, suffix audit detector reintroduced)")
-        code = 3
-    cmd = "git grep -n {q}suffix: bool{q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, suffix detector kingdom reintroduced)")
-        code = 3
-    cmd = "git grep -n -E {q}(^|[[:space:]])(if not |and not |or not |\\\\(not ){q} -- scripts/proof lib/semantic gates 2>/dev/null | grep -v grammarconvergence | grep -v text:match | grep -v 'never if not' | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, keyword not in teaching surfaces)")
-        code = 3
-    cmd = "git grep -n hostreadpat scripts/semanticgate.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, host spelling census antipattern)")
-        code = 3
-    cmd = "git grep -n hostargspat scripts/semanticgate.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, host spelling census antipattern)")
-        code = 3
-    cmd = "git grep -n 'dot: bool = (code: str, world: str)' gate/idiom.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) < 2
-        print("(semanticgate, control, gate, dot(code, world) enforcement removed from gates)")
-        code = 3
-    cmd = "git grep -n '@c\\.' scripts/ingress gates gate/idiom.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, @c foreign emit reintroduced in ingress/gates)")
-        code = 3
-    cmd = "git grep -n lua_ scripts/ingress gates gate/idiom.id lib/process.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, lua intermediary reintroduced in ingress/gates)")
-        code = 3
-    cmd = "git grep -n '@c\\.' scripts/semanticgate.id scripts/ingress gates lib/process.id 2>/dev/null | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, @c foreign emit reintroduced)")
-        code = 3
-    cmd = "git grep -n popen scripts/semanticgate.id lib/process.id gates gate/idiom.id 2>/dev/null | grep -v fix | grep -v Forbidden | wc -l | awk '{print $1}'"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, gate, popen spelling reintroduced — use command:open)")
-        code = 3
-    # Every census pathset is compared with an independently expanded source
-    # set. An empty or narrowed pathset with zero matches must withhold counts.
-    cmd = "allfiles=$(git ls-files -- {all}); frontfiles=$(git ls-files -- {front}); afterfiles=$(git ls-files -- {after}); provenfiles=$(git ls-files -- {proven}); duos=$(git ls-files -- {duofiles}); expectedall=$(git ls-files -- {q}src/*.zig{q}); expectedfront=$(git ls-files -- src/ast.zig src/parser.zig src/macro_expand.zig); expectedafter=$(git ls-files -- {q}src/*.zig{q} {q}:(exclude)src/ast.zig{q} {q}:(exclude)src/parser.zig{q} {q}:(exclude)src/macro_expand.zig{q} {q}:(exclude)src/pretty.zig{q}); expectedproven=$(git ls-files -- src/ast.zig src/parser.zig src/pretty.zig); expectedduos=$(git ls-files -- {q}*.id{q} {q}:(exclude)scripts/semanticgate.id{q} {q}:(exclude)gate/idiom.id{q}); if test -n \"$allfiles\" && test -n \"$duos\" && test \"$allfiles\" = \"$expectedall\" && test \"$frontfiles\" = \"$expectedfront\" && test \"$afterfiles\" = \"$expectedafter\" && test \"$provenfiles\" = \"$expectedproven\" && test \"$duos\" = \"$expectedduos\" && test -z \"$(git ls-files -- {q}src/no-such-*.zig{q})\" && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/ast.zig && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/native_ir.zig && printf {q}%s\\n{q} \"$duos\" | grep -qx lib/compiler/application.id && git cat-file -e :src/ast.zig && git cat-file -e :src/parser.zig && git cat-file -e :src/pretty.zig && git cat-file -e :src/native_ir.zig && git cat-file -e :src/semantic_graph.zig && git cat-file -e :scripts/semanticgate.id && git grep --cached -q -E {q}{parserpat}{q} -- {front} && git grep --cached -q -E {q}{astpat}{q} -- {after} && git grep --cached -q {q}boxpat = {q} -- scripts/semanticgate.id; then git grep --cached -q {q}boxpat = {q} -- {duofiles}; status=$?; if test $status = 1; then printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1; else printf 0; fi; else printf 0; fi"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, source, staged pathspec parser classifier or exclusion failed)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}.if_stmt => |branch|{q} | grep -c -E {q}{dispatchpat}{q}"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, dispatch, missed if face)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}.demand => |edge|{q} | grep -c -E {q}{dispatchpat}{q}"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, dispatch, convicted demand)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}    directive,{q} | grep -c -E {q}{graphpat}{q}"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, graph, missed directive kind)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}    relation,{q} | grep -c -E {q}{graphpat}{q}"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, graph, convicted relation)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.vocab.positive}{q} | grep -c -E {q}{irpat}{q}"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, ir, missed duplicate call identity)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.vocab.negative}{q} | grep -c -E {q}{irpat}{q}"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, ir, convicted physical branch)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.syntax.positive}{q} | grep -c -E {q}{newpat}{q}"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, unclassified, missed new syntax kind)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.syntax.negative}{q} | grep -c -E {q}{newpat}{q}"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, unclassified, convicted semantic kind)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.namespace.positive}{q} | grep -c -E {q}{namespacepat}{q}"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, namespace, missed std fs operation)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.namespace.negative}{q} | grep -c -E {q}{namespacepat}{q}"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, namespace, convicted subject relation)")
-        code = 3
-    cmd = "./zig-out/bin/idol run examples/demand/result.id 2>/dev/null | tail -1 | tr -d '\\n'"
-    if tail(cmd) != "42"
-        print("(semanticgate, control, source, result proof broken)")
-        code = 3
-    cmd = "./zig-out/bin/idol run scripts/canon.id 2>/dev/null | tail -1 | tr -d '\\n'"
-    if tail(cmd) != "canon: pass"
-        print("(semanticgate, control, source, canon proof broken)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.result.positive}{q} | grep -q -E {q}{suffixpat}{q} && printf 1"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, source, suffix classifier broken)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.standard.positive}{q} | grep -q -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}{debt.standard.negative}{q} | grep -q -v -E {q}{stdpat}{q} && printf 1"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, source, std classifier broken)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.process.positive}{q} | grep -q -E {q}{processpat}{q} && printf {q}%s\\n{q} {q}{debt.process.negative}{q} | grep -q -v -E {q}{processpat}{q} && printf 1"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, source, process classifier broken)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.negation.positive}{q} | grep -q -v -E {q}{notpat}{q} && printf {q}%s\\n{q} {q}{debt.negation.negative}{q} | grep -q -E {q}{notpat}{q} && printf 1"
-    if ascount(cmd) != 1
-        print("(semanticgate, control, source, keyword-not classifier broken)")
-        code = 3
-    cmd = "printf {q}%s\\n{q} {q}{debt.result.negative}{q} | grep -c -E {q}{suffixpat}{q}"
-    if ascount(cmd) != 0
-        print("(semanticgate, control, result, convicted result demand)")
-        code = 3
+  code = 0
+  cmd = "git grep -n {q}if not suffix({q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, suffix substring detector antipattern)")
+    code = 3
+  cmd = "git grep -n {q}if suffix({q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, suffix audit detector reintroduced)")
+    code = 3
+  cmd = "git grep -n {q}suffix: bool{q} -- gate/idiom.id gate/path.id gate/census.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, suffix detector kingdom reintroduced)")
+    code = 3
+  cmd = "git grep -n -E {q}(^|[[:space:]])(if not |and not |or not |\\\\(not ){q} -- scripts/proof lib/semantic gates 2>/dev/null | grep -v grammarconvergence | grep -v text:match | grep -v 'never if not' | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, keyword not in teaching surfaces)")
+    code = 3
+  cmd = "git grep -n hostreadpat scripts/semanticgate.id 2>/dev/null | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, host spelling census antipattern)")
+    code = 3
+  cmd = "git grep -n hostargspat scripts/semanticgate.id 2>/dev/null | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, host spelling census antipattern)")
+    code = 3
+  cmd = "git grep -n 'dot: bool = (code: str, world: str)' gate/idiom.id gate/host.id 2>/dev/null | wc -l | awk '{print $1}'"
+  if ascount(cmd) < 2
+    print("(semanticgate, control, gate, dot(code, world) enforcement removed from gates)")
+    code = 3
+  cmd = "git grep -n '@c\\.' scripts/ingress gates gate/idiom.id 2>/dev/null | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, @c foreign emit reintroduced in ingress/gates)")
+    code = 3
+  cmd = "git grep -n lua_ scripts/ingress gates gate/idiom.id lib/process.id 2>/dev/null | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, lua intermediary reintroduced in ingress/gates)")
+    code = 3
+  cmd = "git grep -n '@c\\.' scripts/semanticgate.id scripts/ingress gates lib/process.id 2>/dev/null | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, @c foreign emit reintroduced)")
+    code = 3
+  cmd = "git grep -n popen scripts/semanticgate.id lib/process.id gates gate/idiom.id 2>/dev/null | grep -v fix | grep -v Forbidden | wc -l | awk '{print $1}'"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, gate, popen spelling reintroduced — use command:open)")
+    code = 3
+  # Every census pathset is compared with an independently expanded source
+  # set. An empty or narrowed pathset with zero matches must withhold counts.
+  cmd = "allfiles=$(git ls-files -- {all}); frontfiles=$(git ls-files -- {front}); afterfiles=$(git ls-files -- {after}); provenfiles=$(git ls-files -- {proven}); duos=$(git ls-files -- {duofiles}); expectedall=$(git ls-files -- {q}src/*.zig{q}); expectedfront=$(git ls-files -- src/ast.zig src/parser.zig src/macro_expand.zig); expectedafter=$(git ls-files -- {q}src/*.zig{q} {q}:(exclude)src/ast.zig{q} {q}:(exclude)src/parser.zig{q} {q}:(exclude)src/macro_expand.zig{q} {q}:(exclude)src/pretty.zig{q}); expectedproven=$(git ls-files -- src/ast.zig src/parser.zig src/pretty.zig); expectedduos=$(git ls-files -- {q}*.id{q} {q}:(exclude)scripts/semanticgate.id{q} {q}:(exclude)gate/idiom.id{q}); if test -n \"$allfiles\" && test -n \"$duos\" && test \"$allfiles\" = \"$expectedall\" && test \"$frontfiles\" = \"$expectedfront\" && test \"$afterfiles\" = \"$expectedafter\" && test \"$provenfiles\" = \"$expectedproven\" && test \"$duos\" = \"$expectedduos\" && test -z \"$(git ls-files -- {q}src/no-such-*.zig{q})\" && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/ast.zig && printf {q}%s\\n{q} \"$allfiles\" | grep -qx src/native_ir.zig && printf {q}%s\\n{q} \"$duos\" | grep -qx lib/compiler/application.id && git cat-file -e :src/ast.zig && git cat-file -e :src/parser.zig && git cat-file -e :src/pretty.zig && git cat-file -e :src/native_ir.zig && git cat-file -e :src/semantic_graph.zig && git cat-file -e :scripts/semanticgate.id && git grep --cached -q -E {q}{parserpat}{q} -- {front} && git grep --cached -q -E {q}{astpat}{q} -- {after} && git grep --cached -q {q}boxpat = {q} -- scripts/semanticgate.id; then git grep --cached -q {q}boxpat = {q} -- {duofiles}; status=$?; if test $status = 1; then printf {q}%s\\n{q} {q}pub const IfExpr = struct {{{q} | grep -q -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}pub const relation = struct {{{q} | grep -q -v -E {q}{parserpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.positive}{q} | grep -q -E {q}{boxpat}{q} && printf {q}%s\\n{q} {q}{debt.boxed.negative}{q} | grep -q -v -E {q}{boxpat}{q} && printf 1; else printf 0; fi; else printf 0; fi"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, source, staged pathspec parser classifier or exclusion failed)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}.if_stmt => |branch|{q} | grep -c -E {q}{dispatchpat}{q}"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, dispatch, missed if face)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}.demand => |edge|{q} | grep -c -E {q}{dispatchpat}{q}"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, dispatch, convicted demand)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}    directive,{q} | grep -c -E {q}{graphpat}{q}"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, graph, missed directive kind)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}    relation,{q} | grep -c -E {q}{graphpat}{q}"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, graph, convicted relation)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.vocab.positive}{q} | grep -c -E {q}{irpat}{q}"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, ir, missed duplicate call identity)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.vocab.negative}{q} | grep -c -E {q}{irpat}{q}"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, ir, convicted physical branch)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.syntax.positive}{q} | grep -c -E {q}{newpat}{q}"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, unclassified, missed new syntax kind)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.syntax.negative}{q} | grep -c -E {q}{newpat}{q}"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, unclassified, convicted semantic kind)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.namespace.positive}{q} | grep -c -E {q}{namespacepat}{q}"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, namespace, missed std fs operation)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.namespace.negative}{q} | grep -c -E {q}{namespacepat}{q}"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, namespace, convicted subject relation)")
+    code = 3
+  cmd = "./zig-out/bin/idol run examples/demand/result.id 2>/dev/null | tail -1 | tr -d '\\n'"
+  if tail(cmd) != "42"
+    print("(semanticgate, control, source, result proof broken)")
+    code = 3
+  cmd = "./zig-out/bin/idol run scripts/canon.id 2>/dev/null | tail -1 | tr -d '\\n'"
+  if tail(cmd) != "canon: pass"
+    print("(semanticgate, control, source, canon proof broken)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.result.positive}{q} | grep -q -E {q}{suffixpat}{q} && printf 1"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, source, suffix classifier broken)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.standard.positive}{q} | grep -q -E {q}{stdpat}{q} && printf {q}%s\\n{q} {q}{debt.standard.negative}{q} | grep -q -v -E {q}{stdpat}{q} && printf 1"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, source, std classifier broken)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.process.positive}{q} | grep -q -E {q}{processpat}{q} && printf {q}%s\\n{q} {q}{debt.process.negative}{q} | grep -q -v -E {q}{processpat}{q} && printf 1"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, source, process classifier broken)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.negation.positive}{q} | grep -q -v -E {q}{notpat}{q} && printf {q}%s\\n{q} {q}{debt.negation.negative}{q} | grep -q -E {q}{notpat}{q} && printf 1"
+  if ascount(cmd) != 1
+    print("(semanticgate, control, source, keyword-not classifier broken)")
+    code = 3
+  cmd = "printf {q}%s\\n{q} {q}{debt.result.negative}{q} | grep -c -E {q}{suffixpat}{q}"
+  if ascount(cmd) != 0
+    print("(semanticgate, control, result, convicted result demand)")
+    code = 3
 
-    if code != 0
-        print("(semanticgate, error, controls, broken, repository counts withheld)")
-    if code == 0
-        cmd = "git grep --cached -h -E {q}{parserpat}{q} -- {front} 2>/dev/null | wc -l | awk '{print $1}'"
-        parser = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{provenpat}{q} -- {proven} 2>/dev/null | wc -l | awk '{print $1}'"
-        provenance = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{astpat}{q} -- src/pretty.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        render = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{dispatchpat}{q} -- src/pretty.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        render += ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{physicalpat}{q} -- src/native_ir.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        physical = ascount(cmd)
-        cmd = "files=$(git ls-files -- {all}); if test -z \"$files\"; then printf 1000000; else git grep --cached -h -E {q}{newpat}{q} -- $files 2>/dev/null | wc -l; fi"
-        unclassified = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{astpat}{q} -- {after} 2>/dev/null | wc -l | awk '{print $1}'"
-        consumer = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{dispatchpat}{q} -- {after} 2>/dev/null | wc -l | awk '{print $1}'"
-        dispatch = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{facepat}{q} -- {after} 2>/dev/null | wc -l | awk '{print $1}'"
-        face = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{graphpat}{q} -- src/semantic_graph.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        graph = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{irpat}{q} -- src/native_ir.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        ir = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{taxpat}{q} -- src/native_ir.zig 2>/dev/null | wc -l | awk '{print $1}'"
-        taxonomy = ascount(cmd)
-        cmd = "files=$(git ls-files -- {all}); if test -z \"$files\"; then printf 99999999; else a=$(git grep --cached -h -E {q}{apipat}{q} -- {after} 2>/dev/null | wc -l); b=$(git grep --cached -h {q}lua_Value{q} -- $files 2>/dev/null | wc -l); printf {q}%s{q} $((a * 10000 + b)); fi"
-        api = ascount(cmd)
-        combined = api
-        boxed = combined % 10000
-        api = (combined - boxed) / 10000
-        cmd = "git grep --cached -h -E {q}{namespacepat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '{print $1}'"
-        namespace = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{stdpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '{print $1}'"
-        standard = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{suffixpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        suffix = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{envemptypat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        envempty = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{nilpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        nilabsence = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{notpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        keywordnot = ascount(cmd)
-        cmd = "git grep --cached -h -E {q}{existpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
-        existence = ascount(cmd)
-        cmd = "git show :scripts/semanticgate.id | grep -E {q}std[.]proc[.]capture\\({q} | grep -v -E {q}^[[:space:]]*positive[[:space:]]*={q} | wc -l | awk '{print $1}'"
-        bootstrap = ascount(cmd)
-        cmd = "git ls-files '*.id' | grep -c {q}_{q}"
-        fileword = ascount(cmd)
+  if code != 0
+    print("(semanticgate, error, controls, broken, repository counts withheld)")
+  if code == 0
+    cmd = "git grep --cached -h -E {q}{parserpat}{q} -- {front} 2>/dev/null | wc -l | awk '{print $1}'"
+    parser = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{provenpat}{q} -- {proven} 2>/dev/null | wc -l | awk '{print $1}'"
+    provenance = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{astpat}{q} -- src/pretty.zig 2>/dev/null | wc -l | awk '{print $1}'"
+    render = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{dispatchpat}{q} -- src/pretty.zig 2>/dev/null | wc -l | awk '{print $1}'"
+    render = render + ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{physicalpat}{q} -- src/native_ir.zig 2>/dev/null | wc -l | awk '{print $1}'"
+    physical = ascount(cmd)
+    cmd = "files=$(git ls-files -- {all}); if test -z \"$files\"; then printf 1000000; else git grep --cached -h -E {q}{newpat}{q} -- $files 2>/dev/null | wc -l; fi"
+    unclassified = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{astpat}{q} -- {after} 2>/dev/null | wc -l | awk '{print $1}'"
+    consumer = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{dispatchpat}{q} -- {after} 2>/dev/null | wc -l | awk '{print $1}'"
+    dispatch = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{facepat}{q} -- {after} 2>/dev/null | wc -l | awk '{print $1}'"
+    face = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{graphpat}{q} -- src/semantic_graph.zig 2>/dev/null | wc -l | awk '{print $1}'"
+    graph = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{irpat}{q} -- src/native_ir.zig 2>/dev/null | wc -l | awk '{print $1}'"
+    ir = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{taxpat}{q} -- src/native_ir.zig 2>/dev/null | wc -l | awk '{print $1}'"
+    taxonomy = ascount(cmd)
+    cmd = "files=$(git ls-files -- {all}); if test -z \"$files\"; then printf 99999999; else a=$(git grep --cached -h -E {q}{apipat}{q} -- {after} 2>/dev/null | wc -l); b=$(git grep --cached -h {q}lua_Value{q} -- $files 2>/dev/null | wc -l); printf {q}%s{q} $((a * 10000 + b)); fi"
+    api = ascount(cmd)
+    combined = api
+    boxed = combined % 10000
+    api = (combined - boxed) / 10000
+    cmd = "git grep --cached -h -E {q}{namespacepat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '{print $1}'"
+    namespace = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{stdpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*(--|source[[:space:]]*=|\"){q} | wc -l | awk '{print $1}'"
+    standard = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{suffixpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
+    suffix = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{envemptypat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
+    envempty = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{nilpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
+    nilabsence = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{notpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
+    keywordnot = ascount(cmd)
+    cmd = "git grep --cached -h -E {q}{existpat}{q} -- {duofiles} 2>/dev/null | grep -v -E {q}^[[:space:]]*--{q} | wc -l | awk '{print $1}'"
+    existence = ascount(cmd)
+    cmd = "git show :scripts/semanticgate.id | grep -E {q}std[.]proc[.]capture\\({q} | grep -v -E {q}^[[:space:]]*positive[[:space:]]*={q} | wc -l | awk '{print $1}'"
+    bootstrap = ascount(cmd)
+    cmd = "git ls-files '*.id' | grep -c {q}_{q}"
+    fileword = ascount(cmd)
 
-        over = 0
-        print("(semanticgate, count, parser-only, faces, {parser}, cap=5)")
-        if parser > 5 over += 1
-        print("(semanticgate, count, provenance, faces, {provenance}, cap=10)")
-        if provenance > 10 over += 1
-        print("(semanticgate, count, provenance, render, {render}, cap=26)")
-        if render > 26 over += 1
-        print("(semanticgate, count, physical, control, {physical}, cap=5)")
-        if physical > 5 over += 1
-        print("(semanticgate, count, irreducible, documented, 0, cap=0)")
-        print("(semanticgate, count, unclassified, syntax, {unclassified}, cap=0)")
-        if unclassified > 0 over += 1
-        print("(semanticgate, count, migration, consumers, {consumer}, cap=815)")
-        if consumer > 815 over += 1
-        print("(semanticgate, count, migration, dispatch, {dispatch}, cap=723)")
-        if dispatch > 723 over += 1
-        print("(semanticgate, count, migration, faceauth, {face}, cap=2)")
-        if face > 2 over += 1
-        print("(semanticgate, count, migration, graphkind, {graph}, cap=1)")
-        if graph > 1 over += 1
-        print("(semanticgate, census, {debt.vocab.state}, {debt.vocab.id}, {ir}, cap={debt.vocab.cap}, law={debt.vocab.law}, owner={debt.vocab.owner})")
-        if ir > debt.vocab.cap over += 1
-        print("(semanticgate, census, {debt.taxonomy.state}, {debt.taxonomy.id}, {taxonomy}, cap={debt.taxonomy.cap}, law={debt.taxonomy.law}, owner={debt.taxonomy.owner})")
-        if taxonomy > debt.taxonomy.cap over += 1
-        print("(semanticgate, census, {debt.boxed.state}, {debt.boxed.id}, {boxed}, cap={debt.boxed.cap}, law={debt.boxed.law}, owner={debt.boxed.owner})")
-        if boxed > debt.boxed.cap over += 1
-        print("(semanticgate, count, migration, api, {api}, cap=8)")
-        if api > 8 over += 1
-        print("(semanticgate, census, {debt.namespace.state}, {debt.namespace.id}, {namespace}, cap={debt.namespace.cap}, law={debt.namespace.law}, owner={debt.namespace.owner})")
-        if namespace > debt.namespace.cap over += 1
-        print("(semanticgate, census, {debt.standard.state}, {debt.standard.id}, {standard}, cap={debt.standard.cap}, law={debt.standard.law}, owner={debt.standard.owner})")
-        if standard > debt.standard.cap over += 1
-        print("(semanticgate, census, {debt.result.state}, {debt.result.id}, {suffix}, cap={debt.result.cap}, law={debt.result.law}, owner={debt.result.owner})")
-        if suffix > debt.result.cap over += 1
-        print("(semanticgate, census, {debt.empty.state}, {debt.empty.id}, {envempty}, cap={debt.empty.cap}, law={debt.empty.law}, owner={debt.empty.owner})")
-        if envempty > debt.empty.cap over += 1
-        print("(semanticgate, census, {debt.absence.state}, {debt.absence.id}, {nilabsence}, cap={debt.absence.cap}, law={debt.absence.law}, owner={debt.absence.owner})")
-        if nilabsence > debt.absence.cap over += 1
-        print("(semanticgate, census, {debt.negation.state}, {debt.negation.id}, {keywordnot}, cap={debt.negation.cap}, law={debt.negation.law}, owner={debt.negation.owner})")
-        if keywordnot > debt.negation.cap over += 1
-        print("(semanticgate, census, {debt.existence.state}, {debt.existence.id}, {existence}, cap={debt.existence.cap}, law={debt.existence.law}, owner={debt.existence.owner})")
-        if existence > debt.existence.cap over += 1
-        print("(semanticgate, census, {debt.file.state}, {debt.file.id}, {fileword}, cap={debt.file.cap}, law={debt.file.law}, owner={debt.file.owner})")
-        if fileword > debt.file.cap over += 1
-        print("(semanticgate, census, {debt.process.state}, {debt.process.id}, {bootstrap}, cap={debt.process.cap}, law={debt.process.law}, owner={debt.process.owner})")
-        if bootstrap > debt.process.cap over += 1
-        print("(semanticgate, blocked, {blocked.world.state}, {blocked.world.id}, owner={blocked.world.owner}, evidence=graph-required)")
-        print("(semanticgate, blocked, {blocked.subject.state}, {blocked.subject.id}, owner={blocked.subject.owner}, evidence=graph-required)")
-        print("(semanticgate, blocked, {blocked.vocab.state}, {blocked.vocab.id}, owner={blocked.vocab.owner}, evidence=graph-required)")
-        print("(semanticgate, blocked, {blocked.sentinel.state}, {blocked.sentinel.id}, owner={blocked.sentinel.owner}, evidence=graph-required)")
-        print("(semanticgate, blocked, {blocked.control.state}, {blocked.control.id}, owner={blocked.control.owner}, evidence=graph-required)")
+    over = 0
+    print("(semanticgate, count, parser-only, faces, {parser}, cap=5)")
+    if parser > 5
+      over = over + 1
+    print("(semanticgate, count, provenance, faces, {provenance}, cap=10)")
+    if provenance > 10
+      over = over + 1
+    print("(semanticgate, count, provenance, render, {render}, cap=26)")
+    if render > 26
+      over = over + 1
+    print("(semanticgate, count, physical, control, {physical}, cap=5)")
+    if physical > 5
+      over = over + 1
+    print("(semanticgate, count, irreducible, documented, 0, cap=0)")
+    print("(semanticgate, count, unclassified, syntax, {unclassified}, cap=0)")
+    if unclassified > 0
+      over = over + 1
+    print("(semanticgate, count, migration, consumers, {consumer}, cap=815)")
+    if consumer > 815
+      over = over + 1
+    print("(semanticgate, count, migration, dispatch, {dispatch}, cap=723)")
+    if dispatch > 723
+      over = over + 1
+    print("(semanticgate, count, migration, faceauth, {face}, cap=2)")
+    if face > 2
+      over = over + 1
+    print("(semanticgate, count, migration, graphkind, {graph}, cap=1)")
+    if graph > 1
+      over = over + 1
+    print("(semanticgate, census, {debt.vocab.state}, {debt.vocab.id}, {ir}, cap={debt.vocab.cap}, law={debt.vocab.law}, owner={debt.vocab.owner})")
+    if ir > debt.vocab.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.taxonomy.state}, {debt.taxonomy.id}, {taxonomy}, cap={debt.taxonomy.cap}, law={debt.taxonomy.law}, owner={debt.taxonomy.owner})")
+    if taxonomy > debt.taxonomy.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.boxed.state}, {debt.boxed.id}, {boxed}, cap={debt.boxed.cap}, law={debt.boxed.law}, owner={debt.boxed.owner})")
+    if boxed > debt.boxed.cap
+      over = over + 1
+    print("(semanticgate, count, migration, api, {api}, cap=8)")
+    if api > 8
+      over = over + 1
+    print("(semanticgate, census, {debt.namespace.state}, {debt.namespace.id}, {namespace}, cap={debt.namespace.cap}, law={debt.namespace.law}, owner={debt.namespace.owner})")
+    if namespace > debt.namespace.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.standard.state}, {debt.standard.id}, {standard}, cap={debt.standard.cap}, law={debt.standard.law}, owner={debt.standard.owner})")
+    if standard > debt.standard.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.result.state}, {debt.result.id}, {suffix}, cap={debt.result.cap}, law={debt.result.law}, owner={debt.result.owner})")
+    if suffix > debt.result.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.empty.state}, {debt.empty.id}, {envempty}, cap={debt.empty.cap}, law={debt.empty.law}, owner={debt.empty.owner})")
+    if envempty > debt.empty.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.absence.state}, {debt.absence.id}, {nilabsence}, cap={debt.absence.cap}, law={debt.absence.law}, owner={debt.absence.owner})")
+    if nilabsence > debt.absence.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.negation.state}, {debt.negation.id}, {keywordnot}, cap={debt.negation.cap}, law={debt.negation.law}, owner={debt.negation.owner})")
+    if keywordnot > debt.negation.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.existence.state}, {debt.existence.id}, {existence}, cap={debt.existence.cap}, law={debt.existence.law}, owner={debt.existence.owner})")
+    if existence > debt.existence.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.file.state}, {debt.file.id}, {fileword}, cap={debt.file.cap}, law={debt.file.law}, owner={debt.file.owner})")
+    if fileword > debt.file.cap
+      over = over + 1
+    print("(semanticgate, census, {debt.process.state}, {debt.process.id}, {bootstrap}, cap={debt.process.cap}, law={debt.process.law}, owner={debt.process.owner})")
+    if bootstrap > debt.process.cap
+      over = over + 1
+    print("(semanticgate, blocked, {blocked.world.state}, {blocked.world.id}, owner={blocked.world.owner}, evidence=graph-required)")
+    print("(semanticgate, blocked, {blocked.subject.state}, {blocked.subject.id}, owner={blocked.subject.owner}, evidence=graph-required)")
+    print("(semanticgate, blocked, {blocked.vocab.state}, {blocked.vocab.id}, owner={blocked.vocab.owner}, evidence=graph-required)")
+    print("(semanticgate, blocked, {blocked.sentinel.state}, {blocked.sentinel.id}, owner={blocked.sentinel.owner}, evidence=graph-required)")
+    print("(semanticgate, blocked, {blocked.control.state}, {blocked.control.id}, owner={blocked.control.owner}, evidence=graph-required)")
 
-        if over > 0
-            print("(semanticgate, fail, ratchet, raised, lower implementation or justify law change)")
-            code = 1
-        else
-            print("(semanticgate, pass, law.surface.zero, staged census classified, debt may only descend, semantic verdicts remain gap.124)")
-    if code != 0
-        error("(semanticgate, blocked, canonicality, unresolved, see structured findings above)")
-    code
+    if over > 0
+      print("(semanticgate, fail, ratchet, raised, lower implementation or justify law change)")
+      code = 1
+    else
+      print("(semanticgate, pass, law.surface.zero, staged census classified, debt may only descend, semantic verdicts remain gap.124)")
+  if code != 0
+    error("(semanticgate, blocked, canonicality, unresolved, see structured findings above)")
+  code

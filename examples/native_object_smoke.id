@@ -1,8 +1,8 @@
-add(a: i64, b: i64): i64
-    a + b
+add: i64 = (a: i64, b: i64)
+  a + b
 
-main(): i64
-    x = add(10, 4)
-    y = add(7, 1)
-    x = x + y * 4
-    x - 1
+main: i64 = ()
+  x = add(10, 4)
+  y = add(7, 1)
+  x = x + y * 4
+  x - 1

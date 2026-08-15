@@ -25,8 +25,8 @@
 # Watched, not blocking, and reported on every `zig build native-differential`
 # run. Both columns exit 0, so only the stdout comparison can see it at all.
 
-main(): i64
-    a: i64 = 7
-    b: i64 = 0
-    print(a / b)
-    0
+main: i64 = ()
+  a: i64 = 7
+  b: i64 = 0
+  print(a / b)
+  0

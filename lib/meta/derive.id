@@ -5,147 +5,146 @@
 # still uses parser-level concept declarations.
 
 Clone = meta.make_concept("Clone", {
-    methods = { "clone" },
+  methods = { "clone" }
 })
 
 Eq = meta.make_concept("Eq", {
-    methods = { "eq" },
+  methods = { "eq" }
 })
 
 Ord = meta.make_concept("Ord", {
-    methods = { "compare" },
+  methods = { "compare" }
 })
 
 Hash = meta.make_concept("Hash", {
-    methods = { "hash" },
+  methods = { "hash" }
 })
 
 Display = meta.make_concept("Display", {
-    methods = { "to_string" },
+  methods = { "to_string" }
 })
 
 Default = meta.make_concept("Default", {
-    methods = { "default" },
+  methods = { "default" }
 })
 
 Iterable = meta.make_concept("Iterable", {
-    methods = { "iter", "next" },
+  methods = { "iter", "next" }
 })
 
 Index = meta.make_concept("Index", {
-    methods = { "at", "len" },
+  methods = { "at", "len" }
 })
 
 Into = meta.make_concept("Into", {
-    methods = { "into" },
+  methods = { "into" }
 })
 
 From = meta.make_concept("From", {
-    methods = { "from" },
+  methods = { "from" }
 })
 
 Add = meta.make_concept("Add", {
-    methods = { "add" },
+  methods = { "add" }
 })
 
 Sub = meta.make_concept("Sub", {
-    methods = { "sub" },
+  methods = { "sub" }
 })
 
 Mul = meta.make_concept("Mul", {
-    methods = { "mul" },
+  methods = { "mul" }
 })
 
 Div = meta.make_concept("Div", {
-    methods = { "div" },
+  methods = { "div" }
 })
 
 Rem = meta.make_concept("Rem", {
-    methods = { "rem" },
+  methods = { "rem" }
 })
 
 Pow = meta.make_concept("Pow", {
-    methods = { "pow" },
+  methods = { "pow" }
 })
 
 Neg = meta.make_concept("Neg", {
-    methods = { "neg" },
+  methods = { "neg" }
 })
 
 BitAnd = meta.make_concept("BitAnd", {
-    methods = { "bit_and" },
+  methods = { "bit_and" }
 })
 
 BitOr = meta.make_concept("BitOr", {
-    methods = { "bit_or" },
+  methods = { "bit_or" }
 })
 
 BitXor = meta.make_concept("BitXor", {
-    methods = { "bit_xor" },
+  methods = { "bit_xor" }
 })
 
 BitNot = meta.make_concept("BitNot", {
-    methods = { "bit_not" },
+  methods = { "bit_not" }
 })
 
 Shl = meta.make_concept("Shl", {
-    methods = { "shl" },
+  methods = { "shl" }
 })
 
 Shr = meta.make_concept("Shr", {
-    methods = { "shr" },
+  methods = { "shr" }
 })
 
 Concat = meta.make_concept("Concat", {
-    methods = { "concat" },
+  methods = { "concat" }
 })
 
 Len = meta.make_concept("Len", {
-    methods = { "len" },
+  methods = { "len" }
 })
 
 Call = meta.make_concept("Call", {
-    methods = { "call" },
+  methods = { "call" }
 })
 
 Contains = meta.make_concept("Contains", {
-    methods = { "contains" },
+  methods = { "contains" }
 })
 
 Try = meta.make_concept("Try", {
-    methods = { "attempt" },
+  methods = { "attempt" }
 })
 
 Unwrap = meta.make_concept("Unwrap", {
-    methods = { "unwrap" },
+  methods = { "unwrap" }
 })
 
 Tag = meta.make_concept("Tag", {
-    methods = { "tag" },
+  methods = { "tag" }
 })
 
 Close = meta.make_concept("Close", {
-    methods = { "close" },
+  methods = { "close" }
 })
 
 Iter = meta.make_concept("Iter", {
-    methods = { "iter" },
+  methods = { "iter" }
 })
 
 Format = meta.make_concept("Format", {
-    methods = { "fmt" },
+  methods = { "fmt" }
 })
 
 Serialize = meta.make_concept("Serialize", {
-    methods = { "serialize" },
+  methods = { "serialize" }
 })
 
 Deserialize = meta.make_concept("Deserialize", {
-    methods = { "deserialize" },
+  methods = { "deserialize" }
 })
 
 DeepClone = meta.make_concept("DeepClone", {
-    methods = { "deep_clone" },
+  methods = { "deep_clone" }
 })
-
 # Derive module table

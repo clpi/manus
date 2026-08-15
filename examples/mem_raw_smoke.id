@@ -1,26 +1,26 @@
-raw_demo(): i64
-    raw: *u8 = mem.alloc(64)
-    mem.zero(raw, 64)
+raw_demo: i64 = ()
+  raw: *u8 = mem.alloc(64)
+  mem.zero(raw, 64)
 
-    ints: *i64 = mem.cast("i64", raw)
-    mem.store(i64)(ints, 42)
+  ints: *i64 = mem.cast("i64", raw)
+  mem.store(i64)(ints, 42)
 
-    second: *i64 = mem.add(ints, 1)
-    mem.volatile_store(i64)(second, 58)
+  second: *i64 = mem.add(ints, 1)
+  mem.volatile_store(i64)(second, 58)
 
-    out: *u8 = mem.calloc(64, 1)
-    raw_was_null: bool = mem.is_null(raw)
-    mem.copy(out, raw, mem.sizeof(i64) * 2)
+  out: *u8 = mem.calloc(64, 1)
+  raw_was_null: bool = mem.is_null(raw)
+  mem.copy(out, raw, mem.sizeof(i64) * 2)
 
-    got0: i64 = mem.load(i64)(mem.cast("i64", out))
-    got1: i64 = mem.volatile_load(i64)(mem.add(mem.cast("i64", out), 1))
-    addr: u64 = mem.addr(out)
-    back: *u8 = mem.ptr_from_addr("u8", addr)
-    mem.move(mem.byte_add(back, 16), back, 16)
+  got0: i64 = mem.load(i64)(mem.cast("i64", out))
+  got1: i64 = mem.volatile_load(i64)(mem.add(mem.cast("i64", out), 1))
+  addr: u64 = mem.addr(out)
+  back: *u8 = mem.ptr_from_addr("u8", addr)
+  mem.move(mem.byte_add(back, 16), back, 16)
 
-    cmp: i64 = mem.compare(out, raw, 16)
-    mem.free(out)
-    mem.free(raw)
-    return got0 + got1 + cmp
+  cmp: i64 = mem.compare(out, raw, 16)
+  mem.free(out)
+  mem.free(raw)
+  return got0 + got1 + cmp
 
 print(raw_demo())

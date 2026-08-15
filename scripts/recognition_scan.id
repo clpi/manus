@@ -137,20 +137,20 @@ space = " "
 # one run's numbers printed under another run's banner because of it. `-H`
 # because a single-file xargs batch drops the path prefix and would take the
 # module census with it.
-head(root: str): str
-    "cd {root} && git ls-files 'lib/*.id' | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
+head: str = (root: str)
+  "cd {root} && git ls-files 'lib/*.id' | tr '\\n' '\\0' | xargs -0 grep -H -n -E "
 
 # Matching lines, whole-line comments dropped.
-hits(root: str, pat: str): i64
-    pre: str = head(root)
-    cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+hits: i64 = (root: str, pat: str)
+  pre: str = head(root)
+  cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
+  to(i64)(std.script.chomp(std.script.capture(cmd)))
 
 # Distinct modules holding at least one site of this class.
-modules(root: str, pat: str): i64
-    pre: str = head(root)
-    cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | cut -d: -f1 | sort -u | wc -l"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+modules: i64 = (root: str, pat: str)
+  pre: str = head(root)
+  cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | cut -d: -f1 | sort -u | wc -l"
+  to(i64)(std.script.chomp(std.script.capture(cmd)))
 
 # The same class over everything tracked that is NOT lib/std. Reported so the
 # lib/std budget is never read as a whole-repo claim.
@@ -163,40 +163,40 @@ modules(root: str, pat: str): i64
 # lines above. The lib/std rows never had the problem (this file is not in
 # lib/std) but the exclusion is written against the pathspec, not the
 # directory, so moving the file cannot silently reintroduce it.
-outside(root: str, pat: str): i64
-    cmd: str = "cd {root} && git ls-files '*.id' | grep -v -E {q}^lib/{q} | grep -v -E {q}^scripts/recognition{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E {q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+outside: i64 = (root: str, pat: str)
+  cmd: str = "cd {root} && git ls-files '*.id' | grep -v -E {q}^lib/{q} | grep -v -E {q}^scripts/recognition{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E {q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
+  to(i64)(std.script.chomp(std.script.capture(cmd)))
 
 # One synthetic line through the ENTIRE filter chain.
-probe(pat: str, line: str): i64
-    cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -n -E {q}{pat}{q} | grep -v -E {q}{comments}{q} | wc -l"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+probe: i64 = (pat: str, line: str)
+  cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -n -E {q}{pat}{q} | grep -v -E {q}{comments}{q} | wc -l"
+  to(i64)(std.script.chomp(std.script.capture(cmd)))
 
 # The same line with NO filter. `probe` alone cannot tell "the filter deleted
 # it" from "the pattern never matched it"; every filter check is a PAIR.
-raw(pat: str, line: str): i64
-    cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+raw: i64 = (pat: str, line: str)
+  cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
+  to(i64)(std.script.chomp(std.script.capture(cmd)))
 
-pad(s: str, width: i64): str
-    out = s
-    while out:len() < width
-        out = out .. space
-    out
+pad: str = (s: str, width: i64)
+  out = s
+  while out:len() < width
+    out = out .. space
+  out
 
-row(name: str, sites: i64, mods: i64, rest: i64, note: str): void
-    a = pad(name, 8)
-    b = pad(sites:to(str), 7)
-    c = pad(mods:to(str), 7)
-    d = pad(rest:to(str), 9)
-    print("  {a}{b}{c}{d}  {note}")
+row = (name: str, sites: i64, mods: i64, rest: i64, note: str)
+  a = pad(name, 8)
+  b = pad(sites:to(str), 7)
+  c = pad(mods:to(str), 7)
+  d = pad(rest:to(str), 9)
+  print("  {a}{b}{c}{d}  {note}")
 
 # A detector must see its own example and decline ordinary Duo. Both halves,
 # or the row is either dead or noise.
-sound(pat: str, example: str): bool
-    good: i64 = probe(pat, example)
-    bad: i64 = probe(pat, "  x = f(y) + 1")
-    good == 1 and bad == 0
+sound: bool = (pat: str, example: str)
+  good: i64 = probe(pat, example)
+  bad: i64 = probe(pat, "  x = f(y) + 1")
+  good == 1 and bad == 0
 
 # BLOCKER 1, live. Builds the target form §0a asks for and RUNS it, asserting
 # the VALUE: `(-3.0):abs()` must be 3.0. Returns 1 only if the program compiles
@@ -211,188 +211,188 @@ sound(pat: str, example: str): bool
 #
 # And it runs the binary rather than trusting the build, because `x:abs()`
 # returning the WRONG SIGN would compile perfectly.
-probecompile(root: str, bin: str, work: str): i64
-    src: str = "{work}/probe.id"
-    body: str = "main(): i64\\n    a: f64 = -3.0\\n    r: f64 = a:abs()\\n    if r == 3.0 return 0 end\\n    1\\nend\\n"
-    cmd: str = "cd {work} && printf {q}{body}{q} > {src} && {root}/{bin} compile {src} -o {work}/probe.out >/dev/null 2>&1 && {work}/probe.out >/dev/null 2>&1 && echo 1 || echo 0"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+probecompile: i64 = (root: str, bin: str, work: str)
+  src: str = "{work}/probe.id"
+  body: str = "main(): i64\\n    a: f64 = -3.0\\n    r: f64 = a:abs()\\n    if r == 3.0 return 0 end\\n    1\\nend\\n"
+  cmd: str = "cd {work} && printf {q}{body}{q} > {src} && {root}/{bin} compile {src} -o {work}/probe.out >/dev/null 2>&1 && {work}/probe.out >/dev/null 2>&1 && echo 1 || echo 0"
+  to(i64)(std.script.chomp(std.script.capture(cmd)))
 
 # The positive control for BLOCKER 1: the SAME pipeline, the same binary, the
 # same scratch directory, the same asserted VALUE — carrying the spelling that
 # works today. If this reads 0 the apparatus is broken and the blocker verdict
 # must be WITHHELD rather than reported as confirmed.
-probecontrol(root: str, bin: str, work: str): i64
-    src: str = "{work}/control.id"
-    body: str = "main(): i64\\n    a: f64 = -3.0\\n    r: f64 = a:abs()\\n    if r == 3.0 return 0 end\\n    1\\nend\\n"
-    cmd: str = "cd {work} && printf {q}{body}{q} > {src} && {root}/{bin} compile {src} -o {work}/control.out >/dev/null 2>&1 && {work}/control.out >/dev/null 2>&1 && echo 1 || echo 0"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+probecontrol: i64 = (root: str, bin: str, work: str)
+  src: str = "{work}/control.id"
+  body: str = "main(): i64\\n    a: f64 = -3.0\\n    r: f64 = a:abs()\\n    if r == 3.0 return 0 end\\n    1\\nend\\n"
+  cmd: str = "cd {work} && printf {q}{body}{q} > {src} && {root}/{bin} compile {src} -o {work}/control.out >/dev/null 2>&1 && {work}/control.out >/dev/null 2>&1 && echo 1 || echo 0"
+  to(i64)(std.script.chomp(std.script.capture(cmd)))
 
 # BLOCKER 2, live: does the NORMATIVE grammar know the word `world` at all?
-grammar(root: str, word: str): i64
-    cmd: str = "cd {root} && grep -c -i -E {q}{word}{q} docs/spec/grammar.md 2>/dev/null || echo 0"
-    to(i64)(std.script.chomp(std.script.capture(cmd)))
+grammar: i64 = (root: str, word: str)
+  cmd: str = "cd {root} && grep -c -i -E {q}{word}{q} docs/spec/grammar.md 2>/dev/null || echo 0"
+  to(i64)(std.script.chomp(std.script.capture(cmd)))
 
-main(): i64
-    root = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
-    code: i64 = 0
-    total: i64 = 0
-    if root == ""
-        print("recognition scan: FAIL — not inside a git work tree; std cannot be listed")
-        code = 3
+main: i64 = ()
+  root = std.script.chomp(std.script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+  code: i64 = 0
+  total: i64 = 0
+  if root == ""
+    print("recognition scan: FAIL — not inside a git work tree; std cannot be listed")
+    code = 3
 
-    if code == 0
-        total = to(i64)(std.script.chomp(std.script.capture("cd {root} && git ls-files 'lib/*.id' | wc -l")))
-        print("recognition scan — §0a: no mem / fmt / math")
-        print("  root      {root}")
-        print("  modules   {total} tracked lib/**/*.id")
-        if total == 0
-            print("recognition scan: FAIL — 0 std modules found; the scan did not run")
-            code = 3
+  if code == 0
+    total = to(i64)(std.script.chomp(std.script.capture("cd {root} && git ls-files 'lib/*.id' | wc -l")))
+    print("recognition scan — §0a: no mem / fmt / math")
+    print("  root      {root}")
+    print("  modules   {total} tracked lib/**/*.id")
+    if total == 0
+      print("recognition scan: FAIL — 0 std modules found; the scan did not run")
+      code = 3
 
-    # Control 1: the pipeline itself. Every count rides this exact shell; if
-    # the control reads 0 every row below is a lie rather than a clean result.
-    if code == 0
-        alive: i64 = hits(root, "[a-zA-Z]")
-        if alive == 0
-            print("recognition scan: FAIL — the control pattern matched 0 lines of std; the grep pipeline is broken and every row below would read a confident 0")
-            code = 3
+  # Control 1: the pipeline itself. Every count rides this exact shell; if
+  # the control reads 0 every row below is a lie rather than a clean result.
+  if code == 0
+    alive: i64 = hits(root, "[a-zA-Z]")
+    if alive == 0
+      print("recognition scan: FAIL — the control pattern matched 0 lines of std; the grep pipeline is broken and every row below would read a confident 0")
+      code = 3
 
-    # Control 2: every detector, both halves.
-    if code == 0
-        broken = ""
-        if !sound(purepat, "  y = x:floor()")
-            broken = "pure"
-        if !sound(randpat, "  r = math.random()")
-            broken = "rand"
-        if !sound(subpat, "  f = math.fft.forward(v)")
-            broken = "sub"
-        if !sound(nspat, "  c = math.clamp(x, a, b)")
-            broken = "ns"
-        if broken != ""
-            print("recognition scan: FAIL — class {broken} either missed its own example or matched ordinary Duo; a 0 from it would be a broken detector, not a clean corpus")
-            code = 3
+  # Control 2: every detector, both halves.
+  if code == 0
+    broken = ""
+    if not sound(purepat, "  y = x:floor()")
+      broken = "pure"
+    if not sound(randpat, "  r = math.random()")
+      broken = "rand"
+    if not sound(subpat, "  f = math.fft.forward(v)")
+      broken = "sub"
+    if not sound(nspat, "  c = math.clamp(x, a, b)")
+      broken = "ns"
+    if broken != ""
+      print("recognition scan: FAIL — class {broken} either missed its own example or matched ordinary Duo; a 0 from it would be a broken detector, not a clean corpus")
+      code = 3
 
-    # Control 2b: the bare rows must DECLINE the dotted namespace, or `pure`
-    # and `ns` would move together and neither budget would mean anything.
-    if code == 0
-        if probe(purepat, "  y = x:floor()") != 0
-            print("recognition scan: FAIL — the pure pattern also matches math.; the pure and ns budgets would double-count the same site")
-            code = 3
+  # Control 2b: the bare rows must DECLINE the dotted namespace, or `pure`
+  # and `ns` would move together and neither budget would mean anything.
+  if code == 0
+    if probe(purepat, "  y = x:floor()") != 0
+      print("recognition scan: FAIL — the pure pattern also matches math.; the pure and ns budgets would double-count the same site")
+      code = 3
 
-    # Control 3: the comment filter, paired.
-    if code == 0
-        if raw(purepat, "-- y = x:floor()") != 1
-            print("recognition scan: FAIL — the comment control line is not matched by the pure pattern at all, so what follows would test nothing")
-            code = 3
-    if code == 0
-        if probe(purepat, "-- y = x:floor()") != 0
-            print("recognition scan: FAIL — the comment filter does not delete a commented site; every count would be inflated by prose")
-            code = 3
+  # Control 3: the comment filter, paired.
+  if code == 0
+    if raw(purepat, "-- y = x:floor()") != 1
+      print("recognition scan: FAIL — the comment control line is not matched by the pure pattern at all, so what follows would test nothing")
+      code = 3
+  if code == 0
+    if probe(purepat, "-- y = x:floor()") != 0
+      print("recognition scan: FAIL — the comment filter does not delete a commented site; every count would be inflated by prose")
+      code = 3
 
-    if code == 0
-        pure: i64 = hits(root, purepat)
-        purem: i64 = modules(root, purepat)
-        pureo: i64 = outside(root, purepat)
-        rand: i64 = hits(root, randpat)
-        randm: i64 = modules(root, randpat)
-        rando: i64 = outside(root, randpat)
-        sub: i64 = hits(root, subpat)
-        subm: i64 = modules(root, subpat)
-        subo: i64 = outside(root, subpat)
-        ns: i64 = hits(root, nspat)
-        nsm: i64 = modules(root, nspat)
-        nso: i64 = outside(root, nspat)
+  if code == 0
+    pure: i64 = hits(root, purepat)
+    purem: i64 = modules(root, purepat)
+    pureo: i64 = outside(root, purepat)
+    rand: i64 = hits(root, randpat)
+    randm: i64 = modules(root, randpat)
+    rando: i64 = outside(root, randpat)
+    sub: i64 = hits(root, subpat)
+    subm: i64 = modules(root, subpat)
+    subo: i64 = outside(root, subpat)
+    ns: i64 = hits(root, nspat)
+    nsm: i64 = modules(root, nspat)
+    nso: i64 = outside(root, nspat)
 
-        print("")
-        print("  class   sites  files  outside   repair")
-        row("pure", pure, purem, pureo, "VALUE EDGE — x:abs() — no capability")
-        row("rand", rand, randm, rando, "WORLD — ambient authority; U1's whole rand class")
-        row("ns", ns, nsm, nso, "std.mem / std.fmt / std.math named by the ruling")
-        print("")
-        row("sub", sub, subm, subo, "module refs — REPORTED, NOT RATCHETED")
+    print("")
+    print("  class   sites  files  outside   repair")
+    row("pure", pure, purem, pureo, "VALUE EDGE — x:abs() — no capability")
+    row("rand", rand, randm, rando, "WORLD — ambient authority; U1's whole rand class")
+    row("ns", ns, nsm, nso, "std.mem / std.fmt / std.math named by the ruling")
+    print("")
+    row("sub", sub, subm, subo, "module refs — REPORTED, NOT RATCHETED")
 
-        print("")
-        print("  outside = tracked .id that is NOT lib/std, so the budget is never")
-        print("  read as a whole-repo claim. sites are LINES: a line calling math.floor")
-        print("  twice counts once, the convention capability_scan uses.")
+    print("")
+    print("  outside = tracked .id that is NOT lib/std, so the budget is never")
+    print("  read as a whole-repo claim. sites are LINES: a line calling math.floor")
+    print("  twice counts once, the convention capability_scan uses.")
 
-        # BLOCKER 1, probed live and PAIRED.
-        bin: str = std.script.getenv("DUO_BIN", "zig-out/bin/idol")
-        work: str = std.script.chomp(std.script.capture("mktemp -d 2>/dev/null"))
-        ctl: i64 = probecontrol(root, bin, work)
-        edge: i64 = probecompile(root, bin, work)
-        std.script.capture("rm -rf {work}")
-        print("")
-        print("  BLOCKER 1 — the value-edge surface `x:abs()`, built and RUN")
-        if ctl == 0
-            print("    UNKNOWN — the control spelling math.abs() did not build-and-answer")
-            print("    either, so the apparatus is broken (binary {bin} missing?) and NO")
-            print("    verdict about x:abs() is earned from this run.")
-        if ctl == 1 and edge == 0
-            print("    ABSENT (control builds and answers 3.0; target does not build).")
-            print("    `a:abs()` lowers the receiver AWAY and emits a call to an undeclared")
-            print("    `a__abs()` taking ZERO arguments — a shape that would bind to any")
-            print("    same-named free function and silently drop the subject. The `pure`")
-            print("    row CANNOT reach zero until this exists; converting the sites above")
-            print("    today would not build. NOTE: `duo check` exits 0 on this form — only")
-            print("    codegen rejects it, so `check` must never be the probe.")
-        if ctl == 1 and edge == 1
-            print("    PRESENT — the value-edge surface builds AND answers 3.0. BLOCKER 1")
-            print("    HAS LIFTED and the `pure` row is convertible. Start with the")
-            print("    smallest module and verify each conversion BY VALUE.")
+    # BLOCKER 1, probed live and PAIRED.
+    bin: str = std.script.getenv("DUO_BIN", "zig-out/bin/idol")
+    work: str = std.script.chomp(std.script.capture("mktemp -d 2>/dev/null"))
+    ctl: i64 = probecontrol(root, bin, work)
+    edge: i64 = probecompile(root, bin, work)
+    std.script.capture("rm -rf {work}")
+    print("")
+    print("  BLOCKER 1 — the value-edge surface `x:abs()`, built and RUN")
+    if ctl == 0
+      print("    UNKNOWN — the control spelling math.abs() did not build-and-answer")
+      print("    either, so the apparatus is broken (binary {bin} missing?) and NO")
+      print("    verdict about x:abs() is earned from this run.")
+    if ctl == 1 and edge == 0
+      print("    ABSENT (control builds and answers 3.0; target does not build).")
+      print("    `a:abs()` lowers the receiver AWAY and emits a call to an undeclared")
+      print("    `a__abs()` taking ZERO arguments — a shape that would bind to any")
+      print("    same-named free function and silently drop the subject. The `pure`")
+      print("    row CANNOT reach zero until this exists; converting the sites above")
+      print("    today would not build. NOTE: `duo check` exits 0 on this form — only")
+      print("    codegen rejects it, so `check` must never be the probe.")
+    if ctl == 1 and edge == 1
+      print("    PRESENT — the value-edge surface builds AND answers 3.0. BLOCKER 1")
+      print("    HAS LIFTED and the `pure` row is convertible. Start with the")
+      print("    smallest module and verify each conversion BY VALUE.")
 
-        # BLOCKER 2, probed live and PAIRED: `world` must be absent from the
-        # normative grammar while a control word it certainly contains is not.
-        wg: i64 = grammar(root, "world")
-        cg: i64 = grammar(root, "expression")
-        print("")
-        print("  BLOCKER 2 — worlds, the only legal capability namespace")
-        if cg == 0
-            print("    UNKNOWN — the control word `expression` is also absent from")
-            print("    docs/spec/grammar.md, so the grep is broken, not the grammar.")
-        if cg > 0 and wg == 0
-            print("    ABSENT (control word found {cg}x, `world` found 0x in the NORMATIVE")
-            print("    grammar). There is no construct to move math.random behind. The")
-            print("    `rand` row cannot reach zero, and neither can U1's rand class.")
-        if cg > 0 and wg > 0
-            print("    PRESENT — `world` appears {wg}x in the normative grammar. Re-read it;")
-            print("    BLOCKER 2 may have lifted and the rand row may be convertible.")
+    # BLOCKER 2, probed live and PAIRED: `world` must be absent from the
+    # normative grammar while a control word it certainly contains is not.
+    wg: i64 = grammar(root, "world")
+    cg: i64 = grammar(root, "expression")
+    print("")
+    print("  BLOCKER 2 — worlds, the only legal capability namespace")
+    if cg == 0
+      print("    UNKNOWN — the control word `expression` is also absent from")
+      print("    docs/spec/grammar.md, so the grep is broken, not the grammar.")
+    if cg > 0 and wg == 0
+      print("    ABSENT (control word found {cg}x, `world` found 0x in the NORMATIVE")
+      print("    grammar). There is no construct to move math.random behind. The")
+      print("    `rand` row cannot reach zero, and neither can U1's rand class.")
+    if cg > 0 and wg > 0
+      print("    PRESENT — `world` appears {wg}x in the normative grammar. Re-read it;")
+      print("    BLOCKER 2 may have lifted and the rand row may be convertible.")
 
-        print("")
-        print("  WITNESS. §0a also requires idiom recognition to lower UNDER WITNESS —")
-        print("  `why(realization)` answers. gap[064] records `why` as undeclared. Until")
-        print("  it exists, a recognized lowering has no way to prove itself, which is")
-        print("  the A5 WITNESS objection to converting anything at all right now.")
+    print("")
+    print("  WITNESS. §0a also requires idiom recognition to lower UNDER WITNESS —")
+    print("  `why(realization)` answers. gap[064] records `why` as undeclared. Until")
+    print("  it exists, a recognized lowering has no way to prove itself, which is")
+    print("  the A5 WITNESS objection to converting anything at all right now.")
 
-        if std.script.getenv("RECOGNITION_SHOW", "") != ""
-            pre: str = head(root)
-            anypat = "{purepat}|{randpat}|{subpat}"
-            print("")
-            print("  modules by math. site count:")
-            io.write(std.script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
+    if std.script.getenv("RECOGNITION_SHOW", "") != ""
+      pre: str = head(root)
+      anypat = "{purepat}|{randpat}|{subpat}"
+      print("")
+      print("  modules by math. site count:")
+      io.write(std.script.capture("{pre}{q}{anypat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | cut -d: -f1 | sort | uniq -c | sort -rn | head -15"))
 
-        # THE RATCHET. Measured 2026-08-08 in a detached worktree, so no
-        # session's uncommitted edits are inside the number.
-        purecap: i64 = to(i64)(std.script.getenv("RECOGNITION_PURE_FLOOR", "512"))
-        randcap: i64 = to(i64)(std.script.getenv("RECOGNITION_RAND_FLOOR", "51"))
-        nscap: i64 = to(i64)(std.script.getenv("RECOGNITION_NS_FLOOR", "13"))
-        over: i64 = 0
-        if pure > purecap
-            print("recognition scan: FAIL — pure sites {pure} exceeds the ratchet {purecap}")
-            over += 1
-        if rand > randcap
-            print("recognition scan: FAIL — rand sites {rand} exceeds the ratchet {randcap}")
-            over += 1
-        if ns > nscap
-            print("recognition scan: FAIL — mem/fmt/math sites {ns} exceeds the ratchet {nscap}")
-            over += 1
-        if over > 0
-            print("  Lower the count, or say in the commit message why the budget was wrong.")
-            code = 1
-        if over == 0
-            print("")
-            print("recognition scan: PASS — pure {pure}/{purecap}, rand {rand}/{randcap}, ns {ns}/{nscap}")
-            print("  PASS does not claim the ruling holds. It claims the distance did not grow.")
-            print("  Both repairs are blocked on surfaces that do not exist; gaps/GAP-071.md")
-            print("  holds the distance and the sequencing.")
-    code
+    # THE RATCHET. Measured 2026-08-08 in a detached worktree, so no
+    # session's uncommitted edits are inside the number.
+    purecap: i64 = to(i64)(std.script.getenv("RECOGNITION_PURE_FLOOR", "512"))
+    randcap: i64 = to(i64)(std.script.getenv("RECOGNITION_RAND_FLOOR", "51"))
+    nscap: i64 = to(i64)(std.script.getenv("RECOGNITION_NS_FLOOR", "13"))
+    over: i64 = 0
+    if pure > purecap
+      print("recognition scan: FAIL — pure sites {pure} exceeds the ratchet {purecap}")
+      over = over + 1
+    if rand > randcap
+      print("recognition scan: FAIL — rand sites {rand} exceeds the ratchet {randcap}")
+      over = over + 1
+    if ns > nscap
+      print("recognition scan: FAIL — mem/fmt/math sites {ns} exceeds the ratchet {nscap}")
+      over = over + 1
+    if over > 0
+      print("  Lower the count, or say in the commit message why the budget was wrong.")
+      code = 1
+    if over == 0
+      print("")
+      print("recognition scan: PASS — pure {pure}/{purecap}, rand {rand}/{randcap}, ns {ns}/{nscap}")
+      print("  PASS does not claim the ruling holds. It claims the distance did not grow.")
+      print("  Both repairs are blocked on surfaces that do not exist; gaps/GAP-071.md")
+      print("  holds the distance and the sequencing.")
+  code

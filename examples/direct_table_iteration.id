@@ -17,10 +17,9 @@ assert(xs(1) == 12)
 assert(xs(2) == 14)
 assert(xs(3) == 16)
 
-scores = {
-  ada = 10,
+scores =
+  ada = 10
   lua = 20
-}
 
 seen = 0
 for name, score in scores

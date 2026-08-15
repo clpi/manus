@@ -1,7 +1,7 @@
 main: i64 = ()
-    text = io:read("gate/idiom.id")
-    if text == nil
-        print("nil")
-        return 1
-    print(text:len())
-    0
+  text = io:read("gate/idiom.id")
+  if text == nil
+    print("nil")
+    return 1
+  print(text:len())
+  0

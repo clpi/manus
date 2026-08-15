@@ -19,15 +19,15 @@
 # it is blue and FAINT, because luminance is surprisal and a comment is
 # inferable. Faint is a statement, never an omission. # gap[078]
 spans = {
-    { 1, 1, 10, "comment" },
-    { 2, 1, 1, "place" },
-    { 2, 3, 1, "operator" },
-    { 2, 5, 1, "layout" },
-    { 2, 6, 3, "literal" },
-    { 2, 9, 1, "layout" },
-    { 3, 1, 1, "place" },
-    { 3, 3, 1, "operator" },
-    { 3, 5, 1, "layout" },
-    { 3, 6, 1, "literal" },
-    { 3, 7, 1, "layout" },
+  { 1, 1, 10, "comment" },
+  { 2, 1, 1, "place" },
+  { 2, 3, 1, "operator" },
+  { 2, 5, 1, "layout" },
+  { 2, 6, 3, "literal" },
+  { 2, 9, 1, "layout" },
+  { 3, 1, 1, "place" },
+  { 3, 3, 1, "operator" },
+  { 3, 5, 1, "layout" },
+  { 3, 6, 1, "literal" },
+  { 3, 7, 1, "layout" }
 }

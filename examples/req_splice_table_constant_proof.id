@@ -15,7 +15,7 @@
 # stopped happening for an unrelated reason.
 p = splicetableprobe
 
-main(): i64
+main: i64 = ()
   v: i64 = p.pick(3)
   if v != 42
     print("req splice table constant: got {v}, want 42")

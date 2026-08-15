@@ -4105,7 +4105,7 @@ fn do_compile(
     // table-access realization before the native suitability precheck, graph
     // lift, and native emit each walk the module — one bounded bridge, deleted
     // when the graph owns the `()` table-access application directly.
-    table_apply.normalizeModule(&ps.mod, &ps.sem.type_map);
+    table_apply.normalizeModule(alloc, &ps.mod, &ps.sem.type_map);
 
     var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);
     native_scalar_precheck.src_path = src_path;

@@ -4,11 +4,10 @@ argparse_key: str = (s: str)
   s or "":gsub("^%-+", "")
 
 add_positional = (parser, name: str, help: str, options: any)
-  parser.positionals(parser:len().positionals + 1) = {
-    name = name,
-    help = help or "",
+  parser.positionals(parser:len().positionals + 1) =
+    name = name
+    help = help or ""
     required = options and options.required
-  }
 
 add_flag = (parser, short_or_long: str, long_or_help: str, help: str)
   short_opt = nil
@@ -20,12 +19,11 @@ add_flag = (parser, short_or_long: str, long_or_help: str, help: str)
   else
     long_opt = short_or_long
     desc = long_or_help
-  parser.flags(parser:len().flags + 1) = {
-    key = argparse_key(long_opt or short_opt),
-    short = short_opt,
-    long = long_opt,
+  parser.flags(parser:len().flags + 1) =
+    key = argparse_key(long_opt or short_opt)
+    short = short_opt
+    long = long_opt
     help = desc or ""
-  }
 
 add_option = (parser, short_or_long: str, long_or_help: str, help: str)
   short_opt = nil
@@ -37,17 +35,17 @@ add_option = (parser, short_or_long: str, long_or_help: str, help: str)
   else
     long_opt = short_or_long
     desc = long_or_help
-  parser.options(parser:len().options + 1) = {
-    key = argparse_key(long_opt or short_opt),
-    short = short_opt,
-    long = long_opt,
+  parser.options(parser:len().options + 1) =
+    key = argparse_key(long_opt or short_opt)
+    short = short_opt
+    long = long_opt
     help = desc or ""
-  }
 
 parse_with: any = (parser, args: any)
   if args == nil
     args = {}
-  opts = { rest_args = {} }
+  opts =
+    rest_args = {}
   positional_idx = 1
   i = 1
   stop_options = false
@@ -140,13 +138,12 @@ parse_with: any = (parser, args: any)
   opts
 
 new: any = (name: str, description: str)
-  parser = {
-    name = name,
-    description = description,
-    positionals = {},
-    flags = {},
+  parser =
+    name = name
+    description = description
+    positionals = {}
+    flags = {}
     options = {}
-  }
   parser
 
 parse: any = (args: any)

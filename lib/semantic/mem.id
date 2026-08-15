@@ -1,6 +1,22 @@
 # mem world — lifetime and region relations.
 
-alloc = { world = "mem", possessed = false, callable = true, operation = false }
-free = { world = "mem", possessed = true, callable = true, operation = false }
-retain = { world = "mem", possessed = true, callable = true, operation = false }
-release = { world = "mem", possessed = true, callable = true, operation = false }
+alloc =
+  world = "mem"
+  possessed = false
+  callable = true
+  operation = false
+free =
+  world = "mem"
+  possessed = true
+  callable = true
+  operation = false
+retain =
+  world = "mem"
+  possessed = true
+  callable = true
+  operation = false
+release =
+  world = "mem"
+  possessed = true
+  callable = true
+  operation = false

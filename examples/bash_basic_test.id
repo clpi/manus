@@ -1,18 +1,18 @@
 # Test basic bash-style fun calls
 
 # Define a simple fun
-greet(name: str): str
-    "Hello, " .. name
+greet: str = (name: str)
+  "Hello, " .. name
 
 # Traditional Lua-style call
 print(greet("World"))
 
 # Bash-style call (no parentheses)
-print greet "Duo"
+print(greet("Duo"))
 
 # Multiple arguments
-add(a: i64, b: i64): i64
-    a + b
+add: i64 = (a: i64, b: i64)
+  a + b
 
 # Bash-style call with multiple arguments
-print add 5 3
+print(add, 5, 3)

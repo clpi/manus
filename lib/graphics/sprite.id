@@ -30,12 +30,11 @@ set_scale = (sprite: any, sx: f64, sy: f64)
 set_rotation = (sprite: any, degrees: f64)
   sprite.rotation = degrees
 set_color = (sprite: any, r: f64, g: f64, b: f64, a: f64)
-  sprite.color = {
-    r = r,
-    g = g,
-    b = b,
+  sprite.color =
+    r = r
+    g = g
+    b = b
     a = a or 1
-  }
 set_flip = (sprite: any, flip_x: bool, flip_y: bool)
   sprite.flip_x = flip_x
   sprite.flip_y = flip_y
@@ -47,12 +46,11 @@ sheet_new: any = (texture: any, frame_width: i64, frame_height: i64)
   while y < rows
     x = 0
     while x < cols
-      frames(frames:len() + 1) = {
-        x = x * frame_width,
-        y = y * frame_height,
-        width = frame_width,
+      frames(frames:len() + 1) =
+        x = x * frame_width
+        y = y * frame_height
+        width = frame_width
         height = frame_height
-      }
       x = x + 1
     y = y + 1
   {
@@ -127,19 +125,18 @@ renderer_render: any = (renderer: any)
   render_calls = {}
   for sprite in renderer.sprites
     if sprite.visible
-      render_calls(render_calls:len() + 1) = {
-        texture = sprite.texture,
-        x = sprite.x,
-        y = sprite.y,
-        width = sprite.width * sprite.scale_x,
-        height = sprite.height * sprite.scale_y,
-        rotation = sprite.rotation,
-        color = sprite.color,
-        flip_x = sprite.flip_x,
-        flip_y = sprite.flip_y,
-        pivot_x = sprite.pivot_x,
+      render_calls(render_calls:len() + 1) =
+        texture = sprite.texture
+        x = sprite.x
+        y = sprite.y
+        width = sprite.width * sprite.scale_x
+        height = sprite.height * sprite.scale_y
+        rotation = sprite.rotation
+        color = sprite.color
+        flip_x = sprite.flip_x
+        flip_y = sprite.flip_y
+        pivot_x = sprite.pivot_x
         pivot_y = sprite.pivot_y
-      }
   {
     calls = render_calls,
     count = render_calls:len()

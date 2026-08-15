@@ -2,51 +2,51 @@
 
 rec = record
 
-check = (what: str, got: str, want: str, fail: i64): i64
-    if got == want
-        print("  ok   {what}")
-        fail
-    else
-        print("  FAIL {what}")
-        print("       got  {got}")
-        print("       want {want}")
-        fail + 1
+check: i64 = (what: str, got: str, want: str, fail: i64)
+  if got == want
+    print("  ok   {what}")
+    fail
+  else
+    print("  FAIL {what}")
+    print("       got  {got}")
+    print("       want {want}")
+    fail + 1
 
 main: i64 = ()
-    fail: i64 = 0
+  fail: i64 = 0
 
-    print("")
-    print("  the idol-native record owner (SH-10), by value")
-    print("")
+  print("")
+  print("  the idol-native record owner (SH-10), by value")
+  print("")
 
-    if rec.typename("point") == "point"
-        print("CONTROL FAILED: typename() is the identity — it names nothing")
-        return 3
-    if rec.emits("")
-        print("CONTROL FAILED: an unnamed descriptor must not emit")
-        return 3
-    if rec.field("x", "1") == "1"
-        print("CONTROL FAILED: field() dropped its designator")
-        return 3
+  if rec.typename("point") == "point"
+    print("CONTROL FAILED: typename() is the identity — it names nothing")
+    return 3
+  if rec.emits("")
+    print("CONTROL FAILED: an unnamed descriptor must not emit")
+    return 3
+  if rec.field("x", "1") == "1"
+    print("CONTROL FAILED: field() dropped its designator")
+    return 3
 
-    fail = check("typename", rec.typename("point"), "duo_point", fail)
-    fail = check("field designator", rec.field("x", "3.0"), ".x = 3.0", fail)
+  fail = check("typename", rec.typename("point"), "duo_point", fail)
+  fail = check("field designator", rec.field("x", "3.0"), ".x = 3.0", fail)
 
-    named: str = rec.applynamed("point", ".x = 3.0, .y = 4.0")
-    fail = check("apply, named pack", named, "((duo_point){.x = 3.0, .y = 4.0})", fail)
+  named: str = rec.applynamed("point", ".x = 3.0, .y = 4.0")
+  fail = check("apply, named pack", named, "((duo_point){.x = 3.0, .y = 4.0})", fail)
 
-    pos: str = rec.applypositional("point", "3.0, 4.0")
-    fail = check("apply, positional pack", pos, "((duo_point){3.0, 4.0})", fail)
+  pos: str = rec.applypositional("point", "3.0, 4.0")
+  fail = check("apply, positional pack", pos, "((duo_point){3.0, 4.0})", fail)
 
-    if named:find("lua_val", 1, true) > 0
-        print("  FAIL apply emitted a boxed value — law.pack violated")
-        fail += 1
-    else
-        print("  ok   apply allocates nothing (law.pack)")
+  if named:find("lua_val", 1, true) > 0
+    print("  FAIL apply emitted a boxed value — law.pack violated")
+    fail = fail + 1
+  else
+    print("  ok   apply allocates nothing (law.pack)")
 
-    print("")
-    if fail > 0
-        print("record proof: FAIL — {fail} row(s) disagreed")
-        return 1
-    print("record proof: PASS — 5 rows, the descriptor edge of apply emits C")
-    0
+  print("")
+  if fail > 0
+    print("record proof: FAIL — {fail} row(s) disagreed")
+    return 1
+  print("record proof: PASS — 5 rows, the descriptor edge of apply emits C")
+  0

@@ -12,13 +12,15 @@ static inline int64_t pipeline_fused_sum(int64_t a, int64_t b, int64_t c) {
 ]])
 
 @comp.rewrite("mul_two", "($1 * 2)", "$1 << 1")
+
+
 @comp.rewrite("add_zero", "($1 + 0)", "$1")
 
-scaled(x: i64): i64
-    x * 2
+scaled: i64 = (x: i64)
+  x * 2
 
-total(): i64
-    pipeline_fused_sum(10, 20, 30) + scaled(5) + 0
+total: i64 = ()
+  pipeline_fused_sum(10, 20, 30) + scaled(5) + 0
 
 print("=== @comp.pipeline / @rewrite showcase ===")
 print("result = " .. to(str)(total()))

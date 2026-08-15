@@ -12,56 +12,56 @@
 
 # git ls-files is the authority on what is TRACKED. A file existing on disk is
 # not a violation — only a tracked one ships.
-_tracked(pattern: str): bool
-    out = script.capture("git ls-files " .. pattern .. " 2>/dev/null | head -1")
-    script.chomp(out) != ""
+_tracked: bool = (pattern: str)
+  out = script.capture("git ls-files " .. pattern .. " 2>/dev/null | head -1")
+  script.chomp(out) != ""
 
-_report(bad: bool, msg: str): bool
-    if bad
-        io:write("repo_hygiene: FAIL — " .. msg .. "\n")
-    bad
+_report: bool = (bad: bool, msg: str)
+  if bad
+    io:write("repo_hygiene: FAIL — " .. msg .. "\n")
+  bad
 
 main: i64 = ()
-    fails = 0
+  fails = 0
 
-    # Root file literally named "-" (1 MB accident from the audit).
-    if _report(script.fs_exists("-"), "root file '-' must be removed")
-        fails += 1
+  # Root file literally named "-" (1 MB accident from the audit).
+  if _report(script.fs_exists("-"), "root file '-' must be removed")
+    fails = fails + 1
 
-    # Tracked benchmark scratch: should not be in a release tree.
-    for _i, f in {".all_bench_output.log", ".run_all_bench_cmds.sh"}
-        if _report(_tracked(f), "tracked scratch file " .. f .. " (git rm or archive)")
-            fails += 1
+  # Tracked benchmark scratch: should not be in a release tree.
+  for _i, f in { ".all_bench_output.log", ".run_all_bench_cmds.sh" }
+    if _report(_tracked(f), "tracked scratch file " .. f .. " (git rm or archive)")
+      fails = fails + 1
 
-    # Root probe binaries from agent sessions. Untracked ones count too: these
-    # are litter on disk, not just in the index.
-    probes = script.chomp(script.capture("ls _*.out 2>/dev/null | head -1"))
-    if _report(probes != "", "root _*.out probe binaries present (delete or gitignore)")
-        fails += 1
+  # Root probe binaries from agent sessions. Untracked ones count too: these
+  # are litter on disk, not just in the index.
+  probes = script.chomp(script.capture("ls _*.out 2>/dev/null | head -1"))
+  if _report(probes != "", "root _*.out probe binaries present (delete or gitignore)")
+    fails = fails + 1
 
-    rootforeign = script.chomp(script.capture("find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort | head -1"))
-    if _report(rootforeign != "", "root foreign scratch script {rootforeign} present (delete or move into idol)")
-        fails += 1
+  rootforeign = script.chomp(script.capture("find . -maxdepth 1 -type f \\( -name '*.py' -o -name '*.sh' \\) -print | sort | head -1"))
+  if _report(rootforeign != "", "root foreign scratch script {rootforeign} present (delete or move into idol)")
+    fails = fails + 1
 
-    # Tracked *.out must never ship; local gitignored copies are fine.
-    if _report(_tracked("'*.out'"), "tracked *.out files in repository (git rm)")
-        fails += 1
+  # Tracked *.out must never ship; local gitignored copies are fine.
+  if _report(_tracked("'*.out'"), "tracked *.out files in repository (git rm)")
+    fails = fails + 1
 
-    # Tracked benchmark / reference binaries.
-    for _i, f in {"benchmark_c", "benchmark_c_fastmath", "benchmark_c_zigcc", "default.profraw"}
-        if _report(_tracked(f), "tracked build artifact " .. f .. " (git rm)")
-            fails += 1
+  # Tracked benchmark / reference binaries.
+  for _i, f in { "benchmark_c", "benchmark_c_fastmath", "benchmark_c_zigcc", "default.profraw" }
+    if _report(_tracked(f), "tracked build artifact " .. f .. " (git rm)")
+      fails = fails + 1
 
-    # The local Duo cache must not be tracked.
-    if _report(_tracked(".id/"), "tracked .id/ cache directory (git rm -r --cached .id/)")
-        fails += 1
+  # The local Duo cache must not be tracked.
+  if _report(_tracked(".id/"), "tracked .id/ cache directory (git rm -r --cached .id/)")
+    fails = fails + 1
 
-    # Agent-local settings must not be tracked.
-    for _i, d in {".poolside", ".serena", ".antigravitycli", ".kiro", ".junie"}
-        if _report(_tracked(d), "tracked agent-local directory " .. d .. "/")
-            fails += 1
+  # Agent-local settings must not be tracked.
+  for _i, d in { ".poolside", ".serena", ".antigravitycli", ".kiro", ".junie" }
+    if _report(_tracked(d), "tracked agent-local directory " .. d .. "/")
+      fails = fails + 1
 
-    if fails != 0
-        return 1
-    print("repo_hygiene: PASS")
-    0
+  if fails != 0
+    return 1
+  print("repo_hygiene: PASS")
+  0

@@ -68,5 +68,5 @@ OP_i64_add = 124
 OP_f32_add = 146
 OP_f64_add = 160
 
-canonical_owner(): str
-    CANONICAL_OWNER
+canonical_owner: str = ()
+  CANONICAL_OWNER

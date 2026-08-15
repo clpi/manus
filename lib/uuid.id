@@ -3,42 +3,41 @@
 
 crypto_rand = rand
 
-v4(): str
-    # UUIDv4 using cryptographic random bytes
-    bytes = crypto_rand.bytes(16)
-    
-    # Format as UUID string: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-    # Version 4 (bits 12-15 of time_hi_and_version = 0100)
-    # Variant 1 (bits 6-7 of clock_seq_hi_and_reserved = 10)
-    hex: str = (b: i64)
-        "%02x":format(b)
-    
-    result = ""
-    # Bytes 0-3 (time_low)
-    result = result .. hex(bytes:byte(1))
-    result = result .. hex(bytes:byte(2))
-    result = result .. hex(bytes:byte(3))
-    result = result .. hex(bytes:byte(4))
-    result = result .. "-"
-    # Bytes 4-5 (time_mid)
-    result = result .. hex(bytes:byte(5))
-    result = result .. hex(bytes:byte(6))
-    result = result .. "-"
-    # Bytes 6-7 (time_hi_and_version) - set version to 4
-    b6 = (bytes:byte(7) & 0x0F) | 0x40
-    result = result .. hex(b6)
-    result = result .. hex(bytes:byte(8))
-    result = result .. "-"
-    # Bytes 8-9 (clock_seq_hi_and_reserved) - set variant to 1
-    b8 = (bytes:byte(9) & 0x3F) | 0x80
-    result = result .. hex(b8)
-    result = result .. hex(bytes:byte(10))
-    result = result .. "-"
-    # Bytes 10-15 (clock_seq_low + node)
-    i = 11
-    while i <= 16
-        result = result .. hex(bytes:byte(i))
-        i += 1
-    
-    result
+v4: str = ()
+  # UUIDv4 using cryptographic random bytes
+  bytes = crypto_rand.bytes(16)
 
+  # Format as UUID string: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+  # Version 4 (bits 12-15 of time_hi_and_version = 0100)
+  # Variant 1 (bits 6-7 of clock_seq_hi_and_reserved = 10)
+  hex: str = (b: i64)
+    "%02x":format(b)
+
+  result = ""
+  # Bytes 0-3 (time_low)
+  result = result .. hex(bytes:byte(1))
+  result = result .. hex(bytes:byte(2))
+  result = result .. hex(bytes:byte(3))
+  result = result .. hex(bytes:byte(4))
+  result = result .. "-"
+  # Bytes 4-5 (time_mid)
+  result = result .. hex(bytes:byte(5))
+  result = result .. hex(bytes:byte(6))
+  result = result .. "-"
+  # Bytes 6-7 (time_hi_and_version) - set version to 4
+  b6 = bytes:byte(7) & 15 | 64
+  result = result .. hex(b6)
+  result = result .. hex(bytes:byte(8))
+  result = result .. "-"
+  # Bytes 8-9 (clock_seq_hi_and_reserved) - set variant to 1
+  b8 = bytes:byte(9) & 63 | 128
+  result = result .. hex(b8)
+  result = result .. hex(bytes:byte(10))
+  result = result .. "-"
+  # Bytes 10-15 (clock_seq_low + node)
+  i = 11
+  while i <= 16
+    result = result .. hex(bytes:byte(i))
+    i = i + 1
+
+  result

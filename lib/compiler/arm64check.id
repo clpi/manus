@@ -44,117 +44,115 @@ global _count: i64 = 0
 # eight lowercase hex digits, most significant first. Comparing in the
 # assembler's own format means no reformatting step can make a mismatch cancel.
 _assemble: str = (mnemonic: str)
-    fh = io.open(_asmpath, "w")
-    if !fh
-        return ""
-    fh:write(".text\n.global _start\n_start:\n    " .. mnemonic .. "\n")
-    fh:close()
-    cc = script.getenv("DUO_ARM64_CC", "xcrun clang")
-    if script.run(cc .. " -c -o " .. _objpath .. " " .. _asmpath .. " 2>/dev/null") != 0
-        os.remove(_asmpath)
-        return ""
-    out = script.capture("xcrun otool -t " .. _objpath
-        .. " 2>/dev/null | tail -1 | awk '{print $2}'")
+  fh = io.open(_asmpath, "w")
+  if not fh
+    return ""
+  fh:write(".text\n.global _start\n_start:\n    " .. mnemonic .. "\n")
+  fh:close()
+  cc = script.getenv("DUO_ARM64_CC", "xcrun clang")
+  if script.run(cc .. " -c -o " .. _objpath .. " " .. _asmpath .. " 2>/dev/null") != 0
     os.remove(_asmpath)
-    os.remove(_objpath)
-    n: i64 = out:len()
-    while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
-        n -= 1
-    out:sub(1, n)
+    return ""
+  out = script.capture("xcrun otool -t " .. _objpath .. " 2>/dev/null | tail -1 | awk '{print $2}'")
+  os.remove(_asmpath)
+  os.remove(_objpath)
+  n: i64 = out:len()
+  while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
+    n = n - 1
+  out:sub(1, n)
 
 # 1 when the encoder and the assembler disagree, 0 when they agree. An
 # assembler that refuses the mnemonic counts as a disagreement: a case that
 # quietly stops being checked is how a suite reports green over nothing.
 _ck: i64 = (mnemonic: str, word: i64)
-    want = _assemble(mnemonic)
-    _count += 1
-    if want == ""
-        print("arm64check: REFUSED [" .. mnemonic .. "]")
-        return 1
-    got = A.word_to_hex(word)
-    if got != want
-        print("arm64check: MISMATCH [" .. mnemonic .. "] assembler " .. want
-            .. ", encoder " .. got)
-        return 1
-    0
+  want = _assemble(mnemonic)
+  _count = _count + 1
+  if want == ""
+    print("arm64check: REFUSED [" .. mnemonic .. "]")
+    return 1
+  got = A.word_to_hex(word)
+  if got != want
+    print("arm64check: MISMATCH [" .. mnemonic .. "] assembler " .. want .. ", encoder " .. got)
+    return 1
+  0
 
 # The register operands deliberately differ per case. A proof that only ever
 # encodes x0/x1/x2 passes just as happily when the register fields are dropped
 # on the floor, so every field of every form is given a value that would show
 # up somewhere visible if it landed in the wrong place.
 check: i64 = ()
-    _count = 0
-    bad: i64 = 0
+  _count = 0
+  bad: i64 = 0
 
-    if _assemble("ret") == ""
-        print("arm64check: SKIP — no working assembler")
-        return 90
+  if _assemble("ret") == ""
+    print("arm64check: SKIP — no working assembler")
+    return 90
 
-    # the original register-register set, still checked
-    bad += _ck("add x0, x1, x2", A.encode_add_reg(0, 1, 2))
-    bad += _ck("sub x28, x0, x30", A.encode_sub_reg(28, 0, 30))
-    bad += _ck("mul x5, x9, x13", A.encode_mul_reg(5, 9, 13))
-    bad += _ck("and x0, x1, x2", A.encode_and_reg(0, 1, 2))
-    bad += _ck("orr x0, x1, x2", A.encode_orr_reg(0, 1, 2))
-    bad += _ck("eor x0, x1, x2", A.encode_eor_reg(0, 1, 2))
-    bad += _ck("mov x0, x2", A.encode_mov_reg(0, 2))
-    bad += _ck("movz x4, #4660", A.encode_movz(4, 0x1234))
-    bad += _ck("ret", A.encode_ret())
+  # the original register-register set, still checked
+  bad = bad + _ck("add x0, x1, x2", A.encode_add_reg(0, 1, 2))
+  bad = bad + _ck("sub x28, x0, x30", A.encode_sub_reg(28, 0, 30))
+  bad = bad + _ck("mul x5, x9, x13", A.encode_mul_reg(5, 9, 13))
+  bad = bad + _ck("and x0, x1, x2", A.encode_and_reg(0, 1, 2))
+  bad = bad + _ck("orr x0, x1, x2", A.encode_orr_reg(0, 1, 2))
+  bad = bad + _ck("eor x0, x1, x2", A.encode_eor_reg(0, 1, 2))
+  bad = bad + _ck("mov x0, x2", A.encode_mov_reg(0, 2))
+  bad = bad + _ck("movz x4, #4660", A.encode_movz(4, 4660))
+  bad = bad + _ck("ret", A.encode_ret())
 
-    # immediates
-    bad += _ck("movz x3, #4660, lsl #16", A.encode_movz_shift(3, 0x1234, 1))
-    bad += _ck("movz x0, #65535", A.encode_movz_shift(0, 0xFFFF, 0))
-    bad += _ck("movk x7, #291, lsl #32", A.encode_movk(7, 0x123, 2))
-    bad += _ck("movn x2, #7, lsl #48", A.encode_movn(2, 7, 3))
-    bad += _ck("add x1, x2, #100", A.encode_add_imm(1, 2, 100))
-    bad += _ck("sub x9, x10, #4095", A.encode_sub_imm(9, 10, 4095))
+  # immediates
+  bad = bad + _ck("movz x3, #4660, lsl #16", A.encode_movz_shift(3, 4660, 1))
+  bad = bad + _ck("movz x0, #65535", A.encode_movz_shift(0, 65535, 0))
+  bad = bad + _ck("movk x7, #291, lsl #32", A.encode_movk(7, 291, 2))
+  bad = bad + _ck("movn x2, #7, lsl #48", A.encode_movn(2, 7, 3))
+  bad = bad + _ck("add x1, x2, #100", A.encode_add_imm(1, 2, 100))
+  bad = bad + _ck("sub x9, x10, #4095", A.encode_sub_imm(9, 10, 4095))
 
-    # loads and stores
-    bad += _ck("ldr x1, [x2, #24]", A.encode_ldr_imm(1, 2, 24))
-    bad += _ck("str x5, [x19, #4088]", A.encode_str_imm(5, 19, 4088))
-    bad += _ck("ldr x3, [x19, x20, lsl #3]", A.encode_ldr_reg(3, 19, 20))
-    bad += _ck("str x8, [x21, x22, lsl #3]", A.encode_str_reg(8, 21, 22))
-    bad += _ck("ldrb w4, [x5, #17]", A.encode_ldrb_imm(4, 5, 17))
-    bad += _ck("strb w6, [x7, #4095]", A.encode_strb_imm(6, 7, 4095))
-    bad += _ck("ldrb w9, [x10, x11]", A.encode_ldrb_reg(9, 10, 11))
+  # loads and stores
+  bad = bad + _ck("ldr x1, [x2, #24]", A.encode_ldr_imm(1, 2, 24))
+  bad = bad + _ck("str x5, [x19, #4088]", A.encode_str_imm(5, 19, 4088))
+  bad = bad + _ck("ldr x3, [x19, x20, lsl #3]", A.encode_ldr_reg(3, 19, 20))
+  bad = bad + _ck("str x8, [x21, x22, lsl #3]", A.encode_str_reg(8, 21, 22))
+  bad = bad + _ck("ldrb w4, [x5, #17]", A.encode_ldrb_imm(4, 5, 17))
+  bad = bad + _ck("strb w6, [x7, #4095]", A.encode_strb_imm(6, 7, 4095))
+  bad = bad + _ck("ldrb w9, [x10, x11]", A.encode_ldrb_reg(9, 10, 11))
 
-    # frame: the signed imm7 counts 8-byte units, so -16 must land on 0x7E
-    bad += _ck("stp x19, x20, [sp, #-16]!", A.encode_stp_pre(19, 20, 31, -16))
-    bad += _ck("ldp x21, x22, [sp], #16", A.encode_ldp_post(21, 22, 31, 16))
+  # frame: the signed imm7 counts 8-byte units, so -16 must land on 0x7E
+  bad = bad + _ck("stp x19, x20, [sp, #-16]!", A.encode_stp_pre(19, 20, 31, -16))
+  bad = bad + _ck("ldp x21, x22, [sp], #16", A.encode_ldp_post(21, 22, 31, 16))
 
-    # compare and select, each condition code separately
-    bad += _ck("cmp x3, x4", A.encode_cmp_reg(3, 4))
-    bad += _ck("cmp x11, #42", A.encode_cmp_imm(11, 42))
-    bad += _ck("cset x0, eq", A.encode_cset(0, 0))
-    bad += _ck("cset x1, ne", A.encode_cset(1, 1))
-    bad += _ck("cset x2, lt", A.encode_cset(2, 11))
-    bad += _ck("cset x3, gt", A.encode_cset(3, 12))
-    bad += _ck("csel x5, x6, x7, ne", A.encode_csel(5, 6, 7, 1))
+  # compare and select, each condition code separately
+  bad = bad + _ck("cmp x3, x4", A.encode_cmp_reg(3, 4))
+  bad = bad + _ck("cmp x11, #42", A.encode_cmp_imm(11, 42))
+  bad = bad + _ck("cset x0, eq", A.encode_cset(0, 0))
+  bad = bad + _ck("cset x1, ne", A.encode_cset(1, 1))
+  bad = bad + _ck("cset x2, lt", A.encode_cset(2, 11))
+  bad = bad + _ck("cset x3, gt", A.encode_cset(3, 12))
+  bad = bad + _ck("csel x5, x6, x7, ne", A.encode_csel(5, 6, 7, 1))
 
-    # branches; offsets are in instructions
-    bad += _ck("b #16", A.encode_b(4))
-    bad += _ck("bl #32", A.encode_bl(8))
-    bad += _ck("blr x8", A.encode_blr(8))
-    bad += _ck("b.eq #8", A.encode_bcond(0, 2))
-    bad += _ck("cbz x9, #12", A.encode_cbz(9, 3))
-    bad += _ck("cbnz x10, #20", A.encode_cbnz(10, 5))
+  # branches; offsets are in instructions
+  bad = bad + _ck("b #16", A.encode_b(4))
+  bad = bad + _ck("bl #32", A.encode_bl(8))
+  bad = bad + _ck("blr x8", A.encode_blr(8))
+  bad = bad + _ck("b.eq #8", A.encode_bcond(0, 2))
+  bad = bad + _ck("cbz x9, #12", A.encode_cbz(9, 3))
+  bad = bad + _ck("cbnz x10, #20", A.encode_cbnz(10, 5))
 
-    # remaining data processing
-    bad += _ck("sdiv x1, x2, x3", A.encode_sdiv(1, 2, 3))
-    bad += _ck("udiv x4, x5, x6", A.encode_udiv(4, 5, 6))
-    bad += _ck("msub x7, x8, x9, x10", A.encode_msub(7, 8, 9, 10))
-    bad += _ck("madd x11, x12, x13, x14", A.encode_madd(11, 12, 13, 14))
-    bad += _ck("lslv x1, x2, x3", A.encode_lslv(1, 2, 3))
-    bad += _ck("lsrv x4, x5, x6", A.encode_lsrv(4, 5, 6))
-    bad += _ck("asrv x7, x8, x9", A.encode_asrv(7, 8, 9))
-    bad += _ck("rorv x10, x11, x12", A.encode_rorv(10, 11, 12))
-    bad += _ck("neg x13, x14", A.encode_neg(13, 14))
-    bad += _ck("sxtw x15, w16", A.encode_sxtw(15, 16))
-    bad += _ck("mov w17, w18", A.encode_uxtw(17, 18))
-    bad += _ck("sxtb x19, w20", A.encode_sxtb(19, 20))
-    bad += _ck("sxth x21, w22", A.encode_sxth(21, 22))
+  # remaining data processing
+  bad = bad + _ck("sdiv x1, x2, x3", A.encode_sdiv(1, 2, 3))
+  bad = bad + _ck("udiv x4, x5, x6", A.encode_udiv(4, 5, 6))
+  bad = bad + _ck("msub x7, x8, x9, x10", A.encode_msub(7, 8, 9, 10))
+  bad = bad + _ck("madd x11, x12, x13, x14", A.encode_madd(11, 12, 13, 14))
+  bad = bad + _ck("lslv x1, x2, x3", A.encode_lslv(1, 2, 3))
+  bad = bad + _ck("lsrv x4, x5, x6", A.encode_lsrv(4, 5, 6))
+  bad = bad + _ck("asrv x7, x8, x9", A.encode_asrv(7, 8, 9))
+  bad = bad + _ck("rorv x10, x11, x12", A.encode_rorv(10, 11, 12))
+  bad = bad + _ck("neg x13, x14", A.encode_neg(13, 14))
+  bad = bad + _ck("sxtw x15, w16", A.encode_sxtw(15, 16))
+  bad = bad + _ck("mov w17, w18", A.encode_uxtw(17, 18))
+  bad = bad + _ck("sxtb x19, w20", A.encode_sxtb(19, 20))
+  bad = bad + _ck("sxth x21, w22", A.encode_sxth(21, 22))
 
-    bad
+  bad
 
 # Root: run the ARM64 encoder/assembler differential.
 check()

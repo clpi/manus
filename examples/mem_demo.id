@@ -14,17 +14,19 @@ arena_alloc = (self, bytes: i64)
   if self._offset + bytes > self._capacity
     self._bufs(self:len()._bufs + 1) = ".":rep(bytes)
     self._offset = 0
-  ptr = { addr = self._total + self._offset, size = bytes }
+  ptr =
+    addr = self._total + self._offset
+    size = bytes
   self._offset = self._offset + bytes
   ptr
 
-arena_used: i64 = (self)
-  self._total + self._offset
+arena_used: i64 = self
+self._total + self._offset
 
-arena_free_all = (self)
-  self._bufs = {}
-  self._offset = 0
-  self._total = 0
+arena_free_all = self
+self._bufs = {}
+self._offset = 0
+self._total = 0
 
 # Test arena
 arena = arena_new(4096)

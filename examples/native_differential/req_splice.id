@@ -4,5 +4,5 @@
 # it. 42 + 1 = 43.
 P = nativespliceprobe
 
-main(): i64
-    P.answer() + P.bump(0)
+main: i64 = ()
+  P.answer() + P.bump(0)

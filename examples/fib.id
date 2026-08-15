@@ -2,8 +2,9 @@
 # Every parameter and return type is annotated, so duo generates
 # a pure C fun with zero dynamic dispatch overhead.
 
-fib(n: i64): i64
-    if n <= 1 return n
-    fib(n - 1) + fib(n - 2)
+fib: i64 = (n: i64)
+  if n <= 1
+    return n
+  fib(n - 1) + fib(n - 2)
 
 print(fib(40))

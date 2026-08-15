@@ -2,6 +2,5 @@
 
 crypto_sha = sha
 
-sha1(s: str): str
-    crypto_sha.sha1(s)
-
+sha1: str = (s: str)
+  crypto_sha.sha1(s)

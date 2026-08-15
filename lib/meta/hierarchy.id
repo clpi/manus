@@ -23,29 +23,28 @@
 #   @meta.permute           O(n!) ordering enumeration
 #   @comp.agent.*           agent discoverability hooks (catalog, ladder, hooks, dedupe)
 
-scaling_ladder(): str
-    @comp.ladder()
+scaling_ladder: str = ()
+  @comp.ladder()
 
-agent_catalog(): str
-    @comp.agent.catalog()
+agent_catalog: str = ()
+  @comp.agent.catalog()
 
-agent_hooks(): str
-    @comp.agent.hooks()
+agent_hooks: str = ()
+  @comp.agent.hooks()
 
-agent_dedupe(): str
-    @comp.agent.dedupe()
+agent_dedupe: str = ()
+  @comp.agent.dedupe()
 
-agent_gaps(): str
-    @comp.agent.gaps()
+agent_gaps: str = ()
+  @comp.agent.gaps()
 
-catalog_categories(): str
-    "combinators, define, emit, introspection, transform, compile, all"
+catalog_categories: str = ()
+  "combinators, define, emit, introspection, transform, compile, all"
 
-M = {
-    scaling_ladder = scaling_ladder,
-    catalog_categories = catalog_categories,
-    agent_catalog = agent_catalog,
-    agent_hooks = agent_hooks,
-    agent_dedupe = agent_dedupe,
-    agent_gaps = agent_gaps,
-}
+M =
+  scaling_ladder = scaling_ladder
+  catalog_categories = catalog_categories
+  agent_catalog = agent_catalog
+  agent_hooks = agent_hooks
+  agent_dedupe = agent_dedupe
+  agent_gaps = agent_gaps

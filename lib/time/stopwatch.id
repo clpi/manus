@@ -59,13 +59,12 @@ profiler_new: any = ()
   }
 profiler_start = (profiler: any, name: str)
   if profiler.sections(name) == nil
-    profiler.sections(name) = {
-      total = 0,
-      count = 0,
-      min = 1000000000000000000000000000000.0,
-      max = -1000000000000000000000000000000.0,
+    profiler.sections(name) =
+      total = 0
+      count = 0
+      min = 1000000000000000000000000000000.0
+      max = -1000000000000000000000000000000.0
       start_time = nil
-    }
   profiler.sections(name).start_time = os.clock()
 profiler_stop = (profiler: any, name: str)
   section = profiler.sections(name)

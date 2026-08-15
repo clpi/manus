@@ -2,40 +2,40 @@
 # A non-cryptographic hash function suitable for use in hash tables.
 # Uses a seed-based FNV-like approach to resist hash-collision attacks.
 
-seed(): i64
-    bytes = std.crypto.rand.bytes(8)
-    s = 0
-    i = 0
-    while i < 8
-        s = (s << 8) | bytes:byte(i + 1)
-        i += 1
-    s
+seed: i64 = ()
+  bytes = std.crypto.rand.bytes(8)
+  s = 0
+  i = 0
+  while i < 8
+    s = s << 8 | bytes:byte(i + 1)
+    i = i + 1
+  s
 
-new(): any
-    {seed = seed(), hash = 0}
+new: any = ()
+  { seed = seed(), hash = 0 }
 
-from(seed: i64): any
-    {seed = seed, hash = 0}
+from: any = (seed: i64)
+  { seed = seed, hash = 0 }
 
-write(h: any, data: str): void
-    h.hash = h.seed
-    for i = 1, data:len()
-        h.hash = (h.hash * 31 + data:byte(i))
+write = (h: any, data: str)
+  h.hash = h.seed
+  for i = 1, data:len()
+    h.hash = h.hash * 31 + data:byte(i)
 
-put(h: any, b: i64): void
-    h.hash = (h.hash * 31 + b)
+put = (h: any, b: i64)
+  h.hash = h.hash * 31 + b
 
-sum(h: any): i64
-    h.hash
+sum: i64 = (h: any)
+  h.hash
 
-hash(seed: i64, s: str): i64
-    h = seed
-    for i = 1, s:len()
-        h = (h * 31 + s:byte(i))
-    h
+hash: i64 = (seed: i64, s: str)
+  h = seed
+  for i = 1, s:len()
+    h = h * 31 + s:byte(i)
+  h
 
-fold(seed: i64, data: str, off: i64, len: i64): i64
-    h = seed
-    for i = off, off + len - 1
-        h = (h * 31 + data:byte(i))
-    h
+fold: i64 = (seed: i64, data: str, off: i64, len: i64)
+  h = seed
+  for i = off, off + len - 1
+    h = h * 31 + data:byte(i)
+  h

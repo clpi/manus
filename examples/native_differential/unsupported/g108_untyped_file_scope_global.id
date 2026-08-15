@@ -35,13 +35,13 @@
 
 total = 5
 
-show(): i64
-    total
+show: i64 = ()
+  total
 
-main(): i64
-    total = 8
-    a: i64 = total
-    b: i64 = show()
-    print(a)
-    print(b)
-    0
+main: i64 = ()
+  total = 8
+  a: i64 = total
+  b: i64 = show()
+  print(a)
+  print(b)
+  0

@@ -18,14 +18,14 @@
 # "neither context => diagnostic" and G-TOTAL's "two candidates is a
 # mixed-space DIAGNOSTIC, never a guess" are the same instruction. -- gap[078]
 spans = {
-    { 1, 1, 7, "comment" },
-    { 2, 1, 1, "place" },
-    { 2, 3, 1, "operator" },
-    { 2, 5, 1, "place" },
-    { 2, 6, 4, "walk" },
-    { 3, 1, 1, "place" },
-    { 3, 3, 1, "operator" },
-    { 3, 5, 1, "place" },
-    { 3, 7, 2, "operator" },
-    { 3, 10, 4, "case" },
+  { 1, 1, 7, "comment" },
+  { 2, 1, 1, "place" },
+  { 2, 3, 1, "operator" },
+  { 2, 5, 1, "place" },
+  { 2, 6, 4, "walk" },
+  { 3, 1, 1, "place" },
+  { 3, 3, 1, "operator" },
+  { 3, 5, 1, "place" },
+  { 3, 7, 2, "operator" },
+  { 3, 10, 4, "case" }
 }

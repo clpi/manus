@@ -1,11 +1,47 @@
 # fs world — path possesses open/read/exists/copy/remove/mkdir relations.
 
-open = { world = "fs", possessed = true, callable = true, operation = false }
-read = { world = "fs", possessed = true, callable = true, operation = false }
-exists = { world = "fs", possessed = true, callable = true, operation = false }
-list = { world = "fs", possessed = true, callable = true, operation = false }
-stat = { world = "fs", possessed = true, callable = true, operation = false }
-remove = { world = "fs", possessed = true, callable = true, operation = false }
-mkdir = { world = "fs", possessed = true, callable = true, operation = false }
-copy = { world = "fs", possessed = true, callable = true, operation = false }
-mkdirall = { world = "fs", possessed = true, callable = true, operation = false }
+open =
+  world = "fs"
+  possessed = true
+  callable = true
+  operation = false
+read =
+  world = "fs"
+  possessed = true
+  callable = true
+  operation = false
+exists =
+  world = "fs"
+  possessed = true
+  callable = true
+  operation = false
+list =
+  world = "fs"
+  possessed = true
+  callable = true
+  operation = false
+stat =
+  world = "fs"
+  possessed = true
+  callable = true
+  operation = false
+remove =
+  world = "fs"
+  possessed = true
+  callable = true
+  operation = false
+mkdir =
+  world = "fs"
+  possessed = true
+  callable = true
+  operation = false
+copy =
+  world = "fs"
+  possessed = true
+  callable = true
+  operation = false
+mkdirall =
+  world = "fs"
+  possessed = true
+  callable = true
+  operation = false

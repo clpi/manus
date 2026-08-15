@@ -193,13 +193,21 @@ registry_register_timer: any = (reg: any, name: str)
 registry_summary: any = (reg: any)
   summary = {}
   for name, c in reg.counters
-    summary(name) = { type = "counter", value = c.value }
+    summary(name) =
+      type = "counter"
+      value = c.value
   for name, g in reg.gauges
-    summary(name) = { type = "gauge", value = g.value }
+    summary(name) =
+      type = "gauge"
+      value = g.value
   for name, h in reg.histograms
-    summary(name) = { type = "histogram", value = histogram_get(h) }
+    summary(name) =
+      type = "histogram"
+      value = histogram_get(h)
   for name, t in reg.timers
-    summary(name) = { type = "timer", value = timer_get(t) }
+    summary(name) =
+      type = "timer"
+      value = timer_get(t)
   summary
 # ═══════════════════════════════════════════════════════════════
 # Module exports

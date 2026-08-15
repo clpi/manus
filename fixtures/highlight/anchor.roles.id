@@ -17,18 +17,18 @@
 # the case-set inline at the field, so a bound name inside a descriptor brace
 # names part of a shape rather than a value. # gap[078]
 spans = {
-    { 1, 1, 9, "comment" },
-    { 2, 1, 5, "place" },
-    { 2, 7, 1, "operator" },
-    { 2, 9, 1, "anchor" },
-    { 2, 10, 1, "layout" },
-    { 2, 12, 1, "descriptor" },
-    { 2, 14, 1, "operator" },
-    { 2, 16, 1, "number" },
-    { 2, 18, 1, "layout" },
-    { 3, 1, 5, "place" },
-    { 3, 7, 1, "operator" },
-    { 3, 9, 5, "place" },
-    { 3, 14, 1, "anchor" },
-    { 3, 15, 5, "place" },
+  { 1, 1, 9, "comment" },
+  { 2, 1, 5, "place" },
+  { 2, 7, 1, "operator" },
+  { 2, 9, 1, "anchor" },
+  { 2, 10, 1, "layout" },
+  { 2, 12, 1, "descriptor" },
+  { 2, 14, 1, "operator" },
+  { 2, 16, 1, "number" },
+  { 2, 18, 1, "layout" },
+  { 3, 1, 5, "place" },
+  { 3, 7, 1, "operator" },
+  { 3, 9, 5, "place" },
+  { 3, 14, 1, "anchor" },
+  { 3, 15, 5, "place" }
 }

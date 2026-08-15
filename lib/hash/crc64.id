@@ -29,7 +29,9 @@ for i = 0, 255
     else
       crc_lo = (crc_lo >> 1 | crc_hi << 31) % 4294967296
       crc_hi = crc_hi >> 1
-  crc_table(i + 1) = { hi = crc_hi, lo = crc_lo }
+  crc_table(i + 1) =
+    hi = crc_hi
+    lo = crc_lo
 
 new: any = ()
   { crc_hi = 0, crc_lo = 0 }
@@ -38,7 +40,7 @@ update = (state: any, data: str)
   for i = 1, data:len()
     idx = (state.crc_lo ~ data:byte(i)) % 256
     new_hi = state.crc_hi >> 8
-    new_lo = (state.crc_hi & 255) << 24 + state.crc_lo >> 8
+    new_lo = (state.crc_hi & 255) << (24 + state.crc_lo) >> 8
     state.crc_hi = (new_hi ~ crc_table(idx + 1).hi) % 4294967296
     state.crc_lo = (new_lo ~ crc_table(idx + 1).lo) % 4294967296
 

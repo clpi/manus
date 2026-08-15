@@ -4,13 +4,16 @@
 # Manifest counts are asserted by the pass34-gate Zig proof (proveL2FallbackFieldManifest);
 # this example verifies the end-to-end runtime behavior.
 
-read_row(r: any): i64
-    r.x + r.y * 100 + r.z * 10000
+read_row: i64 = (r: any)
+  r.x + r.y * 100 + r.z * 10000
 
-t: any = { x = 3, y = 4, z = 5 }
+t: any =
+  x = 3
+  y = 4
+  z = 5
 result: i64 = read_row(t)
 if result != 50403
-    print("FAIL: read_row returned " .. result)
-    os.exit(1)
+  print("FAIL: read_row returned " .. result)
+  os.exit(1)
 
 print("pass34_l2_fallback_field: PASS")

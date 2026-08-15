@@ -1,14 +1,17 @@
 # script — bootstrap tooling bridge (frozen — delete under GAP-157).
 # Prefer shell tools/node/dev/* and direct os.env / io:read / fs: homes.
-echo(msg: str): void
-    print(msg)
+echo = (msg: str)
+  print(msg)
 
-run(cmd: str): i64
-    rc = os:execute(cmd)
-    if rc == nil return -1 
-    if rc == true return 0 
-    if rc:to(str) == "0" return 0 
-    1
+run: i64 = (cmd: str)
+  rc = os:execute(cmd)
+  if rc == nil
+    return -1
+  if rc == true
+    return 0
+  if rc:to(str) == "0"
+    return 0
+  1
 
 # The EXACT exit status, which `run` cannot give. os:execute collapses
 # every failure to 1 # `os:execute("exit 7")` returns 1, not 7 # so any
@@ -19,116 +22,117 @@ run(cmd: str): i64
 # The subshell parentheses are load-bearing: without them `exit 7` terminates
 # the popen'd shell before `echo $?` ever runs, and capture returns "" -> 0.
 # That reads as "everything succeeded", the worst possible failure mode here.
-status(cmd: str): i64
-    to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
+status: i64 = (cmd: str)
+  to(i64)(capture("( " .. cmd .. " ) >/dev/null 2>&1; echo $?"))
 
-ok(cmd: str): bool
-    run(cmd) == 0
+ok: bool = (cmd: str)
+  run(cmd) == 0
 
-must(cmd: str): void
-    if not ok(cmd)
-        echo("FAIL: " .. cmd)
-        os:exit(1)
+must = (cmd: str)
+  if not ok(cmd)
+    echo("FAIL: " .. cmd)
+    os:exit(1)
 
 # Lock wrapper: `idol run scripts/idol_lock.id -- cmd` — the lock script consumes
 # the first `--` itself, so the wrapper never passes a separator through.
-lock_cmd(cmd: str): str
-    idol_bin() .. " run scripts/idol_lock.id -- " .. cmd
+lock_cmd: str = (cmd: str)
+  idol_bin() .. " run scripts/idol_lock.id -- " .. cmd
 
-lock_cmd_timeout(cmd: str, timeout: i64): str
-    idol_bin() .. " run scripts/idol_lock.id -- --timeout " .. timeout:to(str) .. " -- " .. cmd
+lock_cmd_timeout: str = (cmd: str, timeout: i64)
+  idol_bin() .. " run scripts/idol_lock.id -- --timeout " .. timeout:to(str) .. " -- " .. cmd
 
-locked_run(cmd: str): i64
-    if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
-        return run(cmd)
-    run(lock_cmd(cmd))
+locked_run: i64 = (cmd: str)
+  if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
+    return run(cmd)
+  run(lock_cmd(cmd))
 
-locked_ok(cmd: str): bool
-    return locked_run(cmd) == 0
+locked_ok: bool = (cmd: str)
+  return locked_run(cmd) == 0
 
-locked_must(cmd: str): void
-    must(lock_cmd(cmd))
+locked_must = (cmd: str)
+  must(lock_cmd(cmd))
 
-locked_must_timeout(cmd: str, timeout: i64): void
-    must(lock_cmd_timeout(cmd, timeout))
+locked_must_timeout = (cmd: str, timeout: i64)
+  must(lock_cmd_timeout(cmd, timeout))
 
 # Native build mutex (mkdir + stale-PID reclaim). Used by scripts/idol_lock.id.
-build_lock_dir(): str
-    getenv("IDOL_BUILD_LOCK", getenv("DUO_BUILD_LOCK", "/tmp/idol-lock"))
+build_lock_dir: str = ()
+  getenv("IDOL_BUILD_LOCK", getenv("DUO_BUILD_LOCK", "/tmp/idol-lock"))
 
-build_lock_owner(): str
-    build_lock_dir() .. "/owner"
+build_lock_owner: str = ()
+  build_lock_dir() .. "/owner"
 
-build_lock_try_acquire(): bool
+build_lock_try_acquire: bool = ()
+  ld = build_lock_dir()
+  ok("mkdir -p '" .. ld .. "'")
+
+build_lock_write_owner = ()
+  of = build_lock_owner()
+  must("sh -c 'echo \"$(($$)) $(date +%s)\" > \"" .. of .. "\"'")
+
+build_lock_stale: bool = ()
+  of = build_lock_owner()
+  pid_line = capture("cut -d' ' -f1 '" .. of .. "' 2>/dev/null | head -1")
+  if pid_line == ""
+    return true
+  return run("kill -0 " .. pid_line:gsub("%s+", "") .. " 2>/dev/null") != 0
+
+build_lock_release = ()
+  ld = build_lock_dir()
+  of = build_lock_owner()
+  run("rm -f '" .. of .. "'")
+  run("rmdir '" .. ld .. "' 2>/dev/null")
+
+build_lock_acquire: bool = (timeout: i64)
+  if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
+    return true
+  waited = 0
+  while waited < timeout
+    if build_lock_try_acquire()
+      build_lock_write_owner()
+      return true
+    stale_now = build_lock_stale()
     ld = build_lock_dir()
-    ok("mkdir -p '" .. ld .. "'")
-
-build_lock_write_owner(): void
     of = build_lock_owner()
-    must("sh -c 'echo \"$(($$)) $(date +%s)\" > \"" .. of .. "\"'")
+    cmd = "sleep 2"
+    if stale_now
+      cmd = "rm -f '" .. of .. "' 2>/dev/null; rmdir '" .. ld .. "' 2>/dev/null"
+    run(cmd)
+    if not stale_now
+      waited = waited + 2
+  false
 
-build_lock_stale(): bool
-    of = build_lock_owner()
-    pid_line = capture("cut -d' ' -f1 '" .. of .. "' 2>/dev/null | head -1")
-    if pid_line == "" return true 
-    return run("kill -0 " .. pid_line:gsub("%s+", "") .. " 2>/dev/null") != 0
+capture: str = (cmd: str)
+  path = "/tmp/duo-capture"
+  run("rm -f '" .. path .. "'")
+  run(cmd .. " > '" .. path .. "' 2>/dev/null")
+  body = io:read(path)
+  run("rm -f '" .. path .. "'")
+  if body == nil
+    return ""
+  body
 
-build_lock_release(): void
-    ld = build_lock_dir()
-    of = build_lock_owner()
-    run("rm -f '" .. of .. "'")
-    run("rmdir '" .. ld .. "' 2>/dev/null")
+idol_bin: str = ()
+  "./zig-out/bin/idol"
 
-build_lock_acquire(timeout: i64): bool
-    if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
-        return true
-    waited = 0
-    while waited < timeout
-        if build_lock_try_acquire()
-            build_lock_write_owner()
-            return true
-        stale_now = build_lock_stale()
-        ld = build_lock_dir()
-        of = build_lock_owner()
-        cmd = "sleep 2"
-        if stale_now
-            cmd = "rm -f '" .. of .. "' 2>/dev/null; rmdir '" .. ld .. "' 2>/dev/null"
-        run(cmd)
-        if not stale_now
-            waited += 2
-    false
+idol_run = (path: str, bin: str)
+  echo("agent-smoke: idol run " .. path)
+  must(bin .. " run " .. path)
 
-capture(cmd: str): str
-    path = "/tmp/duo-capture"
-    run("rm -f '" .. path .. "'")
-    run(cmd .. " > '" .. path .. "' 2>/dev/null")
-    body = io:read(path)
-    run("rm -f '" .. path .. "'")
-    if body == nil
-        return ""
-    body
+idol_run_all = (paths: any, bin: str)
+  for _, path in paths
+    idol_run(path, bin)
 
-idol_bin(): str
-    "./zig-out/bin/idol"
+zig_build = ()
+  # When invoked via the build target the duo binary is already fresh; a second
+  # `zig build` here would just race other agents on .zig-cache. Skip it then.
+  if os.env("DUO_ALREADY_BUILT") == "1"
+    echo("agent-smoke: zig build skipped (DUO_ALREADY_BUILT)")
+    return
+  must("zig build")
 
-idol_run(path: str, bin: str): void
-    echo("agent-smoke: idol run " .. path)
-    must(bin .. " run " .. path)
-
-idol_run_all(paths: any, bin: str): void
-    for _, path in paths
-        idol_run(path, bin)
-
-zig_build(): void
-    # When invoked via the build target the duo binary is already fresh; a second
-    # `zig build` here would just race other agents on .zig-cache. Skip it then.
-    if os.env["DUO_ALREADY_BUILT"] == "1"
-        echo("agent-smoke: zig build skipped (DUO_ALREADY_BUILT)")
-        return
-    must("zig build")
-
-zig_test_file(path: str): void
-    must("zig test " .. path)
+zig_test_file = (path: str)
+  must("zig test " .. path)
 
 # === Environment ===
 
@@ -142,16 +146,19 @@ zig_test_file(path: str): void
 # An env var deliberately set to "" is therefore indistinguishable from unset
 # here. That is the right trade for this signature: a caller passing a fallback
 # wants a usable value, and os:getenv gives us no way to tell the two apart.
-getenv(name: str, fallback: str): str
-    v = os.env[name]
-    if v == nil return fallback 
-    if v == "" return fallback 
-    v
+getenv: str = (name: str, fallback: str)
+  v = os.env(name)
+  if v == nil
+    return fallback
+  if v == ""
+    return fallback
+  v
 
-getenv_or(name: str): str
-    v = os.env[name]
-    if v == nil return "" 
-    v
+getenv_or: str = (name: str)
+  v = os.env(name)
+  if v == nil
+    return ""
+  v
 
 # This SHELLED OUT (`must("export NAME='v'")`) and was therefore a silent
 # no-op: `export` runs in the child os:execute spawns, and a child cannot
@@ -167,117 +174,124 @@ getenv_or(name: str): str
 # setter that reported success.
 #
 # os:setenv is the real call and already existed.
-env_set(name: str, value: str): void
-    os.env[name] = value
+env_set = (name: str, value: str)
+  os.env(name) = value
 
 # === Path manipulation (makes Duo ergonomic vs Python os.path) ===
 
-path_join(a: str, b: str): str
-    if a == "" return b 
-    if b == "" return a 
-    sep = "/"
-    if a:sub(-1) == sep
-        return a .. b
-    a .. sep .. b
+path_join: str = (a: str, b: str)
+  if a == ""
+    return b
+  if b == ""
+    return a
+  sep = "/"
+  if a:sub(-1) == sep
+    return a .. b
+  a .. sep .. b
 
-path_basename(p: str): str
-    # Find last /
-    pos = 0
-    for i = p:len(), 1, -1
-        if p:sub(i, i) == "/"
-            pos = i
-            break
-    if pos == 0 return p 
-    p:sub(pos + 1)
+path_basename: str = (p: str)
+  # Find last /
+  pos = 0
+  for i = p:len(), 1, -1
+    if p:sub(i, i) == "/"
+      pos = i
+      break
+  if pos == 0
+    return p
+  p:sub(pos + 1)
 
-path_dirname(p: str): str
-    pos = 0
-    for i = p:len(), 1, -1
-        if p:sub(i, i) == "/"
-            pos = i
-            break
-    if pos == 0 return "." 
-    if pos == 1 return "/" 
-    p:sub(1, pos - 1)
+path_dirname: str = (p: str)
+  pos = 0
+  for i = p:len(), 1, -1
+    if p:sub(i, i) == "/"
+      pos = i
+      break
+  if pos == 0
+    return "."
+  if pos == 1
+    return "/"
+  p:sub(1, pos - 1)
 
-path_ext(p: str): str
-    base = path_basename(p)
-    pos = 0
-    for i = base:len(), 1, -1
-        if base:sub(i, i) == "."
-            pos = i
-            break
-    if pos == 0 return "" 
-    base:sub(pos)
+path_ext: str = (p: str)
+  base = path_basename(p)
+  pos = 0
+  for i = base:len(), 1, -1
+    if base:sub(i, i) == "."
+      pos = i
+      break
+  if pos == 0
+    return ""
+  base:sub(pos)
 
-path_stem(p: str): str
-    base = path_basename(p)
-    ext = path_ext(base)
-    if ext == "" return base 
-    base:sub(1, base:len() - ext:len())
+path_stem: str = (p: str)
+  base = path_basename(p)
+  ext = path_ext(base)
+  if ext == ""
+    return base
+  base:sub(1, base:len() - ext:len())
 
 # === File system ===
 
-fs_exists(p: str): bool
-    ok("test -e '" .. p .. "'")
+fs_exists: bool = (p: str)
+  ok("test -e '" .. p .. "'")
 
-fs_is_file(p: str): bool
-    ok("test -f '" .. p .. "'")
+fs_is_file: bool = (p: str)
+  ok("test -f '" .. p .. "'")
 
-fs_is_dir(p: str): bool
-    ok("test -d '" .. p .. "'")
+fs_is_dir: bool = (p: str)
+  ok("test -d '" .. p .. "'")
 
-fs_read(p: str): str
-    body = io:read(p)
-    if body == nil
-        return ""
-    body
+fs_read: str = (p: str)
+  body = io:read(p)
+  if body == nil
+    return ""
+  body
 
-fs_write(p: str, content: str): void
-    must("printf '%s' '" .. content:gsub("'", "'\\''") .. "' > '" .. p .. "'")
+fs_write = (p: str, content: str)
+  must("printf '%s' '" .. content:gsub("'", "'\\''") .. "' > '" .. p .. "'")
 
-fs_mkdir(p: str): void
-    must("mkdir -p '" .. p .. "'")
+fs_mkdir = (p: str)
+  must("mkdir -p '" .. p .. "'")
 
-fs_glob(pattern: str): any
-    out = {}
-    text = capture("ls -1 " .. pattern .. " 2>/dev/null")
-    line = ""
-    n = text:len()
-    i = 1
-    while i <= n + 1
-        boundary = false
-        if i > n
-            boundary = true
-        else
-            if text:byte(i) == 10
-                boundary = true
-        if boundary
-            if line:len() > 0
-                out:insert(line)
-            line = ""
-        else
-            line = line .. text:sub(i, i)
-        i += 1
-    return out
+fs_glob: any = (pattern: str)
+  out = {}
+  text = capture("ls -1 " .. pattern .. " 2>/dev/null")
+  line = ""
+  n = text:len()
+  i = 1
+  while i <= n + 1
+    boundary = false
+    if i > n
+      boundary = true
+    else
+      if text:byte(i) == 10
+        boundary = true
+    if boundary
+      if line:len() > 0
+        out:insert(line)
+      line = ""
+    else
+      line = line .. text:sub(i, i)
+    i = i + 1
+  return out
 
-fs_cp(src: str, dst: str): void
-    must("cp -R '" .. src .. "' '" .. dst .. "'")
+fs_cp = (src: str, dst: str)
+  must("cp -R '" .. src .. "' '" .. dst .. "'")
 
-fs_mv(src: str, dst: str): void
-    must("mv '" .. src .. "' '" .. dst .. "'")
+fs_mv = (src: str, dst: str)
+  must("mv '" .. src .. "' '" .. dst .. "'")
 
-fs_rm(path: str): void
-    must("rm -rf '" .. path .. "'")
+fs_rm = (path: str)
+  must("rm -rf '" .. path .. "'")
 
 # Strip trailing newlines. `capture` terminates every line it reads, so a
 # single-line command's output is a value with a "\n" welded on -- fine to
 # print, silently wrong the moment it is used as a PATH.
-chomp(s: str): str
-    n = s:len()
-    while n > 0 and s:byte(n) == 10
-        n -= 1
-    s:sub(1, n)
+chomp: str = (s: str)
+  n = s:len()
+  while n > 0 and s:byte(n) == 10
+    n = n - 1
+  s:sub(1, n)
 
 # Both of these returned the temp path WITH capture's trailing newline, so
 # `fs_tmpdir() .. "/x"` built "/var/.../tmp.ABC\n/x". Embedded in a shell
@@ -285,99 +299,99 @@ chomp(s: str): str
 # command # giving exit 127 ("command not found") rather than any error
 # naming the real problem. A differential harness reading that 127 in every
 # column concluded the columns AGREED.
-fs_tmp(): str
-    chomp(capture("mktemp 2>/dev/null"))
+fs_tmp: str = ()
+  chomp(capture("mktemp 2>/dev/null"))
 
-fs_tmpdir(): str
-    chomp(capture("mktemp -d 2>/dev/null"))
+fs_tmpdir: str = ()
+  chomp(capture("mktemp -d 2>/dev/null"))
 
 # === Process piping (makes Duo ergonomic vs bash pipes) ===
 
-pipe(cmd1: str, cmd2: str): str
-    capture(cmd1 .. " | " .. cmd2)
+pipe: str = (cmd1: str, cmd2: str)
+  capture(cmd1 .. " | " .. cmd2)
 
-pipe_ok(cmd1: str, cmd2: str): bool
-    ok(cmd1 .. " | " .. cmd2)
+pipe_ok: bool = (cmd1: str, cmd2: str)
+  ok(cmd1 .. " | " .. cmd2)
 
 # === CLI args (makes Duo ergonomic vs Python argparse for simple cases) ===
 
-args(): any
-    os.args
+args: any = ()
+  os.args
 
-arg(n: i64, fallback: str): str
-    a = args()
-    if a == nil or n < 1 or n > a:len() return fallback 
-    return a[n]
+arg: str = (n: i64, fallback: str)
+  a = args()
+  if a == nil or n < 1 or n > a:len()
+    return fallback
+  return a(n)
 
 # === Quick JSON read (makes Duo ergonomic vs python -c 'import json') ===
 
-json_read_file(p: str): any
-    json:decode(fs_read(p))
+json_read_file: any = (p: str)
+  json:decode(fs_read(p))
 
-exec(cmd: str): any
-    out = capture(cmd .. " 2>&1")
-    code = status(cmd)
-    { output = out, code = code }
+exec: any = (cmd: str)
+  out = capture(cmd .. " 2>&1")
+  code = status(cmd)
+  { output = out, code = code }
 
-M = {
-    echo = echo,
-    run = run,
-    exec = exec,
-    ok = ok,
-    must = must,
-    lock_cmd = lock_cmd,
-    lock_cmd_timeout = lock_cmd_timeout,
-    locked_run = locked_run,
-    locked_ok = locked_ok,
-    locked_must = locked_must,
-    locked_must_timeout = locked_must_timeout,
-    build_lock_dir = build_lock_dir,
-    build_lock_acquire = build_lock_acquire,
-    build_lock_release = build_lock_release,
-    build_lock_stale = build_lock_stale,
-    capture = capture,
-    duo_bin = duo_bin,
-    duo_run = duo_run,
-    duo_run_all = duo_run_all,
-    zig_build = zig_build,
-    zig_test_file = zig_test_file,
-    getenv = getenv,
-    getenv_or = getenv_or,
-    env_set = env_set,
-    path_join = path_join,
-    path_basename = path_basename,
-    path_dirname = path_dirname,
-    path_ext = path_ext,
-    path_stem = path_stem,
-    fs_exists = fs_exists,
-    fs_is_file = fs_is_file,
-    fs_is_dir = fs_is_dir,
-    fs_read = fs_read,
-    fs_write = fs_write,
-    fs_mkdir = fs_mkdir,
-    fs_glob = fs_glob,
-    fs_cp = fs_cp,
-    fs_mv = fs_mv,
-    fs_rm = fs_rm,
-    fs_tmp = fs_tmp,
-    fs_tmpdir = fs_tmpdir,
-    # Ergonomic aliases
-    exists = fs_exists,
-    is_file = fs_is_file,
-    is_dir = fs_is_dir,
-    read = fs_read,
-    write = fs_write,
-    cat = fs_read,
-    mkdir = fs_mkdir,
-    glob = fs_glob,
-    cp = fs_cp,
-    mv = fs_mv,
-    rm = fs_rm,
-    tmp = fs_tmp,
-    tmpdir = fs_tmpdir,
-    pipe = pipe,
-    pipe_ok = pipe_ok,
-    args = args,
-    arg = arg,
-    json_read_file = json_read_file,
-}
+M =
+  echo = echo
+  run = run
+  exec = exec
+  ok = ok
+  must = must
+  lock_cmd = lock_cmd
+  lock_cmd_timeout = lock_cmd_timeout
+  locked_run = locked_run
+  locked_ok = locked_ok
+  locked_must = locked_must
+  locked_must_timeout = locked_must_timeout
+  build_lock_dir = build_lock_dir
+  build_lock_acquire = build_lock_acquire
+  build_lock_release = build_lock_release
+  build_lock_stale = build_lock_stale
+  capture = capture
+  duo_bin = duo_bin
+  duo_run = duo_run
+  duo_run_all = duo_run_all
+  zig_build = zig_build
+  zig_test_file = zig_test_file
+  getenv = getenv
+  getenv_or = getenv_or
+  env_set = env_set
+  path_join = path_join
+  path_basename = path_basename
+  path_dirname = path_dirname
+  path_ext = path_ext
+  path_stem = path_stem
+  fs_exists = fs_exists
+  fs_is_file = fs_is_file
+  fs_is_dir = fs_is_dir
+  fs_read = fs_read
+  fs_write = fs_write
+  fs_mkdir = fs_mkdir
+  fs_glob = fs_glob
+  fs_cp = fs_cp
+  fs_mv = fs_mv
+  fs_rm = fs_rm
+  fs_tmp = fs_tmp
+  fs_tmpdir = fs_tmpdir
+  exists = fs_exists
+  is_file = fs_is_file
+  is_dir = fs_is_dir
+  read = fs_read
+  write = fs_write
+  cat = fs_read
+  mkdir = fs_mkdir
+  glob = fs_glob
+  cp = fs_cp
+  mv = fs_mv
+  rm = fs_rm
+  tmp = fs_tmp
+  tmpdir = fs_tmpdir
+  pipe = pipe
+  pipe_ok = pipe_ok
+  args = args
+  arg = arg
+  json_read_file = json_read_file
+# Ergonomic aliases

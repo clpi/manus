@@ -1,5 +1,5 @@
-main(): i64
-    total = 0
-    for i = 1, 10
-        total += i
-    return total
+main: i64 = ()
+  total = 0
+  for i = 1, 10
+    total = total + i
+  return total

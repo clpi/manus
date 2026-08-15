@@ -4,19 +4,19 @@
 # @corpus current
 out = ""
 for i = 1, 15
-    # NOT `"{i}"`. A single-hole interpolation with no literal text folds
-    # to the BARE HOLE (gap[094]), so `word` would be an i64 and the
-    # `word = "fizz"` below assigns a char[] to it. `i:to(str)` is the
-    # conversion edge and says what is meant.
-    word = i:to(str)
-    if i % 15 == 0
-        word = "fizzbuzz"
-    if i % 15 != 0 and i % 3 == 0
-        word = "fizz"
-    if i % 15 != 0 and i % 5 == 0
-        word = "buzz"
-    if out == ""
-        out = word
-    if out != word
-        out = "{out} {word}"
+  # NOT `"{i}"`. A single-hole interpolation with no literal text folds
+  # to the BARE HOLE (gap[094]), so `word` would be an i64 and the
+  # `word = "fizz"` below assigns a char[] to it. `i:to(str)` is the
+  # conversion edge and says what is meant.
+  word = i:to(str)
+  if i % 15 == 0
+    word = "fizzbuzz"
+  if i % 15 != 0 and i % 3 == 0
+    word = "fizz"
+  if i % 15 != 0 and i % 5 == 0
+    word = "buzz"
+  if out == ""
+    out = word
+  if out != word
+    out = "{out} {word}"
 print("{out}")

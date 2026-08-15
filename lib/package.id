@@ -1,10 +1,10 @@
 # package — package utilities
 
-loadlib(libname: str, funcname: str): any
-    package.loadlib(libname, funcname)
+loadlib: any = (libname: str, funcname: str)
+  package.loadlib(libname, funcname)
 
-searchpath(name: str, path: str, sep: str, rep: str): any
-    package.searchpath(name, path, sep, rep)
+searchpath: any = (name: str, path: str, sep: str, rep: str)
+  package.searchpath(name, path, sep, rep)
 
 config = package.config
 cpath = package.cpath

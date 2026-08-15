@@ -100,10 +100,9 @@ str_join: str = (parts: any, sep: str)
     result = result .. part
   result
 
-M = {
-  zig_to_c = zig_to_c,
-  rust_to_c = rust_to_c,
-  python_func = python_func,
+M =
+  zig_to_c = zig_to_c
+  rust_to_c = rust_to_c
+  python_func = python_func
   str_join = str_join
-}
 M

@@ -1,87 +1,86 @@
 # hash.fnv — FNV-1/FNV-1a hash (mirrors Go's hash/fnv)
 
-fnv_offset32 = 0x811C9DC5
-fnv_prime32 = 0x01000193
+fnv_offset32 = 2166136261
+fnv_prime32 = 16777619
 
 # 64-bit values as {hi, lo} pairs
-fnv_offset64_hi = 0xCBF29CE4
-fnv_offset64_lo = 0x84222325
-fnv_prime64_hi = 0x00000100
-fnv_prime64_lo = 0x000001B3
+fnv_offset64_hi = 3421674724
+fnv_offset64_lo = 2216829733
+fnv_prime64_hi = 256
+fnv_prime64_lo = 435
 
-new32(): any
-    {hash = fnv_offset32, bits = 32, kind = "fnv1"}
+new32: any = ()
+  { hash = fnv_offset32, bits = 32, kind = "fnv1" }
 
-new32a(): any
-    {hash = fnv_offset32, bits = 32, kind = "fnv1a"}
+new32a: any = ()
+  { hash = fnv_offset32, bits = 32, kind = "fnv1a" }
 
-new64(): any
-    {hash_hi = fnv_offset64_hi, hash_lo = fnv_offset64_lo, bits = 64, kind = "fnv1"}
+new64: any = ()
+  { hash_hi = fnv_offset64_hi, hash_lo = fnv_offset64_lo, bits = 64, kind = "fnv1" }
 
-new64a(): any
-    {hash_hi = fnv_offset64_hi, hash_lo = fnv_offset64_lo, bits = 64, kind = "fnv1a"}
+new64a: any = ()
+  { hash_hi = fnv_offset64_hi, hash_lo = fnv_offset64_lo, bits = 64, kind = "fnv1a" }
 
-update(state: any, data: str): void
-    for i = 1, data:len()
-        b = data:byte(i)
-        if state.kind == "fnv1a"
-            state.hash = (state.hash ~ b) % (2^32)
-            state.hash = (state.hash * fnv_prime32) % (2^32)
-        else
-            state.hash = (state.hash * fnv_prime32) % (2^32)
-            state.hash = (state.hash ~ b) % (2^32)
+update = (state: any, data: str)
+  for i = 1, data:len()
+    b = data:byte(i)
+    if state.kind == "fnv1a"
+      state.hash = (state.hash ~ b) % 2 ^ 32
+      state.hash = state.hash * fnv_prime32 % 2 ^ 32
+    else
+      state.hash = state.hash * fnv_prime32 % 2 ^ 32
+      state.hash = (state.hash ~ b) % 2 ^ 32
 
-mul64(hi: i64, lo: i64, m_hi: i64, m_lo: i64): any
-    # Multiply two 64-bit numbers stored as {hi, lo}, return {hi, lo}
-    lo_lo = lo * m_lo
-    hi_lo = hi * m_lo
-    lo_hi = lo * m_hi
-    hi_hi = hi * m_hi
-    lo_part = lo_lo % (2^32)
-    carry = (lo_lo >> 32) + (hi_lo % (2^32)) + (lo_hi % (2^32))
-    hi_part = (hi_hi + (hi_lo >> 32) + (lo_hi >> 32) + (carry >> 32)) % (2^32)
-    lo_part = ((carry % (2^32)) * (2^32) + lo_part)
-    {hi = hi_part, lo = lo_part}
+mul64: any = (hi: i64, lo: i64, m_hi: i64, m_lo: i64)
+  # Multiply two 64-bit numbers stored as {hi, lo}, return {hi, lo}
+  lo_lo = lo * m_lo
+  hi_lo = hi * m_lo
+  lo_hi = lo * m_hi
+  hi_hi = hi * m_hi
+  lo_part = lo_lo % 2 ^ 32
+  carry = lo_lo >> 32 + hi_lo % 2 ^ 32 + lo_hi % 2 ^ 32
+  hi_part = (hi_hi + hi_lo >> 32 + lo_hi >> 32 + carry >> 32) % 2 ^ 32
+  lo_part = carry % 2 ^ 32 * 2 ^ 32 + lo_part
+  { hi = hi_part, lo = lo_part }
 
-update64(state: any, data: str): void
-    for i = 1, data:len()
-        b = data:byte(i)
-        if state.kind == "fnv1a"
-            state.hash_lo = (state.hash_lo ~ b) % (2^32)
-        else
-            prod = mul64(state.hash_hi, state.hash_lo, fnv_prime64_hi, fnv_prime64_lo)
-            state.hash_hi = prod.hi
-            state.hash_lo = prod.lo
-            state.hash_lo = (state.hash_lo ~ b) % (2^32)
+update64 = (state: any, data: str)
+  for i = 1, data:len()
+    b = data:byte(i)
+    if state.kind == "fnv1a"
+      state.hash_lo = (state.hash_lo ~ b) % 2 ^ 32
+    else
+      prod = mul64(state.hash_hi, state.hash_lo, fnv_prime64_hi, fnv_prime64_lo)
+      state.hash_hi = prod.hi
+      state.hash_lo = prod.lo
+      state.hash_lo = (state.hash_lo ~ b) % 2 ^ 32
 
-final(state: any): i64
-    # `2^state.bits` is a dynamic exponent, so it lowers to a boxed lua_Value
-    # that integer modulo cannot take. `bits` is only ever 32 or 64, and at 64
-    # the wrap is the identity because i64 arithmetic already wraps mod 2^64.
-    if state.bits == 32
-        return state.hash % 4294967296
-    state.hash
+final: i64 = (state: any)
+  # `2^state.bits` is a dynamic exponent, so it lowers to a boxed lua_Value
+  # that integer modulo cannot take. `bits` is only ever 32 or 64, and at 64
+  # the wrap is the identity because i64 arithmetic already wraps mod 2^64.
+  if state.bits == 32
+    return state.hash % 4294967296
+  state.hash
 
-final64(state: any): i64
-    (state.hash_hi * (2^32) + state.hash_lo)
+final64: i64 = (state: any)
+  state.hash_hi * 2 ^ 32 + state.hash_lo
 
-sum32(data: str): i64
-    s = new32()
-    update(s, data)
-    final(s)
+sum32: i64 = (data: str)
+  s = new32()
+  update(s, data)
+  final(s)
 
-sum32a(data: str): i64
-    s = new32a()
-    update(s, data)
-    final(s)
+sum32a: i64 = (data: str)
+  s = new32a()
+  update(s, data)
+  final(s)
 
-sum64(data: str): i64
-    s = new64()
-    update64(s, data)
-    final64(s)
+sum64: i64 = (data: str)
+  s = new64()
+  update64(s, data)
+  final64(s)
 
-sum64a(data: str): i64
-    s = new64a()
-    update64(s, data)
-    final64(s)
-
+sum64a: i64 = (data: str)
+  s = new64a()
+  update64(s, data)
+  final64(s)

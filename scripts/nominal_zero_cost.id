@@ -44,18 +44,18 @@ failed = 0
 # evidence.
 controlok = 0
 
-quiet(cmd: str): i64
-    std.script.status("{cmd} >/dev/null 2>&1")
+quiet: i64 = (cmd: str)
+  std.script.status("{cmd} >/dev/null 2>&1")
 
-record(row: str): void
-    rows = "{rows}{row}"
+record = (row: str)
+  rows = "{rows}{row}"
 
-check(label: str, ok: i64): void
-    if ok == 1
-        record("  pass  {label}\n")
-    if ok != 1
-        record("  FAIL  {label}\n")
-        failed += 1
+check = (label: str, ok: i64)
+  if ok == 1
+    record("  pass  {label}\n")
+  if ok != 1
+    record("  FAIL  {label}\n")
+    failed = failed + 1
 
 # The body of `duo_entry_main`, isolated. Scanning the WHOLE translation unit
 # would find `lua_Value` in the runtime prelude every time and report a
@@ -66,23 +66,23 @@ check(label: str, ok: i64): void
 # the opening of a hole and the sed range silently becomes a pattern that
 # matches nothing — a gate that finds no body and could be misread as a gate
 # that found no box.
-body(cfile: str, out: str): i64
-    script.run("sed -n '/duo_entry_main() \x7b/,/^\x7d/p' {cfile} > {out}")
-    to(i64)(script.chomp(script.capture("wc -l < {out}")))
+body: i64 = (cfile: str, out: str)
+  script.run("sed -n '/duo_entry_main() {/,/^}/p' {cfile} > {out}")
+  to(i64)(script.chomp(script.capture("wc -l < {out}")))
 
-hits(path: str, pattern: str): i64
-    to(i64)(script.chomp(script.capture("grep -c '{pattern}' {path} || true")))
+hits: i64 = (path: str, pattern: str)
+  to(i64)(script.chomp(script.capture("grep -c '{pattern}' {path} || true")))
 
 # The one predicate both the fixture and the control are judged by, so the
 # control actually controls something. A boxed value in this compiler is a
 # `lua_Value` or a `lua_val_from_*` construction; either is a cost the law
 # says a nominal descriptor does not pay.
-boxes(bodyfile: str): i64
-    n = hits(bodyfile, "lua_Value") + hits(bodyfile, "lua_val_from")
-    v = 0
-    if n > 0
-        v = 1
-    v
+boxes: i64 = (bodyfile: str)
+  n = hits(bodyfile, "lua_Value") + hits(bodyfile, "lua_val_from")
+  v = 0
+  if n > 0
+    v = 1
+  v
 
 # RENDERING IS A PHYSICAL QUESTION TOO, and it is checked here rather than in
 # the fixture because the fixture asserts one line and this needs its own.
@@ -92,128 +92,128 @@ boxes(bodyfile: str): i64
 # the format selector's descriptor arm assumed boxed, which is gap[097] hole
 # 2 in its most visible form. gap[093] measured the same site as SILENT
 # NO-OUTPUT one step earlier. A nominal descriptor prints as the thing it is.
-writerender(path: str): void
-    std.script.run("rm -f {path}")
-    line(path, "type feet = f64")
-    line(path, "type tally = i64")
-    line(path, "")
-    line(path, "main = (): i64")
-    line(path, "    d: feet = 2.5")
-    line(path, "    t: tally = 41")
-    line(path, "    print(d)")
-    line(path, "    print(t)")
-    line(path, "    0")
+writerender = (path: str)
+  std.script.run("rm -f {path}")
+  line(path, "type feet = f64")
+  line(path, "type tally = i64")
+  line(path, "")
+  line(path, "main = (): i64")
+  line(path, "    d: feet = 2.5")
+  line(path, "    t: tally = 41")
+  line(path, "    print(d)")
+  line(path, "    print(t)")
+  line(path, "    0")
 
 # THE CONTROL. Same arithmetic, same printed value, but the binding that
 # carries the descriptor in the fixture is `any` here — so the compiler has
 # to box it. If `boxes` does not fire on this, `boxes` is measuring nothing.
-writecontrol(path: str): void
-    std.script.run("rm -f {path}")
-    line(path, "main = (): i64")
-    line(path, "    d: any = 3.0")
-    line(path, "    n: any = d")
-    line(path, "    print(n)")
-    line(path, "    0")
+writecontrol = (path: str)
+  std.script.run("rm -f {path}")
+  line(path, "main = (): i64")
+  line(path, "    d: any = 3.0")
+  line(path, "    n: any = d")
+  line(path, "    print(n)")
+  line(path, "    0")
 
-line(path: str, text: str): void
-    std.script.run("printf '%s\\n' '{text}' >> {path}")
+line = (path: str, text: str)
+  std.script.run("printf '%s\\n' '{text}' >> {path}")
 
-measure(duo: str): i64
-    std.script.run("rm -rf {work} && mkdir -p {work}")
+measure: i64 = (duo: str)
+  std.script.run("rm -rf {work} && mkdir -p {work}")
 
-    # The C backend, explicitly. `--backend=direct` never writes a .c file, so
-    # a gate that read one after a direct build would find nothing and could
-    # report a stale artifact from an earlier run as this run's evidence.
-    bin = "{work}/nominal.out"
-    if quiet("{duo} compile {fixture} -o {bin}") != 0
-        print("nominal zero cost: FAIL — {fixture} does not compile")
-        return 1
+  # The C backend, explicitly. `--backend=direct` never writes a .c file, so
+  # a gate that read one after a direct build would find nothing and could
+  # report a stale artifact from an earlier run as this run's evidence.
+  bin = "{work}/nominal.out"
+  if quiet("{duo} compile {fixture} -o {bin}") != 0
+    print("nominal zero cost: FAIL — {fixture} does not compile")
+    return 1
 
-    # Value first. A cost claim about a program that computes the wrong number
-    # is a claim about the wrong program.
-    got = script.chomp(script.capture("{bin}"))
-    okval = 0
-    if got == want
-        okval = 1
-    check("value {want} (got {got})", okval)
+  # Value first. A cost claim about a program that computes the wrong number
+  # is a claim about the wrong program.
+  got = script.chomp(script.capture("{bin}"))
+  okval = 0
+  if got == want
+    okval = 1
+  check("value {want} (got {got})", okval)
 
-    cfile = "/tmp/duo_nominal.c"
-    b = "{work}/body.c"
-    lines = body(cfile, b)
-    if lines == 0
-        print("nominal zero cost: FAIL — no duo_entry_main body found in {cfile}")
-        return 1
+  cfile = "/tmp/duo_nominal.c"
+  b = "{work}/body.c"
+  lines = body(cfile, b)
+  if lines == 0
+    print("nominal zero cost: FAIL — no duo_entry_main body found in {cfile}")
+    return 1
 
-    # Storage: three descriptor-typed bindings, three doubles.
-    check("feet binding lowers to double", hits(b, "double d ="))
-    check("inch binding lowers to double", hits(b, "double n ="))
-    check("micron binding lowers to double", hits(b, "double q ="))
+  # Storage: three descriptor-typed bindings, three doubles.
+  check("feet binding lowers to double", hits(b, "double d ="))
+  check("inch binding lowers to double", hits(b, "double n ="))
+  check("micron binding lowers to double", hits(b, "double q ="))
 
-    # No box. Reported as its own row so the reason a red row is red is the
-    # fact that failed, not "something about boxing".
-    nobox = 0
-    if boxes(b) == 0
-        nobox = 1
-    check("no lua_Value and no lua_val_from in the function", nobox)
+  # No box. Reported as its own row so the reason a red row is red is the
+  # fact that failed, not "something about boxing".
+  nobox = 0
+  if boxes(b) == 0
+    nobox = 1
+  check("no lua_Value and no lua_val_from in the function", nobox)
 
-    # No drop ladder. A scalar is not owned, so nothing retains it.
-    noarc = 0
-    if hits(b, "duo_retain") == 0 and hits(b, "duo_release") == 0
-        noarc = 1
-    check("no duo_retain / duo_release", noarc)
+  # No drop ladder. A scalar is not owned, so nothing retains it.
+  noarc = 0
+  if hits(b, "duo_retain") == 0 and hits(b, "duo_release") == 0
+    noarc = 1
+  check("no duo_retain / duo_release", noarc)
 
-    # The derived conversion is two direct calls. If this row goes red while
-    # the value row stays green, the composition started going through
-    # something — which is exactly the regression the law.canon.performance
-    # rule exists to catch.
-    check("derived feet -> inch is a direct shrink(grow(", hits(b, "shrink(grow("))
+  # The derived conversion is two direct calls. If this row goes red while
+  # the value row stays green, the composition started going through
+  # something — which is exactly the regression the law.canon.performance
+  # rule exists to catch.
+  check("derived feet -> inch is a direct shrink(grow(", hits(b, "shrink(grow("))
 
-    # Rendering, by value on both representations.
-    rpath = "{work}/render.id"
-    writerender(rpath)
-    rendered = "no output"
-    if quiet("{duo} compile {rpath} -o {work}/render.out") == 0
-        rendered = script.chomp(script.capture("{work}/render.out | xargs"))
-    okrender = 0
-    if rendered == "2.5 41"
-        okrender = 1
-    check("a nominal renders as its representation (got '{rendered}')", okrender)
+  # Rendering, by value on both representations.
+  rpath = "{work}/render.id"
+  writerender(rpath)
+  rendered = "no output"
+  if quiet("{duo} compile {rpath} -o {work}/render.out") == 0
+    rendered = script.chomp(script.capture("{work}/render.out | xargs"))
+  okrender = 0
+  if rendered == "2.5 41"
+    okrender = 1
+  check("a nominal renders as its representation (got '{rendered}')", okrender)
 
-    # THE POSITIVE CONTROL, run last so its output cannot be mistaken for the
-    # fixture's.
-    cpath = "{work}/control.id"
-    writecontrol(cpath)
-    if quiet("{duo} compile {cpath} -o {work}/control.out") == 0
-        cb = "{work}/controlbody.c"
-        if body("/tmp/duo_control.c", cb) > 0
-            controlok = boxes(cb)
+  # THE POSITIVE CONTROL, run last so its output cannot be mistaken for the
+  # fixture's.
+  cpath = "{work}/control.id"
+  writecontrol(cpath)
+  if quiet("{duo} compile {cpath} -o {work}/control.out") == 0
+    cb = "{work}/controlbody.c"
+    if body("/tmp/duo_control.c", cb) > 0
+      controlok = boxes(cb)
 
-    report()
-    verdict()
+  report()
+  verdict()
 
-report(): void
-    print("")
-    print("  §46 law.nominal — ZERO PHYSICAL OVERHEAD, read off the emitted C")
-    print("")
-    io.write(rows)
-    print("")
+report = ()
+  print("")
+  print("  §46 law.nominal — ZERO PHYSICAL OVERHEAD, read off the emitted C")
+  print("")
+  io.write(rows)
+  print("")
 
-verdict(): i64
-    code = 0
-    if controlok == 0
-        print("nominal zero cost: FAIL — the control did not box.")
-        print("  The box predicate is measuring nothing, so every green row")
-        print("  above is unearned. Fix the predicate before reading a verdict.")
-        code = 1
-    if code == 0 and failed > 0
-        print("nominal zero cost: FAIL — {failed} row(s) red.")
-        print("  §46 binds 'a nominal descriptor over a primitive costs no")
-        print("  boxing'. A red row here is that clause, not a style note.")
-        code = 1
-    if code == 0
-        print("nominal zero cost: PASS — control boxes, fixture does not")
-    code
+verdict: i64 = ()
+  code = 0
+  if controlok == 0
+    print("nominal zero cost: FAIL — the control did not box.")
+    print("  The box predicate is measuring nothing, so every green row")
+    print("  above is unearned. Fix the predicate before reading a verdict.")
+    code = 1
+  if code == 0 and failed > 0
+    print("nominal zero cost: FAIL — {failed} row(s) red.")
+    print("  §46 binds 'a nominal descriptor over a primitive costs no")
+    print("  boxing'. A red row here is that clause, not a style note.")
+    code = 1
+  if code == 0
+    print("nominal zero cost: PASS — control boxes, fixture does not")
+  code
 
 main: i64 = ()
-    duo = std.script.getenv("DUO", "./zig-out/bin/idol")
-    measure(duo)
+  duo = std.script.getenv("DUO", "./zig-out/bin/idol")
+  measure(duo)

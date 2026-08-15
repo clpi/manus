@@ -5,7 +5,7 @@ popcount: i64 = (x: i64)
   n = x
   count = 0
   while n > 0
-    count = count + n & 1
+    count = (count + n) & 1
     n = n >> 1
   count
 
@@ -66,13 +66,13 @@ reverse_bytes: i64 = (x: i64)
 # Extract a bitfield: extract bits [hi:lo] from x (inclusive, 0-indexed)
 extract: i64 = (x: i64, hi: i64, lo: i64)
   width = hi - lo + 1
-  mask = 1 << width - 1
+  mask = 1 << (width - 1)
   x >> lo & mask
 
 # Insert a bitfield: insert value into bits [hi:lo] of x
 insert: i64 = (x: i64, hi: i64, lo: i64, value: i64)
   width = hi - lo + 1
-  mask = 1 << width - 1
+  mask = 1 << (width - 1)
   cleared = x & ~(mask << lo)
   cleared | (value & mask) << lo
 
@@ -97,7 +97,7 @@ test_bit: bool = (x: i64, pos: i64)
 # Count set bits in range [hi:lo]
 popcount_range: i64 = (x: i64, hi: i64, lo: i64)
   width = hi - lo + 1
-  mask = 1 << width - 1
+  mask = 1 << (width - 1)
   popcount(x >> lo & mask)
 
 # Next power of two
@@ -224,15 +224,18 @@ not_bytes: any = (a: any)
 # This is the sanctioned home for C-level primitives; callers stay pure Duo.
 
 f64_to_bits: i64 = (x: f64)
+
   @comp.bit.bitcast(x, "int64_t")
-
+  
 f64_from_bits: f64 = (b: i64)
-  @comp.bit.bitcast(b, "double")
 
+  @comp.bit.bitcast(b, "double")
+  
 f32_to_bits: i64 = (x: f64)
   y: f32 = x
-  @comp.bit.bitcast(y, "uint32_t")
 
+  @comp.bit.bitcast(y, "uint32_t")
+  
 f32_from_bits: f64 = (b: i64)
   y: u32 = b
   @comp.bit.bitcast(y, "float")

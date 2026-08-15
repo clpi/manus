@@ -3,7 +3,7 @@
 new: any = ()
   { s1 = 1, s2 = 0 }
 
-update: void = (state: any, data: str)
+update = (state: any, data: str)
   if data == nil
     return
   for i = 1, data:len()

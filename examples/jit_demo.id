@@ -1,6 +1,6 @@
 # JIT demo: hot closure tier-2 recompile after call threshold (AOT tier-1 until hot)
 hot_add: i64 = (n: i64)
-  f = (x: i64) -> i64
+  f: i64 = (x: i64)
     return x + n
   jit.opt("hotloop", 5)
   sum: i64 = 0

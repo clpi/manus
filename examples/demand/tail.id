@@ -22,30 +22,29 @@
 # Verified BY VALUE.
 
 square: i64 = (x: i64)
-    x * x
+  x * x
 
 want: i64 = (what: str, got: i64, wanted: i64)
-    if got != wanted
-        print("tail demand: {what} got {got}, want {wanted}")
-        os.exit(1)
-    0
+  if got != wanted
+    print("tail demand: {what} got {got}, want {wanted}")
+    os.exit(1)
+  0
 
 throughbinding: i64 = ()
-    p = 5
-    square(p)
+  p = 5
+  square(p)
 
 throughtwo: i64 = ()
-    a = 3
-    b = a + 1
-    square(b)
+  a = 3
+  b = a + 1
+  square(b)
 
 througheffect: i64 = ()
-    value = 6 * 7
-    print("tail demand: effect trailer ran")
-    value
+  value = 6 * 7
+  print("tail demand: effect trailer ran")
+  value
 
 want("binding then call", throughbinding(), 25)
 want("two bindings then call", throughtwo(), 16)
 want("effect trailer keeps the binding", througheffect(), 42)
 print("tail demand: OK")
-

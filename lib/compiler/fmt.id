@@ -39,14 +39,13 @@
 # structure the parser has but does not yet hand back; they land behind this
 # harness, each with its own control.
 
-
 canonicalize: str = (src: str)
-    n: i64 = src:len()
-    if n == 0
-        return src
-    e: i64 = n
-    while e > 0 and src:byte(e) == 10
-        e -= 1
-    if e == 0
-        return ""
-    src:sub(1, e) .. "\n"
+  n: i64 = src:len()
+  if n == 0
+    return src
+  e: i64 = n
+  while e > 0 and src:byte(e) == 10
+    e = e - 1
+  if e == 0
+    return ""
+  src:sub(1, e) .. "\n"

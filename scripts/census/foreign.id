@@ -2,114 +2,114 @@
 # Direct backend only. Includes *.lua in population. No --backend=c.
 
 chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32
-            break
-        n -= 1
-    text:sub(1, n)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32
+      break
+    n = n - 1
+  text:sub(1, n)
 
 cap: str = (cmd: str)
-    chomp(gatecap(cmd))
+  chomp(gatecap(cmd))
 
 tally: i64 = (cmd: str, slot: str)
-    c = cmd
-    s = slot
-    gatecap("{c} > /tmp/idol-fw-{s}")
-    cap("cat /tmp/idol-fw-{s}"):to(i64)
+  c = cmd
+  s = slot
+  gatecap("{c} > /tmp/idol-fw-{s}")
+  cap("cat /tmp/idol-fw-{s}"):to(i64)
 
 classify: i64 = ()
-    gatecap("base64 -d < scripts/census/classify.b64 > /tmp/idol-fw-classify")
-    gatecap("/bin/sh /tmp/idol-fw-classify")
-    0
+  gatecap("base64 -d < scripts/census/classify.b64 > /tmp/idol-fw-classify")
+  gatecap("/bin/sh /tmp/idol-fw-classify")
+  0
 
 embed: i64 = ()
-    gatecap("git grep -ohE '@c.emit|@c.include|@comp.c.emit|@comp.c.include' -- '*.id' 2>/dev/null | grep -v scripts/census/foreign.id > /tmp/idol-fw-embed")
-    0
+  gatecap("git grep -ohE '@c.emit|@c.include|@comp.c.emit|@comp.c.include' -- '*.id' 2>/dev/null | grep -v scripts/census/foreign.id > /tmp/idol-fw-embed")
+  0
 
 census: i64 = ()
-    repo = chomp(cap("git rev-parse --show-toplevel"))
-    if !repo:len()
-        print("census/foreign: FAIL - !inside a git work tree")
-        return 3
-    print("scripts/census/foreign - Pass 105 U8")
-    print("  root      {repo}")
-    gatecap("git ls-files '*.zig' '*.c' '*.h' '*.hpp' '*.cpp' '*.cc' '*.lua' '*.sh' '*.bash' '*.zsh' '*.fish' '*.py' '*.js' '*.ts' '*.rs' '*.go' '*.m' '*.mm' '*.java' '*.rb' '*.pl' > /tmp/idol-fw-all")
-    gatecap("grep -E '^(ledger|oracle)[[:space:]]' docs/spec/foreign.md > /tmp/idol-fw-rules")
-    population = tally("grep -c . /tmp/idol-fw-all", "pop")
-    a = tally("grep -c '^ledger' /tmp/idol-fw-rules", "led")
-    b = tally("grep -c '^oracle' /tmp/idol-fw-rules", "ora")
-    rules = a + b
-    print("  rules     {rules} from docs/spec/foreign.md")
-    print("  foreign   {population} tracked files in another language")
-    if !population
-        print("census/foreign: FAIL - 0 foreign files found")
-        return 3
-    if !rules
-        print("census/foreign: FAIL - 0 rules")
-        return 3
-    u = tally("grep '^ledger' /tmp/idol-fw-rules | grep -c 'until:'", "until")
-    if a != u
-        print("census/foreign: FAIL - ledger rule(s) carry no until:")
-        return 1
-    k = tally("grep '^oracle' /tmp/idol-fw-rules | grep -c 'license:'", "lic")
-    if b != k
-        print("census/foreign: FAIL - oracle rule(s) carry no license:")
-        return 1
-    classify()
-    ledger = tally("grep -c . /tmp/idol-fw-ledgerr", "ledg")
-    oracle = tally("grep -c . /tmp/idol-fw-oracler", "orac")
-    unclassified = tally("grep -c . /tmp/idol-fw-restr", "uncls")
-    if ledger + oracle + unclassified != population
-        print("census/foreign: FAIL - accounting does !close")
-        print("  ledger {ledger}")
-        print("  oracle {oracle}")
-        print("  unclassified {unclassified}")
-        print("  population {population}")
-        return 3
-    left = tally("grep -c . /tmp/idol-fw-restp", "left")
-    if left != unclassified + 1
-        print("census/foreign: FAIL - negative control did !land in unclassified")
-        return 3
-    pos = tally("grep -c src/zzzprobe.zig /tmp/idol-fw-ledgerp", "pos")
-    if !pos
-        print("census/foreign: FAIL - positive control did !land in ledger")
-        return 3
+  repo = chomp(cap("git rev-parse --show-toplevel"))
+  if not repo:len()
+    print("census/foreign: FAIL - !inside a git work tree")
+    return 3
+  print("scripts/census/foreign - Pass 105 U8")
+  print("  root      {repo}")
+  gatecap("git ls-files '*.zig' '*.c' '*.h' '*.hpp' '*.cpp' '*.cc' '*.lua' '*.sh' '*.bash' '*.zsh' '*.fish' '*.py' '*.js' '*.ts' '*.rs' '*.go' '*.m' '*.mm' '*.java' '*.rb' '*.pl' > /tmp/idol-fw-all")
+  gatecap("grep -E '^(ledger|oracle)[[:space:]]' docs/spec/foreign.md > /tmp/idol-fw-rules")
+  population = tally("grep -c . /tmp/idol-fw-all", "pop")
+  a = tally("grep -c '^ledger' /tmp/idol-fw-rules", "led")
+  b = tally("grep -c '^oracle' /tmp/idol-fw-rules", "ora")
+  rules = a + b
+  print("  rules     {rules} from docs/spec/foreign.md")
+  print("  foreign   {population} tracked files in another language")
+  if not population
+    print("census/foreign: FAIL - 0 foreign files found")
+    return 3
+  if not rules
+    print("census/foreign: FAIL - 0 rules")
+    return 3
+  u = tally("grep '^ledger' /tmp/idol-fw-rules | grep -c 'until:'", "until")
+  if a != u
+    print("census/foreign: FAIL - ledger rule(s) carry no until:")
+    return 1
+  k = tally("grep '^oracle' /tmp/idol-fw-rules | grep -c 'license:'", "lic")
+  if b != k
+    print("census/foreign: FAIL - oracle rule(s) carry no license:")
+    return 1
+  classify()
+  ledger = tally("grep -c . /tmp/idol-fw-ledgerr", "ledg")
+  oracle = tally("grep -c . /tmp/idol-fw-oracler", "orac")
+  unclassified = tally("grep -c . /tmp/idol-fw-restr", "uncls")
+  if ledger + oracle + unclassified != population
+    print("census/foreign: FAIL - accounting does !close")
+    print("  ledger {ledger}")
+    print("  oracle {oracle}")
+    print("  unclassified {unclassified}")
+    print("  population {population}")
+    return 3
+  left = tally("grep -c . /tmp/idol-fw-restp", "left")
+  if left != unclassified + 1
+    print("census/foreign: FAIL - negative control did !land in unclassified")
+    return 3
+  pos = tally("grep -c src/zzzprobe.zig /tmp/idol-fw-ledgerp", "pos")
+  if not pos
+    print("census/foreign: FAIL - positive control did !land in ledger")
+    return 3
+  print("")
+  print("  class          files   licence")
+  print("  ledger         {ledger}")
+  print("  oracle         {oracle}")
+  print("  unclassified   {unclassified}")
+  if unclassified > 0
     print("")
-    print("  class          files   licence")
-    print("  ledger         {ledger}")
-    print("  oracle         {oracle}")
-    print("  unclassified   {unclassified}")
-    if unclassified > 0
-        print("")
-        print("  UNCLASSIFIED:")
-        gatecap("head -10 /tmp/idol-fw-restr > /tmp/idol-fw-head")
-        print(cap("cat /tmp/idol-fw-head"))
-    embed()
-    embedded = tally("grep -c . /tmp/idol-fw-embed", "emb")
-    print("")
-    print("  embedded       {embedded}")
-    if !embedded
-        print("census/foreign: FAIL - 0 embedded @c sites")
-        return 3
-    floor = 9
-    embedfloor = 181
-    over = 0
-    if unclassified > floor
-        print("census/foreign: FAIL - unclassified over the ratchet")
-        print("  unclassified {unclassified}")
-        print("  floor {floor}")
-        over = 1
-    if embedded > embedfloor
-        print("census/foreign: FAIL - embedded over the ratchet")
-        print("  embedded {embedded}")
-        print("  embedfloor {embedfloor}")
-        over = 1
-    if over
-        return 1
-    print("census/foreign: PASS")
+    print("  UNCLASSIFIED:")
+    gatecap("head -10 /tmp/idol-fw-restr > /tmp/idol-fw-head")
+    print(cap("cat /tmp/idol-fw-head"))
+  embed()
+  embedded = tally("grep -c . /tmp/idol-fw-embed", "emb")
+  print("")
+  print("  embedded       {embedded}")
+  if not embedded
+    print("census/foreign: FAIL - 0 embedded @c sites")
+    return 3
+  floor = 9
+  embedfloor = 181
+  over = 0
+  if unclassified > floor
+    print("census/foreign: FAIL - unclassified over the ratchet")
+    print("  unclassified {unclassified}")
     print("  floor {floor}")
+    over = 1
+  if embedded > embedfloor
+    print("census/foreign: FAIL - embedded over the ratchet")
+    print("  embedded {embedded}")
     print("  embedfloor {embedfloor}")
-    print("  PASS is !a claim that the foreign code is fine. It is a claim that every file has a licence on record and the debt did !grow.")
-    0
+    over = 1
+  if over
+    return 1
+  print("census/foreign: PASS")
+  print("  floor {floor}")
+  print("  embedfloor {embedfloor}")
+  print("  PASS is !a claim that the foreign code is fine. It is a claim that every file has a licence on record and the debt did !grow.")
+  0

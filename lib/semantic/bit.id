@@ -1,6 +1,12 @@
 # Bit-boundary descriptor — curried to(bit)(src) view edges; nominal over i64.
 
-boundary = { world = "", possessed = false, callable = false, operation = false, class = "view", repr = "i64" }
+boundary =
+  world = ""
+  possessed = false
+  callable = false
+  operation = false
+  class = "view"
+  repr = "i64"
 
 main: i64 = ()
   code: i64 = 0

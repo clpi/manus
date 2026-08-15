@@ -51,8 +51,8 @@ concept HasTag
 Alpha: { tag: str, n: i64 }
 Beta: { tag: str, x: f64 }
 
-mark: str = (meta)
-  meta.name .. ";"
+mark: str = meta
+meta.name .. ";"
 
 SWEEP = @comp.map("HasTag", mark)
 NAMES = @comp.type.names()

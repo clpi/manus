@@ -1,23 +1,27 @@
 # F-13813-4: branch-assigned implicit locals must be visible after if/else
 
-branch_sum(cond: bool): i64
-    if cond
-        v = 10
-    else
-        v = 20
-    v
+branch_sum: i64 = (cond: bool)
+  if cond
+    v = 10
+  else
+    v = 20
+  v
 
-branch_str(cond: bool): str
-    if cond
-        msg = "yes"
-    else
-        msg = "no"
-    msg
+branch_str: str = (cond: bool)
+  if cond
+    msg = "yes"
+  else
+    msg = "no"
+  msg
 
-main(): i64
-    if branch_sum(true) != 10 return 1
-    if branch_sum(false) != 20 return 2
-    if branch_str(true) != "yes" return 3
-    if branch_str(false) != "no" return 4
-    print("PASS branch_scope_smoke")
-    0
+main: i64 = ()
+  if branch_sum(true) != 10
+    return 1
+  if branch_sum(false) != 20
+    return 2
+  if branch_str(true) != "yes"
+    return 3
+  if branch_str(false) != "no"
+    return 4
+  print("PASS branch_scope_smoke")
+  0

@@ -2,86 +2,86 @@
 # Entry application: i64 = ().
 
 seen: bool = (text: str, needle: str)
-    n = text:len()
-    m = needle:len()
-    i = 1
-    while i + m - 1 <= n
-        if text:sub(i, i + m - 1) == needle
-            return true
-        i += 1
-    false
+  n = text:len()
+  m = needle:len()
+  i = 1
+  while i + m - 1 <= n
+    if text:sub(i, i + m - 1) == needle
+      return true
+    i = i + 1
+  false
 
 open: i64 = (label: str, needle: str, text: str)
-    if seen(text, needle)
-        print("  open {label} still reconstructed ({needle})")
-    0
+  if seen(text, needle)
+    print("  open {label} still reconstructed ({needle})")
+  0
 
 graphok: i64 = (label: str, needle: str, text: str)
-    if seen(text, needle)
-        print("  ok   {label} via graph accessor")
-    if !seen(text, needle)
-        print("  FAIL {label} graph accessor missing ({needle})")
-        return 1
-    0
+  if seen(text, needle)
+    print("  ok   {label} via graph accessor")
+  if not seen(text, needle)
+    print("  FAIL {label} graph accessor missing ({needle})")
+    return 1
+  0
 
 application: i64 = ()
-    print("ledger/application -- APPLICATION-CONSUMER-ZERO")
-    fail = 0
-    role = "lib/compiler/application.id":read()
-    lower = "src/dnir_lower.zig":read()
-    backend = "src/native_backend.zig":read()
-    graph = "src/semantic_graph.zig":read()
-    query = "src/graph_query.zig":read()
-    if !role:len()
-        print("  FAIL lib/compiler/application.id missing")
-        fail = 1
-    if role:len() and seen(role, "application: {")
-        print("  FAIL coordinate application schema in application.id")
-        fail = 1
-    if role:len() and !seen(role, "law.application.consumer")
-        print("  FAIL application.id missing consumer law pointer")
-        fail = 1
-    if role:len() and !seen(role, "application: {")
-        print("  ok   application.id is role documentation only")
-    print("graph accessors (required in graph + consumers)")
-    fail += graphok("relation", "pub fn applicationRelation", graph)
-    fail += graphok("caller", "pub fn applicationCaller", graph)
-    fail += graphok("results", "pub fn applicationResults", graph)
-    fail += graphok("descriptor", "pub fn applicationDescriptor", graph)
-    fail += graphok("demand", "pub fn applicationDemand", graph)
-    fail += graphok("subject", "pub fn applicationSubject", graph)
-    if !seen(lower, "applicationRelation")
-        print("  FAIL dnir_lower missing applicationRelation")
-        fail = 1
-    if seen(lower, "applicationRelation")
-        print("  ok   dnir_lower consumes graph relation")
-    if seen(backend, "applicationRelation") and seen(backend, "applicationCaller")
-        print("  ok   native_backend consumes graph relation and caller")
-    if seen(lower, "applicationSubject") and seen(backend, "applicationSubject")
-        print("  ok   subject consumed via graph.applicationSubject")
-    print("FACT-CARDINALITY-ONE")
-    if seen(graph, "pub const Card = union")
-        print("  ok   Card unknown/none/one on ApplicationFact")
-    if !seen(graph, "pub const Card = union")
-        fail = 1
-        print("  FAIL Card union missing")
-    if seen(graph, "effect: ?id = null")
-        fail = 1
-        print("  FAIL nullable Card fields on ApplicationFact")
-    print("reconstruction debt (target zero before closure)")
-    open("subject row", "subject: ?id,\n    arguments", graph)
-    open("subject lower", "fact.subject", lower)
-    open("subject backend", "fact.subject", backend)
-    open("subject query", "return fact.subject", query)
-    open("native_ir subject", "fact.subject", "src/native_ir.zig":read())
-    open("sema bridge", "applicationFact", "src/sema.zig":read())
-    if !seen(lower, "applicationArguments")
-        print("  open operand pack not consumed from graph in dnir_lower")
-    if seen(lower, "applicationArguments")
-        print("  ok   dnir_lower consumes graph operand pack")
-    if fail
-        print("ledger/application: FAIL provenance")
-        return 1
-    print("ledger/application: PASS accessors (reconstruction debt listed)")
-    print("target downstream reconstructed application facts = 0")
-    0
+  print("ledger/application -- APPLICATION-CONSUMER-ZERO")
+  fail = 0
+  role = "lib/compiler/application.id":read()
+  lower = "src/dnir_lower.zig":read()
+  backend = "src/native_backend.zig":read()
+  graph = "src/semantic_graph.zig":read()
+  query = "src/graph_query.zig":read()
+  if not role:len()
+    print("  FAIL lib/compiler/application.id missing")
+    fail = 1
+  if role:len() and seen(role, "application: {")
+    print("  FAIL coordinate application schema in application.id")
+    fail = 1
+  if role:len() and not seen(role, "law.application.consumer")
+    print("  FAIL application.id missing consumer law pointer")
+    fail = 1
+  if role:len() and not seen(role, "application: {")
+    print("  ok   application.id is role documentation only")
+  print("graph accessors (required in graph + consumers)")
+  fail = fail + graphok("relation", "pub fn applicationRelation", graph)
+  fail = fail + graphok("caller", "pub fn applicationCaller", graph)
+  fail = fail + graphok("results", "pub fn applicationResults", graph)
+  fail = fail + graphok("descriptor", "pub fn applicationDescriptor", graph)
+  fail = fail + graphok("demand", "pub fn applicationDemand", graph)
+  fail = fail + graphok("subject", "pub fn applicationSubject", graph)
+  if not seen(lower, "applicationRelation")
+    print("  FAIL dnir_lower missing applicationRelation")
+    fail = 1
+  if seen(lower, "applicationRelation")
+    print("  ok   dnir_lower consumes graph relation")
+  if seen(backend, "applicationRelation") and seen(backend, "applicationCaller")
+    print("  ok   native_backend consumes graph relation and caller")
+  if seen(lower, "applicationSubject") and seen(backend, "applicationSubject")
+    print("  ok   subject consumed via graph.applicationSubject")
+  print("FACT-CARDINALITY-ONE")
+  if seen(graph, "pub const Card = union")
+    print("  ok   Card unknown/none/one on ApplicationFact")
+  if not seen(graph, "pub const Card = union")
+    fail = 1
+    print("  FAIL Card union missing")
+  if seen(graph, "effect: ?id = null")
+    fail = 1
+    print("  FAIL nullable Card fields on ApplicationFact")
+  print("reconstruction debt (target zero before closure)")
+  open("subject row", "subject: ?id,\n    arguments", graph)
+  open("subject lower", "fact.subject", lower)
+  open("subject backend", "fact.subject", backend)
+  open("subject query", "return fact.subject", query)
+  open("native_ir subject", "fact.subject", "src/native_ir.zig":read())
+  open("sema bridge", "applicationFact", "src/sema.zig":read())
+  if not seen(lower, "applicationArguments")
+    print("  open operand pack not consumed from graph in dnir_lower")
+  if seen(lower, "applicationArguments")
+    print("  ok   dnir_lower consumes graph operand pack")
+  if fail
+    print("ledger/application: FAIL provenance")
+    return 1
+  print("ledger/application: PASS accessors (reconstruction debt listed)")
+  print("target downstream reconstructed application facts = 0")
+  0

@@ -1,4 +1,4 @@
 probe: i64 = ()
-    r = gatecap("false; echo $?")
-    print(r)
-    0
+  r = gatecap("false; echo $?")
+  print(r)
+  0

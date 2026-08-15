@@ -2,24 +2,24 @@
 # Native kernels via ml.* — one call per workload, zero @c.emit boilerplate.
 
 @hot
-matmul_256(): f64
-    return ml.matmul_256()
+matmul_256: f64 = ()
+  return ml.matmul_256()
 
 @hot
-conv2d(): f64
-    return ml.conv2d()
+conv2d: f64 = ()
+  return ml.conv2d()
 
 @hot
-softmax_1k(): f64
-    return ml.softmax_1k()
+softmax_1k: f64 = ()
+  return ml.softmax_1k()
 
 @hot
-attention(): f64
-    return ml.attention()
+attention: f64 = ()
+  return ml.attention()
 
 @hot
-mlp_forward(): f64
-    return ml.mlp_forward()
+mlp_forward: f64 = ()
+  return ml.mlp_forward()
 
 # Six decimals, assembled from integer millionths.
 #
@@ -35,26 +35,27 @@ mlp_forward(): f64
 # Doing it in Duo fixes the bug and removes foreign code from a .id file at
 # the same time. The output format is unchanged, so the harnesses that scrape
 # "Time: <n> seconds" and "RESULT <name> <n>" still read it.
-_f6(x: f64): str
-    neg = false
-    v = x
-    if v < 0.0
-        neg = true
-        v = -v
-    n = to(i64)(v * 1000000.0 + 0.5)
-    w = n / 1000000
-    f = n % 1000000
-    fs = to(str)(f)
-    while fs:len() < 6
-        fs = "0" .. fs
-    s = to(str)(w) .. "." .. fs
-    if neg return "-" .. s
-    s
+_f6: str = (x: f64)
+  neg = false
+  v = x
+  if v < 0.0
+    neg = true
+    v = -v
+  n = to(i64)(v * 1000000.0 + 0.5)
+  w = n / 1000000
+  f = n % 1000000
+  fs = to(str)(f)
+  while fs:len() < 6
+    fs = "0" .. fs
+  s = to(str)(w) .. "." .. fs
+  if neg
+    return "-" .. s
+  s
 
-_report(name: str, elapsed: f64, value: f64): void
-    print("Time: " .. _f6(elapsed) .. " seconds")
-    print("RESULT " .. name .. " " .. _f6(value))
-    print("----------------------------------------")
+_report = (name: str, elapsed: f64, value: f64)
+  print("Time: " .. _f6(elapsed) .. " seconds")
+  print("RESULT " .. name .. " " .. _f6(value))
+  print("----------------------------------------")
 
 print("========================================")
 print("       ML BENCHMARK SUITE (Duo)         ")

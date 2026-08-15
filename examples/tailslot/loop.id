@@ -9,9 +9,9 @@
 # Three `b` lines, then `3`.
 
 main: i64 = ()
-    n: i64 = 0
-    while n < 3
-        n += 1
-        print("b")
-    print(n)
-    0
+  n: i64 = 0
+  while n < 3
+    n = n + 1
+    print("b")
+  print(n)
+  0

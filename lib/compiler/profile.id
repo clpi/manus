@@ -18,23 +18,22 @@
 # declaration. Predicting from the surface is possible precisely because those
 # rules are syntactic.
 
-
 contains: bool = (hay: str, needle: str)
-    hn: i64 = hay:len()
-    nn: i64 = needle:len()
-    i: i64 = 1
-    while i + nn - 1 <= hn
-        j: i64 = 0
-        hit = true
-        while j < nn
-            if hay:byte(i + j) != needle:byte(j + 1)
-                hit = false
-                j = nn
-            j += 1
-        if hit
-            return true
-        i += 1
-    false
+  hn: i64 = hay:len()
+  nn: i64 = needle:len()
+  i: i64 = 1
+  while i + nn - 1 <= hn
+    j: i64 = 0
+    hit = true
+    while j < nn
+      if hay:byte(i + j) != needle:byte(j + 1)
+        hit = false
+        j = nn
+      j = j + 1
+    if hit
+      return true
+    i = i + 1
+  false
 
 # Does this source need the boxed runtime?
 #
@@ -43,24 +42,24 @@ contains: bool = (hay: str, needle: str)
 # program needs; one that wrongly claims "needs runtime" costs only size. The
 # asymmetry is real, so the default leans to yes.
 dynamic: bool = (src: str)
-    # an `any`-typed parameter or binding: the native-scalar path refuses the
-    # whole module on this one, with no diagnostic
-    if contains(src, ": any")
-        return true
-    # a table literal or index: no native memory representation for a table
-    # crossing a call boundary
-    if contains(src, "{")
-        return true
-    # varargs
-    if contains(src, "...")
-        return true
-    # string values beyond literals passed straight through
-    if contains(src, ": str")
-        return true
-    false
+  # an `any`-typed parameter or binding: the native-scalar path refuses the
+  # whole module on this one, with no diagnostic
+  if contains(src, ": any")
+    return true
+  # a table literal or index: no native memory representation for a table
+  # crossing a call boundary
+  if contains(src, "{")
+    return true
+  # varargs
+  if contains(src, "...")
+    return true
+  # string values beyond literals passed straight through
+  if contains(src, ": str")
+    return true
+  false
 
 # The profile name, so a build can key on it rather than on a bool.
 profile: str = (src: str)
-    if dynamic(src)
-        return "dynamic"
-    "freestanding"
+  if dynamic(src)
+    return "dynamic"
+  "freestanding"

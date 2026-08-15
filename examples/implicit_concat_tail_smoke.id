@@ -1,21 +1,25 @@
 # F-13813-1: implicit return of chained string concat after a side-effect stmt
 
-format_msg(id: str, kind: str): str
-    "ok: " .. id .. " (" .. kind .. ")"
+format_msg: str = (id: str, kind: str)
+  "ok: " .. id .. " (" .. kind .. ")"
 
-with_side_effect(id: str, kind: str): str
-    print("side")
-    "ok: " .. id .. " (" .. kind .. ")"
+with_side_effect: str = (id: str, kind: str)
+  print("side")
+  "ok: " .. id .. " (" .. kind .. ")"
 
-same_line(id: str, kind: str): str
-    print("side") "ok: " .. id .. " (" .. kind .. ")"
+same_line: str = (id: str, kind: str)
+  print("side")
+  "ok: " .. id .. " (" .. kind .. ")"
 
-main(): i64
-    msg = format_msg("F-1", "ergonomic_gap")
-    if msg:len() != 23 return 1
-    msg2 = with_side_effect("F-1", "ergonomic_gap")
-    if msg2:len() != 23 return 2
-    msg3 = same_line("F-1", "ergonomic_gap")
-    if msg3:len() != 23 return 3
-    print("PASS implicit_concat_tail")
-    return 0
+main: i64 = ()
+  msg = format_msg("F-1", "ergonomic_gap")
+  if msg:len() != 23
+    return 1
+  msg2 = with_side_effect("F-1", "ergonomic_gap")
+  if msg2:len() != 23
+    return 2
+  msg3 = same_line("F-1", "ergonomic_gap")
+  if msg3:len() != 23
+    return 3
+  print("PASS implicit_concat_tail")
+  return 0

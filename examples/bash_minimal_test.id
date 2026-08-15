@@ -1,7 +1,7 @@
 # Test minimal bash-style fun call
 
-greet(name: str): str
-    "Hello, " .. name
+greet: str = (name: str)
+  "Hello, " .. name
 
 # Bash-style call
-print greet "World"
+print(greet("World"))

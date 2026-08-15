@@ -1,3 +1,3 @@
 bytecursor: { a: i64 }
-cursornew(): bytecursor
-    { a = 1 }
+cursornew: bytecursor = ()
+  { a = 1 }

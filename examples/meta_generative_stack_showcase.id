@@ -4,8 +4,8 @@
 # One author pattern per stage; @comp.each closes the algebra by re-expanding
 # every comptime fragment. Fragment counts use @comp.str.countlines (native i64).
 
-stamp: str = (frag)
-  "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
+stamp: str = frag
+"/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 
 # Stage A: O(n) template axis
 TMPL_VARIANTS = "i64:int64_t|f64:double"

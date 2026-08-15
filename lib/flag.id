@@ -8,25 +8,48 @@ new_flag_set: any = (name: str)
 
 # bool_flag: register a boolean flag.
 bool_flag: any = (fs: any, name: str, default_val: bool, usage: str)
-  f = { name = name, value = default_val, default = default_val, usage = usage, is_bool = true }
+  f =
+    name = name
+    value = default_val
+    default = default_val
+    usage = usage
+    is_bool = true
   fs.flags(name) = f
   f
 
 # string_flag: register a string flag.
 string_flag: any = (fs: any, name: str, default_val: str, usage: str)
-  f = { name = name, value = default_val, default = default_val, usage = usage, is_bool = false, kind = "string" }
+  f =
+    name = name
+    value = default_val
+    default = default_val
+    usage = usage
+    is_bool = false
+    kind = "string"
   fs.flags(name) = f
   f
 
 # int_flag: register an integer flag.
 int_flag: any = (fs: any, name: str, default_val: i64, usage: str)
-  f = { name = name, value = default_val, default = default_val, usage = usage, is_bool = false, kind = "int" }
+  f =
+    name = name
+    value = default_val
+    default = default_val
+    usage = usage
+    is_bool = false
+    kind = "int"
   fs.flags(name) = f
   f
 
 # float_flag: register a float flag.
 float_flag: any = (fs: any, name: str, default_val: f64, usage: str)
-  f = { name = name, value = default_val, default = default_val, usage = usage, is_bool = false, kind = "float" }
+  f =
+    name = name
+    value = default_val
+    default = default_val
+    usage = usage
+    is_bool = false
+    kind = "float"
   fs.flags(name) = f
   f
 

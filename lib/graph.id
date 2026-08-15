@@ -27,7 +27,9 @@ add_edge = (g: any, from: any, to: any, weight: any)
     add_node(g, from, nil)
   if g.adj(to) == nil
     add_node(g, to, nil)
-  g.adj(from)(g.adj(from):len() + 1) = { to = to, weight = weight or 1 }
+  g.adj(from)(g.adj(from):len() + 1) =
+    to = to
+    weight = weight or 1
   g.in_degree(to) = (g.in_degree(to) or 0) + 1
 
 # remove_node: remove a node and all its edges.
@@ -295,7 +297,9 @@ dijkstra: any = (g: any, start: any)
         if new_dist < dist(edge.to)
           dist(edge.to) = new_dist
           prev(edge.to) = cur.id
-          pq(pq:len() + 1) = { id = edge.to, d = new_dist }
+          pq(pq:len() + 1) =
+            id = edge.to
+            d = new_dist
         i = i + 1
   { dist = dist, prev = prev }
 

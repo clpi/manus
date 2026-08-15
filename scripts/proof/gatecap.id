@@ -1,17 +1,17 @@
 chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
 
 cap: str = (cmd: str)
-    chomp(gatecap(cmd))
+  chomp(gatecap(cmd))
 
 main: i64 = ()
-    gatecap("echo nested-work > /tmp/idol-gatecap-t")
-    work = cap("cat /tmp/idol-gatecap-t")
-    print("work=[{work}]")
-    0
+  gatecap("echo nested-work > /tmp/idol-gatecap-t")
+  work = cap("cat /tmp/idol-gatecap-t")
+  print("work=[{work}]")
+  0

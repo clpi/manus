@@ -9,15 +9,15 @@ p = "Z"
 q = "a"
 a = 0
 if p < q
-    a = 1
+  a = 1
 r = "ab"
 s = "abc"
 b = 0
 if r < s
-    b = 1
-t = "\xc3\xa9"
+  b = 1
+t = "é"
 u = "z"
 c = 0
 if t < u
-    c = 1
+  c = 1
 print("{a} {b} {c}")

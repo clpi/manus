@@ -1,46 +1,46 @@
 # SHC + FTCFTW closure - file facts only. Run ledgers directly for execution proof.
 
 closure: i64 = ()
-    print("closure: file facts")
-    fail = 0
-    semantic = "scripts/proof/semantic.id":read()
-    sledger = "scripts/ledger/semantic.id":read()
-    evidence = "scripts/ledger/evidence.id":read()
-    ftcftw = "scripts/ledger/ftcftw.id":read()
-    shc = "scripts/ledger/shc.id":read()
-    foreign = "scripts/census/foreign.id":read()
-    if !semantic:len()
-        print("  FAIL semantic-proof missing")
-        fail = 1
-    if semantic:len()
-        print("  ok   semantic-proof")
-    if !sledger:len()
-        print("  FAIL semantic ledger missing")
-        fail = 1
-    if sledger:len()
-        print("  ok   semantic ledger")
-    if !evidence:len()
-        print("  FAIL evidence ledger missing")
-        fail = 1
-    if evidence:len()
-        print("  ok   evidence ledger")
-    if !ftcftw:len()
-        print("  FAIL ftcftw missing")
-        fail = 1
-    if ftcftw:len()
-        print("  ok   ftcftw")
-    if !shc:len()
-        print("  FAIL shc missing")
-        fail = 1
-    if shc:len()
-        print("  ok   shc")
-    if !foreign:len()
-        print("  FAIL foreign census missing")
-        fail = 1
-    if foreign:len()
-        print("  ok   foreign census")
-    if fail
-        print("closure: FAIL")
-    if !fail
-        print("closure: PASS file facts for semantic + evidence + ftcftw + shc + foreign + semantic-ledger")
-    fail
+  print("closure: file facts")
+  fail = 0
+  semantic = "scripts/proof/semantic.id":read()
+  sledger = "scripts/ledger/semantic.id":read()
+  evidence = "scripts/ledger/evidence.id":read()
+  ftcftw = "scripts/ledger/ftcftw.id":read()
+  shc = "scripts/ledger/shc.id":read()
+  foreign = "scripts/census/foreign.id":read()
+  if not semantic:len()
+    print("  FAIL semantic-proof missing")
+    fail = 1
+  if semantic:len()
+    print("  ok   semantic-proof")
+  if not sledger:len()
+    print("  FAIL semantic ledger missing")
+    fail = 1
+  if sledger:len()
+    print("  ok   semantic ledger")
+  if not evidence:len()
+    print("  FAIL evidence ledger missing")
+    fail = 1
+  if evidence:len()
+    print("  ok   evidence ledger")
+  if not ftcftw:len()
+    print("  FAIL ftcftw missing")
+    fail = 1
+  if ftcftw:len()
+    print("  ok   ftcftw")
+  if not shc:len()
+    print("  FAIL shc missing")
+    fail = 1
+  if shc:len()
+    print("  ok   shc")
+  if not foreign:len()
+    print("  FAIL foreign census missing")
+    fail = 1
+  if foreign:len()
+    print("  ok   foreign census")
+  if fail
+    print("closure: FAIL")
+  if not fail
+    print("closure: PASS file facts for semantic + evidence + ftcftw + shc + foreign + semantic-ledger")
+  fail

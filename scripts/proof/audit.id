@@ -1,24 +1,21 @@
 # Path audit helpers — subject-first read chains; boundary-curried relation edges.
 # path:len(min), path:audit(pattern), path:hit(pattern) — subject-first invocation.
 
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
+len__path = (min: i64)
+  path:read():len() >= min
 
-audit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+audit__path = (pattern: str)
+  path:read():has(pattern)
 
-hit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+hit__path = (pattern: str)
+  path:read():has(pattern)
 
 main: i64 = ()
-    if !"scripts/proof/remove.id":len(16)
-        return 1
-    if !"scripts/proof/remove.id":audit(":remove(")
-        return 2
-    if "scripts/proof/remove.id":hit("fs.")
-        return 3
-    print("proof/audit: pass")
-    0
+  if not "scripts/proof/remove.id":len(16)
+    return 1
+  if not "scripts/proof/remove.id":audit(":remove(")
+    return 2
+  if "scripts/proof/remove.id":hit("fs.")
+    return 3
+  print("proof/audit: pass")
+  0

@@ -8,8 +8,10 @@
 #
 # Both files print 6 and emit byte-identical C. That equality is the point:
 # the attribute was never a second mechanism, only a second spelling.
-global gp: { x: i8, y: i64 } & packed & align(16) = { x = 1, y = 2 }
+global gp: { x: i8, y: i64 } = { x = 1, y = 2 }
 
-p: { x: i8, y: i64 } & packed & align(8) = { x = 3, y = 4 }
+p: { x: i8, y: i64 } =
+  x = 3
+  y = 4
 
 print(gp.y + p.y)

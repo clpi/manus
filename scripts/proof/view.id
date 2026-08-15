@@ -2,32 +2,29 @@
 
 bit = "scripts/proof/bit.id"
 
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
+len__path = (min: i64)
+  path:read():len() >= min
 
-audit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+audit__path = (pattern: str)
+  path:read():has(pattern)
 
-hit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+hit__path = (pattern: str)
+  path:read():has(pattern)
 
 main: i64 = ()
-    if !bit:len(32)
-        return 1
-    if bit:hit("viewedges")
-        return 3
-    if bit:hit("callable = true")
-        return 4
-    if !bit:audit("@view")
-        return 5
-    if !bit:audit(":to(bit)")
-        return 6
-    if !bit:audit("to(bit)(f64)")
-        return 7
-    if !bit:audit("to(i64)(bit)")
-        return 8
-    print("proof/view: pass")
-    0
+  if not bit:len(32)
+    return 1
+  if bit:hit("viewedges")
+    return 3
+  if bit:hit("callable = true")
+    return 4
+  if not bit:audit("@view")
+    return 5
+  if not bit:audit(":to(bit)")
+    return 6
+  if not bit:audit("to(bit)(f64)")
+    return 7
+  if not bit:audit("to(i64)(bit)")
+    return 8
+  print("proof/view: pass")
+  0

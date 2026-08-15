@@ -7,7 +7,7 @@ TAG = @("[" .. GREETING .. "]")
 print("=== comptime @embed showcase ===")
 print("GREETING = " .. GREETING)
 print("TAG = " .. TAG)
-print("len = " .. to(str)(@(GREETING:len())))
+print("len = " .. to(str)(@GREETING:len()))
 
 # Combine with @run for hybrid codegen
 BUILDER = @run("whoami")

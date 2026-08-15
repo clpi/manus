@@ -49,35 +49,31 @@ wantstoreout = "16"
 rows = 0
 pass = 0
 
-at(pattern: str): i64
-    n = 0
-    hit = std.script.chomp(std.script.capture(
-        "grep -n '{pattern}' {file} | head -1 | cut -d: -f1"))
-    if hit != ""
-        n = to(i64)(hit)
-    n
+at: i64 = (pattern: str)
+  n = 0
+  hit = std.script.chomp(std.script.capture("grep -n '{pattern}' {file} | head -1 | cut -d: -f1"))
+  if hit != ""
+    n = to(i64)(hit)
+  n
 
-eqlin(lo: i64, hi: i64): i64
-    to(i64)(std.script.chomp(std.script.capture(
-        "sed -n '{lo},{hi}p' {file} | grep -c 'mem.eql' | head -1")))
+eqlin: i64 = (lo: i64, hi: i64)
+  to(i64)(std.script.chomp(std.script.capture("sed -n '{lo},{hi}p' {file} | grep -c 'mem.eql' | head -1")))
 
-census(path: str): str
-    std.script.chomp(std.script.capture(
-        "DUO_SER=1 ./zig-out/bin/idol run {path} 2>&1 >/dev/null | grep '^.ser.' | head -1"))
+census: str = (path: str)
+  std.script.chomp(std.script.capture("DUO_SER=1 ./zig-out/bin/idol run {path} 2>&1 >/dev/null | grep '^.ser.' | head -1"))
 
-answer(path: str): str
-    std.script.chomp(std.script.capture(
-        "DUO_SER=1 ./zig-out/bin/idol run {path} 2>/dev/null | tail -1"))
+answer: str = (path: str)
+  std.script.chomp(std.script.capture("DUO_SER=1 ./zig-out/bin/idol run {path} 2>/dev/null | tail -1"))
 
-row(name: str, got: str, want: str): void
-    rows += 1
-    if got == want
-        pass += 1
-        std.script.echo("  ok   {name}")
-    if got != want
-        std.script.echo("  FAIL {name}")
-        std.script.echo("       want: {want}")
-        std.script.echo("       got:  {got}")
+row = (name: str, got: str, want: str)
+  rows = rows + 1
+  if got == want
+    pass = pass + 1
+    std.script.echo("  ok   {name}")
+  if got != want
+    std.script.echo("  FAIL {name}")
+    std.script.echo("       want: {want}")
+    std.script.echo("       got:  {got}")
 
 std.script.echo("id gate — law.identity.three, gap[103]")
 
@@ -96,29 +92,29 @@ std.script.echo("  byte comparisons: quarantine {quarantine}, algebra {leaked}")
 
 control = 0
 if algebra > 0
-    if tests > algebra
-        if quarantine > 0
-            control = 1
+  if tests > algebra
+    if quarantine > 0
+      control = 1
 
-rows += 1
+rows = rows + 1
 if control == 1
-    pass += 1
-    std.script.echo("  ok   scanner control: {quarantine} byte comparison(s) in the quarantine")
+  pass = pass + 1
+  std.script.echo("  ok   scanner control: {quarantine} byte comparison(s) in the quarantine")
 if control == 0
-    std.script.echo("  FAIL scanner control: the quarantine reads {quarantine} — the scan is blind, so the algebra's zero is unearned")
+  std.script.echo("  FAIL scanner control: the quarantine reads {quarantine} — the scan is blind, so the algebra's zero is unearned")
 
-rows += 1
+rows = rows + 1
 if leaked == 0
-    pass += 1
-    std.script.echo("  ok   algebra is id-native: 0 byte comparisons from `pub const Relation` down")
+  pass = pass + 1
+  std.script.echo("  ok   algebra is id-native: 0 byte comparisons from `pub const Relation` down")
 if leaked != 0
-    std.script.echo("  FAIL the text key is growing back: {leaked} byte comparison(s) in the algebra")
-    std.script.echo("       every identity comparison below `pub const Relation` must read `Id.eq`")
+  std.script.echo("  FAIL the text key is growing back: {leaked} byte comparison(s) in the algebra")
+  std.script.echo("       every identity comparison below `pub const Relation` must read `Id.eq`")
 
 std.script.echo("id {pass}/{rows}")
 verdict = 1
 if pass == rows
-    verdict = 0
+  verdict = 0
 if control == 0
-    verdict = 1
+  verdict = 1
 verdict

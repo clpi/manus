@@ -8,11 +8,10 @@ tape_new: any = ()
 
 tape_push: any = (tape, op, inputs, output)
   tape.n = tape.n + 1
-  tape.ops(tape.n) = {
-    type = op,
-    inputs = inputs,
+  tape.ops(tape.n) =
+    type = op
+    inputs = inputs
     output = output
-  }
   return tape
 
 backward_relu: any = (tape, idx, grad_out)

@@ -20,64 +20,62 @@ _EX = "examples"
 # No ANSI here. The repo has an assert_no_ansi_reports gate, and a benchmark
 # whose output is scraped should not carry escape codes; the shell version's
 # colours were the only thing lost in this port.
-_step(msg: str): void
-    print(msg)
+_step = (msg: str)
+  print(msg)
 
 main: i64 = ()
-    print("=== Duo GPU (Metal) Benchmark ===")
-    print("")
+  print("=== Duo GPU (Metal) Benchmark ===")
+  print("")
 
-    if std.script.chomp(std.script.capture("uname")) != "Darwin"
-        print("SKIP: This benchmark requires macOS with Metal support. Skipping gracefully.")
-        return 0
+  if std.script.chomp(std.script.capture("uname")) != "Darwin"
+    print("SKIP: This benchmark requires macOS with Metal support. Skipping gracefully.")
+    return 0
 
-    duo = "./zig-out/bin/idol"
-    if !std.script.fs_exists(duo)
-        print("ERROR: Duo compiler not found at " .. duo)
-        print("  Run 'zig build' first")
-        return 1
+  duo = "./zig-out/bin/idol"
+  if not std.script.fs_exists(duo)
+    print("ERROR: Duo compiler not found at " .. duo)
+    print("  Run 'zig build' first")
+    return 1
 
-    std.script.run("mkdir -p " .. _OUT_DIR)
-    sdk = std.script.chomp(std.script.capture("xcrun --show-sdk-path"))
+  std.script.run("mkdir -p " .. _OUT_DIR)
+  sdk = std.script.chomp(std.script.capture("xcrun --show-sdk-path"))
 
-    _step("[1/3] Compiling Metal helper (metal_compute.m)...")
-    rc = std.script.run("clang -c " .. _EX .. "/metal_compute.m -o " .. _OUT_DIR
-        .. "/metal_compute.o -isysroot " .. sdk .. " -O2 -fobjc-arc")
-    if rc != 0
-        print("ERROR: Metal helper failed to compile")
-        return 1
-    print("      -> " .. _OUT_DIR .. "/metal_compute.o")
+  _step("[1/3] Compiling Metal helper (metal_compute.m)...")
+  rc = std.script.run("clang -c " .. _EX .. "/metal_compute.m -o " .. _OUT_DIR .. "/metal_compute.o -isysroot " .. sdk .. " -O2 -fobjc-arc")
+  if rc != 0
+    print("ERROR: Metal helper failed to compile")
+    return 1
+  print("      -> " .. _OUT_DIR .. "/metal_compute.o")
 
-    _step("[2/3] Compiling bench_gpu_metal.id...")
-    csrc = _OUT_DIR .. "/bench_gpu_metal.c"
-    # dump-c writes to STDOUT, so the redirect is the output path. A failure
-    # here leaves an empty .c that clang would reject with a confusing error,
-    # which is why the status is checked before clang runs.
-    if std.script.run(duo .. " dump-c " .. _EX .. "/bench_gpu_metal.id > " .. csrc) != 0
-        print("ERROR: duo dump-c failed")
-        return 1
-    print("      -> Generated C: " .. csrc)
+  _step("[2/3] Compiling bench_gpu_metal.id...")
+  csrc = _OUT_DIR .. "/bench_gpu_metal.c"
+  # dump-c writes to STDOUT, so the redirect is the output path. A failure
+  # here leaves an empty .c that clang would reject with a confusing error,
+  # which is why the status is checked before clang runs.
+  if std.script.run(duo .. " dump-c " .. _EX .. "/bench_gpu_metal.id > " .. csrc) != 0
+    print("ERROR: duo dump-c failed")
+    return 1
+  print("      -> Generated C: " .. csrc)
 
-    bin = _OUT_DIR .. "/bench_gpu_metal"
-    rc = std.script.run("clang " .. csrc .. " " .. _OUT_DIR .. "/metal_compute.o -o " .. bin
-        .. " -isysroot " .. sdk .. " -framework Metal -framework Foundation -O3 -ffast-math -lm")
-    if rc != 0
-        print("ERROR: benchmark failed to link")
-        return 1
-    print("      -> Binary: " .. bin)
+  bin = _OUT_DIR .. "/bench_gpu_metal"
+  rc = std.script.run("clang " .. csrc .. " " .. _OUT_DIR .. "/metal_compute.o -o " .. bin .. " -isysroot " .. sdk .. " -framework Metal -framework Foundation -O3 -ffast-math -lm")
+  if rc != 0
+    print("ERROR: benchmark failed to link")
+    return 1
+  print("      -> Binary: " .. bin)
 
-    print("")
-    _step("[3/3] Running benchmark...")
-    print("-----------------------------------------------")
-    # `run`, not `status`: status routes the child's output to /dev/null to
-    # read its code back, and the benchmark's numbers ARE the deliverable.
-    # Zero-vs-nonzero is all this needs, which is exactly what run can give.
-    code = std.script.run(bin)
-    print("-----------------------------------------------")
-    if code != 0
-        print("ERROR: benchmark failed (nonzero exit)")
-        return 1
+  print("")
+  _step("[3/3] Running benchmark...")
+  print("-----------------------------------------------")
+  # `run`, not `status`: status routes the child's output to /dev/null to
+  # read its code back, and the benchmark's numbers ARE the deliverable.
+  # Zero-vs-nonzero is all this needs, which is exactly what run can give.
+  code = std.script.run(bin)
+  print("-----------------------------------------------")
+  if code != 0
+    print("ERROR: benchmark failed (nonzero exit)")
+    return 1
 
-    print("")
-    print("Done.")
-    0
+  print("")
+  print("Done.")
+  0

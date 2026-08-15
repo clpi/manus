@@ -32,4 +32,4 @@ print("timeout_cmd_ok = " .. to(str)(has_timeout))
 print("locked_run_ok = " .. to(str)(ran))
 print("RESULT script_lock_ok = " .. to(str)(ok))
 if not ok
-    error("script lock smoke failed")
+  error("script lock smoke failed")

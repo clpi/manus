@@ -149,19 +149,17 @@ memory: any = (model_fn: any, input_generator: any, batch_size: i64)
 compare: any = (results: any)
   comparison = {}
   for name, result in results
-    comparison(name) = {
-      mean_latency = result.mean_latency or 0,
-      throughput = result.throughput or 0,
+    comparison(name) =
+      mean_latency = result.mean_latency or 0
+      throughput = result.throughput or 0
       tokens_per_second = result.tokens_per_second or 0
-    }
   comparison
 rank: any = (results: any, metric: str)
   ranked = {}
   for name, result in results
-    ranked(ranked:len() + 1) = {
-      name = name,
+    ranked(ranked:len() + 1) =
+      name = name
       value = result(metric) or 0
-    }
   ranked:sort(fun(a: any, b: any) -> any
     a.value > b.value
   end)

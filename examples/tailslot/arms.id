@@ -14,18 +14,18 @@
 #
 # Expect exactly: `then` `done` `else` `done` `4`.
 
-pick: void = (c: bool)
-    if c
-        print("then")
-    else
-        print("else")
-    print("done")
+pick = (c: bool)
+  if c
+    print("then")
+  else
+    print("else")
+  print("done")
 
 main: i64 = ()
-    pick(true)
-    pick(false)
-    n: i64 = 0
-    if n < 1
-        n += 4
-        print(n)
-    0
+  pick(true)
+  pick(false)
+  n: i64 = 0
+  if n < 1
+    n = n + 4
+    print(n)
+  0

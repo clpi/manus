@@ -41,39 +41,39 @@
 # Data-processing (register): sf=1 for the 64-bit forms.
 #   ADD Xd, Xn, Xm  =  0x8B000000 | Rm<<16 | Rn<<5 | Rd
 encode_add_reg: i64 = (d: i64, n: i64, m: i64)
-    0x8B000000 | (m << 16) | (n << 5) | d
+  2332033024 | m << 16 | n << 5 | d
 
 #   SUB Xd, Xn, Xm  =  0xCB000000 | ...
 encode_sub_reg: i64 = (d: i64, n: i64, m: i64)
-    0xCB000000 | (m << 16) | (n << 5) | d
+  3405774848 | m << 16 | n << 5 | d
 
 #   MUL Xd, Xn, Xm is MADD Xd, Xn, Xm, XZR — Ra=31 in bits 10..14
 encode_mul_reg: i64 = (d: i64, n: i64, m: i64)
-    0x9B000000 | (m << 16) | (31 << 10) | (n << 5) | d
+  2600468480 | m << 16 | 31 << 10 | n << 5 | d
 
 #   AND Xd, Xn, Xm
 encode_and_reg: i64 = (d: i64, n: i64, m: i64)
-    0x8A000000 | (m << 16) | (n << 5) | d
+  2315255808 | m << 16 | n << 5 | d
 
 #   ORR Xd, Xn, Xm
 encode_orr_reg: i64 = (d: i64, n: i64, m: i64)
-    0xAA000000 | (m << 16) | (n << 5) | d
+  2852126720 | m << 16 | n << 5 | d
 
 #   EOR Xd, Xn, Xm
 encode_eor_reg: i64 = (d: i64, n: i64, m: i64)
-    0xCA000000 | (m << 16) | (n << 5) | d
+  3388997632 | m << 16 | n << 5 | d
 
 # MOV Xd, Xm is ORR Xd, XZR, Xm — the alias the assembler prints back as `mov`
 encode_mov_reg: i64 = (d: i64, m: i64)
-    encode_orr_reg(d, 31, m)
+  encode_orr_reg(d, 31, m)
 
 #   MOVZ Xd, #imm16 (no shift)
 encode_movz: i64 = (d: i64, imm: i64)
-    0xD2800000 | ((imm & 0xFFFF) << 5) | d
+  3531603968 | (imm & 65535) << 5 | d
 
 #   RET (Xn defaults to X30)
 encode_ret: i64 = ()
-    0xD65F0000 | (30 << 5)
+  3596550144 | 30 << 5
 
 # ─────────────────────────────────────────────────────────────────────────
 # LIFTED FROM ward's JIT (tools/wasm/src/wasm/jit_arm64.id), 2026-08-08.
@@ -99,23 +99,23 @@ encode_ret: i64 = ()
 # ── Immediates ──────────────────────────────────────────────────────────
 #   MOVZ Xd, #imm16, LSL #(16*hw)   —   hw in 0..3
 encode_movz_shift: i64 = (d: i64, imm: i64, hw: i64)
-    0xD2800000 | (hw << 21) | ((imm & 0xFFFF) << 5) | d
+  3531603968 | hw << 21 | (imm & 65535) << 5 | d
 
 #   MOVK Xd, #imm16, LSL #(16*hw)  — keeps the other 48 bits
 encode_movk: i64 = (d: i64, imm: i64, hw: i64)
-    0xF2800000 | (hw << 21) | ((imm & 0xFFFF) << 5) | d
+  4068474880 | hw << 21 | (imm & 65535) << 5 | d
 
 #   MOVN Xd, #imm16, LSL #(16*hw)  — the negative-constant form
 encode_movn: i64 = (d: i64, imm: i64, hw: i64)
-    0x92800000 | (hw << 21) | ((imm & 0xFFFF) << 5) | d
+  2457862144 | hw << 21 | (imm & 65535) << 5 | d
 
 #   ADD Xd, Xn, #imm12
 encode_add_imm: i64 = (d: i64, n: i64, imm: i64)
-    0x91000000 | ((imm & 0xFFF) << 10) | (n << 5) | d
+  2432696320 | (imm & 4095) << 10 | n << 5 | d
 
 #   SUB Xd, Xn, #imm12
 encode_sub_imm: i64 = (d: i64, n: i64, imm: i64)
-    0xD1000000 | ((imm & 0xFFF) << 10) | (n << 5) | d
+  3506438144 | (imm & 4095) << 10 | n << 5 | d
 
 # ── Loads and stores ────────────────────────────────────────────────────
 # The unsigned-offset forms scale the immediate by the access size, so the
@@ -123,31 +123,31 @@ encode_sub_imm: i64 = (d: i64, n: i64, imm: i64)
 # is not encodable in this form at all; the caller owns that.
 #   LDR Xt, [Xn, #off]
 encode_ldr_imm: i64 = (t: i64, n: i64, off: i64)
-    0xF9400000 | ((off >> 3) << 10) | (n << 5) | t
+  4181721088 | off >> 3 << 10 | n << 5 | t
 
 #   STR Xt, [Xn, #off]
 encode_str_imm: i64 = (t: i64, n: i64, off: i64)
-    0xF9000000 | ((off >> 3) << 10) | (n << 5) | t
+  4177526784 | off >> 3 << 10 | n << 5 | t
 
 #   LDR Xt, [Xn, Xm, LSL #3]  — the scaled index form an array read lowers to
 encode_ldr_reg: i64 = (t: i64, n: i64, m: i64)
-    0xF8607800 | (m << 16) | (n << 5) | t
+  4167071744 | m << 16 | n << 5 | t
 
 #   STR Xt, [Xn, Xm, LSL #3]
 encode_str_reg: i64 = (t: i64, n: i64, m: i64)
-    0xF8207800 | (m << 16) | (n << 5) | t
+  4162877440 | m << 16 | n << 5 | t
 
 #   LDRB Wt, [Xn, #off]  — string.byte lowers to exactly this
 encode_ldrb_imm: i64 = (t: i64, n: i64, off: i64)
-    0x39400000 | ((off & 0xFFF) << 10) | (n << 5) | t
+  960495616 | (off & 4095) << 10 | n << 5 | t
 
 #   STRB Wt, [Xn, #off]
 encode_strb_imm: i64 = (t: i64, n: i64, off: i64)
-    0x39000000 | ((off & 0xFFF) << 10) | (n << 5) | t
+  956301312 | (off & 4095) << 10 | n << 5 | t
 
 #   LDRB Wt, [Xn, Xm]  — unscaled register index; byte access needs no shift
 encode_ldrb_reg: i64 = (t: i64, n: i64, m: i64)
-    0x38606800 | (m << 16) | (n << 5) | t
+  945842176 | m << 16 | n << 5 | t
 
 # ── Frame ───────────────────────────────────────────────────────────────
 # imm7 counts 8-byte units and is signed, which is why the pre-index push
@@ -155,120 +155,120 @@ encode_ldrb_reg: i64 = (t: i64, n: i64, m: i64)
 # same seven bits either way; the assembler is what settles it.
 #   STP Xt, Xt2, [Xn, #imm]!
 encode_stp_pre: i64 = (t: i64, t2: i64, n: i64, imm: i64)
-    0xA9800000 | (((imm >> 3) & 0x7F) << 15) | (t2 << 10) | (n << 5) | t
+  2843738112 | (imm >> 3 & 127) << 15 | t2 << 10 | n << 5 | t
 
 #   LDP Xt, Xt2, [Xn], #imm
 encode_ldp_post: i64 = (t: i64, t2: i64, n: i64, imm: i64)
-    0xA8C00000 | (((imm >> 3) & 0x7F) << 15) | (t2 << 10) | (n << 5) | t
+  2831155200 | (imm >> 3 & 127) << 15 | t2 << 10 | n << 5 | t
 
 # ── Compare and select ──────────────────────────────────────────────────
 #   CMP Xn, Xm is SUBS XZR, Xn, Xm
 encode_cmp_reg: i64 = (n: i64, m: i64)
-    0xEB000000 | (m << 16) | (n << 5) | 31
+  3942645760 | m << 16 | n << 5 | 31
 
 #   CMP Xn, #imm12 is SUBS XZR, Xn, #imm
 encode_cmp_imm: i64 = (n: i64, imm: i64)
-    0xF1000000 | ((imm & 0xFFF) << 10) | (n << 5) | 31
+  4043309056 | (imm & 4095) << 10 | n << 5 | 31
 
 # CSET Xd, <cond> is CSINC Xd, XZR, XZR, <inverted cond>. ward flips the low
 # bit with xor; spelled out here because the flip is the whole subtlety and a
 # reader should not have to know that condition codes are paired.
 _invert_cond: i64 = (cond: i64)
-    if cond % 2 == 0
-        return cond + 1
-    cond - 1
+  if cond % 2 == 0
+    return cond + 1
+  cond - 1
 
 encode_cset: i64 = (d: i64, cond: i64)
-    0x9A9F07E0 | ((_invert_cond(cond) & 0xF) << 12) | d
+  2594113504 | (_invert_cond(cond) & 15) << 12 | d
 
 #   CSEL Xd, Xn, Xm, <cond>
 encode_csel: i64 = (d: i64, n: i64, m: i64, cond: i64)
-    0x9A800000 | (m << 16) | (cond << 12) | (n << 5) | d
+  2592079872 | m << 16 | cond << 12 | n << 5 | d
 
 # ── Branches (offsets are in INSTRUCTIONS, not bytes) ───────────────────
 encode_b: i64 = (off: i64)
-    0x14000000 | (off & 0x03FFFFFF)
+  335544320 | off & 67108863
 
 # BL — the call. Neither emitter had one: ward never calls out of JIT-ed code,
 # and the encoder above stops at arithmetic. A self-hosted backend cannot.
 encode_bl: i64 = (off: i64)
-    0x94000000 | (off & 0x03FFFFFF)
+  2483027968 | off & 67108863
 
 encode_blr: i64 = (n: i64)
-    0xD63F0000 | (n << 5)
+  3594452992 | n << 5
 
 encode_bcond: i64 = (cond: i64, off: i64)
-    0x54000000 | ((off & 0x7FFFF) << 5) | cond
+  1409286144 | (off & 524287) << 5 | cond
 
 encode_cbz: i64 = (n: i64, off: i64)
-    0xB4000000 | ((off & 0x7FFFF) << 5) | n
+  3019898880 | (off & 524287) << 5 | n
 
 encode_cbnz: i64 = (n: i64, off: i64)
-    0xB5000000 | ((off & 0x7FFFF) << 5) | n
+  3036676096 | (off & 524287) << 5 | n
 
 # ── Remaining data-processing ───────────────────────────────────────────
 #   SDIV / UDIV Xd, Xn, Xm
 encode_sdiv: i64 = (d: i64, n: i64, m: i64)
-    0x9AC00C00 | (m << 16) | (n << 5) | d
+  2596277248 | m << 16 | n << 5 | d
 
 encode_udiv: i64 = (d: i64, n: i64, m: i64)
-    0x9AC00800 | (m << 16) | (n << 5) | d
+  2596276224 | m << 16 | n << 5 | d
 
 #   MSUB Xd, Xn, Xm, Xa  =  Xa - Xn*Xm. Remainder is sdiv then msub.
 encode_msub: i64 = (d: i64, n: i64, m: i64, a: i64)
-    0x9B008000 | (m << 16) | (a << 10) | (n << 5) | d
+  2600501248 | m << 16 | a << 10 | n << 5 | d
 
 #   MADD Xd, Xn, Xm, Xa
 encode_madd: i64 = (d: i64, n: i64, m: i64, a: i64)
-    0x9B000000 | (m << 16) | (a << 10) | (n << 5) | d
+  2600468480 | m << 16 | a << 10 | n << 5 | d
 
 # Variable shifts. shr_s is ASRV and shr_u is LSRV — the pair ward's BIN table
 # maps in the order that reads backwards (0x87 -> ASRV, 0x88 -> LSRV).
 encode_lslv: i64 = (d: i64, n: i64, m: i64)
-    0x9AC02000 | (m << 16) | (n << 5) | d
+  2596282368 | m << 16 | n << 5 | d
 
 encode_lsrv: i64 = (d: i64, n: i64, m: i64)
-    0x9AC02400 | (m << 16) | (n << 5) | d
+  2596283392 | m << 16 | n << 5 | d
 
 encode_asrv: i64 = (d: i64, n: i64, m: i64)
-    0x9AC02800 | (m << 16) | (n << 5) | d
+  2596284416 | m << 16 | n << 5 | d
 
 encode_rorv: i64 = (d: i64, n: i64, m: i64)
-    0x9AC02C00 | (m << 16) | (n << 5) | d
+  2596285440 | m << 16 | n << 5 | d
 
 #   NEG Xd, Xm is SUB Xd, XZR, Xm. asm_for below already emits the mnemonic;
 #   until now there was no encoding behind it.
 encode_neg: i64 = (d: i64, m: i64)
-    encode_sub_reg(d, 31, m)
+  encode_sub_reg(d, 31, m)
 
 #   SXTW Xd, Wn — sign-extend a 32-bit value into 64 bits
 encode_sxtw: i64 = (d: i64, n: i64)
-    0x93407C00 | (n << 5) | d
+  2470476800 | n << 5 | d
 
 #   MOV Wd, Wm — a W-form move zero-extends, which IS the 32-bit widening
 encode_uxtw: i64 = (d: i64, m: i64)
-    0x2A0003E0 | (m << 16) | d
+  704644064 | m << 16 | d
 
 #   SXTB / SXTH Xd, Wn
 encode_sxtb: i64 = (d: i64, n: i64)
-    0x93401C00 | (n << 5) | d
+  2470452224 | n << 5 | d
 
 encode_sxth: i64 = (d: i64, n: i64)
-    0x93403C00 | (n << 5) | d
+  2470460416 | n << 5 | d
 
 # The instruction word as 8 lowercase hex digits, most significant first —
 # the form `otool -t` prints. The proof compares like with like rather than
 # reformatting one side into the other, because a formatting mismatch that
 # happens to cancel is exactly the kind of agreement that proves nothing.
 word_to_hex: str = (w: i64)
-    digits = "0123456789abcdef"
-    out = ""
-    i: i64 = 7
-    while i >= 0
-        d: i64 = (w >> (i * 4)) & 0xF
-        out = out .. digits:sub(d + 1, d + 1)
-        i -= 1
-    out
+  digits = "0123456789abcdef"
+  out = ""
+  i: i64 = 7
+  while i >= 0
+    d: i64 = w >> (i * 4) & 15
+    out = out .. digits:sub(d + 1, d + 1)
+    i = i - 1
+  out
 
 # ─────────────────────────────────────────────────────────────────────────
 # Expression codegen: a whole function, not one instruction.
@@ -291,92 +291,94 @@ global _src2: str = ""
 global _p2: i64 = 1
 global _bad2: bool = false
 
-_emit: void = (line: str)
-    _asm = _asm .. "    " .. line .. "\n"
+_emit = (line: str)
+  _asm = _asm .. "    " .. line .. "\n"
 
 _at2: i64 = ()
-    if _p2 > _src2:len()
-        return 0
-    _src2:byte(_p2)
+  if _p2 > _src2:len()
+    return 0
+  _src2:byte(_p2)
 
-_ws2: void = ()
-    while _p2 <= _src2:len() and (_at2() == 32 or _at2() == 9)
-        _p2 += 1
+_ws2 = ()
+  while _p2 <= _src2:len() and (_at2() == 32 or _at2() == 9)
+    _p2 = _p2 + 1
 
 _eat2: bool = (a: i64)
-    _ws2()
-    if _at2() != a
-        return false
-    _p2 += 1
-    true
+  _ws2()
+  if _at2() != a
+    return false
+  _p2 = _p2 + 1
+  true
 
 # Each level leaves its result in a freshly allocated register and returns it.
 _g_prim: i64 = ()
-    _ws2()
-    if _eat2(40)
-        r: i64 = _g_expr()
-        if !_eat2(41)
-            _bad2 = true
-        return r
-    if _eat2(45)
-        r2: i64 = _g_prim()
-        _emit("neg x" .. r2:to(str) .. ", x" .. r2:to(str))
-        return r2
-    v: i64 = 0
-    if !(_at2() >= 48 and _at2() <= 57)
-        _bad2 = true
-        return _reg
-    while _p2 <= _src2:len() and _at2() >= 48 and _at2() <= 57
-        v = v * 10 + (_at2() - 48)
-        _p2 += 1
-    d: i64 = _reg
-    _reg += 1
-    if _reg > 15
-        _bad2 = true
-    _emit("mov x" .. d:to(str) .. ", #" .. v:to(str))
-    d
+  _ws2()
+  if _eat2(40)
+    r: i64 = _g_expr()
+    if not _eat2(41)
+      _bad2 = true
+    return r
+  if _eat2(45)
+    r2: i64 = _g_prim()
+    _emit("neg x" .. r2:to(str) .. ", x" .. r2:to(str))
+    return r2
+  v: i64 = 0
+  if not (_at2() >= 48 and _at2() <= 57)
+    _bad2 = true
+    return _reg
+  while _p2 <= _src2:len() and _at2() >= 48 and _at2() <= 57
+    v = v * 10 + _at2() - 48
+    _p2 = _p2 + 1
+  d: i64 = _reg
+  _reg = _reg + 1
+  if _reg > 15
+    _bad2 = true
+  _emit("mov x" .. d:to(str) .. ", #" .. v:to(str))
+  d
 
 _g_term: i64 = ()
-    left: i64 = _g_prim()
-    while true
-        _ws2()
-        if _eat2(42)
-            r: i64 = _g_prim()
-            _emit("mul x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r:to(str))
-            _reg -= 1
-        else if _eat2(47)
-            r2: i64 = _g_prim()
-            _emit("sdiv x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r2:to(str))
-            _reg -= 1
-        else
-            return left
+  left: i64 = _g_prim()
+  while true
+    _ws2()
+    if _eat2(42)
+      r: i64 = _g_prim()
+      _emit("mul x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r:to(str))
+      _reg = _reg - 1
+    else
+      if _eat2(47)
+        r2: i64 = _g_prim()
+        _emit("sdiv x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r2:to(str))
+        _reg = _reg - 1
+      else
+        return left
 
 _g_expr: i64 = ()
-    left: i64 = _g_term()
-    while true
-        _ws2()
-        if _eat2(43)
-            r: i64 = _g_term()
-            _emit("add x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r:to(str))
-            _reg -= 1
-        else if _eat2(45)
-            r2: i64 = _g_term()
-            _emit("sub x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r2:to(str))
-            _reg -= 1
-        else
-            return left
+  left: i64 = _g_term()
+  while true
+    _ws2()
+    if _eat2(43)
+      r: i64 = _g_term()
+      _emit("add x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r:to(str))
+      _reg = _reg - 1
+    else
+      if _eat2(45)
+        r2: i64 = _g_term()
+        _emit("sub x" .. left:to(str) .. ", x" .. left:to(str) .. ", x" .. r2:to(str))
+        _reg = _reg - 1
+      else
+        return left
 
 # A complete assembly unit exporting `_duo_eval`, returning the expression's
 # value in x0 per the ARM64 C ABI.
 asm_for: str = (expr: str)
-    _asm = ""
-    _reg = 9
-    _src2 = expr
-    _p2 = 1
-    _bad2 = false
-    r: i64 = _g_expr()
-    _ws2()
-    if _bad2 or _p2 <= _src2:len()
-        return ""
-    body = _asm .. "    mov x0, x" .. r:to(str) .. "\n    ret\n"
-    ".text\n.global _duo_eval\n.align 2\n_duo_eval:\n" .. body
+  _asm = ""
+  _reg = 9
+  _src2 = expr
+  _p2 = 1
+  _bad2 = false
+  r: i64 = _g_expr()
+  _ws2()
+  if _bad2 or _p2 <= _src2:len()
+    return ""
+  body = _asm .. "    mov x0, x" .. r:to(str) .. "\n    ret\n"
+  ".text\n.global _duo_eval\n.align 2\n_duo_eval:\n" .. body

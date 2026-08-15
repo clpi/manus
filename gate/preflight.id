@@ -4,5 +4,5 @@
 # in the hook; this file remains as a negative control if invoked by mistake.
 
 main: i64 = ()
-    print("gate/preflight.id is retired — use .githooks/pre-commit (direct backend, no --backend=c)")
-    1
+  print("gate/preflight.id is retired — use .githooks/pre-commit (direct backend, no --backend=c)")
+  1

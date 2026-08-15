@@ -9,48 +9,48 @@
 # Do not call this a subprocess module.
 
 work: { line: str } = (line: str)
-    { line = line }
+  { line = line }
 
 command: { line: str } = (line: str)
-    work(line)
+  work(line)
 
 verdict: str = (status: i64)
-    if status == 0
-        "ok"
-    "failed"
+  if status == 0
+    "ok"
+  "failed"
 
 run: { outcome: str, status: i64 } = (line: str)
-    code = os.execute(line)
-    { outcome = verdict(code), status = code }
+  code = os.execute(line)
+  { outcome = verdict(code), status = code }
 
 evidence: str = (line: str)
-    gatecap(line)
+  gatecap(line)
 
 trim: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
 
 read: str = (w: { line: str })
-    evidence(w.line)
+  evidence(w.line)
 
-halt: void = (code: i64)
-    os.exit(code)
+halt = (code: i64)
+  os.exit(code)
 
 # Positive control — run/evidence algebra (revision-bound smoke).
 main: i64 = ()
-    w = command("printf ok")
-    r = run(w.line)
-    if r.outcome != "ok"
-        return 1
-    e = trim(evidence(w.line))
-    if e != "ok"
-        return 2
-    r2 = run("false")
-    if r2.outcome != "failed"
-        return 3
-    0
+  w = command("printf ok")
+  r = run(w.line)
+  if r.outcome != "ok"
+    return 1
+  e = trim(evidence(w.line))
+  if e != "ok"
+    return 2
+  r2 = run("false")
+  if r2.outcome != "failed"
+    return 3
+  0

@@ -28,12 +28,11 @@
 # Bytes per token written by `duo_lexer_tokenize_all`, as i64 slots:
 # kind, loc.line, loc.col, int_val. A host decoding the buffer should assert
 # this rather than hard-code 4, so a layout change fails loudly at the seam.
-duo_lexer_host_stride(): i64
-    4
+duo_lexer_host_stride: i64 = ()
+  4
 
 # One call that proves the boundary is initialized. Returns the token count
 # for a fixed source, so a host can distinguish "linked and live" from "linked
 # and reading uninitialized state" without knowing any Duo.
-duo_lexer_host_probe(out: i64, cap: i64): i64
-    compiler.lexer.id_lexer_tokenize_all("fun add(a: i64): i64 = a + 1 end",
-        "probe.id", 1, out, cap)
+duo_lexer_host_probe: i64 = (out: i64, cap: i64)
+  compiler.lexer.id_lexer_tokenize_all("fun add(a: i64): i64 = a + 1 end", "probe.id", 1, out, cap)

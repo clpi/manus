@@ -4,26 +4,26 @@ script = script
 targetpath = "ext/vscode-duo/extension.js"
 
 main: i64 = ()
-    root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
-    if root == ""
-        print("vscodeproj: fail no git root")
-        os.exit(3)
+  root = script.chomp(script.capture("git rev-parse --show-toplevel 2>/dev/null"))
+  if root == ""
+    print("vscodeproj: fail no git root")
+    os.exit(3)
 
-    tmp = script.chomp(script.capture("mktemp -t vscodeproj"))
-    if tmp == ""
-        print("vscodeproj: fail no temp file")
-        os.exit(3)
+  tmp = script.chomp(script.capture("mktemp -t vscodeproj"))
+  if tmp == ""
+    print("vscodeproj: fail no temp file")
+    os.exit(3)
 
-    rc = script.run("cd '{root}' && VSCODEOUT='{tmp}' ./zig-out/bin/idol run scripts/vscodeemit.id")
-    if rc != 0
-        script.run("rm -f '{tmp}'")
-        os.exit(rc)
-
-    same = script.run("cmp -s '{tmp}' '{root}/{targetpath}'")
+  rc = script.run("cd '{root}' && VSCODEOUT='{tmp}' ./zig-out/bin/idol run scripts/vscodeemit.id")
+  if rc != 0
     script.run("rm -f '{tmp}'")
-    if same != 0
-        print("vscodeproj: fail projection drift {targetpath}")
-        os.exit(1)
+    os.exit(rc)
 
-    print("vscodeproj: pass {targetpath}")
-    0
+  same = script.run("cmp -s '{tmp}' '{root}/{targetpath}'")
+  script.run("rm -f '{tmp}'")
+  if same != 0
+    print("vscodeproj: fail projection drift {targetpath}")
+    os.exit(1)
+
+  print("vscodeproj: pass {targetpath}")
+  0

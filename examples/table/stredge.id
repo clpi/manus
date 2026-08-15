@@ -20,7 +20,7 @@
 # quietly acquires a radix. It is 7, decimal, not 7 octal and not a rejection.
 # expect: 0 7
 main: i64 = ()
-    a = "0":to(i64)
-    b = "007":to(i64)
-    print("{a} {b}")
-    0
+  a = "0":to(i64)
+  b = "007":to(i64)
+  print("{a} {b}")
+  0

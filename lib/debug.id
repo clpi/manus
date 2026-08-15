@@ -1,20 +1,19 @@
 # debug — debugging utilities
 
-traceback(message: str, level: int): str
-    debug.traceback(message, level)
+traceback: str = (message: str, level: int)
+  debug.traceback(message, level)
 
-getinfo(f: any, what: str): any
-    debug.getinfo(f, what)
+getinfo: any = (f: any, what: str)
+  debug.getinfo(f, what)
 
-getlocal(f: any, local_: int): any
-    debug.getlocal(f, local_)
+getlocal: any = (f: any, local_: int)
+  debug.getlocal(f, local_)
 
-getupvalue(f: any, up: int): any
-    debug.getupvalue(f, up)
+getupvalue: any = (f: any, up: int)
+  debug.getupvalue(f, up)
 
-setlocal(thread: any, level: int, local_: int, value: any): any
-    debug.setlocal(thread, level, local_, value)
+setlocal: any = (thread: any, level: int, local_: int, value: any)
+  debug.setlocal(thread, level, local_, value)
 
-setupvalue(f: any, up: int, value: any): any
-    debug.setupvalue(f, up, value)
-
+setupvalue: any = (f: any, up: int, value: any)
+  debug.setupvalue(f, up, value)

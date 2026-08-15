@@ -8,11 +8,11 @@
 
 # Declare program structure once: a record type and two operations on it.
 TYPES = "type Vec3 { x: double, y: double, z: double }"
-FNS   = "fn add(a: Vec3, b: Vec3) -> Vec3 | fn sub(a: Vec3, b: Vec3) -> Vec3"
+FNS = "fn add(a: Vec3, b: Vec3) -> Vec3 | fn sub(a: Vec3, b: Vec3) -> Vec3"
 
 # One template line per unit kind -> a complete, typed C module fragment.
 STRUCTS = @comp.scheme(TYPES, "typedef struct { $fields; } $name;\n")
-SIGS    = @comp.scheme(FNS,   "$ret $name($params);\n")
+SIGS = @comp.scheme(FNS, "$ret $name($params);\n")
 
 print("=== @comp.scheme showcase ===")
 print(STRUCTS)

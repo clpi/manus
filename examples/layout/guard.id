@@ -12,8 +12,8 @@ pos = 0
 pull = ()
   pos = pos + 1
   src(pos)
-small = (n)
-  n < 7
+small = n
+n < 7
 total = 0
 while true
   b = pull()

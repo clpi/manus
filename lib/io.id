@@ -1,26 +1,26 @@
 # io home — subject-first handle relations only.
 # No @c.emit. No lua. Namespace io.method() is forbidden — use io:read / handle:read.
 
-read(file: any, arg: any): any
-    file:read(arg)
+read: any = (file: any, arg: any)
+  file:read(arg)
 
-write(file: any, arg: any): any
-    file:write(arg)
+write: any = (file: any, arg: any)
+  file:write(arg)
 
-close(file: any): void
-    file:close()
+close = (file: any)
+  file:close()
 
-flush(file: any): void
-    file:flush()
+flush = (file: any)
+  file:flush()
 
-bytes(file: any, n: int): str
-    file:read(n)
+bytes: str = (file: any, n: int)
+  file:read(n)
 
-put(file: any, data: str): void
-    file:write(data)
+put = (file: any, data: str)
+  file:write(data)
 
-line(file: any): any
-    file:read("*l")
+line: any = (file: any)
+  file:read("*l")
 
-all(file: any): any
-    file:read("*a")
+all: any = (file: any)
+  file:read("*a")

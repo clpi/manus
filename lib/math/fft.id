@@ -53,7 +53,9 @@ fft: any = (x: any)
       padded(i) = x(i)
       i = i + 1
     while padded:len() < new_n
-      padded(padded:len() + 1) = { re = 0, im = 0 }
+      padded(padded:len() + 1) =
+        re = 0
+        im = 0
     x = padded
     n = new_n
 
@@ -85,7 +87,9 @@ fft: any = (x: any)
 
     i = 0
     while i < n
-      w = { re = 1, im = 0 }
+      w =
+        re = 1
+        im = 0
       j = 0
       while j < half
         u = x(i + j + 1)
@@ -198,11 +202,15 @@ convolve: any = (a: any, b: any)
     if i <= a:len()
       fa(i) = complex_new(a(i), 0)
     else
-      fa(i) = { re = 0, im = 0 }
+      fa(i) =
+        re = 0
+        im = 0
     if i <= b:len()
       fb(i) = complex_new(b(i), 0)
     else
-      fb(i) = { re = 0, im = 0 }
+      fb(i) =
+        re = 0
+        im = 0
     i = i + 1
 
   # FFT both
@@ -252,7 +260,9 @@ dft: any = (x: any)
   result = {}
   k = 0
   while k < n
-    sum = { re = 0, im = 0 }
+    sum =
+      re = 0
+      im = 0
     j = 0
     while j < n
       angle = -2 * math.pi * k * j / n
@@ -268,7 +278,9 @@ idft: any = (x: any)
   result = {}
   k = 0
   while k < n
-    sum = { re = 0, im = 0 }
+    sum =
+      re = 0
+      im = 0
     j = 0
     while j < n
       angle = 2 * math.pi * k * j / n

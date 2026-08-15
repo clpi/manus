@@ -1,4 +1,5 @@
-main(): i64
-    s = "fun"
-    if s == "fun" return 1
-    return 0
+main: i64 = ()
+  s = "fun"
+  if s == "fun"
+    return 1
+  return 0

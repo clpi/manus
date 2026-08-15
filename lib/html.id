@@ -1,18 +1,18 @@
 # html — basic HTML escaping and unescaping
 
 string = string
-escape(s: str): str
-    s = s:gsub("&", "&amp;")
-    s = s:gsub("<", "&lt;")
-    s = s:gsub(">", "&gt;")
-    s = s:gsub('"', "&quot;")
-    s = s:gsub("'", "&#39;")
-    s
+escape: str = (s: str)
+  s = s:gsub("&", "&amp;")
+  s = s:gsub("<", "&lt;")
+  s = s:gsub(">", "&gt;")
+  s = s:gsub("\"", "&quot;")
+  s = s:gsub("'", "&#39;")
+  s
 
-unescape(s: str): str
-    s = s:gsub("&lt;", "<")
-    s = s:gsub("&gt;", ">")
-    s = s:gsub("&quot;", '"')
-    s = s:gsub("&#39;", "'")
-    s = s:gsub("&amp;", "&")
-    s
+unescape: str = (s: str)
+  s = s:gsub("&lt;", "<")
+  s = s:gsub("&gt;", ">")
+  s = s:gsub("&quot;", "\"")
+  s = s:gsub("&#39;", "'")
+  s = s:gsub("&amp;", "&")
+  s

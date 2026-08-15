@@ -1,28 +1,28 @@
 # gatecap tally positive control — redirect then cap("cat …"):to(i64).
 
 chomp: str = (text: str)
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
 
 cap: str = (cmd: str)
-    chomp(gatecap(cmd))
+  chomp(gatecap(cmd))
 
 tally: i64 = (cmd: str, slot: str)
-    c = cmd
-    s = slot
-    gatecap("{c} > /tmp/idol-cap-{s}")
-    cap("cat /tmp/idol-cap-{s}"):to(i64)
+  c = cmd
+  s = slot
+  gatecap("{c} > /tmp/idol-cap-{s}")
+  cap("cat /tmp/idol-cap-{s}"):to(i64)
 
 main: i64 = ()
-    gatecap("git ls-files | grep -E '[.](zig|c)$' > /tmp/idol-cap-all")
-    n = tally("grep -c . /tmp/idol-cap-all", "n")
-    if n < 1
-        print("capcount: FAIL - tally returned 0")
-        return 3
-    print("capcount: PASS n={n}")
-    0
+  gatecap("git ls-files | grep -E '[.](zig|c)$' > /tmp/idol-cap-all")
+  n = tally("grep -c . /tmp/idol-cap-all", "n")
+  if n < 1
+    print("capcount: FAIL - tally returned 0")
+    return 3
+  print("capcount: PASS n={n}")
+  0

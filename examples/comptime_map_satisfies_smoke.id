@@ -11,8 +11,8 @@ IdOnly: { id: i64 }
 @comp.assert(@comp.satisfies(Point, "HasXY"), "Point has x and y")
 @comp.assert(not @comp.satisfies(IdOnly, "HasXY"), "IdOnly lacks x/y")
 
-mark: str = (meta)
-  meta.name .. ";"
+mark: str = meta
+meta.name .. ";"
 
 MARKS = @comp.map("HasXY", mark)
 

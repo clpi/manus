@@ -1,14 +1,14 @@
 # Typed pipeline: x |> f |> g lowers to direct C calls (no lua_invoke)
 # Run: duo run examples/pipeline_typed_showcase.id
 
-twice(x: i64): i64
-    x * 2
+twice: i64 = (x: i64)
+  x * 2
 
-inc(x: i64): i64
-    x + 1
+inc: i64 = (x: i64)
+  x + 1
 
-run_chain(n: i64): i64
-    n |> twice |> inc
+run_chain: i64 = (n: i64)
+  n |> twice |> inc
 
 print("=== pipeline typed showcase ===")
 print("3 |> twice |> inc = " .. to(str)(run_chain(3)))

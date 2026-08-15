@@ -2,10 +2,10 @@
 # os.time / os.date are foreign ingress (origin/provenance) until clock world executes.
 
 now: i64 = ()
-    os.time()
+  os.time()
 
 utc: str = ()
-    os.date("!%Y-%m-%dT%H:%m:%SZ")
+  os.date("!%Y-%m-%dT%H:%m:%SZ")
 
 stamp: str = ()
-    os.date("%Y-%m-%d %H:%m:%S")
+  os.date("%Y-%m-%d %H:%m:%S")

@@ -3,18 +3,18 @@
 # expect: 6765 6765
 # @corpus current
 fib: i64 = (n: i64)
-    if n < 2
-        n
-    fib(n - 1) + fib(n - 2)
+  if n < 2
+    n
+  fib(n - 1) + fib(n - 2)
 
 loop: i64 = (n: i64)
-    a = 0
-    b = 1
-    for i = 1, n
-        c = a + b
-        a = b
-        b = c
-    a
+  a = 0
+  b = 1
+  for i = 1, n
+    c = a + b
+    a = b
+    b = c
+  a
 
 r = fib(20)
 l = loop(20)

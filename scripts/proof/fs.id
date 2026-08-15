@@ -3,36 +3,33 @@
 remove = "scripts/proof/remove.id"
 mkdir = "scripts/proof/mkdir.id"
 
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
+len__path = (min: i64)
+  path:read():len() >= min
 
-audit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+audit__path = (pattern: str)
+  path:read():has(pattern)
 
-hit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+hit__path = (pattern: str)
+  path:read():has(pattern)
 
 main: i64 = ()
-    if !remove:len(16)
-        return 1
-    if !mkdir:len(16)
-        return 2
-    if !remove:audit(":remove(")
-        return 3
-    if !remove:audit(":exists(")
-        return 4
-    if remove:hit("std.")
-        return 5
-    if remove:hit("fs.")
-        return 6
-    if !mkdir:audit(":mkdir(")
-        return 7
-    if !mkdir:audit(":copy(")
-        return 8
-    if mkdir:hit("std.")
-        return 9
-    print("proof/fs: pass")
-    0
+  if not remove:len(16)
+    return 1
+  if not mkdir:len(16)
+    return 2
+  if not remove:audit(":remove(")
+    return 3
+  if not remove:audit(":exists(")
+    return 4
+  if remove:hit("std.")
+    return 5
+  if remove:hit("fs.")
+    return 6
+  if not mkdir:audit(":mkdir(")
+    return 7
+  if not mkdir:audit(":copy(")
+    return 8
+  if mkdir:hit("std.")
+    return 9
+  print("proof/fs: pass")
+  0

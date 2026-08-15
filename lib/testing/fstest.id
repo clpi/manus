@@ -8,10 +8,15 @@ new_mapfs: any = ()
   { files = {} }
 
 mapfs_add = (fs: any, path: str, data: str)
-  fs.files(path) = { data = data, mode = 644 }
+  fs.files(path) =
+    data = data
+    mode = 644
 
 mapfs_add_dir = (fs: any, path: str)
-  fs.files(path) = { data = nil, mode = 755, is_dir = true }
+  fs.files(path) =
+    data = nil
+    mode = 755
+    is_dir = true
 
 mapfs_open: any = (fs: any, path: str)
   entry = fs.files(path)

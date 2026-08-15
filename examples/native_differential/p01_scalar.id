@@ -1,4 +1,4 @@
-add(a: i64, b: i64): i64
-    return a + b
-main(): i64
-    return add(40, 2)
+add: i64 = (a: i64, b: i64)
+  return a + b
+main: i64 = ()
+  return add(40, 2)

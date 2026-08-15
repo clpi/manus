@@ -65,7 +65,7 @@ sha1: str = (s: str)
           else
             f = b ~ c ~ d
             k = 3395469782
-      temp = (a << 5 | a >> 27 + f + e + k + w(j + 1)) % 2 ^ 32
+      temp = (a << 5 | a >> (27 + f + e + k + w(j + 1))) % 2 ^ 32
       e = d
       d = c
       c = (b << 30 | b >> 2) % 2 ^ 32

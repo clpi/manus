@@ -40,12 +40,12 @@ c_getters: str = (type_name: str, fields: any)
   fields_map(fields, "static inline %t get_%n(const " .. type_name .. "* self) { return self->%n; }\n")
 
 # Canonical @meta.map callback: emit a C comment per matching type.
-c_type_comment: str = (meta)
-  "/* " .. meta.name .. " */\n"
+c_type_comment: str = meta
+"/* " .. meta.name .. " */\n"
 
 # Canonical @meta.map callback: semicolon-separated type registry line.
-type_registry_line: str = (meta)
-  meta.name .. ";"
+type_registry_line: str = meta
+meta.name .. ";"
 
 # Canonical @meta.product callback: cross-product type pair signature.
 type_pair_line: str = (a, b)
@@ -120,33 +120,32 @@ chain_hint: str = ()
 type_triple_line: str = (a, b, c)
   a.name .. "x" .. b.name .. "x" .. c.name .. ";"
 
-M = {
-  fields_map = fields_map,
-  c_struct = c_struct,
-  c_hash_combine = c_hash_combine,
-  c_getters = c_getters,
-  c_type_comment = c_type_comment,
-  type_registry_line = type_registry_line,
-  type_pair_line = type_pair_line,
-  expand_hint = expand_hint,
-  ceiling_hint = ceiling_hint,
-  burst_hint = burst_hint,
-  transcend_hint = transcend_hint,
-  infinity_hint = infinity_hint,
-  nfold_hint = nfold_hint,
-  str_contains_hint = str_contains_hint,
-  str_prefix_suffix_hint = str_prefix_suffix_hint,
-  catalog_hint = catalog_hint,
-  ladder_hint = ladder_hint,
-  agent_catalog_hint = agent_catalog_hint,
-  agent_hooks_hint = agent_hooks_hint,
-  template_hint = template_hint,
-  generate_hint = generate_hint,
-  scheme_hint = scheme_hint,
-  scheme_clauses_hint = scheme_clauses_hint,
-  grammar_hint = grammar_hint,
-  weave_hint = weave_hint,
-  each_hint = each_hint,
-  chain_hint = chain_hint,
+M =
+  fields_map = fields_map
+  c_struct = c_struct
+  c_hash_combine = c_hash_combine
+  c_getters = c_getters
+  c_type_comment = c_type_comment
+  type_registry_line = type_registry_line
+  type_pair_line = type_pair_line
+  expand_hint = expand_hint
+  ceiling_hint = ceiling_hint
+  burst_hint = burst_hint
+  transcend_hint = transcend_hint
+  infinity_hint = infinity_hint
+  nfold_hint = nfold_hint
+  str_contains_hint = str_contains_hint
+  str_prefix_suffix_hint = str_prefix_suffix_hint
+  catalog_hint = catalog_hint
+  ladder_hint = ladder_hint
+  agent_catalog_hint = agent_catalog_hint
+  agent_hooks_hint = agent_hooks_hint
+  template_hint = template_hint
+  generate_hint = generate_hint
+  scheme_hint = scheme_hint
+  scheme_clauses_hint = scheme_clauses_hint
+  grammar_hint = grammar_hint
+  weave_hint = weave_hint
+  each_hint = each_hint
+  chain_hint = chain_hint
   type_triple_line = type_triple_line
-}

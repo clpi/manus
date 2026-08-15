@@ -1,47 +1,47 @@
 # Typed fibonacci exports for WAST testing.
 
 @export
-fib(n: int): int
-    if n <= 1
-        n
-    fib(n - 1) + fib(n - 2)
+fib: int = (n: int)
+  if n <= 1
+    n
+  fib(n - 1) + fib(n - 2)
 
 @export
-fib_iter(n: int): int
-    if n <= 1
-        n
-    a: int = 0
-    b: int = 1
-    for i = 2, n
-        c: int = a + b
-        a = b
-        b = c
-    b
+fib_iter: int = (n: int)
+  if n <= 1
+    n
+  a: int = 0
+  b: int = 1
+  for i = 2, n
+    c: int = a + b
+    a = b
+    b = c
+  b
 
 @export
-factorial(n: int): int
-    if n <= 1
-        1
-    n * factorial(n - 1)
+factorial: int = (n: int)
+  if n <= 1
+    1
+  n * factorial(n - 1)
 
 @export
-gcd(a: int, b: int): int
-    while b != 0
-        t: int = b
-        b = a % b
-        a = t
-    a
+gcd: int = (a: int, b: int)
+  while b != 0
+    t: int = b
+    b = a % b
+    a = t
+  a
 
 @export
-lcm(a: int, b: int): int
-    (a // gcd(a, b)) * b
+lcm: int = (a: int, b: int)
+  a // gcd(a, b) * b
 
 @export
-pow_int(base: int, exp: int): int
-    result: int = 1
-    while exp > 0
-        if exp % 2 == 1
-            result *= base
-        base *= base
-        exp = exp >> 1
-    result
+pow_int: int = (base: int, exp: int)
+  result: int = 1
+  while exp > 0
+    if exp % 2 == 1
+      result = result * base
+    base = base * base
+    exp = exp >> 1
+  result

@@ -1,69 +1,69 @@
 # csv — basic CSV parsing and formatting
 
-parse_line(line: any): any
-        res = {}
-        len = line:len()
-        i = 1
-        while i <= len
-            c = line:sub(i, i)
-            if c == '"'
-                # quoted field
-                field = ""
-                i += 1
-                while i <= len
-                    c2 = line:sub(i, i)
-                    if c2 == '"'
-                        if i + 1 <= len and line:sub(i + 1, i + 1) == '"'
-                            field = field .. '"'
-                            i += 2
-                        else
-                            i += 1
-                            break
-                    else
-                        field = field .. c2
-                        i += 1
-                res:insert(field)
-                if i <= len and line:sub(i, i) == ','
-                    i += 1
-            else
-                # unquoted field
-                start = i
-                while i <= len and line:sub(i, i) != ','
-                    i += 1
-                res:insert(line:sub(start, i - 1))
-                if i <= len
-                    i += 1 # skip comma
-        # Handle trailing comma
-        if len > 0 and line:sub(len, len) == ','
-            res:insert("")
-        res
+parse_line: any = (line: any)
+  res = {}
+  len = line:len()
+  i = 1
+  while i <= len
+    c = line:sub(i, i)
+    if c == "\""
+      # quoted field
+      field = ""
+      i = i + 1
+      while i <= len
+        c2 = line:sub(i, i)
+        if c2 == "\""
+          if i + 1 <= len and line:sub(i + 1, i + 1) == "\""
+            field = field .. "\""
+            i = i + 2
+          else
+            i = i + 1
+            break
+        else
+          field = field .. c2
+          i = i + 1
+      res:insert(field)
+      if i <= len and line:sub(i, i) == ","
+        i = i + 1
+    else
+      # unquoted field
+      start = i
+      while i <= len and line:sub(i, i) != ","
+        i = i + 1
+      res:insert(line:sub(start, i - 1))
+      if i <= len
+        # skip comma
+        i = i + 1
+  # Handle trailing comma
+  if len > 0 and line:sub(len, len) == ","
+    res:insert("")
+  res
 
-parse(data: any): any
-    lines = data:split("\n")
-    res = {}
-    for _, line in lines
-        if line:len() > 0 and line:sub(line:len(), line:len()) == "\r"
-            line = line:sub(1, line:len() - 1)
-        if line:len() > 0
-            res:insert(parse_line(line))
-    res
+parse: any = (data: any)
+  lines = data:split("\n")
+  res = {}
+  for _, line in lines
+    if line:len() > 0 and line:sub(line:len(), line:len()) == "\r"
+      line = line:sub(1, line:len() - 1)
+    if line:len() > 0
+      res:insert(parse_line(line))
+  res
 
-escape_field(field: any): any
-    s = field:to(str)
-    if s:find(",") or s:find('"') or s:find("\n")
-        s = s:gsub('"', '""')
-        return '"' .. s .. '"'
-    s
+escape_field: any = (field: any)
+  s = field:to(str)
+  if s:find(",") or s:find("\"") or s:find("\n")
+    s = s:gsub("\"", "\"\"")
+    return "\"" .. s .. "\""
+  s
 
-format_line(row: any): any
-    parts = {}
-    for _, v in row
-        parts:insert(escape_field(v))
-    parts:concat(",")
+format_line: any = (row: any)
+  parts = {}
+  for _, v in row
+    parts:insert(escape_field(v))
+  parts:concat(",")
 
-format(rows: any): any
-    lines = {}
-    for _, row in rows
-        lines:insert(format_line(row))
-    lines:concat("\n")
-
+format: any = (rows: any)
+  lines = {}
+  for _, row in rows
+    lines:insert(format_line(row))
+  lines:concat("\n")

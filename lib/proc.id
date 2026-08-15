@@ -1,18 +1,17 @@
-exec(cmd: str): i64
-    rc = os.execute(cmd)
-    if rc == nil
-        return -1
-    rc
+exec: i64 = (cmd: str)
+  rc = os.execute(cmd)
+  if rc == nil
+    return -1
+  rc
 
-capture(cmd: str): str
-    f = io.popen(cmd, "r")
-    if f == nil
-        ""
-    out = ""
+capture: str = (cmd: str)
+  f = io.popen(cmd, "r")
+  if f == nil
+    ""
+  out = ""
+  line = f:read()
+  while line != nil
+    out = out .. line .. "\n"
     line = f:read()
-    while line != nil
-        out = out .. line .. "\n"
-        line = f:read()
-    f:close()
-    out
-
+  f:close()
+  out

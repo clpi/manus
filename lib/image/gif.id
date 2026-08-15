@@ -68,13 +68,12 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
   # Bit reader state, shared with gif_read_code. `code_size` lives here too
   # because the reader consumes it and the decoder grows it as the dictionary
   # fills — one owner for one fact.
-  st = {
-    data = data,
-    eoi_code = eoi_code,
-    code_size = code_size,
-    byte_pos = 1,
+  st =
+    data = data
+    eoi_code = eoi_code
+    code_size = code_size
+    byte_pos = 1
     bit_pos = 0
-  }
 
   # Output buffer
   output = {}
@@ -179,8 +178,8 @@ decode: any = (data: str)
   height = read_u16_le(data, 9)
   packed = data:byte(11)
   gct_flag = packed >> 7 & 1
-  color_res = packed >> 4 & 7 + 1
-  gct_size = 2 ^ (packed & 7 + 1)
+  color_res = packed >> 4 & (7 + 1)
+  gct_size = 2 ^ (packed & (7 + 1))
   bg_color_idx = data:byte(12)
 
   off = 14
@@ -190,11 +189,10 @@ decode: any = (data: str)
   if gct_flag == 1
     i = 0
     while i < gct_size
-      gct(i) = {
-        r = data:byte(off + i * 3),
-        g = data:byte(off + i * 3 + 1),
+      gct(i) =
+        r = data:byte(off + i * 3)
+        g = data:byte(off + i * 3 + 1)
         b = data:byte(off + i * 3 + 2)
-      }
       i = i + 1
     off = off + gct_size * 3
 
@@ -238,7 +236,7 @@ decode: any = (data: str)
         img_h = read_u16_le(data, off + 7)
         local_packed = data:byte(off + 9)
         lct_flag = local_packed >> 7 & 1
-        lct_size = 2 ^ (local_packed & 7 + 1)
+        lct_size = 2 ^ (local_packed & (7 + 1))
         off = off + 10
 
         # Local Color Table
@@ -247,11 +245,10 @@ decode: any = (data: str)
           lct = {}
           i = 0
           while i < lct_size
-            lct(i) = {
-              r = data:byte(off + i * 3),
-              g = data:byte(off + i * 3 + 1),
+            lct(i) =
+              r = data:byte(off + i * 3)
+              g = data:byte(off + i * 3 + 1)
               b = data:byte(off + i * 3 + 2)
-            }
             i = i + 1
           off = off + lct_size * 3
 

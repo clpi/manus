@@ -5,33 +5,30 @@ target = "src/relation.zig"
 fixture = "examples/conversion/relation.id"
 store = "examples/conversion/store.id"
 
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
+len__path = (min: i64)
+  path:read():len() >= min
 
-audit(path) = (pattern: str)
-    path:read()
-        :match(pattern)
+audit__path = (pattern: str)
+  path:read():match(pattern)
 
-hit(path) = (pattern: str)
-    path:read()
-        :match(pattern)
+hit__path = (pattern: str)
+  path:read():match(pattern)
 
 code = 0
-if !target:len(256)
-    code = 1
-if !code and !fixture:len(32)
-    code = 2
-if !code and !store:len(32)
-    code = 3
-if !code and !target:audit("pub const Relation")
-    code = 4
-if !code and target:hit("--backend=c")
-    code = 5
-if !code and !target:audit("pub const Store")
-    code = 6
+if not target:len(256)
+  code = 1
+if not code and not fixture:len(32)
+  code = 2
+if not code and not store:len(32)
+  code = 3
+if not code and not target:audit("pub const Relation")
+  code = 4
+if not code and target:hit("--backend=c")
+  code = 5
+if not code and not target:audit("pub const Store")
+  code = 6
 
 main: i64 = ()
-    if !code
-        print("relation proof: pass")
-    code
+  if not code
+    print("relation proof: pass")
+  code

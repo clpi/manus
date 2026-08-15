@@ -1,3 +1,3 @@
 read: i64 = (subject: i64)
-    subject
+  subject
 42:read() - 42

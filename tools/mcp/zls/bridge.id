@@ -29,7 +29,10 @@ request: any = (method: str, params: any)
     return { error = "cannot create temp dir" }
   reqf = "{tmpdir}/request.json"
   respf = "{tmpdir}/response.json"
-  obj = { jsonrpc = "2.0", id = 1, method = method }
+  obj =
+    jsonrpc = "2.0"
+    id = 1
+    method = method
   if params != nil
     obj.params = params
   std.fs.write_file(reqf, std.json.encode(obj))

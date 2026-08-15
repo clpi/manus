@@ -4,9 +4,9 @@
 # than returned: a call in tail position dispatches the whole call algebra,
 # which would make the `@hot` discrimination in hot.id unfalsifiable.
 
-add(a: i64, b: i64): i64
-    a + b
+add: i64 = (a: i64, b: i64)
+  a + b
 
-main(): i64
-    x = add(1, 2)
-    x
+main: i64 = ()
+  x = add(1, 2)
+  x

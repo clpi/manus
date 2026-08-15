@@ -45,16 +45,26 @@ emitter_config_new: any = ()
   }
 
 emitter_config_set_position = (config: any, x: f64, y: f64, z: f64)
-  config.position = { x = x, y = y, z = z }
+  config.position =
+    x = x
+    y = y
+    z = z
 
 emitter_config_set_spread = (config: any, x: f64, y: f64, z: f64)
-  config.spread = { x = x, y = y, z = z }
+  config.spread =
+    x = x
+    y = y
+    z = z
 
 emitter_config_set_speed = (config: any, min: f64, max: f64)
-  config.speed = { min = min, max = max }
+  config.speed =
+    min = min
+    max = max
 
 emitter_config_set_lifetime = (config: any, min: f64, max: f64)
-  config.lifetime = { min = min, max = max }
+  config.lifetime =
+    min = min
+    max = max
 
 emitter_config_set_colors = (config: any, colors: any)
   config.colors = colors
@@ -66,7 +76,10 @@ emitter_config_set_burst = (config: any, count: i64)
   config.burst = count
 
 emitter_config_set_gravity = (config: any, x: f64, y: f64, z: f64)
-  config.gravity = { x = x, y = y, z = z }
+  config.gravity =
+    x = x
+    y = y
+    z = z
 
 # ═══════════════════════════════════════════════════════════════
 # Particle Emitter
@@ -85,22 +98,20 @@ emitter_emit: any = (emitter: any)
   particle = particle_new()
 
   # Randomize position within spread
-  particle.position = {
-    x = config.position.x + (math.random() - 0.5) * config.spread.x,
-    y = config.position.y + (math.random() - 0.5) * config.spread.y,
+  particle.position =
+    x = config.position.x + (math.random() - 0.5) * config.spread.x
+    y = config.position.y + (math.random() - 0.5) * config.spread.y
     z = config.position.z + (math.random() - 0.5) * config.spread.z
-  }
 
   # Randomize velocity
   speed = config.speed.min + math.random() * (config.speed.max - config.speed.min)
   angle = math.random() * 2 * math.pi
   elevation = (math.random() - 0.5) * math.pi * config.spread.y
 
-particle.velocity = {
-  x = config.direction.x + angle:cos() * elevation:cos() * speed,
-  y = config.direction.y + elevation:sin() * speed,
+particle.velocity =
+  x = config.direction.x + angle:cos() * elevation:cos() * speed
+  y = config.direction.y + elevation:sin() * speed
   z = config.direction.z + angle:sin() * elevation:cos() * speed
-}
 
 # Randomize properties
 particle.lifetime = config.lifetime.min + math.random() * (config.lifetime.max - config.lifetime.min)
@@ -113,12 +124,11 @@ if config:len().colors >= 2
   t = math.random()
   c1 = config.colors(1)
   c2 = config.colors(config:len().colors)
-  particle.color = {
-    r = c1.r + (c2.r - c1.r) * t,
-    g = c1.g + (c2.g - c1.g) * t,
-    b = c1.b + (c2.b - c1.b) * t,
+  particle.color =
+    r = c1.r + (c2.r - c1.r) * t
+    g = c1.g + (c2.g - c1.g) * t
+    b = c1.b + (c2.b - c1.b) * t
     a = c1.a + (c2.a - c1.a) * t
-  }
 
 particle.acceleration = config.gravity
 emitter.particles(emitter:len().particles + 1) = particle
@@ -229,66 +239,126 @@ system_total_count: i64 = (system: any)
 
 fire: any = ()
   config = emitter_config_new()
-  config.direction = { x = 0, y = 1, z = 0 }
-  config.spread = { x = 0.2, y = 0.1, z = 0.2 }
-  config.speed = { min = 2, max = 4 }
-  config.lifetime = { min = 0.3, max = 0.8 }
-  config.size = { min = 0.2, max = 0.5 }
+  config.direction =
+    x = 0
+    y = 1
+    z = 0
+  config.spread =
+    x = 0.2
+    y = 0.1
+    z = 0.2
+  config.speed =
+    min = 2
+    max = 4
+  config.lifetime =
+    min = 0.3
+    max = 0.8
+  config.size =
+    min = 0.2
+    max = 0.5
   config.colors = {
     { r = 1, g = 0.9, b = 0.1, a = 1 },
     { r = 1, g = 0.4, b = 0, a = 0.8 },
     { r = 0.5, g = 0.1, b = 0, a = 0 }
   }
   config.rate = 20
-  config.gravity = { x = 0, y = 2, z = 0 }
+  config.gravity =
+    x = 0
+    y = 2
+    z = 0
   config.drag = 0.5
   config
 
 smoke: any = ()
   config = emitter_config_new()
-  config.direction = { x = 0, y = 1, z = 0 }
-  config.spread = { x = 0.3, y = 0.2, z = 0.3 }
-  config.speed = { min = 0.5, max = 1.5 }
-  config.lifetime = { min = 1, max = 3 }
-  config.size = { min = 0.5, max = 1.5 }
+  config.direction =
+    x = 0
+    y = 1
+    z = 0
+  config.spread =
+    x = 0.3
+    y = 0.2
+    z = 0.3
+  config.speed =
+    min = 0.5
+    max = 1.5
+  config.lifetime =
+    min = 1
+    max = 3
+  config.size =
+    min = 0.5
+    max = 1.5
   config.colors = {
     { r = 0.5, g = 0.5, b = 0.5, a = 0.5 },
     { r = 0.3, g = 0.3, b = 0.3, a = 0 }
   }
   config.rate = 5
-  config.gravity = { x = 0, y = 0.5, z = 0 }
+  config.gravity =
+    x = 0
+    y = 0.5
+    z = 0
   config.drag = 0.8
   config
 
 rain: any = ()
   config = emitter_config_new()
-  config.position = { x = 0, y = 10, z = 0 }
-  config.spread = { x = 20, y = 0, z = 20 }
-  config.direction = { x = 0, y = -1, z = 0 }
-  config.speed = { min = 8, max = 12 }
-  config.lifetime = { min = 0.5, max = 1 }
-  config.size = { min = 0.05, max = 0.1 }
+  config.position =
+    x = 0
+    y = 10
+    z = 0
+  config.spread =
+    x = 20
+    y = 0
+    z = 20
+  config.direction =
+    x = 0
+    y = -1
+    z = 0
+  config.speed =
+    min = 8
+    max = 12
+  config.lifetime =
+    min = 0.5
+    max = 1
+  config.size =
+    min = 0.05
+    max = 0.1
   config.colors = {
     { r = 0.5, g = 0.7, b = 1, a = 0.5 },
     { r = 0.5, g = 0.7, b = 1, a = 0 }
   }
   config.rate = 100
-  config.gravity = { x = 0, y = -9.8, z = 0 }
+  config.gravity =
+    x = 0
+    y = -9.8
+    z = 0
   config.drag = 0.01
   config
 
 sparkle: any = ()
   config = emitter_config_new()
-  config.spread = { x = 0.5, y = 0.5, z = 0.5 }
-  config.speed = { min = 0.1, max = 0.5 }
-  config.lifetime = { min = 0.5, max = 1.5 }
-  config.size = { min = 0.05, max = 0.15 }
+  config.spread =
+    x = 0.5
+    y = 0.5
+    z = 0.5
+  config.speed =
+    min = 0.1
+    max = 0.5
+  config.lifetime =
+    min = 0.5
+    max = 1.5
+  config.size =
+    min = 0.05
+    max = 0.15
   config.colors = {
     { r = 1, g = 1, b = 0.8, a = 1 },
     { r = 1, g = 1, b = 0.5, a = 0 }
   }
   config.rate = 15
-  config.gravity = { x = 0, y = -1, z = 0 }
+  config.gravity =
+    x = 0
+    y = -1
+    z = 0
   config.drag = 0.3
   config
 # ═══════════════════════════════════════════════════════════════

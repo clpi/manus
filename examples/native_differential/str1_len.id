@@ -1,3 +1,3 @@
-main(): i64
-    s = "hello"
-    return s:len()
+main: i64 = ()
+  s = "hello"
+  return s:len()

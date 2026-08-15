@@ -40,7 +40,7 @@ _pad: str = (s: str, w: i64)
     out = out .. " "
   out
 
-_rule: void = (n: i64)
+_rule = (n: i64)
   line = ""
   i = 1
   while i <= n

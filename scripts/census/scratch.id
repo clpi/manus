@@ -5,30 +5,30 @@
 # left beside the compiler checkout.
 
 chomp: str = (text: str)
-    if text:len() == 0
-        return ""
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
+  if text:len() == 0
+    return ""
+  n = text:len()
+  while n > 0
+    c = text:byte(n)
+    if c != 10 and c != 13 and c != 32 and c != 9
+      break
+    n = n - 1
+  text:sub(1, n)
 
 cap: str = (cmd: str)
-    chomp(gatecap(cmd))
+  chomp(gatecap(cmd))
 
 census: i64 = ()
-    root = cap("git rev-parse --show-toplevel 2>/dev/null")
-    if !root:len()
-        print("census/scratch: fail no git root")
-        return 3
-    py = cap("find . -maxdepth 1 -name '*.py' -print")
-    sh = cap("find . -maxdepth 1 -name '*.sh' -print")
-    if !py:len() and !sh:len()
-        print("census/scratch: pass root foreign scratch 0")
-        return 0
-    print("census/scratch: fail root foreign scratch")
-    print(py)
-    print(sh)
-    1
+  root = cap("git rev-parse --show-toplevel 2>/dev/null")
+  if not root:len()
+    print("census/scratch: fail no git root")
+    return 3
+  py = cap("find . -maxdepth 1 -name '*.py' -print")
+  sh = cap("find . -maxdepth 1 -name '*.sh' -print")
+  if not py:len() and not sh:len()
+    print("census/scratch: pass root foreign scratch 0")
+    return 0
+  print("census/scratch: fail root foreign scratch")
+  print(py)
+  print(sh)
+  1

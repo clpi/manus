@@ -319,7 +319,10 @@ unmarshal: any = (s: str)
   s = s:gsub("%s+$", "")
   if s == ""
     return nil
-  parser = { s = s, pos = 1, err = nil }
+  parser =
+    s = s
+    pos = 1
+    err = nil
   v = parse_value(parser)
   if has(.err)(parser)
     return nil

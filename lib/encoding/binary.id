@@ -137,7 +137,7 @@ decode_varint: any = (s: str, offset: i64)
   i = offset
   while i <= s:len()
     b = s:byte(i)
-    v = v + (b % 128) << shift
+    v = (v + b % 128) << shift
     i = i + 1
     if b < 128
       return v, i, true

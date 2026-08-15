@@ -2,44 +2,44 @@
 
 global M = {}
 
-M.RESET = "\x1b[0m"
-M.BOLD = "\x1b[1m"
-M.DIM = "\x1b[2m"
-M.ITALIC = "\x1b[3m"
-M.UNDERLINE = "\x1b[4m"
+M.RESET = "[0m"
+M.BOLD = "[1m"
+M.DIM = "[2m"
+M.ITALIC = "[3m"
+M.UNDERLINE = "[4m"
 
-M.BLACK = "\x1b[30m"
-M.RED = "\x1b[31m"
-M.GREEN = "\x1b[32m"
-M.YELLOW = "\x1b[33m"
-M.BLUE = "\x1b[34m"
-M.MAGENTA = "\x1b[35m"
-M.CYAN = "\x1b[36m"
-M.WHITE = "\x1b[37m"
+M.BLACK = "[30m"
+M.RED = "[31m"
+M.GREEN = "[32m"
+M.YELLOW = "[33m"
+M.BLUE = "[34m"
+M.MAGENTA = "[35m"
+M.CYAN = "[36m"
+M.WHITE = "[37m"
 
-M.BG_BLACK = "\x1b[40m"
-M.BG_RED = "\x1b[41m"
-M.BG_GREEN = "\x1b[42m"
-M.BG_YELLOW = "\x1b[43m"
-M.BG_BLUE = "\x1b[44m"
-M.BG_MAGENTA = "\x1b[45m"
-M.BG_CYAN = "\x1b[46m"
-M.BG_WHITE = "\x1b[47m"
+M.BG_BLACK = "[40m"
+M.BG_RED = "[41m"
+M.BG_GREEN = "[42m"
+M.BG_YELLOW = "[43m"
+M.BG_BLUE = "[44m"
+M.BG_MAGENTA = "[45m"
+M.BG_CYAN = "[46m"
+M.BG_WHITE = "[47m"
 
-red(text: str): str
-    M.RED .. text .. M.RESET
+red: str = (text: str)
+  M.RED .. text .. M.RESET
 
-green(text: str): str
-    M.GREEN .. text .. M.RESET
+green: str = (text: str)
+  M.GREEN .. text .. M.RESET
 
-yellow(text: str): str
-    M.YELLOW .. text .. M.RESET
+yellow: str = (text: str)
+  M.YELLOW .. text .. M.RESET
 
-blue(text: str): str
-    M.BLUE .. text .. M.RESET
+blue: str = (text: str)
+  M.BLUE .. text .. M.RESET
 
-bold(text: str): str
-    M.BOLD .. text .. M.RESET
+bold: str = (text: str)
+  M.BOLD .. text .. M.RESET
 
 M.red = red
 M.green = green

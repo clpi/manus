@@ -73,235 +73,235 @@ touched = 0
 seen = 0
 
 alpha: bool = (b: i64)
-    (b >= 97 and b <= 122) or (b >= 65 and b <= 90) or b == 95
+  b >= 97 and b <= 122 or b >= 65 and b <= 90 or b == 95
 
 alnum: bool = (b: i64)
-    alpha(b) or (b >= 48 and b <= 57)
+  alpha(b) or b >= 48 and b <= 57
 
 # Is the byte to the LEFT of a `to` one that glues it to something else? An
 # identifier byte makes it a suffix (`auto`), a `.` makes it a member, a `:`
 # makes it an invoke — in none of the three is it the relation family.
 glued: bool = (b: i64)
-    alnum(b) or b == 46 or b == 58
+  alnum(b) or b == 46 or b == 58
 
 # Is this line entirely a comment? Comment text is prose about the law, and it
 # is frequently the only place the noncanonical form is written ON PURPOSE.
 comment: bool = (line: str)
-    n: i64 = line:len()
-    i: i64 = 1
-    while i <= n and (line:byte(i) == 32 or line:byte(i) == 9)
-        i += 1
-    i + 1 <= n and line:byte(i) == 45 and line:byte(i + 1) == 45
+  n: i64 = line:len()
+  i: i64 = 1
+  while i <= n and (line:byte(i) == 32 or line:byte(i) == 9)
+    i = i + 1
+  i + 1 <= n and line:byte(i) == 45 and line:byte(i + 1) == 45
 
 # The subject inside `to(str)(…)`, read from `at`. Answers the index of the
 # closing paren when the subject is a name or a field walk, and 0 for anything
 # richer. 0 is a DECLINE, never a failure: the site stays exactly as written.
 subject: i64 = (line: str, at: i64)
-    n: i64 = line:len()
-    i: i64 = at
-    ok = i <= n and alpha(line:byte(i))
-    if ok
+  n: i64 = line:len()
+  i: i64 = at
+  ok = i <= n and alpha(line:byte(i))
+  if ok
+    while i <= n and alnum(line:byte(i))
+      i = i + 1
+    while ok and i <= n and line:byte(i) == 46
+      i = i + 1
+      if i > n or not alpha(line:byte(i))
+        ok = false
+      else
         while i <= n and alnum(line:byte(i))
-            i += 1
-        while ok and i <= n and line:byte(i) == 46
-            i += 1
-            if i > n or !alpha(line:byte(i))
-                ok = false
-            else
-                while i <= n and alnum(line:byte(i))
-                    i += 1
-    stop = 0
-    if ok and i <= n and line:byte(i) == 41
-        stop = i
-    stop
+          i = i + 1
+  stop = 0
+  if ok and i <= n and line:byte(i) == 41
+    stop = i
+  stop
 
 # One line. Answers how many rewritable sites it carries, or -1 when the line
 # must be left alone entire because a site hides inside a string literal.
 # `talk` prints the §18 witness for each site as it is found.
 scan: i64 = (path: str, line: str, no: i64, talk: i64)
-    n: i64 = line:len()
-    i: i64 = 1
-    quotes: i64 = 0
-    found: i64 = 0
-    hidden: i64 = 0
-    while i <= n
-        b: i64 = line:byte(i)
-        # The escape is honoured ONLY inside a literal, the one place it means
-        # anything. Honouring it outside would let a stray backslash swallow a
-        # real quote and flip the parity for the whole rest of the line.
-        #
-        # TWO, not one. This read `i += 1` first, which skipped the backslash
-        # and then processed the quote it was escaping as an ordinary quote —
-        # so `"… \"to(str)(n)\" …"` came back EVEN, the site read as code, and
-        # a string literal was offered for rewriting. Caught by this file
-        # convicting its own control line.
-        if quotes % 2 == 1 and b == 92
-            i += 2
-        else
-            if b == 34
-                quotes += 1
-            if b == 116 and line:sub(i, i + 7) == "to(str)("
-                left: i64 = 0
-                if i > 1
-                    left = line:byte(i - 1)
-                if !glued(left)
-                    if quotes % 2 == 1
-                        hidden += 1
-                    else
-                        stop: i64 = subject(line, i + 8)
-                        if stop > 0
-                            found += 1
-                            if talk == 1
-                                subj: str = line:sub(i + 8, stop - 1)
-                                print("  w  {path}:{no}  relation to · subject {subj} · level str · graph identity unchanged")
-            i += 1
-    out = found
-    if hidden > 0
-        out = -1
-    out
+  n: i64 = line:len()
+  i: i64 = 1
+  quotes: i64 = 0
+  found: i64 = 0
+  hidden: i64 = 0
+  while i <= n
+    b: i64 = line:byte(i)
+    # The escape is honoured ONLY inside a literal, the one place it means
+    # anything. Honouring it outside would let a stray backslash swallow a
+    # real quote and flip the parity for the whole rest of the line.
+    #
+    # TWO, not one. This read `i += 1` first, which skipped the backslash
+    # and then processed the quote it was escaping as an ordinary quote —
+    # so `"… \"to(str)(n)\" …"` came back EVEN, the site read as code, and
+    # a string literal was offered for rewriting. Caught by this file
+    # convicting its own control line.
+    if quotes % 2 == 1 and b == 92
+      i = i + 2
+    else
+      if b == 34
+        quotes = quotes + 1
+      if b == 116 and line:sub(i, i + 7) == "to(str)("
+        left: i64 = 0
+        if i > 1
+          left = line:byte(i - 1)
+        if not glued(left)
+          if quotes % 2 == 1
+            hidden = hidden + 1
+          else
+            stop: i64 = subject(line, i + 8)
+            if stop > 0
+              found = found + 1
+              if talk == 1
+                subj: str = line:sub(i + 8, stop - 1)
+                print("  w  {path}:{no}  relation to · subject {subj} · level str · graph identity unchanged")
+      i = i + 1
+  out = found
+  if hidden > 0
+    out = -1
+  out
 
 # `grep -n` writes `<number>:<text>`. Answer the number.
 mark: i64 = (row: str)
-    n: i64 = row:len()
-    i: i64 = 1
-    v: i64 = 0
-    while i <= n and row:byte(i) >= 48 and row:byte(i) <= 57
-        v = v * 10 + row:byte(i) - 48
-        i += 1
-    got = 0
-    if i <= n and row:byte(i) == 58 and i > 1
-        got = v
-    got
+  n: i64 = row:len()
+  i: i64 = 1
+  v: i64 = 0
+  while i <= n and row:byte(i) >= 48 and row:byte(i) <= 57
+    v = v * 10 + row:byte(i) - 48
+    i = i + 1
+  got = 0
+  if i <= n and row:byte(i) == 58 and i > 1
+    got = v
+  got
 
 # and the text after it.
 body: str = (row: str)
-    n: i64 = row:len()
-    i: i64 = 1
-    while i <= n and row:byte(i) >= 48 and row:byte(i) <= 57
-        i += 1
-    out = ""
-    if i < n and row:byte(i) == 58
-        out = row:sub(i + 1, n)
-    out
+  n: i64 = row:len()
+  i: i64 = 1
+  while i <= n and row:byte(i) >= 48 and row:byte(i) <= 57
+    i = i + 1
+  out = ""
+  if i < n and row:byte(i) == 58
+    out = row:sub(i + 1, n)
+  out
 
 # One file. Answers the sed program that performs its rewrites, "" when there
 # are none.
 walk: str = (path: str, talk: i64)
-    rows: str = script.capture("grep -n -E {q}{probe}{q} {path} 2>/dev/null")
-    n: i64 = rows:len()
-    start: i64 = 1
-    edits: str = ""
-    i: i64 = 1
-    while i <= n
-        if rows:byte(i) == 10
-            row: str = ""
-            if i > start
-                row = rows:sub(start, i - 1)
-            no: i64 = mark(row)
-            if no > 0
-                line: str = body(row)
-                k: i64 = 0
-                if !comment(line)
-                    k = scan(path, line, no, talk)
-                if k < 0
-                    declined += 1
-                if k > 0
-                    rewrites += k
-                    edits = "{edits} -e {q}{no}s/{pattern}/{repl}/g{q}"
-            start = i + 1
-        i += 1
-    edits
+  rows: str = script.capture("grep -n -E {q}{probe}{q} {path} 2>/dev/null")
+  n: i64 = rows:len()
+  start: i64 = 1
+  edits: str = ""
+  i: i64 = 1
+  while i <= n
+    if rows:byte(i) == 10
+      row: str = ""
+      if i > start
+        row = rows:sub(start, i - 1)
+      no: i64 = mark(row)
+      if no > 0
+        line: str = body(row)
+        k: i64 = 0
+        if not comment(line)
+          k = scan(path, line, no, talk)
+        if k < 0
+          declined = declined + 1
+        if k > 0
+          rewrites = rewrites + k
+          edits = "{edits} -e {q}{no}s/{pattern}/{repl}/g{q}"
+      start = i + 1
+    i = i + 1
+  edits
 
 # CONTROLS FIRST, and every one is about a way this could be WRONG rather than
 # a way it could be idle. A canonicalizer reporting "0 sites" would look like
 # a clean tree; one that convicted the canonical form would look like progress
 # while undoing it.
 controls: i64 = ()
-    bad = 0
-    if scan("c", "    print(to(str)(n))", 1, 0) != 1
-        print("CONTROL FAILED: does not see an operation-first conversion")
-        bad += 1
-    if scan("c", "    print(to(str)(p.x))", 1, 0) != 1
-        print("CONTROL FAILED: does not see a field-walk subject")
-        bad += 1
-    if scan("c", "    print(n:to(str))", 1, 0) != 0
-        print("CONTROL FAILED: convicts the CANONICAL subject-first form")
-        bad += 1
-    if scan("c", "    xs:to(seq)(entry)", 1, 0) != 0
-        print("CONTROL FAILED: convicts a leveled canonical conversion")
-        bad += 1
-    if scan("c", "    print(to(str)(a + b))", 1, 0) != 0
-        print("CONTROL FAILED: accepts an operator subject it cannot bracket")
-        bad += 1
-    if scan("c", "    print(to(str)(f(x)))", 1, 0) != 0
-        print("CONTROL FAILED: accepts a call subject it cannot bracket")
-        bad += 1
-    if scan("c", "    msg = \"to(str)(n)\"", 1, 0) != -1
-        print("CONTROL FAILED: does not decline a site inside a string literal")
-        bad += 1
-    # The same site behind an ESCAPED quote, which is the case that actually
-    # broke. A scanner that mishandles `\\\"` reports the literal as closed and
-    # offers its contents up as code.
-    if scan("c", "    msg = probe(\"say \\\"to(str)(n)\\\" now\")", 1, 0) != -1
-        print("CONTROL FAILED: an escaped quote flips the parity")
-        bad += 1
-    if scan("c", "    x = f(y) + 1", 1, 0) != 0
-        print("CONTROL FAILED: sees a conversion in ordinary Duo")
-        bad += 1
-    if mark("42:  print(x)") != 42
-        print("CONTROL FAILED: cannot read a grep line number")
-        bad += 1
-    if body("42:  print(x)") != "  print(x)"
-        print("CONTROL FAILED: cannot read a grep line body")
-        bad += 1
-    bad
+  bad = 0
+  if scan("c", "    print(to(str)(n))", 1, 0) != 1
+    print("CONTROL FAILED: does not see an operation-first conversion")
+    bad = bad + 1
+  if scan("c", "    print(to(str)(p.x))", 1, 0) != 1
+    print("CONTROL FAILED: does not see a field-walk subject")
+    bad = bad + 1
+  if scan("c", "    print(n:to(str))", 1, 0) != 0
+    print("CONTROL FAILED: convicts the CANONICAL subject-first form")
+    bad = bad + 1
+  if scan("c", "    xs:to(seq)(entry)", 1, 0) != 0
+    print("CONTROL FAILED: convicts a leveled canonical conversion")
+    bad = bad + 1
+  if scan("c", "    print(to(str)(a + b))", 1, 0) != 0
+    print("CONTROL FAILED: accepts an operator subject it cannot bracket")
+    bad = bad + 1
+  if scan("c", "    print(to(str)(f(x)))", 1, 0) != 0
+    print("CONTROL FAILED: accepts a call subject it cannot bracket")
+    bad = bad + 1
+  if scan("c", "    msg = \"to(str)(n)\"", 1, 0) != -1
+    print("CONTROL FAILED: does not decline a site inside a string literal")
+    bad = bad + 1
+  # The same site behind an ESCAPED quote, which is the case that actually
+  # broke. A scanner that mishandles `\\\"` reports the literal as closed and
+  # offers its contents up as code.
+  if scan("c", "    msg = probe(\"say \\\"to(str)(n)\\\" now\")", 1, 0) != -1
+    print("CONTROL FAILED: an escaped quote flips the parity")
+    bad = bad + 1
+  if scan("c", "    x = f(y) + 1", 1, 0) != 0
+    print("CONTROL FAILED: sees a conversion in ordinary Duo")
+    bad = bad + 1
+  if mark("42:  print(x)") != 42
+    print("CONTROL FAILED: cannot read a grep line number")
+    bad = bad + 1
+  if body("42:  print(x)") != "  print(x)"
+    print("CONTROL FAILED: cannot read a grep line body")
+    bad = bad + 1
+  bad
 
 main: i64 = ()
-    list = script.getenv("CONVERTCANON", "/tmp/duo_audit100_canonical.list")
-    apply = script.getenv("CONVERTCANON_APPLY", "")
+  list = script.getenv("CONVERTCANON", "/tmp/duo_audit100_canonical.list")
+  apply = script.getenv("CONVERTCANON_APPLY", "")
 
-    bad = controls()
-    if bad > 0
-        print("")
-        print("convert canon: CONTROLS BROKEN — {bad} of them. Nothing was")
-        print("  scanned and nothing was written.")
-        os.exit(3)
-
-    if !fs.exists(list)
-        print("convert canon: FAIL — no corpus list at {list}")
-        print("  run audit100 with AUDIT100_LIST pointed there first")
-        os.exit(3)
-
-    text: str = script.capture("cat {list}")
-    n: i64 = text:len()
-    start: i64 = 1
-    i: i64 = 1
+  bad = controls()
+  if bad > 0
     print("")
-    while i <= n
-        if text:byte(i) == 10
-            path: str = ""
-            if i > start
-                path = text:sub(start, i - 1)
-            if path != ""
-                seen += 1
-                edits: str = walk(path, 1)
-                if edits != ""
-                    touched += 1
-                    if apply == "1"
-                        script.run("sed -i '' -E{edits} {path}")
-            start = i + 1
-        i += 1
+    print("convert canon: CONTROLS BROKEN — {bad} of them. Nothing was")
+    print("  scanned and nothing was written.")
+    os.exit(3)
 
-    print("")
-    if seen == 0
-        print("convert canon: FAIL — the corpus list is empty; nothing was measured")
-        os.exit(3)
-    print("  corpus     {seen} canonical files")
-    print("  rewrites   {rewrites} to(str) sites in {touched} files")
-    print("  declined   {declined} lines carrying a site inside a string literal")
-    print("")
-    if apply == "1"
-        print("convert canon: APPLIED — rebuild and re-run the gates by VALUE")
-    else
-        print("convert canon: DRY RUN — set CONVERTCANON_APPLY=1 to write")
-    0
+  if not fs.exists(list)
+    print("convert canon: FAIL — no corpus list at {list}")
+    print("  run audit100 with AUDIT100_LIST pointed there first")
+    os.exit(3)
+
+  text: str = script.capture("cat {list}")
+  n: i64 = text:len()
+  start: i64 = 1
+  i: i64 = 1
+  print("")
+  while i <= n
+    if text:byte(i) == 10
+      path: str = ""
+      if i > start
+        path = text:sub(start, i - 1)
+      if path != ""
+        seen = seen + 1
+        edits: str = walk(path, 1)
+        if edits != ""
+          touched = touched + 1
+          if apply == "1"
+            script.run("sed -i '' -E{edits} {path}")
+      start = i + 1
+    i = i + 1
+
+  print("")
+  if seen == 0
+    print("convert canon: FAIL — the corpus list is empty; nothing was measured")
+    os.exit(3)
+  print("  corpus     {seen} canonical files")
+  print("  rewrites   {rewrites} to(str) sites in {touched} files")
+  print("  declined   {declined} lines carrying a site inside a string literal")
+  print("")
+  if apply == "1"
+    print("convert canon: APPLIED — rebuild and re-run the gates by VALUE")
+  else
+    print("convert canon: DRY RUN — set CONVERTCANON_APPLY=1 to write")
+  0

@@ -1,196 +1,222 @@
 # mem — memory primitives, allocators, and low-level memory operations
 # Provides raw memory utilities backed by C stdlib/mmap, plus arena/pool/stack allocators.
 
-@comp.c.include("stdlib.h")
-@comp.c.include("string.h")
-@comp.c.include("sys/mman.h")
+@cinclude("stdlib.h")
+
+@cinclude("string.h")
+
+@cinclude("sys/mman.h")
+
 
 # Memory size constants
-page_size(): u64
-    4096
+page_size: u64 = ()
+  4096
 
-megabyte(): u64
-    1048576
+megabyte: u64 = ()
+  1048576
 
-gigabyte(): u64
-    1073741824
+gigabyte: u64 = ()
+  1073741824
 
 # Arena allocator: bump-allocate, free all at once
-arena_alloc(self: any, bytes: any): any
-    if self._offset + bytes > self._capacity
-        new_buf = "alloc(" .. bytes:to(str) .. " bytes)"
-        self._bufs[self:len()._bufs + 1] = new_buf
-        self._offset = 0
-    ptr = { addr = self._total + self._offset, size = bytes }
-    self._offset = self._offset + bytes
-    ptr
-
-arena_free_all(self: any): void
-    self._bufs = {}
+arena_alloc: any = (self: any, bytes: any)
+  if self._offset + bytes > self._capacity
+    new_buf = "alloc(" .. bytes:to(str) .. " bytes)"
+    self._bufs(self:len()._bufs + 1) = new_buf
     self._offset = 0
-    self._total = 0
+  ptr =
+    addr = self._total + self._offset
+    size = bytes
+  self._offset = self._offset + bytes
+  ptr
 
-arena_used(self: any): i64
-    self._total + self._offset
+arena_free_all = (self: any)
+  self._bufs = {}
+  self._offset = 0
+  self._total = 0
 
-arena_new(size: i64): any
-    {
-        _bufs = {},
-        _offset = 0,
-        _capacity = size or 65536,
-        _total = 0,
-        alloc = arena_alloc,
-        free_all = arena_free_all,
-        used = arena_used,
-    }
+arena_used: i64 = (self: any)
+  self._total + self._offset
+
+arena_new: any = (size: i64)
+  {
+    _bufs = {},
+    _offset = 0,
+    _capacity = size or 65536,
+    _total = 0,
+    alloc = arena_alloc,
+    free_all = arena_free_all,
+    used = arena_used
+  }
 
 # Pool allocator: fixed-size block allocation, O(1) alloc/free
-pool_init(self: any): void
-    count = self._count or 1024
-    for i = 1, count
-        self._free_list[self:len()._free_list + 1] = { addr = i * self._block_size, data = {} }
+pool_init = (self: any)
+  count = self._count or 1024
+  for i = 1, count
+    self._free_list(self:len()._free_list + 1) =
+      addr = i * self._block_size
+      data = {}
 
-pool_alloc(self: any): any
-    if self:len()._free_list == 0 return nil 
-    block = self._free_list:remove()
-    self._allocated[block.addr] = block
-    block
+pool_alloc: any = (self: any)
+  if self:len()._free_list == 0
+    return nil
+  block = self._free_list:remove()
+  self._allocated(block.addr) = block
+  block
 
-pool_free(self: any, block: any): void
-    if block == nil return 
-    self._allocated[block.addr] = nil
-    self._free_list[self:len()._free_list + 1] = block
+pool_free = (self: any, block: any)
+  if block == nil
+    return
+  self._allocated(block.addr) = nil
+  self._free_list(self:len()._free_list + 1) = block
 
-pool_available(self: any): i64
-    return self:len()._free_list
+pool_available: i64 = (self: any)
+  return self:len()._free_list
 
-pool_in_use(self: any): i64
-    self._count - self:len()._free_list
+pool_in_use: i64 = (self: any)
+  self._count - self:len()._free_list
 
-pool_new(block_size: i64, count: i64): any
-    {
-        _block_size = block_size or 64,
-        _free_list = {},
-        _allocated = {},
-        _count = count or 1024,
-        _init = pool_init,
-        alloc = pool_alloc,
-        free = pool_free,
-        available = pool_available,
-        in_use = pool_in_use,
-    }
+pool_new: any = (block_size: i64, count: i64)
+  {
+    _block_size = block_size or 64,
+    _free_list = {},
+    _allocated = {},
+    _count = count or 1024,
+    _init = pool_init,
+    alloc = pool_alloc,
+    free = pool_free,
+    available = pool_available,
+    in_use = pool_in_use
+  }
 
 # Stack allocator: LIFO bump allocator with checkpoint/restore
-stack_checkpoint(self: any): i64
-    self._markers[self:len()._markers + 1] = self._top
-    self._top
+stack_checkpoint: i64 = (self: any)
+  self._markers(self:len()._markers + 1) = self._top
+  self._top
 
-stack_restore(self: any, marker: any): void
-    while self:len()._markers > 0 and self._markers[self:len()._markers] > marker
-        self._markers[self:len()._markers] = nil
-    self._top = marker
+stack_restore = (self: any, marker: any)
+  while self:len()._markers > 0 and self._markers(self:len()._markers) > marker
+    self._markers(self:len()._markers) = nil
+  self._top = marker
 
-stack_alloc(self: any, bytes: any): any
-    ptr = self._top
-    self._top = self._top + bytes
-    if self._top > self._capacity return nil 
-    { addr = ptr, size = bytes }
+stack_alloc: any = (self: any, bytes: any)
+  ptr = self._top
+  self._top = self._top + bytes
+  if self._top > self._capacity
+    return nil
+  { addr = ptr, size = bytes }
 
-stack_used(self: any): i64
-    self._top
+stack_used: i64 = (self: any)
+  self._top
 
-stack_remaining(self: any): i64
-    self._capacity - self._top
+stack_remaining: i64 = (self: any)
+  self._capacity - self._top
 
-stack_reset(self: any): void
-    self._top = 0
-    self._markers = {}
+stack_reset = (self: any)
+  self._top = 0
+  self._markers = {}
 
-stack_new(capacity: i64): any
-    {
-        _buf = "alloc(" .. to(str)(capacity or 65536) .. " bytes)",
-        _top = 0,
-        _capacity = capacity or 65536,
-        _markers = {},
-        checkpoint = stack_checkpoint,
-        restore = stack_restore,
-        alloc = stack_alloc,
-        used = stack_used,
-        remaining = stack_remaining,
-        reset = stack_reset,
-    }
+stack_new: any = (capacity: i64)
+  {
+    _buf = "alloc(" .. to(str)(capacity or 65536) .. " bytes)",
+    _top = 0,
+    _capacity = capacity or 65536,
+    _markers = {},
+    checkpoint = stack_checkpoint,
+    restore = stack_restore,
+    alloc = stack_alloc,
+    used = stack_used,
+    remaining = stack_remaining,
+    reset = stack_reset
+  }
 
 # General-purpose allocator interface
 concept Allocator
-    alloc(self, bytes: i64): any
-    free(self, ptr: any): void
-    realloc(self, ptr: any, new_bytes: i64): any
-    total_allocated(self): i64
+  alloc(self, bytes: i64) -> any
+  free(self, ptr: any) -> void
+  realloc(self, ptr: any, new_bytes: i64) -> any
+  total_allocated(self) -> i64
 
 # Fixed-size buffer allocator (like C alloca but tracked)
-fixed_buffer_alloc(self: any, bytes: any): any
-    if self._offset + bytes > self._size return nil 
-    ptr = self._offset
-    self._offset = self._offset + bytes
-    { addr = ptr, size = bytes }
+fixed_buffer_alloc: any = (self: any, bytes: any)
+  if self._offset + bytes > self._size
+    return nil
+  ptr = self._offset
+  self._offset = self._offset + bytes
+  { addr = ptr, size = bytes }
 
-fixed_buffer_remaining(self: any): i64
-    self._size - self._offset
+fixed_buffer_remaining: i64 = (self: any)
+  self._size - self._offset
 
-fixed_buffer_new(size: i64): any
-    {
-        _buf = "alloc(" .. size:to(str) .. " bytes)",
-        _offset = 0,
-        _size = size,
-        alloc = fixed_buffer_alloc,
-        remaining = fixed_buffer_remaining,
-    }
+fixed_buffer_new: any = (size: i64)
+  {
+    _buf = "alloc(" .. size:to(str) .. " bytes)",
+    _offset = 0,
+    _size = size,
+    alloc = fixed_buffer_alloc,
+    remaining = fixed_buffer_remaining
+  }
 
 # Raw heap allocation
-alloc(bytes: i64): any
-    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = malloc((size_t)bytes); _v; })]])
+alloc: any = (bytes: i64)
+  @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = malloc((size_t)bytes); _v; })]])
+  
 
-free(mem: any): void
-    @comp.c.emit("free(mem.as.tval)")
+free = (mem: any)
+  @comp.c.emit("free(mem.as.tval)")
+  
 
-realloc(mem: any, new_bytes: i64): any
-    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = realloc(mem.as.tval, (size_t)new_bytes); _v; })]])
+realloc: any = (mem: any, new_bytes: i64)
+  @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = realloc(mem.as.tval, (size_t)new_bytes); _v; })]])
+  
 
-dup(mem: any, bytes: i64): any
-    if bytes == 0 return alloc(0) 
-    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; void* _p = malloc((size_t)bytes); if (_p && mem.as.tval) memcpy(_p, mem.as.tval, (size_t)bytes); _v.as.tval = _p; _v; })]])
+dup: any = (mem: any, bytes: i64)
+  if bytes == 0
+    return alloc(0)
+  @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; void* _p = malloc((size_t)bytes); if (_p && mem.as.tval) memcpy(_p, mem.as.tval, (size_t)bytes); _v.as.tval = _p; _v; })]])
+  
 
-offset(mem: any, n: i64): any
-    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = (void*)((uint8_t*)mem.as.tval + n); _v; })]])
+offset: any = (mem: any, n: i64)
+  @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = (void*)((uint8_t*)mem.as.tval + n); _v; })]])
+  
 
 # Raw memory operations
-mem_copy(dst: any, src: any, bytes: i64): void
-    if bytes == 0 return 
-    @comp.c.emit("memcpy(dst.as.tval, src.as.tval, (size_t)bytes)")
+mem_copy = (dst: any, src: any, bytes: i64)
+  if bytes == 0
+    return
+  @comp.c.emit("memcpy(dst.as.tval, src.as.tval, (size_t)bytes)")
+  
 
-mem_set(mem: any, val: u8, bytes: i64): void
-    if bytes == 0 return 
-    @comp.c.emit("memset(mem.as.tval, (int)val, (size_t)bytes)")
+mem_set = (mem: any, val: u8, bytes: i64)
+  if bytes == 0
+    return
+  @comp.c.emit("memset(mem.as.tval, (int)val, (size_t)bytes)")
+  
 
-mem_zero(mem: any, bytes: i64): void
-    if bytes == 0 return 
-    @comp.c.emit("memset(mem.as.tval, 0, (size_t)bytes)")
+mem_zero = (mem: any, bytes: i64)
+  if bytes == 0
+    return
+  @comp.c.emit("memset(mem.as.tval, 0, (size_t)bytes)")
+  
 
-mem_compare(a: any, b: any, bytes: i64): i64
-    if bytes == 0 return 0 
-    @comp.c.emit("(int64_t)memcmp(a.as.tval, b.as.tval, (size_t)bytes)")
+mem_compare: i64 = (a: any, b: any, bytes: i64)
+  if bytes == 0
+    return 0
+  @comp.c.emit("(int64_t)memcmp(a.as.tval, b.as.tval, (size_t)bytes)")
+  
 
 # mmap-backed allocation
-mmap(bytes: i64): any
-    # Use calloc rather than mmap so the codegen is portable across
-    # platforms where MAP_ANON is gated behind feature-test macros
-    # (e.g. macOS with _XOPEN_SOURCE only). calloc yields zeroed
-    # memory, matching mmap(... PROT_READ|PROT_WRITE ...)'s semantics
-    # on systems with mem_zero-filled pages.
-    @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc(1, (size_t)bytes); _v; })]])
+mmap: any = (bytes: i64)
+  # Use calloc rather than mmap so the codegen is portable across
+  # platforms where MAP_ANON is gated behind feature-test macros
+  # (e.g. macOS with _XOPEN_SOURCE only). calloc yields zeroed
+  # memory, matching mmap(... PROT_READ|PROT_WRITE ...)'s semantics
+  # on systems with mem_zero-filled pages.
+  @comp.c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc(1, (size_t)bytes); _v; })]])
+  
 
-mremap(mem: any, old_bytes: i64, new_bytes: i64): any
-    @comp.c.emit([[({
+mremap: any = (mem: any, old_bytes: i64, new_bytes: i64)
+  @comp.c.emit([[({
         lua_Value _v;
         _v.type = VAL_BUFFER;
         void* _r = realloc(mem.as.tval, (size_t)new_bytes);
@@ -204,88 +230,110 @@ mremap(mem: any, old_bytes: i64, new_bytes: i64): any
         }
         _v;
     })]])
-    _ = old_bytes
+  
+  _ = old_bytes
 
-munmap(mem: any, bytes: i64): i64
-    # Portable: just free. (munmap would require MAP_ANON-like backing.)
-    @comp.c.emit("(free(mem.as.tval), 0)")
-    _ = bytes
+munmap: i64 = (mem: any, bytes: i64)
+  # Portable: just free. (munmap would require MAP_ANON-like backing.)
+  @comp.c.emit("(free(mem.as.tval), 0)")
+  
+  _ = bytes
 
 # Byte readers/writers
 # VAL_STRING offsets are 1-indexed; VAL_BUFFER offsets are 0-indexed.
-read_byte(mem: any, offset: i64): i64
-    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; (int64_t)_p[_off]; })")
+read_byte: i64 = (mem: any, offset: i64)
+  @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; (int64_t)_p[_off]; })")
+  
 
-write_byte(mem: any, offset: i64, val: i64): void
-    @comp.c.emit("(((uint8_t*)mem.as.tval + offset)[0] = (uint8_t)val)")
+write_byte = (mem: any, offset: i64, val: i64)
+  @comp.c.emit("(((uint8_t*)mem.as.tval + offset)[0] = (uint8_t)val)")
+  
 
-read_i16(mem: any, offset: i64): i64
-    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+read_i16: i64 = (mem: any, offset: i64)
+  @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+  
 
-write_i16(mem: any, offset: i64, val: i64): void
-    @comp.c.emit("*(int16_t*)((uint8_t*)mem.as.tval + offset) = (int16_t)val")
+write_i16 = (mem: any, offset: i64, val: i64)
+  @comp.c.emit("*(int16_t*)((uint8_t*)mem.as.tval + offset) = (int16_t)val")
+  
 
-read_u16(mem: any, offset: i64): i64
-    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+read_u16: i64 = (mem: any, offset: i64)
+  @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+  
 
-write_u16(mem: any, offset: i64, val: u64): void
-    @comp.c.emit("*(uint16_t*)((uint8_t*)mem.as.tval + offset) = (uint16_t)val")
+write_u16 = (mem: any, offset: i64, val: u64)
+  @comp.c.emit("*(uint16_t*)((uint8_t*)mem.as.tval + offset) = (uint16_t)val")
+  
 
-read_i32(mem: any, offset: i64): i64
-    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+read_i32: i64 = (mem: any, offset: i64)
+  @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+  
 
-write_i32(mem: any, offset: i64, val: i64): void
-    @comp.c.emit("*(int32_t*)((uint8_t*)mem.as.tval + offset) = (int32_t)val")
+write_i32 = (mem: any, offset: i64, val: i64)
+  @comp.c.emit("*(int32_t*)((uint8_t*)mem.as.tval + offset) = (int32_t)val")
+  
 
-read_u32(mem: any, offset: i64): i64
-    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+read_u32: i64 = (mem: any, offset: i64)
+  @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+  
 
-write_u32(mem: any, offset: i64, val: u64): void
-    @comp.c.emit("*(uint32_t*)((uint8_t*)mem.as.tval + offset) = (uint32_t)val")
+write_u32 = (mem: any, offset: i64, val: u64)
+  @comp.c.emit("*(uint32_t*)((uint8_t*)mem.as.tval + offset) = (uint32_t)val")
+  
 
-read_i64(mem: any, offset: i64): i64
-    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
+read_i64: i64 = (mem: any, offset: i64)
+  @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
+  
 
-write_i64(mem: any, offset: i64, val: i64): void
-    @comp.c.emit("*(int64_t*)((uint8_t*)mem.as.tval + offset) = val")
+write_i64 = (mem: any, offset: i64, val: i64)
+  @comp.c.emit("*(int64_t*)((uint8_t*)mem.as.tval + offset) = val")
+  
 
-read_u64(mem: any, offset: i64): u64
-    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
+read_u64: u64 = (mem: any, offset: i64)
+  @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
+  
 
-write_u64(mem: any, offset: i64, val: u64): void
-    @comp.c.emit("*(uint64_t*)((uint8_t*)mem.as.tval + offset) = val")
+write_u64 = (mem: any, offset: i64, val: u64)
+  @comp.c.emit("*(uint64_t*)((uint8_t*)mem.as.tval + offset) = val")
+  
 
-read_f32(mem: any, offset: i64): f64
-    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; float _v; memcpy(&_v, _p + _off, sizeof(_v)); (double)_v; })")
+read_f32: f64 = (mem: any, offset: i64)
+  @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; float _v; memcpy(&_v, _p + _off, sizeof(_v)); (double)_v; })")
+  
 
-write_f32(mem: any, offset: i64, val: f64): void
-    @comp.c.emit("*(float*)((uint8_t*)mem.as.tval + offset) = (float)val")
+write_f32 = (mem: any, offset: i64, val: f64)
+  @comp.c.emit("*(float*)((uint8_t*)mem.as.tval + offset) = (float)val")
+  
 
-read_f64(mem: any, offset: i64): f64
-    @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; double _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
+read_f64: f64 = (mem: any, offset: i64)
+  @comp.c.emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; double _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
+  
 
-write_f64(mem: any, offset: i64, val: f64): void
-    @comp.c.emit("*(double*)((uint8_t*)mem.as.tval + offset) = val")
+write_f64 = (mem: any, offset: i64, val: f64)
+  @comp.c.emit("*(double*)((uint8_t*)mem.as.tval + offset) = val")
+  
 
 # Decode a 1-indexed byte sequence as a float (defaults to first byte).
-bytes_to_f32(s: str, i: i64 = 1): f64
-    @comp.c.emit("({ float _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(float)); (double)_v; })")
+bytes_to_f32: f64 = (s: str, i: i64)
+  @comp.c.emit("({ float _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(float)); (double)_v; })")
+  
 
-bytes_to_f64(s: str, i: i64 = 1): f64
-    @comp.c.emit("({ double _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(double)); _v; })")
+bytes_to_f64: f64 = (s: str, i: i64)
+  @comp.c.emit("({ double _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(double)); _v; })")
+  
 
 # Standard allocators
-default_allocator(): any
-    arena_new(65536)
+default_allocator: any = ()
+  arena_new(65536)
 
 # Utility: calculate aligned size
-align_up(n: i64, alignment: i64): i64
-    if n % alignment == 0 return n 
-    n + alignment - (n % alignment)
+align_up: i64 = (n: i64, alignment: i64)
+  if n % alignment == 0
+    return n
+  n + alignment - n % alignment
 
-align_down(n: i64, alignment: i64): i64
-    n - (n % alignment)
+align_down: i64 = (n: i64, alignment: i64)
+  n - n % alignment
 
-is_power_of_two(n: i64): bool
-    n > 0 and ((n & (n - 1)) == 0)
-
+is_power_of_two: bool = (n: i64)
+  n > 0 and n & (n - 1) == 0

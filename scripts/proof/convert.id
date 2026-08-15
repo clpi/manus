@@ -44,111 +44,110 @@ fails = 0
 
 # Write a probe and answer its stdout, chomped. `flags` selects the lowering.
 answer: str = (name: str, src: str, flags: str)
-    path: str = "{work}/{name}.id"
-    bin: str = "{work}/{name}.out"
-    std.script.run("printf {q}%s{q} {q}{src}{q} > {path}")
-    rc: i64 = std.script.run("{idol} compile {path} {flags} --emit exe -o {bin} > {work}/{name}.log 2>&1")
-    if rc > 0
-        "DID NOT BUILD"
-    else
-        std.script.chomp(std.script.capture(bin))
+  path: str = "{work}/{name}.id"
+  bin: str = "{work}/{name}.out"
+  std.script.run("printf {q}%s{q} {q}{src}{q} > {path}")
+  rc: i64 = std.script.run("{idol} compile {path} {flags} --emit exe -o {bin} > {work}/{name}.log 2>&1")
+  if rc > 0
+    "DID NOT BUILD"
+  else
+    std.script.chomp(std.script.capture(bin))
 
 # and its exit status, which is the only way to see a FAULT.
 verdict: i64 = (name: str, src: str, flags: str)
-    path: str = "{work}/{name}.id"
-    bin: str = "{work}/{name}.out"
-    std.script.run("printf {q}%s{q} {q}{src}{q} > {path}")
-    rc: i64 = std.script.run("{idol} compile {path} {flags} --emit exe -o {bin} > {work}/{name}.log 2>&1")
-    if rc > 0
-        -1
-    else
-        std.script.status("{bin} > /dev/null 2>&1")
+  path: str = "{work}/{name}.id"
+  bin: str = "{work}/{name}.out"
+  std.script.run("printf {q}%s{q} {q}{src}{q} > {path}")
+  rc: i64 = std.script.run("{idol} compile {path} {flags} --emit exe -o {bin} > {work}/{name}.log 2>&1")
+  if rc > 0 - 1
+  else
+    std.script.status("{bin} > /dev/null 2>&1")
 
 row: i64 = (label: str, got: str, want: str)
-    mark = "  ok"
-    bad = 0
-    if got != want
-        mark = "FAIL"
-        bad = 1
-    print("  {mark}  {label}  want {want} got {got}")
-    bad
+  mark = "  ok"
+  bad = 0
+  if got != want
+    mark = "FAIL"
+    bad = 1
+  print("  {mark}  {label}  want {want} got {got}")
+  bad
 
 main: i64 = ()
-    idol = std.script.getenv("IDOL", "./zig-out/bin/idol")
-    std.script.run("rm -rf {work} && mkdir -p {work}")
+  idol = std.script.getenv("IDOL", "./zig-out/bin/idol")
+  std.script.run("rm -rf {work} && mkdir -p {work}")
 
-    # The two faces of one edge. `opfirst` is the form 250 files are written
-    # in; `subjfirst` is the form the result-demand rule makes canonical. They must agree
-    # on the value, or the canonicalizer in this same diff is unsound.
-    opfirst = "main = (): i64\n    s: str = \"17\"\n    n: i64 = to(i64)(s)\n    print(n)\n    0\n"
-    subjfirst = "main = (): i64\n    s: str = \"17\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
+  # The two faces of one edge. `opfirst` is the form 250 files are written
+  # in; `subjfirst` is the form the result-demand rule makes canonical. They must agree
+  # on the value, or the canonicalizer in this same diff is unsound.
+  opfirst = "main = (): i64\n    s: str = \"17\"\n    n: i64 = to(i64)(s)\n    print(n)\n    0\n"
+  subjfirst = "main = (): i64\n    s: str = \"17\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
 
-    # The SAME expression over an untyped call result. This pair is recorded
-    # separately because it used to disagree: operation-first compiled, and
-    # the receiver face boxed into a member invocation and did not build. Two
-    # faces of one edge, only one of them lowering, is half of why the corpus
-    # is written the way it is.
-    opcall = "main = (): i64\n    n: i64 = to(i64)(process:capture(\"printf 17\"))\n    print(n)\n    0\n"
-    subjcall = "main = (): i64\n    n: i64 = process:capture(\"printf 17\"):to(i64)\n    print(n)\n    0\n"
+  # The SAME expression over an untyped call result. This pair is recorded
+  # separately because it used to disagree: operation-first compiled, and
+  # the receiver face boxed into a member invocation and did not build. Two
+  # faces of one edge, only one of them lowering, is half of why the corpus
+  # is written the way it is.
+  opcall = "main = (): i64\n    n: i64 = to(i64)(process:capture(\"printf 17\"))\n    print(n)\n    0\n"
+  subjcall = "main = (): i64\n    n: i64 = process:capture(\"printf 17\"):to(i64)\n    print(n)\n    0\n"
 
-    # The input that used to answer 0. It must not answer anything.
-    junk = "main = (): i64\n    s: str = \"abc\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
+  # The input that used to answer 0. It must not answer anything.
+  junk = "main = (): i64\n    s: str = \"abc\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
 
-    # Trailing text is the subtler half of the same rule: `strtoll` stops at
-    # the `x` and reports 12 without complaining, which is a wrong number
-    # wearing a right one's clothes.
-    tail = "main = (): i64\n    s: str = \"12x\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
+  # Trailing text is the subtler half of the same rule: `strtoll` stops at
+  # the `x` and reports 12 without complaining, which is a wrong number
+  # wearing a right one's clothes.
+  tail = "main = (): i64\n    s: str = \"12x\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
 
-    # A genuine zero, so the refusal above is never confused with the value.
-    # If this row ever fails the way `junk` passes, the conversion has stopped
-    # answering rather than started refusing.
-    zero = "main = (): i64\n    s: str = \"0\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
+  # A genuine zero, so the refusal above is never confused with the value.
+  # If this row ever fails the way `junk` passes, the conversion has stopped
+  # answering rather than started refusing.
+  zero = "main = (): i64\n    s: str = \"0\"\n    n: i64 = s:to(i64)\n    print(n)\n    0\n"
 
-    print("")
-    print("  str -> i64, both faces, default lowering")
-    fails += row("opfirst    ", answer("a", opfirst, ""), "17")
-    fails += row("subjfirst  ", answer("b", subjfirst, ""), "17")
-    fails += row("opcall     ", answer("c", opcall, ""), "17")
-    fails += row("subjcall   ", answer("d", subjcall, ""), "17")
+  print("")
+  print("  str -> i64, both faces, default lowering")
+  fails = fails + row("opfirst    ", answer("a", opfirst, ""), "17")
+  fails = fails + row("subjfirst  ", answer("b", subjfirst, ""), "17")
+  fails = fails + row("opcall     ", answer("c", opcall, ""), "17")
+  fails = fails + row("subjcall   ", answer("d", subjcall, ""), "17")
 
-    print("")
-    print("  the same, through the C backend")
-    fails += row("opfirst  c ", answer("e", opfirst, "--backend=c"), "17")
-    fails += row("subjfirst c", answer("f", subjfirst, "--backend=c"), "17")
+  print("")
+  print("  the same, through the C backend")
+  fails = fails + row("opfirst  c ", answer("e", opfirst, "--backend=c"), "17")
+  fails = fails + row("subjfirst c", answer("f", subjfirst, "--backend=c"), "17")
 
-    print("")
-    print("  a string holding no number must not come back as one")
-    fails += row("zero       ", answer("g", zero, ""), "0")
-    fails += row("junk       ", answer("h", junk, ""), "")
-    fails += row("tail       ", answer("i", tail, ""), "")
+  print("")
+  print("  a string holding no number must not come back as one")
+  fails = fails + row("zero       ", answer("g", zero, ""), "0")
+  fails = fails + row("junk       ", answer("h", junk, ""), "")
+  fails = fails + row("tail       ", answer("i", tail, ""), "")
 
-    # `answer` reads stdout, and an empty stdout is also what a program that
-    # failed to BUILD produces. The status separates them: a build failure
-    # reads -1 here, a fault reads its abort code, and 0 would mean the
-    # program ran to completion and printed nothing — three different facts
-    # that look identical in the rows above.
-    #
-    # The "Abort trap: 6" lines on stderr around here are the SHELL reporting
-    # the fault these two rows require. That is the proof working.
-    junkcode: i64 = verdict("j", junk, "")
-    tailcode: i64 = verdict("k", tail, "")
-    print("")
-    print("  and it must FAULT rather than exit clean")
-    if junkcode <= 0
-        print("  FAIL  junk exit  want a nonzero fault, got {junkcode}")
-        fails += 1
-    else
-        print("    ok  junk exit  {junkcode}")
-    if tailcode <= 0
-        print("  FAIL  tail exit  want a nonzero fault, got {tailcode}")
-        fails += 1
-    else
-        print("    ok  tail exit  {tailcode}")
+  # `answer` reads stdout, and an empty stdout is also what a program that
+  # failed to BUILD produces. The status separates them: a build failure
+  # reads -1 here, a fault reads its abort code, and 0 would mean the
+  # program ran to completion and printed nothing — three different facts
+  # that look identical in the rows above.
+  #
+  # The "Abort trap: 6" lines on stderr around here are the SHELL reporting
+  # the fault these two rows require. That is the proof working.
+  junkcode: i64 = verdict("j", junk, "")
+  tailcode: i64 = verdict("k", tail, "")
+  print("")
+  print("  and it must FAULT rather than exit clean")
+  if junkcode <= 0
+    print("  FAIL  junk exit  want a nonzero fault, got {junkcode}")
+    fails = fails + 1
+  else
+    print("    ok  junk exit  {junkcode}")
+  if tailcode <= 0
+    print("  FAIL  tail exit  want a nonzero fault, got {tailcode}")
+    fails = fails + 1
+  else
+    print("    ok  tail exit  {tailcode}")
 
-    print("")
-    if fails > 0
-        print("convert proof: FAIL — {fails} row(s)")
-        std.os.exit(1)
-    print("convert proof: PASS — one edge, two faces, and a refusal where there")
-    print("  is no number to convert")
-    0
+  print("")
+  if fails > 0
+    print("convert proof: FAIL — {fails} row(s)")
+    std.os.exit(1)
+  print("convert proof: PASS — one edge, two faces, and a refusal where there")
+  print("  is no number to convert")
+  0

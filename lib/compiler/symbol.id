@@ -32,32 +32,32 @@
 # compiler's prefix for every other emitted symbol, so the namespace is one
 # rather than two.
 root: str = (name: str)
-    "duo_fn_{name}"
+  "duo_fn_{name}"
 
 # A module function is ALREADY closed by its module prefix — `<mod>__<name>` is
 # not a spelling libc can hold, because libc has no `__` in that position. This
 # is why only the root translation unit ever needed repair, and recording it
 # here stops the next reader prefixing twice.
 module: str = (home: str, name: str)
-    "{home}__{name}"
+  "{home}__{name}"
 
 # `main` is the one root name that may NOT take the ordinary prefix: the
 # runtime driver emits its own `int main(...)` and calls this as the entry
 # point. A collision here is a link error rather than a silent bind, but the
 # repair is the same shape.
 entry: str = ()
-    "duo_entry_main"
+  "duo_entry_main"
 
 # Whether a root name needs the prefix at all. Everything does — that IS the
 # rule — and the function exists so a caller states the decision rather than
 # assuming it, and so the one exception has somewhere to live.
 mangles: bool = (name: str)
-    if name == "main"
-        return false
-    true
+  if name == "main"
+    return false
+  true
 
 # The C symbol for a root name, with the `main` exception applied.
 symbol: str = (name: str)
-    if mangles(name)
-        return root(name)
-    entry()
+  if mangles(name)
+    return root(name)
+  entry()

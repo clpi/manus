@@ -5,8 +5,8 @@ worlds = "|io|os|fs|json|process|mcp|net|mem|coroutine|debug|jit|ffi|simd|"
 forbidden = "|std|proc|ir|core|runtime|system|environment|"
 relations = "|read|write|len|match|sub|find|each|sort|eq|ord|hash|push|pop|get|set|at|open|close|run|capture|encode|decode|parse|format|split|join|byte|to|from|add|mul|div|mod|and|or|not|iter|derive|compose|project|realize|exists|list|stat|remove|mkdir|copy|mkdirall|connect|send|recv|listen|accept|call|notify|alloc|free|retain|release|suspend|resume|yield|trace|breakpoint|compile|extern|link|load|store|lane|"
 descriptors = "|bit|"
-view(edges) = ()
-    "|bit/f64|f64/bit|bit/f32|f32/bit|i64/bit|"
+view__edges = ()
+  "|bit/f64|f64/bit|bit/f32|f32/bit|i64/bit|"
 
 ioauthority = 1
 processauthority = 2

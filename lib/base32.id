@@ -26,14 +26,14 @@ encode_with_alphabet: str = (data: str, tab: str)
     b5 = 0
     if i + 4 <= len
       b5 = data:byte(i + 4)
-    c1 = b1 >> 3 + 1
-    c2 = (b1 & 7) << 2 | b2 >> 6 + 1
-    c3 = b2 >> 1 & 31 + 1
-    c4 = (b2 & 1) << 4 | b3 >> 4 + 1
-    c5 = (b3 & 15) << 1 | b4 >> 7 + 1
-    c6 = b4 >> 2 & 31 + 1
-    c7 = (b4 & 3) << 3 | b5 >> 5 + 1
-    c8 = b5 & 31 + 1
+    c1 = b1 >> (3 + 1)
+    c2 = (b1 & 7) << 2 | b2 >> (6 + 1)
+    c3 = b2 >> 1 & (31 + 1)
+    c4 = (b2 & 1) << 4 | b3 >> (4 + 1)
+    c5 = (b3 & 15) << 1 | b4 >> (7 + 1)
+    c6 = b4 >> 2 & (31 + 1)
+    c7 = (b4 & 3) << 3 | b5 >> (5 + 1)
+    c8 = b5 & (31 + 1)
     # RFC 4648 s6: a 5-byte group is always EIGHT characters, and how many
     # of them are data depends on how many bytes are present:
     #   1 byte -> 2 data + 6 '='      4 bytes -> 7 data + 1 '='

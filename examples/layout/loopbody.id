@@ -21,16 +21,20 @@
 # expect: 0 3 9
 
 tick = 0
-step = (n: i64) while tick < n tick += 1
+step = (n: i64)
+  while tick < n
+    tick = tick + 1
 
 grid = 0
 xs = { 2, 3, 4 }
-fill = (t) for i, v in t grid += v
+fill = (t)
+  for i, v in t
+    grid = grid + v
 
 main: i64 = ()
-    before = tick
-    step(3)
-    after = tick
-    fill(xs)
-    print("{before} {after} {grid}")
-    0
+  before = tick
+  step(3)
+  after = tick
+  fill(xs)
+  print("{before} {after} {grid}")
+  0

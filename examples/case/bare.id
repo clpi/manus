@@ -56,36 +56,38 @@
 # closes the COMPARISON half, which is the half the 231-site migration was
 # blocked on.
 
-token: {
-    kind: { name, number, eof }
-    span: i64
-}
+enum token__kind
+  name
+  number
+  eof
+token: { kind: token__kind, span: i64 }
 
-glyph: {
-    form: { circle, square, number }
-    area: f64
-}
+enum glyph__form
+  circle
+  square
+  number
+glyph: { form: glyph__form, area: f64 }
 
 n = 0
-k = token.kind.eof
-f = glyph.form.number
+k = token__kind.eof
+f = glyph__form.number
 
 if k == eof
-    n += 1
+  n = n + 1
 if eof == k
-    n += 10
+  n = n + 10
 if k != number
-    n += 5
+  n = n + 5
 
 # Same spelling, other home. Decided by `f`, not by an index.
 if f == number
-    n += 200
+  n = n + 200
 
 # Both of these resolve and are FALSE. A fixture that only asserted the
 # true rows would pass on a resolver that answered "equal" to everything.
 if f == circle
-    n += 30000
+  n = n + 30000
 if k == number
-    n += 1000
+  n = n + 1000
 
 print("{n}")

@@ -48,4 +48,4 @@ print("derive_hint_ok = " .. to(str)(has_derive_hint))
 print("multiplier_hint = " .. HINT)
 print("RESULT agent_hooks_ok = " .. to(str)(ok))
 if not ok
-    error("agent hook discovery failed")
+  error("agent hook discovery failed")

@@ -18,12 +18,12 @@
 # expect: 10 20 3 2 1
 
 pick: i64 = (n: i64)
-    k = if n > 3 10 else 20
-    k
+  k = if n > 3 10 else 20 end
+  k
 
 grade: i64 = (n: i64)
-    k = if n > 8 3 else if n > 4 2 else 1
-    k
+  k = if n > 8 3 else if n > 4 2 else 1 end end
+  k
 
 hi = pick(5)
 lo = pick(1)

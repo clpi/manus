@@ -1,9 +1,9 @@
 # The native pipeline `|>` must lower to a direct C call,
 # not to a boxed invoke. The C must hold `double(21)` at the call site.
 
-double(x: i64): i64
-    x * 2
+double: i64 = (x: i64)
+  x * 2
 
-main(): i64
-    y = 21 |> double
-    y
+main: i64 = ()
+  y = 21 |> double
+  y

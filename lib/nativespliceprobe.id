@@ -18,11 +18,11 @@
 names = { "one", "two" }
 BASE = 40
 
-bump(n: i64): i64
-    n + 1
+bump: i64 = (n: i64)
+  n + 1
 
-twice(n: i64): i64
-    bump(bump(n))
+twice: i64 = (n: i64)
+  bump(bump(n))
 
-answer(): i64
-    BASE + twice(0)
+answer: i64 = ()
+  BASE + twice(0)

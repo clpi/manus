@@ -28,14 +28,14 @@ wide_shr: any = (a: any, n: i64)
   if n >= 32
     return { hi = 0, lo = a.hi >> (n - 32) }
   hi = a.hi >> n
-  lo = (a.hi % 1 << n * 1 << (32 - n) + a.lo) >> n % 4294967296
+  lo = (a.hi % 1) << (n * 1) << (32 - n + a.lo) >> (n % 4294967296)
   return { hi = hi, lo = lo }
 
 wide_shl: any = (a: any, n: i64)
   if n >= 32
-    return { hi = a.lo << (n - 32) % 4294967296, lo = 0 }
-  hi = (a.hi << n + a.lo >> (32 - n)) % 4294967296
-  lo = a.lo << n % 4294967296
+    return { hi = a.lo << ((n - 32) % 4294967296), lo = 0 }
+  hi = a.hi << (n + a.lo) >> (32 - n) % 4294967296
+  lo = a.lo << (n % 4294967296)
   return { hi = hi, lo = lo }
 
 wide_ror: any = (a: any, n: i64)
@@ -155,10 +155,12 @@ sha512: str = (s: str)
     msg = msg .. 0:char()
   bits = s:len() * 8
   for i = 1, 16
-    msg = msg .. bits >> ((16 - i) * 8) % 256:char()
+    msg = (msg .. bits) >> ((16 - i) * 8 % 256:char())
   H = {}
   for i = 1, 8
-    H(i) = { hi = H_init(i).hi, lo = H_init(i).lo }
+    H(i) =
+      hi = H_init(i).hi
+      lo = H_init(i).lo
   for block = 0, msg:len() / 128 - 1
     w = {}
     for j = 0, 15
@@ -168,14 +170,30 @@ sha512: str = (s: str)
       s0 = wide_xor(wide_xor(wide_ror(w(j - 14 + 1), 1), wide_ror(w(j - 14 + 1), 8)), wide_shr(w(j - 14 + 1), 7))
       s1 = wide_xor(wide_xor(wide_ror(w(j - 2 + 1), 19), wide_ror(w(j - 2 + 1), 61)), wide_shr(w(j - 2 + 1), 6))
       w(j + 1) = wide_add(wide_add(wide_add(w(j - 16 + 1), s0), w(j - 7 + 1)), s1)
-    a = { hi = H(1).hi, lo = H(1).lo }
-    b = { hi = H(2).hi, lo = H(2).lo }
-    c = { hi = H(3).hi, lo = H(3).lo }
-    d = { hi = H(4).hi, lo = H(4).lo }
-    e = { hi = H(5).hi, lo = H(5).lo }
-    f = { hi = H(6).hi, lo = H(6).lo }
-    g = { hi = H(7).hi, lo = H(7).lo }
-    hh = { hi = H(8).hi, lo = H(8).lo }
+    a =
+      hi = H(1).hi
+      lo = H(1).lo
+    b =
+      hi = H(2).hi
+      lo = H(2).lo
+    c =
+      hi = H(3).hi
+      lo = H(3).lo
+    d =
+      hi = H(4).hi
+      lo = H(4).lo
+    e =
+      hi = H(5).hi
+      lo = H(5).lo
+    f =
+      hi = H(6).hi
+      lo = H(6).lo
+    g =
+      hi = H(7).hi
+      lo = H(7).lo
+    hh =
+      hi = H(8).hi
+      lo = H(8).lo
     for j = 0, 79
       S1 = wide_xor(wide_xor(wide_ror(e, 14), wide_ror(e, 18)), wide_ror(e, 41))
       ch = wide_xor(wide_and(e, f), wide_and(wide_not(e), g))

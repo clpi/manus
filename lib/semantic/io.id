@@ -1,4 +1,12 @@
 # io world — endpoint read/write binding facts.
 
-read = { world = "io", possessed = true, callable = true, operation = false }
-write = { world = "io", possessed = true, callable = true, operation = false }
+read =
+  world = "io"
+  possessed = true
+  callable = true
+  operation = false
+write =
+  world = "io"
+  possessed = true
+  callable = true
+  operation = false

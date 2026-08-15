@@ -1,43 +1,45 @@
 # image.color — Color models (mirrors Go's image/color)
 
-rgba(r: any, g: any, b: any, a: any): any
-    {r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "rgba"}
+rgba: any = (r: any, g: any, b: any, a: any)
+  { r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "rgba" }
 
-nrgba(r: any, g: any, b: any, a: any): any
-    {r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "nrgba"}
+nrgba: any = (r: any, g: any, b: any, a: any)
+  { r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "nrgba" }
 
-gray(y: any): any
-    {y = y % 65536, kind = "gray"}
+gray: any = (y: any)
+  { y = y % 65536, kind = "gray" }
 
-model_rgba(c: any): any
-    c.kind == "rgba"
+model_rgba: any = (c: any)
+  c.kind == "rgba"
 
-model_nrgba(c: any): any
-    c.kind == "nrgba"
+model_nrgba: any = (c: any)
+  c.kind == "nrgba"
 
-model_gray(c: any): any
-    c.kind == "gray"
+model_gray: any = (c: any)
+  c.kind == "gray"
 
-to_rgba(c: any): any
-    if c.kind == "rgba" return c
-    if c.kind == "nrgba"
-        return rgba(c.r, c.g, c.b, c.a)
-    if c.kind == "gray"
-        return rgba(c.y, c.y, c.y, 65535)
-    rgba(0, 0, 0, 65535)
+to_rgba: any = (c: any)
+  if c.kind == "rgba"
+    return c
+  if c.kind == "nrgba"
+    return rgba(c.r, c.g, c.b, c.a)
+  if c.kind == "gray"
+    return rgba(c.y, c.y, c.y, 65535)
+  rgba(0, 0, 0, 65535)
 
-to_nrgba(c: any): any
-    if c.kind == "nrgba" return c
-    if c.kind == "rgba"
-        return nrgba(c.r, c.g, c.b, c.a)
-    if c.kind == "gray"
-        return nrgba(c.y, c.y, c.y, 65535)
-    nrgba(0, 0, 0, 65535)
+to_nrgba: any = (c: any)
+  if c.kind == "nrgba"
+    return c
+  if c.kind == "rgba"
+    return nrgba(c.r, c.g, c.b, c.a)
+  if c.kind == "gray"
+    return nrgba(c.y, c.y, c.y, 65535)
+  nrgba(0, 0, 0, 65535)
 
-to_gray(c: any): any
-    if c.kind == "gray" return c
-    if c.kind == "rgba" or c.kind == "nrgba"
-        y = (299 * c.r + 587 * c.g + 114 * c.b) / 1000
-        return gray(y)
-    gray(0)
-
+to_gray: any = (c: any)
+  if c.kind == "gray"
+    return c
+  if c.kind == "rgba" or c.kind == "nrgba"
+    y = (299 * c.r + 587 * c.g + 114 * c.b) / 1000
+    return gray(y)
+  gray(0)

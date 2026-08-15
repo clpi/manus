@@ -48,20 +48,28 @@ span: { lo: i64, hi: i64 }
 lexer: { pos: i64, tab: i64 }
 node: { at: span, tag: i64 }
 
-use = (f, v) f(v)
+use = (f, v)
+  f(v)
 
 peek: i64 = (l: lexer)
-    l.tab
+  l.tab
 
 bump: i64 = (l: lexer)
-    rec = { tab = 2 }
-    .pos * 100 + :peek() * 10 + use(.tab, rec)
+  rec =
+    tab = 2
+  l.pos * 100 + l:peek() * 10 + use(.tab, rec)
 
 reach: i64 = (n: node)
-    .at.hi
+  n.at.hi
 
-l: lexer = { pos = 4, tab = 2 }
-n: node = { at = { lo = 1, hi = 7 }, tag = 9 }
+l: lexer =
+  pos = 4
+  tab = 2
+n: node =
+  at =
+    lo = 1
+    hi = 7
+  tag = 9
 total = bump(l)
-total += reach(n)
+total = total + reach(n)
 print("{total}")

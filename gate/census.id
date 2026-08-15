@@ -4,94 +4,94 @@
 # File is the body of gate.census — no main, no census = { } wrapper.
 
 transport: str = ()
-    text = stdin:read()
-    if text:len() == 0
-        return ""
-    text
+  text = stdin:read()
+  if text:len() == 0
+    return ""
+  text
 
 upper: bool = (c: str)
-    c >= "A" and c <= "Z"
+  c >= "A" and c <= "Z"
 
 stem: str = (line: str)
-    slash = 0
-    j = line:len()
-    while j >= 1
-        if line:sub(j, j) == "/"
-            slash = j
-            break
-        j -= 1
-    base = line
-    if slash > 0
-        base = line:sub(slash + 1, line:len())
-    dot = 0
-    j = base:len()
-    while j >= 1
-        if base:sub(j, j) == "."
-            dot = j
-            break
-        j -= 1
-    if dot > 1
-        return base:sub(1, dot - 1)
-    ""
+  slash = 0
+  j = line:len()
+  while j >= 1
+    if line:sub(j, j) == "/"
+      slash = j
+      break
+    j = j - 1
+  base = line
+  if slash > 0
+    base = line:sub(slash + 1, line:len())
+  dot = 0
+  j = base:len()
+  while j >= 1
+    if base:sub(j, j) == "."
+      dot = j
+      break
+    j = j - 1
+  if dot > 1
+    return base:sub(1, dot - 1)
+  ""
 
 badstem: bool = (st: str)
-    k = 1
-    while k <= st:len()
-        c = st:sub(k, k)
-        if c == "_" or c == "-" or upper(c)
-            return true
-        k += 1
-    false
+  k = 1
+  while k <= st:len()
+    c = st:sub(k, k)
+    if c == "_" or c == "-" or upper(c)
+      return true
+    k = k + 1
+  false
 
 filescan: i64 = (files: str)
-    canonicalid = 0
-    zig = 0
-    snake = 0
-    foreign = 0
-    project = 0
-    line = ""
-    nl = "\n"
-    n = files:len()
-    i = 1
-    while i <= n + 1
-        c = nl
-        if i <= n
-            c = files:sub(i, i)
-        if c == nl
-            if line:len() > 0
-                if line:len() >= 4 and line:sub(1, 4) == "ext/"
-                    foreign += 1
-                if line:len() >= 3 and line:sub(line:len() - 2, line:len()) == ".id"
-                    canonicalid += 1
-                    if badstem(stem(line))
-                        snake += 1
-                if line:len() >= 4 and line:sub(line:len() - 3, line:len()) == ".zig"
-                    zig += 1
-                if line:sub(1, 4) == "src/" or line:sub(1, 4) == "lib/" or line:sub(1, 8) == "scripts/" or line:sub(1, 5) == "gate/"
-                    project += 1
-            line = ""
-        else
-            line = "{line}{c}"
-        i += 1
+  canonicalid = 0
+  zig = 0
+  snake = 0
+  foreign = 0
+  project = 0
+  line = ""
+  nl = "\n"
+  n = files:len()
+  i = 1
+  while i <= n + 1
+    c = nl
+    if i <= n
+      c = files:sub(i, i)
+    if c == nl
+      if line:len() > 0
+        if line:len() >= 4 and line:sub(1, 4) == "ext/"
+          foreign = foreign + 1
+        if line:len() >= 3 and line:sub(line:len() - 2, line:len()) == ".id"
+          canonicalid = canonicalid + 1
+          if badstem(stem(line))
+            snake = snake + 1
+        if line:len() >= 4 and line:sub(line:len() - 3, line:len()) == ".zig"
+          zig = zig + 1
+        if line:sub(1, 4) == "src/" or line:sub(1, 4) == "lib/" or line:sub(1, 8) == "scripts/" or line:sub(1, 5) == "gate/"
+          project = project + 1
+      line = ""
+    else
+      line = "{line}{c}"
+    i = i + 1
 
-    print("gate/census (tracked files)")
-    print("  canonical.id     {canonicalid}")
-    print("  bootstrap.zig    {zig}")
-    print("  project.owned    {project}")
-    print("  foreign.paths    {foreign}")
-    print("  separator.debt   {snake}")
-    print("")
-    snake
+  print("gate/census (tracked files)")
+  print("  canonical.id     {canonicalid}")
+  print("  bootstrap.zig    {zig}")
+  print("  project.owned    {project}")
+  print("  foreign.paths    {foreign}")
+  print("  separator.debt   {snake}")
+  print("")
+  snake
 
 files = transport()
 if files:len() == 0
-    print("gate/census: FAIL empty input — pipe git ls-files")
-    3
+  print("gate/census: FAIL empty input — pipe git ls-files")
+  3
 else
-    snake = filescan(files)
-    if snake > 0
-        print("gate/census: FAIL separator debt in tracked .id stems")
-        1
-    else
-        print("gate/census: stem census pass (run gate/path.id tree via stdin for compound paths)")
-        0
+  snake = filescan(files)
+  if snake > 0
+    print("gate/census: FAIL separator debt in tracked .id stems")
+    1
+  else
+    print("gate/census: stem census pass (run gate/path.id tree via stdin for compound paths)")
+    0

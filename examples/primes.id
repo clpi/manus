@@ -3,19 +3,19 @@
 
 const LIMIT: i64 = 10000
 
-count_primes(limit: i64): i64
-    count: i64 = 0
-    n: i64 = 2
-    while n <= limit
-        is_prime: bool = true
-        d: i64 = 2
-        while d * d <= n
-            if n % d == 0
-                is_prime = false
-            d += 1
-        if is_prime
-            count += 1
-        n += 1
-    count
+count_primes: i64 = (limit: i64)
+  count: i64 = 0
+  n: i64 = 2
+  while n <= limit
+    is_prime: bool = true
+    d: i64 = 2
+    while d * d <= n
+      if n % d == 0
+        is_prime = false
+      d = d + 1
+    if is_prime
+      count = count + 1
+    n = n + 1
+  count
 
 print(count_primes(LIMIT))

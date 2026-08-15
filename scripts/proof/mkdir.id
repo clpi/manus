@@ -5,55 +5,55 @@
 base = "/tmp/duofsproof"
 
 main: i64 = ()
-    two = "{base}/two"
-    one = "{base}/one"
-    leaf = "{base}/a/b/c"
-    midb = "{base}/a/b"
-    mida = "{base}/a"
-    deep = "{base}/nosuchparent/x"
+  two = "{base}/two"
+  one = "{base}/one"
+  leaf = "{base}/a/b/c"
+  midb = "{base}/a/b"
+  mida = "{base}/a"
+  deep = "{base}/nosuchparent/x"
 
-    two:remove()
-    one:remove()
-    leaf:remove()
-    midb:remove()
-    mida:remove()
-    base:remove()
+  two:remove()
+  one:remove()
+  leaf:remove()
+  midb:remove()
+  mida:remove()
+  base:remove()
 
-    made = base:mkdir()
-    if !base:exists()
-        print("fs proof: mkdir answered {made} and the directory is absent")
-        1
+  made = base:mkdir()
+  if not base:exists()
+    print("fs proof: mkdir answered {made} and the directory is absent")
+    1
 
-    if !made
-        print("fs proof: mkdir created the directory and answered {made}")
-        2
+  if not made
+    print("fs proof: mkdir created the directory and answered {made}")
+    2
 
-    deepmade = deep:mkdir()
-    if deepmade
-        print("fs proof: mkdir answered {deepmade} for a path whose parent is absent")
-        3
+  deepmade = deep:mkdir()
+  if deepmade
+    print("fs proof: mkdir answered {deepmade} for a path whose parent is absent")
+    3
 
-    all = leaf:mkdirall()
-    if !leaf:exists()
-        print("fs proof: mkdirall answered {all} and the leaf is absent")
-        4
+  all = leaf:mkdirall()
+  if not leaf:exists()
+    print("fs proof: mkdirall answered {all} and the leaf is absent")
+    4
 
-    src = one
-    f = src:open("w")
-    f:write("idol")
-    f:close()
-    dst = two
-    cp = src:copy(dst)
-    if !dst:exists()
-        print("fs proof: copy answered {cp} and the target is absent")
-        5
+  src = one
+  f = src:open("w")
+  f:write("idol")
+  f:close()
+  dst = two
+  cp = src:copy(dst)
+  if not dst:exists()
+    print("fs proof: copy answered {cp} and the target is absent")
+    5
 
-    g = dst:open("r")
-    body = g:read("a")
-    g:close()
-    if body != "idol"
-        print("fs proof: copy produced {body}, not the source bytes")
-        6
+  g = dst:open("r")
+  body = g:read("a")
+  g:close()
+  if body != "idol"
+    print("fs proof: copy produced {body}, not the source bytes")
+    6
 
-    print("fs proof: mkdir, mkdirall and copy all verified by value")
-    0
+  print("fs proof: mkdir, mkdirall and copy all verified by value")
+  0

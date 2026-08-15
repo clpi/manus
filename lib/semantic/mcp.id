@@ -1,4 +1,12 @@
 # mcp world — tool transport relations.
 
-call = { world = "mcp", possessed = false, callable = true, operation = false }
-notify = { world = "mcp", possessed = false, callable = true, operation = false }
+call =
+  world = "mcp"
+  possessed = false
+  callable = true
+  operation = false
+notify =
+  world = "mcp"
+  possessed = false
+  callable = true
+  operation = false

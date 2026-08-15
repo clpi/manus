@@ -22,179 +22,79 @@ _TMP = "/tmp/duo-prop11"
 
 _fails = 0
 
-_clang(): str
-    if script.chomp(script.capture("uname")) == "Darwin"
-        return "xcrun clang"
-    end
-    "clang"
-end
+_clang: str = ()
+  if script.chomp(script.capture("uname")) == "Darwin"
+    return "xcrun clang"
+  "clang"
 
 # Emit one module and syntax-check its C. Returns the generated .c path, or
 # "" if the module did not survive. Failures are COUNTED, not fatal: the
 # shell version ran under `set -e` and aborted on the first bad module, so a
 # run told you about one failure at a time.
-_check_module(name: str, src: str, cc: str): str
-    duo_file = _TMP .. "/" .. name .. ".id"
-    c_file = _TMP .. "/" .. name .. ".c"
-    log = _TMP .. "/" .. name .. ".clang.log"
+_check_module: str = (name: str, src: str, cc: str)
+  duo_file = _TMP .. "/" .. name .. ".id"
+  c_file = _TMP .. "/" .. name .. ".c"
+  log = _TMP .. "/" .. name .. ".clang.log"
 
-    script.fs_write(duo_file, src)
-    if script.run("./zig-out/bin/idol dump-c " .. duo_file .. " > " .. c_file .. " 2>/dev/null") != 0
-        print("FAIL " .. name .. ": duo dump-c failed")
-        _fails += 1
-        return ""
-    end
+  script.fs_write(duo_file, src)
+  if script.run("./zig-out/bin/idol dump-c " .. duo_file .. " > " .. c_file .. " 2>/dev/null") != 0
+    print("FAIL " .. name .. ": duo dump-c failed")
+    _fails = _fails + 1
+    return ""
 
-    cmd = cc .. " -Wall -Wextra -pedantic -std=c11 -Wno-unused-variable"
-        .. " -Wno-strict-prototypes -fsyntax-only " .. c_file .. " > " .. log .. " 2>&1"
-    if script.run(cmd) != 0
-        print("FAIL " .. name .. ": generated C does not compile")
-        print(script.capture("head -6 " .. log))
-        _fails += 1
-        return ""
-    end
+  cmd = cc .. " -Wall -Wextra -pedantic -std=c11 -Wno-unused-variable" .. " -Wno-strict-prototypes -fsyntax-only " .. c_file .. " > " .. log .. " 2>&1"
+  if script.run(cmd) != 0
+    print("FAIL " .. name .. ": generated C does not compile")
+    print(script.capture("head -6 " .. log))
+    _fails = _fails + 1
+    return ""
 
-    print("ok   " .. name)
-    c_file
-end
+  print("ok   " .. name)
+  c_file
 
 # A shape assertion on the emitted C. `grep -F` # fixed string, no regex #
 # because these patterns contain `(*f)` and `[i]`.
-_c_contains(path: str, needle: str, why: str): void
-    if path == "" return end
-    n = script.chomp(script.capture(
-        "grep -Fc \"" .. needle .. "\" " .. path .. " 2>/dev/null"))
-    if n == "" or n == "0"
-        print("FAIL " .. why)
-        _fails += 1
-    end
-end
+_c_contains = (path: str, needle: str, why: str)
+  if path == ""
+    return
+  n = script.chomp(script.capture("grep -Fc \"" .. needle .. "\" " .. path .. " 2>/dev/null"))
+  if n == "" or n == "0"
+    print("FAIL " .. why)
+    _fails = _fails + 1
 
 main: i64 = ()
-    print("[Property 11] Testing C codegen...")
-    script.run("rm -rf " .. _TMP .. " && mkdir -p " .. _TMP)
-    cc = _clang()
+  print("[Property 11] Testing C codegen...")
+  script.run("rm -rf " .. _TMP .. " && mkdir -p " .. _TMP)
+  cc = _clang()
 
-    _check_module("arithmetic", [[function add(a: i64, b: i64) -> i64
-  return a + b
-end
+  _check_module("arithmetic", "function add(a: i64, b: i64) -> i64\n  return a + b\nend\n\nfunction mix(a: i64, b: i64) -> i64\n  local x: i64 = add(a, b)\n  local y: i64 = (x * 3) - (b // 2)\n  return y % 97\nend\n\nlocal result: i64 = mix(40, 2)\n", cc)
 
-function mix(a: i64, b: i64) -> i64
-  local x: i64 = add(a, b)
-  local y: i64 = (x * 3) - (b // 2)
-  return y % 97
-end
+  _check_module("floats_and_branches", "function scale(x: f64, n: i64) -> f64\n  if n > 10 then\n    return x * 2.5\n  elseif n == 10 then\n    return x + 1.25\n  end\n  return x / 2.0\nend\n\nlocal a: f64 = scale(3.0, 12)\nlocal b: bool = a > 1.0\n", cc)
 
-local result: i64 = mix(40, 2)
-]], cc)
+  _check_module("loops", "function sum_to(n: i64) -> i64\n  local acc: i64 = 0\n  local i: i64 = 1\n  while i <= n do\n    acc += i\n    i += 1\n  end\n  return acc\nend\n\nlocal total: i64 = sum_to(16)\n", cc)
 
-    _check_module("floats_and_branches", [[function scale(x: f64, n: i64) -> f64
-  if n > 10 then
-    return x * 2.5
-  elseif n == 10 then
-    return x + 1.25
-  end
-  return x / 2.0
-end
+  _check_module("strings", "function middle(s: str): str\n  return s:sub(2, 4)\nend\n\nfunction label(n: i64): str\n  local s: str = tostring(n)\n  return middle(\"abcdef\") .. s\nend\n\nlocal out: str = label(42)\n", cc)
 
-local a: f64 = scale(3.0, 12)
-local b: bool = a > 1.0
-]], cc)
+  _check_module("records_and_globals", "@packed\n@align(16)\nglobal gp: { x: i8, y: i64 } = { x = 1, y = 2 }\n\nfunction sum_point(): i64\n  @packed\n  @align(8)\n  local p: { x: i8, y: i64 } = { x = 3, y = 4 }\n  return gp.y + p.y\nend\n\nlocal n: i64 = sum_point()\n", cc)
 
-    _check_module("loops", [[function sum_to(n: i64) -> i64
-  local acc: i64 = 0
-  local i: i64 = 1
-  while i <= n do
-    acc += i
-    i += 1
-  end
-  return acc
-end
+  _check_module("record_alias_params", "type Point = { x: i64, y: i64 }\n\nfunction get_y(p: { x: i64, y: i64 }) -> i64\n  return p.y\nend\n\nfunction sum_point(p: Point) -> i64\n  return p.x + p.y\nend\n\nlocal p: Point = { x = 5, y = 7 }\nlocal a: i64 = get_y({ x = 3, y = 4 })\nlocal b: i64 = sum_point(p)\n", cc)
 
-local total: i64 = sum_to(16)
-]], cc)
+  _check_module("bitwise", "function bits(a: i64, b: i64, s: i64) -> i64\n  local x: i64 = (a & b) | (a ~ b)\n  local y: i64 = (a & 65535) << s\n  local z: i64 = y >> s\n  return x + z + (~b)\nend\n\nlocal n: i64 = bits(123456, 7890, 3)\n", cc)
 
-    _check_module("strings", [[function middle(s: str): str
-  return s:sub(2, 4)
-end
+  # A pointer index must stay a typed C index. If this degrades into a
+  # boxed runtime call the module still COMPILES, which is why the shape is
+  # asserted and !merely the exit status.
+  ni = _check_module("native_indexing", "function pointer_read(xs: *i32, i: i64) -> i32\n  return xs[i]\nend\n", cc)
+  _c_contains(ni, "return xs[i];", "native pointer indexing did not remain a direct typed C index")
 
-function label(n: i64): str
-  local s: str = tostring(n)
-  return middle("abcdef") .. s
-end
+  tf = _check_module("typed_function_values", "function increment(x: i32) -> i32\n  return x + 1\nend\n\nfunction apply(f: (i32) -> i32, x: i32) -> i32\n  return f(x)\nend\n\nlocal result: i32 = apply(increment, 41)\n", cc)
 
-local out: str = label(42)
-]], cc)
+  _c_contains(tf, "int32_t (*f)(int32_t)", "typed function parameter did not remain a direct native C pointer")
+  _c_contains(tf, "return f(x);", "typed function call did not remain a direct native C call")
 
-    _check_module("records_and_globals", [[@packed
-@align(16)
-global gp: { x: i8, y: i64 } = { x = 1, y = 2 }
-
-function sum_point(): i64
-  @packed
-  @align(8)
-  local p: { x: i8, y: i64 } = { x = 3, y = 4 }
-  return gp.y + p.y
-end
-
-local n: i64 = sum_point()
-]], cc)
-
-    _check_module("record_alias_params", [[type Point = { x: i64, y: i64 }
-
-function get_y(p: { x: i64, y: i64 }) -> i64
-  return p.y
-end
-
-function sum_point(p: Point) -> i64
-  return p.x + p.y
-end
-
-local p: Point = { x = 5, y = 7 }
-local a: i64 = get_y({ x = 3, y = 4 })
-local b: i64 = sum_point(p)
-]], cc)
-
-    _check_module("bitwise", [[function bits(a: i64, b: i64, s: i64) -> i64
-  local x: i64 = (a & b) | (a ~ b)
-  local y: i64 = (a & 65535) << s
-  local z: i64 = y >> s
-  return x + z + (~b)
-end
-
-local n: i64 = bits(123456, 7890, 3)
-]], cc)
-
-    # A pointer index must stay a typed C index. If this degrades into a
-    # boxed runtime call the module still COMPILES, which is why the shape is
-    # asserted and !merely the exit status.
-    ni = _check_module("native_indexing", [[function pointer_read(xs: *i32, i: i64) -> i32
-  return xs[i]
-end
-]], cc)
-    _c_contains(ni, "return xs[i];",
-        "native pointer indexing did not remain a direct typed C index")
-
-    tf = _check_module("typed_function_values", [[function increment(x: i32) -> i32
-  return x + 1
-end
-
-function apply(f: (i32) -> i32, x: i32) -> i32
-  return f(x)
-end
-
-local result: i32 = apply(increment, 41)
-]], cc)
-    _c_contains(tf, "int32_t (*f)(int32_t)",
-        "typed function parameter did not remain a direct native C pointer")
-    _c_contains(tf, "return f(x);",
-        "typed function call did not remain a direct native C call")
-
-    print("")
-    if _fails > 0
-        print("[Property 11] FAIL — " .. _fails:to(str) .. " module(s)/assertion(s) failed")
-        return 1
-    end
-    print("[Property 11] SUCCESS")
-    0
-end
+  print("")
+  if _fails > 0
+    print("[Property 11] FAIL — " .. _fails:to(str) .. " module(s)/assertion(s) failed")
+    return 1
+  print("[Property 11] SUCCESS")
+  0

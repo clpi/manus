@@ -22,8 +22,12 @@ description = "idol's WebAssembly engine — decode, interpret, JIT to ARM64"
 entry = "src/engine.id"
 target = "native"
 
-targets = {
-  default = { entry = "src/engine.id", backend = "c", emit = "exe" },
-  test    = { entry = "test/conform.id" },
-  bench   = { entry = "bench/run.id" },
-}
+targets =
+  default =
+    entry = "src/engine.id"
+    backend = "c"
+    emit = "exe"
+  test =
+    entry = "test/conform.id"
+  bench =
+    entry = "bench/run.id"

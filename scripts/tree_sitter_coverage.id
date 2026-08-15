@@ -37,11 +37,11 @@ grammardir = "ext/tree-sitter-duo"
 # The tree-sitter CLI builds parser.c with the host compiler, so it needs the
 # macOS SDK on its include path. `xcrun` is the authority; an already-exported
 # SDKROOT wins so a CI image can pin one.
-_sdkroot(): str
-    fromenv = script.chomp(os.getenv("SDKROOT"))
-    if fromenv != ""
-        return fromenv
-    script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))
+_sdkroot: str = ()
+  fromenv = script.chomp(os.getenv("SDKROOT"))
+  if fromenv != ""
+    return fromenv
+  script.chomp(script.capture("xcrun --show-sdk-path 2>/dev/null"))
 
 # Every shell command the gate runs goes through here, so the SDK path is
 # never accidentally dropped from one of them.
@@ -51,123 +51,121 @@ _sdkroot(): str
 # prefixed onto that binds to the `cd` alone — tree-sitter runs on the far
 # side of the `&&` without it. The prefix form silently produced an empty
 # result for every command, which `to(i64)("")` turned into a confident 0.
-_sh(sdk: str, cmd: str): str
-    script.capture("export SDKROOT='" .. sdk .. "'; " .. cmd)
+_sh: str = (sdk: str, cmd: str)
+  script.capture("export SDKROOT='" .. sdk .. "'; " .. cmd)
 
-_shstatus(sdk: str, cmd: str): i64
-    script.status("export SDKROOT='" .. sdk .. "'; " .. cmd)
+_shstatus: i64 = (sdk: str, cmd: str)
+  script.status("export SDKROOT='" .. sdk .. "'; " .. cmd)
 
 # Count files whose tree carries an ERROR / MISSING / UNEXPECTED node.
 # `tree-sitter parse #quiet #paths` prints one line per FAILING file and
 # nothing at all for a clean one, so the failure count is the line count.
-_failures(sdk: str, listfile: str): i64
-    out: str = _sh(sdk, "cd " .. grammardir .. " && tree-sitter parse --quiet --paths '" .. listfile .. "' 2>/dev/null | sort -u | grep -c . ")
-    return to(i64)(script.chomp(out))
+_failures: i64 = (sdk: str, listfile: str)
+  out: str = _sh(sdk, "cd " .. grammardir .. " && tree-sitter parse --quiet --paths '" .. listfile .. "' 2>/dev/null | sort -u | grep -c . ")
+  return to(i64)(script.chomp(out))
 
 # Prove the detector can distinguish a good file from a bad one BEFORE
 # believing anything it says about the corpus. A gate that reports 0/N is
 # usually broken, not green.
-_control(sdk: str, dir: str): bool
-    good = dir .. "/control_good.id"
-    bad = dir .. "/control_bad.id"
-    script.capture("printf 'add(a: i64, b: i64): i64\\n    a + b\\nend\\n' > '" .. good .. "'")
-    # An unclosed parenthesis and a dangling operator: not a Duo program under
-    # any reading, so the parser must produce an error node for it.
-    script.capture("printf 'add(a: i64, b: i64: i64\\n    a + +\\nend\\n' > '" .. bad .. "'")
+_control: bool = (sdk: str, dir: str)
+  good = dir .. "/control_good.id"
+  bad = dir .. "/control_bad.id"
+  script.capture("printf 'add(a: i64, b: i64): i64\\n    a + b\\nend\\n' > '" .. good .. "'")
+  # An unclosed parenthesis and a dangling operator: not a Duo program under
+  # any reading, so the parser must produce an error node for it.
+  script.capture("printf 'add(a: i64, b: i64: i64\\n    a + +\\nend\\n' > '" .. bad .. "'")
 
-    # `fs_tmpdir` is already absolute, so these paths must NOT be prefixed
-    # with $PWD: an unreadable path makes tree-sitter print nothing to stdout,
-    # which the counter would read as "recognised" for both controls.
-    script.capture("printf '%s\\n' '" .. good .. "' > '" .. dir .. "/good.txt'")
-    script.capture("printf '%s\\n' '" .. bad .. "' > '" .. dir .. "/bad.txt'")
+  # `fs_tmpdir` is already absolute, so these paths must NOT be prefixed
+  # with $PWD: an unreadable path makes tree-sitter print nothing to stdout,
+  # which the counter would read as "recognised" for both controls.
+  script.capture("printf '%s\\n' '" .. good .. "' > '" .. dir .. "/good.txt'")
+  script.capture("printf '%s\\n' '" .. bad .. "' > '" .. dir .. "/bad.txt'")
 
-    goodfails = _failures(sdk, dir .. "/good.txt")
-    badfails = _failures(sdk, dir .. "/bad.txt")
+  goodfails = _failures(sdk, dir .. "/good.txt")
+  badfails = _failures(sdk, dir .. "/bad.txt")
 
-    if goodfails != 0
-        io:write("tree_sitter_coverage: CONTROL FAILED — a valid file was reported unrecognised\n")
-        io:write("  this means the measurement is broken, not that the grammar regressed\n")
-        return false
-    if badfails != 1
-        io:write("tree_sitter_coverage: CONTROL FAILED — a file with a deliberate syntax error was reported RECOGNISED\n")
-        io:write("  the detector cannot fail, so its count proves nothing\n")
-        return false
-    print("tree_sitter_coverage: control ok — valid file recognised, broken file rejected")
-    true
+  if goodfails != 0
+    io:write("tree_sitter_coverage: CONTROL FAILED — a valid file was reported unrecognised\n")
+    io:write("  this means the measurement is broken, not that the grammar regressed\n")
+    return false
+  if badfails != 1
+    io:write("tree_sitter_coverage: CONTROL FAILED — a file with a deliberate syntax error was reported RECOGNISED\n")
+    io:write("  the detector cannot fail, so its count proves nothing\n")
+    return false
+  print("tree_sitter_coverage: control ok — valid file recognised, broken file rejected")
+  true
 
 main: i64 = ()
-    sdk = _sdkroot()
-    if sdk == ""
-        io:write("tree_sitter_coverage: FAIL — cannot resolve SDKROOT (xcrun --show-sdk-path returned nothing)\n")
-        io:write("  without it the tree-sitter CLI cannot compile parser.c and reports EVERY file unparseable\n")
-        return 1
-    print("tree_sitter_coverage: SDKROOT=" .. sdk)
+  sdk = _sdkroot()
+  if sdk == ""
+    io:write("tree_sitter_coverage: FAIL — cannot resolve SDKROOT (xcrun --show-sdk-path returned nothing)\n")
+    io:write("  without it the tree-sitter CLI cannot compile parser.c and reports EVERY file unparseable\n")
+    return 1
+  print("tree_sitter_coverage: SDKROOT=" .. sdk)
 
-    if !script.ok("command -v tree-sitter >/dev/null 2>&1")
-        io:write("tree_sitter_coverage: FAIL — tree-sitter CLI not found on PATH\n")
-        io:write("  the grammar cannot be built or measured; install it rather than skipping this gate\n")
-        return 1
+  if not script.ok("command -v tree-sitter >/dev/null 2>&1")
+    io:write("tree_sitter_coverage: FAIL — tree-sitter CLI not found on PATH\n")
+    io:write("  the grammar cannot be built or measured; install it rather than skipping this gate\n")
+    return 1
 
-    # The generator, checked. This is the step scripts/setup-nvim.id used to
-    # swallow with `>/dev/null 2>&1`.
-    genstatus = _shstatus(sdk, "cd " .. grammardir .. " && tree-sitter generate")
-    if genstatus != 0
-        io:write("tree_sitter_coverage: FAIL — tree-sitter generate exited " .. genstatus:to(str) .. "\n")
-        io:write(_sh(sdk, "cd " .. grammardir .. " && tree-sitter generate 2>&1 | head -40"))
-        return 1
-    print("tree_sitter_coverage: tree-sitter generate ok")
+  # The generator, checked. This is the step scripts/setup-nvim.id used to
+  # swallow with `>/dev/null 2>&1`.
+  genstatus = _shstatus(sdk, "cd " .. grammardir .. " && tree-sitter generate")
+  if genstatus != 0
+    io:write("tree_sitter_coverage: FAIL — tree-sitter generate exited " .. genstatus:to(str) .. "\n")
+    io:write(_sh(sdk, "cd " .. grammardir .. " && tree-sitter generate 2>&1 | head -40"))
+    return 1
+  print("tree_sitter_coverage: tree-sitter generate ok")
 
-    # The generator warns rather than fails on a conflict entry that is no
-    # longer needed. Left alone those accumulate until nobody knows which of
-    # them are load-bearing, so the gate treats one as a failure.
-    genout = _sh(sdk, "cd " .. grammardir .. " && tree-sitter generate 2>&1")
-    if script.chomp(genout) != ""
-        io:write("tree_sitter_coverage: FAIL — tree-sitter generate emitted warnings\n")
-        io:write(genout)
-        io:write("  drop the entries it names; every conflict must be provably necessary\n")
-        return 1
+  # The generator warns rather than fails on a conflict entry that is no
+  # longer needed. Left alone those accumulate until nobody knows which of
+  # them are load-bearing, so the gate treats one as a failure.
+  genout = _sh(sdk, "cd " .. grammardir .. " && tree-sitter generate 2>&1")
+  if script.chomp(genout) != ""
+    io:write("tree_sitter_coverage: FAIL — tree-sitter generate emitted warnings\n")
+    io:write(genout)
+    io:write("  drop the entries it names; every conflict must be provably necessary\n")
+    return 1
 
-    tmp = script.fs_tmpdir()
-    if !_control(sdk, tmp)
-        return 1
+  tmp = script.fs_tmpdir()
+  if not _control(sdk, tmp)
+    return 1
 
-    # git ls-files is the authority on what is tracked; the `-f` test drops
-    # entries that are staged-deleted so a mid-rebase tree cannot fake a
-    # failure out of a missing file.
-    #
-    # `fixtures/highlight/` is EXCLUDED, and the reason matters because the
-    # exclusion looks like the exact move this gate exists to stop. This census
-    # asks "can an editor recognise the DUON corpus". Those files are the golden
-    # role corpus for `zig build highlight-corpus`,
-    # and several of them deliberately carry dnir, arm64 assembly, ebnf and C —
-    # one colour language over five surfaces is the point of them. Counting
-    # non-idol text as unrecognised idol does not measure the grammar, it
-    # dilutes the metric with files nobody claimed it should parse. The idol
-    # fixtures among them DO fail here, and that is a real signal — the same
-    # GAP-049 offside hole `examples/layout/offside.id` already reports, so
-    # dropping them costs no information this gate was carrying.
-    listfile = tmp .. "/corpus.txt"
-    script.capture("git ls-files '*.id' | grep -v '^fixtures/highlight/' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")
-    total = to(i64)(script.chomp(script.capture("grep -c . '" .. listfile .. "'")))
-    if total < 1
-        io:write("tree_sitter_coverage: FAIL — no tracked .id files found; the corpus list is empty\n")
-        return 1
+  # git ls-files is the authority on what is tracked; the `-f` test drops
+  # entries that are staged-deleted so a mid-rebase tree cannot fake a
+  # failure out of a missing file.
+  #
+  # `fixtures/highlight/` is EXCLUDED, and the reason matters because the
+  # exclusion looks like the exact move this gate exists to stop. This census
+  # asks "can an editor recognise the DUON corpus". Those files are the golden
+  # role corpus for `zig build highlight-corpus`,
+  # and several of them deliberately carry dnir, arm64 assembly, ebnf and C —
+  # one colour language over five surfaces is the point of them. Counting
+  # non-idol text as unrecognised idol does not measure the grammar, it
+  # dilutes the metric with files nobody claimed it should parse. The idol
+  # fixtures among them DO fail here, and that is a real signal — the same
+  # GAP-049 offside hole `examples/layout/offside.id` already reports, so
+  # dropping them costs no information this gate was carrying.
+  listfile = tmp .. "/corpus.txt"
+  script.capture("git ls-files '*.id' | grep -v '^fixtures/highlight/' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")
+  total = to(i64)(script.chomp(script.capture("grep -c . '" .. listfile .. "'")))
+  if total < 1
+    io:write("tree_sitter_coverage: FAIL — no tracked .id files found; the corpus list is empty\n")
+    return 1
 
-    fails = _failures(sdk, listfile)
-    recognised = total - fails
-    pct = (recognised * 1000) / total
-    print("tree_sitter_coverage: recognised " .. recognised:to(str) .. " / " .. total:to(str)
-        .. " (" .. to(str)(pct / 10) .. "." .. to(str)(pct % 10) .. "%), unrecognised " .. fails:to(str)
-        .. ", ceiling " .. ceiling:to(str))
+  fails = _failures(sdk, listfile)
+  recognised = total - fails
+  pct = recognised * 1000 / total
+  print("tree_sitter_coverage: recognised " .. recognised:to(str) .. " / " .. total:to(str) .. " (" .. to(str)(pct / 10) .. "." .. to(str)(pct % 10) .. "%), unrecognised " .. fails:to(str) .. ", ceiling " .. ceiling:to(str))
 
-    if fails > ceiling
-        io:write("tree_sitter_coverage: FAIL — " .. fails:to(str) .. " unrecognised, ceiling is " .. ceiling:to(str) .. "\n")
-        io:write("  the files that failed:\n")
-        io:write(_sh(sdk, "cd " .. grammardir .. " && tree-sitter parse --quiet --paths '" .. listfile .. "' 2>/dev/null | sort -u | head -40"))
-        return 1
+  if fails > ceiling
+    io:write("tree_sitter_coverage: FAIL — " .. fails:to(str) .. " unrecognised, ceiling is " .. ceiling:to(str) .. "\n")
+    io:write("  the files that failed:\n")
+    io:write(_sh(sdk, "cd " .. grammardir .. " && tree-sitter parse --quiet --paths '" .. listfile .. "' 2>/dev/null | sort -u | head -40"))
+    return 1
 
-    if fails < ceiling
-        print("tree_sitter_coverage: ratchet may be lowered to " .. fails:to(str))
+  if fails < ceiling
+    print("tree_sitter_coverage: ratchet may be lowered to " .. fails:to(str))
 
-    print("tree_sitter_coverage: PASS")
-    0
+  print("tree_sitter_coverage: PASS")
+  0

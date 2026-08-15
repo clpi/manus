@@ -284,11 +284,10 @@ message_encode: any = (schema: any, values: any)
 # identifier when the module is EMBEDDED ("use of undeclared identifier
 # 'WIRE_START_GROUP'"), though it resolves fine standalone. Same compiler gap
 # as lib/net/ws.id's opcode table; reduced there to a two-file repro.
-WIRE = {
-  VARINT = 0,
-  FIXED64 = 1,
-  LENGTH_DELIMITED = 2,
-  START_GROUP = 3,
-  END_GROUP = 4,
+WIRE =
+  VARINT = 0
+  FIXED64 = 1
+  LENGTH_DELIMITED = 2
+  START_GROUP = 3
+  END_GROUP = 4
   FIXED32 = 5
-}

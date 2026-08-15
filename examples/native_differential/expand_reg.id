@@ -1,23 +1,23 @@
 expand: bool = (code: str)
-    n = code:len()
-    i = 1
-    a = 1
-    b = 2
-    c = 3
-    d = 4
-    e = 5
-    f = 6
-    while i <= n
-        if code:sub(i, i) == "="
-            left = ""
-            j = i - 1
-            while j >= 1 and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
-                j -= 1
-            return true
-        i += 1
-    false
+  n = code:len()
+  i = 1
+  a = 1
+  b = 2
+  c = 3
+  d = 4
+  e = 5
+  f = 6
+  while i <= n
+    if code:sub(i, i) == "="
+      left = ""
+      j = i - 1
+      while j >= 1 and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
+        j = j - 1
+      return true
+    i = i + 1
+  false
 
 main: i64 = ()
-    if expand("x = x + 1")
-        1
-    0
+  if expand("x = x + 1")
+    1
+  0

@@ -1,11 +1,41 @@
 # Gate boundary relations — curry slots for proof and migration gates only.
 # Not world relations; path/world/diff symbols live in the curry slot, not strings.
 
-len = { world = "", possessed = false, callable = true, operation = false, class = "gate", slot = "path" }
-audit = { world = "", possessed = false, callable = true, operation = false, class = "gate", slot = "path" }
-hit = { world = "", possessed = false, callable = true, operation = false, class = "gate", slot = "path" }
-scan = { world = "", possessed = false, callable = true, operation = false, class = "gate", slot = "diff" }
-dot = { world = "", possessed = false, callable = true, operation = false, class = "gate", slot = "world" }
+len =
+  world = ""
+  possessed = false
+  callable = true
+  operation = false
+  class = "gate"
+  slot = "path"
+audit =
+  world = ""
+  possessed = false
+  callable = true
+  operation = false
+  class = "gate"
+  slot = "path"
+hit =
+  world = ""
+  possessed = false
+  callable = true
+  operation = false
+  class = "gate"
+  slot = "path"
+scan =
+  world = ""
+  possessed = false
+  callable = true
+  operation = false
+  class = "gate"
+  slot = "diff"
+dot =
+  world = ""
+  possessed = false
+  callable = true
+  operation = false
+  class = "gate"
+  slot = "world"
 
 main: i64 = ()
   code: i64 = 0

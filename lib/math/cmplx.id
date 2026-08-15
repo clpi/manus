@@ -1,82 +1,85 @@
 # math.cmplx — complex number support (mirrors Go's math/cmplx)
 # Complex numbers as tables {re, im}.
 
-new(re: any, im: any): any
-    {re = re, im = im}
+new: any = (re: any, im: any)
+  { re = re, im = im }
 
-add(a: any, b: any): any
-    {re = a.re + b.re, im = a.im + b.im}
+add: any = (a: any, b: any)
+  { re = a.re + b.re, im = a.im + b.im }
 
-sub(a: any, b: any): any
-    {re = a.re - b.re, im = a.im - b.im}
+sub: any = (a: any, b: any)
+  { re = a.re - b.re, im = a.im - b.im }
 
-mul(a: any, b: any): any
-    {re = a.re * b.re - a.im * b.im, im = a.re * b.im + a.im * b.re}
+mul: any = (a: any, b: any)
+  { re = a.re * b.re - a.im * b.im, im = a.re * b.im + a.im * b.re }
 
-div(a: any, b: any): any
-    denom = b.re * b.re + b.im * b.im
-    return {re = (a.re * b.re + a.im * b.im) / denom, im = (a.im * b.re - a.re * b.im) / denom}
+div: any = (a: any, b: any)
+  denom = b.re * b.re + b.im * b.im
+  return { re = (a.re * b.re + a.im * b.im) / denom, im = (a.im * b.re - a.re * b.im) / denom }
 
-neg(a: any): any
-    {re = -a.re, im = -a.im}
+neg: any = (a: any)
+  { re = -a.re, im = -a.im }
 
-conj(a: any): any
-    {re = a.re, im = -a.im}
+conj: any = (a: any)
+  { re = a.re, im = -a.im }
 
-abs(a: any): any
-    a.re * a.re + a.im * a.im:sqrt()
+abs: any = (a: any)
+  a.re * a.re + a.im * a.im:sqrt()
 
-phase(a: any): any
-    math.atan2(a.im, a.re)
+phase: any = (a: any)
+  math.atan2(a.im, a.re)
 
-polar(r: any, theta: any): any
-    {re = r * theta:cos(), im = r * theta:sin()}
+polar: any = (r: any, theta: any)
+  { re = r * theta:cos(), im = r * theta:sin() }
 
-rect(r: any, theta: any): any
-    polar(r, theta)
+rect: any = (r: any, theta: any)
+  polar(r, theta)
 
-exp(a: any): any
-    er = a.re:exp()
-    return {re = er * a.im:cos(), im = er * a.im:sin()}
+exp: any = (a: any)
+  er = a.re:exp()
+  return { re = er * a.im:cos(), im = er * a.im:sin() }
 
-log(a: any): any
-    r = abs(a)
-    theta = phase(a)
-    return {re = r:log(), im = theta}
+log: any = (a: any)
+  r = abs(a)
+  theta = phase(a)
+  return { re = r:log(), im = theta }
 
-sin(a: any): any
-    {re = a.re:sin() * a.im:cosh(), im = a.re:cos() * math.sinh(a.im)}
+sin: any = (a: any)
+  { re = a.re:sin() * a.im:cosh(), im = a.re:cos() * math.sinh(a.im) }
 
-cos(a: any): any
-    {re = a.re:cos() * a.im:cosh(), im = -a.re:sin() * math.sinh(a.im)}
+cos: any = (a: any)
+  { re = a.re:cos() * a.im:cosh(), im = -a.re:sin() * math.sinh(a.im) }
 
-tan(a: any): any
-    s = sin(a)
-    c = cos(a)
-    div(s, c)
+tan: any = (a: any)
+  s = sin(a)
+  c = cos(a)
+  div(s, c)
 
-sqrt(a: any): any
-    if a.im == 0 and a.re >= 0
-        return {re = a.re:sqrt(), im = 0}
-    r = abs(a)
-    return {re = (r + a.re) / 2:sqrt(), im = a.im:sign() * (r - a.re) / 2:sqrt()}
+sqrt: any = (a: any)
+  if a.im == 0 and a.re >= 0
+    return { re = a.re:sqrt(), im = 0 }
+  r = abs(a)
+  return { re = (r + a.re) / 2:sqrt(), im = a.im:sign() * (r - a.re) / 2:sqrt() }
 
-pow(a: any, b: any): any
-    if b.im == 0 and b.re == b.re:floor()
-        n = b.re
-        result = {re = 1, im = 0}
-        base = {re = a.re, im = a.im}
-        if n < 0
-            base = div({re = 1, im = 0}, base)
-            n = -n
-        for _ = 1, n
-            result = mul(result, base)
-        return result
-    exp(mul(b, log(a)))
+pow: any = (a: any, b: any)
+  if b.im == 0 and b.re == b.re:floor()
+    n = b.re
+    result =
+      re = 1
+      im = 0
+    base =
+      re = a.re
+      im = a.im
+    if n < 0
+      base = div({ re = 1, im = 0 }, base)
+      n = -n
+    for _ = 1, n
+      result = mul(result, base)
+    return result
+  exp(mul(b, log(a)))
 
-nan(a: any): bool
-    a.re != a.re or a.im != a.im
+nan: bool = (a: any)
+  a.re != a.re or a.im != a.im
 
-inf(a: any): bool
-    a.re == math.huge or a.re == -math.huge or a.im == math.huge or a.im == -math.huge
-
+inf: bool = (a: any)
+  a.re == math.huge or a.re == -math.huge or a.im == math.huge or a.im == -math.huge

@@ -26,71 +26,71 @@
 # the shell, which already knows how to glob and how to count exit statuses.
 
 # Absolute, because `duo check` is invoked with a repo-relative fixture path.
-here(): str
-    std.script.chomp(std.script.capture("pwd"))
+here: str = ()
+  std.script.chomp(std.script.capture("pwd"))
 
 # The compiler under test. std.script.id bin() is relative and would resolve
 # to nothing if this gate is ever run with a cwd outside the repo.
-compiler(root: str): str
-    "{root}/zig-out/bin/idol"
+compiler: str = (root: str)
+  "{root}/zig-out/bin/idol"
 
-shout(msg: str): void
-    print("luahost: {msg}")
+shout = (msg: str)
+  print("luahost: {msg}")
 
 # One shell integer, chomped and converted subject-first.
-tally(cmd: str): i64
-    std.script.chomp(std.script.capture(cmd)):to(i64)
+tally: i64 = (cmd: str)
+  std.script.chomp(std.script.capture(cmd)):to(i64)
 
-present(path: str): bool
-    std.script.status("test -e {path}") == 0
+present: bool = (path: str)
+  std.script.status("test -e {path}") == 0
 
 main: i64 = ()
-    root = here()
-    bin = compiler(root)
-    bad = 0
+  root = here()
+  bin = compiler(root)
+  bad = 0
 
-    # CONTROL 1 — the runner itself. Without this a status() that has stopped
-    # reporting failure turns every assertion below into a tautology.
-    if std.script.status("false") == 0
-        shout("FAIL — control: status() called `false` a success")
-        bad += 1
+  # CONTROL 1 — the runner itself. Without this a status() that has stopped
+  # reporting failure turns every assertion below into a tautology.
+  if std.script.status("false") == 0
+    shout("FAIL — control: status() called `false` a success")
+    bad = bad + 1
 
-    # CONTROL 2 — the compiler exists. A missing binary makes every check
-    # fail for a reason that has nothing to do with the corpus.
-    if !present(bin)
-        shout("FAIL — no compiler at {bin}; run `zig build` first")
-        bad += 1
+  # CONTROL 2 — the compiler exists. A missing binary makes every check
+  # fail for a reason that has nothing to do with the corpus.
+  if not present(bin)
+    shout("FAIL — no compiler at {bin}; run `zig build` first")
+    bad = bad + 1
 
-    # CONTROL 3 — the corpus is not empty. The Zig original could not fail
-    # this way because its cases were compiled in; a globbing gate can, and
-    # a confident 0/0 is the failure mode this repo has already paid for.
-    total = tally("cd {root} && ls examples/luahost/*.id 2>/dev/null | wc -l")
-    if total < 12
-        shout("FAIL — corpus holds {total} case(s), fewer than the 12 ported")
-        bad += 1
+  # CONTROL 3 — the corpus is not empty. The Zig original could not fail
+  # this way because its cases were compiled in; a globbing gate can, and
+  # a confident 0/0 is the failure mode this repo has already paid for.
+  total = tally("cd {root} && ls examples/luahost/*.id 2>/dev/null | wc -l")
+  if total < 12
+    shout("FAIL — corpus holds {total} case(s), fewer than the 12 ported")
+    bad = bad + 1
 
-    # CONTROL 4 — `duo check` still convicts. An unterminated long string is
-    # the tightest negative for this corpus: it is the SAME lexer path every
-    # positive case exercises, one byte short of closing.
-    work = std.script.chomp(std.script.capture("mktemp -d"))
-    deny = "{work}/deny.id"
-    std.script.run("printf 'x = [[unterminated\\n' > {deny}")
-    if std.script.status("{bin} check {deny} >/dev/null 2>&1") == 0
-        shout("FAIL — control: an unterminated long string was ACCEPTED")
-        bad += 1
-    std.script.run("rm -rf {work}")
+  # CONTROL 4 — `duo check` still convicts. An unterminated long string is
+  # the tightest negative for this corpus: it is the SAME lexer path every
+  # positive case exercises, one byte short of closing.
+  work = std.script.chomp(std.script.capture("mktemp -d"))
+  deny = "{work}/deny.id"
+  std.script.run("printf 'x = [[unterminated\\n' > {deny}")
+  if std.script.status("{bin} check {deny} >/dev/null 2>&1") == 0
+    shout("FAIL — control: an unterminated long string was ACCEPTED")
+    bad = bad + 1
+  std.script.run("rm -rf {work}")
 
-    # The corpus itself. Every case must be accepted; the shell counts the
-    # rejections so one bad fixture does not hide the ones after it.
-    fails = tally("cd {root} && n=0; for f in examples/luahost/*.id; do {bin} check $f >/dev/null 2>&1 || n=$((n+1)); done; echo $n")
-    if fails != 0
-        shout("FAIL — {fails} of {total} corpus case(s) rejected")
-        shout("the rejected cases, with their diagnostics:")
-        std.script.run("cd {root} && for f in examples/luahost/*.id; do {bin} check $f >/dev/null 2>&1 || {bin} check $f 2>&1 | grep error: | head -2; done")
-        bad += 1
+  # The corpus itself. Every case must be accepted; the shell counts the
+  # rejections so one bad fixture does not hide the ones after it.
+  fails = tally("cd {root} && n=0; for f in examples/luahost/*.id; do {bin} check $f >/dev/null 2>&1 || n=$((n+1)); done; echo $n")
+  if fails != 0
+    shout("FAIL — {fails} of {total} corpus case(s) rejected")
+    shout("the rejected cases, with their diagnostics:")
+    std.script.run("cd {root} && for f in examples/luahost/*.id; do {bin} check $f >/dev/null 2>&1 || {bin} check $f 2>&1 | grep error: | head -2; done")
+    bad = bad + 1
 
-    if bad == 0
-        shout("PASS — {total} hosted-language cases accepted, 4 controls held")
-    bad
+  if bad == 0
+    shout("PASS — {total} hosted-language cases accepted, 4 controls held")
+  bad
 
 std.os.exit(main())

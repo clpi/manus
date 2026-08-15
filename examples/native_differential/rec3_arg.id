@@ -1,6 +1,8 @@
 pair: { a: i64, b: i64 }
-sum(p: pair): i64
-    return p.a + p.b
-main(): i64
-    q: pair = { a = 30, b = 12 }
-    return sum(q)
+sum: i64 = (p: pair)
+  return p.a + p.b
+main: i64 = ()
+  q: pair =
+    a = 30
+    b = 12
+  return sum(q)

@@ -2,14 +2,13 @@
 # One line on a type → many generated trait implementations.
 # Bare syntax + implicit module-scope table (G-033/G-039).
 
-bundles = {
-  Serializable = { "Display", "Eq", "Hash", "Serialize", "Deserialize" },
-  Comparable = { "Eq", "Ord", "Hash" },
-  Numeric = { "Add", "Sub", "Mul", "Div", "Neg", "Eq", "Default" },
-  Collection = { "Len", "Clone", "Eq", "Display" },
-  Debug = { "Display", "Eq", "Clone" },
+bundles =
+  Serializable = { "Display", "Eq", "Hash", "Serialize", "Deserialize" }
+  Comparable = { "Eq", "Ord", "Hash" }
+  Numeric = { "Add", "Sub", "Mul", "Div", "Neg", "Eq", "Default" }
+  Collection = { "Len", "Clone", "Eq", "Display" }
+  Debug = { "Display", "Eq", "Clone" }
   Full = { "Debug", "Comparable", "Default" }
-}
 
 names: any = ()
   out = {}

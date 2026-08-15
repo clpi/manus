@@ -4,58 +4,55 @@ record = "scripts/proof/record.id"
 world = "scripts/proof/worldreach.id"
 bit = "scripts/proof/bit.id"
 
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
+len__path = (min: i64)
+  path:read():len() >= min
 
-audit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+audit__path = (pattern: str)
+  path:read():has(pattern)
 
-hit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+hit__path = (pattern: str)
+  path:read():has(pattern)
 
 main: i64 = ()
-    if !record:len(32)
-        return 1
-    if !world:len(16)
-        return 2
-    if !bit:len(32)
-        return 3
-    if record:hit("std.")
-        return 4
-    if record:hit("duo_fn_")
-        return 5
-    if record:hit("sym_")
-        return 6
-    if world:hit("std.")
-        return 7
-    if bit:hit("std.")
-        return 8
-    if bit:hit("bitcast")
-        return 9
-    if bit:hit("bit.f64")
-        return 10
-    if !bit:audit(":to(bit)")
-        return 11
-    if !bit:audit("to(bit)(f64)")
-        return 12
-    if !bit:audit("to(f64)(bit)")
-        return 13
-    if !bit:audit("to(i64)(bit)")
-        return 14
-    if !bit:audit("type bit = i64")
-        return 15
-    if !bit:audit("@view")
-        return 16
-    if bit:hit("unpack@view")
-        return 17
-    if bit:hit("bit.")
-        return 18
-    if bit:hit("viewedges")
-        return 21
-    if bit:hit("callable = true")
-        return 22
-    print("proof/core: pass")
-    0
+  if not record:len(32)
+    return 1
+  if not world:len(16)
+    return 2
+  if not bit:len(32)
+    return 3
+  if record:hit("std.")
+    return 4
+  if record:hit("duo_fn_")
+    return 5
+  if record:hit("sym_")
+    return 6
+  if world:hit("std.")
+    return 7
+  if bit:hit("std.")
+    return 8
+  if bit:hit("bitcast")
+    return 9
+  if bit:hit("bit.f64")
+    return 10
+  if not bit:audit(":to(bit)")
+    return 11
+  if not bit:audit("to(bit)(f64)")
+    return 12
+  if not bit:audit("to(f64)(bit)")
+    return 13
+  if not bit:audit("to(i64)(bit)")
+    return 14
+  if not bit:audit("type bit = i64")
+    return 15
+  if not bit:audit("@view")
+    return 16
+  if bit:hit("unpack@view")
+    return 17
+  if bit:hit("bit.")
+    return 18
+  if bit:hit("viewedges")
+    return 21
+  if bit:hit("callable = true")
+    return 22
+  print("proof/core: pass")
+  0

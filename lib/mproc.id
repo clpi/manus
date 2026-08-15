@@ -1,37 +1,36 @@
 # mproc — multi-process utilities
 
+pid: str = ()
+  # Get PID via /proc/self (Linux) or POSIX getpid
+  f = io.open("/proc/self/stat", "r")
+  if f
+    line = io.read(f, "*l")
+    io.close(f)
+    if line
+      space_idx = line:find(" ")
+      if space_idx
+        return line:sub(1, space_idx - 1)
+  # Fallback: use Lua's os.execute to capture $$
+  handle = io.popen("echo $$", "r")
+  if handle
+    result = io.read(handle, "*l")
+    io.close(handle)
+    if result
+      return result
+  "0"
 
-pid(): str
-    # Get PID via /proc/self (Linux) or POSIX getpid
-    f = io.open("/proc/self/stat", "r")
-    if f
-        line = io.read(f, "*l")
-        io.close(f)
-        if line
-            space_idx = line:find(" ")
-            if space_idx
-                return line:sub(1, space_idx - 1)
-    # Fallback: use Lua's os.execute to capture $$
-    handle = io.popen("echo $$", "r")
-    if handle
-        result = io.read(handle, "*l")
-        io.close(handle)
-        if result return result
-    "0"
+spawn: i64 = (cmd: str)
+  handle = io.popen(cmd .. " 2>&1 & echo $!", "r")
+  if handle
+    pid_str = io.read(handle, "*l")
+    io.close(handle)
+    if pid_str
+      return pid_str:to(i64) or 0
+  0
 
-spawn(cmd: str): i64
-    handle = io.popen(cmd .. " 2>&1 & echo $!", "r")
-    if handle
-        pid_str = io.read(handle, "*l")
-        io.close(handle)
-        if pid_str
-            return pid_str:to(i64) or 0
-    0
+kill = (pid: str)
+  os.execute("kill " .. pid:to(str) .. " 2>/dev/null")
 
-kill(pid: str): void
-    os.execute("kill " .. pid:to(str) .. " 2>/dev/null")
-
-wait(pid: str): void
-    # Use waitpid via os.execute for the given PID
-    os.execute("wait " .. pid:to(str) .. " 2>/dev/null")
-
+wait = (pid: str)
+  # Use waitpid via os.execute for the given PID
+  os.execute("wait " .. pid:to(str) .. " 2>/dev/null")

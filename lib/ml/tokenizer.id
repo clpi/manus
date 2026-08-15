@@ -272,7 +272,9 @@ top_k_tokens: any = (tokens: any, k: i64)
   freq = token_frequencies(tokens)
   sorted = {}
   for t, count in freq
-    sorted(sorted:len() + 1) = { token = t, count = count }
+    sorted(sorted:len() + 1) =
+      token = t
+      count = count
   # Simple selection sort for top k
   i = 1
   while i <= sorted:len() and i <= k
@@ -287,7 +289,7 @@ top_k_tokens: any = (tokens: any, k: i64)
       duostage1 = sorted(i)
       sorted(i) = duostage0
       sorted(max_idx) = duostage1
-      
+
     i = i + 1
   result = {}
   i = 1

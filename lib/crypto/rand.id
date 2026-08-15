@@ -1,12 +1,15 @@
 # crypto.rand — cryptographic random number generation (uses /dev/urandom)
 
-@comp.c.include("fcntl.h")
-@comp.c.include("unistd.h")
+@cinclude("fcntl.h")
 
-bytes(n: i64): any
-    if n == nil or n <= 0 return {} 
-    out = {}
-    @comp.c.emit([[{
+@cinclude("unistd.h")
+
+
+bytes: any = (n: i64)
+  if n == nil or n <= 0
+    return {}
+  out = {}
+  @comp.c.emit([[{
         int fd = open("/dev/urandom", O_RDONLY);
         if (fd >= 0) {
             for (int i = 1; i <= n; i++) {
@@ -18,33 +21,37 @@ bytes(n: i64): any
             close(fd);
         }
     }]])
-    out
+  
+  out
 
-hex(n: i64): str
-    if n == nil or n <= 0 return "" 
-    b = bytes(n)
-    res = ""
-    for i = 1, n
-        res = res .. "%02x":format(b[i])
-    res
+hex: str = (n: i64)
+  if n == nil or n <= 0
+    return ""
+  b = bytes(n)
+  res = ""
+  for i = 1, n
+    res = res .. "%02x":format(b(i))
+  res
 
-int(max: i64): i64
-    if max == nil or max <= 0 return 0 
-    r: i64 = 0
-    @comp.c.emit([[{
+int: i64 = (max: i64)
+  if max == nil or max <= 0
+    return 0
+  r: i64 = 0
+  @comp.c.emit([[{
         int fd = open("/dev/urandom", O_RDONLY);
         if (fd >= 0) { read(fd, &r, sizeof(r)); close(fd); }
     }]])
-    r % max
+  
+  r % max
 
-prime(bits: i64): i64
-    2
+prime: i64 = (bits: i64)
+  2
 
-read(buf: any): i64
-    if buf == nil return 0 
-    n: i64 = buf:len()
-    b = bytes(n)
-    for i = 1, n
-        buf[i] = b[i]
-    n
-
+read: i64 = (buf: any)
+  if buf == nil
+    return 0
+  n: i64 = buf:len()
+  b = bytes(n)
+  for i = 1, n
+    buf(i) = b(i)
+  n

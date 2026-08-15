@@ -1,25 +1,22 @@
-len(path) = (min: i64)
-    path:read()
-        :len() >= min
+len__path = (min: i64)
+  path:read():len() >= min
 
-audit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+audit__path = (pattern: str)
+  path:read():has(pattern)
 
-hit(path) = (pattern: str)
-    path:read()
-        :has(pattern)
+hit__path = (pattern: str)
+  path:read():has(pattern)
 
 # CATALOG-ZERO — relation rows with string worlds and boolean mirrors are not
 # authority. Resolver publishes graph ids. Probe samples in gate/idiom.id
 # contain the forbidden spellings on purpose; do not treat those as live rows.
 
 main: i64 = ()
-    if !"gate/idiom.id":audit("law.boolean.mirror.zero")
-        return 14
-    if !"gate/idiom.id":audit("law.catalog.zero")
-        return 15
-    if "scripts/proof/bit.id":hit("callable = true")
-        return 17
-    print("proof/resident: pass")
-    0
+  if not "gate/idiom.id":audit("law.boolean.mirror.zero")
+    return 14
+  if not "gate/idiom.id":audit("law.catalog.zero")
+    return 15
+  if "scripts/proof/bit.id":hit("callable = true")
+    return 17
+  print("proof/resident: pass")
+  0

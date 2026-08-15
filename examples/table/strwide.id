@@ -12,6 +12,6 @@
 # number moved by exactly one.
 # expect: 9007199254740993
 main: i64 = ()
-    b = "9007199254740993":to(i64)
-    print("{b}")
-    0
+  b = "9007199254740993":to(i64)
+  print("{b}")
+  0

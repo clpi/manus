@@ -1,6 +1,6 @@
 @ffi("puts")
-puts(s: str): i64
-
-main(): i64
-    puts("Hello from native duo!")
-    0
+puts: i64 = (s: str)
+  void
+main: i64 = ()
+  puts("Hello from native duo!")
+  0

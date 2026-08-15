@@ -32,101 +32,101 @@
 # it is the finding that the contract is not enforced anywhere a user stands.
 # This gate therefore asserts the JSON, and the enforcement gap is filed.
 
-here(): str
-    script.chomp(script.capture("pwd"))
+here: str = ()
+  script.chomp(script.capture("pwd"))
 
-compiler(root: str): str
-    "{root}/zig-out/bin/idol"
+compiler: str = (root: str)
+  "{root}/zig-out/bin/idol"
 
-shout(msg: str): void
-    print("explain: {msg}")
+shout = (msg: str)
+  print("explain: {msg}")
 
-present(path: str): bool
-    script.status("test -e {path}") == 0
+present: bool = (path: str)
+  script.status("test -e {path}") == 0
 
 # Does `duo explain fixture` print a line holding `want`? Exit status cannot
 # answer this: explain exits 0 on the violating module too, which is the whole
 # reason these assertions read the output rather than the status.
-says(bin: str, fixture: str, want: str): bool
-    script.status("{bin} explain {fixture} 2>/dev/null | tr ',' '\\n' | grep -q -F '{want}'") == 0
+says: bool = (bin: str, fixture: str, want: str)
+  script.status("{bin} explain {fixture} 2>/dev/null | tr ',' '\\n' | grep -q -F '{want}'") == 0
 
 main: i64 = ()
-    root = here()
-    bin = compiler(root)
-    bad = 0
+  root = here()
+  bin = compiler(root)
+  bad = 0
 
-    # CONTROL 1 — the runner convicts.
-    if script.status("false") == 0
-        shout("FAIL — control: status() called `false` a success")
-        bad += 1
+  # CONTROL 1 — the runner convicts.
+  if script.status("false") == 0
+    shout("FAIL — control: status() called `false` a success")
+    bad = bad + 1
 
-    # CONTROL 2 — the compiler is here.
-    if !present(bin)
-        shout("FAIL — no compiler at {bin}; run `zig build` first")
-        bad += 1
+  # CONTROL 2 — the compiler is here.
+  if not present(bin)
+    shout("FAIL — no compiler at {bin}; run `zig build` first")
+    bad = bad + 1
 
-    ok = "{root}/examples/noalloc_ok.id"
-    bust = "{root}/examples/noalloc_fail.id"
-    shape = "{root}/examples/explain_smoke.id"
+  ok = "{root}/examples/noalloc_ok.id"
+  bust = "{root}/examples/noalloc_fail.id"
+  shape = "{root}/examples/explain_smoke.id"
 
-    # CONTROL 3 — the fixtures are here. A `says` over a missing file is
-    # false for every want, which reads as a wall of real failures.
-    if !present(ok)
-        shout("FAIL — missing fixture {ok}")
-        bad += 1
-    if !present(bust)
-        shout("FAIL — missing fixture {bust}")
-        bad += 1
-    if !present(shape)
-        shout("FAIL — missing fixture {shape}")
-        bad += 1
+  # CONTROL 3 — the fixtures are here. A `says` over a missing file is
+  # false for every want, which reads as a wall of real failures.
+  if not present(ok)
+    shout("FAIL — missing fixture {ok}")
+    bad = bad + 1
+  if not present(bust)
+    shout("FAIL — missing fixture {bust}")
+    bad = bad + 1
+  if not present(shape)
+    shout("FAIL — missing fixture {shape}")
+    bad = bad + 1
 
-    # CONTROL 4 — `says` can answer NO. Without this a grep that has stopped
-    # matching, or an explain that has stopped printing, scores a clean sweep.
-    if says(bin, ok, "duo-explain-this-string-does-not-exist")
-        shout("FAIL — control: says() matched a string that is not in the output")
-        bad += 1
+  # CONTROL 4 — `says` can answer NO. Without this a grep that has stopped
+  # matching, or an explain that has stopped printing, scores a clean sweep.
+  if says(bin, ok, "duo-explain-this-string-does-not-exist")
+    shout("FAIL — control: says() matched a string that is not in the output")
+    bad = bad + 1
 
-    # The contract, both sides. The pair is the assertion: the rejection must
-    # appear for the allocating module and must NOT appear for its twin.
-    if !says(bin, bust, "\"transformation\":\"contract.noalloc\"")
-        shout("FAIL — noalloc violation produced no contract.noalloc outcome")
-        bad += 1
-    if !says(bin, bust, "\"status\":\"rejected\"")
-        shout("FAIL — the contract.noalloc outcome was not rejected")
-        bad += 1
-    if !says(bin, bust, "\"reason\":\"heap allocation required at mem.alloc\"")
-        shout("FAIL — the rejection carried no reason naming the allocation")
-        bad += 1
-    if says(bin, ok, "contract.noalloc")
-        shout("FAIL — the non-allocating twin ALSO reported a contract outcome")
-        bad += 1
-    if !says(bin, ok, "\"outcome_count\":0")
-        shout("FAIL — the non-allocating twin reported outcomes")
-        bad += 1
+  # The contract, both sides. The pair is the assertion: the rejection must
+  # appear for the allocating module and must NOT appear for its twin.
+  if not says(bin, bust, "\"transformation\":\"contract.noalloc\"")
+    shout("FAIL — noalloc violation produced no contract.noalloc outcome")
+    bad = bad + 1
+  if not says(bin, bust, "\"status\":\"rejected\"")
+    shout("FAIL — the contract.noalloc outcome was not rejected")
+    bad = bad + 1
+  if not says(bin, bust, "\"reason\":\"heap allocation required at mem.alloc\"")
+    shout("FAIL — the rejection carried no reason naming the allocation")
+    bad = bad + 1
+  if says(bin, ok, "contract.noalloc")
+    shout("FAIL — the non-allocating twin ALSO reported a contract outcome")
+    bad = bad + 1
+  if not says(bin, ok, "\"outcome_count\":0")
+    shout("FAIL — the non-allocating twin reported outcomes")
+    bad = bad + 1
 
-    # The repair candidates. Two, by count, for the named blocker.
-    if !says(bin, bust, "\"diagnostic_id\":\"noalloc_heap_alloc\"")
-        shout("FAIL — no repair set was attached to the noalloc blocker")
-        bad += 1
-    if !says(bin, bust, "\"repair_count\":2")
-        shout("FAIL — the noalloc blocker did not offer exactly two repairs")
-        bad += 1
+  # The repair candidates. Two, by count, for the named blocker.
+  if not says(bin, bust, "\"diagnostic_id\":\"noalloc_heap_alloc\"")
+    shout("FAIL — no repair set was attached to the noalloc blocker")
+    bad = bad + 1
+  if not says(bin, bust, "\"repair_count\":2")
+    shout("FAIL — the noalloc blocker did not offer exactly two repairs")
+    bad = bad + 1
 
-    # The enrichment. A sealed record must reach the snapshot with an
-    # identity, and must carry the shape assumption that identity licenses.
-    if !says(bin, shape, "\"name\":\"Point\"")
-        shout("FAIL — the sealed record never reached the knowledge snapshot")
-        bad += 1
-    if says(bin, shape, "\"fingerprint\":\"0\"")
-        shout("FAIL — an entity reached the snapshot with a zero fingerprint")
-        bad += 1
-    if !says(bin, shape, "\"subject_entity\":\"duo:record:Point\"")
-        shout("FAIL — no assumption was raised about the sealed record")
-        bad += 1
+  # The enrichment. A sealed record must reach the snapshot with an
+  # identity, and must carry the shape assumption that identity licenses.
+  if not says(bin, shape, "\"name\":\"Point\"")
+    shout("FAIL — the sealed record never reached the knowledge snapshot")
+    bad = bad + 1
+  if says(bin, shape, "\"fingerprint\":\"0\"")
+    shout("FAIL — an entity reached the snapshot with a zero fingerprint")
+    bad = bad + 1
+  if not says(bin, shape, "\"subject_entity\":\"duo:record:Point\"")
+    shout("FAIL — no assumption was raised about the sealed record")
+    bad = bad + 1
 
-    if bad == 0
-        shout("PASS — contract pair, repair count and enrichment, 4 controls held")
-    bad
+  if bad == 0
+    shout("PASS — contract pair, repair count and enrichment, 4 controls held")
+  bad
 
 os.exit(main())

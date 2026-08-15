@@ -3,84 +3,93 @@
 # This is a general-purpose capability, not Ward-specific.
 
 # Create a byte buffer from a string (zero-copy view of string bytes)
-from_string(s: str): any
-    { data = s, pos = 1, len = s:len() }
+from_string: any = (s: str)
+  { data = s, pos = 1, len = s:len() }
 
 # Read one byte at current position, advance cursor
-read_byte(buf: any): i64
-    if buf.pos > buf.len return -1
-    b = buf.data:byte(buf.pos)
-    buf.pos = buf.pos + 1
-    b
+read_byte: i64 = (buf: any)
+  if buf.pos > buf.len
+    return -1
+  b = buf.data:byte(buf.pos)
+  buf.pos = buf.pos + 1
+  b
 
 # Read a u32 (little-endian) from cursor
-read_u32_le(buf: any): i64
-    if buf.pos + 3 > buf.len return -1
-    b0 = buf.data:byte(buf.pos)
-    b1 = buf.data:byte(buf.pos + 1)
-    b2 = buf.data:byte(buf.pos + 2)
-    b3 = buf.data:byte(buf.pos + 3)
-    buf.pos = buf.pos + 4
-    b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+read_u32_le: i64 = (buf: any)
+  if buf.pos + 3 > buf.len
+    return -1
+  b0 = buf.data:byte(buf.pos)
+  b1 = buf.data:byte(buf.pos + 1)
+  b2 = buf.data:byte(buf.pos + 2)
+  b3 = buf.data:byte(buf.pos + 3)
+  buf.pos = buf.pos + 4
+  b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
 
 # Read a u16 (little-endian) from cursor
-read_u16_le(buf: any): i64
-    if buf.pos + 1 > buf.len return -1
-    b0 = buf.data:byte(buf.pos)
-    b1 = buf.data:byte(buf.pos + 1)
-    buf.pos = buf.pos + 2
-    b0 + b1 * 256
+read_u16_le: i64 = (buf: any)
+  if buf.pos + 1 > buf.len
+    return -1
+  b0 = buf.data:byte(buf.pos)
+  b1 = buf.data:byte(buf.pos + 1)
+  buf.pos = buf.pos + 2
+  b0 + b1 * 256
 
 # Read LEB128-encoded unsigned integer (used extensively in Wasm binary format)
-read_leb128_u(buf: any): i64
-    result = 0
-    shift = 0
-    while true
-        if buf.pos > buf.len return -1
-        b = buf.data:byte(buf.pos)
-        buf.pos = buf.pos + 1
-        result += ((b % 128) * (2 ^ shift))
-        if b < 128 return result
-        shift += 7
-        if shift >= 35 return -1
-    result
+read_leb128_u: i64 = (buf: any)
+  result = 0
+  shift = 0
+  while true
+    if buf.pos > buf.len
+      return -1
+    b = buf.data:byte(buf.pos)
+    buf.pos = buf.pos + 1
+    result = result + b % 128 * 2 ^ shift
+    if b < 128
+      return result
+    shift = shift + 7
+    if shift >= 35
+      return -1
+  result
 
 # Read LEB128-encoded signed integer
-read_leb128_s(buf: any): i64
-    result = 0
-    shift = 0
-    while true
-        if buf.pos > buf.len return -1
-        b = buf.data:byte(buf.pos)
-        buf.pos = buf.pos + 1
-        result += ((b % 128) * (2 ^ shift))
-        shift += 7
-        if b < 128
-            if shift < 64 and (b % 256) >= 64
-                result -= (2 ^ shift)
-            return result
-        if shift >= 70 return -1
-    result
+read_leb128_s: i64 = (buf: any)
+  result = 0
+  shift = 0
+  while true
+    if buf.pos > buf.len
+      return -1
+    b = buf.data:byte(buf.pos)
+    buf.pos = buf.pos + 1
+    result = result + b % 128 * 2 ^ shift
+    shift = shift + 7
+    if b < 128
+      if shift < 64 and b % 256 >= 64
+        result = result - 2 ^ shift
+      return result
+    if shift >= 70
+      return -1
+  result
 
 # Read N bytes as a substring
-read_bytes(buf: any, n: i64): str
-    if buf.pos + n - 1 > buf.len return ""
-    result = buf.data:sub(buf.pos, buf.pos + n - 1)
-    buf.pos = buf.pos + n
-    result
+read_bytes: str = (buf: any, n: i64)
+  if buf.pos + n - 1 > buf.len
+    return ""
+  result = buf.data:sub(buf.pos, buf.pos + n - 1)
+  buf.pos = buf.pos + n
+  result
 
 # Remaining bytes in buffer
-remaining(buf: any): i64
-    buf.len - buf.pos + 1
+remaining: i64 = (buf: any)
+  buf.len - buf.pos + 1
 
 # Check if at end
-is_eof(buf: any): bool
-    buf.pos > buf.len
+is_eof: bool = (buf: any)
+  buf.pos > buf.len
 
 # Skip N bytes
-skip(buf: any, n: i64)
-    buf.pos = buf.pos + n
+skip = (buf: any, n: i64)
+  buf.pos = buf.pos + n
 
 # Current position (1-indexed)
-position(buf: any): i64
-    buf.pos
+position: i64 = (buf: any)
+  buf.pos

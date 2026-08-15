@@ -1,7 +1,23 @@
 # Parser-reserved relation spellings — bracket keys only.
 
 reserved = {}
-reserved("match") = { world = "", possessed = true, callable = true, operation = false }
-reserved("and") = { world = "", possessed = true, callable = true, operation = false }
-reserved("or") = { world = "", possessed = true, callable = true, operation = false }
-reserved("not") = { world = "", possessed = true, callable = true, operation = false }
+reserved("match") =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+reserved("and") =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+reserved("or") =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false
+reserved("not") =
+  world = ""
+  possessed = true
+  callable = true
+  operation = false

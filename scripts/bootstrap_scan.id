@@ -42,7 +42,7 @@ q = "'"
 # file cannot move a ratcheted number, which is the blind spot that made
 # audit100 red for four agents in a row tonight.
 head: str = (root: str)
-    "cd {root} && git ls-files 'src/*.zig' | tr '\\n' '\\0' | xargs -0 grep -h -E "
+  "cd {root} && git ls-files 'src/*.zig' | tr '\\n' '\\0' | xargs -0 grep -h -E "
 
 # §0.1 LAW-ONE. A declared type whose name carries a capital.
 upperpat = "^pub const [A-Z][A-Za-z0-9]* = (enum|struct|union|packed struct)"
@@ -58,9 +58,9 @@ companionpat = "^pub const [A-Za-z0-9]*(Kind|Type) = enum"
 relationpat = "pub fn (add|register|emit)[A-Z][A-Za-z0-9]*\\("
 
 count: i64 = (root: str, pat: str)
-    pre: str = head(root)
-    cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | wc -l"
-    std.proc.capture(cmd):to(i64)
+  pre: str = head(root)
+  cmd: str = "{pre}{q}{pat}{q} 2>/dev/null | wc -l"
+  std.proc.capture(cmd):to(i64)
 
 # The control surface. `count` alone cannot separate "the corpus is clean"
 # from "the pattern matches nothing" — a broken pattern reads as a perfect
@@ -68,8 +68,8 @@ count: i64 = (root: str, pat: str)
 # exactly that reason. Every row below is checked against a synthetic line it
 # MUST see and one it MUST decline.
 sees: i64 = (pat: str, line: str)
-    cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
-    std.proc.capture(cmd):to(i64)
+  cmd: str = "printf {q}%s\\n{q} {q}{line}{q} | grep -c -E {q}{pat}{q}"
+  std.proc.capture(cmd):to(i64)
 
 # ── the assumption row (GAP-085) ──────────────────────────────────────────
 #
@@ -113,132 +113,132 @@ verifypat = "verify_[a-z0-9_]+"
 # pushed through the identical chain. A control that exercises a paraphrase
 # of the pattern proves nothing about the pattern that runs.
 live: str = (feed: str)
-    "{feed} | grep -hoE {q}{livepat}{q} | grep -v {q} = false{q} | sed {q}s/fb\\.use_//;s/ = .*//{q} | sort -u"
+  "{feed} | grep -hoE {q}{livepat}{q} | grep -v {q} = false{q} | sed {q}s/fb\\.use_//;s/ = .*//{q} | sort -u"
 
 verified: str = (feed: str)
-    "{feed} | grep -hoE {q}{verifypat}{q} | sed {q}s/verify_//{q} | sort -u"
+  "{feed} | grep -hoE {q}{verifypat}{q} | sed {q}s/verify_//{q} | sort -u"
 
 zig: str = (root: str)
-    "cd {root} && git ls-files 'src/*.zig' | tr '\\n' '\\0' | xargs -0 cat"
+  "cd {root} && git ls-files 'src/*.zig' | tr '\\n' '\\0' | xargs -0 cat"
 
 lines: i64 = (cmd: str)
-    to(i64)(proc.capture("{cmd} | wc -l"))
+  to(i64)(proc.capture("{cmd} | wc -l"))
 
 # Set difference without a temp file and without a brace group, which would
 # collide with interpolation: emit the right side TWICE, so a name present on
 # both sides appears three times and a left-only name appears once. `uniq -u`
 # keeps the ones seen once.
 minus: i64 = (a: str, b: str)
-    to(i64)(proc.capture("( {a} ; {b} ; {b} ) | sort | uniq -u | wc -l"))
+  to(i64)(proc.capture("( {a} ; {b} ; {b} ) | sort | uniq -u | wc -l"))
 
 pad: str = (s: str, width: i64)
-    out = s
-    while out:len() < width
-        out = out .. " "
-    out
+  out = s
+  while out:len() < width
+    out = out .. " "
+  out
 
 # Every hole below is a PLAIN BINDING, never an expression. `"{pad(name, 11)}"`
 # renders the call LITERALLY — idol interpolation substitutes bindings and
 # field walks only, so an expression hole silently prints its own source and
 # the table reads as corrupt data rather than as a formatting bug.
 row: i64 = (name: str, n: i64, budget: i64)
-    mark = "  "
-    if n > budget
-        mark = "!!"
-    label: str = pad(name, 11)
-    shown: str = pad(n:to(str), 7)
-    print("  {mark} {label} {shown} {budget}")
-    if n > budget
-        return 1
-    0
+  mark = "  "
+  if n > budget
+    mark = "!!"
+  label: str = pad(name, 11)
+  shown: str = pad(n:to(str), 7)
+  print("  {mark} {label} {shown} {budget}")
+  if n > budget
+    return 1
+  0
 
 main: i64 = ()
-    root = os.getenv("DUO_ROOT")
-    if root == ""
-        root = "."
+  root = os.getenv("DUO_ROOT")
+  if root == ""
+    root = "."
 
-    # CONTROLS FIRST. A row printed before its control has been checked is a
-    # number nobody should act on.
-    bad = 0
-    if sees(upperpat, "pub const NodeKind = enum {") != 1
-        print("CONTROL FAILED: upper does not see `pub const NodeKind = enum`")
-        bad += 1
-    if sees(upperpat, "pub const node = enum {") != 0
-        print("CONTROL FAILED: upper convicts an already-canonical name")
-        bad += 1
-    if sees(companionpat, "pub const EdgeKind = enum {") != 1
-        print("CONTROL FAILED: companion does not see `EdgeKind`")
-        bad += 1
-    if sees(companionpat, "pub const Lexer = struct {") != 0
-        print("CONTROL FAILED: companion convicts a non-companion type")
-        bad += 1
-    if sees(relationpat, "pub fn addChild(self: *SemanticGraph") != 1
-        print("CONTROL FAILED: relation does not see `addChild`")
-        bad += 1
-    if sees(relationpat, "pub fn get(self: *const SemanticGraph") != 0
-        print("CONTROL FAILED: relation convicts an ordinary accessor")
-        bad += 1
+  # CONTROLS FIRST. A row printed before its control has been checked is a
+  # number nobody should act on.
+  bad = 0
+  if sees(upperpat, "pub const NodeKind = enum {") != 1
+    print("CONTROL FAILED: upper does not see `pub const NodeKind = enum`")
+    bad = bad + 1
+  if sees(upperpat, "pub const node = enum {") != 0
+    print("CONTROL FAILED: upper convicts an already-canonical name")
+    bad = bad + 1
+  if sees(companionpat, "pub const EdgeKind = enum {") != 1
+    print("CONTROL FAILED: companion does not see `EdgeKind`")
+    bad = bad + 1
+  if sees(companionpat, "pub const Lexer = struct {") != 0
+    print("CONTROL FAILED: companion convicts a non-companion type")
+    bad = bad + 1
+  if sees(relationpat, "pub fn addChild(self: *SemanticGraph") != 1
+    print("CONTROL FAILED: relation does not see `addChild`")
+    bad = bad + 1
+  if sees(relationpat, "pub fn get(self: *const SemanticGraph") != 0
+    print("CONTROL FAILED: relation convicts an ordinary accessor")
+    bad = bad + 1
 
-    # The assumption row has FIVE controls, because it is a pipeline rather
-    # than one grep and every stage of a pipeline can fail silently to zero.
-    # Two prove the extractors read the real corpus at all; two prove the live
-    # filter separates an assignment from a retirement; one proves the set
-    # difference. Without the first two a broken `git ls-files` would score a
-    # perfect nothing, which this repository has already shipped once.
-    if lines(live(zig(root))) < 1
-        print("CONTROL FAILED: the live extractor reads no flag from src/*.zig")
-        bad += 1
-    if lines(verified(zig(root))) < 1
-        print("CONTROL FAILED: the verify extractor reads no companion from src/*.zig")
-        bad += 1
-    if lines(live("printf {q}    fb.use_alpha = detect(fb);\\n{q}")) != 1
-        print("CONTROL FAILED: live does not see a conditionally-assigned flag")
-        bad += 1
-    if lines(live("printf {q}    fb.use_beta = false;\\n{q}")) != 0
-        print("CONTROL FAILED: live counts a flag retired to false")
-        bad += 1
-    if minus("printf {q}alpha\\n{q}", "printf {q}beta\\n{q}") != 1
-        print("CONTROL FAILED: minus loses a left-only name")
-        bad += 1
-    if minus("printf {q}alpha\\n{q}", "printf {q}alpha\\n{q}") != 0
-        print("CONTROL FAILED: minus keeps a name present on both sides")
-        bad += 1
+  # The assumption row has FIVE controls, because it is a pipeline rather
+  # than one grep and every stage of a pipeline can fail silently to zero.
+  # Two prove the extractors read the real corpus at all; two prove the live
+  # filter separates an assignment from a retirement; one proves the set
+  # difference. Without the first two a broken `git ls-files` would score a
+  # perfect nothing, which this repository has already shipped once.
+  if lines(live(zig(root))) < 1
+    print("CONTROL FAILED: the live extractor reads no flag from src/*.zig")
+    bad = bad + 1
+  if lines(verified(zig(root))) < 1
+    print("CONTROL FAILED: the verify extractor reads no companion from src/*.zig")
+    bad = bad + 1
+  if lines(live("printf {q}    fb.use_alpha = detect(fb);\\n{q}")) != 1
+    print("CONTROL FAILED: live does not see a conditionally-assigned flag")
+    bad = bad + 1
+  if lines(live("printf {q}    fb.use_beta = false;\\n{q}")) != 0
+    print("CONTROL FAILED: live counts a flag retired to false")
+    bad = bad + 1
+  if minus("printf {q}alpha\\n{q}", "printf {q}beta\\n{q}") != 1
+    print("CONTROL FAILED: minus loses a left-only name")
+    bad = bad + 1
+  if minus("printf {q}alpha\\n{q}", "printf {q}alpha\\n{q}") != 0
+    print("CONTROL FAILED: minus keeps a name present on both sides")
+    bad = bad + 1
 
-    if bad > 0
-        print("")
-        print("bootstrap scan: CONTROLS BROKEN — every number below would be")
-        print("  meaningless, so none is printed. Fix the patterns first.")
-        os.exit(3)
-
-    upper = count(root, upperpat)
-    companion = count(root, companionpat)
-    relation = count(root, relationpat)
-    assume = minus(live(zig(root)), verified(zig(root)))
-
+  if bad > 0
     print("")
-    print("  the deny table over src/*.zig — the corpus audit100 cannot see")
-    print("  row          count   budget")
-    over = 0
-    over += row("upper", upper, 444)
-    over += row("companion", companion, 41)
-    over += row("relation", relation, 45)
-    over += row("assume", assume, 17)
-    print("")
-    print("  §0.1 LAW-ONE denies uppercase; §0.3 denies companion *Kind/*Type")
-    print("  by name; law.arch.relation denies a semantic distinction encoded")
-    print("  in a host function name. See gaps/GAP-080.md for the repair order")
-    print("  and for why NOT to bulk-rename.")
-    print("")
-    print("  assume is §3 MEASUREMENT HONESTY made a number: a live use flag")
-    print("  with no verify companion. The seventeen at budget were each read")
-    print("  and none is an unguarded value claim — the row exists so the")
-    print("  eighteenth cannot arrive unread. See gaps/GAP-085.md.")
-    print("")
+    print("bootstrap scan: CONTROLS BROKEN — every number below would be")
+    print("  meaningless, so none is printed. Fix the patterns first.")
+    os.exit(3)
 
-    if over > 0
-        print("bootstrap scan: FAIL — {over} row(s) rose. The ratchet runs DOWN.")
-        os.exit(1)
+  upper = count(root, upperpat)
+  companion = count(root, companionpat)
+  relation = count(root, relationpat)
+  assume = minus(live(zig(root)), verified(zig(root)))
 
-    total: i64 = upper + companion + relation
-    print("bootstrap scan: PASS — {total} sites, none rising")
-    0
+  print("")
+  print("  the deny table over src/*.zig — the corpus audit100 cannot see")
+  print("  row          count   budget")
+  over = 0
+  over = over + row("upper", upper, 444)
+  over = over + row("companion", companion, 41)
+  over = over + row("relation", relation, 45)
+  over = over + row("assume", assume, 17)
+  print("")
+  print("  §0.1 LAW-ONE denies uppercase; §0.3 denies companion *Kind/*Type")
+  print("  by name; law.arch.relation denies a semantic distinction encoded")
+  print("  in a host function name. See gaps/GAP-080.md for the repair order")
+  print("  and for why NOT to bulk-rename.")
+  print("")
+  print("  assume is §3 MEASUREMENT HONESTY made a number: a live use flag")
+  print("  with no verify companion. The seventeen at budget were each read")
+  print("  and none is an unguarded value claim — the row exists so the")
+  print("  eighteenth cannot arrive unread. See gaps/GAP-085.md.")
+  print("")
+
+  if over > 0
+    print("bootstrap scan: FAIL — {over} row(s) rose. The ratchet runs DOWN.")
+    os.exit(1)
+
+  total: i64 = upper + companion + relation
+  print("bootstrap scan: PASS — {total} sites, none rising")
+  0

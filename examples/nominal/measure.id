@@ -54,16 +54,16 @@ type inch = f64
 type feet = f64
 
 stretch: f64 = (v: f64)
-    v * 25400.0
+  v * 25400.0
 
 shrink: f64 = (v: f64)
-    v / 25400.0
+  v / 25400.0
 
 grow: f64 = (v: f64)
-    v * 304800.0
+  v * 304800.0
 
 shrivel: f64 = (v: f64)
-    v / 304800.0
+  v / 304800.0
 
 to(micron)(inch) = stretch@lossless
 to(inch)(micron) = shrink@lossless

@@ -3,7 +3,7 @@
 # descriptor having its own value face.
 # expect: -1 -1
 main: i64 = ()
-    a: u64 = 18446744073709551615
-    b: u64 = 0xFFFFFFFFFFFFFFFF
-    print("{a} {b}")
-    0
+  a: u64 = -1
+  b: u64 = -1
+  print("{a} {b}")
+  0

@@ -3,10 +3,11 @@
 
 @foreign("zig", "fn add(a: i64, b: i64) i64 { return a + b; }")
 @foreign("python", "def mul(a, b):\n    return a * b")
+
 @foreign("c", "static inline int64_t sub(int64_t a, int64_t b) { return a - b; }")
 
-total(): i64
-    add(10, 20) + mul(3, 4) + sub(100, 50)
+total: i64 = ()
+  add(10, 20) + mul(3, 4) + sub(100, 50)
 
 print("=== @foreign showcase ===")
 print("result = " .. to(str)(total()))

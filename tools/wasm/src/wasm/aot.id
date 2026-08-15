@@ -2,7 +2,7 @@
 
 M = {}
 
-compile(mod: any, path: str): str
+compile: str = (mod: any, path: str)
   ""
 
 M.compile = compile

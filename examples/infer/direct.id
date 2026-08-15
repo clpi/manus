@@ -21,11 +21,11 @@
 # expect: 1
 
 enable: bool = (flag: bool)
-    flag
+  flag
 
 check: bool = (value: bool)
-    value
+  value
 
 flag: bool = true
 if check(flag)
-    print("1")
+  print("1")

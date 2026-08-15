@@ -141,7 +141,9 @@ render_blocks: str = (tmpl: str, data: any, start: i64)
               if type(hk) != "number"
                 item = hv
                 if type(hv) != "table"
-                  item = { value = hv, key = hk }
+                  item =
+                    value = hv
+                    key = hk
                 out(out:len() + 1) = render_blocks(block_text, item, 1)
         i = block_end + 2
         if block_end == nil

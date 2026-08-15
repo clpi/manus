@@ -6,11 +6,11 @@ z = 0.0
 n = z / z
 a = 0
 if n == n
-    a = 1
+  a = 1
 b = 0
 if n < 1.0
-    b = 1
+  b = 1
 c = 0
 if n > 1.0
-    c = 1
+  c = 1
 print("{n} {a} {b} {c}")

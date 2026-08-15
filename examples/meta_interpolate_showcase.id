@@ -6,21 +6,21 @@
 # Comptime-only — folds to native C string, never lua_Value.
 
 # Basic: single variable substitution
-S = @comp.interpolate("int64_t {name}() { return 0; }", {name = "noop"})
+S = @comp.interpolate("int64_t {name}() { return 0; }", { name = "noop" })
 print("=== @comp.interpolate: function signature ===")
 print(S)
 
 # Multi-variable C code template (the real power — code templating)
-G = @comp.interpolate("int64_t {fname}(int64_t a) { return a + {delta}; }", {fname = "add_one", delta = 1})
+G = @comp.interpolate("int64_t {fname}(int64_t a) { return a + {delta}; }", { fname = "add_one", delta = 1 })
 print("=== @comp.interpolate: C function template ===")
 print(G)
 
 # String value substitution
-M = @comp.interpolate("return \"{msg}\";", {msg = "hello from comptime"})
+M = @comp.interpolate("return \"{msg}\";", { msg = "hello from comptime" })
 print("=== @comp.interpolate: string value ===")
 print(M)
 
 # Unknown placeholders are preserved
-U = @comp.interpolate("int64_t {known} + {unknown};", {known = "x"})
+U = @comp.interpolate("int64_t {known} + {unknown};", { known = "x" })
 print("=== @comp.interpolate: unknown preservation ===")
 print(U)

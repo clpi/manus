@@ -9,161 +9,160 @@
 #   idol run gate/path.id < idolgate-body.txt
 
 transport: str = ()
-    text = stdin:read()
-    if text:len() == 0
-        return ""
-    text
+  text = stdin:read()
+  if text:len() == 0
+    return ""
+  text
 
 alpha: bool = (c: str)
-    c >= "a" and c <= "z"
+  c >= "a" and c <= "z"
 
 upper: bool = (c: str)
-    c >= "A" and c <= "Z"
+  c >= "A" and c <= "Z"
 
 digit: bool = (c: str)
-    c >= "0" and c <= "9"
+  c >= "0" and c <= "9"
 
 glyph: bool = (c: str)
-    alpha(c) or upper(c) or digit(c) or c == "_"
+  alpha(c) or upper(c) or digit(c) or c == "_"
 
 atom: bool = (code: str, sought: str)
-    n = code:len()
-    m = sought:len()
-    i = 1
-    while i + m - 1 <= n
-        if code:sub(i, i + m - 1) == sought
-            before = ""
-            after = ""
-            if i > 1
-                before = code:sub(i - 1, i - 1)
-            if i + m <= n
-                after = code:sub(i + m, i + m)
-            if (before == "" or !glyph(before)) and (after == "" or !glyph(after))
-                return true
-        i += 1
-    false
+  n = code:len()
+  m = sought:len()
+  i = 1
+  while i + m - 1 <= n
+    if code:sub(i, i + m - 1) == sought
+      before = ""
+      after = ""
+      if i > 1
+        before = code:sub(i - 1, i - 1)
+      if i + m <= n
+        after = code:sub(i + m, i + m)
+      if (before == "" or not glyph(before)) and (after == "" or not glyph(after))
+        return true
+    i = i + 1
+  false
 
 has: bool = (hay: str, needle: str)
-    n = hay:len()
-    m = needle:len()
-    if m == 0
-        return false
-    i = 1
-    while i + m - 1 <= n
-        if hay:sub(i, i + m - 1) == needle
-            return true
-        i += 1
-    false
+  n = hay:len()
+  m = needle:len()
+  if m == 0
+    return false
+  i = 1
+  while i + m - 1 <= n
+    if hay:sub(i, i + m - 1) == needle
+      return true
+    i = i + 1
+  false
 
 words = " graph lexer parser compiler token scope world demand relation semantic native backend read line old thing layout home origin law stage role value witness place realize machine emit target bind host profile rewrite fmt check trace proof schema cursor thread sync time random hash crypto net path bytes str text json io mem heap bit flag table vector meta script build config foreign wasm os process signal id idol gap agent bench engine opcode decode run tool orient doctor manifest ledger census gate smoke audit highlight capability idiom module surface correctness embed hygiene repro init spec corpus constitution authority bootstrap tooling performance contributing alignment integration readme examples scripts tools lib src gaps tests benchmarks docs agents cursor rules hooks lower codegen sema ast term transaction snapshot reach layout compound name proof fixture benchmark generated migration cache legacy compat foreign history numeric version taxonomy ambient fold mkdir remove bitcast worldreach convert symbol record benchmark suffix array back end write file dir view edges quick fstest iotest cmplx ascii adler subtle strbuilder tabwriter scanner template jpeg png gif flate gzip zlib lzw crc fnv sha hmac rand split join concat format emit lower codegen parse symbol scope compress encode decode image color database sql encoding testing grammar classify role classify wasm wasi jit simd memory stack value engine probe derived verify perf hash ledger claim debt embed zig shc ftcftw perf js c census dig full vscode emit project materialization priority chained comparison capability scan temp body base diff list name track tree scratch quote zero staged range worktree "
 
 known: bool = (word: str)
-    m = word:len()
-    if m < 2
-        return false
-    needle = " {word} "
-    hay = words
-    n = hay:len()
-    k = needle:len()
-    i = 1
-    while i + k - 1 <= n
-        if hay:sub(i, i + k - 1) == needle
-            return true
-        i += 1
-    false
+  m = word:len()
+  if m < 2
+    return false
+  needle = " {word} "
+  hay = words
+  n = hay:len()
+  k = needle:len()
+  i = 1
+  while i + k - 1 <= n
+    if hay:sub(i, i + k - 1) == needle
+      return true
+    i = i + 1
+  false
 
 # Static vocabulary only. Dynamic git-derived stems belong in build-world
 # preparation piped through stdin, not io.popen inside this gate.
 seed: bool = ()
-    true
+  true
 
 foreign: bool = (path: str)
-    path:len() >= 4 and path:sub(1, 4) == "ext/"
+  path:len() >= 4 and path:sub(1, 4) == "ext/"
 
 historical: bool = (path: str)
-    path:len() >= 12 and path:sub(1, 12) == "benchmarks/"
-    or path:len() >= 7 and path:sub(1, 7) == "vendor/"
+  path:len() >= 12 and path:sub(1, 12) == "benchmarks/" or path:len() >= 7 and path:sub(1, 7) == "vendor/"
 
 owned: bool = (path: str)
-    !foreign(path) and !historical(path)
+  not foreign(path) and not historical(path)
 
 leaf: str = (path: str)
-    slash = 0
-    i = path:len()
-    while i >= 1
-        if path:sub(i, i) == "/"
-            slash = i
-            break
-        i -= 1
-    base = path
-    if slash > 0
-        base = path:sub(slash + 1, path:len())
-    dot = 0
-    i = base:len()
-    while i >= 1
-        if base:sub(i, i) == "."
-            dot = i
-            break
-        i -= 1
-    if dot <= 1
-        base
-    else
-        base:sub(1, dot - 1)
+  slash = 0
+  i = path:len()
+  while i >= 1
+    if path:sub(i, i) == "/"
+      slash = i
+      break
+    i = i - 1
+  base = path
+  if slash > 0
+    base = path:sub(slash + 1, path:len())
+  dot = 0
+  i = base:len()
+  while i >= 1
+    if base:sub(i, i) == "."
+      dot = i
+      break
+    i = i - 1
+  if dot <= 1
+    base
+  else
+    base:sub(1, dot - 1)
 
 sep: bool = (name: str)
-    n = name:len()
-    i = 1
-    while i <= n
-        c = name:sub(i, i)
-        if c == "_" or c == "-" or upper(c)
-            return true
-        i += 1
-    false
+  n = name:len()
+  i = 1
+  while i <= n
+    c = name:sub(i, i)
+    if c == "_" or c == "-" or upper(c)
+      return true
+    i = i + 1
+  false
 
 # numeric suffix taxonomy on a path word. Subject-first: name:tail().
 tail: bool = (name: str)
-    n = name:len()
-    if n < 2
-        return false
-    if !digit(name:sub(n, n))
-        return false
-    i = n - 1
-    while i >= 1 and digit(name:sub(i, i))
-        i -= 1
-    i == 0 or alpha(name:sub(i, i)) or name:sub(i, i) == "_"
+  n = name:len()
+  if n < 2
+    return false
+  if not digit(name:sub(n, n))
+    return false
+  i = n - 1
+  while i >= 1 and digit(name:sub(i, i))
+    i = i - 1
+  i == 0 or alpha(name:sub(i, i)) or name:sub(i, i) == "_"
 
 mash: bool = (name: str)
-    if known(name)
-        return false
-    n = name:len()
-    if n >= 5 and name:sub(n - 4, n) == "proof"
-        left = name:sub(1, n - 5)
-        if left:len() >= 2 and known(left)
-            return true
-    if n < 4
-        return false
-    i = 2
-    while i <= n - 1
-        left = name:sub(1, i - 1)
-        right = name:sub(i, n)
-        if left:len() >= 2 and right:len() >= 2 and known(left) and known(right)
-            return true
-        i += 1
-    false
+  if known(name)
+    return false
+  n = name:len()
+  if n >= 5 and name:sub(n - 4, n) == "proof"
+    left = name:sub(1, n - 5)
+    if left:len() >= 2 and known(left)
+      return true
+  if n < 4
+    return false
+  i = 2
+  while i <= n - 1
+    left = name:sub(1, i - 1)
+    right = name:sub(i, n)
+    if left:len() >= 2 and right:len() >= 2 and known(left) and known(right)
+      return true
+    i = i + 1
+  false
 
 member: bool = (hay: str, word: str)
-    m = word:len()
-    if m < 2
-        return false
-    needle = " {word} "
-    n = hay:len()
-    k = needle:len()
-    i = 1
-    while i + k - 1 <= n
-        if hay:sub(i, i + k - 1) == needle
-            return true
-        i += 1
-    false
+  m = word:len()
+  if m < 2
+    return false
+  needle = " {word} "
+  n = hay:len()
+  k = needle:len()
+  i = 1
+  while i + k - 1 <= n
+    if hay:sub(i, i + k - 1) == needle
+      return true
+    i = i + 1
+  false
 
 roles = " reader writer runner caller encoder decoder parser formatter checker validator builder emitter generator scanner resolver evaluator interpreter provider producer consumer receiver sender "
 collisions = " router gateway dispatcher registry manager factory adapter broker mediator controller coordinator orchestrator handler executor pipeline scheduler loader bridge shim proxy wrapper frontend backend context session service driver framework container "
@@ -171,499 +170,486 @@ cardinals = " bytes strings chars fields variants tokens nodes edges values argu
 histwords = " showcase legacy deprecated compat "
 
 ends: bool = (name: str, ending: str)
-    n = name:len()
-    m = ending:len()
-    if n <= m
-        return false
-    if name:sub(n - m + 1, n) != ending
-        return false
-    if n > m and !alpha(name:sub(n - m, n - m))
-        return false
-    true
+  n = name:len()
+  m = ending:len()
+  if n <= m
+    return false
+  if name:sub(n - m + 1, n) != ending
+    return false
+  if n > m and not alpha(name:sub(n - m, n - m))
+    return false
+  true
 
 rolestem: bool = (name: str)
-    if known(name) or name:len() < 4
-        return false
-    if member(roles, name)
-        return true
-    ends(name, "reader") or ends(name, "writer") or ends(name, "runner")
-    or ends(name, "caller") or ends(name, "encoder") or ends(name, "decoder")
-    or ends(name, "parser") or ends(name, "formatter") or ends(name, "checker")
-    or ends(name, "validator") or ends(name, "builder") or ends(name, "emitter")
-    or ends(name, "generator") or ends(name, "scanner") or ends(name, "resolver")
-    or ends(name, "provider") or ends(name, "producer") or ends(name, "consumer")
+  if known(name) or name:len() < 4
+    return false
+  if member(roles, name)
+    return true
+  ends(name, "reader") or ends(name, "writer") or ends(name, "runner") or ends(name, "caller") or ends(name, "encoder") or ends(name, "decoder") or ends(name, "parser") or ends(name, "formatter") or ends(name, "checker") or ends(name, "validator") or ends(name, "builder") or ends(name, "emitter") or ends(name, "generator") or ends(name, "scanner") or ends(name, "resolver") or ends(name, "provider") or ends(name, "producer") or ends(name, "consumer")
 
 collisionstem: bool = (name: str)
-    if known(name) or name:len() < 4
-        return false
-    if member(collisions, name)
-        return true
-    ends(name, "router") or ends(name, "gateway") or ends(name, "dispatcher")
-    or ends(name, "registry") or ends(name, "manager") or ends(name, "factory")
-    or ends(name, "adapter") or ends(name, "broker") or ends(name, "mediator")
-    or ends(name, "controller") or ends(name, "coordinator") or ends(name, "orchestrator")
-    or ends(name, "handler") or ends(name, "executor") or ends(name, "pipeline")
-    or ends(name, "scheduler") or ends(name, "loader") or ends(name, "bridge")
-    or ends(name, "wrapper") or ends(name, "context") or ends(name, "session")
-    or ends(name, "service") or ends(name, "framework") or ends(name, "container")
+  if known(name) or name:len() < 4
+    return false
+  if member(collisions, name)
+    return true
+  ends(name, "router") or ends(name, "gateway") or ends(name, "dispatcher") or ends(name, "registry") or ends(name, "manager") or ends(name, "factory") or ends(name, "adapter") or ends(name, "broker") or ends(name, "mediator") or ends(name, "controller") or ends(name, "coordinator") or ends(name, "orchestrator") or ends(name, "handler") or ends(name, "executor") or ends(name, "pipeline") or ends(name, "scheduler") or ends(name, "loader") or ends(name, "bridge") or ends(name, "wrapper") or ends(name, "context") or ends(name, "session") or ends(name, "service") or ends(name, "framework") or ends(name, "container")
 
 cardinalstem: bool = (name: str)
-    member(cardinals, name)
+  member(cardinals, name)
 
 ables = " callable readable writable iterable indexable hashable comparable serializable encodable decodable parseable printable executable runnable awaitable seekable "
 
 ablestem: bool = (name: str)
-    if member(ables, name)
-        return true
-    n = name:len()
-    if n < 6
-        return false
-    ends(name, "able") or ends(name, "ible")
+  if member(ables, name)
+    return true
+  n = name:len()
+  if n < 6
+    return false
+  ends(name, "able") or ends(name, "ible")
 
 histstem: bool = (name: str)
-    if atom(name, "pass") or atom(name, "gap") or atom(name, "phase")
-        return true
-    member(histwords, name) or ends(name, "showcase") or ends(name, "legacy")
-    or ends(name, "deprecated") or ends(name, "compat")
+  if atom(name, "pass") or atom(name, "gap") or atom(name, "phase")
+    return true
+  member(histwords, name) or ends(name, "showcase") or ends(name, "legacy") or ends(name, "deprecated") or ends(name, "compat")
 
 orghomes = " std lib core common shared util utils helper helpers support internal framework platform system module modules namespace namespaces "
 mediatorhomes = " router gateway dispatcher registry manager factory adapter broker context engine pipeline service provider bridge wrapper "
 
 orghome: bool = (name: str)
-    if known(name)
-        return false
-    member(orghomes, name) or ends(name, "utils") or ends(name, "helpers")
+  if known(name)
+    return false
+  member(orghomes, name) or ends(name, "utils") or ends(name, "helpers")
 
 mediatorhome: bool = (name: str)
-    if known(name)
-        return false
-    member(mediatorhomes, name)
+  if known(name)
+    return false
+  member(mediatorhomes, name)
 
 filename: bool = (where: str)
-    where:len() > 0 and where:sub(where:len(), where:len()) != ":"
+  where:len() > 0 and where:sub(where:len(), where:len()) != ":"
 
 verdict: i64 = (where: str, name: str)
-    hits = 0
-    if name:len() == 0
-        return 0
-    if sep(name)
-        print("{where}  [law.path.name]  snake_case or separator `{name}` — one lowercase word per path component; use home hierarchy")
-        hits += 1
-    if name:tail()
-        print("{where}  [law.path.name]  numeric taxonomy `{name}` — version is provenance")
-        hits += 1
-    if mash(name)
-        print("{where}  [PATH-SEMANTICS-BLOCKED]  mashed compound `{name}` — decompose the owner")
-        hits += 1
-    if filename(where)
-        if rolestem(name)
-            print("{where}  [law.identity.role]  role-noun stem `{name}` — subject + relation; docs/spec/canonical.md §26")
-            hits += 1
-        if collisionstem(name)
-            print("{where}  [law.identity.collision]  mediator stem `{name}` — decompose; docs/spec/canonical.md §26")
-            hits += 1
-        if cardinalstem(name)
-            print("{where}  [law.identity.cardinal]  plural-cardinality stem `{name}` — one entity + facts; docs/spec/canonical.md §26")
-            hits += 1
-        if ablestem(name)
-            print("{where}  [law.protocol.name.zero]  *able/*ible stem `{name}` — relation constraints only; docs/spec/canonical.md §26")
-            hits += 1
-        if histstem(name)
-            print("{where}  [law.source.not.proof]  history/showcase stem `{name}` — isolate or delete; docs/spec/canonical.md §26")
-            hits += 1
-    if !filename(where) and name:len() > 0
-        if orghome(name)
-            print("{where}  [law.std.zero]  organizational namespace `{name}` — layout/home projection; docs/spec/canonical.md §27")
-            hits += 1
-        if mediatorhome(name)
-            print("{where}  [law.identity.collision]  mediator home `{name}` — decompose; docs/spec/canonical.md §27")
-            hits += 1
-        if name == "semantic"
-            print("{where}  [law.catalog.zero]  catalog home `{name}` — resolver publishes graph ids")
-            hits += 1
-    hits
+  hits = 0
+  if name:len() == 0
+    return 0
+  if sep(name)
+    print("{where}  [law.path.name]  snake_case or separator `{name}` — one lowercase word per path component; use home hierarchy")
+    hits = hits + 1
+  if name:tail()
+    print("{where}  [law.path.name]  numeric taxonomy `{name}` — version is provenance")
+    hits = hits + 1
+  if mash(name)
+    print("{where}  [PATH-SEMANTICS-BLOCKED]  mashed compound `{name}` — decompose the owner")
+    hits = hits + 1
+  if filename(where)
+    if rolestem(name)
+      print("{where}  [law.identity.role]  role-noun stem `{name}` — subject + relation; docs/spec/canonical.md §26")
+      hits = hits + 1
+    if collisionstem(name)
+      print("{where}  [law.identity.collision]  mediator stem `{name}` — decompose; docs/spec/canonical.md §26")
+      hits = hits + 1
+    if cardinalstem(name)
+      print("{where}  [law.identity.cardinal]  plural-cardinality stem `{name}` — one entity + facts; docs/spec/canonical.md §26")
+      hits = hits + 1
+    if ablestem(name)
+      print("{where}  [law.protocol.name.zero]  *able/*ible stem `{name}` — relation constraints only; docs/spec/canonical.md §26")
+      hits = hits + 1
+    if histstem(name)
+      print("{where}  [law.source.not.proof]  history/showcase stem `{name}` — isolate or delete; docs/spec/canonical.md §26")
+      hits = hits + 1
+  if not filename(where) and name:len() > 0
+    if orghome(name)
+      print("{where}  [law.std.zero]  organizational namespace `{name}` — layout/home projection; docs/spec/canonical.md §27")
+      hits = hits + 1
+    if mediatorhome(name)
+      print("{where}  [law.identity.collision]  mediator home `{name}` — decompose; docs/spec/canonical.md §27")
+      hits = hits + 1
+    if name == "semantic"
+      print("{where}  [law.catalog.zero]  catalog home `{name}` — resolver publishes graph ids")
+      hits = hits + 1
+  hits
 
 walk: i64 = (path: str)
-    if !owned(path)
-        return 0
-    hits = verdict(path, leaf(path))
-    if has(path, "lib/semantic/")
-        print("{path}  [law.catalog.zero]  no relation catalog home — resolver publishes graph ids")
-        hits += 1
-    part = ""
-    n = path:len()
-    i = 1
-    while i <= n
-        c = path:sub(i, i)
-        if c == "/"
-            if part:len() > 0 and part:sub(1, 1) != "."
-                hits += verdict("{path}:", part)
-            part = ""
-        else
-            part = "{part}{c}"
-        i += 1
-    if part:len() > 0 and part:sub(1, 1) != "." and part != leaf(path)
-        hits += verdict("{path}:", part)
-    hits
+  if not owned(path)
+    return 0
+  hits = verdict(path, leaf(path))
+  if has(path, "lib/semantic/")
+    print("{path}  [law.catalog.zero]  no relation catalog home — resolver publishes graph ids")
+    hits = hits + 1
+  part = ""
+  n = path:len()
+  i = 1
+  while i <= n
+    c = path:sub(i, i)
+    if c == "/"
+      if part:len() > 0 and part:sub(1, 1) != "."
+        hits = hits + verdict("{path}:", part)
+      part = ""
+    else
+      part = "{part}{c}"
+    i = i + 1
+  if part:len() > 0 and part:sub(1, 1) != "." and part != leaf(path)
+    hits = hits + verdict("{path}:", part)
+  hits
 
 peel: str = (line: str)
-    out = ""
-    n = line:len()
-    quote = ""
-    i = 1
-    while i <= n
-        c = line:sub(i, i)
-        if quote == ""
-            if c == "#"
-                return out
-            if c == "\"" or c == "'"
-                quote = c
-                out = "{out} "
-            else
-                out = "{out}{c}"
-        else
-            if c == quote
-                quote = ""
-            out = "{out} "
-        i += 1
-    out
+  out = ""
+  n = line:len()
+  quote = ""
+  i = 1
+  while i <= n
+    c = line:sub(i, i)
+    if quote == ""
+      if c == "#"
+        return out
+      if c == "\"" or c == "'"
+        quote = c
+        out = "{out} "
+      else
+        out = "{out}{c}"
+    else
+      if c == quote
+        quote = ""
+      out = "{out} "
+    i = i + 1
+  out
 
 dash: bool = (code: str)
-    n = code:len()
-    quote = ""
-    i = 1
-    while i <= n
-        c = code:sub(i, i)
-        if quote == ""
-            if c == "#"
-                return false
-            if c == "\"" or c == "'"
-                quote = c
-            else
-                if c == "-" and i < n and code:sub(i + 1, i + 1) == "-"
-                    if i + 2 <= n and code:sub(i + 2, i + 2) == "-"
-                        i += 1
-                    else
-                        before = ""
-                        if i > 1
-                            before = code:sub(i - 1, i - 1)
-                        if before == "" or before == " " or before == "\t"
-                            return true
-        else
-            if c == quote
-                quote = ""
-        i += 1
-    false
+  n = code:len()
+  quote = ""
+  i = 1
+  while i <= n
+    c = code:sub(i, i)
+    if quote == ""
+      if c == "#"
+        return false
+      if c == "\"" or c == "'"
+        quote = c
+      else
+        if c == "-" and i < n and code:sub(i + 1, i + 1) == "-"
+          if i + 2 <= n and code:sub(i + 2, i + 2) == "-"
+            i = i + 1
+          else
+            before = ""
+            if i > 1
+              before = code:sub(i - 1, i - 1)
+            if before == "" or before == " " or before == "\t"
+              return true
+    else
+      if c == quote
+        quote = ""
+    i = i + 1
+  false
 
 wide: bool = (code: str)
-    n = code:len()
-    i = 1
-    while i <= n
-        if code:sub(i, i) == "="
-            left = ""
-            j = i - 1
-            while j >= 1 and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
-                j -= 1
-            endpos = j
-            while j >= 1 and glyph(code:sub(j, j))
-                j -= 1
-            if endpos >= j + 1
-                left = code:sub(j + 1, endpos)
-            k = i + 1
-            while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
-                k += 1
-            start = k
-            while k <= n and glyph(code:sub(k, k))
-                k += 1
-            if k > start
-                right = code:sub(start, k - 1)
-                if left != "" and left == right
-                    while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
-                        k += 1
-                    if k <= n
-                        op = code:sub(k, k)
-                        if op == "+" or op == "-" or op == "*" or op == "/"
-                            return true
-        i += 1
-    false
+  n = code:len()
+  i = 1
+  while i <= n
+    if code:sub(i, i) == "="
+      left = ""
+      j = i - 1
+      while j >= 1 and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
+        j = j - 1
+      endpos = j
+      while j >= 1 and glyph(code:sub(j, j))
+        j = j - 1
+      if endpos >= j + 1
+        left = code:sub(j + 1, endpos)
+      k = i + 1
+      while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
+        k = k + 1
+      start = k
+      while k <= n and glyph(code:sub(k, k))
+        k = k + 1
+      if k > start
+        right = code:sub(start, k - 1)
+        if left != "" and left == right
+          while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
+            k = k + 1
+          if k <= n
+            op = code:sub(k, k)
+            if op == "+" or op == "-" or op == "*" or op == "/"
+              return true
+    i = i + 1
+  false
 
 judge: i64 = (path: str, no: i64, line: str)
-    code = peel(line)
-    hits = 0
-    if wide(code)
-        print("{path}:{no}  [law.update.face]  place += value — use += -= *= /=; never place = place op value")
-        hits += 1
-    n = code:len()
-    i = 1
-    while i <= n
-        c = code:sub(i, i)
-        if glyph(c)
-            start = i
-            while i <= n and glyph(code:sub(i, i))
-                i += 1
-            token = code:sub(start, i - 1)
-            if token:len() >= 2
-                hits += verdict("{path}:{no}", token)
-        else
-            i += 1
-    hits
+  code = peel(line)
+  hits = 0
+  if wide(code)
+    print("{path}:{no}  [law.update.face]  place += value — use += -= *= /=; never place = place op value")
+    hits = hits + 1
+  n = code:len()
+  i = 1
+  while i <= n
+    c = code:sub(i, i)
+    if glyph(c)
+      start = i
+      while i <= n and glyph(code:sub(i, i))
+        i = i + 1
+      token = code:sub(start, i - 1)
+      if token:len() >= 2
+        hits = hits + verdict("{path}:{no}", token)
+    else
+      i = i + 1
+  hits
 
 num: i64 = (s: str, i: i64)
-    v = 0
-    n = s:len()
-    j = i
-    while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
-        v *= 10
-        v += (s:byte(j) - 48)
-        j += 1
-    v
+  v = 0
+  n = s:len()
+  j = i
+  while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
+    v = v * 10
+    v = v + s:byte(j) - 48
+    j = j + 1
+  v
 
 head: bool = (line: str)
-    line:len() >= 6 and line:sub(1, 6) == "+++ b/"
+  line:len() >= 6 and line:sub(1, 6) == "+++ b/"
 
 list: i64 = (body: str)
-    hits = 0
-    line = ""
-    nl = string.char(10)
-    n = body:len()
-    i = 1
-    while i <= n + 1
-        c = nl
-        if i <= n
-            c = body:sub(i, i)
-        if c == nl
-            if line:len() > 0
-                hits += walk(line)
-            line = ""
-        else
-            line = "{line}{c}"
-        i += 1
-    hits
+  hits = 0
+  line = ""
+  nl = string.char(10)
+  n = body:len()
+  i = 1
+  while i <= n + 1
+    c = nl
+    if i <= n
+      c = body:sub(i, i)
+    if c == nl
+      if line:len() > 0
+        hits = hits + walk(line)
+      line = ""
+    else
+      line = "{line}{c}"
+    i = i + 1
+  hits
 
 diff: i64 = (body: str)
-    hits = 0
-    path = ""
-    no = 0
-    line = ""
-    nl = string.char(10)
-    n = body:len()
-    i = 1
-    while i <= n + 1
-        c = nl
-        if i <= n
-            c = body:sub(i, i)
-        if c == nl
-            if head(line)
-                path = line:sub(7, line:len())
-                no = 0
-            else
-                if line:len() > 2 and line:sub(1, 2) == "@@"
-                    p = 1
-                    m = line:len()
-                    while p <= m and line:sub(p, p) != "+"
-                        p += 1
-                    no = num(line, p + 1)
-                else
-                    if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
-                        hits += judge(path, no, line:sub(2, line:len()))
-                        no += 1
-            line = ""
+  hits = 0
+  path = ""
+  no = 0
+  line = ""
+  nl = string.char(10)
+  n = body:len()
+  i = 1
+  while i <= n + 1
+    c = nl
+    if i <= n
+      c = body:sub(i, i)
+    if c == nl
+      if head(line)
+        path = line:sub(7, line:len())
+        no = 0
+      else
+        if line:len() > 2 and line:sub(1, 2) == "@@"
+          p = 1
+          m = line:len()
+          while p <= m and line:sub(p, p) != "+"
+            p = p + 1
+          no = num(line, p + 1)
         else
-            line = "{line}{c}"
-        i += 1
-    hits
+          if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
+            hits = hits + judge(path, no, line:sub(2, line:len()))
+            no = no + 1
+      line = ""
+    else
+      line = "{line}{c}"
+    i = i + 1
+  hits
 
 tree: i64 = (body: str)
-    if body:len() == 0
-        print("gate/path: empty tree listing on stdin")
-        return 3
-    hits = list(body)
-    print("gate/path: {hits} finding(s) on tracked project paths  [tree: pass]")
-    hits
+  if body:len() == 0
+    print("gate/path: empty tree listing on stdin")
+    return 3
+  hits = list(body)
+  print("gate/path: {hits} finding(s) on tracked project paths  [tree: pass]")
+  hits
 
 # Decode IDOLGATE section protocol from input body.
 feed: i64 = (body: str)
-    m = ""
-    a = ""
-    b = ""
-    slot = ""
-    line = ""
-    n = body:len()
-    i = 1
-    while i <= n + 1
-        boundary = false
-        if i > n
-            boundary = true
+  m = ""
+  a = ""
+  b = ""
+  slot = ""
+  line = ""
+  n = body:len()
+  i = 1
+  while i <= n + 1
+    boundary = false
+    if i > n
+      boundary = true
+    else
+      if body:byte(i) == 10
+        boundary = true
+    if boundary
+      if line == "IDOLGATE tree"
+        m = "tree"
+        slot = "tree"
+      else
+        if line == "IDOLGATE staged"
+          m = "staged"
+          slot = "pathlist"
         else
-            if body:byte(i) == 10
-                boundary = true
-        if boundary
-            if line == "IDOLGATE tree"
-                m = "tree"
-                slot = "tree"
+          if line == "IDOLGATE namediff"
+            slot = "namediff"
+          else
+            if line == "IDOLGATE end"
+              slot = "done"
             else
-                if line == "IDOLGATE staged"
-                    m = "staged"
-                    slot = "pathlist"
+              if slot == "tree"
+                if a:len() > 0
+                  a = "{a}\n"
+                a = "{a}{line}"
+              else
+                if slot == "pathlist"
+                  if a:len() > 0
+                    a = "{a}\n"
+                  a = "{a}{line}"
                 else
-                    if line == "IDOLGATE namediff"
-                        slot = "namediff"
-                    else
-                        if line == "IDOLGATE end"
-                            slot = "done"
-                        else
-                            if slot == "tree"
-                                if a:len() > 0
-                                    a = "{a}\n"
-                                a = "{a}{line}"
-                            else
-                                if slot == "pathlist"
-                                    if a:len() > 0
-                                        a = "{a}\n"
-                                    a = "{a}{line}"
-                                else
-                                    if slot == "namediff"
-                                        if b:len() > 0
-                                            b = "{b}\n"
-                                        b = "{b}{line}"
-            line = ""
-        else
-            c = body:sub(i, i)
-            line = "{line}{c}"
-        i += 1
-    if m == ""
-        return 3
-    if m == "tree"
-        return tree(a)
-    total = 0
-    if a:len() > 0
-        total += list(a)
-    if b:len() > 0
-        total += diff(b)
-    print("gate/path: {total} finding(s) on staged names  [control: pass]")
-    if total > 0
-        return 1
-    0
+                  if slot == "namediff"
+                    if b:len() > 0
+                      b = "{b}\n"
+                    b = "{b}{line}"
+      line = ""
+    else
+      c = body:sub(i, i)
+      line = "{line}{c}"
+    i = i + 1
+  if m == ""
+    return 3
+  if m == "tree"
+    return tree(a)
+  total = 0
+  if a:len() > 0
+    total = total + list(a)
+  if b:len() > 0
+    total = total + diff(b)
+  print("gate/path: {total} finding(s) on staged names  [control: pass]")
+  if total > 0
+    return 1
+  0
 
 control: bool = ()
-    ok = true
-    if verdict("graph.id", "graph") != 0
-        print("control FAIL: graph.id rejected")
-        ok = false
-    if verdict("semantic_graph.id", "semantic_graph") == 0
-        print("control FAIL: semantic_graph")
-        ok = false
-    if verdict("semanticGraph.id", "semanticGraph") == 0
-        print("control FAIL: semanticGraph")
-        ok = false
-    if verdict("semantic-graph.id", "semantic-graph") == 0
-        print("control FAIL: semantic-graph")
-        ok = false
-    if verdict("semanticgraph.id", "semanticgraph") == 0
-        print("control FAIL: semanticgraph")
-        ok = false
-    if verdict("readline.id", "readline") == 0
-        print("control FAIL: readline")
-        ok = false
-    if verdict("lib/std/index/suffix/array.id", "array") != 0
-        print("control FAIL: decomposed suffix/array path rejected")
-        ok = false
-    if walk("lib/std/index/suffixarray.id") == 0
-        print("control FAIL: suffixarray compound path not rejected")
-        ok = false
-    if verdict("nativebackend.zig", "nativebackend") == 0
-        print("control FAIL: nativebackend")
-        ok = false
-    if verdict("graph2.id", "graph2") == 0
-        print("control FAIL: graph2")
-        ok = false
-    if judge("probe.id", 1, "answer = nativebackend") == 0
-        print("control FAIL: line compound detector")
-        ok = false
-    if judge("probe.id", 2, "answer = graph") != 0
-        print("control FAIL: graph token rejected")
-        ok = false
-    if judge("probe.id", 7, "hits = hits + 1") == 0
-        print("control FAIL: expanded add not rejected")
-        ok = false
-    if judge("probe.id", 8, "hits += 1") != 0
-        print("control FAIL: compound add rejected")
-        ok = false
-    if judge("probe.id", 9, "n = n - 1") == 0
-        print("control FAIL: expanded subtract not rejected")
-        ok = false
-    if judge("probe.id", 10, "n -= 1") != 0
-        print("control FAIL: compound subtract rejected")
-        ok = false
-    if judge("probe.id", 11, "viewedges = \"|bit|\"") == 0
-        print("control FAIL: viewedges mash not rejected")
-        ok = false
-    if judge("probe.id", 12, "view(edges) = ()") != 0
-        print("control FAIL: view(edges) curried binding rejected")
-        ok = false
-    if judge("probe.id", 11, "x = x * 2") == 0
-        print("control FAIL: expanded multiply not rejected")
-        ok = false
-    if judge("probe.id", 12, "x *= 2") != 0
-        print("control FAIL: compound multiply rejected")
-        ok = false
-    if judge("probe.id", 13, "y = y / 2") == 0
-        print("control FAIL: expanded divide not rejected")
-        ok = false
-    if judge("probe.id", 14, "y /= 2") != 0
-        print("control FAIL: compound divide rejected")
-        ok = false
-    if verdict("scripts/perfledger.id", "perfledger") == 0
-        print("control FAIL: perfledger mashed ledger path not rejected")
-        ok = false
-    if verdict("scripts/ledger/perf.id", "perf") != 0
-        print("control FAIL: scripts/ledger/perf.id decomposed path rejected")
-        ok = false
-    if verdict("tools/node/dev/zerohistorycensus", "zerohistorycensus") == 0
-        print("control FAIL: zerohistorycensus mashed census path not rejected")
-        ok = false
-    if verdict("tools/node/dev/census/history/zero", "zero") != 0
-        print("control FAIL: census/history/zero decomposed path rejected")
-        ok = false
-    if verdict("scripts/infer_census.id", "infer_census") == 0
-        print("control FAIL: infer_census mashed census path not rejected")
-        ok = false
-    if verdict("scripts/census/infer.id", "infer") != 0
-        print("control FAIL: scripts/census/infer.id decomposed path rejected")
-        ok = false
-    if verdict("filereader.id", "filereader") == 0
-        print("control FAIL: filereader role-noun stem not rejected")
-        ok = false
-    if verdict("callable.id", "callable") == 0
-        print("control FAIL: callable protocol stem not rejected")
-        ok = false
-    if verdict("bytes.id", "bytes") == 0
-        print("control FAIL: bytes plural-cardinality stem not rejected")
-        ok = false
-    if verdict("lib/compiler/graph.id", "graph") != 0
-        print("control FAIL: graph canonical stem rejected")
-        ok = false
-    if verdict("lib/semantic/io.id:", "semantic") == 0
-        print("control FAIL: semantic catalog home not rejected")
-        ok = false
-    if verdict("examples/foo.id:", "examples") != 0
-        print("control FAIL: established examples home rejected")
-        ok = false
-    if verdict("probe/utils/foo.id:", "utils") == 0
-        print("control FAIL: utils organizational home not rejected")
-        ok = false
-    ok
+  ok = true
+  if verdict("graph.id", "graph") != 0
+    print("control FAIL: graph.id rejected")
+    ok = false
+  if verdict("semantic_graph.id", "semantic_graph") == 0
+    print("control FAIL: semantic_graph")
+    ok = false
+  if verdict("semanticGraph.id", "semanticGraph") == 0
+    print("control FAIL: semanticGraph")
+    ok = false
+  if verdict("semantic-graph.id", "semantic-graph") == 0
+    print("control FAIL: semantic-graph")
+    ok = false
+  if verdict("semanticgraph.id", "semanticgraph") == 0
+    print("control FAIL: semanticgraph")
+    ok = false
+  if verdict("readline.id", "readline") == 0
+    print("control FAIL: readline")
+    ok = false
+  if verdict("lib/std/index/suffix/array.id", "array") != 0
+    print("control FAIL: decomposed suffix/array path rejected")
+    ok = false
+  if walk("lib/std/index/suffixarray.id") == 0
+    print("control FAIL: suffixarray compound path not rejected")
+    ok = false
+  if verdict("nativebackend.zig", "nativebackend") == 0
+    print("control FAIL: nativebackend")
+    ok = false
+  if verdict("graph2.id", "graph2") == 0
+    print("control FAIL: graph2")
+    ok = false
+  if judge("probe.id", 1, "answer = nativebackend") == 0
+    print("control FAIL: line compound detector")
+    ok = false
+  if judge("probe.id", 2, "answer = graph") != 0
+    print("control FAIL: graph token rejected")
+    ok = false
+  if judge("probe.id", 7, "hits = hits + 1") == 0
+    print("control FAIL: expanded add not rejected")
+    ok = false
+  if judge("probe.id", 8, "hits += 1") != 0
+    print("control FAIL: compound add rejected")
+    ok = false
+  if judge("probe.id", 9, "n = n - 1") == 0
+    print("control FAIL: expanded subtract not rejected")
+    ok = false
+  if judge("probe.id", 10, "n -= 1") != 0
+    print("control FAIL: compound subtract rejected")
+    ok = false
+  if judge("probe.id", 11, "viewedges = \"|bit|\"") == 0
+    print("control FAIL: viewedges mash not rejected")
+    ok = false
+  if judge("probe.id", 12, "view(edges) = ()") != 0
+    print("control FAIL: view(edges) curried binding rejected")
+    ok = false
+  if judge("probe.id", 11, "x = x * 2") == 0
+    print("control FAIL: expanded multiply not rejected")
+    ok = false
+  if judge("probe.id", 12, "x *= 2") != 0
+    print("control FAIL: compound multiply rejected")
+    ok = false
+  if judge("probe.id", 13, "y = y / 2") == 0
+    print("control FAIL: expanded divide not rejected")
+    ok = false
+  if judge("probe.id", 14, "y /= 2") != 0
+    print("control FAIL: compound divide rejected")
+    ok = false
+  if verdict("scripts/perfledger.id", "perfledger") == 0
+    print("control FAIL: perfledger mashed ledger path not rejected")
+    ok = false
+  if verdict("scripts/ledger/perf.id", "perf") != 0
+    print("control FAIL: scripts/ledger/perf.id decomposed path rejected")
+    ok = false
+  if verdict("tools/node/dev/zerohistorycensus", "zerohistorycensus") == 0
+    print("control FAIL: zerohistorycensus mashed census path not rejected")
+    ok = false
+  if verdict("tools/node/dev/census/history/zero", "zero") != 0
+    print("control FAIL: census/history/zero decomposed path rejected")
+    ok = false
+  if verdict("scripts/infer_census.id", "infer_census") == 0
+    print("control FAIL: infer_census mashed census path not rejected")
+    ok = false
+  if verdict("scripts/census/infer.id", "infer") != 0
+    print("control FAIL: scripts/census/infer.id decomposed path rejected")
+    ok = false
+  if verdict("filereader.id", "filereader") == 0
+    print("control FAIL: filereader role-noun stem not rejected")
+    ok = false
+  if verdict("callable.id", "callable") == 0
+    print("control FAIL: callable protocol stem not rejected")
+    ok = false
+  if verdict("bytes.id", "bytes") == 0
+    print("control FAIL: bytes plural-cardinality stem not rejected")
+    ok = false
+  if verdict("lib/compiler/graph.id", "graph") != 0
+    print("control FAIL: graph canonical stem rejected")
+    ok = false
+  if verdict("lib/semantic/io.id:", "semantic") == 0
+    print("control FAIL: semantic catalog home not rejected")
+    ok = false
+  if verdict("examples/foo.id:", "examples") != 0
+    print("control FAIL: established examples home rejected")
+    ok = false
+  if verdict("probe/utils/foo.id:", "utils") == 0
+    print("control FAIL: utils organizational home not rejected")
+    ok = false
+  ok
 
 main: i64 = ()
-    if !seed()
-        print("gate/path: vocabulary load failed")
-        return 3
-    if !control()
-        print("gate/path: POSITIVE CONTROL FAILED")
-        return 3
-    body = transport()
-    if body:len() == 0
-        print("gate/path: empty input — pipe IDOLGATE sections")
-        print("  { printf 'IDOLGATE tree\\n'; git ls-files; printf '\\nIDOLGATE end\\n'; } | idol run gate/path.id")
-        return 3
-    feed(body)
+  if not seed()
+    print("gate/path: vocabulary load failed")
+    return 3
+  if not control()
+    print("gate/path: POSITIVE CONTROL FAILED")
+    return 3
+  body = transport()
+  if body:len() == 0
+    print("gate/path: empty input — pipe IDOLGATE sections")
+    print("  { printf 'IDOLGATE tree\\n'; git ls-files; printf '\\nIDOLGATE end\\n'; } | idol run gate/path.id")
+    return 3
+  feed(body)

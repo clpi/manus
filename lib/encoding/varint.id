@@ -8,39 +8,54 @@
 # Each byte: 7 bits of data + 1 continuation bit (high bit)
 # ═══════════════════════════════════════════════════════════════
 
-write(buf: any, value: i64): void
-    while value >= 0x80
-        buf[buf:len() + 1] = (value & 0x7F) | 0x80:char()
-        value = value >> 7
-    buf[buf:len() + 1] = value:char()
+write = (buf: any, value: i64)
+  while value >= 128
+    buf(buf:len() + 1) = value & 127 | 128:char()
+    value = value >> 7
+  buf(buf:len() + 1) = value:char()
 
-read(data: str, pos: any): i64
-    result = 0
-    shift = 0
-    while true
-        if pos[1] > data:len()
-            error("varint: unexpected end of data")
-        byte = data:byte(pos[1])
-        pos[1] += 1
-        result |= ((byte & 0x7F) << shift)
-        if byte < 0x80
-            break
-        shift += 7
-        if shift >= 64
-            error("varint: overflow")
-    result
+read: i64 = (data: str, pos: any)
+  result = 0
+  shift = 0
+  while true
+    if pos(1) > data:len()
+      error("varint: unexpected end of data")
+    byte = data:byte(pos(1))
+    pos(1) = pos(1) + 1
+    result = result | (byte & 127) << shift
+    if byte < 128
+      break
+    shift = shift + 7
+    if shift >= 64
+      error("varint: overflow")
+  result
 
-value: i64:len(): i64
-    if value < 0x80 return 1 
-    if value < 0x4000 return 2 
-    if value < 0x200000 return 3 
-    if value < 0x10000000 return 4 
-    if value < 0x800000000 return 5 
-    if value < 0x40000000000 return 6 
-    if value < 0x2000000000000 return 7 
-    if value < 0x100000000000000 return 8 
-    if value < 0x8000000000000000 return 9 
-    10
+value: i64
+fun(__proj_v)
+  return __proj_v:len()
+end
+fun(__proj_v)
+  return __proj_v:i64()
+end
+if value < 128
+  return 1
+if value < 16384
+  return 2
+if value < 2097152
+  return 3
+if value < 268435456
+  return 4
+if value < 34359738368
+  return 5
+if value < 4398046511104
+  return 6
+if value < 562949953421312
+  return 7
+if value < 72057594037927936
+  return 8
+if value < -9223372036854775808
+  return 9
+10
 
 # ═══════════════════════════════════════════════════════════════
 # ZigZag encoding (protobuf-style, maps signed → unsigned)
@@ -48,17 +63,17 @@ value: i64:len(): i64
 #   0 → 0, -1 → 1, 1 → 2, -2 → 3, ...
 # ═══════════════════════════════════════════════════════════════
 
-zigzag_encode(value: i64): i64
-    (value << 1) ~ (value >> 63)
+zigzag_encode: i64 = (value: i64)
+  value << 1 ~ value >> 63
 
-zigzag_decode(value: i64): i64
-    (value >> 1) ~ -(value & 1)
+zigzag_decode: i64 = (value: i64)
+  value >> 1 ~ -(value & 1)
 
-write_zigzag(buf: any, value: i64): void
-    write(buf, zigzag_encode(value))
+write_zigzag = (buf: any, value: i64)
+  write(buf, zigzag_encode(value))
 
-read_zigzag(data: str, pos: any): i64
-    zigzag_decode(read(data, pos))
+read_zigzag: i64 = (data: str, pos: any)
+  zigzag_decode(read(data, pos))
 
 # ═══════════════════════════════════════════════════════════════
 # LEB128 (Little-Endian Base-128, DWARF/ELF style)
@@ -66,60 +81,59 @@ read_zigzag(data: str, pos: any): i64
 # Little-endian ordering (lsb first)
 # ═══════════════════════════════════════════════════════════════
 
-write_leb128(buf: any, value: i64): void
-    repeat
-        byte = value & 0x7F
-        value = value >> 7
-        if value != 0
-            byte |= 0x80
-        buf[buf:len() + 1] = byte:char()
-    until value == 0
+write_leb128 = (buf: any, value: i64)
+  repeat
+    byte = value & 127
+    value = value >> 7
+    if value != 0
+      byte = byte | 128
+    buf(buf:len() + 1) = byte:char()
+  until value == 0
 
-read_leb128(data: str, pos: any): i64
-    result = 0
-    shift = 0
-    while true
-        if pos[1] > data:len()
-            error("leb128: unexpected end of data")
-        byte = data:byte(pos[1])
-        pos[1] += 1
-        result |= ((byte & 0x7F) << shift)
-        if byte < 0x80
-            break
-        shift += 7
-        if shift >= 64
-            error("leb128: overflow")
-    result
+read_leb128: i64 = (data: str, pos: any)
+  result = 0
+  shift = 0
+  while true
+    if pos(1) > data:len()
+      error("leb128: unexpected end of data")
+    byte = data:byte(pos(1))
+    pos(1) = pos(1) + 1
+    result = result | (byte & 127) << shift
+    if byte < 128
+      break
+    shift = shift + 7
+    if shift >= 64
+      error("leb128: overflow")
+  result
 
-write_signed_leb128(buf: any, value: i64): void
-    more = true
-    while more
-        byte = value & 0x7F
-        value = value >> 7
-        if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) != 0)
-            more = false
-        else
-            byte |= 0x80
-        buf[buf:len() + 1] = byte:char()
+write_signed_leb128 = (buf: any, value: i64)
+  more = true
+  while more
+    byte = value & 127
+    value = value >> 7
+    if value == 0 and byte & 64 == 0 or value == -1 and byte & 64 != 0
+      more = false
+    else
+      byte = byte | 128
+    buf(buf:len() + 1) = byte:char()
 
-read_signed_leb128(data: str, pos: any): i64
-    result = 0
-    shift = 0
-    while true
-        if pos[1] > data:len()
-            error("signed leb128: unexpected end of data")
-        byte = data:byte(pos[1])
-        pos[1] += 1
-        result |= ((byte & 0x7F) << shift)
-        shift += 7
-        if byte < 0x80
-            if shift < 64 and (byte & 0x40) != 0
-                result |= -(1 << shift)
-            break
-        if shift >= 64
-            error("signed leb128: overflow")
-    result
-
+read_signed_leb128: i64 = (data: str, pos: any)
+  result = 0
+  shift = 0
+  while true
+    if pos(1) > data:len()
+      error("signed leb128: unexpected end of data")
+    byte = data:byte(pos(1))
+    pos(1) = pos(1) + 1
+    result = result | (byte & 127) << shift
+    shift = shift + 7
+    if byte < 128
+      if shift < 64 and byte & 64 != 0
+        result = result | -(1 << shift)
+      break
+    if shift >= 64
+      error("signed leb128: overflow")
+  result
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════

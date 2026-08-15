@@ -63,21 +63,21 @@
 
 root = os.getenv("IDOL_ROOT")
 if root == nil or root == ""
-    root = os.getenv("DUO_ROOT")
+  root = os.getenv("DUO_ROOT")
 if root == nil or root == ""
-    root = os.getenv("PWD")
+  root = os.getenv("PWD")
 if root == nil or root == ""
-    root = "."
+  root = "."
 
 idolbin = os.getenv("IDOL_BIN")
 if idolbin == nil or idolbin == ""
-    idolbin = os.getenv("DUO_BIN")
+  idolbin = os.getenv("DUO_BIN")
 if idolbin == nil or idolbin == ""
-    idolbin = root .. "/zig-out/bin/idol"
+  idolbin = root .. "/zig-out/bin/idol"
 
 server = os.getenv("LSPGATE_SERVER")
 if server == nil or server == ""
-    server = root .. "/tools/lsp/src/server.id"
+  server = root .. "/tools/lsp/src/server.id"
 
 # `idol run x.id` drops `x.out` in the CURRENT directory. Run from the repo
 # root and the gate litters the root with server.out, which `zig build
@@ -86,57 +86,56 @@ work = "/tmp/idol-lsp-gate"
 
 fails = 0
 
-report(ok: bool, what: str, detail: str): void
-    if ok
-        io:write("  ok   " .. what .. "\n")
-    else
-        io:write("  FAIL " .. what .. " — " .. detail .. "\n")
+report = (ok: bool, what: str, detail: str)
+  if ok
+    io:write("  ok   " .. what .. "\n")
+  else
+    io:write("  FAIL " .. what .. " — " .. detail .. "\n")
 
 # LSP framing. Not newline-delimited JSON: the server reads a header, parses
 # Content-Length, and then reads exactly that many bytes. A gate that spoke
 # the wrong transport would hang rather than fail, so the frame is built here
 # from the body's own byte length and never from a constant.
-frame(body: str): str
-    n = body:len()
-    "Content-Length: " .. n:to(str) .. "\r\n\r\n" .. body
+frame: str = (body: str)
+  n = body:len()
+  "Content-Length: " .. n:to(str) .. "\r\n\r\n" .. body
 
 # Feed the server a session on stdin, hand back everything it wrote. stdin is
 # a FILE, not a pipe: a half-written pipe would look like a hang rather than a
 # failure, and this gate exists because silence is the failure mode.
-drive(lines: str): str
-    reqf = work .. "/req.lsp"
-    respf = work .. "/resp.lsp"
-    std.fs.write_file(reqf, lines)
-    os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idolbin
-        .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
-    std.fs.read_file(respf) or ""
+drive: str = (lines: str)
+  reqf = work .. "/req.lsp"
+  respf = work .. "/resp.lsp"
+  std.fs.write_file(reqf, lines)
+  os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idolbin .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
+  std.fs.read_file(respf) or ""
 
-has(blob: str, needle: str): bool
-    hn = blob:len()
-    nn = needle:len()
-    if nn == 0 or nn > hn
-        return false
-    i = 1
-    while i + nn - 1 <= hn
-        j = 1
-        ok = true
-        while j <= nn
-            if blob:byte(i + j - 1) != needle:byte(j)
-                ok = false
-                j = nn
-            j += 1
-        if ok
-            return true
-        i += 1
-    false
+has: bool = (blob: str, needle: str)
+  hn = blob:len()
+  nn = needle:len()
+  if nn == 0 or nn > hn
+    return false
+  i = 1
+  while i + nn - 1 <= hn
+    j = 1
+    ok = true
+    while j <= nn
+      if blob:byte(i + j - 1) != needle:byte(j)
+        ok = false
+        j = nn
+      j = j + 1
+    if ok
+      return true
+    i = i + 1
+  false
 
-hasnot(blob: str, needle: str): bool
-    not has(blob, needle)
+hasnot: bool = (blob: str, needle: str)
+  not has(blob, needle)
 
-check(ok: bool, what: str, detail: str): void
-    report(ok, what, detail)
-    if not ok
-        fails += 1
+check = (ok: bool, what: str, detail: str)
+  report(ok, what, detail)
+  if not ok
+    fails = fails + 1
 
 # The fixture, as one JSON string literal. It is `fixtures/highlight/copula.id`
 # byte for byte, because that file is the one the golden corpus uses to
@@ -156,211 +155,159 @@ uri = "file:///tmp/duo-lsp-gate/fixture.id"
 cdr = "outer(a: i64)\\n  helper(b: i64): i64\\n    b\\n  end\\n  helper(a)\\nend\\ntotal = 7\\nout = xs | ys\\n"
 cdruri = "file:///tmp/duo-lsp-gate/cdr.id"
 
-msg(id: i64, method: str, params: str): str
-    frame("{\"jsonrpc\":\"2.0\",\"id\":" .. id:to(str) .. ",\"method\":\"" .. method
-        .. "\",\"params\":" .. params .. "}")
+msg: str = (id: i64, method: str, params: str)
+  frame("{\"jsonrpc\":\"2.0\",\"id\":" .. id:to(str) .. ",\"method\":\"" .. method .. "\",\"params\":" .. params .. "}")
 
-note(method: str, params: str): str
-    frame("{\"jsonrpc\":\"2.0\",\"method\":\"" .. method .. "\",\"params\":" .. params .. "}")
+note: str = (method: str, params: str)
+  frame("{\"jsonrpc\":\"2.0\",\"method\":\"" .. method .. "\",\"params\":" .. params .. "}")
 
-at(line: i64, col: i64): str
-    "{\"textDocument\":{\"uri\":\"" .. uri .. "\"},\"position\":{\"line\":" .. line:to(str)
-        .. ",\"character\":" .. col:to(str) .. "}}"
+at: str = (line: i64, col: i64)
+  "{\"textDocument\":{\"uri\":\"" .. uri .. "\"},\"position\":{\"line\":" .. line:to(str) .. ",\"character\":" .. col:to(str) .. "}}"
 
-main(): i64
-    std.fs.mkdirall(work)
-    io.write("lsp-gate: the LSP must SERVE, not merely compile\n")
-    io.write("  server: " .. server .. "\n")
+main: i64 = ()
+  std.fs.mkdirall(work)
+  io.write("lsp-gate: the LSP must SERVE, not merely compile\n")
+  io.write("  server: " .. server .. "\n")
 
-    session = msg(1, "initialize", "{}")
-        .. note("initialized", "{}")
-        .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. uri
-            .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. doc .. "\"}}")
-        # CLOSE THE DOCUMENT, THEN REOPEN IT. Everything scored below happens
-        # after this pair. On the day this gate was written the close alone
-        # took the process down with SIGSEGV and every later id went
-        # unanswered — which is exactly how the seven dead MCP handlers
-        # looked, and exactly why counts are asserted after the close and not
-        # before it.
-        .. note("textDocument/didClose", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}")
-        .. msg(2, "workspace/symbol", "{\"query\":\"total\"}")
-        .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. uri
-            .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. doc .. "\"}}")
-        .. msg(3, "textDocument/documentSymbol", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}")
-        .. msg(4, "textDocument/hover", at(1, 2))
-        .. msg(5, "textDocument/definition", at(1, 2))
-        .. msg(6, "textDocument/semanticTokens/full", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}")
-        .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. cdruri
-            .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. cdr .. "\"}}")
-        .. msg(7, "textDocument/inlayHint", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}")
-        .. msg(8, "textDocument/codeLens", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}")
-        .. msg(10, "textDocument/documentSymbol", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}")
-        .. msg(11, "textDocument/codeLens", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}")
-        .. msg(9, "textDocument/nosuch", "{}")
-        .. msg(99, "shutdown", "{}")
-        .. frame("{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}")
+  session = msg(1, "initialize", "{}") .. note("initialized", "{}") .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. uri .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. doc .. "\"}}") .. note("textDocument/didClose", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}") .. msg(2, "workspace/symbol", "{\"query\":\"total\"}") .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. uri .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. doc .. "\"}}") .. msg(3, "textDocument/documentSymbol", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}") .. msg(4, "textDocument/hover", at(1, 2)) .. msg(5, "textDocument/definition", at(1, 2)) .. msg(6, "textDocument/semanticTokens/full", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}") .. note("textDocument/didOpen", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\",\"languageId\":\"duo\",\"version\":1,\"text\":\"" .. cdr .. "\"}}") .. msg(7, "textDocument/inlayHint", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}") .. msg(8, "textDocument/codeLens", "{\"textDocument\":{\"uri\":\"" .. uri .. "\"}}") .. msg(10, "textDocument/documentSymbol", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}") .. msg(11, "textDocument/codeLens", "{\"textDocument\":{\"uri\":\"" .. cdruri .. "\"}}") .. msg(9, "textDocument/nosuch", "{}") .. msg(99, "shutdown", "{}") .. frame("{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}")
+  # CLOSE THE DOCUMENT, THEN REOPEN IT. Everything scored below happens
+  # after this pair. On the day this gate was written the close alone
+  # took the process down with SIGSEGV and every later id went
+  # unanswered — which is exactly how the seven dead MCP handlers
+  # looked, and exactly why counts are asserted after the close and not
+  # before it.
 
-    out = drive(session)
+  out = drive(session)
 
-    if out:len() == 0
-        check(false, "the server wrote anything at all", "zero bytes on stdout — it did not start, or it died before the first reply")
-        io.write("\nlsp-gate: FAIL — no session\n")
-        std.os.exit(1)
-        return 1
-
-    # ── handshake and the capability set ─────────────────────────────────
-    check(has(out, "\"serverInfo\":{\"name\":\"idol-lsp\""), "initialize handshakes",
-        "no serverInfo in the response — the server never handshook")
-
-    for i, cap in {"hoverProvider", "definitionProvider", "documentSymbolProvider",
-            "referencesProvider", "renameProvider", "foldingRangeProvider",
-            "documentHighlightProvider", "workspaceSymbolProvider",
-            "completionProvider", "semanticTokensProvider", "inlayHintProvider",
-            "codeLensProvider"}
-        check(has(out, "\"" .. cap .. "\""), "initialize advertises " .. cap,
-            "absent from capabilities — a client will never send the request")
-
-    # The legend, EXACTLY, in order. It is GENERATED from the ONE taxonomy in
-    # tools/lsp/src/highlight.id by tools/lsp/legend.id; a hand edit in it is
-    # an H-1 drift finding (CLAUDE.md §0d) and this row is where it surfaces.
-    # If the taxonomy legitimately moves, update this string ON PURPOSE.
-    legend = "\"tokenTypes\":[\"keyword\",\"copula\",\"operator\",\"layout\",\"descriptor\","
-        .. "\"union\",\"anchor\",\"retrieve\",\"invoke\",\"callable\",\"world\",\"foreign\","
-        .. "\"place\",\"number\",\"literal\",\"case\",\"comment\",\"walk\",\"pipe\"]"
-    check(has(out, legend), "the semantic-token legend is the merged CLOSED set, in order",
-        "the legend drifted from tools/lsp/src/highlight.id — regenerate with `idol run tools/lsp/legend.id`")
-    check(has(out, "\"tokenModifiers\":[\"declaration\",\"defaultlibrary\"]"),
-        "the legend carries H-3 weight and H-5 italic as modifiers",
-        "definition-adds-weight and ambient-is-italic are axes and must reach the client")
-    # `ambiguous` is NOT a role and must never acquire an index. If it did, an
-    # unresolved span could be TOKENIZED, and a token is a colour — which is
-    # the guess G-TOTAL forbids, wearing the taxonomy as a disguise.
-    check(hasnot(out, "\"ambiguous\""), "the legend has no `ambiguous` member",
-        "an unresolved span could be given a colour; two candidates is a diagnostic, never a role")
-
-    # ── THE DIDCLOSE REGRESSION ──────────────────────────────────────────
-    # id 2 is asked immediately after a close. If the close crashed the
-    # process this id — and every id after it — is simply missing, which is
-    # what a dead server looks like from the outside.
-    check(has(out, "\"id\":2"), "the session SURVIVES textDocument/didClose",
-        "no answer after the close — SIGSEGV again; see `forget` in server.id")
-    check(has(out, "{\"id\":2,\"result\":[],\"jsonrpc\":\"2.0\"}"), "the close really FORGETS the document",
-        "workspace/symbol still answers for a closed document, so removal did not remove")
-
-    # ── VALUE round trips ────────────────────────────────────────────────
-    check(has(out, "\"name\":\"total\"") and has(out, "\"name\":\"count\"") and has(out, "\"name\":\"n\""),
-        "documentSymbol answers by value (total, count, n)",
-        "the three top-level bindings of the fixture did not all come back")
-
-    check(has(out, "```duo\\ntotal: f64\\n```"), "hover answers by value",
-        "the hover body does not carry the fixture's own declaration line")
-    check(has(out, "`why(span)` · role **place** · card **bound** (closed set)"),
-        "hover carries why(span) — the role AND the card at the cursor",
-        "H-7: every (span, role) carries a rule citation; the hover answered prose only")
-    # `total` is an ordinary binding. That is the role `place`, and the hover
-    # must carry the ruling that named it — GAP-073 found the hole, GAP-078
-    # ruled it, and this row is where the LSP proves it reads the merged
-    # taxonomy rather than either of the two that disagreed.
-    check(has(out, "rule: gaps/GAP-078.md RULING — an ordinary binding is a PLACE"),
-        "hover carries the rule that decided the role",
-        "H-7: the why-chain has no rule behind it")
-
-    check(has(out, "{\"id\":5,\"result\":{\"uri\":\"" .. uri
-        .. "\",\"range\":{\"end\":{\"character\":5,\"line\":1},\"start\":{\"character\":0,\"line\":1}}}"),
-        "definition answers by value (line 1, cols 0-5)",
-        "the definition range for `total` is not the fixture's line 1")
-
-    # ── semantic tokens, byte for byte ───────────────────────────────────
-    # Delta-encoded five-tuples. This array IS the copula/invoke ruling in
-    # numbers: `count:u32` on line 2 is tight and groupless, so its `:` must
-    # come back as role 1 (copula) and not role 6 (invoke). Painting it purple
-    # moves one integer here and this row goes red.
-    # Type ids index the GENERATED legend, so inserting `retrieve` at index 7
-    # shifted every id above it by one: comment 15->16, place 11->12, invoke
-    # 7->8, callable 8->9. That renumber is the legend doing its job — it is
-    # generated, so a renumber costs nothing and a hand edit is caught.
-    tokens = "\"data\":[0,0,9,16,0,1,0,5,12,1,0,5,1,1,0,0,2,3,4,0,1,0,5,12,1,0,5,1,1,0,"
-        .. "0,1,3,4,0,1,0,1,12,1,0,2,1,2,0,0,2,2,12,0,0,2,1,8,0,0,1,4,9,0,0,4,1,3,0,"
-        .. "0,1,6,12,0,0,6,1,3,0]"
-    check(has(out, tokens), "semanticTokens answers the corpus token stream exactly",
-        "the token array moved; compare against fixtures/highlight/copula.roles.id")
-
-
-    # ── inlay hints: CDR-inferred descriptors ────────────────────────────
-    check(has(out, "\"id\":7"), "inlayHint answers",
-        "no response for id 7 — the handler killed the session")
-    check(has(out, "\"label\":\": i64\""), "inlayHint shows the CDR-inferred descriptor by value",
-        "no `: i64` hint — `scale` declares no return contract and `duo sim` resolves it to int64_t")
-    check(has(out, "B-13 CDR"), "inlayHint carries its CDR citation",
-        "a hint with no why-chain is a guess with a label")
-    check(has(out, "\"dnir\":\"sim-v0 entity\""), "inlayHint carries its dnir correspondence",
-        "H-7: a hint with no provenance cannot be checked against the compiler that produced it")
-
-    # ── code lenses: lenses count witnesses ──────────────────────────────
-    check(has(out, "\"id\":8"), "codeLens answers",
-        "no response for id 8 — the handler killed the session")
-    # ALL THREE §0g numbers, by value, in one string. Naming `place` is what
-    # takes coverage from 20% to 100% on this fixture, and the two application
-    # parens stay findings because their CARD (level vs param) is undecided
-    # even though their ROLE is not — SPECIFICITY, which coverage alone misses.
-    check(has(out, "G-TOTAL — coverage 100% (43/43 bytes) · ambiguity 0 · provenance 100% · specificity findings 2 · unclaimed bytes 0"),
-        "the file lens reports all three G-TOTAL numbers by value",
-        "coverage/ambiguity/provenance moved on the golden copula fixture")
-    check(has(out, "\"role\":\"witness\""), "every lens carries its (role, why, dnir) tuple",
-        "H-8: a lens whose only payload is a title string is plain-text output")
-
-    # AND THE AMBIGUITY COUNTER ANSWERS SOMETHING ELSE. A counter that reads 0
-    # on every input is not measuring; the second document puts `|` outside
-    # shape position, where union and pipe are two roles in two hues, and the
-    # lens must say so.
-    check(has(out, "· ambiguity 4 ·"), "the ambiguity counter is live, not stuck at zero",
-        "`xs | ys` is union-or-pipe with no lexical rule between them and must be COUNTED, never guessed")
-
-    # ── document symbols ARE the trie (§0g) ──────────────────────────────
-    # This returned a flat list with a `containerName` hint, which every
-    # client is free to ignore and all of them do. `helper` is declared inside
-    # `outer`; it must come back as its CHILD, with its own name. Both halves
-    # were broken: nothing indented was lifted at all, and what the `fun` path
-    # did lift came back NAMED `un`, because the keyword was read off the
-    # trimmed line and the remainder sliced out of the untrimmed one.
-    check(has(out, "\"children\":[{"), "documentSymbol nests — it IS the trie, not a flat list",
-        "no child anywhere in the response; `helper` is declared inside `outer`")
-    check(has(out, "\"name\":\"helper\""), "the nested symbol keeps its own name",
-        "an indented declaration came back mangled — head_keyword sliced the untrimmed line")
-
-    # ── THE IN-BAND POSITIVE CONTROL ─────────────────────────────────────
-    # An unknown method must come back as an ERROR, not as silence and not as
-    # a result. If the transport were broken every `has` above could fail
-    # together and look like one bug; this row can only pass when the reader
-    # and the writer are both real.
-    check(has(out, "{\"id\":9,\"error\":{\"code\":-32601"), "an unknown method ERRORS (positive control)",
-        "the server answered an unknown method with silence or with a result")
-
-    check(has(out, "{\"id\":99,\"jsonrpc\":\"2.0\"}"), "shutdown answers last",
-        "the session did not reach shutdown; something between opened and it died")
-
-    # ── the legend is GENERATED, and still current ───────────────────────
-    # Re-derive from the taxonomy and require no change. This is the H-1 drift
-    # check with teeth: it runs the real generator against the real document.
-    src = root .. "/docs/spec/roles.md"
-    if fs.exists(src)
-        rc = os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. idolbin
-            .. "' run --backend=c '" .. root .. "/tools/lsp/legend.id' > '" .. work .. "/legend.txt' 2>/dev/null")
-        gen = fs.read_file(work .. "/legend.txt") or ""
-        check(has(gen, "already current"), "the committed legend re-derives from docs/spec/roles.md",
-            "regenerating changed the block — commit the regeneration, do not hand-edit it")
-    else
-        io:write("  OWED docs/spec/roles.md is absent — the legend cannot be re-derived, so H-1 drift is UNCHECKED this run\n")
-
-    os.execute("rm -f ./gate.out")
-
-    io:write("\n")
-    if fails == 0
-        io:write("lsp-gate: PASS — the server handshakes, survives a close, and answers by value\n")
-        return 0
-    io:write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
-    # `os.exit`, NOT `return 1`. A Duo script's `main` return value is
-    # DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
-    # mcp-gate learned this by printing 13 failures into a green build.
+  if out:len() == 0
+    check(false, "the server wrote anything at all", "zero bytes on stdout — it did not start, or it died before the first reply")
+    io.write("\nlsp-gate: FAIL — no session\n")
     std.os.exit(1)
-    1
+    return 1
+
+  # ── handshake and the capability set ─────────────────────────────────
+  check(has(out, "\"serverInfo\":{\"name\":\"idol-lsp\""), "initialize handshakes", "no serverInfo in the response — the server never handshook")
+
+  for i, cap in {
+    "hoverProvider",
+    "definitionProvider",
+    "documentSymbolProvider",
+    "referencesProvider",
+    "renameProvider",
+    "foldingRangeProvider",
+    "documentHighlightProvider",
+    "workspaceSymbolProvider",
+    "completionProvider",
+    "semanticTokensProvider",
+    "inlayHintProvider",
+    "codeLensProvider"
+  }
+    check(has(out, "\"" .. cap .. "\""), "initialize advertises " .. cap, "absent from capabilities — a client will never send the request")
+
+  # The legend, EXACTLY, in order. It is GENERATED from the ONE taxonomy in
+  # tools/lsp/src/highlight.id by tools/lsp/legend.id; a hand edit in it is
+  # an H-1 drift finding (CLAUDE.md §0d) and this row is where it surfaces.
+  # If the taxonomy legitimately moves, update this string ON PURPOSE.
+  legend = "\"tokenTypes\":[\"keyword\",\"copula\",\"operator\",\"layout\",\"descriptor\"," .. "\"union\",\"anchor\",\"retrieve\",\"invoke\",\"callable\",\"world\",\"foreign\"," .. "\"place\",\"number\",\"literal\",\"case\",\"comment\",\"walk\",\"pipe\"]"
+  check(has(out, legend), "the semantic-token legend is the merged CLOSED set, in order", "the legend drifted from tools/lsp/src/highlight.id — regenerate with `idol run tools/lsp/legend.id`")
+  check(has(out, "\"tokenModifiers\":[\"declaration\",\"defaultlibrary\"]"), "the legend carries H-3 weight and H-5 italic as modifiers", "definition-adds-weight and ambient-is-italic are axes and must reach the client")
+  # `ambiguous` is NOT a role and must never acquire an index. If it did, an
+  # unresolved span could be TOKENIZED, and a token is a colour — which is
+  # the guess G-TOTAL forbids, wearing the taxonomy as a disguise.
+  check(hasnot(out, "\"ambiguous\""), "the legend has no `ambiguous` member", "an unresolved span could be given a colour; two candidates is a diagnostic, never a role")
+
+  # ── THE DIDCLOSE REGRESSION ──────────────────────────────────────────
+  # id 2 is asked immediately after a close. If the close crashed the
+  # process this id — and every id after it — is simply missing, which is
+  # what a dead server looks like from the outside.
+  check(has(out, "\"id\":2"), "the session SURVIVES textDocument/didClose", "no answer after the close — SIGSEGV again; see `forget` in server.id")
+  check(has(out, "{\"id\":2,\"result\":[],\"jsonrpc\":\"2.0\"}"), "the close really FORGETS the document", "workspace/symbol still answers for a closed document, so removal did not remove")
+
+  # ── VALUE round trips ────────────────────────────────────────────────
+  check(has(out, "\"name\":\"total\"") and has(out, "\"name\":\"count\"") and has(out, "\"name\":\"n\""), "documentSymbol answers by value (total, count, n)", "the three top-level bindings of the fixture did not all come back")
+
+  check(has(out, "```duo\\ntotal: f64\\n```"), "hover answers by value", "the hover body does not carry the fixture's own declaration line")
+  check(has(out, "`why(span)` · role **place** · card **bound** (closed set)"), "hover carries why(span) — the role AND the card at the cursor", "H-7: every (span, role) carries a rule citation; the hover answered prose only")
+  # `total` is an ordinary binding. That is the role `place`, and the hover
+  # must carry the ruling that named it — GAP-073 found the hole, GAP-078
+  # ruled it, and this row is where the LSP proves it reads the merged
+  # taxonomy rather than either of the two that disagreed.
+  check(has(out, "rule: gaps/GAP-078.md RULING — an ordinary binding is a PLACE"), "hover carries the rule that decided the role", "H-7: the why-chain has no rule behind it")
+
+  check(has(out, "{\"id\":5,\"result\":{\"uri\":\"" .. uri .. "\",\"range\":{\"end\":{\"character\":5,\"line\":1},\"start\":{\"character\":0,\"line\":1}}}"), "definition answers by value (line 1, cols 0-5)", "the definition range for `total` is not the fixture's line 1")
+
+  # ── semantic tokens, byte for byte ───────────────────────────────────
+  # Delta-encoded five-tuples. This array IS the copula/invoke ruling in
+  # numbers: `count:u32` on line 2 is tight and groupless, so its `:` must
+  # come back as role 1 (copula) and not role 6 (invoke). Painting it purple
+  # moves one integer here and this row goes red.
+  # Type ids index the GENERATED legend, so inserting `retrieve` at index 7
+  # shifted every id above it by one: comment 15->16, place 11->12, invoke
+  # 7->8, callable 8->9. That renumber is the legend doing its job — it is
+  # generated, so a renumber costs nothing and a hand edit is caught.
+  tokens = "\"data\":[0,0,9,16,0,1,0,5,12,1,0,5,1,1,0,0,2,3,4,0,1,0,5,12,1,0,5,1,1,0," .. "0,1,3,4,0,1,0,1,12,1,0,2,1,2,0,0,2,2,12,0,0,2,1,8,0,0,1,4,9,0,0,4,1,3,0," .. "0,1,6,12,0,0,6,1,3,0]"
+  check(has(out, tokens), "semanticTokens answers the corpus token stream exactly", "the token array moved; compare against fixtures/highlight/copula.roles.id")
+
+  # ── inlay hints: CDR-inferred descriptors ────────────────────────────
+  check(has(out, "\"id\":7"), "inlayHint answers", "no response for id 7 — the handler killed the session")
+  check(has(out, "\"label\":\": i64\""), "inlayHint shows the CDR-inferred descriptor by value", "no `: i64` hint — `scale` declares no return contract and `duo sim` resolves it to int64_t")
+  check(has(out, "B-13 CDR"), "inlayHint carries its CDR citation", "a hint with no why-chain is a guess with a label")
+  check(has(out, "\"dnir\":\"sim-v0 entity\""), "inlayHint carries its dnir correspondence", "H-7: a hint with no provenance cannot be checked against the compiler that produced it")
+
+  # ── code lenses: lenses count witnesses ──────────────────────────────
+  check(has(out, "\"id\":8"), "codeLens answers", "no response for id 8 — the handler killed the session")
+  # ALL THREE §0g numbers, by value, in one string. Naming `place` is what
+  # takes coverage from 20% to 100% on this fixture, and the two application
+  # parens stay findings because their CARD (level vs param) is undecided
+  # even though their ROLE is not — SPECIFICITY, which coverage alone misses.
+  check(has(out, "G-TOTAL — coverage 100% (43/43 bytes) · ambiguity 0 · provenance 100% · specificity findings 2 · unclaimed bytes 0"), "the file lens reports all three G-TOTAL numbers by value", "coverage/ambiguity/provenance moved on the golden copula fixture")
+  check(has(out, "\"role\":\"witness\""), "every lens carries its (role, why, dnir) tuple", "H-8: a lens whose only payload is a title string is plain-text output")
+
+  # AND THE AMBIGUITY COUNTER ANSWERS SOMETHING ELSE. A counter that reads 0
+  # on every input is not measuring; the second document puts `|` outside
+  # shape position, where union and pipe are two roles in two hues, and the
+  # lens must say so.
+  check(has(out, "· ambiguity 4 ·"), "the ambiguity counter is live, not stuck at zero", "`xs | ys` is union-or-pipe with no lexical rule between them and must be COUNTED, never guessed")
+
+  # ── document symbols ARE the trie (§0g) ──────────────────────────────
+  # This returned a flat list with a `containerName` hint, which every
+  # client is free to ignore and all of them do. `helper` is declared inside
+  # `outer`; it must come back as its CHILD, with its own name. Both halves
+  # were broken: nothing indented was lifted at all, and what the `fun` path
+  # did lift came back NAMED `un`, because the keyword was read off the
+  # trimmed line and the remainder sliced out of the untrimmed one.
+  check(has(out, "\"children\":[{"), "documentSymbol nests — it IS the trie, not a flat list", "no child anywhere in the response; `helper` is declared inside `outer`")
+  check(has(out, "\"name\":\"helper\""), "the nested symbol keeps its own name", "an indented declaration came back mangled — head_keyword sliced the untrimmed line")
+
+  # ── THE IN-BAND POSITIVE CONTROL ─────────────────────────────────────
+  # An unknown method must come back as an ERROR, not as silence and not as
+  # a result. If the transport were broken every `has` above could fail
+  # together and look like one bug; this row can only pass when the reader
+  # and the writer are both real.
+  check(has(out, "{\"id\":9,\"error\":{\"code\":-32601"), "an unknown method ERRORS (positive control)", "the server answered an unknown method with silence or with a result")
+
+  check(has(out, "{\"id\":99,\"jsonrpc\":\"2.0\"}"), "shutdown answers last", "the session did not reach shutdown; something between opened and it died")
+
+  # ── the legend is GENERATED, and still current ───────────────────────
+  # Re-derive from the taxonomy and require no change. This is the H-1 drift
+  # check with teeth: it runs the real generator against the real document.
+  src = root .. "/docs/spec/roles.md"
+  if fs.exists(src)
+    rc = os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. idolbin .. "' run --backend=c '" .. root .. "/tools/lsp/legend.id' > '" .. work .. "/legend.txt' 2>/dev/null")
+    gen = fs.read_file(work .. "/legend.txt") or ""
+    check(has(gen, "already current"), "the committed legend re-derives from docs/spec/roles.md", "regenerating changed the block — commit the regeneration, do not hand-edit it")
+  else
+    io:write("  OWED docs/spec/roles.md is absent — the legend cannot be re-derived, so H-1 drift is UNCHECKED this run\n")
+
+  os.execute("rm -f ./gate.out")
+
+  io:write("\n")
+  if fails == 0
+    io:write("lsp-gate: PASS — the server handshakes, survives a close, and answers by value\n")
+    return 0
+  io:write("lsp-gate: FAIL — " .. fails:to(str) .. " check(s) failed\n")
+  # `os.exit`, NOT `return 1`. A Duo script's `main` return value is
+  # DROPPED, so a gate that returns 1 exits 0 and `zig build` reads success.
+  # mcp-gate learned this by printing 13 failures into a green build.
+  std.os.exit(1)
+  1

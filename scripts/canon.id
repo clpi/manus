@@ -7,66 +7,66 @@ missing: i64 = 2
 invalid: i64 = 3
 
 world: i64 = (need: i64, reach: i64)
-    if (need & reach) == need
-        valid
-    else
-        invalid
+  if need & reach == need
+    valid
+  else
+    invalid
 
 vocab: i64 = (known: bool, duplicate: bool, qualifier: bool, foreign: bool)
-    if duplicate
-        invalid
+  if duplicate
+    invalid
+  else
+    if qualifier
+      migrate
     else
-        if qualifier
-            migrate
+      if foreign
+        missing
+      else
+        if known
+          valid
         else
-            if foreign
-                missing
-            else
-                if known
-                    valid
-                else
-                    missing
+          missing
 
 sentinel: i64 = (cases: bool, literal: bool, routing: bool)
-    if cases
-        if literal
-            if routing
-                invalid
-            else
-                valid
-        else
-            valid
-    else
+  if cases
+    if literal
+      if routing
+        invalid
+      else
         valid
+    else
+      valid
+  else
+    valid
 
 control: i64 = (equivalent: bool, admitted: bool, freedom: bool)
-    if equivalent
-        if admitted
-            if freedom
-                migrate
-            else
-                invalid
-        else
-            missing
+  if equivalent
+    if admitted
+      if freedom
+        migrate
+      else
+        invalid
     else
-        valid
+      missing
+  else
+    valid
 
 main: i64 = ()
-    code: i64 = 0
-    if 2:world(2) != valid
-        code = 1
-    if 2:world(0) != invalid
-        code = 2
-    if true:vocab(false, false, false) != valid
-        code = 3
-    if false:vocab(false, false, true) != missing
-        code = 4
-    if true:sentinel(true, true) != invalid
-        code = 5
-    if true:control(true, true) != migrate
-        code = 6
-    if true:control(false, true) != missing
-        code = 7
-    if code == 0
-        stdout:write("canon: pass\n")
-    code
+  code: i64 = 0
+  if 2:world(2) != valid
+    code = 1
+  if 2:world(0) != invalid
+    code = 2
+  if true:vocab(false, false, false) != valid
+    code = 3
+  if false:vocab(false, false, true) != missing
+    code = 4
+  if true:sentinel(true, true) != invalid
+    code = 5
+  if true:control(true, true) != migrate
+    code = 6
+  if true:control(false, true) != missing
+    code = 7
+  if code == 0
+    stdout:write("canon: pass\n")
+  code

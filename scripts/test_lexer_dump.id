@@ -1,2 +1,2 @@
-test(bytes: str)
-    { bytes = bytes, pos = 1 }
+test = (bytes: str)
+  { bytes = bytes, pos = 1 }

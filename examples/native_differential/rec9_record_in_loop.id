@@ -1,14 +1,14 @@
 tok: { kind: i64, start: i64, len: i64 }
-mk(pos: i64): tok
-    return { kind = 1, start = pos, len = 2 }
-loop_over(src: str): i64
-    total = 0
-    pos = 1
-    n = src:len()
-    while pos <= n
-        t: tok = mk(pos)
-        total += t.kind
-        pos += t.len
-    return total
-main(): i64
-    return loop_over("abcd")
+mk: tok = (pos: i64)
+  return { kind = 1, start = pos, len = 2 }
+loop_over: i64 = (src: str)
+  total = 0
+  pos = 1
+  n = src:len()
+  while pos <= n
+    t: tok = mk(pos)
+    total = total + t.kind
+    pos = pos + t.len
+  return total
+main: i64 = ()
+  return loop_over("abcd")

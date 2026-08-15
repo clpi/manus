@@ -3,7 +3,6 @@
 # Run: idol run scripts/verify_build.id
 # Run: idol run scripts/verify_build.id
 
-
 script.must("zig build 2>&1 | tee /tmp/duo_zig_build.log")
 script.echo("zig build OK")
 script.must("zig build test 2>&1 | tee /tmp/duo_zig_test.log")

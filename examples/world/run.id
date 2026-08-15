@@ -2,4 +2,4 @@
 # Executable proof: idol run --backend=c on the process home (entry resolves to main).
 
 main: i64 = ()
-    0
+  0

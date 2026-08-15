@@ -291,7 +291,9 @@ voronoi_2d: any = (x: f64, y: f64, seed: i64)
 
   min_dist = 10000000000.0
   second_min = 10000000000.0
-  closest_cell = { x = 0, y = 0 }
+  closest_cell =
+    x = 0
+    y = 0
 
   dy = -1
   while dy <= 1
@@ -311,7 +313,9 @@ voronoi_2d: any = (x: f64, y: f64, seed: i64)
       if dist < min_dist
         second_min = min_dist
         min_dist = dist
-        closest_cell = { x = px, y = py }
+        closest_cell =
+          x = px
+          y = py
       else(dist < second_min)
         second_min = dist
 

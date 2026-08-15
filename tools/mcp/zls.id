@@ -16,66 +16,66 @@ bridge = tools.mcp.zls.bridge
 
 # Tool: zig_diagnostics  -  get diagnostics for a Zig file
 mcp:register_tool("zig_diagnostics", "Get LSP diagnostics for a .zig file via zls", {
-    type = "object",
-    properties = {
-        file_path = { type = "string", description = "Path to .zig file" },
-    },
-    required = { "file_path" },
+  type = "object",
+  properties = {
+    file_path = { type = "string", description = "Path to .zig file" }
+  },
+  required = { "file_path" }
 }, fun(args)
-    if not bridge.available()
-        return json:encode({ error = "zls not installed or not on PATH" })
-    "{uri = \"file://\"}{args.file_path}"
-    content = bridge.read_source(args.file_path)
-    opened = bridge.request("textDocument/didOpen", {
-        textDocument = { uri = uri, languageId = "zig", version = 1, text = content }
-    })
-    # Diagnostics arrive as a publishDiagnostics NOTIFICATION, which a
-    # one-shot request/response bridge cannot observe. The list is honestly
-    # empty and says so, rather than reporting a clean file.
-    json:encode({ diagnostics = {}, file = args.file_path, note = "publishDiagnostics is a notification; not captured by the one-shot bridge" })
+  if not bridge.available()
+    return json:encode({ error = "zls not installed or not on PATH" })
+  "{uri = \"file://\"}{args.file_path}"
+  content = bridge.read_source(args.file_path)
+  opened = bridge.request("textDocument/didOpen", {
+    textDocument = { uri = uri, languageId = "zig", version = 1, text = content }
+  })
+  # Diagnostics arrive as a publishDiagnostics NOTIFICATION, which a
+  # one-shot request/response bridge cannot observe. The list is honestly
+  # empty and says so, rather than reporting a clean file.
+  json:encode({ diagnostics = {}, file = args.file_path, note = "publishDiagnostics is a notification; not captured by the one-shot bridge" })
 end)
 
 # Tool: zig_hover  -  get hover info for a symbol
 mcp:register_tool("zig_hover", "Get hover/type info for a symbol at a position in a .zig file", {
-    type = "object",
-    properties = {
-        file_path = { type = "string", description = "Path to .zig file" },
-        line = { type = "number", description = "Line number (0-indexed)" },
-        col = { type = "number", description = "Column number (0-indexed)" },
-    },
-    required = { "file_path", "line", "col" },
+  type = "object",
+  properties = {
+    file_path = { type = "string", description = "Path to .zig file" },
+    line = { type = "number", description = "Line number (0-indexed)" },
+    col = { type = "number", description = "Column number (0-indexed)" }
+  },
+  required = { "file_path", "line", "col" }
 }, fun(args)
-    json:encode(bridge.request("textDocument/hover", {
-        textDocument = "{{ uri = \"file://\"}{args.file_path },}"
-        position = { line = args.line, character = args.col },
-    }))
+  json:encode(bridge.request("textDocument/hover", {
+    textDocument = "{{ uri = \"file://\"}{args.file_path },}",
+    position = { line = args.line, character = args.col }
+  }))
 end)
 
 # Tool: zig_definition  -  go-to-definition
 mcp:register_tool("zig_definition", "Go-to-definition for a symbol in a .zig file", {
-    type = "object",
-    properties = {
-        file_path = { type = "string", description = "Path to .zig file" },
-        line = { type = "number", description = "Line number (0-indexed)" },
-        col = { type = "number", description = "Column number (0-indexed)" },
-    },
-    required = { "file_path", "line", "col" },
+  type = "object",
+  properties = {
+    file_path = { type = "string", description = "Path to .zig file" },
+    line = { type = "number", description = "Line number (0-indexed)" },
+    col = { type = "number", description = "Column number (0-indexed)" }
+  },
+  required = { "file_path", "line", "col" }
 }, fun(args)
-    json:encode(bridge.request("textDocument/definition", {
-        textDocument = "{{ uri = \"file://\"}{args.file_path },}"
-        position = { line = args.line, character = args.col },
-    }))
+  json:encode(bridge.request("textDocument/definition", {
+    textDocument = "{{ uri = \"file://\"}{args.file_path },}",
+    position = { line = args.line, character = args.col }
+  }))
 end)
 
 # Tool: zig_format  -  format a .zig file with `zig fmt`
 mcp:register_tool("zig_format", "Format a .zig file with zig fmt", {
-    type = "object",
-    properties = {
-        file_path = { type = "string", description = "Path to .zig file" },
-    },
-    required = { "file_path" },
+  type = "object",
+  properties = {
+    file_path = { type = "string", description = "Path to .zig file" }
+  },
+  required = { "file_path" }
 }, fun(args)
-    bridge.fmt(args.file_path)
+  bridge.fmt(args.file_path)
 end)
 
 mcp:serve()

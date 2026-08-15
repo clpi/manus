@@ -4,49 +4,51 @@
 # coroutines rather than threads.
 
 # mutex: create a new Mutex.
-mutex(): any
-    {locked = false}
+mutex: any = ()
+  { locked = false }
 
 # lock: acquire the mutex. If already locked, yield until available.
-lock(m: any): void
-    while m.locked
-        co = coroutine
-        co.yield()
-    m.locked = true
+lock = (m: any)
+  while m.locked
+    co = coroutine
+    co.yield()
+  m.locked = true
 
 # unlock: release the mutex.
-unlock(m: any): void
-    m.locked = false
+unlock = (m: any)
+  m.locked = false
 
 # probe: attempt to acquire the mutex without blocking. Returns true if acquired.
-probe(m: any): bool
-    if m.locked return false
-    m.locked = true
-    true
+probe: bool = (m: any)
+  if m.locked
+    return false
+  m.locked = true
+  true
 
 # rwmutex: create a new RWMutex.
-rwmutex(): any
-    {writers = 0, readers = 0, writing = false}
+rwmutex: any = ()
+  { writers = 0, readers = 0, writing = false }
 
 # rlock: acquire a read lock.
-rlock(m: any): void
-    while m.writing
-        co = coroutine
-        co.yield()
-    m.readers = m.readers + 1
+rlock = (m: any)
+  while m.writing
+    co = coroutine
+    co.yield()
+  m.readers = m.readers + 1
 
 # runlock: release a read lock.
-runlock(m: any): void
-    m.readers = m.readers - 1
-    if m.readers < 0 m.readers = 0
+runlock = (m: any)
+  m.readers = m.readers - 1
+  if m.readers < 0
+    m.readers = 0
 
 # wlock: acquire a write lock.
-wlock(m: any): void
-    while m.writing or m.readers > 0
-        co = coroutine
-        co.yield()
-    m.writing = true
+wlock = (m: any)
+  while m.writing or m.readers > 0
+    co = coroutine
+    co.yield()
+  m.writing = true
 
 # wunlock: release a write lock.
-wunlock(m: any): void
-    m.writing = false
+wunlock = (m: any)
+  m.writing = false

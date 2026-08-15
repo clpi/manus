@@ -9,9 +9,9 @@
 # pure machine code: `E.emit_u32(...)` becomes a `bl` with a relocation against
 # the module's `@comp.c.export` symbol, and the compiler compiles and links
 # `lib/std/emit.id` itself. Gated by `zig build direct-module-link`.
-main(): i64
-    E = emit
-    E.emit_begin("/tmp/duo_emit_probe.bin")
-    E.emit_u32("/tmp/duo_emit_probe.bin", 3531605312)
-    E.emit_u32("/tmp/duo_emit_probe.bin", 3596551104)
-    E.emit_"/tmp/duo_emit_probe.bin":len()
+main: i64 = ()
+  E = emit
+  E.emit_begin("/tmp/duo_emit_probe.bin")
+  E.emit_u32("/tmp/duo_emit_probe.bin", 3531605312)
+  E.emit_u32("/tmp/duo_emit_probe.bin", 3596551104)
+  E.emit_("/tmp/duo_emit_probe.bin"):len()

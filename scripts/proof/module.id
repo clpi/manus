@@ -5,98 +5,89 @@ probe = "/tmp/idolprobe.bin"
 idol = "./zig-out/bin/idol"
 
 fail: i64 = (msg: str)
-    print("proof/module: " .. msg)
-    1
+  print("proof/module: " .. msg)
+  1
 
 compile: bool = (src: str, out: str)
-    std.script.run(idol .. " compile " .. src .. " --backend=direct --emit exe -o " .. out) == 0
+  std.script.run(idol .. " compile " .. src .. " --backend=direct --emit exe -o " .. out) == 0
 
 matchcount: bool = (pattern: str, path: str)
-    n = std.script.chomp(std.script.capture("grep -c \"" .. pattern .. "\" " .. path .. " 2>/dev/null"))
-    n != "" and n != "0"
+  n = std.script.chomp(std.script.capture("grep -c \"" .. pattern .. "\" " .. path .. " 2>/dev/null"))
+  n != "" and n != "0"
 
 main: i64 = ()
-    std.script.run("rm -rf " .. site .. " " .. probe .. " && mkdir -p " .. site)
+  std.script.run("rm -rf " .. site .. " " .. probe .. " && mkdir -p " .. site)
 
-    if !compile("examples/duo_emit_machine_code.id", site .. "/prog")
-        return fail("compile failed")
+  if not compile("examples/duo_emit_machine_code.id", site .. "/prog")
+    return fail("compile failed")
 
-    rc = std.script.status(site .. "/prog")
-    if rc != 8
-        return fail("expected exit 8 (bytes written), got " .. rc:to(str))
+  rc = std.script.status(site .. "/prog")
+  if rc != 8
+    return fail("expected exit 8 (bytes written), got " .. rc:to(str))
 
-    got = std.script.chomp(std.script.capture("xxd -p " .. probe))
-    if got != "400580d2c0035fd6"
-        return fail("wrong machine code: " .. got)
+  got = std.script.chomp(std.script.capture("xxd -p " .. probe))
+  if got != "400580d2c0035fd6"
+    return fail("wrong machine code: " .. got)
 
-    modc = "/tmp/idolreqmodemit.c"
-    if !modc:exists()
-        return fail("compiler emitted no module C")
-    if matchcount("lua_", modc)
-        return fail("module C references the boxed runtime")
+  modc = "/tmp/idolreqmodemit.c"
+  if not modc:exists()
+    return fail("compiler emitted no module C")
+  if matchcount("lua_", modc)
+    return fail("module C references the boxed runtime")
 
-    for i, sym in {"duo_emit_begin", "duo_emit_u32", "duo_emit_size"}
-        n = std.script.chomp(std.script.capture(
-            "nm -g /tmp/duo_reqmod_emit.o 2>/dev/null | grep -c \"T _" .. sym .. "\""))
-        if n == "" or n == "0"
-            return fail("module object is missing _" .. sym)
+  for i, sym in { "duo_emit_begin", "duo_emit_u32", "duo_emit_size" }
+    n = std.script.chomp(std.script.capture("nm -g /tmp/duo_reqmod_emit.o 2>/dev/null | grep -c \"T _" .. sym .. "\""))
+    if n == "" or n == "0"
+      return fail("module object is missing _" .. sym)
 
-    native = "/tmp/duo_duo_emit_machine_code_native.o"
-    if !native:exists()
-        return fail("direct backend emitted no object")
+  native = "/tmp/duo_duo_emit_machine_code_native.o"
+  if not native:exists()
+    return fail("direct backend emitted no object")
 
-    print("proof/module: PASS — compiler linked a layout-resolved module unaided")
-    print("proof/module: emitted " .. got .. " (mov x0,#42 ; ret)")
+  print("proof/module: PASS — compiler linked a layout-resolved module unaided")
+  print("proof/module: emitted " .. got .. " (mov x0,#42 ; ret)")
 
-    subpath = site .. "/sub.id"
-    sub = subpath:open("w")
-    sub:write("main(): i64\n"
-        .. "    S = req \"std.str\"\n"
-        .. "    return S.len(S.sub(\"hello world\", 7, 11))\n"
-        .. "end\n")
-    sub:close()
-    if !compile(subpath, site .. "/sub")
-        return fail("native string.sub failed to compile")
-    subcode = std.script.status(site .. "/sub")
-    if subcode != 5
-        return fail("native string.sub returned " .. subcode:to(str) .. ", expected 5")
-    print("proof/module: native string.sub works on the direct backend")
+  subpath = site .. "/sub.id"
+  sub = subpath:open("w")
+  sub:write("main(): i64\n" .. "    S = req \"std.str\"\n" .. "    return S.len(S.sub(\"hello world\", 7, 11))\n" .. "end\n")
+  sub:close()
+  if not compile(subpath, site .. "/sub")
+    return fail("native string.sub failed to compile")
+  subcode = std.script.status(site .. "/sub")
+  if subcode != 5
+    return fail("native string.sub returned " .. subcode:to(str) .. ", expected 5")
+  print("proof/module: native string.sub works on the direct backend")
 
-    parsepath = site .. "/parse.id"
-    parse = parsepath:open("w")
-    parse:write("main(): i64\n"
-        .. "    P = req \"std.compiler.parser\"\n"
-        .. "    return P.eval(\"2 + 3 * (4 - 1)\")\n"
-        .. "end\n")
-    parse:close()
-    if !compile(parsepath, site .. "/parse")
-        return fail("Duo parser failed to compile")
-    parsecode = std.script.status(site .. "/parse")
-    if parsecode != 11
-        return fail("Duo parser returned " .. parsecode:to(str) .. ", expected 11")
-    print("proof/module: Duo parser runs natively (2 + 3 * (4 - 1) = 11)")
+  parsepath = site .. "/parse.id"
+  parse = parsepath:open("w")
+  parse:write("main(): i64\n" .. "    P = req \"std.compiler.parser\"\n" .. "    return P.eval(\"2 + 3 * (4 - 1)\")\n" .. "end\n")
+  parse:close()
+  if not compile(parsepath, site .. "/parse")
+    return fail("Duo parser failed to compile")
+  parsecode = std.script.status(site .. "/parse")
+  if parsecode != 11
+    return fail("Duo parser returned " .. parsecode:to(str) .. ", expected 11")
+  print("proof/module: Duo parser runs natively (2 + 3 * (4 - 1) = 11)")
 
-    printpath = site .. "/print.id"
-    sink = printpath:open("w")
-    sink:write("fun main(): i64\n"
-        .. "    print(42)\n    print(\"hi\")\n    print(1.5)\n    print()\n    0\nend\n")
-    sink:close()
-    if !compile(printpath, site .. "/print")
-        return fail("native print failed to compile")
-    std.script.run(site .. "/print > " .. site .. "/print.out")
+  printpath = site .. "/print.id"
+  sink = printpath:open("w")
+  sink:write("fun main(): i64\n" .. "    print(42)\n    print(\"hi\")\n    print(1.5)\n    print()\n    0\nend\n")
+  sink:close()
+  if not compile(printpath, site .. "/print")
+    return fail("native print failed to compile")
+  std.script.run(site .. "/print > " .. site .. "/print.out")
 
-    expected = site .. "/expected.txt"
-    exp = expected:open("w")
-    exp:write("42\nhi\n1.500000\n\n")
-    exp:close()
-    if std.script.run("cmp -s " .. site .. "/print.out " .. expected) != 0
-        print("proof/module: native print output mismatch")
-        return 1
+  expected = site .. "/expected.txt"
+  exp = expected:open("w")
+  exp:write("42\nhi\n1.500000\n\n")
+  exp:close()
+  if std.script.run("cmp -s " .. site .. "/print.out " .. expected) != 0
+    print("proof/module: native print output mismatch")
+    return 1
 
-    n = std.script.chomp(std.script.capture(
-        "strings " .. site .. "/print 2>/dev/null | grep -c lua_Value"))
-    if n != "" and n != "0"
-        return fail("native print binary pulls in the boxed runtime")
+  n = std.script.chomp(std.script.capture("strings " .. site .. "/print 2>/dev/null | grep -c lua_Value"))
+  if n != "" and n != "0"
+    return fail("native print binary pulls in the boxed runtime")
 
-    print("proof/module: sovereign native print works (i64/str/f64/blank)")
-    0
+  print("proof/module: sovereign native print works (i64/str/f64/blank)")
+  0

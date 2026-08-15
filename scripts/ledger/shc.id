@@ -4,77 +4,77 @@
 # Native whole-string `==` is false above 15 bytes; keep needles short.
 
 seen: bool = (text: str, needle: str)
-    n = text:len()
-    m = needle:len()
-    i = 1
-    while i + m - 1 <= n
-        if text:sub(i, i + m - 1) == needle
-            return true
-        i += 1
-    false
+  n = text:len()
+  m = needle:len()
+  i = 1
+  while i + m - 1 <= n
+    if text:sub(i, i + m - 1) == needle
+      return true
+    i = i + 1
+  false
 
 shc: i64 = ()
-    print("ledger/shc -- current blockers")
-    print("  audit     scripts/ledger/embed")
-    print("  audit     scripts/ledger/embed.id")
-    print("manifest contract")
-    fail = 0
-    dispatch = "src/lexer_dispatch.zig":read()
-    if !seen(dispatch, "tokenize(alloc")
-        print("  FAIL production route not on Idol tokenize")
-        fail = 1
-    if seen(dispatch, "tokenize(alloc")
-        print("  ok   canonical route tokenizes via Idol")
-    if !seen(dispatch, "fn tokenizeHost")
-        print("  FAIL host differential tokenizeHost missing")
-        fail = 1
-    if seen(dispatch, "fn tokenizeHost")
-        print("  ok   host scanner differential-only")
-    if seen(dispatch, "RECORD_SLOTS")
-        print("  FAIL RECORD_SLOTS host slot map restored")
-        fail = 1
-    if !seen(dispatch, "RECORD_SLOTS")
-        print("  ok   RECORD_SLOTS host slot map deleted")
-    if !seen(dispatch, "bindKindSchema")
-        print("  FAIL producer kind schema not bound once")
-        fail = 1
-    if seen(dispatch, "bindKindSchema")
-        print("  ok   producer kind schema bound once")
-    if !seen(dispatch, "record_bound")
-        print("  FAIL producer record schema not bound once")
-        fail = 1
-    if seen(dispatch, "record_bound")
-        print("  ok   producer record schema bound once")
-    if !seen(dispatch, "kindFromRecord")
-        print("  FAIL producer kind ordinal not bound once")
-        fail = 1
-    if seen(dispatch, "kindFromRecord")
-        print("  ok   producer kind ordinal bound once")
-    if !seen(dispatch, "fn kindFromName")
-        print("  FAIL kindFromName bridge missing")
-        fail = 1
-    if seen(dispatch, "fn kindFromName")
-        print("  ok   kindFromName bridge present")
-    if !seen(dispatch, "if (n == -1)")
-        print("  FAIL tokenize does not grow records on BufferTooSmall")
-        fail = 1
-    if seen(dispatch, "if (n == -1)")
-        print("  ok   tokenize grows records on BufferTooSmall")
-    if !seen(dispatch, "lex.family")
-        print("  FAIL route does not consume lex.family")
-        fail = 1
-    if seen(dispatch, "lex.family")
-        print("  ok   route consumes lex.family")
-    print("remaining host boundaries")
-    print("  GAP-145 long-bracket scan deleted; level in int_val")
-    print("  GAP-134 quoted/descriptor/nonassoc; Pratt left/right from assoc")
-    print("  admit(law, path) is family producer; discover is provenance")
-    print("  sourceFacts ingress residual = admit(discover(path), path)")
-    print("  Lexer.init test convenience; TokenKind host enum still parallel")
-    print("  TokenKind host enum still parallel to producer kindname")
-    print("  parser SHC not started; one headerSignal; BinOp map remains")
-    if fail
-        print("ledger/shc: FAIL checks")
-        return 1
-    print("ledger/shc: PASS complete")
-    0
+  print("ledger/shc -- current blockers")
+  print("  audit     scripts/ledger/embed")
+  print("  audit     scripts/ledger/embed.id")
+  print("manifest contract")
+  fail = 0
+  dispatch = "src/lexer_dispatch.zig":read()
+  if not seen(dispatch, "tokenize(alloc")
+    print("  FAIL production route not on Idol tokenize")
+    fail = 1
+  if seen(dispatch, "tokenize(alloc")
+    print("  ok   canonical route tokenizes via Idol")
+  if not seen(dispatch, "fn tokenizeHost")
+    print("  FAIL host differential tokenizeHost missing")
+    fail = 1
+  if seen(dispatch, "fn tokenizeHost")
+    print("  ok   host scanner differential-only")
+  if seen(dispatch, "RECORD_SLOTS")
+    print("  FAIL RECORD_SLOTS host slot map restored")
+    fail = 1
+  if not seen(dispatch, "RECORD_SLOTS")
+    print("  ok   RECORD_SLOTS host slot map deleted")
+  if not seen(dispatch, "bindKindSchema")
+    print("  FAIL producer kind schema not bound once")
+    fail = 1
+  if seen(dispatch, "bindKindSchema")
+    print("  ok   producer kind schema bound once")
+  if not seen(dispatch, "record_bound")
+    print("  FAIL producer record schema not bound once")
+    fail = 1
+  if seen(dispatch, "record_bound")
+    print("  ok   producer record schema bound once")
+  if not seen(dispatch, "kindFromRecord")
+    print("  FAIL producer kind ordinal not bound once")
+    fail = 1
+  if seen(dispatch, "kindFromRecord")
+    print("  ok   producer kind ordinal bound once")
+  if not seen(dispatch, "fn kindFromName")
+    print("  FAIL kindFromName bridge missing")
+    fail = 1
+  if seen(dispatch, "fn kindFromName")
+    print("  ok   kindFromName bridge present")
+  if not seen(dispatch, "if (n == -1)")
+    print("  FAIL tokenize does not grow records on BufferTooSmall")
+    fail = 1
+  if seen(dispatch, "if (n == -1)")
+    print("  ok   tokenize grows records on BufferTooSmall")
+  if not seen(dispatch, "lex.family")
+    print("  FAIL route does not consume lex.family")
+    fail = 1
+  if seen(dispatch, "lex.family")
+    print("  ok   route consumes lex.family")
+  print("remaining host boundaries")
+  print("  GAP-145 long-bracket scan deleted; level in int_val")
+  print("  GAP-134 quoted/descriptor/nonassoc; Pratt left/right from assoc")
+  print("  admit(law, path) is family producer; discover is provenance")
+  print("  sourceFacts ingress residual = admit(discover(path), path)")
+  print("  Lexer.init test convenience; TokenKind host enum still parallel")
+  print("  TokenKind host enum still parallel to producer kindname")
+  print("  parser SHC not started; one headerSignal; BinOp map remains")
+  if fail
+    print("ledger/shc: FAIL checks")
+    return 1
+  print("ledger/shc: PASS complete")
+  0

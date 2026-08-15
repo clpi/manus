@@ -1,16 +1,18 @@
 # cmp — Ordered comparison utilities (mirrors Go 1.21 cmp package)
 # Provides comparison functions for ordered types.
 
-compare(a: any, b: any): i64
-    if a < b return -1
-    if a > b return 1
-    0
+compare: i64 = (a: any, b: any)
+  if a < b
+    return -1
+  if a > b
+    return 1
+  0
 
-less(a: any, b: any): bool
-    a < b
+less: bool = (a: any, b: any)
+  a < b
 
-ordered(a: any, b: any): i64
-    compare(a, b)
+ordered: i64 = (a: any, b: any)
+  compare(a, b)
 
 # Guards, not `if a < b a else b end`. The endless one-liner clause must be
 # SELF-DELIMITED: in `a < b a` the trailing `b a` reads as
@@ -20,18 +22,19 @@ ordered(a: any, b: any): i64
 # Same defect as strconv.format_bool and fmt.boolean. The shape to avoid is a
 # one-line `if` whose clause ENDS in a bare name and whose body BEGINS with
 # one; `clamp` below is safe because each body starts with `return`.
-min(a: any, b: any): any
-    if a < b
-        return a
-    b
+min: any = (a: any, b: any)
+  if a < b
+    return a
+  b
 
-max(a: any, b: any): any
-    if a > b
-        return a
-    b
+max: any = (a: any, b: any)
+  if a > b
+    return a
+  b
 
-clamp(val: any, lo: any, hi: any): any
-    if val < lo return lo
-    if val > hi return hi
-    val
-
+clamp: any = (val: any, lo: any, hi: any)
+  if val < lo
+    return lo
+  if val > hi
+    return hi
+  val

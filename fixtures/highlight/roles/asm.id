@@ -12,11 +12,11 @@
 #
 # Codes are the second column of the taxonomy in tools/lsp/src/highlight.id.
 roles = {
-    "mmmmmmmmmmmmmmm",
-    "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
-    "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
-    "llllffflppllppllpp",
-    "llllffflppllnnn",
-    "llllffflppllpp",
-    "llllffflpp",
+  "mmmmmmmmmmmmmmm",
+  "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+  "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+  "llllffflppllppllpp",
+  "llllffflppllnnn",
+  "llllffflppllpp",
+  "llllffflpp"
 }

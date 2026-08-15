@@ -2,6 +2,6 @@
 # Self-hosting: a `req` module constant must fold to a native immediate.
 # The C backend cannot compile this, so it is gated by absolute value rather
 # than differentially. Lowers to `mov x9, #14; mov x0, x9; ret` — no runtime.
-main(): i64
-    Token = token
-    return Token.KIND_FUN
+main: i64 = ()
+  Token = token
+  return Token.KIND_FUN

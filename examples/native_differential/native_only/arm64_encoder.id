@@ -17,42 +17,42 @@
 
 # MOVZ Xd, #imm16        : 0xd2800000 | imm<<5 | Rd
 enc_movz: i64 = (rd: i64, imm: i64)
-    3531603968 + imm * 32 + rd
+  3531603968 + imm * 32 + rd
 
 # ADD Xd, Xn, Xm         : 0x8b000000 | Rm<<16 | Rn<<5 | Rd
 enc_add: i64 = (rd: i64, rn: i64, rm: i64)
-    2332033024 + rm * 65536 + rn * 32 + rd
+  2332033024 + rm * 65536 + rn * 32 + rd
 
 # SUB Xd, Xn, Xm         : 0xcb000000 | Rm<<16 | Rn<<5 | Rd
 enc_sub: i64 = (rd: i64, rn: i64, rm: i64)
-    3405774848 + rm * 65536 + rn * 32 + rd
+  3405774848 + rm * 65536 + rn * 32 + rd
 
 # CSET Xd, cond ≡ CSINC Xd, XZR, XZR, invert(cond)
 #                        : 0x9a9f07e0 | invcond<<12 | Rd
 # The condition field MUST start at zero — a base with a cond bit pre-set ORs
 # into the condition and silently encodes a different test.
 enc_cset: i64 = (rd: i64, invcond: i64)
-    2594113504 + invcond * 4096 + rd
+  2594113504 + invcond * 4096 + rd
 
 # RET                    : 0xd65f03c0
 enc_ret: i64 = ()
-    3596551104
+  3596551104
 
 check: i64 = (got: i64, want: i64)
-    if got == want
-        return 1
-    0
+  if got == want
+    return 1
+  0
 
-main(): i64
-    ok = 0
-    # mov x9, #0        -> 0xd2800009
-    ok += check(enc_movz(9, 0), 3531603977)
-    # add x11, x9, x10  -> 0x8b0a012b
-    ok += check(enc_add(11, 9, 10), 2332688683)
-    # sub x10, x0, x9   -> 0xcb09000a
-    ok += check(enc_sub(10, 0, 9), 3406364682)
-    # cset x10, lt      -> encodes invert(lt) = ge = 0xa -> 0x9a9fa7ea
-    ok += check(enc_cset(10, 10), 2594154474)
-    # ret               -> 0xd65f03c0
-    ok += check(enc_ret(), 3596551104)
-    ok
+main: i64 = ()
+  ok = 0
+  # mov x9, #0        -> 0xd2800009
+  ok = ok + check(enc_movz(9, 0), 3531603977)
+  # add x11, x9, x10  -> 0x8b0a012b
+  ok = ok + check(enc_add(11, 9, 10), 2332688683)
+  # sub x10, x0, x9   -> 0xcb09000a
+  ok = ok + check(enc_sub(10, 0, 9), 3406364682)
+  # cset x10, lt      -> encodes invert(lt) = ge = 0xa -> 0x9a9fa7ea
+  ok = ok + check(enc_cset(10, 10), 2594154474)
+  # ret               -> 0xd65f03c0
+  ok = ok + check(enc_ret(), 3596551104)
+  ok

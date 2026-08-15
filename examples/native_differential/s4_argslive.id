@@ -1,7 +1,7 @@
-f(a: i64, b: i64): i64
-    t = g(a)
-    return t + b + a
-g(x: i64): i64
-    return x * 2
-main(): i64
-    return f(7, 3)
+f: i64 = (a: i64, b: i64)
+  t = g(a)
+  return t + b + a
+g: i64 = (x: i64)
+  return x * 2
+main: i64 = ()
+  return f(7, 3)

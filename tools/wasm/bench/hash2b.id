@@ -20,15 +20,15 @@
 # to "use of undeclared identifier '__c_export'". The exported entry stays a
 # bare declaration until that closes; `main` uses the canonical value form.
 @comp.c.export("run")
-run(): i32
-    h: u32 = 2166136261
-    i: u32 = 0
-    while i < 2000000000
-        h = h ~ i
-        h = h * 16777619
-        h = (h << 13) | (h >> 19)
-        i += 1
-    h
+run: i32 = ()
+  h: u32 = 2166136261
+  i: u32 = 0
+  while i < 2000000000
+    h = h ~ i
+    h = h * 16777619
+    h = h << 13 | h >> 19
+    i = i + 1
+  h
 
 main: i32 = ()
-    run()
+  run()

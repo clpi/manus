@@ -6,47 +6,49 @@
 # build deletes zig-out first. That is also why this is slow and !on the
 # tier-0 path: it pays for two full ReleaseFast builds.
 
-_zig(): str
-    z = script.getenv_or("ZIG")
-    if z == "" return "zig"
-    z
+_zig: str = ()
+  z = script.getenv_or("ZIG")
+  if z == ""
+    return "zig"
+  z
 
-_opt(): str
-    o = script.getenv_or("REPRO_OPT")
-    if o == "" return "ReleaseFast"
-    o
+_opt: str = ()
+  o = script.getenv_or("REPRO_OPT")
+  if o == ""
+    return "ReleaseFast"
+  o
 
 # One clean build; returns the binary's sha256, or "" if the build failed.
 # A missing hash must not read as "hashes differ" # that would report a
 # reproducibility failure for what is actually a broken build.
-_build_once(zig: str, opt: str): str
-    std.script.run("rm -rf zig-out")
-    if std.script.run(zig .. " build -Doptimize=" .. opt) != 0
-        return ""
-    std.script.chomp(std.script.capture("shasum -a 256 zig-out/bin/idol | awk '{print $1}'"))
+_build_once: str = (zig: str, opt: str)
+  std.script.run("rm -rf zig-out")
+  if std.script.run(zig .. " build -Doptimize=" .. opt) != 0
+    return ""
+  std.script.chomp(std.script.capture("shasum -a 256 zig-out/bin/idol | awk '{print $1}'"))
 
 main: i64 = ()
-    zig = _zig()
-    opt = _opt()
-    ver = std.script.chomp(std.script.capture(zig .. " version"))
-    print("reproducibility_smoke: zig=" .. ver .. " optimize=" .. opt)
+  zig = _zig()
+  opt = _opt()
+  ver = std.script.chomp(std.script.capture(zig .. " version"))
+  print("reproducibility_smoke: zig=" .. ver .. " optimize=" .. opt)
 
-    hash1 = _build_once(zig, opt)
-    if hash1 == ""
-        print("reproducibility_smoke: FAIL — first build did not produce a binary")
-        return 1
+  hash1 = _build_once(zig, opt)
+  if hash1 == ""
+    print("reproducibility_smoke: FAIL — first build did not produce a binary")
+    return 1
 
-    hash2 = _build_once(zig, opt)
-    if hash2 == ""
-        print("reproducibility_smoke: FAIL — second build did not produce a binary")
-        return 1
+  hash2 = _build_once(zig, opt)
+  if hash2 == ""
+    print("reproducibility_smoke: FAIL — second build did not produce a binary")
+    return 1
 
-    print("reproducibility_smoke: hash1=" .. hash1)
-    print("reproducibility_smoke: hash2=" .. hash2)
+  print("reproducibility_smoke: hash1=" .. hash1)
+  print("reproducibility_smoke: hash2=" .. hash2)
 
-    if hash1 != hash2
-        print("reproducibility_smoke: FAIL — ReleaseFast duo binary differs between clean rebuilds")
-        return 1
+  if hash1 != hash2
+    print("reproducibility_smoke: FAIL — ReleaseFast duo binary differs between clean rebuilds")
+    return 1
 
-    print("reproducibility_smoke: PASS — identical ReleaseFast compiler binaries")
-    0
+  print("reproducibility_smoke: PASS — identical ReleaseFast compiler binaries")
+  0

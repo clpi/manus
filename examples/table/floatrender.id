@@ -4,9 +4,9 @@
 # all, making 1.0 indistinguishable from the integer 1.
 # expect: 0.10000000000000001 0.33333333333333331 1 1000
 main: i64 = ()
-    a = 0.1
-    b = 1.0 / 3.0
-    c = 1.0
-    d = 1e3
-    print("{a} {b} {c} {d}")
-    0
+  a = 0.1
+  b = 1.0 / 3.0
+  c = 1.0
+  d = 1000.0
+  print("{a} {b} {c} {d}")
+  0

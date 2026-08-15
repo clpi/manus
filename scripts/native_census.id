@@ -45,58 +45,49 @@
 # gate. Exit 0 pass, 1 below the floor, 3 the census could not run.
 
 shell: str = (cmd: str)
-    script.capture("cd " .. script.getenv("DUO_ROOT", ".") .. " && " .. cmd)
+  script.capture("cd " .. script.getenv("DUO_ROOT", ".") .. " && " .. cmd)
 
 num: i64 = (out: str)
-    n: i64 = out:len()
-    while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
-        n -= 1
-    to(i64)(out:sub(1, n))
+  n: i64 = out:len()
+  while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
+    n = n - 1
+  to(i64)(out:sub(1, n))
 
 # One shell pass. Each program is compiled with the direct backend; the three
 # buckets are printed as a single line of counts so Duo parses numbers, not
 # process output.
 sweep: str = ()
-    shell("idol=./zig-out/bin/idol; ok=0; bail=0; un=0; noent=0; "
-        .. "for f in $(find examples -name '*.id' | grep -v compile_fail); do "
-        .. "  out=$($idol compile --backend=direct \"$f\" -o /tmp/_census.bin 2>&1); "
-        .. "  case \"$out\" in *'ok compile'*) ok=$((ok+1)); continue;; esac; "
-        .. "  case \"$out\" in *DNB*) : ;; *) noent=$((noent+1)); continue;; esac; "
-        .. "  if grep -qE '^global [A-Za-z_]* = std.compiler\\.|= *req *\"std.compiler' \"$f\"; then "
-        .. "    un=$((un+1)); else bail=$((bail+1)); fi; "
-        .. "done; echo \"$ok $bail $un $noent\"")
+  shell("idol=./zig-out/bin/idol; ok=0; bail=0; un=0; noent=0; " .. "for f in $(find examples -name '*.id' | grep -v compile_fail); do " .. "  out=$($idol compile --backend=direct \"$f\" -o /tmp/_census.bin 2>&1); " .. "  case \"$out\" in *'ok compile'*) ok=$((ok+1)); continue;; esac; " .. "  case \"$out\" in *DNB*) : ;; *) noent=$((noent+1)); continue;; esac; " .. "  if grep -qE '^global [A-Za-z_]* = std.compiler\\.|= *req *\"std.compiler' \"$f\"; then " .. "    un=$((un+1)); else bail=$((bail+1)); fi; " .. "done; echo \"$ok $bail $un $noent\"")
 
-main(): i64
-    counts = sweep()
-    if counts:len() == 0
-        print("native_census: FAIL — sweep produced no output; census did not run")
-        return 3
+main: i64 = ()
+  counts = sweep()
+  if counts:len() == 0
+    print("native_census: FAIL — sweep produced no output; census did not run")
+    return 3
 
-    ok: i64 = num(counts:match("^%d+"))
-    rest = counts:gsub("^%d+%s+", "")
-    bail: i64 = num(rest:match("^%d+"))
-    rest2 = rest:gsub("^%d+%s+", "")
-    unreachable: i64 = num(rest2:match("^%d+"))
+  ok: i64 = num(counts:match("^%d+"))
+  rest = counts:gsub("^%d+%s+", "")
+  bail: i64 = num(rest:match("^%d+"))
+  rest2 = rest:gsub("^%d+%s+", "")
+  unreachable: i64 = num(rest2:match("^%d+"))
 
-    # Positive control. A census whose numerator AND denominator are both zero
-    # is broken, not perfect — the exact failure mode that made an earlier
-    # language gate report a confident 0/N from a worktree.
-    if ok == 0
-        print("native_census: FAIL — 0 programs compiled natively; the sweep is broken")
-        return 3
+  # Positive control. A census whose numerator AND denominator are both zero
+  # is broken, not perfect — the exact failure mode that made an earlier
+  # language gate report a confident 0/N from a worktree.
+  if ok == 0
+    print("native_census: FAIL — 0 programs compiled natively; the sweep is broken")
+    return 3
 
-    reachable: i64 = ok + bail
-    print("native census (--backend=direct over examples/, compile_fail excluded)")
-    print("  native        " .. ok:to(str) .. "   lowered to ARM64")
-    print("  bail          " .. bail:to(str) .. "   reachable, not yet lowered — the worklist")
-    print("  unreachable   " .. unreachable:to(str) .. "   C-emitter fixtures; native is not a goal for these")
-    print("  reachable     " .. reachable:to(str) .. "   the denominator that can reach 100%")
+  reachable: i64 = ok + bail
+  print("native census (--backend=direct over examples/, compile_fail excluded)")
+  print("  native        " .. ok:to(str) .. "   lowered to ARM64")
+  print("  bail          " .. bail:to(str) .. "   reachable, not yet lowered — the worklist")
+  print("  unreachable   " .. unreachable:to(str) .. "   C-emitter fixtures; native is not a goal for these")
+  print("  reachable     " .. reachable:to(str) .. "   the denominator that can reach 100%")
 
-    floor: i64 = to(i64)(script.getenv("NATIVE_FLOOR", "88"))
-    if ok < floor
-        print("native_census: FAIL — native " .. ok:to(str)
-            .. " fell below the ratchet " .. floor:to(str))
-        return 1
-    print("native_census: PASS (native " .. ok:to(str) .. " >= " .. floor:to(str)
-        .. ", " .. to(str)(reachable - ok) .. " reachable programs remain)")
-    0
+  floor: i64 = to(i64)(script.getenv("NATIVE_FLOOR", "88"))
+  if ok < floor
+    print("native_census: FAIL — native " .. ok:to(str) .. " fell below the ratchet " .. floor:to(str))
+    return 1
+  print("native_census: PASS (native " .. ok:to(str) .. " >= " .. floor:to(str) .. ", " .. to(str)(reachable - ok) .. " reachable programs remain)")
+  0

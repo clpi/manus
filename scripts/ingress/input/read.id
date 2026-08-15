@@ -1,6 +1,6 @@
 # input home — read relation on readable subjects (no @c, no lua).
 
 endpointread: str = (path: str)
-    if path == nil or path:len() == 0
-        stdin:read()
-    path:read()
+  if path == nil or path:len() == 0
+    stdin:read()
+  path:read()

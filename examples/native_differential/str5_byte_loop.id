@@ -1,10 +1,10 @@
-count(src: str): i64
-    n = src:len()
-    i = 1
-    total = 0
-    while i <= n
-        total += src:byte(i)
-        i += 1
-    return total
-main(): i64
-    return count("AB")
+count: i64 = (src: str)
+  n = src:len()
+  i = 1
+  total = 0
+  while i <= n
+    total = total + src:byte(i)
+    i = i + 1
+  return total
+main: i64 = ()
+  return count("AB")

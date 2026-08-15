@@ -25,27 +25,27 @@
 #   Never scandiff / scanline / diffhead / bareend / flat len(path, min).
 
 transport: str = ()
-    text = stdin:read()
-    if !text
-        return ""
-    if !text:len()
-        return ""
-    text
+  text = stdin:read()
+  if not text
+    return ""
+  if not text:len()
+    return ""
+  text
 
 # Runs a POSITIVE CONTROL before any verdict.
 
 # Pattern rows live in rules() — no module-level keyed table (direct-native).
 
 word: bool = (c: str)
-    alpha(c) or upper(c) or digit(c) or c == "_"
+  alpha(c) or upper(c) or digit(c) or c == "_"
 
 # Worlds (io, os) are authority — never namespace.method(). One word per binding;
 # world and owner are arguments across the relation, not mashed into the name.
 # Exception: bootstrap foreign ingress in scripts/ingress/* only (GAP-155).
 # Operation-first conversion projection at a call site — not declaration head.
 commentline: bool = (code: str)
-    s = strip(code)
-    s:len() >= 1 and s:sub(1, 1) == "#"
+  s = strip(code)
+  s:len() >= 1 and s:sub(1, 1) == "#"
 
 # Detector homes may quote forbidden sigils. `@` IS THE CURRENT-WORLD ACCESSOR
 # (docs/spec/law.md §4): bare `@` is the current world, `@member` accesses a
@@ -56,1557 +56,1549 @@ commentline: bool = (code: str)
 # host-escape directive spellings — @comp @c @host @runtime @emit @asm — are not
 # world members and stay forbidden.
 cited: bool = (path: str)
-    path:len() >= 5 and path:sub(1, 5) == "gate/"
+  path:len() >= 5 and path:sub(1, 5) == "gate/"
 
 directive: bool = (name: str)
-    name == "comp" or name == "c" or name == "host" or
-        name == "runtime" or name == "emit" or name == "asm"
+  name == "comp" or name == "c" or name == "host" or name == "runtime" or name == "emit" or name == "asm"
 
 sigil: bool = (code: str)
-    if commentline(code)
-        return false
-    if !code:has("@")
-        return false
-    n = code:len()
-    i = 1
-    while i <= n
-        if code:sub(i, i) == "@"
-            prev = ""
-            if i > 1
-                prev = code:sub(i - 1, i - 1)
-            nxt = ""
-            if i < n
-                nxt = code:sub(i + 1, i + 1)
-            postfix = false
-            if prev != ""
-                postfix = word(prev) or prev == ")" or prev == "]"
-            if !postfix
-                if nxt == "." or nxt == ":"
-                    return true
-                if word(nxt) and !digit(nxt)
-                    j = i + 1
-                    name = ""
-                    while j <= n and word(code:sub(j, j))
-                        c = code:sub(j, j)
-                        name = "{name}{c}"
-                        j += 1
-                    if directive(name)
-                        return true
-                else
-                    prefixok = nxt == "" or nxt == "{" or nxt == "(" or nxt == "@" or nxt == " "
-                    if !prefixok
-                        return true
-        i += 1
-    false
+  if commentline(code)
+    return false
+  if not code:has("@")
+    return false
+  n = code:len()
+  i = 1
+  while i <= n
+    if code:sub(i, i) == "@"
+      prev = ""
+      if i > 1
+        prev = code:sub(i - 1, i - 1)
+      nxt = ""
+      if i < n
+        nxt = code:sub(i + 1, i + 1)
+      postfix = false
+      if prev != ""
+        postfix = word(prev) or prev == ")" or prev == "]"
+      if not postfix
+        if nxt == "." or nxt == ":"
+          return true
+        if word(nxt) and not digit(nxt)
+          j = i + 1
+          name = ""
+          while j <= n and word(code:sub(j, j))
+            c = code:sub(j, j)
+            name = "{name}{c}"
+            j = j + 1
+          if directive(name)
+            return true
+        else
+          prefixok = nxt == "" or nxt == "{" or nxt == "(" or nxt == "@" or nxt == " "
+          if not prefixok
+            return true
+    i = i + 1
+  false
 
 docline: bool = (code: str)
-    code:has("never `to(str)(") or code:has("never to(str)(") or code:has("noncanonical")
+  code:has("never `to(str)(") or code:has("never to(str)(") or code:has("noncanonical")
 
 projcurrydesc: bool = (code: str, desc: str)
-    needle = "to({desc})("
-    if !code:has(needle)
-        return false
-    if commentline(code) or docline(code)
-        return false
-    true
+  needle = "to({desc})("
+  if not code:has(needle)
+    return false
+  if commentline(code) or docline(code)
+    return false
+  true
 
 projcurry: bool = (code: str)
-    projcurrydesc(code, "str") or
-        projcurrydesc(code, "i64") or
-        projcurrydesc(code, "f64") or
-        projcurrydesc(code, "bool") or
-        projcurrydesc(code, "bytes")
+  projcurrydesc(code, "str") or projcurrydesc(code, "i64") or projcurrydesc(code, "f64") or projcurrydesc(code, "bool") or projcurrydesc(code, "bytes")
 
 ingress: bool = (path: str)
-    path:len() >= 17 and path:sub(1, 17) == "scripts/ingress/"
+  path:len() >= 17 and path:sub(1, 17) == "scripts/ingress/"
 
-dot(io) = (code: str)
-    code:find("io.", 1, true) or code:find("io:", 1, true)
+dot__io = (code: str)
+  code:find("io.", 1, true) or code:find("io:", 1, true)
 
-dot(os) = (code: str)
-    code:find("os.", 1, true) or code:find("os:", 1, true)
+dot__os = (code: str)
+  code:find("os.", 1, true) or code:find("os:", 1, true)
 
-dot(std) = (world: str, code: str)
-    code:find("std." .. world, 1, true)
+dot__std = (world: str, code: str)
+  code:find("std." .. world, 1, true)
 
 # Needle membership is subject-first only: hay:has(needle). Never has(hay, needle).
 
 # Subject-first law: scanned source must use subject:rel(...), never rel(subject) or world:rel(...).
-subject(has) = (code: str)
-    callfirst("has(", code)
+subject__has = (code: str)
+  callfirst("has(", code)
 
-subject(tail) = (code: str)
-    callfirst("tail(", code)
+subject__tail = (code: str)
+  callfirst("tail(", code)
 
-subject(read) = (code: str)
-    code:has("io:read(") or code:has("io.read(")
+subject__read = (code: str)
+  code:has("io:read(") or code:has("io.read(")
 
-rule(q) = (path: str, no: i64, code: str, pat: str, law: str, fix: str)
-    code:has(pat)
+rule__q = (path: str, no: i64, code: str, pat: str, law: str, fix: str)
+  code:has(pat)
 
 rule: i64 = (path: str, no: i64, code: str, pat: str, law: str, fix: str)
-    if rule(q)(path, no, code, pat, law, fix)
-        print("{path}:{no}  {pat}  [{law}]  {fix}")
-        1
-    else
-        0
+  if rule__q(path, no, code, pat, law, fix)
+    print("{path}:{no}  {pat}  [{law}]  {fix}")
+    1
+  else
+    0
 
 flag: i64 = (path: str, no: i64, code: str, pat: str, law: str, fix: str, quiet: bool)
-    if quiet
-        rule(q)(path, no, code, pat, law, fix)
-    else
-        rule(path, no, code, pat, law, fix)
+  if quiet
+    rule__q(path, no, code, pat, law, fix)
+  else
+    rule(path, no, code, pat, law, fix)
 
 probe: bool = (code: str, pat: str)
-    code:has(pat)
+  code:has(pat)
 
 admitwords = " i64 i32 i16 i8 u64 u32 u16 u8 f64 f32 str bool any void if else while for return and or not true false print len sub byte find match read write open close nil "
 
 admitted: bool = (name: str)
-    m = name:len()
-    if m == 0
-        return false
-    needle = " {name} "
-    hay = admitwords
-    n = hay:len()
-    k = needle:len()
-    i = 1
-    while i + k - 1 <= n
-        if hay:sub(i, i + k - 1) == needle
-            return true
-        i += 1
-    false
+  m = name:len()
+  if m == 0
+    return false
+  needle = " {name} "
+  hay = admitwords
+  n = hay:len()
+  k = needle:len()
+  i = 1
+  while i + k - 1 <= n
+    if hay:sub(i, i + k - 1) == needle
+      return true
+    i = i + 1
+  false
 
-rules(q) = (path: str, no: i64, code: str)
-    h = deny(path, no, code, true)
-    h += edge(path, no, code, true)
-    h += home(path, no, code, true)
-    h += adj(path, no, code, true)
-    h
+rules__q = (path: str, no: i64, code: str)
+  h = deny(path, no, code, true)
+  h = h + edge(path, no, code, true)
+  h = h + home(path, no, code, true)
+  h = h + adj(path, no, code, true)
+  h
 
 strike: bool = (path: str, no: i64, code: str)
-    rules(q)(path, no, code) > 0
+  rules__q(path, no, code) > 0
 
 pathfail: bool = (path: str)
-    route(path) > 0
+  route(path) > 0
 
 namefail: bool = (where: str, name: str)
-    eq(where, name) > 0
+  eq(where, name) > 0
 
 scanfired: bool = (body: str)
-    probescan(body) > 0
+  probescan(body) > 0
 
 rules: i64 = (path: str, no: i64, code: str)
-    h = deny(path, no, code, false)
-    h += edge(path, no, code, false)
-    h += home(path, no, code, false)
-    h += adj(path, no, code, false)
-    h
+  h = deny(path, no, code, false)
+  h = h + edge(path, no, code, false)
+  h = h + home(path, no, code, false)
+  h = h + adj(path, no, code, false)
+  h
 
 deny: i64 = (path: str, no: i64, code: str, quiet: bool)
-    hits = 0
-    hits += flag(path, no, code, "_", "LAW-ONE", "one lowercase word: a LEVEL read(number), a HOME date.pad, or delete the axis", quiet)
-    hits += flag(path, no, code, "end", "Smoke §7", "`end` is DELETED — outdent", quiet)
-    hits += flag(path, no, code, ";", "Smoke §1", "the semicolon does not exist — press enter", quiet)
-    hits += flag(path, no, code, "local", "§1 deny", "bindings are already scoped", quiet)
-    hits += flag(path, no, code, "require_old", "§1 deny", "no import — reachability is scope/home projection", quiet)
-    hits += flag(path, no, code, "then", "§1 deny", "outdent", quiet)
-    hits += flag(path, no, code, "tostring", "§1 deny", "x:to(str)", quiet)
-    hits += flag(path, no, code, "tonumber", "§1 deny", "x:to(i64) — and it ROUTES on failure", quiet)
-    hits += flag(path, no, code, "pcall", "§1 deny", "t | error — failure routes (B-15)", quiet)
-    hits += flag(path, no, code, "setmetatable", "§1 deny", "descriptors and protocols", quiet)
-    hits += flag(path, no, code, "pairs", "§1 deny", "iterate the value: xs:each()", quiet)
-    hits += flag(path, no, code, "if not ", "LEXICAL", "prefix ! — if !expr; never if not expr", quiet)
-    hits += flag(path, no, code, " and not ", "LEXICAL", "prefix ! — and !expr; never and not expr", quiet)
-    hits += flag(path, no, code, " or not ", "LEXICAL", "prefix ! — or !expr; never or not expr", quiet)
-    hits += flag(path, no, code, "(not ", "LEXICAL", "prefix ! — (!expr); never (not expr)", quiet)
-    hits += flag(path, no, code, ".new(", "LADDER", "desc{…} · x:to(desc) · p:from(mode)(…) · file.open", quiet)
-    hits += flag(path, no, code, ".create(", "LADDER", "desc{…}", quiet)
-    hits += flag(path, no, code, "make", "LADDER", "desc{…} — make* is banned", quiet)
-    hits += flag(path, no, code, "self", "SELF-ZERO", ".x · leading :call() · `.` is the subject · ... spreads it", quiet)
-    hits += flag(path, no, code, " .. ", "FMT-ONE", "`{{}}` interpolation — never `..` concatenation", quiet)
-    hits += flag(path, no, code, "os.args(", "host-TEMP", "os.args[n] table under os world — never os.args()", quiet)
-    hits += flag(path, no, code, "os.getenv(", "host-TEMP", "os.env[key] / os.env(key) — environment is not a thing", quiet)
-    hits += flag(path, no, code, "environment[", "host-TEMP", "environment is not a thing — use os.env[key]", quiet)
-    hits += flag(path, no, code, "environment:", "host-TEMP", "environment is not a thing — use os.env[key]", quiet)
-    hits += flag(path, no, code, "io.popen(", "host-TEMP", "command(line) then c:open(mode) across process boundary — docs/spec/host.md", quiet)
-    hits += flag(path, no, code, "popen(", "host-TEMP", "command(line) then c:open(mode) — never popen", quiet)
-    hits += flag(path, no, code, "io:popen(", "host-TEMP", "command(line) then c:open(mode) across process boundary", quiet)
-    hits += flag(path, no, code, ":popen(", "host-TEMP", "c:open(mode) on command subject — never :popen", quiet)
-    hits += flag(path, no, code, "os.execute(", "host-TEMP", "structured command + process world — docs/spec/host.md", quiet)
-    hits += flag(path, no, code, "io.read(", "law.relation.read", "stdin:read() or path:read() — read relation on subject; never io.read", quiet)
-    hits += flag(path, no, code, "io.open(", "law.world.dot", "path:open(mode) — subject-first; never io.open dot", quiet)
-    hits += flag(path, no, code, "io.write(", "law.world.dot", "subject:write() — never io.write dot", quiet)
-    hits += flag(path, no, code, "os.exit(", "law.world.dot", "demand/transition — never os.exit(); docs/spec/world.md", quiet)
-    hits += flag(path, no, code, "use(", "projection", "no admission syntax — scope/home projection only", quiet)
-    hits += flag(path, no, code, "using(", "projection", "no admission syntax — scope/home projection only", quiet)
-    hits += flag(path, no, code, "inject(", "projection", "no admission syntax — scope/home projection only", quiet)
-    hits += flag(path, no, code, "admit(", "projection", "no admission syntax — scope/home projection only", quiet)
-    hits += flag(path, no, code, "std\x2E", "host-TEMP", "NO std anywhere — use layout/home/world projection (GAP-157)", quiet)
-    hits += flag(path, no, code, "table.", "law.lua.redirect", "xs:push(v) xs:remove(i) xs:sort() xs:keys() xs:join(sep) — subject-first; never table.* namespace", quiet)
-    hits += flag(path, no, code, "string.", "law.lua.redirect", "text:sub(a,b) text:find(p) text:match(p) text:len() — subject-first; never string.* namespace", quiet)
-    hits += flag(path, no, code, "math.", "law.lua.redirect", "x:sqrt() x:abs() x:floor() — subject-first; never math.* namespace", quiet)
-    hits
+  hits = 0
+  hits = hits + flag(path, no, code, "_", "LAW-ONE", "one lowercase word: a LEVEL read(number), a HOME date.pad, or delete the axis", quiet)
+  hits = hits + flag(path, no, code, "end", "Smoke §7", "`end` is DELETED — outdent", quiet)
+  hits = hits + flag(path, no, code, ";", "Smoke §1", "the semicolon does not exist — press enter", quiet)
+  hits = hits + flag(path, no, code, "local", "§1 deny", "bindings are already scoped", quiet)
+  hits = hits + flag(path, no, code, "require_old", "§1 deny", "no import — reachability is scope/home projection", quiet)
+  hits = hits + flag(path, no, code, "then", "§1 deny", "outdent", quiet)
+  hits = hits + flag(path, no, code, "tostring", "§1 deny", "x:to(str)", quiet)
+  hits = hits + flag(path, no, code, "tonumber", "§1 deny", "x:to(i64) — and it ROUTES on failure", quiet)
+  hits = hits + flag(path, no, code, "pcall", "§1 deny", "t | error — failure routes (B-15)", quiet)
+  hits = hits + flag(path, no, code, "setmetatable", "§1 deny", "descriptors and protocols", quiet)
+  hits = hits + flag(path, no, code, "pairs", "§1 deny", "iterate the value: xs:each()", quiet)
+  hits = hits + flag(path, no, code, "if not ", "LEXICAL", "prefix ! — if !expr; never if not expr", quiet)
+  hits = hits + flag(path, no, code, " and not ", "LEXICAL", "prefix ! — and !expr; never and not expr", quiet)
+  hits = hits + flag(path, no, code, " or not ", "LEXICAL", "prefix ! — or !expr; never or not expr", quiet)
+  hits = hits + flag(path, no, code, "(not ", "LEXICAL", "prefix ! — (!expr); never (not expr)", quiet)
+  hits = hits + flag(path, no, code, ".new(", "LADDER", "desc{…} · x:to(desc) · p:from(mode)(…) · file.open", quiet)
+  hits = hits + flag(path, no, code, ".create(", "LADDER", "desc{…}", quiet)
+  hits = hits + flag(path, no, code, "make", "LADDER", "desc{…} — make* is banned", quiet)
+  hits = hits + flag(path, no, code, "self", "SELF-ZERO", ".x · leading :call() · `.` is the subject · ... spreads it", quiet)
+  hits = hits + flag(path, no, code, " .. ", "FMT-ONE", "`{{}}` interpolation — never `..` concatenation", quiet)
+  hits = hits + flag(path, no, code, "os.args(", "host-TEMP", "os.args[n] table under os world — never os.args()", quiet)
+  hits = hits + flag(path, no, code, "os.getenv(", "host-TEMP", "os.env[key] / os.env(key) — environment is not a thing", quiet)
+  hits = hits + flag(path, no, code, "environment[", "host-TEMP", "environment is not a thing — use os.env[key]", quiet)
+  hits = hits + flag(path, no, code, "environment:", "host-TEMP", "environment is not a thing — use os.env[key]", quiet)
+  hits = hits + flag(path, no, code, "io.popen(", "host-TEMP", "command(line) then c:open(mode) across process boundary — docs/spec/host.md", quiet)
+  hits = hits + flag(path, no, code, "popen(", "host-TEMP", "command(line) then c:open(mode) — never popen", quiet)
+  hits = hits + flag(path, no, code, "io:popen(", "host-TEMP", "command(line) then c:open(mode) across process boundary", quiet)
+  hits = hits + flag(path, no, code, ":popen(", "host-TEMP", "c:open(mode) on command subject — never :popen", quiet)
+  hits = hits + flag(path, no, code, "os.execute(", "host-TEMP", "structured command + process world — docs/spec/host.md", quiet)
+  hits = hits + flag(path, no, code, "io.read(", "law.relation.read", "stdin:read() or path:read() — read relation on subject; never io.read", quiet)
+  hits = hits + flag(path, no, code, "io.open(", "law.world.dot", "path:open(mode) — subject-first; never io.open dot", quiet)
+  hits = hits + flag(path, no, code, "io.write(", "law.world.dot", "subject:write() — never io.write dot", quiet)
+  hits = hits + flag(path, no, code, "os.exit(", "law.world.dot", "demand/transition — never os.exit(); docs/spec/world.md", quiet)
+  hits = hits + flag(path, no, code, "use(", "projection", "no admission syntax — scope/home projection only", quiet)
+  hits = hits + flag(path, no, code, "using(", "projection", "no admission syntax — scope/home projection only", quiet)
+  hits = hits + flag(path, no, code, "inject(", "projection", "no admission syntax — scope/home projection only", quiet)
+  hits = hits + flag(path, no, code, "admit(", "projection", "no admission syntax — scope/home projection only", quiet)
+  hits = hits + flag(path, no, code, "std.", "host-TEMP", "NO std anywhere — use layout/home/world projection (GAP-157)", quiet)
+  hits = hits + flag(path, no, code, "table.", "law.lua.redirect", "xs:push(v) xs:remove(i) xs:sort() xs:keys() xs:join(sep) — subject-first; never table.* namespace", quiet)
+  hits = hits + flag(path, no, code, "string.", "law.lua.redirect", "text:sub(a,b) text:find(p) text:match(p) text:len() — subject-first; never string.* namespace", quiet)
+  hits = hits + flag(path, no, code, "math.", "law.lua.redirect", "x:sqrt() x:abs() x:floor() — subject-first; never math.* namespace", quiet)
+  hits
 
 edge: i64 = (path: str, no: i64, code: str, quiet: bool)
-    hits = 0
-    hits += flag(path, no, code, "ipairs", "law.lua.redirect", "iterate the value: xs:each() — never ipairs global", quiet)
-    hits += flag(path, no, code, "proc.", "host-TEMP", "proc is not a thing — structured command + process world", quiet)
+  hits = 0
+  hits = hits + flag(path, no, code, "ipairs", "law.lua.redirect", "iterate the value: xs:each() — never ipairs global", quiet)
+  hits = hits + flag(path, no, code, "proc.", "host-TEMP", "proc is not a thing — structured command + process world", quiet)
 
+  hits = hits + flag(path, no, code, "chomp(", "bridge", "recoverable text qualification — inline at boundary", quiet)
 
-
-
-    hits += flag(path, no, code, "chomp(", "bridge", "recoverable text qualification — inline at boundary", quiet)
-
-    hits += flag(path, no, code, "req(", "projection", "no admission syntax — same-home reachability only", quiet)
-    hits += flag(path, no, code, "process", "projection", "no admission syntax — same-home reachability only", quiet)
-    hits += flag(path, no, code, "std\x2Escript.", "host-TEMP", "std\x2Escript frozen — renaming to process does not decompose authority", quiet)
-    hits += flag(path, no, code, "ir.", "host-TEMP", "ir is not source vocabulary — graph/realization authority only", quiet)
-    hits += flag(path, no, code, "core.", "host-TEMP", "no core namespace — canonical vocabulary projection", quiet)
-    if !cited(path) and !ingress(path) and sigil(code)
-        if !quiet
-            print("{path}:{no}  at  [law.anchor.one]  at-sigil is current-world only — no prefix directive")
-        hits += 1
-    hits += flag(path, no, code, "bitcast", "view-TEMP", "subject-first to(bit) @view — no bitcast naming", quiet)
-    hits += flag(path, no, code, "unpack@view", "view-TEMP", "reverse f64 view is restore@view — unpack lowers to table.unpack", quiet)
-    hits += flag(path, no, code, "bit.", "view-TEMP", "no bit module — curried to(bit)(src) @view edges", quiet)
-    hits += flag(path, no, code, "f64_to_bits", "LAW-ONE", "subject-first one:to(bit) — no snake_case", quiet)
-    hits += flag(path, no, code, "== nil", "law.lua.hosted", "nil is a Lua value — use the admitted semantic absence case", quiet)
-    hits += flag(path, no, code, "!= nil", "law.lua.hosted", "nil is a Lua value — use the admitted semantic absence case", quiet)
-    hits += flag(path, no, code, "~= nil", "law.lua.hosted", "nil is a Lua value — use the admitted semantic absence case", quiet)
-    hits += flag(path, no, code, "= nil", "law.lua.hosted", "nil is a Lua value — use the admitted semantic absence case", quiet)
-    hits += flag(path, no, code, "== 0", "law.sentinel.zero", "do not branch on numeric zero sentinel — use else-if early return or bool outcome", quiet)
-    hits += flag(path, no, code, "!= 0", "law.sentinel.zero", "do not branch on numeric zero sentinel — use else-if early return or bool outcome", quiet)
-    hits += flag(path, no, code, "~= 0", "law.sentinel.zero", "do not branch on numeric zero sentinel — use else-if early return or bool outcome", quiet)
-    hits += flag(path, no, code, "== 1", "law.sentinel.zero", "do not branch on numeric one sentinel — use else-if early return or bool outcome", quiet)
-    hits += flag(path, no, code, "== true", "law.predicate.zero", "do not box semantic cases as bool — use outcome facts or direct transition", quiet)
-    hits += flag(path, no, code, "== false", "law.predicate.zero", "do not box semantic cases as bool — use outcome facts or direct transition", quiet)
-    hits += flag(path, no, code, "~= true", "law.predicate.zero", "do not box semantic cases as bool — use outcome facts or direct transition", quiet)
-    hits += flag(path, no, code, "~= false", "law.predicate.zero", "do not box semantic cases as bool — use outcome facts or direct transition", quiet)
-    hits += flag(path, no, code, "== \"\"", "law.sentinel.zero", "empty string is not an absence sentinel — use the admitted semantic case", quiet)
-    hits += flag(path, no, code, "~= \"\"", "law.sentinel.zero", "empty string is not an absence sentinel — use the admitted semantic case", quiet)
-    hits += flag(path, no, code, "!= \"\"", "law.sentinel.zero", "empty string is not an absence sentinel — use the admitted semantic case", quiet)
-    hits += flag(path, no, code, "passed =", "law.predicate.zero", "outcome/status facts — never passed: bool boxing", quiet)
-    hits += flag(path, no, code, ".passed", "law.predicate.zero", "outcome/status facts — never .passed bool boxing", quiet)
-    hits += flag(path, no, code, "dual_tool", "law.legacy.zero", "register idol_* tools only — duo_* aliases deleted", quiet)
-    hits += flag(path, no, code, "\"duo_", "law.legacy.zero", "MCP tool identity is idol_* — never duo_* registration", quiet)
-    hits += flag(path, no, code, "record = {}", "law.intermediate.zero", "no bridge pack builder — return facts directly with distinct field names", quiet)
-    hits += flag(path, no, code, "tally = {}", "law.intermediate.zero", "no bridge pack builder — return facts directly", quiet)
-    hits += flag(path, no, code, "cap = {}", "law.intermediate.zero", "no bridge pack builder — return facts directly", quiet)
-    hits += flag(path, no, code, "body = {}", "law.intermediate.zero", "no bridge pack builder — return facts directly", quiet)
-    hits += flag(path, no, code, ":to()", "law.infer.one", "no value:to() rung — spell target only when not inferable from demand", quiet)
-    hits += flag(path, no, code, "idol_fn_", "LAW-ONE", "one lowercase word per binding — never idol_fn_ snake", quiet)
-    hits += flag(path, no, code, "sym_", "LAW-ONE", "one lowercase word per binding — never sym_ snake", quiet)
-    hits += flag(path, no, code, "generic_table", "LAW-ONE", "one word per binding — never generic+table mash or snake", quiet)
-    hits += flag(path, no, code, "evidence_class", "LAW-ONE", "one word per binding — never evidence+class mash or snake", quiet)
-    hits += flag(path, no, code, "env_set", "LAW-ONE", "os.env[key] = value — never env_set snake", quiet)
-    hits += flag(path, no, code, "env_get", "LAW-ONE", "os.env[key] — never env_get snake", quiet)
-    hits += flag(path, no, code, "path_stem", "LAW-ONE", "path stem via home projection — never path_stem mash", quiet)
-    hits += flag(path, no, code, "viewedges", "LAW-ONE", "view(edges) pipe — never view+edges mash", quiet)
-    hits += flag(path, no, code, "viewrouter", "LAW-ONE", "router(view)(view[home]) — never view+router mash", quiet)
-    hits += flag(path, no, code, "viewproof", "LAW-ONE", "router(proof)(proof[view]) — slot name matches home key", quiet)
-    hits += flag(path, no, code, "bin/idol", "LAW-ONE", "zig-out/bin/idol — public command identity is idol", quiet)
-    hits += flag(path, no, code, "fsrouter", "LAW-ONE", "router(proof)(proof[home]) — never fs+router mash", quiet)
-    hits += flag(path, no, code, "corerouter", "LAW-ONE", "router(proof)(proof[home]) — never core+router mash", quiet)
-    hits
+  hits = hits + flag(path, no, code, "req(", "projection", "no admission syntax — same-home reachability only", quiet)
+  hits = hits + flag(path, no, code, "process", "projection", "no admission syntax — same-home reachability only", quiet)
+  hits = hits + flag(path, no, code, "std.script.", "host-TEMP", "std.script frozen — renaming to process does not decompose authority", quiet)
+  hits = hits + flag(path, no, code, "ir.", "host-TEMP", "ir is not source vocabulary — graph/realization authority only", quiet)
+  hits = hits + flag(path, no, code, "core.", "host-TEMP", "no core namespace — canonical vocabulary projection", quiet)
+  if not cited(path) and not ingress(path) and sigil(code)
+    if not quiet
+      print("{path}:{no}  at  [law.anchor.one]  at-sigil is current-world only — no prefix directive")
+    hits = hits + 1
+  hits = hits + flag(path, no, code, "bitcast", "view-TEMP", "subject-first to(bit) @view — no bitcast naming", quiet)
+  hits = hits + flag(path, no, code, "unpack@view", "view-TEMP", "reverse f64 view is restore@view — unpack lowers to table.unpack", quiet)
+  hits = hits + flag(path, no, code, "bit.", "view-TEMP", "no bit module — curried to(bit)(src) @view edges", quiet)
+  hits = hits + flag(path, no, code, "f64_to_bits", "LAW-ONE", "subject-first one:to(bit) — no snake_case", quiet)
+  hits = hits + flag(path, no, code, "== nil", "law.lua.hosted", "nil is a Lua value — use the admitted semantic absence case", quiet)
+  hits = hits + flag(path, no, code, "!= nil", "law.lua.hosted", "nil is a Lua value — use the admitted semantic absence case", quiet)
+  hits = hits + flag(path, no, code, "~= nil", "law.lua.hosted", "nil is a Lua value — use the admitted semantic absence case", quiet)
+  hits = hits + flag(path, no, code, "= nil", "law.lua.hosted", "nil is a Lua value — use the admitted semantic absence case", quiet)
+  hits = hits + flag(path, no, code, "== 0", "law.sentinel.zero", "do not branch on numeric zero sentinel — use else-if early return or bool outcome", quiet)
+  hits = hits + flag(path, no, code, "!= 0", "law.sentinel.zero", "do not branch on numeric zero sentinel — use else-if early return or bool outcome", quiet)
+  hits = hits + flag(path, no, code, "~= 0", "law.sentinel.zero", "do not branch on numeric zero sentinel — use else-if early return or bool outcome", quiet)
+  hits = hits + flag(path, no, code, "== 1", "law.sentinel.zero", "do not branch on numeric one sentinel — use else-if early return or bool outcome", quiet)
+  hits = hits + flag(path, no, code, "== true", "law.predicate.zero", "do not box semantic cases as bool — use outcome facts or direct transition", quiet)
+  hits = hits + flag(path, no, code, "== false", "law.predicate.zero", "do not box semantic cases as bool — use outcome facts or direct transition", quiet)
+  hits = hits + flag(path, no, code, "~= true", "law.predicate.zero", "do not box semantic cases as bool — use outcome facts or direct transition", quiet)
+  hits = hits + flag(path, no, code, "~= false", "law.predicate.zero", "do not box semantic cases as bool — use outcome facts or direct transition", quiet)
+  hits = hits + flag(path, no, code, "== \"\"", "law.sentinel.zero", "empty string is not an absence sentinel — use the admitted semantic case", quiet)
+  hits = hits + flag(path, no, code, "~= \"\"", "law.sentinel.zero", "empty string is not an absence sentinel — use the admitted semantic case", quiet)
+  hits = hits + flag(path, no, code, "!= \"\"", "law.sentinel.zero", "empty string is not an absence sentinel — use the admitted semantic case", quiet)
+  hits = hits + flag(path, no, code, "passed =", "law.predicate.zero", "outcome/status facts — never passed: bool boxing", quiet)
+  hits = hits + flag(path, no, code, ".passed", "law.predicate.zero", "outcome/status facts — never .passed bool boxing", quiet)
+  hits = hits + flag(path, no, code, "dual_tool", "law.legacy.zero", "register idol_* tools only — duo_* aliases deleted", quiet)
+  hits = hits + flag(path, no, code, "\"duo_", "law.legacy.zero", "MCP tool identity is idol_* — never duo_* registration", quiet)
+  hits = hits + flag(path, no, code, "record = {}", "law.intermediate.zero", "no bridge pack builder — return facts directly with distinct field names", quiet)
+  hits = hits + flag(path, no, code, "tally = {}", "law.intermediate.zero", "no bridge pack builder — return facts directly", quiet)
+  hits = hits + flag(path, no, code, "cap = {}", "law.intermediate.zero", "no bridge pack builder — return facts directly", quiet)
+  hits = hits + flag(path, no, code, "body = {}", "law.intermediate.zero", "no bridge pack builder — return facts directly", quiet)
+  hits = hits + flag(path, no, code, ":to()", "law.infer.one", "no value:to() rung — spell target only when not inferable from demand", quiet)
+  hits = hits + flag(path, no, code, "idol_fn_", "LAW-ONE", "one lowercase word per binding — never idol_fn_ snake", quiet)
+  hits = hits + flag(path, no, code, "sym_", "LAW-ONE", "one lowercase word per binding — never sym_ snake", quiet)
+  hits = hits + flag(path, no, code, "generic_table", "LAW-ONE", "one word per binding — never generic+table mash or snake", quiet)
+  hits = hits + flag(path, no, code, "evidence_class", "LAW-ONE", "one word per binding — never evidence+class mash or snake", quiet)
+  hits = hits + flag(path, no, code, "env_set", "LAW-ONE", "os.env[key] = value — never env_set snake", quiet)
+  hits = hits + flag(path, no, code, "env_get", "LAW-ONE", "os.env[key] — never env_get snake", quiet)
+  hits = hits + flag(path, no, code, "path_stem", "LAW-ONE", "path stem via home projection — never path_stem mash", quiet)
+  hits = hits + flag(path, no, code, "viewedges", "LAW-ONE", "view(edges) pipe — never view+edges mash", quiet)
+  hits = hits + flag(path, no, code, "viewrouter", "LAW-ONE", "router(view)(view[home]) — never view+router mash", quiet)
+  hits = hits + flag(path, no, code, "viewproof", "LAW-ONE", "router(proof)(proof[view]) — slot name matches home key", quiet)
+  hits = hits + flag(path, no, code, "bin/idol", "LAW-ONE", "zig-out/bin/idol — public command identity is idol", quiet)
+  hits = hits + flag(path, no, code, "fsrouter", "LAW-ONE", "router(proof)(proof[home]) — never fs+router mash", quiet)
+  hits = hits + flag(path, no, code, "corerouter", "LAW-ONE", "router(proof)(proof[home]) — never core+router mash", quiet)
+  hits
 
 home: i64 = (path: str, no: i64, code: str, quiet: bool)
-    hits = 0
-    hits += flag(path, no, code, "ingestbody", "LAW-ONE", "router(semantic)(semantic[home]) — never ingest+body mash", quiet)
-    hits += flag(path, no, code, "graphbody", "LAW-ONE", "router(semantic)(semantic[home]) — never graph+body mash", quiet)
-    hits += flag(path, no, code, "bitbody", "LAW-ONE", "router(proof)(proof[home]) — never bit+body mash", quiet)
-    hits += flag(path, no, code, "censusbody", "LAW-ONE", "router(semantic)(semantic[home]) — never census+body mash", quiet)
-    hits += flag(path, no, code, "zerostdbody", "LAW-ONE", "router(semantic)(semantic[home]) — never zerostd+body mash", quiet)
-    hits += flag(path, no, code, "verdictbody", "LAW-ONE", "router(semantic)(semantic[home]) — never verdict+body mash", quiet)
-    hits += flag(path, no, code, "recordbody", "LAW-ONE", "router(proof)(proof[home]) — never record+body mash", quiet)
-    hits += flag(path, no, code, "worldbody", "LAW-ONE", "router(proof)(proof[home]) — never world+body mash", quiet)
-    hits += flag(path, no, code, "removebody", "LAW-ONE", "router(proof)(proof[home]) — never remove+body mash", quiet)
-    hits += flag(path, no, code, "mkdirbody", "LAW-ONE", "router(proof)(proof[home]) — never mkdir+body mash", quiet)
-    hits += flag(path, no, code, "fs_exists", "LAW-ONE", "path:exists() — subject-first; never fs_exists snake", quiet)
-    hits += flag(path, no, code, "fsexists", "LAW-ONE", "path:exists() — never fsexists mash", quiet)
-    hits += flag(path, no, code, "fs_write", "LAW-ONE", "path:open + :write — never std\x2Escript.fs_write", quiet)
-    hits += flag(path, no, code, "fswrite", "LAW-ONE", "path:open + :write — never fswrite mash", quiet)
-    hits += flag(path, no, code, "fs_read", "LAW-ONE", "path:read() — never fs_read snake", quiet)
-    hits += flag(path, no, code, "fs_cp", "LAW-ONE", "src:copy(dst) — subject-first; never fs_cp mash", quiet)
-    hits += flag(path, no, code, "fs_rm", "LAW-ONE", "path:remove() — subject-first; never fs_rm mash", quiet)
-    hits += flag(path, no, code, "fs:", "law.world.dot", "path possesses fs relations — never fs: namespace dispatch", quiet)
-    hits += flag(path, no, code, "io:read(", "law.relation.read", "stdin:read() or path:read() — read relation on subject; never io:read", quiet)
-    hits
+  hits = 0
+  hits = hits + flag(path, no, code, "ingestbody", "LAW-ONE", "router(semantic)(semantic[home]) — never ingest+body mash", quiet)
+  hits = hits + flag(path, no, code, "graphbody", "LAW-ONE", "router(semantic)(semantic[home]) — never graph+body mash", quiet)
+  hits = hits + flag(path, no, code, "bitbody", "LAW-ONE", "router(proof)(proof[home]) — never bit+body mash", quiet)
+  hits = hits + flag(path, no, code, "censusbody", "LAW-ONE", "router(semantic)(semantic[home]) — never census+body mash", quiet)
+  hits = hits + flag(path, no, code, "zerostdbody", "LAW-ONE", "router(semantic)(semantic[home]) — never zerostd+body mash", quiet)
+  hits = hits + flag(path, no, code, "verdictbody", "LAW-ONE", "router(semantic)(semantic[home]) — never verdict+body mash", quiet)
+  hits = hits + flag(path, no, code, "recordbody", "LAW-ONE", "router(proof)(proof[home]) — never record+body mash", quiet)
+  hits = hits + flag(path, no, code, "worldbody", "LAW-ONE", "router(proof)(proof[home]) — never world+body mash", quiet)
+  hits = hits + flag(path, no, code, "removebody", "LAW-ONE", "router(proof)(proof[home]) — never remove+body mash", quiet)
+  hits = hits + flag(path, no, code, "mkdirbody", "LAW-ONE", "router(proof)(proof[home]) — never mkdir+body mash", quiet)
+  hits = hits + flag(path, no, code, "fs_exists", "LAW-ONE", "path:exists() — subject-first; never fs_exists snake", quiet)
+  hits = hits + flag(path, no, code, "fsexists", "LAW-ONE", "path:exists() — never fsexists mash", quiet)
+  hits = hits + flag(path, no, code, "fs_write", "LAW-ONE", "path:open + :write — never std.script.fs_write", quiet)
+  hits = hits + flag(path, no, code, "fswrite", "LAW-ONE", "path:open + :write — never fswrite mash", quiet)
+  hits = hits + flag(path, no, code, "fs_read", "LAW-ONE", "path:read() — never fs_read snake", quiet)
+  hits = hits + flag(path, no, code, "fs_cp", "LAW-ONE", "src:copy(dst) — subject-first; never fs_cp mash", quiet)
+  hits = hits + flag(path, no, code, "fs_rm", "LAW-ONE", "path:remove() — subject-first; never fs_rm mash", quiet)
+  hits = hits + flag(path, no, code, "fs:", "law.world.dot", "path possesses fs relations — never fs: namespace dispatch", quiet)
+  hits = hits + flag(path, no, code, "io:read(", "law.relation.read", "stdin:read() or path:read() — read relation on subject; never io:read", quiet)
+  hits
 
 adj: i64 = (path: str, no: i64, code: str, quiet: bool)
-    hits = 0
-    hits += flag(path, no, code, ": readable", "law.adjective.zero", "relation constraint read — source: read not source: readable", quiet)
-    hits += flag(path, no, code, ": writable", "law.adjective.zero", "relation constraint write — sink: write not sink: writable", quiet)
-    hits += flag(path, no, code, ": seekable", "law.adjective.zero", "relation constraint seek — never seekable adjective", quiet)
-    hits += flag(path, no, code, ": iterable", "law.adjective.zero", "relation constraint iter — never iterable adjective", quiet)
-    hits += flag(path, no, code, ": hashable", "law.adjective.zero", "relation constraint hash — never hashable adjective", quiet)
-    hits += flag(path, no, code, ": equatable", "law.adjective.zero", "relation constraint eq — never equatable adjective", quiet)
-    hits += flag(path, no, code, ": comparable", "law.adjective.zero", "relation constraint lt/le — never comparable adjective", quiet)
-    hits += flag(path, no, code, ": cloneable", "law.adjective.zero", "relation constraint clone — never cloneable adjective", quiet)
-    hits += flag(path, no, code, ": copyable", "law.adjective.zero", "relation constraint copy — never copyable adjective", quiet)
-    hits += flag(path, no, code, ": serializable", "law.adjective.zero", "relation constraint encode — never serializable adjective", quiet)
-    hits += flag(path, no, code, ": deserializable", "law.adjective.zero", "relation constraint decode — never deserializable adjective", quiet)
-    hits += flag(path, no, code, ": convertible", "law.adjective.zero", "relation constraint to — never convertible adjective", quiet)
-    hits += flag(path, no, code, ": indexable", "law.adjective.zero", "relation constraint index — never indexable adjective", quiet)
-    hits += flag(path, no, code, ": sortable", "law.adjective.zero", "relation constraint sort — never sortable adjective", quiet)
-    hits += flag(path, no, code, ": printable", "law.adjective.zero", "relation constraint format — never printable adjective", quiet)
-    hits += flag(path, no, code, ": formattable", "law.adjective.zero", "relation constraint format — never formattable adjective", quiet)
-    hits += flag(path, no, code, ": callable", "law.adjective.zero", "relation constraint call — never callable adjective", quiet)
-    hits += flag(path, no, code, "callable\x20=\x20true", "law.boolean.mirror.zero", "application is callable or it is not — never callable boolean mirror", quiet)
-    hits += flag(path, no, code, "possessed\x20=\x20true", "law.boolean.mirror.zero", "subject edge exists — never possessed boolean mirror", quiet)
-    hits += flag(path, no, code, "possessed\x20=\x20false", "law.boolean.mirror.zero", "absence of subject edge — never possessed boolean", quiet)
-    hits += flag(path, no, code, "operation\x20=\x20false", "law.boolean.mirror.zero", "graph participation — never operation classification boolean", quiet)
-    hits += flag(path, no, code, "operation\x20=\x20true", "law.boolean.mirror.zero", "graph participation — never operation classification boolean", quiet)
-    hits += flag(path, no, code, "typed\x20=\x20true", "law.boolean.mirror.zero", "descriptor edge exists — never typed boolean mirror", quiet)
-    hits += flag(path, no, code, "authorized\x20=\x20true", "law.boolean.mirror.zero", "witness edge exists — never authorized boolean mirror", quiet)
-    hits += flag(path, no, code, "captured\x20=\x20true", "law.boolean.mirror.zero", "capture edge exists — never captured boolean mirror", quiet)
-    hits += flag(path, no, code, "projected\x20=\x20true", "law.boolean.mirror.zero", "projection edge exists — never projected boolean mirror", quiet)
-    hits += flag(path, no, code, "resolved\x20=\x20true", "law.boolean.mirror.zero", "binding is resolved or it is not — never resolved boolean mirror", quiet)
-    hits += flag(path, no, code, "imported\x20=\x20true", "law.boolean.mirror.zero", "no import fact — never imported boolean mirror", quiet)
-    hits += flag(path, no, code, "native\x20=\x20true", "law.boolean.mirror.zero", "realization target is a fact — never native boolean mirror", quiet)
-    hits += flag(path, no, code, "static\x20=\x20true", "law.boolean.mirror.zero", "stage is a fact — never static boolean mirror", quiet)
-    hits += flag(path, no, code, "world\x20=\x20\"\"", "law.unknown.one", "no world-requirement edge — never world empty-string sentinel", quiet)
-    hits += flag(path, no, code, "world\x20=\x20\"io\"", "law.world.one", "authority is exact witness — never string world on a relation row", quiet)
-    hits += flag(path, no, code, "world\x20=\x20\"fs\"", "law.world.one", "authority is exact witness — never string world on a relation row", quiet)
-    hits += flag(path, no, code, "world\x20=\x20\"json\"", "law.world.one", "json is format not world — never string world catalog", quiet)
-    hits += flag(path, no, code, "world\x20=\x20\"net\"", "law.world.one", "authority is exact witness — never string world on a relation row", quiet)
-    hits += flag(path, no, code, "resident\x20=\x20{", "law.catalog.zero", "no relation catalog — resolver publishes graph ids", quiet)
-    hits += flag(path, no, code, "concept ", "law.protocol.zero", "no concept kingdom — relation constraints only", quiet)
-    hits += flag(path, no, code, "@implements", "law.protocol.zero", "no impl registry — graph proves satisfaction", quiet)
-    hits += flag(path, no, code, "= router(", "bridge", "audit(path)(pattern) — no transitive router text bindings", quiet)
-    hits += flag(path, no, code, "relationid", "LAW-ONE", "one id + facts — never relationid mash across relation edge", quiet)
-    hits += flag(path, no, code, "readid", "LAW-ONE", "relation spelling + facts — never readid mash", quiet)
-    hits += flag(path, no, code, "read = 10", "LAW-ONE", "resident facts — never parallel integer relation slots", quiet)
-    hits += flag(path, no, code, "len: bool = (path", "bridge", "len(path) = (min: i64) with path:read() then :len on next line; call path:len(min)", quiet)
-    hits += flag(path, no, code, "audit: bool = (path", "bridge", "audit(path) = (pattern: str) with path:read() then :match on next line; call path:audit(pattern)", quiet)
-    hits += flag(path, no, code, "hit: bool = (path", "bridge", "hit(path) = (pattern: str) with path:read() then :match on next line; call path:hit(pattern)", quiet)
-    hits += flag(path, no, code, "from(path) = (pattern", "bridge", "audit(path) = (pattern: str) for required patterns; hit(path)(pattern) for forbidden — never from(path) mash", quiet)
-    if !(path:len() >= 5 and path:sub(1, 5) == "gate/")
-        hits += flag(path, no, code, "flag(path, ", "bridge", "path:flag(q)(no, code, pat, law, fix) — subject-first; never flag(path, ...)", quiet)
-        hits += flag(path, no, code, "flag(path)(", "bridge", "path:flag(q)(...) — subject-first; never flag(path)(...)", quiet)
-    hits += flag(path, no, code, "len(path, ", "bridge", "len(path)(min) — boundary-curried length audit; never flat len(path, min)", quiet)
-    hits += flag(path, no, code, "audit(path, ", "bridge", "path:audit(pattern) — subject-first pattern audit; never flat audit(path, pattern)", quiet)
-    hits += flag(path, no, code, "hit(path, ", "bridge", "path:hit(pattern) — subject-first pattern probe; never flat hit(path, pattern)", quiet)
-    hits += flag(path, no, code, "findFunc(", "law.graph.query", "entity(id) / application(id) — exact graph ids only; never findFunc(name)", quiet)
-    hits += flag(path, no, code, "findByName(", "law.graph.query", "entity(id) — exact graph ids only; never findByName(name)", quiet)
-    hits += flag(path, no, code, "lookupByName(", "law.graph.query", "entity(id) — exact graph ids only; never lookupByName(name)", quiet)
-    hits += flag(path, no, code, "EdgeKind.", "law.graph.edge", "edges are structural roles — never operational EdgeKind.run/call/read/write/...", quiet)
-    hits += flag(path, no, code, ".set(", "law.access.zero", "ordinary access: table(key)=value — never x:set(k,v) or x.set(k,v)", quiet)
-    hits += flag(path, no, code, ":set(", "law.access.zero", "ordinary access: table(key)=value — never x:set(k,v)", quiet)
-    hits += flag(path, no, code, ".call(", "law.application.one", "subject:relation(...) — never f:call(x) or f.call(x)", quiet)
-    hits += flag(path, no, code, ":call(", "law.application.one", "subject:relation(...) — never f:call(x)", quiet)
-    hits += flag(path, no, code, ".get(", "law.access.zero", "ordinary access: x(key) — never x:get(k) or x.get(k); classify DATA or fix producer", quiet)
-    hits += flag(path, no, code, ":get(", "law.access.zero", "ordinary access: x(key) — never x:get(k)", quiet)
-    hits += flag(path, no, code, "call_handler", "law.identity.collision", "handler is collision role — decompose to subject + relation", quiet)
-    hits += flag(path, no, code, ".get(\"", "law.resolve.once", "semantic .get(name) forbidden — classify as DATA or fix producer", quiet)
-    hits += flag(path, no, code, "findTableShape(", "law.graph.query", "tableShapeEntity(id) — exact ids only; never findTableShape(name)", quiet)
-    hits += flag(path, no, code, "findEnumShape(", "law.graph.query", "enumShapeEntity(id) — exact ids only; never findEnumShape(name)", quiet)
-    hits += flag(path, no, code, "text = path:read()", "bridge", "path:read() then :match(pattern) on next line — no transitive read binding", quiet)
-    hits += flag(path, no, code, "lua_", "foreign-zero", "no lua intermediaries in Idol source", quiet)
-    hits += flag(path, no, code, "gate.sh", "foreign-zero", "gate transport is Idol only — pipe diff via stdin:read()", quiet)
-    hits += flag(path, no, code, "gatepath", "foreign-zero", "gate transport is Idol only — no shell path injection", quiet)
-    hits += flag(path, no, code, "scandiff", "LAW-ONE", "scan(body) — one word; never scan+diff mash", quiet)
-    hits += flag(path, no, code, "scanline", "LAW-ONE", "audit(path, no, line) — one word per binding; scan+line is a mash", quiet)
-    hits += flag(path, no, code, "diffhead", "LAW-ONE", "head(line) inside scan(body) — one word per binding", quiet)
-    hits += flag(path, no, code, "bareend", "LAW-ONE", "bare(code) — one word per binding; bare+end is a mash", quiet)
-    hits += flag(path, no, code, "writetemp", "LAW-ONE", "write(path, body) via io:open — never write+temp mash", quiet)
-    hits += flag(path, no, code, "rungate", "LAW-ONE", "run(gate, body) — curried edge; never run+gate mash", quiet)
-    hits += flag(path, no, code, "shquote", "LAW-ONE", "quote(text) — one word per binding", quiet)
-    hits += flag(path, no, code, "rootdir", "LAW-ONE", "root() — one word per binding", quiet)
-    hits += flag(path, no, code, "idolbin", "LAW-ONE", "idol() — one word per binding", quiet)
-    hits += flag(path, no, code, "printlines", "LAW-ONE", "emit(prefix, text) — never print+lines mash", quiet)
-    hits += flag(path, no, code, "tmpbase", "LAW-ONE", "scratch path + \\\"/name\\\" — never tmp+base mash", quiet)
-    hits += flag(path, no, code, "pathbody", "LAW-ONE", "path file under scratch — never path+body mash", quiet)
-    hits += flag(path, no, code, "treebody", "LAW-ONE", "reuse path under scratch — never tree+body mash", quiet)
-    hits += flag(path, no, code, "hostdiff", "LAW-ONE", "host file under scratch — decompose owner and role", quiet)
-    hits += flag(path, no, code, "pathgate", "LAW-ONE", "path file under scratch — decompose owner and role", quiet)
-    hits += flag(path, no, code, "treegate", "LAW-ONE", "path file under scratch — decompose owner and role", quiet)
-    hits += flag(path, no, code, "scan(\\\"diff\\\")", "LAW-ONE", "scan(body) — one word; diff is the transport boundary, not a string tag", quiet)
-    hits += flag(path, no, code, "scan(\\\"path\\\")", "LAW-ONE", "scan(body) — one word; path list is the transport boundary, not a string tag", quiet)
-    hits += flag(path, no, code, "qualworlddot", "LAW-ONE", "dot(std)(world, code) — relation family; never qual+world+dot mash", quiet)
-    hits += flag(path, no, code, "ingressonly", "LAW-ONE", "ingress(path) — one word; never ingress+only mash", quiet)
-    hits += flag(path, no, code, "only(ingress)", "LAW-ONE", "ingress(path) — ingress is the relation, not only(ingress)", quiet)
-    hits += flag(path, no, code, "worlddot", "LAW-ONE", "dot(io)(code) / dot(os)(code) — relation family; never world+dot mash", quiet)
-    hits += flag(path, no, code, "captureline", "LAW-ONE", "chomp(capture(cmd)) — never capture+line mash", quiet)
-    hits += flag(path, no, code, "[[", "lexical", "use \\\" text \\\" — double quotes admit multiline content", quiet)
-    hits
+  hits = 0
+  hits = hits + flag(path, no, code, ": readable", "law.adjective.zero", "relation constraint read — source: read not source: readable", quiet)
+  hits = hits + flag(path, no, code, ": writable", "law.adjective.zero", "relation constraint write — sink: write not sink: writable", quiet)
+  hits = hits + flag(path, no, code, ": seekable", "law.adjective.zero", "relation constraint seek — never seekable adjective", quiet)
+  hits = hits + flag(path, no, code, ": iterable", "law.adjective.zero", "relation constraint iter — never iterable adjective", quiet)
+  hits = hits + flag(path, no, code, ": hashable", "law.adjective.zero", "relation constraint hash — never hashable adjective", quiet)
+  hits = hits + flag(path, no, code, ": equatable", "law.adjective.zero", "relation constraint eq — never equatable adjective", quiet)
+  hits = hits + flag(path, no, code, ": comparable", "law.adjective.zero", "relation constraint lt/le — never comparable adjective", quiet)
+  hits = hits + flag(path, no, code, ": cloneable", "law.adjective.zero", "relation constraint clone — never cloneable adjective", quiet)
+  hits = hits + flag(path, no, code, ": copyable", "law.adjective.zero", "relation constraint copy — never copyable adjective", quiet)
+  hits = hits + flag(path, no, code, ": serializable", "law.adjective.zero", "relation constraint encode — never serializable adjective", quiet)
+  hits = hits + flag(path, no, code, ": deserializable", "law.adjective.zero", "relation constraint decode — never deserializable adjective", quiet)
+  hits = hits + flag(path, no, code, ": convertible", "law.adjective.zero", "relation constraint to — never convertible adjective", quiet)
+  hits = hits + flag(path, no, code, ": indexable", "law.adjective.zero", "relation constraint index — never indexable adjective", quiet)
+  hits = hits + flag(path, no, code, ": sortable", "law.adjective.zero", "relation constraint sort — never sortable adjective", quiet)
+  hits = hits + flag(path, no, code, ": printable", "law.adjective.zero", "relation constraint format — never printable adjective", quiet)
+  hits = hits + flag(path, no, code, ": formattable", "law.adjective.zero", "relation constraint format — never formattable adjective", quiet)
+  hits = hits + flag(path, no, code, ": callable", "law.adjective.zero", "relation constraint call — never callable adjective", quiet)
+  hits = hits + flag(path, no, code, "callable = true", "law.boolean.mirror.zero", "application is callable or it is not — never callable boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "possessed = true", "law.boolean.mirror.zero", "subject edge exists — never possessed boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "possessed = false", "law.boolean.mirror.zero", "absence of subject edge — never possessed boolean", quiet)
+  hits = hits + flag(path, no, code, "operation = false", "law.boolean.mirror.zero", "graph participation — never operation classification boolean", quiet)
+  hits = hits + flag(path, no, code, "operation = true", "law.boolean.mirror.zero", "graph participation — never operation classification boolean", quiet)
+  hits = hits + flag(path, no, code, "typed = true", "law.boolean.mirror.zero", "descriptor edge exists — never typed boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "authorized = true", "law.boolean.mirror.zero", "witness edge exists — never authorized boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "captured = true", "law.boolean.mirror.zero", "capture edge exists — never captured boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "projected = true", "law.boolean.mirror.zero", "projection edge exists — never projected boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "resolved = true", "law.boolean.mirror.zero", "binding is resolved or it is not — never resolved boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "imported = true", "law.boolean.mirror.zero", "no import fact — never imported boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "native = true", "law.boolean.mirror.zero", "realization target is a fact — never native boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "static = true", "law.boolean.mirror.zero", "stage is a fact — never static boolean mirror", quiet)
+  hits = hits + flag(path, no, code, "world = \"\"", "law.unknown.one", "no world-requirement edge — never world empty-string sentinel", quiet)
+  hits = hits + flag(path, no, code, "world = \"io\"", "law.world.one", "authority is exact witness — never string world on a relation row", quiet)
+  hits = hits + flag(path, no, code, "world = \"fs\"", "law.world.one", "authority is exact witness — never string world on a relation row", quiet)
+  hits = hits + flag(path, no, code, "world = \"json\"", "law.world.one", "json is format not world — never string world catalog", quiet)
+  hits = hits + flag(path, no, code, "world = \"net\"", "law.world.one", "authority is exact witness — never string world on a relation row", quiet)
+  hits = hits + flag(path, no, code, "resident = {", "law.catalog.zero", "no relation catalog — resolver publishes graph ids", quiet)
+  hits = hits + flag(path, no, code, "concept ", "law.protocol.zero", "no concept kingdom — relation constraints only", quiet)
+  hits = hits + flag(path, no, code, "@implements", "law.protocol.zero", "no impl registry — graph proves satisfaction", quiet)
+  hits = hits + flag(path, no, code, "= router(", "bridge", "audit(path)(pattern) — no transitive router text bindings", quiet)
+  hits = hits + flag(path, no, code, "relationid", "LAW-ONE", "one id + facts — never relationid mash across relation edge", quiet)
+  hits = hits + flag(path, no, code, "readid", "LAW-ONE", "relation spelling + facts — never readid mash", quiet)
+  hits = hits + flag(path, no, code, "read = 10", "LAW-ONE", "resident facts — never parallel integer relation slots", quiet)
+  hits = hits + flag(path, no, code, "len: bool = (path", "bridge", "len(path) = (min: i64) with path:read() then :len on next line; call path:len(min)", quiet)
+  hits = hits + flag(path, no, code, "audit: bool = (path", "bridge", "audit(path) = (pattern: str) with path:read() then :match on next line; call path:audit(pattern)", quiet)
+  hits = hits + flag(path, no, code, "hit: bool = (path", "bridge", "hit(path) = (pattern: str) with path:read() then :match on next line; call path:hit(pattern)", quiet)
+  hits = hits + flag(path, no, code, "from(path) = (pattern", "bridge", "audit(path) = (pattern: str) for required patterns; hit(path)(pattern) for forbidden — never from(path) mash", quiet)
+  if not (path:len() >= 5 and path:sub(1, 5) == "gate/")
+    hits = hits + flag(path, no, code, "flag(path, ", "bridge", "path:flag(q)(no, code, pat, law, fix) — subject-first; never flag(path, ...)", quiet)
+    hits = hits + flag(path, no, code, "flag(path)(", "bridge", "path:flag(q)(...) — subject-first; never flag(path)(...)", quiet)
+  hits = hits + flag(path, no, code, "len(path, ", "bridge", "len(path)(min) — boundary-curried length audit; never flat len(path, min)", quiet)
+  hits = hits + flag(path, no, code, "audit(path, ", "bridge", "path:audit(pattern) — subject-first pattern audit; never flat audit(path, pattern)", quiet)
+  hits = hits + flag(path, no, code, "hit(path, ", "bridge", "path:hit(pattern) — subject-first pattern probe; never flat hit(path, pattern)", quiet)
+  hits = hits + flag(path, no, code, "findFunc(", "law.graph.query", "entity(id) / application(id) — exact graph ids only; never findFunc(name)", quiet)
+  hits = hits + flag(path, no, code, "findByName(", "law.graph.query", "entity(id) — exact graph ids only; never findByName(name)", quiet)
+  hits = hits + flag(path, no, code, "lookupByName(", "law.graph.query", "entity(id) — exact graph ids only; never lookupByName(name)", quiet)
+  hits = hits + flag(path, no, code, "EdgeKind.", "law.graph.edge", "edges are structural roles — never operational EdgeKind.run/call/read/write/...", quiet)
+  hits = hits + flag(path, no, code, ".set(", "law.access.zero", "ordinary access: table(key)=value — never x:set(k,v) or x.set(k,v)", quiet)
+  hits = hits + flag(path, no, code, ":set(", "law.access.zero", "ordinary access: table(key)=value — never x:set(k,v)", quiet)
+  hits = hits + flag(path, no, code, ".call(", "law.application.one", "subject:relation(...) — never f:call(x) or f.call(x)", quiet)
+  hits = hits + flag(path, no, code, ":call(", "law.application.one", "subject:relation(...) — never f:call(x)", quiet)
+  hits = hits + flag(path, no, code, ".get(", "law.access.zero", "ordinary access: x(key) — never x:get(k) or x.get(k); classify DATA or fix producer", quiet)
+  hits = hits + flag(path, no, code, ":get(", "law.access.zero", "ordinary access: x(key) — never x:get(k)", quiet)
+  hits = hits + flag(path, no, code, "call_handler", "law.identity.collision", "handler is collision role — decompose to subject + relation", quiet)
+  hits = hits + flag(path, no, code, ".get(\"", "law.resolve.once", "semantic .get(name) forbidden — classify as DATA or fix producer", quiet)
+  hits = hits + flag(path, no, code, "findTableShape(", "law.graph.query", "tableShapeEntity(id) — exact ids only; never findTableShape(name)", quiet)
+  hits = hits + flag(path, no, code, "findEnumShape(", "law.graph.query", "enumShapeEntity(id) — exact ids only; never findEnumShape(name)", quiet)
+  hits = hits + flag(path, no, code, "text = path:read()", "bridge", "path:read() then :match(pattern) on next line — no transitive read binding", quiet)
+  hits = hits + flag(path, no, code, "lua_", "foreign-zero", "no lua intermediaries in Idol source", quiet)
+  hits = hits + flag(path, no, code, "gate.sh", "foreign-zero", "gate transport is Idol only — pipe diff via stdin:read()", quiet)
+  hits = hits + flag(path, no, code, "gatepath", "foreign-zero", "gate transport is Idol only — no shell path injection", quiet)
+  hits = hits + flag(path, no, code, "scandiff", "LAW-ONE", "scan(body) — one word; never scan+diff mash", quiet)
+  hits = hits + flag(path, no, code, "scanline", "LAW-ONE", "audit(path, no, line) — one word per binding; scan+line is a mash", quiet)
+  hits = hits + flag(path, no, code, "diffhead", "LAW-ONE", "head(line) inside scan(body) — one word per binding", quiet)
+  hits = hits + flag(path, no, code, "bareend", "LAW-ONE", "bare(code) — one word per binding; bare+end is a mash", quiet)
+  hits = hits + flag(path, no, code, "writetemp", "LAW-ONE", "write(path, body) via io:open — never write+temp mash", quiet)
+  hits = hits + flag(path, no, code, "rungate", "LAW-ONE", "run(gate, body) — curried edge; never run+gate mash", quiet)
+  hits = hits + flag(path, no, code, "shquote", "LAW-ONE", "quote(text) — one word per binding", quiet)
+  hits = hits + flag(path, no, code, "rootdir", "LAW-ONE", "root() — one word per binding", quiet)
+  hits = hits + flag(path, no, code, "idolbin", "LAW-ONE", "idol() — one word per binding", quiet)
+  hits = hits + flag(path, no, code, "printlines", "LAW-ONE", "emit(prefix, text) — never print+lines mash", quiet)
+  hits = hits + flag(path, no, code, "tmpbase", "LAW-ONE", "scratch path + \\\"/name\\\" — never tmp+base mash", quiet)
+  hits = hits + flag(path, no, code, "pathbody", "LAW-ONE", "path file under scratch — never path+body mash", quiet)
+  hits = hits + flag(path, no, code, "treebody", "LAW-ONE", "reuse path under scratch — never tree+body mash", quiet)
+  hits = hits + flag(path, no, code, "hostdiff", "LAW-ONE", "host file under scratch — decompose owner and role", quiet)
+  hits = hits + flag(path, no, code, "pathgate", "LAW-ONE", "path file under scratch — decompose owner and role", quiet)
+  hits = hits + flag(path, no, code, "treegate", "LAW-ONE", "path file under scratch — decompose owner and role", quiet)
+  hits = hits + flag(path, no, code, "scan(\\\"diff\\\")", "LAW-ONE", "scan(body) — one word; diff is the transport boundary, not a string tag", quiet)
+  hits = hits + flag(path, no, code, "scan(\\\"path\\\")", "LAW-ONE", "scan(body) — one word; path list is the transport boundary, not a string tag", quiet)
+  hits = hits + flag(path, no, code, "qualworlddot", "LAW-ONE", "dot(std)(world, code) — relation family; never qual+world+dot mash", quiet)
+  hits = hits + flag(path, no, code, "ingressonly", "LAW-ONE", "ingress(path) — one word; never ingress+only mash", quiet)
+  hits = hits + flag(path, no, code, "only(ingress)", "LAW-ONE", "ingress(path) — ingress is the relation, not only(ingress)", quiet)
+  hits = hits + flag(path, no, code, "worlddot", "LAW-ONE", "dot(io)(code) / dot(os)(code) — relation family; never world+dot mash", quiet)
+  hits = hits + flag(path, no, code, "captureline", "LAW-ONE", "chomp(capture(cmd)) — never capture+line mash", quiet)
+  hits = hits + flag(path, no, code, "[[", "lexical", "use \\\" text \\\" — double quotes admit multiline content", quiet)
+  hits
 
 # lowercase letter, for the LAW-ONE [a-z]_[a-z] check
 alpha: bool = (c: str)
-    c >= "a" and c <= "z"
+  c >= "a" and c <= "z"
 
 upper: bool = (c: str)
-    c >= "A" and c <= "Z"
+  c >= "A" and c <= "Z"
 
 digit: bool = (c: str)
-    c >= "0" and c <= "9"
+  c >= "0" and c <= "9"
 
 # true when code introduces a Lua dash comment outside strings
 dash: bool = (code: str)
-    n = code:len()
-    quote = ""
-    i = 1
-    while i <= n
-        c = code:sub(i, i)
-        if quote == ""
-            if c == "#"
-                return false
-            if c == "\"" or c == "'"
-                quote = c
-            else
-                if c == "-" and i < n and code:sub(i + 1, i + 1) == "-"
-                    if i + 2 <= n and code:sub(i + 2, i + 2) == "-"
-                        i += 1
-                    else
-                        before = ""
-                        if i > 1
-                            before = code:sub(i - 1, i - 1)
-                        if before == "" or before == " " or before == "\t"
-                            return true
-        else
-            if c == quote
-                quote = ""
-        i += 1
-    false
+  n = code:len()
+  quote = ""
+  i = 1
+  while i <= n
+    c = code:sub(i, i)
+    if quote == ""
+      if c == "#"
+        return false
+      if c == "\"" or c == "'"
+        quote = c
+      else
+        if c == "-" and i < n and code:sub(i + 1, i + 1) == "-"
+          if i + 2 <= n and code:sub(i + 2, i + 2) == "-"
+            i = i + 1
+          else
+            before = ""
+            if i > 1
+              before = code:sub(i - 1, i - 1)
+            if before == "" or before == " " or before == "\t"
+              return true
+    else
+      if c == quote
+        quote = ""
+    i = i + 1
+  false
 
 # Strip comments and string bodies so a rule cannot fire on prose or on this
 # file's own rule table. Quotes are replaced by spaces, not removed, so column
 # numbers stay true.
 strip: str = (line: str)
-    out = ""
-    n = line:len()
-    quote = ""
-    i = 1
-    while i <= n
-        c = line:sub(i, i)
-        if quote == ""
-            if c == "#"
-                return out
-            if c == "\"" or c == "'"
-                quote = c
-                out = "{out} "
-            else
-                out = "{out}{c}"
-        else
-            if c == quote
-                quote = ""
-            out = "{out} "
-        i += 1
-    out
+  out = ""
+  n = line:len()
+  quote = ""
+  i = 1
+  while i <= n
+    c = line:sub(i, i)
+    if quote == ""
+      if c == "#"
+        return out
+      if c == "\"" or c == "'"
+        quote = c
+        out = "{out} "
+      else
+        out = "{out}{c}"
+    else
+      if c == quote
+        quote = ""
+      out = "{out} "
+    i = i + 1
+  out
 
 # LAW-ONE has no spelling exemptions. Qualification belongs to levels and
 # homes; an underscore in idol source is migration debt regardless of where it
 # occurs in an identifier.
 under: bool = (code: str)
-    n = code:len()
-    i = 1
-    while i <= n
-        if code:sub(i, i) == "_"
-            return true
-        i += 1
-    false
+  n = code:len()
+  i = 1
+  while i <= n
+    if code:sub(i, i) == "_"
+      return true
+    i = i + 1
+  false
 
 # Uppercase is not a descriptor convention in idol. Cases, descriptors,
 # bindings, homes, relations, and generated identities share the same law.
 capital: bool = (code: str)
-    n = code:len()
-    i = 1
-    while i <= n
-        c = code:sub(i, i)
-        before = ""
-        if i > 1
-            before = code:sub(i - 1, i - 1)
-        if digit(c) and (i == 1 or (!alpha(before) and !upper(before) and before != "_"))
-            i += 1
-            while i <= n and (alpha(code:sub(i, i)) or upper(code:sub(i, i)) or digit(code:sub(i, i)) or code:sub(i, i) == "_" or code:sub(i, i) == ".")
-                i += 1
-        else
-            if upper(c)
-                return true
-            i += 1
-    false
+  n = code:len()
+  i = 1
+  while i <= n
+    c = code:sub(i, i)
+    before = ""
+    if i > 1
+      before = code:sub(i - 1, i - 1)
+    if digit(c) and (i == 1 or not alpha(before) and not upper(before) and before != "_")
+      i = i + 1
+      while i <= n and (alpha(code:sub(i, i)) or upper(code:sub(i, i)) or digit(code:sub(i, i)) or code:sub(i, i) == "_" or code:sub(i, i) == ".")
+        i = i + 1
+    else
+      if upper(c)
+        return true
+      i = i + 1
+  false
 
 token: bool = (code: str, sought: str)
-    n = code:len()
-    m = sought:len()
-    i = 1
-    while i + m - 1 <= n
-        if code:sub(i, i + m - 1) == sought
-            before = ""
-            after = ""
-            if i > 1
-                before = code:sub(i - 1, i - 1)
-            if i + m <= n
-                after = code:sub(i + m, i + m)
-            if (before == "" or !word(before)) and (after == "" or !word(after))
-                return true
-        i += 1
-    false
+  n = code:len()
+  m = sought:len()
+  i = 1
+  while i + m - 1 <= n
+    if code:sub(i, i + m - 1) == sought
+      before = ""
+      after = ""
+      if i > 1
+        before = code:sub(i - 1, i - 1)
+      if i + m <= n
+        after = code:sub(i + m, i + m)
+      if (before == "" or not word(before)) and (after == "" or not word(after))
+        return true
+    i = i + 1
+  false
 
 # Concatenation with `..` is forbidden everywhere — use `{}` interpolation.
 bridge: bool = (code: str)
-    n = code:len()
-    quote = ""
-    i = 1
-    while i <= n
-        c = code:sub(i, i)
-        if quote == ""
-            if c == "#"
-                return false
-            if c == "\"" or c == "'"
-                quote = c
-            else
-                if i + 1 <= n and code:sub(i, i + 1) == ".."
-                    if i + 2 <= n and code:sub(i + 2, i + 2) == "."
-                        i += 1
-                    else
-                        return true
-        else
-            if c == quote
-                quote = ""
-        i += 1
-    false
+  n = code:len()
+  quote = ""
+  i = 1
+  while i <= n
+    c = code:sub(i, i)
+    if quote == ""
+      if c == "#"
+        return false
+      if c == "\"" or c == "'"
+        quote = c
+      else
+        if i + 1 <= n and code:sub(i, i + 1) == ".."
+          if i + 2 <= n and code:sub(i + 2, i + 2) == "."
+            i = i + 1
+          else
+            return true
+    else
+      if c == quote
+        quote = ""
+    i = i + 1
+  false
 
 # Operation-first relation call — rel(...), never rel(subject). Subject-first: subject:rel(...).
 callfirst: bool = (needle: str, code: str)
-    if commentline(code) or docline(code)
-        return false
-    n = code:len()
-    m = needle:len()
-    if m == 0
-        return false
-    i = 1
-    while i + m - 1 <= n
-        if code:sub(i, i + m - 1) == needle
-            before = ""
-            if i > 1
-                before = code:sub(i - 1, i - 1)
-            if before != ":" and (before == "" or !word(before))
-                return true
-        i += 1
-    false
+  if commentline(code) or docline(code)
+    return false
+  n = code:len()
+  m = needle:len()
+  if m == 0
+    return false
+  i = 1
+  while i + m - 1 <= n
+    if code:sub(i, i + m - 1) == needle
+      before = ""
+      if i > 1
+        before = code:sub(i - 1, i - 1)
+      if before != ":" and (before == "" or not word(before))
+        return true
+    i = i + 1
+  false
 
 # Relation declaration head read(number) = or gate boundary len(path)(min) — not a call site.
 callfirstrel: bool = (rel: str, code: str)
-    needle = "{rel}("
-    if !callfirst(needle, code)
-        return false
-    s = strip(code)
-    head = "{rel}("
-    h = head:len()
-    if s:len() >= h and s:sub(1, h) == head
-        if s:has(") =") or s:has("): ")
-            return false
-    if rel == "len" or rel == "audit" or rel == "hit"
-        if code:has("{rel}(path)(")
-            return false
-    true
+  needle = "{rel}("
+  if not callfirst(needle, code)
+    return false
+  s = strip(code)
+  head = "{rel}("
+  h = head:len()
+  if s:len() >= h and s:sub(1, h) == head
+    if s:has(") =") or s:has("): ")
+      return false
+  if rel == "len" or rel == "audit" or rel == "hit"
+    if code:has("{rel}(path)(")
+      return false
+  true
 
 # eq() at value call sites — path admission is route/eq(q) only; relation store is eq(desc)(desc) =.
-subject(eq) = (code: str)
-    if commentline(code) or docline(code)
-        return false
-    if code:has("eq(q)(") or code:has("eq(q) =")
-        return false
-    s = strip(code)
-    if s:len() >= 3 and s:sub(1, 3) == "eq("
-        if s:has(")(") and s:has(" =")
-            return false
-        if s:has(") =") and !s:has(", ")
-            return false
-    n = code:len()
-    i = 1
-    while i + 2 <= n
-        if code:sub(i, i + 2) == "eq("
-            if i + 4 <= n and code:sub(i + 3, i + 4) == "q)"
-                i += 1
-                continue
-            before = ""
-            if i > 1
-                before = code:sub(i - 1, i - 1)
-            if before != ":" and (before == "" or !word(before))
-                return true
-        i += 1
-    false
+subject__eq = (code: str)
+  if commentline(code) or docline(code)
+    return false
+  if code:has("eq(q)(") or code:has("eq(q) =")
+    return false
+  s = strip(code)
+  if s:len() >= 3 and s:sub(1, 3) == "eq("
+    if s:has(")(") and s:has(" =")
+      return false
+    if s:has(") =") and not s:has(", ")
+      return false
+  n = code:len()
+  i = 1
+  while i + 2 <= n
+    if code:sub(i, i + 2) == "eq("
+      if i + 4 <= n and code:sub(i + 3, i + 4) == "q)"
+        i = i + 1
+        continue
+      before = ""
+      if i > 1
+        before = code:sub(i - 1, i - 1)
+      if before != ":" and (before == "" or not word(before))
+        return true
+    i = i + 1
+  false
 
 # Scan past whitespace after the RHS place name and detect an arithmetic op.
 opafter: bool = (code: str, k: i64)
-    n = code:len()
-    pos = k
-    while pos <= n and (code:sub(pos, pos) == " " or code:sub(pos, pos) == "\t")
-        pos += 1
-    if pos <= n
-        op = code:sub(pos, pos)
-        if op == "+" or op == "-" or op == "*" or op == "/"
-            return true
-    false
+  n = code:len()
+  pos = k
+  while pos <= n and (code:sub(pos, pos) == " " or code:sub(pos, pos) == "\t")
+    pos = pos + 1
+  if pos <= n
+    op = code:sub(pos, pos)
+    if op == "+" or op == "-" or op == "*" or op == "/"
+      return true
+  false
 
 # true when code uses place = place op value instead of canonical place op= value
 expand: bool = (code: str)
-    n = code:len()
-    i = 1
-    while i <= n
-        if code:sub(i, i) == "="
-            j = i - 1
-            while j >= 1 and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
-                j -= 1
-            endpos = j
-            while j >= 1 and word(code:sub(j, j))
-                j -= 1
-            k = i + 1
-            while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
-                k += 1
-            start = k
-            while k <= n and word(code:sub(k, k))
-                k += 1
-            if k > start and endpos >= j + 1
-                left = code:sub(j + 1, endpos)
-                right = code:sub(start, k - 1)
-                if left == right
-                    if opafter(code, k)
-                        return true
-        i += 1
-    false
+  n = code:len()
+  i = 1
+  while i <= n
+    if code:sub(i, i) == "="
+      j = i - 1
+      while j >= 1 and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
+        j = j - 1
+      endpos = j
+      while j >= 1 and word(code:sub(j, j))
+        j = j - 1
+      k = i + 1
+      while k <= n and (code:sub(k, k) == " " or code:sub(k, k) == "\t")
+        k = k + 1
+      start = k
+      while k <= n and word(code:sub(k, k))
+        k = k + 1
+      if k > start and endpos >= j + 1
+        left = code:sub(j + 1, endpos)
+        right = code:sub(start, k - 1)
+        if left == right
+          if opafter(code, k)
+            return true
+    i = i + 1
+  false
 
 # a bare `end` occupying its own line
 bare: bool = (code: str)
-    t = ""
-    n = code:len()
-    i = 1
-    while i <= n
-        c = code:sub(i, i)
-        if c != " " and c != "\t"
-            t = "{t}{c}"
-        i += 1
-    t == "end"
+  t = ""
+  n = code:len()
+  i = 1
+  while i <= n
+    c = code:sub(i, i)
+    if c != " " and c != "\t"
+      t = "{t}{c}"
+    i = i + 1
+  t == "end"
 
 words = " graph lexer parser compiler token scope world demand relation semantic native backend read line old thing layout home origin law stage role value witness place realize machine emit target bind host profile rewrite fmt check trace proof schema cursor thread sync time random hash crypto net path bytes str text json io mem heap bit flag table vector meta script build config foreign wasm os process signal id idol gap agent bench engine opcode decode run tool orient doctor manifest ledger census gate smoke audit highlight capability idiom module surface correctness embed hygiene repro init spec corpus constitution authority bootstrap tooling performance contributing alignment integration readme examples scripts tools lib src gaps tests benchmarks docs agents cursor rules hooks lower codegen sema ast term transaction snapshot reach layout compound name proof fixture benchmark generated migration cache legacy compat foreign history numeric version taxonomy suffix array back end write temp file dir view quick fstest iotest cmplx ascii adler subtle strbuilder tabwriter scanner template jpeg png gif flate gzip zlib lzw crc fnv sha hmac rand split join concat format emit lower codegen parse symbol scope compress encode decode image color database sql encoding testing grammar classify role classify wasm wasi jit simd memory stack value engine probe derived verify perf hash ledger claim debt embed zig shc ftcftw perf js c census dig full vscode emit project materialization priority chained comparison capability scan "
 
 known: bool = (word: str)
-    m = word:len()
-    if m < 2
-        return false
-    needle = " {word} "
-    hay = words
-    n = hay:len()
-    k = needle:len()
-    i = 1
-    while i + k - 1 <= n
-        if hay:sub(i, i + k - 1) == needle
-            return true
-        i += 1
-    false
+  m = word:len()
+  if m < 2
+    return false
+  needle = " {word} "
+  hay = words
+  n = hay:len()
+  k = needle:len()
+  i = 1
+  while i + k - 1 <= n
+    if hay:sub(i, i + k - 1) == needle
+      return true
+    i = i + 1
+  false
 
 sep: bool = (name: str)
-    n = name:len()
-    i = 1
-    while i <= n
-        c = name:sub(i, i)
-        if c == "_" or c == "-" or upper(c)
-            return true
-        i += 1
-    false
+  n = name:len()
+  i = 1
+  while i <= n
+    c = name:sub(i, i)
+    if c == "_" or c == "-" or upper(c)
+      return true
+    i = i + 1
+  false
 
 digitonly: bool = (name: str)
-    n = name:len()
-    if !n
-        return false
-    i = 1
-    while i <= n
-        if !digit(name:sub(i, i))
-            return false
-        i += 1
-    true
+  n = name:len()
+  if not n
+    return false
+  i = 1
+  while i <= n
+    if not digit(name:sub(i, i))
+      return false
+    i = i + 1
+  true
 
 # numeric suffix taxonomy on a path word. Subject-first: name:tail().
 tail: bool = (name: str)
-    if admitted(name) or digitonly(name)
-        return false
-    n = name:len()
-    if n < 2
-        return false
-    if !digit(name:sub(n, n))
-        return false
-    i = n - 1
-    while i >= 1 and digit(name:sub(i, i))
-        i -= 1
-    i == 0 or alpha(name:sub(i, i)) or name:sub(i, i) == "_"
+  if admitted(name) or digitonly(name)
+    return false
+  n = name:len()
+  if n < 2
+    return false
+  if not digit(name:sub(n, n))
+    return false
+  i = n - 1
+  while i >= 1 and digit(name:sub(i, i))
+    i = i - 1
+  i == 0 or alpha(name:sub(i, i)) or name:sub(i, i) == "_"
 
 compound: bool = (name: str)
-    if known(name)
-        return false
-    n = name:len()
-    if n >= 5 and name:sub(n - 4, n) == "proof"
-        left = name:sub(1, n - 5)
-        if left:len() >= 2 and known(left)
-            return true
-    if n < 4
-        return false
-    i = 2
-    while i <= n - 1
-        left = name:sub(1, i - 1)
-        right = name:sub(i, n)
-        if left:len() >= 2 and right:len() >= 2 and known(left) and known(right)
-            return true
-        i += 1
-    false
+  if known(name)
+    return false
+  n = name:len()
+  if n >= 5 and name:sub(n - 4, n) == "proof"
+    left = name:sub(1, n - 5)
+    if left:len() >= 2 and known(left)
+      return true
+  if n < 4
+    return false
+  i = 2
+  while i <= n - 1
+    left = name:sub(1, i - 1)
+    right = name:sub(i, n)
+    if left:len() >= 2 and right:len() >= 2 and known(left) and known(right)
+      return true
+    i = i + 1
+  false
 
 foreign: bool = (path: str)
-    path:len() >= 4 and path:sub(1, 4) == "ext/"
+  path:len() >= 4 and path:sub(1, 4) == "ext/"
 
 owned: bool = (path: str)
-    !foreign(path)
+  not foreign(path)
 
 stem: str = (path: str)
-    slash = 0
-    i = path:len()
-    while i >= 1
-        if path:sub(i, i) == "/"
-            slash = i
-            break
-        i -= 1
-    base = path
-    if slash > 0
-        base = path:sub(slash + 1, path:len())
-    stop = 0
-    i = base:len()
-    while i >= 1
-        if base:sub(i, i) == "."
-            stop = i
-            break
-        i -= 1
-    if stop <= 1
-        base
-    else
-        base:sub(1, stop - 1)
+  slash = 0
+  i = path:len()
+  while i >= 1
+    if path:sub(i, i) == "/"
+      slash = i
+      break
+    i = i - 1
+  base = path
+  if slash > 0
+    base = path:sub(slash + 1, path:len())
+  stop = 0
+  i = base:len()
+  while i >= 1
+    if base:sub(i, i) == "."
+      stop = i
+      break
+    i = i - 1
+  if stop <= 1
+    base
+  else
+    base:sub(1, stop - 1)
 
-eq(q) = (where: str, name: str)
-    hits = 0
-    if name:len() == 0
-        return 0
-    if admitted(name) or digitonly(name)
-        return 0
-    if sep(name)
-        hits += 1
-    if name:tail()
-        hits += 1
-    if compound(name)
-        hits += 1
-    hits
+eq__q = (where: str, name: str)
+  hits = 0
+  if name:len() == 0
+    return 0
+  if admitted(name) or digitonly(name)
+    return 0
+  if sep(name)
+    hits = hits + 1
+  if name:tail()
+    hits = hits + 1
+  if compound(name)
+    hits = hits + 1
+  hits
 
 eq: i64 = (where: str, name: str)
-    hits = 0
-    if !name:len()
-        return 0
-    if admitted(name) or digitonly(name)
-        return 0
-    if sep(name)
-        print("{where}  [law.path.name]  snake_case or separator `{name}` — one lowercase word; use home hierarchy")
-        hits += 1
-    if name:tail()
-        print("{where}  [law.path.name]  numeric taxonomy `{name}` — version is provenance, not a path word")
-        hits += 1
-    if compound(name)
-        print("{where}  [PATH-SEMANTICS-BLOCKED]  mashed compound `{name}` — decompose into homes/worlds through hierarchy")
-        hits += 1
-    hits
+  hits = 0
+  if not name:len()
+    return 0
+  if admitted(name) or digitonly(name)
+    return 0
+  if sep(name)
+    print("{where}  [law.path.name]  snake_case or separator `{name}` — one lowercase word; use home hierarchy")
+    hits = hits + 1
+  if name:tail()
+    print("{where}  [law.path.name]  numeric taxonomy `{name}` — version is provenance, not a path word")
+    hits = hits + 1
+  if compound(name)
+    print("{where}  [PATH-SEMANTICS-BLOCKED]  mashed compound `{name}` — decompose into homes/worlds through hierarchy")
+    hits = hits + 1
+  hits
 
-route(q) = (path: str)
-    if !owned(path)
-        return 0
-    hits = eq(q)(path, stem(path))
-    if path:has("lib/semantic/")
-        print("{path}  [law.catalog.zero]  no relation catalog home — resolver publishes graph ids")
-        hits += 1
-    part = ""
-    n = path:len()
-    i = 1
-    while i <= n
-        c = path:sub(i, i)
-        if c == "/"
-            if part:len() > 0 and part:sub(1, 1) != "."
-                hits += eq(q)("{path}:", part)
-            part = ""
-        else
-            part = "{part}{c}"
-        i += 1
-    if part:len() > 0 and part:sub(1, 1) != "." and part != stem(path)
-        hits += eq(q)("{path}:", part)
-    hits
+route__q = (path: str)
+  if not owned(path)
+    return 0
+  hits = eq__q(path, stem(path))
+  if path:has("lib/semantic/")
+    print("{path}  [law.catalog.zero]  no relation catalog home — resolver publishes graph ids")
+    hits = hits + 1
+  part = ""
+  n = path:len()
+  i = 1
+  while i <= n
+    c = path:sub(i, i)
+    if c == "/"
+      if part:len() > 0 and part:sub(1, 1) != "."
+        hits = hits + eq__q("{path}:", part)
+      part = ""
+    else
+      part = "{part}{c}"
+    i = i + 1
+  if part:len() > 0 and part:sub(1, 1) != "." and part != stem(path)
+    hits = hits + eq__q("{path}:", part)
+  hits
 
 route: i64 = (path: str)
-    if !owned(path)
-        return 0
-    hits = eq(path, stem(path))
-    if path:has("lib/semantic/")
-        print("{path}  [law.catalog.zero]  no relation catalog home — resolver publishes graph ids")
-        hits += 1
-    part = ""
-    n = path:len()
-    i = 1
-    while i <= n
-        c = path:sub(i, i)
-        if c == "/"
-            if part:len() > 0 and part:sub(1, 1) != "."
-                hits += eq("{path}:", part)
-            part = ""
-        else
-            part = "{part}{c}"
-        i += 1
-    if part:len() > 0 and part:sub(1, 1) != "." and part != stem(path)
-        hits += eq("{path}:", part)
-    hits
+  if not owned(path)
+    return 0
+  hits = eq(path, stem(path))
+  if path:has("lib/semantic/")
+    print("{path}  [law.catalog.zero]  no relation catalog home — resolver publishes graph ids")
+    hits = hits + 1
+  part = ""
+  n = path:len()
+  i = 1
+  while i <= n
+    c = path:sub(i, i)
+    if c == "/"
+      if part:len() > 0 and part:sub(1, 1) != "."
+        hits = hits + eq("{path}:", part)
+      part = ""
+    else
+      part = "{part}{c}"
+    i = i + 1
+  if part:len() > 0 and part:sub(1, 1) != "." and part != stem(path)
+    hits = hits + eq("{path}:", part)
+  hits
 
 # CATALOG-ZERO: do not probe deleted registry paths. path:exists is
 # IMPLEMENTATION-BLOCKED on direct native; absence of the fact is the
 # ratchet. This seed proves the gate still carries the two laws.
 seed: bool = ()
-    body = "gate/idiom.id":read()
-    if !body
-        false
-    if body:len() < 32
-        false
-    if !body:has("law.boolean.mirror.zero")
-        false
-    if !body:has("law.catalog.zero")
-        false
-    true
+  body = "gate/idiom.id":read()
+  if not body
+    false
+  if body:len() < 32
+    false
+  if not body:has("law.boolean.mirror.zero")
+    false
+  if not body:has("law.catalog.zero")
+    false
+  true
 
-audit(q) = (path: str, no: i64, line: str)
-    code = strip(line)
-    h = lex(path, no, code, line, true)
-    h += face(path, no, code, true)
-    h += rules(q)(path, no, code)
-    h += realm(path, no, code, true)
-    h += term(path, no, code, true)
-    h
+audit__q = (path: str, no: i64, line: str)
+  code = strip(line)
+  h = lex(path, no, code, line, true)
+  h = h + face(path, no, code, true)
+  h = h + rules__q(path, no, code)
+  h = h + realm(path, no, code, true)
+  h = h + term(path, no, code, true)
+  h
 
 audit: i64 = (path: str, no: i64, line: str)
-    code = strip(line)
-    h = lex(path, no, code, line, false)
-    h += face(path, no, code, false)
-    h += rules(path, no, code)
-    h += realm(path, no, code, false)
-    h += term(path, no, code, false)
-    h
+  code = strip(line)
+  h = lex(path, no, code, line, false)
+  h = h + face(path, no, code, false)
+  h = h + rules(path, no, code)
+  h = h + realm(path, no, code, false)
+  h = h + term(path, no, code, false)
+  h
 
 lex: i64 = (path: str, no: i64, code: str, line: str, quiet: bool)
-    hits = 0
-    if bare(code)
-        if !quiet
-            print("{path}:{no}  end  [Smoke §7]  `end` is DELETED — outdent")
-        hits += 1
-    if under(code)
-        if !quiet
-            print("{path}:{no}  underscore  [LAW-ONE]  one lowercase word: a LEVEL, a HOME, or delete the axis")
-        hits += 1
-    if capital(code)
-        if !quiet
-            print("{path}:{no}  uppercase  [LAW-ONE]  no uppercase in an identifier, ever: point, error, max")
-        hits += 1
-    if code:has(";")
-        if !quiet
-            print("{path}:{no}  semicolon  [Smoke §1]  the semicolon does not exist — press enter")
-        hits += 1
-    if dash(line)
-        if !quiet
-            print("{path}:{no}  dash comment  [LEXICAL]  `#` starts a comment — `--` is Lua debt")
-        hits += 1
-    if bridge(line)
-        if !quiet
-            print("{path}:{no}  concat  [FMT-ONE]  `{{}}` interpolation — never `..` concatenation")
-        hits += 1
-    if expand(code)
-        if !quiet
-            print("({path}, {no}, migratable, law.update.face, place += value — use += -= *= /=; never place = place op value)")
-        hits += 1
-    hits
+  hits = 0
+  if bare(code)
+    if not quiet
+      print("{path}:{no}  end  [Smoke §7]  `end` is DELETED — outdent")
+    hits = hits + 1
+  if under(code)
+    if not quiet
+      print("{path}:{no}  underscore  [LAW-ONE]  one lowercase word: a LEVEL, a HOME, or delete the axis")
+    hits = hits + 1
+  if capital(code)
+    if not quiet
+      print("{path}:{no}  uppercase  [LAW-ONE]  no uppercase in an identifier, ever: point, error, max")
+    hits = hits + 1
+  if code:has(";")
+    if not quiet
+      print("{path}:{no}  semicolon  [Smoke §1]  the semicolon does not exist — press enter")
+    hits = hits + 1
+  if dash(line)
+    if not quiet
+      print("{path}:{no}  dash comment  [LEXICAL]  `#` starts a comment — `--` is Lua debt")
+    hits = hits + 1
+  if bridge(line)
+    if not quiet
+      print("{path}:{no}  concat  [FMT-ONE]  `{{}}` interpolation — never `..` concatenation")
+    hits = hits + 1
+  if expand(code)
+    if not quiet
+      print("({path}, {no}, migratable, law.update.face, place += value — use += -= *= /=; never place = place op value)")
+    hits = hits + 1
+  hits
 
 face: i64 = (path: str, no: i64, code: str, quiet: bool)
-    hits = 0
-    if code:has("function")
-        if !quiet
-            print("{path}:{no}  function  [§1]  callable binding: name: i64 = (a: i64)")
-        hits += 1
-    if token(code, "fun") or token(code, "fn")
-        if !quiet
-            print("{path}:{no}  fun/fn  [§2]  callable binding with result demand — never fun/fn keyword")
-        hits += 1
-    if token(code, "let") or token(code, "local") or token(code, "const")
-        if !quiet
-            print("{path}:{no}  let/local/const  [§2]  binding with result demand — never let/local/const keyword")
-        hits += 1
-    if code:has("require_old")
-        if !quiet
-            print("{path}:{no}  require_old  [§0h]  std is the prelude graph — no import")
-        hits += 1
-    if code:has("tostring")
-        if !quiet
-            print("{path}:{no}  tostring  [§1]  x:to(str)")
-        hits += 1
-    if projcurry(code)
-        if !quiet
-            print("({path}, {no}, migratable, law.paren.one, shortest unique form under law.infer.one — declare to(str)=; prefer value over value:to(str) when demand proves redundancy; never to(str)(value) at call site)")
-        hits += 1
-    if code:has("pcall")
-        if !quiet
-            print("{path}:{no}  pcall  [B-15]  t | error — failure routes")
-        hits += 1
-    if code:has("setmetatable")
-        if !quiet
-            print("{path}:{no}  setmetatable  [§1]  descriptors and relation facts")
-        hits += 1
-    if token(code, "nil")
-        if !quiet
-            print("({path}, {no}, invalid, law.lua.hosted, nil is a Lua value; use the admitted semantic case)")
-        hits += 1
-    if code:has(".new(")
-        if !quiet
-            print("{path}:{no}  .new(  [LADDER]  desc{{…}} · x:to(desc) · p:from(mode)(…)")
-        hits += 1
-    if subject(has)(code)
-        if !quiet
-            print("{path}:{no}  has(  [law.world.dot]  hay:has(needle) — subject-first; never has(hay, needle)")
-        hits += 1
-    if subject(tail)(code)
-        if !quiet
-            print("{path}:{no}  tail(  [law.world.dot]  name:tail() — subject-first; never tail(name)")
-        hits += 1
-    if subject(read)(code)
-        if !quiet
-            print("{path}:{no}  io:read(  [law.relation.read]  stdin:read() or path:read() — read relation on subject")
-        hits += 1
-    if !(path:len() >= 5 and path:sub(1, 5) == "gate/") and subject(eq)(code)
-        if !quiet
-            print("{path}:{no}  eq(  [law.world.dot]  x:eq(y) or route/eq(q) admission — never eq(x, y) at call site")
-        hits += 1
-    if callfirstrel("match", code)
-        if !quiet
-            print("{path}:{no}  match(  [law.world.dot]  text:match(pattern) — subject-first; never match(text, pattern)")
-        hits += 1
-    if callfirstrel("open", code)
-        if !quiet
-            print("{path}:{no}  open(  [law.world.dot]  path:open(mode) — subject-first; never open(path, mode)")
-        hits += 1
-    if callfirstrel("write", code)
-        if !quiet
-            print("{path}:{no}  write(  [law.world.dot]  subject:write() — subject-first; never write(subject, ...)")
-        hits += 1
-    if callfirstrel("len", code)
-        if !quiet
-            print("{path}:{no}  len(  [law.world.dot]  value:len() — subject-first; never len(value)")
-        hits += 1
-    if callfirstrel("read", code)
-        if !quiet
-            print("{path}:{no}  read(  [law.relation.read]  path:read() or stdin:read() — subject-first; never read(path)")
-        hits += 1
-    if callfirstrel("find", code)
-        if !quiet
-            print("{path}:{no}  find(  [law.world.dot]  text:find(p) — subject-first; never find(text, p)")
-        hits += 1
-    if callfirstrel("sub", code)
-        if !quiet
-            print("{path}:{no}  sub(  [law.world.dot]  text:sub(a, b) — subject-first; never sub(text, a, b)")
-        hits += 1
-    if callfirstrel("member", code)
-        if !quiet
-            print("{path}:{no}  member(  [law.world.dot]  word:member(hay) — subject-first; never member(hay, word)")
-        hits += 1
-    hits
+  hits = 0
+  if code:has("function")
+    if not quiet
+      print("{path}:{no}  function  [§1]  callable binding: name: i64 = (a: i64)")
+    hits = hits + 1
+  if token(code, "fun") or token(code, "fn")
+    if not quiet
+      print("{path}:{no}  fun/fn  [§2]  callable binding with result demand — never fun/fn keyword")
+    hits = hits + 1
+  if token(code, "let") or token(code, "local") or token(code, "const")
+    if not quiet
+      print("{path}:{no}  let/local/const  [§2]  binding with result demand — never let/local/const keyword")
+    hits = hits + 1
+  if code:has("require_old")
+    if not quiet
+      print("{path}:{no}  require_old  [§0h]  std is the prelude graph — no import")
+    hits = hits + 1
+  if code:has("tostring")
+    if not quiet
+      print("{path}:{no}  tostring  [§1]  x:to(str)")
+    hits = hits + 1
+  if projcurry(code)
+    if not quiet
+      print("({path}, {no}, migratable, law.paren.one, shortest unique form under law.infer.one — declare to(str)=; prefer value over value:to(str) when demand proves redundancy; never to(str)(value) at call site)")
+    hits = hits + 1
+  if code:has("pcall")
+    if not quiet
+      print("{path}:{no}  pcall  [B-15]  t | error — failure routes")
+    hits = hits + 1
+  if code:has("setmetatable")
+    if not quiet
+      print("{path}:{no}  setmetatable  [§1]  descriptors and relation facts")
+    hits = hits + 1
+  if token(code, "nil")
+    if not quiet
+      print("({path}, {no}, invalid, law.lua.hosted, nil is a Lua value; use the admitted semantic case)")
+    hits = hits + 1
+  if code:has(".new(")
+    if not quiet
+      print("{path}:{no}  .new(  [LADDER]  desc{{…}} · x:to(desc) · p:from(mode)(…)")
+    hits = hits + 1
+  if subject__has(code)
+    if not quiet
+      print("{path}:{no}  has(  [law.world.dot]  hay:has(needle) — subject-first; never has(hay, needle)")
+    hits = hits + 1
+  if subject__tail(code)
+    if not quiet
+      print("{path}:{no}  tail(  [law.world.dot]  name:tail() — subject-first; never tail(name)")
+    hits = hits + 1
+  if subject__read(code)
+    if not quiet
+      print("{path}:{no}  io:read(  [law.relation.read]  stdin:read() or path:read() — read relation on subject")
+    hits = hits + 1
+  if not (path:len() >= 5 and path:sub(1, 5) == "gate/") and subject__eq(code)
+    if not quiet
+      print("{path}:{no}  eq(  [law.world.dot]  x:eq(y) or route/eq(q) admission — never eq(x, y) at call site")
+    hits = hits + 1
+  if callfirstrel("match", code)
+    if not quiet
+      print("{path}:{no}  match(  [law.world.dot]  text:match(pattern) — subject-first; never match(text, pattern)")
+    hits = hits + 1
+  if callfirstrel("open", code)
+    if not quiet
+      print("{path}:{no}  open(  [law.world.dot]  path:open(mode) — subject-first; never open(path, mode)")
+    hits = hits + 1
+  if callfirstrel("write", code)
+    if not quiet
+      print("{path}:{no}  write(  [law.world.dot]  subject:write() — subject-first; never write(subject, ...)")
+    hits = hits + 1
+  if callfirstrel("len", code)
+    if not quiet
+      print("{path}:{no}  len(  [law.world.dot]  value:len() — subject-first; never len(value)")
+    hits = hits + 1
+  if callfirstrel("read", code)
+    if not quiet
+      print("{path}:{no}  read(  [law.relation.read]  path:read() or stdin:read() — subject-first; never read(path)")
+    hits = hits + 1
+  if callfirstrel("find", code)
+    if not quiet
+      print("{path}:{no}  find(  [law.world.dot]  text:find(p) — subject-first; never find(text, p)")
+    hits = hits + 1
+  if callfirstrel("sub", code)
+    if not quiet
+      print("{path}:{no}  sub(  [law.world.dot]  text:sub(a, b) — subject-first; never sub(text, a, b)")
+    hits = hits + 1
+  if callfirstrel("member", code)
+    if not quiet
+      print("{path}:{no}  member(  [law.world.dot]  word:member(hay) — subject-first; never member(hay, word)")
+    hits = hits + 1
+  hits
 
 realm: i64 = (path: str, no: i64, code: str, quiet: bool)
-    hits = 0
-    if !ingress(path)
-        if dot(io)(code)
-            if !quiet
-                print("({path}, {no}, violation, law.world.dot, io is a world — stdin:read() / path:read() / subject:relation(); never io.method())")
-            hits += 1
-        if dot(os)(code)
-            if !quiet
-                print("({path}, {no}, violation, law.world.dot, os is a world — use os.args[n] / os.env[k]; never os.method())")
-            hits += 1
-        if dot(std)(io, code)
-            if !quiet
-                print("({path}, {no}, violation, law.world.dot, std\x2Eio is forbidden — stdin:read() / path:read() / subject:relation(); docs/spec/world.md")
-            hits += 1
-        if dot(std)(os, code)
-            if !quiet
-                print("({path}, {no}, violation, law.world.dot, std\x2Eos is forbidden — use root projection or bridge relations; docs/spec/world.md")
-            hits += 1
-    hits
+  hits = 0
+  if not ingress(path)
+    if dot__io(code)
+      if not quiet
+        print("({path}, {no}, violation, law.world.dot, io is a world — stdin:read() / path:read() / subject:relation(); never io.method())")
+      hits = hits + 1
+    if dot__os(code)
+      if not quiet
+        print("({path}, {no}, violation, law.world.dot, os is a world — use os.args[n] / os.env[k]; never os.method())")
+      hits = hits + 1
+    if dot__std(io, code)
+      if not quiet
+        print("({path}, {no}, violation, law.world.dot, std.io is forbidden — stdin:read() / path:read() / subject:relation(); docs/spec/world.md")
+      hits = hits + 1
+    if dot__std(os, code)
+      if not quiet
+        print("({path}, {no}, violation, law.world.dot, std.os is forbidden — use root projection or bridge relations; docs/spec/world.md")
+      hits = hits + 1
+  hits
 
 term: i64 = (path: str, no: i64, code: str, quiet: bool)
-    hits = 0
-    pi = 1
-    pn = code:len()
-    while pi <= pn
-        c = code:sub(pi, pi)
-        if word(c)
-            start = pi
-            while pi <= pn and word(code:sub(pi, pi))
-                pi += 1
-            piece = code:sub(start, pi - 1)
-            if piece:len() >= 2
-                if quiet
-                    hits += eq(q)("{path}:{no}", piece)
-                else
-                    hits += eq("{path}:{no}", piece)
+  hits = 0
+  pi = 1
+  pn = code:len()
+  while pi <= pn
+    c = code:sub(pi, pi)
+    if word(c)
+      start = pi
+      while pi <= pn and word(code:sub(pi, pi))
+        pi = pi + 1
+      piece = code:sub(start, pi - 1)
+      if piece:len() >= 2
+        if quiet
+          hits = hits + eq__q("{path}:{no}", piece)
         else
-            pi += 1
-    hits
+          hits = hits + eq("{path}:{no}", piece)
+    else
+      pi = pi + 1
+  hits
 
 # the decimal number starting at i
 num: i64 = (s: str, i: i64)
-    v = 0
-    n = s:len()
-    j = i
-    while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
-        v = v * 10 + (s:byte(j) - 48)
-        j += 1
-    v
+  v = 0
+  n = s:len()
+  j = i
+  while j <= n and s:sub(j, j) >= "0" and s:sub(j, j) <= "9"
+    v = v * 10 + s:byte(j) - 48
+    j = j + 1
+  v
 
 head: bool = (line: str)
-    line:len() >= 6 and line:sub(1, 6) == "+++ b/"
+  line:len() >= 6 and line:sub(1, 6) == "+++ b/"
 
 devnull: bool = (line: str)
-    line == "--- /dev/null"
+  line == "--- /dev/null"
 
 oldhead: bool = (line: str)
-    line:len() >= 6 and line:sub(1, 6) == "--- a/" or devnull(line)
+  line:len() >= 6 and line:sub(1, 6) == "--- a/" or devnull(line)
 
 newfile: bool = (oldline: str)
-    devnull(oldline)
+  devnull(oldline)
 
 renamed: bool = (oldline: str, newpath: str)
-    if !oldhead(oldline)
-        return false
-    if newfile(oldline)
-        return false
-    oldpath = oldline:sub(7, oldline:len())
-    oldpath != newpath
+  if not oldhead(oldline)
+    return false
+  if newfile(oldline)
+    return false
+  oldpath = oldline:sub(7, oldline:len())
+  oldpath != newpath
 
-open(q) = (pendingold: str, path: str)
-    if newfile(pendingold) or renamed(pendingold, path)
-        route(q)(path)
-    else
-        0
+open__q = (pendingold: str, path: str)
+  if newfile(pendingold) or renamed(pendingold, path)
+    route__q(path)
+  else
+    0
 
 open: i64 = (pendingold: str, path: str)
-    if newfile(pendingold) or renamed(pendingold, path)
-        route(path)
-    else
-        0
+  if newfile(pendingold) or renamed(pendingold, path)
+    route(path)
+  else
+    0
 
-plus(q) = (path: str, no: i64, text: str)
-    audit(q)(path, no, text)
+plus__q = (path: str, no: i64, text: str)
+  audit__q(path, no, text)
 
 plus: i64 = (path: str, no: i64, text: str)
-    audit(path, no, text)
+  audit(path, no, text)
 
 feed: i64 = (body: str, quiet: bool)
-    hits = 0
-    path = ""
-    pendingold = ""
-    no = 0
-    line = ""
-    nl = string.char(10)
-    n = body:len()
-    i = 1
-    while i <= n + 1
-        c = nl
-        if i <= n
-            c = body:sub(i, i)
-        if c == nl
-            if oldhead(line)
-                pendingold = line
-            else
-                if head(line)
-                    path = line:sub(7, line:len())
-                    no = 0
-                    if quiet
-                        hits += open(q)(pendingold, path)
-                    else
-                        hits += open(pendingold, path)
-                    pendingold = ""
-                else
-                    if line:len() > 2 and line:sub(1, 2) == "@@"
-                        p = 1
-                        m = line:len()
-                        while p <= m and line:sub(p, p) != "+"
-                            p += 1
-                        no = num(line, p + 1)
-                    else
-                        if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
-                            text = line:sub(2, line:len())
-                            if quiet
-                                hits += plus(q)(path, no, text)
-                            else
-                                hits += plus(path, no, text)
-                            no += 1
-            line = ""
+  hits = 0
+  path = ""
+  pendingold = ""
+  no = 0
+  line = ""
+  nl = string.char(10)
+  n = body:len()
+  i = 1
+  while i <= n + 1
+    c = nl
+    if i <= n
+      c = body:sub(i, i)
+    if c == nl
+      if oldhead(line)
+        pendingold = line
+      else
+        if head(line)
+          path = line:sub(7, line:len())
+          no = 0
+          if quiet
+            hits = hits + open__q(pendingold, path)
+          else
+            hits = hits + open(pendingold, path)
+          pendingold = ""
         else
-            line = "{line}{c}"
-        i += 1
-    hits
+          if line:len() > 2 and line:sub(1, 2) == "@@"
+            p = 1
+            m = line:len()
+            while p <= m and line:sub(p, p) != "+"
+              p = p + 1
+            no = num(line, p + 1)
+          else
+            if line:len() > 0 and line:sub(1, 1) == "+" and path != ""
+              text = line:sub(2, line:len())
+              if quiet
+                hits = hits + plus__q(path, no, text)
+              else
+                hits = hits + plus(path, no, text)
+              no = no + 1
+      line = ""
+    else
+      line = "{line}{c}"
+    i = i + 1
+  hits
 
-scan(q) = (body: str)
-    feed(body, true)
+scan__q = (body: str)
+  feed(body, true)
 
 # Scan ONLY THE LINES THIS DIFF ADDS. Path stems judged on NEW/RENAMED paths only.
 scan: i64 = (body: str)
-    feed(body, false)
+  feed(body, false)
 
 probescan: i64 = (body: str)
-    scan(q)(body)
+  scan__q(body)
 
 # POSITIVE CONTROL. Every detector must fire on a line built to trip it, and
 # must stay silent on a canonical line. A gate that cannot convict its own
 # exhibit reports 0 because it is broken, not because the tree is clean.
 control: bool = ()
-    ok = true
-    if !bare("    end")
-        print("control FAIL: bare did not fire")
-        ok = false
-    if bare("    scan(n)")
-        print("control FAIL: bare fired on canonical")
-        ok = false
-    if !under("is_digit(c)") or !under("_subject")
-        print("control FAIL: under did not fire")
-        ok = false
-    if under("digit(c)")
-        print("control FAIL: under fired on canonical")
-        ok = false
-    if !capital("p: Point") or !capital("p: P") or !capital("foo2Bar")
-        print("control FAIL: capital did not fire")
-        ok = false
-    if capital("p: point") or capital("mask = 0xFF") or capital("value = 1E9")
-        print("control FAIL: capital fired on canonical")
-        ok = false
-    if strip("code # string.sub here"):len() > 6
-        print("control FAIL: strip did not remove a comment")
-        ok = false
-    if !dash("x = 1  -- old")
-        print("control FAIL: dash did not reject Lua comment")
-        ok = false
-    if dash("x = 1  # canonical") or dash("--- @inline")
-        print("control FAIL: dash rejected canonical # comment or --- decorator")
-        ok = false
-    if !token("value = nil", "nil") or token("value = vanilla", "nil")
-        print("control FAIL: nil token boundary is broken")
-        ok = false
-    if !head("+++ b/example.id") or head("+value = \"+++ b/\"")
-        print("control FAIL: diff header boundary is broken")
-        ok = false
-    if !bridge("x = left .. right")
-        print("control FAIL: bridge did not reject .. concatenation")
-        ok = false
-    if bridge("# x .. y")
-        print("control FAIL: bridge rejected comment context")
-        ok = false
-    if !expand("hits = hits + 1")
-        print("control FAIL: expand did not reject place = place op value")
-        ok = false
-    if expand("hits += 1") or expand("left = right + 1")
-        print("control FAIL: expand rejected compound or distinct places")
-        ok = false
-    if !subject(tail)("if tail(name)")
-        print("control FAIL: subject(tail) did not reject non-subject-first tail(")
-        ok = false
-    if subject(tail)("if name:tail()") or subject(tail)("exprtail()")
-        print("control FAIL: subject(tail) rejected subject-first or identifier suffix")
-        ok = false
-    if !subject(has)("if has(code, pat)")
-        print("control FAIL: subject(has) did not reject non-subject-first has(")
-        ok = false
-    if subject(has)("if code:has(pat)")
-        print("control FAIL: subject(has) rejected subject-first has(")
-        ok = false
-    if !subject(read)("line = io:read()")
-        print("control FAIL: subject(read) did not reject io:read")
-        ok = false
-    if subject(read)("line = stdin:read()") or subject(read)("path:read()")
-        print("control FAIL: subject(read) rejected canonical stdin:read / path:read")
-        ok = false
-    if !subject(eq)("if eq(x, y)")
-        print("control FAIL: subject(eq) did not reject operation-first eq(x, y)")
-        ok = false
-    if subject(eq)("hits += eq(q)(path, stem)") or subject(eq)("eq(i64)(f64) = store")
-        print("control FAIL: subject(eq) rejected eq(q) admission or relation-store declaration")
-        ok = false
-    if !callfirstrel("match", "if match(text, pat)")
-        print("control FAIL: callfirstrel(match) did not reject operation-first match(")
-        ok = false
-    if callfirstrel("match", "if text:match(pat)") or callfirstrel("match", "match(pattern) = (text)")
-        print("control FAIL: callfirstrel(match) rejected subject-first or declaration head")
-        ok = false
-    if !callfirstrel("len", "n = len(text)")
-        print("control FAIL: callfirstrel(len) did not reject operation-first len(")
-        ok = false
-    if callfirstrel("len", "if text:len()") or callfirstrel("len", "len(path)(32)")
-        print("control FAIL: callfirstrel(len) rejected subject-first or gate boundary len(path)(min)")
-        ok = false
-    if !strike("examples/test.id", 1, "hits += flag(path, no, code, pat, law, fix, quiet)")
-        print("control FAIL: flag(path, operation-first bridge rule did not fire")
-        ok = false
-    if !probe("x = findFunc(\"main\")", "findFunc(")
-        print("control FAIL: findFunc name lookup firewall did not fire")
-        ok = false
-    if !probe("k = EdgeKind.run", "EdgeKind.")
-        print("control FAIL: EdgeKind operational edge firewall did not fire")
-        ok = false
-    if !probe("x:set(k, v)", ":set(")
-        print("control FAIL: :set( ordinary access firewall did not fire")
-        ok = false
-    if !probe("f:call(x)", ":call(")
-        print("control FAIL: :call( application firewall did not fire")
-        ok = false
-    if !probe("let x = 1", "let")
-        print("control FAIL: let keyword firewall did not fire")
-        ok = false
-    if !probe("call_handler = ()", "call_handler")
-        print("control FAIL: call_handler collision firewall did not fire")
-        ok = false
-    if !pathfail("lib/std/index/suffixarray.id")
-        print("control FAIL: route did not reject suffixarray compound path")
-        ok = false
-    if pathfail("lib/std/index/suffix/array.id")
-        print("control FAIL: route rejected decomposed suffix/array path")
-        ok = false
-    if !pathfail("lib/semantic_graph.id")
-        print("control FAIL: route did not reject mashed path stem")
-        ok = false
-    if pathfail("lib/compiler/graph.id")
-        print("control FAIL: route rejected decomposed compiler/graph path")
-        ok = false
-    if !pathfail("lib/semantic/io.id")
-        print("control FAIL: route did not reject deleted catalog home")
-        ok = false
-    if !compound("readline")
-        print("control FAIL: compound did not reject readline")
-        ok = false
-    if !compound("strproof")
-        print("control FAIL: compound did not reject strproof")
-        ok = false
-    if !compound("writetemp")
-        print("control FAIL: compound did not reject writetemp")
-        ok = false
-    if !"writetemp(path, body)":has("writetemp")
-        print("control FAIL: writetemp mash rule did not fire")
-        ok = false
-    if compound("write")
-        print("control FAIL: compound rejected canonical write")
-        ok = false
-    if compound("audit")
-        print("control FAIL: compound rejected canonical audit")
-        ok = false
-    if !namefail("x", "semantic_graph")
-        print("control FAIL: eq did not reject semantic_graph")
-        ok = false
-    if namefail("x", "semantic")
-        print("control FAIL: eq rejected canonical semantic")
-        ok = false
-    if !"args = os.args()":has("os.args(")
-        print("control FAIL: os.args host firewall did not fire")
-        ok = false
-    if !"mode = os.getenv(\"X\")":has("os.getenv(")
-        print("control FAIL: os.getenv host firewall did not fire")
-        ok = false
-    if !"use(m)":has("use(") or !"using(m)":has("using(")
-        print("control FAIL: admission syntax firewall did not fire")
-        ok = false
-    if "command = os.args[1]":has("os.args(")
-        print("control FAIL: os.args() fired on os.args table index")
-        ok = false
-    if !"mode = environment[":has("environment[")
-        print("control FAIL: environment entity firewall did not fire")
-        ok = false
-    if !probe("table.insert(xs,v)", "table.")
-        print("control FAIL: table namespace firewall did not fire on positive")
-        ok = false
-    if probe("xs:push(v)", "table.")
-        print("control FAIL: table namespace firewall fired on canonical xs:push")
-        ok = false
-    if !probe("string.sub(text,a,b)", "string.")
-        print("control FAIL: string namespace firewall did not fire on positive")
-        ok = false
-    if probe("text:sub(a,b)", "string.")
-        print("control FAIL: string namespace firewall fired on canonical text:sub")
-        ok = false
-    if !"x = std\x2Eproc.capture(\"echo\")":has("std\x2E")
-        print("control FAIL: std namespace firewall did not fire")
-        ok = false
-    if !"node = ir.node()":has("ir.")
-        print("control FAIL: ir namespace firewall did not fire")
-        ok = false
-    if !dot(io)("text = io.read(\"*a\")")
-        print("control FAIL: dot(io) did not reject io.read")
-        ok = false
-    if !dot(os)("code = os.exit(1)")
-        print("control FAIL: dot(os) did not reject os.exit")
-        ok = false
-    if dot(io)("line = io:read()")
-        print("control FAIL: dot(io) fired on io:read — use stdin:read() or path:read()")
-        ok = false
-    if dot(io)("x = std\x2Eio.open(p)")
-        print("control FAIL: dot(io) fired on std\x2Eio qualification")
-        ok = false
-    if !dot(std)(io, "f = std\x2Eio.open(p)")
-        print("control FAIL: dot(std)(io) did not reject std\x2Eio.open")
-        ok = false
-    if !sigil("x = @c.emit(\"fn()\")")
-        print("control FAIL: except-anchor firewall did not fire")
-        ok = false
-    if sigil("x = @{ name = 1 }")
-        print("control FAIL: sigil fired on lawful injection literal")
-        ok = false
-    if sigil("# leftover @comp.c.export in a comment")
-        print("control FAIL: sigil fired on comment")
-        ok = false
-    if sigil("world = @")
-        print("control FAIL: sigil fired on bare @ current world")
-        ok = false
-    if sigil("host = @target")
-        print("control FAIL: sigil fired on @member current-world access")
-        ok = false
-    if !sigil("host = @.target")
-        print("control FAIL: sigil did not fire on invalid @.member accessor")
-        ok = false
-    if !sigil("x = @:read()")
-        print("control FAIL: sigil did not fire on invalid @: subject dispatch")
-        ok = false
-    if sigil("reply = @stdin:read()")
-        print("control FAIL: sigil fired on @member subject relation")
-        ok = false
-    if sigil("x = value@world")
-        print("control FAIL: sigil fired on postfix thing@world qualification")
-        ok = false
-    if sigil("y = sale.quote@{ tax = zero }(100)")
-        print("control FAIL: sigil fired on interjection thing@{ k = v }")
-        ok = false
-    if sigil("@fee = 0")
-        print("control FAIL: sigil fired on ambient mutation @member place")
-        ok = false
-    if !sigil("@.fee = 0")
-        print("control FAIL: sigil did not fire on invalid @.member mutation")
-        ok = false
-    if !sigil("x = @runtime.spawn()")
-        print("control FAIL: sigil did not fire on @runtime directive namespace")
-        ok = false
-    if !sigil("x = @host.env")
-        print("control FAIL: sigil did not fire on @host directive namespace")
-        ok = false
-    if !"y = lua_io_read()":has("lua_")
-        print("control FAIL: lua foreign-zero firewall did not fire")
-        ok = false
-    if !"x = bit.f64_to_bits(v)":has("bit.")
-        print("control FAIL: bit module firewall did not fire")
-        ok = false
-    if !"to(f64)(bit) = unpack@view":has("unpack@view")
-        print("control FAIL: unpack@view firewall did not fire")
-        ok = false
-    if !"y = bitcast(x)":has("bitcast")
-        print("control FAIL: bitcast naming firewall did not fire")
-        ok = false
-    if "pattern: bit = one:to(bit)":has("bit.")
-        print("control FAIL: bit. fired on canonical to(bit)")
-        ok = false
-    if !"viewedges = \"|bit|\"":has("viewedges")
-        print("control FAIL: viewedges mash firewall did not fire")
-        ok = false
-    if "view(edges) = ()":has("viewedges")
-        print("control FAIL: viewedges fired on canonical view(edges)")
-        ok = false
-    if !"viewrouter = stdin:read":has("viewrouter")
-        print("control FAIL: viewrouter mash firewall did not fire")
-        ok = false
-    if "router(view)(view[census])":has("viewrouter")
-        print("control FAIL: viewrouter fired on canonical router(view)")
-        ok = false
-    if !"viewproof = router":has("viewproof")
-        print("control FAIL: viewproof mash firewall did not fire")
-        ok = false
-    if "view = router(proof)(proof[view])":has("viewproof")
-        print("control FAIL: viewproof fired on canonical slot-named view")
-        ok = false
-    if !"zig-out/bin/idol":has("bin/idol")
-        print("control FAIL: bin/idol path firewall did not fire")
-        ok = false
-    if "zig-out/bin/idol":has("bin/idol")
-        print("control FAIL: bin/idol fired on canonical idol binary path")
-        ok = false
-    if !"ingestbody = path:read":has("ingestbody")
-        print("control FAIL: ingestbody mash firewall did not fire")
-        ok = false
-    if "router(semantic)(semantic[ingest])":has("ingestbody")
-        print("control FAIL: ingestbody fired on canonical router(semantic)")
-        ok = false
-    if !"std\x2Escript.fs_exists(":has("fs_exists")
-        print("control FAIL: fs_exists snake firewall did not fire")
-        ok = false
-    if "fs:exists(":has("fs_exists")
-        print("control FAIL: fs_exists fired on canonical path:exists")
-        ok = false
-    if !strike("control", 1, "text = router(x)")
-        print("control FAIL: router bridge binding firewall did not fire")
-        ok = false
-    if !strike("control", 1, "len: bool = (path: str, min: i64)")
-        print("control FAIL: flat len binding bridge rule did not fire")
-        ok = false
-    if strike("control", 1, "len(path) = (min: i64)")
-        print("control FAIL: flat len rule fired on canonical len(path) boundary curry")
-        ok = false
-    if !strike("control", 1, "audit: bool = (path: str, pattern: str)")
-        print("control FAIL: flat audit binding bridge rule did not fire")
-        ok = false
-    if strike("control", 1, "audit(path) = (pattern: str)")
-        print("control FAIL: flat audit rule fired on canonical audit(path) boundary curry")
-        ok = false
-    if !strike("control", 1, "hit: bool = (path: str, pattern: str)")
-        print("control FAIL: flat hit binding bridge rule did not fire")
-        ok = false
-    if !strike("control", 1, "from(path) = (pattern: str)")
-        print("control FAIL: from(path) mash bridge rule did not fire")
-        ok = false
-    if strike("control", 1, "hit(path) = (pattern: str)")
-        print("control FAIL: flat hit rule fired on canonical hit(path) boundary curry")
-        ok = false
-    if !strike("control", 1, "if len(path, min)")
-        print("control FAIL: len(path, min) call bridge rule did not fire")
-        ok = false
-    if strike("control", 1, "if !len(path)(min)")
-        print("control FAIL: len(path)(min) rule fired on canonical len(path)(min)")
-        ok = false
-    if !strike("control", 1, "if not bare")
-        print("control FAIL: if not keyword bridge rule did not fire")
-        ok = false
-    if strike("control", 1, "if !bare")
-        print("control FAIL: if not rule fired on canonical prefix !")
-        ok = false
-    if !strike("control", 1, "text = path:read()")
-        print("control FAIL: transitive read binding firewall did not fire")
-        ok = false
-    if strike("control", 1, "path:read():match(pattern)")
-        print("control FAIL: read binding rule fired on canonical path:read():match chain")
-        ok = false
-    if !"relationid":has("relationid")
-        print("control FAIL: relationid mash firewall did not fire")
-        ok = false
-    if "path:read()":has("relationid")
-        print("control FAIL: relationid fired on canonical path:read")
-        ok = false
-    if !"io:read(\"lib/compiler":has("io:read(")
-        print("control FAIL: io:read firewall did not fire")
-        ok = false
-    if "path:read()":has("io:read(")
-        print("control FAIL: io:read rule fired on canonical path:read()")
-        ok = false
-    if !"std\x2Escript.fswrite(":has("fswrite")
-        print("control FAIL: fswrite mash firewall did not fire")
-        ok = false
-    if "io.open(":has("fswrite")
-        print("control FAIL: fswrite fired on canonical io.open write")
-        ok = false
-    if !probe("process = process", "process = process")
-        print("control FAIL: process library admission firewall did not fire")
-        ok = false
-    if !probe("rc = run(cmd)", "run(")
-        print("control FAIL: run namespace firewall did not fire")
-        ok = false
-    if !probe("text = capture(cmd)", "capture(")
-        print("control FAIL: capture namespace firewall did not fire")
-        ok = false
-    if !probe("exit(1)", "exit(")
-        print("control FAIL: exit namespace firewall did not fire")
-        ok = false
-    if !probe("x = chomp(text)", "chomp(")
-        print("control FAIL: chomp namespace firewall did not fire")
-        ok = false
-    if !probe("foo(x)", "")
-        print("control FAIL: std→process rename classifier did not fire on process namespace")
-        ok = false
-    if probe("command(line):open(\"r\")", "capture(")
-        print("control FAIL: capture fired on canonical command:open")
-        ok = false
-    if !probe("procrun: i64 = (shellline: str)", "procrun:")
-        print("control FAIL: procrun parallel execution API firewall did not fire")
-        ok = false
-    if !probe("proccap: str = (shellline: str)", "proccap:")
-        print("control FAIL: proccap parallel capture API firewall did not fire")
-        ok = false
-    if !probe("shared = req(\"tools.mcp.shared\")", "req(")
-        print("control FAIL: req admission syntax firewall did not fire")
-        ok = false
-    if !probe("x = [[long string]]", "[[")
-        print("control FAIL: Lua long bracket lexical firewall did not fire")
-        ok = false
-    if probe("\"multiline text\"", "[[")
-        print("control FAIL: long bracket rule fired on quoted text")
-        ok = false
-    if !projcurry("print(to(str)(42))")
-        print("control FAIL: projection-curry firewall did not fire on to(str)(value)")
-        ok = false
-    if !projcurry("n = to(i64)(s)")
-        print("control FAIL: projection-curry firewall did not fire on to(i64)(value)")
-        ok = false
-    if projcurry("to(str) = (value)")
-        print("control FAIL: projection-curry fired on declaration head to(str) =")
-        ok = false
-    if projcurry("value:to(str)")
-        print("control FAIL: projection-curry fired on subject-first value:to(str)")
-        ok = false
-    if projcurry("to(micron)(inch) = stretch")
-        print("control FAIL: projection-curry fired on relation-store declaration")
-        ok = false
-    nl = string.char(10)
-    sampleat = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+@comp.c.export(\"x\"){nl}"
-    if !scanfired(sampleat)
-        print("control FAIL: except-anchor firewall did not fire on added directive")
-        ok = false
-    sampleanchor = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+x = @{ name = 1 }{nl}"
-    if scanfired(sampleanchor)
-        print("control FAIL: except-anchor firewall fired on lawful pack anchor")
-        ok = false
-    sampleto = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+x = value:to(){nl}"
-    if !scanfired(sampleto)
-        print("control FAIL: :to() infer firewall did not fire on added line")
-        ok = false
-    samplemirror = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+read = { world = \"io\", possessed = true, callable = true, operation = false }{nl}"
-    if !scanfired(samplemirror)
-        print("control FAIL: boolean-mirror catalog firewall did not fire")
-        ok = false
-    samplecatalog = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+resident = { read = io.read }{nl}"
-    if !scanfired(samplecatalog)
-        print("control FAIL: relation catalog firewall did not fire")
-        ok = false
-    samplehome = "--- /dev/null{nl}+++ b/lib/semantic/io.id{nl}@@ -0,0 +1 @@{nl}+x = 1{nl}"
-    if !scanfired(samplehome)
-        print("control FAIL: catalog home lib/semantic/ not rejected")
-        ok = false
-    sample = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+process = process{nl}"
-    if !scanfired(sample)
-        print("control FAIL: scan did not convict added-line diff body — check newline boundary")
-        ok = false
-    ok
+  ok = true
+  if not bare("    end")
+    print("control FAIL: bare did not fire")
+    ok = false
+  if bare("    scan(n)")
+    print("control FAIL: bare fired on canonical")
+    ok = false
+  if not under("is_digit(c)") or not under("_subject")
+    print("control FAIL: under did not fire")
+    ok = false
+  if under("digit(c)")
+    print("control FAIL: under fired on canonical")
+    ok = false
+  if not capital("p: Point") or not capital("p: P") or not capital("foo2Bar")
+    print("control FAIL: capital did not fire")
+    ok = false
+  if capital("p: point") or capital("mask = 0xFF") or capital("value = 1E9")
+    print("control FAIL: capital fired on canonical")
+    ok = false
+  if strip("code # string.sub here"):len() > 6
+    print("control FAIL: strip did not remove a comment")
+    ok = false
+  if not dash("x = 1  -- old")
+    print("control FAIL: dash did not reject Lua comment")
+    ok = false
+  if dash("x = 1  # canonical") or dash("--- @inline")
+    print("control FAIL: dash rejected canonical # comment or --- decorator")
+    ok = false
+  if not token("value = nil", "nil") or token("value = vanilla", "nil")
+    print("control FAIL: nil token boundary is broken")
+    ok = false
+  if not head("+++ b/example.id") or head("+value = \"+++ b/\"")
+    print("control FAIL: diff header boundary is broken")
+    ok = false
+  if not bridge("x = left .. right")
+    print("control FAIL: bridge did not reject .. concatenation")
+    ok = false
+  if bridge("# x .. y")
+    print("control FAIL: bridge rejected comment context")
+    ok = false
+  if not expand("hits = hits + 1")
+    print("control FAIL: expand did not reject place = place op value")
+    ok = false
+  if expand("hits += 1") or expand("left = right + 1")
+    print("control FAIL: expand rejected compound or distinct places")
+    ok = false
+  if not subject__tail("if tail(name)")
+    print("control FAIL: subject(tail) did not reject non-subject-first tail(")
+    ok = false
+  if subject__tail("if name:tail()") or subject__tail("exprtail()")
+    print("control FAIL: subject(tail) rejected subject-first or identifier suffix")
+    ok = false
+  if not subject__has("if has(code, pat)")
+    print("control FAIL: subject(has) did not reject non-subject-first has(")
+    ok = false
+  if subject__has("if code:has(pat)")
+    print("control FAIL: subject(has) rejected subject-first has(")
+    ok = false
+  if not subject__read("line = io:read()")
+    print("control FAIL: subject(read) did not reject io:read")
+    ok = false
+  if subject__read("line = stdin:read()") or subject__read("path:read()")
+    print("control FAIL: subject(read) rejected canonical stdin:read / path:read")
+    ok = false
+  if not subject__eq("if eq(x, y)")
+    print("control FAIL: subject(eq) did not reject operation-first eq(x, y)")
+    ok = false
+  if subject__eq("hits += eq(q)(path, stem)") or subject__eq("eq(i64)(f64) = store")
+    print("control FAIL: subject(eq) rejected eq(q) admission or relation-store declaration")
+    ok = false
+  if not callfirstrel("match", "if match(text, pat)")
+    print("control FAIL: callfirstrel(match) did not reject operation-first match(")
+    ok = false
+  if callfirstrel("match", "if text:match(pat)") or callfirstrel("match", "match(pattern) = (text)")
+    print("control FAIL: callfirstrel(match) rejected subject-first or declaration head")
+    ok = false
+  if not callfirstrel("len", "n = len(text)")
+    print("control FAIL: callfirstrel(len) did not reject operation-first len(")
+    ok = false
+  if callfirstrel("len", "if text:len()") or callfirstrel("len", "len(path)(32)")
+    print("control FAIL: callfirstrel(len) rejected subject-first or gate boundary len(path)(min)")
+    ok = false
+  if not strike("examples/test.id", 1, "hits += flag(path, no, code, pat, law, fix, quiet)")
+    print("control FAIL: flag(path, operation-first bridge rule did not fire")
+    ok = false
+  if not probe("x = findFunc(\"main\")", "findFunc(")
+    print("control FAIL: findFunc name lookup firewall did not fire")
+    ok = false
+  if not probe("k = EdgeKind.run", "EdgeKind.")
+    print("control FAIL: EdgeKind operational edge firewall did not fire")
+    ok = false
+  if not probe("x:set(k, v)", ":set(")
+    print("control FAIL: :set( ordinary access firewall did not fire")
+    ok = false
+  if not probe("f:call(x)", ":call(")
+    print("control FAIL: :call( application firewall did not fire")
+    ok = false
+  if not probe("let x = 1", "let")
+    print("control FAIL: let keyword firewall did not fire")
+    ok = false
+  if not probe("call_handler = ()", "call_handler")
+    print("control FAIL: call_handler collision firewall did not fire")
+    ok = false
+  if not pathfail("lib/std/index/suffixarray.id")
+    print("control FAIL: route did not reject suffixarray compound path")
+    ok = false
+  if pathfail("lib/std/index/suffix/array.id")
+    print("control FAIL: route rejected decomposed suffix/array path")
+    ok = false
+  if not pathfail("lib/semantic_graph.id")
+    print("control FAIL: route did not reject mashed path stem")
+    ok = false
+  if pathfail("lib/compiler/graph.id")
+    print("control FAIL: route rejected decomposed compiler/graph path")
+    ok = false
+  if not pathfail("lib/semantic/io.id")
+    print("control FAIL: route did not reject deleted catalog home")
+    ok = false
+  if not compound("readline")
+    print("control FAIL: compound did not reject readline")
+    ok = false
+  if not compound("strproof")
+    print("control FAIL: compound did not reject strproof")
+    ok = false
+  if not compound("writetemp")
+    print("control FAIL: compound did not reject writetemp")
+    ok = false
+  if not "writetemp(path, body)":has("writetemp")
+    print("control FAIL: writetemp mash rule did not fire")
+    ok = false
+  if compound("write")
+    print("control FAIL: compound rejected canonical write")
+    ok = false
+  if compound("audit")
+    print("control FAIL: compound rejected canonical audit")
+    ok = false
+  if not namefail("x", "semantic_graph")
+    print("control FAIL: eq did not reject semantic_graph")
+    ok = false
+  if namefail("x", "semantic")
+    print("control FAIL: eq rejected canonical semantic")
+    ok = false
+  if not "args = os.args()":has("os.args(")
+    print("control FAIL: os.args host firewall did not fire")
+    ok = false
+  if not "mode = os.getenv(\"X\")":has("os.getenv(")
+    print("control FAIL: os.getenv host firewall did not fire")
+    ok = false
+  if not "use(m)":has("use(") or not "using(m)":has("using(")
+    print("control FAIL: admission syntax firewall did not fire")
+    ok = false
+  if "command = os.args[1]":has("os.args(")
+    print("control FAIL: os.args() fired on os.args table index")
+    ok = false
+  if not "mode = environment[":has("environment[")
+    print("control FAIL: environment entity firewall did not fire")
+    ok = false
+  if not probe("table.insert(xs,v)", "table.")
+    print("control FAIL: table namespace firewall did not fire on positive")
+    ok = false
+  if probe("xs:push(v)", "table.")
+    print("control FAIL: table namespace firewall fired on canonical xs:push")
+    ok = false
+  if not probe("string.sub(text,a,b)", "string.")
+    print("control FAIL: string namespace firewall did not fire on positive")
+    ok = false
+  if probe("text:sub(a,b)", "string.")
+    print("control FAIL: string namespace firewall fired on canonical text:sub")
+    ok = false
+  if not "x = std.proc.capture(\"echo\")":has("std.")
+    print("control FAIL: std namespace firewall did not fire")
+    ok = false
+  if not "node = ir.node()":has("ir.")
+    print("control FAIL: ir namespace firewall did not fire")
+    ok = false
+  if not dot__io("text = io.read(\"*a\")")
+    print("control FAIL: dot(io) did not reject io.read")
+    ok = false
+  if not dot__os("code = os.exit(1)")
+    print("control FAIL: dot(os) did not reject os.exit")
+    ok = false
+  if dot__io("line = io:read()")
+    print("control FAIL: dot(io) fired on io:read — use stdin:read() or path:read()")
+    ok = false
+  if dot__io("x = std.io.open(p)")
+    print("control FAIL: dot(io) fired on std.io qualification")
+    ok = false
+  if not dot__std(io, "f = std.io.open(p)")
+    print("control FAIL: dot(std)(io) did not reject std.io.open")
+    ok = false
+  if not sigil("x = @c.emit(\"fn()\")")
+    print("control FAIL: except-anchor firewall did not fire")
+    ok = false
+  if sigil("x = @{ name = 1 }")
+    print("control FAIL: sigil fired on lawful injection literal")
+    ok = false
+  if sigil("# leftover @comp.c.export in a comment")
+    print("control FAIL: sigil fired on comment")
+    ok = false
+  if sigil("world = @")
+    print("control FAIL: sigil fired on bare @ current world")
+    ok = false
+  if sigil("host = @target")
+    print("control FAIL: sigil fired on @member current-world access")
+    ok = false
+  if not sigil("host = @.target")
+    print("control FAIL: sigil did not fire on invalid @.member accessor")
+    ok = false
+  if not sigil("x = @:read()")
+    print("control FAIL: sigil did not fire on invalid @: subject dispatch")
+    ok = false
+  if sigil("reply = @stdin:read()")
+    print("control FAIL: sigil fired on @member subject relation")
+    ok = false
+  if sigil("x = value@world")
+    print("control FAIL: sigil fired on postfix thing@world qualification")
+    ok = false
+  if sigil("y = sale.quote@{ tax = zero }(100)")
+    print("control FAIL: sigil fired on interjection thing@{ k = v }")
+    ok = false
+  if sigil("@fee = 0")
+    print("control FAIL: sigil fired on ambient mutation @member place")
+    ok = false
+  if not sigil("@.fee = 0")
+    print("control FAIL: sigil did not fire on invalid @.member mutation")
+    ok = false
+  if not sigil("x = @runtime.spawn()")
+    print("control FAIL: sigil did not fire on @runtime directive namespace")
+    ok = false
+  if not sigil("x = @host.env")
+    print("control FAIL: sigil did not fire on @host directive namespace")
+    ok = false
+  if not "y = lua_io_read()":has("lua_")
+    print("control FAIL: lua foreign-zero firewall did not fire")
+    ok = false
+  if not "x = bit.f64_to_bits(v)":has("bit.")
+    print("control FAIL: bit module firewall did not fire")
+    ok = false
+  if not "to(f64)(bit) = unpack@view":has("unpack@view")
+    print("control FAIL: unpack@view firewall did not fire")
+    ok = false
+  if not "y = bitcast(x)":has("bitcast")
+    print("control FAIL: bitcast naming firewall did not fire")
+    ok = false
+  if "pattern: bit = one:to(bit)":has("bit.")
+    print("control FAIL: bit. fired on canonical to(bit)")
+    ok = false
+  if not "viewedges = \"|bit|\"":has("viewedges")
+    print("control FAIL: viewedges mash firewall did not fire")
+    ok = false
+  if "view(edges) = ()":has("viewedges")
+    print("control FAIL: viewedges fired on canonical view(edges)")
+    ok = false
+  if not "viewrouter = stdin:read":has("viewrouter")
+    print("control FAIL: viewrouter mash firewall did not fire")
+    ok = false
+  if "router(view)(view[census])":has("viewrouter")
+    print("control FAIL: viewrouter fired on canonical router(view)")
+    ok = false
+  if not "viewproof = router":has("viewproof")
+    print("control FAIL: viewproof mash firewall did not fire")
+    ok = false
+  if "view = router(proof)(proof[view])":has("viewproof")
+    print("control FAIL: viewproof fired on canonical slot-named view")
+    ok = false
+  if not "zig-out/bin/idol":has("bin/idol")
+    print("control FAIL: bin/idol path firewall did not fire")
+    ok = false
+  if "zig-out/bin/idol":has("bin/idol")
+    print("control FAIL: bin/idol fired on canonical idol binary path")
+    ok = false
+  if not "ingestbody = path:read":has("ingestbody")
+    print("control FAIL: ingestbody mash firewall did not fire")
+    ok = false
+  if "router(semantic)(semantic[ingest])":has("ingestbody")
+    print("control FAIL: ingestbody fired on canonical router(semantic)")
+    ok = false
+  if not "std.script.fs_exists(":has("fs_exists")
+    print("control FAIL: fs_exists snake firewall did not fire")
+    ok = false
+  if "fs:exists(":has("fs_exists")
+    print("control FAIL: fs_exists fired on canonical path:exists")
+    ok = false
+  if not strike("control", 1, "text = router(x)")
+    print("control FAIL: router bridge binding firewall did not fire")
+    ok = false
+  if not strike("control", 1, "len: bool = (path: str, min: i64)")
+    print("control FAIL: flat len binding bridge rule did not fire")
+    ok = false
+  if strike("control", 1, "len(path) = (min: i64)")
+    print("control FAIL: flat len rule fired on canonical len(path) boundary curry")
+    ok = false
+  if not strike("control", 1, "audit: bool = (path: str, pattern: str)")
+    print("control FAIL: flat audit binding bridge rule did not fire")
+    ok = false
+  if strike("control", 1, "audit(path) = (pattern: str)")
+    print("control FAIL: flat audit rule fired on canonical audit(path) boundary curry")
+    ok = false
+  if not strike("control", 1, "hit: bool = (path: str, pattern: str)")
+    print("control FAIL: flat hit binding bridge rule did not fire")
+    ok = false
+  if not strike("control", 1, "from(path) = (pattern: str)")
+    print("control FAIL: from(path) mash bridge rule did not fire")
+    ok = false
+  if strike("control", 1, "hit(path) = (pattern: str)")
+    print("control FAIL: flat hit rule fired on canonical hit(path) boundary curry")
+    ok = false
+  if not strike("control", 1, "if len(path, min)")
+    print("control FAIL: len(path, min) call bridge rule did not fire")
+    ok = false
+  if strike("control", 1, "if !len(path)(min)")
+    print("control FAIL: len(path)(min) rule fired on canonical len(path)(min)")
+    ok = false
+  if not strike("control", 1, "if not bare")
+    print("control FAIL: if not keyword bridge rule did not fire")
+    ok = false
+  if strike("control", 1, "if !bare")
+    print("control FAIL: if not rule fired on canonical prefix !")
+    ok = false
+  if not strike("control", 1, "text = path:read()")
+    print("control FAIL: transitive read binding firewall did not fire")
+    ok = false
+  if strike("control", 1, "path:read():match(pattern)")
+    print("control FAIL: read binding rule fired on canonical path:read():match chain")
+    ok = false
+  if not "relationid":has("relationid")
+    print("control FAIL: relationid mash firewall did not fire")
+    ok = false
+  if "path:read()":has("relationid")
+    print("control FAIL: relationid fired on canonical path:read")
+    ok = false
+  if not "io:read(\"lib/compiler":has("io:read(")
+    print("control FAIL: io:read firewall did not fire")
+    ok = false
+  if "path:read()":has("io:read(")
+    print("control FAIL: io:read rule fired on canonical path:read()")
+    ok = false
+  if not "std.script.fswrite(":has("fswrite")
+    print("control FAIL: fswrite mash firewall did not fire")
+    ok = false
+  if "io.open(":has("fswrite")
+    print("control FAIL: fswrite fired on canonical io.open write")
+    ok = false
+  if not probe("process = process", "process = process")
+    print("control FAIL: process library admission firewall did not fire")
+    ok = false
+  if not probe("rc = run(cmd)", "run(")
+    print("control FAIL: run namespace firewall did not fire")
+    ok = false
+  if not probe("text = capture(cmd)", "capture(")
+    print("control FAIL: capture namespace firewall did not fire")
+    ok = false
+  if not probe("exit(1)", "exit(")
+    print("control FAIL: exit namespace firewall did not fire")
+    ok = false
+  if not probe("x = chomp(text)", "chomp(")
+    print("control FAIL: chomp namespace firewall did not fire")
+    ok = false
+  if not probe("foo(x)", "")
+    print("control FAIL: std→process rename classifier did not fire on process namespace")
+    ok = false
+  if probe("command(line):open(\"r\")", "capture(")
+    print("control FAIL: capture fired on canonical command:open")
+    ok = false
+  if not probe("procrun: i64 = (shellline: str)", "procrun:")
+    print("control FAIL: procrun parallel execution API firewall did not fire")
+    ok = false
+  if not probe("proccap: str = (shellline: str)", "proccap:")
+    print("control FAIL: proccap parallel capture API firewall did not fire")
+    ok = false
+  if not probe("shared = req(\"tools.mcp.shared\")", "req(")
+    print("control FAIL: req admission syntax firewall did not fire")
+    ok = false
+  if not probe("x = [[long string]]", "[[")
+    print("control FAIL: Lua long bracket lexical firewall did not fire")
+    ok = false
+  if probe("\"multiline text\"", "[[")
+    print("control FAIL: long bracket rule fired on quoted text")
+    ok = false
+  if not projcurry("print(to(str)(42))")
+    print("control FAIL: projection-curry firewall did not fire on to(str)(value)")
+    ok = false
+  if not projcurry("n = to(i64)(s)")
+    print("control FAIL: projection-curry firewall did not fire on to(i64)(value)")
+    ok = false
+  if projcurry("to(str) = (value)")
+    print("control FAIL: projection-curry fired on declaration head to(str) =")
+    ok = false
+  if projcurry("value:to(str)")
+    print("control FAIL: projection-curry fired on subject-first value:to(str)")
+    ok = false
+  if projcurry("to(micron)(inch) = stretch")
+    print("control FAIL: projection-curry fired on relation-store declaration")
+    ok = false
+  nl = string.char(10)
+  sampleat = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+@comp.c.export(\"x\"){nl}"
+  if not scanfired(sampleat)
+    print("control FAIL: except-anchor firewall did not fire on added directive")
+    ok = false
+  sampleanchor = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+x = @{ name = 1 }{nl}"
+  if scanfired(sampleanchor)
+    print("control FAIL: except-anchor firewall fired on lawful pack anchor")
+    ok = false
+  sampleto = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+x = value:to(){nl}"
+  if not scanfired(sampleto)
+    print("control FAIL: :to() infer firewall did not fire on added line")
+    ok = false
+  samplemirror = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+read = { world = \"io\", possessed = true, callable = true, operation = false }{nl}"
+  if not scanfired(samplemirror)
+    print("control FAIL: boolean-mirror catalog firewall did not fire")
+    ok = false
+  samplecatalog = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+resident = { read = io.read }{nl}"
+  if not scanfired(samplecatalog)
+    print("control FAIL: relation catalog firewall did not fire")
+    ok = false
+  samplehome = "--- /dev/null{nl}+++ b/lib/semantic/io.id{nl}@@ -0,0 +1 @@{nl}+x = 1{nl}"
+  if not scanfired(samplehome)
+    print("control FAIL: catalog home lib/semantic/ not rejected")
+    ok = false
+  sample = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+process = process{nl}"
+  if not scanfired(sample)
+    print("control FAIL: scan did not convict added-line diff body — check newline boundary")
+    ok = false
+  ok
 
 main: i64 = ()
-    if !seed()
-        print("gate/idiom: relation catalog must not exist")
-        return 3
-    if !control()
-        print("gate/idiom: POSITIVE CONTROL FAILED")
-        return 3
-    files = transport()
-    if !files:len()
-        print("gate/idiom: empty input — pipe unified diff on stdin")
-        print("Usage: git diff -U0 ... | idol run gate/idiom.id")
-        return 3
-    total = scan(files)
+  if not seed()
+    print("gate/idiom: relation catalog must not exist")
+    return 3
+  if not control()
+    print("gate/idiom: POSITIVE CONTROL FAILED")
+    return 3
+  files = transport()
+  if not files:len()
+    print("gate/idiom: empty input — pipe unified diff on stdin")
+    print("Usage: git diff -U0 ... | idol run gate/idiom.id")
+    return 3
+  total = scan(files)
+  print("")
+  print("gate/idiom: {total} finding(s) on ADDED lines and paths  [control: pass]")
+  if total > 0
     print("")
-    print("gate/idiom: {total} finding(s) on ADDED lines and paths  [control: pass]")
-    if total > 0
-        print("")
-        print("The law: docs/spec/constitution.md · docs/spec/source.md · AGENTS.md")
-        print("Canonical teaching source: current .id only; historical source is not a template.")
-        print("The corpus is NOT the law — do not imitate the file you are editing.")
-        return 1
-    0
+    print("The law: docs/spec/constitution.md · docs/spec/source.md · AGENTS.md")
+    print("Canonical teaching source: current .id only; historical source is not a template.")
+    print("The corpus is NOT the law — do not imitate the file you are editing.")
+    return 1
+  0

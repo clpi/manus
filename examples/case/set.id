@@ -19,19 +19,22 @@
 # `token.kind` is the home this case-set was declared at.
 # expect: 9
 
-token: {
-    kind: { name, number, string, symbol, eof }
-    span: i64
-}
+enum token__kind
+  name
+  number
+  string
+  symbol
+  eof
+token: { kind: token__kind, span: i64 }
 
 n = 0
-k = token.kind.eof
-if k == token.kind.eof
-    n += 1
-if k == token.kind.number
-    n += 100
-if token.kind.number == token.kind.number
-    n += 8
-if token.kind.name == token.kind.symbol
-    n += 400
+k = token__kind.eof
+if k == token__kind.eof
+  n = n + 1
+if k == token__kind.number
+  n = n + 100
+if token__kind.number == token__kind.number
+  n = n + 8
+if token__kind.name == token__kind.symbol
+  n = n + 400
 print("{n}")

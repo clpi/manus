@@ -1,5 +1,5 @@
 print("0")
-req "std"
+req("std")
 print("1")
 
 source = compiler.source
@@ -17,28 +17,36 @@ print("lexer created")
 
 t1 = lexer.next(l)
 print("t1", t1.kind, t1.text)
-if t1.kind != token.KIND_FUN error("expected fun")
+if t1.kind != token.KIND_FUN
+  error("expected fun")
 
 t2 = lexer.next(l)
 print("t2", t2.kind, t2.text)
-if t2.kind != token.KIND_NAME error("expected name")
-if t2.text != "add" error("expected add")
+if t2.kind != token.KIND_NAME
+  error("expected name")
+if t2.text != "add"
+  error("expected add")
 
 t3 = lexer.next(l)
 print("t3", t3.kind, t3.text)
-if t3.kind != token.KIND_LPAREN error("expected (")
+if t3.kind != token.KIND_LPAREN
+  error("expected (")
 
 t4 = lexer.next(l)
 print("t4", t4.kind, t4.text)
-if t4.kind != token.KIND_NAME error("expected name")
-if t4.text != "a" error("expected a")
+if t4.kind != token.KIND_NAME
+  error("expected name")
+if t4.text != "a"
+  error("expected a")
 
 t5 = lexer.next(l)
 print("t5", t5.kind, t5.text)
-if t5.kind != token.KIND_COLON error("expected :")
+if t5.kind != token.KIND_COLON
+  error("expected :")
 
 t6 = lexer.next(l)
 print("t6", t6.kind, t6.text)
-if t6.kind != token.KIND_I64 error("expected i64")
+if t6.kind != token.KIND_I64
+  error("expected i64")
 
 print("Lexer smoke test passed!")

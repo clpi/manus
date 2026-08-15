@@ -50,23 +50,21 @@ gui_id_hash: i64 = (s: str)
 # ═══════════════════════════════════════════════════════════════
 
 gui_draw_rect = (state: any, x: f64, y: f64, w: f64, h: f64, color: any)
-  state.draw_commands(state:len().draw_commands + 1) = {
-    type = "rect",
-    x = x,
-    y = y,
-    width = w,
-    height = h,
+  state.draw_commands(state:len().draw_commands + 1) =
+    type = "rect"
+    x = x
+    y = y
+    width = w
+    height = h
     color = color
-  }
 
 gui_draw_text = (state: any, text: str, x: f64, y: f64, color: any)
-  state.draw_commands(state:len().draw_commands + 1) = {
-    type = "text",
-    text = text,
-    x = x,
-    y = y,
+  state.draw_commands(state:len().draw_commands + 1) =
+    type = "text"
+    text = text
+    x = x
+    y = y
     color = color
-  }
 
 # ═══════════════════════════════════════════════════════════════
 # GUI Widgets

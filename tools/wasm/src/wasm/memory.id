@@ -1,54 +1,54 @@
 # the engine/src/wasm/memory.id — Linear memory (mmap-backed)
 PAGE_SIZE = 65536
 
-mem_new(pages: i64)
-    size: i64 = pages * PAGE_SIZE
-    ptr = __emit("mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0)")
-    return { ptr = ptr, pages = pages, size = size }
+mem_new = (pages: i64)
+  size: i64 = pages * PAGE_SIZE
+  ptr = __emit("mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0)")
+  return { ptr = ptr, pages = pages, size = size }
 
-mem_grow(mem, pages: i64): i64
-    old: i64 = mem.pages
-    mem.size = (old + pages) * PAGE_SIZE
-    __emit("mem.ptr = mremap(mem.ptr, old * 65536, mem.size, MREMAP_MAYMOVE)")
-    mem.pages = old + pages
-    return old
+mem_grow: i64 = (mem, pages: i64)
+  old: i64 = mem.pages
+  mem.size = (old + pages) * PAGE_SIZE
+  __emit("mem.ptr = mremap(mem.ptr, old * 65536, mem.size, MREMAP_MAYMOVE)")
+  mem.pages = old + pages
+  return old
 
 --- @inline
-mem_load_i32(mem, addr: i64): i64
-    return __emit("(int64_t)(*(int32_t*)((uint8_t*)mem.as.tval + addr))")
+mem_load_i32: i64 = (mem, addr: i64)
+  return __emit("(int64_t)(*(int32_t*)((uint8_t*)mem.as.tval + addr))")
 --- @inline
-mem_store_i32(mem, addr: i64, val: i64)
-    __emit("*(int32_t*)((uint8_t*)mem.as.tval + addr) = (int32_t)val")
+mem_store_i32 = (mem, addr: i64, val: i64)
+  __emit("*(int32_t*)((uint8_t*)mem.as.tval + addr) = (int32_t)val")
 --- @inline
-mem_load_i64(mem, addr: i64): i64
-    return __emit("*(int64_t*)((uint8_t*)mem.as.tval + addr)")
+mem_load_i64: i64 = (mem, addr: i64)
+  return __emit("*(int64_t*)((uint8_t*)mem.as.tval + addr)")
 --- @inline
-mem_store_i64(mem, addr: i64, val: i64)
-    __emit("*(int64_t*)((uint8_t*)mem.as.tval + addr) = val")
+mem_store_i64 = (mem, addr: i64, val: i64)
+  __emit("*(int64_t*)((uint8_t*)mem.as.tval + addr) = val")
 --- @inline
-mem_load_f32(mem, addr: i64): f64
-    return __emit("(double)(*(float*)((uint8_t*)mem.as.tval + addr))")
+mem_load_f32: f64 = (mem, addr: i64)
+  return __emit("(double)(*(float*)((uint8_t*)mem.as.tval + addr))")
 --- @inline
-mem_load_f64(mem, addr: i64): f64
-    return __emit("*(double*)((uint8_t*)mem.as.tval + addr)")
+mem_load_f64: f64 = (mem, addr: i64)
+  return __emit("*(double*)((uint8_t*)mem.as.tval + addr)")
 --- @inline
-mem_store_f32(mem, addr: i64, val: f64)
-    __emit("*(float*)((uint8_t*)mem.as.tval + addr) = (float)val")
+mem_store_f32 = (mem, addr: i64, val: f64)
+  __emit("*(float*)((uint8_t*)mem.as.tval + addr) = (float)val")
 --- @inline
-mem_store_f64(mem, addr: i64, val: f64)
-    __emit("*(double*)((uint8_t*)mem.as.tval + addr) = val")
+mem_store_f64 = (mem, addr: i64, val: f64)
+  __emit("*(double*)((uint8_t*)mem.as.tval + addr) = val")
 --- @inline
-mem_load8_u(mem, addr: i64): i64
-    return __emit("(int64_t)(*(uint8_t*)((uint8_t*)mem.as.tval + addr))")
+mem_load8_u: i64 = (mem, addr: i64)
+  return __emit("(int64_t)(*(uint8_t*)((uint8_t*)mem.as.tval + addr))")
 --- @inline
-mem_load8_s(mem, addr: i64): i64
-    return __emit("(int64_t)(*(int8_t*)((uint8_t*)mem.as.tval + addr))")
+mem_load8_s: i64 = (mem, addr: i64)
+  return __emit("(int64_t)(*(int8_t*)((uint8_t*)mem.as.tval + addr))")
 --- @inline
-mem_load16_u(mem, addr: i64): i64
-    return __emit("(int64_t)(*(uint16_t*)((uint8_t*)mem.as.tval + addr))")
+mem_load16_u: i64 = (mem, addr: i64)
+  return __emit("(int64_t)(*(uint16_t*)((uint8_t*)mem.as.tval + addr))")
 --- @inline
-mem_load16_s(mem, addr: i64): i64
-    return __emit("(int64_t)(*(int16_t*)((uint8_t*)mem.as.tval + addr))")
+mem_load16_s: i64 = (mem, addr: i64)
+  return __emit("(int64_t)(*(int16_t*)((uint8_t*)mem.as.tval + addr))")
 
 M = {}
 M.mem_new = mem_new

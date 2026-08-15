@@ -1,30 +1,30 @@
-atomic_demo(): i64
-    raw: *u8 = mem.alloc(16)
-    mem.zero(raw, 16)
+atomic_demo: i64 = ()
+  raw: *u8 = mem.alloc(16)
+  mem.zero(raw, 16)
 
-    slot: *i64 = mem.cast("i64", raw)
-    expected: *i64 = mem.add(slot, 1)
+  slot: *i64 = mem.cast("i64", raw)
+  expected: *i64 = mem.add(slot, 1)
 
-    atomic.store("i64", slot, 10, "release")
-    old_add: i64 = atomic.fetch_add("i64", slot, 5, "acq_rel")
-    old_sub: i64 = atomic.fetch_sub("i64", slot, 3, "acq_rel")
-    old_or: i64 = atomic.fetch_or("i64", slot, 3, "acq_rel")
-    old_and: i64 = atomic.fetch_and("i64", slot, 14, "acq_rel")
-    old_xor: i64 = atomic.fetch_xor("i64", slot, 6, "acq_rel")
-    old_exchange: i64 = atomic.exchange("i64", slot, 7, "acq_rel")
+  atomic.store("i64", slot, 10, "release")
+  old_add: i64 = atomic.fetch_add("i64", slot, 5, "acq_rel")
+  old_sub: i64 = atomic.fetch_sub("i64", slot, 3, "acq_rel")
+  old_or: i64 = atomic.fetch_or("i64", slot, 3, "acq_rel")
+  old_and: i64 = atomic.fetch_and("i64", slot, 14, "acq_rel")
+  old_xor: i64 = atomic.fetch_xor("i64", slot, 6, "acq_rel")
+  old_exchange: i64 = atomic.exchange("i64", slot, 7, "acq_rel")
 
-    mem.store(i64)(expected, 7)
-    swapped: bool = atomic.compare_exchange("i64", slot, expected, 11, "acq_rel", "acquire")
-    final_value: i64 = atomic.load("i64", slot, "acquire")
-    expected_value: i64 = mem.load(i64)(expected)
-    atomic.compiler_fence("acquire")
-    atomic.fence("seq_cst")
+  mem.store(i64)(expected, 7)
+  swapped: bool = atomic.compare_exchange("i64", slot, expected, 11, "acq_rel", "acquire")
+  final_value: i64 = atomic.load("i64", slot, "acquire")
+  expected_value: i64 = mem.load(i64)(expected)
+  atomic.compiler_fence("acquire")
+  atomic.fence("seq_cst")
 
-    bonus: i64 = 0
-    if swapped
-        bonus = 1
+  bonus: i64 = 0
+  if swapped
+    bonus = 1
 
-    mem.free(raw)
-    return old_add + old_sub + old_or + old_and + old_xor + old_exchange + final_value + expected_value + bonus
+  mem.free(raw)
+  return old_add + old_sub + old_or + old_and + old_xor + old_exchange + final_value + expected_value + bonus
 
 print(atomic_demo())

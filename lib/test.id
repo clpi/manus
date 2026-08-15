@@ -1,49 +1,47 @@
-start(msg: str): void
-    io:write("=== %s ===\n":format(msg))
+start = (msg: str)
+  io:write("=== %s ===\n":format(msg))
 
-assert_eq(actual: any, expected: any, msg: str): void
-    if actual == expected
-        io:write("  PASS: %s\n":format(msg or ""))
-    else
-        io:write("  FAIL: %s (expected %s, got %s)\n":format(msg or "", expected:to(str), actual:to(str)))
+assert_eq = (actual: any, expected: any, msg: str)
+  if actual == expected
+    io:write("  PASS: %s\n":format(msg or ""))
+  else
+    io:write("  FAIL: %s (expected %s, got %s)\n":format(msg or "", expected:to(str), actual:to(str)))
 
-assert_ne(actual: any, not_expected: any, msg: str): void
-    if actual != not_expected
-        io:write("  PASS: %s\n":format(msg or ""))
-    else
-        io:write("  FAIL: %s (expected not %s)\n":format(msg or "", not_expected:to(str)))
+assert_ne = (actual: any, not_expected: any, msg: str)
+  if actual != not_expected
+    io:write("  PASS: %s\n":format(msg or ""))
+  else
+    io:write("  FAIL: %s (expected not %s)\n":format(msg or "", not_expected:to(str)))
 
-assert_true(val: any, msg: str): void
-    if val == true
-        io:write("  PASS: %s\n":format(msg or ""))
-    else
-        io:write("  FAIL: %s\n":format(msg or ""))
+assert_true = (val: any, msg: str)
+  if val == true
+    io:write("  PASS: %s\n":format(msg or ""))
+  else
+    io:write("  FAIL: %s\n":format(msg or ""))
 
-assert_false(val: any, msg: str): void
-    if val == false
-        io:write("  PASS: %s\n":format(msg or ""))
-    else
-        io:write("  FAIL: %s\n":format(msg or ""))
+assert_false = (val: any, msg: str)
+  if val == false
+    io:write("  PASS: %s\n":format(msg or ""))
+  else
+    io:write("  FAIL: %s\n":format(msg or ""))
 
-assert_nil(val: any, msg: str): void
-    if val == nil
-        io:write("  PASS: %s\n":format(msg or ""))
-    else
-        io:write("  FAIL: %s (expected nil, got %s)\n":format(msg or "", val:to(str)))
+assert_nil = (val: any, msg: str)
+  if val == nil
+    io:write("  PASS: %s\n":format(msg or ""))
+  else
+    io:write("  FAIL: %s (expected nil, got %s)\n":format(msg or "", val:to(str)))
 
-assert_not_nil(val: any, msg: str): void
-    if val != nil
-        io:write("  PASS: %s\n":format(msg or ""))
-    else
-        io:write("  FAIL: %s (expected not nil)\n":format(msg or ""))
+assert_not_nil = (val: any, msg: str)
+  if val != nil
+    io:write("  PASS: %s\n":format(msg or ""))
+  else
+    io:write("  FAIL: %s (expected not nil)\n":format(msg or ""))
 
-done(): void
-    io:write("=== tests done ===\n")
+done = ()
+  io:write("=== tests done ===\n")
 
 # Supported @test.* / @bench / @time attributes (see also bench.attrs).
-attrs = {
-    test = { "test", "test.unit", "test.integration", "test.e2e", "test.skip", "test.only", "test.flaky", "test.should_panic", "test.bench", "test.time" },
-    args = { "name", "tag", "message", "timeout", "timeout_ms", "iterations", "warmup" },
-    cli = { "duo test <file.id>", "duo bench <file.id>", "duo test <file> --filter <pat>" },
-}
-
+attrs =
+  test = { "test", "test.unit", "test.integration", "test.e2e", "test.skip", "test.only", "test.flaky", "test.should_panic", "test.bench", "test.time" }
+  args = { "name", "tag", "message", "timeout", "timeout_ms", "iterations", "warmup" }
+  cli = { "duo test <file.id>", "duo bench <file.id>", "duo test <file> --filter <pat>" }

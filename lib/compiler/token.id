@@ -1,12 +1,7 @@
 # compiler.token
 # Token descriptors for the Duo-native lexer
 
-
-loc: {
-    file: str,
-    line: i64,
-    col: i64
-}
+loc: { file: str, line: i64, col: i64 }
 
 KIND_NAME = 0
 KIND_INT_LIT = 1
@@ -129,13 +124,7 @@ KIND_COMMENT = 111
 KIND_COMPAT_COMMENT = 112
 KIND_COMPAT_LONG_COMMENT = 113
 
-token: {
-    kind: i64,
-    loc: loc,
-    text: str,
-    int_val: i64,
-    float_val: f64
-}
+token: { kind: i64, loc: loc, text: str, int_val: i64, float_val: f64 }
 
-is_type_keyword(kind: i64): bool
-    (kind >= KIND_I8 and kind <= KIND_STR)
+is_type_keyword: bool = (kind: i64)
+  kind >= KIND_I8 and kind <= KIND_STR

@@ -15,58 +15,57 @@
 # coverage, and this harness only checks that the two engines agree with
 # each other. Only wasmtime agreement counts, and that lives there.
 
-_pad(s: str, w: i64): str
-    out = s
-    while out:len() < w
-        out = out .. " "
-    out
+_pad: str = (s: str, w: i64)
+  out = s
+  while out:len() < w
+    out = out .. " "
+  out
 
-_rule(n: i64): void
-    line = ""
-    i = 1
-    while i <= n
-        line = line .. "-"
-        i += 1
-    print(line)
+_rule = (n: i64)
+  line = ""
+  i = 1
+  while i <= n
+    line = line .. "-"
+    i = i + 1
+  print(line)
 
-_field(raw: str, key: str): str
-    m = raw:match("\n" .. key .. "=([^\n]*)")
-    if m == nil
-        m = raw:match("^" .. key .. "=([^\n]*)")
-    if m == nil
-        return "none"
-    v = script.chomp(m)
-    if v == "" return "none"
-    v
+_field: str = (raw: str, key: str)
+  m = raw:match("\n" .. key .. "=([^\n]*)")
+  if m == nil
+    m = raw:match("^" .. key .. "=([^\n]*)")
+  if m == nil
+    return "none"
+  v = script.chomp(m)
+  if v == ""
+    return "none"
+  v
 
-_ms(a: i64, b: i64): i64
-    to(i64)((b - a) / 1000000)
+_ms: i64 = (a: i64, b: i64)
+  to(i64)((b - a) / 1000000)
 
 # Run one engine on one module. Returns "<result>|<ms>|<engine>".
 # the engine is invoked via DUO_WASM_MODULE; anything else is a lie (see header).
-_engine(root: str, binary: str, mod: str, engine: str): str
-    # Corpora disagree on the entry export: hash.wasm uses `run`, wart's uses
-    # `_start`. Try both rather than silently reporting "unsupported".
-    raw = ""
-    res = "none"
-    for _i, want in {"run", "_start"}
-        if res == "none"
-            raw = std.script.capture("DUO_WASM_MODULE=" .. root .. "/" .. mod
-                .. " DUO_WASM_INVOKE=" .. want .. " DUO_WASM_ENGINE=" .. engine
-                .. " timeout 120 " .. binary .. " 2>&1")
-            res = _field(raw, "result")
-    # Report the engine that ACTUALLY ran: the JIT falls back to the
-    # interpreter on any opcode it cannot emit, so "jit" requested is not
-    # "jit" used.
-    res .. "|" .. _field(raw, "seconds") .. "|" .. _field(raw, "engine")
+_engine: str = (root: str, binary: str, mod: str, engine: str)
+  # Corpora disagree on the entry export: hash.wasm uses `run`, wart's uses
+  # `_start`. Try both rather than silently reporting "unsupported".
+  raw = ""
+  res = "none"
+  for _i, want in { "run", "_start" }
+    if res == "none"
+      raw = std.script.capture("DUO_WASM_MODULE=" .. root .. "/" .. mod .. " DUO_WASM_INVOKE=" .. want .. " DUO_WASM_ENGINE=" .. engine .. " timeout 120 " .. binary .. " 2>&1")
+      res = _field(raw, "result")
+  # Report the engine that ACTUALLY ran: the JIT falls back to the
+  # interpreter on any opcode it cannot emit, so "jit" requested is not
+  # "jit" used.
+  res .. "|" .. _field(raw, "seconds") .. "|" .. _field(raw, "engine")
 
-_wasmtime_run(wasmtime: str, mod: str): str
-    a: i64 = std.time.monotonic()
-    out = std.script.chomp(std.script.capture(
-        wasmtime .. " --invoke run " .. mod .. " 2>/dev/null | tail -1"))
-    b: i64 = std.time.monotonic()
-    if out == "" out = "none"
-    out .. "|" .. to(str)(_ms(a, b)) .. "ms"
+_wasmtime_run: str = (wasmtime: str, mod: str)
+  a: i64 = std.time.monotonic()
+  out = std.script.chomp(std.script.capture(wasmtime .. " --invoke run " .. mod .. " 2>/dev/null | tail -1"))
+  b: i64 = std.time.monotonic()
+  if out == ""
+    out = "none"
+  out .. "|" .. to(str)(_ms(a, b)) .. "ms"
 
 # Which wart produced the numbers in this table.
 #
@@ -80,22 +79,20 @@ _wasmtime_run(wasmtime: str, mod: str): str
 # This does not PIN wart # pinning means a submodule and that decision is
 # open (docs/wart-integration.md §5). It makes the absence of a pin VISIBLE,
 # which is the part that can be done from here.
-provenance(repo: str): str
-    out = "no repo at {repo}"
-    if std.script.fs_exists(repo)
-        sha = std.script.chomp(std.script.capture(
-            "git -C {repo} rev-parse --short HEAD 2>/dev/null"))
-        if sha == ""
-            out = "{repo} is not a git checkout"
-        else
-            # `wc -l` pads its count with leading blanks on macOS; a raw splice
-            # puts "ad10076+       3 uncommitted" in the table.
-            dirt = std.script.chomp(std.script.capture(
-                "git -C {repo} status --porcelain 2>/dev/null | wc -l | tr -d ' '"))
-            out = sha
-            if dirt != "0"
-                out = "{sha}+{dirt} uncommitted — NOT REPRODUCIBLE"
-    out
+provenance: str = (repo: str)
+  out = "no repo at {repo}"
+  if std.script.fs_exists(repo)
+    sha = std.script.chomp(std.script.capture("git -C {repo} rev-parse --short HEAD 2>/dev/null"))
+    if sha == ""
+      out = "{repo} is not a git checkout"
+    else
+      # `wc -l` pads its count with leading blanks on macOS; a raw splice
+      # puts "ad10076+       3 uncommitted" in the table.
+      dirt = std.script.chomp(std.script.capture("git -C {repo} status --porcelain 2>/dev/null | wc -l | tr -d ' '"))
+      out = sha
+      if dirt != "0"
+        out = "{sha}+{dirt} uncommitted — NOT REPRODUCIBLE"
+  out
 
 # A nonzero exit from wart is REPORTED, never mapped to a name.
 #
@@ -105,73 +102,71 @@ provenance(repo: str): str
 # values as wasmtime, wasmer and this engine. The arm was dead code guarding a
 # condition that does not occur, and a harness that has a name ready for a
 # failure will use it.
-_wartrun(wart: str, mod: str): str
-    a: i64 = std.time.monotonic()
-    rc: i64 = std.script.status("timeout 120 " .. wart .. " run " .. mod)
-    b: i64 = std.time.monotonic()
-    out = "ok|" .. to(str)(_ms(a, b)) .. "ms"
-    if rc != 0
-        out = "exit{rc}|-"
-    out
+_wartrun: str = (wart: str, mod: str)
+  a: i64 = std.time.monotonic()
+  rc: i64 = std.script.status("timeout 120 " .. wart .. " run " .. mod)
+  b: i64 = std.time.monotonic()
+  out = "ok|" .. to(str)(_ms(a, b)) .. "ms"
+  if rc != 0
+    out = "exit{rc}|-"
+  out
 
-_head(s: str): str
-    i = s:find("|", 1, true)
-    if i == nil return s
-    s:sub(1, i - 1)
+_head: str = (s: str)
+  i = s:find("|", 1, true)
+  if i == nil
+    return s
+  s:sub(1, i - 1)
 
-main(): i64
-    idol_bin = std.script.getenv("IDOL", std.script.getenv("DUO", std.script.getenv("HOME", ".") .. "/x/idol/zig-out/bin/idol"))
-    wart = std.script.getenv("WART", std.script.getenv("HOME", ".") .. "/x/wart/zig-out/bin/wart")
-    wasmtime = std.script.getenv("WASMTIME", "wasmtime")
-    binary = std.script.getenv("IDOL_WASM_BIN", std.script.getenv("IDOL_WASM_BIN", "/tmp/idolwasm"))
-    mode = std.script.arg(1, "full")
-    root = std.script.chomp(std.script.capture("pwd"))
+main: i64 = ()
+  idol_bin = std.script.getenv("IDOL", std.script.getenv("DUO", std.script.getenv("HOME", ".") .. "/x/idol/zig-out/bin/idol"))
+  wart = std.script.getenv("WART", std.script.getenv("HOME", ".") .. "/x/wart/zig-out/bin/wart")
+  wasmtime = std.script.getenv("WASMTIME", "wasmtime")
+  binary = std.script.getenv("IDOL_WASM_BIN", std.script.getenv("IDOL_WASM_BIN", "/tmp/idolwasm"))
+  mode = std.script.arg(1, "full")
+  root = std.script.chomp(std.script.capture("pwd"))
 
-    print("== building the engine ==")
-    if std.script.status(idol_bin .. " compile src/engine.id --backend=c --emit exe -o " .. binary) != 0
-        print("BUILD FAILED")
-        return 1
-    if not std.script.fs_exists(binary)
-        print("BUILD FAILED: no binary at " .. binary)
-        return 1
+  print("== building the engine ==")
+  if std.script.status(idol_bin .. " compile src/engine.id --backend=c --emit exe -o " .. binary) != 0
+    print("BUILD FAILED")
+    return 1
+  if not std.script.fs_exists(binary)
+    print("BUILD FAILED: no binary at " .. binary)
+    return 1
 
-    # PROVENANCE, before any number. A wart column with no wart commit beside
-    # it is not reproducible, and the reader cannot tell that by looking at it.
+  # PROVENANCE, before any number. A wart column with no wart commit beside
+  # it is not reproducible, and the reader cannot tell that by looking at it.
+  if mode != "cover"
+    repo = std.script.getenv("WARTREPO", std.script.getenv("HOME", ".") .. "/x/wart")
+    print("wart      {repo}")
+    print("wart at   " .. provenance(repo))
+
+  print("")
+  print(_pad("MODULE", 32) .. " " .. _pad("the engine-jit (res|s|eng)", 26) .. " " .. _pad("the engine-interp", 26) .. " " .. _pad("wasmtime", 18) .. " wart")
+  _rule(126)
+
+  pass = 0
+  total = 0
+  for _i, m in std.script.fs_glob("bench/*.wasm")
+    total = total + 1
+    # `jt`, not `jit`: `jit` is the frozen std.jit namespace root, and
+    # assigning it is "attempt to assign to const variable".
+    jt = _engine(root, binary, m, "jit")
+    itp = _engine(root, binary, m, "interp")
+    wt = "-|-"
+    wr = "-|-"
     if mode != "cover"
-        repo = std.script.getenv("WARTREPO", std.script.getenv("HOME", ".") .. "/x/wart")
-        print("wart      {repo}")
-        print("wart at   " .. provenance(repo))
+      wt = _wasmtime_run(wasmtime, m)
+      wr = _wartrun(wart, m)
+    print(_pad(std.script.path_stem(m), 32) .. " " .. _pad(jt, 26) .. " " .. _pad(itp, 26) .. " " .. _pad(wt, 18) .. " " .. wr)
 
-    print("")
-    print(_pad("MODULE", 32) .. " " .. _pad("the engine-jit (res|s|eng)", 26) .. " "
-        .. _pad("the engine-interp", 26) .. " " .. _pad("wasmtime", 18) .. " wart")
-    _rule(126)
+    # the engine "covers" a module when it produced a result at all and both
+    # engines agree. result=0 is legitimate here: the wart corpus exports
+    # a void `_start`.
+    jr = _head(jt)
+    ir = _head(itp)
+    if jr == ir and jr != "none" and jr != "-1"
+      pass = pass + 1
 
-    pass = 0
-    total = 0
-    for _i, m in std.script.fs_glob("bench/*.wasm")
-        total += 1
-        # `jt`, not `jit`: `jit` is the frozen std.jit namespace root, and
-        # assigning it is "attempt to assign to const variable".
-        jt = _engine(root, binary, m, "jit")
-        itp = _engine(root, binary, m, "interp")
-        wt = "-|-"
-        wr = "-|-"
-        if mode != "cover"
-            wt = _wasmtime_run(wasmtime, m)
-            wr = _wartrun(wart, m)
-        print(_pad(std.script.path_stem(m), 32) .. " " .. _pad(jt, 26) .. " "
-            .. _pad(itp, 26) .. " " .. _pad(wt, 18) .. " " .. wr)
-
-        # the engine "covers" a module when it produced a result at all and both
-        # engines agree. result=0 is legitimate here: the wart corpus exports
-        # a void `_start`.
-        jr = _head(jt)
-        ir = _head(itp)
-        if jr == ir and jr != "none" and jr != "-1"
-            pass += 1
-
-    _rule(126)
-    print("the engine-wasm covers " .. pass:to(str) .. "/" .. total:to(str)
-        .. " modules (both engines agree, non-sentinel result)")
-    0
+  _rule(126)
+  print("the engine-wasm covers " .. pass:to(str) .. "/" .. total:to(str) .. " modules (both engines agree, non-sentinel result)")
+  0

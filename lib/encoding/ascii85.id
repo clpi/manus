@@ -2,110 +2,129 @@
 
 alphabet = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
-encode(src: str): str
-    if src == nil return "" 
-    out = {}
-    i = 1
-    len = src:len()
-    while i <= len
-        available = 4:min(len - i + 1)
-        chunk = src:sub(i, i + 3)
-        b1 = chunk:byte(1)
-        b2 = 0
-        if available >= 2 b2 = chunk:byte(2) 
-        b3 = 0
-        if available >= 3 b3 = chunk:byte(3) 
-        b4 = 0
-        if available >= 4 b4 = chunk:byte(4) 
-        if available == 4
-            val = ((b1 * 256 + b2) * 256 + b3) * 256 + b4
-            if val == 0
-                out[out:len() + 1] = "z"
-            else
-                c1 = (val / 85^4) % 85
-                c2 = (val / 85^3) % 85
-                c3 = (val / 85^2) % 85
-                c4 = (val / 85) % 85
-                c5 = val % 85
-                out[out:len() + 1] = alphabet:sub(c1 + 1, c1 + 1)
-                out[out:len() + 1] = alphabet:sub(c2 + 1, c2 + 1)
-                out[out:len() + 1] = alphabet:sub(c3 + 1, c3 + 1)
-                out[out:len() + 1] = alphabet:sub(c4 + 1, c4 + 1)
-                out[out:len() + 1] = alphabet:sub(c5 + 1, c5 + 1)
-        else
-            val = 0
-            if available >= 1 val += b1 
-            if available >= 2 val = val * 256 + b2 
-            if available >= 3 val = val * 256 + b3 
-            val *= (256 ^ (4 - available))
-            c1 = (val / 85^4) % 85
-            c2 = (val / 85^3) % 85
-            c3 = (val / 85^2) % 85
-            c4 = (val / 85) % 85
-            c5 = val % 85
-            out[out:len() + 1] = alphabet:sub(c1 + 1, c1 + 1)
-            out[out:len() + 1] = alphabet:sub(c2 + 1, c2 + 1)
-            out[out:len() + 1] = alphabet:sub(c3 + 1, c3 + 1)
-            out[out:len() + 1] = alphabet:sub(c4 + 1, c4 + 1)
-            out[out:len() + 1] = alphabet:sub(c5 + 1, c5 + 1)
-        i += 4
-    "~<" .. out:concat() .. "~>"
+encode: str = (src: str)
+  if src == nil
+    return ""
+  out = {}
+  i = 1
+  len = src:len()
+  while i <= len
+    available = 4:min(len - i + 1)
+    chunk = src:sub(i, i + 3)
+    b1 = chunk:byte(1)
+    b2 = 0
+    if available >= 2
+      b2 = chunk:byte(2)
+    b3 = 0
+    if available >= 3
+      b3 = chunk:byte(3)
+    b4 = 0
+    if available >= 4
+      b4 = chunk:byte(4)
+    if available == 4
+      val = ((b1 * 256 + b2) * 256 + b3) * 256 + b4
+      if val == 0
+        out(out:len() + 1) = "z"
+      else
+        c1 = val / 85 ^ 4 % 85
+        c2 = val / 85 ^ 3 % 85
+        c3 = val / 85 ^ 2 % 85
+        c4 = val / 85 % 85
+        c5 = val % 85
+        out(out:len() + 1) = alphabet:sub(c1 + 1, c1 + 1)
+        out(out:len() + 1) = alphabet:sub(c2 + 1, c2 + 1)
+        out(out:len() + 1) = alphabet:sub(c3 + 1, c3 + 1)
+        out(out:len() + 1) = alphabet:sub(c4 + 1, c4 + 1)
+        out(out:len() + 1) = alphabet:sub(c5 + 1, c5 + 1)
+    else
+      val = 0
+      if available >= 1
+        val = val + b1
+      if available >= 2
+        val = val * 256 + b2
+      if available >= 3
+        val = val * 256 + b3
+      val = val * 256 ^ (4 - available)
+      c1 = val / 85 ^ 4 % 85
+      c2 = val / 85 ^ 3 % 85
+      c3 = val / 85 ^ 2 % 85
+      c4 = val / 85 % 85
+      c5 = val % 85
+      out(out:len() + 1) = alphabet:sub(c1 + 1, c1 + 1)
+      out(out:len() + 1) = alphabet:sub(c2 + 1, c2 + 1)
+      out(out:len() + 1) = alphabet:sub(c3 + 1, c3 + 1)
+      out(out:len() + 1) = alphabet:sub(c4 + 1, c4 + 1)
+      out(out:len() + 1) = alphabet:sub(c5 + 1, c5 + 1)
+    i = i + 4
+  "~<" .. out:concat() .. "~>"
 
-decode_word(w: str): any
-    if w == "z" return {0, 0, 0, 0} 
-    v = 0
-    for j = 1, w:len()
-        c = w:byte(j)
-        v = v * 85 + (c - 33)
-    b1 = (v / 16777216) % 256
-    b2 = (v / 65536) % 256
-    b3 = (v / 256) % 256
-    b4 = v % 256
-    return {b1 % 256, b2 % 256, b3 % 256, b4 % 256}
+decode_word: any = (w: str)
+  if w == "z"
+    return { 0, 0, 0, 0 }
+  v = 0
+  for j = 1, w:len()
+    c = w:byte(j)
+    v = v * 85 + c - 33
+  b1 = v / 16777216 % 256
+  b2 = v / 65536 % 256
+  b3 = v / 256 % 256
+  b4 = v % 256
+  return { b1 % 256, b2 % 256, b3 % 256, b4 % 256 }
 
-decode(src: str): str
-    if src == nil return "" 
-    out = {}
-    len = src:len()
-    i = 1
-    if src:sub(1, 2) == "~<" i = 3 
-    while i <= len
-        c = src:byte(i)
-        if c == 126 break 
-        if c == 32 or c == 9 or c == 10 or c == 13
-            i += 1
-        else if c == 122
-            out[out:len() + 1] = 0
-            out[out:len() + 1] = 0
-            out[out:len() + 1] = 0
-            out[out:len() + 1] = 0
-            i += 1
-        else if c >= 33 and c <= 117
-            word = ""
-            for j = 0, 4
-                if i + j <= len
-                    nc = src:byte(i + j)
-                    if nc >= 33 and nc <= 117
-                        word = word .. src:sub(i + j, i + j)
-                    else if nc == 122
-                        word = word .. "z"
-                        break
-                    else
-                        break
-            bytes = decode_word(word)
-            for _, b in bytes
-                out[out:len() + 1] = b
-            i += word:len()
+decode: str = (src: str)
+  if src == nil
+    return ""
+  out = {}
+  len = src:len()
+  i = 1
+  if src:sub(1, 2) == "~<"
+    i = 3
+  while i <= len
+    c = src:byte(i)
+    if c == 126
+      break
+    if c == 32 or c == 9 or c == 10 or c == 13
+      i = i + 1
+    else
+      if c == 122
+        out(out:len() + 1) = 0
+        out(out:len() + 1) = 0
+        out(out:len() + 1) = 0
+        out(out:len() + 1) = 0
+        i = i + 1
+      else
+        if c >= 33 and c <= 117
+          word = ""
+          for j = 0, 4
+            if i + j <= len
+              nc = src:byte(i + j)
+              if nc >= 33 and nc <= 117
+                word = word .. src:sub(i + j, i + j)
+              else
+                if nc == 122
+                  word = word .. "z"
+                  break
+                else
+                  break
+          bytes = decode_word(word)
+          for _, b in bytes
+            out(out:len() + 1) = b
+          i = i + word:len()
         else
-            i += 1
-    result = ""
-    for _, b in out
-        result = result .. b:char()
-    result
+          i = i + 1
+  result = ""
+  for _, b in out
+    result = result .. b:char()
+  result
 
 # `/` yields f64 even on two i64 operands, so this was a return-type mismatch
 # against the declared `: i64` and took the module down. The division is the
 # ceiling of n/4 in 4-byte groups; the truncation is intended, so it is stated.
-max_encoded_n: i64:len(): i64
-    to(i64)((n + 3) / 4) * 5 + 4
-
+max_encoded_n: i64
+fun(__proj_v)
+  return __proj_v:len()
+end
+fun(__proj_v)
+  return __proj_v:i64()
+end
+to(i64)((n + 3) / 4) * 5 + 4
