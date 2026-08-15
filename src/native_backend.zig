@@ -722,6 +722,13 @@ pub const CostLedger = struct {
     }
 };
 
+/// GP value registers the allocator may hand out: x9–x17 (nine — x18 is Apple's
+/// reserved platform register) and x19–x28 (ten).
+const gp_allocatable: u32 = 19;
+/// Registers held back from long-lived homes so every instruction has somewhere
+/// to compute. Five is what a record store-and-index sequence peaks at.
+const gp_scratch_floor: u32 = 5;
+
 const Arm64Compiler = struct {
     alloc: std.mem.Allocator,
     diagnostic: *Diagnostic,
@@ -803,9 +810,25 @@ const Arm64Compiler = struct {
     /// consumes it; `emitBl` clears the mask. Zero outside argument marshaling,
     /// so it never perturbs code that is not staging a call.
     pending_arg_regs: u8 = 0,
-    /// Gate transport scripts carry many short-lived locals; default budget is
-    /// for checked kernels. Raised when `m.graph.gateTransportModule()`.
-    gp_local_home_budget: u32 = 20,
+    /// How many locals may keep a REGISTER home for the whole function.
+    ///
+    /// This has to be smaller than the pool, and it was not: x9–x17 and x19–x28
+    /// are nineteen allocatable registers (x18 is Apple's reserved platform
+    /// register), and the budget was twenty. Every instruction also needs
+    /// scratch, so a body that actually claimed its allowance had nothing left
+    /// to compute with and refused DNB003.
+    ///
+    /// It never showed, because the budget is only consulted when locals are NOT
+    /// all being spilled — that is, in a function with no call — and until the
+    /// bounds trap stopped being `call_extern abort` a function that indexed a
+    /// table dynamically was a "caller" and never reached this path. A
+    /// twenty-element select-chain loop is the smallest program that does:
+    /// leaf, ~20 locals, and it went straight from 33 to DNB003.
+    ///
+    /// Gate transport raises it (`m.graph.gateTransportModule()`), which is safe
+    /// for the same structural reason: those bodies call `gatecap`, so their
+    /// locals are stack-homed and this number is never read.
+    gp_local_home_budget: u32 = gp_allocatable - gp_scratch_floor,
     spill_frame_budget: u16 = 65520,
     /// Gate/ledger transport: allow reclaiming spilled temp registers when the
     /// pool is exhausted instead of refusing with DNB003.
@@ -841,6 +864,15 @@ const Arm64Compiler = struct {
     /// `[sp,#off]` homes stay zero-based. Without this, `strip`'s `i += 1`
     /// left x19–x21 in the caller's registers and `callfirstrel` SIGSEGV'd.
     callee_save_bytes: u16 = 0,
+    /// STICKY record of every callee-saved register (x19–x28) this function's
+    /// body has claimed. `used_regs` is cleared on release, so it answers "is
+    /// this register busy right now", which is not the question the prologue
+    /// asks. Bit `r` set means x`r` was written at some point and its incoming
+    /// value therefore has to be preserved.
+    callee_touched: u32 = 0,
+    /// The set the prologue actually saves. `callee_save_all` is the old
+    /// unconditional block; a probe pass narrows it to `callee_touched`.
+    callee_save_plan: u32 = 0,
     /// `alloc_slots` result temp -> sp-relative byte offset of its slot region.
     slot_bases: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     spilled_regs: std.AutoHashMapUnmanaged(u5, u16) = .empty,
@@ -1111,11 +1143,59 @@ const Arm64Compiler = struct {
         try self.emitAsmHeader();
         if (m.functions.len == 0) return error.MissingMain;
         for (m.functions) |f| {
+            self.callee_save_plan = if (dnirNeedsCalleeSave(f)) self.probeCalleeSaveUse(f) else 0;
             try self.compileDnirFunction(f);
+            // The plan was measured, not guessed, so a body that reached outside
+            // it means the measurement and the emission disagreed — and the
+            // artifact just written would hand the CALLER back a register it
+            // clobbered. That is invisible to any test of this function. Refuse
+            // instead: a refusal falls back to the C emit path and still runs.
+            if (self.callee_touched & ~self.callee_save_plan != 0) return self.refuse(@src());
         }
         for (m.externs) |ext| {
             try self.ensureExternalSymbol(ext.symbol);
         }
+    }
+
+    /// Which callee-saved registers this function's body actually writes.
+    ///
+    /// The answer is MEASURED, by compiling the function once into a throwaway
+    /// compiler and reading back what its allocator claimed. Nothing else can
+    /// answer it: the highest register reached is decided by the allocator's own
+    /// spill-and-reuse behaviour over the whole body, and `dnirGpPressure` — a
+    /// census of names MENTIONED anywhere, with no notion of liveness — is not a
+    /// bound on it in either direction. That census is what made one extra local
+    /// (5 -> 6, liveness never above 2) turn 16 instructions into 41, all of the
+    /// difference being twenty saves and restores of registers the function did
+    /// not go on to use.
+    ///
+    /// The probe runs with `callee_save_plan = callee_save_all`, i.e. EXACTLY
+    /// today's prologue, so the two passes differ only in which `str`/`ldr` pairs
+    /// the prologue emits. Register allocation reads no code offset and no frame
+    /// size, so the second pass claims the same registers as the first — and the
+    /// caller verifies that rather than trusting it.
+    ///
+    /// The probe gets its own `Diagnostic`: a refusal encountered while probing
+    /// is not this compilation's refusal, and must not be left behind for the
+    /// real pass's error to be read from. If the probe cannot compile the
+    /// function at all, this answers `callee_save_all` — the old behaviour — and
+    /// the real pass reports the real failure.
+    fn probeCalleeSaveUse(self: *Arm64Compiler, f: dnir.Function) u32 {
+        var scratch: Diagnostic = .{};
+        var probe = Arm64Compiler{
+            .alloc = self.alloc,
+            .diagnostic = &scratch,
+            .f64_records = self.f64_records,
+            .scal_records = self.scal_records,
+            .entry = self.entry,
+        };
+        probe.gate_transport = self.gate_transport;
+        probe.gp_local_home_budget = self.gp_local_home_budget;
+        probe.spill_frame_budget = self.spill_frame_budget;
+        probe.callee_save_plan = callee_save_all;
+        defer probe.deinit();
+        probe.compileDnirFunction(f) catch return callee_save_all;
+        return probe.callee_touched;
     }
 
     /// True when the body contains any call, so parameters must be relocated out
@@ -1531,7 +1611,7 @@ const Arm64Compiler = struct {
         if (reg < 9 or reg >= 29) return;
         if (reg == platform_reserved_reg) return;
         self.gp_home_regs[reg] = true;
-        self.used_regs[reg] = true;
+        self.claimReg(reg);
         self.gp_reg_owner[reg] = null;
     }
 
@@ -1708,6 +1788,9 @@ const Arm64Compiler = struct {
         self.fp_stack_slots.clearRetainingCapacity();
         self.stack_frame_bytes = 0;
         self.callee_save_bytes = 0;
+        // `callee_save_plan` is set by the CALLER from the probe and must
+        // survive this reset; what it measures must not.
+        self.callee_touched = 0;
         self.spilled_regs.clearRetainingCapacity();
         self.free_spill_slots.clearRetainingCapacity();
         self.gp_stack_locals.clearRetainingCapacity();
@@ -1742,9 +1825,10 @@ const Arm64Compiler = struct {
         const scalar_body_has_call = if (!f.is_float_kernel) dnirFunctionHasCall(f) else false;
         self.cur_func_has_call = scalar_body_has_call or dnirFunctionHasCall(f);
         self.eval_pinned = &pinned;
-        if (dnirNeedsCalleeSave(f)) {
-            try self.emitSaveCalleeRegs();
-        }
+        // `dnirNeedsCalleeSave` no longer decides here: it gates the PROBE (see
+        // `compileDnirModule`), and the probe's answer is the plan. An empty plan
+        // emits nothing at all.
+        try self.emitSaveCalleeRegs();
 
         if (f.is_float_kernel) {
             // Exactly the move the integer path below makes, and for exactly
@@ -1887,11 +1971,38 @@ const Arm64Compiler = struct {
                 }
             }
             if (slots_frame > 0) {
+                // EVERY sp-RELATIVE OFFSET ALREADY HANDED OUT IS NOW WRONG BY
+                // THIS MUCH. That is the invariant this prologue kept breaking:
+                // each region is measured from the `sp` that existed when the
+                // region was reserved, and every later `sub sp` silently
+                // renumbers all of them. Three regions are reserved in sequence
+                // (records, tables, GP locals + spill), so each `sub sp` must
+                // rebase everything handed out before it — here and below.
+                //
+                // Left unrebased, the regions do not merely shift, they OVERLAP:
+                // GP stack locals are addressed from the FINAL `sp` starting at
+                // [sp,#0], which is exactly where an unrebased table region also
+                // claims to start. Measured on a 33-element table in a relation
+                // that also makes a call (the call is what forces locals to
+                // memory at all): `t(3) + ident(3)` answered 50 instead of 33,
+                // the scalar reading element 2 of the table. No refusal, no
+                // diagnostic, a program that compiles and runs and is wrong.
+                //
+                // WHY IT SURVIVED THE GATES: tables are covered, calls are
+                // covered, and nothing covered BOTH IN ONE RELATION. Below 33
+                // elements the table is a select chain — registers, not frame —
+                // so the corpus's tables never met the spill area.
                 try self.emitSubSp(slots_frame);
                 self.stack_frame_bytes += slots_frame;
-                // Offsets were handed out relative to the base of this region,
-                // which sits at the *bottom* of the frame reserved so far, so
-                // they are already correct sp-relative displacements.
+                // Every region reserved EARLIER is now that much further from
+                // `sp`. The record region is the only one, and it is rebased
+                // here for the same reason the table region is rebased below.
+                var rec_it = self.fp_stack_slots.valueIterator();
+                while (rec_it.next()) |slot| {
+                    const rebased: u32 = @as(u32, slot.off) + slots_frame;
+                    if (rebased > 32752) return self.refuse(@src());
+                    slot.off = @intCast(rebased);
+                }
             }
         }
 
@@ -1907,13 +2018,37 @@ const Arm64Compiler = struct {
             // for both — a second sub moved sp and left local offsets pointing
             // into the spill pit, so `bare`'s `i` and the `c != " "` bool shared
             // a slot and the walk never advanced.
+            // SPILL SPACE IS NOT A PROPERTY OF CALLING, and reserving it only
+            // for callers was an accident that held because something else was
+            // wrong. A dynamic table index emits a bounds trap; the trap used to
+            // be `call_extern abort`; so every function that indexed a table
+            // dynamically counted as a caller and got a spill area it needed for
+            // an entirely unrelated reason — register pressure. Making the trap a
+            // real trap took the area away with it, and a 20-element select-chain
+            // loop with no call in it went from answering 33 to DNB003.
+            //
+            // The two facts are now asked separately. A CALL forces locals out of
+            // caller-saved homes (`gate_spill_all_locals`, above). PRESSURE is
+            // what needs somewhere to spill to, and it is `dnirNeedsCalleeSave`
+            // — the same question the prologue asks about x19–x28 — that says a
+            // function has more live values than caller-saved homes.
+            //
+            // Over-reserving costs one `sub sp`/`add sp` pair and some untouched
+            // stack; under-reserving costs a working program. The budget check
+            // still HARD-FAILS for a caller, because a caller that cannot spill
+            // really is out of capacity; for a leaf it simply reserves what is
+            // left, which may be nothing.
+            const wants_spill = scalar_body_has_call or dnirNeedsCalleeSave(f);
             var spill_reserve: u16 = 0;
-            if (scalar_body_has_call) {
+            if (wants_spill) {
                 const used: u32 = @as(u32, self.stack_frame_bytes) + gp_stack_bytes;
-                if (used >= self.spill_frame_budget) return error.RegisterExhausted;
-                const remain: u32 = self.spill_frame_budget - used;
-                spill_reserve = @min(@as(u16, @intCast(@min(remain, 8192))), @as(u16, 8192));
-                if (spill_reserve < 64) spill_reserve = 0;
+                if (used >= self.spill_frame_budget) {
+                    if (scalar_body_has_call) return error.RegisterExhausted;
+                } else {
+                    const remain: u32 = self.spill_frame_budget - used;
+                    spill_reserve = @min(@as(u16, @intCast(@min(remain, 8192))), @as(u16, 8192));
+                    if (spill_reserve < 64) spill_reserve = 0;
+                }
             }
             const frame: u16 = gp_stack_bytes + spill_reserve;
             if (frame > 0) {
@@ -1922,6 +2057,37 @@ const Arm64Compiler = struct {
                 }
                 try self.emitSubSp(frame);
                 self.stack_frame_bytes += frame;
+                // REBASE the memory-backed table regions.
+                //
+                // `slot_bases` was measured against the `sp` that existed before
+                // this reservation, and GP stack locals are addressed from the
+                // NEW `sp` starting at [sp,#0]. Without this shift the two name
+                // the same bytes: a 40-element table sat at [sp,#0..320) while
+                // the loop counter's home sat at [sp,#0xb0] — inside it, element
+                // 23 — so every iteration's `i` store overwrote a table element.
+                //
+                // That is a WRONG ANSWER, not a crash, and it hid for a long
+                // time behind test data: the corpus tables are `{1,2,3,…}`, and
+                // storing `i` over element `i` writes the value that was already
+                // there. It only becomes visible when the elements stop equalling
+                // their own index (`t[k] = k + 100`) or when something reads the
+                // region at a different point in the loop.
+                //
+                // Records (`fp_stack_slots`) are reserved BEFORE the table
+                // region, so they are stale by `slots_frame + frame` and are
+                // rebased by the same rule immediately below.
+                var slot_it = self.slot_bases.valueIterator();
+                while (slot_it.next()) |off| {
+                    const rebased: u32 = @as(u32, off.*) + frame;
+                    if (rebased > 32752) return self.refuse(@src());
+                    off.* = @intCast(rebased);
+                }
+                var rec_it = self.fp_stack_slots.valueIterator();
+                while (rec_it.next()) |slot| {
+                    const rebased: u32 = @as(u32, slot.off) + frame;
+                    if (rebased > 32752) return self.refuse(@src());
+                    slot.off = @intCast(rebased);
+                }
             }
             if (spill_reserve >= 64) {
                 self.gate_spill_base = gp_stack_bytes;
@@ -2995,6 +3161,18 @@ const Arm64Compiler = struct {
                 } else return self.refuse(@src());
             },
             .hw_unary => {
+                // The tags are checked BEFORE `.hw`, so a trap or a vector
+                // reduction never reaches `emitHwUnary` and `.hw` stays `.none`
+                // for every other consumer of this instruction. See
+                // `dnir_lower.trap_abort_tag` / `vec_reduce_add_i64_tag`.
+                if (std.mem.eql(u8, ins.field, dnir_lower.trap_abort_tag)) {
+                    try self.emitTrapAbort();
+                    return;
+                }
+                if (std.mem.eql(u8, ins.field, dnir_lower.vec_reduce_add_i64_tag)) {
+                    try self.emitVecReduceAddI64(temps, pinned, ins);
+                    return;
+                }
                 const src = try self.evalDnirValue(temps, ins.lhs);
                 const dst = try self.allocReg();
                 try self.emitHwUnary(dst, src, ins.hw);
@@ -3003,6 +3181,51 @@ const Arm64Compiler = struct {
             },
             else => return self.refuse(@src()),
         }
+    }
+
+    /// The expansion of `dnir_lower.trap_abort_tag` — `abort()` WITHOUT a call.
+    ///
+    /// Six words, no `bl`, no x30, no relocation, no import:
+    ///
+    ///     mov x16, #20      ; SYS_getpid
+    ///     svc #0x80         ; -> x0 = pid
+    ///     mov x1,  #6       ; SIGABRT
+    ///     mov x16, #37      ; SYS_kill
+    ///     svc #0x80         ; kill(getpid(), SIGABRT)
+    ///     brk #1            ; unreachable; SIGTRAP if the kernel ever returns
+    ///
+    /// WHY THE SIGNAL AND NOT JUST `brk`. `brk` alone is one word and terminates,
+    /// but it raises SIGTRAP, so the process exits 133 where `abort()` exited
+    /// 134. The exit code is this subset's ONLY observable — it is how every gate
+    /// on the surface states its answer — so silently renumbering the trap would
+    /// change observable behaviour to buy five words in a block that never
+    /// executes. `kill(getpid(), SIGABRT)` reproduces `abort()`'s exit code
+    /// EXACTLY, and the trailing `brk` means even a kernel that returned from
+    /// `kill` (it cannot for an unblocked SIGABRT, but the register allocator has
+    /// no way to know that) still stops here rather than falling through into the
+    /// success path with a clobbered x0/x1/x16.
+    ///
+    /// WHY CLOBBERING x0/x1/x16 IS SAFE, which is the only thing that makes six
+    /// unallocated registers acceptable: control never leaves this sequence.
+    /// There is no path from here to any later instruction, so no live value can
+    /// be read after it, so nothing needs saving — which is precisely the
+    /// property `call_extern` did NOT have and precisely why it cost so much.
+    ///
+    /// `svc` is a kernel entry, not a procedure call: it does not write x30 and
+    /// does not consume a frame, so a function whose only "call" was this one is
+    /// still a leaf.
+    fn emitTrapAbort(self: *Arm64Compiler) Error!void {
+        const movz = struct {
+            fn word(reg: u5, imm: u16) u32 {
+                return 0xd2800000 | (@as(u32, imm) << 5) | @as(u32, reg);
+            }
+        }.word;
+        try self.emitFmt(movz(16, 20), "mov x16, #{d}", .{20});
+        try self.emit(0xd4001001, "svc #0x80");
+        try self.emitFmt(movz(1, 6), "mov x1, #{d}", .{6});
+        try self.emitFmt(movz(16, 37), "mov x16, #{d}", .{37});
+        try self.emit(0xd4001001, "svc #0x80");
+        try self.emit(0xd4200020, "brk #1");
     }
 
     fn emitHwUnary(self: *Arm64Compiler, dst: u5, src: u5, hw: dnir.HwIntrinsic) Error!void {
@@ -3335,11 +3558,30 @@ const Arm64Compiler = struct {
             self.gate_spill_cursor += 16;
             break :blk slot;
         } else blk: {
-            // Gate transport locals use fixed `[sp,#off]` homes from the prologue.
-            // Mid-function `sub sp` here shifted those offsets and clobbered str
-            // locals after the first loop iteration — `digits(gatecap(...))` read
-            // `12` from `181` because `raw:byte(2)` reload used a corrupted slot.
+            // LAST RESORT, AND ONLY WHEN NOTHING ELSE LIVES IN THE FRAME.
+            //
+            // This moves `sp` in the MIDDLE of the body, and every offset the
+            // prologue handed out is measured from the `sp` the prologue left
+            // behind. Gate transport was already excluded for exactly this
+            // reason (`digits(gatecap(...))` read `12` out of `181` after the
+            // first loop iteration, from a local whose slot had shifted under
+            // it), but the exclusion named one symptom instead of the rule.
+            //
+            // The rule: a frame with ANY other resident — GP stack locals, a
+            // memory-backed table region, a record region — cannot have `sp`
+            // moved under it. Refusing falls back to the C emit path, which is
+            // slower and CORRECT; the alternative is an artifact that computes
+            // the wrong answer and reports success, which is the failure this
+            // whole area has produced twice already.
+            //
+            // Reachable much less often than it looks: spilling requires all
+            // nineteen allocatable registers to be busy, which implies pressure
+            // above the caller-save homes, which now reserves a spill area in
+            // the prologue (see `wants_spill`) and takes the branch above.
             if (self.gate_transport) return error.RegisterExhausted;
+            if (self.gp_stack_locals.count() > 0 or
+                self.slot_bases.count() > 0 or
+                self.fp_stack_slots.count() > 0) return error.RegisterExhausted;
             if (self.stack_frame_bytes + 16 > self.spill_frame_budget) return error.RegisterExhausted;
             const slot = self.stack_frame_bytes;
             self.stack_frame_bytes += 16;
@@ -3365,7 +3607,7 @@ const Arm64Compiler = struct {
         while (it.next()) |reg_ptr| {
             const reg = reg_ptr.*;
             _ = self.spilled_regs.remove(reg);
-            self.used_regs[reg] = true;
+            self.claimReg(reg);
             return reg;
         }
         return error.RegisterExhausted;
@@ -3397,7 +3639,7 @@ const Arm64Compiler = struct {
             // refusal is a bail while the alternative is a wrong answer.
             if (self.spilled_regs.contains(reg)) continue;
             if (!self.used_regs[reg]) {
-                self.used_regs[reg] = true;
+                self.claimReg(reg);
                 return reg;
             }
         }
@@ -3407,7 +3649,7 @@ const Arm64Compiler = struct {
             if (self.pending_arg_regs & (@as(u8, 1) << @as(u3, @intCast(reg))) != 0) continue;
             if (self.spilled_regs.contains(reg)) continue;
             if (!self.used_regs[reg]) {
-                self.used_regs[reg] = true;
+                self.claimReg(reg);
                 return reg;
             }
         }
@@ -3458,16 +3700,48 @@ const Arm64Compiler = struct {
     const callee_save_last: u5 = 28;
     const callee_save_count: u16 = @as(u16, callee_save_last - callee_save_first + 1);
     const callee_save_span: u16 = callee_save_count * 8;
+    /// Every callee-saved register, i.e. what the prologue used to save
+    /// unconditionally.
+    const callee_save_all: u32 = blk: {
+        var m: u32 = 0;
+        var r: u5 = callee_save_first;
+        while (r <= callee_save_last) : (r += 1) m |= @as(u32, 1) << r;
+        break :blk m;
+    };
 
+    /// Mark a register as claimed, remembering it if the ABI makes it ours to
+    /// give back. One funnel, because a claim that skips this is a register
+    /// saved by nobody — an ABI violation in the CALLER, which is the class of
+    /// defect that cannot be found by running the callee.
+    fn claimReg(self: *Arm64Compiler, reg: u5) void {
+        self.used_regs[reg] = true;
+        if (reg >= callee_save_first and reg <= callee_save_last) {
+            self.callee_touched |= @as(u32, 1) << reg;
+        }
+    }
+
+    /// Save exactly the callee-saved registers in `callee_save_plan`.
+    ///
+    /// This block used to be ten stores and ten loads in every function that
+    /// reached x19 at all, whether it reached x28 or stopped at x19. Measured
+    /// across the surface's artifacts, 737 of 790 saved registers were never
+    /// written — 1,474 instructions preserving values nothing touched, and in
+    /// five artifacts (`lex`, `array`, `branch`, `control`, `match`) not a single
+    /// saved register was used by anything.
+    ///
+    /// The SPAN is deliberately NOT narrowed with the set. Every register keeps
+    /// its fixed slot at `(r - 19) * 8`, so `callee_save_bytes` stays 80 whenever
+    /// anything is saved and no stacked-parameter displacement moves as a
+    /// function of WHICH registers were needed. Only the empty plan collapses
+    /// the frame, and then it collapses completely — no `sub sp`, no `add sp`,
+    /// nothing.
     fn emitSaveCalleeRegs(self: *Arm64Compiler) Error!void {
+        if (self.callee_save_plan == 0) return;
         try self.emitSubSp(callee_save_span);
         var reg: u5 = callee_save_first;
-        var off: u16 = 0;
-        while (reg <= callee_save_last) : ({
-            reg += 1;
-            off += 8;
-        }) {
-            try self.emitStrSp(reg, off);
+        while (reg <= callee_save_last) : (reg += 1) {
+            if (self.callee_save_plan & (@as(u32, 1) << reg) == 0) continue;
+            try self.emitStrSp(reg, (@as(u16, reg) - callee_save_first) * 8);
         }
         self.callee_save_bytes = callee_save_span;
     }
@@ -3475,12 +3749,9 @@ const Arm64Compiler = struct {
     fn emitRestoreCalleeRegs(self: *Arm64Compiler) Error!void {
         if (self.callee_save_bytes == 0) return;
         var reg: u5 = callee_save_first;
-        var off: u16 = 0;
-        while (reg <= callee_save_last) : ({
-            reg += 1;
-            off += 8;
-        }) {
-            try self.emitLdrSp(reg, off);
+        while (reg <= callee_save_last) : (reg += 1) {
+            if (self.callee_save_plan & (@as(u32, 1) << reg) == 0) continue;
+            try self.emitLdrSp(reg, (@as(u16, reg) - callee_save_first) * 8);
         }
         try self.emitAddSp(self.callee_save_bytes);
     }
@@ -3738,7 +4009,7 @@ const Arm64Compiler = struct {
             if (saveSetContains(save, reg)) continue;
             if (self.spilled_regs.contains(reg)) continue;
             if (!self.used_regs[reg]) {
-                self.used_regs[reg] = true;
+                self.claimReg(reg);
                 return reg;
             }
         }
@@ -3747,7 +4018,7 @@ const Arm64Compiler = struct {
             if (saveSetContains(save, reg)) continue;
             if (self.spilled_regs.contains(reg)) continue;
             if (!self.used_regs[reg]) {
-                self.used_regs[reg] = true;
+                self.claimReg(reg);
                 return reg;
             }
         }
@@ -3994,13 +4265,31 @@ const Arm64Compiler = struct {
     }
 
     /// `add xd, sp, #imm` — materialize the address of a frame slot region.
+    ///
+    /// `add` immediates are 12 bits, and a frame can be deeper than 4095 bytes,
+    /// so a displacement past that is CHAINED rather than refused. It has to be:
+    /// the slot region now sits above the GP local/spill region (see the rebase
+    /// in the prologue), which pushes ordinary table bases past 4095 in any
+    /// function that both builds a table and spills. Refusing there would turn
+    /// working programs into fallbacks purely as a side effect of the rebase.
+    /// No scratch register is used — each step adds into `dst` itself.
     fn emitAddSpImm(self: *Arm64Compiler, dst: u5, bytes: u16) Error!void {
-        if (bytes > 4095) return self.refuse(@src());
+        const first: u16 = @min(bytes, 4095);
         try self.emitFmt(
-            0x910003e0 | (@as(u32, bytes) << 10) | @as(u32, dst),
+            0x910003e0 | (@as(u32, first) << 10) | @as(u32, dst),
             "add x{d}, sp, #{d}",
-            .{ dst, bytes },
+            .{ dst, first },
         );
+        var rest: u16 = bytes - first;
+        while (rest > 0) {
+            const step: u16 = @min(rest, 4095);
+            try self.emitFmt(
+                0x91000000 | (@as(u32, step) << 10) | (@as(u32, dst) << 5) | @as(u32, dst),
+                "add x{d}, x{d}, #{d}",
+                .{ dst, dst, step },
+            );
+            rest -= step;
+        }
     }
 
     /// `ldr xd, [xbase, xidx, lsl #3]` — 8-byte scaled indexed load.
@@ -4012,6 +4301,166 @@ const Arm64Compiler = struct {
             "ldr x{d}, [x{d}, x{d}, lsl #3]",
             .{ dst, base, idx },
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // NEON. The first vector instructions this backend has ever emitted.
+    //
+    // Every word below was checked against the system assembler rather than
+    // read off a table, because the failure mode is silent: a wrong lane size
+    // still assembles, still runs, and answers with the wrong number. The
+    // reference assembly and its bytes:
+    //
+    //     eor.16b  v16, v16, v16      6e301e10
+    //     ldr      q17, [x9], #0x10   3cc10531
+    //     add.2d   v16, v16, v17      4ef18610
+    //     addp.2d  d16, v16           5ef1ba10
+    //     fmov     x9, d16            9e660209
+    //     subs     x9, x9, #0x1       f1000529
+    //
+    // Note the arm64 spelling: the LANE SUFFIX IS ON THE MNEMONIC, not on the
+    // operands. `docs/hardware-baseline.md` records two probes that reported a
+    // clean zero for densely vectorized code because they searched for
+    // `v0\.4s`. The listing strings here are written the way the disassembler
+    // prints them so the two agree.
+    // -----------------------------------------------------------------------
+
+    /// `eor.16b vd, vd, vd` — zero a whole 128-bit register.
+    fn emitVecZero(self: *Arm64Compiler, v: u5) Error!void {
+        try self.emitFmt(
+            0x6e201c00 | (@as(u32, v) << 16) | (@as(u32, v) << 5) | @as(u32, v),
+            "eor.16b v{d}, v{d}, v{d}",
+            .{ v, v, v },
+        );
+    }
+
+    /// `ldr qt, [xn], #16` — load two i64 lanes and post-increment the pointer.
+    fn emitVecLdrQPost16(self: *Arm64Compiler, t: u5, n: u5) Error!void {
+        try self.ensureRegLive(n);
+        // imm9 = 16, then the `01` post-index selector in bits 11:10.
+        try self.emitFmt(
+            0x3cc00400 | (@as(u32, 16) << 12) | (@as(u32, n) << 5) | @as(u32, t),
+            "ldr q{d}, [x{d}], #16",
+            .{ t, n },
+        );
+    }
+
+    /// `add.2d vd, vn, vm` — two lanes of 64-bit integer addition. Wraps exactly
+    /// as the scalar `add` does, which is what makes regrouping a reduction
+    /// exact rather than approximate.
+    fn emitVecAdd2d(self: *Arm64Compiler, d: u5, n: u5, m: u5) Error!void {
+        try self.emitFmt(
+            0x4ee08400 | (@as(u32, m) << 16) | (@as(u32, n) << 5) | @as(u32, d),
+            "add.2d v{d}, v{d}, v{d}",
+            .{ d, n, m },
+        );
+    }
+
+    /// `addp.2d dd, vn` — horizontal add of the two lanes into the low double.
+    fn emitVecAddp2d(self: *Arm64Compiler, d: u5, n: u5) Error!void {
+        try self.emitFmt(
+            0x5ef1b800 | (@as(u32, n) << 5) | @as(u32, d),
+            "addp.2d d{d}, v{d}",
+            .{ d, n },
+        );
+    }
+
+    /// `fmov xd, dn` — move lane 0 into a general-purpose register.
+    fn emitFmovGpFromFp(self: *Arm64Compiler, d: u5, n: u5) Error!void {
+        try self.emitFmt(
+            0x9e660000 | (@as(u32, n) << 5) | @as(u32, d),
+            "fmov x{d}, d{d}",
+            .{ d, n },
+        );
+    }
+
+    /// `subs xd, xn, #imm` — decrement and set flags, so the loop latch needs no
+    /// separate compare and no immediate staged in a register per iteration.
+    fn emitSubsImm(self: *Arm64Compiler, d: u5, n: u5, imm: u12) Error!void {
+        try self.ensureRegLive(n);
+        try self.emitFmt(
+            0xf1000000 | (@as(u32, imm) << 10) | (@as(u32, n) << 5) | @as(u32, d),
+            "subs x{d}, x{d}, #{d}",
+            .{ d, n, imm },
+        );
+    }
+
+    /// The expansion of `dnir_lower.vec_reduce_add_i64_tag`: sum `count`
+    /// consecutive i64 words starting at 1-based element `lo` of the table whose
+    /// base is `ins.lhs`, and leave the total in `ins.result`.
+    ///
+    /// `count` is an exact multiple of the lane width and `lo`/`count` were
+    /// proven inside the table's extent by the recognizer, so there is no
+    /// prologue, no epilogue and no in-loop guard here — the odd element, if
+    /// there is one, is handled by the ordinary scalar loop that follows this
+    /// instruction. The conditions are re-checked anyway: this is the only place
+    /// that knows the load width, and a malformed operand must refuse rather
+    /// than read past the region.
+    ///
+    /// The vector registers come from `allocFpReg`, i.e. the SAME pool the f64
+    /// path uses. `d16` and `v16` are one physical register, so allocating from
+    /// anywhere else would be the mixed-representation bug in another form.
+    /// They are freed here because their whole lifetime is this expansion — no
+    /// slot ever names one.
+    fn emitVecReduceAddI64(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+    ) Error!void {
+        const lo: i64 = switch (ins.rhs) {
+            .i64 => |v| v,
+            else => return self.refuse(@src()),
+        };
+        const count: i64 = switch (ins.third) {
+            .i64 => |v| v,
+            else => return self.refuse(@src()),
+        };
+        if (lo < 1 or count < 2 or @rem(count, 2) != 0) return self.refuse(@src());
+        const byte_off: i64 = (lo - 1) * 8;
+        if (byte_off > 0xffff) return self.refuse(@src());
+
+        const base = try self.evalDnirValue(temps, ins.lhs);
+        try self.ensureRegLive(base);
+
+        const cursor = try self.allocReg();
+        const pairs = try self.allocReg();
+        if (byte_off == 0) {
+            try self.emitMovReg(cursor, base);
+        } else {
+            try self.emitMovImm(cursor, byte_off);
+            try self.emitAddReg(cursor, base, cursor);
+        }
+        try self.emitMovImm(pairs, @divTrunc(count, 2));
+
+        const acc_v = try self.allocFpReg();
+        const dat_v = try self.allocFpReg();
+        try self.emitVecZero(acc_v);
+
+        const loop_off: u32 = @intCast(self.code.items.len);
+        try self.emitVecLdrQPost16(dat_v, cursor);
+        try self.emitVecAdd2d(acc_v, acc_v, dat_v);
+        try self.emitSubsImm(pairs, pairs, 1);
+        const latch = try self.emitBCond(.ne, 0);
+        try self.patchCondBranch(latch, loop_off);
+
+        try self.emitVecAddp2d(acc_v, acc_v);
+        self.used_fp_regs[dat_v] = false;
+
+        // Retire the cursor and the trip counter BEFORE claiming the result
+        // register. Both are dead once the loop has fallen through, and holding
+        // them across the allocation raises this instruction's peak GP demand by
+        // two for no reason — which in a register-tight function is the
+        // difference between compiling and a DNB003 refusal that the scalar
+        // lowering of the same loop would not have hit.
+        self.releaseReg(cursor);
+        self.releaseReg(pairs);
+
+        const dst = try self.allocReg();
+        try self.emitFmovGpFromFp(dst, acc_v);
+        self.used_fp_regs[acc_v] = false;
+        self.releaseDnirTemp(pinned, ins.lhs, base);
+        if (ins.result) |t| try temps.put(self.alloc, t, dst);
     }
 
     /// `str xs, [xbase, xidx, lsl #3]` — 8-byte scaled indexed store.
@@ -8888,30 +9337,53 @@ test "native backend spills GP locals past home budget without aliasing owners" 
     defer arena.deinit();
     const alloc = arena.allocator();
 
+    // THE VALUES ARE PARAMETER-DERIVED ON PURPOSE. Every binding used to be
+    // `= 1`, and that stopped probing anything the day constant folding reached
+    // USED bindings: the whole body collapses to a single immediate, there is
+    // nothing left to spill, and `saw_stack_local` is false. The test would then
+    // report a failure for a pass WORKING.
+    //
+    // The neighbouring test at "unused immediate bindings do not demand register
+    // or stack places" asserts exactly the opposite for the same 21-binding
+    // shape — no `str`, no `ldr`, no `sub sp` — so the two are only telling
+    // different stories while one of them is opaque to the folder. Deriving
+    // every value from `n` makes this one opaque by construction: the folder
+    // cannot know `n`, all 21 stay live to the sum, and register pressure is
+    // real rather than notional.
+    //
+    // This matters more than it looks. The GP home budget was measured at 20
+    // against a pool of 19 allocatable registers (x9-x17, x19-x28; x18 is
+    // Apple's reserved platform register), and that mismatch stayed invisible
+    // for as long as every table-indexing function looked like a caller and
+    // spilled everything anyway. A test whose body folds cannot see a
+    // register-pressure bug at all.
     const source =
-        \\main: i64 = ()
-        \\    v0 = 1
-        \\    v1 = 1
-        \\    v2 = 1
-        \\    v3 = 1
-        \\    v4 = 1
-        \\    v5 = 1
-        \\    v6 = 1
-        \\    v7 = 1
-        \\    v8 = 1
-        \\    v9 = 1
-        \\    v10 = 1
-        \\    v11 = 1
-        \\    v12 = 1
-        \\    v13 = 1
-        \\    v14 = 1
-        \\    v15 = 1
-        \\    v16 = 1
-        \\    v17 = 1
-        \\    v18 = 1
-        \\    v19 = 1
-        \\    v20 = 1
+        \\pressure: i64 = (n: i64)
+        \\    v0 = n + 1
+        \\    v1 = n + 2
+        \\    v2 = n + 3
+        \\    v3 = n + 4
+        \\    v4 = n + 5
+        \\    v5 = n + 6
+        \\    v6 = n + 7
+        \\    v7 = n + 8
+        \\    v8 = n + 9
+        \\    v9 = n + 10
+        \\    v10 = n + 11
+        \\    v11 = n + 12
+        \\    v12 = n + 13
+        \\    v13 = n + 14
+        \\    v14 = n + 15
+        \\    v15 = n + 16
+        \\    v16 = n + 17
+        \\    v17 = n + 18
+        \\    v18 = n + 19
+        \\    v19 = n + 20
+        \\    v20 = n + 21
         \\    v0 + v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 + v11 + v12 + v13 + v14 + v15 + v16 + v17 + v18 + v19 + v20
+        \\
+        \\main: i64 = ()
+        \\    pressure(1)
     ;
     var lex = Lexer.init(source, "live-register-pressure.id");
     var parser = Parser.init(&lex, alloc);
@@ -8940,6 +9412,11 @@ test "native backend spills GP locals past home budget without aliasing owners" 
     }
     try std.testing.expect(saw_stack_local);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "_main") != null);
+    // The body must NOT have folded — if it did, `saw_stack_local` above is
+    // measuring nothing and this test has quietly stopped being a test. 21 live
+    // parameter-derived values cannot collapse to one immediate, so the relation
+    // has to still be emitted.
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "pressure") != null);
 }
 
 test "record return wider than x0..x7 uses the AAPCS64 x8 indirect result" {

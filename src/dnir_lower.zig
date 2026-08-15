@@ -15,6 +15,7 @@ const dnir = @import("native_ir.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
+const table_facts = @import("table_facts.zig");
 const RT = types.ResolvedType;
 
 pub const Error = error{
@@ -1198,6 +1199,17 @@ pub const LowerCtx = struct {
     /// Static element count of a positional table, keyed by its `.len` slot, so
     /// `t[i]` with a non-constant `i` knows how many slots to select over.
     table_lens: std.AutoHashMapUnmanaged(u32, i64) = .empty,
+    /// Positional tables this function proved DETERMINED: every element is an
+    /// integer literal, and the whole body neither writes the name nor lets it
+    /// escape. `t(k)` on one of these with a compile-time `k` is the literal,
+    /// AT ANY EXTENT — see `noteConstTable`. Owns both key and value.
+    const_tables: std.StringHashMapUnmanaged([]i64) = .empty,
+    /// The body being lowered, so a binding can ask what the REST of the
+    /// function does with the name it is about to bind. `tables_in_memory`
+    /// already establishes that a realization choice is allowed to read the
+    /// whole body; this makes the same body reachable from the binding site,
+    /// which is the only place a representation decision may be taken.
+    body: ?*const ast.Block = null,
     /// Module-level integer constants, keyed `Name` or `Name.field`. Populated
     /// from top-level `N = <int>` and `N = @{ f = <int>, ... }` bindings, which
     /// are otherwise invisible inside a function body.
@@ -1234,6 +1246,12 @@ pub const LowerCtx = struct {
         self.bool_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
         self.table_lens.deinit(self.alloc);
+        var ct = self.const_tables.iterator();
+        while (ct.next()) |e| {
+            self.alloc.free(e.key_ptr.*);
+            self.alloc.free(e.value_ptr.*);
+        }
+        self.const_tables.deinit(self.alloc);
         var ci = self.const_ints.iterator();
         while (ci.next()) |e| self.alloc.free(e.key_ptr.*);
         self.const_ints.deinit(self.alloc);
@@ -1432,7 +1450,8 @@ fn lowerFunction(
         },
         .module_consts = module_consts,
         .ret_record = if (findRecordName(records, fd.func.ret_type)) |r| r.name else null,
-        .tables_in_memory = stmtsBindWideTable(fd.func.body.stmts),
+        .tables_in_memory = blockNeedsMemoryTables(&fd.func.body),
+        .body = &fd.func.body,
     };
     defer ctx.deinit();
 
@@ -1945,6 +1964,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     ctx.block_answering = allow_return;
     defer ctx.block_answering = saved_answering;
     for (block.stmts, 0..) |*stmt, i| {
+        if (false) try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
     if (allow_return) {
@@ -2056,6 +2076,15 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // packs with a native ABI) is what will let this lower here.
             if (as.targets.len != as.values.len) return bail(ctx.diagnostic, @src());
             for (as.targets, as.values) |target, value| {
+                // The environment is a PLACE. This runs before the switch below
+                // because `os.env[k]` is an `.index` whose object is a `.field`,
+                // which `lowerIndexAssignTarget` rejects outright, and
+                // `env(k)`/`os.env(k)` are `.call` targets, which the switch has
+                // no arm for at all.
+                if (envPlaceKey(ctx, target)) |key| {
+                    try lowerEnvStore(ctx, key, value);
+                    continue;
+                }
                 switch (target.*) {
                     .name => |n| try lowerAssignTarget(ctx, n.ident, value),
                     .field => |f| try lowerFieldAssignTarget(ctx, f.obj, f.field, value),
@@ -2187,6 +2216,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
             try lowerStmt(ctx, stmt, tail_here);
             return true;
         }
+        if (false) try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
@@ -2458,7 +2488,6 @@ fn nameIsPositionalTable(ctx: *LowerCtx, name: []const u8) bool {
     return ctx.table_lens.contains(len_slot);
 }
 
-/// The slot holding a table base address, when `expr` names one.
 /// True when any positional table bound anywhere in `stmts` is wider than the
 /// select chain serves.
 ///
@@ -2499,6 +2528,227 @@ fn exprsBindWideTable(exprs: []const *ast.Expr) bool {
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// THE FACT THAT DECIDES A TABLE'S REPRESENTATION IS INDEX CONSTANCY, NOT WIDTH.
+//
+// A select chain answers `t(i)` with one compare-and-select PER ELEMENT. For a
+// compile-time index that is free — the chain collapses to the element's own
+// slot, or to the literal. For a RUNTIME index it is a LINEAR SCAN, O(width) on
+// every single access, and it is the dominant cost of this whole project:
+// profiled on `native.out`, 62,587,868 of 94,458,056 executed instructions —
+// 66.3% — are array subscripts lowered to if-chains. One subscript into a
+// 16-element array costs exactly 60 instructions; into an 8-element array,
+// exactly 29. Memory costs one scaled load, at any width.
+//
+// So the ordering INVERTS with index constancy, which is why a width threshold
+// could never be tuned into the right answer:
+//
+//                        constant index      runtime index
+//     select chain              2 instrs      O(width) — 305 at width 32
+//     frame memory            174 instrs      O(1)     — 206 at width 33
+//
+// The decision, in the order it is taken:
+//
+//   1. DETERMINED and read only at compile-time indices -> no table at all
+//      (`noteConstTable`); the value is the answer, at any extent.
+//   2. Read or written at a RUNTIME index -> frame memory, AT ANY WIDTH. This
+//      function.
+//   3. Wider than the register file can hold -> frame memory. `select_chain_max`
+//      survives ONLY as this feasibility bound; it no longer selects a strategy.
+//   4. Otherwise -> one slot per element.
+//
+// Uniform per function, as before: mixing the two representations inside one
+// relation is what made `x = w(i) ; r(i) = x` read a stale index.
+// ---------------------------------------------------------------------------
+
+const max_tracked_tables = 64;
+
+/// Names bound to a positional table literal in the function being lowered.
+/// Overflow answers "assume everything", which costs speed and never an answer.
+const TableNames = struct {
+    names: [max_tracked_tables][]const u8 = undefined,
+    len: usize = 0,
+    overflow: bool = false,
+
+    fn add(self: *TableNames, n: []const u8) void {
+        if (self.has(n)) return;
+        if (self.len == max_tracked_tables) {
+            self.overflow = true;
+            return;
+        }
+        self.names[self.len] = n;
+        self.len += 1;
+    }
+
+    fn has(self: *const TableNames, n: []const u8) bool {
+        if (self.overflow) return true;
+        for (self.names[0..self.len]) |e| if (std.mem.eql(u8, e, n)) return true;
+        return false;
+    }
+};
+
+fn collectTableNamesExpr(name: []const u8, init: *const ast.Expr, out: *TableNames) void {
+    if (init.* == .table and tableIsPositional(init)) out.add(name);
+}
+
+fn collectTableNames(stmts: []const ast.Stmt, out: *TableNames) void {
+    for (stmts) |st| switch (st) {
+        .local_decl => |d| for (d.names, 0..) |n, i| {
+            if (i < d.inits.len) collectTableNamesExpr(n.ident, d.inits[i], out);
+        },
+        .global_decl => |d| for (d.names, 0..) |n, i| {
+            if (i < d.inits.len) collectTableNamesExpr(n.ident, d.inits[i], out);
+        },
+        .const_decl => |d| collectTableNamesExpr(d.ident, d.val, out),
+        .assign => |a| for (a.targets, 0..) |t, i| {
+            if (t.* == .name and i < a.values.len) collectTableNamesExpr(t.name.ident, a.values[i], out);
+        },
+        .do_block => |b| collectTableNames(b.body.stmts, out),
+        .while_loop => |w| collectTableNames(w.body.stmts, out),
+        .repeat_loop => |r| collectTableNames(r.body.stmts, out),
+        .num_for => |f| collectTableNames(f.body.stmts, out),
+        .gen_for => |f| collectTableNames(f.body.stmts, out),
+        .if_stmt => |f| {
+            collectTableNames(f.then.stmts, out);
+            for (f.elseifs) |ei| collectTableNames(ei.body.stmts, out);
+            if (f.else_body) |eb| collectTableNames(eb.stmts, out);
+        },
+        else => {},
+    };
+}
+
+/// `t(k)` on a tracked table with `k` not a compile-time literal.
+fn exprRuntimeIndexes(expr: *const ast.Expr, tables: *const TableNames) bool {
+    return switch (expr.*) {
+        .index => |ix| blk: {
+            if (ix.obj.* == .name and tables.has(ix.obj.name.ident) and
+                intLiteralStep(ix.key) == null) break :blk true;
+            break :blk exprRuntimeIndexes(ix.obj, tables) or exprRuntimeIndexes(ix.key, tables);
+        },
+        .field => |f| exprRuntimeIndexes(f.obj, tables),
+        .call => |c| blk: {
+            if (exprRuntimeIndexes(c.func, tables)) break :blk true;
+            for (c.args) |a| if (exprRuntimeIndexes(a, tables)) break :blk true;
+            break :blk false;
+        },
+        .method_call => |m| blk: {
+            if (exprRuntimeIndexes(m.obj, tables)) break :blk true;
+            for (m.args) |a| if (exprRuntimeIndexes(a, tables)) break :blk true;
+            break :blk false;
+        },
+        .binop => |b| exprRuntimeIndexes(b.lhs, tables) or exprRuntimeIndexes(b.rhs, tables),
+        .unop => |u| exprRuntimeIndexes(u.operand, tables),
+        .try_expr => |x| exprRuntimeIndexes(x.operand, tables),
+        .unwrap_expr => |x| exprRuntimeIndexes(x.operand, tables),
+        .await_expr => |x| exprRuntimeIndexes(x.operand, tables),
+        .contains_expr => |c| exprRuntimeIndexes(c.lhs, tables) or exprRuntimeIndexes(c.rhs, tables),
+        .if_expr => |ie| exprRuntimeIndexes(ie.cond, tables) or
+            exprRuntimeIndexes(ie.then_expr, tables) or exprRuntimeIndexes(ie.else_expr, tables),
+        .sequence => |s| blk: {
+            for (s.exprs) |e| if (exprRuntimeIndexes(e, tables)) break :blk true;
+            break :blk false;
+        },
+        .range => |r| exprRuntimeIndexes(r.start, tables) or exprRuntimeIndexes(r.end, tables) or
+            (if (r.step) |st| exprRuntimeIndexes(st, tables) else false),
+        .macro_call => |mc| blk: {
+            for (mc.args) |a| if (exprRuntimeIndexes(a, tables)) break :blk true;
+            break :blk false;
+        },
+        .table => |t| blk: {
+            for (t.fields) |fld| {
+                const hit = switch (fld) {
+                    .positional => |v| exprRuntimeIndexes(v, tables),
+                    .named => |nf| exprRuntimeIndexes(nf.val, tables),
+                    .semantic => |sf| exprRuntimeIndexes(sf.val, tables),
+                    .spread => |sp| exprRuntimeIndexes(sp, tables),
+                    .indexed => |ix| exprRuntimeIndexes(ix.key, tables) or exprRuntimeIndexes(ix.val, tables),
+                };
+                if (hit) break :blk true;
+            }
+            break :blk false;
+        },
+        .match_expr => |m| blk: {
+            if (exprRuntimeIndexes(m.scrutinee, tables)) break :blk true;
+            for (m.arms) |arm| {
+                if (arm.guard) |g| if (exprRuntimeIndexes(g, tables)) break :blk true;
+                if (blockRuntimeIndexes(&arm.body, tables)) break :blk true;
+            }
+            break :blk false;
+        },
+        // Unmodeled shapes answer "no runtime index seen", which keeps today's
+        // representation. This question only trades speed for speed — either
+        // answer compiles and both are correct — so the safe default here is the
+        // one that changes nothing.
+        else => false,
+    };
+}
+
+fn blockRuntimeIndexes(block: *const ast.Block, tables: *const TableNames) bool {
+    for (block.stmts) |*s| if (stmtRuntimeIndexes(s, tables)) return true;
+    if (block.tail_expr) |t| return exprRuntimeIndexes(t, tables);
+    return false;
+}
+
+fn stmtRuntimeIndexes(stmt: *const ast.Stmt, tables: *const TableNames) bool {
+    return switch (stmt.*) {
+        .local_decl => |d| blk: {
+            for (d.inits) |e| if (exprRuntimeIndexes(e, tables)) break :blk true;
+            break :blk false;
+        },
+        .const_decl => |d| exprRuntimeIndexes(d.val, tables),
+        .global_decl => |d| blk: {
+            for (d.inits) |e| if (exprRuntimeIndexes(e, tables)) break :blk true;
+            break :blk false;
+        },
+        // The STORE face counts too: `t(i) = v` with a runtime `i` is a
+        // select-chain of stores, the same linear scan from the other side.
+        .assign => |a| blk: {
+            for (a.targets) |t| if (exprRuntimeIndexes(t, tables)) break :blk true;
+            for (a.values) |e| if (exprRuntimeIndexes(e, tables)) break :blk true;
+            break :blk false;
+        },
+        .call_stmt => |c| exprRuntimeIndexes(c.expr, tables),
+        .expr_stmt => |c| exprRuntimeIndexes(c.expr, tables),
+        .do_block => |d| blockRuntimeIndexes(&d.body, tables),
+        .while_loop => |w| exprRuntimeIndexes(w.cond, tables) or blockRuntimeIndexes(&w.body, tables),
+        .repeat_loop => |r| blockRuntimeIndexes(&r.body, tables) or exprRuntimeIndexes(r.cond, tables),
+        .if_stmt => |f| blk: {
+            if (f.binding) |b| if (exprRuntimeIndexes(b.expr, tables)) break :blk true;
+            if (exprRuntimeIndexes(f.cond, tables)) break :blk true;
+            if (blockRuntimeIndexes(&f.then, tables)) break :blk true;
+            for (f.elseifs) |ei| {
+                if (exprRuntimeIndexes(ei.cond, tables)) break :blk true;
+                if (blockRuntimeIndexes(&ei.body, tables)) break :blk true;
+            }
+            if (f.else_body) |eb| if (blockRuntimeIndexes(&eb, tables)) break :blk true;
+            break :blk false;
+        },
+        .num_for => |n| blk: {
+            if (exprRuntimeIndexes(n.start, tables) or exprRuntimeIndexes(n.stop, tables)) break :blk true;
+            if (n.step) |st| if (exprRuntimeIndexes(st, tables)) break :blk true;
+            break :blk blockRuntimeIndexes(&n.body, tables);
+        },
+        .gen_for => |g| blk: {
+            for (g.iters) |e| if (exprRuntimeIndexes(e, tables)) break :blk true;
+            break :blk blockRuntimeIndexes(&g.body, tables);
+        },
+        .ret => |r| blk: {
+            for (r.vals) |e| if (exprRuntimeIndexes(e, tables)) break :blk true;
+            break :blk false;
+        },
+        else => false,
+    };
+}
+
+/// The per-function representation decision. See the block comment above.
+fn blockNeedsMemoryTables(body: *const ast.Block) bool {
+    if (stmtsBindWideTable(body.stmts)) return true;
+    var tables: TableNames = .{};
+    collectTableNames(body.stmts, &tables);
+    if (tables.len == 0 and !tables.overflow) return false;
+    return blockRuntimeIndexes(body, &tables);
+}
+
 fn exprIsWideTable(expr: *const ast.Expr) bool {
     if (expr.* != .table) return false;
     var n: i64 = 0;
@@ -2518,8 +2768,20 @@ fn exprIsWideTable(expr: *const ast.Expr) bool {
 /// memory and issue one scaled load/store instead, which is also what lifts the
 /// old order-8 ceiling on `rec`: nothing about the recurrence needed 8, the
 /// coefficients simply had nowhere wider to live.
-const select_chain_max: i64 = 32;
+///
+/// ONE SOURCE, NOT TWO IN AGREEMENT. This was declared here AND in
+/// `table_facts.zig`, the second carrying a comment saying the two "MUST equal"
+/// each other. Two declarations that must be kept equal is the shape that gave
+/// this project a JIT emitting "native" while its caller compared against
+/// "arm64" — nothing detects the day they stop matching. The FACT module owns
+/// the decision; this pass consumes it.
+///
+/// Note what the threshold does and does not decide any more. It chooses how to
+/// REALIZE a table that must exist. Whether one must exist at all is answered
+/// before it, by `noteConstTable`, and that answer holds at every extent.
+const select_chain_max: i64 = table_facts.select_chain_max;
 
+/// The slot holding a table base address, when `expr` names one.
 fn ptrSlotOf(ctx: *LowerCtx, expr: *const ast.Expr) ?u32 {
     if (expr.* != .name) return null;
     const slot = ctx.locals.get(expr.name.ident) orelse return null;
@@ -2570,6 +2832,267 @@ fn materializeTableSlots(ctx: *LowerCtx, name: []const u8) Error!u32 {
     // could have mutated it yet.
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), base);
     return base;
+}
+
+// ---------------------------------------------------------------------------
+// The vector beachhead: one integer reduction over a memory-backed table.
+// ---------------------------------------------------------------------------
+
+/// Marks a DNIR `hw_unary` as a VECTOR REDUCTION rather than a scalar bit
+/// intrinsic. `native_backend.zig` reads the same constant.
+///
+/// This rides `hw_unary` + `.field` because a vector op is not expressible in
+/// `native_ir.zig`'s `Op` set and that file is not this pass's to change. The
+/// convention is not invented here: `mov_arg` already discriminates its
+/// variadic-tail form with `.field = "vararg"`. The tag is checked FIRST in the
+/// backend's `hw_unary` arm, so `.hw` stays `.none` and every existing consumer
+/// — `intrinsicOfOp`, `functionHardwareTier`, `definition` — reads exactly what
+/// it read before. That also means the module's hardware tier still reports
+/// `.scalar`; making it report `.vector` needs an `Op`, which is the first item
+/// in "what remains".
+pub const vec_reduce_add_i64_tag = "vec.reduce.add.i64";
+
+/// One 128-bit ARM64 vector register holds two i64 lanes. Everything below is
+/// written against this number rather than a literal 2, because the number is
+/// the only target-specific thing in the recognizer — the FACTS it checks
+/// (contiguity, element type, extent, associativity) are not.
+const vec_i64_lanes: i64 = 2;
+
+fn identOf(e: *const ast.Expr) ?[]const u8 {
+    return switch (e.*) {
+        .name => |n| n.ident,
+        else => null,
+    };
+}
+
+const IndexNames = struct { tbl: []const u8, idx: []const u8 };
+
+/// `tbl[idx]` with both sides plain names, or null.
+fn indexNames(e: *const ast.Expr) ?IndexNames {
+    const ix = switch (e.*) {
+        .index => |x| x,
+        else => return null,
+    };
+    return .{
+        .tbl = identOf(ix.obj) orelse return null,
+        .idx = identOf(ix.key) orelse return null,
+    };
+}
+
+const ReduceStep = struct { acc: []const u8, tbl: []const u8, idx: []const u8 };
+
+/// `acc = acc + tbl[idx]` in either operand order (which is also what `+=`
+/// desugars to), or null.
+fn reduceStep(st: *const ast.Stmt) ?ReduceStep {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return null,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    const acc = identOf(a.targets[0]) orelse return null;
+    const b = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    if (b.op != .add) return null;
+    if (identOf(b.lhs)) |l| {
+        if (std.mem.eql(u8, l, acc)) {
+            if (indexNames(b.rhs)) |ix| return .{ .acc = acc, .tbl = ix.tbl, .idx = ix.idx };
+        }
+    }
+    if (identOf(b.rhs)) |r| {
+        if (std.mem.eql(u8, r, acc)) {
+            if (indexNames(b.lhs)) |ix| return .{ .acc = acc, .tbl = ix.tbl, .idx = ix.idx };
+        }
+    }
+    return null;
+}
+
+/// `idx = idx + 1` in either operand order.
+fn stepIsIncrementOfOne(st: *const ast.Stmt, idx: []const u8) bool {
+    const a = switch (st.*) {
+        .assign => |x| x,
+        else => return false,
+    };
+    if (a.targets.len != 1 or a.values.len != 1) return false;
+    const t = identOf(a.targets[0]) orelse return false;
+    if (!std.mem.eql(u8, t, idx)) return false;
+    const b = switch (a.values[0].*) {
+        .binop => |x| x,
+        else => return false,
+    };
+    if (b.op != .add) return false;
+    if (identOf(b.lhs)) |l| {
+        if (std.mem.eql(u8, l, idx) and b.rhs.* == .int_lit and b.rhs.int_lit.val == 1) return true;
+    }
+    if (identOf(b.rhs)) |r| {
+        if (std.mem.eql(u8, r, idx) and b.lhs.* == .int_lit and b.lhs.int_lit.val == 1) return true;
+    }
+    return false;
+}
+
+/// Inclusive last index of `while idx <= N` / `while idx < N`, or null.
+fn loopUpperBound(cond: *const ast.Expr, idx: []const u8) ?i64 {
+    const b = switch (cond.*) {
+        .binop => |x| x,
+        else => return null,
+    };
+    const l = identOf(b.lhs) orelse return null;
+    if (!std.mem.eql(u8, l, idx)) return null;
+    if (b.rhs.* != .int_lit) return null;
+    const n = b.rhs.int_lit.val;
+    return switch (b.op) {
+        .leq => n,
+        .lt => n - 1,
+        else => null,
+    };
+}
+
+/// `name = <int literal>` as the whole of `st`, or null.
+///
+/// The start index is read from the STATEMENT IMMEDIATELY BEFORE THE LOOP, not
+/// from `ctx.const_ints`. That map records a name's last literal binding and is
+/// never invalidated by a non-literal reassignment, so after `i = 1 ; i = i + 5`
+/// it still answers 1. Reading it here would start the vector run at the wrong
+/// element and produce a wrong answer that still compiles — the exact failure
+/// mode this beachhead is required to avoid. The preceding statement is the one
+/// place where the literal is provably the current value.
+fn literalBindingOf(st: *const ast.Stmt, name: []const u8) ?i64 {
+    switch (st.*) {
+        .assign => |a| {
+            if (a.targets.len != 1 or a.values.len != 1) return null;
+            const t = identOf(a.targets[0]) orelse return null;
+            if (!std.mem.eql(u8, t, name)) return null;
+            return if (a.values[0].* == .int_lit) a.values[0].int_lit.val else null;
+        },
+        .local_decl => |d| {
+            if (d.names.len != 1 or d.inits.len != 1) return null;
+            if (!std.mem.eql(u8, d.names[0].ident, name)) return null;
+            return if (d.inits[0].* == .int_lit) d.inits[0].int_lit.val else null;
+        },
+        else => return null,
+    }
+}
+
+/// True when `slot` holds something other than a plain i64.
+fn slotIsNonInteger(ctx: *const LowerCtx, slot: u32) bool {
+    return ctx.f64_slots.contains(slot) or
+        ctx.str_slots.contains(slot) or
+        ctx.bool_slots.contains(slot) or
+        ctx.ptr_slots.contains(slot);
+}
+
+/// THE BEACHHEAD. Emit a NEON prologue for
+///
+///     idx = LO
+///     while idx <= HI
+///         acc = acc + tbl[idx]
+///         idx = idx + 1
+///
+/// and nothing else. `stmts[at]` is the loop; `stmts[at - 1]` supplies `LO`.
+///
+/// The prologue is ADDITIVE: it sums a whole number of LANE-SIZED groups into
+/// `acc`, advances `idx` past them, and then the ordinary scalar lowering of the
+/// SAME loop runs unchanged and finishes the (at most one) remaining element.
+/// Nothing is replaced, so every existing behaviour of that loop — bounds
+/// handling, break/continue, the value of `idx` on exit — is whatever it already
+/// was. When any condition below fails, this emits nothing at all and the loop
+/// lowers exactly as it does today.
+///
+/// What has to be true, and where each fact comes from:
+///
+///   CONTIGUITY and ELEMENT TYPE — `tbl` resolves to a `ptr_slot`, i.e. an
+///   `alloc_slots` region of 8-byte words. That representation was chosen at the
+///   BINDING (`lowerPositionalTableIntoMemory`, or `materializeTableSlots` which
+///   rebinds the name), never here. This pass only READS the decision; a
+///   register-exploded table is declined, not materialized, so no copy can be
+///   emitted at an access site and no loop can restore a table to its initial
+///   value.
+///
+///   EXTENT — `tbl.len` carries the static element count, so `1 <= LO` and
+///   `HI <= len` prove every lane load is in bounds without a per-element guard.
+///
+///   ASSOCIATIVITY — i64 addition. Two's-complement `add` is associative and
+///   commutative including on overflow, and `add.2d` wraps identically to `add`,
+///   so regrouping the summation is EXACT. This is why the case is integer and
+///   not float: a float reduction reassociated this way changes the answer, and
+///   that would need an explicit fact this compiler does not have.
+///
+///   REPRESENTATION UNIFORMITY — no BINDING changes representation. `acc` and
+///   `idx` stay ordinary integer locals for the whole function; the vector
+///   accumulator is a register private to one instruction's expansion, created
+///   and consumed inside it, and never named by any slot.
+fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: usize) Error!void {
+    if (at == 0) return;
+    const ws = switch (stmts[at]) {
+        .while_loop => |w| w,
+        else => return,
+    };
+    // Exactly the two statements, and no tail expression. Anything else in the
+    // body could read `acc`, rebind `idx`, or store into `tbl`, and each of
+    // those makes the regrouping observable.
+    if (ws.body.tail_expr != null) return;
+    if (ws.body.stmts.len != 2) return;
+
+    const step = reduceStep(&ws.body.stmts[0]) orelse return;
+    if (!stepIsIncrementOfOne(&ws.body.stmts[1], step.idx)) return;
+    if (std.mem.eql(u8, step.acc, step.idx)) return;
+    if (std.mem.eql(u8, step.acc, step.tbl)) return;
+    if (std.mem.eql(u8, step.idx, step.tbl)) return;
+
+    const hi = loopUpperBound(ws.cond, step.idx) orelse return;
+    const lo = literalBindingOf(&stmts[at - 1], step.idx) orelse return;
+    if (lo < 1 or hi < lo) return;
+
+    const base_slot = ctx.locals.get(step.tbl) orelse return;
+    if (!ctx.ptr_slots.contains(base_slot)) return;
+
+    var key_buf: [512]u8 = undefined;
+    const len_key = std.fmt.bufPrint(&key_buf, "{s}.len", .{step.tbl}) catch return;
+    const len_slot = ctx.locals.get(len_key) orelse return;
+    const len = ctx.table_lens.get(len_slot) orelse return;
+    if (hi > len) return;
+
+    const acc_slot = ctx.locals.get(step.acc) orelse return;
+    if (slotIsNonInteger(ctx, acc_slot)) return;
+    const idx_slot = ctx.locals.get(step.idx) orelse return;
+    if (slotIsNonInteger(ctx, idx_slot)) return;
+    if (acc_slot == idx_slot or acc_slot == base_slot or idx_slot == base_slot) return;
+
+    // Whole lane groups only. A trip count below one group (which includes the
+    // empty range) leaves this to the scalar loop entirely.
+    const count = hi - lo + 1;
+    const vectored = @divTrunc(count, vec_i64_lanes) * vec_i64_lanes;
+    if (vectored < vec_i64_lanes) return;
+
+    const sum = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .hw_unary,
+        .hw = .none,
+        .field = vec_reduce_add_i64_tag,
+        .ty = .i64,
+        .result = sum,
+        .lhs = .{ .local = base_slot },
+        .rhs = .{ .i64 = lo },
+        .third = .{ .i64 = vectored },
+    });
+    const folded = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .binop,
+        .result = folded,
+        .binop = .add,
+        .lhs = .{ .local = acc_slot },
+        .rhs = .{ .temp = sum },
+        .ty = .any,
+    });
+    try ctx.emit(.{ .op = .store_local, .result = acc_slot, .lhs = .{ .temp = folded }, .ty = .any });
+    try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = .{ .i64 = lo + vectored }, .ty = .any });
+
+    // `idx` is no longer the literal the preceding statement bound. Dropping the
+    // entry keeps `const_ints` from answering `LO` for it downstream; every
+    // consumer of that map treats a miss as "not compile-time known" and stays
+    // conservative.
+    if (ctx.const_ints.fetchRemove(step.idx)) |kv| ctx.alloc.free(kv.key);
 }
 
 /// True when `expr` holds a BOOLEAN rather than a number.
@@ -2925,6 +3448,370 @@ fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, a
     try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = rec_name, .field = name });
 }
 
+// ---------------------------------------------------------------------------
+// REPRESENTATION IS A DECISION, AND SIZE IS NOT THE FACT THAT DECIDES IT.
+//
+// `select_chain_max` used to be the whole decision, and it produced a 43x cliff
+// between two programs that differ only in how many literals were written:
+//
+//     t = (1 … 32) ; t(2)   ->    4 instructions
+//     t = (1 … 33) ; t(2)   ->  174 instructions      same answer, the literal 2
+//
+// Both answers were fully determined before the program ran — constant contents,
+// constant index, no writes, no escape — and one of them was computed at run time
+// out of frame memory anyway. Extent is a fact about how to REALIZE a table that
+// must exist; it says nothing about whether one must exist at all. That question
+// is answered below, from the uses, and its answer holds at every extent.
+//
+// What is asked here is deliberately narrow and entirely local: does the rest of
+// this function ever do anything to this name other than read it at a
+// compile-time index? Anything else at all — a write, a bare mention, an
+// unrecognized construct — declines. Declining costs speed; being wrong costs the
+// answer, and this tree has already paid that twice (materialization re-run per
+// loop iteration, and two representations live in one function). So the walker
+// below has NO permissive default: an expression kind it does not model returns
+// `.opaque_use` whether or not it mentions the name.
+// ---------------------------------------------------------------------------
+
+/// How a function body uses one bound name, worst case. Ordered: a later variant
+/// subsumes an earlier one.
+const TableUse = enum {
+    /// Never mentioned after the binding.
+    none,
+    /// Only ever `t(k)` with `k` a compile-time integer.
+    const_read,
+    /// Also read at an index only known at run time.
+    dyn_read,
+    /// Written, rebound, shadowed, passed on, or used in a shape not modeled
+    /// here. NOTHING may be assumed about the table.
+    opaque_use,
+};
+
+fn worseUse(a: TableUse, b: TableUse) TableUse {
+    return if (@intFromEnum(b) > @intFromEnum(a)) b else a;
+}
+
+/// `k` as a compile-time integer, for an index expression. Literals only — a
+/// name resolved through `const_ints` is NOT accepted, because that map records
+/// a name's last literal binding and is never invalidated by a later
+/// non-literal assignment, so it would answer for a variable that has since
+/// moved. A wrong element is a wrong answer that still compiles.
+fn constIndexOf(key: *const ast.Expr) ?i64 {
+    return intLiteralStep(key);
+}
+
+fn tableUseInExpr(expr: *const ast.Expr, name: []const u8) TableUse {
+    return switch (expr.*) {
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => .none,
+        .semantic, .semantic_scope => .none,
+        .name => |n| if (std.mem.eql(u8, n.ident, name)) .opaque_use else .none,
+        .index => |ix| blk: {
+            // The READ face. `t(k)` and `t[k]` are the same node by the time
+            // lowering sees them (`table_apply.zig` canonicalizes the call form),
+            // so this one arm covers both spellings.
+            const in_key = tableUseInExpr(ix.key, name);
+            if (ix.obj.* == .name and std.mem.eql(u8, ix.obj.name.ident, name)) {
+                const here: TableUse = if (constIndexOf(ix.key) != null) .const_read else .dyn_read;
+                break :blk worseUse(here, in_key);
+            }
+            break :blk worseUse(tableUseInExpr(ix.obj, name), in_key);
+        },
+        .field => |f| tableUseInExpr(f.obj, name),
+        .call => |c| blk: {
+            var u = tableUseInExpr(c.func, name);
+            for (c.args) |a| u = worseUse(u, tableUseInExpr(a, name));
+            break :blk u;
+        },
+        .method_call => |m| blk: {
+            var u = tableUseInExpr(m.obj, name);
+            for (m.args) |a| u = worseUse(u, tableUseInExpr(a, name));
+            break :blk u;
+        },
+        .binop => |b| worseUse(tableUseInExpr(b.lhs, name), tableUseInExpr(b.rhs, name)),
+        .unop => |u| tableUseInExpr(u.operand, name),
+        .try_expr => |x| tableUseInExpr(x.operand, name),
+        .unwrap_expr => |x| tableUseInExpr(x.operand, name),
+        .await_expr => |x| tableUseInExpr(x.operand, name),
+        .quote => |q| tableUseInExpr(q.expr, name),
+        .unquote => |q| tableUseInExpr(q.expr, name),
+        .contains_expr => |c| worseUse(tableUseInExpr(c.lhs, name), tableUseInExpr(c.rhs, name)),
+        .if_expr => |ie| worseUse(
+            tableUseInExpr(ie.cond, name),
+            worseUse(tableUseInExpr(ie.then_expr, name), tableUseInExpr(ie.else_expr, name)),
+        ),
+        .sequence => |s| blk: {
+            var u: TableUse = .none;
+            for (s.exprs) |e| u = worseUse(u, tableUseInExpr(e, name));
+            break :blk u;
+        },
+        .range => |r| blk: {
+            var u = worseUse(tableUseInExpr(r.start, name), tableUseInExpr(r.end, name));
+            if (r.step) |st| u = worseUse(u, tableUseInExpr(st, name));
+            break :blk u;
+        },
+        .macro_call => |mc| blk: {
+            var u: TableUse = .none;
+            for (mc.args) |a| u = worseUse(u, tableUseInExpr(a, name));
+            break :blk u;
+        },
+        .table => |t| blk: {
+            var u: TableUse = .none;
+            for (t.fields) |fld| {
+                u = worseUse(u, switch (fld) {
+                    .positional => |v| tableUseInExpr(v, name),
+                    .named => |nf| tableUseInExpr(nf.val, name),
+                    .semantic => |sf| tableUseInExpr(sf.val, name),
+                    .spread => |sp| tableUseInExpr(sp, name),
+                    .indexed => |ix| worseUse(tableUseInExpr(ix.key, name), tableUseInExpr(ix.val, name)),
+                });
+            }
+            break :blk u;
+        },
+        .match_expr => |m| blk: {
+            var u = tableUseInExpr(m.scrutinee, name);
+            for (m.arms) |arm| {
+                if (arm.guard) |g| u = worseUse(u, tableUseInExpr(g, name));
+                // A pattern that BINDS this name shadows the table from here on.
+                if (patternBinds(arm.pattern, name)) break :blk .opaque_use;
+                u = worseUse(u, tableUseInBlock(&arm.body, name, m.scrutinee));
+            }
+            break :blk u;
+        },
+        // `func_expr` and `list_comp` introduce their own scope and their own
+        // capture rules. Neither is modeled, so neither is assumed about.
+        .func_expr, .list_comp => .opaque_use,
+    };
+}
+
+fn patternBinds(pat: ast.Pattern, name: []const u8) bool {
+    return switch (pat) {
+        .binding => |b| std.mem.eql(u8, b.name, name),
+        .rest => |r| std.mem.eql(u8, r, name),
+        .variant => |v| blk: {
+            const payload = v.payload orelse break :blk false;
+            for (payload) |p| if (patternBinds(p, name)) break :blk true;
+            break :blk false;
+        },
+        .table_destr => |entries| blk: {
+            for (entries) |e| if (patternBinds(e.pat, name)) break :blk true;
+            break :blk false;
+        },
+        .array_destr => |pats| blk: {
+            for (pats) |p| if (patternBinds(p, name)) break :blk true;
+            break :blk false;
+        },
+        .literal, .wildcard => false,
+    };
+}
+
+/// An assignment TARGET naming this table is a WRITE, whatever its shape:
+/// `t = …` rebinds it and `t(k) = …` mutates it. Either way the initializer's
+/// literals stop being the whole truth.
+fn targetWrites(target: *const ast.Expr, name: []const u8) bool {
+    return switch (target.*) {
+        .name => |n| std.mem.eql(u8, n.ident, name),
+        .index => |ix| targetWrites(ix.obj, name),
+        .field => |f| targetWrites(f.obj, name),
+        else => true,
+    };
+}
+
+/// `bound` is the initializer expression of the binding being judged. That one
+/// occurrence is THE binding and is not a use of it; every other binding of the
+/// same name — a second declaration, a reassignment, a loop variable, a pattern
+/// capture — replaces the table and is `.opaque_use`. Identity is by POINTER,
+/// not by name, so "the binding" cannot be confused with a later one.
+fn tableUseInBlock(block: *const ast.Block, name: []const u8, bound: *const ast.Expr) TableUse {
+    var u: TableUse = .none;
+    for (block.stmts) |*s| {
+        u = worseUse(u, tableUseInStmt(s, name, bound));
+        if (u == .opaque_use) return u;
+    }
+    if (block.tail_expr) |t| u = worseUse(u, tableUseInExpr(t, name));
+    return u;
+}
+
+/// Uses contributed by a name/value binding pair. `.none` for the one pair that
+/// IS this binding; `.opaque_use` for any other pair that binds the name.
+fn bindingPairUse(
+    n: []const u8,
+    init: ?*const ast.Expr,
+    name: []const u8,
+    bound: *const ast.Expr,
+) TableUse {
+    const init_use: TableUse = if (init) |e| tableUseInExpr(e, name) else .none;
+    if (!std.mem.eql(u8, n, name)) return init_use;
+    if (init) |e| if (e == bound) return .none;
+    return .opaque_use;
+}
+
+fn tableUseInStmt(stmt: *const ast.Stmt, name: []const u8, bound: *const ast.Expr) TableUse {
+    return switch (stmt.*) {
+        .local_decl => |d| blk: {
+            var u: TableUse = .none;
+            for (d.names, 0..) |n, i| {
+                const init: ?*const ast.Expr = if (i < d.inits.len) d.inits[i] else null;
+                u = worseUse(u, bindingPairUse(n.ident, init, name, bound));
+            }
+            // An initializer with no name of its own is still evaluated.
+            if (d.inits.len > d.names.len) {
+                for (d.inits[d.names.len..]) |e| u = worseUse(u, tableUseInExpr(e, name));
+            }
+            break :blk u;
+        },
+        .const_decl => |d| blk: {
+            if (std.mem.eql(u8, d.ident, name)) break :blk .opaque_use;
+            break :blk tableUseInExpr(d.val, name);
+        },
+        .global_decl => |d| blk: {
+            var u: TableUse = .none;
+            for (d.names, 0..) |n, i| {
+                const init: ?*const ast.Expr = if (i < d.inits.len) d.inits[i] else null;
+                u = worseUse(u, bindingPairUse(n.ident, init, name, bound));
+            }
+            if (d.inits.len > d.names.len) {
+                for (d.inits[d.names.len..]) |e| u = worseUse(u, tableUseInExpr(e, name));
+            }
+            break :blk u;
+        },
+        .assign => |a| blk: {
+            var u: TableUse = .none;
+            for (a.targets, 0..) |t, i| {
+                const val: ?*const ast.Expr = if (i < a.values.len) a.values[i] else null;
+                if (t.* == .name) {
+                    u = worseUse(u, bindingPairUse(t.name.ident, val, name, bound));
+                    continue;
+                }
+                // `t(k) = …` / `t.f = …` mutate the table in place.
+                if (targetWrites(t, name)) break :blk .opaque_use;
+                u = worseUse(u, tableUseInExpr(t, name));
+                if (val) |v| u = worseUse(u, tableUseInExpr(v, name));
+            }
+            if (a.values.len > a.targets.len) {
+                for (a.values[a.targets.len..]) |e| u = worseUse(u, tableUseInExpr(e, name));
+            }
+            break :blk u;
+        },
+        .call_stmt => |c| tableUseInExpr(c.expr, name),
+        .expr_stmt => |c| tableUseInExpr(c.expr, name),
+        .do_block => |d| tableUseInBlock(&d.body, name, bound),
+        .while_loop => |w| worseUse(tableUseInExpr(w.cond, name), tableUseInBlock(&w.body, name, bound)),
+        .repeat_loop => |r| worseUse(tableUseInBlock(&r.body, name, bound), tableUseInExpr(r.cond, name)),
+        .if_stmt => |f| blk: {
+            var u: TableUse = .none;
+            if (f.binding) |b| {
+                if (std.mem.eql(u8, b.name, name)) break :blk .opaque_use;
+                u = worseUse(u, tableUseInExpr(b.expr, name));
+            }
+            u = worseUse(u, tableUseInExpr(f.cond, name));
+            u = worseUse(u, tableUseInBlock(&f.then, name, bound));
+            for (f.elseifs) |ei| {
+                u = worseUse(u, tableUseInExpr(ei.cond, name));
+                u = worseUse(u, tableUseInBlock(&ei.body, name, bound));
+            }
+            if (f.else_body) |eb| u = worseUse(u, tableUseInBlock(&eb, name, bound));
+            break :blk u;
+        },
+        .num_for => |n| blk: {
+            if (std.mem.eql(u8, n.var_name, name)) break :blk .opaque_use;
+            var u = worseUse(tableUseInExpr(n.start, name), tableUseInExpr(n.stop, name));
+            if (n.step) |st| u = worseUse(u, tableUseInExpr(st, name));
+            break :blk worseUse(u, tableUseInBlock(&n.body, name, bound));
+        },
+        .gen_for => |g| blk: {
+            for (g.vars) |v| if (std.mem.eql(u8, v, name)) break :blk .opaque_use;
+            var u: TableUse = .none;
+            for (g.iters) |e| u = worseUse(u, tableUseInExpr(e, name));
+            break :blk worseUse(u, tableUseInBlock(&g.body, name, bound));
+        },
+        .ret => |r| blk: {
+            var u: TableUse = .none;
+            for (r.vals) |e| u = worseUse(u, tableUseInExpr(e, name));
+            break :blk u;
+        },
+        .brk, .cont, .goto_stmt, .label_stmt => .none,
+        // Same rule as the expression walker: an unmodeled statement is not
+        // evidence of absence.
+        else => .opaque_use,
+    };
+}
+
+/// Every element as a compile-time integer, or null.
+///
+/// Integers only. A float table would need the same treatment on the f64 side,
+/// and a `.f64` slot and an `.i64` immediate are different representations —
+/// mixing them is exactly the confusion that produced this tree's other
+/// wrong-answer regression, so the float case is DECLINED here rather than
+/// approximated.
+fn constTableValues(ctx: *LowerCtx, table: *const ast.Expr) Error!?[]i64 {
+    if (table.* != .table) return null;
+    var n: usize = 0;
+    for (table.table.fields) |fld| {
+        if (fld != .positional) return null;
+        if (intLiteralStep(fld.positional) == null) return null;
+        n += 1;
+    }
+    if (n == 0) return null;
+    const out = try ctx.alloc.alloc(i64, n);
+    var i: usize = 0;
+    for (table.table.fields) |fld| {
+        out[i] = intLiteralStep(fld.positional).?;
+        i += 1;
+    }
+    return out;
+}
+
+/// Decide, AT THE BINDING, what is known about `name`, and record it.
+///
+/// Returns the use verdict so the caller can also decide whether to emit any
+/// storage at all. The decision is taken here and nowhere else: an access site
+/// is routinely inside a loop, and a representation chosen there re-runs its
+/// setup per iteration — which is how a previous attempt at this silently
+/// restored tables to their initial values every trip.
+fn noteConstTable(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!TableUse {
+    const body = ctx.body orelse return .opaque_use;
+    const use = tableUseInBlock(body, name, table);
+    if (use == .opaque_use) return use;
+    const values = (try constTableValues(ctx, table)) orelse return .opaque_use;
+    errdefer ctx.alloc.free(values);
+    // A name bound twice in one body is `.opaque_use` above, so this cannot
+    // overwrite a live entry.
+    const key = try ctx.alloc.dupe(u8, name);
+    errdefer ctx.alloc.free(key);
+    try ctx.const_tables.put(ctx.alloc, key, values);
+    return use;
+}
+
+/// `t(k)` where `t` was proved determined and `k` is compile-time — the element,
+/// as an immediate, at any extent.
+///
+/// A constant index OUTSIDE the extent returns an error rather than a value.
+/// Tables are 1-indexed, so `t(0)` is out of range as surely as `t(len + 1)` is,
+/// and both are refused at compile time. That refusal is not new — a
+/// register-exploded table already refused it by failing to find the element's
+/// local — but it now holds at every width, where the memory-backed path used to
+/// emit an unguarded load of whatever lay next to the region.
+fn constTableRead(ctx: *LowerCtx, expr: *const ast.Expr) Error!?dnir.Value {
+    if (expr.* != .index) return null;
+    const ix = expr.index;
+    if (ix.obj.* != .name) return null;
+    const values = ctx.const_tables.get(ix.obj.name.ident) orelse return null;
+    const k = constIndexOf(ix.key) orelse return null;
+    if (k < 1 or k > @as(i64, @intCast(values.len))) return bail(ctx.diagnostic, @src());
+    return dnir.Value{ .i64 = values[@intCast(k - 1)] };
+}
+
+/// Bind `t.len`. The length of a positional table is static in every
+/// realization, so it is a foldable constant whichever way the elements go —
+/// including the realization that emits no elements.
+fn bindTableLen(ctx: *LowerCtx, name: []const u8, len: i64) Error!void {
+    const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{name});
+    const len_slot = ctx.freshTemp();
+    try ctx.locals.put(ctx.alloc, len_key, len_slot);
+    try ctx.emit(.{ .op = .store_local, .result = len_slot, .lhs = .{ .i64 = len }, .ty = .any });
+    try ctx.table_lens.put(ctx.alloc, len_slot, len);
+}
+
 /// `t = { 10, 20, 30 }` — a positional table with a statically known length.
 ///
 /// Elements become one local per slot, keyed `t.1`, `t.2`, … exactly as record
@@ -2936,6 +3823,16 @@ fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, a
 /// milestone. Constant indexing is the slice that fits the proven subset today.
 fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
     if (table.* != .table) return bail(ctx.diagnostic, @src());
+    const use = try noteConstTable(ctx, name, table);
+    if (@intFromEnum(use) <= @intFromEnum(TableUse.const_read)) {
+        // DETERMINED, and read only at compile-time indices: the table itself is
+        // not a thing this function needs. Bind the length (still a foldable
+        // constant, so `#t` costs nothing) and emit no elements at all — every
+        // read is answered by `constTableRead`. This is the branch that makes the
+        // width irrelevant, because it is taken at 4 elements and at 4096.
+        try bindTableLen(ctx, name, @intCast(ctx.const_tables.get(name).?.len));
+        return;
+    }
     if (ctx.tables_in_memory) return lowerPositionalTableIntoMemory(ctx, name, table);
     const t_slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), t_slot);
@@ -3081,9 +3978,96 @@ fn lowerTestRelation(ctx: *LowerCtx, method: []const u8, args: []const *const as
     return .void;
 }
 
-fn emitIndexBoundsTrap(ctx: *LowerCtx, idx_slot: u32, len: i64) Error!void {
-    try ensureExtern(ctx, "os", "abort", "abort");
+/// Marks a DNIR `hw_unary` as a TERMINATING TRAP rather than a scalar bit
+/// intrinsic. `native_backend.zig` reads the same constant and expands it to an
+/// inline instruction sequence that raises SIGABRT.
+///
+/// TRAP, DON'T CALL. This used to be `call_extern abort`, and the cost of that
+/// was not the two words at the trap site — it was everything the word CALL
+/// means to the rest of the backend:
+///
+///   1. `dnirFunctionHasCall` counts `call_extern`, so a never-taken bounds
+///      check made the whole function "a function with a call".
+///   2. `gate_spill_all_locals = body_has_call`, so EVERY local lost its
+///      register home and became a stack slot reloaded per use.
+///   3. `dnirNeedsCalleeSave` followed, dragging in the full x19–x28
+///      save/restore block a leaf never needs.
+///   4. `spill_reserve` opened an unconditional ~8 KB stack pit.
+///   5. The `bl` itself needed `emitSaveCallerRegs` around it — nine stores and
+///      nine loads guarding registers across a call that never returns.
+///
+/// Measured on `s += t(i)` over an eight-element table: 142 instructions, one
+/// dynamic import, against 2 for the same loop with no table at all.
+///
+/// A trap is not a call. It does not return, so nothing needs preserving across
+/// it; it does not use x30, so nothing needs a frame; and it resolves no symbol,
+/// so the artifact keeps no import. The four gates above all key off
+/// `call_extern` and none of them fire.
+///
+/// It rides `hw_unary` + `.field` because a trap is not expressible in
+/// `native_ir.zig`'s `Op` set and that file is not this pass's to change. The
+/// convention is not invented here: `mov_arg` already discriminates its
+/// variadic-tail form with `.field = "vararg"`, and the vector reduction above
+/// uses the same seam. `.hw` stays `.none`, so `intrinsicOfOp`,
+/// `functionHardwareTier` and `moduleHardwareTier` all read exactly what they
+/// read before — a trap is not a hardware intrinsic and must not raise a
+/// module's reported tier. `.result` is null, so `definition` establishes no
+/// slot, which is right: control never leaves this instruction.
+pub const trap_abort_tag = "trap.abort";
 
+/// The one place a trap is emitted. Both trap sites — the index bounds check and
+/// a failed `test:assert` — mean the same thing (stop the process, do not
+/// return), so they emit the same instruction rather than two spellings of it.
+fn emitTrap(ctx: *LowerCtx) Error!void {
+    try ctx.emit(.{ .op = .hw_unary, .hw = .none, .field = trap_abort_tag });
+}
+
+/// Static element count of a positional table bound in this function, or null
+/// when the extent is not known here — which is exactly the case for a `ptr`
+/// PARAMETER, where the table was bound in some other function and only its base
+/// address crossed the boundary. No extent, no guard: a check against a length
+/// this function does not have would be a guess.
+fn staticTableLen(ctx: *const LowerCtx, name: []const u8) ?i64 {
+    var buf: [512]u8 = undefined;
+    const len_key = std.fmt.bufPrint(&buf, "{s}.len", .{name}) catch return null;
+    const len_slot = ctx.locals.get(len_key) orelse return null;
+    return ctx.table_lens.get(len_slot);
+}
+
+/// The index to use for a MEMORY-BACKED access, with the range decided first.
+///
+/// The register-exploded representation has always refused a statically
+/// out-of-range index (there is no element local to name) and trapped a dynamic
+/// one (gap[063]). The memory-backed representation, which the same table falls
+/// into purely by being wider, did NEITHER: `t(0)` on a 40-element table read the
+/// word below the region and answered with it, and `t(41)` read the word above.
+/// Same program, same index, same table — a different answer decided by how many
+/// literals were written. That is the size threshold showing up as a CORRECTNESS
+/// difference rather than a speed one, and it is the reason the two paths are
+/// brought level here.
+///
+///   constant, in range   — nothing emitted; the extent already proved it.
+///   constant, out of range — REFUSED at compile time, as the narrow path does.
+///   dynamic              — the bounds trap, as the narrow path does.
+///
+/// Affordable now precisely because the trap stopped being a call: before
+/// `trap_abort_tag` this guard would have set `body_has_call` on every function
+/// that touches a wide table and cost each one its entire register allocation,
+/// which is why "check the wide path too" was not a small change until now.
+fn guardedTableIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const ast.Expr) Error!dnir.Value {
+    const len = staticTableLen(ctx, table_name) orelse return try lowerExpr(ctx, key_expr);
+    if (intLiteralStep(key_expr)) |k| {
+        if (k < 1 or k > len) return bail(ctx.diagnostic, @src());
+        return .{ .i64 = k };
+    }
+    const idx_slot = ctx.freshTemp();
+    const raw = try lowerExpr(ctx, key_expr);
+    try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = raw, .ty = .any });
+    try emitIndexBoundsTrap(ctx, idx_slot, len);
+    return .{ .local = idx_slot };
+}
+
+fn emitIndexBoundsTrap(ctx: *LowerCtx, idx_slot: u32, len: i64) Error!void {
     const lo = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = lo, .binop = .geq, .lhs = .{ .local = idx_slot }, .rhs = .{ .i64 = 1 } });
     const lo_bad = ctx.instrs.items.len;
@@ -3100,7 +4084,7 @@ fn emitIndexBoundsTrap(ctx: *LowerCtx, idx_slot: u32, len: i64) Error!void {
     const trap: u32 = @intCast(ctx.instrs.items.len);
     ctx.instrs.items[lo_bad].branch_target = trap;
     ctx.instrs.items[hi_bad].branch_target = trap;
-    try ctx.emit(.{ .op = .call_extern, .callee = "abort" });
+    try emitTrap(ctx);
     ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
 }
 
@@ -3127,7 +4111,7 @@ fn lowerIndexAssignTarget(
     // Memory-backed table: a real scaled store, so writes through a shared base
     // are visible to every function holding it.
     if (ptrSlotOf(ctx, obj)) |base| {
-        const idx = try lowerExpr(ctx, key_expr);
+        const idx = try guardedTableIndex(ctx, table_name, key_expr);
         const v = try lowerExprCons(ctx, value, .single);
         try ctx.emit(.{
             .op = .store_index,
@@ -3589,6 +4573,11 @@ fn lowerExprCons(
             // Normalizing here keeps ONE origin in the backend rather than
             // giving it a second — the same decision the byte STORE required,
             // where two origins on one opcode would be a wrong address.
+            // A DETERMINED table read at a compile-time index is its element,
+            // whatever the table's extent and whatever realization the rest of
+            // the function forced on it. Checked first, so the answer does not
+            // depend on which of the three storage paths below would have run.
+            if (try constTableRead(ctx, expr)) |v| break :blk v;
             if (exprIsStr(ctx, ix.obj)) {
                 const sbase = try lowerExpr(ctx, ix.obj);
                 const raw = try lowerExpr(ctx, ix.key);
@@ -3602,7 +4591,7 @@ fn lowerExprCons(
             // A memory-backed table indexes for real: one scaled load, constant
             // or not. This is the path that makes a shared token array work.
             if (ptrSlotOf(ctx, ix.obj)) |base| {
-                const idx = try lowerExpr(ctx, ix.key);
+                const idx = try guardedTableIndex(ctx, ix.obj.name.ident, ix.key);
                 const t = ctx.freshTemp();
                 try ctx.emit(.{
                     .op = .load_index,
@@ -3922,6 +4911,63 @@ fn env(expr: *const ast.Expr) bool {
     return f.obj.* == .name and
         std.mem.eql(u8, f.obj.name.ident, "os") and
         std.mem.eql(u8, f.field, "env");
+}
+
+/// The KEY of an environment projection used as an assignment TARGET, or null.
+///
+/// The environment is a PLACE, not only a value, so `env(k)` has to be writable
+/// as well as readable. All three spellings that name the same edge reach here:
+///
+///     env("K")     = v     canonical — `os` is injected, so the anchor adds
+///                          nothing (only reachable once sema admits bare `env`)
+///     os.env("K")  = v     lawful where the anchor genuinely disambiguates
+///     os.env["K"]  = v     legacy bracket accessor
+///
+/// A LOCAL named `env` or `os` shadows the projection. That guard is not
+/// hypothetical: `a[i]` canonicalizes to `a(i)`, so `env(k) = v` is also exactly
+/// how a positional table named `env` is written to, and without the check a
+/// local table store would be silently rewritten into a `setenv` call.
+fn envPlaceKey(ctx: *const LowerCtx, expr: *const ast.Expr) ?*const ast.Expr {
+    switch (expr.*) {
+        .index => |ix| {
+            if (!env(ix.obj)) return null;
+            if (ctx.locals.contains("os")) return null;
+            return ix.key;
+        },
+        .call => |c| {
+            if (c.args.len != 1) return null;
+            if (env(c.func)) return if (ctx.locals.contains("os")) null else c.args[0];
+            if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "env")) {
+                return if (ctx.locals.contains("env")) null else c.args[0];
+            }
+            return null;
+        },
+        else => return null,
+    }
+}
+
+/// `env(k) = v` — POSIX `setenv(k, v, 1)`.
+///
+/// `setenv` and not `putenv`: `putenv` takes one `"K=V"` string, which would
+/// mean building and OWNING a concatenation at run time, and it installs the
+/// caller's buffer rather than copying it.
+///
+/// The overwrite flag is 1, so a write always takes effect. Nothing here treats
+/// the empty string specially — `env("K") = ""` sets `K` to the empty value and
+/// does NOT remove it. That matters: the READ side currently cannot distinguish
+/// absent from empty (both answer `""`, the §17 fake-nil identity written up in
+/// idol-native/docs/env-identity.md), and if the write side collapsed the two as
+/// well, the distinction would be unrecoverable rather than merely unobservable.
+/// REMOVAL is `unsetenv`, a different edge, and is deliberately not spelled as
+/// an assignment of `""` here.
+fn lowerEnvStore(ctx: *LowerCtx, key_expr: *const ast.Expr, value: *const ast.Expr) Error!void {
+    const k = try lowerExprCons(ctx, key_expr, .single);
+    const v = try lowerExprCons(ctx, value, .single);
+    try ensureExtern(ctx, "os", "setenv", "setenv");
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = k });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = v });
+    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .i64 = 1 } });
+    try ctx.emit(.{ .op = .call_extern, .callee = "setenv", .ty = .i64 });
 }
 
 /// `os.cwd` — the root-projected working directory, not `getcwd` / `os.cwd()`.

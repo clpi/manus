@@ -349,14 +349,18 @@ test "graph_query: calls and callees from lifted graph" {
     defer alloc.free(helper_users);
     try std.testing.expectEqual(@as(usize, 1), helper_users.len);
     try std.testing.expectEqual(calls[0], helper_users[0]);
-    try std.testing.expect(effect(&g, calls[0]) == .unknown);
-    try std.testing.expect(authority(&g, calls[0]) == .unknown);
+    // `helper: i64 = () 1` applies nothing, captures nothing, reads no member
+    // and is not foreign, so the effect pass in `semantic_graph` publishes
+    // known-absent rather than not-yet-known. These two read `.unknown` for as
+    // long as the two fields had no write site at all.
+    try std.testing.expect(effect(&g, calls[0]) == .none);
+    try std.testing.expect(authority(&g, calls[0]) == .none);
     try std.testing.expect(witness(&g, calls[0]) == .unknown);
     try std.testing.expect(realization(&g, calls[0]) == .unknown);
     try std.testing.expect(target(&g, calls[0]) == .unknown);
     try std.testing.expect(stage(&g, calls[0]) == null);
-    try std.testing.expect(call.effect == .unknown);
-    try std.testing.expect(call.authority == .unknown);
+    try std.testing.expect(call.effect == .none);
+    try std.testing.expect(call.authority == .none);
     try std.testing.expect(call.witness == .unknown);
     try std.testing.expect(call.target == .unknown);
     try std.testing.expect(call.realization == .unknown);

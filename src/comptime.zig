@@ -183,6 +183,7 @@ pub const Evaluator = struct {
                 const obj = try self.eval(field.obj);
                 break :blk try tableFieldLookup(obj, field.field);
             },
+            .method_call => |mc| try self.evalMethodCall(mc.obj, mc.method, mc.args),
             .unop => |unop| try self.evalUnop(unop.op, unop.operand),
             .binop => |binop| try self.evalBinop(binop.op, binop.lhs, binop.rhs),
             .table => |table| try self.evalTable(table.fields),
@@ -474,6 +475,57 @@ pub const Evaluator = struct {
             _ = try self.pushLocal(param.name, value);
         }
         return try self.evalBlockValue(&func.body);
+    }
+
+    /// `s:len()`, `s:byte(2)`, `s:sub(2, 3)` — the METHOD face of the standard
+    /// library, which is the only face .id programs are written in.
+    ///
+    /// WHY THIS WAS MISSING AND WHAT IT COST. `evalStringBuiltin` below already
+    /// folds `len`/`byte`/`sub`/`upper`/`lower`/`rev` with the same 1-based
+    /// semantics the backend emits, and has for a long time — but `eval` had no
+    /// `.method_call` arm at all, so the only route into it was the dotted face
+    /// `string.len(s)`. Nothing in .id is spelled that way. Measured: a body
+    /// whose whole answer is `"hello":len()` emits a 14-instruction runtime byte
+    /// scan, and `"hello":byte(2)` emits 9, where the floor for a constant
+    /// answer is 2. The folder was never wrong; it was never reachable.
+    ///
+    /// A method call is the dotted call with the receiver moved in front of the
+    /// dot, so it is the same argument vector with the receiver prepended. No
+    /// AST is synthesized — only the pointer vector is rebuilt — so there is one
+    /// implementation of each face and the two spellings cannot drift apart.
+    fn evalMethodCall(
+        self: *Evaluator,
+        obj: *ast.Expr,
+        method: []const u8,
+        args: []const *ast.Expr,
+    ) EvalError!Value {
+        // Bounded on the stack rather than allocated: `options.alloc` is
+        // optional, and a face taking more than seven arguments does not exist.
+        var buf: [8]*ast.Expr = undefined;
+        if (args.len + 1 > buf.len) return error.UnsupportedExpression;
+        buf[0] = obj;
+        for (args, 0..) |a, i| buf[i + 1] = a;
+        const with_receiver = buf[0 .. args.len + 1];
+
+        // Dispatch on the RECEIVER'S VALUE, not on its syntax: `s:len()` folds
+        // when `s` is a literal and equally when it is a comptime binding that
+        // holds a string. A receiver that is not a compile-time value at all
+        // fails here, which is the decline the caller expects.
+        //
+        // STRINGS ONLY, AND THAT IS NOT AN OVERSIGHT. `evalTableBuiltin` is
+        // deliberately not reachable from here. Its `insert`/`remove`/`sort`
+        // faces are spelled functionally — they RETURN a new table — while the
+        // language's `t:insert(v)` MUTATES the receiver and is written as a
+        // statement whose value is discarded. Routing the method face there
+        // would evaluate the call, build the updated table, throw it away, and
+        // report success: the fold would swallow the mutation and the program
+        // would keep the old contents. Declining leaves it to run, which is
+        // slower and right. Strings are immutable, so every face below is pure
+        // and has no such failure mode.
+        return switch (try self.eval(obj)) {
+            .string => self.evalStringBuiltin(method, with_receiver),
+            else => error.UnsupportedExpression,
+        };
     }
 
     /// Evaluate string.* standard library functions at compile time.
@@ -1627,6 +1679,124 @@ test "comptime eval: step limit" {
     const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
     var one = ast.Expr{ .int_lit = .{ .loc = loc, .val = 1 } };
     try std.testing.expectError(error.StepLimitExceeded, evalWithBindings(&one, .{}, .{ .step_limit = 0 }));
+}
+
+// ---------------------------------------------------------------------------
+// THE METHOD FACE. `s:len()` is how .id spells it; `string.len(s)` is not a
+// spelling any .id program uses. These parse REAL SOURCE rather than building
+// AST by hand, because the defect being fixed was not in the fold — it was that
+// the node the parser actually produces (`.method_call`) never reached it.
+// ---------------------------------------------------------------------------
+
+/// The body of the single relation in `source`, as the whole-body folder gets it.
+fn methodFaceFixture(alloc: std.mem.Allocator, source: []const u8) !*const ast.FuncBody {
+    var lexer = @import("lexer.zig").Lexer.init(source, "comptime-method-face.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    const module = try parser.parse_module();
+    for (module.body.stmts) |*st| {
+        if (st.* == .func_decl) return &st.func_decl.func;
+    }
+    return error.UnsupportedExpression;
+}
+
+/// What `dnir_lower.foldWholeBody` does, minus the two guards that keep it away
+/// from these bodies. See the routed edit in the report: the fold below is the
+/// whole of what the lowering would gain.
+fn foldWholeBody(alloc: std.mem.Allocator, source: []const u8) !Value {
+    const fb = try methodFaceFixture(alloc, source);
+    const opts: Options = .{ .step_limit = 200_000, .alloc = alloc };
+    const fv = try funcValue(fb, .{}, opts);
+    return callFunctionValue(fv, &.{}, .{}, opts);
+}
+
+test "comptime eval: the method face reaches the string folder" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Measured before this arm existed: 14 instructions of runtime byte scan
+    // for the first, 9 for the second. Both answers are these.
+    try std.testing.expectEqual(Value{ .int = 5 }, try foldWholeBody(alloc,
+        \\main: i64 = ()
+        \\    "hello":len()
+    ));
+    // 1-INDEXED, and it must match what the backend emits: byte 2 of "hello"
+    // is 'e' (101), not 'h' (104) and not 'l'.
+    try std.testing.expectEqual(Value{ .int = 101 }, try foldWholeBody(alloc,
+        \\main: i64 = ()
+        \\    "hello":byte(2)
+    ));
+    try std.testing.expectEqual(Value{ .int = 104 }, try foldWholeBody(alloc,
+        \\main: i64 = ()
+        \\    "hello":byte(1)
+    ));
+}
+
+test "comptime eval: the method face and the dotted face are one implementation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // If these two ever disagree, the receiver-prepending in `evalMethodCall`
+    // has stopped being a pure re-spelling of the same call.
+    const faces = [_][2][]const u8{
+        .{ "\"hello\":len()", "string.len(\"hello\")" },
+        .{ "\"hello\":byte(2)", "string.byte(\"hello\", 2)" },
+        .{ "\"hello\":sub(2, 3):len()", "string.len(string.sub(\"hello\", 2, 3))" },
+        .{ "\"hello\":upper():byte(1)", "string.byte(string.upper(\"hello\"), 1)" },
+        .{ "\"hello\":rev():byte(1)", "string.byte(string.rev(\"hello\"), 1)" },
+    };
+    for (faces) |pair| {
+        const method_src = try std.mem.concat(alloc, u8, &.{ "main: i64 = ()\n    ", pair[0], "\n" });
+        const dotted_src = try std.mem.concat(alloc, u8, &.{ "main: i64 = ()\n    ", pair[1], "\n" });
+        const m = try foldWholeBody(alloc, method_src);
+        const d = try foldWholeBody(alloc, dotted_src);
+        try std.testing.expect(m == .int and d == .int);
+        try std.testing.expectEqual(d.int, m.int);
+    }
+}
+
+test "comptime eval: a runtime receiver declines rather than inventing an answer" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // The receiver is a PARAMETER — which, measured, is what every `:len()` and
+    // `:byte(` site in `lib/native.id` actually has. There is no compile-time
+    // string here and the fold must say so, not guess.
+    try std.testing.expectError(error.UnsupportedExpression, foldWholeBody(alloc,
+        \\n: i64 = (src: str)
+        \\    src:len()
+    ));
+    // And an out-of-range index is `nil`, never a neighbouring byte.
+    try std.testing.expectEqual(Value.nil, try foldWholeBody(alloc,
+        \\main: i64 = ()
+        \\    "hello":byte(6)
+    ));
+    try std.testing.expectEqual(Value.nil, try foldWholeBody(alloc,
+        \\main: i64 = ()
+        \\    "hello":byte(0)
+    ));
+}
+
+test "comptime eval: a table receiver is refused, so no mutation is swallowed" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // `t:insert(4)` MUTATES `t`. `evalTableBuiltin` spells insert functionally
+    // — it returns a new table and leaves the old one alone — so folding this
+    // method call would build the answer, discard it, and report that the
+    // statement succeeded, leaving `t` at three elements. The fold must decline
+    // the whole body instead. If someone later routes tables through
+    // `evalMethodCall`, this test is the one that fails.
+    try std.testing.expectError(error.UnsupportedExpression, foldWholeBody(alloc,
+        \\main: i64 = ()
+        \\    t = (1, 2, 3)
+        \\    t:insert(4)
+        \\    t:len()
+    ));
 }
 
 /// True for @comp.* hook callee names that take inline `fun()` callbacks folded at comptime.

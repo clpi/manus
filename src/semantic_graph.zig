@@ -1995,7 +1995,213 @@ pub const SemanticGraph = struct {
             try self.publishApplicationProjections(call_id);
         }
         try self.liftCaptureEdges(mod);
+        try self.publishApplicationEffects(mod);
         return module;
+    }
+
+    /// One relation's inputs to the effect fixpoint, gathered in a single pass
+    /// so the fixpoint iterates over edges of the call graph rather than
+    /// re-walking the node table once per round.
+    const EffectRow = struct {
+        relation: id,
+        /// Something about this relation's body the graph cannot see through.
+        /// A blocked relation is never effect-free and never becomes so.
+        blocked: bool = false,
+        callees_start: u32 = 0,
+        callees_len: u32 = 0,
+    };
+
+    /// Declarations whose body is a placeholder for a symbol outside this
+    /// module. `@ffi("llabs")` lifts as an ordinary `func` node with an
+    /// ordinary body — MEASURED: the graph for `@ffi("llabs") absval: i64 =
+    /// (n) 0` publishes a normal application bound to a normal callable, and
+    /// nothing in the graph records that applying it runs `llabs`. So this one
+    /// fact has to come from the declaration, which is why the effect pass
+    /// takes the AST module it was lifted from.
+    fn declarationIsForeign(fd: *const ast.FuncDecl) bool {
+        for (fd.attributes) |attribute| {
+            for ([_][]const u8{ "ffi", "extern", "foreign", "import" }) |name| {
+                if (std.mem.eql(u8, attribute.name, name)) return true;
+            }
+        }
+        return false;
+    }
+
+    fn markForeignDeclarations(
+        self: *SemanticGraph,
+        block: *const ast.Block,
+        foreign: *std.DynamicBitSetUnmanaged,
+    ) void {
+        for (block.stmts) |*stmt| {
+            switch (stmt.*) {
+                .func_decl => |*fd| {
+                    if (declarationIsForeign(fd)) {
+                        if (self.findFuncDecl(fd)) |entity| {
+                            if (entity < foreign.bit_length) foreign.set(entity);
+                        }
+                    }
+                    self.markForeignDeclarations(&fd.func.body, foreign);
+                },
+                .if_stmt => |*i| {
+                    self.markForeignDeclarations(&i.then, foreign);
+                    for (i.elseifs) |*ei| self.markForeignDeclarations(&ei.body, foreign);
+                    if (i.else_body) |*eb| self.markForeignDeclarations(eb, foreign);
+                },
+                .while_loop => |*w| self.markForeignDeclarations(&w.body, foreign),
+                .repeat_loop => |*r| self.markForeignDeclarations(&r.body, foreign),
+                .do_block => |*d| self.markForeignDeclarations(&d.body, foreign),
+                .num_for => |*nf| self.markForeignDeclarations(&nf.body, foreign),
+                .gen_for => |*g| self.markForeignDeclarations(&g.body, foreign),
+                .try_stmt => |*t| {
+                    self.markForeignDeclarations(&t.body, foreign);
+                    for (t.catches) |*cc| self.markForeignDeclarations(&cc.body, foreign);
+                },
+                .defer_stmt => |*d| self.markForeignDeclarations(&d.body, foreign),
+                else => {},
+            }
+        }
+    }
+
+    /// Nearest enclosing callable of an entity, by `scope`. Null when the
+    /// entity hangs off the module rather than off a relation.
+    fn enclosingCallable(self: *const SemanticGraph, entity: id) ?id {
+        var cursor: ?id = entity;
+        while (cursor) |current| {
+            if (self.callable(current)) return current;
+            cursor = (self.get(current) orelse return null).scope;
+        }
+        return null;
+    }
+
+    /// EFFECT AND AUTHORITY for every published application.
+    ///
+    /// `ApplicationFact.effect` and `.authority` shipped with no write site at
+    /// all: `Card` distinguishes "known-absent" from "not yet known", and every
+    /// application said "not yet known" forever, so every consumer downstream
+    /// had to assume the worst. This is the write site. It publishes exactly
+    /// one value — `.none` — and only where the whole transitive body is
+    /// provably unobservable; everything else keeps `.unknown`, which is the
+    /// honest answer and not a sentinel.
+    ///
+    /// A relation is EFFECT-FREE when all of these hold:
+    ///   1. it is not a foreign declaration (`declarationIsForeign`);
+    ///   2. every application candidate whose caller is this relation RESOLVED
+    ///      to a published fact — an unresolved candidate is a call the graph
+    ///      could not identify, and `print("hi")` is measured to be exactly
+    ///      that shape (a `.call` node in `unresolved_applications`);
+    ///   3. every callee it does resolve is itself effect-free;
+    ///   4. it captures nothing — a `.capture` edge is the graph's own record
+    ///      of reaching outside the frame, which is where a write to somebody
+    ///      else's binding would show up;
+    ///   5. nothing inside it reads a static `.member` — the injected world
+    ///      arrives as member edges, so this is where `env`/`arg`/`clock` land.
+    ///
+    /// The fixpoint is LEAST: nothing starts effect-free and a relation is only
+    /// promoted once all of its callees already are, so a recursive relation is
+    /// never promoted at all. That is a missed fact. The opposite error — a
+    /// greatest fixpoint that starts optimistic — publishes "pure" about
+    /// something impure the moment any of the five conditions is incomplete,
+    /// and this tree has shipped two silent miscompiles already.
+    ///
+    /// AUTHORITY rides on the same evidence deliberately: a relation that
+    /// applies nothing foreign, resolves every call it makes, captures nothing
+    /// and reads no world member cannot be exercising authority either. When
+    /// authority acquires evidence of its own — a capability fact rather than
+    /// the absence of one — it separates from this and gets its own predicate.
+    fn publishApplicationEffects(self: *SemanticGraph, mod: *const ast.Module) !void {
+        const node_count = self.nodes.items.len;
+        if (node_count == 0) return;
+
+        var foreign = try std.DynamicBitSetUnmanaged.initEmpty(self.alloc, node_count);
+        defer foreign.deinit(self.alloc);
+        self.markForeignDeclarations(&mod.body, &foreign);
+
+        var rows: std.ArrayListUnmanaged(EffectRow) = .empty;
+        defer rows.deinit(self.alloc);
+        var callees: std.ArrayListUnmanaged(id) = .empty;
+        defer callees.deinit(self.alloc);
+        var row_of: std.AutoHashMapUnmanaged(id, u32) = .empty;
+        defer row_of.deinit(self.alloc);
+
+        var entity: usize = 0;
+        while (entity < node_count) : (entity += 1) {
+            const relation = std.math.cast(id, entity) orelse break;
+            if (!self.callable(relation)) continue;
+            try row_of.put(self.alloc, relation, @intCast(rows.items.len));
+            try rows.append(self.alloc, .{
+                .relation = relation,
+                .blocked = relation < foreign.bit_length and foreign.isSet(relation),
+            });
+        }
+        if (rows.items.len == 0) return;
+
+        // Condition 5, then 4: a member read or a capture blocks the relation
+        // it sits inside, whichever relation that is.
+        for (self.edges.items) |edge| {
+            if (edge.kind != .member and edge.kind != .capture) continue;
+            const holder = self.enclosingCallable(edge.from) orelse continue;
+            const row = row_of.get(holder) orelse continue;
+            rows.items[row].blocked = true;
+        }
+
+        // Condition 2: an unresolved candidate is a call the graph could not
+        // identify, so its caller can never be proven unobservable.
+        var candidate: usize = 0;
+        while (candidate < self.application_candidates.bit_length) : (candidate += 1) {
+            if (!self.application_candidates.isSet(candidate)) continue;
+            const site = std.math.cast(id, candidate) orelse break;
+            if (self.applicationRelation(site) != null) continue;
+            const node = self.get(site) orelse continue;
+            const caller = self.enclosingCallable(node.scope orelse continue) orelse continue;
+            const row = row_of.get(caller) orelse continue;
+            rows.items[row].blocked = true;
+        }
+
+        // Condition 3, grouped by caller so the fixpoint below walks call-graph
+        // edges instead of re-scanning the candidate column every round.
+        for (rows.items) |*row| {
+            row.callees_start = @intCast(callees.items.len);
+            candidate = 0;
+            while (candidate < self.application_candidates.bit_length) : (candidate += 1) {
+                if (!self.application_candidates.isSet(candidate)) continue;
+                const site = std.math.cast(id, candidate) orelse break;
+                const callee = self.applicationRelation(site) orelse continue;
+                const node = self.get(site) orelse continue;
+                const caller = self.enclosingCallable(node.scope orelse continue) orelse continue;
+                if (caller != row.relation) continue;
+                try callees.append(self.alloc, callee);
+            }
+            row.callees_len = @as(u32, @intCast(callees.items.len)) - row.callees_start;
+        }
+
+        var effect_free = try std.DynamicBitSetUnmanaged.initEmpty(self.alloc, node_count);
+        defer effect_free.deinit(self.alloc);
+
+        var promoted = true;
+        while (promoted) {
+            promoted = false;
+            for (rows.items) |row| {
+                if (row.blocked or effect_free.isSet(row.relation)) continue;
+                var all_free = true;
+                const start: usize = row.callees_start;
+                for (callees.items[start .. start + row.callees_len]) |callee| {
+                    if (callee >= effect_free.bit_length or !effect_free.isSet(callee)) {
+                        all_free = false;
+                        break;
+                    }
+                }
+                if (!all_free) continue;
+                effect_free.set(row.relation);
+                promoted = true;
+            }
+        }
+
+        for (self.application_facts.items) |*fact| {
+            const callee = self.applicationRelation(fact.application) orelse continue;
+            if (callee >= effect_free.bit_length or !effect_free.isSet(callee)) continue;
+            fact.effect = .none;
+            fact.authority = .none;
+        }
     }
 
     const DependencyFrame = struct {
@@ -2962,12 +3168,16 @@ test "semantic_graph: checked subject application retains relation and value ide
     try std.testing.expectEqualStrings("document", subject.descriptor.?.@"struct".name);
     try std.testing.expectEqual(types.ResolvedType.i64, graph.get(results[0]).?.descriptor.?);
     try std.testing.expectEqual(@as(u32, 7), graph.applicationProvenance(stored.application).?.start);
-    try std.testing.expect(stored.effect == .unknown);
-    try std.testing.expect(stored.authority == .unknown);
+    // `read` projects a field of the subject it was handed and applies
+    // nothing, so effect and authority are KNOWN-ABSENT here rather than
+    // not-yet-known — the distinction `Card` exists to carry.
+    try std.testing.expect(stored.effect == .none);
+    try std.testing.expect(stored.authority == .none);
     try std.testing.expect(stored.witness == .unknown);
     try std.testing.expect(stored.target == .unknown);
     try std.testing.expect(stored.realization == .unknown);
-    // Unknown is graph state. Do not reconstruct world from "io" or a catalog.
+    // The remaining unknowns are graph state. Do not reconstruct world from
+    // "io" or a catalog.
 
     const unresolved_before = graph.unresolvedApplicationCount(null);
     const row = graph.application_rows.items[fact.application];
@@ -4116,6 +4326,120 @@ test "semantic_graph: four calls to one callee in one body are four identities" 
     // assertion below vacuously true.
     try std.testing.expectEqual(@as(usize, 4), calls);
     try std.testing.expectEqual(@as(usize, 4), seen.count());
+}
+
+/// Lift `src` the way the native path lifts it — sema first, then checked
+/// calls — and report the effect the pass published for the single application
+/// named by `caller`.
+fn liftedEffectOf(
+    alloc: std.mem.Allocator,
+    g: *SemanticGraph,
+    src: []const u8,
+    caller: []const u8,
+) !Card {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var lex = Lexer.init(src, "effect.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&mod);
+    const module = try g.liftModuleWithCheckedCalls(&mod, &checked, "effect.id");
+    const home = g.resolveInHome(module, caller, .func) orelse return error.TestExpectedEqual;
+    const published = g.applicationsIn(home);
+    if (published.len == 0) return error.TestExpectedEqual;
+    const fact = g.application(published[0]) orelse return error.TestExpectedEqual;
+    return fact.effect;
+}
+
+test "semantic_graph: effect and authority are published, not left empty" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // A leaf that applies nothing. The purest case, and the seed the whole
+    // fixpoint grows from.
+    {
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        try std.testing.expect(.none == try liftedEffectOf(alloc, &g,
+            \\helper: i64 = ()
+            \\    1
+            \\entry: i64 = ()
+            \\    helper()
+        , "entry"));
+    }
+
+    // Transitive: `entry` applies `middle` applies `leaf`. Every link has to be
+    // established before `entry`'s application is known-absent, which is what
+    // makes this a fixpoint rather than a one-level check.
+    {
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        try std.testing.expect(.none == try liftedEffectOf(alloc, &g,
+            \\leaf: i64 = (n: i64)
+            \\    n + 1
+            \\middle: i64 = (n: i64)
+            \\    leaf(n) * 2
+            \\entry: i64 = ()
+            \\    middle(3)
+        , "entry"));
+    }
+
+    // An unresolved candidate in the callee's body. MEASURED: `print("hi")`
+    // lifts as a `.call` node that never publishes an application, so a rule
+    // that only consulted published applications would call this body empty and
+    // therefore pure. It is not.
+    {
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        const observed = liftedEffectOf(alloc, &g,
+            \\noisy: i64 = ()
+            \\    print("hi")
+            \\    1
+            \\entry: i64 = ()
+            \\    noisy()
+        , "entry") catch |err| switch (err) {
+            error.TestExpectedEqual => Card.unknown,
+            else => return err,
+        };
+        try std.testing.expect(observed == .unknown);
+    }
+
+    // A foreign declaration. Its body is a placeholder and the graph records
+    // nothing about the symbol it binds, so the declaration is the only place
+    // this can be known.
+    {
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        try std.testing.expect(.unknown == try liftedEffectOf(alloc, &g,
+            \\@ffi("llabs")
+            \\absval: i64 = (n: i64)
+            \\    0
+            \\entry: i64 = ()
+            \\    absval(5)
+        , "entry"));
+    }
+
+    // Recursion is a MISS, not an error: the least fixpoint never promotes a
+    // relation that is waiting on itself. Recorded here so the miss is a
+    // measured property of the rule rather than a surprise later.
+    {
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        try std.testing.expect(.unknown == try liftedEffectOf(alloc, &g,
+            \\down: i64 = (n: i64)
+            \\    if n <= 0
+            \\        0
+            \\    else
+            \\        down(n - 1)
+            \\entry: i64 = ()
+            \\    down(3)
+        , "entry"));
+    }
 }
 
 test "semantic_graph: same-named locals in sibling blocks are distinct identities" {
