@@ -27,9 +27,9 @@ result_new: any = (model_name: str, batch_size: i64)
     memory_peak = 0,
     tokens_per_second = 0
   }
-result_add_latency: void = (result: any, latency: f64)
+result_add_latency = (result: any, latency: f64)
   result.latencies[result:len().latencies + 1] = latency
-result_calculate_stats: void = (result: any)
+result_calculate_stats = (result: any)
   n = result:len().latencies
   if n == 0
     return

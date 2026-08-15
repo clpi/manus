@@ -35,19 +35,19 @@ handler_new: any = ()
     blocked = {}
   }
 
-register: void = (handler: any, sig: i64, callback: any)
+register = (handler: any, sig: i64, callback: any)
   handler.handlers[sig] = callback
 
-unregister: void = (handler: any, sig: i64)
+unregister = (handler: any, sig: i64)
   handler.handlers[sig] = nil
 
-block: void = (handler: any, sig: i64)
+block = (handler: any, sig: i64)
   handler.blocked[sig] = true
 
-unblock: void = (handler: any, sig: i64)
+unblock = (handler: any, sig: i64)
   handler.blocked[sig] = nil
 
-emit: void = (handler: any, sig: i64)
+emit = (handler: any, sig: i64)
   if handler.blocked[sig]
     handler.signal_queue[handler:len().signal_queue + 1] = sig
     return
@@ -55,7 +55,7 @@ emit: void = (handler: any, sig: i64)
   if handler.handlers[sig]
     handler.handlers[sig](sig)
 
-process_queue: void = (handler: any)
+process_queue = (handler: any)
   while handler:len().signal_queue > 0
     sig = handler.signal_queue[1]
     handler.signal_queue:remove(1)
@@ -135,10 +135,10 @@ shutdown_new: any = ()
     shutdown_timeout = 30
   }
 
-shutdown_register: void = (sh: any, callback: any)
+shutdown_register = (sh: any, callback: any)
   sh.shutdown_hooks[sh:len().shutdown_hooks + 1] = callback
 
-shutdown_trigger: void = (sh: any)
+shutdown_trigger = (sh: any)
   if sh.is_shutting_down
     return
   sh.is_shutting_down = true
@@ -152,7 +152,7 @@ shutdown_trigger: void = (sh: any)
 shutdown_is_active: bool = (sh: any)
   sh.is_shutting_down
 
-shutdown_setup: void = (sh: any)
+shutdown_setup = (sh: any)
   # Register signal handlers for graceful shutdown
   register(sh.handler, SIGTERM, fun(sig)
     print("Received SIGTERM, shutting down...")

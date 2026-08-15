@@ -19,6 +19,10 @@ const Error = error{OutOfMemory};
 
 pub const SourceComment = struct { line: u32, text: []const u8 };
 
+fn isVoidType(t: TypeExpr) bool {
+    return t == .named and std.mem.eql(u8, t.named, "void");
+}
+
 /// True when every field of a table literal began on the table's own line —
 /// i.e. the source wrote it inline.
 fn tableWasInline(t: anytype) bool {
@@ -923,7 +927,16 @@ pub const PrettyPrinter = struct {
             // formatter that emits the other one cannot be used to canonicalise
             // a tree — it would rewrite every relation in the repo into a face
             // the surface does not use.
-            if (fd.func.ret_type != .inferred) {
+            // `void` is INFERRED, not written. A result descriptor is worth
+            // stating when it constrains something; `void` constrains nothing —
+            // it is what a relation produces when it produces nothing, and the
+            // compiler already knows that from the body. Writing it everywhere
+            // is noise the reader has to skip, and the canon omits what can be
+            // uniquely reconstructed.
+            //
+            // It stays legal to write, for the case where it is directing the
+            // compiler on purpose; the printer just does not add it back.
+            if (fd.func.ret_type != .inferred and !isVoidType(fd.func.ret_type)) {
                 try self.write(": ");
                 try self.printTypeExpr(fd.func.ret_type);
             }

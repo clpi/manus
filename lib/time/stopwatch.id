@@ -5,7 +5,7 @@ stopwatch_new: any = ()
     running = false,
     laps = {}
   }
-stopwatch_start: void = (sw: any)
+stopwatch_start = (sw: any)
   if sw.running
     return
   sw.start_time = os.clock()
@@ -16,7 +16,7 @@ stopwatch_stop: f64 = (sw: any)
   sw.elapsed = sw.elapsed + os.clock() - sw.start_time
   sw.running = false
   sw.elapsed
-stopwatch_reset: void = (sw: any)
+stopwatch_reset = (sw: any)
   sw.start_time = nil
   sw.elapsed = 0
   sw.running = false
@@ -57,7 +57,7 @@ profiler_new: any = ()
   {
     sections = {}
   }
-profiler_start: void = (profiler: any, name: str)
+profiler_start = (profiler: any, name: str)
   if profiler.sections[name] == nil
     profiler.sections[name] = {
       total = 0,
@@ -67,7 +67,7 @@ profiler_start: void = (profiler: any, name: str)
       start_time = nil
     }
   profiler.sections[name].start_time = os.clock()
-profiler_stop: void = (profiler: any, name: str)
+profiler_stop = (profiler: any, name: str)
   section = profiler.sections[name]
   if section == nil or section.start_time == nil
     return
@@ -99,7 +99,7 @@ profiler_report: any = (profiler: any)
     a.total > b.total
   end)
   report
-profiler_reset: void = (profiler: any)
+profiler_reset = (profiler: any)
   profiler.sections = {}
 benchmark: any = (func: any, iterations: i64)
   if iterations == nil

@@ -111,7 +111,7 @@ recv: any = (fd: any, maxlen: i64)
   nil
 
 # TCP close — stub
-close: void = (fd: any)
+close = (fd: any)
   # intercepted: duo_net_tcp_close(fd)
   void
 
@@ -132,7 +132,7 @@ udp_recvfrom: any = (fd: any, maxlen: i64)
 
 # Simple blocking HTTP server (requires native socket support via codegen path)
 # handler(method, path, raw_request): response_body string
-http_serve: void = (port: i64, handler: any)
+http_serve = (port: i64, handler: any)
   srv = listen("0.0.0.0", port, 128)
   if srv == nil
     io:write("net.http_serve: listen failed on port " .. port:to(str) .. "\n")

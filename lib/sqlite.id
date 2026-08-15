@@ -152,7 +152,7 @@ open: any = (path: str)
 # API: close(db): void
 # Closes the database connection and frees resources.
 # ===========================================================================
-close: void = (db: any)
+close = (db: any)
   if db == nil
     return
   if type(db) == "table"
@@ -202,20 +202,20 @@ prepare: any = (db: any, sql: any)
 # API: bind_* functions — bind values to prepared statement parameters
 # Parameter indices are 1-based in SQLite.
 # ===========================================================================
-bind_int: void = (stmt: any, idx: int, val: int)
+bind_int = (stmt: any, idx: int, val: int)
   sqlite3_bind_int(stmt, idx, val)
 
-bind_int64: void = (stmt: any, idx: int, val: int)
+bind_int64 = (stmt: any, idx: int, val: int)
   sqlite3_bind_int64(stmt, idx, val)
 
-bind_double: void = (stmt: any, idx: int, val: f64)
+bind_double = (stmt: any, idx: int, val: f64)
   sqlite3_bind_double(stmt, idx, val)
 
-bind_text: void = (stmt: any, idx: int, val: str)
+bind_text = (stmt: any, idx: int, val: str)
   # nByte=-1: NUL-terminated string. destructor=-1: SQLITE_TRANSIENT (SQLite copies the data).
   sqlite3_bind_text(stmt, idx, val, -1, -1)
 
-bind_null: void = (stmt: any, idx: int)
+bind_null = (stmt: any, idx: int)
   sqlite3_bind_null(stmt, idx)
 
 # ===========================================================================
@@ -254,7 +254,7 @@ column_name: str = (stmt: any, idx: int)
 # API: finalize(stmt): void
 # Destroys a prepared statement, freeing its resources.
 # ===========================================================================
-finalize: void = (stmt: any)
+finalize = (stmt: any)
   if stmt != nil
     sqlite3_finalize(stmt)
 

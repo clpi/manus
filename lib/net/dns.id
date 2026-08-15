@@ -245,9 +245,9 @@ resolver_new: any = ()
     cache = {},
     retries = 3
   }
-resolver_set_servers: void = (resolver: any, servers: any)
+resolver_set_servers = (resolver: any, servers: any)
   resolver.servers = servers
-resolver_set_timeout: void = (resolver: any, timeout: i64)
+resolver_set_timeout = (resolver: any, timeout: i64)
   resolver.timeout = timeout
 resolver_resolve: any = (resolver: any, name: str, qtype: i64)
   cache_key = name .. ":" .. qtype:to(str)
@@ -337,7 +337,7 @@ resolver_lookup_cname: any = (resolver: any, name: str)
   {
     cname = nil
   }
-resolver_flush_cache: void = (resolver: any)
+resolver_flush_cache = (resolver: any)
   resolver.cache = {}
 type_name: str = (qtype: i64)
   types = {

@@ -54,7 +54,7 @@ shared = req("tools.mcp.shared")
 eval = req("tools.mcp.eval")
 vector = req("lib.std.vector")
 
-tool: void = (name: str, schema: any, handler: any)
+tool = (name: str, schema: any, handler: any)
   std.mcp.register_tool(string.gsub(name, "^duo_", "idol_"), schema, handler)
 
 audit_tally: any = (results: any)

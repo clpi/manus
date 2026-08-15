@@ -2,7 +2,7 @@ table_new: any = ()
   {}
 table_get: any = (m: any, key: any)
   m[key]
-table_set: void = (m: any, key: any, value: any)
+table_set = (m: any, key: any, value: any)
   m[key] = value
 table_has: bool = (m: any, key: any)
   m[key] != nil
@@ -13,6 +13,6 @@ wrap: any = (fn: any)
       cache[x] = fn(x)
     cache[x]
   end
-clear: void = (m: any)
+clear = (m: any)
   for k, _ in m
     m[k] = nil
