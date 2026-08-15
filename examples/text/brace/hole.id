@@ -1,0 +1,37 @@
+# A HOLE MAY OPEN WITH A BRACE, AND THAT IS WHY `{{` IS NOT FREE.
+#
+# This is the migration proof for the ruling in `docs/text-law.md`, mechanized.
+#
+# Two standing laws meet here. `law.brace` binds "braces carry structured packs,
+# descriptor homes and descriptor application". `law.literal.text` binds
+# "interpolation preserves literal and EXPRESSION segments". A structured pack is
+# an expression, so a hole may open with `{` — and therefore `{{` is ALREADY
+# spoken for. It is the spelling of "a hole whose expression begins with a pack".
+#
+# Python, C#, Rust, Zig and C++ `std::format` all spend `{{` on a literal brace,
+# and that is the strongest familiarity argument available. This file is the
+# reason the ruling declines it anyway: adopting `{{` would change the answer of
+# every line below from a computed number to its own source text, and no
+# familiar spelling is worth a language that cannot apply a relation to a pack
+# inside a hole.
+#
+# THIS FILE IS A SHRINK-ONLY OBLIGATION. It must keep answering 3. If a later
+# lane implements `{{` as an escape, the first line stops saying 3 and this
+# oracle is what says so.
+# expect: n=3 spaced=3 v=7 pack=3
+# @corpus current
+
+# NO SPACE between the hole opener and the pack. This is the exact collision.
+print("n={{10, 20, 30}:len()}")
+
+# The spaced form is the same expression and must give the same answer; if the
+# two ever diverge, whitespace has become semantic inside a hole.
+print("spaced={ {10, 20, 30}:len() }")
+
+x = 7
+print("v={x}")
+
+# A pack that is not a literal is the same shape one step removed, so the fact
+# does not rest on a single parse path.
+n = {1, 2, 3}:len()
+print("pack={n}")

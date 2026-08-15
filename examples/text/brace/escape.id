@@ -1,0 +1,39 @@
+# THE RULED SPELLING OF A LITERAL BRACE. THIS FILE IS A RATCHET, NOT A PASS.
+#
+# `docs/text-law.md` rules that `\{` and `\}` are the literal-brace spelling in
+# the canonical text face. The `# expect:` line below states the RULED answer.
+#
+# TODAY THIS FILE CONTRADICTS ITSELF ON PURPOSE, and `gate/expect.sh` records it
+# as `fail`. `decode_lua_short_string`'s unknown-escape fallback (src/lexer.zig,
+# the trailing `else =>`) drops the backslash BEFORE interpolation runs, so `\{`
+# and `{` are the same byte by the time `desugar_string_interpolation` sees
+# them, and both open a hole. Measured with the vendored compiler, the first
+# line prints `v=7` where the ruling says `v={x}` — a program that compiles,
+# runs, and silently prints something other than its own source text.
+#
+# THAT IS WHY THE ORACLE IS PINNED `fail` RATHER THAN DELETED. `gate/expect.sh`
+# fails in BOTH directions: the day the parser patch in `docs/text-law.md` lands,
+# this file starts agreeing with itself, the gate goes red, and it has to be
+# re-pinned as `pass`. A ruling with no gate is a ruling that regresses, and a
+# ruling whose gate cannot go green is a ruling nobody finished.
+#
+# WHAT MUST NOT HAPPEN INSTEAD: the second line must keep interpolating. A
+# spelling that makes a literal brace possible by making the hole impossible has
+# not solved anything, so both readings appear in one literal here.
+# expect: v={x} both 7 and {x} pair={"k": 1}
+# @corpus current
+
+x = 7
+
+# The escaped hole. Ruled: literal text. Today: interpolates.
+print("v=\{x}")
+
+# One literal, both readings — the case no raw face can serve, because a raw
+# face has no holes. 128 sites across 17 files in the compiler corpus are this
+# shape; `docs/text-law.md` enumerates them.
+print("both {x} and \{x}")
+
+# A brace pair that is not an expression at all. This one already emits its own
+# source text today (with an STR-1 warning), so it is the control: the ruling
+# must not change it, only make it sayable without a diagnostic.
+print("pair=\{\"k\": 1\}")

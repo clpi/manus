@@ -1,0 +1,50 @@
+# A LITERAL BRACE, IN THE FACE THAT ALREADY HAS ONE.
+#
+# `law.literal.bytes` binds "single quotes are the one canonical byte sequence
+# literal face". Measured, that face does NOT interpolate: a `{` inside it is a
+# byte, not a hole opener, and no STR-1 diagnostic is raised. This file is the
+# oracle for that fact, because it is the only spelling of a literal brace that
+# `docs/text-law.md` finds already admitted, and the migration out of the 419
+# hole-free brace sites rests on it staying true.
+#
+# WHAT WOULD BREAK THIS FILE. Teaching the byte face to interpolate — the
+# obvious "make the two literal faces consistent" change — turns every line
+# below into a different answer. That is the change this oracle exists to catch.
+#
+# THE FACE'S TWO MEASURED LIMITS are recorded here rather than in prose, because
+# a limit nobody can run is a limit that gets forgotten:
+#
+#   * it does not decode escapes — `'a\nb'` is FOUR bytes, not three, so no
+#     literal needing both `\n` and `{` can move here;
+#   * it cannot spell its own delimiter — `'\''` prints a BACKSLASH and a quote.
+#
+# Together those are why `docs/text-law.md` rules that this face closes 419 of
+# the 547 sites and cannot close the remaining 128.
+#
+# WHAT THIS FILE DELIBERATELY DOES NOT COVER: `[[ ... ]]`. It is also raw
+# (measured), but `law.literal.text` binds "lua long brackets are not canonical
+# text faces" and C0 §42 files it under `audit`, so pinning it here would make a
+# retirement candidate load-bearing. Its measurement lives in `docs/text-law.md`
+# with the command that produced it.
+# expect: {"k": 1, "n": {"d": 2}} awk {print $1} lone { brace 23 4 prefix-{
+# @corpus current
+
+json: str = '{"k": 1, "n": {"d": 2}}'
+prog: str = 'awk {print $1}'
+lone: str = 'lone { brace'
+
+print(json)
+print(prog)
+print(lone)
+
+# The byte face is descriptor-compatible with `str`: it answers `:len()` and it
+# concatenates with a text literal. Without this the face would be a dead end
+# rather than a migration target.
+print("{json:len()}")
+
+# The escape limit, as a running number rather than a claim. The text face
+# answers 3 for the same four source characters.
+esc = 'a\nb'
+print("{esc:len()}")
+
+print("prefix-" .. '{')
