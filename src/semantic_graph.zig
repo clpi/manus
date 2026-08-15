@@ -353,6 +353,20 @@ pub const Card = union(enum) {
     unknown,
     none,
     one: id,
+
+    /// The union tag, spelled once. Every projection of a `Card` — JSON,
+    /// diagnostics, any future face — uses THIS, so a consumer that learns the
+    /// three words learns them for the whole tree. Deliberately not `@tagName`
+    /// at each site: `law.unknown.one` forbids `null` standing in for any of
+    /// these, and a hand-written spelling at each site is how one of them
+    /// quietly becomes `null` again.
+    pub fn name(self: Card) []const u8 {
+        return switch (self) {
+            .unknown => "unknown",
+            .none => "none",
+            .one => "one",
+        };
+    }
 };
 
 /// Graph-owned facts for one checked relation application. The application
@@ -2688,24 +2702,55 @@ pub const SemanticGraph = struct {
         try buf.append(alloc, '"');
     }
 
-    fn cardId(card: Card) ?id {
-        return switch (card) {
-            .one => |n| n,
-            .unknown, .none => null,
-        };
-    }
-
-    fn appendOptionalIdJson(
+    /// PROJECT A `Card` SO A CONSUMER OUTSIDE THE COMPILER CAN READ IT.
+    ///
+    /// This replaced a writer that mapped BOTH `.none` and `.unknown` to Zig
+    /// `null` and then OMITTED the key, which made the two answers the graph
+    /// exists to distinguish — "this application has no effect" and "nobody has
+    /// looked" — byte-identical in the export, and identical to a third thing
+    /// besides: a schema that never had the field. Measured on the tree it was
+    /// replaced from: 178 of 210 `examples/*.id` exported, 525 applications
+    /// published, and the strings `effect`, `authority` and `witness` occurred
+    /// ZERO times across all of them. The fact was written into a struct that
+    /// no consumer could see, which is the same as not having been written.
+    ///
+    /// The encoding is one key per card, ALWAYS PRESENT, holding a tagged
+    /// object. A consumer reads `.card`:
+    ///
+    ///     {"card":"unknown"}      nobody has looked — assume the worst
+    ///     {"card":"none"}         KNOWN-ABSENT — the graph proved it
+    ///     {"card":"one","id":N}   exactly this graph entity
+    ///
+    /// Always-present is the load-bearing half. An omitted key is indistinguish-
+    /// able from an older compiler, a truncated write, or a consumer reading the
+    /// wrong array — so a gate that treats "no key" as "no effect" is agreeing
+    /// with an absence, and this tree already paid for that lesson once in
+    /// `gate/negative.sh`, where a missing artifact read as a refusal. With the
+    /// key always present, a missing key is a MALFORMED EXPORT and nothing else,
+    /// and a gate can say so.
+    ///
+    /// `.one` carries its id in a named slot rather than overloading the key's
+    /// JSON type. A consumer that wants the id checks `card == "one"` first, so
+    /// it can never read a tag as a coordinate.
+    fn appendCardJson(
         buf: *std.ArrayListUnmanaged(u8),
         alloc: std.mem.Allocator,
         key: []const u8,
-        value: ?id,
+        card: Card,
     ) !void {
-        const n = value orelse return;
         try buf.appendSlice(alloc, ",\"");
         try buf.appendSlice(alloc, key);
-        try buf.appendSlice(alloc, "\":");
-        try appendJsonInt(buf, alloc, n);
+        try buf.appendSlice(alloc, "\":{\"card\":\"");
+        try buf.appendSlice(alloc, card.name());
+        try buf.append(alloc, '"');
+        switch (card) {
+            .one => |n| {
+                try buf.appendSlice(alloc, ",\"id\":");
+                try appendJsonInt(buf, alloc, n);
+            },
+            .unknown, .none => {},
+        }
+        try buf.append(alloc, '}');
     }
 
     fn requireHome(self: *const SemanticGraph, entity: id) !id {
@@ -2731,7 +2776,13 @@ pub const SemanticGraph = struct {
         out: *std.ArrayListUnmanaged(u8),
         source_hash: ?u64,
     ) !void {
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":2,\"file\":\"");
+        // version 3: every `applications[]` row now carries all five Cards as
+        // always-present tagged objects (`appendCardJson`). Version 2 omitted a
+        // card whose answer was `.none` or `.unknown`, so a v2 reader pointed at
+        // a v3 export sees keys it did not expect, and a v3 reader pointed at a
+        // v2 export sees a MISSING card rather than silently reading absence as
+        // agreement. The bump is what lets it tell those apart.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":3,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         if (source_hash) |h| {
@@ -2923,11 +2974,11 @@ pub const SemanticGraph = struct {
             try out.appendSlice(alloc, ",\"end\":");
             try appendJsonInt(out, alloc, span.end);
             try out.append(alloc, '}');
-            try appendOptionalIdJson(out, alloc, "effect", cardId(fact.effect));
-            try appendOptionalIdJson(out, alloc, "authority", cardId(fact.authority));
-            try appendOptionalIdJson(out, alloc, "witness", cardId(fact.witness));
-            try appendOptionalIdJson(out, alloc, "target", cardId(fact.target));
-            try appendOptionalIdJson(out, alloc, "realization", cardId(fact.realization));
+            try appendCardJson(out, alloc, "effect", fact.effect);
+            try appendCardJson(out, alloc, "authority", fact.authority);
+            try appendCardJson(out, alloc, "witness", fact.witness);
+            try appendCardJson(out, alloc, "target", fact.target);
+            try appendCardJson(out, alloc, "realization", fact.realization);
             if (self.applicationStage(fact.application)) |st| {
                 try out.appendSlice(alloc, ",\"stage\":\"");
                 try out.appendSlice(alloc, semantic_algebra.Stage.name(st));
@@ -3352,9 +3403,40 @@ test "semantic_graph: checked subject application retains relation and value ide
         projected[0].object.get("subject").?.integer,
     );
     try std.testing.expectEqualStrings("single", projected[0].object.get("demand").?.string);
-    try std.testing.expect(projected[0].object.get("effect") == null);
-    try std.testing.expect(projected[0].object.get("witness") == null);
-    try std.testing.expect(projected[0].object.get("target") == null);
+    // THE CARDS ARE OBSERVABLE, AND `.none` IS NOT `.unknown`.
+    //
+    // This block used to assert `get("effect") == null` — it PINNED the defect.
+    // Both known-absent and not-yet-known were written as an omitted key, so the
+    // export could not answer the one question it is asked: whether the graph
+    // proved this application does nothing, or never looked. `read` projects a
+    // field of the subject it was handed and applies nothing, so effect and
+    // authority are KNOWN-ABSENT, while witness/target/realization genuinely
+    // have no evidence yet. Three cards, two answers, and they must not be the
+    // same bytes.
+    try std.testing.expectEqualStrings(
+        "none",
+        projected[0].object.get("effect").?.object.get("card").?.string,
+    );
+    try std.testing.expectEqualStrings(
+        "none",
+        projected[0].object.get("authority").?.object.get("card").?.string,
+    );
+    try std.testing.expectEqualStrings(
+        "unknown",
+        projected[0].object.get("witness").?.object.get("card").?.string,
+    );
+    try std.testing.expectEqualStrings(
+        "unknown",
+        projected[0].object.get("target").?.object.get("card").?.string,
+    );
+    try std.testing.expectEqualStrings(
+        "unknown",
+        projected[0].object.get("realization").?.object.get("card").?.string,
+    );
+    // NEGATIVE CONTROL for the encoding itself: neither absent-ish card may
+    // carry an id, or a consumer could read a tag as a coordinate.
+    try std.testing.expect(projected[0].object.get("effect").?.object.get("id") == null);
+    try std.testing.expect(projected[0].object.get("witness").?.object.get("id") == null);
     const witness_id = results[0];
     graph.application_facts.items[row].witness = .{ .one = witness_id };
     json.clearRetainingCapacity();
@@ -3362,7 +3444,14 @@ test "semantic_graph: checked subject application retains relation and value ide
     parsed.deinit();
     parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     const witnessed = parsed.value.object.get("applications").?.array.items;
-    try std.testing.expectEqual(@as(i64, @intCast(witness_id)), witnessed[0].object.get("witness").?.integer);
+    const witness_card = witnessed[0].object.get("witness").?.object;
+    try std.testing.expectEqualStrings("one", witness_card.get("card").?.string);
+    try std.testing.expectEqual(@as(i64, @intCast(witness_id)), witness_card.get("id").?.integer);
+    // `.one` must not disturb its neighbours: effect stays known-absent.
+    try std.testing.expectEqualStrings(
+        "none",
+        witnessed[0].object.get("effect").?.object.get("card").?.string,
+    );
     try std.testing.expectEqual(witness_id, graph.application(fact.application).?.witness.one);
     graph.application_facts.items[row].witness = .unknown;
     const projected_shapes = parsed.value.object.get("call_shapes").?.array.items;
