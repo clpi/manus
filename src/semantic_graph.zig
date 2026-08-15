@@ -378,6 +378,14 @@ pub const SemanticGraph = struct {
     alloc: std.mem.Allocator,
     /// Source path for the lifted module; used for gate-transport bootstrap faces.
     module_path: ?[]const u8 = null,
+    /// The declaration the module entity was lifted from. Provenance for
+    /// consumers that need file-scope statements the graph does not lift as
+    /// entities — module-level constants such as `ring = 2147483647`, which are
+    /// free names inside every relation that reads them. Kept as its own field
+    /// rather than on `Node.ast_ref` because two diagnostic projections
+    /// (`dnir_lower.applicationFace`, `native_backend.occurrenceFace`) cast any
+    /// `ast_ref` they are handed straight to `*const Expr`.
+    module_ast: ?*const ast.Module = null,
     nodes: std.ArrayListUnmanaged(Node) = .empty,
     edges: std.ArrayListUnmanaged(Edge) = .empty,
     /// from-id -> indices into `edges`. A PHYSICAL ACCELERATION INDEX ONLY
@@ -1281,6 +1289,7 @@ pub const SemanticGraph = struct {
 
     /// Lift module-level function names from AST (Phase 1 minimal — no sema yet).
     pub fn liftModule(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
+        self.module_ast = mod;
         const mod_id = try self.addNode(.{
             .kind = .module,
             .span = .{ .file = file, .start = 0, .end = 0 },
@@ -2062,6 +2071,71 @@ pub const SemanticGraph = struct {
         }
     }
 
+    /// THE ONE EXCEPTION TO "AN UNRESOLVED CANDIDATE IS NEVER EFFECT-FREE".
+    ///
+    /// `s:len()` and `s:byte(i)` lower through dedicated bootstrap rules rather
+    /// than through a published relation id (GAP-155), so they sit in the
+    /// unresolved column forever and, until this, blocked every relation that
+    /// touched a string. MEASURED on `native.id`: 34 relations blocked directly
+    /// by exactly these two faces, and transitively 60 of 92 — including `run`
+    /// and therefore `main`. Not one of those blocks was a real effect.
+    ///
+    /// STATED AS A CLOSED LIST, NOT AS A PROPERTY, AND THE REASON IS THAT
+    /// `native_bootstrap`'s bootstrap set IS NOT A PURITY PREDICATE. It also
+    /// contains `stdin:read`, `stdin:line`, `stdout:write`, `print` and
+    /// `gatecap` — every one of which reaches the world. Admitting the
+    /// bootstrap set wholesale would publish "pure" about host egress, which is
+    /// precisely the greatest-fixpoint error this pass exists to avoid.
+    ///
+    /// `sub` IS DELIBERATELY ABSENT even though it is in the same bootstrap set
+    /// and the compile-time evaluator implements it. `gate/collapse.sh` pins
+    /// `len` and `byte` against the emitted code and nothing pins `sub`'s
+    /// negative-index and clamping behaviour across the two implementations, so
+    /// it stays unproven rather than assumed.
+    fn unobservableStringFace(self: *const SemanticGraph, occurrence: id) bool {
+        const node = self.get(occurrence) orelse return false;
+        const raw = node.ast_ref orelse return false;
+        const expr: *const ast.Expr = @ptrCast(@alignCast(raw));
+        if (expr.* != .method_call) return false;
+        const mc = expr.method_call;
+
+        const arity_ok = if (std.mem.eql(u8, mc.method, "len"))
+            mc.args.len == 0
+        else if (std.mem.eql(u8, mc.method, "byte"))
+            mc.args.len == 1
+        else
+            false;
+        if (!arity_ok) return false;
+
+        // A named world handle is never a string, whatever the spelling after
+        // the colon.
+        if (mc.obj.* == .name) {
+            for ([_][]const u8{ "stdin", "stdout", "stderr", "io", "os" }) |handle| {
+                if (std.mem.eql(u8, mc.obj.name.ident, handle)) return false;
+            }
+        }
+
+        // A module that declares its own relation of this name OWNS the
+        // spelling. If an application of it is unresolved, it is unresolved for
+        // a real reason and must block. Scanned rather than routed through
+        // `findFunc`, which answers null for an AMBIGUOUS name and would turn
+        // two declarations of `len` into an admission.
+        for (self.nodes.items) |declaration| {
+            if (declaration.kind != .func) continue;
+            const name = declaration.name orelse continue;
+            if (std.mem.eql(u8, name, mc.method)) return false;
+        }
+        return true;
+    }
+
+    /// Query face of `unobservableStringFace` for the effect consumer, which
+    /// must admit exactly the same sites the fixpoint declined to block.
+    pub fn applicationIsUnobservableStringFace(self: *const SemanticGraph, occurrence: id) bool {
+        if (!self.isApplicationCandidate(occurrence)) return false;
+        if (self.application(occurrence) != null) return false;
+        return self.unobservableStringFace(occurrence);
+    }
+
     /// Nearest enclosing callable of an entity, by `scope`. Null when the
     /// entity hangs off the module rather than off a relation.
     fn enclosingCallable(self: *const SemanticGraph, entity: id) ?id {
@@ -2151,6 +2225,7 @@ pub const SemanticGraph = struct {
             if (!self.application_candidates.isSet(candidate)) continue;
             const site = std.math.cast(id, candidate) orelse break;
             if (self.applicationRelation(site) != null) continue;
+            if (self.unobservableStringFace(site)) continue;
             const node = self.get(site) orelse continue;
             const caller = self.enclosingCallable(node.scope orelse continue) orelse continue;
             const row = row_of.get(caller) orelse continue;
@@ -2174,26 +2249,57 @@ pub const SemanticGraph = struct {
             row.callees_len = @as(u32, @intCast(callees.items.len)) - row.callees_start;
         }
 
-        var effect_free = try std.DynamicBitSetUnmanaged.initEmpty(self.alloc, node_count);
-        defer effect_free.deinit(self.alloc);
-
-        var promoted = true;
-        while (promoted) {
-            promoted = false;
+        // THE FIXPOINT RUNS ON BADNESS, AND IS STILL LEAST.
+        //
+        // It used to run forward on GOODNESS — a relation became effect-free
+        // once every callee already was. That is a least fixpoint which can
+        // never close a CYCLE, so no recursive relation was ever promoted and
+        // neither was anything that reaches one. MEASURED on `native.id` with
+        // every blocking condition satisfied and NOTHING blocked at all: 47 of
+        // 92 relations still read `.unknown`, every one of them because the
+        // recursive-descent core (`expr` / `term` / `factor`) is mutually
+        // recursive. `run` and therefore `main` were among them.
+        //
+        // The dual is grounded in exactly the same evidence and is still least:
+        // BAD is the LEAST set that contains every BLOCKED relation and is
+        // closed under "applies a relation in BAD". A relation is effect-free
+        // exactly when it is not in BAD — when no finite call chain out of it
+        // reaches a relation the graph could not clear. A cycle none of whose
+        // members is blocked performs no observable action however long it
+        // runs, and that is the fact the forward form threw away.
+        //
+        // THIS IS NOT THE GREATEST FIXPOINT THIS PASS WARNS ABOUT. That one
+        // starts every relation effect-free and removes the ones it can
+        // disprove, so an incomplete blocking condition silently publishes
+        // "pure". Here the seed set is the blocking evidence itself, exactly as
+        // before: an incomplete blocking condition is wrong in precisely the
+        // same way, and in no new way. What changed is the direction of
+        // propagation, not what is trusted.
+        var bad = try std.DynamicBitSetUnmanaged.initEmpty(self.alloc, node_count);
+        defer bad.deinit(self.alloc);
+        for (rows.items) |row| {
+            if (row.blocked) bad.set(row.relation);
+        }
+        var spread = true;
+        while (spread) {
+            spread = false;
             for (rows.items) |row| {
-                if (row.blocked or effect_free.isSet(row.relation)) continue;
-                var all_free = true;
+                if (bad.isSet(row.relation)) continue;
                 const start: usize = row.callees_start;
                 for (callees.items[start .. start + row.callees_len]) |callee| {
-                    if (callee >= effect_free.bit_length or !effect_free.isSet(callee)) {
-                        all_free = false;
+                    if (callee >= bad.bit_length or bad.isSet(callee)) {
+                        bad.set(row.relation);
+                        spread = true;
                         break;
                     }
                 }
-                if (!all_free) continue;
-                effect_free.set(row.relation);
-                promoted = true;
             }
+        }
+
+        var effect_free = try std.DynamicBitSetUnmanaged.initEmpty(self.alloc, node_count);
+        defer effect_free.deinit(self.alloc);
+        for (rows.items) |row| {
+            if (!bad.isSet(row.relation)) effect_free.set(row.relation);
         }
 
         for (self.application_facts.items) |*fact| {
@@ -4424,13 +4530,17 @@ test "semantic_graph: effect and authority are published, not left empty" {
         , "entry"));
     }
 
-    // Recursion is a MISS, not an error: the least fixpoint never promotes a
-    // relation that is waiting on itself. Recorded here so the miss is a
-    // measured property of the rule rather than a surprise later.
+    // RECURSION IS NO LONGER A MISS. This block asserted `.unknown` and
+    // recorded the forward-on-goodness fixpoint's inability to close a cycle.
+    // MEASURED cost of that miss on `native.id`: with every blocking condition
+    // satisfied and NOTHING blocked, 47 of 92 relations still read `.unknown`
+    // because the recursive-descent core is mutually recursive — `run` and
+    // `main` among them. The fixpoint now runs on BADNESS, which is still least
+    // and still seeded by the same blocking evidence.
     {
         var g = SemanticGraph.init(alloc);
         defer g.deinit();
-        try std.testing.expect(.unknown == try liftedEffectOf(alloc, &g,
+        try std.testing.expect(.none == try liftedEffectOf(alloc, &g,
             \\down: i64 = (n: i64)
             \\    if n <= 0
             \\        0
@@ -4439,6 +4549,63 @@ test "semantic_graph: effect and authority are published, not left empty" {
             \\entry: i64 = ()
             \\    down(3)
         , "entry"));
+    }
+
+    // …AND THE HALF THAT MAKES THE PROMOTION ABOVE A FACT RATHER THAN OPTIMISM:
+    // one observable member and the whole cycle stays unknown. If this ever
+    // reads `.none`, the fixpoint has become the greatest one.
+    {
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        const observed = liftedEffectOf(alloc, &g,
+            \\down: i64 = (n: i64)
+            \\    if n <= 0
+            \\        0
+            \\    else
+            \\        up(n - 1)
+            \\up: i64 = (n: i64)
+            \\    print("x")
+            \\    down(n - 1)
+            \\entry: i64 = ()
+            \\    down(3)
+        , "entry") catch |err| switch (err) {
+            error.TestExpectedEqual => Card.unknown,
+            else => return err,
+        };
+        try std.testing.expect(observed == .unknown);
+    }
+
+    // THE STRING READER FACES. `s:len()` and `s:byte(i)` are unresolved
+    // candidates forever (they lower through bootstrap rules), and blocking on
+    // them cost `native.id` 60 of its 92 relations. Admitted by name and arity,
+    // as a closed list.
+    {
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        try std.testing.expect(.none == try liftedEffectOf(alloc, &g,
+            \\size: i64 = (s: str)
+            \\    s:len() + s:byte(1)
+            \\entry: i64 = ()
+            \\    size("abc")
+        , "entry"));
+    }
+
+    // …and a face in the SAME bootstrap set that reaches the world is not
+    // admitted. The bootstrap set is not a purity predicate.
+    {
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        const observed = liftedEffectOf(alloc, &g,
+            \\emit: i64 = (s: str)
+            \\    stdout:write(s)
+            \\    1
+            \\entry: i64 = ()
+            \\    emit("abc")
+        , "entry") catch |err| switch (err) {
+            error.TestExpectedEqual => Card.unknown,
+            else => return err,
+        };
+        try std.testing.expect(observed == .unknown);
     }
 }
 

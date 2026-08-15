@@ -1,6 +1,8 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const term = @import("term.zig");
+const semantic_graph = @import("semantic_graph.zig");
+const graph_query = @import("graph_query.zig");
 
 pub const EvalError = error{
     OutOfMemory,
@@ -32,12 +34,53 @@ pub const Options = struct {
     /// combinator calls inside callback bodies (G-059 fix).
     meta_hook: ?MetaHookFn = null,
     meta_ctx: ?*anyopaque = null,
+    /// THE NATIVE WHOLE-BODY FOLD, and nothing else, turns this on. It is one
+    /// switch rather than three because the three are not independently safe:
+    /// admitting relation application without frames, or without the backend's
+    /// integer laws, is a silent wrong answer, and each was MEASURED as one.
+    ///
+    /// It changes three things at once.
+    ///
+    /// 1. RELATION APPLICATION THROUGH THE SUBJECT-FIRST FACE. `"src":run()` is
+    ///    `run(src)`; the bound relation is tried BEFORE the string faces, so a
+    ///    module that declares `rev` reaches its own relation.
+    ///
+    /// 2. INTEGER `/`, `//` and `%` AS THE DIRECT BACKEND EVALUATES THEM.
+    ///    Three divergences, each a two-line program, each a silent wrong
+    ///    answer:
+    ///      `if a / b == 3` at (7,2) — backend 1, interpreter 0, because
+    ///          `evalNumeric` routed `.div` to the FLOAT path for two ints and
+    ///          `3.5 == 3` is false;
+    ///      `a // b` at (-7,2)      — backend -3, interpreter -4: AArch64
+    ///          `sdiv` TRUNCATES toward zero, `@divFloor` floors;
+    ///      `a % b`  at (-7,3)      — backend -1, interpreter 2: `sdiv`+`msub`
+    ///          is the truncated remainder, `@mod` takes the divisor's sign.
+    ///    Verified against emitted code over the full sign matrix: `//` is
+    ///    3/-3/-3/3 and `%` is 1/-1/1/-1 at (7,2)(-7,2)(7,-2)(-7,-2).
+    ///
+    /// 3. A CALL FRAME. `locals` is one flat stack and `lookup`/`setLocal`
+    ///    walked ALL of it, so a callee saw — and `setLocal` WROTE THROUGH TO —
+    ///    the caller's bindings whenever the two used the same spelling. That
+    ///    is dynamic scoping with cross-frame mutation. It never mattered while
+    ///    the folder refused every body containing an application; it is fatal
+    ///    the moment one is admitted, and `native.id`'s relations share `i`,
+    ///    `n`, `k`, `q`, `d` and `b` freely. An application now opens a frame
+    ///    that name resolution cannot see past.
+    native_fold: bool = false,
 };
 
 /// Hook type for @comp.* combinator evaluation inside comptime callbacks.
 /// Receives pre-evaluated Value args from the comptime evaluator.
 /// Returns the computed Value (typically a .string) or null if not handled.
 pub const MetaHookFn = *const fn (ctx: ?*anyopaque, name: []const u8, args: []const Value) ?Value;
+
+/// Widest operand list any face is evaluated with, receiver included.
+///
+/// It was 8, with a comment saying "a face taking more than seven arguments
+/// does not exist". `native.id`'s `o:rec(a,b,c,d,e,f,g,h,n)` takes NINE plus
+/// the subject, and the fold declined on it with no diagnostic — an arity
+/// threshold standing in for a fact, in the interpreter this time.
+const max_face_operands: usize = 16;
 
 pub const Value = union(enum) {
     pub const TableEntry = struct {
@@ -113,6 +156,8 @@ pub const Evaluator = struct {
     bindings: Bindings = .{},
     options: Options = .{},
     locals: std.ArrayListUnmanaged(LocalBinding) = .empty,
+    /// Index in `locals` below which the current frame cannot see.
+    frame_base: usize = 0,
     steps: usize = 0,
 
     fn step(self: *Evaluator) EvalError!void {
@@ -120,9 +165,17 @@ pub const Evaluator = struct {
         if (self.steps > self.options.step_limit) return error.StepLimitExceeded;
     }
 
+    /// Floor of the current call frame. Name resolution must not see past it
+    /// once `options.native_fold` is on; see the option's doc for the measured
+    /// reason. Zero everywhere else, which is exactly today's behaviour.
+    fn frameFloor(self: *const Evaluator) usize {
+        return if (self.options.native_fold) self.frame_base else 0;
+    }
+
     fn lookup(self: *const Evaluator, name: []const u8) ?Value {
         var i = self.locals.items.len;
-        while (i > 0) {
+        const floor = self.frameFloor();
+        while (i > floor) {
             i -= 1;
             const binding = self.locals.items[i];
             if (std.mem.eql(u8, binding.name, name)) return binding.value;
@@ -143,7 +196,8 @@ pub const Evaluator = struct {
 
     fn setLocal(self: *Evaluator, name: []const u8, value: Value) EvalError!void {
         var i = self.locals.items.len;
-        while (i > 0) {
+        const floor = self.frameFloor();
+        while (i > floor) {
             i -= 1;
             if (std.mem.eql(u8, self.locals.items[i].name, name)) {
                 self.locals.items[i].value = value;
@@ -457,24 +511,7 @@ pub const Evaluator = struct {
         }
         const callee = try self.eval(func_expr);
         if (callee != .func) return error.UnsupportedExpression;
-        const func = callee.func.body;
-        if (func.vararg or args.len > func.params.len) return error.UnsupportedExpression;
-
-        const mark = self.locals.items.len;
-        defer self.popLocals(mark);
-        for (callee.func.captures) |capture| {
-            _ = try self.pushLocal(capture.name, capture.value);
-        }
-        for (func.params, 0..) |param, i| {
-            const value = if (i < args.len)
-                try self.eval(args[i])
-            else if (param.default_val) |default_val|
-                try self.eval(default_val)
-            else
-                Value.nil;
-            _ = try self.pushLocal(param.name, value);
-        }
-        return try self.evalBlockValue(&func.body);
+        return try self.applyFuncValue(callee, null, args);
     }
 
     /// `s:len()`, `s:byte(2)`, `s:sub(2, 3)` — the METHOD face of the standard
@@ -499,13 +536,6 @@ pub const Evaluator = struct {
         method: []const u8,
         args: []const *ast.Expr,
     ) EvalError!Value {
-        // Bounded on the stack rather than allocated: `options.alloc` is
-        // optional, and a face taking more than seven arguments does not exist.
-        var buf: [8]*ast.Expr = undefined;
-        if (args.len + 1 > buf.len) return error.UnsupportedExpression;
-        buf[0] = obj;
-        for (args, 0..) |a, i| buf[i + 1] = a;
-        const with_receiver = buf[0 .. args.len + 1];
 
         // Dispatch on the RECEIVER'S VALUE, not on its syntax: `s:len()` folds
         // when `s` is a literal and equally when it is a comptime binding that
@@ -522,10 +552,87 @@ pub const Evaluator = struct {
         // would keep the old contents. Declining leaves it to run, which is
         // slower and right. Strings are immutable, so every face below is pure
         // and has no such failure mode.
-        return switch (try self.eval(obj)) {
-            .string => self.evalStringBuiltin(method, with_receiver),
-            else => error.UnsupportedExpression,
-        };
+        const receiver = try self.eval(obj);
+
+        // SUBJECT-FIRST APPLICATION OF A RELATION, TRIED FIRST WHEN THE CALLER
+        // OPTED IN. `"src":run()` is `run(src)` with the subject moved in front
+        // of the dot — the same rewrite the string faces use, applied to a
+        // relation the caller has already proved, through the graph, is the
+        // exact target of this application.
+        //
+        // THE BOUND RELATION WINS OVER THE STRING FACE, AND THAT ORDER IS THE
+        // SOUND ONE, not a preference. `native.id` declares a relation named
+        // `rev`, which is also a string face. Trying the face first would fold
+        // `x:rev()` to a reversed string where the graph selected the user's
+        // relation. The other direction cannot misfire: `foldRelationBody` only
+        // binds names the graph resolved at every site in the closure, and a
+        // site that really means the string face is an UNRESOLVED candidate,
+        // which blocks the enclosing relation and so never reaches this
+        // evaluator at all.
+        if (self.options.native_fold) {
+            if (self.lookup(method)) |callee| {
+                if (callee == .func) return try self.applyFuncValue(callee, receiver, args);
+            }
+        }
+        if (receiver == .string) {
+            // Bounded on the stack rather than allocated: `options.alloc` is
+            // optional. Built HERE and not before the dispatch above, because
+            // an over-wide operand list is only a string face's problem — the
+            // relation face passes its operands through `applyFuncValue`.
+            var buf: [max_face_operands]*ast.Expr = undefined;
+            if (args.len + 1 > buf.len) return error.UnsupportedExpression;
+            buf[0] = obj;
+            for (args, 0..) |a, i| buf[i + 1] = a;
+            return self.evalStringBuiltin(method, buf[0 .. args.len + 1]);
+        }
+        return error.UnsupportedExpression;
+    }
+
+    /// Apply a relation value to a subject already evaluated plus unevaluated
+    /// operands. One implementation, shared with `evalCall`'s tail, so the
+    /// dotted and subject-first faces cannot drift.
+    fn applyFuncValue(
+        self: *Evaluator,
+        callee: Value,
+        subject: ?Value,
+        args: []const *ast.Expr,
+    ) EvalError!Value {
+        const func = callee.func.body;
+        const supplied = args.len + @as(usize, if (subject != null) 1 else 0);
+        if (func.vararg or supplied > func.params.len) return error.UnsupportedExpression;
+
+        // Operands are evaluated in the CALLER's frame and the frame opens only
+        // after, so `f(i)` still reads the caller's `i` while `f`'s own `i`
+        // cannot be reached from inside `f`.
+        var evaluated: [max_face_operands]Value = undefined;
+        if (args.len > evaluated.len) return error.UnsupportedExpression;
+        for (args, 0..) |argument, i| evaluated[i] = try self.eval(argument);
+
+        const mark = self.locals.items.len;
+        const outer_frame = self.frame_base;
+        self.frame_base = mark;
+        defer {
+            self.frame_base = outer_frame;
+            self.popLocals(mark);
+        }
+        for (callee.func.captures) |capture| {
+            _ = try self.pushLocal(capture.name, capture.value);
+        }
+        var next: usize = 0;
+        if (subject) |value| {
+            _ = try self.pushLocal(func.params[0].name, value);
+            next = 1;
+        }
+        for (func.params[next..], 0..) |param, i| {
+            const value = if (i < args.len)
+                evaluated[i]
+            else if (param.default_val) |default_val|
+                try self.eval(default_val)
+            else
+                Value.nil;
+            _ = try self.pushLocal(param.name, value);
+        }
+        return try self.evalBlockValue(&func.body);
     }
 
     /// Evaluate string.* standard library functions at compile time.
@@ -1019,7 +1126,12 @@ pub const Evaluator = struct {
         const left = try self.eval(lhs);
         const right = try self.eval(rhs);
         return switch (op) {
-            .add, .sub, .mul, .div, .idiv, .mod, .pow => try evalNumeric(op, left, right),
+            .add, .sub, .mul, .div, .idiv, .mod, .pow => try evalNumeric(
+                op,
+                left,
+                right,
+                self.options.native_fold,
+            ),
             .band, .bor, .bxor, .lshift, .rshift => try evalInteger(op, left, right),
             .concat => try self.evalConcat(left, right),
             .eq => .{ .bool = left.eql(right) },
@@ -1223,6 +1335,292 @@ pub const Evaluator = struct {
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LAWFUL NONEXECUTION, WITH APPLICATIONS ADMITTED.
+//
+// `dnir_lower.foldWholeBody` refuses ANY body containing an application. It had
+// to: `ApplicationFact.effect` had no write site, so every call read `.unknown`
+// and might have done anything. The fact is published now
+// (`semantic_graph.publishApplicationEffects`), `graph_query` reads it, and
+// this is the fold that consumes the reading.
+//
+// The old behaviour is kept EXACTLY for bodies that apply nothing — same two
+// guards, same budget, same evaluator, empty bindings — so routing this in
+// cannot move a case that folds today. The new capability is confined to the
+// branch where the body does apply something.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Spellings the evaluator itself intercepts before any binding is consulted.
+/// A relation named one of these would be dispatched by the interpreter's own
+/// rule instead of the relation the graph selected, so it is refused rather
+/// than folded to whatever the interpreter happens to mean by it.
+fn interceptedSpelling(name: []const u8) bool {
+    if (std.mem.startsWith(u8, name, "__")) return true;
+    const intercepted = [_][]const u8{
+        // `evalCall` answers these from its own rule before it ever looks at a
+        // binding, so a relation spelled one of them could never be reached.
+        "type", "tonumber", "tostring",
+        // namespace receivers `evalCall` routes on before any binding
+        "math", "string",   "table",
+    };
+    // The string METHOD faces are deliberately NOT here. `evalMethodCall`
+    // consults the bound relation FIRST when `native_fold` is on, so a
+    // relation named `rev` or `find` is reached, not shadowed — and a site that
+    // means the face instead is an unresolved candidate that blocks the fold
+    // before it starts.
+    for (intercepted) |word| {
+        if (std.mem.eql(u8, word, name)) return true;
+    }
+    return false;
+}
+
+/// True when the body contains no application of any kind. Verbatim the
+/// predicate `dnir_lower` used, moved here so that routing `foldRelationBody`
+/// in leaves ONE copy rather than two (`law.arch.relation`).
+fn bodyHasNoApplication(b: *const ast.Block) bool {
+    for (b.stmts) |st| if (!stmtHasNoApplication(&st)) return false;
+    if (b.tail_expr) |te| return exprHasNoApplication(te);
+    return true;
+}
+
+fn stmtHasNoApplication(st: *const ast.Stmt) bool {
+    return switch (st.*) {
+        .local_decl => |d| for (d.inits) |e| {
+            if (!exprHasNoApplication(e)) break false;
+        } else true,
+        .assign => |a| blk: {
+            for (a.targets) |e| if (!exprHasNoApplication(e)) break :blk false;
+            for (a.values) |e| if (!exprHasNoApplication(e)) break :blk false;
+            break :blk true;
+        },
+        .while_loop => |w| exprHasNoApplication(w.cond) and bodyHasNoApplication(&w.body),
+        .num_for => |f| bodyHasNoApplication(&f.body),
+        .do_block => |d| bodyHasNoApplication(&d.body),
+        .if_stmt => |f| blk: {
+            if (!exprHasNoApplication(f.cond)) break :blk false;
+            if (!bodyHasNoApplication(&f.then)) break :blk false;
+            for (f.elseifs) |ei| {
+                if (!exprHasNoApplication(ei.cond)) break :blk false;
+                if (!bodyHasNoApplication(&ei.body)) break :blk false;
+            }
+            break :blk if (f.else_body) |eb| bodyHasNoApplication(&eb) else true;
+        },
+        .ret => |r| for (r.vals) |e| {
+            if (!exprHasNoApplication(e)) break false;
+        } else true,
+        .expr_stmt => |e| exprHasNoApplication(e.expr),
+        .brk, .cont => true,
+        else => false,
+    };
+}
+
+fn exprHasNoApplication(e: *const ast.Expr) bool {
+    return switch (e.*) {
+        .call, .method_call, .macro_call => false,
+        .binop => |b| exprHasNoApplication(b.lhs) and exprHasNoApplication(b.rhs),
+        .unop => |u| exprHasNoApplication(u.operand),
+        .if_expr => |ie| exprHasNoApplication(ie.cond) and
+            exprHasNoApplication(ie.then_expr) and exprHasNoApplication(ie.else_expr),
+        .index => |ix| exprHasNoApplication(ix.obj) and exprHasNoApplication(ix.key),
+        .field => |f| exprHasNoApplication(f.obj),
+        .name, .int_lit, .float_lit, .true_lit, .false_lit, .string_lit, .nil => true,
+        else => false,
+    };
+}
+
+/// True when the body contains a loop. Straight-line constant folding is
+/// `region_transform`'s job and it RECORDS the transformation as evidence;
+/// folding it here first would pre-empt that and silently delete the record.
+fn bodyHasLoop(b: *const ast.Block) bool {
+    for (b.stmts) |st| {
+        const has = switch (st) {
+            .while_loop, .num_for, .repeat_loop, .gen_for => true,
+            .do_block => |d| bodyHasLoop(&d.body),
+            .if_stmt => |f| blk: {
+                if (bodyHasLoop(&f.then)) break :blk true;
+                for (f.elseifs) |ei| if (bodyHasLoop(&ei.body)) break :blk true;
+                break :blk if (f.else_body) |eb| bodyHasLoop(&eb) else false;
+            },
+            else => false,
+        };
+        if (has) return true;
+    }
+    return false;
+}
+
+/// Bodies whose ONLY reader is the fold get a step budget rather than a proof
+/// of termination. A loop of 1e9 iterations hits it and falls through to
+/// ordinary lowering rather than folding for a minute.
+const fold_step_limit: usize = 200_000;
+
+/// Run a no-operand relation body at compile time. Null when it cannot be run —
+/// which is most bodies, and must stay cheap to discover.
+///
+/// `relation` is the graph id of the relation being lowered; `null` means the
+/// caller has no graph identity for it, and with no identity there is no effect
+/// fact, so an applying body is refused.
+///
+/// FAILS CLOSED at every step: no graph id, an unproven application, a name the
+/// interpreter would intercept, an unsupported construct, the step budget — all
+/// return null and leave the lowered body in place.
+pub fn foldRelationBody(
+    alloc: std.mem.Allocator,
+    graph: *const semantic_graph.SemanticGraph,
+    relation: ?semantic_graph.id,
+    fb: *const ast.FuncBody,
+) ?i64 {
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const scratch = arena.allocator();
+
+    if (bodyHasNoApplication(&fb.body)) {
+        if (!bodyHasLoop(&fb.body)) return null;
+        return runFold(fb, .{}, .{
+            .step_limit = fold_step_limit,
+            .alloc = scratch,
+            .native_fold = true,
+        });
+    }
+
+    const entity = relation orelse return null;
+    const closure = (graph_query.effectFreeCalleeClosure(graph, scratch, entity, &fb.body) catch
+        return null) orelse return null;
+
+    var scope: std.StringHashMapUnmanaged(Value) = .empty;
+
+    // MODULE-LEVEL CONSTANTS FIRST. `ring = 2147483647` at file scope is a free
+    // name inside every relation that reads it, and the graph lifts no entity
+    // for it — `dnir_lower` handles it separately, as an immediate, through
+    // `collectModuleConsts`. Before this evaluator had call frames it resolved
+    // such a name BY ACCIDENT, off whatever the caller happened to have on the
+    // locals stack; with frames it is correctly unbound, and `native.id` stops
+    // folding on `ring`. Binding it here is the honest version of what the
+    // accident was doing.
+    //
+    // A binding whose initializer this evaluator cannot run is SKIPPED, not
+    // refused: a relation that reads it then fails closed on the unbound name,
+    // which is the same refusal by a shorter route.
+    if (graph_query.moduleDeclaration(graph)) |module| {
+        for (module.body.stmts) |statement| {
+            const name: []const u8, const init: *const ast.Expr = switch (statement) {
+                .const_decl => |d| .{ d.ident, d.val },
+                .local_decl => |d| blk: {
+                    if (d.names.len != 1 or d.inits.len != 1) continue;
+                    break :blk .{ d.names[0].ident, d.inits[0] };
+                },
+                .assign => |a| blk: {
+                    if (a.targets.len != 1 or a.values.len != 1) continue;
+                    if (a.targets[0].* != .name) continue;
+                    break :blk .{ a.targets[0].name.ident, a.values[0] };
+                },
+                else => continue,
+            };
+            if (interceptedSpelling(name)) continue;
+            const so_far = [_]std.StringHashMapUnmanaged(Value){scope};
+            const value = evalWithBindings(init, .{ .scopes = &so_far }, .{
+                .step_limit = fold_step_limit,
+                .alloc = scratch,
+                .native_fold = true,
+            }) catch continue;
+            switch (value) {
+                .int, .float, .bool, .string => {},
+                else => continue,
+            }
+            const slot = scope.getOrPut(scratch, name) catch return null;
+            if (slot.found_existing) return null;
+            slot.value_ptr.* = value;
+        }
+    }
+
+    for (closure) |callee| {
+        const node = graph.get(callee) orelse return null;
+        const name = node.name orelse return null;
+        if (interceptedSpelling(name)) return null;
+        const declaration = graph_query.relationDeclaration(graph, callee) orelse return null;
+        // A projection variant reaches its entity through a mangled path, never
+        // a bare identifier, so binding one by name would bind the wrong thing.
+        if (declaration.path.len != 1) return null;
+        if (!std.mem.eql(u8, declaration.path[0], name)) return null;
+        if (declaration.func.vararg or declaration.func.vararg_name != null) return null;
+        // A local of the same spelling shadows the injected relation inside the
+        // interpreter (`lookup` reads locals first) while the graph bound this
+        // application to the relation. Refuse rather than let the two disagree.
+        if (bindsIdent(&fb.body, name)) return null;
+        for (closure) |other| {
+            const other_declaration = graph_query.relationDeclaration(graph, other) orelse return null;
+            if (bindsIdent(&other_declaration.func.body, name)) return null;
+            for (other_declaration.func.params) |param| {
+                if (std.mem.eql(u8, param.name, name)) return null;
+            }
+        }
+        const slot = scope.getOrPut(scratch, name) catch return null;
+        // Two relations spelled the same is an ambiguity a by-name interpreter
+        // cannot represent, whatever the graph knows about their ids.
+        if (slot.found_existing) return null;
+        slot.value_ptr.* = .{ .func = .{ .body = &declaration.func } };
+    }
+
+    const scopes = [_]std.StringHashMapUnmanaged(Value){scope};
+    return runFold(fb, .{ .scopes = &scopes }, .{
+        .step_limit = fold_step_limit,
+        .alloc = scratch,
+        .native_fold = true,
+    });
+}
+
+fn runFold(fb: *const ast.FuncBody, bindings: Bindings, options: Options) ?i64 {
+    const value = funcValue(fb, bindings, options) catch return null;
+    const result = callFunctionValue(value, &.{}, bindings, options) catch return null;
+    return switch (result) {
+        .int => |n| n,
+        else => null,
+    };
+}
+
+/// True when the block binds `name` anywhere the interpreter would see it as a
+/// local. Deliberately over-approximate: an assignment to an unbound name
+/// creates a local in `setLocal`, so assignment targets count too.
+fn bindsIdent(b: *const ast.Block, name: []const u8) bool {
+    for (b.stmts) |st| {
+        const bound = switch (st) {
+            .local_decl => |d| blk: {
+                for (d.names) |n| if (std.mem.eql(u8, n.ident, name)) break :blk true;
+                break :blk false;
+            },
+            .const_decl => |d| std.mem.eql(u8, d.ident, name),
+            .global_decl => |d| blk: {
+                for (d.names) |n| if (std.mem.eql(u8, n.ident, name)) break :blk true;
+                break :blk false;
+            },
+            .assign => |a| blk: {
+                for (a.targets) |t| {
+                    if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            .while_loop => |w| bindsIdent(&w.body, name),
+            .repeat_loop => |r| bindsIdent(&r.body, name),
+            .do_block => |d| bindsIdent(&d.body, name),
+            .num_for => |f| std.mem.eql(u8, f.var_name, name) or bindsIdent(&f.body, name),
+            .gen_for => |g| blk: {
+                for (g.vars) |v| if (std.mem.eql(u8, v, name)) break :blk true;
+                break :blk bindsIdent(&g.body, name);
+            },
+            .if_stmt => |f| blk: {
+                if (f.binding) |binding| {
+                    if (std.mem.eql(u8, binding.name, name)) break :blk true;
+                }
+                if (bindsIdent(&f.then, name)) break :blk true;
+                for (f.elseifs) |ei| if (bindsIdent(&ei.body, name)) break :blk true;
+                break :blk if (f.else_body) |eb| bindsIdent(&eb, name) else false;
+            },
+            else => false,
+        };
+        if (bound) return true;
+    }
+    return false;
+}
+
 pub fn funcValue(func: *const ast.FuncBody, bindings: Bindings, options: Options) EvalError!Value {
     var evaluator: Evaluator = .{ .bindings = bindings, .options = options };
     defer if (options.alloc) |alloc| evaluator.locals.deinit(alloc);
@@ -1292,7 +1690,28 @@ fn numericAsInt(value: Value) ?i64 {
     };
 }
 
-fn evalNumeric(op: ast.BinOp, left: Value, right: Value) EvalError!Value {
+fn evalNumeric(op: ast.BinOp, left: Value, right: Value, native_integers: bool) EvalError!Value {
+    if (native_integers and left == .int and right == .int and op != .pow) {
+        const l = left.int;
+        const r = right.int;
+        return switch (op) {
+            .add => .{ .int = l +% r },
+            .sub => .{ .int = l -% r },
+            .mul => .{ .int = l *% r },
+            // `sdiv` truncates toward zero and `msub` takes the sign of the
+            // dividend. `@divTrunc(minInt, -1)` traps, so refuse it rather than
+            // fold a trap into a value.
+            .div, .idiv => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
+                error.DivisionByZero
+            else
+                .{ .int = @divTrunc(l, r) },
+            .mod => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
+                error.DivisionByZero
+            else
+                .{ .int = @rem(l, r) },
+            else => error.UnsupportedOperator,
+        };
+    }
     if (left == .int and right == .int and op != .div and op != .pow) {
         const l = left.int;
         const r = right.int;
