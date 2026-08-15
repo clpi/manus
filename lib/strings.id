@@ -29,7 +29,7 @@ builder_write_fmt = (b: any, fmt: str, a1: any, a2: any, a3: any, a4: any, a5: a
     builder_write(b, result)
 
 # builder_len: return the total length of all parts.
-builder_b: any:len(): i64
+builder_len: i64 = (b: any)
     total = 0
     i = 1
     while i <= b.count

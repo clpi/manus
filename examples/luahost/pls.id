@@ -1,4 +1,4 @@
-# LS-1 — long strings as statements: two binds, both must survive the lexer.
-block = [[alpha
+-- LS-1 — long strings as statements: two binds, both must survive the lexer.
+local block = [[alpha
 beta]]
-bracket = [=[contains ]] without ending]=]
+local bracket = [=[contains ]] without ending]=]

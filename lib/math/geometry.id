@@ -221,7 +221,7 @@ aabb_center: any = (box: any)
         z = (box.min.z + box.max.z) / 2,
     }
 
-aabb_box: any:len(): any
+aabb_size: any = (box: any)
     vec3_sub(box.max, box.min)
 
 aabb_contains_point: bool = (box: any, p: any)

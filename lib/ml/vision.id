@@ -43,7 +43,7 @@ set_pixel = (img: any, x: i64, y: i64, pixel: any)
 # Image Transforms
 # ═══════════════════════════════════════════════════════════════
 
-reimg: any, new_width: i64, new_height: i64:len(): any
+resize: any = (img: any, new_width: i64, new_height: i64)
     result = new(new_width, new_height, img.channels)
     x_scale = img.width / new_width
     y_scale = img.height / new_height

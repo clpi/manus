@@ -269,7 +269,7 @@ sem_constant: str = (text: str)
 sem_hex: str = (text: str)
     return M.BRIGHT_BLACK .. M.UNDERLINE .. text:to(str) .. M.RESET
 
-sem_text: str:len(): str
+sem_size: str = (text: str)
     return M.BRIGHT_YELLOW .. text:to(str) .. M.RESET
 
 sem_percent: str = (text: str)
@@ -351,13 +351,13 @@ pretty_val: str = (value: any)
     t = type(value)
     if t:find("string") == 1
         return sem_string_val('"' .. to(str)(value) .. '"')
-    else if t:find("number") == 1
+    elseif t:find("number") == 1
         return sem_number_val(value:to(str))
-    else if t:find("boolean") == 1
+    elseif t:find("boolean") == 1
         return sem_bool_val(value:to(str))
-    else if t:find("function") == 1
+    elseif t:find("function") == 1
         return sem_function_val("⟪fn⟫")
-    else if t:find("table") == 1
+    elseif t:find("table") == 1
         n = value:len()
         if n > 0
             return sem_table_val("⟦array " .. n:to(str) .. "⟧")
@@ -390,23 +390,23 @@ fmt_hex: str = (value: any)
     if neg hex = "-" .. hex 
     return sem_hex("0x" .. hex)
 
-fmt_bytes: any:len(): str
+fmt_size: str = (bytes: any)
     n = bytes:to(i64)
     if n == nil return bytes:to(str) 
     if n < 1024
-        return sem_n:to(str) .. "B":len()
-    else if n < 1048576
+        return sem_size(n:to(str) .. "B")
+    elseif n < 1048576
         whole = n / 1024:floor()
         frac = (n - whole * 1024) * 10 / 1024:floor()
-        return sem_whole:to(str) .. "." .. frac:to(str) .. "KB":len()
-    else if n < 1073741824
+        return sem_size(whole:to(str) .. "." .. frac:to(str) .. "KB")
+    elseif n < 1073741824
         whole = n / 1048576:floor()
         frac = (n - whole * 1048576) * 10 / 1048576:floor()
-        return sem_whole:to(str) .. "." .. frac:to(str) .. "MB":len()
+        return sem_size(whole:to(str) .. "." .. frac:to(str) .. "MB")
     else
         whole = n / 1073741824:floor()
         frac = (n - whole * 1073741824) * 10 / 1073741824:floor()
-        return sem_whole:to(str) .. "." .. frac:to(str) .. "GB":len()
+        return sem_size(whole:to(str) .. "." .. frac:to(str) .. "GB")
 
 fmt_pct: str = (value: any)
     n = value:to(i64)
@@ -457,7 +457,7 @@ ts: str = ()
     ms = (os.clock() * 1000) % 1000:floor()
     frac = "." .. ms:to(str)
     if ms < 10 frac = ".00" .. ms:to(str)
-    else if ms < 100 frac = ".0" .. ms:to(str)
+    elseif ms < 100 frac = ".0" .. ms:to(str)
     return sem_meta(os.date("%H:%M:%S", secs) .. frac)
 
 # ─── Level tag ─────────────────────────────────────────────────────
@@ -467,16 +467,16 @@ level_tag: str = (level: int)
     if level == M.LV_DEBUG
         glyph = M.G_DEBUG
         tag = "debug"
-    else if level == M.LV_INFO
+    elseif level == M.LV_INFO
         glyph = M.G_INFO
         tag = " info"
-    else if level == M.LV_WARN
+    elseif level == M.LV_WARN
         glyph = M.G_WARN
         tag = " warn"
-    else if level == M.LV_ERROR
+    elseif level == M.LV_ERROR
         glyph = M.G_ERROR
         tag = "error"
-    else if level == M.LV_FATAL
+    elseif level == M.LV_FATAL
         glyph = M.G_FATAL
         tag = "fatal"
     body = glyph .. " " .. tag
@@ -506,7 +506,7 @@ _fmt_dur: str = (ms: float)
     raw = whole:to(str) .. "." .. frac_str .. "ms"
     if ms < 1
         return sem_time_fast(raw)
-    else if ms < 16
+    elseif ms < 16
         return sem_time_normal(raw)
     else
         return sem_time_slow(raw)
@@ -648,10 +648,10 @@ diff_line: str = (kind: str, key: str, old_val: any, new_val: any)
     if kind == "added"
         prefix = dim(green(M.G_PROPEL .. " "))
         line = sem_added("+" .. key) .. " " .. pretty_val(new_val)
-    else if kind == "removed"
+    elseif kind == "removed"
         prefix = dim(red(M.G_RETURN .. " "))
         line = sem_deleted("-" .. key) .. " " .. pretty_val(old_val)
-    else if kind == "changed"
+    elseif kind == "changed"
         prefix = dim(yellow(M.G_CROSS .. " "))
         line = sem_changed_old("-" .. key .. " " .. pretty_val(old_val)) ..
                "\n" .. dim("  ") ..
@@ -797,7 +797,7 @@ legend = ()
           sem_failure("failure") .. "    " ..
           sem_caution("caution") .. "    " ..
           sem_hex("0xDEAD") .. " hex    " ..
-          sem_"1.2MB":len() .. " size    " ..
+          sem_size("1.2MB") .. " size    " ..
           sem_percent("87.5%") .. " percent")
     print("")
     print("  " .. sem_time_fast("<1ms") .. " fast    " ..
@@ -833,13 +833,13 @@ pretty_repr: str = (value: any, depth: int, seen: any)
     t = type(value)
     if t:find("string") == 1
         return '"' .. to(str)(value) .. '"'
-    else if t:find("number") == 1
+    elseif t:find("number") == 1
         return value:to(str)
-    else if t:find("boolean") == 1
+    elseif t:find("boolean") == 1
         return value:to(str)
-    else if t:find("function") == 1
+    elseif t:find("function") == 1
         return "<function>"
-    else if t:find("table") != 1
+    elseif t:find("table") != 1
         return value:to(str)
     if _seen(seen, value) return "<circular>" 
     _seen_add(seen, value)

@@ -8,7 +8,7 @@ test.start("stdlib comprehensive test")
 pass = 0
 fail = 0
 
-check(desc, cond)
+check = (desc, cond)
     if cond
         pass += 1
     else
@@ -53,11 +53,11 @@ check("pick", tbl.pick({a = 1, b = 2, c = 3}, {"a", "c"})["a"] == 1)
 check("pick omit", tbl.pick({a = 1, b = 2, c = 3}, {"a", "c"})["b"] == nil)
 check("omit", tbl.omit({a = 1, b = 2, c = 3}, {"b"})["a"] == 1)
 check("omit removed", tbl.omit({a = 1, b = 2, c = 3}, {"b"})["b"] == nil)
-check("find", tbl.find({1, 2, 3, 4}, (v) return v > 2) == 3)
-check("every true", tbl.every({2, 4, 6}, (v) return v % 2 == 0))
-check("every false", not tbl.every({2, 3, 6}, (v) return v % 2 == 0))
-check("some true", tbl.some({1, 3, 4}, (v) return v % 2 == 0))
-check("some false", not tbl.some({1, 3, 5}, (v) return v % 2 == 0))
+check("find", tbl.find({1, 2, 3, 4}, (v) v > 2) == 3)
+check("every true", tbl.every({2, 4, 6}, (v) v % 2 == 0))
+check("every false", not tbl.every({2, 3, 6}, (v) v % 2 == 0))
+check("some true", tbl.some({1, 3, 4}, (v) v % 2 == 0))
+check("some false", not tbl.some({1, 3, 5}, (v) v % 2 == 0))
 
 # ── math ────────────────────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ check("iter drop values", iter.drop({10, 20, 30, 40}, 2)[1] == 30)
 check("iter sliding_window", iter.sliding_window({1, 2, 3, 4}, 2):len() == 3)
 check("iter sliding_window values", iter.sliding_window({1, 2, 3, 4}, 2)[1][2] == 2)
 check("iter unique", iter.unique({1, 2, 2, 3}):len() == 3)
-check("iter flat_map", iter.flat_map({1, 2, 3}, (x) return {x, x * 10}):len() == 6)
+check("iter flat_map", iter.flat_map({1, 2, 3}, (x) {x, x * 10}):len() == 6)
 
 # ── Summary ─────────────────────────────────────────────────────────────
 

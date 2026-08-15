@@ -33,10 +33,16 @@ lookup: any = (store: any, pattern: str)
         suffix = data:sub(sa[mid])
         cmp = 0
         if suffix:len() < plen
-            if suffix < pattern cmp = -1 else cmp = 1 
+            if suffix < pattern
+                cmp = -1
+            else
+                cmp = 1
         else
             prefix = suffix:sub(1, plen)
-            if prefix < pattern cmp = -1 else if prefix > pattern cmp = 1 
+            if prefix < pattern
+                cmp = -1
+            elseif prefix > pattern
+                cmp = 1
         if cmp < 0
             lo = mid + 1
         else
@@ -48,10 +54,16 @@ lookup: any = (store: any, pattern: str)
         suffix = data:sub(sa[mid])
         cmp = 0
         if suffix:len() < plen
-            if suffix > pattern cmp = 1 else cmp = -1 
+            if suffix > pattern
+                cmp = 1
+            else
+                cmp = -1
         else
             prefix = suffix:sub(1, plen)
-            if prefix > pattern cmp = 1 else if prefix < pattern cmp = -1 
+            if prefix > pattern
+                cmp = 1
+            elseif prefix < pattern
+                cmp = -1
         if cmp <= 0
             lo = mid + 1
         else

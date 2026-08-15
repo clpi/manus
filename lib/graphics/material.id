@@ -58,7 +58,7 @@ texture_sample: any = (tex: any, u: f64, v: f64)
     y = v * tex.height:floor() % tex.height
     texture_get_pixel(tex, x, y)
 
-texture_retex: any, new_width: i64, new_height: i64:len(): any
+texture_resize: any = (tex: any, new_width: i64, new_height: i64)
     new_tex = texture_new(new_width, new_height, tex.channels)
     x_scale = tex.width / new_width
     y_scale = tex.height / new_height
@@ -170,13 +170,13 @@ material_set_emissive = (mat: any, r: f64, g: f64, b: f64, strength: f64)
 material_set_texture = (mat: any, texture_type: str, texture: any)
     if texture_type == "albedo"
         mat.albedo_texture = texture
-    else if texture_type == "metallic_roughness"
+    elseif texture_type == "metallic_roughness"
         mat.metallic_roughness_texture = texture
-    else if texture_type == "normal"
+    elseif texture_type == "normal"
         mat.normal_texture = texture
-    else if texture_type == "ao"
+    elseif texture_type == "ao"
         mat.ao_texture = texture
-    else if texture_type == "emissive"
+    elseif texture_type == "emissive"
         mat.emissive_texture = texture
 
 # ═══════════════════════════════════════════════════════════════

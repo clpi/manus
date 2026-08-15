@@ -7,14 +7,14 @@ print("=== Cross-compiler harness ===")
 @c.include("stdio.h")
 
 # Inject C discovered/generated at compile time
-@c.emit(@run("printf 'static const char duo_harness_tag[] = {99,111,109,112,105,108,101,100,0};'"))
+@c.emit(@comp.run("printf 'static const char duo_harness_tag[] = {99,111,109,112,105,108,101,100,0};'"))
 
 # Compile-time string from a host command
-BUILD_ID: str = @run("printf duo-20260725")
+BUILD_ID: str = @comp.run("printf duo-20260725")
 print("BUILD_ID = " .. BUILD_ID)
 
 # Embed this file at compile time
-FIRST_BYTES: str = @embed("examples/cross_compiler_harness.id")
+FIRST_BYTES: str = @comp.embed.str("examples/cross_compiler_harness.id")
 print("embedded starts with: " .. FIRST_BYTES:sub(1, 2))
 
 len: i64 = @c.call("strlen", BUILD_ID)

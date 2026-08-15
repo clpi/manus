@@ -29,13 +29,19 @@ next_part(r: any)
             d1, e = r.data:find(sep, pos, true)
             if e == nil break 
             if r.data:sub(e + 1, e + 1) == "-" break 
-            if r.data:sub(e + 1, e + 1) == "\r" e += 2 else e += 1 
+            if r.data:sub(e + 1, e + 1) == "\r"
+                e += 2
+            else
+                e += 1
             d2, hdr_end = r.data:find("\r\n\r\n", e, true)
             if hdr_end == nil d2, hdr_end = r.data:find("\n\n", e, true) 
             if hdr_end == nil break 
             hdr = r.data:sub(e, hdr_end - 1)
             body_start = hdr_end + 1
-            if r.data:sub(hdr_end - 1, hdr_end) == "\n\n" body_start = hdr_end else body_start = hdr_end + 2 
+            if r.data:sub(hdr_end - 1, hdr_end) == "\n\n"
+                body_start = hdr_end
+            else
+                body_start = hdr_end + 2
             next_sep = r.data:find("\r\n" .. sep, body_start, true)
             if next_sep == nil next_sep = r.data:find("\n" .. sep, body_start, true) 
             if next_sep == nil
@@ -47,7 +53,7 @@ next_part(r: any)
             part_body = r.data:sub(body_start, next_sep - 1)
             if part_body:sub(part_body:len() - 1) == "\r\n"
                 part_body = part_body:sub(1, part_body:len() - 2)
-            else if part_body:sub(part_body:len()) == "\n"
+            elseif part_body:sub(part_body:len()) == "\n"
                 part_body = part_body:sub(1, part_body:len() - 1)
             r.parts[r.parts:len() + 1] = {headers = parse_headers(hdr), body = part_body}
             pos = next_sep + 1

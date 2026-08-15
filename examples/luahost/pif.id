@@ -1,6 +1,8 @@
-# CF-0 — if/then/end. Declared, because `duo check` runs sema where the
-# Zig corpus ran the parser alone; the construct under test is unchanged.
+-- CF-0 — if/then/end. Declared, because `duo check` runs sema where the
+-- Zig corpus ran the parser alone; the construct under test is unchanged.
 local ready = true
-local run()
-if ready
+local function run()
+end
+if ready then
     run()
+end

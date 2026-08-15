@@ -37,7 +37,7 @@ emit_u32: bool = (path: str, word: i64)
 # Size of `path` in bytes, or 0 - 1 when it cannot be read. Lets a generator
 # verify its own output without a boxed string round-trip.
 @comp.c.export("duo_emit_size")
-emit_path: str:len(): i64
+emit_size: i64 = (path: str)
     return @comp.c.emit([[({ FILE* _f = fopen(path, "rb"); long _n = -1; if (_f) { fseek(_f, 0, SEEK_END); _n = ftell(_f); fclose(_f); } (int64_t)_n; })]])
 
 # Read one 32-bit word back, little-endian, at word index `idx` (0-based).

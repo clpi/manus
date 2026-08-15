@@ -29,13 +29,13 @@ _sh: str = (c: str)
 
 _pad: str = (s: str, w: i64)
     o = s
-    while #o < w
+    while o:len() < w
         o = o .. " "
     o
 
 _lpad(s: str, w: i64): str
     o = s
-    while #o < w
+    while o:len() < w
         o = " " .. o
     o
 
@@ -58,7 +58,7 @@ _norm: str = (t: str, s: any)
     if type(s) == "table"
         parts = {}
         for _i, x in s
-            parts[#parts + 1] = x:to(str)
+            parts[parts:len() + 1] = x:to(str)
         return "v128:" .. parts:concat(",")
     if s == "nan:canonical" or s == "nan:arithmetic" return "nan" 
     n = to(i64)(s)
@@ -83,7 +83,7 @@ main: i64 = ()
     only = ""
     args = os.args()
     i = 1
-    while i <= #args
+    while i <= args:len()
         a = args[i]
         if a == "--only"
             only = args[i + 1]
@@ -115,7 +115,7 @@ main: i64 = ()
                 js = td .. "/" .. name .. ".json"
                 if script.run("wast2json " .. wast .. " -o " .. js .. " >/dev/null 2>&1") != 0
                     tot_skip = tot_skip + 1
-                    fails[#fails + 1] = name .. ": wast2json failed"
+                    fails[fails:len() + 1] = name .. ": wast2json failed"
                 else
                     spec = json.decode(script.capture("cat " .. js))
                     cur_mod = ""
@@ -143,7 +143,7 @@ main: i64 = ()
                                     for _a, arg in act.args
                                         s = _arg_str(arg.value)
                                         if s == "" unrunnable = true 
-                                        parts[#parts + 1] = s
+                                        parts[parts:len() + 1] = s
                                 if unrunnable
                                     skip = skip + 1
                                 else
@@ -157,12 +157,12 @@ main: i64 = ()
                                             ok = ok + 1
                                         else
                                             bad = bad + 1
-                                            if #fails < 25
-                                                fails[#fails + 1] = name .. " " .. act.field
+                                            if fails:len() < 25
+                                                fails[fails:len() + 1] = name .. " " .. act.field
                                                     .. " expected trap, got " .. out
                                     else
                                         exp = cmd.expected
-                                        if exp == nil or #exp == 0
+                                        if exp == nil or exp:len() == 0
                                             ok = ok + 1
                                         else
                                             et = exp[1].type
@@ -190,14 +190,14 @@ main: i64 = ()
                                                 ok = ok + 1
                                             else
                                                 bad = bad + 1
-                                                if #fails < 25
-                                                    fails[#fails + 1] = name .. " " .. act.field
+                                                if fails:len() < 25
+                                                    fails[fails:len() + 1] = name .. " " .. act.field
                                                         .. " want=" .. want .. " got=" .. out
                     tot_ok = tot_ok + ok
                     tot_bad = tot_bad + bad
                     tot_skip = tot_skip + skip
                     if ok > 0 or bad > 0
-                        rows[#rows + 1] = { name, ok, bad, skip }
+                        rows[rows:len() + 1] = { name, ok, bad, skip }
 
     print(_pad("suite", 24) .. _lpad("pass", 7) .. _lpad("fail", 7) .. _lpad("skip", 7))
     for _i, r in rows
@@ -216,7 +216,7 @@ main: i64 = ()
         .. to(str)(pct % 10) .. "% conformance); " .. tot_skip:to(str)
         .. " skipped (validation-only)")
 
-    if #fails > 0
+    if fails:len() > 0
         print("")
         print("first failures:")
         for _i, f in fails

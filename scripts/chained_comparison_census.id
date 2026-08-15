@@ -67,7 +67,7 @@ skip_spaces_right: i64 = (s: str, i: i64)
 
 # Length of an ordering operator at `i`, or 0. `==` and `~=` are NOT ordering
 # operators and must not match; `<=`/`>=` are checked before `<`/`>`.
-ord_op_s: str, i: i64:len(): i64
+ord_op_len: i64 = (s: str, i: i64)
     n: i64 = s:len()
     c: i64 = s:byte(i)
     if i + 1 <= n
@@ -103,16 +103,16 @@ scan: i64 = (src: str, path: str)
                 opl: i64 = skip_spaces_left(src, bs - 1)
                 oplen: i64 = 0
                 if opl >= 2
-                    oplen = ord_op_src, opl - 1:len()
+                    oplen = ord_op_len(src, opl - 1)
                 if oplen == 0 and opl >= 1
-                    oplen = ord_op_src, opl:len()
+                    oplen = ord_op_len(src, opl)
                 if oplen > 0
                     # RIGHT of `and`: C op ...
                     rs: i64 = skip_spaces_right(src, i + 5)
                     re: i64 = ident_end(src, rs)
                     if re > 0
                         ao: i64 = skip_spaces_right(src, re + 1)
-                        if ord_op_src, ao:len() > 0
+                        if ord_op_len(src, ao) > 0
                             # middle terms must be the SAME token
                             if src:sub(bs, le) == src:sub(rs, re)
                                 found += 1

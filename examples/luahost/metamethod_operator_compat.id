@@ -1,72 +1,72 @@
-concat_obj = setmetatable({}, {
+local concat_obj = setmetatable({}, {
   __concat: str = (a: any, b: any)
     "concat"
   end
 })
 
-lt_obj = setmetatable({}, {
+local lt_obj = setmetatable({}, {
   __lt: bool = (a: any, b: any)
     true
   end
 })
 
-le_obj = setmetatable({}, {
+local le_obj = setmetatable({}, {
   __le: bool = (a: any, b: any)
     true
   end
 })
 
-unm_obj = setmetatable({}, {
+local unm_obj = setmetatable({}, {
   __unm: any = (a: any)
     "unm"
   end
 })
 
-idiv_obj = setmetatable({}, {
+local idiv_obj = setmetatable({}, {
   __idiv: any = (a: any, b: any)
     "idiv"
   end
 })
 
-band_obj = setmetatable({}, {
+local band_obj = setmetatable({}, {
   __band: any = (a: any, b: any)
     "band"
   end
 })
 
-bor_obj = setmetatable({}, {
+local bor_obj = setmetatable({}, {
   __bor: any = (a: any, b: any)
     "bor"
   end
 })
 
-bxor_obj = setmetatable({}, {
+local bxor_obj = setmetatable({}, {
   __bxor: any = (a: any, b: any)
     "bxor"
   end
 })
 
-bnot_obj = setmetatable({}, {
+local bnot_obj = setmetatable({}, {
   __bnot: any = (a: any)
     "bnot"
   end
 })
 
-shl_obj = setmetatable({}, {
+local shl_obj = setmetatable({}, {
   __shl: any = (a: any, b: any)
     "shl"
   end
 })
 
-shr_obj = setmetatable({}, {
+local shr_obj = setmetatable({}, {
   __shr: any = (a: any, b: any)
     "shr"
   end
 })
 
 print(concat_obj .. "x")
-print(to(str)(lt_obj < 1))
-print(to(str)(le_obj <= 1))
+print(tostring(lt_obj < 1))
+print(tostring(le_obj <= 1))
 print(-unm_obj)
 print(idiv_obj // 1)
 print(band_obj & 1)

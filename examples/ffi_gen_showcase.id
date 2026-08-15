@@ -4,8 +4,8 @@
 @c.include("string.h")
 @comp.ffi("string.h")
 
-demo_s: str:len(): i64
+demo_len: i64 = (s: str)
   return @c.call("strlen", s)
 
 print("=== @comp.ffi showcase ===")
-print("str'duo':len() = " .. to(str)(demo_"duo":len()))
+print("strlen('duo') = " .. to(str)(demo_len("duo")))

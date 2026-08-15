@@ -59,7 +59,7 @@ get_float: float = (p: ptr, idx: i32)
 # CPU matmul: C = A * B, all MxN with inner dim K
 # Emitted as raw C for fair comparison (typed Duo compiles to this anyway)
 @hot
-cpu_matmul = (a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32)
+cpu_matmul: void = (a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32)
   @c.emit([[
     float* A = (float*)a;
     float* B = (float*)b;

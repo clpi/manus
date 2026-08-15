@@ -129,7 +129,7 @@ epoll_new: any = ()
   epoll_create(64)
 
 epoll_create: any = (max_events: i64)
-  fd = @ffi("duo_epoll_create", i64, { i64 })(max_events)
+  fd = @comp.ffi("duo_epoll_create", i64, { i64 })(max_events)
   if fd < 0
     error("epoll_create failed: " .. fd:to(str))
   {
@@ -138,19 +138,19 @@ epoll_create: any = (max_events: i64)
   }
 
 epoll_add: any = (epoll: any, fd: i64, events: i64, data: any)
-  result = @ffi("duo_epoll_ctl", i64, { i64, i64, i64, i64 })(epoll.fd, M.EPOLL_CTL_ADD, fd, events)
+  result = @comp.ffi("duo_epoll_ctl", i64, { i64, i64, i64, i64 })(epoll.fd, M.EPOLL_CTL_ADD, fd, events)
   if result < 0
     return { ok = false, error = "epoll_ctl ADD failed" }
   { ok = true }
 
 epoll_mod: any = (epoll: any, fd: i64, events: i64)
-  result = @ffi("duo_epoll_ctl", i64, { i64, i64, i64, i64 })(epoll.fd, M.EPOLL_CTL_MOD, fd, events)
+  result = @comp.ffi("duo_epoll_ctl", i64, { i64, i64, i64, i64 })(epoll.fd, M.EPOLL_CTL_MOD, fd, events)
   if result < 0
     return { ok = false, error = "epoll_ctl MOD failed" }
   { ok = true }
 
 epoll_del: any = (epoll: any, fd: i64)
-  result = @ffi("duo_epoll_ctl", i64, { i64, i64, i64, i64 })(epoll.fd, M.EPOLL_CTL_DEL, fd, 0)
+  result = @comp.ffi("duo_epoll_ctl", i64, { i64, i64, i64, i64 })(epoll.fd, M.EPOLL_CTL_DEL, fd, 0)
   if result < 0
     return { ok = false, error = "epoll_ctl DEL failed" }
   { ok = true }
@@ -159,21 +159,21 @@ epoll_wait: any = (epoll: any, timeout_ms: i64)
   if timeout_ms == nil
     timeout_ms = -1
   # Allocate arrays for results
-  fds = @ffi("calloc", any, { i64, i64 })(epoll.max_events, 4)
-  events_buf = @ffi("calloc", any, { i64, i64 })(epoll.max_events, 4)
-  count = @ffi("duo_epoll_wait", i64, { i64, any, any, i64, i64 })(epoll.fd, fds, events_buf, epoll.max_events, timeout_ms)
+  fds = @comp.ffi("calloc", any, { i64, i64 })(epoll.max_events, 4)
+  events_buf = @comp.ffi("calloc", any, { i64, i64 })(epoll.max_events, 4)
+  count = @comp.ffi("duo_epoll_wait", i64, { i64, any, any, i64, i64 })(epoll.fd, fds, events_buf, epoll.max_events, timeout_ms)
   result_events = {}
   if count > 0
     i = 0
     while i < count
-      fd = @ffi("malloc_read_i32", i64, { any, i64 })(fds, i * 4)
-      ev = @ffi("malloc_read_i32", i64, { any, i64 })(events_buf, i * 4)
+      fd = @comp.ffi("malloc_read_i32", i64, { any, i64 })(fds, i * 4)
+      ev = @comp.ffi("malloc_read_i32", i64, { any, i64 })(events_buf, i * 4)
       result_events(result_events:len() + 1) =
         fd = fd
         events = ev
       i = i + 1
-  @ffi("free", void, { any })(fds)
-  @ffi("free", void, { any })(events_buf)
+  @comp.ffi("free", void, { any })(fds)
+  @comp.ffi("free", void, { any })(events_buf)
   {
     ok = count >= 0,
     events = result_events,
@@ -181,7 +181,7 @@ epoll_wait: any = (epoll: any, timeout_ms: i64)
   }
 
 epoll_close = (epoll: any)
-  @ffi("duo_close", i64, { i64 })(epoll.fd)
+  @comp.ffi("duo_close", i64, { i64 })(epoll.fd)
   epoll.fd = -1
 
 # ═══════════════════════════════════════════════════════════════
@@ -200,7 +200,7 @@ M.IN_DELETE_SELF = 1024
 M.IN_MOVE_SELF = 2048
 
 inotify_new: any = ()
-  fd = @ffi("duo_inotify_init", i64, { i64 })(0)
+  fd = @comp.ffi("duo_inotify_init", i64, { i64 })(0)
   if fd < 0
     error("inotify_init failed: " .. fd:to(str))
   {
@@ -209,7 +209,7 @@ inotify_new: any = ()
   }
 
 inotify_add_watch: any = (inotify: any, path: str, mask: i64)
-  watch_id = @ffi("duo_inotify_add_watch", i64, { i64, str, i64 })(inotify.fd, path, mask)
+  watch_id = @comp.ffi("duo_inotify_add_watch", i64, { i64, str, i64 })(inotify.fd, path, mask)
   if watch_id < 0
     return { ok = false, error = "inotify_add_watch failed" }
   inotify.watches(watch_id) =
@@ -218,7 +218,7 @@ inotify_add_watch: any = (inotify: any, path: str, mask: i64)
   { ok = true, watch_id = watch_id }
 
 inotify_rm_watch: any = (inotify: any, watch_id: i64)
-  result = @ffi("duo_inotify_rm_watch", i64, { i64, i64 })(inotify.fd, watch_id)
+  result = @comp.ffi("duo_inotify_rm_watch", i64, { i64, i64 })(inotify.fd, watch_id)
   if result < 0
     return { ok = false, error = "inotify_rm_watch failed" }
   inotify.watches(watch_id) = nil
@@ -226,7 +226,7 @@ inotify_rm_watch: any = (inotify: any, watch_id: i64)
 
 inotify_read: any = (inotify: any)
   buf = 0:char():rep(4096)
-  n = @ffi("duo_read", i64, { i64, str, i64 })(inotify.fd, buf, 4096)
+  n = @comp.ffi("duo_read", i64, { i64, str, i64 })(inotify.fd, buf, 4096)
   if n < 0
     return { ok = false, events = {}, count = 0 }
   events = {}
@@ -252,7 +252,7 @@ inotify_read: any = (inotify: any)
   { ok = true, events = events, count = events:len() }
 
 inotify_close = (inotify: any)
-  @ffi("duo_close", i64, { i64 })(inotify.fd)
+  @comp.ffi("duo_close", i64, { i64 })(inotify.fd)
   inotify.fd = -1
 
 # ═══════════════════════════════════════════════════════════════
@@ -271,12 +271,12 @@ mmap_new: any = (path: str, size: i64, flags: i64)
     flags = M.MAP_SHARED
   # Open file for reading/writing
   # O_RDWR | O_CREAT
-  fd = @ffi("open", i64, { str, i64, i64 })(path, 2, 1604)
+  fd = @comp.ffi("open", i64, { str, i64, i64 })(path, 2, 1604)
   if fd < 0
     error("mmap: failed to open " .. path)
-  ptr = @ffi("duo_mmap_create", any, { i64, i64, i64, i64, i64 })(size, M.PROT_READ | M.PROT_WRITE, flags, fd, 0)
+  ptr = @comp.ffi("duo_mmap_create", any, { i64, i64, i64, i64, i64 })(size, M.PROT_READ | M.PROT_WRITE, flags, fd, 0)
   if ptr == nil
-    @ffi("duo_close", i64, { i64 })(fd)
+    @comp.ffi("duo_close", i64, { i64 })(fd)
     error("mmap: failed to mmap " .. path)
   {
     path = path,
@@ -288,23 +288,23 @@ mmap_new: any = (path: str, size: i64, flags: i64)
 
 mmap_read: any = (mmap: any, offset: i64, length: i64)
   buf = 0:char():rep(length)
-  @ffi("memcpy", void, { any, any, i64 })(buf, mmap.ptr + offset, length)
+  @comp.ffi("memcpy", void, { any, any, i64 })(buf, mmap.ptr + offset, length)
   { ok = true, data = buf, size = length }
 
 mmap_write: any = (mmap: any, offset: i64, data: any)
-  @ffi("memcpy", void, { any, any, i64 })(mmap.ptr + offset, data, data:len())
+  @comp.ffi("memcpy", void, { any, any, i64 })(mmap.ptr + offset, data, data:len())
   { ok = true }
 
 mmap_sync: any = (mmap: any)
-  result = @ffi("duo_msync", i64, { any, i64, i64 })(mmap.ptr, mmap.size, M.MS_SYNC)
+  result = @comp.ffi("duo_msync", i64, { any, i64, i64 })(mmap.ptr, mmap.size, M.MS_SYNC)
   { ok = result == 0 }
 
 mmap_unmap = (mmap: any)
   if has(.ptr)(mmap)
-    @ffi("duo_munmap", i64, { any, i64 })(mmap.ptr, mmap.size)
+    @comp.ffi("duo_munmap", i64, { any, i64 })(mmap.ptr, mmap.size)
     mmap.ptr = nil
   if mmap.fd >= 0
-    @ffi("duo_close", i64, { i64 })(mmap.fd)
+    @comp.ffi("duo_close", i64, { i64 })(mmap.fd)
     mmap.fd = -1
 
 # ═══════════════════════════════════════════════════════════════
@@ -320,7 +320,7 @@ eventfd_new: any = (initval: i64, flags: i64)
     initval = 0
   if flags == nil
     flags = 0
-  fd = @ffi("duo_eventfd_create", i64, { i64, i64 })(initval, flags)
+  fd = @comp.ffi("duo_eventfd_create", i64, { i64, i64 })(initval, flags)
   if fd < 0
     error("eventfd_create failed")
   { fd = fd }
@@ -334,12 +334,12 @@ eventfd_write: any = (eventfd: any, value: i64)
     buf = (buf:sub(1, i - 1) .. v) & (255:char() .. buf:sub(i + 1))
     v = v >> 8
     i = i + 1
-  n = @ffi("duo_write", i64, { i64, str, i64 })(eventfd.fd, buf, 8)
+  n = @comp.ffi("duo_write", i64, { i64, str, i64 })(eventfd.fd, buf, 8)
   { ok = n == 8 }
 
 eventfd_read: any = (eventfd: any)
   buf = 0:char():rep(8)
-  n = @ffi("duo_read", i64, { i64, str, i64 })(eventfd.fd, buf, 8)
+  n = @comp.ffi("duo_read", i64, { i64, str, i64 })(eventfd.fd, buf, 8)
   if n != 8
     return { ok = false, value = 0 }
   value = 0
@@ -350,7 +350,7 @@ eventfd_read: any = (eventfd: any)
   { ok = true, value = value }
 
 eventfd_close = (eventfd: any)
-  @ffi("duo_close", i64, { i64 })(eventfd.fd)
+  @comp.ffi("duo_close", i64, { i64 })(eventfd.fd)
   eventfd.fd = -1
 
 # ═══════════════════════════════════════════════════════════════
@@ -366,7 +366,7 @@ timerfd_new: any = (clock_id: i64, flags: i64)
     clock_id = M.CLOCK_MONOTONIC
   if flags == nil
     flags = M.TFD_CLOEXEC
-  fd = @ffi("duo_timerfd_create", i64, { i64, i64 })(clock_id, flags)
+  fd = @comp.ffi("duo_timerfd_create", i64, { i64, i64 })(clock_id, flags)
   if fd < 0
     error("timerfd_create failed")
   { fd = fd }
@@ -380,12 +380,12 @@ timerfd_settime: any = (timerfd: any, initial: any, interval: any)
     interval =
       sec = 0
       nsec = 0
-  result = @ffi("duo_timerfd_settime", i64, { i64, i64, i64, i64, i64, i64 })(timerfd.fd, 0, initial.sec, initial.nsec, interval.sec, interval.nsec)
+  result = @comp.ffi("duo_timerfd_settime", i64, { i64, i64, i64, i64, i64, i64 })(timerfd.fd, 0, initial.sec, initial.nsec, interval.sec, interval.nsec)
   { ok = result == 0 }
 
 timerfd_read: any = (timerfd: any)
   buf = 0:char():rep(8)
-  n = @ffi("duo_read", i64, { i64, str, i64 })(timerfd.fd, buf, 8)
+  n = @comp.ffi("duo_read", i64, { i64, str, i64 })(timerfd.fd, buf, 8)
   if n != 8
     return { ok = false, expirations = 0 }
   expirations = 0
@@ -396,7 +396,7 @@ timerfd_read: any = (timerfd: any)
   { ok = true, expirations = expirations }
 
 timerfd_close = (timerfd: any)
-  @ffi("duo_close", i64, { i64 })(timerfd.fd)
+  @comp.ffi("duo_close", i64, { i64 })(timerfd.fd)
   timerfd.fd = -1
 
 # ═══════════════════════════════════════════════════════════════

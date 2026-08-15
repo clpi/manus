@@ -26,7 +26,10 @@ lcs: any = (a: any, b: any)
             else
                 left = curr[j]
                 up = prev[j + 1]
-                if left > up curr[j + 1] = left else curr[j + 1] = up 
+                if left > up
+                    curr[j + 1] = left
+                else
+                    curr[j + 1] = up
             j += 1
         tmp = prev
         prev = curr
@@ -81,7 +84,10 @@ lcs_length: i64 = (a: any, b: any)
             else
                 left = curr[j]
                 up = prev[j + 1]
-                if left > up curr[j + 1] = left else curr[j + 1] = up 
+                if left > up
+                    curr[j + 1] = left
+                else
+                    curr[j + 1] = up
             j += 1
         tmp = prev
         prev = curr
@@ -165,9 +171,9 @@ unified: any = (old_lines: any, new_lines: any)
         op = ops[i]
         if op.op == "equal"
             out[out:len() + 1] = " " .. op.value
-        else if op.op == "delete"
+        elseif op.op == "delete"
             out[out:len() + 1] = "-" .. op.value
-        else if op.op == "insert"
+        elseif op.op == "insert"
             out[out:len() + 1] = "+" .. op.value
         i += 1
     out
@@ -228,8 +234,8 @@ stats: any = (diffs: any)
     i = 1
     while i <= diffs:len()
         if diffs[i].op == "add" adds += 1
-        else if diffs[i].op == "remove" removes += 1
-        else if diffs[i].op == "replace" replaces += 1
+        elseif diffs[i].op == "remove" removes += 1
+        elseif diffs[i].op == "replace" replaces += 1
         i += 1
     {adds = adds, removes = removes, replaces = replaces, total = adds + removes + replaces}
 

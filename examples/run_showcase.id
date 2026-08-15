@@ -1,7 +1,7 @@
 # =============================================================================
 # Duo @run Showcase — the cross-language compile-time harness
 #
-# `@run("cmd")` executes a host command at *compile time* and either:
+# `@comp.run("cmd")` executes a host command at *compile time* and either:
 #   • injects its stdout as raw C at module scope (parallel to @c.emit), or
 #   • returns the stdout as a comptime string when used in an expression.
 #
@@ -23,11 +23,11 @@ print("=== Duo @run Showcase ===")
 print("\n-- 1. Synthesize a C declaration from a shell command --")
 
 # `printf` emits a C statement at compile time; the binary sees `static int secret`.
-@run("printf 'static int secret = 1337;'")
+@comp.run("printf 'static int secret = 1337;'")
 @c.call("printf", "  secret (compiled-in) = %d\n", @(secret))
 
 # Multiply via a generated C function whose body is produced by a shell command.
-@run("printf 'static long doubled(long x) { return x * 2; }'")
+@comp.run("printf 'static long doubled(long x) { return x * 2; }'")
 @c.call("printf", "  doubled(21) = %ld\n", @c.call("doubled", @(21)))
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -36,14 +36,14 @@ print("\n-- 1. Synthesize a C declaration from a shell command --")
 
 print("\n-- 2. Compile-time string from a command --")
 
-user = @run("whoami")
+user = @comp.run("whoami")
 print("  user = " .. user)
 
-cores = @run("getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1")
+cores = @comp.run("getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1")
 print("  cores = " .. cores)
 
 # Compose @run with string concatenation to build a compile-time constant.
-stamp = @run("date +%Y-%m-%d")
+stamp = @comp.run("date +%Y-%m-%d")
 print("  built " .. stamp)
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -54,16 +54,16 @@ print("\n-- 3. Compiler-as-codegen --")
 
 # Generate a lookup table via a shell command, injected as a C array, plus a
 # tiny accessor so Duo can read elements through `@c.call`.
-@run("printf 'static int squares[8] = {1,4,9,16,25,36,49,64}; static int square_at(int i){ return squares[i]; }'")
+@comp.run("printf 'static int squares[8] = {1,4,9,16,25,36,49,64}; static int square_at(int i){ return squares[i]; }'")
 @c.call("printf", "  squares[5] = %d\n", @c.call("square_at", @(5)))
 
 # Embed the current working directory as a C string visible to Duo.
-@run("printf 'static const char build_dir[] = \"%s\";' \"$(pwd | xargs basename)\"")
+@comp.run("printf 'static const char build_dir[] = \"%s\";' \"$(pwd | xargs basename)\"")
 @c.call("printf", "  build_dir = %s\n", @(build_dir))
 
 # Compose @c.emit with @run: expression-position @run returns stdout as a string,
 # and @c.emit injects it as raw C (same effect as the directive form above).
-@c.emit(@run("printf 'static int from_emit_run = 42;'"))
+@c.emit(@comp.run("printf 'static int from_emit_run = 42;'"))
 @c.call("printf", "  from_emit_run = %d\n", @(from_emit_run))
 
 print("\n=== done ===")

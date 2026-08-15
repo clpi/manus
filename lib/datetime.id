@@ -75,9 +75,18 @@ new: any = (year: any, month: any, day: any, hour: any, min: any, sec: any)
     d.year = year
     d.month = month
     d.day = day
-    if hour != nil d.hour = hour else d.hour = 0 
-    if min != nil d.min = min else d.min = 0 
-    if sec != nil d.sec = sec else d.sec = 0 
+    if hour != nil
+        d.hour = hour
+    else
+        d.hour = 0
+    if min != nil
+        d.min = min
+    else
+        d.min = 0
+    if sec != nil
+        d.sec = sec
+    else
+        d.sec = 0
     d.wday = 0
     d.yday = 0
     d.isdst = false

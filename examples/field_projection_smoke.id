@@ -2,7 +2,7 @@
 # Enables concise pipeline-style access: items:map(.name)
 
 # Helper: simple map function
-map(t, f)
+map = (t, f)
     result = {}
     for i = 1, t:len()
         result[i] = f(t[i])

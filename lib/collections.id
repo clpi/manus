@@ -12,7 +12,7 @@ list_pop: any = (list: any)
 list_get: any = (list: any, index: i64)
     list[index]
 
-list_list: any:len(): i64
+list_len: i64 = (list: any)
     return list:len()
 
 stack_new: any = ()

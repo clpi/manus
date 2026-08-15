@@ -1,6 +1,6 @@
 # table — table and array helper utilities
 
-t: any:len(): any
+len: any = (t: any)
     if t == nil return 0 
     t:len()
 

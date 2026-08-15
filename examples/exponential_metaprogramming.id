@@ -2,8 +2,8 @@
 
 # 1. @cached — comptime memoization (O(2^n) → O(n))
 # With @cached, fib only computes each n once.
-@cached
-fib(n)
+@comp.compile.cached
+fib: i64 = (n: i64)
   if n < 2 return 1 
   return fib(n - 1) + fib(n - 2)
 

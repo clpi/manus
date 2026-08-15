@@ -165,11 +165,11 @@ assert_is_table: bool = (value: any, message: any)
 # ===== Collection assertions =====
 
 # assert_len: assert a table/string has the expected length.
-assert_value: any, expected_len: any, message: any:len(): bool
+assert_len: bool = (value: any, expected_len: any, message: any)
     actual = 0
     if type(value) == "string"
         actual = value:len()
-    else if type(value) == "table"
+    elseif type(value) == "table"
         actual = value:len()
     if actual == expected_len return true 
     msg = "expected length " .. expected_len:to(str) .. ", got " .. actual:to(str)

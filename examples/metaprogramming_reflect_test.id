@@ -41,7 +41,7 @@ sz_x = @comp.field.size(point, "x")
 print("offset(x) = " .. to(str)(off_x))
 print("offset(y) = " .. to(str)(off_y))
 print("offset(z) = " .. to(str)(off_z))
-print("x:len() = " .. to(str)(sz_x))
+print("size(x) = " .. to(str)(sz_x))
 
 # ═══════════════════════════════════════════════════════════════
 # Enum reflection with @comp.fields (returns variant info)

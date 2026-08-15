@@ -59,7 +59,7 @@ heap_peek: any = (h: any)
     h.data[1]
 
 # heap_len: return the number of elements in the heap.
-heap_h: any:len(): i64
+heap_len: i64 = (h: any)
     h.data:len()
 
 # ===== Doubly-linked list =====
@@ -127,7 +127,7 @@ list_back: any = (l: any)
     l.tail.value
 
 # list_len: return the number of elements.
-list_l: any:len(): i64
+list_len: i64 = (l: any)
     l.len
 
 # list_foreach: iterate over all elements, calling fn(value).
@@ -210,7 +210,7 @@ ring_do = (r: any, fn: any)
         cur = cur.next
 
 # ring_len: return the number of slots in the ring.
-ring_r: any:len(): i64
+ring_len: i64 = (r: any)
     r.len
 
 # Heap exports

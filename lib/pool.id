@@ -120,7 +120,7 @@ drain = (p: any)
     p.waiters[i].val = nil
     i = i + 1
   p.waiters = {}
-rep: any, cap: i64:len(): void
+resize = (p: any, cap: i64)
   p.max = cap
 destroy = (p: any, res: any)
   p.destroyed = p.destroyed + 1

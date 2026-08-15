@@ -2,12 +2,12 @@
 # Enables concise pipeline-style method calls: items:each(:close)
 
 # Helper: apply a function to each element
-each(t, f)
+each = (t, f)
     for i = 1, t:len()
         f(t[i])
 
 # Helper: map applying a method to each element
-map_method(t, f)
+map_method = (t, f)
     result = {}
     for i = 1, t:len()
         result[i] = f(t[i])

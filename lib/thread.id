@@ -95,7 +95,7 @@ wunlock = (rw: any)
     if rw:len().wwait > 0
         co = rw.wwait:remove(1)
         sync.spawn(() coroutine.resume(co))
-    else if rw:len().rwait > 0
+    elseif rw:len().rwait > 0
         for _, co in rw.rwait
             sync.spawn(() coroutine.resume(co))
         rw.rwait = {}

@@ -176,9 +176,9 @@ diff_summary: str = (a: any, b: any)
         line = d.kind .. " " .. d.path
         if d.kind == "changed"
             line = line .. ": " .. d.old:to(str) .. " -> " .. d.new:to(str)
-        else if d.kind == "added"
+        elseif d.kind == "added"
             line = line .. ": " .. d.new:to(str)
-        else if d.kind == "removed"
+        elseif d.kind == "removed"
             line = line .. ": " .. d.old:to(str)
         parts[parts:len() + 1] = line
         i += 1
@@ -199,7 +199,7 @@ type_name(value: any): str
     return t
 
 # size: return the "size" of a value.
-value: any:len(): i64
+size: i64 = (value: any)
     if value == nil return 0 
     t = type(value)
     if t == "string" return value:len() 

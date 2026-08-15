@@ -27,7 +27,7 @@ kind: str = (v: any)
         t
 
 # size: return the "size" of a value (array length or map key count).
-v: any:len(): i64
+size: i64 = (v: any)
     if v == nil return 0 
     t = type(v)
     if t == "table"
@@ -112,7 +112,7 @@ elem: any = (v: any, index: any)
     v[index]
 
 # len: return the length of an array or string.
-v: any:len(): i64
+len: i64 = (v: any)
     if v == nil return 0 
     if type(v) == "string" return v:len() 
     if type(v) == "table" return v:len() 

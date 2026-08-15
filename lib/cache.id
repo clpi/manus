@@ -51,7 +51,7 @@ simple_clear = (c: any)
     c.misses = 0
 
 # simple_size: return the number of entries in the cache.
-simple_c: any:len(): i64
+simple_size: i64 = (c: any)
     if c == nil return 0 
     c.order:len()
 
@@ -140,7 +140,7 @@ ttl_purge_expired: i64 = (c: any)
     removed
 
 # ttl_size: return the number of entries.
-ttl_c: any:len(): i64
+ttl_size: i64 = (c: any)
     if c == nil return 0 
     n = 0
     for _ck, _cv in c.data
@@ -225,7 +225,7 @@ lru_clear = (c: any)
     c.misses = 0
 
 # lru_size: return the number of entries.
-lru_c: any:len(): i64
+lru_size: i64 = (c: any)
     if c == nil return 0 
     c.order:len()
 

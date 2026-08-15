@@ -207,7 +207,7 @@ search(n: i64)
             mid = (lo + hi) / 2:floor()
             if t[mid] < key
                 lo = mid + 1
-            else if t[mid] > key
+            elseif t[mid] > key
                 hi = mid - 1
             else
                 hits += 1
@@ -565,7 +565,7 @@ interp(n: i64)
     return sum
 
 # 36. Run-length encoding count (byte comparison)
-run_n: i64:len()
+run_len = (n: i64)
     s = "aaabbccddddeefffff":rep(n)
     count = 0
     i = 2
@@ -1004,7 +1004,7 @@ print("----------------------------------------")
 
 print("Running Run-length count (rep x50,000)...")
 ts36 = os.clock()
-r36 = run_50000:len()
+r36 = run_len(50000)
 te36 = os.clock()
 print("Run-Length Count   ", r36)
 print("RESULT run_len", r36)

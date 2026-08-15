@@ -1645,7 +1645,7 @@ rulesonly: str = (body: str)
 envor: str = (name: str, fallback: str)
     v = os.getenv(name)
     s: str = v:to(str)
-    if s == "" fallback else s 
+    return if s == "" fallback else s 
 
 main: i64 = ()
     out: str = envor("TSEMIT_OUT", grammarpath)

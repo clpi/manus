@@ -57,7 +57,7 @@ print_sum(@(100), @(200))
 print("\n-- 3. C string operations --")
 
 strlen_result: i64 = @c.call("strlen", "Duo rocks!")
-@c.call("printf", "  str\"Duo rocks!\":len() = %lld\n", strlen_result)
+@c.call("printf", "  strlen(\"Duo rocks!\") = %lld\n", strlen_result)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. C memory operations

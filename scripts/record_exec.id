@@ -32,8 +32,8 @@ chomp: str = (s: str)
   s:sub(1, n)
 
 runs: str = (decl: str, apply: str, read: str)
-  src = "include:len() <stdio.h>\ntypedef struct { double x; double y; } duo_point;\nint main(void){ duo_point p = {apply}; printf(\"%g\\n\", p.{read}); return 0; }\n"
-  src = "include:len() <stdio.h>\ntypedef struct { double x; double y; } duo_point;\nint main(void){ duo_point p = " .. apply .. "; printf(\"%g\\n\", p." .. read .. "); return 0; }\n"
+  src = "#include <stdio.h>\ntypedef struct { double x; double y; } duo_point;\nint main(void){ duo_point p = {apply}; printf(\"%g\\n\", p.{read}); return 0; }\n"
+  src = "#include <stdio.h>\ntypedef struct { double x; double y; } duo_point;\nint main(void){ duo_point p = " .. apply .. "; printf(\"%g\\n\", p." .. read .. "); return 0; }\n"
   path: str = "/tmp/duorecexec.c"
   bin: str = "/tmp/duorecexec.bin"
   fs.write_file(path, src)

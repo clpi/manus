@@ -3,8 +3,11 @@
 total_passes = 0
 total_fails = 0
 
-count_result(p)
-    if p total_passes += 1 else total_fails += 1 
+count_result = (p)
+    if p
+        total_passes += 1
+    else
+        total_fails += 1
 
 log.info("duo stdlib smoke-test")
 
@@ -30,7 +33,7 @@ a = atomic.mutex_new()
 a.locked = true
 count_result(a.locked)
 
-count_result(memo.wrap((x) return x * 2)(21) == 42)
+count_result(memo.wrap((x) x * 2)(21) == 42)
 
 test.start("stdlib smoke")
 test.assert_eq(total_fails, 0, "no failures expected")

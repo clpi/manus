@@ -18,7 +18,7 @@ run = ()
     ok, err = coroutine.resume(task.co)
     if not ok
       io.write("sync: task error: " .. err:to(str) .. "\n")
-    else if coroutine.status(task.co) == "suspended"
+    elseif coroutine.status(task.co) == "suspended"
       pending[pending:len() + 1] = task
 step: bool = ()
   if pending:len() == 0
@@ -27,7 +27,7 @@ step: bool = ()
   ok, err = coroutine.resume(task.co)
   if not ok
     io.write("sync: task error: " .. err:to(str) .. "\n")
-  else if coroutine.status(task.co) == "suspended"
+  elseif coroutine.status(task.co) == "suspended"
     pending[pending:len() + 1] = task
   return pending:len() > 0
 channel: any = (capacity: i64)

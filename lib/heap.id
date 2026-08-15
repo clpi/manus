@@ -31,7 +31,7 @@ heap_peek: any = (h: any)
     if h.n == 0 return nil 
     h.data[1]
 
-heap_h: any:len(): i64
+heap_size: i64 = (h: any)
     h.n
 
 heap_up = (h: any, i: i64)
@@ -103,7 +103,7 @@ pq_decrease_key = (pq: any, key: any, new_priority: any)
 pq_contains: bool = (pq: any, key: any)
     pq.index[key] != nil
 
-pq_pq: any:len(): i64
+pq_size: i64 = (pq: any)
     pq.n
 
 heap_up_pq = (pq: any, i: i64)
@@ -258,7 +258,7 @@ lru_remove: bool = (cache: any, key: any)
         i += 1
     false
 
-lru_cache: any:len(): i64
+lru_size: i64 = (cache: any)
     cache.list:len()
 
 lru_hit_rate: f64 = (cache: any)

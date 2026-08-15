@@ -1,8 +1,8 @@
 @cinclude("stdio.h")
 
-@lua("print('int test_lua_foo();')")
+@comp.lua("print('int test_lua_foo();')")
 
-@lua("print('int test_lua_foo() { return 42; }')")
+@comp.lua("print('int test_lua_foo() { return 42; }')")
 
 do_test = ()
   @c.emit("printf(\"from lua: %d\\n\", test_lua_foo());")

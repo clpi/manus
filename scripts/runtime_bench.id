@@ -121,7 +121,7 @@ lpad: str = (s: str, width: i64)
     out
 
 starts: bool = (s: str, prefix: str)
-    #s >= #prefix and s:sub(1, #prefix) == prefix
+    s:len() >= prefix:len() and s:sub(1, prefix:len()) == prefix
 
 # Seconds to four decimals from integer nanoseconds. `to(str)` on an f64 does
 # not compile in this tree (it lowers to an undeclared `tostring`), so the
@@ -249,7 +249,7 @@ number: i64 = (s: str)
         if b >= 48 and b <= 57
             if start == 0
                 start = i
-        else if start > 0
+        elseif start > 0
             out = to(i64)(s:sub(start, i - 1))
         i += 1
     if start > 0 and out < 0
@@ -263,7 +263,7 @@ peak: i64 = (cmd: str)
     probe: str = "/usr/bin/time -l {cmd} 2>&1 >/dev/null | grep maximum"
     number(script.chomp(shell(probe)))
 
-filepath: str:len(): i64
+filesize: i64 = (path: str)
     probe: str = "wc -c < '{path}' 2>/dev/null"
     number(script.chomp(shell(probe)))
 
@@ -294,15 +294,15 @@ invocation: str = (rt: str, bin: str, path: str, entry: str)
             out = "WARD_WASM='{path}' WARD_INVOKE=_start '{bin}'"
         else
             out = "WARD_WASM='{path}' WARD_INVOKE=run '{bin}'"
-    else if rt == "wart"
+    elseif rt == "wart"
         if entry == "start"
             out = "'{bin}' run '{path}'"
-    else if rt == "wasmtime"
+    elseif rt == "wasmtime"
         if entry == "start"
             out = "'{bin}' '{path}'"
         else
             out = "'{bin}' --invoke run '{path}'"
-    else if rt == "wasmer"
+    elseif rt == "wasmer"
         if entry == "start"
             out = "'{bin}' run '{path}'"
     out
@@ -587,7 +587,7 @@ main: i64 = ()
                 c3: str = lpad("not on PATH", 12)
                 print(ind .. c1 .. c2 .. c3)
             else
-                sz: i64 = filebin:len()
+                sz: i64 = filesize(bin)
                 c2: str = lpad(sz:to(str), 14)
                 c3: str = lpad(kib(sz), 10)
                 print(ind .. c1 .. c2 .. c3)
@@ -764,7 +764,7 @@ main: i64 = ()
                             if got == ref
                                 cells[j] = "ok"
                                 marks[j] = 1
-                            else if wrapped(got, ref)
+                            elseif wrapped(got, ref)
                                 cells[j] = "wrap"
                                 marks[j] = 1
                             else
@@ -885,7 +885,7 @@ main: i64 = ()
                 if pct >= 95 and pct <= 105
                     verdict = "tie"
                     ties += 1
-                else if nsward < rival
+                elseif nsward < rival
                     verdict = "win"
                     wins += 1
                 else
@@ -944,7 +944,7 @@ main: i64 = ()
                     else
                         print(ind6 .. "over baseline {bs}s (limit {ls}s, measured {ms}s) — NOT")
                         print(ind6 .. "counted, the row is flagged and its number is not trusted")
-                else if clean and nsward * 100 < baseline[i] * 70
+                elseif clean and nsward * 100 < baseline[i] * 70
                     bs: str = secs(baseline[i])
                     ms: str = secs(nsward)
                     print(ind6 .. "improved    baseline {bs}s, measured {ms}s — lower it here")
@@ -999,7 +999,7 @@ main: i64 = ()
             print("  NOT fail this gate; only getting slower than ward's own recorded")
             print("  number does.")
             code = 1
-        else if eligible == 0
+        elseif eligible == 0
             print("runtime bench: INCONCLUSIVE — 0 of {total} rows were clean enough to")
             print("  ratchet. Every row carried a `floor` or `noisy` flag, which means")
             print("  this machine was too busy for the measurement to mean anything.")

@@ -30,30 +30,26 @@ read: i64 = (data: str, pos: any)
       error("varint: overflow")
   result
 
-value: i64
-fun(__proj_v)
-  return __proj_v:len()
-fun(__proj_v)
-  return __proj_v:i64()
-if value < 128
-  return 1
-if value < 16384
-  return 2
-if value < 2097152
-  return 3
-if value < 268435456
-  return 4
-if value < 34359738368
-  return 5
-if value < 4398046511104
-  return 6
-if value < 562949953421312
-  return 7
-if value < 72057594037927936
-  return 8
-if value < -9223372036854775808
-  return 9
-10
+size: i64 = (value: i64)
+  if value < 128
+    return 1
+  if value < 16384
+    return 2
+  if value < 2097152
+    return 3
+  if value < 268435456
+    return 4
+  if value < 34359738368
+    return 5
+  if value < 4398046511104
+    return 6
+  if value < 562949953421312
+    return 7
+  if value < 72057594037927936
+    return 8
+  if value < -9223372036854775808
+    return 9
+  10
 
 # ═══════════════════════════════════════════════════════════════
 # ZigZag encoding (protobuf-style, maps signed → unsigned)

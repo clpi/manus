@@ -14,7 +14,7 @@ config_new: any = ()
         compression = false,
     }
 
-config_set_max_config: any, max_size: i64:len(): any
+config_set_max_size: any = (config: any, max_size: i64)
     config.max_size = max_size
     config
 

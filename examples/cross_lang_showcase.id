@@ -7,9 +7,9 @@
 
 @comp.ffi("string.h")
 
-@schema("examples/schemas/point.json")
+@comp.schema("examples/schemas/point.json")
 
-@run("printf 'static const char harness_tag[] = \"duo-cross\";'")
+@comp.run("printf 'static const char harness_tag[] = \"duo-cross\";'")
 
 @c.emit([[
 static double sigmoid(double x) {
@@ -50,12 +50,12 @@ static double vec2_double x, double y:len() {
 }
 ]])
 
-@c.emit(@run("printf 'static const double sin_lut[8] = {0.00000000,0.38268343,0.70710678,0.92387953,1.00000000,0.92387953,0.70710678,0.38268343}; static double sin_lut_at(long i) { return sin_lut[i & 7]; }'"))
+@c.emit(@comp.run("printf 'static const double sin_lut[8] = {0.00000000,0.38268343,0.70710678,0.92387953,1.00000000,0.92387953,0.70710678,0.38268343}; static double sin_lut_at(long i) { return sin_lut[i & 7]; }'"))
 
-EMBEDDED = @embed("examples/run_smoke.id")
-HOST = @run("hostname")
-PY = @run("python3 --version 2>&1")
-ZIG_VER = @run("zig version 2>/dev/null || echo zig-unavailable")
+EMBEDDED = @comp.embed.str("examples/run_smoke.id")
+HOST = @comp.run("hostname")
+PY = @comp.run("python3 --version 2>&1")
+ZIG_VER = @comp.run("zig version 2>/dev/null || echo zig-unavailable")
 
 print("=== Duo Cross-Language Metaprogramming Showcase ===")
 print("")
@@ -67,12 +67,12 @@ print("-- Generated native C via @run --")
 @c.call("printf", "  fibonacci(10) = %ld\n", @c.call("fibonacci", @(10)))
 @c.call("printf", "  gcd(12, 8) = %ld\n", @c.call("gcd_long", @(12), @(8)))
 @c.call("printf", "  vec2_dot(1,2,3,4) = %.1f\n", @c.call("vec2_dot", @(1.0), @(2.0), @(3.0), @(4.0)))
-@c.call("printf", "  vec2_3,4) = %.1f\n", @c.call("vec2_len", @(3.0), @(4.0):len())
+@c.call("printf", "  vec2_len(3,4) = %.1f\n", @c.call("vec2_len", @(3.0), @(4.0)))
 @c.call("printf", "  sin_lut[2] = %.8f\n", @c.call("sin_lut_at", @(2)))
 print("")
 
 print("-- Header/schema/embed surfaces --")
-@c.call("printf", "  str\"duo\":len() = %zu\n", @c.call("strlen", "duo"))
+@c.call("printf", "  strlen(\"duo\") = %zu\n", @c.call("strlen", "duo"))
 print("  embedded file bytes = " .. to(str)(EMBEDDED:len()))
 print("  host = " .. HOST)
 print("  python = " .. PY)

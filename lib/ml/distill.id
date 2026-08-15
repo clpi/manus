@@ -82,7 +82,7 @@ distill_feature_loss: f64 = (student_features: any, teacher_features: any)
                 loss += diff * diff
                 count += 1
 
-    if count > 0 loss / count else 0 
+    return if count > 0 loss / count else 0 
 
 # ═══════════════════════════════════════════════════════════════
 # Attention Transfer
@@ -105,7 +105,7 @@ distill_attention_transfer: f64 = (student_attention: any, teacher_attention: an
                 loss += diff * diff
                 count += 1
 
-    if count > 0 loss / count else 0 
+    return if count > 0 loss / count else 0 
 
 normalize_attention: any = (attention: any)
     # Normalize attention map to unit norm
@@ -152,7 +152,7 @@ distill_layer_loss: f64 = (student_outputs: any, teacher_outputs: any, mapping: 
                 loss += diff * diff
                 count += 1
 
-    if count > 0 loss / count else 0 
+    return if count > 0 loss / count else 0 
 
 # ═══════════════════════════════════════════════════════════════
 # Self-Distillation

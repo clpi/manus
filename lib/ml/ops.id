@@ -34,15 +34,15 @@ matmul: any = (a, b)
   return ml.tensor.matmul(a, b)
 
 @hot
-softmax: any = (t)
+softmax: any = (t: any)
   return ml.tensor.softmax(t)
 
-gelu: any = (t)
+gelu: any = (t: any)
   result = ml.tensor.zeros(t.rows, t.cols)
   for i = 1, t.size
     v = t.data(i)
-    inner = 0.044715 * v * v * v + v
-    result.data(i) = 0.5 * v * (1.0 + math.tanh(0.7978845608 * inner))
+    poly = 0.044715 * v * v * v + v
+    result.data(i) = 0.5 * v * (1.0 + math.tanh(0.7978845608 * poly))
   return result
 
 layernorm: any = (t, eps)

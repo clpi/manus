@@ -51,7 +51,7 @@ Lexer: {
     hint_7: str
 }
 
-new(src: str, file: str, family: i64): Lexer
+new: Lexer = (src: str, file: str, family: i64)
     dummy_loc: Loc = { file = "", line = 0, col = 0 }
     dummy_tok: Tok = { kind = 0, loc = dummy_loc, text = "", int_val = 0, float_val = 0.0 }
     # Family is an operand (`law.family.one`). Path is provenance only.
@@ -78,17 +78,14 @@ new(src: str, file: str, family: i64): Lexer
         hint_6 = "",
         hint_7 = "",
     }
-end
 
-cur_loc(self: Lexer): Loc
+cur_loc: Loc = (self: Lexer)
     return { file = self.file, line = self.line, col = self.col }
-end
 
-has_pending_hints(self: Lexer): bool
+has_pending_hints: bool = (self: Lexer)
     self.hint_count > 0
-end
 
-consume_hints(self: Lexer): any
+consume_hints: any = (self: Lexer)
     hints = {}
     i = 0
     while i < self.hint_count
@@ -100,9 +97,7 @@ consume_hints(self: Lexer): any
         elseif i == 5 hints[hints:len() + 1] = self.hint_5
         elseif i == 6 hints[hints:len() + 1] = self.hint_6
         elseif i == 7 hints[hints:len() + 1] = self.hint_7
-        end
         i += 1
-    end
     self.hint_count = 0
     self.hint_0 = ""
     self.hint_1 = ""
@@ -113,20 +108,17 @@ consume_hints(self: Lexer): any
     self.hint_6 = ""
     self.hint_7 = ""
     hints
-end
 
-peek_char(self: Lexer): i64
-    if self.pos > self.src:len() return 0 end
+peek_char: i64 = (self: Lexer)
+    if self.pos > self.src:len() return 0
     self.src:byte(self.pos)
-end
 
-peek_char2(self: Lexer): i64
-    if self.pos + 1 > self.src:len() return 0 end
+peek_char2: i64 = (self: Lexer)
+    if self.pos + 1 > self.src:len() return 0
     self.src:byte(self.pos + 1)
-end
 
 adv(self: Lexer)
-    if self.pos > self.src:len() return end
+    if self.pos > self.src:len() return
     c = self.src:byte(self.pos)
     self.pos = self.pos + 1
     if c == 10
@@ -134,29 +126,23 @@ adv(self: Lexer)
         self.col = 1
     else
         self.col = self.col + 1
-    end
-end
 
-is_digit(c: i64): bool
+is_digit: bool = (c: i64)
     (c >= 48 and c <= 57)
-end
 
-is_alpha(c: i64): bool
+is_alpha: bool = (c: i64)
     ((c >= 65 and c <= 90) or (c >= 97 and c <= 122))
-end
 
-is_alnum(c: i64): bool
+is_alnum: bool = (c: i64)
     is_alpha(c) or is_digit(c)
-end
 
-is_hex(c: i64): bool
+is_hex: bool = (c: i64)
     is_digit(c) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102)
-end
 
 
 # Keyword ordinals are token's. Spelling → ordinal here so generated C
 # does not walk a `std` table or call a missing home.
-lookup(w: str): i64
+lookup: i64 = (w: str)
     if w == "and"
         return 4
     if w == "break"
@@ -269,31 +255,25 @@ lookup(w: str): i64
 
 # GAP-145: distinct literal identities keyed by quote and source-family fact,
 # never by delimiter text or path suffix. family 1 = canon, 2 = compat.
-classify_quote(family: i64, quote: i64): i64
+classify_quote: i64 = (family: i64, quote: i64)
     if quote == 34
         return 105
-    end
     if quote == 39
         if family == 1
             return 106
-        end
         return 107
-    end
     107
-end
 
-long_bracket_level(self: Lexer): i64
+long_bracket_level: i64 = (self: Lexer)
     i = self.pos
-    if i > self.src:len() or self.src:byte(i) != 91 return -1 end
+    if i > self.src:len() or self.src:byte(i) != 91 return -1
     i += 1
     lvl = 0
     while i <= self.src:len() and self.src:byte(i) == 61
         lvl += 1
         i += 1
-    end
-    if i > self.src:len() or self.src:byte(i) != 91 return -1 end
+    if i > self.src:len() or self.src:byte(i) != 91 return -1
     lvl
-end
 
 # GAP-017: a lexer error is a REJECTION the caller can count, not a process
 # abort. `error(...)` killed the whole run, so one bad file truncated any corpus
@@ -311,8 +291,6 @@ _fail(self: Lexer, code: i64)
         self.has_error = true
         self.error_code = code
         self.error_loc = self:cur_loc()
-    end
-end
 
 skip_long(self: Lexer, level: i64)
     self:adv()
@@ -320,7 +298,6 @@ skip_long(self: Lexer, level: i64)
     while i < level
         self:adv()
         i += 1
-    end
     self:adv()
     while self.pos <= self.src:len()
         if self:peek_char() == 93
@@ -329,17 +306,12 @@ skip_long(self: Lexer, level: i64)
             while self:peek_char() == 61
                 self:adv()
                 eq += 1
-            end
             if eq == level and self:peek_char() == 93
                 self:adv()
                 return
-            end
         else
             self:adv()
-        end
-    end
     self:_fail(2)
-end
 
 skip_ws(self: Lexer)
     while self.pos <= self.src:len()
@@ -348,17 +320,13 @@ skip_ws(self: Lexer)
             self:adv()
         else
             break
-        end
-    end
-end
 
-read_long_str(self: Lexer, level: i64): str
+read_long_str: str = (self: Lexer, level: i64)
     self:adv()
     i = 0
     while i < level
         self:adv()
         i += 1
-    end
     self:adv()
     if self:peek_char() == 10
         self:adv()
@@ -366,8 +334,6 @@ read_long_str(self: Lexer, level: i64): str
         self:adv()
         if self:peek_char() == 10
             self:adv()
-        end
-    end
     start = self.pos
     self.start = start
     while self.pos <= self.src:len()
@@ -378,21 +344,16 @@ read_long_str(self: Lexer, level: i64): str
             while self:peek_char() == 61
                 self:adv()
                 eq += 1
-            end
             if eq == level and self:peek_char() == 93
                 content = self.src:sub( start, close_start - 1)
                 self:adv()
                 return content
-            end
         else
             self:adv()
-        end
-    end
     self:_fail(2)
     ""
-end
 
-read_str(self: Lexer, quote: i64): str
+read_str: str = (self: Lexer, quote: i64)
     self:adv()
     start = self.pos
     self.start = start
@@ -402,48 +363,39 @@ read_str(self: Lexer, quote: i64): str
             s = self.src:sub( start, self.pos - 1)
             self:adv()
             return s
-        end
         if c == 10 or c == 13
             self:_fail(1)
             return ""
-        end
         if c == 92
             self:adv()
             if self.pos > self.src:len()
                 self:_fail(1)
                 return ""
-            end
             esc = self:peek_char()
             if esc == 120
                 self:adv()
                 if self.pos > self.src:len() or !is_hex(self:peek_char())
                     self:_fail(3)
                     return ""
-                end
                 self:adv()
                 if self.pos <= self.src:len() and is_hex(self:peek_char())
                     self:adv()
-                end
             elseif esc == 117
                 self:adv()
                 if self:peek_char() != 123
                     self:_fail(3)
                     return ""
-                end
                 self:adv()
                 has_digit = false
                 while self.pos <= self.src:len() and self:peek_char() != 125
                     if !is_hex(self:peek_char())
                         self:_fail(3)
                         return ""
-                    end
                     has_digit = true
                     self:adv()
-                end
                 if !has_digit or self.pos > self.src:len() or self:peek_char() != 125
                     self:_fail(3)
                     return ""
-                end
                 self:adv()
             elseif esc == 122
                 self:adv()
@@ -453,23 +405,16 @@ read_str(self: Lexer, quote: i64): str
                         self:adv()
                     else
                         break
-                    end
-                end
             elseif esc == 13
                 self:adv()
                 if self.pos <= self.src:len() and self:peek_char() == 10
                     self:adv()
-                end
             else
                 self:adv()
-            end
         else
             self:adv()
-        end
-    end
     self:_fail(1)
     ""
-end
 
 # GAP-023/024: exact decimal and hex to i64, never through f64.
 #
@@ -483,7 +428,7 @@ end
 # Digits accumulate in i64 directly. Values beyond i64 wrap rather than
 # rejecting; that is the same shape the rest of the compiler carries today and
 # is recorded in GAP-024 rather than fixed here.
-_int_of(text: str): i64
+_int_of: i64 = (text: str)
     n: i64 = text:len()
     if n > 2 and text:byte(1) == 48 and (text:byte(2) == 120 or text:byte(2) == 88)
         # gap[042]: ACCUMULATE UNSIGNED, for the same reason the decimal path
@@ -513,12 +458,9 @@ _int_of(text: str): i64
                 d = c - 55
             else
                 return v
-            end
             v = v * 16 + d
             i += 1
-        end
         return v
-    end
     # gap[024]: ACCUMULATE UNSIGNED. This was `v: i64`, and `v * 10` on a
     # literal above i64 max is signed overflow # undefined behaviour that the
     # generated C traps on, so the COMPILER ABORTED (SIGABRT) rather than
@@ -536,14 +478,12 @@ _int_of(text: str): i64
     i: i64 = 1
     while i <= n
         c: i64 = text:byte(i)
-        if c < 48 or c > 57 return v end
+        if c < 48 or c > 57 return v
         v = v * 10 + (c - 48)
         i += 1
-    end
     v
-end
 
-read_num(self: Lexer): Tok
+read_num: Tok = (self: Lexer)
     l = self:cur_loc()
     start = self.pos
     is_float = false
@@ -555,13 +495,11 @@ read_num(self: Lexer): Tok
         self:adv()
         while is_hex(self:peek_char())
             self:adv()
-        end
         if self:peek_char() == 46
             is_float = true
             self:adv()
             while is_hex(self:peek_char())
             self:adv()
-        end
         end
         p = self:peek_char()
         if p == 112 or p == 80
@@ -570,15 +508,11 @@ read_num(self: Lexer): Tok
             sgn = self:peek_char()
             if sgn == 43 or sgn == 45
                 self:adv()
-            end
             while is_digit(self:peek_char())
                 self:adv()
-            end
-        end
     else
         while is_digit(self:peek_char())
             self:adv()
-        end
         if self:peek_char() == 46
             n = self:peek_char2()
             if is_digit(n)
@@ -587,8 +521,6 @@ read_num(self: Lexer): Tok
                 while is_digit(self:peek_char())
             self:adv()
         end
-            end
-        end
         e = self:peek_char()
         if e == 101 or e == 69
             is_float = true
@@ -596,12 +528,8 @@ read_num(self: Lexer): Tok
             sgn = self:peek_char()
             if sgn == 43 or sgn == 45
                 self:adv()
-            end
             while is_digit(self:peek_char())
                 self:adv()
-            end
-        end
-    end
     
     text = self.src:sub( start, self.pos - 1)
     # `to(f64)`/`to(i64)`, NOT `tonumber(text) or 0.0`. The `or` truncated the
@@ -621,31 +549,25 @@ read_num(self: Lexer): Tok
         return { kind = 2, loc = l, text = text, int_val = 0, float_val = to(f64)(text) }
     else
         return { kind = 1, loc = l, text = text, int_val = _int_of(text), float_val = 0.0 }
-    end
-end
 
-next_tok(self: Lexer): Tok
+next_tok: Tok = (self: Lexer)
     if self.pos == 1 and self:peek_char() == 35 and self:peek_char2() == 33
         l = self:cur_loc()
         start = self.pos
         while self.pos <= self.src:len() and self:peek_char() != 10
             self:adv()
-        end
         text = self.src:sub(start, self.pos - 1)
         return { kind = 110, loc = l, text = text, int_val = 0, float_val = 0.0 }
-    end
     self:skip_ws()
     self.start = self.pos
     if self.pos > self.src:len()
         return { kind = 109, loc = self:cur_loc(), text = "", int_val = 0, float_val = 0.0 }
-    end
     
     l = self:cur_loc()
     c = self:peek_char()
     
     if is_digit(c) or (c == 46 and is_digit(self:peek_char2()))
         return self:read_num()
-    end
     
     if is_alpha(c) or c == 95
         start = self.pos
@@ -655,38 +577,29 @@ next_tok(self: Lexer): Tok
                 self:adv()
             else
                 break
-            end
-        end
         text = self.src:sub( start, self.pos - 1)
         kind = lookup(text)
         if kind == 0
             kind = 0
-        end
         return { kind = kind, loc = l, text = text, int_val = 0, float_val = 0.0 }
-    end
     
     if c == 39 or c == 34
         lit_kind = classify_quote(self.family, c)
         s = self:read_str(c)
         return { kind = lit_kind, loc = l, text = s, int_val = 0, float_val = 0.0 }
-    end
     
     if c == 91
         lvl = self:long_bracket_level()
         if lvl >= 0
             s = self:read_long_str(lvl)
             return { kind = 108, loc = l, text = s, int_val = lvl, float_val = 0.0 }
-        end
-    end
     
     if c == 35 and self.family == 1
         start = self.pos
         while self.pos <= self.src:len() and self:peek_char() != 10
             self:adv()
-        end
         text = self.src:sub(start, self.pos - 1)
         return { kind = 111, loc = l, text = text, int_val = 0, float_val = 0.0 }
-    end
 
     if c == 45 and self:peek_char2() == 45
         start = self.pos
@@ -697,15 +610,12 @@ next_tok(self: Lexer): Tok
             self:skip_long(lvl)
             text = self.src:sub(start, self.pos - 1)
             return { kind = 113, loc = l, text = text, int_val = 0, float_val = 0.0 }
-        end
         is_triple = (self.pos <= self.src:len() and self:peek_char() == 45)
         if is_triple
             self:adv()
-        end
         body = self.pos
         while self.pos <= self.src:len() and self:peek_char() != 10
             self:adv()
-        end
         if is_triple and self.hint_count < 8
             if body <= self.src:len() and self.src:byte(body) == 64
                 h = self.src:sub(body + 1, self.pos - 1)
@@ -717,13 +627,9 @@ next_tok(self: Lexer): Tok
                 elseif self.hint_count == 5 self.hint_5 = h
                 elseif self.hint_count == 6 self.hint_6 = h
                 elseif self.hint_count == 7 self.hint_7 = h
-                end
                 self.hint_count = self.hint_count + 1
-            end
-        end
         text = self.src:sub(start, self.pos - 1)
         return { kind = 112, loc = l, text = text, int_val = 0, float_val = 0.0 }
-    end
     
     self:adv()
     p = self.pos
@@ -732,31 +638,26 @@ next_tok(self: Lexer): Tok
         if self:peek_char() == 61
             self:adv()
             return { kind = 99, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 64, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 42
         if self:peek_char() == 61
             self:adv()
             return { kind = 101, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 66, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 37
         if self:peek_char() == 61
             self:adv()
             return { kind = 103, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 68, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 94
         if self:peek_char() == 61
             self:adv()
             return { kind = 104, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 69, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 35
         if self:peek_char() == 35
             self:adv()
             return { kind = 87, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 70, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 38
         return { kind = 71, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
@@ -764,7 +665,6 @@ next_tok(self: Lexer): Tok
         if self.pos <= self.src:len() and self.src:byte(self.pos) == 62
             self.pos = self.pos + 1
             return { kind = 97, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 72, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 40
         return { kind = 58, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
@@ -786,21 +686,17 @@ next_tok(self: Lexer): Tok
         if self:peek_char() == 61
             self:adv()
             return { kind = 100, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         if self:peek_char() == 62
             self:adv()
             return { kind = 96, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 65, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 47
         if self:peek_char() == 61
             self:adv()
             return { kind = 102, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         if self:peek_char() == 47
             self:adv()
             return { kind = 94, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 67, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 46
         if self:peek_char() == 46
@@ -808,19 +704,15 @@ next_tok(self: Lexer): Tok
             if self:peek_char() == 46
                 self:adv()
                 return { kind = 86, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-            end
             return { kind = 85, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 80, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 61
         if self:peek_char() == 61
             self:adv()
             return { kind = 88, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         if self:peek_char() == 62
             self:adv()
             return { kind = 98, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 75, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 126
         # `~` is XOR and nothing else. It used to swallow a following `=` and
@@ -835,27 +727,22 @@ next_tok(self: Lexer): Tok
         if self:peek_char() == 61
             self:adv()
             return { kind = 90, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         if self:peek_char() == 60
             self:adv()
             return { kind = 92, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 73, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 62
         if self:peek_char() == 61
             self:adv()
             return { kind = 91, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         if self:peek_char() == 62
             self:adv()
             return { kind = 93, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 74, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 58
         if self:peek_char() == 58
             self:adv()
             return { kind = 95, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 78, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 64
         return { kind = 81, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
@@ -865,38 +752,30 @@ next_tok(self: Lexer): Tok
         if self:peek_char() == 61
             self:adv()
             return { kind = 89, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        end
         return { kind = 83, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 96
         if self.family == 1
             self:_fail(4)
             return { kind = 109, loc = l, text = "", int_val = 0, float_val = 0.0 }
-        end
         return { kind = 84, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     else
         self:_fail(4)
         return { kind = 109, loc = l, text = "", int_val = 0, float_val = 0.0 }
-    end
-end
 
-next(self: Lexer): Tok
+next: Tok = (self: Lexer)
     if self.has_peeked
         tok = self.peeked_token
         self.has_peeked = false
         return tok
-    end
     return self:next_tok()
-end
 
-peek(self: Lexer): Tok
+peek: Tok = (self: Lexer)
     if !self.has_peeked
         self.peeked_token = self:next_tok()
         self.has_peeked = true
-    end
     self.peeked_token
-end
 
-save_state(self: Lexer): State
+save_state: State = (self: Lexer)
     return {
         pos = self.pos,
         start = self.start,
@@ -905,7 +784,6 @@ save_state(self: Lexer): State
         has_peeked = self.has_peeked,
         peeked_token = self.peeked_token,
     }
-end
 
 restore_state(self: Lexer, state: State)
     self.pos = state.pos
@@ -914,7 +792,6 @@ restore_state(self: Lexer, state: State)
     self.col = state.col
     self.has_peeked = state.has_peeked
     self.peeked_token = state.peeked_token
-end
 
 # ── sovereign tokenize surface ───────────────────────────────────────────────
 #
@@ -957,7 +834,7 @@ end
 #
 # Six i64 per token: kind, line, col, int_val, text_off, text_len.
 # Returns the token count including EOF, or -1 if either buffer is too small.
-duo_lexer_tokenize_text(src: str, file: str, family: i64, out: i64, cap: i64, txt: i64, txtcap: i64): i64
+duo_lexer_tokenize_text: i64 = (src: str, file: str, family: i64, out: i64, cap: i64, txt: i64, txtcap: i64)
     lex = new(src, file, family)
     buf = mem.ptr_from_addr(i64, out)
     tbuf = mem.ptr_from_addr(i64, txt)
@@ -968,19 +845,15 @@ duo_lexer_tokenize_text(src: str, file: str, family: i64, out: i64, cap: i64, tx
         tlen: i64 = lex.pos - lex.start
         if tok.kind == 105 or tok.kind == 106 or tok.kind == 107
             tlen = tlen - 1
-        end
         if tok.kind == 108
             tlen = tlen - 2 - tok.int_val
-        end
         if tlen < 0
             tlen = 0
-        end
-        if toff + tlen > txtcap return -1 end
+        if toff + tlen > txtcap return -1
         k: i64 = 0
         while k < tlen
             mem.write_byte(tbuf, toff + k, tok.text:byte(k + 1))
             k += 1
-        end
         mem.write_i64(buf, (n * 6) * 8, tok.kind)
         mem.write_i64(buf, (n * 6 + 1) * 8, tok.loc.line)
         mem.write_i64(buf, (n * 6 + 2) * 8, tok.loc.col)
@@ -989,10 +862,8 @@ duo_lexer_tokenize_text(src: str, file: str, family: i64, out: i64, cap: i64, tx
         mem.write_i64(buf, (n * 6 + 5) * 8, tlen)
         toff += tlen
         n += 1
-        if tok.kind == 109 return n end
-    end
+        if tok.kind == 109 return n
     -1
-end
 
 # The PRODUCTION DISPATCH entry: everything the host `Token` carries, in one
 # pass. `tokenize_text` is one field short of that — it drops `float_val`, so a
@@ -1011,19 +882,17 @@ end
 # the one failure a parser cannot detect.
 # The rejection's location, for a host that has just been handed a negative
 # code. Re-lexes: this is the cold path, taken once per failed file.
-duo_lexer_error_line(src: str, file: str, family: i64): i64
+duo_lexer_error_line: i64 = (src: str, file: str, family: i64)
     lex = new(src, file, family)
     n: i64 = 0
     while n < 10000000
         tok = next_tok(lex)
         n += 1
-        if lex.has_error return lex.error_loc.line end
-        if tok.kind == 109 return 0 end
-    end
+        if lex.has_error return lex.error_loc.line
+        if tok.kind == 109 return 0
     0
-end
 
-duo_lexer_tokenize_full(src: str, file: str, family: i64, out: i64, cap: i64, txt: i64, txtcap: i64): i64
+duo_lexer_tokenize_full: i64 = (src: str, file: str, family: i64, out: i64, cap: i64, txt: i64, txtcap: i64)
     lex = new(src, file, family)
     buf = mem.ptr_from_addr(i64, out)
     n: i64 = 0
@@ -1038,13 +907,10 @@ duo_lexer_tokenize_full(src: str, file: str, family: i64, out: i64, cap: i64, tx
         tlen: i64 = lex.pos - lex.start
         if tok.kind == 105 or tok.kind == 106 or tok.kind == 107
             tlen = tlen - 1
-        end
         if tok.kind == 108
             tlen = tlen - 2 - tok.int_val
-        end
         if tlen < 0
             tlen = 0
-        end
         mem.write_i64(buf, (n * 7) * 8, tok.kind)
         mem.write_i64(buf, (n * 7 + 1) * 8, tok.loc.line)
         mem.write_i64(buf, (n * 7 + 2) * 8, tok.loc.col)
@@ -1056,13 +922,11 @@ duo_lexer_tokenize_full(src: str, file: str, family: i64, out: i64, cap: i64, tx
         # GAP-017: a rejection is returned, not raised. Negative codes offset
         # by 100 so they cannot collide with -1 (buffer too small) are
         # MAGIC-CODE-ZERO debt. Deletion: carry rejection-id, never -101…-105.
-        if lex.has_error return 0 - 100 - lex.error_code end
-        if tok.kind == 109 return n end
-    end
+        if lex.has_error return 0 - 100 - lex.error_code
+        if tok.kind == 109 return n
     -1
-end
 
-duo_lexer_tokenize_all(src: str, file: str, family: i64, out: i64, cap: i64): i64
+duo_lexer_tokenize_all: i64 = (src: str, file: str, family: i64, out: i64, cap: i64)
     lex = new(src, file, family)
     buf = mem.ptr_from_addr(i64, out)
     n: i64 = 0
@@ -1073,18 +937,15 @@ duo_lexer_tokenize_all(src: str, file: str, family: i64, out: i64, cap: i64): i6
         mem.write_i64(buf, (n * 4 + 2) * 8, tok.loc.col)
         mem.write_i64(buf, (n * 4 + 3) * 8, tok.int_val)
         n += 1
-        if lex.has_error return 0 - 100 - lex.error_code end
-        if tok.kind == 109 return n end
-    end
+        if lex.has_error return 0 - 100 - lex.error_code
+        if tok.kind == 109 return n
     -1
-end
 
-duo_lexer_step(src: str, file: str, family: i64, pos: i64): i64
+duo_lexer_step: i64 = (src: str, file: str, family: i64, pos: i64)
     lex = new(src, file, family)
     lex.pos = pos
     tok = next_tok(lex)
     tok.kind * 1099511627776 + lex.pos
-end
 
 # Token-kind fingerprint: mixes every token including the terminating EOF.
 # Agrees bit-for-bit with `src/lexer_differential.zig:fingerprintSource`
@@ -1102,7 +963,7 @@ end
 # Mixes the LENGTH before the bytes so that concatenation cannot alias: "ab"
 # then "c" must not hash like "a" then "bc". Includes the terminating EOF
 # (length 0), matching `lexer_differential.textFingerprintSource`.
-duo_lexer_text_fingerprint(src: str, file: str, family: i64): u64
+duo_lexer_text_fingerprint: u64 = (src: str, file: str, family: i64)
     lex = new(src, file, family)
     h: u64 = 0
     while true
@@ -1113,199 +974,181 @@ duo_lexer_text_fingerprint(src: str, file: str, family: i64): u64
         while bi <= tl
             h = h * 31 + tok.text:byte(bi)
             bi += 1
-        end
-        if tok.kind == 109 return h end
-    end
+        if tok.kind == 109 return h
     h
-end
 
-duo_lexer_kind_fingerprint(src: str, file: str, family: i64): u64
+duo_lexer_kind_fingerprint: u64 = (src: str, file: str, family: i64)
     lex = new(src, file, family)
     h: u64 = 0
     while true
         tok = next_tok(lex)
         h = h * 31 + tok.kind
-        if tok.kind == 109 return h end
-    end
+        if tok.kind == 109 return h
     h
-end
 
 # ── producer-projected schema (SCHEMA-ONE, MAGIC-CODE-ZERO) ───────────────
 # Host must not independently know slot positions, rejection codes, or token
 # kind ordinals. Query these facts instead of hardcoding.
 
-recordslots(): i64
+recordslots: i64 = ()
     7
-end
 
-fieldkind(): i64
+fieldkind: i64 = ()
     0
-end
 
-fieldline(): i64
+fieldline: i64 = ()
     1
-end
 
-fieldcol(): i64
+fieldcol: i64 = ()
     2
-end
 
-fieldint(): i64
+fieldint: i64 = ()
     3
-end
 
-fieldoff(): i64
+fieldoff: i64 = ()
     4
-end
 
-fieldlen(): i64
+fieldlen: i64 = ()
     5
-end
 
-fieldfloat(): i64
+fieldfloat: i64 = ()
     6
-end
 
-rejectioncount(): i64
+rejectioncount: i64 = ()
     5
-end
 
-rejectioncode(i: i64): i64
-    if i == 1 return -101 end
-    if i == 2 return -102 end
-    if i == 3 return -103 end
-    if i == 4 return -104 end
+rejectioncode: i64 = (i: i64)
+    if i == 1 return -101
+    if i == 2 return -102
+    if i == 3 return -103
+    if i == 4 return -104
     if i == 5 return -105 end
     -1
-end
 
-rejectionname(code: i64): str
-    if code == -101 return "UnterminatedString" end
-    if code == -102 return "UnterminatedLongString" end
-    if code == -103 return "InvalidEscape" end
-    if code == -104 return "UnexpectedChar" end
-    if code == -105 return "InsufficientIndent" end
+rejectionname: str = (code: i64)
+    if code == -101 return "UnterminatedString"
+    if code == -102 return "UnterminatedLongString"
+    if code == -103 return "InvalidEscape"
+    if code == -104 return "UnexpectedChar"
+    if code == -105 return "InsufficientIndent"
     ""
-end
 
-kindcount(): i64
+kindcount: i64 = ()
     114
-end
 
-kindname(i: i64): str
-    if i == 0 return "name" end
-    if i == 1 return "int_lit" end
-    if i == 2 return "float_lit" end
-    if i == 3 return "" end
-    if i == 4 return "and" end
-    if i == 5 return "break" end
-    if i == 6 return "continue" end
-    if i == 7 return "do" end
-    if i == 8 return "else" end
-    if i == 9 return "elseif" end
-    if i == 10 return "end" end
-    if i == 11 return "false" end
-    if i == 12 return "for" end
-    if i == 13 return "function" end
-    if i == 14 return "fun" end
-    if i == 15 return "global" end
-    if i == 16 return "goto" end
-    if i == 17 return "if" end
-    if i == 18 return "in" end
-    if i == 19 return "local" end
-    if i == 20 return "nil" end
-    if i == 21 return "not" end
-    if i == 22 return "or" end
-    if i == 23 return "repeat" end
-    if i == 24 return "return" end
-    if i == 25 return "then" end
-    if i == 26 return "true" end
-    if i == 27 return "until" end
-    if i == 28 return "while" end
-    if i == 29 return "const" end
-    if i == 30 return "enum" end
-    if i == 31 return "i8" end
-    if i == 32 return "i16" end
-    if i == 33 return "i32" end
-    if i == 34 return "i64" end
-    if i == 35 return "u8" end
-    if i == 36 return "u16" end
-    if i == 37 return "u32" end
-    if i == 38 return "u64" end
-    if i == 39 return "f32" end
-    if i == 40 return "f64" end
-    if i == 41 return "bool" end
-    if i == 42 return "void" end
-    if i == 43 return "str" end
-    if i == 44 return "match" end
-    if i == 45 return "try" end
-    if i == 46 return "catch" end
-    if i == 47 return "defer" end
-    if i == 48 return "async" end
-    if i == 49 return "await" end
-    if i == 50 return "concept" end
-    if i == 51 return "alias" end
-    if i == 52 return "private" end
-    if i == 53 return "extends" end
-    if i == 54 return "macro" end
-    if i == 55 return "comptime" end
-    if i == 56 return "by" end
-    if i == 57 return "let" end
-    if i == 58 return "lparen" end
-    if i == 59 return "rparen" end
-    if i == 60 return "lbracket" end
-    if i == 61 return "rbracket" end
-    if i == 62 return "lbrace" end
-    if i == 63 return "rbrace" end
-    if i == 64 return "plus" end
-    if i == 65 return "minus" end
-    if i == 66 return "star" end
-    if i == 67 return "slash" end
-    if i == 68 return "percent" end
-    if i == 69 return "caret" end
-    if i == 70 return "hash" end
-    if i == 71 return "amp" end
-    if i == 72 return "pipe" end
-    if i == 73 return "lt" end
-    if i == 74 return "gt" end
-    if i == 75 return "assign" end
-    if i == 76 return "tilde" end
-    if i == 77 return "semi" end
-    if i == 78 return "colon" end
-    if i == 79 return "comma" end
-    if i == 80 return "dot" end
-    if i == 81 return "at" end
-    if i == 82 return "question" end
-    if i == 83 return "bang" end
-    if i == 84 return "backtick" end
-    if i == 85 return "concat" end
-    if i == 86 return "dots" end
-    if i == 87 return "hash_hash" end
-    if i == 88 return "eq" end
-    if i == 89 return "neq" end
-    if i == 90 return "leq" end
-    if i == 91 return "geq" end
-    if i == 92 return "lshift" end
-    if i == 93 return "rshift" end
-    if i == 94 return "idiv" end
-    if i == 95 return "dcolon" end
-    if i == 96 return "arrow" end
-    if i == 97 return "pipe_gt" end
-    if i == 98 return "fat_arrow" end
-    if i == 99 return "plus_assign" end
-    if i == 100 return "minus_assign" end
-    if i == 101 return "star_assign" end
-    if i == 102 return "slash_assign" end
-    if i == 103 return "percent_assign" end
-    if i == 104 return "caret_assign" end
-    if i == 105 return "text_lit" end
-    if i == 106 return "bytes_lit" end
-    if i == 107 return "compat_text_lit" end
-    if i == 108 return "long_text_lit" end
-    if i == 109 return "eof" end
-    if i == 110 return "shebang" end
-    if i == 111 return "comment" end
-    if i == 112 return "compat_comment" end
-    if i == 113 return "compat_long_comment" end
+kindname: str = (i: i64)
+    if i == 0 return "name"
+    if i == 1 return "int_lit"
+    if i == 2 return "float_lit"
+    if i == 3 return ""
+    if i == 4 return "and"
+    if i == 5 return "break"
+    if i == 6 return "continue"
+    if i == 7 return "do"
+    if i == 8 return "else"
+    if i == 9 return "elseif"
+    if i == 10 return "end"
+    if i == 11 return "false"
+    if i == 12 return "for"
+    if i == 13 return "function"
+    if i == 14 return "fun"
+    if i == 15 return "global"
+    if i == 16 return "goto"
+    if i == 17 return "if"
+    if i == 18 return "in"
+    if i == 19 return "local"
+    if i == 20 return "nil"
+    if i == 21 return "not"
+    if i == 22 return "or"
+    if i == 23 return "repeat"
+    if i == 24 return "return"
+    if i == 25 return "then"
+    if i == 26 return "true"
+    if i == 27 return "until"
+    if i == 28 return "while"
+    if i == 29 return "const"
+    if i == 30 return "enum"
+    if i == 31 return "i8"
+    if i == 32 return "i16"
+    if i == 33 return "i32"
+    if i == 34 return "i64"
+    if i == 35 return "u8"
+    if i == 36 return "u16"
+    if i == 37 return "u32"
+    if i == 38 return "u64"
+    if i == 39 return "f32"
+    if i == 40 return "f64"
+    if i == 41 return "bool"
+    if i == 42 return "void"
+    if i == 43 return "str"
+    if i == 44 return "match"
+    if i == 45 return "try"
+    if i == 46 return "catch"
+    if i == 47 return "defer"
+    if i == 48 return "async"
+    if i == 49 return "await"
+    if i == 50 return "concept"
+    if i == 51 return "alias"
+    if i == 52 return "private"
+    if i == 53 return "extends"
+    if i == 54 return "macro"
+    if i == 55 return "comptime"
+    if i == 56 return "by"
+    if i == 57 return "let"
+    if i == 58 return "lparen"
+    if i == 59 return "rparen"
+    if i == 60 return "lbracket"
+    if i == 61 return "rbracket"
+    if i == 62 return "lbrace"
+    if i == 63 return "rbrace"
+    if i == 64 return "plus"
+    if i == 65 return "minus"
+    if i == 66 return "star"
+    if i == 67 return "slash"
+    if i == 68 return "percent"
+    if i == 69 return "caret"
+    if i == 70 return "hash"
+    if i == 71 return "amp"
+    if i == 72 return "pipe"
+    if i == 73 return "lt"
+    if i == 74 return "gt"
+    if i == 75 return "assign"
+    if i == 76 return "tilde"
+    if i == 77 return "semi"
+    if i == 78 return "colon"
+    if i == 79 return "comma"
+    if i == 80 return "dot"
+    if i == 81 return "at"
+    if i == 82 return "question"
+    if i == 83 return "bang"
+    if i == 84 return "backtick"
+    if i == 85 return "concat"
+    if i == 86 return "dots"
+    if i == 87 return "hash_hash"
+    if i == 88 return "eq"
+    if i == 89 return "neq"
+    if i == 90 return "leq"
+    if i == 91 return "geq"
+    if i == 92 return "lshift"
+    if i == 93 return "rshift"
+    if i == 94 return "idiv"
+    if i == 95 return "dcolon"
+    if i == 96 return "arrow"
+    if i == 97 return "pipe_gt"
+    if i == 98 return "fat_arrow"
+    if i == 99 return "plus_assign"
+    if i == 100 return "minus_assign"
+    if i == 101 return "star_assign"
+    if i == 102 return "slash_assign"
+    if i == 103 return "percent_assign"
+    if i == 104 return "caret_assign"
+    if i == 105 return "text_lit"
+    if i == 106 return "bytes_lit"
+    if i == 107 return "compat_text_lit"
+    if i == 108 return "long_text_lit"
+    if i == 109 return "eof"
+    if i == 110 return "shebang"
+    if i == 111 return "comment"
+    if i == 112 return "compat_comment"
+    if i == 113 return "compat_long_comment"
     ""
-end

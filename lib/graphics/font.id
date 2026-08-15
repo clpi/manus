@@ -77,16 +77,16 @@ font_get_glyph: any = (font: any, char: str)
     if codepoint >= 65 and codepoint <= 90
         # Uppercase A-Z: wider
         glyph.width = font.config.size * 0.7:floor()
-    else if codepoint >= 97 and codepoint <= 122
+    elseif codepoint >= 97 and codepoint <= 122
         # Lowercase a-z: medium
         glyph.width = font.config.size * 0.55:floor()
-    else if codepoint >= 48 and codepoint <= 57
+    elseif codepoint >= 48 and codepoint <= 57
         # Digits 0-9: medium-wide
         glyph.width = font.config.size * 0.6:floor()
-    else if codepoint == 32
+    elseif codepoint == 32
         # Space: half width
         glyph.width = font.config.size * 0.3:floor()
-    else if codepoint == 46 or codepoint == 44 or codepoint == 39
+    elseif codepoint == 46 or codepoint == 44 or codepoint == 39
         # Punctuation: narrow
         glyph.width = font.config.size * 0.2:floor()
     else
@@ -179,7 +179,7 @@ layout_get_glyphs: any = (layout: any)
         glyphs[glyphs:len() + 1] = item
     glyphs
 
-layout_get_layout: any:len(): any
+layout_get_size: any = (layout: any)
     max_x = 0
     for line in layout.lines
         line_width = 0
@@ -212,7 +212,7 @@ render_text: any = (font: any, text: str, x: f64, y: f64, color: any)
 
     {
         items = render_items,
-        size = layout_get_layout:len(),
+        size = layout_get_size(layout),
     }
 
 # ═══════════════════════════════════════════════════════════════

@@ -3,23 +3,23 @@
 type bit = i64
 
 pack: i64 = (v: f64)
-  @comp.c.emit([[({ union { double d; int64_t i; } u; u.d = (double)v; u.i; })]])
+  return @comp.c.emit([[({ union { double d; int64_t i; } u; u.d = (double)v; u.i; })]])
   
 
 restore: f64 = (w: i64)
-  @comp.c.emit([[({ union { double d; int64_t i; } u; u.i = (int64_t)w; u.d; })]])
+  return @comp.c.emit([[({ union { double d; int64_t i; } u; u.i = (int64_t)w; u.d; })]])
   
 
 thin: i64 = (v: f32)
-  @comp.c.emit([[({ union { float f; uint32_t u; } x; x.f = (float)v; (int64_t)x.u; })]])
+  return @comp.c.emit([[({ union { float f; uint32_t u; } x; x.f = (float)v; (int64_t)x.u; })]])
   
 
 lift: f32 = (w: i64)
-  @comp.c.emit([[({ union { float f; uint32_t u; } x; x.u = (uint32_t)w; x.f; })]])
+  return @comp.c.emit([[({ union { float f; uint32_t u; } x; x.u = (uint32_t)w; x.f; })]])
   
 
 observe: i64 = (w: bit)
-  @comp.c.emit([[((int64_t)w)]])
+  return @comp.c.emit([[((int64_t)w)]])
   
 
 to(bit)(f64) = pack@view

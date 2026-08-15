@@ -120,9 +120,5 @@ decode: str = (src: str)
 # `/` yields f64 even on two i64 operands, so this was a return-type mismatch
 # against the declared `: i64` and took the module down. The division is the
 # ceiling of n/4 in 4-byte groups; the truncation is intended, so it is stated.
-max_encoded_n: i64
-fun(__proj_v)
-  return __proj_v:len()
-fun(__proj_v)
-  return __proj_v:i64()
-to(i64)((n + 3) / 4) * 5 + 4
+max_encoded_len: i64 = (n: i64)
+  to(i64)((n + 3) / 4) * 5 + 4

@@ -154,13 +154,13 @@ pretty_val: str = (value: any)
     t = type(value)
     if t:find("string") == 1
         return green('"' .. to(str)(value) .. '"')
-    else if t:find("number") == 1
+    elseif t:find("number") == 1
         return yellow(to(str)(value))
-    else if t:find("boolean") == 1
+    elseif t:find("boolean") == 1
         return magenta(to(str)(value))
-    else if t:find("function") == 1
+    elseif t:find("function") == 1
         return cyan(italic("⟪fn⟫"))
-    else if t:find("table") == 1
+    elseif t:find("table") == 1
         n = value:len()
         if n > 0
             return cyan("⟦array " .. to(str)(n) .. "⟧")
@@ -191,7 +191,7 @@ ts: str = ()
     ms = (os.clock() * 1000) % 1000:floor()
     frac = "." .. to(str)(ms)
     if ms < 10 frac = ".00" .. to(str)(ms)
-    else if ms < 100 frac = ".0" .. to(str)(ms)
+    elseif ms < 100 frac = ".0" .. to(str)(ms)
     return dim(os.date("%H:%M:%S", secs) .. frac)
 
 # ─── Level tag ─────────────────────────────────────────────────────
@@ -201,16 +201,16 @@ level_tag: str = (level: int)
     if level == M.LV_DEBUG
         glyph = M.G_DEBUG
         tag = "debug"
-    else if level == M.LV_INFO
+    elseif level == M.LV_INFO
         glyph = M.G_INFO
         tag = " info"
-    else if level == M.LV_WARN
+    elseif level == M.LV_WARN
         glyph = M.G_WARN
         tag = " warn"
-    else if level == M.LV_ERROR
+    elseif level == M.LV_ERROR
         glyph = M.G_ERROR
         tag = "error"
-    else if level == M.LV_FATAL
+    elseif level == M.LV_FATAL
         glyph = M.G_FATAL
         tag = "fatal"
     body = glyph .. " " .. tag
@@ -401,13 +401,13 @@ pretty_repr: str = (value: any, depth: int, seen: any)
     t = type(value)
     if t:find("string") == 1
         return '"' .. to(str)(value) .. '"'
-    else if t:find("number") == 1
+    elseif t:find("number") == 1
         return to(str)(value)
-    else if t:find("boolean") == 1
+    elseif t:find("boolean") == 1
         return to(str)(value)
-    else if t:find("function") == 1
+    elseif t:find("function") == 1
         return "<function>"
-    else if t:find("table") != 1
+    elseif t:find("table") != 1
         return to(str)(value)
     # table branch — use table identity (== by reference) stored in a
     # flat array, because the codegen's to(str)(table) always returns
@@ -502,11 +502,11 @@ T.divider()
 
 h1 = T.span("compile_module", {module = "std.math.fft", size = 8192})
 h2 = T.span("parse", {tokens = 4096})
-for _x = 1, 2000
+for _x = 1, 2000 _x
 T.span_end(h2)
 
 h3 = T.span("type_check", {fns = 24, errors = 0})
-for _y = 1, 5000
+for _y = 1, 5000 _y
 T.span_end(h3, {note = "cleared all predicates"})
 T.span_end(h1, {emitted_bytes = 16384})
 
@@ -517,7 +517,7 @@ sample_tbl = {
     count = 42,
     enabled = true,
     children = {1, 2, 3, "four"},
-    callback = function() return nil end,
+    callback = () nil,
 }
 T.dump("sample_tbl", sample_tbl)
 T.dump("plain_string", "hello, world")
@@ -540,14 +540,14 @@ print(" ")
 print(span_indent() .. "pure-pretty stack trace below:")
 i = 2
 while i < 12
-    info = debug.getinfo(i, "Snl")
-    if info == nil break 
+    frame = debug.getinfo(i, "Snl")
+    if frame == nil break 
     fname = "?"
-    if info.name != nil fname = to(str)(info.name) 
+    if frame.name != nil fname = to(str)(frame.name) 
     src = "?"
-    if info.short_src != nil src = to(str)(info.short_src) 
+    if frame.short_src != nil src = to(str)(frame.short_src) 
     line = src
-    if info.currentline != nil and tonumber(info.currentline) > 0
-        line = src .. ":" .. to(str)(info.currentline)
+    if frame.currentline != nil and tonumber(frame.currentline) > 0
+        line = src .. ":" .. to(str)(frame.currentline)
     print("  " .. magenta(italic(fname .. "()")) .. "  " .. underline(line))
     i += 1

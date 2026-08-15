@@ -40,7 +40,7 @@ ring_peek: any = (rb: any)
     if rp >= rb.write_pos return nil 
     rb.buf[(rp & rb.mask) + 1]
 
-ring_rb: any:len(): i64
+ring_len: i64 = (rb: any)
     rb.write_pos - rb.read_pos
 
 ring_free: i64 = (rb: any)

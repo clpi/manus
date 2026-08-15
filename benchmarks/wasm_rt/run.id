@@ -27,7 +27,7 @@ _have: bool = (tool: str)
 # Fixed-width column, so the table lines up without printf templates.
 _pad: str = (s: str, w: i64)
     out = s
-    while #out < w
+    while out:len() < w
         out = out .. " "
     out
 
@@ -39,7 +39,7 @@ _secs(ns: i64): str
     whole = tenk / 10000
     frac = tenk % 10000
     fs = frac:to(str)
-    while #fs < 4
+    while fs:len() < 4
         fs = "0" .. fs
     whole:to(str) .. "." .. fs
 
@@ -91,7 +91,7 @@ main: i64 = ()
     runtimes = {}
     for _i, c in candidates
         if _have(c[1])
-            runtimes[#runtimes + 1] = c
+            runtimes[runtimes:len() + 1] = c
 
     if not _have("wasmtime")
         print("run: wasmtime is required as the reference runtime")

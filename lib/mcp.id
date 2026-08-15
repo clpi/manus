@@ -93,7 +93,7 @@ mcp_handle_tools_call = (msg: any)
                 }
             }
         })
-    else if type(res) == "table" and res.isError
+    elseif type(res) == "table" and res.isError
         mcp_send_response(msg.id, {
             isError = true,
             content = {
@@ -120,15 +120,15 @@ mcp_serve = ()
             break
         if msg.method == "initialize"
             mcp_handle_initialize(msg)
-        else if msg.method == "tools/list"
+        elseif msg.method == "tools/list"
             mcp_handle_tools_list(msg)
-        else if msg.method == "tools/call"
+        elseif msg.method == "tools/call"
             mcp_handle_tools_call(msg)
-        else if msg.method == "notifications/initialized"
+        elseif msg.method == "notifications/initialized"
             # nothing to do
-        else if msg.method == "ping"
+        elseif msg.method == "ping"
             mcp_send_response(msg.id, {})
-        else if has(.id)(msg)
+        elseif has(.id)(msg)
             mcp_send_error(msg.id, -32601, "Method not found: " .. msg.method:to(str))
 
 mcp_register_tool = (name: str, p2: any, p3: any, p4: any)

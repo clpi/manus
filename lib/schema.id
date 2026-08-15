@@ -158,7 +158,7 @@ validate_into: bool = (value: any, schema: any, path: str, errors: any)
             if fval == nil and not is_optional(fschema)
                 errors[errors:len() + 1] = {path = fpath, message = "required field missing"}
                 ok = false
-            else if fval != nil
+            elseif fval != nil
                 if not validate_into(fval, fschema, fpath, errors)
                     ok = false
         return ok
@@ -206,7 +206,10 @@ errors_str: str = (result: any)
     while i <= result.errors:len()
         e = result.errors[i]
         msg = e.path
-        if msg != "" msg = msg .. ": " else msg = "" 
+        if msg != ""
+            msg = msg .. ": "
+        else
+            msg = ""
         parts[parts:len() + 1] = msg .. e.message
         i += 1
     parts:concat("; ")

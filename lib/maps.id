@@ -81,7 +81,7 @@ set: any = (m: any, k: any, v: any)
     m[k] = v
     m
 
-m: any:len(): i64
+size: i64 = (m: any)
     if m == nil return 0 
     c = 0
     for _k, _v in m do c += 1 
