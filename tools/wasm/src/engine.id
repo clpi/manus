@@ -4046,6 +4046,11 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
     # `jlf` is a byte scan for 0x10/0x11 and can only ever over-report a call,
     # so `cf == 0` genuinely means no BL will be emitted from this body.
     cf = 1 - mem.read_i64(jft, (curfn * 6 + 4) * 8)
+    # One line per body under DUO_WASM_JIT_TRACE. The refusal trace names why a
+    # body was declined; nothing said what the emitter was DOING when it did
+    # not decline, which is how "engine=interp, no reason given" happened.
+    if os.getenv("DUO_WASM_JIT_TRACE")
+      io.stderr:write("wasm: jit body fn=" .. curfn:to(str) .. " off=" .. off:to(str) .. " blen=" .. blen:to(str) .. " params=" .. fnprm:to(str) .. " locals=" .. selfloc:to(str) .. " words-so-far=" .. n:to(str) .. " queue=" .. jqh:to(str) .. "/" .. jqn:to(str) .. "\n")
     # eight argument registers, seventeen local registers
     if selfloc > 17 or fnprm > 8 or n > 260000
       return jitbail("body needs more locals or params than the register file has", -1, pc)
@@ -4087,1786 +4092,1786 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
     jrn = 0
 
     while pc <= blen or inl_d > 0
-    # An inlined body is done when its cursor runs past its own length:
-    # restore the caller's cursor and register window and carry on.
-    if pc > blen and inl_d > 0
-      inl_d -= 1
-      pc = mem.read_i64(inl_pcs, inl_d * 8)
-      off = mem.read_i64(inl_offs, inl_d * 8)
-      blen = mem.read_i64(inl_bls, inl_d * 8)
-      lbase = mem.read_i64(inl_lbs, inl_d * 8)
-      curloc = mem.read_i64(inl_lcs, inl_d * 8)
-      # Restore the caller's label depth. A callee body ends with its OWN
-      # function-level `end`, so it emits one more `end` than it pushed labels
-      # and that surplus pops a label belonging to the CALLER. Left unrestored,
-      # the caller's later br_if resolved to the wrong target (a nested
-      # factorial sum returned 1 instead of 9).
-      ldep = mem.read_i64(inl_lds, inl_d * 8)
-    op: i64 = s:byte(off + pc)
-    pc += 1
+      # An inlined body is done when its cursor runs past its own length:
+      # restore the caller's cursor and register window and carry on.
+      if pc > blen and inl_d > 0
+        inl_d -= 1
+        pc = mem.read_i64(inl_pcs, inl_d * 8)
+        off = mem.read_i64(inl_offs, inl_d * 8)
+        blen = mem.read_i64(inl_bls, inl_d * 8)
+        lbase = mem.read_i64(inl_lbs, inl_d * 8)
+        curloc = mem.read_i64(inl_lcs, inl_d * 8)
+        # Restore the caller's label depth. A callee body ends with its OWN
+        # function-level `end`, so it emits one more `end` than it pushed labels
+        # and that surplus pops a label belonging to the CALLER. Left unrestored,
+        # the caller's later br_if resolved to the wrong target (a nested
+        # factorial sum returned 1 instead of 9).
+        ldep = mem.read_i64(inl_lds, inl_d * 8)
+      op: i64 = s:byte(off + pc)
+      pc += 1
 
-    jspin += 1
-    if jspin > 4000000
-      return jitbail("the emitter did not terminate (off=" .. off:to(str) .. " blen=" .. blen:to(str) .. " pc=" .. pc:to(str) .. " n=" .. n:to(str) .. " sp=" .. sp:to(str) .. " ldep=" .. ldep:to(str) .. " inl_d=" .. inl_d:to(str) .. " queue " .. jqh:to(str) .. "/" .. jqn:to(str) .. ")", op, pc)
+      jspin += 1
+      if jspin > 4000000
+        return jitbail("the emitter did not terminate (off=" .. off:to(str) .. " blen=" .. blen:to(str) .. " pc=" .. pc:to(str) .. " n=" .. n:to(str) .. " sp=" .. sp:to(str) .. " ldep=" .. ldep:to(str) .. " inl_d=" .. inl_d:to(str) .. " queue " .. jqh:to(str) .. "/" .. jqn:to(str) .. ")", op, pc)
 
-    # Register budget: stack slots occupy w0..w8, locals w9..w16. Emitting
-    # past either would silently alias a local, so refuse and let the caller
-    # fall back to the interpreter. Correctness before speed:
-    # a fast path that changes semantics is not proof.
-    if sp > 8 or sp < 0 or n > 260000
-      return jitbail("operand stack deeper than 8 slots, or code buffer full", op, pc)
+      # Register budget: stack slots occupy w0..w8, locals w9..w16. Emitting
+      # past either would silently alias a local, so refuse and let the caller
+      # fall back to the interpreter. Correctness before speed:
+      # a fast path that changes semantics is not proof.
+      if sp > 8 or sp < 0 or n > 260000
+        return jitbail("operand stack deeper than 8 slots, or code buffer full", op, pc)
 
-    aw: i64 = alu_word(op)
-    cc: i64 = cmp_cond(op)
+      aw: i64 = alu_word(op)
+      cc: i64 = cmp_cond(op)
 
-    # Materialize a pending local alias unless this op can't disturb it.
-    # Survives: `i32.const` (normally writes slot `sp` only) and any binop (it
-    # either consumes the alias as Rn/Rm, or sits above it on the stack).
-    # Everything else # local.set/tee, branches, compares, ends # needs the
-    # value in its own stack register.
-    # `i32.const` is safe even when it folds into slot `sp - 1`: every fold
-    # branch reads `ali_reg` as Rn when that slot is aliased.
-    # Float consts write only slot `sp`, and float binops consume their
-    # operands as Rn/Rm, so both can leave a pending local alias standing —
-    # exactly like i32.const and the integer ALU. Materialising it emitted a
-    # MOV that sat ON the float dependency chain.
-    fkeep: i64 = 0
-    if op == OP_f32_const or op == OP_f64_const or (op >= OP_f32_add and op <= OP_f32_max) or (op >= OP_f64_add and op <= OP_f64_max)
-      fkeep = 1
-    # Flush the float cache before ANY opcode that could read the stale GP
-    # register. Only local.get, float consts and float binops are known safe;
-    # everything else materialises first. Conservative on purpose — a stale
-    # local read as an integer is a silent wrong answer.
-    if fcl >= 0 and not (op == OP_local_get or fkeep == 1)
-      jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
-      n += 1
-      fcl = -1
-    if ali_slot >= 0 and not (op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
-      jitm.w32(code, n, 0xAA0003E0 | (ali_reg << 16) | ali_slot)
-      n += 1
-      ali_slot = -1
-    if ali2_slot >= 0 and not (op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
-      jitm.w32(code, n, 0xAA0003E0 | (ali2_reg << 16) | ali2_slot)
-      n += 1
-      ali2_slot = -1
-
-    if op == OP_i32_const
-      # i32.const -> MOVZ/MOVK into the next stack register, UNLESS the very
-      # next opcode has an ARM64 immediate form. ARM64 encodes the shift/add
-      # amount in the instruction, so a folded constant needs no register and
-      # no MOVZ at all. In the FNV kernel this removes 8 instructions per
-      # iteration (4x `const 19; shr_u`, 4x `const {1,2,3,4}; add`).
-      #
-      # i32.const is a SIGNED LEB. Decoding it with `uleb_val` was wrong for
-      # small negatives: -7 is the single byte 0x79, which reads back as 121
-      # and was emitted as the constant 121. (Large negatives do span five
-      # bytes and did fail the fold range tests, which is why this survived.)
-      # Decode signed, then fold to the unsigned 32-bit pattern so MOVZ/MOVK
-      # emit the right bits and every range test below still rejects it.
-      v: i64 = 0
-      vsh: i64 = 0
-      vb: i64 = 0
-      vmore: i64 = 1
-      while vmore == 1
-        vb = s:byte(off + pc)
-        pc += 1
-        v |= ((vb & 0x7F) << vsh)
-        vsh += 7
-        if vb < 0x80
-          vmore = 0
-      if vsh < 64 and (vb & 0x40) != 0
-        vone: i64 = 1
-        v -= (vone << vsh)
-      v = v & 0xFFFFFFFF
-      nx: i64 = s:byte(off + pc)
-      if sp >= 1 and nx == 118 and v >= 1 and v <= 31
-        # LSR Wt, Wt, #v   (UBFM Wt, Wt, #v, #31).
-        # MEASURED: do NOT instead fold this shift into the consuming
-        # add/or/xor as a shifted-register operand. That form costs an extra
-        # cycle on Apple silicon, and doing it here was a 13% REGRESSION
-        # (0.468 s -> 0.529 s on bench/hash.wasm) even though it removed 4
-        # instructions per iteration.
-        # Each fold reads slot sp-1 and writes it. When that slot is an
-        # un-materialized local alias, read the local's register as Rn instead
-        # and let Rd stay the real stack register — that folds the `local.get`
-        # MOV away too, and those MOVs are ON the dependency chain (measured
-        # 3.8% for removing a single one).
-        # BOTH alias channels, and the second one is not decoration. A fold
-        # that consulted only `ali_slot` read the STALE stack register for a
-        # slot aliased on the second channel, and then the pending alias
-        # overwrote the folded result at the next materialization # so
-        # `local.get 3; i32.const 8; i32.add` produced local 3, not local 3 + 8.
-        # That is wasi-libc's `write` building its iovec pointer, and it was
-        # invisible for as long as an imported call bailed the whole module.
-        fs: i64 = sp - 1
-        if ali_slot == sp - 1 fs = ali_reg
-        if ali2_slot == sp - 1
-          fs = ali2_reg
-        jitm.w32(code, n, 0x53000000 | (v << 16) | (31 << 10) | (fs << 5) | (sp - 1))
-        if ali_slot == sp - 1 ali_slot = -1
-        if ali2_slot == sp - 1
-          ali2_slot = -1
-        n += 1
-        pc += 1
-      elseif sp >= 1 and nx == 116 and v >= 1 and v <= 31
-        # LSL Wt, Wt, #v   (UBFM Wt, Wt, #(-v mod 32), #(31-v))
-        fs2: i64 = sp - 1
-        if ali_slot == sp - 1 fs2 = ali_reg
-        if ali2_slot == sp - 1
-          fs2 = ali2_reg
-        jitm.w32(code, n, 0x53000000 | (((32 - v) & 31) << 16) | ((31 - v) << 10) | (fs2 << 5) | (sp - 1))
-        if ali_slot == sp - 1 ali_slot = -1
-        if ali2_slot == sp - 1
-          ali2_slot = -1
-        n += 1
-        pc += 1
-      elseif sp >= 1 and nx == 106 and v <= 4095
-        # ADD Wt, Wt, #v
-        fs3: i64 = sp - 1
-        if ali_slot == sp - 1 fs3 = ali_reg
-        if ali2_slot == sp - 1
-          fs3 = ali2_reg
-        jitm.w32(code, n, 0x11000000 | (v << 10) | (fs3 << 5) | (sp - 1))
-        if ali_slot == sp - 1 ali_slot = -1
-        if ali2_slot == sp - 1
-          ali2_slot = -1
-        n += 1
-        pc += 1
-      elseif sp >= 1 and nx == 107 and v <= 4095
-        # SUB Wt, Wt, #v
-        fs4: i64 = sp - 1
-        if ali_slot == sp - 1 fs4 = ali_reg
-        if ali2_slot == sp - 1
-          fs4 = ali2_reg
-        jitm.w32(code, n, 0x51000000 | (v << 10) | (fs4 << 5) | (sp - 1))
-        if ali_slot == sp - 1 ali_slot = -1
-        if ali2_slot == sp - 1
-          ali2_slot = -1
-        n += 1
-        pc += 1
-      else
-        d: i64 = sp
-        lo: i64 = v & 0xFFFF
-        hi: i64 = (v >> 16) & 0xFFFF
-        jitm.w32(code, n, 0x52800000 | (lo << 5) | d)
-        n += 1
-        if hi != 0
-          jitm.w32(code, n, 0x72A00000 | (hi << 5) | d)
-          n += 1
-        sp += 1
-
-    elseif op == OP_i32_rem_s or op == OP_i32_rem_u or op == OP_i64_rem_s or op == OP_i64_rem_u
-      # rem_s / rem_u, both widths. ARM64 has no remainder instruction, so
-      # divide into a scratch register and multiply back:
-      #   t = a / b ;  a = a - t * b   (MSUB)
-      # Slot `sp` is free here (it is where a push would land), which is why
-      # this needs sp <= 7 rather than the usual 8.
-      if sp < 2 or sp > 7
-        return jitbail("operand stack shape", op, pc)
-      a4: i64 = sp - 2
-      b4: i64 = sp - 1
-      t4: i64 = sp
-      dvw: i64 = 0x1AC00800
-      msw: i64 = 0x1B008000
-      if op == OP_i64_rem_s or op == OP_i64_rem_u
-        dvw = 0x9AC00800
-        msw = 0x9B008000
-      if op == OP_i32_rem_s or op == OP_i64_rem_s
-        dvw |= 0x00000400          # SDIV rather than UDIV
-      jitm.w32(code, n, dvw | (b4 << 16) | (a4 << 5) | t4)
-      n += 1
-      jitm.w32(code, n, msw | (b4 << 16) | (a4 << 10) | (t4 << 5) | a4)
-      n += 1
-      sp -= 1
-      last_alu = -1
-
-    elseif op == OP_f32_const or op == OP_f64_const
-      # f32.const / f64.const. The immediate is RAW little-endian IEEE754, not
-      # a LEB. the engine keeps floats on the operand stack as their BIT PATTERN, so
-      # a float constant is just an integer constant — no FP register needed.
-      fw: i64 = 4
-      if op == OP_f64_const
-        fw = 8
-      fv: i64 = 0
-      fk: i64 = 0
-      while fk < fw
-        fv |= (s:byte(off + pc) << (fk * 8))
-        pc += 1
-        fk += 1
-      dfq: i64 = sp
-      if fw == 4
-        jitm.w32(code, n, 0x52800000 | ((fv & 0xFFFF) << 5) | dfq)
-        n += 1
-        if ((fv >> 16) & 0xFFFF) != 0
-          jitm.w32(code, n, 0x72A00000 | (((fv >> 16) & 0xFFFF) << 5) | dfq)
-          n += 1
-      else
-        jitm.w32(code, n, 0xD2800000 | ((fv & 0xFFFF) << 5) | dfq)
-        n += 1
-        fj: i64 = 1
-        while fj < 4
-          fc: i64 = (fv >> (fj * 16)) & 0xFFFF
-          if fc != 0
-            jitm.w32(code, n, 0xF2800000 | (fj << 21) | (fc << 5) | dfq)
-            n += 1
-          fj += 1
-      sp += 1
-
-    elseif (op >= OP_f32_add and op <= OP_f32_max) or (op >= OP_f64_add and op <= OP_f64_max)
-      # f32/f64 add/sub/mul/div. Floats live in GP registers as bit patterns,
-      # so the value is moved into an FP scratch register, operated on, and
-      # moved back. That costs two FMOVs per op but needs NO second register
-      # allocator # the operand stack and locals stay entirely integer, which
-      # is what lets floats coexist with the w0..w8 / w9..w16 split.
-      if sp < 2
-        return jitbail("operand stack shape", op, pc)
-      af: i64 = sp - 2
-      bf2: i64 = sp - 1
-      # read an un-materialised alias straight out of the local's register
-      fsa: i64 = af
-      fsb: i64 = bf2
-      if ali_slot == af
-        fsa = ali_reg
-        ali_slot = -1
-      elseif ali2_slot == af
-        fsa = ali2_reg
-        ali2_slot = -1
-      if ali_slot == bf2
-        fsb = ali_reg
-        ali_slot = -1
-      elseif ali2_slot == bf2
-        fsb = ali2_reg
-        ali2_slot = -1
-      # Accumulate-in-place: `local.get N; <k>; f64.op; local.set N`. Keeping N
-      # resident in d2 removes BOTH the FMOV-out and the next iteration's
-      # FMOV-in from the dependency chain.
-      accreg: i64 = -1
-      if s:byte(off + pc) == 33
-        pidx: i64 = uleb_val(s, off + pc + 1, off + blen) + lbase
-        if pidx <= 16
-          prg: i64 = locreg(pidx, cf)
-          if fsa == prg
-            accreg = prg
-      f64op: i64 = 0
-      if op >= OP_f64_add
-        f64op = 1
-      vix: i64 = op - 146
-      if f64op == 1
-        vix = op - 160
-      fop: i64 = 0x2800
-      if vix == 1
-        fop = 0x3800
-      elseif vix == 2
-        fop = 0x0800
-      elseif vix == 3
-        fop = 0x1800
-      elseif vix == 4
-        fop = 0x5800
-      elseif vix == 5
-        fop = 0x4800
-      # The cached local's GP register is STALE, so any operand that would read
-      # it must either come from d2 (only operand `a` on the accumulate path
-      # can) or force a flush first. Without this, `b` read the stale register
-      # and wart_f64_bench drifted to 1000100036477765.6.
-      if fcl >= 0 and not (accreg == fcl and fsb != fcl)
+      # Materialize a pending local alias unless this op can't disturb it.
+      # Survives: `i32.const` (normally writes slot `sp` only) and any binop (it
+      # either consumes the alias as Rn/Rm, or sits above it on the stack).
+      # Everything else # local.set/tee, branches, compares, ends # needs the
+      # value in its own stack register.
+      # `i32.const` is safe even when it folds into slot `sp - 1`: every fold
+      # branch reads `ali_reg` as Rn when that slot is aliased.
+      # Float consts write only slot `sp`, and float binops consume their
+      # operands as Rn/Rm, so both can leave a pending local alias standing —
+      # exactly like i32.const and the integer ALU. Materialising it emitted a
+      # MOV that sat ON the float dependency chain.
+      fkeep: i64 = 0
+      if op == OP_f32_const or op == OP_f64_const or (op >= OP_f32_add and op <= OP_f32_max) or (op >= OP_f64_add and op <= OP_f64_max)
+        fkeep = 1
+      # Flush the float cache before ANY opcode that could read the stale GP
+      # register. Only local.get, float consts and float binops are known safe;
+      # everything else materialises first. Conservative on purpose — a stale
+      # local read as an integer is a silent wrong answer.
+      if fcl >= 0 and not (op == OP_local_get or fkeep == 1)
         jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
         n += 1
         fcl = -1
-      if accreg >= 0
-        # operand a: already in d2 when cached, otherwise move it in once
-        if f64op == 1
-          if fcl != accreg
-            jitm.w32(code, n, 0x9E670000 | (fsa << 5) | 2)
+      if ali_slot >= 0 and not (op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
+        jitm.w32(code, n, 0xAA0003E0 | (ali_reg << 16) | ali_slot)
+        n += 1
+        ali_slot = -1
+      if ali2_slot >= 0 and not (op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
+        jitm.w32(code, n, 0xAA0003E0 | (ali2_reg << 16) | ali2_slot)
+        n += 1
+        ali2_slot = -1
+
+      if op == OP_i32_const
+        # i32.const -> MOVZ/MOVK into the next stack register, UNLESS the very
+        # next opcode has an ARM64 immediate form. ARM64 encodes the shift/add
+        # amount in the instruction, so a folded constant needs no register and
+        # no MOVZ at all. In the FNV kernel this removes 8 instructions per
+        # iteration (4x `const 19; shr_u`, 4x `const {1,2,3,4}; add`).
+        #
+        # i32.const is a SIGNED LEB. Decoding it with `uleb_val` was wrong for
+        # small negatives: -7 is the single byte 0x79, which reads back as 121
+        # and was emitted as the constant 121. (Large negatives do span five
+        # bytes and did fail the fold range tests, which is why this survived.)
+        # Decode signed, then fold to the unsigned 32-bit pattern so MOVZ/MOVK
+        # emit the right bits and every range test below still rejects it.
+        v: i64 = 0
+        vsh: i64 = 0
+        vb: i64 = 0
+        vmore: i64 = 1
+        while vmore == 1
+          vb = s:byte(off + pc)
+          pc += 1
+          v |= ((vb & 0x7F) << vsh)
+          vsh += 7
+          if vb < 0x80
+            vmore = 0
+        if vsh < 64 and (vb & 0x40) != 0
+          vone: i64 = 1
+          v -= (vone << vsh)
+        v = v & 0xFFFFFFFF
+        nx: i64 = s:byte(off + pc)
+        if sp >= 1 and nx == 118 and v >= 1 and v <= 31
+          # LSR Wt, Wt, #v   (UBFM Wt, Wt, #v, #31).
+          # MEASURED: do NOT instead fold this shift into the consuming
+          # add/or/xor as a shifted-register operand. That form costs an extra
+          # cycle on Apple silicon, and doing it here was a 13% REGRESSION
+          # (0.468 s -> 0.529 s on bench/hash.wasm) even though it removed 4
+          # instructions per iteration.
+          # Each fold reads slot sp-1 and writes it. When that slot is an
+          # un-materialized local alias, read the local's register as Rn instead
+          # and let Rd stay the real stack register — that folds the `local.get`
+          # MOV away too, and those MOVs are ON the dependency chain (measured
+          # 3.8% for removing a single one).
+          # BOTH alias channels, and the second one is not decoration. A fold
+          # that consulted only `ali_slot` read the STALE stack register for a
+          # slot aliased on the second channel, and then the pending alias
+          # overwrote the folded result at the next materialization # so
+          # `local.get 3; i32.const 8; i32.add` produced local 3, not local 3 + 8.
+          # That is wasi-libc's `write` building its iovec pointer, and it was
+          # invisible for as long as an imported call bailed the whole module.
+          fs: i64 = sp - 1
+          if ali_slot == sp - 1 fs = ali_reg
+          if ali2_slot == sp - 1
+            fs = ali2_reg
+          jitm.w32(code, n, 0x53000000 | (v << 16) | (31 << 10) | (fs << 5) | (sp - 1))
+          if ali_slot == sp - 1 ali_slot = -1
+          if ali2_slot == sp - 1
+            ali2_slot = -1
+          n += 1
+          pc += 1
+        elseif sp >= 1 and nx == 116 and v >= 1 and v <= 31
+          # LSL Wt, Wt, #v   (UBFM Wt, Wt, #(-v mod 32), #(31-v))
+          fs2: i64 = sp - 1
+          if ali_slot == sp - 1 fs2 = ali_reg
+          if ali2_slot == sp - 1
+            fs2 = ali2_reg
+          jitm.w32(code, n, 0x53000000 | (((32 - v) & 31) << 16) | ((31 - v) << 10) | (fs2 << 5) | (sp - 1))
+          if ali_slot == sp - 1 ali_slot = -1
+          if ali2_slot == sp - 1
+            ali2_slot = -1
+          n += 1
+          pc += 1
+        elseif sp >= 1 and nx == 106 and v <= 4095
+          # ADD Wt, Wt, #v
+          fs3: i64 = sp - 1
+          if ali_slot == sp - 1 fs3 = ali_reg
+          if ali2_slot == sp - 1
+            fs3 = ali2_reg
+          jitm.w32(code, n, 0x11000000 | (v << 10) | (fs3 << 5) | (sp - 1))
+          if ali_slot == sp - 1 ali_slot = -1
+          if ali2_slot == sp - 1
+            ali2_slot = -1
+          n += 1
+          pc += 1
+        elseif sp >= 1 and nx == 107 and v <= 4095
+          # SUB Wt, Wt, #v
+          fs4: i64 = sp - 1
+          if ali_slot == sp - 1 fs4 = ali_reg
+          if ali2_slot == sp - 1
+            fs4 = ali2_reg
+          jitm.w32(code, n, 0x51000000 | (v << 10) | (fs4 << 5) | (sp - 1))
+          if ali_slot == sp - 1 ali_slot = -1
+          if ali2_slot == sp - 1
+            ali2_slot = -1
+          n += 1
+          pc += 1
+        else
+          d: i64 = sp
+          lo: i64 = v & 0xFFFF
+          hi: i64 = (v >> 16) & 0xFFFF
+          jitm.w32(code, n, 0x52800000 | (lo << 5) | d)
+          n += 1
+          if hi != 0
+            jitm.w32(code, n, 0x72A00000 | (hi << 5) | d)
             n += 1
+          sp += 1
+
+      elseif op == OP_i32_rem_s or op == OP_i32_rem_u or op == OP_i64_rem_s or op == OP_i64_rem_u
+        # rem_s / rem_u, both widths. ARM64 has no remainder instruction, so
+        # divide into a scratch register and multiply back:
+        #   t = a / b ;  a = a - t * b   (MSUB)
+        # Slot `sp` is free here (it is where a push would land), which is why
+        # this needs sp <= 7 rather than the usual 8.
+        if sp < 2 or sp > 7
+          return jitbail("operand stack shape", op, pc)
+        a4: i64 = sp - 2
+        b4: i64 = sp - 1
+        t4: i64 = sp
+        dvw: i64 = 0x1AC00800
+        msw: i64 = 0x1B008000
+        if op == OP_i64_rem_s or op == OP_i64_rem_u
+          dvw = 0x9AC00800
+          msw = 0x9B008000
+        if op == OP_i32_rem_s or op == OP_i64_rem_s
+          dvw |= 0x00000400          # SDIV rather than UDIV
+        jitm.w32(code, n, dvw | (b4 << 16) | (a4 << 5) | t4)
+        n += 1
+        jitm.w32(code, n, msw | (b4 << 16) | (a4 << 10) | (t4 << 5) | a4)
+        n += 1
+        sp -= 1
+        last_alu = -1
+
+      elseif op == OP_f32_const or op == OP_f64_const
+        # f32.const / f64.const. The immediate is RAW little-endian IEEE754, not
+        # a LEB. the engine keeps floats on the operand stack as their BIT PATTERN, so
+        # a float constant is just an integer constant — no FP register needed.
+        fw: i64 = 4
+        if op == OP_f64_const
+          fw = 8
+        fv: i64 = 0
+        fk: i64 = 0
+        while fk < fw
+          fv |= (s:byte(off + pc) << (fk * 8))
+          pc += 1
+          fk += 1
+        dfq: i64 = sp
+        if fw == 4
+          jitm.w32(code, n, 0x52800000 | ((fv & 0xFFFF) << 5) | dfq)
+          n += 1
+          if ((fv >> 16) & 0xFFFF) != 0
+            jitm.w32(code, n, 0x72A00000 | (((fv >> 16) & 0xFFFF) << 5) | dfq)
+            n += 1
+        else
+          jitm.w32(code, n, 0xD2800000 | ((fv & 0xFFFF) << 5) | dfq)
+          n += 1
+          fj: i64 = 1
+          while fj < 4
+            fc: i64 = (fv >> (fj * 16)) & 0xFFFF
+            if fc != 0
+              jitm.w32(code, n, 0xF2800000 | (fj << 21) | (fc << 5) | dfq)
+              n += 1
+            fj += 1
+        sp += 1
+
+      elseif (op >= OP_f32_add and op <= OP_f32_max) or (op >= OP_f64_add and op <= OP_f64_max)
+        # f32/f64 add/sub/mul/div. Floats live in GP registers as bit patterns,
+        # so the value is moved into an FP scratch register, operated on, and
+        # moved back. That costs two FMOVs per op but needs NO second register
+        # allocator # the operand stack and locals stay entirely integer, which
+        # is what lets floats coexist with the w0..w8 / w9..w16 split.
+        if sp < 2
+          return jitbail("operand stack shape", op, pc)
+        af: i64 = sp - 2
+        bf2: i64 = sp - 1
+        # read an un-materialised alias straight out of the local's register
+        fsa: i64 = af
+        fsb: i64 = bf2
+        if ali_slot == af
+          fsa = ali_reg
+          ali_slot = -1
+        elseif ali2_slot == af
+          fsa = ali2_reg
+          ali2_slot = -1
+        if ali_slot == bf2
+          fsb = ali_reg
+          ali_slot = -1
+        elseif ali2_slot == bf2
+          fsb = ali2_reg
+          ali2_slot = -1
+        # Accumulate-in-place: `local.get N; <k>; f64.op; local.set N`. Keeping N
+        # resident in d2 removes BOTH the FMOV-out and the next iteration's
+        # FMOV-in from the dependency chain.
+        accreg: i64 = -1
+        if s:byte(off + pc) == 33
+          pidx: i64 = uleb_val(s, off + pc + 1, off + blen) + lbase
+          if pidx <= 16
+            prg: i64 = locreg(pidx, cf)
+            if fsa == prg
+              accreg = prg
+        f64op: i64 = 0
+        if op >= OP_f64_add
+          f64op = 1
+        vix: i64 = op - 146
+        if f64op == 1
+          vix = op - 160
+        fop: i64 = 0x2800
+        if vix == 1
+          fop = 0x3800
+        elseif vix == 2
+          fop = 0x0800
+        elseif vix == 3
+          fop = 0x1800
+        elseif vix == 4
+          fop = 0x5800
+        elseif vix == 5
+          fop = 0x4800
+        # The cached local's GP register is STALE, so any operand that would read
+        # it must either come from d2 (only operand `a` on the accumulate path
+        # can) or force a flush first. Without this, `b` read the stale register
+        # and wart_f64_bench drifted to 1000100036477765.6.
+        if fcl >= 0 and not (accreg == fcl and fsb != fcl)
+          jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
+          n += 1
+          fcl = -1
+        if accreg >= 0
+          # operand a: already in d2 when cached, otherwise move it in once
+          if f64op == 1
+            if fcl != accreg
+              jitm.w32(code, n, 0x9E670000 | (fsa << 5) | 2)
+              n += 1
+            jitm.w32(code, n, 0x9E670000 | (fsb << 5) | 1)
+            n += 1
+            jitm.w32(code, n, 0x1E600000 | fop | (1 << 16) | (2 << 5) | 2)
+            n += 1
+          else
+            if fcl != accreg
+              jitm.w32(code, n, 0x1E270000 | (fsa << 5) | 2)
+              n += 1
+            jitm.w32(code, n, 0x1E270000 | (fsb << 5) | 1)
+            n += 1
+            jitm.w32(code, n, 0x1E200000 | fop | (1 << 16) | (2 << 5) | 2)
+            n += 1
+          fcl = accreg
+          # consume the fused local.set
+          pc = uleb_end(s, off + pc + 1, off + blen) - off
+        elseif f64op == 1
+          jitm.w32(code, n, 0x9E670000 | (fsa << 5))
+          n += 1
           jitm.w32(code, n, 0x9E670000 | (fsb << 5) | 1)
           n += 1
-          jitm.w32(code, n, 0x1E600000 | fop | (1 << 16) | (2 << 5) | 2)
+          jitm.w32(code, n, 0x1E600000 | fop | (1 << 16))
+          n += 1
+          jitm.w32(code, n, 0x9E660000 | af)
           n += 1
         else
-          if fcl != accreg
-            jitm.w32(code, n, 0x1E270000 | (fsa << 5) | 2)
-            n += 1
+          jitm.w32(code, n, 0x1E270000 | (fsa << 5))
+          n += 1
           jitm.w32(code, n, 0x1E270000 | (fsb << 5) | 1)
           n += 1
-          jitm.w32(code, n, 0x1E200000 | fop | (1 << 16) | (2 << 5) | 2)
+          jitm.w32(code, n, 0x1E200000 | fop | (1 << 16))
           n += 1
-        fcl = accreg
-        # consume the fused local.set
-        pc = uleb_end(s, off + pc + 1, off + blen) - off
-      elseif f64op == 1
-        jitm.w32(code, n, 0x9E670000 | (fsa << 5))
+          jitm.w32(code, n, 0x1E260000 | af)
+          n += 1
+        # The fused form consumed the local.set itself, so it pops BOTH operands
+        # and leaves nothing to retarget.
+        if accreg >= 0
+          sp -= 2
+          last_alu = -1
+          last_cset = -1
+        else
+          sp -= 1
+          # The FMOV-out writes slot `af`, and its Rd sits in bits 0..4 like any
+          # ALU word, so a following local.set/tee can retarget it at the local
+          # register directly instead of emitting its own MOV — the same trick
+          # the integer path uses, and that MOV was on the chain too.
+          last_alu = n - 1
+          last_slot = af
+          last_cset = -1
+
+      elseif op == OP_i64_const
+        # i64.const -> up to four MOVZ/MOVK into the next stack register, in the
+        # 64-bit forms (0xD2.. / 0xF2..). The value is a SIGNED LEB of up to ten
+        # bytes, so it is decoded here rather than through `uleb_val`.
+        q: i64 = 0
+        qsh: i64 = 0
+        qb: i64 = 0
+        qmore: i64 = 1
+        while qmore == 1
+          qb = s:byte(off + pc)
+          pc += 1
+          q |= ((qb & 0x7F) << qsh)
+          qsh += 7
+          if qb < 0x80
+            qmore = 0
+        if qsh < 64 and (qb & 0x40) != 0
+          qone: i64 = 1
+          q -= (qone << qsh)
+        dq: i64 = sp
+        jitm.w32(code, n, 0xD2800000 | ((q & 0xFFFF) << 5) | dq)
         n += 1
-        jitm.w32(code, n, 0x9E670000 | (fsb << 5) | 1)
+        qk: i64 = 1
+        while qk < 4
+          qc: i64 = (q >> (qk * 16)) & 0xFFFF
+          if qc != 0
+            jitm.w32(code, n, 0xF2800000 | (qk << 21) | (qc << 5) | dq)
+            n += 1
+          qk += 1
+        sp += 1
+
+      elseif op == OP_local_get
+        # local.get: do NOT copy the local into a stack register. Record that the
+        # pushed slot IS the local's register and let the consuming ALU op read it
+        # directly. Unlike the constant/shift folds, the MOV removed here sits ON
+        # the dependency chain (`mov w4,w9` feeding the very next `eor`/`madd`).
+        # Only one alias is tracked; a second local.get materializes the first.
+        idx: i64 = uleb_val(s, off + pc, off + blen) + lbase
+        pc = uleb_end(s, off + pc, off + blen) - off
+        # Locals occupy w9..w17 then w19..w27: EIGHTEEN of them. x18 is skipped
+        # because it is the reserved platform register on Darwin, and x29/x30 are
+        # the frame pointer and link register. The old cap of 8 was what blocked
+        # wart_mixed_type_bench and wart_complete_opcode_bench.
+        if idx > 16
+          return jitbail("local index above 16", op, pc)
+        rgi: i64 = locreg(idx, cf)
+        # Two alias registers, because consecutive `local.get`s are the common
+        # shape (`local.get 1; local.get 0; xor`) and with only one tracked the
+        # second spills a chain MOV.
+        if ali_slot < 0
+          ali_slot = sp
+          ali_reg = rgi
+        elseif ali2_slot < 0
+          ali2_slot = sp
+          ali2_reg = rgi
+        else
+          jitm.w32(code, n, 0xAA0003E0 | (rgi << 16) | sp)
+          n += 1
+        sp += 1
+
+      elseif op == OP_local_set or op == OP_local_tee
+        # local.set / local.tee -> MOV Wlocal, Wtop
+        idx2: i64 = uleb_val(s, off + pc, off + blen) + lbase
+        pc = uleb_end(s, off + pc, off + blen) - off
+        if idx2 > 16 or sp < 1
+          return jitbail("local index above 16", op, pc)
+        rgo: i64 = locreg(idx2, cf)
+        # If the value was just produced by an ALU op into this very slot,
+        # retarget that instruction's Rd at the local register instead of copying.
+        # These MOVs are on the dependency chain: one round's `local.tee` feeds
+        # the next round's read.
+        if last_alu == n - 1 and last_slot == sp - 1
+          jitm.w32(code, last_alu, (jitm.r32(code, last_alu) & 0xFFFFFFE0) | rgo)
+          last_alu = -1
+          # `tee` leaves the value on the stack too — it now lives in the local
+          # register, so record that as the slot's alias rather than copying back.
+          if op == OP_local_tee
+            ali_slot = sp - 1
+            ali_reg = rgo
+        else
+          jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | rgo)
+          n += 1
+        if op == OP_local_set
+          sp -= 1
+
+      elseif aw != 0
+        # binary ALU: Wd = W(sp-2) op W(sp-1)
+        if sp < 2
+          return jitbail("operand stack shape", op, pc)
+        a: i64 = sp - 2
+        b: i64 = sp - 1
+        # An aliased operand is read straight out of the local's register. The
+        # destination stays the real stack register `a`, so no alias escapes.
+        # Works in either position: the form is Rd = Rn op Rm with Rn = a, Rm = b,
+        # so no commutativity is required. BOTH operands may be aliased at once
+        # (`local.get 1; local.get 0; xor`), hence resolving each independently
+        # rather than an either/or chain.
+        ra: i64 = a
+        rb: i64 = b
+        if ali_slot == a ra = ali_reg
+        if ali_slot == b rb = ali_reg
+        if ali2_slot == a ra = ali2_reg
+        if ali2_slot == b rb = ali2_reg
+        jitm.w32(code, n, aw | (rb << 16) | (ra << 5) | a)
+        if ali_slot == a or ali_slot == b ali_slot = -1
+        if ali2_slot == a or ali2_slot == b ali2_slot = -1
         n += 1
-        jitm.w32(code, n, 0x1E600000 | fop | (1 << 16))
-        n += 1
-        jitm.w32(code, n, 0x9E660000 | af)
-        n += 1
-      else
-        jitm.w32(code, n, 0x1E270000 | (fsa << 5))
-        n += 1
-        jitm.w32(code, n, 0x1E270000 | (fsb << 5) | 1)
-        n += 1
-        jitm.w32(code, n, 0x1E200000 | fop | (1 << 16))
-        n += 1
-        jitm.w32(code, n, 0x1E260000 | af)
-        n += 1
-      # The fused form consumed the local.set itself, so it pops BOTH operands
-      # and leaves nothing to retarget.
-      if accreg >= 0
-        sp -= 2
-        last_alu = -1
-        last_cset = -1
-      else
-        sp -= 1
-        # The FMOV-out writes slot `af`, and its Rd sits in bits 0..4 like any
-        # ALU word, so a following local.set/tee can retarget it at the local
-        # register directly instead of emitting its own MOV — the same trick
-        # the integer path uses, and that MOV was on the chain too.
         last_alu = n - 1
-        last_slot = af
-        last_cset = -1
-
-    elseif op == OP_i64_const
-      # i64.const -> up to four MOVZ/MOVK into the next stack register, in the
-      # 64-bit forms (0xD2.. / 0xF2..). The value is a SIGNED LEB of up to ten
-      # bytes, so it is decoded here rather than through `uleb_val`.
-      q: i64 = 0
-      qsh: i64 = 0
-      qb: i64 = 0
-      qmore: i64 = 1
-      while qmore == 1
-        qb = s:byte(off + pc)
-        pc += 1
-        q |= ((qb & 0x7F) << qsh)
-        qsh += 7
-        if qb < 0x80
-          qmore = 0
-      if qsh < 64 and (qb & 0x40) != 0
-        qone: i64 = 1
-        q -= (qone << qsh)
-      dq: i64 = sp
-      jitm.w32(code, n, 0xD2800000 | ((q & 0xFFFF) << 5) | dq)
-      n += 1
-      qk: i64 = 1
-      while qk < 4
-        qc: i64 = (q >> (qk * 16)) & 0xFFFF
-        if qc != 0
-          jitm.w32(code, n, 0xF2800000 | (qk << 21) | (qc << 5) | dq)
-          n += 1
-        qk += 1
-      sp += 1
-
-    elseif op == OP_local_get
-      # local.get: do NOT copy the local into a stack register. Record that the
-      # pushed slot IS the local's register and let the consuming ALU op read it
-      # directly. Unlike the constant/shift folds, the MOV removed here sits ON
-      # the dependency chain (`mov w4,w9` feeding the very next `eor`/`madd`).
-      # Only one alias is tracked; a second local.get materializes the first.
-      idx: i64 = uleb_val(s, off + pc, off + blen) + lbase
-      pc = uleb_end(s, off + pc, off + blen) - off
-      # Locals occupy w9..w17 then w19..w27: EIGHTEEN of them. x18 is skipped
-      # because it is the reserved platform register on Darwin, and x29/x30 are
-      # the frame pointer and link register. The old cap of 8 was what blocked
-      # wart_mixed_type_bench and wart_complete_opcode_bench.
-      if idx > 16
-        return jitbail("local index above 16", op, pc)
-      rgi: i64 = locreg(idx, cf)
-      # Two alias registers, because consecutive `local.get`s are the common
-      # shape (`local.get 1; local.get 0; xor`) and with only one tracked the
-      # second spills a chain MOV.
-      if ali_slot < 0
-        ali_slot = sp
-        ali_reg = rgi
-      elseif ali2_slot < 0
-        ali2_slot = sp
-        ali2_reg = rgi
-      else
-        jitm.w32(code, n, 0xAA0003E0 | (rgi << 16) | sp)
-        n += 1
-      sp += 1
-
-    elseif op == OP_local_set or op == OP_local_tee
-      # local.set / local.tee -> MOV Wlocal, Wtop
-      idx2: i64 = uleb_val(s, off + pc, off + blen) + lbase
-      pc = uleb_end(s, off + pc, off + blen) - off
-      if idx2 > 16 or sp < 1
-        return jitbail("local index above 16", op, pc)
-      rgo: i64 = locreg(idx2, cf)
-      # If the value was just produced by an ALU op into this very slot,
-      # retarget that instruction's Rd at the local register instead of copying.
-      # These MOVs are on the dependency chain: one round's `local.tee` feeds
-      # the next round's read.
-      if last_alu == n - 1 and last_slot == sp - 1
-        jitm.w32(code, last_alu, (jitm.r32(code, last_alu) & 0xFFFFFFE0) | rgo)
-        last_alu = -1
-        # `tee` leaves the value on the stack too — it now lives in the local
-        # register, so record that as the slot's alias rather than copying back.
-        if op == OP_local_tee
-          ali_slot = sp - 1
-          ali_reg = rgo
-      else
-        jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | rgo)
-        n += 1
-      if op == OP_local_set
+        last_slot = a
         sp -= 1
 
-    elseif aw != 0
-      # binary ALU: Wd = W(sp-2) op W(sp-1)
-      if sp < 2
-        return jitbail("operand stack shape", op, pc)
-      a: i64 = sp - 2
-      b: i64 = sp - 1
-      # An aliased operand is read straight out of the local's register. The
-      # destination stays the real stack register `a`, so no alias escapes.
-      # Works in either position: the form is Rd = Rn op Rm with Rn = a, Rm = b,
-      # so no commutativity is required. BOTH operands may be aliased at once
-      # (`local.get 1; local.get 0; xor`), hence resolving each independently
-      # rather than an either/or chain.
-      ra: i64 = a
-      rb: i64 = b
-      if ali_slot == a ra = ali_reg
-      if ali_slot == b rb = ali_reg
-      if ali2_slot == a ra = ali2_reg
-      if ali2_slot == b rb = ali2_reg
-      jitm.w32(code, n, aw | (rb << 16) | (ra << 5) | a)
-      if ali_slot == a or ali_slot == b ali_slot = -1
-      if ali2_slot == a or ali2_slot == b ali2_slot = -1
-      n += 1
-      last_alu = n - 1
-      last_slot = a
-      sp -= 1
-
-    elseif cc >= 0
-      # comparison: CMP W(sp-2), W(sp-1) then CSET W(sp-2), cond
-      if sp < 2
-        return jitbail("operand stack shape", op, pc)
-      a2: i64 = sp - 2
-      b2: i64 = sp - 1
-      cmpw: i64 = 0x6B00001F
-      if op >= OP_i64_eqz and op <= OP_i64_ge_u
-        cmpw = 0xEB00001F
-      jitm.w32(code, n, cmpw | (b2 << 16) | (a2 << 5))
-      n += 1
-      jitm.w32(code, n, 0x1A9F07E0 | ((cc ~ 1) << 12) | a2)
-      n += 1
-      last_cset = n - 1
-      last_cc = cc
-      sp -= 1
-
-    elseif op == OP_i32_eqz
-      # i32.eqz -> CMP Wt, #0 ; CSET Wt, EQ
-      t: i64 = sp - 1
-      jitm.w32(code, n, 0x7100001F | (t << 5))
-      n += 1
-      jitm.w32(code, n, 0x1A9F07E0 | (1 << 12) | t)
-      n += 1
-      last_cset = n - 1
-      last_cc = 0
-
-    elseif op >= OP_i32_wrap_i64 and op <= OP_f64_reinterpret_i64
-      # the conversion block. Unary throughout: the operand slot is reused for
-      # the result. int<->int is one instruction; int->float and float->int are
-      # two (the FP unit reads/writes a GP register directly for SCVTF/FCVTZS,
-      # so only one FMOV is needed); demote/promote need three.
-      if sp < 1
-        return jitbail("operand stack shape", op, pc)
-      cv: i64 = sp - 1
-      if op == OP_i32_wrap_i64 or op == OP_i64_extend_i32_u
-        # i32.wrap_i64 / i64.extend_i32_u: a 32-bit MOV truncates and
-        # zero-extends in the same instruction
-        jitm.w32(code, n, 0x2A0003E0 | (cv << 16) | cv)
+      elseif cc >= 0
+        # comparison: CMP W(sp-2), W(sp-1) then CSET W(sp-2), cond
+        if sp < 2
+          return jitbail("operand stack shape", op, pc)
+        a2: i64 = sp - 2
+        b2: i64 = sp - 1
+        cmpw: i64 = 0x6B00001F
+        if op >= OP_i64_eqz and op <= OP_i64_ge_u
+          cmpw = 0xEB00001F
+        jitm.w32(code, n, cmpw | (b2 << 16) | (a2 << 5))
         n += 1
-      elseif op == OP_i64_extend_i32_s
-        jitm.w32(code, n, 0x93407C00 | (cv << 5) | cv)   # SXTW
+        jitm.w32(code, n, 0x1A9F07E0 | ((cc ~ 1) << 12) | a2)
         n += 1
-      elseif op >= OP_i32_reinterpret_f32
-        # reinterpret is FREE here: the engine keeps floats in GP registers as bit
-        # patterns, so this is the identity. Only the 32-bit forms clear the
-        # high half.
-        if op == OP_i32_reinterpret_f32 or op == OP_f32_reinterpret_i32
+        last_cset = n - 1
+        last_cc = cc
+        sp -= 1
+
+      elseif op == OP_i32_eqz
+        # i32.eqz -> CMP Wt, #0 ; CSET Wt, EQ
+        t: i64 = sp - 1
+        jitm.w32(code, n, 0x7100001F | (t << 5))
+        n += 1
+        jitm.w32(code, n, 0x1A9F07E0 | (1 << 12) | t)
+        n += 1
+        last_cset = n - 1
+        last_cc = 0
+
+      elseif op >= OP_i32_wrap_i64 and op <= OP_f64_reinterpret_i64
+        # the conversion block. Unary throughout: the operand slot is reused for
+        # the result. int<->int is one instruction; int->float and float->int are
+        # two (the FP unit reads/writes a GP register directly for SCVTF/FCVTZS,
+        # so only one FMOV is needed); demote/promote need three.
+        if sp < 1
+          return jitbail("operand stack shape", op, pc)
+        cv: i64 = sp - 1
+        if op == OP_i32_wrap_i64 or op == OP_i64_extend_i32_u
+          # i32.wrap_i64 / i64.extend_i32_u: a 32-bit MOV truncates and
+          # zero-extends in the same instruction
           jitm.w32(code, n, 0x2A0003E0 | (cv << 16) | cv)
           n += 1
-      elseif op == OP_f32_demote_f64
-        # f32.demote_f64
-        jitm.w32(code, n, 0x9E670000 | (cv << 5))
-        n += 1
-        jitm.w32(code, n, 0x1E624000)
-        n += 1
-        jitm.w32(code, n, 0x1E260000 | cv)
-        n += 1
-      elseif op == OP_f64_promote_f32
-        # f64.promote_f32
-        jitm.w32(code, n, 0x1E270000 | (cv << 5))
-        n += 1
-        jitm.w32(code, n, 0x1E22C000)
-        n += 1
-        jitm.w32(code, n, 0x9E660000 | cv)
-        n += 1
-      elseif op >= OP_f32_convert_i32_s and op <= OP_f64_convert_i64_u
-        # int -> float: SCVTF/UCVTF reads the GP register directly
-        cw: i64 = 0x1E220000                       # f32 <- i32, signed
-        if op == OP_f32_convert_i32_u
-          cw = 0x1E230000
-        elseif op == OP_f32_convert_i64_s
-          cw = 0x9E220000
-        elseif op == OP_f32_convert_i64_u
-          cw = 0x9E230000
-        elseif op == OP_f64_convert_i32_s
-          cw = 0x1E620000
-        elseif op == OP_f64_convert_i32_u
-          cw = 0x1E630000
-        elseif op == OP_f64_convert_i64_s
-          cw = 0x9E620000
-        elseif op == OP_f64_convert_i64_u
-          cw = 0x9E630000
-        jitm.w32(code, n, cw | (cv << 5))
-        n += 1
-        if op >= OP_f64_convert_i32_s
-          jitm.w32(code, n, 0x9E660000 | cv)
+        elseif op == OP_i64_extend_i32_s
+          jitm.w32(code, n, 0x93407C00 | (cv << 5) | cv)   # SXTW
           n += 1
-        else
+        elseif op >= OP_i32_reinterpret_f32
+          # reinterpret is FREE here: the engine keeps floats in GP registers as bit
+          # patterns, so this is the identity. Only the 32-bit forms clear the
+          # high half.
+          if op == OP_i32_reinterpret_f32 or op == OP_f32_reinterpret_i32
+            jitm.w32(code, n, 0x2A0003E0 | (cv << 16) | cv)
+            n += 1
+        elseif op == OP_f32_demote_f64
+          # f32.demote_f64
+          jitm.w32(code, n, 0x9E670000 | (cv << 5))
+          n += 1
+          jitm.w32(code, n, 0x1E624000)
+          n += 1
           jitm.w32(code, n, 0x1E260000 | cv)
           n += 1
-      else
-        # float -> int, truncating toward zero
-        srcf32: i64 = 0
-        if op == OP_i32_trunc_f32_s or op == OP_i32_trunc_f32_u or op == OP_i64_trunc_f32_s or op == OP_i64_trunc_f32_u
-          srcf32 = 1
-        if srcf32 == 1
+        elseif op == OP_f64_promote_f32
+          # f64.promote_f32
           jitm.w32(code, n, 0x1E270000 | (cv << 5))
-        else
-          jitm.w32(code, n, 0x9E670000 | (cv << 5))
-        n += 1
-        tw: i64 = 0x1E380000
-        if op == OP_i32_trunc_f32_u
-          tw = 0x1E390000
-        elseif op == OP_i32_trunc_f64_s
-          tw = 0x1E780000
-        elseif op == OP_i32_trunc_f64_u
-          tw = 0x1E790000
-        elseif op == OP_i64_trunc_f32_s
-          tw = 0x9E380000
-        elseif op == OP_i64_trunc_f32_u
-          tw = 0x9E390000
-        elseif op == OP_i64_trunc_f64_s
-          tw = 0x9E780000
-        elseif op == OP_i64_trunc_f64_u
-          tw = 0x9E790000
-        jitm.w32(code, n, tw | cv)
-        n += 1
-      last_alu = -1
-      last_cset = -1
-
-    elseif (op >= OP_f32_eq and op <= OP_f64_ge)
-      # f32/f64 compares: FCMP then CSET. The conditions are the IEEE ones, so
-      # an unordered (NaN) operand yields false for lt/gt/le/ge and true for
-      # ne, matching wasm: eq=EQ, ne=NE, lt=MI, gt=GT, le=LS, ge=GE.
-      if sp < 2
-        return jitbail("operand stack shape", op, pc)
-      ca: i64 = sp - 2
-      cb: i64 = sp - 1
-      c64: i64 = 0
-      if op >= OP_f64_eq
-        c64 = 1
-      cix: i64 = op - 91
-      if c64 == 1
-        cix = op - 97
-      fcc: i64 = 0
-      if cix == 1
-        fcc = 1
-      elseif cix == 2
-        fcc = 4
-      elseif cix == 3
-        fcc = 12
-      elseif cix == 4
-        fcc = 9
-      elseif cix == 5
-        fcc = 10
-      if c64 == 1
-        jitm.w32(code, n, 0x9E670000 | (ca << 5))
-        n += 1
-        jitm.w32(code, n, 0x9E670000 | (cb << 5) | 1)
-        n += 1
-        jitm.w32(code, n, 0x1E602000 | (1 << 16))
-        n += 1
-      else
-        jitm.w32(code, n, 0x1E270000 | (ca << 5))
-        n += 1
-        jitm.w32(code, n, 0x1E270000 | (cb << 5) | 1)
-        n += 1
-        jitm.w32(code, n, 0x1E202000 | (1 << 16))
-        n += 1
-      jitm.w32(code, n, 0x1A9F07E0 | ((fcc ~ 1) << 12) | ca)
-      n += 1
-      sp -= 1
-      last_cset = n - 1
-      last_cc = fcc
-      last_alu = -1
-
-    elseif op == OP_f32_abs or op == OP_f32_neg or op == OP_f64_abs or op == OP_f64_neg
-      # f32/f64 abs and neg are SIGN-BIT operations, so in the bit-pattern
-      # representation they are integer masking with NO FP register at all:
-      # abs clears the sign bit, neg flips it. That removes two shuttle moves
-      # each, both of which sat on the dependency chain.
-      if sp < 1 or sp > 8
-        return jitbail("operand stack shape", op, pc)
-      na: i64 = sp - 1
-      nt: i64 = sp
-      if op == OP_f64_abs or op == OP_f64_neg
-        jitm.w32(code, n, 0xD2800000 | nt)
-        n += 1
-        jitm.w32(code, n, 0xF2E00000 | (0x8000 << 5) | nt)
-        n += 1
-        if op == OP_f64_abs
-          jitm.w32(code, n, 0x8A200000 | (nt << 16) | (na << 5) | na)
-        else
-          jitm.w32(code, n, 0xCA000000 | (nt << 16) | (na << 5) | na)
-        n += 1
-      else
-        jitm.w32(code, n, 0x52800000 | nt)
-        n += 1
-        jitm.w32(code, n, 0x72A00000 | (0x8000 << 5) | nt)
-        n += 1
-        if op == OP_f32_abs
-          jitm.w32(code, n, 0x0A200000 | (nt << 16) | (na << 5) | na)
-        else
-          jitm.w32(code, n, 0x4A000000 | (nt << 16) | (na << 5) | na)
-        n += 1
-      last_alu = -1
-      last_cset = -1
-
-    elseif (op >= OP_f32_ceil and op <= OP_f32_sqrt) or (op >= OP_f64_ceil and op <= OP_f64_sqrt)
-      # f32/f64 abs/neg/ceil/floor/trunc/nearest/sqrt: one FP-source op, using
-      # the same GP<->FP shuttle as the binops. Offsets are the ARM64 opcode
-      # field, identical for single and double; only the type base differs.
-      if sp < 1
-        return jitbail("operand stack shape", op, pc)
-      uf: i64 = sp - 1
-      ubase: i64 = 0x1E200000
-      uix: i64 = op - 139
-      if op >= OP_f64_abs
-        ubase = 0x1E600000
-        uix = op - 153
-      uw: i64 = 0xC000
-      if uix == 1
-        uw = 0x14000
-      elseif uix == 2
-        uw = 0x4C000
-      elseif uix == 3
-        uw = 0x54000
-      elseif uix == 4
-        uw = 0x5C000
-      elseif uix == 5
-        uw = 0x44000
-      elseif uix == 6
-        uw = 0x1C000
-      if ubase == 0x1E600000
-        jitm.w32(code, n, 0x9E670000 | (uf << 5))
-        n += 1
-        jitm.w32(code, n, ubase | uw)
-        n += 1
-        jitm.w32(code, n, 0x9E660000 | uf)
-        n += 1
-      else
-        jitm.w32(code, n, 0x1E270000 | (uf << 5))
-        n += 1
-        jitm.w32(code, n, ubase | uw)
-        n += 1
-        jitm.w32(code, n, 0x1E260000 | uf)
-        n += 1
-      last_alu = -1
-      last_cset = -1
-
-    elseif op == OP_i32_eqz or op == OP_i64_eqz
-      # i32.eqz / i64.eqz: compare against zero, then CSET EQ. Unary, so the
-      # operand slot is reused for the result.
-      if sp < 1
-        return jitbail("operand stack shape", op, pc)
-      ez: i64 = sp - 1
-      ezw: i64 = 0x7100001F
-      if op == OP_i64_eqz
-        ezw = 0xF100001F
-      jitm.w32(code, n, ezw | (ez << 5))
-      n += 1
-      jitm.w32(code, n, 0x1A9F07E0 | (1 << 12) | ez)
-      n += 1
-      last_cset = n - 1
-      last_cc = 0
-      last_alu = -1
-
-    elseif (op >= OP_i32_load8_s and op <= OP_i64_load32_u) or (op >= OP_i32_store8 and op <= OP_i64_store32)
-      # sub-width loads and stores. Same effective-address form as the full
-      # width ops; only the size, signedness and offset scale differ.
-      salign: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      soff: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      # size in bytes, and whether the load sign-extends
-      ssz: i64 = 1
-      ssg: i64 = 0
-      sx64: i64 = 0
-      if op == OP_i32_load8_s or op == OP_i32_load16_s or op == OP_i64_load8_s or op == OP_i64_load16_s or op == OP_i64_load32_s
-        ssg = 1
-      if op == OP_i32_load16_s or op == OP_i32_load16_u or op == OP_i64_load16_s or op == OP_i64_load16_u or op == OP_i32_store16 or op == OP_i64_store16
-        ssz = 2
-      if op == OP_i64_load32_s or op == OP_i64_load32_u or op == OP_i64_store32
-        ssz = 4
-      if op >= OP_i64_load8_s and op <= OP_i64_load32_u
-        sx64 = 1
-      # The scaled 12-bit immediate reaches 4095 slots and demands natural
-      # alignment. Everything else FOLDS INTO THE ADDRESS REGISTER as one or
-      # two ADD immediates (imm12, the first optionally shifted left 12), which
-      # covers every offset below 16 MiB. This used to be a refusal, and it is
-      # why every wasi-libc `_start` in the corpus ran on the interpreter:
-      # wasi-libc addresses its data through offsets at 65540 and up, which is
-      # precisely the range the scaled immediate cannot encode.
-      sfold: i64 = 0
-      if soff - (soff // ssz) * ssz != 0 or soff // ssz > 4095
-        if soff > 16777215
-          return jitbail("memory offset above 16 MiB, past two ADD immediates", op, pc)
-        sfold = 1
-      simm: i64 = soff // ssz
-      if sfold == 1
-        simm = 0
-      sbase: i64 = 0x39000000
-      if ssz == 2
-        sbase = 0x79000000
-      elseif ssz == 4
-        sbase = 0xB9000000
-      if op >= OP_i32_store8
-        if sp < 2
-          return jitbail("operand stack shape", op, pc)
-        za: i64 = sp - 2
-        zv: i64 = sp - 1
-        jitm.w32(code, n, 0x8B000000 | (za << 16) | (28 << 5) | za)
-        n += 1
-        if sfold == 1
-          if soff >= 4096
-            jitm.w32(code, n, 0x91400000 | ((soff >> 12) << 10) | (za << 5) | za)
+          n += 1
+          jitm.w32(code, n, 0x1E22C000)
+          n += 1
+          jitm.w32(code, n, 0x9E660000 | cv)
+          n += 1
+        elseif op >= OP_f32_convert_i32_s and op <= OP_f64_convert_i64_u
+          # int -> float: SCVTF/UCVTF reads the GP register directly
+          cw: i64 = 0x1E220000                       # f32 <- i32, signed
+          if op == OP_f32_convert_i32_u
+            cw = 0x1E230000
+          elseif op == OP_f32_convert_i64_s
+            cw = 0x9E220000
+          elseif op == OP_f32_convert_i64_u
+            cw = 0x9E230000
+          elseif op == OP_f64_convert_i32_s
+            cw = 0x1E620000
+          elseif op == OP_f64_convert_i32_u
+            cw = 0x1E630000
+          elseif op == OP_f64_convert_i64_s
+            cw = 0x9E620000
+          elseif op == OP_f64_convert_i64_u
+            cw = 0x9E630000
+          jitm.w32(code, n, cw | (cv << 5))
+          n += 1
+          if op >= OP_f64_convert_i32_s
+            jitm.w32(code, n, 0x9E660000 | cv)
             n += 1
-          if (soff & 0xFFF) > 0
-            jitm.w32(code, n, 0x91000000 | ((soff & 0xFFF) << 10) | (za << 5) | za)
-            n += 1
-        jitm.w32(code, n, sbase | (simm << 10) | (za << 5) | zv)
-        n += 1
-        sp -= 2
-      else
-        if sp < 1
-          return jitbail("operand stack shape", op, pc)
-        zl: i64 = sp - 1
-        jitm.w32(code, n, 0x8B000000 | (zl << 16) | (28 << 5) | zl)
-        n += 1
-        if sfold == 1
-          if soff >= 4096
-            jitm.w32(code, n, 0x91400000 | ((soff >> 12) << 10) | (zl << 5) | zl)
-            n += 1
-          if (soff & 0xFFF) > 0
-            jitm.w32(code, n, 0x91000000 | ((soff & 0xFFF) << 10) | (zl << 5) | zl)
-            n += 1
-        lw: i64 = sbase | 0x00400000
-        if ssg == 1
-          if sx64 == 1
-            lw = sbase | 0x00800000
           else
-            lw = sbase | 0x00C00000
-        jitm.w32(code, n, lw | (simm << 10) | (zl << 5) | zl)
-        n += 1
-      last_alu = -1
-      last_cset = -1
+            jitm.w32(code, n, 0x1E260000 | cv)
+            n += 1
+        else
+          # float -> int, truncating toward zero
+          srcf32: i64 = 0
+          if op == OP_i32_trunc_f32_s or op == OP_i32_trunc_f32_u or op == OP_i64_trunc_f32_s or op == OP_i64_trunc_f32_u
+            srcf32 = 1
+          if srcf32 == 1
+            jitm.w32(code, n, 0x1E270000 | (cv << 5))
+          else
+            jitm.w32(code, n, 0x9E670000 | (cv << 5))
+          n += 1
+          tw: i64 = 0x1E380000
+          if op == OP_i32_trunc_f32_u
+            tw = 0x1E390000
+          elseif op == OP_i32_trunc_f64_s
+            tw = 0x1E780000
+          elseif op == OP_i32_trunc_f64_u
+            tw = 0x1E790000
+          elseif op == OP_i64_trunc_f32_s
+            tw = 0x9E380000
+          elseif op == OP_i64_trunc_f32_u
+            tw = 0x9E390000
+          elseif op == OP_i64_trunc_f64_s
+            tw = 0x9E780000
+          elseif op == OP_i64_trunc_f64_u
+            tw = 0x9E790000
+          jitm.w32(code, n, tw | cv)
+          n += 1
+        last_alu = -1
+        last_cset = -1
 
-    elseif op == OP_i32_load or op == OP_i64_load or op == OP_f32_load or op == OP_f64_load or op == OP_i32_store or op == OP_i64_store or op == OP_f32_store or op == OP_f64_store
-      # i32/i64/f32/f64 load and store. Both immediates (align, then offset)
-      # are LEBs. The dynamic address is an UNSIGNED i32 already zero-extended
-      # in its register, because every 32-bit ARM64 op clears the top half, so
-      # `ADD Xa, x28, Xa` forms the effective address without a separate UXTW.
-      malign: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      moff: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      wide: i64 = 0
-      if op == OP_i64_load or op == OP_f64_load or op == OP_i64_store or op == OP_f64_store
-        wide = 1
-      # the scaled immediate form needs a naturally aligned offset in range
-      sc: i64 = 4
-      if wide == 1
-        sc = 8
-      # same fold as the sub-width arm: an offset the scaled immediate cannot
-      # encode goes into the address register instead of being a refusal
-      mfold: i64 = 0
-      if moff - (moff // sc) * sc != 0 or moff // sc > 4095
-        if moff > 16777215
-          return jitbail("memory offset above 16 MiB, past two ADD immediates", op, pc)
-        mfold = 1
-      mimm: i64 = moff // sc
-      if mfold == 1
-        mimm = 0
-      if op >= OP_i32_store
-        # store: [addr, value]
+      elseif (op >= OP_f32_eq and op <= OP_f64_ge)
+        # f32/f64 compares: FCMP then CSET. The conditions are the IEEE ones, so
+        # an unordered (NaN) operand yields false for lt/gt/le/ge and true for
+        # ne, matching wasm: eq=EQ, ne=NE, lt=MI, gt=GT, le=LS, ge=GE.
         if sp < 2
           return jitbail("operand stack shape", op, pc)
-        ma: i64 = sp - 2
-        mv: i64 = sp - 1
-        jitm.w32(code, n, 0x8B000000 | (ma << 16) | (28 << 5) | ma)
-        n += 1
-        if mfold == 1
-          if moff >= 4096
-            jitm.w32(code, n, 0x91400000 | ((moff >> 12) << 10) | (ma << 5) | ma)
-            n += 1
-          if (moff & 0xFFF) > 0
-            jitm.w32(code, n, 0x91000000 | ((moff & 0xFFF) << 10) | (ma << 5) | ma)
-            n += 1
-        if wide == 1
-          jitm.w32(code, n, 0xF9000000 | (mimm << 10) | (ma << 5) | mv)
+        ca: i64 = sp - 2
+        cb: i64 = sp - 1
+        c64: i64 = 0
+        if op >= OP_f64_eq
+          c64 = 1
+        cix: i64 = op - 91
+        if c64 == 1
+          cix = op - 97
+        fcc: i64 = 0
+        if cix == 1
+          fcc = 1
+        elseif cix == 2
+          fcc = 4
+        elseif cix == 3
+          fcc = 12
+        elseif cix == 4
+          fcc = 9
+        elseif cix == 5
+          fcc = 10
+        if c64 == 1
+          jitm.w32(code, n, 0x9E670000 | (ca << 5))
+          n += 1
+          jitm.w32(code, n, 0x9E670000 | (cb << 5) | 1)
+          n += 1
+          jitm.w32(code, n, 0x1E602000 | (1 << 16))
+          n += 1
         else
-          jitm.w32(code, n, 0xB9000000 | (mimm << 10) | (ma << 5) | mv)
-        n += 1
-        sp -= 2
-      else
-        if sp < 1
-          return jitbail("operand stack shape", op, pc)
-        ma2: i64 = sp - 1
-        jitm.w32(code, n, 0x8B000000 | (ma2 << 16) | (28 << 5) | ma2)
-        n += 1
-        if mfold == 1
-          if moff >= 4096
-            jitm.w32(code, n, 0x91400000 | ((moff >> 12) << 10) | (ma2 << 5) | ma2)
-            n += 1
-          if (moff & 0xFFF) > 0
-            jitm.w32(code, n, 0x91000000 | ((moff & 0xFFF) << 10) | (ma2 << 5) | ma2)
-            n += 1
-        if wide == 1
-          jitm.w32(code, n, 0xF9400000 | (mimm << 10) | (ma2 << 5) | ma2)
-        else
-          jitm.w32(code, n, 0xB9400000 | (mimm << 10) | (ma2 << 5) | ma2)
-        n += 1
-      last_alu = -1
-      last_cset = -1
-
-    elseif op == OP_select
-      # select: [a, b, c] -> c != 0 ? a : b. CMP against zero then CSEL, so no
-      # branch is emitted at all.
-      if sp < 3
-        return jitbail("operand stack shape", op, pc)
-      sa: i64 = sp - 3
-      sb: i64 = sp - 2
-      sc: i64 = sp - 1
-      jitm.w32(code, n, 0x7100001F | (sc << 5))
-      n += 1
-      jitm.w32(code, n, 0x1A800000 | (sb << 16) | (1 << 12) | (sa << 5) | sa)
-      n += 1
-      sp -= 2
-      last_alu = -1
-      last_cset = -1
-
-    elseif op == OP_global_get or op == OP_global_set
-      gidx: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      if gidx > 4095
-        return jitbail("global index above 4095", op, pc)
-      if op == OP_global_get
-        if sp > 8
-          return jitbail("operand stack shape", op, pc)
-        jitm.w32(code, n, 0xF9400000 | (gidx << 10) | (27 << 5) | sp)
-        n += 1
-        sp += 1
-      else
-        if sp < 1
-          return jitbail("operand stack shape", op, pc)
-        jitm.w32(code, n, 0xF9000000 | (gidx << 10) | (27 << 5) | (sp - 1))
+          jitm.w32(code, n, 0x1E270000 | (ca << 5))
+          n += 1
+          jitm.w32(code, n, 0x1E270000 | (cb << 5) | 1)
+          n += 1
+          jitm.w32(code, n, 0x1E202000 | (1 << 16))
+          n += 1
+        jitm.w32(code, n, 0x1A9F07E0 | ((fcc ~ 1) << 12) | ca)
         n += 1
         sp -= 1
-      last_alu = -1
-      last_cset = -1
+        last_cset = n - 1
+        last_cc = fcc
+        last_alu = -1
 
-    elseif op == OP_memory_size
-      # memory.size: `main` allocates exactly the declared page count and the
-      # image never grows, so this is the constant `jpages`. It used to emit a
-      # hardcoded 1, which is wrong for every module declaring more than one
-      # page. memory.grow (64) has no arm and still bails — growing would need
-      # a real allocator behind the base pointer.
-      pc += 1
-      if sp > 8
-        return jitbail("operand stack shape", op, pc)
-      jitm.w32(code, n, 0x52800000 | ((jpages & 0xFFFF) << 5) | sp)
-      n += 1
-      sp += 1
-
-    elseif op == OP_i32_clz or op == OP_i32_ctz or op == OP_i32_popcnt or op == OP_i64_clz or op == OP_i64_ctz or op == OP_i64_popcnt
-      # clz / ctz / popcnt, both widths. ARM64 has CLZ but no count-trailing,
-      # so ctz is RBIT+CLZ. popcnt has no integer form at all: it goes through
-      # the vector unit as CNT over bytes then ADDV to sum the lanes, reusing
-      # the same GP<->FP shuttle the float ops use.
-      if sp < 1
-        return jitbail("operand stack shape", op, pc)
-      bq: i64 = sp - 1
-      b64: i64 = 0
-      if op >= OP_i64_clz
-        b64 = 1
-      bk2: i64 = op - 103
-      if b64 == 1
-        bk2 = op - 121
-      if bk2 == 2
-        if b64 == 1
-          jitm.w32(code, n, 0x9E670000 | (bq << 5))
-        else
-          jitm.w32(code, n, 0x1E270000 | (bq << 5))
-        n += 1
-        jitm.w32(code, n, 0x0E205800)
-        n += 1
-        jitm.w32(code, n, 0x0E31B800)
-        n += 1
-        jitm.w32(code, n, 0x1E260000 | bq)
-        n += 1
-      else
-        if bk2 == 1
-          if b64 == 1
-            jitm.w32(code, n, 0xDAC00000 | (bq << 5) | bq)
+      elseif op == OP_f32_abs or op == OP_f32_neg or op == OP_f64_abs or op == OP_f64_neg
+        # f32/f64 abs and neg are SIGN-BIT operations, so in the bit-pattern
+        # representation they are integer masking with NO FP register at all:
+        # abs clears the sign bit, neg flips it. That removes two shuttle moves
+        # each, both of which sat on the dependency chain.
+        if sp < 1 or sp > 8
+          return jitbail("operand stack shape", op, pc)
+        na: i64 = sp - 1
+        nt: i64 = sp
+        if op == OP_f64_abs or op == OP_f64_neg
+          jitm.w32(code, n, 0xD2800000 | nt)
+          n += 1
+          jitm.w32(code, n, 0xF2E00000 | (0x8000 << 5) | nt)
+          n += 1
+          if op == OP_f64_abs
+            jitm.w32(code, n, 0x8A200000 | (nt << 16) | (na << 5) | na)
           else
-            jitm.w32(code, n, 0x5AC00000 | (bq << 5) | bq)
-          n += 1
-        if b64 == 1
-          jitm.w32(code, n, 0xDAC01000 | (bq << 5) | bq)
-        else
-          jitm.w32(code, n, 0x5AC01000 | (bq << 5) | bq)
-        n += 1
-      last_alu = -1
-      last_cset = -1
-
-    elseif op == OP_i32_rotl or op == OP_i64_rotl
-      # rotl. ARM64 rotates RIGHT only, and RORV takes the shift amount modulo
-      # the width from the low bits of its register, so negating the amount
-      # turns a right rotate into a left one with no explicit `width - n`.
-      if sp < 2
-        return jitbail("operand stack shape", op, pc)
-      ra: i64 = sp - 2
-      rb: i64 = sp - 1
-      if op == OP_i64_rotl
-        jitm.w32(code, n, 0xCB0003E0 | (rb << 16) | rb)
-        n += 1
-        jitm.w32(code, n, 0x9AC02C00 | (rb << 16) | (ra << 5) | ra)
-        n += 1
-      else
-        jitm.w32(code, n, 0x4B0003E0 | (rb << 16) | rb)
-        n += 1
-        jitm.w32(code, n, 0x1AC02C00 | (rb << 16) | (ra << 5) | ra)
-        n += 1
-      sp -= 1
-      last_alu = -1
-      last_cset = -1
-
-    elseif op == OP_f32_copysign or op == OP_f64_copysign
-      # copysign. the engine keeps floats as BIT PATTERNS in GP registers, so this is
-      # pure integer masking: clear the sign bit of a, take b's, OR them. No FP
-      # register is touched # another dividend of the representation.
-      if sp < 2 or sp > 8
-        return jitbail("operand stack shape", op, pc)
-      pa: i64 = sp - 2
-      pb: i64 = sp - 1
-      pt: i64 = sp
-      if op == OP_f64_copysign
-        jitm.w32(code, n, 0xD2800000 | pt)
-        n += 1
-        jitm.w32(code, n, 0xF2E00000 | (0x8000 << 5) | pt)
-        n += 1
-        jitm.w32(code, n, 0x8A200000 | (pt << 16) | (pa << 5) | pa)
-        n += 1
-        jitm.w32(code, n, 0x8A000000 | (pt << 16) | (pb << 5) | pb)
-        n += 1
-        jitm.w32(code, n, 0xAA000000 | (pb << 16) | (pa << 5) | pa)
-        n += 1
-      else
-        jitm.w32(code, n, 0x52800000 | pt)
-        n += 1
-        jitm.w32(code, n, 0x72A00000 | (0x8000 << 5) | pt)
-        n += 1
-        jitm.w32(code, n, 0x0A200000 | (pt << 16) | (pa << 5) | pa)
-        n += 1
-        jitm.w32(code, n, 0x0A000000 | (pt << 16) | (pb << 5) | pb)
-        n += 1
-        jitm.w32(code, n, 0x2A000000 | (pb << 16) | (pa << 5) | pa)
-        n += 1
-      sp -= 1
-      last_alu = -1
-      last_cset = -1
-
-    elseif op == OP_nop
-      # nop: emits nothing
-
-    elseif op == OP_unreachable
-      # unreachable: the module traps. BRK #0 is the only trap this JIT can
-      # express # there is no way to call back into the engine from emitted code #
-      # so a jit trap raises SIGTRAP where an interpreter trap exits 71. That
-      # divergence is REAL and `test/conform.id` reports it rather than
-      # hiding it; what is not acceptable is inventing a return value here.
-      #
-      # Like `br`, everything after this is unreachable and wasm makes the
-      # operand stack polymorphic there while this JIT tracks `sp` concretely.
-      # Accept it only where that region is empty. Without this guard, the
-      # wasi-libc `_start` prologue compiles its post-trap tail against a stale
-      # `sp` # the same defect that made wart_simple_bench return 1.
-      nxu: i64 = s:byte(off + pc)
-      if nxu != 11 and nxu != 5
-        return jitbail("reachable code after unreachable", op, pc)
-      # A trap must LOOK THE SAME on both engines. This used to emit `BRK #0`,
-      # which raises SIGTRAP and leaves the shell reporting 133, where the
-      # interpreter's `bailtrap` exits 71. Nothing in the corpus reached it, so
-      # the divergence was invisible # and it stopped being unreachable the
-      # moment imported calls started compiling, because wasi-libc's
-      # `__wasi_proc_exit` ends on exactly this opcode. Call the host's `exit`
-      # with the interpreter's status instead; fall back to BRK only if the
-      # host has no such symbol, which is a stall, never a wrong answer.
-      if jex != 0
-        jitm.w32(code, n, 0x52800000 | (71 << 5))
-        n += 1
-        n = movabs(code, n, 17, jex)
-        jitm.w32(code, n, 0xD63F0000 | (17 << 5))
-        n += 1
-      else
-        jitm.w32(code, n, 0xD4200000)
-        n += 1
-      last_alu = -1
-      last_cset = -1
-
-    elseif op == OP_drop
-      # drop: the value simply stops being referenced
-      if sp < 1
-        return jitbail("operand stack shape", op, pc)
-      sp -= 1
-
-    elseif op == OP_if_
-      # if: pop the condition and branch PAST the then-arm when it is zero.
-      # The target is the matching `else` or `end`, neither emitted yet, so the
-      # branch word is remembered in `lelsw` and patched there. The label is a
-      # block, so `br` out of an `if` uses the same forward machinery.
-      pc += 1
-      if ldep >= 32 or sp < 1
-        return jitbail("label stack deeper than 32", op, pc)
-      sp -= 1
-      mem.write_i64(lkind, ldep * 8, 0)
-      mem.write_i64(lpn, ldep * 8, 0)
-      mem.write_i64(lelsw, ldep * 8, n)
-      mem.write_i64(lsps, ldep * 8, sp)
-      jitm.w32(code, n, 0x34000000 | sp)
-      n += 1
-      ldep += 1
-      last_alu = -1
-      last_cset = -1
-
-    elseif op == OP_else_
-      # else: end of the then-arm. Jump over the else-arm (patched at `end`),
-      # then point the `if`'s conditional branch here.
-      if ldep < 1
-        return jitbail("else with no open if", op, pc)
-      lte: i64 = ldep - 1
-      pke: i64 = mem.read_i64(lpn, lte * 8)
-      if pke >= 8
-        return jitbail("more than 8 forward branches to one label", op, pc)
-      jitm.w32(code, n, 0x14000000)
-      mem.write_i64(lpat, (lte * 8 + pke) * 8, n * 2 + 1)
-      mem.write_i64(lpn, lte * 8, pke + 1)
-      n += 1
-      # both arms must start at the same operand-stack depth; without this the
-      # else-arm pushed on top of the then-arm's result and the epilogue read
-      # the wrong register (a plain if/else returned 5 instead of 100)
-      sp = mem.read_i64(lsps, lte * 8)
-      ew: i64 = mem.read_i64(lelsw, lte * 8)
-      if ew > 0
-        dle: i64 = n - ew
-        jitm.w32(code, ew, (jitm.r32(code, ew) & 0xFF00001F) | ((dle & 0x7FFFF) << 5))
-        mem.write_i64(lelsw, lte * 8, 0)
-      last_alu = -1
-      last_cset = -1
-
-    elseif op == OP_block
-      # block: a FORWARD label. Its target is the matching `end`, so branches
-      # to it are recorded and patched there.
-      pc += 1
-      if ldep >= 32
-        return jitbail("label stack deeper than 32", op, pc)
-      mem.write_i64(lkind, ldep * 8, 0)
-      mem.write_i64(lpn, ldep * 8, 0)
-      mem.write_i64(lelsw, ldep * 8, 0)
-      ldep += 1
-
-    elseif op == OP_loop
-      # loop: header is here, so branches to it resolve immediately
-      pc += 1
-      if ldep >= 32
-        return jitbail("label stack deeper than 32", op, pc)
-      mem.write_i64(lkind, ldep * 8, 1)
-      mem.write_i64(lhead, ldep * 8, n)
-      mem.write_i64(lpn, ldep * 8, 0)
-      mem.write_i64(lelsw, ldep * 8, 0)
-      ldep += 1
-
-    elseif op == OP_br_if
-      # br_if 0 -> CBNZ Wtop, <loop head>  (backward, offset known now)
-      d3: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      sp -= 1
-      lt: i64 = ldep - 1 - d3
-      if lt < 0
-        return jitbail("branch target above the label stack", op, pc)
-      # If a CSET produced this condition immediately before, discard it and
-      # branch on the flags the CMP already set: `cmp; cset; cbnz` (3 insns,
-      # with the CSET on the loop-carried control path) becomes `cmp; b.cond`.
-      if mem.read_i64(lkind, lt * 8) == 1
-        lh: i64 = mem.read_i64(lhead, lt * 8)
-        if last_cset == n - 1
-          n -= 1
-          last_cset = -1
-          dl2: i64 = lh - n
-          jitm.w32(code, n, 0x54000000 | ((dl2 & 0x7FFFF) << 5) | last_cc)
+            jitm.w32(code, n, 0xCA000000 | (nt << 16) | (na << 5) | na)
           n += 1
         else
-          delta: i64 = lh - n
-          jitm.w32(code, n, 0x35000000 | ((delta & 0x7FFFF) << 5) | sp)
+          jitm.w32(code, n, 0x52800000 | nt)
           n += 1
-      else
-        # forward: emit with a zero offset and record the word for patching
-        pk2: i64 = mem.read_i64(lpn, lt * 8)
-        if pk2 >= 8
-          return jitbail("more than 8 forward branches to one label", op, pc)
-        if last_cset == n - 1
-          n -= 1
-          last_cset = -1
-          jitm.w32(code, n, 0x54000000 | last_cc)
+          jitm.w32(code, n, 0x72A00000 | (0x8000 << 5) | nt)
+          n += 1
+          if op == OP_f32_abs
+            jitm.w32(code, n, 0x0A200000 | (nt << 16) | (na << 5) | na)
+          else
+            jitm.w32(code, n, 0x4A000000 | (nt << 16) | (na << 5) | na)
+          n += 1
+        last_alu = -1
+        last_cset = -1
+
+      elseif (op >= OP_f32_ceil and op <= OP_f32_sqrt) or (op >= OP_f64_ceil and op <= OP_f64_sqrt)
+        # f32/f64 abs/neg/ceil/floor/trunc/nearest/sqrt: one FP-source op, using
+        # the same GP<->FP shuttle as the binops. Offsets are the ARM64 opcode
+        # field, identical for single and double; only the type base differs.
+        if sp < 1
+          return jitbail("operand stack shape", op, pc)
+        uf: i64 = sp - 1
+        ubase: i64 = 0x1E200000
+        uix: i64 = op - 139
+        if op >= OP_f64_abs
+          ubase = 0x1E600000
+          uix = op - 153
+        uw: i64 = 0xC000
+        if uix == 1
+          uw = 0x14000
+        elseif uix == 2
+          uw = 0x4C000
+        elseif uix == 3
+          uw = 0x54000
+        elseif uix == 4
+          uw = 0x5C000
+        elseif uix == 5
+          uw = 0x44000
+        elseif uix == 6
+          uw = 0x1C000
+        if ubase == 0x1E600000
+          jitm.w32(code, n, 0x9E670000 | (uf << 5))
+          n += 1
+          jitm.w32(code, n, ubase | uw)
+          n += 1
+          jitm.w32(code, n, 0x9E660000 | uf)
+          n += 1
         else
-          jitm.w32(code, n, 0x35000000 | sp)
-        mem.write_i64(lpat, (lt * 8 + pk2) * 8, n * 2)
-        mem.write_i64(lpn, lt * 8, pk2 + 1)
-        n += 1
+          jitm.w32(code, n, 0x1E270000 | (uf << 5))
+          n += 1
+          jitm.w32(code, n, ubase | uw)
+          n += 1
+          jitm.w32(code, n, 0x1E260000 | uf)
+          n += 1
+        last_alu = -1
+        last_cset = -1
 
-    elseif op == OP_end_
-      # end: closes a label. Every forward branch that targeted this block is
-      # now resolvable, so patch the placeholders to land here. imm19 sits in
-      # bits 5..23 of both B.cond and CBNZ, so one mask serves both.
-      # An inlined callee's own function-level `end` must not touch the
-      # CALLER's labels. Restoring `ldep` on return handles the pop, but this
-      # arm also PATCHES forward branches, and a patch cannot be undone: an
-      # `end` from an inlined body retargeted the caller's `if` into the middle
-      # of that body, hanging wart_simple_opcode_bench. Below the current
-      # inline frame's base, `end` does nothing.
-      ebase: i64 = 0
-      if inl_d > 0
-        ebase = mem.read_i64(inl_lds, (inl_d - 1) * 8)
-      if ldep > ebase
-        ldep -= 1
-        # an `if` with no `else`: its conditional branch lands here
-        ewd: i64 = mem.read_i64(lelsw, ldep * 8)
-        if ewd > 0
-          dlw: i64 = n - ewd
-          jitm.w32(code, ewd, (jitm.r32(code, ewd) & 0xFF00001F) | ((dlw & 0x7FFFF) << 5))
-          mem.write_i64(lelsw, ldep * 8, 0)
-        if mem.read_i64(lkind, ldep * 8) == 0
-          pq: i64 = 0
-          pk3: i64 = mem.read_i64(lpn, ldep * 8)
-          while pq < pk3
-            pe: i64 = mem.read_i64(lpat, (ldep * 8 + pq) * 8)
-            pw: i64 = pe // 2
-            dl3: i64 = n - pw
-            if pe - pw * 2 == 1
-              # unconditional B: imm26 in bits 0..25
-              jitm.w32(code, pw, 0x14000000 | (dl3 & 0x03FFFFFF))
-            else
-              # B.cond / CBNZ: imm19 in bits 5..23
-              jitm.w32(code, pw, (jitm.r32(code, pw) & 0xFF00001F) | ((dl3 & 0x7FFFF) << 5))
-            pq += 1
-
-    elseif op == OP_br
-      # br: unconditional. Backward to a loop head resolves now; forward to a
-      # block end is a placeholder patched at `end`, exactly like br_if, but the
-      # offset lives in imm26 rather than imm19 so the patch records the form.
-      d4: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      lt2: i64 = ldep - 1 - d4
-      if lt2 < 0
-        return jitbail("branch target above the label stack", op, pc)
-      if mem.read_i64(lkind, lt2 * 8) == 1
-        dlb: i64 = mem.read_i64(lhead, lt2 * 8) - n
-        jitm.w32(code, n, 0x14000000 | (dlb & 0x03FFFFFF))
+      elseif op == OP_i32_eqz or op == OP_i64_eqz
+        # i32.eqz / i64.eqz: compare against zero, then CSET EQ. Unary, so the
+        # operand slot is reused for the result.
+        if sp < 1
+          return jitbail("operand stack shape", op, pc)
+        ez: i64 = sp - 1
+        ezw: i64 = 0x7100001F
+        if op == OP_i64_eqz
+          ezw = 0xF100001F
+        jitm.w32(code, n, ezw | (ez << 5))
         n += 1
-      else
-        pk4: i64 = mem.read_i64(lpn, lt2 * 8)
-        if pk4 >= 8
-          return jitbail("more than 8 forward branches to one label", op, pc)
-        jitm.w32(code, n, 0x14000000)
-        mem.write_i64(lpat, (lt2 * 8 + pk4) * 8, n * 2 + 1)
-        mem.write_i64(lpn, lt2 * 8, pk4 + 1)
+        jitm.w32(code, n, 0x1A9F07E0 | (1 << 12) | ez)
         n += 1
-      # Code after an unconditional branch is UNREACHABLE, and wasm makes the
-      # operand stack polymorphic there. This JIT tracks `sp` concretely, so
-      # compiling that region emits wrong code: wart_simple_bench returned 1
-      # instead of 4037913 until this guard was added. Accept `br` only where
-      # the unreachable region is empty # immediately before `end` or `else`.
-      nxb: i64 = s:byte(off + pc)
-      if nxb != 11 and nxb != 5
-        return jitbail("reachable code after an unconditional branch", op, pc)
+        last_cset = n - 1
+        last_cc = 0
+        last_alu = -1
 
-    elseif op == OP_br_table
-      # br_table: a small dense switch. Emitted as a compare chain rather than
-      # a jump table # these tables are tiny (the corpus one has three
-      # targets), and a chain reuses the existing label resolution instead of
-      # needing an addressable constant pool.
-      bt_n: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      if sp < 1 or bt_n > 32
-        return jitbail("br_table with more than 32 targets", op, pc)
-      sp -= 1
-      bti: i64 = sp
-      btk: i64 = 0
-      while btk < bt_n
-        btd: i64 = uleb_val(s, off + pc, off + blen)
+      elseif (op >= OP_i32_load8_s and op <= OP_i64_load32_u) or (op >= OP_i32_store8 and op <= OP_i64_store32)
+        # sub-width loads and stores. Same effective-address form as the full
+        # width ops; only the size, signedness and offset scale differ.
+        salign: i64 = uleb_val(s, off + pc, off + blen)
         pc = uleb_end(s, off + pc, off + blen) - off
-        btt: i64 = ldep - 1 - btd
-        if btt < 0
-          return jitbail("branch target above the label stack", op, pc)
-        jitm.w32(code, n, 0x7100001F | (btk << 10) | (bti << 5))
+        soff: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        # size in bytes, and whether the load sign-extends
+        ssz: i64 = 1
+        ssg: i64 = 0
+        sx64: i64 = 0
+        if op == OP_i32_load8_s or op == OP_i32_load16_s or op == OP_i64_load8_s or op == OP_i64_load16_s or op == OP_i64_load32_s
+          ssg = 1
+        if op == OP_i32_load16_s or op == OP_i32_load16_u or op == OP_i64_load16_s or op == OP_i64_load16_u or op == OP_i32_store16 or op == OP_i64_store16
+          ssz = 2
+        if op == OP_i64_load32_s or op == OP_i64_load32_u or op == OP_i64_store32
+          ssz = 4
+        if op >= OP_i64_load8_s and op <= OP_i64_load32_u
+          sx64 = 1
+        # The scaled 12-bit immediate reaches 4095 slots and demands natural
+        # alignment. Everything else FOLDS INTO THE ADDRESS REGISTER as one or
+        # two ADD immediates (imm12, the first optionally shifted left 12), which
+        # covers every offset below 16 MiB. This used to be a refusal, and it is
+        # why every wasi-libc `_start` in the corpus ran on the interpreter:
+        # wasi-libc addresses its data through offsets at 65540 and up, which is
+        # precisely the range the scaled immediate cannot encode.
+        sfold: i64 = 0
+        if soff - (soff // ssz) * ssz != 0 or soff // ssz > 4095
+          if soff > 16777215
+            return jitbail("memory offset above 16 MiB, past two ADD immediates", op, pc)
+          sfold = 1
+        simm: i64 = soff // ssz
+        if sfold == 1
+          simm = 0
+        sbase: i64 = 0x39000000
+        if ssz == 2
+          sbase = 0x79000000
+        elseif ssz == 4
+          sbase = 0xB9000000
+        if op >= OP_i32_store8
+          if sp < 2
+            return jitbail("operand stack shape", op, pc)
+          za: i64 = sp - 2
+          zv: i64 = sp - 1
+          jitm.w32(code, n, 0x8B000000 | (za << 16) | (28 << 5) | za)
+          n += 1
+          if sfold == 1
+            if soff >= 4096
+              jitm.w32(code, n, 0x91400000 | ((soff >> 12) << 10) | (za << 5) | za)
+              n += 1
+            if (soff & 0xFFF) > 0
+              jitm.w32(code, n, 0x91000000 | ((soff & 0xFFF) << 10) | (za << 5) | za)
+              n += 1
+          jitm.w32(code, n, sbase | (simm << 10) | (za << 5) | zv)
+          n += 1
+          sp -= 2
+        else
+          if sp < 1
+            return jitbail("operand stack shape", op, pc)
+          zl: i64 = sp - 1
+          jitm.w32(code, n, 0x8B000000 | (zl << 16) | (28 << 5) | zl)
+          n += 1
+          if sfold == 1
+            if soff >= 4096
+              jitm.w32(code, n, 0x91400000 | ((soff >> 12) << 10) | (zl << 5) | zl)
+              n += 1
+            if (soff & 0xFFF) > 0
+              jitm.w32(code, n, 0x91000000 | ((soff & 0xFFF) << 10) | (zl << 5) | zl)
+              n += 1
+          lw: i64 = sbase | 0x00400000
+          if ssg == 1
+            if sx64 == 1
+              lw = sbase | 0x00800000
+            else
+              lw = sbase | 0x00C00000
+          jitm.w32(code, n, lw | (simm << 10) | (zl << 5) | zl)
+          n += 1
+        last_alu = -1
+        last_cset = -1
+
+      elseif op == OP_i32_load or op == OP_i64_load or op == OP_f32_load or op == OP_f64_load or op == OP_i32_store or op == OP_i64_store or op == OP_f32_store or op == OP_f64_store
+        # i32/i64/f32/f64 load and store. Both immediates (align, then offset)
+        # are LEBs. The dynamic address is an UNSIGNED i32 already zero-extended
+        # in its register, because every 32-bit ARM64 op clears the top half, so
+        # `ADD Xa, x28, Xa` forms the effective address without a separate UXTW.
+        malign: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        moff: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        wide: i64 = 0
+        if op == OP_i64_load or op == OP_f64_load or op == OP_i64_store or op == OP_f64_store
+          wide = 1
+        # the scaled immediate form needs a naturally aligned offset in range
+        sc: i64 = 4
+        if wide == 1
+          sc = 8
+        # same fold as the sub-width arm: an offset the scaled immediate cannot
+        # encode goes into the address register instead of being a refusal
+        mfold: i64 = 0
+        if moff - (moff // sc) * sc != 0 or moff // sc > 4095
+          if moff > 16777215
+            return jitbail("memory offset above 16 MiB, past two ADD immediates", op, pc)
+          mfold = 1
+        mimm: i64 = moff // sc
+        if mfold == 1
+          mimm = 0
+        if op >= OP_i32_store
+          # store: [addr, value]
+          if sp < 2
+            return jitbail("operand stack shape", op, pc)
+          ma: i64 = sp - 2
+          mv: i64 = sp - 1
+          jitm.w32(code, n, 0x8B000000 | (ma << 16) | (28 << 5) | ma)
+          n += 1
+          if mfold == 1
+            if moff >= 4096
+              jitm.w32(code, n, 0x91400000 | ((moff >> 12) << 10) | (ma << 5) | ma)
+              n += 1
+            if (moff & 0xFFF) > 0
+              jitm.w32(code, n, 0x91000000 | ((moff & 0xFFF) << 10) | (ma << 5) | ma)
+              n += 1
+          if wide == 1
+            jitm.w32(code, n, 0xF9000000 | (mimm << 10) | (ma << 5) | mv)
+          else
+            jitm.w32(code, n, 0xB9000000 | (mimm << 10) | (ma << 5) | mv)
+          n += 1
+          sp -= 2
+        else
+          if sp < 1
+            return jitbail("operand stack shape", op, pc)
+          ma2: i64 = sp - 1
+          jitm.w32(code, n, 0x8B000000 | (ma2 << 16) | (28 << 5) | ma2)
+          n += 1
+          if mfold == 1
+            if moff >= 4096
+              jitm.w32(code, n, 0x91400000 | ((moff >> 12) << 10) | (ma2 << 5) | ma2)
+              n += 1
+            if (moff & 0xFFF) > 0
+              jitm.w32(code, n, 0x91000000 | ((moff & 0xFFF) << 10) | (ma2 << 5) | ma2)
+              n += 1
+          if wide == 1
+            jitm.w32(code, n, 0xF9400000 | (mimm << 10) | (ma2 << 5) | ma2)
+          else
+            jitm.w32(code, n, 0xB9400000 | (mimm << 10) | (ma2 << 5) | ma2)
+          n += 1
+        last_alu = -1
+        last_cset = -1
+
+      elseif op == OP_select
+        # select: [a, b, c] -> c != 0 ? a : b. CMP against zero then CSEL, so no
+        # branch is emitted at all.
+        if sp < 3
+          return jitbail("operand stack shape", op, pc)
+        sa: i64 = sp - 3
+        sb: i64 = sp - 2
+        sc: i64 = sp - 1
+        jitm.w32(code, n, 0x7100001F | (sc << 5))
         n += 1
-        if mem.read_i64(lkind, btt * 8) == 1
-          bth: i64 = mem.read_i64(lhead, btt * 8) - n
-          jitm.w32(code, n, 0x54000000 | ((bth & 0x7FFFF) << 5))
+        jitm.w32(code, n, 0x1A800000 | (sb << 16) | (1 << 12) | (sa << 5) | sa)
+        n += 1
+        sp -= 2
+        last_alu = -1
+        last_cset = -1
+
+      elseif op == OP_global_get or op == OP_global_set
+        gidx: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        if gidx > 4095
+          return jitbail("global index above 4095", op, pc)
+        if op == OP_global_get
+          if sp > 8
+            return jitbail("operand stack shape", op, pc)
+          jitm.w32(code, n, 0xF9400000 | (gidx << 10) | (27 << 5) | sp)
+          n += 1
+          sp += 1
+        else
+          if sp < 1
+            return jitbail("operand stack shape", op, pc)
+          jitm.w32(code, n, 0xF9000000 | (gidx << 10) | (27 << 5) | (sp - 1))
+          n += 1
+          sp -= 1
+        last_alu = -1
+        last_cset = -1
+
+      elseif op == OP_memory_size
+        # memory.size: `main` allocates exactly the declared page count and the
+        # image never grows, so this is the constant `jpages`. It used to emit a
+        # hardcoded 1, which is wrong for every module declaring more than one
+        # page. memory.grow (64) has no arm and still bails — growing would need
+        # a real allocator behind the base pointer.
+        pc += 1
+        if sp > 8
+          return jitbail("operand stack shape", op, pc)
+        jitm.w32(code, n, 0x52800000 | ((jpages & 0xFFFF) << 5) | sp)
+        n += 1
+        sp += 1
+
+      elseif op == OP_i32_clz or op == OP_i32_ctz or op == OP_i32_popcnt or op == OP_i64_clz or op == OP_i64_ctz or op == OP_i64_popcnt
+        # clz / ctz / popcnt, both widths. ARM64 has CLZ but no count-trailing,
+        # so ctz is RBIT+CLZ. popcnt has no integer form at all: it goes through
+        # the vector unit as CNT over bytes then ADDV to sum the lanes, reusing
+        # the same GP<->FP shuttle the float ops use.
+        if sp < 1
+          return jitbail("operand stack shape", op, pc)
+        bq: i64 = sp - 1
+        b64: i64 = 0
+        if op >= OP_i64_clz
+          b64 = 1
+        bk2: i64 = op - 103
+        if b64 == 1
+          bk2 = op - 121
+        if bk2 == 2
+          if b64 == 1
+            jitm.w32(code, n, 0x9E670000 | (bq << 5))
+          else
+            jitm.w32(code, n, 0x1E270000 | (bq << 5))
+          n += 1
+          jitm.w32(code, n, 0x0E205800)
+          n += 1
+          jitm.w32(code, n, 0x0E31B800)
+          n += 1
+          jitm.w32(code, n, 0x1E260000 | bq)
           n += 1
         else
-          btp: i64 = mem.read_i64(lpn, btt * 8)
-          if btp >= 8
-            return jitbail("more than 8 forward branches to one label", op, pc)
-          jitm.w32(code, n, 0x54000000)
-          mem.write_i64(lpat, (btt * 8 + btp) * 8, n * 2)
-          mem.write_i64(lpn, btt * 8, btp + 1)
+          if bk2 == 1
+            if b64 == 1
+              jitm.w32(code, n, 0xDAC00000 | (bq << 5) | bq)
+            else
+              jitm.w32(code, n, 0x5AC00000 | (bq << 5) | bq)
+            n += 1
+          if b64 == 1
+            jitm.w32(code, n, 0xDAC01000 | (bq << 5) | bq)
+          else
+            jitm.w32(code, n, 0x5AC01000 | (bq << 5) | bq)
           n += 1
-        btk += 1
-      # the default label
-      btdf: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      btt2: i64 = ldep - 1 - btdf
-      if btt2 < 0
-        return jitbail("branch target above the label stack", op, pc)
-      if mem.read_i64(lkind, btt2 * 8) == 1
-        btl: i64 = mem.read_i64(lhead, btt2 * 8) - n
-        jitm.w32(code, n, 0x14000000 | (btl & 0x03FFFFFF))
+        last_alu = -1
+        last_cset = -1
+
+      elseif op == OP_i32_rotl or op == OP_i64_rotl
+        # rotl. ARM64 rotates RIGHT only, and RORV takes the shift amount modulo
+        # the width from the low bits of its register, so negating the amount
+        # turns a right rotate into a left one with no explicit `width - n`.
+        if sp < 2
+          return jitbail("operand stack shape", op, pc)
+        ra: i64 = sp - 2
+        rb: i64 = sp - 1
+        if op == OP_i64_rotl
+          jitm.w32(code, n, 0xCB0003E0 | (rb << 16) | rb)
+          n += 1
+          jitm.w32(code, n, 0x9AC02C00 | (rb << 16) | (ra << 5) | ra)
+          n += 1
+        else
+          jitm.w32(code, n, 0x4B0003E0 | (rb << 16) | rb)
+          n += 1
+          jitm.w32(code, n, 0x1AC02C00 | (rb << 16) | (ra << 5) | ra)
+          n += 1
+        sp -= 1
+        last_alu = -1
+        last_cset = -1
+
+      elseif op == OP_f32_copysign or op == OP_f64_copysign
+        # copysign. the engine keeps floats as BIT PATTERNS in GP registers, so this is
+        # pure integer masking: clear the sign bit of a, take b's, OR them. No FP
+        # register is touched # another dividend of the representation.
+        if sp < 2 or sp > 8
+          return jitbail("operand stack shape", op, pc)
+        pa: i64 = sp - 2
+        pb: i64 = sp - 1
+        pt: i64 = sp
+        if op == OP_f64_copysign
+          jitm.w32(code, n, 0xD2800000 | pt)
+          n += 1
+          jitm.w32(code, n, 0xF2E00000 | (0x8000 << 5) | pt)
+          n += 1
+          jitm.w32(code, n, 0x8A200000 | (pt << 16) | (pa << 5) | pa)
+          n += 1
+          jitm.w32(code, n, 0x8A000000 | (pt << 16) | (pb << 5) | pb)
+          n += 1
+          jitm.w32(code, n, 0xAA000000 | (pb << 16) | (pa << 5) | pa)
+          n += 1
+        else
+          jitm.w32(code, n, 0x52800000 | pt)
+          n += 1
+          jitm.w32(code, n, 0x72A00000 | (0x8000 << 5) | pt)
+          n += 1
+          jitm.w32(code, n, 0x0A200000 | (pt << 16) | (pa << 5) | pa)
+          n += 1
+          jitm.w32(code, n, 0x0A000000 | (pt << 16) | (pb << 5) | pb)
+          n += 1
+          jitm.w32(code, n, 0x2A000000 | (pb << 16) | (pa << 5) | pa)
+          n += 1
+        sp -= 1
+        last_alu = -1
+        last_cset = -1
+
+      elseif op == OP_nop
+        # nop: emits nothing
+
+      elseif op == OP_unreachable
+        # unreachable: the module traps. BRK #0 is the only trap this JIT can
+        # express # there is no way to call back into the engine from emitted code #
+        # so a jit trap raises SIGTRAP where an interpreter trap exits 71. That
+        # divergence is REAL and `test/conform.id` reports it rather than
+        # hiding it; what is not acceptable is inventing a return value here.
+        #
+        # Like `br`, everything after this is unreachable and wasm makes the
+        # operand stack polymorphic there while this JIT tracks `sp` concretely.
+        # Accept it only where that region is empty. Without this guard, the
+        # wasi-libc `_start` prologue compiles its post-trap tail against a stale
+        # `sp` # the same defect that made wart_simple_bench return 1.
+        nxu: i64 = s:byte(off + pc)
+        if nxu != 11 and nxu != 5
+          return jitbail("reachable code after unreachable", op, pc)
+        # A trap must LOOK THE SAME on both engines. This used to emit `BRK #0`,
+        # which raises SIGTRAP and leaves the shell reporting 133, where the
+        # interpreter's `bailtrap` exits 71. Nothing in the corpus reached it, so
+        # the divergence was invisible # and it stopped being unreachable the
+        # moment imported calls started compiling, because wasi-libc's
+        # `__wasi_proc_exit` ends on exactly this opcode. Call the host's `exit`
+        # with the interpreter's status instead; fall back to BRK only if the
+        # host has no such symbol, which is a stall, never a wrong answer.
+        if jex != 0
+          jitm.w32(code, n, 0x52800000 | (71 << 5))
+          n += 1
+          n = movabs(code, n, 17, jex)
+          jitm.w32(code, n, 0xD63F0000 | (17 << 5))
+          n += 1
+        else
+          jitm.w32(code, n, 0xD4200000)
+          n += 1
+        last_alu = -1
+        last_cset = -1
+
+      elseif op == OP_drop
+        # drop: the value simply stops being referenced
+        if sp < 1
+          return jitbail("operand stack shape", op, pc)
+        sp -= 1
+
+      elseif op == OP_if_
+        # if: pop the condition and branch PAST the then-arm when it is zero.
+        # The target is the matching `else` or `end`, neither emitted yet, so the
+        # branch word is remembered in `lelsw` and patched there. The label is a
+        # block, so `br` out of an `if` uses the same forward machinery.
+        pc += 1
+        if ldep >= 32 or sp < 1
+          return jitbail("label stack deeper than 32", op, pc)
+        sp -= 1
+        mem.write_i64(lkind, ldep * 8, 0)
+        mem.write_i64(lpn, ldep * 8, 0)
+        mem.write_i64(lelsw, ldep * 8, n)
+        mem.write_i64(lsps, ldep * 8, sp)
+        jitm.w32(code, n, 0x34000000 | sp)
         n += 1
-      else
-        btp2: i64 = mem.read_i64(lpn, btt2 * 8)
-        if btp2 >= 8
+        ldep += 1
+        last_alu = -1
+        last_cset = -1
+
+      elseif op == OP_else_
+        # else: end of the then-arm. Jump over the else-arm (patched at `end`),
+        # then point the `if`'s conditional branch here.
+        if ldep < 1
+          return jitbail("else with no open if", op, pc)
+        lte: i64 = ldep - 1
+        pke: i64 = mem.read_i64(lpn, lte * 8)
+        if pke >= 8
           return jitbail("more than 8 forward branches to one label", op, pc)
         jitm.w32(code, n, 0x14000000)
-        mem.write_i64(lpat, (btt2 * 8 + btp2) * 8, n * 2 + 1)
-        mem.write_i64(lpn, btt2 * 8, btp2 + 1)
+        mem.write_i64(lpat, (lte * 8 + pke) * 8, n * 2 + 1)
+        mem.write_i64(lpn, lte * 8, pke + 1)
         n += 1
-      # like `br`, everything after this is unreachable and the concrete `sp`
-      # model cannot compile it
-      nxt2: i64 = s:byte(off + pc)
-      if nxt2 != 11 and nxt2 != 5
-        return jitbail("reachable code after an unconditional branch", op, pc)
-      last_alu = -1
-      last_cset = -1
+        # both arms must start at the same operand-stack depth; without this the
+        # else-arm pushed on top of the then-arm's result and the epilogue read
+        # the wrong register (a plain if/else returned 5 instead of 100)
+        sp = mem.read_i64(lsps, lte * 8)
+        ew: i64 = mem.read_i64(lelsw, lte * 8)
+        if ew > 0
+          dle: i64 = n - ew
+          jitm.w32(code, ew, (jitm.r32(code, ew) & 0xFF00001F) | ((dle & 0x7FFFF) << 5))
+          mem.write_i64(lelsw, lte * 8, 0)
+        last_alu = -1
+        last_cset = -1
 
-    elseif op == OP_return_
-      # return. At label depth zero it is simply "stop compiling this body".
-      # Deeper in, the rest of the function still has to be emitted (silently
-      # dropping it made wart_compute_bench hang once `if` stopped bailing), so
-      # the result moves to x0 here and an unconditional B jumps to the
-      # epilogue # whose address is not known yet, hence the patch list. A
-      # return from an INLINED body would exit the wrong function, so that
-      # shape still bails.
-      if ldep == 0
-        pc = blen + 1
-      elseif inl_d > 0 or jrn >= 64
-        return jitbail("return inside an inlined body, or more than 64 returns", op, pc)
-      else
-        if sp > 0
-          jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | 0)
+      elseif op == OP_block
+        # block: a FORWARD label. Its target is the matching `end`, so branches
+        # to it are recorded and patched there.
+        pc += 1
+        if ldep >= 32
+          return jitbail("label stack deeper than 32", op, pc)
+        mem.write_i64(lkind, ldep * 8, 0)
+        mem.write_i64(lpn, ldep * 8, 0)
+        mem.write_i64(lelsw, ldep * 8, 0)
+        ldep += 1
+
+      elseif op == OP_loop
+        # loop: header is here, so branches to it resolve immediately
+        pc += 1
+        if ldep >= 32
+          return jitbail("label stack deeper than 32", op, pc)
+        mem.write_i64(lkind, ldep * 8, 1)
+        mem.write_i64(lhead, ldep * 8, n)
+        mem.write_i64(lpn, ldep * 8, 0)
+        mem.write_i64(lelsw, ldep * 8, 0)
+        ldep += 1
+
+      elseif op == OP_br_if
+        # br_if 0 -> CBNZ Wtop, <loop head>  (backward, offset known now)
+        d3: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        sp -= 1
+        lt: i64 = ldep - 1 - d3
+        if lt < 0
+          return jitbail("branch target above the label stack", op, pc)
+        # If a CSET produced this condition immediately before, discard it and
+        # branch on the flags the CMP already set: `cmp; cset; cbnz` (3 insns,
+        # with the CSET on the loop-carried control path) becomes `cmp; b.cond`.
+        if mem.read_i64(lkind, lt * 8) == 1
+          lh: i64 = mem.read_i64(lhead, lt * 8)
+          if last_cset == n - 1
+            n -= 1
+            last_cset = -1
+            dl2: i64 = lh - n
+            jitm.w32(code, n, 0x54000000 | ((dl2 & 0x7FFFF) << 5) | last_cc)
+            n += 1
+          else
+            delta: i64 = lh - n
+            jitm.w32(code, n, 0x35000000 | ((delta & 0x7FFFF) << 5) | sp)
+            n += 1
+        else
+          # forward: emit with a zero offset and record the word for patching
+          pk2: i64 = mem.read_i64(lpn, lt * 8)
+          if pk2 >= 8
+            return jitbail("more than 8 forward branches to one label", op, pc)
+          if last_cset == n - 1
+            n -= 1
+            last_cset = -1
+            jitm.w32(code, n, 0x54000000 | last_cc)
+          else
+            jitm.w32(code, n, 0x35000000 | sp)
+          mem.write_i64(lpat, (lt * 8 + pk2) * 8, n * 2)
+          mem.write_i64(lpn, lt * 8, pk2 + 1)
           n += 1
-        jitm.w32(code, n, 0x14000000)
-        mem.write_i64(jrw, jrn * 8, n)
-        jrn += 1
-        n += 1
-        # Like `br`, everything after this is unreachable, and wasm makes the
-        # operand stack polymorphic there while this JIT tracks `sp`
-        # concretely. Accept it only where that region is empty.
-        nxr: i64 = s:byte(off + pc)
-        if nxr != 11 and nxr != 5
+
+      elseif op == OP_end_
+        # end: closes a label. Every forward branch that targeted this block is
+        # now resolvable, so patch the placeholders to land here. imm19 sits in
+        # bits 5..23 of both B.cond and CBNZ, so one mask serves both.
+        # An inlined callee's own function-level `end` must not touch the
+        # CALLER's labels. Restoring `ldep` on return handles the pop, but this
+        # arm also PATCHES forward branches, and a patch cannot be undone: an
+        # `end` from an inlined body retargeted the caller's `if` into the middle
+        # of that body, hanging wart_simple_opcode_bench. Below the current
+        # inline frame's base, `end` does nothing.
+        ebase: i64 = 0
+        if inl_d > 0
+          ebase = mem.read_i64(inl_lds, (inl_d - 1) * 8)
+        if ldep > ebase
+          ldep -= 1
+          # an `if` with no `else`: its conditional branch lands here
+          ewd: i64 = mem.read_i64(lelsw, ldep * 8)
+          if ewd > 0
+            dlw: i64 = n - ewd
+            jitm.w32(code, ewd, (jitm.r32(code, ewd) & 0xFF00001F) | ((dlw & 0x7FFFF) << 5))
+            mem.write_i64(lelsw, ldep * 8, 0)
+          if mem.read_i64(lkind, ldep * 8) == 0
+            pq: i64 = 0
+            pk3: i64 = mem.read_i64(lpn, ldep * 8)
+            while pq < pk3
+              pe: i64 = mem.read_i64(lpat, (ldep * 8 + pq) * 8)
+              pw: i64 = pe // 2
+              dl3: i64 = n - pw
+              if pe - pw * 2 == 1
+                # unconditional B: imm26 in bits 0..25
+                jitm.w32(code, pw, 0x14000000 | (dl3 & 0x03FFFFFF))
+              else
+                # B.cond / CBNZ: imm19 in bits 5..23
+                jitm.w32(code, pw, (jitm.r32(code, pw) & 0xFF00001F) | ((dl3 & 0x7FFFF) << 5))
+              pq += 1
+
+      elseif op == OP_br
+        # br: unconditional. Backward to a loop head resolves now; forward to a
+        # block end is a placeholder patched at `end`, exactly like br_if, but the
+        # offset lives in imm26 rather than imm19 so the patch records the form.
+        d4: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        lt2: i64 = ldep - 1 - d4
+        if lt2 < 0
+          return jitbail("branch target above the label stack", op, pc)
+        if mem.read_i64(lkind, lt2 * 8) == 1
+          dlb: i64 = mem.read_i64(lhead, lt2 * 8) - n
+          jitm.w32(code, n, 0x14000000 | (dlb & 0x03FFFFFF))
+          n += 1
+        else
+          pk4: i64 = mem.read_i64(lpn, lt2 * 8)
+          if pk4 >= 8
+            return jitbail("more than 8 forward branches to one label", op, pc)
+          jitm.w32(code, n, 0x14000000)
+          mem.write_i64(lpat, (lt2 * 8 + pk4) * 8, n * 2 + 1)
+          mem.write_i64(lpn, lt2 * 8, pk4 + 1)
+          n += 1
+        # Code after an unconditional branch is UNREACHABLE, and wasm makes the
+        # operand stack polymorphic there. This JIT tracks `sp` concretely, so
+        # compiling that region emits wrong code: wart_simple_bench returned 1
+        # instead of 4037913 until this guard was added. Accept `br` only where
+        # the unreachable region is empty # immediately before `end` or `else`.
+        nxb: i64 = s:byte(off + pc)
+        if nxb != 11 and nxb != 5
+          return jitbail("reachable code after an unconditional branch", op, pc)
+
+      elseif op == OP_br_table
+        # br_table: a small dense switch. Emitted as a compare chain rather than
+        # a jump table # these tables are tiny (the corpus one has three
+        # targets), and a chain reuses the existing label resolution instead of
+        # needing an addressable constant pool.
+        bt_n: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        if sp < 1 or bt_n > 32
+          return jitbail("br_table with more than 32 targets", op, pc)
+        sp -= 1
+        bti: i64 = sp
+        btk: i64 = 0
+        while btk < bt_n
+          btd: i64 = uleb_val(s, off + pc, off + blen)
+          pc = uleb_end(s, off + pc, off + blen) - off
+          btt: i64 = ldep - 1 - btd
+          if btt < 0
+            return jitbail("branch target above the label stack", op, pc)
+          jitm.w32(code, n, 0x7100001F | (btk << 10) | (bti << 5))
+          n += 1
+          if mem.read_i64(lkind, btt * 8) == 1
+            bth: i64 = mem.read_i64(lhead, btt * 8) - n
+            jitm.w32(code, n, 0x54000000 | ((bth & 0x7FFFF) << 5))
+            n += 1
+          else
+            btp: i64 = mem.read_i64(lpn, btt * 8)
+            if btp >= 8
+              return jitbail("more than 8 forward branches to one label", op, pc)
+            jitm.w32(code, n, 0x54000000)
+            mem.write_i64(lpat, (btt * 8 + btp) * 8, n * 2)
+            mem.write_i64(lpn, btt * 8, btp + 1)
+            n += 1
+          btk += 1
+        # the default label
+        btdf: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        btt2: i64 = ldep - 1 - btdf
+        if btt2 < 0
+          return jitbail("branch target above the label stack", op, pc)
+        if mem.read_i64(lkind, btt2 * 8) == 1
+          btl: i64 = mem.read_i64(lhead, btt2 * 8) - n
+          jitm.w32(code, n, 0x14000000 | (btl & 0x03FFFFFF))
+          n += 1
+        else
+          btp2: i64 = mem.read_i64(lpn, btt2 * 8)
+          if btp2 >= 8
+            return jitbail("more than 8 forward branches to one label", op, pc)
+          jitm.w32(code, n, 0x14000000)
+          mem.write_i64(lpat, (btt2 * 8 + btp2) * 8, n * 2 + 1)
+          mem.write_i64(lpn, btt2 * 8, btp2 + 1)
+          n += 1
+        # like `br`, everything after this is unreachable and the concrete `sp`
+        # model cannot compile it
+        nxt2: i64 = s:byte(off + pc)
+        if nxt2 != 11 and nxt2 != 5
           return jitbail("reachable code after an unconditional branch", op, pc)
         last_alu = -1
         last_cset = -1
 
-    elseif op == OP_call
-      # call: INLINE a leaf callee. A real call needs a frame and spill
-      # machinery this template JIT does not have, but splicing a leaf body
-      # costs nothing at run time # and `call` is what four of the six
-      # compute-heavy modules bail on, the ones losing 5-26x to wasmtime.
-      cidx: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      cfx: i64 = cidx - jimp
-      if cfx >= jnf
-        return jitbail("call target is above the function section", op, pc)
-      if cfx < 0
-      # ── IMPORTED FUNCTION ────────────────────────────────────────────────
-      # This was the architectural blocker, and it was in `jit`, not here:
-      # alloc/w32/seal/call* let Duo emit code and ENTER it, and nothing let
-      # emitted code LEAVE it. So a body that reached an import took the WHOLE
-      # module to the interpreter # which is every wasi-libc `_start`, because
-      # `_start` reaches `fd_write` to print its answer. `hot`, `hot_big` and
-      # `brtable` all bailed here, at body offset 9, on the first `call`.
-      #
-      # `jit.sym` now answers with a host function address, so the effect
-      # is emitted: materialize the address into x17 and `BLR` it. Dispatch is
-      # on the import's FIELD NAME -- the same byte test the interpreter
-      # applies # and every import that is not one engine can perform keeps the
-      # interpreter's stub shape, so the two engines cannot disagree about a
-      # module. Nothing here reads a module name, a function index or an input
-      # size.
-      imk: i64 = 0
-      imy: i64 = 0
-      if cidx < 256
-        imk = mem.read_i64(jimk, cidx * 8)
-        imy = mem.read_i64(jimx, cidx * 8)
-      imnp: i64 = mem.read_i64(jtp, imy * 8)
-      imnr: i64 = mem.read_i64(jtr, imy * 8)
-      if imk == 1 and imnp == 4 and imnr == 1 and sp >= 4 and jwr != 0
-        # fd_write(fd, iovs, iovslen, nwritten) -> errno.
+      elseif op == OP_return_
+        # return. At label depth zero it is simply "stop compiling this body".
+        # Deeper in, the rest of the function still has to be emitted (silently
+        # dropping it made wart_compute_bench hang once `if` stopped bailing), so
+        # the result moves to x0 here and an unconditional B jumps to the
+        # epilogue # whose address is not known yet, hence the patch list. A
+        # return from an INLINED body would exit the wrong function, so that
+        # shape still bails.
+        if ldep == 0
+          pc = blen + 1
+        elseif inl_d > 0 or jrn >= 64
+          return jitbail("return inside an inlined body, or more than 64 returns", op, pc)
+        else
+          if sp > 0
+            jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | 0)
+            n += 1
+          jitm.w32(code, n, 0x14000000)
+          mem.write_i64(jrw, jrn * 8, n)
+          jrn += 1
+          n += 1
+          # Like `br`, everything after this is unreachable, and wasm makes the
+          # operand stack polymorphic there while this JIT tracks `sp`
+          # concretely. Accept it only where that region is empty.
+          nxr: i64 = s:byte(off + pc)
+          if nxr != 11 and nxr != 5
+            return jitbail("reachable code after an unconditional branch", op, pc)
+          last_alu = -1
+          last_cset = -1
+
+      elseif op == OP_call
+        # call: INLINE a leaf callee. A real call needs a frame and spill
+        # machinery this template JIT does not have, but splicing a leaf body
+        # costs nothing at run time # and `call` is what four of the six
+        # compute-heavy modules bail on, the ones losing 5-26x to wasmtime.
+        cidx: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        cfx: i64 = cidx - jimp
+        if cfx >= jnf
+          return jitbail("call target is above the function section", op, pc)
+        if cfx < 0
+        # ── IMPORTED FUNCTION ────────────────────────────────────────────────
+        # This was the architectural blocker, and it was in `jit`, not here:
+        # alloc/w32/seal/call* let Duo emit code and ENTER it, and nothing let
+        # emitted code LEAVE it. So a body that reached an import took the WHOLE
+        # module to the interpreter # which is every wasi-libc `_start`, because
+        # `_start` reaches `fd_write` to print its answer. `hot`, `hot_big` and
+        # `brtable` all bailed here, at body offset 9, on the first `call`.
         #
-        # Everything the caller holds in a caller-saved register has to survive
-        # the BL by hand, exactly as the real-call path does it: the operand
-        # slots below the four arguments, plus any local that landed in
-        # x0..x17. Locals in x19..x26 and the two bases in x27/x28 are
-        # callee-saved and libc preserves them.
-        isp: i64 = 0
-        iv: i64 = 0
-        while iv < lbase + curloc
-          ir: i64 = locreg(iv, cf)
-          if ir <= 17
-            mem.write_i64(jspr, isp * 8, ir)
+        # `jit.sym` now answers with a host function address, so the effect
+        # is emitted: materialize the address into x17 and `BLR` it. Dispatch is
+        # on the import's FIELD NAME -- the same byte test the interpreter
+        # applies # and every import that is not one engine can perform keeps the
+        # interpreter's stub shape, so the two engines cannot disagree about a
+        # module. Nothing here reads a module name, a function index or an input
+        # size.
+        imk: i64 = 0
+        imy: i64 = 0
+        if cidx < 256
+          imk = mem.read_i64(jimk, cidx * 8)
+          imy = mem.read_i64(jimx, cidx * 8)
+        imnp: i64 = mem.read_i64(jtp, imy * 8)
+        imnr: i64 = mem.read_i64(jtr, imy * 8)
+        if imk == 1 and imnp == 4 and imnr == 1 and sp >= 4 and jwr != 0
+          # fd_write(fd, iovs, iovslen, nwritten) -> errno.
+          #
+          # Everything the caller holds in a caller-saved register has to survive
+          # the BL by hand, exactly as the real-call path does it: the operand
+          # slots below the four arguments, plus any local that landed in
+          # x0..x17. Locals in x19..x26 and the two bases in x27/x28 are
+          # callee-saved and libc preserves them.
+          isp: i64 = 0
+          iv: i64 = 0
+          while iv < lbase + curloc
+            ir: i64 = locreg(iv, cf)
+            if ir <= 17
+              mem.write_i64(jspr, isp * 8, ir)
+              isp += 1
+            iv += 1
+          iov: i64 = 0
+          while iov < sp - 4
+            mem.write_i64(jspr, isp * 8, iov)
             isp += 1
-          iv += 1
-        iov: i64 = 0
-        while iov < sp - 4
-          mem.write_i64(jspr, isp * 8, iov)
-          isp += 1
-          iov += 1
-        if isp > 64
-          return jitbail("more than 64 registers to spill across an imported call", op, pc)
-        isq: i64 = 0
-        while isq < isp
-          jitm.w32(code, n, 0xF81F0FE0 | mem.read_i64(jspr, isq * 8))
+            iov += 1
+          if isp > 64
+            return jitbail("more than 64 registers to spill across an imported call", op, pc)
+          isq: i64 = 0
+          while isq < isp
+            jitm.w32(code, n, 0xF81F0FE0 | mem.read_i64(jspr, isq * 8))
+            n += 1
+            isq += 1
+          # `write` clobbers x0..x17, so NONE of the loop state can live in a
+          # register across it. It lives in a 64-byte scratch block whose address
+          # is baked in, and the sequence re-materializes that address after every
+          # call. Slots: 0 fd, 8 iovec base, 16 count, 24 index, 32 total,
+          # 40 nwritten, 48 cursor, 56 remaining.
+          #
+          # Fixed shape, so every branch offset below is arithmetic rather than a
+          # patch: prologue 16 words at +0, outer head 20 at +16, inner
+          # write-until-drained loop 27 at +36, epilogue 8 at +63.
+          ib: i64 = n
+          ia: i64 = sp - 4
+          n = movabs(code, n, 16, jsca)
+          jitm.w32(code, n, 0x2A0003E0 | (ia << 16))
+          jitm.w32(code, n + 1, 0xF9000000 | (16 << 5))
+          jitm.w32(code, n + 2, 0x2A0003E0 | ((ia + 1) << 16))
+          jitm.w32(code, n + 3, 0x8B000000 | (0 << 16) | (28 << 5))
+          jitm.w32(code, n + 4, 0xF9000000 | (1 << 10) | (16 << 5))
+          jitm.w32(code, n + 5, 0x2A0003E0 | ((ia + 2) << 16))
+          jitm.w32(code, n + 6, 0xF9000000 | (2 << 10) | (16 << 5))
+          jitm.w32(code, n + 7, 0x2A0003E0 | ((ia + 3) << 16))
+          jitm.w32(code, n + 8, 0x8B000000 | (0 << 16) | (28 << 5))
+          jitm.w32(code, n + 9, 0xF9000000 | (5 << 10) | (16 << 5))
+          jitm.w32(code, n + 10, 0xF9000000 | (3 << 10) | (16 << 5) | 31)
+          jitm.w32(code, n + 11, 0xF9000000 | (4 << 10) | (16 << 5) | 31)
+          n += 12
+          # outer: for each iovec, take its (offset, length) pair
+          n = movabs(code, n, 16, jsca)
+          jitm.w32(code, n, 0xF9400000 | (3 << 10) | (16 << 5))
+          jitm.w32(code, n + 1, 0xF9400000 | (2 << 10) | (16 << 5) | 1)
+          jitm.w32(code, n + 2, 0xEB00001F | (1 << 16))
+          jitm.w32(code, n + 3, 0x54000000 | (40 << 5) | 10)
+          jitm.w32(code, n + 4, 0xF9400000 | (1 << 10) | (16 << 5) | 2)
+          jitm.w32(code, n + 5, 0x8B000000 | (0 << 16) | (3 << 10) | (2 << 5) | 2)
+          jitm.w32(code, n + 6, 0xB9400000 | (2 << 5) | 3)
+          jitm.w32(code, n + 7, 0xB9400000 | (1 << 10) | (2 << 5) | 4)
+          jitm.w32(code, n + 8, 0x8B000000 | (3 << 16) | (28 << 5) | 3)
+          jitm.w32(code, n + 9, 0xF9000000 | (6 << 10) | (16 << 5) | 3)
+          jitm.w32(code, n + 10, 0xF9000000 | (7 << 10) | (16 << 5) | 4)
+          jitm.w32(code, n + 11, 0xF9400000 | (4 << 10) | (16 << 5) | 5)
+          jitm.w32(code, n + 12, 0x8B000000 | (4 << 16) | (5 << 5) | 5)
+          jitm.w32(code, n + 13, 0xF9000000 | (4 << 10) | (16 << 5) | 5)
+          jitm.w32(code, n + 14, 0x91000000 | (1 << 10))
+          jitm.w32(code, n + 15, 0xF9000000 | (3 << 10) | (16 << 5))
+          n += 16
+          # inner: a short write is a REAL outcome on a pipe, so drain the iovec
+          # rather than assuming one call moved all of it. Zero or negative ends
+          # the whole sequence with what has been counted so far.
+          n = movabs(code, n, 16, jsca)
+          jitm.w32(code, n, 0xF9400000 | (7 << 10) | (16 << 5) | 2)
+          jitm.w32(code, n + 1, 0xF100001F | (2 << 5))
+          jitm.w32(code, n + 2, 0x54000000 | ((-26 & 0x7FFFF) << 5) | 13)
+          jitm.w32(code, n + 3, 0xF9400000 | (16 << 5))
+          jitm.w32(code, n + 4, 0xF9400000 | (6 << 10) | (16 << 5) | 1)
+          n += 5
+          n = movabs(code, n, 17, jwr)
+          jitm.w32(code, n, 0xD63F0000 | (17 << 5))
           n += 1
-          isq += 1
-        # `write` clobbers x0..x17, so NONE of the loop state can live in a
-        # register across it. It lives in a 64-byte scratch block whose address
-        # is baked in, and the sequence re-materializes that address after every
-        # call. Slots: 0 fd, 8 iovec base, 16 count, 24 index, 32 total,
-        # 40 nwritten, 48 cursor, 56 remaining.
+          n = movabs(code, n, 16, jsca)
+          jitm.w32(code, n, 0xF100001F)
+          jitm.w32(code, n + 1, 0x54000000 | (8 << 5) | 13)
+          jitm.w32(code, n + 2, 0xF9400000 | (6 << 10) | (16 << 5) | 1)
+          jitm.w32(code, n + 3, 0x8B000000 | (0 << 16) | (1 << 5) | 1)
+          jitm.w32(code, n + 4, 0xF9000000 | (6 << 10) | (16 << 5) | 1)
+          jitm.w32(code, n + 5, 0xF9400000 | (7 << 10) | (16 << 5) | 2)
+          jitm.w32(code, n + 6, 0xCB000000 | (0 << 16) | (2 << 5) | 2)
+          jitm.w32(code, n + 7, 0xF9000000 | (7 << 10) | (16 << 5) | 2)
+          jitm.w32(code, n + 8, 0x14000000 | (-26 & 0x3FFFFFF))
+          n += 9
+          # epilogue: report the byte count and answer errno 0, which is what the
+          # interpreter's arm answers too
+          n = movabs(code, n, 16, jsca)
+          jitm.w32(code, n, 0xF9400000 | (4 << 10) | (16 << 5))
+          jitm.w32(code, n + 1, 0xF9400000 | (5 << 10) | (16 << 5) | 1)
+          jitm.w32(code, n + 2, 0xB9000000 | (1 << 5))
+          jitm.w32(code, n + 3, 0x2A1F03E0 | ia)
+          n += 4
+          if n - ib != 71
+            return jitbail("host-call sequence is not the length its branch offsets assume", op, pc)
+          isr: i64 = isp - 1
+          while isr >= 0
+            jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, isr * 8))
+            n += 1
+            isr -= 1
+          sp -= 3
+        else
+          # Every other import: consume the declared parameters and leave the
+          # declared results as zero. Byte for byte the interpreter's stub, so a
+          # module calling an import the engine cannot perform still runs, and runs the
+          # same way on both engines. `proc_exit` is this shape # one parameter,
+          # no result, no emitted instruction at all.
+          if imnp > sp
+            return jitbail("imported call passes more arguments than are on the stack", op, pc)
+          sp -= imnp
+          imz: i64 = 0
+          while imz < imnr
+            if sp > 8
+              return jitbail("operand stack shape", op, pc)
+            jitm.w32(code, n, 0x2A1F03E0 | sp)
+            n += 1
+            sp += 1
+            imz += 1
+        last_alu = -1
+        last_cset = -1
+
+        else
+        cnl: i64 = mem.read_i64(jft, (cfx * 6 + 2) * 8)
+        cnp: i64 = mem.read_i64(jft, (cfx * 6 + 3) * 8)
+        cnr: i64 = mem.read_i64(jft, (cfx * 6 + 5) * 8)
+        clf: i64 = mem.read_i64(jft, (cfx * 6 + 4) * 8)
+        # the callee's locals start above every enclosing frame's
+        nlb2: i64 = lbase + curloc
+        if cnp > sp or cnr > 1
+          return jitbail("call passes more arguments than are on the stack, or returns more than one value", op, pc)
+        # INLINE only a LEAF callee. Leafness is what makes this terminate: a
+        # body containing no call cannot recurse, so the splice is always finite
+        # and the depth cap is belt and braces. It used to inline non-leaves too,
+        # and a recursive callee simply ran the cap out and then bailed the WHOLE
+        # function to the interpreter. Everything else is a real call now, which
+        # is both cheaper to compile and unbounded in what it can express.
+        doinl: i64 = 0
+        if clf == 1 and inl_d < 6 and nlb2 + cnp + cnl <= 17
+          doinl = 1
+
+        if doinl == 1
+        # arguments move from the operand stack into the callee's params, which
+        # are its locals 0..cnp-1 and therefore registers locreg(nlb2)..
+        ck4: i64 = 0
+        while ck4 < cnp
+          jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | locreg(nlb2 + ck4, cf))
+          n += 1
+          ck4 += 1
+        # Wasm guarantees declared locals start at ZERO. Only the params were
+        # being written, so the callee's remaining locals held whatever the
+        # previous frame left in those registers: a loop counter came in at 2
+        # instead of 0 and wart_simple_opcode_bench ran 9998 iterations, giving
+        # 69986 instead of 70000.
+        cz: i64 = cnp
+        while cz < cnp + cnl
+          jitm.w32(code, n, 0x2A1F03E0 | locreg(nlb2 + cz, cf))
+          n += 1
+          cz += 1
+        sp -= cnp
+        mem.write_i64(inl_pcs, inl_d * 8, pc)
+        mem.write_i64(inl_offs, inl_d * 8, off)
+        mem.write_i64(inl_bls, inl_d * 8, blen)
+        mem.write_i64(inl_lbs, inl_d * 8, lbase)
+        mem.write_i64(inl_lds, inl_d * 8, ldep)
+        mem.write_i64(inl_lcs, inl_d * 8, curloc)
+        inl_d += 1
+        off = mem.read_i64(jft, (cfx * 6) * 8)
+        blen = mem.read_i64(jft, (cfx * 6 + 1) * 8)
+        lbase = nlb2
+        curloc = cnp + cnl
+        if nlb2 + cnp + cnl - 1 > hwm
+          hwm = nlb2 + cnp + cnl - 1
+        pc = 1
+        last_alu = -1
+        last_cset = -1
+
+        else
+        # ── REAL CALL ──────────────────────────────────────────────────────
+        # AAPCS-shaped, with the two module-wide bases riding along: args in
+        # x0..x7, result in x0, x27 = globals base, x28 = linear-memory base,
+        # and the callee saves whatever of x19..x26 and x29/x30 it touches.
         #
-        # Fixed shape, so every branch offset below is arithmetic rather than a
-        # patch: prologue 16 words at +0, outer head 20 at +16, inner
-        # write-until-drained loop 27 at +36, epilogue 8 at +63.
-        ib: i64 = n
-        ia: i64 = sp - 4
-        n = movabs(code, n, 16, jsca)
-        jitm.w32(code, n, 0x2A0003E0 | (ia << 16))
-        jitm.w32(code, n + 1, 0xF9000000 | (16 << 5))
-        jitm.w32(code, n + 2, 0x2A0003E0 | ((ia + 1) << 16))
-        jitm.w32(code, n + 3, 0x8B000000 | (0 << 16) | (28 << 5))
-        jitm.w32(code, n + 4, 0xF9000000 | (1 << 10) | (16 << 5))
-        jitm.w32(code, n + 5, 0x2A0003E0 | ((ia + 2) << 16))
-        jitm.w32(code, n + 6, 0xF9000000 | (2 << 10) | (16 << 5))
-        jitm.w32(code, n + 7, 0x2A0003E0 | ((ia + 3) << 16))
-        jitm.w32(code, n + 8, 0x8B000000 | (0 << 16) | (28 << 5))
-        jitm.w32(code, n + 9, 0xF9000000 | (5 << 10) | (16 << 5))
-        jitm.w32(code, n + 10, 0xF9000000 | (3 << 10) | (16 << 5) | 31)
-        jitm.w32(code, n + 11, 0xF9000000 | (4 << 10) | (16 << 5) | 31)
-        n += 12
-        # outer: for each iovec, take its (offset, length) pair
-        n = movabs(code, n, 16, jsca)
-        jitm.w32(code, n, 0xF9400000 | (3 << 10) | (16 << 5))
-        jitm.w32(code, n + 1, 0xF9400000 | (2 << 10) | (16 << 5) | 1)
-        jitm.w32(code, n + 2, 0xEB00001F | (1 << 16))
-        jitm.w32(code, n + 3, 0x54000000 | (40 << 5) | 10)
-        jitm.w32(code, n + 4, 0xF9400000 | (1 << 10) | (16 << 5) | 2)
-        jitm.w32(code, n + 5, 0x8B000000 | (0 << 16) | (3 << 10) | (2 << 5) | 2)
-        jitm.w32(code, n + 6, 0xB9400000 | (2 << 5) | 3)
-        jitm.w32(code, n + 7, 0xB9400000 | (1 << 10) | (2 << 5) | 4)
-        jitm.w32(code, n + 8, 0x8B000000 | (3 << 16) | (28 << 5) | 3)
-        jitm.w32(code, n + 9, 0xF9000000 | (6 << 10) | (16 << 5) | 3)
-        jitm.w32(code, n + 10, 0xF9000000 | (7 << 10) | (16 << 5) | 4)
-        jitm.w32(code, n + 11, 0xF9400000 | (4 << 10) | (16 << 5) | 5)
-        jitm.w32(code, n + 12, 0x8B000000 | (4 << 16) | (5 << 5) | 5)
-        jitm.w32(code, n + 13, 0xF9000000 | (4 << 10) | (16 << 5) | 5)
-        jitm.w32(code, n + 14, 0x91000000 | (1 << 10))
-        jitm.w32(code, n + 15, 0xF9000000 | (3 << 10) | (16 << 5))
-        n += 16
-        # inner: a short write is a REAL outcome on a pipe, so drain the iovec
-        # rather than assuming one call moved all of it. Zero or negative ends
-        # the whole sequence with what has been counted so far.
-        n = movabs(code, n, 16, jsca)
-        jitm.w32(code, n, 0xF9400000 | (7 << 10) | (16 << 5) | 2)
-        jitm.w32(code, n + 1, 0xF100001F | (2 << 5))
-        jitm.w32(code, n + 2, 0x54000000 | ((-26 & 0x7FFFF) << 5) | 13)
-        jitm.w32(code, n + 3, 0xF9400000 | (16 << 5))
-        jitm.w32(code, n + 4, 0xF9400000 | (6 << 10) | (16 << 5) | 1)
-        n += 5
-        n = movabs(code, n, 17, jwr)
-        jitm.w32(code, n, 0xD63F0000 | (17 << 5))
-        n += 1
-        n = movabs(code, n, 16, jsca)
-        jitm.w32(code, n, 0xF100001F)
-        jitm.w32(code, n + 1, 0x54000000 | (8 << 5) | 13)
-        jitm.w32(code, n + 2, 0xF9400000 | (6 << 10) | (16 << 5) | 1)
-        jitm.w32(code, n + 3, 0x8B000000 | (0 << 16) | (1 << 5) | 1)
-        jitm.w32(code, n + 4, 0xF9000000 | (6 << 10) | (16 << 5) | 1)
-        jitm.w32(code, n + 5, 0xF9400000 | (7 << 10) | (16 << 5) | 2)
-        jitm.w32(code, n + 6, 0xCB000000 | (0 << 16) | (2 << 5) | 2)
-        jitm.w32(code, n + 7, 0xF9000000 | (7 << 10) | (16 << 5) | 2)
-        jitm.w32(code, n + 8, 0x14000000 | (-26 & 0x3FFFFFF))
-        n += 9
-        # epilogue: report the byte count and answer errno 0, which is what the
-        # interpreter's arm answers too
-        n = movabs(code, n, 16, jsca)
-        jitm.w32(code, n, 0xF9400000 | (4 << 10) | (16 << 5))
-        jitm.w32(code, n + 1, 0xF9400000 | (5 << 10) | (16 << 5) | 1)
-        jitm.w32(code, n + 2, 0xB9000000 | (1 << 5))
-        jitm.w32(code, n + 3, 0x2A1F03E0 | ia)
-        n += 4
-        if n - ib != 71
-          return jitbail("host-call sequence is not the length its branch offsets assume", op, pc)
-        isr: i64 = isp - 1
-        while isr >= 0
-          jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, isr * 8))
-          n += 1
-          isr -= 1
-        sp -= 3
-      else
-        # Every other import: consume the declared parameters and leave the
-        # declared results as zero. Byte for byte the interpreter's stub, so a
-        # module calling an import the engine cannot perform still runs, and runs the
-        # same way on both engines. `proc_exit` is this shape # one parameter,
-        # no result, no emitted instruction at all.
-        if imnp > sp
-          return jitbail("imported call passes more arguments than are on the stack", op, pc)
-        sp -= imnp
-        imz: i64 = 0
-        while imz < imnr
-          if sp > 8
-            return jitbail("operand stack shape", op, pc)
-          jitm.w32(code, n, 0x2A1F03E0 | sp)
-          n += 1
-          sp += 1
-          imz += 1
-      last_alu = -1
-      last_cset = -1
-
-      else
-      cnl: i64 = mem.read_i64(jft, (cfx * 6 + 2) * 8)
-      cnp: i64 = mem.read_i64(jft, (cfx * 6 + 3) * 8)
-      cnr: i64 = mem.read_i64(jft, (cfx * 6 + 5) * 8)
-      clf: i64 = mem.read_i64(jft, (cfx * 6 + 4) * 8)
-      # the callee's locals start above every enclosing frame's
-      nlb2: i64 = lbase + curloc
-      if cnp > sp or cnr > 1
-        return jitbail("call passes more arguments than are on the stack, or returns more than one value", op, pc)
-      # INLINE only a LEAF callee. Leafness is what makes this terminate: a
-      # body containing no call cannot recurse, so the splice is always finite
-      # and the depth cap is belt and braces. It used to inline non-leaves too,
-      # and a recursive callee simply ran the cap out and then bailed the WHOLE
-      # function to the interpreter. Everything else is a real call now, which
-      # is both cheaper to compile and unbounded in what it can express.
-      doinl: i64 = 0
-      if clf == 1 and inl_d < 6 and nlb2 + cnp + cnl <= 17
-        doinl = 1
-
-      if doinl == 1
-      # arguments move from the operand stack into the callee's params, which
-      # are its locals 0..cnp-1 and therefore registers locreg(nlb2)..
-      ck4: i64 = 0
-      while ck4 < cnp
-        jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | locreg(nlb2 + ck4, cf))
-        n += 1
-        ck4 += 1
-      # Wasm guarantees declared locals start at ZERO. Only the params were
-      # being written, so the callee's remaining locals held whatever the
-      # previous frame left in those registers: a loop counter came in at 2
-      # instead of 0 and wart_simple_opcode_bench ran 9998 iterations, giving
-      # 69986 instead of 70000.
-      cz: i64 = cnp
-      while cz < cnp + cnl
-        jitm.w32(code, n, 0x2A1F03E0 | locreg(nlb2 + cz, cf))
-        n += 1
-        cz += 1
-      sp -= cnp
-      mem.write_i64(inl_pcs, inl_d * 8, pc)
-      mem.write_i64(inl_offs, inl_d * 8, off)
-      mem.write_i64(inl_bls, inl_d * 8, blen)
-      mem.write_i64(inl_lbs, inl_d * 8, lbase)
-      mem.write_i64(inl_lds, inl_d * 8, ldep)
-      mem.write_i64(inl_lcs, inl_d * 8, curloc)
-      inl_d += 1
-      off = mem.read_i64(jft, (cfx * 6) * 8)
-      blen = mem.read_i64(jft, (cfx * 6 + 1) * 8)
-      lbase = nlb2
-      curloc = cnp + cnl
-      if nlb2 + cnp + cnl - 1 > hwm
-        hwm = nlb2 + cnp + cnl - 1
-      pc = 1
-      last_alu = -1
-      last_cset = -1
-
-      else
-      # ── REAL CALL ──────────────────────────────────────────────────────
-      # AAPCS-shaped, with the two module-wide bases riding along: args in
-      # x0..x7, result in x0, x27 = globals base, x28 = linear-memory base,
-      # and the callee saves whatever of x19..x26 and x29/x30 it touches.
-      #
-      # Everything the caller holds in a CALLER-saved register has to survive
-      # the BL by hand. That is the operand-stack slots below the arguments
-      # (w0..w8 are the argument registers) plus any local that landed above
-      # the callee-saved window. The local map is chosen so a body that calls
-      # puts its first eight locals in x19..x26, which usually leaves this
-      # spill list EMPTY # a recursive `fib` spills nothing at all.
-      if jcn >= 1024 or cnp > 8
-        return jitbail("call passes more than 8 arguments, or the call-patch table is full", op, pc)
-      nsp: i64 = 0
-      lv: i64 = 0
-      while lv < lbase + curloc
-        lr: i64 = locreg(lv, cf)
-        if lr <= 17
-          mem.write_i64(jspr, nsp * 8, lr)
+        # Everything the caller holds in a CALLER-saved register has to survive
+        # the BL by hand. That is the operand-stack slots below the arguments
+        # (w0..w8 are the argument registers) plus any local that landed above
+        # the callee-saved window. The local map is chosen so a body that calls
+        # puts its first eight locals in x19..x26, which usually leaves this
+        # spill list EMPTY # a recursive `fib` spills nothing at all.
+        if jcn >= 1024 or cnp > 8
+          return jitbail("call passes more than 8 arguments, or the call-patch table is full", op, pc)
+        nsp: i64 = 0
+        lv: i64 = 0
+        while lv < lbase + curloc
+          lr: i64 = locreg(lv, cf)
+          if lr <= 17
+            mem.write_i64(jspr, nsp * 8, lr)
+            nsp += 1
+          lv += 1
+        ov: i64 = 0
+        while ov < sp - cnp
+          mem.write_i64(jspr, nsp * 8, ov)
           nsp += 1
-        lv += 1
-      ov: i64 = 0
-      while ov < sp - cnp
-        mem.write_i64(jspr, nsp * 8, ov)
-        nsp += 1
-        ov += 1
-      if nsp > 64
-        return jitbail("more than 64 registers to spill across a call", op, pc)
-      spi: i64 = 0
-      while spi < nsp
-        jitm.w32(code, n, 0xF81F0FE0 | mem.read_i64(jspr, spi * 8))
-        n += 1
-        spi += 1
-      # Arguments slide down to x0..x{cnp-1}. Ascending is safe: at step i the
-      # destination is x{i} and every remaining source is x{sp-cnp+j} with
-      # j > i, hence strictly above i.
-      ag: i64 = 0
-      while ag < cnp
-        if sp - cnp + ag != ag
-          jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ag) << 16) | ag)
+          ov += 1
+        if nsp > 64
+          return jitbail("more than 64 registers to spill across a call", op, pc)
+        spi: i64 = 0
+        while spi < nsp
+          jitm.w32(code, n, 0xF81F0FE0 | mem.read_i64(jspr, spi * 8))
           n += 1
-        ag += 1
-      jitm.w32(code, n, 0x94000000)
-      mem.write_i64(jcw, jcn * 8, n)
-      mem.write_i64(jct, jcn * 8, cfx)
-      jcn += 1
-      n += 1
-      # Move the result out of x0 BEFORE restoring, or the first pop lands on
-      # top of it. Its slot is sp-cnp, which is never in the restored range
-      # 0..sp-cnp-1.
-      if cnr == 1 and sp - cnp != 0
-        jitm.w32(code, n, 0xAA0003E0 | (0 << 16) | (sp - cnp))
+          spi += 1
+        # Arguments slide down to x0..x{cnp-1}. Ascending is safe: at step i the
+        # destination is x{i} and every remaining source is x{sp-cnp+j} with
+        # j > i, hence strictly above i.
+        ag: i64 = 0
+        while ag < cnp
+          if sp - cnp + ag != ag
+            jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ag) << 16) | ag)
+            n += 1
+          ag += 1
+        jitm.w32(code, n, 0x94000000)
+        mem.write_i64(jcw, jcn * 8, n)
+        mem.write_i64(jct, jcn * 8, cfx)
+        jcn += 1
         n += 1
-      spj: i64 = nsp - 1
-      while spj >= 0
-        jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, spj * 8))
-        n += 1
-        spj -= 1
-      sp -= cnp + cnr
-      # Queue the callee. A function is compiled once however many call it,
-      # and the entry was queued before this loop began.
-      if mem.read_i64(jqs, cfx * 8) == 0
-        if jqn >= 256
-          return jitbail("more than 256 functions queued for compilation", op, pc)
-        mem.write_i64(jqs, cfx * 8, 1)
-        mem.write_i64(jq, jqn * 8, cfx)
-        jqn += 1
-      last_alu = -1
-      last_cset = -1
-      end
-      end
+        # Move the result out of x0 BEFORE restoring, or the first pop lands on
+        # top of it. Its slot is sp-cnp, which is never in the restored range
+        # 0..sp-cnp-1.
+        if cnr == 1 and sp - cnp != 0
+          jitm.w32(code, n, 0xAA0003E0 | (0 << 16) | (sp - cnp))
+          n += 1
+        spj: i64 = nsp - 1
+        while spj >= 0
+          jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, spj * 8))
+          n += 1
+          spj -= 1
+        sp -= cnp + cnr
+        # Queue the callee. A function is compiled once however many call it,
+        # and the entry was queued before this loop began.
+        if mem.read_i64(jqs, cfx * 8) == 0
+          if jqn >= 256
+            return jitbail("more than 256 functions queued for compilation", op, pc)
+          mem.write_i64(jqs, cfx * 8, 1)
+          mem.write_i64(jq, jqn * 8, cfx)
+          jqn += 1
+        last_alu = -1
+        last_cset = -1
+        end
+        end
 
-    elseif op == OP_call_indirect
-      # ── call_indirect ──────────────────────────────────────────────────
-      # The largest coverage gap left in this JIT: 10 of the 18 refusals
-      # across both fixture corpora, and every wasi-libc `_start` that routes
-      # a call through a function pointer.
-      #
-      # A direct `call` becomes a `BL` whose displacement is patched once the
-      # callee has an address. Here the target is not a constant at all # it
-      # is `table[i]`, chosen at run time # so there is nothing a
-      # displacement could name. The shape is instead:
-      #
-      #   `jidt` (a DISPATCH TABLE, 16 bytes per slot: code address, then the
-      #   callee's declared type index) is allocated BEFORE compiling, so its
-      #   address is a constant this emitter can bake in. It is FILLED after
-      #   the call-patch phase, which is the earliest point at which every
-      #   body has an address. Emitted code loads the pair, checks it, and
-      #   `BLR`s the address.
-      #
-      # Three checks, every one of them trapping, emitted inline with the condition
-      # inverted to skip over the trap:
-      #
-      #   1. index >= table size            # wasm: trap
-      #   2. slot type != the call site's   -- wasm: trap
-      #   3. slot address == 0              # the callee was not compiled
-      #
-      # Check 2 is the one that must not be skipped. Without it a slot holding
-      # a function of a DIFFERENT signature is entered with the wrong argument
-      # shape and the wrong return width, and the result is a plausible wrong
-      # number rather than a refusal # the exact failure mode this runtime
-      # has spent the week removing. It compares type INDICES, which is exact
-      # because a module's type section is deduplicated by construction, and
-      # it is the same comparison the interpreter now makes.
-      cti: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
-      pc = uleb_end(s, off + pc, off + blen) - off     # tableidx, unused
-      if cti < 0 or cti > 4095
-        return jitbail("call_indirect type index above the CMP immediate", op, pc)
-      if jtbz < 1
-        return jitbail("call_indirect on a module with no table", op, pc)
-      if jtbz > 65535
-        return jitbail("table larger than one MOVZ immediate", op, pc)
-      xnp: i64 = mem.read_i64(jtp, cti * 8)
-      xnr: i64 = mem.read_i64(jtr, cti * 8)
-      if sp < xnp + 1 or xnp > 8
-        return jitbail("call_indirect passes more than 8 arguments, or the operand stack is short", op, pc)
-      if jcn >= 1024
-        return jitbail("the call-patch table is full", op, pc)
-      # Queue every function the table can reach, ONCE, on the first
-      # call_indirect in the module. Doing it up front would drag a module
-      # that merely owns a table to the interpreter whenever some function
-      # nothing dispatches to has an opcode with no arm.
-      if jtbq == 0
-        jtbq = 1
-        xti: i64 = 0
-        while xti < jtbz
-          xfn: i64 = mem.read_i64(jtbl, xti * 8) - jimp
-          if mem.read_i64(jtoc, xti * 8) == 1 and xfn < 0
-            # An imported function reachable through the table would have to
-            # be dispatched by field name at run time, which this emitter
-            # cannot do. Decline the module rather than emit a branch that
-            # would enter the wrong code.
-            return jitbail("a table slot names an imported function", op, pc)
-          if mem.read_i64(jtoc, xti * 8) == 1 and xfn >= 0 and xfn < jnf and mem.read_i64(jqs, xfn * 8) == 0
-            if jqn >= 256
-              return jitbail("more than 256 functions queued for compilation", op, pc)
-            mem.write_i64(jqs, xfn * 8, 1)
-            mem.write_i64(jq, jqn * 8, xfn)
-            jqn += 1
-          xti += 1
-      # Spill everything caller-saved, exactly as the direct-call path does.
-      # The operand slots below the ARGUMENTS are spilled; the index slot on
-      # top (sp-1) is not, and must be read into scratch before the argument
-      # slide overwrites x0..
-      xsp: i64 = 0
-      xlv: i64 = 0
-      while xlv < lbase + curloc
-        xlr: i64 = locreg(xlv, cf)
-        if xlr <= 17
-          mem.write_i64(jspr, xsp * 8, xlr)
+      elseif op == OP_call_indirect
+        # ── call_indirect ──────────────────────────────────────────────────
+        # The largest coverage gap left in this JIT: 10 of the 18 refusals
+        # across both fixture corpora, and every wasi-libc `_start` that routes
+        # a call through a function pointer.
+        #
+        # A direct `call` becomes a `BL` whose displacement is patched once the
+        # callee has an address. Here the target is not a constant at all # it
+        # is `table[i]`, chosen at run time # so there is nothing a
+        # displacement could name. The shape is instead:
+        #
+        #   `jidt` (a DISPATCH TABLE, 16 bytes per slot: code address, then the
+        #   callee's declared type index) is allocated BEFORE compiling, so its
+        #   address is a constant this emitter can bake in. It is FILLED after
+        #   the call-patch phase, which is the earliest point at which every
+        #   body has an address. Emitted code loads the pair, checks it, and
+        #   `BLR`s the address.
+        #
+        # Three checks, every one of them trapping, emitted inline with the condition
+        # inverted to skip over the trap:
+        #
+        #   1. index >= table size            # wasm: trap
+        #   2. slot type != the call site's   -- wasm: trap
+        #   3. slot address == 0              # the callee was not compiled
+        #
+        # Check 2 is the one that must not be skipped. Without it a slot holding
+        # a function of a DIFFERENT signature is entered with the wrong argument
+        # shape and the wrong return width, and the result is a plausible wrong
+        # number rather than a refusal # the exact failure mode this runtime
+        # has spent the week removing. It compares type INDICES, which is exact
+        # because a module's type section is deduplicated by construction, and
+        # it is the same comparison the interpreter now makes.
+        cti: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        pc = uleb_end(s, off + pc, off + blen) - off     # tableidx, unused
+        if cti < 0 or cti > 4095
+          return jitbail("call_indirect type index above the CMP immediate", op, pc)
+        if jtbz < 1
+          return jitbail("call_indirect on a module with no table", op, pc)
+        if jtbz > 65535
+          return jitbail("table larger than one MOVZ immediate", op, pc)
+        xnp: i64 = mem.read_i64(jtp, cti * 8)
+        xnr: i64 = mem.read_i64(jtr, cti * 8)
+        if sp < xnp + 1 or xnp > 8
+          return jitbail("call_indirect passes more than 8 arguments, or the operand stack is short", op, pc)
+        if jcn >= 1024
+          return jitbail("the call-patch table is full", op, pc)
+        # Queue every function the table can reach, ONCE, on the first
+        # call_indirect in the module. Doing it up front would drag a module
+        # that merely owns a table to the interpreter whenever some function
+        # nothing dispatches to has an opcode with no arm.
+        if jtbq == 0
+          jtbq = 1
+          xti: i64 = 0
+          while xti < jtbz
+            xfn: i64 = mem.read_i64(jtbl, xti * 8) - jimp
+            if mem.read_i64(jtoc, xti * 8) == 1 and xfn < 0
+              # An imported function reachable through the table would have to
+              # be dispatched by field name at run time, which this emitter
+              # cannot do. Decline the module rather than emit a branch that
+              # would enter the wrong code.
+              return jitbail("a table slot names an imported function", op, pc)
+            if mem.read_i64(jtoc, xti * 8) == 1 and xfn >= 0 and xfn < jnf and mem.read_i64(jqs, xfn * 8) == 0
+              if jqn >= 256
+                return jitbail("more than 256 functions queued for compilation", op, pc)
+              mem.write_i64(jqs, xfn * 8, 1)
+              mem.write_i64(jq, jqn * 8, xfn)
+              jqn += 1
+            xti += 1
+        # Spill everything caller-saved, exactly as the direct-call path does.
+        # The operand slots below the ARGUMENTS are spilled; the index slot on
+        # top (sp-1) is not, and must be read into scratch before the argument
+        # slide overwrites x0..
+        xsp: i64 = 0
+        xlv: i64 = 0
+        while xlv < lbase + curloc
+          xlr: i64 = locreg(xlv, cf)
+          if xlr <= 17
+            mem.write_i64(jspr, xsp * 8, xlr)
+            xsp += 1
+          xlv += 1
+        xov: i64 = 0
+        while xov < sp - 1 - xnp
+          mem.write_i64(jspr, xsp * 8, xov)
           xsp += 1
-        xlv += 1
-      xov: i64 = 0
-      while xov < sp - 1 - xnp
-        mem.write_i64(jspr, xsp * 8, xov)
-        xsp += 1
-        xov += 1
-      if xsp > 64
-        return jitbail("more than 64 registers to spill across a call", op, pc)
-      xsi: i64 = 0
-      while xsi < xsp
-        jitm.w32(code, n, 0xF81F0FE0 | mem.read_i64(jspr, xsi * 8))
-        n += 1
-        xsi += 1
-      # The trap block is a fixed-length sequence, so every branch that skips
-      # it is arithmetic rather than a patch. Same body as `unreachable`:
-      # exit with the interpreter's trap status, or BRK if the host has no
-      # `exit` symbol.
-      xtl: i64 = 1
-      if jex != 0
-        xtl = 6
-      # 1. index (u32, so a 32-bit MOV zero-extends it) against the table size
-      jitm.w32(code, n, 0x2A0003E0 | ((sp - 1) << 16) | 17)
-      n += 1
-      jitm.w32(code, n, 0xD2800000 | (jtbz << 5) | 16)
-      n += 1
-      jitm.w32(code, n, 0xEB000000 | (16 << 16) | (17 << 5) | 31)
-      n += 1
-      jitm.w32(code, n, 0x54000000 | ((1 + xtl) << 5) | 3)          # B.LO
-      n += 1
-      n = jittrap(code, n, jex)
-      # 2. address of the slot, then its declared type against this call site
-      n = movabs(code, n, 16, jidta)
-      jitm.w32(code, n, 0x8B000000 | (17 << 16) | (4 << 10) | (16 << 5) | 17)
-      n += 1
-      jitm.w32(code, n, 0xF9400000 | (1 << 10) | (17 << 5) | 16)
-      n += 1
-      jitm.w32(code, n, 0xF1000000 | (cti << 10) | (16 << 5) | 31)
-      n += 1
-      jitm.w32(code, n, 0x54000000 | ((1 + xtl) << 5) | 0)          # B.EQ
-      n += 1
-      n = jittrap(code, n, jex)
-      # 3. the compiled address; zero means the slot names nothing this
-      # compilation produced, which must trap rather than branch to 0
-      jitm.w32(code, n, 0xF9400000 | (17 << 5) | 16)
-      n += 1
-      jitm.w32(code, n, 0xB5000000 | ((1 + xtl) << 5) | 16)         # CBNZ
-      n += 1
-      n = jittrap(code, n, jex)
-      # Arguments slide down to x0..x{xnp-1}. Ascending is safe for the same
-      # reason it is on the direct path: at step i the destination is x{i} and
-      # every remaining source is strictly above it.
-      xag: i64 = 0
-      while xag < xnp
-        if sp - 1 - xnp + xag != xag
-          jitm.w32(code, n, 0xAA0003E0 | ((sp - 1 - xnp + xag) << 16) | xag)
+          xov += 1
+        if xsp > 64
+          return jitbail("more than 64 registers to spill across a call", op, pc)
+        xsi: i64 = 0
+        while xsi < xsp
+          jitm.w32(code, n, 0xF81F0FE0 | mem.read_i64(jspr, xsi * 8))
           n += 1
-        xag += 1
-      jitm.w32(code, n, 0xD63F0000 | (16 << 5))                     # BLR x16
-      n += 1
-      # Result out of x0 before the restores, or the first pop lands on it.
-      if xnr == 1 and sp - 1 - xnp != 0
-        jitm.w32(code, n, 0xAA0003E0 | (0 << 16) | (sp - 1 - xnp))
+          xsi += 1
+        # The trap block is a fixed-length sequence, so every branch that skips
+        # it is arithmetic rather than a patch. Same body as `unreachable`:
+        # exit with the interpreter's trap status, or BRK if the host has no
+        # `exit` symbol.
+        xtl: i64 = 1
+        if jex != 0
+          xtl = 6
+        # 1. index (u32, so a 32-bit MOV zero-extends it) against the table size
+        jitm.w32(code, n, 0x2A0003E0 | ((sp - 1) << 16) | 17)
         n += 1
-      xsj: i64 = xsp - 1
-      while xsj >= 0
-        jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, xsj * 8))
+        jitm.w32(code, n, 0xD2800000 | (jtbz << 5) | 16)
         n += 1
-        xsj -= 1
-      sp -= 1 - xnp + xnr
-      last_alu = -1
-      last_cset = -1
+        jitm.w32(code, n, 0xEB000000 | (16 << 16) | (17 << 5) | 31)
+        n += 1
+        jitm.w32(code, n, 0x54000000 | ((1 + xtl) << 5) | 3)          # B.LO
+        n += 1
+        n = jittrap(code, n, jex)
+        # 2. address of the slot, then its declared type against this call site
+        n = movabs(code, n, 16, jidta)
+        jitm.w32(code, n, 0x8B000000 | (17 << 16) | (4 << 10) | (16 << 5) | 17)
+        n += 1
+        jitm.w32(code, n, 0xF9400000 | (1 << 10) | (17 << 5) | 16)
+        n += 1
+        jitm.w32(code, n, 0xF1000000 | (cti << 10) | (16 << 5) | 31)
+        n += 1
+        jitm.w32(code, n, 0x54000000 | ((1 + xtl) << 5) | 0)          # B.EQ
+        n += 1
+        n = jittrap(code, n, jex)
+        # 3. the compiled address; zero means the slot names nothing this
+        # compilation produced, which must trap rather than branch to 0
+        jitm.w32(code, n, 0xF9400000 | (17 << 5) | 16)
+        n += 1
+        jitm.w32(code, n, 0xB5000000 | ((1 + xtl) << 5) | 16)         # CBNZ
+        n += 1
+        n = jittrap(code, n, jex)
+        # Arguments slide down to x0..x{xnp-1}. Ascending is safe for the same
+        # reason it is on the direct path: at step i the destination is x{i} and
+        # every remaining source is strictly above it.
+        xag: i64 = 0
+        while xag < xnp
+          if sp - 1 - xnp + xag != xag
+            jitm.w32(code, n, 0xAA0003E0 | ((sp - 1 - xnp + xag) << 16) | xag)
+            n += 1
+          xag += 1
+        jitm.w32(code, n, 0xD63F0000 | (16 << 5))                     # BLR x16
+        n += 1
+        # Result out of x0 before the restores, or the first pop lands on it.
+        if xnr == 1 and sp - 1 - xnp != 0
+          jitm.w32(code, n, 0xAA0003E0 | (0 << 16) | (sp - 1 - xnp))
+          n += 1
+        xsj: i64 = xsp - 1
+        while xsj >= 0
+          jitm.w32(code, n, 0xF84107E0 | mem.read_i64(jspr, xsj * 8))
+          n += 1
+          xsj -= 1
+        sp -= 1 - xnp + xnr
+        last_alu = -1
+        last_cset = -1
 
-    elseif op == OP_prefix_fc
-      # 0xFC prefix, sub-opcode LEB. Only 0..3 # the i32 trunc_sat family #
-      # have an arm, and they are one instruction each: ARM64's FCVTZS/FCVTZU
-      # ARE saturating, with exactly wasm's NaN-to-zero and clamp-to-range
-      # behaviour, so no range test is emitted at all. Every other sub-opcode
-      # declines and the interpreter runs the body.
-      fsub: i64 = s:byte(off + pc)
-      pc += 1
-      if fsub > 3 or sp < 1
-        return jitbail("no jit arm for this 0xFC sub-opcode", op, pc)
-      fsq: i64 = sp - 1
-      if fsub <= 1
-        jitm.w32(code, n, 0x1E270000 | (fsq << 5) | 1)
+      elseif op == OP_prefix_fc
+        # 0xFC prefix, sub-opcode LEB. Only 0..3 # the i32 trunc_sat family #
+        # have an arm, and they are one instruction each: ARM64's FCVTZS/FCVTZU
+        # ARE saturating, with exactly wasm's NaN-to-zero and clamp-to-range
+        # behaviour, so no range test is emitted at all. Every other sub-opcode
+        # declines and the interpreter runs the body.
+        fsub: i64 = s:byte(off + pc)
+        pc += 1
+        if fsub > 3 or sp < 1
+          return jitbail("no jit arm for this 0xFC sub-opcode", op, pc)
+        fsq: i64 = sp - 1
+        if fsub <= 1
+          jitm.w32(code, n, 0x1E270000 | (fsq << 5) | 1)
+        else
+          jitm.w32(code, n, 0x9E670000 | (fsq << 5) | 1)
+        n += 1
+        fcv: i64 = 0x1E780000
+        if fsub == 0
+          fcv = 0x1E380000
+        elseif fsub == 1
+          fcv = 0x1E390000
+        elseif fsub == 3
+          fcv = 0x1E790000
+        jitm.w32(code, n, fcv | (1 << 5) | fsq)
+        n += 1
+        last_alu = -1
+        last_cset = -1
+
       else
-        jitm.w32(code, n, 0x9E670000 | (fsq << 5) | 1)
-      n += 1
-      fcv: i64 = 0x1E780000
-      if fsub == 0
-        fcv = 0x1E380000
-      elseif fsub == 1
-        fcv = 0x1E390000
-      elseif fsub == 3
-        fcv = 0x1E790000
-      jitm.w32(code, n, fcv | (1 << 5) | fsq)
-      n += 1
-      last_alu = -1
-      last_cset = -1
-
-    else
-      return jitbail("no jit arm for this opcode", op, pc)
+        return jitbail("no jit arm for this opcode", op, pc)
 
     if fcl >= 0
       jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
@@ -5985,7 +5990,17 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
           mem.write_i64(jidt, (jdi * 2) * 8, jcba + jda * 4)
           mem.write_i64(jidt, (jdi * 2 + 1) * 8, mem.read_i64(jfty, jdf * 8))
       jdi += 1
-  n
+  # EXPLICIT `return`. As a bare tail expression `n` was emitted by the C
+  # backend as a dead `n;` statement nested two blocks deep, followed by the
+  # function's fallthrough `return 0` — so the emitted word COUNT never reached
+  # the caller and `words` was whatever the boxed call left behind (measured:
+  # 2847898621, which is an ARM64 instruction word, not a count). `engine_main`
+  # then asked mprotect to publish 2.8 billion words, was refused, and fell
+  # back to the interpreter without a word. Every other exit from this function
+  # is already an explicit `return`; this was the one that was not.
+  if os.getenv("DUO_WASM_JIT_TRACE")
+    io.stderr:write("wasm: jit emitted " .. n:to(str) .. " words for " .. jqn:to(str) .. " bod(y/ies)\n")
+  return n
 end
 
 
@@ -6098,6 +6113,39 @@ engine_main = ()
   jit_why: str = ""
   if force_interp == 1
     jit_why = "DUO_WASM_ENGINE=interp"
+  elseif require_jit == 0
+    # ── THE JIT IS OFF BY DEFAULT, AND HERE IS THE MEASUREMENT THAT DECIDED IT ─
+    #
+    # The ARM64 emitter in this file executed for the first time on 2026-08-14.
+    # `test/conform.id`, run with both columns live and every row's `RAN`
+    # recorded, differenced 65 (module, entry) pairs against wasmtime BY VALUE:
+    #
+    #   jit asked 65, COMPILED 36, DECLINED 29
+    #   interp vs jit on the 36 compiled rows: AGREE 33, DIFFER 3
+    #
+    # The three are WRONG ANSWERS, not refusals, and each is the shape this
+    # project has been caught by before — a plausible number, exit 0:
+    #
+    #   call_indirect_typed (run)            wasmtime & interp 1034562941, jit 3
+    #   wart_wasi_preview1_comprehensive     interp prints "WASI Preview 1
+    #     (_start)                           Benchmark Complete", jit prints
+    #                                        NOTHING and returns 0
+    #   wart_wasix_extended (_start)         interp prints "Wasix Benchmark
+    #                                        Complete", jit prints NOTHING
+    #
+    # The first is a `loop`/`br_if` that leaves after one iteration where the
+    # interpreter runs a thousand; the other two are `_start` bodies whose
+    # emitted `fd_write` produced no output at all. Three wrong answers out of
+    # thirty-six is not a tuning gap, and 33 correct rows do not license the
+    # other 3: a runtime that is right 92% of the time is a runtime nobody can
+    # use. So the emitter stays reachable and stays OFF, and turning it on is
+    # an explicit act by someone who has read this.
+    #
+    # `DUO_WASM_ENGINE=jit` still compiles, still refuses (exit 4) rather than
+    # answering under the interpreter's name, and is what `test/conform.id`
+    # drives. Delete this arm when the differential reads DIFFER 0 — and only
+    # then, and only with the run that says so.
+    jit_why = "the jit is gated off by default (3 of 36 compiled bodies answered differently from the interpreter -- ask for it with DUO_WASM_ENGINE=jit)"
   elseif os.getenv("DUO_WASM_ARGS") != nil
     # THE JIT HAS NO ARGUMENT CHANNEL. `jitm.call2(code, memory, globals)`
     # passes linear memory and the globals block and nothing else, so a
@@ -6172,7 +6220,17 @@ engine_main = ()
       tJ2 = os.clock()
       if os.getenv("DUO_WASM_PHASES")
         print("phase alloc=" .. to(str)(tJ1 - tJ0) .. " compile=" .. to(str)(tJ2 - tJ1))
-      if words > 0 and jitm.seal(code, words * 4)
+      # SEALING IS A REFUSAL SITE TOO. `words <= 0` is a decline the emitter has
+      # already explained on stderr; a failed `seal` is the host refusing to
+      # publish code that WAS emitted, and it used to be indistinguishable from
+      # the first — both fell through to `engine=interp` with nothing written.
+      jseal: i64 = 0
+      if words > 0
+        if jitm.seal(code, words * 4)
+          jseal = 1
+        else
+          jitbail("mprotect refused to publish " .. words:to(str) .. " emitted words", -1, 0)
+      if jseal == 1
         engine = "jit-arm64"
         # Mask to 32 bits ONLY for an i32 result. The unconditional mask here
         # truncated every i64 and f64 the JIT returned (an f64 3.5+1.25 chain

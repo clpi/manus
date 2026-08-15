@@ -69,22 +69,35 @@ alloc: any = (bytes: i64)
 # In EXPRESSION position — behind `return` — the same payload is spliced
 # correctly, which is why `alloc`, `r32`, `seal`, `call0/1/2`, `sym`, `addr`
 # and `arch` were all fine and only the three void-returning primitives were
-# hollow. So the assignment is written as an expression and its value returned.
-# The C value of `a[i] = v` is the stored word; callers ignore it.
+# hollow. So the write is written as an expression.
 #
-# Restore the statement form only once the backend matches the canonical
-# directive name; until then it compiles to nothing at all.
-w32: i64 = (buf: any, idx: i64, word: i64)
-  return @comp.c.emit("(int64_t)(((uint32_t*)buf.as.tval)[idx] = (uint32_t)word)")
+# AND THE DECLARED TYPE STAYS `any` — i.e. this function still ANSWERS NIL.
+# The obvious repair was `w32: i64` returning the stored word, and it broke the
+# only consumer there is, in a way no test would have named: a caller that ends
+# an `if` arm with `jit.w32(...)` has that call in TAIL POSITION, and when the
+# callee's return type matches the caller's the C backend promotes the tail
+# call to `return <call>`. The WASM engine's emitter does that in twenty-eight
+# places, all inside one `i64` function, so giving `w32` an `i64` result turned
+# twenty-eight instruction emissions into early returns: the emitter stopped
+# after the first one it reached and handed back an ARM64 instruction word as
+# its word count (measured: 1522536448 words, which mprotect declined). A
+# primitive's return type is part of its interface even when nobody reads it.
+#
+# The statement-expression `({ …; lua_val_nil(); })` performs the store and
+# yields nil, so the emitted C is byte-for-byte what the void form was meant to
+# be. Restore the plain statement form only once the backend matches the
+# canonical directive name; until then it compiles to nothing at all.
+w32: any = (buf: any, idx: i64, word: i64)
+  return @comp.c.emit("({ ((uint32_t*)buf.as.tval)[idx] = (uint32_t)word; lua_val_nil(); })")
 
 # Read back one 32-bit word (debugging emitted code).
 r32: i64 = (buf: any, idx: i64)
   return @comp.c.emit("(int64_t)((uint32_t*)buf.as.tval)[idx]")
 
-# Store one raw byte at byte offset `off`. Expression position for the same
-# reason `w32` is — see the note there; the statement form emits nothing.
-w8: i64 = (buf: any, off: i64, byte: i64)
-  return @comp.c.emit("(int64_t)(((uint8_t*)buf.as.tval)[off] = (uint8_t)byte)")
+# Store one raw byte at byte offset `off`. Expression position, and nil-valued,
+# for the two reasons `w32` is — see the note there.
+w8: any = (buf: any, off: i64, byte: i64)
+  return @comp.c.emit("({ ((uint8_t*)buf.as.tval)[off] = (uint8_t)byte; lua_val_nil(); })")
 
 # Make the first `bytes` executable and flush the instruction cache.
 # Returns true on success.
@@ -103,8 +116,8 @@ call2: i64 = (buf: any, a0: i64, a1: i64)
 # Expression position for the same reason `w32` is: as a statement the munmap
 # is dropped and this leaks the whole mapping while reporting nothing.
 # Returns munmap's status, 0 on success.
-release: i64 = (buf: any, bytes: i64)
-  return @comp.c.emit("(int64_t)munmap(buf.as.tval, (size_t)bytes)")
+release: any = (buf: any, bytes: i64)
+  return @comp.c.emit("({ munmap(buf.as.tval, (size_t)bytes); lua_val_nil(); })")
 
 # Address of a host function already loaded in this process, or 0 when the
 # host does not export that name.

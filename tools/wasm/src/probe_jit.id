@@ -22,7 +22,11 @@
 #   duo compile src/probe_jit.id --backend=c --emit exe -o /tmp/probe_jit
 #   /tmp/probe_jit ; echo $?
 
-j = jit
+# `req`, NOT the bare name. `jit` is a HARDCODED BUILTIN module — the table
+# `lua_jit_init()` builds in `src/jit.zig`, holding on/off/flush/status/
+# version/version_num/opt/os/arch and nothing else — and it SHADOWS
+# `lib/jit.id`, which is where alloc/w32/r32/seal/call*/sym/addr actually live.
+j = req "jit"
 
 # The arch string, read BOTH ways. `jit.arch` is a value today and is expected
 # to become a real accessor; accepting either shape, and either spelling of the
@@ -52,7 +56,9 @@ report: i64 = (name: str, present: i64)
   if present == 1
     print("  present  " .. name)
   else
-    print("  MISSING  " .. name)
+    # "shadowed", not "MISSING": the member exists in `lib/jit.id` and is
+    # callable; only the table-field read is intercepted by the builtin.
+    print("  shadowed " .. name)
   present
 
 probe_main = ()
@@ -88,14 +94,26 @@ probe_main = ()
   n += report("jit.seal(buf, bytes) -> ok     # mprotect RX + icache", h4)
   n += report("jit.call2(buf, a, b) -> i64    # enter under the C ABI", h5)
   n += report("jit.sym(name) -> addr          # host symbol for an imported call", h6)
+  # THE ROSTER ABOVE IS INFORMATION, NOT THE VERDICT, and it used to be the
+  # verdict, which is why it read MISSING for a substrate that works. `req "jit"`
+  # registers `lib/jit.id` in `duo_modules`, but the generated `lua_require`
+  # tests the hardcoded builtin names FIRST, so the BINDING still holds the
+  # builtin table (which has no `alloc`) while every CALL through it was
+  # compiled to a direct call against the real Idol module. So `j.alloc == nil`
+  # answers "missing" and `j.alloc(4096)` answers with a live mapping, both
+  # truthfully, about two different things.
+  #
+  # A roster read cannot settle this and neither can the opposite reading: a
+  # member can be non-nil and still DO NOTHING (`lib/jit.id`'s `w32` was
+  # `return lua_val_nil()` for as long as `@comp.c.emit` in statement position
+  # was dropped by the C backend). Only the end-to-end proof below decides, and
+  # only IT sets the exit status.
   if n < 6
     print("")
-    print("VERDICT: the jit substrate is INCOMPLETE (" .. n:to(str) .. " of 6).")
-    print("  The ARM64 emitter in src/engine.id cannot execute and never has.")
-    print("  `DUO_WASM_ENGINE=jit` refuses (exit 4) rather than running the")
-    print("  interpreter under the jit's name.")
-    os.exit(1)
-  # The substrate exists: prove it end to end rather than trusting the roster.
+    print("NOTE: " .. n:to(str) .. " of 6 are reachable as TABLE FIELDS; the rest are")
+    print("  shadowed by the builtin `jit` table. This is not the verdict —")
+    print("  the calls below are.")
+  # Prove it end to end rather than trusting the roster.
   buf = j.alloc(4096)
   if not buf
     print("VERDICT: jit.alloc exists and REFUSED (mmap failed).")
