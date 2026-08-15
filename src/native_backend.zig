@@ -11,6 +11,7 @@ const dnir_lower = @import("dnir_lower.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const table_apply = @import("table_apply.zig");
+const const_table = @import("const_table.zig");
 const region_graph = @import("region_graph.zig");
 
 pub const Error = error{
@@ -412,10 +413,18 @@ fn emitObjectModeWithGraphLineage(
     var output = try emitArm64ModuleWithGraph(alloc, mod, entry, graph, diagnostic);
     defer output.deinit(alloc);
     if (output.graph != graph) return invalidFactsWith(diagnostic, @src(), "object-graph-context");
-    const bytes = try emitMachOArm64Object(alloc, output.text, output.cstring, output.symbols, output.relocations, output.bss_size);
+    const bytes = try emitMachOArm64ObjectWithConst(
+        alloc,
+        output.text,
+        output.cstring,
+        output.const_data,
+        output.symbols,
+        output.relocations,
+        output.bss_size,
+    );
     errdefer alloc.free(bytes);
 
-    const text_offset = machOTextOffset(output.cstring.len, output.bss_size);
+    const text_offset = machOTextOffset(output.cstring.len, output.const_data.len, output.bss_size);
     const lineage = try alloc.dupe(MachineLineage, output.lineage);
     errdefer alloc.free(lineage);
     for (lineage) |*row| {
@@ -516,7 +525,11 @@ const Symbol = struct {
     name: []const u8,
     offset: u32,
     defined: bool = true,
-    section: u8 = 1, // 1 = __text, 2 = __cstring
+    // Section index, 1-based over the sections this object actually emits:
+    // 1 = __TEXT,__text, then __TEXT,__cstring and __TEXT,__const in that order
+    // when they are non-empty. A promoted table's index is therefore not a
+    // constant — `finish` stamps it once it knows whether any string exists.
+    section: u8 = 1,
     external: bool = true, // n_ext bit for nlist; local string symbols set this false
 };
 
@@ -585,6 +598,17 @@ const Arm64Output = struct {
     text: []u8,
     asm_text: []u8,
     cstring: []u8 = &.{},
+    /// Bytes of `__TEXT,__const` — determined positional tables that became
+    /// read-only data instead of being built word by word at run time.
+    ///
+    /// NOT `__cstring`, AND NOT `__text`. `__cstring` is `S_CSTRING_LITERALS`:
+    /// the linker splits and dedups it at NUL bytes, and a table of i64 literals
+    /// is full of them, so a blob put there would be silently corrupted. `__text`
+    /// would make the data count as INSTRUCTIONS under `otool -tV`, corrupting
+    /// every measurement on this surface — the collapse gate, the perf baseline,
+    /// the frontier rows. `S_REGULAR` in its own section is the only placement
+    /// that is neither.
+    const_data: []u8 = &.{},
     symbols: []Symbol,
     relocations: []Relocation,
     lineage: []MachineLineage = &.{},
@@ -599,6 +623,7 @@ const Arm64Output = struct {
         alloc.free(self.text);
         alloc.free(self.asm_text);
         if (self.cstring.len > 0) alloc.free(self.cstring);
+        if (self.const_data.len > 0) alloc.free(self.const_data);
         for (self.symbols) |sym| alloc.free(sym.name);
         alloc.free(self.symbols);
         alloc.free(self.relocations);
@@ -610,6 +635,7 @@ const Arm64Output = struct {
     fn deinitExceptAssembly(self: *Arm64Output, alloc: std.mem.Allocator) void {
         alloc.free(self.text);
         if (self.cstring.len > 0) alloc.free(self.cstring);
+        if (self.const_data.len > 0) alloc.free(self.const_data);
         for (self.symbols) |sym| alloc.free(sym.name);
         alloc.free(self.symbols);
         alloc.free(self.relocations);
@@ -618,6 +644,7 @@ const Arm64Output = struct {
 
     fn deinitExceptAssemblyMachineAndLineage(self: *Arm64Output, alloc: std.mem.Allocator) void {
         if (self.cstring.len > 0) alloc.free(self.cstring);
+        if (self.const_data.len > 0) alloc.free(self.const_data);
         for (self.symbols) |sym| alloc.free(sym.name);
         alloc.free(self.symbols);
         alloc.free(self.relocations);
@@ -753,6 +780,19 @@ const Arm64Compiler = struct {
     strings: std.ArrayList(StringSymbol) = .empty,
     string_map: std.StringHashMapUnmanaged(u32) = .empty,
     next_string: u32 = 0,
+    /// What the SOURCE facts permit to become read-only data. Borrowed; empty
+    /// when the caller had no source module in hand, and an empty licence
+    /// promotes nothing, so every DNIR-only entry point keeps today's emission
+    /// byte for byte.
+    const_licence: ?*const const_table.Licence = null,
+    /// Promoted tables of the function being compiled: `alloc_slots` result temp
+    /// -> the `__TEXT,__const` symbol its base address relocates against.
+    /// Cleared per function.
+    const_bases: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+    /// The module's `__TEXT,__const` payload, one i64 word per entry.
+    const_words: std.ArrayList(i64) = .empty,
+    const_tables: std.ArrayList(ConstTableSymbol) = .empty,
+    next_const: u32 = 0,
     // f64 native emission: per-function physical FP state. FP params arrive
     // in d0-d7 (caller-saved) and the result returns in d0.
     cur_func_float: bool = false,
@@ -864,6 +904,17 @@ const Arm64Compiler = struct {
     hoist_plan: std.AutoHashMapUnmanaged(u32, HoistPlan) = .empty,
     hoist_active: [max_hoist_depth]HoistActive = @splat(.{}),
     hoist_depth: u8 = 0,
+    /// Loop head flat index -> code offset where that head's preheader `mov`s
+    /// begin. The preheader is emitted BEFORE the head's `code_offsets` entry so
+    /// the back edge re-enters after it, which is right for the back edge and
+    /// WRONG for every other way in. A loop preceded by an `if` is entered by a
+    /// FORWARD branch to the head — both the `b.cond` that skips the then-block
+    /// and the `b` that ends it target the head — and both landed past the
+    /// preheader, so the loop ran against registers that were never initialized.
+    /// That is the declare/branch/loop silent wrong answer. Forward branches are
+    /// re-pointed at this offset in the patch pass; back edges keep the head's
+    /// own offset. Emptied per function with the rest of the hoist state.
+    hoist_preheader: std.AutoHashMapUnmanaged(u32, u32) = .empty,
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
     fp_stack_slots: std.StringHashMapUnmanaged(StackSlot) = .empty,
     stack_frame_bytes: u16 = 0,
@@ -968,6 +1019,16 @@ const Arm64Compiler = struct {
         symbol_index: u32,
     };
 
+    /// One promoted table's place in `__TEXT,__const`. It owns NO memory: the
+    /// name belongs to `symbols` and the words to `const_words`, so there is
+    /// exactly one owner of each and nothing to double-free when `finish`
+    /// hands the symbol table to the output.
+    const ConstTableSymbol = struct {
+        symbol_index: u32,
+        word_off: u32,
+        word_len: u32,
+    };
+
     const DnirBranchPatch = struct {
         patch_off: u32,
         target_instr: u32,
@@ -1006,11 +1067,15 @@ const Arm64Compiler = struct {
         }
         self.strings.deinit(self.alloc);
         self.string_map.deinit(self.alloc);
+        self.const_bases.deinit(self.alloc);
+        self.const_words.deinit(self.alloc);
+        self.const_tables.deinit(self.alloc);
         self.fp_locals.deinit(self.alloc);
         self.fp_temps.deinit(self.alloc);
         self.value_free_at.deinit(self.alloc);
         self.imm_hoist.deinit(self.alloc);
         self.hoist_plan.deinit(self.alloc);
+        self.hoist_preheader.deinit(self.alloc);
         self.fp_abi_passthrough.deinit(self.alloc);
         self.fp_stack_slots.deinit(self.alloc);
         self.slot_bases.deinit(self.alloc);
@@ -1045,6 +1110,41 @@ const Arm64Compiler = struct {
                 str_off += @intCast(s.bytes.len + 1);
             }
         }
+        // `__TEXT,__const` — the determined tables, as data.
+        //
+        // THE VM LAYOUT THE SYMBOLS ARE MEASURED AGAINST. A relocatable object's
+        // sections are laid out here at __text, then __cstring, then __const, and
+        // a defined local symbol's `n_value` is its ABSOLUTE address in that
+        // layout — never a section-relative offset, which clang's linker rejects
+        // (the same rule the string labels above already obey). `__const` is
+        // 8-byte aligned because every element is an 8-byte word and the access
+        // path is `ldr x, [base, idx, lsl #3]`.
+        var const_data: std.ArrayList(u8) = .empty;
+        errdefer const_data.deinit(self.alloc);
+        if (self.const_words.items.len > 0) {
+            // Section INDEX, not a constant: __cstring only exists when this
+            // module has a string literal, so __const is section 2 or 3.
+            const section_index: u8 = if (self.strings.items.len > 0) 3 else 2;
+            const base_addr = alignForward(self.code.items.len + cstring.items.len, 8);
+            try self.asm_text.appendSlice(self.alloc, "\n.section __TEXT,__const\n.p2align 3\n");
+            for (self.const_tables.items) |entry| {
+                const sym = &self.symbols.items[entry.symbol_index];
+                sym.offset = @intCast(base_addr + @as(usize, entry.word_off) * 8);
+                sym.section = section_index;
+                try self.asm_text.appendSlice(self.alloc, sym.name);
+                try self.asm_text.appendSlice(self.alloc, ":\n");
+                const words = self.const_words.items[entry.word_off..][0..entry.word_len];
+                for (words) |w| try self.asm_text.print(self.alloc, "\t.quad {d}\n", .{w});
+            }
+            for (self.const_words.items) |w| {
+                var buf: [8]u8 = undefined;
+                std.mem.writeInt(i64, &buf, w, .little);
+                try const_data.appendSlice(self.alloc, &buf);
+            }
+        }
+        const const_bytes = try const_data.toOwnedSlice(self.alloc);
+        errdefer self.alloc.free(const_bytes);
+
         const cstring_bytes = try cstring.toOwnedSlice(self.alloc);
         errdefer self.alloc.free(cstring_bytes);
 
@@ -1072,6 +1172,7 @@ const Arm64Compiler = struct {
             .text = text,
             .asm_text = asm_text,
             .cstring = cstring_bytes,
+            .const_data = const_bytes,
             .symbols = symbols,
             .relocations = relocations,
             .lineage = lineage,
@@ -1110,6 +1211,41 @@ const Arm64Compiler = struct {
         errdefer self.alloc.free(owned_bytes);
         try self.strings.append(self.alloc, .{ .bytes = owned_bytes, .name = owned_name, .symbol_index = idx });
         try self.string_map.put(self.alloc, owned_bytes, idx);
+        return idx;
+    }
+
+    /// The `__TEXT,__const` symbol for these words, creating it if this is the
+    /// first table with these contents.
+    ///
+    /// Deduped by contents for the same reason string literals are: two bindings
+    /// of the same determined table are the same data, and the address is all
+    /// either one can observe. Nothing writes the section, so sharing it cannot
+    /// be witnessed.
+    fn internConstTable(self: *Arm64Compiler, values: []const i64) Error!u32 {
+        for (self.const_tables.items) |entry| {
+            const have = self.const_words.items[entry.word_off..][0..entry.word_len];
+            if (std.mem.eql(i64, have, values)) return entry.symbol_index;
+        }
+        const idx: u32 = @intCast(self.symbols.items.len);
+        const owned_name = try std.fmt.allocPrint(self.alloc, "Lduo_const_{d}", .{self.next_const});
+        errdefer self.alloc.free(owned_name);
+        self.next_const += 1;
+        // `.section` is stamped in `finish`, which is the only place that knows
+        // whether a __cstring section exists to sit between this and __text.
+        try self.symbols.append(self.alloc, .{
+            .name = owned_name,
+            .offset = 0,
+            .defined = true,
+            .section = 2,
+            .external = false,
+        });
+        const word_off: u32 = @intCast(self.const_words.items.len);
+        try self.const_words.appendSlice(self.alloc, values);
+        try self.const_tables.append(self.alloc, .{
+            .symbol_index = idx,
+            .word_off = word_off,
+            .word_len = @intCast(values.len),
+        });
         return idx;
     }
 
@@ -1199,6 +1335,13 @@ const Arm64Compiler = struct {
         probe.gate_transport = self.gate_transport;
         probe.gp_local_home_budget = self.gp_local_home_budget;
         probe.spill_frame_budget = self.spill_frame_budget;
+        // THE PROBE MUST COMPILE THE SAME BODY THE REAL PASS WILL. Its whole
+        // premise (see above) is that the two passes differ only in the prologue's
+        // save/restore pairs. A licence in one and not the other would give the
+        // probe a table built word by word — one value register per element —
+        // against a real pass that emits none of it, so the measurement would be
+        // of a different function.
+        probe.const_licence = self.const_licence;
         probe.callee_save_plan = callee_save_all;
         defer probe.deinit();
         probe.compileDnirFunction(f) catch return callee_save_all;
@@ -1549,9 +1692,17 @@ const Arm64Compiler = struct {
     /// planned constants into reserved home registers. Emitting BEFORE the head's
     /// `code_offsets` entry means the back edge re-enters AFTER these movs, so the
     /// constants are computed once on fall-in and reused every iteration.
+    ///
+    /// FALL-IN IS NOT THE ONLY WAY IN, and assuming it was is what made this a
+    /// wrong answer rather than a missed optimization. A head is also entered by
+    /// any FORWARD branch that targets it, and an `if` immediately before a loop
+    /// produces two of them. Record where the preheader starts so the patch pass
+    /// can send those entries through it; a head that hoisted nothing records
+    /// nothing and every branch to it keeps the head offset.
     fn immHoistEnter(self: *Arm64Compiler, flat_idx: u32) Error!void {
         const plan = self.hoist_plan.get(flat_idx) orelse return;
         if (self.hoist_depth >= max_hoist_depth) return;
+        const preheader_off: u32 = @intCast(self.code.items.len);
         var active: HoistActive = .{ .latch = plan.latch };
         var k: u8 = 0;
         while (k < plan.count) : (k += 1) {
@@ -1568,6 +1719,9 @@ const Arm64Compiler = struct {
             active.values[active.count] = v;
             active.regs[active.count] = r;
             active.count += 1;
+        }
+        if (self.code.items.len != preheader_off) {
+            try self.hoist_preheader.put(self.alloc, flat_idx, preheader_off);
         }
         self.hoist_active[self.hoist_depth] = active;
         self.hoist_depth += 1;
@@ -1789,6 +1943,7 @@ const Arm64Compiler = struct {
         self.gp_home_regs = @splat(false);
         try self.computeValueLastUse(f);
         self.imm_hoist.clearRetainingCapacity();
+        self.hoist_preheader.clearRetainingCapacity();
         self.hoist_depth = 0;
         try self.planImmHoist(f);
         self.returned = false;
@@ -1955,6 +2110,21 @@ const Arm64Compiler = struct {
             }
         }
 
+        // WHICH TABLES NEED NO STORAGE AT ALL, and therefore no frame region and
+        // no instructions to fill one. `const_table.zig` states the whole rule;
+        // the precondition itself comes from `table_facts.zig` and is not
+        // restated. This runs BEFORE the slot-base pass below because its answer
+        // is what that pass has to skip.
+        self.const_bases.clearRetainingCapacity();
+        if (self.const_licence) |lic| {
+            var promotions = try const_table.recognize(self.alloc, f, lic);
+            defer promotions.deinit();
+            for (promotions.items) |p| {
+                const sym = try self.internConstTable(p.values);
+                try self.const_bases.put(self.alloc, p.base, sym);
+            }
+        }
+
         // Memory-backed positional tables. Same reasoning as records above: the
         // reservation must happen once, not at the point of use, or a table
         // built inside a loop walks `sp` down a frame per iteration. Each
@@ -1967,6 +2137,12 @@ const Arm64Compiler = struct {
                 for (b.instrs) |ins| {
                     if (ins.op != .alloc_slots) continue;
                     const t = ins.result orelse continue;
+                    // A promoted table lives in `__TEXT,__const`. Reserving a
+                    // frame region for it as well would not merely waste stack —
+                    // the region shifts every sp-relative offset handed out
+                    // afterwards, which is the exact mechanism behind the
+                    // overlap that made a scalar read 50 instead of 33.
+                    if (self.const_bases.contains(t)) continue;
                     const n: u16 = switch (ins.lhs) {
                         .i64 => |v| if (v > 0 and v <= 4096) @intCast(v) else return self.refuse(@src()),
                         else => return self.refuse(@src()),
@@ -2295,7 +2471,24 @@ const Arm64Compiler = struct {
         try code_offsets.append(self.alloc, @intCast(self.code.items.len));
         for (branch_patches.items) |p| {
             if (p.target_instr >= code_offsets.items.len) return self.refuse(@src());
-            const target_off = code_offsets.items[p.target_instr];
+            var target_off = code_offsets.items[p.target_instr];
+            // A loop head whose constants were pre-materialized has TWO entry
+            // points, and which one a branch wants is decided by the direction of
+            // the branch, not by the target. The back edge is already past the
+            // preheader and must stay past it, or the movs run every iteration
+            // and the hoist buys nothing. Everything else — the `b.cond` that
+            // skips an `if` and the `b` that closes it are the two that mattered
+            // — is entering the loop for the first time and MUST run them.
+            //
+            // Direction is read off the offsets rather than carried on the patch:
+            // emission is strictly in order, so a branch emitted before the
+            // preheader is exactly a branch from before the head. Keeping
+            // `code_offsets` pointing at the head itself leaves instruction
+            // lineage spans (`text_start`) measuring the instruction and not its
+            // preheader.
+            if (self.hoist_preheader.get(p.target_instr)) |pre_off| {
+                if (p.patch_off < pre_off) target_off = pre_off;
+            }
             if (p.is_cond) {
                 try self.patchCondBranch(p.patch_off, target_off);
             } else {
@@ -3077,12 +3270,45 @@ const Arm64Compiler = struct {
             },
             .alloc_slots => {
                 const t = ins.result orelse return self.refuse(@src());
+                if (self.const_bases.get(t)) |symbol_index| {
+                    // DETERMINED, NEVER WRITTEN, NEVER ESCAPING. The words are
+                    // already in `__TEXT,__const`, so there is nothing to build:
+                    // two instructions place the section's address and the
+                    // element stores below are not emitted at all. `load_index`
+                    // needs no change — it indexes this base exactly as it
+                    // indexed a frame base.
+                    const dst = try self.allocReg();
+                    try self.emitAdrpAdd(dst, symbol_index);
+                    try temps.put(self.alloc, t, dst);
+                    return;
+                }
                 const off = self.slot_bases.get(t) orelse return self.refuse(@src());
                 const dst = try self.allocReg();
                 try self.emitAddSpImm(dst, off);
                 try temps.put(self.alloc, t, dst);
             },
             .load_index, .store_index => |op| if (ins.ty == .i64) {
+                // THE INITIALIZING RUN OF A PROMOTED TABLE IS NOT EMITTED.
+                //
+                // This is the whole win: `mov` the literal / `str` it at a folded
+                // offset, twice per element, replaced by nothing. It is only safe
+                // because `const_table.recognize` proved these stores are the ONLY
+                // writes this base ever receives and that they all precede every
+                // read — a table that is written anywhere else never reaches here,
+                // it keeps its frame region and every one of these instructions.
+                //
+                // BOTH FACES OF THE BASE. The initializing run addresses the
+                // region as a `.temp`; once the table's name is bound to the same
+                // id every later mention arrives as a `.local`. They are one
+                // storage (`evalDnirValue` resolves both through `temps`), so
+                // both have to be recognized here.
+                if (op == .store_index) {
+                    const base_id: ?u32 = switch (ins.lhs) {
+                        .temp, .local => |id| id,
+                        else => null,
+                    };
+                    if (base_id) |id| if (self.const_bases.contains(id)) return;
+                }
                 // Memory-backed positional table: 8-byte elements, Idol-indexed
                 // from 1, so element `i` is at `base + (i - 1) * 8`. The scaled
                 // register form `[base, idx, lsl #3]` does the multiply for
@@ -5347,7 +5573,24 @@ fn validateMachineLineage(
     if (seen.count() != expected) return invalidFactsWith(diagnostic, @src(), "machine-lineage-count");
 }
 
+/// DNIR in, machine code out, with NO source facts in hand.
+///
+/// Nothing is promoted to `__TEXT,__const` on this path — a determined table
+/// needs the source-level precondition from `table_facts.zig`, and a caller
+/// holding only DNIR cannot supply it. That is a deliberate absence, not an
+/// oversight: it keeps every oracle test below measuring the emission it was
+/// written against.
 fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, entry: ?[]const u8, diagnostic: *Diagnostic) Error!Arm64Output {
+    return emitArm64FromDnirLicensed(alloc, m, entry, diagnostic, null);
+}
+
+fn emitArm64FromDnirLicensed(
+    alloc: std.mem.Allocator,
+    m: dnir.Module,
+    entry: ?[]const u8,
+    diagnostic: *Diagnostic,
+    licence: ?*const const_table.Licence,
+) Error!Arm64Output {
     var records = try collectF64RecordsFromDnir(alloc, m);
     defer freeF64Records(alloc, &records);
     var scal_records = try collectScalRecordsFromDnir(alloc, m);
@@ -5358,6 +5601,7 @@ fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, entry: ?[]const u
         .f64_records = &records,
         .scal_records = &scal_records,
         .entry = entry,
+        .const_licence = licence,
     };
     if (m.graph) |graph| {
         if (graph.gateTransportModule()) {
@@ -5468,6 +5712,13 @@ fn emitArm64ModuleWithGraph(
         }
     }
 
+    // WHICH TABLES THE SOURCE PERMITS TO BECOME DATA. Computed here, from the
+    // AST, because `table_facts.zig` answers over a function body and this is the
+    // last place that has one. The DNIR carries no binding names, so the backend
+    // could not ask this question for itself.
+    var licence = try const_table.licenceForModule(alloc, mod);
+    defer licence.deinit();
+
     const lowered_result = dnir_lower.lowerModuleWithGraphObserved(alloc, mod, graph, &diagnostic.lowering);
     if (lowered_result) |lowered| {
         defer dnir.deinitModule(alloc, lowered);
@@ -5475,7 +5726,7 @@ fn emitArm64ModuleWithGraph(
             try validateDnirApplications(alloc, lowered, graph, diagnostic);
         }
         if (dnir.moduleIsNativeDirectReady(lowered) or graph.gateTransportModule()) {
-            var output = try emitArm64FromDnir(alloc, lowered, entry, diagnostic);
+            var output = try emitArm64FromDnirLicensed(alloc, lowered, entry, diagnostic, &licence);
             errdefer output.deinit(alloc);
             output.graph = graph;
             if (!graph.gateTransportModule()) {
@@ -5511,43 +5762,86 @@ fn emitArm64ModuleWithGraph(
     }
 }
 
-fn machOTextOffset(cstring_len: usize, bss_size: u64) usize {
+fn machOTextOffset(cstring_len: usize, const_len: usize, bss_size: u64) usize {
     const header_size: usize = 32;
     const segment_size: usize = 72;
     const section_size: usize = 80;
     const symtab_size: usize = 24;
     const build_version_size: usize = 24;
-    const nsects: usize = (if (cstring_len > 0) @as(usize, 2) else 1) +
+    const nsects: usize = 1 +
+        (if (cstring_len > 0) @as(usize, 1) else 0) +
+        (if (const_len > 0) @as(usize, 1) else 0) +
         (if (bss_size > 0) @as(usize, 1) else 0);
     return header_size + segment_size + section_size * nsects + symtab_size + build_version_size;
 }
 
+/// The object writer at its established arity. Emits no `__TEXT,__const`, which
+/// is exactly what a module with no promoted table needs — kept so every DNIR-
+/// only caller and every oracle test below reads the same bytes it always did.
 fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []const u8, symbols: []const Symbol, relocations: []const Relocation, bss_size: u64) Error![]u8 {
+    return emitMachOArm64ObjectWithConst(alloc, text, cstring, &.{}, symbols, relocations, bss_size);
+}
+
+fn emitMachOArm64ObjectWithConst(
+    alloc: std.mem.Allocator,
+    text: []const u8,
+    cstring: []const u8,
+    const_data: []const u8,
+    symbols: []const Symbol,
+    relocations: []const Relocation,
+    bss_size: u64,
+) Error![]u8 {
     const segment_size: usize = 72;
     const section_size: usize = 80;
     const symtab_size: usize = 24;
     const build_version_size: usize = 24;
     const has_cstring = cstring.len > 0;
+    // `__TEXT,__const` is S_REGULAR read-only data with its own section index.
+    //
+    // NEITHER OF THE TWO OBVIOUS PLACES WOULD DO. `__cstring` is
+    // S_CSTRING_LITERALS — ld splits and dedups its contents at NUL bytes, and a
+    // table of i64 literals is mostly NUL bytes, so a blob put there is silently
+    // rearranged. `__text` would be counted as INSTRUCTIONS by `otool -tV`,
+    // which is the measurement every gate and baseline on this surface is stated
+    // in; moving data there would corrupt the numbers rather than improve them.
+    const has_const = const_data.len > 0;
     // `__DATA,__bss` is S_ZEROFILL: it has a VM size but NO file bytes, so it
     // adds one section header and leaves every file offset below untouched.
     // That is what makes a writable arena affordable here.
     const has_bss = bss_size > 0;
-    const nsects: u32 = (if (has_cstring) @as(u32, 2) else 1) + (if (has_bss) @as(u32, 1) else 0);
+    const nsects: u32 = 1 +
+        (if (has_cstring) @as(u32, 1) else 0) +
+        (if (has_const) @as(u32, 1) else 0) +
+        (if (has_bss) @as(u32, 1) else 0);
     const sizeofcmds = segment_size + section_size * nsects + symtab_size + build_version_size;
-    const text_offset = machOTextOffset(cstring.len, bss_size);
+    const text_offset = machOTextOffset(cstring.len, const_data.len, bss_size);
     const reloff: usize = text_offset + text.len;
     const after_relocs: usize = reloff + relocations.len * 8;
     const cstring_fileoff: usize = after_relocs;
-    const symoff: usize = alignForward(if (has_cstring) cstring_fileoff + cstring.len else after_relocs, 8);
+    const after_cstring: usize = if (has_cstring) cstring_fileoff + cstring.len else after_relocs;
+    // 8-byte aligned in the FILE as well as in the VM layout: every element is an
+    // 8-byte word and the access path is `ldr x, [base, idx, lsl #3]`.
+    const const_fileoff: usize = alignForward(after_cstring, 8);
+    const after_const: usize = if (has_const) const_fileoff + const_data.len else after_cstring;
+    const symoff: usize = alignForward(after_const, 8);
     const stroff: usize = symoff + symbols.len * 16;
     const strtab = try buildStringTable(alloc, symbols);
     defer alloc.free(strtab);
+
+    // The VM addresses the defined local symbols were measured against in
+    // `Arm64Compiler.finish`. Both sides compute this the same way — sections in
+    // emission order, `__const` rounded up to 8 — because a symbol's n_value and
+    // its section's addr must agree or ld resolves the relocation to the wrong
+    // word.
+    const cstring_addr: usize = text.len;
+    const const_addr: usize = alignForward(text.len + cstring.len, 8);
+    const bss_addr: usize = if (has_const) const_addr + const_data.len else text.len + cstring.len;
 
     // Relocation entries live in the file between __text and __cstring but not
     // in the VM layout. llvm-objdump and ld reject LC_SEGMENT_64 when filesize >
     // vmsize, which large gate modules hit once adrp/add relocations accumulate.
     const segment_filesize = symoff - text_offset;
-    const segment_vmsize = @max(text.len + cstring.len + bss_size, segment_filesize);
+    const segment_vmsize = @max(bss_addr + bss_size, segment_filesize);
 
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
@@ -5593,7 +5887,7 @@ fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []c
     if (has_cstring) {
         try appendName16(&out, alloc, "__cstring");
         try appendName16(&out, alloc, "__TEXT");
-        try appendU64(&out, alloc, text.len); // addr (immediately after __text in VM)
+        try appendU64(&out, alloc, cstring_addr); // addr (immediately after __text in VM)
         try appendU64(&out, alloc, cstring.len); // size
         try appendU32(&out, alloc, @intCast(cstring_fileoff)); // offset
         try appendU32(&out, alloc, 0); // align (byte)
@@ -5605,11 +5899,31 @@ fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []c
         try appendU32(&out, alloc, 0);
     }
 
-    // section 3: __DATA,__bss (zerofill arena — writable storage for string ops)
+    // __TEXT,__const (determined positional tables, as read-only data)
+    if (has_const) {
+        try appendName16(&out, alloc, "__const");
+        try appendName16(&out, alloc, "__TEXT");
+        try appendU64(&out, alloc, const_addr); // addr
+        try appendU64(&out, alloc, const_data.len); // size
+        try appendU32(&out, alloc, @intCast(const_fileoff)); // offset
+        try appendU32(&out, alloc, 3); // align (2^3 = 8)
+        try appendU32(&out, alloc, 0); // reloff — the data holds no addresses
+        try appendU32(&out, alloc, 0); // nreloc
+        // S_REGULAR, and NO instruction attributes. `__text` carries
+        // S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS above; a section
+        // without them is data to every disassembler, which is what keeps
+        // `otool -tV` counting instructions and not table elements.
+        try appendU32(&out, alloc, 0x0);
+        try appendU32(&out, alloc, 0);
+        try appendU32(&out, alloc, 0);
+        try appendU32(&out, alloc, 0);
+    }
+
+    // __DATA,__bss (zerofill arena — writable storage for string ops)
     if (has_bss) {
         try appendName16(&out, alloc, "__bss");
         try appendName16(&out, alloc, "__DATA");
-        try appendU64(&out, alloc, text.len + cstring.len); // addr (after the __TEXT sections)
+        try appendU64(&out, alloc, bss_addr); // addr (after the __TEXT sections)
         try appendU64(&out, alloc, bss_size); // size
         try appendU32(&out, alloc, 0); // offset: zerofill occupies no file bytes
         try appendU32(&out, alloc, 3); // align (2^3 = 8)
@@ -5649,6 +5963,10 @@ fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []c
     }
     if (has_cstring) {
         try out.appendSlice(alloc, cstring);
+    }
+    if (has_const) {
+        if (const_fileoff > out.items.len) try appendZeroes(&out, alloc, const_fileoff - out.items.len);
+        try out.appendSlice(alloc, const_data);
     }
     if (symoff > out.items.len) try appendZeroes(&out, alloc, symoff - out.items.len);
 
