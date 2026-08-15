@@ -1102,7 +1102,20 @@ pub const Parser = struct {
         return switch (tok.kind) {
             .at => {
                 const attr = try self.parse_one_attribute();
-                if (!std.mem.eql(u8, attr.name, "c.type")) {
+                // THE ALIAS TABLE DECIDES, not the literal `"c.type"`.
+                // Comparing the short spelling made type position the ONE place
+                // in the language where the canonical name is the broken one:
+                // `@comp.c.type("size_t")` — the spelling
+                // `warnDeprecatedAtQualified` tells you to write — was refused
+                // with "expected @c.type(...)", while the deprecated `@c.type`
+                // worked. Four spellings resolve to `__c_type`; all four now
+                // name the same descriptor here, as they already do everywhere
+                // else (`isAttachingCInterfaceAttribute` reads the same table).
+                const resolves_to_c_type = if (meta_module.resolveBuiltin(attr.name)) |internal|
+                    std.mem.eql(u8, internal, "__c_type")
+                else
+                    false;
+                if (!resolves_to_c_type) {
                     term.locErr(tok.loc, "expected @c.type(...) in type position, got '@{s}'", .{attr.name});
                     return ParseError.UnexpectedToken;
                 }
@@ -1624,18 +1637,6 @@ pub const Parser = struct {
             var parts: std.ArrayList([]const u8) = .empty;
             defer parts.deinit(self.alloc);
             try parts.append(self.alloc, attr_name.text);
-            var is_c_export = false;
-            if (std.mem.eql(u8, attr_name.text, "c") and (try self.pk()).kind == .dot) {
-                const c_saved = self.lex.saveState();
-                _ = try self.adv();
-                const c_part = try self.expect(.name);
-                try parts.append(self.alloc, c_part.text);
-                is_c_export = std.mem.eql(u8, c_part.text, "export");
-                if (!is_c_export) {
-                    self.lex.restoreState(c_saved);
-                    _ = parts.pop();
-                }
-            }
             const is_build = std.mem.eql(u8, attr_name.text, "build") or std.mem.startsWith(u8, attr_name.text, "build.");
             const is_debug = std.mem.eql(u8, attr_name.text, "debug") or std.mem.startsWith(u8, attr_name.text, "debug.");
             const is_trace = std.mem.eql(u8, attr_name.text, "trace") or std.mem.startsWith(u8, attr_name.text, "trace.");
@@ -1646,6 +1647,19 @@ pub const Parser = struct {
             }
             const qualified = try std.mem.join(self.alloc, ".", parts.items);
             defer self.alloc.free(qualified);
+            // THE ASSEMBLED NAME DECIDES, not the token path that assembled it.
+            // This used to be a pre-pass that only fired when the FIRST segment
+            // was literally `c` and the second literally `export`, so
+            // `@comp.c.export` — the canonical spelling — never set the flag and
+            // fell through to `is_known_attribute("comp.c.export")`, which does
+            // not list it. Same defect as `isAttachingCInterfaceAttribute`'s
+            // `c.call`: a literal restating part of the alias table, agreeing
+            // with it on exactly one of the four spellings. Reading the table
+            // makes all four known.
+            const is_c_export = if (meta_module.resolveBuiltin(qualified)) |internal|
+                std.mem.eql(u8, internal, "__c_export")
+            else
+                false;
             const is_meta_directive = meta_module.isMetaAttribute(qualified);
             const is_attaching = meta_module.isAttachingMetaAttribute(qualified);
             const is_type_derive = meta_module.isTypeLevelDeriveAttribute(qualified);
@@ -2708,7 +2722,13 @@ pub const Parser = struct {
 
     /// One header recognizer (GAP-134). Observation over the producer pack.
     /// No host snapshot walk.
-    fn headerSignal(view: token_view.View, start: usize, allow_untyped_comma: bool) bool {
+    ///
+    /// `offside_col` is the column of the first token on the line the `(`
+    /// begins — `line_opener`'s answer, the same threshold `parse_func_body`
+    /// hands the body block. It is `null` outside `.id`, where layout does not
+    /// bind and a next-line body is not a spelling at all. See the single
+    /// untyped parameter case at the bottom.
+    fn headerSignal(view: token_view.View, start: usize, allow_untyped_comma: bool, offside_col: ?u32) bool {
         var idx = start;
 
         if (view.kind(idx) != .lparen) return false;
@@ -2722,6 +2742,13 @@ pub const Parser = struct {
         var has_comma = false;
         var depth1_tokens: usize = 0;
         var depth1_names: usize = 0;
+        // EVERY token inside the group, at every depth. `depth1_tokens` cannot
+        // tell `(t)` from `(less(arr(mid + 1), v))`: the whole call after
+        // `less` sits at depth 2 and is not counted, so both read as "one
+        // depth-1 name". They are not the same thing — a parameter list cannot
+        // contain an application — and the difference is exactly the tokens
+        // depth-1 counting throws away.
+        var inner_tokens: usize = 0;
         var has_literal_arg = false;
         var has_table_literal_arg = false;
         var has_infix_operator = false;
@@ -2777,6 +2804,9 @@ pub const Parser = struct {
                 if (tok.kind == .name) depth1_names += 1;
                 if (grammar_roles.isInfix(tok.kind)) has_infix_operator = true;
             }
+            // Everything strictly inside the outer parens — the closing one
+            // brings `paren_depth` to 0 and is not inside anything.
+            if (paren_depth > 0) inner_tokens += 1;
             prev = tok.kind;
             idx += 1;
         }
@@ -2785,9 +2815,26 @@ pub const Parser = struct {
         if (has_literal_arg and !typed_or_vararg) return false;
         if (has_infix_operator and !typed_or_vararg) return false;
         if (has_table_literal_arg and !typed_or_vararg) return false;
+        // `): Name` — a result descriptor, UNLESS the name is followed by `(`,
+        // in which case it is `(expr):method(args)`: a subject call on the
+        // parenthesised value, the same reading `viewColonIsMethodCall` gives a
+        // `:` INSIDE the group.
+        //
+        // THIS TEST EXISTS THREE TIMES IN THIS FUNCTION and only two copies had
+        // it. Because this copy runs first and returned unconditionally, the
+        // `!= .lparen` in the other two was unreachable — one rule, three
+        // spellings, and the disagreeing one won every time. Measured:
+        // `(out:sub(1, n)):to(i64)` (`scripts/abi_matrix.id:61`) was read as a
+        // header whose parameter `out` had type `sub`, and the file was
+        // refused at "write `)` at this token edge" pointing inside the call.
+        // Falling THROUGH rather than returning false is deliberate: the two
+        // copies below decide it, and a typed header keeps its own answer from
+        // `typed_or_vararg` on the next line, which is what keeps `): *Foo`,
+        // `): [4]i64` and `): i(64)` reading as result descriptors.
         if (after.kind == .colon) {
             const ty = view.kind(idx + 1) orelse return false;
-            if (ty == .name or grammar_roles.isDescriptor(ty)) return true;
+            if ((ty == .name or grammar_roles.isDescriptor(ty)) and
+                view.kind(idx + 2) != .lparen) return true;
         }
         if (typed_or_vararg or after.kind == .arrow or after.kind == .assign) return true;
         if (allow_untyped_comma and has_comma) {
@@ -2806,9 +2853,54 @@ pub const Parser = struct {
             return view.kind(idx + 2) != .lparen;
         }
         if (grammar_roles.isInfix(after.kind) or after.kind == .comma) return false;
+        // A SINGLE BARE NAME IN PARENTHESES — `(t)`, `(meta)`. The only shape
+        // whose two readings are both ordinary: the one-parameter header, and
+        // the grouped expression. `(a, b)` has a comma and `(t: any)` has a
+        // colon; both already decide themselves. This one does not, so the
+        // BODY has to decide it, and the question is where the body may be.
+        //
+        // On the header's own line the next token answers it — `canStartBody`
+        // below. On a LATER line the answer is the offside rule and nothing
+        // else: a body is the lines indented past the opener of the line the
+        // header begins on, which is exactly the threshold `parse_func_body`
+        // will hand `parse_body_block_at`. Asking the same question with the
+        // same threshold is what keeps the recognizer and the body parser from
+        // being two models of one rule.
+        //
+        // REFUSING EVERY NEXT-LINE BODY, which is what stood here, was not a
+        // conservative choice — it was a SILENT WRONG ANSWER. `f: i64 = (t)`
+        // with `t + 1` beneath it reprinted as `f: i64 = t` followed by a
+        // top-level `t + 1`, compiled clean under `idol check`, and returned 1
+        // where the program says 7. The `fun`-retirement lane converts
+        // `fun(t)` into `(t)`, so the shape's population only grows.
+        //
+        // TWO THINGS HAD TO BE EXCLUDED FIRST, both measured as regressions on
+        // the tree before this landed:
+        //
+        //   `else(less(arr(mid + 1), v))`  (lib/slices.id:166, and 5 more)
+        //       one depth-1 name — the whole call after `less` is at depth 2,
+        //       so `depth1_tokens` cannot see it — with the `else`'s own block
+        //       indented beneath. `inner_tokens` is what depth-1 counting threw
+        //       away: a parameter list cannot contain an application, and the
+        //       shape this rule is for is EXACTLY one token wide.
+        //
+        //   `if (flag)` / `while (flag)` / `else(flag)`
+        //       a bare name IS a legal condition, and a condition is always
+        //       followed by an indented block, so offside proves nothing there.
+        //       The keyword before the `(` decides it, and it is the only place
+        //       in this recognizer that looks left of the group — because it is
+        //       the only place where what precedes changes what the group IS.
         if (depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma) {
             if (!allow_untyped_comma) return false;
-            if (after.loc.line != rparen_line) return false;
+            if (after.loc.line != rparen_line) {
+                if (inner_tokens != 1) return false;
+                const open_col = offside_col orelse return false;
+                if (after.loc.col <= open_col) return false;
+                if (start > 0) switch (view.kind(start - 1) orelse .eof) {
+                    .kw_if, .kw_elseif, .kw_else, .kw_while, .kw_until, .kw_for, .kw_match => return false,
+                    else => {},
+                };
+            }
         }
         if (!allow_untyped_comma and !typed_or_vararg) return false;
         if (depth1_tokens == 0 and !allow_untyped_comma) return false;
@@ -2817,10 +2909,19 @@ pub const Parser = struct {
     }
 
     fn scan_func_header_signal(self: *Parser, allow_untyped_comma: bool) ParseError!bool {
-        if ((try self.pk()).kind != .lparen) return false;
+        const lparen = try self.pk();
+        if (lparen.kind != .lparen) return false;
         try self.ensureProducerPack();
         const view = token_view.fromTokens(self.lex.duo_tokens.?);
-        return headerSignal(view, self.lex.duoStreamIndex(), allow_untyped_comma);
+        // DERIVED FROM THE TOKEN STREAM, not from a tracked field: this runs
+        // inside speculative scans that rewind the lexer, and `line_opener`
+        // reads the same producer pack `headerSignal` is about to walk, so it
+        // cannot be left holding a line the parse has not reached.
+        const offside_col: ?u32 = if (self.idol_mode)
+            (try self.line_opener(lparen.loc)).col
+        else
+            null;
+        return headerSignal(view, self.lex.duoStreamIndex(), allow_untyped_comma, offside_col);
     }
 
     fn starts_bare_func_decl(self: *Parser) ParseError!bool {
@@ -5222,70 +5323,101 @@ pub const Parser = struct {
         }
     }
 
-    fn interpolationIdentStart(c: u8) bool {
-        return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
-    }
-
-    fn interpolationIdentContinue(c: u8) bool {
-        return interpolationIdentStart(c) or (c >= '0' and c <= '9');
-    }
-
-    fn parseInterpolationIdent(s: []const u8, pos: *usize) ?[]const u8 {
-        if (pos.* >= s.len or !interpolationIdentStart(s[pos.*])) return null;
-        const start = pos.*;
-        pos.* += 1;
-        while (pos.* < s.len and interpolationIdentContinue(s[pos.*])) {
-            pos.* += 1;
-        }
-        return s[start..pos.*];
-    }
-
-    fn parseInterpolationIndexKey(self: *Parser, loc: ast.Loc, raw: []const u8) ParseError!?*ast.Expr {
-        const text = std.mem.trim(u8, raw, " \t\r\n");
-        if (text.len == 0) return null;
-        if (std.fmt.parseInt(i64, text, 10)) |val| {
-            return self.new_expr(.{ .int_lit = .{ .loc = loc, .val = val } });
-        } else |_| {}
-        return self.parseInterpolationPath(loc, text);
-    }
-
-    fn parseInterpolationPath(self: *Parser, loc: ast.Loc, raw: []const u8) ParseError!?*ast.Expr {
-        const text = std.mem.trim(u8, raw, " \t\r\n");
-        var pos: usize = 0;
-        const head = parseInterpolationIdent(text, &pos) orelse return null;
-        var expr = try self.new_expr(.{ .name = .{ .loc = loc, .ident = try self.alloc.dupe(u8, head) } });
-        while (pos < text.len) {
-            switch (text[pos]) {
-                '.' => {
-                    pos += 1;
-                    const field = parseInterpolationIdent(text, &pos) orelse return null;
-                    expr = try self.new_expr(.{ .field = .{
-                        .loc = loc,
-                        .obj = expr,
-                        .field = try self.alloc.dupe(u8, field),
-                    } });
-                },
-                '[' => {
-                    const key_start = pos + 1;
-                    pos += 1;
-                    var depth: usize = 1;
-                    while (pos < text.len and depth > 0) {
-                        if (text[pos] == '[') {
-                            depth += 1;
-                        } else if (text[pos] == ']') {
-                            depth -= 1;
-                            if (depth == 0) break;
-                        }
-                        pos += 1;
-                    }
-                    if (depth != 0) return null;
-                    const key = (try self.parseInterpolationIndexKey(loc, text[key_start..pos])) orelse return null;
-                    expr = try self.new_expr(.{ .index = .{ .loc = loc, .obj = expr, .key = key } });
-                    pos += 1;
-                },
-                else => return null,
+    /// STR-1 — where the hole that opens at `s[open]` ENDS: the index of its
+    /// matching `}`.
+    ///
+    /// Brace depth is counted and quoted spans are stepped over, because the
+    /// hole carries an EXPRESSION and an expression can contain both. "The next
+    /// `}`" was a sound rule only while a hole could hold nothing but a path,
+    /// which can contain neither; it cuts `{t{1, 2}:len()}` and `{f("}")}` in
+    /// the wrong place.
+    fn interpolationHoleEnd(s: []const u8, open: usize) ?usize {
+        if (open >= s.len or s[open] != '{') return null;
+        var depth: usize = 0;
+        var i: usize = open;
+        while (i < s.len) : (i += 1) {
+            const c = s[i];
+            if (c == '"' or c == '\'') {
+                i += 1;
+                while (i < s.len and s[i] != c) : (i += 1) {
+                    if (s[i] == '\\' and i + 1 < s.len) i += 1;
+                }
+                if (i >= s.len) return null;
+                continue;
+            }
+            if (c == '{') {
+                depth += 1;
+            } else if (c == '}') {
+                depth -= 1;
+                if (depth == 0) return i;
             }
         }
+        return null;
+    }
+
+    /// The source position of byte `off` inside the DECODED literal `s`, given
+    /// the position of the literal's opening quote. Escapes shorten the decoded
+    /// text relative to the source, so the column can drift by however many
+    /// escapes precede the hole; the LINE is exact, which is what a diagnostic
+    /// is read by.
+    fn interpolationLoc(loc: ast.Loc, s: []const u8, off: usize) ast.Loc {
+        var out = loc;
+        out.col += 1; // step over the opening quote
+        var i: usize = 0;
+        while (i < off and i < s.len) : (i += 1) {
+            if (s[i] == '\n') {
+                out.line += 1;
+                out.col = 1;
+            } else {
+                out.col += 1;
+            }
+        }
+        return out;
+    }
+
+    /// STR-1 — ONE hole, parsed by the REAL expression grammar.
+    ///
+    /// `law.literal.text` binds "interpolation preserves literal and EXPRESSION
+    /// segments". A name and a dotted path are the DEGENERATE cases of an
+    /// expression, not the definition of a hole — so this does not carry a
+    /// second, narrower grammar that has to be kept in step with the first. The
+    /// hole text is lexed and parsed by the same `Lexer` and `Parser` as the
+    /// file around it, which is why `{x:len()}` (a subject-first application)
+    /// and `{x + 1}` (arithmetic) work here the day the real grammar does.
+    ///
+    /// The text is PADDED with the newlines and spaces that precede it in the
+    /// file, so the sub-lexer's own position arithmetic lands every token at its
+    /// true `file:line:col`. Handing it the bare hole text instead reports every
+    /// diagnostic inside a hole at line 1.
+    ///
+    /// Returns null when the text is not one whole expression. The CALLER
+    /// decides what that means; it must not mean "quietly emit the braces".
+    fn parseInterpolationHole(self: *Parser, hole_loc: ast.Loc, raw: []const u8) ParseError!?*ast.Expr {
+        const text = std.mem.trim(u8, raw, " \t\r\n");
+        if (text.len == 0) return null;
+
+        // The buffer OUTLIVES this call on purpose. `parse_simple_expr` builds a
+        // `.name` from `tok.text`, which is a slice INTO the source bytes, so a
+        // scratch buffer freed here would leave every identifier in the hole
+        // pointing at reclaimed memory. It is owned by the parse arena instead.
+        var padded: std.ArrayList(u8) = .empty;
+        try padded.appendNTimes(self.alloc, '\n', hole_loc.line -| 1);
+        try padded.appendNTimes(self.alloc, ' ', hole_loc.col -| 1);
+        try padded.appendSlice(self.alloc, text);
+        const src = try padded.toOwnedSlice(self.alloc);
+
+        var sub = Lexer.initFamilyLaw(src, self.lex.cursor.file, self.lex.family, self.lex.source_law);
+        var p = Parser.init(&sub, self.alloc);
+        p.idol_mode = self.idol_mode;
+        p.ensureProducerPack() catch return null;
+        defer p.releaseOwnedPack();
+
+        const expr = p.parse_expr() catch return null;
+        // The whole hole, or none of it. A hole that parses a PREFIX and leaves
+        // a tail behind is the silent-absorption shape one level down: `{x + }`
+        // would interpolate `x` and drop the rest without a word.
+        const rest = p.pk() catch return null;
+        if (rest.kind != .eof) return null;
         return expr;
     }
 
@@ -5299,39 +5431,100 @@ pub const Parser = struct {
         };
     }
 
-    /// §9 — string interpolation holes desugar to `..` concat at parse time (idol_mode).
+    /// §9 / `law.literal.text` — a `{…}` hole in a canonical text literal is an
+    /// EXPRESSION segment. Holes desugar to `..` concat at parse time
+    /// (idol_mode).
+    ///
+    /// ===================== WHICH ANSWER THIS IS =====================
+    /// `parseInterpolationPath` used to accept a name, a dotted path and a
+    /// `[key]` chain and close with `else => return null`; its only caller was
+    /// `if (…) |hole| { … }` with NO else, so a null meant "not a hole" and the
+    /// braces survived into the string literal. `{f()}`, `{x + 1}` and
+    /// `{x:len()}` were copied through as literal brace text with no error, no
+    /// warning and no hint — and BOTH BACKENDS AGREED on the wrong output, which
+    /// is precisely why the C-vs-direct differential could not see it.
+    /// Agreement reads as confirmation.
+    ///
+    /// The constitution decides between the two available answers.
+    /// `law.literal.text` binds "interpolation preserves literal and EXPRESSION
+    /// segments and does not demand concatenation or materialization". A path is
+    /// the DEGENERATE case of an expression, not the definition of a hole. So
+    /// the hole is parsed by the real grammar — same `Lexer`, same `Parser`,
+    /// same precedence — and there is no second, narrower interpolation grammar
+    /// left in this file to drift from the first. That is the whole point:
+    /// `{x:len()}` is a subject-first application and `{x + 1}` is arithmetic,
+    /// and neither is a widened special case here. They work because the real
+    /// grammar works.
+    ///
+    /// Measured over the 1,053-file corpus: 5,783 `{…}` holes were already paths
+    /// and are unaffected; 75 holes in 21 files that emitted literal brace text
+    /// yesterday interpolate today.
+    ///
+    /// ===================== WHAT IS *NOT* REFUSED, AND WHY =====================
+    /// 537 further `{…}` occurrences in 82 files are brace TEXT: JSON bodies,
+    /// C struct bodies, `awk '{print $1}'`, shell `${…}`, and 184 lone `{` with
+    /// no `}` anywhere in the literal. Refusing those is the fail-closed reading
+    /// of "ambiguity diagnoses rather than picks", and it cannot be honoured
+    /// until a literal brace has a SPELLING:
+    ///
+    ///   * `\{` cannot serve. The lexer's unknown-escape fallback already
+    ///     decodes it to a bare `{` before this function is reached, so by here
+    ///     the escaped and unescaped forms are the same byte.
+    ///   * `{{` would be inventing lexical vocabulary locally, which is exactly
+    ///     what `SEMANTIC-VOCABULARY-BLOCKED` forbids, and it would silently
+    ///     change what 24 existing literals print.
+    ///
+    /// So the site is NAMED, LOCATED and WARNED instead — a mistyped hole can no
+    /// longer pass without a word — and the refusal waits on an admitted
+    /// literal-brace face rather than being smuggled in under a parser fix.
     fn desugar_string_interpolation(self: *Parser, loc: ast.Loc, s: []const u8, quote: ast.Quote) ParseError!*ast.Expr {
         if (self.formatting or self.directive_arg_depth > 0 or !self.idol_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
             return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = s, .quote = quote } });
         }
         var parts: std.ArrayList(*ast.Expr) = .empty;
-        var start: usize = 0;
+        var lit: std.ArrayList(u8) = .empty;
+        defer lit.deinit(self.alloc);
+        var holes: usize = 0;
         var i: usize = 0;
         while (i < s.len) {
-            if (s[i] == '{' and i + 1 < s.len) {
-                const rest = s[i + 1 ..];
-                if (std.mem.indexOfScalar(u8, rest, '}')) |off| {
-                    const hole_text = rest[0..off];
-                    if (try self.parseInterpolationPath(loc, hole_text)) |hole| {
-                        if (start < i) {
-                            const lit = try self.alloc.dupe(u8, s[start..i]);
-                            try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = lit, .quote = quote } }));
-                        }
-                        try parts.append(self.alloc, hole);
-                        i += 1 + off + 1;
-                        start = i;
-                        continue;
-                    }
-                }
+            if (s[i] != '{') {
+                try lit.append(self.alloc, s[i]);
+                i += 1;
+                continue;
             }
-            i += 1;
+            const hole_loc = interpolationLoc(loc, s, i);
+            const close = interpolationHoleEnd(s, i) orelse {
+                term.locWarn(hole_loc, "STR-1: this `{{` opens an interpolation hole that never closes", .{});
+                term.locHint(hole_loc, "a `{{` in a text literal is a hole opener; write the matching `}}`, or move the brace text into `@comp.c.emit` where `{{…}}` is directive data", .{});
+                try lit.append(self.alloc, s[i]);
+                i += 1;
+                continue;
+            };
+            const hole_text = s[i + 1 .. close];
+            if (try self.parseInterpolationHole(hole_loc, hole_text)) |hole| {
+                if (lit.items.len > 0) {
+                    const seg = try self.alloc.dupe(u8, lit.items);
+                    try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = seg, .quote = quote } }));
+                    lit.clearRetainingCapacity();
+                }
+                try parts.append(self.alloc, hole);
+                holes += 1;
+            } else {
+                // NOT SILENT. The projected form is named so the reader can see
+                // which of the two readings the compiler took, and the preceding
+                // diagnostics from the sub-parse say exactly where it gave up.
+                term.locWarn(hole_loc, "STR-1: `{{{s}}}` is not one whole expression, so it is emitted as literal text", .{hole_text});
+                term.locHint(hole_loc, "an interpolation hole holds an EXPRESSION (`{{x}}`, `{{f(n)}}`, `{{x:len()}}`, `{{x + 1}}`); if these braces are meant as text, this is the site that has to say so", .{});
+                try lit.appendSlice(self.alloc, s[i .. close + 1]);
+            }
+            i = close + 1;
         }
-        if (parts.items.len == 0) {
+        if (holes == 0) {
             return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = s, .quote = quote } });
         }
-        if (start < s.len) {
-            const lit = try self.alloc.dupe(u8, s[start..]);
-            try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = lit, .quote = quote } }));
+        if (lit.items.len > 0) {
+            const seg = try self.alloc.dupe(u8, lit.items);
+            try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = seg, .quote = quote } }));
         }
         // gap[094]. A string with EXACTLY ONE part and no literal text — `"{i}"`
         // — used to fall straight out of the loop below as its own hole, so the
@@ -6426,16 +6619,19 @@ pub const Parser = struct {
         _ = try self.expect(.rparen);
         const args_slice = try args.toOwnedSlice(self.alloc);
 
-        // `@c.emit(expr)` / `@emit(expr)` desugar to `__emit(expr)` — canonical C injection under `@`.
-        if ((std.mem.eql(u8, qualified, "c.emit") or std.mem.eql(u8, qualified, "emit")) and args_slice.len >= 1) {
-            const emit_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__emit" } });
-            return self.new_expr(.{ .call = .{ .loc = l, .func = emit_name, .args = args_slice } });
-        }
-        // `@c.call("name", args...)` lowers to a direct raw C call expression.
-        if (std.mem.eql(u8, qualified, "c.call") and args_slice.len >= 1) {
-            const call_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__c_call" } });
-            return self.new_expr(.{ .call = .{ .loc = l, .func = call_name, .args = args_slice } });
-        }
+        // `@c.emit` / `@emit` / `@c.call` USED TO BE LOWERED HERE, above the
+        // `self.formatting` guard — so `idol fmt` reprinted `@c.emit(x)` as
+        // `__emit(x)` and `@c.call(…)` as `__c_call(…)`, rewriting SOURCE into
+        // the compiler's internal spelling. That is the same class the guard
+        // below exists to stop, and these three were simply on the wrong side
+        // of it. The `resolveBuiltin` lookup forty lines below produces the
+        // identical lowering for all three (and for the four other spellings
+        // that reach `__emit`), so deleting them loses no behaviour and puts
+        // them behind the formatting guard where every other directive already
+        // is. Sole delta: `@c.emit()` with ZERO arguments now lowers instead of
+        // staying a `macro_call` — an emit of nothing, which had no meaning as
+        // a macro call either.
+        //
         // A parser running in order to REPRINT keeps the written spelling.
         // Every branch below lowers `@name(...)` to an internal `__name(...)`,
         // and the printer then emits THAT — so `@comp.assert(...)` came back

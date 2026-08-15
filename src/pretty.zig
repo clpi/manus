@@ -221,7 +221,23 @@ pub const PrettyPrinter = struct {
     pub fn printTypeExpr(self: *PrettyPrinter, t: TypeExpr) !void {
         switch (t) {
             .inferred => {},
-            .named => |n| try self.write(n),
+            // A C type written in type position is DESUGARED AT PARSE TIME into
+            // the marker name `__c_type:void` (`parse_type_primary`), and the
+            // printer wrote that marker out as if it were an identifier. The
+            // reprint then read `*__c_type:void` as a pointer to an unknown
+            // name followed by a stray `:` and did not compile — the same
+            // "a parse-time desugar is invisible to a formatter" class as the
+            // anchor, interpolation and the `@`-directives, in the one position
+            // nothing had checked. Recovering the written spelling is the whole
+            // fix; `types.c_type_marker_prefix` is the single place the shape
+            // is defined, so this asks it rather than restating it.
+            .named => |n| {
+                if (std.mem.startsWith(u8, n, types.c_type_marker_prefix)) {
+                    try self.print("@c.type(\"{s}\")", .{n[types.c_type_marker_prefix.len..]});
+                } else {
+                    try self.write(n);
+                }
+            },
             .array => |a| {
                 try self.write("[");
                 if (a.size) |sz| try self.print("{d}", .{sz});
@@ -473,12 +489,35 @@ pub const PrettyPrinter = struct {
                 try self.printExpr(x.rhs, child_pos);
             },
             .unop => |x| {
+                // `@` IS NOT A PREFIX OPERATOR YOU CAN JUXTAPOSE. It is written
+                // `@(expr)` (comptime eval) or `@{ … }` (the elided pack), and
+                // both parse by the DELIMITER, not by adjacency: `@` followed
+                // by a name reads as a directive path, and `@` followed by a
+                // number does not lex at all. So printing the operand bare gave
+                // `@64` for `@(64)` and `@comp.for(…)` for `@(@comp.for(…))` —
+                // reprints the parser will not take back. The delimiter is part
+                // of the spelling and has to be reprinted with it.
+                if (x.op == .compile) {
+                    if (x.operand.* == .table) {
+                        // `@{ … }` — the brace IS the delimiter here, and
+                        // wrapping it in parens would change which reader gets
+                        // it (`parse_pack` with the elided stance, not a table
+                        // literal inside a comptime eval).
+                        try self.write("@");
+                        try self.printExpr(x.operand, tight_operand_position);
+                    } else {
+                        try self.write("@(");
+                        try self.printExpr(x.operand, 0);
+                        try self.write(")");
+                    }
+                    return;
+                }
                 const op_str = switch (x.op) {
                     .neg => "-",
                     .not => "not ",
                     .len => "#",
                     .bnot => "~",
-                    .compile => "@",
+                    .compile => unreachable,
                 };
                 try self.write(op_str);
                 // A prefix operator's operand keeps its grouping, and a nested
@@ -1122,24 +1161,23 @@ pub const PrettyPrinter = struct {
         }
     }
 
-    /// A relation whose body is EMPTY needs one written anyway.
+    /// AN EMPTY RELATION BODY IS WRITTEN BY WRITING NOTHING.
     ///
-    /// A block closes by dedent, and an empty block has nothing to dedent from
-    /// — so it never closes and swallows the rest of the file, reporting at EOF
-    /// far from the relation. `end` used to hide this: the terminator closed
-    /// the block, so the absence of a body was never a layout question.
+    /// There used to be a `printEmptyBodyAsVoid` here, which emitted the
+    /// literal `void` as the body of a relation whose block was empty. Its
+    /// justification was that "a block closes by dedent, and an empty block has
+    /// nothing to dedent from — so it never closes". That premise is no longer
+    /// true: `parse_block_open`'s `empty_ok` path makes the ABSENCE of an
+    /// indented line the spelling of an empty relation body, so the dedent that
+    /// closes every other block closes this one too.
     ///
-    /// The canonical body for a relation that produces nothing is the `void`
-    /// value. No new syntax: the relation's result IS void, so its body is that
-    /// value, and any comments that lived in the body stay inside it.
-    fn printEmptyBodyAsVoid(self: *PrettyPrinter, at_line: u32) Error!void {
-        self.indent();
-        try self.nl();
-        try self.flushCommentsBefore(at_line);
-        try self.write("void");
-        self.dedent();
-    }
-
+    /// The premise was false and the output was worse than the shape it
+    /// replaced: `noop = ()` / `  void` PASSES `idol check` and is then REFUSED
+    /// by the backend — `DNB001 application: unknown missing: void`. A reprint
+    /// the compiler will not take back is the same corruption class as the
+    /// dropped parentheses, one step later in the pipeline. `printBlock`
+    /// already returns immediately on an empty block, so falling through to it
+    /// emits the one spelling the parser now accepts: nothing.
     fn printBlock(self: *PrettyPrinter, block: *const Block) Error!void {
         if (block.stmts.len == 0 and block.tail_expr == null) return;
         self.indent();
@@ -1223,6 +1261,15 @@ pub const PrettyPrinter = struct {
             // It stays legal to write, for the case where it is directing the
             // compiler on purpose; the printer just does not add it back.
             //
+            // AN EMPTY BODY IS THE EXCEPTION, because "the compiler already
+            // knows that from the body" is exactly what stops being true when
+            // there is no body. Measured: `noop: void = ()` with an empty body
+            // compiles and the program exits 2; drop the `: void` and the same
+            // program is refused — `DNB001 relation: noop missing: unspecified`.
+            // The result is inferred from the body's last value and an empty
+            // body has none, so here the descriptor is the only thing carrying
+            // it and dropping it changes what the file means.
+            //
             // A QUALIFIED name is the exception, and it is a parse fact, not a
             // taste one. `mix.v2: any = (…)` is not a declaration to the
             // parser: after a dotted path it requires `=` immediately
@@ -1231,15 +1278,18 @@ pub const PrettyPrinter = struct {
             // "this block opened at column 15 is still open at the file edge".
             // For a path the result descriptor therefore stays on the right.
             const qualified = fd.path.len > 1;
+            const bodyless = fd.func.body.stmts.len == 0 and fd.func.body.tail_expr == null;
+            const write_ret = fd.func.ret_type != .inferred and
+                (!isVoidType(fd.func.ret_type) or bodyless);
             if (qualified) {
                 try self.write(" = ");
                 try self.printFuncParamsOnly(&fd.func);
-                if (fd.func.ret_type != .inferred and !isVoidType(fd.func.ret_type)) {
+                if (write_ret) {
                     try self.write(": ");
                     try self.printTypeExpr(fd.func.ret_type);
                 }
             } else {
-                if (fd.func.ret_type != .inferred and !isVoidType(fd.func.ret_type)) {
+                if (write_ret) {
                     try self.write(": ");
                     try self.printTypeExpr(fd.func.ret_type);
                 }
@@ -1249,15 +1299,8 @@ pub const PrettyPrinter = struct {
         } else {
             try self.printFuncSig(&fd.func);
         }
-        if (self.mode == .idol and self.canonical and
-            fd.func.body.stmts.len == 0 and fd.func.body.tail_expr == null)
-        {
-            // Comments that lived in the body belong INSIDE it; the next
-            // top-level construct is the bound, so flush up to just before it.
-            try self.printEmptyBodyAsVoid(fd.loc.line + 1);
-        } else {
-            try self.printBlock(&fd.func.body);
-        }
+        // An empty body prints as no body at all — see `printBlock`.
+        try self.printBlock(&fd.func.body);
         try self.closeBlock();
     }
 
