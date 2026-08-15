@@ -879,6 +879,29 @@ const Arm64Compiler = struct {
     /// GP temp ownership and local homes — same contract as the FP fields above.
     gp_reg_owner: [32]?u32 = @splat(null),
     gp_home_regs: [32]bool = @splat(false),
+    /// The callee-bank homes THIS change hands out (`allocHomeReg`), and the one
+    /// thing that must never happen to them: being spilled.
+    ///
+    /// `spillReg` clears `used_regs` and records the victim in `spilled_regs`;
+    /// `ensureRegLiveRemap` then reloads into a DIFFERENT register and rewrites
+    /// `temps` — but NOT `pinned`, which is the map `evalDnirValue` consults
+    /// FIRST for a local. Spill a local's home and its pinned entry goes on
+    /// naming a register whose value has moved, so the next read of that local
+    /// returns whatever was allocated into the vacancy.
+    ///
+    /// MEASURED, and it is a WRONG ANSWER rather than a refusal: `sha.id`
+    /// answered 0 instead of 16 — both `sb()` and `mb()`, ~20 locals and three
+    /// memory-backed tables each, every NIST digest word wrong — while
+    /// `native.id` fell from 210 agreements to 128.
+    ///
+    /// Refusing instead is free HERE and only here: a calling function that
+    /// cannot allocate makes `probeFunctionPlan` step down the ladder, and the
+    /// bottom rung is zero homes, i.e. exactly the frame-slot behaviour that
+    /// preceded this change. Leaf homes are NOT in this set and keep spilling as
+    /// they always have; the same latent hazard exists there and is older than
+    /// this change, but a leaf has no ladder to fall back on and taking its
+    /// spill victims away would refuse programs that compile today.
+    gp_call_home_regs: u32 = 0,
     /// Argument registers (x0..x7) already STAGED for the call currently being
     /// marshaled. A multi-argument call stages a2→x0, a1→x1, … in order; a later
     /// argument whose operand must be LOADED needs a scratch register, and once
@@ -909,6 +932,20 @@ const Arm64Compiler = struct {
     /// for the same structural reason: those bodies call `gatecap`, so their
     /// locals are stack-homed and this number is never read.
     gp_local_home_budget: u32 = gp_allocatable - gp_scratch_floor,
+    /// How many GP locals a function THAT CALLS may keep in registers.
+    ///
+    /// At most ten, because that is how many registers AAPCS64 makes a caller's
+    /// to keep: x19–x28. A home in that bank survives `bl` by the callee's
+    /// obligation, so it needs neither a frame slot nor a save-set entry, and
+    /// the carried local it holds costs one `mov` per assignment instead of a
+    /// `str` and an `ldr`. Above the budget the surplus still goes to the frame,
+    /// exactly as before.
+    ///
+    /// SET PER FUNCTION, BY MEASUREMENT — see `probeFunctionPlan`. Ten is the
+    /// ceiling, not the answer: a home is a register held for the whole body, so
+    /// a body with heavy expression pressure compiles at four homes and refuses
+    /// with DNB003 at ten. `sha.id` and `tree.id` are both that shape.
+    gp_call_home_budget: u32 = callee_save_count,
     spill_frame_budget: u16 = 65520,
     /// Gate/ledger transport: allow reclaiming spilled temp registers when the
     /// pool is exhausted instead of refusing with DNB003.
@@ -1388,7 +1425,9 @@ const Arm64Compiler = struct {
             // reaches x19 and the check below refuses a correct program. Measure
             // every function: the probe already answers `callee_save_all` when it
             // cannot compile, and a leaf that touches nothing still plans 0.
-            self.callee_save_plan = self.probeCalleeSaveUse(f);
+            const plan = self.probeFunctionPlan(f);
+            self.callee_save_plan = plan.callee_save;
+            self.gp_call_home_budget = plan.home_budget;
             try self.compileDnirFunction(f);
             // The plan was measured, not guessed, so a body that reached outside
             // it means the measurement and the emission disagreed — and the
@@ -1422,10 +1461,73 @@ const Arm64Compiler = struct {
     ///
     /// The probe gets its own `Diagnostic`: a refusal encountered while probing
     /// is not this compilation's refusal, and must not be left behind for the
-    /// real pass's error to be read from. If the probe cannot compile the
-    /// function at all, this answers `callee_save_all` — the old behaviour — and
-    /// the real pass reports the real failure.
-    fn probeCalleeSaveUse(self: *Arm64Compiler, f: dnir.Function) u32 {
+    /// real pass's error to be read from. If no rung of the ladder can compile
+    /// the function, `probeFunctionPlan` answers `callee_save_all` — the old
+    /// behaviour — and the real pass reports the real failure.
+    /// What the real pass must be told before it compiles `f`: which
+    /// callee-saved registers to save, and how many locals it may home.
+    const FunctionPlan = struct { callee_save: u32, home_budget: u32 };
+
+    /// BISECTION HANDLE for the home budget, read once per process.
+    ///
+    /// `IDOL_HOME_BUDGET=n` caps every rung of the ladder at n, so the same
+    /// compiler can be asked "is this program's answer a function of how many
+    /// locals were homed?" without a rebuild per point. It only ever LOWERS a
+    /// rung, so `IDOL_HOME_BUDGET=0` is exactly the frame-slot behaviour that
+    /// preceded homing — which makes it a control, not just a knob: if a
+    /// suspected miscompile survives 0, it is not this change's.
+    fn homeBudgetOverride() ?u32 {
+        const S = struct {
+            var read: bool = false;
+            var value: ?u32 = null;
+        };
+        if (!S.read) {
+            S.read = true;
+            if (std.c.getenv("IDOL_HOME_BUDGET")) |raw| {
+                S.value = std.fmt.parseInt(u32, std.mem.span(raw), 10) catch null;
+            }
+        }
+        return S.value;
+    }
+
+    /// The two per-function facts, measured together in one throwaway compile.
+    ///
+    /// HOW MANY LOCALS A BODY MAY HOME IS ALSO A MEASUREMENT, and for the same
+    /// reason the callee-save set is: a home holds a register for the WHOLE
+    /// function, so it is subtracted from the pool every expression in the body
+    /// draws on, and no census of names says whether what is left is enough.
+    /// Compiled at the full ten homes, `sha.id` and `tree.id` refuse outright
+    /// (DNB003, `RegisterExhausted`) — bodies whose expression pressure needs
+    /// the registers more than their locals do.
+    ///
+    /// So the budget is found by asking, descending, and the ladder ends at ZERO
+    /// — every local in the frame, exactly the behaviour that preceded homing —
+    /// which is why the search always terminates on something the compiler could
+    /// already do. Ten is tried FIRST and answers on the first attempt for
+    /// everything that fits, so the common function costs the same one probe it
+    /// cost before.
+    ///
+    /// A leaf never reads the budget (`planGpStackLocals` only consults it when
+    /// the body calls), so a leaf is probed once and the ladder is skipped: a
+    /// leaf that cannot compile must not be compiled four more times to learn
+    /// the same thing.
+    fn probeFunctionPlan(self: *Arm64Compiler, f: dnir.Function) FunctionPlan {
+        var ladder = [_]u32{ callee_save_count, 6, 3, 0 };
+        if (homeBudgetOverride()) |cap| {
+            for (&ladder) |*rung| rung.* = @min(rung.*, cap);
+        }
+        const steps: usize = if (dnirFunctionHasCall(f)) ladder.len else 1;
+        var i: usize = 0;
+        while (i < steps) : (i += 1) {
+            if (self.probeCalleeSaveUse(f, ladder[i])) |touched| {
+                return .{ .callee_save = touched, .home_budget = ladder[i] };
+            }
+        }
+        return .{ .callee_save = callee_save_all, .home_budget = 0 };
+    }
+
+    /// Null when the function does not compile at `home_budget` homes.
+    fn probeCalleeSaveUse(self: *Arm64Compiler, f: dnir.Function, home_budget: u32) ?u32 {
         var scratch: Diagnostic = .{};
         var probe = Arm64Compiler{
             .alloc = self.alloc,
@@ -1436,6 +1538,7 @@ const Arm64Compiler = struct {
         };
         probe.gate_transport = self.gate_transport;
         probe.gp_local_home_budget = self.gp_local_home_budget;
+        probe.gp_call_home_budget = home_budget;
         probe.spill_frame_budget = self.spill_frame_budget;
         // THE PROBE MUST COMPILE THE SAME BODY THE REAL PASS WILL. Its whole
         // premise (see above) is that the two passes differ only in the prologue's
@@ -1446,7 +1549,7 @@ const Arm64Compiler = struct {
         probe.const_licence = self.const_licence;
         probe.callee_save_plan = callee_save_all;
         defer probe.deinit();
-        probe.compileDnirFunction(f) catch return callee_save_all;
+        probe.compileDnirFunction(f) catch return null;
         return probe.callee_touched;
     }
 
@@ -1962,10 +2065,47 @@ const Arm64Compiler = struct {
             }
             param_slots += slots_for_param;
         }
-        // Any call clobbers x0–x17. Locals left in caller-saved homes made
-        // `bare`'s `n` a heap pointer, so `sub` malloc'd gigabytes.
-        const gate_spill_all_locals = body_has_call;
+        // A CALL DOES NOT REQUIRE A LOCAL TO LIVE IN MEMORY.
+        //
+        // It requires the local's home to survive `bl`, and this used to be met
+        // by giving EVERY local in a calling function a frame slot: every read a
+        // `ldr`, every write a `str`, on every path including a loop body. The
+        // hazard the memory form was answering is real and is named below —
+        // "Any call clobbers x0–x17. Locals left in caller-saved homes made
+        // `bare`'s `n` a heap pointer, so `sub` malloc'd gigabytes" — but the
+        // frame is not the only storage a `bl` cannot touch. AAPCS64 has ten
+        // registers with exactly that property, x19–x28, and the prologue
+        // already saves precisely the ones a body claims (`callee_save_plan`,
+        // measured by `probeCalleeSaveUse`).
+        //
+        // MEASURED, on `benchmarks/cyc/w/ilp4.id`'s loop — four carried values
+        // plus a counter, one call in the function and it is before the loop:
+        //
+        //     ldr x12, [sp, #0x18] / ldr x13, [sp, #0x38]   ; reload a, i
+        //     eor x14, x12, x13 / mul x12, x14, x9 / and x13, x12, x10
+        //     str x13, [sp, #0x18]                          ; and store a back
+        //
+        // — x4, plus the counter's own round trip, per iteration. The round trip
+        // is not free even out of L1: benchmarks/cyc PROBE 11 minus PROBE 5 puts
+        // four of them in an issue-dense loop at +4.563 cyc/op, which is the
+        // whole of that row's distance from its answer-checked floor.
+        //
+        // So the question the plan asks changes from "does this function call?"
+        // to "is there a register left that a call cannot reach?", and only the
+        // surplus past `gp_call_home_budget` still goes to the frame.
+        //
+        // GATE TRANSPORT KEEPS THE MEMORY FORM. Those bodies call `gatecap`/`sh`
+        // repeatedly under a raised home budget (`gp_local_home_budget = 32`)
+        // and their spilled-register reclaim path (`reclaimSpilledReg`) hands
+        // out registers the pinned map still names; a register home there would
+        // be reclaimed under its owner. That is a separate defect from this one
+        // and it is not this change's to take.
+        const gate_spill_all_locals = self.gate_transport and body_has_call;
         self.gate_param_slots = if (gate_spill_all_locals) @max(param_slots, 1) else 0;
+        const home_budget: u32 = if (body_has_call)
+            @min(self.gp_call_home_budget, self.gp_local_home_budget)
+        else
+            self.gp_local_home_budget;
 
         const planSlot = struct {
             fn go(
@@ -1973,23 +2113,26 @@ const Arm64Compiler = struct {
                 slot: u32,
                 homes_used: *u32,
                 homed: *std.AutoHashMapUnmanaged(u32, void),
-                gate_spill: bool,
+                force_stack: bool,
+                force_reason: []const u8,
+                budget: u32,
             ) Error!void {
                 if (homed.contains(slot)) return;
                 // Gate scripts call gatecap/sh repeatedly; every local must
                 // reload from the prologue stack frame after each call.
-                if (gate_spill) {
+                if (force_stack) {
                     // Offset is the slot id, not insertion order. A bump from
                     // `count()*8` gave `i` and the `and` temp the same home.
                     if (slot > 4094) return error.RegisterExhausted;
                     const off: u16 = @intCast(slot * 8);
                     try ctx.gp_stack_locals.put(ctx.alloc, slot, off);
-                    try ctx.cost.record(
-                        ctx.alloc,
-                        .stack_local,
-                        "gate transport local spilled to stack frame",
-                    );
-                } else if (homes_used.* >= ctx.gp_local_home_budget) {
+                    // The REASON is the fact worth recording, not the fact that
+                    // something was spilled: gate transport and an unpromotable
+                    // parameter reach this by different rules, and a ledger that
+                    // spells both "gate transport" cannot tell a test which one
+                    // it just observed.
+                    try ctx.cost.record(ctx.alloc, .stack_local, force_reason);
+                } else if (homes_used.* >= budget) {
                     if (slot > 4094) return error.RegisterExhausted;
                     const off: u16 = @intCast(slot * 8);
                     try ctx.gp_stack_locals.put(ctx.alloc, slot, off);
@@ -2016,7 +2159,24 @@ const Arm64Compiler = struct {
             var k: u32 = 0;
             while (k < slots_for_param) : (k += 1) {
                 if (body_has_call) {
-                    try planSlot(self, slot_cursor, &home_count, &homed_slots, gate_spill_all_locals);
+                    // A PARAMETER KEEPS ITS FRAME SLOT, unchanged from before
+                    // this lane. Its incoming register has to be vacated either
+                    // way, so the only question a home answers for it is where
+                    // the copy lands — and a parameter that is never reassigned
+                    // gains nothing per iteration to repay the prologue
+                    // save/restore its home would cost. A parameter READ in a
+                    // hot loop is a real second win and is not this change's:
+                    // taking it needs the read side of the same liveness fact,
+                    // not the write side.
+                    try planSlot(
+                        self,
+                        slot_cursor,
+                        &home_count,
+                        &homed_slots,
+                        true,
+                        "parameter is not loop-carried; kept in the stack frame",
+                        home_budget,
+                    );
                 } else {
                     try homed_slots.put(self.alloc, slot_cursor, {});
                 }
@@ -2024,6 +2184,74 @@ const Arm64Compiler = struct {
             }
         }
 
+        // A HOME IS EARNED BY BEING CARRIED, in a function that calls.
+        //
+        // The home is not free there: it costs a `str` in the prologue and an
+        // `ldr` in the epilogue, because the register it takes is one the callee
+        // must give back. A local ASSIGNED INSIDE A LOOP repays that once per
+        // iteration and the loop makes the trade unbounded. A local assigned on
+        // a straight line repays it at most once and usually not at all — and
+        // three of `gate/edge.sh`'s static ledger entries measured exactly that
+        // loss when every local was eligible: `LAW len/str-world` 28 -> 31,
+        // `LAW to/str` 47 -> 52, `CONTROL glue/len-world` 28 -> 31, all of it
+        // prologue.
+        //
+        // So the first pass admits only the slots stored inside a loop body.
+        // That is the defect's own definition — "every carried local, stored and
+        // reloaded on every assignment" — rather than a proxy for it, and a
+        // function with no loop is left exactly as it was.
+        var loop_ranges: std.ArrayList([2]u32) = .empty;
+        defer loop_ranges.deinit(self.alloc);
+        {
+            var idx: u32 = 0;
+            for (f.blocks) |b| {
+                for (b.instrs) |ins| {
+                    if (ins.op == .br and ins.branch_target <= idx) {
+                        try loop_ranges.append(self.alloc, .{ ins.branch_target, idx });
+                    }
+                    idx += 1;
+                }
+            }
+        }
+        const carried = struct {
+            fn at(ranges: []const [2]u32, idx: u32) bool {
+                for (ranges) |r| if (idx >= r[0] and idx <= r[1]) return true;
+                return false;
+            }
+        }.at;
+
+        var pass: u8 = 0;
+        while (pass < 2) : (pass += 1) {
+            // Pass 1 is loop-stored slots only. Pass 2 admits the rest, and runs
+            // ONLY for a leaf — where a home costs nothing to save and the old
+            // budget rule already handed them out.
+            if (pass == 1 and body_has_call) break;
+            var idx: u32 = 0;
+            for (f.blocks) |b| {
+                for (b.instrs) |ins| {
+                    defer idx += 1;
+                    if (ins.op != .store_local) continue;
+                    const slot = ins.result orelse continue;
+                    if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) continue;
+                    if (ins.application == null and !self.value_free_at.contains(slot)) switch (ins.lhs) {
+                        .i64 => continue,
+                        else => {},
+                    };
+                    if (body_has_call and pass == 0 and !carried(loop_ranges.items, idx)) continue;
+                    try planSlot(
+                        self,
+                        slot,
+                        &home_count,
+                        &homed_slots,
+                        gate_spill_all_locals,
+                        "gate transport local spilled to stack frame",
+                        home_budget,
+                    );
+                }
+            }
+        }
+
+        // Everything the passes above did not admit still needs a frame slot.
         for (f.blocks) |b| {
             for (b.instrs) |ins| {
                 if (ins.op != .store_local) continue;
@@ -2033,7 +2261,14 @@ const Arm64Compiler = struct {
                     .i64 => continue,
                     else => {},
                 };
-                try planSlot(self, slot, &home_count, &homed_slots, gate_spill_all_locals);
+                if (homed_slots.contains(slot) or self.gp_stack_locals.contains(slot)) continue;
+                if (slot > 4094) return error.RegisterExhausted;
+                try self.gp_stack_locals.put(self.alloc, slot, @intCast(slot * 8));
+                try self.cost.record(
+                    self.alloc,
+                    .stack_local,
+                    "local not carried across a loop; kept in the stack frame",
+                );
             }
         }
     }
@@ -2094,6 +2329,7 @@ const Arm64Compiler = struct {
         self.fp_home_regs = @splat(false);
         self.gp_reg_owner = @splat(null);
         self.gp_home_regs = @splat(false);
+        self.gp_call_home_regs = 0;
         try self.computeValueLastUse(f);
         self.imm_hoist.clearRetainingCapacity();
         self.hoist_preheader.clearRetainingCapacity();
@@ -2486,7 +2722,10 @@ const Arm64Compiler = struct {
                         const frame_total: u32 = @as(u32, self.callee_save_bytes) + @as(u32, self.stack_frame_bytes);
                         const off: u32 = frame_total + (slot - 8) * 8;
                         if (off > 32760) return self.refuse(@src());
-                        const home = try self.allocReg();
+                        const home = if (self.gpSlotUsesStack(slot))
+                            try self.allocReg()
+                        else
+                            try self.allocHomeReg();
                         try self.emitLdrSp(home, @intCast(off));
                         _ = try self.emitNarrowFit(home, home, param_fit);
                         if (self.gpSlotUsesStack(slot)) {
@@ -2503,7 +2742,13 @@ const Arm64Compiler = struct {
                     }
                     const arg_reg: u5 = @intCast(slot);
                     if (scalar_body_has_call) {
-                        const home = try self.allocReg();
+                        // A frame-bound param only needs a scratch register to
+                        // reach its slot; a register-homed one needs a home the
+                        // call cannot reach.
+                        const home = if (self.gpSlotUsesStack(slot))
+                            try self.allocReg()
+                        else
+                            try self.allocHomeReg();
                         try self.emitMovRegFit(home, arg_reg, param_fit);
                         if (self.gpSlotUsesStack(slot)) {
                             const off = try self.reserveGpStackLocal(slot);
@@ -2942,7 +3187,7 @@ const Arm64Compiler = struct {
                             if (src != val_reg) self.releaseReg(src);
                             if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
                         } else {
-                            const local_reg = try self.allocReg();
+                            const local_reg = try self.allocHomeReg();
                             try self.emitMovRegFit(local_reg, val_reg, ins.ty);
                             if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) {
                                 self.releaseReg(val_reg);
@@ -4320,10 +4565,29 @@ const Arm64Compiler = struct {
                 return reg;
             }
         }
+        // SPILL A TEMP BEFORE A HOME, AND NEVER SPILL A CALL-SURVIVING HOME AT
+        // ALL — see `gp_call_home_regs` for why the second is a wrong answer and
+        // not merely a slow one.
+        //
+        // Two passes rather than one exclusion, so no LEAF loses a spill victim
+        // it has today: a leaf's home is still a last-resort victim, just not
+        // the first one reached from x28 down. The callee-bank homes are skipped
+        // in both, because for them refusing costs nothing — the ladder in
+        // `probeFunctionPlan` steps down and the bottom rung is the behaviour
+        // that preceded homing.
         var victim: u5 = 28;
         while (victim >= 9) : (victim -= 1) {
             if (exclude != null and victim == exclude.?) continue;
             if (!self.used_regs[victim]) continue;
+            if (self.gp_home_regs[victim]) continue;
+            try self.spillReg(victim);
+            return self.allocRegExcluding(exclude);
+        }
+        victim = 28;
+        while (victim >= 9) : (victim -= 1) {
+            if (exclude != null and victim == exclude.?) continue;
+            if (!self.used_regs[victim]) continue;
+            if (self.gp_call_home_regs & (@as(u32, 1) << victim) != 0) continue;
             try self.spillReg(victim);
             return self.allocRegExcluding(exclude);
         }
@@ -4351,6 +4615,72 @@ const Arm64Compiler = struct {
     }
 
     fn allocReg(self: *Arm64Compiler) Error!u5 {
+        return self.allocRegExcluding(null);
+    }
+
+    /// A register to HOME A LOCAL IN for the rest of the function.
+    ///
+    /// In a function that calls, the bank is x19–x28 and the preference is not
+    /// cosmetic: a home anywhere else is a value the next `bl` can reach, which
+    /// is why every local in a calling function used to get a frame slot
+    /// instead. `emitSaveCallerRegs` would preserve a caller-saved home across
+    /// the call, but it preserves it BY STORING IT, so a home in x9..x17 pays
+    /// per call what a frame slot pays per assignment — and a home in x0..x7
+    /// is not preserved at all until something sets `used_regs` for it, which
+    /// is the shape of the `bare` miscompile the memory form was answering.
+    ///
+    /// x19–x28 are the callee's to preserve, so nothing has to be emitted at
+    /// the call at all; the prologue saves exactly the ones this body claims
+    /// (`claimReg` records them, `probeCalleeSaveUse` measures them, and
+    /// `compileDnirModule` refuses if the two disagree).
+    ///
+    /// Falls through to the ordinary pool when the bank is full or the function
+    /// is a leaf: a leaf's caller-saved homes are already safe, and paying a
+    /// prologue save/restore pair for them would be a regression.
+    fn allocHomeReg(self: *Arm64Compiler) Error!u5 {
+        if (self.cur_func_has_call) {
+            var reg: u5 = callee_save_first;
+            while (reg <= callee_save_last) : (reg += 1) {
+                if (self.used_regs[reg]) continue;
+                if (self.spilled_regs.contains(reg)) continue;
+                self.claimReg(reg);
+                self.gp_call_home_regs |= @as(u32, 1) << reg;
+                return reg;
+            }
+            // THE BANK IS THE ONLY PLACE A CALLING FUNCTION MAY HOME A LOCAL,
+            // and running out of it is a refusal rather than a fallback.
+            //
+            // `allocRegExcluding` ends in x0..x7, and a local homed THERE is the
+            // `bare` miscompile the frame-slot rule was written to prevent —
+            // reached again from the other side. It is not the `bl` that breaks
+            // it: `emitSaveCallerRegs` does preserve a claimed x0..x7 across the
+            // call. It is ARGUMENT STAGING for the NEXT call, because
+            // `preserveArgReg` — whose whole job is to move a live value out of
+            // an argument register before it is staged — begins
+            // `if (regIsPinned(pinned, slot)) return;`. It treats "pinned" as
+            // "safe", an assumption that held exactly as long as no local was
+            // ever homed in x0..x7.
+            //
+            // MEASURED, on a 40-line reduction of `sha.id`'s compression loop
+            // (two memory-backed tables, a dynamically indexed table WRITE, and
+            // a call in the loop). Nine locals took x19..x27, a hoisted
+            // immediate took x28, and the tenth local `si` fell through to x0:
+            //
+            //     and  x0, x27, x12      ; si = (t & 15) …
+            //     add  x1, x0, x13
+            //     mov  x0, x1            ; …homed in x0
+            //     …
+            //     mov  x0, x23           ; and staged over, for the next call
+            //
+            // Answer 134; the frame-slot build and `--backend=c` both answer
+            // 159. `sha.id` degraded the same way — 0 instead of 16, every NIST
+            // digest word wrong — and `native.id` fell from 210 to 128.
+            //
+            // Refusing costs nothing HERE: `probeFunctionPlan` catches it, steps
+            // the ladder down, and fewer locals are homed. The bottom rung is
+            // the frame, which is where all of them used to live.
+            return error.RegisterExhausted;
+        }
         return self.allocRegExcluding(null);
     }
 
@@ -4504,12 +4834,39 @@ const Arm64Compiler = struct {
     ) Error!void {
         if (slot >= 8) return;
         if (Arm64Compiler.regIsPinned(pinned, slot)) return;
+        // EVERY id THAT NAMES THIS REGISTER MOVES, not the first one found.
+        //
+        // One register routinely carries two ids: `store_local` writes
+        // `temps[slot] = R` for the binding while `temps[temp_id] = R` still
+        // names the value that produced it, and `evalDnirValue` will serve
+        // either. Relocating one and leaving the other is worse than relocating
+        // neither — the surviving entry keeps pointing at an ABI register that
+        // the very next instruction stages an argument into, and it reads that
+        // argument instead of its own value.
+        //
+        // It stayed hidden while nothing much lived in x0..x7. Homing carried
+        // locals in the callee bank tightens x9..x28, and the allocator's
+        // x0..x7 fallback stops being the rare path: `sha.id` began answering 0
+        // instead of 16, and `native.id` 128 instead of 210, at six homes and
+        // above — with the register-home mechanism itself innocent, since the
+        // same programs are correct at five.
+        // The owner that travels with the register is the LONGEST-LIVED of the
+        // ids that named it. `sweepGpLive` frees a register once its owner has
+        // no read left, so naming any earlier-dying id would hand the register
+        // back while another id is still reading it — and naming none at all
+        // (owner null) is the other way to be wrong: the sweep then never
+        // reclaims it, and `tree.id` runs the direct backend out of registers
+        // (DNB003) on the spot.
         var victim: ?u32 = null;
+        var victim_last: u32 = 0;
         var it = temps.iterator();
         while (it.next()) |entry| {
-            if (entry.value_ptr.* == slot) {
-                victim = entry.key_ptr.*;
-                break;
+            if (entry.value_ptr.* != slot) continue;
+            const id = entry.key_ptr.*;
+            const last = self.value_free_at.get(id) orelse std.math.maxInt(u32);
+            if (victim == null or last > victim_last) {
+                victim = id;
+                victim_last = last;
             }
         }
         const t = victim orelse return;
@@ -4519,7 +4876,10 @@ const Arm64Compiler = struct {
             return;
         }
         try self.emitMovReg(fresh, slot);
-        try temps.put(self.alloc, t, fresh);
+        var wit = temps.iterator();
+        while (wit.next()) |entry| {
+            if (entry.value_ptr.* == slot) entry.value_ptr.* = fresh;
+        }
         if (fresh >= 9 and fresh < 29 and fresh != platform_reserved_reg and !self.gp_home_regs[fresh]) {
             self.gp_reg_owner[fresh] = t;
         }
@@ -10257,12 +10617,20 @@ test "native backend lowers scalar-local operand across a call via spill-all-loc
     const alloc = arena.allocator();
 
     // `x` and `b` are body locals; `y = id(x)` passes a local operand across a
-    // call and `y + b` reuses a local defined before the call. Any body holding a
-    // call spills every GP local to the frame (`planGpStackLocals`,
-    // gate_spill_all_locals = body_has_call), so the operand load and the
-    // post-call reload survive the callee's caller-saved clobber. The lowering is
-    // therefore admitted — no operand-ABI refusal is warranted — and the program
-    // evaluates to (1+…+20) + 1 = 211.
+    // call and `y + b` reuses a local defined before the call, so both have to
+    // survive the callee's caller-saved clobber. The lowering is therefore
+    // admitted — no operand-ABI refusal is warranted — and the program evaluates
+    // to (1+…+20) + 1 = 211.
+    //
+    // THE MECHANISM NAMED HERE HAS CHANGED and the assertions never depended on
+    // it. This used to read "any body holding a call spills every GP local to
+    // the frame (`planGpStackLocals`, gate_spill_all_locals = body_has_call)",
+    // which was true and was also the single largest measured performance defect
+    // in the compiler. Surviving a call is the requirement; the frame was one way
+    // to meet it, and a home in the callee-saved bank is a cheaper one. Nothing
+    // in this test asserted the frame, so nothing in it needed retargeting —
+    // only the sentence that would otherwise teach the next reader a rule that
+    // is gone. The three tests at the end of this file pin the new one.
     var lex = Lexer.init(
         \\id(n: i64): i64
         \\    n
@@ -11164,4 +11532,231 @@ test "an eight-field record return still explodes into x0..x7" {
     var object = try emitCheckedTestObject(alloc, &mod, &graph);
     defer object.deinit(alloc);
     try std.testing.expect(object.bytes.len > 0);
+}
+
+/// Compile one `idol_mode` source through the direct backend and hand back the
+/// module output, so the three tests below can read `cost` and `asm_text`
+/// without repeating twenty lines of front-end setup each.
+fn carriedLocalTestModule(
+    alloc: std.mem.Allocator,
+    source: []const u8,
+    diagnostic: *Diagnostic,
+) !Arm64Output {
+    var lex = Lexer.init(source, "carried-local.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    return try emitArm64ModuleWithGraph(alloc, &mod, null, &graph, diagnostic);
+}
+
+fn countStackLocals(cost: []const CostEntry, needle: []const u8) usize {
+    var n: usize = 0;
+    for (cost) |entry| {
+        if (entry.kind != .stack_local) continue;
+        if (needle.len == 0 or std.mem.indexOf(u8, entry.reason, needle) != null) n += 1;
+    }
+    return n;
+}
+
+test "a carried local in a calling function keeps its register across the back edge" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THE DEFECT THIS PINS, and it was the largest measured one in the compiler:
+    // `planGpStackLocals` read `gate_spill_all_locals = body_has_call`, so ONE
+    // call anywhere in a function put EVERY local in the frame for the whole
+    // body — a `str` per assignment and an `ldr` per read, on every iteration of
+    // every loop. `benchmarks/cyc/w/ilp4.id` carries four values through such a
+    // loop and paid it eight times an iteration; the row sat at 2.34x its
+    // answer-checked floor while clang sat at 0.98x.
+    //
+    // The call is deliberately OUTSIDE the loop. That is the point: the old rule
+    // never asked where the call was, only whether one existed.
+    //
+    // EVERY VALUE IS PARAMETER-DERIVED, for the reason the neighbouring
+    // "spills GP locals past home budget" test spells out at length — with
+    // literal seeds the folder evaluates the entire loop and `_main` becomes
+    // `mov x0, #0x2d7; ret`, at which point there are no locals and this test
+    // reports success for a pass that never ran. The `kernel` guard at the
+    // bottom is what makes that failure visible instead of silent.
+    const source =
+        \\step: i64 = (n: i64)
+        \\    n + 1
+        \\
+        \\kernel: i64 = (n: i64)
+        \\    a = step(n)
+        \\    b = n + 2
+        \\    c = n + 3
+        \\    d = n + 4
+        \\    i = 1
+        \\    while i <= n
+        \\        a = ((a ~ i) * 7) & 255
+        \\        b = ((b ~ i) * 7) & 255
+        \\        c = ((c ~ i) * 7) & 255
+        \\        d = ((d ~ i) * 7) & 255
+        \\        i += 1
+        \\    a + b + c + d
+        \\
+        \\main: i64 = ()
+        \\    kernel(5)
+    ;
+    var diagnostic: Diagnostic = .{};
+    var output = try carriedLocalTestModule(alloc, source, &diagnostic);
+    defer output.deinit(alloc);
+
+    // The body must not have folded, or nothing below is measuring anything.
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "kernel") != null);
+
+    // Five carried locals in a function that calls: not one of them may be
+    // given a frame slot, and neither reason for taking one may fire.
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        countStackLocals(output.cost, "not carried across a loop"),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        countStackLocals(output.cost, "GP home budget exhausted"),
+    );
+    // The PARAMETER still takes a frame slot, and that is deliberate rather
+    // than incidental — see the note at its `planSlot` call. Asserting it here
+    // keeps the two halves of the rule from drifting apart silently: if
+    // parameters are ever promoted, this line is where it gets noticed.
+    try std.testing.expect(countStackLocals(output.cost, "parameter is not loop-carried") > 0);
+    // THE ASSERTION THAT FAILS ON THE OLD BACKEND, and the reason this test is
+    // a test rather than a description. `gate_spill_all_locals = body_has_call`
+    // sent every local through the gate-transport branch, so a program with no
+    // gate transport anywhere in it recorded six "gate transport local spilled
+    // to stack frame" entries — five locals and the parameter. Verified against
+    // a compiler built from this same tree with the change reverted: six here,
+    // zero after.
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        countStackLocals(output.cost, "gate transport"),
+    );
+
+    // And the home has to be one a `bl` cannot reach. x19 is the first register
+    // of the callee-saved bank, so the prologue saving it is the observable
+    // consequence of a home being taken there; a home in x9..x17 would leave the
+    // prologue empty, and a home in x0..x7 is the `bare` miscompile.
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "str x19, [sp") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "ldr x19, [sp") != null);
+}
+
+test "a local that is not carried keeps its frame slot rather than a saved register" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THE OTHER DIRECTION, and it is not symmetry for its own sake. A home in
+    // the callee-saved bank costs a `str` in the prologue and an `ldr` in the
+    // epilogue, because the register belongs to the caller. A local assigned
+    // inside a loop repays that every iteration; a local assigned once on a
+    // straight line repays it never.
+    //
+    // MEASURED when every local was eligible: three of `gate/edge.sh`'s static
+    // ledger entries regressed on instruction count and nothing else moved —
+    // `LAW len/str-world` 28 -> 31, `LAW to/str` 47 -> 52, `CONTROL
+    // glue/len-world` 28 -> 31, all of it prologue. Restricting homes to
+    // loop-stored slots put all three back and cost nothing on any cycle row.
+    const source =
+        \\step: i64 = (n: i64)
+        \\    n + 1
+        \\
+        \\kernel: i64 = (n: i64)
+        \\    a = step(n)
+        \\    b = a + 2
+        \\    c = b + 3
+        \\    a + b + c
+        \\
+        \\main: i64 = ()
+        \\    kernel(5)
+    ;
+    var diagnostic: Diagnostic = .{};
+    var output = try carriedLocalTestModule(alloc, source, &diagnostic);
+    defer output.deinit(alloc);
+
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "kernel") != null);
+    // No loop, so no local earns a home, and the REASON is recorded rather than
+    // inferred: an entry saying "budget exhausted" here would mean the
+    // earned-home rule had stopped applying and the budget was doing the work.
+    try std.testing.expect(countStackLocals(output.cost, "not carried across a loop") > 0);
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        countStackLocals(output.cost, "GP home budget exhausted"),
+    );
+}
+
+test "carried locals past the home budget still go to the frame" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // The bank is ten registers wide (x19-x28) and that is the whole budget, so
+    // a loop carrying more than ten values cannot have them all in it. The
+    // surplus takes the frame slot it always had — which is what makes this a
+    // strict improvement rather than a trade: nothing loses a place it used to
+    // have, some things gain a better one.
+    const source =
+        \\step: i64 = (n: i64)
+        \\    n + 1
+        \\
+        \\kernel: i64 = (n: i64)
+        \\    s = step(n)
+        \\    v0 = n + 1
+        \\    v1 = n + 2
+        \\    v2 = n + 3
+        \\    v3 = n + 4
+        \\    v4 = n + 5
+        \\    v5 = n + 6
+        \\    v6 = n + 7
+        \\    v7 = n + 8
+        \\    v8 = n + 9
+        \\    v9 = n + 10
+        \\    v10 = n + 11
+        \\    i = 1
+        \\    while i <= n
+        \\        v0 = (v0 + i) & 255
+        \\        v1 = (v1 + i) & 255
+        \\        v2 = (v2 + i) & 255
+        \\        v3 = (v3 + i) & 255
+        \\        v4 = (v4 + i) & 255
+        \\        v5 = (v5 + i) & 255
+        \\        v6 = (v6 + i) & 255
+        \\        v7 = (v7 + i) & 255
+        \\        v8 = (v8 + i) & 255
+        \\        v9 = (v9 + i) & 255
+        \\        v10 = (v10 + i) & 255
+        \\        s = (s + v0) & 255
+        \\        i += 1
+        \\    s + v0 + v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10
+        \\
+        \\main: i64 = ()
+        \\    kernel(5)
+    ;
+    var diagnostic: Diagnostic = .{};
+    var output = try carriedLocalTestModule(alloc, source, &diagnostic);
+    defer output.deinit(alloc);
+
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "kernel") != null);
+    // Twelve carried values against a ten-register bank. The surplus is on the
+    // frame and it is there for the BUDGET reason; if this ever reads zero,
+    // either the bank grew or the plan stopped counting.
+    try std.testing.expect(countStackLocals(output.cost, "GP home budget exhausted") > 0);
+    // …and the bank is still fully used, so the frame is the overflow rather
+    // than the default.
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "str x28, [sp") != null);
 }

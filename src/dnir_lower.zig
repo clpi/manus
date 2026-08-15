@@ -2180,7 +2180,7 @@ fn lowerBlock(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error
     ctx.block_answering = allow_return;
     defer ctx.block_answering = saved_answering;
     for (block.stmts, 0..) |*stmt, i| {
-        if (false) try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
+        try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
         try lowerStmt(ctx, stmt, allow_return and stmtIsTailSlot(block, i));
     }
     if (allow_return) {
@@ -2450,7 +2450,7 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
             try lowerStmt(ctx, stmt, tail_here);
             return true;
         }
-        if (false) try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
+        try tryEmitVectorReductionPrologue(ctx, block.stmts, i);
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
