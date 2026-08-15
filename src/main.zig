@@ -57,6 +57,7 @@ const representation_manifest = @import("representation_manifest.zig");
 const target_model = @import("target_model.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const table_apply = @import("table_apply.zig");
+const native_bootstrap = @import("native_bootstrap.zig");
 const sim = @import("sim.zig");
 const sim_pipeline = @import("sim_pipeline.zig");
 const knowledge_snapshot = @import("knowledge_snapshot.zig");
@@ -3938,9 +3939,30 @@ fn reportDirectBackendError(
 /// "cache by source spelling" §40 warns against, which is about invalidating too
 /// coarsely across a dependency graph.
 ///
-/// FAIL-SAFE BY CONSTRUCTION: every operation returns null/false on any error, so
-/// the cache can only ever make a build faster, never wrong. A miss falls through
-/// to a normal compile.
+/// FAIL-SAFE ON ERROR: every operation returns null/false on any error, so a
+/// failure to cache falls through to a normal compile.
+///
+/// That is NOT the same as "can only make a build faster, never wrong", which is
+/// what this comment used to claim, and the claim was false. Compilation outcome
+/// is PATH-DEPENDENT — `native_bootstrap.gateTransport` waives graph-fact
+/// validation for source under `gate/`, `scripts/ledger/` and a few named files
+/// — while the key hashed only the source BYTES. So the same bytes compiled
+/// first under `gate/` and then elsewhere hit the cache and were served a binary
+/// that the second path's rules would have REFUSED. Measured, cold cache:
+///
+///     under gate/   ok compile        (validation waived)
+///     outside       cached            (served the waived artifact)
+///
+/// A refusal turned into a running wrong answer, and `sh gate/all.sh` compiles
+/// eleven files under `gate/`, so a gate run poisoned the shared /tmp cache for
+/// every subsequent compile of the same bytes.
+///
+/// The fix hashes the TRANSPORT DECISION rather than the path. Hashing the path
+/// would also work and is what one would reach for first, but it would miss on
+/// every identical file in a different directory for no reason — the path is not
+/// what varies, the rule set is. If another path-dependent rule is ever added it
+/// must be hashed here too, which is why this is a named call and not a bool
+/// literal.
 fn buildCacheKey(
     alloc: std.mem.Allocator,
     io: Io,
@@ -3964,6 +3986,10 @@ fn buildCacheKey(
     h.update(opt);
     h.update(std.mem.asBytes(&self_stat.size));
     h.update(std.mem.asBytes(&self_stat.mtime));
+    // The rule set this path compiles under. See the note above: without it the
+    // cache serves a validation-waived artifact to a path that never waived it.
+    const waived: u8 = if (native_bootstrap.gateTransport(src_path)) 1 else 0;
+    h.update(std.mem.asBytes(&waived));
     var digest: [32]u8 = undefined;
     h.final(&digest);
     // Flat path: no directory to create, so one fewer failure mode.
@@ -5071,6 +5097,10 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
     var pp = PrettyPrinter.init(alloc, &buf, .idol);
     pp.canonical = canonical and parser.idol_mode;
     pp.comments = comments.items;
+    // The `#!` line is its OWN token identity, not a comment, so the loop above
+    // never collects it and the formatter used to delete it outright. The lexer
+    // already retained it; it just had nowhere to go.
+    pp.shebang = lex.shebang;
     // Which lines are genuinely empty. Derived from the SOURCE, not inferred
     // from gaps between statement lines — see `blank_lines`.
     var blanks: std.ArrayList(u32) = .empty;
