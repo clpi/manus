@@ -568,6 +568,13 @@ fn f64RecordDesc(records: *const F64RecordMap, name: []const u8) ?F64RecordDesc 
 const Condition = enum(u4) {
     eq = 0x0,
     ne = 0x1,
+    // UNSIGNED. `hi`/`ls` are not spellings of `gt`/`le` — they read the carry
+    // flag, not the sign, which is what makes ONE compare answer a two-sided
+    // range test: `(i - 1) <=u (len - 1)` is false for every i below 1 as well
+    // as every i above len, because 0 - 1 wraps to the largest unsigned value.
+    // No DNIR binop maps to either; they exist for the index bounds check.
+    hi = 0x8,
+    ls = 0x9,
     ge = 0xa,
     lt = 0xb,
     gt = 0xc,
@@ -3081,12 +3088,52 @@ const Arm64Compiler = struct {
                 // register form `[base, idx, lsl #3]` does the multiply for
                 // free, so only the 1-based bias costs an instruction.
                 const base = try self.evalDnirValue(temps, ins.lhs);
+
+                // A CONSTANT INDEX NEEDS NO INDEX REGISTER AT ALL.
+                //
+                // `base + (k - 1) * 8` is a compile-time number when `k` is, so
+                // the whole address computation collapses into the load/store's
+                // own unsigned-offset field. That removed three instructions per
+                // element from the materialization of a positional table — the
+                // binding emits one `store_index` per element with a LITERAL
+                // index, and was paying `mov idx / mov one / sub` to rediscover
+                // a number the compiler already had. A 32-element table cost 160
+                // instructions to set up; it now costs 64. Same for a constant
+                // read: `t(3)` is one `ldr`.
+                //
+                // The guard is the encoding's, not a heuristic: the offset field
+                // is a 12-bit count of 8-byte units, so `k` must be at least 1
+                // (Idol's own lower bound) and no more than 4096. Anything else
+                // falls through to the register form below, which is correct at
+                // every index.
+                const const_off: ?u16 = blk: {
+                    const k = switch (ins.rhs) {
+                        .i64 => |n| n,
+                        else => break :blk null,
+                    };
+                    if (k < 1 or k > 4096) break :blk null;
+                    break :blk @intCast((k - 1) * 8);
+                };
+                if (const_off) |off| {
+                    if (op == .load_index) {
+                        const dst = try self.allocReg();
+                        try self.emitLdrBaseImm(dst, base, off);
+                        if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                    } else {
+                        const val = try self.evalDnirValue(temps, ins.third);
+                        try self.emitStrBaseImm(val, base, off);
+                        self.releaseDnirTemp(pinned, ins.third, val);
+                    }
+                    // Same ownership rule as the register path: the base is
+                    // shared by every element's store and is released by whoever
+                    // owns it, not here.
+                    self.releaseDnirTemp(pinned, ins.lhs, base);
+                    return;
+                }
+
                 const idx = try self.evalDnirValue(temps, ins.rhs);
                 const biased = try self.allocReg();
-                const one = try self.allocReg();
-                try self.emitMovImm(one, 1);
-                try self.emitSubReg(biased, idx, one);
-                self.releaseReg(one);
+                try self.emitSubImm(biased, idx, 1);
                 if (op == .load_index) {
                     const dst = try self.allocReg();
                     try self.emitLdrScaled(dst, base, biased);
@@ -3121,12 +3168,9 @@ const Arm64Compiler = struct {
                 const sbase = try self.evalDnirValue(temps, ins.lhs);
                 const sidx = try self.evalDnirValue(temps, ins.rhs);
                 const sval = try self.evalDnirValue(temps, ins.third);
-                const sone = try self.allocReg();
-                try self.emitMovImm(sone, 1);
                 const saddr = try self.allocReg();
-                try self.emitSubReg(saddr, sidx, sone);
+                try self.emitSubImm(saddr, sidx, 1);
                 try self.emitAddReg(saddr, sbase, saddr);
-                self.releaseReg(sone);
                 try self.emitStrb(sval, saddr);
                 self.releaseReg(saddr);
                 self.releaseDnirTemp(pinned, ins.lhs, sbase);
@@ -3137,12 +3181,9 @@ const Arm64Compiler = struct {
                 // from 0, so the byte lives at `base + (i - 1)`.
                 const base = try self.evalDnirValue(temps, ins.lhs);
                 const idx = try self.evalDnirValue(temps, ins.rhs);
-                const one = try self.allocReg();
-                try self.emitMovImm(one, 1);
                 const addr = try self.allocReg();
-                try self.emitSubReg(addr, idx, one);
+                try self.emitSubImm(addr, idx, 1);
                 try self.emitAddReg(addr, base, addr);
-                self.releaseReg(one);
                 const dst = try self.allocReg();
                 try self.emitLdrb(dst, addr);
                 self.releaseReg(addr);
@@ -3171,6 +3212,10 @@ const Arm64Compiler = struct {
                 }
                 if (std.mem.eql(u8, ins.field, dnir_lower.vec_reduce_add_i64_tag)) {
                     try self.emitVecReduceAddI64(temps, pinned, ins);
+                    return;
+                }
+                if (std.mem.eql(u8, ins.field, dnir_lower.index_bounds_tag)) {
+                    try self.emitIndexBoundsCheck(temps, pinned, ins);
                     return;
                 }
                 const src = try self.evalDnirValue(temps, ins.lhs);
@@ -3226,6 +3271,68 @@ const Arm64Compiler = struct {
         try self.emitFmt(movz(16, 37), "mov x16, #{d}", .{37});
         try self.emit(0xd4001001, "svc #0x80");
         try self.emit(0xd4200020, "brk #1");
+    }
+
+    /// The expansion of `dnir_lower.index_bounds_tag` — `1 <= i <= len` in ONE
+    /// compare.
+    ///
+    /// The two-sided test used to be two DNIR comparisons and three branches,
+    /// which the backend fused into five instructions on the path that is taken:
+    ///
+    ///     cmp x15, x13        ; x13 hoisted #1
+    ///     b.lt  trap
+    ///     cmp x15, x14        ; x14 hoisted #len
+    ///     b.gt  trap
+    ///     b     ok            ; jump over the trap block
+    ///
+    /// plus two `mov`s outside the loop to hold the two constants. Three of
+    /// those five run on EVERY subscript of EVERY iteration, and a subscript is
+    /// the single hottest idiom in this tree — an exact dynamic attribution put
+    /// array indexing at 66.3% of all executed instructions in `native.out`.
+    ///
+    /// One UNSIGNED compare answers both sides. `i - 1` wraps for every `i <= 0`
+    /// to a value at the top of the range, so
+    ///
+    ///     sub x16, x15, #1
+    ///     cmp x16, #len-1
+    ///     b.ls  ok            ; unsigned: in range
+    ///     <trap>
+    ///     ok:
+    ///
+    /// rejects `i = 0` and `i = -1` by the same comparison that rejects
+    /// `i = len + 1`. Three instructions on the taken path, no hoisted
+    /// constants, and the trap block is jumped over by the SAME branch that
+    /// tests the range rather than by an extra unconditional one.
+    ///
+    /// THE SIGNED FORM WOULD BE WRONG HERE, which is why `Condition` grew `ls`
+    /// rather than reusing `le`: `-1 <= len - 1` is true signed and false
+    /// unsigned, so a signed `b.le` would let `xs(0 - 1)` through to read the
+    /// word below the region — the exact defect gap[063] exists to stop.
+    ///
+    /// `len` is the table's static extent, so `len - 1` is a compile-time
+    /// number; the 12-bit immediate covers extents to 4096. Anything wider
+    /// refuses rather than guessing, and `guardedTableIndex` never emits this
+    /// for a table whose extent is unknown.
+    fn emitIndexBoundsCheck(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+    ) Error!void {
+        const len = switch (ins.rhs) {
+            .i64 => |n| n,
+            else => return self.refuse(@src()),
+        };
+        if (len < 1 or len > 4096) return self.refuse(@src());
+        const idx = try self.evalDnirValue(temps, ins.lhs);
+        const biased = try self.allocReg();
+        try self.emitSubImm(biased, idx, 1);
+        try self.emitCmpImm(biased, @intCast(len - 1));
+        const in_range = try self.emitBCond(.ls, 0);
+        try self.emitTrapAbort();
+        try self.patchCondBranch(in_range, @intCast(self.code.items.len));
+        self.releaseReg(biased);
+        self.releaseDnirTemp(pinned, ins.lhs, idx);
     }
 
     fn emitHwUnary(self: *Arm64Compiler, dst: u5, src: u5, hw: dnir.HwIntrinsic) Error!void {
@@ -4227,6 +4334,20 @@ const Arm64Compiler = struct {
         );
     }
 
+    /// `ldr xd, [xbase, #imm]` — the read half of `emitStrBaseImm`, same
+    /// unsigned-offset form. Used when a table subscript's index is known at
+    /// compile time: `base + (k - 1) * 8` is then a constant and needs no
+    /// register, no `mov` and no `sub`.
+    fn emitLdrBaseImm(self: *Arm64Compiler, dst: u5, base: u5, offset: u16) Error!void {
+        if (offset % 8 != 0 or offset / 8 > 4095) return self.refuse(@src());
+        try self.ensureRegLive(base);
+        try self.emitFmt(
+            0xf9400000 | ((@as(u32, offset) / 8) << 10) | (@as(u32, base) << 5) | @as(u32, dst),
+            "ldr x{d}, [x{d}, #{d}]",
+            .{ dst, base, offset },
+        );
+    }
+
     /// Every field value of a `ret_record`, in descriptor order.
     ///
     /// `vals` is authoritative when the lowerer set it. The `lhs`/`rhs`/`third`
@@ -4509,6 +4630,21 @@ const Arm64Compiler = struct {
         try self.emitFmt(0xcb000000 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "sub x{d}, x{d}, x{d}", .{ dst, lhs, rhs });
     }
 
+    /// `sub xd, xn, #imm12` — SUB immediate, 64-bit, no shift.
+    ///
+    /// The register form needs a second register holding the constant AND the
+    /// `mov` that puts it there. Every 1-based table subscript pays that bias,
+    /// so the pair was two instructions on the hottest path in the tree. This is
+    /// one, and it frees the register the `mov` was consuming.
+    fn emitSubImm(self: *Arm64Compiler, dst: u5, lhs: u5, imm: u12) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.emitFmt(
+            0xd1000000 | (@as(u32, imm) << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "sub x{d}, x{d}, #{d}",
+            .{ dst, lhs, imm },
+        );
+    }
+
     fn emitCmpReg(self: *Arm64Compiler, lhs: u5, rhs: u5) Error!void {
         try self.ensureRegLive(lhs);
         try self.ensureRegLive(rhs);
@@ -4518,6 +4654,17 @@ const Arm64Compiler = struct {
     fn emitCmpZero(self: *Arm64Compiler, reg: u5) Error!void {
         try self.ensureRegLive(reg);
         try self.emitFmt(0xf100001f | (@as(u32, reg) << 5), "cmp x{d}, #0", .{reg});
+    }
+
+    /// `cmp xn, #imm12` — SUBS xzr, xn, #imm, the same form `emitCmpZero`
+    /// emits with a zero immediate.
+    fn emitCmpImm(self: *Arm64Compiler, reg: u5, imm: u12) Error!void {
+        try self.ensureRegLive(reg);
+        try self.emitFmt(
+            0xf100001f | (@as(u32, imm) << 10) | (@as(u32, reg) << 5),
+            "cmp x{d}, #{d}",
+            .{ reg, imm },
+        );
     }
 
     fn emitCompareResult(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, cond: Condition) Error!void {
@@ -4913,6 +5060,8 @@ fn invertCondition(cond: Condition) Condition {
         .ge => .lt,
         .gt => .le,
         .le => .gt,
+        .hi => .ls,
+        .ls => .hi,
     };
 }
 
@@ -4940,6 +5089,8 @@ fn conditionName(cond: Condition) []const u8 {
         .ge => "ge",
         .gt => "gt",
         .le => "le",
+        .hi => "hi",
+        .ls => "ls",
     };
 }
 
@@ -8966,7 +9117,19 @@ test "native backend assembly lists helper call labels" {
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tbl _add\n") != null);
 }
 
-test "native backend refuses source print absent application facts and retains physical print oracle" {
+// Source `print` reaches machine code, and it reaches the SAME machine code as
+// `stdout:write`.
+//
+// This test used to assert the opposite — that `print(1)` in an ordinary module
+// refused with `unresolved-application-facts` — and that refusal was the single
+// largest hole in the direct backend: measured over the 1005 tracked `.id`
+// files, 110 programs that `idol check` accepts and the C bootstrap compiles
+// were refused by direct naming exactly this one relation. `print(v)` and
+// `stdout:write(v)` are one host-egress node (`dnir_lower.lowerPrint`), and the
+// only thing separating them was WHERE the file lived. The physical
+// `print_value` oracle below is unchanged: it is the DNIR-level control that
+// the egress op still lowers to a real libc call.
+test "native backend lowers source print to host egress and retains physical print oracle" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -8983,13 +9146,34 @@ test "native backend refuses source print absent application facts and retains p
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    try expectCheckedTestSemanticFailure(
-        alloc,
-        &mod,
-        &sem,
-        "unresolved-application-facts",
-        null,
-    );
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, ".globl _main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "bl _printf") != null);
+
+    // The subject-first spelling of the same egress, in a module with the same
+    // name, must produce the same call — one node, not two.
+    var stream_lex = Lexer.init(
+        \\main: i64 = ()
+        \\    stdout:write("1")
+        \\    0
+    , "native.id");
+    var stream_parser = Parser.init(&stream_lex, alloc);
+    stream_parser.idol_mode = true;
+    var stream_mod = try stream_parser.parse_module();
+    var stream_sem = Sema.init(alloc);
+    defer stream_sem.deinit();
+    stream_sem.idol_mode = true;
+    try stream_sem.check_module(&stream_mod);
+    var stream_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer stream_graph.deinit();
+    try liftCheckedTestGraph(&stream_mod, &stream_sem, &stream_graph);
+    var stream_assembly = try emitCheckedTestAssembly(alloc, &stream_mod, &stream_graph, null);
+    defer stream_assembly.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, stream_assembly.assembly, "bl _puts") != null);
 
     const instructions = [_]dnir.Instr{
         .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = 1 }, .ty = .i64 },

@@ -4067,7 +4067,47 @@ fn guardedTableIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
     return .{ .local = idx_slot };
 }
 
+/// `1 <= i <= len`, as ONE instruction for the backend to expand.
+///
+/// It used to be two `binop` comparisons and three `br`s, which the backend
+/// fused into five machine instructions on the path that is taken plus two
+/// hoisted constants. Written that way the range test was FOUR DNIR values wide
+/// — two comparison temps and two immediates — and the register allocator paid
+/// for all of them inside the loop that reads the table.
+///
+/// The pair of bounds is not two facts. It is one range, and one UNSIGNED
+/// compare of `i - 1` against `len - 1` decides it, because `i <= 0` wraps to
+/// the top of the unsigned range and fails the same test `i > len` fails. That
+/// expansion belongs to the backend (`emitIndexBoundsCheck`), because unsigned
+/// comparison has no `dnir.BinOpTag` and inventing one would put a second,
+/// nearly-identical comparison family into every consumer of DNIR for the sake
+/// of one call site.
+///
+/// The tag convention is the one `trap_abort_tag` already established: a
+/// `hw_unary` with `.hw = .none` and a `.field` the backend matches. `.result`
+/// is null — this instruction defines no value, it only decides whether control
+/// continues.
+pub const index_bounds_tag = "index.bounds";
+
+/// Widest extent whose `len - 1` still fits the compare's 12-bit immediate.
+/// Past it the fused form would need a register for the limit and would stop
+/// being one instruction, so the portable two-comparison expansion below is
+/// used instead — it is correct at every extent and is what every table used
+/// before this seam existed.
+const fused_bounds_max: i64 = 4096;
+
 fn emitIndexBoundsTrap(ctx: *LowerCtx, idx_slot: u32, len: i64) Error!void {
+    if (len >= 1 and len <= fused_bounds_max) {
+        try ctx.emit(.{
+            .op = .hw_unary,
+            .hw = .none,
+            .field = index_bounds_tag,
+            .lhs = .{ .local = idx_slot },
+            .rhs = .{ .i64 = len },
+        });
+        return;
+    }
+
     const lo = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = lo, .binop = .geq, .lhs = .{ .local = idx_slot }, .rhs = .{ .i64 = 1 } });
     const lo_bad = ctx.instrs.items.len;
