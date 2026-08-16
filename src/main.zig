@@ -4649,7 +4649,26 @@ fn do_compile(
                         var artifact = artifact_value;
                         defer artifact.deinit(alloc);
                         const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null, artifact.need);
-                        const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
+                        const obj_path = blk: {
+                            var oh = std.hash.Wyhash.init(0);
+                            // std.c.realpath is what lexer_bridge.zig:199
+                            // already uses to turn a SPELLING into a FILE
+                            // IDENTITY, and this is the same question: two
+                            // programs both invoked as `racep.id` from their own
+                            // directories share every byte of `src_path`.
+                            var real_buf: [std.c.PATH_MAX]u8 = undefined;
+                            var path_z: [std.c.PATH_MAX]u8 = undefined;
+                            if (src_path.len < path_z.len) {
+                                @memcpy(path_z[0..src_path.len], src_path);
+                                path_z[src_path.len] = 0;
+                                if (std.c.realpath(path_z[0..src_path.len :0].ptr, &real_buf)) |rp| {
+                                    oh.update(std.mem.sliceTo(rp, 0));
+                                } else oh.update(src_path);
+                            } else oh.update(src_path);
+                            break :blk try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_{x}_{d}_native.o", .{
+                                std.fs.path.stem(src_path), oh.final(), std.c.getpid(),
+                            });
+                        };
                         const cwd = Io.Dir.cwd();
                         try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = artifact.bytes });
                         if (emitDirectCompileProofArtifact(alloc, io, src_path, obj_path, mt)) {
