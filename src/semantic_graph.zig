@@ -11,6 +11,7 @@ const sema = @import("sema.zig");
 const types = @import("types.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
+const place = @import("place.zig");
 pub const id = u32;
 
 pub const State = enum {
@@ -379,6 +380,21 @@ pub const SemanticGraph = struct {
     /// Func id assigned at addNode from the declaration pointer. Lookup is this
     /// index, not a later walk of `ast_ref` slots.
     origin: std.AutoHashMapUnmanaged(usize, id) = .empty,
+    /// §18 — PLACE, IN THE GRAPH.
+    ///
+    /// The graph MUST represent place: identity, determinacy, extent, mutation,
+    /// immutability, alias, escape, lifetime, alignment, residency, origin,
+    /// SHARED by sema, demand, optimization, realization, LSP and MCP, and
+    /// NEVER recomputed or discarded per backend. It is one census over the
+    /// module, produced once at lift time, and every consumer reads the same
+    /// array — which is the difference between this and the four name-keyed
+    /// side tables (`ModuleConsts`, `ModuleGlobals`, `const_tables`,
+    /// `table_facts.Decisions`) that each answer one question for one caller.
+    ///
+    /// Optional rather than empty because `null` and "no places" are different
+    /// answers: a graph lifted by `liftModule` alone has NOT been asked, and a
+    /// consumer must not read absence as proof.
+    places: ?place.Census = null,
     pub fn init(alloc: std.mem.Allocator) SemanticGraph {
         return .{ .alloc = alloc };
     }
@@ -403,6 +419,7 @@ pub const SemanticGraph = struct {
         self.home_apps.deinit(self.alloc);
         self.descriptor_refs.deinit(self.alloc);
         self.origin.deinit(self.alloc);
+        if (self.places) |*census| census.deinit();
     }
 
     fn deinitNode(self: *SemanticGraph, node: Node) void {
@@ -1541,12 +1558,36 @@ pub const SemanticGraph = struct {
         }
     }
 
+    /// §18's census, lifted ONCE. Idempotent: a second call is a no-op, so a
+    /// caller that lifts a graph twice does not get two censuses and two sets
+    /// of place identities.
+    pub fn liftPlaces(self: *SemanticGraph, mod: *const ast.Module) !void {
+        if (self.places != null) return;
+        self.places = try place.analyzeModule(self.alloc, mod);
+    }
+
+    /// The place a module-scope name denotes, or null when this graph was never
+    /// asked for places. Consumers must treat null as "unknown", never as "no
+    /// place" — `place.Tri`'s rule, applied to the lookup itself.
+    pub fn placeNamed(self: *const SemanticGraph, name: []const u8) ?*const place.Place {
+        const census = if (self.places) |*c| c else return null;
+        return census.find(name);
+    }
+
+    /// How many places this graph carries. O(1), so a hot consumer can decline
+    /// before paying for a lookup.
+    pub fn placeCount(self: *const SemanticGraph) usize {
+        const census = if (self.places) |*c| c else return 0;
+        return census.count();
+    }
+
     /// Lift module-level symbols, alias table shapes, and enum shapes.
     pub fn liftModuleFull(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
         const mod_id = try self.liftModule(mod, file);
         try self.liftAliasShapes(mod, file, mod_id);
         try self.liftEnumShapes(mod, file, mod_id);
         try self.liftFunctionBindings(mod, file);
+        try self.liftPlaces(mod);
         return mod_id;
     }
 

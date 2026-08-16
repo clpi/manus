@@ -149,6 +149,41 @@ pub const Lifetime = enum { region, function, module, unknown };
 pub const Residency = enum { absent, register, frame, static, foreign, unknown };
 pub const Origin = enum { literal, derived, parameter, world, unknown };
 
+/// WHAT THE NAME NAMES. The census used to admit exactly one shape — a binding
+/// whose value is a `.table` LITERAL — and five independent lanes stopped at
+/// that edge on the same day. Widening it is not coverage for its own sake:
+/// each member below is a JUDGMENT about whether the thing is a location at
+/// all, and two of the five judgments are NEGATIVE.
+///
+///   `.scalar`      IS a place. It has an identity, a lifetime, a residency and
+///                  a mutation history; a scalar written by a relation is the
+///                  one shape `moduleFunctionsAssignName` in `dnir_lower.zig`
+///                  already decides by hand, name-keyed, two-valued.
+///   `.collection`  IS a place. The original census member.
+///   `.record`      IS a place — and its FIELDS ARE NOT. `r.f` is a
+///                  SUB-LOCATION of `r` accessed at a program point with a
+///                  constant sub-location, which is what `Access.const_index`
+///                  already records. Minting a place per field would make
+///                  `alias` unanswerable (two fields of one record alias the
+///                  same storage and nothing would say so) and would multiply
+///                  the census by the arity of every record for no new fact.
+///   `.parameter`   IS a place, and its `origin` says so. Its extent, alias and
+///                  escape facts arrive from the CALLER, so it starts pessimal
+///                  rather than at `.no`.
+///   `.home`        IS a place that HOLDS NO VALUE. `global C = compiler.comptime`
+///                  binds a name to a HOME, not to a datum: it has no residency,
+///                  no extent and no contents, and a consumer that folds a value
+///                  binding must refuse it. Recording it as a place is what lets
+///                  the refusal be a RULING rather than a missing switch arm —
+///                  the shadow test `lib/compiler/rewrite.id:23` blocks on.
+pub const Shape = enum { unknown, scalar, collection, record, parameter, home };
+
+/// WHERE the binding site sits. Not the same question as `Lifetime`: a place
+/// bound at module scope has module lifetime, but a place bound in a relation
+/// body can also outlive the body (it can escape), and the two facts are
+/// established by different evidence.
+pub const Region = enum { function, module };
+
 pub const AccessKind = enum {
     /// The whole place is bound / initialized.
     bind,
@@ -200,6 +235,15 @@ pub const Place = struct {
     /// The statement that BINDS this place; identity's physical witness while
     /// the AST is the only thing that has one.
     binding: *const ast.Stmt,
+    /// What the name names, and therefore which questions are askable of it.
+    shape: Shape = .unknown,
+    /// Which region the binding site sits in.
+    region: Region = .function,
+    /// The initializer expression, or null. Held rather than copied: the AST
+    /// already owns the values and a second copy is a second authority. For a
+    /// `.home` place this is the DOTTED PATH the name holds, which is the whole
+    /// content of the binding — there is no value.
+    init: ?*const ast.Expr = null,
     facts: Facts = .{},
     accesses: std.ArrayListUnmanaged(Access) = .empty,
 
@@ -254,7 +298,108 @@ pub const Place = struct {
         if (b == 0) return null;
         return r / b;
     }
+
+    /// Every access whose sub-location is NOT a compile-time constant.
+    /// `Facts.determinacy` is the whole place's aggregate; this is the
+    /// per-access half, and §19 names them as two separate controls because
+    /// they are: a place with one runtime index somewhere is `.bounded` for
+    /// EVERY access, while one particular access can still be constant.
+    pub fn anyRuntimeIndex(self: *const Place) bool {
+        for (self.accesses.items) |a| {
+            if (!a.const_index) return true;
+        }
+        return false;
+    }
 };
+
+/// Why a place still needs storage. One member per §19 control, plus the shape
+/// and value preconditions that are not controls at all.
+///
+/// NAMED RATHER THAN BOOLEAN so a regression shows up as a CHANGED REASON
+/// instead of as a silently identical instruction count — the rule
+/// `table_facts.Blocker` already lives by, applied to places.
+pub const Refusal = enum {
+    /// Nothing blocks it: the place has NO RUNTIME LOCATION.
+    none,
+    /// Not a module-scope binding. A function-local place's storage question is
+    /// the register allocator's, not this ruling's.
+    not_module,
+    /// A shape this ruling does not answer for — including `.home`, which holds
+    /// no value to fold and must be refused as a RULING, not by omission.
+    shape,
+    /// The binding has no compile-time value: no initializer, or one nobody can
+    /// evaluate without running the program.
+    no_value,
+    /// §19 IMMUTABILITY. Something writes this place after it is bound.
+    mutated,
+    /// The place is bound more than once, so "the initializer" is not a
+    /// function of the place — it is a function of the program point.
+    rebound,
+    /// §19 ALIAS. Another name may denote the same location.
+    aliased,
+    /// §19 ESCAPE. Something outside this walk can see or change it.
+    escaped,
+    /// §19 DETERMINACY. Some access reaches a sub-location decided at runtime,
+    /// so the aggregate must exist even if this access is constant.
+    indeterminate,
+    /// §19 CONSTANT INDEX. This particular access indexes at runtime.
+    runtime_index,
+};
+
+/// §18 RESIDENCY, ruled rather than guessed — and §19's five controls, in the
+/// order the law lists them, as five separately-named refusals.
+///
+/// A module-scope binding whose value nothing can write, alias, escape or index
+/// at a runtime offset has NO RUNTIME LOCATION AT ALL: every read of it IS its
+/// initializer, and the word it would have occupied need not exist. That is a
+/// PLACE ruling and not a constant-folding trick — the fact being established
+/// is `residency = .absent`, which is one of §18's eleven and which nothing in
+/// this tree could previously state.
+///
+/// DELETE ANY ONE CLAUSE AND A CANDIDATE THE OTHER FOUR FORBID BECOMES
+/// ADMISSIBLE. That is the whole of §19, and `gate/place.sh` measures it in
+/// emitted machine code rather than asserting it here.
+pub fn residencyRefusal(p: *const Place) Refusal {
+    if (p.region != .module) return .not_module;
+    switch (p.shape) {
+        .scalar, .collection => {},
+        // A HOME IS NOT A VALUE BINDING. This is the ruling
+        // `lib/compiler/rewrite.id:23` blocks on, stated where a consumer can
+        // read it: `global C = compiler.comptime` names a home, so there is no
+        // datum to put in a register and no storage to elide.
+        .home, .record, .parameter, .unknown => return .shape,
+    }
+    if (p.init == null) return .no_value;
+    // §19 (2) IMMUTABILITY.
+    if (p.facts.mutation != .no) return .mutated;
+    if (p.facts.immutability != .yes) return .mutated;
+    // A second bind makes "the value" a property of the program point.
+    switch (p.bindCount()) {
+        .exact => |n| if (n != 1) return .rebound,
+        else => return .rebound,
+    }
+    // §19 (4) ALIAS — and `unknown` deletes what `yes` deletes, never what
+    // `no` deletes.
+    if (p.facts.alias != .no) return .aliased;
+    // §19 (5) ESCAPE.
+    if (p.facts.escape != .no) return .escaped;
+    // §19 (1) DETERMINACY.
+    if (p.facts.determinacy != .exact) return .indeterminate;
+    return .none;
+}
+
+/// The residency this ruling assigns. `.absent` is the only interesting answer;
+/// the others are recorded so the fact is total rather than optional.
+pub fn ruledResidency(p: *const Place) Residency {
+    if (residencyRefusal(p) == .none) return .absent;
+    return switch (p.region) {
+        .module => .static,
+        .function => switch (p.shape) {
+            .collection, .record => .frame,
+            else => .register,
+        },
+    };
+}
 
 pub const Census = struct {
     places: std.ArrayListUnmanaged(Place) = .empty,
@@ -276,15 +421,30 @@ pub const Census = struct {
         return self.places.items.len;
     }
 
-    pub fn byName(self: *Census, name: []const u8) ?*Place {
-        // Reverse order: the innermost binding of a shadowed name wins, which
-        // is why identity is the binding site and not the string.
+    /// How many places of one shape. The unqualified `count` stopped being the
+    /// interesting number when the census widened past collections.
+    pub fn countOfShape(self: *const Census, s: Shape) usize {
+        var n: usize = 0;
+        for (self.places.items) |p| {
+            if (p.shape == s) n += 1;
+        }
+        return n;
+    }
+
+    /// The lookup, const. ONE rule for which binding of a shadowed name wins:
+    /// reverse order, so the innermost wins — which is why identity is the
+    /// binding site and not the string.
+    pub fn find(self: *const Census, name: []const u8) ?*const Place {
         var i = self.places.items.len;
         while (i > 0) {
             i -= 1;
             if (std.mem.eql(u8, self.places.items[i].name, name)) return &self.places.items[i];
         }
         return null;
+    }
+
+    pub fn byName(self: *Census, name: []const u8) ?*Place {
+        return @constCast(self.find(name) orelse return null);
     }
 
     pub fn get(self: *Census, id: u32) ?*Place {
@@ -302,6 +462,36 @@ const Ctx = struct {
     depth: u8 = 0,
     /// Product of the proven trip counts of the enclosing loops.
     mult: Mult = .{ .exact = 1 },
+    /// Which region the walk is CURRENTLY in — not where it started. Module
+    /// scope binds places; a relation body reached from module scope only
+    /// ACCESSES them.
+    region: Region = .function,
+    /// True while walking a relation body from module scope. A binding here is
+    /// not a new module place, and an assignment here is a WRITE THROUGH the
+    /// module place from outside its own region.
+    foreign: bool = false,
+    /// Names a relation body has taken for itself — parameters, declarations,
+    /// loop variables. A module place of the same name is INVISIBLE for the
+    /// rest of that body, exactly as `dnir_lower.stmtsAssignName` already
+    /// rules: a write to a shadow is not a write to the global.
+    shadow: std.ArrayListUnmanaged([]const u8) = .empty,
+
+    fn deinit(self: *Ctx) void {
+        self.shadow.deinit(self.census.alloc);
+    }
+
+    /// The place a name denotes HERE. Never `Census.byName` directly from the
+    /// walk: that would read through a shadow.
+    fn lookup(self: *Ctx, name: []const u8) ?*Place {
+        for (self.shadow.items) |s| {
+            if (std.mem.eql(u8, s, name)) return null;
+        }
+        return self.census.byName(name);
+    }
+
+    fn shadowName(self: *Ctx, name: []const u8) !void {
+        try self.shadow.append(self.census.alloc, name);
+    }
 };
 
 /// Build the place census for one function body.
@@ -309,6 +499,11 @@ pub fn analyzeFunction(alloc: std.mem.Allocator, fb: *const ast.FuncBody) !Censu
     var census = Census.init(alloc);
     errdefer census.deinit();
     var ctx = Ctx{ .census = &census };
+    defer ctx.deinit();
+    // A PARAMETER IS A PLACE, and it is the one place whose facts arrive from
+    // outside: its extent, alias and escape are the caller's to state, so it
+    // starts pessimal rather than at the `.no` a local binding earns.
+    for (fb.params) |param| try bindParam(&ctx, param.name);
     // `walkBlock` already walks the tail. Walking it again here counted every
     // tail-position read TWICE, which inflates `q` and biases the decision
     // toward preprocessing — caught by the three-access test below.
@@ -319,10 +514,17 @@ pub fn analyzeFunction(alloc: std.mem.Allocator, fb: *const ast.FuncBody) !Censu
 /// Build the place census for a module's file-scope body. The demand gap in
 /// §96 notes the file-scope tail is the LOWER-syntax form and still measures
 /// 16 → 16; a census that only walked `.func_decl` would inherit that hole.
+///
+/// TWO REGIONS, ONE CENSUS. Module-scope statements BIND; relation bodies are
+/// then walked as FOREIGN regions that can only access what module scope bound.
+/// Before this, a `.func_decl` fell to the refusal arm and marked every module
+/// place unknown, so a module containing any relation at all had no usable
+/// place facts — which is to say, every real module.
 pub fn analyzeModule(alloc: std.mem.Allocator, mod: *const ast.Module) !Census {
     var census = Census.init(alloc);
     errdefer census.deinit();
-    var ctx = Ctx{ .census = &census };
+    var ctx = Ctx{ .census = &census, .region = .module };
+    defer ctx.deinit();
     try walkBlock(&ctx, &mod.body);
     return census;
 }
@@ -337,23 +539,62 @@ fn walkStmt(ctx: *Ctx, s: *const ast.Stmt) anyerror!void {
     ctx.census.points += 1;
     switch (s.*) {
         .local_decl => |d| {
-            for (d.inits) |e| try readExpr(ctx, e);
+            for (d.inits) |e| {
+                if (try aliasInit(ctx, e)) continue;
+                try readExpr(ctx, e);
+            }
             for (d.names, 0..) |n, i| {
                 const init_expr: ?*const ast.Expr = if (i < d.inits.len) d.inits[i] else null;
-                try bindOrRebind(ctx, n.ident, s, point, init_expr, n.typ);
+                // A DECLARATION inside a relation body TAKES THE NAME. It is
+                // not a write to the module place that name used to denote.
+                if (ctx.foreign) {
+                    try ctx.shadowName(n.ident);
+                    continue;
+                }
+                try bindOrRebind(ctx, n.ident, s, point, init_expr, n.typ, .declaration);
+            }
+        },
+        .const_decl => |d| {
+            try readExpr(ctx, d.val);
+            if (ctx.foreign) {
+                try ctx.shadowName(d.ident);
+            } else {
+                try bindOrRebind(ctx, d.ident, s, point, d.val, d.typ, .declaration);
             }
         },
         .global_decl => |d| {
-            for (d.inits) |e| try readExpr(ctx, e);
+            for (d.inits) |e| {
+                if (try aliasInit(ctx, e)) continue;
+                try readExpr(ctx, e);
+            }
             for (d.names, 0..) |n, i| {
                 const init_expr: ?*const ast.Expr = if (i < d.inits.len) d.inits[i] else null;
-                try bindOrRebind(ctx, n.ident, s, point, init_expr, n.typ);
-                // A module-scope place outlives the region and may be observed
-                // from outside it. Never `escape = no` without a proof.
-                if (ctx.census.byName(n.ident)) |p| {
-                    p.facts.lifetime = .module;
-                    p.facts.escape = .unknown;
+                if (ctx.foreign) {
+                    // `global x = …` INSIDE a relation writes the shared word.
+                    try bindOrRebind(ctx, n.ident, s, point, init_expr, n.typ, .assignment);
+                    continue;
                 }
+                try bindOrRebind(ctx, n.ident, s, point, init_expr, n.typ, .declaration);
+                if (ctx.lookup(n.ident)) |p| p.facts.lifetime = .module;
+            }
+        },
+        // A TYPE, A CASE-SET OR A BUILD DIRECTIVE BINDS NO LOCATION AND
+        // ACCESSES NONE. These used to fall to the refusal arm and mark every
+        // place in the module unknown, so one `enum` at file scope was enough
+        // to make the whole census unusable. Admitting them is a judgment —
+        // they declare meaning, not storage — not a widening for coverage.
+        .enum_def, .alias_def, .concept_def, .macro_def, .cinclude, .directive => {},
+        .label_stmt, .goto_stmt, .brk, .cont => {},
+        .ret => |r| for (r.vals) |v| try readExpr(ctx, v),
+        // A RELATION BODY REACHED FROM MODULE SCOPE IS A FOREIGN REGION. It
+        // binds nothing here; it reads, writes and escapes what module scope
+        // bound. A relation declared INSIDE another body is a closure that
+        // captures, and this walk does not model capture — so it refuses.
+        .func_decl => |*fd| {
+            if (ctx.foreign or ctx.region != .module) {
+                try markAllUnknown(ctx);
+            } else {
+                try walkForeignBody(ctx, &fd.func);
             }
         },
         .assign => |a| {
@@ -361,11 +602,21 @@ fn walkStmt(ctx: *Ctx, s: *const ast.Stmt) anyerror!void {
             // IS the binding form, and it arrives as `.assign` with a `.name`
             // target. Verified against the parser rather than assumed — both
             // `(1,2,3)` and `{1,2,3}` build `.table` with positional fields.
-            for (a.values) |v| try readExpr(ctx, v);
+            for (a.values) |v| {
+                if (try aliasInit(ctx, v)) continue;
+                try readExpr(ctx, v);
+            }
             for (a.targets, 0..) |t, i| {
                 const val: ?*const ast.Expr = if (i < a.values.len) a.values[i] else null;
-                if (t.* == .name and val != null and val.?.* == .table) {
-                    try bindOrRebind(ctx, t.name.ident, s, point, val, .inferred);
+                if (t.* == .name) {
+                    // A NAME NOT YET BOUND IN THIS REGION IS A BINDING, WHATEVER
+                    // IT IS BOUND TO. The census used to reach `bindOrRebind`
+                    // only when the value was a `.table` literal, which is the
+                    // measured reason lane 2's fixture produced zero places over
+                    // seven program points. Everything else fell to
+                    // `writeTarget`, which records a write against a place that
+                    // was never created.
+                    try bindOrRebind(ctx, t.name.ident, s, point, val, .inferred, .assignment);
                     continue;
                 }
                 try writeTarget(ctx, t, point);
@@ -393,7 +644,10 @@ fn walkStmt(ctx: *Ctx, s: *const ast.Stmt) anyerror!void {
             try readExpr(ctx, r.cond);
         },
         .if_stmt => |f| {
-            if (f.binding) |bd| try readExpr(ctx, bd.expr);
+            if (f.binding) |bd| {
+                try readExpr(ctx, bd.expr);
+                if (ctx.foreign) try ctx.shadowName(bd.name);
+            }
             try readExpr(ctx, f.cond);
             // A branch executes AT MOST as often as its enclosing region.
             try nestedBound(ctx, &f.then);
@@ -407,6 +661,8 @@ fn walkStmt(ctx: *Ctx, s: *const ast.Stmt) anyerror!void {
             try readExpr(ctx, nf.start);
             try readExpr(ctx, nf.stop);
             if (nf.step) |st| try readExpr(ctx, st);
+            // The loop variable is a NAME THIS BODY HAS TAKEN.
+            if (ctx.foreign) try ctx.shadowName(nf.var_name);
             try nested(ctx, &nf.body, numForTrip(nf));
         },
         else => {
@@ -467,8 +723,68 @@ fn markAllUnknown(ctx: *Ctx) !void {
         p.facts.escape = .unknown;
         p.facts.mutation = .unknown;
         p.facts.determinacy = .unknown;
+        // ALIAS BELONGS IN THIS LIST. It was the one §19 fact a refusal left
+        // standing at `.no`, so an unmodelled shape could leave a place still
+        // claiming nothing else denotes it. A refusal must lower every fact it
+        // cannot see through, not all but one.
+        p.facts.alias = .unknown;
+        p.facts.immutability = .unknown;
     }
 }
+
+/// Walk a relation body reached FROM MODULE SCOPE.
+///
+/// THREE THINGS CHANGE AND NOTHING ELSE DOES. The region is foreign, so no
+/// binding here mints a module place; the multiplicity is UNKNOWN, because
+/// nothing at this level knows how often the relation is called and §84 forbids
+/// inventing a number; and the parameters take their names for the whole body.
+fn walkForeignBody(ctx: *Ctx, fb: *const ast.FuncBody) anyerror!void {
+    const saved_foreign = ctx.foreign;
+    const saved_mult = ctx.mult;
+    const saved_depth = ctx.depth;
+    const saved_shadow = ctx.shadow.items.len;
+    ctx.foreign = true;
+    ctx.mult = .unknown;
+    ctx.depth +|= 1;
+    for (fb.params) |param| try ctx.shadowName(param.name);
+    try walkBlock(ctx, &fb.body);
+    ctx.shadow.shrinkRetainingCapacity(saved_shadow);
+    ctx.foreign = saved_foreign;
+    ctx.mult = saved_mult;
+    ctx.depth = saved_depth;
+}
+
+/// A relation parameter, as a place. Its facts are the CALLER'S to state, so
+/// every one of them starts at the pessimistic reading — `unknown`, which by
+/// `Tri`'s rule deletes what `yes` deletes.
+fn bindParam(ctx: *Ctx, name: []const u8) !void {
+    if (ctx.census.byName(name) != null) return;
+    const id: u32 = @intCast(ctx.census.places.items.len);
+    var p = Place{
+        .id = id,
+        .name = name,
+        // A parameter has no binding STATEMENT. The census keys identity on the
+        // binding site and a parameter's site is the signature, so this is the
+        // one place whose witness is the enclosing declaration — recorded as
+        // null-free only because `binding` is not optional today.
+        .binding = &param_binding_sentinel,
+        .shape = .parameter,
+        .region = .function,
+    };
+    p.facts.lifetime = .function;
+    p.facts.origin = .parameter;
+    p.facts.residency = .register;
+    try ctx.census.places.append(ctx.census.alloc, p);
+}
+
+/// A parameter's `binding` slot needs a stable non-null address and never a
+/// dereference. Reading it is a defect; it exists so `Place.binding` can stay
+/// non-optional for every consumer that already has one.
+var param_binding_sentinel: ast.Stmt = .{ .brk = .{ .file = "<param>", .line = 0, .col = 0 } };
+
+/// How a name arrives at `bindOrRebind`. The two are not interchangeable inside
+/// a relation body: `x: i64 = 5` TAKES the name, `x = 5` WRITES the word.
+const BindMode = enum { declaration, assignment };
 
 /// Bind a new place, or record a REBIND of one that already exists.
 ///
@@ -489,8 +805,28 @@ fn bindOrRebind(
     point: u32,
     init_expr: ?*const ast.Expr,
     typ: ast.TypeExpr,
+    mode: BindMode,
 ) !void {
-    if (ctx.census.byName(name)) |p| {
+    if (ctx.lookup(name)) |p| {
+        // A WRITE FROM A FOREIGN REGION IS NOT A BUILD EPISODE. `x = 5` inside
+        // a relation stores into the module's word; counting it as a rebind
+        // would leave `mutation = .no` on a place a relation demonstrably
+        // writes, which is the one reading that turns a fold into a wrong
+        // answer.
+        if (ctx.foreign and mode == .assignment) {
+            try p.accesses.append(ctx.census.alloc, .{
+                .kind = .write,
+                .point = point,
+                .depth = ctx.depth,
+                .mult = ctx.mult,
+                .const_index = true,
+            });
+            p.facts.mutation = .yes;
+            p.facts.immutability = .no;
+            if (p.facts.contents_known == .yes) p.facts.contents_known = .no;
+            if (p.facts.ordered == .yes) p.facts.ordered = .unknown;
+            return;
+        }
         try p.accesses.append(ctx.census.alloc, .{
             .kind = .bind,
             .point = point,
@@ -500,7 +836,60 @@ fn bindOrRebind(
         });
         return;
     }
+    // A relation body binds nothing into the MODULE census. Its own places are
+    // `analyzeFunction`'s to produce, over its own body, with its own ids.
+    if (ctx.foreign) return;
     try bindPlace(ctx, name, s, point, init_expr, typ);
+}
+
+/// Which of §18's shapes this binding is — the judgment, taken once, at the
+/// binding site.
+fn shapeOf(ctx: *Ctx, init_expr: ?*const ast.Expr, typ: ast.TypeExpr) Shape {
+    if (declaredExtent(typ) != null) return .collection;
+    const e = init_expr orelse return .scalar;
+    return switch (e.*) {
+        .table => |t| if (t.fields.len > 0 and t.fields[0] != .positional) .record else .collection,
+        // `global C = compiler.comptime` — a DOTTED CHAIN whose root names
+        // nothing in this module is a HOME, not a value. The rule fails CLOSED:
+        // a chain that is really `M.CONST` is classified `.home` too, and a
+        // consumer that folds values then refuses it, which costs instructions
+        // and never an answer.
+        .field => if (dottedRoot(e)) |root|
+            (if (ctx.census.byName(root) == null) Shape.home else Shape.record)
+        else
+            .scalar,
+        // `u = t` where `t` is a collection makes `u` denote the same storage.
+        .name => |n| if (ctx.census.byName(n.ident)) |src| src.shape else .scalar,
+        else => .scalar,
+    };
+}
+
+/// `u = t` — a SECOND NAME FOR ONE LOCATION.
+///
+/// That is an ALIAS and it is not an ESCAPE: nothing outside the region can
+/// reach `t` merely because `u` exists. Returns true when the initializer was
+/// consumed as an alias, so the caller does not ALSO route it through the
+/// bare-mention arm and raise escape for it. A scalar initializer copies a
+/// VALUE and aliases nothing, which is why the two shapes answer differently.
+fn aliasInit(ctx: *Ctx, e: *const ast.Expr) !bool {
+    if (e.* != .name) return false;
+    const p = ctx.lookup(e.name.ident) orelse return false;
+    return switch (p.shape) {
+        .collection, .record, .home, .unknown => blk: {
+            p.facts.alias = .unknown;
+            break :blk true;
+        },
+        .scalar, .parameter => false,
+    };
+}
+
+/// The head of a pure `a.b.c` chain, or null for anything else.
+fn dottedRoot(e: *const ast.Expr) ?[]const u8 {
+    return switch (e.*) {
+        .name => |n| n.ident,
+        .field => |f| dottedRoot(f.obj),
+        else => null,
+    };
 }
 
 fn bindPlace(
@@ -511,21 +900,19 @@ fn bindPlace(
     init_expr: ?*const ast.Expr,
     typ: ast.TypeExpr,
 ) !void {
-    // Only collection-shaped bindings become places here. A scalar local is a
-    // place too, but nothing in this wedge asks a representation question about
-    // one, and §81 says do not compute analyses with no consumer.
-    const is_collection = blk: {
-        if (init_expr) |e| {
-            if (e.* == .table) break :blk true;
-        }
-        break :blk declaredExtent(typ) != null;
-    };
-    if (!is_collection) return;
+    const shape = shapeOf(ctx, init_expr, typ);
 
     const id: u32 = @intCast(ctx.census.places.items.len);
-    var p = Place{ .id = id, .name = name, .binding = s };
+    var p = Place{
+        .id = id,
+        .name = name,
+        .binding = s,
+        .shape = shape,
+        .region = ctx.region,
+        .init = init_expr,
+    };
 
-    p.facts.lifetime = .function;
+    p.facts.lifetime = if (ctx.region == .module) .module else .function;
     p.facts.residency = .unknown;
     p.facts.alignment = null;
     // Nothing has aliased it at its binding site, and nothing has escaped yet.
@@ -546,8 +933,27 @@ fn bindPlace(
                 p.facts.domain = domainOf(t.fields);
             },
             else => {
-                p.facts.origin = .derived;
-                p.facts.contents_known = .unknown;
+                // A SCALAR LITERAL IS CONTENT, AND THE CENSUS USED TO SAY IT
+                // WAS UNKNOWN. `extent = 1` is not decoration: a scalar has one
+                // sub-location, and stating it is what lets one ruling answer
+                // for scalars and collections without a second code path.
+                if (shape == .scalar and intLit(e) != null) {
+                    p.facts.origin = .literal;
+                    p.facts.contents_known = .yes;
+                    p.facts.extent = .{ .exact = 1 };
+                } else if (shape == .home) {
+                    // A HOME HAS NO CONTENT AND NO EXTENT. Not "unknown" — there
+                    // is nothing there to be known, and `residencyRefusal`
+                    // refuses it on the SHAPE so that a future consumer that
+                    // learns to read homes is not blocked by a fact that is
+                    // merely absent.
+                    p.facts.origin = .world;
+                    p.facts.contents_known = .no;
+                    p.facts.residency = .absent;
+                } else {
+                    p.facts.origin = .derived;
+                    p.facts.contents_known = .unknown;
+                }
             },
         }
     }
@@ -636,10 +1042,16 @@ fn domainOf(fields: []const ast.TableField) ?u64 {
 fn writeTarget(ctx: *Ctx, t: *const ast.Expr, point: u32) anyerror!void {
     switch (t.*) {
         .name => |n| {
-            // Rebinding the whole place: a BUILD, not an element write.
-            if (ctx.census.byName(n.ident)) |p| {
+            // Rebinding the whole place: a BUILD, not an element write — unless
+            // the write comes from a foreign region, where it is a store into
+            // one shared word.
+            if (ctx.lookup(n.ident)) |p| {
+                if (ctx.foreign) {
+                    p.facts.mutation = .yes;
+                    p.facts.immutability = .no;
+                }
                 try p.accesses.append(ctx.census.alloc, .{
-                    .kind = .bind,
+                    .kind = if (ctx.foreign) .write else .bind,
                     .point = point,
                     .depth = ctx.depth,
                     .mult = ctx.mult,
@@ -649,7 +1061,7 @@ fn writeTarget(ctx: *Ctx, t: *const ast.Expr, point: u32) anyerror!void {
         },
         .call => |c| {
             if (c.func.* == .name) {
-                if (ctx.census.byName(c.func.name.ident)) |p| {
+                if (ctx.lookup(c.func.name.ident)) |p| {
                     const ci = c.args.len == 1 and intLit(c.args[0]) != null;
                     try p.accesses.append(ctx.census.alloc, .{
                         .kind = .write,
@@ -671,7 +1083,7 @@ fn writeTarget(ctx: *Ctx, t: *const ast.Expr, point: u32) anyerror!void {
         },
         .index => |ix| {
             if (ix.obj.* == .name) {
-                if (ctx.census.byName(ix.obj.name.ident)) |p| {
+                if (ctx.lookup(ix.obj.name.ident)) |p| {
                     const ci = intLit(ix.key) != null;
                     try p.accesses.append(ctx.census.alloc, .{
                         .kind = .write,
@@ -696,16 +1108,37 @@ fn writeTarget(ctx: *Ctx, t: *const ast.Expr, point: u32) anyerror!void {
 fn readExpr(ctx: *Ctx, e: *const ast.Expr) anyerror!void {
     switch (e.*) {
         .name => |n| {
-            // A bare mention of a collection is the place ESCAPING into some
-            // context this walk cannot see through.
-            if (ctx.census.byName(n.ident)) |p| {
-                p.facts.escape = .unknown;
-                p.facts.alias = .unknown;
-            }
+            if (ctx.lookup(n.ident)) |p| switch (p.shape) {
+                // A SCALAR'S IDENTITY IS NOT ITS ADDRESS. Reading `k` copies a
+                // value; it hands nothing out and lets nothing else denote the
+                // word. Treating this as an escape — which the census did,
+                // because every place it admitted was a collection — is what
+                // would make the residency ruling below unreachable for the one
+                // shape it exists to answer.
+                .scalar, .parameter => try p.accesses.append(ctx.census.alloc, .{
+                    .kind = .read,
+                    .point = ctx.census.points,
+                    .depth = ctx.depth,
+                    .mult = ctx.mult,
+                    .const_index = true,
+                }),
+                // A COLLECTION'S IDENTITY IS ITS ADDRESS. A bare mention hands
+                // that address to a context this walk cannot see through.
+                //
+                // ESCAPE ONLY — NOT ALIAS. §19 asks for the alias proof and the
+                // escape proof as TWO controls, and a walk that answers both
+                // with one assignment cannot run them separately. The split is
+                // not a convenience: ALIAS asks whether two names IN THIS
+                // REGION denote one location, ESCAPE asks whether anything
+                // OUTSIDE the region can reach it. `sink(t)` is the second and
+                // not the first; `u = t` is the first and not the second, and
+                // `aliasInit` records that one at the binding site.
+                .collection, .record, .home, .unknown => p.facts.escape = .unknown,
+            };
         },
         .call => |c| {
             if (c.func.* == .name) {
-                if (ctx.census.byName(c.func.name.ident)) |p| {
+                if (ctx.lookup(c.func.name.ident)) |p| {
                     const ci = c.args.len == 1 and intLit(c.args[0]) != null;
                     try p.accesses.append(ctx.census.alloc, .{
                         .kind = .read,
@@ -724,7 +1157,7 @@ fn readExpr(ctx: *Ctx, e: *const ast.Expr) anyerror!void {
         },
         .index => |ix| {
             if (ix.obj.* == .name) {
-                if (ctx.census.byName(ix.obj.name.ident)) |p| {
+                if (ctx.lookup(ix.obj.name.ident)) |p| {
                     const ci = intLit(ix.key) != null;
                     try p.accesses.append(ctx.census.alloc, .{
                         .kind = .read,
@@ -746,7 +1179,29 @@ fn readExpr(ctx: *Ctx, e: *const ast.Expr) anyerror!void {
             try readExpr(ctx, b.rhs);
         },
         .unop => |u| try readExpr(ctx, u.operand),
-        .field => |f| try readExpr(ctx, f.obj),
+        // A RECORD FIELD IS A SUB-LOCATION, NOT A PLACE. `r.f` is an access on
+        // `r` whose sub-location is decided at compile time — which is exactly
+        // what `Access.const_index` already means for `t(2)`. Minting a place
+        // per field would make `alias` unanswerable between two fields of one
+        // record; routing the whole object through the bare-mention arm would
+        // call every field read an escape.
+        .field => |f| {
+            if (f.obj.* == .name) {
+                if (ctx.lookup(f.obj.name.ident)) |p| {
+                    if (p.shape == .record or p.shape == .home) {
+                        try p.accesses.append(ctx.census.alloc, .{
+                            .kind = .read,
+                            .point = ctx.census.points,
+                            .depth = ctx.depth,
+                            .mult = ctx.mult,
+                            .const_index = true,
+                        });
+                        return;
+                    }
+                }
+            }
+            try readExpr(ctx, f.obj);
+        },
         .method_call => |m| {
             try readExpr(ctx, m.obj);
             for (m.args) |a| try readExpr(ctx, a);
@@ -757,7 +1212,15 @@ fn readExpr(ctx: *Ctx, e: *const ast.Expr) anyerror!void {
             }
         },
         .func_expr => try markAllUnknown(ctx),
-        else => {},
+        // THE LEAVES, ENUMERATED. A literal mentions no place, so it lowers no
+        // fact. Everything else — a comprehension, a macro call, a quote, a
+        // range, a semantic operator — is a shape this walk cannot see through,
+        // and `else => {}` silently called each of them harmless. It is the
+        // same N2 rule the statement walk already follows: an unadmitted shape
+        // is a defect in the WALK, and the walk lowers every fact rather than
+        // assuming the shape was inert.
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => {},
+        else => try markAllUnknown(ctx),
     }
 }
 
@@ -801,7 +1264,7 @@ test "place: a table binding is one place with an exact extent" {
         \\
     );
     defer c.deinit();
-    try testing.expectEqual(@as(usize, 1), c.count());
+    try testing.expectEqual(@as(usize, 1), c.countOfShape(.collection));
     const p = c.byName("s").?;
     try testing.expectEqual(@as(?u32, 3), p.facts.extent.upper());
     try testing.expectEqual(Tri.yes, p.facts.contents_known);
@@ -822,7 +1285,7 @@ test "place: the graph lifts 3 nodes and 0 applications for what is ONE place" {
         \\
     );
     defer c.deinit();
-    try testing.expectEqual(@as(usize, 1), c.count());
+    try testing.expectEqual(@as(usize, 1), c.countOfShape(.collection));
     const p = c.byName("s").?;
     try testing.expectEqual(@as(usize, 3), p.accesses.items.len);
     try testing.expectEqual(Tri.yes, p.facts.mutation);
@@ -919,7 +1382,10 @@ test "place: a rebound place counts BUILD EPISODES, which is the amortiser" {
     try testing.expectEqual(@as(?u64, 800), p.readCount().upperOrNull());
 }
 
-test "place: a bare mention of the collection raises escape to UNKNOWN" {
+test "place: a SECOND NAME is an alias and is NOT an escape" {
+    // §19 asks for the alias proof and the escape proof as two controls, so the
+    // walk must not answer both with one assignment. `u = s` puts a second name
+    // on one location; nothing outside the region can reach it because of that.
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var c = try censusOf(&arena,
@@ -931,8 +1397,273 @@ test "place: a bare mention of the collection raises escape to UNKNOWN" {
     );
     defer c.deinit();
     const p = c.byName("s").?;
+    try testing.expectEqual(Tri.unknown, p.facts.alias);
+    try testing.expectEqual(Tri.no, p.facts.escape);
+}
+
+test "place: handing the collection to a relation is an escape and NOT an alias" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var c = try censusOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    sink(s)
+        \\    s(1)
+        \\
+    );
+    defer c.deinit();
+    const p = c.byName("s").?;
+    try testing.expectEqual(Tri.unknown, p.facts.escape);
+    try testing.expectEqual(Tri.no, p.facts.alias);
+}
+
+test "place: a SCALAR is a place, and reading one is not an escape" {
+    // The measured hole lane 2 stopped at: seven program points, zero places,
+    // because the census admitted a binding only when its value was a `.table`
+    // LITERAL. A scalar has an identity, a lifetime and a mutation history, and
+    // reading it copies a value rather than handing out an address.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var c = try censusOf(&arena,
+        \\main: i64 = ()
+        \\    k = 7
+        \\    k + 1
+        \\
+    );
+    defer c.deinit();
+    const p = c.byName("k").?;
+    try testing.expectEqual(Shape.scalar, p.shape);
+    try testing.expectEqual(Tri.no, p.facts.escape);
+    try testing.expectEqual(Tri.no, p.facts.alias);
+    try testing.expectEqual(Tri.yes, p.facts.contents_known);
+    try testing.expectEqual(@as(?u64, 1), p.readCount().upperOrNull());
+}
+
+test "place: a MODULE-SCOPE binding no relation writes has NO RUNTIME LOCATION" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\global k = 7
+        \\
+        \\main: i64 = ()
+        \\    k + 1
+        \\
+    );
+    var c = try analyzeModule(alloc, &mod);
+    defer c.deinit();
+    const p = c.byName("k").?;
+    try testing.expectEqual(Shape.scalar, p.shape);
+    try testing.expectEqual(Region.module, p.region);
+    try testing.expectEqual(Refusal.none, residencyRefusal(p));
+    try testing.expectEqual(Residency.absent, ruledResidency(p));
+}
+
+test "place: a relation that WRITES the module binding gives it back its word" {
+    // §19 IMMUTABILITY, at the census. `moduleFunctionsAssignName` in
+    // `dnir_lower.zig` decides this by hand, name-keyed and two-valued; here it
+    // is one fact on one entity that four other modules read.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\global k = 7
+        \\
+        \\bump: i64 = ()
+        \\    k = 9
+        \\    k
+        \\
+        \\main: i64 = ()
+        \\    k + 1
+        \\
+    );
+    var c = try analyzeModule(alloc, &mod);
+    defer c.deinit();
+    const p = c.byName("k").?;
+    try testing.expectEqual(Tri.yes, p.facts.mutation);
+    try testing.expectEqual(Refusal.mutated, residencyRefusal(p));
+    try testing.expectEqual(Residency.static, ruledResidency(p));
+}
+
+test "place: a relation's own DECLARATION of the name is a shadow, not a write" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\global k = 7
+        \\
+        \\shadowed: i64 = ()
+        \\    k: i64 = 3
+        \\    k = 4
+        \\    k
+        \\
+        \\main: i64 = ()
+        \\    k + 1
+        \\
+    );
+    var c = try analyzeModule(alloc, &mod);
+    defer c.deinit();
+    const p = c.byName("k").?;
+    try testing.expectEqual(Tri.no, p.facts.mutation);
+    try testing.expectEqual(Refusal.none, residencyRefusal(p));
+}
+
+test "place: a PARAMETER of the same name shadows the module place too" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\global k = 7
+        \\
+        \\reuse: i64 = (k: i64)
+        \\    k = k + 1
+        \\    k
+        \\
+        \\main: i64 = ()
+        \\    k + 1
+        \\
+    );
+    var c = try analyzeModule(alloc, &mod);
+    defer c.deinit();
+    try testing.expectEqual(Tri.no, c.byName("k").?.facts.mutation);
+}
+
+test "place: a name bound to a HOME is a place that holds NO VALUE" {
+    // `lib/compiler/rewrite.id:23`. The hop that needs this is blocked
+    // CORRECTLY by the shadow test today: reading `global C = <home>` as a
+    // value binding requires ruling that it is not one. This is that ruling,
+    // and it FAILS CLOSED — a dotted chain that is really `M.CONST` is refused
+    // on the shape too, which costs instructions and never an answer.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\global C = compiler.comptime
+        \\
+        \\main: i64 = ()
+        \\    1
+        \\
+    );
+    var c = try analyzeModule(alloc, &mod);
+    defer c.deinit();
+    const p = c.byName("C").?;
+    try testing.expectEqual(Shape.home, p.shape);
+    try testing.expectEqual(Origin.world, p.facts.origin);
+    try testing.expectEqual(Residency.absent, p.facts.residency);
+    try testing.expectEqual(Tri.no, p.facts.contents_known);
+    // NOT a value binding: the ruling refuses on the SHAPE, so a future
+    // consumer that learns to read homes is not blocked by a merely-absent fact.
+    try testing.expectEqual(Refusal.shape, residencyRefusal(p));
+}
+
+test "place: a RECORD FIELD is a sub-location, not a place of its own" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var c = try censusOf(&arena,
+        \\main: i64 = ()
+        \\    r = { x = 1, y = 2 }
+        \\    r.x
+        \\
+    );
+    defer c.deinit();
+    try testing.expectEqual(@as(usize, 1), c.count());
+    const p = c.byName("r").?;
+    try testing.expectEqual(Shape.record, p.shape);
+    // The field read is an ACCESS on `r` with a compile-time sub-location — not
+    // a second entity, and not an escape of the whole record.
+    try testing.expectEqual(@as(?u64, 1), p.readCount().upperOrNull());
+    try testing.expectEqual(Tri.no, p.facts.escape);
+    try testing.expectEqual(@as(usize, 0), c.countOfShape(.scalar));
+}
+
+test "place: a PARAMETER is a place whose facts arrive from the caller" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var c = try censusOf(&arena,
+        \\main: i64 = (n: i64)
+        \\    n + 1
+        \\
+    );
+    defer c.deinit();
+    const p = c.byName("n").?;
+    try testing.expectEqual(Shape.parameter, p.shape);
+    try testing.expectEqual(Origin.parameter, p.facts.origin);
+    // Pessimal, because the caller states them and this walk cannot see one.
     try testing.expectEqual(Tri.unknown, p.facts.escape);
     try testing.expectEqual(Tri.unknown, p.facts.alias);
+}
+
+test "place: §19 — each of the five removals changes the RULING, separately" {
+    // The five permanent negative controls, at the fact layer. `gate/place.sh`
+    // runs the same five in emitted machine code; this one pins that they are
+    // FIVE and not one fact wearing five names — each fixture trips exactly the
+    // refusal it is named for.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const Case = struct { src: []const u8, want: Refusal };
+    const cases = [_]Case{
+        .{ .src =
+        \\global t = (10, 20, 30)
+        \\
+        \\main: i64 = ()
+        \\    t(2)
+        \\
+        , .want = .none },
+        // DETERMINACY: a runtime index anywhere makes the aggregate exist.
+        .{ .src =
+        \\global t = (10, 20, 30)
+        \\
+        \\pick: i64 = (i: i64)
+        \\    t(i)
+        \\
+        \\main: i64 = ()
+        \\    t(2)
+        \\
+        , .want = .indeterminate },
+        // IMMUTABILITY.
+        .{ .src =
+        \\global t = (10, 20, 30)
+        \\
+        \\poke: i64 = ()
+        \\    t(1) = 5
+        \\    0
+        \\
+        \\main: i64 = ()
+        \\    t(2)
+        \\
+        , .want = .mutated },
+        // ALIAS — a second name in the region, and no escape.
+        .{ .src =
+        \\global t = (10, 20, 30)
+        \\global u = t
+        \\
+        \\main: i64 = ()
+        \\    t(2)
+        \\
+        , .want = .aliased },
+        // ESCAPE — out of the region, and no second name.
+        .{ .src =
+        \\global t = (10, 20, 30)
+        \\
+        \\run: i64 = ()
+        \\    sink(t)
+        \\
+        \\main: i64 = ()
+        \\    t(2)
+        \\
+        , .want = .escaped },
+    };
+    for (cases, 0..) |c, i| {
+        const mod = try parseModule(alloc, c.src);
+        var census = try analyzeModule(alloc, &mod);
+        defer census.deinit();
+        const p = census.byName("t").?;
+        testing.expectEqual(c.want, residencyRefusal(p)) catch |e| {
+            std.debug.print("§19 control {d} expected {s}\n", .{ i, @tagName(c.want) });
+            return e;
+        };
+    }
 }
 
 test "place: a runtime index drops determinacy from exact to bounded" {
@@ -1003,7 +1734,9 @@ test "place: a rebind is the SAME place with another build episode" {
         \\
     );
     defer c.deinit();
-    try testing.expectEqual(@as(usize, 1), c.count());
+    // `h` and `e` are places too now — scalars — so the question is how many
+    // COLLECTIONS, not how many names.
+    try testing.expectEqual(@as(usize, 1), c.countOfShape(.collection));
     const p = c.byName("s").?;
     try testing.expectEqual(@as(?u64, 11), p.bindCount().upperOrNull());
     try testing.expectEqual(@as(?u64, 10), p.readCount().upperOrNull());

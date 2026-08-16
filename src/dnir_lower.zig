@@ -14,6 +14,7 @@ const subject_home = @import("subject_home.zig");
 const dnir = @import("native_ir.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const place = @import("place.zig");
 const home_resolve = @import("home_resolve.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
 const table_facts = @import("table_facts.zig");
@@ -5017,11 +5018,91 @@ fn lowerExpr(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
     return lowerExprCons(ctx, expr, .single);
 }
 
+/// The module-scope place a name denotes HERE, when the graph ruled that it
+/// has no runtime location at all.
+///
+/// BINDING ORDER IS THE WHOLE SAFETY ARGUMENT, and it is the same order the
+/// `.name` arm below already states: a local, a parameter or a WRITTEN module
+/// global is a NAME THAT IS TAKEN, and only a name nothing else has taken can
+/// still mean a place. Every existing resolution path therefore wins over this
+/// one, so no program that lowers today reaches it.
+fn absentModulePlace(ctx: *LowerCtx, name: []const u8) ?*const place.Place {
+    if (ctx.graph.placeCount() == 0) return null;
+    if (ctx.locals.contains(name)) return null;
+    if (ctx.module_globals.has(name)) return null;
+    const p = ctx.graph.placeNamed(name) orelse return null;
+    if (place.residencyRefusal(p) != .none) return null;
+    return p;
+}
+
+/// `t(k)` / `t[k]` on a module-scope collection whose §18 residency is
+/// `.absent` — the element, as an immediate, with no storage anywhere.
+fn placeElement(ctx: *LowerCtx, name: []const u8, key: *const Expr) ?dnir.Value {
+    const p = absentModulePlace(ctx, name) orelse return null;
+    if (p.shape != .collection) return null;
+    if (p.facts.contents_known != .yes) return null;
+    const init = p.init orelse return null;
+    if (init.* != .table) return null;
+    const fields = init.table.fields;
+    // §19 CONSTANT INDEX — the per-access half, separate from the place-wide
+    // determinacy `residencyRefusal` already checked.
+    const k = intLiteralStep(key) orelse return null;
+    // TABLES ARE 1-INDEXED. `t(0)` is out of range as surely as `t(len + 1)`,
+    // and folding either to `fields[k - 1]` is the wrong-answer class this
+    // whole ruling exists to avoid.
+    if (k < 1 or k > @as(i64, @intCast(fields.len))) return null;
+    const f = fields[@intCast(k - 1)];
+    if (f != .positional) return null;
+    const v = intLiteralStep(f.positional) orelse return null;
+    return dnir.Value{ .i64 = v };
+}
+
+/// §18 RESIDENCY, CONSUMED — the fact `place.zig` produces reaching emitted
+/// machine code.
+///
+/// A module-scope binding that nothing writes, aliases, escapes or indexes at a
+/// runtime offset has NO RUNTIME LOCATION: every read of it IS its initializer.
+/// Measured on this tree before this existed, `global k = 7` and
+/// `global t = (10, 20, 30)` were both outside the direct backend subset —
+/// `DNB001 … missing: k` and `DNB001 … missing: graph-dnir-unsupported` — so
+/// the fold is not a cheaper path to an answer the compiler already had.
+///
+/// WHY IT IS NOT A FOURTH NAME-KEYED TABLE. `ModuleConsts` answers one spelling
+/// with one boolean and cannot say why it declined; `place.residencyRefusal`
+/// names ten distinct reasons, is three-valued so `unknown` never reads as
+/// `no`, and is read from the SAME array `observation.zig` and `eqspace.zig`
+/// read. Deleting any one of its five §19 clauses re-admits a candidate the
+/// other four forbid, which `gate/place.sh` measures in `__text`.
+fn placeFold(ctx: *LowerCtx, expr: *const Expr) ?dnir.Value {
+    switch (expr.*) {
+        .name => |n| {
+            const p = absentModulePlace(ctx, n.ident) orelse return null;
+            if (p.shape != .scalar) return null;
+            const init = p.init orelse return null;
+            const v = intLiteralStep(init) orelse return null;
+            return dnir.Value{ .i64 = v };
+        },
+        .call => |c| {
+            if (c.func.* != .name or c.args.len != 1) return null;
+            return placeElement(ctx, c.func.name.ident, c.args[0]);
+        },
+        .index => |ix| {
+            if (ix.obj.* != .name) return null;
+            return placeElement(ctx, ix.obj.name.ident, ix.key);
+        },
+        else => return null,
+    }
+}
+
 fn lowerExprCons(
     ctx: *LowerCtx,
     expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
+    // A PLACE ACCESS IS NOT AN APPLICATION. `t(2)` on a module-scope collection
+    // reads a location; the graph could not tell that from a relation call
+    // because it had no places, which is why the refusal below fired on it.
+    if (placeFold(ctx, expr)) |folded| return folded;
     if (applicationNeedsGraphOccurrence(ctx, expr)) {
         return refuseMissingApplication(ctx, @src(), expr);
     }
