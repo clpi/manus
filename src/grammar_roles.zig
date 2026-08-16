@@ -104,7 +104,26 @@ pub const rows = blk: {
             // module-top statement path and refused with `mod-top-stmt:ret`,
             // while the same body with any statement before the `return` was
             // fine. No control word is more of a statement than another.
-            .kw_if, .kw_match, .kw_while, .kw_for, .kw_return, .kw_break, .kw_continue, .kw_do => row(kind, .{ .kind = kind, .body_start = true }),
+            .kw_if, .kw_match, .kw_while, .kw_for, .kw_return, .kw_break, .kw_continue => row(kind, .{ .kind = kind, .body_start = true }),
+            // THE BLOCK-DELIMITER FAMILY IS COMPAT-ONLY, and this row is the
+            // authority that says so — not the formatter's private opinion of
+            // it, and not `gate/design.sh`'s regex.
+            //
+            // `then`, `end`, `elseif` and `do` are Lua block punctuation. The
+            // canonical face is OFFSIDE: a block is delimited by indentation,
+            // `elseif` is `else(condition)`, and there is no terminator. That
+            // was true of `gate/design.sh` (which convicts `end`), true of
+            // `pretty.zig`'s canonical face (which refuses to emit any of
+            // them), and NOT recorded here — so the two enforcers each carried
+            // a private copy of one fact and `compat_only` had zero consumers
+            // (HPLS §7/§8 scenery). `pretty.zig` now reads this row.
+            //
+            // ONLY `compat_only` MOVES. `body_start` is read by the PARSER and
+            // is what lets `do` open a block; taking it away would change what
+            // the language accepts, which is a different question from what
+            // canonical tooling may WRITE (HPLS §94).
+            .kw_do => row(kind, .{ .kind = kind, .body_start = true, .compat_only = true }),
+            .kw_then, .kw_end, .kw_elseif => row(kind, .{ .kind = kind, .compat_only = true }),
             .kw_fun, .kw_function => row(kind, .{ .kind = kind, .compat_only = true, .body_start = true }),
             .kw_local, .kw_const, .kw_let => row(kind, .{ .kind = kind, .compat_only = true }),
             .backtick => row(kind, .{ .kind = kind, .compat_only = true }),
@@ -143,6 +162,21 @@ pub fn isInfix(kind: lexer.TokenKind) bool {
 
 pub fn canStartBody(kind: lexer.TokenKind) bool {
     return lookup(kind).body_start;
+}
+
+/// MAY CANONICAL TOOLING WRITE THIS SPELLING? (HPLS §94.)
+///
+/// The parser still ACCEPTS every compat-only spelling — acceptance and
+/// emission are different questions, and collapsing them is how "the current
+/// compiler cannot do X" turns into "Idol should not permit X". This answers
+/// only the second: a formatter, an LSP code action, a doc generator or an MCP
+/// surface that writes a token this returns `false` for is generating retired
+/// syntax from canonical tooling, which §94 forbids.
+///
+/// It exists because `compat_only` had ZERO consumers while three separate
+/// enforcers each held a private copy of the same fact.
+pub fn admits(kind: lexer.TokenKind) bool {
+    return !lookup(kind).compat_only;
 }
 
 /// Primitive descriptor identities (`i64`, `str`, …) — not a spelling list.

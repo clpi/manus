@@ -1,6 +1,8 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
+const lexer = @import("lexer.zig");
+const grammar_roles = @import("grammar_roles.zig");
 const Expr = ast.Expr;
 const Stmt = ast.Stmt;
 const TypeExpr = ast.TypeExpr;
@@ -89,7 +91,19 @@ pub const PrettyPrinter = struct {
     alloc: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     mode: Mode,
-    /// When true in .id mode, omit deprecated keywords (`then`, `do`, bare `fun`).
+    /// THE SOURCE'S GRAMMAR FAMILY: true when the file this tree came from was
+    /// lexed as canonical Idol. It is NOT a user preference and NOT a "style".
+    ///
+    /// It used to be `--canonical`, a FLAG, defaulted OFF — so `idol fmt` wrote
+    /// `fun add(a: i64, b: i64) -> i64 … end` over a file whose source read
+    /// `add: i64 = (a: i64, b: i64)`, and the flag that turned that off was
+    /// spelled as though it were the special case. Measured over
+    /// `gate/fmt.sh`'s twelve files: 145 retired declaration lines from the
+    /// default printer, 0 from `--canonical`. A formatter is canonical tooling;
+    /// HPLS §94 forbids canonical tooling from generating retired syntax, so
+    /// there is no lawful setting of such a flag and it is gone.
+    ///
+    /// WHICH SPELLINGS THAT ADMITS IS NOT DECIDED HERE — see `writes`.
     canonical: bool = false,
     /// Source comments, in source order, so the formatter does not DELETE them.
     ///
@@ -145,6 +159,25 @@ pub const PrettyPrinter = struct {
             .indent_level = 0,
             .indent_str = "  ",
         };
+    }
+
+    /// MAY THIS PRINTER WRITE THIS SPELLING? — the ONE authority, asked.
+    ///
+    /// This printer used to hold a private opinion of which spellings are
+    /// retired, expressed as `self.canonical` at each site. That made three
+    /// independent copies of one fact: `grammar_roles.compat_only` (which had
+    /// ZERO consumers and was therefore scenery under HPLS §7/§8),
+    /// `gate/design.sh`'s regex, and this file. Two of them disagreed —
+    /// `compat_only` did not know `then`, `end`, `elseif` or `do` were retired,
+    /// while this printer and the gate both did — and a fact with two owners
+    /// is the demagix shape §94 exists to close.
+    ///
+    /// A COMPAT-FAMILY SOURCE KEEPS ITS OWN GRAMMAR. Reprinting a Lua file
+    /// into the canonical face would not be formatting, it would be
+    /// translation, and it is not this function's business to do it silently.
+    fn writes(self: *const PrettyPrinter, kind: lexer.TokenKind) bool {
+        if (!(self.mode == .idol and self.canonical)) return true;
+        return grammar_roles.admits(kind);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -808,7 +841,7 @@ pub const PrettyPrinter = struct {
     }
 
     fn closeBlock(self: *PrettyPrinter) !void {
-        if (self.mode == .idol and self.canonical) return;
+        if (!self.writes(.kw_end)) return;
         try self.nl();
         try self.write("end");
     }
@@ -1019,7 +1052,7 @@ pub const PrettyPrinter = struct {
                     try self.write(" ");
                 }
                 try self.printExpr(is.cond, 0);
-                if (self.mode == .lua or (self.mode == .idol and !self.canonical)) {
+                if (self.writes(.kw_then)) {
                     try self.write(" then");
                 }
                 try self.printBlock(&is.then);
@@ -1030,7 +1063,7 @@ pub const PrettyPrinter = struct {
                     // hand-nested form in idol-native/gate/control.id. The
                     // printer was re-emitting `elseif` after every conversion,
                     // so 743 of them kept coming back.
-                    if (self.mode == .idol and self.canonical) {
+                    if (!self.writes(.kw_elseif)) {
                         try self.write("else(");
                         try self.printExpr(ei.cond, 0);
                         try self.write(")");
@@ -1039,7 +1072,7 @@ pub const PrettyPrinter = struct {
                     }
                     try self.write("elseif ");
                     try self.printExpr(ei.cond, 0);
-                    if (self.mode == .lua or (self.mode == .idol and !self.canonical)) {
+                    if (self.writes(.kw_then)) {
                         try self.write(" then");
                     }
                     try self.printBlock(&ei.body);
@@ -1269,7 +1302,7 @@ pub const PrettyPrinter = struct {
         }
         if (self.mode == .lua) {
             try self.write("function");
-        } else if (!self.canonical) {
+        } else if (self.writes(.kw_fun)) {
             try self.write("fun");
         }
         if (fd.path.len > 0) {
@@ -1282,7 +1315,7 @@ pub const PrettyPrinter = struct {
             // A trailing `:` segment is a METHOD (`obj:m`), which is a
             // different edge from `obj.m` — the receiver is bound. `fd.method`
             // records which, so the last separator has to ask.
-            const needs_kw_space = self.mode == .lua or !self.canonical;
+            const needs_kw_space = self.mode == .lua or self.writes(.kw_fun);
             if (needs_kw_space) try self.write(" ");
             for (fd.path, 0..) |p, i| {
                 if (i > 0) {
@@ -1616,7 +1649,7 @@ pub const PrettyPrinter = struct {
     }
 
     fn printFuncSigParams(self: *PrettyPrinter, sig: *const ast.FuncSignature) !void {
-        if (!(self.mode == .idol and self.canonical)) try self.write("fun ");
+        if (self.writes(.kw_fun)) try self.write("fun ");
         try self.write(sig.name);
         try self.write("(");
         for (sig.params, 0..) |param, i| {

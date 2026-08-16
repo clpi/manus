@@ -419,7 +419,6 @@ const usage =
     \\  --build-report S  build output style: pretty|compact|verbose|plain (default pretty)
     \\  --stage <name>    with `build all`, build only one named/numeric stage
     \\  --no-color        disable ANSI styling
-    \\  --canonical       fmt: emit the strongest admitted canonical source face
     \\  --filter <pat>    run only tests whose name contains <pat>
     \\
 ;
@@ -501,7 +500,6 @@ pub fn main(init: std.process.Init) !void {
     var forwarded_args: std.ArrayList([]const u8) = .empty;
     var link_flags: std.ArrayList([]const u8) = .empty;
     var entry_override: ?[]const u8 = null;
-    var fmt_canonical = false;
     var i: usize = start;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -625,8 +623,6 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--stage") and i + 1 < args.len) {
             i += 1;
             stage_filter = args[i];
-        } else if (std.mem.eql(u8, arg, "--canonical")) {
-            fmt_canonical = true;
         } else if (arg.len > 0 and arg[0] != '-') {
             if (input_file == null) {
                 input_file = arg;
@@ -906,7 +902,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, cmd, "check")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override);
     } else if (std.mem.eql(u8, cmd, "fmt")) {
-        try do_fmt(alloc, io, file, fmt_canonical);
+        try do_fmt(alloc, io, file);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file, target, lib_mode);
     } else {
@@ -1277,7 +1273,7 @@ fn fmtTree(alloc: std.mem.Allocator, io: Io, dir_path: []const u8) !void {
         if (is_source_path(entry.name)) {
             const path = try std.fs.path.join(alloc, &.{ dir_path, entry.name });
             defer alloc.free(path);
-            try do_fmt(alloc, io, path, false);
+            try do_fmt(alloc, io, path);
         }
     }
 }
@@ -1288,7 +1284,7 @@ fn do_project_fmt(alloc: std.mem.Allocator, io: Io, t: build_framework.Target) !
         if (std.mem.eql(u8, src, ".") or std.mem.endsWith(u8, src, "/")) {
             try fmtTree(alloc, io, if (std.mem.eql(u8, src, ".")) "." else src);
         } else {
-            try do_fmt(alloc, io, src, false);
+            try do_fmt(alloc, io, src);
         }
     } else {
         try fmtTree(alloc, io, ".");
@@ -5373,7 +5369,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     transform_engine.dumpProvenanceSummary(io, std.Io.File.stderr());
 }
 
-fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: bool) !void {
+fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     const src = read_source(alloc, io, src_path) catch |err| {
         term.err("failed to read source file '{s}': {s}", .{ src_path, @errorName(err) });
         std.process.exit(1);
@@ -5417,7 +5413,21 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: boo
 
     var buf: std.ArrayList(u8) = .empty;
     var pp = PrettyPrinter.init(alloc, &buf, .idol);
-    pp.canonical = canonical and parser.idol_mode;
+    // THE FACE IS THE SOURCE FAMILY'S FACE, and nothing else decides it.
+    //
+    // This read `canonical and parser.idol_mode`, where `canonical` came from
+    // `--canonical`. Read the conjunction: for a compat-family file the flag
+    // could never turn the canonical face ON, so the only thing it could ever
+    // do was turn it OFF for a file the lexer had already ruled canonical.
+    // `--canonical` was a DE-canonicaliser switch, defaulted on.
+    //
+    // MEASURED over `gate/fmt.sh`'s twelve files, idol 015ded1a: the default
+    // printer wrote 145 retired declaration lines, `--canonical` wrote 0. So
+    // `idol fmt native.id` reprinted `add: i64 = (a: i64, b: i64)` as
+    // `fun add(a: i64, b: i64) -> i64 … end` — canonical tooling generating
+    // retired syntax, which HPLS §94 forbids in those words. The flag is gone
+    // rather than re-defaulted: there is no lawful setting of it.
+    pp.canonical = parser.idol_mode;
     pp.comments = comments.items;
     // The `#!` line is its OWN token identity, not a comment, so the loop above
     // never collects it and the formatter used to delete it outright. The lexer
