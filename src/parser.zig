@@ -47,9 +47,52 @@ fn findMatchingParen(s: []const u8, start: usize) usize {
     return s.len;
 }
 
+/// How deep `parse_prec` may descend before the parser REFUSES.
+///
+/// Without a bound the parser did not refuse — it FAULTED. Measured on
+/// `x: i64 = ((((…1…))))`, one paren per level:
+///
+///     Debug        depth 781 ok, depth 782 -> SIGSEGV (exit 139)
+///     ReleaseFast  depth 1589 ok, depth 1590 -> SIGSEGV (exit 139)
+///
+/// The trace is the cycle `parse_prec -> parse_suffixed_expr ->
+/// parse_simple_expr -> parse_expr -> parse_prec`, one frame per level, and a
+/// native stack overflow is not a diagnostic: no location, no message, no
+/// artifact, and an exit code the caller cannot tell from a crash in the
+/// program being compiled.
+///
+/// 256 is the same bound Clang publishes for the identical construct
+/// (`-fbracket-depth`, default 256). It leaves a factor of three under the
+/// measured Debug fault and a factor of six under ReleaseFast, which is the
+/// margin that matters: the fault depth moves with build mode and frame
+/// layout, so a bound chosen just under one measurement would fault under the
+/// next. See `Sema.max_expr_depth` for the second, INDEPENDENT limit — a flat
+/// `1 + 1 + … + 1` chain nests this parser not at all and still overflows sema.
+const max_parse_depth: u32 = 256;
+
+/// How deep BLOCKS may nest before the parser refuses — a separate limit,
+/// because a block frame is much fatter than an expression frame and the two
+/// therefore run out of stack at very different depths.
+///
+/// Measured on `if 1 == 1` nested N deep, one statement per level:
+///
+///     Debug        depth 201 ok, depth 202 -> SIGSEGV (exit 139)
+///     ReleaseFast  depth 621 ok, depth 622 -> SIGSEGV (exit 139)
+///
+/// The cycle is `parse_block_open -> parse_stmt -> parse_if ->
+/// parse_if_clauses -> parse_block_at -> parse_block_open`. 202 is a QUARTER
+/// of the expression limit's fault depth, which is exactly why one shared
+/// constant would have been wrong: a bound safe for `((((…))))` is a fault for
+/// nested `if`.
+const max_block_depth: u32 = 64;
+
 pub const Parser = struct {
     lex: *Lexer,
     alloc: Allocator,
+    /// Live `parse_prec` recursion depth. See `max_parse_depth`.
+    expr_depth: u32 = 0,
+    /// Live `parse_block_open` recursion depth. See `max_block_depth`.
+    block_depth: u32 = 0,
     /// Incremented while parsing a match arm body. When > 0, assignment
     /// right-hand sides use the restricted scrutinee parser so that `[` at
     /// the start of the next arm is not greedily consumed as an index suffix.
@@ -1563,6 +1606,17 @@ pub const Parser = struct {
     }
 
     fn parse_block_open(self: *Parser, open: ?ast.Loc, empty_ok: bool) ParseError!ast.Block {
+        // Before `open_layout` pushes a frame, so a refusal leaves the layout
+        // stack exactly as it found it.
+        if (self.block_depth >= max_block_depth) {
+            const tok = try self.pk();
+            term.locErr(tok.loc, "blocks nest deeper than {d} levels, which is this parser's limit", .{max_block_depth});
+            term.locHint(tok.loc, "lift the inner block into a relation and call it", .{});
+            return ParseError.UnexpectedToken;
+        }
+        self.block_depth += 1;
+        defer self.block_depth -= 1;
+
         const saved_match_depth = self.match_arm_depth;
         self.match_arm_depth = 0;
         defer self.match_arm_depth = saved_match_depth;
@@ -5407,7 +5461,24 @@ pub const Parser = struct {
         return self.parse_prec(0);
     }
 
+    /// The refusal `max_parse_depth` exists to produce. Reported at the token
+    /// the parser is looking at, which is the innermost opener — the place a
+    /// reader can actually cut the expression.
+    fn expr_too_deep(self: *Parser) ParseError {
+        const tok = self.pk() catch return ParseError.UnexpectedToken;
+        term.locErr(tok.loc, "expression nests deeper than {d} levels, which is this parser's limit", .{max_parse_depth});
+        term.locHint(tok.loc, "bind the inner expression to a name and refer to it, rather than nesting further", .{});
+        return ParseError.UnexpectedToken;
+    }
+
     fn parse_prec(self: *Parser, min_prec: u8) ParseError!*ast.Expr {
+        // BEFORE any token is consumed. A refusal that has already advanced the
+        // stream leaves the caller resynchronizing against a position the
+        // diagnostic did not name.
+        if (self.expr_depth >= max_parse_depth) return self.expr_too_deep();
+        self.expr_depth += 1;
+        defer self.expr_depth -= 1;
+
         var lhs: *ast.Expr = undefined;
         {
             const tok = try self.pk();

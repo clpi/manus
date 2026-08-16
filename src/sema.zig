@@ -400,6 +400,14 @@ pub const Sema = struct {
     alloc: Allocator,
     scope: Scope,
     type_map: TypeMap,
+    /// Live `check_expr` recursion depth, and whether the limit has already
+    /// been reported. See `max_expr_depth`.
+    expr_depth: u32 = 0,
+    expr_depth_refused: bool = false,
+    /// Live `check_block_with_implicit_return` recursion depth, and whether
+    /// that limit has already been reported. See `max_block_depth`.
+    block_depth: u32 = 0,
+    block_depth_refused: bool = false,
     module_globals: std.StringHashMapUnmanaged(RT) = .{},
     /// Module-scope Duo bindings retained after `check_module` (lattice queries).
     module_bindings: std.StringHashMapUnmanaged(Symbol) = .{},
@@ -2212,7 +2220,26 @@ pub const Sema = struct {
         try self.check_block_with_implicit_return(blk, false);
     }
 
+    /// The block-nesting twin of `max_expr_depth`, and the same argument: the
+    /// parser's block bound covers what SOURCE can build, this one covers what
+    /// macro expansion, `@comp.*` and derive can synthesize afterwards. A block
+    /// frame is the fattest thing on this stack — the parser measured its own
+    /// fault at 202 levels in Debug — so the number is far below the
+    /// expression limit rather than equal to it.
+    const max_block_depth: u32 = 64;
+
     fn check_block_with_implicit_return(self: *Sema, blk: *ast.Block, validate_implicit_return: bool) SemaError!void {
+        if (self.block_depth >= max_block_depth) {
+            if (!self.block_depth_refused) {
+                self.block_depth_refused = true;
+                self.err(blk.loc, "blocks nest deeper than {d} levels, which is this checker's limit", .{max_block_depth});
+                term.locHint(blk.loc, "lift the inner block into a relation and call it", .{});
+            }
+            return;
+        }
+        self.block_depth += 1;
+        defer self.block_depth -= 1;
+
         try self.scope.push();
         for (blk.stmts) |*stmt| try self.check_stmt(stmt);
         if (validate_implicit_return) {
@@ -3404,7 +3431,41 @@ pub const Sema = struct {
         return false;
     }
 
+    /// How deep `check_expr` may descend before sema REFUSES.
+    ///
+    /// This is NOT the parser's bound restated. The parser's limit is on ITS
+    /// recursion, and there is an ordinary shape that costs the parser no
+    /// recursion at all and still overflows this one: a flat left-associative
+    /// chain. `x: i64 = 1 + 1 + … + 1` is parsed by the `while` loop inside
+    /// `parse_prec` — constant parser depth — and builds a LEFT-LEANING tree
+    /// whose height is the number of terms. Measured on the Debug build:
+    ///
+    ///     365 terms, zero parentheses -> SIGSEGV (exit 139)
+    ///     trace: check_expr -> check_expr_inner -> check_binop -> check_expr
+    ///
+    /// So the two limits are independent obligations and each file carries its
+    /// own. Same value as `parser.max_parse_depth` because it bounds the same
+    /// physical thing — frames on one 8 MiB stack — and a reader who learns one
+    /// number should not have to learn a second.
+    const max_expr_depth: u32 = 256;
+
     fn check_expr(self: *Sema, expr: *ast.Expr) SemaError!RT {
+        if (self.expr_depth >= max_expr_depth) {
+            // ONCE per module. The walk continues past this node — every
+            // sibling of an over-deep subtree would otherwise report the same
+            // limit, and a chain that exceeds it by a thousand terms would
+            // print a thousand identical lines. `self.err` has already made
+            // compilation fail closed; repeating it adds no information.
+            if (!self.expr_depth_refused) {
+                self.expr_depth_refused = true;
+                self.err(expr.loc(), "expression nests deeper than {d} levels, which is this checker's limit", .{max_expr_depth});
+                term.locHint(expr.loc(), "bind subexpressions to names — a long '+' chain counts, it is left-leaning and as deep as it is long", .{});
+            }
+            return self.record(expr, .any);
+        }
+        self.expr_depth += 1;
+        defer self.expr_depth -= 1;
+
         const t = try self.check_expr_inner(expr);
         return self.record(expr, t);
     }
@@ -4264,6 +4325,46 @@ pub const Sema = struct {
         return false;
     }
 
+    /// law §62 — division by zero is one of the outcomes that must be DEFINED,
+    /// and a divisor written as the integer literal `0` is the subcase the
+    /// compiler can settle without emitting anything.
+    ///
+    /// Measured before this check, `--backend direct`:
+    ///
+    ///     a: i64 = 7 ; b: i64 = 0 ; print(a / b)   ->  0      exit 0
+    ///     the same source, `--backend=c`           ->  9218868437227405312
+    ///
+    /// Two backends, one program, two answers and no message on either — which
+    /// is precisely the state `docs/spec/soundness.md` calls out: "Accepted but
+    /// unproved, unguarded, and wrong is not a fourth outcome. Refusal is
+    /// always preferable to silently assigning meaning." AArch64 `sdiv`
+    /// answering 0 is a HARDWARE fact, not a language decision, and §62's
+    /// "deterministic" cannot be satisfied by a value that changes with the
+    /// target.
+    ///
+    /// Of soundness.md's three lawful handlings, a literal zero divisor admits
+    /// only the third. There is nothing to prove — the divisor IS zero — and a
+    /// runtime guard whose failure is certain is a check the program pays for
+    /// and can never pass. So: a structured diagnostic, at the site.
+    ///
+    /// A FLOAT divisor is deliberately untouched. §62 lists "infinities" among
+    /// the things that must be defined, and IEEE-754 defines `x / 0.0` as ±inf;
+    /// that is a defined answer, so it is not this diagnostic's business. The
+    /// separation is by how the divisor is WRITTEN — `0` versus `0.0` — which
+    /// is the one signal available before gap[065]'s `i64 / i64 : f64` typing
+    /// is repaired.
+    fn check_literal_zero_divisor(self: *Sema, loc: ast.Loc, op: ast.BinOp, rhs: *const ast.Expr) void {
+        const spelling: []const u8 = switch (op) {
+            .div => "/",
+            .idiv => "//",
+            .mod => "%",
+            else => return,
+        };
+        if (rhs.* != .int_lit or rhs.int_lit.val != 0) return;
+        self.err(loc, "division by zero: the divisor of '{s}' is the literal 0", .{spelling});
+        term.locHint(loc, "law §62 requires this to be defined and deterministic; it is neither. Write a float divisor ('0.0') if IEEE +/-inf is what you mean, or guard the divisor and let the runtime check report it", .{});
+    }
+
     fn check_binop(self: *Sema, loc: ast.Loc, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr) SemaError!RT {
         // c0 §41 `resolution.rule` — BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE
         // HOMES -> ONE IDENTITY, OR A DIAGNOSTIC. gap[087].
@@ -4278,6 +4379,8 @@ pub const Sema = struct {
         if (op == .eq or op == .neq) try self.resolve_bare_case_operands(lhs, rhs);
         const lt = try self.check_expr(lhs);
         const rt = try self.check_expr(rhs);
+
+        self.check_literal_zero_divisor(loc, op, rhs);
 
         if (op == .matmul and self.idol_mode) {
             if (!self.check_infix_at(loc, lt, rt)) return .any;

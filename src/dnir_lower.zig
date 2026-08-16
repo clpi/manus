@@ -1328,6 +1328,18 @@ pub const LowerCtx = struct {
     f64_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Local slots holding `str` (a `const char*`), so `#s` can lower to strlen.
     str_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Positional tables whose every element is text — `{ "M", "CM", … }` —
+    /// and which the rest of the body only READS. `t(k)` on one of these is a
+    /// `str` at every index, constant or not.
+    ///
+    /// Without this set the ELEMENT lowered correctly and its TYPE was lost:
+    /// `exprIsStr` had no arm for a table read, so `g = glyph(i)` never entered
+    /// `str_slots`, `planConcat` chose `%lld` for `"{out}{g}"`, and printf
+    /// printed the literal's ADDRESS. `examples/boring/roman.id` therefore
+    /// printed a different answer on every run — the address moves with ASLR —
+    /// which is the same defect class as the `v = "set" or "FB"` note on
+    /// `exprIsStr` below, reached through the table surface instead.
+    str_tables: std.StringHashMapUnmanaged(void) = .empty,
     /// Local slots holding `bool`. A bool rides an integer register, so nothing
     /// downstream can tell one from an i64 by its representation — only this
     /// set can, and `..` needs the answer to choose between `true` and `1`.
@@ -1402,6 +1414,9 @@ pub const LowerCtx = struct {
             self.alloc.free(e.value_ptr.*);
         }
         self.const_tables.deinit(self.alloc);
+        var st = self.str_tables.iterator();
+        while (st.next()) |e| self.alloc.free(e.key_ptr.*);
+        self.str_tables.deinit(self.alloc);
         var ci = self.const_ints.iterator();
         while (ci.next()) |e| self.alloc.free(e.key_ptr.*);
         self.const_ints.deinit(self.alloc);
@@ -3509,7 +3524,14 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // and one integer arm is a slot whose type depends on the branch taken,
         // which no consumer downstream can read correctly.
         .if_expr => |ie| exprIsStr(ctx, ie.then_expr) and exprIsStr(ctx, ie.else_expr),
-        .index => |ix| argv(ix.obj) or env(ix.obj),
+        // `t(i)` on a table of text is text at every index. `table_apply`
+        // rewrites the application into `.index` before this pass runs, so the
+        // dynamic read and the constant read arrive at the SAME node and get
+        // the same answer — which is what the select chain, the memory-backed
+        // load and `constTableRead` all need, since none of the three can
+        // carry an element type in the value it returns.
+        .index => |ix| argv(ix.obj) or env(ix.obj) or
+            (ix.obj.* == .name and ctx.str_tables.contains(ix.obj.name.ident)),
         .method_call => |mc| blk: {
             if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "io") and
                 std.mem.eql(u8, mc.method, "read"))
@@ -4125,6 +4147,27 @@ fn bindTableLen(ctx: *LowerCtx, name: []const u8, len: i64) Error!void {
     try ctx.table_lens.put(ctx.alloc, len_slot, len);
 }
 
+/// Record `name` as a table whose every element is text.
+///
+/// The verdict is taken AT THE BINDING for the same reason `noteConstTable`'s
+/// is: a read site is routinely inside a loop, and the answer must not depend
+/// on which of the three storage paths the binding chose. `tableUseInBlock`
+/// supplies the safety — a table that is written, rebound, shadowed or passed
+/// on is `.opaque_use`, and nothing may be assumed about what a later read of
+/// it holds.
+fn noteStrTable(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
+    const body = ctx.body orelse return;
+    if (table.* != .table or table.table.fields.len == 0) return;
+    for (table.table.fields) |fld| {
+        if (fld != .positional) return;
+        if (!exprIsStr(ctx, fld.positional)) return;
+    }
+    if (@intFromEnum(tableUseInBlock(body, name, table)) > @intFromEnum(TableUse.dyn_read)) return;
+    const key = try ctx.alloc.dupe(u8, name);
+    errdefer ctx.alloc.free(key);
+    try ctx.str_tables.put(ctx.alloc, key, {});
+}
+
 /// `t = { 10, 20, 30 }` — a positional table with a statically known length.
 ///
 /// Elements become one local per slot, keyed `t.1`, `t.2`, … exactly as record
@@ -4136,6 +4179,7 @@ fn bindTableLen(ctx: *LowerCtx, name: []const u8, len: i64) Error!void {
 /// milestone. Constant indexing is the slice that fits the proven subset today.
 fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
     if (table.* != .table) return bail(ctx.diagnostic, @src());
+    try noteStrTable(ctx, name, table);
     const use = try noteConstTable(ctx, name, table);
     if (@intFromEnum(use) <= @intFromEnum(TableUse.const_read)) {
         // DETERMINED, and read only at compile-time indices: the table itself is
@@ -4552,6 +4596,11 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
 
     const out_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = out_slot, .lhs = .{ .i64 = 0 }, .ty = .any });
+    // The select chain returns a SLOT, not an expression, so `holds` is the
+    // only thing a consumer that never sees the AST node can ask. It has to
+    // agree with `exprIsStr`'s `.index` arm or the two classifiers disagree on
+    // one read — which is the shape that printed a pointer.
+    if (ctx.str_tables.contains(table_name)) try ctx.str_slots.put(ctx.alloc, out_slot, {});
 
     var i: i64 = 1;
     while (i <= len) : (i += 1) {
@@ -5997,6 +6046,43 @@ fn refitValue(ctx: *LowerCtx, v: dnir.Value, ty: RT) Error!dnir.Value {
     return .{ .temp = t };
 }
 
+/// law §62 — `x / y` and `x % y` where `y` is zero AT RUN TIME.
+///
+/// AArch64 `sdiv` does not fault: it answers 0. That is a property of the chip,
+/// not a decision this language made, and §62 requires division by zero to be
+/// DEFINED and DETERMINISTIC. Measured before this guard, one source and two
+/// answers — `--backend direct` printed `0` and `--backend=c` printed
+/// `9218868437227405312` (the bits of +inf) — with exit 0 and no message on
+/// either. A value that changes with the target is not a definition.
+///
+/// The literal-zero divisor is settled earlier and elsewhere: `sema.zig`'s
+/// `check_literal_zero_divisor` refuses it with a diagnostic, because there is
+/// nothing to guard when the divisor IS zero. What reaches here is the case the
+/// compiler cannot decide, and `soundness.md` names the handling for exactly
+/// that: "realization selects an explicit guard whose failure is a semantic
+/// case". The guard is the same shape `emitIndexBoundsTrap` already uses — a
+/// compare, a branch and `abort` — so the two runtime faults this backend can
+/// raise are one mechanism, not two.
+///
+/// Cost is one `cmp` and one conditional branch per division whose divisor is
+/// not a nonzero constant. A constant nonzero divisor — every `/ 2`, `/ 8`,
+/// `% 10` in the corpus — pays nothing at all.
+fn emitDivisorZeroTrap(ctx: *LowerCtx, divisor: dnir.Value) Error!void {
+    if (divisor == .i64 and divisor.i64 != 0) return;
+
+    const ok = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = ok, .binop = .neq, .lhs = divisor, .rhs = .{ .i64 = 0 } });
+    const bad = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .lhs = .{ .temp = ok }, .branch_target = 0, .branch_condition = .when_false });
+
+    const skip = ctx.instrs.items.len;
+    try ctx.emit(.{ .op = .br, .branch_target = 0 });
+
+    ctx.instrs.items[bad].branch_target = @intCast(ctx.instrs.items.len);
+    try emitTrap(ctx);
+    ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
+}
+
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
     if (op == .concat and concatOperandOk(ctx, lhs) and concatOperandOk(ctx, rhs) and
         (exprIsStr(ctx, lhs) or exprIsStr(ctx, rhs)))
@@ -6034,6 +6120,10 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     const t = ctx.freshTemp();
     var a = try lowerExpr(ctx, lhs);
     var b = try lowerExpr(ctx, rhs);
+    // Integer division only. IEEE-754 DEFINES `x / 0.0` as ±inf and §62 lists
+    // infinities among the defined outcomes, so the float path has an answer
+    // already and must not be given a fault instead.
+    if (!f64_op and (tag == .div or tag == .mod)) try emitDivisorZeroTrap(ctx, b);
     var result_ty: RT = if (f64_op) .f64 else .any;
     if (!f64_op) {
         if (unsignedComparison(ctx, op, lhs, rhs)) |conv| {
