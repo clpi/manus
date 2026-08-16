@@ -2162,6 +2162,31 @@ pub fn narrowFit(ty: RT) ?NarrowFit {
     };
 }
 
+/// DO THE LOW 32 BITS OF THIS OPERATION DEPEND ONLY ON THE LOW 32 BITS OF ITS
+/// OPERANDS?
+///
+/// True for exactly `add`, `sub`, `mul`, `band`, `bor` and `bxor`: carries and
+/// borrows travel upward and the bitwise three are bit-local, so the answer
+/// modulo 2^32 is a function of the operands modulo 2^32. That is the ONLY
+/// property a 32-bit destination form needs — no known-bits lattice, no
+/// canonical operands, no range fact.
+///
+/// FALSE FOR EVERYTHING ELSE, and the exclusions are the load-bearing part:
+/// `shl`/`shr` are ranked `.int64` by `exprCRank` because the operand is
+/// WIDENED before the shift, and the two forms mask the amount to a different
+/// number of bits besides; `div`/`idiv`/`mod` are realized with SIGNED
+/// division, which reads bit 31 as a sign in the narrow form; comparisons carry
+/// no width at all.
+///
+/// Shared with `native_backend`, which selects the realization from it, so the
+/// rule that admits the transform and the rule that emits it are one function.
+pub fn lowThirtyTwoExact(op: dnir.BinOpTag) bool {
+    return switch (op) {
+        .add, .sub, .mul, .band, .bor, .bxor => true,
+        else => false,
+    };
+}
+
 /// The compile-time half of `native_backend.emitNarrowFit`: the value the refit
 /// instruction would produce, for a literal that never reaches a register.
 ///
@@ -6431,10 +6456,41 @@ fn subsumeProducerRefit(ctx: *LowerCtx) void {
     const want = narrowFit(store.ty) orelse return;
     const producer = &items[items.len - 2];
     if (producer.op != .binop) return;
-    const have = narrowFit(producer.ty) orelse return;
-    if (have.bits != want.bits or have.signed != want.signed) return;
     const result = producer.result orelse return;
     if (result != store.lhs.temp) return;
+
+    // WHICH SIDE ABSORBS THE OTHER IS A REALIZATION QUESTION, AND AT 32
+    // UNSIGNED BITS THE PRODUCER WINS.
+    //
+    // A store's refit is an INSTRUCTION — `ubfx xd, xs, #0, #32` — and it sits
+    // on the recurrence of every loop that carries a `u32`. A producer's refit
+    // at that width is not an instruction at all: `native_backend.wForm32`
+    // selects the 32-bit destination form, whose zero-extension IS the
+    // narrowing. So handing the width to the PRODUCER deletes the chain node
+    // and leaves the store an ordinary register move, which this machine
+    // renames away (`docs/dependence-height.md` §1.2, measured at -0.016 cyc).
+    //
+    // Measured on `tools/wasm/bench/hash2b.id`, the single largest consumer of
+    // cycles in this corpus: 9.09 -> 6.04 cycles per iteration, same answer.
+    //
+    // Only at 32 unsigned bits, and only for the operations whose low half is
+    // a function of the operands' low halves — see `lowThirtyTwoExact`. `u8`,
+    // `u16` and every signed width keep the store-side refit below, because
+    // their narrowing is a real mask or a real sign extension and no
+    // destination form performs it for free.
+    if (want.bits == 32 and !want.signed and lowThirtyTwoExact(producer.binop) and
+        (producer.ty == .any or producer.ty == .u32))
+    {
+        producer.ty = .u32;
+        items[items.len - 1].ty = .any;
+        return;
+    }
+
+    // Otherwise the store absorbs the producer's, which is what this function
+    // was written for: refitting both emits two `ubfx` where the store's alone
+    // is enough.
+    const have = narrowFit(producer.ty) orelse return;
+    if (have.bits != want.bits or have.signed != want.signed) return;
     producer.ty = .any;
 }
 

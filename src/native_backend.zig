@@ -4538,8 +4538,45 @@ const Arm64Compiler = struct {
             try self.emitCompareResult(dst, lhs, rhs, condition);
             return;
         }
+        if (wForm32(ty, op)) {
+            try self.emitBinopW32(dst, lhs, rhs, op);
+            return;
+        }
         try self.emitCompareOrBinopWide(dst, lhs, rhs, op);
         _ = try self.emitNarrowFit(dst, dst, ty);
+    }
+
+    /// IS THE 32-BIT DESTINATION FORM OF `op` EXACTLY THE REFIT `ty` DEMANDS?
+    ///
+    /// Two independent facts, and BOTH are needed. A `w` destination
+    /// ZERO-EXTENDS into the whole `x` register, which is bit for bit what
+    /// `ubfx xd, xn, #0, #32` leaves behind — so the narrowing stops being an
+    /// instruction and becomes the encoding. That is only the unsigned answer:
+    /// `i32` wants SIGN extension, and a `w` form alone would turn -1 into
+    /// 4294967295, so `signed` refuses here and keeps `sxtw`.
+    ///
+    /// And the low 32 bits of `add`, `sub`, `mul`, `and`, `orr` and `eor`
+    /// depend ONLY on the low 32 bits of their operands — carries and borrows
+    /// travel upward, never down — so no operand needs to be canonical first.
+    /// That is what makes this a pure instruction SELECTION and not a
+    /// known-bits analysis.
+    ///
+    /// EVERYTHING ELSE IS REFUSED, and each for its own reason rather than out
+    /// of caution:
+    ///   * `shl`/`shr` mask the shift amount to 5 bits in the 32-bit form and 6
+    ///     in the 64-bit one, and `dnir_lower.exprCRank` ranks a shift `.int64`
+    ///     precisely because the operand is WIDENED before it — `h << 13` on a
+    ///     `u32` is a 64-bit value by this language's own conversions, so a
+    ///     32-bit shift would answer a different number, not a narrower one.
+    ///   * `div`/`idiv`/`mod` are realized with SIGNED `sdiv`, which reads bit
+    ///     31 as a sign in the 32-bit form and as an ordinary bit in the 64-bit
+    ///     form over a canonical `u32`. Same instruction, different answer.
+    ///   * comparisons answer 0 or 1 and are never refitted at all.
+    ///   * `u8`/`u16` are not 32 bits wide; their refit is a real mask.
+    fn wForm32(ty: native_types.ResolvedType, op: dnir.BinOpTag) bool {
+        const fit = narrowFit(ty) orelse return false;
+        if (fit.bits != 32 or fit.signed) return false;
+        return lowThirtyTwoExact(op);
     }
 
     /// Is `k` `2^n` for some `1 <= n <= 62`? Returns `n`.
@@ -4651,6 +4688,24 @@ const Arm64Compiler = struct {
         );
     }
 
+    /// `lsl wd, wn, #sh` — the 32-bit UBFM alias, `sh < 32`.
+    ///
+    /// NOT the 64-bit word with `sf` cleared: UBFM carries its own `N` bit and
+    /// its immediates are element-size relative, so the 32-bit form is
+    /// `N = 0, immr = (32-sh) mod 32, imms = 31-sh`. Emitted only where the
+    /// declared width already discards everything above bit 31, which is why
+    /// dropping the high `sh` bits here is the ANSWER rather than a loss.
+    fn emitLslImmW32(self: *Arm64Compiler, dst: u5, lhs: u5, sh: u6) Error!void {
+        try self.ensureRegLive(lhs);
+        const immr: u32 = (32 - @as(u32, sh)) % 32;
+        const imms: u32 = 31 - @as(u32, sh);
+        try self.emitFmt(
+            0x53000000 | (immr << 16) | (imms << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "lsl w{d}, w{d}, #{d}",
+            .{ dst, lhs, sh },
+        );
+    }
+
     fn emitLsrImm(self: *Arm64Compiler, dst: u5, lhs: u5, sh: u6) Error!void {
         try self.ensureRegLive(lhs);
         try self.emitFmt(
@@ -4677,21 +4732,31 @@ const Arm64Compiler = struct {
     /// 0xAA200000 with Rn = 31 (xzr). This is the whole realization of prefix
     /// `~`: `dnir_lower` lowers it to `bxor` against -1 and the constant path
     /// above selects this instruction for that operand.
-    fn emitMvn(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
+    fn emitMvn(self: *Arm64Compiler, dst: u5, src: u5, w32: bool) Error!void {
         try self.ensureRegLive(src);
+        const base: u32 = if (w32) 0x2a2003e0 else 0xaa2003e0;
+        const r: u8 = if (w32) 'w' else 'x';
         try self.emitFmt(
-            0xaa2003e0 | (@as(u32, src) << 16) | @as(u32, dst),
-            "mvn x{d}, x{d}",
-            .{ dst, src },
+            base | (@as(u32, src) << 16) | @as(u32, dst),
+            "mvn {c}{d}, {c}{d}",
+            .{ r, dst, r, src },
         );
     }
 
     fn emitAddImm(self: *Arm64Compiler, dst: u5, lhs: u5, imm: u12) Error!void {
+        try self.emitAddImmSized(dst, lhs, imm, false);
+    }
+
+    /// `add xd, xn, #imm12`, and its 32-bit twin. `w32` clears bit 31 and the
+    /// destination zero-extends — see `wForm32` for why that IS the refit.
+    fn emitAddImmSized(self: *Arm64Compiler, dst: u5, lhs: u5, imm: u12, w32: bool) Error!void {
         try self.ensureRegLive(lhs);
+        const base: u32 = if (w32) 0x11000000 else 0x91000000;
+        const r: u8 = if (w32) 'w' else 'x';
         try self.emitFmt(
-            0x91000000 | (@as(u32, imm) << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
-            "add x{d}, x{d}, #{d}",
-            .{ dst, lhs, imm },
+            base | (@as(u32, imm) << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "add {c}{d}, {c}{d}, #{d}",
+            .{ r, dst, r, lhs, imm },
         );
     }
 
@@ -4716,6 +4781,16 @@ const Arm64Compiler = struct {
     /// Realize `dst = lhs op k`. Only reached for pairs `constBinopRealization`
     /// admitted, so the final `unreachable` is a contract between the two, not
     /// a guess about the operand.
+    ///
+    /// `fitted` IS THE WHOLE WIDTH ACCOUNTING, and it is set by the branch that
+    /// knows. A realization is "fitted" when `dst` already holds exactly what
+    /// the declared width demands — either because the branch chose a 32-bit
+    /// destination form (`wForm32`), or because the value it wrote is canonical
+    /// on its own (a zero, a low-run mask). Every other branch falls through to
+    /// the refit, unchanged. A branch that forgets to set it emits a redundant
+    /// but CORRECT instruction; a branch that sets it wrongly is a silent wrong
+    /// answer, which is why the two are not merged into one predicate computed
+    /// away from the realization it describes.
     fn emitBinopConst(
         self: *Arm64Compiler,
         dst: u5,
@@ -4724,24 +4799,42 @@ const Arm64Compiler = struct {
         op: dnir.BinOpTag,
         ty: native_types.ResolvedType,
     ) Error!void {
+        const w32 = wForm32(ty, op);
+        var fitted = false;
         switch (op) {
             .add => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else if (k > 0)
-                    try self.emitAddImm(dst, lhs, @intCast(k))
-                else
-                    try self.emitSubImm(dst, lhs, @intCast(-k));
+                if (k == 0) try self.emitMovReg(dst, lhs) else if (k > 0) {
+                    try self.emitAddImmSized(dst, lhs, @intCast(k), w32);
+                    fitted = w32;
+                } else {
+                    try self.emitSubImmSized(dst, lhs, @intCast(-k), w32);
+                    fitted = w32;
+                }
             },
             .sub => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else if (k > 0)
-                    try self.emitSubImm(dst, lhs, @intCast(k))
-                else
-                    try self.emitAddImm(dst, lhs, @intCast(-k));
+                if (k == 0) try self.emitMovReg(dst, lhs) else if (k > 0) {
+                    try self.emitSubImmSized(dst, lhs, @intCast(k), w32);
+                    fitted = w32;
+                } else {
+                    try self.emitAddImmSized(dst, lhs, @intCast(-k), w32);
+                    fitted = w32;
+                }
             },
             .mul => {
-                if (k == 0) try self.emitMovImm(dst, 0) else if (k == 1)
-                    try self.emitMovReg(dst, lhs)
-                else
-                    try self.emitLslImm(dst, lhs, powerOfTwoShift(k).?);
+                if (k == 0) {
+                    try self.emitMovImm(dst, 0);
+                    // Zero is canonical at every width; the refit would be a
+                    // second instruction writing the same bits.
+                    fitted = w32;
+                } else if (k == 1) {
+                    try self.emitMovReg(dst, lhs);
+                } else {
+                    const sh = powerOfTwoShift(k).?;
+                    if (w32 and sh < 32) {
+                        try self.emitLslImmW32(dst, lhs, sh);
+                        fitted = true;
+                    } else try self.emitLslImm(dst, lhs, sh);
+                }
             },
             .div => try self.emitMovReg(dst, lhs),
             // `x // 1 = x`; `x // 2^n = x asr n` under FLOORED law, for every
@@ -4765,19 +4858,30 @@ const Arm64Compiler = struct {
                     try self.emitLogicalLowMask(0x92400000, "and", dst, lhs, powerOfTwoShift(k).?);
             },
             .band => {
-                if (k == 0) try self.emitMovImm(dst, 0) else if (k == -1)
-                    try self.emitMovReg(dst, lhs)
-                else
-                    try self.emitLogicalLowMask(0x92400000, "and", dst, lhs, lowMaskWidth(k).?);
+                if (k == 0) {
+                    try self.emitMovImm(dst, 0);
+                    fitted = w32;
+                } else if (k == -1) {
+                    try self.emitMovReg(dst, lhs);
+                } else {
+                    const width = lowMaskWidth(k).?;
+                    try self.emitLogicalLowMask(0x92400000, "and", dst, lhs, width);
+                    // A low-run mask no wider than the declared width leaves
+                    // every bit above it clear, so the 64-bit form is ALREADY
+                    // the refitted value — no `w` form and no second
+                    // instruction. `orr`/`eor` get no such argument: they can
+                    // only set bits, so a non-canonical operand leaks through.
+                    fitted = w32 and width <= 32;
+                }
             },
             .bor => {
                 if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLogicalLowMask(0xb2400000, "orr", dst, lhs, lowMaskWidth(k).?);
             },
             .bxor => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else if (k == -1)
-                    try self.emitMvn(dst, lhs)
-                else
-                    try self.emitLogicalLowMask(0xd2400000, "eor", dst, lhs, lowMaskWidth(k).?);
+                if (k == 0) try self.emitMovReg(dst, lhs) else if (k == -1) {
+                    try self.emitMvn(dst, lhs, w32);
+                    fitted = w32;
+                } else try self.emitLogicalLowMask(0xd2400000, "eor", dst, lhs, lowMaskWidth(k).?);
             },
             .shl => {
                 if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLslImm(dst, lhs, @intCast(k));
@@ -4787,6 +4891,7 @@ const Arm64Compiler = struct {
             },
             .eq, .neq, .lt, .gt, .leq, .geq => unreachable,
         }
+        if (fitted) return;
         _ = try self.emitNarrowFit(dst, dst, ty);
     }
 
@@ -4863,6 +4968,43 @@ const Arm64Compiler = struct {
             .shr => try self.emitBitReg(0x9ac02400, "lsr", dst, lhs, rhs),
             .eq, .neq, .lt, .gt, .leq, .geq => unreachable,
         }
+    }
+
+    /// The 32-BIT DESTINATION forms of the six operations `wForm32` admits.
+    ///
+    /// The encoding is the 64-bit word with bit 31 — `sf`, the size field —
+    /// cleared, and nothing else changes: same Rm/Rn/Rd placement, same
+    /// operation. This is the whole realization the width fact was missing, and
+    /// it REPLACES an instruction rather than adding one.
+    ///
+    /// Only reachable through `wForm32`, so the `unreachable` is a contract
+    /// between the two and not a guess about the operand.
+    fn emitBinopW32(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag) Error!void {
+        const word: u32 = switch (op) {
+            .add => 0x0b000000,
+            .sub => 0x4b000000,
+            .mul => 0x1b007c00,
+            .band => 0x0a000000,
+            .bor => 0x2a000000,
+            .bxor => 0x4a000000,
+            else => unreachable,
+        };
+        const mnemonic: []const u8 = switch (op) {
+            .add => "add",
+            .sub => "sub",
+            .mul => "mul",
+            .band => "and",
+            .bor => "orr",
+            .bxor => "eor",
+            else => unreachable,
+        };
+        try self.ensureRegLive(lhs);
+        try self.ensureRegLive(rhs);
+        try self.emitFmt(
+            word | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "{s} w{d}, w{d}, w{d}",
+            .{ mnemonic, dst, lhs, rhs },
+        );
     }
 
     fn emit(self: *Arm64Compiler, word: u32, asm_line: []const u8) Error!void {
@@ -6113,11 +6255,18 @@ const Arm64Compiler = struct {
     /// so the pair was two instructions on the hottest path in the tree. This is
     /// one, and it frees the register the `mov` was consuming.
     fn emitSubImm(self: *Arm64Compiler, dst: u5, lhs: u5, imm: u12) Error!void {
+        try self.emitSubImmSized(dst, lhs, imm, false);
+    }
+
+    /// `sub xd, xn, #imm12`, and its 32-bit twin — see `emitAddImmSized`.
+    fn emitSubImmSized(self: *Arm64Compiler, dst: u5, lhs: u5, imm: u12, w32: bool) Error!void {
         try self.ensureRegLive(lhs);
+        const base: u32 = if (w32) 0x51000000 else 0xd1000000;
+        const r: u8 = if (w32) 'w' else 'x';
         try self.emitFmt(
-            0xd1000000 | (@as(u32, imm) << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
-            "sub x{d}, x{d}, #{d}",
-            .{ dst, lhs, imm },
+            base | (@as(u32, imm) << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "sub {c}{d}, {c}{d}, #{d}",
+            .{ r, dst, r, lhs, imm },
         );
     }
 
@@ -6853,6 +7002,7 @@ fn returnsVoid(t: ast.TypeExpr) bool {
 /// second copy here is the shape this tree keeps paying for: two spellings of
 /// one fact, and nothing that makes them agree.
 const narrowFit = dnir_lower.narrowFit;
+const lowThirtyTwoExact = dnir_lower.lowThirtyTwoExact;
 const narrowFitConst = dnir_lower.narrowFitConst;
 
 fn comparisonCondition(op: dnir.BinOpTag) ?Condition {
