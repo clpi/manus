@@ -1,0 +1,54 @@
+# GAP-173 case 3 — a value reduction inside a nested `while` is dropped.
+#
+# THE DEFECT AS FILED: "Inlined stack reductions (`val[vt] = apply(o, a, b)`
+# with `vt -= 1`) inside the operator pop-`while` produced wrong sums for 3+
+# operators, while the identical reduction inside a `for` flush produced correct
+# results." So the statement below is the filed one verbatim in Idol spelling,
+# and the operator count is FOUR — one past the boundary where the defect first
+# showed, because a fixture that stops at two proves the case that already
+# worked.
+#
+# 1 + 2 + 3 + 4 + 5 = 15, and every intermediate is a reduction that must
+# actually store: three of them happen inside the nested pop-`while` and one in
+# the sibling flush that follows it, so a dropped store in either place changes
+# the answer. A dropped store leaves `val(1)` at 1.
+#
+# THE `for` FORM OF THIS SUM IS THE CONTROL and it lives in `gate/nest.id`
+# (idol-native) beside this one, because "the `for` was right and the `while`
+# was wrong" is the whole content of the report and neither half means anything
+# alone.
+# expect: 15
+
+apply: i64 = (o: i64, a: i64, b: i64)
+    if o == 43
+        return a + b
+    return a - b
+
+main: i64 = ()
+    val = { 0, 0, 0, 0, 0, 0, 0, 0 }
+    ops = { 0, 0, 0, 0, 0, 0, 0, 0 }
+    vt = 0
+    ot = 0
+    i = 1
+    while i <= 5
+        vt += 1
+        val(vt) = i
+        if i <= 4
+            while ot > 0
+                o = ops(ot)
+                ot -= 1
+                b = val(vt)
+                vt -= 1
+                a = val(vt)
+                val(vt) = apply(o, a, b)
+            ot += 1
+            ops(ot) = 43
+        i += 1
+    while ot > 0
+        o = ops(ot)
+        ot -= 1
+        b = val(vt)
+        vt -= 1
+        a = val(vt)
+        val(vt) = apply(o, a, b)
+    val(1)
