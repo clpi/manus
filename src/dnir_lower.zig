@@ -14,6 +14,7 @@ const subject_home = @import("subject_home.zig");
 const dnir = @import("native_ir.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const home_resolve = @import("home_resolve.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
 const table_facts = @import("table_facts.zig");
 const RT = types.ResolvedType;
@@ -750,7 +751,18 @@ fn lowerModuleFromGraph(
     while (decl_it.next()) |entry| {
         const fd = entry.key_ptr.*;
         const entity_id = entry.value_ptr.*;
-        const export_name = try funcExportName(alloc, fd);
+        // THE MANGLING LAW, on the CALLER side. A relation declared in another
+        // home is realized as `idol_<home>__<name>`; `funcExportName` answers
+        // the bare spelling and has no home to consult, which is exactly why
+        // `lib/compiler/record.id` exports `_field` and collides with every
+        // other home that names a relation `field` (MEASURED: `ld -r` refuses
+        // the pair with `duplicate symbol '_field'`). One authority computes
+        // the string — `home_resolve.homeSymbol` — so definer and caller cannot
+        // disagree about it.
+        const export_name = if (graph.foreignHome(entity_id)) |h|
+            try home_resolve.homeSymbol(alloc, h, fd.path[0])
+        else
+            try funcExportName(alloc, fd);
         errdefer alloc.free(export_name);
         const slot = try entity_linkage.getOrPut(alloc, entity_id);
         if (slot.found_existing) {
@@ -5437,6 +5449,14 @@ fn lowerCheckedScalarCall(
     bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
     const target = try applicationTarget(ctx, application);
     const callee = try linkageForTarget(ctx, target);
+    // A CROSS-HOME CALL IS A RELOCATION, NOT A BRANCH. Nothing in this module
+    // defines the symbol, so `patchCalls` would find it neither among the
+    // defined symbols nor among the externs and report DNB007 `undefined
+    // symbol` — the correct observation with no way to act on it. Registering
+    // the extern here is the only place that knows the target is foreign.
+    if (ctx.graph.foreignHome(target)) |h| {
+        try ensureExtern(ctx, h, callee, callee);
+    }
     const descriptor = try publishedDescriptor(ctx, application);
     try checkedScalarResult(ctx.diagnostic, descriptor);
 

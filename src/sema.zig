@@ -384,6 +384,38 @@ pub const ApplicationFact = struct {
     subject: ?*const Expr,
     arguments: []const *Expr,
     result: RT,
+    /// The dotted HOME the target is declared in, when it is not this module's.
+    ///
+    /// Null is not "unknown" — it is "the same home", which the graph already
+    /// represents by containment. Non-null carries the one fact a caller cannot
+    /// recover downstream: `target` is an AST pointer into a module the graph
+    /// is not lifting, so nothing after this point can ask which file it came
+    /// from. Identity is `(home, name)`; this is the half that used to be
+    /// dropped on the floor.
+    home: ?[]const u8 = null,
+};
+
+/// One home reachable from the module being checked, and the module that home
+/// IS. `home` is the dotted home path derived from the resolved file path by
+/// `home_resolve.homeOfPath` — the same derivation the symbol law uses, so a
+/// caller and a definer cannot disagree about which home a relation belongs to.
+pub const ForeignHome = struct {
+    /// Dotted home path, e.g. `compiler.lexer`.
+    home: []const u8,
+    /// The resolved source path, retained for diagnostics and provenance.
+    path: []const u8,
+    module: *const ast.Module,
+};
+
+/// The host's answer to "this spelling is used as a home — is it one?".
+///
+/// A function pointer rather than an eager pre-pass because the alternative is
+/// a second full AST walk whose only job is to find the callees `check_expr` is
+/// about to visit anyway. `load` returns null for "not a home", and sema caches
+/// that answer as firmly as a positive one.
+pub const HomeLoader = struct {
+    ctx: *anyopaque,
+    load: *const fn (ctx: *anyopaque, alias: []const u8) ?ForeignHome,
 };
 
 const Diagnostic = struct {
@@ -433,6 +465,30 @@ pub const Sema = struct {
     /// Unique module callables by source name. Null marks an overloaded spelling
     /// that cannot identify a declaration without overload resolution.
     callable_defs: std.StringHashMapUnmanaged(?*const ast.FuncDecl) = .{},
+    /// CROSS-HOME CALLABLE SPACE. `callable_defs` above holds exactly THIS
+    /// module's bare-name relations and is `clearRetainingCapacity`'d per
+    /// `check_module`, so a dotted callee had no key and never reached
+    /// `recordApplication`. Nothing else attempted resolution either: MEASURED
+    /// at `c8d1b137`, `idol check` accepts `nosuchmodule.nosuchrelation(x)`
+    /// with no errors and exit 0.
+    ///
+    /// A row here is `<home spelling as written> -> that home's module`, and a
+    /// `null` value is a MEASURED absence — a spelling the loader was asked for
+    /// and could not resolve. Caching the negative matters: every occurrence of
+    /// `nosuchmodule.f(x)` would otherwise re-walk five search roots.
+    ///
+    /// Modules are PARSED AND OWNED BY THE HOST (`home_loader` below), never by
+    /// sema: §92 lets the host parse and store, and a second module loader
+    /// inside the type checker is a second authority for what a home is.
+    foreign_homes: std.StringHashMapUnmanaged(?ForeignHome) = .{},
+    /// Spellings this module has already established name a HOME. See the
+    /// shadow test in `foreignRelation` for why the memory is required.
+    /// Keys are borrowed from `foreign_homes`, which owns them.
+    home_roots: std.StringHashMapUnmanaged(void) = .{},
+    /// The host's module loader. Absent means cross-home resolution is off and
+    /// every dotted callee stays unresolved exactly as it was — which is what
+    /// every unit test in this file wants, and what `null` therefore means.
+    home_loader: ?HomeLoader = null,
     /// Authoritative callable resolution retained per checked application.
     applications: std.AutoHashMapUnmanaged(*const Expr, ApplicationFact) = .empty,
     /// Top-level type aliases, used by semantic type resolution. Shares one
@@ -758,6 +814,113 @@ pub const Sema = struct {
         return self.applications.get(expr);
     }
 
+    /// The home a spelling names, asking the host at most once per spelling.
+    ///
+    /// The key is DUPED. `spelling` is built into a stack buffer by
+    /// `dottedHomeSpelling` and is gone by the next statement; a cache keyed on
+    /// it reads freed stack on the second lookup, which is the kind of bug that
+    /// answers correctly until the frame layout changes.
+    fn homeNamed(self: *Sema, spelling: []const u8) ?ForeignHome {
+        if (self.foreign_homes.get(spelling)) |cached| return cached;
+        const loader = self.home_loader orelse return null;
+        const answer = loader.load(loader.ctx, spelling);
+        const key = self.alloc.dupe(u8, spelling) catch return answer;
+        self.foreign_homes.put(self.alloc, key, answer) catch {
+            self.alloc.free(key);
+        };
+        return answer;
+    }
+
+    /// One resolved cross-home relation: which home, and which declaration.
+    pub const ForeignRelation = struct {
+        home: ForeignHome,
+        decl: *const ast.FuncDecl,
+    };
+
+    /// The home spelling of a DOTTED callee, written into `buf`. `a.b` -> `a`,
+    /// `a.b.c` -> `a.b`. Null when the callee is not a dotted name chain — a
+    /// method call, an index, a call result, anything with a non-name root is
+    /// not a home reference and must not be guessed into one.
+    fn dottedHomeSpelling(callee: *const Expr, buf: []u8) ?[]const u8 {
+        if (callee.* != .field) return null;
+        var chain: [8]*const Expr = undefined;
+        var depth: usize = 0;
+        var cur: *const Expr = callee.field.obj;
+        while (cur.* == .field) {
+            if (depth == chain.len) return null;
+            chain[depth] = cur;
+            depth += 1;
+            cur = cur.field.obj;
+        }
+        if (cur.* != .name) return null;
+        var len: usize = 0;
+        const root = cur.name.ident;
+        if (root.len > buf.len) return null;
+        @memcpy(buf[0..root.len], root);
+        len = root.len;
+        // `chain` was filled inner-most-last, so walk it back to source order.
+        var i: usize = depth;
+        while (i > 0) {
+            i -= 1;
+            const seg = chain[i].field.field;
+            if (len + 1 + seg.len > buf.len) return null;
+            buf[len] = '.';
+            len += 1;
+            @memcpy(buf[len..][0..seg.len], seg);
+            len += seg.len;
+        }
+        return buf[0..len];
+    }
+
+    /// The relation a dotted callee names in a reachable foreign home.
+    ///
+    /// Null keeps the site unresolved rather than guessing — the same contract
+    /// `applicationFact` states. Four ways to answer null, and each is a real
+    /// distinction: the callee is not a dotted name chain; no home of that
+    /// spelling was resolved; an ordinary binding SHADOWS the spelling, so the
+    /// dots are field access on a value and not a home at all; or the home
+    /// declares no such relation (or declares it twice, which cannot identify
+    /// a declaration without overload resolution).
+    pub fn foreignRelation(self: *Sema, callee: *const Expr) ?ForeignRelation {
+        if (self.home_loader == null) return null;
+        var buf: [512]u8 = undefined;
+        const home_spelling = dottedHomeSpelling(callee, &buf) orelse return null;
+        var root_it = std.mem.splitScalar(u8, home_spelling, '.');
+        const root = root_it.first();
+        // A DECLARED binding of the root spelling makes the dots FIELD ACCESS
+        // and this is not a home reference: `pack.kinds(i)` on a `pack`
+        // parameter must never be read as home `pack`. But sema INVENTS a
+        // binding for the root of a dotted callee the first time it checks one
+        // (the implicit-local rule), so from the second occurrence onward every
+        // home in the file would look shadowed by a name the source never
+        // wrote. `home_roots` is the memory of what the FIRST — and only
+        // uncontaminated — answer was.
+        if (!self.home_roots.contains(root)) {
+            if (self.scope.lookup(root) != null) return null;
+            if (self.module_globals.contains(root)) return null;
+        }
+        const entry = self.homeNamed(home_spelling) orelse return null;
+        self.home_roots.put(self.alloc, entry.home, {}) catch {};
+        // `entry.home` is the RESOLVED dotted home; the root spelling as
+        // WRITTEN is what shadowing is asked about, and for a sibling they are
+        // the same string. Record the written one.
+        if (self.foreign_homes.getKey(home_spelling)) |owned| {
+            var owned_it = std.mem.splitScalar(u8, owned, '.');
+            self.home_roots.put(self.alloc, owned_it.first(), {}) catch {};
+        }
+        const wanted = callee.field.field;
+        var found: ?*const ast.FuncDecl = null;
+        for (entry.module.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len != 1 or fd.method or fd.is_local) continue;
+            if (!std.mem.eql(u8, fd.path[0], wanted)) continue;
+            if (found != null) return null;
+            found = fd;
+        }
+        return .{ .home = entry, .decl = found orelse return null };
+    }
+
     fn recordApplication(
         self: *Sema,
         expr: *const Expr,
@@ -766,11 +929,24 @@ pub const Sema = struct {
         arguments: []const *Expr,
         result: RT,
     ) SemaError!void {
+        try self.recordApplicationInHome(expr, target, subject, arguments, result, null);
+    }
+
+    fn recordApplicationInHome(
+        self: *Sema,
+        expr: *const Expr,
+        target: *const ast.FuncDecl,
+        subject: ?*const Expr,
+        arguments: []const *Expr,
+        result: RT,
+        callee_home: ?[]const u8,
+    ) SemaError!void {
         try self.applications.put(self.alloc, expr, .{
             .target = target,
             .subject = subject,
             .arguments = arguments,
             .result = result,
+            .home = callee_home,
         });
     }
 
@@ -855,6 +1031,10 @@ pub const Sema = struct {
         }
         self.overloads.deinit(self.alloc);
         self.callable_defs.deinit(self.alloc);
+        self.home_roots.deinit(self.alloc);
+        var fh_it = self.foreign_homes.iterator();
+        while (fh_it.next()) |entry| self.alloc.free(entry.key_ptr.*);
+        self.foreign_homes.deinit(self.alloc);
         self.applications.deinit(self.alloc);
         self.alias_defs.deinit(self.alloc);
         self.generic_func_arities.deinit(self.alloc);
@@ -3987,6 +4167,21 @@ pub const Sema = struct {
                         );
                     }
                 }
+                // CROSS-HOME RESOLUTION RUNS BEFORE THE CALLEE IS CHECKED, and
+                // the ordering is load-bearing rather than tidy.
+                //
+                // MEASURED: with this asked AFTER `check_expr(c.func)` below,
+                // every dotted callee answered `shadowed` — because checking a
+                // `.field` callee checks its OBJECT, and the `.name` arm
+                // silently defines an unresolved name as an implicit local
+                // (the same rule gap[026] documents one screen up). So sema
+                // manufactured a binding named `lexer`, then refused to read
+                // `lexer.next` as a home because a binding named `lexer`
+                // existed. The shadow test is right and must stay — a real
+                // `lexer = …` DOES make the dots field access — but it has to
+                // be asked while the answer is still the source's.
+                const foreign_callee: ?ForeignRelation =
+                    if (c.func.* == .field) self.foreignRelation(c.func) else null;
                 const ft = try self.check_expr(c.func);
                 if (c.form == .braced and ft == .func) {
                     // c0 §43 `law.brace`: "an ordinary callable uses `name( … )`,
@@ -4125,6 +4320,24 @@ pub const Sema = struct {
                             try self.recordApplication(expr, resolved, null, c.args, result);
                         }
                     }
+                }
+                // CROSS-HOME. `callable_defs` above holds exactly this module's
+                // own bare-name relations, so a dotted callee reached no key
+                // and no `ApplicationFact` — which is why the graph had no
+                // application and `native_backend` refused eight of the
+                // eighteen self-hosted modules with
+                // `unresolved-application-facts`.
+                //
+                // THE RESULT DESCRIPTOR COMES FROM THE FOREIGN DECLARATION, not
+                // from `ft` above. `check_expr` on a dotted callee answers
+                // `.any`, and `.any` is not a descriptor a scalar call can be
+                // realized from — `lowerCheckedScalarCall` rejects it. The
+                // declaration is the authority for its own return type in
+                // exactly the way it is for a same-home relation.
+                if (foreign_callee) |foreign| {
+                    const declared = types.resolve(foreign.decl.func.ret_type, null, self.alloc) catch RT.any;
+                    try self.recordApplicationInHome(expr, foreign.decl, null, c.args, declared, foreign.home.home);
+                    return declared;
                 }
                 return result;
             },

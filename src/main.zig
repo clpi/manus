@@ -6,7 +6,8 @@ const lexer_bridge = @import("lexer_bridge.zig");
 const lexer_dispatch = @import("lexer_dispatch.zig");
 const Parser = @import("parser.zig").Parser;
 const ast = @import("ast.zig");
-const Sema = @import("sema.zig").Sema;
+const sema = @import("sema.zig");
+const Sema = sema.Sema;
 const CodeGen = @import("codegen.zig").CodeGen;
 const Mono = @import("mono.zig");
 const MacroExpand = @import("macro_expand.zig");
@@ -56,6 +57,7 @@ const waist = struct {
     }
 };
 const backend_identity = @import("backend_identity.zig");
+const home_resolve = @import("home_resolve.zig");
 const benchmark_evidence = @import("benchmark_evidence.zig");
 const representation_manifest = @import("representation_manifest.zig");
 const target_model = @import("target_model.zig");
@@ -68,10 +70,6 @@ const sim_pipeline = @import("sim_pipeline.zig");
 const knowledge_snapshot = @import("knowledge_snapshot.zig");
 const assumption_guard = @import("assumption_guard.zig");
 const repair_candidate = @import("repair_candidate.zig");
-const realization = @import("realization.zig");
-const persistent_semantic_state = @import("persistent_semantic_state.zig");
-const compile_semantic_cache = @import("compile_semantic_cache.zig");
-const semantic_invalidation = @import("semantic_invalidation.zig");
 const evidence_record = @import("evidence_record.zig");
 const proof_carrying = @import("proof_carrying.zig");
 const optimization_outcome = @import("optimization_outcome.zig");
@@ -88,8 +86,6 @@ const host_run = @import("host_run.zig");
 const wasm_semantic_gen = @import("wasm_semantic_gen.zig");
 const token_classify_gen = @import("token_classify_gen.zig");
 const grammar_role_gen = @import("grammar_role_gen.zig");
-const semantic_cli = @import("semantic_cli.zig");
-const semantic_transaction = @import("semantic_transaction.zig");
 
 var macos_sdkroot_configured = false;
 var compiler_lib_root: ?[]const u8 = null;
@@ -385,7 +381,6 @@ const usage =
     \\  sim        <file>   export SIM v0 semantic snapshot JSON (Pass 5)
     \\             --import-c <header>  import C declarations into SIM (Pass 5 Layer B)
     \\  explain    <file>   export knowledge snapshots + optimization outcomes (Pass 7)
-    \\  realize    <file>   export realization plan + persistent evidence (Pass 8)
     \\  algebra             export Pass 2 convergence catalog JSON
     \\  catalog             export Pass 3 keyword/directive/grammar catalog JSON
     \\  catalog audit       full Pass 1–14 audit JSON (open_items + findings)
@@ -393,7 +388,6 @@ const usage =
     \\  catalog audit gate [all|pass11|...|pass34|pass36|pass27|foundation|lua-superset|semantic-unification|foundational-closure|proof-bundle|self-hosting-foundation|hpls-frontier|semantic-access] [--barrier] per-pass native gate
     \\  catalog audit summary audit without open_items (medium)
     \\  dev        <sub>    Pass 13 development control plane (snapshot|audit|context|summary|claim|persist|session|validate|integration|coordination)
-    \\  semantic   <sub>    Pass 12 semantic projections (intent|compare|proof|preview|validate|transforms|…)
     \\  wasm-tables emit    regenerate lib/wasm/opcode_lookup.id + ward_mvp_opcodes.id
     \\  completion <shell>  generate shell completions (bash, zsh, fish, nu)
     \\
@@ -460,12 +454,10 @@ pub fn main(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "symbols") or
             std.mem.eql(u8, args[1], "graph") or
             std.mem.eql(u8, args[1], "sim") or
-            std.mem.eql(u8, args[1], "realize") or
             std.mem.eql(u8, args[1], "explain") or
             std.mem.eql(u8, args[1], "algebra") or
             std.mem.eql(u8, args[1], "catalog") or
             std.mem.eql(u8, args[1], "dev") or
-            std.mem.eql(u8, args[1], "semantic") or
             std.mem.eql(u8, args[1], "wasm-tables") or
             std.mem.eql(u8, args[1], "token-tables") or
             std.mem.eql(u8, args[1], "completion") or
@@ -788,30 +780,12 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    if (std.mem.eql(u8, cmd, "realize")) {
-        if (input_file == null) {
-            term.err("no input file (duo realize <file.id>)", .{});
-            std.process.exit(1);
-        }
-        try do_realize(alloc, io, input_file.?);
-        return;
-    }
-
     if (std.mem.eql(u8, cmd, "explain")) {
         const file = input_file orelse {
             term.err("no input file (duo explain <file.id>)", .{});
             std.process.exit(1);
         };
         try do_explain(alloc, io, file);
-        return;
-    }
-
-    if (std.mem.eql(u8, cmd, "semantic")) {
-        const sub = input_file orelse {
-            term.err("usage: duo semantic <intent|compare|proof|obligations|projections|context> [entity]", .{});
-            std.process.exit(1);
-        };
-        try do_semantic(alloc, io, sub, extra_arg);
         return;
     }
 
@@ -1544,44 +1518,6 @@ fn do_sim_c_import(alloc: std.mem.Allocator, io: Io, header_path: []const u8) !v
     try fw.interface.flush();
 }
 
-fn do_realize(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
-    var ps = try parse_and_check(alloc, io, src_path);
-    defer ps.sem.deinit();
-
-    var refresh = try compile_semantic_cache.refreshFromCheckedModule(alloc, io, &ps.mod, src_path, "native");
-    defer refresh.deinit(alloc);
-
-    const stdout = std.Io.File.stdout();
-    var buf: [16384]u8 = undefined;
-    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
-    try fw.interface.print("{{\"schema\":\"duo-realize-v0\",\"file\":\"", .{});
-    for (src_path) |c| {
-        switch (c) {
-            '"', '\\' => try fw.interface.print("\\{c}", .{c}),
-            else => try fw.interface.writeAll(&.{c}),
-        }
-    }
-    try fw.interface.print("\",\"realization_plan\":", .{});
-    try realization.writeJson(&refresh.realizations, &fw.interface);
-    try fw.interface.print(",\"evidence_catalog\":", .{});
-    try evidence_record.writeCatalogJson(&fw.interface);
-    try fw.interface.print(",\"persistent_state\":", .{});
-    try persistent_semantic_state.writeJson(&refresh.state, &fw.interface);
-    try fw.interface.print(",\"cache_path\":\"", .{});
-    for (persistent_semantic_state.DEFAULT_CACHE_PATH) |c| {
-        switch (c) {
-            '"', '\\' => try fw.interface.print("\\{c}", .{c}),
-            else => try fw.interface.writeAll(&.{c}),
-        }
-    }
-    try fw.interface.print("\",\"reuse_audit\":", .{});
-    try persistent_semantic_state.writeReuseAuditJson(refresh.audits, &fw.interface);
-    try fw.interface.print(",\"invalidation\":", .{});
-    try semantic_invalidation.writeJson(&refresh.invalidation, &fw.interface);
-    try fw.interface.print("}}\n", .{});
-    try fw.interface.flush();
-}
-
 fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     contract_defer_exit = true;
     var ps = try parse_and_check(alloc, io, src_path);
@@ -1595,9 +1531,6 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
 
     var assumptions = try assumption_guard.buildFromModule(alloc, &ps.mod, &ps.sem, &graph);
     defer assumptions.deinit(alloc);
-
-    var realizations = try realization.buildFromGraph(alloc, &graph, src_path);
-    defer realizations.deinit(alloc);
 
     transform_engine.deinitProvenance(alloc);
     explain_pipeline.runForProvenance(alloc, io, &ps.mod, &ps.sem, src_path, compiler_lib_root) catch |e| switch (e) {
@@ -1651,8 +1584,6 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     try optimization_outcome.writeJson(&outcomes, &fw.interface);
     try fw.interface.print(",\"assumptions\":", .{});
     try assumption_guard.writeModuleJson(&assumptions, &fw.interface);
-    try fw.interface.print(",\"realizations\":", .{});
-    try realization.writeJson(&realizations, &fw.interface);
     // H-8 output totality: the transform engine's provenance and its tier-1
     // registry contract are compiler state with no other projection. Rendering
     // them here is what lets the dispatch gate be asserted from outside the
@@ -1781,39 +1712,6 @@ fn do_algebra(io: Io) !void {
     var buf: [8192]u8 = undefined;
     var fw: std.Io.File.Writer = .init(stdout, io, &buf);
     try semantic_algebra.writeCatalogJson(&fw.interface);
-    try fw.interface.flush();
-}
-
-fn do_semantic(alloc: std.mem.Allocator, io: Io, sub: []const u8, entity_arg: ?[]const u8) !void {
-    const stdout = std.Io.File.stdout();
-    var buf: [65536]u8 = undefined;
-    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
-    const entity = entity_arg orelse "duo:lexer:keyword_classifier";
-    if (std.mem.eql(u8, sub, "intent")) {
-        try semantic_cli.writeIntentJson(&fw.interface, entity);
-    } else if (std.mem.eql(u8, sub, "compare") or std.mem.eql(u8, sub, "candidates")) {
-        try semantic_cli.writeCandidateCompareJson(&fw.interface, alloc);
-    } else if (std.mem.eql(u8, sub, "proof") or std.mem.eql(u8, sub, "bundle")) {
-        try semantic_cli.writeProofBundleJson(&fw.interface, alloc, entity);
-    } else if (std.mem.eql(u8, sub, "obligations")) {
-        try semantic_cli.writeProofObligationsJson(&fw.interface, entity);
-    } else if (std.mem.eql(u8, sub, "projections")) {
-        try semantic_cli.writeProjectionsJson(&fw.interface);
-    } else if (std.mem.eql(u8, sub, "context")) {
-        try semantic_cli.writeContextJson(&fw.interface, entity_arg);
-    } else if (std.mem.eql(u8, sub, "preview")) {
-        try semantic_cli.writeTransactionPreviewJson(&fw.interface, entity_arg);
-    } else if (std.mem.eql(u8, sub, "validate")) {
-        try semantic_cli.writeTransactionValidateJson(&fw.interface, entity_arg);
-    } else if (std.mem.eql(u8, sub, "transforms")) {
-        try semantic_cli.writeTransformProofLogJson(&fw.interface);
-    } else if (std.mem.eql(u8, sub, "claims")) {
-        try semantic_cli.writeClaimsJson(&fw.interface, alloc);
-    } else {
-        term.err("unknown semantic subcommand '{s}' (expected: intent, compare, proof, obligations, projections, context, preview, validate, transforms, claims)", .{sub});
-        std.process.exit(1);
-    }
-    try fw.interface.writeAll("\n");
     try fw.interface.flush();
 }
 
@@ -3018,6 +2916,56 @@ fn diagnoseLexRejection(lex: *const Lexer, src: []const u8, src_path: []const u8
     }
 }
 
+/// THE HOST'S HALF OF CROSS-HOME IDENTITY.
+///
+/// `sema` must not read files — §92 gives the host parsing and storage and
+/// gives sema meaning — so the module loader lives here and sema holds only a
+/// function pointer. Every home is resolved through `home_resolve`, the ONE
+/// authority, so this and `codegen.find_module_file_for_req` cannot drift into
+/// two answers for "which file is `compiler.lexer`".
+///
+/// PARSE ONLY, NEVER CHECK. A foreign home contributes exactly one thing to
+/// this compilation: the DECLARATION a dotted callee names, which is a parse
+/// fact. Checking it would re-check the whole reachable program per file, and
+/// would make a type error in a module you merely CALL into a failure of the
+/// module you are compiling.
+///
+/// A FOREIGN PARSE MAY NOT KILL THE PROCESS. The primary path exits on a lex or
+/// parse rejection because the file the user named is the program. Here the
+/// file is a candidate: if it does not parse, this spelling is simply not a
+/// home, the site stays unresolved, and the refusal the user gets is about
+/// their own file.
+const HomeLoaderCtx = struct {
+    alloc: std.mem.Allocator,
+    io: Io,
+    from: []const u8,
+
+    fn load(raw: *anyopaque, alias: []const u8) ?sema.ForeignHome {
+        const self: *HomeLoaderCtx = @ptrCast(@alignCast(raw));
+        const path = home_resolve.resolve(
+            self.alloc,
+            self.io,
+            .{ .from = self.from, .stdlib_root = compiler_lib_root },
+            alias,
+        ) orelse return null;
+        // A module is not its own foreign home. Without this a file named
+        // `x.id` containing `x.f(1)` would resolve to itself and publish an
+        // application against a declaration the graph is already lifting,
+        // which is a duplicate identity, not a cross-home one.
+        if (std.mem.eql(u8, path, self.from)) return null;
+        const src = read_source(self.alloc, self.io, path) catch return null;
+        const facts = lexer_bridge.sourceFacts(path);
+        var lex = Lexer.initFacts(src, path, facts);
+        routeThroughDuoLexer(self.alloc, &lex, src, path) catch return null;
+        var parser = Parser.init(&lex, self.alloc);
+        parser.idol_mode = lex.family == lexer_bridge.family_canon;
+        const mod = self.alloc.create(ast.Module) catch return null;
+        mod.* = parser.parse_module() catch return null;
+        const home = home_resolve.homeOfPath(self.alloc, self.io, path) catch return null;
+        return .{ .home = home, .path = path, .module = mod };
+    }
+};
+
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
     const src = try read_source(alloc, io, src_path);
     term.setSource(src_path, src);
@@ -3048,6 +2996,11 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     sem.lua55_mode = lex.source_law == .lua;
     sem.idol_mode = lex.family == lexer_bridge.family_canon;
     sem.source_path = try alloc.dupe(u8, src_path);
+    {
+        const ctx = try alloc.create(HomeLoaderCtx);
+        ctx.* = .{ .alloc = alloc, .io = io, .from = sem.source_path.? };
+        sem.home_loader = .{ .ctx = ctx, .load = HomeLoaderCtx.load };
+    }
     sem.hints_enabled = term.hints;
     sem.info_enabled = term.info;
     if (module_has_macro_syntax(&mod)) {

@@ -202,6 +202,16 @@ pub const Node = struct {
     // ─────────────────────────────────────────────────────────────────────
     /// Opaque link to AST for Phase 1 — graph mirrors, does not replace, AST yet.
     ast_ref: ?*anyopaque = null,
+    /// THE HOME A CALLABLE IS DECLARED IN, when that home is not this module.
+    ///
+    /// Null on every node lifted from the module being compiled — its home is
+    /// the module node and the `.contains` chain already says so. Non-null only
+    /// on a FOREIGN relation: a declaration this module refers to and does not
+    /// contain. It is the one fact that separates "the graph knows this call"
+    /// from "the graph knows this call AND can name the symbol it lands on",
+    /// and realization reads it through `foreignHome` rather than by
+    /// re-deriving a home from a file path in a second place.
+    foreign_home: ?[]const u8 = null,
     /// The graph entity this one is nested inside. The `.contains` edge is a
     /// projection of this field; `addChild` writes both from one call.
     scope: ?id = null,
@@ -858,6 +868,15 @@ pub const SemanticGraph = struct {
 
     fn isBootstrapApplicationExpr(self: *const SemanticGraph, expr: *const ast.Expr) bool {
         return native_bootstrap.applicationExprInModule(expr, self.module_path);
+    }
+
+    /// The dotted home of a callable declared OUTSIDE this module, or null when
+    /// the callable is this module's own. Realization asks this to decide
+    /// whether a call is a local branch or a relocation against another home's
+    /// symbol; nothing else may re-derive the answer.
+    pub fn foreignHome(self: *const SemanticGraph, entity: id) ?[]const u8 {
+        const node = self.get(entity) orelse return null;
+        return node.foreign_home;
     }
 
     fn findFuncDecl(self: *const SemanticGraph, target: *const ast.FuncDecl) ?id {
@@ -1919,6 +1938,50 @@ pub const SemanticGraph = struct {
         }
     }
 
+    /// The graph entity for a relation declared in ANOTHER HOME.
+    ///
+    /// `findFuncDecl` answers over `origin`, which is keyed on the AST pointers
+    /// this module's lift walked — so a cross-home target was never in it and
+    /// the site could only be `MissingSemanticDeclaration`. The declaration is
+    /// real and checked; what was missing was a graph entity to BE it.
+    ///
+    /// It is lifted as an ordinary `.func` child of this module's node, with
+    /// one fact the local ones do not carry: `foreign_home`. Every downstream
+    /// consumer therefore treats it as a callable identity in the ordinary way
+    /// and only realization — which must choose a branch or a relocation —
+    /// consults the home. That is the §35 split: one semantic identity, two
+    /// physical realizations, and the boundary named exactly once.
+    ///
+    /// `rememberFunc` keys `origin` on the AST pointer, so the SECOND call to
+    /// the same foreign relation finds this node through `findFuncDecl` and no
+    /// duplicate identity is created.
+    fn liftForeignRelation(
+        self: *SemanticGraph,
+        module: id,
+        fact: sema.ApplicationFact,
+        file: []const u8,
+    ) !id {
+        const home = fact.home orelse return error.MissingSemanticDeclaration;
+        const fd = fact.target;
+        if (fd.path.len != 1) return error.MissingSemanticDeclaration;
+        const func_id = try self.addChild(module, .{
+            .kind = .func,
+            .span = .{ .file = file, .start = fd.loc.line, .end = fd.loc.col },
+            .name = fd.path[0],
+            .result_descriptor = try types.resolve(fd.func.ret_type, null, self.alloc),
+            .ast_ref = @constCast(@ptrCast(fd)),
+            .foreign_home = home,
+        });
+        for (fd.func.params) |param| {
+            _ = try self.addChild(func_id, .{
+                .kind = .param,
+                .span = .{ .file = file, .start = 0, .end = 0 },
+                .name = param.name,
+            });
+        }
+        return func_id;
+    }
+
     /// Publish identities and descriptors that survived semantic checking.
     /// Absence of a checked fact stays unresolved rather than falling back to
     /// name matching.
@@ -1942,7 +2005,7 @@ pub const SemanticGraph = struct {
             const expr: *const Expr = @ptrCast(@alignCast(raw));
             const fact = checked.applicationFact(expr) orelse continue;
             const relation = self.findFuncDecl(fact.target) orelse
-                return error.MissingSemanticDeclaration;
+                try self.liftForeignRelation(module, fact, file);
             const caller = self.nodes.items[call_id].scope orelse return error.MissingApplicationCaller;
             const caller_node = self.get(caller) orelse return error.MissingApplicationCaller;
             if (!self.callable(caller) and caller_node.scope != null) return error.MissingApplicationCaller;

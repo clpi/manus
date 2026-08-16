@@ -10,6 +10,7 @@ const native_types = @import("types.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const home_resolve = @import("home_resolve.zig");
 const table_apply = @import("table_apply.zig");
 const const_table = @import("const_table.zig");
 const region_graph = @import("region_graph.zig");
@@ -7051,6 +7052,38 @@ fn validateDnirApplications(
                     return invalidFactsWith(diagnostic, @src(), "missing-application-target");
                 if (!std.meta.eql(target_id, relation)) {
                     return invalidFactsWith(diagnostic, @src(), "application-target-mismatch");
+                }
+                // A CROSS-HOME TARGET IS NOT IN `module.functions` AND MUST NOT
+                // BE. `targets` above is built from the functions THIS module
+                // defines, so a relation living in another home could only ever
+                // be `missing-application-target` — the validator had no way to
+                // say "absent here, and correctly so".
+                //
+                // IT STILL VALIDATES, in the one way that is available: the
+                // symbol the emitter chose must be the symbol the MANGLING LAW
+                // derives from `(home, name)`. That is the whole content of a
+                // link target for a relation this module cannot see the body
+                // of, and it is two-sided — an emitter that invents a symbol,
+                // or a lift that loses the home, both fail here.
+                if (graph.foreignHome(target_id)) |foreign_home| {
+                    const node = graph.get(target_id) orelse
+                        return invalidFactsWith(diagnostic, @src(), "missing-application-target");
+                    const relation_name = node.name orelse
+                        return invalidFactsWith(diagnostic, @src(), "missing-application-target");
+                    const want = home_resolve.homeSymbol(alloc, foreign_home, relation_name) catch
+                        return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
+                    defer alloc.free(want);
+                    if (!std.mem.eql(u8, want, instruction.callee)) {
+                        return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
+                    }
+                    if (instruction.record.len != 0) {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-abi");
+                    }
+                    const foreign_use = try seen.getOrPut(alloc, application.application);
+                    if (foreign_use.found_existing) {
+                        return invalidFactsWith(diagnostic, @src(), "application-realization-count");
+                    }
+                    continue;
                 }
                 const target = targets.get(target_id) orelse
                     return invalidFactsWith(diagnostic, @src(), "missing-application-target");
