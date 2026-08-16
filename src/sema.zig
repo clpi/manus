@@ -485,6 +485,21 @@ pub const Sema = struct {
     /// shadow test in `foreignRelation` for why the memory is required.
     /// Keys are borrowed from `foreign_homes`, which owns them.
     home_roots: std.StringHashMapUnmanaged(void) = .{},
+    /// `<name a binding gives a home> -> <that home's dotted spelling>`.
+    ///
+    /// The third layer of `host.md`'s "Worlds provide authority; homes provide
+    /// reach; BINDINGS PROVIDE NAMES". A row is written by `noteHomeAlias` for
+    /// `global A = compiler.arm64` and read by `foreignRelation`; both keys and
+    /// values are owned here.
+    ///
+    /// A ROW IS NOT A CLAIM THAT THE HOME EXISTS. Nothing is resolved when the
+    /// row is written — the spelling is copied out of the initializer and
+    /// nothing else — so `home_aliases` cannot invent reach. `homeNamed` is
+    /// still the only thing that turns a spelling into a module, and it answers
+    /// null for an alias that names no file just as it does for one written out.
+    /// That keeps the cost at zero for every global that is not used as a
+    /// callee root, which is nearly all of them.
+    home_aliases: std.StringHashMapUnmanaged([]const u8) = .{},
     /// The host's module loader. Absent means cross-home resolution is off and
     /// every dotted callee stays unresolved exactly as it was — which is what
     /// every unit test in this file wants, and what `null` therefore means.
@@ -831,6 +846,60 @@ pub const Sema = struct {
         return answer;
     }
 
+    /// A bare dotted NAME CHAIN written into `buf`: `a` -> `a`, `a.b.c` ->
+    /// `a.b.c`. Null for anything else — a call, an index, a literal, or a
+    /// chain whose root is not a name. This is `dottedHomeSpelling`'s sibling
+    /// and deliberately not the same function: that one DROPS the last segment
+    /// because a callee's last segment is the relation, and an alias
+    /// initializer has no relation to drop.
+    fn dottedNameChain(expr: *const Expr, buf: []u8) ?[]const u8 {
+        var chain: [8]*const Expr = undefined;
+        var depth: usize = 0;
+        var cur: *const Expr = expr;
+        while (cur.* == .field) {
+            if (depth == chain.len) return null;
+            chain[depth] = cur;
+            depth += 1;
+            cur = cur.field.obj;
+        }
+        if (cur.* != .name) return null;
+        const root = cur.name.ident;
+        if (root.len > buf.len) return null;
+        @memcpy(buf[0..root.len], root);
+        var len: usize = root.len;
+        var i: usize = depth;
+        while (i > 0) {
+            i -= 1;
+            const seg = chain[i].field.field;
+            if (len + 1 + seg.len > buf.len) return null;
+            buf[len] = '.';
+            len += 1;
+            @memcpy(buf[len..][0..seg.len], seg);
+            len += seg.len;
+        }
+        return buf[0..len];
+    }
+
+    /// Record `global <name> = <a.dotted.chain>` as a NAME FOR A HOME.
+    ///
+    /// Deliberately silent on everything else: a non-chain initializer is an
+    /// ordinary value and writes no row, and a self-naming binding
+    /// (`global a = a`) writes none either because expanding it would loop.
+    fn noteHomeAlias(self: *Sema, name: []const u8, init_expr: *const ast.Expr) !void {
+        var buf: [512]u8 = undefined;
+        const spelling = dottedNameChain(init_expr, &buf) orelse return;
+        if (std.mem.eql(u8, spelling, name)) return;
+        const owned = try self.alloc.dupe(u8, spelling);
+        errdefer self.alloc.free(owned);
+        const gop = try self.home_aliases.getOrPut(self.alloc, name);
+        if (gop.found_existing) {
+            self.alloc.free(gop.value_ptr.*);
+        } else {
+            gop.key_ptr.* = try self.alloc.dupe(u8, name);
+        }
+        gop.value_ptr.* = owned;
+    }
+
     /// One resolved cross-home relation: which home, and which declaration.
     pub const ForeignRelation = struct {
         home: ForeignHome,
@@ -895,16 +964,53 @@ pub const Sema = struct {
         // home in the file would look shadowed by a name the source never
         // wrote. `home_roots` is the memory of what the FIRST — and only
         // uncontaminated — answer was.
-        if (!self.home_roots.contains(root)) {
+        // A BINDING PROVIDES A NAME. `host.md` writes the three layers as one
+        // sentence — "Worlds provide authority; homes provide reach; bindings
+        // provide names" — and the third had no mechanism: `global C =
+        // compiler.comptime` landed in `module_globals`, so the shadow test one
+        // line down read `C.fold(x)` as field access on a value and the site
+        // stayed unresolved. The home was reachable, the name was bound to it,
+        // and nothing joined the two facts. HPLS §99: true, represented, not
+        // propagated.
+        //
+        // THE EXPANSION IS A SPELLING SUBSTITUTION AND NOTHING MORE. The alias
+        // replaces the ROOT SEGMENT of the written home spelling, so `C.fold`
+        // asks for `compiler.comptime` and `C.sub.fold` asks for
+        // `compiler.comptime.sub`; `homeNamed` then answers exactly as it does
+        // for a home written out in full, through the same cache, with the same
+        // negative memory. No new resolution path exists, which is why an alias
+        // naming nothing (`std.compiler.arm64`, measured: no `lib/std/` exists
+        // in either tree) still resolves to nothing instead of to a guess.
+        //
+        // AND IT DEFERS TO A SHADOW, which is the half that keeps the existing
+        // rule intact: the alias applies only where the visible binding for the
+        // root IS the module global that declares it. A parameter or local
+        // spelled `C` is an ordinary subject and `C.fold(x)` is field access on
+        // it, exactly as before.
+        const alias_target: ?[]const u8 = if (self.home_aliases.get(root)) |target| blk: {
+            if (self.scope.lookup(root)) |symbol| {
+                if (!symbol.is_global) break :blk null;
+            }
+            break :blk target;
+        } else null;
+        var alias_buf: [512]u8 = undefined;
+        var resolved_spelling = home_spelling;
+        if (alias_target) |target| {
+            const rest = home_spelling[root.len..];
+            if (target.len + rest.len > alias_buf.len) return null;
+            @memcpy(alias_buf[0..target.len], target);
+            @memcpy(alias_buf[target.len..][0..rest.len], rest);
+            resolved_spelling = alias_buf[0 .. target.len + rest.len];
+        } else if (!self.home_roots.contains(root)) {
             if (self.scope.lookup(root) != null) return null;
             if (self.module_globals.contains(root)) return null;
         }
-        const entry = self.homeNamed(home_spelling) orelse return null;
+        const entry = self.homeNamed(resolved_spelling) orelse return null;
         self.home_roots.put(self.alloc, entry.home, {}) catch {};
         // `entry.home` is the RESOLVED dotted home; the root spelling as
         // WRITTEN is what shadowing is asked about, and for a sibling they are
         // the same string. Record the written one.
-        if (self.foreign_homes.getKey(home_spelling)) |owned| {
+        if (self.foreign_homes.getKey(resolved_spelling)) |owned| {
             var owned_it = std.mem.splitScalar(u8, owned, '.');
             self.home_roots.put(self.alloc, owned_it.first(), {}) catch {};
         }
@@ -1032,6 +1138,12 @@ pub const Sema = struct {
         self.overloads.deinit(self.alloc);
         self.callable_defs.deinit(self.alloc);
         self.home_roots.deinit(self.alloc);
+        var ha_it = self.home_aliases.iterator();
+        while (ha_it.next()) |entry| {
+            self.alloc.free(entry.key_ptr.*);
+            self.alloc.free(entry.value_ptr.*);
+        }
+        self.home_aliases.deinit(self.alloc);
         var fh_it = self.foreign_homes.iterator();
         while (fh_it.next()) |entry| self.alloc.free(entry.key_ptr.*);
         self.foreign_homes.deinit(self.alloc);
@@ -2690,6 +2802,7 @@ pub const Sema = struct {
                     }
                     try self.check_binding_attributes(lname, t, if (i < gd.inits.len) gd.inits[i] else null);
                     try self.note_global(lname.ident, t);
+                    if (i < gd.inits.len) try self.noteHomeAlias(lname.ident, gd.inits[i]);
                     try self.scope.define(lname.ident, .{
                         .typ = t,
                         .is_const = is_const,
