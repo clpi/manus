@@ -18,6 +18,99 @@
 //! move the flush point, so it is preserved exactly, via module-level assembly
 //! that emits the `__DATA,__mod_init_func` pointer.
 //!
+//! # RUNG 1 — THE ARRIVAL GRANULARITY IS AN OBSERVATION NOTHING REQUIRED
+//!
+//! `setvbuf(stdout, _IOLBF)` does not say "the bytes arrive". It says **"the
+//! bytes arrive ONE LINE AT A TIME, FOREVER"**, and that second half is an
+//! observation no Idol program asked for. MEASURED on this compiler, four
+//! binaries emitting a BYTE-IDENTICAL 62,000-byte / 2,000-line stream, min of
+//! seven runs of `instructions retired`:
+//!
+//!     2,000 print calls, no constructor linked   13,246,155
+//!     2,000 print calls, constructor linked      19,993,459
+//!     1 print call,      no constructor linked   12,133,658
+//!     1 print call,      constructor linked      19,210,695
+//!
+//! Merging 1,999 write CALLS saves 556 instructions each. Removing the
+//! per-newline FLUSH saves **~3,200 instructions per newline** — six times more,
+//! and it is bought by changing nothing a consumer of the byte stream can see.
+//! `docs/surviving-runtime.md` §7 measures the same effect at 6,099 per newline
+//! on `cat`, where the writes go to a pipe rather than to `/dev/null`.
+//!
+//! THE REQUIRED OBSERVATION IS NOT PER-NEWLINE ARRIVAL. It is: **the bytes have
+//! arrived before any other party can look at the channel.** There are exactly
+//! three such moments in this file, and this is now the complete list:
+//!
+//!   1. before blocking on stdin  — `idol_io_read_stdin`, `idol_io_read_line`,
+//!      and `idol_io_read_path` when it falls through to stdin. This is the
+//!      handshake the original constructor was written for, and flushing HERE
+//!      satisfies it strictly: the writer cannot block on a response it has not
+//!      yet asked for.
+//!   2. before a child inherits fd 1 — `idol_os_execute`, `idol_process_capture`.
+//!      Parent bytes buffered past the spawn would appear AFTER the child's.
+//!   3. before an abnormal end — see the obligation below.
+//!
+//! # THE PROOF OBLIGATION, stated before the transform
+//!
+//! Line buffering may be dropped only if all five hold. Any one unproven means
+//! keep it; there is no "probably".
+//!
+//!   B1  CONTENT.    The byte sequence written to fd 1 is unchanged. Neither
+//!                   buffering mode can insert, drop or reorder bytes within one
+//!                   stream — stdio is a queue either way. Discharged by
+//!                   construction, and pinned by `gate/arrival.sh` comparing the
+//!                   full output of both regimes with `cmp`.
+//!
+//!   B2  ARRIVAL-BY-EXIT. Every byte arrives before the process ends normally.
+//!                   Returning from `main` runs `exit()`, which flushes every
+//!                   stdio stream. Discharged by libc, unchanged by this file.
+//!
+//!   B3  HANDSHAKE.  A program that writes and then BLOCKS ON INPUT must have
+//!                   flushed first, or it waits for a reply to a request still
+//!                   sitting in its own buffer. Discharged by moment 1 above.
+//!                   `gate/arrival.sh` runs the real bidirectional-pipe rig; a
+//!                   regression here HANGS, so the gate bounds it and reports
+//!                   the timeout as a failure rather than waiting.
+//!
+//!   B4  FD SHARING. A child process writing to the inherited fd 1 must not
+//!                   overtake buffered parent bytes. Discharged by moment 2.
+//!
+//!   B5  FAILURE.    Bytes written before a TRAP must still be observed. THIS
+//!                   ONE WAS NOT DISCHARGED BEFORE AND IS NOT FREE.
+//!                   `native_backend.emitTrapAbort` open-codes
+//!                   `kill(getpid(), SIGABRT)` as six words with no call and no
+//!                   import, on the reasoning that "the exit code is this
+//!                   subset's ONLY observable". MEASURED, that reasoning is
+//!                   false — the C oracle separates the two cases exactly:
+//!
+//!                       clang, puts() then abort()                12 bytes, 134
+//!                       clang, puts() then kill(getpid,SIGABRT)    0 bytes, 134
+//!
+//!                   libc's `abort()` flushes stdio; a raw `kill` does not. So
+//!                   the substitution kept the exit code and silently dropped a
+//!                   DIFFERENT observation. MEASURED on this compiler, before
+//!                   this change, two Idol programs of identical shape:
+//!
+//!                       print then trap, links `os.args`   12 bytes  (survives)
+//!                       print then trap, links no io       0 bytes  (LOST)
+//!
+//!                   The 12 bytes survived only because `os.args` happened to
+//!                   drag this constructor in. Whether a program's dying words
+//!                   are heard is decided by an unrelated linkage accident.
+//!                   Dropping line buffering without discharging B5 would turn
+//!                   the first row into the second — so B5 is discharged HERE,
+//!                   by a SIGABRT handler that flushes and re-raises with the
+//!                   default disposition, reproducing `abort()`'s behaviour in
+//!                   full rather than only its exit code.
+//!
+//!                   THE HANDLER ONLY COVERS PROGRAMS THAT LINK THIS OBJECT.
+//!                   The second row above — a trapping program with no io — was
+//!                   already losing its output before this change and still is.
+//!                   That is `native_backend.emitTrapAbort`'s to fix and it is
+//!                   ROUTED, not touched here. This file must not make it worse,
+//!                   and it does not: every program that observed pre-trap bytes
+//!                   before observes them after.
+//!
 //! `export const ptr linksection("__DATA,__mod_init_func")` — the obvious
 //! spelling — produces a correct section (flags 0x09, S_MOD_INIT_FUNC_POINTERS)
 //! and then CRASHES ld64 in `AliasAddressOrderer`, because Zig emits three
@@ -38,7 +131,6 @@ extern "c" fn fread(p: [*]u8, sz: usize, n: usize, f: *anyopaque) usize;
 extern "c" fn fclose(f: *anyopaque) c_int;
 extern "c" fn fileno(f: *anyopaque) c_int;
 extern "c" fn getchar() c_int;
-extern "c" fn setvbuf(f: *anyopaque, buf: ?[*]u8, mode: c_int, size: usize) c_int;
 extern "c" fn fflush(f: ?*anyopaque) c_int;
 extern "c" fn exit(code: c_int) noreturn;
 extern "c" fn getcwd(buf: [*]u8, size: usize) ?[*:0]u8;
@@ -50,15 +142,52 @@ extern "c" fn _NSGetArgv() *[*][*:0]u8;
 extern "c" fn __error() *c_int;
 extern "c" var __stdoutp: *anyopaque; // Darwin's `stdout`
 
+const Handler = *const fn (c_int) callconv(.c) void;
+extern "c" fn signal(sig: c_int, handler: ?Handler) ?Handler;
+extern "c" fn raise(sig: c_int) c_int;
+
 const EOF: c_int = -1;
 const SEEK_SET: c_int = 0;
 const SEEK_END: c_int = 2;
-const IOLBF: c_int = 1; // Darwin _IOLBF
 const ERANGE: c_int = 34;
+const SIGABRT: c_int = 6;
+
+/// The one place stdout arrival is forced. Every call site names the obligation
+/// (B3, B4 or B5) it is discharging, so the set stays auditable: if a flush has
+/// no obligation beside it, it is an observation nobody asked for and it goes.
+fn arrive() void {
+    _ = fflush(__stdoutp);
+}
+
+/// B5. `abort()` flushes stdio before dying; the backend's open-coded
+/// `kill(getpid(), SIGABRT)` does not, which is why pre-trap output is lost
+/// today for any program that does not link this object. Restoring the flush and
+/// re-raising under the DEFAULT disposition reproduces `abort()` exactly: same
+/// bytes, same signal, same exit code 134. `signal` rather than `sigaction`
+/// because the disposition reset must happen before the re-raise and the
+/// one-shot semantics here are the simpler proof.
+fn abortFlush(sig: c_int) callconv(.c) void {
+    arrive();
+    _ = signal(sig, null); // SIG_DFL
+    _ = raise(sig);
+}
 
 // ── the pre-main constructor ────────────────────────────────────────────────
+/// Was: `setvbuf(stdout, _IOLBF)` — a per-newline arrival observation for the
+/// life of the process, costing ~3,200 instructions per newline forever. Now:
+/// install the B5 handler and nothing else. stdout keeps libc's own default
+/// (line-buffered on a tty, block-buffered on a pipe or file), which is the
+/// weakest arrival observation that still satisfies B1-B5.
+///
+/// The SYMBOL NAME IS DELIBERATELY UNCHANGED. `gate/survivor.sh` pins that an
+/// `os.args` program carries exactly one initializer and that it is
+/// `_idol_io_line_buffer`; that row stays true. Its sibling rows pin `_setvbuf`
+/// in the undefined-symbol census and those DO change — see the routed note in
+/// the lane report. A gate row that pins the pre-transform symbol set is
+/// measuring the old realization, not the semantics, and must be updated with
+/// the transform rather than blocking it.
 export fn idol_io_line_buffer() callconv(.c) void {
-    _ = setvbuf(__stdoutp, null, IOLBF, 0);
+    _ = signal(SIGABRT, abortFlush);
 }
 
 comptime {
@@ -101,6 +230,7 @@ fn readFd(fd: c_int) ?[*:0]u8 {
 }
 
 export fn idol_io_read_stdin() callconv(.c) ?[*:0]u8 {
+    arrive(); // B3: about to block on input; the request must already be out.
     return readFd(0);
 }
 
@@ -112,10 +242,11 @@ export fn idol_io_read_line() callconv(.c) ?[*:0]u8 {
     var cap: usize = 8192;
     var len: usize = 0;
     var buf: [*]u8 = @ptrCast(malloc(cap) orelse return null);
+    arrive(); // B3: about to block on input; the request must already be out.
     var c = getchar();
     if (c == EOF) {
         free(buf);
-        _ = fflush(__stdoutp);
+        arrive(); // B2 on the early exit path, which does not return to `main`.
         exit(0);
     }
     while (c != EOF) {
@@ -193,6 +324,7 @@ export fn idol_os_cwd() callconv(.c) ?[*:0]u8 {
 
 export fn idol_os_execute(cmd: ?[*:0]const u8) callconv(.c) i64 {
     const c = cmd orelse return 1;
+    arrive(); // B4: the child inherits fd 1 and must not overtake our bytes.
     const rc = system(c);
     if (rc == -1) return 1;
     // WIFEXITED / WEXITSTATUS, spelled out rather than imported.
@@ -202,6 +334,7 @@ export fn idol_os_execute(cmd: ?[*:0]const u8) callconv(.c) i64 {
 
 export fn idol_process_capture(cmd: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
     const c = cmd orelse return emptyHeap();
+    arrive(); // B4: the child inherits fd 1 and must not overtake our bytes.
     const f = popen(c, "r") orelse return emptyHeap();
     const out = readFd(fileno(f));
     _ = pclose(f);
