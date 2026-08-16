@@ -177,6 +177,7 @@ const types = @import("types.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const recurrence = @import("recurrence.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
+const demand_projection = @import("demand_projection.zig");
 
 /// Why a statement survived. Every non-`dead` value names an unmet obligation,
 /// so a census over these says which obligation is costing the most work.
@@ -1861,6 +1862,12 @@ pub fn analyzeModule(
         try analyzeFunction(alloc, &s.func_decl.func, scoped, &plan);
     }
     if (opts.world_closed) try analyzeModuleBody(alloc, mod, opts, &plan);
+    // THE SAME BACKWARD QUESTION AT A RICHER `D`. This file's header states
+    // that the quotient cases are the same generator with a richer demand
+    // value; `demand_projection.zig` is that generator. It adds TRUNCATION
+    // candidates to this plan and nothing else -- `prune` below already knows
+    // how to realize a `break_after` site, so no second lowering path exists.
+    _ = try demand_projection.analyzeModule(alloc, mod, scoped, &plan);
     return plan;
 }
 

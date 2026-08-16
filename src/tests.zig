@@ -88,4 +88,5 @@ test {
     _ = @import("jit.zig");
     _ = @import("native_backend.zig");
     _ = @import("demand.zig");
+    _ = @import("demand_projection.zig");
 }
