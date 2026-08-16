@@ -312,6 +312,9 @@ pub fn deinitModule(alloc: std.mem.Allocator, module: Module) void {
         alloc.free(external.symbol);
     }
     alloc.free(module.externs);
+    // `Global.name` is borrowed from the AST identifier, which outlives the
+    // compile — exactly as `Instr.field` is. Only the slice is owned.
+    if (module.globals.len > 0) alloc.free(module.globals);
 }
 
 pub fn moduleHardwareTier(m: Module) HardwareTier {

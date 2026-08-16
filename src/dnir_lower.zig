@@ -400,6 +400,38 @@ fn collectModuleGlobals(alloc: std.mem.Allocator, mod: *const ast.Module) Error!
     return out;
 }
 
+/// THE INITIAL CONTENT OF A MODULE GLOBAL'S WORD, AS A LOAD-TIME FACT.
+///
+/// A module-scope initializer that the compile-time evaluator can run is not an
+/// instruction: it is what the storage HOLDS before anything executes. Returning
+/// it here is what lets `__DATA,__data` carry it, which is the only realization
+/// that is correct in an object, a dylib and an executable at once — the entry
+/// prologue that used to carry it existed only when a `main` did.
+///
+/// FAILS CLOSED, and the caller REFUSES on null rather than emitting a store: an
+/// initializer nobody can evaluate at compile time has no load-time image, and a
+/// wrong answer outranks a refusal (`law.fallback.zero`).
+///
+/// `str` is NOT admitted, and that is a REFUSAL rather than an omission. A `str`
+/// value in this backend is an ADDRESS into `__cstring`, so its data word needs
+/// a relocation in `__DATA`, which the object writer does not emit for that
+/// section. Admitting it would put a link-time-unresolved pointer in a word the
+/// program dereferences — the confident-wrong-number class this whole change is
+/// about. It refuses until the relocation exists.
+fn constGlobalInit(init: *const Expr, ty: RT) ?dnir.Value {
+    const v = comptime_eval.eval(init) catch return null;
+    return switch (v) {
+        .int => |n| if (ty == .f64)
+            dnir.Value{ .f64 = @floatFromInt(n) }
+        else
+            dnir.Value{ .i64 = n },
+        .float => |f| if (ty == .f64) dnir.Value{ .f64 = f } else null,
+        .bool => |b| if (ty == .f64) null else dnir.Value{ .i64 = @intFromBool(b) },
+        .nil => dnir.Value{ .i64 = 0 },
+        else => null,
+    };
+}
+
 fn collectModuleConsts(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -922,16 +954,53 @@ fn lowerModuleFromGraph(
         for (owned_externs) |external| deinitExtern(alloc, external);
         alloc.free(owned_externs);
     }
+
+    // THE INITIALIZERS, AS LOAD-TIME CONTENT OF THE STORAGE.
+    //
+    // `dnir.Module.globals` existed with zero producers and zero consumers —
+    // scenery under `AGENTS.md`'s standing rule. It gains both here, because it
+    // is exactly the fact the backend was missing: WHAT EACH WORD HOLDS BEFORE
+    // ANYTHING RUNS. Publishing it is what lets `__DATA,__data` answer, and what
+    // deleted the `main`-only prologue store that made a library object wrong.
+    //
+    // A global with no initializer is not published: its word is zero, and a
+    // zero word is `__DATA,__bss` — no file bytes, no relocation, nothing. That
+    // is the same rule `has_cstring`/`has_const` follow, and it is why this
+    // change costs a module with no non-zero initializer literally nothing.
+    var globals: std.ArrayListUnmanaged(dnir.Global) = .empty;
+    errdefer globals.deinit(alloc);
+    for (module_globals.order.items) |g| {
+        const init = g.init orelse continue;
+        const ty = module_globals.types.get(g.name) orelse continue;
+        const value = constGlobalInit(init, ty) orelse {
+            var buf: [96]u8 = undefined;
+            const note = std.fmt.bufPrint(&buf, "global-init-not-constant:{s}", .{g.name}) catch
+                "global-init-not-constant";
+            return bailWith(diagnostic, @src(), note);
+        };
+        const zero = switch (value) {
+            .i64 => |n| n == 0,
+            .f64 => |f| @as(u64, @bitCast(f)) == 0,
+            else => false,
+        };
+        if (zero) continue;
+        try globals.append(alloc, .{ .name = g.name, .ty = ty, .init = value });
+    }
+    const owned_globals = try globals.toOwnedSlice(alloc);
+    errdefer alloc.free(owned_globals);
+
     const result = dnir.Module{
         .graph = graph,
         .functions = owned_functions,
         .records = owned_records,
+        .globals = owned_globals,
         .externs = owned_externs,
     };
     return .{
         .graph = graph,
         .functions = result.functions,
         .records = result.records,
+        .globals = result.globals,
         .externs = result.externs,
         .hardware_tier = dnir.moduleHardwareTier(result),
     };
@@ -1650,22 +1719,26 @@ fn lowerFunction(
     // Fails CLOSED: any evaluator error — an unsupported construct, a world
     // effect, the step limit — falls through to ordinary lowering. Nothing is
     // assumed foldable; it is folded only when it actually evaluated.
-    // THE MODULE'S INITIALIZERS RUN BEFORE ITS ENTRY DOES.
+    // THE MODULE'S INITIALIZERS ARE NOT AN ENTRY'S JOB, AND THEY USED TO BE.
     //
-    // A `__bss` word starts zeroed, which is already the answer for
-    // `total: i64 = 0` — but not for `total = 5`, and the two spellings must not
-    // differ in whether their initializer is honoured. When a module declares
-    // its own `main`, module-scope declarations are lowered NOWHERE ELSE: `root`
-    // builds an entry out of them only when there is no `main` to build one
-    // from. So the entry carries them, in source order, ahead of its own body.
-    if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], "main")) {
-        for (ctx.module_globals.order.items) |g| {
-            const ty = ctx.module_globals.types.get(g.name) orelse continue;
-            const init = g.init orelse continue;
-            const v = try lowerExprCons(&ctx, init, .single);
-            try ctx.emit(.{ .op = .store_global, .field = g.name, .lhs = v, .ty = ty });
-        }
-    }
+    // This is where a store of every module-global initializer was emitted,
+    // guarded on `fd.path[0] == "main"`. A LIBRARY OBJECT HAS NO `main`, so the
+    // store existed nowhere and `global G: i64 = 7` started at 0 — `ok compile`,
+    // exit 0, no diagnostic, and a C driver calling `bump(); bump(); peek()`
+    // read `1 2 2` where the answer is `8 9 9`. Measured at 3260b1e5, `--emit
+    // obj` and `--emit dylib` alike.
+    //
+    // An initializer that is a compile-time constant is a PROPERTY OF THE
+    // STORAGE, not an instruction anybody runs: it belongs in the image the
+    // loader maps, which is what `dnir.Module.globals` now carries and what
+    // `__DATA,__data` realizes. `HPLS.md` §31 — absence is a representation —
+    // and §76-77, where startup and loader work are first-class costs: the
+    // right number of instructions for a load-time constant is zero, in EVERY
+    // artifact kind, which is also the only way exe and obj can agree by
+    // construction rather than by a guard naming one function.
+    //
+    // An initializer that does NOT fold is refused in `lowerModuleFromGraph`,
+    // so nothing reaches here needing a store.
 
     try lowerBlock(&ctx, &fd.func.body, true);
 

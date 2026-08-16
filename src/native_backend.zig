@@ -421,6 +421,7 @@ fn emitObjectModeWithGraphLineage(
         output.symbols,
         output.relocations,
         output.bss_size,
+        output.global_data,
     );
     errdefer alloc.free(bytes);
 
@@ -621,9 +622,19 @@ const Arm64Output = struct {
     /// the fold was recorded on, and it is computed by the SAME helper the DNIR
     /// check uses (`unrealizedApplicationCount`) so the two cannot disagree.
     unrealized: usize = 0,
-    /// Bytes of `__DATA,__bss` zerofill arena this module needs. 0 means the
-    /// section is not emitted at all, which is the pre-arena behavior verbatim.
+    /// Bytes of the module-global arena. 0 means the section is not emitted at
+    /// all, which is the pre-arena behavior verbatim.
     bss_size: u64 = 0,
+    /// The arena's LOAD-TIME CONTENT, when any word of it is non-zero. Empty
+    /// means every word is zero and the arena is realized as `__DATA,__bss`
+    /// zerofill — no file bytes at all. Non-empty means `__DATA,__data` at the
+    /// same address with these bytes, and `global_data.len == bss_size`.
+    ///
+    /// This is what makes `global G: i64 = 7` correct in a LIBRARY. The
+    /// initializer used to be a store emitted into the entry prologue, and an
+    /// object has no entry, so `--emit obj` and `--emit dylib` silently started
+    /// every module global at zero.
+    global_data: []u8 = &.{},
     cost: []CostEntry = &.{},
 
     fn deinit(self: *Arm64Output, alloc: std.mem.Allocator) void {
@@ -631,6 +642,7 @@ const Arm64Output = struct {
         alloc.free(self.asm_text);
         if (self.cstring.len > 0) alloc.free(self.cstring);
         if (self.const_data.len > 0) alloc.free(self.const_data);
+        if (self.global_data.len > 0) alloc.free(self.global_data);
         for (self.symbols) |sym| alloc.free(sym.name);
         alloc.free(self.symbols);
         alloc.free(self.relocations);
@@ -643,6 +655,7 @@ const Arm64Output = struct {
         alloc.free(self.text);
         if (self.cstring.len > 0) alloc.free(self.cstring);
         if (self.const_data.len > 0) alloc.free(self.const_data);
+        if (self.global_data.len > 0) alloc.free(self.global_data);
         for (self.symbols) |sym| alloc.free(sym.name);
         alloc.free(self.symbols);
         alloc.free(self.relocations);
@@ -826,6 +839,18 @@ const Arm64Compiler = struct {
     globals: std.StringHashMapUnmanaged(u32) = .empty,
     /// Symbol indices in word order: position `i` owns bss word `i`.
     global_syms: std.ArrayList(u32) = .empty,
+    /// WHAT EACH WORD HOLDS BEFORE ANYTHING RUNS, published by DNIR lowering as
+    /// `dnir.Module.globals`. Name -> the raw 8 bytes of the initial value.
+    ///
+    /// Only NON-ZERO entries are here. A zero word is what a zerofill section
+    /// already is, so the absence of an entry IS the representation of zero
+    /// (`HPLS.md` §31) and a module with nothing but zero initializers emits the
+    /// same `__DATA,__bss` bytes it always did.
+    global_init: std.StringHashMapUnmanaged(u64) = .empty,
+    /// Initial word content in WORD ORDER, appended by `internGlobal` alongside
+    /// `global_syms` so the two can never drift. `finish` writes these as the
+    /// section payload.
+    global_words: std.ArrayList(u64) = .empty,
     // f64 native emission: per-function physical FP state. FP params arrive
     // in d0-d7 (caller-saved) and the result returns in d0.
     cur_func_float: bool = false,
@@ -1144,6 +1169,8 @@ const Arm64Compiler = struct {
         // symbol list, so only the containers go here.
         self.globals.deinit(self.alloc);
         self.global_syms.deinit(self.alloc);
+        self.global_init.deinit(self.alloc);
+        self.global_words.deinit(self.alloc);
         self.fp_locals.deinit(self.alloc);
         self.fp_temps.deinit(self.alloc);
         self.value_free_at.deinit(self.alloc);
@@ -1225,6 +1252,8 @@ const Arm64Compiler = struct {
         // __const, __bss, each present only when non-empty, so the index is not
         // a constant either.
         var bss_size: u64 = 0;
+        var global_data: std.ArrayList(u8) = .empty;
+        errdefer global_data.deinit(self.alloc);
         if (self.global_syms.items.len > 0) {
             var section_index: u8 = 2;
             if (self.strings.items.len > 0) section_index += 1;
@@ -1234,16 +1263,49 @@ const Arm64Compiler = struct {
                 cstring.items.len,
                 self.const_words.items.len * 8,
             );
-            try self.asm_text.appendSlice(self.alloc, "\n.section __DATA,__bss\n.p2align 3\n");
+            // ONE ARENA, TWO REALIZATIONS, AND THE CHEAPER ONE IS THE DEFAULT.
+            //
+            // Every word zero -> `__DATA,__bss`, S_ZEROFILL, no file bytes: the
+            // bytes this emitter always wrote. Any word non-zero -> the SAME
+            // arena at the SAME address as `__DATA,__data`, S_REGULAR, with the
+            // initial content in the file. The loader maps it; nothing executes.
+            //
+            // WHY NOT A THIRD SECTION SPLITTING ZERO FROM NON-ZERO. It would
+            // save (zero words x 8) file bytes and cost a second section header
+            // (80 bytes), a second address derivation and a second index — a
+            // section header is bigger than ten saved words, and two derivations
+            // of one address is exactly how a relocation lands on the wrong
+            // word. `bssBaseAddr` stays the sole derivation.
+            var any_nonzero = false;
+            for (self.global_words.items) |w| {
+                if (w != 0) any_nonzero = true;
+            }
+            try self.asm_text.appendSlice(
+                self.alloc,
+                if (any_nonzero)
+                    "\n.section __DATA,__data\n.p2align 3\n"
+                else
+                    "\n.section __DATA,__bss\n.p2align 3\n",
+            );
             for (self.global_syms.items, 0..) |sidx, w| {
                 const sym = &self.symbols.items[sidx];
                 sym.offset = @intCast(base_addr + w * 8);
                 sym.section = section_index;
                 try self.asm_text.appendSlice(self.alloc, sym.name);
-                try self.asm_text.appendSlice(self.alloc, ":\n\t.zero 8\n");
+                const word = self.global_words.items[w];
+                if (any_nonzero) {
+                    try self.asm_text.print(self.alloc, ":\n\t.quad {d}\n", .{@as(i64, @bitCast(word))});
+                    var buf: [8]u8 = undefined;
+                    std.mem.writeInt(u64, &buf, word, .little);
+                    try global_data.appendSlice(self.alloc, &buf);
+                } else {
+                    try self.asm_text.appendSlice(self.alloc, ":\n\t.zero 8\n");
+                }
             }
             bss_size = @as(u64, self.global_syms.items.len) * 8;
         }
+        const global_data_bytes = try global_data.toOwnedSlice(self.alloc);
+        errdefer self.alloc.free(global_data_bytes);
 
         const const_bytes = try const_data.toOwnedSlice(self.alloc);
         errdefer self.alloc.free(const_bytes);
@@ -1280,6 +1342,7 @@ const Arm64Compiler = struct {
             .relocations = relocations,
             .lineage = lineage,
             .bss_size = bss_size,
+            .global_data = global_data_bytes,
             .cost = cost,
         };
     }
@@ -1375,6 +1438,10 @@ const Arm64Compiler = struct {
             .external = false,
         });
         try self.global_syms.append(self.alloc, idx);
+        // WORD ORDER IS SYMBOL ORDER, and both are appended here so no later
+        // pass has to re-derive the correspondence. A name with no published
+        // initializer holds zero, which is what a zerofill word already is.
+        try self.global_words.append(self.alloc, self.global_init.get(name) orelse 0);
         try self.globals.put(self.alloc, name, idx);
         return idx;
     }
@@ -1414,6 +1481,19 @@ const Arm64Compiler = struct {
 
     fn compileDnirModule(self: *Arm64Compiler, m: dnir.Module) Error!void {
         try self.emitAsmHeader();
+        // The load-time content of the module's storage, BEFORE any function is
+        // compiled — `internGlobal` reads it on first mention of each name.
+        for (m.globals) |g| {
+            const word: u64 = switch (g.init) {
+                .i64 => |n| @bitCast(n),
+                .f64 => |f| @bitCast(f),
+                // `lowerModuleFromGraph` publishes only `.i64`/`.f64` and
+                // refuses everything else, so this is unreachable in practice
+                // and refuses rather than guessing if that ever stops holding.
+                else => return self.refuse(@src()),
+            };
+            try self.global_init.put(self.alloc, g.name, word);
+        }
         // `MissingMain` MEANS MISSING MAIN. Object mode passes `entry = null`
         // (`emitObjectMode…` at the top of this file), and a LIBRARY module
         // with no declarations has no main to miss — it has nothing, which is
@@ -7296,7 +7376,7 @@ fn bssBaseAddr(text_len: usize, cstring_len: usize, const_len: usize) usize {
 }
 
 fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []const u8, symbols: []const Symbol, relocations: []const Relocation, bss_size: u64) Error![]u8 {
-    return emitMachOArm64ObjectWithConst(alloc, text, cstring, &.{}, symbols, relocations, bss_size);
+    return emitMachOArm64ObjectWithConst(alloc, text, cstring, &.{}, symbols, relocations, bss_size, &.{});
 }
 
 fn emitMachOArm64ObjectWithConst(
@@ -7307,6 +7387,15 @@ fn emitMachOArm64ObjectWithConst(
     symbols: []const Symbol,
     relocations: []const Relocation,
     bss_size: u64,
+    /// The module-global arena's LOAD-TIME CONTENT, or empty for an all-zero
+    /// arena. Empty realizes `__DATA,__bss` (S_ZEROFILL, no file bytes) exactly
+    /// as before; non-empty realizes `__DATA,__data` (S_REGULAR) at the SAME
+    /// address with these bytes, and must then be `bss_size` long.
+    ///
+    /// ONE SECTION EITHER WAY, so `machOTextOffset`'s section count, every
+    /// address derived from `bssBaseAddr`, and every symbol `n_value` stamped in
+    /// `finish` are untouched by the choice.
+    global_data: []const u8,
 ) Error![]u8 {
     const segment_size: usize = 72;
     const section_size: usize = 80;
@@ -7326,6 +7415,13 @@ fn emitMachOArm64ObjectWithConst(
     // adds one section header and leaves every file offset below untouched.
     // That is what makes a writable arena affordable here.
     const has_bss = bss_size > 0;
+    // The SAME arena, realized with file bytes because at least one word of it
+    // is non-zero. `global_data.len == bss_size` is a requirement, not a
+    // convenience: the section's VM size and its file content are the same
+    // arena described twice, and a disagreement puts a global's word outside
+    // what the loader maps.
+    const has_data = has_bss and global_data.len > 0;
+    std.debug.assert(!has_data or global_data.len == bss_size);
     const nsects: u32 = 1 +
         (if (has_cstring) @as(u32, 1) else 0) +
         (if (has_const) @as(u32, 1) else 0) +
@@ -7340,7 +7436,13 @@ fn emitMachOArm64ObjectWithConst(
     // 8-byte word and the access path is `ldr x, [base, idx, lsl #3]`.
     const const_fileoff: usize = alignForward(after_cstring, 8);
     const after_const: usize = if (has_const) const_fileoff + const_data.len else after_cstring;
-    const symoff: usize = alignForward(after_const, 8);
+    // `__DATA,__data` is the only writable section with FILE bytes, so it is the
+    // only one whose file offset had to be invented. Same 8-byte rule as
+    // `__const`, for the same reason: every element is an 8-byte word reached by
+    // `ldr x, [x]`.
+    const data_fileoff: usize = alignForward(after_const, 8);
+    const after_data: usize = if (has_data) data_fileoff + global_data.len else after_const;
+    const symoff: usize = alignForward(after_data, 8);
     const stroff: usize = symoff + symbols.len * 16;
     const strtab = try buildStringTable(alloc, symbols);
     defer alloc.free(strtab);
@@ -7438,17 +7540,22 @@ fn emitMachOArm64ObjectWithConst(
         try appendU32(&out, alloc, 0);
     }
 
-    // __DATA,__bss (zerofill arena — writable storage for string ops)
+    // __DATA — the module-global arena. `__data` when it has load-time content,
+    // `__bss` (zerofill) when every word of it is zero. Same address, same size,
+    // same symbol offsets; only the flags, the file offset and whether bytes
+    // follow differ.
     if (has_bss) {
-        try appendName16(&out, alloc, "__bss");
+        try appendName16(&out, alloc, if (has_data) "__data" else "__bss");
         try appendName16(&out, alloc, "__DATA");
         try appendU64(&out, alloc, bss_addr); // addr (after the __TEXT sections)
         try appendU64(&out, alloc, bss_size); // size
-        try appendU32(&out, alloc, 0); // offset: zerofill occupies no file bytes
+        // Zerofill occupies no file bytes and MUST carry offset 0; a regular
+        // section carries its real one.
+        try appendU32(&out, alloc, if (has_data) @as(u32, @intCast(data_fileoff)) else 0);
         try appendU32(&out, alloc, 3); // align (2^3 = 8)
-        try appendU32(&out, alloc, 0); // reloff
+        try appendU32(&out, alloc, 0); // reloff — the words hold no addresses
         try appendU32(&out, alloc, 0); // nreloc
-        try appendU32(&out, alloc, 0x1); // S_ZEROFILL
+        try appendU32(&out, alloc, if (has_data) @as(u32, 0x0) else 0x1); // S_REGULAR / S_ZEROFILL
         try appendU32(&out, alloc, 0);
         try appendU32(&out, alloc, 0);
         try appendU32(&out, alloc, 0);
@@ -7486,6 +7593,10 @@ fn emitMachOArm64ObjectWithConst(
     if (has_const) {
         if (const_fileoff > out.items.len) try appendZeroes(&out, alloc, const_fileoff - out.items.len);
         try out.appendSlice(alloc, const_data);
+    }
+    if (has_data) {
+        if (data_fileoff > out.items.len) try appendZeroes(&out, alloc, data_fileoff - out.items.len);
+        try out.appendSlice(alloc, global_data);
     }
     if (symoff > out.items.len) try appendZeroes(&out, alloc, symoff - out.items.len);
 
