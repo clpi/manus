@@ -22,6 +22,8 @@ const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
 const demand = @import("demand.zig");
+const obseq = @import("obseq.zig");
+const observation = @import("observation.zig");
 
 /// §7 makes "how much of a compile goes through C" a NUMBER this
 /// repository owes, so the code that routes each `req`'d module says which way
@@ -4572,6 +4574,29 @@ fn do_compile(
                     var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph, .world_closed = true });
                     defer demand_plan.deinit();
                     try demand.prune(alloc, &ps.mod, &demand_plan);
+                    // RUNG 1 -- ELIMINATE THE OBSERVATION, and this is the one
+                    // site in the tree where the fact that pays is true.
+                    //
+                    // `main: i64` returns to a PROCESS and a process exit status
+                    // is EIGHT BITS, so the demanded projection of the entry's
+                    // result is `low_bits 8` and 56 of its 64 carried bits reach
+                    // no observer. The comment above already argues why THIS lift
+                    // is the closed world and the dylib/obj lifts below are not:
+                    // they exist to be read from outside, and a foreign reader
+                    // takes the whole register. So the world fact is passed here
+                    // and nowhere else, and `obseq` infers nothing about the
+                    // artifact kind on its own.
+                    //
+                    // Refuses unless the observer roster is exactly {program,
+                    // deployment, failure_recovery}, `main` is the entry, nothing
+                    // in the module applies it, every application in the graph is
+                    // resolved, the body is one counted loop over a trap-free
+                    // grammar whose every operator commutes with the projection,
+                    // and the contracted orbit is a fixed point reached before
+                    // the loop ends. MEASURED on a 20,000,000-iteration serial
+                    // xor/multiply chain: 105,950,622 -> 4,938,857 whole-process
+                    // cycles, `main` 22 -> 2 instructions, same exit byte.
+                    _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, observation.ordinary_executable);
                     var native_diagnostic: native_backend.Diagnostic = .{};
                     if (!(native_scalar_candidate and !too_many_modules)) {
                         // THESE TWO FACTS ARE INDEPENDENT AND USED TO BE SPLICED

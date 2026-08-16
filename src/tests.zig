@@ -94,4 +94,5 @@ test {
     _ = @import("wasm_backend.zig");
     _ = @import("demand.zig");
     _ = @import("demand_projection.zig");
+    _ = @import("obseq.zig");
 }
