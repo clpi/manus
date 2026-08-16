@@ -5,7 +5,15 @@
 --- @comp.c.include("math.h")
 --- @comp.c.include("string.h")
 
-@comp.ffi("string.h")
+@cinclude("math.h")
+
+@cinclude("string.h")
+
+@cinclude("math.h")
+
+
+@cinclude("string.h")
+
 
 @comp.schema("examples/schemas/point.json")
 
@@ -49,6 +57,7 @@ static double vec2_len(double x, double y) {
     return sqrt(x * x + y * y);
 }
 ]])
+
 
 @comp.c.emit(@comp.run("printf 'static const double sin_lut[8] = {0.00000000,0.38268343,0.70710678,0.92387953,1.00000000,0.92387953,0.70710678,0.38268343}; static double sin_lut_at(long i) { return sin_lut[i & 7]; }'"))
 

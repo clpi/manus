@@ -1,8 +1,11 @@
-# NUMERICS: division and modulo signs. Measured: C semantics — quotient
-# truncates toward zero, remainder takes the DIVIDEND's sign. §12 B-4 says
-# "i64/i64 truncates ... % matches", which this satisfies. It diverges from
-# Lua, which floors: Lua answers -4 and 1 for the first pair.
-# expect: -3 -3 -1 1
+# NUMERICS: division and modulo signs. `/` on two integers truncates toward
+# zero; `%` is FLOORED, taking the DIVISOR's sign — Lua's law, and Idol's since
+# 2026-08-15 (`docs/rulings.md` § "Modulo and floor division").
+#
+# This header used to cite `§12 B-4` for a truncating `%` and to note that it
+# "diverges from Lua, which floors". **§12 B-4 does not exist in either tree**,
+# and the divergence had no warrant in any document that does.
+# expect: -3 -3 1 -1
 # @corpus current
 a = -7 / 2
 b = 7 / -2

@@ -1,20 +1,20 @@
-custom_iter: any = (state: any, index: any)
-    local nxt = index + 1
-    if nxt > 3
-        return nil
-    end
-    return nxt, nxt * 10
+fun custom_iter(state: any, index: any) -> any
+  nxt = index + 1
+  if nxt > 3 then
+    return nil
+  end
+  return nxt, nxt * 10
 end
 
-local iterable = setmetatable({}, {
-    __iter = fun(self: any): any
-        return custom_iter, nil, 0
-    end,
+iterable = setmetatable({}, {
+  __iter = fun(self: any) -> any
+    return custom_iter, nil, 0
+  end
 })
 
-local sum = 0
+sum = 0
 for i, value in iterable
-    sum += value
+  sum = sum + value
 end
 
 print(sum)

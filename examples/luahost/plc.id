@@ -1,8 +1,8 @@
 -- LC-0 — the long-comment regression: a long comment between a long string
 -- and an if. This is the pair that used to swallow the following block.
-local block = [[alpha
+block = [[alpha
 beta]]
 --[[ long-string regression ]]
 if block != "alpha\nbeta" then
-    local x = 1
+  x = 1
 end

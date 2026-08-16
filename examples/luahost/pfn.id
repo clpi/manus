@@ -1,4 +1,4 @@
 -- FN-0 — local function with two parameters and a return.
-local function add(a, b)
-    return a + b
+fun add(a, b)
+  return a + b
 end

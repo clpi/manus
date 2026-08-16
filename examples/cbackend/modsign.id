@@ -1,18 +1,33 @@
-# NUMERICS: `%` on two integers TRUNCATES — the remainder takes the DIVIDEND's
-# sign — and it does so whatever shape the divisor arrives in. §12 B-4, quoted
-# in `docs/spec/cost.md`, says `i64/i64` truncates and `examples/table/
-# div/sign.id` records the four answers this rule gives.
+# NUMERICS: `%` on two integers is FLOORED — the remainder takes the DIVISOR's
+# sign — and it does so whatever shape the divisor arrives in.
 #
-# THE POINT OF THIS FILE IS THE DIVISOR'S SHAPE. The C backend used to choose
-# C's truncating `%` when the divisor was a POSITIVE LITERAL and Lua's FLOORING
-# helper otherwise, so one program got both rules: `-7 % 2` printed -1
-# (truncating) and `7 % -2` printed -1 (flooring, where truncating is 1). Every
-# row below is the same arithmetic reached through a different divisor shape —
-# literal, negative literal, and a value the emitter cannot read — so a rule
-# that holds for one shape and not another cannot pass.
+# THE RULING CHANGED AND THIS FILE CHANGED WITH IT, 2026-08-15. This header used
+# to read "`%` … TRUNCATES … §12 B-4 says `i64/i64` truncates … `%` matches",
+# and it pinned `-1 1 -1 1 -1 1`. **`§12 B-4` does not exist.** It is quoted
+# verbatim by six files in this corpus and by `docs/spec/cost.md:356`, and the
+# document it names is in neither tree — the same class of defect as the four
+# phantom law ids in `docs/law-audit.md` §1.7. One of its four clauses is also
+# checkably FALSE about this language: it says "no `//`", and `//` is lexed
+# (`lexer.zig:1018`), parsed (`parser.zig:5388`), given a precedence row and a
+# formatter spelling.
 #
-# Computed by hand: -7 % 2 = -7 - (-3 * 2) = -1. 7 % -2 = 7 - (-3 * -2) = 1.
-# expect: -1 1 -1 1 -1 1
+# `docs/rulings.md` § "Modulo and floor division" settles it from `law.md`,
+# which IS in the tree and IS supreme: its first line makes "ordinary Lua
+# meaning" the entry of the specialization chain, and Lua's `%` is floored.
+# An `i64` descriptor cannot be the excuse — Lua's `%` already answers an
+# INTEGER for two integers, so the descriptor changes nothing about it.
+#
+# THE POINT OF THIS FILE IS STILL THE DIVISOR'S SHAPE, and that is why it
+# survived the ruling instead of being replaced. Every row below is the same
+# arithmetic reached through a different divisor shape — positive literal,
+# negative literal, and a value the emitter cannot read — so a rule that holds
+# for one shape and not another cannot pass. Under the repair those shapes take
+# three different machine paths (`and #imm`, the constant-divisor correction,
+# and `emitFlooredDivRem`), which makes this file MORE load-bearing than before.
+#
+# Computed by hand from Lua 5.4 §3.4.1, `a % b == a - floor(a/b)*b`:
+#   -7 % 2 = -7 - (-4 * 2) = 1.   7 % -2 = 7 - (-4 * -2) = -1.
+# expect: 1 -1 1 -1 1 -1
 # @corpus current
 two = 2
 neg = 0 - two

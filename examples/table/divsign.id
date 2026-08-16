@@ -1,8 +1,22 @@
-# NUMERICS: division and modulo signs. Measured: C semantics — quotient
-# truncates toward zero, remainder takes the DIVIDEND's sign. §12 B-4 says
-# "i64/i64 truncates ... % matches", which this satisfies. It diverges from
-# Lua, which floors: Lua answers -4 and 1 for the first pair.
-# expect: -3 -3 -1 1
+# NUMERICS: division and modulo signs.
+#
+# `/` on two integers truncates toward zero. `%` is FLOORED — the remainder
+# takes the DIVISOR's sign — which is Lua's law and, since 2026-08-15, Idol's:
+# see `docs/rulings.md` § "Modulo and floor division".
+#
+# THIS HEADER USED TO CITE `§12 B-4` for the truncating `%`, and **§12 B-4 does
+# not exist in either tree.** It also used to say "It diverges from Lua, which
+# floors" — a divergence no authority document ever licensed. `law.md`'s first
+# line puts "ordinary Lua meaning" at the entry of the specialization chain, so
+# the divergence was the thing needing a warrant, and it did not have one.
+#
+# THE `/` COLUMNS ARE DELIBERATELY UNMOVED. `-3 -3` is what they were and what
+# they are. Lua's `/` is FLOAT division (`-7 / 2` is `-3.5`), so unlike `%` there
+# is a real descriptor question here — a relation declared `: i64` has no float
+# to return — and `docs/rulings.md` carries it as an OPEN ROW with its own
+# `law:`/`today:`/`delta:`. Half a numeric law is worse than none, so it is
+# stated as open rather than settled by momentum.
+# expect: -3 -3 1 -1
 main: i64 = ()
   a = -7 / 2
   b = 7 / -2

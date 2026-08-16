@@ -20,7 +20,7 @@ scope: bool = (path: str)
   path == "src/semantic_graph.zig" or path == "src/graph_query.zig"
 
 consumer: bool = (path: str)
-  path == "src/sim_pipeline.zig" or path == "src/knowledge_snapshot.zig" or path == "src/realization.zig" or path == "src/dnir_lower.zig"
+  path == "src/sim_pipeline.zig" or path == "src/knowledge_snapshot.zig" or path == "src/dnir_lower.zig"
 
 row: i64 = (path: str, no: i64, code: str, id: str, needle: str, law: str, fix: str)
   if not code:has(needle)
@@ -350,7 +350,7 @@ control: bool = ()
   if audit("src/dnir_lower.zig", 34, "functionResultDescriptor(") != 0
     print("control FAIL: lawful functionResultDescriptor rejected")
     ok = false
-  if audit("src/realization.zig", 35, "findByNameOfKind(") == 0
+  if audit("src/knowledge_snapshot.zig", 35, "findByNameOfKind(") == 0
     print("control FAIL: findByNameOfKind did not fire")
     ok = false
   ok

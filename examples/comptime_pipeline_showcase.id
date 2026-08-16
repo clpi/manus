@@ -1,6 +1,8 @@
 # Comptime @comp.pipeline + module @comp.pipeline fusion
 # Run: duo run examples/comptime_pipeline_showcase.id
 
+# @comp.pipeline(...) in @(expr) returns fused C source as a comptime string
+
 @comp.pipeline({
     fn = "sum_n",
     source = "range",
@@ -11,12 +13,11 @@
     init = "0",
 })
 
-# @comp.pipeline(...) in @(expr) returns fused C source as a comptime string
 FUSED_CHARS = @(@(@comp.pipeline("{ fn = \"probe\", source = \"range\", start = 0, stop = 3, elem = \"int64_t\", kind = \"reduce\", init = \"0\" }")):len())
 
 total: i64 = ()
-    @comp.c.call("sum_n")
+  @comp.c.call("sum_n")
 
 print("=== comptime @comp.pipeline showcase ===")
 print("sum 1..10 = " .. to(str)(total()))
-print("comptime pipeline codegen size = " .. to(str)(FUSED_CHARS) .. " chars")
+print("comptime pipeline codegen size = " .. (to(str)(FUSED_CHARS) .. " chars"))
