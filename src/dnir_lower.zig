@@ -4038,9 +4038,9 @@ fn lowerCheckedRecordCallAssign(
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage);
     var values: [max_direct_scalar_args]dnir.Value = undefined;
-    const floating = try evaluateCheckedScalarOperands(ctx, operands, &values);
+    const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
-    try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
+    try stageCheckedScalarOperands(ctx, values[0..staged.count], staged.floating);
     const result = try checkedApplicationResult(ctx, application);
     const descriptor = try publishedDescriptor(ctx, application);
     try ctx.emit(.{
@@ -5545,7 +5545,34 @@ fn checkedOperandAdmitsDirectGp(ctx: *const LowerCtx, expr: *const Expr) bool {
     };
 }
 
-fn checkedOperandUsesRecordStorage(ctx: *LowerCtx, expr: *const Expr) bool {
+/// The record an operand NAMES, when that name's fields are already resident in
+/// exploded slots — or null when the operand is not one.
+///
+/// THIS ASKS `scalarRecordForName`, IT DOES NOT RE-DERIVE IT. That function is
+/// already the authority on "this name is a record stored as one local per
+/// field", and the unchecked call path has expanded record arguments through it
+/// for as long as it has existed (`emitScalarCallArgs`). A second predicate
+/// here would be a second opinion about the same fact, and the two ends of a
+/// call disagreeing about how many registers a record occupies is a wrong
+/// ANSWER rather than a refusal — both sides still compile.
+fn operandRecordStorage(ctx: *LowerCtx, expr: *const Expr) ?dnir.RecordDesc {
+    if (expr.* != .name) return null;
+    return scalarRecordForName(ctx, expr.name.ident);
+}
+
+/// Does this operand name a record AT ALL — including one whose fields the
+/// argument registers cannot carry?
+///
+/// THIS IS A DIFFERENT FACT FROM `operandRecordStorage`, NOT A SECOND OPINION
+/// ABOUT IT, and the difference is exactly the set that must still be REFUSED.
+/// An f64 record is the live case: its fields are resident under the same
+/// "name.field" keys, but `scalarRecordForName` declines it because the
+/// homogeneous-float aggregate is a different ABI. Without this the name falls
+/// through to the scalar path, which stages the record's OWN slot — a slot that
+/// never holds a value — and the backend reports `DNB007 local 0 has no
+/// register` instead of naming the operand law. Measured: that is precisely
+/// what happened when this predicate was deleted rather than narrowed.
+fn operandNamesRecord(ctx: *LowerCtx, expr: *const Expr) bool {
     if (expr.* != .name) return false;
     for (ctx.records) |rec| {
         if (recordFieldsPresent(ctx, expr.name.ident, rec)) return true;
@@ -5572,7 +5599,28 @@ fn checkedScalarOperand(
                 if (v.payload != null) return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
             }
         },
-        .@"struct", .table_type => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
+        // A RECORD IS NOT ONE THING WITH ONE ABI. This consumer wants its
+        // fields in argument registers, so the question is not "is this a
+        // record" but "do its fields fit the register file" — and that is the
+        // CALLEE'S OWN CONTRACT read from the caller's side: the parameter
+        // homing loop assigns one slot per field, in `rec.fields` order, and
+        // `functionEligible` refuses a record parameter past
+        // `max_reg_record_fields` because record fields have no stack-argument
+        // extension.
+        //
+        // Nothing is materialized and nothing is given an address by admitting
+        // this. `evaluateCheckedScalarOperands` stages the fields that are
+        // already resident, and refuses BY NAME any record-descriptor operand
+        // whose fields are not — so admission here can never become a silent
+        // fallthrough to a value this pass cannot name.
+        .@"struct" => {
+            const rec = recordForDescriptor(ctx.records, descriptor) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+            if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) {
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+            }
+        },
+        .table_type => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
         else => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
     }
     const raw = node.ast_ref orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
@@ -5626,25 +5674,91 @@ fn checkedApplicationResult(
     return results[0];
 }
 
+/// How many argument slots the operands actually occupy, and whether they are
+/// the floating file. THE COUNT IS NOT `operands.len`: one semantic operand may
+/// realize as several registers, which is the whole point of the record case
+/// below.
+const StagedOperands = struct {
+    count: usize,
+    floating: bool,
+};
+
 fn evaluateCheckedScalarOperands(
     ctx: *LowerCtx,
     operands: []const CheckedScalarOperand,
     values: *[max_direct_scalar_args]dnir.Value,
-) Error!bool {
+) Error!StagedOperands {
     var fp_count: usize = 0;
-    for (operands, 0..) |operand, i| {
-        values[i] = try lowerExprCons(ctx, operand.expression, .single);
+    var count: usize = 0;
+    for (operands) |operand| {
+        // ONE SEMANTIC VALUE, A CONSUMER-DIRECTED REALIZATION. A record operand
+        // is not materialized into an aggregate and it is not given an address:
+        // this consumer wants scalar fields in registers, so the fields are what
+        // crosses. Nothing is stored, nothing is copied, and no struct exists.
+        //
+        // The fields are ALREADY resident, one local per field, keyed
+        // "name.field" — the same storage `p.a` reads and the same storage
+        // `lowerRecordReturn` gathers from for `return p`. So this arm adds no
+        // representation; it spends the one that is already there.
+        //
+        // DESCRIPTOR ORDER IS THE CONTRACT, and it is the same order the callee
+        // homes its parameter from (`rec.fields`, one register each). The two
+        // ends read the same list, which is why they cannot drift.
+        if (operandRecordStorage(ctx, operand.expression)) |rec| {
+            // THE REGISTER FILE IS THE BOUND, and it is the same bound the
+            // CALLEE applies when it homes the parameter (`functionEligible`
+            // refuses a record parameter past `max_reg_record_fields`, because
+            // record fields have no stack-argument extension). Stating it here
+            // in the same terms is what keeps a record that the callee would
+            // refuse from being staged by the caller as if it fit.
+            if (count + rec.fields.len <= max_reg_record_fields) {
+                for (rec.fields) |fname| {
+                    const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ operand.expression.name.ident, fname });
+                    defer ctx.alloc.free(key);
+                    const slot = ctx.locals.get(key) orelse
+                        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                    values[count] = .{ .local = slot };
+                    count += 1;
+                }
+                continue;
+            }
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+        }
+        // A RECORD-DESCRIPTOR OPERAND WITH NO RESIDENT FIELDS IS REFUSED BY
+        // NAME, never lowered as if it were a scalar. `checkedScalarOperand`
+        // admits a record whose SHAPE fits the argument registers; whether its
+        // fields are actually resident is a different fact, and only the
+        // storage above can answer it. A record produced straight into a call
+        // (`take(mk(1))`) has a backend record region rather than exploded
+        // locals, so it lands here — refused, with the operand law named.
+        if (operand.descriptor == .@"struct") {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+        }
+        // AND A RECORD THE ARGUMENT REGISTERS CANNOT CARRY IS STILL REFUSED BY
+        // NAME — an f64 record is the live case. Its fields are resident, so it
+        // looks like the expandable case from every angle except the one that
+        // matters: it is a homogeneous float aggregate with a different ABI.
+        // Falling through would stage the record's own slot, which holds no
+        // value.
+        if (operandNamesRecord(ctx, operand.expression)) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+        }
+        if (count >= values.len) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+        }
+        values[count] = try lowerExprCons(ctx, operand.expression, .single);
         if (operand.descriptor == .f64) fp_count += 1;
+        count += 1;
     }
-    if (fp_count != 0 and fp_count != operands.len) {
+    if (fp_count != 0 and fp_count != count) {
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
     }
     // Only the eight FP argument registers (v0..v7) are marshaled; wide integer
     // relations get the stack-arg extension, floating-point ones do not.
-    if (fp_count != 0 and operands.len > 8) {
+    if (fp_count != 0 and count > 8) {
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
     }
-    return fp_count != 0;
+    return .{ .count = count, .floating = fp_count != 0 };
 }
 
 fn stageCheckedScalarOperands(
@@ -5689,27 +5803,33 @@ fn lowerCheckedScalarCall(
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage);
     var values: [max_direct_scalar_args]dnir.Value = undefined;
-    const floating = try evaluateCheckedScalarOperands(ctx, operands, &values);
+    const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     // Admit only the fixed-width integer contract with byte-equivalence proof.
     // Other general-register descriptors remain staged until their result and
     // operand laws have the same focused control.
+    //
+    // `staged.count == 1` is what keeps a record out of this path without
+    // naming records here: the fast path hands ONE value straight to
+    // `call_direct.lhs` and skips staging entirely, so any operand that
+    // realized as more than one register must not reach it.
     const direct_gp = operands.len == 1 and
+        staged.count == 1 and
         operands[0].descriptor == .i64 and
         descriptor == .i64 and
         checkedOperandAdmitsDirectGp(ctx, operands[0].expression);
-    for (operands) |operand| {
-        if (checkedOperandUsesRecordStorage(ctx, operand.expression)) {
-            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-        }
-        // A scalar local passed as an operand (`word(before)` where `before` is a
-        // body binding) is safe: any body containing a call spills all GP locals
-        // to the stack frame (`planGpStackLocals`, gate_spill_all_locals =
-        // body_has_call), so the operand load/reload survives the call's
-        // caller-saved clobber. Non-scalar operands already bailed above and in
-        // `checkedScalarOperand`.
-    }
-    if (!direct_gp) try stageCheckedScalarOperands(ctx, values[0..operands.len], floating);
+    // A record operand is STAGED AS ITS FIELDS by `evaluateCheckedScalarOperands`
+    // above, which refuses by name anything it could not expand. The loop that
+    // stood here refused EVERY record equally — including the ones the argument
+    // registers already hold perfectly well, and which the unchecked path had
+    // been passing that way all along.
+    //
+    // A scalar local passed as an operand (`word(before)` where `before` is a
+    // body binding) is safe for the same reason a record field is: any body
+    // containing a call spills all GP locals to the stack frame
+    // (`planGpStackLocals`, gate_spill_all_locals = body_has_call), so the
+    // operand load/reload survives the call's caller-saved clobber.
+    if (!direct_gp) try stageCheckedScalarOperands(ctx, values[0..staged.count], staged.floating);
     const has_result = consumption != .discard and descriptor != .void;
     const result = if (has_result) ctx.freshTemp() else null;
     const value = try checkedApplicationResult(ctx, application);
