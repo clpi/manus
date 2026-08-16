@@ -350,10 +350,10 @@ the parser.
 | `if(cond)` | canonical | **answers** |
 | `if cond` | familiar | **answers** |
 | `else(pred)` | canonical | **answers** |
-| `else if` | familiar, normalize | **parses ONLY with a terminating bare `else`** — see §12.1 |
+| `else if` | familiar, normalize | **NOW PARSES** — §12.2 |
 | `while(cond)` | canonical | **answers** |
 | `while cond` | familiar | **answers** |
-| `for(source) (item)` | **canonical** | **DOES NOT PARSE** — "write `name` at this token edge" |
+| `for(source) (item)` | **canonical** | **NOW PARSES** — converges with `for x in xs`, §12.2 |
 | `for x in xs` | familiar | parses, backend refuses `gen-for-dynamic-iter` |
 | `return(v)` / `return v` | both | **answer** |
 | `break` | familiar | **answers** |
@@ -404,3 +404,52 @@ programs, then vary one clause at a time — indent width, then trailing `else` 
 until a single variable separated them. A face that "does not parse" and a face
 that "parses" can both be true of the same construct under different
 terminations, and a one-program probe cannot tell the difference.
+
+### §12.2 CLOSED — both faces landed, and the real finding is underneath them
+
+At `f5ed4404` + `src/parser.zig` (434 insertions, 0 deletions):
+
+    else if, NO trailing else       answers 2   (was REFUSED — §12.1's defect)
+    else(pred), NO trailing else    answers 2
+    for(source) (item)              PARSES, converges with `for x in xs`
+
+**A §8 VIOLATION WAS FOUND AND CLOSED ON THE WAY, and it is the reason §12.1's
+defect existed.** At base the two refinement faces built DIFFERENT TREES while
+answering identically:
+
+    else if     ->  elseifs=0  else_body=true  nested_if=true
+    else(cond)  ->  elseifs=1  else_body=true  nested_if=false
+
+`else if` was being desugared into a NESTED `if` inside an else body rather than
+into an alternative — which is exactly why it needed a terminating `else` to
+close. Both are now `elseifs=1`, and `else if` additionally emits **byte-identical
+`__text` and `nm` T-symbols** to `else(cond)`.
+
+`for(source) (item)` has no bytes to compare from either face: `gen_for` is
+refused by every live backend (direct `gen-for-dynamic-iter`, wasm `refused at:
+gen_for`). Both faces produce **byte-identical diagnostics and bail sites**, which
+is convergence honestly stated rather than a proxy dressed as proof.
+
+Verified: `zig build test` 1626/1627 -> 1632/1633 (+6); corpus compile
+differential 1015/1015 and 142/142 IDENTICAL; run differential 142/142 and
+1014/1015 (the one row is `examples/shc/cwd.id`, which prints the cwd);
+`design`/`edge`/`any`/`obseq`/`selfhost` identical on both compilers, `any` still
+5145, `selfhost` still 9/17.
+
+**THE FINDING THAT OUTRANKS BOTH PARSE FIXES.** `ast.Stmt.brk` is a `Loc` — **a
+location and nothing else. No target, no result pack.** The exit target is
+rebuilt at `src/dnir_lower.zig:2705` from `ctx.loop_breaks[len-1]`, a stack
+pushed and popped during a recursive AST descent: literally *find the nearest
+enclosing loop*. And `semantic_graph.zig`'s `NodeKind` has **no iteration,
+recurrence, refinement, region or exit kind at all.**
+
+So §11's stop condition pins `downstream control AST authority` and
+`spelling-based control resolution` at 0, and both are currently **TOTAL**. §10.3
+— *the semantic graph owns normalized control facts* — has not started. One
+immediate consequence: **`break` cannot name a target, so multi-level exit is
+inexpressible.**
+
+**FALSIFIER, as given by the lane that found it:** give the graph a control node
+kind and publish the exit target at parse; if the faces still converge and
+`loop_breaks` can then be deleted, the finding holds. If some consumer needs the
+AST nesting that stack provides, the characterisation is incomplete.

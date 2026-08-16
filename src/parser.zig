@@ -3678,6 +3678,37 @@ pub const Parser = struct {
                     try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
                     continue;
                 }
+                // §7 — `else if` NORMALIZES TO `else(cond)`, and normalizing it
+                // HERE is what makes that true of the tree and not just of the
+                // prose. It builds the very same `ElseIf` node `elseif` and
+                // `else(cond)` build, so all three spellings are one node and
+                // §3's "no `elseif` identity and no `ElseIf` graph kind" holds
+                // by construction rather than by comparison.
+                //
+                // It also repairs a parse. Falling through to `else_body` read
+                // `else if` as a nested `if` whose BODY BLOCK OPENED AT THE
+                // `if` KEYWORD'S COLUMN, while the body was indented relative
+                // to the `else` — so `open_layout` saw a body no deeper than
+                // its opener, never established offside, and the block could
+                // only end at "still open at the file edge". A trailing bare
+                // `else` hid it by closing the chain a different way, which is
+                // why the shape that failed was the one WITHOUT a final
+                // `else`. Anchoring the body on the `else` token is the fix.
+                //
+                // SAME LINE is the whole condition, and it is what preserves
+                // the genuinely nested spelling: an `if` on the line AFTER
+                // `else` still opens an ordinary nested refinement.
+                const after = try self.pk();
+                if (after.kind == .kw_if and after.loc.line == kw.loc.line) {
+                    _ = try self.adv();
+                    const ec = try self.parse_expr();
+                    try self.eat_deprecated(.kw_then);
+                    _ = try self.eat(.assign);
+                    const eb = try self.parse_block_at(kw.loc);
+                    offside = offside or self.last_layout.offside;
+                    try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
+                    continue;
+                }
                 _ = try self.eat(.assign);
                 else_body = try self.parse_block_at(kw.loc);
                 offside = offside or self.last_layout.offside;
@@ -3977,8 +4008,67 @@ pub const Parser = struct {
         return ast.Stmt{ .repeat_loop = .{ .loc = l, .body = body, .cond = cond } };
     }
 
+    /// SOURCE-CONTROL-ONE §5's CANONICAL iteration face, `for(source) (item)`.
+    ///
+    /// It builds the SAME `gen_for` the familiar `for item in source` builds —
+    /// same `vars`, same `iters`, same body — so the two faces are one node by
+    /// construction and cannot diverge downstream. This is the whole point:
+    /// §10.8 cannot migrate a formatter toward a face that does not exist, and
+    /// until now the canonical face was the one that did not parse while its
+    /// compatibility spelling did.
+    ///
+    /// It is NOT `source:iter()` plus repeated `cursor:next()`.
+    /// PROTOCOL-PROJECTION-ONE §3 forbids that as a DEFINITION — it is one
+    /// realization among indexed traversal, SIMD, tree walk, closed-form
+    /// reduction, compile time and nothing. Parsing to the existing iteration
+    /// node keeps every one of those reachable, and adds no protocol object,
+    /// no cursor and no `next` relation.
+    ///
+    /// The yield pack is REQUIRED and must name at least one item. §5's
+    /// zero-yield spelling (`for(events) tick()`) and §2's source-binding head
+    /// (`for(users = load()) (user)`) are deliberately NOT taken here: neither
+    /// has a familiar counterpart to converge against, and a face that cannot
+    /// be shown identical to an existing one is worse than no face (§8).
+    fn parse_for_curried(self: *Parser, l: ast.Loc) ParseError!ast.Stmt {
+        _ = try self.adv();
+        var iters: std.ArrayList(*ast.Expr) = .empty;
+        try iters.append(self.alloc, try self.parse_expr());
+        while (try self.eat(.comma) != null)
+            try iters.append(self.alloc, try self.parse_expr());
+        const src_close = try self.expect(.rparen);
+
+        // The yield pack rides the same LINE as the source pack. That keeps
+        // `for(xs) (x)` distinct from a body block that merely opens with a
+        // parenthesized expression, without giving `(` any new meaning.
+        const pack = try self.pk();
+        if (pack.kind != .lparen or pack.loc.line != src_close.loc.line) {
+            term.locErr(pack.loc, "write the yielded item pack here, as `for(source) (item)`", .{});
+            term.locHint(pack.loc, "the canonical iteration face names what each step yields; `for item in source` is the familiar spelling of the same thing", .{});
+            return ParseError.ExpectedToken;
+        }
+        _ = try self.adv();
+        var vars: std.ArrayList([]const u8) = .empty;
+        const first_var = try self.expect(.name);
+        try vars.append(self.alloc, first_var.text);
+        while (try self.eat(.comma) != null) {
+            const v = try self.expect(.name);
+            try vars.append(self.alloc, v.text);
+        }
+        _ = try self.expect(.rparen);
+
+        const body = try self.parse_block_at(l);
+        try self.close_block(l, self.last_layout.offside);
+        return ast.Stmt{ .gen_for = .{
+            .loc = l,
+            .vars = try vars.toOwnedSlice(self.alloc),
+            .iters = try iters.toOwnedSlice(self.alloc),
+            .body = body,
+        } };
+    }
+
     fn parse_for(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
+        if ((try self.pk()).kind == .lparen) return self.parse_for_curried(l);
         const first_name = try self.expect(.name);
         const nxt = try self.pk();
         if (nxt.kind == .assign or nxt.kind == .colon) {
@@ -8572,6 +8662,350 @@ test "parse: assignment statement" {
     try testing.expect(stmt == .assign);
     try testing.expectEqual(@as(usize, 1), stmt.assign.targets.len);
     try testing.expectEqual(@as(usize, 1), stmt.assign.values.len);
+}
+
+// ── SOURCE-CONTROL-ONE §8 — the control-face convergence gate ────────────────
+//
+// §8 is a GRAPH claim, not a syntax claim, and §10 forbids landing a face
+// without it: *a compiler that produces identical ANSWERS but different
+// semantic GRAPHS for two spellings is still WRONG.* So each canonical face
+// below is compared against the familiar face it is equivalent to, structurally
+// and node by node, ignoring only spelling provenance and source spans — which
+// is exactly the pair §8 says to ignore.
+//
+// It compares the AST because THE AST IS THE AUTHORITY HERE. `idol graph` on
+// these programs publishes `applications: []` and no control entity of any
+// kind, so there is no lower-level control fact for a gate to read; a
+// comparison of the graph JSON would agree on emptiness and prove nothing.
+// Naming that plainly is part of the result.
+//
+// `ctlEqExpr`/`ctlEqStmt` FAIL CLOSED. An unhandled node kind returns an error
+// rather than comparing equal, so a face that starts producing a shape this
+// gate cannot see breaks the gate instead of passing it silently — the failure
+// mode that let `gate/any.sh` and `gate/negative.sh` go green on a capability
+// they had lost.
+
+const CtlEqError = error{ UnhandledExprKind, UnhandledStmtKind } || anyerror;
+
+fn ctlEqExpr(a: *const ast.Expr, b: *const ast.Expr) CtlEqError!void {
+    try testing.expectEqualStrings(@tagName(a.*), @tagName(b.*));
+    switch (a.*) {
+        .int_lit => |x| try testing.expectEqual(x.val, b.int_lit.val),
+        .name => |x| try testing.expectEqualStrings(x.ident, b.name.ident),
+        .binop => |x| {
+            try testing.expectEqual(x.op, b.binop.op);
+            try ctlEqExpr(x.lhs, b.binop.lhs);
+            try ctlEqExpr(x.rhs, b.binop.rhs);
+        },
+        .table => |x| {
+            try testing.expectEqual(x.fields.len, b.table.fields.len);
+            for (x.fields, b.table.fields) |fa, fb| {
+                try testing.expectEqualStrings(@tagName(fa), @tagName(fb));
+                switch (fa) {
+                    .positional => |e| try ctlEqExpr(e, fb.positional),
+                    else => return error.UnhandledExprKind,
+                }
+            }
+        },
+        .call => |x| {
+            try ctlEqExpr(x.func, b.call.func);
+            try testing.expectEqual(x.args.len, b.call.args.len);
+            for (x.args, b.call.args) |ea, eb| try ctlEqExpr(ea, eb);
+        },
+        else => return error.UnhandledExprKind,
+    }
+}
+
+fn ctlEqBlock(a: *const ast.Block, b: *const ast.Block) CtlEqError!void {
+    try testing.expectEqual(a.stmts.len, b.stmts.len);
+    for (a.stmts, b.stmts) |*sa, *sb| try ctlEqStmt(sa, sb);
+    try testing.expectEqual(a.tail_expr == null, b.tail_expr == null);
+    if (a.tail_expr) |ta| try ctlEqExpr(ta, b.tail_expr.?);
+}
+
+fn ctlEqStmt(a: *const ast.Stmt, b: *const ast.Stmt) CtlEqError!void {
+    try testing.expectEqualStrings(@tagName(a.*), @tagName(b.*));
+    switch (a.*) {
+        // A location is a source span, which §8 lists among the two things to
+        // ignore — so `brk`/`cont` compare equal on their TAG alone. That is
+        // also the whole finding about them: the statement carries a location
+        // and nothing else, and no exit target at all.
+        .brk, .cont => {},
+        .local_decl => |x| {
+            try testing.expectEqual(x.names.len, b.local_decl.names.len);
+            for (x.names, b.local_decl.names) |na, nb| try testing.expectEqualStrings(na.ident, nb.ident);
+            try testing.expectEqual(x.inits.len, b.local_decl.inits.len);
+            for (x.inits, b.local_decl.inits) |ea, eb| try ctlEqExpr(ea, eb);
+        },
+        .assign => |x| {
+            try testing.expectEqual(x.targets.len, b.assign.targets.len);
+            for (x.targets, b.assign.targets) |ea, eb| try ctlEqExpr(ea, eb);
+            try testing.expectEqual(x.values.len, b.assign.values.len);
+            for (x.values, b.assign.values) |ea, eb| try ctlEqExpr(ea, eb);
+        },
+        .expr_stmt => |x| try ctlEqExpr(x.expr, b.expr_stmt.expr),
+        .call_stmt => |x| try ctlEqExpr(x.expr, b.call_stmt.expr),
+        .while_loop => |x| {
+            try ctlEqExpr(x.cond, b.while_loop.cond);
+            try ctlEqBlock(&x.body, &b.while_loop.body);
+        },
+        .if_stmt => |x| {
+            try testing.expectEqual(x.binding == null, b.if_stmt.binding == null);
+            try ctlEqExpr(x.cond, b.if_stmt.cond);
+            try ctlEqBlock(&x.then, &b.if_stmt.then);
+            try testing.expectEqual(x.elseifs.len, b.if_stmt.elseifs.len);
+            for (x.elseifs, b.if_stmt.elseifs) |ea, eb| {
+                try ctlEqExpr(ea.cond, eb.cond);
+                try ctlEqBlock(&ea.body, &eb.body);
+            }
+            try testing.expectEqual(x.else_body == null, b.if_stmt.else_body == null);
+            if (x.else_body) |eb| try ctlEqBlock(&eb, &b.if_stmt.else_body.?);
+        },
+        .gen_for => |x| {
+            try testing.expectEqual(x.vars.len, b.gen_for.vars.len);
+            for (x.vars, b.gen_for.vars) |va, vb| try testing.expectEqualStrings(va, vb);
+            try testing.expectEqual(x.iters.len, b.gen_for.iters.len);
+            for (x.iters, b.gen_for.iters) |ea, eb| try ctlEqExpr(ea, eb);
+            try ctlEqBlock(&x.body, &b.gen_for.body);
+        },
+        .func_decl => |x| {
+            try testing.expectEqual(x.path.len, b.func_decl.path.len);
+            for (x.path, b.func_decl.path) |pa, pb| try testing.expectEqualStrings(pa, pb);
+            try ctlEqBlock(&x.func.body, &b.func_decl.func.body);
+        },
+        else => return error.UnhandledStmtKind,
+    }
+}
+
+fn expectCtlConverges(canonical: []const u8, familiar: []const u8) !void {
+    var arena_a = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_a.deinit();
+    var arena_b = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_b.deinit();
+    const ma = try parseDuoSource(canonical, &arena_a);
+    const mb = try parseDuoSource(familiar, &arena_b);
+    try ctlEqBlock(&ma.body, &mb.body);
+}
+
+test "SOURCE-CONTROL-ONE §5: `for(source) (item)` converges with `for item in source`" {
+    try expectCtlConverges(
+        \\main: i64 = ()
+        \\    s = 0
+        \\    xs = {1, 2, 3}
+        \\    for(xs) (x)
+        \\        s = s + x
+        \\    s
+    ,
+        \\main: i64 = ()
+        \\    s = 0
+        \\    xs = {1, 2, 3}
+        \\    for x in xs
+        \\        s = s + x
+        \\    s
+    );
+}
+
+test "SOURCE-CONTROL-ONE §5: a two-item yield pack converges with two loop vars" {
+    try expectCtlConverges(
+        \\main: i64 = ()
+        \\    s = 0
+        \\    xs = {1, 2, 3}
+        \\    for(xs) (k, v)
+        \\        s = s + k + v
+        \\    s
+    ,
+        \\main: i64 = ()
+        \\    s = 0
+        \\    xs = {1, 2, 3}
+        \\    for k, v in xs
+        \\        s = s + k + v
+        \\    s
+    );
+}
+
+test "SOURCE-CONTROL-ONE §7: `else if` converges with `else(cond)`" {
+    // The shape WITHOUT a trailing bare `else` is the one that did not parse
+    // at all before this gate existed, so it is the one pinned here.
+    try expectCtlConverges(
+        \\main: i64 = ()
+        \\    x = 5
+        \\    r = 0
+        \\    if x < 3
+        \\        r = 1
+        \\    else if x < 7
+        \\        r = 2
+        \\    r
+    ,
+        \\main: i64 = ()
+        \\    x = 5
+        \\    r = 0
+        \\    if x < 3
+        \\        r = 1
+        \\    else(x < 7)
+        \\        r = 2
+        \\    r
+    );
+}
+
+test "SOURCE-CONTROL-ONE §7: an `else if` CHAIN converges with an `else(cond)` chain" {
+    try expectCtlConverges(
+        \\main: i64 = ()
+        \\    x = 5
+        \\    r = 0
+        \\    if x < 3
+        \\        r = 1
+        \\    else if x < 7
+        \\        r = 2
+        \\    else if x < 9
+        \\        r = 3
+        \\    else
+        \\        r = 4
+        \\    r
+    ,
+        \\main: i64 = ()
+        \\    x = 5
+        \\    r = 0
+        \\    if x < 3
+        \\        r = 1
+        \\    else(x < 7)
+        \\        r = 2
+        \\    else(x < 9)
+        \\        r = 3
+        \\    else
+        \\        r = 4
+        \\    r
+    );
+}
+
+test "control convergence: the gate can FAIL — negative controls" {
+    // A gate that cannot fail is deleted or made able to fail. Each of these
+    // differs from its partner in exactly ONE fact §8 requires to be compared,
+    // and each must be caught.
+
+    // operand differs
+    try testing.expectError(error.TestExpectedEqual, expectCtlConverges(
+        \\main: i64 = ()
+        \\    i = 0
+        \\    while i < 10
+        \\        i = i + 1
+        \\        if i > 3
+        \\            break
+        \\    i
+    ,
+        \\main: i64 = ()
+        \\    i = 0
+        \\    while i < 10
+        \\        i = i + 1
+        \\        if i > 4
+        \\            break
+        \\    i
+    ));
+
+    // `continue` must NOT converge with `break` — the two exits are different
+    // control targets and the gate has to see that. It is the only thing here
+    // that reads an exit at all, and it reads only the TAG, because the
+    // statement carries a source location and nothing else: no target, no
+    // result pack. The target is reconstructed later by an innermost-loop
+    // stack walked over the AST in `dnir_lower.zig` (`ctx.loop_breaks` /
+    // `ctx.loop_heads`), which is the "find the nearest loop" resolution §6
+    // forbids and the spelling-based control resolution §11 pins at 0.
+    try testing.expectError(error.TestExpectedEqual, expectCtlConverges(
+        \\main: i64 = ()
+        \\    i = 0
+        \\    while i < 10
+        \\        i = i + 1
+        \\        if i > 3
+        \\            continue
+        \\    i
+    ,
+        \\main: i64 = ()
+        \\    i = 0
+        \\    while i < 10
+        \\        i = i + 1
+        \\        if i > 3
+        \\            break
+        \\    i
+    ));
+
+    // the YIELD PACK differs — one item against two
+    try testing.expectError(error.TestExpectedEqual, expectCtlConverges(
+        \\main: i64 = ()
+        \\    xs = {1, 2, 3}
+        \\    for(xs) (x)
+        \\        s = x
+        \\    0
+    ,
+        \\main: i64 = ()
+        \\    xs = {1, 2, 3}
+        \\    for k, v in xs
+        \\        s = k
+        \\    0
+    ));
+
+    // the SOURCE differs
+    try testing.expectError(error.TestExpectedEqual, expectCtlConverges(
+        \\main: i64 = ()
+        \\    xs = {1, 2, 3}
+        \\    ys = {4, 5, 6}
+        \\    for(xs) (x)
+        \\        s = x
+        \\    0
+    ,
+        \\main: i64 = ()
+        \\    xs = {1, 2, 3}
+        \\    ys = {4, 5, 6}
+        \\    for x in ys
+        \\        s = x
+        \\    0
+    ));
+
+    // an ALTERNATIVE is missing — two arms against three
+    try testing.expectError(error.TestExpectedEqual, expectCtlConverges(
+        \\main: i64 = ()
+        \\    x = 5
+        \\    r = 0
+        \\    if x < 3
+        \\        r = 1
+        \\    else if x < 7
+        \\        r = 2
+        \\    r
+    ,
+        \\main: i64 = ()
+        \\    x = 5
+        \\    r = 0
+        \\    if x < 3
+        \\        r = 1
+        \\    else(x < 7)
+        \\        r = 2
+        \\    else
+        \\        r = 3
+        \\    r
+    ));
+}
+
+test "SOURCE-CONTROL-ONE §3: `else` then a NESTED `if` on the next line stays nested" {
+    // The same-line rule is what separates the two, and it has to keep the
+    // genuinely nested spelling nested: `else` followed by `if` on a LATER
+    // line is an ordinary refinement inside the else body, not an alternative
+    // of the outer chain.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\main: i64 = ()
+        \\    x = 5
+        \\    r = 0
+        \\    if x < 3
+        \\        r = 1
+        \\    else
+        \\        if x < 7
+        \\            r = 2
+        \\    r
+    , &arena);
+    const body = mod.body.stmts[0].func_decl.func.body;
+    const ifs = body.stmts[2].if_stmt;
+    try testing.expectEqual(@as(usize, 0), ifs.elseifs.len);
+    try testing.expect(ifs.else_body != null);
+    try testing.expect(ifs.else_body.?.stmts[0] == .if_stmt);
 }
 
 test "parse: compound assignments lower to binary assignments" {

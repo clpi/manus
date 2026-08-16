@@ -159,6 +159,36 @@ smallest missing distinction — never a conformance declaration.
     protocol object 0   iterator object 0   vtable 0   indirect dispatch 0
     unused result fields 0                  generic shape lookup 0
 
+**CORRECTED BY MEASUREMENT — THIS LIST NAMES THE WRONG OBJECTS.** Priced per
+element on Apple M2 Pro against a sealed direct traversal of the same range,
+same file, same flags, same exit byte, three passes:
+
+    iterator object, state in memory (+3 insn)   +0.008 / -0.020 / +0.002   ZERO
+    callee body                                  ~0                         ZERO
+    vtable + indirect dispatch (`blr`)           +0.4%                     ~zero
+    indirect target the predictor cannot pin     +1.9%                     ~zero
+    THE CALL BOUNDARY                            +2.001 cyc/el, +199%      ALL OF IT
+
+A full cursor traversal is **6.65x** the sealed one, and **10.7x** with
+accumulators split. So the *direction* of §6 is right — machinery must go — but
+**the object and the vtable are not worth a line of compiler.** `bl` + `ret` is
+the entire tax. **Inline the advance.**
+
+**MECHANISM, and it generalizes past iteration:** M2 Pro retires **exactly one
+TAKEN branch per cycle**; a not-taken branch is free. 1 / 2 / 3 taken branches
+per iteration measured 1.017 / 2.008 / 3.012 cyc/iter. Control: a probe retiring
+MORE instructions cost HALF as much. So the cost of a control face is its taken
+branches, not its instructions — which is why §3's "for is not iter+next" is a
+performance ruling and not only an architectural one.
+
+**AND THE ZERO THAT CLOSES A LANE.** The tree has no branch term in any cost
+model and predicts 1.00 for a loop costing 3.011 — but the falsifier says do NOT
+go build one: a second taken branch is **FREE** once the body carries >= 8
+instructions, so the count is a `max` candidate, not an additive cost. Corpus
+reach of the defect: **7 loops in 821 (0.9%)**, one with a call. 168 of 821 loops
+carry a call — the largest population any microarchitectural fact has reached in
+this tree — **and it still does not matter.**
+
 And the derived algebra must feed **demand, recurrence, representation
 selection, SIMD, parallelization and target realization** — not merely type
 checking. A sequence with iteration + known cardinality + contiguous
