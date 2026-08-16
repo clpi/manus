@@ -277,16 +277,79 @@ pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u
     return out.toOwnedSlice(alloc);
 }
 
+/// A SYMBOL IS AN IDENTIFIER, so every byte outside `[A-Za-z0-9_]` becomes `_`.
+///
+/// This is the `.` -> `_` rule stated over the alphabet a symbol actually has,
+/// and it SUBSUMES it rather than sitting beside it. The dot was not special:
+/// it was simply the first non-identifier byte anyone hit.
+///
+/// MEASURED, and this is why it is not decoration: the corpus contains
+/// `scripts/gatecap-probe.id` and `scripts/setup-nvim.id`. Their homes carry a
+/// HYPHEN, and `idol compile --target native-asm` on such a file emitted
+///
+///     .globl _idol_odd-name__f
+///
+/// which `xcrun clang -c` refuses with `unexpected token` — the object path
+/// was fine and the assembly path was not, one law with two answers. A file
+/// name is not required to be an identifier; a symbol is.
+fn appendSymbolBytes(out: *std.ArrayList(u8), alloc: std.mem.Allocator, text: []const u8) !void {
+    for (text) |c| {
+        const ok = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+            (c >= '0' and c <= '9') or c == '_';
+        try out.append(alloc, if (ok) c else '_');
+    }
+}
+
 /// THE MANGLING LAW, applied. `home` is a dotted home path, `name` a relation
 /// spelling. Caller owns the result.
 pub fn homeSymbol(alloc: std.mem.Allocator, home: []const u8, name: []const u8) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
     try out.appendSlice(alloc, "idol_");
-    for (home) |c| try out.append(alloc, if (c == '.') '_' else c);
+    try appendSymbolBytes(&out, alloc, home);
     try out.appendSlice(alloc, "__");
-    try out.appendSlice(alloc, name);
+    try appendSymbolBytes(&out, alloc, name);
     return out.toOwnedSlice(alloc);
+}
+
+/// THE LAW AND ITS TWO EXEMPTIONS, IN ONE PLACE, FOR ONE RELATION.
+///
+/// `homeSymbol` above is the STRING. This is the DECISION of whether a relation
+/// gets it, and it exists because the decision was about to be made twice: once
+/// in `dnir_lower` (which names every definition and every same-home callee) and
+/// once in `main` (which names the process entry for `-Wl,-e` and for the f64
+/// exit coercion). Two copies of an exemption list is how a definer and a caller
+/// stop agreeing, which is the exact failure this whole law exists to prevent.
+///
+///   * `foreign` — the name a FOREIGN BOUNDARY declares, from `@ffi(n)` or
+///     `@comp.c.export(n)`. At a foreign boundary the name is not ours to
+///     choose: the declaration IS the name. HPLS §34 — internal ABI is
+///     realization; only foreign boundaries require foreign ABI.
+///   * `main` — the process entry, whose name belongs to the C runtime.
+///
+/// Nothing else. In particular "the program has one file" is NOT an exemption:
+/// a law with a special case for small programs stops being true exactly when a
+/// second file arrives.
+///
+/// A NULL HOME IS THE ONE HOLE, AND IT IS NAMED RATHER THAN HIDDEN. The home is
+/// derived from the module's path (`homeOfPath`), so it is absent only where
+/// there is no path at all — a graph built in a unit test from a literal AST.
+/// Such a module is never linked against another, so the bare name cannot
+/// collide with anything; every path that reaches a real object has a path and
+/// therefore a home. `docs/cross-home-identity.md` §5 records the OTHER half of
+/// this — that the home a path yields is only stable where a project root is
+/// detectable — and that half is `place`'s, not this function's.
+pub fn relationSymbol(
+    alloc: std.mem.Allocator,
+    home: ?[]const u8,
+    name: []const u8,
+    foreign: ?[]const u8,
+) ![]const u8 {
+    if (foreign) |declared| return alloc.dupe(u8, declared);
+    if (std.mem.eql(u8, name, "main")) return alloc.dupe(u8, "main");
+    const h = home orelse return alloc.dupe(u8, name);
+    if (h.len == 0) return alloc.dupe(u8, name);
+    return homeSymbol(alloc, h, name);
 }
 
 test "home_resolve: homeOfPath drops search roots and keeps the home chain" {
@@ -322,6 +385,52 @@ test "home_resolve: the symbol is a function of home AND name" {
     // symbol. Measured `ld -r` refuses the bare-name pair with `duplicate
     // symbol '_field'`, so this inequality is the link becoming possible.
     try std.testing.expect(!std.mem.eql(u8, a, b));
+}
+
+test "home_resolve: the law has exactly two exemptions" {
+    const alloc = std.testing.allocator;
+    // The ordinary case: identity is `(home, name)`.
+    const ordinary = try relationSymbol(alloc, "compiler.record", "field", null);
+    defer alloc.free(ordinary);
+    try std.testing.expectEqualStrings("idol_compiler_record__field", ordinary);
+
+    // EXEMPTION 1 — the process entry. `main` belongs to the C runtime, in
+    // every home, including a home that also declares ordinary relations.
+    const entry = try relationSymbol(alloc, "compiler.host", "main", null);
+    defer alloc.free(entry);
+    try std.testing.expectEqualStrings("main", entry);
+
+    // EXEMPTION 2 — a foreign boundary. The declaration IS the name, and it
+    // wins over the home even for a relation the home would otherwise mangle.
+    const foreign = try relationSymbol(alloc, "compiler.lexer", "tokenize", "duo_lexer_tokenize");
+    defer alloc.free(foreign);
+    try std.testing.expectEqualStrings("duo_lexer_tokenize", foreign);
+
+    // NOT AN EXEMPTION — "the program has one file". A one-file program's
+    // relations are still `(home, name)`; the home is just short.
+    const one_file = try relationSymbol(alloc, "probe", "field", null);
+    defer alloc.free(one_file);
+    try std.testing.expectEqualStrings("idol_probe__field", one_file);
+    try std.testing.expect(!std.mem.eql(u8, one_file, ordinary));
+
+    // The named hole: no path, no home, no collision to protect against.
+    const homeless = try relationSymbol(alloc, null, "field", null);
+    defer alloc.free(homeless);
+    try std.testing.expectEqualStrings("field", homeless);
+
+    // A FILE NAME IS NOT REQUIRED TO BE AN IDENTIFIER; A SYMBOL IS.
+    // `scripts/gatecap-probe.id` is in the corpus, and its home's hyphen made
+    // `--target native-asm` emit `.globl _idol_odd-name__f`, which the
+    // assembler refuses. Object emission accepted it, so one law had two
+    // answers depending on the emit mode.
+    const hyphen = try relationSymbol(alloc, "scripts.gatecap-probe", "f", null);
+    defer alloc.free(hyphen);
+    try std.testing.expectEqualStrings("idol_scripts_gatecap_probe__f", hyphen);
+
+    // The method spelling's dot is the same case, one level in.
+    const method = try relationSymbol(alloc, "pkg.vec", "Vec.xplus", null);
+    defer alloc.free(method);
+    try std.testing.expectEqualStrings("idol_pkg_vec__Vec_xplus", method);
 }
 
 test "home_resolve: a home name cannot exceed the path buffer" {

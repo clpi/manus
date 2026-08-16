@@ -6,6 +6,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const native_bootstrap = @import("native_bootstrap.zig");
+const home_resolve = @import("home_resolve.zig");
 const Expr = ast.Expr;
 const sema = @import("sema.zig");
 const types = @import("types.zig");
@@ -350,6 +351,20 @@ pub const SemanticGraph = struct {
     alloc: std.mem.Allocator,
     /// Source path for the lifted module; used for gate-transport bootstrap faces.
     module_path: ?[]const u8 = null,
+    /// THE MODULE'S OWN HOME — the DEFINER half of `(home, name)`.
+    ///
+    /// `foreign_home` on a node answers the caller's half: "the relation I am
+    /// calling lives over there". Nothing answered "and where do I live", so
+    /// realization named every definition by its bare spelling and two homes
+    /// that both declare `field` both emitted `_field`. MEASURED: `ld -r` over
+    /// that pair answers `duplicate symbol '_field'`, which is why linking the
+    /// eighteen `lib/compiler` modules into one image was impossible
+    /// independent of every sema question in front of it.
+    ///
+    /// Derived here, once, from the module path by `home_resolve.homeOfPath` —
+    /// the SAME derivation `sema` runs for a foreign home — so a definer and a
+    /// caller cannot land on two spellings of one home.
+    home: ?[]const u8 = null,
     /// The declaration the module entity was lifted from. Provenance for
     /// consumers that need file-scope statements the graph does not lift as
     /// entities — module-level constants such as `ring = 2147483647`, which are
@@ -420,6 +435,15 @@ pub const SemanticGraph = struct {
         self.descriptor_refs.deinit(self.alloc);
         self.origin.deinit(self.alloc);
         if (self.places) |*census| census.deinit();
+        if (self.home) |h| self.alloc.free(h);
+    }
+
+    /// The module's own home, or null when it was lifted without a path.
+    /// Realization asks this for the DEFINER half of `(home, name)`; nothing
+    /// else may re-derive it, for the same reason `foreignHome` is the sole
+    /// authority for the caller's half.
+    pub fn selfHome(self: *const SemanticGraph) ?[]const u8 {
+        return self.home;
     }
 
     fn deinitNode(self: *SemanticGraph, node: Node) void {
@@ -2033,6 +2057,24 @@ pub const SemanticGraph = struct {
         file: []const u8,
     ) !id {
         self.module_path = file;
+        // THE DEFINER'S HALF OF `(home, name)`, established at the same moment
+        // as the path it is derived from, so no consumer can observe a graph
+        // that knows where the module came from and not which home it is.
+        //
+        // A local `Io` rather than a threaded parameter: `homeOfPath` probes for
+        // the project root and nothing else, this runs once per lift, and the
+        // alternative is an `Io` argument on the lift signature and on every one
+        // of its fourteen call sites — most of them unit tests that have no `Io`
+        // to give. `sema.importForeignHeader` reaches for a local one for the
+        // same reason.
+        {
+            var threaded = std.Io.Threaded.init(self.alloc, .{});
+            defer threaded.deinit();
+            if (home_resolve.homeOfPath(self.alloc, threaded.io(), file)) |h| {
+                if (self.home) |old| self.alloc.free(old);
+                self.home = h;
+            } else |_| {}
+        }
         const module = try self.liftModuleWithCalls(mod, file);
 
         const candidate_limit = self.application_candidates.bit_length;

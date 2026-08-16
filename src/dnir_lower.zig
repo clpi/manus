@@ -699,6 +699,10 @@ fn lowerModuleFromGraph(
     diagnostic: *Diagnostic,
     require_graph_facts: bool,
 ) Error!dnir.Module {
+    // THE HOME THIS MODULE IS. Read once, here, and handed to every place that
+    // names a symbol, so a definition and a same-home call site cannot be
+    // computed from two different answers.
+    const self_home = graph.selfHome();
 
     // ORDER MATTERS. The globals are collected FIRST and then removed from the
     // constant pool: a name that is written is not a constant, and leaving it in
@@ -752,18 +756,24 @@ fn lowerModuleFromGraph(
     while (decl_it.next()) |entry| {
         const fd = entry.key_ptr.*;
         const entity_id = entry.value_ptr.*;
-        // THE MANGLING LAW, on the CALLER side. A relation declared in another
-        // home is realized as `idol_<home>__<name>`; `funcExportName` answers
-        // the bare spelling and has no home to consult, which is exactly why
-        // `lib/compiler/record.id` exports `_field` and collides with every
-        // other home that names a relation `field` (MEASURED: `ld -r` refuses
-        // the pair with `duplicate symbol '_field'`). One authority computes
-        // the string — `home_resolve.homeSymbol` — so definer and caller cannot
-        // disagree about it.
+        // THE MANGLING LAW, BOTH SIDES, THROUGH ONE FUNCTION.
+        //
+        // A relation is realized as `idol_<home>__<name>`. The only thing that
+        // differs between the two arms is WHICH home: a foreign target's home
+        // is the one sema resolved and the graph carried here as
+        // `foreign_home`; this module's own is `selfHome`. Both then call
+        // `home_resolve.relationSymbol`, so the caller cannot spell a symbol
+        // the definer would not.
+        //
+        // The `else` arm was `funcExportName(alloc, fd)` with no home at all —
+        // the bare spelling — which is why `lib/compiler/record.id` exported
+        // `_field` and collided with every other home naming a relation
+        // `field`. That arm is the DEFINER side of the law, and it is what this
+        // change lands.
         const export_name = if (graph.foreignHome(entity_id)) |h|
             try home_resolve.homeSymbol(alloc, h, fd.path[0])
         else
-            try funcExportName(alloc, fd);
+            try funcExportName(alloc, self_home, fd);
         errdefer alloc.free(export_name);
         const slot = try entity_linkage.getOrPut(alloc, entity_id);
         if (slot.found_existing) {
@@ -793,7 +803,7 @@ fn lowerModuleFromGraph(
         if (!functionEligible(fd, records.items, mod)) continue;
         const slots = f64AbiParamSlots(fd, records.items) orelse continue;
         if (slots == 0 or slots > 8) continue;
-        const key = try funcExportName(alloc, fd);
+        const key = try funcExportName(alloc, self_home, fd);
         if (fp_params.contains(key)) {
             alloc.free(key);
             continue;
@@ -843,7 +853,7 @@ fn lowerModuleFromGraph(
         if (!shouldIncludeFuncDecl(fd)) continue;
         if (!functionEligible(fd, records.items, mod)) continue;
         const rec = findRecordName(records.items, fd.func.ret_type) orelse continue;
-        const export_name = try funcExportName(alloc, fd);
+        const export_name = try funcExportName(alloc, self_home, fd);
         defer alloc.free(export_name);
         if (func_record_returns.contains(export_name)) continue;
         const key = try alloc.dupe(u8, export_name);
@@ -1116,10 +1126,61 @@ fn funcFfiName(attrs: []const ast.Attribute) ?[]const u8 {
     return null;
 }
 
-/// Export symbol for DNIR/backends — `add` or qualified `Vec.xplus`.
-fn funcExportName(alloc: std.mem.Allocator, fd: *const ast.FuncDecl) Error![]const u8 {
-    if (fd.path.len == 1) return try alloc.dupe(u8, fd.path[0]);
-    return std.fmt.allocPrint(alloc, "{s}.{s}", .{ fd.path[0], fd.path[fd.path.len - 1] });
+/// The name a FOREIGN BOUNDARY declares for itself: `@ffi("n")`,
+/// `@c.export("n")` or its canonical spelling `@comp.c.export("n")`. Null when
+/// the relation has no foreign boundary and is therefore ours to name.
+///
+/// `@export` with no argument is here too, and it means "this bare spelling is
+/// the boundary" — the same claim `@c.export("x")` makes about `x`.
+/// `native_backend.funcExportName` reads the identical three attributes when it
+/// picks a process entry; the two agree because they read the same declaration.
+fn foreignBoundaryName(fd: *const ast.FuncDecl) ?[]const u8 {
+    for (fd.attributes) |attr| {
+        const is_boundary = std.mem.eql(u8, attr.name, "ffi") or
+            std.mem.eql(u8, attr.name, "export") or
+            std.mem.eql(u8, attr.name, "c.export") or
+            std.mem.eql(u8, attr.name, "comp.c.export");
+        if (!is_boundary) continue;
+        const raw = attr.args orelse return fd.path[0];
+        if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') return raw[1 .. raw.len - 1];
+        return raw;
+    }
+    return null;
+}
+
+/// THE SYMBOL A RELATION IS REALIZED AS — a function of its IDENTITY, and its
+/// identity is `(home, name)`.
+///
+/// This returned `fd.path[0]` — the BARE name — for as long as the direct
+/// backend has existed, and the direct backend is the only backend there is. It
+/// is not merely inelegant. MEASURED, 2026-08-15: `lib/compiler/record.id`
+/// exports `_field`; an ordinary second module that names one relation `field`
+/// exports `_field`; and `xcrun ld -r` over the two objects answers `duplicate
+/// symbol '_field'`. Across this corpus, 411 of 652 non-`main` exported symbols
+/// (63%) sit in a class where two or more homes export the same spelling. Self
+/// hosting REQUIRES linking the eighteen `lib/compiler` modules into one image,
+/// so under home-blind symbols that link could not exist — independently of
+/// every sema and graph question in front of it.
+///
+/// ONE AUTHORITY, TWO SIDES. `home_resolve.relationSymbol` decides; the CALLER
+/// side (`entity_linkage` for a foreign target, below) and the DEFINER side
+/// (this, for everything else) both go through it, so they agree by
+/// construction rather than by test. The exemptions live there too and are
+/// exactly two — the process entry and a declared foreign boundary.
+///
+/// The dotted spelling for a method (`Vec.xplus`) is the NAME half, unchanged;
+/// `native_backend.linkerSymbolName` still folds its dot to an underscore.
+pub fn funcExportName(
+    alloc: std.mem.Allocator,
+    self_home: ?[]const u8,
+    fd: *const ast.FuncDecl,
+) Error![]const u8 {
+    const name = if (fd.path.len == 1)
+        try alloc.dupe(u8, fd.path[0])
+    else
+        try std.fmt.allocPrint(alloc, "{s}.{s}", .{ fd.path[0], fd.path[fd.path.len - 1] });
+    defer alloc.free(name);
+    return home_resolve.relationSymbol(alloc, self_home, name, foreignBoundaryName(fd));
 }
 
 fn shouldIncludeFuncDecl(fd: *const ast.FuncDecl) bool {
@@ -1866,7 +1927,7 @@ fn lowerFunction(
     const ret_rec = findRecordName(records, fd.func.ret_type);
     const ret_record_name = if (ret_rec) |r| try alloc.dupe(u8, r.name) else null;
     errdefer if (ret_record_name) |record| alloc.free(record);
-    const export_name = try funcExportName(alloc, fd);
+    const export_name = try funcExportName(alloc, graph.selfHome(), fd);
     errdefer alloc.free(export_name);
 
     return .{
@@ -8431,7 +8492,10 @@ test "dnir_lower: checked subject call retains semantic facts" {
             const current_index = instruction_index;
             instruction_index += 1;
             if (instruction.op == .mov_arg) mov_args += 1;
-            if (instruction.op != .call_direct or !std.mem.eql(u8, instruction.callee, "read")) continue;
+            // THE MANGLING LAW: `read` in home `application` (the lift file
+            // is `application.id`) is realized as `idol_application__read`.
+            if (instruction.op != .call_direct or
+                !std.mem.eql(u8, instruction.callee, "idol_application__read")) continue;
             found = true;
             try std.testing.expect(std.meta.eql(relation, instruction.relation.?));
             try std.testing.expect(std.meta.eql(application, instruction.application.?));
@@ -8755,7 +8819,10 @@ test "dnir_lower: graph orders callees before callers" {
     var idx_distance: ?usize = null;
     var idx_main: ?usize = null;
     for (m.functions, 0..) |f, i| {
-        if (std.mem.eql(u8, f.name, "distance2")) idx_distance = i;
+        // `graph-order.id` is home `graph-order`, and a symbol is an
+        // identifier, so the hyphen folds: `idol_graph_order__distance2`.
+        // `main` is the process entry and keeps its name.
+        if (std.mem.eql(u8, f.name, "idol_graph_order__distance2")) idx_distance = i;
         if (std.mem.eql(u8, f.name, "main")) idx_main = i;
         try std.testing.expect(f.id != null);
     }

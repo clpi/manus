@@ -61,6 +61,7 @@ const waist = struct {
 };
 const backend_identity = @import("backend_identity.zig");
 const home_resolve = @import("home_resolve.zig");
+const dnir_lower = @import("dnir_lower.zig");
 const benchmark_evidence = @import("benchmark_evidence.zig");
 const representation_manifest = @import("representation_manifest.zig");
 const target_model = @import("target_model.zig");
@@ -3140,6 +3141,38 @@ fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet:
     }
 }
 
+/// The LINKER SYMBOL for the relation `abi` selected as the process entry.
+///
+/// One function rather than an inline expression because two consumers need the
+/// identical answer — `-Wl,-e,_<sym>` in `link_native_object` and
+/// `Arm64Compiler.needsProcessExitF64Coerce`, which compares this against the
+/// DNIR function name to decide whether the entry's f64 result is coerced to an
+/// exit code. If those two disagreed the link would succeed and the program
+/// would exit with the wrong number.
+///
+/// The home is derived from the module's own path by `home_resolve.homeOfPath`
+/// — the SAME derivation `SemanticGraph.home` runs — and a path with no
+/// derivable home falls back to the bare spelling, which is what
+/// `home_resolve.relationSymbol` does with a null home anyway.
+fn entrySymbol(
+    alloc: std.mem.Allocator,
+    io: Io,
+    src_path: []const u8,
+    mod: *const ast.Module,
+    relation: []const u8,
+) []const u8 {
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        const fd = &stmt.func_decl;
+        if (fd.path.len != 1 or !std.mem.eql(u8, fd.path[0], relation)) continue;
+        const home = home_resolve.homeOfPath(alloc, io, src_path) catch null;
+        return dnir_lower.funcExportName(alloc, home, fd) catch relation;
+    }
+    // A file-scope tail is the program: there is no declaration, the physical
+    // entry is synthesized as `main`, and `main` is the exemption anyway.
+    return relation;
+}
+
 fn link_native_object(
     alloc: std.mem.Allocator,
     io: Io,
@@ -4525,7 +4558,22 @@ fn do_compile(
             std.process.exit(1);
         } else {
             if (native_backend.isNativeExecutableTarget(mt)) {
-                if (native_backend.abi(&ps.mod, entry_override)) |entry| {
+                if (native_backend.abi(&ps.mod, entry_override)) |entry_relation| {
+                    // THE ENTRY IS A RELATION, AND `-Wl,-e` WANTS A SYMBOL.
+                    //
+                    // `abi` answers which RELATION is the process entry —
+                    // `main`, or a sole zero-arg function, or `--entry <name>`.
+                    // Under the mangling law that relation's symbol is
+                    // `idol_<home>__<name>` unless it is `main` or a declared
+                    // foreign boundary, so the linker flag and the f64 exit
+                    // coercion below must both name the SYMBOL. Asked through
+                    // the same `funcExportName` the definition went through, so
+                    // there is no second exemption list to drift.
+                    //
+                    // MEASURED before this existed: `run: i64 = ()` in
+                    // `lib/pkg/ent.id` emitted `_idol_pkg_ent__run` and the
+                    // link asked for `_run` — `Undefined symbol: _run`.
+                    const entry = entrySymbol(alloc, io, src_path, &ps.mod, entry_relation);
                     // A NATIVE `main` DOES NOT INITIALISE THE LUA RUNTIME. The
                     // C backend's main opens with `package = lua_package_init()`;
                     // the direct backend emits no equivalent, and it cannot --

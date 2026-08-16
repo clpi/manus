@@ -8268,7 +8268,8 @@ test "native backend: checked subject fact reaches object bytes" {
     try expectLineageCallTarget(alloc, output, projected, text_lineage);
     const main_start = std.mem.indexOf(u8, output.asm_text, "_main:\n") orelse
         return error.TestExpectedEqual;
-    const call_offset = std.mem.indexOf(u8, output.asm_text[main_start..], "bl _observe") orelse
+    // `machine-lineage.id` is home `machine-lineage`; the hyphen folds.
+    const call_offset = std.mem.indexOf(u8, output.asm_text[main_start..], "bl _idol_machine_lineage__observe") orelse
         return error.TestExpectedEqual;
     const call_staging = output.asm_text[main_start .. main_start + call_offset];
     try std.testing.expect(std.mem.indexOf(u8, call_staging, "mov x0") != null);
@@ -8322,7 +8323,7 @@ test "native backend: checked subject fact reaches object bytes" {
         output.text[text_lineage.text_start..text_lineage.text_end],
         assembly.machine[assembly.lineage[0].text_start..assembly.lineage[0].text_end],
     );
-    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "bl _observe") != null);
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "bl _idol_machine_lineage__observe") != null);
 }
 
 test "native backend: removing checked facts refuses before machine emission" {
@@ -8691,7 +8692,8 @@ test "native backend: shc application example is source to machine" {
     try std.testing.expect(std.meta.eql(graph.applicationSubject(fact.application).?, text_lineage.subject.?));
     try std.testing.expectEqual(graph.applicationCaller(fact.application).?, text_lineage.caller);
     try expectLineageCallTarget(alloc, output, projected, text_lineage);
-    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _read") != null);
+    // `examples/shc/application.id` is home `examples.shc.application`.
+    try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _idol_examples_shc_application__read") != null);
 
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return;
     var artifact = try emitObjectWithGraphLineage(alloc, &module, "native-object", &graph);
@@ -9459,7 +9461,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
         const id = function.id orelse continue;
         if (std.meta.eql(id, graph.applicationRelation(applications[0].application).?)) {
             selected_function = function;
-        } else if (std.mem.eql(u8, function.name, "impostor")) {
+        } else if (std.mem.eql(u8, function.name, "idol_callee_mismatch__impostor")) {
             other_function = function;
         }
     }
@@ -9529,7 +9531,10 @@ test "native backend: callee spelling cannot redirect a checked application" {
     var renamed = try emitArm64FromDnir(alloc, module, null, &diagnostic);
     defer renamed.deinit(alloc);
     try std.testing.expectEqualSlices(u8, baseline.text, renamed.text);
-    try std.testing.expect(std.mem.indexOf(u8, baseline.asm_text, "bl _observe") != null);
+    // The lawful symbol on the left; the hand-written alias on the right is
+    // set straight onto the DNIR, which is the point of the row — a physical
+    // rename that carries the target identity with it changes no semantics.
+    try std.testing.expect(std.mem.indexOf(u8, baseline.asm_text, "bl _idol_callee_mismatch__observe") != null);
     try std.testing.expect(std.mem.indexOf(u8, renamed.asm_text, "bl _observe_alias") != null);
     try std.testing.expectEqual(baseline.lineage.len, renamed.lineage.len);
     try std.testing.expectEqual(@as(usize, 1), renamed.lineage.len);
@@ -10053,7 +10058,11 @@ test "native backend: f64 process entry coerces d0 to x0 exit code" {
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     try liftCheckedTestGraph(&mod, &sem, &graph);
-    var executable = try emitCheckedTestAssembly(alloc, &mod, &graph, "run");
+    // THE ENTRY IS NAMED BY ITS SYMBOL, NOT ITS SPELLING. `run` in home
+    // `f64_run` is `idol_f64_run__run`, and `needsProcessExitF64Coerce`
+    // compares this against the DNIR function name — `main.entrySymbol` maps
+    // `abi`'s answer through the same law before the linker sees it.
+    var executable = try emitCheckedTestAssembly(alloc, &mod, &graph, "idol_f64_run__run");
     defer executable.deinit(alloc);
     const listing = executable.assembly;
     try std.testing.expect(std.mem.indexOf(u8, listing, "fcvtzs x0, d0") != null);
@@ -11445,9 +11454,10 @@ test "native backend assembly lists helper call labels" {
     var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
     defer assembly.deinit(alloc);
     const asm_text = assembly.assembly;
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _add") != null);
+    // `native.id` is home `native`; `main` is the entry and is exempt.
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _idol_native__add") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _main") != null);
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tbl _add\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tbl _idol_native__add\n") != null);
 }
 
 // Source `print` reaches machine code, and it reaches the SAME machine code as
@@ -11982,7 +11992,7 @@ test "record return wider than x0..x7 uses the AAPCS64 x8 indirect result" {
     // Caller: reserve the buffer and point x8 at it BEFORE the branch.
     const x8_setup = std.mem.indexOf(u8, listing, "add x8, sp,") orelse
         return error.MissingIndirectResultPointer;
-    const call_site = std.mem.indexOf(u8, listing, "\tbl _mk\n") orelse
+    const call_site = std.mem.indexOf(u8, listing, "\tbl _idol_indirect_ret__mk\n") orelse
         return error.MissingCall;
     try std.testing.expect(x8_setup < call_site);
 

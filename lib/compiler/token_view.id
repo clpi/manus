@@ -19,10 +19,10 @@ peek: i64 = (pack: Pack, index: i64)
   kindat(pack, index)
 
 canbeginexpr: bool = (pack: Pack, index: i64)
-  grammar.rolebeginexpr(kindat(pack, index))
+  token.grammarrole.rolebeginexpr(kindat(pack, index))
 
 roleprecedence: i64 = (pack: Pack, index: i64)
-  grammar.roleprecedence(kindat(pack, index))
+  token.grammarrole.roleprecedence(kindat(pack, index))
 
 rolecompatonly: bool = (pack: Pack, index: i64)
-  grammar.rolecompatonly(kindat(pack, index))
+  token.grammarrole.rolecompatonly(kindat(pack, index))
