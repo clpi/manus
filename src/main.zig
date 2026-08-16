@@ -24,6 +24,7 @@ const native_backend = @import("native_backend.zig");
 const demand = @import("demand.zig");
 const obseq = @import("obseq.zig");
 const observation = @import("observation.zig");
+const observer_demand = @import("observer_demand.zig");
 
 /// §7 makes "how much of a compile goes through C" a NUMBER this
 /// repository owes, so the code that routes each `req`'d module says which way
@@ -100,6 +101,11 @@ var graph_write_enabled: bool = false;
 var global_bench_backend: backend_identity.BenchBackend = .c_specialized;
 var global_bench_profile_cli: bool = false;
 var global_backend_explicit: bool = false;
+/// HPLS §11. Which INSPECTION observers this compilation must serve. Empty by
+/// default, so a compilation with no `--observer` is bit-identical to one from
+/// before the flag existed. See `src/observer_demand.zig` for why an observer
+/// that could not be spelled made §11's central claim untestable here.
+var global_observer_demand: observer_demand.Demand = .{};
 
 fn env_value_truthy(value: []const u8) bool {
     if (value.len == 0) return false;
@@ -403,6 +409,8 @@ const usage =
     \\                    `c` is RETIRED and refused with a diagnostic — there is no C backend
     \\  --bench-backend <c-dynamic|c-specialized|direct>  benchmark representation profile (default c-specialized);
     \\                    the two c-* profiles select the retired C backend and are refused with it
+    \\  --observer <debugger|profiler|reflection|mcp>  demand an inspection observer
+    \\                    (HPLS §11; repeatable). Costs realization freedoms — see gate/recon.sh
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
@@ -531,6 +539,25 @@ pub fn main(init: std.process.Init) !void {
                 term.err("unknown --emit '{s}'", .{val});
                 std.process.exit(1);
             };
+        } else if ((std.mem.eql(u8, arg, "--observer") and i + 1 < args.len) or
+            std.mem.startsWith(u8, arg, "--observer="))
+        {
+            // HPLS §11. An observer is a WORLD FACT, and until this flag it was
+            // a world fact nothing outside a unit test could state — so the
+            // claim "observation must not force materialization" had no way to
+            // be measured in this compiler at all. `gate/recon.sh` measures it:
+            // 23.4x on `w6`, 33.5x on `pair`, for an observer that never asks.
+            const val = if (std.mem.startsWith(u8, arg, "--observer="))
+                arg["--observer=".len..]
+            else blk: {
+                i += 1;
+                break :blk args[i];
+            };
+            const o = observer_demand.parseObserver(val) orelse {
+                term.err("unknown --observer '{s}' (expected debugger, profiler, reflection, mcp)", .{val});
+                std.process.exit(1);
+            };
+            global_observer_demand.add(o);
         } else if (std.mem.eql(u8, arg, "--backend") and i + 1 < args.len) {
             i += 1;
             compile_backend = args[i];
@@ -4239,6 +4266,13 @@ fn buildCacheKey(
     // grows a structure condition is hashed here the day it is declared and
     // nobody has to remember this site. That is the whole reason the injection
     // predicate moved out of sema and onto the world.
+    // ...AND WHICH OBSERVERS ARE DEMANDED (HPLS §11). Fourth defect at this
+    // site, found the same way the other three were — by measuring and getting
+    // no difference at all. `--observer=debugger` changes which realizations
+    // are lawful, and with only the bytes in the key a watched compilation was
+    // served the UNWATCHED artifact. See `observer_demand.Demand.cacheKey`.
+    const obs_key = global_observer_demand.cacheKey();
+    h.update(std.mem.asBytes(&obs_key));
     const worlds = subject_home.injectedWorldsFor(src_path);
     for (worlds.slice()) |w| h.update(subject_home.homeName(w));
     h.update(std.mem.asBytes(&worlds.len));
@@ -4596,7 +4630,15 @@ fn do_compile(
                     // the loop ends. MEASURED on a 20,000,000-iteration serial
                     // xor/multiply chain: 105,950,622 -> 4,938,857 whole-process
                     // cycles, `main` 22 -> 2 instructions, same exit byte.
-                    _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, observation.ordinary_executable);
+                    //
+                    // §11'S TAX, AND THE ONLY LINE IN THE TREE THAT CHARGES IT.
+                    // `--observer=debugger` adds `debugger_demanded` here and
+                    // `demand_projection.observationRefusal` then refuses the
+                    // whole transform on the ROSTER — so the loop above is
+                    // emitted in full. MEASURED, w6, whole-process cycles:
+                    // 4,630,978 with no observer, 108,363,341 with one, 23.4x,
+                    // same exit byte, and the observer never asked for a value.
+                    _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, global_observer_demand.world(observation.ordinary_executable));
                     var native_diagnostic: native_backend.Diagnostic = .{};
                     if (!(native_scalar_candidate and !too_many_modules)) {
                         // THESE TWO FACTS ARE INDEPENDENT AND USED TO BE SPLICED

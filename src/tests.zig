@@ -45,6 +45,7 @@ test {
     _ = @import("place.zig");
     _ = @import("eqspace.zig");
     _ = @import("observation.zig");
+    _ = @import("observer_demand.zig");
     _ = @import("wasm_semantic.zig");
     _ = @import("wasm_semantic_gen.zig");
     _ = @import("wasm_decode_differential.zig");
