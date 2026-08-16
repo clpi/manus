@@ -5364,7 +5364,7 @@ pub const Parser = struct {
 
     // ── Pratt expression parser ───────────────────────────────────────────────
 
-    fn infixBinOp(kind: TK) ?ast.BinOp {
+    pub fn infixBinOp(kind: TK) ?ast.BinOp {
         return switch (kind) {
             .kw_or => .@"or",
             .kw_and => .@"and",

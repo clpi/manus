@@ -105,6 +105,13 @@ pub const PrettyPrinter = struct {
     ///
     /// WHICH SPELLINGS THAT ADMITS IS NOT DECIDED HERE — see `writes`.
     canonical: bool = false,
+    /// Group EVERY binary operand, so the printed form is a canonical spelling
+    /// of the TREE rather than of the source: two expressions print identically
+    /// here iff they parsed to the same shape. That is how the round-trip test
+    /// compares trees without a structural walker, and it is why idempotence
+    /// alone is not the test — a DROPPED parenthesis yields a different tree
+    /// that is also a fixed point, so `fmt(fmt(x)) == fmt(x)` cannot see it.
+    force_group: bool = false,
     /// Source comments, in source order, so the formatter does not DELETE them.
     ///
     /// Comments never enter the AST — the parser retains no trivia — so a
@@ -402,20 +409,37 @@ pub const PrettyPrinter = struct {
     // every operator application it prints under another operator, and never
     // asks whether the parentheses are "needed".
     //
-    // This replaces a precedence model. The printer used to carry its own
-    // table of operator precedences and drop parentheses it judged redundant —
-    // and that table DISAGREED with the parser's (`grammar_roles`, read by
-    // `infix_prec`). It ranked `<<`/`>>` above `+`/`-`; the grammar ranks them
-    // below. So `(1 << w) - 1` reprinted as `1 << w - 1`, which reparses as
-    // `1 << (w - 1)`: 15 became 8, and `idol check` reported no errors.
-    // Associativity was ignored on top of that, so `10 - (3 - 2)` reprinted as
-    // `10 - 3 - 2`: 9 became 5.
+    // WHERE THE PARENTHESES COME FROM, and the two wrong answers that decided
+    // it. The printer used to carry its OWN table of operator precedences and
+    // drop parentheses it judged redundant — and that table DISAGREED with the
+    // parser's (`grammar_roles`, read by `infix_prec`). It ranked `<<`/`>>`
+    // above `+`/`-`; the grammar ranks them below. So `(1 << w) - 1` reprinted
+    // as `1 << w - 1`, which reparses as `1 << (w - 1)`: 15 became 8, and
+    // `idol check` reported no errors. Associativity was ignored on top of
+    // that, so `10 - (3 - 2)` reprinted as `10 - 3 - 2`: 9 became 5.
     //
-    // Two models that must agree is a standing invitation for them to diverge
-    // again, and every divergence is a silently wrong program. Keeping the
-    // parentheses means the printer consults NO precedence model, so there is
-    // nothing left to disagree about. Redundant parentheses cost a reader two
-    // characters; a dropped one costs a wrong answer nobody sees.
+    // The first repair deleted the model and parenthesized EVERY operand. That
+    // is sound and it is what shipped, but it buys soundness with syntax the
+    // language does not need, and HPLS is minimum programmer-imposed syntax:
+    // `idol fmt` rewrote `i % 15 != 0 and i % 3 == 0` as
+    // `((i % 15) != 0) and ((i % 3) == 0)` in 128 corpus files, and
+    // `gate/fmt.sh` could not see it, because that gate asks whether ANSWERS
+    // moved and inert parentheses do not move an answer.
+    //
+    // The disease was never "a model". It was TWO models that had to agree.
+    // There are three cures — delete one, keep both and test agreement, or make
+    // the second CONSULT the first — and only the third gets both properties.
+    // So the printer now reads binding powers out of `grammar_roles`, which is
+    // the parser's own authority and not a copy of it, through `childBounds`.
+    // There is still exactly one precedence model in the compiler; the printer
+    // is now a reader of it rather than a rival to it.
+    //
+    // Two things pin this, because a derivation is what produced the original
+    // wrong answers and a derivation is not evidence. `tokenFor` is pinned
+    // against `Parser.infixBinOp` so the spelling map cannot drift, and the
+    // round-trip test below prints every operator pair in both nestings,
+    // reparses, and compares the trees — 1,300 shapes, so a bound that is
+    // wrong anywhere is a failing test rather than a silently wrong program.
     //
     // What this cannot recover: parentheses that were ALREADY redundant in the
     // source, like `(a) + b` or `((x))`. Those never reach the printer — the
@@ -423,20 +447,92 @@ pub const PrettyPrinter = struct {
     // by the time anything is printed the information is gone. See the report
     // accompanying this change.
 
+    /// `parent_prec` is a BOUND, not an index. Low bits carry the largest LEFT
+    /// binding power a binary operand may have here and still be read back as
+    /// its own node: a binop child is grouped iff its own left binding power is
+    /// `<=` the bound. Precedences run 2..23, so a bound of 0 groups nothing
+    /// and `bound_always` (127) groups everything.
+    const prec_mask: u8 = 0x7f;
+    /// Set where a UNARY operand needs grouping regardless of the bound.
+    const unary_parens_bit: u8 = 0x80;
+
     /// Free position: nothing above this expression binds it.
     const free_position: u8 = 0;
-    /// Directly under a binary operator.
-    const operand_position: u8 = 1;
+    /// The bound no operator can clear — the refusal path for an operator the
+    /// grammar gives no associativity, where there is no binding power to
+    /// reason from and grouping is the only answer that cannot be wrong.
+    const bound_always: u8 = prec_mask;
     /// Under `^` or a prefix operator — the two places that bind TIGHTER than
     /// a prefix operator does, so a unary operand needs grouping there too.
     /// `(-2) ^ 2` is 4; `-2 ^ 2` is -4, because the parser reads a prefix
-    /// operand with `parse_prec(20)` and `^` is 23, so `^` wins.
-    const tight_operand_position: u8 = 2;
+    /// operand with `parse_prec(20)` and `^` is 23, so `^` wins. 20 is that
+    /// same `parse_prec(20)`, so a binop operand is grouped here on exactly
+    /// the condition the parser would re-associate it.
+    const tight_operand_position: u8 = unary_parens_bit | 20;
+
+    /// The spelling map's inverse, and NOT a precedence table. It answers only
+    /// "which token is this operator written with"; every binding power still
+    /// comes from `grammar_roles` THROUGH it, so the printer reads the
+    /// parser's own authority rather than a copy of it. `test "pretty: every
+    /// BinOp round-trips through the grammar"` pins it against
+    /// `Parser.infixBinOp`, which is what the deleted precedence table never
+    /// had and why it was free to drift.
+    fn tokenFor(op: BinOp) lexer.TokenKind {
+        return switch (op) {
+            .@"or" => .kw_or,
+            .@"and" => .kw_and,
+            .lt => .lt,
+            .gt => .gt,
+            .leq => .leq,
+            .geq => .geq,
+            .eq => .eq,
+            .neq => .neq,
+            .contains => .kw_in,
+            .bor => .pipe,
+            .bxor => .tilde,
+            .band => .amp,
+            .lshift => .lshift,
+            .rshift => .rshift,
+            .concat => .concat,
+            .add => .plus,
+            .sub => .minus,
+            .mul => .star,
+            .div => .slash,
+            .idiv => .idiv,
+            .mod => .percent,
+            .pow => .caret,
+            .matmul => .at,
+            .pipeline => .pipe_gt,
+        };
+    }
+
+    /// The bounds for an operator's two operands, derived from `grammar_roles`
+    /// the same way `Parser.infix_prec` derives the parser's binding powers.
+    ///
+    /// A child is grouped iff its left binding power is `<=` its side's bound,
+    /// which is the parser's own `if (inf.left <= min_prec) break;` read
+    /// backwards. Equal precedence groups on the side associativity does NOT
+    /// favour: `a - (b - c)` keeps its parentheses because `-` is left, and
+    /// `a ^ b ^ c` drops them because `^` is right.
+    fn childBounds(op: BinOp) struct { lhs: u8, rhs: u8 } {
+        const r = grammar_roles.lookup(tokenFor(op));
+        if (r.assoc == .none) return .{ .lhs = bound_always, .rhs = bound_always };
+        const p: u8 = @intCast(r.precedence);
+        return .{
+            .lhs = if (r.assoc == .left) p - 1 else p,
+            .rhs = if (r.assoc == .right) p - 1 else p,
+        };
+    }
 
     fn printExpr(self: *PrettyPrinter, expr: *const Expr, parent_prec: u8) Error!void {
         const needs_parens = switch (expr.*) {
-            .binop => parent_prec != free_position,
-            .unop => parent_prec == tight_operand_position,
+            .binop => |b| blk: {
+                if (self.force_group) break :blk true;
+                const r = grammar_roles.lookup(tokenFor(b.op));
+                if (r.assoc == .none) break :blk true;
+                break :blk @as(u8, @intCast(r.precedence)) <= (parent_prec & prec_mask);
+            },
+            .unop => (parent_prec & unary_parens_bit) != 0,
             // AN IF-EXPRESSION IS AMBIGUOUS WITH AN IF-STATEMENT. Written bare
             // at the head of a line — which is exactly where a function's tail
             // expression goes — `if c == 1 10 else 20 end` is read as a
@@ -504,7 +600,7 @@ pub const PrettyPrinter = struct {
                 // conversion is only kept when `idol check` still passes on the
                 // result — §29 requires the semantics be preserved rather than
                 // the brackets be textually replaced.
-                try self.printExpr(x.obj, 0);
+                try self.printExpr(x.obj, bound_always);
                 const open_c = if (self.mode == .idol and self.canonical) "(" else "[";
                 const close_c = if (self.mode == .idol and self.canonical) ")" else "]";
                 try self.write(open_c);
@@ -512,14 +608,14 @@ pub const PrettyPrinter = struct {
                 try self.write(close_c);
             },
             .field => |x| {
-                try self.printExpr(x.obj, 0);
+                try self.printExpr(x.obj, bound_always);
                 // `a@b` and `a.b` are the same node; `anchored` is the only
                 // record of which was written, and they are different
                 // operators.
                 try self.print("{s}{s}", .{ if (x.anchored) "@" else ".", x.field });
             },
             .call => |x| {
-                try self.printExpr(x.func, 0);
+                try self.printExpr(x.func, bound_always);
                 // APPLY-ONE, gap[092] — c0 §44a trap 2 is "braces as sugar",
                 // and writing `(` here unconditionally made the canonical
                 // FORMATTER a source-level implementation of it: every
@@ -541,8 +637,18 @@ pub const PrettyPrinter = struct {
                 }
                 try self.write(")");
             },
+            // A POSTFIX RECEIVER IS DELIMITED, NOT RANKED. The parentheses in
+            // `(2 * math.pi / 3):sin()` are not operator grouping — they say
+            // where the receiver ENDS, and no binding power expresses that,
+            // because `:sin()` binds to the primary on its left whatever the
+            // precedences are. Dropping them re-reads the call as `3:sin()`.
+            //
+            // This was safe to leave at `free_position` only while every binop
+            // operand was parenthesized anyway. `lib/math/interpolate.id` is
+            // where the corpus A/B caught it: 1 file of 987 moved its tree, and
+            // it was this. `bound_always` groups any operator here.
             .method_call => |x| {
-                try self.printExpr(x.obj, 0);
+                try self.printExpr(x.obj, bound_always);
                 try self.print(":{s}(", .{x.method});
                 for (x.args, 0..) |arg, i| {
                     if (i > 0) try self.write(", ");
@@ -551,8 +657,11 @@ pub const PrettyPrinter = struct {
                 try self.write(")");
             },
             .binop => |x| {
-                const child_pos: u8 = if (x.op == .pow) tight_operand_position else operand_position;
-                try self.printExpr(x.lhs, child_pos);
+                const bounds = childBounds(x.op);
+                // `^` keeps the unary bit on BOTH sides: it is the one operator
+                // that binds tighter than a prefix operator, so `-2 ^ 2` is -4.
+                const tight: u8 = if (x.op == .pow) unary_parens_bit else 0;
+                try self.printExpr(x.lhs, tight | bounds.lhs);
                 const op_str = switch (x.op) {
                     .add => " + ",
                     .sub => " - ",
@@ -580,7 +689,7 @@ pub const PrettyPrinter = struct {
                     .pipeline => " |> ",
                 };
                 try self.write(op_str);
-                try self.printExpr(x.rhs, child_pos);
+                try self.printExpr(x.rhs, tight | bounds.rhs);
             },
             .unop => |x| {
                 // `@` IS NOT A PREFIX OPERATOR YOU CAN JUXTAPOSE. It is written
@@ -707,9 +816,10 @@ pub const PrettyPrinter = struct {
             .contains_expr => |x| {
                 // `3` here was an index into the deleted precedence table.
                 // Both sides are operands of an infix operator like any other.
-                try self.printExpr(x.lhs, operand_position);
+                const bounds = childBounds(.contains);
+                try self.printExpr(x.lhs, bounds.lhs);
                 try self.write(" in ");
-                try self.printExpr(x.rhs, operand_position);
+                try self.printExpr(x.rhs, bounds.rhs);
             },
             .range => |x| {
                 try self.printExpr(x.start, 0);
@@ -2007,6 +2117,80 @@ fn expectIdempotent(alloc: std.mem.Allocator, src: []const u8) !void {
     try testing.expectEqualStrings(once, twice);
 }
 
+/// The tree's canonical spelling: every operand grouped, so equality of these
+/// strings IS equality of the parsed shape.
+fn fmtGrouped(alloc: std.mem.Allocator, src: []const u8) ![]u8 {
+    const mod = try parseForFmt(alloc, src);
+    var buf = std.ArrayList(u8).empty;
+    var pp = PrettyPrinter.init(alloc, &buf, .idol);
+    pp.canonical = true;
+    pp.force_group = true;
+    try pp.printModule(&mod);
+    return try buf.toOwnedSlice(alloc);
+}
+
+test "pretty: every BinOp round-trips through the grammar" {
+    // `tokenFor` is the only new map, and a map that must agree with another
+    // map is the shape of the original defect. This pins it: for every operator
+    // the printer can write, the token it names must be the token the PARSER
+    // reads back as that same operator. A typo here would silently give some
+    // operator another's binding powers.
+    const Parser = @import("parser.zig").Parser;
+    inline for (@typeInfo(BinOp).@"enum".field_names) |nm| {
+        const op: BinOp = @field(BinOp, nm);
+        const back = Parser.infixBinOp(PrettyPrinter.tokenFor(op));
+        try testing.expect(back != null);
+        try testing.expectEqual(op, back.?);
+    }
+}
+
+test "pretty: minimal grouping preserves the tree on every operator pair" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THE DERIVATION IS NOT THE EVIDENCE. `childBounds` is read off the
+    // parser's loop condition, and reading a loop condition backwards is
+    // exactly what produced `1 << w - 1` the first time. So every operator pair
+    // is printed in both nestings, reparsed, and the TREES compared — not the
+    // strings, and not merely that formatting is a fixed point, which a dropped
+    // parenthesis also satisfies.
+    const ops = [_][]const u8{
+        "+",  "-",  "*",  "/",  "//", "%",  "^",  "&",
+        "|",  "~",  "<<", ">>", "==", "!=", "<",  ">",
+        "<=", ">=", "and", "or",
+    };
+    var checked: usize = 0;
+    for (ops) |a| {
+        for (ops) |b| {
+            // Both nestings, spelled with explicit parentheses so the SOURCE is
+            // unambiguous whatever the grammar says.
+            const srcs = [_][]const u8{
+                try std.fmt.allocPrint(alloc, "v = (x {s} y) {s} z\n", .{ a, b }),
+                try std.fmt.allocPrint(alloc, "v = x {s} (y {s} z)\n", .{ a, b }),
+            };
+            for (srcs) |src| {
+                // A pair the grammar refuses (nonassoc chains, compat-only
+                // spellings) is skipped, not counted — and `checked` below
+                // refuses the vacuous pass that skipping everything would be.
+                const want = fmtGrouped(alloc, src) catch continue;
+                const minimal = fmtCanonical(alloc, src) catch continue;
+                const got = fmtGrouped(alloc, minimal) catch |e| {
+                    std.debug.print("reparse failed for {s}: {s}\n", .{ minimal, @errorName(e) });
+                    return e;
+                };
+                testing.expectEqualStrings(want, got) catch |e| {
+                    std.debug.print("tree moved: {s} -> {s}\n", .{ src, minimal });
+                    return e;
+                };
+                checked += 1;
+            }
+        }
+    }
+    // Pinned from below: skipping is allowed, skipping EVERYTHING is not.
+    try testing.expect(checked >= 400);
+}
+
 test "pretty: parentheses survive when the grammar needs them" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -2024,10 +2208,28 @@ test "pretty: parentheses survive when the grammar needs them" {
         \\
     ;
     const out = try fmtCanonical(alloc, src);
-    // Every grouping the author wrote comes back, including the ones a
-    // precedence model would call redundant. The printer consults no such
-    // model, so there is no model to be wrong.
-    try testing.expectEqualStrings(src, out);
+    // The three groupings the grammar NEEDS come back, and only those. `b` and
+    // `d` lose theirs because `&` and `<<` rank below the operators inside
+    // them, which is the same ranking whose absence produced the original bug —
+    // read the other way. `a`, `c` and `e` keep theirs because dropping any one
+    // of them re-associates the expression.
+    try testing.expectEqualStrings(
+        \\a = (1 << w) - 1
+        \\b = x >> 4 & (1 << 4) - 1
+        \\c = (a | b) * 2
+        \\d = a + b << 2
+        \\e = (a << 2) + b
+        \\
+    , out);
+    // AND THE TREE DID NOT MOVE — which is the property, where the string above
+    // is only its spelling. `fmtGrouped` prints the parsed shape with every
+    // operand grouped, so these two agreeing means the reparse of the minimal
+    // form is the same tree as the reparse of the author's fully-parenthesized
+    // source. Without this line the test pins characters, not meaning.
+    try testing.expectEqualStrings(
+        try fmtGrouped(alloc, src),
+        try fmtGrouped(alloc, out),
+    );
     try expectIdempotent(alloc, src);
 }
 
@@ -2049,8 +2251,51 @@ test "pretty: equal-precedence nesting keeps its grouping on either side" {
         \\
     ;
     const out = try fmtCanonical(alloc, src);
-    // Nesting on either side keeps its grouping, whatever the associativity —
-    // the printer does not consult one.
+    // Equal precedence keeps its grouping on the side associativity does NOT
+    // favour, and drops it on the side that does. `a`, `b`, `c` are
+    // left-associative nested on the RIGHT, so the parentheses are load-bearing
+    // and stay. `d` is `^` nested on the right and `^` is RIGHT-associative, so
+    // `2 ^ 3 ^ 2` already means `2 ^ (3 ^ 2)` — those parentheses are the only
+    // redundant pair here, and they go. `e` is the same operator nested on the
+    // left, where they are load-bearing again.
+    try testing.expectEqualStrings(
+        \\a = 10 - (3 - 2)
+        \\b = 100 / (10 / 5)
+        \\c = 10 - (3 + 2)
+        \\d = 2 ^ 3 ^ 2
+        \\e = (2 ^ 3) ^ 2
+        \\
+    , out);
+    try testing.expectEqualStrings(
+        try fmtGrouped(alloc, src),
+        try fmtGrouped(alloc, out),
+    );
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: a postfix receiver keeps its grouping" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // THE SECOND ONE THAT CHANGED ANSWERS, and the shipped printer had it too:
+    // parentheses around the RECEIVER of a postfix form are not grouping by
+    // precedence, they say where the receiver ends. No binding power expresses
+    // that, because `:sin()` takes the primary on its left whatever the
+    // precedences are. The shipped printer passed `free_position` here —
+    // harmless only while every operand was parenthesized anyway — and turned
+    //     x / (2:log() * 2:log()):ceil()      one division
+    // into
+    //     (x / 2:log()) * 2:log():ceil()      a division AND a multiplication
+    // in `lib/heap.id`, `lib/math/interpolate.id` and three `scripts/` files.
+    const src =
+        \\a = (x * y):sin()
+        \\b = (x + 1).field
+        \\c = (f + g)(1)
+        \\d = (t * 2)(i)
+        \\e = -a * b:log() / (2:log() * 2:log()):ceil()
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
     try testing.expectEqualStrings(src, out);
     try expectIdempotent(alloc, src);
 }
