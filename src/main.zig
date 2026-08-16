@@ -7,6 +7,7 @@ const lexer_dispatch = @import("lexer_dispatch.zig");
 const Parser = @import("parser.zig").Parser;
 const ast = @import("ast.zig");
 const sema = @import("sema.zig");
+const conversion_law = @import("conversion_law.zig");
 const Sema = sema.Sema;
 const CodeGen = @import("codegen.zig").CodeGen;
 const Mono = @import("mono.zig");
@@ -128,6 +129,10 @@ fn apply_env_flags(init: std.process.Init) void {
         // witness ships inside the generated artifact unconditionally.
         if (map.get("DUO_WHY_CONVERT")) |v| {
             if (env_value_truthy(v)) cg.why_convert = true;
+            // ONE SWITCH, TWO CONSUMERS. The C emitter's admit witness and the
+            // check-time ruling's are the same observable; a gate that has to
+            // set two variables to see one lattice will eventually set one.
+            if (env_value_truthy(v)) conversion_law.why_convert = true;
         }
         if (map.get("DUO_SER")) |v| {
             if (env_value_truthy(v)) cg.ser_census = true;
@@ -4479,6 +4484,20 @@ fn do_compile(
     if (phase_timer) |*t| trace_phase(io, t, "parse + sema", null);
     debug_trace.event(.parse, .module, "parsed {s}", .{src_path});
     debug_trace.event(.sema, .module, "checked {s} ({d} test(s))", .{ src_path, ps.sem.test_entries.items.len });
+
+    // THE CONVERSION ALGEBRA'S REFUSAL IS A RULING, so it runs here — before
+    // the `check_only` return, and before any backend — rather than inside the
+    // retired C emitter where gap[082] left it. See `src/conversion_law.zig`:
+    // with `--backend=c` retired the direct backend became the only backend and
+    // carries no such law, so `idol check` reported "no errors" on the very
+    // fixture written to pin the rule.
+    {
+        const verdict = try conversion_law.enforce(alloc, &ps.mod);
+        if (verdict.refused > 0) {
+            term.err("{d} refused conversion(s)", .{verdict.refused});
+            std.process.exit(1);
+        }
+    }
 
     if (check_only) {
         if (ps.sem.warnings == 0 and ps.sem.hints == 0 and ps.sem.infos == 0) {

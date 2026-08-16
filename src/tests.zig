@@ -4,6 +4,7 @@
 const std = @import("std");
 
 test {
+    _ = @import("conversion_law.zig");
     _ = @import("lexer.zig");
     _ = @import("lexer_bridge.zig");
     _ = @import("lexical_identity.zig");
