@@ -4092,7 +4092,15 @@ fn hashReqClosure(
                         // The PATH goes in as well as the bytes: two modules with
                         // identical contents at different paths are different reaches.
                         h.update(path);
-                        h.update(body);
+                        // A reached module gets the same §87 quotient as the root
+                        // (see `hashSourceQuotient`): a comment edit in a library
+                        // must not invalidate an artifact it cannot change.
+                        if (hashSourceQuotient(h, body, path)) {
+                            h.update("q");
+                        } else {
+                            h.update("r");
+                            h.update(body);
+                        }
                         if (!hashReqClosure(alloc, io, root, body, h, seen, depth + 1)) return false;
                     }
                 }
@@ -4104,6 +4112,74 @@ fn hashReqClosure(
         if (!found_any) return false;
     }
     return true;
+}
+
+/// §87 build-cache key over the PARSER'S QUOTIENT of a source, not its bytes.
+///
+/// HPLS.md §87: "reorganization, formatting or path movement must not
+/// invalidate semantically unchanged knowledge." MEASURED before this existed,
+/// `gate/ftcftw.id` (36,224 bytes) with one trailing comment appended:
+/// 41.98 ms against a 3.75 ms cache hit — 11.2x — for a BYTE-IDENTICAL
+/// artifact (sha256 b824933b9e15d546…, confirmed across five distinct inert
+/// edits with one input path and one output path).
+///
+/// WHAT IS AND IS NOT TRIVIA HERE, and the second one is the trap:
+///   * `#` and `--[[…]]` comments are trivia and are dropped.
+///   * `--- @…` is NOT trivia. It carries compiler hint directives which the
+///     lexer harvests into `pending_hints` and the parser consumes at the next
+///     function declaration. Dropping it would serve an artifact built under
+///     hints this source does not have — the §40 failure this file's cache-key
+///     comments already record twice.
+///   * COLUMNS ARE SEMANTIC. Idol has no indent/dedent token; the parser reads
+///     `tok.loc.col` directly (32 sites) and compares it against `open_col`,
+///     `body_col` and `prev_end_col = col + text.len`. Columns are hashed
+///     exactly.
+///   * LINES ARE SEMANTIC ONLY RELATIONALLY. All 47 parser uses of
+///     `tok.loc.line` are comparisons BETWEEN two tokens' lines (`==`, `!=`,
+///     `<=`, `>`), never arithmetic on the value. So any strictly monotone
+///     renumbering preserves every parser decision, and the dense rank over
+///     the surviving tokens is exactly that. This is what makes a blank line
+///     or a whole-line comment free while indentation stays load-bearing.
+///
+/// A lex error returns false and the caller falls back to raw bytes, so an
+/// input this scanner cannot read is never given a coarser key than it earns.
+fn hashSourceQuotient(h: *std.crypto.hash.sha2.Sha256, src: []const u8, path: []const u8) bool {
+    var lx = Lexer.init(src, path);
+    var last_line: u32 = 0;
+    var rank: u32 = 0;
+    // One token is at least one byte, so this bounds the loop without trusting
+    // the scanner to terminate.
+    var guard: usize = 0;
+    while (guard <= src.len + 8) : (guard += 1) {
+        const t = lx.next_tok() catch return false;
+        switch (t.kind) {
+            .comment, .compat_long_comment => continue,
+            .compat_comment => {
+                // `---` is the hint-bearing spelling; `--` alone is trivia.
+                if (t.text.len >= 3 and t.text[2] == '-') {
+                    h.update("H");
+                    h.update(t.text);
+                }
+                continue;
+            },
+            else => {},
+        }
+        if (t.loc.line != last_line) {
+            rank += 1;
+            last_line = t.loc.line;
+        }
+        const kind_code: u16 = @intFromEnum(t.kind);
+        const text_len: u32 = @intCast(t.text.len);
+        h.update(std.mem.asBytes(&kind_code));
+        h.update(std.mem.asBytes(&rank));
+        h.update(std.mem.asBytes(&t.loc.col));
+        h.update(std.mem.asBytes(&text_len));
+        h.update(t.text);
+        h.update(std.mem.asBytes(&t.int_val));
+        h.update(std.mem.asBytes(&t.float_val));
+        if (t.kind == .eof) return true;
+    }
+    return false;
 }
 
 fn buildCacheKey(
@@ -4123,7 +4199,15 @@ fn buildCacheKey(
     // compile the cache exists to avoid (measured: 159 ms -> 258 ms).
     const self_stat = Io.Dir.statFile(cwd, io, self_argv0, .{}) catch return null;
     var h = std.crypto.hash.sha2.Sha256.init(.{});
-    h.update(src);
+    // The root source enters as the parser's quotient of itself, never as its
+    // bytes — see `hashSourceQuotient`. The discriminant keeps a quotient key
+    // and a raw-fallback key in disjoint keyspaces.
+    if (hashSourceQuotient(&h, src, src_path)) {
+        h.update("q");
+    } else {
+        h.update("r");
+        h.update(src);
+    }
     h.update(target);
     h.update(backend_mode);
     h.update(opt);
