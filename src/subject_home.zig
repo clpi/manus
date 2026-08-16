@@ -966,8 +966,35 @@ pub fn exemplarStream(relation: []const u8) []const u8 {
 ///
 /// `args` is the legacy plural — an identity is singular — kept only so existing
 /// source keeps working.
-const os_members = [_][]const u8{
-    "arg", "args", "env", "cwd", "exit", "clock", "time",
+///
+/// ── DERIVED, NOT WRITTEN ────────────────────────────────────────────────────
+///
+/// This used to be a hand-written array of seven names beside `os_dot_members`'
+/// fifteen rows, and the two had to agree about which of the fifteen were also
+/// member edges of the world. They were TWO AUTHORITIES on one fact, which is
+/// the shape that has already produced a wrong answer in this compiler twice
+/// (the formatter's precedence table, idol `68d33bbe`; the definer/caller symbol
+/// split, `patches/definer-side-symbol-law`). `Provision.roster` wants names and
+/// the roster carries rows, so the names are TAKEN FROM THE ROWS: a member edge
+/// is bare-reachable exactly when its row says `.bare`, and the two cannot
+/// disagree because there is only one of them.
+fn osBareCount() usize {
+    var n: usize = 0;
+    for (os_dot_members) |m| {
+        if (m.bare) n += 1;
+    }
+    return n;
+}
+
+const os_members: [osBareCount()][]const u8 = blk: {
+    var out: [osBareCount()][]const u8 = undefined;
+    var n: usize = 0;
+    for (os_dot_members) |m| {
+        if (!m.bare) continue;
+        out[n] = m.name;
+        n += 1;
+    }
+    break :blk out;
 };
 
 /// ── THE DOT FACE, AND WHAT DECIDED ITS ROSTER ──────────────────────────────
@@ -1056,13 +1083,76 @@ pub const Realization = enum {
     retired,
 };
 
+/// WHAT APPLYING A MEMBER EDGE *IS*. The three faces are three different
+/// applications, and collapsing them is how `exit(1)` would become an index.
+///
+/// This was a THIRD roster, in `table_apply.zig`, with its own `Member` struct
+/// and its own seven rows — a private copy of the world's membership living in
+/// the pass that rewrites it. It is a property OF THE EDGE, so the edge carries
+/// it, and the pass asks.
+pub const Face = enum {
+    /// Applying it is ACCESS on the world's table — `arg(i)`, `env(k)`.
+    projection,
+    /// Applying it is a CALL — `exit(n)`, `clock()`.
+    relation,
+    /// It is not applied at all: the edge IS the value, and `cwd()` is that
+    /// value applied to nothing. `os.cwd` is the node that realizes it.
+    value,
+};
+
 pub const OsMember = struct {
     name: []const u8,
     how: Realization,
     /// What to write instead. Non-empty only for `.retired`, because that is
     /// the only tier where a repair exists to name.
     repair: []const u8 = "",
+    /// WHAT APPLYING IT IS — see `Face`.
+    face: Face = .relation,
+    /// THE DECLARED RESULT TYPE, AND THE WHOLE POINT OF THIS ROSTER CARRYING
+    /// TYPES AT ALL.
+    ///
+    /// `dnir_lower` has always known `arg(i)` produces text — it emits
+    /// `idol_os_arg` with `.ty = .str` — and the TYPE side knew nothing, so
+    /// `codegen.expr_type` answered `any` for the same node. MEASURED before
+    /// this field existed, and the two forms are the same edge:
+    ///
+    ///     p = arg(1) ; p:len()     ANSWERS 5
+    ///     arg(1):len()             REFUSED  DNB001 method-unresolved:len
+    ///
+    /// The first works only because `string_method_result_type` admits a
+    /// receiver that is a bare `.name` whatever its type — an accident, not a
+    /// fact. The second is the same relation on the same subject and it had no
+    /// descriptor to dispatch on. So the result type is declared HERE, once,
+    /// and BOTH sides read it: `codegen.expr_type` for the receiver's
+    /// descriptor and `dnir_lower.exprIsStr`/`.ty` for the realization.
+    ///
+    /// `.any` means NOT DECLARED, which is the honest answer for a member whose
+    /// result nothing in this compiler knows — and every consumer treats it as
+    /// an absent fact rather than as the `any` descriptor, exactly as
+    /// `Conformance.unknown` is treated above.
+    result: RT = .any,
+    /// The node every face of this edge converges on, when it is not the
+    /// member's own name.
+    ///
+    /// `arg` converges on the PLURAL `os.args`, and that is DEBT, not the
+    /// target: `args` is a plural name and LAW-16 admits one irreducible
+    /// lowercase word, so `arg` is the lawful edge. It is written down here
+    /// rather than in the pass because this is the one place the debt can be
+    /// seen beside the thing it is debt against.
+    ///
+    /// DELETION CONDITION: delete the field when `os.arg` is the node that
+    /// resolves end to end and `args` is a retired spelling like `getenv`.
+    target: []const u8 = "",
+    /// Whether the edge is BARE-REACHABLE — a member of the world in the sense
+    /// `Provision.roster` means. `os_members` is derived from this flag.
+    bare: bool = false,
 };
+
+/// The node a member edge's faces converge on. `target` when it has one, the
+/// member's own name otherwise.
+pub fn osTarget(m: OsMember) []const u8 {
+    return if (m.target.len == 0) m.name else m.target;
+}
 
 /// THE OPERATION-FIRST ROSTER. Every `os.NAME` in the language is one of these
 /// or it is refused.
@@ -1072,26 +1162,38 @@ pub const OsMember = struct {
 pub const os_dot_members = [_]OsMember{
     // LOWERS ON THE DIRECT BACKEND. Measured end to end, statement position,
     // from the repo root: each compiles, runs, and answers correctly.
-    .{ .name = "arg", .how = .direct },
-    .{ .name = "args", .how = .direct },
-    .{ .name = "env", .how = .direct },
-    .{ .name = "cwd", .how = .direct },
-    .{ .name = "exit", .how = .direct },
+    .{ .name = "arg", .how = .direct, .face = .projection, .result = .str, .target = "args", .bare = true },
+    .{ .name = "args", .how = .direct, .face = .projection, .result = .str, .target = "args", .bare = true },
+    .{ .name = "env", .how = .direct, .face = .projection, .result = .str, .bare = true },
+    // A VALUE, NOT A RELATION. `os.cwd` is the working directory; `cwd()` is
+    // that value applied to nothing, and both converge on the one node
+    // `dnir_lower.lowerField` realizes. Written as `.relation` it was a call
+    // with no lowering — DNB011 through both faces, measured.
+    .{ .name = "cwd", .how = .direct, .face = .value, .result = .str, .bare = true },
+    .{ .name = "exit", .how = .direct, .face = .relation, .result = .void, .bare = true },
     // `os.execute("printf EXEC")` emits `EXEC` on `--backend=direct`. It was
     // DNB011 earlier in this session and a lowering landed under this lane;
     // the roster is derived from the measurement, so it moved with it.
-    .{ .name = "execute", .how = .direct },
+    .{ .name = "execute", .how = .direct, .result = .bool },
     // CLAIMED BY THE WORLD, LOWERED BY NOTHING. Counted debt; see `.unrealized`.
     // Refusing these would refuse the corpus while naming no repair, which is a
     // wall rather than a ruling — and it took down the compile-fail harness once
     // already, which is how this tier came to be written down.
-    .{ .name = "clock", .how = .unrealized },
-    .{ .name = "time", .how = .unrealized },
-    .{ .name = "remove", .how = .unrealized },
-    .{ .name = "rename", .how = .unrealized },
+    //
+    // THE RESULT TYPE IS DECLARED ANYWAY, and it is not decoration: it is the
+    // fact a lowering would have to produce, stated before the lowering exists
+    // so the lowering cannot land disagreeing with it. Nothing observes it
+    // today because nothing gets past the refusal.
+    .{ .name = "clock", .how = .unrealized, .result = .f64, .bare = true },
+    .{ .name = "time", .how = .unrealized, .result = .f64, .bare = true },
+    .{ .name = "remove", .how = .unrealized, .result = .bool },
+    .{ .name = "rename", .how = .unrealized, .result = .bool },
+    // `date` and the two retired names are `.any` — NOT DECLARED. Nothing in
+    // this compiler knows what they answer, and inventing a type here would be
+    // scenery with a consumer, which is worse than scenery.
     .{ .name = "date", .how = .unrealized },
-    .{ .name = "tmpname", .how = .unrealized },
-    .{ .name = "difftime", .how = .unrealized },
+    .{ .name = "tmpname", .how = .unrealized, .result = .str },
+    .{ .name = "difftime", .how = .unrealized, .result = .f64 },
     // Retired, with the repair the refusal quotes back.
     .{ .name = "getenv", .how = .retired, .repair = "env(k)" },
     .{ .name = "setenv", .how = .retired, .repair = "env(k) = v" },
@@ -1500,6 +1602,101 @@ test "the world rosters are DISJOINT, so injection has nothing to resolve" {
             std.debug.print("'{s}' is provided by {d} worlds\n", .{ n, providers });
             return error.WorldRostersOverlap;
         }
+    }
+}
+
+// ── The `os` world's edges: one roster, four askers ─────────────────────────
+
+test "a member edge declares its RESULT, and both faces of the edge read it" {
+    // THE MISSING FACT, closed. `dnir_lower` emitted `idol_os_arg` with
+    // `.ty = .str` while `codegen.expr_type` answered `any` for the same node,
+    // so ONE EDGE had TWO ANSWERS and which one you got depended on how you
+    // spelled the receiver — measured on the shipped binary:
+    //
+    //     p = arg(1) ; p:len()     ANSWERS 5
+    //     arg(1):len()             REFUSED  DNB001 method-unresolved:len
+    //
+    // The first only worked because the string dispatch admits a receiver that
+    // is a bare `.name` whatever its type. The result is declared here now, and
+    // the type side and the lowering both read this row.
+    try std.testing.expect(osDotMember("arg").?.result == .str);
+    try std.testing.expect(osDotMember("args").?.result == .str);
+    try std.testing.expect(osDotMember("env").?.result == .str);
+    try std.testing.expect(osDotMember("cwd").?.result == .str);
+    try std.testing.expect(osDotMember("exit").?.result == .void);
+    try std.testing.expect(osDotMember("clock").?.result == .f64);
+    try std.testing.expect(osDotMember("time").?.result == .f64);
+    // `.any` is NOT DECLARED — the honest answer for a member whose result
+    // nothing in this compiler knows, never a claim that it answers `any`.
+    try std.testing.expect(osDotMember("date").?.result == .any);
+    // ...and a word the world has no edge for has no row to read at all.
+    try std.testing.expect(osDotMember("bogus") == null);
+}
+
+test "a member edge's FACE decides what APPLYING it is" {
+    // Three faces, and collapsing them is how `exit(1)` would become an index.
+    //
+    // This was a THIRD roster, in `table_apply.zig`, with its own struct and
+    // its own seven rows — and it had already drifted from this one: `cwd` was
+    // written `.value` there with an arm that did NOTHING, so the canonical
+    // bare `cwd()` answered DNB011 while `os_dot_members` recorded `cwd` as
+    // `.direct` — LOWERS. Two authorities, one fact, and the roster was the one
+    // telling the truth.
+    try std.testing.expectEqual(Face.projection, osDotMember("arg").?.face);
+    try std.testing.expectEqual(Face.projection, osDotMember("env").?.face);
+    try std.testing.expectEqual(Face.value, osDotMember("cwd").?.face);
+    try std.testing.expectEqual(Face.relation, osDotMember("exit").?.face);
+    try std.testing.expectEqual(Face.relation, osDotMember("clock").?.face);
+    // The convergence target is the member's own name unless the row says
+    // otherwise, and the one row that says otherwise is the PLURAL debt.
+    try std.testing.expectEqualStrings("args", osTarget(osDotMember("arg").?));
+    try std.testing.expectEqualStrings("env", osTarget(osDotMember("env").?));
+    try std.testing.expectEqualStrings("cwd", osTarget(osDotMember("cwd").?));
+}
+
+test "the bare roster is DERIVED from the rows, and it does not WIDEN" {
+    // `os_members` was a hand-written array of seven names beside these fifteen
+    // rows, and the two had to agree about which rows were also member edges.
+    // It is taken from `.bare` now. The count is asserted so a row gaining bare
+    // reach cannot pass unnoticed — widening is not a small mistake here:
+    // `remove` bare would collide with `table.remove` and break the disjointness
+    // this file's own tripwire asserts, and `execute` bare would take a name no
+    // program asked it to take.
+    try std.testing.expectEqual(@as(usize, 7), os_members.len);
+    for ([_][]const u8{ "arg", "args", "env", "cwd", "exit", "clock", "time" }) |n| {
+        try std.testing.expectEqual(Home.os, bareReach(n).one);
+        try std.testing.expect(osDotMember(n).?.bare);
+    }
+    // ON THE DOT ROSTER AND NOT BARE. `os.execute(cmd)` resolves through the
+    // anchor; a bare `execute(cmd)` is an ordinary name and must stay one.
+    for ([_][]const u8{
+        "execute", "remove",  "rename", "date",
+        "tmpname", "difftime", "getenv", "setenv",
+    }) |n| {
+        try std.testing.expect(osDotMember(n) != null);
+        try std.testing.expect(!osDotMember(n).?.bare);
+        try std.testing.expectEqual(BareReach.none, std.meta.activeTag(bareReach(n)));
+    }
+}
+
+test "the ANCHOR may never reach less than the bare face" {
+    // `Reach.bare` makes the member edge the canonical face and `os.env(k)` the
+    // DISAMBIGUATOR — "reserved for a world where the same name is injected
+    // from elsewhere and resolution is genuinely contested". A disambiguator
+    // that reaches a SMALLER set than the name it disambiguates is not one; it
+    // is a second, narrower surface, and an author who writes the anchor to be
+    // explicit gets less than one who does not.
+    //
+    // MEASURED BEFORE THIS: `cwd()` and `os.cwd()` were both DNB011 while
+    // `os.cwd` — the same edge, third spelling — compiled and ran. The property
+    // is asserted here rather than assumed, because the shipped table is small
+    // enough that a reader would never notice a row missing from one side.
+    for (os_members) |n| {
+        const m = osDotMember(n) orelse return error.BareMemberHasNoAnchoredFace;
+        try std.testing.expect(m.bare);
+        // A retired name has a repair to quote; a bare-reachable one cannot be
+        // retired, or the canonical face would name a spelling nothing admits.
+        try std.testing.expect(m.how != .retired);
     }
 }
 

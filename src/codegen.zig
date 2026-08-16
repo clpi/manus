@@ -2133,10 +2133,25 @@ pub const CodeGen = struct {
             if (self.global_type(e.name.ident)) |rt| return rt;
         }
         if (e.* == .index) {
+            // THE WORLD'S PROJECTIONS ANSWER WHAT THE ROSTER SAYS THEY ANSWER.
+            //
             // The environment projection answers TEXT — `getenv` returns
-            // `char*`. Without this the read typed as `.any`, took the boxed
-            // path, and emitted `lua_to_str` against a value nothing produced.
-            if (self.env_projection_key(e) != null) return .str;
+            // `char*`. Without an answer here the read typed as `.any`, took
+            // the boxed path, and emitted `lua_to_str` against a value nothing
+            // produced. That was written for `env` ALONE, and `arg` — the same
+            // shape, the same `char*`, lowered by `dnir_lower` with `.ty =
+            // .str` — had no arm at all, so the two member edges of one world
+            // disagreed about whether their result had a type:
+            //
+            //     env("HOME"):len()    ANSWERS
+            //     arg(1):len()         REFUSED  DNB001 method-unresolved:len
+            //
+            // `subject_home.osDotMember` is now the one place a member's result
+            // is declared, and `dnir_lower` reads the same row, so a member
+            // added to the roster is typed at both ends with no edit here.
+            if (self.osMemberOf(e.index.obj)) |m| {
+                if (m.face == .projection and m.result != .any) return m.result;
+            }
             const idx = e.index;
             if (idx.obj.* == .name) {
                 if (self.dense_literal_table(idx.obj.name.ident)) |nd| {
@@ -2156,6 +2171,16 @@ pub const CodeGen = struct {
             }
             if (self.is_dense_table_index(idx.obj)) return .i64;
             if (self.indexed_element_type(self.expr_type(idx.obj))) |t| return t;
+        }
+        // A MEMBER EDGE WHOSE FACE IS A VALUE *IS* THE VALUE AT ITS OWN NODE.
+        // `os.cwd` is the working directory, not a relation to apply, and
+        // `table_apply` converges the bare `cwd()` onto exactly this node. The
+        // declared result is the roster's, the same row `dnir_lower.lowerField`
+        // realizes.
+        if (e.* == .field) {
+            if (self.osMemberOf(e)) |m| {
+                if (m.face == .value and m.result != .any) return m.result;
+            }
         }
         // `s(i)` on a `str` is a BYTE, and a byte is an integer.
         if (self.str_byte_index(e) != null) return .i64;
@@ -3002,22 +3027,37 @@ pub const CodeGen = struct {
         return null;
     }
 
-    fn os_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
-        _ = self;
-        _ = args;
-        if (func.* != .field) return null;
-        const f = &func.field;
+    /// The `os` world's member edge an anchored node names, or null.
+    ///
+    /// ONE ROSTER, ASKED. `subject_home.os_dot_members` is the one place a
+    /// member's face and declared result type are written down; this file used
+    /// to carry a second copy of the type half in `os_call_result_type` below
+    /// and no copy at all of the face, which is why `arg` and `cwd` had no type
+    /// while `clock` and `tmpname` did. Both the type side (here) and the
+    /// lowering (`dnir_lower.osResult`) read the same row.
+    fn osMemberOf(_: *const CodeGen, e: *const ast.Expr) ?subject_home.OsMember {
+        if (e.* != .field) return null;
+        const f = &e.field;
         if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "os")) return null;
-        if (std.mem.eql(u8, f.field, "clock") or
-            std.mem.eql(u8, f.field, "time") or
-            std.mem.eql(u8, f.field, "difftime"))
-            return .f64;
-        if (std.mem.eql(u8, f.field, "tmpname")) return .str;
-        if (std.mem.eql(u8, f.field, "remove") or
-            std.mem.eql(u8, f.field, "rename") or
-            std.mem.eql(u8, f.field, "execute"))
-            return .bool;
-        return null;
+        return subject_home.osDotMember(f.field);
+    }
+
+    /// The result of an `os` member edge applied as a CALL.
+    ///
+    /// `.relation` only: a projection (`os.env(k)`) and a value (`os.cwd`) are
+    /// answered at their own nodes in `expr_type`, and a program that binds `os`
+    /// itself must keep an ordinary call on its own table — asking the face
+    /// rather than the name is what keeps this from claiming either.
+    ///
+    /// `.any` is NOT DECLARED and answers null, so a member the roster has no
+    /// result for falls through exactly as it did before this roster carried
+    /// types at all.
+    fn os_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = args;
+        const m = self.osMemberOf(func) orelse return null;
+        if (m.face != .relation) return null;
+        if (m.result == .any) return null;
+        return m.result;
     }
 
     fn ffi_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {

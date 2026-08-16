@@ -26,6 +26,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const sema = @import("sema.zig");
 const types = @import("types.zig");
+const subject_home = @import("subject_home.zig");
 
 /// The callee value is a statically known array — `t(i)` is table access, not a
 /// call. `.array` is the only indexable the direct backend lowers, and an
@@ -71,45 +72,57 @@ fn argProjection(func: *const ast.Expr) bool {
 ///
 /// `arg` was admitted bare when the argument ruling landed and the rule was
 /// never generalised, so five of the six members were unreachable bare. They
-/// are not all the same KIND, which is why this is a table and not a list:
-/// applying a member table is ACCESS, applying a member relation is a CALL, and
-/// a member value is neither.
-const Member = struct {
-    name: []const u8,
-    kind: enum { table, relation, value },
-    /// The node that already resolves end to end. For arguments that is the
-    /// PLURAL `os.args`, which is why the canonical singular has to be
-    /// converged onto it rather than the other way around.
-    target: []const u8,
-};
-
-const os_world = [_]Member{
-    .{ .name = "arg", .kind = .table, .target = "args" },
-    .{ .name = "args", .kind = .table, .target = "args" },
-    .{ .name = "env", .kind = .table, .target = "env" },
-    .{ .name = "cwd", .kind = .value, .target = "cwd" },
-    .{ .name = "exit", .kind = .relation, .target = "exit" },
-    .{ .name = "clock", .kind = .relation, .target = "clock" },
-    .{ .name = "time", .kind = .relation, .target = "time" },
-};
-
-fn osMember(name: []const u8) ?Member {
-    for (os_world) |m| {
-        if (std.mem.eql(u8, m.name, name)) return m;
-    }
-    return null;
-}
-
+/// are not all the same FACE, which is why the roster is a table and not a
+/// list: applying a member projection is ACCESS, applying a member relation is
+/// a CALL, and a member value is neither.
+///
+/// ── THE ROSTER IS ASKED, NOT RESTATED ──────────────────────────────────────
+///
+/// This file used to carry its own `Member` struct and its own seven rows — a
+/// private copy of the `os` world's membership, living in the pass that
+/// rewrites it, beside `subject_home`'s two. Three authorities on one fact, and
+/// the drift was already visible: `cwd` was `.value` here and its `.value` arm
+/// did nothing at all, so `cwd()` and `os.cwd()` both answered DNB011 while
+/// `subject_home.os_dot_members` recorded `cwd` as `.direct` — LOWERS.
+/// `subject_home.OsMember` now carries the face, the result type and the
+/// convergence target, and this pass reads them.
+///
 /// A member edge is reachable bare only where the name is NOT BOUND by the
 /// program. A local, parameter or declared relation named `env` must win over
 /// the injected world — capturing it would be a silent wrong answer, and the
 /// whole point of deriving reach from injection is that it adds reach without
 /// changing what was already there.
-fn bareMember(func: *const ast.Expr) ?Member {
+///
+/// AND THE COUNT DECIDES, NOT A LOOKUP. `subject_home.bareReach` answers
+/// `.none`, `.one` or `.ambiguous`, and only `.one` confers a bare name — §42 /
+/// `law.inject.algebra`, "ambiguous injection fails rather than picking by
+/// declaration import or path priority". Reaching into the `os` roster directly
+/// would convert a contested name silently, which is the ordering accident the
+/// count exists to remove; asking for the count means a second bare world
+/// arriving with a colliding edge leaves the name unconverted and the author
+/// reads sema's ambiguity diagnostic instead of getting one of two answers.
+fn bareMember(func: *const ast.Expr) ?subject_home.OsMember {
     if (func.* != .name) return null;
     const names = active_names orelse return null;
     if (names.bound.contains(func.name.ident)) return null;
-    return osMember(func.name.ident);
+    return switch (subject_home.bareReach(func.name.ident)) {
+        .one => |w| if (w == .os) subject_home.osDotMember(func.name.ident) else null,
+        .none, .ambiguous => null,
+    };
+}
+
+/// The ANCHORED face of a member edge — `os.cwd(…)`, `os.clock(…)`.
+///
+/// A program that binds `os` owns that word, exactly as one that binds `env`
+/// owns `env`, so the anchor is refused there and the call stays an ordinary
+/// receiver call on the author's own table.
+fn anchoredMember(func: *const ast.Expr) ?subject_home.OsMember {
+    if (func.* != .field) return null;
+    const f = func.field;
+    if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "os")) return null;
+    const names = active_names orelse return null;
+    if (names.bound.contains("os")) return null;
+    return subject_home.osDotMember(f.field);
 }
 
 /// APPLY-ONE (c0 §44 `law.apply.one`): "parenthesized, braced and string faces
@@ -302,6 +315,23 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
                 expr.* = .{ .index = .{ .loc = c.loc, .obj = c.func, .key = c.args[0] } };
                 return;
             }
+            // THE ANCHORED FACE OF A MEMBER *VALUE* — `os.cwd()`.
+            //
+            // A value applied to nothing IS the value, and `os.cwd` is the node
+            // that resolves end to end. Without this the anchored face reached
+            // the backend as an application of a relation nothing realizes and
+            // answered DNB011 `unresolved-application-facts` — measured, both
+            // faces, while the roster recorded `cwd` as LOWERING. The anchor is
+            // the DISAMBIGUATOR, so it must reach whatever the bare face
+            // reaches; it may never reach less.
+            if (isApplicationFace(c.form) and c.args.len == 0) {
+                if (anchoredMember(c.func)) |m| {
+                    if (m.face == .value) {
+                        expr.* = c.func.*;
+                        return;
+                    }
+                }
+            }
 
             // THE BARE MEMBER EDGES of the injected `os` world.
             //
@@ -315,20 +345,29 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
             // member TABLE is access, applying a member RELATION is a call.
             // Collapsing those would turn `exit(1)` into an index.
             if (bareMember(c.func)) |m| {
-                switch (m.kind) {
-                    .table => if (isApplicationFace(c.form) and c.args.len == 1) {
+                const target = subject_home.osTarget(m);
+                switch (m.face) {
+                    .projection => if (isApplicationFace(c.form) and c.args.len == 1) {
                         expr.* = .{ .index = .{
                             .loc = c.loc,
-                            .obj = worldTable(alloc, c.loc, m.target) catch return,
+                            .obj = worldTable(alloc, c.loc, target) catch return,
                             .key = c.args[0],
                         } };
                     },
                     .relation => {
                         var call = c;
-                        call.func = worldTable(alloc, c.loc, m.target) catch return;
+                        call.func = worldTable(alloc, c.loc, target) catch return;
                         expr.* = .{ .call = call };
                     },
-                    .value => {},
+                    // A member VALUE applied to nothing IS the value. This arm
+                    // was EMPTY, so `cwd()` — the canonical bare face of an edge
+                    // the roster records as LOWERING — reached the backend as an
+                    // unresolvable application and answered DNB011, while
+                    // `d = os.cwd` compiled and ran. The bare face is the
+                    // canonical one; it may not be the only one that fails.
+                    .value => if (isApplicationFace(c.form) and c.args.len == 0) {
+                        expr.* = (worldTable(alloc, c.loc, target) catch return).*;
+                    },
                 }
             }
         },

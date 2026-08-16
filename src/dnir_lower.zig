@@ -3767,7 +3767,12 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // `Kind.owner` where the descriptor field holds a string literal — the
         // qualified spelling of the same module-level constant.
         .field => |f| blk: {
-            if (cwd(expr)) break :blk true;
+            // A member edge whose face is a VALUE is that value at its own
+            // node, and the roster declares what it is. `cwd(expr)` alone was
+            // the one member spelled out; the face is the general fact.
+            if (osMemberOf(expr)) |m| {
+                if (m.face == .value and m.result == .str) break :blk true;
+            }
             if (f.obj.* != .name) break :blk false;
             var buf: [512]u8 = undefined;
             const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ f.obj.name.ident, f.field }) catch break :blk false;
@@ -3783,7 +3788,11 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // the same answer — which is what the select chain, the memory-backed
         // load and `constTableRead` all need, since none of the three can
         // carry an element type in the value it returns.
-        .index => |ix| argv(ix.obj) or env(ix.obj) or
+        // A WORLD PROJECTION IS TEXT WHEN THE ROSTER SAYS SO. This was
+        // `argv(ix.obj) or env(ix.obj)` — the two member names spelled out
+        // here, and a third member added to the world would have been text at
+        // the emit site and not-text at this predicate.
+        .index => |ix| (if (osMemberOf(ix.obj)) |m| m.face == .projection and m.result == .str else false) or
             (ix.obj.* == .name and ctx.str_tables.contains(ix.obj.name.ident)),
         .method_call => |mc| blk: {
             if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "io") and
@@ -5329,23 +5338,25 @@ fn lowerExprCons(
             if (argv(ix.obj)) {
                 try ensureExtern(ctx, "os", "args", "idol_os_arg");
                 const i = try lowerExpr(ctx, ix.key);
+                const ty = osResult("args");
                 if (consumption == .discard) {
-                    try ctx.emit(.{ .op = .call_extern, .callee = "idol_os_arg", .lhs = i, .ty = .str });
+                    try ctx.emit(.{ .op = .call_extern, .callee = "idol_os_arg", .lhs = i, .ty = ty });
                     break :blk .void;
                 }
                 const t = ctx.freshTemp();
-                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_arg", .lhs = i, .ty = .str });
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_arg", .lhs = i, .ty = ty });
                 break :blk .{ .temp = t };
             }
             if (env(ix.obj)) {
                 try ensureExtern(ctx, "os", "env", "getenv");
                 const k = try lowerExpr(ctx, ix.key);
+                const ty = osResult("env");
                 if (consumption == .discard) {
-                    try ctx.emit(.{ .op = .call_extern, .callee = "getenv", .lhs = k, .ty = .str });
+                    try ctx.emit(.{ .op = .call_extern, .callee = "getenv", .lhs = k, .ty = ty });
                     break :blk .void;
                 }
                 const t = ctx.freshTemp();
-                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "getenv", .lhs = k, .ty = .str });
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "getenv", .lhs = k, .ty = ty });
                 break :blk .{ .temp = t };
             }
             // `t[2]` on a positional table resolves to the element's own local,
@@ -5700,6 +5711,32 @@ fn argv(expr: *const ast.Expr) bool {
     return f.obj.* == .name and
         std.mem.eql(u8, f.obj.name.ident, "os") and
         std.mem.eql(u8, f.field, "args");
+}
+
+/// The `os` world's member edge an anchored node names, or null.
+///
+/// THE ROSTER IS ASKED, NOT RESTATED — the same shape `isCMember` already uses
+/// for the `c` world's roster in this file. Which extern a member lowers to is
+/// this file's business; what the member RESULTS IN is the world's, and it is
+/// declared in `subject_home.os_dot_members`, which `codegen.expr_type` reads
+/// for the very same row. A literal `.str` here and a literal `.str` there
+/// would be two authorities on one fact — and they were, and they disagreed:
+/// this file gave `arg(i)` `.ty = .str` while the type side answered `any`, so
+/// `arg(1):len()` could not resolve a receiver whose realization was already
+/// text.
+fn osMemberOf(expr: *const ast.Expr) ?subject_home.OsMember {
+    if (expr.* != .field) return null;
+    const f = expr.field;
+    if (f.obj.* != .name) return null;
+    if (!std.mem.eql(u8, f.obj.name.ident, "os")) return null;
+    return subject_home.osDotMember(f.field);
+}
+
+/// The declared result of an `os` member edge, by name. `.any` where the roster
+/// declares nothing, which is the honest answer and not a claim.
+fn osResult(name: []const u8) RT {
+    const m = subject_home.osDotMember(name) orelse return .any;
+    return m.result;
 }
 
 /// `os.env` — the root-projected environment table, not `getenv` / `os.env()`.
@@ -7428,7 +7465,7 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
     if (cwd(expr)) {
         try ensureExtern(ctx, "os", "cwd", "idol_os_cwd");
         const t = ctx.freshTemp();
-        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_cwd", .ty = .str });
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_cwd", .ty = osResult("cwd") });
         return .{ .temp = t };
     }
     const fld = expr.field;
