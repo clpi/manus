@@ -355,34 +355,6 @@ tool("duo_dev_coordination_export", {
   shared.dev_coordination_export()
 end)
 
-tool("duo_semantic_transaction_preview", {
-  description = "Bounded semantic transaction preview",
-  type = "object",
-  properties = {
-    classifier = { type = "string", description = "e.g. classifier.sorted_lookup" }
-  }
-}, fun(args)
-  shared.semantic_transaction_preview(args.classifier or "classifier.sorted_lookup")
-end)
-
-tool("duo_semantic_transaction_validate", {
-  description = "Validate bounded semantic transaction",
-  type = "object",
-  properties = {
-    classifier = { type = "string" }
-  }
-}, fun(args)
-  shared.semantic_transaction_validate(args.classifier or "classifier.sorted_lookup")
-end)
-
-tool("duo_semantic_claims", {
-  description = "Release capability registry + effective claims",
-  type = "object",
-  properties = {}
-}, fun(_args)
-  shared.semantic_claims()
-end)
-
 tool("duo_dev_validate_run", {
   description = "Run impact-based validation plan",
   type = "object",

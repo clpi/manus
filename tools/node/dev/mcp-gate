@@ -126,10 +126,10 @@ bn="$(count_idol_names "$bout")"
 bs="$(count_schemas "$bout")"
 if [ "$bn" != "$bs" ]; then
   report fail "idol-bench tool census agrees" "name count $bn vs schema count $bs"
-elif [ "$bn" != 35 ]; then
-  report fail "idol-bench serves 35 tools" "served $bn"
+elif [ "$bn" != 32 ]; then
+  report fail "idol-bench serves 32 tools" "served $bn"
 else
-  report ok "idol-bench serves 35 tools" ""
+  report ok "idol-bench serves 32 tools" ""
 fi
 
 for name in idol_agent_gaps_update idol_coordination_read idol_dev_claim_acquire idol_dev_claim_release idol_dev_claim_files idol_agent_smoke; do

@@ -272,19 +272,6 @@ dev_validate_plan: str = (file: str, work_item: str)
     else if work_item != "" then cmd = "{cmd} --work-item {work_item}" 
     capture("{cmd} 2>&1")
 
-semantic_claims: str = ()
-    capture("{duobin} semantic claims 2>&1")
-
-semantic_transaction_preview: str = (classifier: str)
-    c = classifier
-    if c == nil or c == "" then c = "classifier.sorted_lookup" 
-    capture("{duobin} semantic preview {c} 2>&1")
-
-semantic_transaction_validate: str = (classifier: str)
-    c = classifier
-    if c == nil or c == "" then c = "classifier.sorted_lookup" 
-    capture("{duobin} semantic validate {c} 2>&1")
-
 dev_integration_list: str = ()
     capture("{duobin} dev integration list 2>&1")
 
@@ -1223,9 +1210,6 @@ m.gaphigh = gaphigh
 m.gapledger = gapledger
 m.dev_coordination_export = dev_coordination_export
 m.dev_validate_plan = dev_validate_plan
-m.semantic_claims = semantic_claims
-m.semantic_transaction_preview = semantic_transaction_preview
-m.semantic_transaction_validate = semantic_transaction_validate
 m.dev_integration_list = dev_integration_list
 m.dev_integration_submit = dev_integration_submit
 m.dev_validate_run = dev_validate_run

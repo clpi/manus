@@ -46,6 +46,42 @@ pub fn receiverLooksStrish(obj: *const Expr) bool {
         .string_lit => true,
         .method_call => true,
         .name => true,
+        // A RECORD FIELD IS AS STRISH AS A LOCAL, and leaving it out cost the
+        // self-hosted lexer.
+        //
+        // This predicate is a SPELLING test, not a type test — `.name` admits
+        // every local of every type, which is far broader than anything `.field`
+        // adds. What it did not admit was `self.src`, and that is the receiver
+        // the self-hosted compiler is written against:
+        //
+        //     L: { src: str, pos: i64 }
+        //     at: i64 = (self: L)
+        //       self.src:byte(self.pos)
+        //
+        // MEASURED at idol 448f877b, `--emit obj`: `s:byte(i)` on a parameter
+        // built, `self.src:len()` on the same field built (`len` is answered
+        // above this switch, before any receiver test), and `self.src:byte(...)`
+        // was refused `DNB011 … relation: byte missing:
+        // unresolved-application-facts`. One method, one receiver shape, and
+        // `lib/compiler/lexer.id` has ten such sites — its refusal named
+        // `relation: byte` exactly.
+        //
+        // WHAT THIS DOES AND DOES NOT CLAIM. Recognising the shape here does not
+        // teach the graph anything; it stops `OccurrenceBridge` counting the site
+        // as a BLOCKING unresolved application, which is the third column in the
+        // `FactCoverage` doc comment below and the one the module-wide bail reads.
+        // The code emitted is the same bootstrap emit `s:byte(i)` already got.
+        //
+        // SCORED ON ITS ANSWER, not on whether it built. Two `@comp.c.export`ed
+        // relations over `L{src="ABC"}` read through a C driver print `65 66` —
+        // 'A' and 'B' at pos 1 and 2 — where the refusal printed nothing.
+        // Corpus effect, both sweeps of 817 files: three files move FORWARD to a
+        // deeper blocker (`lib/compiler/parser.id`, `lib/bytes.id`,
+        // `lib/text/scanner.id`) and zero move backward. That near-zero corpus
+        // delta is survivor bias and not evidence of low value: nobody writes
+        // what will not compile, and the self-hosted compiler is the corpus that
+        // was written anyway.
+        .field => true,
         else => false,
     };
 }

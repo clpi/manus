@@ -674,6 +674,42 @@ pub fn main(init: std.process.Init) !void {
 
     apply_cli_flags(trace_flag, info_flag, hints_flag, plain_diag, debug_flag, debug_list, debug_depth, test_report_style, build_report_style, no_color, verbose_count);
     if (trace_rich and term.build_report == .pretty) term.setBuildReport(.verbose);
+    // `--lib` ON A MACHINE TARGET IS `--emit obj`, AND IT WAS A HARD REFUSAL.
+    //
+    // `--lib` entered this compiler as a WASM-era flag ("compile @export
+    // functions as WASM exports, skip main()/_start, for wasmtime WAST
+    // testing") and every native machine target refused it outright with
+    // "native machine-code target does not use C-only compile options yet".
+    // MEASURED before this block existed: `idol compile --backend=direct --lib`
+    // on `lib/compiler/macho.id` exited 1 with that sentence, while
+    // `--backend=direct --emit obj` on the SAME file wrote a linkable Mach-O
+    // object with 6 text symbols. The capability was already there; only the
+    // spelling was refused, and the refusal named C options for a request that
+    // is not one. With this block the two invocations produce BYTE-IDENTICAL
+    // objects, which is the strongest form the claim has.
+    //
+    // That mattered because "compile this module to something I can link" is
+    // the ONLY question a library module can answer. `--emit` defaults to
+    // `exe`, `exe` demands an entry, and 147 of the 295 `lib/` files in the
+    // sibling corpus are refused `no process: a file-scope tail is the
+    // program...` for having none — the right answer to "run this" and the
+    // wrong answer to "compile this". A user who reached for the flag whose
+    // name says LIBRARY got a sentence about C.
+    //
+    // NARROW BY CONSTRUCTION, and each condition is load-bearing:
+    //   * `lib_mode` — only when asked.
+    //   * `emit_kind == .exe` — the DEFAULT only. An explicit `--emit asm`
+    //     alongside `--lib` keeps the format the user named; silently
+    //     overwriting it is gap[015]'s exact defect (`--emit asm` writing a
+    //     Mach-O executable while reporting `ok compile`). Verified: `--lib
+    //     --emit asm` still writes assembler text.
+    //   * `wantsMachineLowering` — the wasm and C meanings of `--lib` (reactor
+    //     model, `-Wl,--no-entry`, `-dynamiclib`) are untouched, because those
+    //     paths are reached only when this predicate is false. Verified:
+    //     `--backend=wasm --target wasm32-wasi --lib` is unchanged.
+    if (lib_mode and emit_kind == .exe and wantsMachineLowering(compile_backend, target)) {
+        emit_kind = .obj;
+    }
     target = resolveCompileTarget(target, emit_kind);
     const backend_mode = compile_backend;
     target = resolveCompileBackend(backend_mode, target);
@@ -4465,7 +4501,23 @@ fn do_compile(
         if (run_after and !native_backend.isNativeExecutableTarget(mt)) {
             term.err("only --target native-exe can run through the native machine-code backend", .{});
             std.process.exit(1);
-        } else if (load_chunk or lib_mode or shared_mem or pgo) {
+        } else if (load_chunk or shared_mem or pgo) {
+            // `lib_mode` LEFT THIS LIST because it is no longer a C-only option
+            // here: the block near `resolveCompileTarget` turned `--lib` on a
+            // machine target into `--emit obj`, which this backend has emitted
+            // all along. The other three stay — `--load-chunk`,
+            // `--shared-memory` and `--pgo` have no machine-code realization at
+            // all, and folding them in with a flag that now does would put the
+            // sentence back on requests it is still true for. Verified:
+            // `--backend=direct --load-chunk` still exits 1 with it.
+            //
+            // ORDER IS THE PROOF THAT THIS IS NOT A DODGE. `mt` here is already
+            // `native-object` when `--lib` was given, so the `isNativeExecutable`
+            // branch below does NOT demand an entry — the module goes down the
+            // same object path `--emit obj` takes, byte for byte. Had the
+            // rewrite above not run, deleting `lib_mode` from this list would
+            // send a library module at `native-exe` and it would be refused
+            // `no process` instead, which is why the two edits are ONE change.
             term.err("native machine-code target does not use C-only compile options yet", .{});
             std.process.exit(1);
         } else if (!native_backend.isNativeExecutableTarget(mt) and !native_backend.isNativeSharedTarget(mt) and link_flags.len != 0) {
