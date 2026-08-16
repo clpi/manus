@@ -1269,14 +1269,43 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
                     .ffi_name = n[c_type_marker_prefix.len..],
                 } };
             }
-            // Single uppercase letters are type parameters (e.g. Tensor[M, K, f32]).
+            // A DECLARED DESCRIPTOR OUTRANKS THE LETTER HEURISTIC.
+            //
+            // Single uppercase letters are type parameters (`Tensor[M, K, f32]`),
+            // and that convention is worth keeping — but it was being applied
+            // BEFORE the module's own declarations were consulted, so a name the
+            // program DECLARED was overruled by how it happened to be spelled.
+            //
+            // MEASURED before this: `R: { a: i64, b: i64 }` with `mk: R = (n)`
+            // resolved `R` to `generic_param` — which `c_type` spells
+            // `"lua_Value"`, the box every ruling in this tree forbids — and the
+            // program was refused `DNB011 application-result-abi`, a diagnostic
+            // that never mentions the name. `point: {…}` with `mk: point = (n)`
+            // answered 100. Same program, one letter apart, two different
+            // meanings, and the lowercase branch returned `.any` — also not the
+            // record — so lowercasing alone did not repair it.
+            //
+            // LAW-16 makes a one-letter UPPERCASE descriptor a naming violation,
+            // so the corpus should not contain one; that is a separate ratchet
+            // (`gate/design.sh`). This is the semantic half: a lexical heuristic
+            // must not outrank a declaration. C0 §19 — do not create identity
+            // from source spelling.
             if (n.len == 1) {
-                const c = n[0];
-                if (c >= 'A' and c <= 'Z') {
-                    return ResolvedType{ .generic_param = .{ .name = n, .constraint = null } };
-                }
-                if (c >= 'a' and c <= 'z') {
-                    return .any;
+                const declared = if (sema) |s| blk: {
+                    const sema_mod = @import("sema.zig");
+                    const sema_ptr: *const sema_mod.Sema = @ptrCast(@alignCast(s));
+                    break :blk sema_ptr.alias_defs.contains(n) or
+                        sema_ptr.foreign_records.contains(n) or
+                        sema_ptr.enum_types.contains(n);
+                } else false;
+                if (!declared) {
+                    const c = n[0];
+                    if (c >= 'A' and c <= 'Z') {
+                        return ResolvedType{ .generic_param = .{ .name = n, .constraint = null } };
+                    }
+                    if (c >= 'a' and c <= 'z') {
+                        return .any;
+                    }
                 }
             }
             if (std.mem.eql(u8, n, "i8")) return .i8;
