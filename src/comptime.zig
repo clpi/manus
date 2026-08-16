@@ -82,6 +82,24 @@ pub const MetaHookFn = *const fn (ctx: ?*anyopaque, name: []const u8, args: []co
 /// threshold standing in for a fact, in the interpreter this time.
 const max_face_operands: usize = 16;
 
+/// Ceiling on `eval`'s NATIVE recursion, which `Options.step_limit` does not
+/// bound — see the guard in `eval` for the crash this prevents.
+///
+/// CALIBRATED, NOT GUESSED, and it is not a source recursion depth: one
+/// source-level call costs several `eval` frames plus the heavier
+/// `applyFuncValue` / `evalBlock` / `evalIf` frames between them. Measured on
+/// this machine with a self-recursive `deep(n)`: the compiler folded at source
+/// depth 500 and SIGSEGV'd at 600. A bound of 1200 eval frames still faulted;
+/// 800 refused cleanly at every source depth probed up to 100,000. 600 is that
+/// safe value with margin left for shapes whose frames are heavier than this
+/// one's, because the failure mode on the wrong side of this number is a
+/// compiler crash and on the right side it is only a fold that did not happen.
+///
+/// The cost is real and is stated rather than hidden: source recursion folded
+/// to depth ~500 before and folds to ~200 now. A missed fold is a slower
+/// program; a fault is no program at all.
+const max_eval_depth: usize = 600;
+
 pub const Value = union(enum) {
     pub const TableEntry = struct {
         key: ?Value = null,
@@ -116,7 +134,46 @@ pub const Value = union(enum) {
         };
     }
 
-    fn eql(self: Value, other: Value) bool {
+    /// EQUALITY, OR AN ADMISSION THAT IT CANNOT BE DECIDED HERE.
+    ///
+    /// `null` means undecidable, and every caller must fail closed on it. The
+    /// arm this replaces was `.table, .func => false`, which made `a == a`
+    /// answer FALSE for a table — not a missed fold but a WRONG ANSWER, and
+    /// one the rest of the compiler already disagreed with: the memory
+    /// representation implements Lua reference identity, so the constant
+    /// folder was contradicting a decision made on another path. Measured
+    /// before this change, `--backend=direct`, `a = {1,2,3}`:
+    ///
+    ///     a == a   ->  false   (Lua: true)      WRONG
+    ///     a != a   ->  true    (Lua: false)     WRONG
+    ///     b = a ; a == b -> false (Lua: true)   WRONG
+    ///     a == b, separately constructed -> false (Lua: false)   right
+    ///
+    /// Lua's rule is reference identity: two tables are equal exactly when
+    /// they are the same table. `evalTable` allocates a fresh entry slice per
+    /// constructor evaluation (`toOwnedSlice`), and binding or copying a table
+    /// value copies the SLICE HEADER, never the entries — so `ptr` equality is
+    /// exactly "same table", and a differing `ptr` is exactly "constructed
+    /// separately". That is why the aliased row above is fixed by the same
+    /// rule that fixes the self row.
+    ///
+    /// TWO EMPTY TABLES ARE THE HOLE, and they are refused rather than
+    /// guessed. A zero-length slice carries no meaningful `ptr` — `{}` and
+    /// `{}` may share one — so identity is unrecoverable there. Lua says
+    /// `{} == {}` is false; this returns `null` and the fold declines, leaving
+    /// the answer to a path that holds the reference. Answering `false` would
+    /// be right by luck for two distinct empties and wrong for `a == a` with
+    /// an empty `a`, which is the same defect this comment exists to describe.
+    ///
+    /// Functions are the same argument with a weaker handle: two closures
+    /// built from one literal share a `body` pointer and differ only in their
+    /// captures, so a capture-less function literal compared to itself is
+    /// undecidable and is refused too.
+    ///
+    /// NOT TOUCHED, deliberately: `1 == 1.0` still answers false here. That is
+    /// a separate divergence from Lua with a different blast radius, and
+    /// widening this fix to cover it would hide it.
+    fn eqlOrUnknown(self: Value, other: Value) ?bool {
         return switch (self) {
             .unavailable => other == .unavailable,
             .nil => other == .nil,
@@ -124,8 +181,34 @@ pub const Value = union(enum) {
             .int => |v| other == .int and other.int == v,
             .float => |v| other == .float and other.float == v,
             .string => |v| other == .string and std.mem.eql(u8, other.string, v),
-            .table, .func => false,
+            .table => |v| blk: {
+                if (other != .table) break :blk false;
+                const w = other.table;
+                if (v.len != w.len) break :blk false;
+                if (v.len == 0) break :blk null;
+                break :blk v.ptr == w.ptr;
+            },
+            .func => |v| blk: {
+                if (other != .func) break :blk false;
+                const w = other.func;
+                if (v.body != w.body) break :blk false;
+                if (v.captures.len != w.captures.len) break :blk false;
+                if (v.captures.len == 0) break :blk null;
+                break :blk v.captures.ptr == w.captures.ptr;
+            },
         };
+    }
+
+    /// The definite-answer form, for the three KEY-LOOKUP callers (membership,
+    /// pattern literal, table index). Undecidable reads as "does not match",
+    /// which is what those sites already did for every aggregate and is
+    /// fail-closed: a lookup that finds nothing falls through, it does not
+    /// answer wrongly.
+    ///
+    /// `==` and `!=` must NOT use this — they have no fall-through, so for
+    /// them `null` has to become a refusal to fold.
+    fn eql(self: Value, other: Value) bool {
+        return self.eqlOrUnknown(other) orelse false;
     }
 };
 
@@ -159,6 +242,8 @@ pub const Evaluator = struct {
     /// Index in `locals` below which the current frame cannot see.
     frame_base: usize = 0,
     steps: usize = 0,
+    /// Native-stack depth of `eval`, which recurses. See `max_eval_depth`.
+    depth: usize = 0,
 
     fn step(self: *Evaluator) EvalError!void {
         self.steps += 1;
@@ -210,6 +295,26 @@ pub const Evaluator = struct {
 
     pub fn eval(self: *Evaluator, expr: *const ast.Expr) EvalError!Value {
         try self.step();
+        // THE STEP BUDGET DOES NOT BOUND THE NATIVE STACK. `steps` counts work
+        // and `eval` recurses, so a deeply recursive source program exhausted
+        // the compiler's own stack long before 100,000 steps were spent: the
+        // COMPILER CRASHED at source recursion depth ~600 while depth 500
+        // folded and answered. A crash is not a refusal — it produces no
+        // diagnostic, no artifact, and no exit code a caller can act on.
+        //
+        // Reuses `StepLimitExceeded` rather than adding an error variant:
+        // every caller already treats it as "fail closed, leave the body
+        // lowered", which is exactly the wanted behaviour, and a new variant
+        // would widen this file's error set into files this lane does not own.
+        //
+        // THIS DOES NOT FIX EVERY DEEP-NESTING FAULT, and it is not meant to
+        // look as though it does. Two more unbounded native recursions were
+        // measured over the SAME probe family and both are in routed files:
+        // `src/sema.zig` faults at ~500 nested binary expressions and
+        // `src/parser.zig` at ~1000, before the evaluator is ever reached.
+        if (self.depth >= max_eval_depth) return error.StepLimitExceeded;
+        self.depth += 1;
+        defer self.depth -= 1;
         return switch (expr.*) {
             .nil => .nil,
             .true_lit => .{ .bool = true },
@@ -1134,8 +1239,15 @@ pub const Evaluator = struct {
             ),
             .band, .bor, .bxor, .lshift, .rshift => try evalInteger(op, left, right),
             .concat => try self.evalConcat(left, right),
-            .eq => .{ .bool = left.eql(right) },
-            .neq => .{ .bool = !left.eql(right) },
+            // FAIL CLOSED ON AN UNDECIDABLE COMPARISON. Unlike the key-lookup
+            // callers of `eql`, `==` has no fall-through: whatever comes back
+            // here IS the program's answer, so "I cannot tell" has to stop the
+            // fold rather than pick a side. The refusal leaves the body
+            // lowered, exactly as an unsupported operator does.
+            .eq => .{ .bool = left.eqlOrUnknown(right) orelse
+                return error.UnsupportedOperator },
+            .neq => .{ .bool = !(left.eqlOrUnknown(right) orelse
+                return error.UnsupportedOperator) },
             .lt, .gt, .leq, .geq => try evalComparison(op, left, right),
             .contains, .@"and", .@"or" => error.UnsupportedOperator,
             .matmul => error.UnsupportedOperator,
