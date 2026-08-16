@@ -640,6 +640,94 @@ pub const Domain = struct {
     }
 };
 
+/// THE INTERVAL EVALUATOR — `Domain` for an expression, over ALL inputs.
+///
+/// This is a PRODUCER for `law.uncertainty.algebra`, not a new mechanism: it
+/// answers the question `Domain` already exists to hold, and it answers
+/// `unknown` — never a guess — for every shape it cannot prove. It is
+/// compositional, so the rule that matters here (`x & 1023` is confined to
+/// `[0, 1023]` for EVERY `x`, negative included, because masking clears every
+/// bit above the mask's top set bit and the sign bit with them) is a
+/// consequence of one operator law and not a hand-listed pattern.
+///
+/// WHAT IS DELIBERATELY ABSENT, and each absence is an adversarial control that
+/// must keep refusing:
+///
+///   `x % c`   the sign of a truncated remainder follows the DIVIDEND, so
+///             `[0, c-1]` requires proving `x >= 0` and this evaluator has no
+///             such producer for a loop-carried induction variable.
+///   `x >> k`  arithmetic shift preserves the sign bit; `[0, ..]` is false for
+///             negative `x`.
+///   `x | c`   `c` is not a lower bound: `-1 | 4` is `-1`.
+///
+/// A single one of those admitted by accident would let the order-statistic
+/// break fire above the true extremum, and the ANSWER — not the clock —
+/// catches it.
+pub fn exprDomain(e: *const ast.Expr) Domain {
+    return exprDomainDepth(e, 0);
+}
+
+fn exprDomainDepth(e: *const ast.Expr, depth: u8) Domain {
+    if (depth > 16) return Domain.nothing_known;
+    switch (e.*) {
+        .int_lit => |x| return Domain.exact(x.val, "literal"),
+        .unop => |u| switch (u.op) {
+            .neg => {
+                const a = exprDomainDepth(u.operand, depth + 1);
+                if (a.status != .fact) return Domain.nothing_known;
+                return clampI64(Domain.range(-a.hi, -a.lo, "negation"));
+            },
+            else => return Domain.nothing_known,
+        },
+        .binop => |b| {
+            const x = exprDomainDepth(b.lhs, depth + 1);
+            const y = exprDomainDepth(b.rhs, depth + 1);
+            switch (b.op) {
+                .add => {
+                    if (x.status != .fact or y.status != .fact) return Domain.nothing_known;
+                    return clampI64(Domain.range(x.lo + y.lo, x.hi + y.hi, "interval add"));
+                },
+                .sub => {
+                    if (x.status != .fact or y.status != .fact) return Domain.nothing_known;
+                    return clampI64(Domain.range(x.lo - y.hi, x.hi - y.lo, "interval sub"));
+                },
+                .mul => {
+                    if (x.status != .fact or y.status != .fact) return Domain.nothing_known;
+                    const a = x.lo * y.lo;
+                    const bb = x.lo * y.hi;
+                    const c = x.hi * y.lo;
+                    const d = x.hi * y.hi;
+                    return clampI64(Domain.range(
+                        @min(@min(a, bb), @min(c, d)),
+                        @max(@max(a, bb), @max(c, d)),
+                        "interval mul",
+                    ));
+                },
+                // THE ONE LAW THAT NEEDS NO FACT ABOUT ITS OTHER OPERAND.
+                // `x & m` with a proven `0 <= m` lies in `[0, m]` whatever `x`
+                // is: every set bit of the result is a set bit of `m`, so the
+                // result is non-negative and no larger than `m`.
+                .band => {
+                    if (y.status == .fact and y.lo >= 0) return Domain.range(0, y.hi, "x & nonneg");
+                    if (x.status == .fact and x.lo >= 0) return Domain.range(0, x.hi, "nonneg & x");
+                    return Domain.nothing_known;
+                },
+                else => return Domain.nothing_known,
+            }
+        },
+        else => return Domain.nothing_known,
+    }
+}
+
+/// An interval that has left i64 is not a fact about an i64 value. Widening it
+/// silently would be the exact "wide fact discharges a no-wrap obligation"
+/// error `Domain.Status` exists to prevent.
+fn clampI64(d: Domain) Domain {
+    if (d.status != .fact) return d;
+    if (d.lo < std.math.minInt(i64) or d.hi > std.math.maxInt(i64)) return Domain.nothing_known;
+    return d;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // THE UPDATE FORM — how a loop moves one place
 // ═══════════════════════════════════════════════════════════════════════════
@@ -653,6 +741,15 @@ pub const Update = union(enum) {
     /// `p = p <op> <literal>`, with the relation's laws attached at the site
     /// so `admit` reasons about the LAW and never about the token.
     accumulate: struct { op: ast.BinOp, k: i64 },
+    /// `if v <cmp> p then p = v` — THE ORDER-STATISTIC UPDATE. `minimizing` is
+    /// true for `min` (`p` only ever decreases), false for `max`. `domain` is
+    /// `v`'s PROVEN range, carried at the site because it is the entire reason
+    /// an absorbing class exists: `p` cannot pass the infimum of the values it
+    /// is fed, so `{inf}` is closed under the update and every later iteration
+    /// is a no-op. Without a `fact` domain there is no absorbing element and
+    /// `admit` refuses, which is why this variant carries the domain rather
+    /// than a flag.
+    select: struct { minimizing: bool, domain: Domain },
 };
 
 const WriteSite = struct {
@@ -720,6 +817,20 @@ pub const Proof = struct {
         /// — the contrast with `interval_nonzero` is the point: two algebras,
         /// two independent routes to one conclusion.
         law_nonzero,
+        /// THE ORDER-STATISTIC ROUTE, and the only one whose truncation is
+        /// CONDITIONAL. `p` is an extremum fold over values confined to a
+        /// proven interval, so `{settled}` — the interval's infimum for a
+        /// `min`, its supremum for a `max` — is closed under the update: once
+        /// `p == settled`, no admitted value can move it again. `h(p)` is NOT
+        /// constant from the first write, only from the write that lands in
+        /// the class, which is why this route's realization is a GUARDED break
+        /// (`demand.Plan.break_when`) and not an unconditional one.
+        ///
+        /// Note what is NOT required: no fact about `p`'s initial value. If
+        /// `p` starts below the infimum no write ever fires and the guard is
+        /// never true; if it starts above, the guard fires only after a write
+        /// has landed exactly on the infimum. Both are the untruncated answer.
+        guarded_extremum,
     };
 
     route: Route,
@@ -772,13 +883,58 @@ pub fn admit(
                     if (s != hv) break :route1;
                 } else settled = hv;
             },
-            .accumulate => break :route1,
+            .accumulate, .select => break :route1,
         };
         return .{
             .route = .literal_agreement,
             .projection = h,
             .settled = settled.?,
             .accumulator = .nothing_known,
+        };
+    }
+
+    // ── ROUTE 4: the guarded extremum ──────────────────────────────────────
+    //
+    // THE ORDER-STATISTIC CLASS. Every write is `p = v` under `v <cmp> p`, all
+    // in the same direction, and every `v` is confined to a PROVEN interval.
+    // For a `min`, let `L = min over sites of domain.lo`. Then `L <= v` for
+    // every value any site can feed, so at the instant `p == L` every later
+    // guard `v < p` is false and `p` is frozen. `L` is therefore an ABSORBING
+    // ELEMENT of the update restricted to the admitted domain — `I1` exactly,
+    // `h(σ)` in a class closed under `u`.
+    //
+    // `h` must be `whole`. At `low_bits k` the class is not closed: `p` may
+    // still change above bit k while agreeing below it, and it may not — the
+    // low bits of a shrinking value are not monotone. Refusing costs the
+    // width-narrowed order statistic, and admitting it would cost answers.
+    route4: {
+        if (h != .whole) break :route4;
+        var minimizing: ?bool = null;
+        var bound: ?i128 = null;
+        var dom: Domain = .nothing_known;
+        for (writes) |u| switch (u) {
+            .select => |s| {
+                if (s.domain.status != .fact) break :route4;
+                if (minimizing) |m| {
+                    if (m != s.minimizing) break :route4;
+                } else minimizing = s.minimizing;
+                const edge = if (s.minimizing) s.domain.lo else s.domain.hi;
+                // Several sites: the absorbing value must bound EVERY site's
+                // values, so it is the weakest of their edges, never the first.
+                if (bound) |x| {
+                    bound = if (s.minimizing) @min(x, edge) else @max(x, edge);
+                } else bound = edge;
+                dom = if (dom.status == .fact) Domain.range(@min(dom.lo, s.domain.lo), @max(dom.hi, s.domain.hi), dom.why) else s.domain;
+            },
+            else => break :route4,
+        };
+        const edge = bound orelse break :route4;
+        if (edge < std.math.minInt(i64) or edge > std.math.maxInt(i64)) break :route4;
+        return .{
+            .route = .guarded_extremum,
+            .projection = h,
+            .settled = @intCast(edge),
+            .accumulator = dom,
         };
     }
 
@@ -797,6 +953,9 @@ pub fn admit(
                 if (acc.k == 0) break :route2;
             },
             .store => |v| if (v == 0) break :route2,
+            // An extremum fold can reach the domain's infimum, and nothing in
+            // the operator's law forbids that infimum being 0.
+            .select => break :route2,
         };
         return .{
             .route = .law_nonzero,
@@ -832,7 +991,7 @@ pub fn admit(
             kmin = @min(kmin, acc.k);
             kmax = @max(kmax, acc.k);
         },
-        .store => return null,
+        .store, .select => return null,
     };
     if (trips.hi < 1) return null;
     const reach = Domain.range(
@@ -931,6 +1090,13 @@ pub const Cache = struct {
                 w.update(std.mem.asBytes(&a.op));
                 w.update(std.mem.asBytes(&a.k));
             },
+            .select => |s| {
+                w.update("x");
+                w.update(std.mem.asBytes(&s.minimizing));
+                w.update(std.mem.asBytes(&s.domain.status));
+                w.update(std.mem.asBytes(&s.domain.lo));
+                w.update(std.mem.asBytes(&s.domain.hi));
+            },
         };
         inline for (.{ initial, trips }) |d| {
             w.update(std.mem.asBytes(&d.status));
@@ -1028,12 +1194,13 @@ fn addName(alloc: std.mem.Allocator, out: *WriteScan, n: []const u8) !void {
 /// read anywhere it may not be.
 fn collectUpdates(
     alloc: std.mem.Allocator,
+    root: *const ast.Block,
     b: *const ast.Block,
     name: []const u8,
     sites: *std.ArrayListUnmanaged(WriteSite),
     budget: *Budget,
 ) std.mem.Allocator.Error!bool {
-    for (b.stmts) |*s| {
+    for (b.stmts, 0..) |*s, si| {
         if (!budget.charge(1)) return false;
         switch (s.*) {
             .assign => |a| {
@@ -1066,17 +1233,31 @@ fn collectUpdates(
             // day it is a wrong answer, so the shape costs a candidate instead.
             .do_block => return false,
             .if_stmt => |f| {
+                // THE ORDER-STATISTIC EXCEPTION to P3's "never read in the
+                // body". `if v < p then p = v` reads `p` in the guard, and it
+                // is the ONLY read shape admitted, because it is the only one
+                // whose effect on the answer is a lattice operation this
+                // module can prove absorbing. The whole `if` is consumed as
+                // ONE write site; the branches are not descended into, so no
+                // second site can hide inside it.
+                if (extremumForm(f, name)) |ex| {
+                    const dom = selectDomain(root, b, si, ex.value);
+                    try sites.append(alloc, .{ .stmt = ex.stmt, .update = .{
+                        .select = .{ .minimizing = ex.minimizing, .domain = dom },
+                    } });
+                    continue;
+                }
                 if (f.binding) |bnd| {
                     if (std.mem.eql(u8, bnd.name, name)) return false;
                     if (mentions(bnd.expr, name)) return false;
                 }
                 if (mentions(f.cond, name)) return false;
-                if (!try collectUpdates(alloc, &f.then, name, sites, budget)) return false;
+                if (!try collectUpdates(alloc, root, &f.then, name, sites, budget)) return false;
                 for (f.elseifs) |ei| {
                     if (mentions(ei.cond, name)) return false;
-                    if (!try collectUpdates(alloc, &ei.body, name, sites, budget)) return false;
+                    if (!try collectUpdates(alloc, root, &ei.body, name, sites, budget)) return false;
                 }
-                if (f.else_body) |eb| if (!try collectUpdates(alloc, &eb, name, sites, budget)) return false;
+                if (f.else_body) |eb| if (!try collectUpdates(alloc, root, &eb, name, sites, budget)) return false;
             },
             .call_stmt => |x| if (mentions(x.expr, name)) return false,
             .expr_stmt => |x| if (mentions(x.expr, name)) return false,
@@ -1085,6 +1266,137 @@ fn collectUpdates(
     }
     if (b.tail_expr) |t| if (mentions(t, name)) return false;
     return true;
+}
+
+/// The syntactic half of the order-statistic recognition. It decides only WHAT
+/// SHAPE the statement has; whether that shape has an absorbing element is
+/// `admit`'s question and is answered from the domain, never from the tokens.
+const Extremum = struct {
+    /// The inner `p = v`. The break is guarded and inserted after THIS, inside
+    /// the guard's own branch, so it costs nothing on an iteration that does
+    /// not write.
+    stmt: *const ast.Stmt,
+    minimizing: bool,
+    /// The name holding the candidate value.
+    value: []const u8,
+};
+
+/// `if v <cmp> p then p = v` with no `elseif`, no `else`, no binding and
+/// exactly one statement in the branch. Every relaxation of that is a shape
+/// whose absorbing argument is different, so each one costs a candidate rather
+/// than borrowing this one's proof.
+fn extremumForm(f: anytype, name: []const u8) ?Extremum {
+    if (f.binding != null) return null;
+    if (f.elseifs.len != 0) return null;
+    if (f.else_body != null) return null;
+    if (f.then.stmts.len != 1) return null;
+    if (f.then.tail_expr != null) return null;
+
+    const st = &f.then.stmts[0];
+    if (st.* != .assign) return null;
+    const a = st.assign;
+    if (a.targets.len != 1 or a.values.len != 1) return null;
+    if (a.targets[0].* != .name) return null;
+    if (!std.mem.eql(u8, a.targets[0].name.ident, name)) return null;
+    if (a.values[0].* != .name) return null;
+    const v = a.values[0].name.ident;
+    if (std.mem.eql(u8, v, name)) return null;
+
+    if (f.cond.* != .binop) return null;
+    const c = f.cond.binop;
+    if (c.lhs.* != .name or c.rhs.* != .name) return null;
+    const l = c.lhs.name.ident;
+    const r = c.rhs.name.ident;
+    if (std.mem.eql(u8, l, v) and std.mem.eql(u8, r, name)) {
+        return .{ .stmt = st, .value = v, .minimizing = switch (c.op) {
+            .lt, .leq => true,
+            .gt, .geq => false,
+            else => return null,
+        } };
+    }
+    if (std.mem.eql(u8, l, name) and std.mem.eql(u8, r, v)) {
+        return .{ .stmt = st, .value = v, .minimizing = switch (c.op) {
+            .gt, .geq => true,
+            .lt, .leq => false,
+            else => return null,
+        } };
+    }
+    return null;
+}
+
+const ValueWrite = struct {
+    stmt: ?*const ast.Stmt = null,
+    value: ?*const ast.Expr = null,
+    count: u32 = 0,
+    /// False the moment a statement kind this scanner does not model is seen.
+    /// An unmodelled kind might write `v` invisibly, and a domain derived from
+    /// one visible write would then be a claim about a value produced
+    /// somewhere else.
+    ok: bool = true,
+};
+
+fn scanValueWrites(b: *const ast.Block, v: []const u8, out: *ValueWrite) void {
+    for (b.stmts) |*s| switch (s.*) {
+        .assign => |a| {
+            for (a.targets) |t| {
+                if (t.* != .name) {
+                    out.ok = false;
+                    continue;
+                }
+                if (!std.mem.eql(u8, t.name.ident, v)) continue;
+                out.count += 1;
+                if (a.targets.len == 1 and a.values.len == 1) {
+                    out.stmt = s;
+                    out.value = a.values[0];
+                }
+            }
+        },
+        .local_decl => |d| {
+            for (d.names) |n| {
+                if (!std.mem.eql(u8, n.ident, v)) continue;
+                out.count += 1;
+                if (d.names.len == 1 and d.inits.len == 1) {
+                    out.stmt = s;
+                    out.value = d.inits[0];
+                }
+            }
+        },
+        .do_block => |d| scanValueWrites(&d.body, v, out),
+        .if_stmt => |f| {
+            if (f.binding) |bnd| if (std.mem.eql(u8, bnd.name, v)) {
+                out.count += 1;
+                out.ok = false;
+            };
+            scanValueWrites(&f.then, v, out);
+            for (f.elseifs) |ei| scanValueWrites(&ei.body, v, out);
+            if (f.else_body) |eb| scanValueWrites(&eb, v, out);
+        },
+        .call_stmt, .expr_stmt => {},
+        else => out.ok = false,
+    };
+}
+
+/// The domain of the candidate value `v`, or `unknown`.
+///
+/// Two obligations beyond "what does the expression evaluate to":
+///
+///   * `v` is written EXACTLY ONCE in the whole loop body. Two writers and the
+///     value read by the guard is not the one this domain describes.
+///   * that write is in the SAME BLOCK and STRICTLY EARLIER than the guard, so
+///     the guard cannot read a `v` from before the first write — whose value
+///     this module has no producer for and is not in the derived interval.
+fn selectDomain(root: *const ast.Block, b: *const ast.Block, idx: usize, v: []const u8) Domain {
+    var w: ValueWrite = .{};
+    scanValueWrites(root, v, &w);
+    if (!w.ok or w.count != 1) return Domain.nothing_known;
+    const site = w.stmt orelse return Domain.nothing_known;
+    const value = w.value orelse return Domain.nothing_known;
+    var dominates = false;
+    for (b.stmts[0..idx]) |*s| if (s == site) {
+        dominates = true;
+    };
+    if (!dominates) return Domain.nothing_known;
+    return exprDomain(value);
 }
 
 /// `p = <literal>` or `p = p <op> <literal>`. Anything else refuses.
@@ -1657,7 +1969,7 @@ fn considerLoop(
     // P3 — the update forms.
     var sites: std.ArrayListUnmanaged(WriteSite) = .empty;
     defer sites.deinit(alloc);
-    if (!try collectUpdates(alloc, &wl.body, name, &sites, budget)) {
+    if (!try collectUpdates(alloc, &wl.body, &wl.body, name, &sites, budget)) {
         census.refuse(.update_form);
         return;
     }
@@ -1708,7 +2020,14 @@ fn considerLoop(
 
     census.record(&cand);
     for (sites.items) |site| {
-        try plan.break_after.put(plan.alloc, site.stmt, {});
+        // THE ONE PLACE THE TWO REALIZATIONS PART. Everything above is the same
+        // backward question; only the absorbing argument decides whether the
+        // break needs a runtime condition, and the proof says which.
+        if (proof.route == .guarded_extremum) {
+            try plan.break_when.put(plan.alloc, site.stmt, .{ .name = name, .value = proof.settled });
+        } else {
+            try plan.break_after.put(plan.alloc, site.stmt, {});
+        }
         census.sites += 1;
     }
 }

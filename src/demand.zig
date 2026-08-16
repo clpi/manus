@@ -215,9 +215,29 @@ pub const Plan = struct {
     /// Statements after which a `break` is lawful — the SECOND candidate this
     /// module generates. See `earlyExitSites`.
     break_after: std.AutoHashMapUnmanaged(*const ast.Stmt, void) = .empty,
+    /// Statements after which a `break` is lawful ONLY WHILE A RUNTIME GUARD
+    /// HOLDS — the ORDER-STATISTIC class (`min`, `max`, threshold count).
+    ///
+    /// `break_after` is the case where EVERY write enters the absorbing class,
+    /// so the break needs no condition. An order statistic is the case where
+    /// only SOME writes do: `m = v` under `if v < m` settles the answer exactly
+    /// when `m` reaches the proven infimum of `v`'s domain, and not before. The
+    /// two sets are kept apart rather than merged because an unconditional
+    /// break at a site that has not settled is a WRONG ANSWER, and a guard
+    /// synthesised for a site that needs none is a wasted compare.
+    break_when: std.AutoHashMapUnmanaged(*const ast.Stmt, Guard) = .empty,
     /// Census of unmet obligations, for the gate. Index by `@intFromEnum`.
     blocked: [std.meta.fieldNames(Blocker).len]u32 = @splat(0),
     alloc: std.mem.Allocator,
+
+    /// The condition under which the break is lawful: `name == value`. It is
+    /// deliberately the narrowest useful shape — one place against one literal
+    /// — because the guard is emitted into the hot loop and every bit of it is
+    /// paid on every write.
+    pub const Guard = struct {
+        name: []const u8,
+        value: i64,
+    };
 
     pub fn init(alloc: std.mem.Allocator) Plan {
         return .{ .alloc = alloc };
@@ -226,14 +246,23 @@ pub const Plan = struct {
     pub fn deinit(self: *Plan) void {
         self.dead.deinit(self.alloc);
         self.break_after.deinit(self.alloc);
+        self.break_when.deinit(self.alloc);
     }
 
     pub fn breaksAfter(self: *const Plan, stmt: *const ast.Stmt) bool {
         return self.break_after.contains(stmt);
     }
 
+    pub fn guardAfter(self: *const Plan, stmt: *const ast.Stmt) ?Guard {
+        return self.break_when.get(stmt);
+    }
+
     pub fn earlyExitCount(self: *const Plan) u32 {
         return @intCast(self.break_after.count());
+    }
+
+    pub fn guardedExitCount(self: *const Plan) u32 {
+        return @intCast(self.break_when.count());
     }
 
     pub fn isDead(self: *const Plan, stmt: *const ast.Stmt) bool {
@@ -2002,7 +2031,9 @@ fn pruneBlock(alloc: std.mem.Allocator, b: *ast.Block, plan: *const Plan) std.me
     // compacts in place, which keeps the common case allocation-free.
     var inserts: usize = 0;
     for (b.stmts) |*s| {
-        if (!plan.isDead(s) and plan.breaksAfter(s)) inserts += 1;
+        if (plan.isDead(s)) continue;
+        if (plan.breaksAfter(s)) inserts += 1;
+        if (plan.guardAfter(s) != null) inserts += 1;
     }
     if (inserts == 0) {
         var keep: usize = 0;
@@ -2021,6 +2052,7 @@ fn pruneBlock(alloc: std.mem.Allocator, b: *ast.Block, plan: *const Plan) std.me
         const src = &b.stmts[i];
         if (plan.isDead(src)) continue;
         const insert_here = plan.breaksAfter(src);
+        const guard_here = plan.guardAfter(src);
         const loc = stmtLoc(src);
         out[k] = b.stmts[i];
         k += 1;
@@ -2028,8 +2060,33 @@ fn pruneBlock(alloc: std.mem.Allocator, b: *ast.Block, plan: *const Plan) std.me
             out[k] = .{ .brk = loc };
             k += 1;
         }
+        if (guard_here) |g| {
+            out[k] = try guardedBreak(alloc, g, loc);
+            k += 1;
+        }
     }
     b.stmts = out[0..k];
+}
+
+/// `if <name> == <value> then break` — the ONE realization of a guarded
+/// truncation site, synthesised here so no second lowering path exists. It is
+/// ordinary AST: the backend sees a program it could have been given.
+fn guardedBreak(alloc: std.mem.Allocator, g: Plan.Guard, loc: ast.Loc) std.mem.Allocator.Error!ast.Stmt {
+    const lhs = try alloc.create(ast.Expr);
+    lhs.* = .{ .name = .{ .loc = loc, .ident = g.name } };
+    const rhs = try alloc.create(ast.Expr);
+    rhs.* = .{ .int_lit = .{ .loc = loc, .val = g.value } };
+    const cond = try alloc.create(ast.Expr);
+    cond.* = .{ .binop = .{ .loc = loc, .op = .eq, .lhs = lhs, .rhs = rhs } };
+    const body = try alloc.alloc(ast.Stmt, 1);
+    body[0] = .{ .brk = loc };
+    return .{ .if_stmt = .{
+        .loc = loc,
+        .cond = cond,
+        .then = .{ .loc = loc, .stmts = body },
+        .elseifs = &.{},
+        .else_body = null,
+    } };
 }
 
 fn stmtLoc(s: *const ast.Stmt) ast.Loc {
