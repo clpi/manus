@@ -276,6 +276,70 @@ forever without docs, formatter, graph or backend preserving it.
 
 ---
 
+## §11.5 CONTROL-ALGEBRA-NOT-METHODS
+
+**Refinement, recurrence and iteration are semantic application ALGEBRAS — not
+magic relation names projected onto every value.** `if`, `while`, `for`, `else`
+and familiar `match` are source/control faces that establish regions and publish
+graph facts, then DISAPPEAR. They do not imply universal relations named after
+themselves. Therefore these are noncanonical and REJECTED:
+
+    value:if(...)     source:while(...)     source:for(...)     value:else(...)
+
+Each would create a parallel relation ontology for a meaning the algebra already
+owns. `value:if(action)` would need either a fake relation `if` duplicating
+refinement, or pure parser sugar — and the latter weakens the invariant that `:`
+always denotes a real subject-oriented relation. `:else` is worse still: it has
+no independent subject, so it must either search for an open refinement (a
+downstream syntax walk, forbidden) or invent a relation. `users:for(body)` says
+strictly LESS than `users:each(body)`, which at least names the question.
+
+**This is the exact analogue of PROTOCOL-PROJECTION-ONE §3.1.** Just as
+*iteration facts ≠ "has a method named `next`"*, so:
+
+    refinement facts  != "has a method named `if`"
+    recurrence facts  != "has a method named `while`"
+
+**The algebra is stronger than the face.** A descriptor participates by
+supplying FACTS — truthiness, transition, termination — never by implementing a
+control-named method. A user may not override refinement or iteration by
+defining `MyType:if` / `MyType:for` / `MyType:while`.
+
+**THE ONE LEGITIMATE CASE, and its criterion.** A subject-oriented spelling that
+shares a control word is lawful only if it denotes an **independently meaningful
+semantic relation whose identity survives without reference to control syntax**:
+
+    text:match(pattern)    LAWFUL if `match` genuinely means matching —
+                           application { relation: match, subject: text,
+                                         operand: pattern, result: bool }
+    user:match( … )        FORBIDDEN as conditional dispatch. Same spelling,
+                           categorically different graph.
+
+The test is never "is this also a control word?" It is "does this relation mean
+something without the control construct?" Control-`match` is familiar ingress and
+must disappear into refinement; it may never be inferred FROM the relation.
+
+**`until` needs no semantic form.** `repeat body until p` is a recurrence whose
+body runs once before the continuation `!p` is tested. Retain it as ingress if
+useful; do not add `state:until(p)`.
+
+**NO SPELLING-BASED CONTROL RESOLUTION, EVER.** Control parsing is grammar-owned
+ingress; relation resolution is graph-owned semantics. A user-defined relation
+named `while`, or a lexical binding named `if`, must NEVER cause control syntax
+to dispatch dynamically. Reserve control words from ordinary relation naming
+rather than overload parsing on semantic lookup. After publication neither is
+reconstructed from source spelling — that is §11's stop condition.
+
+**THE CANONICAL HIERARCHY:**
+
+    independently meaningful domain relation   users:any(.active)
+        >
+    generic control algebra                    for(users) (user)
+        >
+    familiar compatibility face                for user in users
+        >
+    syntactic mimicry                          users:for(...)      REJECTED
+
 ## §12 MEASURED BASELINE — 2026-08-16, idol `06723d39`
 
 Probed by running one program per face and reading its answer, not by reading

@@ -232,3 +232,72 @@ single site. `token.id` is already clean of both forms.
 whether `for` currently lowers through an `iter`/`next` convention — §3's
 forbidden definition. Both are the first questions a lane must answer, and
 neither is answerable by grep.
+
+---
+
+## §10 GRAPH SUBSTRATE — VERIFIED IN CODE 2026-08-16, idol `2462ea29`
+
+Read out of `src/semantic_graph.zig`, not from memory.
+
+**STRUCTURAL ONLY — CONFIRMED. There are exactly eight edge kinds and NONE is
+operational:**
+
+    contains  binding  member  descriptor_ref  capture  projection
+    descriptor  provenance
+
+So there is no `--if-->`, `--while-->`, `--for-->`, `--call-->`, `--read-->` or
+`--match-->` edge, and §11.5 of `source-control-one.md` is structurally enforced
+rather than merely asserted. `NodeKind` (`module func param local value call
+relation transform_app table_shape enum_shape`) is documented as a PHYSICAL TAG,
+not semantic authority.
+
+**Operation identity lives on the application, split deliberately:**
+
+    ApplicationFact { application, arguments, results,
+                      effect, authority, witness, target, realization }
+
+`relation` and `subject` are NOT fields — relation is the unique `.binding` edge
+from the application occurrence, subject the unique `.projection` edge. And the
+three-valued cardinality is exact, with `null` forbidden as a stand-in:
+
+    Card = union { unknown, none, one: id }
+
+### §10.1 THREE MEASURED GAPS — none of this is closed
+
+1. **THERE IS NO WORLD FIELD.** `grep -c world` over `ApplicationFact` returns
+   **0**. World ownership is still distributed and transitional, so **injection
+   algebra is NOT yet graph-bound at the application.** Until an exact world
+   fact/id reaches the application, `job@{ clock = fake }()` cannot be reasoned
+   about as a graph fact, and "protocol bound through projection and injection
+   world algebra" is a TARGET, not a current property. `authority` and `witness`
+   Cards do exist, which is the right split — world supplies facts, authority
+   supplies requirement, witness proves satisfaction.
+
+2. **BOOTSTRAP APPLICATIONS EMIT MACHINE CODE WITH NO PUBLISHED FACT.**
+   `src/native_bootstrap.zig` is **651 lines recognizing 36 SOURCE SPELLINGS** —
+   `len byte print read write match has to addr alloc free exit env line char
+   sub tail zero observe execute stdin stdout math mem os string test gatecap
+   read_byte remove sqrt sin cos fabs ceil floor` — that lower by SPELLING.
+   Behaviour therefore exists with no graph semantic identity behind it, and
+   demand, protocol closure and world algebra cannot reason about ANY of it.
+   **This must reach zero.** Note `match` and `has` are both on that list.
+
+3. **`ast_ref` REMAINS — 21 sites in `semantic_graph.zig` alone.** Semantic AST
+   backedges are still live Phase-1 mirroring debt.
+
+### §10.2 THE CONVERGENCE TARGET AT THE LANGUAGE BOUNDARY
+
+`f(x)` and `x:f()` denote the same relation/application algebra, so they must
+publish equivalent graph AND machine opportunity for **every** result class:
+
+    scalar      MEASURED EQUIVALENT — five decompositions instruction-identical,
+                and a normalized disassembly diff differs only in `bl` target names
+    record      REFUSED — `3:mk(2)` gives DNB011 `application-result-abi`
+                (`checkedScalarResult`, `dnir_lower.zig:5640`) while `mk(3,2)` answers
+    recursive   REFUSED — subject-first mutual recursion depends on declaration
+                ORDER; operand-first works either way
+    cross-home  OPEN
+    generic     OPEN
+
+**No canonical syntax may pay a performance or capability tax.** That is FTCFTW
+at the language boundary, and two of the five rows currently fail it.
