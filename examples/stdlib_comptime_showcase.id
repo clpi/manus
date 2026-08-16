@@ -7,8 +7,8 @@ concept HasXY
   x: f64
   y: f64
 
-Point: { x: f64, y: f64 }
-Pair: { x: f64, y: f64 }
+point: { x: f64, y: f64 }
+pair: { x: f64, y: f64 }
 
 TYPED = @comp.map("HasXY", meta.type_registry_line)
 COMMENTS = @comp.map("HasXY", meta.c_type_comment)

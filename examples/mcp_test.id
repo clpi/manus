@@ -3,7 +3,7 @@ json = json
 io = io
 
 print("Hello at startup")
-Vector3: { x: f64, y: f64, z: f64 }
+vector: { x: f64, y: f64, z: f64 }
 
 do_test = ()
   req_str = json.encode({ a = 1 })

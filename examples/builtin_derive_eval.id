@@ -16,6 +16,6 @@
 )
 
 @derive(ReportBuiltins)
-Point: { x: i64, y: i64 }
+point: { x: i64, y: i64 }
 
 print("Built-in derive eval ok")

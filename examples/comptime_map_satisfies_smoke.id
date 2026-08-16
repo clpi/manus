@@ -5,18 +5,18 @@ concept HasXY
   x: f64
   y: f64
 
-Point: { x: f64, y: f64 }
-IdOnly: { id: i64 }
+point: { x: f64, y: f64 }
+identity: { id: i64 }
 
-@comp.assert(@comp.satisfies(Point, "HasXY"), "Point has x and y")
-@comp.assert(not @comp.satisfies(IdOnly, "HasXY"), "IdOnly lacks x/y")
+@comp.assert(@comp.satisfies(point, "HasXY"), "point has x and y")
+@comp.assert(not @comp.satisfies(identity, "HasXY"), "identity lacks x/y")
 
 mark: str = meta
 meta.name .. ";"
 
 MARKS = @comp.map("HasXY", mark)
 
-print("satisfies Point = " .. to(str)(@comp.satisfies(Point, "HasXY")))
-print("satisfies IdOnly = " .. to(str)(@comp.satisfies(IdOnly, "HasXY")))
+print("satisfies point = " .. to(str)(@comp.satisfies(point, "HasXY")))
+print("satisfies identity = " .. to(str)(@comp.satisfies(identity, "HasXY")))
 print("marks = " .. MARKS)
 print("ok")

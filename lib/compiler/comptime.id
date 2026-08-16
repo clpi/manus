@@ -21,7 +21,7 @@
 # through the lexer and neither survived the module boundary: a
 # `{ lx = lexer.new(...) }` state table passed as `any` crashed at startup
 # (exit 128, no output — a typed record does not survive being boxed into an
-# untyped field), and threading `lx: Lexer` directly compiled the parameter as
+# untyped field), and threading `lx: lexer` directly compiled the parameter as
 # `int64_t`, because that type does not resolve in this module. Both are real
 # findings; neither is worth blocking a folder on. A closed integer expression
 # needs digits, operators and parens, so it scans them.

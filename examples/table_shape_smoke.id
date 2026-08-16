@@ -10,10 +10,10 @@
 #              zig test src/semantic_graph.zig #test-filter liftAliasShapes
 #              zig test src/codegen.zig #test-filter type_shape
 
-Point: { x: f64, y: f64 }
+point: { x: f64, y: f64 }
 
 @sealed
-Box: { label: str, count: i64 }
+box: { label: str, count: i64 }
 
 enum Color
   Red
@@ -21,13 +21,13 @@ enum Color
   Blue
 
 main = ()
-  p: Point =
+  p: point =
     x = 3.0
     y = 4.0
   pt2: { x: f64, y: f64 } =
     x = 1.0
     y = 2.0
-  b: Box =
+  b: box =
     label = "ok"
     count = 1
 

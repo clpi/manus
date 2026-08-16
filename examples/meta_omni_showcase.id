@@ -8,9 +8,9 @@ concept HasXY
 concept HasTag
   tag: str
 
-Point: { x: f64, y: f64, tag: str }
-Pair: { x: f64, y: f64, tag: str }
-Label: { tag: str }
+point: { x: f64, y: f64, tag: str }
+pair: { x: f64, y: f64, tag: str }
+label: { tag: str }
 
 @comp.define.derive("PairApi", generate: str = (meta)
     if meta.left != nil
@@ -30,5 +30,5 @@ meta.name .. ";"
 __emit(@comp.omni("HasXY", PairApi, "HasTag", registry_line))
 
 print("=== meta omni showcase ===")
-print("Point ok = true")
+print("point ok = true")
 print("ok")

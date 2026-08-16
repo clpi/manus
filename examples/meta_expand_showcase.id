@@ -5,10 +5,10 @@ concept HasXY
   x: f64
   y: f64
 
-Point: { x: f64, y: f64 }
-Pair: { x: f64, y: f64 }
+point: { x: f64, y: f64 }
+pair: { x: f64, y: f64 }
 
-@comp.assert(@comp.satisfies(Point, "HasXY"))
+@comp.assert(@comp.satisfies(point, "HasXY"))
 
 @comp.define.derive("TouchApi", generate: str = (meta)
     acc = ""
@@ -28,6 +28,6 @@ __emit(@comp.expand("HasXY", TouchApi))
 SWEEP = @comp.map("HasXY", registry_line)
 
 print("=== meta.expand showcase ===")
-print("Point ok = true")
+print("point ok = true")
 print("sweep = " .. SWEEP)
 print("ok")

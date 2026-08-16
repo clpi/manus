@@ -22,7 +22,7 @@
 
 # GAP: these two stay on the graveyard `req` spelling because it brings the
 # module's TYPE names into scope and the ambient root binding does not —
-# `lx: Lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
+# `lx: lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
 # this file uses ambient roots. Measured, not assumed.
 
 has: bool = (set: str, name: str)
@@ -52,7 +52,7 @@ add: str = (set: str, name: str)
 # token sits in column 1 — the same layout signal the parser uses to recognise
 # a bodiless declaration.
 nodes: str = (src: str, file: str, family: i64)
-  lx: Lexer = lexer.new(src, file, family)
+  lx: lexer = lexer.new(src, file, family)
   acc = "|"
   while true
     t = lexer.next(lx)
@@ -68,7 +68,7 @@ nodes: str = (src: str, file: str, family: i64)
 # file that declares them, and unreachable from outside it by policy.
 dead: i64 = (src: str, file: str, family: i64, report: bool)
   declared = nodes(src, file, family)
-  lx: Lexer = lexer.new(src, file, family)
+  lx: lexer = lexer.new(src, file, family)
   used = "|"
   kind: i64 = 0
   col: i64 = 0

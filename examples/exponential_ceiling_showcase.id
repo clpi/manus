@@ -5,9 +5,9 @@ concept HasXY
     x: f64
     y: f64
 
-Point: { x: f64, y: f64 }
-BadXY: { x: i64, y: f64 }
-Pair: { x: f64, y: f64 }
+point: { x: f64, y: f64 }
+mismatch: { x: i64, y: f64 }
+pair: { x: f64, y: f64 }
 
 @comp.define.derive("TouchApi", generate: str = (meta)
     acc = ""
@@ -17,8 +17,8 @@ Pair: { x: f64, y: f64 }
     acc
 )
 
-@comp.assert(@comp.satisfies(Point, "HasXY"))
-@comp.assert(not @comp.satisfies(BadXY, "HasXY"))
+@comp.assert(@comp.satisfies(point, "HasXY"))
+@comp.assert(not @comp.satisfies(mismatch, "HasXY"))
 
 registry_line: str = (meta)
     meta.name .. ";"
@@ -37,6 +37,6 @@ MIGRATION = @comp.diff(UserV1, UserV2)
 print("=== exponential ceiling showcase ===")
 print("typed_sweep = " .. TYPED_SWEEP)
 print("migration_lines = " .. to(str)(MIGRATION:len()))
-print("Point satisfies HasXY = " .. to(str)(@comp.satisfies(Point, "HasXY")))
-print("BadXY satisfies HasXY = " .. to(str)(@comp.satisfies(BadXY, "HasXY")))
+print("point satisfies HasXY = " .. to(str)(@comp.satisfies(point, "HasXY")))
+print("mismatch satisfies HasXY = " .. to(str)(@comp.satisfies(mismatch, "HasXY")))
 print("ok")

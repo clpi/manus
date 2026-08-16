@@ -22,9 +22,9 @@ concept HasXY
   x: f64
   y: f64
 
-Vec2: { x: f64, y: f64 }
-Vec3: { x: f64, y: f64, z: f64 }
-Pt: { x: f64, y: f64 }
+pair: { x: f64, y: f64 }
+vector: { x: f64, y: f64, z: f64 }
+point: { x: f64, y: f64 }
 
 SUBSETS = @comp.power("HasXY", fun(s)
   s.name .. ";"

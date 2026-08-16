@@ -35,6 +35,6 @@
 )
 
 @derive(ComposeAll)
-Point: { x: f64, y: f64 }
+point: { x: f64, y: f64 }
 
 print("Higher-order derive composed")

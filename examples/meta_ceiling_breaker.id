@@ -8,9 +8,9 @@ concept HasXY
 concept HasTag
   tag: str
 
-Point: { x: f64, y: f64, tag: str }
-Pair: { x: f64, y: f64, tag: str }
-Label: { tag: str }
+point: { x: f64, y: f64, tag: str }
+pair: { x: f64, y: f64, tag: str }
+label: { tag: str }
 
 # One @comp.ceiling line → O(types × fields) + O(types² × fields) C
 
@@ -36,5 +36,5 @@ NAMES = @comp.type.names()
 print("=== meta ceiling breaker ===")
 print("pairs = " .. PAIRS)
 print("all = " .. NAMES)
-print("Point ok = true")
+print("point ok = true")
 print("ok")

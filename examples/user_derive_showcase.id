@@ -19,13 +19,13 @@
 )
 
 @derive(CStruct, GetterBundle)
-Vec3: { x: f64, y: f64, z: f64 }
+vector: { x: f64, y: f64, z: f64 }
 
 @derive(CStruct)
-RGB: { r: f64, g: f64, b: f64 }
+color: { r: f64, g: f64, b: f64 }
 
-v3: Vec3 = { x = 1.0, y = 2.0, z = 3.0 }
-rgb: RGB = { r = 1.0, g = 0.5, b = 0.0 }
+v3: vector = { x = 1.0, y = 2.0, z = 3.0 }
+rgb: color = { r = 1.0, g = 0.5, b = 0.0 }
 
 FIELD_MAP = @comp.fields.map(v3, "/* %n:%t */")
 
@@ -34,6 +34,6 @@ UNROLL = @(@comp.for(0, 5, "slot_%i=0;"))
 print("=== user derive showcase ===")
 print("field_map = " .. FIELD_MAP)
 print("unrolled = " .. UNROLL)
-print("Vec3 fields = " .. to(str)(@fields(v3):len()))
-print("RGB fields = " .. to(str)(@fields(rgb):len()))
+print("vector fields = " .. to(str)(@fields(v3):len()))
+print("color fields = " .. to(str)(@fields(rgb):len()))
 print("ok")

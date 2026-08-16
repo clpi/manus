@@ -4,7 +4,7 @@
 
 concept Has1
   x: i64
-T1: { x: i64 }
+offset: { x: i64 }
 
 @comp.define.derive("Stub", generate: str = (meta)
     meta.name .. "\n"

@@ -4,30 +4,30 @@
 # Slice is the subject's :sub / :len. Do not alias `str` into a binding —
 # C emit materializes that as a text literal and then table-walks `.sub`.
 
-Loc: {
+loc: {
     file: str,
     line: i64,
     col: i64
 }
 
-Tok: {
+token: {
     kind: i64,
-    loc: Loc,
+    loc: loc,
     text: str,
     int_val: i64,
     float_val: f64
 }
 
-State: {
+state: {
     pos: i64,
     start: i64,
     line: i64,
     col: i64,
     has_peeked: bool,
-    peeked_token: Tok
+    peeked_token: token
 }
 
-Lexer: {
+lexer: {
     src: str,
     pos: i64,
     start: i64,
@@ -36,9 +36,9 @@ Lexer: {
     file: str,
     family: i64,
     has_peeked: bool,
-    peeked_token: Tok,
+    peeked_token: token,
     has_error: bool,
-    error_loc: Loc,
+    error_loc: loc,
     error_code: i64,
     hint_count: i64,
     hint_0: str,
@@ -51,9 +51,9 @@ Lexer: {
     hint_7: str
 }
 
-new: Lexer = (src: str, file: str, family: i64)
-    dummy_loc: Loc = { file = "", line = 0, col = 0 }
-    dummy_tok: Tok = { kind = 0, loc = dummy_loc, text = "", int_val = 0, float_val = 0.0 }
+new: lexer = (src: str, file: str, family: i64)
+    dummy_loc: loc = { file = "", line = 0, col = 0 }
+    dummy_tok: token = { kind = 0, loc = dummy_loc, text = "", int_val = 0, float_val = 0.0 }
     # Family is an operand (`law.family.one`). Path is provenance only.
     return {
         src = src,
@@ -79,21 +79,21 @@ new: Lexer = (src: str, file: str, family: i64)
         hint_7 = "",
     }
 
-cur_loc: Loc = (self: Lexer)
+cur_loc: loc = (self: lexer)
     return { file = self.file, line = self.line, col = self.col }
 
-has_pending_hints: bool = (self: Lexer)
+has_pending_hints: bool = (self: lexer)
     self.hint_count > 0
 
-peek_char: i64 = (self: Lexer)
+peek_char: i64 = (self: lexer)
     if self.pos > self.src:len() return 0
     self.src:byte(self.pos)
 
-peek_char2: i64 = (self: Lexer)
+peek_char2: i64 = (self: lexer)
     if self.pos + 1 > self.src:len() return 0
     self.src:byte(self.pos + 1)
 
-adv(self: Lexer)
+adv(self: lexer)
     if self.pos > self.src:len() return
     c = self.src:byte(self.pos)
     self.pos = self.pos + 1
@@ -240,7 +240,7 @@ classify_quote: i64 = (family: i64, quote: i64)
         return 107
     107
 
-long_bracket_level: i64 = (self: Lexer)
+long_bracket_level: i64 = (self: lexer)
     i = self.pos
     if i > self.src:len() or self.src:byte(i) != 91 return -1
     i += 1
@@ -262,13 +262,13 @@ long_bracket_level: i64 = (self: Lexer)
 #   4 UnexpectedChar
 # First error wins: later failures are consequences of the first, and reporting
 # the last one points at the wrong place.
-_fail(self: Lexer, code: i64)
+_fail(self: lexer, code: i64)
     if !self.has_error
         self.has_error = true
         self.error_code = code
         self.error_loc = self:cur_loc()
 
-skip_long(self: Lexer, level: i64)
+skip_long(self: lexer, level: i64)
     self:adv()
     i = 0
     while i < level
@@ -289,7 +289,7 @@ skip_long(self: Lexer, level: i64)
             self:adv()
     self:_fail(2)
 
-skip_ws(self: Lexer)
+skip_ws(self: lexer)
     while self.pos <= self.src:len()
         c = self:peek_char()
         if c == 32 or c == 9 or c == 13 or c == 10
@@ -297,7 +297,7 @@ skip_ws(self: Lexer)
         else
             break
 
-read_long_str: str = (self: Lexer, level: i64)
+read_long_str: str = (self: lexer, level: i64)
     self:adv()
     i = 0
     while i < level
@@ -329,7 +329,7 @@ read_long_str: str = (self: Lexer, level: i64)
     self:_fail(2)
     ""
 
-read_str: str = (self: Lexer, quote: i64)
+read_str: str = (self: lexer, quote: i64)
     self:adv()
     start = self.pos
     self.start = start
@@ -459,7 +459,7 @@ _int_of: i64 = (text: str)
         i += 1
     v
 
-read_num: Tok = (self: Lexer)
+read_num: token = (self: lexer)
     l = self:cur_loc()
     start = self.pos
     is_float = false
@@ -526,7 +526,7 @@ read_num: Tok = (self: Lexer)
     else
         return { kind = 1, loc = l, text = text, int_val = _int_of(text), float_val = 0.0 }
 
-next_tok: Tok = (self: Lexer)
+next_tok: token = (self: lexer)
     if self.pos == 1 and self:peek_char() == 35 and self:peek_char2() == 33
         l = self:cur_loc()
         start = self.pos
@@ -738,20 +738,20 @@ next_tok: Tok = (self: Lexer)
         self:_fail(4)
         return { kind = 109, loc = l, text = "", int_val = 0, float_val = 0.0 }
 
-next: Tok = (self: Lexer)
+next: token = (self: lexer)
     if self.has_peeked
         tok = self.peeked_token
         self.has_peeked = false
         return tok
     return self:next_tok()
 
-peek: Tok = (self: Lexer)
+peek: token = (self: lexer)
     if !self.has_peeked
         self.peeked_token = self:next_tok()
         self.has_peeked = true
     self.peeked_token
 
-save_state: State = (self: Lexer)
+save_state: state = (self: lexer)
     return {
         pos = self.pos,
         start = self.start,
@@ -761,7 +761,7 @@ save_state: State = (self: Lexer)
         peeked_token = self.peeked_token,
     }
 
-restore_state(self: Lexer, state: State)
+restore_state(self: lexer, state: state)
     self.pos = state.pos
     self.start = state.start
     self.line = state.line
@@ -789,10 +789,10 @@ restore_state(self: Lexer, state: State)
 # Whole-file tokenize in ONE call, writing into a host-provided buffer.
 #
 # This is the shape production dispatch needs, and `duo_lexer_step` is not it.
-# Step rebuilds a `Lexer` at a byte offset, which discards `has_peeked` /
+# Step rebuilds a `lexer` at a byte offset, which discards `has_peeked` /
 # `peeked_token` and the hint state the type carries, so a step-driven walk
 # silently mis-lexes context-sensitive shapes (bisected to the `=` in
-# `fun add(a: i64): i64 =`). Here a single `Lexer` runs the whole file, so the
+# `fun add(a: i64): i64 =`). Here a single `lexer` runs the whole file, so the
 # stream is state-faithful by construction, and it is O(n) with no cursor ABI.
 #
 # `out` is a host address (see `mem.addr` / `mem.ptr_from_addr`); tokens are

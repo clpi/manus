@@ -5,8 +5,8 @@ concept HasXY
   x: f64
   y: f64
 
-Point: { x: f64, y: f64 }
-Pair: { x: f64, y: f64 }
+point: { x: f64, y: f64 }
+pair: { x: f64, y: f64 }
 
 @comp.define.derive("TouchApi", generate: str = (meta)
     "static inline void duo_" .. meta.name .. "_touch(const duo_" .. meta.name .. "* v) { (void)v->x; (void)v->y; }\n"

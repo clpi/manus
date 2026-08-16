@@ -8,9 +8,9 @@ concept HasXY
 concept HasTag
   tag: str
 
-Point: { x: f64, y: f64, tag: str }
-Pair: { x: f64, y: f64, tag: str }
-Label: { tag: str }
+point: { x: f64, y: f64, tag: str }
+pair: { x: f64, y: f64, tag: str }
+label: { tag: str }
 
 @comp.define.derive("TouchApi", generate: str = (meta)
     acc = ""
@@ -39,5 +39,5 @@ print("pairs = " .. PAIRS)
 print("sweep = " .. SWEEP)
 print("tagged = " .. TAGGED)
 print("all = " .. ALL)
-print("Point ok = true")
+print("point ok = true")
 print("ok")

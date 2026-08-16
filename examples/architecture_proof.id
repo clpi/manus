@@ -25,9 +25,9 @@ end
 Point: { x: f64, y: f64 }
 
 # Multi-parent descriptor composition (GP-012)
-Named: { name: str }
-Colored: { color: str }
-Sprite: @{ ..Named, ..Colored, x: f64 }
+name: { name: str }
+color: { color: str }
+Sprite: @{ ..name, ..color, x: f64 }
 
 # Table spread (GP-004)
 defaults = { color = "blue", size = 10 }

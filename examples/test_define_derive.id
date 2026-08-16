@@ -15,10 +15,10 @@
 )
 
 @derive(Printable)
-Foo: {
+foo: {
     x: i64,
     y: str
 }
 
-f: Foo = { x = 42, y = "hello metaprogramming" }
-@comp.c.call("duo_Foo_print", f)
+f: foo = { x = 42, y = "hello metaprogramming" }
+@comp.c.call("duo_foo_print", f)

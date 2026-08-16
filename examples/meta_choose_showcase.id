@@ -5,10 +5,10 @@ concept HasXY
   x: i64
   y: i64
 
-Vec2: { x: i64, y: i64 }
-Vec3: { x: i64, y: i64, z: i64 }
-Pt: { x: i64, y: i64 }
-Ray: { x: i64, y: i64, dx: i64, dy: i64 }
+pair: { x: i64, y: i64 }
+vector: { x: i64, y: i64, z: i64 }
+point: { x: i64, y: i64 }
+ray: { x: i64, y: i64, dx: i64, dy: i64 }
 
 combo_sig: str = meta
 meta.name .. ";"
@@ -32,9 +32,9 @@ choose2_count = count_semis(CHOOSE2)
 choose3_count = count_semis(CHOOSE3)
 expanded_count = count_semis(EXPANDED)
 
-has_first_pair = @comp.str.contains(CHOOSE2, "Vec2_Vec3")
-has_last_pair = @comp.str.contains(CHOOSE2, "Pt_Ray")
-has_triple = @comp.str.contains(CHOOSE3, "Vec2_Vec3_Pt")
+has_first_pair = @comp.str.contains(CHOOSE2, "pair_vector")
+has_last_pair = @comp.str.contains(CHOOSE2, "point_ray")
+has_triple = @comp.str.contains(CHOOSE3, "pair_vector_point")
 ok = choose2_count == 6 and choose3_count == 4 and expanded_count == 0 and has_first_pair and has_last_pair and has_triple
 
 print("=== @comp.choose showcase ===")

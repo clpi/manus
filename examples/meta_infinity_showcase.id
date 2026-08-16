@@ -14,9 +14,9 @@ concept HasId
 concept HasExtra
   extra: i64
 
-Point: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
-Pair: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
-Label: { tag: str, id: i64, extra: i64 }
+point: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
+pair: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
+label: { tag: str, id: i64, extra: i64 }
 
 # One line: derive.all + quadratic + cubic + quartic emit
 
@@ -42,5 +42,5 @@ LADDER = @comp.ladder()
 print("=== meta infinity showcase ===")
 print("has_infinity = " .. to(str)(@comp.str.contains(LADDER, "infinity:")))
 print("nfold = " .. NFOLD)
-print("Point ok = true")
+print("point ok = true")
 print("ok")

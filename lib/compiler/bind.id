@@ -26,7 +26,7 @@
 
 # GAP: these two stay on the graveyard `req` spelling because it brings the
 # module's TYPE names into scope and the ambient root binding does not —
-# `lx: Lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
+# `lx: lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
 # this file uses ambient roots. Measured, not assumed.
 
 # Membership over a "|a|b|" set. str is `sub` and `len`, so this is spelled
@@ -62,7 +62,7 @@ ambient = "|io|os|fs|json|process|string|table|math|coroutine|mem|req|print|erro
 # Names this file binds, and names it references but never binds.
 # Returns the unresolved count; `report` prints each.
 unresolved: i64 = (src: str, file: str, family: i64, report: bool)
-  lx: Lexer = lexer.new(src, file, family)
+  lx: lexer = lexer.new(src, file, family)
   bound = ambient
   refs = "|"
   kind: i64 = 0
@@ -132,7 +132,7 @@ unresolved: i64 = (src: str, file: str, family: i64, report: bool)
         bound = add(bound, t.text)
     kind = t.kind
 
-lx2: Lexer = lexer.new(src, file, family)
+lx2: lexer = lexer.new(src, file, family)
 kind = 0
 count: i64 = 0
 while true

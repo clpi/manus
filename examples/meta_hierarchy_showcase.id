@@ -48,8 +48,8 @@
 concept HasTag
   tag: str
 
-Alpha: { tag: str, n: i64 }
-Beta: { tag: str, x: f64 }
+alpha: { tag: str, n: i64 }
+beta: { tag: str, x: f64 }
 
 mark: str = meta
 meta.name .. ";"
@@ -66,5 +66,5 @@ print("ladder_has_tensor = true")
 print("sweep = " .. SWEEP)
 print("all_types = " .. NAMES)
 print("tag_types = " .. TAG_TYPES)
-print("Alpha ok = true")
+print("alpha ok = true")
 print("ok")

@@ -1,13 +1,13 @@
 # @corpus current
-Point: { x: i64, y: i64 }
+point: { x: i64, y: i64 }
 
 inline_y: i64 = (p: { x: i64, y: i64 })
   p.y
 
-alias_sum: i64 = (p: Point)
+alias_sum: i64 = (p: point)
   p.x + p.y
 
-p: Point =
+p: point =
   x = 5
   y = 7
 

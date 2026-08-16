@@ -2,7 +2,7 @@
 # Tests auto-generated metamethods from @derive attributes
 
 @derive(Display, Eq, Add, Sub, Neg, Len, Default)
-Vec2: { x: f64, y: f64 }
+pair: { x: f64, y: f64 }
 
 # Construct instances
 a =

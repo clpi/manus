@@ -5,6 +5,6 @@ concept HasXY
   x: f64
   y: f64
 
-Point: { x: f64, y: f64 }
-Pair: { x: f64, y: f64 }
-TagOnly: { tag: str }
+point: { x: f64, y: f64 }
+pair: { x: f64, y: f64 }
+tag: { tag: str }

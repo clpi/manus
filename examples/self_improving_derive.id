@@ -20,11 +20,11 @@
 )
 
 @derive(Evolving)
-Point: { x: i64, y: i64 }
+point: { x: i64, y: i64 }
 
-v0: i64 = @comp.c.call("duo_Point_evolve_marker_v0")
-v1: i64 = @comp.c.call("duo_Point_evolve_marker_v1")
-v2: i64 = @comp.c.call("duo_Point_evolve_marker_v2")
+v0: i64 = @comp.c.call("duo_point_evolve_marker_v0")
+v1: i64 = @comp.c.call("duo_point_evolve_marker_v1")
+v2: i64 = @comp.c.call("duo_point_evolve_marker_v2")
 if v0 != 0 or v1 != 1 or v2 != 2
     error("self-improving derive did not generate all three generations")
 

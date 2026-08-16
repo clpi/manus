@@ -15,9 +15,9 @@ concept HasXY
   x: f64
   y: f64
 
-Vec2: { x: f64, y: f64 }
-Vec3: { x: f64, y: f64, z: f64 }
-Pt: { x: f64, y: f64 }
+pair: { x: f64, y: f64 }
+vector: { x: f64, y: f64, z: f64 }
+point: { x: f64, y: f64 }
 
 # 1. @comp.power # power-set enumeration: O(2^n).
 #    For 3 matching types -> 2^3 - 1 = 7 non-empty subsets.

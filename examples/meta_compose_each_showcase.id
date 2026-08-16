@@ -16,9 +16,9 @@ concept HasXY
   x: f64
   y: f64
 
-Vec2: { x: f64, y: f64 }
-Vec3: { x: f64, y: f64, z: f64 }
-Pt: { x: f64, y: f64 }
+pair: { x: f64, y: f64 }
+vector: { x: f64, y: f64, z: f64 }
+point: { x: f64, y: f64 }
 
 # Stage 1: @comp.map produces "Name;" fragments for each matching type.
 type_sig: str = m
