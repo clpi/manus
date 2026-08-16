@@ -262,8 +262,12 @@ control: bool = ()
   if audit("src/semantic_graph.zig", 39, "k = EdgeKind.emit") == 0
     print("control FAIL: graph.edge.emit did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 40, "k = EdgeKind.transform_output") != 0
-    print("control FAIL: lawful EdgeKind.transform_output rejected")
+  # Was `EdgeKind.transform_output`, which is DELETED — it was written on every
+  # compile and read by nothing but its own JSON label. A positive control must
+  # name a kind that still exists, or it teaches the next reader a tag that is
+  # not there. `provenance` is the replacement and is equally lawful here.
+  if audit("src/semantic_graph.zig", 40, "k = EdgeKind.provenance") != 0
+    print("control FAIL: lawful EdgeKind.provenance rejected")
     ok = false
   if audit("src/graph_query.zig", 7, "return graph.findFunc(\"main\")") == 0
     print("control FAIL: graph.query.func did not fire")

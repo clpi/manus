@@ -406,18 +406,6 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "meta.pipeline", .internal = "__pipeline" },
     .{ .public = "comp.pipeline", .internal = "__pipeline" },
     .{ .public = "compiler.pipeline", .internal = "__pipeline" },
-    .{ .public = "meta.rewrite", .internal = "__rewrite" },
-    .{ .public = "comp.rewrite", .internal = "__rewrite" },
-    .{ .public = "compiler.rewrite", .internal = "__rewrite" },
-    .{ .public = "meta.rewrite.bundle", .internal = "__rewrite_bundle" },
-    .{ .public = "comp.rewrite.bundle", .internal = "__rewrite_bundle" },
-    .{ .public = "compiler.rewrite.bundle", .internal = "__rewrite_bundle" },
-    .{ .public = "meta.rewrite.describe", .internal = "__rewrite_describe" },
-    .{ .public = "comp.rewrite.describe", .internal = "__rewrite_describe" },
-    .{ .public = "compiler.rewrite.describe", .internal = "__rewrite_describe" },
-    .{ .public = "meta.rewrite.rulecount", .internal = "__rewrite_rulecount" },
-    .{ .public = "comp.rewrite.rulecount", .internal = "__rewrite_rulecount" },
-    .{ .public = "compiler.rewrite.rulecount", .internal = "__rewrite_rulecount" },
     .{ .public = "meta.sql", .internal = "__sql" },
     .{ .public = "comp.sql", .internal = "__sql" },
     .{ .public = "compiler.sql", .internal = "__sql" },
@@ -673,12 +661,6 @@ const directives = [_]DirectiveEntry{
     .{ .public = "meta.pipeline", .canonical = "pipeline" },
     .{ .public = "comp.pipeline", .canonical = "pipeline" },
     .{ .public = "compiler.pipeline", .canonical = "pipeline" },
-    .{ .public = "meta.rewrite", .canonical = "rewrite" },
-    .{ .public = "comp.rewrite", .canonical = "rewrite" },
-    .{ .public = "compiler.rewrite", .canonical = "rewrite" },
-    .{ .public = "meta.rewrite.bundle", .canonical = "rewrite.bundle" },
-    .{ .public = "comp.rewrite.bundle", .canonical = "rewrite.bundle" },
-    .{ .public = "compiler.rewrite.bundle", .canonical = "rewrite.bundle" },
     .{ .public = "meta.foreign", .canonical = "foreign" },
     .{ .public = "comp.foreign", .canonical = "foreign" },
     .{ .public = "compiler.foreign", .canonical = "foreign" },
@@ -918,7 +900,6 @@ pub fn isModuleDirective(name: []const u8) bool {
     // @foreign, etc. to work without the @comp.* prefix.
     const bare_aliases = [_][]const u8{
         "pipeline",
-        "rewrite",
         "foreign",
         "codegen",
         "wasm",
@@ -1662,8 +1643,6 @@ pub fn agentMultiplierFor(goal: []const u8) []const u8 {
         return "@comp.burst → @comp.transcend → @comp.infinity → @comp.hyper";
     if (goalContains(goal, "pipeline") or goalContains(goal, "fuse"))
         return "@comp.pipeline({ variants = ... }) — typed kernel family";
-    if (goalContains(goal, "rewrite") or goalContains(goal, "rule"))
-        return "@comp.rewrite / @comp.rewrite.bundle — pattern → infinite instances";
     if (goalContains(goal, "template") or goalContains(goal, "parametric"))
         return "@comp.template / @comp.generate — O(n) or O(ops×types) native C fragments; chain with @comp.each";
     if (goalContains(goal, "scheme") or goalContains(goal, "declarative"))
@@ -1695,8 +1674,11 @@ test "meta_module: canonical @meta.* builtins" {
 
 test "meta_module: direct module directives remain canonical" {
     try std.testing.expect(isModuleDirective("pipeline"));
-    try std.testing.expect(isModuleDirective("rewrite"));
     try std.testing.expect(isModuleDirective("foreign"));
+    // `@rewrite` was programmer-written optimizer syntax whose registry no
+    // instruction selection ever read (`HPLS` §90, §105). Deleted, and this row
+    // is the negative control that keeps it deleted.
+    try std.testing.expect(!isModuleDirective("rewrite"));
     try std.testing.expectEqualStrings("pipeline", normalizeDirective("pipeline"));
 }
 

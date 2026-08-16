@@ -3777,8 +3777,7 @@ pub const Sema = struct {
                         std.mem.eql(u8, bn, "__metaschemeclauses") or
                         std.mem.eql(u8, bn, "__derivechoose") or
                         std.mem.eql(u8, bn, "__derivepower") or
-                        std.mem.eql(u8, bn, "__deriveproduct") or
-                        std.mem.eql(u8, bn, "__rewrite_describe"))
+                        std.mem.eql(u8, bn, "__deriveproduct"))
                     {
                         return .str;
                     }
@@ -3790,8 +3789,7 @@ pub const Sema = struct {
                     if (std.mem.eql(u8, bn, "__strcountlines") or
                         std.mem.eql(u8, bn, "__strsplitcount") or
                         std.mem.eql(u8, bn, "__strcomptelen") or
-                        std.mem.eql(u8, bn, "__concept_count") or
-                        std.mem.eql(u8, bn, "__rewrite_rulecount"))
+                        std.mem.eql(u8, bn, "__concept_count"))
                         return .i64;
                     if (std.mem.eql(u8, bn, "__strjoin")) return .str;
                     if (std.mem.eql(u8, bn, "__fields")) return .any;

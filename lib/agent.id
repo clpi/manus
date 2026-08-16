@@ -52,8 +52,6 @@ multiplier_for: str = (goal: str)
     return "@comp.burst → @comp.transcend → @comp.infinity → @comp.hyper"
   if g:find("pipeline") or g:find("fuse")
     return "@comp.pipeline({ variants = ... }) — typed kernel family"
-  if g:find("rewrite") or g:find("rule")
-    return "@comp.rewrite / @comp.rewrite.bundle — pattern → infinite instances"
   if g:find("template") or g:find("parametric")
     return "@comp.template / @comp.generate — O(n) or O(ops×types) native C fragments; chain with @comp.each"
   if g:find("scheme") or g:find("declarative")

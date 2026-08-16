@@ -1,8 +1,7 @@
-/// Register `@foreign`, `@pipeline`, and `@rewrite` at sema time.
+/// Register `@foreign` and `@pipeline` at sema time.
 const std = @import("std");
 const ast = @import("ast.zig");
 const c_signatures = @import("c_signatures.zig");
-const rewrite_rules = @import("rewrite_rules.zig");
 const foreign_transpile = @import("foreign_transpile.zig");
 const c_header_parse = @import("c_header_parse.zig");
 const pipeline_gen = @import("pipeline_gen.zig");
@@ -28,10 +27,6 @@ pub fn registerDirective(alloc: std.mem.Allocator, attr: ast.Attribute) !void {
         try registerForeign(alloc, attr.args orelse "");
     } else if (std.mem.eql(u8, name, "pipeline")) {
         try registerPipeline(alloc, attr.args orelse "");
-    } else if (std.mem.eql(u8, name, "rewrite")) {
-        try registerRewrite(alloc, attr.args orelse "");
-    } else if (std.mem.eql(u8, name, "rewrite.bundle")) {
-        try registerRewriteBundle(alloc, attr.args orelse "");
     } else if (std.mem.eql(u8, name, "ffi.gen")) {
         try registerFfiGen(alloc, attr.args orelse "");
     } else if (std.mem.eql(u8, name, "embed.json")) {
@@ -184,27 +179,6 @@ pub fn deinitModuleDeriveRegistry() void {
 
 const derive_registry = @import("derive_registry.zig");
 
-fn registerRewrite(alloc: std.mem.Allocator, raw: []const u8) !void {
-    // @rewrite("name", "pattern", "replacement" [, priority])
-    var parts: [4][]const u8 = .{ "", "", "", "" };
-    var n: usize = 0;
-    var it = directives.attrArgs(raw);
-    while (it.next()) |arg| : (n += 1) {
-        if (n >= parts.len) break;
-        parts[n] = arg.text;
-    }
-    if (n < 3) return;
-    const priority: i32 = if (n >= 4) std.fmt.parseInt(i32, parts[3], 10) catch 0 else 0;
-    // `registerRule` copies into its own registry, so these borrowed slices
-    // outlive nothing — the old reader duplicated every argument for no reason.
-    try rewrite_rules.registerRule(alloc, parts[0], parts[1], parts[2], priority);
-}
-
-fn registerRewriteBundle(alloc: std.mem.Allocator, raw: []const u8) !void {
-    const bundle = directives.extractCRawCode(raw);
-    _ = try rewrite_rules.registerBundle(alloc, bundle);
-}
-
 fn registerEmitFile(alloc: std.mem.Allocator, raw: []const u8) !void {
     // @c.emit_file("{ path = "file.h", content = "int x;" }")
     // or @c.emit_file("path.h", "int x;")
@@ -276,14 +250,6 @@ test "meta_directives: register define_derive" {
     try std.testing.expect(module_derive_registry.exists("LayoutApi"));
 }
 
-test "meta_directives: register rewrite rule" {
-    const alloc = std.testing.allocator;
-    rewrite_rules.clearRegistry();
-    defer rewrite_rules.clearRegistry();
-    try registerRewrite(alloc, "\"mul_two\", \"($1 * 2)\", \"$1 << 1\", 5");
-    try std.testing.expectEqual(@as(usize, 1), rewrite_rules.ruleCount());
-}
-
 test "meta_directives: emit.file content keeps a comma inside its quoted argument" {
     const alloc = std.testing.allocator;
     c_signatures.clearEmitFiles();
@@ -293,12 +259,4 @@ test "meta_directives: emit.file content keeps a comma inside its quoted argumen
     // Positive control: the table spelling reaches the same registry entry.
     try registerEmitFile(alloc, "{ path = \"tbl.h\", content = \"int c, d;\" }");
     try std.testing.expectEqualStrings("int c, d;", c_signatures.emitFilesMap().get("tbl.h").?);
-}
-
-test "meta_directives: register rewrite bundle" {
-    const alloc = std.testing.allocator;
-    rewrite_rules.clearRegistry();
-    defer rewrite_rules.clearRegistry();
-    try registerRewriteBundle(alloc, "\"algebraic\"");
-    try std.testing.expect(rewrite_rules.ruleCount() >= 10);
 }

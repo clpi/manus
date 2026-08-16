@@ -80,8 +80,6 @@ META_CATALOG = {
     ["str.contains"] =  { kind = "expression", internal = "__strcontains" },
     ["str.countlines"] ={ kind = "expression", internal = "__strcountlines" },
     ["concepts.count"] ={ kind = "expression", internal = "__conceptscount" },
-    ["rewrite.describe"]={ kind = "expression", internal = "__rewritedescribe" },
-    ["rewrite.rulecount"]={ kind = "expression", internal = "__rewriterulecount" },
     ["agent.catalog"] = { kind = "expression", internal = "__agentcatalog" },
     ["agent.ladder"] =  { kind = "expression", internal = "__agentladder" },
     ["agent.hooks"] =   { kind = "expression", internal = "__agenthooks" },

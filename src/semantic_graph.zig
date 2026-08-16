@@ -25,63 +25,15 @@ pub const State = enum {
     }
 };
 
-pub const Recursion = enum {
-    none,
-    indirect_pointer,
-    inline_fixed_point,
-    mutual_module,
-    foreign_recursive,
-
-    pub fn name(self: Recursion) []const u8 {
-        return @tagName(self);
-    }
-};
-
-pub const Completion = enum {
-    placeholder,
-    resolving,
-    complete,
-    invalid_incomplete,
-
-    pub fn name(self: Completion) []const u8 {
-        return @tagName(self);
-    }
-};
-
-/// Descriptor recursion is derived from published `.descriptor_ref` edges only.
-const DescriptorRefWalk = struct {
-    inline_ref: bool = false,
-    indirect_ref: bool = false,
-};
-
-fn classifyDescriptorRecursionFromEdges(
-    self: *const SemanticGraph,
-    alloc: std.mem.Allocator,
-    descriptor: id,
-) !Recursion {
-    var walk: DescriptorRefWalk = .{};
-    var visited: std.AutoHashMapUnmanaged(id, void) = .empty;
-    defer visited.deinit(alloc);
-    var stack: std.ArrayListUnmanaged(id) = .empty;
-    defer stack.deinit(alloc);
-    try stack.append(alloc, descriptor);
-    while (stack.pop()) |current| {
-        if (!visited.contains(current)) {
-            try visited.put(alloc, current, {});
-        }
-        for (self.descriptor_refs.of(current)) |hit| {
-            if (hit.to == descriptor) {
-                if (hit.inline_ref) walk.inline_ref = true else walk.indirect_ref = true;
-                continue;
-            }
-            if (!visited.contains(hit.to)) try stack.append(alloc, hit.to);
-        }
-    }
-    if (walk.inline_ref and walk.indirect_ref) return .indirect_pointer;
-    if (walk.inline_ref) return .inline_fixed_point;
-    if (walk.indirect_ref) return .indirect_pointer;
-    return .none;
-}
+// `Recursion`, `Completion`, `DescriptorRefWalk`,
+// `classifyDescriptorRecursionFromEdges`, `resolveDescriptorCompletion` and
+// `SemanticGraph.descriptorRecursion` lived here. The classifier walked the
+// whole `.descriptor_ref` closure of every table shape on every compile, and
+// its two answers went into `Node.recursion`/`Node.completion`, which were read
+// by one `writeJson` arm each and by nothing else in either tree. The public
+// `descriptorRecursion` had callers only in this file's own tests. Deleted
+// under HPLS §7-8; the `.descriptor_ref` EDGES stay, because
+// `hasDescriptorFacts`/`hasTableDescriptorFacts` do read them.
 
 fn inferDescriptorState(is_sealed: bool) State {
     if (is_sealed) return .sealed;
@@ -91,15 +43,6 @@ fn inferDescriptorState(is_sealed: bool) State {
 fn shapeKnowledge(is_sealed: bool) semantic_algebra.KnowledgeLevel {
     if (is_sealed) return .stable;
     return .observed;
-}
-
-fn resolveDescriptorCompletion(
-    recursion: Recursion,
-    rt: types.ResolvedType,
-) Completion {
-    if (recursion == .none) return .complete;
-    if (rt == .any) return .invalid_incomplete;
-    return .complete;
 }
 
 /// Physical tags only. None own semantic meaning. Meaning lives in graph ids
@@ -119,16 +62,19 @@ pub const NodeKind = enum {
     transform_app,
     /// Typed table/record shape node (storage class + field count).
     table_shape,
-    /// Enum descriptor shape (variant count in `field_count`; names via `ast_ref`).
+    /// Enum descriptor shape (variants are `.member` edges; names via `ast_ref`).
     enum_shape,
 };
 
 /// Physical tags only. Application roles (relation/subject/operand/result)
 /// live on `ApplicationFact`. Remaining tags below are migration indexes and
 /// must not own meaning. Deleted unused tags: def, type_of, transform_input,
-/// home (`homeOf` is `Node.scope`). Remaining reductions: descriptor_ref when
-/// the descriptor role is already represented; transform_output → operand /
-/// result / provenance on a transformation identity.
+/// home (`homeOf` is `Node.scope`), and `transform_output` — that last one was
+/// WRITE-ONLY, added on every compile from two sites and read by nothing but
+/// its own `=> "output"` arm in the JSON dump. Every scan over `edges.items`
+/// filters on a kind and none of them named it, so it changed no answer and
+/// cost graph memory forever (`HPLS` §7-8). Remaining reduction:
+/// descriptor_ref when the descriptor role is already represented.
 pub const EdgeKind = enum {
     /// Nesting/home containment (scope projection — not module lookup).
     contains,
@@ -144,8 +90,6 @@ pub const EdgeKind = enum {
     projection,
     /// Descriptor constraint on a value entity (not a type ontology).
     descriptor,
-    /// Transform pipeline output slot (physical scheduling fact).
-    transform_output,
     /// Source span linkage for diagnostics/display.
     provenance,
 };
@@ -219,13 +163,12 @@ pub const Node = struct {
     /// Residual physical class copied onto a shape. Lift does not populate it
     /// (`law.representation.one`); realization owns width/layout/location.
     storage_class: ?types.StorageClass = null,
-    field_count: u16 = 0,
     /// Shape-content fingerprint used by current realization candidates.
-    /// It never selects or identifies a graph entity.
+    /// It never selects or identifies a graph entity. THE ONE FIELD IN THIS
+    /// GROUP THAT SURVIVED THE SCENERY AUDIT: `realization.fingerprintForRecordId`
+    /// and `knowledge_snapshot.fingerprintForEntity` read it to key cache reuse,
+    /// which is a decision, not a print.
     shape_id: ?u64 = null,
-    /// Derived call-shape fingerprint for specialization candidate retrieval.
-    /// Exact call identity remains the graph id.
-    call_shape_fingerprint: ?u64 = null,
     /// For `.call` nodes: the inferred CallShape (Phase 1 — conservative from AST).
     call_shape: ?types.CallShape = null,
     /// Resolved result descriptor attached to a function's semantic identity.
@@ -240,19 +183,23 @@ pub const Node = struct {
     knowledge: ?semantic_algebra.KnowledgeLevel = null,
     /// evaluation stage when known.
     stage: ?semantic_algebra.Stage = null,
-    /// descriptor algebra hash for alias/type nodes (internal).
-    descriptor_hash: ?u64 = null,
     /// M1: descriptor lifecycle state at lift.
     descriptor_state: ?State = null,
-    /// M1: recursive layout classification.
-    recursion: ?Recursion = null,
-    /// M1: fixed-point resolution status.
-    completion: ?Completion = null,
-    /// Iteration relation identity. A source face such as `|>` is provenance,
-    /// not a persistent node kind.
-    iteration_relation: ?semantic_algebra.IterationRelation = null,
-    /// Lawful hardware realization candidates for the relation (cpu/simd/gpu).
-    hardware_lowerings: semantic_algebra.HardwareSet = .{},
+    // ─────────────────────────────────────────────────────────────────────
+    // DELETED HERE, and the deletion is the entry that keeps them deleted:
+    // `field_count`, `descriptor_hash`, `call_shape_fingerprint`,
+    // `recursion`, `completion`, `iteration_relation`, `hardware_lowerings`.
+    //
+    // MEASURED: every one of them was produced on every compile and read by
+    // NOTHING but `writeJson`/`dumpSummary`, and no gate, script or tool in
+    // EITHER tree parses those keys — `grep` over `gate/`, `scripts/`,
+    // `tools/` and `benchmarks/` in both repos returns one hit, and it is
+    // `scripts/ledger/graph.id` reporting `hardware_lowerings` as OPEN DEBT.
+    // A JSON key with no reader is not "tooling" under HPLS §7; it is scenery
+    // with an audience of nobody, and it cost seven fields on every graph node
+    // plus a whole `.descriptor_ref` closure walk (`recursion`) per shape.
+    // `shape_id` stayed, because it has a reader that makes a decision.
+    // ─────────────────────────────────────────────────────────────────────
     /// Opaque link to AST for Phase 1 — graph mirrors, does not replace, AST yet.
     ast_ref: ?*anyopaque = null,
     /// The graph entity this one is nested inside. The `.contains` edge is a
@@ -996,12 +943,6 @@ pub const SemanticGraph = struct {
         try self.publishDescriptorRefType(descriptor, rt, true);
     }
 
-    /// Exact descriptor recursion from published `.descriptor_ref` edges only.
-    pub fn descriptorRecursion(self: *const SemanticGraph, alloc: std.mem.Allocator, descriptor: id) !Recursion {
-        if (!self.hasDescriptorFacts(descriptor)) return error.InvalidDescriptorEntity;
-        return try classifyDescriptorRecursionFromEdges(self, alloc, descriptor);
-    }
-
     pub const DescriptorRefTarget = struct {
         target: id,
         inline_ref: bool,
@@ -1076,15 +1017,10 @@ pub const SemanticGraph = struct {
         }
     }
 
-    pub fn capturesOf(self: *const SemanticGraph, entity: id, alloc: std.mem.Allocator) ![]const id {
-        var out: std.ArrayListUnmanaged(id) = .empty;
-        errdefer out.deinit(alloc);
-        for (self.edges.items) |edge| {
-            if (edge.from != entity or edge.kind != .capture) continue;
-            try out.append(alloc, edge.to);
-        }
-        return try out.toOwnedSlice(alloc);
-    }
+    // `capturesOf` lived here. Its only caller was `graph_query.capture`, which
+    // had no caller at all; with that deleted it kept one test and no consumer.
+    // The `.capture` EDGE stays and is operative — `publishApplicationEffects`
+    // blocks any relation holding one — so the test below reads the edge.
 
     pub fn homeOf(self: *const SemanticGraph, entity: id) ?id {
         const node = self.get(entity) orelse return null;
@@ -1296,7 +1232,6 @@ pub const SemanticGraph = struct {
         op: semantic_algebra.ShapeOp,
         input_knowledge: semantic_algebra.KnowledgeLevel,
         span: SpanRef,
-        output_shape: id,
         input_hash: u64,
         output_hash: u64,
     ) !id {
@@ -1309,7 +1244,6 @@ pub const SemanticGraph = struct {
             .knowledge = semantic_algebra.ShapeOp.resultingKnowledge(op, input_knowledge),
             .stage = .transform,
         });
-        try self.addEdge(.{ .from = node_id, .to = output_shape, .kind = .transform_output });
         transform_engine.logProvenance(
             self.alloc,
             transform_name,
@@ -1331,7 +1265,6 @@ pub const SemanticGraph = struct {
         span: SpanRef,
         rt: types.ResolvedType,
         shape_id: ?u64,
-        shape_node: id,
     ) !void {
         const sid = shape_id orelse 0;
         const is_sealed = rt == .table_type and rt.table_type.is_sealed;
@@ -1341,7 +1274,6 @@ pub const SemanticGraph = struct {
             .lift,
             .observed,
             span,
-            shape_node,
             0,
             sid,
         );
@@ -1351,7 +1283,6 @@ pub const SemanticGraph = struct {
                 op,
                 shape_knowledge,
                 span,
-                shape_node,
                 sid,
                 sid,
             );
@@ -1398,13 +1329,6 @@ pub const SemanticGraph = struct {
             if (stmt.* != .alias_def) continue;
             const ad = &stmt.alias_def;
             if (ad.type_params != null) continue;
-            const field_count: u16 = blk: {
-                if (ad.fields.len > 0) break :blk @intCast(ad.fields.len);
-                if (ad.target) |tgt| {
-                    if (tgt == .record) break :blk @intCast(tgt.record.fields.len);
-                }
-                break :blk 0;
-            };
             var rt: types.ResolvedType = .any;
             if (ad.target) |tgt| {
                 rt = try types.resolve(tgt, null, self.alloc);
@@ -1428,44 +1352,26 @@ pub const SemanticGraph = struct {
                 .start = ad.loc.line,
                 .end = ad.loc.col,
             };
-            var expr_builder = semantic_algebra.DescriptorExprBuilder.init(self.alloc);
-            defer expr_builder.deinit();
-            const target_name: ?[]const u8 = blk: {
-                if (ad.target) |tgt| {
-                    if (tgt == .named) break :blk tgt.named;
-                }
-                break :blk null;
-            };
-            const desc_expr = try semantic_algebra.buildAliasDescriptorExprWithDerives(
-                &expr_builder,
-                ad.name,
-                ad.parent,
-                target_name,
-                knowledge,
-                ad.attributes,
-                self.alloc,
-            );
-            const d_hash = semantic_algebra.descriptorStructuralHash(desc_expr);
+            // The `DescriptorExprBuilder` tree that used to be built here fed
+            // exactly one consumer — `descriptorStructuralHash` into the
+            // deleted `Node.descriptor_hash` — so every alias in every module
+            // built and freed a descriptor-expression tree to produce a number
+            // nothing read. `semantic_algebra`'s builder is now reachable only
+            // from its own tests; that is a separate P0 row, not this one.
             const state = inferDescriptorState(is_sealed);
             const shape_id_node = try self.addChild(parent, .{
                 .kind = .table_shape,
                 .span = alias_span,
                 .name = ad.name,
-                .field_count = field_count,
                 .shape_id = shape_id,
                 .knowledge = knowledge,
                 .stage = .sema,
-                .descriptor_hash = d_hash,
                 .descriptor_state = state,
                 .ast_ref = @ptrCast(ad),
             });
             try self.publishDescriptorRefEdges(shape_id_node, rt);
             try self.publishTableShapeMembers(shape_id_node, alias_span, rt);
-            const recursion = try classifyDescriptorRecursionFromEdges(self, self.alloc, shape_id_node);
-            const completion = resolveDescriptorCompletion(recursion, rt);
-            self.nodes.items[shape_id_node].recursion = recursion;
-            self.nodes.items[shape_id_node].completion = completion;
-            try self.attachTableShapeTransforms(parent, alias_span, rt, shape_id orelse 0, shape_id_node);
+            try self.attachTableShapeTransforms(parent, alias_span, rt, shape_id orelse 0);
         }
     }
 
@@ -1486,7 +1392,6 @@ pub const SemanticGraph = struct {
                 .kind = .enum_shape,
                 .span = enum_span,
                 .name = ed.name,
-                .field_count = @intCast(ed.variants.len),
                 .shape_id = shape_id,
                 .knowledge = .stable,
                 .stage = .sema,
@@ -1534,7 +1439,6 @@ pub const SemanticGraph = struct {
         const shape_node_id = try self.addChild(func_id, .{
             .kind = .table_shape,
             .span = .{ .file = file, .start = loc.line, .end = loc.col },
-            .field_count = @intCast(rt.table_type.fields.len),
             .shape_id = sid,
             .knowledge = shapeKnowledge(is_sealed),
             .stage = .sema,
@@ -1550,7 +1454,7 @@ pub const SemanticGraph = struct {
             .file = file,
             .start = loc.line,
             .end = loc.col,
-        }, rt, sid, shape_node_id);
+        }, rt, sid);
         const local_id = try self.addChild(func_id, .{
             .kind = .local,
             .span = .{ .file = file, .start = loc.line, .end = loc.col },
@@ -1786,29 +1690,26 @@ pub const SemanticGraph = struct {
                 if (b.op == .pipeline) {
                     const loc = expr.loc();
                     const relation = semantic_algebra.IterationRelation.map;
-                    const relation_id = try self.addChild(parent, .{
+                    _ = try self.addChild(parent, .{
                         .kind = .relation,
                         .span = .{
                             .file = file,
                             .start = loc.line,
                             .end = loc.col,
                         },
-                        .iteration_relation = relation,
-                        .hardware_lowerings = semantic_algebra.HardwareSet.singleton(.cpu),
                         .knowledge = .observed,
                         .stage = .sema,
                         .ast_ref = @ptrCast(@constCast(expr)),
                     });
                     const transform_name = semantic_algebra.iterationTransformId(relation);
                     if (transform_engine.isRegisteredTransform(transform_name)) {
-                        const transform_id = try self.addChild(parent, .{
+                        _ = try self.addChild(parent, .{
                             .kind = .transform_app,
                             .span = .{ .file = file, .start = loc.line, .end = loc.col },
                             .name = transform_name,
                             .knowledge = .observed,
                             .stage = .transform,
                         });
-                        try self.addEdge(.{ .from = transform_id, .to = relation_id, .kind = .transform_output });
                     }
                 }
                 try self.liftExprsFromExpr(b.lhs, file, parent, .single);
@@ -1903,7 +1804,6 @@ pub const SemanticGraph = struct {
                 .end = call_loc.col,
             },
             .call_shape = shape,
-            .call_shape_fingerprint = shape.fingerprint(),
             .demand = consumption,
             .ast_ref = @ptrCast(@constCast(expr)),
         });
@@ -2698,7 +2598,6 @@ pub const SemanticGraph = struct {
             .capture => "capture",
             .projection => "projection",
             .descriptor => "descriptor",
-            .transform_output => "output",
             .provenance => "provenance",
         };
     }
@@ -2874,29 +2773,13 @@ pub const SemanticGraph = struct {
                     try out.appendSlice(alloc, types.storageClassName(s));
                     try out.append(alloc, '"');
                 }
-                try out.appendSlice(alloc, ",\"field_count\":");
-                try appendJsonInt(out, alloc, node.field_count);
                 if (node.shape_id) |sid| {
                     try out.appendSlice(alloc, ",\"shape_fingerprint\":");
                     try appendJsonInt(out, alloc, sid);
                 }
-                if (node.descriptor_hash) |dh| {
-                    try out.appendSlice(alloc, ",\"descriptor_hash\":");
-                    try appendJsonInt(out, alloc, dh);
-                }
                 if (node.descriptor_state) |ds| {
                     try out.appendSlice(alloc, ",\"descriptor_state\":\"");
                     try out.appendSlice(alloc, State.name(ds));
-                    try out.append(alloc, '"');
-                }
-                if (node.recursion) |rc| {
-                    try out.appendSlice(alloc, ",\"recursion\":\"");
-                    try out.appendSlice(alloc, Recursion.name(rc));
-                    try out.append(alloc, '"');
-                }
-                if (node.completion) |cp| {
-                    try out.appendSlice(alloc, ",\"completion\":\"");
-                    try out.appendSlice(alloc, Completion.name(cp));
                     try out.append(alloc, '"');
                 }
                 try out.appendSlice(alloc, ",\"fields\":");
@@ -2915,10 +2798,6 @@ pub const SemanticGraph = struct {
                     try appendJsonInt(out, alloc, cs.arg_count);
                     try out.appendSlice(alloc, ",\"specializable\":");
                     try out.appendSlice(alloc, if (cs.isSpecializable()) "true" else "false");
-                }
-                if (node.call_shape_fingerprint) |fingerprint| {
-                    try out.appendSlice(alloc, ",\"call_shape_fingerprint\":");
-                    try appendJsonInt(out, alloc, fingerprint);
                 }
                 if (node.knowledge) |k| {
                     try out.appendSlice(alloc, ",\"knowledge\":\"");
@@ -2949,25 +2828,12 @@ pub const SemanticGraph = struct {
                 }
             }
             if (self.hasEnumDescriptorFacts(entity)) {
-                try out.appendSlice(alloc, ",\"variant_count\":");
-                try appendJsonInt(out, alloc, node.field_count);
                 if (node.shape_id) |sid| {
                     try out.appendSlice(alloc, ",\"shape_fingerprint\":");
                     try appendJsonInt(out, alloc, sid);
                 }
                 try out.appendSlice(alloc, ",\"variants\":");
                 try self.appendMembersJson(out, alloc, entity);
-            }
-            if (node.kind == .relation) {
-                if (node.iteration_relation) |relation| {
-                    try out.appendSlice(alloc, ",\"relation\":\"");
-                    try out.appendSlice(alloc, relation.name());
-                    try out.append(alloc, '"');
-                }
-                if (node.hardware_lowerings.bits != 0) {
-                    try out.appendSlice(alloc, ",\"hardware_lowerings\":");
-                    try appendJsonInt(out, alloc, node.hardware_lowerings.bits);
-                }
             }
             if (node.demand) |demand| {
                 try out.appendSlice(alloc, ",\"demand\":\"");
@@ -3106,8 +2972,6 @@ pub const SemanticGraph = struct {
                 try out.appendSlice(alloc, types.storageClassName(s));
                 try out.append(alloc, '"');
             }
-            try out.appendSlice(alloc, ",\"field_count\":");
-            try appendJsonInt(out, alloc, node.field_count);
             if (node.shape_id) |sid| {
                 try out.appendSlice(alloc, ",\"shape_fingerprint\":");
                 try appendJsonInt(out, alloc, sid);
@@ -3116,10 +2980,6 @@ pub const SemanticGraph = struct {
                 try out.appendSlice(alloc, ",\"knowledge\":\"");
                 try out.appendSlice(alloc, semantic_algebra.KnowledgeLevel.name(k));
                 try out.append(alloc, '"');
-            }
-            if (node.descriptor_hash) |dh| {
-                try out.appendSlice(alloc, ",\"descriptor_hash\":");
-                try appendJsonInt(out, alloc, dh);
             }
             try out.appendSlice(alloc, ",\"fields\":");
             try self.appendMembersJson(out, alloc, shape);
@@ -3145,8 +3005,6 @@ pub const SemanticGraph = struct {
                 try jsonEscapeAppend(out, alloc, n);
                 try out.append(alloc, '"');
             }
-            try out.appendSlice(alloc, ",\"variant_count\":");
-            try appendJsonInt(out, alloc, node.field_count);
             if (node.shape_id) |sid| {
                 try out.appendSlice(alloc, ",\"shape_fingerprint\":");
                 try appendJsonInt(out, alloc, sid);
@@ -3186,10 +3044,6 @@ pub const SemanticGraph = struct {
                 try appendJsonInt(out, alloc, cs.arg_count);
                 try out.appendSlice(alloc, ",\"specializable\":");
                 try out.appendSlice(alloc, if (cs.isSpecializable()) "true" else "false");
-            }
-            if (node.call_shape_fingerprint) |fingerprint| {
-                try out.appendSlice(alloc, ",\"call_shape_fingerprint\":");
-                try appendJsonInt(out, alloc, fingerprint);
             }
             try out.appendSlice(alloc, ",\"line\":");
             try appendJsonInt(out, alloc, node.span.start);
@@ -3248,7 +3102,7 @@ pub const SemanticGraph = struct {
         ) catch return;
         for (self.nodes.items, 0..) |node, i| {
             if (!self.hasTableDescriptorFacts(@intCast(i))) continue;
-            fw.interface.print("  shape {d} ({d} fields)", .{ i, node.field_count }) catch return;
+            fw.interface.print("  shape {d}", .{i}) catch return;
             if (node.storage_class) |s| {
                 fw.interface.print(" {s}", .{types.storageClassName(s)}) catch return;
             }
@@ -3730,7 +3584,11 @@ test "semantic_graph: liftAliasShapes records shape without physical class" {
     const node = g.get(point_id).?;
     try std.testing.expectEqual(.table_shape, node.kind);
     try std.testing.expect(node.storage_class == null);
-    try std.testing.expectEqual(@as(u16, 2), node.field_count);
+    // The field COUNT is now read off the published `.member` edges rather
+    // than off a `field_count` scalar nothing consumed.
+    const point_members = try g.membersOf(point_id, alloc);
+    defer alloc.free(point_members);
+    try std.testing.expectEqual(@as(usize, 2), point_members.len);
     try std.testing.expectEqual(semantic_algebra.KnowledgeLevel.observed, node.knowledge.?);
     try std.testing.expectEqual(@as(?State, .open_semantic), node.descriptor_state);
 }
@@ -3744,7 +3602,6 @@ test "semantic_graph: findTableShape returns shape node" {
         .span = .{ .file = "t", .start = 0, .end = 1 },
         .name = "Point",
         .storage_class = .native,
-        .field_count = 2,
     });
     const node = g.get(shape).?;
     try std.testing.expectEqual(.native, node.storage_class.?);
@@ -3776,7 +3633,9 @@ test "semantic_graph: liftEnumShapes records enum variants" {
     const color = g.resolveInHome(home, "Color", .enum_shape) orelse return error.TestExpectedEqual;
     const node = g.get(color).?;
     try std.testing.expectEqual(.enum_shape, node.kind);
-    try std.testing.expectEqual(@as(u16, 3), node.field_count);
+    const variants = try g.membersOf(color, alloc);
+    defer alloc.free(variants);
+    try std.testing.expectEqual(@as(usize, 3), variants.len);
 }
 
 test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
@@ -4232,18 +4091,21 @@ test "semantic_graph: liftFunctionBindings creates inline table_shape" {
 
     const shapes = try g.entitiesOfKind(.table_shape, alloc);
     defer alloc.free(shapes);
-    var inline_shape: ?*const Node = null;
+    var inline_shape: ?id = null;
     for (shapes) |shape| {
         const node = g.get(shape) orelse continue;
         const parent = g.get(node.scope orelse continue) orelse continue;
         if (parent.kind == .func) {
-            inline_shape = node;
+            inline_shape = shape;
             break;
         }
     }
-    const found = inline_shape orelse return error.TestExpectedEqual;
+    const found_id = inline_shape orelse return error.TestExpectedEqual;
+    const found = g.get(found_id).?;
     try std.testing.expect(found.storage_class == null);
-    try std.testing.expectEqual(@as(u16, 2), found.field_count);
+    const found_members = try g.membersOf(found_id, alloc);
+    defer alloc.free(found_members);
+    try std.testing.expectEqual(@as(usize, 2), found_members.len);
     try std.testing.expect(countTransformApps(&g, "shape.lift") >= 1);
 }
 
@@ -4275,7 +4137,6 @@ test "semantic_graph: native alias lift attaches shape transforms" {
     try std.testing.expectEqual(@as(usize, 0), countTransformApps(&g, "shape.specialize"));
     const point_id = g.resolveInHome(mod_id, "Point", .table_shape) orelse return error.TestExpectedEqual;
     const point = g.get(point_id).?;
-    try std.testing.expect(point.descriptor_hash != null);
     try std.testing.expectEqualStrings("Point", point.name.?);
 }
 
@@ -4338,10 +4199,6 @@ test "semantic_graph: descriptor lifecycle facts need no parallel identity" {
     const pair_b = g.get(g.resolveInHome(home, "PairB", .table_shape) orelse return error.TestExpectedEqual).?;
     try std.testing.expect(pair_a.descriptor_state == .open_semantic);
     try std.testing.expect(pair_b.descriptor_state == .open_semantic);
-    try std.testing.expect(pair_a.recursion == .none);
-    try std.testing.expect(pair_b.recursion == .none);
-    try std.testing.expect(pair_a.completion == .complete);
-    try std.testing.expect(pair_b.completion == .complete);
 }
 
 test "semantic_graph: recursive descriptor facts remain graph-derived" {
@@ -4377,15 +4234,16 @@ test "semantic_graph: recursive descriptor facts remain graph-derived" {
     try std.testing.expectEqual(@as(usize, 1), refs.len);
     try std.testing.expectEqual(node_shape, refs[0].target);
     try std.testing.expect(!refs[0].inline_ref);
-    const recursion = try g.descriptorRecursion(alloc, node_shape);
-    try std.testing.expectEqual(Recursion.indirect_pointer, recursion);
-    try std.testing.expectEqual(
-        Completion.complete,
-        resolveDescriptorCompletion(recursion, descriptor),
-    );
 
+    // The `.descriptor_ref` EDGE is the fact, and it is keyed on the exact
+    // graph id, not on the name — renaming the shape must not move it. (The
+    // `Recursion`/`Completion` classification that used to be asserted here
+    // was deleted: nothing outside this test ever read either answer.)
     g.nodes.items[node_shape].name = "Renamed";
-    try std.testing.expectEqual(Recursion.indirect_pointer, try g.descriptorRecursion(alloc, node_shape));
+    const after = try g.descriptorRefsOf(node_shape, alloc);
+    defer alloc.free(after);
+    try std.testing.expectEqual(@as(usize, 1), after.len);
+    try std.testing.expectEqual(node_shape, after[0].target);
 }
 
 test "semantic_graph: alias with derive keeps the shape identity" {
@@ -4431,15 +4289,18 @@ test "semantic_graph: pipeline face normalizes to an iteration relation" {
     const mod_id = try g.liftModuleWithCalls(&module, "test.id");
     _ = mod_id;
     try std.testing.expectEqual(@as(usize, 1), g.countKind(.relation));
-    for (g.nodes.items) |node| {
-        if (node.kind != .relation) continue;
-        try std.testing.expectEqual(semantic_algebra.IterationRelation.map, node.iteration_relation.?);
-    }
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
     try g.writeJson(alloc, "test.id", &json, null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"kind\":\"relation\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"relation\":\"map\"") != null);
+    // THE RELATION IDENTITY IS STATED ONCE, NOT TWICE. It used to be carried
+    // BOTH as `Node.iteration_relation` on the relation node (exported as
+    // `"relation":"map"`, read by nothing) and as the neighbouring
+    // `transform_app`'s name from `semantic_algebra.iterationTransformId`. Two
+    // carriers for one fact is the redundancy rule, so the scalar went and the
+    // named transform stayed — which is also the carrier a consumer would
+    // actually reach for, since it is the one the transform engine registers.
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"transform\":\"pipeline.map\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"kind\":\"pipeline\"") == null);
 }
 
@@ -4944,10 +4805,15 @@ test "semantic_graph: capture edges publish exact binding ids; home is scope" {
     try std.testing.expectEqual(g.get(outer).?.scope, g.homeOf(outer));
     try std.testing.expectEqual(g.get(inner).?.scope, g.homeOf(inner));
 
-    const captures = try g.capturesOf(inner, g.alloc);
-    defer g.alloc.free(captures);
-    try std.testing.expectEqual(@as(usize, 1), captures.len);
-    try std.testing.expectEqual(binding, captures[0]);
+    var captures: usize = 0;
+    var captured: ?id = null;
+    for (g.edges.items) |edge| {
+        if (edge.from != inner or edge.kind != .capture) continue;
+        captures += 1;
+        captured = edge.to;
+    }
+    try std.testing.expectEqual(@as(usize, 1), captures);
+    try std.testing.expectEqual(binding, captured.?);
     try std.testing.expect(g.get(@intCast(g.nodes.items.len)) == null);
 }
 

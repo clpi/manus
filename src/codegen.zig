@@ -28,7 +28,6 @@ const jit = @import("jit.zig");
 const subject_home = @import("subject_home.zig");
 const meta_codegen = @import("meta_codegen.zig");
 const meta_module = @import("meta_module.zig");
-const rewrite_rules = @import("rewrite_rules.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
 const meta_dispatch = @import("meta_dispatch.zig");
@@ -3107,8 +3106,7 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "__metaschemeclauses") or
             std.mem.eql(u8, name, "__derivechoose") or
             std.mem.eql(u8, name, "__derivepower") or
-            std.mem.eql(u8, name, "__deriveproduct") or
-            std.mem.eql(u8, name, "__rewrite_describe"))
+            std.mem.eql(u8, name, "__deriveproduct"))
             return .str;
         if (std.mem.eql(u8, name, "__strcontains")) return .bool;
         if (std.mem.eql(u8, name, "__strstartswith") or
@@ -3118,8 +3116,7 @@ pub const CodeGen = struct {
         if (std.mem.eql(u8, name, "__strcountlines") or
             std.mem.eql(u8, name, "__strsplitcount") or
             std.mem.eql(u8, name, "__strcomptelen") or
-            std.mem.eql(u8, name, "__concept_count") or
-            std.mem.eql(u8, name, "__rewrite_rulecount"))
+            std.mem.eql(u8, name, "__concept_count"))
             return .i64;
         if (std.mem.eql(u8, name, "__strjoin")) return .str;
         if (std.mem.eql(u8, name, "type") or
@@ -7742,11 +7739,10 @@ pub const CodeGen = struct {
             if (alias_rt != .table_type) continue;
             if (record_content_hash(alias_rt.table_type) != hash) continue;
             self.p("typedef {s} duo_{s};\n", .{ cname, entry.key_ptr.* });
-            const sc = alias_rt.table_type.storage_class;
-            if (sc != .dynamic) {
-                const realization = @import("realization.zig");
-                realization.logAppliedRepresentation(self.alloc, entry.key_ptr.*, sc, cname);
-            }
+            // `realization.logAppliedRepresentation` was called here. Its body
+            // was four `_ =` discards — a hook that recorded nothing, guarded
+            // by a storage-class test, on every non-dynamic alias of every
+            // emitted record. Both the call and the function are deleted.
         }
     }
 
@@ -18966,19 +18962,6 @@ pub const CodeGen = struct {
         self.p("\"", .{});
     }
 
-    fn emit_rewrite_description_expr(self: *CodeGen, arg: *const ast.Expr) E!void {
-        self.p("({{ const char* __duo_rewrite_bundle = ", .{});
-        try self.emit_expr(arg);
-        self.p("; ", .{});
-        const bundles = [_][]const u8{ "algebraic", "fast", "all" };
-        for (bundles, 0..) |bundle, i| {
-            if (i > 0) self.p(" : ", .{});
-            self.p("(strcmp(__duo_rewrite_bundle, \"{s}\") == 0) ? ", .{bundle});
-            try self.emit_c_string_literal(rewrite_rules.bundleDescription(bundle).?);
-        }
-        self.p(" : \"\"; }})", .{});
-    }
-
     fn fold_meta_string_expr(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
         return switch (expr.*) {
             .string_lit => |s| s.val,
@@ -19094,10 +19077,6 @@ pub const CodeGen = struct {
             const concepts = self.concepts orelse return false;
             const concept = concepts.get(args[0].string_lit.val) orelse return false;
             self.p("{d}", .{@as(i64, @intCast(concept.required_methods.len + concept.required_fields.len))});
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__rewrite_rulecount") and args.len == 0) {
-            self.p("{d}", .{@as(i64, @intCast(rewrite_rules.ruleCount()))});
             return true;
         }
         return false;
@@ -19233,15 +19212,6 @@ pub const CodeGen = struct {
                 return true;
             }
             return false;
-        }
-        if (std.mem.eql(u8, name, "__rewrite_describe") and args.len == 1 and args[0].* == .string_lit) {
-            const description = rewrite_rules.bundleDescription(args[0].string_lit.val) orelse return false;
-            try self.emit_c_string_literal(description);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__rewrite_describe") and args.len == 1) {
-            try self.emit_rewrite_description_expr(args[0]);
-            return true;
         }
         if (std.mem.eql(u8, name, "__strjoin") and args.len == 2) {
             const parts = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), self.comptime_eval_options()) catch return false;

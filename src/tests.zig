@@ -59,7 +59,6 @@ test {
     _ = @import("lua_metamethod.zig");
     _ = @import("graph_query.zig");
     _ = @import("region_graph.zig");
-    _ = @import("region_transform.zig");
     _ = @import("native_ir.zig");
     _ = @import("dnir_lower.zig");
     _ = @import("module_names.zig");
@@ -87,6 +86,20 @@ test {
     _ = @import("ml_kernels.zig");
     _ = @import("jit.zig");
     _ = @import("native_backend.zig");
+    // `wasm_backend.zig` — 3,429 lines with ZERO IMPORTERS until this line.
+    //
+    // MEASURED at `015ded1a`: `git grep wasm_backend` over `src/`, `tools/` and
+    // `build.zig` returns nothing outside the file itself, and it was absent
+    // from this list — so nothing had ever COMPILED it, let alone run it. It is
+    // the "second realizer off the same facts" that `AGENTS.md`'s host-removal
+    // test 3 asks for, and the evidence for that test did not exist.
+    //
+    // One import is the cheapest thing that makes `consumers = 0` false (HPLS
+    // §7/§8) and it costs nothing: it type-checks the file on every `zig build
+    // test`, which is what caught that adding `.idiv` to `native_ir.BinOpTag`
+    // needed an arm here. Wiring it to a driver is a larger job and is NOT this;
+    // this is the line that stops it decaying unnoticed in the meantime.
+    _ = @import("wasm_backend.zig");
     _ = @import("demand.zig");
     _ = @import("demand_projection.zig");
 }

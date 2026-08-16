@@ -11,7 +11,6 @@ const derive_bundles = @import("derive_bundles.zig");
 const meta_directives = @import("meta_directives.zig");
 const meta_module = @import("meta_module.zig");
 const type_diff = @import("type_diff.zig");
-const rewrite_rules = @import("rewrite_rules.zig");
 const c_signatures = @import("c_signatures.zig");
 const directives = @import("directives.zig");
 
@@ -2469,10 +2468,6 @@ pub fn fieldsMapString(host: Host, args: []const *ast.Expr, fieldsMapFields: *co
 pub fn registerDeriveHook(_: Host, alloc: std.mem.Allocator, name: []const u8, func_source: []const u8) void {
     meta_directives.initModuleDeriveRegistry(alloc);
     meta_directives.module_derive_registry.register(name, func_source, .{ .file = "<register_derive>", .line = 1, .col = 1 }) catch {};
-}
-
-pub fn registerRewriteHook(_: Host, alloc: std.mem.Allocator, name: []const u8, pattern: []const u8, replacement: []const u8, priority: i32) void {
-    rewrite_rules.registerRule(alloc, name, pattern, replacement, priority) catch {};
 }
 
 pub fn lookupDeriveHook(_: Host, alloc: std.mem.Allocator, name: []const u8) ?[]const u8 {

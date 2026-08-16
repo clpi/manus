@@ -47,19 +47,6 @@ pub fn fingerprintForRecordId(
     });
 }
 
-/// C-emit bootstrap may still call this. It must not select a realization.
-pub fn logAppliedRepresentation(
-    alloc: std.mem.Allocator,
-    record_name: []const u8,
-    sc: types.StorageClass,
-    c_typedef: []const u8,
-) void {
-    _ = alloc;
-    _ = record_name;
-    _ = sc;
-    _ = c_typedef;
-}
-
 pub const Dimension = enum(u8) {
     representation,
     algorithm,
