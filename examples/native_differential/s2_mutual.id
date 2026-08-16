@@ -1,10 +1,16 @@
-is_odd: i64 = (n: i64)
+odd: i64 = (n: i64)
   if n == 0
     return 0
-  return is_even(n - 1)
-is_even: i64 = (n: i64)
+  # BLOCKED: `(n - 1):even()` is REFUSED — DNB011 unresolved-application-facts.
+  # Subject-first application requires the relation to be ALREADY DECLARED, and
+  # mutual recursion makes one of the two edges a forward reference by
+  # construction. Measured: reversing the pair only moves the refusal to the
+  # other edge. The operand-first face has no such restriction, so the canonical
+  # face is refused exactly where the retired one works.
+  return even(n - 1)
+even: i64 = (n: i64)
   if n == 0
     return 1
-  return is_odd(n - 1)
+  return odd(n - 1)
 main: i64 = ()
-  return is_even(10)
+  return 10:even()

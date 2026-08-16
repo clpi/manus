@@ -63,7 +63,7 @@ static double vec2_len(double x, double y) {
 
 EMBEDDED = @comp.embed.str("examples/run_smoke.id")
 HOST = @comp.run("hostname")
-PY = @comp.run("python3 --version 2>&1")
+py = @comp.run("python3 --version 2>&1")
 ZIG_VER = @comp.run("zig version 2>/dev/null || echo zig-unavailable")
 
 print("=== Duo Cross-Language Metaprogramming Showcase ===")
@@ -84,7 +84,7 @@ print("-- Header/schema/embed surfaces --")
 @comp.c.call("printf", "  strlen(\"duo\") = %zu\n", @comp.c.call("strlen", "duo"))
 print("  embedded file bytes = " .. to(str)(EMBEDDED:len()))
 print("  host = " .. HOST)
-print("  python = " .. PY)
+print("  python = " .. py)
 print("  zig = " .. ZIG_VER)
 print("")
 

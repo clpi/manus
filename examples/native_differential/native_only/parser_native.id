@@ -20,7 +20,7 @@
 # A parse result: the value produced, and the position after it.
 res: @{ val: i64, pos: i64 }
 
-is_digit: i64 = (c: i64)
+digit: i64 = (c: i64)
     if c >= 48 and c <= 57
         return 1
     0
@@ -52,7 +52,7 @@ parsefactor: res = (src: str, pos: i64)
         return { val = inner.val, pos = j }
     acc = 0
     j = i
-    while j <= n and is_digit(src:byte(j)) == 1
+    while j <= n and src:byte(j):digit() == 1
         acc = acc * 10 + src:byte(j) - 48
         j += 1
     { val = acc, pos = j }

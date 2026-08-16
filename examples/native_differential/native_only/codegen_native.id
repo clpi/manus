@@ -18,11 +18,11 @@
 # for the same instructions.
 
 # MOVZ Xd, #imm16 : 0xd2800000 | imm<<5 | Rd
-enc_movz: i64 = (rd: i64, imm: i64)
+movz: i64 = (rd: i64, imm: i64)
     3531603968 + imm * 32 + rd
 
 # RET : 0xd65f03c0
-enc_ret: i64 = ()
+ret: i64 = ()
     3596551104
 
 check: i64 = (got: i64, want: i64)
@@ -36,15 +36,15 @@ main: i64 = ()
     code = { 0, 0, 0, 0 }
     n = 1
 
-    code[n] = enc_movz(0, 42)
+    code[n] = movz(0, 42)
     n += 1
-    code[n] = enc_ret()
+    code[n] = ret()
     n += 1
 
     # Verify the emitted sequence:
     #   mov x0, #42  -> 0xd2800540  (0xd2800000 | 42<<5 | 0) = 3531605312
     #   ret          -> 0xd65f03c0                            = 3596551104
     ok = 0
-    ok += check(code[1], 3531605312)
-    ok += check(code[2], 3596551104)
+    ok += code[1]:check(3531605312)
+    ok += code[2]:check(3596551104)
     ok

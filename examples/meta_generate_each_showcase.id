@@ -8,7 +8,7 @@ GEN = @comp.generate(CONSTRAINTS, "")
 stamp: str = (frag: str)
   "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 
-EXPANDED = @comp.each(GEN, stamp)
+expanded = @comp.each(GEN, stamp)
 
 # The parameter carried NO annotation, so codegen inferred `int64_t` for it
 # while the body used it as a string: `strs:len()` and `duo_str_sub_cstr(s, ...)`
@@ -21,9 +21,9 @@ count_lines: i64 = (s: str)
       n = n + 1
   n
 
-LINES = count_lines(EXPANDED)
+LINES = count_lines(expanded)
 
 print("=== @comp.generate → @comp.each ===")
-print(EXPANDED)
+print(expanded)
 print("fragments = " .. to(str)(LINES) .. "  (expect 4 = 2 ops × 2 types)")
 print("RESULT generate_each_ok = " .. to(str)(LINES == 4))

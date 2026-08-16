@@ -7,8 +7,8 @@ frag: str = (meta)
 # Tiny expr grammar: S → num | S + S | ( S )
 GRAMMAR = "S: num | S plus S | lpar S rpar ; plus: + ; lpar: ( ; rpar: ) ; num: 0 | 1 | 2"
 
-CODE = @comp.grammar(GRAMMAR, frag)
+code = @comp.grammar(GRAMMAR, frag)
 
 print("=== @comp.grammar showcase ===")
-print(CODE)
+print(code)
 print("RESULT grammar_ok = true")

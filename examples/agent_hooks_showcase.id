@@ -4,24 +4,24 @@
 
 HOOKS: str = agent.hook_index()
 DISCOVER: str = agent.discover()
-LADDER: str = agent.scaling_ladder()
-DEDUPE: str = agent.dedupe_policy()
+ladder: str = agent.scaling_ladder()
+dedupe: str = agent.dedupe_policy()
 GAPS: str = agent.gaps_index()
-POLICY: str = agent.native_policy()
+policy: str = agent.native_policy()
 GATES: str = agent.build_gates()
 
 has_map = DISCOVER:find("comp.map") != nil or DISCOVER:find("meta.map") != nil
 has_burst = DISCOVER:find("comp.burst") != nil or DISCOVER:find("meta.burst") != nil
-has_power = LADDER:find("power:O(2^n)", 1, true) != nil
+has_power = ladder:find("power:O(2^n)", 1, true) != nil
 has_coord = HOOKS:find("AGENT_COORDINATION") != nil
-has_dedupe = DEDUPE:find("duo_coordination_update") != nil
+has_dedupe = dedupe:find("duo_coordination_update") != nil
 has_gaps = GAPS:find("Gap Buffer") != nil and GAPS:find("duo_agent_gaps") != nil
-has_no_lua = POLICY:find("NO lua_Value") != nil
+has_no_lua = policy:find("NO lua_Value") != nil
 has_tier0 = GATES:find("agent_smoke.id") != nil
 has_comp_alias = DISCOVER:find("comp.agent.catalog") != nil
 
-HINT = agent.multiplier_for("derive traits for all types")
-has_derive_hint = HINT:find("@comp.derive") != nil
+hint = agent.multiplier_for("derive traits for all types")
+has_derive_hint = hint:find("@comp.derive") != nil
 
 ok = has_map
 ok = ok and has_burst
@@ -45,7 +45,7 @@ print("native_policy_ok = " .. to(str)(has_no_lua))
 print("build_gates_ok = " .. to(str)(has_tier0))
 print("comp_alias_ok = " .. to(str)(has_comp_alias))
 print("derive_hint_ok = " .. to(str)(has_derive_hint))
-print("multiplier_hint = " .. HINT)
+print("multiplier_hint = " .. hint)
 print("RESULT agent_hooks_ok = " .. to(str)(ok))
 if not ok
   error("agent hook discovery failed")

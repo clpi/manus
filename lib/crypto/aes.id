@@ -5,7 +5,7 @@
 # AES S-Box (pre-computed)
 # ═══════════════════════════════════════════════════════════════
 
-SBOX = {
+sbox = {
   99,
   124,
   119,
@@ -525,7 +525,7 @@ AES_INV_SBOX = {
 }
 
 # Round constants
-RCON = {
+rcon = {
   1,
   2,
   4,
@@ -581,18 +581,18 @@ while i < 4 * (nr + 1)
 if i % nk == 0
   # RotWord + SubWord + Rcon
   temp = {
-    SBOX[temp[2] + 1] ~ RCON[i / nk],
-    SBOX[temp[3] + 1],
-    SBOX[temp[4] + 1],
-    SBOX[temp[1] + 1]
+    sbox[temp[2] + 1] ~ rcon[i / nk],
+    sbox[temp[3] + 1],
+    sbox[temp[4] + 1],
+    sbox[temp[1] + 1]
   }
 else(nk > 6 and i % nk == 4)
   # SubWord only for AES-256
   temp = {
-    SBOX[temp[1] + 1],
-    SBOX[temp[2] + 1],
-    SBOX[temp[3] + 1],
-    SBOX[temp[4] + 1]
+    sbox[temp[1] + 1],
+    sbox[temp[2] + 1],
+    sbox[temp[3] + 1],
+    sbox[temp[4] + 1]
   }
 
 w[i] = {}
@@ -611,7 +611,7 @@ i = i + 1
 aes_sub_bytes: void = (state: any)
   i = 0
   while i < 16
-    state[i] = SBOX[state[i] + 1]
+    state[i] = sbox[state[i] + 1]
     i = i + 1
 
 aes_inv_sub_bytes: void = (state: any)

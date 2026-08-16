@@ -8,7 +8,7 @@
 
 SEMANTIC_OWNER = "src/wasm_semantic.zig"
 GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
-SCHEMA = "wasm-instruction-v0"
+schema = "wasm-instruction-v0"
 MVP_FEATURE = "wasm1.0-mvp"
 OPCODE_TABLE_SIZE = 256
 DECODER_TABLE_OWNER = "src/wasm_semantic.zig:mvp_opcode_index"
@@ -24,7 +24,7 @@ generator_owner: str = ()
   GENERATOR_OWNER
 
 schema_version: str = ()
-  SCHEMA
+  schema
 
 mvp_feature: str = ()
   MVP_FEATURE

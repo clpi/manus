@@ -376,7 +376,7 @@ count_occurrences: i64 = (s: str, pattern: str)
 # Text Encoding Detection (simplified)
 # ═══════════════════════════════════════════════════════════════
 
-is_ascii: bool = (s: str)
+ascii: bool = (s: str)
   i = 1
   while i <= s:len()
     if s:byte(i) > 127
@@ -384,9 +384,9 @@ is_ascii: bool = (s: str)
     i = i + 1
   true
 
-is_utf8: bool = (s: str)
+utf8: bool = (s: str)
   # Simplified check
-  is_ascii(s)
+  s:ascii()
 # ═══════════════════════════════════════════════════════════════
 # Module exports
 # ═══════════════════════════════════════════════════════════════

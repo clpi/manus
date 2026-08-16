@@ -3,16 +3,16 @@
 # strings, punctuation, and comments.
 
 # Token kinds
-EOF = -1
-IDENT = 1
-INT = 2
+eof = -1
+ident = 1
+int = 2
 FLOAT = 3
 STRING = 4
 CHAR = 5
-PUNCT = 6
+punct = 6
 COMMENT = 7
-NEWLINE = 8
-WS = 9
+newline = 8
+ws = 9
 
 # new_scanner: create a scanner over source string s.
 new_scanner: any = (s: str)
@@ -36,7 +36,7 @@ scan_ident: any = (sc: any)
   while sc.pos <= sc.src:len() and is_ident_part(sc.src:byte(sc.pos))
     sc.pos = sc.pos + 1
   sc.tok = sc.src:sub(start, sc.pos - 1)
-  sc.kind = IDENT
+  sc.kind = ident
   sc
 
 # scan_number: scan an integer or float.
@@ -69,7 +69,7 @@ scan_number: any = (sc: any)
   if is_float
     sc.kind = FLOAT
   else
-    sc.kind = INT
+    sc.kind = int
   sc
 
 # scan_string: scan a quoted string. Supports " and ' delimiters.
@@ -105,12 +105,12 @@ scan_comment: any = (sc: any)
   sc.kind = COMMENT
   sc
 
-# scan: advance to the next token. Returns the token kind (or EOF).
+# scan: advance to the next token. Returns the token kind (or eof).
 scan: i64 = (sc: any)
   if sc.pos > sc.src:len()
     sc.tok = ""
-    sc.kind = EOF
-    return EOF
+    sc.kind = eof
+    return eof
   # skip whitespace but track newlines
   while sc.pos <= sc.src:len()
     b = sc.src:byte(sc.pos)
@@ -121,14 +121,14 @@ scan: i64 = (sc: any)
         sc.line = sc.line + 1
         sc.pos = sc.pos + 1
         sc.tok = "\n"
-        sc.kind = NEWLINE
-        return NEWLINE
+        sc.kind = newline
+        return newline
       else
         break
   if sc.pos > sc.src:len()
     sc.tok = ""
-    sc.kind = EOF
-    return EOF
+    sc.kind = eof
+    return eof
   b = sc.src:byte(sc.pos)
   # comment
   if b == 45 and sc.pos + 1 <= sc.src:len() and sc.src:byte(sc.pos + 1) == 45
@@ -147,9 +147,9 @@ scan: i64 = (sc: any)
     return scan_string(sc)
   # punctuation (single char)
   sc.tok = sc.src:sub(sc.pos, sc.pos)
-  sc.kind = PUNCT
+  sc.kind = punct
   sc.pos = sc.pos + 1
-  PUNCT
+  punct
 
 # token_text: return the current token text.
 token_text: str = (sc: any)

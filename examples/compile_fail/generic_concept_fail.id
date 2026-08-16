@@ -4,10 +4,10 @@ concept Hashable
     hash(self) -> i64
 end
 
-Bad = {}
+bad = {}
 
 fun tagged<T: Hashable>(x: T): i64
     0
 end
 
-tagged(Bad)
+tagged(bad)

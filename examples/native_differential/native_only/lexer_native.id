@@ -22,12 +22,12 @@ tok: @{ kind: i64, start: i64, len: i64 }
 KIND_NAME = 0
 KIND_NUMBER = 1
 
-is_digit: i64 = (c: i64)
+digit: i64 = (c: i64)
     if c >= 48 and c <= 57
         return 1
     0
 
-is_alpha: i64 = (c: i64)
+alpha: i64 = (c: i64)
     if c >= 97 and c <= 122
         return 1
     if c >= 65 and c <= 90
@@ -36,7 +36,7 @@ is_alpha: i64 = (c: i64)
         return 1
     0
 
-is_space: i64 = (c: i64)
+space: i64 = (c: i64)
     if c == 32
         return 1
     if c == 9
@@ -73,19 +73,19 @@ classify_word: i64 = (src: str, start: i64, len: i64)
 nexttoken: tok = (src: str, pos: i64)
     n = src:len()
     i = pos
-    while i <= n and is_space(src:byte(i)) == 1
+    while i <= n and src:byte(i):space() == 1
         i += 1
     if i > n
         return { kind = 0 - 1, start = i, len = 0 }
     c = src:byte(i)
-    if is_alpha(c) == 1
+    if c:alpha() == 1
         j = i
-        while j <= n and is_alpha(src:byte(j)) == 1
+        while j <= n and src:byte(j):alpha() == 1
             j += 1
         return { kind = classify_word(src, i, j - i), start = i, len = j - i }
-    if is_digit(c) == 1
+    if c:digit() == 1
         j = i
-        while j <= n and is_digit(src:byte(j)) == 1
+        while j <= n and src:byte(j):digit() == 1
             j += 1
         return { kind = KIND_NUMBER, start = i, len = j - i }
     { kind = 0 - 2, start = i, len = 1 }

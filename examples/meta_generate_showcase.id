@@ -3,11 +3,11 @@
 
 CONSTRAINTS = "ops: add|sub\ntypes: i64:int64_t|f64:double\ntemplate: /* gen[$0:$1] */\n"
 
-CODE = @comp.generate(CONSTRAINTS, "/* fallback $0:$1 */\n")
+code = @comp.generate(CONSTRAINTS, "/* fallback $0:$1 */\n")
 
-SIMPLE = @comp.generate("add,sub", "/* op=$0 */\n")
+simple = @comp.generate("add,sub", "/* op=$0 */\n")
 
 print("=== @comp.generate showcase ===")
-print(CODE)
-print(SIMPLE)
+print(code)
+print(simple)
 print("RESULT generate_ok = true")

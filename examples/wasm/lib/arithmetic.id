@@ -45,19 +45,19 @@ rshift: int = (a: int, b: int)
   a >> b
 
 @export
-abs_val: int = (a: int)
+abs: int = (a: int)
   if a < 0
     0 - a
   a
 
 @export
-max_val: int = (a: int, b: int)
+max: int = (a: int, b: int)
   if a > b
     a
   b
 
 @export
-min_val: int = (a: int, b: int)
+min: int = (a: int, b: int)
   if a < b
     a
   b

@@ -16,7 +16,7 @@
 # either way. Verified by VALUE through the native differential, which runs
 # `req_splice.id` on both backends and compares.
 names = { "one", "two" }
-BASE = 40
+base = 40
 
 bump: i64 = (n: i64)
   n + 1
@@ -25,4 +25,4 @@ twice: i64 = (n: i64)
   bump(bump(n))
 
 answer: i64 = ()
-  BASE + twice(0)
+  base + twice(0)

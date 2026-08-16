@@ -1,25 +1,25 @@
 # Boolean predicate exports for WAST testing.
 
 @export
-is_even: int = (n: int)
+even: int = (n: int)
   if n % 2 == 0
     1
   0
 
 @export
-is_odd: int = (n: int)
+odd: int = (n: int)
   if n % 2 != 0
     1
   0
 
 @export
-is_positive: int = (n: int)
+positive: int = (n: int)
   if n > 0
     1
   0
 
 @export
-is_negative: int = (n: int)
+negative: int = (n: int)
   if n < 0
     1
   0

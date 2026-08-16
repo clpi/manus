@@ -26,14 +26,14 @@ registry_line: str = (meta)
 
 @comp.c.emit(@comp.derive("HasN", CountApi))
 
-TYPED = @comp.map("HasN", registry_line)
-DERIVED = @comp.derive("HasN", CountApi)
+typed = @comp.map("HasN", registry_line)
+derived = @comp.derive("HasN", CountApi)
 
 total: i64 = ()
     @comp.c.call("sum_n")
 
 print("=== exponential pipeline showcase ===")
 print("sum 1..100 = " .. to(str)(total()))
-print("typed_sweep = " .. TYPED)
-print("derive_bytes = " .. to(str)(DERIVED:len()))
+print("typed_sweep = " .. typed)
+print("derive_bytes = " .. to(str)(derived:len()))
 print("ok")

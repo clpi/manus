@@ -122,7 +122,7 @@ BEGINEXPR = {
   0,
   0
 }
-PREFIX = {
+prefix = {
   0,
   0,
   0,
@@ -238,7 +238,7 @@ PREFIX = {
   0,
   0
 }
-POSTFIX = {
+postfix = {
   0,
   0,
   0,
@@ -354,7 +354,7 @@ POSTFIX = {
   0,
   0
 }
-PARAMETER = {
+parameter = {
   0,
   0,
   0,
@@ -586,7 +586,7 @@ LITERALKIND = {
   0,
   0
 }
-QUOTED = {
+quoted = {
   0,
   0,
   0,
@@ -702,7 +702,7 @@ QUOTED = {
   0,
   0
 }
-PROJECTION = {
+projection = {
   0,
   0,
   0,
@@ -934,7 +934,7 @@ BODYSTART = {
   0,
   0
 }
-DESCRIPTOR = {
+descriptor = {
   0,
   0,
   0,
@@ -1050,7 +1050,7 @@ DESCRIPTOR = {
   0,
   0
 }
-PATTERN = {
+pattern = {
   1,
   1,
   1,
@@ -1282,7 +1282,7 @@ COMPATONLY = {
   1,
   1
 }
-PRECEDENCE = {
+precedence = {
   0,
   0,
   0,
@@ -1398,7 +1398,7 @@ PRECEDENCE = {
   0,
   0
 }
-ASSOC = {
+assoc = {
   0,
   0,
   0,
@@ -1519,28 +1519,28 @@ rolebeginexpr: bool = (kind: i64)
   kind >= 0 and kind < ROLECOUNT and BEGINEXPR(kind + 1) != 0
 
 roleprefix: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and PREFIX(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and prefix(kind + 1) != 0
 
 rolepostfix: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and POSTFIX(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and postfix(kind + 1) != 0
 
 roleparameter: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and PARAMETER(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and parameter(kind + 1) != 0
 
 roleliteral: bool = (kind: i64)
   kind >= 0 and kind < ROLECOUNT and LITERALKIND(kind + 1) != 0
 
 rolequoted: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and QUOTED(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and quoted(kind + 1) != 0
 
 rolebodystart: bool = (kind: i64)
   kind >= 0 and kind < ROLECOUNT and BODYSTART(kind + 1) != 0
 
 roledescriptor: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and DESCRIPTOR(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and descriptor(kind + 1) != 0
 
 rolepattern: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and PATTERN(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and pattern(kind + 1) != 0
 
 rolecompatonly: bool = (kind: i64)
   kind >= 0 and kind < ROLECOUNT and COMPATONLY(kind + 1) != 0
@@ -1549,10 +1549,10 @@ roleprecedence: i64 = (kind: i64)
   if kind < 0 or kind >= ROLECOUNT
     0
   else
-    PRECEDENCE(kind + 1)
+    precedence(kind + 1)
 
 roleassoc: i64 = (kind: i64)
   if kind < 0 or kind >= ROLECOUNT
     0
   else
-    ASSOC(kind + 1)
+    assoc(kind + 1)

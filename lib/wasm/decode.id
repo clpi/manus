@@ -7,11 +7,11 @@
 
 # Cursor: local { data, pos, len } table (mutates in-module; cursor when native).
 
-Inst = instruction
+inst = instruction
 Lookup = opcode_lookup
 
 DECODER_OWNER = "lib/wasm/decode.id"
-SEMANTIC_TABLE = Inst.decoder_table_owner()
+SEMANTIC_TABLE = inst.decoder_table_owner()
 LOOKUP_TABLE = "lib/wasm/opcode_lookup.id"
 CURSOR_SUBSTRATE = "decode-local-table"
 

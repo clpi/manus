@@ -12,8 +12,8 @@ Both:hash() -> i64
 Both:value() -> i64
     return 3
 
-Half = {}
-Half:hash() -> i64
+half = {}
+half:hash() -> i64
     return 7
 
 fun use_both<T: Hashable + Counter>(target: T): i64

@@ -21,7 +21,7 @@ span: @{ kind: i64, start: i64, len: i64 }
 
 KIND_OTHER = 0
 
-is_alpha: i64 = (c: i64)
+alpha: i64 = (c: i64)
     if c >= 97 and c <= 122
         return 1
     if c >= 65 and c <= 90
@@ -30,7 +30,7 @@ is_alpha: i64 = (c: i64)
         return 1
     0
 
-is_space: i64 = (c: i64)
+space: i64 = (c: i64)
     if c == 32
         return 1
     if c == 9
@@ -66,13 +66,13 @@ word_kind: i64 = (src: str, start: i64, len: i64)
 nextspan: span = (src: str, pos: i64)
     n = src:len()
     i = pos
-    while i <= n and is_space(src:byte(i)) == 1
+    while i <= n and src:byte(i):space() == 1
         i += 1
     if i > n
         return { kind = 0 - 1, start = i, len = 0 }
-    if is_alpha(src:byte(i)) == 1
+    if src:byte(i):alpha() == 1
         j = i
-        while j <= n and is_alpha(src:byte(j)) == 1
+        while j <= n and src:byte(j):alpha() == 1
             j += 1
         return { kind = word_kind(src, i, j - i), start = i, len = j - i }
     { kind = KIND_OTHER, start = i, len = 1 }

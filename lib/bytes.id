@@ -83,7 +83,7 @@ remaining: i64 = (buf: any)
   buf.len - buf.pos + 1
 
 # Check if at end
-is_eof: bool = (buf: any)
+eof: bool = (buf: any)
   buf.pos > buf.len
 
 # Skip N bytes

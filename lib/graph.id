@@ -6,9 +6,9 @@
 
 # DFS visit colours. File scope: dfs_topo_visit reads them but does not
 # declare them, and a sibling function's locals are not in scope there.
-WHITE = 0
-GRAY = 1
-BLACK = 2
+white = 0
+gray = 1
+black = 2
 
 # new: create an empty directed graph.
 new: any = ()
@@ -181,9 +181,9 @@ dfs_topological: any = (g: any)
   color = {}
   order = {}
   for n, _ in g.nodes
-    color(n) = WHITE
+    color(n) = white
   for n, _ in g.nodes
-    if color(n) == WHITE
+    if color(n) == white
       if not dfs_topo_visit(g, n, color, order)
         return nil
   out = {}
@@ -194,17 +194,17 @@ dfs_topological: any = (g: any)
   out
 
 dfs_topo_visit: bool = (g: any, id: any, color: any, order: any)
-  color(id) = GRAY
+  color(id) = gray
   i = 1
   while i <= g.adj(id) or {}:len()
     nb = g.adj(id)(i).to
-    if color(nb) == GRAY
+    if color(nb) == gray
       return false
-    if color(nb) == WHITE
+    if color(nb) == white
       if not dfs_topo_visit(g, nb, color, order)
         return false
     i = i + 1
-  color(id) = BLACK
+  color(id) = black
   order(order:len() + 1) = id
   true
 
@@ -247,25 +247,25 @@ topological_sort: any = (g: any)
 has_cycle: bool = (g: any)
   color = {}
   for n, _ in g.nodes
-    color(n) = WHITE
+    color(n) = white
   for n, _ in g.nodes
-    if color(n) == WHITE
+    if color(n) == white
       if cycle_dfs(g, n, color)
         return true
   false
 
 cycle_dfs: bool = (g: any, id: any, color: any)
-  color(id) = GRAY
+  color(id) = gray
   i = 1
   while i <= g.adj(id) or {}:len()
     nb = g.adj(id)(i).to
-    if color(nb) == GRAY
+    if color(nb) == gray
       return true
-    if color(nb) == WHITE
+    if color(nb) == white
       if cycle_dfs(g, nb, color)
         return true
     i = i + 1
-  color(id) = BLACK
+  color(id) = black
   false
 
 # ═══════════════════════════════════════════════════════════════

@@ -6,7 +6,7 @@ enum Color
     Green
     Blue
 
-Point = struct
+point = struct
     x: i64
     y: i64
 

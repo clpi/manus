@@ -1,5 +1,5 @@
 # G-061 tier-1 three-site parity fixture for `comp.derive.power`.
-# TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
+# top = top_level_assign · nested = nested_callback · block = block_body.
 # All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
 concept Has1
@@ -10,10 +10,10 @@ offset: { x: i64 }
     meta.name .. "\n"
 )
 
-TOP = @comp.derive.power("Has1", Stub)
-NESTED = @comp.map("q", fun(seed)
+top = @comp.derive.power("Has1", Stub)
+nested = @comp.map("q", fun(seed)
   @comp.derive.power("Has1", Stub)
 )
 parity: str = {}
 @comp.derive.power("Has1", Stub)
-BLOCK = parity()
+block = parity()

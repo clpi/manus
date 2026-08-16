@@ -132,7 +132,7 @@ month_name: str = (d: any)
 month_abbr: str = (d: any)
     DT_MONTH_ABBR[d.month]
 
-is_weekend: bool = (d: any)
+weekend: bool = (d: any)
     d.wday == 1 or d.wday == 7
 
 # ---- Arithmetic ----

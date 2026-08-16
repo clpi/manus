@@ -4,12 +4,12 @@
 tmpl_unit: str = (m)
   "/* tmpl[" .. m.name .. ":" .. m.ctype .. "] */\n"
 
-INST = "i64:int64_t|f64:double"
-CODE = @comp.template(INST, "", tmpl_unit)
-N = @comp.str.countlines(CODE)
+inst = "i64:int64_t|f64:double"
+code = @comp.template(inst, "", tmpl_unit)
+N = @comp.str.countlines(code)
 
-ok = N == 2 and @comp.str.contains(CODE, "i64:int64_t") and @comp.str.contains(CODE, "f64:double")
+ok = N == 2 and @comp.str.contains(code, "i64:int64_t") and @comp.str.contains(code, "f64:double")
 
 print("=== @comp.template + named callback ===")
-print(CODE)
+print(code)
 print("RESULT template_callback_ok = " .. to(str)(ok))

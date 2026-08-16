@@ -2,14 +2,14 @@
 # Run: duo run examples/meta_scheme_each_showcase.id
 
 DECLS = "type Point { x: double, y: double } | fn add(a: Point, b: Point) -> Point"
-TMPL = "/* scheme[$kind $name] fields={$fields} params={$params} */\n"
+tmpl = "/* scheme[$kind $name] fields={$fields} params={$params} */\n"
 
-SCHEME = @comp.scheme(DECLS, TMPL)
+SCHEME = @comp.scheme(DECLS, tmpl)
 
 stamp: str = (frag: str)
   "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 
-EXPANDED = @comp.each(SCHEME, stamp)
+expanded = @comp.each(SCHEME, stamp)
 
 count_lines: i64 = (s: str)
   n = 0
@@ -18,9 +18,9 @@ count_lines: i64 = (s: str)
       n = n + 1
   n
 
-LINES = count_lines(EXPANDED)
+LINES = count_lines(expanded)
 
 print("=== @comp.scheme → @comp.each ===")
-print(EXPANDED)
+print(expanded)
 print("fragments = " .. to(str)(LINES) .. "  (expect 2 = type + fn)")
 print("RESULT scheme_each_ok = " .. to(str)(LINES == 2))

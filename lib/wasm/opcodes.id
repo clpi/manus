@@ -51,7 +51,7 @@ CONV_F64 = { "convert_i32_s", "convert_i32_u", "convert_i64_s", "convert_i64_u",
 # per type, contiguous, immediately after the conversion blocks.
 REINTERPRET_BASE = 188
 
-is_float: i64 = (ty: str)
+float: i64 = (ty: str)
   if ty == "f32" or ty == "f64"
     return 1
   0
@@ -68,7 +68,7 @@ type_index: i64 = (ty: str)
 # arithmetic orders are disjoint per class, so a name determines its kind.
 cmp_index: i64 = (ty: str, name: str)
   i: i64 = 1
-  if is_float(ty) == 1
+  if ty:float() == 1
     while i <= 6
       if FLT_CMP[i] == name
         return i - 1
@@ -82,7 +82,7 @@ cmp_index: i64 = (ty: str, name: str)
 
 alu_index: i64 = (ty: str, name: str)
   i: i64 = 1
-  if is_float(ty) == 1
+  if ty:float() == 1
     while i <= 14
       if FLT_ALU[i] == name
         return i - 1

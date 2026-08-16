@@ -1,11 +1,11 @@
 # G-061 tier-1 three-site parity fixture for `comp.zip`.
-# TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
+# top = top_level_assign · nested = nested_callback · block = block_body.
 # All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
-TOP = @comp.zip("a|b", "1|2", fun(p)
+top = @comp.zip("a|b", "1|2", fun(p)
   p.a .. p.b .. "\n"
 )
-NESTED = @comp.map("q", fun(seed)
+nested = @comp.map("q", fun(seed)
   @comp.zip("a|b", "1|2", fun(p)
     p.a .. p.b .. "\n"
   )
@@ -14,4 +14,4 @@ parity: str = {}
 @comp.zip("a|b", "1|2", fun(p)
   p.a .. p.b .. "\n"
 )
-BLOCK = parity()
+block = parity()

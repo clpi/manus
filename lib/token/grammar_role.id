@@ -116,7 +116,7 @@ BEGIN_EXPR = {
   1,
   0
 }
-PREFIX = {
+prefix = {
   0,
   0,
   0,
@@ -228,7 +228,7 @@ PREFIX = {
   0,
   0
 }
-POSTFIX = {
+postfix = {
   0,
   0,
   0,
@@ -340,7 +340,7 @@ POSTFIX = {
   0,
   0
 }
-PARAMETER = {
+parameter = {
   0,
   0,
   0,
@@ -564,7 +564,7 @@ COMPAT_ONLY = {
   1,
   0
 }
-PRECEDENCE = {
+precedence = {
   0,
   0,
   0,
@@ -676,7 +676,7 @@ PRECEDENCE = {
   0,
   0
 }
-ASSOC = {
+assoc = {
   0,
   0,
   0,
@@ -793,13 +793,13 @@ role_begin_expr: bool = (kind: i64)
   kind >= 0 and kind < ROLE_COUNT and BEGIN_EXPR(kind + 1) != 0
 
 role_prefix: bool = (kind: i64)
-  kind >= 0 and kind < ROLE_COUNT and PREFIX(kind + 1) != 0
+  kind >= 0 and kind < ROLE_COUNT and prefix(kind + 1) != 0
 
 role_postfix: bool = (kind: i64)
-  kind >= 0 and kind < ROLE_COUNT and POSTFIX(kind + 1) != 0
+  kind >= 0 and kind < ROLE_COUNT and postfix(kind + 1) != 0
 
 role_parameter: bool = (kind: i64)
-  kind >= 0 and kind < ROLE_COUNT and PARAMETER(kind + 1) != 0
+  kind >= 0 and kind < ROLE_COUNT and parameter(kind + 1) != 0
 
 role_compat_only: bool = (kind: i64)
   kind >= 0 and kind < ROLE_COUNT and COMPAT_ONLY(kind + 1) != 0
@@ -808,10 +808,10 @@ role_precedence: i64 = (kind: i64)
   if kind < 0 or kind >= ROLE_COUNT
     0
   else
-    PRECEDENCE(kind + 1)
+    precedence(kind + 1)
 
 role_assoc: i64 = (kind: i64)
   if kind < 0 or kind >= ROLE_COUNT
     0
   else
-    ASSOC(kind + 1)
+    assoc(kind + 1)

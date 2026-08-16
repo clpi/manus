@@ -1,5 +1,5 @@
 tok: @{ kind: i64, start: i64, len: i64 }
-is_alpha: i64 = (c: i64)
+alpha: i64 = (c: i64)
     if c >= 97 and c <= 122
         return 1
     0

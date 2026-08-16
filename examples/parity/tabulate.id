@@ -1,11 +1,11 @@
 # G-061 tier-1 three-site parity fixture for `comp.tabulate`.
-# TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
+# top = top_level_assign · nested = nested_callback · block = block_body.
 # All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
-TOP = @comp.tabulate(2, fun(i)
+top = @comp.tabulate(2, fun(i)
   tostring(i) .. "\n"
 )
-NESTED = @comp.map("q", fun(seed)
+nested = @comp.map("q", fun(seed)
   @comp.tabulate(2, fun(i)
     tostring(i) .. "\n"
   )
@@ -14,4 +14,4 @@ parity: str = {}
 @comp.tabulate(2, fun(i)
   tostring(i) .. "\n"
 )
-BLOCK = parity()
+block = parity()

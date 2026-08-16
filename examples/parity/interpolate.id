@@ -1,11 +1,11 @@
 # G-061 tier-1 three-site parity fixture for `comp.interpolate`.
-# TOP = top_level_assign · NESTED = nested_callback · BLOCK = block_body.
+# top = top_level_assign · nested = nested_callback · block = block_body.
 # All three C string literals must be IDENTICAL; scripts/transform.id asserts it.
 
-TOP = @comp.interpolate("x={v}", { v = "1" })
-NESTED = @comp.map("q", fun(seed)
+top = @comp.interpolate("x={v}", { v = "1" })
+nested = @comp.map("q", fun(seed)
   @comp.interpolate("x={v}", { v = "1" })
 )
 parity: str = {}
 @comp.interpolate("x={v}", { v = "1" })
-BLOCK = parity()
+block = parity()

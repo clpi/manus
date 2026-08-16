@@ -1,15 +1,15 @@
 # Nested match → fixpoint: comptime-only, no runtime closures.
 # Run: duo run examples/meta_match_fixpoint_showcase.id
 
-OUT = @comp.match("alpha|beta", fun(m)
+out = @comp.match("alpha|beta", fun(m)
   @comp.fixpoint(m.pattern, fun(s)
     "tag=" .. m.pattern .. " iter=" .. to(str)(s.iteration) .. "\n"
   , 2)
 )
 
-LINES = @comp.str.countlines(OUT)
-HAS_ALPHA = @comp.str.contains(OUT, "tag=alpha iter=0")
-HAS_BETA1 = @comp.str.contains(OUT, "tag=beta iter=1")
+LINES = @comp.str.countlines(out)
+HAS_ALPHA = @comp.str.contains(out, "tag=alpha iter=0")
+HAS_BETA1 = @comp.str.contains(out, "tag=beta iter=1")
 
 ok = LINES == 4 and HAS_ALPHA and HAS_BETA1
 print("=== match → fixpoint cascade ===")

@@ -57,7 +57,7 @@ set_add = (s: any, value: any)
 set_has: bool = (s: any, value: any)
     s[value] != nil
 
-is_array: bool = (t: any)
+array: bool = (t: any)
     if type(t) != "table" return false 
     if t[1] == nil return true 
     i = 2

@@ -5,7 +5,7 @@
 # a compiler front-end component, written in canonical Duo and compiled to
 # native ARM64 by `--backend=direct`, correctly processes Duo compiler source.
 #
-# The scanned text is a verbatim copy of `is_digit`'s definition from
+# The scanned text is a verbatim copy of `digit`'s definition from
 # `tokenizer.id` — real Duo syntax with identifiers, digits, operators and
 # punctuation, including the `i64` case where a digit run terminates an
 # identifier run.
@@ -17,12 +17,12 @@ Kind = @{ eof = 0, ident = 1, number = 2, punct = 3 }
 
 tok: @{ kind: i64, start: i64, len: i64 }
 
-is_digit: i64 = (c: i64)
+digit: i64 = (c: i64)
     if c >= 48 and c <= 57
         return 1
     0
 
-is_alpha: i64 = (c: i64)
+alpha: i64 = (c: i64)
     if c >= 97 and c <= 122
         return 1
     if c >= 65 and c <= 90
@@ -31,7 +31,7 @@ is_alpha: i64 = (c: i64)
         return 1
     0
 
-is_space: i64 = (c: i64)
+space: i64 = (c: i64)
     if c == 32
         return 1
     if c == 9
@@ -40,34 +40,34 @@ is_space: i64 = (c: i64)
         return 1
     0
 
-scanone: tok = (src: str, pos: i64)
+scan: tok = (src: str, pos: i64)
     n = src:len()
     i = pos
-    while i <= n and is_space(src:byte(i)) == 1
+    while i <= n and src:byte(i):space() == 1
         i += 1
     if i > n
         return { kind = Kind.eof, start = i, len = 0 }
     c = src:byte(i)
-    if is_alpha(c) == 1
+    if c:alpha() == 1
         j = i
-        while j <= n and is_alpha(src:byte(j)) == 1
+        while j <= n and src:byte(j):alpha() == 1
             j += 1
         return { kind = Kind.ident, start = i, len = j - i }
-    if is_digit(c) == 1
+    if c:digit() == 1
         j = i
-        while j <= n and is_digit(src:byte(j)) == 1
+        while j <= n and src:byte(j):digit() == 1
             j += 1
         return { kind = Kind.number, start = i, len = j - i }
     { kind = Kind.punct, start = i, len = 1 }
 
 # Count the tokens in `src`, so the result is a structural fact about the
 # scanned Duo source rather than an arbitrary fold.
-count_tokens: i64 = (src: str)
+count: i64 = (src: str)
     total = 0
     pos = 1
     n = src:len()
     while pos <= n
-        t: tok = scanone(src, pos)
+        t: tok = scan(src, pos)
         if t.kind == Kind.eof
             return total
         total += 1
@@ -75,6 +75,6 @@ count_tokens: i64 = (src: str)
     total
 
 main: i64 = ()
-    # Verbatim source of this file's own `is_digit`, scanned by this file's own
+    # Verbatim source of this file's own `digit`, scanned by this file's own
     # scanner, in a binary this file was compiled into.
-    count_tokens("is_digit = (c: i64): i64 if c >= 48 and c <= 57 return 1 end 0 end")
+    "digit = (c: i64): i64 if c >= 48 and c <= 57 return 1 end 0 end":count()

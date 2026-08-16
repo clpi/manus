@@ -29,11 +29,11 @@ rgb: color = { r = 1.0, g = 0.5, b = 0.0 }
 
 FIELD_MAP = @comp.fields.map(v3, "/* %n:%t */")
 
-UNROLL = @(@comp.for(0, 5, "slot_%i=0;"))
+unroll = @(@comp.for(0, 5, "slot_%i=0;"))
 
 print("=== user derive showcase ===")
 print("field_map = " .. FIELD_MAP)
-print("unrolled = " .. UNROLL)
+print("unrolled = " .. unroll)
 print("vector fields = " .. to(str)(@fields(v3):len()))
 print("color fields = " .. to(str)(@fields(rgb):len()))
 print("ok")

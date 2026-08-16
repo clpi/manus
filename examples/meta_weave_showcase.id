@@ -4,8 +4,8 @@
 mark: str = (meta)
   "/* weave[" .. meta.source_module .. "] " .. meta.name .. " (" .. to(str)(meta.index) .. "/" .. to(str)(meta.count) .. ") */\n"
 
-CODE = @comp.weave("examples/weave_types", "HasXY", mark)
+code = @comp.weave("examples/weave_types", "HasXY", mark)
 
 print("=== @comp.weave showcase ===")
-print(CODE)
+print(code)
 print("RESULT weave_ok = true")
