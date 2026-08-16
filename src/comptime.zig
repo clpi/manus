@@ -1754,6 +1754,63 @@ pub fn foldRelationBody(
     });
 }
 
+/// **THE VALUE OF ONE EXPRESSION, THROUGH THE SAME FOLD A WHOLE BODY GETS.**
+///
+/// `x = seed(1)` and `x = 12345` are the SAME FACT about the value of `x`
+/// whenever `seed` is foldable, and a consumer that admits the second and
+/// refuses the first is reading the SPELLING rather than the value. MEASURED,
+/// `benchmarks/ftc/control/memform.id` against `regform.id` — byte-identical
+/// but for that one line — 1,412,875,899 instructions retired against
+/// 11,821,591, same answer 57 on both and 57 from an oracle that is not this
+/// compiler, because `obseq.readMachine` required an `.int_lit` TOKEN.
+///
+/// This is deliberately NOT a second folder. It wraps the expression in a
+/// statement-free body and hands it to `foldRelationBody`, so every fail-closed
+/// guard that decides a whole body decides this too: no graph identity, an
+/// application the effect fixpoint cannot prove pure, a name the interpreter
+/// would intercept, a relation spelled like a local, the step budget. `os.env`
+/// is refused there and must stay refused — an environment read is an INPUT,
+/// not a constant, and admitting one would make the closed form answer a
+/// different program.
+///
+/// The one thing it adds is the application-free tail: `foldRelationBody` sends
+/// a body with no application and no loop to `constantAnswer`, which by design
+/// recognizes only a literal. An expression has no ordinary lowering to fall
+/// back to here, so `2 + 3` and `-5` are evaluated directly — with NO bindings,
+/// which is what keeps it honest: a free name is unbound and the fold refuses.
+pub fn foldValueExpr(
+    alloc: std.mem.Allocator,
+    graph: ?*const semantic_graph.SemanticGraph,
+    relation: ?semantic_graph.id,
+    e: *const ast.Expr,
+) ?i64 {
+    const loc: ast.Loc = .{ .file = "", .line = 0, .col = 0 };
+    var no_params = [_]ast.FuncParam{};
+    var no_stmts = [_]ast.Stmt{};
+    const fb: ast.FuncBody = .{
+        .loc = loc,
+        .params = &no_params,
+        .vararg = false,
+        .ret_type = .inferred,
+        .body = .{ .loc = loc, .stmts = &no_stmts, .tail_expr = @constCast(e) },
+    };
+    if (graph) |g| {
+        if (foldRelationBody(alloc, g, relation, &fb)) |k| return k;
+    }
+    if (!bodyHasNoApplication(&fb.body)) return null;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const value = evalWithBindings(e, .{}, .{
+        .step_limit = fold_step_limit,
+        .alloc = arena.allocator(),
+        .native_fold = true,
+    }) catch return null;
+    return switch (value) {
+        .int => |n| n,
+        else => null,
+    };
+}
+
 fn runFold(fb: *const ast.FuncBody, bindings: Bindings, options: Options) ?i64 {
     const value = funcValue(fb, bindings, options) catch return null;
     const result = callFunctionValue(value, &.{}, bindings, options) catch return null;

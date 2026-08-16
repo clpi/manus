@@ -77,8 +77,14 @@ pub const EffectFreeSite = struct {
 pub const EffectQueryError = error{OutOfMemory};
 
 /// Nearest enclosing callable of an entity by `scope`. Null when the entity
-/// hangs off a module rather than off a relation.
-fn enclosingCallable(
+/// hangs off a module rather than off a relation — which is to say, when it
+/// sits at MODULE SCOPE.
+///
+/// Public because `obseq.entryProjection` asks the same question for a
+/// different reason (which relations does the entry reach), and two walks of
+/// one scope chain is how two consumers come to disagree about where an
+/// application lives.
+pub fn enclosingCallable(
     graph: *const semantic_graph.SemanticGraph,
     from: semantic_graph.id,
 ) ?semantic_graph.id {

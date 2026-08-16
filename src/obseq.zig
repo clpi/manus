@@ -240,6 +240,8 @@ const quotient_synth = @import("quotient_synth.zig");
 const recurrence = @import("recurrence.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const comptime_eval = @import("comptime.zig");
+const graph_query = @import("graph_query.zig");
 
 /// The demand quotient. NOT redefined here — `demand_projection.zig` is the one
 /// producer of this lattice and a second spelling of it would be the "two
@@ -1471,9 +1473,9 @@ pub fn entryProjection(
         return .{ .refused = .observer_refused };
 
     if (graph) |g| {
-        if (g.unresolvedApplicationCount(null) != 0)
-            return .{ .refused = .unresolved_application };
         const entry = g.findFunc("main") orelse return .{ .refused = .not_entry };
+        if (unresolvedInReach(g, entry))
+            return .{ .refused = .unresolved_application };
         for (g.applications()) |fact| {
             const callee = g.applicationRelation(fact.application) orelse
                 return .{ .refused = .unresolved_application };
@@ -1483,8 +1485,194 @@ pub fn entryProjection(
     return .{ .projection = .{ .low_bits = 8 } };
 }
 
+/// G3 — **THE OBLIGATION IS ABOUT WHAT RUNS, NOT ABOUT WHAT THE FILE
+/// CONTAINS.**
+///
+/// This replaces `g.unresolvedApplicationCount(null) != 0`, which asked the
+/// whole MODULE. That check's own stated reason is an obligation about `main`'s
+/// CALLERS — *"an application this module cannot name may be the one that reads
+/// it"* — and a relation NOTHING APPLIES cannot be that application, because
+/// nothing ever executes it. MEASURED, two modules whose `main` is
+/// byte-identical:
+///
+///     main alone                                          `_main` =  2
+///     main + an UNUSED module-scope `num(s: str)`
+///       containing `s:len()` and `s:byte(i)`               `_main` = 19
+///
+/// The helper is never applied, it cannot read `main`'s result, and it cost the
+/// whole transform.
+///
+/// So the question is asked of the REACHABLE program: the entry, everything the
+/// entry transitively applies, and every MODULE-SCOPE application — those run
+/// whether or not anything applies them, so they are reachable by construction.
+/// Inside that set an unresolved application still refuses; it may be the
+/// hidden application of `main`, and unlike the dead one it executes.
+///
+/// FAIL-CLOSED IN FOUR PLACES, because the walk IS the proof and a walk that
+/// gives up must give up toward refusal:
+///
+///   * an unresolved application inside a reachable relation — the obligation;
+///   * an application candidate with no scope at all;
+///   * a resolved application whose callee the graph will not name;
+///   * more than `max_reach` reachable relations, or more rounds than that —
+///     refuse rather than truncate the walk and call the remainder dead.
+fn unresolvedInReach(g: *const semantic_graph.SemanticGraph, entry: semantic_graph.id) bool {
+    const max_reach = 256;
+    var reach: [max_reach]semantic_graph.id = undefined;
+    var len: usize = 1;
+    reach[0] = entry;
+    var rounds: usize = 0;
+    while (rounds <= max_reach) : (rounds += 1) {
+        var grew = false;
+        for (0..g.nodes.items.len) |coordinate| {
+            const occurrence = std.math.cast(semantic_graph.id, coordinate) orelse return true;
+            if (!g.isApplicationCandidate(occurrence)) continue;
+            const scope = g.homeOf(occurrence) orelse return true;
+            const owner = graph_query.enclosingCallable(g, scope);
+            const in_reach = if (owner) |o| blk: {
+                for (reach[0..len]) |r| if (r == o) break :blk true;
+                break :blk false;
+            } else true;
+            if (!in_reach) continue;
+            if (g.application(occurrence) == null) return true;
+            const callee = g.applicationRelation(occurrence) orelse return true;
+            var seen = false;
+            for (reach[0..len]) |r| {
+                if (r == callee) seen = true;
+            }
+            if (seen) continue;
+            if (len == max_reach) return true;
+            reach[len] = callee;
+            len += 1;
+            grew = true;
+        }
+        if (!grew) return false;
+    }
+    return true;
+}
+
+/// G1 — **THE PROLOGUE'S VALUE, NOT ITS SPELLING.**
+///
+/// `readMachine` used to admit a pre-loop binding only when its initializer was
+/// an `.int_lit` TOKEN. `entry_constant` is a fact about the VALUE, and the
+/// compiler already owns a decision procedure for it, so requiring the token
+/// was reading the surface where a fact was available. MEASURED, the control
+/// pair `docs/ftc.md` §D1 keeps for exactly this comparison:
+///
+///     benchmarks/ftc/control/regform.id   x = 12345    2 insns    11,804,048
+///     benchmarks/ftc/control/memform.id   x = seed(1) 32 insns 1,412,474,701
+///
+/// — same kernel, same trip count, same answer 57, one line apart.
+///
+/// `comptime.foldValueExpr` is the authority, not a copy of one: it is the same
+/// `foldRelationBody` that decides whether a whole relation collapses to its
+/// answer, so a prologue is admitted on exactly the terms a body is. In
+/// particular an `os.env` read is REFUSED there and must stay refused — it is
+/// an input, and folding one would close a different program than the one that
+/// was written.
+const Prologue = struct {
+    alloc: std.mem.Allocator,
+    graph: ?*const semantic_graph.SemanticGraph = null,
+    /// The entry's own graph identity. `foldValueExpr` needs it to ask the
+    /// effect fixpoint which relations this body may reach; with no graph there
+    /// is no effect fact, and only literal arithmetic folds.
+    entry: ?semantic_graph.id = null,
+
+    fn constant(self: Prologue, e: *const ast.Expr) ?i64 {
+        return switch (e.*) {
+            .int_lit => |x| x.val,
+            else => comptime_eval.foldValueExpr(self.alloc, self.graph, self.entry, e),
+        };
+    }
+};
+
+/// **G1, CARRIED ACROSS THE DELEGATION SEAM — AND THE WALL BEHIND THE WALL.**
+///
+/// Widening `readMachine` alone buys NOTHING, and this is the fourth
+/// independent instance of `docs/closure-census.md` §6.5's law in this tree.
+/// `recurrence.closeRelationBodyObserved` reads the prologue through its own
+/// `polyOfExpr`, which answers for the polynomial grammar and refuses a call —
+/// so with only `readMachine` widened, `memform.id` gets all the way past the
+/// e-graph closure and is refused `no_exact_index` one call later, at
+/// **32 `_main` instructions, unchanged**. MEASURED, not projected: that is
+/// what the first build of this change did.
+///
+/// The fact is WRITTEN DOWN rather than re-derived. Each prologue initializer
+/// this module folded is replaced by its value in a SCRATCH copy of the body —
+/// exactly the substitution `x = seed(1)` -> `x = 12345` that the `regform` /
+/// `memform` control pair differs by — and `recurrence` then derives everything
+/// it derives today from a body it can read. The alternative, a second fact on
+/// `Observation`, would put the same constant across the same seam through a
+/// wider door.
+///
+/// §24 STILL HOLDS. The delegate's answer is checked against this module's own
+/// orbit (`answers.contains(value)`) before it is used, so the two derivations
+/// still cross-check the ORBIT. What they no longer cross-check is the ENTRY
+/// VALUE itself — both now take it from one fold — and that is stated rather
+/// than buried: the fold is `comptime.foldRelationBody`, the same authority
+/// that decides whether the whole relation collapses to a constant, so a wrong
+/// answer here is a wrong answer for every folded body in the corpus.
+fn foldedPrologueBody(
+    scratch: std.mem.Allocator,
+    fb: *const ast.FuncBody,
+    pro: Prologue,
+) ?ast.FuncBody {
+    var changed = false;
+    for (fb.body.stmts) |st| {
+        switch (st) {
+            .local_decl => |d| for (d.inits) |init| {
+                if (init.* != .int_lit) changed = true;
+            },
+            .assign => |a| for (a.values) |v| {
+                if (v.* != .int_lit) changed = true;
+            },
+            else => {},
+        }
+    }
+    if (!changed) return null;
+
+    const stmts = scratch.alloc(ast.Stmt, fb.body.stmts.len) catch return null;
+    @memcpy(stmts, fb.body.stmts);
+    for (stmts) |*st| {
+        switch (st.*) {
+            .local_decl => |*d| {
+                const inits = scratch.alloc(*ast.Expr, d.inits.len) catch return null;
+                @memcpy(inits, d.inits);
+                for (inits) |*slot| {
+                    if (slot.*.* == .int_lit) continue;
+                    const k = pro.constant(slot.*) orelse return null;
+                    const lit = scratch.create(ast.Expr) catch return null;
+                    lit.* = .{ .int_lit = .{ .loc = d.loc, .val = k } };
+                    slot.* = lit;
+                }
+                d.inits = inits;
+            },
+            .assign => |*a| {
+                const values = scratch.alloc(*ast.Expr, a.values.len) catch return null;
+                @memcpy(values, a.values);
+                for (values) |*slot| {
+                    if (slot.*.* == .int_lit) continue;
+                    const k = pro.constant(slot.*) orelse return null;
+                    const lit = scratch.create(ast.Expr) catch return null;
+                    lit.* = .{ .int_lit = .{ .loc = a.loc, .val = k } };
+                    slot.* = lit;
+                }
+                a.values = values;
+            },
+            else => {},
+        }
+    }
+    var out = fb.*;
+    out.body.stmts = stmts;
+    return out;
+}
+
 /// Read the relation body as [constant prologue] [one counted loop] [tail].
-fn readMachine(fb: *const ast.FuncBody, m: *Machine) ?struct { loop: *const ast.Stmt, tail: *const ast.Expr } {
+fn readMachine(
+    fb: *const ast.FuncBody,
+    m: *Machine,
+    pro: Prologue,
+) ?struct { loop: *const ast.Stmt, tail: *const ast.Expr } {
     var loop: ?*const ast.Stmt = null;
     for (fb.body.stmts) |*st| {
         switch (st.*) {
@@ -1492,10 +1680,7 @@ fn readMachine(fb: *const ast.FuncBody, m: *Machine) ?struct { loop: *const ast.
                 if (loop != null) return null;
                 if (d.names.len != d.inits.len) return null;
                 for (d.names, d.inits) |n, init| {
-                    const v = switch (init.*) {
-                        .int_lit => |x| x.val,
-                        else => return null,
-                    };
+                    const v = pro.constant(init) orelse return null;
                     const slot = m.intern(n.ident) orelse return null;
                     m.entry[slot] = v;
                 }
@@ -1507,10 +1692,7 @@ fn readMachine(fb: *const ast.FuncBody, m: *Machine) ?struct { loop: *const ast.
                     .name => |n| n.ident,
                     else => return null,
                 };
-                const v = switch (a.values[0].*) {
-                    .int_lit => |x| x.val,
-                    else => return null,
-                };
+                const v = pro.constant(a.values[0]) orelse return null;
                 const slot = m.intern(name) orelse return null;
                 m.entry[slot] = v;
             },
@@ -1681,7 +1863,12 @@ pub fn closeRelation(
     census.rules_deleted = @intCast(Rule.count - admittedRules(h).count());
 
     var m = Machine{ .env = if (qenv != null) &qenv.? else null };
-    const shape = readMachine(&fd.func, &m) orelse return refuse(&census, .no_loop);
+    const pro = Prologue{
+        .alloc = alloc,
+        .graph = graph,
+        .entry = if (graph) |g| g.findFunc("main") else null,
+    };
+    const shape = readMachine(&fd.func, &m, pro) orelse return refuse(&census, .no_loop);
     const loop = shape.loop.while_loop;
     if (!readBody(&loop.body, &m)) return refuse(&census, .body_not_admitted);
 
@@ -1805,7 +1992,15 @@ pub fn closeRelation(
                 unobserved[dropped] = m.names[i];
                 dropped += 1;
             }
-            const k = recurrence.closeRelationBodyObserved(&fd.func, .{
+            // G1 ACROSS THE SEAM. `foldedPrologueBody` is null when every
+            // prologue initializer is already a literal, which is the shape
+            // that shipped, so a corpus with no folded prologue cannot tell
+            // the difference.
+            var pro_arena = std.heap.ArenaAllocator.init(alloc);
+            defer pro_arena.deinit();
+            const folded = foldedPrologueBody(pro_arena.allocator(), &fd.func, pro);
+            const delegate_body: *const ast.FuncBody = if (folded) |*f| f else &fd.func;
+            const k = recurrence.closeRelationBodyObserved(delegate_body, .{
                 .bits = bits,
                 .unobserved = unobserved[0..dropped],
                 .call_ctx = if (qenv) |*q| @as(*const anyopaque, @ptrCast(q)) else null,
@@ -2232,7 +2427,7 @@ test "obseq: D3 — deleting the unobserved slot is what makes the fixed point e
     const fd = w6Decl(&b, 20000000);
 
     var m = Machine{};
-    const shape = readMachine(&fd.func, &m).?;
+    const shape = readMachine(&fd.func, &m, .{ .alloc = testing.allocator }).?;
     try testing.expect(readBody(&shape.loop.while_loop.body, &m));
 
     // Contracted: the tail reads only `x`.
@@ -2245,7 +2440,7 @@ test "obseq: D3 — deleting the unobserved slot is what makes the fixed point e
 
     // Demand-blind: keep every slot, which is what an exact-term engine must do.
     var m2 = Machine{};
-    const shape2 = readMachine(&fd.func, &m2).?;
+    const shape2 = readMachine(&fd.func, &m2, .{ .alloc = testing.allocator }).?;
     try testing.expect(readBody(&shape2.loop.while_loop.body, &m2));
     for (0..m2.slot_count) |i| m2.tracked[i] = true;
     var eg2 = EGraph.init(testing.allocator, .{ .low_bits = 8 }, .{});
@@ -2438,7 +2633,7 @@ test "obseq: D3 on the delegated row — 192 contracted states against 768" {
     const fd = pairDecl(&b, 20000000, 1103515245, 6364136223);
 
     var m = Machine{};
-    const shape = readMachine(&fd.func, &m).?;
+    const shape = readMachine(&fd.func, &m, .{ .alloc = testing.allocator }).?;
     try testing.expect(readBody(&shape.loop.while_loop.body, &m));
     observedClosure(&m, shape.tail, .{ .low_bits = 8 });
     var eg = EGraph.init(testing.allocator, .{ .low_bits = 8 }, .{});
@@ -2447,7 +2642,7 @@ test "obseq: D3 on the delegated row — 192 contracted states against 768" {
     try testing.expectEqual(@as(u32, 192), small.steps);
 
     var m2 = Machine{};
-    const shape2 = readMachine(&fd.func, &m2).?;
+    const shape2 = readMachine(&fd.func, &m2, .{ .alloc = testing.allocator }).?;
     try testing.expect(readBody(&shape2.loop.while_loop.body, &m2));
     for (0..m2.slot_count) |i| m2.tracked[i] = true;
     var eg2 = EGraph.init(testing.allocator, .{ .low_bits = 8 }, .{});
@@ -2467,7 +2662,7 @@ test "obseq: §24 — the delegated answer is CHECKED against the e-graph's orbi
     const fd = pairDecl(&b, 20000000, 1103515245, 6364136223);
 
     var m = Machine{};
-    const shape = readMachine(&fd.func, &m).?;
+    const shape = readMachine(&fd.func, &m, .{ .alloc = testing.allocator }).?;
     try testing.expect(readBody(&shape.loop.while_loop.body, &m));
     observedClosure(&m, shape.tail, .{ .low_bits = 8 });
     var eg = EGraph.init(testing.allocator, .{ .low_bits = 8 }, .{});
@@ -2545,7 +2740,7 @@ test "obseq: D2 — 65,536 exact states against FOUR in the quotient" {
     defer b.deinit();
     const fd = sqDecl(&b, 20000000);
     var m = Machine{};
-    const shape = readMachine(&fd.func, &m).?;
+    const shape = readMachine(&fd.func, &m, .{ .alloc = testing.allocator }).?;
     try testing.expect(readBody(&shape.loop.while_loop.body, &m));
     observedClosure(&m, shape.tail, .{ .low_bits = 8 });
     var eg = EGraph.init(testing.allocator, .{ .low_bits = 8 }, .{});
@@ -2940,5 +3135,94 @@ test "obseq: a periodic orbit through a call reaches the delegated family" {
             // computed different values for one loop.
             try testing.expectEqual(Refusal.no_exact_index, x.refusal);
         },
+    }
+}
+
+// ── G1: the prologue's VALUE, and the seam it has to cross ──────────────────
+
+/// The LCG this project's control pair uses, run for real in Zig. A closed form
+/// checked against a hand-computed constant only proves the author's algebra
+/// agrees with itself.
+fn lcgOracle(x0: u64, n: u64) u64 {
+    var x: u64 = x0;
+    var i: u64 = 0;
+    while (i < n) : (i += 1) x = 1103515245 *% x +% 12345;
+    return x;
+}
+
+test "obseq: a prologue that FOLDS is a prologue that is a literal" {
+    // `x = 0 - 5` is not an `.int_lit` TOKEN and is an entry CONSTANT, which
+    // is the fact the machine actually needs. The body is the LCG, whose
+    // contracted orbit is PERIODIC — so this closes through the delegated
+    // exact-index family and therefore exercises the SEAM as well as
+    // `readMachine`: widening only the reader leaves `recurrence.polyOfExpr`
+    // refusing the same expression one call later.
+    var fx = try compose(
+        \\main: i64 = ()
+        \\    x = 0 - 5
+        \\    i = 0
+        \\    while i < 20000000
+        \\        x = 1103515245 * x + 12345
+        \\        i = i + 1
+        \\    x
+    );
+    defer fx.deinit();
+    const r = try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{});
+    const out = switch (r) {
+        .refused => return error.TestUnexpectedResult,
+        .closed => |o| o,
+    };
+    const truth = lcgOracle(@as(u64, @bitCast(@as(i64, -5))), 20000000) & 0xff;
+    try testing.expectEqual(@as(i64, @intCast(truth)), out.value);
+
+    // TWO-SIDED: the same machine with the prologue written as the literal it
+    // folds to must answer identically. If it does not, the fold and the
+    // backend disagree about what `0 - 5` is.
+    var lit = try compose(
+        \\main: i64 = ()
+        \\    x = -5
+        \\    i = 0
+        \\    while i < 20000000
+        \\        x = 1103515245 * x + 12345
+        \\        i = i + 1
+        \\    x
+    );
+    defer lit.deinit();
+    const r2 = try closeRelation(testing.allocator, mainOf(&lit.mod), &lit.mod, null, observation.ordinary_executable, .{});
+    switch (r2) {
+        .refused => return error.TestUnexpectedResult,
+        .closed => |o| try testing.expectEqual(out.value, o.value),
+    }
+}
+
+test "obseq: a prologue the fold cannot run REFUSES rather than guessing" {
+    // A free name has no value at compile time. `foldValueExpr` runs the
+    // application-free arm with NO bindings for exactly this reason, so an
+    // unbound name is an evaluation error and the machine is refused — it is
+    // not assumed zero, and it is not read off whatever the interpreter
+    // happened to have on its stack.
+    inline for (.{
+        \\main: i64 = ()
+        \\    x = zz
+        \\    i = 0
+        \\    while i < 20000000
+        \\        x = 1103515245 * x + 12345
+        \\        i = i + 1
+        \\    x
+        ,
+        \\main: i64 = ()
+        \\    x = 3.5
+        \\    i = 0
+        \\    while i < 20000000
+        \\        x = 1103515245 * x + 12345
+        \\        i = i + 1
+        \\    x
+    }) |src| {
+        var fx = try compose(src);
+        defer fx.deinit();
+        switch (try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{})) {
+            .closed => return error.TestUnexpectedResult,
+            .refused => |x| try testing.expectEqual(Refusal.no_loop, x.refusal),
+        }
     }
 }
