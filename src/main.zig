@@ -33,8 +33,11 @@ const demand = @import("demand.zig");
 ///   `splice`  — absorbed into the program's own native object. NOT the waist.
 ///   `nocall`  — bound but never called through; no object, nothing emitted.
 ///   `exports`/`collide`/`unbound`/`parse` — declined by the splice, so the
-///               module falls to `emitReqModuleC` + a C object if it is called.
-///   `cobject` — `directLinkInputs` built a C object for it. THE WAIST.
+///               module has no object and a call into it fails the link with an
+///               honest undefined symbol. It USED to fall to `emitReqModuleC`;
+///               that function and its object compiler had no caller left and
+///               are deleted, so the C fallback no longer exists.
+///   `cobject` — `directLinkInputs` supplied an object for it. THE WAIST.
 const waist = struct {
     var on: ?bool = null;
 
@@ -400,8 +403,10 @@ const usage =
     \\  --cc <path>       C compiler (default: clang)
     \\  --target <triple> target triple (e.g. wasm32-wasi, aarch64-macos, native-exe)
     \\  --emit <kind>     output kind with structured triples: obj, exe, dylib, asm, wasm (default exe)
-    \\  --backend <auto|c|direct|native>  lowering: auto (default, machine-first), direct/native (ARM64 Mach-O), c (bootstrap C emit only)
-    \\  --bench-backend <c-dynamic|c-specialized|direct>  benchmark representation profile (default c-specialized)
+    \\  --backend <auto|direct|native|wasm>  lowering: auto (default, machine-first), direct/native (ARM64 Mach-O), wasm
+    \\                    `c` is RETIRED and refused with a diagnostic — there is no C backend
+    \\  --bench-backend <c-dynamic|c-specialized|direct>  benchmark representation profile (default c-specialized);
+    \\                    the two c-* profiles select the retired C backend and are refused with it
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
@@ -636,7 +641,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (global_bench_profile_cli and global_backend_explicit) {
         const selected = backend_identity.Backend.parse(compile_backend) orelse {
-            term.err("unknown --backend '{s}' (expected auto, c, direct, or native)", .{compile_backend});
+            term.err("unknown --backend '{s}' (expected auto, direct, native, or wasm; `c` is retired)", .{compile_backend});
             std.process.exit(1);
         };
         const expected: backend_identity.Backend = if (global_bench_backend == .direct) .direct else .c;
@@ -3224,18 +3229,23 @@ fn resolveCompileTarget(target_in: []const u8, emit: target_model.EmitKind) []co
 
 fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 {
     const parsed = backend_identity.Backend.parse(backend) orelse {
-        term.err("unknown --backend '{s}' (expected auto, c, direct, or native)", .{backend});
+        term.err("unknown --backend '{s}' (expected auto, direct, native, or wasm; `c` is retired)", .{backend});
         std.process.exit(1);
     };
     switch (parsed) {
         .direct => return if (native_backend.isNativeMachineTarget(target_in)) target_in else "native-exe",
         .auto => return target_in,
+        // NO C BACKEND, PERIOD. The ruling in `docs/rulings.md` retired
+        // `--backend=c`; until this refusal existed the flag was still ACCEPTED
+        // and `gate/noc.sh` row 1 measured it at 1, on the row whose own header
+        // says that while it is 1 nothing else in that ledger matters. A
+        // retired spelling that the CLI still honours is a live defect, not
+        // history (`AGENTS.md`, HPLS §94) — so this is a diagnostic naming the
+        // ruling, never a silent fallback to `direct`, because silently
+        // answering a different question is how the bridge survived this long.
         .c => {
-            if (native_backend.isNativeMachineTarget(target_in)) {
-                term.err("machine target '{s}' requires --backend=auto or --backend=direct (C emit is bootstrap-only)", .{target_in});
-                std.process.exit(1);
-            }
-            return target_in;
+            term.err("--backend=c is RETIRED: the direct AArch64 backend is the only backend (NO C BACKEND, PERIOD — docs/rulings.md). A program that only builds through the C bridge does not build; record it as a direct-backend defect instead of routing around it.", .{});
+            std.process.exit(1);
         },
         .wasm => return target_in,
     }
@@ -3731,95 +3741,14 @@ fn rerootCallsInExpr(
     }
 }
 
-/// `needs_runtime`, when non-null, receives the EMITTER'S OWN verdict on the C
-/// it just wrote: false when the module lowered fully native (no `lua_*`), true
-/// when any part of it went through the boxed runtime.
-///
-/// Asking the emitter rather than inspecting the text is the whole point. The
-/// hazard this answers (gap[023]) is a native `main` linking a C-emitted module
-/// object that expects a `package` nobody initialised, and the property that
-/// decides it — "did this module emit runtime calls" — is a decision codegen
-/// makes and records, not one a caller can re-derive from the source.
-fn emitReqModuleC(
-    alloc: std.mem.Allocator,
-    io: Io,
-    mod_src_path: []const u8,
-    out_c_path: []const u8,
-    target: []const u8,
-    needs_runtime: ?*bool,
-) !void {
-    var ps = try parse_and_check(alloc, io, mod_src_path);
-    defer ps.sem.deinit();
-
-    var mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
-    defer mono.deinit();
-    try mono.run(&ps.mod);
-
-    var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
-    defer arc_pass.deinit();
-    {
-        var it = ps.sem.escape_names.iterator();
-        while (it.next()) |entry| arc_pass.markEscaping(entry.key_ptr.*) catch {};
-    }
-    try arc_pass.run(&ps.mod);
-
-    var async_pass = AsyncLower.AsyncLower.init(alloc, &ps.sem.type_map);
-    defer async_pass.deinit();
-    try async_pass.run(&ps.mod);
-
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &aw.writer, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);
-    cg.table_methods = &ps.sem.table_methods;
-    cg.mono = &mono;
-    cg.arc = &arc_pass;
-    cg.async_lower = &async_pass;
-    cg.src_path = mod_src_path;
-    cg.stdlib_root = compiler_lib_root;
-    cg.target = target;
-    cg.idol_mode = ps.sem.idol_mode;
-    cg.foreign_records = &ps.sem.foreign_records;
-    cg.foreign_functions = &ps.sem.foreign_functions;
-    try cg.emit_module(&ps.mod);
-    try aw.writer.flush();
-    if (needs_runtime) |slot| slot.* = !cg.usesFullNativeLowering();
-
-    try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = out_c_path, .data = aw.written() });
-}
-
-/// Compile one `req`'d module's C to an object. Returns false when it does not
-/// stand alone, so the caller can leave it out of the link. `-Dmain=` renames
-/// the module's synthesized entry point: only the program's own object may
-/// define `main`.
-fn compileReqModuleObject(
-    alloc: std.mem.Allocator,
-    io: Io,
-    cc: []const u8,
-    c_path: []const u8,
-    o_path: []const u8,
-) bool {
-    // Same `xcrun` guard as `link_native_object`: without it the macOS SDK
-    // headers are not on the include path and every module fails on <stdio.h>.
-    const launcher = if (@import("builtin").os.tag == .macos and !macos_sdkroot_configured) "xcrun " else "";
-    const cmd = std.fmt.allocPrint(
-        alloc,
-        "{s}{s} -O2 -w -Dmain=duo_unused_module_main -c '{s}' -o '{s}' >/dev/null 2>&1",
-        .{ launcher, cc, c_path, o_path },
-    ) catch return false;
-    defer alloc.free(cmd);
-    const argv = [_][]const u8{ "/bin/sh", "-c", cmd };
-    var child = std.process.spawn(io, .{
-        .argv = &argv,
-        .stdin = .ignore,
-        .stdout = .ignore,
-        .stderr = .ignore,
-    }) catch return false;
-    const res = child.wait(io) catch return false;
-    return switch (res) {
-        .exited => |c| c == 0,
-        else => false,
-    };
-}
+// `emitReqModuleC` and `compileReqModuleObject` lived here — 89 lines that
+// emitted a `req`'d module's C and compiled it to an object so the direct
+// backend could relocate against its `@comp.c.export` symbols. NEITHER HAD A
+// CALLER: `directLinkInputs` stopped building per-module C objects and now
+// materializes only the embedded bootstrap objects, and nothing else ever
+// called them. They were the last place the DIRECT backend reached for the C
+// emitter, which is why deleting them is part of the no-C ruling and not
+// merely tidiness.
 
 /// Link inputs for a direct-backend executable: the fixed C helper plus one C
 /// file per `req`'d module that exports native symbols. `-Dmain=` renames each
@@ -3955,7 +3884,53 @@ fn reportDirectBackendError(
     trace: ?*std.builtin.StackTrace,
     link_refusal: usize,
     diagnostic: *const native_backend.Diagnostic,
-    native_scalar_precheck: *const CodeGen,
+    /// The scalar precheck, and ONLY from a path whose dispatch actually
+    /// consulted its verdict. `null` everywhere else, which is three of the
+    /// four call sites.
+    ///
+    /// WHY THIS IS AN OPTIONAL AND NOT A CONVENIENCE. `can_emit_native_scalar_module`
+    /// runs once per direct compile and records a reason whether or not anything
+    /// reads its answer. The EXECUTABLE path reads it — `if (native_scalar_candidate
+    /// and !too_many_modules)` selects the emit and `native_diagnostic.remember(why)`
+    /// carries the reason forward — so there the reason IS the blocker. The
+    /// OBJECT, DYLIB and ASM paths never mention `native_scalar_candidate` at
+    /// all: they lift the graph, call their emitter, and report whatever it
+    /// returned. Handing them the precheck let a predicate they did not consult
+    /// outrank `diagnostic.site`, the `@src()` of the refusal that actually
+    /// happened.
+    ///
+    /// MEASURED, `--emit obj`, three probes with one variable:
+    ///
+    ///   global _count + a function that writes it   ok compile, T=1
+    ///   a cross-home call, no written global        DNB011, bail site
+    ///                                               emitArm64ModuleWithGraph()
+    ///                                               — unresolved-application-facts
+    ///   BOTH                                        the SAME DNB011 error line,
+    ///                                               bail site "native-scalar
+    ///                                               precheck — mod-global-written:_count"
+    ///
+    /// The written global refuses nothing on this path — probe one builds. It
+    /// only changed the hint.
+    ///
+    /// BLAST RADIUS, measured 2026-08-15 by compiling every `.id` under
+    /// `idol-native` and `idol/examples` (maxdepth 2, 477 files, `roman.id`
+    /// excluded as separately nondeterministic) with `--emit obj` on both
+    /// binaries, back to back per file:
+    ///
+    ///     compile exit, `T` symbol count and the `error:` line   477 identical
+    ///     bail site named `native-scalar precheck — X`           125 -> 0
+    ///     bail site named `unresolved-application-facts`          37 -> 158
+    ///     distinct bail-site strings                              65 -> 35
+    ///
+    /// Thirty of those sixty-five families did not exist. `gate/selfhost.sh`
+    /// keys its ledger on this line, so the self-hosted compiler's DNB011 rows
+    /// were filed under `mod-global-written:*`, `method-unresolved:*`,
+    /// `ret-type:any`, `param-type:any` and `ret-type:Pack` — five names for one
+    /// refusal, which every one of those rows already printed on its own
+    /// `error:` line, on the UNPATCHED compiler. Anything that ranked
+    /// direct-backend work by bail site was ranking noise on a quarter of the
+    /// corpus.
+    native_scalar_precheck: ?*const CodeGen,
 ) void {
     var buf: [512]u8 = undefined;
     const msg = native_backend.describeCause(err, target, &buf, diagnostic);
@@ -3972,7 +3947,7 @@ fn reportDirectBackendError(
         }
     } else {
         var rbuf: [64]u8 = undefined;
-        if (native_scalar_precheck.nativeScalarReason(&rbuf)) |why| {
+        if (if (native_scalar_precheck) |pre| pre.nativeScalarReason(&rbuf) else null) |why| {
             term.hint("bail site: native-scalar precheck — {s}", .{why});
         } else if (link_refusal > 0) {
             term.hint("bail site: direct link — {d} linked module object(s) call the lua runtime", .{link_refusal});
@@ -4400,7 +4375,7 @@ fn do_compile(
     const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
 
     const selected_backend = backend_identity.Backend.parse(backend_mode) orelse {
-        term.err("unknown --backend '{s}' (expected auto, c, direct, or native)", .{backend_mode});
+        term.err("unknown --backend '{s}' (expected auto, direct, native, or wasm; `c` is retired)", .{backend_mode});
         std.process.exit(1);
     };
     const effective_machine_target: ?[]const u8 = if (wantsMachineLowering(backend_mode, target))
@@ -4694,7 +4669,8 @@ fn do_compile(
                 try demand.prune(alloc, &ps.mod, &demand_plan);
                 var native_diagnostic: native_backend.Diagnostic = .{};
                 var artifact = native_backend.emitSharedObjectInputWithGraphLineageObserved(alloc, &ps.mod, &direct_graph, &native_diagnostic) catch |e| {
-                    reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, &native_scalar_precheck);
+                    // `null`: this path never consults `native_scalar_candidate`.
+                    reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, null);
                     std.process.exit(1);
                 };
                 defer artifact.deinit(alloc);
@@ -4726,7 +4702,8 @@ fn do_compile(
                 if (native_backend.isNativeAsmTarget(mt)) {
                     var native_diagnostic: native_backend.Diagnostic = .{};
                     var assembly = native_backend.emitAssemblyWithGraphLineageObserved(alloc, &ps.mod, mt, &direct_graph, &native_diagnostic) catch |e| {
-                        reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, &native_scalar_precheck);
+                        // `null`: this path never consults `native_scalar_candidate`.
+                        reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, null);
                         std.process.exit(1);
                     };
                     defer assembly.deinit(alloc);
@@ -4734,7 +4711,8 @@ fn do_compile(
                 } else {
                     var native_diagnostic: native_backend.Diagnostic = .{};
                     var artifact = native_backend.emitObjectWithGraphLineageObserved(alloc, &ps.mod, mt, &direct_graph, &native_diagnostic) catch |e| {
-                        reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, &native_scalar_precheck);
+                        // `null`: this path never consults `native_scalar_candidate`.
+                        reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, null);
                         std.process.exit(1);
                     };
                     defer artifact.deinit(alloc);
