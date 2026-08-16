@@ -1308,10 +1308,53 @@ pub const max_record_fields = 32;
 /// Floating-point and record arguments stay capped at the eight-register file.
 pub const max_direct_scalar_args = 16;
 
+/// AAPCS64 §6.9: a composite RESULT larger than 16 bytes is returned through a
+/// caller-allocated buffer whose address the caller passes in x8. At or under 16
+/// bytes it comes back in x0/x1. Every field this backend puts in a scalar record
+/// occupies 8 bytes — i64, str-as-address, and f64 materialized as its bit
+/// pattern all store at an 8-byte stride — so the size test is a field count.
+pub const foreign_reg_record_bytes = 16;
+
 /// True when a record return must use the x8 indirect-result convention rather
 /// than the x0..x7 explosion.
-pub fn recordReturnIsIndirect(rec: dnir.RecordDesc) bool {
-    return rec.fields.len > max_reg_record_fields;
+///
+/// THE THRESHOLD IS A PROPERTY OF THE BOUNDARY, NOT OF THE RECORD, and that is
+/// the whole content of this function. Two conventions meet here:
+///
+///     internal (foreign = false)   > max_reg_record_fields, i.e. > 64 bytes
+///     foreign  (foreign = true)    > foreign_reg_record_bytes, i.e. > 16 bytes
+///
+/// Idol's own convention is the wider one ON PURPOSE: a 24-byte result stays in
+/// x0..x2 with no buffer, no stores and no reload, which is strictly cheaper
+/// than C's, and `AGENTS.md` forbids the C ABI from becoming the internal
+/// application ABI. But a relation that declares `@comp.c.export("n")` has told
+/// a C compiler what convention to expect, and C's answer is 16.
+///
+/// MEASURED, and this is why the parameter exists rather than a constant. A
+/// relation exporting a 3..8-field record answered a C caller with GARBAGE —
+/// `ok compile`, exit 0, no diagnostic:
+///
+///     fields  bytes   before            after
+///     1..2     8..16  correct           correct   (x0/x1 either way)
+///     3..8    24..64  SILENT GARBAGE    correct   (x8 indirect)
+///     9..    72..     correct           correct   (x8 either way)
+///
+/// The window is exactly the span where the two conventions disagree, which is
+/// what a single hardcoded threshold read at a boundary must produce.
+///
+/// ONE FUNCTION, TWO READERS, BY CONSTRUCTION. This predicate had ZERO consumers
+/// while `native_backend` compared against `max_reg_record_fields` inline in
+/// three places — a fact with no consumer beside three copies of itself, which
+/// is how the callee and the caller are able to disagree at all. The callee
+/// prologue and `indirectResultBuffer` both read it now, so the convention
+/// cannot fork again without editing the sentence that defines it.
+pub fn recordReturnIsIndirectFields(fields: usize, foreign: bool) bool {
+    if (foreign) return fields * 8 > foreign_reg_record_bytes;
+    return fields > max_reg_record_fields;
+}
+
+pub fn recordReturnIsIndirect(rec: dnir.RecordDesc, foreign: bool) bool {
+    return recordReturnIsIndirectFields(rec.fields.len, foreign);
 }
 
 /// A payload-free case-set used as a type: ABI-identical to an integer, because
@@ -1935,6 +1978,11 @@ fn lowerFunction(
         .ret = resolveType(fd.func.ret_type),
         .params = owned_params,
         .ret_record = ret_record_name,
+        // The SAME declaration that already exempted this relation from home
+        // mangling two lines up (`funcExportName` consults `foreignBoundaryName`)
+        // also decides its result convention. Reading it once, here, is what
+        // makes "the name is C's" and "the ABI is C's" impossible to hold apart.
+        .foreign_boundary = foreignBoundaryName(fd) != null,
         .is_float_kernel = blk: {
             const slots = f64AbiParamSlots(fd, records) orelse break :blk false;
             break :blk slots > 0 and slots <= 8;

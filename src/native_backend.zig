@@ -867,11 +867,17 @@ const Arm64Compiler = struct {
     cur_func_ret_record: ?ScalRecordDesc = null,
     cur_func_ret_f64_record: ?F64RecordDesc = null,
     /// Where this function parked the AAPCS64 indirect-result pointer it was
-    /// handed in x8. Only set when `cur_func_ret_record` is wider than the
-    /// argument register file. x8 is caller-saved, so a body containing any
-    /// call would lose it; `emitSaveCallerRegs` preserves x9..x28, which is why
-    /// the pointer moves there on entry rather than being read at `ret`.
+    /// handed in x8. Set when `dnir_lower.recordReturnIsIndirectFields` says this
+    /// record crosses THIS function's boundary indirectly — the argument register
+    /// file for an internal relation, 16 bytes for one that declared itself to C.
+    /// x8 is caller-saved, so a body containing any call would lose it;
+    /// `emitSaveCallerRegs` preserves x9..x28, which is why the pointer moves
+    /// there on entry rather than being read at `ret`.
     cur_ret_indirect_reg: ?u5 = null,
+    /// Does the function being compiled answer on C's convention? Set from
+    /// `dnir.Function.foreign_boundary`, which reads the same `@comp.c.export` /
+    /// `@ffi` declaration that names the exported symbol.
+    cur_func_foreign: bool = false,
     /// Backing store for `dnirRetRecordVals`'s lhs/rhs/third fallback.
     ret_record_scratch: [3]dnir.Value = @splat(.void),
     fp_locals: std.StringHashMapUnmanaged(u5) = .empty,
@@ -2445,6 +2451,7 @@ const Arm64Compiler = struct {
         self.cur_func_ret_record = if (f.ret_record) |rn| scalRecordDesc(self.scal_records, rn) else null;
         self.cur_func_ret_f64_record = if (f.ret_record) |rn| f64RecordDesc(self.f64_records, rn) else null;
         self.cur_ret_indirect_reg = null;
+        self.cur_func_foreign = f.foreign_boundary;
         self.cur_func_float = f.is_float_kernel;
         self.cur_func_ret_float = f.ret == .f64 and !f.is_float_kernel;
         self.cur_func_ret = f.ret;
@@ -2529,7 +2536,7 @@ const Arm64Compiler = struct {
             // the caller put there. Everything after this can call, and x8 does
             // not survive a call.
             if (self.cur_func_ret_record) |rec| {
-                if (rec.field_names.len > dnir_lower.max_reg_record_fields) {
+                if (dnir_lower.recordReturnIsIndirectFields(rec.field_names.len, self.cur_func_foreign)) {
                     const home = try self.allocReg();
                     try self.emitMovReg(home, 8);
                     self.cur_ret_indirect_reg = home;
@@ -3642,7 +3649,25 @@ const Arm64Compiler = struct {
                         // are already in their own locals under `x.a`, never under `rec.a`.
                         // Copying the argument file over `rec.*` was n stores nothing can
                         // load -- argc/argv/envp for `_main`, live call debris anywhere else.
-                        if (ins.field.len > 0 and rec.field_names.len <= dnir_lower.max_reg_record_fields) {
+                        //
+                        // `foreign = false` IS THE HONEST ANSWER HERE TODAY, and it is
+                        // not the same claim as the callee's. This is the CALLER, and a
+                        // caller only knows its callee's convention if the call carries
+                        // the fact. It does not: nothing on `dnir.Instr` says "the
+                        // relation I am calling declared itself to C", and inferring it
+                        // from the callee's SPELLING is exactly the spelling-detector-
+                        // as-authority `AGENTS.md` rejects. Publishing the fact with no
+                        // consumer would be scenery (HPLS §7), and there is no consumer:
+                        // MEASURED — an Idol caller cannot get a record back at all today
+                        // (`p = mk(x)` refuses with `application-realization-count`), so
+                        // the only live caller of a record-returning relation is C, and C
+                        // is the side the callee change above now agrees with.
+                        // WHEN THE IDOL CALLER SIDE LANDS this must take the callee's
+                        // flag, or a call to an `@comp.c.export` relation reads x0..x2
+                        // for a result that arrived in memory.
+                        if (ins.field.len > 0 and
+                            !dnir_lower.recordReturnIsIndirectFields(rec.field_names.len, false))
+                        {
                             try self.assignRecordFromAbiRegs(ins.field, rec);
                         }
                     } else return self.refuse(@src());
@@ -3743,6 +3768,24 @@ const Arm64Compiler = struct {
                     const vals = try self.dnirRetRecordVals(ins);
                     const n = vals.len;
                     if (n == 0 or n > dnir_lower.max_reg_record_fields) return self.refuse(@src());
+                    // A FOREIGN result that got this far is one the prologue could
+                    // not send down the indirect path, because neither record map
+                    // holds a descriptor for it. That is a real and narrow class:
+                    // `collectScalRecordsFromDnir` skips any record containing an
+                    // f64 field and `collectF64RecordsFromDnir` takes only records
+                    // that are ENTIRELY f64, so a MIXED record — `{ a: i64, b: f64,
+                    // c: i64 }` — is described nowhere and this arm returns n blind
+                    // registers for it.
+                    //
+                    // Under 16 bytes that is still right and stays allowed (a
+                    // 2-field mixed record comes back in x0/x1 on both conventions,
+                    // measured). Over 16 it is C's memory case and these registers
+                    // are garbage: `mkm(7)` answered `-16 3.0e-314 8289173760`,
+                    // `ok compile`, exit 0, no diagnostic. REFUSE. A named DNB001
+                    // is a debt with an address; a wrong number that links is not.
+                    if (dnir_lower.recordReturnIsIndirectFields(n, self.cur_func_foreign)) {
+                        return self.refuse(@src());
+                    }
                     var srcs: [dnir_lower.max_reg_record_fields]u5 = @splat(0);
                     var staged: [dnir_lower.max_reg_record_fields]u5 = @splat(0);
                     for (vals, 0..) |v, i| srcs[i] = try self.evalDnirValue(temps, v);
@@ -5794,7 +5837,10 @@ const Arm64Compiler = struct {
     fn indirectResultBuffer(self: *Arm64Compiler, ins: dnir.Instr) Error!?u16 {
         if (ins.record.len == 0) return null;
         const rec = scalRecordDesc(self.scal_records, ins.record) orelse return null;
-        if (rec.field_names.len <= dnir_lower.max_reg_record_fields) return null;
+        // Caller side, and the same `foreign = false` obligation recorded at the
+        // `call_direct` result copy above: the call does not carry the callee's
+        // boundary fact, and no Idol caller can receive a record today.
+        if (!dnir_lower.recordReturnIsIndirectFields(rec.field_names.len, false)) return null;
         const base = if (ins.field.len > 0) ins.field else "rec";
         const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, rec.field_names[0] });
         defer self.alloc.free(key);

@@ -238,6 +238,23 @@ pub const Function = struct {
     ret: RT,
     params: []const Param = &.{},
     ret_record: ?[]const u8 = null,
+    /// This relation DECLARED ITSELF a foreign boundary (`@comp.c.export("n")`,
+    /// `@c.export`, `@export`, `@ffi`), so the symbol it exports is the name a C
+    /// program writes and the convention it answers on is C's, not Idol's.
+    ///
+    /// It is the SAME declaration that exempts the relation from home mangling
+    /// (`dnir_lower.foreignBoundaryName`), and it must be, because the two are
+    /// one claim: *this name and this convention are not ours to choose*. Naming
+    /// yourself to C and then answering on Idol's internal convention is the
+    /// half-boundary that produced the measured defect this field exists to
+    /// close — a 24-byte record returned in x0..x2 where AAPCS64 §6.9 says x8.
+    ///
+    /// FALSE IS THE INTERNAL ABI AND THAT IS DELIBERATE. Idol's own convention
+    /// keeps a record of up to `dnir_lower.max_reg_record_fields` in registers,
+    /// which is strictly cheaper than C's 16-byte cliff — no buffer, no stores,
+    /// no reload. `AGENTS.md` forbids the C ABI from becoming the internal
+    /// application ABI, so this is a boundary fact and never a global one.
+    foreign_boundary: bool = false,
     /// Pure f64 kernel — params/return use FP registers (M1).
     is_float_kernel: bool = false,
     /// Exact authoritative graph id for the callable declaration.
