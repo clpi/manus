@@ -459,20 +459,6 @@ pub fn build(b: *std.Build) void {
     const ts_projection_step = b.step("treesitter-projection", "grammar.js regenerates byte-identically from scripts/treesitter_emit.id (GAP-049)");
     ts_projection_step.dependOn(&ts_projection_cmd.step);
 
-    // c-floor -- constitution section 47, the three laws that make C a
-    // CANDIDATE rather than the ceiling, measured instead of asserted. Half the
-    // rows read the `c_floor` block of `duo explain` (the plan) and half run
-    // both backends and time them (the world); a row that disagrees is the
-    // finding. It is a step of its own rather than a row inside audit100
-    // because it COMPILES AND RUNS programs -- seconds, not milliseconds -- and
-    // because a measured loss for the native lowering is a legitimate PASS here
-    // (the floor working) while every audit100 row is a violation count.
-    const cfloor_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/cfloor.id" });
-    cfloor_cmd.setCwd(b.path("."));
-    cfloor_cmd.step.dependOn(b.getInstallStep());
-    const cfloor_step = b.step("c-floor", "constitution §47: the C-equivalent realization is a costed candidate; plan vs measurement");
-    cfloor_step.dependOn(&cfloor_cmd.step);
-
     const ftcftw_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/ledger/ftcftw.id" });
     ftcftw_cmd.setCwd(b.path("."));
     ftcftw_cmd.step.dependOn(b.getInstallStep());
@@ -962,6 +948,32 @@ pub fn build(b: *std.Build) void {
     mcp_gate_step.dependOn(&mcp_gate_cmd.step);
     // Tier 0: a dead MCP server is a dead coordination plane.
     agent_smoke_step.dependOn(&mcp_gate_cmd.step);
+
+    // explain-gate — `duo explain` is the compiler's only projection of live
+    // codegen state (optimization outcomes, assumption guards, the transform
+    // engine's provenance log and tier-1 registry). Its four `.id` consumers —
+    // scripts/explain.id, scripts/contract.id, scripts/transform.id and the
+    // now-deleted scripts/cfloor.id — ALL refused to run when measured: the
+    // first three were invoked as `idol run --backend=c …` and `--backend=c` is
+    // RETIRED (exit 1, by diagnostic), and cfloor.id was outside the direct
+    // backend's subset (DNB001 `mod-global-written:rows`). `consumers = 0`,
+    // which HPLS §8 makes P0 debt, and the same census is what condemned the
+    // `realize`/`semantic` cascade deleted alongside this.
+    //
+    // Shell, not `.id`, for one measured reason: it is the only gate form that
+    // executes today. It asserts BYTES (explain exits 0 on a contract violation
+    // by design, so exit status decides nothing) and is positive-controlled.
+    // Verified load-bearing by driving it at the pre-change compiler, where row
+    // R1 fails on `lower.cequiv` — the realization plan that selected a backend
+    // the compiler refuses. Fold it into the `.id` gates when the direct backend
+    // grows `mod-global-written` and `unresolved-application-facts`.
+    const explain_gate_cmd = b.addSystemCommand(&.{"./tools/node/dev/explain-gate"});
+    explain_gate_cmd.setCwd(b.path("."));
+    explain_gate_cmd.step.dependOn(b.getInstallStep());
+    const explain_gate_step = b.step("explain-gate", "duo explain must project live compiler state, asserted by value");
+    explain_gate_step.dependOn(&explain_gate_cmd.step);
+    // Tier 0: an unprojected optimizer is an undiagnosable one.
+    agent_smoke_step.dependOn(&explain_gate_cmd.step);
 
     // lsp-gate — the LSP is the same kind of program, and it had NO gate at all.
     //

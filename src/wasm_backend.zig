@@ -510,6 +510,9 @@ const Emitter = struct {
     scratch_i32: u32 = 0,
     scratch_a: u32 = 0,
     scratch_b: u32 = 0,
+    /// The TRUNCATED remainder, held so the floored correction can test it
+    /// twice without recomputing a divide. See the `.mod` arm.
+    scratch_c: u32 = 0,
     pc_local: u32 = 0,
     frame_local: u32 = 0,
     frame_off: std.AutoHashMapUnmanaged(u32, u32) = .empty,
@@ -980,9 +983,10 @@ fn emitFunctionBody(e: *Emitter, f: dnir.Function) Error![]u8 {
     e.scratch_i32 = n_slots;
     e.scratch_a = n_slots + 1;
     e.scratch_b = n_slots + 2;
-    e.pc_local = n_slots + 3;
-    e.frame_local = n_slots + 4;
-    const n_field_locals = try planFieldLocals(e, instrs, n_slots + 5) - (n_slots + 5);
+    e.scratch_c = n_slots + 3;
+    e.pc_local = n_slots + 4;
+    e.frame_local = n_slots + 5;
+    const n_field_locals = try planFieldLocals(e, instrs, n_slots + 6) - (n_slots + 6);
 
     // Frame layout for `alloc_slots`, assigned ONCE here. Reserving where the
     // table is produced re-executes on each loop iteration and walks the stack
@@ -1020,7 +1024,7 @@ fn emitFunctionBody(e: *Emitter, f: dnir.Function) Error![]u8 {
             i = j;
         }
         try decls.append(e.alloc, .{ .n = 1, .t = vt_i32 }); // scratch_i32
-        try decls.append(e.alloc, .{ .n = 2, .t = vt_i64 }); // scratch_a, scratch_b
+        try decls.append(e.alloc, .{ .n = 3, .t = vt_i64 }); // scratch_a, scratch_b, scratch_c
         try decls.append(e.alloc, .{ .n = 1, .t = vt_i32 }); // pc
         try decls.append(e.alloc, .{ .n = 1, .t = vt_i32 }); // frame
         if (n_field_locals > 0) try decls.append(e.alloc, .{ .n = n_field_locals, .t = vt_i64 });
@@ -1605,9 +1609,54 @@ fn emitBinop(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
             try b.get(e.scratch_a);
             try b.get(e.scratch_b);
             try b.op(if (ins.binop == .div) op_i64_div_s else op_i64_rem_s);
+            if (ins.binop == .mod) {
+                // THE FLOOR CORRECTION, so the two realizers answer one law.
+                //
+                // `i64.rem_s` is TRUNCATING — the remainder takes the sign of
+                // the dividend — and `docs/rulings.md` rules Idol's `%`
+                // FLOORED, taking the sign of the divisor. They agree exactly
+                // when the operand signs agree, so:
+                //
+                //     r != 0 && (r ^ b) < 0   ->   r + b     else   r
+                //
+                // Written with `select` rather than a branch because both arms
+                // are already on the stack and neither can trap.
+                //
+                // THE TWO SPECIAL ARMS ABOVE NEED NO CORRECTION and are
+                // deliberately untouched: floored and truncating both answer 0
+                // for `x % -1`, and the `b == 0` arm answers `a` in both,
+                // because AArch64's `sdiv` yields quotient 0 there and the
+                // correction's own `r == 0` select then keeps `a`. Checked
+                // against the AArch64 sequence case by case, not assumed.
+                try b.set(e.scratch_c);
+                try b.get(e.scratch_c);
+                try b.get(e.scratch_b);
+                try b.op(op_i64_add);
+                try b.get(e.scratch_c);
+                try b.get(e.scratch_c);
+                try b.i64c(0);
+                try b.op(op_i64_ne);
+                try b.get(e.scratch_c);
+                try b.get(e.scratch_b);
+                try b.op(op_i64_xor);
+                try b.i64c(0);
+                try b.op(op_i64_lt_s);
+                try b.op(op_i32_and);
+                try b.op(op_select);
+            }
             try b.byte(op_end);
             try b.byte(op_end);
         },
+        // `//` IS NOT IMPLEMENTED HERE, AND IT REFUSES BY NAME RATHER THAN
+        // ANSWERING. `i64.div_s` is truncating and floor division is a
+        // different value; emitting the truncating one would make this realizer
+        // disagree with the AArch64 one on `(0-7) // 10` — 0 against -1 — which
+        // is a silent wrong answer, the one outcome this surface does not
+        // tolerate. A named refusal is the honest state until the correction is
+        // written here too. ROUTED: it needs `q` and `r` live at once, i.e. one
+        // more scratch local, plus its own `b == 0` arm (`a < 0 ? -1 : 0`,
+        // which is what the AArch64 sequence produces there).
+        .idiv => return e.refuse("binop:idiv-floor-unimplemented"),
         else => {
             try pushValue(e, b, ins.lhs, .i64);
             try pushValue(e, b, ins.rhs, .i64);

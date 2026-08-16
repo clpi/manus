@@ -322,6 +322,9 @@ pub const CodeGen = struct {
     /// boxed table lookup. Null until `emit_module` collects it.
     current_module: ?*const ast.Module = null,
     emit_stmt_blocks_as_returns: bool = false,
+    /// GAP-174 — set only for the duration of `block_tail_type`. See
+    /// `local_type`.
+    local_type_overlay: ?*const std.StringHashMapUnmanaged(RT) = null,
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
     func_bodies: std.StringHashMapUnmanaged(*const ast.FuncBody) = .empty,
     /// Module-scope function declarations (attributes for effect/call algebra).
@@ -1221,6 +1224,12 @@ pub const CodeGen = struct {
         while (i > 0) {
             i -= 1;
             if (self.local_scopes.items[i].get(name)) |rt| return rt;
+        }
+        // GAP-174 — the names a block is ABOUT to bind, for the one predicate
+        // that has to ask about a block before emitting it. Consulted last, so
+        // a real scope always wins; null except inside `block_tail_type`.
+        if (self.local_type_overlay) |ov| {
+            if (ov.get(name)) |rt| return rt;
         }
         return null;
     }
@@ -11875,8 +11884,56 @@ pub const CodeGen = struct {
         const tail = blk.tail_expr orelse return false;
         if (self.current_ret == .void or self.current_ret == .any) return false;
         if (!semantic_algebra.lowersToNativeC(self.current_ret)) return false;
-        const tail_rt = self.expr_type(tail);
+        const tail_rt = self.block_tail_type(blk, tail);
         return types.ResolvedType.eql(self.current_ret, tail_rt);
+    }
+
+    /// The type the block's TAIL EXPRESSION will have once the block's own
+    /// statements have run — which is not the same question as
+    /// `expr_type(tail)`, because this predicate runs BEFORE the block is
+    /// emitted and therefore before any name the block itself binds exists in
+    /// a scope. gaps/GAP-174: `answer = 7` followed by `answer` typed the tail
+    /// as `.any`, the arm was emitted in STATEMENT mode, and the tail became
+    /// the expression statement `answer;` — a value-returning C function that
+    /// falls off its own end. No diagnostic, and the caller reads whatever the
+    /// return register happened to hold, which is why the same defect answered
+    /// `0` in one direction and THE ARM THAT DID NOT RUN in the other.
+    ///
+    /// The overlay is READ-ONLY and additive: it can only make a type known
+    /// that was previously unknown, never change one that was already
+    /// resolved, so an arm that returned before still returns.
+    fn block_tail_type(self: *CodeGen, blk: *const ast.Block, tail: *const ast.Expr) RT {
+        if (blk.stmts.len == 0) return self.expr_type(tail);
+        var overlay: std.StringHashMapUnmanaged(RT) = .empty;
+        defer overlay.deinit(self.alloc);
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .assign => |a| {
+                    if (a.targets.len != 1 or a.values.len != 1) continue;
+                    if (a.targets[0].* != .name) continue;
+                    const nm = a.targets[0].name.ident;
+                    if (self.local_type(nm) != null) continue;
+                    const vt = self.expr_type(a.values[0]);
+                    if (vt == .any) continue;
+                    overlay.put(self.alloc, nm, vt) catch return self.expr_type(tail);
+                },
+                .local_decl => |ld| {
+                    if (ld.names.len != ld.inits.len) continue;
+                    for (ld.names, ld.inits) |nm, init_expr| {
+                        if (self.local_type(nm.ident) != null) continue;
+                        const vt = self.expr_type(init_expr);
+                        if (vt == .any) continue;
+                        overlay.put(self.alloc, nm.ident, vt) catch return self.expr_type(tail);
+                    }
+                },
+                else => {},
+            }
+        }
+        if (overlay.count() == 0) return self.expr_type(tail);
+        const prev = self.local_type_overlay;
+        self.local_type_overlay = &overlay;
+        defer self.local_type_overlay = prev;
+        return self.expr_type(tail);
     }
 
     /// Poison only names assigned inside *nested* constructs of this block.
@@ -11974,7 +12031,24 @@ pub const CodeGen = struct {
                 self.stmt_fallthrough_returns(&blk.stmts[i]))
             {
                 try self.hoist_control_implicit_locals(&blk.stmts[i], blk.stmts[i + 1 ..], blk.tail_expr);
+                // GAP-174 — THE FLAG HAS TO BE SET BEFORE THE EMISSION IT
+                // GOVERNS. It was set *after* `emit_stmt` and immediately
+                // restored by its own `defer`, so `emit_control_block` never
+                // once observed it true and the whole mechanism was dead code:
+                // every arm fell back on `control_block_should_return`, a TYPE
+                // test, and an arm whose tail type did not resolve was emitted
+                // as a statement block with no `return` at all.
+                //
+                // `stmt_fallthrough_returns` has already declared that this
+                // statement IS the relation's answer — that declaration is what
+                // suppresses the default return below it. Making the emission
+                // honour the same declaration is what stops the two from
+                // disagreeing, which is the only reason a value-returning C
+                // function could be emitted that falls off its own end.
+                const prev = self.emit_stmt_blocks_as_returns;
+                self.emit_stmt_blocks_as_returns = blk.stmts[i] == .if_stmt;
                 try self.emit_stmt(&blk.stmts[i]);
+                self.emit_stmt_blocks_as_returns = prev;
                 // §4 — assignment expression value is the implicit return.
                 // Re-use the assigned lvalue to avoid double-evaluating the RHS.
                 if (blk.stmts[i] == .assign and blk.stmts[i].assign.targets.len == 1 and
@@ -11983,9 +12057,6 @@ pub const CodeGen = struct {
                     try self.emit_implicit_return(blk.stmts[i].assign.targets[0]);
                     return;
                 }
-                const prev = self.emit_stmt_blocks_as_returns;
-                self.emit_stmt_blocks_as_returns = true;
-                defer self.emit_stmt_blocks_as_returns = prev;
                 return;
             }
             if (tail_mode == .implicit_return and blk.tail_expr == null and i + 1 == blk.stmts.len and
@@ -11994,7 +12065,17 @@ pub const CodeGen = struct {
                 return;
             }
             try self.hoist_control_implicit_locals(&blk.stmts[i], blk.stmts[i + 1 ..], blk.tail_expr);
-            try self.emit_stmt(&blk.stmts[i]);
+            {
+                // GAP-174 — `emit_stmt_blocks_as_returns` says "the statement I
+                // am emitting IS the enclosing relation's answer". A statement
+                // that is not the last one is not, so the flag must not leak
+                // into it: an inner `if` would grow a `return` in every arm and
+                // leave the relation early with the wrong value.
+                const prev = self.emit_stmt_blocks_as_returns;
+                self.emit_stmt_blocks_as_returns = false;
+                defer self.emit_stmt_blocks_as_returns = prev;
+                try self.emit_stmt(&blk.stmts[i]);
+            }
             i += 1;
         }
         if (blk.tail_expr) |expr| {

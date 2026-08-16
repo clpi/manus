@@ -91,197 +91,6 @@ pub const Stage = enum(u8) {
     }
 };
 
-// ── 1. Descriptor Algebra ─────────────────────────────────────────────────────
-
-/// Operations on descriptor *values* (types, concepts, protocols, effects, …).
-pub const DescriptorOp = enum {
-    add,
-    sub,
-    intersect,
-    restrict,
-    transform,
-
-    pub fn name(self: DescriptorOp) []const u8 {
-        return switch (self) {
-            .add => "add",
-            .sub => "sub",
-            .intersect => "intersect",
-            .restrict => "restrict",
-            .transform => "transform",
-        };
-    }
-};
-
-pub const DescriptorKind = enum {
-    type,
-    concept,
-    protocol,
-    enum_shape,
-    module,
-    schema,
-    capability,
-    directive,
-    effect,
-    hardware,
-
-    pub fn name(self: DescriptorKind) []const u8 {
-        return @tagName(self);
-    }
-};
-
-/// Named descriptor reference in the convergence spine (graph node id later).
-pub const DescriptorRef = struct {
-    kind: DescriptorKind,
-    name: []const u8,
-    knowledge: KnowledgeLevel = .unknown,
-};
-
-pub const DescriptorExpr = struct {
-    op: DescriptorOp,
-    lhs: ?*const DescriptorExpr = null,
-    rhs: ?*const DescriptorExpr = null,
-    atom: ?DescriptorRef = null,
-
-    /// Structural hash for cache keys (Phase 2+).
-    pub fn hash(self: *const DescriptorExpr, hasher: *std.hash.Wyhash) void {
-        hasher.update(@tagName(self.op));
-        if (self.atom) |a| {
-            hasher.update(a.name);
-            hasher.update(@tagName(a.kind));
-            hasher.update(&.{@intFromEnum(a.knowledge)});
-        }
-        if (self.lhs) |l| l.hash(hasher);
-        if (self.rhs) |r| r.hash(hasher);
-    }
-};
-
-/// Arena-backed builder for descriptor expression trees (— internal only).
-pub const DescriptorExprBuilder = struct {
-    nodes: std.ArrayListUnmanaged(DescriptorExpr) = .empty,
-    alloc: std.mem.Allocator,
-
-    pub fn init(alloc: std.mem.Allocator) DescriptorExprBuilder {
-        return .{ .alloc = alloc };
-    }
-
-    pub fn deinit(self: *DescriptorExprBuilder) void {
-        self.nodes.deinit(self.alloc);
-    }
-
-    pub fn leaf(
-        self: *DescriptorExprBuilder,
-        kind: DescriptorKind,
-        name: []const u8,
-        knowledge: KnowledgeLevel,
-    ) !*const DescriptorExpr {
-        try self.nodes.append(self.alloc, .{
-            .op = .add,
-            .atom = .{ .kind = kind, .name = name, .knowledge = knowledge },
-        });
-        return &self.nodes.items[self.nodes.items.len - 1];
-    }
-
-    pub fn compose(
-        self: *DescriptorExprBuilder,
-        op: DescriptorOp,
-        lhs: *const DescriptorExpr,
-        rhs: *const DescriptorExpr,
-    ) !*const DescriptorExpr {
-        try self.nodes.append(self.alloc, .{
-            .op = op,
-            .lhs = lhs,
-            .rhs = rhs,
-        });
-        return &self.nodes.items[self.nodes.items.len - 1];
-    }
-};
-
-pub fn descriptorIsAtom(expr: *const DescriptorExpr) bool {
-    return expr.atom != null and expr.lhs == null and expr.rhs == null;
-}
-
-pub fn descriptorStructuralHash(expr: *const DescriptorExpr) u64 {
-    var hasher = std.hash.Wyhash.init(0);
-    expr.hash(&hasher);
-    return hasher.final();
-}
-
-/// Build descriptor for a module alias: `Point = {…}`, `Sprite = Point`, `Colored = Named + …`.
-pub fn buildAliasDescriptorExpr(
-    builder: *DescriptorExprBuilder,
-    alias_name: []const u8,
-    parent: ?[]const u8,
-    target_name: ?[]const u8,
-    knowledge: KnowledgeLevel,
-) !*const DescriptorExpr {
-    const self_atom = try builder.leaf(.type, alias_name, knowledge);
-    if (parent) |p| {
-        const parent_atom = try builder.leaf(.type, p, .stable);
-        return try builder.compose(.add, parent_atom, self_atom);
-    }
-    if (target_name) |t| {
-        if (!std.mem.eql(u8, t, alias_name)) {
-            const target_atom = try builder.leaf(.type, t, .stable);
-            return try builder.compose(.add, target_atom, self_atom);
-        }
-    }
-    return self_atom;
-}
-
-/// Parse `@derive(Display, Eq, …)` trait names from alias attributes.
-pub fn collectDeriveTraitNames(
-    attributes: []const ast.Attribute,
-    alloc: std.mem.Allocator,
-) ![]const []const u8 {
-    var names: std.ArrayListUnmanaged([]const u8) = .empty;
-    errdefer {
-        for (names.items) |n| alloc.free(n);
-        names.deinit(alloc);
-    }
-    for (attributes) |attr| {
-        const key = effectAttrKey(attr.name);
-        if (!std.mem.eql(u8, key, "derive")) continue;
-        // `@derive(Display, Eq)` and `@derive("Display", "Eq")` are one shape:
-        // a positional list. The shared tokenizer splits it, so a comma inside
-        // a quoted trait argument no longer severs the name.
-        var it = directives.attrArgs(attr.args);
-        while (it.next()) |arg| {
-            if (arg.text.len == 0) continue;
-            try names.append(alloc, try alloc.dupe(u8, arg.text));
-        }
-    }
-    return names.toOwnedSlice(alloc);
-}
-
-/// Alias descriptor + `@derive` traits as `DescriptorOp.transform` chain (`Type~Display~Eq`).
-pub fn buildAliasDescriptorExprWithDerives(
-    builder: *DescriptorExprBuilder,
-    alias_name: []const u8,
-    parent: ?[]const u8,
-    target_name: ?[]const u8,
-    knowledge: KnowledgeLevel,
-    attributes: []const ast.Attribute,
-    alloc: std.mem.Allocator,
-) !*const DescriptorExpr {
-    _ = try buildAliasDescriptorExpr(builder, alias_name, parent, target_name, knowledge);
-    var expr_idx = builder.nodes.items.len - 1;
-    const traits = try collectDeriveTraitNames(attributes, alloc);
-    defer alloc.free(traits);
-    // Reserve before storing pointers into the node list (ArrayList reallocation safety).
-    try builder.nodes.ensureTotalCapacity(builder.alloc, builder.nodes.items.len + traits.len * 2);
-    for (traits) |trait| {
-        _ = try builder.leaf(.protocol, trait, .stable);
-        const trait_idx = builder.nodes.items.len - 1;
-        try builder.nodes.append(builder.alloc, .{
-            .op = .transform,
-            .lhs = &builder.nodes.items[expr_idx],
-            .rhs = &builder.nodes.items[trait_idx],
-        });
-        expr_idx = builder.nodes.items.len - 1;
-    }
-    return &builder.nodes.items[expr_idx];
-}
-
 /// Compatibility-facing transform ids for ordinary iteration relations.
 ///
 /// The `pipeline.*` strings are frozen registry spellings. They do not name a
@@ -297,27 +106,6 @@ pub fn iterationTransformId(relation: IterationRelation) []const u8 {
         .branch => "pipeline.branch",
         .collect => "pipeline.collect",
     };
-}
-
-/// Compact label for graph JSON (`Point`, `Point+Named`, `A+B`).
-pub fn formatDescriptorExprShort(expr: *const DescriptorExpr, buf: []u8) []const u8 {
-    if (descriptorIsAtom(expr)) {
-        return std.fmt.bufPrint(buf, "{s}", .{expr.atom.?.name}) catch "?";
-    }
-    const lhs = expr.lhs orelse return "?";
-    const rhs = expr.rhs orelse return "?";
-    var lb: [96]u8 = undefined;
-    var rb: [96]u8 = undefined;
-    const ls = formatDescriptorExprShort(lhs, &lb);
-    const rs = formatDescriptorExprShort(rhs, &rb);
-    const sep = switch (expr.op) {
-        .add => "+",
-        .sub => "-",
-        .intersect => "&",
-        .restrict => "<:",
-        .transform => "~",
-    };
-    return std.fmt.bufPrint(buf, "{s}{s}{s}", .{ ls, sep, rs }) catch "?";
 }
 
 // ── 3. Shape Algebra ──────────────────────────────────────────────────────────
@@ -1033,16 +821,6 @@ pub const convergence_catalog: []const ConvergenceEntry = &.{
         .notes = "knowledgeOfType/lowersToNativeC; module_knowledge + moduleUsesFullNativeLowering in codegen.",
     },
     .{
-        .id = "descriptor_algebra",
-        .legacy_mechanisms = &.{
-            "types", "concepts", "derive", "protocols", "enum", "module", "schema", "@comp.*",
-        },
-        .unified_algebra = "DescriptorExpr + DescriptorOp (+, −, ∩, restrict, transform)",
-        .status = .partial,
-        .priority = 2,
-        .notes = "Alias lift builds DescriptorExpr atoms/composition; graph exports descriptor_hash+label.",
-    },
-    .{
         .id = "shape_algebra",
         .legacy_mechanisms = &.{
             "StorageClass", "@sealed", "table_shape nodes", "@comp.type.shape", "record dedup",
@@ -1525,21 +1303,6 @@ test "device attribute: undotted and quoted spellings agree with dotted" {
     try std.testing.expect(!effectSetFromAttributes(&cpu).contains(.gpu));
 }
 
-test "collectDeriveTraitNames: quoted and bare lists give the same names" {
-    const alloc = std.testing.allocator;
-    inline for (.{ "Display, Eq", "\"Display\", \"Eq\"" }) |spelling| {
-        const attrs = [_]ast.Attribute{.{ .name = "derive", .args = spelling }};
-        const names = try collectDeriveTraitNames(&attrs, alloc);
-        defer {
-            for (names) |n| alloc.free(n);
-            alloc.free(names);
-        }
-        try std.testing.expectEqual(@as(usize, 2), names.len);
-        try std.testing.expectEqualStrings("Display", names[0]);
-        try std.testing.expectEqualStrings("Eq", names[1]);
-    }
-}
-
 test "callSiteFromShapeWithEffects: callee pure propagates" {
     const shape = types.CallShape{ .callee_kind = .direct, .callee_name = "f", .arg_count = 0 };
     const site = callSiteFromShapeWithEffects(shape, EffectSet.singleton(.pure));
@@ -1571,48 +1334,4 @@ test "callTransformId roundtrip and eligibility" {
     const indirect_site = callSiteFromShape(indirect);
     try std.testing.expect(!callTransformEligible(.@"inline", indirect_site, indirect));
     try std.testing.expect(!callTransformEligible(.specialize, indirect_site, indirect));
-}
-
-test "descriptor algebra: alias atom and composition" {
-    var builder = DescriptorExprBuilder.init(std.testing.allocator);
-    defer builder.deinit();
-
-    const point = try buildAliasDescriptorExpr(&builder, "Point", null, null, .native);
-    try std.testing.expect(descriptorIsAtom(point));
-    try std.testing.expectEqualStrings("Point", point.atom.?.name);
-
-    var buf: [64]u8 = undefined;
-    try std.testing.expectEqualStrings("Point", formatDescriptorExprShort(point, &buf));
-
-    const sprite = try buildAliasDescriptorExpr(&builder, "Sprite", "Point", null, .native);
-    try std.testing.expectEqualStrings("Point+Sprite", formatDescriptorExprShort(sprite, &buf));
-
-    const h1 = descriptorStructuralHash(point);
-    const h2 = descriptorStructuralHash(sprite);
-    try std.testing.expect(h1 != h2);
-
-    const colored = try buildAliasDescriptorExpr(&builder, "Colored", null, "Named", .stable);
-    try std.testing.expectEqualStrings("Named+Colored", formatDescriptorExprShort(colored, &buf));
-}
-
-test "descriptor algebra: derive traits as transform chain" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var builder = DescriptorExprBuilder.init(alloc);
-    defer builder.deinit();
-    const attrs = [_]ast.Attribute{
-        .{ .name = "derive", .args = "Display, Eq, Add" },
-    };
-    const vec = try buildAliasDescriptorExprWithDerives(
-        &builder,
-        "Vec2",
-        null,
-        null,
-        .native,
-        &attrs,
-        alloc,
-    );
-    var buf: [128]u8 = undefined;
-    try std.testing.expectEqualStrings("Vec2~Display~Eq~Add", formatDescriptorExprShort(vec, &buf));
 }

@@ -42,13 +42,9 @@ test {
     _ = @import("repair_candidate.zig");
     _ = @import("semantic_fingerprint.zig");
     _ = @import("evidence_record.zig");
-    _ = @import("realization.zig");
     _ = @import("place.zig");
     _ = @import("eqspace.zig");
     _ = @import("observation.zig");
-    _ = @import("persistent_semantic_state.zig");
-    _ = @import("compile_semantic_cache.zig");
-    _ = @import("semantic_invalidation.zig");
     _ = @import("wasm_semantic.zig");
     _ = @import("wasm_semantic_gen.zig");
     _ = @import("wasm_decode_differential.zig");
@@ -70,12 +66,8 @@ test {
     _ = @import("proof_carrying.zig");
     _ = @import("token_semantic.zig");
     _ = @import("token_classify_gen.zig");
-    _ = @import("semantic_context.zig");
-    _ = @import("semantic_cli.zig");
-    _ = @import("semantic_transaction.zig");
     _ = @import("backend_identity.zig");
     _ = @import("native_barrier_checks.zig");
-    _ = @import("wasm_decode_semantic.zig");
     _ = @import("target_model.zig");
     _ = @import("sim_pipeline.zig");
     _ = @import("meta_codegen.zig");

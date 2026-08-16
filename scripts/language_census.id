@@ -64,7 +64,9 @@
 # it already carried — after which the assertions could be made from outside the
 # binary. They became scripts/realize.id, scripts/sim.id and
 # scripts/transform.id, all three wired into agent-smoke, each carrying four or
-# five positive controls the Zig originals did not have. `zig build unit-test`
+# five positive controls the Zig originals did not have. (scripts/realize.id was
+# deleted 2026-08-15 with the `duo realize` verb: measured, it only ever ran as
+# `idol run --backend=c`, and that flag is refused.) `zig build unit-test`
 # went 1147 -> 1122: exactly the 25 tests those six files declared, so nothing
 # was lost by accident.
 #

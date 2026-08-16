@@ -5,8 +5,6 @@ graph = "src/semantic_graph.zig"
 query = "src/graph_query.zig"
 dispatch = "src/lexer_dispatch.zig"
 lower = "src/dnir_lower.zig"
-realize = "src/realization.zig"
-cache = "src/compile_semantic_cache.zig"
 snap = "src/knowledge_snapshot.zig"
 pipeline = "src/sim_pipeline.zig"
 tests = "src/tests.zig"
@@ -176,20 +174,6 @@ if not code and not dispatch:audit("fieldkind(")
   code = 79
 if not code and lower:hit("funcResultDescriptor(")
   code = 80
-if not code and realize:hit("findByNameOfKind")
-  code = 81
-if not code and realize:hit("fingerprintForRecordEntity")
-  code = 82
-if not code and realize:hit("duo:record:")
-  code = 83
-if not code and cache:hit("fingerprintForRecordEntity")
-  code = 84
-if not code and cache:hit("recordNameFromEntity")
-  code = 85
-if not code and realize:hit("realize.lowering:")
-  code = 86
-if not code and realize:hit("duo:func:")
-  code = 87
 if not code and snap:hit("findByNameOfKind")
   code = 88
 if not code and snap:hit("mod.body.stmts")

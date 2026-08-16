@@ -40,8 +40,6 @@ ftcftw: i64 = ()
     fail = 1
   if row("scripts/census/native.id", "direct-native coverage over the reachable Idol examples corpus", "native census (--backend=direct", "NATIVE_FLOOR", "0 programs compiled natively", "census/native: PASS")
     fail = 1
-  if row("scripts/cfloor.id", "direct vs c-equivalent lowering plan and measurement (law.c.floor, law.perf.dominance)", "law.c.floor", "awk-oracle", "cfloor: FAIL", "cfloor: PASS")
-    fail = 1
   if row("scripts/native_differential.id", "direct and c backends agree on stdout and exit for blocking fixtures", "native_differential: PASS", "c backend failed to compile", "native_differential: FAIL", "stdout")
     fail = 1
   if row("scripts/run_benchmark.id", "Idiom-hosted kernels match reference C before any speed comparison", "reference C benchmark", "RESULT_FAIL_FLAG = 1", "Benchmark failed:", "Duo .lua/.id >= C")
