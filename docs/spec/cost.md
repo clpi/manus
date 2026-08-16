@@ -353,9 +353,16 @@ quoted from generated output are **C**, not Duo.
   exit 0. §12 says checked is the default.
 - **Integer division by zero is not a fault and not a truncation.** `7 / 0` with
   both operands `i64` prints **9218868437227405312** — the bit pattern of IEEE
-  `+inf` read as an integer. B-4 says `i64/i64` truncates; measured, the operands
-  went through the float path and the result was reinterpreted. This is a wrong
-  answer with a green exit code, and it is the worst row on this page.
+  `+inf` read as an integer; measured, the operands went through the float path
+  and the result was reinterpreted. This is a wrong answer with a green exit
+  code, and it is the worst row on this page.
+  This sentence used to read "B-4 says `i64/i64` truncates". **`§12 B-4` does not
+  exist**: this line was the only citation of it in `docs/spec/`, six corpus
+  files quote it, and no document in either tree defines it. Its `%` clause is
+  overturned by `docs/rulings.md` § "Modulo and floor division" (FLOORED, from
+  `law.md`'s "ordinary Lua meaning"); its "no `//`" clause is checkably false —
+  `//` is lexed, parsed, given a precedence row and a formatter spelling. Cite
+  a document that opens, or state the measurement without a citation.
 - **`range` does not exist**, so `for i in range(0, n)` is a parse-clean
   `call to undeclared function`. **`check`, `why`, and `todo` do not exist**
   either — every witness obligation in §2 is therefore unenforceable today,
