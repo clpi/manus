@@ -35,6 +35,7 @@ const backend_identity = @import("backend_identity.zig");
 const dynamic_boundary = @import("dynamic_boundary.zig");
 const lua_metamethod = @import("lua_metamethod.zig");
 const relation = @import("relation.zig");
+const collection_relation = @import("collection_relation.zig");
 const lexer_bridge = @import("lexer_bridge.zig");
 
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
@@ -5638,6 +5639,17 @@ pub const CodeGen = struct {
             // can lower: a string primitive, a receiver face over a free
             // function, and the `to(T)` conversion edge.
             .method_call => |mc| blk: {
+                // COLLECTION-RELATION-ONE, asked FIRST because the generic arm
+                // below would walk the body relation as an ordinary operand and
+                // refuse it `expr-unhandled:func_expr` — the relation-as-value
+                // wall, hit by a face that never becomes a value. What the
+                // precheck must approve is the SUBJECT and the FUSED BODY, and
+                // the result descriptor is the question's, not the body's.
+                if (collection_relation.shapeOf(expr)) |shape| {
+                    if (!self.expr_is_native_scalar(shape.subject)) break :blk false;
+                    if (!self.expr_is_native_scalar(shape.body)) break :blk false;
+                    break :blk true;
+                }
                 if (!self.expr_is_native_scalar(mc.obj)) break :blk false;
                 for (mc.args) |arg| {
                     if (!self.expr_is_native_scalar(arg)) break :blk false;

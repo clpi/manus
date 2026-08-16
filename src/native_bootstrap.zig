@@ -13,6 +13,17 @@
 //!   text:sub(a,b)       slice relation on subject
 //!   text:read()         read relation on path-shaped subject
 //!   text:tail()         tail relation on subject
+//!   xs:any((x) p)       existential relation on a collection subject
+//!
+//! `xs:any(…)` IS ON THAT LIST AND THE DEBT IS THE SAME ONE, stated so it is
+//! not read as a design: the collection relations resolve in sema and lower in
+//! `dnir_lower`, and the graph publishes NO application for them, exactly as it
+//! publishes none for `text:len()`. The iteration facts
+//! `protocol-projection-one.md` §3 enumerates — source, result pack, body
+//! relation, ordering, termination, effects, demand, world — therefore live in
+//! `collection_relation.Shape` and in the lowering, which is a weaker home than
+//! the graph. Deleting this row means giving `any` a real relation node, and it
+//! is the same deletion every other row above is waiting on.
 //!
 //! Foreign-only namespace spellings (delete when graph publishes exact ids):
 //!   string.byte/sub/match/len/char  → subject relations above
@@ -39,6 +50,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const subject_home = @import("subject_home.zig");
+const collection_relation = @import("collection_relation.zig");
 const Expr = ast.Expr;
 
 pub fn receiverLooksStrish(obj: *const Expr) bool {
@@ -111,6 +123,10 @@ fn testWorldApplication(mc: anytype) bool {
 fn methodApplication(expr: *const Expr) bool {
     const mc = expr.method_call;
     if (testWorldApplication(mc)) return true;
+    // COLLECTION-RELATION-ONE. Asked through `collection_relation.shapeOf` and
+    // not by re-testing the spelling here, so this reader and the three others
+    // cannot drift about which shapes are collection applications.
+    if (collection_relation.shapeOf(expr) != null) return true;
     if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
         std.mem.eql(u8, mc.method, "read") and mc.args.len == 0)
     {

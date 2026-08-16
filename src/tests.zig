@@ -23,6 +23,7 @@ test {
     _ = @import("async_lower.zig");
     _ = @import("escape.zig");
     _ = @import("table_facts.zig");
+    _ = @import("collection_relation.zig");
     _ = @import("property_tests.zig");
     _ = @import("pretty.zig");
     _ = @import("meta_module.zig");

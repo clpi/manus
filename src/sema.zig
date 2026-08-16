@@ -17,6 +17,7 @@ const foreign_adapter = @import("foreign_adapter.zig");
 const abi_specialize = @import("abi_specialize.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
 const wiring = @import("wiring.zig");
+const collection_relation = @import("collection_relation.zig");
 
 const callable_brace_error = "c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses";
 
@@ -3634,6 +3635,66 @@ pub const Sema = struct {
     /// Whether `subject:relation(args)` resolves to a declared relation, builtin,
     /// or admitted bootstrap edge. gap[113]: absent relations must not compile
     /// as `.any` and answer nil at runtime.
+    /// COLLECTION-RELATION-ONE — `xs:any(p)` and its siblings, resolved as real
+    /// subject-oriented relations on a table.
+    ///
+    /// Answers non-null exactly when this application IS one, in which case its
+    /// descriptor is the QUESTION's answer descriptor — `bool` for the
+    /// existential — and never the body relation's.
+    ///
+    /// FAILS CLOSED at every step, per `subject-section-one.md` §1: a relation
+    /// name whose subject is not a collection is left to the ordinary paths
+    /// below, so a user relation named `any` on a non-table subject keeps
+    /// whatever meaning it already had and this arm never takes a name.
+    ///
+    /// THE BODY RELATION IS CHECKED IN A SCOPE, NOT AS A CLOSURE. One push, the
+    /// single result name bound to the ELEMENT descriptor, one expression
+    /// checked, one pop. No binding survives the application, which is the same
+    /// thing `subject-section-one.md` §1 says of a subject section — "no lexical
+    /// binding, no scope mutation, no implicit identifier, and no runtime
+    /// closure" — arrived at from the explicit-lambda side.
+    fn checkCollectionRelation(self: *Sema, expr: *ast.Expr) SemaError!?RT {
+        const shape = collection_relation.shapeOf(expr) orelse return null;
+        // IT NEVER TAKES THE NAME. A program that declares its own relation
+        // called `any` keeps it, on every subject, exactly as an injected world
+        // ADDS reach and never removes a name already in use. This is not
+        // hypothetical politeness: a bare `arg` capture in `table_apply` turned
+        // a user relation into an argument read and answered 0 rather than 42
+        // with no diagnostic, and that is the shape being avoided.
+        if (self.callable_defs.contains(expr.method_call.method)) return null;
+        if (self.scope.lookup(expr.method_call.method) != null) return null;
+        const subject_t = try self.check_expr(@constCast(shape.subject));
+        // `.array` is the ONE indexable the direct backend lowers — the same
+        // fact `table_apply.zig` states about `t(i)`. A record (`table_type`)
+        // has named fields and no element descriptor, so there is nothing for
+        // the result name to be bound to; that is a refusal, not a default.
+        const elem: RT = switch (subject_t) {
+            .array => |a| a.elem.*,
+            else => return null,
+        };
+        try self.scope.push();
+        defer self.scope.pop();
+        try self.scope.define(shape.param, .{ .typ = elem, .is_const = true });
+        const body_t = try self.check_expr(@constCast(shape.body));
+        switch (shape.question) {
+            .any => {
+                // EXISTENTIAL DEMAND. The body relation states a predicate, so
+                // a body that cannot answer yes/no is a refusal here rather
+                // than a truthiness convention invented at the application
+                // site. `.any` passes because an unnarrowed descriptor is the
+                // checker not knowing, not the program being wrong.
+                if (body_t != .bool and body_t != .any) {
+                    self.err(
+                        shape.body.loc(),
+                        "'any' demands a predicate over each element, and this body relation answers '{s}' rather than a truth",
+                        .{@tagName(body_t)},
+                    );
+                }
+                return RT.bool;
+            },
+        }
+    }
+
     fn methodCallResolved(
         self: *Sema,
         obj: *const ast.Expr,
@@ -4463,6 +4524,14 @@ pub const Sema = struct {
                     for (mc.args) |arg| _ = try self.check_expr(arg);
                     return .any;
                 }
+                // COLLECTION-RELATION-ONE, and it must run BEFORE the arguments
+                // are checked. The body relation is FUSED, never built: handing
+                // its `.func_expr` to `check_expr` would run
+                // `analyze_closure_upvalues` and take a `closure_id`, which is
+                // how a value that `protocol-projection-one.md` §6 pins at ZERO
+                // starts existing. Nothing here is undone later — it is never
+                // done.
+                if (try self.checkCollectionRelation(expr)) |rt| return rt;
                 const ot = try self.check_expr(mc.obj);
                 for (mc.args) |arg| _ = try self.check_expr(arg);
                 if (std.mem.eql(u8, mc.method, "eq") and enum_type_has_derive(ot, "Eq")) {

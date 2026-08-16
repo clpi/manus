@@ -18,6 +18,7 @@ const place = @import("place.zig");
 const home_resolve = @import("home_resolve.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
 const table_facts = @import("table_facts.zig");
+const collection_relation = @import("collection_relation.zig");
 const RT = types.ResolvedType;
 
 pub const Error = error{
@@ -1577,6 +1578,22 @@ pub const LowerCtx = struct {
     module_globals: *const ModuleGlobals = &empty_module_globals,
     /// Names bound to compile-time-known i64 literals (for numeric for step, etc.).
     const_ints: std.StringHashMapUnmanaged(i64) = .empty,
+    /// THE RESULT NAME OF A FUSED BODY RELATION, WHEN THE ELEMENT IT NAMES IS A
+    /// LITERAL. Non-empty only while a collection relation is being lowered.
+    ///
+    /// It exists because a SLOT is not a VALUE to the folder. `xs(1) == 7` on a
+    /// determined table folds to two instructions (`constTableRead` answers
+    /// `.i64 = 7`, and `binop` over two immediates settles), while the same
+    /// comparison against a slot that was just stored `7` does not — measured,
+    /// `a = 7 · if a == 7` is 12 instructions today. Storing the element and
+    /// binding the name to the slot would therefore have made `xs:any(…)` the
+    /// SLOWER way to ask a question with a compile-time answer.
+    ///
+    /// Consulted BEFORE `locals` in the `.name` arm, which is what makes it a
+    /// SHADOW: the element name wins for the length of the body relation, and
+    /// an outer binding of the same name means exactly what it meant before and
+    /// after. `gate/collection.sh`'s shadow row is the check.
+    fused_literals: std.StringHashMapUnmanaged(i64) = .empty,
     next_temp: u32 = 0,
     locals: std.StringHashMapUnmanaged(u32) = .empty,
     instrs: std.ArrayList(dnir.Instr) = .empty,
@@ -1620,6 +1637,12 @@ pub const LowerCtx = struct {
         var ci = self.const_ints.iterator();
         while (ci.next()) |e| self.alloc.free(e.key_ptr.*);
         self.const_ints.deinit(self.alloc);
+        // Normally already empty — `ResultName.release` gives the name back at
+        // the end of every collection relation. Drained here so a bail out of a
+        // half-lowered body relation does not leak the key.
+        var fl = self.fused_literals.iterator();
+        while (fl.next()) |e| self.alloc.free(e.key_ptr.*);
+        self.fused_literals.deinit(self.alloc);
         if (self.self_param_slots.len > 0) self.alloc.free(self.self_param_slots);
         while (self.loop_breaks.pop()) |breaks| {
             var pending = breaks;
@@ -4145,6 +4168,26 @@ fn tableUseInExpr(expr: *const ast.Expr, name: []const u8) TableUse {
             break :blk u;
         },
         .method_call => |m| blk: {
+            // COLLECTION-RELATION-ONE. `xs:any(p)` is NOT an opaque mention of
+            // `xs`: it reads each element at a FIXED position, writes none,
+            // rebinds nothing and lets nothing escape — which is exactly the
+            // `const_read` verdict `t(1)`, `t(2)`, … would earn written out.
+            //
+            // WITHOUT THIS ARM THE STRONGER RELATION IS THE SLOWER ONE.
+            // Measured before it existed: the flag-and-scan loop this relation
+            // replaces folded to **2 instructions** while `xs:any(…)` emitted
+            // **65**, because the bare receiver read as `.opaque_use` and
+            // materialized all six elements into registers. That is HPLS §2
+            // exactly — a true fact making the best realization worse — and
+            // §3's negative abstraction tax says the richer form owes the
+            // cheaper code, not the same code.
+            if (collection_relation.shapeOf(expr)) |shape| {
+                if (shape.subject.* == .name and
+                    std.mem.eql(u8, shape.subject.name.ident, name))
+                {
+                    break :blk worseUse(.const_read, tableUseInExpr(shape.body, name));
+                }
+            }
             var u = tableUseInExpr(m.obj, name);
             for (m.args) |a| u = worseUse(u, tableUseInExpr(a, name));
             break :blk u;
@@ -5274,6 +5317,11 @@ fn lowerExprCons(
         // the world. `tryLowerRelationEdgeCall` already asks the question this
         // way (`if (ctx.locals.contains("os")) return null;`).
         .name => |n| blk: {
+            // A FUSED BODY RELATION'S RESULT NAME, standing for a literal
+            // element. Asked FIRST because it is an active shadow: it is
+            // non-empty only inside one collection relation's body, and inside
+            // it the name means the element and nothing else.
+            if (ctx.fused_literals.get(n.ident)) |element| break :blk dnir.Value{ .i64 = element };
             if (ctx.locals.get(n.ident)) |slot| break :blk dnir.Value{ .local = slot };
             // A WRITTEN module-scope binding is READ FROM ITS STORAGE, never
             // folded. `ctx.locals` still wins: a parameter or local of the same
@@ -6084,11 +6132,367 @@ fn lowerSubjectTail(
     return .{ .temp = t };
 }
 
+/// COLLECTION-RELATION-ONE — realize `xs:any(p)` as ONE iteration application.
+///
+/// Answers null when `expr` is not a collection application, so every existing
+/// path below is untouched.
+///
+/// THE QUESTION REACHES REALIZATION INTACT, which is the whole point of having
+/// separate relation words (`subject-section-one.md` §4). `any` is EXISTENTIAL,
+/// so the emitted shape leaves at the FIRST WITNESS and the elements after it
+/// are never examined. An `any` built as `filter` then a non-empty test would
+/// answer the same and be a different program.
+///
+/// THREE REALIZATIONS, ONE QUESTION, chosen from facts already in hand and
+/// none of them an iterator:
+///
+///   extent 0            no iteration at all — the answer is `false`, and the
+///                       emitted form is a constant. `protocol-projection-one.md`
+///                       §3's "or **nothing**".
+///   register-exploded   a SHORT-CIRCUIT CHAIN over the element slots. No loop,
+///                       no induction variable, no bounds check, no memory
+///                       traffic — the elements are already in slots, so asking
+///                       the question costs one predicate and one branch each
+///                       until one answers yes.
+///   memory-backed       an indexed scan whose body branches OUT of the loop on
+///                       the first witness. The early exit is emitted from the
+///                       QUESTION; nothing has to rediscover it from a flag.
+///
+/// Iterator object 0, protocol object 0, vtable 0, indirect dispatch 0,
+/// closure 0 — §6's pins, and they hold BY CONSTRUCTION here rather than by
+/// later elimination: the body relation is an expression lowered in place with
+/// its one result name bound to the element, and no value is ever built for it.
+fn lowerCollectionRelation(ctx: *LowerCtx, expr: *const Expr) Error!?dnir.Value {
+    const shape = collection_relation.shapeOf(expr) orelse return null;
+    // IT NEVER TAKES THE NAME. If the graph resolved this application to a
+    // relation, the program declared its own `any` and that declaration owns
+    // every call to it — the same rule `worldSubject` follows for `stdout` and
+    // `table_apply` follows for `arg`. Both were defects first: a user relation
+    // named `arg` silently became an argument read and answered 0 instead of
+    // 42, with no diagnostic anywhere. Sema declines the same case for the same
+    // reason, and this is the half that matters, because here the wrong answer
+    // would COMPILE.
+    if (ctx.occurrences.get(expr)) |occurrence| {
+        if (ctx.graph.applicationRelation(occurrence.application) != null) return null;
+    }
+    return switch (shape.question) {
+        .any => try lowerAnyRelation(ctx, shape),
+    };
+}
+
+/// Bind the body relation's single result name to `slot` for the duration of
+/// one predicate lowering, and give the name back exactly as it was found.
+///
+/// A SHADOW, NOT A SCOPE. `subject-section-one.md` §1 requires the body
+/// relation to create "no lexical binding, no scope mutation, no implicit
+/// identifier" — so an outer `x` must still be an outer `x` after the
+/// application, and the check that proves it is `gate/any.id`'s shadow row.
+const ResultName = struct {
+    ctx: *LowerCtx,
+    name: []const u8,
+    /// What the name meant OUTSIDE, so it can mean that again afterwards.
+    previous: ?u32,
+    shadowed_slot: bool = false,
+    shadowed_literal: bool = false,
+
+    fn bind(ctx: *LowerCtx, name: []const u8) ResultName {
+        return .{ .ctx = ctx, .name = name, .previous = ctx.locals.get(name) };
+    }
+
+    /// The element lives in a slot — the loaded or exploded realizations.
+    ///
+    /// `put` on a key already present keeps the stored key and replaces only
+    /// the value, so re-pointing the name at the next element allocates
+    /// nothing after the first.
+    fn point(self: *ResultName, slot: u32) Error!void {
+        if (self.shadowed_slot or self.previous != null) {
+            try self.ctx.locals.put(self.ctx.alloc, self.name, slot);
+        } else {
+            try self.ctx.locals.put(self.ctx.alloc, try self.ctx.alloc.dupe(u8, self.name), slot);
+        }
+        self.shadowed_slot = true;
+    }
+
+    /// The element IS a literal — the determined realization, where the folder
+    /// must see an immediate rather than a slot that happens to hold one.
+    fn pointLiteral(self: *ResultName, element: i64) Error!void {
+        if (self.shadowed_literal) {
+            try self.ctx.fused_literals.put(self.ctx.alloc, self.name, element);
+        } else {
+            try self.ctx.fused_literals.put(self.ctx.alloc, try self.ctx.alloc.dupe(u8, self.name), element);
+        }
+        self.shadowed_literal = true;
+    }
+
+    fn release(self: *ResultName) void {
+        if (self.shadowed_literal) {
+            if (self.ctx.fused_literals.fetchRemove(self.name)) |entry| self.ctx.alloc.free(entry.key);
+            self.shadowed_literal = false;
+        }
+        if (!self.shadowed_slot) return;
+        self.shadowed_slot = false;
+        if (self.previous) |slot| {
+            self.ctx.locals.put(self.ctx.alloc, self.name, slot) catch {};
+            return;
+        }
+        if (self.ctx.locals.fetchRemove(self.name)) |entry| self.ctx.alloc.free(entry.key);
+    }
+};
+
+/// EXTENT ZERO IS A FACT, AND `staticTableLen` CANNOT CARRY IT.
+///
+/// A zero-element positional literal is not `tableIsPositional` (that predicate
+/// requires at least one field), so it binds through the record path and no
+/// `<name>.len` slot is ever created — `staticTableLen` then answers null, which
+/// is the same null a `ptr` PARAMETER answers, and those two are opposite
+/// facts. One means "the extent is zero"; the other means "the extent is not
+/// known here". Reading the first as the second refuses a question with a
+/// trivial answer; reading the second as the first would answer `false` about a
+/// table this function has never seen the size of. So the empty binding is
+/// identified from the source that stated it, and nothing else is assumed.
+fn boundEmptyTable(ctx: *const LowerCtx, name: []const u8) bool {
+    const body = ctx.body orelse return false;
+    for (body.stmts) |stmt| {
+        switch (stmt) {
+            .local_decl => |decl| {
+                for (decl.names, 0..) |local, i| {
+                    if (!std.mem.eql(u8, local.ident, name)) continue;
+                    if (i >= decl.inits.len) return false;
+                    const init = decl.inits[i];
+                    return init.* == .table and init.table.fields.len == 0;
+                }
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+/// The body relation, EVALUATED, with its result name standing for `element`.
+///
+/// Deliberately tiny and deliberately conservative — it answers null for
+/// everything it is not certain about, and a null anywhere means the relation
+/// is realized as a scan instead. Three exclusions are the interesting ones,
+/// and each is a place a second opinion would become a WRONG ANSWER rather than
+/// a refusal:
+///
+///   * `ctx.const_ints` is NOT consulted. Its own doc comment says it records a
+///     name's last literal binding and is never invalidated by a later
+///     non-literal assignment — fine for a loop step read at the binding, fatal
+///     for a predicate read anywhere in a body.
+///   * `/`, `//` and `%` are NOT folded. `docs/rulings.md` settles them as
+///     FLOORED, the backend inherited truncating behaviour from `msub`, and a
+///     folder that picked either would be a second definition of an operator
+///     whose first definition is still being repaired.
+///   * `and` / `or` are NOT folded. They are value-selecting in the Lua law
+///     this language descends from, and `0` is TRUTHY there while this
+///     backend's branches treat it as false. That disagreement is a live
+///     question, not something to answer inside a folder.
+fn foldBodyRelation(ctx: *const LowerCtx, expr: *const ast.Expr, name: []const u8, element: i64) ?i64 {
+    const truth = struct {
+        fn of(b: bool) i64 {
+            return if (b) 1 else 0;
+        }
+    }.of;
+    switch (expr.*) {
+        .int_lit => |lit| return lit.val,
+        .true_lit => return 1,
+        .false_lit => return 0,
+        .name => |n| {
+            if (std.mem.eql(u8, n.ident, name)) return element;
+            if (ctx.module_consts.ints.get(n.ident)) |value| return value;
+            return null;
+        },
+        .unop => |u| {
+            const operand = foldBodyRelation(ctx, u.operand, name, element) orelse return null;
+            return switch (u.op) {
+                .neg => -%operand,
+                .not => truth(operand == 0),
+                .bnot => ~operand,
+                else => null,
+            };
+        },
+        .binop => |b| {
+            const lhs = foldBodyRelation(ctx, b.lhs, name, element) orelse return null;
+            const rhs = foldBodyRelation(ctx, b.rhs, name, element) orelse return null;
+            return switch (b.op) {
+                .add => lhs +% rhs,
+                .sub => lhs -% rhs,
+                .mul => lhs *% rhs,
+                .band => lhs & rhs,
+                .bor => lhs | rhs,
+                .bxor => lhs ^ rhs,
+                .eq => truth(lhs == rhs),
+                .neq => truth(lhs != rhs),
+                .lt => truth(lhs < rhs),
+                .gt => truth(lhs > rhs),
+                .leq => truth(lhs <= rhs),
+                .geq => truth(lhs >= rhs),
+                else => null,
+            };
+        },
+        else => return null,
+    }
+}
+
+fn lowerAnyRelation(ctx: *LowerCtx, shape: collection_relation.Shape) Error!dnir.Value {
+    if (shape.subject.* != .name) return bail(ctx.diagnostic, @src());
+    const source = shape.subject.name.ident;
+    const extent = staticTableLen(ctx, source) orelse
+        (if (boundEmptyTable(ctx, source)) @as(i64, 0) else return bail(ctx.diagnostic, @src()));
+
+    // TERMINATION, stated as a fact rather than discovered by running: a known
+    // extent bounds the scan, and an extent of zero bounds it at zero. An
+    // existential over an EMPTY source is FALSE, and the answer is an immediate
+    // — no slot, no scan, no source. `protocol-projection-one.md` §3's last
+    // realization, "or **nothing**", reached from the extent alone.
+    if (extent <= 0) return .{ .i64 = 0 };
+
+    // DETERMINED SOURCE — every element is a compile-time literal, nothing
+    // writes the name and nothing lets it escape (`noteConstTable`'s verdict,
+    // not this pass's opinion). Then the question has a compile-time ANSWER
+    // whenever the body relation is one this folder is certain of, and the
+    // whole iteration is an immediate: no table, no loop, no branch.
+    //
+    // THIS IS WHAT MAKES THE STRONGER RELATION THE CHEAPER ONE. `xs:any(…)`
+    // states existence; the flag-and-scan loop it replaces states "scan and
+    // mutate a flag", and the compiler has to rediscover the question from the
+    // loop before it can do this. Same answer, and the relation form gets there
+    // without the rediscovery.
+    const determined: ?[]const i64 = ctx.const_tables.get(source);
+    if (determined) |values| {
+        var settled = true;
+        var witness = false;
+        for (values) |element| {
+            const verdict = foldBodyRelation(ctx, shape.body, shape.param, element) orelse {
+                settled = false;
+                break;
+            };
+            if (verdict != 0) {
+                witness = true;
+                break;
+            }
+        }
+        if (settled) return .{ .i64 = if (witness) 1 else 0 };
+    }
+
+    const answer = ctx.freshTemp();
+    try ctx.emit(.{ .op = .store_local, .result = answer, .lhs = .{ .i64 = 0 }, .ty = .i64 });
+
+    var witnesses: std.ArrayListUnmanaged(usize) = .empty;
+    defer witnesses.deinit(ctx.alloc);
+
+    var result_name = ResultName.bind(ctx, shape.param);
+    defer result_name.release();
+
+    // The source is determined but the body relation is not foldable — a
+    // capture, a call, an operator this pass refuses to define. The elements
+    // are still literals, so the chain is emitted against IMMEDIATES and the
+    // table is never materialized.
+    if (determined) |values| {
+        for (values) |element| {
+            try result_name.pointLiteral(element);
+            const verdict = try lowerExpr(ctx, shape.body);
+            const rejected = ctx.instrs.items.len;
+            try ctx.emit(.{ .op = .br, .lhs = verdict, .branch_target = 0, .branch_condition = .when_false });
+            try ctx.emit(.{ .op = .store_local, .result = answer, .lhs = .{ .i64 = 1 }, .ty = .i64 });
+            try witnesses.append(ctx.alloc, ctx.instrs.items.len);
+            try ctx.emit(.{ .op = .br, .branch_target = 0 });
+            ctx.instrs.items[rejected].branch_target = @intCast(ctx.instrs.items.len);
+        }
+        const done: u32 = @intCast(ctx.instrs.items.len);
+        for (witnesses.items) |index| ctx.instrs.items[index].branch_target = done;
+        return .{ .local = answer };
+    }
+
+    if (ptrSlotOf(ctx, shape.subject)) |base| {
+        // MEMORY-BACKED: one scan, one scaled load per step, and a branch out
+        // of the loop the moment the predicate answers yes. The index is this
+        // pass's own induction variable and is in range by construction, so no
+        // bounds guard is emitted — `guardedTableIndex` exists for indexes the
+        // SOURCE supplies, and this one has no source.
+        const step = ctx.freshTemp();
+        try ctx.emit(.{ .op = .store_local, .result = step, .lhs = .{ .i64 = 1 }, .ty = .i64 });
+
+        const head: u32 = @intCast(ctx.instrs.items.len);
+        const in_range = ctx.freshTemp();
+        try ctx.emit(.{
+            .op = .binop,
+            .result = in_range,
+            .binop = .leq,
+            .lhs = .{ .local = step },
+            .rhs = .{ .i64 = extent },
+        });
+        const exhausted = ctx.instrs.items.len;
+        try ctx.emit(.{ .op = .br, .lhs = .{ .temp = in_range }, .branch_target = 0, .branch_condition = .when_false });
+
+        const loaded = ctx.freshTemp();
+        try ctx.emit(.{
+            .op = .load_index,
+            .ty = .i64,
+            .result = loaded,
+            .lhs = .{ .local = base },
+            .rhs = .{ .local = step },
+        });
+        const element = ctx.freshTemp();
+        try ctx.emit(.{ .op = .store_local, .result = element, .lhs = .{ .temp = loaded }, .ty = .i64 });
+        try result_name.point(element);
+
+        const verdict = try lowerExpr(ctx, shape.body);
+        const rejected = ctx.instrs.items.len;
+        try ctx.emit(.{ .op = .br, .lhs = verdict, .branch_target = 0, .branch_condition = .when_false });
+        try ctx.emit(.{ .op = .store_local, .result = answer, .lhs = .{ .i64 = 1 }, .ty = .i64 });
+        try witnesses.append(ctx.alloc, ctx.instrs.items.len);
+        try ctx.emit(.{ .op = .br, .branch_target = 0 });
+
+        ctx.instrs.items[rejected].branch_target = @intCast(ctx.instrs.items.len);
+        const next = ctx.freshTemp();
+        try ctx.emit(.{
+            .op = .binop,
+            .result = next,
+            .binop = .add,
+            .lhs = .{ .local = step },
+            .rhs = .{ .i64 = 1 },
+        });
+        try ctx.emit(.{ .op = .store_local, .result = step, .lhs = .{ .temp = next }, .ty = .i64 });
+        try ctx.emit(.{ .op = .br, .branch_target = head });
+
+        const done: u32 = @intCast(ctx.instrs.items.len);
+        ctx.instrs.items[exhausted].branch_target = done;
+        for (witnesses.items) |index| ctx.instrs.items[index].branch_target = done;
+        return .{ .local = answer };
+    }
+
+    // REGISTER-EXPLODED: the elements are already in slots, so there is nothing
+    // to load and nothing to index. The chain short-circuits, which is the same
+    // early exit the loop above emits, reached without a loop existing.
+    if (extent > select_chain_max) return bail(ctx.diagnostic, @src());
+    var index: i64 = 1;
+    while (index <= extent) : (index += 1) {
+        const element_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ source, index });
+        defer ctx.alloc.free(element_key);
+        const element = ctx.locals.get(element_key) orelse return bail(ctx.diagnostic, @src());
+        try result_name.point(element);
+
+        const verdict = try lowerExpr(ctx, shape.body);
+        const rejected = ctx.instrs.items.len;
+        try ctx.emit(.{ .op = .br, .lhs = verdict, .branch_target = 0, .branch_condition = .when_false });
+        try ctx.emit(.{ .op = .store_local, .result = answer, .lhs = .{ .i64 = 1 }, .ty = .i64 });
+        try witnesses.append(ctx.alloc, ctx.instrs.items.len);
+        try ctx.emit(.{ .op = .br, .branch_target = 0 });
+        ctx.instrs.items[rejected].branch_target = @intCast(ctx.instrs.items.len);
+    }
+    const done: u32 = @intCast(ctx.instrs.items.len);
+    for (witnesses.items) |i| ctx.instrs.items[i].branch_target = done;
+    return .{ .local = answer };
+}
+
 fn lowerSubjectCall(
     ctx: *LowerCtx,
     expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
+    if (try lowerCollectionRelation(ctx, expr)) |value| return value;
     // The test world's relations become a real trap rather than a call into a
     // module that does not exist at runtime. Gated on the SUBJECT being `test`,
     // so a user relation named `assert` on any other subject is untouched.
