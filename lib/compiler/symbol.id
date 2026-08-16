@@ -3,8 +3,8 @@
 # WHY THIS FILE EXISTS. Three separate canonical repairs — gap[083] name
 # mangling, gap[087] bare-identity resolution, gap[088] constructor rung (a) —
 # all terminate at ONE missing capability: there is no idol-native owner of
-# code emission. `lib/compiler/` has a lexer, a parser and a projection,
-# and `emit_c.id` covers integer EXPRESSIONS only. Nothing here owns a symbol.
+# code emission. `lib/compiler/` has a lexer, a parser and a projection.
+# Nothing here owns a symbol.
 #
 # So the repair for all three is only expressible in the bootstrap, which the
 # owner directive excludes. This file is the smallest piece that changes that:

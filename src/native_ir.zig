@@ -14,25 +14,19 @@ const RT = types.ResolvedType;
 pub const HwIntrinsic = dnir_hardware.HwIntrinsic;
 pub const HardwareTier = dnir_hardware.Tier;
 
-/// Preferred lowering tier for a compiled module (release order).
-pub const LoweringTier = enum {
-    /// ARM64/WASM/GPU machine object — canonical.
-    machine,
-    /// Generated C + host compiler — bootstrap only.
-    c_emit,
-    /// Lua/runtime boxed path — dynamic programs only.
-    dynamic,
-
-    pub fn dominates(self: LoweringTier, other: LoweringTier) bool {
-        return @intFromEnum(self) <= @intFromEnum(other);
-    }
-};
-
-pub fn preferredTier(native_eligible: bool, dnir_ready: bool) LoweringTier {
-    _ = dnir_ready;
-    if (native_eligible) return .machine;
-    return .dynamic;
-}
+// `LoweringTier` AND `preferredTier` WERE HERE AND ARE DELETED. Measured across
+// the whole tree: `preferredTier` had ZERO call sites, `.c_emit` had ZERO reads,
+// `dominates` had ZERO callers, and the type name appeared in no file but this
+// one. A three-variant policy enum that nothing produces and nothing consumes is
+// not a policy — HPLS §7 scenery, §8 "a fact with consumers = 0 is P0
+// architecture debt" — and this file's own `dnir_hardware.Tier` comment records
+// deleting `.vector`/`.system` for exactly that reason.
+//
+// The middle variant made it worse than ordinary dead code: `c_emit` — "Generated
+// C + host compiler" — ranked a C tier BETWEEN machine and dynamic in the
+// canonical IR, under a ruling that is NO C BACKEND, PERIOD. A retired backend
+// that survives as a rank in the release order is the ruling contradicted in the
+// type system, where the next reader would take it as current law.
 
 pub const FieldKind = enum { i64, str, f64 };
 
@@ -46,7 +40,21 @@ pub const BinOpTag = enum {
     add,
     sub,
     mul,
+    /// `/` — TRUNCATING integer division on integer operands, real division on
+    /// float ones. Distinct from `idiv`; see it for why the distinction is not
+    /// optional.
     div,
+    /// `//` — FLOOR division (`law.numeric.floor`). It is a SEPARATE tag from
+    /// `div` because Idol's `//` and `/` are separate relations with separate
+    /// answers, and this enum used to say otherwise: `dnir_lower` mapped
+    /// `.div, .idiv => .div`, so a sixteen-member HOST enum decided that Idol
+    /// has one integer division. That is HPLS §92 exactly — "host structs/enums
+    /// becoming semantic identity" — and it was not a rounding error:
+    /// `(0-7) // 10` answered 0 where the law answers -1.
+    idiv,
+    /// `%` — FLOORED remainder, taking the sign of the DIVISOR
+    /// (`law.numeric.floor`). Not `sdiv`+`msub`'s truncated remainder, which is
+    /// what the chip happens to compute.
     mod,
     eq,
     neq,
@@ -384,7 +392,14 @@ fn calleeIsModuleLocal(m: Module, callee: []const u8) bool {
 
 /// True when every instruction is in the direct-backend subset.
 pub fn moduleIsNativeDirectReady(m: Module) bool {
-    if (m.functions.len == 0) return false;
+    // NO `if (m.functions.len == 0) return false;` HERE. Readiness is a
+    // UNIVERSAL predicate over the module's instructions — "every instruction
+    // carries the facts the direct backend needs" — and a module with no
+    // instructions satisfies it vacuously. Answering false for the empty module
+    // made the base case of the module system the one shape the canonical
+    // backend refused, one layer below the same conflation in
+    // `dnir_lower.lowerModuleFromGraph`. Both had to go for
+    // `lib/compiler/application.id` to build.
     for (m.functions) |f| {
         for (f.blocks) |b| {
             for (b.instrs) |i| {
@@ -452,11 +467,26 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
     return true;
 }
 
-test "native_ir: empty module not ready" {
+// RE-RECORDED WITH THE CAPABILITY, NOT AROUND IT. This test asserted
+// `!moduleIsNativeDirectReady(empty)` — the refusal that made
+// `lib/compiler/application.id` unbuildable. Readiness is a UNIVERSAL predicate
+// over instructions, so the empty module satisfies it vacuously and the
+// assertion is inverted deliberately. The negative below is what keeps the
+// predicate able to FAIL: a module whose instruction carries SOME of the three
+// graph facts and not all three is still not ready, which is the property the
+// old empty-module row was standing in for and never actually tested.
+test "native_ir: empty module is ready — the module system's base case" {
     const m = Module{ .functions = &.{} };
-    try std.testing.expect(!moduleIsNativeDirectReady(m));
+    try std.testing.expect(moduleIsNativeDirectReady(m));
 }
 
+test "native_ir: partial graph facts are not ready" {
+    const instrs = [_]Instr{.{ .op = .ret, .relation = 1 }};
+    const blocks = [_]Block{.{ .instrs = &instrs }};
+    const funcs = [_]Function{.{ .name = "f", .ret = .any, .blocks = &blocks }};
+    const m = Module{ .functions = &funcs };
+    try std.testing.expect(!moduleIsNativeDirectReady(m));
+}
 test "native_ir: resident graph id stays dense" {
     try std.testing.expectEqual(@sizeOf(u32), @sizeOf(semantic_graph.id));
     try std.testing.expectEqual(@as(usize, 8), @sizeOf(?semantic_graph.id));

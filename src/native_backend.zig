@@ -1414,7 +1414,15 @@ const Arm64Compiler = struct {
 
     fn compileDnirModule(self: *Arm64Compiler, m: dnir.Module) Error!void {
         try self.emitAsmHeader();
-        if (m.functions.len == 0) return error.MissingMain;
+        // `MissingMain` MEANS MISSING MAIN. Object mode passes `entry = null`
+        // (`emitObjectMode…` at the top of this file), and a LIBRARY module
+        // with no declarations has no main to miss — it has nothing, which is
+        // a legal thing for a module to have and the base case the module
+        // system needs. This was the third copy of one conflation: zero
+        // functions read as "refuse" in `lowerModuleFromGraph`, again in
+        // `moduleIsNativeDirectReady`, and again here. When an entry IS
+        // demanded the error is exactly as before.
+        if (m.functions.len == 0 and self.entry != null) return error.MissingMain;
         for (m.functions) |f| {
             // `dnirNeedsCalleeSave` decides whether to MEASURE, and it is a census
             // of DNIR names -- the same census `probeCalleeSaveUse`'s own comment
@@ -4407,16 +4415,50 @@ const Arm64Compiler = struct {
     /// needs no range, sign or alias fact:
     ///   `x±0 = x`  `x*1 = x`  `x*0 = 0`  `x//1 = x`  `x%±1 = 0`
     ///   `x&0 = 0`  `x&-1 = x` `x|0 = x`  `x^0 = x`   `x*2^n = x<<n` (wrapping)
+    ///   `x^-1 = ~x` — realized as `mvn`, the ONE instruction AArch64 has for
+    ///   it. All-ones is NOT an encodable logical immediate (the bitmask
+    ///   encoding excludes it), so `lowMaskWidth(-1)` is null and without this
+    ///   case the pair materialized -1 into a register and paid an `eor`.
     /// plus the pure re-encodings `add/sub #imm12`, `and/orr/eor #bitmask` and
     /// `lsl/lsr #sh`, which change no value at all.
     ///
-    /// NOT HERE, AND THE REASON MATTERS: `x % 2^n -> x & (2^n - 1)` and
-    /// `x // 2^n -> x >> n` are NOT identities for this backend, because `%`
-    /// and `//` are TRUNCATING here (`-7 % 10` answers -7, measured) and the
+    /// `x % 2^n -> x & (2^n - 1)` AND `x // 2^n -> x >> n` ARE HERE, and the
+    /// reason they are here is a LAW ruling, not a new analysis.
+    ///
+    /// This comment used to say the opposite, correctly for the time: "`%` and
+    /// `//` are TRUNCATING here (`-7 % 10` answers -7, measured) and the
     /// mask/shift answer the FLOORED result. They become lawful the moment a
     /// `x >= 0` range fact exists — and no range or known-bits fact exists
-    /// anywhere in this compiler. That missing fact, not this function, is what
-    /// keeps `x % 1024` on the divide path.
+    /// anywhere in this compiler."
+    ///
+    /// Both halves were true. The conclusion was wrong, because the premise was
+    /// an ACCIDENT: nothing had ever ruled that `%` truncates. It truncated
+    /// because `msub` truncates. `docs/rulings.md` settles it as FLOORED —
+    /// `docs/spec/law.md`'s first line makes ordinary Lua meaning the entry of
+    /// the specialization chain and Lua's `%` is floored — and under floored
+    /// law the mask and the arithmetic shift are IDENTITIES OVER THE FULL i64
+    /// DOMAIN for a positive power-of-two divisor, requiring no range fact at
+    /// all. `(-7) mod 8 = 1` and `-7 & 7 = 1`; `(-7) // 8 = -1` and
+    /// `-7 asr 3 = -1`.
+    ///
+    /// **THE LAW THAT NEEDS NO FACT IS THE CHEAPER LAW.** That is not a
+    /// coincidence to be noted; it is HPLS §2 working — a truer semantics
+    /// adding no observable obligation enlarged the realization space.
+    ///
+    /// LAWFULNESS. Every case below is an identity over the FULL i64 domain and
+    /// needs no range, sign or alias fact:
+    ///   `x±0 = x`  `x*1 = x`  `x*0 = 0`  `x/1 = x`  `x//1 = x`  `x%±1 = 0`
+    ///   `x&0 = 0`  `x&-1 = x` `x|0 = x`  `x^0 = x`   `x*2^n = x<<n` (wrapping)
+    ///   `x % 2^n = x & (2^n-1)`   `x // 2^n = x asr n`        (floored law)
+    /// plus the pure re-encodings `add/sub #imm12`, `and/orr/eor #bitmask` and
+    /// `lsl/lsr/asr #sh`, which change no value at all.
+    ///
+    /// A NEGATIVE OR NON-POWER-OF-TWO CONSTANT DIVISOR IS NOT HERE. It has a
+    /// cheaper realization than the general one — the sign of the divisor is
+    /// known, so the floor correction reduces to one `cmp`/`csel` — but that is
+    /// a shorter SEQUENCE, not a single instruction, and this function's
+    /// contract with `emitBinopConst` is one realization per admitted pair.
+    /// `emitBinopFlooredConstDivisor` carries it instead.
     fn constBinopRealization(ins: dnir.Instr) ?i64 {
         if (comparisonCondition(ins.binop) != null) return null;
         const k: i64 = switch (ins.rhs) {
@@ -4427,10 +4469,11 @@ const Arm64Compiler = struct {
             .add, .sub => if (k == 0 or (k > 0 and k <= 4095) or (k < 0 and k >= -4095)) k else null,
             .mul => if (k == 0 or k == 1 or powerOfTwoShift(k) != null) k else null,
             .div => if (k == 1) k else null,
-            .mod => if (k == 1 or k == -1) k else null,
+            .idiv => if (k == 1 or powerOfTwoShift(k) != null) k else null,
+            .mod => if (k == 1 or k == -1 or powerOfTwoShift(k) != null) k else null,
             .band => if (k == 0 or k == -1 or lowMaskWidth(k) != null) k else null,
             .bor => if (k == 0 or lowMaskWidth(k) != null) k else null,
-            .bxor => if (k == 0 or lowMaskWidth(k) != null) k else null,
+            .bxor => if (k == 0 or k == -1 or lowMaskWidth(k) != null) k else null,
             .shl, .shr => if (k >= 0 and k < 64) k else null,
             .eq, .neq, .lt, .gt, .leq, .geq => null,
         };
@@ -4454,6 +4497,32 @@ const Arm64Compiler = struct {
             0xd3400000 | (@as(u32, sh) << 16) | (63 << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
             "lsr x{d}, x{d}, #{d}",
             .{ dst, lhs, sh },
+        );
+    }
+
+    /// `asr xd, xn, #sh` — SBFM with immr=sh, imms=63, the signed twin of the
+    /// UBFM above. The only difference in the encoding is bit 30 (`0x93` vs
+    /// `0xd3`), and the only difference in the ANSWER is what fills the top
+    /// bits — which is the whole of floor division for a power-of-two divisor.
+    fn emitAsrImm(self: *Arm64Compiler, dst: u5, lhs: u5, sh: u6) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.emitFmt(
+            0x9340fc00 | (@as(u32, sh) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "asr x{d}, x{d}, #{d}",
+            .{ dst, lhs, sh },
+        );
+    }
+
+    /// `mvn xd, xn` — the assembler's alias for `orn xd, xzr, xn`, base word
+    /// 0xAA200000 with Rn = 31 (xzr). This is the whole realization of prefix
+    /// `~`: `dnir_lower` lowers it to `bxor` against -1 and the constant path
+    /// above selects this instruction for that operand.
+    fn emitMvn(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
+        try self.ensureRegLive(src);
+        try self.emitFmt(
+            0xaa2003e0 | (@as(u32, src) << 16) | @as(u32, dst),
+            "mvn x{d}, x{d}",
+            .{ dst, src },
         );
     }
 
@@ -4515,7 +4584,26 @@ const Arm64Compiler = struct {
                     try self.emitLslImm(dst, lhs, powerOfTwoShift(k).?);
             },
             .div => try self.emitMovReg(dst, lhs),
-            .mod => try self.emitMovImm(dst, 0),
+            // `x // 1 = x`; `x // 2^n = x asr n` under FLOORED law, for every
+            // x, with no range fact. `asr` and not `lsr`: the arithmetic shift
+            // is the one that rounds toward negative infinity, which is what
+            // floor division means, and the logical one would answer a huge
+            // positive number for a negative x.
+            .idiv => {
+                if (k == 1) try self.emitMovReg(dst, lhs) else try self.emitAsrImm(dst, lhs, powerOfTwoShift(k).?);
+            },
+            // `x % ±1 = 0`; `x % 2^n = x & (2^n - 1)` under FLOORED law, for
+            // every x, with no range fact. Under the truncating law this file
+            // used to implement, the same mask needed a proof that `x >= 0`
+            // that nothing in this compiler can supply — so the truer law is
+            // the one that costs 1 instruction where the accident cost 2 plus a
+            // 20-cycle divide.
+            .mod => {
+                if (k == 1 or k == -1)
+                    try self.emitMovImm(dst, 0)
+                else
+                    try self.emitLogicalLowMask(0x92400000, "and", dst, lhs, powerOfTwoShift(k).?);
+            },
             .band => {
                 if (k == 0) try self.emitMovImm(dst, 0) else if (k == -1)
                     try self.emitMovReg(dst, lhs)
@@ -4526,7 +4614,10 @@ const Arm64Compiler = struct {
                 if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLogicalLowMask(0xb2400000, "orr", dst, lhs, lowMaskWidth(k).?);
             },
             .bxor => {
-                if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLogicalLowMask(0xd2400000, "eor", dst, lhs, lowMaskWidth(k).?);
+                if (k == 0) try self.emitMovReg(dst, lhs) else if (k == -1)
+                    try self.emitMvn(dst, lhs)
+                else
+                    try self.emitLogicalLowMask(0xd2400000, "eor", dst, lhs, lowMaskWidth(k).?);
             },
             .shl => {
                 if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLslImm(dst, lhs, @intCast(k));
@@ -4539,18 +4630,70 @@ const Arm64Compiler = struct {
         _ = try self.emitNarrowFit(dst, dst, ty);
     }
 
+    /// FLOOR DIVISION AND FLOORED REMAINDER over a RUNTIME divisor
+    /// (`law.numeric.floor`, `docs/rulings.md`). `sdiv` truncates toward zero
+    /// and `msub`'s remainder takes the sign of the DIVIDEND; the law rounds
+    /// toward negative infinity and the remainder takes the sign of the
+    /// DIVISOR. Those agree exactly when the operand signs agree, so the
+    /// correction is: if the truncated remainder is non-zero AND the signs
+    /// disagree, the quotient is one lower and the remainder is one divisor
+    /// higher.
+    ///
+    ///     sdiv q, x, y          q = trunc(x/y)
+    ///     msub r, q, y, x       r = x - q*y, sign of x
+    ///     eor  s, r, y          s < 0  iff  sign(r) != sign(y)
+    ///     asr  s, s, #63        s = -1 if signs disagree, else 0
+    ///     mod:  and s, y, s ; add q, r, s ; cmp r, #0 ; csel dst, r, q, eq
+    ///     idiv:              add s, q, s ; cmp r, #0 ; csel dst, q, s, eq
+    ///
+    /// BRANCHLESS AND FLAG-CHEAP ON PURPOSE. `csel` on `eq` rather than a
+    /// branch keeps this straight-line, so it composes with if-conversion and
+    /// with the peephole that folds a compare into its consumer, and the
+    /// `asr #63` sign-broadcast avoids needing an `mi` condition this backend's
+    /// `Condition` set does not carry.
+    ///
+    /// THE `r == 0` SELECT IS LOAD-BEARING, not defensive. `x = 20, y = -10`
+    /// gives `r = 0`, and `0 ^ y` is negative for every negative `y` — so the
+    /// sign-broadcast says "disagree" and the naive form would answer `-10` for
+    /// a remainder that is exactly zero. It was written without this select
+    /// first and that is the case that caught it.
+    ///
+    /// COST. Eight instructions against the old two, for a runtime divisor. The
+    /// trade is deliberate and it is measured in `docs/rulings.md`: a runtime
+    /// divisor is already paying a ~20-cycle `sdiv`, while a CONSTANT
+    /// power-of-two divisor — which is what the corpus actually contains —
+    /// drops from `sdiv`+`msub` to a single `and` or `asr`, and that
+    /// realization is only lawful BECAUSE the law is floored.
+    fn emitFlooredDivRem(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag) Error!void {
+        const q = try self.allocReg();
+        try self.emitSdivReg(q, lhs, rhs);
+        const r = try self.allocReg();
+        try self.emitMsubReg(r, q, rhs, lhs);
+        const s = try self.allocReg();
+        try self.emitEorReg(s, r, rhs);
+        try self.emitAsrImm(s, s, 63);
+        if (op == .mod) {
+            try self.emitAndReg(s, rhs, s);
+            try self.emitAddReg(q, r, s);
+            try self.emitCmpZero(r);
+            try self.emitCselReg(dst, r, q, .eq);
+        } else {
+            try self.emitAddReg(s, q, s);
+            try self.emitCmpZero(r);
+            try self.emitCselReg(dst, q, s, .eq);
+        }
+        self.releaseReg(s);
+        self.releaseReg(r);
+        self.releaseReg(q);
+    }
+
     fn emitCompareOrBinopWide(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag) Error!void {
         switch (op) {
             .add => try self.emitAddReg(dst, lhs, rhs),
             .sub => try self.emitSubReg(dst, lhs, rhs),
             .mul => try self.emitMulReg(dst, lhs, rhs),
             .div => try self.emitSdivReg(dst, lhs, rhs),
-            .mod => {
-                const q = try self.allocReg();
-                try self.emitSdivReg(q, lhs, rhs);
-                try self.emitMsubReg(dst, q, rhs, lhs);
-                self.releaseReg(q);
-            },
+            .idiv, .mod => try self.emitFlooredDivRem(dst, lhs, rhs, op),
             // Bitwise and shift, register forms. AArch64 encodes all five with
             // the same field layout as add/sub, so they share one emitter.
             .band => try self.emitBitReg(0x8a000000, "and", dst, lhs, rhs),
@@ -6078,7 +6221,7 @@ const Arm64Compiler = struct {
             .add, .sub, .mul, .band, .bor, .bxor, .shl, .shr => true,
             .eq, .neq, .lt, .gt, .leq, .geq => true,
             // Division is the trapping one. See the admission rule above.
-            .div, .mod => false,
+            .div, .idiv, .mod => false,
         };
     }
 
@@ -8195,7 +8338,12 @@ test "native backend: empty application facts do not admit a foreign call" {
     try std.testing.expectEqualStrings("missing-foreign-application-lineage", diagnostic.note().?);
 }
 
-test "native backend: strict graph physical refusal stays unsupported" {
+// THE EMPTY MODULE IS THE POSITIVE NOW. This test used to assert that a module
+// with no declarations refused with `UnsupportedProgram` — the refusal that
+// made `lib/compiler/application.id` unbuildable by the compiler it documents.
+// Object mode passes `entry = null`, so there is no main to miss; the module
+// emits, and what it emits is nothing, which is the correct answer.
+test "native backend: empty module emits an empty object" {
     var diagnostic: Diagnostic = .{};
     const alloc = std.testing.allocator;
     var lexer = Lexer.init("", "empty.id");
@@ -8207,11 +8355,38 @@ test "native backend: strict graph physical refusal stays unsupported" {
     defer graph.deinit();
     _ = try graph.liftModuleWithCalls(&module, "empty.id");
 
+    var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 0), output.text.len);
+    try std.testing.expectEqual(@as(usize, 0), output.symbols.len);
+}
+
+// AND THE REFUSAL PATH STILL REFUSES, on a construct that is genuinely outside
+// the subset rather than on the base case. `~` on TEXT has no lawful
+// realization — complementing a `const char*` complements an address — and
+// `lowerExprCons` names it in the note, so this asserts both halves: the error
+// class and the attribution.
+test "native backend: strict graph physical refusal stays unsupported" {
+    var diagnostic: Diagnostic = .{};
+    // Arena, as the neighbouring strict-graph tests use: a module with a real
+    // body owns AST allocations the refusal path never gets to release.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lexer = Lexer.init("f: i64 = (s: str)\n  ~s\n", "bnot.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&module, "bnot.id");
+
     try std.testing.expectError(
         error.UnsupportedProgram,
         emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("graph-dnir-unsupported", diagnostic.note().?);
+    try std.testing.expectEqualStrings("bnot", diagnostic.note().?);
 }
 
 test "native backend: strict graph unresolved application stays semantic" {
@@ -10900,7 +11075,26 @@ test "native backend: every DNIR integer binop selects its exact machine operati
         .{ .op = .sub, .assembly = "\tsub x9, x10, x11\n" },
         .{ .op = .mul, .assembly = "\tmul x9, x10, x11\n" },
         .{ .op = .div, .assembly = "\tsdiv x9, x10, x11\n" },
-        .{ .op = .mod, .assembly = "\tsdiv x12, x10, x11\n\tmsub x9, x12, x11, x10\n" },
+        // `//` AND `%` ARE FLOORED (`docs/rulings.md`), so neither is the bare
+        // hardware operation: `sdiv` truncates toward zero and `msub`'s
+        // remainder takes the sign of the dividend, while the law rounds toward
+        // negative infinity and the remainder takes the sign of the divisor.
+        // The correction — `eor` for "do the signs disagree", `asr #63` to
+        // broadcast that as a mask, and a `csel` on a zero remainder — is
+        // spelled out here rather than summarised, because an assembly listing
+        // is the only place this file's opinion of the law is checkable.
+        .{
+            .op = .idiv,
+            .assembly = "\tsdiv x12, x10, x11\n\tmsub x13, x12, x11, x10\n" ++
+                "\teor x14, x13, x11\n\tasr x14, x14, #63\n" ++
+                "\tadd x14, x12, x14\n\tcmp x13, #0\n\tcsel x9, x12, x14, eq\n",
+        },
+        .{
+            .op = .mod,
+            .assembly = "\tsdiv x12, x10, x11\n\tmsub x13, x12, x11, x10\n" ++
+                "\teor x14, x13, x11\n\tasr x14, x14, #63\n\tand x14, x11, x14\n" ++
+                "\tadd x12, x13, x14\n\tcmp x13, #0\n\tcsel x9, x13, x12, eq\n",
+        },
         .{ .op = .band, .assembly = "\tand x9, x10, x11\n" },
         .{ .op = .bor, .assembly = "\torr x9, x10, x11\n" },
         .{ .op = .bxor, .assembly = "\teor x9, x10, x11\n" },

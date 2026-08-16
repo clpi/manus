@@ -888,7 +888,21 @@ fn lowerModuleFromGraph(
             return err;
         };
     }
-    if (functions.items.len == 0) return bail(diagnostic, @src());
+    // THE MODULE SYSTEM'S BASE CASE. A module that DECLARES nothing lowers to
+    // a module that CONTAINS nothing — an object with no text symbols, which is
+    // exactly what it means. `if (functions.items.len == 0) return bail(…)` used
+    // to sit here and refused that module with `DNB001 lowerModuleFromGraph()`,
+    // so `lib/compiler/application.id` — 29 lines of fact-closure documentation
+    // and zero lines of code — could not be built by the compiler it documents.
+    //
+    // The guard was also REDUNDANT for the case it was defending. Zero functions
+    // has two causes and the line below already separates them: nothing was
+    // declared (`expected == 0`, legal, an empty object) versus everything
+    // declared was refused (`expected > 0`, a bail that NAMES the declaration in
+    // `skipped`). The deleted line answered both with one unattributed refusal,
+    // so it destroyed the better diagnostic in the failing case and forbade the
+    // legal one. HPLS §99: consumed but no candidate generated — the empty
+    // module reached lowering and no realization was ever proposed for it.
     const expected = countModuleFunctions(mod) + @as(usize, @intFromBool(want));
     if (functions.items.len != expected)
         return bailWith(diagnostic, @src(), skipped orelse "?");
@@ -2164,10 +2178,37 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
                 try ctx.emit(.{ .op = .ret, .lhs = .{ .local = slot }, .ty = ret_ty });
                 return true;
             }
+            // A MODULE GLOBAL IS STORAGE THIS PASS CAN NAME — it just is not a
+            // LOCAL SLOT. `compoundTargetSlot` asks `ctx.locals` and nothing
+            // else, so `A = A .. line` and `N = N + 1` as a function's tail
+            // both fell to the refusal below even though the assignment above
+            // had already emitted a `store_global` for exactly that name. The
+            // invariant the comment demands is satisfied by reading the
+            // storage back, not by re-evaluating: `load_global` after
+            // `store_global` is the value that was stored, once.
+            if (target.* == .name) {
+                if (ctx.locals.get(target.name.ident) == null) {
+                    if (ctx.module_globals.types.get(target.name.ident)) |gty| {
+                        const t = ctx.freshTemp();
+                        try ctx.emit(.{
+                            .op = .load_global,
+                            .result = t,
+                            .field = target.name.ident,
+                            .ty = gty,
+                        });
+                        if (gty == .str) try ctx.str_slots.put(ctx.alloc, t, {});
+                        try ctx.emit(.{
+                            .op = .ret,
+                            .lhs = .{ .temp = t },
+                            .ty = if (gty == .f64) .f64 else ret_ty,
+                        });
+                        return true;
+                    }
+                }
+            }
         }
-        // No slot means the statement did not lower to storage this pass can
-        // name. Re-evaluating would be a miscompile, so decline the function
-        // instead and let the C backend take it.
+        // No storage this pass can name. Re-evaluating would be a miscompile,
+        // so the function is declined rather than mis-lowered.
         return bail(ctx.diagnostic, @src());
     }
     if (try tryEmitSelfTail(ctx, r.expr)) return true;
@@ -3507,8 +3548,25 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             // and every consumer still read it as an integer: `print(OWNER)`
             // chose `%lld` and printed the pointer, and `OWNER != "x"` compared
             // addresses. The type answer has to follow the value.
-            const slot = ctx.locals.get(n.ident) orelse
+            const slot = ctx.locals.get(n.ident) orelse {
+                // A WRITTEN module-scope binding is not a constant EITHER — and
+                // that is not an oversight, it is the deliberate act of the
+                // change that gave globals storage: `lowerModuleFromGraph`
+                // removes every written global from `module_consts` because "a
+                // name that is written is not a constant". That removal deleted
+                // the only path by which this predicate could see a `global S:
+                // str`, so the fact remained TRUE and REPRESENTED — in
+                // `module_globals.types`, which the `.name` LOWERING arm reads
+                // one screen up and even uses to seed `str_slots` — while every
+                // predicate that gates a str candidate answered "not text".
+                // HPLS §99: represented but not propagated.
+                //
+                // The declared type is asked EXACTLY, never "not i64": a `%s`
+                // hole fed an integer prints an address, which is the concat
+                // failure mode this tree has already paid for twice.
+                if (ctx.module_globals.types.get(n.ident)) |ty| break :blk ty == .str;
                 break :blk ctx.module_consts.strs.contains(n.ident);
+            };
             break :blk ctx.str_slots.contains(slot);
         },
         // `Kind.owner` where the descriptor field holds a string literal — the
@@ -4958,6 +5016,38 @@ fn lowerExprCons(
                 });
                 break :blk dnir.Value{ .temp = t };
             }
+            // PREFIX `~` — bitwise NOT. `~x == x ^ -1` over the FULL i64
+            // domain, with no range, sign or known-bits fact required, so the
+            // capability is expressed in the tag set DNIR already has rather
+            // than by adding a unary tag that every consumer would have to
+            // learn. `native_backend.constBinopRealization` recognises the
+            // `-1` operand and selects the single instruction AArch64 has for
+            // it (`mvn`, i.e. `orn xd, xzr, xn`), so this costs one
+            // instruction, not a materialised constant plus an `eor`.
+            //
+            // An integral operand is REQUIRED. `~` on text or on an f64 has no
+            // meaning this backend can realize, and `exprIsIntegral` already
+            // excludes both; refusing here keeps the wrong answer from being
+            // computed on a bit pattern that is an address or a mantissa.
+            if (u.op == .bnot and exprIsIntegral(ctx, u.operand)) {
+                const operand = try lowerExpr(ctx, u.operand);
+                const t = ctx.freshTemp();
+                try ctx.emit(.{
+                    .op = .binop,
+                    .result = t,
+                    .binop = .bxor,
+                    .lhs = operand,
+                    .rhs = .{ .i64 = -1 },
+                    // The SAME width the infix spelling `x ~ -1` would get:
+                    // `binopResultWidth(.bxor, x, -1)` joins `uint32` with the
+                    // literal's `int32` to `uint32`, and `bxor` refits unless
+                    // BOTH sides are canonical at that width — which `-1` is
+                    // not. Anything else stays 64-bit, where `~` is the plain
+                    // complement.
+                    .ty = if (exprCRank(ctx, u.operand) == .uint32) RT.u32 else RT.any,
+                });
+                break :blk dnir.Value{ .temp = t };
+            }
             return bailWith(ctx.diagnostic, @src(), @tagName(u.op));
         },
         .index => |ix| blk: {
@@ -6102,7 +6192,14 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
         .add => .add,
         .sub => .sub,
         .mul => .mul,
-        .div, .idiv => .div,
+        .div => .div,
+        // `//` KEEPS ITS OWN IDENTITY. This read `.div, .idiv => .div`, which
+        // is where floor division was lost: the two operators became one tag
+        // and the backend then emitted `sdiv` for both. `(0-7) // 10` answered
+        // 0; the law answers -1. HPLS §92 — the host may not define relation
+        // law — and §4: the optimizer uses the LAW, so the tag has to be able
+        // to carry it.
+        .idiv => .idiv,
         .mod => .mod,
         .eq => .eq,
         .neq => .neq,
