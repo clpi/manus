@@ -163,12 +163,43 @@ the relation, descriptor or world, never hidden in a helper name.
 
 ## §6 EXITS — `return`, `break`, `continue`
 
-    return(value)   return value    break()   break    continue()   continue
+    return(value)   return value              break        continue
+
+**CORRECTED 2026-08-16 — `break()` / `continue()` ARE NOT CANONICAL.** An earlier
+draft of this section had it backwards. **Bare `break` and bare `continue` are
+the canonical zero-result exits.** `()` on a zero-payload region exit carries NO
+information, and the parenthesized face falsely suggests ordinary
+APPLICATION-ONE behaviour — which is exactly why the compiler refuses `break()`
+as `expr-unhandled:func_expr`. §12 measured that refusal and the first reading
+was "a canonical face is broken"; the correct reading is **the compiler was
+right, and the parenthesized face was the wrong design.** Under SOURCE-MINIMUM a
+`()` that carries no information is debt. Revisit only if region exits are ever
+established as ordinary applicable semantic VALUES, and that architecture proves
+useful elsewhere.
+
+**`return` IS DIFFERENT and keeps both faces.** `return(value)` carries a result
+pack, so the parentheses carry real structure — `return(a, b)` is a pack. That is
+a genuine asymmetry with `break`/`continue`, not an inconsistency.
 
 Tail expression IS the result; no explicit `return` needed. All tail faces must
 publish equivalent tail-result demand, so TCO depends on graph position and
-effects, never spelling. `break`/`continue` publish an EXACT recurrence exit or
-step target once — no downstream "find the nearest loop" AST walk.
+effects, never spelling.
+
+`break`/`continue` publish an EXACT region exit once — no downstream "find the
+nearest loop" AST walk. The graph meaning is structural, never a mandatory
+machine branch:
+
+    region exit
+        target       exact iteration/recurrence exit  (break)
+                     exact iteration STEP boundary    (continue)
+        result pack  empty
+
+`continue` does NOT mean "jump to the loop header" — that would encode
+realization. It means *exit the remainder of this iteration body and proceed to
+the iteration application's next semantic step*. Realization may then be a
+branch, predication, a filtered iteration, **a SIMD lane mask**, or no
+instruction at all. That distinction is what keeps a scalar source `continue`
+from blocking vectorization.
 
 Where the meaning is really search, prefer the relation: break-on-first-truth is
 `any`, break-on-first-false is `all`, break-at-first-match is `find`.
