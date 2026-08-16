@@ -1540,9 +1540,8 @@ fn exprHasNoApplication(e: *const ast.Expr) bool {
     };
 }
 
-/// True when the body contains a loop. Straight-line constant folding is
-/// `region_transform`'s job and it RECORDS the transformation as evidence;
-/// folding it here first would pre-empt that and silently delete the record.
+/// True when the body contains a loop. This fold declines loops because it has
+/// no termination budget for one; a loop body is the direct backend's job.
 fn bodyHasLoop(b: *const ast.Block) bool {
     for (b.stmts) |st| {
         const has = switch (st) {
@@ -1827,6 +1826,44 @@ fn numericAsInt(value: Value) ?i64 {
 }
 
 fn evalNumeric(op: ast.BinOp, left: Value, right: Value, native_integers: bool) EvalError!Value {
+    // ═══ ONE LAW FOR `//` AND `%`, AND IT IS THE LAW'S, NOT A BACKEND'S ═══
+    //
+    // THIS FUNCTION USED TO CONTAIN TWO INTEGER SEMANTICS. The `native_fold`
+    // branch answered `@divTrunc`/`@rem` and the ordinary branch answered
+    // `@divFloor`/`@mod` — truncating and floored, twelve lines apart, and
+    // which one a program got depended on whether a fold happened to be running
+    // under the native switch. Neither was chosen: the first was written to
+    // match what AArch64 `sdiv`+`msub` happens to do, and the second to match
+    // what Zig's `@mod` happens to do. **Idol's modulo law was whichever host
+    // builtin someone typed**, which is HPLS §92 literally — the host defining
+    // relation law — and HPLS §67, inheriting implementation-language numeric
+    // assumptions accidentally.
+    //
+    // `docs/spec/law.md` §62 requires "modulo sign" to be "fully defined before
+    // any FTCFTW claim" and it was not defined anywhere. It is now, in
+    // `docs/rulings.md`: **FLOORED**, because law.md's own first line makes
+    // "ordinary Lua meaning" the entry of the specialization chain, Lua's `%`
+    // and `//` are floored, and an `i64` descriptor cannot be the reason —
+    // Lua's `%` and `//` already answer an INTEGER for two integers, so the
+    // descriptor changes nothing about this operator and cannot excuse changing
+    // its answer.
+    //
+    // It is also the CHEAPER law, which is the part that inverts the instinct:
+    // under floored law `x % 2^n -> and` and `x // 2^n -> asr` are identities
+    // over the full i64 domain needing NO range fact, and no range or
+    // known-bits fact exists anywhere in this compiler.
+    if (left == .int and right == .int and (op == .idiv or op == .mod)) {
+        const l = left.int;
+        const r = right.int;
+        // `@divFloor(minInt, -1)` overflows, and a trap is not a value. Refused
+        // rather than folded, exactly as the divide-by-zero ruling requires.
+        if (r == 0 or (r == -1 and l == std.math.minInt(i64))) return error.DivisionByZero;
+        return switch (op) {
+            .idiv => .{ .int = @divFloor(l, r) },
+            .mod => .{ .int = @mod(l, r) },
+            else => unreachable,
+        };
+    }
     if (native_integers and left == .int and right == .int and op != .pow) {
         const l = left.int;
         const r = right.int;
@@ -1834,17 +1871,16 @@ fn evalNumeric(op: ast.BinOp, left: Value, right: Value, native_integers: bool) 
             .add => .{ .int = l +% r },
             .sub => .{ .int = l -% r },
             .mul => .{ .int = l *% r },
-            // `sdiv` truncates toward zero and `msub` takes the sign of the
-            // dividend. `@divTrunc(minInt, -1)` traps, so refuse it rather than
-            // fold a trap into a value.
-            .div, .idiv => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
+            // `/` ON TWO INTEGERS IS STILL TRUNCATING, and that is an OPEN
+            // ROW, not part of this ruling. Lua's `/` always produces a FLOAT
+            // (`-7/10` is `-0.7`), so unlike `%` and `//` there is a real
+            // descriptor question here — `a: i64 / b: i64` has no float to
+            // return — and settling it is a separate ruling with a separate
+            // cost. `docs/rulings.md` carries the `law:`/`today:`/`delta:` row.
+            .div => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
                 error.DivisionByZero
             else
                 .{ .int = @divTrunc(l, r) },
-            .mod => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
-                error.DivisionByZero
-            else
-                .{ .int = @rem(l, r) },
             else => error.UnsupportedOperator,
         };
     }
@@ -1855,8 +1891,6 @@ fn evalNumeric(op: ast.BinOp, left: Value, right: Value, native_integers: bool) 
             .add => .{ .int = l +% r },
             .sub => .{ .int = l -% r },
             .mul => .{ .int = l *% r },
-            .idiv => if (r == 0) error.DivisionByZero else .{ .int = @divFloor(l, r) },
-            .mod => if (r == 0) error.DivisionByZero else .{ .int = @mod(l, r) },
             else => error.UnsupportedOperator,
         };
     }
