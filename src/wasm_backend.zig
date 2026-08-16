@@ -513,6 +513,11 @@ const Emitter = struct {
     /// The TRUNCATED remainder, held so the floored correction can test it
     /// twice without recomputing a divide. See the `.mod` arm.
     scratch_c: u32 = 0,
+    /// `//` needs the truncated QUOTIENT and the truncated REMAINDER live at the
+    /// same time — the correction is `q - 1` decided by a test on `r` — and
+    /// `.mod` needs only the remainder. One more i64 local is the whole cost of
+    /// the fourth scratch; the alternative is dividing twice.
+    scratch_d: u32 = 0,
     pc_local: u32 = 0,
     frame_local: u32 = 0,
     frame_off: std.AutoHashMapUnmanaged(u32, u32) = .empty,
@@ -984,9 +989,10 @@ fn emitFunctionBody(e: *Emitter, f: dnir.Function) Error![]u8 {
     e.scratch_a = n_slots + 1;
     e.scratch_b = n_slots + 2;
     e.scratch_c = n_slots + 3;
-    e.pc_local = n_slots + 4;
-    e.frame_local = n_slots + 5;
-    const n_field_locals = try planFieldLocals(e, instrs, n_slots + 6) - (n_slots + 6);
+    e.scratch_d = n_slots + 4;
+    e.pc_local = n_slots + 5;
+    e.frame_local = n_slots + 6;
+    const n_field_locals = try planFieldLocals(e, instrs, n_slots + 7) - (n_slots + 7);
 
     // Frame layout for `alloc_slots`, assigned ONCE here. Reserving where the
     // table is produced re-executes on each loop iteration and walks the stack
@@ -1024,7 +1030,7 @@ fn emitFunctionBody(e: *Emitter, f: dnir.Function) Error![]u8 {
             i = j;
         }
         try decls.append(e.alloc, .{ .n = 1, .t = vt_i32 }); // scratch_i32
-        try decls.append(e.alloc, .{ .n = 3, .t = vt_i64 }); // scratch_a, scratch_b, scratch_c
+        try decls.append(e.alloc, .{ .n = 4, .t = vt_i64 }); // scratch_a, scratch_b, scratch_c, scratch_d
         try decls.append(e.alloc, .{ .n = 1, .t = vt_i32 }); // pc
         try decls.append(e.alloc, .{ .n = 1, .t = vt_i32 }); // frame
         if (n_field_locals > 0) try decls.append(e.alloc, .{ .n = n_field_locals, .t = vt_i64 });
@@ -1647,16 +1653,94 @@ fn emitBinop(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
             try b.byte(op_end);
             try b.byte(op_end);
         },
-        // `//` IS NOT IMPLEMENTED HERE, AND IT REFUSES BY NAME RATHER THAN
-        // ANSWERING. `i64.div_s` is truncating and floor division is a
-        // different value; emitting the truncating one would make this realizer
+        // `//` — FLOOR DIVISION, and it now ANSWERS instead of refusing by name.
+        //
+        // The refusal it replaces was the right state while the correction was
+        // unwritten: `i64.div_s` is truncating, floor division is a different
+        // value, and emitting the truncating one would have made this realizer
         // disagree with the AArch64 one on `(0-7) // 10` — 0 against -1 — which
         // is a silent wrong answer, the one outcome this surface does not
-        // tolerate. A named refusal is the honest state until the correction is
-        // written here too. ROUTED: it needs `q` and `r` live at once, i.e. one
-        // more scratch local, plus its own `b == 0` arm (`a < 0 ? -1 : 0`,
-        // which is what the AArch64 sequence produces there).
-        .idiv => return e.refuse("binop:idiv-floor-unimplemented"),
+        // tolerate.
+        //
+        // THE THREE ARMS ARE MEASURED AGAINST THE AArch64 BUILD, NOT DERIVED
+        // FROM THE C STANDARD. `--backend=direct`, one program, opaque operands
+        // so nothing folds (idol 0f7d6d00):
+        //
+        //     7//2 -7//2 7//-2 -7//-2   ->   3 -4 -4  3
+        //     6//3 -6//3 6//-3 -6//-3   ->   2 -2 -2  2      exact: no correction
+        //     7//0 -7//0 0//0           ->   0 -1  0         a < 0 ? -1 : 0
+        //     7//-1 -7//-1              ->  -7  7            0 - a
+        //
+        //   b == 0  -> a < 0 ? -1 : 0. NOT 0. AArch64's `sdiv` answers 0 there
+        //             and the floor correction then fires on the nonzero
+        //             remainder `a`, which is why the negative dividend lands on
+        //             -1 and why copying `.div`'s `b == 0` arm would have been
+        //             wrong in exactly one quadrant.
+        //   b == -1 -> 0 - a. Division is exact, so floor and truncation agree,
+        //             and INT64_MIN wraps to itself as it does on the chip.
+        //   else    -> q = a/b, r = a%b, and q-1 when the remainder is nonzero
+        //             and its sign differs from the divisor's — the same
+        //             predicate `(r != 0) && ((r ^ b) < 0)` the `.mod` arm uses,
+        //             because floored `%` and floored `//` are corrections of
+        //             the same truncating pair and must fire together or the
+        //             ruled identity `x == (x // y) * y + (x % y)` breaks.
+        //
+        // `select` rather than a branch: both arms are already on the stack and
+        // neither can trap.
+        .idiv => {
+            try pushValue(e, b, ins.lhs, .i64);
+            try b.set(e.scratch_a);
+            try pushValue(e, b, ins.rhs, .i64);
+            try b.set(e.scratch_b);
+
+            try b.get(e.scratch_b);
+            try b.op(op_i64_eqz);
+            try b.byte(op_if);
+            try b.byte(vt_i64);
+            // b == 0: a < 0 ? -1 : 0
+            try b.i64c(-1);
+            try b.i64c(0);
+            try b.get(e.scratch_a);
+            try b.i64c(0);
+            try b.op(op_i64_lt_s);
+            try b.op(op_select);
+            try b.byte(op_else);
+            try b.get(e.scratch_b);
+            try b.i64c(-1);
+            try b.op(op_i64_eq);
+            try b.byte(op_if);
+            try b.byte(vt_i64);
+            // b == -1: 0 - a
+            try b.i64c(0);
+            try b.get(e.scratch_a);
+            try b.op(op_i64_sub);
+            try b.byte(op_else);
+            // q into scratch_c, r into scratch_d, then the floor correction.
+            try b.get(e.scratch_a);
+            try b.get(e.scratch_b);
+            try b.op(op_i64_div_s);
+            try b.set(e.scratch_c);
+            try b.get(e.scratch_a);
+            try b.get(e.scratch_b);
+            try b.op(op_i64_rem_s);
+            try b.set(e.scratch_d);
+            try b.get(e.scratch_c);
+            try b.i64c(1);
+            try b.op(op_i64_sub);
+            try b.get(e.scratch_c);
+            try b.get(e.scratch_d);
+            try b.i64c(0);
+            try b.op(op_i64_ne);
+            try b.get(e.scratch_d);
+            try b.get(e.scratch_b);
+            try b.op(op_i64_xor);
+            try b.i64c(0);
+            try b.op(op_i64_lt_s);
+            try b.op(op_i32_and);
+            try b.op(op_select);
+            try b.byte(op_end);
+            try b.byte(op_end);
+        },
         else => {
             try pushValue(e, b, ins.lhs, .i64);
             try pushValue(e, b, ins.rhs, .i64);

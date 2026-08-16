@@ -22,6 +22,7 @@ const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
+const wasm_backend = @import("wasm_backend.zig");
 const demand = @import("demand.zig");
 const obseq = @import("obseq.zig");
 const observation = @import("observation.zig");
@@ -3303,7 +3304,27 @@ fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 
             term.err("--backend=c is RETIRED: the direct AArch64 backend is the only backend (NO C BACKEND, PERIOD — docs/rulings.md). A program that only builds through the C bridge does not build; record it as a direct-backend defect instead of routing around it.", .{});
             std.process.exit(1);
         },
-        .wasm => return target_in,
+        // `--backend=wasm` NAMES AN ARTIFACT, AND UNTIL NOW IT DID NOT PRODUCE
+        // ONE. With no `--target` it returned "native" unchanged, fell past the
+        // machine-target refusal (it does not prefer machine code), and landed
+        // in the C tail: `src/codegen.zig` wrote `/tmp/duo_<stem>.c` and
+        // `zig cc` linked a MACH-O ARM64 EXECUTABLE into the path the caller
+        // spelled `.wasm`. MEASURED at idol 0f7d6d00, `file -b` on the output:
+        // `Mach-O 64-bit executable arm64`. So the flag whose whole name is a
+        // target selected neither the target nor the backend, and the RETIRED C
+        // emitter was reachable under it — the `NO C BACKEND` refusal below
+        // fires on the literal string `c` and on nothing else.
+        //
+        // The backend and the target are now the same choice: `--backend=wasm`
+        // means wasm32-wasi, which routes to `src/wasm_backend.zig`. An explicit
+        // non-wasm target with this backend is the contradiction that produced
+        // the Mach-O, so it is refused rather than silently reinterpreted.
+        .wasm => {
+            if (std.mem.eql(u8, target_in, "native")) return "wasm32-wasi";
+            if (std.mem.indexOf(u8, target_in, "wasm") != null) return target_in;
+            term.err("--backend=wasm cannot emit for target '{s}': the wasm backend emits wasm32-wasi modules and nothing else. Drop --target, or say --target wasm32-wasi.", .{target_in});
+            std.process.exit(1);
+        },
     }
 }
 
@@ -4544,6 +4565,49 @@ fn do_compile(
     else
         null;
 
+    // NATIVE WEBASSEMBLY. `--target wasm32-wasi` is no longer the C emitter's
+    // tail: `wasm_backend.zig` consumes the SAME DNIR the AArch64 direct backend
+    // consumes and writes the `.wasm` bytes itself — no `zig cc`, no C. Placed
+    // HERE, above the machine-target refusal below, because wasm32-wasi is not
+    // an AArch64 machine target and that refusal would turn it away first.
+    //
+    // THE CONDITION IS THE TARGET AND NOT THE BACKEND NAME. `--backend=wasm`
+    // reaches this because `resolveCompileBackend` now resolves its target to
+    // `wasm32-wasi`; the backend name never selected the artifact and pretending
+    // it did is what let `--backend=wasm` emit a Mach-O executable into a path
+    // called `.wasm`.
+    if (std.mem.eql(u8, target, "wasm32-wasi") and !load_chunk and !lib_mode) {
+        var wasm_graph = semantic_graph.SemanticGraph.init(alloc);
+        defer wasm_graph.deinit();
+        _ = try wasm_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+        // THE SAME DEMAND PRUNE THE DIRECT EXECUTABLE PATH APPLIES. The whole
+        // value of this target is that its stdout can be diffed against the
+        // AArch64 build's, and a transform applied to one column and not the
+        // other is a difference this emitter did not make. `world_closed` is
+        // true for the same reason it is true there: an executable image is the
+        // whole world, so nothing outside it can name a module-level binding.
+        var wasm_demand = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &wasm_graph, .world_closed = true });
+        defer wasm_demand.deinit();
+        try demand.prune(alloc, &ps.mod, &wasm_demand);
+        var wasm_diagnostic: wasm_backend.Diagnostic = .{};
+        const wasm_entry = native_backend.abi(&ps.mod, entry_override);
+        const wasm_bytes = wasm_backend.emitWasmModule(alloc, &ps.mod, wasm_entry, &wasm_graph, &wasm_diagnostic) catch |e| {
+            term.err("wasm32-wasi: no native realization ({s})", .{@errorName(e)});
+            if (wasm_diagnostic.note()) |why| term.hint("refused at: {s}", .{why});
+            if (wasm_diagnostic.functionName()) |fname| term.hint("in relation: {s}", .{fname});
+            std.process.exit(1);
+        };
+        defer alloc.free(wasm_bytes);
+        try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = out_path, .data = wasm_bytes });
+        if (phase_timer) |*t| trace_phase(io, t, "wasm emit", out_path);
+        if (term.build_report != .plain and !test_mode) {
+            const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+            term.buildPhaseDone("compile", total_ms, out_path);
+        }
+        if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+        return;
+    }
+
     if ((selected_backend == .auto or selected_backend == .direct) and effective_machine_target == null) {
         term.err("{s} backend has no native machine realization for target '{s}' on this host; explicitly select --backend=c or --backend=wasm if that realization is intended", .{ selected_backend.name(), target });
         std.process.exit(1);
@@ -4975,6 +5039,34 @@ fn do_compile(
         term.err("machine target '{s}' requires --backend=auto or --backend=direct on this host", .{target});
         std.process.exit(1);
     }
+
+    // ---------------------------------------------------------------------
+    // NO C BACKEND, PERIOD — ENFORCED BY REACHABILITY, NOT BY SPELLING.
+    //
+    // Everything below this line is the C emitter's tail: `src/codegen.zig`
+    // writes `/tmp/duo_<stem>.c` and `zig cc` compiles it. The ruling in
+    // `docs/rulings.md` retired that backend, and until now the retirement was
+    // a STRING COMPARISON: `resolveCompileBackend` refused the four characters
+    // `--backend=c` and nothing else, so the identical emitter was still
+    // reachable as `--backend=wasm`. MEASURED at idol 0f7d6d00, before this
+    // line existed: `idol compile --backend=wasm -o wt.wasm wt.id` exited 0,
+    // wrote `/tmp/duo_wt.c` (6,640 bytes) and produced a `Mach-O 64-bit
+    // executable arm64` — the retired backend, under another name, emitting
+    // for the wrong target, into a path called `.wasm`.
+    //
+    // `--backend=wasm` now resolves to `wasm32-wasi` and routes to
+    // `src/wasm_backend.zig` (no C, no `zig cc`; the module is written by the
+    // compiler itself), so the last CLI spelling that reached this tail is
+    // gone. This refusal is what makes that a PROPERTY rather than an
+    // observation: a spelling that reaches C again fails here and says which
+    // spelling it was, instead of silently emitting C.
+    //
+    // It is deliberately NOT `unreachable`. If some route does still arrive,
+    // the honest outcome is a named refusal a person can act on, not a
+    // panic — and not a silent C compile, which is the thing being retired.
+    // ---------------------------------------------------------------------
+    term.err("no C backend: this compile reached the retired C emitter (backend '{s}', target '{s}'). NO C BACKEND, PERIOD — docs/rulings.md. The AArch64 direct backend and the native wasm emitter (--backend=wasm / --target wasm32-wasi) are the only realizations; a program that only builds through the C bridge does not build, and is a direct-backend defect to record rather than route around.", .{ backend_mode, target });
+    std.process.exit(1);
 
     phase_timer = start_trace_timer(io);
     if (term.trace) term.traceStep("monomorphize", .{});
