@@ -178,6 +178,7 @@ const semantic_graph = @import("semantic_graph.zig");
 const recurrence = @import("recurrence.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
 const demand_projection = @import("demand_projection.zig");
+const quotient_synth = @import("quotient_synth.zig");
 
 /// Why a statement survived. Every non-`dead` value names an unmet obligation,
 /// so a census over these says which obligation is costing the most work.
@@ -1867,6 +1868,16 @@ pub fn analyzeModule(
     // value; `demand_projection.zig` is that generator. It adds TRUNCATION
     // candidates to this plan and nothing else -- `prune` below already knows
     // how to realize a `break_after` site, so no second lowering path exists.
+    //
+    // §22-23 LAW CLOSURE, INSTALLED FOR THE DURATION OF THAT ONE WALK. The
+    // derivative's only opaque node is a call to a user-defined relation;
+    // `quotient_synth.zig` holds the module's relation table and answers that
+    // node from the callee's own body. Uninstalled on the way out, so no
+    // analysis outside this call ever sees a table it did not ask for, and an
+    // uninstalled derivative is bit-identical to the one that shipped.
+    var qenv = quotient_synth.Env.scan(mod, scoped);
+    quotient_synth.install(&qenv);
+    defer quotient_synth.uninstall();
     _ = try demand_projection.analyzeModule(alloc, mod, scoped, &plan);
     return plan;
 }

@@ -179,6 +179,38 @@ const demand = @import("demand.zig");
 const observation = @import("observation.zig");
 
 // ═══════════════════════════════════════════════════════════════════════════
+// §22-23 — THE LAW CLOSURE SEAM
+//
+// `projectionOfName` answers `whole` for every call, because a call to a
+// USER-DEFINED relation is opaque to it: it has the derivative and no relation
+// table. HPLS §106's test is exactly whether the loop can run for such a
+// relation, so the seam exists to let a module that HAS the table answer the
+// one node this file cannot.
+//
+// TWO NULLABLE POINTERS, AND NO SHARED TYPE. The context is `*const anyopaque`
+// and the answer is this file's own `Projection`, so the producer side can be
+// compiled, tested and deleted without this file knowing its name. Both
+// default to null, and null is EXACTLY today's behaviour — `mentions(e, n)`
+// and a `whole` that costs candidates and never costs correctness.
+//
+// SET ONCE PER MODULE ANALYSIS, CLEARED ON EXIT (`demand.zig` owns the
+// `defer`). This file never writes them, so it cannot be its own producer of a
+// fact it is meant to consume.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// The relation table the derivative consults for a call. Opaque here.
+pub var call_law_ctx: ?*const anyopaque = null;
+
+/// Given the demanded projection of a call's RESULT, the projection of `n`
+/// that suffices. Null means no law closure is installed.
+pub var call_law_derive: ?*const fn (
+    ctx: *const anyopaque,
+    h: Projection,
+    e: *const ast.Expr,
+    n: []const u8,
+) Projection = null;
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ALGEBRA 2 — `law.demand.derivative`: the projection lattice
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -427,6 +459,17 @@ pub fn projectionOfName(h: Projection, e: *const ast.Expr, n: []const u8) Projec
             var acc: Projection = .none;
             for (sq.exprs) |x| acc = Projection.join(acc, projectionOfName(h, x, n));
             return acc;
+        },
+
+        // THE ONE NODE THIS FILE CANNOT ANSWER. A call to a user-defined
+        // relation carries a projection law only its own body knows, and this
+        // file has no relation table. With no law closure installed the answer
+        // is the fail-closed one it always was.
+        .call => {
+            if (call_law_derive) |derive| {
+                if (call_law_ctx) |ctx| return derive(ctx, h, e, n);
+            }
+            return if (mentions(e, n)) .whole else .none;
         },
 
         else => return if (mentions(e, n)) .whole else .none,
