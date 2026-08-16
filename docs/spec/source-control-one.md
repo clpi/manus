@@ -350,7 +350,7 @@ the parser.
 | `if(cond)` | canonical | **answers** |
 | `if cond` | familiar | **answers** |
 | `else(pred)` | canonical | **answers** |
-| `else if` | familiar, normalize | **DOES NOT PARSE** — block left open |
+| `else if` | familiar, normalize | **parses ONLY with a terminating bare `else`** — see §12.1 |
 | `while(cond)` | canonical | **answers** |
 | `while cond` | familiar | **answers** |
 | `for(source) (item)` | **canonical** | **DOES NOT PARSE** — "write `name` at this token edge" |
@@ -371,3 +371,36 @@ at ingress and normalized to `else(cond)`.
 
 **Not yet measured:** whether the faces that DO answer publish identical graphs.
 Answer parity is not graph parity (§8), and no equivalence gate exists yet.
+
+### §12.1 `else if` — CORRECTED TWICE, and the real defect is narrower than either reading
+
+The first table entry said `else if` "DOES NOT PARSE". A lane then reported the
+opposite — that it parses and emits code byte-identical to `else(pred)`. **Both
+were wrong, and the truth is a sharper defect than either.** Isolated at idol
+`1408da4c`, identical programs differing in ONE clause:
+
+    else if     WITH a terminating bare `else`      answers        (rc 2)
+    else if     WITHOUT one                         REFUSED        (rc 1)
+    else(pred)  WITH a terminating bare `else`      answers
+    else(pred)  WITHOUT one                         ANSWERS
+    plain if, no else at all                        answers
+
+Indentation is NOT the variable — 2-space and 4-space behave identically on both
+sides. **The variable is the trailing `else`.** The failure is
+`this block opened at column N is still open at the file edge`, so the familiar
+chain never closes unless an unconditional alternative terminates it.
+
+**THE FAMILIAR FACE CARRIES A CONSTRAINT THE CANONICAL FACE DOES NOT.** That is a
+direct §3 violation — familiar ingress must normalize to the same refinement, and
+here `else if` admits a strictly smaller language than `else(cond)`. A
+three-alternative chain ending in a bare `else` hides it completely, which is
+exactly why both earlier readings were confident and wrong: the lane's probe had
+a terminating `else` and mine did not.
+
+**Method note, because this is the second time today a control-face claim was
+wrong in both directions.** Neither reading was reproduced against the other's
+program before being written down. The fix that found it was to run BOTH
+programs, then vary one clause at a time — indent width, then trailing `else` —
+until a single variable separated them. A face that "does not parse" and a face
+that "parses" can both be true of the same construct under different
+terminations, and a one-program probe cannot tell the difference.
