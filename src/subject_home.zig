@@ -70,7 +70,42 @@ pub const Conformance = enum {
 
 /// The builtin homes. `os` and `testing` are WORLDS rather than protocols: no
 /// value conforms to them, they are reached because the subject IS the world.
-pub const Home = enum { string, math, table, io, testing, os };
+pub const Home = enum { string, math, table, io, testing, os, c };
+
+/// THE `c` WORLD'S ROSTER — the one place it is written down.
+///
+/// NAMED `c` BY RULING. `docs/foreign-world.md` §8.1 argued the world's identity
+/// IS the library, which would make this `libc`; the ruling is `c`, and it is
+/// the better answer for the reason §8.1 was reaching for. `libc` names an
+/// artifact of one platform's packaging — the C standard library is `libc.so` on
+/// Linux, `libSystem` on Darwin, and neither is the entity a program means. `c`
+/// IS the independently meaningful entity `docs/spec/world.md` asks for: the C
+/// ABI and its standard surface, which is what a caller is actually reaching
+/// for. A world per shared object (`sqlite3`, `openssl`) still follows §8.1 —
+/// those genuinely ARE libraries.
+///
+/// Deliberately SMALL and deliberately a ROSTER rather than "any symbol". A world
+/// that forwards every name it is given is not a capability, it is a hole: the
+/// point of `authority = .one(<world>)` is that a module which was not granted
+/// the world cannot reach out, and that is worth nothing if the granted world
+/// reaches everything. Growing this list is how the world grows, and each entry
+/// is a decision.
+///
+/// Signature-checked NOWHERE YET, which is the honest limit of this first cut:
+/// these are the i64-in/i64-out members, and a member whose C signature is not
+/// that shape does not belong here until the roster carries signatures.
+pub const c_members = [_][]const u8{ "abs", "labs" };
+
+/// Is `name` a member of the `c` world? Asked by BOTH sema and lowering, so
+/// there is one roster and not two lists that have to agree — which is the shape
+/// that has already produced a wrong answer in this compiler (the formatter's
+/// precedence table, idol `68d33bbe`).
+pub fn isCMember(name: []const u8) bool {
+    for (c_members) |m| {
+        if (std.mem.eql(u8, m, name)) return true;
+    }
+    return false;
+}
 
 /// The conformance a descriptor carries.
 ///
@@ -359,6 +394,32 @@ pub const declarations = [_]Declaration{
     .{ .home = .string, .name = "string", .provides = .realized, .injection = .always, .reach = .anchored_only },
     .{ .home = .math, .name = "math", .provides = .realized, .injection = .always, .reach = .anchored_only },
     .{ .home = .table, .name = "table", .provides = .realized, .injection = .always, .reach = .anchored_only },
+    // THE FOREIGN WORLD. `c.abs(0 - 7)` is anchored access on a world value —
+    // no directive, and `@cinclude`/`@comp.c.call`/`@c.export` are the retired
+    // spellings it replaces.
+    //
+    // `anchored_only` IS THE CAPABILITY-RELEVANT HALF: the world's NAME
+    // resolves and nothing else does, so a bare `abs(x)` stays whatever the
+    // module itself declares and no C name is ever taken from a program that
+    // did not ask. Injection adds reach; it never takes a name.
+    //
+    // `always` IS AN INTERIM AND IS NOT THE GRANTING STORY. Granting is the open
+    // ruling in `docs/foreign-world.md` §8.4, and the answer taken is that the
+    // BUILD ROOT grants authority (what a program may reach at all, enforceable
+    // at link because the root decides what is linked) while INJECTION scopes
+    // reach (where the granted world is nameable). `Injection` has no variant
+    // for either yet, so this is `always` and capability is NOT enforced: today
+    // any module can write `c.abs`. That is a smaller hole than it sounds —
+    // `anchored_only` means nothing is reachable without writing `c.`
+    // explicitly — but it is a hole, and it closes when granting lands rather
+    // than by tightening this line.
+    .{
+        .home = .c,
+        .name = "c",
+        .provides = .{ .roster = &c_members },
+        .injection = .always,
+        .reach = .anchored_only,
+    },
     // THE STRUCTURE-DERIVED WORLD. Nothing in a test file says it is one: no
     // import, no attribute, no directive. Only where the file LIVES.
     .{

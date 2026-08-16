@@ -6937,6 +6937,34 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = .{ .temp = buf }, .rhs = .{ .i64 = 2 }, .third = .{ .i64 = 0 } });
                 return .{ .temp = buf };
             }
+            // THE `c` WORLD. `c.abs(0 - 7)` is anchored access on a world
+            // value — no directive, and the same shape `math.sqrt(x)` below has
+            // always had. `docs/foreign-world.md` §9.6 measured the machinery as
+            // already present: "the direct backend already emits `call_extern`
+            // with a relocation — `print` proves it by importing `_puts` — so
+            // what is missing is the fact, not the machinery." This is the fact.
+            //
+            // THE ROSTER IS ASKED, NOT RESTATED. `subject_home.isCMember` is
+            // the one place the membership lives, so this cannot drift from what
+            // sema believes the world provides. A world that forwarded any name
+            // would not be a capability at all.
+            //
+            // A MODULE THAT BINDS `c` ITSELF KEEPS IT, and the `ctx.locals`
+            // test is what makes that true rather than lucky. Injection adds
+            // reach, it never takes a name, so a local called `c` shadows the
+            // world exactly as it shadows `os`. Measured before adding it: zero
+            // corpus files call `c.abs` or `c.labs`, but 168 bind a name `c`,
+            // so the collision was one `abs` away and the comment claiming
+            // shadowing worked would have been the only thing implementing it.
+            if (std.mem.eql(u8, f.obj.name.ident, "c") and c.args.len == 1 and
+                subject_home.isCMember(f.field) and ctx.locals.get("c") == null)
+            {
+                const arg = try lowerExpr(ctx, c.args[0]);
+                try ensureExtern(ctx, "c", f.field, f.field);
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = f.field, .lhs = arg, .ty = .i64 });
+                return .{ .temp = t };
+            }
             if (std.mem.eql(u8, f.obj.name.ident, "math") and c.args.len == 1) {
                 const fname = f.field;
                 const known = std.mem.eql(u8, fname, "sqrt") or std.mem.eql(u8, fname, "sin") or
