@@ -4549,7 +4549,19 @@ fn do_compile(
                     // lift sites so exe, dylib and asm/obj cannot disagree about what
                     // the program is -- `--emit asm` is how the cycle benchmarks read
                     // instruction counts, and it must describe the shipped binary.
-                    var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph });
+                    //
+                    // W IS THE ONE THING THE THREE SITES MUST DISAGREE ABOUT,
+                    // and this is the EXECUTABLE. The image is the whole world:
+                    // nothing outside it can name a module-level binding, so
+                    // the FILE-SCOPE TAIL -- "a file-scope tail is the program",
+                    // the lower-syntax spelling of the same program -- is
+                    // analysable here and only here. MEASURED, same dead loop,
+                    // `otool -tv | grep -cE '^[0-9a-f]{16}\s'`: as a function
+                    // body 16 -> 2 before this line existed, as a file-scope
+                    // tail 16 -> 16. The dylib and obj sites below EXIST to be
+                    // read from outside, so they leave `world_closed` at its
+                    // false default and emit exactly what they emitted before.
+                    var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph, .world_closed = true });
                     defer demand_plan.deinit();
                     try demand.prune(alloc, &ps.mod, &demand_plan);
                     var native_diagnostic: native_backend.Diagnostic = .{};

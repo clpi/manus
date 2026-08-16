@@ -87,6 +87,80 @@
 //!                     label — deleting a statement that transfers control
 //!                     changes where control goes.
 //!
+//! # THE W OBLIGATION — the file-scope tail, and why it needed its own proof
+//!
+//! `T: (S,F,D,W,H)` has five inputs and O1..O5 discharge only four of them. `W`
+//! — does anything OUTSIDE the program observe `S` — was answered "yes, always"
+//! by refusing module scope outright, and that refusal inverted the project's
+//! own deliverable. MEASURED on this compiler at f75aba55, `--backend direct`,
+//! `otool -tv | grep -cE '^[0-9a-f]{16}\s'`:
+//!
+//!     dead loop inside `main: i64 = ()`, result never read   16 -> 2
+//!     the same loop written as a FILE-SCOPE TAIL             16 -> 16
+//!
+//! The tail is the LOWER-SYNTAX spelling of the same program. Rewarding the
+//! programmer who writes the function wrapper is HPLS backwards.
+//!
+//! `W` is not a property of the program; it is a property of what is being
+//! BUILT. For a native EXECUTABLE the world is closed at module scope: nothing
+//! outside the image can name a module-level binding. For `--emit dylib` and
+//! `--emit obj` it is not — the object's whole purpose is a foreign consumer.
+//! So `Options.world_closed` DEFAULTS TO FALSE and only the executable site
+//! sets it. Getting that backwards deletes a library's state.
+//!
+//! A module-scope write is eliminable only if ALL FIVE of these hold ON TOP OF
+//! O1..O5. Any one unproven refuses THE WHOLE MODULE BODY, not one statement,
+//! because every one of them is a defect in the walk rather than in a statement.
+//!
+//!   W1  CLOSED WORLD.  `Options.world_closed` is true. Nothing else in this
+//!                      module may infer it; the caller knows the emit kind and
+//!                      this module does not.
+//!
+//!   W2  NO DEFERRED READER. The name is mentioned — READ **or** WRITTEN, at any
+//!                      depth, shadowing ignored — nowhere in any code that runs
+//!                      at a time this backward walk cannot place: a `func_decl`
+//!                      body, an `alias` method, a macro body, a `defer` body,
+//!                      or any closure value. `deferredMentions` collects that
+//!                      set and it is handed to the walk AS `Options.globals`,
+//!                      so a write to one is refused by exactly the machinery
+//!                      that already refuses a global store.
+//!
+//!                      A WRITE counts, not only a read. `dnir_lower`'s
+//!                      `collectModuleGlobals` gives a module name bss storage
+//!                      IFF some function assigns it, and takes that global's
+//!                      DECLARATION AND INITIALIZER from the module-scope
+//!                      statement this pass would delete. `collectModuleConsts`
+//!                      does the same for a literal binding a function folds.
+//!                      Deleting either is not a lost store, it is a name that
+//!                      no longer exists.
+//!
+//!   W3  NO EXPORT.     No module-scope binding carries `@export` / `@c.export`
+//!                      / `@ffi`. Discharged STRUCTURALLY, not by a check:
+//!                      `ast.Attribute` lists hang off `FuncDecl` alone, and a
+//!                      `func_decl` is never a deletion candidate. Stated so the
+//!                      obligation survives the day attributes reach a binding.
+//!
+//!   W4  ENUMERABLE.    Every statement in the module — including inside every
+//!                      function body — is one whose mentioned names this module
+//!                      can enumerate. `@build.*` and friends carry raw
+//!                      unparsed argument text that could name anything, so a
+//!                      `.directive` anywhere refuses the module. So does any
+//!                      variant `namesEnumerable` does not list, which is how a
+//!                      future AST node fails closed instead of silently.
+//!
+//!   W5  NO POINTER MOVED. `semantic_graph` stores `*FuncDecl`, `*AliasDef` and
+//!                      `*EnumDef` — the three module-scope shapes held BY VALUE
+//!                      inside `ast.Stmt` — as `ast_ref`, and the graph is
+//!                      lifted BEFORE this pass runs. Compacting the module's
+//!                      statement list moves every `Stmt` after the hole, so
+//!                      nothing at or before the last such statement may be
+//!                      deleted. (`*Expr` and `*LocalName` live in their own
+//!                      allocations and travel independently, which is why only
+//!                      these three are anchors.)
+//!
+//! `--entry <name>` needs no obligation: `isZeroArgEntryFunction` requires a
+//! `.func_decl`, so a module-scope BINDING can never be the linker entry.
+//!
 //! # What is deliberately NOT proven here
 //!
 //! Reads of `a(i)` / `r.f`, table constructors, string concatenation, varargs,
@@ -101,6 +175,8 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const recurrence = @import("recurrence.zig");
+const tail_result_demand = @import("tail_result_demand.zig");
 
 /// Why a statement survived. Every non-`dead` value names an unmet obligation,
 /// so a census over these says which obligation is costing the most work.
@@ -195,6 +271,22 @@ pub const Options = struct {
     /// set of names and the transfer is monotone, so this can only be hit by a
     /// bug; hitting it refuses the loop rather than looping forever.
     fixpoint_rounds: u32 = 64,
+    /// W1. True only when the caller knows nothing outside the image can name a
+    /// module-level binding — a native EXECUTABLE. `--emit dylib` and
+    /// `--emit obj` exist to be read from outside, so they must leave this
+    /// FALSE, which is why it defaults to false and is never inferred here.
+    ///
+    /// False costs nothing that was ever gained: it is exactly the behaviour
+    /// before the file-scope tail was analysed at all.
+    world_closed: bool = false,
+    /// True while the walk is over the MODULE body rather than a function body.
+    /// A `local_decl` means two different things in those two places — a fresh
+    /// frame slot inside a function, a module-scope place at file scope — and
+    /// only the second can be read by a `func_decl` that runs later. Carried on
+    /// `Options` rather than on `Walk` so the loop fixpoint's sub-walks inherit
+    /// it for free; a sub-walk that lost it would kill a module binding a
+    /// function reads.
+    module_scope: bool = false,
 };
 
 // ---------------------------------------------------------------------------
@@ -385,7 +477,11 @@ fn readsOf(live: *Live, e: *const ast.Expr) std.mem.Allocator.Error!void {
             .named => |x| try readsOf(live, x.val),
             .positional => |x| try readsOf(live, x),
             .spread => |x| try readsOf(live, x),
-            else => {},
+            // `{ @eq = impl }` — the implementation is an ORDINARY EXPRESSION
+            // and `impl` is very often a bare name. This arm was an `else => {}`,
+            // which is the one place a name could be mentioned in a table and
+            // not counted; a hole in `readsOf` is a name that looks dead.
+            .semantic => |x| try readsOf(live, x.val),
         },
         .list_comp => |l| {
             try readsOf(live, l.value);
@@ -486,8 +582,333 @@ fn stmtReads(live: *Live, s: *const ast.Stmt) std.mem.Allocator.Error!void {
         .func_decl => |f| try blockReads(live, &f.func.body),
         .ret => |r| for (r.vals) |e| try readsOf(live, e),
         .brk, .cont, .goto_stmt, .label_stmt => {},
-        else => {},
+
+        // THE FOUR SHAPES THAT USED TO FALL THROUGH `else => {}` WITH NAMES IN
+        // THEM. `transferStmt`'s catch-all calls this to keep everything a
+        // refused statement mentions alive; a shape that mentions a name and
+        // adds nothing here is a name that looks dead while a surviving
+        // statement still reads it. Not reachable through `--backend direct`
+        // today — `dnir_lower` refuses `match_stmt` outright, measured — but
+        // "the backend happens to refuse it" is not a liveness proof.
+        .match_stmt => |m| try matchReads(live, &m),
+        .try_stmt => |t| {
+            try blockReads(live, &t.body);
+            for (t.catches) |c| try blockReads(live, &c.body);
+            for (t.defers) |d| try blockReads(live, &d.body);
+        },
+        .defer_stmt => |d| try blockReads(live, &d.body),
+        .macro_def => |m| switch (m.body) {
+            .expr => |e| try readsOf(live, e),
+            .block => |b| try blockReads(live, &b),
+        },
+        .alias_def => |a| {
+            for (a.fields) |f| if (f.default_val) |dv| try readsOf(live, dv);
+            for (a.methods) |m| try blockReads(live, &m.func.body);
+        },
+
+        // Name-free by construction: `enum` variants carry names and types,
+        // `concept` carries signatures, `cinclude` carries a header string,
+        // `directive` carries RAW UNPARSED TEXT — which is why `namesEnumerable`
+        // refuses a module containing one rather than pretending this arm saw it.
+        .enum_def, .concept_def, .cinclude, .directive => {},
     }
+}
+
+/// Every name a `match` mentions: the scrutinee, each guard, each arm body, and
+/// each pattern's literal sub-expressions. Pattern BINDINGS are added too — a
+/// bound name is a write, and `stmtReads`' contract is reads OR writes.
+fn matchReads(live: *Live, m: *const ast.MatchExpr) std.mem.Allocator.Error!void {
+    try readsOf(live, m.scrutinee);
+    for (m.arms) |arm| {
+        try patternReads(live, &arm.pattern);
+        if (arm.guard) |g| try readsOf(live, g);
+        try blockReads(live, &arm.body);
+    }
+}
+
+fn patternReads(live: *Live, p: *const ast.Pattern) std.mem.Allocator.Error!void {
+    switch (p.*) {
+        .literal => |e| try readsOf(live, e),
+        .binding => |b| try live.add(b.name),
+        .variant => |v| {
+            try live.add(v.tag);
+            if (v.payload) |ps| for (ps) |*sub| try patternReads(live, sub);
+        },
+        .table_destr => |entries| for (entries) |e| try patternReads(live, &e.pat),
+        .array_destr => |ps| for (ps) |*sub| try patternReads(live, sub),
+        .rest => |n| try live.add(n),
+        .wildcard => {},
+    }
+}
+
+// ---------------------------------------------------------------------------
+// W2 — what DEFERRED code mentions
+// ---------------------------------------------------------------------------
+
+/// Every name mentioned by code that runs at a time the module's backward walk
+/// CANNOT PLACE. The backward walk's whole premise is "control reaches each
+/// statement from the one after it"; a function body, an `alias` method, a macro
+/// body, a `defer` body and any closure value all break that premise, because
+/// they run when someone calls them and the walk has no edge for that.
+///
+/// So their mentions are not liveness — they are a REFUSAL SET, handed to the
+/// walk as `Options.globals`. Two module-scope programs make the difference
+/// concrete; only the second is a hazard, and only the refusal set catches it:
+///
+///     g = 5          f = (x) x + g        <- closure mentions g
+///     f()            g = 5                <- the walk sees g dead here
+///     ...            f()                     and would delete the 5
+///
+/// A WRITE counts as a mention, exactly like `blockReads`: a function that
+/// assigns a module name is what gives that name bss storage in `dnir_lower`,
+/// and the storage's declaration comes from the statement this pass would cut.
+///
+/// Returns false the moment it meets a shape whose names it cannot enumerate.
+/// The caller must then refuse the whole module body — an un-enumerated mention
+/// is precisely the reader this pass would fail to see.
+fn deferredMentionsBlock(out: *Live, b: *const ast.Block) std.mem.Allocator.Error!bool {
+    for (b.stmts) |*s| if (!try deferredMentionsStmt(out, s)) return false;
+    if (b.tail_expr) |t| if (!try deferredMentionsExpr(out, t)) return false;
+    return true;
+}
+
+fn deferredMentionsStmt(out: *Live, s: *const ast.Stmt) std.mem.Allocator.Error!bool {
+    switch (s.*) {
+        // WHOLLY deferred: everything under here runs at call time.
+        .func_decl => |f| try blockReads(out, &f.func.body),
+        .macro_def => |m| switch (m.body) {
+            .expr => |e| try readsOf(out, e),
+            .block => |b| try blockReads(out, &b),
+        },
+        .alias_def => |a| {
+            for (a.fields) |f| if (f.default_val) |dv| try readsOf(out, dv);
+            for (a.methods) |m| try blockReads(out, &m.func.body);
+        },
+        // A `defer` body runs at scope exit — AFTER the module's tail, which is
+        // the one program point the backward walk treats as the end. Its
+        // mentions cannot be placed, so they are deferred, not ordered.
+        .defer_stmt => |d| try blockReads(out, &d.body),
+
+        // ORDERED shapes: the walk places these itself, so only the closures
+        // INSIDE them are collected.
+        .local_decl => |d| for (d.inits) |e| if (!try deferredMentionsExpr(out, e)) return false,
+        .global_decl => |d| for (d.inits) |e| if (!try deferredMentionsExpr(out, e)) return false,
+        .const_decl => |d| return deferredMentionsExpr(out, d.val),
+        .assign => |a| {
+            for (a.values) |e| if (!try deferredMentionsExpr(out, e)) return false;
+            for (a.targets) |t| if (!try deferredMentionsExpr(out, t)) return false;
+        },
+        .call_stmt => |x| return deferredMentionsExpr(out, x.expr),
+        .expr_stmt => |x| return deferredMentionsExpr(out, x.expr),
+        .do_block => |d| return deferredMentionsBlock(out, &d.body),
+        .while_loop => |w| {
+            if (!try deferredMentionsExpr(out, w.cond)) return false;
+            return deferredMentionsBlock(out, &w.body);
+        },
+        .repeat_loop => |r| {
+            if (!try deferredMentionsBlock(out, &r.body)) return false;
+            return deferredMentionsExpr(out, r.cond);
+        },
+        .if_stmt => |f| {
+            if (f.binding) |b| if (!try deferredMentionsExpr(out, b.expr)) return false;
+            if (!try deferredMentionsExpr(out, f.cond)) return false;
+            if (!try deferredMentionsBlock(out, &f.then)) return false;
+            for (f.elseifs) |ei| {
+                if (!try deferredMentionsExpr(out, ei.cond)) return false;
+                if (!try deferredMentionsBlock(out, &ei.body)) return false;
+            }
+            if (f.else_body) |eb| return deferredMentionsBlock(out, &eb);
+        },
+        .num_for => |n| {
+            if (!try deferredMentionsExpr(out, n.start)) return false;
+            if (!try deferredMentionsExpr(out, n.stop)) return false;
+            if (n.step) |st| if (!try deferredMentionsExpr(out, st)) return false;
+            return deferredMentionsBlock(out, &n.body);
+        },
+        .gen_for => |g| {
+            for (g.iters) |e| if (!try deferredMentionsExpr(out, e)) return false;
+            return deferredMentionsBlock(out, &g.body);
+        },
+        .ret => |r| for (r.vals) |e| if (!try deferredMentionsExpr(out, e)) return false,
+        .match_stmt => |m| {
+            if (!try deferredMentionsExpr(out, m.scrutinee)) return false;
+            for (m.arms) |arm| {
+                if (arm.guard) |g| if (!try deferredMentionsExpr(out, g)) return false;
+                if (!try deferredMentionsBlock(out, &arm.body)) return false;
+            }
+        },
+        .try_stmt => |t| {
+            if (!try deferredMentionsBlock(out, &t.body)) return false;
+            for (t.catches) |c| if (!try deferredMentionsBlock(out, &c.body)) return false;
+            for (t.defers) |d| try blockReads(out, &d.body);
+        },
+
+        // Name-free.
+        .enum_def, .concept_def, .cinclude, .brk, .cont => {},
+
+        // `@build.exe({ ... })` keeps its argument list as RAW UNPARSED TEXT
+        // (`ast.Attribute.args` is a `?[]const u8`), so a directive can name a
+        // module binding in a way no AST walk can see — `@c.emit` most obviously.
+        // `goto`/label break the "control arrives from the previous statement"
+        // premise outright. Both refuse.
+        .directive, .goto_stmt, .label_stmt => return false,
+    }
+    return true;
+}
+
+/// Closures reachable from an expression. Exhaustive over `ast.Expr` ON PURPOSE
+/// and with no `else` arm, so a new expression variant is a COMPILE ERROR here
+/// rather than a silently uncollected closure.
+fn deferredMentionsExpr(out: *Live, e: *const ast.Expr) std.mem.Allocator.Error!bool {
+    switch (e.*) {
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name, .semantic, .semantic_scope => {},
+        // The one that matters: everything a closure mentions is deferred.
+        .func_expr => |f| try blockReads(out, &f.body),
+        .index => |x| {
+            if (!try deferredMentionsExpr(out, x.obj)) return false;
+            return deferredMentionsExpr(out, x.key);
+        },
+        .field => |x| return deferredMentionsExpr(out, x.obj),
+        .call => |c| {
+            if (!try deferredMentionsExpr(out, c.func)) return false;
+            for (c.args) |a| if (!try deferredMentionsExpr(out, a)) return false;
+        },
+        .method_call => |m| {
+            if (!try deferredMentionsExpr(out, m.obj)) return false;
+            for (m.args) |a| if (!try deferredMentionsExpr(out, a)) return false;
+        },
+        .binop => |b| {
+            if (!try deferredMentionsExpr(out, b.lhs)) return false;
+            return deferredMentionsExpr(out, b.rhs);
+        },
+        .unop => |u| return deferredMentionsExpr(out, u.operand),
+        .table => |t| for (t.fields) |f| switch (f) {
+            .indexed => |x| {
+                if (!try deferredMentionsExpr(out, x.key)) return false;
+                if (!try deferredMentionsExpr(out, x.val)) return false;
+            },
+            .named => |x| if (!try deferredMentionsExpr(out, x.val)) return false,
+            .positional => |x| if (!try deferredMentionsExpr(out, x)) return false,
+            .spread => |x| if (!try deferredMentionsExpr(out, x)) return false,
+            .semantic => |x| if (!try deferredMentionsExpr(out, x.val)) return false,
+        },
+        .list_comp => |l| {
+            if (!try deferredMentionsExpr(out, l.value)) return false;
+            if (!try deferredMentionsExpr(out, l.iter)) return false;
+            if (l.filter) |f| return deferredMentionsExpr(out, f);
+        },
+        .try_expr => |x| return deferredMentionsExpr(out, x.operand),
+        .unwrap_expr => |x| return deferredMentionsExpr(out, x.operand),
+        .await_expr => |x| return deferredMentionsExpr(out, x.operand),
+        .quote => |x| return deferredMentionsExpr(out, x.expr),
+        .unquote => |x| return deferredMentionsExpr(out, x.expr),
+        .if_expr => |ie| {
+            if (!try deferredMentionsExpr(out, ie.cond)) return false;
+            if (!try deferredMentionsExpr(out, ie.then_expr)) return false;
+            return deferredMentionsExpr(out, ie.else_expr);
+        },
+        .match_expr => |m| {
+            if (!try deferredMentionsExpr(out, m.scrutinee)) return false;
+            for (m.arms) |arm| {
+                if (arm.guard) |g| if (!try deferredMentionsExpr(out, g)) return false;
+                if (!try deferredMentionsBlock(out, &arm.body)) return false;
+            }
+        },
+        .contains_expr => |c| {
+            if (!try deferredMentionsExpr(out, c.lhs)) return false;
+            return deferredMentionsExpr(out, c.rhs);
+        },
+        .macro_call => |m| for (m.args) |a| if (!try deferredMentionsExpr(out, a)) return false,
+        .sequence => |s| for (s.exprs) |x| if (!try deferredMentionsExpr(out, x)) return false,
+        .range => |r| {
+            if (!try deferredMentionsExpr(out, r.start)) return false;
+            if (!try deferredMentionsExpr(out, r.end)) return false;
+            if (r.step) |st| return deferredMentionsExpr(out, st);
+        },
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// W6 — the answer is where the LOWERING will look for it
+// ---------------------------------------------------------------------------
+
+/// Whether the block's result is its own tail expression.
+///
+/// `transferBlock` seeds liveness from `b.tail_expr` and calls that the answer.
+/// `dnir_lower` does not: it asks `tail_result_demand.blockTailResult`, and a
+/// VOID-SHAPED TAIL CALL IS TRANSPARENT there. `print(…)` carries no value, so
+/// the resolver walks BACK to the last value-carrying statement and THAT
+/// statement's value is what the block returns. A statement this walk calls
+/// "inert and in statement position, so its value has no consumer at all" can
+/// be the consumer.
+///
+/// MEASURED, `examples/layout/glued.id`, which ends:
+///
+///     e = 5
+///     e >> 1
+///     print("{a} {b} {c} {d} {e}")
+///
+/// The answer is `e >> 1` = 2, and the emitted `main` computes `e >> 1` TWICE —
+/// once as the statement, once into `x0`. Deleting the statement moved the exit
+/// code from 2 to 5 with stdout byte-identical, which is the quietest kind of
+/// wrong answer there is. (`--backend c` exits 0 on the same file, so the two
+/// backends already disagree here; that is a separate defect and not this
+/// pass's to fix. Not moving the number is.)
+///
+/// KEEPING THE ANCHORED STATEMENT IS NOT ENOUGH, which is why this refuses the
+/// block instead: deleting any statement can MOVE the anchor to an earlier one,
+/// and a resolution that returns `null` today can become non-null once the
+/// statement it declined to resolve is gone. The only stable condition is that
+/// the resolver never walks back at all — and that depends solely on
+/// `b.tail_expr`, which pruning never touches.
+fn answerIsTail(b: *const ast.Block) bool {
+    const tail = b.tail_expr orelse return false;
+    const r = tail_result_demand.blockTailResult(b) orelse return false;
+    return r.expr == tail;
+}
+
+// ---------------------------------------------------------------------------
+// W4 — can this module's names be enumerated at all?
+// ---------------------------------------------------------------------------
+
+/// Whether every statement under `b` is one `stmtReads` can enumerate the names
+/// of. The `else => false` is the point of the function: a variant added to
+/// `ast.Stmt` tomorrow refuses the module instead of quietly contributing no
+/// names to a set whose whole job is to be complete.
+fn namesEnumerable(b: *const ast.Block) bool {
+    for (b.stmts) |*s| switch (s.*) {
+        .local_decl, .const_decl, .global_decl, .assign, .call_stmt, .expr_stmt, .ret, .brk, .cont, .enum_def, .concept_def, .cinclude => {},
+        .do_block => |d| if (!namesEnumerable(&d.body)) return false,
+        .while_loop => |w| if (!namesEnumerable(&w.body)) return false,
+        .repeat_loop => |r| if (!namesEnumerable(&r.body)) return false,
+        .if_stmt => |f| {
+            if (!namesEnumerable(&f.then)) return false;
+            for (f.elseifs) |ei| if (!namesEnumerable(&ei.body)) return false;
+            if (f.else_body) |eb| if (!namesEnumerable(&eb)) return false;
+        },
+        .num_for => |n| if (!namesEnumerable(&n.body)) return false,
+        .gen_for => |g| if (!namesEnumerable(&g.body)) return false,
+        .func_decl => |f| if (!namesEnumerable(&f.func.body)) return false,
+        .defer_stmt => |d| if (!namesEnumerable(&d.body)) return false,
+        .match_stmt => |m| for (m.arms) |arm| {
+            if (!namesEnumerable(&arm.body)) return false;
+        },
+        .try_stmt => |t| {
+            if (!namesEnumerable(&t.body)) return false;
+            for (t.catches) |c| if (!namesEnumerable(&c.body)) return false;
+            for (t.defers) |d| if (!namesEnumerable(&d.body)) return false;
+        },
+        .alias_def => |a| for (a.methods) |m| {
+            if (!namesEnumerable(&m.func.body)) return false;
+        },
+        .macro_def => |m| switch (m.body) {
+            .expr => {},
+            .block => |blk| if (!namesEnumerable(&blk)) return false,
+        },
+        else => return false,
+    };
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -553,6 +974,13 @@ pub fn provenTripCount(w: anytype) ?TripProof {
         .gt, .geq => false,
         else => return null,
     };
+    // `<=`/`>=` admit the bound itself; `<`/`>` stop one short. The old check
+    // here did not read this, which is exactly where it was tighter than the
+    // fact — see `recurrence.terminatesForAnyStart` below.
+    const inclusive = switch (b.op) {
+        .leq, .geq => true,
+        else => false,
+    };
     if (b.lhs.* != .name) return null;
     const counter = b.lhs.name.ident;
     const limit = intLiteralOf(b.rhs) orelse return null;
@@ -576,15 +1004,22 @@ pub fn provenTripCount(w: anytype) ?TripProof {
     if (ascending and c <= 0) return null;
     if (!ascending and c >= 0) return null;
     const magnitude = if (ascending) c else -c;
-    // The counter exits on the FIRST value past the bound, so it overshoots by
-    // less than one step. Requiring the bound plus one step to fit means the
-    // overshoot cannot wrap — which is decidable only because the bound is a
-    // literal, and is why a symbolic bound is refused above.
-    if (ascending) {
-        if (limit > std.math.maxInt(i64) - magnitude) return null;
-    } else {
-        if (limit < std.math.minInt(i64) + magnitude) return null;
-    }
+    // THE ARITHMETIC IS NOT DECIDED HERE, AND THAT IS THE POINT.
+    //
+    // `src/recurrence.zig` derives a trip count too — to replace a loop with a
+    // value rather than to delete it — and a compiler carrying two proofs of
+    // one fact can license with the first what the second would have refused.
+    // The disagreement is invisible until it is a wrong answer. So this module
+    // keeps what it is for, recognising the shape and the structural guards
+    // above, and asks the ONE kernel whether the walk stays inside i64.
+    //
+    // The kernel is exact where this was a sufficient condition: it takes the
+    // guard's inclusivity into account and computes the real exit value in
+    // i128, so `while i < maxInt` — which halts, and which this refused —
+    // is now proven. Measured at the seam: over 1,156 (bound, step, direction,
+    // inclusivity) shapes the old condition was never unsound and was needlessly
+    // tight on 7.
+    if (!recurrence.terminatesForAnyStart(limit, ascending, inclusive, c)) return null;
     return .{ .counter = counter, .limit = limit, .step = magnitude, .ascending = ascending };
 }
 
@@ -747,14 +1182,23 @@ fn loopWrites(opts: Options, b: *const ast.Block, w: *Live) std.mem.Allocator.Er
                 try w.add(t.name.ident);
             }
         },
-        .local_decl => |d| for (d.names) |n| try w.add(n.ident),
+        .local_decl => |d| for (d.names) |n| {
+            // Module scope has ONE flat name space in `dnir_lower`'s root
+            // context, so a declaration inside a file-scope loop can name the
+            // same place a function reads. Same refusal as the `.assign` arm.
+            if (opts.module_scope) if (opts.globals) |g| if (g.contains(n.ident)) return false;
+            try w.add(n.ident);
+        },
         .do_block => |d| if (!try loopWrites(opts, &d.body, w)) return false,
         .while_loop => |wl| if (!try loopWrites(opts, &wl.body, w)) return false,
         .if_stmt => |f| {
             if (!try loopWrites(opts, &f.then, w)) return false;
             for (f.elseifs) |ei| if (!try loopWrites(opts, &ei.body, w)) return false;
             if (f.else_body) |eb| if (!try loopWrites(opts, &eb, w)) return false;
-            if (f.binding) |bnd| try w.add(bnd.name);
+            if (f.binding) |bnd| {
+                if (opts.module_scope) if (opts.globals) |g| if (g.contains(bnd.name)) return false;
+                try w.add(bnd.name);
+            }
         },
         .brk, .cont, .goto_stmt, .label_stmt => {},
         .call_stmt, .expr_stmt => {},
@@ -1087,7 +1531,19 @@ fn transferStmt(w: *Walk, s: *const ast.Stmt, live: *Live) std.mem.Allocator.Err
         },
 
         .local_decl => |d| {
-            const all_dead = blk: {
+            // W2 at module scope ONLY. Inside a function `x: i64 = 5` binds a
+            // fresh frame slot that nothing else can name, so the module-name
+            // set must not be consulted — doing so would refuse every local
+            // whose name happens to collide with a module binding. At FILE
+            // scope the same node binds a place `dnir_lower` may hand to a
+            // function, so the refusal set applies exactly as it does to
+            // `.assign`.
+            const escapes = blk: {
+                if (!w.opts.module_scope) break :blk false;
+                for (d.names) |n| if (w.isGlobal(n.ident)) break :blk true;
+                break :blk false;
+            };
+            const all_dead = !escapes and blk: {
                 for (d.names) |n| if (live.has(n.ident)) break :blk false;
                 break :blk true;
             };
@@ -1378,9 +1834,13 @@ fn blockHasJump(b: *const ast.Block) bool {
     return false;
 }
 
-/// Demand-analyse every function in a module. Module-scope statements are NOT
-/// analysed: a file-scope binding is reachable from outside the module and the
-/// walk has no root set that can prove otherwise.
+/// Demand-analyse every function in a module, and — only when the caller says
+/// the world is closed — the MODULE BODY as well.
+///
+/// The module body is the file-scope tail: "a file-scope tail is the program".
+/// It is the LOWER-SYNTAX spelling and it was the one spelling this pass could
+/// not see, which made the transform reward extra syntax. See the W obligation
+/// in this file's header for what closing the world costs and what it does not.
 pub fn analyzeModule(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -1400,7 +1860,86 @@ pub fn analyzeModule(
         if (s.* != .func_decl) continue;
         try analyzeFunction(alloc, &s.func_decl.func, scoped, &plan);
     }
+    if (opts.world_closed) try analyzeModuleBody(alloc, mod, opts, &plan);
     return plan;
+}
+
+/// W1..W5 for the module body, then the ordinary backward walk over it.
+///
+/// The refusal set handed to the walk is NOT `collectModuleNames` — that set is
+/// every module binding, and using it here would refuse every write at module
+/// scope, which is precisely the "widen the walk and nothing happens" outcome.
+/// It is `deferredMentions`: only the module bindings that code the walk cannot
+/// order actually mentions. Everything else is an ordinary local of the
+/// synthesized `main`, and liveness decides it.
+fn analyzeModuleBody(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    opts: Options,
+    plan: *Plan,
+) !void {
+    // W4. A shape whose names cannot be enumerated is a reader this pass cannot
+    // see, and one such statement ANYWHERE in the module — a `@build` directive,
+    // a `goto` — refuses the whole body.
+    if (!namesEnumerable(&mod.body)) {
+        plan.note(.unsupported_shape);
+        return;
+    }
+    // W6. The module's answer must be its own tail expression, not a statement
+    // the resolver walked back to. See `answerIsTail`.
+    if (!answerIsTail(&mod.body)) {
+        plan.note(.observed);
+        return;
+    }
+    // O5's walk-level twin, restated at file scope: `goto`/label means "the
+    // paths from this statement" is not the suffix of the block. `namesEnumerable`
+    // already refused both, so this is belt and braces against a future arm.
+    if (blockHasJump(&mod.body)) {
+        plan.note(.control_escape);
+        return;
+    }
+
+    // W2.
+    var escapes = Live.init(alloc);
+    defer escapes.deinit();
+    if (!try deferredMentionsBlock(&escapes, &mod.body)) {
+        plan.note(.unsupported_shape);
+        return;
+    }
+
+    var scoped = opts;
+    scoped.globals = &escapes.set;
+    scoped.module_scope = true;
+
+    var live = Live.init(alloc);
+    defer live.deinit();
+    var w: Walk = .{ .alloc = alloc, .opts = scoped, .plan = plan, .recording = true };
+    try transferBlock(&w, &mod.body, &live);
+
+    // W5. `prune` compacts a statement list in place, which MOVES every `Stmt`
+    // after the hole — and `semantic_graph` holds the address of the
+    // `FuncDecl`/`AliasDef`/`EnumDef` stored by value inside three of them, from
+    // a lift that already happened. Nothing at or before the last such statement
+    // may go. This is a restriction on the file-scope TAIL, which is where the
+    // work being eliminated actually is: `s = 0` before a `func_decl` survives,
+    // the loop after every declaration does not.
+    var anchor: usize = 0;
+    var have_anchor = false;
+    for (mod.body.stmts, 0..) |*s, i| switch (s.*) {
+        .func_decl, .alias_def, .enum_def => {
+            anchor = i;
+            have_anchor = true;
+        },
+        else => {},
+    };
+    if (have_anchor) {
+        for (mod.body.stmts, 0..) |*s, i| {
+            if (i > anchor) break;
+            if (!plan.isDead(s)) continue;
+            plan.unmark(s);
+            plan.note(.unsupported_shape);
+        }
+    }
 }
 
 /// Every name bound at module scope. A function that writes one of these is
@@ -1535,6 +2074,16 @@ fn deadCount(src: []const u8) !u32 {
     var fx = try parse(src);
     defer fx.deinit();
     var plan = try analyzeModule(std.testing.allocator, &fx.mod, .{});
+    defer plan.deinit();
+    return plan.count();
+}
+
+/// Number of statements proven deletable with the world CLOSED — the executable
+/// case, and the only one in which the FILE-SCOPE TAIL is analysed at all.
+fn deadCountClosed(src: []const u8) !u32 {
+    var fx = try parse(src);
+    defer fx.deinit();
+    var plan = try analyzeModule(std.testing.allocator, &fx.mod, .{ .world_closed = true });
     defer plan.deinit();
     return plan.count();
 }
@@ -1880,8 +2429,23 @@ test "demand: a trip proof is refused when the bound is not a literal" {
     try std.testing.expectEqual(@as(u32, 0), n);
 }
 
-test "demand: a trip proof is refused at the overflow boundary" {
-    var fx = try parse(
+test "demand: the overflow boundary is the EXIT VALUE, not the bound plus a step" {
+    // THIS TEST USED TO ASSERT THE OPPOSITE, and the reason it gave was the bug.
+    //
+    // It read: "`limit + step` would wrap, so no proof, so the loop survives."
+    // But `limit + step` is not a value the induction variable ever holds. The
+    // guard is EXCLUSIVE, so the last admitted value is maxInt-1 and the loop
+    // leaves holding maxInt — which is representable. The loop terminates in
+    // 9223372036854775807 steps and nothing wraps.
+    //
+    // Confirmed by running the identical shape in C at a start near the top:
+    // `i = INT64_MAX - 20000; while (i < INT64_MAX) i++;` halts after exactly
+    // 20,000 trips with i == INT64_MAX and no overflow.
+    //
+    // The proof now comes from `recurrence.terminatesForAnyStart`, which asks
+    // for the real exit value in i128 rather than for a sufficient condition on
+    // the bound, so this loop is proven and deleted.
+    const proven = try deadCount(
         \\main: i64 = ()
         \\    s = 0
         \\    i = 0
@@ -1891,12 +2455,24 @@ test "demand: a trip proof is refused at the overflow boundary" {
         \\    0
         \\
     );
-    defer fx.deinit();
-    var plan = try analyzeModule(std.testing.allocator, &fx.mod, .{});
-    defer plan.deinit();
-    // `limit + step` would wrap, so no proof, so the loop survives — and with it
-    // both of its inputs.
-    try std.testing.expectEqual(@as(u32, 0), plan.count());
+    try std.testing.expect(proven > 0);
+
+    // AND THE BOUNDARY IS STILL A BOUNDARY. The INCLUSIVE form of the same bound
+    // genuinely does not terminate: the guard still admits maxInt, so the IV must
+    // step past it and wrap, and the loop re-enters forever. It is refused, which
+    // is what makes the case above a real difference rather than the new check
+    // being loose everywhere near the edge.
+    const refused = try deadCount(
+        \\main: i64 = ()
+        \\    s = 0
+        \\    i = 0
+        \\    while i <= 9223372036854775807
+        \\        s += i
+        \\        i += 1
+        \\    0
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 0), refused);
 }
 
 test "demand: two counter updates give no single trip count" {
@@ -1933,6 +2509,204 @@ test "demand: empty function body analyses to nothing dead" {
     try std.testing.expectEqual(@as(u32, 0), n);
 }
 
+
+// --- W: the file-scope tail ------------------------------------------------
+
+test "demand: W — a file-scope tail's dead loop dies when the world is closed" {
+    // THE GAP THIS SECTION EXISTS FOR. Byte for byte the program of the very
+    // first test in this file, written in the LOWER-SYNTAX spelling the entry
+    // rule admits: "a file-scope tail is the program". Measured on the compiled
+    // binary, `otool -tv | grep -cE '^[0-9a-f]{16}\s'`: 16 instructions before,
+    // 2 after — the same 16 -> 2 the wrapped spelling already got.
+    const n = try deadCountClosed(
+        \\s = 0
+        \\i = 0
+        \\while i < 100000
+        \\    s += i
+        \\    i += 1
+        \\0
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 3), n);
+}
+
+test "demand: W1 — the identical tail is untouched when the world is open" {
+    // `--emit dylib` and `--emit obj` exist to be read from outside, so they
+    // leave `world_closed` false and get exactly the pre-existing behaviour.
+    // This is the test that fails if the default is ever flipped.
+    const n = try deadCount(
+        \\s = 0
+        \\i = 0
+        \\while i < 100000
+        \\    s += i
+        \\    i += 1
+        \\0
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 0), n);
+}
+
+test "demand: W — a file-scope tail that observes the loop keeps all of it" {
+    const n = try deadCountClosed(
+        \\s = 0
+        \\i = 0
+        \\while i < 100000
+        \\    s += i
+        \\    i += 1
+        \\s & 255
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 0), n);
+}
+
+test "demand: W — only the unobserved half of a file-scope tail dies" {
+    const n = try deadCountClosed(
+        \\k = 3
+        \\s = 0
+        \\i = 0
+        \\while i < 10
+        \\    s += k
+        \\    i += 1
+        \\k
+        \\
+    );
+    // s, i and the loop. `k` is the answer.
+    try std.testing.expectEqual(@as(u32, 3), n);
+}
+
+test "demand: W2 — a module binding a function READS survives" {
+    // `bump` runs when someone calls it, which is a time this backward walk
+    // cannot place, so `g = 7` is not dead merely because no LATER module-scope
+    // statement reads it. Without the deferred-mention set this deletes the 7
+    // and `bump` folds a constant that no longer exists.
+    const n = try deadCountClosed(
+        \\bump: i64 = ()
+        \\    g + 1
+        \\
+        \\g = 7
+        \\bump()
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 0), n);
+}
+
+test "demand: W2 — a module binding a function WRITES survives" {
+    // A WRITE is a mention. `dnir_lower.collectModuleGlobals` gives `g` bss
+    // storage precisely BECAUSE a function assigns it, and takes the global's
+    // declaration and initializer from this statement.
+    const n = try deadCountClosed(
+        \\set: i64 = ()
+        \\    g = 1
+        \\    0
+        \\
+        \\g = 7
+        \\set()
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 0), n);
+}
+
+test "demand: W2 — a module binding only a CLOSURE mentions survives" {
+    // The ordering hazard in one program: the walk reaches `g = 7` before it
+    // reaches the closure that reads `g`, so plain liveness says dead. The
+    // closure's mentions are collected up front for exactly this.
+    const n = try deadCountClosed(
+        \\f = (x: i64) x + g
+        \\g = 7
+        \\f(1)
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 0), n);
+}
+
+test "demand: W5 — nothing at or before a func_decl is deleted" {
+    // `semantic_graph` holds the address of the `FuncDecl` stored BY VALUE
+    // inside this statement list, from a lift that already happened. Compacting
+    // the list would move it. Same loop as the test below, one position earlier.
+    const n = try deadCountClosed(
+        \\s = 0
+        \\i = 0
+        \\while i < 100
+        \\    s += i
+        \\    i += 1
+        \\
+        \\bump: i64 = ()
+        \\    1
+        \\
+        \\bump()
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 0), n);
+}
+
+test "demand: W5 — after the last func_decl the same statements die" {
+    const n = try deadCountClosed(
+        \\bump: i64 = ()
+        \\    1
+        \\
+        \\s = 0
+        \\i = 0
+        \\while i < 100
+        \\    s += i
+        \\    i += 1
+        \\bump()
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 3), n);
+}
+
+test "demand: W — the function walk is untouched by closing the world" {
+    // Six statements: three inside `helper`, three at file scope. With the world
+    // open only the function's three are found; closing it adds the tail's.
+    const src =
+        \\helper: i64 = ()
+        \\    a = 0
+        \\    b = 0
+        \\    while b < 10
+        \\        a += b
+        \\        b += 1
+        \\    0
+        \\
+        \\t = 0
+        \\j = 0
+        \\while j < 10
+        \\    t += j
+        \\    j += 1
+        \\helper()
+        \\
+    ;
+    try std.testing.expectEqual(@as(u32, 3), try deadCount(src));
+    try std.testing.expectEqual(@as(u32, 6), try deadCountClosed(src));
+}
+
+test "demand: W4 — a module directive refuses the whole file-scope body" {
+    // `ast.Attribute.args` is RAW UNPARSED TEXT, so a directive can name a
+    // module binding in a way no AST walk sees. One anywhere refuses the body;
+    // the function walk is unaffected, which is why this counts 0 and not -1.
+    const n = try deadCountClosed(
+        \\@build.exe({ name = "x" })
+        \\
+        \\s = 0
+        \\i = 0
+        \\while i < 100
+        \\    s += i
+        \\    i += 1
+        \\0
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 0), n);
+}
+
+test "demand: W — a chain of dead file-scope bindings dies whole" {
+    const n = try deadCountClosed(
+        \\a = 1
+        \\b = a + 2
+        \\d = b + 3
+        \\0
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 3), n);
+}
 
 // --- the second candidate --------------------------------------------------
 

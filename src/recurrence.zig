@@ -508,6 +508,63 @@ fn ivStaysInRange(v: i128) bool {
     return v >= std.math.minInt(i64) and v <= std.math.maxInt(i64);
 }
 
+/// THE ONE TRIP-COUNT PROOF, in the shape `src/demand.zig` needs it.
+///
+/// Two lanes derived a trip count independently and both landed in this tree.
+/// This is the seam that makes them one derivation: `demand` recognises the
+/// counter, the bound and the step out of the AST and applies its own
+/// structural guards, then asks THIS function the arithmetic question. Nothing
+/// about wrapping, overshoot or direction is decided twice.
+///
+/// `demand` proves termination in order to DELETE a loop, so it never learns
+/// where the counter starts — the question it must answer is "does this halt
+/// with the induction variable staying in i64, from EVERY i64 start?".
+///
+/// That reduces to ONE call to `tripCount`, at the worst start. The IV is
+/// monotone, so the largest magnitude it ever holds is its EXIT value, and the
+/// exit value is largest when the loop is entered as late as the guard allows —
+/// at the last value the guard still admits, where the body runs exactly once
+/// and the IV steps straight out. A start below that exits no further; a start
+/// past it runs zero times. So checking that single start is not a heuristic
+/// bound on the answer, it IS the answer.
+///
+/// This is strictly more permissive than the sufficient condition it replaces
+/// (`|bound| <= maxInt - step`), and the gap is real rather than theoretical:
+/// see the differential test below, which walks the boundary and finds an
+/// EXCLUSIVE bound at the i64 edge that terminates cleanly and was refused.
+pub fn terminatesForAnyStart(bound: i64, ascending: bool, inclusive: bool, step: i64) bool {
+    // O5 FIRST AND UNCONDITIONALLY, exactly as `tripCount` applies it.
+    //
+    // A vacuous guard — `while i < minInt`, which no i64 satisfies — halts from
+    // every start whatever the step is, so returning true here would be *true*.
+    // It is still refused, because this function's contract is "the kernel's
+    // answer at the worst start" and the kernel refuses a zero or wrong-way
+    // step outright. A wrapper that is right where its kernel is silent is a
+    // second opinion, which is the thing this seam exists to abolish.
+    if (step == 0) return false;
+    if (ascending and step < 0) return false;
+    if (!ascending and step > 0) return false;
+
+    // The last value of the IV the guard still admits, in i128 because an
+    // exclusive bound at the i64 edge steps outside the type to name it.
+    const last: i128 = if (ascending)
+        (if (inclusive) @as(i128, bound) else @as(i128, bound) - 1)
+    else
+        (if (inclusive) @as(i128, bound) else @as(i128, bound) + 1);
+
+    // No i64 satisfies the guard at all — `while i < minInt`. The body runs
+    // zero times from every start, which terminates, whatever the step is.
+    if (!ivStaysInRange(last)) return true;
+
+    const guard = Guard{
+        .iv = 0,
+        .bound = bound,
+        .ascending = ascending,
+        .inclusive = inclusive,
+    };
+    return tripCount(guard, @intCast(last), step) != null;
+}
+
 // ── O6/O7: the body as a parallel substitution ───────────────────────────────
 
 const Updates = struct {
@@ -1466,6 +1523,173 @@ test "recurrence: O2 refuses when the induction variable would wrap" {
         .inclusive = true,
     };
     try std.testing.expect(tripCount(ok, std.math.maxInt(i64) - 10, 1) != null);
+}
+
+// ── THE TWO PROVERS, DIFFERENCED ─────────────────────────────────────────────
+//
+// `src/demand.zig` shipped its own trip-count proof. These tests are the
+// evidence for collapsing it onto `terminatesForAnyStart`: they sweep the
+// boundary where the two derivations can disagree, against an oracle that is
+// neither of them.
+
+/// `src/demand.zig`'s ORIGINAL arithmetic condition, transcribed verbatim from
+/// `provenTripCount` at f75aba55 so the difference is measured and not argued.
+/// It is a SUFFICIENT condition on the bound: "the bound plus one whole step
+/// fits", which ignores whether the guard is inclusive.
+fn demandOldCondition(limit: i64, ascending: bool, step: i64) bool {
+    if (step == 0) return false;
+    if (ascending and step <= 0) return false;
+    if (!ascending and step >= 0) return false;
+    const magnitude = if (ascending) step else -step;
+    if (ascending) {
+        if (limit > std.math.maxInt(i64) - magnitude) return false;
+    } else {
+        if (limit < std.math.minInt(i64) + magnitude) return false;
+    }
+    return true;
+}
+
+fn guardHolds(i: i64, bound: i64, ascending: bool, inclusive: bool) bool {
+    return if (ascending)
+        (if (inclusive) i <= bound else i < bound)
+    else
+        (if (inclusive) i >= bound else i > bound);
+}
+
+/// THE ORACLE, and it is a third mechanism. It does not compute a trip count at
+/// all: it RUNS the loop in real, wrapping i64 arithmetic from the worst-case
+/// start, and asks whether the machine did what integer arithmetic in Z says.
+///
+/// The worst start is the last value the guard admits, so a correct loop must
+/// leave after EXACTLY one trip. Two trips means the step wrapped the IV back
+/// under the bound and the loop re-entered — the failure O2 exists to refuse.
+fn bruteTerminatesFromWorstStart(bound: i64, ascending: bool, inclusive: bool, step: i64) bool {
+    if (step == 0) return false;
+    if (ascending and step < 0) return false;
+    if (!ascending and step > 0) return false;
+
+    const last: i128 = if (ascending)
+        (if (inclusive) @as(i128, bound) else @as(i128, bound) - 1)
+    else
+        (if (inclusive) @as(i128, bound) else @as(i128, bound) + 1);
+    if (!ivStaysInRange(last)) return true; // guard admits no i64: zero trips.
+
+    var i: i64 = @intCast(last);
+    var trips: u32 = 0;
+    while (guardHolds(i, bound, ascending, inclusive)) {
+        i +%= step;
+        trips += 1;
+        if (trips > 3) break; // it wrapped and came back: not a terminating walk.
+    }
+    if (trips != 1) return false;
+    // And the value it left with must be the value arithmetic in Z predicts.
+    return @as(i128, i) == last + @as(i128, step);
+}
+
+test "recurrence: terminatesForAnyStart agrees with a running loop, everywhere" {
+    const max = std.math.maxInt(i64);
+    const min = std.math.minInt(i64);
+    const bounds = [_]i64{
+        min,        min + 1,     min + 2,   min + 7,   min + 64,
+        -1000,      -7,          -1,        0,         1,
+        7,          1000,        max - 64,  max - 7,   max - 2,
+        max - 1,    max,
+    };
+    const steps = [_]i64{
+        1, 2, 3, 7, 64, 1000, max - 1, max,
+        -1, -2, -3, -7, -64, -1000, min + 1, min + 2,
+        0,
+    };
+
+    var checked: usize = 0;
+    var exact_wrong: usize = 0;
+    var demand_unsound: usize = 0;
+    var demand_conservative: usize = 0;
+
+    for (bounds) |bound| {
+        for (steps) |step| {
+            for ([_]bool{ true, false }) |ascending| {
+                for ([_]bool{ true, false }) |inclusive| {
+                    checked += 1;
+                    const truth = bruteTerminatesFromWorstStart(bound, ascending, inclusive, step);
+                    const exact = terminatesForAnyStart(bound, ascending, inclusive, step);
+                    const old = demandOldCondition(bound, ascending, step);
+
+                    // 1. The kernel this lane is converging ON must be exact.
+                    if (exact != truth) exact_wrong += 1;
+                    // 2. The condition it replaces must never have been WRONG —
+                    //    a case demand accepted that does not actually halt is
+                    //    a deleted loop that was not dead.
+                    if (old and !truth) demand_unsound += 1;
+                    // 3. Where it was merely tighter, count it. A zero here
+                    //    would mean the convergence is pure deduplication.
+                    if (truth and !old) demand_conservative += 1;
+                }
+            }
+        }
+    }
+
+    if (exact_wrong != 0 or demand_unsound != 0) {
+        std.debug.print(
+            "\nconverge sweep: checked={d} exact_wrong={d} demand_unsound={d} demand_conservative={d}\n",
+            .{ checked, exact_wrong, demand_unsound, demand_conservative },
+        );
+        for (bounds) |bound| {
+            for (steps) |step| {
+                for ([_]bool{ true, false }) |ascending| {
+                    for ([_]bool{ true, false }) |inclusive| {
+                        const truth = bruteTerminatesFromWorstStart(bound, ascending, inclusive, step);
+                        const exact = terminatesForAnyStart(bound, ascending, inclusive, step);
+                        const old = demandOldCondition(bound, ascending, step);
+                        if (exact != truth or (old and !truth)) {
+                            std.debug.print(
+                                "  bound={d} step={d} asc={} incl={} truth={} exact={} old={}\n",
+                                .{ bound, step, ascending, inclusive, truth, exact, old },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    try std.testing.expectEqual(@as(usize, 1156), checked);
+    try std.testing.expectEqual(bounds.len * steps.len * 4, checked);
+    // The kernel is EXACT: it says yes on precisely the loops that ran and left.
+    try std.testing.expectEqual(@as(usize, 0), exact_wrong);
+    // `demand`'s condition was never WRONG — nothing it accepted fails to halt.
+    // So this convergence licenses no transform that was previously refused for
+    // a reason; it only stops refusing things for no reason.
+    try std.testing.expectEqual(@as(usize, 0), demand_unsound);
+    // MEASURED, not read off the source: the two provers really do differ, on
+    // 7 of 1,156 shapes, all of them an exclusive bound one step from the edge.
+    // A zero here would have made this a pure deduplication.
+    try std.testing.expectEqual(@as(usize, 7), demand_conservative);
+}
+
+test "recurrence: the distinguishing case is an exclusive bound at the i64 edge" {
+    const max = std.math.maxInt(i64);
+    // `while i < maxInt` stepping by 1. The last admitted value is maxInt-1 and
+    // the loop leaves holding maxInt, which is representable — it terminates,
+    // and every i64 start reaches that same exit. `demand`'s condition asks
+    // instead whether `maxInt + 1` fits, which it does not, so it refused.
+    try std.testing.expect(bruteTerminatesFromWorstStart(max, true, false, 1));
+    try std.testing.expect(terminatesForAnyStart(max, true, false, 1));
+    try std.testing.expect(!demandOldCondition(max, true, 1));
+
+    // The INCLUSIVE form of the same bound genuinely does not terminate: the
+    // guard still admits maxInt, so the IV must step past it and wrap. Both
+    // provers refuse, which is what makes the case above a real difference
+    // rather than the exact check being loose everywhere near the edge.
+    try std.testing.expect(!bruteTerminatesFromWorstStart(max, true, true, 1));
+    try std.testing.expect(!terminatesForAnyStart(max, true, true, 1));
+    try std.testing.expect(!demandOldCondition(max, true, 1));
+
+    // And the mirror image at the bottom of the range.
+    const min = std.math.minInt(i64);
+    try std.testing.expect(bruteTerminatesFromWorstStart(min, false, false, -1));
+    try std.testing.expect(terminatesForAnyStart(min, false, false, -1));
+    try std.testing.expect(!demandOldCondition(min, false, -1));
 }
 
 test "recurrence: O5 refuses a zero step and a step moving away from the bound" {
