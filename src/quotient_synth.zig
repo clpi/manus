@@ -349,7 +349,7 @@ pub const Env = struct {
     }
 
     /// R1 + R5. Resolve a call expression to a relation index.
-    fn resolve(self: *Env, c: anytype) ?usize {
+    pub fn resolve(self: *Env, c: anytype) ?usize {
         const callee = switch (c.func.*) {
             .name => |x| x.ident,
             else => {
@@ -463,6 +463,28 @@ const Table = struct {
 /// is the sound fallback the caller must then use.
 pub fn inducedInputProjection(env: *Env, rel: usize, h: Projection) ?[max_params]Projection {
     if (h == .none) return @splat(.none);
+    // R5 AT THE PUBLIC DOOR, AND IT IS A MEMORY-SAFETY BOUND, NOT A POLICY.
+    //
+    // The answer is `[max_params]Projection` and the loops below index it by
+    // PARAMETER NUMBER. R5 was enforced only in the private `Env.resolve`, so
+    // every path that arrives through a CALL was bounded and this entry point
+    // — reachable with a bare relation index — was not. MEASURED on the
+    // corpus: 15 module-scope relations carry more than `max_params`
+    // parameters, and this function on any of them wrote past the end of a
+    // stack array.
+    //
+    // Latent while the only callers were internal; not latent the moment a
+    // second module composes through it. Refusing here is the same refusal
+    // `resolve` already makes, moved to where the array is sized.
+    if (rel >= env.len) {
+        env.census.refuse(.callee_not_a_relation);
+        return null;
+    }
+    const fb = &env.rels[rel].decl.func;
+    if (fb.params.len > max_params or fb.vararg or fb.vararg_name != null) {
+        env.census.refuse(.arity);
+        return null;
+    }
     // RE-ENTRANCY IS THE WHOLE DIFFICULTY OF A FIXPOINT. A call encountered
     // WHILE solving must READ the table, never start a second solve: reading ⊥
     // for a query not yet settled is what makes the iteration ascending, and
@@ -480,7 +502,6 @@ pub fn inducedInputProjection(env: *Env, rel: usize, h: Projection) ?[max_params
         if (law != null and law.?.ring_hom_mod_2k and law.?.pure) {
             env.census.admitted_by_law += 1;
             var out: [max_params]Projection = @splat(.none);
-            const fb = &env.rels[rel].decl.func;
             for (0..fb.params.len) |i| out[i] = h;
             return out;
         }
@@ -821,6 +842,10 @@ fn callProjection(env: *Env, h: Projection, c: anytype, name: []const u8, depth:
 /// which this module does not solve — the PROJECTION fixpoint above is the one
 /// it does solve, and it needs no law).
 pub fn deriveRelationLaw(env: *Env, rel: usize) ?Law {
+    // Public, index-taking, and it reads `env.rels[rel]` — the same door
+    // `inducedInputProjection` had open. `blockLaw` below is bounded by the
+    // params check inside it, so this one only has to bound the index.
+    if (rel >= env.len) return null;
     switch (env.rels[rel].law_state) {
         .derived => return env.rels[rel].law,
         .refused, .computing => return null,
@@ -908,6 +933,176 @@ fn exprLaw(env: *Env, e: *const ast.Expr, depth: u8) ?Law {
                 acc = dp.composeLaws(acc, exprLaw(env, a, depth + 1) orelse return null);
             }
             return acc;
+        },
+        else => null,
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §17 × §26 — **THE CALL ADMISSION FOR A MACHINE THAT RUNS IN THE QUOTIENT.**
+//
+// `src/obseq.zig` and `src/recurrence.zig` both walk a loop's state machine in
+// `Z/2^k` and both REFUSE a call outright, for the same stated reason: a call
+// is opaque to a grammar built out of operators, and an opaque node in a
+// quotiented machine is a node that may not commute with the quotient.
+//
+// `deriveRelationLaw` is exactly the fact that answers them. When it reports
+// `ring_hom_mod_2k` for a USER-DEFINED relation the compiler was never told
+// about, it has PROVEN
+//
+//     f(x) mod 2^k  =  f(x mod 2^k) mod 2^k
+//
+// compositionally, from the callee's own body — which IS the admission
+// condition those two files spell for `+ - * & | ^ ~` and nothing else. So the
+// call joins their grammar not as a special case but as the same rule applied
+// to a relation instead of an operator, and §106's test ("can the loop run for
+// an ARBITRARY USER-DEFINED RELATION?") is answered by the SAME mechanism that
+// answers it for `+`.
+//
+// WHAT THE ADMISSION DOES NOT COVER, stated because a narrow class honestly
+// named is worth more than a wide one asserted:
+//
+//   * `blockLaw` refuses a branch — selection is not a mod-2^k homomorphism —
+//     so an admitted answer is ONE straight-line expression. A relation with
+//     an `if` is refused here and still goes through the PROJECTION fixpoint,
+//     which is the other half of this file and needs no law.
+//   * A recursive relation is refused: `deriveRelationLaw` marks `computing`
+//     and a cycle answers null. **This is what makes `evalAnswer` terminate by
+//     STRUCTURE rather than by budget** — an admitted call graph is a finite
+//     DAG, so there is no step limit to tune and none is offered.
+//   * `/ % // **` carry no `ring_hom_mod_2k` in `demand_projection.lawsOf`, so
+//     they are refused by the law derivation before this code is reached.
+//
+// §84 BY SIGNATURE: `admitInQuotient` takes an environment and an expression
+// and NO cost parameter. There is no argument through which a measurement
+// could admit a call the law refuses.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// The fact a quotiented machine needs about one call site: which relation it
+/// resolves to, and the law that lets its value be computed over PROJECTED
+/// arguments instead of exact ones.
+pub const QuotientCall = struct {
+    rel: usize,
+    law: Law,
+};
+
+/// Admit — or refuse — a call inside a machine quotiented by `x mod 2^k`.
+///
+/// Null means "leave the call opaque", which is every caller's existing
+/// behaviour, so a refusal costs candidates and can never cost an answer.
+pub fn admitInQuotient(env: *Env, c: anytype) ?QuotientCall {
+    env.census.calls_examined += 1;
+    const rel = env.resolve(c) orelse return null;
+    const law = deriveRelationLaw(env, rel) orelse {
+        env.census.refuse(.answer_form);
+        return null;
+    };
+    // PURE is not implied by the homomorphism and is not folded into it: a
+    // relation could carry the arithmetic law and still write. `answerInert`
+    // already refused effects, and this is the second reading of the same
+    // fact through the law rather than a second authority for it.
+    if (!law.pure or !law.ring_hom_mod_2k) {
+        env.census.refuse(.no_gain);
+        return null;
+    }
+    env.census.calls_admitted += 1;
+    env.census.admitted_by_law += 1;
+    return .{ .rel = rel, .law = law };
+}
+
+/// The admitted relation's answer at CONCRETE arguments, in the ring.
+///
+/// i64 here is wrapping two's complement mod 2^64 — the same ring
+/// `recurrence.zig`'s O3 measures on both of its paths — so the value returned
+/// is `f(args)` exactly, and the caller applies `h` to it. Because the caller
+/// hands PROJECTED arguments, what it obtains is `h(f(h(x)))`, and
+/// `ring_hom_mod_2k` is precisely the proof that this equals `h(f(x))`.
+///
+/// Terminates by structure: `admitInQuotient` refused recursion, so the walk
+/// is over a finite DAG. `max_depth` is a table-space guard, not a budget that
+/// could silently truncate a real answer — exceeding it is a refusal.
+pub fn evalAnswer(env: *Env, rel: usize, args: []const i64) ?i64 {
+    // The same bound `inducedInputProjection` states, for the same reason: a
+    // public entry taking a bare relation index cannot inherit R5 from
+    // `Env.resolve`, and `args` is indexed by parameter number.
+    if (rel >= env.len) return null;
+    const fb = &env.rels[rel].decl.func;
+    if (fb.params.len != args.len or args.len > max_params) return null;
+    if (fb.vararg or fb.vararg_name != null) return null;
+    return evalBlock(env, &fb.body, fb.params, args, 0);
+}
+
+fn evalBlock(
+    env: *Env,
+    b: *const ast.Block,
+    params: []const ast.FuncParam,
+    args: []const i64,
+    depth: u8,
+) ?i64 {
+    if (depth > max_depth) return null;
+    if (b.stmts.len == 0) return evalExpr(env, b.tail_expr orelse return null, params, args, depth + 1);
+    if (b.stmts.len == 1 and b.tail_expr == null) {
+        switch (b.stmts[0]) {
+            .ret => |r| {
+                if (r.vals.len != 1) return null;
+                return evalExpr(env, r.vals[0], params, args, depth + 1);
+            },
+            // The same refusal `blockLaw` makes, and it must be the same one:
+            // a shape this evaluates but the law derivation refuses would be a
+            // second, wider admitted class with no proof behind it.
+            else => return null,
+        }
+    }
+    return null;
+}
+
+fn evalExpr(
+    env: *Env,
+    e: *const ast.Expr,
+    params: []const ast.FuncParam,
+    args: []const i64,
+    depth: u8,
+) ?i64 {
+    if (depth > max_depth) return null;
+    return switch (e.*) {
+        .int_lit => |x| x.val,
+        .name => |x| blk: {
+            for (params, 0..) |p, i| {
+                if (std.mem.eql(u8, p.name, x.ident)) break :blk args[i];
+            }
+            // R3 already refused a capture; reaching here would mean the law
+            // was derived for a body this cannot read, so it refuses.
+            break :blk null;
+        },
+        .unop => |u| switch (u.op) {
+            .neg => 0 -% (evalExpr(env, u.operand, params, args, depth + 1) orelse return null),
+            .bnot => ~(evalExpr(env, u.operand, params, args, depth + 1) orelse return null),
+            else => null,
+        },
+        .binop => |b| blk: {
+            // THE OPERATOR SET IS NOT LISTED TWICE. It is read off the one
+            // producer of relation law, exactly as `exprLaw` reads it, so the
+            // evaluator cannot admit an operator the derivation refused.
+            if (!dp.lawsOf(b.op).ring_hom_mod_2k) break :blk null;
+            const l = evalExpr(env, b.lhs, params, args, depth + 1) orelse break :blk null;
+            const r = evalExpr(env, b.rhs, params, args, depth + 1) orelse break :blk null;
+            break :blk switch (b.op) {
+                .add => l +% r,
+                .sub => l -% r,
+                .mul => l *% r,
+                .band => l & r,
+                .bor => l | r,
+                .bxor => l ^ r,
+                else => null,
+            };
+        },
+        .call => |c| blk: {
+            const inner = admitInQuotient(env, c) orelse break :blk null;
+            var sub: [max_params]i64 = @splat(0);
+            for (c.args, 0..) |a, i| {
+                sub[i] = evalExpr(env, a, params, args, depth + 1) orelse break :blk null;
+            }
+            break :blk evalAnswer(env, inner.rel, sub[0..c.args.len]);
         },
         else => null,
     };
@@ -1570,4 +1765,203 @@ test "VALIDATION — h(f(x)) = g(h(x)) on the admitted relations, differentially
 fn seenOracle(n: i64, k: i64) i64 {
     if (k == 0) return if (n != 0) 1 else 0;
     return seenOracle(n, k - 1);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE CALL ADMISSION FOR A QUOTIENTED MACHINE — every claim, and every refusal
+// ═══════════════════════════════════════════════════════════════════════════
+
+const src_ringhom =
+    \\step: i64 = (n: i64)
+    \\    (n ~ (n * 1103515245)) + 12345
+    \\
+    \\main: i64 = ()
+    \\    step(7)
+;
+
+fn stepOracle(n: i64) i64 {
+    return (n ^ (n *% 1103515245)) +% 12345;
+}
+
+test "quotient synth: a straight-line user relation is admitted into the quotient" {
+    var fx = try parse(src_ringhom);
+    defer fx.deinit();
+    var env = Env.scan(&fx.mod, .{});
+    const rel = env.indexOf("step").?;
+    const law = deriveRelationLaw(&env, rel) orelse return error.TestUnexpectedResult;
+    try std.testing.expect(law.ring_hom_mod_2k and law.pure);
+
+    // DIFFERENTIAL against a hand-written model with the same wrapping
+    // arithmetic, over the whole i64 range. `evalAnswer` agreeing with itself
+    // would prove nothing.
+    var rng = std.Random.DefaultPrng.init(0xC0FFEE);
+    const r = rng.random();
+    var trial: usize = 0;
+    while (trial < 4096) : (trial += 1) {
+        const x = r.int(i64);
+        const got = evalAnswer(&env, rel, &.{x}) orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqual(stepOracle(x), got);
+    }
+}
+
+test "quotient synth: THE HOMOMORPHISM ITSELF, checked rather than asserted" {
+    // The admission's whole claim is `f(x) mod 2^k = f(x mod 2^k) mod 2^k`.
+    // A quotiented machine hands PROJECTED arguments over, so if this identity
+    // is false the answer is wrong, not merely imprecise.
+    var fx = try parse(src_ringhom);
+    defer fx.deinit();
+    var env = Env.scan(&fx.mod, .{});
+    const rel = env.indexOf("step").?;
+
+    var rng = std.Random.DefaultPrng.init(0xBEEF);
+    const r = rng.random();
+    var k: u6 = 1;
+    while (k < 32) : (k += 1) {
+        const mask: i64 = @bitCast((@as(u64, 1) << k) - 1);
+        var trial: usize = 0;
+        while (trial < 256) : (trial += 1) {
+            const x = r.int(i64);
+            const exact = evalAnswer(&env, rel, &.{x}) orelse return error.TestUnexpectedResult;
+            const projected = evalAnswer(&env, rel, &.{x & mask}) orelse return error.TestUnexpectedResult;
+            try std.testing.expectEqual(exact & mask, projected & mask);
+        }
+    }
+}
+
+test "quotient synth: a nested user call composes, and nothing knows either name" {
+    var fx = try parse(
+        \\inner: i64 = (n: i64)
+        \\    n * 1103515245
+        \\
+        \\outer: i64 = (n: i64)
+        \\    (n ~ inner(n)) + 12345
+        \\
+        \\main: i64 = ()
+        \\    outer(3)
+    );
+    defer fx.deinit();
+    var env = Env.scan(&fx.mod, .{});
+    const rel = env.indexOf("outer").?;
+    const law = deriveRelationLaw(&env, rel) orelse return error.TestUnexpectedResult;
+    try std.testing.expect(law.ring_hom_mod_2k and law.pure);
+    // Identical to `step` above, written through a second relation.
+    try std.testing.expectEqual(stepOracle(99), evalAnswer(&env, rel, &.{99}).?);
+}
+
+test "quotient synth: the refusals a quotiented machine depends on" {
+    // A BRANCH. Selection is not a mod-2^k homomorphism — the branch taken
+    // reads the WHOLE condition — so `seen` must not be admitted here even
+    // though the projection fixpoint handles it perfectly well.
+    {
+        var fx = try parse(
+            \\seen: i64 = (n: i64)
+            \\    if n != 0
+            \\        1
+            \\    else
+            \\        0
+            \\
+            \\main: i64 = ()
+            \\    seen(3)
+        );
+        defer fx.deinit();
+        var env = Env.scan(&fx.mod, .{});
+        try std.testing.expect(deriveRelationLaw(&env, env.indexOf("seen").?) == null);
+    }
+    // RECURSION. Admitting it would make `evalAnswer` non-terminating, so the
+    // cycle marker refusing is what makes termination structural.
+    {
+        var fx = try parse(
+            \\down: i64 = (n: i64)
+            \\    down(n - 1)
+            \\
+            \\main: i64 = ()
+            \\    down(3)
+        );
+        defer fx.deinit();
+        var env = Env.scan(&fx.mod, .{});
+        try std.testing.expect(deriveRelationLaw(&env, env.indexOf("down").?) == null);
+    }
+    // DIVISION. No homomorphism to Z/2^k exists, and `demand_projection.lawsOf`
+    // is the one place that says so — this module does not get a second
+    // opinion.
+    {
+        var fx = try parse(
+            \\half: i64 = (n: i64)
+            \\    n / 2
+            \\
+            \\main: i64 = ()
+            \\    half(8)
+        );
+        defer fx.deinit();
+        var env = Env.scan(&fx.mod, .{});
+        try std.testing.expect(deriveRelationLaw(&env, env.indexOf("half").?) == null);
+    }
+    // AN EFFECT. A printed argument is a whole-value observation and no
+    // projection may hide it.
+    {
+        var fx = try parse(
+            \\shout: i64 = (n: i64)
+            \\    print(n)
+            \\    1
+            \\
+            \\main: i64 = ()
+            \\    shout(3)
+        );
+        defer fx.deinit();
+        var env = Env.scan(&fx.mod, .{});
+        try std.testing.expect(deriveRelationLaw(&env, env.indexOf("shout").?) == null);
+    }
+}
+
+test "quotient synth: admission takes no cost parameter — §84 by signature" {
+    // The type system carries the separation. `evalAnswer` is the value the
+    // quotiented machine acts on and `deriveRelationLaw` is the legality it
+    // acts on; neither has an argument through which a measurement could
+    // travel, so no perturbation of any cost can move the admitted set.
+    const Eval = @typeInfo(@TypeOf(evalAnswer)).@"fn";
+    try std.testing.expectEqual(@as(usize, 3), Eval.param_types.len);
+    const Derive = @typeInfo(@TypeOf(deriveRelationLaw)).@"fn";
+    try std.testing.expectEqual(@as(usize, 2), Derive.param_types.len);
+    inline for (Derive.param_types) |p| {
+        try std.testing.expect(p.? != f32 and p.? != f64);
+    }
+    inline for (Eval.param_types) |p| {
+        try std.testing.expect(p.? != f32 and p.? != f64);
+    }
+}
+
+test "quotient synth: R5 IS ENFORCED AT THE PUBLIC DOOR, not only behind a call" {
+    // THE BUG THIS PINS. `inducedInputProjection` writes `[max_params]Projection`
+    // indexed by parameter number, and R5 lived only in the private
+    // `Env.resolve` — so every path arriving through a CALL was bounded and
+    // this entry point, reachable with a bare relation index, was not. A
+    // relation with more than `max_params` parameters wrote past the end of a
+    // stack array. MEASURED on the corpus: 15 module-scope relations qualify.
+    //
+    // Nine parameters against a bound of eight. Under `-Doptimize=Debug` the
+    // unguarded version trips Zig's bounds check on this call; under
+    // ReleaseFast it silently corrupted the frame, which is why this is a test
+    // and not a comment.
+    var fx = try parse(
+        \\wide: i64 = (a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, k: i64)
+        \\    a + b + c + d + e + f + g + h + k
+        \\
+        \\main: i64 = ()
+        \\    wide(1, 2, 3, 4, 5, 6, 7, 8, 9)
+    );
+    defer fx.deinit();
+    var env = Env.scan(&fx.mod, .{});
+    const rel = env.indexOf("wide").?;
+    try std.testing.expect(env.rels[rel].decl.func.params.len > max_params);
+    try std.testing.expect(inducedInputProjection(&env, rel, .{ .low_bits = 8 }) == null);
+    try std.testing.expect(inducedInputProjection(&env, rel, .whole) == null);
+    try std.testing.expect(evalAnswer(&env, rel, &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9 }) == null);
+    try std.testing.expect(env.census.refusalCount(.arity) > 0);
+
+    // AND AN INDEX THAT NAMES NO RELATION. Every one of these is `pub` and
+    // takes a `usize`; a caller that has one wrong reads uninitialised table
+    // memory, so the bound is checked rather than assumed.
+    try std.testing.expect(inducedInputProjection(&env, env.len, .whole) == null);
+    try std.testing.expect(evalAnswer(&env, env.len, &.{}) == null);
+    try std.testing.expect(deriveRelationLaw(&env, env.len) == null);
 }

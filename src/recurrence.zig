@@ -795,7 +795,56 @@ pub const Closed = struct {
 pub const Observation = struct {
     /// Low bits any observer can distinguish. 64 = fully observed.
     bits: u7 = 64,
+
+    /// O10 — **THE CONTRACTED STATE KEY.** Loop-carried names the caller has
+    /// proven the CONTINUATION cannot distinguish (`projectionOfName` is
+    /// `none`) and that no surviving slot's update reads. They are dropped
+    /// from the ORBIT KEY, never from the walk: their updates still run and
+    /// are still held to the trap-free grammar, so nothing about O4 moves.
+    ///
+    /// WHY IT IS WORTH A FIELD. The key decides when the orbit REPEATS, so a
+    /// slot nobody can see is a slot that lengthens the cycle for free.
+    /// MEASURED by `src/obseq.zig`, which computes this set for its own
+    /// e-graph and until now could not hand it here — the two-accumulator
+    /// fixture walks 768 states with the induction variable in the key and 192
+    /// without, and the four-accumulator one 1792 against 896. Empty is
+    /// verbatim today's behaviour: every assigned name is packed.
+    ///
+    /// §24 — THE FACT IS CHECKED, NOT TRUSTED. `closeWhileByOrbit` re-derives
+    /// the closure condition from the body it is about to walk and refuses a
+    /// drop this file cannot confirm, so a wrong set from any caller costs a
+    /// closure and can never cost an answer.
+    unobserved: []const []const u8 = &.{},
+
+    /// §22-23 — **THE RELATION LAW SEAM**, opaque here for the same reason
+    /// `demand_projection.zig`'s is: the producer side can be compiled, tested
+    /// and deleted without this file knowing its name.
+    ///
+    /// The one question this file asks it: *what is the value of this call, in
+    /// the ring, at these already-quotiented arguments?* A non-null answer is
+    /// the caller asserting that the callee is a PURE mod-2^k ring
+    /// homomorphism — which is the SAME admission `quotientEval` applies to
+    /// `+ - * & | ^ ~` and nothing weaker. Null, and every call refuses
+    /// exactly as it always has.
+    call_ctx: ?*const anyopaque = null,
+    call_value: ?*const fn (
+        ctx: *const anyopaque,
+        call: *const ast.Expr,
+        args: []const i64,
+    ) ?i64 = null,
+
+    fn dropped(self: Observation, name: []const u8) bool {
+        for (self.unobserved) |n| {
+            if (std.mem.eql(u8, n, name)) return true;
+        }
+        return false;
+    }
 };
+
+/// Arguments one admitted call may carry. Sized to `max_vars` for the same
+/// reason the state is: a call in a quotiented loop body reads loop-carried
+/// values, and there are no more of those than there are slots.
+const max_call_args: usize = max_vars;
 
 /// Steps of the orbit walk before the quotient alternative refuses.
 ///
@@ -882,6 +931,7 @@ fn quotientStep(
     vals: *[max_vars]u64,
     mask: u64,
     binds: Bindings,
+    obs: Observation,
 ) bool {
     for (body.stmts) |st| {
         const a = switch (st) {
@@ -893,8 +943,15 @@ fn quotientStep(
             .name => |n| n.ident,
             else => return false,
         };
-        const slot = state.indexOf(target) orelse return false;
-        const v = quotientEval(a.values[0], state, vals, mask, binds) orelse return false;
+        // O10. A name that never entered the state is one the caller proved
+        // unobserved and `internAssignedNames` proved trap-free; it has no
+        // value to maintain and nothing reads it. Any OTHER unknown target is
+        // still a refusal.
+        const slot = state.indexOf(target) orelse {
+            if (obs.dropped(target)) continue;
+            return false;
+        };
+        const v = quotientEval(a.values[0], state, vals, mask, binds, obs) orelse return false;
         vals[slot] = v & mask;
     }
     return true;
@@ -906,6 +963,7 @@ fn quotientEval(
     vals: *const [max_vars]u64,
     mask: u64,
     binds: Bindings,
+    obs: Observation,
 ) ?u64 {
     switch (expr.*) {
         .int_lit => |lit| return @as(u64, @bitCast(lit.val)) & mask,
@@ -914,8 +972,41 @@ fn quotientEval(
             if (binds.get(n.ident)) |v| return v & mask;
             return null;
         },
+
+        // ── A CALL, AND IT IS ADMITTED BY THE SAME RULE AS `+` ─────────────
+        //
+        // Every other operator in this grammar is here because it commutes
+        // with `x mod 2^k`. A call was absent for the same reason `>>` is
+        // absent — nothing had proven anything about it — and NOT because a
+        // call is categorically opaque. `Observation.call_value` is the
+        // caller's proof: it answers only for a callee whose law is a PURE
+        // mod-2^k ring homomorphism derived from that callee's own body, and
+        // null otherwise.
+        //
+        // WHY QUOTIENTED ARGUMENTS ARE ENOUGH. The values handed over are
+        // already `x mod 2^k`, so what comes back is `h(f(h(x)))`; the
+        // homomorphism is exactly the proof that this is `h(f(x))`, which is
+        // the identity every line above rests on for a builtin operator.
+        //
+        // O4 IS NOT WEAKENED. The seam's producer runs `demand.inert` — the
+        // tree's one producer of the trap/effect fact — over the callee's
+        // whole answer and refuses `/ % //` and every effect before answering,
+        // so admitting the node adds no trap this grammar was excluding.
+        .call => |c| {
+            const ctx = obs.call_ctx orelse return null;
+            const value = obs.call_value orelse return null;
+            if (c.args.len > max_call_args) return null;
+            var argv: [max_call_args]i64 = @splat(0);
+            for (c.args, 0..) |arg, i| {
+                const av = quotientEval(arg, state, vals, mask, binds, obs) orelse return null;
+                argv[i] = @bitCast(av);
+            }
+            const v = value(ctx, expr, argv[0..c.args.len]) orelse return null;
+            return @as(u64, @bitCast(v)) & mask;
+        },
+
         .unop => |u| {
-            const inner = quotientEval(u.operand, state, vals, mask, binds) orelse return null;
+            const inner = quotientEval(u.operand, state, vals, mask, binds, obs) orelse return null;
             return switch (u.op) {
                 .neg => (0 -% inner) & mask,
                 .bnot => (~inner) & mask,
@@ -923,8 +1014,8 @@ fn quotientEval(
             };
         },
         .binop => |b| {
-            const lhs = quotientEval(b.lhs, state, vals, mask, binds) orelse return null;
-            const rhs = quotientEval(b.rhs, state, vals, mask, binds) orelse return null;
+            const lhs = quotientEval(b.lhs, state, vals, mask, binds, obs) orelse return null;
+            const rhs = quotientEval(b.rhs, state, vals, mask, binds, obs) orelse return null;
             return switch (b.op) {
                 .add => (lhs +% rhs) & mask,
                 .sub => (lhs -% rhs) & mask,
@@ -959,7 +1050,7 @@ fn closeWhileByOrbit(loop: anytype, binds: Bindings, obs: Observation) ?Closed {
     // Only the BODY is quotiented; the guard never is, because the guard reads
     // the induction variable at 64 bits.
     var state = State{};
-    if (!internAssignedNames(&loop.body, &state)) return null;
+    if (!internAssignedNames(&loop.body, &state, loop.cond, obs)) return null;
     if (state.len == 0) return null;
 
     // THE GUARD IS NOT QUOTIENTED — same function, same rules, full width. Only
@@ -988,10 +1079,38 @@ fn closeWhileByOrbit(loop: anytype, binds: Bindings, obs: Observation) ?Closed {
     const iv_start: i64 = @bitCast(binds.get(state.names[guard.iv]) orelse return null);
     const trips = tripCount(guard, iv_start, step) orelse return null;
 
+    // ── O10 — THE CONTRACTED KEY, AND THE CHECK THAT MAKES IT THIS FILE'S ──
+    //
+    // A slot the continuation cannot see does not have to be part of what
+    // makes a state distinct. Dropping it can only SHORTEN the orbit, and on
+    // the shapes `src/obseq.zig` measures it shortens 768 -> 192 and
+    // 1792 -> 896 — because the induction variable's 256-cycle multiplies
+    // every other slot's period and nothing observes it.
+    //
+    // THE CONDITION IS RE-DERIVED HERE. The caller supplies the SET; this
+    // file proves the property that makes dropping it lawful, namely that the
+    // remaining key still determines its own successor. If any slot that stays
+    // reads a slot that goes, the orbit is not a function of the key, a repeat
+    // is not a cycle, and the whole closure is refused. That is §24 across the
+    // seam: the delegating engine's answer is a candidate, not an authority.
+    //
+    // The GUARD may read a dropped slot and that is not a defect: it is read
+    // at FULL WIDTH out of `binds`, and O1/O2/O5/O8 derive the trip count
+    // analytically without ever consulting `vals`. Refusing it would delete
+    // the commonest case — the induction variable itself.
+    var in_key: [max_vars]bool = @splat(true);
+    var key_len: usize = 0;
+    for (0..state.len) |i| {
+        in_key[i] = !obs.dropped(state.names[i]);
+        if (in_key[i]) key_len += 1;
+    }
+    if (key_len == 0) return null;
+    if (!keyDeterminesSuccessor(&loop.body, &state, &in_key, obs)) return null;
+
     // The orbit key must be injective on the quotient state, or two distinct
     // states could be read as a cycle and the answer would be wrong.
     const bits_per: usize = obs.bits;
-    if (bits_per * state.len > 64) return null;
+    if (bits_per * key_len > 64) return null;
 
     var seen: std.AutoHashMapUnmanaged(u64, u32) = .empty;
     var history: std.ArrayListUnmanaged([max_vars]u64) = .empty;
@@ -1002,7 +1121,10 @@ fn closeWhileByOrbit(loop: anytype, binds: Bindings, obs: Observation) ?Closed {
     var step_index: u32 = 0;
     while (true) {
         var key: u64 = 0;
-        for (0..state.len) |i| key = (key << @intCast(bits_per)) | (vals[i] & mask);
+        for (0..state.len) |i| {
+            if (!in_key[i]) continue;
+            key = (key << @intCast(bits_per)) | (vals[i] & mask);
+        }
 
         const slot = seen.getOrPut(alloc, key) catch return null;
         if (slot.found_existing) {
@@ -1017,10 +1139,100 @@ fn closeWhileByOrbit(loop: anytype, binds: Bindings, obs: Observation) ?Closed {
         if (trips == step_index) {
             return finishOrbit(&state, vals, trips, obs.bits);
         }
-        if (!quotientStep(&loop.body, &state, &vals, mask, binds)) return null;
+        if (!quotientStep(&loop.body, &state, &vals, mask, binds, obs)) return null;
         step_index += 1;
         if (step_index >= max_orbit_steps) return null;
     }
+}
+
+/// O10's proof obligation, discharged against the body this file is about to
+/// walk rather than against the caller's word for it.
+///
+/// Every slot that STAYS in the key must have an update that reads only slots
+/// that stay. Then the key is a function of itself one step later, a repeated
+/// key IS a repeated state of the contracted machine, and the cycle detection
+/// above means what it meant before the contraction.
+///
+/// FAILS CLOSED: an expression form `mentionsSlot` does not enumerate answers
+/// TRUE, so an unmodelled construct keeps the slot and refuses the drop.
+fn keyDeterminesSuccessor(
+    body: *const ast.Block,
+    state: *const State,
+    in_key: *const [max_vars]bool,
+    obs: Observation,
+) bool {
+    for (body.stmts) |st| {
+        const a = switch (st) {
+            .assign => |x| x,
+            else => return false,
+        };
+        if (a.targets.len != 1 or a.values.len != 1) return false;
+        const target = switch (a.targets[0].*) {
+            .name => |n| n.ident,
+            else => return false,
+        };
+        // A target that never entered the state is a dropped slot; nothing in
+        // the key reads it, which is the property this function checks.
+        const slot = state.indexOf(target) orelse continue;
+        if (!in_key[slot]) continue;
+        // Checked against the CALLER'S SET rather than against the state, so
+        // a dropped name that was interned anyway — the induction variable —
+        // is caught too. `a = a + i` with `i` out of the key is exactly the
+        // shape that would make a repeat not a cycle.
+        for (obs.unobserved) |n| {
+            if (mentionsSlot(a.values[0], n)) return false;
+        }
+    }
+    return true;
+}
+
+/// FAILS CLOSED — an expression form not enumerated answers TRUE.
+fn mentionsSlot(e: *const ast.Expr, name: []const u8) bool {
+    return switch (e.*) {
+        .int_lit, .float_lit, .string_lit, .nil, .true_lit, .false_lit => false,
+        .name => |n| std.mem.eql(u8, n.ident, name),
+        .unop => |u| mentionsSlot(u.operand, name),
+        .binop => |b| mentionsSlot(b.lhs, name) or mentionsSlot(b.rhs, name),
+        .call => |c| blk: {
+            if (mentionsSlot(c.func, name)) break :blk true;
+            for (c.args) |arg| if (mentionsSlot(arg, name)) break :blk true;
+            break :blk false;
+        },
+        else => true,
+    };
+}
+
+/// O10's OTHER half. `finishOrbit` reports every slot's value at the CYCLE
+/// index, and for a dropped slot that is not its value at the trip index —
+/// the key stopped distinguishing it, so the walk stopped tracking when it
+/// came round. Nothing outside the loop may read one.
+///
+/// Checked over the whole relation body once, before any of it runs, rather
+/// than at each of the four places a value is read: one place cannot be
+/// reached around, four can.
+fn readsDroppedOutsideLoop(b: *const ast.Block, obs: Observation) bool {
+    for (b.stmts) |st| {
+        switch (st) {
+            .while_loop => {},
+            .assign => |a| for (a.values) |v| {
+                for (obs.unobserved) |n| if (mentionsSlot(v, n)) return true;
+            },
+            .local_decl => |d| for (d.inits) |v| {
+                for (obs.unobserved) |n| if (mentionsSlot(v, n)) return true;
+            },
+            .ret => |r| for (r.vals) |v| {
+                for (obs.unobserved) |n| if (mentionsSlot(v, n)) return true;
+            },
+            // Every other statement form refuses the whole body below anyway;
+            // saying TRUE here keeps this check from being the one that lets a
+            // future form through.
+            else => return true,
+        }
+    }
+    if (b.tail_expr) |t| {
+        for (obs.unobserved) |n| if (mentionsSlot(t, n)) return true;
+    }
+    return false;
 }
 
 fn finishOrbit(state: *const State, vals: [max_vars]u64, trips: u64, bits: u7) Closed {
@@ -1039,7 +1251,32 @@ fn finishOrbit(state: *const State, vals: [max_vars]u64, trips: u64, bits: u7) C
 }
 
 /// O6/O7 for the quotient path: the same refusals, without building polynomials.
-fn internAssignedNames(body: *const ast.Block, state: *State) bool {
+///
+/// O10 — **THE CONTRACTION REACHES THE INTERNING, NOT ONLY THE PACKING.** A
+/// slot the continuation cannot see does not need a state entry at all, and
+/// this is where that is worth something rather than merely tidy: `max_vars`
+/// is SIX, so a loop assigning seven names is refused outright here — while
+/// `obseq.max_slots` is EIGHT, so the delegating engine had already closed
+/// its contracted orbit and could only watch the delegation refuse. Dropping
+/// the unobserved names before interning is what makes the two agree on what
+/// the state IS.
+///
+/// A dropped name's assignment is then NEVER EVALUATED, so O4 has to be
+/// discharged another way: its right-hand side is held to the same trap-free
+/// grammar `quotientEval` admits, syntactically, with no call. Skipping a
+/// statement that could trap would delete a trap, and a deleted trap is a
+/// changed answer.
+///
+/// The INDUCTION VARIABLE is interned even when it is dropped: `analyzeGuard`
+/// resolves the guard's names against this state, and O1/O2/O5/O8 are derived
+/// from it at full width. It is dropped from the KEY, which is the whole W6
+/// contraction, and kept in the WALK, which is what the guard needs.
+fn internAssignedNames(
+    body: *const ast.Block,
+    state: *State,
+    cond: *const ast.Expr,
+    obs: Observation,
+) bool {
     if (body.tail_expr != null) return false;
     for (body.stmts) |st| {
         switch (st) {
@@ -1049,12 +1286,53 @@ fn internAssignedNames(body: *const ast.Block, state: *State) bool {
                     .name => |n| n.ident,
                     else => return false,
                 };
+                if (obs.dropped(target) and !mentionsSlot(cond, target)) continue;
                 _ = state.intern(target) orelse return false;
             },
             else => return false,
         }
     }
-    return true;
+    // Second pass, because the first cannot know which names ended up interned
+    // until it has seen every statement.
+    for (body.stmts) |st| {
+        const a = st.assign;
+        const target = a.targets[0].name.ident;
+        if (state.indexOf(target) != null) continue;
+        if (!droppedUpdateIsInert(a.values[0])) return false;
+    }
+    return state.len != 0;
+}
+
+/// O4 FOR A STATEMENT THAT WILL NOT RUN. The same node set `quotientEval`
+/// admits, read syntactically because there are no values to read: a dropped
+/// slot's update may mention other dropped slots, which are not in the state.
+///
+/// A CALL IS NOT IN IT, and deliberately: admitting one here would mean
+/// asserting the callee is total without evaluating it, and the seam that
+/// proves that answers about a call SITE with arguments. A dropped slot whose
+/// update applies a relation refuses the drop, which costs a closure and never
+/// an answer.
+fn droppedUpdateIsInert(e: *const ast.Expr) bool {
+    return switch (e.*) {
+        .int_lit, .name => true,
+        .unop => |u| switch (u.op) {
+            .neg, .bnot => droppedUpdateIsInert(u.operand),
+            else => false,
+        },
+        .binop => |b| switch (b.op) {
+            .add, .sub, .mul, .band, .bor, .bxor => droppedUpdateIsInert(b.lhs) and droppedUpdateIsInert(b.rhs),
+            .lshift => blk: {
+                const c = switch (b.rhs.*) {
+                    .int_lit => |lit| lit.val,
+                    else => break :blk false,
+                };
+                if (c < 0 or c > 63) break :blk false;
+                break :blk droppedUpdateIsInert(b.lhs);
+            },
+            else => false,
+        },
+        else => false,
+    };
 }
 
 /// The IV's step when the body is outside the polynomial grammar (a body with
@@ -1268,6 +1546,10 @@ pub fn closeRelationBody(fb: *const ast.FuncBody) ?i64 {
 /// call site deliberately supplies the fact.
 pub fn closeRelationBodyObserved(fb: *const ast.FuncBody, obs: Observation) ?i64 {
     if (fb.params.len != 0 or fb.vararg or fb.vararg_name != null) return null;
+    // O10. A contracted key stops maintaining the slots it dropped, so a read
+    // of one anywhere outside the loop would be reading the orbit's value at
+    // the wrong index. Refused before anything runs.
+    if (obs.unobserved.len != 0 and readsDroppedOutsideLoop(&fb.body, obs)) return null;
 
     var binds = Bindings{};
     var saw_loop = false;
@@ -1904,14 +2186,14 @@ test "recurrence: the quotient grammar admits exactly what commutes with the pro
     // ADMITTED — each of these is a homomorphism onto Z/2^k.
     inline for (.{ .add, .sub, .mul, .band, .bor, .bxor, .lshift }) |op| {
         const e = ast.Expr{ .binop = .{ .loc = test_loc, .op = op, .lhs = &lit_a, .rhs = &lit_b } };
-        try std.testing.expect(quotientEval(&e, &state, &vals, 0xFF, binds) != null);
+        try std.testing.expect(quotientEval(&e, &state, &vals, 0xFF, binds, .{ .bits = 8 }) != null);
     }
     // REFUSED — `>>` reads bits the quotient discarded; `/` and `%` are floor
     // operations with no homomorphism to Z/2^k at all. Admitting any of these
     // is the single most likely way to make this pass produce a wrong answer.
     inline for (.{ .rshift, .div, .idiv, .mod, .pow }) |op| {
         const e = ast.Expr{ .binop = .{ .loc = test_loc, .op = op, .lhs = &lit_a, .rhs = &lit_b } };
-        try std.testing.expect(quotientEval(&e, &state, &vals, 0xFF, binds) == null);
+        try std.testing.expect(quotientEval(&e, &state, &vals, 0xFF, binds, .{ .bits = 8 }) == null);
     }
 }
 

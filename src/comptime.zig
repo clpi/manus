@@ -1540,6 +1540,57 @@ fn exprHasNoApplication(e: *const ast.Expr) bool {
     };
 }
 
+/// A BODY THAT IS ALREADY ITS ANSWER HAS FOLDED, AND SAYING SO IS NOT A
+/// COURTESY — IT IS THE APPLICATION ACCOUNTING.
+///
+/// `folded_to_constant` is not a cosmetic label. `native_backend`'s
+/// `unrealizedApplicationCount` reads it to learn which PUBLISHED applications
+/// are realized nowhere, and every published application must be realized
+/// exactly once or attributed to a fold. Returning null for a body that is a
+/// bare literal was harmless while the only way to get one was to write it —
+/// such a body publishes no application, so nothing was left unattributed.
+///
+/// It stopped being harmless the moment a body that DID publish applications
+/// was replaced by its answer before lowering. `src/obseq.zig` does exactly
+/// that: it closes the entry's loop to the constant its demanded observer
+/// cannot distinguish, and once its grammar admits a call to a user-defined
+/// relation the deleted body took the application with it. The backend then
+/// counted one published application, zero realizations and zero folds, and
+/// refused the program with DNB011 `application-realization-count` — a correct
+/// refusal of a true inconsistency, whose real cause was this null.
+///
+/// So the answer is the honest one: the relation's value IS this constant, the
+/// applications inside it are realized NOWHERE, and both facts travel together.
+/// Nothing about ordinary lowering changes — a bare-literal body emits the same
+/// `ret k` either way, and it publishes no applications for the count to
+/// subtract, so a corpus with no rewritten body cannot tell the difference.
+///
+/// Deliberately the NARROWEST shape that carries the fact: one statement-free
+/// tail integer literal, or a lone `return <int literal>`. A wider recognizer
+/// here would be a second constant folder beside `runFold`.
+fn constantAnswer(b: *const ast.Block) ?i64 {
+    if (b.stmts.len == 0) {
+        const tail = b.tail_expr orelse return null;
+        return switch (tail.*) {
+            .int_lit => |lit| lit.val,
+            else => null,
+        };
+    }
+    if (b.stmts.len == 1 and b.tail_expr == null) {
+        switch (b.stmts[0]) {
+            .ret => |r| {
+                if (r.vals.len != 1) return null;
+                return switch (r.vals[0].*) {
+                    .int_lit => |lit| lit.val,
+                    else => null,
+                };
+            },
+            else => return null,
+        }
+    }
+    return null;
+}
+
 /// True when the body contains a loop. This fold declines loops because it has
 /// no termination budget for one; a loop body is the direct backend's job.
 fn bodyHasLoop(b: *const ast.Block) bool {
@@ -1609,7 +1660,7 @@ pub fn foldRelationBody(
     const scratch = arena.allocator();
 
     if (bodyHasNoApplication(&fb.body)) {
-        if (!bodyHasLoop(&fb.body)) return null;
+        if (!bodyHasLoop(&fb.body)) return constantAnswer(&fb.body);
         return runFold(fb, .{}, .{
             .step_limit = fold_step_limit,
             .alloc = scratch,

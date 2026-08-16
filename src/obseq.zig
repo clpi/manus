@@ -236,6 +236,7 @@ const ast = @import("ast.zig");
 const demand = @import("demand.zig");
 const demand_projection = @import("demand_projection.zig");
 const observation = @import("observation.zig");
+const quotient_synth = @import("quotient_synth.zig");
 const recurrence = @import("recurrence.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const semantic_graph = @import("semantic_graph.zig");
@@ -1142,6 +1143,15 @@ pub const Machine = struct {
     entry: [max_slots]i64 = @splat(0),
     tracked: [max_slots]bool = @splat(false),
     slot_count: usize = 0,
+    /// **THE COMPOSITION SEAM.** The module's user-defined relation table, or
+    /// null. Null is exactly the behaviour this file shipped with: Q4's
+    /// grammar has no `call` and every body mentioning one refuses.
+    ///
+    /// With a table, a call is admitted on `quotient_synth`'s derived
+    /// `ring_hom_mod_2k` — the SAME admission condition `commutesWith` applies
+    /// to `+ - * & | ^ ~`, read off a relation's own body instead of an
+    /// operator table. `build` owns the one call site.
+    env: ?*quotient_synth.Env = null,
 
     fn indexOf(self: *const Machine, name: []const u8) ?usize {
         for (0..self.slot_count) |i| {
@@ -1297,6 +1307,42 @@ fn build(eg: *EGraph, e: *const ast.Expr, m: *const Machine, vals: *const [max_s
             try foldInto(eg, id, .{ .op = op, .a = lhs, .b = rhs });
             return id;
         },
+
+        // ── Q4/Q5 FOR A RELATION THE COMPILER WAS NEVER TOLD ABOUT ─────────
+        //
+        // A call is admitted when `quotient_synth.admitInQuotient` proves the
+        // callee is a PURE mod-2^k ring homomorphism derived from its own
+        // body. That fact discharges Q5 for the node — `h(f(x)) = g(h(x))`
+        // with `g = f` read in the quotient — and Q4 with it, because the law
+        // derivation runs `demand.inert` (the tree's one producer of the
+        // trap/effect fact) over the whole answer and refuses `/ % //` before
+        // this line is reached.
+        //
+        // WHY THE ARGUMENTS MAY BE THE PROJECTED VALUES. `vals` holds the
+        // state modulo `h`; evaluating `f` on those gives `h(f(h(x)))`, and
+        // the homomorphism is exactly the proof that this is `h(f(x))`. Every
+        // OTHER admission in this grammar rests on the same identity for a
+        // builtin operator, so the call is not a wider trust, it is the same
+        // one applied to a relation.
+        //
+        // The result enters as a `cst`, so `canonical` takes it through `h`
+        // like any other constant and the e-class is the quotient class. There
+        // is no `call` e-node: an opaque node in a graph quotiented by `h`
+        // would be a node whose congruence nobody proved.
+        .call => |c| {
+            const env = m.env orelse return null;
+            if (!commutesWith(.cst, eg.h)) return null;
+            const admitted = quotient_synth.admitInQuotient(env, c) orelse return null;
+            if (c.args.len > quotient_synth.max_params) return null;
+            var argv: [quotient_synth.max_params]i64 = @splat(0);
+            for (c.args, 0..) |a, i| {
+                const aid = (try build(eg, a, m, vals)) orelse return null;
+                argv[i] = eg.constantOf(aid) orelse return null;
+            }
+            const v = quotient_synth.evalAnswer(env, admitted.rel, argv[0..c.args.len]) orelse return null;
+            return try eg.add(.{ .op = .cst, .k = v });
+        },
+
         else => return null,
     }
 }
@@ -1370,6 +1416,13 @@ pub const Census = struct {
     lambda: u32 = 0,
     stop: Stop = .contracted,
     demanded_bits: u7 = 64,
+    /// THE COMPOSITION, COUNTED. Calls this decision handed to
+    /// `quotient_synth.admitInQuotient`, and how many carried a derived
+    /// mod-2^k homomorphism. `examined > 0, admitted == 0` is the honest
+    /// reading of a body whose relation is outside the law's class, and it is
+    /// a different fact from "no call was there".
+    calls_examined: u32 = 0,
+    calls_admitted: u32 = 0,
 };
 
 pub const Outcome = struct {
@@ -1508,6 +1561,12 @@ fn readBody(body: *const ast.Block, m: *Machine) bool {
 ///
 /// Least fixpoint, and it errs toward KEEPING: `mentions` answers true for
 /// every expression form it does not enumerate.
+/// **PIECE 3 OF THE COMPOSITION LIVES ON THE FIRST LINE.**
+/// `demand_projection.projectionOfName` answers `whole` for a tail that calls a
+/// user-defined relation — unless `quotient_synth` is installed, in which case
+/// the answer comes from the callee's own body. `closeRelation` installs it
+/// around this call, so `tag(x)` demands of `x` what `tag` actually reads
+/// rather than everything.
 fn observedClosure(m: *Machine, tail: *const ast.Expr, h: Projection) void {
     for (0..m.slot_count) |i| {
         const p = demand_projection.projectionOfName(h, tail, m.names[i]);
@@ -1521,7 +1580,7 @@ fn observedClosure(m: *Machine, tail: *const ast.Expr, h: Projection) void {
             if (!m.tracked[slot]) continue;
             for (0..m.slot_count) |j| {
                 if (m.tracked[j]) continue;
-                if (mentions(m.update[s], m.names[j])) {
+                if (mentions(m.env, m.update[s], m.names[j])) {
                     m.tracked[j] = true;
                     changed = true;
                 }
@@ -1532,12 +1591,29 @@ fn observedClosure(m: *Machine, tail: *const ast.Expr, h: Projection) void {
 
 /// FAIL-CLOSED: an expression form this does not enumerate answers TRUE, so an
 /// unmodelled construct keeps the slot in the key rather than deleting it.
-fn mentions(e: *const ast.Expr, name: []const u8) bool {
+///
+/// A CALL IS THE ONE FORM WHERE FAIL-CLOSED WAS COSTING THE WHOLE CONTRACTION.
+/// `x = step(x)` made every slot answer TRUE and D3 deleted nothing, so a body
+/// with a call could not contract even when the call was admitted three lines
+/// later. It is answered precisely only when `admitInQuotient` proves the
+/// callee — which carries `onlyParams`, so the callee reads its ARGUMENTS and
+/// nothing else and cannot reach a name that is not passed to it. Without the
+/// table, or for a callee the law refuses, the answer is TRUE exactly as
+/// before: a relation this module cannot see into may read a place it cannot
+/// bound.
+fn mentions(env: ?*quotient_synth.Env, e: *const ast.Expr, name: []const u8) bool {
     return switch (e.*) {
         .int_lit, .float_lit, .string_lit, .nil, .true_lit, .false_lit => false,
         .name => |n| std.mem.eql(u8, n.ident, name),
-        .unop => |u| mentions(u.operand, name),
-        .binop => |b| mentions(b.lhs, name) or mentions(b.rhs, name),
+        .unop => |u| mentions(env, u.operand, name),
+        .binop => |b| mentions(env, b.lhs, name) or mentions(env, b.rhs, name),
+        .call => |c| blk: {
+            const table = env orelse break :blk true;
+            if (quotient_synth.admitInQuotient(table, c) == null) break :blk true;
+            if (mentions(env, c.func, name)) break :blk true;
+            for (c.args) |a| if (mentions(env, a, name)) break :blk true;
+            break :blk false;
+        },
         else => true,
     };
 }
@@ -1564,14 +1640,29 @@ fn tripLowerBound(loop: anytype, m: *const Machine) ?u64 {
 
 /// The whole decision, in the order §26 mandates: derive the fact, CONTRACT,
 /// then saturate, then rank.
+///
+/// `mod` is the module the entry lives in, or null. It carries ONE thing: the
+/// user-defined relation table `quotient_synth.zig` derives law from. Null is
+/// this module as it shipped — every call refuses — and the corpus differential
+/// in the report is against exactly that.
 pub fn closeRelation(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
+    mod: ?*const ast.Module,
     graph: ?*const semantic_graph.SemanticGraph,
     world: observation.World,
     bound: Bound,
 ) !Result {
     var census = Census{ .examined = 1 };
+
+    // §22-23's law closure, INSTALLED FOR THE DURATION OF THIS ONE DECISION,
+    // exactly as `demand.zig` installs it for the duration of one backward
+    // walk. Uninstalled on the way out, so no analysis outside this call sees a
+    // table it did not ask for and an uninstalled derivative is bit-identical
+    // to the one that shipped.
+    var qenv: ?quotient_synth.Env = if (mod) |m| quotient_synth.Env.scan(m, .{}) else null;
+    if (qenv != null) quotient_synth.install(&qenv.?);
+    defer if (qenv != null) quotient_synth.uninstall();
 
     const h: Projection = switch (entryProjection(fd, graph, world)) {
         .refused => |r| return refuse(&census, r),
@@ -1589,7 +1680,7 @@ pub fn closeRelation(
     census.ops_deleted = @intCast(Op.count - admittedOps(h).count());
     census.rules_deleted = @intCast(Rule.count - admittedRules(h).count());
 
-    var m = Machine{};
+    var m = Machine{ .env = if (qenv != null) &qenv.? else null };
     const shape = readMachine(&fd.func, &m) orelse return refuse(&census, .no_loop);
     const loop = shape.loop.while_loop;
     if (!readBody(&loop.body, &m)) return refuse(&census, .body_not_admitted);
@@ -1625,6 +1716,10 @@ pub fn closeRelation(
     census.steps = closure.steps;
     census.mu = closure.mu;
     census.lambda = closure.lambda;
+    if (qenv) |*q| {
+        census.calls_examined = q.census.calls_examined;
+        census.calls_admitted = q.census.calls_admitted;
+    }
 
     var facts: FactSet = .{};
     facts.insert(.projection_proven);
@@ -1684,12 +1779,38 @@ pub fn closeRelation(
     // from that file was `terminatesForAnyStart`. The projection this passes it
     // is the one `demand_projection.zig` produces, and this line is the edge
     // between them.
+    //
+    // AND IT NOW CARRIES THE CONTRACTION AS WELL AS THE PROJECTION. D3 is
+    // computed above for THIS module's e-graph; handing the same set over
+    // means the delegated walk quotients the state the same way instead of
+    // walking the uncontracted orbit — the induction variable's 256-cycle
+    // multiplied every other slot's period on the far side of a seam that had
+    // the answer on this side. `recurrence` re-derives the condition that
+    // makes the drop lawful and refuses one it cannot confirm, so this is a
+    // fact offered, not a fact imposed.
+    //
+    // The relation table travels the same way, for the same reason: a body
+    // whose loop applies a user-defined relation reaches the exact-index
+    // family only if the far side can evaluate the call, and only
+    // `quotient_synth` can say whether that is lawful.
     if (closure.lambda > 1) {
         var trial: FactSet = facts;
         trial.insert(.trip_count_exact);
         var sp2 = contract(trial, h);
         if (sp2.has(.orbit_index)) {
-            const k = recurrence.closeRelationBodyObserved(&fd.func, .{ .bits = bits }) orelse
+            var unobserved: [max_slots][]const u8 = undefined;
+            var dropped: usize = 0;
+            for (0..m.slot_count) |i| {
+                if (m.tracked[i]) continue;
+                unobserved[dropped] = m.names[i];
+                dropped += 1;
+            }
+            const k = recurrence.closeRelationBodyObserved(&fd.func, .{
+                .bits = bits,
+                .unobserved = unobserved[0..dropped],
+                .call_ctx = if (qenv) |*q| @as(*const anyopaque, @ptrCast(q)) else null,
+                .call_value = if (qenv == null) null else &callValueInRing,
+            }) orelse
                 return refuse(&census, .no_exact_index);
             const value = h.apply(k) orelse return refuse(&census, .tail_not_admitted);
             if (!answers.contains(value)) return refuse(&census, .disagreement);
@@ -1715,6 +1836,29 @@ fn refuse(census: *Census, r: Refusal) Result {
     return .{ .refused = .{ .refusal = r, .census = census.* } };
 }
 
+/// **THE PRODUCER BEHIND `recurrence.Observation.call_value`.**
+///
+/// `recurrence.zig` asks one question — *what is this call worth, in the ring,
+/// at these arguments?* — and this answers it only when `quotient_synth` has
+/// derived a PURE mod-2^k ring homomorphism from the callee's own body. That
+/// is the same admission `build` above applies to the same node, through the
+/// same two functions, so the two engines cannot come to different conclusions
+/// about which calls are lawful.
+///
+/// No type crosses the seam: `*const anyopaque` in, `?i64` out. `recurrence`
+/// compiles with or without a producer, and with none every call refuses
+/// exactly as it did.
+fn callValueInRing(ctx: *const anyopaque, call: *const ast.Expr, args: []const i64) ?i64 {
+    const env: *quotient_synth.Env = @constCast(@ptrCast(@alignCast(ctx)));
+    const c = switch (call.*) {
+        .call => |x| x,
+        else => return null,
+    };
+    if (args.len != c.args.len) return null;
+    const admitted = quotient_synth.admitInQuotient(env, c) orelse return null;
+    return quotient_synth.evalAnswer(env, admitted.rel, args);
+}
+
 /// **THE TRANSFORM.** Replace the entry relation's whole body with the constant
 /// its demanded observer cannot distinguish from it.
 ///
@@ -1732,7 +1876,7 @@ pub fn applyToEntry(
         if (st.* != .func_decl) continue;
         const fd = &st.func_decl;
         if (fd.path.len != 1 or !std.mem.eql(u8, fd.path[0], "main")) continue;
-        const r = try closeRelation(alloc, fd, graph, world, .{});
+        const r = try closeRelation(alloc, fd, mod, graph, world, .{});
         switch (r) {
             .refused => return null,
             .closed => |out| {
@@ -2024,7 +2168,7 @@ test "obseq: W6 closes to a FIXED POINT, and the answer matches a real loop" {
     var b = Build.init();
     defer b.deinit();
     const fd = w6Decl(&b, 20000000);
-    const r = try closeRelation(testing.allocator, &fd, null, observation.ordinary_executable, .{});
+    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
     const out = switch (r) {
         .refused => |x| {
             std.debug.print("refused: {s}\n", .{@tagName(x.refusal)});
@@ -2053,7 +2197,7 @@ test "obseq: the closed value is right at EVERY trip count past mu" {
     var n: i64 = 4;
     while (n <= 4096) : (n *= 2) {
         const fd = w6Decl(&b, n);
-        const r = try closeRelation(testing.allocator, &fd, null, observation.ordinary_executable, .{});
+        const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
         switch (r) {
             .refused => return error.TestUnexpectedResult,
             .closed => |o| try testing.expectEqual(
@@ -2071,7 +2215,7 @@ test "obseq: Q7 — a loop that may run fewer than mu times is REFUSED" {
     var b = Build.init();
     defer b.deinit();
     const fd = w6Decl(&b, 3);
-    const r = try closeRelation(testing.allocator, &fd, null, observation.ordinary_executable, .{});
+    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
     switch (r) {
         .closed => return error.TestUnexpectedResult,
         .refused => |x| try testing.expectEqual(Refusal.trips_below_mu, x.refusal),
@@ -2269,7 +2413,7 @@ test "obseq: a PERIODIC contracted orbit falls to the delegated exact index" {
     var b = Build.init();
     defer b.deinit();
     const fd = pairDecl(&b, 20000000, 1103515245, 6364136223);
-    const r = try closeRelation(testing.allocator, &fd, null, observation.ordinary_executable, .{});
+    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
     const out = switch (r) {
         .refused => |x| {
             std.debug.print("refused: {s}\n", .{@tagName(x.refusal)});
@@ -2411,7 +2555,7 @@ test "obseq: D2 — 65,536 exact states against FOUR in the quotient" {
     try testing.expectEqual(@as(u32, 4), c.lambda);
 
     // And it still answers, through the delegated exact index.
-    const r = try closeRelation(testing.allocator, &fd, null, observation.ordinary_executable, .{});
+    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
     switch (r) {
         .refused => return error.TestUnexpectedResult,
         .closed => |o| {
@@ -2441,7 +2585,7 @@ test "obseq: a randomized differential over the whole admitted grammar" {
         // reaches fixed points) and two (which do not).
         const solo = t % 2 == 0;
         const fd = if (solo) soloDecl(&b, n, ca, cb) else pairDecl(&b, n, ca, cb);
-        const r = try closeRelation(testing.allocator, &fd, null, observation.ordinary_executable, .{ .max_steps = 1024 });
+        const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{ .max_steps = 1024 });
         switch (r) {
             .refused => refused += 1,
             .closed => |o| {
@@ -2496,7 +2640,7 @@ test "obseq: Q5 — a body that reads bits above the quotient is REFUSED" {
             .body = outer,
         },
     };
-    const r = try closeRelation(testing.allocator, &fd, null, observation.ordinary_executable, .{});
+    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
     switch (r) {
         .closed => return error.TestUnexpectedResult,
         .refused => {},
@@ -2532,7 +2676,7 @@ test "obseq: a NON-quotientable body still closes when it is a fixed point" {
             .body = outer,
         },
     };
-    const r = try closeRelation(testing.allocator, &fd, null, observation.ordinary_executable, .{});
+    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
     switch (r) {
         .refused => return error.TestUnexpectedResult,
         .closed => |o| try testing.expectEqual(@as(i64, (12345 & 240) & 0xff), o.value),
@@ -2545,7 +2689,7 @@ test "obseq: §43 — the retention budget is structural, and overflow REFUSES" 
     const fd = w6Decl(&b, 20000000);
     // A budget of two steps cannot hold a five-step orbit. The answer is a
     // refusal, never a truncated closure.
-    const r = try closeRelation(testing.allocator, &fd, null, observation.ordinary_executable, .{ .max_steps = 2 });
+    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{ .max_steps = 2 });
     switch (r) {
         .closed => return error.TestUnexpectedResult,
         .refused => |x| try testing.expectEqual(Refusal.budget, x.refusal),
@@ -2565,4 +2709,236 @@ test "obseq: the transform rewrites the entry body and nothing else" {
     try testing.expectEqual(@as(usize, 0), after.stmts.len);
     try testing.expect(after.tail_expr != null);
     try testing.expectEqual(out.value, after.tail_expr.?.int_lit.val);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE COMPOSITION — a loop whose body applies a relation nobody listed
+//
+// Every test below FAILS on this file without `Machine.env` and its `build`
+// arm: the grammar has no `call`, so the body refuses and `applyToEntry`
+// answers null. They are the executable form of the report's headline number.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const CLexer = @import("lexer.zig").Lexer;
+const CParser = @import("parser.zig").Parser;
+
+const Composed = struct {
+    arena: std.heap.ArenaAllocator,
+    mod: ast.Module,
+    fn deinit(self: *Composed) void {
+        self.arena.deinit();
+    }
+};
+
+fn compose(src: []const u8) !Composed {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    errdefer arena.deinit();
+    const alloc = arena.allocator();
+    const owned = try alloc.dupe(u8, src);
+    var lex = CLexer.init(owned, "obseq_compose_test.id");
+    var p = CParser.init(&lex, alloc);
+    p.idol_mode = true;
+    const mod = try p.parse_module();
+    return .{ .arena = arena, .mod = mod };
+}
+
+fn mainOf(mod: *const ast.Module) *const ast.FuncDecl {
+    for (mod.body.stmts) |*s| {
+        if (s.* != .func_decl) continue;
+        if (std.mem.eql(u8, s.func_decl.path[0], "main")) return &s.func_decl;
+    }
+    unreachable;
+}
+
+/// The oracle for `step(x) = (x ~ (x*1103515245)) + 12345` iterated — the SAME
+/// arithmetic as `w6Oracle`, which is the point: writing the body behind a
+/// relation may not change the answer.
+fn stepLoopOracle(n: u64) u64 {
+    var x: u64 = 12345;
+    var i: u64 = 0;
+    while (i < n) : (i += 1) {
+        x = (x ^ (x *% 1103515245)) +% 12345;
+    }
+    return x;
+}
+
+const src_call_body =
+    \\step: i64 = (n: i64)
+    \\    (n ~ (n * 1103515245)) + 12345
+    \\
+    \\main: i64 = ()
+    \\    x = 12345
+    \\    i = 0
+    \\    while i < 20000000
+    \\        x = step(x)
+    \\        i = i + 1
+    \\    x
+;
+
+test "obseq: a loop body that APPLIES a user relation closes to a fixed point" {
+    var fx = try compose(src_call_body);
+    defer fx.deinit();
+    const fd = mainOf(&fx.mod);
+
+    // WITHOUT the relation table — this module exactly as it shipped.
+    switch (try closeRelation(testing.allocator, fd, null, null, observation.ordinary_executable, .{})) {
+        .closed => return error.TestUnexpectedResult,
+        .refused => |x| try testing.expectEqual(Refusal.body_not_admitted, x.refusal),
+    }
+
+    // WITH it. The answer is checked against a loop run for real in Zig, not
+    // against this module's own algebra.
+    const r = try closeRelation(testing.allocator, fd, &fx.mod, null, observation.ordinary_executable, .{});
+    const out = switch (r) {
+        .refused => return error.TestUnexpectedResult,
+        .closed => |o| o,
+    };
+    try testing.expectEqual(@as(i64, @intCast(stepLoopOracle(20000000) & 0xff)), out.value);
+    try testing.expectEqual(@as(i64, @intCast(w6Oracle(20000000) & 0xff)), out.value);
+    try testing.expectEqual(Family.fixed_point, out.family);
+    try testing.expect(out.census.calls_admitted > 0);
+    // D3 STILL FIRES THROUGH THE CALL. `mentions` answering TRUE for every
+    // call would have kept `i` in the key; the admitted callee reads its
+    // arguments and nothing else, so `i` is deleted and the orbit is a fixed
+    // point rather than a 256-cycle.
+    try testing.expectEqual(@as(u8, 1), out.census.slots_deleted);
+    try testing.expectEqual(@as(u32, 1), out.census.lambda);
+}
+
+test "obseq: the closed value is right at EVERY trip count, through the call" {
+    var trips: usize = 4;
+    while (trips <= 512) : (trips *= 2) {
+        var buf: [512]u8 = undefined;
+        const src = try std.fmt.bufPrint(&buf,
+            \\step: i64 = (n: i64)
+            \\    (n ~ (n * 1103515245)) + 12345
+            \\
+            \\main: i64 = ()
+            \\    x = 12345
+            \\    i = 0
+            \\    while i < {d}
+            \\        x = step(x)
+            \\        i = i + 1
+            \\    x
+        , .{trips});
+        var fx = try compose(src);
+        defer fx.deinit();
+        const r = try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{});
+        switch (r) {
+            .refused => return error.TestUnexpectedResult,
+            .closed => |o| try testing.expectEqual(
+                @as(i64, @intCast(stepLoopOracle(trips) & 0xff)),
+                o.value,
+            ),
+        }
+    }
+}
+
+test "obseq: a callee the law refuses leaves the loop alone" {
+    // ONE CHARACTER FROM THE WIN. `>>` reads bits ABOVE the quotient, so
+    // `demand_projection.lawsOf` carries no `ring_hom_mod_2k` for it, the law
+    // derivation refuses, and the call stays opaque. If this ever closes, the
+    // admission is UNSOUND rather than merely optimistic.
+    var fx = try compose(
+        \\step: i64 = (n: i64)
+        \\    (n ~ (n >> 7)) + 12345
+        \\
+        \\main: i64 = ()
+        \\    x = 12345
+        \\    i = 0
+        \\    while i < 20000000
+        \\        x = step(x)
+        \\        i = i + 1
+        \\    x
+    );
+    defer fx.deinit();
+    switch (try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{})) {
+        .closed => return error.TestUnexpectedResult,
+        .refused => |x| try testing.expectEqual(Refusal.body_not_admitted, x.refusal),
+    }
+}
+
+test "obseq: an EFFECT in the callee leaves the loop alone" {
+    var fx = try compose(
+        \\step: i64 = (n: i64)
+        \\    print(n)
+        \\    n + 1
+        \\
+        \\main: i64 = ()
+        \\    x = 12345
+        \\    i = 0
+        \\    while i < 20000000
+        \\        x = step(x)
+        \\        i = i + 1
+        \\    x
+    );
+    defer fx.deinit();
+    switch (try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{})) {
+        .closed => return error.TestUnexpectedResult,
+        .refused => |x| try testing.expectEqual(Refusal.body_not_admitted, x.refusal),
+    }
+}
+
+test "obseq: a REBOUND callee name is not a relation" {
+    // `step` is also assigned inside `main`, so R1 refuses to resolve it and
+    // the call stays opaque. A rebindable name is a place, and this module
+    // cannot bound a place's writers.
+    var fx = try compose(
+        \\step: i64 = (n: i64)
+        \\    (n ~ (n * 1103515245)) + 12345
+        \\
+        \\main: i64 = ()
+        \\    x = 12345
+        \\    i = 0
+        \\    step = 3
+        \\    while i < 20000000
+        \\        x = step(x)
+        \\        i = i + 1
+        \\    x
+    );
+    defer fx.deinit();
+    switch (try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{})) {
+        .closed => return error.TestUnexpectedResult,
+        .refused => |x| try testing.expect(x.refusal != .disagreement),
+    }
+}
+
+/// The `pair` shape with `b * ca` written as `mix(b)`. Its contracted orbit is
+/// PERIODIC, so the fixed-point family cannot answer and the decision falls to
+/// the DELEGATED exact-index closure in `recurrence.zig` — which is the other
+/// half of the composition and the half that needs the routed patch.
+const src_pair_call =
+    \\mix: i64 = (n: i64)
+    \\    n * 1103515245
+    \\
+    \\main: i64 = ()
+    \\    a = 12345
+    \\    b = 6789
+    \\    i = 0
+    \\    while i < 20000000
+    \\        a = a ~ mix(b)
+    \\        b = b + (a * 6364136223)
+    \\        i = i + 1
+    \\    a + b
+;
+
+test "obseq: a periodic orbit through a call reaches the delegated family" {
+    var fx = try compose(src_pair_call);
+    defer fx.deinit();
+    const r = try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{});
+    switch (r) {
+        .closed => |o| {
+            // Only reachable with `patches/recurrence-contracted-key-and-call.patch`
+            // applied: without it `quotientEval` refuses the call and the
+            // delegation answers null.
+            try testing.expectEqual(@as(i64, @intCast(pairOracle(20000000, 1103515245, 6364136223) & 0xff)), o.value);
+            try testing.expectEqual(Family.orbit_index, o.family);
+        },
+        .refused => |x| {
+            // The unrouted tree. A REFUSAL is the correct answer there, and
+            // `disagreement` never is: that would mean the two engines
+            // computed different values for one loop.
+            try testing.expectEqual(Refusal.no_exact_index, x.refusal);
+        },
+    }
 }
