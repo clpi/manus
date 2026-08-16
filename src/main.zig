@@ -25,6 +25,7 @@ const native_backend = @import("native_backend.zig");
 const wasm_backend = @import("wasm_backend.zig");
 const demand = @import("demand.zig");
 const obseq = @import("obseq.zig");
+const loop_closure = @import("loop_closure.zig");
 const observation = @import("observation.zig");
 const observer_demand = @import("observer_demand.zig");
 
@@ -4822,6 +4823,26 @@ fn do_compile(
                     // 4,630,978 with no observer, 108,363,341 with one, 23.4x,
                     // same exit byte, and the observer never asked for a value.
                     _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, global_observer_demand.world(observation.ordinary_executable));
+                    // RUNG 3 -- REDUCE THE COMPLEXITY CLASS, AT THE LOOP
+                    // RATHER THAN AT THE RELATION.
+                    //
+                    // `obseq` above can reach `recurrence`'s closure engine only
+                    // through a relation body shaped `[int-literal prologue][one
+                    // while][tail expression]`, and a `print` anywhere in that
+                    // body refuses the whole shape. `loop_closure` asks the same
+                    // engine about ONE LOOP, so a loop inside a relation that
+                    // also does I/O is replaced while the I/O is preserved in
+                    // its original order. It runs AFTER `obseq` deliberately:
+                    // when the entry closes to a constant there is no loop left
+                    // to ask about, and the stronger transform must not be
+                    // pre-empted by the weaker one.
+                    //
+                    // It needs NO demand fact -- `recurrence.closeWhile` answers
+                    // all 64 bits -- which is why it is also applied at the
+                    // dylib and asm/obj lifts below, where `obseq` is not: those
+                    // exist to be read from outside and a full-width closed form
+                    // is lawful for a foreign reader too.
+                    _ = try loop_closure.applyToModule(alloc, &ps.mod);
                     var native_diagnostic: native_backend.Diagnostic = .{};
                     if (!(native_scalar_candidate and !too_many_modules)) {
                         // THESE TWO FACTS ARE INDEPENDENT AND USED TO BE SPLICED
@@ -4973,6 +4994,10 @@ fn do_compile(
                 var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph });
                 defer demand_plan.deinit();
                 try demand.prune(alloc, &ps.mod, &demand_plan);
+                // RUNG 3 at the LOOP -- see the executable lift above for why
+                // this needs no world fact and therefore reaches every artifact
+                // kind, unlike `obseq`.
+                _ = try loop_closure.applyToModule(alloc, &ps.mod);
                 var native_diagnostic: native_backend.Diagnostic = .{};
                 var artifact = native_backend.emitSharedObjectInputWithGraphLineageObserved(alloc, &ps.mod, &direct_graph, &native_diagnostic) catch |e| {
                     // `null`: this path never consults `native_scalar_candidate`.
@@ -5004,6 +5029,11 @@ fn do_compile(
                 var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph });
                 defer demand_plan.deinit();
                 try demand.prune(alloc, &ps.mod, &demand_plan);
+                // RUNG 3 at the LOOP -- see the executable lift above. `--emit
+                // asm` is how the cycle benchmarks read instruction counts, so
+                // this site is what makes those counts describe the shipped
+                // binary rather than a different program.
+                _ = try loop_closure.applyToModule(alloc, &ps.mod);
                 const cwd = Io.Dir.cwd();
                 if (native_backend.isNativeAsmTarget(mt)) {
                     var native_diagnostic: native_backend.Diagnostic = .{};

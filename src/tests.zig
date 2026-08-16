@@ -98,4 +98,5 @@ test {
     _ = @import("demand_projection.zig");
     _ = @import("quotient_synth.zig");
     _ = @import("obseq.zig");
+    _ = @import("loop_closure.zig");
 }

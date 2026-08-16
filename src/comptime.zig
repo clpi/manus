@@ -1489,7 +1489,12 @@ fn interceptedSpelling(name: []const u8) bool {
 /// True when the body contains no application of any kind. Verbatim the
 /// predicate `dnir_lower` used, moved here so that routing `foldRelationBody`
 /// in leaves ONE copy rather than two (`law.arch.relation`).
-fn bodyHasNoApplication(b: *const ast.Block) bool {
+///
+/// PUBLIC because it is exactly the door `foldRelationBody` takes to the
+/// `bodyHasLoop` dispatch below, and `src/loop_closure.zig` has to know whether
+/// it is standing in front of that door before it deletes the loop the dispatch
+/// keys on. Asking here rather than re-deriving keeps ONE predicate.
+pub fn bodyHasNoApplication(b: *const ast.Block) bool {
     for (b.stmts) |st| if (!stmtHasNoApplication(&st)) return false;
     if (b.tail_expr) |te| return exprHasNoApplication(te);
     return true;
@@ -1637,7 +1642,11 @@ fn bodyHasLoop(b: *const ast.Block) bool {
 /// 1.5 ns/step, and this evaluator runs at 60.
 const fold_target_ms: usize = 12;
 const fold_ns_per_step: usize = 60;
-const fold_step_limit: usize = fold_target_ms * std.time.ns_per_ms / fold_ns_per_step;
+/// PUBLIC because `src/loop_closure.zig` DEFERS to it: below this budget the
+/// whole-relation fold answers and is strictly stronger than replacing one
+/// loop, so the loop-level closure declines. Read rather than copied, so the
+/// two mechanisms cannot drift into overlapping or into a gap.
+pub const fold_step_limit: usize = fold_target_ms * std.time.ns_per_ms / fold_ns_per_step;
 
 /// Run a no-operand relation body at compile time. Null when it cannot be run —
 /// which is most bodies, and must stay cheap to discover.
