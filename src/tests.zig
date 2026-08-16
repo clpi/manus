@@ -43,6 +43,8 @@ test {
     _ = @import("semantic_fingerprint.zig");
     _ = @import("evidence_record.zig");
     _ = @import("realization.zig");
+    _ = @import("place.zig");
+    _ = @import("eqspace.zig");
     _ = @import("persistent_semantic_state.zig");
     _ = @import("compile_semantic_cache.zig");
     _ = @import("semantic_invalidation.zig");
