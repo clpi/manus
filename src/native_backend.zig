@@ -2731,7 +2731,33 @@ const Arm64Compiler = struct {
                     if (scalar_body_has_call) return error.RegisterExhausted;
                 } else {
                     const remain: u32 = self.spill_frame_budget - used;
-                    spill_reserve = @min(@as(u16, @intCast(@min(remain, 8192))), @as(u16, 8192));
+                    // SIZED FROM PRESSURE, NOT A FLAT 8 KiB — and the flat 8 KiB
+                    // is what capped recursion at ~1,000 frames.
+                    //
+                    // This reserved 8192 bytes for every function that calls,
+                    // whatever it spills. A two-parameter `tail(n, acc)` got a
+                    // frame of 8192 + 16 = 8208 bytes, so an 8 MiB stack holds
+                    // 8388608 / 8208 = 1022 frames. MEASURED before this: depth
+                    // 1,000 answers correctly, depth 5,000 is SIGSEGV. §12
+                    // promises PROPER TAIL CALLS and the guarantee was missing
+                    // by three orders of magnitude — but the frame is the reason
+                    // the cliff sits where it does, and it costs every recursive
+                    // formulation whether or not its calls are in tail position.
+                    //
+                    // Only a value `dnirGpPressure` already counted can ever be
+                    // spilled — it walks the same locals and temps the allocator
+                    // draws from — so `pressure * 16` is a true upper bound, 16
+                    // being the slot size `spillReg` hands out. Clamped to the
+                    // old 8192 so this can only ever reserve LESS, never more.
+                    //
+                    // Under-reserving is SAFE HERE and that is why this is a
+                    // legal change rather than a gamble: `spillReg` refuses with
+                    // `RegisterExhausted` when `gate_spill_cursor + 16 >
+                    // gate_spill_end`, so a bound that is too tight costs a
+                    // named refusal, not a frame written below `sp`.
+                    const pressure_bytes: u32 = @as(u32, dnirGpPressure(f)) * 16;
+                    const want: u32 = @min(@min(remain, pressure_bytes), 8192);
+                    spill_reserve = @intCast(std.mem.alignForward(u32, want, 16));
                     if (spill_reserve < 64) spill_reserve = 0;
                 }
             }
