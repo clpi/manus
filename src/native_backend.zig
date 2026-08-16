@@ -3324,6 +3324,21 @@ const Arm64Compiler = struct {
                     if (rhs != dst) self.releaseFpReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
                     try self.markFpTemp(ins.result);
+                } else if (constBinopRealization(ins)) |k| {
+                    // THE OPERAND IS A LITERAL, AND THE SELECTOR CAN SEE IT.
+                    // Every other arm calls `evalDnirValue` on `ins.rhs` first,
+                    // which turns `.i64 = k` into a register with a `mov` and
+                    // hands `emitCompareOrBinop` two register NUMBERS. The
+                    // constant is true, represented and propagated all the way
+                    // here — and then erased one line before instruction
+                    // selection by the selector's own signature. That is why
+                    // `x * 1`, `x + 0` and `x % 1` each cost a `mov` and an
+                    // arithmetic instruction, and why `x % 1` reached `sdiv`.
+                    const lhs = try self.evalDnirValue(temps, ins.lhs);
+                    const dst = try self.allocReg();
+                    try self.emitBinopConst(dst, lhs, k, ins.binop, ins.ty);
+                    if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+                    if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 } else {
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
@@ -4356,6 +4371,171 @@ const Arm64Compiler = struct {
             return;
         }
         try self.emitCompareOrBinopWide(dst, lhs, rhs, op);
+        _ = try self.emitNarrowFit(dst, dst, ty);
+    }
+
+    /// Is `k` `2^n` for some `1 <= n <= 62`? Returns `n`.
+    fn powerOfTwoShift(k: i64) ?u6 {
+        if (k <= 1) return null;
+        const u: u64 = @bitCast(k);
+        if (u & (u - 1) != 0) return null;
+        const n = @ctz(u);
+        if (n < 1 or n > 62) return null;
+        return @intCast(n);
+    }
+
+    /// Is `k` `2^n - 1` for some `1 <= n <= 63`? Returns `n`. These are exactly
+    /// the low-run AArch64 logical bitmask immediates, encoded `N=1, immr=0,
+    /// imms=n-1` — verified against clang's own `and x0, x0, #0x3ff`
+    /// (`0x92402400`), `orr #0xf` (`0xb2400c00`) and `eor #0xff` (`0xd2401c00`).
+    fn lowMaskWidth(k: i64) ?u6 {
+        if (k <= 0) return null;
+        const u: u64 = @bitCast(k);
+        if (u & (u +% 1) != 0) return null;
+        const n = 64 - @clz(u);
+        if (n < 1 or n > 63) return null;
+        return @intCast(n);
+    }
+
+    /// The CANDIDATE PREDICATE. Non-null exactly when `ins.rhs` is a literal
+    /// AND `emitBinopConst` has a realization for that (op, value) pair. Kept
+    /// separate from the emitter so the two cannot disagree: a value this
+    /// returns is a value the emitter must handle, and everything else falls
+    /// through to the unchanged register path.
+    ///
+    /// LAWFULNESS. Every case below is an identity over the FULL i64 domain and
+    /// needs no range, sign or alias fact:
+    ///   `x±0 = x`  `x*1 = x`  `x*0 = 0`  `x//1 = x`  `x%±1 = 0`
+    ///   `x&0 = 0`  `x&-1 = x` `x|0 = x`  `x^0 = x`   `x*2^n = x<<n` (wrapping)
+    /// plus the pure re-encodings `add/sub #imm12`, `and/orr/eor #bitmask` and
+    /// `lsl/lsr #sh`, which change no value at all.
+    ///
+    /// NOT HERE, AND THE REASON MATTERS: `x % 2^n -> x & (2^n - 1)` and
+    /// `x // 2^n -> x >> n` are NOT identities for this backend, because `%`
+    /// and `//` are TRUNCATING here (`-7 % 10` answers -7, measured) and the
+    /// mask/shift answer the FLOORED result. They become lawful the moment a
+    /// `x >= 0` range fact exists — and no range or known-bits fact exists
+    /// anywhere in this compiler. That missing fact, not this function, is what
+    /// keeps `x % 1024` on the divide path.
+    fn constBinopRealization(ins: dnir.Instr) ?i64 {
+        if (comparisonCondition(ins.binop) != null) return null;
+        const k: i64 = switch (ins.rhs) {
+            .i64 => |v| v,
+            else => return null,
+        };
+        return switch (ins.binop) {
+            .add, .sub => if (k == 0 or (k > 0 and k <= 4095) or (k < 0 and k >= -4095)) k else null,
+            .mul => if (k == 0 or k == 1 or powerOfTwoShift(k) != null) k else null,
+            .div => if (k == 1) k else null,
+            .mod => if (k == 1 or k == -1) k else null,
+            .band => if (k == 0 or k == -1 or lowMaskWidth(k) != null) k else null,
+            .bor => if (k == 0 or lowMaskWidth(k) != null) k else null,
+            .bxor => if (k == 0 or lowMaskWidth(k) != null) k else null,
+            .shl, .shr => if (k >= 0 and k < 64) k else null,
+            .eq, .neq, .lt, .gt, .leq, .geq => null,
+        };
+    }
+
+    /// `lsl xd, xn, #sh` and `lsr xd, xn, #sh` are UBFM aliases.
+    fn emitLslImm(self: *Arm64Compiler, dst: u5, lhs: u5, sh: u6) Error!void {
+        try self.ensureRegLive(lhs);
+        const immr: u32 = (64 - @as(u32, sh)) % 64;
+        const imms: u32 = 63 - @as(u32, sh);
+        try self.emitFmt(
+            0xd3400000 | (immr << 16) | (imms << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "lsl x{d}, x{d}, #{d}",
+            .{ dst, lhs, sh },
+        );
+    }
+
+    fn emitLsrImm(self: *Arm64Compiler, dst: u5, lhs: u5, sh: u6) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.emitFmt(
+            0xd3400000 | (@as(u32, sh) << 16) | (63 << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "lsr x{d}, x{d}, #{d}",
+            .{ dst, lhs, sh },
+        );
+    }
+
+    fn emitAddImm(self: *Arm64Compiler, dst: u5, lhs: u5, imm: u12) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.emitFmt(
+            0x91000000 | (@as(u32, imm) << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "add x{d}, x{d}, #{d}",
+            .{ dst, lhs, imm },
+        );
+    }
+
+    /// `and`/`orr`/`eor` with a low-run bitmask immediate, `N=1, immr=0`.
+    fn emitLogicalLowMask(
+        self: *Arm64Compiler,
+        base: u32,
+        mnemonic: []const u8,
+        dst: u5,
+        lhs: u5,
+        width: u6,
+    ) Error!void {
+        try self.ensureRegLive(lhs);
+        const imms: u32 = @as(u32, width) - 1;
+        try self.emitFmt(
+            base | (imms << 10) | (@as(u32, lhs) << 5) | @as(u32, dst),
+            "{s} x{d}, x{d}, #{d}",
+            .{ mnemonic, dst, lhs, (@as(u64, 1) << width) - 1 },
+        );
+    }
+
+    /// Realize `dst = lhs op k`. Only reached for pairs `constBinopRealization`
+    /// admitted, so the final `unreachable` is a contract between the two, not
+    /// a guess about the operand.
+    fn emitBinopConst(
+        self: *Arm64Compiler,
+        dst: u5,
+        lhs: u5,
+        k: i64,
+        op: dnir.BinOpTag,
+        ty: native_types.ResolvedType,
+    ) Error!void {
+        switch (op) {
+            .add => {
+                if (k == 0) try self.emitMovReg(dst, lhs) else if (k > 0)
+                    try self.emitAddImm(dst, lhs, @intCast(k))
+                else
+                    try self.emitSubImm(dst, lhs, @intCast(-k));
+            },
+            .sub => {
+                if (k == 0) try self.emitMovReg(dst, lhs) else if (k > 0)
+                    try self.emitSubImm(dst, lhs, @intCast(k))
+                else
+                    try self.emitAddImm(dst, lhs, @intCast(-k));
+            },
+            .mul => {
+                if (k == 0) try self.emitMovImm(dst, 0) else if (k == 1)
+                    try self.emitMovReg(dst, lhs)
+                else
+                    try self.emitLslImm(dst, lhs, powerOfTwoShift(k).?);
+            },
+            .div => try self.emitMovReg(dst, lhs),
+            .mod => try self.emitMovImm(dst, 0),
+            .band => {
+                if (k == 0) try self.emitMovImm(dst, 0) else if (k == -1)
+                    try self.emitMovReg(dst, lhs)
+                else
+                    try self.emitLogicalLowMask(0x92400000, "and", dst, lhs, lowMaskWidth(k).?);
+            },
+            .bor => {
+                if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLogicalLowMask(0xb2400000, "orr", dst, lhs, lowMaskWidth(k).?);
+            },
+            .bxor => {
+                if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLogicalLowMask(0xd2400000, "eor", dst, lhs, lowMaskWidth(k).?);
+            },
+            .shl => {
+                if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLslImm(dst, lhs, @intCast(k));
+            },
+            .shr => {
+                if (k == 0) try self.emitMovReg(dst, lhs) else try self.emitLsrImm(dst, lhs, @intCast(k));
+            },
+            .eq, .neq, .lt, .gt, .leq, .geq => unreachable,
+        }
         _ = try self.emitNarrowFit(dst, dst, ty);
     }
 
