@@ -58,21 +58,31 @@ _name16: str = (s: str)
     i = i + 1
   out
 
-# Instruction words -> little-endian code bytes, as hex. ARM64 is fixed-width 4.
-words_to_bytes: str = (words: any)
-  out = ""
-  i: i64 = 1
-  while i <= words:len()
-    out = out .. _u32(words(i))
-    i = i + 1
-  out
-
 # Build a complete relocatable object exporting one global symbol at offset 0.
 #
 # Offsets are computed, never hardcoded: header 32 + segment 152 + symtab 24
 # gives the code offset, and every later offset follows from the code size.
 # Hardcoding them is exactly the bug the link step would catch, so the code
 # says how they are derived.
+#
+# THE STRING-TABLE LOOP WAS CORRUPTED IN THE COMMITTED TREE and this relation
+# did not compile on ANY backend. A rename had eaten the leading `s` of two
+# names and pushed the remainder onto its own line, twice:
+#
+#     while si <= s:len()          <- `symbol:len()`; `s` is not in scope here
+#       ymbol                      <- the orphan tail
+#     ...
+#     str_len: i64 = s:len()       <- `strtab:len() // 2`
+#     trtab // 2                   <- the orphan tail
+#
+# NOTHING CAUGHT IT, because the native-scalar precheck refused this file one
+# relation earlier on `param-type:any` and never reached the corruption. The
+# `any` went, the corruption surfaced, and the module's OWN oracle — stated at
+# the top of this file — settled the repair: `object_hex("answer",
+# "40058052c0035fd6")` now emits 241 bytes that `xxd -r -p` turns into an
+# object `nm` reads as `T _answer`, that `xcrun clang` links against a C
+# `main`, and that RUNS and prints 42. Before the repair the same driver did
+# not compile on the direct backend or through `--backend=c`.
 object_hex: str = (symbol: str, code: str)
   hdr: i64 = 32
   seg: i64 = 72 + 80
@@ -88,13 +98,11 @@ object_hex: str = (symbol: str, code: str)
   strtab = _u8(0)
   si: i64 = 1
   strtab = strtab .. _u8(95)
-  while si <= s:len()
-    ymbol
+  while si <= symbol:len()
     strtab = strtab .. _u8(symbol:byte(si))
     si = si + 1
   strtab = strtab .. _u8(0)
-  str_len: i64 = s:len()
-  trtab // 2
+  str_len: i64 = strtab:len() // 2
 
   out = ""
   # mach_header_64

@@ -1,7 +1,7 @@
 # compiler.token_view
 # Immutable observation over a production token pack (GAP-134 prerequisite).
 
-Pack: { kinds: any, lines: any, cols: any, texts: any, count: i64 }
+Pack: { kinds: []i64, lines: []i64, cols: []i64, texts: []str, count: i64 }
 
 view: Pack = (pack: Pack)
   pack

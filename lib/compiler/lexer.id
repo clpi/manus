@@ -85,30 +85,6 @@ cur_loc: Loc = (self: Lexer)
 has_pending_hints: bool = (self: Lexer)
     self.hint_count > 0
 
-consume_hints: any = (self: Lexer)
-    hints = {}
-    i = 0
-    while i < self.hint_count
-        if i == 0 hints[hints:len() + 1] = self.hint_0
-        elseif i == 1 hints[hints:len() + 1] = self.hint_1
-        elseif i == 2 hints[hints:len() + 1] = self.hint_2
-        elseif i == 3 hints[hints:len() + 1] = self.hint_3
-        elseif i == 4 hints[hints:len() + 1] = self.hint_4
-        elseif i == 5 hints[hints:len() + 1] = self.hint_5
-        elseif i == 6 hints[hints:len() + 1] = self.hint_6
-        elseif i == 7 hints[hints:len() + 1] = self.hint_7
-        i += 1
-    self.hint_count = 0
-    self.hint_0 = ""
-    self.hint_1 = ""
-    self.hint_2 = ""
-    self.hint_3 = ""
-    self.hint_4 = ""
-    self.hint_5 = ""
-    self.hint_6 = ""
-    self.hint_7 = ""
-    hints
-
 peek_char: i64 = (self: Lexer)
     if self.pos > self.src:len() return 0
     self.src:byte(self.pos)

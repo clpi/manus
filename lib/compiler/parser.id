@@ -172,16 +172,17 @@ eval: i64 = (src: str)
 # Operator dispatch is on `token.KIND_*` rather than on raw bytes, so adding a
 # grammar level is a token-kind edit, not a character comparison.
 
-# GAP: these two keep the graveyard `req` spelling. `req` brings the module's
-# TYPE names into scope and the ambient root binding does not, so `lx: Lexer`
-# and `t: Tok` fail to compile ("unknown type name 'duo_Lexer'"). Retyping the
-# parameters to `any` would lose the native record lowering SH-04 depends on.
-# Measured, not assumed; the dead spelling stays until ambient roots carry
-# type names.
+# `lx: Lexer` RESOLVES and `t: Tok` DOES NOT, and the difference is the whole
+# remaining gap. This comment used to claim both failed and that `any` was the
+# workaround; re-measured at 2843fad3, `lx: Lexer` reaches the emitter and only
+# `Tok` (used by `is_member_name` below) is still an unknown name. `any` is
+# never made explicit — inference resolves to a concrete representation or the
+# precheck refuses — so the three relations below now say `Lexer`, and the one
+# genuinely-unresolved cross-home type name is what the ledger reports.
 
 # factor := INT_LIT | '(' expr ')'
 # Mutual recursion with parse_expr_tok, exactly as in the character version.
-parse_factor_tok: i64 = (lx: any)
+parse_factor_tok: i64 = (lx: Lexer)
     t = lexer.next(lx)
     if t.kind == token.KIND_INT_LIT
         return t.int_val
@@ -194,7 +195,7 @@ parse_factor_tok: i64 = (lx: any)
     0
 
 # term := factor (('*' | '/') factor)*
-parse_term_tok: i64 = (lx: any)
+parse_term_tok: i64 = (lx: Lexer)
     acc = parse_factor_tok(lx)
     cont = 1
     while cont == 1
@@ -212,7 +213,7 @@ parse_term_tok: i64 = (lx: any)
     acc
 
 # expr := term (('+' | '-') term)*
-parse_expr_tok: i64 = (lx: any)
+parse_expr_tok: i64 = (lx: Lexer)
     acc = parse_term_tok(lx)
     cont = 1
     while cont == 1
