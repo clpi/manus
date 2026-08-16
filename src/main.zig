@@ -20,6 +20,7 @@ const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
+const demand = @import("demand.zig");
 
 /// §7 makes "how much of a compile goes through C" a NUMBER this
 /// repository owes, so the code that routes each `req`'d module says which way
@@ -4542,6 +4543,15 @@ fn do_compile(
                     var direct_graph = semantic_graph.SemanticGraph.init(alloc);
                     defer direct_graph.deinit();
                     _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+                    // TIER-0: an unobserved computation must not execute. The proof
+                    // obligation is stated in `demand.zig`; nothing is removed unless
+                    // all five parts of it are discharged. Applied at ALL THREE direct
+                    // lift sites so exe, dylib and asm/obj cannot disagree about what
+                    // the program is -- `--emit asm` is how the cycle benchmarks read
+                    // instruction counts, and it must describe the shipped binary.
+                    var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph });
+                    defer demand_plan.deinit();
+                    try demand.prune(alloc, &ps.mod, &demand_plan);
                     var native_diagnostic: native_backend.Diagnostic = .{};
                     if (!(native_scalar_candidate and !too_many_modules)) {
                         // THESE TWO FACTS ARE INDEPENDENT AND USED TO BE SPLICED
@@ -4665,6 +4675,15 @@ fn do_compile(
                 var direct_graph = semantic_graph.SemanticGraph.init(alloc);
                 defer direct_graph.deinit();
                 _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+                // TIER-0: an unobserved computation must not execute. The proof
+                // obligation is stated in `demand.zig`; nothing is removed unless
+                // all five parts of it are discharged. Applied at ALL THREE direct
+                // lift sites so exe, dylib and asm/obj cannot disagree about what
+                // the program is -- `--emit asm` is how the cycle benchmarks read
+                // instruction counts, and it must describe the shipped binary.
+                var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph });
+                defer demand_plan.deinit();
+                try demand.prune(alloc, &ps.mod, &demand_plan);
                 var native_diagnostic: native_backend.Diagnostic = .{};
                 var artifact = native_backend.emitSharedObjectInputWithGraphLineageObserved(alloc, &ps.mod, &direct_graph, &native_diagnostic) catch |e| {
                     reportDirectBackendError(io, e, mt, @errorReturnTrace(), link_refusal, &native_diagnostic, &native_scalar_precheck);
@@ -4686,6 +4705,15 @@ fn do_compile(
                 var direct_graph = semantic_graph.SemanticGraph.init(alloc);
                 defer direct_graph.deinit();
                 _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+                // TIER-0: an unobserved computation must not execute. The proof
+                // obligation is stated in `demand.zig`; nothing is removed unless
+                // all five parts of it are discharged. Applied at ALL THREE direct
+                // lift sites so exe, dylib and asm/obj cannot disagree about what
+                // the program is -- `--emit asm` is how the cycle benchmarks read
+                // instruction counts, and it must describe the shipped binary.
+                var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &direct_graph });
+                defer demand_plan.deinit();
+                try demand.prune(alloc, &ps.mod, &demand_plan);
                 const cwd = Io.Dir.cwd();
                 if (native_backend.isNativeAsmTarget(mt)) {
                     var native_diagnostic: native_backend.Diagnostic = .{};

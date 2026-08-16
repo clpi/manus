@@ -84,4 +84,5 @@ test {
     _ = @import("ml_kernels.zig");
     _ = @import("jit.zig");
     _ = @import("native_backend.zig");
+    _ = @import("demand.zig");
 }
