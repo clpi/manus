@@ -10,6 +10,13 @@
 # would prove the rule is self-consistent, which is not the question. The
 # question is whether it agrees with the compiler that ships.
 #
+# THE SCHEME CHANGED, AND THIS FILE PINNED THE OLD ONE BY VALUE. It wanted
+# `duo_fn_<name>` / `duo_entry_main` / `<mod>__<name>` — `codegen.zig`'s C-path
+# scheme, from the RETIRED emitter. The host answers `idol_<home>__<name>` with
+# `main` bare (`home_resolve.relationSymbol`). Both this file and
+# `lib/compiler/symbol.id` are re-stated against that law, and two rows are ADDED
+# for the symbol alphabet, which the old scheme had no notion of.
+#
 # WHY THE ROWS ARE THE ROWS. Four of them are idol's OWN VOCABULARY — `case`
 # (§0.3), `union` (§0.5), `register` (§0b), `default` (the `?.` repair
 # spells `get(.y, default)`). Three are the libc names that BIND SILENTLY
@@ -38,7 +45,7 @@ names = {
 fail = 0
 
 check = (name: str, want: str)
-  got: str = sym.symbol(name)
+  got: str = sym.symbol("compiler.lexer", name)
   if got == want
     print("  ok   {name} -> {got}")
   else
@@ -53,11 +60,11 @@ main: i64 = ()
   # CONTROLS FIRST. A row printed before the rule is shown to discriminate is
   # a number nobody should act on — and this file's whole claim is that the
   # rule is not the identity function.
-  if sym.root("read") == "read"
-    print("CONTROL FAILED: root() is the identity — it mangles nothing")
+  if sym.module("compiler.lexer", "read") == "read"
+    print("CONTROL FAILED: the rule is the identity — it mangles nothing")
     os.exit(3)
-  if sym.module("wire", "read") == sym.root("read")
-    print("CONTROL FAILED: module and root symbols collide")
+  if sym.module("wire", "read") == sym.module("other", "read")
+    print("CONTROL FAILED: two homes produce one symbol — the home is not in it")
     os.exit(3)
   if sym.mangles("main")
     print("CONTROL FAILED: main must NOT take the ordinary prefix")
@@ -70,25 +77,43 @@ main: i64 = ()
   n: i64 = names:len()
   while i <= n
     nm: str = names(i)
-    check(nm, "duo_fn_{nm}")
+    check(nm, "idol_compiler_lexer__{nm}")
     i = i + 1
 
   # The exception, asserted separately because it is the one row that would
   # silently pass if `symbol` returned the prefix for everything.
-  check2: str = sym.symbol("main")
-  if check2 == "duo_entry_main"
+  check2: str = sym.symbol("compiler.lexer", "main")
+  if check2 == "main"
     print("  ok   main -> {check2}   (the exception)")
   else
-    print("  FAIL main -> {check2}, wanted duo_entry_main")
+    print("  FAIL main -> {check2}, wanted main")
     fail = fail + 1
 
   # A module name must NOT be prefixed twice: `<mod>__<name>` is already
   # closed, and prefixing it again is the mistake this row exists to catch.
   mo: str = sym.module("wire", "read")
-  if mo == "wire__read"
-    print("  ok   wire.read -> {mo}   (already closed, not reprefixed)")
+  if mo == "idol_wire__read"
+    print("  ok   wire.read -> {mo}")
   else
-    print("  FAIL wire.read -> {mo}, wanted wire__read")
+    print("  FAIL wire.read -> {mo}, wanted idol_wire__read")
+    fail = fail + 1
+
+  # THE SYMBOL ALPHABET. A home is a DOTTED path and a file name may hold
+  # anything the file system allows; a hyphenated file once emitted
+  # `.globl _idol_odd-name__f`, which the assembler refuses. Every byte outside
+  # [A-Za-z0-9_] becomes `_`, and this row is the only one that exercises it.
+  dot: str = sym.module("compiler.lexer", "read")
+  if dot == "idol_compiler_lexer__read"
+    print("  ok   dotted home -> {dot}   (alphabet applied)")
+  else
+    print("  FAIL dotted home -> {dot}, wanted idol_compiler_lexer__read")
+    fail = fail + 1
+
+  hyp: str = sym.module("odd-name", "f")
+  if hyp == "idol_odd_name__f"
+    print("  ok   hyphen -> {hyp}   (the assembler can take this)")
+  else
+    print("  FAIL hyphen -> {hyp}, wanted idol_odd_name__f")
     fail = fail + 1
 
   print("")
