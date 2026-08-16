@@ -520,7 +520,17 @@ pub fn unsupportedReason(target: []const u8) []const u8 {
     if (!isNativeMachineTarget(target)) return "DNB004: not a direct machine-code target (use --backend=direct)";
     if (builtin.os.tag != .macos) return "DNB004: direct object writer currently supports Mach-O on macOS only";
     if (builtin.cpu.arch != .aarch64) return "DNB004: direct object writer currently supports AArch64 only";
-    return "DNB001: program is outside the current direct backend subset (machine code is canonical; use --backend=c only for bootstrap C emit)";
+    // THE HINT TOLD EVERY USER TO USE A BACKEND THAT REFUSES. It read "use
+    // --backend=c only for bootstrap C emit"; `--backend=c` is RETIRED and exits
+    // 1 with a diagnostic naming the ruling, so the compiler's own advice on its
+    // most common refusal path was to run a command that cannot work.
+    //
+    // `AGENTS.md`: a thing that only works via the bridge does not work — it is
+    // a defect with a named diagnostic, never a route around. So the hint now
+    // says what is actually true: the program is outside the subset, that is a
+    // DEFECT TO RECORD, and the two realizations that exist are the direct
+    // backend and the native wasm emitter.
+    return "DNB001: program is outside the current direct backend subset (machine code is canonical). This is a direct-backend defect to record, not to route around: --backend=c is RETIRED, and --backend=wasm is the native WebAssembly emitter, not a C bridge.";
 }
 
 const Symbol = struct {
