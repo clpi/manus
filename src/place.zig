@@ -474,6 +474,13 @@ pub const Census = struct {
         }
         return null;
     }
+
+    pub fn at(self: *const Census, id: u32) ?*const Place {
+        for (self.places.items) |*p| {
+            if (p.id == id) return p;
+        }
+        return null;
+    }
 };
 
 // ---------------------------------------------------------------- the walk
@@ -1015,7 +1022,11 @@ fn positionalValue(f: ast.TableField) ?*const ast.Expr {
 fn allFieldsConst(fields: []const ast.TableField) bool {
     for (fields) |f| {
         const v = positionalValue(f) orelse return false;
-        if (v.* != .int_lit) return false;
+        switch (v.*) {
+            .int_lit => {},
+            .table => |nested_table| if (!allFieldsConst(nested_table.fields)) return false,
+            else => return false,
+        }
     }
     return true;
 }

@@ -185,6 +185,9 @@ pub const Instr = struct {
     /// Selected callable entity id for direct realization. Distinct from
     /// relation identity once overload resolution publishes both upstream.
     target: ?semantic_graph.id = null,
+    /// Semantic aggregate whose physical base this instruction realizes.
+    /// Separate from application `value`: storage lineage is not a call result.
+    aggregate: ?semantic_graph.id = null,
     /// First flattened DNIR instruction whose emitted bytes belong to this
     /// application realization. Present exactly when an application id is.
     realization_start: ?u32 = null,
@@ -244,9 +247,10 @@ pub const Block = struct {
 };
 
 pub const DenseTable = struct {
-    name: []const u8,
+    /// Exact semantic aggregate whose immutable physical realization this is.
+    value: semantic_graph.id,
     elem_ty: RT,
-    values: []const Value,
+    values: []const i64,
 };
 
 pub const Global = struct {
@@ -372,6 +376,8 @@ pub fn deinitModule(alloc: std.mem.Allocator, module: Module) void {
     // `Global.name` is borrowed from the AST identifier, which outlives the
     // compile — exactly as `Instr.field` is. Only the slice is owned.
     if (module.globals.len > 0) alloc.free(module.globals);
+    for (module.dense_tables) |table| if (table.values.len > 0) alloc.free(table.values);
+    if (module.dense_tables.len > 0) alloc.free(module.dense_tables);
 }
 
 pub fn moduleHardwareTier(m: Module) HardwareTier {
