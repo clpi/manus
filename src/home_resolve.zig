@@ -594,5 +594,6 @@ test "home_resolve: a home name cannot exceed the path buffer" {
     var buf: [8]u8 = undefined;
     try std.testing.expect(homeAsPath(&buf, "abcdefghij") == null);
     try std.testing.expect(homeAsPath(&buf, "") == null);
-    try std.testing.expectEqualStrings("a/b", homeAsPath(&buf, "a.b").?);
+    const expected = [_]u8{ 'a', std.fs.path.sep, 'b' };
+    try std.testing.expectEqualStrings(&expected, homeAsPath(&buf, "a.b").?);
 }
