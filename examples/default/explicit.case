@@ -1,0 +1,7 @@
+choose: i64 = (value: i64 = 5)
+    if value == nil
+        return 9
+    value
+
+main: i64 = ()
+    choose(nil)

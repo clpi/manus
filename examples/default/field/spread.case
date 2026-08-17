@@ -1,0 +1,10 @@
+point = struct
+    x: i64 = 1
+    y: i64 = 2
+    tag: str = "ready"
+end
+
+main: i64 = ()
+    first = point{ x = 3, y = 4, tag = "set" }
+    second = point{ ..first }
+    second.x

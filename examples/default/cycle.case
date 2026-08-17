@@ -1,0 +1,5 @@
+choose: i64 = (left: i64 = right, right: i64 = left)
+    left + right
+
+main: i64 = ()
+    choose()

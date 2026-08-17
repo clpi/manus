@@ -1,0 +1,9 @@
+holder = struct
+    address: *u8 = nil
+end
+
+main: i64 = ()
+    value = holder{}
+    if value.address == nil
+        return 1
+    0

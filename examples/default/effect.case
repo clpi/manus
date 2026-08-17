@@ -1,0 +1,6 @@
+sample: f64 = (value: f64 = clock())
+    value
+
+main: i64 = ()
+    sample()
+    9

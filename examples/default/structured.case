@@ -1,0 +1,6 @@
+make = (value: i64 = 4)
+    { left = value, right = value + 1 }
+
+main: i64 = ()
+    made = make()
+    made.left
