@@ -1,6 +1,8 @@
 //! AST → DNIR lowering for typed native programs (no lua_Value, no C-string codegen).
 //!
-//! Produces `native_ir.Module` for direct machine backends. C emission is bootstrap-only.
+//! Produces graph-observed `native_ir.Module` input for physical realizers. Direct
+//! remains canonical; the orthogonal C99 realizer consumes the same DNIR only when
+//! explicitly selected and is never an auto, fallback, self-host, or release path.
 //!
 //! Entry points: Idol modules export functions at file scope (file-as-M). There is no
 //! Python/Lua-style mandatory `main()` or special entry typing — any eligible function

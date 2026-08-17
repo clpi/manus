@@ -516,23 +516,6 @@ fn emitAssemblyModeWithGraphLineage(
     return artifact;
 }
 
-pub fn unsupportedReason(target: []const u8) []const u8 {
-    if (!isNativeMachineTarget(target)) return "DNB004: not a direct machine-code target (use --backend=direct)";
-    if (builtin.os.tag != .macos) return "DNB004: direct object writer currently supports Mach-O on macOS only";
-    if (builtin.cpu.arch != .aarch64) return "DNB004: direct object writer currently supports AArch64 only";
-    // THE HINT TOLD EVERY USER TO USE A BACKEND THAT REFUSES. It read "use
-    // --backend=c only for bootstrap C emit"; `--backend=c` is RETIRED and exits
-    // 1 with a diagnostic naming the ruling, so the compiler's own advice on its
-    // most common refusal path was to run a command that cannot work.
-    //
-    // `AGENTS.md`: a thing that only works via the bridge does not work — it is
-    // a defect with a named diagnostic, never a route around. So the hint now
-    // says what is actually true: the program is outside the subset, that is a
-    // DEFECT TO RECORD, and the two realizations that exist are the direct
-    // backend and the native wasm emitter.
-    return "DNB001: program is outside the current direct backend subset (machine code is canonical). This is a direct-backend defect to record, not to route around: --backend=c is RETIRED, and --backend=wasm is the native WebAssembly emitter, not a C bridge.";
-}
-
 const Symbol = struct {
     name: []const u8,
     offset: u32,
@@ -1543,7 +1526,8 @@ const Arm64Compiler = struct {
             // it means the measurement and the emission disagreed — and the
             // artifact just written would hand the CALLER back a register it
             // clobbered. That is invisible to any test of this function. Refuse
-            // instead: a refusal falls back to the C emit path and still runs.
+            // instead. Auto preserves this refusal; the explicit C99 source
+            // realizer is orthogonal and never rescues a direct-native claim.
             if (self.callee_touched & ~self.callee_save_plan != 0) return self.refuse(@src());
         }
         for (m.externs) |ext| {
@@ -5344,10 +5328,10 @@ const Arm64Compiler = struct {
             //
             // The rule: a frame with ANY other resident — GP stack locals, a
             // memory-backed table region, a record region — cannot have `sp`
-            // moved under it. Refusing falls back to the C emit path, which is
-            // slower and CORRECT; the alternative is an artifact that computes
-            // the wrong answer and reports success, which is the failure this
-            // whole area has produced twice already.
+            // moved under it. Refusing preserves correctness and remains visible
+            // through auto; the explicit C99 source realizer is not a fallback.
+            // The alternative is an artifact that computes the wrong answer and
+            // reports success, which is the failure this area produced twice.
             //
             // Reachable much less often than it looks: spilling requires all
             // nineteen allocatable registers to be busy, which implies pressure

@@ -69,7 +69,7 @@ pub const seed_capabilities: []const Capability = &.{
     .{ .id = "cap.native_backend.arm64", .description = "Direct ARM64 Mach-O subset", .status = .experimental, .owner = "src/native_backend.zig" },
     .{ .id = "cap.bootstrap.id_chain", .description = "Zig seed → Duo B → Duo C bootstrap", .status = .planned, .owner = "(archived, deleted — git history)" },
     .{ .id = "cap.repr.native_scalar", .description = "Full native_scalar module without lua runtime", .status = .partial, .owner = "src/codegen.zig" },
-    .{ .id = "cap.bench.c_specialized", .description = "Benchmark profile c-specialized (default)", .status = .partial, .owner = "src/backend_identity.zig" },
+    .{ .id = "cap.bench.direct", .description = "Canonical direct-native benchmark profile", .status = .partial, .owner = "src/backend_identity.zig" },
     .{ .id = "cap.bench.correctness", .description = "Benchmark RESULT correctness gate", .status = .supported, .owner = "scripts/run_benchmark.sh" },
     .{ .id = "cap.token_semantic.m1", .description = "Descriptor-driven keyword classifier in production lexer", .status = .supported, .owner = "src/token_semantic.zig" },
 };
@@ -548,7 +548,7 @@ pub const seed_claims: []const ReleaseClaim = &.{
         .id = "claim.faster_than_c_global",
         .statement = "Duo beats C on all benchmarks globally",
         .status = .partial,
-        .dependency_ids = &.{ "cap.bench.c_specialized", "cap.bench.correctness" },
+        .dependency_ids = &.{ "cap.bench.direct", "cap.bench.correctness" },
     },
     .{
         .id = "claim.m1_keyword_semantic",

@@ -950,10 +950,10 @@ const os_members: [osBareCount()][]const u8 = blk: {
 ///      as one that invents a relation the backend does not — the roster and
 ///      the realization disagree, and only one of them runs."
 ///
-/// THE BACKEND, SINGULAR. `--backend=c` is retired; the direct AArch64 backend
-/// is the only one. So "the realization" is no longer a question with two
-/// answers to be traded off, and the measurement that decides this roster is a
-/// single column. Measured per name, `--backend=direct`, every face, from the
+/// Direct is canonical. The explicit graph-observed DNIR to C99 realizer is an
+/// orthogonal physical output and does not define this world roster. The
+/// measurement that decides the current direct realization is therefore one
+/// column. Measured per name, `--backend=direct`, every face, from the
 /// repo root (idol 48cfd928):
 ///
 ///     env(k)  env(k)=v  env:remove(k)  os.env(k)     LOWERS

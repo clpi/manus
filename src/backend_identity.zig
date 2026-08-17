@@ -6,9 +6,9 @@ const std = @import("std");
 pub const SCHEMA_VERSION = "backend-identity-v0";
 
 pub const Backend = enum {
-    /// Native-first: direct machine lowering when eligible, else C emit (bootstrap only).
+    /// Canonical direct machine lowering. A refusal never falls back to C.
     auto,
-    /// Explicit C emission — bootstrap / debugging, not the canonical release path.
+    /// Explicit graph-observed DNIR to C99 source; orthogonal to direct and auto.
     c,
     /// ARM64 Mach-O machine code via `native_backend.zig` (canonical when eligible).
     direct,
@@ -58,7 +58,9 @@ pub const RuntimeProfile = enum {
     }
 };
 
-/// Benchmark harness profile (WP-01): explicit boxing path selection.
+/// Benchmark harness profile (WP-01). The C identities remain parseable only so
+/// old invocations and manifests receive an exact retirement diagnostic; they
+/// never select the graph-backed C99 source realizer.
 pub const BenchBackend = enum {
     c_dynamic,
     c_specialized,
@@ -79,9 +81,8 @@ pub const BenchBackend = enum {
         return null;
     }
 
-    /// Default canonical benchmark path: strongest generally supported C specialization.
-    pub fn defaultCanonical() BenchBackend {
-        return .c_specialized;
+    pub fn runnable(self: BenchBackend) bool {
+        return self == .direct;
     }
 };
 
@@ -142,8 +143,7 @@ pub fn inferFromCompile(
         .target = target,
         .intermediate = intermediate,
         .external_compiler = switch (backend) {
-            .auto, .direct => null,
-            .c => "clang",
+            .auto, .direct, .c => null,
             .wasm => "zig cc",
         },
         .boxing_mode = boxing,
@@ -183,13 +183,17 @@ test "backend_identity: parse backend and bench profiles" {
     try std.testing.expectEqual(Backend.direct, Backend.parse("native").?);
     try std.testing.expect(Backend.parse("c-specialized") == null);
     try std.testing.expect(BenchBackend.parse("c-specialized") == .c_specialized);
-    const prof = profileForBenchBackend(.c_specialized);
-    try std.testing.expect(prof.representation == .specialized);
+    try std.testing.expect(!BenchBackend.c_specialized.runnable());
+    try std.testing.expect(!BenchBackend.c_dynamic.runnable());
+    try std.testing.expect(BenchBackend.direct.runnable());
+    const prof = profileForBenchBackend(.direct);
+    try std.testing.expect(prof.backend == .direct);
 }
 
-test "backend_identity: manifest for native scalar C path" {
+test "backend_identity: explicit C source records no compiler invocation" {
     const m = inferFromCompile(.c, "native", true, true);
     try std.testing.expectEqual(Backend.c, m.backend);
     try std.testing.expectEqual(RepresentationProfile.native, m.representation);
     try std.testing.expect(std.mem.eql(u8, m.boxing_mode, "none"));
+    try std.testing.expect(m.external_compiler == null);
 }

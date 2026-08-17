@@ -105,7 +105,7 @@ var forwarded_program_args: []const []const u8 = &.{};
 var self_argv0: []const u8 = "";
 var graph_diag_enabled: bool = false;
 var graph_write_enabled: bool = false;
-var global_bench_backend: backend_identity.BenchBackend = .c_specialized;
+var global_bench_backend: backend_identity.BenchBackend = .direct;
 var global_bench_profile_cli: bool = false;
 var global_backend_explicit: bool = false;
 /// HPLS §11. Which INSPECTION observers this compilation must serve. Empty by
@@ -121,6 +121,18 @@ fn env_value_truthy(value: []const u8) bool {
     if (std.ascii.eqlIgnoreCase(value, "no")) return false;
     if (std.ascii.eqlIgnoreCase(value, "off")) return false;
     return true;
+}
+
+fn selectBenchBackend(value: []const u8) backend_identity.BenchBackend {
+    const selected = backend_identity.BenchBackend.parse(value) orelse {
+        term.err("unknown --bench-backend '{s}' (expected direct)", .{value});
+        std.process.exit(1);
+    };
+    if (!selected.runnable()) {
+        term.err("benchmark execution profile '{s}' retired with the AST/Lua C bridge; the explicit graph-backed C99 source realizer is not an execution backend. Use --bench-backend=direct", .{value});
+        std.process.exit(1);
+    }
+    return selected;
 }
 
 fn apply_env_flags(init: std.process.Init) void {
@@ -159,7 +171,7 @@ fn apply_env_flags(init: std.process.Init) void {
         if (env_value_truthy(v)) graph_write_enabled = true;
     }
     if (map.get("DUO_BENCH_BACKEND")) |v| {
-        if (backend_identity.BenchBackend.parse(v)) |bb| global_bench_backend = bb;
+        global_bench_backend = selectBenchBackend(v);
     }
     if (map.get("DUO_TRACE")) |v| {
         if (env_value_truthy(v)) term.trace = true;
@@ -418,8 +430,8 @@ const usage =
     \\  --emit <kind>     output kind: obj, exe, dylib, asm, c, wasm (default exe)
     \\  --backend <auto|direct|native|c|wasm>  physical realization; auto/direct remain machine-native
     \\                    C99 source requires explicit --backend=c --emit=c and never serves as fallback
-    \\  --bench-backend <c-dynamic|c-specialized|direct>  benchmark representation profile (default c-specialized);
-    \\                    c-* execution profiles remain unavailable; they never route through the source realizer
+    \\  --bench-backend <direct>  benchmark execution profile (default direct)
+    \\                    c-dynamic/c-specialized retired with the AST/Lua bridge and never route through the source realizer
     \\  --observer <debugger|profiler|reflection|mcp>  demand an inspection observer
     \\                    (HPLS §11; repeatable). Costs realization freedoms — see gate/recon.sh
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
@@ -578,28 +590,14 @@ pub fn main(init: std.process.Init) !void {
             global_backend_explicit = true;
         } else if (std.mem.eql(u8, arg, "--bench-backend") and i + 1 < args.len) {
             i += 1;
-            if (backend_identity.BenchBackend.parse(args[i])) |bb| {
-                global_bench_backend = bb;
-                global_bench_profile_cli = true;
-                if (!global_backend_explicit) {
-                    compile_backend = if (bb == .direct) "direct" else "c";
-                }
-            } else {
-                term.err("unknown --bench-backend '{s}' (expected c-dynamic, c-specialized, or direct)", .{args[i]});
-                std.process.exit(1);
-            }
+            global_bench_backend = selectBenchBackend(args[i]);
+            global_bench_profile_cli = true;
+            if (!global_backend_explicit) compile_backend = "direct";
         } else if (std.mem.startsWith(u8, arg, "--bench-backend=")) {
             const val = arg["--bench-backend=".len..];
-            if (backend_identity.BenchBackend.parse(val)) |bb| {
-                global_bench_backend = bb;
-                global_bench_profile_cli = true;
-                if (!global_backend_explicit) {
-                    compile_backend = if (bb == .direct) "direct" else "c";
-                }
-            } else {
-                term.err("unknown --bench-backend '{s}'", .{val});
-                std.process.exit(1);
-            }
+            global_bench_backend = selectBenchBackend(val);
+            global_bench_profile_cli = true;
+            if (!global_backend_explicit) compile_backend = "direct";
         } else if (std.mem.eql(u8, arg, "--load-chunk")) {
             load_chunk = true;
         } else if (std.mem.eql(u8, arg, "--lib")) {
@@ -676,7 +674,7 @@ pub fn main(init: std.process.Init) !void {
             term.err("unknown --backend '{s}' (expected auto, direct, native, c, or wasm)", .{compile_backend});
             std.process.exit(1);
         };
-        const expected: backend_identity.Backend = if (global_bench_backend == .direct) .direct else .c;
+        const expected: backend_identity.Backend = .direct;
         if (selected != expected) {
             term.err("--backend={s} conflicts with --bench-backend={s}", .{ selected.name(), global_bench_backend.name() });
             std.process.exit(1);

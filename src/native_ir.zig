@@ -2,9 +2,10 @@
 //! Graph ids and facts remain authoritative; this layer adds physical facts for
 //! realization and machine emission without creating another meaning space.
 //!
-//! Machine code is the release target. C emission is bootstrap/debug only.
-//! DNIR is SSA-ish: native scalars, records, direct calls — consumed by
-//! `native_backend.zig` (ARM64 Mach-O) without lua_Value.
+//! Direct machine code is canonical. Explicit C99 is an orthogonal physical
+//! realization of the same graph-observed DNIR; auto, self-host, and release paths
+//! never select or fall back to it. DNIR is SSA-ish: native scalars, records, and
+//! direct calls consumed by physical realizers without lua_Value.
 const std = @import("std");
 const semantic_graph = @import("semantic_graph.zig");
 const types = @import("types.zig");
@@ -22,11 +23,10 @@ pub const HardwareTier = dnir_hardware.Tier;
 // architecture debt" — and this file's own `dnir_hardware.Tier` comment records
 // deleting `.vector`/`.system` for exactly that reason.
 //
-// The middle variant made it worse than ordinary dead code: `c_emit` — "Generated
-// C + host compiler" — ranked a C tier BETWEEN machine and dynamic in the
-// canonical IR, under a ruling that is NO C BACKEND, PERIOD. A retired backend
-// that survives as a rank in the release order is the ruling contradicted in the
-// type system, where the next reader would take it as current law.
+// The middle variant made it worse than ordinary dead code: `c_emit` ranked an
+// unused C policy tier between machine and dynamic. C99 now exists only as an
+// explicitly selected orthogonal physical output. Keeping its selection rank in
+// DNIR would make this IR own backend policy and invite an unlawful auto fallback.
 
 pub const FieldKind = enum { i64, str, f64 };
 

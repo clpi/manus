@@ -42,13 +42,25 @@ if locked "$compiler" compile "$fixture" --backend=c -o "$scratch/inferred-emit"
 fi
 grep -q 'portable source only' "$scratch/inferred-emit.log"
 
+# Retired AST/Lua C benchmark profiles stay exact refusals. They may not select
+# the orthogonal source realizer or turn benchmark execution back into C.
+if locked "$compiler" compile "$fixture" --bench-backend=c-specialized -o "$scratch/retired-bench" >"$scratch/retired-bench.log" 2>&1; then
+    echo "retired C benchmark profile executed" >&2
+    exit 1
+fi
+grep -q 'retired with the AST/Lua C bridge' "$scratch/retired-bench.log"
+grep -q 'not an execution backend' "$scratch/retired-bench.log"
+test ! -e "$scratch/retired-bench"
+
 # A poisoned C compiler does not change direct or automatic object emission.
 # The configured compiler is used only afterward as an independent linker.
 locked "$compiler" compile "$fixture" --backend=direct --emit=obj --lib --cc "$poison" -o "$scratch/direct-poison.o"
 locked "$compiler" compile "$fixture" --backend=direct --emit=obj --lib --cc "$cc" -o "$scratch/direct-control.o"
 locked "$compiler" compile "$fixture" --backend=auto --emit=obj --lib --cc "$poison" -o "$scratch/auto-poison.o"
+locked "$compiler" compile "$fixture" --bench-backend=direct --emit=obj --lib --cc "$poison" -o "$scratch/bench-direct.o"
 cmp "$scratch/direct-poison.o" "$scratch/direct-control.o"
 cmp "$scratch/direct-poison.o" "$scratch/auto-poison.o"
+cmp "$scratch/direct-poison.o" "$scratch/bench-direct.o"
 
 locked "$cc" "$scratch/direct-poison.o" -o "$scratch/direct"
 locked "$cc" "$scratch/auto-poison.o" -o "$scratch/auto"
