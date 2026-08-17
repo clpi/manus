@@ -1853,6 +1853,7 @@ pub const Sema = struct {
             _ = self.mem_arg_count_ok(loc, fname, args.len, 3, 3);
             self.mem_validate_pointer_arg(fname, args, 0);
             self.mem_validate_numeric_arg(fname, args, 1);
+            self.mem_validate_numeric_arg(fname, args, 2);
             return;
         }
         if (std.mem.eql(u8, fname, "dup")) {
@@ -14060,6 +14061,8 @@ test "sema: memory intrinsics reject invalid low-level calls" {
         \\  mem.load("bogus", raw)
         \\  mem.store("i64", 1, 2)
         \\  mem.add(1, raw)
+        \\  mem.write_byte(raw, 0, "bad")
+        \\  mem.write_i64(raw, 0, raw)
         \\  mem.fence(1)
         \\end
     ;
@@ -14068,7 +14071,7 @@ test "sema: memory intrinsics reject invalid low-level calls" {
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
     try s.check_module(&mod);
-    try testing.expect(s.errors >= 5);
+    try testing.expect(s.errors >= 7);
 }
 
 test "sema: atomic intrinsics preserve scalar results and validate storage pointers" {
