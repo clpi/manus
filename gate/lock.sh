@@ -7,6 +7,7 @@ source="$repo/scripts/idol_lock.id"
 shell="$repo/tools/node/dev/idol-lock"
 work=$(mktemp -d "${TMPDIR:-/tmp}/idol-lock-gate.XXXXXX")
 children=""
+unset IDOL_LOCK_HELD
 
 cleanup() {
   for child in $children; do
@@ -43,7 +44,61 @@ printf '%s\n' \
   'printf ready >"$1"' \
   'while [ ! -e "$2" ]; do sleep 0.01; done' >"$work/hold"
 printf '%s\n' '#!/bin/sh' 'printf ran >"$1"' >"$work/write"
-chmod +x "$work/exit37" "$work/hold" "$work/write"
+printf '%s\n' '#!/bin/sh' 'kill -TERM $$' >"$work/signal"
+chmod +x "$work/exit37" "$work/hold" "$work/write" "$work/signal"
+
+nested="$work/nested"
+ready="$work/nested-ready"
+release="$work/nested-release"
+IDOL_BUILD_LOCK="$nested" "$shell" -- \
+  "$shell" -- "$work/hold" "$ready" "$release" &
+holder=$!
+children="$children $holder"
+waitfor "$ready"
+waitfor "$nested/owner"
+set +e
+IDOL_LOCK_HELD=2 IDOL_BUILD_LOCK="$nested" "$shell" --timeout 0 -- \
+  "$work/write" "$work/nested-overlap"
+rc=$?
+set -e
+[ "$rc" -eq 75 ] || fail "non-one marker bypassed with $rc"
+[ ! -e "$work/nested-overlap" ] || fail 'nested child overlapped holder'
+touch "$release"
+wait "$holder"
+children=""
+[ ! -e "$nested" ] || fail 'nested holder left its lock'
+
+nested="$work/nested-exit"
+set +e
+IDOL_BUILD_LOCK="$nested" "$shell" -- "$shell" -- "$work/exit37"
+rc=$?
+set -e
+[ "$rc" -eq 37 ] || fail "nested child exit became $rc"
+[ ! -e "$nested" ] || fail 'nested failed child left its lock'
+
+nested="$work/nested-signal"
+set +e
+IDOL_BUILD_LOCK="$nested" "$shell" -- "$shell" -- "$work/signal" 2>/dev/null
+rc=$?
+set -e
+[ "$rc" -eq 143 ] || fail "nested child signal became $rc"
+[ ! -e "$nested" ] || fail 'nested signalled child left its lock'
+
+damaged="$work/idol-lock-damaged"
+sed '/^if \[ "${IDOL_LOCK_HELD:-}" = "1" \]; then$/,/^fi$/d' \
+  "$shell" >"$damaged"
+chmod +x "$damaged"
+if grep -Fq 'if [ "${IDOL_LOCK_HELD:-}" = "1" ]; then' "$damaged"; then
+  fail 'reentrant-arm damage did not land'
+fi
+set +e
+IDOL_BUILD_LOCK="$work/damaged-shell-lock" "$shell" -- \
+  "$damaged" --timeout 0 -- "$work/write" "$work/damaged-shell-ran"
+rc=$?
+set -e
+[ "$rc" -eq 75 ] || fail "damaged nested shell returned $rc"
+[ ! -e "$work/damaged-shell-ran" ] || fail 'damaged nested shell ran its child'
+[ ! -e "$work/damaged-shell-lock" ] || fail 'damaged outer shell left its lock'
 
 success="$work/success"
 [ "$(IDOL_BUILD_LOCK="$success" "$work/lock" status)" = FREE ] || \
@@ -151,15 +206,17 @@ line two'
 six=''
 export one two three four five six
 shelllock="$work/shell-lock"
-IDOL_BUILD_LOCK="$shelllock" "$shell" -- sh -c '
+output=$(IDOL_BUILD_LOCK="$shelllock" "$shell" -- "$shell" -- sh -c '
   [ "$#" -eq 6 ] &&
   [ "$1" = "$one" ] &&
   [ "$2" = "$two" ] &&
   [ "$3" = "$three" ] &&
   [ "$4" = "$four" ] &&
   [ "$5" = "$five" ] &&
-  [ "$6" = "$six" ]
-' argv "$one" "$two" "$three" "$four" "$five" "$six"
+  [ "$6" = "$six" ] &&
+  printf nested-output
+' argv "$one" "$two" "$three" "$four" "$five" "$six")
+[ "$output" = nested-output ] || fail 'nested child output changed'
 [ ! -e "$shelllock" ] || fail 'authoritative shell lock remained'
 
 printf 'lock gate: PASS\n'
