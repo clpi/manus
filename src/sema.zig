@@ -381,6 +381,11 @@ pub const FuncSignature = struct {
 /// Checked identity of one callable application. AST pointers are provenance
 /// keys only; `target` is the declaration selected by semantic analysis.
 pub const ApplicationFact = struct {
+    /// Exact semantic value occupying the applied role. Resolved declaration
+    /// applications currently apply their selected declaration directly; this
+    /// remains a separate field because applied value, relation, and selected
+    /// target are independent application dimensions.
+    applied: *const ast.FuncDecl,
     target: *const ast.FuncDecl,
     subject: ?*const Expr,
     arguments: []const *Expr,
@@ -1061,6 +1066,7 @@ pub const Sema = struct {
         callee_home: ?[]const u8,
     ) SemaError!void {
         try self.applications.put(self.alloc, expr, .{
+            .applied = target,
             .target = target,
             .subject = subject,
             .arguments = arguments,

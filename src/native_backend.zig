@@ -879,6 +879,7 @@ const Arm64Compiler = struct {
     /// When set, this function's f64 return is coerced to i64 for process exit.
     entry: ?[]const u8 = null,
     cur_func_ret_record: ?ScalRecordDesc = null,
+    cur_func_ret_pack: []const native_types.ResolvedType = &.{},
     cur_func_ret_f64_record: ?F64RecordDesc = null,
     /// Where this function parked the AAPCS64 indirect-result pointer it was
     /// handed in x8. Set when `dnir_lower.recordReturnIsIndirectFields` says this
@@ -1724,6 +1725,10 @@ const Arm64Compiler = struct {
                         }
                     }
                 }
+                for (ins.pack_results) |result| {
+                    const id = result.temp orelse continue;
+                    if (dnirDefinitionUsed(f, false, id)) mark.slot(&temps, &n, id);
+                }
                 mark.value(&locals, &temps, &n, ins.lhs);
                 mark.value(&locals, &temps, &n, ins.rhs);
                 mark.value(&locals, &temps, &n, ins.third);
@@ -1814,6 +1819,10 @@ const Arm64Compiler = struct {
                 if (sink.failed) return error.OutOfMemory;
                 if (ins.result) |r| {
                     if (!def_at.contains(r)) try def_at.put(self.alloc, r, idx);
+                }
+                for (ins.pack_results) |result| {
+                    const temp = result.temp orelse continue;
+                    if (!def_at.contains(temp)) try def_at.put(self.alloc, temp, idx);
                 }
                 switch (ins.op) {
                     .br => {
@@ -2463,6 +2472,7 @@ const Arm64Compiler = struct {
         self.extern_preserve_x0 = false;
         self.extern_preserve_x0_temp = null;
         self.cur_func_ret_record = if (f.ret_record) |rn| scalRecordDesc(self.scal_records, rn) else null;
+        self.cur_func_ret_pack = f.ret_pack;
         self.cur_func_ret_f64_record = if (f.ret_record) |rn| f64RecordDesc(self.f64_records, rn) else null;
         self.cur_ret_indirect_reg = null;
         self.cur_func_foreign = f.foreign_boundary;
@@ -2989,7 +2999,11 @@ const Arm64Compiler = struct {
                     try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1]);
                     extra_consumed = 1;
                 } else {
-                    try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches);
+                    const pack_result_reg = if (bi + 1 < b.instrs.len)
+                        self.returnPackBinopDestination(&temps, ins, b.instrs[bi + 1])
+                    else
+                        null;
+                    try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches, pack_result_reg);
                 }
                 const fact_count: u2 = @as(u2, @intFromBool(ins.relation != null)) +
                     @as(u2, @intFromBool(ins.application != null)) +
@@ -3059,10 +3073,17 @@ const Arm64Compiler = struct {
                         }
                     }
                 }
+                for (ins.pack_results) |result| {
+                    const t = result.temp orelse continue;
+                    const r = temps.get(t) orelse continue;
+                    if (r >= 9 and r < 29 and r != platform_reserved_reg and !self.gp_home_regs[r]) {
+                        self.gp_reg_owner[r] = t;
+                    }
+                }
                 self.sweepFpLive(flat_idx);
                 self.sweepGpLive(flat_idx);
                 tail_terminates = switch (ins.op) {
-                    .ret, .ret_record => true,
+                    .ret, .ret_pack, .ret_record => true,
                     .br => ins.branch_condition == .unconditional,
                     else => false,
                 };
@@ -3125,12 +3146,57 @@ const Arm64Compiler = struct {
         self.cur_func_has_call = false;
     }
 
+    fn mappedGpValueReg(
+        self: *const Arm64Compiler,
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        value: dnir.Value,
+    ) ?u5 {
+        return switch (value) {
+            .local => |slot| if (self.gp_stack_locals.contains(slot)) null else temps.get(slot),
+            .temp => |slot| temps.get(slot),
+            else => null,
+        };
+    }
+
+    /// Select the ABI result register as a binop destination when the following
+    /// pack return proves that overwriting it cannot destroy another member.
+    fn returnPackBinopDestination(
+        self: *const Arm64Compiler,
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+        next: dnir.Instr,
+    ) ?u5 {
+        if (ins.op != .binop or next.op != .ret_pack) return null;
+        const result = ins.result orelse return null;
+        var destination: ?u5 = null;
+        for (next.vals, 0..) |value, i| switch (value) {
+            .temp => |slot| if (slot == result and destination == null) {
+                if (i >= dnir_lower.max_reg_record_fields) return null;
+                destination = @intCast(i);
+            },
+            else => {},
+        };
+        const dest = destination orelse return null;
+        for (next.vals, 0..) |value, i| {
+            if (i == dest) continue;
+            switch (value) {
+                .temp => |slot| if (slot == result) continue,
+                else => {},
+            }
+            if (self.mappedGpValueReg(temps, value)) |source| {
+                if (source == dest) return null;
+            }
+        }
+        return dest;
+    }
+
     fn compileDnirInstr(
         self: *Arm64Compiler,
         temps: *std.AutoHashMapUnmanaged(u32, u5),
         pinned: *std.AutoHashMapUnmanaged(u32, u5),
         ins: dnir.Instr,
         branch_patches: *std.ArrayList(DnirBranchPatch),
+        preferred_result: ?u5,
     ) Error!void {
         switch (ins.op) {
             .@"const" => switch (ins.ty) {
@@ -3442,10 +3508,11 @@ const Arm64Compiler = struct {
                     if (!any_fp) {
                         const ilhs = try self.evalDnirValue(temps, ins.lhs);
                         const irhs = try self.evalDnirValue(temps, ins.rhs);
-                        const idst = try self.allocReg();
+                        const idst = preferred_result orelse try self.allocReg();
+                        if (preferred_result != null) self.claimReg(idst);
                         try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop, ins.ty);
-                        if (!Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
-                        if (!Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
+                        if (ilhs != idst and !Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
+                        if (irhs != idst and !Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
                         if (ins.result) |t| try temps.put(self.alloc, t, idst);
                         break :blk;
                     }
@@ -3474,17 +3541,19 @@ const Arm64Compiler = struct {
                     // `x * 1`, `x + 0` and `x % 1` each cost a `mov` and an
                     // arithmetic instruction, and why `x % 1` reached `sdiv`.
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
-                    const dst = try self.allocReg();
+                    const dst = preferred_result orelse try self.allocReg();
+                    if (preferred_result != null) self.claimReg(dst);
                     try self.emitBinopConst(dst, lhs, k, ins.binop, ins.ty);
-                    if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+                    if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 } else {
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
-                    const dst = try self.allocReg();
+                    const dst = preferred_result orelse try self.allocReg();
+                    if (preferred_result != null) self.claimReg(dst);
                     try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop, ins.ty);
-                    if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
-                    if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
+                    if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+                    if (rhs != dst and !Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 }
             },
@@ -3583,19 +3652,40 @@ const Arm64Compiler = struct {
                     // would name a slot in the save area instead of the buffer.
                     const indirect = try self.indirectResultBuffer(ins);
                     if (indirect) |off| try self.emitAddSpImm(8, off);
+                    if ((ins.pack_results.len > 0 and ins.op != .call_direct) or
+                        ins.pack_results.len > dnir_lower.max_reg_record_fields or
+                        (ins.pack_results.len > 0 and
+                            (ins.result != null or ins.record.len != 0 or indirect != null)))
+                    {
+                        return self.refuse(@src());
+                    }
                     const preserve_x0 = self.extern_preserve_x0 and ins.op == .call_extern and
                         std.mem.eql(u8, ins.callee, "snprintf");
                     if (preserve_x0) {
                         try self.emitSubSp(16);
                         try self.emitStrSp(0, 0);
                     }
+                    var pack_conflict = false;
+                    for (ins.pack_results, 0..) |result, i| {
+                        if (result.temp != null and self.used_regs[i]) pack_conflict = true;
+                    }
+                    const pack_bytes: u16 = if (pack_conflict)
+                        @intCast(std.mem.alignForward(usize, ins.pack_results.len * 8, 16))
+                    else
+                        0;
+                    if (pack_bytes > 0) try self.emitSubSp(pack_bytes);
                     const save = try self.emitSaveCallerRegs();
                     const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
                     try self.emitPopVarargs(vbytes);
+                    if (pack_bytes > 0) {
+                        for (ins.pack_results, 0..) |_, i| {
+                            try self.emitStrSp(@intCast(i), save.stack_bytes + @as(u16, @intCast(i * 8)));
+                        }
+                    }
                     var call_result: ?u5 = null;
                     var call_result_on_stack = false;
-                    if (ins.result != null) {
+                    if (ins.result != null and pack_bytes == 0) {
                         if (!saveSetContains(save, 0)) {
                             self.used_regs[0] = true;
                             call_result = 0;
@@ -3611,7 +3701,24 @@ const Arm64Compiler = struct {
                         }
                     }
                     try self.emitRestoreCallerRegs(save);
+                    if (pack_bytes > 0) try self.emitAddSp(pack_bytes);
                     try self.syncGateLocalTempsAfterCall(temps, pinned);
+                    if (pack_bytes > 0) {
+                        for (ins.pack_results, 0..) |result, i| {
+                            const temp = result.temp orelse continue;
+                            const dst = try self.allocReg();
+                            const offset: i16 = @as(i16, @intCast(i * 8)) - @as(i16, @intCast(pack_bytes));
+                            try self.emitLdurSp(dst, offset);
+                            try temps.put(self.alloc, temp, dst);
+                        }
+                    } else if (ins.pack_results.len > 0) {
+                        for (ins.pack_results, 0..) |result, i| {
+                            const temp = result.temp orelse continue;
+                            const reg: u5 = @intCast(i);
+                            self.claimReg(reg);
+                            try temps.put(self.alloc, temp, reg);
+                        }
+                    }
                     if (preserve_x0) {
                         if (self.extern_preserve_x0_temp) |t| {
                             const reg = try self.allocReg();
@@ -3737,6 +3844,91 @@ const Arm64Compiler = struct {
                     // path reuses it for a constant (`n - 1` became `1 - 1`).
                     // A local's register stays reserved for the whole function.
                     if (!Arm64Compiler.regIsPinned(pinned, reg)) self.releaseReg(reg);
+                }
+                try self.restoreStackFrame();
+                try self.emitRet();
+                self.returned = true;
+            },
+            .ret_pack => {
+                const vals = ins.vals;
+                if (vals.len == 0 or vals.len > dnir_lower.max_reg_record_fields or
+                    vals.len != self.cur_func_ret_pack.len)
+                {
+                    return self.refuse(@src());
+                }
+                for (self.cur_func_ret_pack) |ty| switch (ty) {
+                    .i8,
+                    .i16,
+                    .i32,
+                    .i64,
+                    .u8,
+                    .u16,
+                    .u32,
+                    .u64,
+                    .bool,
+                    .str,
+                    .pointer,
+                    => {},
+                    else => return self.refuse(@src()),
+                };
+                // A pack return is a parallel register assignment, not a tuple
+                // copy. Emit every acyclic move in place and spend one scratch
+                // only for a real cycle. The common `(n, n + 1)` shape is then
+                // exactly `add x1,x0,#1; ret`, instead of staging both members.
+                var srcs: [dnir_lower.max_reg_record_fields]u5 = @splat(0);
+                var pending: [dnir_lower.max_reg_record_fields]bool = @splat(false);
+                var cycle_scratch: ?u5 = null;
+                for (vals, 0..) |value, i| srcs[i] = try self.evalDnirValue(temps, value);
+                for (srcs[0..vals.len], 0..) |src, i| pending[i] = src != @as(u5, @intCast(i));
+                while (true) {
+                    var remaining = false;
+                    var emitted = false;
+                    for (pending[0..vals.len], 0..) |move, i| {
+                        if (!move) continue;
+                        remaining = true;
+                        var destination_is_source = false;
+                        for (pending[0..vals.len], srcs[0..vals.len], 0..) |other, source, j| {
+                            if (j != i and other and source == @as(u5, @intCast(i))) destination_is_source = true;
+                        }
+                        if (destination_is_source) continue;
+                        try self.emitMovReg(@intCast(i), srcs[i]);
+                        pending[i] = false;
+                        emitted = true;
+                    }
+                    if (!remaining) break;
+                    if (emitted) {
+                        if (cycle_scratch) |scratch| {
+                            var read = false;
+                            for (pending[0..vals.len], srcs[0..vals.len]) |move, source| {
+                                if (move and source == scratch) read = true;
+                            }
+                            if (!read) {
+                                self.releaseReg(scratch);
+                                cycle_scratch = null;
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Every remaining destination is also a remaining source:
+                    // a cycle. Preserve one source and redirect every reader of
+                    // it through the scratch, which makes the cycle acyclic.
+                    var first: usize = 0;
+                    while (!pending[first]) : (first += 1) {}
+                    const saved = srcs[first];
+                    const scratch = try self.allocReg();
+                    cycle_scratch = scratch;
+                    try self.emitMovReg(scratch, saved);
+                    for (pending[0..vals.len], 0..) |move, i| {
+                        if (move and srcs[i] == saved) srcs[i] = scratch;
+                    }
+                }
+                if (cycle_scratch) |scratch| self.releaseReg(scratch);
+                // Apply declared widths only after all raw values landed; doing
+                // it during the parallel copy could narrow a register that a
+                // later pack member still needs at full width.
+                for (self.cur_func_ret_pack, 0..) |ty, i| {
+                    _ = try self.emitNarrowFit(@intCast(i), @intCast(i), ty);
                 }
                 try self.restoreStackFrame();
                 try self.emitRet();
@@ -3991,6 +4183,21 @@ const Arm64Compiler = struct {
                 }
                 try self.ensureExternalSymbol(if (use_puts) "puts" else "printf");
                 try self.emitBl(if (use_puts) "puts" else "printf");
+                if (nonl) {
+                    // `stdout:write` is RAW HOST EGRESS: the peer is a protocol
+                    // client (newline-delimited JSON-RPC over a pipe), not a
+                    // terminal, and libc stdio is block-buffered on a pipe — an
+                    // unflushed write is a write the peer never receives until
+                    // 4 KiB accumulate or the process exits. A long-lived stdio
+                    // server (tools/mcp/native.id) hangs its client's handshake
+                    // forever on exactly that; measured, the initialize response
+                    // sat unflushed for the full 60 s client timeout. `print`/
+                    // `puts` keeps the buffered line shape: programs that print
+                    // and exit pay nothing.
+                    try self.emitMovImm(0, 0); // fflush(NULL): flush every output stream
+                    try self.ensureExternalSymbol("fflush");
+                    try self.emitBl("fflush");
+                }
                 if (stack_arg) try self.emitAddSp(16);
                 try self.emitRestoreCallerRegs(save);
                 if (skip) |off| try self.patchCondBranch(off, @intCast(self.code.items.len));
@@ -5940,6 +6147,20 @@ const Arm64Compiler = struct {
         try self.emitFmt(0xf94003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, reg), "ldr x{d}, [sp, #{d}]", .{ reg, offset });
     }
 
+    /// Reload a just-returned pack member after restoring the ordinary stack
+    /// pointer. The temporary result area is immediately below `sp`; signed
+    /// unscaled addressing keeps every normal local/spill offset unchanged.
+    fn emitLdurSp(self: *Arm64Compiler, reg: u5, offset: i16) Error!void {
+        if (offset < -256 or offset > 255) return self.refuse(@src());
+        const bits: u16 = @bitCast(offset);
+        const imm9: u32 = @as(u32, bits & 0x01ff);
+        try self.emitFmt(
+            0xf84003e0 | (imm9 << 12) | @as(u32, reg),
+            "ldur x{d}, [sp, #{d}]",
+            .{ reg, offset },
+        );
+    }
+
     /// Release `reg` only if it was scratch for this instruction. A `.temp` or a
     /// register-homed `.local` operand's register is owned by the slot map and
     /// outlives us. A STACK `.local`, however, is reloaded into a fresh scratch
@@ -6684,7 +6905,7 @@ const Arm64Compiler = struct {
         if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
             self.gp_reg_owner[dst] = t;
         }
-        try self.compileDnirInstr(temps, pinned, plan.store, branch_patches);
+        try self.compileDnirInstr(temps, pinned, plan.store, branch_patches, null);
     }
 
     /// Peephole precondition for folding `mul -> T ; add(T, c) -> D` into a
@@ -7200,7 +7421,7 @@ fn applicationResult(
 ) Error!semantic_graph.id {
     const results = graph.applicationResults(application.application) orelse
         return invalidFactsWith(diagnostic, @src(), "application-results");
-    if (results.len != 1) return invalidFactsWith(diagnostic, @src(), "application-result-count");
+    if (results.len == 0) return invalidFactsWith(diagnostic, @src(), "application-result-count");
     return results[0];
 }
 
@@ -7348,6 +7569,8 @@ fn validateDnirApplications(
                 const application = graph.application(instruction.application.?) orelse
                     return invalidFactsWith(diagnostic, @src(), "unknown-application-lineage");
                 const result = try applicationResult(graph, application.*, diagnostic);
+                const results = graph.applicationResults(application.application) orelse
+                    return invalidFactsWith(diagnostic, @src(), "application-results");
                 const caller = graph.applicationCaller(application.application) orelse
                     return invalidFactsWith(diagnostic, @src(), "application-caller-mismatch");
                 if (function.id == null or !std.meta.eql(function.id.?, caller)) {
@@ -7365,9 +7588,54 @@ fn validateDnirApplications(
                 {
                     return invalidFactsWith(diagnostic, @src(), "application-fact-mismatch");
                 }
+                if (results.len == 1) {
+                    if (instruction.pack_results.len != 0) {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-pack");
+                    }
+                } else {
+                    if (results.len > dnir_lower.max_reg_record_fields or
+                        instruction.pack_results.len != results.len or instruction.result != null or
+                        instruction.record.len != 0)
+                    {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-abi");
+                    }
+                    for (instruction.pack_results, results) |projected, value_id| {
+                        if (!std.meta.eql(projected.value, value_id)) {
+                            return invalidFactsWith(diagnostic, @src(), "application-result-pack");
+                        }
+                        const node = graph.get(value_id) orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-member");
+                        const result_descriptor = node.descriptor orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-descriptor");
+                        if (!result_descriptor.eql(projected.ty)) {
+                            return invalidFactsWith(diagnostic, @src(), "application-result-descriptor");
+                        }
+                        switch (projected.ty) {
+                            .i8,
+                            .i16,
+                            .i32,
+                            .i64,
+                            .u8,
+                            .u16,
+                            .u32,
+                            .u64,
+                            .bool,
+                            .str,
+                            .pointer,
+                            => {},
+                            else => return invalidFactsWith(diagnostic, @src(), "application-result-abi"),
+                        }
+                    }
+                }
                 const target_id = instruction.target orelse
                     return invalidFactsWith(diagnostic, @src(), "missing-application-target");
-                if (!std.meta.eql(target_id, relation)) {
+                const selected_target = graph.applicationTarget(application.application) orelse
+                    return invalidFactsWith(diagnostic, @src(), "missing-application-target");
+                const applied = graph.applicationApplied(application.application) orelse
+                    return invalidFactsWith(diagnostic, @src(), "missing-application-applied");
+                if (!std.meta.eql(target_id, selected_target) or
+                    !std.meta.eql(applied, selected_target))
+                {
                     return invalidFactsWith(diagnostic, @src(), "application-target-mismatch");
                 }
                 const result_shape = graph.applicationResultShape(application.application, 0);
@@ -7492,9 +7760,11 @@ fn validateMachineLineage(
             return invalidFactsWith(diagnostic, @src(), "machine-lineage-mismatch");
         const relation = graph.applicationRelation(application.application) orelse
             return invalidFactsWith(diagnostic, @src(), "machine-lineage-mismatch");
+        const target = graph.applicationTarget(application.application) orelse
+            return invalidFactsWith(diagnostic, @src(), "machine-lineage-mismatch");
         if (!std.meta.eql(lineage.application, application.application) or
             !std.meta.eql(lineage.relation, relation) or
-            !std.meta.eql(lineage.target, relation) or
+            !std.meta.eql(lineage.target, target) or
             !std.meta.eql(lineage.value, result) or
             !optionalIdEql(lineage.subject, graph.applicationSubject(application.application)) or
             !lineage.descriptor.eql(descriptor) or
@@ -8591,6 +8861,7 @@ test "native backend: checked subject fact reaches object bytes" {
     try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
     const text_lineage = output.lineage[0];
     try std.testing.expectEqual(graph.applicationRelation(applications[0].application).?, text_lineage.relation);
+    try std.testing.expectEqual(graph.applicationTarget(applications[0].application).?, text_lineage.target);
     try std.testing.expectEqual(applications[0].application, text_lineage.application);
     try std.testing.expectEqual(try applicationResult(&graph, applications[0], &diagnostic), text_lineage.value);
     try std.testing.expect(std.meta.eql(graph.applicationSubject(applications[0].application).?, text_lineage.subject.?));
@@ -8626,6 +8897,12 @@ test "native backend: checked subject fact reaches object bytes" {
         validateMachineLineage(alloc, output, &graph, &diagnostic),
     );
     output.lineage[0].descriptor = graph.applicationDescriptor(applications[0].application).?;
+    output.lineage[0].target +%= 1;
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateMachineLineage(alloc, output, &graph, &diagnostic),
+    );
+    output.lineage[0].target -%= 1;
 
     var artifact = try emitObjectWithGraphLineage(alloc, &module, "native-object", &graph);
     defer artifact.deinit(alloc);
@@ -8633,6 +8910,7 @@ test "native backend: checked subject fact reaches object bytes" {
     try std.testing.expectEqual(@as(usize, 1), artifact.lineage.len);
     const object_lineage = artifact.lineage[0];
     try std.testing.expectEqual(text_lineage.relation, object_lineage.relation);
+    try std.testing.expectEqual(text_lineage.target, object_lineage.target);
     try std.testing.expectEqual(text_lineage.application, object_lineage.application);
     try std.testing.expectEqual(text_lineage.value, object_lineage.value);
     try std.testing.expect(std.meta.eql(text_lineage.subject.?, object_lineage.subject.?));
@@ -8656,6 +8934,27 @@ test "native backend: checked subject fact reaches object bytes" {
         assembly.machine[assembly.lineage[0].text_start..assembly.lineage[0].text_end],
     );
     try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "bl _idol_machine_lineage__observe") != null);
+
+    const application = applications[0].application;
+    const row = graph.application_rows.items[application];
+    const saved = graph.application_facts.items[row];
+    const alternate = graph.applicationCaller(application) orelse return error.TestExpectedEqual;
+    try std.testing.expect(alternate != text_lineage.relation);
+    graph.application_facts.items[row].applied = .{ .one = alternate };
+    graph.application_facts.items[row].target = .{ .one = alternate };
+    defer graph.application_facts.items[row] = saved;
+
+    var split_output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
+    defer split_output.deinit(alloc);
+    try validateMachineLineage(alloc, split_output, &graph, &diagnostic);
+    try std.testing.expectEqual(@as(usize, 1), split_output.lineage.len);
+    try std.testing.expectEqual(text_lineage.relation, split_output.lineage[0].relation);
+    try std.testing.expectEqual(alternate, split_output.lineage[0].target);
+
+    var split_artifact = try emitObjectWithGraphLineage(alloc, &module, "native-object", &graph);
+    defer split_artifact.deinit(alloc);
+    try std.testing.expectEqual(text_lineage.relation, split_artifact.lineage[0].relation);
+    try std.testing.expectEqual(alternate, split_artifact.lineage[0].target);
 }
 
 test "native backend: removing checked facts refuses before machine emission" {
@@ -9611,6 +9910,73 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
             );
         }
     }
+}
+
+test "native backend: checked result pack retains order through machine lineage" {
+    var diagnostic: Diagnostic = .{};
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pair(n: i64): (i64, i64)
+        \\    return n, n + 1
+        \\main: i64 = ()
+        \\    a, b = pair(40)
+        \\    a + b
+    ;
+    var lexer = Lexer.init(source, "result-pack-lineage.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "result-pack-lineage.id");
+
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    defer dnir.deinitModule(alloc, module);
+    try validateDnirApplications(alloc, module, &graph, &diagnostic);
+    if (builtin.os.tag == .macos and builtin.cpu.arch == .aarch64) {
+        var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph, &diagnostic);
+        defer output.deinit(alloc);
+        try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
+        try std.testing.expectEqual(graph.applications()[0].application, output.lineage[0].application);
+        var pair_start: ?u32 = null;
+        var main_start: ?u32 = null;
+        for (output.symbols) |symbol| {
+            if (!symbol.defined or symbol.section != 1) continue;
+            if (std.mem.endsWith(u8, symbol.name, "__pair")) pair_start = symbol.offset;
+            if (std.mem.eql(u8, symbol.name, "main")) main_start = symbol.offset;
+        }
+        try std.testing.expectEqual(@as(u32, 8), (main_start orelse return error.TestExpectedEqual) -
+            (pair_start orelse return error.TestExpectedEqual));
+    }
+
+    // Damage control: application identity alone is insufficient if a physical
+    // projection permutes its members. The ordered graph values must agree too.
+    var damaged: ?[]dnir.PackResult = null;
+    for (module.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.pack_results.len == 2) {
+                    damaged = @constCast(instruction.pack_results);
+                }
+            }
+        }
+    }
+    const projected = damaged orelse return error.TestExpectedEqual;
+    const first = projected[0].value;
+    projected[0].value = projected[1].value;
+    projected[1].value = first;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-pack", diagnostic.note().?);
 }
 
 test "native backend: checked record result keeps application lineage" {

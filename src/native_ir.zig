@@ -129,6 +129,10 @@ pub const Op = enum {
     fp_mov_arg,
     br,
     ret,
+    /// Return one semantic result pack through the ordinary Idol GP result
+    /// convention. `vals` is ordered exactly as the graph/function pack; no
+    /// tuple or aggregate is materialized.
+    ret_pack,
     ret_record,
     /// Sovereign machine barrier — `dmb` / `mfence` class (never C emit).
     hw_fence,
@@ -157,6 +161,15 @@ pub const Value = union(enum) {
     local: u32,
     temp: u32,
     record: u32,
+};
+
+/// One graph-owned application result and its selected physical realization.
+/// `temp = null` means demand discarded this member; the ABI position remains
+/// its index in the enclosing slice, so later demanded members never shift.
+pub const PackResult = struct {
+    value: semantic_graph.id,
+    temp: ?u32,
+    ty: RT,
 };
 
 pub const Instr = struct {
@@ -195,6 +208,10 @@ pub const Instr = struct {
     /// 5-field record return wrote x0..x2 and left the caller reading whatever
     /// x3/x4 happened to hold. Fields beyond the third exist only here.
     vals: []const Value = &.{},
+    /// Ordered result members for a multi-result `call_direct`. Semantic value
+    /// identity and descriptor come from the resident graph; `temp` is only the
+    /// selected physical destination for this realization.
+    pack_results: []const PackResult = &.{},
     /// Label index for branch ops (resolved by backend).
     branch_target: u32 = 0,
     /// Physical branch selection. The semantic condition fact remains upstream.
@@ -253,6 +270,10 @@ pub const Param = struct {
 pub const Function = struct {
     name: []const u8,
     ret: RT,
+    /// Ordered internal result convention for a semantic pack. Empty is a
+    /// scalar/void function. This is a physical projection of the function's
+    /// tuple result descriptor, never an aggregate type.
+    ret_pack: []const RT = &.{},
     params: []const Param = &.{},
     ret_record: ?[]const u8 = null,
     /// This relation DECLARED ITSELF a foreign boundary (`@comp.c.export("n")`,
@@ -315,6 +336,7 @@ pub fn deinitInstr(alloc: std.mem.Allocator, instruction: Instr) void {
     if (instruction.field.len > 0) alloc.free(instruction.field);
     if (instruction.record.len > 0) alloc.free(instruction.record);
     if (instruction.vals.len > 0) alloc.free(instruction.vals);
+    if (instruction.pack_results.len > 0) alloc.free(instruction.pack_results);
 }
 
 /// Release a module produced by DNIR lowering.
@@ -333,6 +355,7 @@ pub fn deinitModule(alloc: std.mem.Allocator, module: Module) void {
             if (param.record) |record| alloc.free(record);
         }
         alloc.free(function.params);
+        if (function.ret_pack.len > 0) alloc.free(function.ret_pack);
         if (function.ret_record) |record| alloc.free(record);
         for (function.blocks) |block| {
             for (block.instrs) |instruction| deinitInstr(alloc, instruction);
@@ -459,8 +482,20 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     if (graph.applicationRelation(application) != relation or
                         graph.applicationSubject(application) != i.subject) return false;
                     const results = graph.applicationResults(application) orelse return false;
-                    if (results.len != 1 or results[0] != value) return false;
+                    if (results.len == 0 or results[0] != value) return false;
+                    if (results.len == 1) {
+                        if (i.pack_results.len != 0) return false;
+                    } else {
+                        if (i.pack_results.len != results.len or i.result != null or i.record.len != 0) return false;
+                        for (i.pack_results, results) |projected, result| {
+                            if (projected.value != result) return false;
+                            const node = graph.get(result) orelse return false;
+                            const descriptor = node.descriptor orelse return false;
+                            if (!descriptor.eql(projected.ty)) return false;
+                        }
+                    }
                 }
+                if (i.op != .call_direct and i.pack_results.len != 0) return false;
                 if (i.op == .call_extern and i.application == null and !isBootstrapForeignCall(i.callee)) {
                     return false;
                 }
@@ -484,6 +519,7 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .binop,
                     .cmp,
                     .ret,
+                    .ret_pack,
                     .ret_record,
                     .@"const",
                     .store_local,
@@ -575,6 +611,7 @@ test "native_ir: definition excludes ABI metadata and nonproducers" {
         .{ .op = .fp_mov_arg, .result = 37 },
         .{ .op = .br, .result = 37 },
         .{ .op = .ret, .result = 37 },
+        .{ .op = .ret_pack, .result = 37 },
         .{ .op = .ret_record, .result = 37 },
         .{ .op = .hw_fence, .result = 37 },
         .{ .op = .hw_spin, .result = 37 },

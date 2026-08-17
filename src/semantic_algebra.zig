@@ -365,17 +365,6 @@ pub const RelationNode = struct {
     knowledge: KnowledgeLevel = .unknown,
 };
 
-// ── 5. Return Packs (IR sketch) ───────────────────────────────────────────────
-
-pub const ReturnPack = struct {
-    arity: u8,
-    /// Field names when destructured (`a, b = f()` or `f().x`).
-    fields: ?[]const []const u8 = null,
-    knowledge: KnowledgeLevel = .unknown,
-    /// Consumption mode drives DCE / tail-call / pack fusion.
-    consumption: enum { unused, bound, projected, spread, piped } = .unused,
-};
-
 // ── 14. Semantic Cost Model ───────────────────────────────────────────────────
 //
 // constitution §47: "PERFORMANCE IS NOT ONE NUMBER. A realization DOMINATES
@@ -895,10 +884,10 @@ pub const convergence_catalog: []const ConvergenceEntry = &.{
         .legacy_mechanisms = &.{
             "multi-return", "vararg", "tail expr", "destructure assign",
         },
-        .unified_algebra = "ReturnPack IR + consumption modes",
-        .status = .planned,
+        .unified_algebra = "SemanticGraph.PackFact exact identity + ordered demand",
+        .status = .partial,
         .priority = 10,
-        .notes = "parse().x / spread / :map on returns without allocation.",
+        .notes = "Application operand/result packs are graph-owned; binding adjustment and open-tail realization remain.",
     },
     .{
         .id = "pattern_recognition",

@@ -774,19 +774,12 @@ pub const ApplicationFact = struct {
     /// and `tokenizer-id != token-id` is exactly the distinction this field
     /// exists to keep.
     ///
-    /// `.none` IS THE FTCFTW ANSWER AND IS NOT A GAP. §2: "the applicator
-    /// survives as an identity only if the VALUE ITSELF IS OBSERVABLE. If it is
-    /// sealed and stateless: provider object 0, provider lookup 0, dynamic
-    /// dispatch 0." A relation selected from an exact declaration applies NO
-    /// observable value, and `.none` is the graph saying so — where before,
-    /// nothing said it and every consumer had to infer it from `call_shape`, a
-    /// PHYSICAL TAG inferred from the AST.
+    /// `.one` is the exact semantic applicator identity. A sealed stateless
+    /// applicator may still realize to provider object 0, lookup 0, and dynamic
+    /// dispatch 0; physical absence never erases this semantic role.
     ///
-    /// `.one` is an applicator value the graph carries an entity for.
-    ///
-    /// The DEFAULT IS `.unknown`, not `.none`: a fact defaults to the answer
-    /// that claims nothing, and `publishApplication` writes `.none` only where
-    /// a declaration was actually resolved.
+    /// The default is `.unknown`, not `.none`: absence of an applied fact is
+    /// not an exact empty role.
     applied: Card = .unknown,
 };
 
@@ -1416,40 +1409,12 @@ pub const SemanticGraph = struct {
         self.application_candidates.set(entity);
     }
 
-    /// THE APPLIED VALUE, from the shape of the applicator — never from a tag.
-    ///
-    /// A published application already carries a relation resolved to an EXACT
-    /// declaration, so the only remaining question is whether an applicator
-    /// VALUE is also applied. It is not, whenever the applicator is a name, a
-    /// static projection, or a subject-oriented relation: the selection is
-    /// static and `face-role-launch-one.md` §2's zeros hold — provider object 0,
-    /// provider lookup 0, dynamic dispatch 0. `.none` is that claim, published.
-    ///
-    /// `tokenizer = rule` then `tokenizer(source)` lands HERE, on `.none`, and
-    /// that is the right answer rather than a missed one: §2 says the
-    /// applicator survives as an identity "only if the VALUE ITSELF IS
-    /// OBSERVABLE", and a sealed stateless relation's value is not.
-    ///
-    /// Anything else — applying the result of an expression — genuinely applies
-    /// a value, and the graph carries no entity for it yet, so the answer is
-    /// `.unknown` and not a fabricated `.one`.
-    fn appliedValue(node: *const Node) Card {
-        const raw = node.ast_ref orelse return .unknown;
-        const expr: *const Expr = @ptrCast(@alignCast(raw));
-        return switch (expr.*) {
-            .method_call => .none,
-            .call => |c| switch (c.func.*) {
-                .name, .field, .semantic => .none,
-                else => .unknown,
-            },
-            else => .unknown,
-        };
-    }
-
     fn publishApplication(
         self: *SemanticGraph,
         occurrence: id,
+        applied: id,
         relation: id,
+        target: id,
         subject: ?id,
         arguments: []const id,
         results: []const id,
@@ -1463,6 +1428,9 @@ pub const SemanticGraph = struct {
             application_node.demand == null) return error.InvalidApplicationFact;
         _ = self.get(relation) orelse return error.InvalidApplicationRelation;
         if (!self.callable(relation)) return error.InvalidApplicationRelation;
+        _ = self.get(applied) orelse return error.InvalidApplicationApplied;
+        _ = self.get(target) orelse return error.InvalidApplicationTarget;
+        if (!self.callable(target)) return error.InvalidApplicationTarget;
         const caller_node = self.get(caller) orelse return error.InvalidApplicationCaller;
         if (!self.callable(caller) and caller_node.scope != null) return error.InvalidApplicationCaller;
         if (subject) |entity| {
@@ -1520,7 +1488,8 @@ pub const SemanticGraph = struct {
             .application = occurrence,
             .operand_pack = operand_pack,
             .result_pack = result_pack,
-            .applied = appliedValue(self.get(occurrence).?),
+            .applied = .{ .one = applied },
+            .target = .{ .one = target },
         });
         self.application_rows.items[occurrence] = row;
         self.application_presence.set(occurrence);
@@ -1553,6 +1522,16 @@ pub const SemanticGraph = struct {
         const caller = application_node.scope orelse return null;
         if (!self.isApplicationCandidate(fact.application) or
             application_node.demand == null) return null;
+        const applied = switch (fact.applied) {
+            .one => |entity| entity,
+            .unknown, .none => return null,
+        };
+        _ = self.get(applied) orelse return null;
+        const target = switch (fact.target) {
+            .one => |entity| entity,
+            .unknown, .none => return null,
+        };
+        if (self.get(target) == null or !self.callable(target)) return null;
         _ = self.bindingRelation(fact.application) orelse return null;
         const caller_node = self.get(caller) orelse return null;
         if (!self.callable(caller) and caller_node.scope != null) return null;
@@ -2033,6 +2012,24 @@ pub const SemanticGraph = struct {
     pub fn applicationRelation(self: *const SemanticGraph, occurrence: id) ?id {
         _ = self.application(occurrence) orelse return null;
         return self.bindingRelation(occurrence);
+    }
+
+    /// Exact semantic value occupying the applied role.
+    pub fn applicationApplied(self: *const SemanticGraph, occurrence: id) ?id {
+        const fact = self.application(occurrence) orelse return null;
+        return switch (fact.applied) {
+            .one => |entity| entity,
+            .unknown, .none => null,
+        };
+    }
+
+    /// Exact callable implementation selected by semantic analysis.
+    pub fn applicationTarget(self: *const SemanticGraph, occurrence: id) ?id {
+        const fact = self.application(occurrence) orelse return null;
+        return switch (fact.target) {
+            .one => |entity| entity,
+            .unknown, .none => null,
+        };
     }
 
     fn bindingRelation(self: *const SemanticGraph, occurrence: id) ?id {
@@ -3259,6 +3256,10 @@ pub const SemanticGraph = struct {
             const fact = checked.applicationFact(expr) orelse continue;
             const relation = self.findFuncDecl(fact.target) orelse
                 try self.liftForeignRelation(module, checked, fact, file);
+            const applied = self.findFuncDecl(fact.applied) orelse
+                return error.MissingApplicationApplied;
+            const target = self.findFuncDecl(fact.target) orelse
+                return error.MissingApplicationTarget;
             const caller = self.nodes.items[call_id].scope orelse return error.MissingApplicationCaller;
             const caller_node = self.get(caller) orelse return error.MissingApplicationCaller;
             if (!self.callable(caller) and caller_node.scope != null) return error.MissingApplicationCaller;
@@ -3295,7 +3296,9 @@ pub const SemanticGraph = struct {
             }
             try self.publishApplication(
                 call_id,
+                applied,
                 relation,
+                target,
                 subject_value,
                 arguments,
                 results,
@@ -5124,13 +5127,14 @@ test "semantic_graph: checked subject application retains relation and value ide
     try std.testing.expectEqualStrings("document", subject.descriptor.?.@"struct".name);
     try std.testing.expectEqual(types.ResolvedType.i64, graph.get(results[0]).?.descriptor.?);
     try std.testing.expectEqual(@as(u32, 7), graph.applicationProvenance(stored.application).?.start);
-    // `read` projects a field of the subject it was handed and applies
-    // nothing, so effect and authority are KNOWN-ABSENT here rather than
-    // not-yet-known — the distinction `Card` exists to carry.
+    // `read` is sealed and stateless, so its semantic applicator identity is
+    // exact even though no provider object or dynamic dispatch survives.
     try std.testing.expect(stored.effect == .none);
     try std.testing.expect(stored.authority == .none);
     try std.testing.expect(stored.witness == .unknown);
-    try std.testing.expect(stored.target == .unknown);
+    const relation = graph.applicationRelation(stored.application).?;
+    try std.testing.expectEqual(Card{ .one = relation }, stored.applied);
+    try std.testing.expectEqual(Card{ .one = relation }, stored.target);
     try std.testing.expect(stored.realization == .unknown);
     // The remaining unknowns are graph state. Do not reconstruct world from
     // "io" or a catalog.
@@ -5209,10 +5213,9 @@ test "semantic_graph: checked subject application retains relation and value ide
     // Both known-absent and not-yet-known were written as an omitted key, so the
     // export could not answer the one question it is asked: whether the graph
     // proved this application does nothing, or never looked. `read` projects a
-    // field of the subject it was handed and applies nothing, so effect and
-    // authority are KNOWN-ABSENT, while witness/target/realization genuinely
-    // have no evidence yet. Three cards, two answers, and they must not be the
-    // same bytes.
+    // field of the subject it was handed, so effect and authority are
+    // KNOWN-ABSENT. Applied and target are exact semantic identities even
+    // though their physical provider and dispatch remain absent.
     try std.testing.expectEqualStrings(
         "none",
         projected[0].object.get("effect").?.object.get("card").?.string,
@@ -5226,8 +5229,20 @@ test "semantic_graph: checked subject application retains relation and value ide
         projected[0].object.get("witness").?.object.get("card").?.string,
     );
     try std.testing.expectEqualStrings(
-        "unknown",
+        "one",
+        projected[0].object.get("applied").?.object.get("card").?.string,
+    );
+    try std.testing.expectEqual(
+        @as(i64, @intCast(relation)),
+        projected[0].object.get("applied").?.object.get("id").?.integer,
+    );
+    try std.testing.expectEqualStrings(
+        "one",
         projected[0].object.get("target").?.object.get("card").?.string,
+    );
+    try std.testing.expectEqual(
+        @as(i64, @intCast(relation)),
+        projected[0].object.get("target").?.object.get("id").?.integer,
     );
     try std.testing.expectEqualStrings(
         "unknown",
@@ -5714,11 +5729,15 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
     try graph.publishApplication(
         application,
         relation,
+        relation,
+        relation,
         subject,
         &arguments,
         &results,
     );
     try std.testing.expectEqual(relation, graph.applicationRelation(application).?);
+    try std.testing.expectEqual(relation, graph.applicationApplied(application).?);
+    try std.testing.expectEqual(relation, graph.applicationTarget(application).?);
     try std.testing.expectEqual(subject, graph.applicationSubject(application).?);
     try std.testing.expectEqualSlices(id, &arguments, graph.applicationArguments(application).?);
     try std.testing.expectEqual(result, graph.applicationResult(application).?);
@@ -5736,6 +5755,8 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         graph.publishApplication(
             application,
             relation,
+            relation,
+            relation,
             subject,
             &arguments,
             &results,
@@ -5747,6 +5768,8 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         error.DuplicateApplicationFact,
         graph.publishApplication(
             application,
+            relation,
+            relation,
             relation,
             subject,
             &arguments,
@@ -5771,7 +5794,9 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         error.InvalidApplicationRelation,
         graph.publishApplication(
             wrong,
+            relation,
             result,
+            relation,
             null,
             &.{},
             &wrong_results,
@@ -5806,6 +5831,8 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         graph.publishApplication(
             incomplete,
             relation,
+            relation,
+            relation,
             without_descriptor,
             &.{},
             &incomplete_results,
@@ -5815,6 +5842,8 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         error.InvalidApplicationArgument,
         graph.publishApplication(
             incomplete,
+            relation,
+            relation,
             relation,
             null,
             &incomplete_arguments,
@@ -5827,11 +5856,72 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
         graph.publishApplication(
             incomplete,
             relation,
+            relation,
+            relation,
             null,
             &.{},
             &mismatched_results,
         ),
     );
+}
+
+test "semantic_graph: applied relation and selected target remain distinct" {
+    var graph = SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const module = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "roles.id", .start = 0, .end = 0 },
+    });
+    const relation = try graph.addChild(module, .{
+        .kind = .func,
+        .span = .{ .file = "roles.id", .start = 1, .end = 1 },
+        .result_descriptor = .i64,
+    });
+    const target = try graph.addChild(module, .{
+        .kind = .func,
+        .span = .{ .file = "roles.id", .start = 2, .end = 2 },
+        .result_descriptor = .i64,
+    });
+    const applied = try graph.addChild(module, .{
+        .kind = .local,
+        .span = .{ .file = "roles.id", .start = 2, .end = 2 },
+        .descriptor = .i64,
+    });
+    const application = try graph.addChild(relation, .{
+        .kind = .call,
+        .span = .{ .file = "roles.id", .start = 3, .end = 3 },
+        .descriptor = .i64,
+        .demand = .single,
+    });
+    try graph.markApplicationCandidate(application);
+    const result = try graph.addChild(application, .{
+        .kind = .value,
+        .span = .{ .file = "roles.id", .start = 3, .end = 3 },
+        .descriptor = .i64,
+    });
+    try graph.publishApplication(
+        application,
+        applied,
+        relation,
+        target,
+        null,
+        &.{},
+        &.{result},
+    );
+
+    try std.testing.expectEqual(applied, graph.applicationApplied(application).?);
+    try std.testing.expectEqual(relation, graph.applicationRelation(application).?);
+    try std.testing.expectEqual(target, graph.applicationTarget(application).?);
+    try std.testing.expect(applied != relation);
+    try std.testing.expect(applied != target);
+    try std.testing.expect(target != relation);
+
+    const row = graph.application_rows.items[application];
+    graph.application_facts.items[row].applied = .none;
+    try std.testing.expect(graph.application(application) == null);
+    graph.application_facts.items[row].applied = .{ .one = applied };
+    graph.application_facts.items[row].target = .unknown;
+    try std.testing.expect(graph.application(application) == null);
 }
 
 test "semantic_graph: checked occurrences keep distinct packed ranges" {

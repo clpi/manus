@@ -1,0 +1,21 @@
+# expect: 77
+# Exact pointer descriptors cross ordinary relation boundaries in the graph;
+# the physical realization is one general-purpose register and no aggregate.
+make: *u8 = (size: i64)
+  mem.alloc(size)
+
+pass: *u8 = (value: *u8)
+  value
+
+poke: i64 = (value: *u8)
+  mem.write_byte(value, 3, 77)
+  0
+
+main: i64 = ()
+  first: *u8 = make(8)
+  second: *u8 = pass(first)
+  mem.zero(second, 8)
+  ignored = poke(second)
+  answer = mem.read_byte(first, 3)
+  mem.free(first)
+  answer + ignored
