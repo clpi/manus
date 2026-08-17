@@ -221,6 +221,46 @@ pub fn resolve(
     return null;
 }
 
+/// Remove spelling-only `.` and `..` components before a path contributes a
+/// home. A parent component must cancel one component from the same spelling;
+/// leading relative parents and absolute-root underflow have no lexical home
+/// to name, so they fail closed.
+fn lexicalPath(alloc: std.mem.Allocator, path: []const u8) ![]u8 {
+    if (path.len == 0) return error.AmbiguousHomePath;
+
+    const absolute = std.fs.path.isAbsolute(path);
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer parts.deinit(alloc);
+
+    var it = std.mem.tokenizeScalar(u8, path, '/');
+    while (it.next()) |part| {
+        if (std.mem.eql(u8, part, ".")) continue;
+        if (std.mem.eql(u8, part, "..")) {
+            if (parts.items.len == 0) return error.HomePathEscape;
+            _ = parts.pop();
+            continue;
+        }
+        try parts.append(alloc, part);
+    }
+    if (parts.items.len == 0) return error.AmbiguousHomePath;
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    if (absolute) try out.append(alloc, '/');
+    for (parts.items, 0..) |part, index| {
+        if (index != 0) try out.append(alloc, '/');
+        try out.appendSlice(alloc, part);
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+fn isWithinRoot(path: []const u8, root: []const u8) bool {
+    if (std.mem.eql(u8, path, root)) return true;
+    if (!std.mem.startsWith(u8, path, root)) return false;
+    if (root.len == 0 or root[root.len - 1] == '/') return true;
+    return path.len > root.len and path[root.len] == '/';
+}
+
 /// The HOME a file inhabits, as a dotted path, derived from the file path.
 ///
 /// Both sides of a cross-home reference must land on the same string or the
@@ -231,8 +271,10 @@ pub fn resolve(
 /// home: `lib/compiler/lexer.id` and a project-root `compiler/lexer.id` are the
 /// same home reached two ways, and they must mangle alike.
 pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u8 {
-    const stem = std.fs.path.stem(path);
-    var dir = std.fs.path.dirname(path) orelse "";
+    const normalized = try lexicalPath(alloc, path);
+    defer alloc.free(normalized);
+    const stem = std.fs.path.stem(normalized);
+    var dir = std.fs.path.dirname(normalized) orelse "";
     // THE HOME MAY NOT CONTAIN THE FILESYSTEM. Compiling
     // `/Users/clp/x/idol/lib/compiler/lexer.id` and compiling
     // `lib/compiler/lexer.id` are the same module, and if the two produce
@@ -243,15 +285,14 @@ pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u
     //
     // The project root is the same walk the resolver uses to FIND the file, so
     // stripping it here cannot disagree with the search that produced it.
-    const root = projectRoot(io, path);
-    if (root.len > 0 and !std.mem.eql(u8, root, ".") and std.mem.startsWith(u8, dir, root)) {
+    const root = projectRoot(io, normalized);
+    if (root.len > 0 and !std.mem.eql(u8, root, ".") and isWithinRoot(dir, root)) {
         dir = dir[root.len..];
     }
     var parts: std.ArrayList([]const u8) = .empty;
     defer parts.deinit(alloc);
     var it = std.mem.tokenizeScalar(u8, dir, '/');
     while (it.next()) |part| {
-        if (std.mem.eql(u8, part, ".") or std.mem.eql(u8, part, "..")) continue;
         try parts.append(alloc, part);
     }
     // Drop every leading search-root segment. These name WHERE the compiler
@@ -372,6 +413,29 @@ test "home_resolve: homeOfPath drops search roots and keeps the home chain" {
         defer alloc.free(got);
         try std.testing.expectEqualStrings(c.want, got);
     }
+}
+
+test "home_resolve: lexical parents do not become home components" {
+    const alloc = std.testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    const canonical = try homeOfPath(alloc, io, "right/probe.id");
+    defer alloc.free(canonical);
+    const parent = try homeOfPath(alloc, io, "left/../right/probe.id");
+    defer alloc.free(parent);
+    try std.testing.expectEqualStrings(canonical, parent);
+    try std.testing.expectEqualStrings("right.probe", parent);
+
+    try std.testing.expectError(error.HomePathEscape, homeOfPath(alloc, io, "../../escape.id"));
+    try std.testing.expectError(error.HomePathEscape, homeOfPath(alloc, io, "/../../escape.id"));
+
+    // Damage control: deleting the parent token leaves the cancelled component
+    // alive and therefore names another home.
+    const damaged = try homeOfPath(alloc, io, "left/right/probe.id");
+    defer alloc.free(damaged);
+    try std.testing.expect(!std.mem.eql(u8, parent, damaged));
 }
 
 test "home_resolve: the symbol is a function of home AND name" {
