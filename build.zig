@@ -588,6 +588,15 @@ pub fn build(b: *std.Build) void {
     defaults_step.dependOn(&defaults_cmd.step);
     test_step.dependOn(&defaults_cmd.step);
 
+    const cache_home_cmd = b.addSystemCommand(&.{ "sh", "gate/cache-home.sh" });
+    cache_home_cmd.setCwd(b.path("."));
+    cache_home_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol");
+    cache_home_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
+    cache_home_cmd.step.dependOn(b.getInstallStep());
+    const cache_home_step = b.step("cache-home", "executable cache follows resolved semantic home identity");
+    cache_home_step.dependOn(&cache_home_cmd.step);
+    test_step.dependOn(&cache_home_cmd.step);
+
     // tree-sitter-coverage -- section 19's editor front-end, measured.
     // Runs the generator (failing if it exits non-zero, which the nvim setup
     // script used to swallow), parses every tracked .id file, and ratchets off

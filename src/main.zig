@@ -4339,6 +4339,16 @@ fn buildCacheKey(
     // compile the cache exists to avoid (measured: 159 ms -> 258 ms).
     const self_stat = Io.Dir.statFile(cwd, io, self_argv0, .{}) catch return null;
     var h = std.crypto.hash.sha2.Sha256.init(.{});
+    // Ordinary relation symbols depend on the resolved semantic home. Preserve
+    // that fact in the executable cache key without making path spelling an
+    // identity: equivalent paths resolve to the same home bytes.
+    const home = home_resolve.homeOfPath(alloc, io, src_path) catch return null;
+    defer alloc.free(home);
+    const home_discriminant: u8 = 1;
+    const home_len: u64 = @intCast(home.len);
+    h.update(std.mem.asBytes(&home_discriminant));
+    h.update(std.mem.asBytes(&home_len));
+    h.update(home);
     // The root source enters as the parser's quotient of itself, never as its
     // bytes — see `hashSourceQuotient`. The discriminant keeps a quotient key
     // and a raw-fallback key in disjoint keyspaces.
