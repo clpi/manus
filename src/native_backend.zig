@@ -7760,20 +7760,39 @@ fn validateDnirApplications(
                     // selected physical realization independently.
                     return invalidFactsWith(diagnostic, @src(), "unwitnessed-application-transform");
                 }
-                if (results.len == 1) {
+                const result_aggregate = if (results.len == 1) graph.aggregate(results[0]) else null;
+                const packed_aggregate = result_aggregate != null and instruction.pack_results.len != 0;
+                const physical_results = if (packed_aggregate)
+                    graph.aggregateMembers(result_aggregate.?.aggregate) orelse
+                        return invalidFactsWith(diagnostic, @src(), "application-result-members")
+                else
+                    results;
+                if (results.len == 1 and !packed_aggregate) {
                     if (instruction.pack_results.len != 0) {
                         return invalidFactsWith(diagnostic, @src(), "application-result-pack");
                     }
                 } else {
-                    if (results.len > dnir_lower.max_reg_record_fields or
-                        instruction.pack_results.len != results.len or instruction.result != null or
+                    if (physical_results.len > dnir_lower.max_reg_record_fields or
+                        instruction.pack_results.len != physical_results.len or instruction.result != null or
                         instruction.record.len != 0)
                     {
                         return invalidFactsWith(diagnostic, @src(), "application-result-abi");
                     }
-                    for (instruction.pack_results, results) |projected, value_id| {
+                    const physical_demands = if (packed_aggregate)
+                        graph.packMemberDemands(result_aggregate.?.members_pack) orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-demand")
+                    else
+                        graph.packMemberDemands(application.result_pack) orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-demand");
+                    if (physical_demands.len != physical_results.len) {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-demand");
+                    }
+                    for (instruction.pack_results, physical_results, physical_demands) |projected, value_id, demand| {
                         if (!std.meta.eql(projected.value, value_id)) {
                             return invalidFactsWith(diagnostic, @src(), "application-result-pack");
+                        }
+                        if ((projected.temp == null) != (demand == .discard)) {
+                            return invalidFactsWith(diagnostic, @src(), "application-result-demand");
                         }
                         const node = graph.get(value_id) orelse
                             return invalidFactsWith(diagnostic, @src(), "application-result-member");
@@ -7831,7 +7850,22 @@ fn validateDnirApplications(
                     }
                     const record = result_record orelse
                         return invalidFactsWith(diagnostic, @src(), "application-result-shape");
-                    if (!std.mem.eql(u8, record.name, instruction.record)) {
+                    if (packed_aggregate) {
+                        const aggregate = result_aggregate.?;
+                        const members = graph.aggregateMembers(aggregate.aggregate) orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-members");
+                        if (instruction.record.len != 0 or record.fields.len != members.len) {
+                            return invalidFactsWith(diagnostic, @src(), "application-result-abi");
+                        }
+                        for (record.fields, members) |field, member| {
+                            const member_name = (graph.get(member) orelse
+                                return invalidFactsWith(diagnostic, @src(), "application-result-member")).name orelse
+                                return invalidFactsWith(diagnostic, @src(), "application-result-member");
+                            if (!std.mem.eql(u8, field, member_name)) {
+                                return invalidFactsWith(diagnostic, @src(), "application-result-abi");
+                            }
+                        }
+                    } else if (!std.mem.eql(u8, record.name, instruction.record)) {
                         return invalidFactsWith(diagnostic, @src(), "application-result-abi");
                     }
                 } else {
@@ -10170,6 +10204,18 @@ test "native backend: checked result pack retains order through machine lineage"
     try std.testing.expectEqualStrings("application-result-pack", diagnostic.note().?);
 }
 
+fn verifyProjectedRecordCaller(listing: []const u8) !void {
+    const main_start = std.mem.indexOf(u8, listing, "_main:\n") orelse return error.MissingCaller;
+    const caller = listing[main_start..];
+    const call = std.mem.indexOf(u8, caller, "\tbl ") orelse return error.MissingCall;
+    const after_call = caller[call..];
+    if (std.mem.indexOf(u8, after_call, "\tstr ") != null or
+        std.mem.indexOf(u8, after_call, "\tstur ") != null)
+    {
+        return error.ResultHomeSurvived;
+    }
+}
+
 test "native backend: checked record result keeps application lineage" {
     var diagnostic: Diagnostic = .{};
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
@@ -10177,17 +10223,7 @@ test "native backend: checked record result keeps application lineage" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const source =
-        \\pair: {
-        \\    left: i64
-        \\    right: i64
-        \\}
-        \\make: pair = (value: i64)
-        \\    { left = value, right = value + 1 }
-        \\main: i64 = (seed: i64)
-        \\    result: pair = make(41)
-        \\    result.left + 1
-    ;
+    const source = @embedFile("testdata/result_member_record.id");
     var lexer = Lexer.init(source, "record-lineage.id");
     var parser = Parser.init(&lexer, alloc);
     parser.idol_mode = true;
@@ -10199,6 +10235,8 @@ test "native backend: checked record result keeps application lineage" {
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "record-lineage.id");
+    var demand_plan = try @import("demand.zig").analyzeModule(alloc, &ast_module, .{ .graph = &graph });
+    defer demand_plan.deinit();
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 1), applications.len);
 
@@ -10217,7 +10255,15 @@ test "native backend: checked record result keeps application lineage" {
     }
     try std.testing.expectEqual(@as(usize, 0), anonymous_record_realizations);
     const instruction = call orelse return error.TestExpectedEqual;
-    try std.testing.expectEqualStrings("pair", instruction.record);
+    try std.testing.expectEqualStrings("", instruction.record);
+    try std.testing.expectEqual(@as(usize, 2), instruction.pack_results.len);
+    try std.testing.expect(instruction.pack_results[0].temp != null);
+    try std.testing.expect(instruction.pack_results[1].temp == null);
+    const result_aggregate = graph.aggregate(instruction.value.?) orelse return error.TestExpectedEqual;
+    const result_members = graph.aggregateMembers(result_aggregate.aggregate) orelse return error.TestExpectedEqual;
+    for (instruction.pack_results, result_members) |physical, semantic| {
+        try std.testing.expectEqual(semantic, physical.value);
+    }
     try std.testing.expect(std.meta.eql(instruction.application.?, applications[0].application));
     try std.testing.expect(std.meta.eql(
         instruction.value.?,
@@ -10235,6 +10281,43 @@ test "native backend: checked record result keeps application lineage" {
     try std.testing.expect(std.meta.eql(output.lineage[0].application, applications[0].application));
     try std.testing.expect(output.lineage[0].descriptor.eql(graph.applicationDescriptor(applications[0].application).?));
     try expectLineageCallTarget(alloc, output, module, output.lineage[0]);
+    try verifyProjectedRecordCaller(output.asm_text);
+    const callee_label = try std.fmt.allocPrint(alloc, "_{s}:\n", .{instruction.callee});
+    defer alloc.free(callee_label);
+    const callee_start = std.mem.indexOf(u8, output.asm_text, callee_label) orelse return error.MissingCallee;
+    const main_start = std.mem.indexOfPos(u8, output.asm_text, callee_start, "_main:\n") orelse
+        return error.MissingCaller;
+    const callee_body = output.asm_text[callee_start..main_start];
+    try std.testing.expect(std.mem.indexOf(u8, callee_body, "\tbl _printf\n") != null);
+
+    const full_source =
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = ()
+        \\    print(7)
+        \\    { left = 41, right = 42 }
+        \\main: i64 = ()
+        \\    result = make()
+        \\    result.left
+    ;
+    var full_lexer = Lexer.init(full_source, "record-lineage-full.id");
+    var full_parser = Parser.init(&full_lexer, alloc);
+    full_parser.idol_mode = true;
+    var full_module = try full_parser.parse_module();
+    var full_checked = Sema.init(alloc);
+    defer full_checked.deinit();
+    full_checked.idol_mode = true;
+    try full_checked.check_module(&full_module);
+    var full_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer full_graph.deinit();
+    _ = try full_graph.liftModuleWithCheckedCalls(&full_module, &full_checked, "record-lineage-full.id");
+    var full_demand = try @import("demand.zig").analyzeModule(alloc, &full_module, .{ .graph = &full_graph });
+    defer full_demand.deinit();
+    var full_output = try emitArm64ModuleWithGraph(alloc, &full_module, null, &full_graph, &diagnostic);
+    defer full_output.deinit(alloc);
+    try std.testing.expectError(error.ResultHomeSurvived, verifyProjectedRecordCaller(full_output.asm_text));
 
     var artifact = try emitObjectWithGraphLineage(alloc, &ast_module, "native-object", &graph);
     defer artifact.deinit(alloc);
@@ -10245,7 +10328,34 @@ test "native backend: checked record result keeps application lineage" {
         artifact.bytes[artifact.lineage[0].object_start..artifact.lineage[0].object_end],
     );
 
+    const saved_pack = instruction.pack_results;
+    instruction.pack_results = &.{};
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-abi", diagnostic.note().?);
+    instruction.pack_results = saved_pack;
+    const physical: []dnir.PackResult = @constCast(instruction.pack_results);
+    const demanded_temp = physical[0].temp;
+    physical[0].temp = null;
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-demand", diagnostic.note().?);
+    physical[0].temp = demanded_temp;
+    physical[1].temp = demanded_temp;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-demand", diagnostic.note().?);
+    physical[1].temp = null;
     instruction.record = "other";
+    diagnostic.reset();
     try std.testing.expectError(
         error.SemanticFactsInvalid,
         validateDnirApplications(alloc, module, &graph, &diagnostic),

@@ -323,6 +323,14 @@ pub const AggregateFact = struct {
     contents_known: place.Tri = .unknown,
 };
 
+/// One exact use of an aggregate value. `member = .none` is a use of the
+/// aggregate itself (escape/open observation); `.one` is a statically selected
+/// member. The facts are ordinary binding/projection edges on `occurrence`.
+pub const AggregateUse = struct {
+    aggregate: id,
+    member: Card,
+};
+
 /// Exact scalar content retained by the graph. Literal AST is provenance; a
 /// realization consumes this fact and never re-parses literal syntax.
 pub const ExactI64 = struct {
@@ -1446,6 +1454,130 @@ pub const SemanticGraph = struct {
     pub fn aggregateMembers(self: *const SemanticGraph, aggregate_id: id) ?[]const id {
         const fact = self.aggregate(aggregate_id) orelse return null;
         return self.packMembers(fact.members_pack);
+    }
+
+    /// Validate one graph-owned aggregate occurrence. A consumer may use a
+    /// selected member only when it belongs to the exact bound aggregate.
+    pub fn aggregateUse(self: *const SemanticGraph, occurrence: id) ?AggregateUse {
+        const occurrence_node = self.get(occurrence) orelse return null;
+        if (occurrence_node.kind != .value or occurrence_node.ast_ref == null) return null;
+        var aggregate_id: ?id = null;
+        var member: Card = .none;
+        for (self.outEdges(occurrence)) |ei| {
+            if (ei >= self.edges.items.len) return null;
+            const edge = self.edges.items[ei];
+            if (edge.from != occurrence) return null;
+            switch (edge.kind) {
+                .binding => {
+                    if (self.aggregate(edge.to) == null or aggregate_id != null) return null;
+                    aggregate_id = edge.to;
+                },
+                .projection => {
+                    if (edge.position != 0 or member != .none or self.get(edge.to) == null) return null;
+                    member = .{ .one = edge.to };
+                },
+                else => {},
+            }
+        }
+        const bound_aggregate = aggregate_id orelse return null;
+        switch (member) {
+            .one => |selected| {
+                const members = self.aggregateMembers(bound_aggregate) orelse return null;
+                var found = false;
+                for (members) |candidate| {
+                    if (candidate == selected) found = true;
+                }
+                if (!found) return null;
+            },
+            .none => {},
+            .unknown => return null,
+        }
+        return .{ .aggregate = bound_aggregate, .member = member };
+    }
+
+    fn occurrenceBindsAggregate(self: *const SemanticGraph, occurrence: id, aggregate_id: id) bool {
+        for (self.outEdges(occurrence)) |ei| {
+            if (ei >= self.edges.items.len) continue;
+            const edge = self.edges.items[ei];
+            if (edge.from == occurrence and edge.kind == .binding and edge.to == aggregate_id) return true;
+        }
+        return false;
+    }
+
+    /// Project exact field occurrences onto application-specific result-member
+    /// demand. This changes only physical result capture: application execution
+    /// remains demanded independently by effect/trap/completion law.
+    pub fn projectApplicationResultMemberDemands(self: *SemanticGraph) !usize {
+        try self.requireOpen();
+        var projected_count: usize = 0;
+        for (self.pack_adjustments.items) |adjustment| {
+            const application_fact = self.application(adjustment.application) orelse return error.InvalidPackAdjustment;
+            const source_outer = self.packMembers(adjustment.source_pack) orelse return error.InvalidPackAdjustment;
+            const target_outer = self.packMembers(adjustment.target_pack) orelse return error.InvalidPackAdjustment;
+            if (source_outer.len != 1 or target_outer.len != 1) continue;
+            const source_aggregate = self.aggregate(source_outer[0]) orelse continue;
+            const source_members = self.packMembers(source_aggregate.members_pack) orelse return error.InvalidAggregateFact;
+            const source_demands = self.demandsForRangeMut((self.pack(source_aggregate.members_pack) orelse
+                return error.InvalidAggregateFact).members) orelse return error.InvalidAggregateFact;
+            const target_aggregate = self.aggregate(target_outer[0]) orelse {
+                @memset(source_demands, .unknown);
+                projected_count += 1;
+                continue;
+            };
+            const target_members = self.packMembers(target_aggregate.members_pack) orelse return error.InvalidAggregateFact;
+            if (source_members.len != target_members.len or source_members.len == 0) return error.InvalidAggregateFact;
+            for (source_members, target_members) |source_member, target_member| {
+                if (source_member != target_member) return error.InvalidAggregateFact;
+            }
+            const target_demands = self.demandsForRangeMut((self.pack(target_aggregate.members_pack) orelse
+                return error.InvalidAggregateFact).members) orelse return error.InvalidAggregateFact;
+
+            const target = self.applicationTarget(application_fact.application) orelse return error.InvalidApplicationTarget;
+            if (self.foreignHome(target) != null) {
+                @memset(source_demands, .value);
+                @memset(target_demands, .value);
+                projected_count += 1;
+                continue;
+            }
+
+            @memset(source_demands, .discard);
+            @memset(target_demands, .discard);
+            var open_observation = false;
+            for (self.nodes.items, 0..) |_, coordinate| {
+                const occurrence: id = @intCast(coordinate);
+                if (!self.occurrenceBindsAggregate(occurrence, target_aggregate.aggregate)) continue;
+                const use = self.aggregateUse(occurrence) orelse {
+                    open_observation = true;
+                    break;
+                };
+                switch (use.member) {
+                    .one => |member| {
+                        var found = false;
+                        for (target_members, 0..) |candidate, i| {
+                            if (candidate != member) continue;
+                            source_demands[i] = .value;
+                            target_demands[i] = .value;
+                            found = true;
+                            break;
+                        }
+                        if (!found) {
+                            open_observation = true;
+                            break;
+                        }
+                    },
+                    .none, .unknown => {
+                        open_observation = true;
+                        break;
+                    },
+                }
+            }
+            if (open_observation) {
+                @memset(source_demands, .unknown);
+                @memset(target_demands, .unknown);
+            }
+            projected_count += 1;
+        }
+        return projected_count;
     }
 
     pub fn aggregateCount(self: *const SemanticGraph) usize {
@@ -3222,9 +3354,196 @@ pub const SemanticGraph = struct {
     fn aggregateForExpr(self: *const SemanticGraph, expr: *const ast.Expr, scope: id) ?id {
         return switch (expr.*) {
             .name => |name| self.aggregateNamedInScope(scope, name.ident),
-            .table, .index => self.aggregate_origins.get(@intFromPtr(expr)),
+            .table, .index, .call, .method_call => self.aggregate_origins.get(@intFromPtr(expr)),
             else => null,
         };
+    }
+
+    fn aggregateMemberNamed(self: *const SemanticGraph, aggregate_id: id, name: []const u8) ?id {
+        const members = self.aggregateMembers(aggregate_id) orelse return null;
+        var found: ?id = null;
+        for (members) |member| {
+            const node = self.get(member) orelse return null;
+            const member_name = node.name orelse continue;
+            if (!std.mem.eql(u8, member_name, name)) continue;
+            if (found != null) return null;
+            found = member;
+        }
+        return found;
+    }
+
+    /// Publish an open occurrence against every same-named aggregate in the
+    /// nearest lexical scope. Multiple bindings deliberately make
+    /// `aggregateUse` fail exact validation while `occurrenceBindsAggregate`
+    /// remains true for each candidate, so demand keeps every member.
+    fn publishOpenAggregateNameUse(
+        self: *SemanticGraph,
+        expr: *const ast.Expr,
+        parent: id,
+        name: []const u8,
+    ) !bool {
+        var scope: ?id = parent;
+        while (scope) |current| {
+            var occurrence: ?id = null;
+            for (self.aggregate_facts.items) |fact| {
+                if (fact.owner != current) continue;
+                const node = self.get(fact.aggregate) orelse continue;
+                if (node.scope != current) continue;
+                const candidate = node.name orelse continue;
+                if (!std.mem.eql(u8, candidate, name)) continue;
+                if (occurrence == null) {
+                    const loc = expr.loc();
+                    occurrence = try self.addChild(parent, .{
+                        .kind = .value,
+                        .span = .{ .file = self.module_path orelse "", .start = loc.line, .end = loc.col },
+                        .descriptor = node.descriptor,
+                        .knowledge = .observed,
+                        .stage = .sema,
+                        .ast_ref = @ptrCast(@constCast(expr)),
+                    });
+                }
+                try self.addEdge(.{ .from = occurrence.?, .to = fact.aggregate, .kind = .binding });
+            }
+            if (occurrence != null) return true;
+            scope = (self.get(current) orelse return false).scope;
+        }
+        return false;
+    }
+
+    fn publishAggregateUse(
+        self: *SemanticGraph,
+        expr: *const ast.Expr,
+        parent: id,
+        aggregate_id: id,
+        member: ?id,
+    ) !void {
+        const aggregate_node = self.get(aggregate_id) orelse return error.InvalidAggregateFact;
+        const selected_node = if (member) |selected| self.get(selected) orelse return error.InvalidAggregateFact else aggregate_node;
+        const loc = expr.loc();
+        const occurrence = try self.addChild(parent, .{
+            .kind = .value,
+            .span = .{ .file = self.module_path orelse "", .start = loc.line, .end = loc.col },
+            .descriptor = selected_node.descriptor,
+            .knowledge = .observed,
+            .stage = .sema,
+            .ast_ref = @ptrCast(@constCast(expr)),
+        });
+        try self.addEdge(.{ .from = occurrence, .to = aggregate_id, .kind = .binding });
+        if (member) |selected| {
+            try self.addEdge(.{ .from = occurrence, .to = selected, .kind = .projection, .position = 0 });
+        }
+    }
+
+    fn publishAggregateUsesFromExpr(self: *SemanticGraph, expr: *const ast.Expr, parent: id) anyerror!void {
+        switch (expr.*) {
+            .name => |name| if (self.aggregateForExpr(expr, parent)) |aggregate_id| {
+                try self.publishAggregateUse(expr, parent, aggregate_id, null);
+            } else {
+                _ = try self.publishOpenAggregateNameUse(expr, parent, name.ident);
+            },
+            .field => |field| {
+                if (self.aggregateForExpr(field.obj, parent)) |aggregate_id| {
+                    const member = self.aggregateMemberNamed(aggregate_id, field.field) orelse
+                        return error.InvalidAggregateFact;
+                    try self.publishAggregateUse(expr, parent, aggregate_id, member);
+                } else if (field.obj.* == .name and try self.publishOpenAggregateNameUse(
+                    expr,
+                    parent,
+                    field.obj.name.ident,
+                )) {} else {
+                    try self.publishAggregateUsesFromExpr(field.obj, parent);
+                }
+            },
+            .index => |index| {
+                if (self.aggregateForExpr(index.obj, parent)) |aggregate_id| {
+                    try self.publishAggregateUse(expr, parent, aggregate_id, null);
+                } else {
+                    try self.publishAggregateUsesFromExpr(index.obj, parent);
+                }
+                try self.publishAggregateUsesFromExpr(index.key, parent);
+            },
+            .call => |call| {
+                try self.publishAggregateUsesFromExpr(call.func, parent);
+                for (call.args) |argument| try self.publishAggregateUsesFromExpr(argument, parent);
+            },
+            .method_call => |call| {
+                try self.publishAggregateUsesFromExpr(call.obj, parent);
+                for (call.args) |argument| try self.publishAggregateUsesFromExpr(argument, parent);
+            },
+            .binop => |binary| {
+                try self.publishAggregateUsesFromExpr(binary.lhs, parent);
+                try self.publishAggregateUsesFromExpr(binary.rhs, parent);
+            },
+            .unop => |unary| try self.publishAggregateUsesFromExpr(unary.operand, parent),
+            .table => |table| for (table.fields) |field| switch (field) {
+                .indexed => |indexed| {
+                    try self.publishAggregateUsesFromExpr(indexed.key, parent);
+                    try self.publishAggregateUsesFromExpr(indexed.val, parent);
+                },
+                .named => |named| try self.publishAggregateUsesFromExpr(named.val, parent),
+                .positional => |value| try self.publishAggregateUsesFromExpr(value, parent),
+                .spread => |source| try self.publishAggregateUsesFromExpr(source, parent),
+                .semantic => |semantic| try self.publishAggregateUsesFromExpr(semantic.val, parent),
+            },
+            .if_expr => |conditional| {
+                try self.publishAggregateUsesFromExpr(conditional.cond, parent);
+                try self.publishAggregateUsesFromExpr(conditional.then_expr, parent);
+                try self.publishAggregateUsesFromExpr(conditional.else_expr, parent);
+            },
+            .try_expr => |attempt| try self.publishAggregateUsesFromExpr(attempt.operand, parent),
+            .unwrap_expr => |unwrap| try self.publishAggregateUsesFromExpr(unwrap.operand, parent),
+            .await_expr => |awaited| try self.publishAggregateUsesFromExpr(awaited.operand, parent),
+            .contains_expr => |contains| {
+                try self.publishAggregateUsesFromExpr(contains.lhs, parent);
+                try self.publishAggregateUsesFromExpr(contains.rhs, parent);
+            },
+            .quote => |quote| try self.publishAggregateUsesFromExpr(quote.expr, parent),
+            .unquote => |unquote| try self.publishAggregateUsesFromExpr(unquote.expr, parent),
+            .sequence => |sequence| for (sequence.exprs) |item| try self.publishAggregateUsesFromExpr(item, parent),
+            .range => |range| {
+                try self.publishAggregateUsesFromExpr(range.start, parent);
+                try self.publishAggregateUsesFromExpr(range.end, parent);
+                if (range.step) |step| try self.publishAggregateUsesFromExpr(step, parent);
+            },
+            .list_comp => |list| {
+                try self.publishAggregateUsesFromExpr(list.value, parent);
+                try self.publishAggregateUsesFromExpr(list.iter, parent);
+                if (list.filter) |filter| try self.publishAggregateUsesFromExpr(filter, parent);
+            },
+            .macro_call => |macro| for (macro.args) |argument| try self.publishAggregateUsesFromExpr(argument, parent),
+            .match_expr => |match| {
+                try self.publishAggregateUsesFromExpr(match.scrutinee, parent);
+                for (match.arms) |*arm| {
+                    if (arm.guard) |guard| try self.publishAggregateUsesFromExpr(guard, parent);
+                    try self.publishAggregateUsesInBlock(&arm.body, parent);
+                }
+            },
+            else => {},
+        }
+    }
+
+    fn publishAggregateWriteUse(self: *SemanticGraph, target: *const ast.Expr, parent: id) anyerror!void {
+        switch (target.*) {
+            .name => |name| {
+                _ = try self.publishOpenAggregateNameUse(target, parent, name.ident);
+            },
+            .field => |field| {
+                if (self.aggregateForExpr(field.obj, parent)) |aggregate_id| {
+                    try self.publishAggregateUse(target, parent, aggregate_id, null);
+                } else {
+                    try self.publishAggregateUsesFromExpr(field.obj, parent);
+                }
+            },
+            .index => |index| {
+                if (self.aggregateForExpr(index.obj, parent)) |aggregate_id| {
+                    try self.publishAggregateUse(target, parent, aggregate_id, null);
+                } else {
+                    try self.publishAggregateUsesFromExpr(index.obj, parent);
+                }
+                try self.publishAggregateUsesFromExpr(index.key, parent);
+            },
+            else => try self.publishAggregateUsesFromExpr(target, parent),
+        }
     }
 
     fn aggregateAccessRelation(self: *SemanticGraph, start: id) !id {
@@ -3292,6 +3611,13 @@ pub const SemanticGraph = struct {
     ) !void {
         const selected_fact = self.aggregate(selected) orelse return error.InvalidAggregateFact;
         const selected_members = self.aggregateMembers(selected) orelse return error.InvalidAggregateFact;
+        if (self.descriptorShape(selected, 0)) |shape| {
+            if (self.descriptorShape(projected, 0)) |existing| {
+                if (existing != shape) return error.InvalidAggregateFact;
+            } else {
+                try self.addEdge(.{ .from = projected, .to = shape, .kind = .descriptor });
+            }
+        }
         const members = try self.alloc.alloc(PackMember, selected_members.len);
         defer self.alloc.free(members);
         for (selected_members, 0..) |member, i| {
@@ -3605,6 +3931,64 @@ pub const SemanticGraph = struct {
         }
     }
 
+    /// Publish the ordered semantic values inside one record-valued application
+    /// result. The descriptor shape supplies field identity and order; this
+    /// application supplies fresh value identities. No physical record is
+    /// implied by the aggregate/member-pack fact.
+    fn publishApplicationResultAggregate(self: *SemanticGraph, application_id: id) !void {
+        const results = self.applicationResults(application_id) orelse return error.InvalidAggregateFact;
+        if (results.len != 1) return;
+        const result = results[0];
+        const descriptor = (self.get(result) orelse return error.InvalidAggregateFact).descriptor orelse
+            return error.InvalidAggregateFact;
+        if (descriptor != .@"struct") return;
+        const shape = self.applicationResultShape(application_id, 0) orelse return error.InvalidAggregateFact;
+        const shape_members = try self.membersOf(shape, self.alloc);
+        defer self.alloc.free(shape_members);
+        if (shape_members.len == 0) return;
+
+        const members = try self.alloc.alloc(PackMember, shape_members.len);
+        defer self.alloc.free(members);
+        for (shape_members, 0..) |shape_member, i| {
+            const shape_node = self.get(shape_member) orelse return error.InvalidAggregateFact;
+            const member_descriptor = shape_node.descriptor orelse return error.InvalidAggregateFact;
+            const member = try self.addChild(result, .{
+                .kind = .value,
+                .span = shape_node.span,
+                .name = shape_node.name,
+                .descriptor = member_descriptor,
+                .knowledge = semantic_algebra.knowledgeOfType(member_descriptor),
+                .stage = .sema,
+            });
+            if (self.descriptorShape(shape_member, 0)) |nested_shape| {
+                try self.addEdge(.{ .from = member, .to = nested_shape, .kind = .descriptor });
+            }
+            members[i] = .{ .value = member, .demand = .unknown };
+        }
+        const members_pack = try self.addChild(result, .{
+            .kind = .value,
+            .span = (self.get(result) orelse return error.InvalidAggregateFact).span,
+            .knowledge = .stable,
+            .stage = .sema,
+        });
+        try self.publishPack(
+            members_pack,
+            members,
+            .{ .fixed = @intCast(members.len) },
+            .{ .one = result },
+        );
+        const owner = self.applicationCaller(application_id) orelse return error.InvalidAggregateFact;
+        try self.publishAggregate(.{
+            .aggregate = result,
+            .members_pack = members_pack,
+            .owner = owner,
+            .place = .none,
+            .contents_known = .unknown,
+        });
+        const expression = self.valueExpression(result) orelse return error.InvalidAggregateFact;
+        try self.rememberAggregateOrigin(expression, result);
+    }
+
     fn applicationForExpression(self: *const SemanticGraph, expr: *const Expr) ?*const ApplicationFact {
         for (self.application_facts.items) |*fact| {
             const node = self.get(fact.application) orelse continue;
@@ -3626,10 +4010,12 @@ pub const SemanticGraph = struct {
         source: *const Expr,
         target_count: usize,
     ) !?BindingAdjustmentSource {
-        if (target_count <= 1) return null;
         const application_fact = self.applicationForExpression(source) orelse return null;
         const source_fact = self.pack(application_fact.result_pack) orelse return error.InvalidPackAdjustment;
         const source_members = self.packMembers(source_fact.pack) orelse return error.InvalidPackAdjustment;
+        if (target_count <= 1) {
+            if (target_count != 1 or source_members.len != 1 or self.aggregate(source_members[0]) == null) return null;
+        }
         const source_demands = self.demandsForRangeMut(source_fact.members) orelse return error.InvalidPackAdjustment;
         for (source_demands, 0..) |*demand, i| {
             demand.* = if (i < target_count) .value else .discard;
@@ -3646,6 +4032,7 @@ pub const SemanticGraph = struct {
         source: BindingAdjustmentSource,
         target_pack: id,
         members: []const PackMember,
+        project_aggregate: bool,
     ) !void {
         try self.publishPack(
             target_pack,
@@ -3658,6 +4045,10 @@ pub const SemanticGraph = struct {
             .source_pack = source.source_pack,
             .target_pack = target_pack,
         });
+        if (project_aggregate and source.members.len == 1 and members.len == 1 and self.aggregate(source.members[0]) != null) {
+            const owner = self.applicationCaller(source.application) orelse return error.InvalidPackAdjustment;
+            try self.publishAggregateProjection(members[0].value, source.members[0], owner, .none);
+        }
     }
 
     fn publishBindingAdjustment(
@@ -3685,7 +4076,7 @@ pub const SemanticGraph = struct {
             const value = try self.addApplicationValue(adjustment_source.application, target, file, descriptor);
             target_members[i] = .{ .value = value, .demand = .value };
         }
-        try self.publishBindingTargetPack(adjustment_source, target_pack, target_members);
+        try self.publishBindingTargetPack(adjustment_source, target_pack, target_members, false);
     }
 
     fn localBindingForAdjustment(
@@ -3749,7 +4140,7 @@ pub const SemanticGraph = struct {
             const binding = try self.localBindingForAdjustment(checked, file, adjustment_source, name, fallback);
             target_members[i] = .{ .value = binding, .demand = .value };
         }
-        try self.publishBindingTargetPack(adjustment_source, target_pack, target_members);
+        try self.publishBindingTargetPack(adjustment_source, target_pack, target_members, true);
     }
 
     fn publishBindingAdjustmentsInBlock(
@@ -3789,6 +4180,75 @@ pub const SemanticGraph = struct {
             .func_decl => |function| try self.publishBindingAdjustmentsInBlock(checked, file, &function.func.body),
             else => {},
         };
+    }
+
+    fn publishAggregateUsesInBlock(self: *SemanticGraph, block: *const ast.Block, parent: id) anyerror!void {
+        for (block.stmts) |*stmt| switch (stmt.*) {
+            .expr_stmt => |expression| try self.publishAggregateUsesFromExpr(expression.expr, parent),
+            .call_stmt => |call| try self.publishAggregateUsesFromExpr(call.expr, parent),
+            .local_decl => |declaration| for (declaration.inits) |value|
+                try self.publishAggregateUsesFromExpr(value, parent),
+            .global_decl => |declaration| for (declaration.inits) |value|
+                try self.publishAggregateUsesFromExpr(value, parent),
+            .const_decl => |declaration| try self.publishAggregateUsesFromExpr(declaration.val, parent),
+            .assign => |assignment| {
+                for (assignment.targets) |target| try self.publishAggregateWriteUse(target, parent);
+                for (assignment.values) |value| try self.publishAggregateUsesFromExpr(value, parent);
+            },
+            .ret => |returned| for (returned.vals) |value| try self.publishAggregateUsesFromExpr(value, parent),
+            .if_stmt => |conditional| {
+                if (conditional.binding) |binding| try self.publishAggregateUsesFromExpr(binding.expr, parent);
+                try self.publishAggregateUsesFromExpr(conditional.cond, parent);
+                try self.publishAggregateUsesInBlock(&conditional.then, parent);
+                for (conditional.elseifs) |*branch| {
+                    try self.publishAggregateUsesFromExpr(branch.cond, parent);
+                    try self.publishAggregateUsesInBlock(&branch.body, parent);
+                }
+                if (conditional.else_body) |*branch| try self.publishAggregateUsesInBlock(branch, parent);
+            },
+            .while_loop => |loop| {
+                try self.publishAggregateUsesFromExpr(loop.cond, parent);
+                try self.publishAggregateUsesInBlock(&loop.body, parent);
+            },
+            .repeat_loop => |loop| {
+                try self.publishAggregateUsesInBlock(&loop.body, parent);
+                try self.publishAggregateUsesFromExpr(loop.cond, parent);
+            },
+            .num_for => |loop| {
+                try self.publishAggregateUsesFromExpr(loop.start, parent);
+                try self.publishAggregateUsesFromExpr(loop.stop, parent);
+                if (loop.step) |step| try self.publishAggregateUsesFromExpr(step, parent);
+                try self.publishAggregateUsesInBlock(&loop.body, parent);
+            },
+            .gen_for => |loop| {
+                for (loop.iters) |iter| try self.publishAggregateUsesFromExpr(iter, parent);
+                try self.publishAggregateUsesInBlock(&loop.body, parent);
+            },
+            .do_block => |nested| try self.publishAggregateUsesInBlock(&nested.body, parent),
+            .func_decl => |*function| {
+                const callable_id = self.findFuncDecl(function) orelse parent;
+                try self.publishAggregateUsesInBlock(&function.func.body, callable_id);
+            },
+            .match_stmt => |match| {
+                try self.publishAggregateUsesFromExpr(match.scrutinee, parent);
+                for (match.arms) |*arm| {
+                    if (arm.guard) |guard| try self.publishAggregateUsesFromExpr(guard, parent);
+                    try self.publishAggregateUsesInBlock(&arm.body, parent);
+                }
+            },
+            .try_stmt => |attempt| {
+                try self.publishAggregateUsesInBlock(&attempt.body, parent);
+                for (attempt.catches) |*clause| try self.publishAggregateUsesInBlock(&clause.body, parent);
+                for (attempt.defers) |*deferred| try self.publishAggregateUsesInBlock(&deferred.body, parent);
+            },
+            .defer_stmt => |deferred| try self.publishAggregateUsesInBlock(&deferred.body, parent),
+            else => {},
+        };
+        if (block.tail_expr) |tail| try self.publishAggregateUsesFromExpr(tail, parent);
+    }
+
+    fn publishAggregateUses(self: *SemanticGraph, mod: *const ast.Module, module: id) !void {
+        try self.publishAggregateUsesInBlock(&mod.body, module);
     }
 
     /// Publish identities and descriptors that survived semantic checking.
@@ -3882,9 +4342,11 @@ pub const SemanticGraph = struct {
                 arguments,
                 results,
             );
+            try self.publishApplicationResultAggregate(call_id);
             try self.publishApplicationProjections(call_id);
         }
         try self.publishBindingAdjustmentsInBlock(checked, file, &mod.body);
+        try self.publishAggregateUses(mod, module);
         try self.liftCaptureEdges(mod);
         try self.publishApplicationEffects(mod);
         // AFTER the effect fixpoint, deliberately. That pass blocks a relation
@@ -5183,6 +5645,71 @@ pub const SemanticGraph = struct {
         try buf.append(alloc, ']');
     }
 
+    fn appendPacksJson(
+        self: *const SemanticGraph,
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+    ) !void {
+        try buf.appendSlice(alloc, ",\"packs\":[");
+        for (self.pack_facts.items, 0..) |stored, i| {
+            const fact = self.pack(stored.pack) orelse return error.InvalidPackFact;
+            const members = self.packMembers(fact.pack) orelse return error.InvalidPackFact;
+            const demands = self.packMemberDemands(fact.pack) orelse return error.InvalidPackFact;
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"pack\":");
+            try appendJsonInt(buf, alloc, fact.pack);
+            try buf.appendSlice(alloc, ",\"arity\":{\"kind\":\"");
+            try buf.appendSlice(alloc, switch (fact.arity) {
+                .unknown => "unknown",
+                .fixed => "fixed",
+                .open => "open",
+            });
+            try buf.append(alloc, '"');
+            switch (fact.arity) {
+                .fixed => |count| {
+                    try buf.appendSlice(alloc, ",\"count\":");
+                    try appendJsonInt(buf, alloc, count);
+                },
+                .open => |prefix| {
+                    try buf.appendSlice(alloc, ",\"prefix\":");
+                    try appendJsonInt(buf, alloc, prefix);
+                },
+                .unknown => {},
+            }
+            try buf.append(alloc, '}');
+            try appendCardJson(buf, alloc, "producer", fact.producer);
+            try buf.appendSlice(alloc, ",\"realization\":\"");
+            try buf.appendSlice(alloc, @tagName(fact.realization));
+            try buf.appendSlice(alloc, "\",\"members\":[");
+            for (members, demands, 0..) |member, demand, member_index| {
+                if (member_index > 0) try buf.append(alloc, ',');
+                try buf.appendSlice(alloc, "{\"value\":");
+                try appendJsonInt(buf, alloc, member);
+                try buf.appendSlice(alloc, ",\"demand\":\"");
+                try buf.appendSlice(alloc, @tagName(demand));
+                try buf.appendSlice(alloc, "\"}");
+            }
+            try buf.appendSlice(alloc, "]}");
+        }
+        try buf.appendSlice(alloc, "],\"pack_adjustments\":[");
+        for (self.pack_adjustments.items, 0..) |adjustment, i| {
+            if (self.packAdjustment(adjustment.application) == null) return error.InvalidPackAdjustment;
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"application\":");
+            try appendJsonInt(buf, alloc, adjustment.application);
+            try buf.appendSlice(alloc, ",\"source_pack\":");
+            try appendJsonInt(buf, alloc, adjustment.source_pack);
+            try buf.appendSlice(alloc, ",\"target_pack\":");
+            try appendJsonInt(buf, alloc, adjustment.target_pack);
+            try buf.appendSlice(alloc, ",\"fill\":\"");
+            try buf.appendSlice(alloc, @tagName(adjustment.fill));
+            try buf.appendSlice(alloc, "\",\"forwards_tail\":");
+            try buf.appendSlice(alloc, if (adjustment.forwards_tail) "true" else "false");
+            try buf.append(alloc, '}');
+        }
+        try buf.append(alloc, ']');
+    }
+
     fn appendMembersJson(
         self: *const SemanticGraph,
         buf: *std.ArrayListUnmanaged(u8),
@@ -5226,7 +5753,11 @@ pub const SemanticGraph = struct {
         // version 6: `aggregates` and `exact_i64`. Version 5 serialized neither
         // aggregate member identity nor exact scalar content, so a self-hosted
         // consumer could not reproduce the fact closure used by realization.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":6,\"file\":\"");
+        //
+        // version 7: `packs` and `pack_adjustments`, including every ordered
+        // member demand. Version 6 could name an aggregate's members but could
+        // not reproduce the mask that now changes physical result capture.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":7,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         if (source_hash) |h| {
@@ -5441,6 +5972,7 @@ pub const SemanticGraph = struct {
         try self.appendBodiesJson(out, alloc);
         try self.appendWorldsJson(out, alloc);
         try self.appendAggregatesJson(out, alloc);
+        try self.appendPacksJson(out, alloc);
         try out.appendSlice(alloc, ",\"table_shapes\":[");
         var first_table = true;
         for (self.nodes.items, 0..) |node, node_index| {
@@ -5751,6 +6283,286 @@ test "semantic_graph: tuple return descriptor publishes one semantic result pack
     try std.testing.expectEqual(@as(usize, 2), graph.packMembers(adjustment.target_pack).?.len);
 }
 
+test "semantic_graph: record result field occurrences project exact member demand" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const sources = [_][]const u8{
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: i64 = ()
+        \\    made: pair = make(41)
+        \\    made.left
+        ,
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: i64 = ()
+        \\    made: pair = make(41)
+        \\    made.right
+        ,
+    };
+    for (sources, 0..) |source, selected_index| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = Lexer.init(source, if (selected_index == 0) "left.id" else "right.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = sema.Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        var graph = SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+
+        try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+        const application = graph.applications()[0];
+        const results = graph.applicationResults(application.application).?;
+        try std.testing.expectEqual(@as(usize, 1), results.len);
+        const source_aggregate = graph.aggregate(results[0]) orelse return error.TestExpectedEqual;
+        const members = graph.aggregateMembers(source_aggregate.aggregate) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(@as(usize, 2), members.len);
+        const adjustment = graph.packAdjustment(application.application) orelse return error.TestExpectedEqual;
+        const targets = graph.packMembers(adjustment.target_pack) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(@as(usize, 1), targets.len);
+        const target_node = graph.get(targets[0]) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqualStrings("made", target_node.name orelse return error.TestExpectedEqual);
+        try std.testing.expectEqual(graph.applicationCaller(application.application).?, target_node.scope.?);
+
+        var selected_occurrence: ?id = null;
+        for (graph.nodes.items, 0..) |_, coordinate| {
+            const occurrence: id = @intCast(coordinate);
+            const use = graph.aggregateUse(occurrence) orelse continue;
+            if (use.aggregate != targets[0]) continue;
+            const selected = switch (use.member) {
+                .one => |member| member,
+                .none, .unknown => continue,
+            };
+            try std.testing.expectEqual(members[selected_index], selected);
+            selected_occurrence = occurrence;
+        }
+        const occurrence = selected_occurrence orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(@as(usize, 1), try graph.projectApplicationResultMemberDemands());
+        const expected = if (selected_index == 0)
+            [_]PackMemberDemand{ .value, .discard }
+        else
+            [_]PackMemberDemand{ .discard, .value };
+        try std.testing.expectEqualSlices(
+            PackMemberDemand,
+            &expected,
+            graph.packMemberDemands(source_aggregate.members_pack).?,
+        );
+
+        var json: std.ArrayListUnmanaged(u8) = .empty;
+        defer json.deinit(alloc);
+        try graph.writeJson(alloc, module.file, &json, null);
+        var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
+        defer parsed.deinit();
+        try std.testing.expectEqual(@as(i64, 7), parsed.value.object.get("version").?.integer);
+        var serialized_members: ?[]std.json.Value = null;
+        for (parsed.value.object.get("packs").?.array.items) |serialized_pack| {
+            const object = serialized_pack.object;
+            const pack_id = object.get("pack") orelse continue;
+            if (pack_id.integer != @as(i64, @intCast(source_aggregate.members_pack))) continue;
+            serialized_members = object.get("members").?.array.items;
+        }
+        const serialized = serialized_members orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(members.len, serialized.len);
+        for (serialized, members, expected) |serialized_member, member, demand| {
+            const object = serialized_member.object;
+            try std.testing.expectEqual(@as(i64, @intCast(member)), object.get("value").?.integer);
+            try std.testing.expectEqualStrings(@tagName(demand), object.get("demand").?.string);
+        }
+        try std.testing.expectEqual(@as(usize, 1), parsed.value.object.get("pack_adjustments").?.array.items.len);
+
+        // A foreign target is an open physical boundary: all result registers
+        // remain captured even when this caller selects only one member.
+        const target = graph.applicationTarget(application.application) orelse return error.TestExpectedEqual;
+        graph.nodes.items[target].foreign_home = "foreign";
+        try std.testing.expectEqual(@as(usize, 1), try graph.projectApplicationResultMemberDemands());
+        try std.testing.expectEqualSlices(
+            PackMemberDemand,
+            &[_]PackMemberDemand{ .value, .value },
+            graph.packMemberDemands(source_aggregate.members_pack).?,
+        );
+        graph.nodes.items[target].foreign_home = null;
+        _ = try graph.projectApplicationResultMemberDemands();
+        try std.testing.expectEqualSlices(
+            PackMemberDemand,
+            &expected,
+            graph.packMemberDemands(source_aggregate.members_pack).?,
+        );
+
+        // Damage the selected member edge. The exact occurrence can no longer
+        // validate, so the mask must fail closed to unknown rather than select
+        // a member by field spelling.
+        for (graph.outEdges(occurrence)) |edge_index| {
+            const edge = &graph.edges.items[edge_index];
+            if (edge.kind == .projection) edge.to = std.math.maxInt(id);
+        }
+        try std.testing.expect(graph.aggregateUse(occurrence) == null);
+        _ = try graph.projectApplicationResultMemberDemands();
+        try std.testing.expectEqualSlices(
+            PackMemberDemand,
+            &[_]PackMemberDemand{ .unknown, .unknown },
+            graph.packMemberDemands(source_aggregate.members_pack).?,
+        );
+    }
+}
+
+test "semantic_graph: mutable record result remains an open full-ABI value" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: i64 = ()
+        \\    made = make(41)
+        \\    made.right
+    ;
+    var lexer = Lexer.init(source, "record-assignment.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+
+    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+    const application = graph.applications()[0];
+    const adjustment = graph.packAdjustment(application.application) orelse return error.TestExpectedEqual;
+    const targets = graph.packMembers(adjustment.target_pack) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), targets.len);
+    const caller = graph.applicationCaller(application.application) orelse return error.TestExpectedEqual;
+    _ = caller;
+    try std.testing.expect(graph.aggregate(targets[0]) == null);
+    try std.testing.expectEqual(@as(usize, 1), try graph.projectApplicationResultMemberDemands());
+    const results = graph.applicationResults(application.application) orelse return error.TestExpectedEqual;
+    const aggregate = graph.aggregate(results[0]) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualSlices(
+        PackMemberDemand,
+        &[_]PackMemberDemand{ .unknown, .unknown },
+        graph.packMemberDemands(aggregate.members_pack).?,
+    );
+}
+
+test "semantic_graph: reassigned and shadowed record results never conflate binding with value" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const sources = [_][]const u8{
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: i64 = ()
+        \\    made: pair = make(1)
+        \\    made = make(2)
+        \\    made.left
+        ,
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: i64 = ()
+        \\    made: pair = make(1)
+        \\    do
+        \\        made: pair = make(2)
+        \\        made.left
+        \\    made.right
+        ,
+    };
+    for (sources, 0..) |source, source_index| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = Lexer.init(source, if (source_index == 0) "record-reassign.id" else "record-shadow.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = sema.Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        var graph = SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+        try std.testing.expectEqual(@as(usize, 2), graph.applications().len);
+        try std.testing.expectEqual(@as(usize, 2), try graph.projectApplicationResultMemberDemands());
+        for (graph.applications()) |application| {
+            const results = graph.applicationResults(application.application) orelse return error.TestExpectedEqual;
+            const aggregate = graph.aggregate(results[0]) orelse return error.TestExpectedEqual;
+            try std.testing.expectEqualSlices(
+                PackMemberDemand,
+                &[_]PackMemberDemand{ .unknown, .unknown },
+                graph.packMemberDemands(aggregate.members_pack).?,
+            );
+        }
+    }
+}
+
+test "semantic_graph: bare record observation preserves every result member" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: pair = ()
+        \\    made: pair = make(41)
+        \\    made
+    ;
+    var lexer = Lexer.init(source, "record-open.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+    const application = graph.applications()[0];
+    _ = try graph.projectApplicationResultMemberDemands();
+    const results = graph.applicationResults(application.application) orelse return error.TestExpectedEqual;
+    const aggregate = graph.aggregate(results[0]) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualSlices(
+        PackMemberDemand,
+        &[_]PackMemberDemand{ .unknown, .unknown },
+        graph.packMemberDemands(aggregate.members_pack).?,
+    );
+}
+
 test "semantic_graph: checked subject application retains relation and value identities" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -6028,8 +6840,9 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 6), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 7), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
+    try std.testing.expectEqual(graph.pack_facts.items.len, parsed.value.object.get("packs").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
 
     // The producer in this slice is positional arrays, but AggregateFact and

@@ -290,7 +290,7 @@ pub const Plan = struct {
 pub const Options = struct {
     /// The checked graph, when there is one. Without it every call is refused,
     /// because O3 has no evidence and `unknown` is an effect.
-    graph: ?*const semantic_graph.SemanticGraph = null,
+    graph: ?*semantic_graph.SemanticGraph = null,
     /// Names bound at MODULE scope. A write to one of these is a write to a
     /// place the whole program can see, and is never eliminable.
     ///
@@ -1916,6 +1916,7 @@ pub fn analyzeModule(
     quotient_synth.install(&qenv);
     defer quotient_synth.uninstall();
     _ = try demand_projection.analyzeModule(alloc, mod, scoped, &plan);
+    if (scoped.graph) |graph| _ = try graph.projectApplicationResultMemberDemands();
     return plan;
 }
 
@@ -2196,6 +2197,53 @@ fn deadCountWithGraph(src: []const u8) !GraphDemandResult {
     var plan = try analyzeModule(alloc, &fx.mod, .{ .graph = &graph });
     defer plan.deinit();
     return .{ .dead = plan.count(), .effect_free = effect_free };
+}
+
+test "demand: exact record field projects one result member without deleting its call" {
+    var fx = try parse(
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: i64 = ()
+        \\    made: pair = make(41)
+        \\    made.left
+    );
+    defer fx.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const Sema = @import("sema.zig").Sema;
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&fx.mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&fx.mod, &checked, "member-demand.id");
+
+    const application = graph.applications()[0];
+    const result = graph.applicationResult(application.application) orelse return error.TestExpectedEqual;
+    const aggregate = graph.aggregate(result) orelse return error.TestExpectedEqual;
+    var call_statement: ?*const ast.Stmt = null;
+    for (fx.mod.body.stmts) |*statement| {
+        if (statement.* != .func_decl or !std.mem.eql(u8, statement.func_decl.path[0], "main")) continue;
+        for (statement.func_decl.func.body.stmts) |*body_statement| {
+            if (body_statement.* == .local_decl) call_statement = body_statement;
+        }
+    }
+
+    var plan = try analyzeModule(alloc, &fx.mod, .{ .graph = &graph });
+    defer plan.deinit();
+    try std.testing.expectEqualSlices(
+        semantic_graph.PackMemberDemand,
+        &[_]semantic_graph.PackMemberDemand{ .value, .discard },
+        graph.packMemberDemands(aggregate.members_pack).?,
+    );
+    try std.testing.expect(!plan.isDead(call_statement orelse return error.TestExpectedEqual));
+    try std.testing.expect(graph.application(application.application) != null);
 }
 
 /// Number of statements proven deletable with the world CLOSED — the executable
@@ -2670,7 +2718,6 @@ test "demand: empty function body analyses to nothing dead" {
     );
     try std.testing.expectEqual(@as(u32, 0), n);
 }
-
 
 // --- W: the file-scope tail ------------------------------------------------
 

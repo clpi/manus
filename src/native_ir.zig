@@ -490,7 +490,31 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     const results = graph.applicationResults(application) orelse return false;
                     if (results.len == 0 or results[0] != value) return false;
                     if (results.len == 1) {
-                        if (i.pack_results.len != 0) return false;
+                        if (graph.aggregate(results[0])) |aggregate| {
+                            const members = graph.aggregateMembers(aggregate.aggregate) orelse return false;
+                            if (i.pack_results.len != 0) {
+                                if (i.pack_results.len != members.len or i.result != null or i.record.len != 0) return false;
+                                const demands = graph.packMemberDemands(aggregate.members_pack) orelse return false;
+                                if (demands.len != members.len) return false;
+                                for (i.pack_results, members, demands) |projected, member, demand| {
+                                    if (projected.value != member) return false;
+                                    if ((projected.temp == null) != (demand == .discard)) return false;
+                                    const descriptor = (graph.get(member) orelse return false).descriptor orelse return false;
+                                    if (!descriptor.eql(projected.ty)) return false;
+                                }
+                            } else {
+                                if (i.result != null or i.record.len == 0) return false;
+                                const shape = graph.applicationResultShape(application, 0) orelse return false;
+                                var full_record = false;
+                                for (m.records) |record| {
+                                    if (record.semantic_shape != shape) continue;
+                                    if (!std.mem.eql(u8, record.name, i.record)) continue;
+                                    full_record = true;
+                                    break;
+                                }
+                                if (!full_record) return false;
+                            }
+                        } else if (i.pack_results.len != 0) return false;
                     } else {
                         if (i.pack_results.len != results.len or i.result != null or i.record.len != 0) return false;
                         for (i.pack_results, results) |projected, result| {
