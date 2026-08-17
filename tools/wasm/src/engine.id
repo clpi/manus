@@ -54,8 +54,10 @@ wabi = req "src.wasm.wasi_abi"
 #
 # Codegen constraints (filed 2026-08-05, src/codegen.zig locked):
 #   BUG A  a branch may not end on a void call -> explicit non-void tail.
-#   BUG B  pointer locals must not cross a function boundary -> one function.
-#   BUG C  no `req "std.mem"`; mem.* is intercepted by name.
+#   BUG B  CLOSED: exact pointer descriptors now cross relation parameters and
+#          results; `native_only/pointer_transport.id` is the executable proof.
+#   BUG C  cross-home `req` applications do not yet lower from one semantic
+#          graph; mem.* remains intercepted by name until that path exists.
 #   BUG D  named consts are illegal as `match` patterns -> if/elseif, which
 #          compares properly and lets the descriptor names be used directly.
 #   BUG E  mem.alloc local + while + `match` is a compiler panic -> if/elseif.
@@ -256,8 +258,8 @@ M32 = 0xFFFFFFFF
 
 
 # ── Minimal WASM module decoder (pure Duo) ───────────────────────────────
-# Operates on the module image as a Lua string and returns byte offsets, so
-# no pointer ever crosses a function boundary (BUG B).
+# Operates on the immutable module image as text and returns byte offsets. This
+# shape remains useful independently of pointer transport.
 
 # unsigned LEB128 at 1-based offset `i`. Two scanning helpers instead of an
 # out-parameter: mem.* cannot take an `any`-typed buffer param, and decoding
@@ -289,10 +291,9 @@ uleb_end: i64 = (s: str, i: i64, n: i64)
   p
 
 # Locate the body of the function exported as `run` (falls back to the
-# largest body). Returns offset packed as off * 65536 + len.
-# `which` selects what the walk reports: 0 = the packed body offset/len the
-# JIT path wants, 1 = the *function index* the interpreter wants (it resolves
-# bodies itself, because BUG B forbids handing it a pointer).
+# largest body). Returns offset packed as off * 65536 + len. `which` selects
+# what the walk reports: 0 = the packed body offset/len the JIT path wants,
+# 1 = the function index the interpreter wants.
 find_run_body: i64 = (s: str, n: i64, want: str, wlen: i64, which: i64)
   i: i64 = 9                       # skip 8-byte header (1-based)
   code_off: i64 = 0
@@ -456,11 +457,11 @@ find_run_body: i64 = (s: str, n: i64, want: str, wlen: i64, which: i64)
 # to grep stdout for a sentinel # and -1 is a perfectly legal i64 result, so
 # even that grep is wrong. bench/fib.wasm at fib(34) reaches this today.
 #
-# -1 cannot be made unambiguous in band, and there is no out-of-band channel:
-# BUG B still holds (a `mem.*` buffer cannot cross a Duo function boundary #
-# verified 2026-08-08, it lowers to a boxed lua_Value and the C build fails).
-# So the bail ENDS THE PROCESS at the site that detected it, where the opcode
-# and the body offset are still in scope.
+# -1 cannot be made unambiguous in band. Pointer transport and fixed ordered GP
+# result packs are no longer blockers; the missing fact is the outcome
+# alternative that correlates a value pack with an error/trap pack. Until that
+# crosses applications, the bail ends the process at the detecting site, where
+# the opcode and body offset are in scope.
 #
 # The contract, at the process boundary:
 #   exit 0   a result was computed; stdout carries `result=<v>`
@@ -1011,10 +1012,10 @@ jit_substrate_gap: str = ()
 
 # Interprets function `target` of the module image `img`.
 #
-# It re-walks the module rather than being handed offsets, because BUG B
-# forbids a pointer local crossing a Duo function boundary: the function
-# table, type table and code buffer must be built *here*, by the same
-# function that reads them. The walk is one-time and off the hot path.
+# This legacy path still re-walks the module and builds its function/type/code
+# tables inline. Pointer transport no longer requires that shape; decomposition
+# now waits on graph-owned cross-home modules and exact outcome alternatives;
+# ordinary fixed GP result packs already cross without an aggregate.
 run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
   # The only module name whose functions this host provides. Bound to a `str`
   # local so `:byte()` indexes it; the roster it names lives in
@@ -3848,10 +3849,10 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
   # The one module name whose functions this host provides, bound to a `str`
   # local so `:byte()` indexes it. Same source as the interpreter's.
   jwmod: str = wabi.module_name
-  # The grant as written by the launcher, read here for the same reason the
-  # interpreter reads it in `run_body`: a pointer local cannot cross a function
-  # boundary in this toolchain, so each site materializes the policy from the
-  # `str` it is stated in.
+  # The grant as written by the launcher. This legacy private engine does not
+  # yet consume a graph-owned world/authority value, so each site re-materializes
+  # the policy from the `str` where it is stated. That duplication is migration
+  # debt, not a pointer-transport constraint.
   jgspec: str = grant_spec()
   n: i64 = 0                       # emitted instruction words
   sp: i64 = 0                      # compile-time operand-stack depth
@@ -3928,9 +3929,8 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
   curloc: i64 = 0
   # ── function table, for inlining `call` ──────────────────────────────
   # `s` is the whole module but `off`/`blen` delimit only THIS body, so a
-  # callee must be located here. Built in-function because BUG B forbids a
-  # pointer local crossing a Duo function boundary # the same reason
-  # `run_body` builds its tables inline.
+  # callee must be located here. This table is still built in-function as
+  # migration debt; pointer transport no longer requires the locality.
   jtp = mem.alloc(256 * 8)
   jtr = mem.alloc(256 * 8)
   jft = mem.alloc(256 * 6 * 8)
@@ -4231,9 +4231,8 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
       jfv += 1
 
   # ── table + element segments ─────────────────────────────────────────
-  # Read exactly as `run_body` reads them, and for the same reason it does it
-  # inline: BUG B forbids handing a pointer local across a Duo function
-  # boundary, so the walk lives with the tables it fills.
+  # Read exactly as `run_body` reads them. The inline walk is legacy structure,
+  # not a remaining pointer-boundary requirement.
   if jtbo > 0
     jntb: i64 = uleb_val(s, jtbo, mlen)
     jtq3: i64 = uleb_end(s, jtbo, mlen)
