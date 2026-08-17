@@ -586,6 +586,7 @@ pub fn build(b: *std.Build) void {
     defaults_cmd.step.dependOn(b.getInstallStep());
     const defaults_step = b.step("defaults-gate", "census function and descriptor defaults across parse, check, direct, and run");
     defaults_step.dependOn(&defaults_cmd.step);
+    test_step.dependOn(&defaults_cmd.step);
 
     // tree-sitter-coverage -- section 19's editor front-end, measured.
     // Runs the generator (failing if it exits non-zero, which the nvim setup
