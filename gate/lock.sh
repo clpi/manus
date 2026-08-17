@@ -100,6 +100,65 @@ set -e
 [ ! -e "$work/damaged-shell-ran" ] || fail 'damaged nested shell ran its child'
 [ ! -e "$work/damaged-shell-lock" ] || fail 'damaged outer shell left its lock'
 
+for kind in replacement invalid ownerless; do
+  shellheld="$work/shell-$kind"
+  ready="$work/shell-$kind-ready"
+  release="$work/shell-$kind-release"
+  IDOL_BUILD_LOCK="$shellheld" "$shell" -- \
+    "$work/hold" "$ready" "$release" &
+  holder=$!
+  children="$children $holder"
+  waitfor "$ready"
+  waitfor "$shellheld/owner"
+  case "$kind" in
+    replacement) printf 'replacement\n' >"$shellheld/owner" ;;
+    invalid) printf 'not-a-process\n' >"$shellheld/owner" ;;
+    ownerless) rm -f "$shellheld/owner" ;;
+  esac
+  touch "$release"
+  wait "$holder"
+  children=""
+  [ -d "$shellheld" ] || fail "authoritative shell deleted $kind owner"
+  case "$kind" in
+    replacement) [ "$(cat "$shellheld/owner")" = replacement ] || fail 'replacement owner changed' ;;
+    invalid) [ "$(cat "$shellheld/owner")" = not-a-process ] || fail 'invalid owner changed' ;;
+    ownerless) [ ! -e "$shellheld/owner" ] || fail 'ownerless lock gained an owner' ;;
+  esac
+  rm -f "$shellheld/owner"
+  rmdir "$shellheld"
+done
+
+cleanupdamage="$work/idol-lock-cleanup-damaged"
+sed '/^cleanup() {$/,/^}$/c\
+cleanup() {\
+  rm -rf "$lockdir"\
+}' "$shell" >"$cleanupdamage"
+chmod +x "$cleanupdamage"
+grep -Fq 'rm -rf "$lockdir"' "$cleanupdamage" || \
+  fail 'replacement cleanup damage did not land'
+shellheld="$work/shell-damaged-replacement"
+ready="$work/shell-damaged-ready"
+release="$work/shell-damaged-release"
+IDOL_BUILD_LOCK="$shellheld" "$cleanupdamage" -- \
+  "$work/hold" "$ready" "$release" &
+holder=$!
+children="$children $holder"
+waitfor "$ready"
+waitfor "$shellheld/owner"
+printf 'replacement\n' >"$shellheld/owner"
+touch "$release"
+wait "$holder"
+children=""
+if [ -d "$shellheld" ]; then
+  damage=REPLACEMENT_PRESERVED
+  rm -f "$shellheld/owner"
+  rmdir "$shellheld"
+else
+  damage=REPLACEMENT_DELETED
+fi
+printf 'lock gate damage: %s\n' "$damage"
+[ "$damage" = REPLACEMENT_DELETED ] || fail 'replacement cleanup damage survived'
+
 success="$work/success"
 [ "$(IDOL_BUILD_LOCK="$success" "$work/lock" status)" = FREE ] || \
   fail 'fresh lock did not report free'

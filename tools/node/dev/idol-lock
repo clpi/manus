@@ -54,7 +54,14 @@ done
 printf '%s\n' "$$" >"$lockdir/owner"
 export IDOL_LOCK_HELD=1
 export IDOL_BUILD_LOCK="$lockdir"
-trap 'rm -rf "$lockdir"' EXIT INT TERM
+
+cleanup() {
+  owner=$(cat "$lockdir/owner" 2>/dev/null) || return 0
+  [ "$owner" = "$$" ] || return 0
+  rm -f "$lockdir/owner" || return 0
+  rmdir "$lockdir" || true
+}
+trap cleanup EXIT INT TERM
 
 set +e
 "$@"
