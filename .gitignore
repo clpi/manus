@@ -106,7 +106,8 @@ scripts/_*.id
 .cursor/mcp.json
 .codex/
 .devin/
-.opencode/
+.opencode/*
+!.opencode/agent/
 
 # Agent git worktrees. 1.7 GB at the time this line was written, sitting inside
 # the repository as UNTRACKED — which is one `git add -A` away from being

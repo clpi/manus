@@ -14,6 +14,14 @@ tool census, or current gate status.
   names, environment keys, and skill names are `idol`-named only; no client
   configuration may reintroduce retired spellings.
 
+## Operating model and work orders
+
+Multi-agent allocation is defined by `.agents/AGENT_OPERATING_MODEL.md`
+(roles, waves, and the never-assign list). Every assignment to a
+non-architectural agent is materialized through `.agents/WORK_ORDER.md`;
+per-agent injectables live under `.agents/briefs/`. OpenCode's assigned
+role is projected natively as the `pickle` agent (`.opencode/agent/pickle.md`).
+
 ## Repository servers
 
 The version-locked MCP implementations are declared once by the
