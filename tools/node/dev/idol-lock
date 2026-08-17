@@ -10,13 +10,27 @@ usage() {
   exit 64
 }
 
+holder() {
+  for entry in "$lockdir"/owner.*.*; do
+    [ -d "$entry" ] || continue
+    name=${entry##*/}
+    printf '%s\n' "${name#owner.}"
+    return 0
+  done
+  if [ -f "$lockdir/owner" ]; then
+    name=$(cat "$lockdir/owner" 2>/dev/null || true)
+    [ "$name" = "" ] || { printf '%s\n' "$name"; return 0; }
+  fi
+  printf 'unavailable\n'
+}
+
 if [ "$#" -eq 0 ]; then
   usage
 fi
 
 if [ "$1" = "status" ]; then
-  if [ -f "$lockdir/owner" ]; then
-    printf 'LOCKED by %s\n' "$(cat "$lockdir/owner" 2>/dev/null || true)"
+  if [ -d "$lockdir" ]; then
+    printf 'LOCKED by %s\n' "$(holder)"
   else
     printf 'FREE\n'
   fi
@@ -44,22 +58,22 @@ fi
 waited=0
 while ! mkdir "$lockdir" 2>/dev/null; do
   if [ "$waited" -ge "$timeout" ]; then
-    echo "idol-lock: timed out after ${timeout}s waiting for lock" >&2
+    echo "idol-lock: timed out after ${timeout}s waiting for lock ($(holder))" >&2
     exit 75
   fi
   sleep 1
   waited=$((waited + 1))
 done
 
-printf '%s\n' "$$" >"$lockdir/owner"
+nonce=$(date +%s)
+token="$lockdir/owner.$$.$nonce"
+mkdir "$token"
 export IDOL_LOCK_HELD=1
 export IDOL_BUILD_LOCK="$lockdir"
 
 cleanup() {
-  owner=$(cat "$lockdir/owner" 2>/dev/null) || return 0
-  [ "$owner" = "$$" ] || return 0
-  rm -f "$lockdir/owner" || return 0
-  rmdir "$lockdir" || true
+  rmdir "$token" 2>/dev/null || return 0
+  rmdir "$lockdir" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 

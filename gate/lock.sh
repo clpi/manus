@@ -33,6 +33,26 @@ waitfor() {
   done
 }
 
+tokenof() {
+  for candidate in "$1"/owner.*.*; do
+    [ -d "$candidate" ] || continue
+    printf '%s\n' "$candidate"
+    return 0
+  done
+  return 1
+}
+
+waittoken() {
+  directory=$1
+  tries=0
+  while ! token=$(tokenof "$directory"); do
+    tries=$((tries + 1))
+    [ "$tries" -lt 200 ] || fail "timed out waiting for token in $directory"
+    sleep 0.01
+  done
+  printf '%s\n' "$token"
+}
+
 buildlock="$work/build-lock"
 IDOL_BUILD_LOCK="$buildlock" "$shell" -- \
   "$idol" compile --backend=direct "$source" -o "$work/lock" >/dev/null
@@ -55,13 +75,21 @@ IDOL_BUILD_LOCK="$nested" "$shell" -- \
 holder=$!
 children="$children $holder"
 waitfor "$ready"
-waitfor "$nested/owner"
+token=$(waittoken "$nested")
+tokenname=${token##*/}
+owner=${tokenname#owner.}
+[ "$(IDOL_BUILD_LOCK="$nested" "$shell" status)" = "LOCKED by $owner" ] || \
+  fail 'authoritative status lost its unique owner token'
 set +e
-IDOL_LOCK_HELD=2 IDOL_BUILD_LOCK="$nested" "$shell" --timeout 0 -- \
-  "$work/write" "$work/nested-overlap"
+waiting=$(IDOL_LOCK_HELD=2 IDOL_BUILD_LOCK="$nested" "$shell" --timeout 0 -- \
+  "$work/write" "$work/nested-overlap" 2>&1)
 rc=$?
 set -e
 [ "$rc" -eq 75 ] || fail "non-one marker bypassed with $rc"
+case "$waiting" in
+  *"$owner"*) ;;
+  *) fail 'authoritative wait diagnostic lost its unique owner token' ;;
+esac
 [ ! -e "$work/nested-overlap" ] || fail 'nested child overlapped holder'
 touch "$release"
 wait "$holder"
@@ -100,6 +128,40 @@ set -e
 [ ! -e "$work/damaged-shell-ran" ] || fail 'damaged nested shell ran its child'
 [ ! -e "$work/damaged-shell-lock" ] || fail 'damaged outer shell left its lock'
 
+legacy="$work/shell-legacy"
+mkdir "$legacy"
+printf '424242\n' >"$legacy/owner"
+[ "$(IDOL_BUILD_LOCK="$legacy" "$shell" status)" = 'LOCKED by 424242' ] || \
+  fail 'authoritative status lost the legacy owner'
+set +e
+waiting=$(IDOL_BUILD_LOCK="$legacy" "$shell" --timeout 0 -- /usr/bin/true 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 75 ] || fail "legacy owner returned $rc"
+case "$waiting" in
+  *424242*) ;;
+  *) fail 'authoritative wait diagnostic lost the legacy owner' ;;
+esac
+[ "$(cat "$legacy/owner")" = 424242 ] || fail 'legacy owner changed'
+rm -f "$legacy/owner"
+rmdir "$legacy"
+
+ownerless="$work/shell-ownerless-diagnostic"
+mkdir "$ownerless"
+[ "$(IDOL_BUILD_LOCK="$ownerless" "$shell" status)" = 'LOCKED by unavailable' ] || \
+  fail 'authoritative status treated ownerless lock as free'
+set +e
+waiting=$(IDOL_BUILD_LOCK="$ownerless" "$shell" --timeout 0 -- /usr/bin/true 2>&1)
+rc=$?
+set -e
+[ "$rc" -eq 75 ] || fail "ownerless shell lock returned $rc"
+case "$waiting" in
+  *unavailable*) ;;
+  *) fail 'authoritative wait diagnostic hid ownerless lock' ;;
+esac
+[ -d "$ownerless" ] || fail 'authoritative shell reclaimed ownerless lock'
+rmdir "$ownerless"
+
 for kind in replacement invalid ownerless; do
   shellheld="$work/shell-$kind"
   ready="$work/shell-$kind-ready"
@@ -109,24 +171,66 @@ for kind in replacement invalid ownerless; do
   holder=$!
   children="$children $holder"
   waitfor "$ready"
-  waitfor "$shellheld/owner"
+  token=$(waittoken "$shellheld")
+  rmdir "$token"
   case "$kind" in
-    replacement) printf 'replacement\n' >"$shellheld/owner" ;;
+    replacement) mkdir "$shellheld/owner.replacement.precleanup" ;;
     invalid) printf 'not-a-process\n' >"$shellheld/owner" ;;
-    ownerless) rm -f "$shellheld/owner" ;;
+    ownerless) : ;;
   esac
   touch "$release"
   wait "$holder"
   children=""
   [ -d "$shellheld" ] || fail "authoritative shell deleted $kind owner"
   case "$kind" in
-    replacement) [ "$(cat "$shellheld/owner")" = replacement ] || fail 'replacement owner changed' ;;
+    replacement) [ -d "$shellheld/owner.replacement.precleanup" ] || fail 'replacement token changed' ;;
     invalid) [ "$(cat "$shellheld/owner")" = not-a-process ] || fail 'invalid owner changed' ;;
-    ownerless) [ ! -e "$shellheld/owner" ] || fail 'ownerless lock gained an owner' ;;
+    ownerless) [ -z "$(find "$shellheld" -mindepth 1 -maxdepth 1 -print -quit)" ] || fail 'ownerless lock gained an owner' ;;
   esac
-  rm -f "$shellheld/owner"
+  case "$kind" in
+    replacement) rmdir "$shellheld/owner.replacement.precleanup" ;;
+    invalid) rm -f "$shellheld/owner" ;;
+    ownerless) : ;;
+  esac
   rmdir "$shellheld"
 done
+
+realrmdir=$(command -v rmdir)
+mkdir "$work/interpose-rmdir"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'set -eu' \
+  'if [ ! -e "$IDOL_RMDIR_STATE" ]; then' \
+  '  : >"$IDOL_RMDIR_STATE"' \
+  '  : >"$IDOL_RMDIR_PAUSED"' \
+  '  while [ ! -e "$IDOL_RMDIR_RESUME" ]; do sleep 0.01; done' \
+  'fi' \
+  'exec "$IDOL_REAL_RMDIR" "$@"' >"$work/interpose-rmdir/rmdir"
+chmod +x "$work/interpose-rmdir/rmdir"
+
+race="$work/shell-cleanup-race"
+paused="$work/shell-cleanup-paused"
+resume="$work/shell-cleanup-resume"
+state="$work/shell-cleanup-state"
+PATH="$work/interpose-rmdir:$PATH" \
+IDOL_REAL_RMDIR="$realrmdir" \
+IDOL_RMDIR_STATE="$state" \
+IDOL_RMDIR_PAUSED="$paused" \
+IDOL_RMDIR_RESUME="$resume" \
+IDOL_BUILD_LOCK="$race" "$shell" -- /usr/bin/true &
+holder=$!
+children="$children $holder"
+waitfor "$paused"
+token=$(waittoken "$race")
+replacement="$race/owner.replacement.race"
+mkdir "$replacement"
+touch "$resume"
+wait "$holder"
+children=""
+[ ! -e "$token" ] || fail 'authoritative cleanup left its own token'
+[ -d "$replacement" ] || fail 'authoritative cleanup deleted in-window replacement'
+rmdir "$replacement"
+rmdir "$race"
 
 cleanupdamage="$work/idol-lock-cleanup-damaged"
 sed '/^cleanup() {$/,/^}$/c\
@@ -136,23 +240,41 @@ cleanup() {\
 chmod +x "$cleanupdamage"
 grep -Fq 'rm -rf "$lockdir"' "$cleanupdamage" || \
   fail 'replacement cleanup damage did not land'
-shellheld="$work/shell-damaged-replacement"
-ready="$work/shell-damaged-ready"
-release="$work/shell-damaged-release"
-IDOL_BUILD_LOCK="$shellheld" "$cleanupdamage" -- \
-  "$work/hold" "$ready" "$release" &
+
+realrm=$(command -v rm)
+mkdir "$work/interpose-rm"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'set -eu' \
+  'if [ ! -e "$IDOL_RM_STATE" ]; then' \
+  '  : >"$IDOL_RM_STATE"' \
+  '  : >"$IDOL_RM_PAUSED"' \
+  '  while [ ! -e "$IDOL_RM_RESUME" ]; do sleep 0.01; done' \
+  'fi' \
+  'exec "$IDOL_REAL_RM" "$@"' >"$work/interpose-rm/rm"
+chmod +x "$work/interpose-rm/rm"
+
+shellheld="$work/shell-damaged-race"
+paused="$work/shell-damaged-paused"
+resume="$work/shell-damaged-resume"
+state="$work/shell-damaged-state"
+PATH="$work/interpose-rm:$PATH" \
+IDOL_REAL_RM="$realrm" \
+IDOL_RM_STATE="$state" \
+IDOL_RM_PAUSED="$paused" \
+IDOL_RM_RESUME="$resume" \
+IDOL_BUILD_LOCK="$shellheld" "$cleanupdamage" -- /usr/bin/true &
 holder=$!
 children="$children $holder"
-waitfor "$ready"
-waitfor "$shellheld/owner"
-printf 'replacement\n' >"$shellheld/owner"
-touch "$release"
+waitfor "$paused"
+waittoken "$shellheld" >/dev/null
+mkdir "$shellheld/owner.replacement.race"
+touch "$resume"
 wait "$holder"
 children=""
 if [ -d "$shellheld" ]; then
   damage=REPLACEMENT_PRESERVED
-  rm -f "$shellheld/owner"
-  rmdir "$shellheld"
+  rm -rf "$shellheld"
 else
   damage=REPLACEMENT_DELETED
 fi
