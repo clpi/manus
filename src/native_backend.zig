@@ -807,6 +807,10 @@ const Arm64Compiler = struct {
     /// -> the `__TEXT,__const` symbol its base address relocates against.
     /// Cleared per function.
     const_bases: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+    /// Graph aggregate identity -> immutable `__TEXT,__const` symbol. DNIR
+    /// function plans project that semantic identity onto their local base
+    /// temp; no source binding name or table AST is consulted here.
+    graph_const_bases: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
     /// The module's `__TEXT,__const` payload, one i64 word per entry.
     const_words: std.ArrayList(i64) = .empty,
     const_tables: std.ArrayList(ConstTableSymbol) = .empty,
@@ -1168,6 +1172,7 @@ const Arm64Compiler = struct {
         self.strings.deinit(self.alloc);
         self.string_map.deinit(self.alloc);
         self.const_bases.deinit(self.alloc);
+        self.graph_const_bases.deinit(self.alloc);
         self.const_words.deinit(self.alloc);
         self.const_tables.deinit(self.alloc);
         // Keys are borrowed; the symbol NAMES are owned and freed with the
@@ -1486,6 +1491,13 @@ const Arm64Compiler = struct {
 
     fn compileDnirModule(self: *Arm64Compiler, m: dnir.Module) Error!void {
         try self.emitAsmHeader();
+        for (m.dense_tables) |table| {
+            if (table.elem_ty != .i64 or table.values.len == 0) return self.refuse(@src());
+            const symbol = try self.internConstTable(table.values);
+            const entry = try self.graph_const_bases.getOrPut(self.alloc, table.value);
+            if (entry.found_existing and entry.value_ptr.* != symbol) return self.refuse(@src());
+            entry.value_ptr.* = symbol;
+        }
         // The load-time content of the module's storage, BEFORE any function is
         // compiled — `internGlobal` reads it on first mention of each name.
         for (m.globals) |g| {
@@ -1641,6 +1653,28 @@ const Arm64Compiler = struct {
         // against a real pass that emits none of it, so the measurement would be
         // of a different function.
         probe.const_licence = self.const_licence;
+        if (self.graph_const_bases.count() != 0) {
+            var last_symbol: u32 = 0;
+            var bases = self.graph_const_bases.iterator();
+            while (bases.next()) |entry| last_symbol = @max(last_symbol, entry.value_ptr.*);
+            if (last_symbol >= self.symbols.items.len) return null;
+            for (self.symbols.items[0 .. last_symbol + 1]) |symbol| {
+                var copy = symbol;
+                copy.name = self.alloc.dupe(u8, symbol.name) catch return null;
+                probe.symbols.append(self.alloc, copy) catch {
+                    self.alloc.free(copy.name);
+                    return null;
+                };
+            }
+            bases = self.graph_const_bases.iterator();
+            while (bases.next()) |entry| {
+                probe.graph_const_bases.put(
+                    self.alloc,
+                    entry.key_ptr.*,
+                    entry.value_ptr.*,
+                ) catch return null;
+            }
+        }
         probe.callee_save_plan = callee_save_all;
         defer probe.deinit();
         probe.compileDnirFunction(f) catch return null;
@@ -2636,12 +2670,24 @@ const Arm64Compiler = struct {
         // restated. This runs BEFORE the slot-base pass below because its answer
         // is what that pass has to skip.
         self.const_bases.clearRetainingCapacity();
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.op != .alloc_slots or ins.aggregate == null) continue;
+                const base = ins.result orelse return self.refuse(@src());
+                const symbol = self.graph_const_bases.get(ins.aggregate.?) orelse return self.refuse(@src());
+                const entry = try self.const_bases.getOrPut(self.alloc, base);
+                if (entry.found_existing and entry.value_ptr.* != symbol) return self.refuse(@src());
+                entry.value_ptr.* = symbol;
+            }
+        }
         if (self.const_licence) |lic| {
             var promotions = try const_table.recognize(self.alloc, f, lic);
             defer promotions.deinit();
             for (promotions.items) |p| {
                 const sym = try self.internConstTable(p.values);
-                try self.const_bases.put(self.alloc, p.base, sym);
+                const entry = try self.const_bases.getOrPut(self.alloc, p.base);
+                if (entry.found_existing and entry.value_ptr.* != sym) return self.refuse(@src());
+                entry.value_ptr.* = sym;
             }
         }
 
@@ -7464,6 +7510,135 @@ fn unrealizedApplicationCount(module: dnir.Module) usize {
     return count;
 }
 
+fn aggregateApplicationRoot(
+    graph: *const semantic_graph.SemanticGraph,
+    application: semantic_graph.id,
+) ?semantic_graph.id {
+    var subject = graph.applicationSubject(application) orelse return null;
+    var traversed: usize = 0;
+    while (graph.aggregateProducer(subject)) |producer| {
+        if (traversed >= graph.aggregateCount()) return null;
+        subject = graph.applicationSubject(producer) orelse return null;
+        traversed += 1;
+    }
+    return if (graph.aggregate(subject) != null) subject else null;
+}
+
+fn aggregateWordsMatch(
+    graph: *const semantic_graph.SemanticGraph,
+    aggregate: semantic_graph.id,
+    words: []const i64,
+    cursor: *usize,
+    depth: usize,
+) bool {
+    if (depth >= graph.aggregateCount()) return false;
+    const fact = graph.aggregate(aggregate) orelse return false;
+    if (fact.contents_known != .yes) return false;
+    const members = graph.aggregateMembers(aggregate) orelse return false;
+    for (members) |member| {
+        const node = graph.get(member) orelse return false;
+        const descriptor = node.descriptor orelse return false;
+        switch (descriptor) {
+            .i64 => {
+                if (cursor.* >= words.len) return false;
+                if (graph.exactI64(member) != words[cursor.*]) return false;
+                cursor.* += 1;
+            },
+            .array => if (!aggregateWordsMatch(graph, member, words, cursor, depth + 1)) return false,
+            else => return false,
+        }
+    }
+    return true;
+}
+
+fn validateAggregateAccessRealization(
+    module: dnir.Module,
+    function: dnir.Function,
+    graph: *const semantic_graph.SemanticGraph,
+    instruction: dnir.Instr,
+    descriptor: native_types.ResolvedType,
+    diagnostic: *Diagnostic,
+) Error!void {
+    const application = instruction.application orelse
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-application");
+    _ = graph.aggregateAccess(application) orelse
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-facts");
+    const root = aggregateApplicationRoot(graph, application) orelse
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
+    const root_node = graph.get(root) orelse
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
+    const root_descriptor = root_node.descriptor orelse
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
+    if (root_descriptor != .array or root_descriptor.array.elem.* != .array) {
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
+    }
+    const root_fact = graph.aggregate(root) orelse
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
+    const aggregate_place = graph.aggregatePlace(root) orelse
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-place");
+    if (root_fact.contents_known != .yes or aggregate_place.shape != .collection or
+        aggregate_place.facts.contents_known != .yes or aggregate_place.facts.mutation != .no or
+        aggregate_place.facts.immutability != .yes or aggregate_place.facts.alias != .no or
+        aggregate_place.facts.escape != .no)
+    {
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-place");
+    }
+
+    var table: ?dnir.DenseTable = null;
+    for (module.dense_tables) |candidate| {
+        if (candidate.value != root) continue;
+        if (table != null) return invalidFactsWith(diagnostic, @src(), "aggregate-dense-table-count");
+        table = candidate;
+    }
+    const dense = table orelse
+        return invalidFactsWith(diagnostic, @src(), "aggregate-dense-table");
+    if (dense.elem_ty != .i64 or dense.values.len == 0) {
+        return invalidFactsWith(diagnostic, @src(), "aggregate-dense-table");
+    }
+    var cursor: usize = 0;
+    if (!aggregateWordsMatch(graph, root, dense.values, &cursor, 0) or cursor != dense.values.len) {
+        return invalidFactsWith(diagnostic, @src(), "aggregate-dense-table-content");
+    }
+
+    var base: ?u32 = null;
+    for (function.blocks) |block| {
+        for (block.instrs) |candidate| {
+            if (candidate.aggregate != root) continue;
+            if (candidate.op != .alloc_slots or candidate.result == null or candidate.ty != .i64 or
+                candidate.lhs != .i64 or candidate.lhs.i64 != @as(i64, @intCast(dense.values.len)))
+            {
+                return invalidFactsWith(diagnostic, @src(), "aggregate-root-marker");
+            }
+            if (base != null) return invalidFactsWith(diagnostic, @src(), "aggregate-root-marker-count");
+            base = candidate.result.?;
+        }
+    }
+    const root_base = base orelse
+        return invalidFactsWith(diagnostic, @src(), "aggregate-root-marker");
+    if (instruction.aggregate != null or instruction.callee.len != 0 or
+        instruction.record.len != 0 or instruction.pack_results.len != 0)
+    {
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization");
+    }
+    switch (descriptor) {
+        .array => {
+            if (instruction.op != .store_local or instruction.result == null or instruction.lhs == .void or
+                instruction.rhs != .void)
+            {
+                return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
+            }
+        },
+        .i64 => {
+            if (instruction.op != .load_index or instruction.result == null or instruction.lhs != .temp or
+                instruction.lhs.temp != root_base or instruction.rhs != .temp)
+            {
+                return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
+            }
+        },
+        else => return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-descriptor"),
+    }
+}
+
 fn validateDnirApplications(
     alloc: std.mem.Allocator,
     module: dnir.Module,
@@ -7543,13 +7718,6 @@ fn validateDnirApplications(
                     return invalidFactsWith(diagnostic, @src(), "invalid-realization-start");
                 }
 
-                // A checked call-to-constant or tail-call rewrite needs a
-                // semantic transform witness that the current graph does not
-                // publish. Until then, only the untransformed call is lawful.
-                if (instruction.op != .call_direct) {
-                    return invalidFactsWith(diagnostic, @src(), "unwitnessed-application-transform");
-                }
-
                 const application = graph.application(instruction.application.?) orelse
                     return invalidFactsWith(diagnostic, @src(), "unknown-application-lineage");
                 const result = try applicationResult(graph, application.*, diagnostic);
@@ -7572,20 +7740,59 @@ fn validateDnirApplications(
                 {
                     return invalidFactsWith(diagnostic, @src(), "application-fact-mismatch");
                 }
-                if (results.len == 1) {
+                const aggregate_access = graph.aggregateAccess(application.application) != null;
+                if (aggregate_access) {
+                    try validateAggregateAccessRealization(
+                        module,
+                        function,
+                        graph,
+                        instruction,
+                        descriptor,
+                        diagnostic,
+                    );
+                } else if (instruction.op != .call_direct) {
+                    // A checked call-to-constant or tail-call rewrite needs a
+                    // semantic transform witness that the current graph does
+                    // not publish. Until then, only the untransformed call is
+                    // lawful. Aggregate access above is not this exception: its
+                    // ordinary application, aggregate/member facts and place
+                    // facts are the witness, and the helper validates the exact
+                    // selected physical realization independently.
+                    return invalidFactsWith(diagnostic, @src(), "unwitnessed-application-transform");
+                }
+                const result_aggregate = if (results.len == 1) graph.aggregate(results[0]) else null;
+                const packed_aggregate = result_aggregate != null and instruction.pack_results.len != 0;
+                const physical_results = if (packed_aggregate)
+                    graph.aggregateMembers(result_aggregate.?.aggregate) orelse
+                        return invalidFactsWith(diagnostic, @src(), "application-result-members")
+                else
+                    results;
+                if (results.len == 1 and !packed_aggregate) {
                     if (instruction.pack_results.len != 0) {
                         return invalidFactsWith(diagnostic, @src(), "application-result-pack");
                     }
                 } else {
-                    if (results.len > dnir_lower.max_reg_record_fields or
-                        instruction.pack_results.len != results.len or instruction.result != null or
+                    if (physical_results.len > dnir_lower.max_reg_record_fields or
+                        instruction.pack_results.len != physical_results.len or instruction.result != null or
                         instruction.record.len != 0)
                     {
                         return invalidFactsWith(diagnostic, @src(), "application-result-abi");
                     }
-                    for (instruction.pack_results, results) |projected, value_id| {
+                    const physical_demands = if (packed_aggregate)
+                        graph.packMemberDemands(result_aggregate.?.members_pack) orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-demand")
+                    else
+                        graph.packMemberDemands(application.result_pack) orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-demand");
+                    if (physical_demands.len != physical_results.len) {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-demand");
+                    }
+                    for (instruction.pack_results, physical_results, physical_demands) |projected, value_id, demand| {
                         if (!std.meta.eql(projected.value, value_id)) {
                             return invalidFactsWith(diagnostic, @src(), "application-result-pack");
+                        }
+                        if ((projected.temp == null) != (demand == .discard)) {
+                            return invalidFactsWith(diagnostic, @src(), "application-result-demand");
                         }
                         const node = graph.get(value_id) orelse
                             return invalidFactsWith(diagnostic, @src(), "application-result-member");
@@ -7617,7 +7824,16 @@ fn validateDnirApplications(
                     return invalidFactsWith(diagnostic, @src(), "missing-application-target");
                 const applied = graph.applicationApplied(application.application) orelse
                     return invalidFactsWith(diagnostic, @src(), "missing-application-applied");
-                if (!std.meta.eql(target_id, selected_target) or
+                if (aggregate_access) {
+                    const subject = graph.applicationSubject(application.application) orelse
+                        return invalidFactsWith(diagnostic, @src(), "aggregate-access-subject");
+                    if (!std.meta.eql(target_id, selected_target) or
+                        !std.meta.eql(selected_target, relation) or
+                        !std.meta.eql(applied, subject))
+                    {
+                        return invalidFactsWith(diagnostic, @src(), "application-target-mismatch");
+                    }
+                } else if (!std.meta.eql(target_id, selected_target) or
                     !std.meta.eql(applied, selected_target))
                 {
                     return invalidFactsWith(diagnostic, @src(), "application-target-mismatch");
@@ -7634,7 +7850,22 @@ fn validateDnirApplications(
                     }
                     const record = result_record orelse
                         return invalidFactsWith(diagnostic, @src(), "application-result-shape");
-                    if (!std.mem.eql(u8, record.name, instruction.record)) {
+                    if (packed_aggregate) {
+                        const aggregate = result_aggregate.?;
+                        const members = graph.aggregateMembers(aggregate.aggregate) orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-members");
+                        if (instruction.record.len != 0 or record.fields.len != members.len) {
+                            return invalidFactsWith(diagnostic, @src(), "application-result-abi");
+                        }
+                        for (record.fields, members) |field, member| {
+                            const member_name = (graph.get(member) orelse
+                                return invalidFactsWith(diagnostic, @src(), "application-result-member")).name orelse
+                                return invalidFactsWith(diagnostic, @src(), "application-result-member");
+                            if (!std.mem.eql(u8, field, member_name)) {
+                                return invalidFactsWith(diagnostic, @src(), "application-result-abi");
+                            }
+                        }
+                    } else if (!std.mem.eql(u8, record.name, instruction.record)) {
                         return invalidFactsWith(diagnostic, @src(), "application-result-abi");
                     }
                 } else {
@@ -7644,6 +7875,16 @@ fn validateDnirApplications(
                     if (instruction.record.len != 0) {
                         return invalidFactsWith(diagnostic, @src(), "application-result-abi");
                     }
+                }
+                if (aggregate_access) {
+                    if (function.folded_to_constant) {
+                        return invalidFactsWith(diagnostic, @src(), "folded-application-lineage");
+                    }
+                    const use = try seen.getOrPut(alloc, application.application);
+                    if (use.found_existing) {
+                        return invalidFactsWith(diagnostic, @src(), "application-realization-count");
+                    }
+                    continue;
                 }
                 // A CROSS-HOME TARGET IS NOT IN `module.functions` AND MUST NOT
                 // BE. `targets` above is built from the functions THIS module
@@ -9963,6 +10204,18 @@ test "native backend: checked result pack retains order through machine lineage"
     try std.testing.expectEqualStrings("application-result-pack", diagnostic.note().?);
 }
 
+fn verifyProjectedRecordCaller(listing: []const u8) !void {
+    const main_start = std.mem.indexOf(u8, listing, "_main:\n") orelse return error.MissingCaller;
+    const caller = listing[main_start..];
+    const call = std.mem.indexOf(u8, caller, "\tbl ") orelse return error.MissingCall;
+    const after_call = caller[call..];
+    if (std.mem.indexOf(u8, after_call, "\tstr ") != null or
+        std.mem.indexOf(u8, after_call, "\tstur ") != null)
+    {
+        return error.ResultHomeSurvived;
+    }
+}
+
 test "native backend: checked record result keeps application lineage" {
     var diagnostic: Diagnostic = .{};
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
@@ -9970,17 +10223,7 @@ test "native backend: checked record result keeps application lineage" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const source =
-        \\pair: {
-        \\    left: i64
-        \\    right: i64
-        \\}
-        \\make: pair = (value: i64)
-        \\    { left = value, right = value + 1 }
-        \\main: i64 = (seed: i64)
-        \\    result: pair = make(41)
-        \\    result.left + 1
-    ;
+    const source = @embedFile("testdata/result_member_record.id");
     var lexer = Lexer.init(source, "record-lineage.id");
     var parser = Parser.init(&lexer, alloc);
     parser.idol_mode = true;
@@ -9992,6 +10235,8 @@ test "native backend: checked record result keeps application lineage" {
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "record-lineage.id");
+    var demand_plan = try @import("demand.zig").analyzeModule(alloc, &ast_module, .{ .graph = &graph });
+    defer demand_plan.deinit();
     const applications = try checkedApplications(&graph, &diagnostic);
     try std.testing.expectEqual(@as(usize, 1), applications.len);
 
@@ -10010,7 +10255,15 @@ test "native backend: checked record result keeps application lineage" {
     }
     try std.testing.expectEqual(@as(usize, 0), anonymous_record_realizations);
     const instruction = call orelse return error.TestExpectedEqual;
-    try std.testing.expectEqualStrings("pair", instruction.record);
+    try std.testing.expectEqualStrings("", instruction.record);
+    try std.testing.expectEqual(@as(usize, 2), instruction.pack_results.len);
+    try std.testing.expect(instruction.pack_results[0].temp != null);
+    try std.testing.expect(instruction.pack_results[1].temp == null);
+    const result_aggregate = graph.aggregate(instruction.value.?) orelse return error.TestExpectedEqual;
+    const result_members = graph.aggregateMembers(result_aggregate.aggregate) orelse return error.TestExpectedEqual;
+    for (instruction.pack_results, result_members) |physical, semantic| {
+        try std.testing.expectEqual(semantic, physical.value);
+    }
     try std.testing.expect(std.meta.eql(instruction.application.?, applications[0].application));
     try std.testing.expect(std.meta.eql(
         instruction.value.?,
@@ -10028,6 +10281,43 @@ test "native backend: checked record result keeps application lineage" {
     try std.testing.expect(std.meta.eql(output.lineage[0].application, applications[0].application));
     try std.testing.expect(output.lineage[0].descriptor.eql(graph.applicationDescriptor(applications[0].application).?));
     try expectLineageCallTarget(alloc, output, module, output.lineage[0]);
+    try verifyProjectedRecordCaller(output.asm_text);
+    const callee_label = try std.fmt.allocPrint(alloc, "_{s}:\n", .{instruction.callee});
+    defer alloc.free(callee_label);
+    const callee_start = std.mem.indexOf(u8, output.asm_text, callee_label) orelse return error.MissingCallee;
+    const main_start = std.mem.indexOfPos(u8, output.asm_text, callee_start, "_main:\n") orelse
+        return error.MissingCaller;
+    const callee_body = output.asm_text[callee_start..main_start];
+    try std.testing.expect(std.mem.indexOf(u8, callee_body, "\tbl _printf\n") != null);
+
+    const full_source =
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = ()
+        \\    print(7)
+        \\    { left = 41, right = 42 }
+        \\main: i64 = ()
+        \\    result = make()
+        \\    result.left
+    ;
+    var full_lexer = Lexer.init(full_source, "record-lineage-full.id");
+    var full_parser = Parser.init(&full_lexer, alloc);
+    full_parser.idol_mode = true;
+    var full_module = try full_parser.parse_module();
+    var full_checked = Sema.init(alloc);
+    defer full_checked.deinit();
+    full_checked.idol_mode = true;
+    try full_checked.check_module(&full_module);
+    var full_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer full_graph.deinit();
+    _ = try full_graph.liftModuleWithCheckedCalls(&full_module, &full_checked, "record-lineage-full.id");
+    var full_demand = try @import("demand.zig").analyzeModule(alloc, &full_module, .{ .graph = &full_graph });
+    defer full_demand.deinit();
+    var full_output = try emitArm64ModuleWithGraph(alloc, &full_module, null, &full_graph, &diagnostic);
+    defer full_output.deinit(alloc);
+    try std.testing.expectError(error.ResultHomeSurvived, verifyProjectedRecordCaller(full_output.asm_text));
 
     var artifact = try emitObjectWithGraphLineage(alloc, &ast_module, "native-object", &graph);
     defer artifact.deinit(alloc);
@@ -10038,7 +10328,34 @@ test "native backend: checked record result keeps application lineage" {
         artifact.bytes[artifact.lineage[0].object_start..artifact.lineage[0].object_end],
     );
 
+    const saved_pack = instruction.pack_results;
+    instruction.pack_results = &.{};
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-abi", diagnostic.note().?);
+    instruction.pack_results = saved_pack;
+    const physical: []dnir.PackResult = @constCast(instruction.pack_results);
+    const demanded_temp = physical[0].temp;
+    physical[0].temp = null;
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-demand", diagnostic.note().?);
+    physical[0].temp = demanded_temp;
+    physical[1].temp = demanded_temp;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-demand", diagnostic.note().?);
+    physical[1].temp = null;
     instruction.record = "other";
+    diagnostic.reset();
     try std.testing.expectError(
         error.SemanticFactsInvalid,
         validateDnirApplications(alloc, module, &graph, &diagnostic),
@@ -12103,6 +12420,117 @@ test "native backend emits assembly listing for arithmetic" {
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _main") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "mul x") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tret\n") != null);
+}
+
+test "native backend realizes graph nested aggregate as immutable const data" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pairs = {{10, 11}, {20, 21}, {30, 31}}
+        \\pick: i64 = (i: i64)
+        \\    pairs(i)(2)
+        \\main: i64 = ()
+        \\    pick(2)
+    ;
+    var lexer = Lexer.init(source, "aggregate-native.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&module, &checked, &graph);
+
+    var assembly = try emitCheckedTestAssembly(alloc, &module, &graph, null);
+    defer assembly.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, ".section __TEXT,__const") != null);
+    for ([_]i64{ 10, 11, 20, 21, 30, 31 }) |word| {
+        const line = try std.fmt.allocPrint(alloc, "\t.quad {d}\n", .{word});
+        try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, line) != null);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "Lduo_const_0@PAGE") != null);
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "lsl #3]") != null);
+
+    var aggregate_lineage: usize = 0;
+    var scalar_lineage: usize = 0;
+    for (assembly.lineage) |lineage| {
+        if (graph.aggregateAccess(lineage.application) == null) continue;
+        aggregate_lineage += 1;
+        if (lineage.descriptor == .i64) scalar_lineage += 1;
+        try std.testing.expectEqual(lineage.target, graph.applicationTarget(lineage.application).?);
+        try std.testing.expectEqual(lineage.value, graph.applicationResults(lineage.application).?[0]);
+    }
+    try std.testing.expectEqual(@as(usize, 2), aggregate_lineage);
+    try std.testing.expectEqual(@as(usize, 1), scalar_lineage);
+
+    var object = try emitCheckedTestObject(alloc, &module, &graph);
+    defer object.deinit(alloc);
+    try std.testing.expect(object.bytes.len > 0);
+    var object_aggregate_lineage: usize = 0;
+    for (object.lineage) |lineage| {
+        if (graph.aggregateAccess(lineage.application) != null) object_aggregate_lineage += 1;
+    }
+    try std.testing.expectEqual(aggregate_lineage, object_aggregate_lineage);
+
+    const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &module, &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    var damaged_instruction: ?*dnir.Instr = null;
+    outer: for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (@constCast(block.instrs)) |*instruction| {
+                const application = instruction.application orelse continue;
+                if (graph.aggregateAccess(application) == null or instruction.ty != .array) continue;
+                damaged_instruction = instruction;
+                break :outer;
+            }
+        }
+    }
+    const instruction = damaged_instruction orelse return error.TestExpectedEqual;
+    const saved_instruction = instruction.*;
+    instruction.op = .binop;
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, lowered, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-access-realization-op", diagnostic.note().?);
+    instruction.* = saved_instruction;
+
+    instruction.subject = saved_instruction.target;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, lowered, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-fact-mismatch", diagnostic.note().?);
+    instruction.* = saved_instruction;
+
+    instruction.target = saved_instruction.subject;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, lowered, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-target-mismatch", diagnostic.note().?);
+    instruction.* = saved_instruction;
+
+    const root = lowered.dense_tables[0].value;
+    const root_fact = @constCast(graph.aggregate(root) orelse return error.TestExpectedEqual);
+    const saved_members_pack = root_fact.members_pack;
+    root_fact.members_pack = graph.aggregateAccess(saved_instruction.application.?).?.operand_pack;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, lowered, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("unwitnessed-application-transform", diagnostic.note().?);
+    root_fact.members_pack = saved_members_pack;
 }
 
 test "native backend assembly lists helper call labels" {
