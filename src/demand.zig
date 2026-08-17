@@ -78,10 +78,11 @@
 //!                     864 `none` / 414 `unknown`, and treating `unknown` as
 //!                     "probably fine" is how a lane ships a wrong answer.
 //!
-//!   O4  TERMINATING.  A loop is not dead merely because its value is unused. If
+//!   O4  TERMINATING.  Work is not dead merely because its value is unused. If
 //!                     it may not terminate, deleting it turns a hang into a
 //!                     return, which is observable. `provenTripCount` below is
-//!                     the only proof accepted, and it is deliberately narrow.
+//!                     the only loop proof accepted. No application-completion
+//!                     fact exists yet, so an application is never deleted.
 //!
 //!   O5  NO ESCAPE.    `S` contains no `break`, `continue`, `return`, `goto` or
 //!                     label — deleting a statement that transfers control
@@ -431,6 +432,13 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
 
         // O3 lives here, and it is the whole reason the graph is threaded in.
         // `.none` is the only card that discharges it. `.unknown` is an effect.
+        //
+        // It discharges ONLY O3. An effect-free relation may still trap or
+        // diverge, and the graph has no separate application facts proving
+        // either impossible. A recursive relation with no world interaction
+        // deliberately publishes `effect = .none`; treating that as totality
+        // changed a hang into a return. Keep every call until exact trap and
+        // completion facts discharge O2 and O4 independently.
         .call, .method_call => blk: {
             const graph = opts.graph orelse break :blk .has_effect;
             const fact = applicationOf(graph, e) orelse break :blk .has_effect;
@@ -442,7 +450,7 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
             };
             for (args) |a| if (inert(opts, a)) |b| break :blk b;
             if (e.* == .method_call) if (inert(opts, e.method_call.obj)) |b| break :blk b;
-            break :blk null;
+            break :blk .may_not_terminate;
         },
 
         // Reads through a place. The graph cannot express a place, so
@@ -2153,6 +2161,43 @@ fn deadCount(src: []const u8) !u32 {
     return plan.count();
 }
 
+const GraphDemandResult = struct {
+    dead: u32,
+    effect_free: u32,
+};
+
+/// Exercise demand against the same checked application effects production
+/// lowering receives. The effect count is part of the control: these tests must
+/// prove that `.none` was present and insufficient, not pass because graph
+/// publication failed closed for some unrelated reason.
+fn deadCountWithGraph(src: []const u8) !GraphDemandResult {
+    var fx = try parse(src);
+    defer fx.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Sema = @import("sema.zig").Sema;
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&fx.mod);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&fx.mod, &checked, "demand-call.id");
+
+    var effect_free: u32 = 0;
+    for (graph.application_facts.items) |fact| {
+        if (fact.effect == .none) effect_free += 1;
+    }
+
+    var plan = try analyzeModule(alloc, &fx.mod, .{ .graph = &graph });
+    defer plan.deinit();
+    return .{ .dead = plan.count(), .effect_free = effect_free };
+}
+
 /// Number of statements proven deletable with the world CLOSED — the executable
 /// case, and the only one in which the FILE-SCOPE TAIL is analysed at all.
 fn deadCountClosed(src: []const u8) !u32 {
@@ -2335,6 +2380,48 @@ test "demand: O3 — a call with no effect evidence is kept" {
         \\
     );
     try std.testing.expectEqual(@as(u32, 0), n);
+}
+
+test "demand: O4 — effect-free recursion is not a completion proof" {
+    const result = try deadCountWithGraph(
+        \\spin: i64 = ()
+        \\    spin()
+        \\
+        \\main: i64 = ()
+        \\    dead = spin()
+        \\    7
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 2), result.effect_free);
+    try std.testing.expectEqual(@as(u32, 0), result.dead);
+}
+
+test "demand: O2 — effect-free application is not a trap proof" {
+    const result = try deadCountWithGraph(
+        \\divide: i64 = (d: i64)
+        \\    100 // d
+        \\
+        \\main: i64 = ()
+        \\    dead = divide(0)
+        \\    7
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 1), result.effect_free);
+    try std.testing.expectEqual(@as(u32, 0), result.dead);
+}
+
+test "demand: an effect-free leaf still needs a completion proof" {
+    const result = try deadCountWithGraph(
+        \\triple: i64 = (v: i64)
+        \\    v * 3
+        \\
+        \\main: i64 = ()
+        \\    dead = triple(2)
+        \\    7
+        \\
+    );
+    try std.testing.expectEqual(@as(u32, 1), result.effect_free);
+    try std.testing.expectEqual(@as(u32, 0), result.dead);
 }
 
 test "demand: O5 — a break inside the dead loop keeps it" {
