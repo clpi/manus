@@ -10007,6 +10007,9 @@ test "dnir_lower: checked subject call retains semantic facts" {
 
     const row = graph.application_rows.items[application];
     const saved = graph.application_facts.items[row];
+    graph.application_facts.items[row].applied = .unknown;
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraph(alloc, &mod, &graph));
+    graph.application_facts.items[row] = saved;
     graph.application_facts.items[row].applied = .none;
     try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraph(alloc, &mod, &graph));
     graph.application_facts.items[row] = saved;
@@ -10017,6 +10020,9 @@ test "dnir_lower: checked subject call retains semantic facts" {
     try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraph(alloc, &mod, &graph));
     graph.application_facts.items[row] = saved;
     graph.application_facts.items[row].target = .none;
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraph(alloc, &mod, &graph));
+    graph.application_facts.items[row] = saved;
+    graph.application_facts.items[row].target = .{ .one = value };
     try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraph(alloc, &mod, &graph));
     graph.application_facts.items[row] = saved;
 
