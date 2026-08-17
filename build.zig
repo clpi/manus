@@ -549,6 +549,13 @@ pub fn build(b: *std.Build) void {
     const pathgate_step = b.step("path-gate", "law.path.name: gate/path admission firewall");
     pathgate_step.dependOn(&pathgate_cmd.step);
 
+    const world_launch_cmd = b.addSystemCommand(&.{ "sh", "gate/world-launch.sh" });
+    world_launch_cmd.setCwd(b.path("."));
+    world_launch_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
+    world_launch_cmd.step.dependOn(b.getInstallStep());
+    const world_launch_step = b.step("world-launch", "launcher world admission and cache separation");
+    world_launch_step.dependOn(&world_launch_cmd.step);
+
     // tree-sitter-coverage -- section 19's editor front-end, measured.
     // Runs the generator (failing if it exits non-zero, which the nvim setup
     // script used to swallow), parses every tracked .id file, and ratchets off
