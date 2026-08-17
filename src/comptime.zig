@@ -3,6 +3,7 @@ const ast = @import("ast.zig");
 const term = @import("term.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const graph_query = @import("graph_query.zig");
+const collection_relation = @import("collection_relation.zig");
 
 pub const EvalError = error{
     OutOfMemory,
@@ -336,13 +337,46 @@ pub const Evaluator = struct {
             .index => |index| blk: {
                 const obj = try self.eval(index.obj);
                 const key = try self.eval(index.key);
-                break :blk try tableLookup(obj, key);
+                const value = try tableLookup(obj, key);
+                // A TABLE READ THAT ANSWERS `nil` IS A READ THE RUNNING PROGRAM
+                // WOULD HAVE TRAPPED ON, AND `nil` IS NOT A VALUE THIS BACKEND
+                // HAS. `tableLookup` implements the Lua rule — an absent key is
+                // `nil` — which is right for the metaprogramming faces and
+                // WRONG whenever this evaluator is standing in for native
+                // lowering, because `dnir_lower.guardedTableIndex` emits a
+                // GUARD there and the guard aborts.
+                //
+                // MEASURED, and it is a wrong answer rather than a missed fold:
+                //
+                //     ys: [2]i64 = {5, 6}
+                //     n = 0 · i = 1 · while i <= 3 : if ys(i) == 6 : n += 1 · n
+                //
+                //     compiled with the fold        2 instructions, answers 1
+                //     the same program, unfolded    aborts on ys(3)
+                //
+                // So the fold was not making the program faster; it was making
+                // a DIFFERENT program, one whose out-of-range read never
+                // happened. Refusing leaves the guard in place, which is slower
+                // and right.
+                //
+                // Confined to `native_fold`: the `@comp.*` faces use tables as
+                // maps, where an absent key genuinely IS `nil` and answering
+                // anything else would break them.
+                if (self.options.native_fold and obj == .table and value == .nil) {
+                    break :blk error.UnsupportedExpression;
+                }
+                break :blk value;
             },
             .field => |field| blk: {
                 const obj = try self.eval(field.obj);
                 break :blk try tableFieldLookup(obj, field.field);
             },
-            .method_call => |mc| try self.evalMethodCall(mc.obj, mc.method, mc.args),
+            .method_call => |mc| try self.evalMethodCall(
+                mc.obj,
+                mc.method,
+                mc.args,
+                collection_relation.shapeOf(expr),
+            ),
             .unop => |unop| try self.evalUnop(unop.op, unop.operand),
             .binop => |binop| try self.evalBinop(binop.op, binop.lhs, binop.rhs),
             .table => |table| try self.evalTable(table.fields),
@@ -640,6 +674,7 @@ pub const Evaluator = struct {
         obj: *ast.Expr,
         method: []const u8,
         args: []const *ast.Expr,
+        collection: ?collection_relation.Shape,
     ) EvalError!Value {
 
         // Dispatch on the RECEIVER'S VALUE, not on its syntax: `s:len()` folds
@@ -679,6 +714,13 @@ pub const Evaluator = struct {
                 if (callee == .func) return try self.applyFuncValue(callee, receiver, args);
             }
         }
+        // COLLECTION-RELATION-ONE, ANSWERED RATHER THAN SCANNED — and asked
+        // AFTER the bound relation, because a program that declares its own
+        // `any` owns every call to it. That is the same order `evalMethodCall`
+        // already uses against the string faces, for the same reason.
+        if (collection) |shape| {
+            if (self.options.native_fold) return try self.evalCollectionRelation(receiver, shape);
+        }
         if (receiver == .string) {
             // Bounded on the stack rather than allocated: `options.alloc` is
             // optional. Built HERE and not before the dispatch above, because
@@ -691,6 +733,73 @@ pub const Evaluator = struct {
             return self.evalStringBuiltin(method, buf[0 .. args.len + 1]);
         }
         return error.UnsupportedExpression;
+    }
+
+    /// THE QUESTION, ANSWERED — the compile-time half of `lowerAnyRelation`.
+    ///
+    /// The backend already answers a DETERMINED source with an immediate, so
+    /// the relation's own cost there is zero. What it could not do is let the
+    /// SURROUNDING relation fold, because the enclosing body contained an
+    /// application and the door refused every one of those. This is the face
+    /// that makes the enclosing body runnable: the question is stated, so it is
+    /// answered here the same way it is answered there.
+    ///
+    /// AND IT IS STRICTLY STRONGER THAN `dnir_lower.foldBodyRelation`, which is
+    /// a deliberately tiny recognizer over literals. This is the whole
+    /// evaluator, so a predicate reading an outer binding, a module constant or
+    /// a nested relation answers here — while the source itself may be any
+    /// table this evaluator built, including one a loop wrote, which the
+    /// backend's `const_tables` cannot represent.
+    ///
+    /// FAILS CLOSED AT EVERY STEP, and each refusal is load-bearing:
+    ///
+    ///   * a receiver that is not a compile-time TABLE — which is what a
+    ///     runtime source is here, and it must stay a refusal or the 26x early
+    ///     exit would be folded away into a wrong answer about a table this
+    ///     evaluator never saw;
+    ///   * a table with a named or non-contiguous key. A record has no element
+    ///     descriptor (`docs/collection-relation.md` §5.8) and is a refusal,
+    ///     not a default;
+    ///   * A VERDICT THAT IS NOT A TRUTH. `Value.truthy` is LUA truthiness,
+    ///     where `0` is TRUE, and this backend's branches read `0` as FALSE.
+    ///     Reading an integer verdict through either convention would be a
+    ///     second definition of the predicate — so an integer verdict refuses.
+    ///     `sema.checkCollectionRelation` demands `bool` of the body relation
+    ///     already, which is why this costs nothing that should have worked.
+    ///
+    /// A SHADOW, NOT A SCOPE, exactly as `dnir_lower.ResultName` is: the result
+    /// name is pushed for one predicate and popped after, so an outer binding
+    /// of the same spelling means what it meant before and after.
+    fn evalCollectionRelation(
+        self: *Evaluator,
+        receiver: Value,
+        shape: collection_relation.Shape,
+    ) EvalError!Value {
+        if (receiver != .table) return error.UnsupportedExpression;
+        const entries = receiver.table;
+        for (entries, 0..) |entry, i| {
+            if (entry.name != null) return error.UnsupportedExpression;
+            const key = entry.key orelse return error.UnsupportedExpression;
+            if (key != .int) return error.UnsupportedExpression;
+            if (key.int != @as(i64, @intCast(i + 1))) return error.UnsupportedExpression;
+        }
+        switch (shape.question) {
+            .any => {
+                for (entries) |entry| {
+                    try self.step();
+                    const mark = self.locals.items.len;
+                    _ = try self.pushLocal(shape.param, entry.val);
+                    const verdict = self.eval(shape.body) catch |err| {
+                        self.popLocals(mark);
+                        return err;
+                    };
+                    self.popLocals(mark);
+                    if (verdict != .bool) return error.UnsupportedExpression;
+                    if (verdict.bool) return .{ .bool = true };
+                }
+                return .{ .bool = false };
+            },
+        }
     }
 
     /// Apply a relation value to a subject already evaluated plus unevaluated

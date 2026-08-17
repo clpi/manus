@@ -13,6 +13,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const collection_relation = @import("collection_relation.zig");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EFFECT CONSUMER — the query `ApplicationFact.effect` was published for.
@@ -96,6 +97,60 @@ pub fn enclosingCallable(
     return null;
 }
 
+/// THE SECOND UNRESOLVED SHAPE THAT IS STILL PROVABLY UNOBSERVABLE, AND IT IS
+/// ADMITTED ON A DIFFERENT FACT THAN THE FIRST.
+///
+/// `applicationIsUnobservableStringFace` admits `s:len()` because the CALLEE is
+/// known to reach nothing. A collection relation has no callee at all: its body
+/// relation is written at the application site and FUSED into the iteration
+/// (`collection_relation.Shape`), so there is nothing for the graph to resolve
+/// and the site sits in the unresolved column forever — exactly the shape the
+/// door was refusing. What makes it admissible is that all five facts the
+/// enclosing fold needs are decided HERE, from the shape, with no fixpoint:
+///
+///     effect none        the realization emits no call and touches no world
+///                        (`gate/collection.sh` row 5 reads bl=0, blr/br=0,
+///                        undefined=0 off the artifact)
+///     trap none          the fused body applies nothing — enforced by
+///                        `ApplicationWalk` below, which refuses a body that
+///                        adds a single application site
+///     termination        the source's extent bounds the iteration, and the
+///                        caller's step budget bounds it again
+///     world closed       no operand escapes; the body relation is never built
+///                        as a value, so nothing can be handed out
+///     result known       only when the compile-time evaluator can actually
+///                        answer it, which is the CALLER's question, not this
+///                        one — a site admitted here and unanswerable there
+///                        simply fails the fold closed
+///
+/// A CLOSED LIST, NOT A PROPERTY — the same ruling `unobservableStringFace`
+/// records. `collection_relation.rostered` is the list, and a question added to
+/// it without an evaluator face refuses at the fold rather than answering
+/// wrongly here.
+///
+/// IT NEVER TAKES THE NAME. A resolved application belongs to the relation the
+/// program declared and goes through the ordinary path above; a module that
+/// declares the spelling at all is refused outright, because then the
+/// interpreter's by-name lookup and this admission could disagree about which
+/// meaning the site has.
+fn collectionRelationSite(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) ?*const ast.Expr {
+    if (!graph.isApplicationCandidate(occurrence)) return null;
+    if (graph.application(occurrence) != null) return null;
+    const node = graph.get(occurrence) orelse return null;
+    const raw = node.ast_ref orelse return null;
+    const expr: *const ast.Expr = @ptrCast(@alignCast(raw));
+    _ = collection_relation.shapeOf(expr) orelse return null;
+    for (graph.nodes.items) |declaration| {
+        if (declaration.kind != .func) continue;
+        const name = declaration.name orelse continue;
+        if (std.mem.eql(u8, name, expr.method_call.method)) return null;
+    }
+    return expr;
+}
+
 /// Every application in `body`, proved effect-free — or null, meaning REFUSED.
 ///
 /// Caller owns the returned slice. Null is the only failure signal: this query
@@ -131,12 +186,50 @@ fn effectFreeApplications(
             // the consumer must admit exactly the sites the fixpoint declined
             // to block or the two disagree about what "effect-free" means.
             if (graph.applicationIsUnobservableStringFace(occurrence)) {
+                // WORLD CONSUMER. `s:len()` and `s:byte(i)` are admitted by
+                // ARITY AND SPELLING, which is the whole of what
+                // `unobservableStringFace` can check while the receiver's
+                // descriptor is not in the graph. `applicationWorld` is the
+                // exact fact underneath that guess: an occurrence the world
+                // table says is supplied by an INJECTED WORLD reaches outside
+                // this module however it is spelled, and `os`, `io` and `c` are
+                // every one of them observable. A `len` face this rule admits
+                // and the world table claims is `.one` is a disagreement
+                // between two producers, and the pure answer is the unsound one.
+                switch (graph.applicationWorld(occurrence)) {
+                    .one => {
+                        sites.deinit(alloc);
+                        return null;
+                    },
+                    .unknown, .none => {},
+                }
                 const face_raw = node.ast_ref orelse {
                     sites.deinit(alloc);
                     return null;
                 };
                 try sites.append(alloc, .{
                     .expr = @ptrCast(@alignCast(face_raw)),
+                    .occurrence = occurrence,
+                    .callee = null,
+                });
+                continue;
+            }
+            // A COLLECTION RELATION — see `collectionRelationSite`. Null callee
+            // for the same reason the string face has one: there is no relation
+            // to bind, and the consumer that runs the body implements the
+            // question itself. The world check is the same one the string face
+            // takes, for the same reason: two producers must not disagree, and
+            // the pure answer is the unsound one.
+            if (collectionRelationSite(graph, occurrence)) |fused| {
+                switch (graph.applicationWorld(occurrence)) {
+                    .one => {
+                        sites.deinit(alloc);
+                        return null;
+                    },
+                    .unknown, .none => {},
+                }
+                try sites.append(alloc, .{
+                    .expr = fused,
                     .occurrence = occurrence,
                     .callee = null,
                 });
@@ -150,6 +243,17 @@ fn effectFreeApplications(
         if (fact.effect != .none or fact.authority != .none) {
             sites.deinit(alloc);
             return null;
+        }
+        // A PUBLISHED application that DRAWS A WORLD is never effect-free,
+        // whatever the effect fixpoint concluded. World supplies facts,
+        // authority requires them, witness proves satisfaction — three
+        // questions, and `effect == .none` answers none of the first.
+        switch (graph.applicationWorld(occurrence)) {
+            .one => {
+                sites.deinit(alloc);
+                return null;
+            },
+            .unknown, .none => {},
         }
         const callee = graph.applicationRelation(occurrence) orelse {
             sites.deinit(alloc);
@@ -341,6 +445,24 @@ const ApplicationWalk = struct {
             .method_call => |m| {
                 try self.out.append(self.alloc, e);
                 if (!(try self.expr(m.obj))) return false;
+                // A COLLECTION RELATION'S BODY IS FUSED, NOT PASSED. The
+                // operand is a `.func_expr`, which the arm below refuses with
+                // every other unenumerated node — correctly, because a relation
+                // handed over as a VALUE can be applied anywhere. Here it is
+                // not handed over: `shapeOf` guarantees one statement-free
+                // expression that this walk can read in full.
+                //
+                // AND THE BODY MUST APPLY NOTHING. An application inside the
+                // fused body is not lifted as a candidate of any callable this
+                // query can name, so the graph half could not line it up; the
+                // count check would then be comparing two different sets. A
+                // body that adds even one site is refused, which is also the
+                // whole of the "effectful predicate" refusal.
+                if (collection_relation.shapeOf(e)) |fused| {
+                    const before = self.out.items.len;
+                    if (!(try self.expr(fused.body))) return false;
+                    return self.out.items.len == before;
+                }
                 for (m.args) |a| if (!(try self.expr(a))) return false;
                 return true;
             },
