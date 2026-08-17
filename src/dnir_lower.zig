@@ -9147,7 +9147,7 @@ test "dnir_lower: to(str) declines a non-integer argument rather than mis-loweri
     const mod = try parser.parse_module();
     // `"%lld"` is a constant the emitter assumes; an f64 there printed the
     // operand's ADDRESS. The whole program leaves the subset instead.
-    try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModule(alloc, &mod));
 }
 
 test "dnir_lower: f64 kernel call with record variable" {
