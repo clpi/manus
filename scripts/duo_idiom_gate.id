@@ -38,7 +38,7 @@ main: i64 = ()
     return 0
 
   duobin = root .. "/zig-out/bin/idol"
-  rc = shellstatus("cd '" .. root .. "' && git diff -U0 --diff-filter=ACM -- '*.id' | " .. duobin .. " run --backend=c scripts/idiomgate.id")
+  rc = shellstatus("cd '" .. root .. "' && git diff -U0 --diff-filter=ACM -- '*.id' | " .. duobin .. " run --backend=direct scripts/idiomgate.id")
   if rc != 0
     return rc
   print("duo_idiom_gate: PASS")

@@ -9,6 +9,7 @@ test {
     _ = @import("lexer_bridge.zig");
     _ = @import("lexical_identity.zig");
     _ = @import("lexer_dispatch.zig");
+    _ = @import("launch_role.zig");
     _ = @import("ast.zig");
     _ = @import("types.zig");
     _ = @import("parser.zig");
@@ -81,6 +82,7 @@ test {
     _ = @import("build_framework.zig");
     _ = @import("ml_kernels.zig");
     _ = @import("jit.zig");
+    _ = @import("c_backend.zig");
     _ = @import("native_backend.zig");
     // `wasm_backend.zig` — 3,429 lines with ZERO IMPORTERS until this line.
     //

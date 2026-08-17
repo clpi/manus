@@ -38,14 +38,13 @@
 # `src/wasm/wasi_abi.id` holds the roster, the numbering, the errno policy, the
 # proc_exit status range, the argv[0] rule, the descriptor set and the stdio
 # filetype; `src/engine.id` reads it and so does this file. That file's header
-# records the measured toolchain defect that forces two host implementations at
-# all (a `mem.alloc` pointer through a `(p: ptr)` parameter FAULTS — re-measured
-# at this revision: SIGBUS, exit 138), and it is the reason the split cannot
-# simply be deleted. Everything the split does NOT require to be duplicated is
-# read from there, so a policy change cannot land in one host and miss the
-# other. Two of them had already drifted when this req was added: the stdio
-# filetype (this file said character_device, the engine and wasmtime said
-# unknown) and the proc_exit status range.
+# records the exact migration boundary. Pointer parameters and results now cross
+# same-home relations correctly; the remaining blocker is graph-native
+# cross-home module lowering. Until that exists, deleting the inline host would
+# route execution through the legacy req-module authority rather than the one
+# semantic graph. Everything the split does not require to be duplicated is
+# read from the ABI file. Two policies had already drifted when this req was
+# added: the stdio filetype and the proc_exit status range.
 
 abi = req "src.wasm.wasi_abi"
 

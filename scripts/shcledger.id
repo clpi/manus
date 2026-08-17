@@ -176,9 +176,9 @@ main: i64 = ()
   bad = bad + need(manifest, "FIXTURES ONLY", "fixture-only backend row not hidden")
 
   print("cheap gates")
-  bad = bad + runcheck(root, "language_census", duobin .. " run --backend=c scripts/language_census.id")
-  bad = bad + runcheck(root, "foreign_census", duobin .. " run --backend=c scripts/foreign_census.id")
-  bad = bad + runcheck(root, "embedledger", duobin .. " run --backend=c scripts/embedledger.id")
+  bad = bad + runcheck(root, "language_census", duobin .. " run --backend=direct scripts/language_census.id")
+  bad = bad + runcheck(root, "foreign_census", duobin .. " run --backend=direct scripts/foreign_census.id")
+  bad = bad + runcheck(root, "embedledger", duobin .. " run --backend=direct scripts/embedledger.id")
   bad = bad + runcheck(root, "gates/build", duobin .. " run gates/build.id")
 
   deep = envor("SHCLEDGER_DEEP", "0")

@@ -1,0 +1,8 @@
+range = struct
+    left: i64 = 3
+    right: i64 = left + 4
+end
+
+main: i64 = ()
+    value = range{}
+    value.right

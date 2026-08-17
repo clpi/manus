@@ -1,0 +1,2 @@
+score: i64 = (value: i64 = 4)
+    value + 3

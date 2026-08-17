@@ -29,9 +29,8 @@
 -- proves the coordination lock by making it REFUSE  -  a lock that only ever
 -- says yes is not a lock, and the gate would rather see the "no".
 --
--- No `req` here: gate.id is compiled with --backend=c as the entry module, and
--- C lowering does not yet bind file-scope `req` the way bench.id/lsp.id do when
--- THEY are the entry. Process capture is inlined below.
+-- No `req` here: process capture is inlined so this gate exercises the same
+-- direct-native entry path as the servers it drives.
 
 passed: bool = (code: i64)
   code == 0
@@ -93,7 +92,7 @@ drive: str = (server: str, tag: str, lines: str)
   reqf = "{work}/{tag}.req.json"
   respf = "{work}/{tag}.resp.json"
   fs.write_file(reqf, lines)
-  os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idol_bin .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
+  os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idol_bin .. "' run --backend=direct '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
   fs.read_file(respf) or ""
 
 -- Count tool entries two INDEPENDENT ways and require them to agree. One

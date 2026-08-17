@@ -206,12 +206,12 @@ pub fn mergedBindingConformance(prev: ?Conformance, next: Conformance) ?Conforma
 // was a six-arm switch, one hand-written expression per world; `homeName` was a
 // third six-arm switch; the `os` roster and the `test` roster were two loose
 // `const` arrays; the standing stream names were a fourth if-chain; and WHICH
-// FILES INHABIT THE TEST WORLD lived in `sema.inTestWorld`, in a different file
-// from the world it decides. Seven places had to agree about six worlds, and
-// nothing made them.
+// test-world admission lived in `sema.inTestWorld`, inferred from a source path
+// in a file that did not own either launch role or world declarations. Seven
+// places had to agree about six worlds, and nothing made them.
 //
-// A WORLD NOW CARRIES ITS OWN FACTS: its name, what it provides, which files it
-// is injected into, and what that injection confers. Every question below is
+// A WORLD NOW CARRIES ITS OWN FACTS: its name, what it provides, whether it
+// needs a launcher witness, and what reach confers. Every question below is
 // ANSWERED FROM THAT DECLARATION, so a world added to the table is a world the
 // resolver, the bare-reach rule, the injection rule and the diagnostics all
 // already know about, with no edit anywhere else.
@@ -224,54 +224,13 @@ pub fn mergedBindingConformance(prev: ?Conformance, next: Conformance) ?Conforma
 // declaration has to arrive into. The remaining hardcoded fact is named
 // precisely: `Provision.roster` — and only two worlds still use it.
 
-/// WHERE A FILE MUST LIVE to inhabit a world. STRUCTURE-DERIVED INJECTION,
-/// generalised.
-///
-/// The test world is injected because the file's NAME says so, and that was the
-/// only structure-derived fact in the compiler — written as four `std.mem` calls
-/// inside `sema.inTestWorld`, a function in a different file from the world it
-/// decided. It is a FACT ABOUT THE WORLD, so the world carries it, and any world
-/// may carry one.
-///
-/// A COMPONENT, NOT A SUBSTRING. `directory = "test"` admits `test/a.id`,
-/// `x/test/a.id` and `test/deep/a.id`, and refuses `testing/a.id` and
-/// `mytest/a.id` — the two probes in `gate/inject.sh` that pin the difference.
-pub const Structure = struct {
-    /// A path COMPONENT.
-    directory: ?[]const u8 = null,
-    /// A basename SUFFIX. `_test.id` admits `foo_test.id`, not `mytest.id`.
-    stem_suffix: ?[]const u8 = null,
-    /// A basename PREFIX. `test_` admits `test_foo.id`, not `atest.id`.
-    stem_prefix: ?[]const u8 = null,
-
-    /// Whether a file at `path` lives where this structure requires.
-    pub fn admits(self: Structure, path: []const u8) bool {
-        if (self.directory) |d| {
-            var at: usize = 0;
-            while (std.mem.indexOfPos(u8, path, at, d)) |hit| : (at = hit + 1) {
-                const opens = hit == 0 or path[hit - 1] == '/';
-                const ends = hit + d.len;
-                const closes = ends < path.len and path[ends] == '/';
-                if (opens and closes) return true;
-            }
-        }
-        const stem = std.fs.path.basename(path);
-        if (self.stem_suffix) |s| {
-            if (std.mem.endsWith(u8, stem, s)) return true;
-        }
-        if (self.stem_prefix) |p| {
-            if (std.mem.startsWith(u8, stem, p)) return true;
-        }
-        return false;
-    }
-};
-
-/// WHICH FILES a world is injected into.
-pub const Injection = union(enum) {
-    /// Every file. The standard environment.
+/// HOW A WORLD ENTERS THE ACTIVE LAUNCH CONTEXT.
+pub const Injection = enum {
+    /// The standard environment supplies this world without another witness.
     always,
-    /// The files whose LOCATION says so, and only those.
-    by_structure: Structure,
+    /// The launcher must supply an exact grant for this world. Source paths do
+    /// not grant it; they may only help the launcher select a role.
+    witnessed,
 };
 
 /// WHAT INHABITING a world confers. The two are separate questions and were
@@ -420,17 +379,14 @@ pub const declarations = [_]Declaration{
         .injection = .always,
         .reach = .anchored_only,
     },
-    // THE STRUCTURE-DERIVED WORLD. Nothing in a test file says it is one: no
-    // import, no attribute, no directive. Only where the file LIVES.
+    // A TEST LAUNCH may grant this world. The source path never does: launch
+    // structure is interpreted at the launcher boundary and arrives here as an
+    // exact world grant.
     .{
         .home = .testing,
         .name = "test",
         .provides = .{ .roster = &testing_members },
-        .injection = .{ .by_structure = .{
-            .directory = "test",
-            .stem_suffix = "_test.id",
-            .stem_prefix = "test_",
-        } },
+        .injection = .witnessed,
         .reach = .anchored_only,
     },
 };
@@ -444,24 +400,17 @@ pub fn declarationOf(home: Home) *const Declaration {
     unreachable;
 }
 
-/// The worlds a file at `path` inhabits, taken from `decls`.
-///
-/// Parameterized on the declaration table for the same reason `bareReachIn` is
-/// parameterized on the world list: the general mechanism has exactly ONE
-/// structure-injected world in the shipped table, so every interesting case —
-/// two structure worlds, a conflict between them, a world injected here and not
-/// there — is unreachable in production and would never be exercised. A test
-/// hands it a second table.
-///
-/// `path` of `null` is a source with no location — the honest answer is that no
-/// structure-derived world reaches it, which is what `sema.inTestWorld` already
-/// did for a `source_path` it did not have.
-pub fn inhabitedIn(decls: []const Declaration, path: ?[]const u8) WorldSet {
+/// The worlds reached under exact launcher `grants`, taken from `decls`.
+/// `always` worlds need no explicit grant; `witnessed` worlds do. The input is
+/// semantic identity, never a file path or spelling detector.
+pub fn inhabitedIn(decls: []const Declaration, grants: []const Home) WorldSet {
     var set: WorldSet = .{};
     for (decls) |d| {
         const in = switch (d.injection) {
             .always => true,
-            .by_structure => |s| if (path) |p| s.admits(p) else false,
+            .witnessed => for (grants) |grant| {
+                if (grant == d.home) break true;
+            } else false,
         };
         if (in) set.add(d.home);
     }
@@ -494,21 +443,18 @@ pub const WorldSet = struct {
     }
 };
 
-/// Whether a file at `path` inhabits `world`. THE INJECTION QUESTION, asked by
-/// sema for every world instead of for one.
-pub fn fileInhabits(world: Home, path: ?[]const u8) bool {
-    return switch (declarationOf(world).injection) {
-        .always => true,
-        .by_structure => |s| if (path) |p| s.admits(p) else false,
-    };
+/// Whether `world` reaches the supplied launch context.
+pub fn worldReached(worlds: []const Home, world: Home) bool {
+    for (worlds) |reached| if (reached == world) return true;
+    return false;
 }
 
-/// The worlds injected into a file at `path`.
-pub fn injectedWorldsFor(path: ?[]const u8) WorldSet {
-    return inhabitedIn(&declarations, path);
+/// The worlds reached after applying exact launcher grants.
+pub fn injectedWorldsFor(grants: []const Home) WorldSet {
+    return inhabitedIn(&declarations, grants);
 }
 
-/// The worlds injected into a file with no location — every `always` world.
+/// The worlds supplied without explicit launcher grants — every `always` world.
 ///
 /// MEMBERSHIP, NOT A SECOND LIST. `arg` was admitted by hand in
 /// `is_builtin_global` when the argument ruling landed, and the other five
@@ -519,7 +465,7 @@ pub fn injectedWorldsFor(path: ?[]const u8) WorldSet {
 /// injected confers nothing, and a member edge added to an injected world is
 /// bare-reachable with no edit anywhere.
 pub fn injectedWorlds() WorldSet {
-    return injectedWorldsFor(null);
+    return injectedWorldsFor(&.{});
 }
 
 /// Which injected worlds provide `name` as a member edge. THE BARE-REACH
@@ -581,16 +527,15 @@ pub fn bareReachIn(worlds: []const Home, name: []const u8) BareReach {
     return bareReachAmong(&declarations, worlds, name);
 }
 
-/// The bare reach `name` has in a file at `path` — WHICH WORLDS REACH THIS FILE
-/// decides which member edges are bare in it.
-pub fn bareReachFor(path: ?[]const u8, name: []const u8) BareReach {
-    const set = injectedWorldsFor(path);
-    return bareReachIn(set.slice(), name);
+/// The bare reach `name` has in an exact launch-world set.
+pub fn bareReachFor(worlds: []const Home, name: []const u8) BareReach {
+    return bareReachIn(worlds, name);
 }
 
 /// The bare reach `name` has in the STANDARD environment.
 pub fn bareReach(name: []const u8) BareReach {
-    return bareReachFor(null, name);
+    const worlds = injectedWorlds();
+    return bareReachFor(worlds.slice(), name);
 }
 
 /// The injected world that UNIQUELY provides `name`, or null. Ambiguity answers
@@ -598,12 +543,13 @@ pub fn bareReach(name: []const u8) BareReach {
 /// must not be handed one of two answers — and the caller that reports the
 /// ambiguity asks `bareReach` for the pair.
 pub fn injectedWorldProviding(name: []const u8) ?Home {
-    return injectedWorldProvidingFor(null, name);
+    const worlds = injectedWorlds();
+    return injectedWorldProvidingFor(worlds.slice(), name);
 }
 
-/// The injected world that uniquely provides `name` IN A FILE AT `path`.
-pub fn injectedWorldProvidingFor(path: ?[]const u8, name: []const u8) ?Home {
-    return switch (bareReachFor(path, name)) {
+/// The reached world that uniquely provides `name` in this launch context.
+pub fn injectedWorldProvidingFor(worlds: []const Home, name: []const u8) ?Home {
+    return switch (bareReachFor(worlds, name)) {
         .one => |w| w,
         .none, .ambiguous => null,
     };
@@ -628,9 +574,7 @@ pub fn injectedWorldProvidingAmong(
 /// than an instance. `os:arg(i)` reaches the `os` world because the subject is
 /// `os`, not because "arg" appears in a table keyed by home.
 ///
-/// The caller still owns admission: `test` is injected by STRUCTURE and is only
-/// a world in a file that inhabits it, which is sema's question, not this
-/// file's.
+/// The caller still owns admission: naming a world does not grant it.
 pub fn worldNamed(ident: []const u8) ?Home {
     for (&declarations) |*d| {
         if (std.mem.eql(u8, d.name, ident)) return d.home;
@@ -638,15 +582,10 @@ pub fn worldNamed(ident: []const u8) ?Home {
     return null;
 }
 
-/// The world a builtin subject names AND that reaches a file at `path`.
-///
-/// `worldNamed` answers what the word MEANS; this answers whether the word means
-/// it HERE. `test` is a world in a file the test world is injected into and an
-/// ordinary word everywhere else, and that used to be a `.testing` special case
-/// at the one call site that remembered to make it.
-pub fn worldNamedFor(path: ?[]const u8, ident: []const u8) ?Home {
+/// The world a builtin subject names AND that reaches this launch context.
+pub fn worldNamedFor(worlds: []const Home, ident: []const u8) ?Home {
     const world = worldNamed(ident) orelse return null;
-    return if (fileInhabits(world, path)) world else null;
+    return if (worldReached(worlds, world)) world else null;
 }
 
 // ── THE REMAINDER: what conformance still cannot derive ─────────────────────
@@ -712,12 +651,11 @@ fn str_(name: []const u8) Provided {
 /// and `"hi":close()` came to type-check clean and die at emit with
 /// `DNB001 method-unresolved` — a string is a PATH, and a path is not a stream.
 const text_relations = [_]Provided{
-    str_("sub"),   str_("match"), str_("byte"),    str_("len"),
-    str_("rep"),   str_("lower"), str_("upper"),   str_("reverse"),
-    str_("format"), str_("gsub"), str_("gmatch"),  str_("split"),
-    str_("trim"),  str_("has"),   str_("tail"),    str_("starts"),
-    str_("ends"),  str_("find"),
-    .{ .name = "read", .home = .io },
+    str_("sub"),    str_("match"), str_("byte"),                     str_("len"),
+    str_("rep"),    str_("lower"), str_("upper"),                    str_("reverse"),
+    str_("format"), str_("gsub"),  str_("gmatch"),                   str_("split"),
+    str_("trim"),   str_("has"),   str_("tail"),                     str_("starts"),
+    str_("ends"),   str_("find"),  .{ .name = "read", .home = .io },
 };
 
 fn math_(name: []const u8) Provided {
@@ -726,12 +664,12 @@ fn math_(name: []const u8) Provided {
 
 /// What a `numeric` subject provides.
 const numeric_relations = [_]Provided{
-    math_("sqrt"),  math_("sin"),   math_("cos"),   math_("tan"),
-    math_("exp"),   math_("log"),   math_("ceil"),  math_("max"),
-    math_("min"),   math_("abs"),   math_("floor"), math_("fmod"),
-    math_("pow"),   math_("sign"),  math_("round"), math_("random"),
-    math_("sinh"),  math_("cosh"),  math_("tanh"),  math_("asin"),
-    math_("acos"),  math_("atan"),  math_("atan2"),
+    math_("sqrt"), math_("sin"),  math_("cos"),   math_("tan"),
+    math_("exp"),  math_("log"),  math_("ceil"),  math_("max"),
+    math_("min"),  math_("abs"),  math_("floor"), math_("fmod"),
+    math_("pow"),  math_("sign"), math_("round"), math_("random"),
+    math_("sinh"), math_("cosh"), math_("tanh"),  math_("asin"),
+    math_("acos"), math_("atan"), math_("atan2"),
     // A CODEPOINT is the subject; the relation is realized by the string home.
     // `65:char()` is the canonical face and `string.char(65)` the other end of
     // the same edge.
@@ -746,7 +684,7 @@ fn tbl_(name: []const u8) Provided {
 /// `str` subject cannot reach it and a sequence subject reaches it with no
 /// tiebreak.
 const sequence_relations = [_]Provided{
-    tbl_("insert"), tbl_("remove"), tbl_("sort"), tbl_("unpack"),
+    tbl_("insert"), tbl_("remove"), tbl_("sort"),   tbl_("unpack"),
     tbl_("push"),   tbl_("pop"),    tbl_("concat"),
 };
 
@@ -870,11 +808,10 @@ pub const Supplied = struct { world: Home, protocol: Conformance, inbound: bool 
 
 pub fn suppliedInstanceIn(
     decls: []const Declaration,
-    path: ?[]const u8,
+    worlds: []const Home,
     ident: []const u8,
 ) ?Supplied {
-    const set = inhabitedIn(decls, path);
-    for (set.slice()) |w| {
+    for (worlds) |w| {
         for (decls) |d| {
             if (d.home != w or d.reach != .bare) continue;
             switch (d.provides) {
@@ -889,12 +826,13 @@ pub fn suppliedInstanceIn(
     return null;
 }
 
-pub fn suppliedInstanceFor(path: ?[]const u8, ident: []const u8) ?Supplied {
-    return suppliedInstanceIn(&declarations, path, ident);
+pub fn suppliedInstanceFor(worlds: []const Home, ident: []const u8) ?Supplied {
+    return suppliedInstanceIn(&declarations, worlds, ident);
 }
 
 pub fn suppliedInstance(ident: []const u8) ?Supplied {
-    return suppliedInstanceFor(null, ident);
+    const worlds = injectedWorlds();
+    return suppliedInstanceFor(worlds.slice(), ident);
 }
 
 /// Whether `ident` is a standing stream the `io` world supplies.
@@ -1012,10 +950,10 @@ const os_members: [osBareCount()][]const u8 = blk: {
 ///      as one that invents a relation the backend does not — the roster and
 ///      the realization disagree, and only one of them runs."
 ///
-/// THE BACKEND, SINGULAR. `--backend=c` is retired; the direct AArch64 backend
-/// is the only one. So "the realization" is no longer a question with two
-/// answers to be traded off, and the measurement that decides this roster is a
-/// single column. Measured per name, `--backend=direct`, every face, from the
+/// Direct is canonical. The explicit graph-observed DNIR to C99 realizer is an
+/// orthogonal physical output and does not define this world roster. The
+/// measurement that decides the current direct realization is therefore one
+/// column. Measured per name, `--backend=direct`, every face, from the
 /// repo root (idol 48cfd928):
 ///
 ///     env(k)  env(k)=v  env:remove(k)  os.env(k)     LOWERS
@@ -1237,10 +1175,8 @@ pub fn osDotTierCount(how: Realization) usize {
     return n;
 }
 
-/// The TEST world's relations. Reached as `test:assert(...)`, and only in a
-/// file the test world is injected into — which is now derived from the world's
-/// own `Injection.by_structure` predicate rather than from four `std.mem` calls
-/// in sema.
+/// The TEST world's relations. Reached as `test:assert(...)` only when the
+/// launcher supplied the testing-world witness. Source paths do not grant it.
 ///
 /// This is what `@comp.assert` should have been. A directive namespace is a
 /// namespace; a world is a subject, and an assertion is a relation on it.
@@ -1580,18 +1516,16 @@ test "the world rosters are DISJOINT, so injection has nothing to resolve" {
     // when it breaks, and this is the tripwire that says it broke.
     const worlds = [_]Home{ .string, .math, .table, .io, .testing, .os };
     const names = [_][]const u8{
-        "arg",    "args",  "env",     "cwd",    "exit",   "clock",  "time",
-        "assert", "refute", "equal",  "differs", "raises", "near",
-        "sub",    "match", "byte",    "len",    "rep",    "lower",  "upper",
-        "reverse", "format", "gsub",  "gmatch", "split",  "trim",   "has",
-        "tail",   "starts", "ends",   "find",   "char",
-        "sqrt",   "sin",   "cos",     "tan",    "exp",    "log",    "ceil",
-        "max",    "min",   "abs",     "floor",  "fmod",   "pow",    "sign",
-        "round",  "random", "sinh",   "cosh",   "tanh",   "asin",   "acos",
-        "atan",   "atan2",
-        "insert", "remove", "sort",   "unpack", "push",   "pop",    "concat",
-        "write",  "read",  "close",   "flush",  "seek",   "line",   "lines",
-        "setvbuf",
+        "arg",    "args",   "env",    "cwd",     "exit",   "clock",  "time",
+        "assert", "refute", "equal",  "differs", "raises", "near",   "sub",
+        "match",  "byte",   "len",    "rep",     "lower",  "upper",  "reverse",
+        "format", "gsub",   "gmatch", "split",   "trim",   "has",    "tail",
+        "starts", "ends",   "find",   "char",    "sqrt",   "sin",    "cos",
+        "tan",    "exp",    "log",    "ceil",    "max",    "min",    "abs",
+        "floor",  "fmod",   "pow",    "sign",    "round",  "random", "sinh",
+        "cosh",   "tanh",   "asin",   "acos",    "atan",   "atan2",  "insert",
+        "remove", "sort",   "unpack", "push",    "pop",    "concat", "write",
+        "read",   "close",  "flush",  "seek",    "line",   "lines",  "setvbuf",
     };
     for (names) |n| {
         var providers: usize = 0;
@@ -1670,7 +1604,7 @@ test "the bare roster is DERIVED from the rows, and it does not WIDEN" {
     // ON THE DOT ROSTER AND NOT BARE. `os.execute(cmd)` resolves through the
     // anchor; a bare `execute(cmd)` is an ordinary name and must stay one.
     for ([_][]const u8{
-        "execute", "remove",  "rename", "date",
+        "execute", "remove",   "rename", "date",
         "tmpname", "difftime", "getenv", "setenv",
     }) |n| {
         try std.testing.expect(osDotMember(n) != null);
@@ -1744,68 +1678,26 @@ test "a world's name, membership and injection all come from its declaration" {
     try std.testing.expect(!homeProvides(.string, "read"));
 }
 
-test "structure-derived injection is a path COMPONENT, not a substring" {
-    const s: Structure = .{ .directory = "test", .stem_suffix = "_test.id", .stem_prefix = "test_" };
-    // The four positive shapes `sema.inTestWorld` used to spell out by hand.
-    try std.testing.expect(s.admits("foo_test.id"));
-    try std.testing.expect(s.admits("test_foo.id"));
-    try std.testing.expect(s.admits("test/foo.id"));
-    try std.testing.expect(s.admits("sub/test/foo.id"));
-    try std.testing.expect(s.admits("test/deep/foo.id"));
-    try std.testing.expect(s.admits("test/foo_test.id"));
-    // The negatives, which are what make the positives mean anything. Each one
-    // is a probe in `gate/inject.sh`, checked here against the predicate itself
-    // rather than through a compile.
-    try std.testing.expect(!s.admits("plain.id"));
-    try std.testing.expect(!s.admits("other/injection.id"));
-    try std.testing.expect(!s.admits("mytest.id")); // `test.id`, not `_test.id`
-    try std.testing.expect(!s.admits("testing/foo.id")); // `/testing/`, not `/test/`
-    try std.testing.expect(!s.admits("mytest/foo.id")); // a suffix is not the component
-    try std.testing.expect(!s.admits("atest.id")); // `test_` is a PREFIX test
-    // A component test must not match the LAST component either: `a/test` is a
-    // file named `test`, not a directory. The stem tests answer for it and they
-    // both say no.
-    try std.testing.expect(!s.admits("a/test"));
+test "witnessed worlds require exact launcher grants" {
+    const ordinary = injectedWorlds();
+    try std.testing.expect(ordinary.holds(.os));
+    try std.testing.expect(ordinary.holds(.io));
+    try std.testing.expect(!ordinary.holds(.testing));
+
+    const testing = injectedWorldsFor(&.{.testing});
+    try std.testing.expect(testing.holds(.testing));
+    try std.testing.expect(testing.holds(.os));
+
+    try std.testing.expect(worldReached(testing.slice(), .testing));
+    try std.testing.expect(!worldReached(ordinary.slice(), .testing));
+    try std.testing.expect(worldReached(ordinary.slice(), .os));
+
+    try std.testing.expectEqual(Home.testing, worldNamedFor(testing.slice(), "test").?);
+    try std.testing.expect(worldNamedFor(ordinary.slice(), "test") == null);
+    try std.testing.expectEqual(Home.os, worldNamedFor(ordinary.slice(), "os").?);
 }
 
-test "which worlds reach a file is decided by where the file lives" {
-    // The shipped table. Five worlds are `always`, one is structural.
-    const nowhere = injectedWorldsFor(null);
-    try std.testing.expect(nowhere.holds(.os));
-    try std.testing.expect(nowhere.holds(.io));
-    try std.testing.expect(!nowhere.holds(.testing));
-
-    const in_test = injectedWorldsFor("gate/foo_test.id");
-    try std.testing.expect(in_test.holds(.testing));
-    try std.testing.expect(in_test.holds(.os));
-
-    const outside = injectedWorldsFor("gate/foo.id");
-    try std.testing.expect(!outside.holds(.testing));
-
-    // ...and the same fact asked one world at a time, which is the form sema
-    // uses. `inTestWorld` was this, for one world, in a different file.
-    try std.testing.expect(fileInhabits(.testing, "test/a.id"));
-    try std.testing.expect(!fileInhabits(.testing, "testing/a.id"));
-    try std.testing.expect(fileInhabits(.os, "testing/a.id"));
-    try std.testing.expect(fileInhabits(.os, null));
-    try std.testing.expect(!fileInhabits(.testing, null));
-
-    // A WORLD'S NAME MEANS IT ONLY WHERE THE WORLD REACHES.
-    try std.testing.expectEqual(Home.testing, worldNamedFor("a_test.id", "test").?);
-    try std.testing.expect(worldNamedFor("a.id", "test") == null);
-    try std.testing.expectEqual(Home.os, worldNamedFor("a.id", "os").?);
-}
-
-test "structure-derived injection is GENERAL — a second world, and their conflict" {
-    // THE POINT OF THE PARAMETERIZATION. The shipped table has exactly one
-    // structure-injected world, so "the mechanism is general" is unfalsifiable
-    // against it: every interesting case — a second structural world, a file in
-    // one and not the other, two structural worlds providing one name — is
-    // unreachable in production. A table is handed in instead, which is the same
-    // move `bareReachIn`'s world-list parameter makes for the ambiguity arm.
-    //
-    // Nothing below edits the shipped table, and nothing below is a world the
-    // language has. It is the RULE being exercised, not a world being added.
+test "explicit world grants are general and their conflicts fail closed" {
     const alpha = [_][]const u8{ "alpha", "shared" };
     const beta = [_][]const u8{ "beta", "shared" };
     const two = [_]Declaration{
@@ -1813,49 +1705,36 @@ test "structure-derived injection is GENERAL — a second world, and their confl
             .home = .os,
             .name = "os",
             .provides = .{ .roster = &alpha },
-            .injection = .{ .by_structure = .{ .directory = "alpha" } },
+            .injection = .witnessed,
             .reach = .bare,
         },
         .{
             .home = .testing,
             .name = "test",
             .provides = .{ .roster = &beta },
-            .injection = .{ .by_structure = .{ .stem_suffix = "_beta.id" } },
+            .injection = .witnessed,
             .reach = .bare,
         },
     };
 
-    // A file in neither inhabits neither. Structure is the WHOLE condition.
-    try std.testing.expectEqual(@as(usize, 0), inhabitedIn(&two, "plain.id").len);
-    try std.testing.expectEqual(@as(usize, 0), inhabitedIn(&two, null).len);
+    try std.testing.expectEqual(@as(usize, 0), inhabitedIn(&two, &.{}).len);
 
-    // A file in one inhabits one, and the two conditions are independent — a
-    // directory for the first, a stem for the second, and neither leaks.
-    const in_alpha = inhabitedIn(&two, "alpha/x.id");
+    const in_alpha = inhabitedIn(&two, &.{.os});
     try std.testing.expect(in_alpha.holds(.os) and !in_alpha.holds(.testing));
-    const in_beta = inhabitedIn(&two, "x_beta.id");
+    const in_beta = inhabitedIn(&two, &.{.testing});
     try std.testing.expect(in_beta.holds(.testing) and !in_beta.holds(.os));
 
-    // A file in BOTH inhabits both — and this is the case the shipped table
-    // cannot produce, because it has one structural world.
-    const both = inhabitedIn(&two, "alpha/x_beta.id");
+    const both = inhabitedIn(&two, &.{ .os, .testing });
     try std.testing.expectEqual(@as(usize, 2), both.len);
 
-    // WHERE THE FILE LIVES DECIDES WHAT IS BARE. `alpha` is a member edge in an
-    // `alpha/` file and an ordinary word beside it — the property the whole
-    // mechanism exists for, and one no hardcoded injected-world list can hold.
     try std.testing.expectEqual(Home.os, bareReachAmong(&two, in_alpha.slice(), "alpha").one);
     try std.testing.expectEqual(
         BareReach.none,
         std.meta.activeTag(bareReachAmong(&two, in_beta.slice(), "alpha")),
     );
 
-    // ...AND THEIR CONFLICT IS DIAGNOSED, NOT PICKED. `shared` is provided by
-    // both, so in a file that inhabits both it names no single edge. §42 /
-    // `law.inject.algebra`: "ambiguous injection fails rather than picking by
-    // declaration import or path priority". Until injection could vary with the
-    // path, this arm was reachable only by handing the function `{os, os}` —
-    // a list no program could produce.
+    // Two exact grants still cannot create an ordering rule. `shared` is
+    // ambiguous and therefore confers no reach.
     const clash = bareReachAmong(&two, both.slice(), "shared");
     try std.testing.expectEqual(BareReach.ambiguous, std.meta.activeTag(clash));
     try std.testing.expectEqual(Home.os, clash.ambiguous.first);
@@ -1870,10 +1749,10 @@ test "structure-derived injection is GENERAL — a second world, and their confl
 }
 
 test "injection and REACH are two questions, and only one confers a bare name" {
-    // `string` is injected into every file — `string.len(s)` resolves anywhere —
+    // `string` is supplied by every launch — `string.len(s)` resolves anywhere —
     // and confers no bare reach at all, so `len(x)` is an ordinary name and
     // `gate/shadow.id` can declare a relation called `len`.
-    const set = injectedWorldsFor(null);
+    const set = injectedWorlds();
     try std.testing.expect(set.holds(.string));
     try std.testing.expectEqual(BareReach.none, std.meta.activeTag(bareReach("len")));
     try std.testing.expectEqual(BareReach.none, std.meta.activeTag(bareReach("floor")));
@@ -1881,18 +1760,16 @@ test "injection and REACH are two questions, and only one confers a bare name" {
     // `os` is injected AND confers bare reach, which is the whole difference.
     try std.testing.expectEqual(Home.os, bareReach("env").one);
     try std.testing.expectEqual(Home.os, bareReach("cwd").one);
-    // The test world reaches a `_test.id` file and still confers nothing bare,
-    // which is the ROUTED question — see `Reach.anchored_only`. If that ruling
-    // lands the other way this expectation is the one that changes, and it is
-    // written down so the change is deliberate.
-    try std.testing.expect(fileInhabits(.testing, "a_test.id"));
+    // An explicit test-world grant still confers nothing bare; its own name is
+    // the anchor and `assert` remains an ordinary bare name.
+    const testing = injectedWorldsFor(&.{.testing});
     try std.testing.expectEqual(
         BareReach.none,
-        std.meta.activeTag(bareReachFor("a_test.id", "assert")),
+        std.meta.activeTag(bareReachFor(testing.slice(), "assert")),
     );
     try std.testing.expectEqual(
         BareReach.none,
-        std.meta.activeTag(bareReachFor("a_test.id", "equal")),
+        std.meta.activeTag(bareReachFor(testing.slice(), "equal")),
     );
 }
 
@@ -1943,26 +1820,28 @@ test "CROSS-PROJECTION: the world supplies the instance, the protocol carries th
 test "a supplied instance is a name the world reaches, not a name it takes" {
     // Membership is this file's; ADMISSION is sema's, and sema asks
     // `userBinding` first. What THIS file has to guarantee is that the fact is
-    // keyed on the injected world reaching the file at all: a world that does
-    // not reach supplies nothing.
+    // keyed on the world reaching the launch at all: a world that does not
+    // reach supplies nothing.
     const two = [_]Declaration{.{
         .home = .io,
         .name = "io",
         .provides = .{ .supplies = .{ .instances = &standing_streams, .protocol = .stream } },
-        .injection = .{ .by_structure = .{ .directory = "hosted" } },
+        .injection = .witnessed,
         .reach = .bare,
     }};
-    try std.testing.expect(inhabitedIn(&two, "hosted/a.id").holds(.io));
-    try std.testing.expect(!inhabitedIn(&two, "plain.id").holds(.io));
+    const reached = inhabitedIn(&two, &.{.io});
+    const absent = inhabitedIn(&two, &.{});
+    try std.testing.expect(reached.holds(.io));
+    try std.testing.expect(!absent.holds(.io));
     // ...and the instance follows the world. `stdout` is a standing name where
     // the world that supplies it reaches, and an ordinary word where it does
     // not — which is what makes "not granted, not reachable" a mechanism rather
     // than a rule someone has to remember to write.
     try std.testing.expectEqual(
         Conformance.stream,
-        suppliedInstanceIn(&two, "hosted/a.id", "stdout").?.protocol,
+        suppliedInstanceIn(&two, reached.slice(), "stdout").?.protocol,
     );
-    try std.testing.expect(suppliedInstanceIn(&two, "plain.id", "stdout") == null);
+    try std.testing.expect(suppliedInstanceIn(&two, absent.slice(), "stdout") == null);
 }
 
 test "the lowerer's bridge is the same dispatch, not a second one" {

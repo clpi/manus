@@ -1,0 +1,7 @@
+point = struct
+    x: i64 = 3
+end
+
+main: i64 = ()
+    value = point{}
+    value.x

@@ -1,0 +1,5 @@
+width: i64 = (text: str = arg(1))
+    text:len()
+
+main: i64 = ()
+    width()

@@ -52,5 +52,10 @@ while true
                     else
                         '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"debug","logger":"idol","data":"ack"}}'
 
-    stdout:write(resp)
+    # MCP stdio framing: one JSON object per LINE. The trailing newline is the
+    # delimiter a line-oriented client reads on, and stdout:write is raw host
+    # egress — the backend flushes it, so each response reaches the peer before
+    # the next request is read (the handshake used to sit in libc's 4 KiB
+    # block buffer until exit and every client timed out).
+    stdout:write(resp .. "\n")
     line = stdin:line()

@@ -1,0 +1,5 @@
+point: { x: i64 = 3 }
+
+main: i64 = ()
+    value = point{}
+    value.x

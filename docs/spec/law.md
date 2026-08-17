@@ -813,8 +813,15 @@ No file-wide recompilation merely because a file changed.
 
 Destination: graph → demand → realization → instruction → object.
 
-Generated C is a bounded bootstrap bridge only. No new semantic feature should
-require the C backend exclusively.
+Direct native is the canonical default, self-host, release, correctness, and
+performance path. It never emits C, invokes a C compiler, depends on a C
+artifact, or falls back to C.
+
+Generated C is also a lawful, explicit, orthogonal physical realization when it
+consumes the same graph facts. It is never semantic authority, never selected by
+`auto`, and never supplies missing facts or evidence for direct native. No
+semantic feature may require it exclusively. The `c` foreign world is a separate
+interop capability and does not select the C backend.
 
 Every backend refusal names application id, missing fact, expected producer,
 consumer/cause. Crashes: P0, target 0.

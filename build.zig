@@ -37,8 +37,9 @@ fn linkProductionDuoLexer(b: *std.Build, mod: *std.Build.Module) void {
 /// The direct backend's runtime support, COMPILED FROM ZIG AND CARRIED INSIDE
 /// THE COMPILER — the half of "no C backend" that nobody notices.
 ///
-/// Retiring `--backend=c` does not make this compiler C-free while the DIRECT
-/// backend still hands C source to clang at link time, which is what it did:
+/// Retiring the AST/Lua C bridge did not make this compiler C-free while the
+/// direct backend still handed C source to clang at link time, which is what it
+/// did:
 /// `s:has()`, `s:sub()`, `s:find()` and `s:to(i64)` were implemented in
 /// `src/idol_str_bootstrap.c`, and `io:read()` / `os.args` / `os.cwd` in
 /// `src/idol_io_bootstrap.c`. Both files were appended to the link line, so
@@ -114,7 +115,7 @@ pub fn build(b: *std.Build) void {
     // G11 — the language census ratchet. A number nobody runs is a number that
     // drifts, which is how "no language but Duo" stayed a slogan instead of a
     // list of twelve files.
-    const census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/language_census.id" });
+    const census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "scripts/language_census.id" });
     census_cmd.setCwd(b.path("."));
     census_cmd.step.dependOn(b.getInstallStep());
     const census_step = b.step("language-census", "G11: count tracked non-Duo source; ratchets sh/py, js and zig");
@@ -132,16 +133,16 @@ pub fn build(b: *std.Build) void {
     const foreign_step = b.step("foreign-census", "U8: every foreign file classified ledger or oracle; ratchets violations");
     foreign_step.dependOn(&foreign_cmd.step);
 
-    const embed_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "scripts/embedledger.id" });
+    const embed_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "scripts/embedledger.id" });
     embed_cmd.setCwd(b.path("."));
     embed_cmd.step.dependOn(b.getInstallStep());
     const embed_step = b.step("embed-ledger", "Embedded @c audit; enforce zero sites for self-hosting");
     embed_step.dependOn(&embed_cmd.step);
 
     // The native census. Same reasoning as G11 one level down: "native 100%"
-    // was a slogan because nothing measured it honestly. `duo compile` falls
-    // back to the C backend and still reports ok, so only --backend=direct is
-    // an answer -- and the ratio has to be over the REACHABLE set, because a
+    // was a slogan because nothing measured it honestly. Auto preserves a
+    // direct refusal, so only --backend=direct is an answer -- and the ratio has
+    // to be over the REACHABLE set, because a
     // compiler proof fixture that exists to drive the C emitter can never be
     // native and counting it turns a 90% ceiling into a 61% failure.
     const native_census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/native_census.id" });
@@ -245,6 +246,29 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
     test_step.dependOn(&test_cmd.step);
+
+    // The C realizer is explicit-only and consumes the same graph-observed DNIR
+    // as direct. Run its independent answer, selection, toolchain-poison, and
+    // damage controls with the compiler built by this invocation. The outer
+    // lock sets IDOL_LOCK_HELD=1, so the proof's nested compiler calls reuse it.
+    const c_realizer_cmd = b.addSystemCommand(&.{ "./tools/node/dev/idol-lock", "--", "sh", "examples/cbackend/prove.sh" });
+    c_realizer_cmd.setCwd(b.path("."));
+    c_realizer_cmd.setEnvironmentVariable("IDOL_C_REALIZER_COMPILER", "./zig-out/bin/idol");
+    c_realizer_cmd.step.dependOn(b.getInstallStep());
+    const c_realizer_step = b.step("c-realizer", "Explicit graph-observed DNIR to C99, with isolation and damage controls");
+    c_realizer_step.dependOn(&c_realizer_cmd.step);
+    test_step.dependOn(&c_realizer_cmd.step);
+
+    // This gate owns and perturbs the lock protocol itself, so wrapping it in
+    // the lock under test would deadlock. It uses isolated lock roots and the
+    // source-built compiler while proving exclusion, cleanup, and exact status.
+    const lock_gate_cmd = b.addSystemCommand(&.{ "sh", "gate/lock.sh" });
+    lock_gate_cmd.setCwd(b.path("."));
+    lock_gate_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol");
+    lock_gate_cmd.step.dependOn(b.getInstallStep());
+    const lock_gate_step = b.step("lock-gate", "Authoritative build lock exclusion, cleanup, and damage controls");
+    lock_gate_step.dependOn(&lock_gate_cmd.step);
+    test_step.dependOn(&lock_gate_cmd.step);
 
     // Zig unit tests (lexer, parser, AST, types, sema).
     // Run independently from the binary: `zig build unit-test`
@@ -549,6 +573,30 @@ pub fn build(b: *std.Build) void {
     const pathgate_step = b.step("path-gate", "law.path.name: gate/path admission firewall");
     pathgate_step.dependOn(&pathgate_cmd.step);
 
+    const world_launch_cmd = b.addSystemCommand(&.{ "sh", "gate/world-launch.sh" });
+    world_launch_cmd.setCwd(b.path("."));
+    world_launch_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
+    world_launch_cmd.step.dependOn(b.getInstallStep());
+    const world_launch_step = b.step("world-launch", "launcher world admission and cache separation");
+    world_launch_step.dependOn(&world_launch_cmd.step);
+
+    const defaults_cmd = b.addSystemCommand(&.{ "sh", "gate/defaults.sh" });
+    defaults_cmd.setCwd(b.path("."));
+    defaults_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
+    defaults_cmd.step.dependOn(b.getInstallStep());
+    const defaults_step = b.step("defaults-gate", "census function and descriptor defaults across parse, check, direct, and run");
+    defaults_step.dependOn(&defaults_cmd.step);
+    test_step.dependOn(&defaults_cmd.step);
+
+    const cache_home_cmd = b.addSystemCommand(&.{ "sh", "gate/cache-home.sh" });
+    cache_home_cmd.setCwd(b.path("."));
+    cache_home_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol");
+    cache_home_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
+    cache_home_cmd.step.dependOn(b.getInstallStep());
+    const cache_home_step = b.step("cache-home", "executable cache follows resolved semantic home identity");
+    cache_home_step.dependOn(&cache_home_cmd.step);
+    test_step.dependOn(&cache_home_cmd.step);
+
     // tree-sitter-coverage -- section 19's editor front-end, measured.
     // Runs the generator (failing if it exits non-zero, which the nvim setup
     // script used to swallow), parses every tracked .id file, and ratchets off
@@ -702,7 +750,7 @@ pub fn build(b: *std.Build) void {
     const bootstrap_scan_step = b.step("bootstrap-scan", "gap[080]: the deny table over src/*.zig, the corpus audit100 excludes; ratchets");
     bootstrap_scan_step.dependOn(&bootstrap_scan_cmd.step);
 
-    const semantic_architecture_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "gate/architecture.id" });
+    const semantic_architecture_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "gate/architecture.id" });
     semantic_architecture_cmd.setCwd(b.path("."));
     semantic_architecture_cmd.step.dependOn(b.getInstallStep());
     const semantic_architecture_step = b.step("semantic-architecture", "C0 §65: syntax faces erase into semantic relations, facts and demand; debt ratchets");
@@ -1070,9 +1118,9 @@ pub fn build(b: *std.Build) void {
     // engine's provenance log and tier-1 registry). Its four `.id` consumers —
     // scripts/explain.id, scripts/contract.id, scripts/transform.id and the
     // now-deleted scripts/cfloor.id — ALL refused to run when measured: the
-    // first three were invoked as `idol run --backend=c …` and `--backend=c` is
-    // RETIRED (exit 1, by diagnostic), and cfloor.id was outside the direct
-    // backend's subset (DNB001 `mod-global-written:rows`). `consumers = 0`,
+    // first three were invoked through the retired AST/Lua C bridge, and the
+    // explicit C99 source realizer cannot execute them; cfloor.id was outside
+    // the direct backend's subset (DNB001 `mod-global-written:rows`). `consumers = 0`,
     // which HPLS §8 makes P0 debt, and the same census is what condemned the
     // `realize`/`semantic` cascade deleted alongside this.
     //
@@ -1108,7 +1156,7 @@ pub fn build(b: *std.Build) void {
     // counts. Everything scored happens AFTER a close, so a server that dies
     // mid-session cannot score. Positive-controlled by driving it at corrupted
     // copies via LSPGATE_SERVER — see the file header for the three runs.
-    const lsp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=c", "tools/lsp/gate.id" });
+    const lsp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "tools/lsp/gate.id" });
     lsp_gate_cmd.setCwd(b.path("."));
     lsp_gate_cmd.step.dependOn(b.getInstallStep());
     const lsp_gate_step = b.step("lsp-gate", "The LSP must handshake, survive a document close, and answer by value");

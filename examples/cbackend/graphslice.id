@@ -1,0 +1,11 @@
+# Graph-backed C physical realization: bounded i64 call, arithmetic, control,
+# and return. The independently computed answer is 42.
+
+twice: i64 = (value: i64)
+  value * 2
+
+main: i64 = ()
+  value = twice(20)
+  if value == 40
+    return 42
+  1

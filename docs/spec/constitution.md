@@ -7099,18 +7099,18 @@ zerohistory = law{
     fails = "retired architecture preserved as permanent resident in the active tree when git already stores its history"
 }
 
-nocbackend = law{
-    id    = "law.backend.c.zero"
+orthogonalcbackend = law{
+    id    = "law.backend.c.orthogonal"
     kind  = .invariant
     holds = .native
     binds = {
-        "NO-C-BACKEND the generated C backend is not a destination architecture — it is bootstrap debt that must be deleted",
-        "the direct native backend is the sole realization path — no compiler B or C should emit C as a production backend",
-        "duo_lexer_tokenize.c idol codegen and all generated C artifacts are temporary bridges with mandatory deletion conditions",
-        "do not invest in improving the C backend — invest in deleting it by advancing the native backend to full coverage",
-        "the C backend exists only while the native backend cannot yet compile the bootstrap subset — its deletion gate is native backend coverage of the compiler critical basis",
+        "C-BACKEND-ORTHOGONAL generated C is a lawful explicit physical realization over the same semantic graph and never a second semantic authority",
+        "direct native is the canonical default self-host release correctness and performance path — it never emits C invokes a C compiler depends on a C artifact or falls back to C",
+        "auto never selects C and C-backend evidence proves only the C feature never direct-native correctness or performance",
+        "no semantic feature requires C exclusively and missing direct-native facts are repaired generally rather than supplied by the C realization",
+        "the c foreign world is an independent interop capability and neither selects nor grants the C backend",
     }
-    fails = "C backend treated as permanent architecture or improved rather than deleted"
+    fails = "C realization contaminates semantic authority direct-native independence automatic selection or direct evidence"
 }
 
 filesystem.projection = law{

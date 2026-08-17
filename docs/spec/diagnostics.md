@@ -259,7 +259,7 @@ construct is legal Duo that the current toolchain cannot lower:
 ```
 error  DNB001  this shape is outside the direct backend today
   because: `{f64}` in a string hole has no direct lowering yet
-  workaround: none needed — `--backend=c` handles it; it is the oracle path
+  workaround: none — this is direct-native capability debt
   gap: gap[nn]
 ```
 
@@ -403,7 +403,7 @@ addressed to a compiler author:**
 ```
 error: direct backend: DNB001: program construct is outside the direct backend subset
 hint: DNB001: program is outside the current direct backend subset (machine code
-      is canonical; use #backend=c only for bootstrap C emit)
+      is canonical; the explicit C source realizer is not a workaround)
 hint: refused with: UnsupportedProgram
 hint: bail site: lowerBinop() at dnir_lower.zig:2413 — concat
 ```

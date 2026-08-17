@@ -6,10 +6,21 @@ manifest="${IDOL_MCP_MANIFEST:-$repo/tools/node/dev/mcp.manifest.json}"
 idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-${DUO_BIN:-$repo/zig-out/bin/idol}}}"
 work="$(mktemp -d "${TMPDIR:-/tmp}/idol-mcp-gate.XXXXXX")"
 fails=0
+stream_server_pid=""
+stream_reader_pid=""
 
 # Invoked by the EXIT trap.
 # shellcheck disable=SC2329
 cleanup_gate() {
+  exec 9>&- 2>/dev/null || true
+  if [ -n "$stream_reader_pid" ]; then
+    kill "$stream_reader_pid" 2>/dev/null || true
+    wait "$stream_reader_pid" 2>/dev/null || true
+  fi
+  if [ -n "$stream_server_pid" ]; then
+    kill "$stream_server_pid" 2>/dev/null || true
+    wait "$stream_server_pid" 2>/dev/null || true
+  fi
   rm -rf "$work"
 }
 trap cleanup_gate EXIT
@@ -26,24 +37,87 @@ report() {
 validate_native_response() {
   response="$1"
   expected_head="$2"
-  jq -s -e --arg head "$expected_head" '
-    (map({key: (.id | tostring), value: .}) | from_entries) as $r |
-    length == 5 and
-    (map(.id) | sort) == [1, 2, 3, 4, 5] and
-    ([.[] | select(has("error"))] | length) == 0 and
-    $r["1"].jsonrpc == "2.0" and
-    $r["1"].result.protocolVersion == "2024-11-05" and
-    $r["1"].result.serverInfo.name == "idol" and
-    ($r["2"].result.tools | type) == "array" and
-    ($r["2"].result.tools | length) == 3 and
-    ([$r["2"].result.tools[].name] | sort) == ["head", "orient", "status"] and
-    ([$r["2"].result.tools[].name] | unique | length) == 3 and
-    all($r["2"].result.tools[]; .inputSchema.type == "object") and
-    ($r["3"].result.content[0].type == "text") and
-    (($r["3"].result.content[0].text | sub("\\n$"; "")) == $head) and
-    ($r["4"].result.content[0].text | startswith("## ")) and
-    ($r["5"].result.content[0].text | startswith("project: Idol\n"))
-  ' "$response" >/dev/null 2>&1
+  ids="$work/validated-response"
+  rm -rf "$ids"
+  mkdir "$ids"
+
+  lines=0
+  while IFS= read -r line; do
+    lines=$((lines + 1))
+    [ -n "$line" ] || return 1
+    printf '%s\n' "$line" | jq -e 'type == "object"' >/dev/null 2>&1 || return 1
+    id="$(printf '%s\n' "$line" | jq -er '.id | select(type == "number")')" || return 1
+    case "$id" in
+      1|2|3|4|5) ;;
+      *) return 1 ;;
+    esac
+    [ ! -e "$ids/$id.json" ] || return 1
+    printf '%s\n' "$line" >"$ids/$id.json"
+  done <"$response"
+
+  [ "$lines" -eq 5 ] || return 1
+  [ "$(wc -l <"$response" | tr -d ' ')" -eq 5 ] || return 1
+  jq -e '.jsonrpc == "2.0" and (has("error") | not) and .result.protocolVersion == "2024-11-05" and .result.serverInfo.name == "idol"' "$ids/1.json" >/dev/null 2>&1 &&
+    jq -e '(has("error") | not) and (.result.tools | type) == "array" and (.result.tools | length) == 3 and ([.result.tools[].name] | sort) == ["head", "orient", "status"] and ([.result.tools[].name] | unique | length) == 3 and all(.result.tools[]; .inputSchema.type == "object")' "$ids/2.json" >/dev/null 2>&1 &&
+    jq -e --arg head "$expected_head" '(has("error") | not) and .result.content[0].type == "text" and ((.result.content[0].text | sub("\\n$"; "")) == $head)' "$ids/3.json" >/dev/null 2>&1 &&
+    jq -e '(has("error") | not) and (.result.content[0].text | startswith("## "))' "$ids/4.json" >/dev/null 2>&1 &&
+    jq -e '(has("error") | not) and (.result.content[0].text | startswith("project: Idol\n"))' "$ids/5.json" >/dev/null 2>&1
+}
+
+wait_for_path() {
+  path="$1"
+  tries=0
+  while [ ! -e "$path" ] && [ "$tries" -lt 100 ]; do
+    sleep 0.05
+    tries=$((tries + 1))
+  done
+  [ -e "$path" ]
+}
+
+start_stream() {
+  executable="$1"
+  base="$2"
+  mkfifo "$base.in" "$base.out"
+  (cd "$repo" && exec env IDOL_ROOT="$repo" DUO_ROOT="$repo" IDOL_BIN="$idol" DUO_BIN="$idol" \
+    "$executable" <"$base.in" >"$base.out" 2>"$base.err") &
+  stream_server_pid=$!
+  exec 9>"$base.in"
+  (
+    exec 9>&-
+    n=1
+    while [ "$n" -le 2 ]; do
+      if IFS= read -r line; then
+        printf '%s\n' "$line" >"$base.$n.json"
+        : >"$base.$n.ready"
+      else
+        : >"$base.$n.eof"
+        exit 1
+      fi
+      n=$((n + 1))
+    done
+  ) <"$base.out" &
+  stream_reader_pid=$!
+}
+
+finish_stream() {
+  exec 9>&-
+  stream_rc=0
+  wait "$stream_server_pid" || stream_rc=$?
+  reader_rc=0
+  wait "$stream_reader_pid" || reader_rc=$?
+  stream_server_pid=""
+  stream_reader_pid=""
+  [ "$stream_rc" -eq 0 ] && [ "$reader_rc" -eq 0 ]
+}
+
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    return 1
+  fi
 }
 
 printf 'mcp-gate: manifest-driven production JSON-RPC\n'
@@ -78,6 +152,42 @@ elif [ "$backend" != native ]; then
 elif [ ! -r "$repo/$entry" ]; then
   report fail "native idol server" "entry is unreadable: $repo/$entry"
 else
+  compiler_hash="$(sha256_file "$idol" 2>/dev/null || true)"
+  if [ -n "$compiler_hash" ]; then
+    report ok "compiler artifact SHA-256 $compiler_hash" ""
+  else
+    report fail "compiler artifact SHA-256" "neither shasum nor sha256sum is available"
+  fi
+
+  if (cd "$repo" && "$idol" compile "$repo/$entry" --backend=direct --emit exe -o "$work/native-server" >"$work/native-compile.out" 2>"$work/native-compile.err"); then
+    start_stream "$work/native-server" "$work/native-stream"
+    printf '%s\n' '{"jsonrpc":"2.0","id":91,"method":"initialize","params":{}}' >&9
+    if wait_for_path "$work/native-stream.1.ready" &&
+      jq -e '.jsonrpc == "2.0" and .id == 91 and .result.protocolVersion == "2024-11-05" and .result.serverInfo.name == "idol"' "$work/native-stream.1.json" >/dev/null 2>&1; then
+      report ok "persistent native stream initializes before EOF" ""
+    else
+      report fail "persistent native stream initializes before EOF" "missing newline-delimited response"
+    fi
+
+    printf '%s\n' '{"jsonrpc":"2.0","id":92,"method":"tools/list","params":{}}' >&9
+    if wait_for_path "$work/native-stream.2.ready" &&
+      jq -e '.jsonrpc == "2.0" and .id == 92 and (.result.tools | length) == 3 and ([.result.tools[].name] | sort) == ["head", "orient", "status"]' "$work/native-stream.2.json" >/dev/null 2>&1; then
+      report ok "persistent native stream serves a second response before EOF" ""
+    else
+      report fail "persistent native stream serves a second response before EOF" "missing, unparseable, or wrong response"
+    fi
+
+    if finish_stream; then
+      report ok "persistent native stream exits cleanly after EOF" ""
+    else
+      report fail "persistent native stream exits cleanly after EOF" "server or reader failed"
+      cat "$work/native-stream.err" >&2
+    fi
+  else
+    report fail "direct native server artifact" "production entry did not compile"
+    cat "$work/native-compile.err" >&2
+  fi
+
   printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
     '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
@@ -104,6 +214,13 @@ else
     cat "$work/response.json" >&2
   fi
 
+  tr -d '\n' <"$work/response.json" >"$work/adjacent-response.json"
+  if validate_native_response "$work/adjacent-response.json" "$head"; then
+    report fail "damage control: adjacent JSON objects" "objects without line delimiters were accepted"
+  else
+    report ok "damage control: adjacent JSON objects rejected" ""
+  fi
+
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05"}}' >"$work/init-only.json"
   if validate_native_response "$work/init-only.json" "$head"; then
     report fail "damage control: initialize-only" "incomplete server was accepted"
@@ -122,6 +239,31 @@ else
     report fail "damage control: duplicate tool" "duplicate roster was accepted"
   else
     report ok "damage control: duplicate tool rejected" ""
+  fi
+
+  sed 's/stdout:write(resp \.\. "\\n")/stdout:write(resp)/' "$repo/$entry" >"$work/no-newline.id"
+  old_writes="$(grep -c 'stdout:write(resp \.\. "\\n")' "$work/no-newline.id" || true)"
+  new_writes="$(grep -c 'stdout:write(resp)$' "$work/no-newline.id" || true)"
+  if [ "$old_writes" -ne 0 ] || [ "$new_writes" -ne 1 ]; then
+    report fail "damage control: newline removal landed" "production response write was not damaged exactly once"
+  elif ! (cd "$repo" && "$idol" compile "$work/no-newline.id" --backend=direct --emit exe -o "$work/no-newline-server" >"$work/no-newline-compile.out" 2>"$work/no-newline-compile.err"); then
+    report fail "damage control: newline removal compiled" "damaged server did not compile"
+    cat "$work/no-newline-compile.err" >&2
+  else
+    start_stream "$work/no-newline-server" "$work/no-newline-stream"
+    printf '%s\n' '{"jsonrpc":"2.0","id":93,"method":"initialize","params":{}}' >&9
+    if wait_for_path "$work/no-newline-stream.1.ready"; then
+      report fail "damage control: unterminated response rejected before EOF" "line reader accepted a response without its delimiter"
+    elif [ ! -e "$work/no-newline-stream.1.eof" ] && kill -0 "$stream_server_pid" 2>/dev/null; then
+      report ok "damage control: unterminated response rejected before EOF" ""
+    else
+      report fail "damage control: unterminated response rejected before EOF" "server exited instead of remaining on the persistent stream"
+    fi
+    exec 9>&-
+    wait "$stream_server_pid" 2>/dev/null || true
+    wait "$stream_reader_pid" 2>/dev/null || true
+    stream_server_pid=""
+    stream_reader_pid=""
   fi
 fi
 

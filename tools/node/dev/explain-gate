@@ -12,11 +12,12 @@
 #   scripts/transform.id    ran as `idol run --backend=c …`   -> refused, exit 1
 #   scripts/cfloor.id       ran on the direct backend         -> DNB001, exit 1
 #
-# `--backend=c` is RETIRED and refuses with a diagnostic, and the three `.id`
-# gates are outside the direct backend's subset (DNB001 `mod-global-written`,
-# DNB011 `unresolved-application-facts`). So every consumer of `explain` scored
-# the FLAG or the BACKEND GAP, never the surface. `consumers = 0`, which HPLS §8
-# calls P0 architecture debt.
+# The legacy AST/Lua C bridge refuses, and the three `.id` gates are outside the
+# direct backend's subset (DNB001 `mod-global-written`, DNB011
+# `unresolved-application-facts`). So every consumer of `explain` scored the
+# FLAG or the BACKEND GAP, never the surface. `consumers = 0`, which HPLS §8
+# calls P0 architecture debt. A future explicitly selected graph-backed C
+# realizer is orthogonal and cannot supply this direct-native evidence.
 #
 # This gate is written in `sh` for exactly one reason: it is the only gate form
 # that executes today. When the direct backend grows `mod-global-written` and
@@ -123,12 +124,12 @@ holds "$doc" '"assumptions":' \
 # lowering, with `"retained":true` — a plan naming a backend that refuses at
 # exit 1. It carried zero cost facts (`LOWERING_COST_FACTS_ATTACHED = 0`) and a
 # scalar `static_cost`, which is on this project's what-not-to-build list. It is
-# gone, and this row keeps it gone: a re-introduction that names the retired
-# backend fails here rather than misinforming the next reader.
+# gone, and this row keeps that legacy semantic authority gone: a re-introduction
+# of its C-equivalent lowering fails rather than misinforming the next reader.
 if holds "$doc" "lower.cequiv" || holds "$doc" "c_translation_unit"; then
-  report fail "R1 no candidate names the retired C backend" "explain offers a lowering the compiler refuses"
+  report fail "R1 no candidate names the legacy AST C lowering" "explain offers a non-graph lowering"
 else
-  report ok "R1 no candidate names the retired C backend"
+  report ok "R1 no candidate names the legacy AST C lowering"
 fi
 
 # D1 — refusal totality. A file the lexer refuses must still produce a

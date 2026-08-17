@@ -94,6 +94,9 @@ pub const EmitKind = enum {
     dylib,
     shared_lib,
     assembly,
+    /// Portable C99 source from the graph-backed C physical realizer.
+    /// This is output format only; it does not select the realizer.
+    c,
     wasm,
 
     pub fn name(self: EmitKind) []const u8 {
@@ -103,6 +106,7 @@ pub const EmitKind = enum {
             .dylib => "dylib",
             .shared_lib => "so",
             .assembly => "asm",
+            .c => "c",
             .wasm => "wasm",
         };
     }
@@ -113,6 +117,7 @@ pub const EmitKind = enum {
         if (std.mem.eql(u8, s, "dylib")) return .dylib;
         if (std.mem.eql(u8, s, "so") or std.mem.eql(u8, s, "shared")) return .shared_lib;
         if (std.mem.eql(u8, s, "asm") or std.mem.eql(u8, s, "assembly")) return .assembly;
+        if (std.mem.eql(u8, s, "c")) return .c;
         if (std.mem.eql(u8, s, "wasm")) return .wasm;
         return null;
     }
@@ -182,6 +187,7 @@ pub const ResolvedTarget = struct {
     /// Map structured target back to legacy CLI name when on direct-backend triple.
     pub fn toLegacyTargetName(self: ResolvedTarget) ?[]const u8 {
         if (self.legacy_name) |n| return n;
+        if (self.emit == .c) return "c-source";
         if (!self.triple.directBackendSupported()) return null;
         return switch (self.emit) {
             .obj => "native-object",
@@ -368,6 +374,13 @@ test "target_model: structured aarch64-macos maps to native-exe" {
 test "target_model: structured aarch64-macos obj maps to native-object" {
     const r = parseStructuredTarget("aarch64-macos", .obj).?;
     try std.testing.expectEqualStrings("native-object", r.toLegacyTargetName().?);
+}
+
+test "target_model: portable C output is independent of direct-native support" {
+    try std.testing.expectEqual(EmitKind.c, EmitKind.parse("c").?);
+    const target = parseStructuredTarget("x86_64-linux-gnu", .c).?;
+    try std.testing.expectEqualStrings("c-source", target.toLegacyTargetName().?);
+    try std.testing.expect(!target.requiresDirectBackend());
 }
 
 test "target_model: resolveTargetInput accepts legacy names" {
