@@ -16,13 +16,22 @@
 
 line = stdin:line()
 while true
+    # The id value runs to the first `,` or, when id is the final member, to
+    # the closing `}` — clients differ on member order (opencode serializes
+    # id last, so a to-comma slice swallowed the `}` and broke framing).
     idp: i64 = line:find('"id":', 1, 1)
     ia: i64 = idp + 5
-    cma: i64 = line:find(',', ia, 1)
-    idstr: str = if line:has('"id":')
-        line:sub(ia, cma - 1)
+    linelen: i64 = line:len()
+    tail: str = if line:has('"id":')
+        line:sub(ia, linelen)
     else
         ""
+    cma: i64 = tail:find(',', 1, 1)
+    taillen: i64 = tail:len()
+    idstr: str = if tail:has(',')
+        tail:sub(1, cma - 1)
+    else
+        tail:sub(1, taillen - 1)
 
     cmd: str = if line:has('"name":"status"')
         "git status --short --branch"

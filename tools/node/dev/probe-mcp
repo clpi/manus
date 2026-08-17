@@ -2,8 +2,9 @@
 set -eu
 
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+parent="$(dirname "$repo")"
 manifest="${IDOL_MCP_MANIFEST:-$repo/tools/node/dev/mcp.manifest.json}"
-idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-${DUO_BIN:-$repo/zig-out/bin/idol}}}"
+idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-$repo/zig-out/bin/idol}}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "probe-mcp: jq is required" >&2
@@ -34,7 +35,15 @@ cleanup_probe() {
 trap cleanup_probe EXIT
 
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' >"$work/init.json"
-jq -r '.servers[] | select((.enabled // .required // false) == true) | [.name, .entry, .backend] | @tsv' "$manifest" >"$work/enabled.tsv"
+
+# name <tab> root <tab> bin <tab> entry <tab> backend (enabled only); sibling
+# servers resolve against their own checkout root and launcher binary.
+jq -r --arg repo "$repo" --arg parent "$parent" --arg mainbin "$idol" '
+  .servers[] | select((.enabled // .required // false) == true) |
+  (if .sibling then ($parent + "/" + .sibling) else $repo end) as $root |
+  (if .sibling then ($root + "/" + (.bin // "bin/idol")) else $mainbin end) as $bin |
+  [.name, $root, $bin, .entry, .backend] | @tsv
+' "$manifest" >"$work/enabled.tsv"
 jq -r '.servers[] | select((.enabled // .required // false) != true) | .name' "$manifest" >"$work/disabled.txt"
 
 while IFS= read -r name; do
@@ -45,7 +54,8 @@ done <"$work/disabled.txt"
 
 enabled=0
 fail=0
-while IFS='	' read -r name entry backend; do
+tab="$(printf '\t')"
+while IFS="$tab" read -r name root bin entry backend; do
   if [ -z "$name" ]; then
     continue
   fi
@@ -54,12 +64,18 @@ while IFS='	' read -r name entry backend; do
   check="$work/$name.check"
   err="$work/$name.err"
 
-  if [ ! -r "$repo/$entry" ]; then
-    echo "probe-mcp: $name entry is unreadable: $repo/$entry" >&2
+  if [ ! -r "$root/$entry" ]; then
+    echo "probe-mcp: $name entry is unreadable: $root/$entry" >&2
     fail=$((fail + 1))
     continue
   fi
-  if ! (cd "$repo" && "$idol" check "$repo/$entry" >"$check" 2>&1); then
+  if [ ! -x "$bin" ]; then
+    echo "probe-mcp: $name launcher is not executable: $bin" >&2
+    fail=$((fail + 1))
+    continue
+  fi
+
+  if ! (cd "$root" && "$bin" check "$root/$entry" >"$check" 2>&1); then
     echo "probe-mcp: $name check failed" >&2
     cat "$check" >&2
     fail=$((fail + 1))
@@ -72,16 +88,16 @@ while IFS='	' read -r name entry backend; do
     continue
   fi
 
-  echo "probe-mcp: launch name=$name backend=$backend entry=$repo/$entry" >&2
+  echo "probe-mcp: launch name=$name backend=$backend entry=$root/$entry" >&2
   rc=0
   case "$backend" in
     native)
-      (cd "$repo" && IDOL_ROOT="$repo" DUO_ROOT="$repo" IDOL_BIN="$idol" DUO_BIN="$idol" \
-        "$idol" run "$repo/$entry" <"$work/init.json" >"$response" 2>"$err") || rc=$?
+      (cd "$root" && IDOL_ROOT="$root" IDOL_BIN="$bin" \
+        "$bin" run "$root/$entry" <"$work/init.json" >"$response" 2>"$err") || rc=$?
       ;;
     direct)
-      (cd "$repo" && IDOL_ROOT="$repo" DUO_ROOT="$repo" IDOL_BIN="$idol" DUO_BIN="$idol" \
-        "$idol" run --backend=direct "$repo/$entry" <"$work/init.json" >"$response" 2>"$err") || rc=$?
+      (cd "$root" && IDOL_ROOT="$root" IDOL_BIN="$bin" \
+        "$bin" run --backend=direct "$root/$entry" <"$work/init.json" >"$response" 2>"$err") || rc=$?
       ;;
     *)
       echo "probe-mcp: $name uses unsupported or retired backend: $backend" >&2

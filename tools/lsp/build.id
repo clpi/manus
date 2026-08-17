@@ -1,7 +1,7 @@
-# Build the duo-lsp server binary from Idol source.
+# Build the idol-lsp server binary from Idol source.
 #
-# Locates the compiler via IDOL_LSP_BIN / DUO_LSP_DUO_BIN override, sibling
-# checkout, or PATH. Public command identity is `idol`.
+# Locates the compiler via IDOL_LSP_BIN override, the repository root, or PATH.
+# Public command identity is `idol`.
 
 _first_executable: str = (candidates: any)
   for _i, c in candidates
@@ -10,14 +10,10 @@ _first_executable: str = (candidates: any)
   ""
 
 _locate_idol: str = ()
-  # Explicit override wins, then the sibling checkout, then PATH.
+  # Explicit override wins, then the repository root, then PATH.
   override = script.getenv_or("IDOL_LSP_BIN")
-  if override == ""
-    override = script.getenv_or("DUO_LSP_DUO_BIN")
   on_path = script.chomp(script.capture("command -v idol 2>/dev/null"))
-  if on_path == ""
-    on_path = script.chomp(script.capture("command -v duo 2>/dev/null"))
-  _first_executable({ override, "../duo/zig-out/bin/idol", "../../zig-out/bin/idol", on_path })
+  _first_executable({ override, "../../zig-out/bin/idol", on_path })
 
 main: i64 = ()
   idol = _locate_idol()
@@ -25,12 +21,12 @@ main: i64 = ()
     print("error: idol compiler not found. Build it with 'zig build' or set IDOL_LSP_BIN.")
     return 1
 
-  print("compiling duo-lsp with: " .. idol)
-  rc = script.run(idol .. " compile -o duo-lsp src/server.id")
+  print("compiling idol-lsp with: " .. idol)
+  rc = script.run(idol .. " compile -o idol-lsp src/server.id")
   if rc != 0
     print("error: compile failed (exit " .. rc:to(str) .. ")")
     return rc
 
-  script.run("chmod +x duo-lsp")
-  print("built: duo-lsp")
+  script.run("chmod +x idol-lsp")
+  print("built: idol-lsp")
   0

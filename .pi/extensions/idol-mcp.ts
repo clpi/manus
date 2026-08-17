@@ -1,43 +1,50 @@
 /**
- * idol-mcp — bridge the three project MCP servers into pi tools.
+ * idol-mcp — bridge the project MCP servers into pi tools.
  *
  * WHY THIS EXISTS
  * pi has no native MCP. The Idol coordination workflow is MCP-based:
- * `idol-bench` owns claims (idol_dev_claim_acquire / duo_dev_claim_acquire aliases,
- * idol_dev_claim_files), gaps (idol_agent_gaps_update), session start
- * (idol_agent_session_start), and serialized builds; `idol-lsp` owns diagnostics; `zls` owns Zig navigation.
- * This extension speaks newline-delimited JSON-RPC 2.0 to those servers by
- * spawning the repository-native `idol` binary on the same entrypoints the
- * Cursor/Codex projections use (tools/node/dev/mcp.manifest.json).
+ * `idol` owns status/head/orient; `idol-native` (sibling idol-native
+ * checkout) owns the semantic-graph surface: check, symbols, graph, run,
+ * gates, orient, sim, explain, fmt, asm. This extension speaks
+ * newline-delimited JSON-RPC 2.0 to those servers by spawning each server's
+ * own `idol` binary on the entrypoints declared by
+ * tools/node/dev/mcp.manifest.json.
  *
  * SCOPE — tooling projection only
- * This is the pi analogue of .cursor/mcp.json and .codex/mcp.generated.toml.
- * It adds NO compiler subsystem, NO new grammar/parser authority, and NO
- * std.* surface. It only forwards calls to the project's own MCP servers. It
- * must never bypass a gate or invent vocabulary. Authority lives in C0.
+ * This is the pi analogue of .cursor/mcp.json, .codex/mcp.generated.toml,
+ * and .opencode/opencode.json. It adds NO compiler subsystem, NO new
+ * grammar/parser authority, and NO std.* surface. It only forwards calls to
+ * the project's own MCP servers. It must never bypass a gate or invent
+ * vocabulary. Authority lives in C0.
  *
  * USAGE
  * - `idol_mcp_status`        — report server health + discovered tools.
  * - `idol__<server>__<tool>` — one pi tool per MCP tool discovered via
- *   tools/list (e.g. idol__idol-bench__duo_dev_claim_acquire). Arguments are
- *   forwarded as the MCP `arguments` object.
+ *   tools/list (e.g. idol__idol-native__graph). Arguments are forwarded as
+ *   the MCP `arguments` object.
  *
  * Servers start lazily on first use and are torn down on session_shutdown.
- * If an entrypoint fails to compile/start (current bootstrap state can break
- * the historical shebang/dash-comment transport), the tool returns a clear
- * structured error rather than hanging.
+ * Manifest entries with "enabled": false are listed but never started. If an
+ * entrypoint fails to compile/start, the tool returns a clear structured
+ * error rather than hanging.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 interface ManifestServer {
   name: string;
   entry: string;
   backend: string;
+  /** Sibling checkout name; resolves the root and launcher against it. */
+  sibling?: string;
+  /** Launcher binary inside the server root (sibling servers only). */
+  bin?: string;
+  enabled?: boolean;
   required?: boolean;
+  startup_timeout_sec?: number;
   purpose?: string;
 }
 interface Manifest {
@@ -70,8 +77,8 @@ class McpClient {
   readonly tools: McpTool[] = [];
 
   constructor(
-    private readonly duoBin: string,
-    private readonly repo: string,
+    private readonly idolBin: string,
+    private readonly root: string,
     private readonly server: ManifestServer,
   ) {}
 
@@ -83,65 +90,70 @@ class McpClient {
   }
 
   private doStart(startupTimeoutMs: number): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      let proc: ChildProcessWithoutNullStreams;
-      try {
-        proc = spawn(
-          this.duoBin,
-          ["run", `--backend=${this.server.backend}`, join(this.repo, this.server.entry)],
-          { cwd: this.repo, stdio: ["pipe", "pipe", "pipe"] },
-        );
-      } catch (e) {
-        this.startError = `spawn failed: ${(e as Error).message}`;
-        return reject(new Error(this.startError));
-      }
-      this.proc = proc;
+    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    let proc: ChildProcessWithoutNullStreams;
+    try {
+      proc = spawn(
+        this.idolBin,
+        ["run", `--backend=${this.server.backend}`, join(this.root, this.server.entry)],
+        {
+          cwd: this.root,
+          stdio: ["pipe", "pipe", "pipe"],
+          env: { ...process.env, IDOL_ROOT: this.root, IDOL_BIN: this.idolBin },
+        },
+      );
+    } catch (e) {
+      this.startError = `spawn failed: ${(e as Error).message}`;
+      reject(new Error(this.startError));
+      return promise;
+    }
+    this.proc = proc;
 
-      let stderrTail = "";
-      const timer = setTimeout(() => {
-        const msg = `${this.server.name} did not initialize within ${startupTimeoutMs}ms`;
-        this.startError = msg;
-        this.kill();
-        reject(new Error(`${msg}\nstderr:\n${stderrTail.slice(-2000)}`));
-      }, startupTimeoutMs);
+    let stderrTail = "";
+    const timer = setTimeout(() => {
+      const msg = `${this.server.name} did not initialize within ${startupTimeoutMs}ms`;
+      this.startError = msg;
+      this.kill();
+      reject(new Error(`${msg}\nstderr:\n${stderrTail.slice(-2000)}`));
+    }, startupTimeoutMs);
 
-      proc.on("error", (e) => {
-        clearTimeout(timer);
-        this.startError = `process error: ${e.message}`;
-        reject(e);
-      });
-      proc.on("exit", (code, signal) => {
-        if (!this.tools.length && !this.startError) {
-          this.startError = `process exited before initialize (code=${code} signal=${signal})`;
-        }
-        for (const p of this.pending.values()) {
-          p.reject(new Error(`${this.server.name} server exited`));
-        }
-        this.pending.clear();
-      });
-      proc.stderr.on("data", (d: Buffer) => {
-        stderrTail += d.toString();
-        if (stderrTail.length > 4000) stderrTail = stderrTail.slice(-4000);
-      });
-      proc.stdout.on("data", (d: Buffer) => this.onData(d));
-
-      // Initialize handshake. protocolVersion 2024-11-05 is what probe-mcp asserts.
-      this.call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "pi-idol-mcp", version: "0" } })
-        .then(() => this.notify("notifications/initialized"))
-        .then(() => this.call("tools/list", {}))
-        .then((res) => {
-          const list = (res as { tools?: McpTool[] } | null)?.tools ?? [];
-          this.tools.push(...list);
-          clearTimeout(timer);
-          resolve();
-        })
-        .catch((e: Error) => {
-          clearTimeout(timer);
-          this.startError = e.message;
-          this.kill();
-          reject(new Error(`${this.server.name} initialize failed: ${e.message}\nstderr:\n${stderrTail.slice(-2000)}`));
-        });
+    proc.on("error", (e) => {
+      clearTimeout(timer);
+      this.startError = `process error: ${e.message}`;
+      reject(e);
     });
+    proc.on("exit", (code, signal) => {
+      if (!this.tools.length && !this.startError) {
+        this.startError = `process exited before initialize (code=${code} signal=${signal})`;
+      }
+      for (const p of this.pending.values()) {
+        p.reject(new Error(`${this.server.name} server exited`));
+      }
+      this.pending.clear();
+    });
+    proc.stderr.on("data", (d: Buffer) => {
+      stderrTail += d.toString();
+      if (stderrTail.length > 4000) stderrTail = stderrTail.slice(-4000);
+    });
+    proc.stdout.on("data", (d: Buffer) => this.onData(d));
+
+    // Initialize handshake. protocolVersion 2024-11-05 is what probe-mcp asserts.
+    this.call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "pi-idol-mcp", version: "0" } })
+      .then(() => this.notify("notifications/initialized"))
+      .then(() => this.call("tools/list", {}))
+      .then((res) => {
+        const list = (res as { tools?: McpTool[] } | null)?.tools ?? [];
+        this.tools.push(...list);
+        clearTimeout(timer);
+        resolve();
+      })
+      .catch((e: Error) => {
+        clearTimeout(timer);
+        this.startError = e.message;
+        this.kill();
+        reject(new Error(`${this.server.name} initialize failed: ${e.message}\nstderr:\n${stderrTail.slice(-2000)}`));
+      });
+    return promise;
   }
 
   private onData(d: Buffer): void {
@@ -169,11 +181,11 @@ class McpClient {
   call(method: string, params: unknown): Promise<unknown> {
     if (!this.proc) return Promise.reject(new Error(`${this.server.name} not started`));
     const id = this.nextId++;
+    const { promise, resolve, reject } = Promise.withResolvers<unknown>();
     const req = JSON.stringify({ jsonrpc: "2.0", id, method, params });
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.proc!.stdin.write(req + "\n");
-    });
+    this.pending.set(id, { resolve, reject });
+    this.proc!.stdin.write(req + "\n");
+    return promise;
   }
 
   private notify(method: string): Promise<void> {
@@ -201,13 +213,12 @@ class McpClient {
 
 export default function (pi: ExtensionAPI) {
   let repo = process.cwd();
-  let duoBin = join(repo, "zig-out", "bin", "duo");
   const manifestPath = join(repo, "tools", "node", "dev", "mcp.manifest.json");
 
   // The Idol dev workflow sends session metadata; PI env may resolve repo.
-  const fromEnv = process.env.IDOL_REPO ?? process.env.DUO_ROOT;
+  const fromEnv = process.env.IDOL_REPO ?? process.env.IDOL_ROOT;
   if (fromEnv) repo = fromEnv;
-  duoBin = process.env.IDOL_BOOTSTRAP_BIN ?? process.env.DUO_BIN ?? join(repo, "zig-out", "bin", "duo");
+  const idolBin = process.env.IDOL_BOOTSTRAP_BIN ?? process.env.IDOL_BIN ?? join(repo, "zig-out", "bin", "idol");
 
   const clients = new Map<string, McpClient>();
   const statusToolName = "idol_mcp_status";
@@ -222,10 +233,18 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
+  // A server with a "sibling" field resolves its root and launcher against
+  // the sibling checkout of this clone (for example the idol-native
+  // repository); every other server resolves against this repository.
+  const serverRoot = (s: ManifestServer): string =>
+    s.sibling ? join(dirname(repo), s.sibling) : repo;
+  const serverBin = (s: ManifestServer): string =>
+    s.sibling ? join(serverRoot(s), s.bin ?? "bin/idol") : idolBin;
+
   const ensureClient = async (s: ManifestServer): Promise<McpClient> => {
     let c = clients.get(s.name);
     if (!c) {
-      c = new McpClient(duoBin, repo, s);
+      c = new McpClient(serverBin(s), serverRoot(s), s);
       clients.set(s.name, c);
     }
     await c.start((s.startup_timeout_sec ?? 60) * 1000);
@@ -282,15 +301,18 @@ export default function (pi: ExtensionAPI) {
     name: statusToolName,
     label: "Idol MCP status",
     description:
-      "Bridge health for the Idol MCP servers (idol-bench, idol-lsp, zls) and the tools each exposes. Start here to see whether the coordination/build/LSP servers are reachable from pi.",
+      "Bridge health for the Idol MCP servers (idol, idol-native) and the tools each exposes. Start here to see whether the repository status and semantic-graph servers are reachable from pi.",
     parameters: Type.Object({}),
     async execute() {
       const servers = loadManifest();
-      const report: string[] = [`repo: ${repo}`, `duo: ${duoBin}`, `manifest: ${manifestPath}`, ""];
+      const report: string[] = [`repo: ${repo}`, `idol: ${idolBin}`, `manifest: ${manifestPath}`, ""];
       for (const s of servers) {
-        let client = clients.get(s.name);
+        if (s.enabled === false) {
+          report.push(`off   ${s.name} — disabled in manifest`);
+          continue;
+        }
         try {
-          client = await ensureClient(s);
+          const client = await ensureClient(s);
           report.push(`ok    ${s.name} — ${client.tools.length} tools${s.required === false ? "" : " (required)"}`);
           for (const t of client.tools.slice(0, 40)) {
             report.push(`        ${t.name}`);

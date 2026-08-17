@@ -3,64 +3,100 @@
 This is a durable client setup guide. It contains no language law, live claims,
 tool census, or current gate status.
 
+## Canonical locations
+
+- Development repository: `/Users/clp/x/idol` (worktree on the data volume,
+  reached through the `~/x` symlink; dev remote `clpi/idol`).
+- Native benchmark repository: `/Users/clp/x/idol-native` (remote
+  `clpi/idol-native`, branch `main`) — owns the semantic-graph MCP server and
+  the end-user `.id` language server.
+- The pre-rename project identity is **fully retired**. Server names, tool
+  names, environment keys, and skill names are `idol`-named only; no client
+  configuration may reintroduce retired spellings.
+
 ## Repository servers
 
-The version-locked MCP implementations live in this repository:
+The version-locked MCP implementations are declared once by the
+client-neutral `tools/node/dev/mcp.manifest.json`:
 
-| Physical server name | Entry point | Purpose |
-|---|---|---|
-| `idol-bench` | `tools/mcp/bench.id` | claims, gaps, serialized gates, performance evidence |
-| `idol-lsp` | `tools/mcp/lsp.id` | diagnostics and language intelligence |
-| `zls` | `tools/mcp/zls.id` | Zig bootstrap navigation |
+| Physical server name | Entry point | State | Purpose |
+|---|---|---|---|
+| `idol` | `tools/mcp/native.id` | enabled, required | status, head, orient |
+| `idol-native` | sibling `idol-native` checkout, `tools/mcp/server.id` | enabled | `check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`, `explain`, `fmt`, `asm` |
+| `idol-bench` | `tools/mcp/bench.id` | disabled | claims/gaps/serialized gates — predates the C-backend retirement; revive on native |
+| `idol-lsp` | `tools/mcp/lsp.id` | disabled | diagnostics transport — same revival condition |
+| `zls` | `tools/mcp/zls.id` | disabled | Zig bootstrap navigation — same revival condition |
 
-The physical `duo` executable, `duo-*` server names, and `duo_*` MCP tool names
-are legacy aliases registered beside `idol_*` on the same servers. Prefer
-`idol-bench`, `idol-lsp`, and `idol_*` tools in new client configuration.
-The current `.id` server entrypoints are executed bootstrap/compatibility
-transport; their suffix alone proves neither canonicality nor self-hosting
-authority transfer. Historical `.id` paths are migration provenance. None of
-those transport or historical spellings names the language, authorizes new
-`.id`, or establishes a second current project brand. Historical
-`~/x/duo-mcp` and `~/x/duo-lsp` checkouts are not canonical implementations.
+A manifest entry with a `sibling` field resolves its root, entry, and launcher
+binary against the sibling checkout of this clone. Generated client
+configurations are projections of the manifest, not additional authorities.
 
 ## Client shape
 
-Clients run the in-tree bootstrap executable with the repository as cwd. The
-one client-neutral physical manifest is `tools/node/dev/mcp.manifest.json`; run
-`tools/node/dev/generate-configs` to derive absolute client projections from the
-actual clone path. Generated client configurations are projections, not
-additional manifest authorities.
+Clients run each server's own `idol` binary with the server's root as cwd.
+Run `tools/node/dev/generate-configs` to derive absolute client projections
+from the actual clone path (the generator emits the stable `~/x` spelling
+when applicable). Projections:
+
+- Codex: `.codex/mcp.generated.toml` plus a marked block in `~/.codex/config.toml`.
+- Cursor: `.cursor/mcp.json`.
+- OpenCode: `.opencode/opencode.json` (project) plus the managed `mcp` entries
+  of `~/.config/opencode/opencode.jsonc`; user-owned keys are preserved.
+- OpenCode skills: `.opencode/skills/{idol,idol-dev}` symlinks into
+  `.pi/skills`, and the same skills synced to `~/.config/opencode/skills`.
+- Claude Code: user-scope `mcpServers` in `~/.claude.json` (same servers;
+  `sh -c` cd-wrappers because Claude has no cwd field).
+- pi: `.pi/extensions/idol-mcp.ts` reads the same manifest and spawns the same
+  entrypoints; `idol_mcp_status` reports health, `idol__<server>__<tool>`
+  forwards calls.
 
 The generated Codex shape is:
 
 ```toml
-[mcp_servers.idol-bench]
+[mcp_servers.idol]
 command = "<repo>/zig-out/bin/idol"
-args = ["run", "<repo>/tools/mcp/bench.id"]
+args = ["run", "--backend=native", "<repo>/tools/mcp/native.id"]
 cwd = "<repo>"
-env = { IDOL_ROOT = "<repo>", IDOL_BIN = "<repo>/zig-out/bin/idol", DUO_ROOT = "<repo>", DUO_BIN = "<repo>/zig-out/bin/idol" }
 startup_timeout_sec = 60
 tool_timeout_sec = 1800
 required = true
+
+[mcp_servers.idol.env]
+IDOL_ROOT = "<repo>"
+IDOL_BIN = "<repo>/zig-out/bin/idol"
 ```
 
-`idol-lsp` and `zls` use the same command, cwd, and environment pattern with
-their own entry points. Keep the pinned Zig and ZLS directories in `PATH` for
-desktop and IDE launches.
+`idol-native` uses the same shape with its own root and `bin/idol` launcher.
+Keep the pinned Zig and ZLS directories in `PATH` for desktop and IDE
+launches.
 
-Do not copy tool counts into documentation. `zig build mcp-gate` obtains and
-checks the current tool lists through real JSON-RPC requests.
+## Skills and law routing
+
+- Every agent starts at `AGENTS.md`; OpenCode additionally loads it through
+  `instructions` in its global config.
+- Skills `idol` and `idol-dev` live canonically in `.pi/skills`.
+  `tools/node/dev/install-skills` installs them for Codex and Devin;
+  `tools/node/dev/generate-configs` projects them for OpenCode (paths above).
+
+## Editor language intelligence
+
+The `.id` language server is the idol-native tree's `tools/lsp/launch.sh`
+(Content-Length framing; diagnostics and symbols come from that tree's own
+compiler and semantic graph — the transport adds no second authority). Wire
+editors with `IDOL_BIN` pointing at `/Users/clp/x/idol-native/bin/idol`.
+The in-repository `tools/lsp` projection remains bootstrap debt until its
+source fits the direct-native subset.
 
 ## Session protocol
 
 1. Start at `AGENTS.md` and `.agents/AGENT_CANONICAL.md`.
 2. Use skill **`idol-dev`** (`.pi/skills/idol-dev`).
-3. Call session start on the bench MCP server.
+3. Orient: `tools/node/dev/orient`, or the `orient` tool on the `idol` server.
 4. Inspect current HEAD, dirty state, recent commits, live claim files,
-   every current `gaps/GAP-*.md`, the verified `docs/bootstrap.md` frontier,
-   and stash state.
+   every current `gaps/GAP-*.md`, and the verified `docs/bootstrap.md` frontier.
 5. Treat the session-start gap summary as incomplete until `GAP-131` closes.
-6. Claim exact paths before editing.
+6. Claim exact paths before editing (`.agents/session/claims/`; claims minting
+   is owned by the bench server while it is live, else durable claim files).
 7. Delegate only bounded independent work with disjoint write ownership.
 8. Serialize heavy gates through the repository lock script.
 9. Commit explicit pathspecs and release only claims owned by the session.
@@ -73,10 +109,14 @@ Run setup evidence from the repository root:
 repo="$(git rev-parse --show-toplevel)"
 codex --strict-config doctor
 codex mcp list
-"$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- zig build mcp-gate
+"$repo/tools/node/dev/probe-mcp"
+"$repo/tools/node/dev/mcp-gate"
+opencode mcp list
+opencode debug skill
 ```
 
-The absolute bootstrap paths avoid the current relative-executable discovery
-failure. The first two commands validate client configuration. The locked MCP
-gate validates the actual repository handlers. A client listing tools without
-exercising the handlers is not MCP health evidence.
+The first two commands validate Codex client configuration. `probe-mcp`
+exercises a real JSON-RPC initialize against every enabled server;
+`mcp-gate` drives the production server plus damage controls. The OpenCode
+commands validate the OpenCode projection and skill discovery. A client
+listing tools without exercising the handlers is not MCP health evidence.
