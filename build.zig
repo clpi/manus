@@ -2,10 +2,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 /// SH-02 + SH-03 production seam. These travel together: any module that
-/// reaches `lexer_bridge` reaches both the keyword table and the Duo lexer
+/// reaches `lexer_bridge` reaches both the keyword table and the Idol lexer
 /// behind it, so linking them separately only produces undefined symbols later.
 ///
-/// The Duo lexer artifact also defines a STRONG `duo_keyword_classify`, which
+/// The Idol lexer artifact also defines a STRONG `duo_keyword_classify`, which
 /// overrides the weak one in src/keyword_classify.c — that file was written
 /// weak for exactly this case.
 fn linkProductionKeywordClassify(b: *std.Build, mod: *std.Build.Module) void {
@@ -16,14 +16,14 @@ fn linkProductionKeywordClassify(b: *std.Build, mod: *std.Build.Module) void {
         .file = b.path("src/keyword_classify.c"),
         .flags = &.{ "-std=c11", "-w" },
     });
-    linkProductionDuoLexer(b, mod);
+    linkProductionIdolLexer(b, mod);
     mod.link_libc = true;
 }
 
 /// SH-03 production dispatch: Idol lexer regenerated from
 /// `lib/compiler/lexer.id`. Provides `duo_lexer_tokenize_full`.
 /// Keyword classify is the separate generated unit above.
-fn linkProductionDuoLexer(b: *std.Build, mod: *std.Build.Module) void {
+fn linkProductionIdolLexer(b: *std.Build, mod: *std.Build.Module) void {
     mod.addCSourceFile(.{
         .file = b.path("src/lexer_tokenize.c"),
         // The generated lexer artifact carries an executable `main` from the
@@ -106,19 +106,19 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(b.args orelse &.{});
     }
 
-    const run_step = b.step("run", "Run duo");
+    const run_step = b.step("run", "Run idol");
     run_step.dependOn(&run_cmd.step);
 
     const test_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_compile_fail_tests.id" });
     test_cmd.setCwd(b.path("."));
     test_cmd.step.dependOn(b.getInstallStep());
     // G11 — the language census ratchet. A number nobody runs is a number that
-    // drifts, which is how "no language but Duo" stayed a slogan instead of a
+    // drifts, which is how "no language but Idol" stayed a slogan instead of a
     // list of twelve files.
     const census_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "scripts/language_census.id" });
     census_cmd.setCwd(b.path("."));
     census_cmd.step.dependOn(b.getInstallStep());
-    const census_step = b.step("language-census", "G11: count tracked non-Duo source; ratchets sh/py, js and zig");
+    const census_step = b.step("language-census", "G11: count tracked non-idol source; ratchets sh/py, js and zig");
     census_step.dependOn(&census_cmd.step);
 
     // U8 -- `toolchain@{ foreign = ledger | oracle }`. The step above answers
@@ -313,20 +313,20 @@ pub fn build(b: *std.Build) void {
     const gpu_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_gpu_benchmark.id" });
     gpu_bench_cmd.setCwd(b.path("."));
     gpu_bench_cmd.step.dependOn(b.getInstallStep());
-    const gpu_bench_step = b.step("gpu-bench", "Run Duo vs GPU Metal benchmark");
+    const gpu_bench_step = b.step("gpu-bench", "Run idol vs GPU Metal benchmark");
     gpu_bench_step.dependOn(&gpu_bench_cmd.step);
     test_step.dependOn(&gpu_bench_cmd.step);
 
     const bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_benchmark.id" });
     bench_cmd.setCwd(b.path("."));
     bench_cmd.step.dependOn(b.getInstallStep());
-    const bench_step = b.step("bench", "Run Duo vs C benchmark suite");
+    const bench_step = b.step("bench", "Run idol vs C benchmark suite");
     bench_step.dependOn(&bench_cmd.step);
 
     const cross_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_cross_benchmark.id" });
     cross_bench_cmd.setCwd(b.path("."));
     cross_bench_cmd.step.dependOn(b.getInstallStep());
-    const cross_bench_step = b.step("cross-bench", "Run cross-language benchmark (Duo vs C vs Lua vs LuaJIT)");
+    const cross_bench_step = b.step("cross-bench", "Run cross-language benchmark (idol vs C vs Lua vs LuaJIT)");
     cross_bench_step.dependOn(&cross_bench_cmd.step);
 
     const wasm_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_wasm_benchmark.id" });
@@ -519,11 +519,11 @@ pub fn build(b: *std.Build) void {
     const ml_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_ml_benchmark.id" });
     ml_bench_cmd.setCwd(b.path("."));
     ml_bench_cmd.step.dependOn(b.getInstallStep());
-    const ml_bench_step = b.step("ml-bench", "Run ML benchmark suite (Duo vs C)");
+    const ml_bench_step = b.step("ml-bench", "Run ML benchmark suite (idol vs C)");
     ml_bench_step.dependOn(&ml_bench_cmd.step);
 
     // `scripts/run_honest_benchmark.sh` does not exist and has not for some
-    // time — the Duo port is tracked and the shell file is not, so this step
+    // time — the idol port is tracked and the shell file is not, so this step
     // was invoking bash on a missing path. Repointed at the file that is there.
     const honest_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_honest_benchmark.id" });
     honest_bench_cmd.setCwd(b.path("."));
@@ -592,7 +592,7 @@ pub fn build(b: *std.Build) void {
     ts_coverage_step.dependOn(&ts_coverage_cmd.step);
 
     // "the host": tree-sitter is "a generated grammar projection
-    // (output, never authored)". ext/tree-sitter-duo/grammar.js is PARTLY
+    // (output, never authored)". ext/tree-sitter-idol/grammar.js is PARTLY
     // that now -- everything outside its @@residue markers is emitted by
     // scripts/treesitter_emit.id. This step regenerates and fails unless the
     // result is byte-identical to the tracked file, which is the only thing
@@ -616,7 +616,7 @@ pub fn build(b: *std.Build) void {
     // `blk.tail_expr`, and in dnir_lower only the RETURN path ever read that
     // field, so a branch body or a loop body -- both lowered with
     // `allow_return = false` -- dropped its last statement on the floor. The
-    // direct backend is what `duo run` uses, so every conditional print, every
+    // direct backend is what `idol run` uses, so every conditional print, every
     // error path and every accumulate-then-emit loop was silent by default
     // while `--backend=c` was correct. A step of its own rather than an
     // audit100 row because it COMPILES AND RUNS four programs through both
@@ -708,7 +708,7 @@ pub fn build(b: *std.Build) void {
     // carry no capability, and `math.random`, which is ambient authority and is
     // the ENTIRE `rand` class the capability scan ratchets. One averaged budget
     // would hide that. It also probes its own two blockers live -- the value
-    // edge is built AND RUN, never merely `check`ed, because `duo check` exits
+    // edge is built AND RUN, never merely `check`ed, because `idol check` exits
     // 0 on `x:abs()` and only codegen rejects it.
     const recognition_scan_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/recognition_scan.id" });
     recognition_scan_cmd.setCwd(b.path("."));
@@ -756,13 +756,13 @@ pub fn build(b: *std.Build) void {
     gapalloc_step.dependOn(&gapalloc_cmd.step);
 
     // The first sixty seconds of a new user's life, gated. src/build_framework.zig's
-    // tests drive parser+sema in-process and stayed green while `duo init` emitted a
-    // src/main.id that `duo check`, `duo build` and `duo run` all rejected. Only a
+    // tests drive parser+sema in-process and stayed green while `idol init` emitted a
+    // src/main.id that `idol check`, `idol build` and `idol run` all rejected. Only a
     // gate that shells the real CLI into a real scratch directory can see that.
     const init_build_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/init_build_smoke.id" });
     init_build_cmd.setCwd(b.path("."));
     init_build_cmd.step.dependOn(b.getInstallStep());
-    const init_build_step = b.step("init-build-smoke", "duo init -> check -> build -> run -> test on a clean directory");
+    const init_build_step = b.step("init-build-smoke", "idol init -> check -> build -> run -> test on a clean directory");
     init_build_step.dependOn(&init_build_cmd.step);
 
     // U2 -- `build@deterministic`. The step above is its
@@ -995,7 +995,7 @@ pub fn build(b: *std.Build) void {
     const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/proof/module.id" });
     direct_link_cmd.step.dependOn(b.getInstallStep());
     direct_link_cmd.setCwd(b.path("."));
-    const direct_link_step = b.step("direct-module-link", "A direct-backend program must be able to call a req'd Duo module");
+    const direct_link_step = b.step("direct-module-link", "A direct-backend program must be able to call a req'd idol module");
     direct_link_step.dependOn(&direct_link_cmd.step);
 
     const idiom_cmd = b.addSystemCommand(&.{
@@ -1003,7 +1003,7 @@ pub fn build(b: *std.Build) void {
         "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gate/idiom.id || test $? -eq 3",
     });
     idiom_cmd.setCwd(b.path("."));
-    const idiom_step = b.step("idiom-gate", "Every .id file must use canonical Duo idioms");
+    const idiom_step = b.step("idiom-gate", "Every .id file must use canonical idol idioms");
     idiom_step.dependOn(&idiom_cmd.step);
 
     const bench_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/proof/benchmark.id" });
@@ -1019,8 +1019,6 @@ pub fn build(b: *std.Build) void {
     idiom_gate_cmd.setCwd(b.path("."));
     idiom_gate_cmd.step.dependOn(b.getInstallStep());
     idiom_step.dependOn(&idiom_gate_cmd.step);
-    const duo_idiom_step = b.step("duo-idiom-gate", "Alias for idiom-gate (bootstrap name — use idiom-gate)");
-    duo_idiom_step.dependOn(&idiom_gate_cmd.step);
 
     const agent_smoke_cmd = b.addSystemCommand(&.{ "./tools/node/dev/idol-lock", "--", "./zig-out/bin/idol", "run", "scripts/agent_smoke.id" });
     agent_smoke_cmd.setCwd(b.path("."));
@@ -1074,9 +1072,9 @@ pub fn build(b: *std.Build) void {
         agent_smoke_step.dependOn(&cmd.step);
     }
 
-    // MCP gate. All three duo MCP servers (duo-bench, duo-lsp, zls) were DEAD —
+    // MCP gate. All three pre-rename MCP servers (bench, lsp, zls bridges) were DEAD —
     // not slow, dead — for an unknown period, and nothing noticed: they
-    // compiled, so every check that existed was satisfied, while `duo run`
+    // compiled, so every check that existed was satisfied, while `idol run`
     // failed at link time on a `req` inside a tool handler. Coordination across
     // parallel agent sessions ran with no coordination tool at all, and the
     // damage was measurable — three gap-number collisions in one night plus
@@ -1086,7 +1084,7 @@ pub fn build(b: *std.Build) void {
     // tool counts (not floors), named coordination tools, a value round trip
     // through the file-claim lock that requires the lock to REFUSE a second
     // owner, and by-name calls to seven handlers that used to answer nothing at
-    // all. It spawns the servers in a scratch cwd, because `duo run x.id`
+    // all. It spawns the servers in a scratch cwd, because `idol run x.id`
     // drops `x.out` beside itself and this gate guards the tree it runs in.
     const mcp_gate_cmd = b.addSystemCommand(&.{ "./tools/node/dev/mcp-gate" });
     mcp_gate_cmd.setCwd(b.path("."));
@@ -1096,7 +1094,7 @@ pub fn build(b: *std.Build) void {
     // Tier 0: a dead MCP server is a dead coordination plane.
     agent_smoke_step.dependOn(&mcp_gate_cmd.step);
 
-    // explain-gate — `duo explain` is the compiler's only projection of live
+    // explain-gate — `idol explain` is the compiler's only projection of live
     // codegen state (optimization outcomes, assumption guards, the transform
     // engine's provenance log and tier-1 registry). Its four `.id` consumers —
     // scripts/explain.id, scripts/contract.id, scripts/transform.id and the
@@ -1117,7 +1115,7 @@ pub fn build(b: *std.Build) void {
     const explain_gate_cmd = b.addSystemCommand(&.{"./tools/node/dev/explain-gate"});
     explain_gate_cmd.setCwd(b.path("."));
     explain_gate_cmd.step.dependOn(b.getInstallStep());
-    const explain_gate_step = b.step("explain-gate", "duo explain must project live compiler state, asserted by value");
+    const explain_gate_step = b.step("explain-gate", "idol explain must project live compiler state, asserted by value");
     explain_gate_step.dependOn(&explain_gate_cmd.step);
     // Tier 0: an unprojected optimizer is an undiagnosable one.
     agent_smoke_step.dependOn(&explain_gate_cmd.step);
@@ -1127,7 +1125,7 @@ pub fn build(b: *std.Build) void {
     // It was carrying the same class of defect the MCP servers were: on
     // 2026-08-08 `textDocument/didClose` SEGFAULTED the server. Exit 139, no
     // diagnostic, no partial answer, no reply to anything afterwards. `t[k] =
-    // nil` does not remove a key in Duo, so `flush_dirty` — which runs after
+    // nil` does not remove a key in idol, so `flush_dirty` — which runs after
     // EVERY message — walked the docs table, found the nil and dereferenced it.
     // Every editor closes documents; nobody had ever run one against it.
     //

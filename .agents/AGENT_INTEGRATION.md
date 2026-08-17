@@ -23,12 +23,13 @@ client-neutral `tools/node/dev/mcp.manifest.json`:
 |---|---|---|---|
 | `idol` | `tools/mcp/native.id` | enabled, required | status, head, orient |
 | `idol-native` | sibling `idol-native` checkout, `tools/mcp/server.id` | enabled | `check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`, `explain`, `fmt`, `asm` |
-| `idol-bench` | `tools/mcp/bench.id` | disabled | claims/gaps/serialized gates — predates the C-backend retirement; revive on native |
-| `idol-lsp` | `tools/mcp/lsp.id` | disabled | diagnostics transport — same revival condition |
-| `zls` | `tools/mcp/zls.id` | disabled | Zig bootstrap navigation — same revival condition |
 
 A manifest entry with a `sibling` field resolves its root, entry, and launcher
-binary against the sibling checkout of this clone. Generated client
+binary against the sibling checkout of this clone. The retired pre-rename
+transports (claims/bench, diagnostics, zls bridges) were removed, not
+disabled: claims live in `.agents/session/claims/`, diagnostics and language
+intelligence come from the `idol-native` server and its language server, and
+Zig navigation uses the editor's own zls directly. Generated client
 configurations are projections of the manifest, not additional authorities.
 
 ## Client shape

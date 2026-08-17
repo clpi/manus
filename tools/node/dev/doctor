@@ -4,6 +4,10 @@ set -u
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$repo" || exit 1
 
+repository="$repo/tools/node/dev/repository"
+development="$("$repository" development)"
+release="$("$repository" release)"
+
 fail=0
 warn=0
 
@@ -80,13 +84,15 @@ else
   bad "wrong repository root"
 fi
 
-origin_url="$(git remote get-url origin 2>/dev/null || true)"
-if printf '%s' "$origin_url" | grep -Eq '(^git@github.com:clpi/duo(.git)?$|^https://github.com/clpi/duo(.git)?$)'; then
-  ok "active development repository is clpi/duo"
-elif printf '%s' "$origin_url" | grep -Eq '(^git@github.com:idollang/idol(.git)?$|^https://github.com/idollang/idol(.git)?$)'; then
-  bad "release repository checkout; active development remains in clpi/duo"
+if repository_result="$("$repository" check 2>&1)"; then
+  ok "$repository_result"
 else
-  bad "origin is not the admitted clpi/duo development repository"
+  bad "$repository_result"
+fi
+if repository_control="$("$repository" selftest 2>&1)"; then
+  ok "$repository_control"
+else
+  bad "$repository_control"
 fi
 
 if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)" = "main" ]; then
@@ -152,16 +158,30 @@ fi
 "$repo/tools/node/dev/generate-configs" --check || bad "generated MCP projections are missing or stale"
 "$repo/tools/node/dev/generate-harness" --check || bad "generated harness orientation is missing or stale"
 "$repo/tools/node/dev/install-skills" || bad "idol-dev skill installation failed"
-if [ -f "${CODEX_HOME:-$HOME/.codex}/skills/idol-dev/SKILL.md" ]; then
-  ok "Codex skill idol-dev installed"
-else
-  bad "Codex skill idol-dev missing after install-skills"
-fi
-if grep -q '^name: idol-dev' "${CODEX_HOME:-$HOME/.codex}/skills/idol-dev/SKILL.md" 2>/dev/null; then
-  ok "Codex skill idol-dev names idol-dev"
-else
-  bad "Codex skill idol-dev has wrong skill name"
-fi
+for skill in idol-dev idol; do
+  source_skill="$repo/.pi/skills/$skill/SKILL.md"
+  installed_skill="${CODEX_HOME:-$HOME/.codex}/skills/$skill/SKILL.md"
+  if git check-ignore -q "$source_skill"; then
+    bad "canonical skill source is ignored: $source_skill"
+  else
+    ok "canonical skill source is visible: $skill"
+  fi
+  if [ -f "$installed_skill" ]; then
+    ok "Codex skill $skill installed"
+  else
+    bad "Codex skill $skill missing after install-skills"
+  fi
+  if grep -q "^name: $skill" "$installed_skill" 2>/dev/null; then
+    ok "Codex skill $skill names $skill"
+  else
+    bad "Codex skill $skill has wrong skill name"
+  fi
+  if cmp -s "$source_skill" "$installed_skill"; then
+    ok "Codex skill $skill matches canonical source"
+  else
+    bad "Codex skill $skill differs from canonical source"
+  fi
+done
 
 for name in idol-bench idol-lsp zls; do
   if codex mcp get "$name" >/dev/null 2>&1; then
@@ -201,7 +221,11 @@ else
   bad "Cursor indexing exclusions missing"
 fi
 
-if "$repo/tools/node/dev/orient" >/tmp/idol-orient.out 2>&1 && grep -q '^project: Idol$' /tmp/idol-orient.out && grep -q '^authority:' /tmp/idol-orient.out; then
+if "$repo/tools/node/dev/orient" >/tmp/idol-orient.out 2>&1 \
+  && grep -q '^project: Idol$' /tmp/idol-orient.out \
+  && grep -Fq "devrepository: $development" /tmp/idol-orient.out \
+  && grep -Fq "releaserepository: $release" /tmp/idol-orient.out \
+  && grep -q '^authority:' /tmp/idol-orient.out; then
   ok "orientation command reports current repository facts"
 else
   bad "orientation command failed"

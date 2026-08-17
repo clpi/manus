@@ -143,7 +143,7 @@ check = (ok: bool, what: str, detail: str)
 # taxonomy turns on — and a gate should assert against the corpus the law
 # names rather than a fixture it invented for itself.
 doc = "-- copula\\ntotal: f64\\ncount:u32\\nn = lx:read(number)\\n"
-uri = "file:///tmp/duo-lsp-gate/fixture.id"
+uri = "file:///tmp/idol-lsp-gate/fixture.id"
 
 # A second document, carrying the three things the copula fixture cannot show.
 # It declares a parameter and NOT a return and binds a bare literal, so both
@@ -153,7 +153,7 @@ uri = "file:///tmp/duo-lsp-gate/fixture.id"
 # in two hues with no lexical rule between them — a real ambiguity, so the
 # ambiguity counter is shown answering something other than zero.
 cdr = "outer(a: i64)\\n  helper(b: i64): i64\\n    b\\n  end\\n  helper(a)\\nend\\ntotal = 7\\nout = xs | ys\\n"
-cdruri = "file:///tmp/duo-lsp-gate/cdr.id"
+cdruri = "file:///tmp/idol-lsp-gate/cdr.id"
 
 msg: str = (id: i64, method: str, params: str)
   frame("{\"jsonrpc\":\"2.0\",\"id\":" .. id:to(str) .. ",\"method\":\"" .. method .. "\",\"params\":" .. params .. "}")

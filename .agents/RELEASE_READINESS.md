@@ -1,17 +1,17 @@
 # Idol release readiness ledger
 
 This is a release-gating checklist, not semantic law and not live project status.
-Active development stays in **`clpi/duo`**. **`idollang/idol`** remains untouched
+Active development stays in **`clpi/idol`**. **`idollang/idol`** remains untouched
 until every blocker below is closed and explicit release authorization is recorded.
 
 ## Repository separation
 
 | Requirement | Status |
 |---|---|
-| Development remote remains `clpi/duo` during concurrent work | **open** — current origin |
+| A configured development remote names `clpi/idol` during concurrent work | **required** — verified from the manifest and live remotes by `tools/node/dev/repository check` |
 | Release repo `idollang/idol` receives no development commits | **open** — do not push dev work there |
 | Release migration runbook exists as a dedicated future operation | **open** |
-| `tools/node/dev/doctor` admits only `clpi/duo` development checkouts | **met** — release checkout fails closed |
+| `tools/node/dev/doctor` admits only a checkout with the configured development repository | **met** — release identity cannot satisfy the development check |
 
 ## Authority and orientation
 
@@ -91,7 +91,7 @@ Claim exact paths before write. No broad cleanup. No release migration.
 
 | Check | Status |
 |---|---|
-| `tools/node/dev/orient` | **met** — reports Idol / `clpi/duo` / untouched `idollang/idol` |
+| `tools/node/dev/orient` | **met** — derives `clpi/idol`, `idollang/idol`, and the authority order from the tracked manifest |
 | `tools/node/dev/doctor` | **fail** — see blockers below |
 | Single MCP manifest | **met** — `tools/node/dev/mcp.manifest.json` only |
 | Cursor rules as routers | **met** — 9 scoped `.mdc`, all under 50 lines except always-on (21 lines) |

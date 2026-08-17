@@ -93,9 +93,9 @@ bootc: bool = (path: str)
   starts(path, "src/") or starts(path, "lib/c/")
 
 generated: bool = (root: str, path: str)
-  if path == "ext/vscode-duo/extension.js"
+  if path == "ext/vscode-idol/extension.js"
     return status("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
-  if path == "ext/tree-sitter-duo/grammar.js"
+  if path == "ext/tree-sitter-idol/grammar.js"
     return status("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
   false
 

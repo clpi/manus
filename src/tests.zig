@@ -43,7 +43,6 @@ test {
     _ = @import("explain_pipeline.zig");
     _ = @import("assumption_guard.zig");
     _ = @import("repair_candidate.zig");
-    _ = @import("semantic_fingerprint.zig");
     _ = @import("evidence_record.zig");
     _ = @import("place.zig");
     _ = @import("region.zig");

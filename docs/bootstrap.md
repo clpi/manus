@@ -213,6 +213,15 @@ The seed must be:
 Fingerprints may accelerate candidate comparison or summarize evidence. They
 never establish B/C semantic identity, correspondence, or lineage.
 
+The executed foundation now qualifies the one resident graph `id` with an
+owning graph-incarnation coordinate, freezes registered incarnations, and
+admits explicit witnessed preserved/replaced/split/merge/generated/retired
+correspondence facts with checked cardinality. The public knowledge snapshot
+projects those exact references and no longer manufactures identity from a
+kind/name string or fingerprint. This is not B/C closure: no bootstrap driver
+yet persists two incarnations, supplies B and C producer witnesses, or compares
+their complete graph and diagnostic facts.
+
 ## Stage comparisons (when declared)
 
 - Compiler performance baselines

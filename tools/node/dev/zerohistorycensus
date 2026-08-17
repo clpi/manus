@@ -77,7 +77,7 @@ scan_id_files ': (readable|writable|iterable|hashable|convertible)' 'adjective p
 scan_id_files '\b(req|require|import)\(' 'admission syntax in .id'
 
 # Active bridges allowlist — must carry deletion condition in bootstrap.md or gap.
-bridge_allow='duo_lock\.id|DUO_TRANSFORM|bootstrap.*duo|@import\("std"\)|tree-sitter-duo|vscode-duo'
+bridge_allow='DUO_TRANSFORM|bootstrap.*duo|@import("std")'
 duo_hits=$(owned_files | xargs rg -n '(^|[^a-zA-Z])duo([^a-zA-Z]|$)|DUO_' 2>/dev/null \
   | rg -v "$filter" \
   | rg -v "$bridge_allow" || true)

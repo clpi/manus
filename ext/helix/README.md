@@ -13,18 +13,18 @@ cat languages.toml >> ~/.config/helix/languages.toml
 
 ### 2. Copy queries
 
-Copy the query files into Helix's runtime directory under `queries/duo/`:
+Copy the query files into Helix's runtime directory under `queries/idol/`:
 
 ```sh
 HELIX_RUNTIME=$(helix --helix-runtime 2>/dev/null || echo "$HOME/.config/helix")
-mkdir -p "$HELIX_RUNTIME/queries/duo"
-cp queries/*.scm "$HELIX_RUNTIME/queries/duo/"
+mkdir -p "$HELIX_RUNTIME/queries/idol"
+cp queries/*.scm "$HELIX_RUNTIME/queries/idol/"
 ```
 
 ### 3. Build the tree-sitter grammar
 
 Helix will compile the grammar from the `source.path` specified in
-`languages.toml`. Make sure the relative path `../tree-sitter-duo` resolves
+`languages.toml`. Make sure the relative path `../tree-sitter-idol` resolves
 correctly from the `ext/helix/` directory, or adjust it to an absolute path.
 
 ```sh
@@ -35,8 +35,8 @@ helix --grammar build
 
 ### 4. Language server (optional)
 
-If you have `duo-lsp` installed and on your `PATH`, Helix will use it
-automatically. Otherwise, remove `language-servers = ["duo-lsp"]` from the
+If you have `idol-lsp` installed and on your `PATH`, Helix will use it
+automatically. Otherwise, remove `language-servers = ["idol-lsp"]` from the
 `[[language]]` entry.
 
 ## File structure

@@ -9,7 +9,7 @@ opencode_home="${OPENCODE_HOME:-$HOME/.opencode}"
 
 install_skill() {
   name="$1"
-  src="$repo/.devin/skills/$name"
+  src="$repo/.pi/skills/$name"
   dst_dir="$2/skills/$name"
 
   if [ ! -f "$src/SKILL.md" ]; then
@@ -38,7 +38,7 @@ if [ -d "$legacy_dst" ] || [ -f "$legacy_dst/SKILL.md" ]; then
   cat >"$legacy_dst/SKILL.md" <<'EOF'
 ---
 name: idol-development
-description: RETIRED — use idol-dev instead. Historical alias for Idol development in clpi/duo.
+description: RETIRED — use idol-dev instead. Historical alias for Idol development.
 ---
 
 # Retired
@@ -59,7 +59,7 @@ if [ -d "$legacy_devin_dst" ] || [ -f "$legacy_devin_dst/SKILL.md" ]; then
   cat >"$legacy_devin_dst/SKILL.md" <<'EOF'
 ---
 name: idol-development
-description: RETIRED — use idol-dev instead. Historical alias for Idol development in clpi/duo.
+description: RETIRED — use idol-dev instead. Historical alias for Idol development.
 ---
 
 # Retired

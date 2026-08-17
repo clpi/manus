@@ -1,14 +1,14 @@
 ---
 name: idol-dev
-description: Idol language development loop in clpi/duo. Use whenever editing .id source, the constitution or spec projections, the compiler, gates, gaps, or claims. Encodes the authority read-order, the monoglot boundary, the closed lexical/grammar law, claim coordination, serialized builds, and the gates/preflight chain. Run orient + doctor first; claim paths before editing; commit explicit pathspecs only.
+description: Idol language development loop. Use whenever editing .id source, the constitution or spec projections, the compiler, gates, gaps, or claims. Encodes the authority read-order, the monoglot boundary, the closed lexical/grammar law, claim coordination, serialized builds, and the gates/preflight chain. Run orient + doctor first; claim paths before editing; commit explicit pathspecs only.
 license: MIT
 ---
 
 # Idol development loop
 
 You are working on **Idol** (`idol`, `.id`) in the active development repository
-`clpi/duo`. The future release repository `idollang/idol` is untouched until
-explicit release-readiness authorization.
+reported by `tools/node/dev/repository`; the release repository remains untouched
+until explicit release-readiness authorization.
 
 This skill is a tooling projection. It does not add law. When it conflicts with
 authority, authority wins and this skill must be repaired.
@@ -18,15 +18,18 @@ authority, authority wins and this skill must be repaired.
 1. Read `AGENTS.md` (workflow + mechanical preflight — the file that sent you here)
 2. Run `./tools/node/dev/generate-harness` then read `.agents/HARNESS.md`
    (pre-task reduction is mandatory before choosing work or editing)
-3. `docs/spec/constitution.md` (C0, the sole semantic law; structured law
+3. `docs/spec/law.md` (supreme one-page law)
+4. `docs/spec/canonical.md` (blind-start constitution)
+5. `docs/spec/agent.md` (sole new-agent bootstrap)
+6. `docs/spec/constitution.md` (C0, the sole semantic law; structured law
    notation, **not** executable source)
-4. `CLAUDE.md` (operative projection of C0)
-5. `docs/spec/source.md` (source/home/package/world closure — no native module
+7. `CLAUDE.md` (operative projection of C0)
+8. `docs/spec/source.md` (source/home/package/world closure — no native module
    system)
-6. `docs/spec/host.md` (host boundary / shell / capability closure — blocking)
-7. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, the relevant `docs/spec/*.md`
-8. `.agents/AGENT_CANONICAL.md`, `.agents/AGENT_COORDINATION.md`
-9. The exact `gaps/GAP-*.md` for the frontier you are touching
+9. `docs/spec/host.md` (host boundary / shell / capability closure — blocking)
+10. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, the relevant `docs/spec/*.md`
+11. `.agents/AGENT_CANONICAL.md`, `.agents/AGENT_COORDINATION.md`
+12. The exact `gaps/GAP-*.md` for the frontier you are touching
 
 `docs/spec/grammar.md`, `docs/spec/diagnostics.md`, etc. are **projections**.
 They defer to C0. A projection never overrides C0.

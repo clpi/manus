@@ -84,9 +84,11 @@ declares the enabled project servers:
   checkout: `check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`,
   `explain`, `fmt`, `asm` (`tools/mcp/server.id` on that tree's `bin/idol`).
 
-`idol-bench`, `idol-lsp`, and `zls` remain listed but disabled: their sources
-predate the C-backend retirement and do not compile under any live backend.
-Revive by migrating them to native, then restore `required`.
+The retired pre-rename transports (`idol-bench`, `idol-lsp`, `zls`) were
+removed: their legacy-syntax sources predated the C-backend retirement and
+never compiled under a live backend. Claims live in `.agents/session/claims/`,
+language intelligence comes from `idol-native` (MCP + language server), and
+Zig navigation uses the editor's own zls directly.
 
 `tools/node/dev/generate-configs` projects the manifest into:
 

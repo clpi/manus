@@ -1,7 +1,7 @@
-# A Duo program that emits real ARM64 machine code to a file.
+# An Idol program that emits real ARM64 machine code to a file.
 #
 # Writes `mov x0, #42; ret` as little-endian words and returns the byte count.
-# Verify with:  xxd /tmp/duo_emit_probe.bin
+# Verify with:  xxd /tmp/idol_emit_probe.bin
 #   4005 80d2  -> 0xd2800540  mov x0, #42
 #   c003 5fd6  -> 0xd65f03c0  ret
 #
@@ -11,7 +11,7 @@
 # `lib/std/emit.id` itself. Gated by `zig build direct-module-link`.
 main: i64 = ()
   E = emit
-  E.emit_begin("/tmp/duo_emit_probe.bin")
-  E.emit_u32("/tmp/duo_emit_probe.bin", 3531605312)
-  E.emit_u32("/tmp/duo_emit_probe.bin", 3596551104)
-  E.emit_size("/tmp/duo_emit_probe.bin")
+  E.emit_begin("/tmp/idol_emit_probe.bin")
+  E.emit_u32("/tmp/idol_emit_probe.bin", 3531605312)
+  E.emit_u32("/tmp/idol_emit_probe.bin", 3596551104)
+  E.emit_size("/tmp/idol_emit_probe.bin")

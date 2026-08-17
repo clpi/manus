@@ -1,7 +1,7 @@
 #!/bin/sh
 # explain-gate — the answerability surface, asserted BY VALUE, in a shell that runs.
 #
-# WHY THIS FILE EXISTS. `duo explain` is the compiler's only projection of live
+# WHY THIS FILE EXISTS. `idol explain` is the compiler's only projection of live
 # codegen state: optimization outcomes, assumption guards, the transform engine's
 # provenance log and its tier-1 registry. HPLS §7 counts diagnostics and tooling
 # as causal consumers — but only if something CONSUMES them. Measured on
@@ -59,7 +59,7 @@ mkdir -p "$work"
 doc="$work/explain.json"
 fixture="$repo/examples/cfloor/fact.id"
 
-printf 'explain-gate: `duo explain` projects live compiler state, asserted by value\n'
+printf 'explain-gate: `idol explain` projects live compiler state, asserted by value\n'
 
 [ -f "$fixture" ] || { printf '  FAIL fixture missing — %s\n' "$fixture" >&2; exit 1; }
 
@@ -75,7 +75,7 @@ report ok "explain renders a document ($(wc -c <"$doc" | tr -d ' ') bytes)"
 
 # P0 — positive control. A gate that passes every row by matching everything is
 # not a gate. This string is not in any document the compiler can produce.
-if holds "$doc" "duo-explain-this-string-is-not-in-any-document"; then
+if holds "$doc" "idol-explain-this-string-is-not-in-any-document"; then
   report fail "P0 positive control" "the matcher accepts a string that cannot be present"
 else
   report ok "P0 positive control (a fabricated string is absent)"
@@ -83,19 +83,27 @@ fi
 
 # S1 — schema identity. The consumer contract is the schema name, not the shape
 # that happens to come out today.
-holds "$doc" '"schema":"duo-explain-v0"' \
-  && report ok "S1 schema is duo-explain-v0" \
-  || report fail "S1 schema is duo-explain-v0" "schema key absent or renamed"
+holds "$doc" '"schema":"idol-explain-v1"' \
+  && report ok "S1 schema is idol-explain-v1" \
+  || report fail "S1 schema is idol-explain-v1" "schema key absent or renamed"
 
 # K1 — the knowledge snapshot reaches the document with entities in it. `mix`
 # and `main` are the two callables in the fixture; an empty snapshot renders the
 # same keys, so the entity NAME is what is pinned.
-holds "$doc" '"schema":"knowledge-snapshot-v0"' \
+holds "$doc" '"schema":"knowledge-snapshot-v1"' \
   && report ok "K1 knowledge snapshot present" \
-  || report fail "K1 knowledge snapshot present" "no knowledge-snapshot-v0 block"
+  || report fail "K1 knowledge snapshot present" "no knowledge-snapshot-v1 block"
 holds "$doc" '"name":"mix"' \
   && report ok "K1b the snapshot names the fixture's callable by value" \
   || report fail "K1b the snapshot names the fixture's callable by value" "no entity named mix"
+holds "$doc" '"entity":{"incarnation":' \
+  && report ok "K1c snapshot identity is an exact graph reference" \
+  || report fail "K1c snapshot identity is an exact graph reference" "no incarnation-qualified graph entity"
+if holds "$doc" '"entity_id":'; then
+  report fail "K1d name-derived identity is absent" "snapshot still emits a textual entity_id"
+else
+  report ok "K1d name-derived identity is absent"
+fi
 
 # T1/T2 — the transform engine is LIVE machinery in the direct-backend codegen
 # path (`publicNameForInternal` / `requireMetaDispatchBeforeHook` gate every

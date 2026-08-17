@@ -62,7 +62,7 @@ When a file supplies one naturally named table/home, its stem projects that ordi
 Given:
 
 ```text
-app/
+main/
   main.id
   parser.id
   lexer.id
@@ -71,7 +71,7 @@ app/
 the semantic topology is approximately:
 
 ```text
-app
+@
   main
   parser
   lexer
@@ -420,7 +420,7 @@ observable through its ordinary law.
 
 Canonical named projection remains `user.name`.
 
-Canonical computed projection remains `table[key]` where grammar permits.
+Canonical computed projection is ordinary application: `table(key)`.
 
 A package table behaves exactly like any other table.
 

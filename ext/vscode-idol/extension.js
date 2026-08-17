@@ -9,20 +9,20 @@ let client = null;
  * @param {vscode.ExtensionContext} context
  */
 async function activate(context) {
-  const config = vscode.workspace.getConfiguration('duo-lsp');
+  const config = vscode.workspace.getConfiguration('idol-lsp');
   if (!config.get('enable')) {
     return;
   }
 
-  const path = config.get('path') || 'duo-lsp';
+  const path = config.get('path') || 'idol-lsp';
   const trace = config.get('trace') || 'off';
 
   // Search PATH + common install locations
   const resolved = await resolveBinary(path);
   if (!resolved) {
     vscode.window.showWarningMessage(
-      `Duo LSP binary not found at "${path}". ` +
-      'Install duo-lsp or set duo-lsp.path in settings.'
+      `Idol LSP binary not found at "${path}". ` +
+      'Install idol-lsp or set idol-lsp.path in settings.'
     );
     return;
   }
@@ -35,13 +35,13 @@ async function activate(context) {
   };
 
   const clientOptions = {
-    documentSelector: [{ scheme: 'file', language: 'duo' }],
+    documentSelector: [{ scheme: 'file', language: 'idol' }],
     traceOutputChannel: traceLevels[trace]
-      ? vscode.window.createOutputChannel('Duo LSP Trace')
+      ? vscode.window.createOutputChannel('Idol LSP Trace')
       : undefined,
   };
 
-  client = new LanguageClient('duo-lsp', 'Duo Language Server', serverOptions, clientOptions);
+  client = new LanguageClient('idol-lsp', 'Idol Language Server', serverOptions, clientOptions);
   await client.start();
 }
 

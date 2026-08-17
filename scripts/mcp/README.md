@@ -8,9 +8,6 @@ fully retired; every server, tool, and environment key is `idol`-named only.
 |---|---|---|---|
 | `idol` | `tools/mcp/native.id` | enabled, required | repository status, head, orient (native backend, `idol run`) |
 | `idol-native` | sibling `idol-native` repo, `tools/mcp/server.id` | enabled | semantic graph: `check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`, `explain`, `fmt`, `asm` |
-| `idol-bench` | `tools/mcp/bench.id` | disabled | claims, gaps, serialized gates, performance evidence — predates the C-backend retirement; revive on native |
-| `idol-lsp` | `tools/mcp/lsp.id` | disabled | diagnostics transport — same revival condition |
-| `zls` | `tools/mcp/zls.id` | disabled | Zig bootstrap navigation — same revival condition |
 
 Run the enabled servers from the repository root:
 

@@ -3,6 +3,7 @@ const ast = @import("ast.zig");
 const term = @import("term.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const graph_query = @import("graph_query.zig");
+const types = @import("types.zig");
 const collection_relation = @import("collection_relation.zig");
 
 pub const EvalError = error{
@@ -230,6 +231,13 @@ pub const Evaluator = struct {
     const LocalBinding = struct {
         name: []const u8,
         value: Value,
+        /// THE DECLARED WIDTH OF THE PLACE, or null when the binding is
+        /// full-width. A write to this binding stores the EXACT projection of
+        /// this descriptor — the same value `dnir_lower` hands the store and
+        /// `native_backend` realizes as `sxtw`/`ubfx`, through the same
+        /// function, so the folded program and the emitted program cannot
+        /// answer differently.
+        width: ?types.ResolvedType = null,
     };
 
     const BlockResult = union(enum) {
@@ -270,10 +278,39 @@ pub const Evaluator = struct {
     }
 
     fn pushLocal(self: *Evaluator, name: []const u8, value: Value) EvalError!usize {
+        return self.pushPlace(name, value, null);
+    }
+
+    /// THE ONE WRITE PRIMITIVE. Every binding is created here and every value
+    /// that enters one passes through `project`, so there is no path by which a
+    /// declared width can be established and then not applied.
+    fn pushPlace(
+        self: *Evaluator,
+        name: []const u8,
+        value: Value,
+        width: ?types.ResolvedType,
+    ) EvalError!usize {
         const alloc = self.options.alloc orelse return error.UnsupportedExpression;
         const mark = self.locals.items.len;
-        self.locals.append(alloc, .{ .name = name, .value = value }) catch return error.UnsupportedExpression;
+        self.locals.append(alloc, .{
+            .name = name,
+            .value = project(value, width),
+            .width = width,
+        }) catch return error.UnsupportedExpression;
         return mark;
+    }
+
+    /// The exact projection of `value` onto `width`, or `value` unchanged when
+    /// the place is full-width or does not hold an integer.
+    ///
+    /// A FLOAT IS NOT PROJECTED AND MUST NOT BE. `t: i32 = 1.5` is a
+    /// conversion question this evaluator does not answer, and silently
+    /// truncating it here would invent a semantics no other consumer shares —
+    /// the binding keeps its value and any disagreement stays visible.
+    fn project(value: Value, width: ?types.ResolvedType) Value {
+        const w = width orelse return value;
+        if (value != .int) return value;
+        return .{ .int = types.narrowFitConst(value.int, w) };
     }
 
     fn popLocals(self: *Evaluator, mark: usize) void {
@@ -286,7 +323,11 @@ pub const Evaluator = struct {
         while (i > floor) {
             i -= 1;
             if (std.mem.eql(u8, self.locals.items[i].name, name)) {
-                self.locals.items[i].value = value;
+                // AT EVERY WRITE, not only at the declaration. A loop-carried
+                // update is a write like any other, and it was the one this
+                // evaluator got wrong: the declaration bound 0 and every
+                // iteration after it stored a value the place cannot hold.
+                self.locals.items[i].value = project(value, self.locals.items[i].width);
                 return;
             }
         }
@@ -834,7 +875,7 @@ pub const Evaluator = struct {
         }
         var next: usize = 0;
         if (subject) |value| {
-            _ = try self.pushLocal(func.params[0].name, value);
+            _ = try self.pushPlace(func.params[0].name, value, types.narrowIntOfType(func.params[0].typ));
             next = 1;
         }
         for (func.params[next..], 0..) |param, i| {
@@ -844,7 +885,11 @@ pub const Evaluator = struct {
                 try self.eval(default_val)
             else
                 Value.nil;
-            _ = try self.pushLocal(param.name, value);
+            // A PARAMETER IS A PLACE. `native_backend` narrows a declared
+            // narrow parameter ON ENTRY precisely because the caller may not
+            // have -- see its "arrives in a 64-bit register" note -- so the
+            // fold binds the projection the callee would actually see.
+            _ = try self.pushPlace(param.name, value, types.narrowIntOfType(param.typ));
         }
         return try self.evalBlockValue(&func.body);
     }
@@ -1489,12 +1534,14 @@ pub const Evaluator = struct {
             .local_decl => |decl| blk: {
                 for (decl.names, 0..) |name, i| {
                     const value = if (i < decl.inits.len) try self.eval(decl.inits[i]) else Value.nil;
-                    _ = try self.pushLocal(name.ident, value);
+                    // THE INITIAL BINDING IS A WRITE. `t: u8 = a * b` stores
+                    // the projection, exactly as a later `t = a * b` does.
+                    _ = try self.pushPlace(name.ident, value, types.narrowIntOfType(name.typ));
                 }
                 break :blk .none;
             },
             .const_decl => |decl| blk: {
-                _ = try self.pushLocal(decl.ident, try self.eval(decl.val));
+                _ = try self.pushPlace(decl.ident, try self.eval(decl.val), types.narrowIntOfType(decl.typ));
                 break :blk .none;
             },
             .assign => |assign| blk: {
@@ -1544,7 +1591,10 @@ pub const Evaluator = struct {
         if (step_value == 0) return error.UnsupportedOperator;
         const mark = self.locals.items.len;
         defer self.popLocals(mark);
-        _ = try self.pushLocal(num_for.var_name, .{ .int = start });
+        // The induction variable is a PLACE and may carry a descriptor:
+        // `for k: u8 = 1, 300` counts through a `u8`, and `setLocal` below is
+        // the write that has to know it.
+        _ = try self.pushPlace(num_for.var_name, .{ .int = start }, types.narrowIntOfType(num_for.var_typ));
         var i = start;
         while (if (step_value > 0) i <= stop else i >= stop) : (i += step_value) {
             try self.step();
@@ -2007,7 +2057,7 @@ pub fn callFunctionValue(func: Value, args: []const Value, bindings: Bindings, o
             try evaluator.eval(default_val)
         else
             Value.nil;
-        _ = try evaluator.pushLocal(param.name, value);
+        _ = try evaluator.pushPlace(param.name, value, types.narrowIntOfType(param.typ));
     }
     return evaluator.evalBlockValue(&body.body);
 }
