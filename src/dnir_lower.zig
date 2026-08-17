@@ -187,6 +187,7 @@ fn deinitRecord(alloc: std.mem.Allocator, record: dnir.RecordDesc) void {
     for (record.fields) |field| alloc.free(field);
     alloc.free(record.fields);
     alloc.free(record.kinds);
+    alloc.free(record.widths);
 }
 
 fn deinitFunction(alloc: std.mem.Allocator, function: dnir.Function) void {
@@ -727,7 +728,7 @@ fn lowerModuleFromGraph(
         for (records.items) |record| deinitRecord(alloc, record);
         records.deinit(alloc);
     }
-    try collectRecords(alloc, &records, mod);
+    try collectRecordsFromGraph(alloc, &records, graph);
 
     var relation_edges = try collectRelationEdges(alloc, mod);
     defer {
@@ -1233,6 +1234,15 @@ fn isF64Record(recs: []const dnir.RecordDesc, t: ast.TypeExpr) ?dnir.RecordDesc 
     return r;
 }
 
+fn recordKindsMixed(record: dnir.RecordDesc) bool {
+    var saw_fp = false;
+    var saw_gp = false;
+    for (record.kinds) |kind| {
+        if (kind == .f64) saw_fp = true else saw_gp = true;
+    }
+    return saw_fp and saw_gp;
+}
+
 /// One entry per ABI argument SLOT: true when the slot travels in v0..v7.
 ///
 /// GAP-056. `emitScalarCallArgs` marshalled every argument with `mov_arg`, which
@@ -1380,6 +1390,13 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc, mod:
     if (fd.func.vararg or fd.func.vararg_name != null) return false;
     if (findRecordName(recs, fd.func.ret_type)) |rec| {
         if (rec.fields.len == 0 or rec.fields.len > max_record_fields) return false;
+        // The caller-side indirect buffer understands a mixed exact shape, but
+        // this backend does not yet have mixed GP/FP stores for an INDIRECT
+        // callee return. Keep only that case refused. A two-word C result and
+        // an up-to-eight-word internal result already travel in registers and
+        // are pinned by recordabi's mixed-result controls.
+        if (recordKindsMixed(rec) and
+            recordReturnIsIndirectFields(rec.fields.len, foreignBoundaryName(fd) != null)) return false;
         // An f64 record rides v0..v7 as a homogeneous float aggregate; there is
         // no indirect form for it here, so its own eight stays a hard limit.
         if (isF64Record(recs, fd.func.ret_type)) |_| {
@@ -1397,6 +1414,7 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc, mod:
                 if (r.fields.len > max_reg_record_fields) return false;
                 continue;
             }
+            if (isFloatType(p.typ)) continue;
             if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ) and
                 !typeIsScalarCaseSet(mod, p.typ)) return false;
         }
@@ -1432,17 +1450,87 @@ fn functionEligible(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc, mod:
     return true;
 }
 
-fn collectRecords(alloc: std.mem.Allocator, out: *std.ArrayList(dnir.RecordDesc), mod: *const ast.Module) Error!void {
-    for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .alias_def) continue;
-        const ad = &stmt.alias_def;
-        if (ad.type_params != null) continue;
-        const target = ad.target orelse continue;
-        const rec = switch (target) {
-            .record => |r| r,
-            else => continue,
+const GraphFieldFact = struct {
+    kind: dnir.FieldKind,
+    width: ?RT,
+};
+
+fn graphFieldFact(descriptor: RT) ?GraphFieldFact {
+    return switch (descriptor) {
+        .str => .{ .kind = .str, .width = null },
+        .f64 => .{ .kind = .f64, .width = null },
+        .i8, .i16, .i32, .u8, .u16, .u32 => .{ .kind = .i64, .width = descriptor },
+        .i64, .u64, .bool => .{ .kind = .i64, .width = null },
+        else => null,
+    };
+}
+
+fn shapeOnStack(stack: []const semantic_graph.id, shape: semantic_graph.id) bool {
+    for (stack) |candidate| if (candidate == shape) return true;
+    return false;
+}
+
+fn appendGraphRecordFields(
+    alloc: std.mem.Allocator,
+    graph: *const semantic_graph.SemanticGraph,
+    shape: semantic_graph.id,
+    prefix: []const u8,
+    stack: *std.ArrayListUnmanaged(semantic_graph.id),
+    names: *std.ArrayListUnmanaged([]const u8),
+    kinds: *std.ArrayListUnmanaged(dnir.FieldKind),
+    widths: *std.ArrayListUnmanaged(?RT),
+) Error!bool {
+    if (shapeOnStack(stack.items, shape)) return false;
+    try stack.append(alloc, shape);
+    defer _ = stack.pop();
+    const members = try graph.membersOf(shape, alloc);
+    defer alloc.free(members);
+    if (members.len == 0) return false;
+    for (members) |member| {
+        const node = graph.get(member) orelse return false;
+        const member_name = node.name orelse return false;
+        const path = if (prefix.len == 0)
+            try alloc.dupe(u8, member_name)
+        else
+            try std.fmt.allocPrint(alloc, "{s}.{s}", .{ prefix, member_name });
+        if (graph.descriptorShape(member, 0)) |nested| {
+            defer alloc.free(path);
+            if (!try appendGraphRecordFields(alloc, graph, nested, path, stack, names, kinds, widths)) return false;
+            continue;
+        }
+        const descriptor = node.descriptor orelse {
+            alloc.free(path);
+            return false;
         };
-        if (rec.fields.len == 0 or rec.fields.len > max_record_fields) continue;
+        const fact = graphFieldFact(descriptor) orelse {
+            alloc.free(path);
+            return false;
+        };
+        names.append(alloc, path) catch |err| {
+            alloc.free(path);
+            return err;
+        };
+        try kinds.append(alloc, fact.kind);
+        try widths.append(alloc, fact.width);
+        if (names.items.len > max_record_fields) return false;
+    }
+    return true;
+}
+
+/// Physical record layouts are a projection of exact graph descriptor edges.
+/// The retired implementation walked local alias AST and then matched result
+/// descriptor names downstream; that made imported and nested result shapes
+/// unknowable even though sema had already resolved their homes.
+fn collectRecordsFromGraph(
+    alloc: std.mem.Allocator,
+    out: *std.ArrayList(dnir.RecordDesc),
+    graph: *const semantic_graph.SemanticGraph,
+) Error!void {
+    const shapes = try graph.tableDescriptorHomes(alloc);
+    defer alloc.free(shapes);
+    for (shapes) |shape| {
+        const node = graph.tableShapeEntity(shape) orelse continue;
+        const semantic_name = node.name orelse continue;
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer {
             for (names.items) |name| alloc.free(name);
@@ -1450,26 +1538,11 @@ fn collectRecords(alloc: std.mem.Allocator, out: *std.ArrayList(dnir.RecordDesc)
         }
         var kinds: std.ArrayListUnmanaged(dnir.FieldKind) = .empty;
         defer kinds.deinit(alloc);
-        var ok = true;
-        for (rec.fields) |field| {
-            const kind: dnir.FieldKind = if (isStrType(field.typ))
-                .str
-            else if (isIntType(field.typ))
-                .i64
-            else if (isFloatType(field.typ))
-                .f64
-            else {
-                ok = false;
-                break;
-            };
-            const name = try alloc.dupe(u8, field.name);
-            names.append(alloc, name) catch |err| {
-                alloc.free(name);
-                return err;
-            };
-            try kinds.append(alloc, kind);
-        }
-        if (!ok) continue;
+        var widths: std.ArrayListUnmanaged(?RT) = .empty;
+        defer widths.deinit(alloc);
+        var stack: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
+        defer stack.deinit(alloc);
+        if (!try appendGraphRecordFields(alloc, graph, shape, "", &stack, &names, &kinds, &widths)) continue;
         const owned_fields = try names.toOwnedSlice(alloc);
         errdefer {
             for (owned_fields) |name| alloc.free(name);
@@ -1477,14 +1550,21 @@ fn collectRecords(alloc: std.mem.Allocator, out: *std.ArrayList(dnir.RecordDesc)
         }
         const owned_kinds = try kinds.toOwnedSlice(alloc);
         errdefer alloc.free(owned_kinds);
-        const name = try alloc.dupe(u8, ad.name);
-        const descriptor: dnir.RecordDesc = .{
+        const owned_widths = try widths.toOwnedSlice(alloc);
+        errdefer alloc.free(owned_widths);
+        const name = if (node.foreign_home != null)
+            try std.fmt.allocPrint(alloc, "$shape.{d}", .{shape})
+        else
+            try alloc.dupe(u8, semantic_name);
+        const record: dnir.RecordDesc = .{
+            .semantic_shape = shape,
             .name = name,
             .fields = owned_fields,
             .kinds = owned_kinds,
+            .widths = owned_widths,
         };
-        out.append(alloc, descriptor) catch |err| {
-            deinitRecord(alloc, descriptor);
+        out.append(alloc, record) catch |err| {
+            deinitRecord(alloc, record);
             return err;
         };
     }
@@ -2164,25 +2244,20 @@ fn isIntAlias(n: []const u8) bool {
 // back out. Nothing is reconstructed from context.
 // ---------------------------------------------------------------------------
 
-/// The declared width of a sub-64-bit integer type, and whether refitting it
-/// into a 64-bit register sign- or zero-extends.
+/// THE PROJECTION MOVED TO `types.zig`, BESIDE THE DESCRIPTOR IT BELONGS TO.
 ///
-/// `i64`, `u64` and `.any` answer NULL: they are already the register width, so
-/// nothing on the i64 path may gain an instruction from this repair. `u64` is
-/// out of scope for a different reason — it does not need TRUNCATION at all,
-/// only unsigned division/shift/compare, which is a separate defect.
-pub const NarrowFit = struct { bits: u7, signed: bool };
+/// It had to. `comptime.zig`'s folder must apply the SAME projection this file
+/// hands to the store, and `dnir_lower` already imports `comptime.zig`, so the
+/// folder could not import this one. It answered in the full 64-bit ring
+/// instead and `t: i32` folded to a value no store could ever hold.
+///
+/// These are ALIASES, not copies — `native_backend` already reaches the
+/// projection this way (`const narrowFit = dnir_lower.narrowFit;`) and keeps
+/// doing so unchanged.
+pub const NarrowFit = types.NarrowFit;
 
 pub fn narrowFit(ty: RT) ?NarrowFit {
-    return switch (ty) {
-        .u8 => .{ .bits = 8, .signed = false },
-        .u16 => .{ .bits = 16, .signed = false },
-        .u32 => .{ .bits = 32, .signed = false },
-        .i8 => .{ .bits = 8, .signed = true },
-        .i16 => .{ .bits = 16, .signed = true },
-        .i32 => .{ .bits = 32, .signed = true },
-        else => null,
-    };
+    return ty.narrowFit();
 }
 
 /// DO THE LOW 32 BITS OF THIS OPERATION DEPEND ONLY ON THE LOW 32 BITS OF ITS
@@ -2218,30 +2293,14 @@ pub fn lowThirtyTwoExact(op: dnir.BinOpTag) bool {
 /// state and read against another — the shape behind every silent wrong answer
 /// in this tree. `native_backend` calls THIS function rather than carrying its
 /// own copy.
-pub fn narrowFitConst(v: i64, ty: RT) i64 {
-    const fit = narrowFit(ty) orelse return v;
-    const shift: u6 = @intCast(64 - @as(u7, fit.bits));
-    const kept: u64 = @as(u64, @bitCast(v)) << shift;
-    if (fit.signed) return @as(i64, @bitCast(kept)) >> shift;
-    return @bitCast(kept >> shift);
-}
+pub const narrowFitConst = types.narrowFitConst;
 
 /// The declared narrow width of a type expression, or null for everything else.
 ///
 /// `i32` is included even though `resolveType` already answers `.i32`: nothing
 /// downstream had ever acted on that answer, so `h: i32 = 2147483647; h = h + 1`
 /// printed 2147483648 where C printed -2147483648.
-fn narrowIntOfType(t: ast.TypeExpr) ?RT {
-    if (t != .named) return null;
-    const n = t.named;
-    if (std.mem.eql(u8, n, "u8")) return .u8;
-    if (std.mem.eql(u8, n, "u16")) return .u16;
-    if (std.mem.eql(u8, n, "u32")) return .u32;
-    if (std.mem.eql(u8, n, "i8")) return .i8;
-    if (std.mem.eql(u8, n, "i16")) return .i16;
-    if (std.mem.eql(u8, n, "i32")) return .i32;
-    return null;
-}
+const narrowIntOfType = types.narrowIntOfType;
 
 /// C's integer-promotion rank for an operand, as `--backend=c` computes it —
 /// because that backend emits real C and real C types, so its arithmetic IS
@@ -2504,14 +2563,23 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
     const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj.name.ident, field_name });
     defer ctx.alloc.free(fk);
     const v = try lowerExprCons(ctx, value, .single);
-    const store_ty: RT = if (exprIsF64(ctx, value)) .f64 else .any;
     if (ctx.locals.get(fk)) |slot| {
+        // THE FIELD'S DECLARED WIDTH APPLIES AT EVERY WRITE, not only at the
+        // literal that created the storage. This read is the whole repair:
+        // `store_ty` was unconditionally `.any` here, so `r.f = r.f + K` on an
+        // `f: i32` emitted a full 64-bit `str` and answered a value the place
+        // cannot hold — at all six widths, folded and emitted alike.
+        const store_ty: RT = if (exprIsF64(ctx, value))
+            .f64
+        else
+            ctx.narrow_slots.get(slot) orelse .any;
         if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
         if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
-        if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
         try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
+        subsumeProducerRefit(ctx);
         return;
     }
+    const store_ty: RT = if (exprIsF64(ctx, value)) .f64 else .any;
     const slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), slot);
     if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
@@ -2547,6 +2615,135 @@ fn exprReturnsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     return functionResultIs(ctx, expr.call.func.name.ident, .f64);
 }
 
+fn storePackName(
+    ctx: *LowerCtx,
+    name: []const u8,
+    value: dnir.Value,
+    descriptor: types.ResolvedType,
+) Error!void {
+    if (ctx.locals.get(name)) |slot| {
+        const store_ty: RT = if (descriptor == .f64)
+            .f64
+        else
+            ctx.narrow_slots.get(slot) orelse .any;
+        if (descriptor == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {}) else _ = ctx.f64_slots.remove(slot);
+        if (descriptor == .str) try ctx.str_slots.put(ctx.alloc, slot, {}) else _ = ctx.str_slots.remove(slot);
+        if (descriptor == .bool) try ctx.bool_slots.put(ctx.alloc, slot, {}) else _ = ctx.bool_slots.remove(slot);
+        try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = value, .ty = store_ty });
+        return;
+    }
+    if (ctx.module_globals.types.get(name)) |ty| {
+        try ctx.emit(.{ .op = .store_global, .field = name, .lhs = value, .ty = ty });
+        return;
+    }
+    const slot = ctx.freshTemp();
+    try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), slot);
+    const store_ty: RT = if (descriptor == .f64) .f64 else .any;
+    if (descriptor == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
+    if (descriptor == .str) try ctx.str_slots.put(ctx.alloc, slot, {});
+    if (descriptor == .bool) try ctx.bool_slots.put(ctx.alloc, slot, {});
+    try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = value, .ty = store_ty });
+}
+
+fn prepareLocalPackSlots(ctx: *LowerCtx, names: []const ast.LocalName) Error!void {
+    for (names) |name| {
+        const width = narrowIntOfType(name.typ) orelse continue;
+        const slot = ctx.locals.get(name.ident) orelse blk: {
+            const fresh = ctx.freshTemp();
+            const owned = try ctx.alloc.dupe(u8, name.ident);
+            ctx.locals.put(ctx.alloc, owned, fresh) catch |err| {
+                ctx.alloc.free(owned);
+                return err;
+            };
+            break :blk fresh;
+        };
+        try ctx.narrow_slots.put(ctx.alloc, slot, width);
+    }
+}
+
+fn lowerOneToManyPackDeclaration(
+    ctx: *LowerCtx,
+    names: []const ast.LocalName,
+    initializers: []const *ast.Expr,
+) Error!bool {
+    if (initializers.len != 1 or names.len <= 1) return false;
+    const source = initializers[0];
+    const application_fact = ctx.occurrences.get(source) orelse return false;
+    const adjustment = ctx.graph.packAdjustment(application_fact.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "declaration-pack-adjustment");
+    const sources = ctx.graph.packMembers(adjustment.source_pack) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "declaration-source-pack");
+    const targets = ctx.graph.packMembers(adjustment.target_pack) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "declaration-target-pack");
+    if (sources.len != 1 or targets.len != names.len) return false;
+    for (targets, names) |target_id, *name| {
+        const node = ctx.graph.get(target_id) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "declaration-target-member");
+        const raw = node.ast_ref orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "declaration-target-provenance");
+        const published: *const ast.LocalName = @ptrCast(@alignCast(raw));
+        if (node.kind != .local or published != name or node.name == null or
+            !std.mem.eql(u8, node.name.?, name.ident))
+        {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "declaration-target-place");
+        }
+    }
+
+    try prepareLocalPackSlots(ctx, names);
+    const source_node = ctx.graph.get(sources[0]) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "declaration-source-member");
+    const descriptor = source_node.descriptor orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "declaration-source-descriptor");
+    const first = try lowerExprCons(ctx, source, .single);
+    try storePackName(ctx, names[0].ident, first, descriptor);
+    for (names[1..]) |name| {
+        try storePackName(ctx, name.ident, .{ .i64 = 0 }, .nil);
+    }
+    return true;
+}
+
+/// Realize the first binding-adjustment law directly from graph packs:
+/// one scalar result feeding several name targets. The call runs once, its
+/// first member is stored, and Lua's missing members are nil-filled. No target
+/// count or result shape is reconstructed from the callee spelling.
+fn lowerOneToManyPackAssign(
+    ctx: *LowerCtx,
+    assignment_targets: []const *ast.Expr,
+    assignment_values: []const *ast.Expr,
+) Error!bool {
+    if (assignment_values.len != 1 or assignment_targets.len <= 1) return false;
+    const source = assignment_values[0];
+    const application_fact = ctx.occurrences.get(source) orelse return false;
+    const adjustment = ctx.graph.packAdjustment(application_fact.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-pack-adjustment");
+    const sources = ctx.graph.packMembers(adjustment.source_pack) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-source-pack");
+    const targets = ctx.graph.packMembers(adjustment.target_pack) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-target-pack");
+    if (sources.len != 1 or targets.len != assignment_targets.len) return false;
+    for (targets, assignment_targets) |target_id, target| {
+        const node = ctx.graph.get(target_id) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "binding-target-member");
+        const raw = node.ast_ref orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "binding-target-provenance");
+        const published: *const ast.Expr = @ptrCast(@alignCast(raw));
+        if (published != target or target.* != .name) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "binding-target-place");
+        }
+    }
+
+    const source_node = ctx.graph.get(sources[0]) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-source-member");
+    const descriptor = source_node.descriptor orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-source-descriptor");
+    const first = try lowerExprCons(ctx, source, .single);
+    try storePackName(ctx, assignment_targets[0].name.ident, first, descriptor);
+    for (assignment_targets[1..]) |target| {
+        try storePackName(ctx, target.name.ident, .{ .i64 = 0 }, .nil);
+    }
+    return true;
+}
+
 fn functionResultIs(
     ctx: *const LowerCtx,
     name: []const u8,
@@ -2561,10 +2758,7 @@ fn functionResultIs(
 fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!void {
     switch (stmt.*) {
         .local_decl => |ld| {
-            // Same return-pack case as `.assign` below: `a, b = f()` arrives here
-            // with more names than inits. The `i < ld.inits.len` guard kept it from
-            // crashing, but silently left every name past the first unassigned —
-            // a miscompile, which is worse than a refusal. Decline instead.
+            if (try lowerOneToManyPackDeclaration(ctx, ld.names, ld.inits)) return;
             if (ld.names.len != ld.inits.len and ld.inits.len == 1) return bail(ctx.diagnostic, @src());
             for (ld.names, 0..) |*ln, i| {
                 // The declared width has to be on record BEFORE the initializer
@@ -2600,13 +2794,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             }
         },
         .assign => |as| {
-            // `a, b = f()` — one call feeding several targets (a return pack).
-            // Zig's multi-object `for` below requires equal lengths, so an
-            // unguarded pack panicked the compiler outright
-            // ("for loop over objects with non-equal lengths"). Decline the
-            // construct instead: DNIR lowering fails, the module falls back to the
-            // C backend, and the program still compiles. §3.1 (correlated
-            // packs with a native ABI) is what will let this lower here.
+            if (try lowerOneToManyPackAssign(ctx, as.targets, as.values)) return;
             if (as.targets.len != as.values.len) return bail(ctx.diagnostic, @src());
             for (as.targets, as.values) |target, value| {
                 // The environment is a PLACE. This runs before the switch below
@@ -3939,7 +4127,7 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         if (ctx.occurrences.get(value)) |application| {
             bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
             const descriptor = try publishedDescriptor(ctx, application);
-            if (recordForDescriptor(ctx.records, descriptor)) |record| {
+            if (recordForApplicationResult(ctx, application)) |record| {
                 try lowerCheckedRecordCallAssign(ctx, name, application, record);
                 return;
             }
@@ -4057,11 +4245,19 @@ fn recordForDescriptor(
     return null;
 }
 
-fn checkedRecordResultSupported(record: dnir.RecordDesc) bool {
-    for (record.kinds) |kind| {
-        if (kind == .f64) return false;
+fn recordForApplicationResult(
+    ctx: *const LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+) ?dnir.RecordDesc {
+    const shape = ctx.graph.applicationResultShape(application.application, 0) orelse return null;
+    for (ctx.records) |record| {
+        if (record.semantic_shape == shape and checkedRecordResultSupported(record)) return record;
     }
-    return true;
+    return null;
+}
+
+fn checkedRecordResultSupported(record: dnir.RecordDesc) bool {
+    return record.fields.len > 0 and record.fields.len <= max_record_fields;
 }
 
 /// Selected callable entity id. Producer is the occurrence binding edge.
@@ -4087,6 +4283,9 @@ fn lowerCheckedRecordCallAssign(
     bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
     const target = try applicationTarget(ctx, application);
     const callee = try linkageForTarget(ctx, target);
+    if (ctx.graph.foreignHome(target)) |foreign_home| {
+        try ensureExtern(ctx, foreign_home, callee, callee);
+    }
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage);
     var values: [max_direct_scalar_args]dnir.Value = undefined;
@@ -5042,7 +5241,14 @@ fn lowerRecordLiteralFields(ctx: *LowerCtx, prefix: []const u8, table: *const as
         const v = try lowerExpr(ctx, nf.val);
         const fslot = ctx.freshTemp();
         try ctx.locals.put(ctx.alloc, fk, fslot);
-        const store_ty: RT = if (exprIsF64(ctx, nf.val)) .f64 else .any;
+        // A FIELD IS A PLACE AND ITS DESCRIPTOR APPLIES HERE — the literal
+        // that creates the storage is a write like any later `r.f = …`, and
+        // registering the width now is what makes every one of those later
+        // writes find it: `lowerFieldAssignTarget` reads `narrow_slots` off
+        // the slot exactly as `lowerAssign` does for a narrow local.
+        const declared = fieldWidth(ctx, table, nf.key);
+        if (declared) |width| try ctx.narrow_slots.put(ctx.alloc, fslot, width);
+        const store_ty: RT = if (exprIsF64(ctx, nf.val)) .f64 else (declared orelse .any);
         if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, fslot, {});
         if (exprIsStr(ctx, nf.val)) try ctx.str_slots.put(ctx.alloc, fslot, {});
         try ctx.emit(.{ .op = .store_local, .result = fslot, .lhs = v, .ty = store_ty });
@@ -5050,6 +5256,25 @@ fn lowerRecordLiteralFields(ctx: *LowerCtx, prefix: []const u8, table: *const as
 }
 
 /// Match a table literal's named fields to a module record descriptor.
+/// The declared narrow width of `field` in the record `table` is a literal of,
+/// or null when the record is unknown, the field is absent, or the field is
+/// full-width.
+///
+/// FAILS CLOSED, and the failure is the pre-existing behaviour rather than a
+/// new refusal: an unrecognised literal answers null and the store stays
+/// `.any`, which is exactly what every field store did before.
+fn fieldWidth(ctx: *LowerCtx, table: *const ast.Expr, field: []const u8) ?RT {
+    for (ctx.records) |rec| {
+        if (!tableMatchesRecord(table, rec)) continue;
+        if (rec.widths.len != rec.fields.len) return null;
+        for (rec.fields, 0..) |name, i| {
+            if (std.mem.eql(u8, name, field)) return rec.widths[i];
+        }
+        return null;
+    }
+    return null;
+}
+
 fn inferRecordNameFromTable(records: []const dnir.RecordDesc, table: *const ast.Expr) ?[]const u8 {
     if (table.* != .table) return null;
     for (records) |rec| {
@@ -7425,6 +7650,29 @@ fn lowerSubjectTo(
         try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "duo_str_to_i64", .lhs = s, .ty = .i64 });
         return .{ .temp = t };
     }
+    // THE OTHER HALF OF THE SAME EDGE. `str -> i64` was here and `str -> f64`
+    // was nowhere, in either spelling, so a lexer could scan a well-formed
+    // float literal and had no way to say what it was worth —
+    // `lib/compiler/lexer.id` refuses on exactly this, at its ONE `to(f64)`.
+    //
+    // The subject check is the `i64` arm's, for the reason that arm records at
+    // length: `duo_str_to_f64` takes a `const char*`, so a non-text subject is
+    // DEREFERENCED AS AN ADDRESS. A conversion that cannot be performed is
+    // refused, never emitted and left to the loader.
+    if (std.mem.eql(u8, target.name.ident, "f64")) {
+        if (!exprIsStr(ctx, subject)) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
+        }
+        const s = try lowerExpr(ctx, subject);
+        try ensureExtern(ctx, "compat", "str", "duo_str_to_f64");
+        if (consumption == .discard) {
+            try ctx.emit(.{ .op = .call_extern, .callee = "duo_str_to_f64", .lhs = s, .ty = .f64 });
+            return .void;
+        }
+        const t = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "duo_str_to_f64", .lhs = s, .ty = .f64 });
+        return .{ .temp = t };
+    }
     if (std.mem.eql(u8, target.name.ident, "str")) {
         if (!exprIsIntegral(ctx, subject)) {
             return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
@@ -7435,6 +7683,23 @@ fn lowerSubjectTo(
         return .{ .temp = buf };
     }
     return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
+}
+
+/// A CALLER'S BYTE OFFSET AS THE BACKEND'S 1-BASED ELEMENT INDEX.
+///
+/// `load_index`/`store_index` at `.ty = .i64` address `base + (idx - 1) * 8`;
+/// the `mem` faces take a 0-based BYTE offset, the same one `codegen.zig`
+/// spells `(uint8_t*)p + off`. Both conversions therefore have to happen — the
+/// scale down by 8 and the 1-based bias — and they have to happen in ONE place,
+/// because the read and the write of the same buffer disagreeing about its
+/// origin is exactly the defect this helper was extracted to end.
+fn lowerScaledElementIndex(ctx: *LowerCtx, off_expr: *const ast.Expr) Error!dnir.Value {
+    const off = try lowerExpr(ctx, off_expr);
+    const scaled = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = scaled, .binop = .div, .lhs = off, .rhs = .{ .i64 = 8 } });
+    const idx = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .add, .lhs = .{ .temp = scaled }, .rhs = .{ .i64 = 1 } });
+    return .{ .temp = idx };
 }
 
 /// `to(str)(n)` — integer to decimal text. malloc(24) + snprintf(buf, 24,
@@ -7588,6 +7853,20 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
     if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "to") and c.args.len == 2) {
         return lowerSubjectTo(ctx, c.args[0], c.args[1], consumption);
     }
+    // `to(T)(x)` FOR EVERY OTHER T. `lowerToStr` above answers the one target
+    // it was written for and declines the rest by returning null, which left
+    // the curried face with no route to the conversion table `x:to(T)` and
+    // `to(x, T)` both already reach. Three spellings of one edge, and only two
+    // of them arrived — so the same conversion refused or answered depending on
+    // how it was written, which is the capability tax §10.2 forbids.
+    if (c.args.len == 1 and c.func.* == .call) {
+        const inner = c.func.call;
+        if (inner.func.* == .name and std.mem.eql(u8, inner.func.name.ident, "to") and
+            inner.args.len == 1 and inner.args[0].* == .name)
+        {
+            return lowerSubjectTo(ctx, c.args[0], inner.args[0], consumption);
+        }
+    }
     if (c.func.* == .field) {
         const f = c.func.field;
         // A DOTTED callee — `std.compiler.lexer.new` has `f.obj` as a `.field`,
@@ -7713,14 +7992,64 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 // offset, so divide here rather than teaching the backend a
                 // second addressing mode. A non-8-aligned offset is already
                 // undefined for an i64 read, so the division loses nothing real.
+                //
+                // THE `+ 1` IS THE SAME 1-BASED BIAS THE BYTE ARM ABOVE PAYS,
+                // and this arm did not pay it. The scaled path is `base +
+                // (idx - 1) * 8`, so a divided-only offset read EIGHT BYTES
+                // BELOW the address the caller named. MEASURED, against the
+                // semantics `codegen.zig` gives the same face
+                // (`*(int64_t*)((uint8_t*)p + off)`, a 0-based byte offset):
+                //
+                //     s = "ABCDEFGHIJKLMNOP" ; p = mem.addr(s)
+                //     mem.read_byte(p, 0)  ->  65 ('A')          correct
+                //     mem.read_byte(p, 8)  ->  73 ('I')          correct
+                //     mem.read_i64(p, 8)   ->  "ABCDEFGH"        OFF BY ONE ELEMENT
+                //     mem.read_i64(p, 0)   ->  the 8 bytes BEFORE the string
+                //
+                // The comment three lines up already stated the rule the code
+                // broke — "the byte read normalizes with +1 here exactly as
+                // `s[i]` does" — so the two halves of one face disagreed about
+                // the origin of the same buffer, and only the half without a
+                // scale factor was right. `read_i64(p, 0)` reading out of
+                // bounds is not a subset boundary; it is a wrong answer, and it
+                // was reachable from any module that could name a pointer.
                 if (std.mem.eql(u8, f.field, "read_i64") and c.args.len == 2) {
                     const base = try lowerExpr(ctx, c.args[0]);
-                    const off = try lowerExpr(ctx, c.args[1]);
-                    const idx = ctx.freshTemp();
-                    try ctx.emit(.{ .op = .binop, .result = idx, .binop = .div, .lhs = off, .rhs = .{ .i64 = 8 } });
+                    const idx = try lowerScaledElementIndex(ctx, c.args[1]);
                     const t = ctx.freshTemp();
-                    try ctx.emit(.{ .op = .load_index, .result = t, .ty = .i64, .lhs = base, .rhs = .{ .temp = idx } });
+                    try ctx.emit(.{ .op = .load_index, .result = t, .ty = .i64, .lhs = base, .rhs = idx });
                     return .{ .temp = t };
+                }
+                // THE WRITE HALF. `store_index` is the exact mirror of
+                // `load_index` at both widths and both share the backend's
+                // 1-based origin, so each store normalizes its offset with the
+                // SAME helper its load uses — one origin, computed in one
+                // place, which is the only reason the pair can be trusted to
+                // agree. A buffer the direct backend can read and cannot fill
+                // is not a subset of the language, it is a half of a face.
+                if (std.mem.eql(u8, f.field, "write_byte") and c.args.len == 3) {
+                    const base = try lowerExpr(ctx, c.args[0]);
+                    const off = try lowerExpr(ctx, c.args[1]);
+                    const one = ctx.freshTemp();
+                    try ctx.emit(.{ .op = .binop, .result = one, .binop = .add, .lhs = off, .rhs = .{ .i64 = 1 } });
+                    const val = try lowerExpr(ctx, c.args[2]);
+                    try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = base, .rhs = .{ .temp = one }, .third = val });
+                    return .void;
+                }
+                if (std.mem.eql(u8, f.field, "write_i64") and c.args.len == 3) {
+                    const base = try lowerExpr(ctx, c.args[0]);
+                    const idx = try lowerScaledElementIndex(ctx, c.args[1]);
+                    const val = try lowerExpr(ctx, c.args[2]);
+                    try ctx.emit(.{ .op = .store_index, .ty = .i64, .lhs = base, .rhs = idx, .third = val });
+                    return .void;
+                }
+                // `mem.ptr_from_addr(T, a)` is `mem.addr` read backwards, and
+                // at this width it is the same no-op: the address IS the
+                // pointer. `T` is a DESCRIPTOR, not a value, so it is never
+                // lowered — asking for its register is what a type operand in
+                // an argument position always looks like when it is wrong.
+                if (std.mem.eql(u8, f.field, "ptr_from_addr") and c.args.len == 2) {
+                    return try lowerExpr(ctx, c.args[1]);
                 }
                 if (std.mem.eql(u8, f.field, "zero") and c.args.len == 2) {
                     const ptr = try lowerExpr(ctx, c.args[0]);
@@ -8664,7 +8993,7 @@ test "dnir_lower: checked aggregate operand requires graph ABI facts" {
     try std.testing.expectEqualStrings("distance", diagnostic.relation.?);
 }
 
-test "dnir_lower: checked aggregate result requires graph ABI facts" {
+test "dnir_lower: checked aggregate result consumes exact graph shape" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -8692,13 +9021,36 @@ test "dnir_lower: checked aggregate result requires graph ABI facts" {
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "aggregate-result.id");
 
     var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    try std.testing.expectEqual(@as(usize, 1), lowered.records.len);
+    const shape = lowered.records[0].semantic_shape orelse return error.TestExpectedEqual;
+    var make_application: ?semantic_graph.id = null;
+    for (graph.application_facts.items) |fact| {
+        const relation = graph.applicationRelation(fact.application) orelse continue;
+        const name = (graph.get(relation) orelse continue).name orelse continue;
+        if (std.mem.eql(u8, name, "make")) make_application = fact.application;
+    }
+    const application = make_application orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(shape, graph.applicationResultShape(application, 0).?);
+
+    // Damage control: deleting the exact result-value -> shape edge makes the
+    // production consumer refuse. It does not recover `point` from the AST.
+    const result = graph.applicationResults(application).?[0];
+    var deleted = false;
+    for (graph.edges.items) |*edge| {
+        if (edge.from == result and edge.kind == .descriptor) {
+            edge.kind = .provenance;
+            deleted = true;
+            break;
+        }
+    }
+    try std.testing.expect(deleted);
+    diagnostic.reset();
     try std.testing.expectError(
         error.GraphFactsInvalid,
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("application-result-abi", diagnostic.note().?);
-    try std.testing.expect(diagnostic.application != null);
-    try std.testing.expectEqualStrings("make", diagnostic.relation.?);
 }
 
 test "dnir_lower: no mandatory main — entry function lowers uniformly" {
@@ -9345,6 +9697,117 @@ test "dnir_lower: checked ordinary calls consume graph facts" {
     try std.testing.expect(!std.meta.eql(applications[0], applications[1]));
     try std.testing.expect(!std.meta.eql(values[0], values[1]));
     try std.testing.expectEqual(@as(usize, 0), mov_args);
+}
+
+test "dnir_lower: graph pack adjusts one result into several bindings" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\one: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    a, b = one(7)
+        \\    a * 10 + b
+    ;
+    var lexer = Lexer.init(source, "one-many-pack.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "one-many-pack.id");
+
+    const application = graph.applications()[0];
+    const adjustment = graph.packAdjustment(application.application) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), graph.packMembers(adjustment.source_pack).?.len);
+    try std.testing.expectEqual(@as(usize, 2), graph.packMembers(adjustment.target_pack).?.len);
+
+    const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
+    defer dnir.deinitModule(alloc, module);
+    var calls: usize = 0;
+    var stores: usize = 0;
+    var saw_nil_fill = false;
+    for (module.functions) |function| {
+        if (!std.mem.eql(u8, function.name, "main")) continue;
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.op == .call_direct) calls += 1;
+            if (instruction.op == .store_local) {
+                stores += 1;
+                if (std.meta.eql(dnir.Value{ .i64 = 0 }, instruction.lhs)) saw_nil_fill = true;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), calls);
+    try std.testing.expect(stores >= 2);
+    try std.testing.expect(saw_nil_fill);
+
+    // Negative control: the same source shape is not authority. Removing the
+    // graph adjustment must refuse instead of reconstructing Lua pack law from
+    // target/value counts in DNIR.
+    try std.testing.expect(graph.adjustment_rows.remove(application.application));
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraph(alloc, &ast_module, &graph));
+}
+
+test "dnir_lower: graph pack adjusts one result into several local declarations" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\one: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    local a, b = one(7)
+        \\    a * 10 + b
+    ;
+    var lexer = Lexer.init(source, "one-many-local-pack.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "one-many-local-pack.id");
+
+    const application = graph.applications()[0];
+    const adjustment = graph.packAdjustment(application.application) orelse return error.TestExpectedEqual;
+    const targets = graph.packMembers(adjustment.target_pack) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 2), targets.len);
+    for (targets) |target| try std.testing.expectEqual(semantic_graph.NodeKind.local, graph.get(target).?.kind);
+
+    const module = try lowerModuleWithGraph(alloc, &ast_module, &graph);
+    defer dnir.deinitModule(alloc, module);
+    var calls: usize = 0;
+    var stores: usize = 0;
+    var saw_nil_fill = false;
+    for (module.functions) |function| {
+        if (!std.mem.eql(u8, function.name, "main")) continue;
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.op == .call_direct) calls += 1;
+            if (instruction.op == .store_local) {
+                stores += 1;
+                if (std.meta.eql(dnir.Value{ .i64 = 0 }, instruction.lhs)) saw_nil_fill = true;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), calls);
+    try std.testing.expect(stores >= 2);
+    try std.testing.expect(saw_nil_fill);
 }
 
 test "dnir_lower: checked multi-operand call retains ABI staging" {

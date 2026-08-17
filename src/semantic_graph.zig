@@ -105,10 +105,10 @@ pub const application_subject_projection: u16 = 1;
 
 test "semantic_graph: EdgeKind excludes operational spellings" {
     const forbidden = [_][]const u8{
-        "run",    "call",     "invoke",  "execute", "read",    "write", "get",
-        "set",    "parse",    "encode",  "decode",  "convert", "compile", "lower",
-        "emit",   "transform", "subject", "argument", "result", "relation",
-        "type_of", "def", "transform_input", "use", "home",
+        "run",  "call",            "invoke",  "execute",  "read",    "write",    "get",
+        "set",  "parse",           "encode",  "decode",   "convert", "compile",  "lower",
+        "emit", "transform",       "subject", "argument", "result",  "relation", "type_of",
+        "def",  "transform_input", "use",     "home",
     };
     inline for (@typeInfo(EdgeKind).@"enum".field_names) |field_name| {
         const kind: EdgeKind = @field(EdgeKind, field_name);
@@ -145,8 +145,8 @@ test "semantic_graph: ApplicationFact has no string world" {
     try std.testing.expect(!@hasField(ApplicationFact, "subject"));
     const dummy = ApplicationFact{
         .application = 0,
-        .arguments = .{ .start = 0, .len = 0 },
-        .results = .{ .start = 0, .len = 0 },
+        .operand_pack = 1,
+        .result_pack = 2,
     };
     try std.testing.expect(dummy.effect == .unknown);
     try std.testing.expect(dummy.authority == .unknown);
@@ -185,9 +185,9 @@ pub const Node = struct {
     storage_class: ?types.StorageClass = null,
     /// Shape-content fingerprint used by current realization candidates.
     /// It never selects or identifies a graph entity. THE ONE FIELD IN THIS
-    /// GROUP THAT SURVIVED THE SCENERY AUDIT: `realization.fingerprintForRecordId`
-    /// and `knowledge_snapshot.fingerprintForEntity` read it to key cache reuse,
-    /// which is a decision, not a print.
+    /// GROUP THAT SURVIVED THE SCENERY AUDIT:
+    /// `realization.fingerprintForRecordId` reads it to key candidate reuse,
+    /// which is a decision, not a print. Exact graph facts still verify a hit.
     shape_id: ?u64 = null,
     /// For `.call` nodes: the inferred CallShape (Phase 1 — conservative from AST).
     call_shape: ?types.CallShape = null,
@@ -251,6 +251,409 @@ pub const Edge = struct {
 pub const FactRange = struct {
     start: u32,
     len: u32,
+};
+
+/// Cardinality is a fact about a semantic pack, not its current physical
+/// container. `open` carries the number of leading members whose identity is
+/// already known; the tail remains a pack and may later become fixed.
+pub const PackArity = union(enum) {
+    unknown,
+    fixed: u32,
+    open: u32,
+
+    pub fn fixedPrefix(self: PackArity) ?u32 {
+        return switch (self) {
+            .unknown => null,
+            .fixed => |n| n,
+            .open => |n| n,
+        };
+    }
+};
+
+/// Demand for one ordered pack member. Known-discarded is distinct from
+/// unknown: the former authorizes physical nonexistence, the latter does not.
+pub const PackMemberDemand = enum {
+    unknown,
+    discard,
+    value,
+};
+
+pub const PackMember = struct {
+    value: id,
+    demand: PackMemberDemand = .unknown,
+};
+
+/// Physical answers available to realization. Semantic producers publish
+/// `.unknown`; only a realization decision may select another member.
+pub const PackRealization = enum {
+    unknown,
+    none,
+    scalar,
+    registers,
+    split_registers,
+    stack,
+    foreign_sret,
+    lazy,
+};
+
+/// One exact semantic pack. `pack` is an ordinary graph value identity; no
+/// `NodeKind.pack` exists. Ordered members carry their own descriptors and
+/// provenance on their value nodes. `producer` links effects/worlds back to
+/// their single owners instead of copying either fact onto the pack.
+pub const PackFact = struct {
+    pack: id,
+    members: FactRange,
+    arity: PackArity,
+    producer: Card = .unknown,
+    realization: PackRealization = .unknown,
+};
+
+pub const PackFill = enum { nil };
+
+/// One binding adjustment from a produced source pack to an ordered target
+/// pack. Arity differences are facts on the two packs; no separate case enum
+/// duplicates one-to-many, many-to-fewer, or exact adjustment.
+pub const PackAdjustment = struct {
+    application: id,
+    source_pack: id,
+    target_pack: id,
+    fill: PackFill = .nil,
+    forwards_tail: bool = false,
+};
+
+/// Dense coordinate of one graph incarnation inside its owning `History`.
+/// It qualifies an `id`; it is not a second semantic entity identity.
+pub const incarnation = u32;
+
+/// One exact semantic entity in one exact graph incarnation.
+pub const EntityRef = struct {
+    incarnation: incarnation,
+    entity: id,
+
+    pub fn eql(a: EntityRef, b: EntityRef) bool {
+        return a.incarnation == b.incarnation and a.entity == b.entity;
+    }
+};
+
+/// Cross-incarnation cardinality. `unknown`, known absence, and one exact
+/// entity remain distinct just as they do inside one graph (`Card`).
+pub const RefCard = union(enum) {
+    unknown,
+    none,
+    one: EntityRef,
+
+    pub fn name(self: RefCard) []const u8 {
+        return switch (self) {
+            .unknown => "unknown",
+            .none => "none",
+            .one => "one",
+        };
+    }
+};
+
+pub const RefRange = struct {
+    start: u32,
+    len: u32,
+};
+
+/// Dependency knowledge for an incarnation. A known empty set is stronger
+/// than `unknown` and therefore has its own representation.
+pub const Dependencies = union(enum) {
+    unknown,
+    known: []const EntityRef,
+};
+
+pub const DependencyFacts = union(enum) {
+    unknown,
+    known: RefRange,
+};
+
+/// Revision bytes are provenance, never identity. They can bind evidence to a
+/// checkout, but cannot establish semantic correspondence.
+pub const Revision = union(enum) {
+    unknown,
+    known: []const u8,
+};
+
+pub const IncarnationInput = struct {
+    revision: Revision = .unknown,
+    /// The compiler application that produced this graph, when witnessed in a
+    /// previously registered incarnation.
+    producer: RefCard = .unknown,
+    /// These are graph-local semantic entities, not enum/string substitutes.
+    source_family: Card = .unknown,
+    world: Card = .unknown,
+    target: Card = .unknown,
+    dependencies: Dependencies = .unknown,
+};
+
+pub const IncarnationFact = struct {
+    coordinate: incarnation,
+    entity_count: u32,
+    revision: Revision,
+    producer: RefCard,
+    source_family: RefCard,
+    world: RefCard,
+    target: RefCard,
+    dependencies: DependencyFacts,
+};
+
+/// The cardinality of each relationship is checked at admission:
+/// preserved/replaced 1→1, split 1→many, merged many→1, generated 0→many,
+/// retired many→0.
+pub const Continuity = enum {
+    preserved,
+    replaced,
+    split,
+    merged,
+    generated,
+    retired,
+};
+
+pub const Preservation = enum {
+    exact,
+    lawful_refinement,
+};
+
+pub const StageCard = union(enum) {
+    unknown,
+    none,
+    one: semantic_algebra.Stage,
+};
+
+/// A witnessed correspondence between exact entities in distinct graph
+/// incarnations. Fingerprints may locate candidates for this fact; only this
+/// fact establishes continuity.
+pub const Correspondence = struct {
+    predecessors: RefRange,
+    successors: RefRange,
+    relationship: Continuity,
+    preservation: Preservation,
+    witness: EntityRef,
+    transformation: RefCard = .unknown,
+    provenance: RefCard = .unknown,
+    world: RefCard = .unknown,
+    stage: StageCard = .unknown,
+};
+
+pub const CorrespondenceInput = struct {
+    predecessors: []const EntityRef,
+    successors: []const EntityRef,
+    relationship: Continuity,
+    preservation: Preservation,
+    witness: EntityRef,
+    transformation: RefCard = .unknown,
+    provenance: RefCard = .unknown,
+    world: RefCard = .unknown,
+    stage: StageCard = .unknown,
+};
+
+/// Owner of graph incarnations and their explicit correspondence facts.
+/// Semantic entities remain `semantic_graph.id`; this object only qualifies
+/// those coordinates over time and validates every cross-incarnation edge.
+pub const History = struct {
+    alloc: std.mem.Allocator,
+    incarnations: std.ArrayListUnmanaged(IncarnationFact) = .empty,
+    refs: std.ArrayListUnmanaged(EntityRef) = .empty,
+    correspondences: std.ArrayListUnmanaged(Correspondence) = .empty,
+
+    pub fn init(alloc: std.mem.Allocator) History {
+        return .{ .alloc = alloc };
+    }
+
+    pub fn deinit(self: *History) void {
+        for (self.incarnations.items) |fact| switch (fact.revision) {
+            .known => |revision| self.alloc.free(revision),
+            .unknown => {},
+        };
+        self.incarnations.deinit(self.alloc);
+        self.refs.deinit(self.alloc);
+        self.correspondences.deinit(self.alloc);
+    }
+
+    fn u32Coordinate(value: usize) !u32 {
+        if (comptime @bitSizeOf(usize) > @bitSizeOf(u32)) {
+            if (value > std.math.maxInt(u32)) return error.GraphCoordinateExhausted;
+        }
+        return @intCast(value);
+    }
+
+    pub fn incarnationFact(self: *const History, coordinate: incarnation) ?*const IncarnationFact {
+        return if (coordinate < self.incarnations.items.len)
+            &self.incarnations.items[coordinate]
+        else
+            null;
+    }
+
+    pub fn correspondenceAt(self: *const History, coordinate: u32) ?*const Correspondence {
+        return if (coordinate < self.correspondences.items.len)
+            &self.correspondences.items[coordinate]
+        else
+            null;
+    }
+
+    pub fn correspondenceCount(self: *const History) usize {
+        return self.correspondences.items.len;
+    }
+
+    pub fn refsIn(self: *const History, range: RefRange) ?[]const EntityRef {
+        const start: usize = range.start;
+        const len: usize = range.len;
+        if (start > self.refs.items.len or len > self.refs.items.len - start) return null;
+        return self.refs.items[start .. start + len];
+    }
+
+    fn validRef(self: *const History, ref: EntityRef) bool {
+        const fact = self.incarnationFact(ref.incarnation) orelse return false;
+        return ref.entity < fact.entity_count;
+    }
+
+    fn validateRefCard(self: *const History, card: RefCard) !void {
+        switch (card) {
+            .unknown, .none => {},
+            .one => |ref| if (!self.validRef(ref)) return error.InvalidGraphEntityRef,
+        }
+    }
+
+    fn localCard(graph: *const SemanticGraph, coordinate: incarnation, card: Card) !RefCard {
+        return switch (card) {
+            .unknown => .unknown,
+            .none => .none,
+            .one => |entity| blk: {
+                if (graph.get(entity) == null) return error.InvalidGraphEntityRef;
+                break :blk .{ .one = .{ .incarnation = coordinate, .entity = entity } };
+            },
+        };
+    }
+
+    pub fn register(
+        self: *History,
+        graph: *SemanticGraph,
+        input: IncarnationInput,
+    ) !incarnation {
+        if (graph.incarnation_coordinate != null) return error.GraphAlreadyRegistered;
+        try self.validateRefCard(input.producer);
+        switch (input.dependencies) {
+            .unknown => {},
+            .known => |dependencies| for (dependencies) |dependency| {
+                if (!self.validRef(dependency)) return error.InvalidGraphEntityRef;
+            },
+        }
+
+        const coordinate = try u32Coordinate(self.incarnations.items.len);
+        const entity_count = try u32Coordinate(graph.nodes.items.len);
+        const source_family = try localCard(graph, coordinate, input.source_family);
+        const world = try localCard(graph, coordinate, input.world);
+        const target = try localCard(graph, coordinate, input.target);
+
+        const revision: Revision = switch (input.revision) {
+            .unknown => .unknown,
+            .known => |value| .{ .known = try self.alloc.dupe(u8, value) },
+        };
+        errdefer switch (revision) {
+            .known => |value| self.alloc.free(value),
+            .unknown => {},
+        };
+
+        const refs_before = self.refs.items.len;
+        errdefer self.refs.shrinkRetainingCapacity(refs_before);
+        const dependencies: DependencyFacts = switch (input.dependencies) {
+            .unknown => .unknown,
+            .known => |values| blk: {
+                const start = try u32Coordinate(self.refs.items.len);
+                const len = try u32Coordinate(values.len);
+                try self.refs.appendSlice(self.alloc, values);
+                break :blk .{ .known = .{ .start = start, .len = len } };
+            },
+        };
+
+        try self.incarnations.append(self.alloc, .{
+            .coordinate = coordinate,
+            .entity_count = entity_count,
+            .revision = revision,
+            .producer = input.producer,
+            .source_family = source_family,
+            .world = world,
+            .target = target,
+            .dependencies = dependencies,
+        });
+        graph.incarnation_coordinate = coordinate;
+        return coordinate;
+    }
+
+    fn validateRelationship(input: CorrespondenceInput) !void {
+        const before = input.predecessors.len;
+        const after = input.successors.len;
+        const valid = switch (input.relationship) {
+            .preserved, .replaced => before == 1 and after == 1,
+            .split => before == 1 and after > 1,
+            .merged => before > 1 and after == 1,
+            .generated => before == 0 and after > 0,
+            .retired => before > 0 and after == 0,
+        };
+        if (!valid) return error.InvalidCorrespondenceCardinality;
+        if (input.relationship == .preserved and input.preservation != .exact)
+            return error.InvalidCorrespondencePreservation;
+        if (input.relationship != .preserved and input.preservation == .exact)
+            return error.InvalidCorrespondencePreservation;
+    }
+
+    pub fn addCorrespondence(self: *History, input: CorrespondenceInput) !u32 {
+        try validateRelationship(input);
+        if (!self.validRef(input.witness)) return error.InvalidGraphEntityRef;
+        try self.validateRefCard(input.transformation);
+        try self.validateRefCard(input.provenance);
+        try self.validateRefCard(input.world);
+        for (input.predecessors) |predecessor| {
+            if (!self.validRef(predecessor)) return error.InvalidGraphEntityRef;
+            for (input.successors) |successor| {
+                if (predecessor.incarnation == successor.incarnation)
+                    return error.CorrespondenceRequiresDistinctIncarnations;
+            }
+        }
+        for (input.successors) |successor| {
+            if (!self.validRef(successor)) return error.InvalidGraphEntityRef;
+        }
+
+        const refs_before = self.refs.items.len;
+        errdefer self.refs.shrinkRetainingCapacity(refs_before);
+        const predecessors = RefRange{
+            .start = try u32Coordinate(self.refs.items.len),
+            .len = try u32Coordinate(input.predecessors.len),
+        };
+        try self.refs.appendSlice(self.alloc, input.predecessors);
+        const successors = RefRange{
+            .start = try u32Coordinate(self.refs.items.len),
+            .len = try u32Coordinate(input.successors.len),
+        };
+        try self.refs.appendSlice(self.alloc, input.successors);
+
+        const coordinate = try u32Coordinate(self.correspondences.items.len);
+        try self.correspondences.append(self.alloc, .{
+            .predecessors = predecessors,
+            .successors = successors,
+            .relationship = input.relationship,
+            .preservation = input.preservation,
+            .witness = input.witness,
+            .transformation = input.transformation,
+            .provenance = input.provenance,
+            .world = input.world,
+            .stage = input.stage,
+        });
+        return coordinate;
+    }
+
+    /// Exact 1→1 continuity only. No name, path, or fingerprint fallback.
+    pub fn exactSuccessor(self: *const History, predecessor: EntityRef) ?EntityRef {
+        for (self.correspondences.items) |fact| {
+            if (fact.relationship != .preserved or fact.preservation != .exact) continue;
+            const before = self.refsIn(fact.predecessors) orelse continue;
+            const after = self.refsIn(fact.successors) orelse continue;
+            if (before.len != 1 or after.len != 1) continue;
+            if (EntityRef.eql(before[0], predecessor)) return after[0];
+        }
+        return null;
+    }
 };
 
 /// Derived reverse index: one producer writes it; consumers borrow the range
@@ -356,8 +759,8 @@ pub const Card = union(enum) {
 /// caller → node.scope · effect/authority/witness/target/realization → Card here
 pub const ApplicationFact = struct {
     application: id,
-    arguments: FactRange,
-    results: FactRange,
+    operand_pack: id,
+    result_pack: id,
     effect: Card = .unknown,
     authority: Card = .unknown,
     witness: Card = .unknown,
@@ -459,8 +862,14 @@ pub const Body = struct {
 
 pub const SemanticGraph = struct {
     alloc: std.mem.Allocator,
+    /// Coordinate assigned only by an owning `History`. The semantic entity
+    /// identity remains `id`; this qualifies it across graph incarnations.
+    incarnation_coordinate: ?incarnation = null,
     /// Source path for the lifted module; used for gate-transport bootstrap faces.
     module_path: ?[]const u8 = null,
+    /// Exact launcher-supplied worlds for this graph incarnation. This is copied
+    /// from checked sema facts; `module_path` is provenance only.
+    launch_worlds: subject_home.WorldSet,
     /// THE MODULE'S OWN HOME — the DEFINER half of `(home, name)`.
     ///
     /// `foreign_home` on a node answers the caller's half: "the relation I am
@@ -492,7 +901,12 @@ pub const SemanticGraph = struct {
     /// lowering O(applications x edges).
     out_edges: std.AutoHashMapUnmanaged(id, std.ArrayListUnmanaged(u32)) = .empty,
     application_facts: std.ArrayListUnmanaged(ApplicationFact) = .empty,
-    application_values: std.ArrayListUnmanaged(id) = .empty,
+    pack_facts: std.ArrayListUnmanaged(PackFact) = .empty,
+    pack_values: std.ArrayListUnmanaged(id) = .empty,
+    pack_demands: std.ArrayListUnmanaged(PackMemberDemand) = .empty,
+    pack_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
+    pack_adjustments: std.ArrayListUnmanaged(PackAdjustment) = .empty,
+    adjustment_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     application_rows: std.ArrayListUnmanaged(u32) = .empty,
     application_presence: std.DynamicBitSetUnmanaged = .{},
     application_candidates: std.DynamicBitSetUnmanaged = .{},
@@ -544,7 +958,7 @@ pub const SemanticGraph = struct {
     /// `place[value]` for application values, ascending by value id.
     origins: std.ArrayListUnmanaged(Origin) = .empty,
     pub fn init(alloc: std.mem.Allocator) SemanticGraph {
-        return .{ .alloc = alloc };
+        return .{ .alloc = alloc, .launch_worlds = subject_home.injectedWorlds() };
     }
 
     pub fn deinit(self: *SemanticGraph) void {
@@ -559,7 +973,12 @@ pub const SemanticGraph = struct {
             self.out_edges.deinit(self.alloc);
         }
         self.application_facts.deinit(self.alloc);
-        self.application_values.deinit(self.alloc);
+        self.pack_facts.deinit(self.alloc);
+        self.pack_values.deinit(self.alloc);
+        self.pack_demands.deinit(self.alloc);
+        self.pack_rows.deinit(self.alloc);
+        self.pack_adjustments.deinit(self.alloc);
+        self.adjustment_rows.deinit(self.alloc);
         self.application_rows.deinit(self.alloc);
         self.application_presence.deinit(self.alloc);
         self.application_candidates.deinit(self.alloc);
@@ -588,6 +1007,14 @@ pub const SemanticGraph = struct {
         return self.home;
     }
 
+    pub fn entityRef(self: *const SemanticGraph, entity: id) !EntityRef {
+        if (self.get(entity) == null) return error.InvalidGraphEntityRef;
+        return .{
+            .incarnation = self.incarnation_coordinate orelse return error.GraphNotRegistered,
+            .entity = entity,
+        };
+    }
+
     fn deinitNode(self: *SemanticGraph, node: Node) void {
         if (node.why) |why| self.alloc.free(why);
         if (node.owns_name) {
@@ -602,7 +1029,12 @@ pub const SemanticGraph = struct {
         return @intCast(len);
     }
 
+    fn requireOpen(self: *const SemanticGraph) !void {
+        if (self.incarnation_coordinate != null) return error.GraphIncarnationFrozen;
+    }
+
     pub fn addNode(self: *SemanticGraph, node: Node) !id {
+        try self.requireOpen();
         const entity = try coordinateForLength(self.nodes.items.len);
         try self.rememberFunc(node, entity);
         errdefer self.forgetFunc(node);
@@ -645,6 +1077,7 @@ pub const SemanticGraph = struct {
     }
 
     fn appendEdge(self: *SemanticGraph, edge: Edge) !void {
+        try self.requireOpen();
         const idx: u32 = @intCast(self.edges.items.len);
         try self.edges.append(self.alloc, edge);
         // The index is required for query COMPLETENESS, so a failure to grow it
@@ -749,6 +1182,30 @@ pub const SemanticGraph = struct {
         return try out.toOwnedSlice(alloc);
     }
 
+    /// The exact descriptor shape attached to one semantic entity and pack
+    /// position. Absence and ambiguity both refuse: a consumer may not choose
+    /// whichever same-named shape happened to be visited first.
+    pub fn descriptorShape(self: *const SemanticGraph, entity: id, position: u16) ?id {
+        var found: ?id = null;
+        for (self.edges.items) |edge| {
+            if (edge.from != entity or edge.kind != .descriptor or edge.position != position) continue;
+            if (found != null and found.? != edge.to) return null;
+            found = edge.to;
+        }
+        const shape = found orelse return null;
+        if (!self.hasTableDescriptorFacts(shape)) return null;
+        return shape;
+    }
+
+    /// Exact shape of one application result-pack member. The result value is
+    /// the owner of the edge, so source call orientation and relation spelling
+    /// are already gone by the time realization asks this question.
+    pub fn applicationResultShape(self: *const SemanticGraph, occurrence: id, position: u16) ?id {
+        const results = self.applicationResults(occurrence) orelse return null;
+        if (position >= results.len) return null;
+        return self.descriptorShape(results[position], 0);
+    }
+
     /// Enum descriptor homes only.
     pub fn enumDescriptorHomes(self: *const SemanticGraph, alloc: std.mem.Allocator) ![]const id {
         var out: std.ArrayListUnmanaged(id) = .empty;
@@ -787,11 +1244,165 @@ pub const SemanticGraph = struct {
         return .{ .start = @intCast(start), .len = @intCast(len) };
     }
 
-    fn valuesForRange(self: *const SemanticGraph, range: FactRange) ?[]const id {
+    fn membersForRange(self: *const SemanticGraph, range: FactRange) ?[]const id {
         const start: usize = range.start;
         const end = std.math.add(usize, start, range.len) catch return null;
-        if (end > self.application_values.items.len) return null;
-        return self.application_values.items[start..end];
+        if (end > self.pack_values.items.len or end > self.pack_demands.items.len) return null;
+        return self.pack_values.items[start..end];
+    }
+
+    fn demandsForRange(self: *const SemanticGraph, range: FactRange) ?[]const PackMemberDemand {
+        const start: usize = range.start;
+        const end = std.math.add(usize, start, range.len) catch return null;
+        if (end > self.pack_values.items.len or end > self.pack_demands.items.len) return null;
+        return self.pack_demands.items[start..end];
+    }
+
+    fn demandsForRangeMut(self: *SemanticGraph, range: FactRange) ?[]PackMemberDemand {
+        const start: usize = range.start;
+        const end = std.math.add(usize, start, range.len) catch return null;
+        if (end > self.pack_values.items.len or end > self.pack_demands.items.len) return null;
+        return self.pack_demands.items[start..end];
+    }
+
+    fn validPackArity(arity: PackArity, member_count: usize) bool {
+        const count = std.math.cast(u32, member_count) orelse return false;
+        return switch (arity) {
+            .unknown => member_count == 0,
+            .fixed => |n| n == count,
+            .open => |prefix| prefix == count,
+        };
+    }
+
+    /// Publish one exact ordered pack. Members must already be graph values;
+    /// this operation establishes pack membership, never value identity.
+    pub fn publishPack(
+        self: *SemanticGraph,
+        pack_id: id,
+        members: []const PackMember,
+        arity: PackArity,
+        producer: Card,
+    ) !void {
+        const pack_node = self.get(pack_id) orelse return error.InvalidPackFact;
+        if (pack_node.kind != .value or !validPackArity(arity, members.len)) {
+            return error.InvalidPackFact;
+        }
+        if (self.pack_rows.contains(pack_id)) return error.DuplicatePackFact;
+        for (members) |member| {
+            const node = self.get(member.value) orelse return error.InvalidPackMember;
+            if (node.descriptor == null) return error.InvalidPackMember;
+        }
+        switch (producer) {
+            .one => |entity| if (self.get(entity) == null) return error.InvalidPackProducer,
+            else => {},
+        }
+
+        const start = self.pack_values.items.len;
+        errdefer self.pack_values.shrinkRetainingCapacity(start);
+        errdefer self.pack_demands.shrinkRetainingCapacity(start);
+        const range = try factRange(start, members.len);
+        for (members) |member| {
+            try self.pack_values.append(self.alloc, member.value);
+            try self.pack_demands.append(self.alloc, member.demand);
+        }
+        const row = try coordinateForLength(self.pack_facts.items.len);
+        try self.pack_facts.append(self.alloc, .{
+            .pack = pack_id,
+            .members = range,
+            .arity = arity,
+            .producer = producer,
+        });
+        errdefer _ = self.pack_facts.pop();
+        try self.pack_rows.putNoClobber(self.alloc, pack_id, row);
+    }
+
+    pub fn pack(self: *const SemanticGraph, pack_id: id) ?*const PackFact {
+        const row = self.pack_rows.get(pack_id) orelse return null;
+        if (row >= self.pack_facts.items.len) return null;
+        const fact = &self.pack_facts.items[row];
+        if (fact.pack != pack_id or self.get(pack_id) == null) return null;
+        const members = self.membersForRange(fact.members) orelse return null;
+        if (!validPackArity(fact.arity, members.len)) return null;
+        _ = self.demandsForRange(fact.members) orelse return null;
+        for (members) |member| {
+            const node = self.get(member) orelse return null;
+            if (node.descriptor == null) return null;
+        }
+        switch (fact.producer) {
+            .one => |entity| if (self.get(entity) == null) return null,
+            else => {},
+        }
+        return fact;
+    }
+
+    pub fn packMembers(self: *const SemanticGraph, pack_id: id) ?[]const id {
+        const fact = self.pack(pack_id) orelse return null;
+        return self.membersForRange(fact.members);
+    }
+
+    pub fn packMemberDemands(self: *const SemanticGraph, pack_id: id) ?[]const PackMemberDemand {
+        const fact = self.pack(pack_id) orelse return null;
+        return self.demandsForRange(fact.members);
+    }
+
+    pub fn packEffect(self: *const SemanticGraph, pack_id: id) Card {
+        const fact = self.pack(pack_id) orelse return .unknown;
+        const producer = switch (fact.producer) {
+            .one => |entity| entity,
+            else => return .unknown,
+        };
+        const application_fact = self.application(producer) orelse return .unknown;
+        return application_fact.effect;
+    }
+
+    pub fn packWorld(self: *const SemanticGraph, pack_id: id) Card {
+        const fact = self.pack(pack_id) orelse return .unknown;
+        const producer = switch (fact.producer) {
+            .one => |entity| entity,
+            else => return .unknown,
+        };
+        return self.applicationWorld(producer);
+    }
+
+    pub fn selectPackRealization(self: *SemanticGraph, pack_id: id, realization: PackRealization) !void {
+        if (self.incarnation_coordinate != null) return error.GraphIncarnationFrozen;
+        const row = self.pack_rows.get(pack_id) orelse return error.InvalidPackFact;
+        const fact = self.pack(pack_id) orelse return error.InvalidPackFact;
+        const demands = self.demandsForRange(fact.members) orelse return error.InvalidPackFact;
+        switch (realization) {
+            .none => for (demands) |demand| {
+                if (demand != .discard) return error.DemandedPackCannotDisappear;
+            },
+            .scalar => switch (fact.arity) {
+                .fixed => |n| if (n != 1 or demands[0] == .discard) return error.InvalidPackRealization,
+                else => return error.InvalidPackRealization,
+            },
+            else => {},
+        }
+        self.pack_facts.items[row].realization = realization;
+    }
+
+    fn publishPackAdjustment(self: *SemanticGraph, adjustment: PackAdjustment) !void {
+        if (self.application(adjustment.application) == null) return error.InvalidPackAdjustment;
+        if (self.pack(adjustment.source_pack) == null or self.pack(adjustment.target_pack) == null) {
+            return error.InvalidPackAdjustment;
+        }
+        if (self.adjustment_rows.contains(adjustment.application)) return error.DuplicatePackAdjustment;
+        const row = try coordinateForLength(self.pack_adjustments.items.len);
+        try self.pack_adjustments.append(self.alloc, adjustment);
+        errdefer _ = self.pack_adjustments.pop();
+        try self.adjustment_rows.putNoClobber(self.alloc, adjustment.application, row);
+    }
+
+    pub fn packAdjustment(self: *const SemanticGraph, application_id: id) ?*const PackAdjustment {
+        const row = self.adjustment_rows.get(application_id) orelse return null;
+        if (row >= self.pack_adjustments.items.len) return null;
+        const adjustment = &self.pack_adjustments.items[row];
+        if (adjustment.application != application_id) return null;
+        const application_fact = self.application(application_id) orelse return null;
+        if (application_fact.result_pack != adjustment.source_pack) return null;
+        if (self.pack(adjustment.target_pack) == null) return null;
+        return adjustment;
     }
 
     pub fn isApplicationCandidate(self: *const SemanticGraph, entity: id) bool {
@@ -846,6 +1457,8 @@ pub const SemanticGraph = struct {
         const application_node = self.get(occurrence) orelse return error.InvalidApplicationFact;
         const want = application_node.descriptor orelse return error.InvalidApplicationFact;
         const caller = application_node.scope orelse return error.InvalidApplicationCaller;
+        const application_span = application_node.span;
+        const result_consumption = application_node.demand orelse return error.InvalidApplicationFact;
         if (!self.isApplicationCandidate(occurrence) or
             application_node.demand == null) return error.InvalidApplicationFact;
         _ = self.get(relation) orelse return error.InvalidApplicationRelation;
@@ -860,9 +1473,9 @@ pub const SemanticGraph = struct {
             const node = self.get(entity) orelse return error.InvalidApplicationArgument;
             if (node.descriptor == null) return error.InvalidApplicationArgument;
         }
-        for (results) |entity| {
+        for (results, 0..) |entity, i| {
             const node = self.get(entity) orelse return error.InvalidApplicationResult;
-            if (node.descriptor == null or !node.descriptor.?.eql(want)) {
+            if (node.descriptor == null or (i == 0 and !node.descriptor.?.eql(want))) {
                 return error.InvalidApplicationResult;
             }
         }
@@ -870,19 +1483,44 @@ pub const SemanticGraph = struct {
         try self.ensureApplicationRows();
         if (self.application_presence.isSet(occurrence)) return error.DuplicateApplicationFact;
 
-        const values_start = self.application_values.items.len;
-        errdefer self.application_values.shrinkRetainingCapacity(values_start);
-        const argument_range = try factRange(values_start, arguments.len);
-        try self.application_values.appendSlice(self.alloc, arguments);
-        const result_range = try factRange(self.application_values.items.len, results.len);
-        try self.application_values.appendSlice(self.alloc, results);
+        const operand_members = try self.alloc.alloc(PackMember, arguments.len);
+        defer self.alloc.free(operand_members);
+        for (arguments, 0..) |value, i| operand_members[i] = .{ .value = value, .demand = .value };
+        const result_members = try self.alloc.alloc(PackMember, results.len);
+        defer self.alloc.free(result_members);
+        for (results, 0..) |value, i| {
+            result_members[i] = .{
+                .value = value,
+                .demand = switch (result_consumption) {
+                    .unknown => .unknown,
+                    .discard => .discard,
+                    .single => if (i == 0) .value else .discard,
+                    .multi => .value,
+                },
+            };
+        }
+
+        const operand_pack = try self.addChild(occurrence, .{
+            .kind = .value,
+            .span = application_span,
+            .knowledge = .stable,
+            .stage = .sema,
+        });
+        const result_pack = try self.addChild(occurrence, .{
+            .kind = .value,
+            .span = application_span,
+            .knowledge = .stable,
+            .stage = .sema,
+        });
+        try self.publishPack(operand_pack, operand_members, .{ .fixed = @intCast(arguments.len) }, .{ .one = occurrence });
+        try self.publishPack(result_pack, result_members, .{ .fixed = @intCast(results.len) }, .{ .one = occurrence });
 
         const row = try coordinateForLength(self.application_facts.items.len);
         try self.application_facts.append(self.alloc, .{
             .application = occurrence,
-            .arguments = argument_range,
-            .results = result_range,
-            .applied = appliedValue(application_node),
+            .operand_pack = operand_pack,
+            .result_pack = result_pack,
+            .applied = appliedValue(self.get(occurrence).?),
         });
         self.application_rows.items[occurrence] = row;
         self.application_presence.set(occurrence);
@@ -922,27 +1560,27 @@ pub const SemanticGraph = struct {
             const node = self.get(entity) orelse return null;
             if (node.descriptor == null) return null;
         }
-        const arguments = self.valuesForRange(fact.arguments) orelse return null;
-        const results = self.valuesForRange(fact.results) orelse return null;
-        for (arguments) |entity| {
-            const node = self.get(entity) orelse return null;
+        const arguments = self.packMembers(fact.operand_pack) orelse return null;
+        const results = self.packMembers(fact.result_pack) orelse return null;
+        for (arguments) |member| {
+            const node = self.get(member) orelse return null;
             if (node.descriptor == null) return null;
         }
-        for (results) |entity| {
-            const node = self.get(entity) orelse return null;
-            if (node.descriptor == null or !node.descriptor.?.eql(want)) return null;
+        for (results, 0..) |member, i| {
+            const node = self.get(member) orelse return null;
+            if (node.descriptor == null or (i == 0 and !node.descriptor.?.eql(want))) return null;
         }
         return fact;
     }
 
     pub fn applicationArguments(self: *const SemanticGraph, occurrence: id) ?[]const id {
         const fact = self.application(occurrence) orelse return null;
-        return self.valuesForRange(fact.arguments);
+        return self.packMembers(fact.operand_pack);
     }
 
     pub fn applicationResults(self: *const SemanticGraph, occurrence: id) ?[]const id {
         const fact = self.application(occurrence) orelse return null;
-        return self.valuesForRange(fact.results);
+        return self.packMembers(fact.result_pack);
     }
 
     pub fn unresolvedApplicationCount(self: *const SemanticGraph, caller: ?id) usize {
@@ -1247,6 +1885,52 @@ pub const SemanticGraph = struct {
     fn publishEnumShapeMembers(self: *SemanticGraph, home: id, span: SpanRef, ed: *const ast.EnumDef) !void {
         for (ed.variants, 0..) |variant, i| {
             _ = try self.publishMember(home, span, variant.name, @intCast(i), null);
+        }
+    }
+
+    fn addDescriptorShapeEdge(
+        self: *SemanticGraph,
+        entity: id,
+        position: u16,
+        scope: id,
+        descriptor: types.ResolvedType,
+    ) !void {
+        const shape = switch (descriptor) {
+            .@"struct" => |s| self.resolveInHome(scope, s.name, .table_shape),
+            else => null,
+        } orelse return;
+        for (self.edges.items) |edge| {
+            if (edge.from == entity and edge.kind == .descriptor and edge.position == position) {
+                if (edge.to != shape) return error.InvalidDescriptorFact;
+                return;
+            }
+        }
+        try self.addEdge(.{ .from = entity, .to = shape, .kind = .descriptor, .position = position });
+    }
+
+    /// Bind each field to the exact nested descriptor shape after every alias
+    /// in the home exists. Doing this in the alias-construction loop made a
+    /// forward declaration silently lose its edge and forced consumers to
+    /// recover the nested shape by name.
+    fn attachMemberDescriptorShapes(self: *SemanticGraph, home: id) !void {
+        for (self.nested.of(home)) |shape| {
+            const node = self.get(shape) orelse continue;
+            if (node.kind != .table_shape) continue;
+            const members = try self.membersOf(shape, self.alloc);
+            defer self.alloc.free(members);
+            for (members) |member| {
+                const descriptor = (self.get(member) orelse continue).descriptor orelse continue;
+                try self.addDescriptorShapeEdge(member, 0, home, descriptor);
+            }
+        }
+    }
+
+    fn attachCallableResultShapes(self: *SemanticGraph, home: id) !void {
+        for (self.nested.of(home)) |relation| {
+            const node = self.get(relation) orelse continue;
+            if (node.kind != .func) continue;
+            const descriptor = node.result_descriptor orelse continue;
+            try self.addDescriptorShapeEdge(relation, 0, home, descriptor);
         }
     }
 
@@ -1759,6 +2443,7 @@ pub const SemanticGraph = struct {
     /// caller that lifts a graph twice does not get two censuses and two sets
     /// of place identities.
     pub fn liftPlaces(self: *SemanticGraph, mod: *const ast.Module) !void {
+        try self.requireOpen();
         if (self.places != null) return;
         self.places = try place.analyzeModule(self.alloc, mod);
     }
@@ -1781,6 +2466,7 @@ pub const SemanticGraph = struct {
     /// The place and region censuses of one relation body. Idempotent: a second
     /// lift is a no-op, so a graph lifted twice does not get two censuses.
     pub fn liftBodies(self: *SemanticGraph, mod: *const ast.Module) !void {
+        try self.requireOpen();
         if (self.bodies.items.len > 0) return;
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .func_decl) continue;
@@ -1839,6 +2525,8 @@ pub const SemanticGraph = struct {
         const mod_id = try self.liftModule(mod, file);
         try self.liftAliasShapes(mod, file, mod_id);
         try self.liftEnumShapes(mod, file, mod_id);
+        try self.attachMemberDescriptorShapes(mod_id);
+        try self.attachCallableResultShapes(mod_id);
         try self.liftFunctionBindings(mod, file);
         try self.liftPlaces(mod);
         try self.liftBodies(mod);
@@ -1866,9 +2554,14 @@ pub const SemanticGraph = struct {
                     try self.liftExprsFromExpr(cs.expr, file, parent, .discard);
                 },
                 .local_decl => |ld| {
+                    const rc = types.returnConsumptionForTargets(ld.names.len);
                     for (ld.inits) |v| {
-                        try self.liftExprsFromExpr(v, file, parent, .single);
+                        try self.liftExprsFromExpr(v, file, parent, rc);
                     }
+                },
+                .global_decl => |gd| {
+                    const rc = types.returnConsumptionForTargets(gd.names.len);
+                    for (gd.inits) |v| try self.liftExprsFromExpr(v, file, parent, rc);
                 },
                 .assign => |asgn| {
                     for (asgn.targets) |target| {
@@ -1905,8 +2598,9 @@ pub const SemanticGraph = struct {
                     try self.liftExprsFromExpr(cs.expr, file, parent, .discard);
                 },
                 .local_decl => |ld| {
+                    const rc = types.returnConsumptionForTargets(ld.names.len);
                     for (ld.inits) |v| {
-                        try self.liftExprsFromExpr(v, file, parent, .single);
+                        try self.liftExprsFromExpr(v, file, parent, rc);
                     }
                 },
                 .assign => |asgn| {
@@ -1964,7 +2658,8 @@ pub const SemanticGraph = struct {
                     try self.liftExprsFromExpr(cd.val, file, parent, .single);
                 },
                 .global_decl => |gd| {
-                    for (gd.inits) |v| try self.liftExprsFromExpr(v, file, parent, .single);
+                    const rc = types.returnConsumptionForTargets(gd.names.len);
+                    for (gd.inits) |v| try self.liftExprsFromExpr(v, file, parent, rc);
                 },
                 .match_stmt => |ms| {
                     try self.liftExprsFromExpr(ms.scrutinee, file, parent, .single);
@@ -2190,6 +2885,7 @@ pub const SemanticGraph = struct {
         OutOfMemory,
         DuplicateSemanticDeclaration,
         DerivedContainsIndex,
+        GraphIncarnationFrozen,
     };
 
     fn liftCaptureEdgesFromBlock(self: *SemanticGraph, block: *const ast.Block) CaptureLiftError!void {
@@ -2250,21 +2946,52 @@ pub const SemanticGraph = struct {
     /// `rememberFunc` keys `origin` on the AST pointer, so the SECOND call to
     /// the same foreign relation finds this node through `findFuncDecl` and no
     /// duplicate identity is created.
+    fn liftForeignHome(
+        self: *SemanticGraph,
+        module: id,
+        checked: *const sema.Sema,
+        home: []const u8,
+    ) !id {
+        for (self.nested.of(module)) |child| {
+            const node = self.get(child) orelse continue;
+            if (node.kind != .module) continue;
+            const candidate = node.foreign_home orelse continue;
+            if (std.mem.eql(u8, candidate, home)) return child;
+        }
+        const resolved = checked.resolvedHome(home) orelse return error.MissingSemanticDeclaration;
+        const foreign = try self.addChild(module, .{
+            .kind = .module,
+            .span = .{ .file = resolved.path, .start = 0, .end = 0 },
+            .name = resolved.home,
+            .foreign_home = resolved.home,
+        });
+        const first = self.nodes.items.len;
+        try self.liftAliasShapes(resolved.module, resolved.path, foreign);
+        try self.liftEnumShapes(resolved.module, resolved.path, foreign);
+        for (self.nodes.items[first..]) |*node| {
+            if (node.kind == .table_shape or node.kind == .enum_shape) node.foreign_home = resolved.home;
+        }
+        try self.attachMemberDescriptorShapes(foreign);
+        return foreign;
+    }
+
     fn liftForeignRelation(
         self: *SemanticGraph,
         module: id,
+        checked: *const sema.Sema,
         fact: sema.ApplicationFact,
         file: []const u8,
     ) !id {
         const home = fact.home orelse return error.MissingSemanticDeclaration;
         const fd = fact.target;
         if (fd.path.len != 1) return error.MissingSemanticDeclaration;
-        const func_id = try self.addChild(module, .{
+        const foreign = try self.liftForeignHome(module, checked, home);
+        const func_id = try self.addChild(foreign, .{
             .kind = .func,
             .span = .{ .file = file, .start = fd.loc.line, .end = fd.loc.col },
             .name = fd.path[0],
             .result_descriptor = try types.resolve(fd.func.ret_type, null, self.alloc),
-            .ast_ref = @constCast(@ptrCast(fd)),
+            .ast_ref = @ptrCast(@constCast(fd)),
             .foreign_home = home,
         });
         for (fd.func.params) |param| {
@@ -2274,7 +3001,219 @@ pub const SemanticGraph = struct {
                 .name = param.name,
             });
         }
+        try self.addDescriptorShapeEdge(func_id, 0, foreign, self.nodes.items[func_id].result_descriptor.?);
         return func_id;
+    }
+
+    /// Copy the checked callable's principal result pack into graph-owned
+    /// descriptors. A tuple annotation is syntax provenance for a semantic
+    /// pack, never a tuple value or mandatory aggregate representation.
+    fn checkedResultPack(
+        self: *SemanticGraph,
+        checked: *const sema.Sema,
+        fact: sema.ApplicationFact,
+    ) ![]types.ResolvedType {
+        switch (fact.target.func.ret_type) {
+            .tuple => |items| {
+                const results = try self.alloc.alloc(types.ResolvedType, items.len);
+                errdefer self.alloc.free(results);
+                for (items, 0..) |item, i| {
+                    results[i] = try types.resolve(item, @ptrCast(@constCast(checked)), self.alloc);
+                }
+                return results;
+            },
+            else => {
+                const results = try self.alloc.alloc(types.ResolvedType, 1);
+                results[0] = fact.result;
+                return results;
+            },
+        }
+    }
+
+    fn applicationForExpression(self: *const SemanticGraph, expr: *const Expr) ?*const ApplicationFact {
+        for (self.application_facts.items) |*fact| {
+            const node = self.get(fact.application) orelse continue;
+            const raw = node.ast_ref orelse continue;
+            const candidate: *const Expr = @ptrCast(@alignCast(raw));
+            if (candidate == expr) return self.application(fact.application);
+        }
+        return null;
+    }
+
+    const BindingAdjustmentSource = struct {
+        application: id,
+        source_pack: id,
+        members: []const id,
+    };
+
+    fn bindingAdjustmentSource(
+        self: *SemanticGraph,
+        source: *const Expr,
+        target_count: usize,
+    ) !?BindingAdjustmentSource {
+        if (target_count <= 1) return null;
+        const application_fact = self.applicationForExpression(source) orelse return null;
+        const source_fact = self.pack(application_fact.result_pack) orelse return error.InvalidPackAdjustment;
+        const source_members = self.packMembers(source_fact.pack) orelse return error.InvalidPackAdjustment;
+        const source_demands = self.demandsForRangeMut(source_fact.members) orelse return error.InvalidPackAdjustment;
+        for (source_demands, 0..) |*demand, i| {
+            demand.* = if (i < target_count) .value else .discard;
+        }
+        return .{
+            .application = application_fact.application,
+            .source_pack = application_fact.result_pack,
+            .members = source_members,
+        };
+    }
+
+    fn publishBindingTargetPack(
+        self: *SemanticGraph,
+        source: BindingAdjustmentSource,
+        target_pack: id,
+        members: []const PackMember,
+    ) !void {
+        try self.publishPack(
+            target_pack,
+            members,
+            .{ .fixed = @intCast(members.len) },
+            .{ .one = source.application },
+        );
+        try self.publishPackAdjustment(.{
+            .application = source.application,
+            .source_pack = source.source_pack,
+            .target_pack = target_pack,
+        });
+    }
+
+    fn publishBindingAdjustment(
+        self: *SemanticGraph,
+        checked: *const sema.Sema,
+        file: []const u8,
+        targets: []const *Expr,
+        source: *const Expr,
+    ) !void {
+        const adjustment_source = try self.bindingAdjustmentSource(source, targets.len) orelse return;
+
+        const target_pack = try self.addChild(adjustment_source.application, .{
+            .kind = .value,
+            .span = self.get(adjustment_source.application).?.span,
+            .knowledge = .stable,
+            .stage = .sema,
+        });
+        const target_members = try self.alloc.alloc(PackMember, targets.len);
+        defer self.alloc.free(target_members);
+        for (targets, 0..) |target, i| {
+            const descriptor = checked.exprDescriptor(target) orelse if (i < adjustment_source.members.len)
+                self.get(adjustment_source.members[i]).?.descriptor.?
+            else
+                types.ResolvedType.nil;
+            const value = try self.addApplicationValue(adjustment_source.application, target, file, descriptor);
+            target_members[i] = .{ .value = value, .demand = .value };
+        }
+        try self.publishBindingTargetPack(adjustment_source, target_pack, target_members);
+    }
+
+    fn localBindingForAdjustment(
+        self: *SemanticGraph,
+        checked: *const sema.Sema,
+        file: []const u8,
+        source: BindingAdjustmentSource,
+        name: *const ast.LocalName,
+        fallback: types.ResolvedType,
+    ) !id {
+        const descriptor = switch (name.typ) {
+            .inferred => fallback,
+            else => try types.resolve(name.typ, @ptrCast(@constCast(checked)), self.alloc),
+        };
+        const caller = self.get(source.application).?.scope orelse return error.InvalidPackAdjustment;
+        const raw: *const anyopaque = @ptrCast(name);
+        for (self.nested.of(caller)) |child| {
+            const node = self.get(child) orelse continue;
+            if (node.kind != .local or node.ast_ref != raw) continue;
+            if (node.descriptor) |existing| {
+                if (!std.meta.eql(existing, descriptor)) return error.InvalidPackAdjustment;
+            } else {
+                self.nodes.items[child].descriptor = descriptor;
+                self.nodes.items[child].knowledge = semantic_algebra.knowledgeOfType(descriptor);
+                self.nodes.items[child].stage = .sema;
+            }
+            return child;
+        }
+        return self.addChild(caller, .{
+            .kind = .local,
+            .span = .{ .file = file, .start = name.loc.line, .end = name.loc.col },
+            .name = name.ident,
+            .descriptor = descriptor,
+            .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+            .stage = .sema,
+            .ast_ref = @ptrCast(@constCast(name)),
+        });
+    }
+
+    fn publishDeclarationBindingAdjustment(
+        self: *SemanticGraph,
+        checked: *const sema.Sema,
+        file: []const u8,
+        names: []const ast.LocalName,
+        source_expr: *const Expr,
+    ) !void {
+        const adjustment_source = try self.bindingAdjustmentSource(source_expr, names.len) orelse return;
+        const target_pack = try self.addChild(adjustment_source.application, .{
+            .kind = .value,
+            .span = self.get(adjustment_source.application).?.span,
+            .knowledge = .stable,
+            .stage = .sema,
+        });
+        const target_members = try self.alloc.alloc(PackMember, names.len);
+        defer self.alloc.free(target_members);
+        for (names, 0..) |*name, i| {
+            const fallback = if (i < adjustment_source.members.len)
+                self.get(adjustment_source.members[i]).?.descriptor.?
+            else
+                types.ResolvedType.nil;
+            const binding = try self.localBindingForAdjustment(checked, file, adjustment_source, name, fallback);
+            target_members[i] = .{ .value = binding, .demand = .value };
+        }
+        try self.publishBindingTargetPack(adjustment_source, target_pack, target_members);
+    }
+
+    fn publishBindingAdjustmentsInBlock(
+        self: *SemanticGraph,
+        checked: *const sema.Sema,
+        file: []const u8,
+        block: *const ast.Block,
+    ) !void {
+        for (block.stmts) |*stmt| switch (stmt.*) {
+            .local_decl => |declaration| if (declaration.inits.len == 1)
+                try self.publishDeclarationBindingAdjustment(checked, file, declaration.names, declaration.inits[0]),
+            .global_decl => |declaration| if (!declaration.star and declaration.inits.len == 1)
+                try self.publishDeclarationBindingAdjustment(checked, file, declaration.names, declaration.inits[0]),
+            .assign => |assignment| if (assignment.values.len == 1)
+                try self.publishBindingAdjustment(checked, file, assignment.targets, assignment.values[0]),
+            .do_block => |nested| try self.publishBindingAdjustmentsInBlock(checked, file, &nested.body),
+            .while_loop => |loop| try self.publishBindingAdjustmentsInBlock(checked, file, &loop.body),
+            .repeat_loop => |loop| try self.publishBindingAdjustmentsInBlock(checked, file, &loop.body),
+            .num_for => |loop| try self.publishBindingAdjustmentsInBlock(checked, file, &loop.body),
+            .gen_for => |loop| try self.publishBindingAdjustmentsInBlock(checked, file, &loop.body),
+            .if_stmt => |conditional| {
+                try self.publishBindingAdjustmentsInBlock(checked, file, &conditional.then);
+                for (conditional.elseifs) |*branch| {
+                    try self.publishBindingAdjustmentsInBlock(checked, file, &branch.body);
+                }
+                if (conditional.else_body) |*branch| {
+                    try self.publishBindingAdjustmentsInBlock(checked, file, branch);
+                }
+            },
+            .try_stmt => |attempt| {
+                try self.publishBindingAdjustmentsInBlock(checked, file, &attempt.body);
+                for (attempt.catches) |*clause| {
+                    try self.publishBindingAdjustmentsInBlock(checked, file, &clause.body);
+                }
+            },
+            .defer_stmt => |deferred| try self.publishBindingAdjustmentsInBlock(checked, file, &deferred.body),
+            .func_decl => |function| try self.publishBindingAdjustmentsInBlock(checked, file, &function.func.body),
+            else => {},
+        };
     }
 
     /// Publish identities and descriptors that survived semantic checking.
@@ -2287,6 +3226,7 @@ pub const SemanticGraph = struct {
         file: []const u8,
     ) !id {
         self.module_path = file;
+        self.launch_worlds = checked.worlds;
         // THE DEFINER'S HALF OF `(home, name)`, established at the same moment
         // as the path it is derived from, so no consumer can observe a graph
         // that knows where the module came from and not which home it is.
@@ -2318,13 +3258,18 @@ pub const SemanticGraph = struct {
             const expr: *const Expr = @ptrCast(@alignCast(raw));
             const fact = checked.applicationFact(expr) orelse continue;
             const relation = self.findFuncDecl(fact.target) orelse
-                try self.liftForeignRelation(module, fact, file);
+                try self.liftForeignRelation(module, checked, fact, file);
             const caller = self.nodes.items[call_id].scope orelse return error.MissingApplicationCaller;
             const caller_node = self.get(caller) orelse return error.MissingApplicationCaller;
             if (!self.callable(caller) and caller_node.scope != null) return error.MissingApplicationCaller;
             if (self.nodes.items[call_id].demand == null) return error.MissingApplicationDemand;
 
-            self.nodes.items[call_id].descriptor = fact.result;
+            const result_descriptors = try self.checkedResultPack(checked, fact);
+            defer self.alloc.free(result_descriptors);
+            self.nodes.items[call_id].descriptor = if (result_descriptors.len > 0)
+                result_descriptors[0]
+            else
+                .void;
 
             var subject_value: ?id = null;
             if (fact.subject) |subject| {
@@ -2341,17 +3286,23 @@ pub const SemanticGraph = struct {
                 arguments[i] = try self.addApplicationValue(call_id, argument, file, descriptor);
                 try self.noteOrigin(arguments[i], argument, caller);
             }
-            const result = try self.addApplicationValue(call_id, expr, file, fact.result);
-            const results = [_]id{result};
+            const results = try self.alloc.alloc(id, result_descriptors.len);
+            defer self.alloc.free(results);
+            for (result_descriptors, 0..) |descriptor, i| {
+                results[i] = try self.addApplicationValue(call_id, expr, file, descriptor);
+                const relation_home = self.homeOf(relation) orelse return error.MissingSemanticDeclaration;
+                try self.addDescriptorShapeEdge(results[i], 0, relation_home, descriptor);
+            }
             try self.publishApplication(
                 call_id,
                 relation,
                 subject_value,
                 arguments,
-                &results,
+                results,
             );
             try self.publishApplicationProjections(call_id);
         }
+        try self.publishBindingAdjustmentsInBlock(checked, file, &mod.body);
         try self.liftCaptureEdges(mod);
         try self.publishApplicationEffects(mod);
         // AFTER the effect fixpoint, deliberately. That pass blocks a relation
@@ -2379,8 +3330,8 @@ pub const SemanticGraph = struct {
     /// world in sight. Three Cards, three questions.
     ///
     /// EVERY ANSWER COMES FROM `subject_home.declarations`, which is the sole
-    /// authority for what a world is, what it provides, where it is injected
-    /// and what that injection confers. This pass adds NO name list: it asks
+    /// authority for what a world is, what it provides, how it is granted, and
+    /// what that reach confers. This pass adds NO name list: it asks
     /// the world table the same questions the resolver asks.
     ///
     /// THE MODULE WINS. `docs/rulings.md`: "injection ADDS reach, it never TAKES
@@ -2398,7 +3349,7 @@ pub const SemanticGraph = struct {
             const node = self.get(site) orelse continue;
             const raw = node.ast_ref orelse continue;
             const expr: *const Expr = @ptrCast(@alignCast(raw));
-            const reached = self.worldOfApplication(file, site, expr) orelse continue;
+            const reached = self.worldOfApplication(site, expr) orelse continue;
             try drawn.append(self.alloc, .{
                 .application = site,
                 .home = reached.home,
@@ -2487,7 +3438,6 @@ pub const SemanticGraph = struct {
     /// inference `face-role-launch-one.md` §1 forbids.
     fn worldOfApplication(
         self: *const SemanticGraph,
-        file: []const u8,
         site: id,
         expr: *const Expr,
     ) ?Reached {
@@ -2513,14 +3463,14 @@ pub const SemanticGraph = struct {
             .call => |c| switch (c.func.*) {
                 .name => |n| {
                     if (self.findFunc(n.ident) != null) return .{ .home = null, .member = "" };
-                    const home = subject_home.injectedWorldProvidingFor(file, n.ident) orelse return null;
+                    const home = subject_home.injectedWorldProvidingFor(self.launch_worlds.slice(), n.ident) orelse return null;
                     return .{ .home = home, .member = n.ident };
                 },
                 // `math.sqrt(x)`, `c.abs(v)`, `os.env(k)` — the ANCHORED face,
                 // where the world is named outright and nothing is inferred.
                 .field => |f| {
                     if (f.obj.* != .name) return null;
-                    const home = subject_home.worldNamedFor(file, f.obj.name.ident) orelse return null;
+                    const home = subject_home.worldNamedFor(self.launch_worlds.slice(), f.obj.name.ident) orelse return null;
                     if (!subject_home.homeProvides(home, f.field)) return null;
                     return .{ .home = home, .member = f.field };
                 },
@@ -2530,7 +3480,7 @@ pub const SemanticGraph = struct {
                 if (mc.obj.* != .name) return null;
                 const receiver = mc.obj.name.ident;
                 // `test:assert(c, m)` — the world reached on its own subject.
-                if (subject_home.worldNamedFor(file, receiver)) |home| {
+                if (subject_home.worldNamedFor(self.launch_worlds.slice(), receiver)) |home| {
                     if (!subject_home.homeProvides(home, mc.method)) return null;
                     return .{ .home = home, .member = mc.method };
                 }
@@ -2538,8 +3488,8 @@ pub const SemanticGraph = struct {
                 // different subject carries the relation, which is the whole of
                 // cross-projection. The world drawn is the one that supplied
                 // the standing name.
-                if (subject_home.suppliedInstanceFor(file, receiver) != null) {
-                    if (!subject_home.fileInhabits(.io, file)) return null;
+                if (subject_home.suppliedInstanceFor(self.launch_worlds.slice(), receiver) != null) {
+                    if (!subject_home.worldReached(self.launch_worlds.slice(), .io)) return null;
                     return .{ .home = .io, .member = receiver };
                 }
                 return null;
@@ -2679,8 +3629,8 @@ pub const SemanticGraph = struct {
         // already knows about, with no edit here.
         if (mc.obj.* == .name) {
             const receiver = mc.obj.name.ident;
-            if (subject_home.worldNamedFor(self.module_path, receiver) != null) return false;
-            if (subject_home.suppliedInstanceFor(self.module_path, receiver) != null) return false;
+            if (subject_home.worldNamedFor(self.launch_worlds.slice(), receiver) != null) return false;
+            if (subject_home.suppliedInstanceFor(self.launch_worlds.slice(), receiver) != null) return false;
         }
 
         // A module that declares its own relation of this name OWNS the
@@ -4088,6 +5038,46 @@ test "semantic_graph: function identities carry resolved result descriptors" {
     try std.testing.expect(g.resolveInHome(home, "missing", .func) == null);
 }
 
+test "semantic_graph: tuple return descriptor publishes one semantic result pack" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\pair(n: i64, s: str): (i64, str)
+        \\    return n, s
+        \\main(): i64
+        \\    a, b = pair(7, "ok")
+        \\    a
+    ;
+    var lex = Lexer.init(src, "result-pack.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "result-pack.id");
+    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+    const application_fact = graph.applications()[0];
+    const results = graph.applicationResults(application_fact.application).?;
+    try std.testing.expectEqual(@as(usize, 2), results.len);
+    try std.testing.expectEqual(types.ResolvedType.i64, graph.get(results[0]).?.descriptor.?);
+    try std.testing.expectEqual(types.ResolvedType.str, graph.get(results[1]).?.descriptor.?);
+    try std.testing.expect(graph.applicationResult(application_fact.application) == null);
+    try std.testing.expectEqualSlices(PackMemberDemand, &.{ .value, .value }, graph.packMemberDemands(application_fact.result_pack).?);
+    const adjustment = graph.packAdjustment(application_fact.application).?;
+    try std.testing.expectEqual(application_fact.result_pack, adjustment.source_pack);
+    try std.testing.expectEqual(@as(?u32, 2), graph.pack(adjustment.target_pack).?.arity.fixedPrefix());
+    try std.testing.expectEqual(@as(usize, 2), graph.packMembers(adjustment.target_pack).?.len);
+}
+
 test "semantic_graph: checked subject application retains relation and value identities" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -4176,11 +5166,12 @@ test "semantic_graph: checked subject application retains relation and value ide
     try std.testing.expectEqual(unresolved_before + 1, graph.unresolvedApplicationCount(null));
     graph.nodes.items[results[0]].descriptor = result_descriptor;
 
-    const result_range = graph.application_facts.items[row].results;
-    graph.application_facts.items[row].results.start = std.math.maxInt(u32);
+    const result_pack_row = graph.pack_rows.get(fact.result_pack).?;
+    const result_range = graph.pack_facts.items[result_pack_row].members;
+    graph.pack_facts.items[result_pack_row].members.start = std.math.maxInt(u32);
     try std.testing.expect(graph.application(fact.application) == null);
     try std.testing.expectEqual(unresolved_before + 1, graph.unresolvedApplicationCount(null));
-    graph.application_facts.items[row].results = result_range;
+    graph.pack_facts.items[result_pack_row].members = result_range;
 
     // Transitional kinds and containment do not own application meaning. The
     // candidate column and packed roles retain the exact semantic identities.
@@ -4371,7 +5362,8 @@ test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
     try std.testing.expectError(error.UnresolvedApplication, g.moduleFunctionEmitOrder(alloc, &functions));
     g.application_rows.items[unresolved] = application_row;
 
-    g.application_facts.items[0].results.len = std.math.maxInt(u32);
+    const result_pack_row = g.pack_rows.get(g.application_facts.items[0].result_pack).?;
+    g.pack_facts.items[result_pack_row].members.len = std.math.maxInt(u32);
     try std.testing.expectError(error.UnresolvedApplication, g.moduleFunctionEmitOrder(alloc, &functions));
 }
 
@@ -4628,6 +5620,60 @@ test "semantic_graph: textual projections refuse same-kind ambiguity" {
     try std.testing.expect(graph.findFunc("same") == null);
 }
 
+test "semantic_graph: packs preserve exact identity arity order and demand" {
+    var graph = SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const module = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "packs.id", .start = 0, .end = 0 },
+    });
+    const first = try graph.addChild(module, .{
+        .kind = .value,
+        .span = .{ .file = "packs.id", .start = 1, .end = 1 },
+        .descriptor = .i64,
+    });
+    const second = try graph.addChild(module, .{
+        .kind = .value,
+        .span = .{ .file = "packs.id", .start = 1, .end = 2 },
+        .descriptor = .str,
+    });
+    const open_pack = try graph.addChild(module, .{
+        .kind = .value,
+        .span = .{ .file = "packs.id", .start = 1, .end = 3 },
+    });
+    const members = [_]PackMember{
+        .{ .value = first, .demand = .value },
+        .{ .value = second, .demand = .discard },
+    };
+    try graph.publishPack(open_pack, &members, .{ .open = 2 }, .none);
+    try std.testing.expectEqualSlices(id, &.{ first, second }, graph.packMembers(open_pack).?);
+    try std.testing.expectEqualSlices(PackMemberDemand, &.{ .value, .discard }, graph.packMemberDemands(open_pack).?);
+    try std.testing.expectEqual(@as(?u32, 2), graph.pack(open_pack).?.arity.fixedPrefix());
+    try std.testing.expectError(error.DemandedPackCannotDisappear, graph.selectPackRealization(open_pack, .none));
+
+    const bad_pack = try graph.addChild(module, .{
+        .kind = .value,
+        .span = .{ .file = "packs.id", .start = 2, .end = 1 },
+    });
+    try std.testing.expectError(
+        error.InvalidPackFact,
+        graph.publishPack(bad_pack, &members, .{ .fixed = 1 }, .none),
+    );
+    try std.testing.expect(graph.pack(bad_pack) == null);
+
+    const absent_pack = try graph.addChild(module, .{
+        .kind = .value,
+        .span = .{ .file = "packs.id", .start = 3, .end = 1 },
+    });
+    const discarded = [_]PackMember{
+        .{ .value = first, .demand = .discard },
+        .{ .value = second, .demand = .discard },
+    };
+    try graph.publishPack(absent_pack, &discarded, .{ .fixed = 2 }, .none);
+    try graph.selectPackRealization(absent_pack, .none);
+    try std.testing.expectEqual(PackRealization.none, graph.pack(absent_pack).?.realization);
+}
+
 test "semantic_graph: packed application facts reject duplicate and wrong roles" {
     var graph = SemanticGraph.init(std.testing.allocator);
     defer graph.deinit();
@@ -4676,6 +5722,12 @@ test "semantic_graph: packed application facts reject duplicate and wrong roles"
     try std.testing.expectEqual(subject, graph.applicationSubject(application).?);
     try std.testing.expectEqualSlices(id, &arguments, graph.applicationArguments(application).?);
     try std.testing.expectEqual(result, graph.applicationResult(application).?);
+    const application_fact = graph.application(application).?;
+    try std.testing.expect(application_fact.operand_pack != application_fact.result_pack);
+    try std.testing.expectEqualSlices(PackMemberDemand, &.{.value}, graph.packMemberDemands(application_fact.operand_pack).?);
+    try std.testing.expectEqualSlices(PackMemberDemand, &.{.unknown}, graph.packMemberDemands(application_fact.result_pack).?);
+    try std.testing.expectEqual(Card.unknown, graph.packEffect(application_fact.result_pack));
+    try std.testing.expectEqual(Card.unknown, graph.packWorld(application_fact.result_pack));
     try std.testing.expect(graph.application(@intCast(graph.nodes.items.len)) == null);
 
     graph.nodes.items[application].demand = null;
@@ -4827,8 +5879,8 @@ test "semantic_graph: checked occurrences keep distinct packed ranges" {
         graph.applicationRelation(facts[0].application).?,
         graph.applicationRelation(facts[1].application).?,
     );
-    try std.testing.expect(facts[0].arguments.start != facts[1].arguments.start);
-    try std.testing.expect(facts[0].results.start != facts[1].results.start);
+    try std.testing.expect(facts[0].operand_pack != facts[1].operand_pack);
+    try std.testing.expect(facts[0].result_pack != facts[1].result_pack);
     for (facts) |fact| {
         try std.testing.expectEqual(@as(usize, 2), graph.applicationArguments(fact.application).?.len);
         try std.testing.expectEqual(@as(usize, 1), graph.applicationResults(fact.application).?.len);
@@ -4922,7 +5974,7 @@ test "semantic_graph: duplicate declaration provenance refuses" {
     );
     try std.testing.expectError(
         error.DuplicateSemanticDeclaration,
-                graph.addChild(parent, .{
+        graph.addChild(parent, .{
             .kind = .func,
             .span = .{ .file = "duplicate-declaration.id", .start = 1, .end = 1 },
             .name = "duplicate",
@@ -5781,4 +6833,98 @@ test "semantic_graph: gate transport census clears bootstrap-only unresolved app
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "scripts/census/language.id");
     try std.testing.expectEqual(@as(usize, 0), graph.unresolvedApplicationCountExcludingBootstrap(null));
+}
+
+test "semantic_graph: continuity requires a witnessed cross-incarnation fact" {
+    var before = SemanticGraph.init(std.testing.allocator);
+    defer before.deinit();
+    const old = try before.addNode(.{
+        .kind = .func,
+        .span = .{ .file = "old/place.id", .start = 1, .end = 1 },
+        .name = "parse",
+    });
+
+    var after = SemanticGraph.init(std.testing.allocator);
+    defer after.deinit();
+    const current = try after.addNode(.{
+        .kind = .func,
+        .span = .{ .file = "moved/place.id", .start = 9, .end = 9 },
+        .name = "parse",
+    });
+    const witness = try after.addNode(.{
+        .kind = .transform_app,
+        .span = .{ .file = "moved/place.id", .start = 9, .end = 9 },
+    });
+
+    var history = History.init(std.testing.allocator);
+    defer history.deinit();
+    _ = try history.register(&before, .{ .revision = .{ .known = "before" } });
+    try std.testing.expectError(error.GraphIncarnationFrozen, before.addNode(.{
+        .kind = .value,
+        .span = .{ .file = "old/place.id", .start = 2, .end = 2 },
+    }));
+    const old_ref = try before.entityRef(old);
+    _ = try history.register(&after, .{
+        .revision = .{ .known = "after" },
+        .producer = .{ .one = old_ref },
+    });
+    const current_ref = try after.entityRef(current);
+    const witness_ref = try after.entityRef(witness);
+
+    // Equal spelling cannot establish continuity, even across a file move.
+    try std.testing.expect(history.exactSuccessor(old_ref) == null);
+    _ = try history.addCorrespondence(.{
+        .predecessors = &.{old_ref},
+        .successors = &.{current_ref},
+        .relationship = .preserved,
+        .preservation = .exact,
+        .witness = witness_ref,
+        .transformation = .{ .one = witness_ref },
+        .provenance = .{ .one = witness_ref },
+        .stage = .{ .one = .transform },
+    });
+    try std.testing.expectEqual(current_ref, history.exactSuccessor(old_ref).?);
+}
+
+test "semantic_graph: correspondence cardinality and entity bounds fail closed" {
+    var before = SemanticGraph.init(std.testing.allocator);
+    defer before.deinit();
+    const old = try before.addNode(.{
+        .kind = .value,
+        .span = .{ .file = "before.id", .start = 1, .end = 1 },
+    });
+    var after = SemanticGraph.init(std.testing.allocator);
+    defer after.deinit();
+    const current = try after.addNode(.{
+        .kind = .value,
+        .span = .{ .file = "after.id", .start = 1, .end = 1 },
+    });
+    const witness = try after.addNode(.{
+        .kind = .transform_app,
+        .span = .{ .file = "after.id", .start = 1, .end = 1 },
+    });
+
+    var history = History.init(std.testing.allocator);
+    defer history.deinit();
+    _ = try history.register(&before, .{});
+    _ = try history.register(&after, .{});
+    const old_ref = try before.entityRef(old);
+    const current_ref = try after.entityRef(current);
+    const witness_ref = try after.entityRef(witness);
+
+    try std.testing.expectError(error.InvalidCorrespondenceCardinality, history.addCorrespondence(.{
+        .predecessors = &.{old_ref},
+        .successors = &.{current_ref},
+        .relationship = .split,
+        .preservation = .lawful_refinement,
+        .witness = witness_ref,
+    }));
+    try std.testing.expectError(error.InvalidGraphEntityRef, history.addCorrespondence(.{
+        .predecessors = &.{old_ref},
+        .successors = &.{.{ .incarnation = current_ref.incarnation, .entity = 99 }},
+        .relationship = .replaced,
+        .preservation = .lawful_refinement,
+        .witness = witness_ref,
+    }));
+    try std.testing.expectEqual(@as(usize, 0), history.correspondenceCount());
 }

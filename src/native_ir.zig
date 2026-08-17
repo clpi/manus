@@ -31,9 +31,26 @@ pub const HardwareTier = dnir_hardware.Tier;
 pub const FieldKind = enum { i64, str, f64 };
 
 pub const RecordDesc = struct {
+    /// Exact graph descriptor-shape identity. Null is reserved for hand-built
+    /// physical fixtures; production lowering always supplies it.
+    semantic_shape: ?semantic_graph.id = null,
     name: []const u8,
     fields: []const []const u8,
     kinds: []const FieldKind,
+    /// THE FIELD'S DECLARED WIDTH, which `kinds` DESTROYS.
+    ///
+    /// `FieldKind` has three members and every integer width answers `.i64`,
+    /// so `R: { f: i32 }` and `R: { f: i64 }` were the same record by the time
+    /// the store was chosen and `r.f = r.f + 2000000000` never projected —
+    /// measured wrong at all six widths, folded AND emitted. That is this
+    /// file's own §92 complaint about `BinOpTag` a second time: a three-member
+    /// HOST enum deciding how many integers Idol has.
+    ///
+    /// `kinds` is NOT widened, because its three members are a REALIZATION
+    /// question (which register file, which store form) and this is a SEMANTIC
+    /// one (what value the place holds). Null means full-width — `i64`, `u64`,
+    /// `str`, `f64` — so nothing on the i64 path changes.
+    widths: []const ?types.ResolvedType = &.{},
 };
 
 pub const BinOpTag = enum {
@@ -369,6 +386,7 @@ pub fn isBootstrapForeignCall(callee: []const u8) bool {
         "ceil",
         "cos",
         "duo_str_sub",
+        "duo_str_to_f64",
         "duo_str_to_i64",
         "exit",
         "fabs",

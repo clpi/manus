@@ -4456,27 +4456,10 @@ pub const CodeGen = struct {
     }
 
     fn stmt_is_native_scalar(self: *CodeGen, stmt: *const ast.Stmt, allow_return: bool) bool {
-        // §3.1 — a return pack (`a, b = f()`: several targets, one call)
-        // is emitted via `lua_mret_clear` / `lua_mret_get`, which the full-native
-        // profile never declares. Treating such a function as native-scalar
-        // produced C that referenced undeclared `lua_mret_*` and failed to
-        // compile — so `for v in tbl` and `if a, b = f()` could not be built in a
-        // typed module at all. Excluding packs here keeps the lua runtime present
-        // for exactly the functions that need it. When correlated packs gain a
-        // native ABI (§3.1 proper), this exclusion is what gets deleted.
+        // Global declarations still need their graph binding-pack consumer.
+        // Local declarations and ordinary assignments are admitted here: DNIR
+        // consumes the exact graph adjustment and refuses if it is missing.
         switch (stmt.*) {
-            .assign => |as| {
-                if (as.targets.len != as.values.len) {
-                    self.nativeDiagFail("return-pack-assign");
-                    return false;
-                }
-            },
-            .local_decl => |ld| {
-                if (ld.names.len != ld.inits.len and ld.inits.len == 1) {
-                    self.nativeDiagFail("return-pack-local-decl");
-                    return false;
-                }
-            },
             .global_decl => |gd| {
                 if (gd.names.len != gd.inits.len and gd.inits.len == 1) {
                     self.nativeDiagFail("return-pack-global-decl");
@@ -4619,7 +4602,10 @@ pub const CodeGen = struct {
             },
             .assign => |as| blk: {
                 if (relation.declFromAssign(as) != null) break :blk true;
-                if (as.targets.len != as.values.len) break :blk false;
+                // One application may feed a wider binding pack. This gate
+                // admits the surface shape only; DNIR must consume the exact
+                // graph PackAdjustment and refuses when that fact is absent.
+                if (as.targets.len != as.values.len and as.values.len != 1) break :blk false;
                 if (as.targets.len == 1 and as.values.len == 1 and as.targets[0].* == .name) {
                     var pathbuf: [512]u8 = undefined;
                     if (self.moduleBindingPath(as.values[0], &pathbuf)) |path| {
@@ -5563,10 +5549,21 @@ pub const CodeGen = struct {
                     }
                     if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "mem")) {
                         const nargs = call.args.len;
+                        // `ptr_from_addr(T, a)` is listed apart because its
+                        // FIRST operand is a DESCRIPTOR, not a value. Running
+                        // `expr_is_native_scalar` over it asks a type name for
+                        // its register and is answered no, which would
+                        // disqualify the module in front of a lowering that
+                        // never touches that operand.
+                        if (std.mem.eql(u8, f.field, "ptr_from_addr") and nargs == 2) {
+                            break :blk self.expr_is_native_scalar(call.args[1]);
+                        }
                         const ok_mem = (std.mem.eql(u8, f.field, "alloc") and nargs == 1) or
                             (std.mem.eql(u8, f.field, "free") and nargs == 1) or
                             (std.mem.eql(u8, f.field, "read_byte") and nargs == 2) or
                             (std.mem.eql(u8, f.field, "read_i64") and nargs == 2) or
+                            (std.mem.eql(u8, f.field, "write_byte") and nargs == 3) or
+                            (std.mem.eql(u8, f.field, "write_i64") and nargs == 3) or
                             (std.mem.eql(u8, f.field, "zero") and nargs == 2) or
                             (std.mem.eql(u8, f.field, "addr") and nargs == 1);
                         if (ok_mem) {
@@ -16279,7 +16276,6 @@ pub const CodeGen = struct {
         }
     }
 
-
     fn emit_bound_field_call(self: *CodeGen, c: anytype) E!void {
         const f = c.func.field;
         const hash = calc_lua_hash(f.field);
@@ -17485,7 +17481,7 @@ pub const CodeGen = struct {
                         // qualified call and fell through to duo_fatal, which is
                         // what blocked a Duo code generator from calling stdlib
                         // primitives such as std.emit.
-                                    self.p("duo_fatal(\"unlowered native call\")", .{});
+                        self.p("duo_fatal(\"unlowered native call\")", .{});
                         return;
                     }
                     const invoke_result_rt = self.expr_type(expr);

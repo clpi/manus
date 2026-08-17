@@ -572,8 +572,12 @@ pub const Sema = struct {
     /// Collected `@build.*` module directives from the current module.
     build_directives: std.ArrayListUnmanaged(ast.Attribute) = .empty,
     debug_directives: std.ArrayListUnmanaged(ast.Attribute) = .empty,
-    /// Duo source path for resolving `@c.import` header paths.
+    /// Source provenance for foreign-header and home resolution. It never
+    /// grants a world.
     source_path: ?[]const u8 = null,
+    /// Exact worlds supplied by the launcher. Resolution and graph publication
+    /// consume this set instead of reconstructing authority from source paths.
+    worlds: subject_home.WorldSet,
     /// Imported C record descriptors keyed by foreign type name (e.g. CPoint).
     foreign_records: std.StringHashMapUnmanaged(RT) = .{},
     /// Imported C function descriptors keyed by Duo name (e.g. distance2).
@@ -585,33 +589,19 @@ pub const Sema = struct {
         options: directives.TestOptions,
     };
 
-    /// WHICH WORLDS REACH THIS FILE — derived from where the file LIVES.
-    ///
-    /// Assertions do not belong in a directive namespace (`@comp.assert`) and
-    /// do not belong in every program either. They belong to a `test` world,
-    /// and which files inhabit that world is already stated by where they LIVE:
-    /// a `test/` component in the path, or a `*_test.id` stem. Deriving it from
-    /// structure means no import, no attribute, and no way for a non-test file
-    /// to reach an assertion by accident.
-    ///
-    /// THE MECHANISM IS NO LONGER THE TEST WORLD'S. This was `inTestWorld`, four
-    /// `std.mem` calls against a path, hardcoded to one world in a file that is
-    /// not where worlds are described — so the ONE structure-derived fact in the
-    /// compiler lived apart from the thing it decided, and no second world could
-    /// have one without a second copy of it. The predicate is now a property of
-    /// the world (`subject_home.Structure`), every world is asked the same
-    /// question, and `os`/`io`/`string`/`math`/`table` answer it with `always`.
+    /// WHICH WORLDS REACH THIS COMPILATION, supplied by the launcher as exact
+    /// identities. Source provenance cannot answer this question.
     fn inhabitsWorld(self: *const Sema, world: subject_home.Home) bool {
-        return subject_home.fileInhabits(world, self.source_path);
+        return subject_home.worldReached(self.worlds.slice(), world);
     }
 
     fn is_builtin_global(self: *const Sema, name: []const u8) bool {
         // A WORLD'S OWN NAME, admitted only where the world reaches. `os`, `io`,
         // `string`, `math` and `table` are injected everywhere and were a
-        // hardcoded five-name disjunction below; `test` is injected by structure
-        // and was a hardcoded special case above it. One question now, asked of
+        // hardcoded five-name disjunction below; `test` requires a launcher
+        // witness and was a hardcoded special case above it. One question, asked of
         // the declaration, so a world added to the table is nameable with no
-        // edit here — and a world that does not reach this file is an ordinary
+        // edit here — and a world that does not reach this launch is an ordinary
         // word in it.
         if (subject_home.worldNamed(name)) |world| {
             if (!self.inhabitsWorld(world)) return false;
@@ -643,13 +633,9 @@ pub const Sema = struct {
         // membership of the world is the fact that confers the reach, and it
         // is asked here. See `subject_home.injectedWorlds`.
         //
-        // AND IT IS ASKED OF THIS FILE. `injectedWorldProvidingFor` takes the
-        // source path, so which member edges are bare here is decided by which
-        // worlds reach here — the same derivation that decides whether `test`
-        // is a world in this file. Every world in the shipped table is injected
-        // `always`, so the answer does not yet vary with the path; the QUESTION
-        // does, which is what a structure-injected world with `Reach.bare` would
-        // need and what a hardcoded list could never express.
+        // AND IT IS ASKED OF THE LAUNCH-WORLD SET. Which member edges are bare
+        // follows the exact grants the launcher supplied; source provenance is
+        // not consulted here.
         //
         // A LOCAL WINS, and the check is made HERE rather than assumed. Two of
         // this function's three callers ask only after `scope.lookup` failed,
@@ -658,7 +644,7 @@ pub const Sema = struct {
         // have stopped being captured as an upvalue and a closure would have
         // read the world instead. That is a silent wrong answer, which is the
         // one failure mode this whole convergence exists to avoid.
-        if (subject_home.injectedWorldProvidingFor(self.source_path, name) != null)
+        if (subject_home.injectedWorldProvidingFor(self.worlds.slice(), name) != null)
             return self.userBinding(name) == null;
         // A STANDING INSTANCE the injected `io` world supplies — `stdout`,
         // `stderr`, `stdin` — is deliberately NOT admitted here, and the reason
@@ -791,7 +777,12 @@ pub const Sema = struct {
             .current_ret_fallible = false,
             .next_closure_id = 0,
             .table_field_types = .empty,
+            .worlds = subject_home.injectedWorlds(),
         };
+    }
+
+    pub fn grantWorld(self: *Sema, world: subject_home.Home) void {
+        self.worlds.add(world);
     }
 
     /// Check whether the current function's return type is result-compatible.
@@ -845,6 +836,27 @@ pub const Sema = struct {
             self.alloc.free(key);
         };
         return answer;
+    }
+
+    /// The already-resolved home with this semantic home identity. This never
+    /// invokes the loader and never treats a source spelling as authority: an
+    /// application fact has already retained `ForeignHome.home`, and graph
+    /// publication uses this accessor only to project that home's descriptor
+    /// declarations into graph facts. Two different modules claiming one home
+    /// make the answer ambiguous and therefore absent.
+    pub fn resolvedHome(self: *const Sema, home: []const u8) ?ForeignHome {
+        var found: ?ForeignHome = null;
+        var it = self.foreign_homes.valueIterator();
+        while (it.next()) |entry| {
+            const candidate = entry.* orelse continue;
+            if (!std.mem.eql(u8, candidate.home, home)) continue;
+            if (found) |prior| {
+                if (prior.module != candidate.module) return null;
+            } else {
+                found = candidate;
+            }
+        }
+        return found;
     }
 
     /// A bare dotted NAME CHAIN written into `buf`: `a` -> `a`, `a.b.c` ->
@@ -3352,7 +3364,7 @@ pub const Sema = struct {
         // (`methodCallResolved`) and nowhere else — so `refuseWorldStreamFace`
         // and every other world rule treated `test` as a world in every file in
         // the tree. One question, asked once, for every world.
-        return subject_home.worldNamedFor(self.source_path, ident);
+        return subject_home.worldNamedFor(self.worlds.slice(), ident);
     }
 
     /// THE `io` PROJECTION, refused at SEMA in both application faces.
@@ -3494,7 +3506,7 @@ pub const Sema = struct {
         if (obj.* != .name) return false;
         if (!std.mem.eql(u8, obj.name.ident, "os")) return false;
         // The world has to REACH this file, and the program must not bind `os`.
-        const world = subject_home.worldNamedFor(self.source_path, "os") orelse return false;
+        const world = subject_home.worldNamedFor(self.worlds.slice(), "os") orelse return false;
         if (world != .os) return false;
         if (self.userBinding("os") != null) return false;
 
@@ -3603,7 +3615,7 @@ pub const Sema = struct {
         // picking by declaration import or path priority" — the failure has to
         // be readable, or the next reader concludes the name simply does not
         // exist and adds it a third time.
-        switch (subject_home.bareReachFor(self.source_path, name)) {
+        switch (subject_home.bareReachFor(self.worlds.slice(), name)) {
             .ambiguous => |pair| {
                 self.err(
                     loc,
@@ -3736,7 +3748,7 @@ pub const Sema = struct {
         // instance. A parameter or local spelled `stdout` is an ordinary subject
         // and answers from its own conformance. `gate/shadow.id` runs both forms.
         if (obj.* == .name and self.userBinding(obj.name.ident) == null) {
-            if (subject_home.suppliedInstanceFor(self.source_path, obj.name.ident)) |supplied| {
+            if (subject_home.suppliedInstanceFor(self.worlds.slice(), obj.name.ident)) |supplied| {
                 if (subject_home.homeForConformance(supplied.protocol, method)) |_| return true;
             }
         }
@@ -3752,16 +3764,9 @@ pub const Sema = struct {
         // relation's name alone could not refuse `"hi":floor()`, because it
         // never looked at `"hi"`.
         if (self.subjectHome(obj, method, ot)) |owner| {
-            // A WORLD'S RELATIONS RESOLVE ONLY WHERE THE WORLD REACHES. Without
-            // this the world was admitted as a name in `test/` but
-            // `test:assert(...)` resolved anywhere, which is the opposite of
-            // deriving reach from location.
-            //
-            // Asked of every world instead of hardcoded to `.testing`: `owner`
-            // here can be any of six, and five of them answer `always`. The
-            // `.testing` spelling made the ONE structure-injected world a
-            // special case at its ONE consumer, so a second such world would
-            // have resolved everywhere and nothing would have said so.
+            // A WORLD'S RELATIONS RESOLVE ONLY WHERE THE WORLD REACHES. The
+            // answer is uniform for every world and comes from the launcher's
+            // exact grant set, never from source provenance.
             return self.inhabitsWorld(owner);
         }
         if (ot == .str or ot == .any) {
@@ -3947,7 +3952,7 @@ pub const Sema = struct {
                 // `userBinding`, not `lookup`: a program that binds `env`
                 // itself owns the word and keeps its global, by the same rule
                 // that gives it the name everywhere else.
-                if (subject_home.injectedWorldProvidingFor(self.source_path, n.ident) != null and
+                if (subject_home.injectedWorldProvidingFor(self.worlds.slice(), n.ident) != null and
                     self.userBinding(n.ident) == null)
                 {
                     return .any;
