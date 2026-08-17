@@ -72,6 +72,7 @@ const semantic_graph = @import("semantic_graph.zig");
 const table_apply = @import("table_apply.zig");
 const native_bootstrap = @import("native_bootstrap.zig");
 const subject_home = @import("subject_home.zig");
+const launch_role = @import("launch_role.zig");
 const sim = @import("sim.zig");
 const sim_pipeline = @import("sim_pipeline.zig");
 const knowledge_snapshot = @import("knowledge_snapshot.zig");
@@ -3039,6 +3040,17 @@ const HomeLoaderCtx = struct {
     }
 };
 
+/// Convert launcher provenance into exact world witnesses once, at ingress.
+/// Downstream semantic consumers receive identities and never inspect the path.
+fn launchWorlds(src_path: []const u8) subject_home.WorldSet {
+    var worlds = subject_home.injectedWorlds();
+    switch (launch_role.forSource(src_path)) {
+        .ordinary => {},
+        .testing => worlds.add(.testing),
+    }
+    return worlds;
+}
+
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
     const src = try read_source(alloc, io, src_path);
     term.setSource(src_path, src);
@@ -3069,6 +3081,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     sem.lua55_mode = lex.source_law == .lua;
     sem.idol_mode = lex.family == lexer_bridge.family_canon;
     sem.source_path = try alloc.dupe(u8, src_path);
+    sem.worlds = launchWorlds(src_path);
     {
         const ctx = try alloc.create(HomeLoaderCtx);
         ctx.* = .{ .alloc = alloc, .io = io, .from = sem.source_path.? };
@@ -4342,12 +4355,11 @@ fn buildCacheKey(
     // cache serves a validation-waived artifact to a path that never waived it.
     const waived: u8 = if (native_bootstrap.gateTransport(src_path)) 1 else 0;
     h.update(std.mem.asBytes(&waived));
-    // ...AND WHICH WORLDS REACH IT, which is the second path-dependent rule the
-    // note above said would have to be hashed here. It was already live and was
-    // already wrong: the test world is injected by FILE STRUCTURE, so
-    // `test:assert(c, m)` resolves in `foo_test.id` and is REFUSED in `plain.id`
-    // — and with only the source bytes and the waiver in the key, two
-    // byte-identical files hit one entry. MEASURED, same bytes, same directory:
+    // ...AND WHICH WORLDS THE LAUNCHER GRANTED. Source structure may select a
+    // launch role, but only `launchWorlds` turns that role into exact world
+    // identities. With only source bytes and the waiver in the key, two
+    // byte-identical files launched under different roles hit one entry.
+    // MEASURED, same bytes, same directory:
     //
     //     idol compile foo_test.id   ok compile        ./foo_test.out -> 2
     //     idol check   plain.id      REFUSED
@@ -4357,11 +4369,7 @@ fn buildCacheKey(
     // binary for it. That is the §40 failure in its worst form — not a stale
     // artifact but an artifact built under RULES THIS FILE DOES NOT HAVE.
     //
-    // A SET, not a bool, and derived rather than listed: `injectedWorldsFor`
-    // answers from each world's own `Injection` declaration, so a world that
-    // grows a structure condition is hashed here the day it is declared and
-    // nobody has to remember this site. That is the whole reason the injection
-    // predicate moved out of sema and onto the world.
+    // A SET, not a bool, and exactly the same launcher result sema consumes.
     // ...AND WHICH OBSERVERS ARE DEMANDED (HPLS §11). Fourth defect at this
     // site, found the same way the other three were — by measuring and getting
     // no difference at all. `--observer=debugger` changes which realizations
@@ -4369,7 +4377,7 @@ fn buildCacheKey(
     // served the UNWATCHED artifact. See `observer_demand.Demand.cacheKey`.
     const obs_key = global_observer_demand.cacheKey();
     h.update(std.mem.asBytes(&obs_key));
-    const worlds = subject_home.injectedWorldsFor(src_path);
+    const worlds = launchWorlds(src_path);
     for (worlds.slice()) |w| h.update(subject_home.homeName(w));
     h.update(std.mem.asBytes(&worlds.len));
     // ...AND EVERY MODULE THIS FILE CAN REACH. Third defect at this site, and

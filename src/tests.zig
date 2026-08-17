@@ -9,6 +9,7 @@ test {
     _ = @import("lexer_bridge.zig");
     _ = @import("lexical_identity.zig");
     _ = @import("lexer_dispatch.zig");
+    _ = @import("launch_role.zig");
     _ = @import("ast.zig");
     _ = @import("types.zig");
     _ = @import("parser.zig");
