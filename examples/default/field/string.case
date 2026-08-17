@@ -1,0 +1,7 @@
+label = struct
+    text: str = "ready"
+end
+
+main: i64 = ()
+    value = label{}
+    value.text:len()
