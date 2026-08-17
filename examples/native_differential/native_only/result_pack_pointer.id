@@ -1,0 +1,13 @@
+# expect: 154
+# Exact pointer identity and an integer member share one ordered graph pack;
+# the pointer remains a direct address rather than becoming an aggregate field.
+make(size: i64): (*u8, i64)
+  return mem.alloc(size), 77
+
+main: i64 = ()
+  bytes, marker = make(8)
+  mem.zero(bytes, 8)
+  mem.write_byte(bytes, 3, marker)
+  answer = mem.read_byte(bytes, 3) + marker
+  mem.free(bytes)
+  answer

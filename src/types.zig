@@ -307,6 +307,47 @@ pub fn nominalReprAdmissible(repr: ResolvedType) bool {
 
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
+/// The declared width of a sub-64-bit integer descriptor, and whether
+/// projecting it into a 64-bit register sign- or zero-extends.
+///
+/// `i64`, `u64` and `.any` answer NULL: they are already the register width, so
+/// nothing on the i64 path may gain an instruction from this. `u64` is out of
+/// scope for a different reason — it does not need TRUNCATION at all, only
+/// unsigned division/shift/compare, which is a separate defect.
+pub const NarrowFit = struct { bits: u7, signed: bool };
+
+/// The value a write of `v` to a place of type `ty` leaves behind.
+///
+/// `native_backend.emitNarrowFit` MUST agree with this bit for bit, and
+/// `comptime`'s folder now calls it rather than answering in the 64-bit ring.
+/// A folded constant that skipped the projection the register path performs is
+/// a decision computed against one state and read against another — the shape
+/// behind every silent wrong answer in this tree.
+pub fn narrowFitConst(v: i64, ty: ResolvedType) i64 {
+    const fit = ty.narrowFit() orelse return v;
+    const shift: u6 = @intCast(64 - @as(u7, fit.bits));
+    const kept: u64 = @as(u64, @bitCast(v)) << shift;
+    if (fit.signed) return @as(i64, @bitCast(kept)) >> shift;
+    return @bitCast(kept >> shift);
+}
+
+/// The declared narrow width of a TYPE EXPRESSION, or null for everything else.
+///
+/// `i32` is included even though `resolveType` already answers `.i32`: nothing
+/// downstream had ever acted on that answer, so `h: i32 = 2147483647; h = h + 1`
+/// printed 2147483648 where C printed -2147483648.
+pub fn narrowIntOfType(t: ast.TypeExpr) ?ResolvedType {
+    if (t != .named) return null;
+    const n = t.named;
+    if (std.mem.eql(u8, n, "u8")) return .u8;
+    if (std.mem.eql(u8, n, "u16")) return .u16;
+    if (std.mem.eql(u8, n, "u32")) return .u32;
+    if (std.mem.eql(u8, n, "i8")) return .i8;
+    if (std.mem.eql(u8, n, "i16")) return .i16;
+    if (std.mem.eql(u8, n, "i32")) return .i32;
+    return null;
+}
+
 pub const ResolvedType = union(enum) {
     // Primitive native types (map directly to C types)
     i8,
@@ -404,6 +445,35 @@ pub const ResolvedType = union(enum) {
     instantiated: struct { base: *ResolvedType, args: []ResolvedType, specialization_key: u64 },
     /// `Tensor[M,N,dtype]` — compile-time shape + element type for ML.
     tensor: struct { dims: []ResolvedType, dtype: *const ResolvedType },
+
+    /// THE PROJECTION OF THIS DESCRIPTOR — the value a semantic write to a
+    /// place of this type LEAVES BEHIND, exactly, at every write.
+    ///
+    /// It lives HERE, beside the descriptor it is a property of, because three
+    /// independent consumers must agree on it bit for bit and any two of them
+    /// disagreeing is a silent wrong answer:
+    ///
+    ///     `dnir_lower`      chooses `Instr.ty` for the store
+    ///     `native_backend`  realizes it as `sxtb`/`sxth`/`sxtw`/`ubfx`/`w`-form
+    ///     `comptime`        folds it when the loop never reaches emission
+    ///
+    /// The third was MISSING and answered in the full 64-bit ring, so
+    /// `t: i32 = 0; while i < 2: t = t + 2000000000` folded to `mov x0, #7`
+    /// where the same program with a runtime bound emitted `sxtw` and answered
+    /// 9. Two implementations of one fact, one of them absent — which is the
+    /// failure `dnir_lower`'s own `narrowFitConst` comment names and then could
+    /// not prevent, because the folder could not see the function.
+    pub fn narrowFit(self: ResolvedType) ?NarrowFit {
+        return switch (self) {
+            .u8 => .{ .bits = 8, .signed = false },
+            .u16 => .{ .bits = 16, .signed = false },
+            .u32 => .{ .bits = 32, .signed = false },
+            .i8 => .{ .bits = 8, .signed = true },
+            .i16 => .{ .bits = 16, .signed = true },
+            .i32 => .{ .bits = 32, .signed = true },
+            else => null,
+        };
+    }
 
     pub fn is_integer(self: ResolvedType) bool {
         return switch (self) {

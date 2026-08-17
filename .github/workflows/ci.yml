@@ -66,14 +66,51 @@ jobs:
           file /tmp/hello.wasm | grep -q "WebAssembly"
           echo "WASM OK"
 
-      - name: Install WASI runtime and WABT
+      - name: Install pinned Wasmtime oracle
         run: |
-          sudo apt-get update && sudo apt-get install -y wabt
-          curl https://wasmtime.dev/install.sh -sSf | bash
-          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+          archive="$RUNNER_TEMP/wasmtime-v47.0.3-x86_64-linux.tar.xz"
+          curl --fail --location --silent --show-error \
+            https://github.com/bytecodealliance/wasmtime/releases/download/v47.0.3/wasmtime-v47.0.3-x86_64-linux.tar.xz \
+            --output "$archive"
+          printf '%s  %s\n' \
+            ca1fc56d1afc40c8782e96c297fd182a0da162f9a8f52a1e7b094e1dd648e178 \
+            "$archive" | sha256sum --check --strict
+          tar --extract --xz --file "$archive" --directory "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/wasmtime-v47.0.3-x86_64-linux" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/wasmtime-v47.0.3-x86_64-linux/wasmtime" --version
 
-      - name: WASM conformance against Wasmtime
-        run: zig build wasm-test
+      - name: Preserve compiler Zig for focused evidence
+        run: echo "IDOL_ZIG=$(command -v zig)" >> "$GITHUB_ENV"
+
+      - name: Install pinned Wart build Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev.1567+f0354179a
+
+      - name: Build frozen Wart oracle
+        run: |
+          wart_repo="$RUNNER_TEMP/wart-oracle"
+          git clone --filter=blob:none --no-checkout https://github.com/clpi/wart.git "$wart_repo"
+          git -C "$wart_repo" checkout --detach ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b
+          test "$(git -C "$wart_repo" rev-parse HEAD)" = ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b
+          test -z "$(git -C "$wart_repo" status --porcelain=v1 --untracked-files=all)"
+          (cd "$wart_repo" && zig build -Drelease=true)
+          wart_bin="$wart_repo/zig-out/bin/wart"
+          wart_hash=$(sha256sum "$wart_bin" | cut -d ' ' -f 1)
+          wart_provenance="$wart_bin.provenance"
+          "$wart_bin" --version
+          printf 'revision=%s\nzig_version=%s\nbuild=%s\nhost=%s\nbinary_sha256=%s\n' \
+            ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b \
+            "$(zig version)" \
+            'zig build -Drelease=true' \
+            "$(uname -sm)" \
+            "$wart_hash" > "$wart_provenance"
+          echo "WART_ORACLE_REPO=$wart_repo" >> "$GITHUB_ENV"
+          echo "WART_ORACLE_BIN=$wart_bin" >> "$GITHUB_ENV"
+          echo "WART_ORACLE_PROVENANCE=$wart_provenance" >> "$GITHUB_ENV"
+
+      - name: WASM focused evidence against frozen oracles
+        run: $IDOL_ZIG build wasm-test
 
       - name: Upload toolchain record
         uses: actions/upload-artifact@v4

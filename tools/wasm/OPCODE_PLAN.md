@@ -1,5 +1,17 @@
 # idol wasm — remaining opcode work, in execution order
 
+> **Status: retired implementation plan; not semantic or production authority.**
+> The opcode/control/pack/WASI lawset belongs to Idol's shared semantic graph;
+> `tools/wasm/src/engine.id` is a standalone evidence subject until it converges.
+> `zig build wasm-test` is the only admission path and must fail closed when the
+> direct-native subject, an explicit realization/fallback row, or a damage
+> control is unavailable. Wart is frozen as an external test oracle only at
+> `clpi/wart@ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b`; it is never a production
+> dependency. Wasmtime is frozen by the executable CI/evidence gate. The list
+> below is historical execution guidance, not an opcode ontology or a claim of
+> current capability. Benchmark-time competitor discovery remains separate and
+> never substitutes its live `$WART` checkout for this frozen baseline.
+
 Written blind (no shell) so a fresh session can execute mechanically. Every item lists
 the stack effect and, where relevant, the ARM64 encoding, so no rediscovery is needed.
 Verify each group against wasmtime before moving on — `wasmtime run --invoke run x.wasm`

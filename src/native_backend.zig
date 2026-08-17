@@ -560,13 +560,17 @@ const F64RecordDesc = struct {
 
 const F64RecordMap = std.StringHashMapUnmanaged(F64RecordDesc);
 
-const ScalFieldKind = enum { i64, str };
+const ScalFieldKind = enum { i64, str, f64 };
 
 /// Record lowered as consecutive x-reg ABI slots (i64 / const char*).
 const ScalRecordDesc = struct {
     field_names: []const []const u8,
     field_kinds: []const ScalFieldKind,
 };
+
+fn scalRecordReturnsIndirect(record: ScalRecordDesc, foreign: bool) bool {
+    return dnir_lower.recordReturnIsIndirectFields(record.field_names.len, foreign);
+}
 
 const ScalRecordMap = std.StringHashMapUnmanaged(ScalRecordDesc);
 
@@ -875,6 +879,7 @@ const Arm64Compiler = struct {
     /// When set, this function's f64 return is coerced to i64 for process exit.
     entry: ?[]const u8 = null,
     cur_func_ret_record: ?ScalRecordDesc = null,
+    cur_func_ret_pack: []const native_types.ResolvedType = &.{},
     cur_func_ret_f64_record: ?F64RecordDesc = null,
     /// Where this function parked the AAPCS64 indirect-result pointer it was
     /// handed in x8. Set when `dnir_lower.recordReturnIsIndirectFields` says this
@@ -1720,6 +1725,10 @@ const Arm64Compiler = struct {
                         }
                     }
                 }
+                for (ins.pack_results) |result| {
+                    const id = result.temp orelse continue;
+                    if (dnirDefinitionUsed(f, false, id)) mark.slot(&temps, &n, id);
+                }
                 mark.value(&locals, &temps, &n, ins.lhs);
                 mark.value(&locals, &temps, &n, ins.rhs);
                 mark.value(&locals, &temps, &n, ins.third);
@@ -1810,6 +1819,10 @@ const Arm64Compiler = struct {
                 if (sink.failed) return error.OutOfMemory;
                 if (ins.result) |r| {
                     if (!def_at.contains(r)) try def_at.put(self.alloc, r, idx);
+                }
+                for (ins.pack_results) |result| {
+                    const temp = result.temp orelse continue;
+                    if (!def_at.contains(temp)) try def_at.put(self.alloc, temp, idx);
                 }
                 switch (ins.op) {
                     .br => {
@@ -2459,6 +2472,7 @@ const Arm64Compiler = struct {
         self.extern_preserve_x0 = false;
         self.extern_preserve_x0_temp = null;
         self.cur_func_ret_record = if (f.ret_record) |rn| scalRecordDesc(self.scal_records, rn) else null;
+        self.cur_func_ret_pack = f.ret_pack;
         self.cur_func_ret_f64_record = if (f.ret_record) |rn| f64RecordDesc(self.f64_records, rn) else null;
         self.cur_ret_indirect_reg = null;
         self.cur_func_foreign = f.foreign_boundary;
@@ -2546,7 +2560,7 @@ const Arm64Compiler = struct {
             // the caller put there. Everything after this can call, and x8 does
             // not survive a call.
             if (self.cur_func_ret_record) |rec| {
-                if (dnir_lower.recordReturnIsIndirectFields(rec.field_names.len, self.cur_func_foreign)) {
+                if (scalRecordReturnsIndirect(rec, self.cur_func_foreign)) {
                     const home = try self.allocReg();
                     try self.emitMovReg(home, 8);
                     self.cur_ret_indirect_reg = home;
@@ -2618,7 +2632,10 @@ const Arm64Compiler = struct {
                     for (rec.field_names, 0..) |fname, i| {
                         const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, fname });
                         const off: u16 = record_frame + @as(u16, @intCast(i * 8));
-                        try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = false });
+                        try self.fp_stack_slots.put(self.alloc, key, .{
+                            .off = off,
+                            .float = rec.field_kinds[i] == .f64,
+                        });
                     }
                     record_frame += @intCast(std.mem.alignForward(usize, rec.field_names.len * 8, 16));
                 }
@@ -2982,7 +2999,11 @@ const Arm64Compiler = struct {
                     try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1]);
                     extra_consumed = 1;
                 } else {
-                    try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches);
+                    const pack_result_reg = if (bi + 1 < b.instrs.len)
+                        self.returnPackBinopDestination(&temps, ins, b.instrs[bi + 1])
+                    else
+                        null;
+                    try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches, pack_result_reg);
                 }
                 const fact_count: u2 = @as(u2, @intFromBool(ins.relation != null)) +
                     @as(u2, @intFromBool(ins.application != null)) +
@@ -3052,10 +3073,17 @@ const Arm64Compiler = struct {
                         }
                     }
                 }
+                for (ins.pack_results) |result| {
+                    const t = result.temp orelse continue;
+                    const r = temps.get(t) orelse continue;
+                    if (r >= 9 and r < 29 and r != platform_reserved_reg and !self.gp_home_regs[r]) {
+                        self.gp_reg_owner[r] = t;
+                    }
+                }
                 self.sweepFpLive(flat_idx);
                 self.sweepGpLive(flat_idx);
                 tail_terminates = switch (ins.op) {
-                    .ret, .ret_record => true,
+                    .ret, .ret_pack, .ret_record => true,
                     .br => ins.branch_condition == .unconditional,
                     else => false,
                 };
@@ -3118,12 +3146,57 @@ const Arm64Compiler = struct {
         self.cur_func_has_call = false;
     }
 
+    fn mappedGpValueReg(
+        self: *const Arm64Compiler,
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        value: dnir.Value,
+    ) ?u5 {
+        return switch (value) {
+            .local => |slot| if (self.gp_stack_locals.contains(slot)) null else temps.get(slot),
+            .temp => |slot| temps.get(slot),
+            else => null,
+        };
+    }
+
+    /// Select the ABI result register as a binop destination when the following
+    /// pack return proves that overwriting it cannot destroy another member.
+    fn returnPackBinopDestination(
+        self: *const Arm64Compiler,
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+        next: dnir.Instr,
+    ) ?u5 {
+        if (ins.op != .binop or next.op != .ret_pack) return null;
+        const result = ins.result orelse return null;
+        var destination: ?u5 = null;
+        for (next.vals, 0..) |value, i| switch (value) {
+            .temp => |slot| if (slot == result and destination == null) {
+                if (i >= dnir_lower.max_reg_record_fields) return null;
+                destination = @intCast(i);
+            },
+            else => {},
+        };
+        const dest = destination orelse return null;
+        for (next.vals, 0..) |value, i| {
+            if (i == dest) continue;
+            switch (value) {
+                .temp => |slot| if (slot == result) continue,
+                else => {},
+            }
+            if (self.mappedGpValueReg(temps, value)) |source| {
+                if (source == dest) return null;
+            }
+        }
+        return dest;
+    }
+
     fn compileDnirInstr(
         self: *Arm64Compiler,
         temps: *std.AutoHashMapUnmanaged(u32, u5),
         pinned: *std.AutoHashMapUnmanaged(u32, u5),
         ins: dnir.Instr,
         branch_patches: *std.ArrayList(DnirBranchPatch),
+        preferred_result: ?u5,
     ) Error!void {
         switch (ins.op) {
             .@"const" => switch (ins.ty) {
@@ -3435,10 +3508,11 @@ const Arm64Compiler = struct {
                     if (!any_fp) {
                         const ilhs = try self.evalDnirValue(temps, ins.lhs);
                         const irhs = try self.evalDnirValue(temps, ins.rhs);
-                        const idst = try self.allocReg();
+                        const idst = preferred_result orelse try self.allocReg();
+                        if (preferred_result != null) self.claimReg(idst);
                         try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop, ins.ty);
-                        if (!Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
-                        if (!Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
+                        if (ilhs != idst and !Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
+                        if (irhs != idst and !Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
                         if (ins.result) |t| try temps.put(self.alloc, t, idst);
                         break :blk;
                     }
@@ -3467,17 +3541,19 @@ const Arm64Compiler = struct {
                     // `x * 1`, `x + 0` and `x % 1` each cost a `mov` and an
                     // arithmetic instruction, and why `x % 1` reached `sdiv`.
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
-                    const dst = try self.allocReg();
+                    const dst = preferred_result orelse try self.allocReg();
+                    if (preferred_result != null) self.claimReg(dst);
                     try self.emitBinopConst(dst, lhs, k, ins.binop, ins.ty);
-                    if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+                    if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 } else {
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
-                    const dst = try self.allocReg();
+                    const dst = preferred_result orelse try self.allocReg();
+                    if (preferred_result != null) self.claimReg(dst);
                     try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop, ins.ty);
-                    if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
-                    if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
+                    if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+                    if (rhs != dst and !Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 }
             },
@@ -3576,19 +3652,40 @@ const Arm64Compiler = struct {
                     // would name a slot in the save area instead of the buffer.
                     const indirect = try self.indirectResultBuffer(ins);
                     if (indirect) |off| try self.emitAddSpImm(8, off);
+                    if ((ins.pack_results.len > 0 and ins.op != .call_direct) or
+                        ins.pack_results.len > dnir_lower.max_reg_record_fields or
+                        (ins.pack_results.len > 0 and
+                            (ins.result != null or ins.record.len != 0 or indirect != null)))
+                    {
+                        return self.refuse(@src());
+                    }
                     const preserve_x0 = self.extern_preserve_x0 and ins.op == .call_extern and
                         std.mem.eql(u8, ins.callee, "snprintf");
                     if (preserve_x0) {
                         try self.emitSubSp(16);
                         try self.emitStrSp(0, 0);
                     }
+                    var pack_conflict = false;
+                    for (ins.pack_results, 0..) |result, i| {
+                        if (result.temp != null and self.used_regs[i]) pack_conflict = true;
+                    }
+                    const pack_bytes: u16 = if (pack_conflict)
+                        @intCast(std.mem.alignForward(usize, ins.pack_results.len * 8, 16))
+                    else
+                        0;
+                    if (pack_bytes > 0) try self.emitSubSp(pack_bytes);
                     const save = try self.emitSaveCallerRegs();
                     const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
                     try self.emitPopVarargs(vbytes);
+                    if (pack_bytes > 0) {
+                        for (ins.pack_results, 0..) |_, i| {
+                            try self.emitStrSp(@intCast(i), save.stack_bytes + @as(u16, @intCast(i * 8)));
+                        }
+                    }
                     var call_result: ?u5 = null;
                     var call_result_on_stack = false;
-                    if (ins.result != null) {
+                    if (ins.result != null and pack_bytes == 0) {
                         if (!saveSetContains(save, 0)) {
                             self.used_regs[0] = true;
                             call_result = 0;
@@ -3604,7 +3701,24 @@ const Arm64Compiler = struct {
                         }
                     }
                     try self.emitRestoreCallerRegs(save);
+                    if (pack_bytes > 0) try self.emitAddSp(pack_bytes);
                     try self.syncGateLocalTempsAfterCall(temps, pinned);
+                    if (pack_bytes > 0) {
+                        for (ins.pack_results, 0..) |result, i| {
+                            const temp = result.temp orelse continue;
+                            const dst = try self.allocReg();
+                            const offset: i16 = @as(i16, @intCast(i * 8)) - @as(i16, @intCast(pack_bytes));
+                            try self.emitLdurSp(dst, offset);
+                            try temps.put(self.alloc, temp, dst);
+                        }
+                    } else if (ins.pack_results.len > 0) {
+                        for (ins.pack_results, 0..) |result, i| {
+                            const temp = result.temp orelse continue;
+                            const reg: u5 = @intCast(i);
+                            self.claimReg(reg);
+                            try temps.put(self.alloc, temp, reg);
+                        }
+                    }
                     if (preserve_x0) {
                         if (self.extern_preserve_x0_temp) |t| {
                             const reg = try self.allocReg();
@@ -3676,7 +3790,7 @@ const Arm64Compiler = struct {
                         // flag, or a call to an `@comp.c.export` relation reads x0..x2
                         // for a result that arrived in memory.
                         if (ins.field.len > 0 and
-                            !dnir_lower.recordReturnIsIndirectFields(rec.field_names.len, false))
+                            !scalRecordReturnsIndirect(rec, false))
                         {
                             try self.assignRecordFromAbiRegs(ins.field, rec);
                         }
@@ -3735,6 +3849,91 @@ const Arm64Compiler = struct {
                 try self.emitRet();
                 self.returned = true;
             },
+            .ret_pack => {
+                const vals = ins.vals;
+                if (vals.len == 0 or vals.len > dnir_lower.max_reg_record_fields or
+                    vals.len != self.cur_func_ret_pack.len)
+                {
+                    return self.refuse(@src());
+                }
+                for (self.cur_func_ret_pack) |ty| switch (ty) {
+                    .i8,
+                    .i16,
+                    .i32,
+                    .i64,
+                    .u8,
+                    .u16,
+                    .u32,
+                    .u64,
+                    .bool,
+                    .str,
+                    .pointer,
+                    => {},
+                    else => return self.refuse(@src()),
+                };
+                // A pack return is a parallel register assignment, not a tuple
+                // copy. Emit every acyclic move in place and spend one scratch
+                // only for a real cycle. The common `(n, n + 1)` shape is then
+                // exactly `add x1,x0,#1; ret`, instead of staging both members.
+                var srcs: [dnir_lower.max_reg_record_fields]u5 = @splat(0);
+                var pending: [dnir_lower.max_reg_record_fields]bool = @splat(false);
+                var cycle_scratch: ?u5 = null;
+                for (vals, 0..) |value, i| srcs[i] = try self.evalDnirValue(temps, value);
+                for (srcs[0..vals.len], 0..) |src, i| pending[i] = src != @as(u5, @intCast(i));
+                while (true) {
+                    var remaining = false;
+                    var emitted = false;
+                    for (pending[0..vals.len], 0..) |move, i| {
+                        if (!move) continue;
+                        remaining = true;
+                        var destination_is_source = false;
+                        for (pending[0..vals.len], srcs[0..vals.len], 0..) |other, source, j| {
+                            if (j != i and other and source == @as(u5, @intCast(i))) destination_is_source = true;
+                        }
+                        if (destination_is_source) continue;
+                        try self.emitMovReg(@intCast(i), srcs[i]);
+                        pending[i] = false;
+                        emitted = true;
+                    }
+                    if (!remaining) break;
+                    if (emitted) {
+                        if (cycle_scratch) |scratch| {
+                            var read = false;
+                            for (pending[0..vals.len], srcs[0..vals.len]) |move, source| {
+                                if (move and source == scratch) read = true;
+                            }
+                            if (!read) {
+                                self.releaseReg(scratch);
+                                cycle_scratch = null;
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Every remaining destination is also a remaining source:
+                    // a cycle. Preserve one source and redirect every reader of
+                    // it through the scratch, which makes the cycle acyclic.
+                    var first: usize = 0;
+                    while (!pending[first]) : (first += 1) {}
+                    const saved = srcs[first];
+                    const scratch = try self.allocReg();
+                    cycle_scratch = scratch;
+                    try self.emitMovReg(scratch, saved);
+                    for (pending[0..vals.len], 0..) |move, i| {
+                        if (move and srcs[i] == saved) srcs[i] = scratch;
+                    }
+                }
+                if (cycle_scratch) |scratch| self.releaseReg(scratch);
+                // Apply declared widths only after all raw values landed; doing
+                // it during the parallel copy could narrow a register that a
+                // later pack member still needs at full width.
+                for (self.cur_func_ret_pack, 0..) |ty, i| {
+                    _ = try self.emitNarrowFit(@intCast(i), @intCast(i), ty);
+                }
+                try self.restoreStackFrame();
+                try self.emitRet();
+                self.returned = true;
+            },
             .ret_record => {
                 if (self.cur_func_ret_f64_record != null or
                     (ins.record.len > 0 and f64RecordDesc(self.f64_records, ins.record) != null))
@@ -3778,21 +3977,12 @@ const Arm64Compiler = struct {
                     const vals = try self.dnirRetRecordVals(ins);
                     const n = vals.len;
                     if (n == 0 or n > dnir_lower.max_reg_record_fields) return self.refuse(@src());
-                    // A FOREIGN result that got this far is one the prologue could
-                    // not send down the indirect path, because neither record map
-                    // holds a descriptor for it. That is a real and narrow class:
-                    // `collectScalRecordsFromDnir` skips any record containing an
-                    // f64 field and `collectF64RecordsFromDnir` takes only records
-                    // that are ENTIRELY f64, so a MIXED record — `{ a: i64, b: f64,
-                    // c: i64 }` — is described nowhere and this arm returns n blind
-                    // registers for it.
-                    //
-                    // Under 16 bytes that is still right and stays allowed (a
-                    // 2-field mixed record comes back in x0/x1 on both conventions,
-                    // measured). Over 16 it is C's memory case and these registers
-                    // are garbage: `mkm(7)` answered `-16 3.0e-314 8289173760`,
-                    // `ok compile`, exit 0, no diagnostic. REFUSE. A named DNB001
-                    // is a debt with an address; a wrong number that links is not.
+                    // Mixed records now retain their exact field classes in the
+                    // scalar map. A two-word foreign result still lawfully arrives
+                    // in x0/x1; an indirect mixed result is rejected by lowering
+                    // because this emitter has no mixed GP/FP buffer-store path.
+                    // Keep the physical threshold here as a final guard for
+                    // hand-built DNIR: a wrong number that links is not a refusal.
                     if (dnir_lower.recordReturnIsIndirectFields(n, self.cur_func_foreign)) {
                         return self.refuse(@src());
                     }
@@ -3841,7 +4031,17 @@ const Arm64Compiler = struct {
                 const base = if (ins.req_alias.len > 0) ins.req_alias else "rec";
                 const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, ins.field });
                 defer self.alloc.free(key);
-                if (self.cur_func_float) {
+                if (self.fp_stack_slots.get(key)) |slot| {
+                    if (slot.float) {
+                        const d = try self.allocFpReg();
+                        try self.emitLdrSpFp(d, slot.off);
+                        if (ins.result) |t| try temps.put(self.alloc, t, d);
+                        try self.markFpTemp(ins.result);
+                    } else {
+                        const reg = try self.loadStackField(key);
+                        if (ins.result) |t| try temps.put(self.alloc, t, reg);
+                    }
+                } else if (self.cur_func_float) {
                     const d = self.fp_locals.get(key) orelse return self.undefinedKey(@src(), "fp local", key);
                     if (ins.result) |t| try temps.put(self.alloc, t, d);
                     try self.markFpTemp(ins.result);
@@ -3983,6 +4183,21 @@ const Arm64Compiler = struct {
                 }
                 try self.ensureExternalSymbol(if (use_puts) "puts" else "printf");
                 try self.emitBl(if (use_puts) "puts" else "printf");
+                if (nonl) {
+                    // `stdout:write` is RAW HOST EGRESS: the peer is a protocol
+                    // client (newline-delimited JSON-RPC over a pipe), not a
+                    // terminal, and libc stdio is block-buffered on a pipe — an
+                    // unflushed write is a write the peer never receives until
+                    // 4 KiB accumulate or the process exits. A long-lived stdio
+                    // server (tools/mcp/native.id) hangs its client's handshake
+                    // forever on exactly that; measured, the initialize response
+                    // sat unflushed for the full 60 s client timeout. `print`/
+                    // `puts` keeps the buffered line shape: programs that print
+                    // and exit pay nothing.
+                    try self.emitMovImm(0, 0); // fflush(NULL): flush every output stream
+                    try self.ensureExternalSymbol("fflush");
+                    try self.emitBl("fflush");
+                }
                 if (stack_arg) try self.emitAddSp(16);
                 try self.emitRestoreCallerRegs(save);
                 if (skip) |off| try self.patchCondBranch(off, @intCast(self.code.items.len));
@@ -4436,6 +4651,29 @@ const Arm64Compiler = struct {
             },
             .record => return self.refuse(@src()),
         };
+    }
+
+    /// The 64 BITS of a value, in a general register, whichever register file
+    /// the value actually lives in.
+    ///
+    /// An 8-byte store does not care what the bits MEAN, and `evalDnirValue`
+    /// does: for an `.f64` IMMEDIATE it already answers `@bitCast(n)` in a GP
+    /// register — exactly this — but for an fp TEMP it answers the number
+    /// `temps` holds, which is a `d` register index, and the caller then emits
+    /// `str x<that number>`. Same number, wrong register file, no diagnostic:
+    /// the store writes whatever integer register shares the index.
+    ///
+    /// So the immediate and the temp of one type disagreed, and only the
+    /// immediate was right. `fmov x, d` is the whole repair and it is free at
+    /// every site that was already correct — `valueIsFp` is false there and
+    /// this is `evalDnirValue` verbatim.
+    fn evalDnirValueBits(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
+        if (!self.valueIsFp(v)) return self.evalDnirValue(temps, v);
+        if (v == .f64) return self.evalDnirValue(temps, v);
+        const d = try self.evalDnirValueFp(temps, v);
+        const bits = try self.allocReg();
+        try self.emitFmovToGpr(bits, d);
+        return bits;
     }
 
     fn evalDnirValueFp(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
@@ -5540,7 +5778,7 @@ const Arm64Compiler = struct {
             try self.emitStrSp(abi_reg, off);
             if (already_reserved) continue;
             const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[i] });
-            try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = false });
+            try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = desc.field_kinds[i] == .f64 });
         }
     }
 
@@ -5909,6 +6147,20 @@ const Arm64Compiler = struct {
         try self.emitFmt(0xf94003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, reg), "ldr x{d}, [sp, #{d}]", .{ reg, offset });
     }
 
+    /// Reload a just-returned pack member after restoring the ordinary stack
+    /// pointer. The temporary result area is immediately below `sp`; signed
+    /// unscaled addressing keeps every normal local/spill offset unchanged.
+    fn emitLdurSp(self: *Arm64Compiler, reg: u5, offset: i16) Error!void {
+        if (offset < -256 or offset > 255) return self.refuse(@src());
+        const bits: u16 = @bitCast(offset);
+        const imm9: u32 = @as(u32, bits & 0x01ff);
+        try self.emitFmt(
+            0xf84003e0 | (imm9 << 12) | @as(u32, reg),
+            "ldur x{d}, [sp, #{d}]",
+            .{ reg, offset },
+        );
+    }
+
     /// Release `reg` only if it was scratch for this instruction. A `.temp` or a
     /// register-homed `.local` operand's register is owned by the slot map and
     /// outlives us. A STACK `.local`, however, is reloaded into a fresh scratch
@@ -5992,7 +6244,7 @@ const Arm64Compiler = struct {
         // Caller side, and the same `foreign = false` obligation recorded at the
         // `call_direct` result copy above: the call does not carry the callee's
         // boundary fact, and no Idol caller can receive a record today.
-        if (!dnir_lower.recordReturnIsIndirectFields(rec.field_names.len, false)) return null;
+        if (!scalRecordReturnsIndirect(rec, false)) return null;
         const base = if (ins.field.len > 0) ins.field else "rec";
         const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, rec.field_names[0] });
         defer self.alloc.free(key);
@@ -6653,7 +6905,7 @@ const Arm64Compiler = struct {
         if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
             self.gp_reg_owner[dst] = t;
         }
-        try self.compileDnirInstr(temps, pinned, plan.store, branch_patches);
+        try self.compileDnirInstr(temps, pinned, plan.store, branch_patches, null);
     }
 
     /// Peephole precondition for folding `mul -> T ; add(T, c) -> D` into a
@@ -6666,6 +6918,28 @@ const Arm64Compiler = struct {
     fn mulAddFusible(self: *const Arm64Compiler, ins: dnir.Instr, nx: dnir.Instr, flat_idx: u32) bool {
         if (ins.op != .binop or ins.binop != .mul) return false;
         if (ins.ty == .f64 or self.cur_func_float) return false;
+        // THE INTERMEDIATE PRODUCT'S OWN REFIT IS ERASED BY THE FUSION, so a
+        // product that must be projected before it is added cannot be fused —
+        // `(a * b)` narrowed to `u8` and then added is not `madd`'s answer.
+        // The SUM's refit is a different matter and is preserved rather than
+        // refused: see `emitFusedMulAdd`.
+        //
+        // THE ONE EXCEPTION IS NOT A TOLERANCE, IT IS AN IDENTITY. When BOTH
+        // the product and the sum want the unsigned-32 projection, the 32-bit
+        // fused form performs both at once:
+        //
+        //     ((a*b mod 2^32) + c) mod 2^32  ==  (a*b + c) mod 2^32
+        //
+        // because mod-2^32 is a ring homomorphism and `mul` and `add` are both
+        // low-32 closed (`lowThirtyTwoExact`). So `madd Wd,Wn,Wm,Wa` is the
+        // exact answer for both writes in ONE instruction. Without this the
+        // repair costs a real instruction on the recurrence of every narrow
+        // multiply-accumulate loop — MEASURED on an FNV-style `h = h * k + i`
+        // over `u32`: 6 instructions per iteration became 7, and this returns
+        // it to 6 with the answer the law demands (171, where the unrepaired
+        // fusion answered 168 and no compiler should ever have answered).
+        if (narrowFit(ins.ty) != null and
+            !(wForm32(ins.ty, ins.binop) and wForm32(nx.ty, nx.binop))) return false;
         if (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)) return false;
         if (ins.application != null or ins.relation != null or ins.value != null) return false;
         const t = ins.result orelse return false;
@@ -6699,7 +6973,28 @@ const Arm64Compiler = struct {
         const acc_val = if (nx.lhs == .temp and nx.lhs.temp == t) nx.rhs else nx.lhs;
         const c = try self.evalDnirValue(temps, acc_val);
         const dst = try self.allocReg();
-        try self.emitMaddReg(dst, a, b, c);
+        // THE SUM'S DECLARED WIDTH SURVIVES THE FUSION.
+        //
+        // `dnir_lower.subsumeProducerRefit` MOVES a `u32` store's refit onto
+        // this `add` and clears the store's, on the reasoning that the
+        // producer's 32-bit destination form performs the narrowing for free.
+        // The fusion then rewrote that producer as a 64-bit `madd` and dropped
+        // the obligation it had just accepted — two independently correct
+        // transforms composing into a wrong answer, and the only one in this
+        // gate's matrix that survives to the EMITTED program.
+        //
+        // `madd Wd, Wn, Wm, Wa` exists and its low 32 bits are exact for the
+        // same reason `add`'s are (`lowThirtyTwoExact`: mul and add are both
+        // low-32 closed, so their composition is), and a `w` destination
+        // zero-extends. So the unsigned-32 case keeps the fusion AND the free
+        // narrowing; every other width pays one refit instruction, which is
+        // what it would have paid unfused.
+        if (wForm32(nx.ty, .add)) {
+            try self.emitMaddRegW(dst, a, b, c);
+        } else {
+            try self.emitMaddReg(dst, a, b, c);
+            _ = try self.emitNarrowFit(dst, dst, nx.ty);
+        }
         if (!Arm64Compiler.regIsPinned(pinned, a)) self.releaseReg(a);
         if (!Arm64Compiler.regIsPinned(pinned, b)) self.releaseReg(b);
         if (!Arm64Compiler.regIsPinned(pinned, c)) self.releaseReg(c);
@@ -6758,6 +7053,19 @@ const Arm64Compiler = struct {
         try self.ensureRegLive(rhs);
         try self.ensureRegLive(acc);
         try self.emitFmt(0x9b000000 | (@as(u32, rhs) << 16) | (@as(u32, acc) << 10) | (@as(u32, lhs) << 5) | @as(u32, dst), "madd x{d}, x{d}, x{d}, x{d}", .{ dst, lhs, rhs, acc });
+    }
+
+    /// `madd wd, wn, wm, wa` — the 32-bit destination form, bit 31 clear.
+    ///
+    /// The `w` destination ZERO-EXTENDS into the whole `x` register, which is
+    /// bit for bit what `ubfx xd, xn, #0, #32` leaves behind, so a `u32` sum
+    /// keeps both the fusion and a free narrowing. `wForm32` is the one
+    /// authority on when that substitution is exact; this only emits it.
+    fn emitMaddRegW(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, acc: u5) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.ensureRegLive(rhs);
+        try self.ensureRegLive(acc);
+        try self.emitFmt(0x1b000000 | (@as(u32, rhs) << 16) | (@as(u32, acc) << 10) | (@as(u32, lhs) << 5) | @as(u32, dst), "madd w{d}, w{d}, w{d}, w{d}", .{ dst, lhs, rhs, acc });
     }
 
     fn emitAndReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
@@ -7113,7 +7421,7 @@ fn applicationResult(
 ) Error!semantic_graph.id {
     const results = graph.applicationResults(application.application) orelse
         return invalidFactsWith(diagnostic, @src(), "application-results");
-    if (results.len != 1) return invalidFactsWith(diagnostic, @src(), "application-result-count");
+    if (results.len == 0) return invalidFactsWith(diagnostic, @src(), "application-result-count");
     return results[0];
 }
 
@@ -7187,7 +7495,6 @@ fn validateDnirApplications(
     const LinkTarget = struct {
         id: semantic_graph.id,
         linkage: []const u8,
-        result_record: ?[]const u8,
     };
     var targets: std.AutoHashMapUnmanaged(semantic_graph.id, LinkTarget) = .empty;
     defer targets.deinit(alloc);
@@ -7202,7 +7509,6 @@ fn validateDnirApplications(
         target.value_ptr.* = .{
             .id = id,
             .linkage = function.name,
-            .result_record = function.ret_record,
         };
     }
 
@@ -7263,6 +7569,8 @@ fn validateDnirApplications(
                 const application = graph.application(instruction.application.?) orelse
                     return invalidFactsWith(diagnostic, @src(), "unknown-application-lineage");
                 const result = try applicationResult(graph, application.*, diagnostic);
+                const results = graph.applicationResults(application.application) orelse
+                    return invalidFactsWith(diagnostic, @src(), "application-results");
                 const caller = graph.applicationCaller(application.application) orelse
                     return invalidFactsWith(diagnostic, @src(), "application-caller-mismatch");
                 if (function.id == null or !std.meta.eql(function.id.?, caller)) {
@@ -7280,10 +7588,78 @@ fn validateDnirApplications(
                 {
                     return invalidFactsWith(diagnostic, @src(), "application-fact-mismatch");
                 }
+                if (results.len == 1) {
+                    if (instruction.pack_results.len != 0) {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-pack");
+                    }
+                } else {
+                    if (results.len > dnir_lower.max_reg_record_fields or
+                        instruction.pack_results.len != results.len or instruction.result != null or
+                        instruction.record.len != 0)
+                    {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-abi");
+                    }
+                    for (instruction.pack_results, results) |projected, value_id| {
+                        if (!std.meta.eql(projected.value, value_id)) {
+                            return invalidFactsWith(diagnostic, @src(), "application-result-pack");
+                        }
+                        const node = graph.get(value_id) orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-member");
+                        const result_descriptor = node.descriptor orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-result-descriptor");
+                        if (!result_descriptor.eql(projected.ty)) {
+                            return invalidFactsWith(diagnostic, @src(), "application-result-descriptor");
+                        }
+                        switch (projected.ty) {
+                            .i8,
+                            .i16,
+                            .i32,
+                            .i64,
+                            .u8,
+                            .u16,
+                            .u32,
+                            .u64,
+                            .bool,
+                            .str,
+                            .pointer,
+                            => {},
+                            else => return invalidFactsWith(diagnostic, @src(), "application-result-abi"),
+                        }
+                    }
+                }
                 const target_id = instruction.target orelse
                     return invalidFactsWith(diagnostic, @src(), "missing-application-target");
-                if (!std.meta.eql(target_id, relation)) {
+                const selected_target = graph.applicationTarget(application.application) orelse
+                    return invalidFactsWith(diagnostic, @src(), "missing-application-target");
+                const applied = graph.applicationApplied(application.application) orelse
+                    return invalidFactsWith(diagnostic, @src(), "missing-application-applied");
+                if (!std.meta.eql(target_id, selected_target) or
+                    !std.meta.eql(applied, selected_target))
+                {
                     return invalidFactsWith(diagnostic, @src(), "application-target-mismatch");
+                }
+                const result_shape = graph.applicationResultShape(application.application, 0);
+                if (result_shape) |shape| {
+                    var result_record: ?dnir.RecordDesc = null;
+                    for (module.records) |record| {
+                        if (record.semantic_shape != shape) continue;
+                        if (result_record != null) {
+                            return invalidFactsWith(diagnostic, @src(), "application-result-shape-collision");
+                        }
+                        result_record = record;
+                    }
+                    const record = result_record orelse
+                        return invalidFactsWith(diagnostic, @src(), "application-result-shape");
+                    if (!std.mem.eql(u8, record.name, instruction.record)) {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-abi");
+                    }
+                } else {
+                    if (descriptor == .@"struct" or descriptor == .table_type) {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-shape");
+                    }
+                    if (instruction.record.len != 0) {
+                        return invalidFactsWith(diagnostic, @src(), "application-result-abi");
+                    }
                 }
                 // A CROSS-HOME TARGET IS NOT IN `module.functions` AND MUST NOT
                 // BE. `targets` above is built from the functions THIS module
@@ -7308,9 +7684,6 @@ fn validateDnirApplications(
                     if (!std.mem.eql(u8, want, instruction.callee)) {
                         return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
                     }
-                    if (instruction.record.len != 0) {
-                        return invalidFactsWith(diagnostic, @src(), "application-result-abi");
-                    }
                     const foreign_use = try seen.getOrPut(alloc, application.application);
                     if (foreign_use.found_existing) {
                         return invalidFactsWith(diagnostic, @src(), "application-realization-count");
@@ -7324,13 +7697,6 @@ fn validateDnirApplications(
                 }
                 if (!std.mem.eql(u8, target.linkage, instruction.callee)) {
                     return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
-                }
-                if (target.result_record) |record| {
-                    if (!std.mem.eql(u8, record, instruction.record)) {
-                        return invalidFactsWith(diagnostic, @src(), "application-result-abi");
-                    }
-                } else if (instruction.record.len != 0) {
-                    return invalidFactsWith(diagnostic, @src(), "application-result-abi");
                 }
                 // A FOLDED RELATION MAY NOT ALSO REALIZE SOMETHING. The fold
                 // replaces the whole body with its constant, so lineage
@@ -7394,9 +7760,11 @@ fn validateMachineLineage(
             return invalidFactsWith(diagnostic, @src(), "machine-lineage-mismatch");
         const relation = graph.applicationRelation(application.application) orelse
             return invalidFactsWith(diagnostic, @src(), "machine-lineage-mismatch");
+        const target = graph.applicationTarget(application.application) orelse
+            return invalidFactsWith(diagnostic, @src(), "machine-lineage-mismatch");
         if (!std.meta.eql(lineage.application, application.application) or
             !std.meta.eql(lineage.relation, relation) or
-            !std.meta.eql(lineage.target, relation) or
+            !std.meta.eql(lineage.target, target) or
             !std.meta.eql(lineage.value, result) or
             !optionalIdEql(lineage.subject, graph.applicationSubject(application.application)) or
             !lineage.descriptor.eql(descriptor) or
@@ -7464,14 +7832,11 @@ fn collectScalRecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!Sc
     var map: ScalRecordMap = .empty;
     errdefer freeScalRecords(alloc, &map);
     for (m.records) |r| {
-        var has_f64 = false;
+        var all_f64 = r.kinds.len > 0;
         for (r.kinds) |k| {
-            if (k == .f64) {
-                has_f64 = true;
-                break;
-            }
+            if (k != .f64) all_f64 = false;
         }
-        if (has_f64) continue;
+        if (all_f64) continue;
         try putScalRecordFromDnir(alloc, &map, r);
     }
     return map;
@@ -7481,7 +7846,12 @@ fn putScalRecordFromDnir(alloc: std.mem.Allocator, map: *ScalRecordMap, record: 
     var kinds: std.ArrayListUnmanaged(ScalFieldKind) = .empty;
     defer kinds.deinit(alloc);
     for (record.kinds) |kind| {
-        try kinds.append(alloc, if (kind == .str) .str else .i64);
+        const physical: ScalFieldKind = switch (kind) {
+            .str => .str,
+            .f64 => .f64,
+            .i64 => .i64,
+        };
+        try kinds.append(alloc, physical);
     }
     const owned_kinds = try kinds.toOwnedSlice(alloc);
     errdefer alloc.free(owned_kinds);
@@ -8491,6 +8861,7 @@ test "native backend: checked subject fact reaches object bytes" {
     try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
     const text_lineage = output.lineage[0];
     try std.testing.expectEqual(graph.applicationRelation(applications[0].application).?, text_lineage.relation);
+    try std.testing.expectEqual(graph.applicationTarget(applications[0].application).?, text_lineage.target);
     try std.testing.expectEqual(applications[0].application, text_lineage.application);
     try std.testing.expectEqual(try applicationResult(&graph, applications[0], &diagnostic), text_lineage.value);
     try std.testing.expect(std.meta.eql(graph.applicationSubject(applications[0].application).?, text_lineage.subject.?));
@@ -8526,6 +8897,12 @@ test "native backend: checked subject fact reaches object bytes" {
         validateMachineLineage(alloc, output, &graph, &diagnostic),
     );
     output.lineage[0].descriptor = graph.applicationDescriptor(applications[0].application).?;
+    output.lineage[0].target +%= 1;
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateMachineLineage(alloc, output, &graph, &diagnostic),
+    );
+    output.lineage[0].target -%= 1;
 
     var artifact = try emitObjectWithGraphLineage(alloc, &module, "native-object", &graph);
     defer artifact.deinit(alloc);
@@ -8533,6 +8910,7 @@ test "native backend: checked subject fact reaches object bytes" {
     try std.testing.expectEqual(@as(usize, 1), artifact.lineage.len);
     const object_lineage = artifact.lineage[0];
     try std.testing.expectEqual(text_lineage.relation, object_lineage.relation);
+    try std.testing.expectEqual(text_lineage.target, object_lineage.target);
     try std.testing.expectEqual(text_lineage.application, object_lineage.application);
     try std.testing.expectEqual(text_lineage.value, object_lineage.value);
     try std.testing.expect(std.meta.eql(text_lineage.subject.?, object_lineage.subject.?));
@@ -8556,6 +8934,27 @@ test "native backend: checked subject fact reaches object bytes" {
         assembly.machine[assembly.lineage[0].text_start..assembly.lineage[0].text_end],
     );
     try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "bl _idol_machine_lineage__observe") != null);
+
+    const application = applications[0].application;
+    const row = graph.application_rows.items[application];
+    const saved = graph.application_facts.items[row];
+    const alternate = graph.applicationCaller(application) orelse return error.TestExpectedEqual;
+    try std.testing.expect(alternate != text_lineage.relation);
+    graph.application_facts.items[row].applied = .{ .one = alternate };
+    graph.application_facts.items[row].target = .{ .one = alternate };
+    defer graph.application_facts.items[row] = saved;
+
+    var split_output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
+    defer split_output.deinit(alloc);
+    try validateMachineLineage(alloc, split_output, &graph, &diagnostic);
+    try std.testing.expectEqual(@as(usize, 1), split_output.lineage.len);
+    try std.testing.expectEqual(text_lineage.relation, split_output.lineage[0].relation);
+    try std.testing.expectEqual(alternate, split_output.lineage[0].target);
+
+    var split_artifact = try emitObjectWithGraphLineage(alloc, &module, "native-object", &graph);
+    defer split_artifact.deinit(alloc);
+    try std.testing.expectEqual(text_lineage.relation, split_artifact.lineage[0].relation);
+    try std.testing.expectEqual(alternate, split_artifact.lineage[0].target);
 }
 
 test "native backend: removing checked facts refuses before machine emission" {
@@ -9513,6 +9912,73 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
     }
 }
 
+test "native backend: checked result pack retains order through machine lineage" {
+    var diagnostic: Diagnostic = .{};
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pair(n: i64): (i64, i64)
+        \\    return n, n + 1
+        \\main: i64 = ()
+        \\    a, b = pair(40)
+        \\    a + b
+    ;
+    var lexer = Lexer.init(source, "result-pack-lineage.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var ast_module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&ast_module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "result-pack-lineage.id");
+
+    const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
+    defer dnir.deinitModule(alloc, module);
+    try validateDnirApplications(alloc, module, &graph, &diagnostic);
+    if (builtin.os.tag == .macos and builtin.cpu.arch == .aarch64) {
+        var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph, &diagnostic);
+        defer output.deinit(alloc);
+        try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
+        try std.testing.expectEqual(graph.applications()[0].application, output.lineage[0].application);
+        var pair_start: ?u32 = null;
+        var main_start: ?u32 = null;
+        for (output.symbols) |symbol| {
+            if (!symbol.defined or symbol.section != 1) continue;
+            if (std.mem.endsWith(u8, symbol.name, "__pair")) pair_start = symbol.offset;
+            if (std.mem.eql(u8, symbol.name, "main")) main_start = symbol.offset;
+        }
+        try std.testing.expectEqual(@as(u32, 8), (main_start orelse return error.TestExpectedEqual) -
+            (pair_start orelse return error.TestExpectedEqual));
+    }
+
+    // Damage control: application identity alone is insufficient if a physical
+    // projection permutes its members. The ordered graph values must agree too.
+    var damaged: ?[]dnir.PackResult = null;
+    for (module.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.pack_results.len == 2) {
+                    damaged = @constCast(instruction.pack_results);
+                }
+            }
+        }
+    }
+    const projected = damaged orelse return error.TestExpectedEqual;
+    const first = projected[0].value;
+    projected[0].value = projected[1].value;
+    projected[1].value = first;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-pack", diagnostic.note().?);
+}
+
 test "native backend: checked record result keeps application lineage" {
     var diagnostic: Diagnostic = .{};
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
@@ -9595,7 +10061,7 @@ test "native backend: checked record result keeps application lineage" {
     );
 }
 
-test "native backend: checked f64 record result refuses unstable ABI homes" {
+test "native backend: checked f64 record result uses graph-owned shape" {
     var diagnostic: Diagnostic = .{};
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
@@ -9625,12 +10091,9 @@ test "native backend: checked f64 record result refuses unstable ABI homes" {
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "record-f64-refusal.id");
 
-    try std.testing.expectError(
-        error.SemanticFactsInvalid,
-        emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph, &diagnostic),
-    );
-    try std.testing.expectEqualStrings("application-result-abi", diagnostic.note().?);
-    try std.testing.expectEqualStrings("application-result-abi", diagnostic.lowering.note().?);
+    var output = try emitArm64ModuleWithGraph(alloc, &ast_module, null, &graph, &diagnostic);
+    defer output.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
 }
 
 test "native backend: callee spelling cannot redirect a checked application" {

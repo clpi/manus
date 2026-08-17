@@ -5,6 +5,9 @@
 **.zig-out/
 duo
 test
+!/tools/wasm/test/
+/tools/wasm/test/*
+!/tools/wasm/test/conform.id
 test3
 test4
 *.o
@@ -20,7 +23,10 @@ scripts/ingress/.run.id
 **/.idol/
 scripts/migrate_lexical.py
 lib/std/token/grammar_role.id
-.pi/skills/
+.pi/skills/*
+!.pi/skills/idol/
+.pi/skills/idol/*
+!.pi/skills/idol/SKILL.md
 scripts/_*.id
 *.dylib
 /bench_*

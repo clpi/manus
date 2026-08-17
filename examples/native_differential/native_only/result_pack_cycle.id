@@ -1,0 +1,9 @@
+# expect: 44
+# Swapping two incoming registers is a real parallel-copy cycle. The return
+# preserves one source in a scratch register instead of overwriting it.
+swap(a: i64, b: i64): (i64, i64)
+  return b, a
+
+main: i64 = ()
+  first, second = swap(40, 2)
+  first * 2 + second

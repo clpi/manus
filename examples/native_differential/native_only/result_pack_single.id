@@ -1,0 +1,9 @@
+# expect: 40
+# Single-value demand projects member zero without materializing or truncating
+# the semantic result pack.
+pair(n: i64): (i64, i64)
+  return n, n + 1
+
+main: i64 = ()
+  first = pair(40)
+  first

@@ -1,11 +1,18 @@
 #!/bin/sh
-# MCP integration gate — shell transport until tools/mcp/gate.id native entry stabilizes.
 set -eu
 
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
-bin="${IDOL_BIN:-${DUO_BIN:-$repo/zig-out/bin/idol}}"
-work="${TMPDIR:-/tmp}/idol-mcp-gate"
+manifest="${IDOL_MCP_MANIFEST:-$repo/tools/node/dev/mcp.manifest.json}"
+idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-${DUO_BIN:-$repo/zig-out/bin/idol}}}"
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-mcp-gate.XXXXXX")"
 fails=0
+
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
+cleanup_gate() {
+  rm -rf "$work"
+}
+trap cleanup_gate EXIT
 
 report() {
   if [ "$1" = ok ]; then
@@ -16,183 +23,111 @@ report() {
   fi
 }
 
-member() {
-  case "$1" in *"$2"*) return 0 ;; esac
-  return 1
+validate_native_response() {
+  response="$1"
+  expected_head="$2"
+  jq -s -e --arg head "$expected_head" '
+    (map({key: (.id | tostring), value: .}) | from_entries) as $r |
+    length == 5 and
+    (map(.id) | sort) == [1, 2, 3, 4, 5] and
+    ([.[] | select(has("error"))] | length) == 0 and
+    $r["1"].jsonrpc == "2.0" and
+    $r["1"].result.protocolVersion == "2024-11-05" and
+    $r["1"].result.serverInfo.name == "idol" and
+    ($r["2"].result.tools | type) == "array" and
+    ($r["2"].result.tools | length) == 3 and
+    ([$r["2"].result.tools[].name] | sort) == ["head", "orient", "status"] and
+    ([$r["2"].result.tools[].name] | unique | length) == 3 and
+    all($r["2"].result.tools[]; .inputSchema.type == "object") and
+    ($r["3"].result.content[0].type == "text") and
+    (($r["3"].result.content[0].text | sub("\\n$"; "")) == $head) and
+    ($r["4"].result.content[0].text | startswith("## ")) and
+    ($r["5"].result.content[0].text | startswith("project: Idol\n"))
+  ' "$response" >/dev/null 2>&1
 }
 
-exact_capture() {
-  capf="$work/capture.txt"
+printf 'mcp-gate: manifest-driven production JSON-RPC\n'
+if ! "$repo/tools/node/dev/probe-mcp"; then
+  report fail "enabled-server initialize probe" "probe-mcp failed"
+else
+  report ok "enabled-server initialize probe" ""
+fi
+
+if [ ! -r "$manifest" ] || ! jq -e '.servers | type == "array"' "$manifest" >/dev/null 2>&1; then
+  report fail "manifest" "unreadable or invalid: $manifest"
+else
+  required="$(jq '[.servers[] | select((.enabled // .required // false) == true)] | length' "$manifest")"
+  if [ "$required" -eq 0 ]; then
+    report fail "required server roster" "zero enabled servers"
+  else
+    report ok "required server roster" ""
+  fi
+fi
+
+entry=""
+backend=""
+if [ -r "$manifest" ]; then
+  entry="$(jq -r '.servers[] | select(.name == "idol" and ((.enabled // .required // false) == true)) | .entry' "$manifest" 2>/dev/null)"
+  backend="$(jq -r '.servers[] | select(.name == "idol" and ((.enabled // .required // false) == true)) | .backend' "$manifest" 2>/dev/null)"
+fi
+
+if [ -z "$entry" ] || [ "$entry" = null ]; then
+  report fail "native idol server" "enabled manifest entry is absent"
+elif [ "$backend" != native ]; then
+  report fail "native idol server" "backend is $backend, expected native"
+elif [ ! -r "$repo/$entry" ]; then
+  report fail "native idol server" "entry is unreadable: $repo/$entry"
+else
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+    '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"head","arguments":{}}}' \
+    '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"status","arguments":{}}}' \
+    '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"orient","arguments":{}}}' \
+    >"$work/request.json"
+
   rc=0
-  ( "$@" ) >"$capf" 2>&1 || rc=$?
-  printf 'duoexit:%s\n' "$rc" >>"$capf"
-  cat "$capf"
-}
-
-count_idol_names() {
-  printf '%s' "$1" | grep -o '"name":"idol_' | wc -l | tr -d ' '
-}
-
-count_schemas() {
-  printf '%s' "$1" | grep -o '"inputSchema"' | wc -l | tr -d ' '
-}
-
-drive() {
-  server="$1"
-  tag="$2"
-  lines="$3"
-  reqf="$work/$tag.req.json"
-  respf="$work/$tag.resp.json"
-  printf '%s' "$lines" >"$reqf"
-  (
-    cd "$work" || exit 1
-    IDOL_ROOT="$repo" DUO_ROOT="$repo" IDOL_BIN="$bin" DUO_BIN="$bin" \
-      "$bin" run --backend=c "$server" <"$reqf" >"$respf" 2>/dev/null
-  ) || true
-  if [ -f "$respf" ]; then cat "$respf"; else printf ''; fi
-}
-
-mkdir -p "$work"
-printf 'mcp-gate: tier-0 compile checks (serve round-trip deferred while bench/lsp C embed debt remains)\n'
-
-serve_blocked=0
-if ! "$bin" check "$repo/tools/mcp/shared.id" >/dev/null 2>&1; then
-  printf '  WARN tools/mcp/shared.id semantic check — Lua bootstrap parse/C embed blocked (IMPLEMENTATION-BLOCKED)\n' >&2
-  serve_blocked=1
-else
-  report ok "tools/mcp/shared.id semantic check" ""
-fi
-
-if ! "$bin" check "$repo/tools/mcp/gate.id" >/dev/null 2>&1; then
-  report fail "tools/mcp/gate.id semantic check" "parse/check failed"
-else
-  report ok "tools/mcp/gate.id semantic check" ""
-fi
-
-serve_blocked=0
-for entry in bench.id lsp.id zls.id; do
-  if ! "$bin" check "$repo/tools/mcp/$entry" >/dev/null 2>&1; then
-    printf '  WARN tools/mcp/%s semantic check — parse/C embed blocked (IMPLEMENTATION-BLOCKED)\n' "$entry" >&2
-    serve_blocked=1
+  (cd "$repo" && IDOL_ROOT="$repo" DUO_ROOT="$repo" IDOL_BIN="$idol" DUO_BIN="$idol" \
+    "$idol" run "$repo/$entry" <"$work/request.json" >"$work/response.json" 2>"$work/server.err") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    report fail "native idol process" "exited $rc"
+    cat "$work/server.err" >&2
   else
-    report ok "tools/mcp/$entry semantic check" ""
+    report ok "native idol process exits cleanly after EOF" ""
   fi
-done
 
-cap="$(exact_capture printf capturegood)"
-if member "$cap" capturegood && member "$cap" 'duoexit:0'; then
-  report ok "process capture preserves success" ""
-else
-  report fail "process capture preserves success" "missing capturegood or nonzero status"
-fi
-
-cap="$(exact_capture /usr/bin/false)"
-if member "$cap" 'duoexit:0'; then
-  report fail "process capture preserves failure" "false returned zero"
-else
-  report ok "process capture preserves failure" ""
-fi
-
-if [ "$serve_blocked" -ne 0 ]; then
-  printf '\nmcp-gate: SKIP serve round-trip — bench/lsp/zls C embed debt (MCP bootstrap / GAP-154)\n'
-  if [ "$fails" -eq 0 ]; then
-    printf 'mcp-gate: PASS — tier-0 checks green; serve deferred\n'
-    exit 0
-  fi
-  printf 'mcp-gate: FAIL — %s tier-0 check(s) failed\n' "$fails"
-  exit 1
-fi
-
-printf 'bench.id\n'
-probe='.mcpgate/probe'
-breq='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"idol_dev_claim_acquire","arguments":{"owner":"mcpgate","file":"'"$probe"'"}}}
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"idol_dev_claim_acquire","arguments":{"owner":"intruder","file":"'"$probe"'"}}}
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"idol_dev_claim_files","arguments":{}}}
-{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"idol_dev_claim_release","arguments":{"owner":"mcpgate","file":"'"$probe"'"}}}
-{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"idol_coordination_read","arguments":{}}}
-{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"idol_bench_regressions","arguments":{"suite":"control"}}}
-'
-bout="$(drive "$repo/tools/mcp/bench.id" bench "$breq")"
-
-if member "$bout" '"protocolVersion":"2024-11-05"'; then
-  report ok "idol-bench initialize" ""
-else
-  report fail "idol-bench initialize" "no protocolVersion in response"
-fi
-
-bn="$(count_idol_names "$bout")"
-bs="$(count_schemas "$bout")"
-if [ "$bn" != "$bs" ]; then
-  report fail "idol-bench tool census agrees" "name count $bn vs schema count $bs"
-elif [ "$bn" != 32 ]; then
-  report fail "idol-bench serves 32 tools" "served $bn"
-else
-  report ok "idol-bench serves 32 tools" ""
-fi
-
-for name in idol_agent_gaps_update idol_coordination_read idol_dev_claim_acquire idol_dev_claim_release idol_dev_claim_files idol_agent_smoke; do
-  if member "$bout" "\"name\":\"$name\""; then
-    report ok "idol-bench lists $name" ""
+  head="$(git -C "$repo" rev-parse HEAD)"
+  if validate_native_response "$work/response.json" "$head"; then
+    report ok "native idol initialize/list/handlers by request id" ""
   else
-    report fail "idol-bench lists $name" "absent from tools/list"
+    report fail "native idol initialize/list/handlers by request id" "invalid, missing, duplicate, or wrong response"
+    cat "$work/response.json" >&2
   fi
-done
 
-if member "$bout" '"granted":true' && member "$bout" '"granted":false' && member "$bout" '"held_by":"mcpgate"'; then
-  report ok "idol-bench claim lock round trip" ""
-else
-  report fail "idol-bench claim lock round trip" "missing grant/refuse/holder evidence"
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05"}}' >"$work/init-only.json"
+  if validate_native_response "$work/init-only.json" "$head"; then
+    report fail "damage control: initialize-only" "incomplete server was accepted"
+  else
+    report ok "damage control: initialize-only rejected" ""
+  fi
+
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","serverInfo":{"name":"idol"}}}' \
+    '{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"head","inputSchema":{"type":"object"}},{"name":"head","inputSchema":{"type":"object"}},{"name":"status","inputSchema":{"type":"object"}}]}}' \
+    '{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"'"$head"'"}]}}' \
+    '{"jsonrpc":"2.0","id":4,"result":{"content":[{"type":"text","text":"## main"}]}}' \
+    '{"jsonrpc":"2.0","id":5,"result":{"content":[{"type":"text","text":"project: Idol"}]}}' \
+    >"$work/duplicate-tool.json"
+  if validate_native_response "$work/duplicate-tool.json" "$head"; then
+    report fail "damage control: duplicate tool" "duplicate roster was accepted"
+  else
+    report ok "damage control: duplicate tool rejected" ""
+  fi
 fi
 
-printf 'lsp.id\n'
-lreq='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"idol_language_features","arguments":{}}}
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"idol_agent_canonical_index","arguments":{}}}
-'
-lout="$(drive "$repo/tools/mcp/lsp.id" lsp "$lreq")"
-
-if member "$lout" '"protocolVersion":"2024-11-05"'; then
-  report ok "idol-lsp initialize" ""
-else
-  report fail "idol-lsp initialize" "no protocolVersion in response"
-fi
-
-ln="$(count_idol_names "$lout")"
-ls="$(count_schemas "$lout")"
-if [ "$ln" != "$ls" ]; then
-  report fail "idol-lsp tool census agrees" "name count $ln vs schema count $ls"
-elif [ "$ln" != 32 ]; then
-  report fail "idol-lsp serves 32 tools" "served $ln"
-else
-  report ok "idol-lsp serves 32 tools" ""
-fi
-
-printf 'zls.id\n'
-zreq='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-'
-zout="$(drive "$repo/tools/mcp/zls.id" zls "$zreq")"
-
-if member "$zout" '"protocolVersion":"2024-11-05"'; then
-  report ok "zls initialize" ""
-else
-  report fail "zls initialize" "no protocolVersion in response"
-fi
-
-zn="$(printf '%s' "$zout" | grep -o '"name":"zig_' | wc -l | tr -d ' ')"
-if [ "$zn" = 4 ]; then
-  report ok "zls serves 4 tools" ""
-else
-  report fail "zls serves 4 tools" "served $zn"
-fi
-
-printf '\n'
 if [ "$fails" -eq 0 ]; then
-  printf 'mcp-gate: PASS — all three servers handshake and serve their tool census\n'
+  printf 'mcp-gate: PASS — production server replied by value and damage controls fired\n'
   exit 0
 fi
-printf 'mcp-gate: FAIL — %s check(s) failed\n' "$fails"
+printf 'mcp-gate: FAIL — %s check(s) failed\n' "$fails" >&2
 exit 1
