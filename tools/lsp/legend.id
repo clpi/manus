@@ -110,7 +110,7 @@ findat: i64 = (hay: str, needle: str)
 main: i64 = ()
   src = "{root}/tools/lsp/src/highlight.id"
   dump = "/tmp/idol-lsp-legend.txt"
-  os.execute("cd /tmp && hlmode=legend IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. root .. "/zig-out/bin/idol' run --backend=c '" .. src .. "' > '" .. dump .. "' 2>/dev/null")
+  os.execute("cd /tmp && hlmode=legend IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. root .. "/zig-out/bin/idol' run --backend=direct '" .. src .. "' > '" .. dump .. "' 2>/dev/null")
   text = std.fs.read_file(dump)
   if text == nil or text == ""
     print("legend: FAIL — {src} printed no legend under hlmode=legend")
