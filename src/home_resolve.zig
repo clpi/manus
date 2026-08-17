@@ -250,6 +250,30 @@ fn rejectParentUnderflow(comptime path_type: std.fs.path.PathType, path: []const
     if (depth == 0) return error.AmbiguousHomePath;
 }
 
+fn hasParentComponent(comptime path_type: std.fs.path.PathType, path: []const u8) bool {
+    var it = std.fs.path.ComponentIterator(path_type, u8).init(path);
+    while (it.next()) |component| {
+        if (std.mem.eql(u8, component.name, "..")) return true;
+    }
+    return false;
+}
+
+fn canonicalHomePath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]u8 {
+    var buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const len = Io.Dir.cwd().realPathFile(io, path, &buffer) catch |err| switch (err) {
+        // Semantic tests and generated regions can have a source identity before
+        // they have a file. A parent spelling cannot: resolving it lexically
+        // would disagree with filesystem order when its left component is a
+        // symlink, so that case remains an exact refusal.
+        error.FileNotFound => if (hasParentComponent(native_path_type, path))
+            return err
+        else
+            return std.fs.path.resolve(alloc, &.{path}),
+        else => return err,
+    };
+    return alloc.dupe(u8, buffer[0..len]);
+}
+
 fn isWithinRoot(comptime path_type: std.fs.path.PathType, path: []const u8, root: []const u8) bool {
     if (std.mem.eql(u8, path, root)) return true;
     if (!std.mem.startsWith(u8, path, root)) return false;
@@ -301,7 +325,7 @@ fn homeFromDir(
 /// same home reached two ways, and they must mangle alike.
 pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u8 {
     try rejectParentUnderflow(native_path_type, path);
-    const canonical = try Io.Dir.cwd().realPathFileAlloc(io, path, alloc);
+    const canonical = try canonicalHomePath(alloc, io, path);
     defer alloc.free(canonical);
     const stem = std.fs.path.stem(canonical);
     var dir = std.fs.path.dirname(canonical) orelse "";
@@ -433,6 +457,10 @@ test "home_resolve: homeOfPath drops search roots and keeps the home chain" {
         defer alloc.free(got);
         try std.testing.expectEqualStrings(c.want, got);
     }
+
+    const virtual = try homeOfPath(alloc, io, "virtual-lineage.id");
+    defer alloc.free(virtual);
+    try std.testing.expectEqualStrings("virtual-lineage", virtual);
 }
 
 test "home_resolve: file identity resolves parents after symlinks" {
@@ -475,6 +503,11 @@ test "home_resolve: file identity resolves parents after symlinks" {
 
     try std.testing.expectError(error.HomePathEscape, homeOfPath(alloc, io, "../../escape.id"));
     try std.testing.expectError(error.HomePathEscape, homeOfPath(alloc, io, "/../../escape.id"));
+    const missing_parent = try std.fmt.allocPrint(alloc, "{s}{c}left{c}..{c}missing.id", .{
+        root, std.fs.path.sep, std.fs.path.sep, std.fs.path.sep,
+    });
+    defer alloc.free(missing_parent);
+    try std.testing.expectError(error.FileNotFound, homeOfPath(alloc, io, missing_parent));
 }
 
 test "home_resolve: parent underflow and home components follow platform paths" {
