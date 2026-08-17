@@ -232,6 +232,7 @@ const OccurrenceBridge = struct {
     graph: *const semantic_graph.SemanticGraph,
     diagnostic: *Diagnostic,
     by_expression: std.AutoHashMapUnmanaged(*const Expr, semantic_graph.id) = .empty,
+    member_by_expression: std.AutoHashMapUnmanaged(*const Expr, semantic_graph.id) = .empty,
     unresolved: usize = 0,
 
     fn init(
@@ -247,6 +248,22 @@ const OccurrenceBridge = struct {
         errdefer index.deinit();
 
         for (graph.nodes.items, 0..) |node, coordinate| {
+            if (node.kind == .value) {
+                const occurrence: semantic_graph.id = @intCast(coordinate);
+                const use = graph.aggregateUse(occurrence) orelse continue;
+                const selected_member = switch (use.member) {
+                    .one => |selected| selected,
+                    .none, .unknown => continue,
+                };
+                const expression_raw = node.ast_ref orelse
+                    return invalidGraphFacts(diagnostic, @src(), "aggregate-member-occurrence");
+                const expression: *const Expr = @ptrCast(@alignCast(expression_raw));
+                const slot = try index.member_by_expression.getOrPut(alloc, expression);
+                if (slot.found_existing and slot.value_ptr.* != selected_member)
+                    return invalidGraphFacts(diagnostic, @src(), "aggregate-member-occurrence");
+                slot.value_ptr.* = selected_member;
+                continue;
+            }
             if (node.kind != .call) continue;
             const application: semantic_graph.id = @intCast(coordinate);
             if (graph.application(application) == null) {
@@ -272,11 +289,16 @@ const OccurrenceBridge = struct {
 
     fn deinit(self: *OccurrenceBridge) void {
         self.by_expression.deinit(self.alloc);
+        self.member_by_expression.deinit(self.alloc);
     }
 
     fn get(self: *const OccurrenceBridge, expression: *const Expr) ?*const semantic_graph.ApplicationFact {
         const application = self.by_expression.get(expression) orelse return null;
         return self.graph.application(application);
+    }
+
+    fn member(self: *const OccurrenceBridge, expression: *const Expr) ?semantic_graph.id {
+        return self.member_by_expression.get(expression);
     }
 };
 
@@ -1820,6 +1842,13 @@ pub const LowerCtx = struct {
     /// function. The identity and contents stay graph-owned; this map only
     /// avoids emitting a second address materialization for another access.
     aggregate_bases: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
+    /// Application-specific graph member value to its demanded caller-side
+    /// home. No `record.field` spelling participates in checked result access.
+    member_locals: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
+    /// Every member assigned the graph-projected realization, including
+    /// discarded members with no home. Absence means the full record ABI owns
+    /// the access and the established field slots remain authoritative.
+    projected_result_members: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty,
     /// Static element count of a positional table, keyed by its `.len` slot, so
     /// `t[i]` with a non-constant `i` knows how many slots to select over.
     table_lens: std.AutoHashMapUnmanaged(u32, i64) = .empty,
@@ -1888,6 +1917,8 @@ pub const LowerCtx = struct {
         self.narrow_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
         self.aggregate_bases.deinit(self.alloc);
+        self.member_locals.deinit(self.alloc);
+        self.projected_result_members.deinit(self.alloc);
         self.table_lens.deinit(self.alloc);
         var ct = self.const_tables.iterator();
         while (ct.next()) |e| {
@@ -4584,7 +4615,7 @@ fn linkageForTarget(ctx: *LowerCtx, target: semantic_graph.id) Error![]const u8 
         invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-target");
 }
 
-fn lowerCheckedRecordCallAssign(
+fn lowerCheckedRecordCallAssignFull(
     ctx: *LowerCtx,
     name: []const u8,
     application: *const semantic_graph.ApplicationFact,
@@ -4618,6 +4649,66 @@ fn lowerCheckedRecordCallAssign(
         .field = name,
         .ty = descriptor,
     });
+}
+
+fn lowerCheckedRecordCallAssign(
+    ctx: *LowerCtx,
+    name: []const u8,
+    application: *const semantic_graph.ApplicationFact,
+    record: dnir.RecordDesc,
+) Error!void {
+    if (record.fields.len > max_reg_record_fields) {
+        return lowerCheckedRecordCallAssignFull(ctx, name, application, record);
+    }
+    for (record.kinds) |kind| {
+        if (kind != .i64) return lowerCheckedRecordCallAssignFull(ctx, name, application, record);
+    }
+    const target = try applicationTarget(ctx, application);
+    if (ctx.graph.foreignHome(target) != null) {
+        return lowerCheckedRecordCallAssignFull(ctx, name, application, record);
+    }
+    const result = try checkedApplicationResult(ctx, application);
+    const aggregate = ctx.graph.aggregate(result) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-members");
+    const members = ctx.graph.aggregateMembers(result) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-members");
+    const demands = ctx.graph.packMemberDemands(aggregate.members_pack) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-demand");
+    if (members.len != record.fields.len or members.len > max_reg_record_fields or demands.len != members.len) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-abi");
+    }
+    for (demands) |demand| {
+        if (demand == .unknown) return lowerCheckedRecordCallAssignFull(ctx, name, application, record);
+    }
+    for (members, record.fields, record.kinds) |member, field_name, kind| {
+        const node = ctx.graph.get(member) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-member");
+        const member_name = node.name orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-member");
+        if (!std.mem.eql(u8, member_name, field_name) or kind != .i64) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-abi");
+        }
+        _ = try checkedGpPackResultType(ctx, member);
+    }
+    const adjustment = ctx.graph.packAdjustment(application.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-adjustment");
+    const targets = ctx.graph.packMembers(adjustment.target_pack) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-adjustment");
+    if (targets.len != 1) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-adjustment");
+    }
+    if (ctx.graph.aggregate(targets[0]) == null) {
+        return lowerCheckedRecordCallAssignFull(ctx, name, application, record);
+    }
+
+    var temps: [max_reg_record_fields]?u32 = @splat(null);
+    try lowerCheckedResultMembers(ctx, application, result, members, demands, &temps);
+    for (members, temps[0..members.len]) |member, temp| {
+        try ctx.projected_result_members.put(ctx.alloc, member, {});
+        if (temp) |slot| try ctx.member_locals.put(ctx.alloc, member, slot);
+    }
+    // The source name remains diagnostic provenance only on the full-ABI
+    // fallback. Checked projected field reads bind through graph member ids.
 }
 
 fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, args: []const *ast.Expr, rec_name: []const u8) Error!void {
@@ -6615,19 +6706,18 @@ fn stageCheckedScalarOperands(
     }
 }
 
-/// Realize an ordered graph result pack directly in ABI result registers.
-/// `demanded` is a prefix because binding adjustment preserves Lua/Idol pack
-/// order; undemanded members retain their ABI positions but gain no DNIR temp.
-fn lowerCheckedPackCall(
+/// Realize ordered graph result values directly in ABI result registers.
+/// Discarded members retain their ABI positions but gain no DNIR temp/home.
+fn lowerCheckedResultMembers(
     ctx: *LowerCtx,
     application: *const semantic_graph.ApplicationFact,
-    demanded: usize,
+    lineage_value: semantic_graph.id,
+    results: []const semantic_graph.id,
+    demands: []const semantic_graph.PackMemberDemand,
     out_temps: *[max_reg_record_fields]?u32,
 ) Error!void {
     bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
-    const results = ctx.graph.applicationResults(application.application) orelse
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
-    if (results.len <= 1 or results.len > max_reg_record_fields or demanded > results.len) {
+    if (results.len == 0 or results.len > max_reg_record_fields or demands.len != results.len) {
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-abi");
     }
     const target = try applicationTarget(ctx, application);
@@ -6653,7 +6743,7 @@ fn lowerCheckedPackCall(
     @memset(out_temps, null);
     for (results, 0..) |value, i| {
         const descriptor = try checkedGpPackResultType(ctx, value);
-        const temp = if (i < demanded) ctx.freshTemp() else null;
+        const temp = if (demands[i] == .discard) null else ctx.freshTemp();
         out_temps[i] = temp;
         projected[i] = .{ .value = value, .temp = temp, .ty = descriptor };
     }
@@ -6661,10 +6751,7 @@ fn lowerCheckedPackCall(
         .op = .call_direct,
         .relation = relation,
         .application = application.application,
-        // `value` remains the first member for the compact lineage row. The
-        // application id names the authoritative entire result pack, and
-        // `pack_results` proves every ordered member against it.
-        .value = results[0],
+        .value = lineage_value,
         .subject = ctx.graph.applicationSubject(application.application),
         .target = target,
         .realization_start = realization_start,
@@ -6673,6 +6760,33 @@ fn lowerCheckedPackCall(
         .ty = try publishedDescriptor(ctx, application),
         .pack_results = projected,
     });
+}
+
+/// Multiple-return source packs use the same result-member realizer. Their
+/// demand is currently the exact binding prefix.
+fn lowerCheckedPackCall(
+    ctx: *LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+    demanded: usize,
+    out_temps: *[max_reg_record_fields]?u32,
+) Error!void {
+    const results = ctx.graph.applicationResults(application.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
+    if (results.len <= 1 or demanded > results.len) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-abi");
+    }
+    var demand_storage: [max_reg_record_fields]semantic_graph.PackMemberDemand = @splat(.discard);
+    for (demand_storage[0..results.len], 0..) |*member, i| {
+        member.* = if (i < demanded) .value else .discard;
+    }
+    try lowerCheckedResultMembers(
+        ctx,
+        application,
+        results[0],
+        results,
+        demand_storage[0..results.len],
+        out_temps,
+    );
 }
 
 /// Realize one checked scalar application. Source call orientation has already
@@ -9011,6 +9125,12 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_cwd", .ty = osResult("cwd") });
         return .{ .temp = t };
     }
+    if (ctx.occurrences.member(expr)) |member| {
+        if (ctx.member_locals.get(member)) |slot| return .{ .temp = slot };
+        if (ctx.projected_result_members.contains(member)) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-demand");
+        }
+    }
     const fld = expr.field;
     if (fld.obj.* == .name) {
         // Module-level descriptor constant: `Kind.ident` folds to an immediate.
@@ -9713,6 +9833,199 @@ test "dnir_lower: graph result pack crosses one checked application" {
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("application-result-abi", diagnostic.note().?);
+}
+
+test "dnir_lower: graph member demand removes only the discarded result home" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: i64 = (seed: i64)
+        \\    made: pair = make(seed)
+        \\    made.left
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "member-result.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "member-result.id");
+    var plan = try @import("demand.zig").analyzeModule(alloc, &module, .{ .graph = &graph });
+    defer plan.deinit();
+
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    var call: ?*dnir.Instr = null;
+    var producer_survived = false;
+    for (lowered.functions) |function| {
+        if (std.mem.indexOf(u8, function.name, "make") != null) {
+            for (function.blocks) |block| {
+                for (block.instrs) |instruction| {
+                    if (instruction.op == .binop) producer_survived = true;
+                }
+            }
+        }
+        for (function.blocks) |block| {
+            for (block.instrs) |*instruction| {
+                if (instruction.application != null) call = @constCast(instruction);
+            }
+        }
+    }
+    const projected = call orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 2), projected.pack_results.len);
+    try std.testing.expect(projected.pack_results[0].temp != null);
+    try std.testing.expect(projected.pack_results[1].temp == null);
+    try std.testing.expect(producer_survived);
+    try std.testing.expect(dnir.moduleIsNativeDirectReady(lowered));
+
+    const saved_pack = projected.pack_results;
+    projected.pack_results = &.{};
+    try std.testing.expect(!dnir.moduleIsNativeDirectReady(lowered));
+    projected.pack_results = saved_pack;
+    const physical: []dnir.PackResult = @constCast(projected.pack_results);
+    const first_temp = physical[0].temp;
+    physical[0].temp = null;
+    try std.testing.expect(!dnir.moduleIsNativeDirectReady(lowered));
+    physical[0].temp = first_temp;
+    physical[1].temp = first_temp;
+    try std.testing.expect(!dnir.moduleIsNativeDirectReady(lowered));
+    physical[1].temp = null;
+    try std.testing.expect(dnir.moduleIsNativeDirectReady(lowered));
+
+    const application_id = projected.application orelse return error.TestExpectedEqual;
+    const target = graph.applicationTarget(application_id) orelse return error.TestExpectedEqual;
+    graph.nodes.items[target].foreign_home = "foreign";
+    try std.testing.expectEqual(@as(usize, 1), try graph.projectApplicationResultMemberDemands());
+    const foreign = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, foreign);
+    var foreign_call: ?dnir.Instr = null;
+    for (foreign.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.application == application_id) foreign_call = instruction;
+            }
+        }
+    }
+    const full = foreign_call orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 0), full.pack_results.len);
+    try std.testing.expectEqualStrings("pair", full.record);
+    try std.testing.expectEqualStrings("made", full.field);
+    graph.nodes.items[target].foreign_home = null;
+    try std.testing.expectEqual(@as(usize, 1), try graph.projectApplicationResultMemberDemands());
+    const result_aggregate = graph.aggregate(projected.value.?) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualSlices(
+        semantic_graph.PackMemberDemand,
+        &[_]semantic_graph.PackMemberDemand{ .value, .discard },
+        graph.packMemberDemands(result_aggregate.members_pack).?,
+    );
+}
+
+test "dnir_lower: graph member demand retains the full ABI for a mixed record result" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\mixed: {
+        \\    number: i64
+        \\    text: str
+        \\}
+        \\make: mixed = (value: i64)
+        \\    { number = value, text = "kept" }
+        \\main: i64 = (seed: i64)
+        \\    made: mixed = make(seed)
+        \\    made.number
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "member-mixed.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "member-mixed.id");
+    var plan = try @import("demand.zig").analyzeModule(alloc, &module, .{ .graph = &graph });
+    defer plan.deinit();
+
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    var call: ?dnir.Instr = null;
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.application != null) call = instruction;
+            }
+        }
+    }
+    const full = call orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 0), full.pack_results.len);
+    try std.testing.expectEqualStrings("mixed", full.record);
+    try std.testing.expectEqualStrings("made", full.field);
+    try std.testing.expect(dnir.moduleIsNativeDirectReady(lowered));
+}
+
+test "dnir_lower: graph member demand retains the full ABI after reassignment" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pair: {
+        \\    left: i64
+        \\    right: i64
+        \\}
+        \\make: pair = (value: i64)
+        \\    { left = value, right = value + 1 }
+        \\main: i64 = (seed: i64)
+        \\    made: pair = make(seed)
+        \\    made = make(seed + 1)
+        \\    made.left
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "member-reassigned.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "member-reassigned.id");
+    var plan = try @import("demand.zig").analyzeModule(alloc, &module, .{ .graph = &graph });
+    defer plan.deinit();
+
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    var calls: usize = 0;
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.application == null) continue;
+                calls += 1;
+                try std.testing.expectEqual(@as(usize, 0), instruction.pack_results.len);
+                try std.testing.expectEqualStrings("pair", instruction.record);
+                try std.testing.expectEqualStrings("made", instruction.field);
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), calls);
+    try std.testing.expect(dnir.moduleIsNativeDirectReady(lowered));
 }
 
 test "dnir_lower: checked aggregate operand requires graph ABI facts" {
