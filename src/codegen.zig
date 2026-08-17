@@ -3734,12 +3734,17 @@ pub const CodeGen = struct {
         return false;
     }
 
-    /// `{ 0x00, 0x61, … }` — every field positional, every value an integer
-    /// literal. A constant byte blob, not an exported record.
+    /// A positional aggregate whose leaves are integer literals. Nested rows
+    /// are still immutable data, not keyed exports; the graph owns their exact
+    /// member packs and the direct realization chooses the physical layout.
     fn table_is_positional_int_blob(expr: *const ast.Expr) bool {
         for (expr.table.fields) |fld| {
             switch (fld) {
-                .positional => |pv| if (pv.* != .int_lit) return false,
+                .positional => |pv| switch (pv.*) {
+                    .int_lit => {},
+                    .table => if (!table_is_positional_int_blob(pv)) return false,
+                    else => return false,
+                },
                 else => return false,
             }
         }
