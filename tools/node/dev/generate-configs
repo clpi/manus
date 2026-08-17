@@ -10,6 +10,18 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! jq -e '
+  (.servers | type == "array" and length > 0) and
+  all(.servers[];
+    has("enabled") and (.enabled | type == "boolean") and
+    has("required") and (.required | type == "boolean") and
+    ((.required != true) or .enabled)
+  )
+' "$manifest" >/dev/null; then
+  echo "generate-configs: every server needs explicit enabled/required booleans, and required servers must be enabled" >&2
+  exit 1
+fi
+
 if [ ! -x "$duo" ]; then
   echo "generate-configs: missing compiler artifact: $duo" >&2
   exit 1
@@ -46,6 +58,7 @@ cursor_out="$tmp/cursor.json"
     "cwd = " + ($repo|@json) + "\n" +
     "startup_timeout_sec = " + (.startup_timeout_sec|tostring) + "\n" +
     "tool_timeout_sec = " + (.tool_timeout_sec|tostring) + "\n" +
+    "enabled = " + (.enabled|tostring) + "\n" +
     "required = " + (.required|tostring) + "\n\n" +
     "[mcp_servers." + .name + ".env]\n" +
     "IDOL_ROOT = " + ($repo|@json) + "\n" +
@@ -59,6 +72,7 @@ jq --arg repo "$repo" --arg duo "$duo" '
   {
     mcpServers: (
       .servers
+      | map(select(.enabled))
       | map({
           key: .name,
           value: {
@@ -94,14 +108,32 @@ mkdir -p "$codex_home"
 touch "$codex_config"
 
 clean="$tmp/config.toml"
-awk '
+managed_servers="$(jq -r '.servers[].name' "$manifest" | tr '\n' ' ')duo-bench duo-lsp"
+awk -v managed_servers="$managed_servers" '
+  BEGIN {
+    count = split(managed_servers, names, /[[:space:]]+/)
+    for (i = 1; i <= count; i++) {
+      if (names[i] != "") managed[names[i]] = 1
+    }
+  }
   /^# BEGIN IDOL MCP$/ { marked=1; next }
   /^# END IDOL MCP$/ { marked=0; next }
   /^# BEGIN IDSEM MCP$/ { marked=1; next }
   /^# END IDSEM MCP$/ { marked=0; next }
   marked == 1 { next }
-  /^\[mcp_servers\.(idol-bench|idol-lsp|duo-bench|duo-lsp|zls)(\.env)?\]$/ { legacy=1; next }
-  /^\[/ { legacy=0 }
+  /^\[/ {
+    legacy=0
+    section=$0
+    if (section ~ /^\[mcp_servers\./) {
+      sub(/^\[mcp_servers\./, "", section)
+      sub(/\]$/, "", section)
+      sub(/\.env$/, "", section)
+      if (section in managed) {
+        legacy=1
+        next
+      }
+    }
+  }
   legacy != 1 { print }
 ' "$codex_config" > "$clean"
 {

@@ -2,11 +2,14 @@
   "schema": 1,
   "project": "Idol",
   "language": "idol",
-  "development_repository": "clpi/duo",
+  "development_repository": "clpi/idol",
   "release_repository": "idollang/idol",
   "canonical_source": ".id",
   "authority": [
+    "docs/spec/law.md",
     "AGENTS.md",
+    "docs/spec/canonical.md",
+    "docs/spec/agent.md",
     "docs/spec/constitution.md",
     "CLAUDE.md",
     "docs/spec/source.md",
@@ -26,6 +29,7 @@
       "entry": "tools/mcp/native.id",
       "provenance": "native",
       "backend": "native",
+      "enabled": true,
       "required": true,
       "startup_timeout_sec": 60,
       "tool_timeout_sec": 1800,
@@ -36,30 +40,33 @@
       "entry": "tools/mcp/bench.id",
       "provenance": "bootstrap-compatibility",
       "backend": "c",
-      "required": true,
+      "enabled": false,
+      "required": false,
       "startup_timeout_sec": 60,
       "tool_timeout_sec": 1800,
-      "purpose": "claims, gaps, serialized gates, and performance evidence"
+      "purpose": "claims, gaps, serialized gates, and performance evidence \u2014 DISABLED: source predates the C-backend retirement and does not compile under any live backend; revive by migrating to native, then restore required"
     },
     {
       "name": "idol-lsp",
       "entry": "tools/mcp/lsp.id",
       "provenance": "bootstrap-compatibility",
       "backend": "c",
-      "required": true,
+      "enabled": false,
+      "required": false,
       "startup_timeout_sec": 60,
       "tool_timeout_sec": 1800,
-      "purpose": "diagnostics and language intelligence"
+      "purpose": "diagnostics and language intelligence \u2014 DISABLED: source predates the C-backend retirement and does not compile under any live backend; revive by migrating to native, then restore required"
     },
     {
       "name": "zls",
       "entry": "tools/mcp/zls.id",
       "provenance": "bootstrap-compatibility",
       "backend": "c",
-      "required": true,
+      "enabled": false,
+      "required": false,
       "startup_timeout_sec": 60,
       "tool_timeout_sec": 1800,
-      "purpose": "Zig bootstrap navigation through zls"
+      "purpose": "Zig bootstrap navigation through zls \u2014 DISABLED: source predates the C-backend retirement and does not compile under any live backend; revive by migrating to native, then restore required"
     }
   ]
 }
