@@ -1018,8 +1018,8 @@ Mandatory for every agent:
 4. **Generated harness** — stable law projection in `.agents/HARNESS.md`;
    session envelope in `.agents/session/ENVELOPE.md` is ephemeral and never
    committed.
-5. **Verification** — run `./tools/node/dev/zerohistorycensus` and
-   `./tools/node/dev/identitycensus` before claiming purge complete.
+5. **Verification** — run `./tools/node/dev/census/history/zero` and
+   `./tools/node/dev/census/identity` before claiming purge complete.
 
 Text census discovers debt; semantic gates convict equivalent architecture under
 different spelling (`law.gate.convergence`).

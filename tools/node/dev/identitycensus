@@ -1,5 +1,0 @@
-#!/bin/sh
-# Identity census — law.zero.history current identity only.
-# Thin spelling shim; the implementation lives at census/identity
-# (decomposed-path dispatch is itself gated by gate/path.id).
-exec "$(dirname "$0")/census/identity" "$@"

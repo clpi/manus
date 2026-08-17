@@ -114,6 +114,7 @@ jq --arg repo "$repo" --arg parent "$parent" '
 
 jq --arg repo "$repo" --arg parent "$parent" '
   {
+    "$schema": "https://opencode.ai/config.json",
     mcp: (
       [.servers[] | select(.enabled) |
         (if .sibling then ($parent + "/" + .sibling) else $repo end) as $root |

@@ -183,22 +183,22 @@ for skill in idol-dev idol; do
   fi
 done
 
-for name in idol-bench idol-lsp zls; do
+for name in $(jq -r '.servers[] | select(.enabled == true) | .name' "$repo/tools/node/dev/mcp.manifest.json"); do
   if codex mcp get "$name" >/dev/null 2>&1; then
     ok "Codex has MCP server $name"
-  elif [ "$name" = "idol-bench" ] && codex mcp get duo-bench >/dev/null 2>&1; then
-    ok "Codex has MCP server duo-bench (legacy  -  run tools/node/dev/generate-configs)"
-  elif [ "$name" = "idol-lsp" ] && codex mcp get duo-lsp >/dev/null 2>&1; then
-    ok "Codex has MCP server duo-lsp (legacy  -  run tools/node/dev/generate-configs)"
   else
     bad "Codex missing MCP server $name"
   fi
 done
 
-if [ -f "$repo/.cursor/mcp.json" ] && jq -e '((.mcpServers["idol-bench"] or .mcpServers["duo-bench"]) and (.mcpServers["idol-lsp"] or .mcpServers["duo-lsp"]) and .mcpServers.zls)' "$repo/.cursor/mcp.json" >/dev/null 2>&1; then
-  ok "Cursor project MCP config has all three servers"
+cursor_expected="$(jq -r '[.servers[] | select(.enabled == true) | .name] | join(" ")' "$repo/tools/node/dev/mcp.manifest.json")"
+if [ -f "$repo/.cursor/mcp.json" ] && jq -e --arg expected "$cursor_expected" '
+    ($expected | split(" ")) as $names |
+    [ $names[] as $n | select(.mcpServers[$n] == null) ] | length == 0
+  ' "$repo/.cursor/mcp.json" >/dev/null 2>&1; then
+  ok "Cursor project MCP config has every manifest-enabled server"
 else
-  bad "Cursor project MCP config missing required servers"
+  bad "Cursor project MCP config missing manifest-enabled servers"
 fi
 
 if [ -f "$repo/.cursor/rules/00-authority.mdc" ] && grep -q 'AGENTS.md' "$repo/.cursor/rules/00-authority.mdc" && grep -q 'docs/spec/constitution.md' "$repo/.cursor/rules/00-authority.mdc"; then
@@ -323,9 +323,9 @@ run_gate() {
   fi
 }
 
-run_gate "identity projection census" "$repo/tools/node/dev/identitycensus"
+run_gate "identity projection census" "$repo/tools/node/dev/census/identity"
 run_gate "corpus tag census" "$repo/tools/node/dev/corpuscensus"
-run_gate "zero-history census" "$repo/tools/node/dev/zerohistorycensus"
+run_gate "zero-history census" "$repo/tools/node/dev/census/history/zero"
 run_gate "convergence census" "$repo/tools/node/dev/convergencecensus"
 run_gate "projection debt census" "$repo/tools/node/dev/projectioncensus"
 run_gate "foreign licence census" "$repo/tools/node/dev/foreigncensus"
