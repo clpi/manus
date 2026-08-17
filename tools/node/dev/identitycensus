@@ -1,43 +1,5 @@
 #!/bin/sh
 # Identity census — law.zero.history current identity only.
-set -eu
-repo="$(cd "$(dirname "$0")/../../.." && pwd)"
-cd "$repo"
-
-paths="
-AGENTS.md
-CLAUDE.md
-docs/orientation.md
-docs/AGENT_ALIGNMENT.md
-docs/METRICS.md
-docs/bootstrap.md
-.agents/AGENT_CANONICAL.md
-.agents/AGENT_COORDINATION.md
-.agents/AGENT_INTEGRATION.md
-.agents/HARNESS.md
-docs/spec/harness-projection.md
-docs/spec/README.md
-docs/spec/AUTHORITY.md
-.cursor/rules/00-authority.mdc
-.cursor/rules/10-language.mdc
-.cursor/rules/50-mcp-lsp.mdc
-"
-
-retired='Idsem|idsem|Duon|duon|\.duo\b|Historical Idol|Historical Duo|historical Idol/Duo'
-count=0
-for f in $paths; do
-  [ -f "$f" ] || continue
-  hits=$(rg -n "$retired" "$f" 2>/dev/null | rg -v 'law\.zero|ZERO-HISTORY|zerohistorycensus|identitycensus|git stores|retired name|forbidden|Retired|not source suffixes' || true)
-  if [ -n "$hits" ]; then
-    echo "identitycensus: FAIL $f"
-    echo "$hits" | sed 's/^/  /'
-    count=$((count + $(echo "$hits" | wc -l | tr -d ' ')))
-  fi
-done
-
-if [ "$count" -gt 0 ]; then
-  echo "identitycensus: $count retired identity reference(s) in agent projections"
-  exit 1
-fi
-echo "identitycensus: pass agent projections current-only"
-exit 0
+# Thin spelling shim; the implementation lives at census/identity
+# (decomposed-path dispatch is itself gated by gate/path.id).
+exec "$(dirname "$0")/census/identity" "$@"

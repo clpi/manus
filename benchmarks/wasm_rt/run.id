@@ -1,8 +1,8 @@
 # Head-to-head WASM runtime benchmark: ward vs every other runtime on PATH.
 #
-# Duo replacement for benchmarks/wasm_rt/run.sh (monoglot census).
+# Idol replacement for benchmarks/wasm_rt/run.sh (monoglot census).
 #
-# Unlike scripts/run_wasm_benchmark.id (which measures duo-compiled-to-WASM
+# Unlike scripts/run_wasm_benchmark.id (which measures idol-compiled-to-WASM
 # running *under* other runtimes), this measures the runtimes themselves
 # executing the same module.
 #
