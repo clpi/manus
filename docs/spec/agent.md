@@ -2492,10 +2492,15 @@ unless explicitly performing an admitted foreign realization.
 
 ## CXXXII. C Backend
 
-Generated C is bootstrap realization debt, not destination architecture.
-Do not shape Idol semantics around ease of C emission.
-Advance direct native realization until C can be deleted.
-Do not improve C backend in ways that entrench it.
+Generated C is an explicit orthogonal physical realization, not semantic
+authority and not a tier beneath direct native. It consumes the same graph facts
+as every other backend. Do not shape Idol semantics around ease of C emission.
+
+Direct native remains the default, self-host, release, correctness, and
+performance path. It never emits C, invokes a C compiler, depends on a C
+artifact, or falls back to C. `auto` never selects C. C-backend evidence proves
+only the C feature; it cannot certify direct native. The `c` foreign world is an
+independent interop capability and does not select a backend.
 
 ## CXXXIII. FTCFTW
 

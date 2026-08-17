@@ -766,7 +766,7 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 `law.abi.internal`, `law.error.cold`, `law.crash.first`, `law.cost.explain`,
 `law.projection.one`, `law.from.zero`, `law.lib.zero`, `law.home.projection`,
 `law.shell.not.world`, `law.cross.one`, `law.conversion.derive`, `law.conversion.decl`,
-`law.zero.history`, `law.backend.c.zero`,
+`law.zero.history`, `law.backend.c.orthogonal`,
 `law.gate.convergence`, `law.intermediate.zero`. Adversarial controls: `law.gate.convergence`.
 
 **Before writing code, audit these seams.**
@@ -870,13 +870,13 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 - generated projections consume current C0 only — no old brands or committed session state
 - do not preserve old names/symbols/paths/env prefixes/artifacts as permanent residents
 
-### NO-C-BACKEND (law.backend.c.zero)
+### C-BACKEND-ORTHOGONAL (law.backend.c.orthogonal)
 
-- the generated C backend is bootstrap debt, not destination architecture
-- the direct native backend is the sole realization path
-- do not improve the C backend — invest in deleting it by advancing native coverage
-- generated C tokenizer and codegen artifacts: temporary bridges with deletion gates
-- deletion gate: native backend coverage of the compiler-critical basis
+- generated C is an explicit physical realization over the shared graph
+- direct native is the default, self-host, release, correctness, and performance path
+- direct native never emits C, invokes a C compiler, depends on C, or falls back to C
+- `auto` never selects C; C evidence proves only the C feature
+- the `c` foreign world is a separate interop capability and does not select a backend
 
 ### FTCFTW
 
