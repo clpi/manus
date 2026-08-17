@@ -83,7 +83,8 @@ matches_home() {
 [ -x "$idol" ] || fail "compiler is not executable: $idol"
 
 project=$work/project
-mkdir -p "$project/src" "$project/left" "$project/right"
+mkdir -p "$project/src" "$project/left" "$project/right" \
+    "$project/other/left" "$project/other/right"
 left=$project/left/role.id
 right=$project/right/role.id
 printf '%s\n' \
@@ -92,8 +93,10 @@ printf '%s\n' \
     'main: i64 = ()' \
     '    helper()' >"$left"
 cp "$left" "$right"
+cp "$left" "$project/other/right/role.id"
 cmp -s "$left" "$right" || fail 'left and right source bytes differ'
 ln -s "$project" "$work/link"
+ln -s other/left "$project/turn"
 
 source_hash=$(hash "$idol")
 cp "$idol" "$work/idol"
@@ -103,6 +106,7 @@ compiler=$work/idol
 
 left_symbol=_idol_left_role__helper
 right_symbol=_idol_right_role__helper
+other_symbol=_idol_other_right_role__helper
 
 compile "$project" left/role.id "$work/left.out" "$work/left.log" \
     || fail 'cold left compile failed'
@@ -131,6 +135,21 @@ cmp -s "$work/right.out" "$work/parent.out" \
     || fail 'parent-normalized executable changed bytes'
 matches_home "$work/parent.out" "$right_symbol" "$left_symbol" \
     || fail 'parent spelling changed the exact right-home symbol'
+
+compile "$project" other/right/role.id "$work/other.out" "$work/other.log" \
+    || fail 'cold symlink-parent target compile failed'
+grep -Fq '(cached)' "$work/other.log" && fail 'symlink-parent target reused another home cache entry'
+matches_home "$work/other.out" "$other_symbol" "$right_symbol" \
+    || fail 'symlink-parent target does not carry its exact home symbol'
+
+compile "$project" turn/../right/role.id "$work/symlink-parent.out" "$work/symlink-parent.log" \
+    || fail 'symlink-parent same-file compile failed'
+grep -Fq '(cached)' "$work/symlink-parent.log" \
+    || fail 'symlink-parent spelling missed the actual-file cache entry'
+cmp -s "$work/other.out" "$work/symlink-parent.out" \
+    || fail 'symlink-parent spelling aliased the lexical home'
+matches_home "$work/symlink-parent.out" "$other_symbol" "$right_symbol" \
+    || fail 'symlink-parent spelling changed the actual-file home symbol'
 
 compile / "$work/link/left/role.id" "$work/symlink.out" "$work/symlink.log" \
     || fail 'symlinked-root same-home compile failed'
