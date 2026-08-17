@@ -4550,6 +4550,55 @@ pub const Sema = struct {
                                     try self.recordApplication(expr, resolved, mc.obj, mc.args, result);
                                     return result;
                                 }
+                                // DECLARATION ORDER IS NOT A SEMANTIC FACT, and
+                                // the scope symbol is the only thing here that
+                                // ever thought it was. `check_module`
+                                // pre-registers every top-level relation as
+                                // `.any` so forward references resolve, and
+                                // `check_func_decl` replaces that with the real
+                                // `.func` signature WHEN IT REACHES THE
+                                // DECLARATION. So a relation applied before its
+                                // own declaration is checked has a `.any`
+                                // symbol, the arm above declines, and NO
+                                // `ApplicationFact` is published — which the
+                                // backend later reports as DNB011
+                                // `unresolved-application-facts` on a relation
+                                // it can see by name.
+                                //
+                                // MUTUAL RECURSION MAKES ONE EDGE A FORWARD
+                                // REFERENCE BY CONSTRUCTION, so this was not a
+                                // corner: `odd` declared first and calling
+                                // `(n - 1):even()` refused, and swapping the
+                                // pair only moved the refusal to the other
+                                // edge. The operand-first face never consulted
+                                // the symbol — it reads `callable_defs`, which
+                                // is a whole-module pre-pass — so the CANONICAL
+                                // face refused exactly where the retired one
+                                // worked. `protocol-projection-one.md` §10.2:
+                                // no canonical syntax may pay a capability tax.
+                                //
+                                // THE DECLARATION IS THE AUTHORITY FOR ITS OWN
+                                // RESULT, which is the rule the cross-home
+                                // `.call` arm already applies for the same
+                                // reason (`recordApplicationInHome` resolves
+                                // `foreign.decl.func.ret_type` rather than
+                                // trusting `check_expr` on the callee). Reading
+                                // it here costs nothing and is STRONGER than
+                                // what the operand-first face records for the
+                                // same forward reference — that path takes its
+                                // result from `check_expr` on the callee name
+                                // and therefore records `.any`.
+                                //
+                                // A NON-`.any` SYMBOL STILL DECLINES. `.any` is
+                                // exactly the pre-registration state; anything
+                                // else is a real binding that shadows the
+                                // relation name, and a shadow must keep
+                                // winning (`gate/shadow.id`).
+                                if (symbol.typ == .any and !resolved.method) {
+                                    const declared = try self.resolve_type(contract_ret_expr(&resolved.func));
+                                    try self.recordApplication(expr, resolved, mc.obj, mc.args, declared);
+                                    return declared;
+                                }
                             }
                         }
                     }
@@ -12420,9 +12469,34 @@ pub const Sema = struct {
                         self.local_tys.put(cd.ident, t) catch return false;
                     },
                     .assign => |*as| {
-                        for (as.targets, as.values) |tgt, val| {
+                        // A MULTI-TARGET ASSIGN IS NOT A ZIP, and this loop
+                        // asserted that it was. `ok, err = coroutine.resume(c)`
+                        // is TWO targets and ONE value — one application
+                        // supplying a result pack — so `for (as.targets,
+                        // as.values)` panics `for loop over objects with
+                        // non-equal lengths` in the middle of the type checker.
+                        // `lib/sync.id` has written that exact line since it was
+                        // added and nothing reached it, because whether
+                        // `try_specialize_native_func` walks this far is decided
+                        // by an inference gate several frames up.
+                        //
+                        // A CRASH IS NOT A REFUSAL. The gate cannot be trusted to
+                        // keep this arm unreachable — MEASURED: two unrelated
+                        // edits to this file each flipped whether `lib/sync.id`
+                        // panics or reports its one ordinary error, in both
+                        // directions — so the loop must be right rather than
+                        // merely unvisited.
+                        //
+                        // POSITION, AND SKIP WHAT HAS NO VALUE — the same shape
+                        // `.local_decl` above already uses for the same reason
+                        // (`if (i < ld.inits.len)`). A target past the last value
+                        // is supplied by a result pack this pass cannot read, so
+                        // it gets NO recorded type, which is exactly the absence
+                        // it is.
+                        for (as.targets, 0..) |tgt, i| {
+                            if (i >= as.values.len) break;
                             if (tgt.* != .name) continue;
-                            const t = self.expr_type(val);
+                            const t = self.expr_type(as.values[i]);
                             if (!t.is_native() and t != .any) continue;
                             self.local_tys.put(tgt.name.ident, t) catch return false;
                         }

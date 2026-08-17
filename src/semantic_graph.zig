@@ -13,6 +13,8 @@ const types = @import("types.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
 const place = @import("place.zig");
+const region = @import("region.zig");
+const subject_home = @import("subject_home.zig");
 pub const id = u32;
 
 pub const State = enum {
@@ -117,6 +119,21 @@ test "semantic_graph: EdgeKind excludes operational spellings" {
     }
 }
 
+// WORLD IS NOT A FIELD HERE, AND THAT IS NOW A DECISION RATHER THAN A GAP.
+// `protocol-projection-one.md` §10.1 measured the absence and read it as
+// "injection algebra is NOT yet graph-bound at the application". It is bound —
+// as `SemanticGraph.draws`, `world[application]`, keyed by the exact occurrence.
+// It is not a field on this struct for one measured reason: the applications
+// that actually draw a world (`env("HOME")`, `s:len()`, `print(v)`) have no
+// `ApplicationFact` at all, so a field here would have been a world fact that
+// could not reach a single world face. `demand`, `descriptor`, `provenance`,
+// `stage` and `caller` are already not fields of this struct for the same kind
+// of reason, and `law.md` §20 asks for packed sparse columns keyed by
+// application rather than one fat nullable row.
+//
+// A STRING WORLD REMAINS FORBIDDEN, which is what this test was written for and
+// still checks: `draws` carries a `Card` over an exact world ENTITY, never a
+// spelling.
 test "semantic_graph: ApplicationFact has no string world" {
     try std.testing.expect(!@hasField(ApplicationFact, "world"));
     try std.testing.expect(!@hasField(ApplicationFact, "descriptor"));
@@ -136,6 +153,7 @@ test "semantic_graph: ApplicationFact has no string world" {
     try std.testing.expect(dummy.witness == .unknown);
     try std.testing.expect(dummy.target == .unknown);
     try std.testing.expect(dummy.realization == .unknown);
+    try std.testing.expect(dummy.applied == .unknown);
     try std.testing.expect(dummy.effect != .none);
 }
 
@@ -345,6 +363,98 @@ pub const ApplicationFact = struct {
     witness: Card = .unknown,
     target: Card = .unknown,
     realization: Card = .unknown,
+    /// THE APPLIED VALUE — the applicator, and a THIRD fact beside relation and
+    /// subject (`face-role-launch-one.md` §2). Relation is the operation the
+    /// application denotes; subject is the value it is oriented around; APPLIED
+    /// is the value that is applied. `tokenizer = rule` then `tokenizer(source)`
+    /// normalises to `applied = rule-value, relation = token, subject = source`,
+    /// and `tokenizer-id != token-id` is exactly the distinction this field
+    /// exists to keep.
+    ///
+    /// `.none` IS THE FTCFTW ANSWER AND IS NOT A GAP. §2: "the applicator
+    /// survives as an identity only if the VALUE ITSELF IS OBSERVABLE. If it is
+    /// sealed and stateless: provider object 0, provider lookup 0, dynamic
+    /// dispatch 0." A relation selected from an exact declaration applies NO
+    /// observable value, and `.none` is the graph saying so — where before,
+    /// nothing said it and every consumer had to infer it from `call_shape`, a
+    /// PHYSICAL TAG inferred from the AST.
+    ///
+    /// `.one` is an applicator value the graph carries an entity for.
+    ///
+    /// The DEFAULT IS `.unknown`, not `.none`: a fact defaults to the answer
+    /// that claims nothing, and `publishApplication` writes `.none` only where
+    /// a declaration was actually resolved.
+    applied: Card = .unknown,
+};
+
+/// One injected world, keyed by the exact id of its graph entity.
+///
+/// A WORLD IS A VALUE, so it needs no new `NodeKind` — `ast.Expr.semantic_scope`
+/// already spells bare `@` as "the current effective semantic world, AS A
+/// VALUE". The meaning lives HERE, in the fact, not in the tag (`law.md` §19,
+/// TAG-AUTHORITY-ZERO).
+///
+/// `home` and `reach` are copied from `subject_home.declarations`, which is the
+/// SOLE authority for what a world is and what inhabiting it confers. This
+/// family does not decide either; it records which of them this module drew on.
+pub const WorldFact = struct {
+    world: id,
+    home: subject_home.Home,
+    reach: subject_home.Reach,
+    /// The member entities THIS MODULE reaches, packed. A world's full roster
+    /// is a property of the world, not of the module, and publishing the whole
+    /// roster on every module would be a fact about somebody else.
+    members: FactRange,
+};
+
+/// WORLD, keyed by the exact application occurrence.
+///
+/// KEYED BY THE OCCURRENCE AND NOT STORED ON `ApplicationFact`, deliberately.
+/// `demand`, `descriptor`, `provenance`, `stage` and `caller` are already not
+/// fields of that struct — this tree's convention is that an application
+/// dimension lives wherever exactly ONE producer owns it (`law.md` §21), and
+/// `law.md` §20 asks for packed sparse columns keyed by application rather than
+/// one fat nullable row. The deciding fact is coverage: the applications that
+/// actually DRAW a world are overwhelmingly the ones with no `ApplicationFact`
+/// at all — `env("HOME")`, `s:len()`, `print(v)` — so a field on the struct
+/// would have been a world fact that could not reach a single world face.
+pub const Draw = struct {
+    application: id,
+    world: Card,
+};
+
+/// The place one application VALUE reads, keyed by the exact value entity.
+///
+/// `p:add(q)` and `q:add(p)` published BYTE-IDENTICAL normalised graphs: both
+/// carry `subject = <value>`, `arguments = [<value>]`, and a value entity is
+/// anonymous. The missing fact is which PLACE the value came from — §29's
+/// "value != binding != place", with the third term finally named. The name is
+/// used to LOCATE the place during ingress (`face-role-launch-one.md` §1
+/// permits exactly that) and what is stored is an exact census id.
+///
+/// SHADOWING IS THE KNOWN LIMIT. `place.Census.find` scans backward, so a body
+/// binding two places of one spelling in sibling scopes attributes to the
+/// later one. A wrong answer here names the wrong PLACE and never changes a
+/// program; it becomes exact when places carry lexical extent, with no change
+/// to any consumer of this family.
+pub const Origin = struct {
+    value: id,
+    /// The relation whose census `place` indexes. A place id is only meaningful
+    /// against the census it came from.
+    relation: id,
+    place: u32,
+};
+
+/// The two censuses of one relation body, produced as a PAIR.
+///
+/// `place.Census` is keyed to one body and `region.Census`'s refinements index
+/// into it, so they are only meaningful together and are stored together. The
+/// module-scope census on `SemanticGraph.places` is a different census with a
+/// different id space and is NOT one of these.
+pub const Body = struct {
+    relation: id,
+    places: place.Census,
+    regions: region.Census,
 };
 
 pub const SemanticGraph = struct {
@@ -410,6 +520,29 @@ pub const SemanticGraph = struct {
     /// answers: a graph lifted by `liftModule` alone has NOT been asked, and a
     /// consumer must not read absence as proof.
     places: ?place.Census = null,
+    /// §18's census and SOURCE-CONTROL-ONE's regions, PER RELATION.
+    ///
+    /// `places` above is the MODULE-scope census and `place.zig` states why it
+    /// stops there: "a relation body binds nothing into the MODULE census. Its
+    /// own places are `analyzeFunction`'s to produce, over its own body, with
+    /// its own ids." Nothing produced them, so every fact that separates two
+    /// relation bodies — how many places, at what depth, updated where, under
+    /// which refinement — was unproduced, and TEN different programs published
+    /// ONE graph digest. This is the production.
+    ///
+    /// A SEPARATE FIELD rather than a widened `places`, because
+    /// `dnir_lower.zig:5219` resolves MODULE-scope names through
+    /// `placeNamed`/`find`, and `find` scans backwards: folding relation-local
+    /// places into the same census would silently answer a module lookup with a
+    /// relation-local place of the same spelling.
+    bodies: std.ArrayListUnmanaged(Body) = .empty,
+    /// Injected worlds this module draws on, and the members it reaches.
+    worlds: std.ArrayListUnmanaged(WorldFact) = .empty,
+    world_members: std.ArrayListUnmanaged(id) = .empty,
+    /// `world[application]`, ascending by application id.
+    draws: std.ArrayListUnmanaged(Draw) = .empty,
+    /// `place[value]` for application values, ascending by value id.
+    origins: std.ArrayListUnmanaged(Origin) = .empty,
     pub fn init(alloc: std.mem.Allocator) SemanticGraph {
         return .{ .alloc = alloc };
     }
@@ -435,6 +568,15 @@ pub const SemanticGraph = struct {
         self.descriptor_refs.deinit(self.alloc);
         self.origin.deinit(self.alloc);
         if (self.places) |*census| census.deinit();
+        for (self.bodies.items) |*body| {
+            body.places.deinit();
+            body.regions.deinit();
+        }
+        self.bodies.deinit(self.alloc);
+        self.worlds.deinit(self.alloc);
+        self.world_members.deinit(self.alloc);
+        self.draws.deinit(self.alloc);
+        self.origins.deinit(self.alloc);
         if (self.home) |h| self.alloc.free(h);
     }
 
@@ -663,6 +805,36 @@ pub const SemanticGraph = struct {
         self.application_candidates.set(entity);
     }
 
+    /// THE APPLIED VALUE, from the shape of the applicator — never from a tag.
+    ///
+    /// A published application already carries a relation resolved to an EXACT
+    /// declaration, so the only remaining question is whether an applicator
+    /// VALUE is also applied. It is not, whenever the applicator is a name, a
+    /// static projection, or a subject-oriented relation: the selection is
+    /// static and `face-role-launch-one.md` §2's zeros hold — provider object 0,
+    /// provider lookup 0, dynamic dispatch 0. `.none` is that claim, published.
+    ///
+    /// `tokenizer = rule` then `tokenizer(source)` lands HERE, on `.none`, and
+    /// that is the right answer rather than a missed one: §2 says the
+    /// applicator survives as an identity "only if the VALUE ITSELF IS
+    /// OBSERVABLE", and a sealed stateless relation's value is not.
+    ///
+    /// Anything else — applying the result of an expression — genuinely applies
+    /// a value, and the graph carries no entity for it yet, so the answer is
+    /// `.unknown` and not a fabricated `.one`.
+    fn appliedValue(node: *const Node) Card {
+        const raw = node.ast_ref orelse return .unknown;
+        const expr: *const Expr = @ptrCast(@alignCast(raw));
+        return switch (expr.*) {
+            .method_call => .none,
+            .call => |c| switch (c.func.*) {
+                .name, .field, .semantic => .none,
+                else => .unknown,
+            },
+            else => .unknown,
+        };
+    }
+
     fn publishApplication(
         self: *SemanticGraph,
         occurrence: id,
@@ -710,6 +882,7 @@ pub const SemanticGraph = struct {
             .application = occurrence,
             .arguments = argument_range,
             .results = result_range,
+            .applied = appliedValue(application_node),
         });
         self.application_rows.items[occurrence] = row;
         self.application_presence.set(occurrence);
@@ -1605,6 +1778,62 @@ pub const SemanticGraph = struct {
         return census.count();
     }
 
+    /// The place and region censuses of one relation body. Idempotent: a second
+    /// lift is a no-op, so a graph lifted twice does not get two censuses.
+    pub fn liftBodies(self: *SemanticGraph, mod: *const ast.Module) !void {
+        if (self.bodies.items.len > 0) return;
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len != 1) continue;
+            const relation = self.findFuncDecl(fd) orelse continue;
+            var places = try place.analyzeFunction(self.alloc, &fd.func);
+            errdefer places.deinit();
+            var regions = try region.analyzeFunction(self.alloc, &fd.func, &places);
+            errdefer regions.deinit();
+            try self.bodies.append(self.alloc, .{
+                .relation = relation,
+                .places = places,
+                .regions = regions,
+            });
+        }
+    }
+
+    /// The censuses of one relation, or null when this graph was never asked.
+    /// Null must be read as "not asked", never as "no places and no regions" —
+    /// `place.Tri`'s rule applied to the lookup itself.
+    pub fn bodyOf(self: *const SemanticGraph, relation: id) ?*const Body {
+        for (self.bodies.items) |*body| {
+            if (body.relation == relation) return body;
+        }
+        return null;
+    }
+
+    /// The world an application draws. `.unknown` when nothing decided — which
+    /// is the answer for every occurrence this graph never examined, and is not
+    /// a claim that the application draws nothing.
+    pub fn applicationWorld(self: *const SemanticGraph, occurrence: id) Card {
+        for (self.draws.items) |draw| {
+            if (draw.application == occurrence) return draw.world;
+        }
+        return .unknown;
+    }
+
+    /// The members of one world this module reaches.
+    pub fn worldMembers(self: *const SemanticGraph, fact: WorldFact) []const id {
+        const end = std.math.add(u32, fact.members.start, fact.members.len) catch return &.{};
+        if (end > self.world_members.items.len) return &.{};
+        return self.world_members.items[fact.members.start..end];
+    }
+
+    /// The place an application value reads, three-valued.
+    pub fn valueOrigin(self: *const SemanticGraph, value: id) place.Site {
+        for (self.origins.items) |origin| {
+            if (origin.value == value) return .{ .one = origin.place };
+        }
+        return .unknown;
+    }
+
     /// Lift module-level symbols, alias table shapes, and enum shapes.
     pub fn liftModuleFull(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
         const mod_id = try self.liftModule(mod, file);
@@ -1612,6 +1841,7 @@ pub const SemanticGraph = struct {
         try self.liftEnumShapes(mod, file, mod_id);
         try self.liftFunctionBindings(mod, file);
         try self.liftPlaces(mod);
+        try self.liftBodies(mod);
         return mod_id;
     }
 
@@ -2101,6 +2331,7 @@ pub const SemanticGraph = struct {
                 const descriptor = checked.exprDescriptor(subject) orelse
                     return error.MissingApplicationDescriptor;
                 subject_value = try self.addApplicationValue(call_id, subject, file, descriptor);
+                try self.noteOrigin(subject_value.?, subject, caller);
             }
             const arguments = try self.alloc.alloc(id, fact.arguments.len);
             defer self.alloc.free(arguments);
@@ -2108,6 +2339,7 @@ pub const SemanticGraph = struct {
                 const descriptor = checked.exprDescriptor(argument) orelse
                     return error.MissingApplicationDescriptor;
                 arguments[i] = try self.addApplicationValue(call_id, argument, file, descriptor);
+                try self.noteOrigin(arguments[i], argument, caller);
             }
             const result = try self.addApplicationValue(call_id, expr, file, fact.result);
             const results = [_]id{result};
@@ -2122,7 +2354,216 @@ pub const SemanticGraph = struct {
         }
         try self.liftCaptureEdges(mod);
         try self.publishApplicationEffects(mod);
+        // AFTER the effect fixpoint, deliberately. That pass blocks a relation
+        // on any `.member` edge inside it, and a world's member edges are the
+        // graph's record of exactly the reach it means. Publishing worlds first
+        // would have moved `effect`/`authority` on relations for a reason that
+        // has nothing to do with what they do — a measurement changing because
+        // it was measured.
+        try self.publishApplicationWorlds(file);
         return module;
+    }
+
+    /// WORLD, for every application occurrence — published or not.
+    ///
+    /// THE FACT THE GRAPH DID NOT HAVE. `protocol-projection-one.md` §10.1:
+    /// "THERE IS NO WORLD FIELD. `grep -c world` over `ApplicationFact` returns
+    /// 0. World ownership is still distributed and transitional, so injection
+    /// algebra is NOT yet graph-bound at the application." This binds it, for
+    /// the worlds that exist.
+    ///
+    /// IT DOES NOT COLLAPSE INTO AUTHORITY OR WITNESS, and the split is the
+    /// ruling's: world SUPPLIES facts, authority REQUIRES them, witness PROVES
+    /// satisfaction. `env("HOME")` draws the `os` world whether or not any
+    /// authority is demanded of it, and a relation may demand authority with no
+    /// world in sight. Three Cards, three questions.
+    ///
+    /// EVERY ANSWER COMES FROM `subject_home.declarations`, which is the sole
+    /// authority for what a world is, what it provides, where it is injected
+    /// and what that injection confers. This pass adds NO name list: it asks
+    /// the world table the same questions the resolver asks.
+    ///
+    /// THE MODULE WINS. `docs/rulings.md`: "injection ADDS reach, it never TAKES
+    /// A NAME." A module that declares its own `env` draws no world at an
+    /// application of it, and this pass checks that FIRST.
+    fn publishApplicationWorlds(self: *SemanticGraph, file: []const u8) !void {
+        const Drawn = struct { application: id, home: ?subject_home.Home, member: []const u8 };
+        var drawn: std.ArrayListUnmanaged(Drawn) = .empty;
+        defer drawn.deinit(self.alloc);
+
+        var candidate: usize = 0;
+        while (candidate < self.application_candidates.bit_length) : (candidate += 1) {
+            if (!self.application_candidates.isSet(candidate)) continue;
+            const site = std.math.cast(id, candidate) orelse break;
+            const node = self.get(site) orelse continue;
+            const raw = node.ast_ref orelse continue;
+            const expr: *const Expr = @ptrCast(@alignCast(raw));
+            const reached = self.worldOfApplication(file, site, expr) orelse continue;
+            try drawn.append(self.alloc, .{
+                .application = site,
+                .home = reached.home,
+                .member = reached.member,
+            });
+        }
+
+        // ONE PASS PER WORLD so a world's member range is contiguous. Interleaved
+        // appends would have produced ranges that overlap two worlds, which is
+        // the kind of packed-storage defect that reads as a wrong fact rather
+        // than as a crash.
+        for (&subject_home.declarations) |*declaration| {
+            var uses = false;
+            for (drawn.items) |row| {
+                if (row.home) |h| {
+                    if (h == declaration.home) uses = true;
+                }
+            }
+            if (!uses) continue;
+            const module = self.moduleEntity() orelse continue;
+            const world = try self.addChild(module, .{
+                .kind = .value,
+                .span = .{ .file = file, .start = 0, .end = 0 },
+                .name = subject_home.homeName(declaration.home),
+                .knowledge = .stable,
+                .stage = .sema,
+            });
+            const start = self.world_members.items.len;
+            for (drawn.items) |row| {
+                const h = row.home orelse continue;
+                if (h != declaration.home) continue;
+                if (row.member.len == 0) continue;
+                if (self.worldMemberNamed(start, row.member)) continue;
+                const member = try self.addChild(world, .{
+                    .kind = .value,
+                    .span = .{ .file = file, .start = 0, .end = 0 },
+                    .name = row.member,
+                    .knowledge = .stable,
+                    .stage = .sema,
+                });
+                try self.addEdge(.{ .from = world, .to = member, .kind = .member });
+                try self.world_members.append(self.alloc, member);
+            }
+            try self.worlds.append(self.alloc, .{
+                .world = world,
+                .home = declaration.home,
+                .reach = declaration.reach,
+                .members = try factRange(start, self.world_members.items.len - start),
+            });
+        }
+
+        for (drawn.items) |row| {
+            const card: Card = if (row.home) |h| blk: {
+                for (self.worlds.items) |fact| {
+                    if (fact.home == h) break :blk .{ .one = fact.world };
+                }
+                break :blk .unknown;
+            } else .none;
+            try self.draws.append(self.alloc, .{ .application = row.application, .world = card });
+        }
+    }
+
+    fn worldMemberNamed(self: *const SemanticGraph, start: usize, name: []const u8) bool {
+        for (self.world_members.items[start..]) |member| {
+            const node = self.get(member) orelse continue;
+            const existing = node.name orelse continue;
+            if (std.mem.eql(u8, existing, name)) return true;
+        }
+        return false;
+    }
+
+    fn moduleEntity(self: *const SemanticGraph) ?id {
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind == .module) return @intCast(i);
+        }
+        return null;
+    }
+
+    const Reached = struct { home: ?subject_home.Home, member: []const u8 };
+
+    /// Which world supplies one application, or null for "not determined".
+    ///
+    /// FAILS CLOSED at every step. A method call whose receiver the graph does
+    /// not carry a descriptor for is `null`, not a guess: the receiver decides
+    /// the home and reading it from the relation's SPELLING is the exact
+    /// inference `face-role-launch-one.md` §1 forbids.
+    fn worldOfApplication(
+        self: *const SemanticGraph,
+        file: []const u8,
+        site: id,
+        expr: *const Expr,
+    ) ?Reached {
+        // A RESOLVED RELATION IS SUPPLIED BY A DECLARATION, NOT BY A WORLD.
+        // Published means sema bound an exact declaration; a declaration lives
+        // in a HOME; and `law.md` §23 is explicit that a home is not a world
+        // grant. So the answer is `.none` — known-absent — and it does not
+        // depend on WHICH home.
+        //
+        // MEASURED, AND THE FIRST DRAFT WAS WRONG HERE. This used to answer
+        // `.none` only when `foreign_home == null`, so `step(3)` declared at
+        // module scope drew `.none` and the same relation moved to a sibling
+        // home drew nothing at all. `gate/protocol.sh` §7.6 caught it: "move a
+        // relation to another home, semantics unchanged" is a control, and a
+        // world fact that changes when a declaration moves house is a home
+        // leaking into a world.
+        if (self.application(site)) |fact| {
+            if (self.applicationRelation(fact.application) != null) {
+                return .{ .home = null, .member = "" };
+            }
+        }
+        switch (expr.*) {
+            .call => |c| switch (c.func.*) {
+                .name => |n| {
+                    if (self.findFunc(n.ident) != null) return .{ .home = null, .member = "" };
+                    const home = subject_home.injectedWorldProvidingFor(file, n.ident) orelse return null;
+                    return .{ .home = home, .member = n.ident };
+                },
+                // `math.sqrt(x)`, `c.abs(v)`, `os.env(k)` — the ANCHORED face,
+                // where the world is named outright and nothing is inferred.
+                .field => |f| {
+                    if (f.obj.* != .name) return null;
+                    const home = subject_home.worldNamedFor(file, f.obj.name.ident) orelse return null;
+                    if (!subject_home.homeProvides(home, f.field)) return null;
+                    return .{ .home = home, .member = f.field };
+                },
+                else => return null,
+            },
+            .method_call => |mc| {
+                if (mc.obj.* != .name) return null;
+                const receiver = mc.obj.name.ident;
+                // `test:assert(c, m)` — the world reached on its own subject.
+                if (subject_home.worldNamedFor(file, receiver)) |home| {
+                    if (!subject_home.homeProvides(home, mc.method)) return null;
+                    return .{ .home = home, .member = mc.method };
+                }
+                // `stdout:write(x)` — the world supplies the INSTANCE and a
+                // different subject carries the relation, which is the whole of
+                // cross-projection. The world drawn is the one that supplied
+                // the standing name.
+                if (subject_home.suppliedInstanceFor(file, receiver) != null) {
+                    if (!subject_home.fileInhabits(.io, file)) return null;
+                    return .{ .home = .io, .member = receiver };
+                }
+                return null;
+            },
+            else => return null,
+        }
+    }
+
+    /// The place an application value reads, when it reads one exactly.
+    ///
+    /// Only a bare name resolves. `p:add(q)` names two places and `f(x + 1)`
+    /// names none — a derived value has no single place and inventing one would
+    /// make `alias` unanswerable, the same judgment `place.zig` takes about
+    /// record fields.
+    fn noteOrigin(self: *SemanticGraph, value: id, expr: *const Expr, caller: id) !void {
+        if (expr.* != .name) return;
+        const relation = self.enclosingCallable(caller) orelse return;
+        const body = self.bodyOf(relation) orelse return;
+        const found = body.places.find(expr.name.ident) orelse return;
+        try self.origins.append(self.alloc, .{
+            .value = value,
+            .relation = relation,
+            .place = found.id,
+        });
     }
 
     /// One relation's inputs to the effect fixpoint, gathered in a single pass
@@ -2224,12 +2665,22 @@ pub const SemanticGraph = struct {
             false;
         if (!arity_ok) return false;
 
-        // A named world handle is never a string, whatever the spelling after
-        // the colon.
+        // A WORLD HANDLE IS NEVER A STRING, whatever the spelling after the
+        // colon — and WHICH names are world handles is a question the world
+        // declaration table answers exactly.
+        //
+        // THIS USED TO BE A LIST OF FIVE SPELLINGS (`stdin stdout stderr io
+        // os`) written down here, in a file that has no other business knowing
+        // what a world is. `subject_home.declarations` is the sole authority
+        // for both halves of the question — `worldNamedFor` for a world reached
+        // on its own subject, `suppliedInstanceFor` for a standing instance the
+        // world supplies — and asking it covers every world including the ones
+        // the list forgot. A world added to that table is a handle this rule
+        // already knows about, with no edit here.
         if (mc.obj.* == .name) {
-            for ([_][]const u8{ "stdin", "stdout", "stderr", "io", "os" }) |handle| {
-                if (std.mem.eql(u8, mc.obj.name.ident, handle)) return false;
-            }
+            const receiver = mc.obj.name.ident;
+            if (subject_home.worldNamedFor(self.module_path, receiver) != null) return false;
+            if (subject_home.suppliedInstanceFor(self.module_path, receiver) != null) return false;
         }
 
         // A module that declares its own relation of this name OWNS the
@@ -2859,6 +3310,261 @@ pub const SemanticGraph = struct {
         return self.homeOf(entity) orelse error.InvalidTableShapeScope;
     }
 
+    fn appendMultJson(
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+        mult: place.Mult,
+    ) !void {
+        switch (mult) {
+            .unknown => try buf.appendSlice(alloc, "\"unknown\""),
+            .exact => |n| {
+                try buf.appendSlice(alloc, "{\"exact\":");
+                try appendJsonInt(buf, alloc, n);
+                try buf.append(alloc, '}');
+            },
+            .bounded => |n| {
+                try buf.appendSlice(alloc, "{\"bounded\":");
+                try appendJsonInt(buf, alloc, n);
+                try buf.append(alloc, '}');
+            },
+        }
+    }
+
+    /// §18's census, PROJECTED — not a new fact.
+    ///
+    /// `place.Census` is produced on every lift and consumed by
+    /// `dnir_lower.zig:5216`; until now no projection published it, so a graph
+    /// reader could not see the one entity that carries a program point. That
+    /// is why TEN structurally different programs normalised to ONE digest:
+    /// every fact separating them lives on a place, and the dump printed none.
+    ///
+    /// NAMES ARE NOT PUBLISHED. A place's identity is its binding site
+    /// (`place.zig` header) and its name is provenance, so a renamed binding
+    /// must not move this digest — the same rule §8 states for spelling.
+    fn appendPlacesJson(
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+        maybe: ?*const place.Census,
+    ) !void {
+        try buf.append(alloc, '[');
+        const census = maybe orelse {
+            try buf.appendSlice(alloc, "]");
+            return;
+        };
+        for (census.places.items, 0..) |*p, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"place\":");
+            try appendJsonInt(buf, alloc, p.id);
+            try buf.appendSlice(alloc, ",\"shape\":\"");
+            try buf.appendSlice(alloc, @tagName(p.shape));
+            try buf.appendSlice(alloc, "\",\"region\":\"");
+            try buf.appendSlice(alloc, @tagName(p.region));
+            try buf.appendSlice(alloc, "\",\"determinacy\":\"");
+            try buf.appendSlice(alloc, @tagName(p.facts.determinacy));
+            try buf.appendSlice(alloc, "\",\"mutation\":\"");
+            try buf.appendSlice(alloc, @tagName(p.facts.mutation));
+            try buf.appendSlice(alloc, "\",\"escape\":\"");
+            try buf.appendSlice(alloc, @tagName(p.facts.escape));
+            try buf.appendSlice(alloc, "\",\"lifetime\":\"");
+            try buf.appendSlice(alloc, @tagName(p.facts.lifetime));
+            try buf.appendSlice(alloc, "\",\"residency\":\"");
+            try buf.appendSlice(alloc, @tagName(p.facts.residency));
+            try buf.appendSlice(alloc, "\",\"origin\":\"");
+            try buf.appendSlice(alloc, @tagName(p.facts.origin));
+            try buf.appendSlice(alloc, "\",\"extent\":");
+            switch (p.facts.extent) {
+                .unknown => try buf.appendSlice(alloc, "\"unknown\""),
+                .exact => |n| {
+                    try buf.appendSlice(alloc, "{\"exact\":");
+                    try appendJsonInt(buf, alloc, n);
+                    try buf.append(alloc, '}');
+                },
+                .bounded => |n| {
+                    try buf.appendSlice(alloc, "{\"bounded\":");
+                    try appendJsonInt(buf, alloc, n);
+                    try buf.append(alloc, '}');
+                },
+            }
+            try buf.appendSlice(alloc, ",\"accesses\":[");
+            for (p.accesses.items, 0..) |a, ai| {
+                if (ai > 0) try buf.append(alloc, ',');
+                try buf.appendSlice(alloc, "{\"kind\":\"");
+                try buf.appendSlice(alloc, @tagName(a.kind));
+                try buf.appendSlice(alloc, "\",\"point\":");
+                try appendJsonInt(buf, alloc, a.point);
+                try buf.appendSlice(alloc, ",\"depth\":");
+                try appendJsonInt(buf, alloc, a.depth);
+                try buf.appendSlice(alloc, ",\"mult\":");
+                try appendMultJson(buf, alloc, a.mult);
+                try buf.appendSlice(alloc, ",\"const_index\":");
+                try buf.appendSlice(alloc, if (a.const_index) "true" else "false");
+                try buf.append(alloc, '}');
+            }
+            try buf.appendSlice(alloc, "]}");
+        }
+        try buf.appendSlice(alloc, "]");
+    }
+
+    fn appendBoundJson(
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+        key: []const u8,
+        bound: region.Bound,
+    ) !void {
+        try buf.appendSlice(alloc, ",\"");
+        try buf.appendSlice(alloc, key);
+        try buf.appendSlice(alloc, "\":{\"end\":\"");
+        try buf.appendSlice(alloc, bound.name());
+        try buf.append(alloc, '"');
+        switch (bound) {
+            .unknown => {},
+            .at => |v| {
+                try buf.appendSlice(alloc, ",\"value\":");
+                try appendJsonInt(buf, alloc, v);
+            },
+            .place, .under => |p| {
+                try buf.appendSlice(alloc, ",\"place\":");
+                try appendJsonInt(buf, alloc, p);
+            },
+        }
+        try buf.append(alloc, '}');
+    }
+
+    fn appendSiteJson(
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+        key: []const u8,
+        name: []const u8,
+        one: ?u32,
+    ) !void {
+        try buf.appendSlice(alloc, ",\"");
+        try buf.appendSlice(alloc, key);
+        try buf.appendSlice(alloc, "\":{\"site\":\"");
+        try buf.appendSlice(alloc, name);
+        try buf.append(alloc, '"');
+        if (one) |v| {
+            try buf.appendSlice(alloc, ",\"id\":");
+            try appendJsonInt(buf, alloc, v);
+        }
+        try buf.append(alloc, '}');
+    }
+
+    fn appendRegionsJson(
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+        census: *const region.Census,
+    ) !void {
+        try buf.append(alloc, '[');
+        for (census.regions.items, 0..) |r, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"region\":");
+            try appendJsonInt(buf, alloc, r.id);
+            try buf.appendSlice(alloc, ",\"shape\":\"");
+            try buf.appendSlice(alloc, @tagName(r.shape));
+            try buf.appendSlice(alloc, "\",\"position\":");
+            try appendJsonInt(buf, alloc, r.position);
+            try appendSiteJson(buf, alloc, "parent", r.parent.name(), switch (r.parent) {
+                .one => |v| v,
+                else => null,
+            });
+            try appendSiteJson(buf, alloc, "target", r.target.name(), switch (r.target) {
+                .one => |v| v,
+                else => null,
+            });
+            try buf.appendSlice(alloc, ",\"departure\":\"");
+            try buf.appendSlice(alloc, @tagName(r.departure));
+            try buf.appendSlice(alloc, "\",\"results\":");
+            try appendJsonInt(buf, alloc, r.results);
+            try buf.appendSlice(alloc, ",\"refinement\":{");
+            try buf.appendSlice(alloc, "\"subject\":{\"site\":\"");
+            try buf.appendSlice(alloc, r.refinement.subject.name());
+            try buf.append(alloc, '"');
+            switch (r.refinement.subject) {
+                .one => |v| {
+                    try buf.appendSlice(alloc, ",\"place\":");
+                    try appendJsonInt(buf, alloc, v);
+                },
+                else => {},
+            }
+            try buf.append(alloc, '}');
+            try appendBoundJson(buf, alloc, "lower", r.refinement.lower);
+            try appendBoundJson(buf, alloc, "upper", r.refinement.upper);
+            try appendBoundJson(buf, alloc, "hole", r.refinement.hole);
+            try buf.appendSlice(alloc, "},\"carried\":[");
+            for (census.carriedOf(r), 0..) |p, ci| {
+                if (ci > 0) try buf.append(alloc, ',');
+                try appendJsonInt(buf, alloc, p);
+            }
+            try buf.appendSlice(alloc, "]}");
+        }
+        try buf.append(alloc, ']');
+    }
+
+    /// The two censuses of each relation, keyed by the exact relation entity.
+    ///
+    /// THIS IS THE SECTION THAT SEPARATES THE TEN PROGRAMS. Everything above it
+    /// in this dump is module-level and identical across all ten.
+    fn appendBodiesJson(
+        self: *const SemanticGraph,
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+    ) !void {
+        try buf.appendSlice(alloc, ",\"bodies\":[");
+        for (self.bodies.items, 0..) |*body, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"relation\":");
+            try appendJsonInt(buf, alloc, body.relation);
+            try buf.appendSlice(alloc, ",\"places\":");
+            try appendPlacesJson(buf, alloc, &body.places);
+            try buf.appendSlice(alloc, ",\"regions\":");
+            try appendRegionsJson(buf, alloc, &body.regions);
+            try buf.appendSlice(alloc, ",\"points\":");
+            try appendJsonInt(buf, alloc, body.regions.points);
+            try buf.append(alloc, '}');
+        }
+        try buf.append(alloc, ']');
+    }
+
+    fn appendWorldsJson(
+        self: *const SemanticGraph,
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+    ) !void {
+        try buf.appendSlice(alloc, ",\"worlds\":[");
+        for (self.worlds.items, 0..) |fact, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"world\":");
+            try appendJsonInt(buf, alloc, fact.world);
+            try buf.appendSlice(alloc, ",\"home\":\"");
+            try buf.appendSlice(alloc, subject_home.homeName(fact.home));
+            try buf.appendSlice(alloc, "\",\"reach\":\"");
+            try buf.appendSlice(alloc, @tagName(fact.reach));
+            try buf.appendSlice(alloc, "\",\"members\":");
+            try appendIdsJson(buf, alloc, self.worldMembers(fact));
+            try buf.append(alloc, '}');
+        }
+        try buf.appendSlice(alloc, "],\"draws\":[");
+        for (self.draws.items, 0..) |draw, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"application\":");
+            try appendJsonInt(buf, alloc, draw.application);
+            try appendCardJson(buf, alloc, "world", draw.world);
+            try buf.append(alloc, '}');
+        }
+        try buf.appendSlice(alloc, "],\"origins\":[");
+        for (self.origins.items, 0..) |origin, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"value\":");
+            try appendJsonInt(buf, alloc, origin.value);
+            try buf.appendSlice(alloc, ",\"relation\":");
+            try appendJsonInt(buf, alloc, origin.relation);
+            try buf.appendSlice(alloc, ",\"place\":");
+            try appendJsonInt(buf, alloc, origin.place);
+            try buf.append(alloc, '}');
+        }
+        try buf.append(alloc, ']');
+    }
+
     fn appendMembersJson(
         self: *const SemanticGraph,
         buf: *std.ArrayListUnmanaged(u8),
@@ -2889,7 +3595,16 @@ pub const SemanticGraph = struct {
         // one level up — v3 published `unresolved_applications` and nothing that
         // said which of those entries the backend would actually refuse on, so a
         // reader had to guess, and the guess is wrong by 4:1 corpus-wide.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":4,\"file\":\"");
+        //
+        // version 5: `places`, `bodies`, `worlds`, `draws`, `origins`, and an
+        // `applied` card on every application row. Same argument a third time,
+        // and this one is the largest: v4 published NO fact that separated two
+        // relation BODIES, so ten structurally different programs exported one
+        // digest (`ebede795efad`) while the backend emitted ten objects. A
+        // reader that cannot tell a recurrence from an early return cannot
+        // adjudicate SOURCE-CONTROL-ONE §8 on any row, and a v4 reader pointed
+        // at a v5 export must know that it is now being told.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":5,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         if (source_hash) |h| {
@@ -3048,6 +3763,7 @@ pub const SemanticGraph = struct {
             try out.appendSlice(alloc, ",\"end\":");
             try appendJsonInt(out, alloc, span.end);
             try out.append(alloc, '}');
+            try appendCardJson(out, alloc, "applied", fact.applied);
             try appendCardJson(out, alloc, "effect", fact.effect);
             try appendCardJson(out, alloc, "authority", fact.authority);
             try appendCardJson(out, alloc, "witness", fact.witness);
@@ -3097,7 +3813,12 @@ pub const SemanticGraph = struct {
         try appendJsonInt(out, alloc, coverage.bootstrap);
         try out.appendSlice(alloc, ",\"blocking\":");
         try appendJsonInt(out, alloc, coverage.blocking);
-        try out.appendSlice(alloc, "},\"table_shapes\":[");
+        try out.append(alloc, '}');
+        try out.appendSlice(alloc, ",\"places\":");
+        try appendPlacesJson(out, alloc, if (self.places) |*c| c else null);
+        try self.appendBodiesJson(out, alloc);
+        try self.appendWorldsJson(out, alloc);
+        try out.appendSlice(alloc, ",\"table_shapes\":[");
         var first_table = true;
         for (self.nodes.items, 0..) |node, node_index| {
             const shape: id = @intCast(node_index);

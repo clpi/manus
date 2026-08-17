@@ -3906,7 +3906,36 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
     // an extern symbol. There is nothing to store at runtime, and lowering it as
     // an ordinary call pushed the whole program outside the direct subset.
     if (isReqCall(value)) return;
-    if (value.* == .call) {
+    // THE SOURCE FACE IS NOT THE ABI. `t: pt = mk(3, 2)` and `t: pt = 3:mk(2)`
+    // are ONE application — same relation, same operands, same result — and
+    // everything below this line reads them from the graph, which already
+    // publishes them orientation-free: `applicationTarget` takes the `.binding`
+    // edge, `checkedScalarOperands` projects the `.projection` subject and then
+    // the position-ordered arguments. NOTHING in the record-result path asks
+    // which face was written.
+    //
+    // This guard did, and that was the whole of the record row's refusal. A
+    // `.method_call` skipped the block entirely and fell through to
+    // `lowerExprCons` -> `lowerCheckedScalarCall`, whose FIRST act is
+    // `checkedScalarResult` — a predicate that admits `i32 i64 bool str f64
+    // void any` and nothing else. So the canonical face reached a SCALAR-ONLY
+    // consumer for a RECORD result and answered DNB011 `application-result-abi`
+    // while the retired operand-first face answered 5, measured. That is a
+    // capability tax on canonical syntax, which `protocol-projection-one.md`
+    // §10.2 forbids.
+    //
+    // ADMITTING THE FACE COSTS NO NEW ABI. `record-operand-register-abi`
+    // already made record OPERANDS cross in registers, and this is the RESULT
+    // side of the same call: `lowerCheckedRecordCallAssign` emits the identical
+    // `call_direct` it emits for the operand-first face — measured
+    // instruction-identical, and a normalized disassembly diff differs only in
+    // the module tag on symbol names.
+    //
+    // A SCALAR-RESULT `.method_call` IS UNCHANGED, deliberately.
+    // `recordForDescriptor` declines, `checkedScalarResult` runs the same
+    // predicate `lowerCheckedScalarCall` was about to run on it, and the fall
+    // through below reaches the same lowering it always did.
+    if (value.* == .call or value.* == .method_call) {
         if (ctx.occurrences.get(value)) |application| {
             bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
             const descriptor = try publishedDescriptor(ctx, application);

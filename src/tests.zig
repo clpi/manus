@@ -45,6 +45,7 @@ test {
     _ = @import("semantic_fingerprint.zig");
     _ = @import("evidence_record.zig");
     _ = @import("place.zig");
+    _ = @import("region.zig");
     _ = @import("eqspace.zig");
     _ = @import("observation.zig");
     _ = @import("observer_demand.zig");

@@ -75,6 +75,27 @@ pub const Tri = enum {
     }
 };
 
+/// Three-valued reference INTO one census's place space.
+///
+/// `Card`'s discipline (`semantic_graph.zig`), spelled here so a place id can
+/// never be read as a graph entity id: `null` may not stand in for any of the
+/// three, and "no place is constrained" (`.none`) is a different answer from
+/// "which place is constrained was not determined" (`.unknown`).
+pub const Site = union(enum) {
+    unknown,
+    none,
+    one: u32,
+
+    /// The union tag, spelled ONCE, for every projection of it.
+    pub fn name(self: Site) []const u8 {
+        return switch (self) {
+            .unknown => "unknown",
+            .none => "none",
+            .one => "one",
+        };
+    }
+};
+
 /// §18 `determinacy`: is the accessed sub-location decided at compile time?
 pub const Determinacy = enum {
     /// Every access index is a compile-time constant.
