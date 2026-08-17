@@ -85,7 +85,7 @@ or semantic authority.
 | Generated-C bootstrap backend | `src/codegen.zig` |
 | Token and Wasm generated projections | `src/token_classify_gen.zig`, `src/wasm_semantic_gen.zig` |
 | LSP and MCP | `tools/lsp/`, `tools/mcp/` |
-| Wasm consumer | `ext/ward/` |
+| Wasm consumer | `tools/wasm/` (standalone debt; destination: shared graph and realization) |
 
 Read `docs/bootstrap.md` before choosing work. Attack the earliest host-owned
 production boundary whose prerequisites exist. Do not infer progress from file

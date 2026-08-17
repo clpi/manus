@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 /// SH-02 + SH-03 production seam. These travel together: any module that
 /// reaches `lexer_bridge` reaches both the keyword table and the Duo lexer
@@ -310,71 +311,186 @@ pub fn build(b: *std.Build) void {
     const wasm_bench_step = b.step("wasm-bench", "Run WASM runtime benchmark (wasmtime, wazero, wasm3, iwasm, wasmer, spin)");
     wasm_bench_step.dependOn(&wasm_bench_cmd.step);
 
-    // ── wasm conformance suite (tools/wasm) ─────────────────────────────────
-    // The WASM runtime ships in the release, and until 2026-08-08 it had NO
-    // test suite: `test/main.id` required four modules that had been deleted
-    // and did not parse, so the only checking was a benchmark harness's `-1`
-    // filter. This step builds the engine and differences every fixture against
-    // wasmtime BY VALUE, under both engines and both entry shapes, and refuses
-    // to print a score until its own controls pass (exit 3).
+    // ── wasm evidence firewall (tools/wasm) ─────────────────────────────────
+    // Wasm is admitted only through direct-native artifacts. The old route
+    // built both subject and harness with the retired C backend into shared
+    // zig-out paths; a stale binary could therefore outlive its source and
+    // every reported row was non-authoritative. Build cache outputs below are
+    // private to the exact inputs, and any direct-native refusal is the gate's
+    // outcome rather than permission to ask a retired realization.
     //
-    // It used to live at `ext/ward/` and be called ward. It is not a separate
-    // product any more -- it is idol's wasm capability, so it sits beside the
-    // other toolchain parts that version-lock to the compiler (`tools/lsp`,
-    // `tools/mcp`). `docs/wasm-integration.md` records why NOT `lib/std/wasm/`:
-    // the engine is a program, `capability-scan` has zero slack on a
-    // `lib/std/**` denominator, and `stdlib_embed_gate` requires every file
-    // under `lib/std` to be `req`-able, which a program with a `main()` tail
-    // is not.
-    //
-    // Both commands run with cwd = tools/wasm so `duo run`'s `.out` artifact
-    // lands where that directory's .gitignore already covers it, and the
-    // compiled engine goes outside the tree for the reason the same .gitignore
-    // states: a stale binary sitting next to the source is this project's
-    // oldest measurement bug.
-    // Paths are relative to the CHILD's cwd (tools/wasm), which is what setCwd
-    // establishes before exec. An absolute path via the build root would be
-    // nicer to read, and the API for it has moved twice in zig master.
-    const wasm_conform_bin = "../../zig-out/bin/wasm-conform";
-    const duo_bin_path = "../../zig-out/bin/idol";
+    // This bounded shell bridge only transports revision/hash/oracle evidence
+    // while direct Idol lacks those host projections. It owns no Wasm meaning.
+    // Delete it when the tracked direct-native harness can obtain the same
+    // facts itself (law.bridge.death).
+    const wasm_evidence_cmd = b.addSystemCommand(&.{
+        "sh", "-eu", "-c",
+        \\build_zig_version=$1
+        \\build_optimize=$2
+        \\revision=$(git rev-parse HEAD)
+        \\dirty=$(git status --porcelain=v1 --untracked-files=all)
+        \\if [ -n "$dirty" ]; then dirty_state=dirty; else dirty_state=clean; fi
+        \\dirty_hash=$(git status --porcelain=v1 --untracked-files=all | shasum -a 256 | cut -d ' ' -f 1)
+        \\engine_hash=$(shasum -a 256 tools/wasm/src/engine.id | cut -d ' ' -f 1)
+        \\wasi_abi_hash=$(shasum -a 256 tools/wasm/src/wasm/wasi_abi.id | cut -d ' ' -f 1)
+        \\jit_hash=$(shasum -a 256 lib/jit.id | cut -d ' ' -f 1)
+        \\harness_hash=$(shasum -a 256 tools/wasm/test/conform.id | cut -d ' ' -f 1)
+        \\compiler_hash=$(shasum -a 256 zig-out/bin/idol | cut -d ' ' -f 1)
+        \\printf 'wasm-evidence subject_revision=%s evidence_revision=%s dirty=%s dirty_sha256=%s\n' "$revision" "$revision" "$dirty_state" "$dirty_hash"
+        \\printf 'wasm-evidence build_zig_version=%s compiler_optimize=%s embedded_direct_runtime_optimize=ReleaseFast\n' "$build_zig_version" "$build_optimize"
+        \\printf 'wasm-evidence compiler_binary_sha256=%s\n' "$compiler_hash"
+        \\printf 'wasm-evidence engine_source_sha256=%s harness_source_sha256=%s\n' "$engine_hash" "$harness_hash"
+        \\printf 'wasm-evidence wasi_abi_source_sha256=%s jit_source_sha256=%s\n' "$wasi_abi_hash" "$jit_hash"
+        \\printf 'wasm-evidence modes=interpreter,forced-jit,default,fallback outcome=pending-preflight\n'
+        \\wart_pin=ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b
+        \\if [ -z "${WART_ORACLE_REPO:-}" ]; then
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-unconfigured expected_revision=%s role=test-only\n' "$wart_pin" >&2
+        \\  exit 2
+        \\fi
+        \\if [ ! -d "$WART_ORACLE_REPO/.git" ]; then
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-source-missing path=%s expected_revision=%s\n' "$WART_ORACLE_REPO" "$wart_pin" >&2
+        \\  exit 2
+        \\fi
+        \\wart_repo=$(cd "$WART_ORACLE_REPO" && pwd -P)
+        \\wart_revision=$(git -C "$wart_repo" rev-parse HEAD 2>/dev/null || true)
+        \\if [ "$wart_revision" != "$wart_pin" ]; then
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-revision expected=%s actual=%s\n' "$wart_pin" "${wart_revision:-missing}" >&2
+        \\  exit 2
+        \\fi
+        \\wart_dirty=$(git -C "$wart_repo" status --porcelain=v1 --untracked-files=all)
+        \\if [ -n "$wart_dirty" ]; then
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-dirty revision=%s\n' "$wart_revision" >&2
+        \\  exit 2
+        \\fi
+        \\wart_bin=${WART_ORACLE_BIN:-$wart_repo/zig-out/bin/wart}
+        \\case "$wart_bin" in "$wart_repo"/*) ;; *) printf 'CAPABILITY BLOCKED wart-oracle-unattributed binary=%s\n' "$wart_bin" >&2; exit 2 ;; esac
+        \\if [ ! -x "$wart_bin" ]; then
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-binary-missing path=%s revision=%s\n' "$wart_bin" "$wart_revision" >&2
+        \\  exit 2
+        \\fi
+        \\wart_version=$("$wart_bin" --version)
+        \\wart_hash=$(shasum -a 256 "$wart_bin" | cut -d ' ' -f 1)
+        \\wart_provenance=${WART_ORACLE_PROVENANCE:-$wart_bin.provenance}
+        \\if [ ! -f "$wart_provenance" ]; then
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-provenance-missing path=%s\n' "$wart_provenance" >&2
+        \\  exit 2
+        \\fi
+        \\wart_provenance_revision=$(sed -n 's/^revision=//p' "$wart_provenance")
+        \\wart_provenance_hash=$(sed -n 's/^binary_sha256=//p' "$wart_provenance")
+        \\if [ "$wart_provenance_revision" != "$wart_revision" ] || [ "$wart_provenance_hash" != "$wart_hash" ]; then
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-provenance-mismatch revision=%s binary_sha256=%s\n' "$wart_revision" "$wart_hash" >&2
+        \\  exit 2
+        \\fi
+        \\wart_provenance_sha=$(shasum -a 256 "$wart_provenance" | cut -d ' ' -f 1)
+        \\if ! oracle=$(command -v wasmtime); then
+        \\  printf 'CAPABILITY BLOCKED wasmtime-oracle-missing expected_version=47.0.3\n' >&2
+        \\  exit 2
+        \\fi
+        \\oracle_version=$("$oracle" --version)
+        \\case "$oracle_version" in
+        \\  "wasmtime 47.0.3 "*) ;;
+        \\  *) printf 'CAPABILITY BLOCKED oracle-pin expected=47.0.3 actual=%s\n' "$oracle_version" >&2; exit 2 ;;
+        \\esac
+        \\oracle_hash=$(shasum -a 256 "$oracle" | cut -d ' ' -f 1)
+        \\printf 'wasm-evidence oracle=wasmtime version=%s binary_sha256=%s\n' "$oracle_version" "$oracle_hash"
+        \\printf 'wasm-evidence oracle=wart revision=%s version=%s binary_sha256=%s provenance_sha256=%s role=test-only dynamic_competitor=no\n' "$wart_revision" "$wart_version" "$wart_hash" "$wart_provenance_sha"
+        \\printf 'wasm-evidence preflight=pass outcome=pending-direct-native\n'
+        ,
+        "wasm-evidence",
+        builtin.zig_version_string,
+        @tagName(optimize),
+    });
+    wasm_evidence_cmd.setCwd(b.path("."));
+    wasm_evidence_cmd.step.dependOn(b.getInstallStep());
+
     const wasm_engine_cmd = b.addSystemCommand(&.{
-        duo_bin_path,  "compile",        "src/engine.id",
-        "--backend=c", "--emit",         "exe",
-        "-o",          wasm_conform_bin,
+        "sh",          "-eu", "-c",
+        \\if ! ./zig-out/bin/idol compile tools/wasm/src/engine.id --backend=direct --emit exe -o "$1"; then
+        \\  printf 'CAPABILITY BLOCKED direct-native-engine source=tools/wasm/src/engine.id\n' >&2
+        \\  exit 1
+        \\fi
+        ,
+        "wasm-engine",
     });
-    wasm_engine_cmd.setCwd(b.path("tools/wasm"));
-    wasm_engine_cmd.step.dependOn(b.getInstallStep());
-    // COMPILE THEN RUN, never `duo run`. `run` routes to the DIRECT backend,
-    // and the harness is outside that backend's subset — it reads its engine
-    // path from the environment, so the direct backend refused it outright:
-    //
-    //   DNB001 application: 92 relation: getenv missing: runtime-global:string
-    //
-    // The step therefore exited 1 before executing a single fixture and had
-    // NEVER RUN. That is how a differential harness came to report perfect
-    // agreement: nothing was differencing anything, and the only engine that
-    // ever answered was the interpreter, twice.
-    //
-    // The harness itself (`tools/wasm/test/`) is UNTRACKED — root
-    // `.gitignore` line 7 is a bare `test`, which matches that directory at
-    // any depth, so `git ls-files tools/wasm/test` is empty. Nothing here
-    // fights that; the step simply names the file it runs.
-    const wasm_conform_test_bin = "../../zig-out/bin/wasm-conform-test";
+    const wasm_engine_bin = wasm_engine_cmd.addOutputFileArg("wasm-engine");
+    wasm_engine_cmd.addFileInput(exe.getEmittedBin());
+    wasm_engine_cmd.addFileInput(b.path("tools/wasm/src/engine.id"));
+    wasm_engine_cmd.addFileInput(b.path("tools/wasm/src/wasm/wasi_abi.id"));
+    wasm_engine_cmd.addFileInput(b.path("lib/jit.id"));
+    wasm_engine_cmd.setCwd(b.path("."));
+    wasm_engine_cmd.step.dependOn(&wasm_evidence_cmd.step);
+
+    const wasm_engine_artifact_evidence_cmd = b.addSystemCommand(&.{
+        "sh", "-eu", "-c",
+        \\engine_hash=$(shasum -a 256 "$1" | cut -d ' ' -f 1)
+        \\printf 'wasm-evidence artifact=direct-native-engine binary_sha256=%s\n' "$engine_hash"
+        ,
+        "wasm-engine-artifact",
+    });
+    wasm_engine_artifact_evidence_cmd.addFileArg(wasm_engine_bin);
+    wasm_engine_artifact_evidence_cmd.setCwd(b.path("."));
+    wasm_engine_artifact_evidence_cmd.step.dependOn(&wasm_engine_cmd.step);
+
     const wasm_test_build_cmd = b.addSystemCommand(&.{
-        duo_bin_path,  "compile",             "test/conform.id",
-        "--backend=c", "--emit",              "exe",
-        "-o",          wasm_conform_test_bin,
+        "sh",           "-eu", "-c",
+        \\if ! ./zig-out/bin/idol compile tools/wasm/test/conform.id --backend=direct --emit exe -o "$1"; then
+        \\  printf 'CAPABILITY BLOCKED direct-native-harness source=tools/wasm/test/conform.id\n' >&2
+        \\  exit 1
+        \\fi
+        ,
+        "wasm-harness",
     });
-    wasm_test_build_cmd.setCwd(b.path("tools/wasm"));
-    wasm_test_build_cmd.step.dependOn(&wasm_engine_cmd.step);
-    // cwd stays tools/wasm so the fixture paths the harness opens resolve, and
-    // DUO_WASM_BIN stays the same relative path the engine step wrote to.
-    const wasm_test_cmd = b.addSystemCommand(&.{wasm_conform_test_bin});
-    wasm_test_cmd.setEnvironmentVariable("DUO_WASM_BIN", wasm_conform_bin);
+    const wasm_test_bin = wasm_test_build_cmd.addOutputFileArg("wasm-conform");
+    wasm_test_build_cmd.addFileInput(exe.getEmittedBin());
+    wasm_test_build_cmd.addFileInput(b.path("tools/wasm/test/conform.id"));
+    wasm_test_build_cmd.setCwd(b.path("."));
+    wasm_test_build_cmd.step.dependOn(&wasm_engine_artifact_evidence_cmd.step);
+
+    const wasm_harness_artifact_evidence_cmd = b.addSystemCommand(&.{
+        "sh", "-eu", "-c",
+        \\harness_hash=$(shasum -a 256 "$1" | cut -d ' ' -f 1)
+        \\printf 'wasm-evidence artifact=direct-native-harness binary_sha256=%s\n' "$harness_hash"
+        ,
+        "wasm-harness-artifact",
+    });
+    wasm_harness_artifact_evidence_cmd.addFileArg(wasm_test_bin);
+    wasm_harness_artifact_evidence_cmd.setCwd(b.path("."));
+    wasm_harness_artifact_evidence_cmd.step.dependOn(&wasm_test_build_cmd.step);
+
+    const wasm_test_cmd = b.addSystemCommand(&.{
+        "sh",        "-eu", "-c",
+        \\DUO_WASM_BIN="$1" WASMTIME_VERSION=47.0.3 "$2"
+        ,
+        "wasm-test",
+    });
+    wasm_test_cmd.addFileArg(wasm_engine_bin);
+    wasm_test_cmd.addFileArg(wasm_test_bin);
     wasm_test_cmd.setCwd(b.path("tools/wasm"));
-    wasm_test_cmd.step.dependOn(&wasm_test_build_cmd.step);
-    const wasm_test_step = b.step("wasm-test", "wasm conformance: every fixture, both engines, differenced against wasmtime");
-    wasm_test_step.dependOn(&wasm_test_cmd.step);
+    wasm_test_cmd.step.dependOn(&wasm_harness_artifact_evidence_cmd.step);
+
+    // The deliberate comparator sabotage must be observed as harness failure
+    // (exit 3). A zero here means the damage control cannot damage the proof.
+    const wasm_damage_cmd = b.addSystemCommand(&.{
+        "sh",               "-eu", "-c",
+        \\set +e
+        \\DUO_WASM_DAMAGE=comparator DUO_WASM_BIN="$1" WASMTIME_VERSION=47.0.3 "$2"
+        \\status=$?
+        \\set -e
+        \\if [ "$status" -ne 3 ]; then
+        \\  printf 'CONTROL FAIL: comparator sabotage returned %s, expected 3\n' "$status" >&2
+        \\  exit 1
+        \\fi
+        \\printf 'damage-control comparator=failed-as-required\n'
+        ,
+        "wasm-test-damage",
+    });
+    wasm_damage_cmd.addFileArg(wasm_engine_bin);
+    wasm_damage_cmd.addFileArg(wasm_test_bin);
+    wasm_damage_cmd.setCwd(b.path("tools/wasm"));
+    wasm_damage_cmd.step.dependOn(&wasm_test_cmd.step);
+
+    const wasm_test_step = b.step("wasm-test", "direct-native Wasm evidence: pinned oracle, explicit modes and damage controls");
+    wasm_test_step.dependOn(&wasm_damage_cmd.step);
 
     const ml_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_ml_benchmark.id" });
     ml_bench_cmd.setCwd(b.path("."));
