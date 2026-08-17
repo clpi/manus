@@ -22,6 +22,7 @@ const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
+const c_backend = @import("c_backend.zig");
 const wasm_backend = @import("wasm_backend.zig");
 const demand = @import("demand.zig");
 const obseq = @import("obseq.zig");
@@ -65,6 +66,7 @@ const waist = struct {
 const backend_identity = @import("backend_identity.zig");
 const home_resolve = @import("home_resolve.zig");
 const dnir_lower = @import("dnir_lower.zig");
+const native_ir = @import("native_ir.zig");
 const benchmark_evidence = @import("benchmark_evidence.zig");
 const representation_manifest = @import("representation_manifest.zig");
 const target_model = @import("target_model.zig");
@@ -413,11 +415,11 @@ const usage =
     \\  -O<n>             optimisation level (default: -O3)
     \\  --cc <path>       C compiler (default: clang)
     \\  --target <triple> target triple (e.g. wasm32-wasi, aarch64-macos, native-exe)
-    \\  --emit <kind>     output kind with structured triples: obj, exe, dylib, asm, wasm (default exe)
-    \\  --backend <auto|direct|native|wasm>  lowering: auto (default, machine-first), direct/native (ARM64 Mach-O), wasm
-    \\                    `c` is RETIRED and refused with a diagnostic — there is no C backend
+    \\  --emit <kind>     output kind: obj, exe, dylib, asm, c, wasm (default exe)
+    \\  --backend <auto|direct|native|c|wasm>  physical realization; auto/direct remain machine-native
+    \\                    C99 source requires explicit --backend=c --emit=c and never serves as fallback
     \\  --bench-backend <c-dynamic|c-specialized|direct>  benchmark representation profile (default c-specialized);
-    \\                    the two c-* profiles select the retired C backend and are refused with it
+    \\                    c-* execution profiles remain unavailable; they never route through the source realizer
     \\  --observer <debugger|profiler|reflection|mcp>  demand an inspection observer
     \\                    (HPLS §11; repeatable). Costs realization freedoms — see gate/recon.sh
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
@@ -539,7 +541,7 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--emit") and i + 1 < args.len) {
             i += 1;
             emit_kind = target_model.EmitKind.parse(args[i]) orelse {
-                term.err("unknown --emit '{s}' (expected obj, exe, dylib, asm, wasm)", .{args[i]});
+                term.err("unknown --emit '{s}' (expected obj, exe, dylib, asm, c, wasm)", .{args[i]});
                 std.process.exit(1);
             };
         } else if (std.mem.startsWith(u8, arg, "--emit=")) {
@@ -671,7 +673,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (global_bench_profile_cli and global_backend_explicit) {
         const selected = backend_identity.Backend.parse(compile_backend) orelse {
-            term.err("unknown --backend '{s}' (expected auto, direct, native, or wasm; `c` is retired)", .{compile_backend});
+            term.err("unknown --backend '{s}' (expected auto, direct, native, c, or wasm)", .{compile_backend});
             std.process.exit(1);
         };
         const expected: backend_identity.Backend = if (global_bench_backend == .direct) .direct else .c;
@@ -721,6 +723,14 @@ pub fn main(init: std.process.Init) !void {
     }
     target = resolveCompileTarget(target, emit_kind);
     const backend_mode = compile_backend;
+    if (emit_kind == .c and !std.mem.eql(u8, backend_mode, "c")) {
+        term.err("--emit=c is an explicit orthogonal realization; select it with --backend=c", .{});
+        std.process.exit(1);
+    }
+    if (std.mem.eql(u8, backend_mode, "c") and emit_kind != .c) {
+        term.err("the graph-backed C realizer currently emits portable source only; use --backend=c --emit=c", .{});
+        std.process.exit(1);
+    }
     target = resolveCompileBackend(backend_mode, target);
 
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
@@ -942,6 +952,9 @@ pub fn main(init: std.process.Init) !void {
 
     const out = output_file orelse out: {
         const stem = std.fs.path.stem(file);
+        if (emit_kind == .c) {
+            break :out try std.fmt.allocPrint(alloc, "./{s}.c", .{stem});
+        }
         if (std.mem.eql(u8, target, "wasm32-wasi")) {
             break :out try std.fmt.allocPrint(alloc, "./{s}.wasm", .{stem});
         }
@@ -3300,24 +3313,15 @@ fn resolveCompileTarget(target_in: []const u8, emit: target_model.EmitKind) []co
 
 fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 {
     const parsed = backend_identity.Backend.parse(backend) orelse {
-        term.err("unknown --backend '{s}' (expected auto, direct, native, or wasm; `c` is retired)", .{backend});
+        term.err("unknown --backend '{s}' (expected auto, direct, native, c, or wasm)", .{backend});
         std.process.exit(1);
     };
     switch (parsed) {
         .direct => return if (native_backend.isNativeMachineTarget(target_in)) target_in else "native-exe",
         .auto => return target_in,
-        // NO C BACKEND, PERIOD. The ruling in `docs/rulings.md` retired
-        // `--backend=c`; until this refusal existed the flag was still ACCEPTED
-        // and `gate/noc.sh` row 1 measured it at 1, on the row whose own header
-        // says that while it is 1 nothing else in that ledger matters. A
-        // retired spelling that the CLI still honours is a live defect, not
-        // history (`AGENTS.md`, HPLS §94) — so this is a diagnostic naming the
-        // ruling, never a silent fallback to `direct`, because silently
-        // answering a different question is how the bridge survived this long.
-        .c => {
-            term.err("--backend=c is RETIRED: the direct AArch64 backend is the only backend (NO C BACKEND, PERIOD — docs/rulings.md). A program that only builds through the C bridge does not build; record it as a direct-backend defect instead of routing around it.", .{});
-            std.process.exit(1);
-        },
+        // Explicit only. Selection was paired with `--emit=c` above, and this
+        // target reaches the graph-backed realizer before any direct decision.
+        .c => return target_in,
         // `--backend=wasm` NAMES AN ARTIFACT, AND UNTIL NOW IT DID NOT PRODUCE
         // ONE. With no `--target` it returned "native" unchanged, fell past the
         // machine-target refusal (it does not prefer machine code), and landed
@@ -3326,8 +3330,8 @@ fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 
         // spelled `.wasm`. MEASURED at idol 0f7d6d00, `file -b` on the output:
         // `Mach-O 64-bit executable arm64`. So the flag whose whole name is a
         // target selected neither the target nor the backend, and the RETIRED C
-        // emitter was reachable under it — the `NO C BACKEND` refusal below
-        // fires on the literal string `c` and on nothing else.
+        // emitter was reachable under it — the legacy-tail refusal below fired
+        // on the literal string `c` and on nothing else.
         //
         // The backend and the target are now the same choice: `--backend=wasm`
         // means wasm32-wasi, which routes to `src/wasm_backend.zig`. An explicit
@@ -4026,7 +4030,7 @@ fn reportDirectBackendError(
     var buf: [512]u8 = undefined;
     const msg = native_backend.describeCause(err, target, &buf, diagnostic);
     term.err("direct backend: {s}", .{msg});
-    term.hint("{s}", .{native_backend.unsupportedReason(target)});
+    term.hint("DNB001: program is outside the current direct-native subset. Auto reports the same direct refusal and never falls back to C. Explicit graph-backed C99 source is an orthogonal physical realization and cannot qualify direct-native support; C foreign interop is a separate capability.", .{});
     // The error name is always reported. Lowering and machine evidence belong
     // to this exact attempt; the scalar precheck belongs to this compilation.
     term.hint("refused with: {s}", .{@errorName(err)});
@@ -4517,10 +4521,10 @@ fn do_compile(
 
     // THE CONVERSION ALGEBRA'S REFUSAL IS A RULING, so it runs here — before
     // the `check_only` return, and before any backend — rather than inside the
-    // retired C emitter where gap[082] left it. See `src/conversion_law.zig`:
-    // with `--backend=c` retired the direct backend became the only backend and
-    // carries no such law, so `idol check` reported "no errors" on the very
-    // fixture written to pin the rule.
+    // legacy AST/Lua C emitter where gap[082] left it. See
+    // `src/conversion_law.zig`: direct is canonical and carries no separate
+    // copy of that law, so `idol check` reported "no errors" on the very fixture
+    // written to pin the rule.
     {
         const verdict = try conversion_law.enforce(alloc, &ps.mod);
         if (verdict.refused > 0) {
@@ -4548,6 +4552,56 @@ fn do_compile(
     // when the graph owns the `()` table-access application directly.
     table_apply.normalizeModule(alloc, &ps.mod, &ps.sem.type_map);
 
+    const selected_backend = backend_identity.Backend.parse(backend_mode) orelse {
+        term.err("unknown --backend '{s}' (expected auto, direct, native, c, or wasm)", .{backend_mode});
+        std.process.exit(1);
+    };
+
+    // Orthogonal C99 source realization. The branch is selected only by the
+    // explicit backend, lowers through the same checked graph-to-DNIR seam as
+    // direct and Wasm, and returns before constructing the retired AST/Lua
+    // CodeGen. No result here can qualify or rescue a direct-native compile.
+    if (selected_backend == .c) {
+        if (!std.mem.eql(u8, target, "c-source")) {
+            term.err("the graph-backed C realizer currently supports portable source only; use --backend=c --emit=c", .{});
+            std.process.exit(1);
+        }
+        if (run_after or test_mode or bench_mode or load_chunk or pgo or lib_mode or shared_mem or link_flags.len != 0) {
+            term.err("--backend=c --emit=c writes source only; execution, test/benchmark running, linking, PGO, shared memory, and library modes are not in this bounded slice", .{});
+            std.process.exit(1);
+        }
+
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+        var lowering: dnir_lower.Diagnostic = .{};
+        const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, &ps.mod, &graph, &lowering) catch |err| {
+            term.err("C99 realizer: graph-to-DNIR refused ({s})", .{@errorName(err)});
+            if (lowering.note()) |why| term.hint("refused at: {s}", .{why});
+            std.process.exit(1);
+        };
+        defer native_ir.deinitModule(alloc, lowered);
+
+        var diagnostic: c_backend.Diagnostic = .{};
+        const entry = native_backend.abi(&ps.mod, entry_override);
+        const source = c_backend.emitSource(alloc, lowered, entry, &diagnostic) catch |err| {
+            term.err("C99 realizer: no realization ({s})", .{@errorName(err)});
+            if (diagnostic.note()) |why| term.hint("refused at: {s}", .{why});
+            if (diagnostic.functionName()) |name| term.hint("in relation: {s}", .{name});
+            std.process.exit(1);
+        };
+        defer alloc.free(source);
+        try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = out_path, .data = source });
+        if (phase_timer) |*timer| trace_phase(io, timer, "C99 emit", out_path);
+        if (term.build_report != .plain and !test_mode) {
+            const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+            term.buildPhaseDone("compile", total_ms, out_path);
+        }
+        if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+        if (cache_path) |path| buildCacheStore(io, path, out_path, alloc);
+        return;
+    }
+
     var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);
     native_scalar_precheck.src_path = src_path;
     native_scalar_precheck.stdlib_root = compiler_lib_root;
@@ -4565,10 +4619,6 @@ fn do_compile(
     var link_refusal: usize = 0;
     const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
 
-    const selected_backend = backend_identity.Backend.parse(backend_mode) orelse {
-        term.err("unknown --backend '{s}' (expected auto, direct, native, or wasm; `c` is retired)", .{backend_mode});
-        std.process.exit(1);
-    };
     const effective_machine_target: ?[]const u8 = if (wantsMachineLowering(backend_mode, target))
         machineTargetForBackend(target)
     else
@@ -4667,7 +4717,7 @@ fn do_compile(
                     // link asked for `_run` — `Undefined symbol: _run`.
                     const entry = entrySymbol(alloc, io, src_path, &ps.mod, entry_relation);
                     // A NATIVE `main` DOES NOT INITIALISE THE LUA RUNTIME. The
-                    // C backend's main opens with `package = lua_package_init()`;
+                    // legacy AST/Lua C bridge's main opens with `package = lua_package_init()`;
                     // the direct backend emits no equivalent, and it cannot --
                     // lua_package_init is `static inline`, so there is no symbol
                     // for machine code to call.
@@ -4713,7 +4763,7 @@ fn do_compile(
                     // rewrites `ps.mod` in place, and `ps.mod` is also what the
                     // C emit below walks when this path declines — so a
                     // transform that exists only to feed the direct backend was
-                    // deciding what the C backend compiled. When the direct
+                    // deciding what the legacy C bridge compiled. When direct
                     // backend then bailed, the spliced declarations survived as
                     // dead C nobody calls, and dead C still has to type-check:
                     // `instruction_descriptor_smoke` died on
@@ -5079,13 +5129,13 @@ fn do_compile(
     }
 
     // ---------------------------------------------------------------------
-    // NO C BACKEND, PERIOD — ENFORCED BY REACHABILITY, NOT BY SPELLING.
+    // LEGACY AST/LUA C BRIDGE — UNREACHABLE BY EVERY BACKEND.
     //
-    // Everything below this line is the C emitter's tail: `src/codegen.zig`
+    // Everything below this line is the retired bridge tail: `src/codegen.zig`
     // writes `/tmp/duo_<stem>.c` and `zig cc` compiles it. The ruling in
     // `docs/rulings.md` retired that backend, and until now the retirement was
     // a STRING COMPARISON: `resolveCompileBackend` refused the four characters
-    // `--backend=c` and nothing else, so the identical emitter was still
+    // the spelling `--backend=c` and nothing else, so the identical emitter was still
     // reachable as `--backend=wasm`. MEASURED at idol 0f7d6d00, before this
     // line existed: `idol compile --backend=wasm -o wt.wasm wt.id` exited 0,
     // wrote `/tmp/duo_wt.c` (6,640 bytes) and produced a `Mach-O 64-bit
@@ -5103,7 +5153,7 @@ fn do_compile(
     // the honest outcome is a named refusal a person can act on, not a
     // panic — and not a silent C compile, which is the thing being retired.
     // ---------------------------------------------------------------------
-    term.err("no C backend: this compile reached the retired C emitter (backend '{s}', target '{s}'). NO C BACKEND, PERIOD — docs/rulings.md. The AArch64 direct backend and the native wasm emitter (--backend=wasm / --target wasm32-wasi) are the only realizations; a program that only builds through the C bridge does not build, and is a direct-backend defect to record rather than route around.", .{ backend_mode, target });
+    term.err("internal routing defect: backend '{s}' target '{s}' reached the retired AST/Lua C bridge. The orthogonal C99 source realizer returns before this point; direct and auto never route through either C path.", .{ backend_mode, target });
     std.process.exit(1);
 
     phase_timer = start_trace_timer(io);
