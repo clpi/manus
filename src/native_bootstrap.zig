@@ -27,7 +27,7 @@
 //!
 //! Foreign-only namespace spellings (delete when graph publishes exact ids):
 //!   string.byte/sub/match/len/char  → subject relations above
-//!   mem.alloc/free/zero/read_*        → demanded place/allocation facts
+//!   mem.alloc/free/zero/read_*/write_*  → demanded place/allocation facts
 //!   os.exit/execute                   → process world facts
 //!   math.sqrt/sin/...                 → relation + selected target id
 //!   gatecap(cmd)                      → command capture (host ingress only)
@@ -317,6 +317,22 @@ fn callApplication(expr: *const Expr) bool {
                 if (std.mem.eql(u8, f.field, "read_byte") and c.args.len == 2) return true;
                 if (std.mem.eql(u8, f.field, "read_i64") and c.args.len == 2) return true;
                 if (std.mem.eql(u8, f.field, "addr") and c.args.len == 1) return true;
+                // THE WRITE HALF OF A FACE SET THAT ONLY HAD ITS READ HALF.
+                // `read_byte`/`read_i64` are indexed loads and were admitted;
+                // their stores were not, so a module could read a raw buffer
+                // and never fill one. That is not a subset, it is a buffer the
+                // direct backend can only observe — and the host bridges in
+                // `lib/compiler/lexer.id` exist precisely to FILL a
+                // caller-supplied buffer, which is why the beachhead module
+                // refuses on `mem.write_i64` 16 times over.
+                //
+                // `ptr_from_addr(T, a)` belongs with them: it is `mem.addr`
+                // read backwards, and at this width it is the same no-op —
+                // the address IS the pointer. The type operand is a
+                // DESCRIPTOR, not a value, so it is never lowered.
+                if (std.mem.eql(u8, f.field, "write_byte") and c.args.len == 3) return true;
+                if (std.mem.eql(u8, f.field, "write_i64") and c.args.len == 3) return true;
+                if (std.mem.eql(u8, f.field, "ptr_from_addr") and c.args.len == 2) return true;
             }
             if (std.mem.eql(u8, home, "os")) {
                 if (std.mem.eql(u8, f.field, "exit") and c.args.len == 1) return true;
