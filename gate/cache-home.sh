@@ -124,12 +124,20 @@ compile "$project" ./left/role.id "$work/dot.out" "$work/dot.log" \
     || fail 'dot same-home compile failed'
 grep -Fq '(cached)' "$work/dot.log" || fail 'dot spelling missed the same-home cache entry'
 
+compile "$project" left/../right/role.id "$work/parent.out" "$work/parent.log" \
+    || fail 'parent-normalized same-home compile failed'
+grep -Fq '(cached)' "$work/parent.log" || fail 'parent spelling missed the same-home cache entry'
+cmp -s "$work/right.out" "$work/parent.out" \
+    || fail 'parent-normalized executable changed bytes'
+matches_home "$work/parent.out" "$right_symbol" "$left_symbol" \
+    || fail 'parent spelling changed the exact right-home symbol'
+
 compile / "$work/link/left/role.id" "$work/symlink.out" "$work/symlink.log" \
     || fail 'symlinked-root same-home compile failed'
 grep -Fq '(cached)' "$work/symlink.log" || fail 'symlinked-root spelling missed the same-home cache entry'
 
 for artifact in "$work/absolute.out" "$work/dot.out" "$work/symlink.out"; do
-    cmp -s "$work/left.out" "$artifact" || fail 'same-home cached executable changed bytes'
+    cmp -s "$work/left.out" "$artifact" || fail "same-home cached executable changed bytes: $artifact"
     matches_home "$artifact" "$left_symbol" "$right_symbol" \
         || fail 'same-home spelling changed the exact native symbol'
 done
