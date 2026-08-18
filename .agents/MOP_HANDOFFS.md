@@ -228,3 +228,21 @@ exists as the declared convergence script for this surface.
 `baseline` is not a compound — added to the `words` authority in both
 law copies (gate/path.id and gate/idiom.id). The compound census parses
 the list at runtime and honors it with no code change.
+
+
+## Update 4 — compile concurrency measured; cache publish hardened in-tree
+
+Ground truth (30-way concurrent compiles, distinct content, one cwd):
+every compile succeeds, no cross-process lock exists in `idol compile`,
+and the reducer parallel-sweep regression was my throttle's spawn/poll
+overhead, not compiler serialization (README corrected).
+
+The one real multi-agent hazard on the roadmap modules:
+`.id/cache/semantic/state.json` was a direct truncate-write in
+src/persistent_semantic_state.zig (codex's unwired transactional-cache
+WIP). It now publishes atomically (per-process temp + rename; readers see
+old-or-new, writers never block; last consistent writer wins). The patch
+sits in the working tree beside that WIP for the owning session to wire
+and commit — committing their untracked file under my name would repeat
+the ace5f7d5 sweep mistake. Build green; unit-test parity identical
+(1663 pass / 3 pre-existing failures, reproduced with the patch reverted).

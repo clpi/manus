@@ -71,7 +71,10 @@ call counts are emitted in the closing report line.
 
 Batch-testing ddmin round candidates 8-wide produced the identical
 reduction but ran SLOWER (5m06s vs 3m54s on parser.id) with system time
-exploding (1m44s -> 5m38s): `idol compile` serializes on the compiler's
-own cache/lock, so parallel candidates contend instead of overlapping.
-Candidate-level parallelism is structurally pointless until compiles run
-lock-free; the guarded inert pre-pass remains the throughput lever.
+exploding (1m44s -> 5m38s). Follow-up measurement retracted the first
+attribution (a compiler cache lock): `idol compile` has NO cross-process
+lock — 10- and 30-way concurrent compiles of distinct files all succeed
+with no shared-writer corruption. The regression came from the sweep's
+own throttle polling and spawn overhead. Candidate-level parallelism
+needs a C-level batch runner (xargs -P) to pay off; the guarded inert
+pre-pass remains the proven throughput lever.
