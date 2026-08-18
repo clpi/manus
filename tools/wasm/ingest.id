@@ -113,16 +113,19 @@ appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
   head: str = '{"application":' .. n:num() .. ',"caller":' .. fi:num() .. ',"relation":"'
   tail: str = ',"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"unknown"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}'
   if op == 32
-    stdout:write(head .. 'read","operand":{"kind":"local","index":' .. src:ulebval(ip):num() .. '},"results":[{"width":32}]' .. tail .. "\n")
+    stdout:write(head .. 'read","operand":{"kind":"local","index":' .. src:ulebval(ip):num())
+    stdout:write('},"results":[{"width":32}]' .. tail .. "\n")
   if op == 65
     stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num())
     stdout:write(',"determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
   if op == 66
-    stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num() .. ',"determinacy":"exact","results":[{"width":64}]' .. tail .. "\n")
+    stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num())
+    stdout:write(',"determinacy":"exact","results":[{"width":64}]' .. tail .. "\n")
   if op == 67 or op == 68
     stdout:write(head .. 'constant","determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
   if op >= 103 and op <= 118 or op >= 70 and op <= 78 or op >= 167 and op <= 181 or op >= 81 and op <= 89 or op >= 134 and op <= 136 or op >= 192 and op <= 196 or op >= 146 and op <= 150 or op >= 160 and op <= 164
-    stdout:write(head .. op:binname() .. '","operands":[' .. a:num() .. ',' .. b:num() .. '],"width":32,"overflow":"wrap","results":[{"width":32}]' .. tail .. "\n")
+    stdout:write(head .. op:binname() .. '","operands":[' .. a:num() .. ',' .. b:num())
+    stdout:write('],"width":32,"overflow":"wrap","results":[{"width":32}]' .. tail .. "\n")
   if op >= 40 and op <= 53
     stdout:write(head .. 'memory","world":{"home":"memory","reach":"address"},"operands":[' .. a:num() .. '],"width":32,"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"unknown"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}' .. "\n")
   if op == 16
@@ -200,10 +203,26 @@ slebsign: i64 = (s: str, i: i64)
 
 main: i64 = ()
   path: str = args(1)
-  applimit: i64 = 1000000
   if path == ""
-    stdout:write("usage: idol run tools/wasm/ingest.id -- <module.wasm.hex>\n")
+    stdout:write("usage: idol run tools/wasm/ingest.id -- <module.wasm.hex> | --serve\n")
     return 1
+  if path != "--serve"
+    path:ingestmain()
+  else
+    # MCP streaming face: newline JSON-RPC; each request is a hex module
+    # path; the full fact + record stream emits as notifications.
+    serve: bool = true
+    ln: str = stdin:line()
+    while serve
+      if ln == ""
+        serve = false
+      else
+        stdout:write('{"jsonrpc":"2.0","method":"wasm/module","params":{"source":"' .. ln .. '"}}' .. "\n")
+        ln:ingestmain()
+        ln = stdin:line()
+  0
+ingestmain: i64 = (path: str)
+  applimit: i64 = 1000000
   src: str = path:read()
   if src:len() < 8
     stdout:write("error: too short for a module\n")
