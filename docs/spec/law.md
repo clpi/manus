@@ -122,6 +122,51 @@ Authority is a fact within a world. World is not synonymous with authority.
 
 A world is an ordinary semantic table. No separate World object hierarchy.
 
+## 3a. Source, law, grammar, world
+
+Source supplies bytes, spans, origin, and provenance. Law supplies how those
+bytes and the values they denote behave. Grammar is the one compiler authority's
+projection of a source law into token identities, roles, precedence, and
+structural recognition. World supplies bindings, descriptors, relations,
+values, laws in reach, stage and target facts, authority requirements, and
+witnesses. The graph owns resolved meaning. Demand decides which observations
+must survive. Realization chooses physical execution.
+
+The ordering is exact:
+
+    recognize(source, source law) -> syntax provenance
+    resolve(syntax, world, source law) -> semantic facts
+    project(semantic facts, demand) -> specialization
+    realize(semantic facts, demand, target) -> physical execution
+
+Exactly one source law owns every source position. Never union grammars, try
+several parsers and choose one that accepts, infer a grammar from command-like
+text, or activate syntax because a world or authority is reachable. Canonical
+`.id` ingress selects Idol source law; other admitted source partitions may
+select Lua, C, Bash, Wasm, or another exact law. A suffix or path may participate
+at ingress and remains provenance afterward; it is never reconstructed as
+semantic authority.
+
+Do not mint a semantic dialect, source-world, grammar-world, foreign-mode, or
+language-mode identity. `origin`, `law`, span, and provenance qualify ordinary
+identities in the one graph. Foreign grammar remains source recognition state,
+not permanent `BashPipelineNode`, `LuaMethodCall`, `CForStatement`, or
+`IdolSubjectCall` semantic kinds. Foreign meaning that has no witnessed native
+equivalent remains an exact foreign semantic identity in the same id universe.
+
+Source law never grants authority or selects realization. A tool may recognize
+Bash with zero process authority. Process authority may be present while Idol
+grammar remains unchanged. Shell is command interpretation law; Bash is one
+foreign source and semantic lawset; process is a world capability. They are
+independent facts even when a launcher supplies them together.
+
+Whole-source partitions are the first ingestion boundary. Inline polyglot
+source, if admitted later, requires one neutral face that captures an unparsed
+source span before a law is selected. It does not execute, import, change world,
+or grant authority. Its punctuation is not frozen. Ordinary `thing@world`
+remains semantic interjection after recognition and never becomes a parser-mode
+switch.
+
 ## 4. @
 
 `@` means exactly THE CURRENT WORLD.
@@ -778,8 +823,12 @@ programs.
 One semantic text model may realize as static literal, borrowed view, slice +
 length, inline small value, owned buffer, or other representation if demanded.
 
-Interpolation/concatenation should avoid temporary allocation where output can
-be sized or streamed directly. Do not turn text convenience into automatic heap
+Interpolation publishes an ordered formatted-text segment pack: literal
+segment, expression value, literal segment. It does not semantically publish a
+concatenation chain or demand materialization. Concatenation, exact-size
+materialization, direct sink formatting, scatter/gather output, constant
+folding, and erasure are realization candidates. Retired `..` input is not the
+semantic concat relation. Do not turn text convenience into automatic heap
 allocation.
 
 ## 38. Metatables

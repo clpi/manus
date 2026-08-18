@@ -54,7 +54,7 @@
 
 work = "/tmp/duo-highlight"
 projector = "tools/lsp/src/highlight.id"
-scm = "ext/tree-sitter-duo/queries/highlights.scm"
+scm = "ext/tree-sitter-idol/queries/highlights.scm"
 indent = "    "
 
 # The corpus. `kind` decides what the diagnostic count is allowed to be:
@@ -143,7 +143,7 @@ proofs = {
   "1 5 2 copula ascribe H-1 the SPACED colon is the copula, `x: f64`",
   "1 7 7 invoke apply H-1 the TIGHT colon is invoke, `lx:read` — same glyph",
   "2 6 24 union alt H-1 a bar ON a descriptor edge is the union, `file | error`",
-  "2 8 9 pipe stream H-1 the same bar with no edge open is the pipe, `sh .. | ..`",
+  "2 8 9 pipe stream H-1 the same bar with no edge open is a foreign pipe face",
   "2 6 17 copula ascribe the copula that OPENED the edge the union reads",
   "2 7 15 union alt a literal union, still on the edge the copula opened",
   "2 9 14 pipe stream the second pipe, so the pipe reading is not a one-off",
@@ -183,9 +183,8 @@ proofs = {
   "9 13 6 ambiguous ambiguous the semicolon names no edge",
   "1 13 6 copula ascribe R1 DECIDES: a tight colon with no call group IS",
   "1 13 7 descriptor shape and what follows it is therefore a descriptor",
-  "3 15 9 retrieve walk `to[str]` is a SPACE WALK, not a bracket",
-  "3 16 7 retrieve index the same glyph over a value key RETRIEVES",
-  "9 16 7 ambiguous ambiguous and over a bare name it has two candidates"
+  "3 14 9 invoke apply `to(str)` is ordinary application; operand facts decide",
+  "3 15 7 invoke apply `xs(0)` is the same ordinary application role"
 }
 # H-1, THE FOUR THAT ARE THE WHOLE POINT. Two glyphs, four roles.
 # and the chain: the union above is a union BECAUSE of this copula.
@@ -286,7 +285,7 @@ quote: str = ()
 goldrows: any = (body: str)
   out = {}
   q: str = quote()
-  head: str = indent .. q
+  head: str = "{indent}{q}"
   for i, ln in body:split("\n")
     if ln:sub(1, 5) == head
       rest: str = ln:sub(6, ln:len())

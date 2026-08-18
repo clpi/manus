@@ -45,9 +45,10 @@ another root, or expose an implementation strategy as the public semantic
 operation when one relation and law suffice.
 
 FACE-ZERO applies to migrated canonical source. Subject-held operations are
-subject-first; static identities use named projection; square brackets mean a
-genuinely computed key. Source shape never forces a table, linear-memory
-access, branch, allocation, box, interpreter dispatch, or JIT strategy.
+subject-first; static identities use named projection; genuinely computed keys
+are operands of ordinary application. Source shape never forces a table,
+linear-memory access, branch, allocation, box, interpreter dispatch, or JIT
+strategy.
 
 PREDICATE-ZERO preserves foreign and native law. Validation, capability,
 presence, trap, and refinement states remain semantic facts or cases rather

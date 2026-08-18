@@ -31,14 +31,14 @@ after resolution:
 ```text
 () ordinary application and grouping
 {} structured packs, descriptor application, and bounded homes
-[] genuinely computed projection
 .  statically named projection
 :  admitted descriptor, subject, and home faces
 ```
 
 Static identity should look static: `user.name` and `{ name = value }` expose
 more information than string-key computation. A genuinely computed key remains
-`values[i]` or `table[key]`. Neither face chooses a physical representation.
+ordinary application: `values(i)` or `table(key)`. Neither face chooses a
+physical representation.
 
 Possessed values supply subjects. Worlds supply authority. Facts carry
 qualification. Demand selects need. Realization selects implementation and

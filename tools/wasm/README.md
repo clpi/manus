@@ -19,10 +19,11 @@ realization selects the lawful physical form. An interpreter, native compiler,
 foreign engine, opcode table, or target-specific code generator is an
 implementation candidate—not a second semantic architecture.
 
-The admitted public model follows ROOT-ZERO: package location is provenance and grants
-no capability; the standard distribution owns no native namespace. It follows
-FACE-ZERO: subject and static identities are exposed directly, computed keys use
-`[]`, and source syntax never chooses storage or execution strategy.
+The admitted public model follows ROOT-ZERO: package location is provenance and
+grants no capability; the standard distribution owns no native namespace. It
+follows FACE-ZERO: subject and static identities are exposed directly, computed
+keys are ordinary application operands, and source syntax never chooses storage
+or execution strategy.
 
 PREDICATE-ZERO keeps capability, validation, presence, trap, and unknown states
 as facts or cases. Foreign predicate spellings remain foreign provenance until

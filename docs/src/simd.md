@@ -22,8 +22,8 @@ machine work. Such masks are physical realization facts, not native boolean
 helper relations. A source numeric face or computed projection does not by
 itself require a vector register or memory aggregate.
 
-Square brackets remain canonical only when an expression genuinely computes an
-index. A known field or component identity uses the stronger static face. After
+Ordinary application supplies a genuinely computed index: `value(index)`. A
+known field or component identity uses the stronger static face. After
 resolution, punctuation contributes provenance rather than a SIMD or storage
 operation kind.
 

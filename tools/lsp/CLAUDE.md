@@ -50,9 +50,9 @@ unknown-as-false helpers. A protocol-required boolean is only a rendering at the
 transport boundary and retains a route to the richer graph fact.
 
 FACE-ZERO applies to every edit and generated suggestion. A statically known
-identity is presented as named projection; square brackets are reserved for a
-key supplied by evaluating an expression. Source faces erase after resolution
-and never force storage, lookup, allocation, boxing, or dispatch.
+identity is presented as named projection; a key supplied by evaluating an
+expression is an operand of ordinary application. Source faces erase after
+resolution and never force storage, lookup, allocation, boxing, or dispatch.
 
 The one machine-readable grammar authority generates the roles consumed here.
 Do not hand-copy keywords, punctuation, expression starts, token categories, or

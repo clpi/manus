@@ -461,17 +461,27 @@ selfzero.pattern = pattern{
     diagnostic = "a parameter named self is an audit finding"
 }
 
-# ═══ §11 · dialect identity ════════════════════════════════════════════════
+# ═══ §11 · source law, not dialect identity ════════════════════════════════
 
-dialect = @{
-    kinds  = { .idol, .lua, .generated, .foreign },
-    switch = false             # no implicit mode switch
-    hidden = false             # no hidden semantics
+source.interpretation = law{
+    id    = "law.source.interpretation"
+    kind  = .invariant
+    holds = .exact
+    binds = {
+        "every source position has exactly one explicit or ingress-derived source law",
+        "source supplies bytes span origin and provenance while law supplies interpretation",
+        "one grammar authority projects the selected law into token identity roles precedence and structural recognition",
+        "world supplies semantic context and authority after recognition and never switches grammar",
+        "source law grants no authority and selects no physical realization",
+        "foreign grammar remains source provenance rather than a semantic node taxonomy",
+        "foreign meaning remains an exact identity in the shared graph until a witness permits convergence",
+        "ordinary thing@world is semantic interjection after recognition and never a parser-mode switch",
+        "inline foreign source if admitted uses one neutral source-span capture whose punctuation is not yet frozen",
+    }
+    fails = "a dialect semantic identity hidden parser switch grammar union try-parser world-selected syntax or foreign syntax node surviving as semantic authority"
 }
 
-# Every semantic fact carries these three. `law` is what §7 adds and what the
-# substrate RFC was missing.
-fact.marks = { "origin", "dialect", "law" }
+fact.marks = { "origin", "law", "provenance" }
 
 # ═══ §12 · canonicalization ════════════════════════════════════════════════
 
@@ -1925,7 +1935,7 @@ subtract.proves = {
     "resolution is deterministic",
     "canonical lowering is NO WORSE",
     "the canonicalizer migrates it mechanically",
-    "lua and foreign dialects are unaffected",
+    "lua and other foreign source laws are unaffected",
 }
 
 # SELF-ZERO requires implicit-subject fields to use ordinary bare identities.
@@ -2108,9 +2118,9 @@ locality.lattice = {
 keep = {
     "x.y", "x:f()", ":f() under self-zero",
     "if", "while", "for x in xs", "break", "continue",
-    "arithmetic and comparison operator faces", "[expr] computed keys",
+    "arithmetic and comparison operator faces",
     "() ordinary application", "{} structured packs and descriptor homes",
-    "[] computed keys", ". named projection", ": descriptor, subject and home roles",
+    ". named projection", ": descriptor, subject and home roles",
     "ordinary interpolated strings", "offside layout",
 }
 
@@ -2149,13 +2159,14 @@ grammar.owed = "remove bare dot primary; preserve postfix named projection; gene
 
 # ═══ §43 · DELIMITER CLOSURE — useful source distinctions survive ═══════
 #
-# Brace-zero and bracket-zero are closed.
+# Brace-zero and application-zero are closed.
 #
 # Source faces preserve useful human distinctions while semantic meaning
 # converges immediately after resolution. One application architecture does
 # not imply one delimiter. Parentheses carry ordinary callable operands;
 # braces carry structured packs, descriptor homes and descriptor application;
-# brackets carry genuinely computed keys. None selects a physical aggregate.
+# parentheses carry every ordinary application, including computed keys and
+# ordinal access. Brackets are retired. No source face selects a physical aggregate.
 
 brace = law{
     id    = "law.brace"
@@ -3342,9 +3353,9 @@ surfacezero = law{
     holds = .erased
     binds = {
         "a grammar face records provenance and resolution evidence, never semantic identity",
-        "if while for and or not operators projection indexing application and binding normalize immediately",
-        "a bracket face says only that evaluating an expression supplies the key while a dot face supplies statically named identity",
-        "dot and bracket faces converge after resolution whenever subject key value place demand and descriptor facts are equivalent",
+        "if while for and or not operators projection access application and binding normalize immediately",
+        "ordinary application supplies a dynamic key while a dot face supplies statically named identity",
+        "named projection and ordinary application converge after resolution whenever subject key value place demand and descriptor facts are equivalent",
         "equivalent source faces resolve to the same facts while distinct occurrences retain distinct ids",
         "computed projection never forces a table hash lookup dynamic dispatch allocation or physical memory access",
         "a retained grammar face may improve human density and still own ZERO semantic machinery",
@@ -3521,7 +3532,7 @@ conventional = law{
     binds = {
         "std os fs and mem operation homes are canonical debt, not semantic namespaces",
         "operation first namespace calls are audited against subject relation world and demand roles",
-        "a literal string or otherwise statically known key in brackets is audited for named projection or named structured content",
+        "a literal string or otherwise statically known key operand is audited for named projection or named structured content",
         "table qualified get set has new and similar names are audited for projection update establishment removal iteration or shape facts",
         "has is can exists present missing valid ready enabled supported and similar boolean helpers are audited for an existing fact case relation world transition refinement demand shape effect or identity",
         "subject first spelling does not rescue a relation whose only work is collapsing richer semantics into bool",
@@ -3553,7 +3564,7 @@ conventionzero = law{
     binds = {
         "a weaker conventional pattern is noncanonical when an existing relation level descriptor world demand place proof or structured value preserves its observations",
         "statically known field identity uses named projection or named structured content rather than computed key syntax",
-        "brackets remain canonical when evaluating their expression genuinely supplies key identity",
+        "a genuinely computed key remains ordinary application table(key)",
         "subject first relation expected descriptor direct composition semantic case and explicit world fact each beat an equally readable weaker face",
         "a semantic fact case relation transition refinement demand world effect shape or identity is never duplicated as a boolean helper",
         "true false unknown absent not applicable and unresolved remain distinct wherever the semantic domain admits them",
@@ -4585,7 +4596,9 @@ grammarone = law{
     holds = .one
     binds = {
         "GRAMMAR-ONE exactly one executable grammar-fact owner",
-        "canonical Idol grammar facts are the authority — generated Zig or C tables are a bridge projection — grammar.md and Tree-sitter are human or editor projections from that owner",
+        "the one grammar owner projects facts qualified by source law — Idol Lua C Bash Wasm and later laws never become independent grammar authorities",
+        "canonical Idol grammar facts are one law-qualified projection — generated Zig or C tables are a bridge projection — grammar.md and Tree-sitter are human or editor projections from that owner",
+        "exactly one source law owns each source position — no grammar union try-parser command-looking switch suffix reconstruction or world-selected syntax",
         "forbidden parallel owners include C0 prose grammar.id grammar_roles.zig grammarrole.id grammar.md and Tree-sitter each claiming to own recognition",
         "a host grammar_roles.zig table is transitional and has a deletion condition once Idol owns the facts",
         "parser-local BinOp maps spelling lists and category switches are reconstruction debt — token identity yields grammar-role facts and the parser observes them",
@@ -6164,12 +6177,12 @@ indexprojection = law{
     kind  = .invariant
     holds = .static
     binds = {
-        "bracket remains computed projection",
-        "do not use x[field] when static field identity exists and use x.field instead",
-        "computed key remains appropriate when the key is genuinely dynamic",
-        "indexed syntax does not force table realization",
+        "ordinary access is application table(key)",
+        "do not use table(\"field\") when static field identity exists and use table.field instead",
+        "a genuinely dynamic key remains an ordinary application operand",
+        "application syntax does not force table realization",
     }
-    fails = "literal string bracket projection when named projection or structured field exposes static identity"
+    fails = "bracket access or literal-string application when named projection exposes static identity"
 }
 
 worldvaluefield = law{

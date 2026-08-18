@@ -29,8 +29,8 @@ renderings only and must retain a route back to structured facts.
 
 ROOT-ZERO and FACE-ZERO apply to all results. Completion is subject-oriented,
 package paths grant no authority, and the standard distribution owns no native
-namespace. Named identities look static; `[]` is suggested only for genuinely
-computed keys; neither face selects a representation.
+namespace. Named identities look static; a genuinely computed key remains an
+operand of ordinary application; neither face selects a representation.
 
 PREDICATE-ZERO also applies. Completion, diagnostics, and code actions expose
 semantic facts, cases, refinements, and transitions rather than teaching
