@@ -52,12 +52,32 @@ try:
 except Exception:
     ts = None
 
+# formatter admission surface: keywords/token kinds the fmt projection
+# admits (lib/token/grammarrole.id KIND_* / role tables drive admission).
+fmt_admits = None
+try:
+    gr = open('lib/token/grammarrole.id').read()
+    import re as _re
+    fmt_admits = len(_re.findall(r'^[A-Z][A-Z_0-9]+\s*=', gr, _re.M))
+except Exception:
+    pass
+
+# grammar docs surface: token spellings the law document names.
+doc_tokens = None
+try:
+    gd = open('docs/spec/grammar.md').read()
+    doc_tokens = gd.count('`')
+except Exception:
+    pass
+
 rows = [
     ('src/lexer.zig TokenKind (canonical)', canonical),
-    ('lib/token/grammar_role.id (current)',  current['count'] if current else None),
     ('lib/token/grammarrole.id (legacy)',    legacy['count'] if legacy else None),
     ('tree-sitter idol rules (context)',     ts),
+    ('grammarrole.id KIND tables',            fmt_admits),
+    ('grammar.md inline tokens (context)',    doc_tokens),
 ]
+print('note: lib/token/grammar_role.id (ROLE_COUNT 110, undriven) was removed in the H7 reconciliation')
 print('%-42s %s' % ('projection', 'token/rule count'))
 for name, n in rows:
     print('%-42s %s' % (name, n if n is not None else 'ABSENT'))
