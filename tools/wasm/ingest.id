@@ -89,7 +89,13 @@ immclass: i64 = (op: i64)
               if op == 17
                 2
               else
-                0
+                if op == 2 or op == 3 or op == 4
+                  -6
+                else
+                  if op == 252
+                    -7
+                  else
+                    0
 
 slebend: i64 = (s: str, i: i64)
   p: i64 = i
@@ -165,6 +171,28 @@ main: i64 = ()
           if cl == 2
             ip = ulebafter(src, ip)
             ip = ulebafter(src, ip)
+          if cl == -6
+            bt: i64 = byteat(src, ip)
+            if bt == 64 or bt >= 123
+              ip = ip + 1
+            if bt < 64
+              ip = slebend(src, ip)
+          if cl == -7
+            sub: i64 = byteat(src, ip)
+            ip = ip + 1
+            if sub == 8
+              ip = ulebafter(src, ip)
+              ip = ip + 1
+            if sub == 9
+              ip = ulebafter(src, ip)
+            if sub == 10
+              ip = ip + 2
+            if sub == 11
+              ip = ip + 1
+            if sub >= 12
+              ip = ulebafter(src, ip)
+              if sub == 14 or sub == 15
+                ip = ulebafter(src, ip)
           if cl == -2
             ip = slebend(src, ip)
           if cl == -3
