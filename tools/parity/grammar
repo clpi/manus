@@ -1,14 +1,12 @@
 #!/bin/sh
 # parity/grammar — compare grammar-role projections by token identity.
 #
-# REPORT ONLY (Pickle Mission E): reports drift between the existing
-# projections of the one grammar authority. Never chooses which side is
-# correct and never rewrites a grammar role.
+# Reports drift between the live generated projection and the grammar authority.
+# It never rewrites a grammar role, but absence or drift is a failing result.
 #
 # Projections compared:
 #   canonical   src/lexer.zig TokenKind ordinal count
-#   current     lib/token/grammar_role.id   (ROLE_COUNT / KIND_EOF / BEGIN_EXPR)
-#   legacy      lib/token/grammarrole.id    (ROLECOUNT / KINDEOF / BEGINEXPR)
+#   generated   lib/token/grammarrole.id    (ROLECOUNT / KINDEOF / BEGINEXPR)
 #   tree-sitter ext/tree-sitter-idol/src/grammar.json (rule count, context)
 
 set -eu
@@ -41,10 +39,7 @@ def id_projection(path, count_pat, eof_pat, vec_pat):
     return {'count': int(c.group(1)), 'eof': int(e.group(1)), 'begin_expr': vec}
 
 canonical = enum_count('src/lexer.zig')
-current   = id_projection('lib/token/grammar_role.id',
-                          r'ROLE_COUNT\s*=\s*(\d+)', r'KIND_EOF\s*=\s*(\d+)',
-                          r'BEGIN_EXPR\s*=\s*\{(.*?)\}')
-legacy    = id_projection('lib/token/grammarrole.id',
+generated = id_projection('lib/token/grammarrole.id',
                           r'ROLECOUNT\s*=\s*(\d+)', r'KINDEOF\s*=\s*(\d+)',
                           r'BEGINEXPR\s*=\s*\{(.*?)\}')
 try:
@@ -54,8 +49,7 @@ except Exception:
 
 rows = [
     ('src/lexer.zig TokenKind (canonical)', canonical),
-    ('lib/token/grammar_role.id (current)',  current['count'] if current else None),
-    ('lib/token/grammarrole.id (legacy)',    legacy['count'] if legacy else None),
+    ('lib/token/grammarrole.id (generated)', generated['count'] if generated else None),
     ('tree-sitter idol rules (context)',     ts),
 ]
 print('%-42s %s' % ('projection', 'token/rule count'))
@@ -64,27 +58,31 @@ for name, n in rows:
 
 print()
 drift = []
-if canonical and current and current['count'] != canonical:
-    drift.append('current lib/token/grammar_role.id ROLE_COUNT=%d != canonical TokenKind=%d (stale by %d)'
-                 % (current['count'], canonical, canonical - current['count']))
-if canonical and legacy and legacy['count'] != canonical:
-    drift.append('legacy lib/token/grammarrole.id ROLECOUNT=%d != canonical TokenKind=%d'
-                 % (legacy['count'], canonical))
-if current and legacy:
-    a, b = current['begin_expr'], legacy['begin_expr']
-    if a != b:
-        i = next((k for k in range(min(len(a), len(b))) if a[k] != b[k]), min(len(a), len(b)))
-        drift.append('BEGIN_EXPR vectors diverge at ordinal %d (lengths %d vs %d)'
-                     % (i, len(a), len(b)))
-    else:
-        print('BEGIN_EXPR vectors agree (%d entries)' % len(a))
-if current and canonical and current['eof'] is not None and current['eof'] >= current['count']:
-    drift.append('current KIND_EOF=%d out of range for ROLE_COUNT=%d' % (current['eof'], current['count']))
+if canonical is None:
+    drift.append('canonical src/lexer.zig TokenKind is unreadable')
+if generated is None:
+    drift.append('generated lib/token/grammarrole.id is absent or malformed')
+if canonical and generated and generated['count'] != canonical:
+    drift.append('generated lib/token/grammarrole.id ROLECOUNT=%d != canonical TokenKind=%d'
+                 % (generated['count'], canonical))
+if generated and len(generated['begin_expr']) != generated['count']:
+    drift.append('generated BEGINEXPR length=%d != ROLECOUNT=%d'
+                 % (len(generated['begin_expr']), generated['count']))
+if generated and generated['eof'] >= generated['count']:
+    drift.append('generated KINDEOF=%d out of range for ROLECOUNT=%d'
+                 % (generated['eof'], generated['count']))
+for retired in ('lib/token/grammar_role.id', 'lib/std/token/grammar_role.id'):
+    try:
+        open(retired).close()
+        drift.append('retired projection still exists: ' + retired)
+    except FileNotFoundError:
+        pass
 
 if drift:
     print('DRIFT (report only — no side is chosen):')
     for d in drift:
         print('  - ' + d)
 else:
-    print('parity: all projections agree')
+    print('parity: generated grammar role agrees with canonical token identity')
+sys.exit(1 if drift else 0)
 PY
