@@ -1,0 +1,103 @@
+#!/bin/sh
+set -eu
+
+LC_ALL=C
+export LC_ALL
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd -P)
+artifact="$root/tools/node/dev/lexer/artifact"
+cc=${CC-cc}
+base=${TMPDIR-/tmp}
+work=$(mktemp -d "$base/idol-lexer-artifact-test.XXXXXX")
+cleanup() {
+    rm -rf -- "$work"
+}
+trap cleanup EXIT HUP INT TERM
+
+good="$work/good.c"
+different="$work/different.c"
+changed="$work/changed.c"
+bad="$work/bad.c"
+fake="$work/idol"
+
+printf '%s\n' \
+    '#include <stdint.h>' \
+    '#include <string.h>' \
+    'int64_t recordslots(void) { return 2; }' \
+    'int64_t duo_lexer_tokenize_full(const char *src, const char *file, int64_t family, int64_t out, int64_t cap, int64_t txt, int64_t txtcap) {' \
+    '    (void)txt; (void)txtcap;' \
+    '    if (strcmp(src, "x = 1\n") != 0 || strcmp(file, "probe.id") != 0 || family != 1 || cap < 4 || out == 0) return -9;' \
+    '    int64_t *records = (int64_t *)(uintptr_t)out;' \
+    '    for (int64_t i = 0; i < 8; ++i) records[i] = 100 + i;' \
+    '    return 4;' \
+    '}' \
+    'int main(void) { return 0; }' > "$good"
+
+printf '%s\n' \
+    '#include <stdint.h>' \
+    'int64_t recordslots(void) { return 2; }' \
+    'int64_t duo_lexer_tokenize_full(const char *src, const char *file, int64_t family, int64_t out, int64_t cap, int64_t txt, int64_t txtcap) {' \
+    '    (void)src; (void)file; (void)family; (void)out; (void)cap; (void)txt; (void)txtcap;' \
+    '    return 3;' \
+    '}' \
+    'int main(void) { return 0; }' > "$bad"
+
+cp "$good" "$different"
+printf '%s\n' '/* harmless byte poison */' >> "$different"
+sed 's/100 + i/200 + i/' "$good" > "$changed"
+
+printf '%s\n' \
+    '#!/bin/sh' \
+    'set -eu' \
+    'test "$#" -eq 3' \
+    'test "$1" = dump-c' \
+    'test "$2" = lib/compiler/lexer.id' \
+    'test "$3" = --lib' \
+    'cat "$FAKE_OUTPUT"' > "$fake"
+chmod +x "$fake"
+
+IDOL="$fake" FAKE_OUTPUT="$good" TRACKED="$good" CC="$cc" "$artifact" \
+    > "$work/positive.log" 2>&1
+
+if IDOL="$fake" FAKE_OUTPUT="$different" TRACKED="$good" CC="$cc" "$artifact" \
+    > "$work/byte.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — byte poison was accepted' >&2
+    exit 1
+fi
+grep -q 'byte mismatch' "$work/byte.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$changed" TRACKED="$good" CC="$cc" "$artifact" \
+    > "$work/records.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — token-record poison was accepted' >&2
+    exit 1
+fi
+grep -q 'token records differ' "$work/records.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$bad" TRACKED="$bad" CC="$cc" "$artifact" \
+    > "$work/abi.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — semantic ABI poison was accepted' >&2
+    exit 1
+fi
+grep -q 'semantic probe failed' "$work/abi.log"
+
+: > "$work/empty.c"
+if IDOL="$fake" FAKE_OUTPUT="$good" TRACKED="$work/empty.c" CC="$cc" "$artifact" \
+    > "$work/empty.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — empty tracked artifact was accepted' >&2
+    exit 1
+fi
+grep -q 'absent or empty' "$work/empty.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$work/empty.c" TRACKED="$good" CC="$cc" "$artifact" \
+    > "$work/generated.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — empty generated artifact was accepted' >&2
+    exit 1
+fi
+grep -q 'produced zero bytes' "$work/generated.log"
+
+printf '%s\n' 'lexer artifact control: PASS'
