@@ -111,3 +111,22 @@ demanded dimension or names the remaining loss.
   nowhere in the output; it is the edge order. Snapshot:
   evidence/mop/wasm/probe.fib.json.
 - Lanes 1-2 (source-law ingress, GRAMMAR-ONE): compiler lane, untouched.
+
+
+## Lane 3 idol-native status + H9 (measured)
+
+tools/wasm/ingest.id is CANONICAL IDOL: checks green, compiles under
+direct-native, runs as a process — flat bindings, subject-first
+relations, lawful spellings, zero python. The idol-subset lessons paid
+to get there: pack returns are tail-only (avoided via paired flat
+functions), double-quoted escapes are not unescaped (single-quoted byte
+literals), for-in over dynamic args needs an unpublished
+gen-for-dynamic-iter fact (positional args(2) instead).
+
+MEASURED BLOCKER (H9): binary-safe ingress. `path:read()` on a .wasm
+file yields an EMPTY str — the current read face is text-only and the
+wasm magic (\0asm) does not survive. The canonical ingest is therefore
+blocked on the bytes-vs-text contract (the architecture memo's 'text
+and bytes need a true semantic contract' item): a bytes face on
+path:read, or a world-authorized binary ingress relation. No shell
+piping workaround was wired in — that would be a silent fallback.

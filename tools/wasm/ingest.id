@@ -1,0 +1,80 @@
+# tools/wasm/ingest.id — canonical idol Wasm fact ingestion (lane 3).
+#
+# Wasm bytes are source-law provenance: this reads a module and emits
+# fact lines (module identity, section census) in the graph vocabulary.
+# Runtime need is NEVER inferred here — realization reads demand, not
+# opcodes. Lawful shape: flat bindings, subject-first relations, no
+# module globals, no compound spellings.
+#
+# usage: idol run tools/wasm/ingest.id -- <module.wasm>
+
+ulebval: i64 = (s: str, i: i64)
+  r: i64 = 0
+  k: i64 = 0
+  p: i64 = i
+  hit: bool = true
+  while hit
+    x: i64 = s:byte(p)
+    r = r + (x - (x / 128) * 128) * pow2(k)
+    p = p + 1
+    hit = x >= 128 and p <= s:len()
+    k = k + 7
+  r
+
+ulebafter: i64 = (s: str, i: i64)
+  p: i64 = i
+  hit: bool = true
+  while hit
+    x: i64 = s:byte(p)
+    p = p + 1
+    hit = x >= 128 and p <= s:len()
+  p
+
+pow2: i64 = (k: i64)
+  out: i64 = 1
+  n: i64 = 0
+  while n < k
+    out = out * 2
+    n = n + 1
+  out
+
+fact: str = (key: str, val: str)
+  '{"fact":"' .. key .. '","value":' .. val .. '}'
+
+num: str = (n: i64)
+  n:to(str)
+
+emit: i64 = (key: str, val: str)
+  stdout:write(fact(key, "\"" .. val .. "\"") .. "\n")
+  0
+
+main: i64 = ()
+  path: str = args(2)
+  if path == ""
+    stdout:write("usage: idol run tools/wasm/ingest.id -- <module.wasm>\n")
+    return 1
+  src: str = path:read()
+  if src:len() < 8
+    stdout:write("error: too short for a module\n")
+    return 1
+  b0: i64 = src:byte(1)
+  b1: i64 = src:byte(2)
+  b2: i64 = src:byte(3)
+  b3: i64 = src:byte(4)
+  if b0 != 0 or b1 != 97 or b2 != 115 or b3 != 109
+    stdout:write("error: not a wasm module\n")
+    return 1
+  v: i64 = src:byte(5) + src:byte(6) * 256 + src:byte(7) * 65536 + src:byte(8) * 16777216
+  _ = emit("module.magic", "wasm")
+  _ = emit("module.version", num(v))
+  # section census: each section is one fact line (id, byte size)
+  i: i64 = 9
+  walk: bool = true
+  while walk and i + 1 < src:len()
+    sid: i64 = src:byte(i)
+    size: i64 = ulebval(src, i + 1)
+    after: i64 = ulebafter(src, i + 1)
+    _ = emit("section." .. num(sid), num(size))
+    i = after + size
+    walk = i > 0
+  0
