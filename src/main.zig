@@ -3936,6 +3936,7 @@ fn boot(symbol: []const u8) ?[]const u8 {
     if (std.mem.eql(u8, symbol, "idol_io_read_stdin") or
         std.mem.eql(u8, symbol, "idol_io_read_line") or
         std.mem.eql(u8, symbol, "idol_io_read_path") or
+        std.mem.eql(u8, symbol, "idol_io_write_path") or
         std.mem.eql(u8, symbol, "idol_os_arg") or
         std.mem.eql(u8, symbol, "idol_os_cwd") or
         std.mem.eql(u8, symbol, "idol_os_execute") or
