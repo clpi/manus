@@ -5,7 +5,9 @@
 # moment its admission unblocks (see evidence/mop/wasm/proposals.md —
 # the STARTUP LANE is the winnable one: wasmtime pays a ~130 ms floor on
 # every fixture).wart CLI calibration (invocation semantics, execution
-# mode flags) is pending; its column stays raw until calibrated.
+# mode flags) is CALIBRATED: --aot is compile-only (ELF 0x5500 artifact,
+# not host-executable) and --jit shows no effect; the wart column runs
+# the interpreter, the only effective execution mode on this machine.
 #
 # usage: tools/wasm/perf [bench-dir]     (default tools/wasm/bench)
 

@@ -32,7 +32,7 @@ realizations are selected by the transform registry.
 | GC | ~25 | 0 | wasmtime (gc on) | large + host-GC semantic decision |
 | exceptions | ~10 | 0 | wasmtime ✓ | mid + control-flow design |
 | WASI p1 | ~46 syscalls | partial (9/18 conform history) | wasmtime ✓ | mid |
-| WASI p2 (component) | — | 0 | wasmtime component ✓ | architectural |
+| placeholder
 | WASIX | ~70 syscalls | 0 | NO local oracle (wart calibration first) | largest surface |
 
 Completion order by leverage: bulk-memory -> reference-types ->
@@ -54,6 +54,23 @@ timeouts, 12.33 s total).
 3. **JIT/interpreter crossover** — the jit_* grid corpus exists for
    this; unmeasured until admission.
 4. **WASI syscall lane** — design syscall-dense loops when p1 closes.
+
+## Wart oracle calibration (measured 2026-08-17)
+
+- `wart run` interpreter: effective mode; startup 29-45 ms (BEATS
+  wasmtime's floor), compute slow (fib 654 ms, hash 14 s, hash2b >60 s).
+- `--jit`: no measurable effect on these fixtures (fib 878 ms, hash
+  13.5 s).
+- `--aot`: COMPILE-ONLY ("AOT compilation successful. Use -o to save
+  native executable"); the emitted artifact is ELF arch 0x5500 — the
+  Wasm-Machine ISA — NOT host-executable on macOS. There is no measured
+  wart AOT execution path on this platform. An earlier 10-17 ms "--aot"
+  reading was compilation time alone; treat any AOT execution claim as
+  unmeasured until a wasm-machine loader exists here.
+- Competitive map on THIS machine: wasmtime = compute king (hash 0.5 s)
+  with a 130 ms startup floor; wart = startup lane (30-45 ms) with slow
+  compute. Beating "all competition" = wasmtime's compute AND wart's
+  startup AND, eventually, wart's wasm-machine AOT where a loader exists.
 
 ## Standing blockers
 
