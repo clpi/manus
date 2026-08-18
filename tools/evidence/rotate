@@ -14,7 +14,7 @@ set -eu
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
 
-rotations="mcp-gate-id-extraction config-freshness"
+rotations="mcp-gate-id-extraction config-freshness compound-census"
 [ $# -gt 0 ] && rotations="$*"
 
 fails=0
@@ -34,6 +34,25 @@ for name in $rotations; do
         'idol-native",' 2 0 \
         's|/idol-native|/idol-native-damaged|' \
         ./tools/node/dev/generate-configs --check >&2 || fails=$((fails + 1))
+      ;;
+    compound-census)
+      # Rename a tracked path to the gate's own control mash (read+line)
+      # — the compound census scans tracked paths and must fail above its
+      # baseline; restore and prove the count returns.
+      target=tools/reduce/fixtures/view/slice.id
+      mashed=tools/reduce/fixtures/view/readline.id
+      git mv "$target" "$mashed"
+      if ./tools/node/dev/census/compound >/dev/null 2>&1; then
+        git mv "$mashed" "$target"
+        echo "evidence/rotate: FAIL compound census did not fire on renamed readline" >&2
+        fails=$((fails + 1))
+      else
+        git mv "$mashed" "$target"
+        ./tools/node/dev/census/compound >/dev/null 2>&1 \
+          || { echo "evidence/rotate: FAIL census did not recover after restore" >&2
+               fails=$((fails + 1)); }
+        echo "evidence/rotate: ok compound census fired on renamed readline (restored)" >&2
+      fi
       ;;
     *)
       echo "evidence/rotate: unknown rotation: $name" >&2

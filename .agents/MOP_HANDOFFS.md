@@ -12,7 +12,7 @@ dispatch per `.agents/AGENT_OPERATING_MODEL.md`.
 - tier: bounded-implementer (after Codex publishes the accessor)
 - before: `mem.write_f64(buf, off, v)` after `mem.ptr_from_addr` refuses
   `unresolved-application-facts` (graph producer); write_i64 compiles.
-- fixture: `tools/reduce/fixtures/f1_unresolved_app_facts.id` (+ f1_neg
+- fixture: `tools/reduce/fixtures/graph/f64.id` (+ f1_neg
   negative control in the same directory).
 - after: fixture compiles to an object; f1_neg still compiles; a damage
   control that drops the f64 fact re-refuses.
@@ -75,15 +75,15 @@ evidence of compilability; object emission is the current honest floor.
 
 ## Update 2026-08-17 — reducer landed; F5 and F2 resolved to theorems
 
-`tools/reduce/idol-reduce` (selftest-proven) reduced the open families:
+`tools/reduce/idol` (selftest-proven) reduced the open families:
 
 - **F5 InvalidAggregateFact: 1792 → 27 lines**
-  (`tools/reduce/fixtures/f5_parser_reduced.id`). Checks clean; crashes the
+  (`tools/reduce/fixtures/crash/corpus.id`). Checks clean; crashes the
   compiler at semantic_graph.zig:3945. Perturbation experiment: hoisting
   the tail nested call `tail_pack(lx, proj_expr(lx))` to a flat binding
   does NOT clear the crash — the aggregate crash lives in the chained
   condition applications (`lexer.peek(lx).kind`). H4 (diagnostics defect)
-  stands; the graph lane now has a 27-line reproducer.
+  stands; the graph lane now has a 2-line reproducer.
 - **F2 application-operand-abi: line-irreducible.** graph.id is 112 lines
   and EVERY single-line deletion breaks the predicate — the missing fact
   is module-granularity (whole-file context), not a local construct.
@@ -108,7 +108,7 @@ nothing (this is the routed-guard analysis conclusion, now with numbers).
 
 New top handoff: **H6 — graph must publish application ids for foreign and
 method call sites** (unblocks F1's three units past their next hole; the
-27-line F5 reproducer and the F2 module-granularity finding are the
+2-line F5 reproducer and the F2 module-granularity finding are the
 companion inputs).
 
 ## Appendix — idiomatic floor and graph instrument (working notes)
@@ -192,9 +192,8 @@ state the relation, publish the facts, let specialization choose.
 
 - canonical `TokenKind` = **114** ordinals (src/lexer.zig)
 - live projection `lib/token/grammarrole.id` = **114** — count-correct,
-  emitted by `idol token-tables emit` (main.zig:901), consumed by
-  `lib/compiler/token_view.id`; carries the old dialect (`--` comments,
-  `req("std.compiler.token")`) and a retired regen banner
+  emitted with the full manifest by `zig build grammar-role-emit`, consumed by
+  `lib/compiler/token_view.id`
 - `lib/token/grammar_role.id` = **110** — STALE by four ordinals and no
   emitter writes it (dead artifact or stale rename target)
 - `tools/emit_grammar_role.zig` writes a third, dead
@@ -202,22 +201,129 @@ state the relation, publish the facts, let specialization choose.
 - BEGIN_EXPR vectors diverge at ordinal 3 between the two .id projections
 
 Owner: lane 1–2 (GAP-134 generated grammar roles / immutable token view).
-The parity checker must stay report-only; reconciling the three emitters
-is a ruled decision for that lane. `scripts/grammarconvergence.id` already
-exists as the declared convergence script for this surface.
+Exact manifest, digest, slot, and consumer-projection agreement is the only
+convergence authority for this surface.
 
 
 ## Update 3 — H7 mechanical subset implemented; F4 minimized
 
-- Generator banner `duo token-tables emit` -> `idol token-tables emit`
-  (src/grammar_role_gen.zig); `idol token-tables emit` regenerated the
-  tracked projection (114, current format). Stale 110 artifact and the
-  spent tools/ emitter deleted (foreign.md's ledger already recorded the
-  latter as spent). `tools/parity/grammar`: **all projections agree**.
+- The build-only grammar-role emitter regenerates the tracked Idol projection
+  and full manifest together. Stale artifacts and partial emitters are deleted.
+  `tools/parity/grammar` requires exact authority agreement.
   The remaining H7 decisions (old-dialect emission face, tree-sitter
   convergence) stay with lane 1-2.
 - F4 `missing: view` minimized 29 -> 4 lines
-  (tools/reduce/fixtures/f4_view_minimal.id). Renaming the relation moves
+  (tools/reduce/fixtures/view/minimal.id). Renaming the relation moves
   the missing-fact name with it; renaming the param does not. The fact is
   the relation SHAPE (pack param + if/else over a pack field), reported
   by name — not a name-keyed lookup. Hands lane 4 a 4-line reproducer.
+
+
+## Vocabulary ruling (user, 2026-08-17): `baseline` is a word
+
+`baseline` is not a compound — added to the `words` authority in both
+law copies (gate/path.id and gate/idiom.id). The compound census parses
+the list at runtime and honors it with no code change.
+
+
+## Update 4 — compile concurrency measured; cache publish hardened in-tree
+
+Ground truth (30-way concurrent compiles, distinct content, one cwd):
+every compile succeeds, no cross-process lock exists in `idol compile`,
+and the reducer parallel-sweep regression was my throttle's spawn/poll
+overhead, not compiler serialization (README corrected).
+
+The one real multi-agent hazard on the roadmap modules:
+`.id/cache/semantic/state.json` was a direct truncate-write in
+src/persistent_semantic_state.zig (codex's unwired transactional-cache
+WIP). It now publishes atomically (per-process temp + rename; readers see
+old-or-new, writers never block; last consistent writer wins). The patch
+sits in the working tree beside that WIP for the owning session to wire
+and commit — committing their untracked file under my name would repeat
+the ace5f7d5 sweep mistake. Build green; unit-test parity identical
+(1663 pass / 3 pre-existing failures, reproduced with the patch reverted).
+
+
+## Update 5 — F5 closed to a 2-line theorem: self-recursion
+
+A second serial pass reduced the 11-line crasher further: the crash is
+SELF-RECURSION. tools/reduce/fixtures/crash/corpus.id (2 lines) — a
+relation invoking itself with literal arguments reaches
+publishApplicationResultAggregate and returns InvalidAggregateFact (raw
+internal error, leaked stack trace) instead of a classified refusal.
+crash/ctrl.id is the causality control: identical shape with the call
+target renamed yields a clean return-type diagnostic. Lane 3 has the
+smallest possible reproducer plus its control.
+
+Also recorded: a second parallel-sweep attempt (xargs -P) degraded to a
+15-minute CPU-idle timeout — shell-level candidate parallelism has now
+failed twice on this workload with different mechanisms; serial plus the
+guarded inert pre-pass (3m54s for the full 1792-line reduction) is the
+standing configuration.
+
+
+## Update 6 — H4 fixed; H5 minimized with a corrected diagnosis
+
+- H4 FIXED (commit 44bb7b5b): main wraps mainInner; internal errors print
+  one classified line; the error-return trace only dumps under
+  IDOL_TRACE=1. Classified diagnostics unchanged; unit parity 1663/3.
+- H5 minimized 38 -> 3 lines (tools/reduce/fixtures/link/probe.id) and
+  the diagnosis CORRECTED: the undefined symbol is not about the stride
+  relation — a cross-module application reached from an exe entry does
+  not pull the callee's object into the link. host.id's "ambient
+  reference" comment was the workaround attempt. Owner: lane 4.
+  Reducer note: predicate exit 0 means failure PRESENT (no negation).
+
+
+## Update 7 — Mission B verdict; matrix remeasured
+
+- Metamorphic generator (Pickle B) is BLOCKED ON AUTHORITY, correctly:
+  the only ruled equivalence pairs live in idol-native's gate/subject.id,
+  which is already self-executing there ("the agreement count IS the exit
+  code"). A generator beside it would duplicate the authority the
+  operating model forbids duplicating. Unblocked when the main repo
+  gains its own pair authority (e.g. the graph-backed canonicalizer's
+  equivalence table).
+- Self-host matrix remeasured at 98e643cd per the no-carry-forward
+  discipline: all 19 units, exit statuses byte-identical (10 clean,
+  9 blocked, same families). evidence/mop/matrix.tsv stamped.
+- Codex landed 'Retire duplicate language server authority' on the
+  parallel ref reconcile/idol-canonical-all-work-20260817; not in this
+  branch's history.
+
+
+## H8 (corrected) — module-table REPRESENTATION gates wasm + LSP admission
+
+`zig build wasm-test` fails closed at `module_materializes_table` in
+codegen.zig: a module exporting a table built by keyed writes has no
+native-scalar representation (producer drops the writes; the consumer
+flattens `m.x` to undefined symbols). This is the REPRESENTATION
+decision, not a missing published fact — my first H8 framing repeated
+the exact false-splice main.zig:4920 documents (three historical false
+findings from that comma). The engine's real first blocker is req's own
+unresolved applications. Owner: realization lane; the reconcile branch
+is landing table semantics (src/table_apply.zig). Wart oracle BUILT at
+the frozen rev (ca2b0b9c, ReleaseFast) — the perf rail has both oracles
+pinned; the engine number waits on admission.
+
+Measured: `zig build wasm-test` fails closed at
+`idol compile tools/wasm/src/engine.id --backend=direct` ->
+`DNB001 missing: keyed-table-export` (dnir_lower) — the SAME missing fact
+that blocks `tools/lsp/src/server.id`. One published fact family unblocks
+both the wasm admission gate and the LSP server admission. Full wasm
+closure matrix with proposal states and wasmtime oracle baselines:
+evidence/mop/wasm/closure.md. WASIX has zero source support (the wasix
+bench is oracle corpus only); WASI p1 is real but partial.
+
+
+## Update 8 — one-command theorem suite
+
+`tools/reduce/verify` runs every blocker theorem and its control with
+exact expectations (9/9 PASS at 287c17fe). The crash control asserts
+CLEAN DIAGNOSIS — never an internal InvalidAggregateFact — so the suite
+is the post-merge regression guard: after the reconcile merge lands
+(self-recursion fixed to classified refusal on that line), this command
+must stay green with `missing: parse_expr` and never revert to the
+crash. Post-merge pass order: merge -> tools/reduce/verify ->
+census/compound --record -> parity (adopt fail-closed) -> ABI rename
+window -> bridge census re-run.

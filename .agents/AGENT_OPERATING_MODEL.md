@@ -96,6 +96,46 @@ representation-one, candidate/value-of-information engine, new syntax.
 A low-context agent may implement a prewritten interface resulting from one
 of those decisions. It may not make the decision.
 
+## Vocabulary, instrument, and claims law (all agents)
+
+- **Vocabulary is LAW-ONE and it is executable.** The word authority is
+  the `words` literal in `gate/path.id` (runtime-parsed by
+  `tools/node/dev/census/compound`). No compound words, ever, anywhere:
+  no mashed compounds (`readline`), no separators or case in path
+  components, no numeric-suffix taxonomy, no role/mediator/plurality
+  stems, no `*able/*ible`, no organizational namespaces. Decompose into
+  existing edges/nodes, homes/worlds through hierarchy, or eliminate.
+  New work must not raise the compound-census baseline.
+- **No plurality**: one entity plus facts — singular stems only
+  (`law.identity.cardinal`, docs/spec/canonical.md §26).
+- **`!` over `not`** in Idol source, where appropriate.
+- **Subject-first invocation**: `subject:edge(rest)` — never
+  `edge(subject, rest)` (H-1; `gate/subject.id` teaches and proves it).
+- **No antipattern spellings in Idol source**: single-letter table
+  bindings (`M = {…}`), snake_case (`OP_unreachable`), and mashed
+  compound names are the measured antipattern set. The wasm engine
+  sources under tools/wasm/src are saturated with all three — their
+  documented SOURCE-ZERO debt; convergence renames to subject-first
+  edges rather than carrying spellings forward.
+- **The wasm runtime leverages ALL language features in service of
+  highest performance at lowest syntax**: opcode tables via comptime
+  tabulation, dispatch via call specialization, memory via place/region
+  facts, SIMD via simd_lower, lawset import through the one graph. A
+  private standalone engine with hand-rolled tables is the antipattern;
+  the interpreter/JIT/AOT are realization candidates the registry
+  selects, not a second architecture.
+- **Instrument**: the semantic graph via the `idol-native` MCP server
+  (`check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`,
+  `explain`, `fmt`, `asm`) — applications carry cardinality cards,
+  `fact_coverage` is the blocker meter, `places`/`regions` are the
+  control algebra. Working notes: `.agents/MOP_HANDOFFS.md` appendix.
+- **Tooling**: `tools/reduce/idol` (predicate reducer),
+  `tools/evidence/{subject,perturb,rotate}`, `tools/parity/grammar`,
+  `tools/node/dev/census/compound`.
+- **Claims**: obtain live claims before editing; aggressively clear
+  stale claims (clean-file claims with no live work) rather than
+  waiting; never edit a path a live claim owns.
+
 ## Work orders
 
 Every assignment is materialized through `.agents/WORK_ORDER.md`

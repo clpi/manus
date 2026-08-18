@@ -1,0 +1,172 @@
+#!/bin/sh
+# Destructive controls for tools/parity/grammar. All damage stays in a fixture.
+
+set -eu
+
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+gate="$repo/tools/parity/grammar"
+fixtures="$(mktemp -d "${TMPDIR:-/tmp}/idol-grammar-parity.XXXXXX")"
+trap 'rm -rf "$fixtures"' EXIT HUP INT TERM
+
+python3 - "$fixtures" <<'PY'
+import re
+import shutil
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+base = root / "valid"
+(base / "lib/token").mkdir(parents=True)
+(base / "ext/tree-sitter-idol").mkdir(parents=True)
+
+header = (
+    "slot\tkind\tspelling\tbegin\tprefix\tpostfix\tparameter\tliteral\tquoted\t"
+    "projection\tbody\tdescriptor\tpattern\tbinary\tprecedence\tassoc\tcompat\n"
+)
+rows = [
+    "0\tname\t-\t1\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0\t0\t0\n",
+    "1\tlparen\t(\t1\t0\t1\t1\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\n",
+    "2\teof\t-\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\n",
+    "3\t-\t-\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\n",
+]
+
+
+def fnv(rows):
+    value = 0xCBF29CE484222325
+    chunks = [b"grammar-role-v2", b"\0"]
+    for row in rows:
+        fields = row.rstrip("\n").split("\t")
+        slot = int(fields[0])
+        chunks.extend((
+            bytes((slot & 0xFF, slot >> 8)), fields[1].encode(), b"\0",
+            fields[2].encode(), b"\0",
+        ))
+        chunks.extend(bytes((int(fields[index]),)) for index in range(3, 14))
+        chunks.extend((
+            bytes((int(fields[14]) & 0xFF,)),
+            bytes((int(fields[15]), int(fields[16]))),
+        ))
+    for data in chunks:
+        for byte in data:
+            value ^= byte
+            value = (value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return f"fnv1a64:{value:016x}"
+
+
+def write_fixture(path, role_rows):
+    authority = fnv(role_rows)
+    payload = (header + "".join(role_rows)).encode()
+    (path / "lib/token").mkdir(parents=True, exist_ok=True)
+    (path / "ext/tree-sitter-idol").mkdir(parents=True, exist_ok=True)
+    (path / "lib/token/grammarrole.tsv").write_bytes(
+        b"# schema\tgrammar-role-v2\n# authority\t" + authority.encode() + b"\n" + payload
+    )
+    (path / "lib/token/grammarrole.id").write_text(
+        'GRAMMARSCHEMA = "grammar-role-v2"\n'
+        f'GRAMMARHASH = "{authority}"\n'
+        'ROLEIDENTITYCOUNT = 3\n'
+        'ROLECOUNT = 4\n'
+        'KINDEOF = 2\n'
+        'BEGINEXPR = {1, 1, 0, 0}\n'
+    )
+    (path / "ext/tree-sitter-idol/grammar.js").write_text(
+        '// GRAMMARSCHEMA = "grammar-role-v2"\n'
+        f'// GRAMMARHASH = "{authority}"\n'
+        'module.exports = grammar({ name: "idol", rules: {} });\n'
+    )
+
+
+write_fixture(base, rows)
+
+
+def case(name):
+    path = root / name
+    shutil.copytree(base, path)
+    return path
+
+
+case("absent-manifest").joinpath("lib/token/grammarrole.tsv").unlink()
+
+path = case("absent-hash") / "lib/token/grammarrole.tsv"
+path.write_bytes(path.read_bytes().replace(
+    next(line for line in path.read_bytes().splitlines(keepends=True)
+         if line.startswith(b"# authority\t")), b""
+))
+
+for name, old, new in (
+    ("payload", b"\tname\t-\t", b"\tname\tidentifier\t"),
+    ("associativity", b"\tlparen\t(\t1\t0\t1\t1\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\n",
+     b"\tlparen\t(\t1\t0\t1\t1\t0\t0\t1\t0\t0\t0\t0\t0\t1\t0\n"),
+    ("compat", b"\tname\t-\t1\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0\t0\t0\n",
+     b"\tname\t-\t1\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0\t0\t1\n"),
+    ("delimiter-projection",
+     b"\tlparen\t(\t1\t0\t1\t1\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\n",
+     b"\tlparen\t(\t1\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\n"),
+):
+    target = case(name) / "lib/token/grammarrole.tsv"
+    data = target.read_bytes()
+    if old not in data:
+        raise SystemExit(f"selftest mutation anchor absent: {name}")
+    target.write_bytes(data.replace(old, new, 1))
+
+path = case("stale-id") / "lib/token/grammarrole.id"
+path.write_text(re.sub(
+    r"fnv1a64:[0-9a-f]{16}", "fnv1a64:0000000000000000", path.read_text(), count=1
+))
+
+path = case("stale-tree") / "ext/tree-sitter-idol/grammar.js"
+path.write_text(re.sub(
+    r"fnv1a64:[0-9a-f]{16}", "fnv1a64:0000000000000000", path.read_text(), count=1
+))
+
+zero = case("zero-rows")
+write_fixture(zero, [])
+PY
+
+output="$fixtures/valid.out"
+if ! GRAMMAR_PARITY_ROOT="$fixtures/valid" "$gate" >"$output" 2>&1; then
+    echo "grammar-selftest: positive control failed" >&2
+    cat "$output" >&2
+    exit 1
+fi
+
+checked=0
+failed=0
+while IFS='|' read -r name expected; do
+    [ -n "$name" ] || continue
+    checked=$((checked + 1))
+    output="$fixtures/$name.out"
+    set +e
+    GRAMMAR_PARITY_ROOT="$fixtures/$name" "$gate" >"$output" 2>&1
+    status=$?
+    set -e
+    if [ "$status" -eq 0 ]; then
+        echo "grammar-selftest: damage went green: $name" >&2
+        failed=$((failed + 1))
+    elif ! grep -F "$expected" "$output" >/dev/null; then
+        echo "grammar-selftest: wrong detector fired for $name; expected: $expected" >&2
+        cat "$output" >&2
+        failed=$((failed + 1))
+    fi
+done <<'CASES'
+absent-manifest|grammar-role manifest absent
+absent-hash|manifest authority metadata is absent or malformed
+payload|manifest semantic authority hash
+associativity|manifest semantic authority hash
+compat|manifest semantic authority hash
+delimiter-projection|manifest semantic authority hash
+stale-id|grammarrole.id authority
+stale-tree|grammar.js authority
+zero-rows|manifest contains zero role rows
+CASES
+
+if [ "$checked" -eq 0 ]; then
+    echo "grammar-selftest: examined zero destructive fixtures" >&2
+    exit 1
+fi
+if [ "$failed" -ne 0 ]; then
+    echo "grammar-selftest: FAIL ($failed of $checked destructive fixtures escaped)" >&2
+    exit "$failed"
+fi
+
+echo "grammar-selftest: PASS ($checked destructive fixtures, 1 positive control)"

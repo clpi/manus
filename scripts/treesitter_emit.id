@@ -238,6 +238,160 @@ probe: i64 = ()
         bad += 1
     bad
 
+width: i64 = (row: str)
+    parts = row:split(" ")
+    parts:len()
+
+number: bool = (body: str)
+    valid: bool = body:len() > 0
+    i: i64 = 1
+    if valid and body:sub(1, 1) == "-"
+        i = 2
+        valid = body:len() > 1
+    while valid and i <= body:len()
+        byte: i64 = body:byte(i)
+        if byte < 48 or byte > 57
+            valid = false
+        i += 1
+    valid
+
+hex: str = (value: u64)
+    digits: str = "0123456789abcdef"
+    out: str = ""
+    shift: i64 = 60
+    while shift >= 0
+        nibble: i64 = (value >> shift) & 15
+        out = "{out}{digits:sub(nibble + 1, nibble + 1)}"
+        shift -= 4
+    out
+
+mix: u64 = (value: u64, byte: i64)
+    (value ~ byte) * 1099511628211
+
+text: u64 = (value: u64, body: str)
+    i: i64 = 1
+    while i <= body:len()
+        value = value:mix(body:byte(i))
+        i += 1
+    value:mix(0)
+
+# Host-layout-independent semantic-row digest. This deliberately does not hash
+# raw TSV bytes: exact textual regeneration is the producer check's job. The
+# consumer replays the producer's semantic field order so a changed role fact
+# cannot hide behind a copied authority tag.
+digest: str = (body: str)
+    value: u64 = 1469598103
+    value = value * 10000000000 + 9346656037
+    value = value:text(schema)
+    rows = body:split("\n")
+    i: i64 = 4
+    while i <= rows:len()
+        row: str = rows(i)
+        if row != ""
+            part = row:split("\t")
+            slot: i64 = part(1):to(i64)
+            value = value:mix(slot & 255)
+            value = value:mix((slot >> 8) & 255)
+            value = value:text(part(2))
+            value = value:text(part(3))
+            column: i64 = 4
+            while column <= 14
+                value = value:mix(part(column):to(i64))
+                column += 1
+            value = value:mix(part(15):to(i64) & 255)
+            value = value:mix(part(16):to(i64))
+            value = value:mix(part(17):to(i64))
+        i += 1
+    value:hex()
+
+# Return the number of contradictions. Zero is valid only after the schema,
+# semantic hash, column shape, slot sequence, and binary facts all agree.
+audit: i64 = (body: str)
+    bad: i64 = 0
+    rows = body:split("\n")
+    tag: str = "# authority\tfnv1a64:"
+    if rows:len() < 4
+        bad += 1
+    else
+        if rows(1) != "# schema\t{schema}"
+            bad += 1
+        if rows(2):sub(1, tag:len()) != tag
+            bad += 1
+        if rows(3) != columns
+            bad += 1
+        slot: i64 = 0
+        binary: i64 = 0
+        tight: i64 = 0
+        near: i64 = 0
+        i: i64 = 4
+        while i <= rows:len()
+            row: str = rows(i)
+            if row != ""
+                part = row:split("\t")
+                if part:len() != 17
+                    bad += 1
+                else
+                    if part(1) != slot:to(str)
+                        bad += 1
+                    if part(2) == "" or part(3) == ""
+                        bad += 1
+                    bit: i64 = 4
+                    while bit <= 14
+                        value: str = part(bit)
+                        if value != "0" and value != "1"
+                            bad += 1
+                        bit += 1
+                    if part(17) != "0" and part(17) != "1"
+                        bad += 1
+                    power: str = part(15)
+                    if !power:number()
+                        bad += 1
+                    side: str = part(16)
+                    if side != "0" and side != "1" and side != "2" and side != "3"
+                        bad += 1
+                    if part(14) == "1"
+                        binary += 1
+                        if power:number()
+                            level: i64 = power:to(i64)
+                            if part(3) == "-" or part(3) == "" or level <= 0 or side == "0"
+                                bad += 1
+                            if level > tight
+                                near = tight
+                                tight = level
+                            else
+                                if level < tight and level > near
+                                    near = level
+                slot += 1
+            i += 1
+        if slot == 0 or binary == 0 or near == 0
+            bad += 1
+        if bad == 0 and rows(2) != "{tag}{body:digest()}"
+            bad += 1
+    bad
+
+wrap: str = (data: str)
+    draft: str = "# schema\t{schema}\n# authority\tfnv1a64:0000000000000000\n{data}"
+    "# schema\t{schema}\n# authority\tfnv1a64:{draft:digest()}\n{data}"
+
+# Destructive controls: each damaged projection must be rejected, including a
+# malformed payload whose hash was honestly recomputed.
+probe: i64 = ()
+    data: str = "{columns}\n0\tplus\t+\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t17\t1\t0\n1\tstar\t*\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t19\t1\t0\n"
+    good: str = data:wrap()
+    bad: i64 = 0
+    if good:audit() != 0
+        bad += 1
+    wrong: str = "{good:sub(1, 8)}x{good:sub(10, good:len())}"
+    if wrong:audit() == 0
+        bad += 1
+    stale: str = "{good}x"
+    if stale:audit() == 0
+        bad += 1
+    broken: str = "{columns}\n0\tplus\t+\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t17\t9\t0\n1\tstar\t*\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t19\t1\t0\n"
+    if broken:wrap():audit() == 0
+        bad += 1
+    bad
+
 # `n` copies of `s`. The long-string delimiters need exactly this: the number
 # of `=` signs IS the level.
 tile: str = (s: str, n: i64)

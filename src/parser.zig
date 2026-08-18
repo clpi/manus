@@ -3070,7 +3070,7 @@ pub const Parser = struct {
             const tok = view.at(idx) orelse return false;
             const row = view.role(idx);
             if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and
-                row != null and row.?.literal_kind)
+                row != null and row.?.roles.literal_kind)
             {
                 has_literal_arg = true;
             }
@@ -4971,7 +4971,7 @@ pub const Parser = struct {
         // need full expression parsing, not parse_suffixed_expr which only handles
         // suffixed expressions (names, literals, calls, field access).
         const first_tok = try self.pk();
-        const is_unary = grammar_roles.lookup(first_tok.kind).prefix;
+        const is_unary = grammar_roles.lookup(first_tok.kind).roles.prefix;
         // `{ name, age } = user` named destructuring assign
         if (first_tok.kind == .lbrace) {
             const saved = self.lex.saveState();

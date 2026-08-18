@@ -1,0 +1,67 @@
+fixture	ms	value
+call_indirect.wasm	176	22
+call_indirect_typed.wasm	106	1034562941
+fib.wasm	127	2178309
+hash.wasm	583	1899277430
+hash2b.wasm	4405	-1009008024
+jit_bits.wasm	117	102
+jit_block.wasm	101	55
+jit_brtable.wasm	119	100
+jit_call_result.wasm	110	46
+jit_convert.wasm	115	1122.25
+jit_copysign.wasm	132	-6.75
+jit_f32.wasm	132	2.25
+jit_f64.wasm	130	2.25
+jit_fcmp.wasm	132	4
+jit_funary.wasm	116	20.25
+jit_grid_indirect_a1_d0_r0.wasm	117	0
+jit_grid_indirect_a1_d0_r1.wasm	112	3
+jit_grid_indirect_a1_d3_r0.wasm	106	1110
+jit_grid_indirect_a1_d3_r1.wasm	141	1113
+jit_grid_indirect_a2_d0_r0.wasm	109	0
+jit_grid_indirect_a2_d0_r1.wasm	111	6
+jit_grid_indirect_a2_d3_r0.wasm	133	1110
+jit_grid_indirect_a2_d3_r1.wasm	117	1116
+jit_grid_indirect_a3_d0_r0.wasm	111	0
+jit_grid_indirect_a3_d0_r1.wasm	115	10
+jit_grid_indirect_a3_d3_r0.wasm	104	1110
+jit_grid_indirect_a3_d3_r1.wasm	109	1120
+jit_grid_indirect_a4_d0_r0.wasm	100	0
+jit_grid_indirect_a4_d0_r1.wasm	97	15
+jit_grid_indirect_a4_d3_r0.wasm	112	1110
+jit_grid_indirect_a4_d3_r1.wasm	112	1125
+jit_grid_real_a1_d3_r1.wasm	124	1118
+jit_grid_real_a3_d3_r1.wasm	139	1125
+jit_i64t.wasm	123	30796550
+jit_ifd.wasm	126	1013
+jit_indirect2.wasm	136	7497
+jit_inline.wasm	112	5050
+jit_mem.wasm	111	1286621740
+jit_memwidth.wasm	110	14608
+jit_minmax.wasm	133	11
+jit_nested_call.wasm	136	9
+jit_nonleaf.wasm	120	41
+jit_proc_exit.wasm	129	
+jit_rot.wasm	119	602979722
+jit_select.wasm	117	244
+jit_signed.wasm	96	4
+reinterpret.wasm	98	4612811919403778339
+simd_family.wasm	102	846
+simd_float.wasm	103	3000000000642.5
+wart_arithmetic_bench.wasm	118	
+wart_complete_opcode_bench.wasm	105	
+wart_comprehensive_bench.wasm	98	
+wart_comprehensive_opcode_bench.wasm	94	
+wart_compute_bench.wasm	94	
+wart_core_i32_compute.wasm	99	
+wart_f32_bench.wasm	94	
+wart_f64_bench.wasm	114	
+wart_i64_bench.wasm	139	
+wart_mixed_type_bench.wasm	135	
+wart_omni_opcode_wasi_bench.wasm	94	
+wart_opcode_test_simple.wasm	100	
+wart_simple.wasm	98	
+wart_simple_bench.wasm	101	
+wart_simple_opcode_bench.wasm	112	
+wart_wasi_preview1_comprehensive.wasm	91	
+wart_wasix_extended.wasm	103	

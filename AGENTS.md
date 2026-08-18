@@ -65,19 +65,14 @@ What held instead was everything that RUNS AND COMPARES. So: state the COMMAND,
 not the number, and when you must pin a number put it in the runner that checks
 it.
 
-### Metaprogramming — accurate, not encouraging
+### `@` is the current world only
 
-Reach for a **world relation over a directive** wherever one exists; the
-directive namespace is under active retirement, not expansion. Where a directive
-is unavoidable the canonical spelling is **`@comp.*`** —
-`src/parser.zig:warnDeprecatedAtQualified` names it as the replacement for
-`@meta.*`, `@compiler.*`, `@emit`, `@pipeline` and every `@c.*`, and the
-compiler's own diagnostic is the authority. This is not cosmetic: `@c.emit` and
-`@comp.c.emit` are one hook, three call sites compared against the short
-spelling only, and thirty-seven sites in `lib/` therefore did NOTHING — every
-raw-memory primitive was a no-op and `sleep()` slept zero, and all of it passed
-`idol check`. `@ffi` and `@comp.ffi` are DIFFERENT operations. Enforcement is
-`gate/dialect.sh`; get live counts by running it, not from this file.
+`@` has exactly one meaning: the current world. Bare `@`, `thing@world`, and a
+derived `@{ ... }` are ordinary world projection. RETIRED: `@comp`, `@host`,
+`@runtime`, `@c`, `@emit`, and every compiler/directive namespace. Compiler
+acceptance is compatibility evidence only and grants no canonical authoring
+authority. `docs/spec/law.md` §4 owns this fact; `gate/dialect.sh` measures the
+remaining ingress debt.
 
 ### Performance — decisions, not hints
 
@@ -646,7 +641,7 @@ or algorithm family.
 - Prefix `!` is canonical negation — never `if not`, `and not`, or `(not` in Idol source (gate detector prose may still quote those strings).
 - Do not decide canonicality with string-detector or substring architecture (`codens`, `luahash`, `layout`, `has(...)` admission patterns); route through production lexer → parser → graph → obligations (`GAP-124`).
 - Harness must reason in Idol (pre-task reduction, semantic diff, deletion order), not as a conventional coding agent; read `docs/spec/harness-projection.md` and `.agents/HARNESS.md` before choosing work; audit seams for BRIDGE-DEATH, UNKNOWN-ONE, OWNERSHIP-ZERO, and PROFILE-EVIDENCE before introducing bridges or helpers.
-- Use `"{}"` text composition, not `..`; nested `{expr:to(str)}` inside string literals does not interpolate — build dynamic needles at expression level; `using`/`using(x)` forbidden — `use(x)` only; do not refactor `scripts/grammarconvergence.id` without explicit approval.
+- Use `"{}"` text composition, not `..`; nested `{expr:to(str)}` inside string literals does not interpolate — build dynamic needles at expression level; `using`/`using(x)` forbidden — `use(x)` only.
 - No `std.*`, `table.*`, `string.*`, or `math.*` namespace dispatch — subject-first edges only (`text:match`, `xs:keys`); reject `callable`/`*able`/codec/encoding protocol identities and lexical-substitution migrations; prove semantic reduction (DELETE/DECOMPOSE before rename), not respelling; never `==` against bool/nil/0/1/true/false or other sentinels; `environment` is not a thing — use `os.env(k)`, `os.args(n)`, `io:read`/`io:write`. No `match`/`case`/`switch`/pattern-object subsystem — control flow is refinement `if` (subject evaluated exactly once; branch heads are constraints on the already-evaluated subject; multi-arm refinement is unordered with no first-match/most-specific/declaration-order/trait precedence; nested `if` expresses order). Express every design from the small irreducible basis (id, fact, binding, value, table, descriptor, world, home, projection, application, relation, able, pack, place, refinement, demand, effect, witness, stage, provenance, transformation, realization) and reject match/pattern/trait/interface/module/namespace/import/service/context/result/option/future/promise/async/stream/iterator/macro/unsafe/capability/reflection unless irreducibility is proven.
 
 ## Learned Workspace Facts

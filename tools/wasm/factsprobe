@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+# tools/wasm/factsprobe — decode a Wasm module's core structure into
+# graph-fact-shaped JSON (sim-v0 vocabulary). Research lane 3 artifact:
+# proves the validation-facts mapping executes on real bytes. Subset:
+# sections, types, functions, code bodies with the core integer stack
+# discipline expressed as application chains. No runtime, no claims.
+
+import json, struct, sys
+
+def uleb(b, i):
+    r = 0; s = 0
+    while True:
+        x = b[i]; i += 1
+        r |= (x & 0x7F) << s
+        if not (x & 0x80): return r, i
+        s += 7
+
+def name(b, i):
+    n, i = uleb(b, i)
+    return b[i:i+n].decode('utf-8', 'replace'), i+n
+
+TYPES = {0x7F:'i32',0x7E:'i64',0x7D:'f32',0x7C:'f64',0x7B:'v128'}
+
+OPS = {
+ 0x00:('unreachable',0),0x01:('nop',0),
+ 0x20:('local.get',1),0x21:('local.set',1),0x22:('local.tee',1),
+ 0x23:('global.get',1),0x24:('global.set',1),
+ 0x1A:('drop',0),0x1B:('select',0),0x1C:('select_t',1),
+ 0x41:('i32.const',1),0x42:('i64.const',1),0x43:('f32.const',4),0x44:('f64.const',8),
+ 0x10:('call',1),0x11:('call_indirect',2),
+ 0x0C:('br',1),0x0D:('br_if',1),0x0E:('br_table',-1),0x0F:('return',0),0x0B:('end',0),
+ 0x45:('i32.eqz',0),0x50:('i64.eqz',0),
+ 0x0A:('end.block',0),0x05:('else',0),
+}
+MEMOPS = set(range(0x28,0x3E))  # loads/stores: align+offset immediates
+BINOPS = {m:('i32',n) for m,n in {
+ 0x6A:'add',0x6B:'sub',0x6C:'mul',0x6D:'div_s',0x6E:'div_u',
+ 0x71:'and',0x72:'or',0x73:'xor',0x74:'shl',0x75:'shr_s',0x76:'shr_u',
+ 0x46:'eq',0x47:'ne',0x48:'lt_s',0x4A:'gt_s',0x4C:'le_s',0x4E:'ge_s',
+}.items()}
+
+def body_facts(code, nlocals):
+    # the operand stack DOES NOT exist here: each instruction is an
+    # application whose operand/result packs are typed descriptors; the
+    # stack order survives only as the edge order between applications.
+    apps, stack = [], []
+    i = 0; aid = 0
+    truncated = False
+    while i < len(code):
+        op = code[i]; i += 1
+        if op in (0x20,):  # local.get -> place read application
+            idx, i = uleb(code, i)
+            apps.append({'application': aid, 'relation': 'read',
+                         'operand': {'kind': 'local', 'index': idx},
+                         'results': [{'width': 32}], 'origin': 'wasm',
+                         'demand': 'single'})
+            stack.append(aid); aid += 1
+        elif op == 0x41:  # i32.const -> determinate place bind
+            v, i = sleb(code, i)
+            apps.append({'application': aid, 'relation': 'constant',
+                         'value': v, 'results': [{'width': 32}],
+                         'origin': 'wasm', 'determinacy': 'exact'})
+            stack.append(aid); aid += 1
+        elif op in BINOPS:  # binop -> application with operand pack
+            b = stack.pop() if stack else None
+            a = stack.pop() if stack else None
+            apps.append({'application': aid,
+                         'relation': BINOPS[op][1],
+                         'operands': [a, b], 'width': 32,
+                         'overflow': 'wrap', 'origin': 'wasm'})
+            stack.append(aid); aid += 1
+        elif op in MEMOPS:  # memory access: place observation on the memory world
+            _, i = uleb(code, i)  # align
+            _, i = uleb(code, i)  # offset
+            apps.append({'application': aid, 'relation': 'memory',
+                         'world': {'home': 'memory', 'reach': 'address'},
+                         'width': 32, 'origin': 'wasm'})
+            stack.append(aid); aid += 1
+        elif op in (0x23, 0x24):  # global get/set: module place access
+            idx, i = uleb(code, i)
+            apps.append({'application': aid,
+                         'relation': 'read' if op == 0x23 else 'write',
+                         'operand': {'kind': 'global', 'index': idx},
+                         'origin': 'wasm'})
+            if op == 0x23: stack.append(aid)
+            elif stack: stack.pop()
+            aid += 1
+        elif op in (0x45, 0x50):  # unary eqz
+            a = stack.pop() if stack else None
+            apps.append({'application': aid, 'relation': 'eqz',
+                         'operands': [a], 'width': 32, 'origin': 'wasm'})
+            stack.append(aid); aid += 1
+        elif op in (0x1A,):  # drop: stack discipline as fact
+            if stack: stack.pop()
+        elif op in (0x1B, 0x1C):  # select: 3 -> 1
+            if op == 0x1C: _, i = uleb(code, i)
+            c = stack.pop() if stack else None
+            b = stack.pop() if stack else None
+            a = stack.pop() if stack else None
+            apps.append({'application': aid, 'relation': 'select',
+                         'operands': [a, b, c], 'origin': 'wasm'})
+            stack.append(aid); aid += 1
+        elif op == 0x0E:  # br_table: targets vector
+            n, i = uleb(code, i)
+            for _ in range(n + 1): _, i = uleb(code, i)
+            apps.append({'application': aid, 'relation': 'branch.table',
+                         'targets': n + 1, 'origin': 'wasm'})
+            if stack: stack.pop()
+            aid += 1
+        elif op in (0x43, 0x44):  # f32/f64 const: raw bytes
+            i += 4 if op == 0x43 else 8
+            apps.append({'application': aid, 'relation': 'constant',
+                         'width': 32 if op == 0x43 else 64,
+                         'origin': 'wasm', 'determinacy': 'exact'})
+            stack.append(aid); aid += 1
+        elif op in (0x02, 0x03, 0x04):  # block/loop/if: region facts
+            bt = code[i]
+            if bt == 0x40 or bt in (0x7F,0x7E,0x7D,0x7C,0x7B):
+                i += 1  # empty or valtype blocktype: one byte
+            else:
+                _, i = sleb(code, i)  # type index: signed LEB, multi-byte
+            shape = {0x02:'refinement',0x03:'recurrence',0x04:'alternative'}[op]
+            apps.append({'application': aid, 'relation': 'region',
+                         'region_shape': shape, 'origin': 'wasm'})
+            aid += 1
+        elif op in OPS and OPS[op][1] == 1 and op not in (0x20,):
+            _, i = uleb(code, i)
+        elif op in OPS:
+            pass  # zero-immediate member (unreachable/nop/br/return/end)
+        elif op in OPS and OPS[op][1] == 2:
+            _, i = uleb(code, i); _, i = uleb(code, i)
+        else:
+            # outside the research subset: stop honestly rather than
+            # desync on an unknown immediate grammar
+            truncated = True
+            break
+    return apps if not truncated else apps + [{'truncated': True}]
+
+def sleb(b, i):
+    r = 0; s = 0
+    while True:
+        x = b[i]; i += 1
+        r |= (x & 0x7F) << s; s += 7
+        if not (x & 0x80):
+            if s < 64 and (x & 0x40): r -= 1 << s
+            return r, i
+
+def probe(path):
+    b = open(path,'rb').read()
+    assert b[:4] == b'\0asm', 'not a wasm module'
+    version = struct.unpack('<I', b[4:8])[0]
+    facts = {'schema':'wasm-facts-probe-v1','version':version,
+             'origin':'wasm','source':path,'types':[],'functions':[],
+             'imports':[],'exports':[],'memories':0,'tables':0}
+    i = 8
+    while i < len(b):
+        sid = b[i]; i += 1
+        size, i = uleb(b, i)
+        end = i + size
+        if sid == 1:  # types
+            n, i = uleb(b, i)
+            for _ in range(n):
+                form = b[i]; i += 1
+                np, i = uleb(b, i)
+                params = [TYPES.get(b[i+k],'?') for k in range(np)]; i += np
+                nr, i = uleb(b, i)
+                results = [TYPES.get(b[i+k],'?') for k in range(nr)]; i += nr
+                facts['types'].append({'params':params,'results':results})
+        elif sid == 2:  # imports
+            n, i = uleb(b, i)
+            for _ in range(n):
+                m, i = name(b, i); nm, i = name(b, i)
+                kind = b[i]; i += 1
+                desc = {'module':m,'name':nm,'kind':kind}
+                if kind == 0: t, i = uleb(b, i); desc['type'] = t
+                elif kind == 2:
+                    mm, i = uleb(b, i); desc['mutable'] = bool(mm)
+                    desc['valtype'] = TYPES.get(b[i],'?'); i += 1
+                facts['imports'].append(desc)
+        elif sid == 3:  # functions
+            n, i = uleb(b, i)
+            facts['function_types'] = []
+            for _ in range(n):
+                t, i = uleb(b, i); facts['function_types'].append(t)
+        elif sid == 4: facts['tables'] = 1
+        elif sid == 5: facts['memories'] = 1
+        elif sid == 7:  # exports
+            n, i = uleb(b, i)
+            for _ in range(n):
+                nm, i = name(b, i); kind = b[i]; i += 1
+                idx, i = uleb(b, i)
+                facts['exports'].append({'name':nm,'kind':kind,'index':idx})
+        elif sid == 10:  # code
+            n, i = uleb(b, i)
+            for f in range(n):
+                bsz, i = uleb(b, i)
+                bend = i + bsz
+                nloc, i = uleb(b, i)
+                nlocals = 0
+                for _ in range(nloc):
+                    c, i = uleb(b, i); i += 1; nlocals += c
+                code = b[i:bend-1]  # trailing end opcode trimmed
+                sig = facts['types'][facts['function_types'][f]] \
+                    if f < len(facts.get('function_types',[])) else None
+                facts['functions'].append({
+                    'index': f, 'locals': nlocals, 'signature': sig,
+                    'applications': body_facts(code, nlocals)})
+                i = bend
+        i = end
+    return facts
+
+if __name__ == '__main__':
+    print(json.dumps(probe(sys.argv[1]), indent=1))

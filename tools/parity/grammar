@@ -1,129 +1,349 @@
 #!/bin/sh
-# parity/grammar — compare grammar-role projections by token identity.
+# parity/grammar — exact grammar-role authority and projection agreement.
 #
-# Reports drift between the live generated projection and the grammar authority.
-# It never rewrites a grammar role, but absence or drift is a failing result.
-#
-# Projections compared:
-#   canonical   src/lexer.zig TokenKind semantic identities + backing span
-#   generated   lib/token/grammarrole.id    (ROLEIDENTITYCOUNT / ROLECOUNT /
-#                                             KINDEOF / BEGINEXPR)
-#   tree-sitter ext/tree-sitter-idol/src/grammar.json (rule count, context)
+# This is a census. Every finding contributes one to the exit status. A run
+# which examines no projection is a failure, never a vacuous green result.
 
 set -eu
-repo="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$repo"
 
-python3 - <<'PY'
-import json, re, sys
+script_repo="$(cd "$(dirname "$0")/../.." && pwd)"
+repo="${GRAMMAR_PARITY_ROOT:-$script_repo}"
 
-def enum_shape(path):
-    src = open(path).read()
-    m = re.search(
-        r'pub const TokenKind = enum(?:\([^)]*\))?\s*\{(.*?)\n\s*pub fn spelling',
-        src, re.S)
-    if not m:
-        return None
-    names = []
-    values = []
-    value = -1
-    field = re.compile(
-        r'\s*([a-z][a-z_0-9]*)\s*(?:=\s*([0-9]+))?\s*,\s*(?://.*)?$')
-    for line in m.group(1).splitlines():
-        f = field.fullmatch(line)
-        if not f:
-            continue
-        value = int(f.group(2)) if f.group(2) is not None else value + 1
-        names.append(f.group(1))
-        values.append(value)
-    if not values:
-        return None
-    return {
-        'identities': len(values),
-        'slots': max(values) + 1,
-        'names': names,
-        'values': values,
-    }
+python3 - "$repo" <<'PY'
+import sys
 
-def id_projection(path, identity_pat, count_pat, eof_pat, vec_pat):
+root = sys.argv[1].rstrip("/")
+manifest_path = root + "/lib/token/grammarrole.tsv"
+idol_path = root + "/lib/token/grammarrole.id"
+tree_path = root + "/ext/tree-sitter-idol/grammar.js"
+
+schema = "grammar-role-v2"
+header = (
+    b"slot\tkind\tspelling\tbegin\tprefix\tpostfix\tparameter\tliteral\tquoted\t"
+    b"projection\tbody\tdescriptor\tpattern\tbinary\tprecedence\tassoc\tcompat"
+)
+columns = len(header.split(b"\t"))
+findings = []
+examined = 0
+rows = []
+authority = None
+
+
+def finding(message):
+    findings.append(message)
+
+
+def relative(path):
+    return path[len(root) + 1:] if path.startswith(root + "/") else path
+
+
+def tagged(value):
+    return (
+        len(value) == 24
+        and value.startswith("fnv1a64:")
+        and all(byte in "0123456789abcdef" for byte in value[8:])
+    )
+
+
+def fnv1a64(chunks):
+    value = 0xCBF29CE484222325
+    for data in chunks:
+        for byte in data:
+            value ^= byte
+            value = (value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return f"fnv1a64:{value:016x}"
+
+
+def read(path, label):
+    global examined
     try:
-        src = open(path).read()
+        with open(path, "rb") as source:
+            data = source.read()
     except FileNotFoundError:
+        finding(f"{label} absent: {relative(path)}")
         return None
-    i = re.search(identity_pat, src)
-    c = re.search(count_pat, src)
-    e = re.search(eof_pat, src)
-    v = re.search(vec_pat, src, re.S)
-    if not (i and c and e and v):
+    except OSError as error:
+        finding(f"{label} unreadable: {relative(path)}: {error}")
         return None
-    vec = [int(x) for x in re.findall(r'-?\d+', v.group(1))]
-    return {
-        'identities': int(i.group(1)),
-        'count': int(c.group(1)),
-        'eof': int(e.group(1)),
-        'begin_expr': vec,
-    }
+    examined += 1
+    return data
 
-canonical = enum_shape('src/lexer.zig')
-generated = id_projection('lib/token/grammarrole.id',
-                          r'ROLEIDENTITYCOUNT\s*=\s*(\d+)',
-                          r'ROLECOUNT\s*=\s*(\d+)', r'KINDEOF\s*=\s*(\d+)',
-                          r'BEGINEXPR\s*=\s*\{(.*?)\}')
-try:
-    ts = len(json.load(open('ext/tree-sitter-idol/src/grammar.json'))['rules'])
-except Exception:
-    ts = None
+manifest = read(manifest_path, "grammar-role manifest")
+payload = None
+if manifest is not None:
+    if not manifest:
+        finding("grammar-role manifest is empty")
+    if b"\r" in manifest:
+        finding("grammar-role manifest contains CR bytes; authority is exact LF bytes")
+    if not manifest.endswith(b"\n"):
+        finding("grammar-role manifest lacks its final LF byte")
 
-rows = [
-    ('src/lexer.zig semantic identities', canonical['identities'] if canonical else None,
-     canonical['slots'] if canonical else None),
-    ('lib/token/grammarrole.id generated', generated['identities'] if generated else None,
-     generated['count'] if generated else None),
-    ('tree-sitter idol rules (context)', ts, None),
-]
-print('%-42s %-20s %s' % ('projection', 'semantic identities', 'physical slot span'))
-for name, identities, slots in rows:
-    print('%-42s %-20s %s' % (
-        name,
-        identities if identities is not None else 'ABSENT',
-        slots if slots is not None else '-'))
+    lines = manifest.splitlines(keepends=True)
+    expected_schema = f"# schema\t{schema}\n".encode()
+    if not lines or lines[0] != expected_schema:
+        finding(f"manifest schema metadata must be exactly # schema\\t{schema}")
 
-print()
-drift = []
-if canonical is None:
-    drift.append('canonical src/lexer.zig TokenKind is unreadable')
-if generated is None:
-    drift.append('generated lib/token/grammarrole.id is absent or malformed')
-if canonical and 'string_lit' in canonical['names']:
-    drift.append('retired TokenKind.string_lit identity still exists')
-if canonical and 3 in canonical['values']:
-    drift.append('unpublished producer slot 3 has a host semantic identity')
-if canonical and generated and generated['identities'] != canonical['identities']:
-    drift.append('generated ROLEIDENTITYCOUNT=%d != canonical semantic identities=%d'
-                 % (generated['identities'], canonical['identities']))
-if canonical and generated and generated['count'] != canonical['slots']:
-    drift.append('generated ROLECOUNT=%d != canonical physical slot span=%d'
-                 % (generated['count'], canonical['slots']))
-if generated and len(generated['begin_expr']) != generated['count']:
-    drift.append('generated BEGINEXPR length=%d != ROLECOUNT=%d'
-                 % (len(generated['begin_expr']), generated['count']))
-if generated and generated['eof'] >= generated['count']:
-    drift.append('generated KINDEOF=%d out of range for ROLECOUNT=%d'
-                 % (generated['eof'], generated['count']))
-if generated and (generated['count'] <= 3 or generated['begin_expr'][3] != 0):
-    drift.append('unpublished producer slot 3 acquired an expression role')
-for retired in ('lib/token/grammar_role.id', 'lib/std/token/grammar_role.id'):
+    authority_line = lines[1] if len(lines) > 1 else b""
+    authority_prefix = b"# authority\t"
     try:
-        open(retired).close()
-        drift.append('retired projection still exists: ' + retired)
-    except FileNotFoundError:
-        pass
+        declared = authority_line[len(authority_prefix):-1].decode("ascii")
+    except UnicodeDecodeError:
+        declared = ""
+    if not (
+        authority_line.startswith(authority_prefix)
+        and authority_line.endswith(b"\n")
+        and tagged(declared)
+    ):
+        finding("manifest authority metadata is absent or malformed")
+    else:
+        authority = declared
 
-if drift:
-    print('DRIFT (report only — no side is chosen):')
-    for d in drift:
-        print('  - ' + d)
+    if len(lines) < 3:
+        finding("manifest payload is absent")
+    else:
+        payload = b"".join(lines[2:])
+        payload_lines = payload.split(b"\n")
+        if payload_lines and payload_lines[-1] == b"":
+            payload_lines.pop()
+        if not payload_lines or payload_lines[0] != header:
+            finding("manifest payload header is absent or not the exact 17-column schema")
+        else:
+            data_lines = payload_lines[1:]
+            if not data_lines:
+                finding("manifest contains zero role rows")
+            for number, line in enumerate(data_lines, 2):
+                fields = line.split(b"\t")
+                if len(fields) != columns:
+                    finding(
+                        f"manifest payload row {number} has {len(fields)} fields; expected {columns}"
+                    )
+                    continue
+                rows.append((number, fields))
+
+slots = []
+kinds = {}
+valid_rows = []
+boolean_fields = tuple(range(3, 14)) + (16,)
+for number, fields in rows:
+    try:
+        slot = int(fields[0])
+    except ValueError:
+        finding(f"manifest payload row {number} has non-decimal slot")
+        continue
+    if fields[0] != str(slot).encode() or slot < 0 or slot > 65535:
+        finding(f"manifest payload row {number} slot is not canonical u16 decimal")
+        continue
+
+    for index, label in ((1, "kind"), (2, "spelling")):
+        try:
+            fields[index].decode("utf-8")
+        except UnicodeDecodeError:
+            finding(f"manifest payload row {number} {label} is not UTF-8")
+
+    numeric_ok = True
+    for index in boolean_fields:
+        if fields[index] not in (b"0", b"1"):
+            finding(f"manifest payload row {number} column {index + 1} is not boolean")
+            numeric_ok = False
+    try:
+        precedence = int(fields[14])
+    except ValueError:
+        finding(f"manifest payload row {number} precedence is not decimal")
+        numeric_ok = False
+        precedence = -1
+    if precedence < -128 or precedence > 127 or fields[14] != str(precedence).encode():
+        finding(f"manifest payload row {number} precedence is not canonical signed i8 decimal")
+        numeric_ok = False
+    try:
+        assoc = int(fields[15])
+    except ValueError:
+        finding(f"manifest payload row {number} associativity is not decimal")
+        numeric_ok = False
+        assoc = -1
+    if assoc not in (0, 1, 2, 3) or fields[15] != str(assoc).encode():
+        finding(f"manifest payload row {number} associativity is outside the closed role set")
+        numeric_ok = False
+
+    slots.append(slot)
+    kind = fields[1]
+    if kind != b"-":
+        if kind in kinds:
+            finding(
+                f"manifest kind {kind.decode('utf-8', 'backslashreplace')} occurs at slots "
+                f"{kinds[kind]} and {slot}"
+            )
+        else:
+            kinds[kind] = slot
+    valid_rows.append((slot, fields, numeric_ok))
+
+if slots:
+    seen = set()
+    for slot in slots:
+        if slot in seen:
+            finding(f"manifest slot {slot} occurs more than once")
+        seen.add(slot)
+    expected_slots = list(range(len(slots)))
+    if sorted(slots) != expected_slots:
+        finding(
+            "manifest slots are not the unique contiguous ordinal range "
+            f"0..{len(slots) - 1}"
+        )
+
+actual_authority = None
+if rows and len(valid_rows) == len(rows) and sorted(slots) == list(range(len(slots))):
+    chunks = [schema.encode("utf-8"), b"\0"]
+    for slot, fields, numeric_ok in sorted(valid_rows, key=lambda row: row[0]):
+        if not numeric_ok:
+            chunks = None
+            break
+        precedence = int(fields[14])
+        assoc = int(fields[15])
+        chunks.extend((bytes((slot & 0xFF, slot >> 8)), fields[1], b"\0", fields[2], b"\0"))
+        chunks.extend(bytes((int(fields[index]),)) for index in range(3, 14))
+        chunks.extend((bytes((precedence & 0xFF,)), bytes((assoc, int(fields[16])))))
+    if chunks is not None:
+        actual_authority = fnv1a64(chunks)
+        if authority is not None and authority != actual_authority:
+            finding(
+                f"manifest semantic authority hash {actual_authority} != declared {authority}"
+            )
+
+slot_three = [(fields, numeric_ok) for slot, fields, numeric_ok in valid_rows if slot == 3]
+if rows and not slot_three:
+    finding("unpublished producer slot 3 is absent")
+elif slot_three:
+    fields, numeric_ok = slot_three[0]
+    if fields[1] != b"-" or fields[2] != b"-":
+        finding("unpublished producer slot 3 acquired kind or spelling identity")
+    if numeric_ok and any(field != b"0" for field in fields[3:]):
+        finding("unpublished producer slot 3 acquired a grammar role")
+
+
+def exact_assignment(data, path, key, prefix=b""):
+    if data is None:
+        return None
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        finding(f"{relative(path)} is not UTF-8")
+        return None
+    opening = prefix.decode() + key + ' = "'
+    matches = [line[len(opening):-1] for line in text.splitlines()
+               if line.startswith(opening) and line.endswith('"')
+               and '"' not in line[len(opening):-1]]
+    if len(matches) != 1:
+        finding(
+            f"{relative(path)} must contain exactly one exact {key} assignment; "
+            f"found {len(matches)}"
+        )
+        return None
+    return matches[0]
+
+
+idol = read(idol_path, "generated Idol grammar-role projection")
+idol_schema = exact_assignment(idol, idol_path, "GRAMMARSCHEMA")
+idol_hash = exact_assignment(idol, idol_path, "GRAMMARHASH")
+
+tree = read(tree_path, "generated Tree-sitter grammar projection")
+tree_schema = exact_assignment(tree, tree_path, "GRAMMARSCHEMA", b"// ")
+tree_hash = exact_assignment(tree, tree_path, "GRAMMARHASH", b"// ")
+
+for label, value in (
+    ("grammarrole.id schema", idol_schema),
+    ("grammar.js schema", tree_schema),
+):
+    if value is not None and value != schema:
+        finding(f"{label} {value!r} != manifest schema {schema!r}")
+for label, value in (
+    ("grammarrole.id authority", idol_hash),
+    ("grammar.js authority", tree_hash),
+):
+    if value is not None:
+        if not tagged(value):
+            finding(f"{label} {value!r} is malformed")
+        elif authority is not None and value != authority:
+            finding(f"{label} {value} != manifest authority {authority}")
+
+
+def exact_decimal(data, path, key):
+    if data is None:
+        return None
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    prefix = key + " = "
+    matches = [line[len(prefix):] for line in text.splitlines() if line.startswith(prefix)]
+    if (len(matches) != 1 or not matches[0].isdigit()
+            or str(int(matches[0])) != matches[0]):
+        finding(
+            f"{relative(path)} must contain exactly one exact {key} decimal; "
+            f"found {len(matches)}"
+        )
+        return None
+    return int(matches[0])
+
+
+role_count = exact_decimal(idol, idol_path, "ROLECOUNT")
+identity_count = exact_decimal(idol, idol_path, "ROLEIDENTITYCOUNT")
+kind_eof = exact_decimal(idol, idol_path, "KINDEOF")
+if rows:
+    if role_count is not None and role_count != len(rows):
+        finding(f"grammarrole.id ROLECOUNT={role_count} != manifest row count={len(rows)}")
+    expected_identities = sum(fields[1] != b"-" for _, fields in rows)
+    if identity_count is not None and identity_count != expected_identities:
+        finding(
+            f"grammarrole.id ROLEIDENTITYCOUNT={identity_count} != manifest identities="
+            f"{expected_identities}"
+        )
+    eof_slots = [slot for slot, fields, _ in valid_rows if fields[1] == b"eof"]
+    if len(eof_slots) != 1:
+        finding(f"manifest must contain exactly one eof kind; found {len(eof_slots)}")
+    elif kind_eof is not None and kind_eof != eof_slots[0]:
+        finding(f"grammarrole.id KINDEOF={kind_eof} != manifest eof slot={eof_slots[0]}")
+
+if idol is not None:
+    text = idol.decode("utf-8", "ignore")
+    opening = "BEGINEXPR = {"
+    if text.count(opening) != 1:
+        finding("grammarrole.id must contain exactly one BEGINEXPR vector")
+    elif role_count is not None:
+        start = text.find(opening)
+        closing = text.find("}", start + len(opening))
+        body = text[start + len(opening):closing] if closing >= 0 else ""
+        values = body.replace(",", " ").split()
+        if closing < 0 or any(not value.lstrip("-").isdigit() for value in values):
+            finding("grammarrole.id BEGINEXPR vector is malformed")
+        elif len(values) != role_count:
+            finding(
+                f"grammarrole.id BEGINEXPR width={len(values)} != ROLECOUNT={role_count}"
+            )
+
+for retired in (
+    root + "/lib/token/grammar_role.id",
+    root + "/lib/std/token/grammar_role.id",
+):
+    try:
+        with open(retired, "rb"):
+            pass
+    except FileNotFoundError:
+        continue
+    else:
+        examined += 1
+        finding(f"retired grammar-role projection survives: {relative(retired)}")
+
+if examined == 0:
+    finding("grammar parity examined zero projections")
+
+if findings:
+    print(f"grammar parity: {len(findings)} finding(s), {examined} projection(s) examined")
+    for message in findings:
+        print(f"  - {message}")
 else:
-    print('parity: generated grammar role agrees with canonical token identity')
-sys.exit(1 if drift else 0)
+    print(
+        f"grammar parity: PASS ({examined} projections, {len(rows)} exact role rows, "
+        f"{authority})"
+    )
+
+sys.exit(min(len(findings), 125))
 PY

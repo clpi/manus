@@ -1,4 +1,4 @@
-# idol-reduce — source reducer for the Idol toolchain
+# tools/reduce/idol — source reducer for the Idol toolchain
 
 Minimizes an `.id` program while an external predicate holds. Tooling only;
 no language or compiler semantics. (Pickle Mission A.)
@@ -7,7 +7,7 @@ no language or compiler semantics. (Pickle Mission A.)
 
 ```sh
 export IDOL="/path/to/zig-out/bin/idol"
-tools/reduce/idol-reduce <input.id> -p '<predicate text>' [-o out.id]
+tools/reduce/idol <input.id> -p '<predicate text>' [-o out.id]
 ```
 
 The predicate runs as `sh -c "<predicate>" reduce-sh <candidate-path>`, so
@@ -49,10 +49,32 @@ broken predicate is rejected, and the original still fails after reduction
 
 ## Proven theorems (2026-08-17, idol @ 4724e589, compiler ee08e553)
 
-- F3b `global-init-not-constant:g` — 4 lines (tools/reduce/fixtures/f3_global_init_not_constant.id).
+- F3b `global-init-not-constant:g` — 4 lines (tools/reduce/fixtures/global/write.id).
 - F5 `InvalidAggregateFact` compiler crash — parser.id 1792 → 27 lines;
   the crash survives hoisting the tail nested call, so it lives in the
   chained condition applications (`lexer.peek(lx).kind`).
 - F2 `application-operand-abi` — graph.id is line-irreducible at 112
   lines: EVERY line deletion breaks the predicate. The missing fact is
   module-granularity, not local — a finding, not a failure.
+
+## Performance (2026-08-17)
+
+Guarded inert pre-pass: comment-only and blank lines are stripped in one
+shot and verified with a single predicate call (reverted untouched if the
+failure does not survive — sound for text predicates too). On
+lib/compiler/parser.id (438 inert lines of 1792) the F5 crash reduction
+went 12m54s -> 3m54s and landed a strictly smaller theorem (1792 -> 11
+lines, recursive relation + nested application as argument). Predicate
+call counts are emitted in the closing report line.
+
+## Negative result: parallel chunk sweeps (2026-08-17)
+
+Batch-testing ddmin round candidates 8-wide produced the identical
+reduction but ran SLOWER (5m06s vs 3m54s on parser.id) with system time
+exploding (1m44s -> 5m38s). Follow-up measurement retracted the first
+attribution (a compiler cache lock): `idol compile` has NO cross-process
+lock — 10- and 30-way concurrent compiles of distinct files all succeed
+with no shared-writer corruption. The regression came from the sweep's
+own throttle polling and spawn overhead. Candidate-level parallelism
+needs a C-level batch runner (xargs -P) to pay off; the guarded inert
+pre-pass remains the proven throughput lever.

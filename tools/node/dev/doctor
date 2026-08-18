@@ -314,6 +314,7 @@ run_gate() {
 run_gate "identity projection census" "$repo/tools/node/dev/census/identity"
 run_gate "corpus tag census" "$repo/tools/node/dev/corpuscensus"
 run_gate "zero-history census" "$repo/tools/node/dev/census/history/zero"
+run_gate "compound census" "$repo/tools/node/dev/census/compound"
 run_gate "convergence census" "$repo/tools/node/dev/convergencecensus"
 run_gate "projection debt census" "$repo/tools/node/dev/projectioncensus"
 run_gate "foreign licence census" "$repo/tools/node/dev/foreigncensus"

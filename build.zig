@@ -98,6 +98,33 @@ pub fn build(b: *std.Build) void {
     addDirectRuntimeObjects(b, exe.root_module);
     b.installArtifact(exe);
 
+    const grammar_role_check = b.addExecutable(.{
+        .name = "grammar-role-check",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/grammar_role_check.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    const grammar_role_run = b.addRunArtifact(grammar_role_check);
+    grammar_role_run.setCwd(b.path("."));
+    const grammar_role_step = b.step("grammar-role", "generated grammar-role projections agree with their sole producer");
+    grammar_role_step.dependOn(&grammar_role_run.step);
+    const grammar_role_emit = b.addRunArtifact(grammar_role_check);
+    grammar_role_emit.setCwd(b.path("."));
+    grammar_role_emit.addArg("emit");
+    const grammar_role_emit_step = b.step("grammar-role-emit", "regenerate grammar-role projections from their sole producer");
+    grammar_role_emit_step.dependOn(&grammar_role_emit.step);
+    const grammar_parity_run = b.addSystemCommand(&.{ "tools/parity/grammar" });
+    grammar_parity_run.setCwd(b.path("."));
+    grammar_parity_run.step.dependOn(&grammar_role_run.step);
+    const grammar_parity_selftest = b.addSystemCommand(&.{ "tools/parity/grammar-selftest" });
+    grammar_parity_selftest.setCwd(b.path("."));
+    grammar_parity_selftest.step.dependOn(&grammar_role_run.step);
+    const grammar_parity_step = b.step("grammar-parity", "all grammar consumers share the exact authority and damaged projections fail");
+    grammar_parity_step.dependOn(&grammar_parity_run.step);
+    grammar_parity_step.dependOn(&grammar_parity_selftest.step);
+
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (@hasDecl(std.Build.Step.Run, "addPassthruArgs")) {
@@ -246,6 +273,9 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
     test_step.dependOn(&test_cmd.step);
+    test_step.dependOn(&grammar_role_run.step);
+    test_step.dependOn(&grammar_parity_run.step);
+    test_step.dependOn(&grammar_parity_selftest.step);
 
     // The C realizer is explicit-only and consumes the same graph-observed DNIR
     // as direct. Run its independent answer, selection, toolchain-poison, and

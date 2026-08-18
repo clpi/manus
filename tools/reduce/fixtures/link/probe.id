@@ -1,0 +1,7 @@
+# H5 theorem (38 -> 3 lines): a cross-module application reached from an
+# exe entry does not pull the callee's object — the link fails on the
+# callee's mangled symbol. host.id's "ambient reference" comment was the
+# workaround attempt. Owner: lane 4 (realization/exe link).
+  4
+duo_lexer_host_probe: i64 = (out: i64, cap: i64)
+  compiler.lexer.duo_lexer_tokenize_all("fun add(a: i64): i64 = a + 0 end", "probe.id", 0, out, cap)

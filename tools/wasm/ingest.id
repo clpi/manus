@@ -1,0 +1,312 @@
+# tools/wasm/ingest.id — canonical idol Wasm fact ingestion (lane 3).
+#
+# Wasm bytes are source-law provenance: this reads a module and emits
+# fact lines (module identity, section census) in the graph vocabulary.
+# Runtime need is NEVER inferred here — realization reads demand, not
+# opcodes. Lawful shape: flat bindings, subject-first relations, no
+# module globals, no compound spellings.
+#
+# usage: idol run tools/wasm/ingest.id -- <module.wasm>
+
+ulebval: i64 = (s: str, i: i64)
+  r: i64 = 0
+  k: i64 = 0
+  p: i64 = i
+  hit: bool = true
+  while hit
+    x: i64 = s:byteat(p)
+    r = r + (x - (x / 128) * 128) * k:pow2()
+    p = p + 1
+    hit = x >= 128 and p <= bytecount(s)
+    k = k + 7
+  r
+
+ulebafter: i64 = (s: str, i: i64)
+  p: i64 = i
+  hit: bool = true
+  while hit
+    x: i64 = s:byteat(p)
+    p = p + 1
+    hit = x >= 128 and p <= bytecount(s)
+  p
+
+pow2: i64 = (k: i64)
+  out: i64 = 1
+  n: i64 = 0
+  while n < k
+    out = out * 2
+    n = n + 1
+  out
+
+fact: str = (key: str, val: str)
+  '{"fact":"' .. key .. '","value":' .. val .. '}'
+
+num: str = (n: i64)
+  n:to(str)
+
+emit: i64 = (key: str, val: str)
+  stdout:write(key:fact("\"" .. val .. "\"") .. "\n")
+  0
+
+hexdigit: i64 = (c: i64)
+  if c >= 48 and c <= 57
+    c - 48
+  else
+    if c >= 97 and c <= 102
+      c - 87
+    else
+      0
+
+# DECLARED TRANSPORT (until H9 lands a bytes face): the module is hex
+# text; bytes are read IN PLACE (hex pair -> value). O(1) per access,
+# zero materialization. The binary face replaces this accessor alone.
+
+byteat: i64 = (s: str, n: i64)
+  hexdigit(s:byte(2 * n - 1)) * 16 + hexdigit(s:byte(2 * n))
+
+bytecount: i64 = (s: str)
+  s:len() / 2
+
+immclass: i64 = (op: i64)
+  if op == 14 or op == 28
+    -1
+  else
+    if op == 65 or op == 66
+      -2
+    else
+      if op == 67
+        -3
+      else
+        if op == 68
+          -4
+        else
+          if op >= 40 and op <= 62
+            -5
+          else
+            if op == 32 or op == 33 or op == 34 or op == 35 or op == 36 or op == 16 or op == 12 or op == 13
+              1
+            else
+              if op == 17
+                2
+              else
+                if op == 2 or op == 3 or op == 4
+                  -6
+                else
+                  if op == 252
+                    -7
+                  else
+                    0
+
+slebend: i64 = (s: str, i: i64)
+  p: i64 = i
+  hit: bool = true
+  while hit
+    x: i64 = s:byteat(p)
+    p = p + 1
+    hit = x >= 128 and p <= bytecount(s)
+  p
+
+appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
+  # graph-conformant application record (sim-v0 applications[] shape):
+  # relation + operand refs + typed results + provenance + demand. The
+  # demand card is the performance lever (FTCFTW rungs 1-2).
+  head: str = '{"application":' .. n:num() .. ',"caller":' .. fi:num() .. ',"relation":"'
+  tail: str = ',"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"unknown"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}'
+  if op == 32
+    stdout:write(head .. 'read","operand":{"kind":"local","index":' .. src:ulebval(ip):num() .. '},"results":[{"width":32}]' .. tail .. "\n")
+  if op == 65
+    stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num())
+    stdout:write(',"determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
+  if op == 66
+    stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num() .. ',"determinacy":"exact","results":[{"width":64}]' .. tail .. "\n")
+  if op == 67 or op == 68
+    stdout:write(head .. 'constant","determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
+  if op >= 103 and op <= 118 or op >= 70 and op <= 78 or op >= 167 and op <= 181 or op >= 81 and op <= 89 or op >= 134 and op <= 136 or op >= 192 and op <= 196
+    stdout:write(head .. op:binname() .. '","operands":[' .. a:num() .. ',' .. b:num() .. '],"width":32,"overflow":"wrap","results":[{"width":32}]' .. tail .. "\n")
+  if op >= 40 and op <= 53
+    stdout:write(head .. 'memory","world":{"home":"memory","reach":"address"},"operands":[' .. a:num() .. '],"width":32,"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"unknown"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}' .. "\n")
+  if op == 16
+    stdout:write(head .. 'call","target":{"card":"exact","index":' .. src:ulebval(ip):num() .. '},"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"one"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}' .. "\n")
+  0
+
+binname: str = (op: i64)
+  if op >= 71 and op <= 78
+    "cmp"
+  else
+    if op >= 81 and op <= 89
+      "cmp64"
+    else
+      if op == 106
+        "add"
+      else
+        if op == 107
+          "sub"
+        else
+          if op == 108
+            "mul"
+          else
+            if op == 109 or op == 110
+              "div"
+            else
+              if op == 113 or op == 114 or op == 115
+                "bit"
+              else
+                if op == 116 or op == 117 or op == 118
+                  "shift"
+                else
+                  if op >= 103 and op <= 105
+                    "popcount"
+                  else
+                    if op >= 134 and op <= 136
+                      "shift64"
+                    else
+                      if op >= 192 and op <= 196
+                        "signext"
+                      else
+                        if op >= 167 and op <= 167
+                          "wrap"
+                        else
+                          "??"
+
+slebsign: i64 = (s: str, i: i64)
+  p: i64 = i
+  r: i64 = 0
+  k: i64 = 0
+  hit: bool = true
+  while hit
+    x: i64 = s:byteat(p)
+    r = r + (x - (x / 128) * 128) * k:pow2()
+    p = p + 1
+    hit = x >= 128 and p <= bytecount(s)
+    k = k + 7
+  if k < 64
+    lastx: i64 = s:byteat(p - 1)
+    if lastx >= 64
+      r = r - k:pow2()
+  r
+
+main: i64 = ()
+  path: str = args(1)
+  applimit: i64 = 1000000
+  if path == ""
+    stdout:write("usage: idol run tools/wasm/ingest.id -- <module.wasm.hex>\n")
+    return 1
+  src: str = path:read()
+  if src:len() < 8
+    stdout:write("error: too short for a module\n")
+    return 1
+  b0: i64 = src:byteat(1)
+  b1: i64 = src:byteat(2)
+  b2: i64 = src:byteat(3)
+  b3: i64 = src:byteat(4)
+  if b0 != 0 or b1 != 97 or b2 != 115 or b3 != 109
+    stdout:write("error: not a wasm module\n")
+    return 1
+  v: i64 = src:byteat(5) + src:byteat(6) * 256 + src:byteat(7) * 65536 + src:byteat(8) * 16777216
+  emit("module.magic", "wasm")
+  emit("module.version", v:num())
+  # section census: each section is one fact line (id, byte size)
+  i: i64 = 9
+  walk: bool = true
+  while walk and i + 1 < bytecount(src)
+    sid: i64 = src:byteat(i)
+    size: i64 = src:ulebval(i + 1)
+    after: i64 = src:ulebafter(i + 1)
+    emit("section." .. sid:num(), size:num())
+    if sid == 1
+      n1c: i64 = src:ulebval(after)
+      emit("types.count", n1c:num())
+    if sid == 3
+      n3c: i64 = src:ulebval(after)
+      emit("functions.count", n3c:num())
+    if sid == 10
+      n10c: i64 = src:ulebval(after)
+      emit("bodies.count", n10c:num())
+      bp: i64 = src:ulebafter(after)
+      fi: i64 = 0
+      totalinstr: i64 = 0
+      totallocals: i64 = 0
+      while fi < n10c and bp < bytecount(src)
+        bsz: i64 = src:ulebval(bp)
+        bstart: i64 = src:ulebafter(bp)
+        bend: i64 = bstart + bsz - 1
+        nld: i64 = src:ulebval(bstart)
+        lp: i64 = src:ulebafter(bstart)
+        flocals: i64 = 0
+        li: i64 = 0
+        while li < nld and lp < bend
+          cnt: i64 = src:ulebval(lp)
+          lp = src:ulebafter(lp) + 1
+          flocals = flocals + cnt
+          li = li + 1
+        ninstr: i64 = 0
+        ip: i64 = lp
+        walking: bool = true
+        prev: i64 = -1
+        prev2: i64 = -1
+        while walking and ip <= bend
+          op: i64 = src:byteat(ip)
+          pre: i64 = ip + 1
+          ip = ip + 1
+          cl: i64 = op:immclass()
+          if cl == 1
+            ip = src:ulebafter(ip)
+          if cl == 2
+            ip = src:ulebafter(ip)
+            ip = src:ulebafter(ip)
+          if fi < applimit
+            src:appfact(fi, ninstr, op, pre, prev2, prev)
+            if op == 32 or op == 65
+              prev2 = prev
+              prev = ninstr
+          if cl == -6
+            bt: i64 = src:byteat(ip)
+            if bt == 64 or bt >= 123
+              ip = ip + 1
+            if bt < 64
+              ip = src:slebend(ip)
+          if cl == -7
+            sub: i64 = src:byteat(ip)
+            ip = ip + 1
+            if sub == 8
+              ip = src:ulebafter(ip)
+              ip = ip + 1
+            if sub == 9
+              ip = src:ulebafter(ip)
+            if sub == 10
+              ip = ip + 2
+            if sub == 11
+              ip = ip + 1
+            if sub >= 12
+              ip = src:ulebafter(ip)
+              if sub == 14 or sub == 15
+                ip = src:ulebafter(ip)
+          if cl == -2
+            ip = src:slebend(ip)
+          if cl == -3
+            ip = ip + 4
+          if cl == -4
+            ip = ip + 8
+          if cl == -5
+            ip = src:ulebafter(ip)
+            ip = src:ulebafter(ip)
+          if cl == -1
+            walking = false
+          ninstr = ninstr + 1
+        emit("body." .. fi:num() .. ".locals", flocals:num())
+        emit("body." .. fi:num() .. ".instr", ninstr:num())
+        totalinstr = totalinstr + ninstr
+        totallocals = totallocals + flocals
+        bp = bstart + bsz
+        fi = fi + 1
+      emit("code.totalinstr", totalinstr:num())
+      emit("code.totallocals", totallocals:num())
+    if sid == 7
+      n7c: i64 = src:ulebval(after)
+      emit("exports.count", n7c:num())
+    if sid == 2
+      n2c: i64 = src:ulebval(after)
+      emit("imports.count", n2c:num())
+    i = after + size
+    walk = i > 0
+  0

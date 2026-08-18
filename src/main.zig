@@ -94,8 +94,6 @@ const git_preservation = @import("git_preservation.zig");
 const native_barrier_checks = @import("native_barrier_checks.zig");
 const host_run = @import("host_run.zig");
 const wasm_semantic_gen = @import("wasm_semantic_gen.zig");
-const token_classify_gen = @import("token_classify_gen.zig");
-const grammar_role_gen = @import("grammar_role_gen.zig");
 
 var macos_sdkroot_configured = false;
 var compiler_lib_root: ?[]const u8 = null;
@@ -455,7 +453,22 @@ const usage =
     \\
 ;
 
-pub fn main(init: std.process.Init) !void {
+// The one choke point for unclassified errors. Classified failures print
+// their diagnostics and exit directly; anything that still escapes to here
+// is an internal defect. Zig's start code would print the raw error-return
+// trace (internal frames leak into user diagnostics — H4); instead print
+// one classified line and keep the trace behind IDOL_TRACE=1.
+pub fn main(init: std.process.Init) void {
+    mainInner(init) catch |e| {
+        if (std.c.getenv("IDOL_TRACE") != null) {
+            if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
+        }
+        term.err("{s} — internal; rerun with IDOL_TRACE=1 for the trace", .{@errorName(e)});
+        std.process.exit(1);
+    };
+}
+
+fn mainInner(init: std.process.Init) !void {
     const alloc = init.arena.allocator();
     term.init(init.io);
     apply_env_flags(init);
@@ -492,7 +505,6 @@ pub fn main(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "catalog") or
             std.mem.eql(u8, args[1], "dev") or
             std.mem.eql(u8, args[1], "wasm-tables") or
-            std.mem.eql(u8, args[1], "token-tables") or
             std.mem.eql(u8, args[1], "completion") or
             std.mem.eql(u8, args[1], "help") or
             std.mem.eql(u8, args[1], "--help") or
@@ -884,24 +896,6 @@ pub fn main(init: std.process.Init) !void {
         try wasm_semantic_gen.emitWardMvpOpcodesFile(alloc, io, "lib/wasm/ward_mvp_opcodes.id");
         term.print("wrote lib/wasm/opcode_lookup.id\n", .{});
         term.print("wrote lib/wasm/ward_mvp_opcodes.id\n", .{});
-        return;
-    }
-
-    if (std.mem.eql(u8, cmd, "token-tables")) {
-        const sub = input_file orelse {
-            term.err("usage: duo token-tables emit", .{});
-            std.process.exit(1);
-        };
-        if (!std.mem.eql(u8, sub, "emit")) {
-            term.err("unknown token-tables subcommand '{s}' (expected: emit)", .{sub});
-            std.process.exit(1);
-        }
-        try token_classify_gen.emitTokenClassifyFile(alloc, io, "lib/token/classify.id");
-        try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "src/keyword_classify.c");
-        try grammar_role_gen.emitGrammarRoleFile(alloc, io, "lib/token/grammarrole.id");
-        term.print("wrote lib/token/classify.id\n", .{});
-        term.print("wrote src/keyword_classify.c\n", .{});
-        term.print("wrote lib/token/grammarrole.id\n", .{});
         return;
     }
 

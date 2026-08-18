@@ -1,0 +1,72 @@
+#!/bin/sh
+# tools/reduce/verify — run every blocker theorem and its control.
+#
+# Each fixture must produce its exact first refusal; each control must
+# compile (or diagnose cleanly, never crash). One command = the whole
+# regression intake, including the F5 regression guard (self-recursion
+# must refuse classified or crash-legacy — after the reconcile merge it
+# must NEVER be an internal InvalidAggregateFact).
+#
+# Usage: tools/reduce/verify   (exit 0 iff every expectation holds)
+
+set -eu
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$repo"
+IDOL="${IDOL_REDUCE_BIN:-$repo/zig-out/bin/idol}"
+fails=0
+
+# fixture <path> <expected-substring>
+fixture() {
+  out="$("$IDOL" compile "$1" --emit obj -o /tmp/verify.o 2>&1 || true)"
+  if printf '%s' "$out" | grep -q "$2"; then
+    echo "PASS  $1"
+  else
+    echo "FAIL  $1 — expected '$2' in:" >&2
+    printf '%s\n' "$out" | head -3 >&2
+    fails=$((fails + 1))
+  fi
+  rm -f /tmp/verify.o
+}
+
+# control <path> — must compile to an object cleanly
+control() {
+  if "$IDOL" compile "$1" --emit obj -o /tmp/verify.o >/dev/null 2>&1; then
+    echo "PASS  $1 (control compiles)"
+  else
+    echo "FAIL  $1 — control did not compile" >&2
+    fails=$((fails + 1))
+  fi
+  rm -f /tmp/verify.o
+}
+
+fixture tools/reduce/fixtures/graph/f64.id "unresolved-application-facts"
+control  tools/reduce/fixtures/graph/ctrl.id
+fixture tools/reduce/fixtures/global/write.id "global-init-not-constant:g"
+fixture tools/reduce/fixtures/global/ctrl.id "missing: g"
+fixture tools/reduce/fixtures/view/slice.id "missing: view"
+fixture tools/reduce/fixtures/view/minimal.id "missing: view"
+fixture tools/reduce/fixtures/result/pack.id "application-result-abi"
+fixture tools/reduce/fixtures/crash/corpus.id "InvalidAggregateFact\|missing: parse_expr"
+# the crash CONTROL does not compile — it must DIAGNOSE cleanly:
+# an error message, never an internal InvalidAggregateFact or trace frames
+diagctrl() {
+  out="$("$IDOL" compile "$1" --emit obj -o /tmp/verify.o 2>&1 || true)"
+  rm -f /tmp/verify.o
+  if printf '%s' "$out" | grep -q "InvalidAggregateFact"; then
+    echo "FAIL  $1 — control crashed internally" >&2
+    fails=$((fails + 1))
+  elif printf '%s' "$out" | grep -qE "error:|✗"; then
+    echo "PASS  $1 (control diagnoses cleanly)"
+  else
+    echo "FAIL  $1 — control neither compiled nor diagnosed" >&2
+    fails=$((fails + 1))
+  fi
+}
+
+diagctrl tools/reduce/fixtures/crash/ctrl.id
+
+if [ "$fails" -ne 0 ]; then
+  echo "tools/reduce/verify: FAIL ($fails)" >&2
+  exit 1
+fi
+echo "tools/reduce/verify: PASS (all theorems + controls)"
