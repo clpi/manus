@@ -29,6 +29,11 @@ state: {
 
 lexer: {
     src: str,
+    # Bootstrap bridge: `str` is still a pointer-only physical view, so `:len()`
+    # walks the source bytes. Carry the exact extent beside that borrowed view.
+    # law.bridge.death: delete this field when `str` realizes as pointer + extent
+    # and `:len()` consumes the view fact in constant time.
+    extent: i64,
     pos: i64,
     start: i64,
     line: i64,
@@ -57,6 +62,7 @@ new: lexer = (src: str, file: str, family: i64)
     # Family is an operand (`law.family.one`). Path is provenance only.
     return {
         src = src,
+        extent = src:len(),
         pos = 1,
         start = 1,
         line = 1,
@@ -86,15 +92,15 @@ has_pending_hints: bool = (self: lexer)
     self.hint_count > 0
 
 peek_char: i64 = (self: lexer)
-    if self.pos > self.src:len() return 0
+    if self.pos > self.extent return 0
     self.src:byte(self.pos)
 
 peek_char2: i64 = (self: lexer)
-    if self.pos + 1 > self.src:len() return 0
+    if self.pos + 1 > self.extent return 0
     self.src:byte(self.pos + 1)
 
 adv(self: lexer)
-    if self.pos > self.src:len() return
+    if self.pos > self.extent return
     c = self.src:byte(self.pos)
     self.pos = self.pos + 1
     if c == 10
@@ -242,13 +248,13 @@ classify_quote: i64 = (family: i64, quote: i64)
 
 long_bracket_level: i64 = (self: lexer)
     i = self.pos
-    if i > self.src:len() or self.src:byte(i) != 91 return -1
+    if i > self.extent or self.src:byte(i) != 91 return -1
     i += 1
     lvl = 0
-    while i <= self.src:len() and self.src:byte(i) == 61
+    while i <= self.extent and self.src:byte(i) == 61
         lvl += 1
         i += 1
-    if i > self.src:len() or self.src:byte(i) != 91 return -1
+    if i > self.extent or self.src:byte(i) != 91 return -1
     lvl
 
 # GAP-017: a lexer error is a REJECTION the caller can count, not a process
@@ -275,7 +281,7 @@ skip_long(self: lexer, level: i64)
         self:adv()
         i += 1
     self:adv()
-    while self.pos <= self.src:len()
+    while self.pos <= self.extent
         if self:peek_char() == 93
             eq = 0
             self:adv()
@@ -290,7 +296,7 @@ skip_long(self: lexer, level: i64)
     self:_fail(2)
 
 skip_ws(self: lexer)
-    while self.pos <= self.src:len()
+    while self.pos <= self.extent
         c = self:peek_char()
         if c == 32 or c == 9 or c == 13 or c == 10
             self:adv()
@@ -312,7 +318,7 @@ read_long_str: str = (self: lexer, level: i64)
             self:adv()
     start = self.pos
     self.start = start
-    while self.pos <= self.src:len()
+    while self.pos <= self.extent
         if self:peek_char() == 93
             close_start = self.pos
             self:adv()
@@ -333,7 +339,7 @@ read_str: str = (self: lexer, quote: i64)
     self:adv()
     start = self.pos
     self.start = start
-    while self.pos <= self.src:len()
+    while self.pos <= self.extent
         c = self:peek_char()
         if c == quote
             s = self.src:sub( start, self.pos - 1)
@@ -344,17 +350,17 @@ read_str: str = (self: lexer, quote: i64)
             return ""
         if c == 92
             self:adv()
-            if self.pos > self.src:len()
+            if self.pos > self.extent
                 self:_fail(1)
                 return ""
             esc = self:peek_char()
             if esc == 120
                 self:adv()
-                if self.pos > self.src:len() or !is_hex(self:peek_char())
+                if self.pos > self.extent or !is_hex(self:peek_char())
                     self:_fail(3)
                     return ""
                 self:adv()
-                if self.pos <= self.src:len() and is_hex(self:peek_char())
+                if self.pos <= self.extent and is_hex(self:peek_char())
                     self:adv()
             elseif esc == 117
                 self:adv()
@@ -363,19 +369,19 @@ read_str: str = (self: lexer, quote: i64)
                     return ""
                 self:adv()
                 has_digit = false
-                while self.pos <= self.src:len() and self:peek_char() != 125
+                while self.pos <= self.extent and self:peek_char() != 125
                     if !is_hex(self:peek_char())
                         self:_fail(3)
                         return ""
                     has_digit = true
                     self:adv()
-                if !has_digit or self.pos > self.src:len() or self:peek_char() != 125
+                if !has_digit or self.pos > self.extent or self:peek_char() != 125
                     self:_fail(3)
                     return ""
                 self:adv()
             elseif esc == 122
                 self:adv()
-                while self.pos <= self.src:len()
+                while self.pos <= self.extent
                     ws = self:peek_char()
                     if ws == 32 or ws == 9 or ws == 13 or ws == 10
                         self:adv()
@@ -383,7 +389,7 @@ read_str: str = (self: lexer, quote: i64)
                         break
             elseif esc == 13
                 self:adv()
-                if self.pos <= self.src:len() and self:peek_char() == 10
+                if self.pos <= self.extent and self:peek_char() == 10
                     self:adv()
             else
                 self:adv()
@@ -530,13 +536,13 @@ next_tok: token = (self: lexer)
     if self.pos == 1 and self:peek_char() == 35 and self:peek_char2() == 33
         l = self:cur_loc()
         start = self.pos
-        while self.pos <= self.src:len() and self:peek_char() != 10
+        while self.pos <= self.extent and self:peek_char() != 10
             self:adv()
         text = self.src:sub(start, self.pos - 1)
         return { kind = 110, loc = l, text = text, int_val = 0, float_val = 0.0 }
     self:skip_ws()
     self.start = self.pos
-    if self.pos > self.src:len()
+    if self.pos > self.extent
         return { kind = 109, loc = self:cur_loc(), text = "", int_val = 0, float_val = 0.0 }
     
     l = self:cur_loc()
@@ -547,7 +553,7 @@ next_tok: token = (self: lexer)
     
     if is_alpha(c) or c == 95
         start = self.pos
-        while self.pos <= self.src:len()
+        while self.pos <= self.extent
             p = self:peek_char()
             if is_alnum(p) or p == 95
                 self:adv()
@@ -572,7 +578,7 @@ next_tok: token = (self: lexer)
     
     if c == 35 and self.family == 1
         start = self.pos
-        while self.pos <= self.src:len() and self:peek_char() != 10
+        while self.pos <= self.extent and self:peek_char() != 10
             self:adv()
         text = self.src:sub(start, self.pos - 1)
         return { kind = 111, loc = l, text = text, int_val = 0, float_val = 0.0 }
@@ -586,14 +592,14 @@ next_tok: token = (self: lexer)
             self:skip_long(lvl)
             text = self.src:sub(start, self.pos - 1)
             return { kind = 113, loc = l, text = text, int_val = 0, float_val = 0.0 }
-        is_triple = (self.pos <= self.src:len() and self:peek_char() == 45)
+        is_triple = (self.pos <= self.extent and self:peek_char() == 45)
         if is_triple
             self:adv()
         body = self.pos
-        while self.pos <= self.src:len() and self:peek_char() != 10
+        while self.pos <= self.extent and self:peek_char() != 10
             self:adv()
         if is_triple and self.hint_count < 8
-            if body <= self.src:len() and self.src:byte(body) == 64
+            if body <= self.extent and self.src:byte(body) == 64
                 h = self.src:sub(body + 1, self.pos - 1)
                 if self.hint_count == 0 self.hint_0 = h
                 elseif self.hint_count == 1 self.hint_1 = h
@@ -638,7 +644,7 @@ next_tok: token = (self: lexer)
     elseif c == 38
         return { kind = 71, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 124
-        if self.pos <= self.src:len() and self.src:byte(self.pos) == 62
+        if self.pos <= self.extent and self.src:byte(self.pos) == 62
             self.pos = self.pos + 1
             return { kind = 97, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         return { kind = 72, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
