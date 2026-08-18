@@ -1,9 +1,9 @@
-# tools/wasm/ingest.id — canonical idol Wasm fact ingestion (lane 3).
+# tools/wasm/ingest.id — executable wasm research ingress with canonicality debt.
 #
-# Wasm bytes are source-law provenance: this reads a module and emits
+# wasm bytes are source-law provenance: this reads a module and emits
 # fact lines (module identity, section census) in the graph vocabulary.
-# Runtime need is NEVER inferred here — realization reads demand, not
-# opcodes. Lawful shape: flat bindings, subject-first relations, no
+# runtime need is never inferred here — realization reads demand, not
+# opcodes. lawful shape: flat bindings, subject-first relations, no
 # module globals, no compound spellings.
 #
 # usage: idol run tools/wasm/ingest.id -- <module.wasm>
@@ -57,9 +57,9 @@ hex: i64 = (c: i64)
     else
       0
 
-# DECLARED TRANSPORT (until H9 lands a bytes face): the module is hex
-# text; bytes are read IN PLACE (hex pair -> value). O(1) per access,
-# zero materialization. The binary face replaces this accessor alone.
+# declared transport (until h9 lands a bytes face): the module is hex
+# text; bytes are read in place (hex pair -> value). o(1) per access,
+# zero materialization. the binary face replaces this accessor alone.
 
 byteat: i64 = (s: str, n: i64)
   # subject-chain form: the argument form silently returns 0 under
@@ -106,9 +106,8 @@ slebend: i64 = (s: str, i: i64)
   p
 
 appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
-  # graph-conformant application record (sim-v0 applications[] shape):
-  # relation + operand refs + typed results + provenance + demand. The
-  # demand card is the performance lever (FTCFTW rungs 1-2).
+  # graph-shaped evidence only: n and fi are source coordinates and
+  # relation is a local label, not an exact semantic graph identity.
   head: str = '{"application":' .. n:num() .. ',"caller":' .. fi:num() .. ',"relation":"'
   tail: str = ',"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"unknown"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}'
   if op == 32
@@ -208,8 +207,8 @@ main: i64 = ()
   if path != "--serve"
     path:ingest()
   else
-    # MCP streaming face: newline JSON-RPC; each request is a hex module
-    # path; the full fact + record stream emits as notifications.
+    # line transport research face; this does not parse json-rpc and is
+    # not an mcp endpoint. each line is treated as a hex module path.
     serve: bool = true
     ln: str = stdin:line()
     while serve

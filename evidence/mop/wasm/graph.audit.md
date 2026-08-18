@@ -1,4 +1,4 @@
-# Graph-conformance audit — wasm ingest records vs compiler sim-v0 (measured)
+# Graph-shape audit — wasm ingest evidence vs compiler sim-v0 (measured)
 
 Compiler graph of ingest.id itself: 741 nodes, 1,105 edges, 95 published
 applications (of 113 candidates, 17 bootstrap, 1 blocking), 15 bodies with
@@ -12,7 +12,7 @@ recurrence regions, 2 worlds.
 | `arguments` / `results` as NODE references | my `operands` are app numbers; the graph uses node ids — switch to per-body node allocation or keep app-refs and document the projection |
 | `provenance` {file, start, end} | byte offsets — available at read time (at) |
 | `applied` card {one/none/unknown + id} | emit card:"one" + relation number for calls; "unknown" for binops until published |
-| `effect` / `authority` / `witness` / `realization` cards | emit explicit card:"unknown" — presence IS the conformance (facts publish later) |
+| `effect` / `authority` / `witness` / `realization` cards | emit explicit card:"unknown" — presence proves schema coverage only; the fact remains unresolved |
 
 | My fields the compiler LACKS (wasm-native) | Ruling |
 |---|---|
@@ -20,11 +20,13 @@ recurrence regions, 2 worlds.
 
 ## Conformance verdict
 
-Records are shape-ADJACENT, not yet shape-IDENTICAL. The missing card
-fields are mechanical (values known at emission); the node-id vs app-ref
-difference is a projection decision for the graph lane. The wasm-native
-fields (width/overflow/origin/determinacy) are the foreign-law payload
-per the separation ruling — they must NOT be flattened away.
+Records are shape-adjacent evidence, not semantic graph applications.
+The sequential application counter, Wasm function index, operand
+counter, and local relation label are provenance/classification data;
+they are not substitutes for exact graph identities. The wasm-native
+fields (width/overflow/origin/determinacy) are foreign-law inputs and
+must not be flattened away. Closure requires the Wasm-law producer to
+publish exact shared graph ids and facts, not a consumer-side renumbering.
 
 ## Performance opportunities identified this audit
 
@@ -37,11 +39,11 @@ per the separation ruling — they must NOT be flattened away.
    regions (exploit-4 prerequisite).
 4. **caller field**: enables per-relation fact_coverage on the wasm
    side — the ingest's OWN blocker meter, mirroring the compiler's.
-5. **IPC speedup**: the ingest currently writes JSONL to stdout — for
-   the idol MCP path, the same records can stream over the newline
-   JSON-RPC transport (native.id pattern) with zero format change;
-   for compiler-internal use, the record stream can be consumed
-   directly at graph-build time (no serialization at all).
+5. **IPC speedup**: the ingest currently writes JSONL to stdout. The
+   line-oriented serve prototype is not JSON-RPC or MCP. A real tool
+   face must use the existing checked MCP/JSON-RPC semantic boundary;
+   compiler-internal use can consume published graph facts directly
+   without serialization.
 6. **Instruction minimization in the ingest itself**: slebsign/ulebval
    each re-walk the LEB from scratch; a single walk returning value+
    end (tail pack — blocked by subset) would halve byte reads per

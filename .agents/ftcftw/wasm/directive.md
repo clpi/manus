@@ -113,25 +113,26 @@ demanded dimension or names the remaining loss.
 - Lanes 1-2 (source-law ingress, GRAMMAR-ONE): compiler lane, untouched.
 
 
-## Lane 3 idol-native status + H9 (measured)
+## Lane 3 idol-native research status + H9 (measured)
 
-tools/wasm/ingest.id is CANONICAL IDOL: checks green, compiles under
-direct-native, runs as a process — flat bindings, subject-first
-relations, lawful spellings, zero python. The idol-subset lessons paid
-to get there: pack returns are tail-only (avoided via paired flat
-functions), double-quoted escapes are not unescaped (single-quoted byte
-literals), for-in over dynamic args needs an unpublished
-gen-for-dynamic-iter fact (positional args(2) instead).
+tools/wasm/ingest.id is executable research/bootstrap Idol with known
+canonicality debt. It checks, compiles under direct-native, and runs as
+a process, but executable production source is not a canonical teaching
+surface. Compound identities, the hex transport, local opcode labels,
+and the line transport remain migration evidence rather than language
+authority.
 
 UPDATE 4 (FINAL for the census): the idol ingest matches ground truth
 EXACTLY — 29,004 instructions, 1,028 locals across 203 bodies. Two more
 grammar bugs closed by per-body trace diff: (a) the walk-ending op
 (br_table) was excluded from the count; (b) call_indirect's TWO LEB
 immediates had no handler — padded LEBs were counted as opcodes (body
-48: 5 GT ops vs 15). The census is CLOSED; snapshot at evidence/mop/
-wasm/ingest.fib.facts. Remaining grammar debt for full application
-emission: blocktype slebs on block/loop/if (currently walked as bare
-ops — correct only for empty blocktypes) and 0xFC-prefixed ops.
+48: 5 GT ops vs 15). The measured fixture instruction/local census
+agrees with its independent oracle; snapshot at evidence/mop/wasm/
+ingest.fib.facts. This does not prove complete Wasm validation. Open
+semantic work includes block signatures, stack typing, branch arity,
+indices, reference types, feature gates, proposal instructions, and
+publication into the shared semantic graph.
 
 UPDATE 3: full body walk lands — locals EXACT (1,028 across 203
 bodies), instruction census 29,356 vs independent ground truth 29,004
@@ -178,28 +179,33 @@ Field access via `.` is for STATIC members (world/home fields like
 (no `.` on dynamic values — all access is `:` edges or plain locals).
 
 
-## Lane 3: records now GRAPH-CONFORMANT (sim-v0 applications shape)
+## Lane 3: records are graph-shaped evidence, not graph publication
 
-Every emitted record carries the graph application fields: relation,
-operand references by number, typed results (width), provenance
-(origin=wasm), and the DEMAND card — the performance lever (FTCFTW
-rungs 1-2: undemanded results never realize). 16 records on fib
-bodies 0-2 (7 read / 6 constant / 3 add), every record validated to
-carry the required card set. The output is now directly consumable by
-graph-side consumers: the demand pass reads these records exactly as
-it reads idol-source applications — one admission surface, as ruled.
+Every emitted record has an application-shaped schema, but its
+application number is a sequential source occurrence counter, its
+caller is a Wasm function index, and its relation is a locally assigned
+string. Those are provenance and classification coordinates, not exact
+semantic graph identities. Explicit unknown cards prove schema
+coverage only. Closure requires the Wasm-law producer to publish exact
+occurrence, caller, relation, subject, operand, result, demand, effect,
+world, and witness facts into the same graph used by Idol source.
 
 
-## Lane 3 CLOSED: 100% relation mapping, corpus-complete
+## Lane 3 corpus classification census; semantic closure remains open
 
 The full-bounds census found the last unnamed ops (0x46 eq outside the
 cmp start; conversions 0xA7/0xA9-0xAC inside the arith64 block).
-binname rebuilt with every family exact. Corpus: 66 fixtures, 55,942
-records, ZERO unmapped — fib alone: 17,829 records across 18 relation
-families (read 6,982 / constant 4,889 / add 1,360 / memory-world 1,274
-/ float 870 / cmp 519 / exact-target call 358 / shift64 295 / cmp64
-287 / bit 269 / sub 218 / shift 165 / arith64 155 / wrap64 98 / mul 55
-/ popcount 15 / extend 13 / signext 5). Every record carries the full
-sim-v0 card set. The ingest is COMPLETE: wasm bytes -> section census
--> exact body walk -> fully-mapped application records with demand,
-caller, provenance, and all five cards.
+The measured corpus has no opcode left without a local family label.
+That establishes byte-decoding and classification coverage for those
+fixtures, not exact relation resolution. Current status is:
+
+- byte decoding: complete for the measured corpus;
+- opcode family classification: complete for the measured corpus;
+- section/body census: complete for the measured corpus;
+- semantic relation resolution: partial;
+- Wasm validation: partial;
+- shared semantic graph identity publication: not implemented.
+
+Track schema coverage, known-fact coverage, trust/proof status, and
+semantic-id continuity separately. An unknown card is an honest blocker,
+not evidence that the corresponding semantic fact has been closed.
