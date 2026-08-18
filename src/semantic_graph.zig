@@ -102,6 +102,9 @@ pub const EdgeKind = enum {
 // callable is the unique `.binding` edge to func/relation; subject-first
 // subject is the unique `.projection` at `application_subject_projection`.
 pub const application_subject_projection: u16 = 1;
+const relation_subject_projection: u16 = 2;
+const occurrence_subject_projection: u16 = 3;
+const occurrence_member_projection: u16 = 4;
 
 test "semantic_graph: EdgeKind excludes operational spellings" {
     const forbidden = [_][]const u8{
@@ -807,7 +810,7 @@ pub const SubjectProjectionFact = struct {
     occurrence: id,
     relation: id,
     subject: id,
-    member: id,
+    member: ?id,
 };
 
 /// One injected world, keyed by the exact id of its graph entity.
@@ -921,11 +924,9 @@ pub const SemanticGraph = struct {
     /// lowering O(applications x edges).
     out_edges: std.AutoHashMapUnmanaged(id, std.ArrayListUnmanaged(u32)) = .empty,
     application_facts: std.ArrayListUnmanaged(ApplicationFact) = .empty,
-    relation_subjects: std.AutoHashMapUnmanaged(id, id) = .empty,
-    subject_projections: std.ArrayListUnmanaged(SubjectProjectionFact) = .empty,
-    subject_projection_rows: std.AutoHashMapUnmanaged(usize, u32) = .empty,
-    /// Physical O(1) coverage index derived at the subject-projection write.
-    subject_projection_relations: std.AutoHashMapUnmanaged(id, void) = .empty,
+    /// Relations for which Sema published an incoming subject. The subject
+    /// identity itself is the exact `.projection` edge, never this bit.
+    subject_relations: std.DynamicBitSetUnmanaged = .{},
     pack_facts: std.ArrayListUnmanaged(PackFact) = .empty,
     pack_values: std.ArrayListUnmanaged(id) = .empty,
     pack_demands: std.ArrayListUnmanaged(PackMemberDemand) = .empty,
@@ -948,12 +949,9 @@ pub const SemanticGraph = struct {
     home_apps: Adjacency = .{},
     /// Descriptor → descriptor_ref hits (`law.fact.locality`).
     descriptor_refs: RefAdjacency = .{},
-    /// Func id assigned at addNode from the declaration pointer. Lookup is this
-    /// index, not a later walk of `ast_ref` slots.
+    /// Exact source node -> graph entity. This is a physical lift index only;
+    /// every typed query revalidates the graph facts of the returned entity.
     origin: std.AutoHashMapUnmanaged(usize, id) = .empty,
-    /// Alias declaration pointer -> descriptor entity. Physical lift index;
-    /// semantic identity remains the graph id it returns.
-    descriptor_origin: std.AutoHashMapUnmanaged(usize, id) = .empty,
     /// §18 — PLACE, IN THE GRAPH.
     ///
     /// The graph MUST represent place: identity, determinacy, extent, mutation,
@@ -1008,10 +1006,7 @@ pub const SemanticGraph = struct {
             self.out_edges.deinit(self.alloc);
         }
         self.application_facts.deinit(self.alloc);
-        self.relation_subjects.deinit(self.alloc);
-        self.subject_projections.deinit(self.alloc);
-        self.subject_projection_rows.deinit(self.alloc);
-        self.subject_projection_relations.deinit(self.alloc);
+        self.subject_relations.deinit(self.alloc);
         self.pack_facts.deinit(self.alloc);
         self.pack_values.deinit(self.alloc);
         self.pack_demands.deinit(self.alloc);
@@ -1032,7 +1027,6 @@ pub const SemanticGraph = struct {
         self.home_apps.deinit(self.alloc);
         self.descriptor_refs.deinit(self.alloc);
         self.origin.deinit(self.alloc);
-        self.descriptor_origin.deinit(self.alloc);
         if (self.places) |*census| census.deinit();
         for (self.bodies.items) |*body| {
             body.places.deinit();
@@ -1092,6 +1086,10 @@ pub const SemanticGraph = struct {
     fn rememberFunc(self: *SemanticGraph, node: Node, entity: id) !void {
         if (node.result_descriptor == null) return;
         const raw = node.ast_ref orelse return;
+        try self.rememberOrigin(raw, entity);
+    }
+
+    fn rememberOrigin(self: *SemanticGraph, raw: *const anyopaque, entity: id) !void {
         const slot = try self.origin.getOrPut(self.alloc, @intFromPtr(raw));
         if (slot.found_existing) return error.DuplicateSemanticDeclaration;
         slot.value_ptr.* = entity;
@@ -1967,12 +1965,15 @@ pub const SemanticGraph = struct {
 
     fn findFuncDecl(self: *const SemanticGraph, target: *const ast.FuncDecl) ?id {
         const raw: *const anyopaque = @ptrCast(target);
-        return self.origin.get(@intFromPtr(raw));
+        const relation = self.origin.get(@intFromPtr(raw)) orelse return null;
+        const node = self.get(relation) orelse return null;
+        if (node.ast_ref != raw or !self.callable(relation)) return null;
+        return relation;
     }
 
     fn findAliasShape(self: *const SemanticGraph, target: *const ast.AliasDef) ?id {
         const raw: *const anyopaque = @ptrCast(target);
-        const shape = self.descriptor_origin.get(@intFromPtr(raw)) orelse return null;
+        const shape = self.origin.get(@intFromPtr(raw)) orelse return null;
         const node = self.get(shape) orelse return null;
         if (node.ast_ref != raw or !self.hasTableDescriptorFacts(shape)) return null;
         return shape;
@@ -1980,51 +1981,61 @@ pub const SemanticGraph = struct {
 
     fn publishSubjectFacts(self: *SemanticGraph, checked: *const sema.Sema, file: []const u8) !void {
         const relation_limit = self.nodes.items.len;
-        var index: usize = 0;
-        while (index < relation_limit) : (index += 1) {
-            if (!self.callable(@intCast(index))) continue;
-            const node = self.nodes.items[index];
-            const raw = node.ast_ref orelse continue;
-            const relation_decl: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
-            const source = checked.relationSubjectFact(relation_decl) orelse continue;
+        try self.subject_relations.resize(self.alloc, relation_limit, false);
+        for (checked.relationSubjectFacts()) |*source| {
+            const relation = self.findFuncDecl(source.relation) orelse return error.MissingRelationSubject;
+            if (self.subject_relations.isSet(relation)) return error.DuplicateRelationSubject;
+            const node = self.nodes.items[relation];
             const shape = self.findAliasShape(source.home) orelse return error.MissingRelationSubject;
-            const relation: id = @intCast(index);
             const subject = try self.addChild(relation, .{
                 .kind = .value,
                 .span = node.span,
-                .descriptor = source.descriptor,
+                .descriptor = .{ .@"struct" = .{ .name = source.home.name } },
                 .stage = .sema,
             });
             try self.addEdge(.{ .from = subject, .to = shape, .kind = .descriptor });
-            const gop = try self.relation_subjects.getOrPut(self.alloc, relation);
-            if (gop.found_existing) return error.DuplicateRelationSubject;
-            gop.value_ptr.* = subject;
+            try self.addEdge(.{
+                .from = relation,
+                .to = subject,
+                .kind = .projection,
+                .position = relation_subject_projection,
+            });
+            self.subject_relations.set(relation);
         }
 
-        for (checked.subjectProjectionFacts()) |source| {
+        for (checked.subjectProjectionFacts()) |*source| {
             const relation = self.findFuncDecl(source.relation) orelse return error.MissingRelationSubject;
-            const subject = self.relation_subjects.get(relation) orelse return error.MissingRelationSubject;
-            const shape = self.relationSubjectShape(relation) orelse return error.MissingRelationSubject;
-            const members = try self.membersOf(shape, self.alloc);
-            defer self.alloc.free(members);
-            if (source.field >= members.len) return error.InvalidSubjectProjection;
+            const subject = self.relationSubject(relation) orelse return error.MissingRelationSubject;
+            var member: ?id = null;
+            var descriptor = self.get(subject).?.descriptor orelse return error.MissingRelationSubject;
+            if (source.field) |field| {
+                const shape = self.relationSubjectShape(relation) orelse return error.MissingRelationSubject;
+                const members = try self.membersOf(shape, self.alloc);
+                defer self.alloc.free(members);
+                if (field >= members.len) return error.InvalidSubjectProjection;
+                member = members[field];
+                descriptor = self.get(member.?).?.descriptor orelse return error.InvalidSubjectProjection;
+            }
             const occurrence = try self.addChild(relation, .{
                 .kind = .value,
                 .span = .{ .file = file, .start = source.expression.loc().line, .end = source.expression.loc().col },
-                .descriptor = source.descriptor,
+                .descriptor = descriptor,
                 .stage = .sema,
                 .ast_ref = @ptrCast(@constCast(source.expression)),
             });
-            const row = std.math.cast(u32, self.subject_projections.items.len) orelse
-                return error.SubjectProjectionCapacityExceeded;
-            try self.subject_projections.append(self.alloc, .{
-                .occurrence = occurrence,
-                .relation = relation,
-                .subject = subject,
-                .member = members[source.field],
+            try self.rememberOrigin(@ptrCast(source.expression), occurrence);
+            try self.addEdge(.{
+                .from = occurrence,
+                .to = subject,
+                .kind = .projection,
+                .position = occurrence_subject_projection,
             });
-            try self.subject_projection_rows.putNoClobber(self.alloc, @intFromPtr(source.expression), row);
-            try self.subject_projection_relations.put(self.alloc, relation, {});
+            if (member) |entity| try self.addEdge(.{
+                .from = occurrence,
+                .to = entity,
+                .kind = .projection,
+                .position = occurrence_member_projection,
+            });
         }
     }
 
@@ -2421,9 +2432,17 @@ pub const SemanticGraph = struct {
     }
 
     pub fn relationSubject(self: *const SemanticGraph, relation: id) ?id {
-        const subject = self.relation_subjects.get(relation) orelse return null;
-        const node = self.get(subject) orelse return null;
-        if (!self.callable(relation) or node.descriptor == null) return null;
+        if (relation >= self.subject_relations.bit_length or !self.subject_relations.isSet(relation))
+            return null;
+        var subject: ?id = null;
+        for (self.outEdges(relation)) |edge_index| {
+            const edge = self.edges.items[edge_index];
+            if (edge.from != relation or edge.kind != .projection or
+                edge.position != relation_subject_projection) continue;
+            const node = self.get(edge.to) orelse return null;
+            if (node.descriptor == null or subject != null) return null;
+            subject = edge.to;
+        }
         return subject;
     }
 
@@ -2440,16 +2459,41 @@ pub const SemanticGraph = struct {
     }
 
     pub fn relationHasSubjectProjection(self: *const SemanticGraph, relation: id) bool {
-        return self.subject_projection_relations.contains(relation);
+        return relation < self.subject_relations.bit_length and self.subject_relations.isSet(relation);
+    }
+
+    fn subjectOccurrence(self: *const SemanticGraph, expression: *const ast.Expr) ?SubjectProjectionFact {
+        const occurrence = self.origin.get(@intFromPtr(expression)) orelse return null;
+        const node = self.get(occurrence) orelse return null;
+        if (node.ast_ref != @as(?*anyopaque, @ptrCast(@constCast(expression)))) return null;
+        const relation = node.scope orelse return null;
+        const subject = self.relationSubject(relation) orelse return null;
+        var occurrence_subject: ?id = null;
+        var member: ?id = null;
+        for (self.outEdges(occurrence)) |edge_index| {
+            const edge = self.edges.items[edge_index];
+            if (edge.from != occurrence or edge.kind != .projection) continue;
+            if (edge.position == occurrence_subject_projection) {
+                if (occurrence_subject != null) return null;
+                occurrence_subject = edge.to;
+            } else if (edge.position == occurrence_member_projection) {
+                if (member != null) return null;
+                member = edge.to;
+            }
+        }
+        if (occurrence_subject != subject) return null;
+        return .{ .occurrence = occurrence, .relation = relation, .subject = subject, .member = member };
     }
 
     pub fn subjectProjection(self: *const SemanticGraph, expression: *const ast.Expr) ?SubjectProjectionFact {
-        const row = self.subject_projection_rows.get(@intFromPtr(expression)) orelse return null;
-        if (row >= self.subject_projections.items.len) return null;
-        const fact = self.subject_projections.items[row];
-        const node = self.get(fact.occurrence) orelse return null;
-        if (node.ast_ref != @as(?*anyopaque, @ptrCast(@constCast(expression)))) return null;
-        if (self.relationSubject(fact.relation) != fact.subject) return null;
+        const fact = self.subjectOccurrence(expression) orelse return null;
+        if (fact.member == null) return null;
+        return fact;
+    }
+
+    fn ambientSubject(self: *const SemanticGraph, expression: *const ast.Expr) ?SubjectProjectionFact {
+        const fact = self.subjectOccurrence(expression) orelse return null;
+        if (fact.member != null) return null;
         return fact;
     }
 
@@ -2629,7 +2673,7 @@ pub const SemanticGraph = struct {
                 .descriptor_state = state,
                 .ast_ref = @ptrCast(ad),
             });
-            try self.descriptor_origin.putNoClobber(self.alloc, @intFromPtr(ad), shape_id_node);
+            try self.rememberOrigin(@ptrCast(ad), shape_id_node);
             try self.publishDescriptorRefEdges(shape_id_node, rt);
             try self.publishTableShapeMembers(shape_id_node, alias_span, rt);
             try self.attachTableShapeTransforms(parent, alias_span, rt, shape_id orelse 0);
@@ -3995,12 +4039,9 @@ pub const SemanticGraph = struct {
 
             var subject_value: ?id = null;
             if (fact.subject) |subject| {
-                if (checked.ambientSubjectFact(subject)) |ambient| {
-                    const ambient_relation = self.findFuncDecl(ambient.relation) orelse
-                        return error.MissingRelationSubject;
-                    if (ambient_relation != caller) return error.InvalidRelationSubject;
-                    subject_value = self.relation_subjects.get(caller) orelse
-                        return error.MissingRelationSubject;
+                if (self.ambientSubject(subject)) |ambient| {
+                    if (ambient.relation != caller) return error.InvalidRelationSubject;
+                    subject_value = self.relationSubject(caller) orelse return error.MissingRelationSubject;
                 } else {
                     const descriptor = checked.exprDescriptor(subject) orelse
                         return error.MissingApplicationDescriptor;
@@ -5377,11 +5418,10 @@ pub const SemanticGraph = struct {
         // aggregate member identity nor exact scalar content, so a self-hosted
         // consumer could not reproduce the fact closure used by realization.
         //
-        // version 7: relation subjects and subject-member projections. A v6
-        // snapshot could serialize an application subject, but not the
-        // subject VALUE incoming to a relation nor the exact member identities
-        // its body projected, so a host-independent realizer could not replay
-        // SELF-ZERO without consulting AST spelling.
+        // version 7: relation subjects and subject-member occurrences are exact
+        // graph values linked by reserved projection positions in `edges`. A v6
+        // snapshot could serialize an application subject, but not the incoming
+        // relation value or exact member identities its body projected.
         try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":7,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
@@ -5507,35 +5547,6 @@ pub const SemanticGraph = struct {
             if (edge.kind == .descriptor_ref and edge.inline_ref) {
                 try out.appendSlice(alloc, ",\"inline_ref\":true");
             }
-            try out.append(alloc, '}');
-        }
-        try out.appendSlice(alloc, "],\"relation_subjects\":[");
-        var first_relation_subject = true;
-        for (self.nodes.items, 0..) |_, index| {
-            const relation: id = @intCast(index);
-            const subject = self.relationSubject(relation) orelse continue;
-            const shape = self.relationSubjectShape(relation) orelse return error.InvalidRelationSubject;
-            if (!first_relation_subject) try out.append(alloc, ',');
-            first_relation_subject = false;
-            try out.appendSlice(alloc, "{\"relation\":");
-            try appendJsonInt(out, alloc, relation);
-            try out.appendSlice(alloc, ",\"subject\":");
-            try appendJsonInt(out, alloc, subject);
-            try out.appendSlice(alloc, ",\"descriptor\":");
-            try appendJsonInt(out, alloc, shape);
-            try out.append(alloc, '}');
-        }
-        try out.appendSlice(alloc, "],\"subject_projections\":[");
-        for (self.subject_projections.items, 0..) |fact, index| {
-            if (index > 0) try out.append(alloc, ',');
-            try out.appendSlice(alloc, "{\"occurrence\":");
-            try appendJsonInt(out, alloc, fact.occurrence);
-            try out.appendSlice(alloc, ",\"relation\":");
-            try appendJsonInt(out, alloc, fact.relation);
-            try out.appendSlice(alloc, ",\"subject\":");
-            try appendJsonInt(out, alloc, fact.subject);
-            try out.appendSlice(alloc, ",\"member\":");
-            try appendJsonInt(out, alloc, fact.member);
             try out.append(alloc, '}');
         }
         try out.appendSlice(alloc, "],\"applications\":[");

@@ -1190,7 +1190,7 @@ pub const Parser = struct {
         try self.pending_hoists.append(self.alloc, .{ .func_decl = .{
             .loc = loc,
             .path = fpath,
-            .subject = .{ .descriptor = descriptor },
+            .subject = descriptor,
             .method = false,
             .is_local = false,
             .func = fb,
@@ -4948,11 +4948,10 @@ pub const Parser = struct {
         if (method) self.subject_next = true;
         defer self.subject_next = outer_next;
         const fb = try self.parse_func_body(loc);
-        const subject: ?ast.SubjectRole = if (method) .{ .qualified = path.items[0] } else null;
         return ast.Stmt{ .func_decl = .{
             .loc = loc,
             .path = try path.toOwnedSlice(self.alloc),
-            .subject = subject,
+            .subject = null,
             .method = method,
             .is_local = false,
             .func = fb,
@@ -9723,8 +9722,7 @@ test "parse: descriptor relation has a subject role and only true operands" {
     try testing.expect(!fd.method);
     try testing.expectEqual(@as(usize, 1), fd.path.len);
     try testing.expectEqualStrings("greet", fd.path[0]);
-    try testing.expect(fd.subject.? == .descriptor);
-    const descriptor = fd.subject.?.descriptor;
+    const descriptor = fd.subject.?;
     try testing.expect(mod.body.stmts[1] == .alias_def);
     try testing.expect(mod.body.stmts[1].alias_def.target.? == .record);
     try testing.expectEqual(descriptor, mod.body.stmts[1].alias_def.target.?.record);

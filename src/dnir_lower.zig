@@ -1835,9 +1835,9 @@ pub const LowerCtx = struct {
     /// function. The identity and contents stay graph-owned; this map only
     /// avoids emitting a second address materialization for another access.
     aggregate_bases: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
-    /// Exact subject-member entity to its already-resident incoming ABI slot.
-    /// This is a realization index over graph identities, never a name map.
-    subject_slots: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
+    /// Descriptor-ordered incoming subject members. The ABI slot is the dense
+    /// ordinal, so a hash table would add work and state while erasing order.
+    subject_members: []const semantic_graph.id = &.{},
     /// Static element count of a positional table, keyed by its `.len` slot, so
     /// `t[i]` with a non-constant `i` knows how many slots to select over.
     table_lens: std.AutoHashMapUnmanaged(u32, i64) = .empty,
@@ -1906,7 +1906,7 @@ pub const LowerCtx = struct {
         self.narrow_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
         self.aggregate_bases.deinit(self.alloc);
-        self.subject_slots.deinit(self.alloc);
+        if (self.subject_members.len > 0) self.alloc.free(self.subject_members);
         self.table_lens.deinit(self.alloc);
         var ct = self.const_tables.iterator();
         while (ct.next()) |e| {
@@ -2052,13 +2052,10 @@ fn lowerFunction(
                 if (kind == .f64) return invalidGraphFacts(diagnostic, @src(), "relation-subject-abi");
             }
             const members = try graph.membersOf(shape, alloc);
-            defer alloc.free(members);
+            ctx.subject_members = members;
             if (members.len != rec.fields.len)
                 return invalidGraphFacts(diagnostic, @src(), "relation-subject-abi");
-            for (members) |member| {
-                try ctx.subject_slots.putNoClobber(alloc, member, param_slot_cursor);
-                param_slot_cursor += 1;
-            }
+            param_slot_cursor = @intCast(members.len);
             subject_record = rec;
         } else if (graph.relationHasSubjectProjection(relation)) {
             return invalidGraphFacts(diagnostic, @src(), "relation-subject-abi");
@@ -4614,6 +4611,13 @@ fn recordForSemanticShape(records: []const dnir.RecordDesc, shape: semantic_grap
     return null;
 }
 
+fn subjectMemberSlot(ctx: *const LowerCtx, member: semantic_graph.id) ?u32 {
+    for (ctx.subject_members, 0..) |candidate, index| {
+        if (candidate == member) return @intCast(index);
+    }
+    return null;
+}
+
 fn checkedRecordResultSupported(record: dnir.RecordDesc) bool {
     return record.fields.len > 0 and record.fields.len <= max_record_fields;
 }
@@ -6153,7 +6157,9 @@ fn lowerExprCons(
                 {
                     return invalidGraphFacts(ctx.diagnostic, @src(), "subject-projection-relation");
                 }
-                const slot = ctx.subject_slots.get(projection.member) orelse
+                const member = projection.member orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "subject-projection-member");
+                const slot = subjectMemberSlot(ctx, member) orelse
                     return invalidGraphFacts(ctx.diagnostic, @src(), "subject-projection-member");
                 break :blk dnir.Value{ .local = slot };
             }
@@ -6618,14 +6624,11 @@ fn evaluateCheckedScalarOperands(
                     return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
                 const rec = recordForSemanticShape(ctx.records, shape) orelse
                     return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                const members = try ctx.graph.membersOf(shape, ctx.alloc);
-                defer ctx.alloc.free(members);
-                if (members.len != rec.fields.len or count + members.len > max_reg_record_fields)
+                if (ctx.subject_members.len != rec.fields.len or
+                    count + ctx.subject_members.len > max_reg_record_fields)
                     return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                for (members) |member| {
-                    const slot = ctx.subject_slots.get(member) orelse
-                        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                    values[count] = .{ .local = slot };
+                for (ctx.subject_members, 0..) |_, slot| {
+                    values[count] = .{ .local = @intCast(slot) };
                     count += 1;
                 }
                 continue;
@@ -10769,8 +10772,8 @@ test "dnir_lower: implicit subject is graph-owned and absent from operand packs"
     defer snapshot.deinit(alloc);
     try graph.writeJson(alloc, "subject-zero.id", &snapshot, null);
     try std.testing.expect(std.mem.indexOf(u8, snapshot.items, "\"version\":7") != null);
-    try std.testing.expect(std.mem.indexOf(u8, snapshot.items, "\"relation_subjects\":[{") != null);
-    try std.testing.expect(std.mem.indexOf(u8, snapshot.items, "\"subject_projections\":[{") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot.items, "\"relation\":\"projection\",\"position\":2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot.items, "\"relation\":\"projection\",\"position\":4") != null);
 
     const clean = try lowerModuleWithGraph(alloc, &module_ast, &graph);
     defer dnir.deinitModule(alloc, clean);
@@ -10796,12 +10799,20 @@ test "dnir_lower: implicit subject is graph-owned and absent from operand packs"
 
     // Destructive absence control: a projection fact with its relation-subject
     // producer deleted must refuse, never degrade to spelling or operand zero.
-    try std.testing.expect(graph.relation_subjects.remove(sum));
+    var subject_edge: ?u32 = null;
+    for (graph.edges.items, 0..) |edge, index| {
+        if (edge.from == sum and edge.to == subject and edge.kind == .projection) {
+            subject_edge = @intCast(index);
+            break;
+        }
+    }
+    const deleted = subject_edge orelse return error.TestExpectedEqual;
+    graph.edges.items[deleted].kind = .provenance;
     try std.testing.expectError(
         error.GraphFactsInvalid,
         lowerModuleWithGraph(alloc, &module_ast, &graph),
     );
-    try graph.relation_subjects.putNoClobber(alloc, sum, subject);
+    graph.edges.items[deleted].kind = .projection;
 
     // Destructive controls.  Once graph closure exists, neither the source
     // member spelling nor the parser's descriptor-role node may affect realization.
@@ -10820,7 +10831,7 @@ test "dnir_lower: implicit subject is graph-owned and absent from operand packs"
     }
     try std.testing.expectEqual(@as(usize, 1), poisoned_roles);
     var role_poison = ast.TypeExpr.RecordType{ .fields = &.{} };
-    @constCast(sum_decl).subject = .{ .descriptor = &role_poison };
+    @constCast(sum_decl).subject = &role_poison;
     const poisoned = try lowerModuleWithGraph(alloc, &module_ast, &graph);
     defer dnir.deinitModule(alloc, poisoned);
     var poisoned_instructions: usize = 0;

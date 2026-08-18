@@ -506,14 +506,6 @@ pub const NameRole = enum {
     subject,
 };
 
-/// Grammar-produced source role of a relation's implicit subject. Canonical
-/// descriptor relations retain the exact descriptor node, not its spelling.
-/// `qualified` is the legacy `Home:edge = ...` compatibility face only.
-pub const SubjectRole = union(enum) {
-    descriptor: *const TypeExpr.RecordType,
-    qualified: []const u8,
-};
-
 pub const Expr = union(enum) {
     nil: Loc,
     true_lit: Loc,
@@ -724,7 +716,7 @@ pub const FuncDecl = struct {
     path: [][]const u8,
     /// Source-role provenance only. Sema publishes the exact subject fact and
     /// realization never reads this parser node.
-    subject: ?SubjectRole = null,
+    subject: ?*const TypeExpr.RecordType = null,
     method: bool,
     is_local: bool,
     func: FuncBody,
