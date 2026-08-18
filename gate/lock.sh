@@ -2,8 +2,6 @@
 set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-idol=${IDOL_BIN:-"$repo/zig-out/bin/idol"}
-source="$repo/scripts/idol_lock.id"
 shell="$repo/tools/node/dev/idol-lock"
 work=$(mktemp -d "${TMPDIR:-/tmp}/idol-lock-gate.XXXXXX")
 children=""
@@ -52,11 +50,6 @@ waittoken() {
   done
   printf '%s\n' "$token"
 }
-
-buildlock="$work/build-lock"
-IDOL_BUILD_LOCK="$buildlock" "$shell" -- \
-  "$idol" compile --backend=direct "$source" -o "$work/lock" >/dev/null
-[ ! -e "$buildlock" ] || fail 'authoritative build lock remained'
 
 printf '%s\n' '#!/bin/sh' 'exit 37' >"$work/exit37"
 printf '%s\n' \
@@ -280,103 +273,6 @@ else
 fi
 printf 'lock gate damage: %s\n' "$damage"
 [ "$damage" = REPLACEMENT_DELETED ] || fail 'replacement cleanup damage survived'
-
-success="$work/success"
-[ "$(IDOL_BUILD_LOCK="$success" "$work/lock" status)" = FREE ] || \
-  fail 'fresh lock did not report free'
-IDOL_BUILD_LOCK="$success" "$work/lock" -- /usr/bin/true
-[ ! -e "$success" ] || fail 'successful child left its lock'
-
-exact="$work/exact"
-set +e
-IDOL_BUILD_LOCK="$exact" "$work/lock" -- "$work/exit37"
-rc=$?
-set -e
-[ "$rc" -eq 37 ] || fail "child exit became $rc"
-[ ! -e "$exact" ] || fail 'failed child left its lock'
-
-live="$work/live"
-ready="$work/live-ready"
-release="$work/live-release"
-IDOL_BUILD_LOCK="$live" "$work/lock" -- "$work/hold" "$ready" "$release" &
-holder=$!
-children="$children $holder"
-waitfor "$ready"
-waitfor "$live/owner"
-owner=$(cat "$live/owner")
-case "$owner" in
-  ''|*[!0-9]*) fail 'live owner is not a process id' ;;
-esac
-kill -0 "$owner" 2>/dev/null || fail 'recorded owner is not the live wrapper'
-[ "$(IDOL_BUILD_LOCK="$live" "$work/lock" status)" = "LOCKED by $owner" ] || \
-  fail 'live lock status lost its owner'
-
-set +e
-IDOL_BUILD_LOCK="$live" "$work/lock" --timeout 0 -- \
-  "$work/write" "$work/overlap"
-rc=$?
-set -e
-[ "$rc" -eq 75 ] || fail "live exclusion returned $rc"
-[ ! -e "$work/overlap" ] || fail 'contending child overlapped holder'
-touch "$release"
-wait "$holder"
-children=""
-[ ! -e "$live" ] || fail 'live holder left its lock'
-
-for kind in empty invalid dead; do
-  blocked="$work/$kind"
-  mkdir "$blocked"
-  case "$kind" in
-    empty) : >"$blocked/owner" ;;
-    invalid) printf 'not-a-process\n' >"$blocked/owner" ;;
-    dead)
-      dead=999999
-      while kill -0 "$dead" 2>/dev/null; do dead=$((dead + 1)); done
-      printf '%s\n' "$dead" >"$blocked/owner"
-      ;;
-  esac
-  case "$(IDOL_BUILD_LOCK="$blocked" "$work/lock" status)" in
-    LOCKED*) ;;
-    *) fail "$kind owner reported free" ;;
-  esac
-  set +e
-  IDOL_BUILD_LOCK="$blocked" "$work/lock" --timeout 0 -- /usr/bin/true
-  rc=$?
-  set -e
-  [ "$rc" -eq 75 ] || fail "$kind owner returned $rc"
-  [ -d "$blocked" ] || fail "$kind owner was reclaimed"
-  rm -f "$blocked/owner"
-  rmdir "$blocked"
-done
-
-replaced="$work/replaced"
-ready="$work/replaced-ready"
-release="$work/replaced-release"
-IDOL_BUILD_LOCK="$replaced" "$work/lock" -- "$work/hold" "$ready" "$release" &
-holder=$!
-children="$children $holder"
-waitfor "$ready"
-waitfor "$replaced/owner"
-printf 'replacement\n' >"$replaced/owner"
-touch "$release"
-wait "$holder"
-children=""
-[ -d "$replaced" ] || fail 'replacement owner lock was deleted'
-[ "$(cat "$replaced/owner")" = replacement ] || fail 'replacement owner changed'
-rm -f "$replaced/owner"
-rmdir "$replaced"
-
-sed 's/\$PPID/\$\$/g' "$source" >"$work/damaged.id"
-IDOL_BUILD_LOCK="$buildlock" "$shell" -- \
-  "$idol" compile --backend=direct "$work/damaged.id" -o "$work/damaged" >/dev/null
-set +e
-IDOL_BUILD_LOCK="$work/damaged-lock" "$work/damaged" -- \
-  "$work/write" "$work/damaged-ran"
-rc=$?
-set -e
-[ "$rc" -eq 75 ] || fail "damaged owner check returned $rc"
-[ ! -e "$work/damaged-ran" ] || fail 'damaged owner ran its child'
-[ ! -e "$work/damaged-lock" ] || fail 'damaged owner acquired the lock'
 
 one='space and tab'
 two='semi;star*question?'

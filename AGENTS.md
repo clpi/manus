@@ -43,7 +43,7 @@ Four consequences worth having in hand before you write anything:
 
 **Read the executable version of this section before writing Idol:**
 
-    cd ../idol-native && ./bin/idol run subject.id    # agreement count IS the exit
+    cd ../idol-native && ./bin/idol run gate/subject.id    # agreement count IS the exit
 
 It puts each canonical form beside the retired one it replaces and requires them
 to AGREE on every input, so reading it teaches the decomposition and running it

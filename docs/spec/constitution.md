@@ -350,13 +350,14 @@ call.face = @{
 # assignment face; there is no setter ontology. The resolver decides whether an
 # application yields a value, a place, or another applicable value; there is no
 # "get first / call first / table first" precedence, and incomparable applications
-# are an ambiguity error. `[]` is legacy/foreign-compat computed-key projection,
-# migratable to `table(key)`; `:get`/`get(t,k)` are noncanonical.
+# are an ambiguity error. Canonical Idol has no `[]`; a foreign source law may
+# recognize its own bracket form only inside that law-qualified source
+# projection. `:get`/`get(t,k)` are noncanonical.
 access = @{
     ordinary = .application    # table(key) — one application algebra, §6
     place    = .assignment     # table(key) = value — no setter kingdom
     precede  = false           # no get/call/table-first precedence; ambiguity errors
-    bracket  = .legacy         # table[key] is migratable computed-key debt
+    bracket  = .foreign        # source provenance only; never canonical Idol access
 }
 
 # `docs/spec/law.md` §9: `able(...)` is the ONE explicit protocol/requirement
@@ -1514,7 +1515,7 @@ host = law{
     holds = .boundary
     binds = {
         "Idol source does not call host operating system APIs as semantics",
-        "args and env are ordinary tables under os world accessed as os.args[n] and os.env[k]",
+        "args and env are ordinary tables under os world accessed as os.args(n) and os.env(k)",
         "environment is not a thing",
         "io read and write use io:read and io:write not io.read or io.write",
         "environment observation requires environment value facts and compatible world authority",
@@ -1528,18 +1529,19 @@ host = law{
 }
 
 shell = law{
-    id    = "law.shell.home"
+    id    = "law.shell.interpretation"
     kind  = .invariant
-    holds = .home
+    holds = .law
     binds = {
-        "shell is an execution home not a mode bit keyword or global boolean",
-        "shell home adds command projection and appropriate worlds and endpoints",
-        "bare external command resolution requires shell home command projection",
-        "ordinary home without command projection leaves unknown bare commands unresolved",
-        "Idol native bindings resolve before shell fallback",
-        "shell home does not alternate parser AST or compiler semantics",
+        "shell is command interpretation law not a source law grammar home world authority mode bit keyword or global boolean",
+        "a launcher may independently supply exact command provider reach process filesystem and environment authority and endpoints according to policy",
+        "shell interpretation grants none of those facts",
+        "bare external command resolution requires an exact reached command provider and execution independently requires process authority",
+        "Idol lexical and ordinary home bindings resolve before command provider projection",
+        "shell interpretation never changes source law grammar parser AST or compiler semantics",
+        "raw shell text is an explicit opaque boundary and never fallback for an unresolved structured command",
     }
-    fails = "shell string execution or popen as native relation"
+    fails = "shell interpretation selecting grammar granting authority constructing a privileged home or making shell string execution or popen a native relation"
 }
 
 core = law{
@@ -4200,8 +4202,8 @@ projectionone = law{
         "copy = (source sink) sink:write(source:read())",
         "command:run()",
         "stdout:write(text)",
-        "args[1]",
-        "env[\"KEY\"]",
+        "args(1)",
+        "env(\"KEY\")",
     }
     deny  = {
         "std.foo", "lib.foo", "lib.process", "process = lib.process",
@@ -4770,7 +4772,7 @@ world.one = law{
         "a capability sensitive relation declares its required world facts, and there is no namespace capability system beside world edges",
         "world requirements participate in checking staging sandboxing caching optimization adaptation authorization and provenance",
         "avoid canonical monolithic os world and monolithic io world where authority can be represented more precisely as filesystem process environment clock network device capabilities",
-        "ambient world fields args env cwd stdin stdout stderr clock may project from context when meaning unique — prefer args[1] env[KEY] stdout:write(text) clock:now() over os.args os.env io:write when unique context supplies values",
+        "ambient world fields args env cwd stdin stdout stderr clock may project from context when meaning unique — prefer args(1) env(\"KEY\") stdout:write(text) clock:now() over os.args os.env io:write when unique context supplies values",
         "stdout is possessed endpoint value and legitimate subject — io is organizational authority not interchangeable",
         "path exists isfile isdir ready valid supported suspect under predicate zero — prefer consuming richer path state relation when algorithm merely branches on existence",
         "relation witness and world witness are separate — protocol satisfaction does not grant world authority",
@@ -6074,7 +6076,7 @@ worldfield = law{
         "distinguish world capability from ordinary data obtained through that capability",
         "environment state is authority bearing observation not an os namespace",
         "do not canonize os.getenv(name) std.os.getenv(name) or process.getenv(name)",
-        "when env is the admitted world value projection canonical use may be env[name] only if current world law defines env as that projection",
+        "when env is the admitted world value projection canonical use is env(name) under the ordinary application algebra",
         "command arguments are ambient run input projection not os.args() merely because a host exposes that api",
         "the exact source face follows admitted world descriptor not host api spelling",
     }

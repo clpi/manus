@@ -87,11 +87,11 @@ source:
 repo="$(git rev-parse --show-toplevel)"
 gate="$(mktemp -t idolgate)" && trap 'rm -f "$gate"' EXIT
 git diff -U0 -- '*.id' > "$gate"
-cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/gates/idiom.id"
+cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/gate/idiom.id"
 ```
 
-Stage, then let the pre-commit hook run `gates/preflight.id` (which invokes
-`gates/architecture.id` among others). Do not suppress, bypass, weaken, or route around a finding. A
+Stage, then let the pre-commit hook run `gate/preflight.id` (which invokes
+`gate/architecture.id` among others). Do not suppress, bypass, weaken, or route around a finding. A
 formatting rewrite requires a proved semantic equivalence, not a regex.
 
 A changed canonical `.id` line (or touched historical `.id` line) is rejected
@@ -111,15 +111,19 @@ when it introduces any of:
 
 Closed lexical law: `"text"` is text, `'bytes'` are bytes, `#` starts a
 comment, `value:len()` is the length relation, backtick is reserved and never
-executes a process. `()` ordinary application/grouping, `{}` structured
-packs/descriptor application/homes, `[]` computed projection, `.` static named
+executes a process. `()` ordinary application/grouping including a computed
+key, `{}` structured packs/descriptor application/homes, `.` static named
 projection, `:` only its admitted descriptor/subject/home roles.
+
+Each source position has exactly one selected source law. One grammar authority
+projects that law into recognition. Worlds supply semantic context and
+authority after recognition; they never select grammar.
 
 Layout law: no `req`, `import`, `module`, `use(`, `using(`, `inject`, or `admit`.
 Reachability is scope and home projection only.
 
 Host law (`docs/spec/world.md`, `GAP-154`, `GAP-157`): **no `std` anywhere**.
-Use `os.args[n]`, `os.env[k]`, `io:read`, `io:write`. Never `std.*`,
+Use `os.args(n)`, `os.env(k)`, `io:read`, `io:write`. Never `std.*`,
 `os.getenv`, `environment[...]`, or `io.read`/`io.write`.
 
 ## 6. Semantic-first correctness
