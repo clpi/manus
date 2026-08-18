@@ -28,10 +28,11 @@ fn emitGrammarRole(w: *std.Io.Writer) !void {
         \\
         \\grammar = req("std.compiler.token")
         \\
+        \\ROLEIDENTITYCOUNT = {d}
         \\ROLECOUNT = {d}
         \\KINDEOF = {d}
         \\
-    , .{ enum_info.field_names.len, @backingInt(lexer.TokenKind.eof) });
+    , .{ enum_info.field_names.len, grammar_roles.rows.len, @backingInt(lexer.TokenKind.eof) });
 
     try emitBoolTable(w, "BEGINEXPR", &grammar_roles.rows, "begin_expr");
     try emitBoolTable(w, "prefix", &grammar_roles.rows, "prefix");
@@ -151,18 +152,22 @@ test "grammar role generator emits the canonical Idol source face" {
     try std.testing.expect(std.mem.indexOf(u8, output, "\n--") == null);
 }
 
-test "grammar role generator preserves token cardinality and eof identity" {
+test "grammar role generator distinguishes semantic identities from physical slots" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
     try emitGrammarRole(&aw.writer);
 
     const enum_info = @typeInfo(lexer.TokenKind).@"enum";
     var count_buf: [32]u8 = undefined;
-    const count_text = try std.fmt.bufPrint(&count_buf, "ROLECOUNT = {d}", .{enum_info.field_names.len});
+    const count_text = try std.fmt.bufPrint(&count_buf, "ROLECOUNT = {d}", .{grammar_roles.rows.len});
+    var identity_buf: [40]u8 = undefined;
+    const identity_text = try std.fmt.bufPrint(&identity_buf, "ROLEIDENTITYCOUNT = {d}", .{enum_info.field_names.len});
     var eof_buf: [32]u8 = undefined;
     const eof_text = try std.fmt.bufPrint(&eof_buf, "KINDEOF = {d}", .{@backingInt(lexer.TokenKind.eof)});
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), count_text) != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), identity_text) != null);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), eof_text) != null);
+    try std.testing.expectEqual(enum_info.field_names.len + 1, grammar_roles.rows.len);
 }
 
 test "grammar role generator: emit when EMIT_GRAMMAR_ROLE set" {

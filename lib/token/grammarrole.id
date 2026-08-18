@@ -4,6 +4,7 @@
 
 grammar = req("std.compiler.token")
 
+ROLEIDENTITYCOUNT = 113
 ROLECOUNT = 114
 KINDEOF = 109
 BEGINEXPR = {

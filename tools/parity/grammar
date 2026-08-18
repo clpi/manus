@@ -5,8 +5,9 @@
 # It never rewrites a grammar role, but absence or drift is a failing result.
 #
 # Projections compared:
-#   canonical   src/lexer.zig TokenKind ordinal count
-#   generated   lib/token/grammarrole.id    (ROLECOUNT / KINDEOF / BEGINEXPR)
+#   canonical   src/lexer.zig TokenKind semantic identities + backing span
+#   generated   lib/token/grammarrole.id    (ROLEIDENTITYCOUNT / ROLECOUNT /
+#                                             KINDEOF / BEGINEXPR)
 #   tree-sitter ext/tree-sitter-idol/src/grammar.json (rule count, context)
 
 set -eu
@@ -16,30 +17,56 @@ cd "$repo"
 python3 - <<'PY'
 import json, re, sys
 
-def enum_count(path):
+def enum_shape(path):
     src = open(path).read()
-    m = re.search(r'pub const TokenKind = enum\b(.*?\n\};)', src, re.S)
+    m = re.search(
+        r'pub const TokenKind = enum(?:\([^)]*\))?\s*\{(.*?)\n\s*pub fn spelling',
+        src, re.S)
     if not m:
         return None
-    fields = [l for l in m.group(1).split('\n')
-              if re.match(r'\s*[a-z_0-9]+\s*(=\s*[0-9]+)?\s*,?\s*(//.*)?$', l)]
-    return len(fields)
+    names = []
+    values = []
+    value = -1
+    field = re.compile(
+        r'\s*([a-z][a-z_0-9]*)\s*(?:=\s*([0-9]+))?\s*,\s*(?://.*)?$')
+    for line in m.group(1).splitlines():
+        f = field.fullmatch(line)
+        if not f:
+            continue
+        value = int(f.group(2)) if f.group(2) is not None else value + 1
+        names.append(f.group(1))
+        values.append(value)
+    if not values:
+        return None
+    return {
+        'identities': len(values),
+        'slots': max(values) + 1,
+        'names': names,
+        'values': values,
+    }
 
-def id_projection(path, count_pat, eof_pat, vec_pat):
+def id_projection(path, identity_pat, count_pat, eof_pat, vec_pat):
     try:
         src = open(path).read()
     except FileNotFoundError:
         return None
+    i = re.search(identity_pat, src)
     c = re.search(count_pat, src)
     e = re.search(eof_pat, src)
     v = re.search(vec_pat, src, re.S)
-    if not (c and e and v):
+    if not (i and c and e and v):
         return None
     vec = [int(x) for x in re.findall(r'-?\d+', v.group(1))]
-    return {'count': int(c.group(1)), 'eof': int(e.group(1)), 'begin_expr': vec}
+    return {
+        'identities': int(i.group(1)),
+        'count': int(c.group(1)),
+        'eof': int(e.group(1)),
+        'begin_expr': vec,
+    }
 
-canonical = enum_count('src/lexer.zig')
+canonical = enum_shape('src/lexer.zig')
 generated = id_projection('lib/token/grammarrole.id',
+                          r'ROLEIDENTITYCOUNT\s*=\s*(\d+)',
                           r'ROLECOUNT\s*=\s*(\d+)', r'KINDEOF\s*=\s*(\d+)',
                           r'BEGINEXPR\s*=\s*\{(.*?)\}')
 try:
@@ -48,13 +75,18 @@ except Exception:
     ts = None
 
 rows = [
-    ('src/lexer.zig TokenKind (canonical)', canonical),
-    ('lib/token/grammarrole.id (generated)', generated['count'] if generated else None),
-    ('tree-sitter idol rules (context)',     ts),
+    ('src/lexer.zig semantic identities', canonical['identities'] if canonical else None,
+     canonical['slots'] if canonical else None),
+    ('lib/token/grammarrole.id generated', generated['identities'] if generated else None,
+     generated['count'] if generated else None),
+    ('tree-sitter idol rules (context)', ts, None),
 ]
-print('%-42s %s' % ('projection', 'token/rule count'))
-for name, n in rows:
-    print('%-42s %s' % (name, n if n is not None else 'ABSENT'))
+print('%-42s %-20s %s' % ('projection', 'semantic identities', 'physical slot span'))
+for name, identities, slots in rows:
+    print('%-42s %-20s %s' % (
+        name,
+        identities if identities is not None else 'ABSENT',
+        slots if slots is not None else '-'))
 
 print()
 drift = []
@@ -62,15 +94,24 @@ if canonical is None:
     drift.append('canonical src/lexer.zig TokenKind is unreadable')
 if generated is None:
     drift.append('generated lib/token/grammarrole.id is absent or malformed')
-if canonical and generated and generated['count'] != canonical:
-    drift.append('generated lib/token/grammarrole.id ROLECOUNT=%d != canonical TokenKind=%d'
-                 % (generated['count'], canonical))
+if canonical and 'string_lit' in canonical['names']:
+    drift.append('retired TokenKind.string_lit identity still exists')
+if canonical and 3 in canonical['values']:
+    drift.append('unpublished producer slot 3 has a host semantic identity')
+if canonical and generated and generated['identities'] != canonical['identities']:
+    drift.append('generated ROLEIDENTITYCOUNT=%d != canonical semantic identities=%d'
+                 % (generated['identities'], canonical['identities']))
+if canonical and generated and generated['count'] != canonical['slots']:
+    drift.append('generated ROLECOUNT=%d != canonical physical slot span=%d'
+                 % (generated['count'], canonical['slots']))
 if generated and len(generated['begin_expr']) != generated['count']:
     drift.append('generated BEGINEXPR length=%d != ROLECOUNT=%d'
                  % (len(generated['begin_expr']), generated['count']))
 if generated and generated['eof'] >= generated['count']:
     drift.append('generated KINDEOF=%d out of range for ROLECOUNT=%d'
                  % (generated['eof'], generated['count']))
+if generated and (generated['count'] <= 3 or generated['begin_expr'][3] != 0):
+    drift.append('unpublished producer slot 3 acquired an expression role')
 for retired in ('lib/token/grammar_role.id', 'lib/std/token/grammar_role.id'):
     try:
         open(retired).close()

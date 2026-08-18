@@ -3,15 +3,17 @@ const source_cursor = @import("source_cursor.zig");
 
 pub const Loc = source_cursor.Loc;
 
-pub const TokenKind = enum {
+pub const TokenKind = enum(u8) {
     // Literals
-    name,
+    name = 0,
     int_lit,
     float_lit,
-    string_lit,
 
     // Lua keywords
-    kw_and,
+    // Producer slot 3 is deliberately unpublished. It is a physical ABI slot,
+    // not a token identity. Keep the first live identity after it explicit so
+    // deleting a host enum member can never renumber the producer contract.
+    kw_and = 4,
     kw_break,
     kw_continue,
     kw_do,
@@ -137,7 +139,6 @@ pub const TokenKind = enum {
             .name => "name",
             .int_lit => "integer",
             .float_lit => "float",
-            .string_lit => "string",
             .text_lit => "text",
             .bytes_lit => "bytes",
             .compat_text_lit => "compat_text",

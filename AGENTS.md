@@ -59,7 +59,8 @@ this project recorded as an ASSERTION has decayed, measured in one day: a siblin
 `gate/all.sh` claimed three counting gates agreed at 33 when they were 25, 35 and
 35; a comment asserted two constants "MUST equal" and their drift left ~1,700
 lines of JIT unreachable; `@comp.assert` was retired and kept 32 call sites; and
-`src/lexer_token_kind_abi.zig` is an ABI agreement test imported by nothing.
+an ABI agreement test was imported by nothing and therefore could never fail a
+build; it has since been deleted.
 What held instead was everything that RUNS AND COMPARES. So: state the COMMAND,
 not the number, and when you must pin a number put it in the runner that checks
 it.

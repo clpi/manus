@@ -16,7 +16,9 @@ pub const Associativity = enum(u8) {
 };
 
 pub const RoleRow = struct {
-    kind: lexer.TokenKind,
+    /// Semantic identity occupying this physical producer slot. `null` means
+    /// the ABI slot is deliberately empty and must never acquire grammar role.
+    kind: ?lexer.TokenKind = null,
     begin_expr: bool = false,
     prefix: bool = false,
     postfix: bool = false,
@@ -37,14 +39,27 @@ fn row(comptime k: lexer.TokenKind, r: RoleRow) RoleRow {
     return r;
 }
 
-/// Compact generated lookup table — one row per TokenKind ordinal.
+/// Physical producer-slot span. This is intentionally not the semantic token
+/// identity count: producer slot 3 is empty, while live identities retain their
+/// established backing values through 113.
+pub const slot_count = blk: {
+    const values = @typeInfo(lexer.TokenKind).@"enum".field_values;
+    var max_value: usize = 0;
+    for (values) |value| {
+        max_value = @max(max_value, @as(usize, @intCast(value)));
+    }
+    break :blk max_value + 1;
+};
+
+/// Compact generated lookup table — one row per physical producer slot.
+/// Semantic identities populate rows by backing value; the empty slot remains
+/// the all-false row and cannot be constructed as `TokenKind`.
 pub const rows = blk: {
     const enum_info = @typeInfo(lexer.TokenKind).@"enum";
-    var table: [enum_info.field_names.len]RoleRow = undefined;
-    @memset(&table, .{ .kind = .name });
-    for (enum_info.field_names, enum_info.field_values, 0..) |_, value, ordinal| {
+    var table: [slot_count]RoleRow = @splat(.{});
+    for (enum_info.field_values) |value| {
         const kind: lexer.TokenKind = @enumFromInt(value);
-        table[ordinal] = switch (kind) {
+        table[@intCast(value)] = switch (kind) {
             .name => row(kind, .{ .kind = kind, .begin_expr = true, .body_start = true, .pattern = true }),
             .int_lit, .float_lit => row(kind, .{ .kind = kind, .begin_expr = true, .literal_kind = true, .body_start = true, .pattern = true }),
             .text_lit, .bytes_lit => row(kind, .{ .kind = kind, .begin_expr = true, .literal_kind = true, .quoted = true, .body_start = true, .pattern = true }),
@@ -57,7 +72,6 @@ pub const rows = blk: {
                 .body_start = true,
                 .pattern = true,
             }),
-            .string_lit => row(kind, .{ .kind = kind }),
             .kw_true, .kw_false, .kw_nil => row(kind, .{
                 .kind = kind,
                 .begin_expr = true,
@@ -322,9 +336,18 @@ test "grammar roles: canonical and compatibility faces stay distinct" {
 
 test "grammar roles: every token identity has one ordinal row" {
     const enum_info = @typeInfo(lexer.TokenKind).@"enum";
-    try std.testing.expectEqual(enum_info.field_names.len, rows.len);
+    try std.testing.expectEqual(enum_info.field_names.len + 1, rows.len);
     inline for (enum_info.field_values) |value| {
         const kind: lexer.TokenKind = @enumFromInt(value);
-        try std.testing.expectEqual(kind, lookup(kind).kind);
+        try std.testing.expectEqual(kind, lookup(kind).kind.?);
     }
+}
+
+test "grammar roles: unpublished producer slot has no token identity or role" {
+    try std.testing.expect(!@hasField(lexer.TokenKind, "string_lit"));
+    try std.testing.expectEqual(@as(usize, 4), @intFromEnum(lexer.TokenKind.kw_and));
+    try std.testing.expect(rows[3].kind == null);
+    try std.testing.expect(!rows[3].begin_expr);
+    try std.testing.expect(!rows[3].literal_kind);
+    try std.testing.expect(!rows[3].quoted);
 }
