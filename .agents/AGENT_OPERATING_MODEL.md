@@ -1,9 +1,10 @@
 # AGENT_OPERATING_MODEL — multi-agent allocation for the self-host frontier
 
-Durable coordination projection. No language law lives here; authority order
-is unchanged (`AGENTS.md` → `docs/spec/law.md` → C0). Lane ownership and
-claim discipline are defined by `AGENT_COORDINATION.md`; this file only
-decides **which agent class receives which class of work**.
+Coordination projection only. `AGENTS.md` routes to
+`docs/spec/constitution.md`, the sole living semantic law. Gates, documents,
+briefs, censuses, examples, and agent instructions derive from it and own no
+law. `AGENT_COORDINATION.md` owns lane and claim discipline; this file only
+routes work to agent classes.
 
 Expected repository base at materialization: the HEAD recorded in the
 assignment. Every work order expires immediately when HEAD differs.
@@ -42,11 +43,10 @@ Lower-context agents therefore primarily:
 5. migrate mechanical consumers only after Codex establishes the semantic
    interface
 
-They do not design `@{}`, retire DNIR, define worlds, modify application
-roles, invent pack laws, or decide Wasm semantics. Current realization is
-explicitly AST→DNIR and uses AST-expression correspondence to find graph
-applications, while DNIR still carries a mixture of semantic and physical
-data.
+They do not change closed `@{}` current-world law, retire DNIR, define worlds,
+modify application roles, invent pack laws, or decide Wasm semantics. Current
+realization is AST→DNIR with AST-expression correspondence to graph
+applications; DNIR still mixes semantic and physical data.
 
 ## Allocation
 
@@ -85,27 +85,24 @@ data.
 
 ## Never assigned to lower-context agents
 
-Kept with Codex / architectural review: `@{…}` final meaning, DNIR
-retirement architecture, fact strata, semantic identity/incarnation law,
-observation equivalence, graph transaction semantics, application role
-assignment, pack/default semantics, world/authority design, protocol
-coherence, numeric semantics, table/metatable semantics, foreign-lawset
-taxonomy, compiler-B stage interfaces, Wasm semantic lawset,
-representation-one, candidate/value-of-information engine, new syntax.
+Kept with Codex / architectural review: changes to closed `@{…}` current-world
+law, DNIR retirement, fact strata, identity/incarnation law, observation
+equivalence, graph transactions, application roles, pack/default law, worlds,
+protocol coherence, numeric and table law, foreign lawsets, compiler-B stage
+interfaces, Wasm law, representation-one, candidate/value-of-information
+selection, and new syntax.
 
 A low-context agent may implement a prewritten interface resulting from one
 of those decisions. It may not make the decision.
 
 ## Vocabulary, instrument, and claims law (all agents)
 
-- **Vocabulary is LAW-ONE and it is executable.** The word authority is
-  the `words` literal in `gate/path.id` (runtime-parsed by
-  `tools/node/dev/census/compound`). No compound words, ever, anywhere:
-  no mashed compounds (`readline`), no separators or case in path
-  components, no numeric-suffix taxonomy, no role/mediator/plurality
-  stems, no `*able/*ible`, no organizational namespaces. Decompose into
-  existing edges/nodes, homes/worlds through hierarchy, or eliminate.
-  New work must not raise the compound-census baseline.
+- **C0 alone governs vocabulary.** Decompose facts first; morphology only
+  suggests migration candidates. `gate/path.id` and
+  `tools/node/dev/census/compound` are incomplete derived instruments allowed
+  to miss and over-report. Their inputs own no vocabulary: hits require review,
+  misses prove nothing. Do not raise the census baseline; green is not proof of
+  canonicality.
 - **No plurality**: one entity plus facts — singular stems only
   (`law.identity.cardinal`, docs/spec/canonical.md §26).
 - **`!` over `not`** in Idol source, where appropriate.
