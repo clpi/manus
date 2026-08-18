@@ -4652,6 +4652,17 @@ fn linkageForTarget(ctx: *LowerCtx, target: semantic_graph.id) Error![]const u8 
         invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-target");
 }
 
+fn link(ctx: *LowerCtx, symbol: []const u8) Error!void {
+    for (ctx.externs.items) |external| {
+        if (std.mem.eql(u8, external.symbol, symbol)) return;
+    }
+    const name = try ctx.alloc.dupe(u8, symbol);
+    errdefer ctx.alloc.free(name);
+    const linkage = try ctx.alloc.dupe(u8, symbol);
+    errdefer ctx.alloc.free(linkage);
+    try ctx.externs.append(ctx.alloc, .{ .duo_name = name, .symbol = linkage });
+}
+
 fn lowerCheckedRecordCallAssign(
     ctx: *LowerCtx,
     name: []const u8,
@@ -6803,7 +6814,14 @@ fn lowerCheckedScalarCall(
     bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
     const relation = try applicationRelation(ctx, application);
     const target = try applicationTarget(ctx, application);
-    const callee = try linkageForTarget(ctx, target);
+    const external = ctx.graph.externalApplication(application.application);
+    const callee = if (external) |selected| blk: {
+        if (selected.relation != relation or selected.target != target) {
+            return invalidGraphFacts(ctx.diagnostic, @src(), "external-application-lineage");
+        }
+        try link(ctx, selected.symbol);
+        break :blk selected.symbol;
+    } else try linkageForTarget(ctx, target);
     // A CROSS-HOME CALL IS A RELOCATION, NOT A BRANCH. Nothing in this module
     // defines the symbol, so `patchCalls` would find it neither among the
     // defined symbols nor among the externs and report DNB007 `undefined
@@ -6850,7 +6868,7 @@ fn lowerCheckedScalarCall(
     const result = if (has_result) ctx.freshTemp() else null;
     const value = try checkedApplicationResult(ctx, application);
     try ctx.emit(.{
-        .op = .call_direct,
+        .op = if (external != null) .call_extern else .call_direct,
         .relation = relation,
         .application = application.application,
         .value = value,
@@ -11676,4 +11694,135 @@ test "dnir_lower: a nine-field record return is eligible, a nine-field param is 
         const mod = try parser.parse_module();
         try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
     }
+}
+
+test "dnir_lower: path write is graph-owned and fails closed" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\main: i64 = ()
+        \\    path: str = "/tmp/idol-path-write-control"
+        \\    body: str = "exact body"
+        \\    done: bool = path:write(body)
+        \\    if done
+        \\        0
+        \\    else
+        \\        1
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "write-control.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "write-control.id");
+    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+    const occurrence = graph.applications()[0].application;
+    const selected = graph.externalApplication(occurrence) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(selected.relation, selected.target);
+    try std.testing.expectEqualStrings("idol_io_write_path", selected.symbol);
+    try std.testing.expect(switch (graph.applicationWorld(occurrence)) {
+        .one => true,
+        .unknown, .none => false,
+    });
+
+    var diagnostic: Diagnostic = .{};
+    {
+        const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+        defer dnir.deinitModule(alloc, lowered);
+        var saw = false;
+        for (lowered.functions) |function| {
+            for (function.blocks) |block| {
+                for (block.instrs) |instruction| {
+                    if (instruction.application != occurrence) continue;
+                    try std.testing.expectEqual(dnir.Op.call_extern, instruction.op);
+                    try std.testing.expectEqual(selected.relation, instruction.relation.?);
+                    try std.testing.expectEqual(selected.target, instruction.target.?);
+                    try std.testing.expectEqualStrings(selected.symbol, instruction.callee);
+                    saw = true;
+                }
+            }
+        }
+        try std.testing.expect(saw);
+    }
+
+    // AST spelling is provenance after publication. Poisoning it must not
+    // change the selected relation, linkage, or physical instruction.
+    const occurrence_node = graph.get(occurrence) orelse return error.TestExpectedEqual;
+    const raw = occurrence_node.ast_ref orelse return error.TestExpectedEqual;
+    const expression: *ast.Expr = @ptrCast(@alignCast(raw));
+    if (expression.* != .method_call) return error.TestExpectedEqual;
+    expression.method_call.method = "poison";
+    diagnostic.reset();
+    {
+        const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+        defer dnir.deinitModule(alloc, lowered);
+        var saw = false;
+        for (lowered.functions) |function| {
+            for (function.blocks) |block| {
+                for (block.instrs) |instruction| {
+                    if (instruction.application != occurrence) continue;
+                    try std.testing.expectEqual(dnir.Op.call_extern, instruction.op);
+                    try std.testing.expectEqualStrings(selected.symbol, instruction.callee);
+                    saw = true;
+                }
+            }
+        }
+        try std.testing.expect(saw);
+    }
+
+    const row = graph.application_rows.items[occurrence];
+    const saved = graph.application_facts.items[row];
+    const Control = struct {
+        fn rejects(
+            allocator: std.mem.Allocator,
+            parsed: *const ast.Module,
+            semantic: *const semantic_graph.SemanticGraph,
+            report: *Diagnostic,
+        ) !void {
+            report.reset();
+            try std.testing.expectError(
+                error.GraphFactsInvalid,
+                lowerModuleWithGraphObserved(allocator, parsed, semantic, report),
+            );
+        }
+    };
+
+    // Every required coordinate is destructive: delete it and realization
+    // refuses rather than recovering it from method text or the path literal.
+    graph.application_facts.items[row].effect = .unknown;
+    try Control.rejects(alloc, &module, &graph, &diagnostic);
+    graph.application_facts.items[row] = saved;
+    graph.application_facts.items[row].authority = .unknown;
+    try Control.rejects(alloc, &module, &graph, &diagnostic);
+    graph.application_facts.items[row] = saved;
+    graph.application_facts.items[row].witness = .unknown;
+    try Control.rejects(alloc, &module, &graph, &diagnostic);
+    graph.application_facts.items[row] = saved;
+    graph.application_facts.items[row].realization = .unknown;
+    try Control.rejects(alloc, &module, &graph, &diagnostic);
+    graph.application_facts.items[row] = saved;
+
+    const subject = graph.applicationSubject(occurrence) orelse return error.TestExpectedEqual;
+    const subject_descriptor = graph.nodes.items[subject].descriptor;
+    graph.nodes.items[subject].descriptor = .i64;
+    try Control.rejects(alloc, &module, &graph, &diagnostic);
+    graph.nodes.items[subject].descriptor = subject_descriptor;
+
+    var draw_row: ?usize = null;
+    for (graph.draws.items, 0..) |draw, i| {
+        if (draw.application == occurrence) draw_row = i;
+    }
+    const draw_index = draw_row orelse return error.TestExpectedEqual;
+    const draw = graph.draws.items[draw_index];
+    graph.draws.items[draw_index].world = .unknown;
+    try Control.rejects(alloc, &module, &graph, &diagnostic);
+    graph.draws.items[draw_index] = draw;
 }

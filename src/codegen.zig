@@ -38,6 +38,7 @@ const relation = @import("relation.zig");
 const collection_relation = @import("collection_relation.zig");
 const lexer_bridge = @import("lexer_bridge.zig");
 const home_resolve = @import("home_resolve.zig");
+const semantic_graph = @import("semantic_graph.zig");
 
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
 /// driver uses.
@@ -285,6 +286,11 @@ pub const CodeGen = struct {
     native_diag_line: u32 = 0,
     /// module-wide knowledge level; set alongside `native_scalar_mode`.
     module_knowledge: semantic_algebra.KnowledgeLevel = .unknown,
+    /// Optional checked graph used only by direct-native suitability. Source
+    /// syntax may locate an occurrence, but only a complete graph-selected
+    /// external application can admit it; absent or incomplete facts retain
+    /// the ordinary fail-closed precheck.
+    graph: ?*const semantic_graph.SemanticGraph = null,
     /// Per-function native scalar: when true, the module has both native-eligible
     /// and non-native functions. Native-eligible functions get C codegen; the rest
     /// use Lua thunks. The full Lua runtime is included.
@@ -5624,6 +5630,16 @@ pub const CodeGen = struct {
                 if (!self.expr_is_native_scalar(mc.obj)) break :blk false;
                 for (mc.args) |arg| {
                     if (!self.expr_is_native_scalar(arg)) break :blk false;
+                }
+                // Graph facts outrank this transitional syntax precheck. The
+                // AST pointer locates an occurrence only; the query validates
+                // relation, subject, operand/result descriptors, effect,
+                // world, authority, witness, realization and target by graph
+                // ids before admitting the physical application.
+                if (self.graph) |graph| {
+                    if (graph.locate(expr)) |site| {
+                        if (graph.externalApplication(site) != null) break :blk true;
+                    }
                 }
                 const resolvable = self.string_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.readable_method_result_type(mc.method, mc.obj, mc.args) != null or

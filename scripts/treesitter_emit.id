@@ -84,18 +84,6 @@ columns = "slot\tkind\tspelling\tbegin\tprefix\tpostfix\tparameter\tliteral\tquo
 markbegin = "@@residue:begin"
 markend = "@@residue:end"
 
-# Output remains the one bootstrap bridge in this consumer. `path:write(body)`
-# is correctly refused today: a path is not a stream, and the graph publishes
-# no structured file-output edge or platform-output witness. Delete this handle
-# bridge when that fact has one producer and the direct realizer consumes it.
-spill: bool = (path: str, body: str)
-    f = io.open(path, "w")
-    done: bool = false
-    if f
-        f:write(body)
-        done = true
-    done
-
 width: i64 = (row: str)
     parts = row:split(" ")
     parts:len()
@@ -1812,7 +1800,7 @@ main: i64 = ()
             print("      idol run scripts/treesitter_emit.id")
             exit(1)
     else
-        done: bool = out:spill(body)
+        done: bool = out:write(body)
         if done
             print("treesitter emit: wrote {out}")
         else

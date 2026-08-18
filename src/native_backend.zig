@@ -7741,6 +7741,7 @@ fn validateDnirApplications(
                     return invalidFactsWith(diagnostic, @src(), "application-fact-mismatch");
                 }
                 const aggregate_access = graph.aggregateAccess(application.application) != null;
+                const external = graph.externalApplication(application.application);
                 if (aggregate_access) {
                     try validateAggregateAccessRealization(
                         module,
@@ -7750,6 +7751,12 @@ fn validateDnirApplications(
                         descriptor,
                         diagnostic,
                     );
+                } else if (external) |selected| {
+                    if (instruction.op != .call_extern or
+                        !std.mem.eql(u8, selected.symbol, instruction.callee))
+                    {
+                        return invalidFactsWith(diagnostic, @src(), "external-application-realization");
+                    }
                 } else if (instruction.op != .call_direct) {
                     // A checked call-to-constant or tail-call rewrite needs a
                     // semantic transform witness that the current graph does
@@ -7843,6 +7850,21 @@ fn validateDnirApplications(
                     }
                 }
                 if (aggregate_access) {
+                    if (function.folded_to_constant) {
+                        return invalidFactsWith(diagnostic, @src(), "folded-application-lineage");
+                    }
+                    const use = try seen.getOrPut(alloc, application.application);
+                    if (use.found_existing) {
+                        return invalidFactsWith(diagnostic, @src(), "application-realization-count");
+                    }
+                    continue;
+                }
+                if (external) |selected| {
+                    if (selected.relation != relation or selected.target != target_id or
+                        !std.mem.eql(u8, selected.symbol, instruction.callee))
+                    {
+                        return invalidFactsWith(diagnostic, @src(), "external-application-lineage");
+                    }
                     if (function.folded_to_constant) {
                         return invalidFactsWith(diagnostic, @src(), "folded-application-lineage");
                     }
