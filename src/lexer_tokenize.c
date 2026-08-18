@@ -6144,6 +6144,14 @@ __attribute__((visibility("default"))) uint64_t duo_lexer_text_fingerprint(const
 static lua_Value duo_lexer_text_fingerprint__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);
 __attribute__((visibility("default"))) uint64_t duo_lexer_kind_fingerprint(const char* src, const char* file, int64_t family);
 static lua_Value duo_lexer_kind_fingerprint__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);
+__attribute__((visibility("default"))) int64_t sourceformcount(void);
+static lua_Value sourceformcount__lua(lua_Value _unused);
+__attribute__((visibility("default"))) const char* sourceformlaw(int64_t i);
+static lua_Value sourceformlaw__lua(lua_Value _a0);
+__attribute__((visibility("default"))) const char* sourceformsuffix(int64_t i);
+static lua_Value sourceformsuffix__lua(lua_Value _a0);
+__attribute__((visibility("default"))) bool sourceformcanonical(int64_t i);
+static lua_Value sourceformcanonical__lua(lua_Value _a0);
 __attribute__((visibility("default"))) int64_t recordslots(void);
 static lua_Value recordslots__lua(lua_Value _unused);
 __attribute__((visibility("default"))) int64_t fieldkind(void);
@@ -8454,6 +8462,58 @@ __attribute__((visibility("default"))) uint64_t duo_lexer_kind_fingerprint(const
         }
     }
     return h;
+}
+
+static lua_Value sourceformcount__lua(lua_Value _unused) {
+    (void)_unused;
+    int64_t _r = sourceformcount();
+    return lua_val_from_int((int64_t)(_r));
+}
+
+__attribute__((visibility("default"))) int64_t sourceformcount(void) {
+    return 2;
+}
+
+static lua_Value sourceformlaw__lua(lua_Value _a0) {
+int64_t _p0 = (int64_t)lua_to_num(_a0);
+const char* _r = sourceformlaw(_p0);
+    return lua_val_from_str(_r);
+}
+
+__attribute__((visibility("default"))) const char* sourceformlaw(int64_t i) {
+    if ((i == 1)) {
+        return "idol";
+    }
+    if ((i == 2)) {
+        return "lua";
+    }
+    return "";
+}
+
+static lua_Value sourceformsuffix__lua(lua_Value _a0) {
+int64_t _p0 = (int64_t)lua_to_num(_a0);
+const char* _r = sourceformsuffix(_p0);
+    return lua_val_from_str(_r);
+}
+
+__attribute__((visibility("default"))) const char* sourceformsuffix(int64_t i) {
+    if ((i == 1)) {
+        return ".id";
+    }
+    if ((i == 2)) {
+        return ".lua";
+    }
+    return "";
+}
+
+static lua_Value sourceformcanonical__lua(lua_Value _a0) {
+int64_t _p0 = (int64_t)lua_to_num(_a0);
+bool _r = sourceformcanonical(_p0);
+    return lua_val_from_bool(_r);
+}
+
+__attribute__((visibility("default"))) bool sourceformcanonical(int64_t i) {
+    return (i == 1);
 }
 
 static lua_Value recordslots__lua(lua_Value _unused) {

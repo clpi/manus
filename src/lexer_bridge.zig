@@ -37,50 +37,60 @@ pub const SourceFacts = struct {
 pub const SourceForm = struct {
     law: SourceLaw,
     suffix: []const u8,
+    canonical: bool,
 };
 
 pub const SourceFormIterator = struct {
-    pending: ?SourceLaw = .idol,
+    next_index: i64 = 1,
+    count: i64,
 
-    pub fn next(comptime self: *SourceFormIterator) ?SourceForm {
-        const law = self.pending orelse return null;
-        self.pending = switch (law) {
-            .idol => .lua,
-            .lua, .unknown => null,
-        };
-        return .{ .law = law, .suffix = sourceSuffix(law).? };
+    pub fn next(self: *SourceFormIterator) ?SourceForm {
+        while (self.next_index <= self.count) {
+            const index = self.next_index;
+            self.next_index += 1;
+            const law = sourceLawFromName(sourceformlaw(index)) orelse continue;
+            const suffix = std.mem.span(sourceformsuffix(index));
+            if (suffix.len == 0) continue;
+            return .{ .law = law, .suffix = suffix, .canonical = sourceformcanonical(index) };
+        }
+        return null;
     }
 };
 
-fn sourceSuffix(law: SourceLaw) ?[]const u8 {
-    return switch (law) {
-        .idol => CANONICAL_SOURCE_SUFFIX,
-        .lua => ".lua",
-        .unknown => null,
-    };
+/// Executed producer schema. Names bind to the temporary host enum once at the
+/// bootstrap boundary exactly like token identities in `lexer_dispatch`.
+extern fn sourceformcount() i64;
+extern fn sourceformlaw(i: i64) [*:0]const u8;
+extern fn sourceformsuffix(i: i64) [*:0]const u8;
+extern fn sourceformcanonical(i: i64) bool;
+
+fn sourceLawFromName(name: [*:0]const u8) ?SourceLaw {
+    return std.meta.stringToEnum(SourceLaw, std.mem.span(name));
 }
 
 pub fn sourceForms() SourceFormIterator {
-    return .{};
+    const count = sourceformcount();
+    return .{ .count = if (count > 0 and count <= 64) count else 0 };
 }
 
 /// Path discovery for CLI/file filters. Suffix is provenance, not tokenize
 /// family (`law.family.one`). Remaining host ingress until an Idol source-family
 /// fact exists.
 pub fn discover(path: []const u8) SourceLaw {
-    comptime var forms = sourceForms();
-    inline while (comptime forms.next()) |form| {
+    var forms = sourceForms();
+    while (forms.next()) |form| {
         if (std.mem.endsWith(u8, path, form.suffix)) return form.law;
     }
     return .unknown;
 }
 
 pub fn provenanceOf(path: []const u8) SourceProvenance {
-    return switch (discover(path)) {
-        .idol => .canonical,
-        .lua => .foreign,
-        .unknown => .unknown,
-    };
+    var forms = sourceForms();
+    while (forms.next()) |form| {
+        if (!std.mem.endsWith(u8, path, form.suffix)) continue;
+        return if (form.canonical) .canonical else .foreign;
+    }
+    return .unknown;
 }
 
 /// Family producer (`law.family.one`). Law is an operand; path supplies
@@ -315,14 +325,21 @@ test "lexer bridge: discover is path provenance not family authority" {
 }
 
 test "lexer bridge: one source-law producer owns physical form order" {
-    comptime var forms = sourceForms();
-    const idol = comptime forms.next().?;
+    try std.testing.expectEqual(@as(i64, 2), sourceformcount());
+    try std.testing.expectEqualStrings("", std.mem.span(sourceformlaw(0)));
+    try std.testing.expectEqualStrings("", std.mem.span(sourceformsuffix(3)));
+    var forms = sourceForms();
+    const idol = forms.next().?;
     try std.testing.expectEqual(SourceLaw.idol, idol.law);
     try std.testing.expectEqualStrings(CANONICAL_SOURCE_SUFFIX, idol.suffix);
-    const lua = comptime forms.next().?;
+    try std.testing.expect(idol.canonical);
+    const lua = forms.next().?;
     try std.testing.expectEqual(SourceLaw.lua, lua.law);
+    try std.testing.expectEqualStrings(".lua", lua.suffix);
+    try std.testing.expect(!lua.canonical);
     try std.testing.expectEqual(SourceLaw.unknown, discover("compiler.txt"));
-    try std.testing.expect(comptime forms.next() == null);
+    try std.testing.expect(forms.next() == null);
+    try std.testing.expect(sourceLawFromName("bash") == null);
 }
 
 test "lexer bridge: admit law is not path-derived" {

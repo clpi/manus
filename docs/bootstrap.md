@@ -57,10 +57,12 @@ embed or optimization path; deleting those higher-level fallbacks requires the
 corresponding realization owner to distinguish physical refusal from semantic
 failure.
 
-Source ingress remains the earliest host-owned entry seam: Zig still derives
-source law and provenance from suffix/path text instead of consuming an
-executed Idol source-family fact (`is_canonical_source` is still suffix
-bytes `.id`). Production lexing now goes through the Idol lexer
+Source ingress remains the earliest host-owned entry seam. The executed Idol
+producer now owns the physical source-form roster through `sourceform*()` and
+home discovery consumes it, so Zig no longer enumerates `.id` and `.lua`
+there. Zig still owns corpus-home admission and the unlisted-path
+`sourceFacts` fallback, so this is not full source-family authority.
+Production lexing now goes through the Idol lexer
 (`tokenize()`); host `tokenizeHost()` is differential-only. The identity
 blocker is `GAP-145` remaining consumers (Tree-sitter and source-law collapse)
 before parser SHC. Physical producer slot 3 remains
@@ -82,7 +84,7 @@ sentinel, or query-then-mutate helpers as Idol semantic architecture.
 
 | Boundary | Current state | Exact remaining authority |
 | --- | --- | --- |
-| Source ingress | HOST OWNED | `admit(law, path)` produces family (path is provenance). Corpus homes in `docs/spec/corpus.md` admit in-tree family; unlisted paths fall back to `discover` (`law.bridge.death`). Not an executed Idol source-family producer. |
+| Source ingress | HOST OWNED, FORM ROSTER IDOL-OWNED | `lib/compiler/lexer.id` projects admitted physical form count, law name, suffix provenance, and canonical status through `sourceform*()`; home resolution consumes it and owns no suffix roster. `admit(law, path)` and corpus homes remain host-owned; unlisted paths use projected-form `discover` (`law.bridge.death`). |
 | Lexer producer | IDOL OWNED | `lib/compiler/lexer.id` owns token-kind, content, and span production and fails closed. Canonical lexical-law closure remains `GAP-145`. |
 | Canonical `.id` lex route | IDOL OWNED | `src/lexer_dispatch.zig` `route()` calls `tokenize()` for every source. Host `tokenizeHost()` is differential-only (legacy-equivalent subset; must not veto intentional Idol divergence; `law.bridge.death`). Generated `src/lexer_tokenize.c` is from current `lib/compiler/lexer.id` via `dump-c --lib`. Every lexer export takes `family` as an operand (`law.family.one`); `new()` does not read suffix bytes. Production compile, fmt, and embed classify once via `sourceFacts` then `Lexer.initFacts`. `route()`, parse, sema, and token-view consume `lex.family`. `Lexer.init` is a test convenience. Host `sourceFacts` remains the one ingress. CLI file filter uses the same `sourceFacts.law`. |
 | Lexer ABI schema | HOST OWNED (bridge) | `RECORD_SLOTS` / `lexErrorFromCode` / `tokenKindFromOrdinal` deleted. Consumer queries `recordslots()` / `field*()` / `rejectionname()` / `kindname()` / `kindcount()`; `bindKindSchema` binds ordinals once. `bindKindSchema` is a deletion-gated bridge (`law.bridge.death`): endpoint is token-role-id, not producer-name → runtime bind → host enum. Remaining: host `TokenKind` enum, `duo_lexer_*` / `useDuoTokens` names (`law.schema.one`, `law.magic.zero`, GAP-107). |
@@ -107,8 +109,9 @@ For the fail-closed lexer transfer:
 - **AFTER:** the same failure propagates, partial route storage is released, and
   no host token stream is accepted by that route.
 - **NEXT:** `GAP-145` remaining is Tree-sitter `grammar.json`, semantic
-  consumers that collapse quote/source-law distinctions, and suffix
-  `sourceFacts`. Do not start parser SHC. `GAP-134` remaining is closing
+  consumers that collapse quote/source-law distinctions, and host corpus-home
+  admission in `sourceFacts`. The physical suffix roster is already producer-
+  projected. Do not start parser SHC. `GAP-134` remaining is closing
   grammar.md as the generatable owner. Header recognition is one
   `headerSignal` over the producer pack (snapshot walk deleted); Pratt
   left/right come from roles; BinOp map remains.
