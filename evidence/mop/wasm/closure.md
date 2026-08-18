@@ -12,8 +12,20 @@ tools/wasm/src/engine.id --backend=direct` refuses with
 lines of SOURCE-ZERO standalone machinery (README/HANDOFF say exactly
 this); `idol check` passes it, object admission does not.
 
-**The same missing fact blocks `tools/lsp/src/server.id`.** One published
-fact family unblocks both admission paths. Recorded as handoff H8.
+CORRECTED (codegen.zig:3815-3831, main.zig:4920-4945): the refusal is
+NOT a missing published fact — `module_materializes_table(mod)` is a
+deliberate native-scalar GATE: a module whose exported value is a table
+built by keyed writes (`M = {}` / `M.x = 1` / `M`) has no representation
+in the native-scalar profile (the producer emitted `void* M = NULL` and
+dropped the writes while consumers flattened `m.x` to undefined symbols).
+Unblocking it = the module-table REPRESENTATION decision in codegen —
+realization-lane work, not fact publication. main.zig additionally
+documents the historical false-splice (`relation: req missing:
+keyed-table-export`) that cost three false findings; the engine's real
+first blocker per that measurement is req's own unresolved applications.
+The reconcile branch is landing `src/table_apply.zig` (+49 lines) —
+table semantics are being built there. The lsp server shares the gate,
+not a quick fix.
 
 ## Proposal matrix (source-class evidence)
 
@@ -36,6 +48,11 @@ fact family unblocks both admission paths. Recorded as handoff H8.
 | fib.wasm | 2178309 | 0.07 s |
 | hash.wasm | 1899277430 | 0.50 s |
 | wart_wasi_preview1_comprehensive.wasm | runs | 0.09 s |
+
+Wart oracle BUILT at the frozen revision ca2b0b9c (ReleaseFast, 55 s build):
+/Volumes/d 1/x/wart/zig-out/bin/wart — raw `wart run`: fib 0.55 s,
+hash 12.93 s (CLI has no --invoke; value comparison and execution-mode
+flags need calibration before the four-way table — post-merge work).
 
 `engine.out` (Aug 14 artifact) no longer speaks the current CLI — zero
 output, instant exit. No honest idol-engine number exists until the
