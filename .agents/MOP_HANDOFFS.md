@@ -83,7 +83,7 @@ evidence of compilability; object emission is the current honest floor.
   the tail nested call `tail_pack(lx, proj_expr(lx))` to a flat binding
   does NOT clear the crash — the aggregate crash lives in the chained
   condition applications (`lexer.peek(lx).kind`). H4 (diagnostics defect)
-  stands; the graph lane now has a 11-line reproducer.
+  stands; the graph lane now has a 2-line reproducer.
 - **F2 application-operand-abi: line-irreducible.** graph.id is 112 lines
   and EVERY single-line deletion breaks the predicate — the missing fact
   is module-granularity (whole-file context), not a local construct.
@@ -108,7 +108,7 @@ nothing (this is the routed-guard analysis conclusion, now with numbers).
 
 New top handoff: **H6 — graph must publish application ids for foreign and
 method call sites** (unblocks F1's three units past their next hole; the
-11-line F5 reproducer and the F2 module-granularity finding are the
+2-line F5 reproducer and the F2 module-granularity finding are the
 companion inputs).
 
 ## Appendix — idiomatic floor and graph instrument (working notes)
@@ -246,3 +246,21 @@ sits in the working tree beside that WIP for the owning session to wire
 and commit — committing their untracked file under my name would repeat
 the ace5f7d5 sweep mistake. Build green; unit-test parity identical
 (1663 pass / 3 pre-existing failures, reproduced with the patch reverted).
+
+
+## Update 5 — F5 closed to a 2-line theorem: self-recursion
+
+A second serial pass reduced the 11-line crasher further: the crash is
+SELF-RECURSION. tools/reduce/fixtures/crash/corpus.id (2 lines) — a
+relation invoking itself with literal arguments reaches
+publishApplicationResultAggregate and returns InvalidAggregateFact (raw
+internal error, leaked stack trace) instead of a classified refusal.
+crash/ctrl.id is the causality control: identical shape with the call
+target renamed yields a clean return-type diagnostic. Lane 3 has the
+smallest possible reproducer plus its control.
+
+Also recorded: a second parallel-sweep attempt (xargs -P) degraded to a
+15-minute CPU-idle timeout — shell-level candidate parallelism has now
+failed twice on this workload with different mechanisms; serial plus the
+guarded inert pre-pass (3m54s for the full 1792-line reduction) is the
+standing configuration.
