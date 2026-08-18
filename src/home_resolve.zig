@@ -212,9 +212,9 @@ pub fn resolve(
     // THE SHARED ROOTS HANG OFF THE PROJECT, NOT OFF THE PROCESS.
     //
     // `find_module_file_for_req` searched a bare `"lib"`, which `Io.Dir.access`
-    // resolves against the CURRENT WORKING DIRECTORY. MEASURED: compiling
-    // `<idol-root>/lib/compiler/host.id` from a sibling native checkout
-    // — which is exactly how `gate/selfhost.sh` invokes it — made `compiler.lexer`
+    // resolves against the CURRENT WORKING DIRECTORY. MEASURED from a sibling
+    // native checkout: compiling an entry under `<idol-root>/lib/compiler/`
+    // made its `compiler.lexer`
     // look for `./lib/compiler/lexer.id` under the GATE's tree, found nothing,
     // and the home was unresolvable purely because of where the shell was
     // standing. A home is a property of the program, and the CWD is not.
