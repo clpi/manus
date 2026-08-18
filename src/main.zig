@@ -108,6 +108,10 @@ var graph_write_enabled: bool = false;
 var global_bench_backend: backend_identity.BenchBackend = .direct;
 var global_bench_profile_cli: bool = false;
 var global_backend_explicit: bool = false;
+/// The process-owned environment map. Runtime bridge helpers consume this one
+/// parsed authority rather than inventing parallel configuration channels.
+/// Null only in isolated unit tests, which deliberately exercise defaults.
+var global_environ_map: ?*const std.process.Environ.Map = null;
 /// HPLS §11. Which INSPECTION observers this compilation must serve. Empty by
 /// default, so a compilation with no `--observer` is bit-identical to one from
 /// before the flag existed. See `src/observer_demand.zig` for why an observer
@@ -458,6 +462,7 @@ const usage =
 pub fn main(init: std.process.Init) !void {
     const alloc = init.arena.allocator();
     term.init(init.io);
+    global_environ_map = init.environ_map;
     apply_env_flags(init);
     if (init.environ_map.get("SDKROOT")) |sdkroot| {
         macos_sdkroot_configured = sdkroot.len > 0;
@@ -960,11 +965,11 @@ pub fn main(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, output_file != null, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, true, false, false, false, false, false, false, false, null, &.{}, entry_override);
     } else if (std.mem.eql(u8, cmd, "fmt")) {
         try do_fmt(alloc, io, file);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
@@ -1370,7 +1375,7 @@ fn do_project_check(alloc: std.mem.Allocator, io: Io, t: build_framework.Target)
     if (t.src) |src| {
         const dummy = try std.fmt.allocPrint(alloc, "/tmp/duo_check_{s}.out", .{std.fs.path.stem(src)});
         defer alloc.free(dummy);
-        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link, null);
+        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, true, false, false, false, false, false, false, false, null, t.link, null);
         term.ok("'{s}' ok", .{src});
         return;
     }
@@ -1496,7 +1501,7 @@ fn run_test_sources(
         else
             try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
         defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null);
         const code = try run_pretty_test_runner(alloc, io, out, bench_only);
         if (code != 0) failures += 1;
     }
@@ -1967,6 +1972,435 @@ fn run_shell_binary(io: Io, out_path: []const u8) !void {
     }
 }
 
+const default_wasmtime_version = "47.0.3";
+const wasm_artifact_name = "module.wasm";
+
+fn processEnvironmentValueAlloc(
+    alloc: std.mem.Allocator,
+    key: []const u8,
+    default: []const u8,
+) ![]u8 {
+    if (global_environ_map) |environ| {
+        if (environ.get(key)) |value| return alloc.dupe(u8, value);
+    }
+    return alloc.dupe(u8, default);
+}
+
+fn privateFilePermissions() Io.File.Permissions {
+    return if (builtin.os.tag == .windows)
+        .default_file
+    else
+        Io.File.Permissions.fromMode(0o600);
+}
+
+fn privateDirPermissions() Io.File.Permissions {
+    return if (builtin.os.tag == .windows)
+        .default_dir
+    else
+        Io.File.Permissions.fromMode(0o700);
+}
+
+fn platformTempRootAlloc(alloc: std.mem.Allocator) ![]u8 {
+    if (builtin.os.tag == .windows) {
+        const temp = try processEnvironmentValueAlloc(alloc, "TEMP", "");
+        if (temp.len != 0) return temp;
+        alloc.free(temp);
+        return processEnvironmentValueAlloc(alloc, "TMP", ".");
+    }
+    return processEnvironmentValueAlloc(alloc, "TMPDIR", "/tmp");
+}
+
+const ImplicitWasmArtifact = struct {
+    dir_path: []u8,
+    path: []u8,
+    dir: Io.Dir,
+    file: Io.File,
+    digest: [std.crypto.hash.sha2.Sha256.digest_length]u8,
+    file_open: bool = true,
+    dir_open: bool = true,
+    named_file_live: bool = true,
+    named_dir_live: bool = true,
+
+    /// Validate the name against the file and directory handles retained since
+    /// creation. POSIX execution unlinks this name before spawn; Windows still
+    /// requires it and therefore retains a small validate-to-child-open bridge.
+    fn validate(self: *const ImplicitWasmArtifact, io: Io) !void {
+        const held_dir = try self.dir.stat(io);
+        const named_dir = Io.Dir.statFile(Io.Dir.cwd(), io, self.dir_path, .{ .follow_symlinks = false }) catch
+            return error.WasmArtifactReplaced;
+        const held = try self.file.stat(io);
+        const named = Io.Dir.statFile(Io.Dir.cwd(), io, self.path, .{ .follow_symlinks = false }) catch
+            return error.WasmArtifactReplaced;
+        if (held_dir.kind != .directory or named_dir.kind != .directory or
+            held_dir.inode != named_dir.inode or
+            held.kind != .file or named.kind != .file or
+            held.inode != named.inode or held.size != named.size)
+        {
+            return error.WasmArtifactReplaced;
+        }
+        if (builtin.os.tag != .windows) {
+            if (named_dir.permissions.toMode() & 0o077 != 0 or named.permissions.toMode() & 0o077 != 0)
+                return error.WasmArtifactNotPrivate;
+        }
+
+        var actual_digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+        var hash = std.crypto.hash.sha2.Sha256.init(.{});
+        var offset: u64 = 0;
+        var buffer: [4096]u8 = undefined;
+        while (offset < held.size) {
+            const remaining: usize = @intCast(@min(held.size - offset, buffer.len));
+            const count = try self.file.readPositional(io, &.{buffer[0..remaining]}, offset);
+            if (count == 0) return error.WasmArtifactChanged;
+            hash.update(buffer[0..count]);
+            offset += count;
+        }
+        hash.final(&actual_digest);
+        if (!std.mem.eql(u8, &actual_digest, &self.digest)) return error.WasmArtifactChanged;
+    }
+
+    fn clearCloseOnExec(file: Io.File) !void {
+        if (builtin.os.tag == .windows) return;
+        while (true) switch (std.posix.errno(std.posix.system.fcntl(file.handle, std.posix.F.SETFD, @as(usize, 0)))) {
+            .SUCCESS => return,
+            .INTR => continue,
+            else => |err| return std.posix.unexpectedErrno(err),
+        };
+    }
+
+    /// Produce the runner's physical source without a pathname race where the
+    /// host supports inherited descriptors. Wasmtime accepts `/dev/fd/N`; after
+    /// clearing CLOEXEC, the file and its 0700 directory are unlinked BEFORE the
+    /// child exists, so interruption cannot leave a named artifact. The inherited
+    /// descriptor lives until Wasmtime exits. That inheritance, and Windows'
+    /// validated pathname reopen below, are the exact residual bridge debt.
+    fn runnerPathAlloc(self: *ImplicitWasmArtifact, alloc: std.mem.Allocator, io: Io) ![]u8 {
+        try self.validate(io);
+        if (builtin.os.tag == .windows) return alloc.dupe(u8, self.path);
+
+        const fd_path = try std.fmt.allocPrint(alloc, "/dev/fd/{d}", .{self.file.handle});
+        Io.Dir.access(Io.Dir.cwd(), io, fd_path, .{ .read = true }) catch {
+            alloc.free(fd_path);
+            return alloc.dupe(u8, self.path);
+        };
+        errdefer alloc.free(fd_path);
+        try clearCloseOnExec(self.file);
+        try self.dir.deleteFile(io, wasm_artifact_name);
+        self.named_file_live = false;
+        self.dir.close(io);
+        self.dir_open = false;
+        try Io.Dir.deleteDir(Io.Dir.cwd(), io, self.dir_path);
+        self.named_dir_live = false;
+        return fd_path;
+    }
+
+    /// Close the retained identity first, then remove the named transport. The
+    /// directory itself is deleted only if its public name still resolves to the
+    /// retained directory identity; never delete an adversarial replacement.
+    fn cleanup(self: *ImplicitWasmArtifact, alloc: std.mem.Allocator, io: Io) !void {
+        const held_dir = if (self.dir_open) self.dir.stat(io) catch null else null;
+        if (self.file_open) {
+            self.file.close(io);
+            self.file_open = false;
+        }
+
+        var first_error: ?anyerror = null;
+        if (self.dir_open and self.named_file_live) {
+            self.dir.deleteFile(io, wasm_artifact_name) catch |err| switch (err) {
+                error.FileNotFound => {},
+                else => first_error = err,
+            };
+            self.named_file_live = false;
+        }
+        if (self.dir_open) {
+            self.dir.close(io);
+            self.dir_open = false;
+        }
+
+        if (self.named_dir_live) {
+            const named_dir = Io.Dir.statFile(Io.Dir.cwd(), io, self.dir_path, .{ .follow_symlinks = false }) catch null;
+            if (held_dir != null and named_dir != null and
+                held_dir.?.kind == .directory and named_dir.?.kind == .directory and
+                held_dir.?.inode == named_dir.?.inode)
+            {
+                Io.Dir.deleteDir(Io.Dir.cwd(), io, self.dir_path) catch |err| {
+                    if (first_error == null) first_error = err;
+                };
+                self.named_dir_live = false;
+            } else if (named_dir != null and first_error == null) {
+                first_error = error.WasmArtifactDirectoryReplaced;
+            }
+        }
+
+        alloc.free(self.path);
+        alloc.free(self.dir_path);
+        if (first_error) |err| return err;
+    }
+};
+
+/// Bytes already exist before this function is called. Creation is one random,
+/// private directory plus one exclusive file kept open through the write; there
+/// is no reserve-close-reopen interval for compiler emission.
+fn createImplicitWasmArtifact(
+    alloc: std.mem.Allocator,
+    io: Io,
+    bytes: []const u8,
+) !ImplicitWasmArtifact {
+    const root = try platformTempRootAlloc(alloc);
+    defer alloc.free(root);
+    const cwd = Io.Dir.cwd();
+
+    for (0..8) |_| {
+        var nonce: [16]u8 = undefined;
+        try io.randomSecure(&nonce);
+        const hex = std.fmt.bytesToHex(nonce, .lower);
+        const leaf = try std.fmt.allocPrint(alloc, "idol-wasm-run-{s}", .{hex});
+        defer alloc.free(leaf);
+        const dir_path = try std.fs.path.join(alloc, &.{ root, leaf });
+
+        Io.Dir.createDir(cwd, io, dir_path, privateDirPermissions()) catch |err| switch (err) {
+            error.PathAlreadyExists => {
+                alloc.free(dir_path);
+                continue;
+            },
+            else => {
+                alloc.free(dir_path);
+                return err;
+            },
+        };
+        errdefer Io.Dir.deleteDir(cwd, io, dir_path) catch {};
+
+        var dir = try Io.Dir.openDir(cwd, io, dir_path, .{});
+        errdefer dir.close(io);
+        var file = try dir.createFile(io, wasm_artifact_name, .{
+            .read = true,
+            .exclusive = true,
+            .permissions = privateFilePermissions(),
+        });
+        errdefer dir.deleteFile(io, wasm_artifact_name) catch {};
+        errdefer file.close(io);
+        try file.writeStreamingAll(io, bytes);
+
+        const path = try std.fs.path.join(alloc, &.{ dir_path, wasm_artifact_name });
+        errdefer alloc.free(path);
+        var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
+        const artifact: ImplicitWasmArtifact = .{
+            .dir_path = dir_path,
+            .path = path,
+            .dir = dir,
+            .file = file,
+            .digest = digest,
+        };
+        return artifact;
+    }
+    return error.PathAlreadyExists;
+}
+
+fn resolveExecutablePath(
+    alloc: std.mem.Allocator,
+    io: Io,
+    configured: []const u8,
+) ![]u8 {
+    const cwd = Io.Dir.cwd();
+    if (std.fs.path.isAbsolute(configured) or std.mem.findAny(u8, configured, "/\\") != null) {
+        const resolved = if (std.fs.path.isAbsolute(configured))
+            try alloc.dupe(u8, configured)
+        else resolved: {
+            var cwd_buffer: [std.fs.max_path_bytes]u8 = undefined;
+            const cwd_len = try cwd.realPath(io, &cwd_buffer);
+            break :resolved try std.fs.path.join(alloc, &.{ cwd_buffer[0..cwd_len], configured });
+        };
+        errdefer alloc.free(resolved);
+        try cwd.access(io, resolved, .{ .execute = true });
+        return resolved;
+    }
+
+    const path_env = try processEnvironmentValueAlloc(alloc, "PATH", "");
+    defer alloc.free(path_env);
+    var parts = std.mem.splitScalar(u8, path_env, std.fs.path.delimiter);
+    while (parts.next()) |part| {
+        const dir_name = if (part.len == 0) "." else part;
+        const suffix_count: usize = if (builtin.os.tag == .windows) 2 else 1;
+        for (0..suffix_count) |suffix_index| {
+            const suffix = if (suffix_index == 0) "" else ".exe";
+            const executable_name = try std.fmt.allocPrint(alloc, "{s}{s}", .{ configured, suffix });
+            defer alloc.free(executable_name);
+            const candidate = try std.fs.path.join(alloc, &.{ dir_name, executable_name });
+            defer alloc.free(candidate);
+            const resolved = if (std.fs.path.isAbsolute(candidate))
+                try alloc.dupe(u8, candidate)
+            else resolved: {
+                var cwd_buffer: [std.fs.max_path_bytes]u8 = undefined;
+                const cwd_len = cwd.realPath(io, &cwd_buffer) catch continue;
+                break :resolved try std.fs.path.join(alloc, &.{ cwd_buffer[0..cwd_len], candidate });
+            };
+            errdefer alloc.free(resolved);
+            cwd.access(io, resolved, .{ .execute = true }) catch {
+                alloc.free(resolved);
+                continue;
+            };
+            return resolved;
+        }
+    }
+    return error.FileNotFound;
+}
+
+fn wasmtimeVersionMatches(version_output: []const u8, expected_text: []const u8) bool {
+    const expected = std.SemanticVersion.parse(std.mem.trim(u8, expected_text, " \t\r\n")) catch return false;
+    if (expected.major != 47) return false;
+    var fields = std.mem.tokenizeAny(u8, std.mem.trim(u8, version_output, " \t\r\n"), " \t\r\n");
+    if (!std.mem.eql(u8, fields.next() orelse return false, "wasmtime")) return false;
+    const actual = std.SemanticVersion.parse(fields.next() orelse return false) catch return false;
+    return actual.major == 47 and actual.order(expected) == .eq;
+}
+
+fn resolvePinnedWasmtime47(alloc: std.mem.Allocator, io: Io) ![]u8 {
+    const configured = try processEnvironmentValueAlloc(alloc, "WASMTIME", "wasmtime");
+    defer alloc.free(configured);
+    const expected = try processEnvironmentValueAlloc(alloc, "WASMTIME_VERSION", default_wasmtime_version);
+    defer alloc.free(expected);
+    const parsed_expected = std.SemanticVersion.parse(std.mem.trim(u8, expected, " \t\r\n")) catch {
+        term.err("WASMTIME_VERSION must be an exact semantic version with major 47", .{});
+        return error.WasmtimeVersionMismatch;
+    };
+    if (parsed_expected.major != 47) {
+        term.err("WASMTIME_VERSION must select major 47", .{});
+        return error.WasmtimeVersionMismatch;
+    }
+
+    const runner_path = resolveExecutablePath(alloc, io, configured) catch |err| {
+        term.err("wasm run could not resolve configured Wasmtime 47 ({s})", .{@errorName(err)});
+        return error.WasmtimeUnavailable;
+    };
+    errdefer alloc.free(runner_path);
+    if (term.trace) term.kv("wasmtime runner", runner_path);
+    const version = std.process.run(alloc, io, .{
+        .argv = &.{ runner_path, "--version" },
+        .stdout_limit = .limited(4096),
+        .stderr_limit = .limited(4096),
+    }) catch |err| {
+        term.err("could not execute configured Wasmtime 47 ({s})", .{@errorName(err)});
+        return error.WasmtimeUnavailable;
+    };
+    defer alloc.free(version.stdout);
+    defer alloc.free(version.stderr);
+    if (!version.term.success() or !wasmtimeVersionMatches(version.stdout, expected)) {
+        const found = std.mem.trim(u8, if (version.stdout.len != 0) version.stdout else version.stderr, " \t\r\n");
+        term.err("wasm run requires configured Wasmtime {s}; found '{s}'", .{ expected, found });
+        return error.WasmtimeVersionMismatch;
+    }
+    return runner_path;
+}
+
+fn signalExitCode(sig: std.posix.SIG) u8 {
+    const number: u32 = @backingInt(sig);
+    return if (number <= std.math.maxInt(u8) - 128)
+        @intCast(128 + number)
+    else
+        std.math.maxInt(u8);
+}
+
+/// `law.bridge.death`: this outer physical bridge owns no Wasm meaning. It
+/// carries the already-emitted module plus argv/stdin/stdout/stderr and the
+/// process outcome to pinned Wasmtime 47. Delete it when Idol's native Wasm
+/// executor consumes the same graph/world facts and returns the same outcome;
+/// the exit/stdout differential and missing-runner control are its witnesses.
+fn runWasmArtifactWithWasmtime47(
+    alloc: std.mem.Allocator,
+    io: Io,
+    runner_path: []const u8,
+    artifact_path: []const u8,
+) !u8 {
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    try argv.appendSlice(alloc, &.{ runner_path, "run", "--", artifact_path });
+    try argv.appendSlice(alloc, forwarded_program_args);
+    var child = std.process.spawn(io, .{
+        .argv = argv.items,
+        .stdin = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    }) catch |err| {
+        term.err("could not start Wasmtime 47 ({s})", .{@errorName(err)});
+        return error.WasmtimeUnavailable;
+    };
+    defer child.kill(io);
+    return switch (try child.wait(io)) {
+        .exited => |code| code,
+        .signal => |sig| signalExitCode(sig),
+        else => 1,
+    };
+}
+
+test "wasmtime bridge accepts only the configured exact major-47 semver" {
+    try std.testing.expect(wasmtimeVersionMatches("wasmtime 47.0.3 (hash date)\n", "47.0.3"));
+    try std.testing.expect(!wasmtimeVersionMatches("wasmtime 47.0.4\n", "47.0.3"));
+    try std.testing.expect(!wasmtimeVersionMatches("wasmtime 47.evil\n", "47.0.3"));
+    try std.testing.expect(!wasmtimeVersionMatches("wasmtime 48.0.0\n", "47.0.3"));
+    try std.testing.expect(!wasmtimeVersionMatches("wart 47.0.3\n", "47.0.3"));
+    try std.testing.expect(!wasmtimeVersionMatches("wasmtime 47.0.3\n", "48.0.0"));
+}
+
+test "implicit wasm run artifacts are private disjoint retained identities" {
+    const alloc = std.testing.allocator;
+    var first = try createImplicitWasmArtifact(alloc, std.testing.io, "one");
+    defer first.cleanup(alloc, std.testing.io) catch {};
+    var second = try createImplicitWasmArtifact(alloc, std.testing.io, "two");
+    defer second.cleanup(alloc, std.testing.io) catch {};
+    try std.testing.expect(!std.mem.eql(u8, first.path, second.path));
+    try first.validate(std.testing.io);
+    try second.validate(std.testing.io);
+    if (builtin.os.tag != .windows) {
+        const first_file = try first.file.stat(std.testing.io);
+        const first_dir = try first.dir.stat(std.testing.io);
+        try std.testing.expectEqual(@as(std.posix.mode_t, 0), first_file.permissions.toMode() & 0o077);
+        try std.testing.expectEqual(@as(std.posix.mode_t, 0), first_dir.permissions.toMode() & 0o077);
+    }
+}
+
+test "implicit wasm run artifact replacement fails closed" {
+    const alloc = std.testing.allocator;
+    var artifact = try createImplicitWasmArtifact(alloc, std.testing.io, "original");
+    defer artifact.cleanup(alloc, std.testing.io) catch {};
+    try artifact.dir.writeFile(std.testing.io, .{
+        .sub_path = wasm_artifact_name,
+        .data = "tampered",
+        .flags = .{ .permissions = privateFilePermissions() },
+    });
+    try std.testing.expectError(error.WasmArtifactChanged, artifact.validate(std.testing.io));
+    try artifact.file.writePositionalAll(std.testing.io, "original", 0);
+    try artifact.validate(std.testing.io);
+    try artifact.dir.deleteFile(std.testing.io, wasm_artifact_name);
+    try artifact.dir.writeFile(std.testing.io, .{
+        .sub_path = wasm_artifact_name,
+        .data = "replacement has different identity and extent",
+        .flags = .{ .permissions = privateFilePermissions() },
+    });
+    try std.testing.expectError(error.WasmArtifactReplaced, artifact.validate(std.testing.io));
+}
+
+test "posix wasm runner inherits bytes after every artifact name is removed" {
+    if (builtin.os.tag == .windows) return;
+    const alloc = std.testing.allocator;
+    var artifact = try createImplicitWasmArtifact(alloc, std.testing.io, "wasm bytes");
+    defer artifact.cleanup(alloc, std.testing.io) catch {};
+    const runner_path = try artifact.runnerPathAlloc(alloc, std.testing.io);
+    defer alloc.free(runner_path);
+    try std.testing.expectError(
+        error.FileNotFound,
+        Io.Dir.statFile(Io.Dir.cwd(), std.testing.io, artifact.dir_path, .{ .follow_symlinks = false }),
+    );
+    const inherited = try Io.Dir.readFileAlloc(Io.Dir.cwd(), std.testing.io, runner_path, alloc, .unlimited);
+    defer alloc.free(inherited);
+    try std.testing.expectEqualStrings("wasm bytes", inherited);
+}
+
+test "signal outcomes preserve their conventional distinct exit status" {
+    if (builtin.os.tag == .windows) return;
+    try std.testing.expectEqual(@as(u8, 130), signalExitCode(.INT));
+    try std.testing.expectEqual(@as(u8, 143), signalExitCode(.TERM));
+}
+
 fn run_host_shell_command(io: Io, command: []const u8) !void {
     const code = try shell_host.runRawShell(io, command);
     if (code != 0) {
@@ -2114,7 +2548,7 @@ fn run_shell_line(
     defer term.build_report = prev_report;
 
     const compile_started = Io.Timestamp.now(io, .awake);
-    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", backend_mode, false, false, verbose, false, false, false, false, false, false, null, &.{}, null);
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", backend_mode, false, true, false, verbose, false, false, false, false, false, false, null, &.{}, null);
     const compile_elapsed: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
 
     try run_shell_binary(io, out_path);
@@ -2321,6 +2755,7 @@ fn do_project_build_one(
         target,
         backend_mode,
         run_after,
+        true,
         false,
         verbose,
         load_chunk_arg or t.load_chunk,
@@ -4474,6 +4909,7 @@ fn do_compile(
     target: []const u8,
     backend_mode: []const u8,
     run_after: bool,
+    preserve_wasm_artifact: bool,
     check_only: bool,
     verbose: bool,
     load_chunk: bool,
@@ -4644,7 +5080,7 @@ fn do_compile(
     else
         null;
 
-    // NATIVE WEBASSEMBLY. `--target wasm32-wasi` is no longer the C emitter's
+    // DIRECT WEBASSEMBLY ARTIFACT. `--target wasm32-wasi` is no longer the C emitter's
     // tail: `wasm_backend.zig` consumes the SAME DNIR the AArch64 direct backend
     // consumes and writes the `.wasm` bytes itself — no `zig cc`, no C. Placed
     // HERE, above the machine-target refusal below, because wasm32-wasi is not
@@ -4656,34 +5092,93 @@ fn do_compile(
     // it did is what let `--backend=wasm` emit a Mach-O executable into a path
     // called `.wasm`.
     if (std.mem.eql(u8, target, "wasm32-wasi") and !load_chunk and !lib_mode) {
+        const implicit_external_run = run_after and !preserve_wasm_artifact;
         var wasm_graph = semantic_graph.SemanticGraph.init(alloc);
         defer wasm_graph.deinit();
         _ = try wasm_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
-        // THE SAME DEMAND PRUNE THE DIRECT EXECUTABLE PATH APPLIES. The whole
-        // value of this target is that its stdout can be diffed against the
-        // AArch64 build's, and a transform applied to one column and not the
-        // other is a difference this emitter did not make. `world_closed` is
-        // true for the same reason it is true there: an executable image is the
-        // whole world, so nothing outside it can name a module-level binding.
-        var wasm_demand = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &wasm_graph, .world_closed = true });
+        // EXTERNAL WASMTIME IS AN OPEN PHYSICAL BRIDGE. Deleting its transport
+        // artifact after execution does not erase the runner, its runtime state,
+        // or the pathname reopen from the observable boundary. Until an Idol-
+        // native executor consumes these graph/world facts, no closed-world
+        // deletion may be admitted here.
+        var wasm_demand = try demand.analyzeModule(alloc, &ps.mod, .{
+            .graph = &wasm_graph,
+            .world_closed = false,
+        });
         defer wasm_demand.deinit();
         try demand.prune(alloc, &ps.mod, &wasm_demand);
         var wasm_diagnostic: wasm_backend.Diagnostic = .{};
         const wasm_entry = native_backend.abi(&ps.mod, entry_override);
         const wasm_bytes = wasm_backend.emitWasmModule(alloc, &ps.mod, wasm_entry, &wasm_graph, &wasm_diagnostic) catch |e| {
-            term.err("wasm32-wasi: no native realization ({s})", .{@errorName(e)});
+            term.err("wasm32-wasi: no direct artifact realization ({s})", .{@errorName(e)});
             if (wasm_diagnostic.note()) |why| term.hint("refused at: {s}", .{why});
             if (wasm_diagnostic.functionName()) |fname| term.hint("in relation: {s}", .{fname});
             std.process.exit(1);
         };
         defer alloc.free(wasm_bytes);
-        try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = out_path, .data = wasm_bytes });
-        if (phase_timer) |*t| trace_phase(io, t, "wasm emit", out_path);
+
+        var runner_path: ?[]u8 = null;
+        defer if (runner_path) |path| alloc.free(path);
+        var implicit_artifact: ?ImplicitWasmArtifact = null;
+        var implicit_artifact_live = false;
+        defer if (implicit_artifact_live) implicit_artifact.?.cleanup(alloc, io) catch {};
+        const artifact_path = if (implicit_external_run) path: {
+            // SEMANTIC EMISSION PRECEDES PHYSICAL TEMPORARY CREATION. A parse,
+            // graph, demand, or emitter refusal therefore leaves no artifact.
+            runner_path = resolvePinnedWasmtime47(alloc, io) catch std.process.exit(1);
+            implicit_artifact = createImplicitWasmArtifact(alloc, io, wasm_bytes) catch |err| {
+                term.err("could not create private wasm runner artifact ({s})", .{@errorName(err)});
+                std.process.exit(1);
+            };
+            implicit_artifact_live = true;
+            break :path implicit_artifact.?.path;
+        } else path: {
+            try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = out_path, .data = wasm_bytes });
+            break :path out_path;
+        };
+
+        const trace_detail: ?[]const u8 = if (implicit_external_run) null else artifact_path;
+        if (phase_timer) |*t| trace_phase(io, t, "wasm emit", trace_detail);
         if (term.build_report != .plain and !test_mode) {
             const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
-            term.buildPhaseDone("compile", total_ms, out_path);
+            term.buildPhaseDone("compile", total_ms, if (implicit_external_run) "external wasm runner bridge" else artifact_path);
         }
-        if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+        if (!implicit_external_run and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{artifact_path});
+        if (run_after) {
+            // Explicit `-o` is already durable before runner discovery, so a
+            // missing/mismatched runner never destroys the requested output.
+            if (runner_path == null) runner_path = resolvePinnedWasmtime47(alloc, io) catch std.process.exit(1);
+            const inherited_artifact_path: ?[]u8 = if (implicit_artifact) |*artifact|
+                artifact.runnerPathAlloc(alloc, io) catch |err| {
+                    term.err("private wasm runner artifact changed before execution ({s})", .{@errorName(err)});
+                    implicit_artifact_live = false;
+                    artifact.cleanup(alloc, io) catch |cleanup_err| {
+                        term.err("could not remove refused private wasm runner artifact ({s})", .{@errorName(cleanup_err)});
+                    };
+                    std.process.exit(1);
+                }
+            else
+                null;
+            defer if (inherited_artifact_path) |path| alloc.free(path);
+            const physical_artifact_path = inherited_artifact_path orelse artifact_path;
+            const exit_code = runWasmArtifactWithWasmtime47(alloc, io, runner_path.?, physical_artifact_path) catch {
+                if (implicit_artifact_live) {
+                    implicit_artifact_live = false;
+                    implicit_artifact.?.cleanup(alloc, io) catch |cleanup_err| {
+                        term.err("could not remove failed private wasm runner artifact ({s})", .{@errorName(cleanup_err)});
+                    };
+                }
+                std.process.exit(1);
+            };
+            if (implicit_artifact_live) {
+                implicit_artifact_live = false;
+                implicit_artifact.?.cleanup(alloc, io) catch |err| {
+                    term.err("could not remove private wasm runner artifact ({s})", .{@errorName(err)});
+                    std.process.exit(1);
+                };
+            }
+            std.process.exit(exit_code);
+        }
         return;
     }
 
