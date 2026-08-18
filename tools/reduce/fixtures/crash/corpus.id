@@ -1,27 +1,11 @@
-    if k == token.KIND_NAME
-        return true
-markerr = (lx: lexer)
-peek2: token = (lx: lexer)
-    if t.kind == token.KIND_LPAREN
-                        markerr(lx)
-    if acc != "" and lexer.peek(lx).kind == token.KIND_PIPE
-                s = "{s} {nxt}"
-    acc
-proj_target_or_expr: str = (lx: lexer)
-            if k2.kind == token.KIND_ASSIGN or k2.kind == token.KIND_COLON
-        else
-            before: i64 = lx.pos
-proj_expr: str = (lx: lexer)
+parse_expr: Res = (src: str, pos: i64)
+    r = parse_expr(src, 0)
+    while cont == 0
+            return left
     if k == token.KIND_EQ
-        op = ">"
-    left = proj_bor(lx)
-proj_bor: str = (lx: lexer)
-        if t.kind == token.KIND_LSHIFT
+        left = "(| " .. left .. " " .. proj_bxor(lx) .. ")"
+    left
+proj_bxor: str = (lx: lexer)
+        if t.kind == token.KIND_PLUS
         else
             return left
-tail_pack: str = (lx: lexer, first: str)
-    if lexer.peek(lx).kind != token.KIND_COMMA
-            return s .. ")"
-    if t.text == "type" and peek2(lx).kind == token.KIND_NAME
-            return proj_target_or_expr(lx)
-    tail_pack(lx, proj_expr(lx))

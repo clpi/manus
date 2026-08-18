@@ -31,6 +31,7 @@ input=""
 predicate=""
 output=""
 work="$(mktemp -d "${TMPDIR:-/tmp}/reduce.XXXXXX")"
+pred_calls=0
 trap 'rm -rf "$work"' EXIT
 
 usage() {
@@ -59,6 +60,7 @@ mkdir -p "$cache_dir"
 pred_cached() {
   _h="$(shasum -a 256 "$1" | cut -c1-32)"
   _f="$cache_dir/$_h"
+  pred_calls=$((pred_calls + 1))
   if [ -e "$_f" ]; then
     [ "$(cat "$_f")" = 0 ]
   else
@@ -79,6 +81,19 @@ fi
 
 cp "$input" "$work/cur.id"
 orig_lines=$(grep -c "" "$work/cur.id")
+
+# --- inert pre-pass ----------------------------------------------------------
+# Comment-only and blank lines cannot affect a compile-behavior predicate.
+# Strip them all in one shot, then verify with a single predicate call:
+# if the failure survives, every subsequent ddmin round starts smaller;
+# if it does not (a text predicate that reads comments), revert untouched.
+sed -E '/^[[:space:]]*(#|$)/d' "$work/cur.id" >"$work/stripped.id"
+if [ -s "$work/stripped.id" ] && pred_cached "$work/stripped.id"    && [ "$(grep -c "" "$work/stripped.id")" -lt "$orig_lines" ]; then
+  cp "$work/stripped.id" "$work/cur.id"
+  echo "idol-reduce: inert pre-pass stripped $(($(grep -c "" "$work/cur.id") - 0)) -> see stats" >&2
+else
+  : # predicate needs the inert lines (or nothing to strip); keep original
+fi
 
 # --- pass 1: ddmin over lines ------------------------------------------------
 ddmin() {

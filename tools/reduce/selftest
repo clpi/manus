@@ -35,7 +35,7 @@ cp tools/reduce/fixtures/crash/corpus.id "$crash" 2>/dev/null || {
 if [ -f "$crash" ]; then
   for i in $(seq 1 40); do echo "# pad $i" >>"$crash"; done
   "$R" "$crash" -p '"$IDOL" compile "$1" --emit obj -o /tmp/irs.o 2>&1 | grep -q "InvalidAggregateFact"' -o "$work/crash.min" >/dev/null 2>&1
-  t $? "crash reduces (27+40 pads -> 27)"
+  t $? "crash reduces (11+40 pads -> 11)"
 fi
 
 # 3. a wrong answer reduces (output mismatch against an oracle expectation)

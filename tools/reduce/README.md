@@ -56,3 +56,13 @@ broken predicate is rejected, and the original still fails after reduction
 - F2 `application-operand-abi` — graph.id is line-irreducible at 112
   lines: EVERY line deletion breaks the predicate. The missing fact is
   module-granularity, not local — a finding, not a failure.
+
+## Performance (2026-08-17)
+
+Guarded inert pre-pass: comment-only and blank lines are stripped in one
+shot and verified with a single predicate call (reverted untouched if the
+failure does not survive — sound for text predicates too). On
+lib/compiler/parser.id (438 inert lines of 1792) the F5 crash reduction
+went 12m54s -> 3m54s and landed a strictly smaller theorem (1792 -> 11
+lines, recursive relation + nested application as argument). Predicate
+call counts are emitted in the closing report line.

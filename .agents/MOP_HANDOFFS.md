@@ -83,7 +83,7 @@ evidence of compilability; object emission is the current honest floor.
   the tail nested call `tail_pack(lx, proj_expr(lx))` to a flat binding
   does NOT clear the crash — the aggregate crash lives in the chained
   condition applications (`lexer.peek(lx).kind`). H4 (diagnostics defect)
-  stands; the graph lane now has a 27-line reproducer.
+  stands; the graph lane now has a 11-line reproducer.
 - **F2 application-operand-abi: line-irreducible.** graph.id is 112 lines
   and EVERY single-line deletion breaks the predicate — the missing fact
   is module-granularity (whole-file context), not a local construct.
@@ -108,7 +108,7 @@ nothing (this is the routed-guard analysis conclusion, now with numbers).
 
 New top handoff: **H6 — graph must publish application ids for foreign and
 method call sites** (unblocks F1's three units past their next hole; the
-27-line F5 reproducer and the F2 module-granularity finding are the
+11-line F5 reproducer and the F2 module-granularity finding are the
 companion inputs).
 
 ## Appendix — idiomatic floor and graph instrument (working notes)
