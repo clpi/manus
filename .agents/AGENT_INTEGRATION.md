@@ -5,9 +5,9 @@ tool census, or current gate status.
 
 ## Canonical locations
 
-- Development repository: `/Users/clp/x/idol` (worktree on the data volume,
-  reached through the `~/x` symlink; dev remote `clpi/idol`).
-- Native benchmark repository: `/Users/clp/x/idol-native` (remote
+- Development repository: the current `clpi/idol` checkout (worktrees may live
+  on another volume; derive the root with `git rev-parse --show-toplevel`).
+- Native benchmark repository: the sibling `idol-native` checkout (remote
   `clpi/idol-native`, branch `main`) — owns the end-user `.id` language server
   and its compiler-backed graph queries.
 - The pre-rename project identity is **fully retired**. Server names, tool
@@ -94,9 +94,11 @@ launches.
 The `.id` language server is the idol-native tree's `tools/lsp/launch.sh`
 (Content-Length framing; diagnostics and symbols come from that tree's own
 compiler and semantic graph — the transport adds no second authority). Wire
-editors with `IDOL_BIN` pointing at `/Users/clp/x/idol-native/bin/idol`.
-The in-repository `tools/lsp` projection remains bootstrap debt until its
-source fits the direct-native subset.
+editors with `IDOL_BIN` pointing at the sibling checkout's `bin/idol`.
+The duplicate in-repository `tools/lsp` scanner, taxonomy, fixtures, and gates
+were deleted. Semantic tokens wait for graph-owned source spans and generated
+grammar-role projections in the durable sibling server; do not restore the old
+raw scanner or corpus.
 
 ## Session protocol
 

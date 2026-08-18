@@ -1374,7 +1374,7 @@ pub const CodeGen = struct {
     /// `call to undeclared function 'lua_file_write_method'`, because such a
     /// module is native-scalar and never emits the lua prelude that declares
     /// it. `io.stdout:write(x)` compiled, so the gap was EXACTLY the projected
-    /// spelling — and `tools/lsp/gate.id` and `tools/mcp/gate.id` build
+    /// spelling — and the since-retired in-tree LSP/MCP gates then built
     /// themselves with `--backend=c`.
     ///
     /// IT IS NOT `print`. `io.write` appended no newline and neither does

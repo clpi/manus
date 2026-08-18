@@ -330,11 +330,9 @@ if [ "$skip_gates" != "1" ]; then
   run_gate "mcp-gate" "$lock" -- zig build mcp-gate
   run_gate "repo hygiene gate" "$repo/tools/node/dev/repo-hygiene"
   if [ "$full_gates" = "1" ]; then
-    run_gate "lsp-gate" "$lock" -- zig build lsp-gate
     run_gate "semantic architecture gate" "$lock" -- zig build semantic-architecture
     run_gate "unit gate" "$lock" -- zig build unit-test --summary all
   else
-    ok "lsp-gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  GAP-078 graph-owned idol-native projection replacement)"
     ok "semantic architecture gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  gate/architecture.id C embed debt)"
     ok "unit gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  verify the current aggregate debt live)"
   fi

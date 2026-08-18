@@ -84,7 +84,8 @@ or semantic authority.
 | Direct machine and object emission | `src/native_backend.zig` |
 | Generated-C bootstrap backend | `src/codegen.zig` |
 | Token and Wasm generated projections | `src/token_classify_gen.zig`, `src/wasm_semantic_gen.zig` |
-| LSP and MCP | `tools/lsp/`, `tools/mcp/` |
+| LSP | sibling `idol-native/tools/lsp/` over that compiler's graph |
+| MCP | `tools/mcp/` plus sibling `idol-native/tools/mcp/` |
 | Wasm consumer | `tools/wasm/` (standalone debt; destination: shared graph and realization) |
 
 Read `docs/bootstrap.md` before choosing work. Attack the earliest host-owned

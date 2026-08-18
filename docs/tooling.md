@@ -11,9 +11,15 @@ freely admitted — it is the Idol source extension. Only tracked *noncanonical*
 `.id` content (host-shaped patterns, namespace dispatch, duplicate authority) is
 SOURCE-ZERO debt, migrated by repairing the pattern; the `.id` file itself is
 not debt. Physical `duo` executable or tool prefixes are bootstrap aliases and
-deletion targets, not a second current language. The current in-tree compiler, LSP, and MCP implementation paths live
-in this repository; do not route agents to historical companion checkouts or
-mistake those paths for canonical source.
+deletion targets, not a second current language. The compiler and bootstrap MCP
+transport live here. Durable `.id` language intelligence lives in the sibling
+`idol-native` checkout and consumes that compiler's graph; the duplicate
+in-tree LSP/highlighter was deleted rather than ported.
+
+Semantic tokens are not reconstructed by a raw scanner. They remain unavailable
+until the compiler publishes graph-owned source spans and the one grammar
+authority publishes its generated role projection. Do not restore the deleted
+taxonomy, legend generator, or highlight corpus as an interim implementation.
 
 Tooling projects graph-owned identity, facts, demand, worlds, provenance, and
 realization. It must not invent a vocabulary or recover semantic truth from

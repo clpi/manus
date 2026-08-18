@@ -22,9 +22,6 @@ negative       examples/compile_fail/
 negative       examples/native_differential/unsupported/
 negative       error_test.id
 foreign        examples/native_differential/
-negative       fixtures/highlight/mixed/
-foreign        fixtures/highlight/surface/
-canonical      fixtures/highlight/
 generated      lib/token/classify.id
 generated      lib/wasm/opcode_lookup.id
 generated      lib/wasm/ward_mvp_opcodes.id

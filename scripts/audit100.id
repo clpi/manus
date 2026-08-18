@@ -824,7 +824,7 @@ main: i64 = ()
   #                        FUNCTION-FINAL; the eight `return 3` refusals stay,
   #                        an early return is not a tail expression),
   #                        lib/bytes.id 10, lib/encoding/varint.id 7,
-  #                        tools/lsp/src/server.id 13
+  #                        the retired in-tree LSP server 13 (historical)
   #   nonduo         -1    `examples/benchmark.lua.backup` deleted — an
   #                        unreferenced stale copy of `examples/benchmark.lua`
   #                        differing only in a pre-annotation `collatz_sum`.

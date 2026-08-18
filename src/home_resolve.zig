@@ -206,7 +206,7 @@ pub fn resolve(
     //
     // `find_module_file_for_req` searched a bare `"lib"`, which `Io.Dir.access`
     // resolves against the CURRENT WORKING DIRECTORY. MEASURED: compiling
-    // `/Users/clp/x/idol/lib/compiler/host.id` from `/Users/clp/x/idol-native`
+    // `<idol-root>/lib/compiler/host.id` from a sibling native checkout
     // — which is exactly how `gate/selfhost.sh` invokes it — made `compiler.lexer`
     // look for `./lib/compiler/lexer.id` under the GATE's tree, found nothing,
     // and the home was unresolvable purely because of where the shell was
@@ -330,7 +330,7 @@ pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u
     const stem = std.fs.path.stem(canonical);
     var dir = std.fs.path.dirname(canonical) orelse "";
     // THE HOME MAY NOT CONTAIN THE FILESYSTEM. Compiling
-    // `/Users/clp/x/idol/lib/compiler/lexer.id` and compiling
+    // `<idol-root>/lib/compiler/lexer.id` and compiling
     // `lib/compiler/lexer.id` are the same module, and if the two produce
     // `Users_clp_x_idol_compiler_lexer` and `compiler_lexer` then the symbol
     // depends on how the shell spelled the argument — the definer and the

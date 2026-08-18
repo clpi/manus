@@ -1,9 +1,0 @@
-# surface: foreign
-# ONE COLOUR LANGUAGE, fifth surface, and the one that says the least on
-# purpose. H-5: THE TRUST BOUNDARY IS TYPOGRAPHIC. There is no graph behind
-# foreign source, so it takes one role across its whole extent and renders
-# italic. Colouring inside it would be a claim to understand it.
-static int tokenize(const char *p, size_t n) {
-    while (n--) { if (*p++ == 0) return -1; }
-    return 0;
-}

@@ -657,48 +657,6 @@ pub fn build(b: *std.Build) void {
     const audit100_step = b.step("audit100", "deny table over the canonical .id corpus; ratchets each row");
     audit100_step.dependOn(&audit100_cmd.step);
 
-    // role-scan is GONE, and this note is here so the next reader does not go
-    // looking for it. gaps/GAP-078.md: two role taxonomies landed in this tree
-    // on the same day and disagreed -- on `:`, on the count, on whether an
-    // ordinary binding has a hue, on the spelling of the string role, and on
-    // whether the section 0g fine splits are roles. Two generators for one
-    // legend means whichever a front end picks, the other convicts it, and the
-    // two coverage numbers measured different quantities. The ruling merged
-    // them into ONE taxonomy and DELETED `scripts/role_scan.id` rather than
-    // parking it beside the survivor. Its corpus was not deleted with it: the
-    // seven fixtures under fixtures/highlight/*.id and their span sidecars are
-    // now measured by `highlight-corpus` below, in the surviving vocabulary.
-    //
-    // highlight-corpus -- CLAUDE.md section 0d. Law: this is one generated
-    // grammar projection. Today: the retained bootstrap projector is not
-    // admitted by direct native (DNB001 keyed-table-export) or the graph C
-    // source realizer (missing-application-id). Delta: migrate the useful
-    // corpus assertions to the graph-owned idol-native LSP, then delete this
-    // duplicate projector and gate. The standalone step remains red rather
-    // than turning an unavailable projection into false-green admission.
-    // PROJECTION OF THE GRAPH, not a lexer, and the only way to tell those two
-    // apart from outside is a corpus containing the glyphs idol overloads: `:`
-    // is copula OR invoke and `|` is union OR pipe, and no lexer separates
-    // either pair. The gate asserts the role AND the card at named byte
-    // offsets, so "it produced highlighting" is not a passing answer.
-    //
-    // It also gates section 0g's G-TOTAL: every non-whitespace byte carries a
-    // role, and an undecidable span DIAGNOSES rather than defaulting. The
-    // negative control in fixtures/highlight/mixed/ is what keeps the
-    // "0 unresolved spans" row from being the broken kind of zero.
-    //
-    // It publishes the three G-TOTAL numbers -- coverage, ambiguity,
-    // provenance -- over BOTH corpora at once, which is what gaps/GAP-078.md's
-    // falsifier asked for: a coverage percentage published without naming the
-    // taxonomy behind it means the gap was closed by forgetting. There is one
-    // taxonomy now, so there is one set of numbers. SPECIFICITY is reported
-    // separately because it is the bar coverage is not.
-    const highlight_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/highlight.id" });
-    highlight_cmd.setCwd(b.path("."));
-    highlight_cmd.step.dependOn(b.getInstallStep());
-    const highlight_step = b.step("highlight-corpus", "the golden role corpus, totality, the H-1 proofs by value, and specificity; ratchets");
-    highlight_step.dependOn(&highlight_cmd.step);
-
     // U1 -- `std@{ ambient = false }`, executable. The one
     // charter row that is effective immediately rather than at 0.1, so it is a
     // step rather than a plan. It ratchets off a measured baseline for the same
@@ -1135,32 +1093,6 @@ pub fn build(b: *std.Build) void {
     explain_gate_step.dependOn(&explain_gate_cmd.step);
     // Tier 0: an unprojected optimizer is an undiagnosable one.
     agent_smoke_step.dependOn(&explain_gate_cmd.step);
-
-    // lsp-gate — the LSP is the same kind of program, and it had NO gate at all.
-    //
-    // It was carrying the same class of defect the MCP servers were: on
-    // 2026-08-08 `textDocument/didClose` SEGFAULTED the server. Exit 139, no
-    // diagnostic, no partial answer, no reply to anything afterwards. `t[k] =
-    // nil` does not remove a key in idol, so `flush_dirty` — which runs after
-    // EVERY message — walked the docs table, found the nil and dereferenced it.
-    // Every editor closes documents; nobody had ever run one against it.
-    //
-    // The gate speaks real LSP framing (`Content-Length: N\r\n\r\n{…}`) and
-    // asserts response BYTES: the twelve advertised capabilities, the generated
-    // 17+13 role legend verbatim, a value round trip through hover, definition
-    // and documentSymbol, the exact delta-encoded semantic-token stream for the
-    // golden copula fixture, the CDR inlay hint, and the code lens witness
-    // counts. Everything scored happens AFTER a close, so a server that dies
-    // mid-session cannot score. Positive-controlled by driving it at corrupted
-    // copies via LSPGATE_SERVER — see the file header for the three runs.
-    const lsp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "tools/lsp/gate.id" });
-    lsp_gate_cmd.setCwd(b.path("."));
-    lsp_gate_cmd.step.dependOn(b.getInstallStep());
-    const lsp_gate_step = b.step("lsp-gate", "The LSP must handshake, survive a document close, and answer by value");
-    lsp_gate_step.dependOn(&lsp_gate_cmd.step);
-    // Tier 0: an untested language server is an untested front end, and every
-    // front end is gated.
-    agent_smoke_step.dependOn(&lsp_gate_cmd.step);
 
     // G-061 tier-0 metaprogramming smokes (combinator dispatch + derive bundles)
     const meta_smoke_paths = [_][]const u8{
