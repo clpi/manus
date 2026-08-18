@@ -93,7 +93,22 @@ main: i64 = ()
     sid: i64 = byteat(src, i)
     size: i64 = ulebval(src, i + 1)
     after: i64 = ulebafter(src, i + 1)
-    _ = emit("section." .. num(sid), num(size))
+    emit("section." .. num(sid), num(size))
+    if sid == 1
+      n1c: i64 = ulebval(src, after)
+      emit("types.count", num(n1c))
+    if sid == 3
+      n3c: i64 = ulebval(src, after)
+      emit("functions.count", num(n3c))
+    if sid == 10
+      n10c: i64 = ulebval(src, after)
+      emit("bodies.count", num(n10c))
+    if sid == 7
+      n7c: i64 = ulebval(src, after)
+      emit("exports.count", num(n7c))
+    if sid == 2
+      n2c: i64 = ulebval(src, after)
+      emit("imports.count", num(n2c))
     i = after + size
     walk = i > 0
   0

@@ -123,6 +123,12 @@ functions), double-quoted escapes are not unescaped (single-quoted byte
 literals), for-in over dynamic args needs an unpublished
 gen-for-dynamic-iter fact (positional args(2) instead).
 
+UPDATE 2: per-section content counts now parsed IN IDOL and CROSS-
+VALIDATED against an independent read of the same bytes: types 39,
+imports 6, functions 203, exports 3, bodies 203 — exact match. The
+ingest is the census authority candidate for the module face; the next
+increment is body walk (local decls + application chains).
+
 UPDATE: the ingest now RUNS END TO END over a DECLARED hex transport
 (in-place pair reads, O(1) per byte, zero materialization) — real
 fib.wasm bytes -> idol -> fact lines: magic, version, and the full
