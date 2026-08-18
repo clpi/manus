@@ -719,8 +719,23 @@ fn immutableNestedAggregateRoot(graph: *const semantic_graph.SemanticGraph, aggr
     return descriptor == .array and descriptor.array.elem.* == .array;
 }
 
-fn skipStaticAggregateInitializer(ctx: *LowerCtx, initializer: *const ast.Expr) Error!bool {
-    const aggregate = ctx.graph.aggregateOrigin(initializer) orelse return false;
+/// Whether the exact graph place named by this transitional AST binding already
+/// has a selected static aggregate realization. The name is only the current
+/// walker's bridge to the graph place; aggregate identity, contents, legality,
+/// and physical selection all come from graph facts. Delete the name bridge
+/// when parser work items carry place ids directly.
+fn skipStaticAggregateBinding(ctx: *LowerCtx, binding_name: []const u8) Error!bool {
+    const owner = ctx.function orelse return false;
+    const owner_node = ctx.graph.get(owner) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-owner");
+    const bound_place = if (owner_node.scope == null)
+        ctx.graph.placeNamed(binding_name)
+    else if (ctx.graph.bodyOf(owner)) |body|
+        body.places.find(binding_name)
+    else
+        null;
+    const site = (bound_place orelse return false).id;
+    const aggregate = ctx.graph.boundAggregateAtPlace(owner, site) orelse return false;
     if (ctx.graph.aggregateProducer(aggregate) != null) return false;
     const fact = ctx.graph.aggregate(aggregate) orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-member-pack");
@@ -3017,7 +3032,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                     try ctx.narrow_slots.put(ctx.alloc, slot, width);
                 }
                 if (i < ld.inits.len) {
-                    if (try skipStaticAggregateInitializer(ctx, ld.inits[i])) continue;
+                    if (try skipStaticAggregateBinding(ctx, ln.ident)) continue;
                     try lowerAssignTarget(ctx, ln.ident, ld.inits[i]);
                 }
                 if (ln.typ != .inferred and isFloatType(ln.typ)) {
@@ -3038,7 +3053,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             if (try lowerOneToManyPackAssign(ctx, as.targets, as.values)) return;
             if (as.targets.len != as.values.len) return bail(ctx.diagnostic, @src());
             for (as.targets, as.values) |target, value| {
-                if (target.* == .name and try skipStaticAggregateInitializer(ctx, value)) continue;
+                if (target.* == .name and try skipStaticAggregateBinding(ctx, target.name.ident)) continue;
                 // The environment is a PLACE. This runs before the switch below
                 // because `os.env[k]` is an `.index` whose object is a `.field`,
                 // which `lowerIndexAssignTarget` rejects outright, and
@@ -9807,7 +9822,12 @@ test "dnir_lower: graph aggregate facts select one immutable nested layout" {
         const root_aggregate = lowered.dense_tables[0].value;
         const root_fact = graph.aggregate(root_aggregate) orelse return error.TestExpectedEqual;
         try std.testing.expectEqual(place.Tri.yes, root_fact.contents_known);
-        try std.testing.expect(graph.aggregatePlace(root_aggregate) != null);
+        const root_place = graph.aggregatePlace(root_aggregate) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(
+            root_aggregate,
+            graph.boundAggregateAtPlace(root_fact.owner, root_place.id).?,
+        );
+        try std.testing.expect(graph.boundAggregateAtPlace(root_fact.owner, root_place.id + 1000) == null);
 
         var saw_base = false;
         var saw_outer_bounds = false;
@@ -9843,6 +9863,34 @@ test "dnir_lower: graph aggregate facts select one immutable nested layout" {
         try std.testing.expect(saw_outer_bounds);
         try std.testing.expect(saw_projection);
         try std.testing.expect(saw_load);
+
+        // The initializer expression is provenance after graph publication.
+        // Poison its AST tag while retaining the exact graph aggregate/place
+        // facts: realization must keep the same dense contents and instruction
+        // shape. This fails if lowering again uses the source initializer as
+        // the key that selects static aggregate realization.
+        var baseline_instructions: usize = 0;
+        for (lowered.functions) |function| {
+            for (function.blocks) |block| baseline_instructions += block.instrs.len;
+        }
+        const source_initializer = @constCast(graph.valueExpression(root_aggregate) orelse
+            return error.TestExpectedEqual);
+        const saved_initializer = source_initializer.*;
+        source_initializer.* = .{ .nil = saved_initializer.loc() };
+        const relowered = try lowerModuleWithGraph(alloc, &module, &graph);
+        defer dnir.deinitModule(alloc, relowered);
+        source_initializer.* = saved_initializer;
+        try std.testing.expectEqual(@as(usize, 1), relowered.dense_tables.len);
+        try std.testing.expectEqualSlices(
+            i64,
+            lowered.dense_tables[0].values,
+            relowered.dense_tables[0].values,
+        );
+        var relowered_instructions: usize = 0;
+        for (relowered.functions) |function| {
+            for (function.blocks) |block| relowered_instructions += block.instrs.len;
+        }
+        try std.testing.expectEqual(baseline_instructions, relowered_instructions);
 
         // Damage the member descriptor fact. The access path must fail before
         // the AST literal can be consulted as a replacement authority.
