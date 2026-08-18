@@ -294,3 +294,15 @@ standing configuration.
 - Codex landed 'Retire duplicate language server authority' on the
   parallel ref reconcile/idol-canonical-all-work-20260817; not in this
   branch's history.
+
+
+## H8 — keyed-table-export fact publication unblocks TWO admission paths
+
+Measured: `zig build wasm-test` fails closed at
+`idol compile tools/wasm/src/engine.id --backend=direct` ->
+`DNB001 missing: keyed-table-export` (dnir_lower) — the SAME missing fact
+that blocks `tools/lsp/src/server.id`. One published fact family unblocks
+both the wasm admission gate and the LSP server admission. Full wasm
+closure matrix with proposal states and wasmtime oracle baselines:
+evidence/mop/wasm-closure.md. WASIX has zero source support (the wasix
+bench is oracle corpus only); WASI p1 is real but partial.
