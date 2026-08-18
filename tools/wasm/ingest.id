@@ -162,6 +162,9 @@ main: i64 = ()
           cl: i64 = immclass(op)
           if cl == 1
             ip = ulebafter(src, ip)
+          if cl == 2
+            ip = ulebafter(src, ip)
+            ip = ulebafter(src, ip)
           if cl == -2
             ip = slebend(src, ip)
           if cl == -3
@@ -173,8 +176,7 @@ main: i64 = ()
             ip = ulebafter(src, ip)
           if cl == -1
             walking = false
-          if walking
-            ninstr = ninstr + 1
+          ninstr = ninstr + 1
         emit("body." .. num(fi) .. ".locals", num(flocals))
         emit("body." .. num(fi) .. ".instr", num(ninstr))
         totalinstr = totalinstr + ninstr

@@ -123,6 +123,16 @@ functions), double-quoted escapes are not unescaped (single-quoted byte
 literals), for-in over dynamic args needs an unpublished
 gen-for-dynamic-iter fact (positional args(2) instead).
 
+UPDATE 4 (FINAL for the census): the idol ingest matches ground truth
+EXACTLY — 29,004 instructions, 1,028 locals across 203 bodies. Two more
+grammar bugs closed by per-body trace diff: (a) the walk-ending op
+(br_table) was excluded from the count; (b) call_indirect's TWO LEB
+immediates had no handler — padded LEBs were counted as opcodes (body
+48: 5 GT ops vs 15). The census is CLOSED; snapshot at evidence/mop/
+wasm/ingest.fib.facts. Remaining grammar debt for full application
+emission: blocktype slebs on block/loop/if (currently walked as bare
+ops — correct only for empty blocktypes) and 0xFC-prefixed ops.
+
 UPDATE 3: full body walk lands — locals EXACT (1,028 across 203
 bodies), instruction census 29,356 vs independent ground truth 29,004
 (1.2% divergence). The big correctness fix was a SIGN ERROR: the sleb
