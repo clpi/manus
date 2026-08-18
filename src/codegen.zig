@@ -4072,7 +4072,9 @@ pub const CodeGen = struct {
     }
 
     fn compute_substrate_native_mode(self: *CodeGen, mod: *const ast.Module) bool {
-        if (!self.idol_mode or self.load_chunk or self.test_mode) return false;
+        // Source law constrains each operation below; it does not itself make
+        // a checked scalar closure require the Lua runtime.
+        if (self.load_chunk or self.test_mode) return false;
         if (self.bench_mode and self.bench_backend != .c_specialized) return false;
         if (self.native_scalar_mode) return true;
         if (!self.mixed_scalar_mode) return false;
@@ -4774,24 +4776,6 @@ pub const CodeGen = struct {
     /// Module includes Lua runtime (dynamic paths or mixed native/dynamic).
     fn moduleNeedsLuaRuntime(self: *const CodeGen) bool {
         return !self.moduleUsesFullNativeLowering();
-    }
-
-    /// `%` ON TWO INTEGERS TRUNCATES, and the remainder takes the DIVIDEND's
-    /// sign. §12 B-4 — quoted in `docs/spec/cost.md` — says `i64/i64`
-    /// truncates and `examples/table/div/sign.id` records the four answers
-    /// `-3 -3 -1 1` for `-7/2`, `7/-2`, `-7%2`, `7%-2`.
-    ///
-    /// Before this predicate the C backend had NO single answer. The emit chose
-    /// C's truncating `%` when the divisor was a positive literal and Lua's
-    /// FLOORING `lua_imod_i64` otherwise, so one program got both: `-7 % 2`
-    /// printed -1 (truncating) and `7 % -2` printed -1 (flooring, where
-    /// truncating is 1). That split is not a Lua-compatibility choice either —
-    /// under Lua's floor rule `-7 % 2` is 1, and the positive-literal fast path
-    /// answers -1 — so the previous behaviour matched neither language on the
-    /// same line. Idol source gets the truncating rule everywhere; a Lua chunk
-    /// (`idol_mode == false`) keeps the flooring helper it was written against.
-    fn intModTruncates(self: *const CodeGen) bool {
-        return self.idol_mode;
     }
 
     /// True when `req` bindings in the current function may bypass lua_require.
@@ -6259,7 +6243,11 @@ pub const CodeGen = struct {
                 const lt = self.expr_type(b.lhs);
                 const rt = self.expr_type(b.rhs);
                 if (!lt.is_integer() or !rt.is_integer()) break :blk false;
-                break :blk !(b.rhs.* == .int_lit and b.rhs.int_lit.val > 0);
+                // Integer // and % are flooring relations in both admitted
+                // source laws. Literal spelling cannot change that relation;
+                // a range fact could later prove the direct C operations
+                // equivalent, but none is available on this edge today.
+                break :blk true;
             },
             .unop => |un| self.expr_needs_int_floor_helpers(un.operand),
             .call => |call| blk: {
@@ -6330,7 +6318,9 @@ pub const CodeGen = struct {
         if (self.native_scalar_mode and !self.req_deps_allow_full_native(mod)) {
             self.native_scalar_mode = false;
         }
-        if (!self.native_scalar_mode and self.idol_mode and (self.target.len == 0 or std.mem.eql(u8, self.target, "native"))) {
+        // Candidate discovery consumes checked descriptors/module facts. A
+        // foreign source law is not a physical runtime obligation.
+        if (!self.native_scalar_mode and (self.target.len == 0 or std.mem.eql(u8, self.target, "native"))) {
             if (self.compute_native_scalar_funcs(mod)) {
                 self.mixed_scalar_mode = true;
             }
@@ -18566,18 +18556,11 @@ pub const CodeGen = struct {
                         },
                         .idiv => {
                             if (lt.is_integer() and rt.is_integer()) {
-                                // Fast path: direct C division when divisor is a positive literal
-                                if (b.rhs.* == .int_lit and b.rhs.int_lit.val > 0) {
-                                    self.p("((int64_t)(", .{});
-                                    try self.emit_expr(b.lhs);
-                                    self.p(") / {d})", .{b.rhs.int_lit.val});
-                                } else {
-                                    self.p("lua_idiv_i64((int64_t)(", .{});
-                                    try self.emit_expr(b.lhs);
-                                    self.p("), (int64_t)(", .{});
-                                    try self.emit_expr(b.rhs);
-                                    self.p("))", .{});
-                                }
+                                self.p("lua_idiv_i64((int64_t)(", .{});
+                                try self.emit_expr(b.lhs);
+                                self.p("), (int64_t)(", .{});
+                                try self.emit_expr(b.rhs);
+                                self.p("))", .{});
                             } else {
                                 var buf: [128]u8 = undefined;
                                 const t = self.expr_type(expr);
@@ -18590,20 +18573,11 @@ pub const CodeGen = struct {
                         },
                         .mod => {
                             if (lt.is_integer() and rt.is_integer()) {
-                                // Fast path: direct C modulo when divisor is a positive literal
-                                if (self.intModTruncates() or (b.rhs.* == .int_lit and b.rhs.int_lit.val > 0)) {
-                                    self.p("((int64_t)(", .{});
-                                    try self.emit_expr(b.lhs);
-                                    self.p(") % (int64_t)(", .{});
-                                    try self.emit_expr(b.rhs);
-                                    self.p("))", .{});
-                                } else {
-                                    self.p("lua_imod_i64((int64_t)(", .{});
-                                    try self.emit_expr(b.lhs);
-                                    self.p("), (int64_t)(", .{});
-                                    try self.emit_expr(b.rhs);
-                                    self.p("))", .{});
-                                }
+                                self.p("lua_imod_i64((int64_t)(", .{});
+                                try self.emit_expr(b.lhs);
+                                self.p("), (int64_t)(", .{});
+                                try self.emit_expr(b.rhs);
+                                self.p("))", .{});
                             } else {
                                 var buf: [128]u8 = undefined;
                                 const t = self.expr_type(expr);
@@ -32649,6 +32623,107 @@ test "native scalar eligibility is source-law independent and resets refusal evi
     try testing.expect(first.can_emit_native_scalar_module(&module));
     try testing.expect(first.nativeScalarReason(&first_buf) == null);
     try testing.expectEqualStrings("second:2", second.nativeScalarReason(&second_buf).?);
+}
+
+test "source law preserves floored integer relations while facts select the runtime" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const fixtures = [_]struct {
+        path: []const u8,
+        law: lexer_bridge.SourceLaw,
+        source: []const u8,
+        full_native: bool,
+        floor_helpers: bool,
+    }{
+        .{
+            .path = "fixture.lua",
+            .law = .lua,
+            .source =
+            \\local counter: i64 = 0
+            \\
+            \\local function evaluate(): i64
+            \\    counter = counter + 1
+            \\    return (-7 % 2) + (7 % -2) + (-7 // 2) + (7 // -2) + counter
+            \\end
+            \\
+            \\function main(): i64
+            \\    return 0
+            \\end
+            \\
+            \\print(evaluate())
+            ,
+            .full_native = true,
+            .floor_helpers = true,
+        },
+        .{
+            .path = "fixture.id",
+            .law = .idol,
+            .source =
+            \\counter: i64 = 0
+            \\
+            \\evaluate: i64 = ()
+            \\  counter = counter + 1
+            \\  (-7 % 2) + (7 % -2) + (-7 // 2) + (7 // -2) + counter
+            \\
+            \\main: i64 = ()
+            \\  print("{evaluate()}\n")
+            \\  0
+            ,
+            .full_native = true,
+            .floor_helpers = true,
+        },
+        .{
+            .path = "fixture.lua",
+            .law = .lua,
+            .source =
+            \\local counter: i64 = 0
+            \\
+            \\local function bump(value: any): any
+            \\    counter = counter + 1
+            \\    return value
+            \\end
+            \\
+            \\function main(): i64
+            \\    return counter + 1
+            \\end
+            \\
+            \\print(bump(main()))
+            ,
+            .full_native = false,
+            .floor_helpers = false,
+        },
+    };
+
+    for (fixtures) |fixture| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lex = Lexer.initFacts(fixture.source, fixture.path, lexer_bridge.sourceFacts(fixture.path));
+        try testing.expect(routeEmbedThroughDuoLexer(alloc, &lex, fixture.source, fixture.path));
+        try testing.expectEqual(fixture.law, lex.source_law);
+        var parser = Parser.init(&lex, alloc);
+        parser.idol_mode = lex.family == lexer_bridge.family_canon;
+        try testing.expectEqual(fixture.law == .idol, parser.idol_mode);
+        var module = try parser.parse_module();
+        var semantic = sema.Sema.init(alloc);
+        defer semantic.deinit();
+        semantic.lua55_mode = lex.source_law == .lua;
+        semantic.idol_mode = lex.source_law == .idol;
+        try semantic.check_module(&module);
+
+        var aw: std.Io.Writer.Allocating = .init(alloc);
+        defer aw.deinit();
+        var cg = CodeGen.init(alloc, std.testing.io, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+        cg.src_path = fixture.path;
+        cg.idol_mode = lex.source_law == .idol;
+        try cg.emit_module(&module);
+        try testing.expectEqual(fixture.full_native, cg.usesFullNativeLowering());
+        try testing.expectEqual(fixture.full_native, std.mem.indexOf(u8, aw.written(), "lua_Value") == null);
+        if (fixture.floor_helpers) {
+            try testing.expect(std.mem.indexOf(u8, aw.written(), "lua_idiv_i64") != null);
+            try testing.expect(std.mem.indexOf(u8, aw.written(), "lua_imod_i64") != null);
+        }
+    }
 }
 
 test "runtime: temporary artifact path is reserved with its suffix" {
