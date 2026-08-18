@@ -1584,10 +1584,17 @@ pub const CodeGen = struct {
         return false;
     }
 
-    /// Native record parameters are passed by pointer so mutating methods
-    /// (e.g. lexer `self.pos = …`, ByteCursor `c.pos = …`) persist across calls.
+    /// Internal record parameters are passed by pointer so mutation persists
+    /// across application boundaries. This is one translation-unit convention:
+    /// root emission, embedded emission, and descriptor spelling cannot select
+    /// different ABIs for the same semantic record.
+    ///
+    /// Bridge deletion: once edge-local representation publishes one selected
+    /// internal application ABI from place/mutation/alias/escape facts, callers
+    /// and callees consume that fact and this uniform convention disappears.
+    /// Header-declared foreign C ABI is separate and never consults this helper.
     /// The `.table_type` behind a record parameter, following the alias a
-    /// `.@"struct"` annotation names. Same resolution `native_record_param_by_ptr`
+    /// `.@"struct"` annotation names. Same resolution `internal_record_param_by_ptr`
     /// performs, factored out so an emitter can reach the field list.
     fn resolved_record_type(self: *const CodeGen, rt: RT) ?RT {
         var resolved = rt;
@@ -1597,33 +1604,12 @@ pub const CodeGen = struct {
         return if (resolved == .table_type) resolved else null;
     }
 
-    fn native_record_param_by_ptr(self: *const CodeGen, rt: RT) bool {
+    fn internal_record_param_by_ptr(self: *const CodeGen, rt: RT) bool {
         var resolved = rt;
         if (resolved == .@"struct") {
             if (self.record_aliases.get(resolved.@"struct".name)) |alias_rt| resolved = alias_rt;
         }
-        if (resolved != .table_type) return false;
-        if (self.moduleUsesFullNativeLowering()) return true;
-        // Embedded req modules (`std.compiler.*`, etc.): all record params by pointer.
-        if (self.current_module_cname.len > 0) return true;
-        if (self.current_func_name) |name| {
-            if (self.funcUsesNativeLowering(name)) return true;
-        }
-        // ABI uniformity. The record parameter convention must be identical for
-        // every function in a translation unit. In mixed-scalar mode only some
-        // functions lower natively; letting that split reach the calling
-        // convention makes a caller and callee disagree about the same record
-        // type — `next_tok` took `Lexer` by value while its caller `next` and
-        // its callee `cur_loc` used `Lexer *`, which is not compilable C.
-        if (self.mixed_scalar_mode and self.native_scalar_funcs.count() > 0) return true;
-        return false;
-    }
-
-    fn funcUsesRecordSelfPointer(self: *CodeGen, fb: *const ast.FuncBody) bool {
-        if (fb.params.len == 0) return false;
-        const par = &fb.params[0];
-        if (!std.mem.eql(u8, par.name, "self")) return false;
-        return self.native_record_param_by_ptr(self.resolve_type(par.typ));
+        return resolved == .table_type;
     }
 
     fn expr_is_native_record_ptr_param(self: *CodeGen, e: *const ast.Expr) bool {
@@ -1631,7 +1617,7 @@ pub const CodeGen = struct {
         const fb = self.current_func_body orelse return false;
         for (fb.params) |par| {
             if (std.mem.eql(u8, par.name, e.name.ident)) {
-                return self.native_record_param_by_ptr(self.resolve_type(par.typ));
+                return self.internal_record_param_by_ptr(self.resolve_type(par.typ));
             }
         }
         return false;
@@ -2075,7 +2061,7 @@ pub const CodeGen = struct {
                 }
             },
             else => {
-                if (self.native_record_param_by_ptr(rt)) {
+                if (self.internal_record_param_by_ptr(rt)) {
                     self.typ(rt);
                     if (name) |n| self.p(" *{s}", .{n}) else self.p(" *", .{});
                 } else {
@@ -4925,7 +4911,7 @@ pub const CodeGen = struct {
         }
         try self.emit_expr(c.func);
         self.p("(", .{});
-        const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .native;
+        const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .internal;
         var emitted_args: usize = 0;
         for (c.args, 0..) |arg, i| {
             if (i > 0) self.p(", ", .{});
@@ -8809,20 +8795,20 @@ pub const CodeGen = struct {
     }
 
     fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT, for_call: bool) E!void {
-        try self.emit_arg_for_param_abi(arg, param_type, for_call, .native);
+        try self.emit_arg_for_param_abi(arg, param_type, for_call, .internal);
     }
 
     /// Which calling convention the receiving parameter obeys.
     ///
-    /// `.native` records may travel by pointer — that is Idol's own convention and
-    /// it is chosen per translation unit. A `.foreign` parameter's convention
+    /// `.internal` records travel by the compiler's bounded bootstrap convention.
+    /// A `.foreign` parameter's convention
     /// is fixed by the C header that declared it: `extern double
     /// distance2(CPoint)` takes the record BY VALUE, and handing it `&p` is not
     /// a style difference, it is a type error clang rejects ("passing 'CPoint *'
-    /// to parameter of incompatible type 'CPoint'"). Applying the native record
+    /// to parameter of incompatible type 'CPoint'"). Applying the internal record
     /// convention to an imported C function is what made every `@comp.c.import`
     /// program with a record argument unlinkable.
-    const ParamAbi = enum { native, foreign };
+    const ParamAbi = enum { internal, foreign };
 
     fn emit_arg_for_param_abi(
         self: *CodeGen,
@@ -8831,7 +8817,7 @@ pub const CodeGen = struct {
         for_call: bool,
         abi: ParamAbi,
     ) E!void {
-        if (for_call and abi == .native and self.native_record_param_by_ptr(param_type)) {
+        if (for_call and abi == .internal and self.internal_record_param_by_ptr(param_type)) {
             if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
                 try self.emit_expr(arg);
                 return;
@@ -9918,7 +9904,7 @@ pub const CodeGen = struct {
     fn emit_lua_thunk_record_writebacks(self: *CodeGen, fb: *const ast.FuncBody, lua_names: []const []const u8) E!void {
         for (fb.params, 0..) |par, i| {
             const pt = self.resolve_type(par.typ);
-            if (!self.native_record_param_by_ptr(pt)) continue;
+            if (!self.internal_record_param_by_ptr(pt)) continue;
             var pn: [8]u8 = undefined;
             const pname = std.fmt.bufPrint(&pn, "_p{d}", .{i}) catch continue;
             try self.emit_native_record_to_lua_table(pt, pname, lua_names[i]);
@@ -9926,7 +9912,7 @@ pub const CodeGen = struct {
     }
 
     fn emit_thunk_native_arg(self: *CodeGen, pt: RT, c_name: []const u8) void {
-        if (self.native_record_param_by_ptr(pt)) {
+        if (self.internal_record_param_by_ptr(pt)) {
             self.p("&{s}", .{c_name});
         } else {
             self.p("{s}", .{c_name});
@@ -9947,7 +9933,7 @@ pub const CodeGen = struct {
 
         // The record-parameter ABI is a property of the callee, not of whatever
         // function happened to be emitted last. A thunk bridges lua -> native for
-        // `cname`, so evaluate `native_record_param_by_ptr` in `cname`'s context;
+        // `cname`, so evaluate `internal_record_param_by_ptr` in `cname`'s context;
         // otherwise a by-pointer callee is handed a by-value argument.
         const saved_name = self.current_func_name;
         self.current_func_name = cname;
@@ -17608,7 +17594,7 @@ pub const CodeGen = struct {
                     var name_buf: [256]u8 = undefined;
                     break :blk self.func_bodies.get(self.mangled_name(c.func.name.ident, &name_buf));
                 } else null;
-                const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .native;
+                const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .internal;
                 var emitted_args: usize = 0;
                 for (c.args, 0..) |arg, i| {
                     if (i > 0) self.p(", ", .{});
@@ -25421,7 +25407,7 @@ pub const CodeGen = struct {
 
         self.current_module_cname = resolved.home;
         const subject_type = self.resolve_type(params[0].typ);
-        const subject_by_ptr = self.native_record_param_by_ptr(subject_type);
+        const subject_by_ptr = self.internal_record_param_by_ptr(subject_type);
         self.current_module_cname = saved_cname;
         if (subject_by_ptr) {
             if (call.obj.* == .name and self.expr_is_native_record_ptr_param(call.obj)) {
@@ -25442,7 +25428,7 @@ pub const CodeGen = struct {
             }
             self.current_module_cname = resolved.home;
             const param_type = self.resolve_type(params[i + 1].typ);
-            const param_by_ptr = self.native_record_param_by_ptr(param_type);
+            const param_by_ptr = self.internal_record_param_by_ptr(param_type);
             self.current_module_cname = saved_cname;
             if (param_by_ptr) {
                 if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
@@ -25581,7 +25567,7 @@ pub const CodeGen = struct {
             const pt: RT = if (i < ft.func.params.len) ft.func.params[i] else .any;
             const pass_by_ptr = blk: {
                 self.current_module_cname = mod_cname;
-                const by_ptr = self.native_record_param_by_ptr(pt);
+                const by_ptr = self.internal_record_param_by_ptr(pt);
                 self.current_module_cname = saved_cname;
                 break :blk by_ptr;
             };
@@ -35769,6 +35755,50 @@ test "codegen: @ builtin aliases emit existing intrinsic paths" {
     try testing.expect(std.mem.indexOf(u8, output, "@comptime_if") == null);
     try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
     try testing.expect(std.mem.indexOf(u8, output, "__comptimeif") == null);
+}
+
+test "codegen: internal record ABI is invariant under route and descriptor casing" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, undefined, 0, null, null);
+
+    const fields = try alloc.alloc(types.FieldType, 1);
+    fields[0] = .{ .name = "pos", .typ = .i64 };
+    const record = RT{ .table_type = .{ .fields = fields } };
+    try cg.record_aliases.put(alloc, "lexer", record);
+    try cg.record_aliases.put(alloc, "Lexer", record);
+    try cg.native_scalar_funcs.put(alloc, "next", {});
+
+    const routes = [_]struct {
+        module: []const u8,
+        native: bool,
+        mixed: bool,
+        substrate: bool,
+        function: ?[]const u8,
+    }{
+        .{ .module = "", .native = false, .mixed = false, .substrate = false, .function = null },
+        .{ .module = "", .native = true, .mixed = false, .substrate = false, .function = "next" },
+        .{ .module = "", .native = false, .mixed = true, .substrate = false, .function = "next" },
+        .{ .module = "compiler_lexer", .native = false, .mixed = false, .substrate = false, .function = null },
+        .{ .module = "compiler_lexer", .native = false, .mixed = true, .substrate = true, .function = "next" },
+    };
+
+    for (routes) |route| {
+        cg.current_module_cname = route.module;
+        cg.native_scalar_mode = route.native;
+        cg.mixed_scalar_mode = route.mixed;
+        cg.substrate_native_mode = route.substrate;
+        cg.current_func_name = route.function;
+
+        try testing.expect(cg.internal_record_param_by_ptr(record));
+        try testing.expect(cg.internal_record_param_by_ptr(.{ .@"struct" = .{ .name = "lexer" } }));
+        try testing.expect(cg.internal_record_param_by_ptr(.{ .@"struct" = .{ .name = "Lexer" } }));
+        try testing.expect(!cg.internal_record_param_by_ptr(.i64));
+    }
 }
 
 test "codegen: record literal fields unbox into typed record params" {
