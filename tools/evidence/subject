@@ -33,7 +33,7 @@ inner=0
 "$@" >"$work/stdout" 2>"$work/stderr" || inner=$?
 
 commit="$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo uncommitted)"
-dirty="$(git -C "$repo" status --porcelain 2>/dev/null | grep -c "" || echo 0)"
+dirty="$(git -C "$repo" status --porcelain 2>/dev/null | awk 'END { print NR + 0 }')"
 
 # artifacts: hash every NEW untracked file plus every modified tracked file
 # the run could have touched, capped for sanity.
@@ -60,9 +60,9 @@ subject="$(jq -n \
   --arg repo "$repo" \
   --argjson inner "$inner" \
   --arg cmd "$(printf '%s ' "$@")" \
-  --argjson stdout_sha256 "\"$(shasum -a 256 "$work/stdout" | awk '{print $1}')\"" \
+  --arg stdout_sha256 "$(shasum -a 256 "$work/stdout" | awk '{print $1}')" \
   --argjson stdout_bytes "$(wc -c <"$work/stdout" | tr -d ' ')" \
-  --argjson stderr_sha256 "\"$(shasum -a 256 "$work/stderr" | awk '{print $1}')\"" \
+  --arg stderr_sha256 "$(shasum -a 256 "$work/stderr" | awk '{print $1}')" \
   --argjson labels "$labels_json" \
   --argjson artifacts "$(jq -s '.' "$work/artifacts.jsonl" 2>/dev/null || echo '[]')" \
   '{schema:$schema, commit:$commit, dirty:$dirty, repo:$repo,
