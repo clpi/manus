@@ -987,6 +987,145 @@ sourceformsuffix: str = (i: i64)
 sourceformcanonical: bool = (i: i64)
     i == 1
 
+# Corpus/home admission is source ingress, not lexer meaning. It lives beside
+# the source-form projection only for the current executable bootstrap: this
+# producer now answers the complete law + provenance question and the host
+# supplies only a filesystem-normalized provenance path. The roles are corpus
+# roles, not language/world/runtime identities.
+sourceentrycount: i64 = ()
+    39
+
+sourceentryrole: str = (i: i64)
+    if i >= 1 and i <= 3 return "negative"
+    if i == 5 or i == 6 or i == 7 return "generated"
+    if i == 9 or i == 10 or i == 27 return "compatibility"
+    if i >= 11 and i <= 26 return "canonical"
+    if i >= 1 and i <= 39 return "foreign"
+    ""
+
+sourceentrypattern: str = (i: i64)
+    if i == 1 return "examples/compile_fail/"
+    if i == 2 return "examples/native_differential/unsupported/"
+    if i == 3 return "error_test.id"
+    if i == 4 return "examples/native_differential/"
+    if i == 5 return "lib/token/classify.id"
+    if i == 6 return "lib/wasm/opcode_lookup.id"
+    if i == 7 return "lib/wasm/ward_mvp_opcodes.id"
+    if i == 8 return "examples/wasm/"
+    if i == 9 return "examples/lua"
+    if i == 10 return "examples/test_lua"
+    if i == 11 return "examples/json/"
+    if i == 12 return "examples/conversion/"
+    if i == 13 return "examples/projection/"
+    if i == 14 return "examples/infer/"
+    if i == 15 return "examples/demand/"
+    if i == 16 return "examples/hash/"
+    if i == 17 return "examples/native/"
+    if i == 18 return "examples/control/"
+    if i == 19 return "examples/nominal/"
+    if i == 20 return "examples/layout/"
+    if i == 21 return "examples/pack/"
+    if i == 22 return "examples/anchor/"
+    if i == 23 return "examples/case/"
+    if i == 24 return "examples/read/"
+    if i == 25 return "examples/boring/"
+    if i == 26 return "examples/table/"
+    if i == 27 return "examples/luahost/"
+    if i == 28 return "examples/parity/"
+    if i == 29 return "examples/host/"
+    if i == 30 return "examples/world/"
+    if i == 31 return "examples/tailslot/"
+    if i == 32 return "examples/shc/"
+    if i == 33 return "examples/cfloor/"
+    if i == 34 return "examples/benchmark.id"
+    if i == 35 return "examples/mandelbrot.id"
+    if i == 36 return "vendor/"
+    if i == 37 return "test.id"
+    if i == 38 return "test2.id"
+    if i == 39 return "examples/"
+    ""
+
+sourceequal: bool = (left: str, right: str)
+    n: i64 = left:len()
+    if n != right:len() return false
+    i: i64 = 1
+    while i <= n
+        if left:byte(i) != right:byte(i) return false
+        i += 1
+    true
+
+sourcerangeequal: bool = (text: str, start: i64, pattern: str)
+    n: i64 = pattern:len()
+    if start < 1 or start + n - 1 > text:len() return false
+    i: i64 = 1
+    while i <= n
+        if text:byte(start + i - 1) != pattern:byte(i) return false
+        i += 1
+    true
+
+sourceends: bool = (text: str, suffix: str)
+    n: i64 = text:len()
+    m: i64 = suffix:len()
+    if m > n return false
+    sourcerangeequal(text, n - m + 1, suffix)
+
+sourcepathmatches: bool = (path: str, pattern: str)
+    n: i64 = path:len()
+    m: i64 = pattern:len()
+    if sourceequal(path, pattern) return true
+    if n >= m and sourcerangeequal(path, 1, pattern)
+        if pattern:byte(m) == 47 return true
+        if n > m and path:byte(m + 1) == 47 return true
+    if n > m and path:byte(n - m) == 47
+        return sourcerangeequal(path, n - m + 1, pattern)
+    false
+
+sourcepathrole: str = (path: str)
+    best: str = ""
+    bestlen: i64 = 0
+    i: i64 = 1
+    while i <= sourceentrycount()
+        pattern = sourceentrypattern(i)
+        n: i64 = pattern:len()
+        if n >= bestlen and sourcepathmatches(path, pattern)
+            best = sourceentryrole(i)
+            bestlen = n
+        i += 1
+    best
+
+sourcepathformlaw: str = (path: str)
+    i: i64 = 1
+    while i <= sourceformcount()
+        if sourceends(path, sourceformsuffix(i)) return sourceformlaw(i)
+        i += 1
+    ""
+
+sourcepathformprovenance: str = (path: str)
+    i: i64 = 1
+    while i <= sourceformcount()
+        if sourceends(path, sourceformsuffix(i))
+            if sourceformcanonical(i) return "canonical"
+            return "foreign"
+        i += 1
+    "unknown"
+
+sourcefactlaw: str = (path: str, role: str)
+    if sourceequal(role, "canonical") or sourceequal(role, "generated") return "idol"
+    if sourceequal(role, "compatibility") return "lua"
+    discovered = sourcepathformlaw(path)
+    if sourceequal(role, "negative") or sourceequal(role, "foreign")
+        if sourceequal(discovered, "lua") return "lua"
+        return "idol"
+    discovered
+
+sourcefactprovenance: str = (path: str, role: str)
+    if sourceequal(role, "canonical") or sourceequal(role, "generated") return "canonical"
+    if sourceequal(role, "compatibility") or sourceequal(role, "foreign") return "foreign"
+    if sourceequal(role, "negative")
+        if sourceequal(sourcepathformlaw(path), "lua") return "foreign"
+        return "canonical"
+    sourcepathformprovenance(path)
+
 recordslots: i64 = ()
     7
 

@@ -12,8 +12,9 @@
 #      gate that is red on the day it ships teaches people to pass #skip.
 #      Lower a budget whenever you lower a count; that is the whole protocol.
 #
-#   2. IT SCANS THE CANONICAL PARTITION ONLY. docs/spec/corpus.md classifies
-#      every tracked .id file. examples/compile_fail/ must contain denied
+#   2. IT SCANS THE CANONICAL PARTITION ONLY. The executed source producer
+#      classifies every tracked .id file; docs/spec/corpus.md is its checked
+#      projection for this source-level tool. examples/compile_fail/ must contain denied
 #      text — that is its assertion. Counting it makes zero unreachable and
 #      the number meaningless. See docs/spec/corpus.md for the mechanism and
 #      the argument against per-file markers.
@@ -229,7 +230,7 @@ main: i64 = ()
     print("audit100: FAIL — missing {manifest}")
     return 3
 
-  # Rules: parallel arrays, first match wins, order as written.
+  # Checked producer projection: parallel arrays, first match wins.
   rcls = {}
   rpre = {}
   for i, line in split(capture("cat {manifest}"))
@@ -257,7 +258,7 @@ main: i64 = ()
   n_none = 0
   written = 0
   unclassified = ""
-  canon = ""
+  canon: str = ""
 
   for i, f in files
     cls = ""

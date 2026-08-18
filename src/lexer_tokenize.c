@@ -6152,6 +6152,30 @@ __attribute__((visibility("default"))) const char* sourceformsuffix(int64_t i);
 static lua_Value sourceformsuffix__lua(lua_Value _a0);
 __attribute__((visibility("default"))) bool sourceformcanonical(int64_t i);
 static lua_Value sourceformcanonical__lua(lua_Value _a0);
+__attribute__((visibility("default"))) int64_t sourceentrycount(void);
+static lua_Value sourceentrycount__lua(lua_Value _unused);
+__attribute__((visibility("default"))) const char* sourceentryrole(int64_t i);
+static lua_Value sourceentryrole__lua(lua_Value _a0);
+__attribute__((visibility("default"))) const char* sourceentrypattern(int64_t i);
+static lua_Value sourceentrypattern__lua(lua_Value _a0);
+__attribute__((visibility("default"))) bool sourceequal(const char* left, const char* right);
+static lua_Value sourceequal__lua2(lua_Value _a0, lua_Value _a1);
+__attribute__((visibility("default"))) bool sourcerangeequal(const char* text, int64_t start, const char* pattern);
+static lua_Value sourcerangeequal__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);
+__attribute__((visibility("default"))) bool sourceends(const char* text, const char* suffix);
+static lua_Value sourceends__lua2(lua_Value _a0, lua_Value _a1);
+__attribute__((visibility("default"))) bool sourcepathmatches(const char* path, const char* pattern);
+static lua_Value sourcepathmatches__lua2(lua_Value _a0, lua_Value _a1);
+__attribute__((visibility("default"))) const char* sourcepathrole(const char* path);
+static lua_Value sourcepathrole__lua(lua_Value _a0);
+__attribute__((visibility("default"))) const char* sourcepathformlaw(const char* path);
+static lua_Value sourcepathformlaw__lua(lua_Value _a0);
+__attribute__((visibility("default"))) const char* sourcepathformprovenance(const char* path);
+static lua_Value sourcepathformprovenance__lua(lua_Value _a0);
+__attribute__((visibility("default"))) const char* sourcefactlaw(const char* path, const char* role);
+static lua_Value sourcefactlaw__lua2(lua_Value _a0, lua_Value _a1);
+__attribute__((visibility("default"))) const char* sourcefactprovenance(const char* path, const char* role);
+static lua_Value sourcefactprovenance__lua2(lua_Value _a0, lua_Value _a1);
 __attribute__((visibility("default"))) int64_t recordslots(void);
 static lua_Value recordslots__lua(lua_Value _unused);
 __attribute__((visibility("default"))) int64_t fieldkind(void);
@@ -8514,6 +8538,256 @@ bool _r = sourceformcanonical(_p0);
 
 __attribute__((visibility("default"))) bool sourceformcanonical(int64_t i) {
     return (i == 1);
+}
+
+static lua_Value sourceentrycount__lua(lua_Value _unused) {
+    (void)_unused;
+    int64_t _r = sourceentrycount();
+    return lua_val_from_int((int64_t)(_r));
+}
+
+__attribute__((visibility("default"))) int64_t sourceentrycount(void) {
+    return 39;
+}
+
+static lua_Value sourceentryrole__lua(lua_Value _a0) {
+int64_t _p0 = (int64_t)lua_to_num(_a0);
+const char* _r = sourceentryrole(_p0);
+    return lua_val_from_str(_r);
+}
+
+__attribute__((visibility("default"))) const char* sourceentryrole(int64_t i) {
+    if (((i >= 1) && (i <= 3))) {
+        return "negative";
+    }
+    if ((((i == 5) || (i == 6)) || (i == 7))) {
+        return "generated";
+    }
+    if ((((i == 9) || (i == 10)) || (i == 27))) {
+        return "compatibility";
+    }
+    if (((i >= 11) && (i <= 26))) {
+        return "canonical";
+    }
+    if (((i >= 1) && (i <= 39))) {
+        return "foreign";
+    }
+    return "";
+}
+
+static lua_Value sourceentrypattern__lua(lua_Value _a0) {
+int64_t _p0 = (int64_t)lua_to_num(_a0);
+const char* _r = sourceentrypattern(_p0);
+    return lua_val_from_str(_r);
+}
+
+__attribute__((visibility("default"))) const char* sourceentrypattern(int64_t i) {
+    if ((i == 1)) return "examples/compile_fail/";
+    if ((i == 2)) return "examples/native_differential/unsupported/";
+    if ((i == 3)) return "error_test.id";
+    if ((i == 4)) return "examples/native_differential/";
+    if ((i == 5)) return "lib/token/classify.id";
+    if ((i == 6)) return "lib/wasm/opcode_lookup.id";
+    if ((i == 7)) return "lib/wasm/ward_mvp_opcodes.id";
+    if ((i == 8)) return "examples/wasm/";
+    if ((i == 9)) return "examples/lua";
+    if ((i == 10)) return "examples/test_lua";
+    if ((i == 11)) return "examples/json/";
+    if ((i == 12)) return "examples/conversion/";
+    if ((i == 13)) return "examples/projection/";
+    if ((i == 14)) return "examples/infer/";
+    if ((i == 15)) return "examples/demand/";
+    if ((i == 16)) return "examples/hash/";
+    if ((i == 17)) return "examples/native/";
+    if ((i == 18)) return "examples/control/";
+    if ((i == 19)) return "examples/nominal/";
+    if ((i == 20)) return "examples/layout/";
+    if ((i == 21)) return "examples/pack/";
+    if ((i == 22)) return "examples/anchor/";
+    if ((i == 23)) return "examples/case/";
+    if ((i == 24)) return "examples/read/";
+    if ((i == 25)) return "examples/boring/";
+    if ((i == 26)) return "examples/table/";
+    if ((i == 27)) return "examples/luahost/";
+    if ((i == 28)) return "examples/parity/";
+    if ((i == 29)) return "examples/host/";
+    if ((i == 30)) return "examples/world/";
+    if ((i == 31)) return "examples/tailslot/";
+    if ((i == 32)) return "examples/shc/";
+    if ((i == 33)) return "examples/cfloor/";
+    if ((i == 34)) return "examples/benchmark.id";
+    if ((i == 35)) return "examples/mandelbrot.id";
+    if ((i == 36)) return "vendor/";
+    if ((i == 37)) return "test.id";
+    if ((i == 38)) return "test2.id";
+    if ((i == 39)) return "examples/";
+    return "";
+}
+
+static lua_Value sourceequal__lua2(lua_Value _a0, lua_Value _a1) {
+const char* _p0 = lua_to_str(_a0);
+const char* _p1 = lua_to_str(_a1);
+bool _r = sourceequal(_p0, _p1);
+    return lua_val_from_bool(_r);
+}
+
+__attribute__((visibility("default"))) bool sourceequal(const char* left, const char* right) {
+    int64_t n = ((int64_t)strlen(left));
+    if ((n != ((int64_t)strlen(right)))) return false;
+    int64_t i = 1;
+    while ((i <= n)) {
+        if ((((int64_t)(unsigned char)(left[i - 1])) != ((int64_t)(unsigned char)(right[i - 1])))) return false;
+        i = (i + 1);
+    }
+    return true;
+}
+
+static lua_Value sourcerangeequal__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {
+const char* _p0 = lua_to_str(_a0);
+int64_t _p1 = (int64_t)lua_to_num(_a1);
+const char* _p2 = lua_to_str(_a2);
+bool _r = sourcerangeequal(_p0, _p1, _p2);
+    return lua_val_from_bool(_r);
+}
+
+__attribute__((visibility("default"))) bool sourcerangeequal(const char* text, int64_t start, const char* pattern) {
+    int64_t n = ((int64_t)strlen(pattern));
+    if (((start < 1) || (((start + n) - 1) > ((int64_t)strlen(text))))) return false;
+    int64_t i = 1;
+    while ((i <= n)) {
+        if ((((int64_t)(unsigned char)(text[((start + i) - 1) - 1])) != ((int64_t)(unsigned char)(pattern[i - 1])))) return false;
+        i = (i + 1);
+    }
+    return true;
+}
+
+static lua_Value sourceends__lua2(lua_Value _a0, lua_Value _a1) {
+const char* _p0 = lua_to_str(_a0);
+const char* _p1 = lua_to_str(_a1);
+bool _r = sourceends(_p0, _p1);
+    return lua_val_from_bool(_r);
+}
+
+__attribute__((visibility("default"))) bool sourceends(const char* text, const char* suffix) {
+    int64_t n = ((int64_t)strlen(text));
+    int64_t m = ((int64_t)strlen(suffix));
+    if ((m > n)) return false;
+    return sourcerangeequal(text, ((n - m) + 1), suffix);
+}
+
+static lua_Value sourcepathmatches__lua2(lua_Value _a0, lua_Value _a1) {
+const char* _p0 = lua_to_str(_a0);
+const char* _p1 = lua_to_str(_a1);
+bool _r = sourcepathmatches(_p0, _p1);
+    return lua_val_from_bool(_r);
+}
+
+__attribute__((visibility("default"))) bool sourcepathmatches(const char* path, const char* pattern) {
+    int64_t n = ((int64_t)strlen(path));
+    int64_t m = ((int64_t)strlen(pattern));
+    if (sourceequal(path, pattern)) return true;
+    if (((n >= m) && sourcerangeequal(path, 1, pattern))) {
+        if ((((int64_t)(unsigned char)(pattern[m - 1])) == 47)) return true;
+        if (((n > m) && (((int64_t)(unsigned char)(path[(m + 1) - 1])) == 47))) return true;
+    }
+    if (((n > m) && (((int64_t)(unsigned char)(path[(n - m) - 1])) == 47))) {
+        return sourcerangeequal(path, ((n - m) + 1), pattern);
+    }
+    return false;
+}
+
+static lua_Value sourcepathrole__lua(lua_Value _a0) {
+const char* _p0 = lua_to_str(_a0);
+const char* _r = sourcepathrole(_p0);
+    return lua_val_from_str(_r);
+}
+
+__attribute__((visibility("default"))) const char* sourcepathrole(const char* path) {
+    const char* best = "";
+    duo_retain((void*)(best));
+    int64_t bestlen = 0;
+    int64_t i = 1;
+    while ((i <= sourceentrycount())) {
+        const char* pattern = sourceentrypattern(i);
+        int64_t n = ((int64_t)strlen(pattern));
+        if (((n >= bestlen) && sourcepathmatches(path, pattern))) {
+            duo_release((void*)(best));
+            best = sourceentryrole(i);
+            duo_retain((void*)(best));
+            bestlen = n;
+        }
+        i = (i + 1);
+    }
+    return best;
+    duo_release((void*)(best));
+}
+
+static lua_Value sourcepathformlaw__lua(lua_Value _a0) {
+const char* _p0 = lua_to_str(_a0);
+const char* _r = sourcepathformlaw(_p0);
+    return lua_val_from_str(_r);
+}
+
+__attribute__((visibility("default"))) const char* sourcepathformlaw(const char* path) {
+    int64_t i = 1;
+    while ((i <= sourceformcount())) {
+        if (sourceends(path, sourceformsuffix(i))) return sourceformlaw(i);
+        i = (i + 1);
+    }
+    return "";
+}
+
+static lua_Value sourcepathformprovenance__lua(lua_Value _a0) {
+const char* _p0 = lua_to_str(_a0);
+const char* _r = sourcepathformprovenance(_p0);
+    return lua_val_from_str(_r);
+}
+
+__attribute__((visibility("default"))) const char* sourcepathformprovenance(const char* path) {
+    int64_t i = 1;
+    while ((i <= sourceformcount())) {
+        if (sourceends(path, sourceformsuffix(i))) {
+            if (sourceformcanonical(i)) return "canonical";
+            return "foreign";
+        }
+        i = (i + 1);
+    }
+    return "unknown";
+}
+
+static lua_Value sourcefactlaw__lua2(lua_Value _a0, lua_Value _a1) {
+const char* _p0 = lua_to_str(_a0);
+const char* _p1 = lua_to_str(_a1);
+const char* _r = sourcefactlaw(_p0, _p1);
+    return lua_val_from_str(_r);
+}
+
+__attribute__((visibility("default"))) const char* sourcefactlaw(const char* path, const char* role) {
+    if ((sourceequal(role, "canonical") || sourceequal(role, "generated"))) return "idol";
+    if (sourceequal(role, "compatibility")) return "lua";
+    const char* discovered = sourcepathformlaw(path);
+    if ((sourceequal(role, "negative") || sourceequal(role, "foreign"))) {
+        if (sourceequal(discovered, "lua")) return "lua";
+        return "idol";
+    }
+    return discovered;
+}
+
+static lua_Value sourcefactprovenance__lua2(lua_Value _a0, lua_Value _a1) {
+const char* _p0 = lua_to_str(_a0);
+const char* _p1 = lua_to_str(_a1);
+const char* _r = sourcefactprovenance(_p0, _p1);
+    return lua_val_from_str(_r);
+}
+
+__attribute__((visibility("default"))) const char* sourcefactprovenance(const char* path, const char* role) {
+    if ((sourceequal(role, "canonical") || sourceequal(role, "generated"))) return "canonical";
+    if ((sourceequal(role, "compatibility") || sourceequal(role, "foreign"))) return "foreign";
+    if (sourceequal(role, "negative")) {
+        if (sourceequal(sourcepathformlaw(path), "lua")) return "foreign";
+        return "canonical";
+    }
+    return sourcepathformprovenance(path);
 }
 
 static lua_Value recordslots__lua(lua_Value _unused) {

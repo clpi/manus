@@ -1,10 +1,10 @@
 # corpus_classify — re-derive the .id corpus classification, and report what
 # the classification is NOT confident about.
 #
-# The rules live in ONE place: `docs/spec/corpus.md`. This file does not
-# restate them, it reads them. Adding a class rule here instead of there would
-# give the repo two edges for one fact, which is the failure mode the manifest
-# exists to avoid.
+# The rules live in ONE executed producer: `lib/compiler/lexer.id` sourceentry*.
+# `docs/spec/corpus.md` is its mechanically checked text projection for tools
+# that cannot call the producer yet. This file reads that projection and never
+# restates the roster.
 #
 # WHY THIS IS SEPARATE FROM audit100. audit100 ENFORCES the deny table over the
 # canonical partition; it needs the partition and stops there. This gate
@@ -182,7 +182,7 @@ main: i64 = ()
     print("corpus_classify: FAIL — missing {spec}")
     return 3
 
-  # Rules as parallel arrays: first match wins, order as written.
+  # Checked producer projection as parallel arrays: first match wins.
   rcls = {}
   rpre = {}
   rpin = {}
