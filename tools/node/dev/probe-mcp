@@ -91,13 +91,16 @@ while IFS="$tab" read -r name root bin entry backend; do
   echo "probe-mcp: launch name=$name backend=$backend entry=$root/$entry" >&2
   rc=0
   case "$backend" in
-    native)
-      (cd "$root" && IDOL_ROOT="$root" IDOL_BIN="$bin" \
-        "$bin" run "$root/$entry" <"$work/init.json" >"$response" 2>"$err") || rc=$?
-      ;;
-    direct)
-      (cd "$root" && IDOL_ROOT="$root" IDOL_BIN="$bin" \
-        "$bin" run --backend=direct "$root/$entry" <"$work/init.json" >"$response" 2>"$err") || rc=$?
+    native|direct)
+      beflag=""
+      if [ "$backend" = direct ]; then beflag="--backend=direct"; fi
+      # Each launch is an evidence subject: commit, dirty state, compiler
+      # hash, command, inner exit, and output hashes (evidence/subject).
+      "$repo/tools/evidence/subject" -o "$work/$name.subject.json" -s "$response" \
+        --label "probe=$name" --label "backend=$backend" -- \
+        sh -c 'cd "$1" && exec env IDOL_ROOT="$2" IDOL_BIN="$3" "$3" run $4 "$5"' \
+        _ "$root" "$root" "$bin" "$beflag" "$root/$entry" \
+        <"$work/init.json" >"$response" 2>"$err" || rc=$?
       ;;
     *)
       echo "probe-mcp: $name uses unsupported or retired backend: $backend" >&2
@@ -119,6 +122,7 @@ while IFS="$tab" read -r name root bin entry backend; do
     continue
   fi
   echo "ok $name initialize"
+  cat "$work/$name.subject.json" >&2
 done <"$work/enabled.tsv"
 
 if [ "$enabled" -eq 0 ]; then

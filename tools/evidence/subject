@@ -1,0 +1,82 @@
+#!/bin/sh
+# evidence/subject — run one command and emit a machine-verifiable subject.
+#
+# A subject is the minimum context that makes a gate output impossible to
+# fake retroactively: the exact commit and dirty state, the compiler binary
+# hash, the command, its real inner exit status, and the hashes of the
+# artifacts it produced. (Pickle Mission D.)
+#
+# usage: tools/evidence/subject [-o out.json] [-- label=value ...] -- <cmd...>
+# Exit status: the inner command's exit status (so wrappers keep working).
+
+set -eu
+
+repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+out=""
+stdout_to=""
+label_args=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -s) stdout_to="$2"; shift 2 ;;
+    --label) label_args="$label_args $2"; shift 2 ;;
+    --) shift; break ;;
+    *) echo "evidence/subject: unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+[ $# -gt 0 ] || { echo "evidence/subject: no command after --" >&2; exit 2; }
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-subject.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+
+inner=0
+"$@" >"$work/stdout" 2>"$work/stderr" || inner=$?
+
+commit="$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo uncommitted)"
+dirty="$(git -C "$repo" status --porcelain 2>/dev/null | grep -c "" || echo 0)"
+
+# artifacts: hash every NEW untracked file plus every modified tracked file
+# the run could have touched, capped for sanity.
+git -C "$repo" status --porcelain 2>/dev/null | awk '$1=="??"||$1==" M"||$1=="M"{print $2}' \
+  | head -50 >"$work/candidates"
+: >"$work/artifacts.jsonl"
+while IFS= read -r f; do
+  [ -f "$repo/$f" ] || continue
+  h="$(shasum -a 256 "$repo/$f" 2>/dev/null | awk '{print $1}')"
+  [ -n "$h" ] && printf '{"path":%s,"sha256":%s}\n' \
+    "$(printf '%s' "$f" | jq -Rs .)" "\"$h\"" >>"$work/artifacts.jsonl"
+done <"$work/candidates"
+
+labels_json="{}"
+for kv in $label_args; do
+  k="${kv%%=*}"; v="${kv#*=}"
+  labels_json="$(printf '%s' "$labels_json" | jq --arg k "$k" --arg v "$v" '. + {($k): $v}')"
+done
+
+subject="$(jq -n \
+  --arg schema "evidence-subject-v1" \
+  --arg commit "$commit" \
+  --argjson dirty "$dirty" \
+  --arg repo "$repo" \
+  --argjson inner "$inner" \
+  --arg cmd "$(printf '%s ' "$@")" \
+  --argjson stdout_sha256 "\"$(shasum -a 256 "$work/stdout" | awk '{print $1}')\"" \
+  --argjson stdout_bytes "$(wc -c <"$work/stdout" | tr -d ' ')" \
+  --argjson stderr_sha256 "\"$(shasum -a 256 "$work/stderr" | awk '{print $1}')\"" \
+  --argjson labels "$labels_json" \
+  --argjson artifacts "$(jq -s '.' "$work/artifacts.jsonl" 2>/dev/null || echo '[]')" \
+  '{schema:$schema, commit:$commit, dirty:$dirty, repo:$repo,
+    command:$cmd, inner_exit:$inner,
+    stdout:{sha256:$stdout_sha256, bytes:$stdout_bytes},
+    stderr:{sha256:$stderr_sha256},
+    artifacts:$artifacts, labels:$labels}')"
+
+if [ -n "$stdout_to" ]; then
+  cp "$work/stdout" "$stdout_to"
+fi
+if [ -n "$out" ]; then
+  printf '%s\n' "$subject" >"$out"
+else
+  printf '%s\n' "$subject"
+fi
+exit "$inner"
