@@ -9,7 +9,7 @@
 /* weak: this generated table is the PROJECTION of
  * lib/token/classify.id. A program that embeds the canonical Duo
  * source emits its own definition of the same symbol, and A3 ONE EDGE
- * says there is one fact behind both — so the Duo-emitted one must be
+ * says there is one fact behind both — so the idol-emitted one must be
  * allowed to win rather than colliding. Without this, anything pulling
  * in SH-02's artifact AND SH-03's lexer fails to link with
  * `duplicate symbol '_duo_keyword_classify'`. */

@@ -23,7 +23,7 @@ fn emitGrammarRole(w: *std.Io.Writer) !void {
     const enum_info = @typeInfo(lexer.TokenKind).@"enum";
     try w.print(
         \\-- GENERATED from src/grammar_role_gen.zig — do not edit by hand.
-        \\-- Regenerate: duo token-tables emit
+        \\-- Regenerate: idol token-tables emit
         \\-- Canonical grammar-role facts: src/grammar_roles.zig
         \\
         \\grammar = req "std.compiler.token"

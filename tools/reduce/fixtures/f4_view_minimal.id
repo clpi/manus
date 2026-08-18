@@ -1,0 +1,8 @@
+# F4 — missing: view, minimized 29 -> 4 lines (predicate: same first refusal).
+# Perturbations: renaming the relation yields `missing: vw`; renaming the
+# param keeps `missing: view`. The fact is the relation's SHAPE (pack param
+# + if/else over a pack field), reported by name — not a name-keyed lookup.
+view: pack = (pack: pack)
+  if index < 0 or index > pack.count
+    token.KINDEOF
+  else

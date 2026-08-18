@@ -205,3 +205,19 @@ Owner: lane 1–2 (GAP-134 generated grammar roles / immutable token view).
 The parity checker must stay report-only; reconciling the three emitters
 is a ruled decision for that lane. `scripts/grammarconvergence.id` already
 exists as the declared convergence script for this surface.
+
+
+## Update 3 — H7 mechanical subset implemented; F4 minimized
+
+- Generator banner `duo token-tables emit` -> `idol token-tables emit`
+  (src/grammar_role_gen.zig); `idol token-tables emit` regenerated the
+  tracked projection (114, current format). Stale 110 artifact and the
+  spent tools/ emitter deleted (foreign.md's ledger already recorded the
+  latter as spent). `tools/parity/grammar`: **all projections agree**.
+  The remaining H7 decisions (old-dialect emission face, tree-sitter
+  convergence) stay with lane 1-2.
+- F4 `missing: view` minimized 29 -> 4 lines
+  (tools/reduce/fixtures/f4_view_minimal.id). Renaming the relation moves
+  the missing-fact name with it; renaming the param does not. The fact is
+  the relation SHAPE (pack param + if/else over a pack field), reported
+  by name — not a name-keyed lookup. Hands lane 4 a 4-line reproducer.
