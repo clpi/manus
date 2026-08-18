@@ -14,8 +14,8 @@ ulebval: i64 = (s: str, i: i64)
   p: i64 = i
   hit: bool = true
   while hit
-    x: i64 = byteat(s, p)
-    r = r + (x - (x / 128) * 128) * pow2(k)
+    x: i64 = s:byteat(p)
+    r = r + (x - (x / 128) * 128) * k:pow2()
     p = p + 1
     hit = x >= 128 and p <= bytecount(s)
     k = k + 7
@@ -25,7 +25,7 @@ ulebafter: i64 = (s: str, i: i64)
   p: i64 = i
   hit: bool = true
   while hit
-    x: i64 = byteat(s, p)
+    x: i64 = s:byteat(p)
     p = p + 1
     hit = x >= 128 and p <= bytecount(s)
   p
@@ -45,7 +45,7 @@ num: str = (n: i64)
   n:to(str)
 
 emit: i64 = (key: str, val: str)
-  stdout:write(fact(key, "\"" .. val .. "\"") .. "\n")
+  stdout:write(key:fact("\"" .. val .. "\"") .. "\n")
   0
 
 hexdigit: i64 = (c: i64)
@@ -101,13 +101,50 @@ slebend: i64 = (s: str, i: i64)
   p: i64 = i
   hit: bool = true
   while hit
-    x: i64 = byteat(s, p)
+    x: i64 = s:byteat(p)
     p = p + 1
     hit = x >= 128 and p <= bytecount(s)
   p
 
+appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
+  key: str = "app." .. fi:num() .. "." .. n:num()
+  if op == 32
+    key:emit("read local=" .. num(src:ulebval(ip)))
+  if op == 65
+    key:emit("const " .. num(src:slebsign(ip)))
+  if op == 106 or op == 107 or op == 108
+    key:emit(op:binname() .. " a=" .. a:num() .. " b=" .. b:num() .. " width=32 overflow=wrap origin=wasm")
+  0
+
+binname: str = (op: i64)
+  if op == 106
+    "add"
+  else
+    if op == 107
+      "sub"
+    else
+      "mul"
+
+slebsign: i64 = (s: str, i: i64)
+  p: i64 = i
+  r: i64 = 0
+  k: i64 = 0
+  hit: bool = true
+  while hit
+    x: i64 = s:byteat(p)
+    r = r + (x - (x / 128) * 128) * k:pow2()
+    p = p + 1
+    hit = x >= 128 and p <= bytecount(s)
+    k = k + 7
+  if k < 64
+    lastx: i64 = s:byteat(p - 1)
+    if lastx >= 64
+      r = r - k:pow2()
+  r
+
 main: i64 = ()
   path: str = args(1)
+  applimit: i64 = 3
   if path == ""
     stdout:write("usage: idol run tools/wasm/ingest.id -- <module.wasm.hex>\n")
     return 1
@@ -115,110 +152,118 @@ main: i64 = ()
   if src:len() < 8
     stdout:write("error: too short for a module\n")
     return 1
-  b0: i64 = byteat(src, 1)
-  b1: i64 = byteat(src, 2)
-  b2: i64 = byteat(src, 3)
-  b3: i64 = byteat(src, 4)
+  b0: i64 = src:byteat(1)
+  b1: i64 = src:byteat(2)
+  b2: i64 = src:byteat(3)
+  b3: i64 = src:byteat(4)
   if b0 != 0 or b1 != 97 or b2 != 115 or b3 != 109
     stdout:write("error: not a wasm module\n")
     return 1
-  v: i64 = byteat(src, 5) + byteat(src, 6) * 256 + byteat(src, 7) * 65536 + byteat(src, 8) * 16777216
+  v: i64 = src:byteat(5) + src:byteat(6) * 256 + src:byteat(7) * 65536 + src:byteat(8) * 16777216
   emit("module.magic", "wasm")
-  emit("module.version", num(v))
+  emit("module.version", v:num())
   # section census: each section is one fact line (id, byte size)
   i: i64 = 9
   walk: bool = true
   while walk and i + 1 < bytecount(src)
-    sid: i64 = byteat(src, i)
-    size: i64 = ulebval(src, i + 1)
-    after: i64 = ulebafter(src, i + 1)
-    emit("section." .. num(sid), num(size))
+    sid: i64 = src:byteat(i)
+    size: i64 = src:ulebval(i + 1)
+    after: i64 = src:ulebafter(i + 1)
+    emit("section." .. sid:num(), size:num())
     if sid == 1
-      n1c: i64 = ulebval(src, after)
-      emit("types.count", num(n1c))
+      n1c: i64 = src:ulebval(after)
+      emit("types.count", n1c:num())
     if sid == 3
-      n3c: i64 = ulebval(src, after)
-      emit("functions.count", num(n3c))
+      n3c: i64 = src:ulebval(after)
+      emit("functions.count", n3c:num())
     if sid == 10
-      n10c: i64 = ulebval(src, after)
-      emit("bodies.count", num(n10c))
-      bp: i64 = ulebafter(src, after)
+      n10c: i64 = src:ulebval(after)
+      emit("bodies.count", n10c:num())
+      bp: i64 = src:ulebafter(after)
       fi: i64 = 0
       totalinstr: i64 = 0
       totallocals: i64 = 0
       while fi < n10c and bp < bytecount(src)
-        bsz: i64 = ulebval(src, bp)
-        bstart: i64 = ulebafter(src, bp)
+        bsz: i64 = src:ulebval(bp)
+        bstart: i64 = src:ulebafter(bp)
         bend: i64 = bstart + bsz - 1
-        nld: i64 = ulebval(src, bstart)
-        lp: i64 = ulebafter(src, bstart)
+        nld: i64 = src:ulebval(bstart)
+        lp: i64 = src:ulebafter(bstart)
         flocals: i64 = 0
         li: i64 = 0
         while li < nld and lp < bend
-          cnt: i64 = ulebval(src, lp)
-          lp = ulebafter(src, lp) + 1
+          cnt: i64 = src:ulebval(lp)
+          lp = src:ulebafter(lp) + 1
           flocals = flocals + cnt
           li = li + 1
         ninstr: i64 = 0
         ip: i64 = lp
         walking: bool = true
+        prev: i64 = -1
+        prev2: i64 = -1
         while walking and ip <= bend
-          op: i64 = byteat(src, ip)
+          op: i64 = src:byteat(ip)
+          pre: i64 = ip + 1
           ip = ip + 1
-          cl: i64 = immclass(op)
+          cl: i64 = op:immclass()
           if cl == 1
-            ip = ulebafter(src, ip)
+            ip = src:ulebafter(ip)
           if cl == 2
-            ip = ulebafter(src, ip)
-            ip = ulebafter(src, ip)
+            ip = src:ulebafter(ip)
+            ip = src:ulebafter(ip)
+          if fi < applimit
+            src:appfact(fi, ninstr, op, pre, prev2, prev)
+            if op == 32 or op == 65
+              prev2 = prev
+              prev = ninstr
           if cl == -6
-            bt: i64 = byteat(src, ip)
+            bt: i64 = src:byteat(ip)
             if bt == 64 or bt >= 123
               ip = ip + 1
             if bt < 64
-              ip = slebend(src, ip)
+              ip = src:slebend(ip)
           if cl == -7
-            sub: i64 = byteat(src, ip)
+            sub: i64 = src:byteat(ip)
             ip = ip + 1
             if sub == 8
-              ip = ulebafter(src, ip)
+              ip = src:ulebafter(ip)
               ip = ip + 1
             if sub == 9
-              ip = ulebafter(src, ip)
+              ip = src:ulebafter(ip)
             if sub == 10
               ip = ip + 2
             if sub == 11
               ip = ip + 1
             if sub >= 12
-              ip = ulebafter(src, ip)
+              ip = src:ulebafter(ip)
               if sub == 14 or sub == 15
-                ip = ulebafter(src, ip)
+                ip = src:ulebafter(ip)
           if cl == -2
-            ip = slebend(src, ip)
+            ip = src:slebend(ip)
           if cl == -3
             ip = ip + 4
           if cl == -4
             ip = ip + 8
           if cl == -5
-            ip = ulebafter(src, ip)
-            ip = ulebafter(src, ip)
+            ip = src:ulebafter(ip)
+            ip = src:ulebafter(ip)
           if cl == -1
             walking = false
           ninstr = ninstr + 1
-        emit("body." .. num(fi) .. ".locals", num(flocals))
-        emit("body." .. num(fi) .. ".instr", num(ninstr))
+        emit("body." .. fi:num() .. ".locals", flocals:num())
+        emit("body." .. fi:num() .. ".instr", ninstr:num())
         totalinstr = totalinstr + ninstr
         totallocals = totallocals + flocals
         bp = bstart + bsz
         fi = fi + 1
-      emit("code.totalinstr", num(totalinstr))
-      emit("code.totallocals", num(totallocals))
+      emit("code.totalinstr", totalinstr:num())
+      emit("code.totallocals", totallocals:num())
     if sid == 7
-      n7c: i64 = ulebval(src, after)
-      emit("exports.count", num(n7c))
+      n7c: i64 = src:ulebval(after)
+      emit("exports.count", n7c:num())
     if sid == 2
-      n2c: i64 = ulebval(src, after)
-      emit("imports.count", num(n2c))
+      n2c: i64 = src:ulebval(after)
+      emit("imports.count", n2c:num())
     i = after + size
     walk = i > 0
   0
