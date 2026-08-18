@@ -92,8 +92,8 @@ oracle   tests/                        license:test-oracle — differential fixt
 No tracked foreign file is currently unclassified. `ext/vscode-idol/extension.js`
 and `ext/tree-sitter-idol/grammar.js` are ledger rows beside the generators.
 `.pi/extensions/idol-mcp.ts` is ledger until pi speaks MCP without TypeScript.
-Spent one-shot root `*.py` and `tools/emit_grammar_role.zig` (stale duplicate of
-`src/emit_grammar_role.zig`) were deleted rather than licensed.
+Spent one-shot root `*.py` and partial grammar-role emitters were deleted rather
+than licensed; the build-only authority emitter writes every projection.
 
 Two earlier left the list the same way: `docs/theme/custom.js` was deleted, and
 `scripts/run_compile_size_benchmark.sh` was rewritten in Idol.
