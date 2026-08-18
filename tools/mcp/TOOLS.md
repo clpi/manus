@@ -4,20 +4,14 @@ This file intentionally contains no static tool census or copied schemas.
 Discover the exact current surface through MCP `tools/list`; validate it with
 the locked `mcp-gate`.
 
-Stable orientation operations currently include:
+The current project server exposes exactly the manifest-gated orientation
+operations `status`, `head`, and `orient`. The sibling `idol-native` server
+owns its separately gated compiler and LSP queries. There are no `duo_*`
+aliases and no hidden benchmark, claim, build, gap, or zls tools.
 
-- session start, which routes to one law, the bootstrap ledger, live claims,
-  and an explicit unknown state plus blocker `GAP-131` and
-  `gaps/GAP-*.md` route;
-- exact path claims and releases;
-- numbered gap allocation and updates;
-- serialized build and performance evidence;
-- grammar and graph projections that remain subordinate to the constitution.
-
-Names beginning with `duo_` are bootstrap compatibility identifiers. They do
-not rename Idol. Tools that expose historical passes, directives, `.id`
-fixtures, or migration catalogs are provenance only and must not guide new
-source or architecture.
+Claims, gap reservations, and locked execution are explicit repository
+commands. Do not reintroduce them through raw JSON substring dispatch or model
+their outcomes as successful text payloads.
 
 MCP does not own semantics. It projects graph identity, facts, demand,
 realization, provenance, evidence, and current repository state. It must fail

@@ -284,8 +284,8 @@ pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u
 /// it was simply the first non-identifier byte anyone hit.
 ///
 /// MEASURED, and this is why it is not decoration: the corpus contains
-/// `scripts/gatecap-probe.id` and `scripts/setup-nvim.id`. Their homes carry a
-/// HYPHEN, and `idol compile --target native-asm` on such a file emitted
+/// `scripts/gatecap-probe.id` is one corpus example. Its home carries a
+/// HYPHEN, and `idol compile --target native-asm` on that file emitted
 ///
 ///     .globl _idol_odd-name__f
 ///

@@ -4795,11 +4795,10 @@ fn do_compile(
                     // classifier", and that refused the one cross-module shape
                     // the direct backend was BUILT for: a module exporting C
                     // symbols, called through a `bl` with a relocation.
-                    // `examples/duo_emit_machine_code.id` is that shape, and
-                    // `zig build direct-module-link` — the gate whose entire
-                    // job is to prove it — could not pass at all from the
-                    // moment gap[023] landed until now, because `std.emit` is
-                    // one object and one is already over the ceiling.
+                    // The historical machine-emission fixture had that shape,
+                    // but its proof depended on generated C and guessed
+                    // temporary object names. It was deleted rather than kept
+                    // as false direct-native evidence.
                     //
                     // The hazard gap[023] actually measured is narrower: a
                     // linked module object that CALLS THE RUNTIME (`lua_require`

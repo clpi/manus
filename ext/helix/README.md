@@ -1,10 +1,10 @@
-# Helix editor support for Duo
+# Helix editor support for Idol
 
 ## Installation
 
 ### 1. Register the language
 
-Append the `[language-server.id-lsp]`, `[[language]]`, and `[[grammar]]` entries
+Append the `[language-server.idol-lsp]`, `[[language]]`, and `[[grammar]]` entries
 from `languages.toml` into your Helix languages config:
 
 ```sh
@@ -28,7 +28,7 @@ Helix will compile the grammar from the `source.path` specified in
 correctly from the `ext/helix/` directory, or adjust it to an absolute path.
 
 ```sh
-# From the Duo repo root:
+# From the Idol repo root:
 helix --grammar fetch
 helix --grammar build
 ```

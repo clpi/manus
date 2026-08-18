@@ -1,4 +1,4 @@
-[language-server.id-lsp]
+[language-server.idol-lsp]
 command = "idol-lsp"
 
 [[language]]
@@ -6,7 +6,7 @@ name = "idol"
 scope = "source.id"
 file-types = ["id"]
 roots = ["build.id"]
-comment-token = "--"
+comment-token = "#"
 injection-regex = "idol"
 indent = { tab-width = 4, unit = "    " }
 language-servers = ["idol-lsp"]
