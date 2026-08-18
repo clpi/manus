@@ -292,7 +292,7 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, type_map: *const sem
             normalizeExpr(alloc, c.func, type_map);
             for (c.args) |a| normalizeExpr(alloc, a, type_map);
             if (c.form == .parenthesized and c.args.len == 1 and
-                (calleeIsArray(type_map, c.func) or nameIsPositionalTable(c.func)))
+                (calleeIsArray(type_map, c.func) or positionalResultDepth(c.func) != null))
             {
                 expr.* = .{ .index = .{ .loc = c.loc, .obj = c.func, .key = c.args[0] } };
                 return;
@@ -450,7 +450,9 @@ fn normalizeStmt(alloc: std.mem.Allocator, stmt: *ast.Stmt, type_map: *const sem
 /// through the compatibility C backend (`codegen.zig`), never the direct one,
 /// so a qualifying table has no callable meaning to lose.
 const TableNames = struct {
-    positional: std.StringHashMap(void),
+    /// Number of positional aggregate applications needed to reach a scalar.
+    /// A flat `{1, 2}` has depth one; `{{1, 2}, {3, 4}}` has depth two.
+    positional: std.StringHashMap(u32),
     callable: std.StringHashMap(void),
     /// EVERY name the program binds — local, global, parameter, declared
     /// relation, loop variable. Used only to REFUSE a world-member conversion:
@@ -465,10 +467,33 @@ const TableNames = struct {
 };
 
 fn allPositional(e: *const ast.Expr) bool {
-    if (e.* != .table) return false;
-    if (e.table.fields.len == 0) return false;
-    for (e.table.fields) |f| if (f != .positional) return false;
+    if (e.* != .table or e.table.fields.len == 0) return false;
+    for (e.table.fields) |field| if (field != .positional) return false;
     return true;
+}
+
+/// Depth this bounded graph-owned family can realize. Returning null preserves
+/// the prior one-application normalization for every other positional table;
+/// it does not broaden nested projection to strings, mixed leaves, or ragged
+/// shapes whose descriptor law is not owned here.
+fn positionalIntDepth(e: *const ast.Expr) ?u32 {
+    if (e.* != .table) return null;
+    if (e.table.fields.len == 0) return null;
+    var child_depth: ?u32 = null;
+    for (e.table.fields) |f| {
+        if (f != .positional) return null;
+        const depth: u32 = switch (f.positional.*) {
+            .table => positionalIntDepth(f.positional) orelse return null,
+            .int_lit => 0,
+            else => return null,
+        };
+        if (child_depth) |known| {
+            if (known != depth) return null;
+        } else {
+            child_depth = depth;
+        }
+    }
+    return (child_depth orelse return null) + 1;
 }
 
 fn collectNamesBlock(names: *TableNames, block: *const ast.Block) void {
@@ -516,7 +541,7 @@ fn bindNames(names: *TableNames, idents: []const ast.LocalName, inits: []const *
 fn note(names: *TableNames, name: []const u8, init: *const ast.Expr) void {
     names.bound.put(name, {}) catch {};
     if (allPositional(init)) {
-        names.positional.put(name, {}) catch {};
+        names.positional.put(name, positionalIntDepth(init) orelse 1) catch {};
     } else {
         // Anything else this name is ever bound to disqualifies it. A lambda is
         // the case that matters; the rest is conservatism, not precision.
@@ -530,7 +555,7 @@ fn note(names: *TableNames, name: []const u8, init: *const ast.Expr) void {
 /// suitability precheck, graph lift, and native emit so all three see one face.
 pub fn normalizeModule(alloc: std.mem.Allocator, mod: *ast.Module, type_map: *const sema.TypeMap) void {
     var names: TableNames = .{
-        .positional = std.StringHashMap(void).init(alloc),
+        .positional = std.StringHashMap(u32).init(alloc),
         .callable = std.StringHashMap(void).init(alloc),
         .bound = std.StringHashMap(void).init(alloc),
     };
@@ -548,7 +573,11 @@ pub fn normalizeModule(alloc: std.mem.Allocator, mod: *ast.Module, type_map: *co
 /// to all of them to carry a read-only lookup earns nothing.
 var active_names: ?*const TableNames = null;
 
-fn nameIsPositionalTable(func: *const ast.Expr) bool {
-    const names = active_names orelse return false;
-    return func.* == .name and names.qualifies(func.name.ident);
+fn positionalResultDepth(func: *const ast.Expr) ?u32 {
+    const names = active_names orelse return null;
+    return switch (func.*) {
+        .name => |n| if (names.qualifies(n.ident)) names.positional.get(n.ident) else null,
+        .index => |ix| if (positionalResultDepth(ix.obj)) |depth| (if (depth > 1) depth - 1 else null) else null,
+        else => null,
+    };
 }

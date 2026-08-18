@@ -107,7 +107,7 @@ drive: str = (lines: str)
   reqf = work .. "/req.lsp"
   respf = work .. "/resp.lsp"
   std.fs.write_file(reqf, lines)
-  os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idolbin .. "' run --backend=c '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
+  os.execute("cd " .. work .. " && IDOL_ROOT='" .. root .. "' DUO_ROOT='" .. root .. "' '" .. idolbin .. "' run --backend=direct '" .. server .. "' < '" .. reqf .. "' > '" .. respf .. "' 2>/dev/null")
   std.fs.read_file(respf) or ""
 
 has: bool = (blob: str, needle: str)
@@ -293,7 +293,7 @@ main: i64 = ()
   # check with teeth: it runs the real generator against the real document.
   src = root .. "/docs/spec/roles.md"
   if fs.exists(src)
-    rc = os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. idolbin .. "' run --backend=c '" .. root .. "/tools/lsp/legend.id' > '" .. work .. "/legend.txt' 2>/dev/null")
+    rc = os.execute("cd " .. work .. " && DUO_ROOT='" .. root .. "' '" .. idolbin .. "' run --backend=direct '" .. root .. "/tools/lsp/legend.id' > '" .. work .. "/legend.txt' 2>/dev/null")
     gen = fs.read_file(work .. "/legend.txt") or ""
     check(has(gen, "already current"), "the committed legend re-derives from docs/spec/roles.md", "regenerating changed the block — commit the regeneration, do not hand-edit it")
   else

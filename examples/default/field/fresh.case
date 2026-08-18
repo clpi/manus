@@ -1,0 +1,7 @@
+cell = struct
+    state: { value: i64 } = { value = 0 }
+end
+
+main: i64 = ()
+    value = cell{}
+    value.state.value

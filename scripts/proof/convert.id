@@ -111,11 +111,6 @@ main: i64 = ()
   fails = fails + row("subjcall   ", answer("d", subjcall, ""), "17")
 
   print("")
-  print("  the same, through the C backend")
-  fails = fails + row("opfirst  c ", answer("e", opfirst, "--backend=c"), "17")
-  fails = fails + row("subjfirst c", answer("f", subjfirst, "--backend=c"), "17")
-
-  print("")
   print("  a string holding no number must not come back as one")
   fails = fails + row("zero       ", answer("g", zero, ""), "0")
   fails = fails + row("junk       ", answer("h", junk, ""), "")

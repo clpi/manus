@@ -1,0 +1,5 @@
+size: i64 = (text: str, count: i64 = text:len())
+    count
+
+main: i64 = ()
+    size("abcd")

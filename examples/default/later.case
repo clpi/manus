@@ -1,0 +1,5 @@
+span: i64 = (base: i64, count: i64 = limit + base, limit: i64 = 4)
+    count
+
+main: i64 = ()
+    span(3)

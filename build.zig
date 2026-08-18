@@ -580,6 +580,23 @@ pub fn build(b: *std.Build) void {
     const world_launch_step = b.step("world-launch", "launcher world admission and cache separation");
     world_launch_step.dependOn(&world_launch_cmd.step);
 
+    const defaults_cmd = b.addSystemCommand(&.{ "sh", "gate/defaults.sh" });
+    defaults_cmd.setCwd(b.path("."));
+    defaults_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
+    defaults_cmd.step.dependOn(b.getInstallStep());
+    const defaults_step = b.step("defaults-gate", "census function and descriptor defaults across parse, check, direct, and run");
+    defaults_step.dependOn(&defaults_cmd.step);
+    test_step.dependOn(&defaults_cmd.step);
+
+    const cache_home_cmd = b.addSystemCommand(&.{ "sh", "gate/cache-home.sh" });
+    cache_home_cmd.setCwd(b.path("."));
+    cache_home_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol");
+    cache_home_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
+    cache_home_cmd.step.dependOn(b.getInstallStep());
+    const cache_home_step = b.step("cache-home", "executable cache follows resolved semantic home identity");
+    cache_home_step.dependOn(&cache_home_cmd.step);
+    test_step.dependOn(&cache_home_cmd.step);
+
     // tree-sitter-coverage -- section 19's editor front-end, measured.
     // Runs the generator (failing if it exits non-zero, which the nvim setup
     // script used to swallow), parses every tracked .id file, and ratchets off
