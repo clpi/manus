@@ -455,7 +455,22 @@ const usage =
     \\
 ;
 
-pub fn main(init: std.process.Init) !void {
+// The one choke point for unclassified errors. Classified failures print
+// their diagnostics and exit directly; anything that still escapes to here
+// is an internal defect. Zig's start code would print the raw error-return
+// trace (internal frames leak into user diagnostics — H4); instead print
+// one classified line and keep the trace behind IDOL_TRACE=1.
+pub fn main(init: std.process.Init) void {
+    mainInner(init) catch |e| {
+        if (std.c.getenv("IDOL_TRACE") != null) {
+            if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
+        }
+        term.err("{s} — internal; rerun with IDOL_TRACE=1 for the trace", .{@errorName(e)});
+        std.process.exit(1);
+    };
+}
+
+fn mainInner(init: std.process.Init) !void {
     const alloc = init.arena.allocator();
     term.init(init.io);
     apply_env_flags(init);
