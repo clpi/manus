@@ -1247,7 +1247,9 @@ pub const SemanticGraph = struct {
     /// whichever same-named shape happened to be visited first.
     pub fn descriptorShape(self: *const SemanticGraph, entity: id, position: u16) ?id {
         var found: ?id = null;
-        for (self.edges.items) |edge| {
+        for (self.outEdges(entity)) |edge_index| {
+            if (edge_index >= self.edges.items.len) return null;
+            const edge = self.edges.items[edge_index];
             if (edge.from != entity or edge.kind != .descriptor or edge.position != position) continue;
             if (found != null and found.? != edge.to) return null;
             found = edge.to;
@@ -3468,6 +3470,7 @@ pub const SemanticGraph = struct {
             .demand = consumption,
             .ast_ref = @ptrCast(@constCast(expr)),
         });
+        try self.rememberOrigin(@ptrCast(expr), occurrence);
         try self.markApplicationCandidate(occurrence);
     }
 
@@ -3979,14 +3982,14 @@ pub const SemanticGraph = struct {
         }
     }
 
-    fn applicationForExpression(self: *const SemanticGraph, expr: *const Expr) ?*const ApplicationFact {
-        for (self.application_facts.items) |*fact| {
-            const node = self.get(fact.application) orelse continue;
-            const raw = node.ast_ref orelse continue;
-            const candidate: *const Expr = @ptrCast(@alignCast(raw));
-            if (candidate == expr) return self.application(fact.application);
-        }
-        return null;
+    /// Exact graph entity found from source provenance. The pointer only locates
+    /// a candidate and the retained pointer validates that lookup; consumers
+    /// must query the graph fact they need from the returned identity.
+    pub fn locate(self: *const SemanticGraph, expr: *const Expr) ?id {
+        const entity = self.origin.get(@intFromPtr(expr)) orelse return null;
+        const node = self.get(entity) orelse return null;
+        if (node.ast_ref != @as(?*anyopaque, @ptrCast(@constCast(expr)))) return null;
+        return entity;
     }
 
     const BindingAdjustmentSource = struct {
@@ -4001,7 +4004,8 @@ pub const SemanticGraph = struct {
         target_count: usize,
     ) !?BindingAdjustmentSource {
         if (target_count <= 1) return null;
-        const application_fact = self.applicationForExpression(source) orelse return null;
+        const site = self.locate(source) orelse return null;
+        const application_fact = self.application(site) orelse return null;
         const source_fact = self.pack(application_fact.result_pack) orelse return error.InvalidPackAdjustment;
         const source_members = self.packMembers(source_fact.pack) orelse return error.InvalidPackAdjustment;
         const source_demands = self.demandsForRangeMut(source_fact.members) orelse return error.InvalidPackAdjustment;
@@ -4817,6 +4821,7 @@ pub const SemanticGraph = struct {
         }
 
         for (self.application_facts.items) |*fact| {
+            if (fact.effect != .unknown) continue;
             const callee = self.applicationRelation(fact.application) orelse continue;
             if (callee >= effect_free.bit_length or !effect_free.isSet(callee)) continue;
             fact.effect = .none;

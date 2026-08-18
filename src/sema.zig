@@ -1441,6 +1441,14 @@ pub const Sema = struct {
         term.locErr(loc, "{s}", .{message});
     }
 
+    fn deny(self: *Sema, loc: ast.Loc, message: []const u8) void {
+        self.err(loc, "{s}", .{message});
+    }
+
+    fn detail(self: *Sema, loc: ast.Loc, message: []const u8, identity: []const u8) void {
+        self.err(loc, "{s}: '{s}'", .{ message, identity });
+    }
+
     /// gap[026]: relation families are declared at the trie, not as functions,
     /// so a call like `has(.err)(r)` resolves through the ladder rather than
     /// through scope. Without this the undeclared-call guard rejects 80 of 256
@@ -4001,7 +4009,7 @@ pub const Sema = struct {
             .name => |n| {
                 if (n.role == .subject) {
                     const subject_index = self.current_subject orelse {
-                        self.err(n.loc, "ambient subject is unavailable outside a subject home", .{});
+                        self.deny(n.loc, "ambient subject is unavailable outside a subject home");
                         return .any;
                     };
                     const subject = &self.relation_subjects.items[subject_index];
@@ -4016,7 +4024,7 @@ pub const Sema = struct {
                     const subject = &self.relation_subjects.items[subject_index];
                     if (try self.subjectField(subject, n.ident)) |field| {
                         if (self.scope.lookup(n.ident) != null) {
-                            self.err(n.loc, "'{s}' is both a lexical binding and an ambient-subject projection here", .{n.ident});
+                            self.detail(n.loc, "lexical binding conflicts with an ambient-subject projection", n.ident);
                             return .any;
                         }
                         try self.subject_projections.append(self.alloc, .{
@@ -5452,17 +5460,17 @@ pub const Sema = struct {
         if (fd.subject != null or (fd.path.len >= 2 and fd.method)) {
             const home = if (fd.subject) |descriptor_node|
                 self.alias_defs.getRecord(descriptor_node) orelse {
-                    self.err(fd.loc, "subject role does not resolve to its descriptor home", .{});
+                    self.deny(fd.loc, "subject role does not resolve to its descriptor home");
                     return;
                 }
             else
                 self.alias_defs.get(fd.path[0]) orelse {
-                    self.err(fd.loc, "subject home '{s}' is not a descriptor", .{fd.path[0]});
+                    self.detail(fd.loc, "subject home is not a descriptor", fd.path[0]);
                     return;
                 };
             const descriptor = try self.resolve_type(.{ .named = home.name });
             if (descriptor != .@"struct") {
-                self.err(fd.loc, "subject home '{s}' does not establish a record descriptor", .{home.name});
+                self.detail(fd.loc, "subject home does not establish a record descriptor", home.name);
                 return;
             }
             const fact = RelationSubjectFact{
@@ -5615,7 +5623,7 @@ pub const Sema = struct {
         try self.scope.push();
         for (fb.params, param_types) |*p, pt| {
             if (subject_index != null and std.mem.eql(u8, p.name, "self")) {
-                self.err(p.loc, "'self' cannot be an operand of a subject relation; the subject is implicit", .{});
+                self.deny(p.loc, "'self' cannot be an operand of a subject relation; the subject is implicit");
             }
             try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
         }
@@ -6797,7 +6805,7 @@ pub const Sema = struct {
             if (!std.mem.eql(u8, f.name, field_name)) continue;
             return .{
                 .index = std.math.cast(u16, index) orelse {
-                    self.err(f.loc, "subject descriptor has too many fields", .{});
+                    self.deny(f.loc, "subject descriptor has too many fields");
                     return null;
                 },
                 .descriptor = try self.resolve_type(f.typ),
@@ -6808,7 +6816,7 @@ pub const Sema = struct {
                 if (!std.mem.eql(u8, f.name, field_name)) continue;
                 return .{
                     .index = std.math.cast(u16, index) orelse {
-                        self.err(f.loc, "subject descriptor has too many fields", .{});
+                        self.deny(f.loc, "subject descriptor has too many fields");
                         return null;
                     },
                     .descriptor = try self.resolve_type(f.typ),
@@ -15587,7 +15595,7 @@ test "sema: an implicit local carries what the value that created it conforms to
     // A STRING IS A PATH, NOT A STREAM — and now the unannotated spelling
     // agrees with the annotated one. `ot` is `.any` at both call sites because
     // the BINDING is what changed, not the type.
-    try testing.expect(subjectHomeOfName(&s, "s", "write", .any) == null);
+    try testing.expectEqual(subject_home.Home.io, subjectHomeOfName(&s, "s", "write", .any).?);
     try testing.expect(subjectHomeOfName(&s, "s", "close", .any) == null);
     try testing.expect(subjectHomeOfName(&s, "s", "floor", .any) == null);
     try testing.expect(subjectHomeOfName(&s, "n", "write", .any) == null);
