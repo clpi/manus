@@ -41,8 +41,8 @@ locations.
 Canonical lexical identity is not closed (`GAP-145` OPEN): producer identities
 for text/bytes/compat/long, `#` comment, shebang, dash comments, and reserved
 backtick now cross `tokenize()`. Producer `KIND_STRING_LIT` and host
-`TokenKind.string_lit` are deleted without renumbering live producer slots;
-AST `.string_lit`, Tree-sitter, and suffix `sourceFacts` remain. The historical
+`TokenKind.string_lit` and AST `.string_lit` are deleted without renumbering
+live producer slots; Tree-sitter and suffix `sourceFacts` remain. The historical
 `lib/` distribution path is retired filesystem
 provenance (GAP-157), not semantic ownership.
 
@@ -57,12 +57,14 @@ embed or optimization path; deleting those higher-level fallbacks requires the
 corresponding realization owner to distinguish physical refusal from semantic
 failure.
 
-Source ingress remains the earliest host-owned entry seam: Zig still derives
-source law and provenance from suffix/path text instead of consuming an
-executed Idol source-family fact (`is_canonical_source` is still suffix
-bytes `.id`). Production lexing now goes through the Idol lexer
+Source ingress remains the earliest host-owned entry seam. The executed Idol
+producer now owns the physical source-form roster through `sourceform*()` and
+home discovery consumes it, so Zig no longer enumerates `.id` and `.lua`
+there. Zig still owns corpus-home admission and the unlisted-path
+`sourceFacts` fallback, so this is not full source-family authority.
+Production lexing now goes through the Idol lexer
 (`tokenize()`); host `tokenizeHost()` is differential-only. The identity
-blocker is `GAP-145` remaining consumers (Tree-sitter and AST `.string_lit`)
+blocker is `GAP-145` remaining consumers (Tree-sitter and source-law collapse)
 before parser SHC. Physical producer slot 3 remains
 unpublished and fails closed; it is not a token identity.
 Parser long-bracket reconstruction is deleted (level in `int_val`).
@@ -82,11 +84,11 @@ sentinel, or query-then-mutate helpers as Idol semantic architecture.
 
 | Boundary | Current state | Exact remaining authority |
 | --- | --- | --- |
-| Source ingress | HOST OWNED | `admit(law, path)` produces family (path is provenance). Corpus homes in `docs/spec/corpus.md` admit in-tree family; unlisted paths fall back to `discover` (`law.bridge.death`). Not an executed Idol source-family producer. |
+| Source ingress | HOST OWNED, FORM ROSTER IDOL-OWNED | `lib/compiler/lexer.id` projects admitted physical form count, law name, suffix provenance, and canonical status through `sourceform*()`; home resolution consumes it and owns no suffix roster. `admit(law, path)` and corpus homes remain host-owned; unlisted paths use projected-form `discover` (`law.bridge.death`). |
 | Lexer producer | IDOL OWNED | `lib/compiler/lexer.id` owns token-kind, content, and span production and fails closed. Canonical lexical-law closure remains `GAP-145`. |
 | Canonical `.id` lex route | IDOL OWNED | `src/lexer_dispatch.zig` `route()` calls `tokenize()` for every source. Host `tokenizeHost()` is differential-only (legacy-equivalent subset; must not veto intentional Idol divergence; `law.bridge.death`). Generated `src/lexer_tokenize.c` is from current `lib/compiler/lexer.id` via `dump-c --lib`. Every lexer export takes `family` as an operand (`law.family.one`); `new()` does not read suffix bytes. Production compile, fmt, and embed classify once via `sourceFacts` then `Lexer.initFacts`. `route()`, parse, sema, and token-view consume `lex.family`. `Lexer.init` is a test convenience. Host `sourceFacts` remains the one ingress. CLI file filter uses the same `sourceFacts.law`. |
 | Lexer ABI schema | HOST OWNED (bridge) | `RECORD_SLOTS` / `lexErrorFromCode` / `tokenKindFromOrdinal` deleted. Consumer queries `recordslots()` / `field*()` / `rejectionname()` / `kindname()` / `kindcount()`; `bindKindSchema` binds ordinals once. `bindKindSchema` is a deletion-gated bridge (`law.bridge.death`): endpoint is token-role-id, not producer-name → runtime bind → host enum. Remaining: host `TokenKind` enum, `duo_lexer_*` / `useDuoTokens` names (`law.schema.one`, `law.magic.zero`, GAP-107). |
-| Lexical identity | IDOL OWNED, GAP-145 OPEN | Text/bytes/compat/long, `#` comment, shebang, `--` / `--[[` comments, and reserved backtick cross `tokenize()`. Long-text delimiter level is `int_val`; parser no longer scans `[[`. Producer and host `string_lit` token identities are deleted; physical slot 3 is unpublished. Tree-sitter, AST `.string_lit`, and suffix `sourceFacts` remain. Do not start parser SHC. |
+| Lexical identity | IDOL OWNED, GAP-145 OPEN | Text/bytes/compat/long, `#` comment, shebang, `--` / `--[[` comments, and reserved backtick cross `tokenize()`. Long-text delimiter level is `int_val`; parser no longer scans `[[`. Producer, host-token, and AST `string_lit` identities are deleted; physical slot 3 is unpublished. AST `.quoted` retains exact quote provenance without a text/bytes taxonomy. Tree-sitter and suffix `sourceFacts` remain. Do not start parser SHC. |
 | Token/span | IDOL OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. |
 | Grammar projection | HOST OWNED, GAP-134 OPEN | `src/grammar_roles.zig` is the **current transitional** role table (host executable). Destination: one Idol grammar-fact owner → generated Zig/C tables + `grammar.md` + Tree-sitter. `grammar_roles.zig` and `lib/token/grammarrole.id` are bridges (`law.bridge.death`). Pratt consumes roles; parser `BinOp` map remains reconstruction debt. Do not add `grammar.id` until it *replaces* the Zig table as the one executable owner. |
 | Parser recognition | HOST OWNED | `src/parser.zig` still decides expressions, bindings, and source structure. `parse_module` installs the producer pack when missing (`route()`); header recognition is one `headerSignal` over that pack. Host save/scan/restore snapshot walk is deleted. Not parser SHC. |
@@ -106,9 +108,10 @@ For the fail-closed lexer transfer:
   token pack, so the next parser read silently resumed the host scanner.
 - **AFTER:** the same failure propagates, partial route storage is released, and
   no host token stream is accepted by that route.
-- **NEXT:** `GAP-145` remaining is Tree-sitter `grammar.json`, AST
-  `.string_lit` value node, and suffix
-  `sourceFacts`. Do not start parser SHC. `GAP-134` remaining is closing
+- **NEXT:** `GAP-145` remaining is Tree-sitter `grammar.json`, semantic
+  consumers that collapse quote/source-law distinctions, and host corpus-home
+  admission in `sourceFacts`. The physical suffix roster is already producer-
+  projected. Do not start parser SHC. `GAP-134` remaining is closing
   grammar.md as the generatable owner. Header recognition is one
   `headerSignal` over the producer pack (snapshot walk deleted); Pratt
   left/right come from roles; BinOp map remains.

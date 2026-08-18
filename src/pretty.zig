@@ -145,7 +145,7 @@ pub const PrettyPrinter = struct {
     /// are two apart because `else` sits on line 4, so a gap test invents a
     /// blank line inside an if. Only the source knows which lines are empty.
     blank_lines: []const u32 = &.{},
-    /// WHICH FORM `string_lit.val` IS IN. Not decoration — it decides whether a
+    /// WHICH FORM `quoted.val` IS IN. Not decoration — it decides whether a
     /// `{` in the value is a hole opener or a literal brace, and after decoding
     /// those are the same byte (`law.lexical.one`: the printer is TOLD the role,
     /// it does not reconstruct it from contents).
@@ -561,7 +561,7 @@ pub const PrettyPrinter = struct {
                     try self.print("{d}", .{x.val});
                 }
             },
-            .string_lit => |x| try self.writeStringLitQuoted(x),
+            .quoted => |x| try self.writeStringLitQuoted(x),
             .vararg => try self.write("..."),
 
             .name => |x| try self.write(x.ident),

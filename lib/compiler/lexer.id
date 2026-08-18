@@ -966,6 +966,27 @@ duo_lexer_kind_fingerprint: u64 = (src: str, file: str, family: i64)
 # Host must not independently know slot positions, rejection codes, or token
 # kind ordinals. Query these facts instead of hardcoding.
 
+# Source-law ingress precedes lexing semantically. These queries live in this
+# executed producer only as the current bootstrap projection boundary: the host
+# asks the selected producer which physical source forms it admits instead of
+# maintaining its own `.id` / `.lua` roster. `sourceformlaw` is identity;
+# suffix is ingress provenance only and never selects meaning downstream.
+sourceformcount: i64 = ()
+    2
+
+sourceformlaw: str = (i: i64)
+    if i == 1 return "idol"
+    if i == 2 return "lua"
+    ""
+
+sourceformsuffix: str = (i: i64)
+    if i == 1 return ".id"
+    if i == 2 return ".lua"
+    ""
+
+sourceformcanonical: bool = (i: i64)
+    i == 1
+
 recordslots: i64 = ()
     7
 

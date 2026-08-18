@@ -411,7 +411,7 @@ pub const Monomorphizer = struct {
             },
             .quote, .unquote, .macro_call => unreachable,
             .semantic, .semantic_scope => {}, // semantic identity / world: no child exprs
-            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg, .name => {},
             .sequence => |seq| {
                 for (seq.exprs) |e| try self.collectSitesExpr(e, env);
             },

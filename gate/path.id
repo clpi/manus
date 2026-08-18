@@ -38,7 +38,7 @@ atom: bool = (code: str, sought: str)
         before = code:sub(i - 1, i - 1)
       if i + m <= n
         after = code:sub(i + m, i + m)
-      if (before == "" or not glyph(before)) and (after == "" or not glyph(after))
+      if (before == "" or !glyph(before)) and (after == "" or !glyph(after))
         return true
     i = i + 1
   false
@@ -84,7 +84,7 @@ historical: bool = (path: str)
   path:len() >= 12 and path:sub(1, 12) == "benchmarks/" or path:len() >= 7 and path:sub(1, 7) == "vendor/"
 
 owned: bool = (path: str)
-  not foreign(path) and not historical(path)
+  !foreign(path) and !historical(path)
 
 leaf: str = (path: str)
   slash = 0
@@ -124,7 +124,7 @@ tail: bool = (name: str)
   n = name:len()
   if n < 2
     return false
-  if not digit(name:sub(n, n))
+  if !digit(name:sub(n, n))
     return false
   i = n - 1
   while i >= 1 and digit(name:sub(i, i))
@@ -176,7 +176,7 @@ ends: bool = (name: str, ending: str)
     return false
   if name:sub(n - m + 1, n) != ending
     return false
-  if n > m and not alpha(name:sub(n - m, n - m))
+  if n > m and !alpha(name:sub(n - m, n - m))
     return false
   true
 
@@ -257,7 +257,7 @@ verdict: i64 = (where: str, name: str)
     if histstem(name)
       print("{where}  [law.source.not.proof]  history/showcase stem `{name}` — isolate or delete; docs/spec/canonical.md §26")
       hits = hits + 1
-  if not filename(where) and name:len() > 0
+  if !filename(where) and name:len() > 0
     if orghome(name)
       print("{where}  [law.std.zero]  organizational namespace `{name}` — layout/home projection; docs/spec/canonical.md §27")
       hits = hits + 1
@@ -270,7 +270,7 @@ verdict: i64 = (where: str, name: str)
   hits
 
 walk: i64 = (path: str)
-  if not owned(path)
+  if !owned(path)
     return 0
   hits = verdict(path, leaf(path))
   if has(path, "lib/semantic/")
@@ -641,15 +641,15 @@ control: bool = ()
   ok
 
 main: i64 = ()
-  if not seed()
+  if !seed()
     print("gate/path: vocabulary load failed")
     return 3
-  if not control()
+  if !control()
     print("gate/path: POSITIVE CONTROL FAILED")
     return 3
   body = transport()
   if body:len() == 0
     print("gate/path: empty input — pipe IDOLGATE sections")
-    print("  { printf 'IDOLGATE tree\\n'; git ls-files; printf '\\nIDOLGATE end\\n'; } | idol run gate/path.id")
+    print("  \{ printf 'IDOLGATE tree\\n'; git ls-files; printf '\\nIDOLGATE end\\n'; \} | idol run gate/path.id")
     return 3
   feed(body)

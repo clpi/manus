@@ -161,8 +161,8 @@ pub fn moduleFileUnder(
 ) ?Source {
     const cwd = Io.Dir.cwd();
     inline for ([_]bool{ false, true }) |nested| {
-        comptime var forms = lexer_bridge.sourceForms();
-        inline while (comptime forms.next()) |form| {
+        var forms = lexer_bridge.sourceForms();
+        while (forms.next()) |form| {
             const path = if (nested)
                 std.fmt.allocPrint(alloc, "{s}{c}{s}{c}init{s}", .{ base_dir, std.fs.path.sep, mod_path, std.fs.path.sep, form.suffix }) catch return null
             else

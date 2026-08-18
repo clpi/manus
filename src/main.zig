@@ -3645,7 +3645,7 @@ fn collectBareCallsInExpr(
         .sequence => |s| for (s.exprs) |x| try collectBareCallsInExpr(x, scan),
         // Leaves that carry no identifier.
         .nil, .true_lit, .false_lit, .vararg, .semantic_scope => {},
-        .int_lit, .float_lit, .string_lit, .semantic => {},
+        .int_lit, .float_lit, .quoted, .semantic => {},
         // Everything else can hold a name this walk would not see. Saying so
         // is what lets the free-name check decline instead of guessing.
         else => scan.blind = true,
@@ -3675,7 +3675,7 @@ fn collectBareCallsInExpr(
 /// An unprovable case declines rather than guesses.
 fn exprIsLiteral(e: *const ast.Expr) bool {
     return switch (e.*) {
-        .int_lit, .float_lit, .string_lit, .true_lit, .false_lit => true,
+        .int_lit, .float_lit, .quoted, .true_lit, .false_lit => true,
         .unop => |u| u.operand.* == .int_lit or u.operand.* == .float_lit,
         .table => |t| {
             for (t.fields) |f| switch (f) {
@@ -3717,8 +3717,8 @@ fn reqPathOfExpr(e: *const ast.Expr) ?[]const u8 {
     if (e.* != .call) return null;
     const c = e.call;
     if (c.func.* != .name or !std.mem.eql(u8, c.func.name.ident, "req")) return null;
-    if (c.args.len != 1 or c.args[0].* != .string_lit) return null;
-    return c.args[0].string_lit.val;
+    if (c.args.len != 1 or c.args[0].* != .quoted) return null;
+    return c.args[0].quoted.val;
 }
 
 fn topLevelName(st: ast.Stmt) ?[]const u8 {

@@ -1595,7 +1595,7 @@ fn mentions(e: *const ast.Expr, name: []const u8) bool {
             for (c.args) |a| if (mentions(a, name)) break :blk true;
             break :blk mentions(c.func, name);
         },
-        .int_lit, .float_lit, .string_lit, .nil, .true_lit, .false_lit, .vararg => false,
+        .int_lit, .float_lit, .quoted, .nil, .true_lit, .false_lit, .vararg => false,
         // Fail closed: a construct this module does not enumerate counts as a
         // read, so an unmodelled form can never look dead.
         else => true,

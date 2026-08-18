@@ -264,7 +264,7 @@ fn walkExpr(ctx: *Ctx, e: *const ast.Expr) void {
         .false_lit,
         .int_lit,
         .float_lit,
-        .string_lit,
+        .quoted,
         .vararg,
         .name,
         .semantic,
