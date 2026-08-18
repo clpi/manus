@@ -304,5 +304,5 @@ Measured: `zig build wasm-test` fails closed at
 that blocks `tools/lsp/src/server.id`. One published fact family unblocks
 both the wasm admission gate and the LSP server admission. Full wasm
 closure matrix with proposal states and wasmtime oracle baselines:
-evidence/mop/wasm-closure.md. WASIX has zero source support (the wasix
+evidence/mop/wasm/closure.md. WASIX has zero source support (the wasix
 bench is oracle corpus only); WASI p1 is real but partial.
