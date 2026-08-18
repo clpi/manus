@@ -8,8 +8,9 @@ const keyword_bridge = @import("keyword_bridge.zig");
 pub const CANONICAL_SOURCE_SUFFIX = ".id";
 
 /// Integer operand into production `tokenize()`. 1 = canonical Idol, 2 = compat.
-/// Unknown retired suffixes are not a third law; they keep the historical
-/// non-`.id` default until ingress classifies them.
+/// Unknown is not a lexical family. `familyCode` retains the historical value
+/// for allocator-free test helpers; production ingress must reject unknown
+/// before constructing a lexer.
 pub const family_canon: i64 = 1;
 pub const family_compat: i64 = 2;
 
@@ -67,6 +68,7 @@ extern fn sourceentrycount() i64;
 extern fn sourceentryrole(i: i64) [*:0]const u8;
 extern fn sourceentrypattern(i: i64) [*:0]const u8;
 extern fn sourcepathrole(path: [*:0]const u8) [*:0]const u8;
+extern fn sourcepathformlaw(path: [*:0]const u8) [*:0]const u8;
 extern fn sourcefactlaw(path: [*:0]const u8, role: [*:0]const u8) [*:0]const u8;
 extern fn sourcefactprovenance(path: [*:0]const u8, role: [*:0]const u8) [*:0]const u8;
 
@@ -110,7 +112,7 @@ const CORPUS_RULES = "docs/spec/corpus.md";
 /// say: the path does not resolve to anything on disk, or no ancestor of it
 /// carries the rules. Those are the owner REPORTING an unsupported boundary,
 /// which is the one fallback shape `law.fallback.zero` admits.
-fn corpusRelative(path: []const u8, out: []u8) ?[]const u8 {
+fn corpusRelative(path: []const u8, out: []u8) ?[:0]const u8 {
     var in_z: [std.fs.max_path_bytes]u8 = undefined;
     if (path.len == 0 or path.len >= in_z.len) return null;
     @memcpy(in_z[0..path.len], path);
@@ -135,9 +137,10 @@ fn corpusRelative(path: []const u8, out: []u8) ?[]const u8 {
             const cut = if (dir.len == 1 and dir[0] == '/') dir.len else dir.len + 1;
             if (real.len <= cut) return null;
             const rel = real[cut..];
-            if (rel.len > out.len) return null;
+            if (rel.len >= out.len) return null;
             @memcpy(out[0..rel.len], rel);
-            return out[0..rel.len];
+            out[rel.len] = 0;
+            return out[0..rel.len :0];
         }
         const parent = std.fs.path.dirname(dir) orelse return null;
         if (parent.len == dir.len) return null;
@@ -145,11 +148,11 @@ fn corpusRelative(path: []const u8, out: []u8) ?[]const u8 {
     }
 }
 
-fn producerPath(path: []const u8, out: []u8) ?[*:0]const u8 {
+fn producerPath(path: []const u8, out: []u8) ?[:0]const u8 {
     if (path.len >= out.len) return null;
     @memcpy(out[0..path.len], path);
     out[path.len] = 0;
-    return out[0..path.len :0].ptr;
+    return out[0..path.len :0];
 }
 
 /// Normalize physical provenance once, then ask the executed Idol producer for
@@ -157,13 +160,27 @@ fn producerPath(path: []const u8, out: []u8) ?[*:0]const u8 {
 /// fallback. Later stages consume this returned fact / `lex.family`; they never
 /// inspect the path again to select source meaning.
 pub fn sourceFacts(path: []const u8) SourceFacts {
-    var rel_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const canon = corpusRelative(path, &rel_buf) orelse path;
-    var producer_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const producer_path = producerPath(canon, &producer_buf) orelse return .{ .law = .unknown, .provenance = .unknown };
-    const role = sourcepathrole(producer_path);
-    const law = sourceLawFromName(sourcefactlaw(producer_path, role)) orelse return .{ .law = .unknown, .provenance = .unknown };
-    const provenance = sourceProvenanceFromName(sourcefactprovenance(producer_path, role)) orelse return .{ .law = .unknown, .provenance = .unknown };
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const producer_path = corpusRelative(path, &path_buf) orelse
+        producerPath(path, &path_buf) orelse
+        return .{ .law = .unknown, .provenance = .unknown };
+
+    // A corpus role qualifies an admitted source; it cannot invent a source
+    // law for bytes whose physical form the producer does not admit. Ask the
+    // executed producer twice: the form projection must be present and must
+    // agree with the same fact query absent a corpus role. Only then may the
+    // role-qualified query select the exact law/provenance pair. This keeps
+    // compatibility homes lawful while making foreign/negative `.bin`, stdin,
+    // and every other unadmitted form fail closed before tokenization.
+    const form_law = sourceLawFromName(sourcepathformlaw(producer_path.ptr)) orelse
+        return .{ .law = .unknown, .provenance = .unknown };
+    const discovered_law = sourceLawFromName(sourcefactlaw(producer_path.ptr, "")) orelse
+        return .{ .law = .unknown, .provenance = .unknown };
+    if (form_law != discovered_law) return .{ .law = .unknown, .provenance = .unknown };
+
+    const role = sourcepathrole(producer_path.ptr);
+    const law = sourceLawFromName(sourcefactlaw(producer_path.ptr, role)) orelse return .{ .law = .unknown, .provenance = .unknown };
+    const provenance = sourceProvenanceFromName(sourcefactprovenance(producer_path.ptr, role)) orelse return .{ .law = .unknown, .provenance = .unknown };
     return .{ .law = law, .provenance = provenance };
 }
 
@@ -277,12 +294,16 @@ test "lexer bridge: corpus home admits family not suffix" {
     try std.testing.expectEqual(SourceProvenance.canonical, generated.provenance);
 
     const foreign_unknown = sourceFacts("vendor/opaque.bin");
-    try std.testing.expectEqual(SourceLaw.idol, foreign_unknown.law);
-    try std.testing.expectEqual(SourceProvenance.foreign, foreign_unknown.provenance);
+    try std.testing.expectEqual(SourceLaw.unknown, foreign_unknown.law);
+    try std.testing.expectEqual(SourceProvenance.unknown, foreign_unknown.provenance);
 
     const negative_unknown = sourceFacts("examples/compile_fail/opaque.bin");
-    try std.testing.expectEqual(SourceLaw.idol, negative_unknown.law);
-    try std.testing.expectEqual(SourceProvenance.canonical, negative_unknown.provenance);
+    try std.testing.expectEqual(SourceLaw.unknown, negative_unknown.law);
+    try std.testing.expectEqual(SourceProvenance.unknown, negative_unknown.provenance);
+
+    const stdin = sourceFacts("/dev/stdin");
+    try std.testing.expectEqual(SourceLaw.unknown, stdin.law);
+    try std.testing.expectEqual(SourceProvenance.unknown, stdin.provenance);
 
     const exact_foreign = sourceFacts("test.id");
     try std.testing.expectEqual(SourceLaw.idol, exact_foreign.law);
