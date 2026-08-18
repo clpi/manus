@@ -15,9 +15,9 @@ ulebval: i64 = (s: str, i: i64)
   hit: bool = true
   while hit
     x: i64 = s:byteat(p)
-    r = r + (x - (x / 128) * 128) * k:pow2()
+    r = r + (x - (x / 128) * 128) * 2:pow(k)
     p = p + 1
-    hit = x >= 128 and p <= bytecount(s)
+    hit = x >= 128 and p <= s:len() / 2
     k = k + 7
   r
 
@@ -27,14 +27,14 @@ ulebafter: i64 = (s: str, i: i64)
   while hit
     x: i64 = s:byteat(p)
     p = p + 1
-    hit = x >= 128 and p <= bytecount(s)
+    hit = x >= 128 and p <= s:len() / 2
   p
 
-pow2: i64 = (k: i64)
+pow: i64 = (base: i64, k: i64)
   out: i64 = 1
   n: i64 = 0
   while n < k
-    out = out * 2
+    out = out * base
     n = n + 1
   out
 
@@ -48,7 +48,7 @@ emit: i64 = (key: str, val: str)
   stdout:write(key:fact("\"" .. val .. "\"") .. "\n")
   0
 
-hexdigit: i64 = (c: i64)
+hex: i64 = (c: i64)
   if c >= 48 and c <= 57
     c - 48
   else
@@ -62,12 +62,11 @@ hexdigit: i64 = (c: i64)
 # zero materialization. The binary face replaces this accessor alone.
 
 byteat: i64 = (s: str, n: i64)
-  hexdigit(s:byte(2 * n - 1)) * 16 + hexdigit(s:byte(2 * n))
+  # subject-chain form: the argument form silently returns 0 under
+  # direct-native (evidence/mop/wasm/argform.defect.md, 8-line repro)
+  s:byte(2 * n - 1):hex() * 16 + s:byte(2 * n):hex()
 
-bytecount: i64 = (s: str)
-  s:len() / 2
-
-immclass: i64 = (op: i64)
+class: i64 = (op: i64)
   if op == 14 or op == 28
     -1
   else
@@ -103,7 +102,7 @@ slebend: i64 = (s: str, i: i64)
   while hit
     x: i64 = s:byteat(p)
     p = p + 1
-    hit = x >= 128 and p <= bytecount(s)
+    hit = x >= 128 and p <= s:len() / 2
   p
 
 appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
@@ -124,7 +123,7 @@ appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
   if op == 67 or op == 68
     stdout:write(head .. 'constant","determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
   if op >= 103 and op <= 118 or op >= 70 and op <= 78 or op >= 167 and op <= 181 or op >= 81 and op <= 89 or op >= 134 and op <= 136 or op >= 192 and op <= 196 or op >= 146 and op <= 150 or op >= 160 and op <= 164
-    stdout:write(head .. op:binname() .. '","operands":[' .. a:num() .. ',' .. b:num())
+    stdout:write(head .. op:name() .. '","operands":[' .. a:num() .. ',' .. b:num())
     stdout:write('],"width":32,"overflow":"wrap","results":[{"width":32}]' .. tail .. "\n")
   if op >= 40 and op <= 53
     stdout:write(head .. 'memory","world":{"home":"memory","reach":"address"},"operands":[' .. a:num() .. '],"width":32,"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"unknown"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}' .. "\n")
@@ -132,7 +131,7 @@ appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
     stdout:write(head .. 'call","target":{"card":"exact","index":' .. src:ulebval(ip):num() .. '},"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"one"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}' .. "\n")
   0
 
-binname: str = (op: i64)
+name: str = (op: i64)
   if op >= 70 and op <= 78
     "cmp"
   else
@@ -191,14 +190,14 @@ slebsign: i64 = (s: str, i: i64)
   hit: bool = true
   while hit
     x: i64 = s:byteat(p)
-    r = r + (x - (x / 128) * 128) * k:pow2()
+    r = r + (x - (x / 128) * 128) * 2:pow(k)
     p = p + 1
-    hit = x >= 128 and p <= bytecount(s)
+    hit = x >= 128 and p <= s:len() / 2
     k = k + 7
   if k < 64
     lastx: i64 = s:byteat(p - 1)
     if lastx >= 64
-      r = r - k:pow2()
+      r = r - 2:pow(k)
   r
 
 main: i64 = ()
@@ -207,7 +206,7 @@ main: i64 = ()
     stdout:write("usage: idol run tools/wasm/ingest.id -- <module.wasm.hex> | --serve\n")
     return 1
   if path != "--serve"
-    path:ingestmain()
+    path:ingest()
   else
     # MCP streaming face: newline JSON-RPC; each request is a hex module
     # path; the full fact + record stream emits as notifications.
@@ -218,10 +217,10 @@ main: i64 = ()
         serve = false
       else
         stdout:write('{"jsonrpc":"2.0","method":"wasm/module","params":{"source":"' .. ln .. '"}}' .. "\n")
-        ln:ingestmain()
+        ln:ingest()
         ln = stdin:line()
   0
-ingestmain: i64 = (path: str)
+ingest: i64 = (path: str)
   applimit: i64 = 1000000
   src: str = path:read()
   if src:len() < 8
@@ -240,7 +239,7 @@ ingestmain: i64 = (path: str)
   # section census: each section is one fact line (id, byte size)
   i: i64 = 9
   walk: bool = true
-  while walk and i + 1 < bytecount(src)
+  while walk and i + 1 < src:len() / 2
     sid: i64 = src:byteat(i)
     size: i64 = src:ulebval(i + 1)
     after: i64 = src:ulebafter(i + 1)
@@ -258,7 +257,7 @@ ingestmain: i64 = (path: str)
       fi: i64 = 0
       totalinstr: i64 = 0
       totallocals: i64 = 0
-      while fi < n10c and bp < bytecount(src)
+      while fi < n10c and bp < src:len() / 2
         bsz: i64 = src:ulebval(bp)
         bstart: i64 = src:ulebafter(bp)
         bend: i64 = bstart + bsz - 1
@@ -280,7 +279,7 @@ ingestmain: i64 = (path: str)
           op: i64 = src:byteat(ip)
           pre: i64 = ip + 1
           ip = ip + 1
-          cl: i64 = op:immclass()
+          cl: i64 = op:class()
           if cl == 1
             ip = src:ulebafter(ip)
           if cl == 2
