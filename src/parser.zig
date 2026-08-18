@@ -823,13 +823,15 @@ pub const Parser = struct {
         if (!self.idol_mode) return l;
         try self.ensureProducerPack();
         const toks = self.lex.duo_tokens orelse return l;
+        const view = token_view.fromTokens(toks);
         var i = @min(self.lex.duoStreamIndex(), toks.len);
         var best = l;
         while (i > 0) {
             i -= 1;
-            const t = toks[i];
-            if (t.loc.line != l.line) break;
-            if (t.loc.col < best.col) best = t.loc;
+            const line = view.line(i) orelse break;
+            if (line != l.line) break;
+            const col = view.col(i) orelse break;
+            if (col < best.col) best.col = col;
         }
         return best;
     }
@@ -3065,14 +3067,14 @@ pub const Parser = struct {
         var rparen_line: u32 = 0;
         var prev: TK = .eof;
         while (paren_depth > 0) {
-            const tok = view.at(idx) orelse return false;
-            const row = view.role(idx);
+            const kind = view.kind(idx) orelse return false;
+            const row = grammar_roles.lookup(kind);
             if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and
-                row != null and row.?.literal_kind)
+                row.literal_kind)
             {
                 has_literal_arg = true;
             }
-            switch (tok.kind) {
+            switch (kind) {
                 .eof => return false,
                 .dots => typed_or_vararg = true,
                 .comma => if (paren_depth == 1) {
@@ -3090,7 +3092,7 @@ pub const Parser = struct {
                 .lparen => paren_depth += 1,
                 .rparen => {
                     paren_depth -= 1;
-                    if (paren_depth == 0) rparen_line = tok.loc.line;
+                    if (paren_depth == 0) rparen_line = view.line(idx) orelse return false;
                 },
                 .lbracket => bracket_depth += 1,
                 .rbracket => {
@@ -3108,20 +3110,20 @@ pub const Parser = struct {
                 else => {},
             }
             if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and
-                tok.kind != .lparen and tok.kind != .rparen)
+                kind != .lparen and kind != .rparen)
             {
                 depth1_tokens += 1;
-                if (tok.kind == .name) depth1_names += 1;
-                if (grammar_roles.isInfix(tok.kind)) has_infix_operator = true;
+                if (kind == .name) depth1_names += 1;
+                if (grammar_roles.isInfix(kind)) has_infix_operator = true;
             }
             // Everything strictly inside the outer parens — the closing one
             // brings `paren_depth` to 0 and is not inside anything.
             if (paren_depth > 0) inner_tokens += 1;
-            prev = tok.kind;
+            prev = kind;
             idx += 1;
         }
 
-        const after = view.at(idx) orelse return false;
+        const after = view.kind(idx) orelse return false;
         if (has_literal_arg and !typed_or_vararg) return false;
         if (has_infix_operator and !typed_or_vararg) return false;
         if (has_table_literal_arg and !typed_or_vararg) return false;
@@ -3141,28 +3143,28 @@ pub const Parser = struct {
         // copies below decide it, and a typed header keeps its own answer from
         // `typed_or_vararg` on the next line, which is what keeps `): *Foo`,
         // `): [4]i64` and `): i(64)` reading as result descriptors.
-        if (after.kind == .colon) {
+        if (after == .colon) {
             const ty = view.kind(idx + 1) orelse return false;
             if ((ty == .name or grammar_roles.isDescriptor(ty)) and
                 view.kind(idx + 2) != .lparen) return true;
         }
-        if (typed_or_vararg or after.kind == .arrow or after.kind == .assign) return true;
+        if (typed_or_vararg or after == .arrow or after == .assign) return true;
         if (allow_untyped_comma and has_comma) {
-            if (after.kind == .eof) return false;
-            if (after.kind == .colon) {
+            if (after == .eof) return false;
+            if (after == .colon) {
                 const ty = view.kind(idx + 1) orelse return false;
                 if (ty != .name and !grammar_roles.isDescriptor(ty)) return false;
                 return view.kind(idx + 2) != .lparen;
             }
-            if (grammar_roles.isInfix(after.kind) or after.kind == .dot) return false;
+            if (grammar_roles.isInfix(after) or after == .dot) return false;
             return true;
         }
-        if (after.kind == .colon) {
+        if (after == .colon) {
             const ty = view.kind(idx + 1) orelse return false;
             if (ty != .name and !grammar_roles.isDescriptor(ty)) return false;
             return view.kind(idx + 2) != .lparen;
         }
-        if (grammar_roles.isInfix(after.kind) or after.kind == .comma) return false;
+        if (grammar_roles.isInfix(after) or after == .comma) return false;
         // A SINGLE BARE NAME IN PARENTHESES — `(t)`, `(meta)`. The only shape
         // whose two readings are both ordinary: the one-parameter header, and
         // the grouped expression. `(a, b)` has a comma and `(t: any)` has a
@@ -3202,10 +3204,10 @@ pub const Parser = struct {
         //       the only place where what precedes changes what the group IS.
         if (depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma) {
             if (!allow_untyped_comma) return false;
-            if (after.loc.line != rparen_line) {
+            if ((view.line(idx) orelse return false) != rparen_line) {
                 if (inner_tokens != 1) return false;
                 const open_col = offside_col orelse return false;
-                if (after.loc.col <= open_col) return false;
+                if ((view.col(idx) orelse return false) <= open_col) return false;
                 if (start > 0) switch (view.kind(start - 1) orelse .eof) {
                     .kw_if, .kw_elseif, .kw_else, .kw_while, .kw_until, .kw_for, .kw_match => return false,
                     else => {},
@@ -3214,7 +3216,7 @@ pub const Parser = struct {
         }
         if (!allow_untyped_comma and !typed_or_vararg) return false;
         if (depth1_tokens == 0 and !allow_untyped_comma) return false;
-        if (grammar_roles.canStartBody(after.kind)) return true;
+        if (grammar_roles.canStartBody(after)) return true;
         return false;
     }
 
@@ -8286,6 +8288,29 @@ test "parse: backtick rejection does not depend on token text" {
 
     try testing.expectError(ParseError.UnexpectedToken, p.parse_module());
     _ = try parseDuoSource("value = 1", &arena);
+}
+
+test "parse: header recognition observes identity and position without token text" {
+    const file = "view.id";
+    const tokens = [_]Token{
+        .{ .kind = .lparen, .loc = .{ .file = file, .line = 1, .col = 1 }, .text = "not-an-open-paren" },
+        .{ .kind = .name, .loc = .{ .file = file, .line = 1, .col = 2 }, .text = "not-a-name" },
+        .{ .kind = .colon, .loc = .{ .file = file, .line = 1, .col = 3 }, .text = "same-spelling" },
+        .{ .kind = .kw_i64, .loc = .{ .file = file, .line = 1, .col = 4 }, .text = "not-a-descriptor" },
+        .{ .kind = .rparen, .loc = .{ .file = file, .line = 1, .col = 5 }, .text = "not-a-close-paren" },
+        .{ .kind = .name, .loc = .{ .file = file, .line = 1, .col = 7 }, .text = "not-a-body" },
+        .{ .kind = .eof, .loc = .{ .file = file, .line = 1, .col = 8 }, .text = "not-an-end" },
+    };
+    const view = token_view.fromTokens(&tokens);
+    try testing.expect(!@hasDecl(token_view.View, "text"));
+    try testing.expect(Parser.headerSignal(view, 0, false, null));
+
+    // Hold spelling and position fixed while changing the producer identity.
+    // A comma is not a typed-parameter separator, so recognition must change.
+    var changed = tokens;
+    changed[2].kind = .comma;
+    const changed_view = token_view.fromTokens(&changed);
+    try testing.expect(!Parser.headerSignal(changed_view, 0, false, null));
 }
 
 test "parse: retired macro declaration cannot reach quotation" {
