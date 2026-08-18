@@ -176,3 +176,15 @@ Field access via `.` is for STATIC members (world/home fields like
 `os.args`); dynamic values relate through subject-first `:` edges
 (`s:byte(i)`, `path:read()`). Recorded; ingest.id audited compliant
 (no `.` on dynamic values — all access is `:` edges or plain locals).
+
+
+## Lane 3: records now GRAPH-CONFORMANT (sim-v0 applications shape)
+
+Every emitted record carries the graph application fields: relation,
+operand references by number, typed results (width), provenance
+(origin=wasm), and the DEMAND card — the performance lever (FTCFTW
+rungs 1-2: undemanded results never realize). 16 records on fib
+bodies 0-2 (7 read / 6 constant / 3 add), every record validated to
+carry the required card set. The output is now directly consumable by
+graph-side consumers: the demand pass reads these records exactly as
+it reads idol-source applications — one admission surface, as ruled.

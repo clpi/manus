@@ -107,13 +107,17 @@ slebend: i64 = (s: str, i: i64)
   p
 
 appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
-  key: str = "app." .. fi:num() .. "." .. n:num()
+  # graph-conformant application record (sim-v0 applications[] shape):
+  # relation + operand refs + typed results + provenance + demand. The
+  # demand card is the performance lever (FTCFTW rungs 1-2).
+  head: str = '{"application":' .. n:num() .. ',"relation":"'
+  tail: str = ',"origin":"wasm","demand":"single"}'
   if op == 32
-    key:emit("read local=" .. num(src:ulebval(ip)))
+    stdout:write(head .. 'read","operand":{"kind":"local","index":' .. src:ulebval(ip):num() .. '},"results":[{"width":32}]' .. tail .. "\n")
   if op == 65
-    key:emit("const " .. num(src:slebsign(ip)))
+    stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num() .. ',"determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
   if op == 106 or op == 107 or op == 108
-    key:emit(op:binname() .. " a=" .. a:num() .. " b=" .. b:num() .. " width=32 overflow=wrap origin=wasm")
+    stdout:write(head .. op:binname() .. '","operands":[' .. a:num() .. ',' .. b:num() .. '],"width":32,"overflow":"wrap","results":[{"width":32}]' .. tail .. "\n")
   0
 
 binname: str = (op: i64)
