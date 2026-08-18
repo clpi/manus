@@ -1,0 +1,37 @@
+#!/bin/sh
+# tools/wasm/perf — four-way performance table over the bench corpus.
+#
+# Engines: wasmtime and wart now; the idol engine joins the table the
+# moment its admission unblocks (see evidence/mop/wasm/proposals.md —
+# the STARTUP LANE is the winnable one: wasmtime pays a ~130 ms floor on
+# every fixture).wart CLI calibration (invocation semantics, execution
+# mode flags) is pending; its column stays raw until calibrated.
+#
+# usage: tools/wasm/perf [bench-dir]     (default tools/wasm/bench)
+
+set -eu
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$repo"
+bench="${1:-tools/wasm/bench}"
+WASMTIME="${WASMTIME:-wasmtime}"
+WART="${WART:-/Volumes/d 1/x/wart/zig-out/bin/wart}"
+
+printf '%-42s %10s %10s\n' fixture wasmtime-ms wart-ms
+total_w=0
+for w in "$bench"/*.wasm; do
+  b="$(basename "$w")"
+  t0=$(python3 -c 'import time;print(time.time())')
+  timeout 30 "$WASMTIME" run --invoke run "$w" >/dev/null 2>&1 || true
+  t1=$(python3 -c 'import time;print(time.time())')
+  wm=$(python3 -c "print(int(($t1-$t0)*1000))")
+  rm=""
+  if [ -x "$WART" ]; then
+    t0=$(python3 -c 'import time;print(time.time())')
+    timeout 30 "$WART" run "$w" >/dev/null 2>&1 || true
+    t1=$(python3 -c 'import time;print(time.time())')
+    rm=$(python3 -c "print(int(($t1-$t0)*1000))")
+  fi
+  total_w=$((total_w + wm))
+  printf '%-42s %10s %10s\n' "$b" "$wm" "$rm"
+done
+printf '%-42s %10s\n' TOTAL "$total_w"

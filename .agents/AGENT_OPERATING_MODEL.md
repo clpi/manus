@@ -111,6 +111,19 @@ of those decisions. It may not make the decision.
 - **`!` over `not`** in Idol source, where appropriate.
 - **Subject-first invocation**: `subject:edge(rest)` — never
   `edge(subject, rest)` (H-1; `gate/subject.id` teaches and proves it).
+- **No antipattern spellings in Idol source**: single-letter table
+  bindings (`M = {…}`), snake_case (`OP_unreachable`), and mashed
+  compound names are the measured antipattern set. The wasm engine
+  sources under tools/wasm/src are saturated with all three — their
+  documented SOURCE-ZERO debt; convergence renames to subject-first
+  edges rather than carrying spellings forward.
+- **The wasm runtime leverages ALL language features in service of
+  highest performance at lowest syntax**: opcode tables via comptime
+  tabulation, dispatch via call specialization, memory via place/region
+  facts, SIMD via simd_lower, lawset import through the one graph. A
+  private standalone engine with hand-rolled tables is the antipattern;
+  the interpreter/JIT/AOT are realization candidates the registry
+  selects, not a second architecture.
 - **Instrument**: the semantic graph via the `idol-native` MCP server
   (`check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`,
   `explain`, `fmt`, `asm`) — applications carry cardinality cards,
