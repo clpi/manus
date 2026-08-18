@@ -1,55 +1,82 @@
-# Compiler subset defect found: argument-form method calls return 0
+# Compiler defect: application faces lack one relation-role authority
 
-MEASURED (2026-08-18, isolated minimal repros, binary recomputed each run):
+Measured on exact `80fbdb85` (2026-08-18) with isolated programs,
+semantic-graph dumps, emitted AArch64, and process results.
 
-`x:hex(b)` where `b` is a pre-bound local — returns 0.
-`x:byte(3):hex()` — returns 6. Same relation, same value.
+## The earlier wrong-answer claim was wrong
 
-The difference is the ARGUMENT FORM: when a user-declared relation is
-invoked with an argument expression (vs the subject-first chain), the
-argument arrives as 0/garbage under direct-native. This broke byteat
-(`s:hex(s:byte(...))` — nested calls-as-arguments are the documented
-GAP-155 refusal class, but THIS is the flat argument form, which
-checks clean and silently mislowers).
-
-## Minimal repro (two lines apart in the same program)
+For this declaration:
 
 ```
 hex: i64 = (c: i64)
   if c >= 48 and c <= 57
     c - 48
   ...
-main: i64 = ()
-  x: str = "/tmp/fib.hex":read()
-  b: i64 = x:byte(3)        # b = 54
-  v1: i64 = x:hex(b)        # v1 = 0   ← WRONG (arg form)
-  v2: i64 = x:byte(3):hex() # v2 = 6   ← RIGHT (subject chain)
 ```
 
-## Impact
-
-- The ingest's byteat broke silently after the EDGE-MAX renames moved
-  every call to subject-first — but byteat's BODY still uses the arg
-  form internally (`s:hex(s:byte(...))`). Output: all magic bytes = 0,
-  "not a wasm module."
-- This is also the root cause of the historical "7-arg call helper
-  relieved register pressure" observation: argument-form calls with
-  several locals may be the same defect presenting as register
-  corruption.
-
-## Workaround (applied)
-
-Use subject-chain form at every call site: `s:byte(k):hex()` instead
-of `s:hex(s:byte(k))`. byteat becomes:
+`c` is the semantic subject slot. Therefore these are equivalent:
 
 ```
-byteat: i64 = (s: str, n: i64)
-  s:byte(2 * n - 1):hex() * 16 + s:byte(2 * n):hex()
+hex(b)
+b:hex()
 ```
 
-## Handoff
+Both execute with result 6 when `b = 54`.
 
-Owner: compiler lane (dnir_lower — argument passing for user relations
-under direct-native). The repro is 8 lines. `idol check` accepts both
-forms; only execution differs — a silent wrong-answer defect, the
-worst class.
+This is a different application:
+
+```
+x:hex(b)
+```
+
+It supplies subject `x` and an additional ordinary operand `b`. The
+relation declares no ordinary operand. Returning 0 is not evidence that
+the backend lost `b`: the emitted call passes `x` in `x0` and `b` in
+`x1`, and the declared subject slot reads `x0`. The compiler defect is
+accepting the excess operand rather than refusing the invalid relation
+application.
+
+## The real graph-ownership defect
+
+The two equivalent faces currently execute alike but publish different
+graph facts:
+
+| source face | relation | subject | arguments |
+|---|---:|---|---|
+| `hex(b)` | same exact id | absent | `[b]` |
+| `b:hex()` | same exact id | `b` | `[]` |
+
+That means source syntax still decides subject/operand roles. The first
+semantic divergence occurs before realization; register allocation and
+machine argument passing are downstream witnesses, not the producer.
+
+## Required closure
+
+The relation declaration must publish one ordered slot-role fact. Both
+accepted source faces then normalize to the same application facts:
+
+```
+relation = hex
+subject = b
+arguments = []
+result demand = single
+```
+
+Required controls:
+
+1. `hex(b)` and `b:hex()` publish identical relation, subject, operand,
+   result, and demand ids and execute identically.
+2. `x:hex(b)` fails closed as an excess-operand application.
+3. Poisoning source face, parameter spelling, or AST provenance after
+   graph closure does not change realization.
+4. Deleting or corrupting the relation-role fact makes the graph refuse;
+   no consumer reconstructs roles from argument order or spelling.
+
+Owner: resolver/Sema relation-role publication and the shared semantic
+graph. DNIR/native lowering consumes the normalized graph application;
+it must not repair source-form ambiguity.
+
+## Ingest consequence
+
+The ingest spelling `s:byte(k):hex()` is canonical because the byte
+result is the semantic subject of `hex`. It is not a backend workaround.

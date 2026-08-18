@@ -45,8 +45,8 @@ higher rung (bounds checks, devirtualization, representation choice).
 
 1. Records to stdout as JSONL: parseable by any consumer (jq, python,
    the graph builder) — current path.
-2. MCP streaming: native.id's newline JSON-RPC pattern carries the
-   same records with ZERO format change — the idol MCP server face.
+2. Line streaming prototype: it carries the same records but does not
+   parse JSON-RPC and is not an MCP server face.
 3. Compiler-internal: the record stream consumed at graph-build time
    (no serialization, no parse) — the realization-lane integration.
 4. Provenance byte offsets in every record: incremental re-ingest
