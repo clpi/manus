@@ -5,12 +5,5 @@ command = "idol-lsp"
 name = "idol"
 scope = "source.id"
 file-types = ["id"]
-roots = ["build.id"]
 comment-token = "#"
-injection-regex = "idol"
-indent = { tab-width = 4, unit = "    " }
 language-servers = ["idol-lsp"]
-
-[[grammar]]
-name = "idol"
-source = { path = "../tree-sitter-idol" }
