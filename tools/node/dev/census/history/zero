@@ -90,11 +90,12 @@ else
   echo "census/history/zero: pass duo/DUO_ (bridges allowlisted)"
 fi
 
-if git ls-files --error-unmatch .agents/session/ENVELOPE.md >/dev/null 2>&1; then
-  echo "census/history/zero: FAIL committed session envelope"
+if git ls-files --error-unmatch .agents/session/ENVELOPE.md >/dev/null 2>&1 \
+  || git ls-files --error-unmatch .agents/SESSION_STATE.md >/dev/null 2>&1; then
+  echo "census/history/zero: FAIL committed session state"
   fail=$((fail + 1))
 else
-  echo "census/history/zero: pass session envelope not committed"
+  echo "census/history/zero: pass session state not committed"
 fi
 
 if git ls-files --error-unmatch .agents/harness.generated.md >/dev/null 2>&1; then
