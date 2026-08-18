@@ -36,17 +36,17 @@ Do not treat a volatile count or pass/fail claim in this file as durable
 authority. Refresh it from:
 
 - `git rev-parse HEAD`, `git status`, and recent commits for the exact tree;
-- `duo_dev_claim_files` for live ownership;
+- `tools/node/dev/claim list` for live ownership;
 - `gaps/GAP-0NN.md` for open obligations;
 - `docs/bootstrap.md`, verified against production dispatch, for the current
   self-host frontier; and
 - the exact serialized gate output for current evidence.
 
-`GAP-131` records that the MCP session-start open-P0 summary is unknown and can
-under-report repository gaps. Until the gap closes, run `tools/node/dev/orient`
-for the live observed count and inspect every matching `gaps/GAP-*.md` record
-directly. The observed count is orientation evidence, not a second or durable
-status authority.
+`GAP-131` is closed: the retired MCP session census was deleted and
+`tools/node/dev/orient` now derives `activep0` from exact gap headers. Inspect
+every matching `gaps/GAP-*.md` record directly; the observed count is orientation
+evidence, not a second or durable status authority. Reserve new numbers only
+through `tools/node/dev/gap reserve`.
 
 ## Current tree only
 

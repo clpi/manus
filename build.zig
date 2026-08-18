@@ -652,7 +652,13 @@ pub fn build(b: *std.Build) void {
     // seven fixtures under fixtures/highlight/*.id and their span sidecars are
     // now measured by `highlight-corpus` below, in the surviving vocabulary.
     //
-    // highlight-corpus -- CLAUDE.md section 0d, executable. Highlighting is a
+    // highlight-corpus -- CLAUDE.md section 0d. Law: this is one generated
+    // grammar projection. Today: the retained bootstrap projector is not
+    // admitted by direct native (DNB001 keyed-table-export) or the graph C
+    // source realizer (missing-application-id). Delta: migrate the useful
+    // corpus assertions to the graph-owned idol-native LSP, then delete this
+    // duplicate projector and gate. The standalone step remains red rather
+    // than turning an unavailable projection into false-green admission.
     // PROJECTION OF THE GRAPH, not a lexer, and the only way to tell those two
     // apart from outside is a corpus containing the glyphs idol overloads: `:`
     // is copula OR invoke and `|` is union OR pipe, and no lexer separates
@@ -749,9 +755,8 @@ pub fn build(b: *std.Build) void {
     // that is the whole point: a silent fallback to the worktree-local ledger
     // would keep colliding while reporting success, so the path is the only
     // thing that tells the two apart. Read-only -- it allocates nothing.
-    const gapalloc_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/gapalloc.id" });
+    const gapalloc_cmd = b.addSystemCommand(&.{ "./tools/node/dev/gap", "facts" });
     gapalloc_cmd.setCwd(b.path("."));
-    gapalloc_cmd.step.dependOn(b.getInstallStep());
     const gapalloc_step = b.step("gapalloc", "gap[076]: resolved gap-reservation ledger path, high-water mark across ALL refs, next number");
     gapalloc_step.dependOn(&gapalloc_cmd.step);
 
@@ -992,12 +997,6 @@ pub fn build(b: *std.Build) void {
     closure_proof_step.dependOn(&closure_proof_cmd.step);
     closure_proof_step.dependOn(&semantic_proof_cmd.step);
 
-    const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/proof/module.id" });
-    direct_link_cmd.step.dependOn(b.getInstallStep());
-    direct_link_cmd.setCwd(b.path("."));
-    const direct_link_step = b.step("direct-module-link", "A direct-backend program must be able to call a req'd idol module");
-    direct_link_step.dependOn(&direct_link_cmd.step);
-
     const idiom_cmd = b.addSystemCommand(&.{
         "sh", "-c",
         "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gate/idiom.id || test $? -eq 3",
@@ -1170,7 +1169,7 @@ pub fn build(b: *std.Build) void {
     const meta_smoke_step = b.step("meta-smoke", "Run canonical teaching examples under idol run");
     meta_smoke_step.dependOn(b.getInstallStep());
     inline for (meta_smoke_paths) |path| {
-        const cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/idol_lock.id", "--", "./zig-out/bin/idol", "run", path });
+        const cmd = b.addSystemCommand(&.{ "./tools/node/dev/idol-lock", "--", "./zig-out/bin/idol", "run", path });
         cmd.setCwd(b.path("."));
         meta_smoke_step.dependOn(&cmd.step);
     }
@@ -1178,7 +1177,7 @@ pub fn build(b: *std.Build) void {
     // G-061 strict dispatch gate: metaprogramming smoke under DUO_TRANSFORM_GATE=1
     const meta_gate_cmd = b.addSystemCommand(&.{
         "bash",                                                                                                                                        "-c",
-        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./zig-out/bin/idol run scripts/idol_lock.id -- ./zig-out/bin/idol run examples/parity/each.id",
+        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./tools/node/dev/idol-lock -- ./zig-out/bin/idol run examples/parity/each.id",
     });
     meta_gate_cmd.setCwd(b.path("."));
     meta_gate_cmd.step.dependOn(b.getInstallStep());

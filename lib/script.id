@@ -33,75 +33,6 @@ must = (cmd: str)
     echo("FAIL: " .. cmd)
     os:exit(1)
 
-# Lock wrapper: `idol run scripts/idol_lock.id -- cmd` — the lock script consumes
-# the first `--` itself, so the wrapper never passes a separator through.
-lock_cmd: str = (cmd: str)
-  idol_bin() .. " run scripts/idol_lock.id -- " .. cmd
-
-lock_cmd_timeout: str = (cmd: str, timeout: i64)
-  idol_bin() .. " run scripts/idol_lock.id -- --timeout " .. timeout:to(str) .. " -- " .. cmd
-
-locked_run: i64 = (cmd: str)
-  if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
-    return run(cmd)
-  run(lock_cmd(cmd))
-
-locked_ok: bool = (cmd: str)
-  return locked_run(cmd) == 0
-
-locked_must = (cmd: str)
-  must(lock_cmd(cmd))
-
-locked_must_timeout = (cmd: str, timeout: i64)
-  must(lock_cmd_timeout(cmd, timeout))
-
-# Native build mutex (mkdir + stale-PID reclaim). Used by scripts/idol_lock.id.
-build_lock_dir: str = ()
-  getenv("IDOL_BUILD_LOCK", getenv("DUO_BUILD_LOCK", "/tmp/idol-lock"))
-
-build_lock_owner: str = ()
-  build_lock_dir() .. "/owner"
-
-build_lock_try_acquire: bool = ()
-  ld = build_lock_dir()
-  ok("mkdir -p '" .. ld .. "'")
-
-build_lock_write_owner = ()
-  of = build_lock_owner()
-  must("sh -c 'echo \"$(($$)) $(date +%s)\" > \"" .. of .. "\"'")
-
-build_lock_stale: bool = ()
-  of = build_lock_owner()
-  pid_line = capture("cut -d' ' -f1 '" .. of .. "' 2>/dev/null | head -1")
-  if pid_line == ""
-    return true
-  return run("kill -0 " .. pid_line:gsub("%s+", "") .. " 2>/dev/null") != 0
-
-build_lock_release = ()
-  ld = build_lock_dir()
-  of = build_lock_owner()
-  run("rm -f '" .. of .. "'")
-  run("rmdir '" .. ld .. "' 2>/dev/null")
-
-build_lock_acquire: bool = (timeout: i64)
-  if getenv_or("IDOL_LOCK_HELD") == "1" or getenv_or("DUO_LOCK_HELD") == "1"
-    return true
-  waited = 0
-  while waited < timeout
-    if build_lock_try_acquire()
-      build_lock_write_owner()
-      return true
-    stale_now = build_lock_stale()
-    ld = build_lock_dir()
-    of = build_lock_owner()
-    cmd = "sleep 2"
-    if stale_now
-      cmd = "rm -f '" .. of .. "' 2>/dev/null; rmdir '" .. ld .. "' 2>/dev/null"
-    run(cmd)
-    if !stale_now
-      waited = waited + 2
-  false
-
 # Reads the command's stdout through `io.popen`, not through a temp file.
 #
 # TWO faults were repaired here at once, and the first is why NOTHING in this
@@ -471,16 +402,6 @@ M =
   exec = exec
   ok = ok
   must = must
-  lock_cmd = lock_cmd
-  lock_cmd_timeout = lock_cmd_timeout
-  locked_run = locked_run
-  locked_ok = locked_ok
-  locked_must = locked_must
-  locked_must_timeout = locked_must_timeout
-  build_lock_dir = build_lock_dir
-  build_lock_acquire = build_lock_acquire
-  build_lock_release = build_lock_release
-  build_lock_stale = build_lock_stale
   capture = capture
   idol_bin = idol_bin
   idol_run = idol_run

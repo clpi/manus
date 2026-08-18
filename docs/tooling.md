@@ -18,8 +18,8 @@ mistake those paths for canonical source.
 Tooling projects graph-owned identity, facts, demand, worlds, provenance, and
 realization. It must not invent a vocabulary or recover semantic truth from
 package paths, formatted text, hashes, or source punctuation. Static identity
-uses named projection; `[]` communicates a genuinely computed key and does not
-select a physical representation.
+uses named projection; a genuinely computed key uses ordinary application
+`table(key)` and does not select a physical representation.
 
 Tool protocols may require booleans, but those are transport renderings rather
 than semantic owners. Tooling preserves graph cases, unknowns, descriptor and
@@ -31,10 +31,10 @@ distribution, `std.script` is frozen debt, and another universal root is not a
 replacement. Implementation location is provenance; relations own meaning,
 subjects orient application, and worlds grant authority.
 
-Use `duo_agent_session_start`, `duo_dev_claim_files`,
-`duo_dev_claim_acquire`, and `duo_agent_gaps_update` according to the router,
-and serialize heavy commands through its locked-build route. Derive volatile
-tool availability and project status from the exact current tree instead of
-copying counts into documentation. Fail closed when authority conflicts, state
-is incomplete, semantic vocabulary is missing, or a required fact is owned
-elsewhere.
+Use `tools/node/dev/claim list` and `tools/node/dev/claim acquire` according to
+the router; edit exact `gaps/GAP-*.md` records and reserve new numbers with
+`tools/node/dev/gap reserve`. Serialize heavy commands through
+`tools/node/dev/idol-lock`. Derive volatile tool availability and project status
+from the exact current tree instead of copying counts into documentation. Fail
+closed when authority conflicts, state is incomplete, semantic vocabulary is
+missing, or a required fact is owned elsewhere.

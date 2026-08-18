@@ -43,27 +43,25 @@ former project branding for current Idol work.
 repo="$(git rev-parse --show-toplevel)"
 "$repo/tools/node/dev/orient"     # regenerates .agents/HARNESS.md + current state
 "$repo/tools/node/dev/doctor"     # pre-agent admission check (rejects stale/broken state)
-# claims: inspect .agents/session/claims or idol_dev_claim_files via MCP
-"$repo/tools/node/dev/orient"     # includes activep0; read exact gaps/GAP-*.md until GAP-131 closes
+# claims: inspect tools/node/dev/claim list
+"$repo/tools/node/dev/orient"     # includes activep0; read exact gaps/GAP-*.md
 ```
 
 `orient` reports `activep0` and `frontier`. Until GAP-131 closes, the
-session-start P0 summary is incomplete — read the exact gap files.
+The P0 summary is derived — read the exact gap files.
 
 ## 3. Claim exact paths before editing
 
 This repository runs **concurrent agent lanes** (Cursor, Codex, Poolside,
 Devin, AGY). Never edit a path owned by another live session.
 
-- Acquire claims through the `idol-bench` MCP server: `idol_dev_claim_acquire`,
-  `idol_dev_claim_files`, `idol_agent_session_start`, `idol_agent_gaps_update`.
-  From pi these are exposed by `extensions/idol-mcp.ts` as `idol__*` tools.
-  Legacy `duo_*` names remain registered as bootstrap aliases only.
-- If the MCP servers are unreachable, fall back to the durable claim view from
-  `scripts/claims.sh`, but **do not edit** paths another session shows as
-  locked. Coordination is the authority for safety, not a convenience.
-- `duo` / `duo-*` in tool names are physical bootstrap aliases, not the `idol`
-  command identity.
+- Read and mutate the shared claim view with `tools/node/dev/claim`. Do not
+  invent or use the removed `idol-bench` or `duo_*` transports, and do not add
+  claim semantics to an MCP text dispatcher.
+- **Do not edit** paths another live session owns. Coordination is the
+  authority for safety, not a convenience.
+- Reserve a new numbered obligation with `tools/node/dev/gap reserve`; never
+  hand-allocate a number or create another ledger.
 
 ## 4. Build and test through the locked path
 
@@ -72,13 +70,12 @@ repo="$(git rev-parse --show-toplevel)"
 cd "$repo" && zig build --summary all && zig build unit-test
 ```
 
-For serialized builds and benchmarks, use the locked MCP build tools
-(`idol-bench`), not a bare concurrent run. The serialization wrapper is
-`scripts/idol_lock.id`:
+For serialized builds and benchmarks, use the repository lock wrapper, not a
+bare concurrent run:
 
 ```sh
 repo="$(git rev-parse --show-toplevel)"
-"$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- <command>
+"$repo/tools/node/dev/idol-lock" -- <command>
 ```
 
 ## 5. Mechanical preflight — the grammar is closed
@@ -153,7 +150,8 @@ no single-use bridge bindings. No `@{...}` when use determines dependency.
 
 **Seam audit (mandatory before code):** read `docs/spec/harness-projection.md`
 § seam audit — `law.bridge.death`, `law.fallback.zero`, `law.fact.producer.one`,
-`law.gate.convergence`, etc. `idol_agent_session_start` returns `harness_context`.
+`law.gate.convergence`, etc. `tools/node/dev/orient` refreshes the derived
+`.agents/HARNESS.md` projection.
 
 Before writing a nontrivial Idol expression, answer the 12 preflight questions
 in `AGENTS.md` (subject? relation? indirect info? sentinel? value-relation

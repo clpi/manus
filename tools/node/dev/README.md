@@ -86,9 +86,12 @@ declares the enabled project servers:
 
 The retired pre-rename transports (`idol-bench`, `idol-lsp`, `zls`) were
 removed: their legacy-syntax sources predated the C-backend retirement and
-never compiled under a live backend. Claims live in `.agents/session/claims/`,
-language intelligence comes from `idol-native` (MCP + language server), and
-Zig navigation uses the editor's own zls directly.
+never compiled under a live backend. Exact file claims use
+`tools/node/dev/claim`; gap numbers use `tools/node/dev/gap`; locked work uses
+`tools/node/dev/idol-lock`; language
+intelligence comes from `idol-native` (MCP + language server); Zig navigation
+uses the editor's own zls directly. These commands preserve the useful
+coordination contracts without making a text dispatcher semantic authority.
 
 `tools/node/dev/generate-configs` projects the manifest into:
 

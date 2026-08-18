@@ -9,11 +9,9 @@ development="$("$repository" development)"
 release="$("$repository" release)"
 
 fail=0
-warn=0
 
 ok() { printf 'ok %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1" >&2; fail=$((fail + 1)); }
-note() { printf 'WARN %s\n' "$1" >&2; warn=$((warn + 1)); }
 
 cleanup_root_artifacts() {
   find "$repo" -maxdepth 1 -type f \( -name '*.out' -o -name '*.profraw' -o -name 'test_*.c' -o -name 'test_*.wasm' \) -exec rm {} \;
@@ -22,7 +20,11 @@ cleanup_root_artifacts() {
 trap cleanup_root_artifacts EXIT
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 && ok "$1 on PATH" || bad "$1 missing from PATH"
+  if command -v "$1" >/dev/null 2>&1; then
+    ok "$1 on PATH"
+  else
+    bad "$1 missing from PATH"
+  fi
 }
 
 want_version() {
@@ -140,12 +142,6 @@ else
   fi
 fi
 
-if git status --short | grep -E '^[ MADRCU?!]{1,2} ext/duo-lsp$' >/dev/null 2>&1; then
-  bad "ext/duo-lsp submodule is not admitted"
-else
-  ok "ext/duo-lsp submodule admitted"
-fi
-
 cleanup_root_artifacts
 
 root_artifacts="$(find "$repo" -maxdepth 1 -type f \( -name '*.out' -o -name '*.profraw' -o -name 'test_*.c' -o -name 'test_*.wasm' \) -print | head -1)"
@@ -184,8 +180,11 @@ for skill in idol-dev idol; do
 done
 
 for name in $(jq -r '.servers[] | select(.enabled == true) | .name' "$repo/tools/node/dev/mcp.manifest.json"); do
+  required=$(jq -r --arg name "$name" '.servers[] | select(.name == $name) | (.required // false)' "$repo/tools/node/dev/mcp.manifest.json")
   if codex mcp get "$name" >/dev/null 2>&1; then
     ok "Codex has MCP server $name"
+  elif [ "$required" = false ]; then
+    ok "Codex optional MCP server unavailable: $name"
   else
     bad "Codex missing MCP server $name"
   fi
@@ -267,31 +266,20 @@ else
 fi
 
 if cursor agent mcp list >/tmp/idol-cursor-mcp.out 2>&1; then
-  mcp_serve_blocked=0
-  if ! "$duo" check "$repo/tools/mcp/bench.id" >/dev/null 2>&1; then
-    mcp_serve_blocked=1
-  fi
   missing_cursor_mcp=0
-  for name in idol-bench idol-lsp zls; do
-    if [ "$mcp_serve_blocked" -eq 1 ]; then
-      ok "Cursor MCP server deferred: $name (IMPLEMENTATION-BLOCKED C embed)"
-    elif grep -q "^$name: ready" /tmp/idol-cursor-mcp.out; then
+  for name in $(jq -r '.servers[] | select(.enabled == true) | .name' "$repo/tools/node/dev/mcp.manifest.json"); do
+    required=$(jq -r --arg name "$name" '.servers[] | select(.name == $name) | (.required // false)' "$repo/tools/node/dev/mcp.manifest.json")
+    if grep -q "^$name: ready" /tmp/idol-cursor-mcp.out; then
       ok "Cursor MCP server ready: $name"
-    elif [ "$name" = "idol-bench" ] && grep -q "^duo-bench: ready" /tmp/idol-cursor-mcp.out; then
-      ok "Cursor MCP server ready: duo-bench (legacy  -  run tools/node/dev/generate-configs)"
-    elif [ "$name" = "idol-lsp" ] && grep -q "^duo-lsp: ready" /tmp/idol-cursor-mcp.out; then
-      ok "Cursor MCP server ready: duo-lsp (legacy  -  run tools/node/dev/generate-configs)"
+    elif [ "$required" = false ]; then
+      ok "Cursor optional MCP server unavailable: $name"
     else
-      if "$repo/tools/node/dev/mcp-gate" >/dev/null 2>&1; then
-        ok "Cursor MCP server tier-0 deferred: $name (serve IMPLEMENTATION-BLOCKED)"
-      else
       bad "Cursor MCP server is not ready: $name"
       missing_cursor_mcp=1
-      fi
     fi
   done
   if [ "$missing_cursor_mcp" -eq 0 ]; then
-    ok "Cursor MCP required servers approved"
+    ok "Cursor required MCP servers approved"
   fi
 else
   bad "Cursor MCP server list failed"
@@ -346,19 +334,17 @@ if [ "$skip_gates" != "1" ]; then
     run_gate "semantic architecture gate" "$lock" -- zig build semantic-architecture
     run_gate "unit gate" "$lock" -- zig build unit-test --summary all
   else
-    ok "lsp-gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  IMPLEMENTATION-BLOCKED C embed / exit-128 hints)"
+    ok "lsp-gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  GAP-078 graph-owned idol-native projection replacement)"
     ok "semantic architecture gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  gate/architecture.id C embed debt)"
-    ok "unit gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  33 known Zig test failures at HEAD)"
+    ok "unit gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  verify the current aggregate debt live)"
   fi
 fi
 
 if [ "$fail" -eq 0 ]; then
   cleanup_root_artifacts
-  printf 'idol doctor: PASS'
-  [ "$warn" -gt 0 ] && printf ' (%s warning(s))' "$warn"
-  printf '\n'
+  printf 'idol doctor: PASS\n'
   exit 0
 fi
 
-printf 'idol doctor: FAIL (%s failure(s), %s warning(s))\n' "$fail" "$warn" >&2
+printf 'idol doctor: FAIL (%s failure(s))\n' "$fail" >&2
 exit 1
