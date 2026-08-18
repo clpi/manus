@@ -3030,20 +3030,20 @@ const HomeLoaderCtx = struct {
 
     fn load(raw: *anyopaque, alias: []const u8) ?sema.ForeignHome {
         const self: *HomeLoaderCtx = @ptrCast(@alignCast(raw));
-        const path = home_resolve.resolve(
+        const source = home_resolve.resolve(
             self.alloc,
             self.io,
             .{ .from = self.from, .stdlib_root = compiler_lib_root },
             alias,
         ) orelse return null;
+        const path = source.path;
         // A module is not its own foreign home. Without this a file named
         // `x.id` containing `x.f(1)` would resolve to itself and publish an
         // application against a declaration the graph is already lifting,
         // which is a duplicate identity, not a cross-home one.
         if (std.mem.eql(u8, path, self.from)) return null;
         const src = read_source(self.alloc, self.io, path) catch return null;
-        const facts = lexer_bridge.sourceFacts(path);
-        var lex = Lexer.initFacts(src, path, facts);
+        var lex = Lexer.initFacts(src, path, source.facts);
         routeThroughDuoLexer(self.alloc, &lex, src, path) catch return null;
         var parser = Parser.init(&lex, self.alloc);
         parser.idol_mode = lex.family == lexer_bridge.family_canon;
