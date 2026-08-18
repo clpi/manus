@@ -306,3 +306,16 @@ both the wasm admission gate and the LSP server admission. Full wasm
 closure matrix with proposal states and wasmtime oracle baselines:
 evidence/mop/wasm/closure.md. WASIX has zero source support (the wasix
 bench is oracle corpus only); WASI p1 is real but partial.
+
+
+## Update 8 — one-command theorem suite
+
+`tools/reduce/verify` runs every blocker theorem and its control with
+exact expectations (9/9 PASS at 287c17fe). The crash control asserts
+CLEAN DIAGNOSIS — never an internal InvalidAggregateFact — so the suite
+is the post-merge regression guard: after the reconcile merge lands
+(self-recursion fixed to classified refusal on that line), this command
+must stay green with `missing: parse_expr` and never revert to the
+crash. Post-merge pass order: merge -> tools/reduce/verify ->
+census/compound --record -> parity (adopt fail-closed) -> ABI rename
+window -> bridge census re-run.
