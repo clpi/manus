@@ -59,3 +59,23 @@ through. Ingesting Wasm as facts inherits the existing demand,
 specialization, and realization machinery instead of forking a second
 compiler. Lane 3 delivers this mapping plus prototypes as fixtures; the
 production decoder waits on lanes 1–2 closing ingress and grammar.
+
+
+## Fact-separation ruling (parallel review, 2026-08-17)
+
+Two architecture regressions the review prevented apply directly here:
+
+1. **Semantic runtime need is NEVER inferred from opcodes** — neither
+   Wasm opcodes nor DNIR opcodes. Instructions are source-law
+   provenance; runtime need comes only from demanded occurrences on the
+   graph. The probe's per-instruction applications are provenance
+   records; any realization decision reads demand facts, not these.
+2. **No bundled boundary records.** law, provider, ABI, ownership, and
+   realization are SEPARATE fact families. An application record carries
+   provenance (origin: wasm) and operand/result descriptors — never a
+   boundary bundle. Component/WIT ingestion must publish each family
+   independently (descriptor / pack / ownership / world / effect), and
+   consumers demand per family.
+
+Also noted: the WASI lane stripped an accidental 4,000-line formatter
+rewrite before history — ingest tooling generates nothing but facts.
