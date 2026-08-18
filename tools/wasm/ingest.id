@@ -67,6 +67,39 @@ byteat: i64 = (s: str, n: i64)
 bytecount: i64 = (s: str)
   s:len() / 2
 
+immclass: i64 = (op: i64)
+  if op == 14 or op == 28
+    -1
+  else
+    if op == 65 or op == 66
+      -2
+    else
+      if op == 67
+        -3
+      else
+        if op == 68
+          -4
+        else
+          if op >= 40 and op <= 62
+            -5
+          else
+            if op == 32 or op == 33 or op == 34 or op == 35 or op == 36 or op == 16 or op == 12 or op == 13
+              1
+            else
+              if op == 17
+                2
+              else
+                0
+
+slebend: i64 = (s: str, i: i64)
+  p: i64 = i
+  hit: bool = true
+  while hit
+    x: i64 = byteat(s, p)
+    p = p + 1
+    hit = x >= 128 and p <= bytecount(s)
+  p
+
 main: i64 = ()
   path: str = args(1)
   if path == ""
@@ -103,6 +136,53 @@ main: i64 = ()
     if sid == 10
       n10c: i64 = ulebval(src, after)
       emit("bodies.count", num(n10c))
+      bp: i64 = ulebafter(src, after)
+      fi: i64 = 0
+      totalinstr: i64 = 0
+      totallocals: i64 = 0
+      while fi < n10c and bp < bytecount(src)
+        bsz: i64 = ulebval(src, bp)
+        bstart: i64 = ulebafter(src, bp)
+        bend: i64 = bstart + bsz - 1
+        nld: i64 = ulebval(src, bstart)
+        lp: i64 = ulebafter(src, bstart)
+        flocals: i64 = 0
+        li: i64 = 0
+        while li < nld and lp < bend
+          cnt: i64 = ulebval(src, lp)
+          lp = ulebafter(src, lp) + 1
+          flocals = flocals + cnt
+          li = li + 1
+        ninstr: i64 = 0
+        ip: i64 = lp
+        walking: bool = true
+        while walking and ip <= bend
+          op: i64 = byteat(src, ip)
+          ip = ip + 1
+          cl: i64 = immclass(op)
+          if cl == 1
+            ip = ulebafter(src, ip)
+          if cl == -2
+            ip = slebend(src, ip)
+          if cl == -3
+            ip = ip + 4
+          if cl == -4
+            ip = ip + 8
+          if cl == -5
+            ip = ulebafter(src, ip)
+            ip = ulebafter(src, ip)
+          if cl == -1
+            walking = false
+          if walking
+            ninstr = ninstr + 1
+        emit("body." .. num(fi) .. ".locals", num(flocals))
+        emit("body." .. num(fi) .. ".instr", num(ninstr))
+        totalinstr = totalinstr + ninstr
+        totallocals = totallocals + flocals
+        bp = bstart + bsz
+        fi = fi + 1
+      emit("code.totalinstr", num(totalinstr))
+      emit("code.totallocals", num(totallocals))
     if sid == 7
       n7c: i64 = ulebval(src, after)
       emit("exports.count", num(n7c))

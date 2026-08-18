@@ -123,6 +123,15 @@ functions), double-quoted escapes are not unescaped (single-quoted byte
 literals), for-in over dynamic args needs an unpublished
 gen-for-dynamic-iter fact (positional args(2) instead).
 
+UPDATE 3: full body walk lands — locals EXACT (1,028 across 203
+bodies), instruction census 29,356 vs independent ground truth 29,004
+(1.2% divergence). The big correctness fix was a SIGN ERROR: the sleb
+class is -2 but its handler tested cl == 2, so every i32.const value
+byte was counted as an opcode (38,001 before the fix). The remaining
+1.2% is diagnosed by per-body trace-diff (84 bodies differ, both +1 and
++40 patterns) with the trace methodology proven; one instrumentation
+lesson recorded: emit-at-read-time, never post-skip (positions shift).
+
 UPDATE 2: per-section content counts now parsed IN IDOL and CROSS-
 VALIDATED against an independent read of the same bytes: types 39,
 imports 6, functions 203, exports 3, bodies 203 — exact match. The
@@ -149,3 +158,11 @@ blocked on the bytes-vs-text contract (the architecture memo's 'text
 and bytes need a true semantic contract' item): a bytes face on
 path:read, or a world-authorized binary ingress relation. No shell
 piping workaround was wired in — that would be a silent fallback.
+
+
+## Style ruling (user, 2026-08-17): `.` only for static members
+
+Field access via `.` is for STATIC members (world/home fields like
+`os.args`); dynamic values relate through subject-first `:` edges
+(`s:byte(i)`, `path:read()`). Recorded; ingest.id audited compliant
+(no `.` on dynamic values — all access is `:` edges or plain locals).
