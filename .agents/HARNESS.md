@@ -455,7 +455,7 @@ composition is inferable from use.
 
 - **FROM-ZERO** — `to` is the one conversion relation; `from` normalizes to same edge
 - **STD-ZERO / LIB-ZERO** — no canonical `std.*` or `lib.*` traversal; fix reachability
-- **WORLD-ONE** — worlds grant authority, not intent; prefer `stdin:read()`, `args[1]`, `stdout:write()`
+- **WORLD-ONE** — worlds grant authority, not intent; prefer `stdin:read()`, `args(1)`, `stdout:write()`
 - **SHELL-NOT-WORLD** — shell is law; process world authorizes run
 - **HOME-PROJECTION** — hierarchy is reachability, not `compiler.parser.parse`
 - Protocol constraints are relation projections (`source: read`), not adjective traits
