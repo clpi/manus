@@ -793,7 +793,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "run")) {
         if (input_file) |maybe_target| {
-            if (lexer_bridge.sourceFacts(maybe_target).law == .unknown) {
+            if (admittedSourceFacts(maybe_target) == null) {
                 try do_project_build(alloc, io, maybe_target, output_file, cc, opt_level, target, backend_mode, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, true);
                 return;
             }
@@ -981,8 +981,23 @@ fn read_source(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]u8 {
     return Io.Dir.readFileAlloc(cwd, io, path, alloc, .unlimited);
 }
 
+/// Bind a source law only when the executed producer also publishes the
+/// physical form that carried it. This is the consumer-side fail-closed seam:
+/// a guessed law for an unlisted suffix cannot become parser or realization
+/// authority. Corpus-role rejection remains rejection even for a listed form.
+fn admittedSourceFacts(path: []const u8) ?lexer_bridge.SourceFacts {
+    const facts = lexer_bridge.sourceFacts(path);
+    return if (facts.law == .unknown) null else facts;
+}
+
 fn is_source_path(path: []const u8) bool {
-    return lexer_bridge.sourceFacts(path).law != .unknown;
+    return admittedSourceFacts(path) != null;
+}
+
+test "unlisted source path is not admitted by a guessed law" {
+    try std.testing.expect(admittedSourceFacts("vendor/opaque.bin") == null);
+    try std.testing.expect(admittedSourceFacts("program.id") != null);
+    try std.testing.expect(admittedSourceFacts("program.lua") != null);
 }
 
 fn usesProjectWorkspace(cmd: []const u8, input_file: ?[]const u8) bool {
@@ -1064,12 +1079,8 @@ fn detectCompilerLibRoot(alloc: std.mem.Allocator, io: Io, environ: *std.process
 }
 
 fn dirHasWorkspaceMarker(alloc: std.mem.Allocator, io: Io, dir: []const u8) !bool {
-    for (build_framework.buildSourceCandidates()[0..4]) |candidate| {
-        const path = try pathJoin2(alloc, dir, candidate);
-        defer alloc.free(path);
-        if (absPathExists(io, path)) return true;
-    }
-    return false;
+    _ = alloc;
+    return build_framework.hasWorkspaceMarker(io, dir);
 }
 
 fn findWorkspaceRoot(alloc: std.mem.Allocator, io: Io) !?[]const u8 {
@@ -1108,13 +1119,11 @@ fn getCwd(buf: *[std.fs.max_path_bytes]u8) ![]const u8 {
     return std.mem.sliceTo(buf[0..], 0);
 }
 
-fn buildSourcePath(io: Io, requested: ?[]const u8) []const u8 {
+fn buildSourcePath(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8) ![]const u8 {
     if (requested) |r| {
         if (is_source_path(r)) return r;
     }
-    const path = build_framework.findBuildSource(io, null);
-    const cwd = Io.Dir.cwd();
-    cwd.access(io, path, .{}) catch {
+    const path = (try build_framework.findBuildSource(alloc, io)) orelse {
         term.err("no build source found", .{});
         term.hint("expected build.id, src/build.id, src/main.id, or main.id; .lua remains foreign compatibility input", .{});
         std.process.exit(1);
@@ -1123,9 +1132,9 @@ fn buildSourcePath(io: Io, requested: ?[]const u8) []const u8 {
 }
 
 fn resolveDefaultSource(alloc: std.mem.Allocator, io: Io) ![]const u8 {
-    if (build_framework.findEntrypoint(io)) |path| {
+    if (try build_framework.findEntrypoint(alloc, io)) |path| {
         term.infoMsg("selected default source '{s}'", .{path});
-        return try alloc.dupe(u8, path);
+        return path;
     }
     term.err("no input file and no default source found", .{});
     term.hint("create src/main.id or main.id; .lua entrypoints remain foreign compatibility input", .{});
@@ -1141,7 +1150,7 @@ fn requestedTargetName(requested: ?[]const u8) ?[]const u8 {
 }
 
 fn loadBuildProject(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8) !build_framework.Project {
-    const build_source = buildSourcePath(io, requested);
+    const build_source = try buildSourcePath(alloc, io, requested);
     var ps = try parse_and_check(alloc, io, build_source);
     _ = &ps;
     var project = try build_framework.loadFromSema(alloc, build_source, &ps.sem);
@@ -1412,8 +1421,7 @@ fn scanInlineTestDir(
             continue;
         }
         if (entry.kind != .file) continue;
-        const facts = lexer_bridge.sourceFacts(entry.name);
-        if (facts.law == .unknown) continue;
+        const facts = admittedSourceFacts(entry.name) orelse continue;
         const path = if (std.mem.eql(u8, rel_dir, "."))
             try alloc.dupe(u8, entry.name)
         else
@@ -3069,7 +3077,11 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     const src = try read_source(alloc, io, src_path);
     term.setSource(src_path, src);
 
-    const facts = lexer_bridge.sourceFacts(src_path);
+    const facts = admittedSourceFacts(src_path) orelse {
+        term.err("source law is not admitted for '{s}'", .{src_path});
+        term.hint("use a physical source form published by the source-law owner", .{});
+        std.process.exit(1);
+    };
     var lex = Lexer.initFacts(src, src_path, facts);
     routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
         diagnoseLexRejection(&lex, src, src_path, e);
@@ -4194,14 +4206,6 @@ fn hashReqClosure(
     if (depth > 64) return false;
     const cwd = Io.Dir.cwd();
     const roots = [_][]const u8{ root, ".", "lib", "vendor", "lib/core" };
-    // A tuple with `inline for`, not a slice: a format string must be comptime.
-    // Same four templates, same order, as `codegen.find_module_path`.
-    const templates = .{
-        "{s}/{s}" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
-        "{s}/{s}.lua",
-        "{s}/{s}/init" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
-        "{s}/{s}/init.lua",
-    };
 
     var scan: usize = 0;
     while (nextReqTarget(src, scan)) |hit| {
@@ -4220,30 +4224,36 @@ fn hashReqClosure(
 
         var found_any = false;
         for (roots) |r| {
-            // No `continue` in here: this loop is `inline`, so a loop-targeting
-            // jump is comptime control flow inside a runtime block.
-            inline for (templates) |tmpl| {
-                const path = std.fmt.allocPrint(alloc, tmpl, .{ r, mod }) catch return false;
-                const exists = if (Io.Dir.access(cwd, io, path, .{})) |_| true else |_| false;
-                if (exists) {
-                    found_any = true;
-                    if (!seen.contains(path)) {
-                        seen.put(alloc, path, {}) catch return false;
-                        const body = Io.Dir.readFileAlloc(cwd, io, path, alloc, .unlimited) catch
-                            return false;
-                        // The PATH goes in as well as the bytes: two modules with
-                        // identical contents at different paths are different reaches.
-                        h.update(path);
-                        // A reached module gets the same §87 quotient as the root
-                        // (see `hashSourceQuotient`): a comment edit in a library
-                        // must not invalidate an artifact it cannot change.
-                        if (hashSourceQuotient(h, body, path)) {
-                            h.update("q");
-                        } else {
-                            h.update("r");
-                            h.update(body);
+            inline for ([_]bool{ false, true }) |nested| {
+                var forms = lexer_bridge.sourceForms();
+                while (forms.next()) |form| {
+                    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+                    const path = if (nested)
+                        std.fmt.bufPrint(&path_buf, "{s}{c}{s}{c}init{s}", .{ r, std.fs.path.sep, mod, std.fs.path.sep, form.suffix }) catch return false
+                    else
+                        std.fmt.bufPrint(&path_buf, "{s}{c}{s}{s}", .{ r, std.fs.path.sep, mod, form.suffix }) catch return false;
+                    const exists = if (Io.Dir.access(cwd, io, path, .{})) |_| true else |_| false;
+                    if (exists) {
+                        found_any = true;
+                        if (!seen.contains(path)) {
+                            const owned_path = alloc.dupe(u8, path) catch return false;
+                            seen.put(alloc, owned_path, {}) catch return false;
+                            const body = Io.Dir.readFileAlloc(cwd, io, path, alloc, .unlimited) catch
+                                return false;
+                            // The PATH goes in as well as the bytes: two modules with
+                            // identical contents at different paths are different reaches.
+                            h.update(path);
+                            // A reached module gets the same §87 quotient as the root
+                            // (see `hashSourceQuotient`): a comment edit in a library
+                            // must not invalidate an artifact it cannot change.
+                            if (hashSourceQuotient(h, body, path)) {
+                                h.update("q");
+                            } else {
+                                h.update("r");
+                                h.update(body);
+                            }
+                            if (!hashReqClosure(alloc, io, root, body, h, seen, depth + 1)) return false;
                         }
-                        if (!hashReqClosure(alloc, io, root, body, h, seen, depth + 1)) return false;
                     }
                 }
             }
@@ -5784,7 +5794,11 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
         std.process.exit(1);
     };
     term.setSource(src_path, src);
-    const facts = lexer_bridge.sourceFacts(src_path);
+    const facts = admittedSourceFacts(src_path) orelse {
+        term.err("source law is not admitted for '{s}'", .{src_path});
+        term.hint("use a physical source form published by the source-law owner", .{});
+        std.process.exit(1);
+    };
     var lex = Lexer.initFacts(src, src_path, facts);
     routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
         diagnoseLexRejection(&lex, src, src_path, e);

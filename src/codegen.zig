@@ -37,6 +37,7 @@ const lua_metamethod = @import("lua_metamethod.zig");
 const relation = @import("relation.zig");
 const collection_relation = @import("collection_relation.zig");
 const lexer_bridge = @import("lexer_bridge.zig");
+const home_resolve = @import("home_resolve.zig");
 
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
 /// driver uses.
@@ -3810,10 +3811,6 @@ pub const CodeGen = struct {
             !std.mem.eql(u8, self.target, "native-dylib"))
         {
             self.nativeDiagFail("guard-target");
-            return self.nofit(@src());
-        }
-        if (!self.idol_mode) {
-            self.nativeDiagFail("guard-duo");
             return self.nofit(@src());
         }
         if (mod.body.tail_expr) |expr| {
@@ -24326,22 +24323,8 @@ pub const CodeGen = struct {
     }
 
     fn find_module_path(self: *CodeGen, base_dir: []const u8, mod_name: []const u8) ?[]const u8 {
-        const templates = .{
-            "{s}/{s}" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
-            "{s}/{s}.lua",
-            "{s}/{s}/init" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
-            "{s}/{s}/init.lua",
-        };
-        const cwd = Io.Dir.cwd();
-        inline for (templates) |tmpl| {
-            const path = std.fmt.allocPrint(self.alloc, tmpl, .{ base_dir, mod_name }) catch return null;
-            if (Io.Dir.access(cwd, self.io, path, .{})) |_| {
-                return path;
-            } else |_| {
-                self.alloc.free(path);
-            }
-        }
-        return null;
+        const source = home_resolve.moduleFileUnder(self.alloc, self.io, base_dir, mod_name) orelse return null;
+        return source.path;
     }
 
     fn emit_required_modules(self: *CodeGen, mod: *const ast.Module) E!void {
@@ -32642,7 +32625,7 @@ const duo_runtime =
 
 const testing = std.testing;
 
-test "native scalar refusal evidence is isolated and reset per codegen" {
+test "native scalar eligibility is source-law independent and resets refusal evidence" {
     var type_map = sema.TypeMap.init(testing.allocator);
     defer type_map.deinit();
 
@@ -32663,8 +32646,8 @@ test "native scalar refusal evidence is isolated and reset per codegen" {
             .stmts = &.{},
         },
     };
-    try testing.expect(!first.can_emit_native_scalar_module(&module));
-    try testing.expectEqualStrings("guard-duo", first.nativeScalarReason(&first_buf).?);
+    try testing.expect(first.can_emit_native_scalar_module(&module));
+    try testing.expect(first.nativeScalarReason(&first_buf) == null);
     try testing.expectEqualStrings("second:2", second.nativeScalarReason(&second_buf).?);
 }
 
@@ -33384,6 +33367,8 @@ test "codegen: alias derive field projections use native table helpers" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
 
@@ -33829,6 +33814,8 @@ test "codegen: numeric lua locals unbox in mixed native binops" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(int64_t n)") orelse return error.TestExpectedEqual;
@@ -33862,6 +33849,8 @@ test "codegen: unary neg on numeric lua local unboxes" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(int64_t n)") orelse return error.TestExpectedEqual;
@@ -33931,6 +33920,8 @@ test "codegen: typed arbitrary-key table reads use native projection helpers" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "int64_t n = ((int64_t)lua_table_get_key_num(t, lua_val_from_str(nk)))") != null);
@@ -34912,6 +34903,8 @@ test "codegen: dynamic length operator emits native numeric helper" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "lua_len_num(") != null);
@@ -35939,6 +35932,8 @@ test "codegen: typed __emit bypasses lua_to_num on return and locals" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
 
@@ -36764,6 +36759,8 @@ test "gcd prelude uses coprime affine divisor iteration with fallback" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "duo_gcd_i64(mul_mod, period) == 1") != null);

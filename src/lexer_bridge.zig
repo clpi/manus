@@ -5,8 +5,6 @@ const std = @import("std");
 const lexer = @import("lexer.zig");
 const keyword_bridge = @import("keyword_bridge.zig");
 
-pub const CANONICAL_SOURCE_SUFFIX = ".id";
-
 /// Integer operand into production `tokenize()`. 1 = canonical Idol, 2 = compat.
 /// Unknown is not a lexical family. `familyCode` retains the historical value
 /// for allocator-free test helpers; production ingress must reject unknown
@@ -232,7 +230,7 @@ test "lexer bridge: one source-law producer owns physical form order" {
     var forms = sourceForms();
     const idol = forms.next().?;
     try std.testing.expectEqual(SourceLaw.idol, idol.law);
-    try std.testing.expectEqualStrings(CANONICAL_SOURCE_SUFFIX, idol.suffix);
+    try std.testing.expectEqualStrings(".id", idol.suffix);
     try std.testing.expect(idol.canonical);
     const lua = forms.next().?;
     try std.testing.expectEqual(SourceLaw.lua, lua.law);

@@ -608,6 +608,15 @@ test "home_resolve: a home name cannot exceed the path buffer" {
 test "home_resolve: one source-form authority selects path and law once" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
+    var forms = lexer_bridge.sourceForms();
+    var canonical_form: ?lexer_bridge.SourceForm = null;
+    while (forms.next()) |form| {
+        if (!form.canonical) continue;
+        try std.testing.expect(canonical_form == null);
+        canonical_form = form;
+    }
+    const canonical = canonical_form orelse return error.TestExpectedCanonicalSourceForm;
+
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     try tmp.dir.writeFile(io, .{ .sub_path = "both.id", .data = "" });
@@ -623,7 +632,7 @@ test "home_resolve: one source-form authority selects path and law once" {
 
     const both = moduleFileUnder(alloc, io, root, "both").?;
     defer alloc.free(both.path);
-    try std.testing.expect(std.mem.endsWith(u8, both.path, lexer_bridge.CANONICAL_SOURCE_SUFFIX));
+    try std.testing.expect(std.mem.endsWith(u8, both.path, canonical.suffix));
     try std.testing.expectEqual(lexer_bridge.SourceLaw.idol, both.facts.law);
 
     const nested = moduleFileUnder(alloc, io, root, "nested").?;
@@ -642,7 +651,7 @@ test "home_resolve: one source-form authority selects path and law once" {
     const compatibility = moduleFileUnder(alloc, io, "examples/luahost", "lc0") orelse
         return error.TestExpectedCompatibilitySource;
     defer alloc.free(compatibility.path);
-    try std.testing.expect(std.mem.endsWith(u8, compatibility.path, lexer_bridge.CANONICAL_SOURCE_SUFFIX));
+    try std.testing.expect(std.mem.endsWith(u8, compatibility.path, canonical.suffix));
     try std.testing.expectEqual(lexer_bridge.SourceLaw.lua, compatibility.facts.law);
     try std.testing.expectEqual(lexer_bridge.SourceProvenance.foreign, compatibility.facts.provenance);
 }
