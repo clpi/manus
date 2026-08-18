@@ -2157,22 +2157,26 @@ pub const SemanticGraph = struct {
     }
 
     pub fn membersOf(self: *const SemanticGraph, home: id, alloc: std.mem.Allocator) ![]const id {
-        const Entry = struct { pos: u16, entity: id };
-        var out: std.ArrayListUnmanaged(Entry) = .empty;
-        errdefer out.deinit(alloc);
-        for (self.edges.items) |edge| {
-            if (edge.from != home or edge.kind != .member) continue;
-            try out.append(alloc, .{ .pos = edge.position, .entity = edge.to });
+        var count: usize = 0;
+        for (self.outEdges(home)) |edge_index| {
+            if (edge_index >= self.edges.items.len) return error.GraphFactsInvalid;
+            const edge = self.edges.items[edge_index];
+            if (edge.from == home and edge.kind == .member) count += 1;
         }
-        std.mem.sort(Entry, out.items, {}, struct {
-            fn lessThan(_: void, a: Entry, b: Entry) bool {
-                return a.pos < b.pos;
-            }
-        }.lessThan);
-        var ids: std.ArrayListUnmanaged(id) = .empty;
-        errdefer ids.deinit(alloc);
-        for (out.items) |entry| try ids.append(alloc, entry.entity);
-        return try ids.toOwnedSlice(alloc);
+        const ids = try alloc.alloc(id, count);
+        errdefer alloc.free(ids);
+        @memset(ids, std.math.maxInt(id));
+        for (self.outEdges(home)) |edge_index| {
+            if (edge_index >= self.edges.items.len) return error.GraphFactsInvalid;
+            const edge = self.edges.items[edge_index];
+            if (edge.from != home or edge.kind != .member) continue;
+            if (edge.position >= ids.len or ids[edge.position] != std.math.maxInt(id))
+                return error.GraphFactsInvalid;
+            if (self.get(edge.to) == null) return error.GraphFactsInvalid;
+            ids[edge.position] = edge.to;
+        }
+        for (ids) |entity| if (entity == std.math.maxInt(id)) return error.GraphFactsInvalid;
+        return ids;
     }
 
     fn publishMember(
