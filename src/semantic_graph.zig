@@ -402,8 +402,6 @@ pub const IncarnationInput = struct {
     /// The compiler application that produced this graph, when witnessed in a
     /// previously registered incarnation.
     producer: RefCard = .unknown,
-    /// These are graph-local semantic entities, not enum/string substitutes.
-    source_family: Card = .unknown,
     world: Card = .unknown,
     target: Card = .unknown,
     dependencies: Dependencies = .unknown,
@@ -414,7 +412,6 @@ pub const IncarnationFact = struct {
     entity_count: u32,
     revision: Revision,
     producer: RefCard,
-    source_family: RefCard,
     world: RefCard,
     target: RefCard,
     dependencies: DependencyFacts,
@@ -564,7 +561,6 @@ pub const History = struct {
 
         const coordinate = try u32Coordinate(self.incarnations.items.len);
         const entity_count = try u32Coordinate(graph.nodes.items.len);
-        const source_family = try localCard(graph, coordinate, input.source_family);
         const world = try localCard(graph, coordinate, input.world);
         const target = try localCard(graph, coordinate, input.target);
 
@@ -594,7 +590,6 @@ pub const History = struct {
             .entity_count = entity_count,
             .revision = revision,
             .producer = input.producer,
-            .source_family = source_family,
             .world = world,
             .target = target,
             .dependencies = dependencies,
