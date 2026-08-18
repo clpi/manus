@@ -38,14 +38,11 @@ pow: i64 = (base: i64, k: i64)
     n = n + 1
   out
 
-fact: str = (key: str, val: str)
-  '{"fact":"' .. key .. '","value":' .. val .. '}'
-
 num: str = (n: i64)
   n:to(str)
 
 emit: i64 = (key: str, val: str)
-  stdout:write(key:fact("\"" .. val .. "\"") .. "\n")
+  stdout:write('{"fact":"' .. key .. '","value":" ' .. val .. ' "}' .. "\n")
   0
 
 hex: i64 = (c: i64)
@@ -208,8 +205,9 @@ main: i64 = ()
   if path != "--serve"
     path:ingest()
   else
-    # MCP streaming face: newline JSON-RPC; each request is a hex module
-    # path; the full fact + record stream emits as notifications.
+    # Line-oriented streaming transport (NOT JSON-RPC parsing): each
+    # line is a hex module path; records stream as JSON-shaped lines.
+    # A real MCP face requires request parsing — not claimed here.
     serve: bool = true
     ln: str = stdin:line()
     while serve
