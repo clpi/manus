@@ -116,8 +116,12 @@ appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
     stdout:write(head .. 'read","operand":{"kind":"local","index":' .. src:ulebval(ip):num() .. '},"results":[{"width":32}]' .. tail .. "\n")
   if op == 65
     stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num() .. ',"determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
-  if op == 106 or op == 107 or op == 108
+  if op >= 106 and op <= 115 or op >= 70 and op <= 78
     stdout:write(head .. op:binname() .. '","operands":[' .. a:num() .. ',' .. b:num() .. '],"width":32,"overflow":"wrap","results":[{"width":32}]' .. tail .. "\n")
+  if op >= 40 and op <= 53
+    stdout:write(head .. 'memory","world":{"home":"memory","reach":"address"},"operands":[' .. a:num() .. '],"width":32,"origin":"wasm","demand":"single"}' .. "\n")
+  if op == 16
+    stdout:write(head .. 'call","target":{"card":"exact","index":' .. src:ulebval(ip):num() .. '},"origin":"wasm","demand":"single"}' .. "\n")
   0
 
 binname: str = (op: i64)
@@ -127,7 +131,19 @@ binname: str = (op: i64)
     if op == 107
       "sub"
     else
-      "mul"
+      if op == 108
+        "mul"
+      else
+        if op == 109 or op == 110
+          "div"
+        else
+          if op == 113 or op == 114 or op == 115
+            "bit"
+          else
+            if op >= 70 and op <= 78
+              "cmp"
+            else
+              "??"
 
 slebsign: i64 = (s: str, i: i64)
   p: i64 = i
@@ -148,7 +164,7 @@ slebsign: i64 = (s: str, i: i64)
 
 main: i64 = ()
   path: str = args(1)
-  applimit: i64 = 3
+  applimit: i64 = 5
   if path == ""
     stdout:write("usage: idol run tools/wasm/ingest.id -- <module.wasm.hex>\n")
     return 1
