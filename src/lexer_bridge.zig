@@ -30,12 +30,48 @@ pub const SourceFacts = struct {
     provenance: SourceProvenance,
 };
 
+/// One physical source form projected from the existing source-law ingress.
+/// This is deliberately not another language enum or resolver-owned suffix
+/// roster: `SourceLaw` remains the identity, and every physical discovery
+/// consumer walks this one projection.
+pub const SourceForm = struct {
+    law: SourceLaw,
+    suffix: []const u8,
+};
+
+pub const SourceFormIterator = struct {
+    pending: ?SourceLaw = .idol,
+
+    pub fn next(comptime self: *SourceFormIterator) ?SourceForm {
+        const law = self.pending orelse return null;
+        self.pending = switch (law) {
+            .idol => .lua,
+            .lua, .unknown => null,
+        };
+        return .{ .law = law, .suffix = sourceSuffix(law).? };
+    }
+};
+
+fn sourceSuffix(law: SourceLaw) ?[]const u8 {
+    return switch (law) {
+        .idol => CANONICAL_SOURCE_SUFFIX,
+        .lua => ".lua",
+        .unknown => null,
+    };
+}
+
+pub fn sourceForms() SourceFormIterator {
+    return .{};
+}
+
 /// Path discovery for CLI/file filters. Suffix is provenance, not tokenize
 /// family (`law.family.one`). Remaining host ingress until an Idol source-family
 /// fact exists.
 pub fn discover(path: []const u8) SourceLaw {
-    if (std.mem.endsWith(u8, path, CANONICAL_SOURCE_SUFFIX)) return .idol;
-    if (std.mem.endsWith(u8, path, ".lua")) return .lua;
+    comptime var forms = sourceForms();
+    inline while (comptime forms.next()) |form| {
+        if (std.mem.endsWith(u8, path, form.suffix)) return form.law;
+    }
     return .unknown;
 }
 
@@ -62,9 +98,6 @@ const homes = [_]struct { class: HomeClass, pattern: []const u8 }{
     .{ .class = .negative, .pattern = "examples/native_differential/unsupported/" },
     .{ .class = .negative, .pattern = "error_test.id" },
     .{ .class = .foreign, .pattern = "examples/native_differential/" },
-    .{ .class = .negative, .pattern = "fixtures/highlight/mixed/" },
-    .{ .class = .foreign, .pattern = "fixtures/highlight/surface/" },
-    .{ .class = .canonical, .pattern = "fixtures/highlight/" },
     .{ .class = .generated, .pattern = "lib/token/classify.id" },
     .{ .class = .generated, .pattern = "lib/wasm/opcode_lookup.id" },
     .{ .class = .generated, .pattern = "lib/wasm/ward_mvp_opcodes.id" },
@@ -279,6 +312,17 @@ test "lexer bridge: discover is path provenance not family authority" {
     try std.testing.expectEqual(SourceLaw.lua, discover("compiler.lua"));
     try std.testing.expectEqual(SourceLaw.unknown, discover("compiler.duo"));
     try std.testing.expectEqual(SourceLaw.unknown, discover("compiler.txt"));
+}
+
+test "lexer bridge: one source-law producer owns physical form order" {
+    comptime var forms = sourceForms();
+    const idol = comptime forms.next().?;
+    try std.testing.expectEqual(SourceLaw.idol, idol.law);
+    try std.testing.expectEqualStrings(CANONICAL_SOURCE_SUFFIX, idol.suffix);
+    const lua = comptime forms.next().?;
+    try std.testing.expectEqual(SourceLaw.lua, lua.law);
+    try std.testing.expectEqual(SourceLaw.unknown, discover("compiler.txt"));
+    try std.testing.expect(comptime forms.next() == null);
 }
 
 test "lexer bridge: admit law is not path-derived" {

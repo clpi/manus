@@ -1,7 +1,7 @@
 {
   "name": "idol",
   "displayName": "Idol",
-  "description": "Idol language support — syntax highlighting, snippets, and language server integration",
+  "description": "Idol file association and language server integration",
   "version": "0.1.0",
   "publisher": "idol-lang",
   "license": "MIT",
@@ -9,8 +9,7 @@
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Programming Languages",
-    "Snippets"
+    "Programming Languages"
   ],
   "activationEvents": [
     "onLanguage:idol"
@@ -30,19 +29,6 @@
         "configuration": "./language-configuration.json"
       }
     ],
-    "grammars": [
-      {
-        "language": "idol",
-        "scopeName": "source.id",
-        "path": "./syntaxes/idol.tmLanguage.json"
-      }
-    ],
-    "snippets": [
-      {
-        "language": "idol",
-        "path": "./snippets/idol.json"
-      }
-    ],
     "configuration": {
       "title": "Idol Language Server",
       "properties": {
@@ -50,16 +36,6 @@
           "type": "string",
           "default": "idol-lsp",
           "description": "Path to the Idol language server binary."
-        },
-        "idol-lsp.trace": {
-          "type": "string",
-          "enum": [
-            "off",
-            "messages",
-            "verbose"
-          ],
-          "default": "off",
-          "description": "Trace level for LSP communication."
         },
         "idol-lsp.enable": {
           "type": "boolean",
@@ -69,5 +45,7 @@
       }
     }
   },
-  "dependencies": {}
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
 }

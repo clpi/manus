@@ -138,19 +138,8 @@ main: i64 = ()
   # entries that are staged-deleted so a mid-rebase tree cannot fake a
   # failure out of a missing file.
   #
-  # `fixtures/highlight/` is EXCLUDED, and the reason matters because the
-  # exclusion looks like the exact move this gate exists to stop. This census
-  # asks "can an editor recognise the IDOL corpus". Those files are the golden
-  # role corpus for `zig build highlight-corpus`,
-  # and several of them deliberately carry dnir, arm64 assembly, ebnf and C —
-  # one colour language over five surfaces is the point of them. Counting
-  # non-idol text as unrecognised idol does not measure the grammar, it
-  # dilutes the metric with files nobody claimed it should parse. The idol
-  # fixtures among them DO fail here, and that is a real signal — the same
-  # GAP-049 offside hole `examples/layout/offside.id` already reports, so
-  # dropping them costs no information this gate was carrying.
   listfile = tmp .. "/corpus.txt"
-  script.capture("git ls-files '*.id' | grep -v '^fixtures/highlight/' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")
+  script.capture("git ls-files '*.id' | while read f; do [ -f \"$f\" ] && printf '%s/%s\\n' \"$PWD\" \"$f\"; done > '" .. listfile .. "'")
   total = to(i64)(script.chomp(script.capture("grep -c . '" .. listfile .. "'")))
   if total < 1
     stdout:write("tree_sitter_coverage: FAIL — no tracked .id files found; the corpus list is empty\n")

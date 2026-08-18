@@ -1,0 +1,95 @@
+#!/bin/sh
+set -eu
+
+root=${IDOL_REPOSITORY_ROOT:-$(unset CDPATH; cd -- "$(dirname -- "$0")/../../.." && pwd)}
+manifest=${IDOL_REPOSITORY_MANIFEST:-$root/tools/node/dev/mcp.manifest.json}
+
+fail() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+[ -r "$manifest" ] || fail "repository: missing manifest $manifest"
+command -v jq >/dev/null 2>&1 || fail "repository: jq is required"
+
+development=$(jq -er '.development_repository | select(type == "string" and length > 0)' "$manifest") \
+  || fail 'repository: development_repository is missing'
+release=$(jq -er '.release_repository | select(type == "string" and length > 0)' "$manifest") \
+  || fail 'repository: release_repository is missing'
+
+slug() {
+  url=$1
+  case "$url" in
+    git@github.com:*) value=${url#git@github.com:} ;;
+    ssh://git@github.com/*) value=${url#ssh://git@github.com/} ;;
+    https://github.com/*) value=${url#https://github.com/} ;;
+    http://github.com/*) value=${url#http://github.com/} ;;
+    *) value=$url ;;
+  esac
+  value=${value%/}
+  value=${value%.git}
+  printf '%s\n' "$value"
+}
+
+remote() {
+  target=$1
+  git -C "$root" remote 2>/dev/null | while IFS= read -r name; do
+    git -C "$root" remote get-url --all "$name" 2>/dev/null | while IFS= read -r url; do
+      [ "$(slug "$url")" = "$target" ] || continue
+      printf '%s\t%s\n' "$name" "$url"
+      return 0
+    done
+  done | sed -n '1p'
+}
+
+case ${1:-facts} in
+  development)
+    printf '%s\n' "$development"
+    ;;
+  release)
+    printf '%s\n' "$release"
+    ;;
+  authority)
+    jq -er '.authority | select(type == "array" and length > 0) | join(" -> ")' "$manifest"
+    ;;
+  remote)
+    remote "$development"
+    ;;
+  origin)
+    origin=$(git -C "$root" remote get-url origin 2>/dev/null || true)
+    [ -n "$origin" ] && slug "$origin"
+    ;;
+  check)
+    case "$development" in */*) ;; *) fail "repository: malformed development identity $development" ;; esac
+    case "$release" in */*) ;; *) fail "repository: malformed release identity $release" ;; esac
+    [ "$development" != "$release" ] \
+      || fail 'repository: development and release identities must remain distinct'
+    pair=$(remote "$development")
+    [ -n "$pair" ] \
+      || fail "repository: no configured Git remote names the development repository $development"
+    name=$(printf '%s\n' "$pair" | cut -f1)
+    printf 'active development repository is %s via remote %s\n' "$development" "$name"
+    ;;
+  selftest)
+    [ "$(slug 'git@github.com:owner/project.git')" = 'owner/project' ] \
+      || fail 'repository: SSH normalization control failed'
+    [ "$(slug 'https://github.com/owner/project.git')" = 'owner/project' ] \
+      || fail 'repository: HTTPS normalization control failed'
+    [ "$(slug 'git@github.com:owner/release.git')" != 'owner/project' ] \
+      || fail 'repository: distinct-repository control failed'
+    printf 'repository: normalization controls pass\n'
+    ;;
+  facts)
+    pair=$(remote "$development")
+    name=$(printf '%s\n' "$pair" | cut -f1)
+    url=$(printf '%s\n' "$pair" | cut -f2-)
+    printf 'development_repository=%s\n' "$development"
+    printf 'release_repository=%s\n' "$release"
+    printf 'development_remote=%s\n' "$name"
+    printf 'development_url=%s\n' "$url"
+    printf 'origin_repository=%s\n' "$("$0" origin)"
+    ;;
+  *)
+    fail 'usage: repository [facts|development|release|authority|remote|origin|check|selftest]'
+    ;;
+esac

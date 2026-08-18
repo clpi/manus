@@ -1374,7 +1374,7 @@ pub const CodeGen = struct {
     /// `call to undeclared function 'lua_file_write_method'`, because such a
     /// module is native-scalar and never emits the lua prelude that declares
     /// it. `io.stdout:write(x)` compiled, so the gap was EXACTLY the projected
-    /// spelling — and `tools/lsp/gate.id` and `tools/mcp/gate.id` build
+    /// spelling — and the since-retired in-tree LSP/MCP gates then built
     /// themselves with `--backend=c`.
     ///
     /// IT IS NOT `print`. `io.write` appended no newline and neither does
@@ -3734,12 +3734,17 @@ pub const CodeGen = struct {
         return false;
     }
 
-    /// `{ 0x00, 0x61, … }` — every field positional, every value an integer
-    /// literal. A constant byte blob, not an exported record.
+    /// A positional aggregate whose leaves are integer literals. Nested rows
+    /// are still immutable data, not keyed exports; the graph owns their exact
+    /// member packs and the direct realization chooses the physical layout.
     fn table_is_positional_int_blob(expr: *const ast.Expr) bool {
         for (expr.table.fields) |fld| {
             switch (fld) {
-                .positional => |pv| if (pv.* != .int_lit) return false,
+                .positional => |pv| switch (pv.*) {
+                    .int_lit => {},
+                    .table => if (!table_is_positional_int_blob(pv)) return false,
+                    else => return false,
+                },
                 else => return false,
             }
         }

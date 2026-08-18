@@ -536,13 +536,19 @@ create compile-time query overhead.
 
 ## 11p. Grammar one
 
-Exactly one executable grammar-fact owner (`law.grammar.one`). Canonical Idol
-grammar facts are the authority. Generated Zig/C tables are a bridge
-projection. `grammar.md` and Tree-sitter are human/editor projections from
-that owner. A host `grammar_roles.zig` table is transitional and has a
-deletion condition. Parser-local BinOp maps, spelling lists, and category
-switches are reconstruction debt. Tree-sitter, LSP, MCP, and formatter
-consume the same facts or generated projections.
+Exactly one executable grammar-fact owner (`law.grammar.one`). Each source
+position has exactly one explicit or ingress-derived source law before
+lexing. The owner projects that law into token identities, roles, precedence,
+and structural recognition. Canonical Idol is the default projection for
+canonical `.id` source; it is not the authority for every admitted source law.
+Generated Zig/C tables are bridge projections. `grammar.md`, Tree-sitter, and
+other editor/tooling artifacts are projections from that same owner. A host
+`grammar_roles.zig` table is transitional and has a deletion condition.
+Parser-local BinOp maps, spelling lists, category switches, grammar unions,
+try-parser selection, and world-selected grammar are reconstruction debt.
+Worlds supply semantic context and authority only after recognition. They
+never select grammar. Parser, formatter, and any admitted editor/tooling
+consumer use the same law-qualified facts or generated projections.
 
 ---
 

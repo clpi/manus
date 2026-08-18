@@ -93,8 +93,15 @@
 //! additive: a symbol that did not exist before now exists.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Io = std.Io;
 const lexer_bridge = @import("lexer_bridge.zig");
+
+const native_path_type: std.fs.path.PathType = switch (builtin.os.tag) {
+    .windows => .windows,
+    .uefi => .uefi,
+    else => .posix,
+};
 
 /// Where a home reference is written, and which roots its file may live under.
 /// `from` is the source path of the referring file — the sibling rule needs it,
@@ -109,7 +116,7 @@ pub const Roots = struct {
 /// than any path this resolver will build).
 fn homeAsPath(buf: []u8, home: []const u8) ?[]const u8 {
     if (home.len == 0 or home.len > buf.len) return null;
-    for (home, 0..) |c, i| buf[i] = if (c == '.') '/' else c;
+    for (home, 0..) |c, i| buf[i] = if (c == '.') std.fs.path.sep else c;
     return buf[0..home.len];
 }
 
@@ -122,7 +129,7 @@ fn projectRoot(io: Io, from: []const u8) []const u8 {
     var d = dir;
     while (d.len > 0) {
         var pbuf: [1024]u8 = undefined;
-        const probe = std.fmt.bufPrint(&pbuf, "{s}/src", .{d}) catch break;
+        const probe = std.fmt.bufPrint(&pbuf, "{s}{c}src", .{ d, std.fs.path.sep }) catch break;
         const cwd = Io.Dir.cwd();
         var fd = Io.Dir.openDir(cwd, io, probe, .{}) catch {
             if (std.mem.eql(u8, d, ".")) break;
@@ -135,28 +142,38 @@ fn projectRoot(io: Io, from: []const u8) []const u8 {
     return dir;
 }
 
-/// The four spellings a module file may take under one base directory.
-/// `.lua` remains because 585 `.lua` modules are still tracked in the sibling
-/// tree; it is de-Lua debt, owned by the de-Lua lane, not silently dropped here.
+/// A selected physical source. The path is ingress provenance; `facts` carries
+/// the law selected exactly once so downstream consumers never re-read suffix
+/// or path spelling to choose semantics.
+pub const Source = struct {
+    path: []const u8,
+    facts: lexer_bridge.SourceFacts,
+};
+
+/// Find one admitted physical source under a base directory. Source forms come
+/// only from the source-law ingress; home resolution owns search topology, not
+/// a second suffix or language roster.
 pub fn moduleFileUnder(
     alloc: std.mem.Allocator,
     io: Io,
     base_dir: []const u8,
     mod_path: []const u8,
-) ?[]const u8 {
-    const templates = .{
-        "{s}/{s}" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
-        "{s}/{s}.lua",
-        "{s}/{s}/init" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
-        "{s}/{s}/init.lua",
-    };
+) ?Source {
     const cwd = Io.Dir.cwd();
-    inline for (templates) |tmpl| {
-        const path = std.fmt.allocPrint(alloc, tmpl, .{ base_dir, mod_path }) catch return null;
-        if (Io.Dir.access(cwd, io, path, .{})) |_| {
-            return path;
-        } else |_| {
-            alloc.free(path);
+    inline for ([_]bool{ false, true }) |nested| {
+        comptime var forms = lexer_bridge.sourceForms();
+        inline while (comptime forms.next()) |form| {
+            const path = if (nested)
+                std.fmt.allocPrint(alloc, "{s}{c}{s}{c}init{s}", .{ base_dir, std.fs.path.sep, mod_path, std.fs.path.sep, form.suffix }) catch return null
+            else
+                std.fmt.allocPrint(alloc, "{s}{c}{s}{s}", .{ base_dir, std.fs.path.sep, mod_path, form.suffix }) catch return null;
+            if (Io.Dir.access(cwd, io, path, .{})) |_| {
+                const facts = lexer_bridge.sourceFacts(path);
+                if (facts.law != .unknown) return .{ .path = path, .facts = facts };
+                alloc.free(path);
+            } else |_| {
+                alloc.free(path);
+            }
         }
     }
     return null;
@@ -173,7 +190,7 @@ pub fn resolve(
     io: Io,
     roots: Roots,
     home: []const u8,
-) ?[]const u8 {
+) ?Source {
     const vendor_prefix = "vendor.";
     const core_prefix = "std.core.";
     const has_vendor = std.mem.startsWith(u8, home, vendor_prefix);
@@ -185,18 +202,18 @@ pub fn resolve(
 
     if (roots.from.len > 0) {
         const sibling_dir = std.fs.path.dirname(roots.from) orelse ".";
-        if (moduleFileUnder(alloc, io, sibling_dir, mod_path)) |p| return p;
+        if (moduleFileUnder(alloc, io, sibling_dir, mod_path)) |source| return source;
     }
     const project_root = projectRoot(io, roots.from);
-    if (moduleFileUnder(alloc, io, project_root, mod_path)) |p| return p;
+    if (moduleFileUnder(alloc, io, project_root, mod_path)) |source| return source;
     if (roots.stdlib_root) |root| {
-        if (moduleFileUnder(alloc, io, root, mod_path)) |p| return p;
+        if (moduleFileUnder(alloc, io, root, mod_path)) |source| return source;
     }
     // THE SHARED ROOTS HANG OFF THE PROJECT, NOT OFF THE PROCESS.
     //
     // `find_module_file_for_req` searched a bare `"lib"`, which `Io.Dir.access`
     // resolves against the CURRENT WORKING DIRECTORY. MEASURED: compiling
-    // `/Users/clp/x/idol/lib/compiler/host.id` from `/Users/clp/x/idol-native`
+    // `<idol-root>/lib/compiler/host.id` from a sibling native checkout
     // — which is exactly how `gate/selfhost.sh` invokes it — made `compiler.lexer`
     // look for `./lib/compiler/lexer.id` under the GATE's tree, found nothing,
     // and the home was unresolvable purely because of where the shell was
@@ -207,18 +224,101 @@ pub fn resolve(
     // root to speak of and `./lib` is then the only thing `lib` can mean.
     for ([_][]const u8{ project_root, "." }) |base| {
         var joined: [1024]u8 = undefined;
-        const lib_dir = std.fmt.bufPrint(&joined, "{s}/lib", .{base}) catch continue;
-        if (moduleFileUnder(alloc, io, lib_dir, mod_path)) |p| return p;
+        const lib_dir = std.fmt.bufPrint(&joined, "{s}{c}lib", .{ base, std.fs.path.sep }) catch continue;
+        if (moduleFileUnder(alloc, io, lib_dir, mod_path)) |source| return source;
         if (has_vendor) {
-            const vendor_dir = std.fmt.bufPrint(&joined, "{s}/vendor", .{base}) catch continue;
-            if (moduleFileUnder(alloc, io, vendor_dir, mod_path)) |p| return p;
+            const vendor_dir = std.fmt.bufPrint(&joined, "{s}{c}vendor", .{ base, std.fs.path.sep }) catch continue;
+            if (moduleFileUnder(alloc, io, vendor_dir, mod_path)) |source| return source;
         }
         if (has_core) {
-            const core_dir = std.fmt.bufPrint(&joined, "{s}/lib/core", .{base}) catch continue;
-            if (moduleFileUnder(alloc, io, core_dir, mod_path)) |p| return p;
+            const core_dir = std.fmt.bufPrint(&joined, "{s}{c}lib{c}core", .{ base, std.fs.path.sep, std.fs.path.sep }) catch continue;
+            if (moduleFileUnder(alloc, io, core_dir, mod_path)) |source| return source;
         }
     }
     return null;
+}
+
+/// Reject a parent component that has no component on its left. This validates
+/// escape without rewriting the path: `link/..` must reach the filesystem so a
+/// symlink is resolved before its parent is interpreted.
+fn rejectParentUnderflow(comptime path_type: std.fs.path.PathType, path: []const u8) !void {
+    if (path.len == 0) return error.AmbiguousHomePath;
+    var depth: usize = 0;
+    var it = std.fs.path.ComponentIterator(path_type, u8).init(path);
+    while (it.next()) |component| {
+        if (std.mem.eql(u8, component.name, ".")) continue;
+        if (std.mem.eql(u8, component.name, "..")) {
+            if (depth == 0) return error.HomePathEscape;
+            depth -= 1;
+        } else {
+            depth += 1;
+        }
+    }
+    if (depth == 0) return error.AmbiguousHomePath;
+}
+
+fn hasParentComponent(comptime path_type: std.fs.path.PathType, path: []const u8) bool {
+    var it = std.fs.path.ComponentIterator(path_type, u8).init(path);
+    while (it.next()) |component| {
+        if (std.mem.eql(u8, component.name, "..")) return true;
+    }
+    return false;
+}
+
+fn canonicalHomePath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]u8 {
+    var buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const len = Io.Dir.cwd().realPathFile(io, path, &buffer) catch |err| switch (err) {
+        // Semantic tests and generated regions can have a source identity before
+        // they have a file. A parent spelling cannot: resolving it lexically
+        // would disagree with filesystem order when its left component is a
+        // symlink, so that case remains an exact refusal.
+        error.FileNotFound => if (hasParentComponent(native_path_type, path))
+            return err
+        else
+            return std.fs.path.resolve(alloc, &.{path}),
+        else => return err,
+    };
+    return alloc.dupe(u8, buffer[0..len]);
+}
+
+fn isWithinRoot(comptime path_type: std.fs.path.PathType, path: []const u8, root: []const u8) bool {
+    if (std.mem.eql(u8, path, root)) return true;
+    if (!std.mem.startsWith(u8, path, root)) return false;
+    if (root.len == 0 or path_type.isSep(u8, root[root.len - 1])) return true;
+    return path.len > root.len and path_type.isSep(u8, path[root.len]);
+}
+
+fn homeFromDir(
+    comptime path_type: std.fs.path.PathType,
+    alloc: std.mem.Allocator,
+    dir: []const u8,
+    stem: []const u8,
+) ![]const u8 {
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer parts.deinit(alloc);
+    var it = std.fs.path.ComponentIterator(path_type, u8).init(dir);
+    while (it.next()) |component| try parts.append(alloc, component.name);
+
+    const roots = [_][]const u8{ "lib", "vendor", "core", "std" };
+    var start: usize = 0;
+    outer: while (start < parts.items.len) {
+        for (roots) |root| {
+            if (std.mem.eql(u8, parts.items[start], root)) {
+                start += 1;
+                continue :outer;
+            }
+        }
+        break;
+    }
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    for (parts.items[start..]) |part| {
+        try out.appendSlice(alloc, part);
+        try out.append(alloc, '.');
+    }
+    try out.appendSlice(alloc, stem);
+    return out.toOwnedSlice(alloc);
 }
 
 /// The HOME a file inhabits, as a dotted path, derived from the file path.
@@ -231,10 +331,13 @@ pub fn resolve(
 /// home: `lib/compiler/lexer.id` and a project-root `compiler/lexer.id` are the
 /// same home reached two ways, and they must mangle alike.
 pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u8 {
-    const stem = std.fs.path.stem(path);
-    var dir = std.fs.path.dirname(path) orelse "";
+    try rejectParentUnderflow(native_path_type, path);
+    const canonical = try canonicalHomePath(alloc, io, path);
+    defer alloc.free(canonical);
+    const stem = std.fs.path.stem(canonical);
+    var dir = std.fs.path.dirname(canonical) orelse "";
     // THE HOME MAY NOT CONTAIN THE FILESYSTEM. Compiling
-    // `/Users/clp/x/idol/lib/compiler/lexer.id` and compiling
+    // `<idol-root>/lib/compiler/lexer.id` and compiling
     // `lib/compiler/lexer.id` are the same module, and if the two produce
     // `Users_clp_x_idol_compiler_lexer` and `compiler_lexer` then the symbol
     // depends on how the shell spelled the argument — the definer and the
@@ -243,38 +346,11 @@ pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u
     //
     // The project root is the same walk the resolver uses to FIND the file, so
     // stripping it here cannot disagree with the search that produced it.
-    const root = projectRoot(io, path);
-    if (root.len > 0 and !std.mem.eql(u8, root, ".") and std.mem.startsWith(u8, dir, root)) {
+    const root = projectRoot(io, canonical);
+    if (root.len > 0 and !std.mem.eql(u8, root, ".") and isWithinRoot(native_path_type, dir, root)) {
         dir = dir[root.len..];
     }
-    var parts: std.ArrayList([]const u8) = .empty;
-    defer parts.deinit(alloc);
-    var it = std.mem.tokenizeScalar(u8, dir, '/');
-    while (it.next()) |part| {
-        if (std.mem.eql(u8, part, ".") or std.mem.eql(u8, part, "..")) continue;
-        try parts.append(alloc, part);
-    }
-    // Drop every leading search-root segment. These name WHERE the compiler
-    // looked, not WHOSE the relation is.
-    const roots = [_][]const u8{ "lib", "vendor", "core", "std" };
-    var start: usize = 0;
-    outer: while (start < parts.items.len) {
-        for (roots) |r| {
-            if (std.mem.eql(u8, parts.items[start], r)) {
-                start += 1;
-                continue :outer;
-            }
-        }
-        break;
-    }
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(alloc);
-    for (parts.items[start..]) |part| {
-        try out.appendSlice(alloc, part);
-        try out.append(alloc, '.');
-    }
-    try out.appendSlice(alloc, stem);
-    return out.toOwnedSlice(alloc);
+    return homeFromDir(native_path_type, alloc, dir, stem);
 }
 
 /// A SYMBOL IS AN IDENTIFIER, so every byte outside `[A-Za-z0-9_]` becomes `_`.
@@ -284,8 +360,8 @@ pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u
 /// it was simply the first non-identifier byte anyone hit.
 ///
 /// MEASURED, and this is why it is not decoration: the corpus contains
-/// `scripts/gatecap-probe.id` and `scripts/setup-nvim.id`. Their homes carry a
-/// HYPHEN, and `idol compile --target native-asm` on such a file emitted
+/// `scripts/gatecap-probe.id` is one corpus example. Its home carries a
+/// HYPHEN, and `idol compile --target native-asm` on that file emitted
 ///
 ///     .globl _idol_odd-name__f
 ///
@@ -354,24 +430,112 @@ pub fn relationSymbol(
 
 test "home_resolve: homeOfPath drops search roots and keeps the home chain" {
     const alloc = std.testing.allocator;
-    var threaded = std.Io.Threaded.init(alloc, .{});
-    defer threaded.deinit();
-    const io = threaded.io();
-    const cases = [_]struct { path: []const u8, want: []const u8 }{
-        .{ .path = "lib/compiler/lexer.id", .want = "compiler.lexer" },
-        .{ .path = "compiler/lexer.id", .want = "compiler.lexer" },
-        .{ .path = "./lib/compiler/bind.id", .want = "compiler.bind" },
-        .{ .path = "probe.id", .want = "probe" },
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "src");
+    try tmp.dir.createDirPath(io, "lib/compiler");
+    try tmp.dir.createDirPath(io, "compiler");
+    try tmp.dir.createDirPath(io, "examples/boring");
+    for ([_][]const u8{
+        "lib/compiler/lexer.id",
+        "compiler/lexer.id",
+        "lib/compiler/bind.id",
+        "probe.id",
+        "examples/boring/primes.id",
+    }) |file| try tmp.dir.writeFile(io, .{ .sub_path = file, .data = "" });
+
+    var root_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const root = root_buf[0..try tmp.dir.realPath(io, &root_buf)];
+    const cases = [_]struct { suffix: []const u8, want: []const u8 }{
+        .{ .suffix = "lib/compiler/lexer.id", .want = "compiler.lexer" },
+        .{ .suffix = "compiler/lexer.id", .want = "compiler.lexer" },
+        .{ .suffix = "./lib/compiler/bind.id", .want = "compiler.bind" },
+        .{ .suffix = "probe.id", .want = "probe" },
         // `examples` is an ordinary directory, NOT a search root — the four
         // roots are where the compiler LOOKS, and nobody passes `-Iexamples`.
         // The home therefore keeps it, and that is the answer, not a wart.
-        .{ .path = "examples/boring/primes.id", .want = "examples.boring.primes" },
+        .{ .suffix = "examples/boring/primes.id", .want = "examples.boring.primes" },
     };
     for (cases) |c| {
-        const got = try homeOfPath(alloc, io, c.path);
+        const path = try std.fmt.allocPrint(alloc, "{s}{c}{s}", .{ root, std.fs.path.sep, c.suffix });
+        defer alloc.free(path);
+        const got = try homeOfPath(alloc, io, path);
         defer alloc.free(got);
         try std.testing.expectEqualStrings(c.want, got);
     }
+
+    const virtual = try homeOfPath(alloc, io, "virtual-lineage.id");
+    defer alloc.free(virtual);
+    try std.testing.expectEqualStrings("virtual-lineage", virtual);
+}
+
+test "home_resolve: file identity resolves parents after symlinks" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "src");
+    try tmp.dir.createDirPath(io, "left");
+    try tmp.dir.createDirPath(io, "right");
+    try tmp.dir.createDirPath(io, "other/left");
+    try tmp.dir.createDirPath(io, "other/right");
+    try tmp.dir.writeFile(io, .{ .sub_path = "right/probe.id", .data = "" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "other/right/probe.id", .data = "" });
+    try tmp.dir.symLink(io, "other/left", "turn", .{});
+
+    var root_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const root = root_buf[0..try tmp.dir.realPath(io, &root_buf)];
+    const canonical_path = try std.fmt.allocPrint(alloc, "{s}{c}right{c}probe.id", .{ root, std.fs.path.sep, std.fs.path.sep });
+    defer alloc.free(canonical_path);
+    const parent_path = try std.fmt.allocPrint(alloc, "{s}{c}left{c}..{c}right{c}probe.id", .{
+        root, std.fs.path.sep, std.fs.path.sep, std.fs.path.sep, std.fs.path.sep,
+    });
+    defer alloc.free(parent_path);
+    const canonical = try homeOfPath(alloc, io, canonical_path);
+    defer alloc.free(canonical);
+    const parent = try homeOfPath(alloc, io, parent_path);
+    defer alloc.free(parent);
+    try std.testing.expectEqualStrings("right.probe", canonical);
+    try std.testing.expectEqualStrings(canonical, parent);
+
+    const symlink_path = try std.fmt.allocPrint(alloc, "{s}{c}turn{c}..{c}right{c}probe.id", .{
+        root, std.fs.path.sep, std.fs.path.sep, std.fs.path.sep, std.fs.path.sep,
+    });
+    defer alloc.free(symlink_path);
+    const symlink_parent = try homeOfPath(alloc, io, symlink_path);
+    defer alloc.free(symlink_parent);
+    try std.testing.expectEqualStrings("other.right.probe", symlink_parent);
+    try std.testing.expect(!std.mem.eql(u8, canonical, symlink_parent));
+
+    try std.testing.expectError(error.HomePathEscape, homeOfPath(alloc, io, "../../escape.id"));
+    try std.testing.expectError(error.HomePathEscape, homeOfPath(alloc, io, "/../../escape.id"));
+    const missing_parent = try std.fmt.allocPrint(alloc, "{s}{c}left{c}..{c}missing.id", .{
+        root, std.fs.path.sep, std.fs.path.sep, std.fs.path.sep,
+    });
+    defer alloc.free(missing_parent);
+    try std.testing.expectError(error.FileNotFound, homeOfPath(alloc, io, missing_parent));
+}
+
+test "home_resolve: parent underflow and home components follow platform paths" {
+    try rejectParentUnderflow(.posix, "left/../right/probe.id");
+    try std.testing.expectError(error.HomePathEscape, rejectParentUnderflow(.posix, "../../escape.id"));
+    try std.testing.expectError(error.HomePathEscape, rejectParentUnderflow(.posix, "/../../escape.id"));
+
+    try rejectParentUnderflow(.windows, "C:\\left\\..\\right\\probe.id");
+    try rejectParentUnderflow(.windows, "C:/left\\../right/probe.id");
+    try rejectParentUnderflow(.windows, "\\\\server\\share\\left\\..\\right\\probe.id");
+    try std.testing.expectError(error.HomePathEscape, rejectParentUnderflow(.windows, "C:\\..\\escape.id"));
+    try std.testing.expectError(error.HomePathEscape, rejectParentUnderflow(.windows, "\\\\server\\share\\..\\escape.id"));
+
+    try std.testing.expect(isWithinRoot(.windows, "C:\\project\\right", "C:\\project"));
+    try std.testing.expect(!isWithinRoot(.windows, "C:\\projected\\right", "C:\\project"));
+    try std.testing.expect(isWithinRoot(.windows, "\\\\server\\share\\project\\right", "\\\\server\\share\\project"));
+
+    const alloc = std.testing.allocator;
+    const home = try homeFromDir(.windows, alloc, "lib\\compiler\\parser", "bind");
+    defer alloc.free(home);
+    try std.testing.expectEqualStrings("compiler.parser.bind", home);
 }
 
 test "home_resolve: the symbol is a function of home AND name" {
@@ -437,5 +601,99 @@ test "home_resolve: a home name cannot exceed the path buffer" {
     var buf: [8]u8 = undefined;
     try std.testing.expect(homeAsPath(&buf, "abcdefghij") == null);
     try std.testing.expect(homeAsPath(&buf, "") == null);
-    try std.testing.expectEqualStrings("a/b", homeAsPath(&buf, "a.b").?);
+    const expected = [_]u8{ 'a', std.fs.path.sep, 'b' };
+    try std.testing.expectEqualStrings(&expected, homeAsPath(&buf, "a.b").?);
+}
+
+test "home_resolve: one source-form authority selects path and law once" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "both.id", .data = "" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "both" ++ "." ++ "lua", .data = "" });
+    try tmp.dir.createDirPath(io, "nested");
+    try tmp.dir.writeFile(io, .{ .sub_path = "nested/init.id", .data = "" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "flat" ++ "." ++ "lua", .data = "" });
+    try tmp.dir.createDirPath(io, "flat");
+    try tmp.dir.writeFile(io, .{ .sub_path = "flat/init.id", .data = "" });
+
+    var root_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const root = root_buf[0..try tmp.dir.realPath(io, &root_buf)];
+
+    const both = moduleFileUnder(alloc, io, root, "both").?;
+    defer alloc.free(both.path);
+    try std.testing.expect(std.mem.endsWith(u8, both.path, lexer_bridge.CANONICAL_SOURCE_SUFFIX));
+    try std.testing.expectEqual(lexer_bridge.SourceLaw.idol, both.facts.law);
+
+    const nested = moduleFileUnder(alloc, io, root, "nested").?;
+    defer alloc.free(nested.path);
+    try std.testing.expectEqual(lexer_bridge.SourceLaw.idol, nested.facts.law);
+
+    // Preserve the existing form order: a flat foreign source wins over a
+    // nested canonical source for the same home.
+    const flat = moduleFileUnder(alloc, io, root, "flat").?;
+    defer alloc.free(flat.path);
+    try std.testing.expectEqual(lexer_bridge.SourceLaw.lua, flat.facts.law);
+
+    // The suffix selects a physical form, not the law. This corpus home is
+    // explicitly compatibility law while its selected file uses the canonical
+    // physical suffix; the source ingress fact must win and cross the resolver.
+    const compatibility = moduleFileUnder(alloc, io, "examples/luahost", "lc0") orelse
+        return error.TestExpectedCompatibilitySource;
+    defer alloc.free(compatibility.path);
+    try std.testing.expect(std.mem.endsWith(u8, compatibility.path, lexer_bridge.CANONICAL_SOURCE_SUFFIX));
+    try std.testing.expectEqual(lexer_bridge.SourceLaw.lua, compatibility.facts.law);
+    try std.testing.expectEqual(lexer_bridge.SourceProvenance.foreign, compatibility.facts.provenance);
+}
+
+test "home_resolve: source facts preserve sibling project stdlib and lib order" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "src");
+    try tmp.dir.createDirPath(io, "stdlib");
+    try tmp.dir.createDirPath(io, "lib");
+    for ([_][]const u8{
+        "src/entry.id",
+        "src/sibling.id",
+        "sibling.id",
+        "project.id",
+        "lib/project.id",
+        "stdlib/standard.id",
+        "lib/standard.id",
+        "lib/library.id",
+    }) |file| try tmp.dir.writeFile(io, .{ .sub_path = file, .data = "" });
+
+    var root_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const root = root_buf[0..try tmp.dir.realPath(io, &root_buf)];
+    const from = try std.fmt.allocPrint(alloc, "{s}{c}src{c}entry.id", .{ root, std.fs.path.sep, std.fs.path.sep });
+    defer alloc.free(from);
+    const stdlib = try std.fmt.allocPrint(alloc, "{s}{c}stdlib", .{ root, std.fs.path.sep });
+    defer alloc.free(stdlib);
+    const roots: Roots = .{ .from = from, .stdlib_root = stdlib };
+
+    const sibling = resolve(alloc, io, roots, "sibling").?;
+    defer alloc.free(sibling.path);
+    try std.testing.expect(std.mem.indexOf(u8, sibling.path, "src" ++ std.fs.path.sep_str ++ "sibling.id") != null);
+
+    const project = resolve(alloc, io, roots, "project").?;
+    defer alloc.free(project.path);
+    try std.testing.expect(std.mem.endsWith(u8, project.path, std.fs.path.sep_str ++ "project.id"));
+    try std.testing.expect(std.mem.indexOf(u8, project.path, "lib" ++ std.fs.path.sep_str ++ "project.id") == null);
+
+    const standard = resolve(alloc, io, roots, "standard").?;
+    defer alloc.free(standard.path);
+    try std.testing.expect(std.mem.indexOf(u8, standard.path, "stdlib" ++ std.fs.path.sep_str ++ "standard.id") != null);
+
+    const library = resolve(alloc, io, roots, "library").?;
+    defer alloc.free(library.path);
+    try std.testing.expect(std.mem.indexOf(u8, library.path, "lib" ++ std.fs.path.sep_str ++ "library.id") != null);
+}
+
+test "home_resolve: source forms are not independently spelled here" {
+    const source = @embedFile("home_resolve.zig");
+    const suffix_literal = "\"" ++ "." ++ "lua" ++ "\"";
+    try std.testing.expect(std.mem.indexOf(u8, source, suffix_literal) == null);
 }

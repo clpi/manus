@@ -3547,7 +3547,7 @@ pub const Sema = struct {
     /// MEASURED BLAST RADIUS, before writing it: across every tracked `.id`,
     /// `environment` appears as a NAME at exactly one live site — the fixture.
     /// Every other occurrence is a comment or a detector's string literal
-    /// (`gate/host.id`, `gate/idiom.id`, `gate/probe.id`, `scripts/idiomgate.id`),
+    /// (`gate/host.id`, `gate/idiom.id`, `gate/probe.id`),
     /// and those are the corpus's own detectors for this bug class. Nothing to
     /// migrate, so nothing was.
     ///

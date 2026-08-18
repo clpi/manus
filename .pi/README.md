@@ -24,7 +24,7 @@ file is right and this projection must be repaired.
 | `settings.json` | Project-local pi settings (compaction retention, npm via mise). |
 | `skills/idol-dev/` | Canonical Idol development-loop skill source. Install it into agent homes with `./tools/node/dev/install-skills`. |
 | `skills/idol/` | Canonical Idol authority-projection skill source. Install it into agent homes with `./tools/node/dev/install-skills`. |
-| `extensions/idol-mcp.ts` | Bridges the three project MCP servers (`idol-bench`, `idol-lsp`, `zls`) into pi tools, since pi has no native MCP and the Idol coordination workflow (claims, gaps, serialized builds) is MCP-based. |
+| `extensions/idol-mcp.ts` | Projects the manifest-owned `idol` and `idol-native` servers into pi tools. Compiler/LSP facts come from `idol-native`; claims and locked builds stay explicit repository commands. |
 
 ## What this projection does NOT do
 
@@ -34,9 +34,9 @@ file is right and this projection must be repaired.
   servers.
 - It does not bypass the gates. `skills/idol-dev` wraps `gate/idiom.id`
   and `gate/architecture.id`; it never suppresses a finding.
-- It does not replace claim coordination. Claim acquire/release is forwarded to
-  the `idol-bench` MCP server (`idol_dev_claim_acquire` / `duo_dev_claim_acquire` aliases), the same authority
-  Cursor and Codex use.
+- It does not replace claim coordination. Claim acquire/release remains the
+  explicit `tools/node/dev/claim` command; MCP does not mint a second transport
+  meaning for it.
 
 ## Trust
 

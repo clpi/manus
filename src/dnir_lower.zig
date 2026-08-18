@@ -699,6 +699,148 @@ fn collectRelationEdges(
     return edges;
 }
 
+fn immutableAggregate(graph: *const semantic_graph.SemanticGraph, aggregate: semantic_graph.id) bool {
+    const fact = graph.aggregate(aggregate) orelse return false;
+    if (fact.contents_known != .yes) return false;
+    const p = graph.aggregatePlace(aggregate) orelse return false;
+    if (p.shape != .collection or p.facts.contents_known != .yes) return false;
+    if (p.facts.mutation != .no or p.facts.immutability != .yes) return false;
+    if (p.facts.alias != .no or p.facts.escape != .no) return false;
+    return switch (p.bindCount()) {
+        .exact => |count| count == 1,
+        .bounded, .unknown => false,
+    };
+}
+
+fn immutableNestedAggregateRoot(graph: *const semantic_graph.SemanticGraph, aggregate: semantic_graph.id) bool {
+    if (!immutableAggregate(graph, aggregate)) return false;
+    const node = graph.get(aggregate) orelse return false;
+    const descriptor = node.descriptor orelse return false;
+    return descriptor == .array and descriptor.array.elem.* == .array;
+}
+
+/// Whether the exact graph place named by this transitional AST binding already
+/// has a selected static aggregate realization. The name is only the current
+/// walker's bridge to the graph place; aggregate identity, contents, legality,
+/// and physical selection all come from graph facts. Delete the name bridge
+/// when parser work items carry place ids directly.
+fn skipStaticAggregateBinding(ctx: *LowerCtx, binding_name: []const u8) Error!bool {
+    const owner = ctx.function orelse return false;
+    const owner_node = ctx.graph.get(owner) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-owner");
+    const bound_place = if (owner_node.scope == null)
+        ctx.graph.placeNamed(binding_name)
+    else if (ctx.graph.bodyOf(owner)) |body|
+        body.places.find(binding_name)
+    else
+        null;
+    const site = (bound_place orelse return false).id;
+    const aggregate = ctx.graph.boundAggregateAtPlace(owner, site) orelse return false;
+    if (ctx.graph.aggregateProducer(aggregate) != null) return false;
+    const fact = ctx.graph.aggregate(aggregate) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-member-pack");
+    const node = ctx.graph.get(aggregate) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-root");
+    const descriptor = node.descriptor orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-root-descriptor");
+    if (descriptor != .array or descriptor.array.elem.* != .array) return false;
+    if (fact.contents_known != .yes or ctx.graph.aggregatePlace(aggregate) == null)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-static-place");
+    return immutableNestedAggregateRoot(ctx.graph, aggregate);
+}
+
+fn appendAggregateWords(
+    graph: *const semantic_graph.SemanticGraph,
+    aggregate: semantic_graph.id,
+    words: *std.ArrayListUnmanaged(i64),
+    stack: *std.AutoHashMapUnmanaged(semantic_graph.id, void),
+    alloc: std.mem.Allocator,
+) Error!void {
+    const entry = try stack.getOrPut(alloc, aggregate);
+    if (entry.found_existing) return error.GraphFactsInvalid;
+    defer _ = stack.remove(aggregate);
+
+    const fact = graph.aggregate(aggregate) orelse return error.GraphFactsInvalid;
+    if (fact.contents_known != .yes) return error.GraphFactsInvalid;
+    const members = graph.aggregateMembers(aggregate) orelse return error.GraphFactsInvalid;
+    for (members) |member| {
+        const node = graph.get(member) orelse return error.GraphFactsInvalid;
+        const descriptor = node.descriptor orelse return error.GraphFactsInvalid;
+        switch (descriptor) {
+            .i64 => try words.append(alloc, graph.exactI64(member) orelse return error.GraphFactsInvalid),
+            .array => try appendAggregateWords(graph, member, words, stack, alloc),
+            else => return error.GraphFactsInvalid,
+        }
+    }
+}
+
+fn collectDenseTables(
+    alloc: std.mem.Allocator,
+    graph: *const semantic_graph.SemanticGraph,
+    diagnostic: *Diagnostic,
+) Error![]const dnir.DenseTable {
+    var tables: std.ArrayListUnmanaged(dnir.DenseTable) = .empty;
+    errdefer {
+        for (tables.items) |table| alloc.free(table.values);
+        tables.deinit(alloc);
+    }
+    var stack: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;
+    defer stack.deinit(alloc);
+    var row: usize = 0;
+    while (row < graph.aggregateCount()) : (row += 1) {
+        const fact = graph.aggregateAt(row) orelse
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
+        if (graph.aggregateProducer(fact.aggregate) != null) continue;
+        if (!immutableNestedAggregateRoot(graph, fact.aggregate)) continue;
+        var words: std.ArrayListUnmanaged(i64) = .empty;
+        errdefer words.deinit(alloc);
+        appendAggregateWords(graph, fact.aggregate, &words, &stack, alloc) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack"),
+        };
+        if (words.items.len == 0) {
+            words.deinit(alloc);
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
+        }
+        const values = try words.toOwnedSlice(alloc);
+        errdefer alloc.free(values);
+        try tables.append(alloc, .{
+            .value = fact.aggregate,
+            .elem_ty = .i64,
+            .values = values,
+        });
+    }
+    return try tables.toOwnedSlice(alloc);
+}
+
+fn validateAggregateFacts(
+    graph: *const semantic_graph.SemanticGraph,
+    diagnostic: *Diagnostic,
+) Error!void {
+    var row: usize = 0;
+    while (row < graph.aggregateCount()) : (row += 1) {
+        const fact = graph.aggregateAt(row) orelse
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
+        const descriptor = (graph.get(fact.aggregate) orelse
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack")).descriptor orelse
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
+        if (descriptor != .array) continue;
+        const extent = descriptor.array.size orelse
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
+        const members = graph.aggregateMembers(fact.aggregate) orelse
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
+        if (members.len != extent)
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
+        for (members) |member| {
+            const member_descriptor = (graph.get(member) orelse
+                return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack")).descriptor orelse
+                return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
+            if (!member_descriptor.eql(descriptor.array.elem.*))
+                return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
+        }
+    }
+}
+
 fn lowerModuleFromGraph(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -707,6 +849,7 @@ fn lowerModuleFromGraph(
     diagnostic: *Diagnostic,
     require_graph_facts: bool,
 ) Error!dnir.Module {
+    try validateAggregateFacts(graph, diagnostic);
     // THE HOME THIS MODULE IS. Read once, here, and handed to every place that
     // names a symbol, so a definition and a same-home call site cannot be
     // computed from two different answers.
@@ -1020,11 +1163,18 @@ fn lowerModuleFromGraph(
     const owned_globals = try globals.toOwnedSlice(alloc);
     errdefer alloc.free(owned_globals);
 
+    const owned_dense_tables = try collectDenseTables(alloc, graph, diagnostic);
+    errdefer {
+        for (owned_dense_tables) |table| alloc.free(table.values);
+        alloc.free(owned_dense_tables);
+    }
+
     const result = dnir.Module{
         .graph = graph,
         .functions = owned_functions,
         .records = owned_records,
         .globals = owned_globals,
+        .dense_tables = owned_dense_tables,
         .externs = owned_externs,
     };
     return .{
@@ -1032,6 +1182,7 @@ fn lowerModuleFromGraph(
         .functions = result.functions,
         .records = result.records,
         .globals = result.globals,
+        .dense_tables = result.dense_tables,
         .externs = result.externs,
         .hardware_tier = dnir.moduleHardwareTier(result),
     };
@@ -1680,6 +1831,10 @@ pub const LowerCtx = struct {
     /// materialized by `materializeTableSlots`. `t[i]` on one of these is a
     /// scaled 8-byte load, not a select-chain.
     ptr_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Graph aggregate identity to the one physical base temp selected for this
+    /// function. The identity and contents stay graph-owned; this map only
+    /// avoids emitting a second address materialization for another access.
+    aggregate_bases: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
     /// Static element count of a positional table, keyed by its `.len` slot, so
     /// `t[i]` with a non-constant `i` knows how many slots to select over.
     table_lens: std.AutoHashMapUnmanaged(u32, i64) = .empty,
@@ -1747,6 +1902,7 @@ pub const LowerCtx = struct {
         self.bool_slots.deinit(self.alloc);
         self.narrow_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
+        self.aggregate_bases.deinit(self.alloc);
         self.table_lens.deinit(self.alloc);
         var ct = self.const_tables.iterator();
         while (ct.next()) |e| {
@@ -2876,6 +3032,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                     try ctx.narrow_slots.put(ctx.alloc, slot, width);
                 }
                 if (i < ld.inits.len) {
+                    if (try skipStaticAggregateBinding(ctx, ln.ident)) continue;
                     try lowerAssignTarget(ctx, ln.ident, ld.inits[i]);
                 }
                 if (ln.typ != .inferred and isFloatType(ln.typ)) {
@@ -2896,6 +3053,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             if (try lowerOneToManyPackAssign(ctx, as.targets, as.values)) return;
             if (as.targets.len != as.values.len) return bail(ctx.diagnostic, @src());
             for (as.targets, as.values) |target, value| {
+                if (target.* == .name and try skipStaticAggregateBinding(ctx, target.name.ident)) continue;
                 // The environment is a PLACE. This runs before the switch below
                 // because `os.env[k]` is an `.index` whose object is a `.field`,
                 // which `lowerIndexAssignTarget` rejects outright, and
@@ -5702,6 +5860,196 @@ fn placeFold(ctx: *LowerCtx, expr: *const Expr) ?dnir.Value {
     }
 }
 
+const AggregateAccessStep = struct {
+    application: *const semantic_graph.ApplicationFact,
+    subject: semantic_graph.id,
+    key: semantic_graph.id,
+    result: semantic_graph.id,
+    extent: i64,
+    result_descriptor: RT,
+};
+
+fn collectAggregateAccessPath(
+    ctx: *LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+    steps: *std.ArrayListUnmanaged(AggregateAccessStep),
+    seen: *std.AutoHashMapUnmanaged(semantic_graph.id, void),
+) Error!void {
+    const fact = ctx.graph.aggregateAccess(application.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-fact");
+    const entry = try seen.getOrPut(ctx.alloc, fact.application);
+    if (entry.found_existing) return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-cycle");
+
+    const subject = ctx.graph.applicationSubject(fact.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-subject");
+    if (ctx.graph.aggregateProducer(subject)) |producer| {
+        const parent = ctx.graph.aggregateAccess(producer) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-producer");
+        try collectAggregateAccessPath(ctx, parent, steps, seen);
+    }
+    const operands = ctx.graph.applicationArguments(fact.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-operand-pack");
+    const results = ctx.graph.applicationResults(fact.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-result-pack");
+    if (operands.len != 1 or results.len != 1)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-pack-arity");
+    const subject_node = ctx.graph.get(subject) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-subject");
+    const descriptor = subject_node.descriptor orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-descriptor");
+    if (descriptor != .array or descriptor.array.size == null)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-descriptor");
+    const result_node = ctx.graph.get(results[0]) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-result-member");
+    const result_descriptor = result_node.descriptor orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-result-descriptor");
+    if (!result_descriptor.eql(descriptor.array.elem.*))
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-result-descriptor");
+    try steps.append(ctx.alloc, .{
+        .application = fact,
+        .subject = subject,
+        .key = operands[0],
+        .result = results[0],
+        .extent = @intCast(descriptor.array.size.?),
+        .result_descriptor = result_descriptor,
+    });
+}
+
+fn aggregateLeafCount(descriptor: RT) ?i64 {
+    var current = descriptor;
+    var count: u64 = 1;
+    while (current == .array) {
+        const extent = current.array.size orelse return null;
+        count = std.math.mul(u64, count, extent) catch return null;
+        current = current.array.elem.*;
+    }
+    if (current != .i64 or count == 0 or count > std.math.maxInt(i64)) return null;
+    return @intCast(count);
+}
+
+fn aggregateBase(ctx: *LowerCtx, root_aggregate: semantic_graph.id) Error!u32 {
+    if (ctx.aggregate_bases.get(root_aggregate)) |base| return base;
+    if (!immutableNestedAggregateRoot(ctx.graph, root_aggregate))
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-static-place");
+    const node = ctx.graph.get(root_aggregate) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-root");
+    const descriptor = node.descriptor orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-root-descriptor");
+    const words = aggregateLeafCount(descriptor) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-root-descriptor");
+    const base = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .alloc_slots,
+        .result = base,
+        .lhs = .{ .i64 = words },
+        .aggregate = root_aggregate,
+        .ty = .i64,
+    });
+    try ctx.aggregate_bases.put(ctx.alloc, root_aggregate, base);
+    return base;
+}
+
+fn setAggregateLineage(
+    ctx: *LowerCtx,
+    step: AggregateAccessStep,
+    start: u32,
+    instruction: *dnir.Instr,
+) Error!void {
+    instruction.relation = ctx.graph.applicationRelation(step.application.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-relation");
+    instruction.application = step.application.application;
+    instruction.value = step.result;
+    instruction.subject = step.subject;
+    instruction.target = ctx.graph.applicationTarget(step.application.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-target");
+    instruction.realization_start = start;
+    instruction.ty = step.result_descriptor;
+}
+
+fn aggregateKey(ctx: *LowerCtx, step: AggregateAccessStep) Error!dnir.Value {
+    if (ctx.graph.exactI64(step.key)) |constant| {
+        if (constant < 1 or constant > step.extent) return bailWith(ctx.diagnostic, @src(), "aggregate-index-bounds");
+        return .{ .i64 = constant };
+    }
+    const expression = ctx.graph.valueExpression(step.key) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-key-provenance");
+    const raw = try lowerExpr(ctx, expression);
+    const slot = ctx.freshTemp();
+    try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = raw, .ty = .i64 });
+    try emitIndexBoundsTrap(ctx, slot, step.extent);
+    return .{ .local = slot };
+}
+
+fn lowerAggregateAccess(
+    ctx: *LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    var steps: std.ArrayListUnmanaged(AggregateAccessStep) = .empty;
+    defer steps.deinit(ctx.alloc);
+    var seen: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;
+    defer seen.deinit(ctx.alloc);
+    try collectAggregateAccessPath(ctx, application, &steps, &seen);
+    if (steps.items.len < 2)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-depth");
+    const root_aggregate = steps.items[0].subject;
+    if (ctx.graph.aggregateProducer(root_aggregate) != null)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-root");
+    const base = try aggregateBase(ctx, root_aggregate);
+
+    var prefix: dnir.Value = .void;
+    for (steps.items, 0..) |step, i| {
+        const start: u32 = @intCast(ctx.instrs.items.len);
+        const key = try aggregateKey(ctx, step);
+        if (i == 0) {
+            const slot = ctx.freshTemp();
+            var instruction: dnir.Instr = .{
+                .op = .store_local,
+                .result = slot,
+                .lhs = key,
+            };
+            try setAggregateLineage(ctx, step, start, &instruction);
+            try ctx.emit(instruction);
+            prefix = .{ .local = slot };
+            continue;
+        }
+
+        const biased = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = biased, .binop = .sub, .lhs = prefix, .rhs = .{ .i64 = 1 } });
+        const scaled = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = scaled, .binop = .mul, .lhs = .{ .temp = biased }, .rhs = .{ .i64 = step.extent } });
+        const offset = ctx.freshTemp();
+        try ctx.emit(.{ .op = .binop, .result = offset, .binop = .add, .lhs = .{ .temp = scaled }, .rhs = key });
+
+        const last = i + 1 == steps.items.len;
+        if (last) {
+            if (step.result_descriptor != .i64)
+                return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-leaf-descriptor");
+            const result = ctx.freshTemp();
+            var instruction: dnir.Instr = .{
+                .op = .load_index,
+                .result = result,
+                .lhs = .{ .temp = base },
+                .rhs = .{ .temp = offset },
+                .ty = .i64,
+            };
+            try setAggregateLineage(ctx, step, start, &instruction);
+            try ctx.emit(instruction);
+            return if (consumption == .discard) .void else .{ .temp = result };
+        }
+        const slot = ctx.freshTemp();
+        var instruction: dnir.Instr = .{
+            .op = .store_local,
+            .result = slot,
+            .lhs = .{ .temp = offset },
+        };
+        try setAggregateLineage(ctx, step, start, &instruction);
+        try ctx.emit(instruction);
+        prefix = .{ .local = slot };
+    }
+    return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-result");
+}
+
 fn lowerExprCons(
     ctx: *LowerCtx,
     expr: *const Expr,
@@ -5711,6 +6059,10 @@ fn lowerExprCons(
     // reads a location; the graph could not tell that from a relation call
     // because it had no places, which is why the refusal below fired on it.
     if (placeFold(ctx, expr)) |folded| return folded;
+    if (ctx.occurrences.get(expr)) |application| {
+        if (ctx.graph.aggregateAccess(application.application) != null)
+            return lowerAggregateAccess(ctx, application, consumption);
+    }
     if (applicationNeedsGraphOccurrence(ctx, expr)) {
         return refuseMissingApplication(ctx, @src(), expr);
     }
@@ -9413,6 +9765,209 @@ test "dnir_lower: checked aggregate operand requires graph ABI facts" {
     try std.testing.expectEqualStrings("application-operand-abi", diagnostic.note().?);
     try std.testing.expect(diagnostic.application != null);
     try std.testing.expectEqualStrings("distance", diagnostic.relation.?);
+}
+
+test "dnir_lower: graph aggregate facts select one immutable nested layout" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const table_apply = @import("table_apply.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const cases = [_]struct { file: []const u8, source: []const u8 }{
+        .{
+            .file = "aggregate-module.id",
+            .source =
+            \\pairs = {{10, 11}, {20, 21}, {30, 31}}
+            \\pick: i64 = (i: i64)
+            \\    pairs(i)(2)
+            \\main: i64 = ()
+            \\    pick(2)
+            ,
+        },
+        .{
+            .file = "aggregate-local.id",
+            .source =
+            \\pick: i64 = (i: i64)
+            \\    pairs = {{10, 11}, {20, 21}, {30, 31}}
+            \\    pairs(i)(2)
+            \\main: i64 = ()
+            \\    pick(2)
+            ,
+        },
+    };
+    for (cases) |case| {
+        var lexer = Lexer.init(case.source, case.file);
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        table_apply.normalizeModule(alloc, &module, &checked.type_map);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, case.file);
+        const lowered = try lowerModuleWithGraph(alloc, &module, &graph);
+        defer dnir.deinitModule(alloc, lowered);
+
+        try std.testing.expectEqual(@as(usize, 1), lowered.dense_tables.len);
+        try std.testing.expectEqualSlices(
+            i64,
+            &.{ 10, 11, 20, 21, 30, 31 },
+            lowered.dense_tables[0].values,
+        );
+        const root_aggregate = lowered.dense_tables[0].value;
+        const root_fact = graph.aggregate(root_aggregate) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(place.Tri.yes, root_fact.contents_known);
+        const root_place = graph.aggregatePlace(root_aggregate) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(
+            root_aggregate,
+            graph.boundAggregateAtPlace(root_fact.owner, root_place.id).?,
+        );
+        try std.testing.expect(graph.boundAggregateAtPlace(root_fact.owner, root_place.id + 1000) == null);
+
+        var saw_base = false;
+        var saw_outer_bounds = false;
+        var saw_projection = false;
+        var saw_load = false;
+        for (lowered.functions) |function| {
+            if (std.mem.indexOf(u8, function.name, "pick") == null) continue;
+            for (function.blocks) |block| {
+                for (block.instrs) |instruction| {
+                    if (instruction.op == .alloc_slots and instruction.aggregate == root_aggregate) {
+                        saw_base = true;
+                        try std.testing.expectEqual(dnir.Value{ .i64 = 6 }, instruction.lhs);
+                    }
+                    if (instruction.op == .hw_unary and std.mem.eql(u8, instruction.field, index_bounds_tag)) {
+                        saw_outer_bounds = true;
+                        try std.testing.expectEqual(dnir.Value{ .i64 = 3 }, instruction.rhs);
+                    }
+                    if (instruction.op == .store_local and instruction.application != null) {
+                        saw_projection = true;
+                        try std.testing.expect(graph.aggregateAccess(instruction.application.?) != null);
+                        try std.testing.expect(instruction.value != null);
+                    }
+                    if (instruction.op == .load_index and instruction.application != null) {
+                        saw_load = true;
+                        try std.testing.expect(graph.aggregateAccess(instruction.application.?) != null);
+                        try std.testing.expect(instruction.value != null);
+                        try std.testing.expectEqual(types.ResolvedType.i64, instruction.ty);
+                    }
+                }
+            }
+        }
+        try std.testing.expect(saw_base);
+        try std.testing.expect(saw_outer_bounds);
+        try std.testing.expect(saw_projection);
+        try std.testing.expect(saw_load);
+
+        // The initializer expression is provenance after graph publication.
+        // Poison its AST tag while retaining the exact graph aggregate/place
+        // facts: realization must keep the same dense contents and instruction
+        // shape. This fails if lowering again uses the source initializer as
+        // the key that selects static aggregate realization.
+        var baseline_instructions: usize = 0;
+        for (lowered.functions) |function| {
+            for (function.blocks) |block| baseline_instructions += block.instrs.len;
+        }
+        const source_initializer = @constCast(graph.valueExpression(root_aggregate) orelse
+            return error.TestExpectedEqual);
+        const saved_initializer = source_initializer.*;
+        source_initializer.* = .{ .nil = saved_initializer.loc() };
+        const relowered = try lowerModuleWithGraph(alloc, &module, &graph);
+        defer dnir.deinitModule(alloc, relowered);
+        source_initializer.* = saved_initializer;
+        try std.testing.expectEqual(@as(usize, 1), relowered.dense_tables.len);
+        try std.testing.expectEqualSlices(
+            i64,
+            lowered.dense_tables[0].values,
+            relowered.dense_tables[0].values,
+        );
+        var relowered_instructions: usize = 0;
+        for (relowered.functions) |function| {
+            for (function.blocks) |block| relowered_instructions += block.instrs.len;
+        }
+        try std.testing.expectEqual(baseline_instructions, relowered_instructions);
+
+        // Damage the member descriptor fact. The access path must fail before
+        // the AST literal can be consulted as a replacement authority.
+        const root_members = graph.aggregateMembers(root_aggregate) orelse return error.TestExpectedEqual;
+        const saved_descriptor = graph.nodes.items[root_members[0]].descriptor;
+        graph.nodes.items[root_members[0]].descriptor = .i64;
+        var diagnostic: Diagnostic = .{};
+        try std.testing.expectError(
+            error.GraphFactsInvalid,
+            lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+        );
+        try std.testing.expectEqualStrings("aggregate-member-pack", diagnostic.note().?);
+        graph.nodes.items[root_members[0]].descriptor = saved_descriptor;
+
+        const aggregate_row = graph.aggregate_rows.get(root_aggregate).?;
+        const saved_contents = graph.aggregate_facts.items[aggregate_row].contents_known;
+        graph.aggregate_facts.items[aggregate_row].contents_known = .unknown;
+        diagnostic.reset();
+        try std.testing.expectError(
+            error.GraphFactsInvalid,
+            lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+        );
+        try std.testing.expectEqualStrings("aggregate-static-place", diagnostic.note().?);
+        graph.aggregate_facts.items[aggregate_row].contents_known = saved_contents;
+
+        // Damage one result pack range. Access lowering must not reconstruct
+        // the result from the source's outer index node.
+        var outer: ?*const semantic_graph.ApplicationFact = null;
+        for (graph.applications()) |application| {
+            const access = graph.aggregateAccess(application.application) orelse continue;
+            const result = graph.applicationResults(access.application).?[0];
+            if (graph.get(result).?.descriptor.? == .i64) outer = access;
+        }
+        const outer_fact = outer orelse return error.TestExpectedEqual;
+        const result_pack_row = graph.pack_rows.get(outer_fact.result_pack).?;
+        const saved_range = graph.pack_facts.items[result_pack_row].members;
+        graph.pack_facts.items[result_pack_row].members.start = std.math.maxInt(u32);
+        diagnostic.reset();
+        try std.testing.expectError(
+            error.GraphFactsInvalid,
+            lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+        );
+        graph.pack_facts.items[result_pack_row].members = saved_range;
+    }
+}
+
+test "dnir_lower: nested aggregate constant bounds fail closed" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const table_apply = @import("table_apply.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pairs = {{10, 11}, {20, 21}, {30, 31}}
+        \\main: i64 = ()
+        \\    pairs(2)(3)
+    ;
+    var lexer = Lexer.init(source, "aggregate-bounds.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    table_apply.normalizeModule(alloc, &module, &checked.type_map);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "aggregate-bounds.id");
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedConstruct,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-index-bounds", diagnostic.note().?);
 }
 
 test "dnir_lower: checked aggregate result consumes exact graph shape" {

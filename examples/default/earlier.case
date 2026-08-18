@@ -1,0 +1,5 @@
+span: i64 = (base: i64, offset: i64 = base + 1, count: i64 = offset + 1)
+    count
+
+main: i64 = ()
+    span(3)

@@ -21,7 +21,7 @@ Renaming without semantic decomposition is forbidden (`abi_matrix` → `abimatri
 | `scripts/idiomgate.id` | deleted | authority is `gate/idiom.id` |
 | `scripts/duo_idiom_gate.id` | deleted | `gate/idiom.id` + `gate/build.id` own transport |
 | `scripts/semanticgate.id` | bootstrap census | delete when GAP-124 graph gate owns staged verdicts |
-| `scripts/module_surface_gate.id` | bootstrap smoke | keep until module privacy is graph fact |
+| `scripts/module_surface_gate.id` | deleted | source-name module/privacy scanner contradicted home/reach law |
 | `scripts/stdlib_embed_gate.id` | bootstrap embed | delete under GAP-157 std home migration |
 | `scripts/stdlib_correctness_gate.id` | bootstrap embed | delete under GAP-157 |
 | `scripts/run_wasm_benchmark.id` | workflow | `tools/wasm/bench/` or single operational name |

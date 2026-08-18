@@ -189,7 +189,6 @@ value:len()  length relation
 
 ()           ordinary application and grouping
 {}           structured packs, descriptor application, and bounded homes
-[]           computed or indexed projection
 .            statically named projection
 :            admitted descriptor, subject, and home faces by grammar role
 ```
@@ -200,11 +199,11 @@ lexer token identity and generated grammar roles, never token-text spelling
 lists. `GAP-145` records the unclosed lexical implementation boundary.
 
 Use the smallest source face that exposes the strongest fact already known.
-Square brackets mean a genuinely computed key. Prefer `value.name` to a
-literal-string bracket projection and `{ name = value }` to a structured field
-whose known name is reconstructed through a string. Do not preserve dot,
-bracket, call, or table syntax as semantic operation kinds, and do not let any
-source face choose physical representation.
+Computed and indexed access remains ordinary application: `table(key)` and
+`row(1)`. Prefer `value.name` to `value("name")` and `{ name = value }` to a
+structured field whose known name is reconstructed through a string. Do not
+preserve dot, application, or table syntax as semantic operation kinds, and do
+not let any source face choose physical representation.
 
 Canonical callable result demand is on the binding:
 
@@ -327,7 +326,7 @@ identity only (`law.identity.projection`).
 One projection algebra (`law.projection.one`) — no separate conversion/protocol/world/shell
 subsystems. **FROM-ZERO:** `to` only; `from` normalizes to same edge. **STD-ZERO /
 LIB-ZERO:** no canonical `std.*` / `lib.*` traversal. **WORLD-ONE:** worlds grant
-authority not intent; prefer `stdin:read()`, `args[1]`, `stdout:write()` over
+authority not intent; prefer `stdin:read()`, `args(1)`, `stdout:write()` over
 `os.*` / `io.*` namespace teaching. **SHELL-NOT-WORLD:** shell is law; `run` uses
 process world. Spell only facts not uniquely recoverable; ladder ends at implicit
 relation + implicit projection when proved.
@@ -357,7 +356,8 @@ A graph-aware formatter and canonicality gate for this face depend on the
 lexical identities in `GAP-145`, generated grammar roles in `GAP-134`, and the
 graph-derived semantic gate in `GAP-124`. Current text ratchets are migration
 pressure only: the added-line check in `gate/idiom.id` is not
-authoritative equivalence proof.
+authoritative equivalence proof, and today its direct execution is blocked by
+DNB001 `concat`.
 
 PREDICATE-ZERO applies after subject correction. Do not encode a semantic case,
 descriptor, capability, shape, identity, demand, transition, or realization
@@ -518,30 +518,27 @@ is not current evidence. A zero needs a positive control.
 
 Every claim names the exact tree, command, executed path, outcome, and known
 red aggregate. Obtain volatile state live: current HEAD and dirty tree from
-Git, live ownership from `duo_dev_claim_files`, open obligations from `gaps/`,
-and the current aggregate outcome from a serialized run. `GAP-131` records that
-the session-start open-P0 summary is unknown rather than a trustworthy census.
-Run `tools/node/dev/orient` for the current observed count, then inspect every
-matching `gaps/GAP-*.md` record directly before work. A copied count is
-orientation evidence rather than replacement status authority.
+Git, live ownership from `tools/node/dev/claim list`, open obligations from
+`gaps/`, and the current aggregate outcome from a serialized run.
+`tools/node/dev/orient` derives `activep0` from exact gap headers after the
+`GAP-131` closure; inspect every matching `gaps/GAP-*.md` record directly before
+work because the derived count does not replace status authority.
 
 ## Workflow
 
 Start at `AGENTS.md`, then use `.agents/AGENT_CANONICAL.md` as the stable path
 router. Read `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the relevant
-scope authority. Start the MCP session, inspect live claims and the dirty tree,
-claim exact paths, and serialize heavy commands through:
+scope authority. Inspect live claims and the dirty tree, claim exact paths with
+`tools/node/dev/claim acquire`, and serialize heavy commands through:
 
 ```text
 repo="$(git rev-parse --show-toplevel)"
-"$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- <command>
+"$repo/tools/node/dev/idol-lock" -- <command>
 ```
 
-`duo` in commands and `duo-*` in MCP names are current physical bootstrap
-aliases, not the `idol` command identity or permission to create a parallel
-current brand. The physical `.id` spelling of this lock entrypoint is not by
-itself semantic migration or self-host authority transfer. The repository
-remains at S0 and no compiler B exists.
+The lock and claim commands are bootstrap coordination transport, not semantic
+authority or self-host transfer. The repository remains at S0 and no compiler B
+exists.
 
 Never stash, hard-reset, absorb another session's changes, bypass a gate, or
 repair combined-tree failures by restoring a shadow authority. Commit only

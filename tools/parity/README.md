@@ -1,19 +1,20 @@
 # parity — projection agreement reporters (Pickle Mission E)
 
-Report-only tools. They compare existing projections of a shared authority
-by identity, report drift, and never choose a side or rewrite a role.
+Projection-verification tools. They compare generated projections with their
+shared authority by identity and never rewrite a role. Drift or a missing live
+projection exits nonzero.
 
 ## grammar
 
 `tools/parity/grammar` compares, by token ordinal:
 
 - `src/lexer.zig` `TokenKind` field count — the canonical ordinal space
-- `lib/token/grammar_role.id` (ROLE_COUNT / KIND_EOF / BEGIN_EXPR)
-- `lib/token/grammarrole.id` (ROLECOUNT / KINDEOF / BEGINEXPR)
+- `lib/token/grammarrole.id` (ROLECOUNT / KINDEOF / BEGINEXPR), the sole live
+  generated projection
 - `ext/tree-sitter-idol/src/grammar.json` rule count (context only)
 
-Output: a count matrix, the first divergent BEGIN_EXPR ordinal, and a
-DRIFT list. Exit is always 0 — this is measurement, not a gate.
+Output: a count matrix and a DRIFT list. Exit 0 means the live projection agrees
+and both retired projection paths are absent; drift exits 1.
 
 ### First measurement (2026-08-17, HEAD fa2805ef) — since closed
 
@@ -33,8 +34,7 @@ dead `lib/std/token/...` path. See `.agents/MOP_HANDOFFS.md` H7.
 
 ### Update (same day, post-reconciliation)
 
-The stale `lib/token/grammar_role.id` (110, undriven, unconsumed) and the
-spent `tools/emit_grammar_role.zig` (dead `lib/std` target) were deleted;
-the live generator's retired regen banner was corrected and
-`idol token-tables emit` regenerated `lib/token/grammarrole.id` (114,
-current generator format). Parity now reports: **all projections agree**.
+The stale `lib/token/grammar_role.id` (110, undriven, unconsumed) and the spent
+`tools/emit_grammar_role.zig` (dead `lib/std` target) were deleted. The live
+generator emits `lib/token/grammarrole.id`; parity now requires that projection
+to agree with `TokenKind` and requires the retired paths to remain absent.

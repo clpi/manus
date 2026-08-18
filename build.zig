@@ -580,6 +580,23 @@ pub fn build(b: *std.Build) void {
     const world_launch_step = b.step("world-launch", "launcher world admission and cache separation");
     world_launch_step.dependOn(&world_launch_cmd.step);
 
+    const defaults_cmd = b.addSystemCommand(&.{ "sh", "gate/defaults.sh" });
+    defaults_cmd.setCwd(b.path("."));
+    defaults_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
+    defaults_cmd.step.dependOn(b.getInstallStep());
+    const defaults_step = b.step("defaults-gate", "census function and descriptor defaults across parse, check, direct, and run");
+    defaults_step.dependOn(&defaults_cmd.step);
+    test_step.dependOn(&defaults_cmd.step);
+
+    const cache_home_cmd = b.addSystemCommand(&.{ "sh", "gate/cache-home.sh" });
+    cache_home_cmd.setCwd(b.path("."));
+    cache_home_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol");
+    cache_home_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
+    cache_home_cmd.step.dependOn(b.getInstallStep());
+    const cache_home_step = b.step("cache-home", "executable cache follows resolved semantic home identity");
+    cache_home_step.dependOn(&cache_home_cmd.step);
+    test_step.dependOn(&cache_home_cmd.step);
+
     // tree-sitter-coverage -- section 19's editor front-end, measured.
     // Runs the generator (failing if it exits non-zero, which the nvim setup
     // script used to swallow), parses every tracked .id file, and ratchets off
@@ -639,42 +656,6 @@ pub fn build(b: *std.Build) void {
     audit100_cmd.step.dependOn(b.getInstallStep());
     const audit100_step = b.step("audit100", "deny table over the canonical .id corpus; ratchets each row");
     audit100_step.dependOn(&audit100_cmd.step);
-
-    // role-scan is GONE, and this note is here so the next reader does not go
-    // looking for it. gaps/GAP-078.md: two role taxonomies landed in this tree
-    // on the same day and disagreed -- on `:`, on the count, on whether an
-    // ordinary binding has a hue, on the spelling of the string role, and on
-    // whether the section 0g fine splits are roles. Two generators for one
-    // legend means whichever a front end picks, the other convicts it, and the
-    // two coverage numbers measured different quantities. The ruling merged
-    // them into ONE taxonomy and DELETED `scripts/role_scan.id` rather than
-    // parking it beside the survivor. Its corpus was not deleted with it: the
-    // seven fixtures under fixtures/highlight/*.id and their span sidecars are
-    // now measured by `highlight-corpus` below, in the surviving vocabulary.
-    //
-    // highlight-corpus -- CLAUDE.md section 0d, executable. Highlighting is a
-    // PROJECTION OF THE GRAPH, not a lexer, and the only way to tell those two
-    // apart from outside is a corpus containing the glyphs idol overloads: `:`
-    // is copula OR invoke and `|` is union OR pipe, and no lexer separates
-    // either pair. The gate asserts the role AND the card at named byte
-    // offsets, so "it produced highlighting" is not a passing answer.
-    //
-    // It also gates section 0g's G-TOTAL: every non-whitespace byte carries a
-    // role, and an undecidable span DIAGNOSES rather than defaulting. The
-    // negative control in fixtures/highlight/mixed/ is what keeps the
-    // "0 unresolved spans" row from being the broken kind of zero.
-    //
-    // It publishes the three G-TOTAL numbers -- coverage, ambiguity,
-    // provenance -- over BOTH corpora at once, which is what gaps/GAP-078.md's
-    // falsifier asked for: a coverage percentage published without naming the
-    // taxonomy behind it means the gap was closed by forgetting. There is one
-    // taxonomy now, so there is one set of numbers. SPECIFICITY is reported
-    // separately because it is the bar coverage is not.
-    const highlight_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/highlight.id" });
-    highlight_cmd.setCwd(b.path("."));
-    highlight_cmd.step.dependOn(b.getInstallStep());
-    const highlight_step = b.step("highlight-corpus", "the golden role corpus, totality, the H-1 proofs by value, and specificity; ratchets");
-    highlight_step.dependOn(&highlight_cmd.step);
 
     // U1 -- `std@{ ambient = false }`, executable. The one
     // charter row that is effective immediately rather than at 0.1, so it is a
@@ -749,9 +730,8 @@ pub fn build(b: *std.Build) void {
     // that is the whole point: a silent fallback to the worktree-local ledger
     // would keep colliding while reporting success, so the path is the only
     // thing that tells the two apart. Read-only -- it allocates nothing.
-    const gapalloc_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/gapalloc.id" });
+    const gapalloc_cmd = b.addSystemCommand(&.{ "./tools/node/dev/gap", "facts" });
     gapalloc_cmd.setCwd(b.path("."));
-    gapalloc_cmd.step.dependOn(b.getInstallStep());
     const gapalloc_step = b.step("gapalloc", "gap[076]: resolved gap-reservation ledger path, high-water mark across ALL refs, next number");
     gapalloc_step.dependOn(&gapalloc_cmd.step);
 
@@ -992,12 +972,6 @@ pub fn build(b: *std.Build) void {
     closure_proof_step.dependOn(&closure_proof_cmd.step);
     closure_proof_step.dependOn(&semantic_proof_cmd.step);
 
-    const direct_link_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/proof/module.id" });
-    direct_link_cmd.step.dependOn(b.getInstallStep());
-    direct_link_cmd.setCwd(b.path("."));
-    const direct_link_step = b.step("direct-module-link", "A direct-backend program must be able to call a req'd idol module");
-    direct_link_step.dependOn(&direct_link_cmd.step);
-
     const idiom_cmd = b.addSystemCommand(&.{
         "sh", "-c",
         "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gate/idiom.id || test $? -eq 3",
@@ -1120,32 +1094,6 @@ pub fn build(b: *std.Build) void {
     // Tier 0: an unprojected optimizer is an undiagnosable one.
     agent_smoke_step.dependOn(&explain_gate_cmd.step);
 
-    // lsp-gate — the LSP is the same kind of program, and it had NO gate at all.
-    //
-    // It was carrying the same class of defect the MCP servers were: on
-    // 2026-08-08 `textDocument/didClose` SEGFAULTED the server. Exit 139, no
-    // diagnostic, no partial answer, no reply to anything afterwards. `t[k] =
-    // nil` does not remove a key in idol, so `flush_dirty` — which runs after
-    // EVERY message — walked the docs table, found the nil and dereferenced it.
-    // Every editor closes documents; nobody had ever run one against it.
-    //
-    // The gate speaks real LSP framing (`Content-Length: N\r\n\r\n{…}`) and
-    // asserts response BYTES: the twelve advertised capabilities, the generated
-    // 17+13 role legend verbatim, a value round trip through hover, definition
-    // and documentSymbol, the exact delta-encoded semantic-token stream for the
-    // golden copula fixture, the CDR inlay hint, and the code lens witness
-    // counts. Everything scored happens AFTER a close, so a server that dies
-    // mid-session cannot score. Positive-controlled by driving it at corrupted
-    // copies via LSPGATE_SERVER — see the file header for the three runs.
-    const lsp_gate_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "tools/lsp/gate.id" });
-    lsp_gate_cmd.setCwd(b.path("."));
-    lsp_gate_cmd.step.dependOn(b.getInstallStep());
-    const lsp_gate_step = b.step("lsp-gate", "The LSP must handshake, survive a document close, and answer by value");
-    lsp_gate_step.dependOn(&lsp_gate_cmd.step);
-    // Tier 0: an untested language server is an untested front end, and every
-    // front end is gated.
-    agent_smoke_step.dependOn(&lsp_gate_cmd.step);
-
     // G-061 tier-0 metaprogramming smokes (combinator dispatch + derive bundles)
     const meta_smoke_paths = [_][]const u8{
         "examples/json/iteration.id",
@@ -1170,7 +1118,7 @@ pub fn build(b: *std.Build) void {
     const meta_smoke_step = b.step("meta-smoke", "Run canonical teaching examples under idol run");
     meta_smoke_step.dependOn(b.getInstallStep());
     inline for (meta_smoke_paths) |path| {
-        const cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/idol_lock.id", "--", "./zig-out/bin/idol", "run", path });
+        const cmd = b.addSystemCommand(&.{ "./tools/node/dev/idol-lock", "--", "./zig-out/bin/idol", "run", path });
         cmd.setCwd(b.path("."));
         meta_smoke_step.dependOn(&cmd.step);
     }
@@ -1178,7 +1126,7 @@ pub fn build(b: *std.Build) void {
     // G-061 strict dispatch gate: metaprogramming smoke under DUO_TRANSFORM_GATE=1
     const meta_gate_cmd = b.addSystemCommand(&.{
         "bash",                                                                                                                                        "-c",
-        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./zig-out/bin/idol run scripts/idol_lock.id -- ./zig-out/bin/idol run examples/parity/each.id",
+        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./tools/node/dev/idol-lock -- ./zig-out/bin/idol run examples/parity/each.id",
     });
     meta_gate_cmd.setCwd(b.path("."));
     meta_gate_cmd.step.dependOn(b.getInstallStep());

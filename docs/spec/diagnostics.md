@@ -259,7 +259,7 @@ construct is legal Duo that the current toolchain cannot lower:
 ```
 error  DNB001  this shape is outside the direct backend today
   because: `{f64}` in a string hole has no direct lowering yet
-  workaround: none needed — `--backend=c` handles it; it is the oracle path
+  workaround: none — this is direct-native capability debt
   gap: gap[nn]
 ```
 
@@ -403,7 +403,7 @@ addressed to a compiler author:**
 ```
 error: direct backend: DNB001: program construct is outside the direct backend subset
 hint: DNB001: program is outside the current direct backend subset (machine code
-      is canonical; use #backend=c only for bootstrap C emit)
+      is canonical; the explicit C source realizer is not a workaround)
 hint: refused with: UnsupportedProgram
 hint: bail site: lowerBinop() at dnir_lower.zig:2413 — concat
 ```
@@ -450,7 +450,7 @@ the direct backend produces a garbage value.
 | §6 severity | **MET on the levels.** `error`/`warning`/`hint`/`info` exactly, `info` gated behind `--info`/`DUO_INFO=1`, no `note`, no `-Werror`, no suppression pragmas. Fails §6's warning rule: `@satisfies is deprecated, use @comp.satisfies instead` names a replacement but no removal schedule. And the `warning: warning:` double label. |
 | §7 rule IDs | **ONE FAMILY.** `DNB001`–`DNB007`, backend-admission only, emitted as `hint:` text. Zero IDs on user-facing errors: `grep -rn 'DUO[0-9]' src/*.zig` returns **0** and `grep -rn '"E[0-9][0-9][0-9]' src/*.zig` returns **0** (positive control: `grep -rn 'DNB[0-9]' src/*.zig` returns 41). Some diagnostics cite prose sections ("§1 deny table", "§2 gives the anchor three stances") — good practice, not a substitute, and nothing resolves them. |
 | §8 JSON | **DOES NOT EXIST.** `--diagnostics=json` is not a flag. `term.ReportStyle` has a `json` member but it is reachable only through `--test-report`/`--build-report`. |
-| §8 `--plain-diagnostics` | **EXISTS AND WORKS.** `file:line:col: severity: message`, one per line, hints retained, zero ANSI escapes. `tools/lsp/src/server.id:1372` is its consumer and parses it with `parse_diagnostics`. No byte offsets, no end positions, no fixes, no IDs — so the LSP cannot offer a code action even where the hint contains the exact replacement text. |
+| §8 `--plain-diagnostics` | **EXISTS AND WORKS.** `file:line:col: severity: message`, one per line, hints retained, zero ANSI escapes. The former in-tree string parser was deleted with the duplicate LSP. The durable sibling LSP consumes compiler graph facts; exact repair/code-action projection waits for graph-owned ranges, fixes, and IDs. |
 | §8 stdout discipline | **VIOLATED.** *Everything* goes to stderr, including diagnostics; stdout is empty. And the progress line `  > compile (f.id) …` shares the stream with the diagnostics, so every consumer must filter it. |
 | §8 colour | **VIOLATED, measurably.** `printSourceContext` emits `\x1b[2m→\x1b[0m \x1b[2m{file}:{line}:{col}\x1b[0m` **unconditionally** — not inside the `if (color)` branch that guards every other escape in the file. Measured: piping to `grep -c $'\033'` returns **2** both with and without `--no-color`. Positive control: the same grep over the rest of the output returns 0, so the counter is real. Two escaped lines survive `--no-color`, `NO_COLOR`, and a non-TTY stdout. |
 | §9 unimplemented-as-a-kind | **PARTIAL.** DNB001 is the shape, addressed to the wrong reader, with no `gap[nn]` citation. |

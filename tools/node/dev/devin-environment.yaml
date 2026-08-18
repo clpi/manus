@@ -41,15 +41,15 @@ knowledge:
     contents: |
       This is a concurrent checkout. Inspect git status, HEAD, recent commits,
       gaps, and live claims before editing. Claim exact paths through
-      duo_dev_claim_acquire when MCP is available. Never use git stash,
+      tools/node/dev/claim. Never use git stash,
       git reset --hard, git add ., or git add -A. Commit explicit pathspecs.
 
   - name: verification
     contents: |
       Use ./tools/node/dev/doctor for fast development-node admission. Use
       ./tools/node/dev/probe-mcp for raw MCP initialize health. Heavy gates must
-      resolve the repository root and run through its `zig-out/bin/idol` with
-      `run`, its `scripts/idol_lock.id`, and `-- ...`.
+      resolve the repository root and run through its
+      `tools/node/dev/idol-lock` wrapper.
       Evidence is exact tree, command, executed path, outcome, and positive
       controls.
 

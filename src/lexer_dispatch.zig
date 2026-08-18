@@ -85,10 +85,7 @@ fn rejectionNameToError(name: [*:0]const u8) ?lexer.LexError {
 fn kindFromName(name: [*:0]const u8) ?lexer.TokenKind {
     const s = std.mem.span(name);
     if (s.len == 0) return null;
-    if (std.meta.stringToEnum(lexer.TokenKind, s)) |k| {
-        if (k == .string_lit) return null;
-        return k;
-    }
+    if (std.meta.stringToEnum(lexer.TokenKind, s)) |k| return k;
     var buf: [32]u8 = undefined;
     const prefixed = std.fmt.bufPrint(&buf, "kw_{s}", .{s}) catch return null;
     if (std.meta.stringToEnum(lexer.TokenKind, prefixed)) |k| return k;
@@ -484,6 +481,7 @@ test "lexer_dispatch: kind identity binds producer names once" {
 }
 
 test "lexer_dispatch: record fields are producer positions" {
+    try std.testing.expect(!@hasField(lexer.TokenKind, "string_lit"));
     const slots = recordslots();
     try std.testing.expect(slots > 0);
     const positions = [_]i64{
@@ -513,6 +511,8 @@ test "lexer_dispatch: record fields are producer positions" {
     }
     try std.testing.expect(published == kinds - 1);
     try std.testing.expect(producer("string_lit") < 0);
+    try std.testing.expect(kindFromName("string_lit") == null);
+    try std.testing.expect(std.mem.span(kindname(3)).len == 0);
     bindKindSchema();
     try std.testing.expectError(DispatchError.InvalidTokenKind, kindFromRecord(3));
     try std.testing.expect(rejectioncount() > 0);

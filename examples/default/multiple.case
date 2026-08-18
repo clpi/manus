@@ -1,0 +1,6 @@
+make = (value: i64 = 4)
+    return value, value + 1
+
+main: i64 = ()
+    left, right = make()
+    left + right

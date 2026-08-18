@@ -185,6 +185,9 @@ pub const Instr = struct {
     /// Selected callable entity id for direct realization. Distinct from
     /// relation identity once overload resolution publishes both upstream.
     target: ?semantic_graph.id = null,
+    /// Semantic aggregate whose physical base this instruction realizes.
+    /// Separate from application `value`: storage lineage is not a call result.
+    aggregate: ?semantic_graph.id = null,
     /// First flattened DNIR instruction whose emitted bytes belong to this
     /// application realization. Present exactly when an application id is.
     realization_start: ?u32 = null,
@@ -244,9 +247,10 @@ pub const Block = struct {
 };
 
 pub const DenseTable = struct {
-    name: []const u8,
+    /// Exact semantic aggregate whose immutable physical realization this is.
+    value: semantic_graph.id,
     elem_ty: RT,
-    values: []const Value,
+    values: []const i64,
 };
 
 pub const Global = struct {
@@ -372,6 +376,8 @@ pub fn deinitModule(alloc: std.mem.Allocator, module: Module) void {
     // `Global.name` is borrowed from the AST identifier, which outlives the
     // compile — exactly as `Instr.field` is. Only the slice is owned.
     if (module.globals.len > 0) alloc.free(module.globals);
+    for (module.dense_tables) |table| if (table.values.len > 0) alloc.free(table.values);
+    if (module.dense_tables.len > 0) alloc.free(module.dense_tables);
 }
 
 pub fn moduleHardwareTier(m: Module) HardwareTier {
@@ -484,31 +490,7 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     const results = graph.applicationResults(application) orelse return false;
                     if (results.len == 0 or results[0] != value) return false;
                     if (results.len == 1) {
-                        if (graph.aggregate(results[0])) |aggregate| {
-                            const members = graph.aggregateMembers(aggregate.aggregate) orelse return false;
-                            if (i.pack_results.len != 0) {
-                                if (i.pack_results.len != members.len or i.result != null or i.record.len != 0) return false;
-                                const demands = graph.packMemberDemands(aggregate.members_pack) orelse return false;
-                                if (demands.len != members.len) return false;
-                                for (i.pack_results, members, demands) |projected, member, demand| {
-                                    if (projected.value != member) return false;
-                                    if ((projected.temp == null) != (demand == .discard)) return false;
-                                    const descriptor = (graph.get(member) orelse return false).descriptor orelse return false;
-                                    if (!descriptor.eql(projected.ty)) return false;
-                                }
-                            } else {
-                                if (i.result != null or i.record.len == 0) return false;
-                                const shape = graph.applicationResultShape(application, 0) orelse return false;
-                                var full_record = false;
-                                for (m.records) |record| {
-                                    if (record.semantic_shape != shape) continue;
-                                    if (!std.mem.eql(u8, record.name, i.record)) continue;
-                                    full_record = true;
-                                    break;
-                                }
-                                if (!full_record) return false;
-                            }
-                        } else if (i.pack_results.len != 0) return false;
+                        if (i.pack_results.len != 0) return false;
                     } else {
                         if (i.pack_results.len != results.len or i.result != null or i.record.len != 0) return false;
                         for (i.pack_results, results) |projected, result| {

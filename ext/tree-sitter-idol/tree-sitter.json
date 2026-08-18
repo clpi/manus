@@ -6,7 +6,7 @@
       "scope": "source.id",
       "path": ".",
       "file-types": [
-        "idol"
+        "id"
       ],
       "injection-regex": "^idol$"
     }

@@ -1,4 +1,0 @@
-# copula
-total: f64
-count: u32
-n = lx:read(number)

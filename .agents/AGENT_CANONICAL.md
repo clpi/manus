@@ -39,24 +39,26 @@ historical corpus file is an authority.
 1. Read `AGENTS.md` (orientation + mechanical preflight), the constitution,
    `CLAUDE.md`, `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the
    scope-specific authority.
-2. Call `idol_agent_session_start(agent_id="your-id")` on `idol-bench`
-   (`duo_agent_session_start` remains registered as a legacy alias).
+2. Run `tools/node/dev/orient` and inspect its exact authority/frontier output.
 3. Inspect `git status --short --branch`, current HEAD, recent commits,
-   `idol_dev_claim_files` (`duo_dev_claim_files` legacy alias), every current `gaps/GAP-*.md`, and `git stash list`.
+   `tools/node/dev/claim list`, every current `gaps/GAP-*.md`, and `git stash list`.
    Verify the executed frontier in `docs/bootstrap.md` against production.
-4. Treat the session-start gap summary as incomplete until `GAP-131` closes;
-   route work from the exact gap files and live claim result.
-5. Claim exact paths with `idol_dev_claim_acquire` (`duo_dev_claim_acquire` legacy alias) before editing.
+4. Treat `tools/node/dev/orient` as a derived census only; route work from the
+   exact gap files and live claim result. Reserve new numbers with
+   `tools/node/dev/gap reserve`.
+5. Claim exact paths with `tools/node/dev/claim acquire` before editing.
 6. Run heavy gates through the repository lock and record the inner outcome.
    The MCP health gate is
-   `repo="$(git rev-parse --show-toplevel)" && "$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- zig build mcp-gate`.
-   The `.id` lock entry is executed bootstrap transport, not self-hosting proof.
+   `repo="$(git rev-parse --show-toplevel)" && "$repo/tools/node/dev/idol-lock" -- zig build mcp-gate`.
+   The lock wrapper is coordination transport, not semantic authority.
 7. Commit only explicit owned paths and release only your own claims.
 
 The language identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
 Semantic law lives in `docs/spec/constitution.md` (C0). Do not migrate to the
 release repository until `.agents/RELEASE_READINESS.md` authorizes release.
-MCP session and claim tool names remain bootstrap transport until cutover completes.
+The claim wrapper remains bootstrap transport until the graph-owned
+coordination world closes. It is not language semantics and is not duplicated
+inside MCP.
 
 No import or admission syntax in canonical source — reachability is scope and
 home projection (`docs/spec/source.md`, `GAP-153`).

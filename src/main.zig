@@ -3045,20 +3045,20 @@ const HomeLoaderCtx = struct {
 
     fn load(raw: *anyopaque, alias: []const u8) ?sema.ForeignHome {
         const self: *HomeLoaderCtx = @ptrCast(@alignCast(raw));
-        const path = home_resolve.resolve(
+        const source = home_resolve.resolve(
             self.alloc,
             self.io,
             .{ .from = self.from, .stdlib_root = compiler_lib_root },
             alias,
         ) orelse return null;
+        const path = source.path;
         // A module is not its own foreign home. Without this a file named
         // `x.id` containing `x.f(1)` would resolve to itself and publish an
         // application against a declaration the graph is already lifting,
         // which is a duplicate identity, not a cross-home one.
         if (std.mem.eql(u8, path, self.from)) return null;
         const src = read_source(self.alloc, self.io, path) catch return null;
-        const facts = lexer_bridge.sourceFacts(path);
-        var lex = Lexer.initFacts(src, path, facts);
+        var lex = Lexer.initFacts(src, path, source.facts);
         routeThroughDuoLexer(self.alloc, &lex, src, path) catch return null;
         var parser = Parser.init(&lex, self.alloc);
         parser.idol_mode = lex.family == lexer_bridge.family_canon;
@@ -4356,6 +4356,16 @@ fn buildCacheKey(
     // compile the cache exists to avoid (measured: 159 ms -> 258 ms).
     const self_stat = Io.Dir.statFile(cwd, io, self_argv0, .{}) catch return null;
     var h = std.crypto.hash.sha2.Sha256.init(.{});
+    // Ordinary relation symbols depend on the resolved semantic home. Preserve
+    // that fact in the executable cache key without making path spelling an
+    // identity: equivalent paths resolve to the same home bytes.
+    const home = home_resolve.homeOfPath(alloc, io, src_path) catch return null;
+    defer alloc.free(home);
+    const home_discriminant: u8 = 1;
+    const home_len: u64 = @intCast(home.len);
+    h.update(std.mem.asBytes(&home_discriminant));
+    h.update(std.mem.asBytes(&home_len));
+    h.update(home);
     // The root source enters as the parser's quotient of itself, never as its
     // bytes — see `hashSourceQuotient`. The discriminant keeps a quotient key
     // and a raw-fallback key in disjoint keyspaces.
@@ -4810,11 +4820,10 @@ fn do_compile(
                     // classifier", and that refused the one cross-module shape
                     // the direct backend was BUILT for: a module exporting C
                     // symbols, called through a `bl` with a relocation.
-                    // `examples/duo_emit_machine_code.id` is that shape, and
-                    // `zig build direct-module-link` — the gate whose entire
-                    // job is to prove it — could not pass at all from the
-                    // moment gap[023] landed until now, because `std.emit` is
-                    // one object and one is already over the ceiling.
+                    // The historical machine-emission fixture had that shape,
+                    // but its proof depended on generated C and guessed
+                    // temporary object names. It was deleted rather than kept
+                    // as false direct-native evidence.
                     //
                     // The hazard gap[023] actually measured is narrower: a
                     // linked module object that CALLS THE RUNTIME (`lua_require`

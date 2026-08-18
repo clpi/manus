@@ -33,9 +33,9 @@ The lexer identifies delimiters, the grammar assigns roles, the parser consumes
 roles, and resolution assigns meaning. Punctuation contributes no semantic
 identity or physical representation choice after normalization.
 
-- `()` is ordinary callable application and grouping: `f(a, b)`;
+- `()` is ordinary application and grouping, including computed-key access:
+  `f(a, b)`, `values(i)`;
 - `{}` bounds structured packs, descriptor application, and descriptor homes;
-- `[]` is genuinely computed or indexed projection: `values[i]`;
 - `.` is only statically named projection after an explicit subject:
   `user.name`; leading `.name` and bare `.` are noncanonical;
 - `:` carries only its admitted descriptor, subject, and home roles:
@@ -76,18 +76,22 @@ point: {
 
 An ordinary callable uses parentheses. A descriptor applies to structured
 content with braces. A statically known field or key uses a named projection or
-structured label. Brackets remain only when evaluating an expression supplies
-the key:
+structured label. A computed key is an ordinary operand to application; it does
+not introduce an indexing syntax or semantic kingdom:
 
 ```id
 user.name
-table[key]
+table(key)
 
 {
     name = value
-    [key] = computed
 }
 ```
+
+Canonical Idol does not use `[]`, including for a dynamic key. A foreign source
+law may recognize its own bracket form inside that law's grammar projection,
+but the source form remains provenance and cannot become canonical Idol syntax
+or semantic authority.
 
 None of these faces implies a table, record, object, allocation, place, nested
 container, hash lookup, boxing, or dispatch.

@@ -12,8 +12,8 @@
 # APPLICATION under the name, which a recognizer counting only DEPTH-1 tokens
 # cannot see — it reads `(name)` and takes the else's own block as a lambda
 # body. That is how six tracked files stopped parsing in one afternoon:
-# lib/slices.id, lib/sort.id, lib/net/url.id, scripts/runtime_bench.id,
-# tools/lsp/src/highlight.id, tools/lsp/src/server.id.
+# lib/slices.id, lib/sort.id, lib/net/url.id, scripts/runtime_bench.id, and the
+# two in-tree LSP files retired on 2026-08-17.
 #
 # CHECKED BY VALUE, and it discriminates in BOTH directions, which is the only
 # reason the number proves anything:

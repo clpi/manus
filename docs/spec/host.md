@@ -43,12 +43,12 @@ bootstrap or realization provenance only — delete or push outward, never exten
 Renaming host spellings without semantic decomposition is forbidden:
 
 ```text
-os.args()        → os.args[n]   (table under os world — not a function call)
-os.getenv(k)     → os.env[k] / os.env(k) / os.env[k] =
+os.args()        → os.args(n)   (ordinary application to the table under os world)
+os.getenv(k)     → os.env(k) / os.env(k) =
 io.read()        → stdin:read() / path:read()  (read relation on subject)
 io.write(x)      → sink:write(x)  (write relation on subject)
 io.popen(cmd)    → structured command + process world
-environment[k]   → os.env[k]    (environment is not a thing)
+environment[k]   → os.env(k)    (environment is not a thing)
 ```
 
 when the same host model remains underneath.
@@ -71,8 +71,8 @@ cwd
 root singletons and not an `environment` entity. Access:
 
 ```id
-os.args[1]
-os.env["KEY"]
+os.args(1)
+os.env("KEY")
 ```
 
 ordinary anchored homes such as:
@@ -108,14 +108,14 @@ Wrong:
 
 ```id
 args = os.args()
-command = args[1]    # bare table without os world when argv is meant
+command = args(1)    # bare value without an os namespace when argv is meant
 ```
 
 Canonical:
 
 ```id
-command = os.args[1]
-target = os.args[2]
+command = os.args(1)
+target = os.args(2)
 ```
 
 Launcher ingress:
@@ -142,8 +142,8 @@ mode = environment["IDOLTREE"]
 Canonical:
 
 ```id
-mode = os.env["IDOLTREE"]
-os.env["KEY"] = value
+mode = os.env("IDOLTREE")
+os.env("KEY") = value
 os.env(key) = value
 ```
 
@@ -221,39 +221,34 @@ another host wrapper.
 Direct command and shell expression remain semantically distinct. Do not convert
 every command into `/bin/sh -c ...`.
 
-## Shell home
+## Shell interpretation and command reach
 
-Shell behavior is expressed through execution home/context.
+Shell is command interpretation law. It is not a source law, grammar, home,
+world, authority grant, mode keyword, or hidden global flag. Possessing shell
+law never changes which grammar recognizes source.
 
-There is no shell mode keyword, no `use shell`, no hidden global shell flag.
+A launcher may independently provide ordinary command-provider reach, process,
+filesystem and environment authority witnesses, and input/output/error
+endpoints according to policy. Bundling those facts for an interactive launch
+does not make shell interpretation their owner and does not make the bundle a
+privileged semantic container.
 
-The launcher constructs a shell home:
-
-```text
-ordinary program home projections
-+ command-resolution projection
-+ shell-provided process/environment/fs worlds
-+ input/output/error endpoints
-```
-
-Changing home is a launcher/embedding operation — not canonical source syntax.
-
-Bare command resolution exists only when the active home carries command
-projection:
+Bare command resolution exists only when an exact command provider is reached:
 
 ```text
 ordinary lexical binding
 → ordinary home binding
 → anchored semantic roots
 → canonical vocabulary
-→ shell command projection (shell home only)
+→ exact reached command-provider projection
 → failure
 ```
 
-A real Idol binding wins over shell fallback.
+A real Idol binding wins over command-provider projection.
 
-Ordinary home without command projection: unknown bare command → unresolved
-identity. It does NOT silently run an executable.
+No reached provider: unknown bare command → unresolved identity. Multiple
+incomparable providers → ambiguity. Execution additionally requires exact
+process authority. Failure to resolve never falls back to opaque shell text.
 
 ## Core vocabulary
 
@@ -331,7 +326,7 @@ Production authority:
 - environment reads require environment facts + world
 - process execution requires structured command + process world
 - argument access resolves root-projected args value
-- shell command fallback requires shell home + command projection
+- structured command execution requires exact provider reach plus independent process authority
 
 Spelling mutation must not evade these invariants.
 
@@ -357,14 +352,15 @@ Do not reach for host APIs.
 ## Absolute closure
 
 ```text
-There is no native os.args()    — use os.args[n] under os world
-There is no native os.getenv   — use os.env[k]; environment is not a thing
+There is no native os.args()    — use os.args(n) under os world
+There is no native os.getenv   — use os.env(k); environment is not a thing
 There is no native io.read     — use stdin:read() / path:read(); never readable adjective
 There is no native popen       — commands are structured values under process authority
 There is no stdin-only architecture — input/output/error are endpoint values
 There is no core namespace     — vocabulary is direct canonical reachability
 There is no module/import/use/using/inject — homes establish reachability
-Shell is a home, not a mode bit — bare commands resolve only under shell home
+Shell is interpretation law, not source law, grammar, home, world, or authority
+Bare commands resolve only through exact reached providers; execution separately requires process authority
 Host APIs exist only at ingress/egress realization boundaries
 ```
 

@@ -10,16 +10,16 @@ the ignored `.agents/session/` state or in evidence from an exact run.
 |---|---|
 | Semantic law | `docs/spec/constitution.md` only |
 | Executed compiler frontier | `docs/bootstrap.md`, verified against production dispatch |
-| Live claims and leases | `.agents/session/claims/` (MCP mkdir locks; TTL 14400s), accessed through MCP claim tools |
-| Open obligations | `gaps/GAP-0NN.md`; session-start census remains `GAP-131` debt |
+| Live claims and leases | shared Git-common-dir claim locks, accessed through `tools/node/dev/claim` |
+| Open obligations | exact `gaps/GAP-0NN.md` records; `orient` derives the P0 census |
 | Performance evidence | `docs/performance.md` |
 | Source-family classification | `docs/spec/corpus.md` |
 | Source/home/package/world closure | `docs/spec/source.md` |
 | Historical changes | Git history |
 
 **Live control plane (`law.control.derived`):** do not read HEAD, dirty, or
-lane holders from this file. Obtain them from `git`, `.agents/session/claims/`,
-`scripts/ledger/claim.id`, and `tools/node/dev/orient`. This file names
+lane holders from this file. Obtain them from `git`, `tools/node/dev/claim`,
+and `tools/node/dev/orient`. This file names
 durable lane *roles* only.
 
 No string-world / relation catalogs. Storage class is not a representation
@@ -84,7 +84,8 @@ or semantic authority.
 | Direct machine and object emission | `src/native_backend.zig` |
 | Generated-C bootstrap backend | `src/codegen.zig` |
 | Token and Wasm generated projections | `src/token_classify_gen.zig`, `src/wasm_semantic_gen.zig` |
-| LSP and MCP | `tools/lsp/`, `tools/mcp/` |
+| LSP | sibling `idol-native/tools/lsp/` over that compiler's graph |
+| MCP | `tools/mcp/` plus sibling `idol-native/tools/mcp/` |
 | Wasm consumer | `tools/wasm/` (standalone debt; destination: shared graph and realization) |
 
 Read `docs/bootstrap.md` before choosing work. Attack the earliest host-owned
@@ -110,7 +111,7 @@ counts or translate a host module line for line.
 2. Claim exact paths and commit only explicit owned pathspecs.
 3. Serialize heavy commands through
    `repo="$(git rev-parse --show-toplevel)"` and
-   `"$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- <command>`.
+   `"$repo/tools/node/dev/idol-lock" -- <command>`.
 4. Positive-control every zero and report the inner requested outcome.
 5. Never repair an integration failure by restoring a shadow authority another
    owner removed.

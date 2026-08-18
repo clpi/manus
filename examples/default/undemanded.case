@@ -1,0 +1,10 @@
+spin: i64 = ()
+    while 1 == 1
+        continue
+    0
+
+take: i64 = (left: i64, right: i64 = spin())
+    left
+
+main: i64 = ()
+    take(7)

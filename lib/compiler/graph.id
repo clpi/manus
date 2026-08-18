@@ -5,13 +5,10 @@
 # reference graph: NODES are top-level bindings, EDGES are references from one
 # to another.
 #
-# WHY THIS SHAPE FIRST. Scope makes a file's top-level
-# bindings its surface and `_`-prefixed ones private. That turns in-degree into
-# a real question with a real answer: a `_private` binding with no references
-# inside its own file is dead code, and nothing outside the file may reach it
-# (scripts/module_surface_gate.id enforces that half). A public binding with
-# in-degree 0 is NOT dead — it is the surface — which is exactly why the
-# private/public distinction has to exist before this query means anything.
+# TODAY/DELTA. This bootstrap reference scan still treats `_`-prefixed names as
+# private and a file's top-level names as a surface. Those are source-name
+# approximations, not language law. Home/reachability facts must replace this
+# query before it becomes semantic authority.
 #
 # So this is not a graph for its own sake: it is the first query the graph can
 # answer that no other pass can.

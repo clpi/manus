@@ -59,7 +59,7 @@ else
   detail="$(sed -n '1p' "$mcp_log" | tr '\n' ' ')"
   [ -n "$detail" ] && echo "mcphealthdetail: $detail"
 fi
-echo "coordination: use idol_dev_claim_acquire for exact paths; never stash or hard reset; commit explicit pathspecs only"
+echo "coordination: use tools/node/dev/claim for exact paths; never stash or hard reset; commit explicit pathspecs only"
 echo "evidence: exact tree, command, executed path, outcome, and positive controls"
 echo "avoid: historical .id semantics, pass documents as law, copied machine state, shadow specs, source-text identity reconstruction"
 echo "harnesslaw: docs/spec/harness-projection.md"
@@ -69,7 +69,6 @@ else
   echo "harnesscontext: generate-harness failed — run tools/node/dev/generate-harness"
 fi
 echo "nextboundary: smallest owned slice on lexical identity or grammar-role frontier after claiming paths"
-idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-$repo/zig-out/bin/idol}}"
 if [ -x "$repo/tools/node/dev/hostcensus" ]; then
   hosttotal="$("$repo/tools/node/dev/hostcensus" 2>/dev/null | sed -n 's/^total violation+migration hits: //p' | tail -1)"
   if [ -n "$hosttotal" ]; then

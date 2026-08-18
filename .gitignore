@@ -21,7 +21,6 @@ scripts/ingress/.run.id
 /scripts/__pycache__/
 **/.idol/
 scripts/migrate_lexical.py
-lib/std/token/grammar_role.id
 .pi/skills/*
 !.pi/skills/idol/
 .pi/skills/idol/*

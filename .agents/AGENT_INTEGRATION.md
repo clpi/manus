@@ -5,11 +5,11 @@ tool census, or current gate status.
 
 ## Canonical locations
 
-- Development repository: `/Users/clp/x/idol` (worktree on the data volume,
-  reached through the `~/x` symlink; dev remote `clpi/idol`).
-- Native benchmark repository: `/Users/clp/x/idol-native` (remote
-  `clpi/idol-native`, branch `main`) — owns the semantic-graph MCP server and
-  the end-user `.id` language server.
+- Development repository: the current `clpi/idol` checkout (worktrees may live
+  on another volume; derive the root with `git rev-parse --show-toplevel`).
+- Native benchmark repository: the sibling `idol-native` checkout (remote
+  `clpi/idol-native`, branch `main`) — owns the end-user `.id` language server
+  and its compiler-backed graph queries.
 - The pre-rename project identity is **fully retired**. Server names, tool
   names, environment keys, and skill names are `idol`-named only; no client
   configuration may reintroduce retired spellings.
@@ -29,16 +29,18 @@ client-neutral `tools/node/dev/mcp.manifest.json`:
 
 | Physical server name | Entry point | State | Purpose |
 |---|---|---|---|
-| `idol` | `tools/mcp/native.id` | enabled, required | status, head, orient |
+| `idol` | `tools/mcp/native.id` | enabled, required | bootstrap status, head, orient transport |
 | `idol-native` | sibling `idol-native` checkout, `tools/mcp/server.id` | enabled | `check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`, `explain`, `fmt`, `asm` |
 
 A manifest entry with a `sibling` field resolves its root, entry, and launcher
 binary against the sibling checkout of this clone. The retired pre-rename
 transports (claims/bench, diagnostics, zls bridges) were removed, not
-disabled: claims live in `.agents/session/claims/`, diagnostics and language
+disabled: claims use `tools/node/dev/claim`, diagnostics and language
 intelligence come from the `idol-native` server and its language server, and
-Zig navigation uses the editor's own zls directly. Generated client
-configurations are projections of the manifest, not additional authorities.
+Zig navigation uses the editor's own zls directly. `tools/mcp/native.id` is a
+raw-text bootstrap compatibility transport, not a graph-owned semantic
+projection. Generated client configurations are projections of the manifest,
+not additional authorities.
 
 ## Client shape
 
@@ -92,22 +94,24 @@ launches.
 The `.id` language server is the idol-native tree's `tools/lsp/launch.sh`
 (Content-Length framing; diagnostics and symbols come from that tree's own
 compiler and semantic graph — the transport adds no second authority). Wire
-editors with `IDOL_BIN` pointing at `/Users/clp/x/idol-native/bin/idol`.
-The in-repository `tools/lsp` projection remains bootstrap debt until its
-source fits the direct-native subset.
+editors with `IDOL_BIN` pointing at the sibling checkout's `bin/idol`.
+The duplicate in-repository `tools/lsp` scanner, taxonomy, fixtures, and gates
+were deleted. Semantic tokens wait for graph-owned source spans and generated
+grammar-role projections in the durable sibling server; do not restore the old
+raw scanner or corpus.
 
 ## Session protocol
 
 1. Start at `AGENTS.md` and `.agents/AGENT_CANONICAL.md`.
 2. Use skill **`idol-dev`** (`.pi/skills/idol-dev`).
 3. Orient: `tools/node/dev/orient`, or the `orient` tool on the `idol` server.
-4. Inspect current HEAD, dirty state, recent commits, live claim files,
+4. Inspect current HEAD, dirty state, recent commits, `tools/node/dev/claim list`,
    every current `gaps/GAP-*.md`, and the verified `docs/bootstrap.md` frontier.
-5. Treat the session-start gap summary as incomplete until `GAP-131` closes.
-6. Claim exact paths before editing (`.agents/session/claims/`; claims minting
-   is owned by the bench server while it is live, else durable claim files).
+5. Treat `orient`'s `activep0` as a derived census; the exact gap files own
+   obligation status (`GAP-131` is closed).
+6. Claim exact paths with `tools/node/dev/claim acquire` before editing.
 7. Delegate only bounded independent work with disjoint write ownership.
-8. Serialize heavy gates through the repository lock script.
+8. Serialize heavy gates through `tools/node/dev/idol-lock`.
 9. Commit explicit pathspecs and release only claims owned by the session.
 
 ## Validation

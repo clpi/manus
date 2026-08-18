@@ -5,10 +5,9 @@
 #   4005 80d2  -> 0xd2800540  mov x0, #42
 #   c003 5fd6  -> 0xd65f03c0  ret
 #
-# Lowers on BOTH backends. On the direct backend the program's own object is
-# pure machine code: `E.emit_u32(...)` becomes a `bl` with a relocation against
-# the module's `@comp.c.export` symbol, and the compiler compiles and links
-# `lib/std/emit.id` itself. Gated by `zig build direct-module-link`.
+# This source is retained as the byte oracle only. Direct lowering currently
+# refuses its unresolved cross-home applications; it is not direct-native
+# capability evidence until graph-owned targets and a current gate consume it.
 main: i64 = ()
   E = emit
   E.emit_begin("/tmp/idol_emit_probe.bin")

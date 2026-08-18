@@ -6180,7 +6180,6 @@ pub const Parser = struct {
                 _ = try self.adv();
                 break :blk self.new_expr(.{ .float_lit = .{ .loc = tok.loc, .val = tok.float_val } });
             },
-            .string_lit => error.UnexpectedToken,
             .compat_text_lit => blk: {
                 _ = try self.adv();
                 var protected: std.ArrayList(bool) = .empty;

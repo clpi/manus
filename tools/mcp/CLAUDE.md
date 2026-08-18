@@ -5,13 +5,13 @@
 Use layout-projected homes and worlds:
 
 ```id
-os.env["DUO_ROOT"]
-fs:read_file(path)
-json:encode(value)
+root = os.env("IDOL_ROOT")
+content = path:read()
+encoded = value:encode(json)
 mcp:register_tool(...)
-process.capture(cmd)
-clock.now()
-clock.utc()
+result = command:run()
+instant = clock:now()
+civil = instant:utc()
 ```
 
 Host/world law: `docs/spec/world.md`, `docs/spec/host.md`, GAP-157.
