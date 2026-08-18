@@ -1177,7 +1177,7 @@ pub const Parser = struct {
             return ParseError.UnexpectedToken;
         };
         const descriptor = self.descriptor_record orelse {
-            term.locErr(loc, "relation slot '{s}' has no descriptor role", .{name});
+            term.locErr(loc, "relation slot '{s}' needs a named descriptor to be homed on", .{name});
             return ParseError.UnexpectedToken;
         };
         const outer_next = self.subject_next;
