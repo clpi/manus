@@ -102,4 +102,12 @@ demanded dimension or names the remaining loss.
   extracted (encoding tables, register-slot model, region-edge branch
   helpers, application call helpers, icache coherence) with fact-driven
   selection shared across Idol and Wasm origins.
+- Lane 3 EXECUTES: tools/wasm/factsprobe decodes real Wasm bytes into
+  fact-shaped JSON (wasm-facts-probe-v1). On bench/fib.wasm (wasi-libc,
+  203 functions): f192 -> 71 applications with exact shapes — constants
+  carry determinacy exact, local.get is a read application, binops
+  carry width 32 + overflow wrap + origin wasm, block/loop/if map to
+  refinement/recurrence/alternative regions. The operand stack exists
+  nowhere in the output; it is the edge order. Snapshot:
+  evidence/mop/wasm/probe.fib.json.
 - Lanes 1-2 (source-law ingress, GRAMMAR-ONE): compiler lane, untouched.
