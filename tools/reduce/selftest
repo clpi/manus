@@ -1,12 +1,12 @@
 #!/bin/sh
-# idol-reduce selftests — the five proofs required by the brief.
+# tools/reduce/idol selftests — the five proofs required by the brief.
 # Each test prints PASS/FAIL; exit non-zero on any failure.
 set -eu
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
-R="./tools/reduce/idol-reduce"
+R="./tools/reduce/idol"
 IDOL="${IDOL_REDUCE_BIN:-$repo/zig-out/bin/idol}"
 export IDOL
-work="$(mktemp -d "${TMPDIR:-/tmp}/idol-reduce-selftest.XXXXXX")"
+work="$(mktemp -d "${TMPDIR:-/tmp}/reduce-selftest.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 fails=0
 
@@ -29,7 +29,7 @@ t $rc "reduced fixture keeps the semantic lever"
 
 # 2. a crash reduces (compiler internal error, padded real crasher)
 crash="$work/crash.id"
-cp /tmp/idol-mop/f5_parser_reduced.id "$crash" 2>/dev/null || {
+cp tools/reduce/fixtures/crash/corpus.id "$crash" 2>/dev/null || {
   echo "SKIP crash reduces (no f5 fixture on this machine)" >&2
 }
 if [ -f "$crash" ]; then

@@ -1,4 +1,4 @@
-# idol-reduce — source reducer for the Idol toolchain
+# tools/reduce/idol — source reducer for the Idol toolchain
 
 Minimizes an `.id` program while an external predicate holds. Tooling only;
 no language or compiler semantics. (Pickle Mission A.)
@@ -7,7 +7,7 @@ no language or compiler semantics. (Pickle Mission A.)
 
 ```sh
 export IDOL="/path/to/zig-out/bin/idol"
-tools/reduce/idol-reduce <input.id> -p '<predicate text>' [-o out.id]
+tools/reduce/idol <input.id> -p '<predicate text>' [-o out.id]
 ```
 
 The predicate runs as `sh -c "<predicate>" reduce-sh <candidate-path>`, so
@@ -49,7 +49,7 @@ broken predicate is rejected, and the original still fails after reduction
 
 ## Proven theorems (2026-08-17, idol @ 4724e589, compiler ee08e553)
 
-- F3b `global-init-not-constant:g` — 4 lines (tools/reduce/fixtures/f3_global_init_not_constant.id).
+- F3b `global-init-not-constant:g` — 4 lines (tools/reduce/fixtures/global/write.id).
 - F5 `InvalidAggregateFact` compiler crash — parser.id 1792 → 27 lines;
   the crash survives hoisting the tail nested call, so it lives in the
   chained condition applications (`lexer.peek(lx).kind`).

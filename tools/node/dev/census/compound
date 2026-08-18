@@ -1,0 +1,141 @@
+#!/bin/sh
+# census/compound — LAW-ONE path-name census (executable port of the
+# verdict in gate/path.id). Vocabulary authority: the string literals in
+# gate/path.id, parsed at runtime — this file adds no words of its own.
+#
+# Scope v1: tracked path components (file leaf stems + directory parts),
+# owned() paths only (ext/ is foreign; benchmarks/ and vendor/ historical).
+# The source-token scan (gate/idiom.id) is a separate census.
+#
+# usage: census/compound [--record]   (default: report + ratchet vs baseline)
+
+set -eu
+repo="$(cd "$(dirname "$0")/../../../.." repo="$(cd "$(dirname "$0")/../../.." && pwd)"repo="$(cd "$(dirname "$0")/../../.." && pwd)" pwd)"
+cd "$repo"
+baseline="evidence/mop/compound-baseline"
+
+python3 - "$@" <<'PY'
+import re, subprocess, sys
+
+src = open('gate/path.id').read()
+
+def wordlist(varname):
+    m = re.search(r'^%s = " (.*?) "\s*$' % varname, src, re.M | re.S)
+    if not m:
+        sys.exit('census/compound: authority literal not found: %s' % varname)
+    return set(m.group(1).split())
+
+words       = wordlist('words')
+roles       = wordlist('roles')
+collisions  = wordlist('collisions')
+cardinals   = wordlist('cardinals')
+ables       = wordlist('ables')
+histwords   = wordlist('histwords')
+orghomes    = wordlist('orghomes')
+mediatorhomes = wordlist('mediatorhomes')
+
+def known(w):     return len(w) >= 2 and w in words
+def member(lst, n): return n in lst
+def ends(n, s):   return n.endswith(s)
+def sep(name):
+    return any(c in '_-' or c.isupper() for c in name)
+def tail(name):
+    n = len(name)
+    if n < 2 or not name[-1].isdigit(): return False
+    i = n - 1
+    while i >= 1 and name[i].isdigit(): i -= 1
+    return i == 0 or name[i].isalpha() or name[i] == '_'
+def mash(name):
+    if known(name): return False
+    n = len(name)
+    if n >= 5 and name.endswith('proof'):
+        left = name[:n-5]
+        if len(left) >= 2 and known(left): return True
+    if n < 4: return False
+    for i in range(2, n):
+        left, right = name[:i-1], name[i-1:]
+        if len(left) >= 2 and len(right) >= 2 and known(left) and known(right):
+            return True
+    return False
+def rolestem(name):
+    if known(name) or len(name) < 4: return False
+    if member(roles, name): return True
+    return any(ends(name, s) for s in ('reader','writer','runner','caller','encoder',
+        'decoder','parser','formatter','checker','validator','builder','emitter',
+        'generator','scanner','resolver','provider','producer','consumer'))
+def collisionstem(name):
+    if known(name) or len(name) < 4: return False
+    if member(collisions, name): return True
+    return any(ends(name, s) for s in ('router','gateway','dispatcher','registry',
+        'manager','factory','adapter','broker','mediator','controller','coordinator',
+        'orchestrator','handler','executor','pipeline','scheduler','loader','bridge',
+        'wrapper','context','session','service','framework','container'))
+def cardinalstem(name): return member(cardinals, name)
+def ables_tem(name):
+    if member(ables, name): return True
+    return len(name) >= 6 and (ends(name, 'able') or ends(name, 'ible'))
+def histstem(name):
+    if name in ('pass', 'gap', 'phase'): return True
+    return member(histwords, name) or ends(name, 'showcase') or ends(name, 'legacy') \
+        or ends(name, 'deprecated') or ends(name, 'compat')
+def orghome(name):
+    if known(name): return False
+    return member(orghomes, name) or ends(name, 'utils') or ends(name, 'helpers')
+def mediatorhome(name):
+    if known(name): return False
+    return member(mediatorhomes, name)
+def leaf(path):
+    base = path.rsplit('/', 1)[-1]
+    dot = base.find('.')
+    return base if dot <= 0 else base[:dot]
+def owned(path):
+    return not path.startswith('ext/') and not path.startswith('benchmarks/') \
+        and not path.startswith('vendor/')
+
+findings = []
+def verdict(where, name):
+    if not name: return
+    if sep(name):
+        findings.append('%s  [law.path.name]  separator `%s`' % (where, name))
+    if tail(name):
+        findings.append('%s  [law.path.name]  numeric taxonomy `%s`' % (where, name))
+    if mash(name):
+        findings.append('%s  [PATH-SEMANTICS-BLOCKED]  mashed compound `%s`' % (where, name))
+    is_file = not where.endswith(':')
+    if is_file:
+        if rolestem(name):     findings.append('%s  [law.identity.role] `%s`' % (where, name))
+        if collisionstem(name):findings.append('%s  [law.identity.collision] `%s`' % (where, name))
+        if cardinalstem(name): findings.append('%s  [law.identity.cardinal] `%s`' % (where, name))
+        if ables_tem(name):    findings.append('%s  [law.protocol.name.zero] `%s`' % (where, name))
+        if histstem(name):     findings.append('%s  [law.source.not.proof] `%s`' % (where, name))
+    else:
+        if orghome(name):      findings.append('%s  [law.std.zero] org namespace `%s`' % (where, name))
+        if mediatorhome(name): findings.append('%s  [law.identity.collision] mediator home `%s`' % (where, name))
+
+paths = subprocess.run(['git','ls-files'], capture_output=True, text=True).stdout.split('\n')
+for path in paths:
+    if not path or not owned(path): continue
+    verdict(path, leaf(path))
+    for part in path.split('/')[:-1]:
+        verdict(path + ':', part)
+
+n = len(findings)
+baseline_path = 'evidence/mop/compound-baseline'
+record = '--record' in sys.argv
+if record:
+    open(baseline_path, 'w').write('%d\n' % n)
+    print('census/compound: baseline recorded = %d' % n)
+else:
+    try:
+        base = int(open(baseline_path).read().strip())
+    except FileNotFoundError:
+        base = None
+    for f in findings[:40]:
+        print(f)
+    if len(findings) > 40:
+        print('... %d more' % (len(findings) - 40))
+    print('census/compound: %d finding(s)%s' % (n, '' if base is None else ' (baseline %d)' % base))
+    if base is not None and n > base:
+        print('census/compound: FAIL — above baseline' , file=sys.stderr)
+        sys.exit(1)
+PY

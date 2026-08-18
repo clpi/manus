@@ -12,7 +12,7 @@ dispatch per `.agents/AGENT_OPERATING_MODEL.md`.
 - tier: bounded-implementer (after Codex publishes the accessor)
 - before: `mem.write_f64(buf, off, v)` after `mem.ptr_from_addr` refuses
   `unresolved-application-facts` (graph producer); write_i64 compiles.
-- fixture: `tools/reduce/fixtures/f1_unresolved_app_facts.id` (+ f1_neg
+- fixture: `tools/reduce/fixtures/graph/f64.id` (+ f1_neg
   negative control in the same directory).
 - after: fixture compiles to an object; f1_neg still compiles; a damage
   control that drops the f64 fact re-refuses.
@@ -75,10 +75,10 @@ evidence of compilability; object emission is the current honest floor.
 
 ## Update 2026-08-17 — reducer landed; F5 and F2 resolved to theorems
 
-`tools/reduce/idol-reduce` (selftest-proven) reduced the open families:
+`tools/reduce/idol` (selftest-proven) reduced the open families:
 
 - **F5 InvalidAggregateFact: 1792 → 27 lines**
-  (`tools/reduce/fixtures/f5_parser_reduced.id`). Checks clean; crashes the
+  (`tools/reduce/fixtures/crash/corpus.id`). Checks clean; crashes the
   compiler at semantic_graph.zig:3945. Perturbation experiment: hoisting
   the tail nested call `tail_pack(lx, proj_expr(lx))` to a flat binding
   does NOT clear the crash — the aggregate crash lives in the chained
@@ -217,7 +217,7 @@ exists as the declared convergence script for this surface.
   The remaining H7 decisions (old-dialect emission face, tree-sitter
   convergence) stay with lane 1-2.
 - F4 `missing: view` minimized 29 -> 4 lines
-  (tools/reduce/fixtures/f4_view_minimal.id). Renaming the relation moves
+  (tools/reduce/fixtures/view/minimal.id). Renaming the relation moves
   the missing-fact name with it; renaming the param does not. The fact is
   the relation SHAPE (pack param + if/else over a pack field), reported
   by name — not a name-keyed lookup. Hands lane 4 a 4-line reproducer.
