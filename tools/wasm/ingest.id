@@ -62,8 +62,7 @@ hex: i64 = (c: i64)
 # zero materialization. the binary face replaces this accessor alone.
 
 byteat: i64 = (s: str, n: i64)
-  # subject-chain form: the argument form silently returns 0 under
-  # direct-native (evidence/mop/wasm/argform.defect.md, 8-line repro)
+  # each byte result is the subject of hex; there is no extra operand
   s:byte(2 * n - 1):hex() * 16 + s:byte(2 * n):hex()
 
 class: i64 = (op: i64)
