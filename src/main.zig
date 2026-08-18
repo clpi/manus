@@ -948,23 +948,29 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     };
 
+    var implicit_wasm_run_artifact: ?[]u8 = null;
     const out = output_file orelse out: {
         const stem = std.fs.path.stem(file);
         if (emit_kind == .c) {
             break :out try std.fmt.allocPrint(alloc, "./{s}.c", .{stem});
         }
         if (std.mem.eql(u8, target, "wasm32-wasi")) {
+            if (std.mem.eql(u8, cmd, "run")) {
+                const private = try reserveImplicitWasmRunArtifact(alloc, io);
+                implicit_wasm_run_artifact = private;
+                break :out private;
+            }
             break :out try std.fmt.allocPrint(alloc, "./{s}.wasm", .{stem});
         }
         break :out try std.fmt.allocPrint(alloc, "./{s}.out", .{stem});
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, output_file != null, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, true, false, false, false, false, false, false, false, null, &.{}, entry_override);
     } else if (std.mem.eql(u8, cmd, "fmt")) {
         try do_fmt(alloc, io, file);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
@@ -974,6 +980,7 @@ pub fn main(init: std.process.Init) !void {
         term.printRaw("{s}", .{usage});
         std.process.exit(1);
     }
+    if (implicit_wasm_run_artifact) |path| alloc.free(path);
 }
 
 fn read_source(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]u8 {
@@ -1370,7 +1377,7 @@ fn do_project_check(alloc: std.mem.Allocator, io: Io, t: build_framework.Target)
     if (t.src) |src| {
         const dummy = try std.fmt.allocPrint(alloc, "/tmp/duo_check_{s}.out", .{std.fs.path.stem(src)});
         defer alloc.free(dummy);
-        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link, null);
+        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, true, false, false, false, false, false, false, false, null, t.link, null);
         term.ok("'{s}' ok", .{src});
         return;
     }
@@ -1496,7 +1503,7 @@ fn run_test_sources(
         else
             try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
         defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null);
         const code = try run_pretty_test_runner(alloc, io, out, bench_only);
         if (code != 0) failures += 1;
     }
@@ -1967,6 +1974,120 @@ fn run_shell_binary(io: Io, out_path: []const u8) !void {
     }
 }
 
+/// The artifact observer is a property of the COMMAND boundary, not of Wasm.
+/// `compile` and `run -o` leave bytes another process may inspect, so their
+/// world remains open.  Only a plain `run`, whose private artifact is deleted
+/// before this process exits, is the ordinary closed executable world.
+fn wasmRunObservationWorld(run_after: bool, artifact_observed: bool) observation.World {
+    const base = if (run_after and !artifact_observed)
+        observation.ordinary_executable
+    else
+        observation.World{};
+    return global_observer_demand.world(base);
+}
+
+fn isWasmtime47Version(version_output: []const u8) bool {
+    return std.mem.startsWith(u8, std.mem.trim(u8, version_output, " \t\r\n"), "wasmtime 47.");
+}
+
+/// Reserve, rather than merely guess, a private output name. Randomness makes
+/// independent compiler processes disjoint; `exclusive` makes collision a
+/// checked event instead of an overwrite. The caller owns the returned path.
+fn reserveImplicitWasmRunArtifact(alloc: std.mem.Allocator, io: Io) ![]u8 {
+    const cwd = Io.Dir.cwd();
+    for (0..8) |_| {
+        var nonce: [16]u8 = undefined;
+        try io.randomSecure(&nonce);
+        const hex = std.fmt.bytesToHex(nonce, .lower);
+        const path = try std.fmt.allocPrint(alloc, "/tmp/idol-wasm-run-{s}.wasm", .{hex});
+        Io.Dir.writeFile(cwd, io, .{
+            .sub_path = path,
+            .data = "",
+            .flags = .{ .exclusive = true },
+        }) catch |err| switch (err) {
+            error.PathAlreadyExists => {
+                alloc.free(path);
+                continue;
+            },
+            else => {
+                alloc.free(path);
+                return err;
+            },
+        };
+        return path;
+    }
+    return error.PathAlreadyExists;
+}
+
+/// `law.bridge.death`: this outer physical bridge owns no Wasm meaning. It
+/// carries the already-emitted module plus argv/stdin/stdout/stderr and the
+/// process outcome to pinned Wasmtime 47. Delete it when Idol's native Wasm
+/// executor consumes the same graph/world facts and returns the same outcome;
+/// the exit/stdout differential and missing-runner control are its witnesses.
+fn runWasmArtifactWithWasmtime47(
+    alloc: std.mem.Allocator,
+    io: Io,
+    artifact_path: []const u8,
+) !u8 {
+    const version = std.process.run(alloc, io, .{
+        .argv = &.{ "wasmtime", "--version" },
+        .stdout_limit = .limited(4096),
+        .stderr_limit = .limited(4096),
+    }) catch |err| {
+        term.err("wasm run requires Wasmtime 47 on PATH ({s})", .{@errorName(err)});
+        return error.WasmtimeUnavailable;
+    };
+    defer alloc.free(version.stdout);
+    defer alloc.free(version.stderr);
+    if (!version.term.success() or !isWasmtime47Version(version.stdout)) {
+        const found = std.mem.trim(u8, if (version.stdout.len != 0) version.stdout else version.stderr, " \t\r\n");
+        term.err("wasm run requires Wasmtime 47; found '{s}'", .{found});
+        return error.WasmtimeVersionMismatch;
+    }
+
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    try argv.appendSlice(alloc, &.{ "wasmtime", "run", "--", artifact_path });
+    try argv.appendSlice(alloc, forwarded_program_args);
+    var child = std.process.spawn(io, .{
+        .argv = argv.items,
+        .stdin = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    }) catch |err| {
+        term.err("could not start Wasmtime 47 ({s})", .{@errorName(err)});
+        return error.WasmtimeUnavailable;
+    };
+    return switch (try child.wait(io)) {
+        .exited => |code| code,
+        .signal => 128,
+        else => 1,
+    };
+}
+
+test "wasm run observer is closed only for a disposable implicit artifact" {
+    try std.testing.expect(wasmRunObservationWorld(true, false).has(.closed_world));
+    try std.testing.expect(!wasmRunObservationWorld(false, true).has(.closed_world));
+    try std.testing.expect(!wasmRunObservationWorld(true, true).has(.closed_world));
+}
+
+test "wasmtime bridge accepts only pinned major 47" {
+    try std.testing.expect(isWasmtime47Version("wasmtime 47.0.3 (hash date)\n"));
+    try std.testing.expect(!isWasmtime47Version("wasmtime 48.0.0\n"));
+    try std.testing.expect(!isWasmtime47Version("wart 47.0.3\n"));
+}
+
+test "implicit wasm run artifact reservations do not collide" {
+    const alloc = std.testing.allocator;
+    const first = try reserveImplicitWasmRunArtifact(alloc, std.testing.io);
+    defer alloc.free(first);
+    defer Io.Dir.deleteFile(Io.Dir.cwd(), std.testing.io, first) catch {};
+    const second = try reserveImplicitWasmRunArtifact(alloc, std.testing.io);
+    defer alloc.free(second);
+    defer Io.Dir.deleteFile(Io.Dir.cwd(), std.testing.io, second) catch {};
+    try std.testing.expect(!std.mem.eql(u8, first, second));
+}
+
 fn run_host_shell_command(io: Io, command: []const u8) !void {
     const code = try shell_host.runRawShell(io, command);
     if (code != 0) {
@@ -2114,7 +2235,7 @@ fn run_shell_line(
     defer term.build_report = prev_report;
 
     const compile_started = Io.Timestamp.now(io, .awake);
-    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", backend_mode, false, false, verbose, false, false, false, false, false, false, null, &.{}, null);
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", backend_mode, false, true, false, verbose, false, false, false, false, false, false, null, &.{}, null);
     const compile_elapsed: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
 
     try run_shell_binary(io, out_path);
@@ -2321,6 +2442,7 @@ fn do_project_build_one(
         target,
         backend_mode,
         run_after,
+        true,
         false,
         verbose,
         load_chunk_arg or t.load_chunk,
@@ -4474,6 +4596,7 @@ fn do_compile(
     target: []const u8,
     backend_mode: []const u8,
     run_after: bool,
+    artifact_observed: bool,
     check_only: bool,
     verbose: bool,
     load_chunk: bool,
@@ -4656,16 +4779,21 @@ fn do_compile(
     // it did is what let `--backend=wasm` emit a Mach-O executable into a path
     // called `.wasm`.
     if (std.mem.eql(u8, target, "wasm32-wasi") and !load_chunk and !lib_mode) {
+        const wasm_world = wasmRunObservationWorld(run_after, artifact_observed);
+        var private_artifact_live = run_after and !artifact_observed;
+        defer if (private_artifact_live) Io.Dir.deleteFile(Io.Dir.cwd(), io, out_path) catch {};
         var wasm_graph = semantic_graph.SemanticGraph.init(alloc);
         defer wasm_graph.deinit();
         _ = try wasm_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
-        // THE SAME DEMAND PRUNE THE DIRECT EXECUTABLE PATH APPLIES. The whole
-        // value of this target is that its stdout can be diffed against the
-        // AArch64 build's, and a transform applied to one column and not the
-        // other is a difference this emitter did not make. `world_closed` is
-        // true for the same reason it is true there: an executable image is the
-        // whole world, so nothing outside it can name a module-level binding.
-        var wasm_demand = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &wasm_graph, .world_closed = true });
+        // WORLD CLOSURE COMES FROM THE OBSERVED COMMAND BOUNDARY. A compile
+        // artifact (and an explicit `run -o` artifact) is readable after this
+        // process, while the private plain-run artifact is deleted before the
+        // guest outcome crosses the boundary. The boolean is only the existing
+        // demand transport; `observation.World` above owns the fact.
+        var wasm_demand = try demand.analyzeModule(alloc, &ps.mod, .{
+            .graph = &wasm_graph,
+            .world_closed = wasm_world.has(.closed_world),
+        });
         defer wasm_demand.deinit();
         try demand.prune(alloc, &ps.mod, &wasm_demand);
         var wasm_diagnostic: wasm_backend.Diagnostic = .{};
@@ -4674,6 +4802,10 @@ fn do_compile(
             term.err("wasm32-wasi: no native realization ({s})", .{@errorName(e)});
             if (wasm_diagnostic.note()) |why| term.hint("refused at: {s}", .{why});
             if (wasm_diagnostic.functionName()) |fname| term.hint("in relation: {s}", .{fname});
+            if (private_artifact_live) {
+                Io.Dir.deleteFile(Io.Dir.cwd(), io, out_path) catch {};
+                private_artifact_live = false;
+            }
             std.process.exit(1);
         };
         defer alloc.free(wasm_bytes);
@@ -4684,6 +4816,23 @@ fn do_compile(
             term.buildPhaseDone("compile", total_ms, out_path);
         }
         if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+        if (run_after) {
+            const exit_code = runWasmArtifactWithWasmtime47(alloc, io, out_path) catch {
+                if (private_artifact_live) {
+                    Io.Dir.deleteFile(Io.Dir.cwd(), io, out_path) catch {};
+                    private_artifact_live = false;
+                }
+                std.process.exit(1);
+            };
+            if (private_artifact_live) {
+                Io.Dir.deleteFile(Io.Dir.cwd(), io, out_path) catch |err| {
+                    term.err("could not delete private wasm run artifact '{s}' ({s})", .{ out_path, @errorName(err) });
+                    std.process.exit(1);
+                };
+                private_artifact_live = false;
+            }
+            std.process.exit(exit_code);
+        }
         return;
     }
 
