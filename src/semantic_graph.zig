@@ -1805,7 +1805,7 @@ pub const SemanticGraph = struct {
         _ = self.bindingRelation(fact.application) orelse return null;
         const caller_node = self.get(caller) orelse return null;
         if (!self.callable(caller) and caller_node.scope != null) return null;
-        if (self.uniqueSubjectProjection(fact.application)) |entity| {
+        if (self.project(fact.application, application_subject_projection)) |entity| {
             const node = self.get(entity) orelse return null;
             if (node.descriptor == null) return null;
         }
@@ -2391,13 +2391,12 @@ pub const SemanticGraph = struct {
         return match;
     }
 
-    fn uniqueSubjectProjection(self: *const SemanticGraph, occurrence: id) ?id {
+    fn project(self: *const SemanticGraph, entity: id, position: u16) ?id {
         var match: ?id = null;
-        for (self.outEdges(occurrence)) |ei| {
+        for (self.outEdges(entity)) |ei| {
             if (ei >= self.edges.items.len) continue;
             const edge = self.edges.items[ei];
-            if (edge.from != occurrence or edge.kind != .projection) continue;
-            if (edge.position != application_subject_projection) continue;
+            if (edge.from != entity or edge.kind != .projection or edge.position != position) continue;
             if (self.get(edge.to) == null) continue;
             if (match != null) return null;
             match = edge.to;
@@ -2446,7 +2445,7 @@ pub const SemanticGraph = struct {
     /// `application_subject_projection` (`law.application.consumer`).
     /// Checked subject: unique projection at `application_subject_projection`.
     pub fn applicationSubject(self: *const SemanticGraph, occurrence: id) ?id {
-        const entity = self.uniqueSubjectProjection(occurrence) orelse return null;
+        const entity = self.project(occurrence, application_subject_projection) orelse return null;
         const node = self.get(entity) orelse return null;
         if (node.descriptor == null) return null;
         return entity;
@@ -2455,28 +2454,15 @@ pub const SemanticGraph = struct {
     pub fn relationSubject(self: *const SemanticGraph, relation: id) ?id {
         if (relation >= self.subject_relations.bit_length or !self.subject_relations.isSet(relation))
             return null;
-        var subject: ?id = null;
-        for (self.outEdges(relation)) |edge_index| {
-            const edge = self.edges.items[edge_index];
-            if (edge.from != relation or edge.kind != .projection or
-                edge.position != relation_subject_projection) continue;
-            const node = self.get(edge.to) orelse return null;
-            if (node.descriptor == null or subject != null) return null;
-            subject = edge.to;
-        }
+        const subject = self.project(relation, relation_subject_projection) orelse return null;
+        const node = self.get(subject) orelse return null;
+        if (node.descriptor == null) return null;
         return subject;
     }
 
     pub fn relationSubjectShape(self: *const SemanticGraph, relation: id) ?id {
         const subject = self.relationSubject(relation) orelse return null;
-        var shape: ?id = null;
-        for (self.outEdges(subject)) |edge_index| {
-            const edge = self.edges.items[edge_index];
-            if (edge.from != subject or edge.kind != .descriptor) continue;
-            if (!self.hasTableDescriptorFacts(edge.to) or shape != null) return null;
-            shape = edge.to;
-        }
-        return shape;
+        return self.descriptorShape(subject, 0);
     }
 
     pub fn relationHasSubjectProjection(self: *const SemanticGraph, relation: id) bool {
@@ -2494,12 +2480,12 @@ pub const SemanticGraph = struct {
         for (self.outEdges(occurrence)) |edge_index| {
             const edge = self.edges.items[edge_index];
             if (edge.from != occurrence or edge.kind != .projection) continue;
-            if (edge.position == occurrence_subject_projection) {
-                if (occurrence_subject != null) return null;
+            if (edge.position == occurrence_subject_projection and occurrence_subject == null) {
                 occurrence_subject = edge.to;
-            } else if (edge.position == occurrence_member_projection) {
-                if (member != null) return null;
+            } else if (edge.position == occurrence_member_projection and member == null) {
                 member = edge.to;
+            } else if (edge.position == occurrence_subject_projection or edge.position == occurrence_member_projection) {
+                return null;
             }
         }
         if (occurrence_subject != subject) return null;
