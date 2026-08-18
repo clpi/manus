@@ -65,9 +65,9 @@ Parser authority transfer (`GAP-134`) is **blocked upstream** until the lexical
 1. `gaps/GAP-145.md` — distinct lexical token identities (text, bytes, compat
    literals/comments, shebang, reserved backtick) without delimiter-text
    inference.
-2. Generated grammar-role projection — `lib/token/grammarrole.id` from
-   `src/grammar_roles.zig` / `idol token-tables emit`; no parser-local spelling
-   tables.
+2. Generated grammar-role projections — `lib/token/grammarrole.id` and
+   `lib/token/grammarrole.tsv` from `src/grammar_roles.zig` via
+   `zig build grammar-role-emit`; no parser-local spelling tables.
 3. Immutable token-pack view — `lib/compiler/token_view.id` and host
    `src/token_view.zig` for observation/lookahead.
 4. `gaps/GAP-134.md` — first bounded production parser recognition slice.

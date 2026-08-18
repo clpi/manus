@@ -192,9 +192,8 @@ state the relation, publish the facts, let specialization choose.
 
 - canonical `TokenKind` = **114** ordinals (src/lexer.zig)
 - live projection `lib/token/grammarrole.id` = **114** — count-correct,
-  emitted by `idol token-tables emit` (main.zig:901), consumed by
-  `lib/compiler/token_view.id`; carries the old dialect (`--` comments,
-  `req("std.compiler.token")`) and a retired regen banner
+  emitted with the full manifest by `zig build grammar-role-emit`, consumed by
+  `lib/compiler/token_view.id`
 - `lib/token/grammar_role.id` = **110** — STALE by four ordinals and no
   emitter writes it (dead artifact or stale rename target)
 - `tools/emit_grammar_role.zig` writes a third, dead
@@ -202,18 +201,15 @@ state the relation, publish the facts, let specialization choose.
 - BEGIN_EXPR vectors diverge at ordinal 3 between the two .id projections
 
 Owner: lane 1–2 (GAP-134 generated grammar roles / immutable token view).
-The parity checker must stay report-only; reconciling the three emitters
-is a ruled decision for that lane. `scripts/grammarconvergence.id` already
-exists as the declared convergence script for this surface.
+Exact manifest, digest, slot, and consumer-projection agreement is the only
+convergence authority for this surface.
 
 
 ## Update 3 — H7 mechanical subset implemented; F4 minimized
 
-- Generator banner `duo token-tables emit` -> `idol token-tables emit`
-  (src/grammar_role_gen.zig); `idol token-tables emit` regenerated the
-  tracked projection (114, current format). Stale 110 artifact and the
-  spent tools/ emitter deleted (foreign.md's ledger already recorded the
-  latter as spent). `tools/parity/grammar`: **all projections agree**.
+- The build-only grammar-role emitter regenerates the tracked Idol projection
+  and full manifest together. Stale artifacts and partial emitters are deleted.
+  `tools/parity/grammar` requires exact authority agreement.
   The remaining H7 decisions (old-dialect emission face, tree-sitter
   convergence) stay with lane 1-2.
 - F4 `missing: view` minimized 29 -> 4 lines
