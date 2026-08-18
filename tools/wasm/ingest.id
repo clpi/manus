@@ -115,12 +115,13 @@ appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
   if op == 32
     stdout:write(head .. 'read","operand":{"kind":"local","index":' .. src:ulebval(ip):num() .. '},"results":[{"width":32}]' .. tail .. "\n")
   if op == 65
-    stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num() .. ',"determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
+    stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num())
+    stdout:write(',"determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
   if op == 66
     stdout:write(head .. 'constant","value":' .. src:slebsign(ip):num() .. ',"determinacy":"exact","results":[{"width":64}]' .. tail .. "\n")
   if op == 67 or op == 68
     stdout:write(head .. 'constant","determinacy":"exact","results":[{"width":32}]' .. tail .. "\n")
-  if op >= 103 and op <= 118 or op >= 70 and op <= 78 or op >= 167 and op <= 181 or op >= 81 and op <= 89 or op >= 134 and op <= 136
+  if op >= 103 and op <= 118 or op >= 70 and op <= 78 or op >= 167 and op <= 181 or op >= 81 and op <= 89 or op >= 134 and op <= 136 or op >= 192 and op <= 196
     stdout:write(head .. op:binname() .. '","operands":[' .. a:num() .. ',' .. b:num() .. '],"width":32,"overflow":"wrap","results":[{"width":32}]' .. tail .. "\n")
   if op >= 40 and op <= 53
     stdout:write(head .. 'memory","world":{"home":"memory","reach":"address"},"operands":[' .. a:num() .. '],"width":32,"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"unknown"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}' .. "\n")
@@ -159,7 +160,13 @@ binname: str = (op: i64)
                     if op >= 134 and op <= 136
                       "shift64"
                     else
-                      "??"
+                      if op >= 192 and op <= 196
+                        "signext"
+                      else
+                        if op >= 167 and op <= 167
+                          "wrap"
+                        else
+                          "??"
 
 slebsign: i64 = (s: str, i: i64)
   p: i64 = i
