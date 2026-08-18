@@ -221,3 +221,10 @@ exists as the declared convergence script for this surface.
   the missing-fact name with it; renaming the param does not. The fact is
   the relation SHAPE (pack param + if/else over a pack field), reported
   by name — not a name-keyed lookup. Hands lane 4 a 4-line reproducer.
+
+
+## Vocabulary ruling (user, 2026-08-17): `baseline` is a word
+
+`baseline` is not a compound — added to the `words` authority in both
+law copies (gate/path.id and gate/idiom.id). The compound census parses
+the list at runtime and honors it with no code change.

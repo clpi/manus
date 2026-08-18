@@ -155,7 +155,7 @@ flag: i64 = (path: str, no: i64, code: str, pat: str, law: str, fix: str, quiet:
 probe: bool = (code: str, pat: str)
   code:has(pat)
 
-admitwords = " i64 i32 i16 i8 u64 u32 u16 u8 f64 f32 str bool any void if else while for return and or not true false print len sub byte find match read write open close nil "
+admitwords = " i64 i32 i16 i8 u64 u32 u16 u8 f64 f32 str bool any void if else while for return and or not true false print len sub byte find match read write open close nil baseline"
 
 admitted: bool = (name: str)
   m = name:len()
