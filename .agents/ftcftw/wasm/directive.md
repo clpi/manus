@@ -203,3 +203,34 @@ families (read 6,982 / constant 4,889 / add 1,360 / memory-world 1,274
 sim-v0 card set. The ingest is COMPLETE: wasm bytes -> section census
 -> exact body walk -> fully-mapped application records with demand,
 caller, provenance, and all five cards.
+
+## AUDIT CORRECTION (2026-08-18): closure claims retracted
+
+The prior status said "Lane 3 mapping CLOSED" and "COMPLETE end to
+end." Per review, the defensible status is:
+
+- byte decoding coverage: corpus-complete
+- opcode family classification: corpus-complete (measured corpus)
+- section/body census: corpus-complete
+- semantic relation resolution: PARTIAL — name(op) is a manually
+  maintained local taxonomy ("float"/"arith64" are family labels, not
+  semantic relations), not witnessed projections onto graph relation
+  ids
+- validation: PARTIAL — no stack typing, block signatures, branch
+  arity, index validity, feature gating demonstrated
+- graph identity publication: NOT YET — emitted "application" is a
+  sequential instruction counter (physical coordinate), "caller" a
+  Wasm function index (source-law provenance), "relation" a local
+  string — none are semantic graph ids
+
+The records are GRAPH-SHAPED INGESTION EVIDENCE, not graph-conformant
+semantic ingestion. The unknown-card fields prove schema coverage,
+not semantic conformance (99/99 witness unknown = a blocker
+measurement). The next closure criterion: Wasm source occurrence ->
+exact semantic occurrence id -> exact relation id -> exact caller/
+operand/result ids -> facts, with opcodes/offsets as provenance only.
+
+The ingest file is EXECUTABLE RESEARCH BOOTSTRAP IDOL with known
+canonicality debt (ulebval/byteat/appfact/applimit/totalinstr et al.
+are compounds; num is a register-relief wrapper, not a naming choice;
+the header's "canonical" claim is retracted).
