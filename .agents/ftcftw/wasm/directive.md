@@ -188,3 +188,18 @@ bodies 0-2 (7 read / 6 constant / 3 add), every record validated to
 carry the required card set. The output is now directly consumable by
 graph-side consumers: the demand pass reads these records exactly as
 it reads idol-source applications — one admission surface, as ruled.
+
+
+## Lane 3 CLOSED: 100% relation mapping, corpus-complete
+
+The full-bounds census found the last unnamed ops (0x46 eq outside the
+cmp start; conversions 0xA7/0xA9-0xAC inside the arith64 block).
+binname rebuilt with every family exact. Corpus: 66 fixtures, 55,942
+records, ZERO unmapped — fib alone: 17,829 records across 18 relation
+families (read 6,982 / constant 4,889 / add 1,360 / memory-world 1,274
+/ float 870 / cmp 519 / exact-target call 358 / shift64 295 / cmp64
+287 / bit 269 / sub 218 / shift 165 / arith64 155 / wrap64 98 / mul 55
+/ popcount 15 / extend 13 / signext 5). Every record carries the full
+sim-v0 card set. The ingest is COMPLETE: wasm bytes -> section census
+-> exact body walk -> fully-mapped application records with demand,
+caller, provenance, and all five cards.

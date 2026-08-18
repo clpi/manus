@@ -130,7 +130,7 @@ appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
   0
 
 binname: str = (op: i64)
-  if op >= 71 and op <= 78
+  if op >= 70 and op <= 78
     "cmp"
   else
     if op >= 81 and op <= 89
@@ -148,31 +148,38 @@ binname: str = (op: i64)
             if op == 109 or op == 110
               "div"
             else
-              if op == 113 or op == 114 or op == 115
-                "bit"
+              if op == 111 or op == 112
+                "rem"
               else
-                if op == 116 or op == 117 or op == 118
-                  "shift"
+                if op == 167
+                  "wrap64"
                 else
-                  if op >= 103 and op <= 105
-                    "popcount"
+                  if op >= 169 and op <= 172
+                    "extend"
                   else
-                    if op >= 134 and op <= 136
-                      "shift64"
+                    if op >= 168 and op <= 181
+                      "arith64"
                     else
-                      if op >= 192 and op <= 196
-                        "signext"
+                      if op == 113 or op == 114 or op == 115
+                        "bit"
                       else
-                        if op == 111 or op == 112
-                          "rem"
+                        if op == 116 or op == 117 or op == 118
+                          "shift"
                         else
-                          if op >= 168 and op <= 181
-                            "arith64"
+                          if op >= 103 and op <= 105
+                            "popcount"
                           else
-                            if op >= 146 and op <= 150 or op >= 160 and op <= 164
-                              "float"
+                            if op >= 134 and op <= 136
+                              "shift64"
                             else
-                              "??"
+                              if op >= 192 and op <= 196
+                                "signext"
+                              else
+                                if op >= 146 and op <= 150 or op >= 160 and op <= 164
+                                  "float"
+                                else
+                                  "??"
+
 
 slebsign: i64 = (s: str, i: i64)
   p: i64 = i
