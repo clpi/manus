@@ -47,3 +47,18 @@ output-hash subject beside it.
 
 One gate per patch. The next gate to migrate should be `mcp-gate` (it
 already carries inline damage controls that `perturb` can adopt).
+
+## rotate — verifier rotation (V-B)
+
+`tools/evidence/rotate [name ...]` falsifies live gates through
+`evidence/perturb`. Each named rotation damages one real guard file,
+proves the gate failed on the damaged file, and proves byte-exact
+restoration:
+
+- `mcp-gate-id-extraction` — damages `tools/mcp/native.id`'s id-at-end
+  extraction (`taillen - 1` -> `taillen`); the MCP gate's member-order
+  tolerance control must fire.
+- `config-freshness` — corrupts the OpenCode projection's sibling-server
+  paths; `generate-configs --check` must report the artifact stale.
+
+First full rotation (2026-08-17): PASS on both.
