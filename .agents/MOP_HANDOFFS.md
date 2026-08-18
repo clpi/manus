@@ -264,3 +264,16 @@ Also recorded: a second parallel-sweep attempt (xargs -P) degraded to a
 failed twice on this workload with different mechanisms; serial plus the
 guarded inert pre-pass (3m54s for the full 1792-line reduction) is the
 standing configuration.
+
+
+## Update 6 — H4 fixed; H5 minimized with a corrected diagnosis
+
+- H4 FIXED (commit 44bb7b5b): main wraps mainInner; internal errors print
+  one classified line; the error-return trace only dumps under
+  IDOL_TRACE=1. Classified diagnostics unchanged; unit parity 1663/3.
+- H5 minimized 38 -> 3 lines (tools/reduce/fixtures/link/probe.id) and
+  the diagnosis CORRECTED: the undefined symbol is not about the stride
+  relation — a cross-module application reached from an exe entry does
+  not pull the callee's object into the link. host.id's "ambient
+  reference" comment was the workaround attempt. Owner: lane 4.
+  Reducer note: predicate exit 0 means failure PRESENT (no negation).
