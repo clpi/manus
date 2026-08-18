@@ -1,7 +1,10 @@
 # AGENT_OPERATING_MODEL — multi-agent allocation for the self-host frontier
 
-Durable coordination projection. No language law lives here; authority order
-is unchanged (`AGENTS.md` → `docs/spec/law.md` → C0). Lane ownership and
+Durable coordination projection. No language law lives here; authority
+is unchanged: `AGENTS.md` routes to `docs/spec/constitution.md`, the
+sole semantic law (C0). All gates, docs, briefs, and censuses are
+derived projections — none can outrank C0 or independently own
+vocabulary. Lane ownership and
 claim discipline are defined by `AGENT_COORDINATION.md`; this file only
 decides **which agent class receives which class of work**.
 
@@ -85,7 +88,7 @@ data.
 
 ## Never assigned to lower-context agents
 
-Kept with Codex / architectural review: `@{…}` final meaning, DNIR
+Kept with Codex / architectural review: closed `@{…}` world-injection law (no changes to C0 surface law), DNIR
 retirement architecture, fact strata, semantic identity/incarnation law,
 observation equivalence, graph transaction semantics, application role
 assignment, pack/default semantics, world/authority design, protocol
@@ -98,9 +101,11 @@ of those decisions. It may not make the decision.
 
 ## Vocabulary, instrument, and claims law (all agents)
 
-- **Vocabulary is LAW-ONE and it is executable.** The word authority is
-  the `words` literal in `gate/path.id` (runtime-parsed by
-  `tools/node/dev/census/compound`). No compound words, ever, anywhere:
+- **No compound words, ever, anywhere** (LAW-ONE under C0). The
+  `tools/node/dev/census/compound` ratchet parses the gate/path.id word
+  set as a TEMPORARY MIGRATION-DETECTOR vocabulary — a heuristic, not
+  an authority; it may miss and over-report (it missed `byteat`).
+  No compound words, ever, anywhere:
   no mashed compounds (`readline`), no separators or case in path
   components, no numeric-suffix taxonomy, no role/mediator/plurality
   stems, no `*able/*ible`, no organizational namespaces. Decompose into
