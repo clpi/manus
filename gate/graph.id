@@ -23,7 +23,7 @@ consumer: bool = (path: str)
   path == "src/sim_pipeline.zig" or path == "src/knowledge_snapshot.zig" or path == "src/dnir_lower.zig"
 
 row: i64 = (path: str, no: i64, code: str, id: str, needle: str, law: str, fix: str)
-  if not code:has(needle)
+  if !code:has(needle)
     return 0
   print("({path}, {no}, violation, {id}, {law}, {fix})")
   1
@@ -81,7 +81,7 @@ graphrules: i64 = (path: str, no: i64, code: str)
   hits = hits + row(path, no, code, "graph.edge.home", ".kind = .home", "law.graph.edge", "homeOf → Node.scope - do not publish a second home edge")
   hits = hits + row(path, no, code, "graph.card.null", "effect: ?id = null", "law.fact.cardinality", "Card unknown/none/one - null is not unknown")
   hits = hits + row(path, no, code, "graph.tag.validity", "kind != .func and", "law.tag.authority", "callable/hasDescriptorFacts - NodeKind must not establish validity")
-  hits = hits + row(path, no, code, "graph.contains.mut", "addEdge(.{ .from = parent, .to = entity, .kind = .contains", "law.derived.index", "appendEdge from addChild - addEdge must not mint contains")
+  hits = hits + row(path, no, code, "graph.contains.mut", 'addEdge(.{ .from = parent, .to = entity, .kind = .contains', "law.derived.index", "appendEdge from addChild - addEdge must not mint contains")
   hits = hits + row(path, no, code, "graph.tag.validity.shape", "kind != .table_shape", "law.tag.authority", "hasTableDescriptorFacts - not table_shape tag")
   hits = hits + row(path, no, code, "graph.tag.validity.enum", "kind != .enum_shape", "law.tag.authority", "hasEnumDescriptorFacts - not enum_shape tag")
   hits = hits + row(path, no, code, "graph.query.entitiesOfKind", "entitiesOfKind(", "law.tag.authority", "descriptorHomes/tableDescriptorHomes - not kind scan")
@@ -137,7 +137,7 @@ producerules: i64 = (path: str, no: i64, code: str)
   hits
 
 consumerules: i64 = (path: str, no: i64, code: str)
-  if not consumer(path)
+  if !consumer(path)
     return 0
   if code:has("Migration wrapper")
     return 0
@@ -162,7 +162,7 @@ strip: str = (line: str)
         quote = ""
         closed = true
       out = "{out} "
-    if quote == "" and not closed
+    if quote == "" and !closed
       if c == "#"
         return out
       if c == "\"" or c == "'"
@@ -209,8 +209,8 @@ scan: i64 = (body: str)
     if i <= n
       c = body:sub(i, i)
     hunk = c == nl and head(line)
-    mark = c == nl and not hunk and line:len() > 2 and line:sub(1, 2) == "@@"
-    add = c == nl and not hunk and not mark and line:len() > 0 and line:sub(1, 1) == "+" and path != ""
+    mark = c == nl and !hunk and line:len() > 2 and line:sub(1, 2) == "@@"
+    add = c == nl and !hunk and !mark and line:len() > 0 and line:sub(1, 1) == "+" and path != ""
     if hunk
       path = line:sub(7, line:len())
       no = 0
@@ -244,7 +244,7 @@ control: bool = ()
   if audit("src/semantic_graph.zig", 4, "if edge.kind == .relation") == 0
     print("control FAIL: graph.edge.relation did not fire")
     ok = false
-  if audit("src/semantic_graph.zig", 5, "try self.addEdge(.{ .kind = .capture })") != 0
+  if audit("src/semantic_graph.zig", 5, 'try self.addEdge(.{ .kind = .capture })') != 0
     print("control FAIL: lawful .kind = .capture rejected")
     ok = false
   if audit("src/semantic_graph.zig", 6, "k = EdgeKind.run") == 0
@@ -272,10 +272,10 @@ control: bool = ()
   if audit("src/graph_query.zig", 7, "return graph.findFunc(\"main\")") == 0
     print("control FAIL: graph.query.func did not fire")
     ok = false
-  if audit("src/graph_query.zig", 8, "if testing { const main = unresolved.findFunc(\"main\") }") != 0
+  if audit("src/graph_query.zig", 8, 'if testing { const main = unresolved.findFunc("main") }') != 0
     print("control FAIL: graph_query test findFunc rejected")
     ok = false
-  if audit("src/graph_fact_producer.zig", 9, "pub const catalog = [_]Ownership{") == 0
+  if audit("src/graph_fact_producer.zig", 9, 'pub const catalog = [_]Ownership{') == 0
     print("control FAIL: restored fact-producer catalog did not fire")
     ok = false
   if audit("src/sim_pipeline.zig", 11, "const node = graph.findTableShape(name)") == 0
@@ -323,7 +323,7 @@ control: bool = ()
   if audit("src/graph_query.zig", 25, "return descriptor(g, r)") != 0
     print("control FAIL: lawful descriptor query rejected")
     ok = false
-  if audit("src/semantic_graph.zig", 26, "try self.addEdge(.{ .kind = .home })") == 0
+  if audit("src/semantic_graph.zig", 26, 'try self.addEdge(.{ .kind = .home })') == 0
     print("control FAIL: home edge publish did not fire")
     ok = false
   if audit("src/graph_query.zig", 27, "return hardwareDescriptorsOfModule(a, m)") == 0
@@ -356,7 +356,7 @@ control: bool = ()
   ok
 
 graph: i64 = ()
-  if not control()
+  if !control()
     print("gate/graph: POSITIVE CONTROL FAILED")
     return 3
   body = transport()
