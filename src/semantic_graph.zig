@@ -1478,6 +1478,37 @@ pub const SemanticGraph = struct {
         return census.at(site);
     }
 
+    /// The unique aggregate value bound to one exact graph place.
+    ///
+    /// This is a derived index over `AggregateFact.owner/place`, not another
+    /// binding authority. More than one aggregate at the same place is not a
+    /// unique answer (normally a rebinding) and therefore returns null. A
+    /// realization can use the returned semantic id without consulting the
+    /// aggregate's source expression.
+    pub fn boundAggregateAtPlace(self: *const SemanticGraph, owner: id, site: u32) ?id {
+        _ = self.get(owner) orelse return null;
+        var found: ?id = null;
+        for (self.aggregate_facts.items) |fact| {
+            if (fact.owner != owner) continue;
+            const fact_site = switch (fact.place) {
+                .one => |value| value,
+                .unknown, .none => continue,
+            };
+            if (fact_site != site or self.aggregate(fact.aggregate) == null) continue;
+            // Nested member aggregates inherit the root place because their
+            // contents project from it. Only the aggregate directly contained
+            // by `owner` is the value bound there.
+            if ((self.get(fact.aggregate) orelse continue).scope != owner) continue;
+            // A projected aggregate can share its subject's place while being
+            // produced by an application. This query selects the binding's
+            // stored value, not an occurrence result at that place.
+            if (self.aggregateProducer(fact.aggregate) != null) continue;
+            if (found != null and found.? != fact.aggregate) return null;
+            found = fact.aggregate;
+        }
+        return found;
+    }
+
     pub fn aggregateAccess(self: *const SemanticGraph, occurrence: id) ?*const ApplicationFact {
         const relation = self.aggregate_access_relation orelse return null;
         const fact = self.application(occurrence) orelse return null;
