@@ -1,4 +1,4 @@
-# Session state — 2026-08-18, canonical main @ 3f24962b
+# Session state — 2026-08-18, canonical main @ cad1a55f
 
 53 commits from agent-integration through wasm lane 3. This file is
 the pick-up point: what exists, what's red, what's next, who owns it.
