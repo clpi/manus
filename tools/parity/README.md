@@ -1,40 +1,38 @@
-# parity — projection agreement reporters (Pickle Mission E)
+# parity — executable projection agreement
 
-Projection-verification tools. They compare generated projections with their
-shared authority by identity and never rewrite a role. Drift or a missing live
-projection exits nonzero.
+These tools prove that derived language projections still carry the exact
+authority they claim. They never regenerate or repair a projection. Absence,
+malformation, stale authority, and a zero-file census are failures.
 
 ## grammar
 
-`tools/parity/grammar` compares, by token ordinal:
+`tools/parity/grammar` reads the tracked byte authority
+`lib/token/grammarrole.tsv`. Its format is closed:
 
-- `src/lexer.zig` `TokenKind` field count — the canonical ordinal space
-- `lib/token/grammarrole.id` (ROLECOUNT / KINDEOF / BEGINEXPR), the sole live
-  generated projection
-- `ext/tree-sitter-idol/src/grammar.json` rule count (context only)
+1. `# schema<TAB>grammar-role-v2`
+2. `# authority<TAB>fnv1a64:<16 lowercase hexadecimal digits>`
+3. the exact 17-column TSV header
+4. one complete row for every physical token slot
 
-Output: a count matrix and a DRIFT list. Exit 0 means the live projection agrees
-and both retired projection paths are absent; drift exits 1.
+The FNV-1a digest covers the schema and semantic row serialization: u16 slot,
+UTF-8 kind and spelling, then every remaining semantic field in exact TSV column
+order, with precedence encoded as signed i8. The TSV spelling is also exact: the
+gate validates metadata, header, line form, row widths, canonical and unique
+contiguous slots, the unpublished slot, role domains, identity and EOF counts,
+and the generated Idol vector width. It then requires both generated consumers
+to embed the same schema and full tagged authority:
 
-### First measurement (2026-08-17, HEAD fa2805ef) — since closed
+- `lib/token/grammarrole.id`
+- `ext/tree-sitter-idol/grammar.js`
 
-```
-canonical TokenKind        114
-lib/token/grammar_role.id  110   stale by 4; no emitter writes it
-lib/token/grammarrole.id   114   count-correct; live target of
-                                `idol token-tables emit` (main.zig:901);
-                                old dialect + retired regen banner
-tree-sitter idol rules     127   context (rules include non-token rules)
-BEGIN_EXPR divergence at ordinal 3
-```
+Retired grammar-role projection paths remain forbidden. Success reports the
+number of projections and role rows examined. Every finding contributes to the
+nonzero census exit status.
 
-Consumer census: `lib/compiler/token_view.id` reads `token.grammarrole.*`
-(the 114 projection). `tools/emit_grammar_role.zig` writes a third,
-dead `lib/std/token/...` path. See `.agents/MOP_HANDOFFS.md` H7.
+## grammar-selftest
 
-### Update (same day, post-reconciliation)
-
-The stale `lib/token/grammar_role.id` (110, undriven, unconsumed) and the spent
-`tools/emit_grammar_role.zig` (dead `lib/std` target) were deleted. The live
-generator emits `lib/token/grammarrole.id`; parity now requires that projection
-to agree with `TokenKind` and requires the retired paths to remain absent.
+`tools/parity/grammar-selftest` builds an isolated valid authority and damages
+it nine ways. It proves rejection of a missing manifest or hash, exact payload
+drift in ordinary, associativity, compatibility, and delimiter/projection
+fields, stale Idol and Tree-sitter hashes, and a correctly hashed zero-row
+manifest. The repository is never changed by the controls.
