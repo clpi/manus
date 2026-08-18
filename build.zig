@@ -842,6 +842,24 @@ pub fn build(b: *std.Build) void {
     // catalog apparatus was retired.
     test_step.dependOn(&run_native_backend_tests.step);
 
+    // `floor_derive.zig` is the automatic floor-derivation module (HPLS §106's
+    // `lower bound` stage). It had NO consumer — nothing imported it and it was
+    // not a test target, so its 11 tests never ran. Wiring it here is the HPLS
+    // §7 resolution ("a fact with no consumer must gain one or be deleted"):
+    // it is forward-looking work (the F3 prerequisite), not debt, so it gains a
+    // consumer rather than being deleted. `gate/orphan.sh` is the ratchet that
+    // would have caught it landing without one.
+    const floor_derive_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/floor_derive.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    linkProductionKeywordClassify(b, floor_derive_tests.root_module);
+    const run_floor_derive_tests = b.addRunArtifact(floor_derive_tests);
+    test_step.dependOn(&run_floor_derive_tests.step);
+
     const native_diff_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/native_differential.id" });
     native_diff_cmd.step.dependOn(b.getInstallStep());
     native_diff_cmd.setCwd(b.path("."));

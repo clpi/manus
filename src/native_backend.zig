@@ -11315,7 +11315,7 @@ test "native backend refuses source conversion absent application facts and reta
 
     var lex = Lexer.init(
         \\main(): i64
-        \\    s = to(str)(42)
+        \\    s = to(bytes)(42)
         \\    return s:len()
         \\end
     , "to_str_vararg.id");
