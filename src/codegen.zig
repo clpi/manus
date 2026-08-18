@@ -37,6 +37,7 @@ const lua_metamethod = @import("lua_metamethod.zig");
 const relation = @import("relation.zig");
 const collection_relation = @import("collection_relation.zig");
 const lexer_bridge = @import("lexer_bridge.zig");
+const home_resolve = @import("home_resolve.zig");
 
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
 /// driver uses.
@@ -1583,10 +1584,17 @@ pub const CodeGen = struct {
         return false;
     }
 
-    /// Native record parameters are passed by pointer so mutating methods
-    /// (e.g. lexer `self.pos = …`, ByteCursor `c.pos = …`) persist across calls.
+    /// Internal record parameters are passed by pointer so mutation persists
+    /// across application boundaries. This is one translation-unit convention:
+    /// root emission, embedded emission, and descriptor spelling cannot select
+    /// different ABIs for the same semantic record.
+    ///
+    /// Bridge deletion: once edge-local representation publishes one selected
+    /// internal application ABI from place/mutation/alias/escape facts, callers
+    /// and callees consume that fact and this uniform convention disappears.
+    /// Header-declared foreign C ABI is separate and never consults this helper.
     /// The `.table_type` behind a record parameter, following the alias a
-    /// `.@"struct"` annotation names. Same resolution `native_record_param_by_ptr`
+    /// `.@"struct"` annotation names. Same resolution `internal_record_param_by_ptr`
     /// performs, factored out so an emitter can reach the field list.
     fn resolved_record_type(self: *const CodeGen, rt: RT) ?RT {
         var resolved = rt;
@@ -1596,33 +1604,12 @@ pub const CodeGen = struct {
         return if (resolved == .table_type) resolved else null;
     }
 
-    fn native_record_param_by_ptr(self: *const CodeGen, rt: RT) bool {
+    fn internal_record_param_by_ptr(self: *const CodeGen, rt: RT) bool {
         var resolved = rt;
         if (resolved == .@"struct") {
             if (self.record_aliases.get(resolved.@"struct".name)) |alias_rt| resolved = alias_rt;
         }
-        if (resolved != .table_type) return false;
-        if (self.moduleUsesFullNativeLowering()) return true;
-        // Embedded req modules (`std.compiler.*`, etc.): all record params by pointer.
-        if (self.current_module_cname.len > 0) return true;
-        if (self.current_func_name) |name| {
-            if (self.funcUsesNativeLowering(name)) return true;
-        }
-        // ABI uniformity. The record parameter convention must be identical for
-        // every function in a translation unit. In mixed-scalar mode only some
-        // functions lower natively; letting that split reach the calling
-        // convention makes a caller and callee disagree about the same record
-        // type — `next_tok` took `Lexer` by value while its caller `next` and
-        // its callee `cur_loc` used `Lexer *`, which is not compilable C.
-        if (self.mixed_scalar_mode and self.native_scalar_funcs.count() > 0) return true;
-        return false;
-    }
-
-    fn funcUsesRecordSelfPointer(self: *CodeGen, fb: *const ast.FuncBody) bool {
-        if (fb.params.len == 0) return false;
-        const par = &fb.params[0];
-        if (!std.mem.eql(u8, par.name, "self")) return false;
-        return self.native_record_param_by_ptr(self.resolve_type(par.typ));
+        return resolved == .table_type;
     }
 
     fn expr_is_native_record_ptr_param(self: *CodeGen, e: *const ast.Expr) bool {
@@ -1630,7 +1617,7 @@ pub const CodeGen = struct {
         const fb = self.current_func_body orelse return false;
         for (fb.params) |par| {
             if (std.mem.eql(u8, par.name, e.name.ident)) {
-                return self.native_record_param_by_ptr(self.resolve_type(par.typ));
+                return self.internal_record_param_by_ptr(self.resolve_type(par.typ));
             }
         }
         return false;
@@ -2074,7 +2061,7 @@ pub const CodeGen = struct {
                 }
             },
             else => {
-                if (self.native_record_param_by_ptr(rt)) {
+                if (self.internal_record_param_by_ptr(rt)) {
                     self.typ(rt);
                     if (name) |n| self.p(" *{s}", .{n}) else self.p(" *", .{});
                 } else {
@@ -3812,10 +3799,6 @@ pub const CodeGen = struct {
             self.nativeDiagFail("guard-target");
             return self.nofit(@src());
         }
-        if (!self.idol_mode) {
-            self.nativeDiagFail("guard-duo");
-            return self.nofit(@src());
-        }
         if (mod.body.tail_expr) |expr| {
             if (!self.call_stmt_is_native_scalar(expr)) {
                 self.nativeDiagFail("mod-tail");
@@ -4075,7 +4058,9 @@ pub const CodeGen = struct {
     }
 
     fn compute_substrate_native_mode(self: *CodeGen, mod: *const ast.Module) bool {
-        if (!self.idol_mode or self.load_chunk or self.test_mode) return false;
+        // Source law constrains each operation below; it does not itself make
+        // a checked scalar closure require the Lua runtime.
+        if (self.load_chunk or self.test_mode) return false;
         if (self.bench_mode and self.bench_backend != .c_specialized) return false;
         if (self.native_scalar_mode) return true;
         if (!self.mixed_scalar_mode) return false;
@@ -4779,24 +4764,6 @@ pub const CodeGen = struct {
         return !self.moduleUsesFullNativeLowering();
     }
 
-    /// `%` ON TWO INTEGERS TRUNCATES, and the remainder takes the DIVIDEND's
-    /// sign. §12 B-4 — quoted in `docs/spec/cost.md` — says `i64/i64`
-    /// truncates and `examples/table/div/sign.id` records the four answers
-    /// `-3 -3 -1 1` for `-7/2`, `7/-2`, `-7%2`, `7%-2`.
-    ///
-    /// Before this predicate the C backend had NO single answer. The emit chose
-    /// C's truncating `%` when the divisor was a positive literal and Lua's
-    /// FLOORING `lua_imod_i64` otherwise, so one program got both: `-7 % 2`
-    /// printed -1 (truncating) and `7 % -2` printed -1 (flooring, where
-    /// truncating is 1). That split is not a Lua-compatibility choice either —
-    /// under Lua's floor rule `-7 % 2` is 1, and the positive-literal fast path
-    /// answers -1 — so the previous behaviour matched neither language on the
-    /// same line. Idol source gets the truncating rule everywhere; a Lua chunk
-    /// (`idol_mode == false`) keeps the flooring helper it was written against.
-    fn intModTruncates(self: *const CodeGen) bool {
-        return self.idol_mode;
-    }
-
     /// True when `req` bindings in the current function may bypass lua_require.
     fn function_allows_native_req(self: *const CodeGen) bool {
         if (self.moduleUsesFullNativeLowering()) return true;
@@ -4944,7 +4911,7 @@ pub const CodeGen = struct {
         }
         try self.emit_expr(c.func);
         self.p("(", .{});
-        const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .native;
+        const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .internal;
         var emitted_args: usize = 0;
         for (c.args, 0..) |arg, i| {
             if (i > 0) self.p(", ", .{});
@@ -6262,7 +6229,11 @@ pub const CodeGen = struct {
                 const lt = self.expr_type(b.lhs);
                 const rt = self.expr_type(b.rhs);
                 if (!lt.is_integer() or !rt.is_integer()) break :blk false;
-                break :blk !(b.rhs.* == .int_lit and b.rhs.int_lit.val > 0);
+                // Integer // and % are flooring relations in both admitted
+                // source laws. Literal spelling cannot change that relation;
+                // a range fact could later prove the direct C operations
+                // equivalent, but none is available on this edge today.
+                break :blk true;
             },
             .unop => |un| self.expr_needs_int_floor_helpers(un.operand),
             .call => |call| blk: {
@@ -6333,7 +6304,9 @@ pub const CodeGen = struct {
         if (self.native_scalar_mode and !self.req_deps_allow_full_native(mod)) {
             self.native_scalar_mode = false;
         }
-        if (!self.native_scalar_mode and self.idol_mode and (self.target.len == 0 or std.mem.eql(u8, self.target, "native"))) {
+        // Candidate discovery consumes checked descriptors/module facts. A
+        // foreign source law is not a physical runtime obligation.
+        if (!self.native_scalar_mode and (self.target.len == 0 or std.mem.eql(u8, self.target, "native"))) {
             if (self.compute_native_scalar_funcs(mod)) {
                 self.mixed_scalar_mode = true;
             }
@@ -8822,20 +8795,20 @@ pub const CodeGen = struct {
     }
 
     fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT, for_call: bool) E!void {
-        try self.emit_arg_for_param_abi(arg, param_type, for_call, .native);
+        try self.emit_arg_for_param_abi(arg, param_type, for_call, .internal);
     }
 
     /// Which calling convention the receiving parameter obeys.
     ///
-    /// `.native` records may travel by pointer — that is Idol's own convention and
-    /// it is chosen per translation unit. A `.foreign` parameter's convention
+    /// `.internal` records travel by the compiler's bounded bootstrap convention.
+    /// A `.foreign` parameter's convention
     /// is fixed by the C header that declared it: `extern double
     /// distance2(CPoint)` takes the record BY VALUE, and handing it `&p` is not
     /// a style difference, it is a type error clang rejects ("passing 'CPoint *'
-    /// to parameter of incompatible type 'CPoint'"). Applying the native record
+    /// to parameter of incompatible type 'CPoint'"). Applying the internal record
     /// convention to an imported C function is what made every `@comp.c.import`
     /// program with a record argument unlinkable.
-    const ParamAbi = enum { native, foreign };
+    const ParamAbi = enum { internal, foreign };
 
     fn emit_arg_for_param_abi(
         self: *CodeGen,
@@ -8844,7 +8817,7 @@ pub const CodeGen = struct {
         for_call: bool,
         abi: ParamAbi,
     ) E!void {
-        if (for_call and abi == .native and self.native_record_param_by_ptr(param_type)) {
+        if (for_call and abi == .internal and self.internal_record_param_by_ptr(param_type)) {
             if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
                 try self.emit_expr(arg);
                 return;
@@ -9931,7 +9904,7 @@ pub const CodeGen = struct {
     fn emit_lua_thunk_record_writebacks(self: *CodeGen, fb: *const ast.FuncBody, lua_names: []const []const u8) E!void {
         for (fb.params, 0..) |par, i| {
             const pt = self.resolve_type(par.typ);
-            if (!self.native_record_param_by_ptr(pt)) continue;
+            if (!self.internal_record_param_by_ptr(pt)) continue;
             var pn: [8]u8 = undefined;
             const pname = std.fmt.bufPrint(&pn, "_p{d}", .{i}) catch continue;
             try self.emit_native_record_to_lua_table(pt, pname, lua_names[i]);
@@ -9939,7 +9912,7 @@ pub const CodeGen = struct {
     }
 
     fn emit_thunk_native_arg(self: *CodeGen, pt: RT, c_name: []const u8) void {
-        if (self.native_record_param_by_ptr(pt)) {
+        if (self.internal_record_param_by_ptr(pt)) {
             self.p("&{s}", .{c_name});
         } else {
             self.p("{s}", .{c_name});
@@ -9960,7 +9933,7 @@ pub const CodeGen = struct {
 
         // The record-parameter ABI is a property of the callee, not of whatever
         // function happened to be emitted last. A thunk bridges lua -> native for
-        // `cname`, so evaluate `native_record_param_by_ptr` in `cname`'s context;
+        // `cname`, so evaluate `internal_record_param_by_ptr` in `cname`'s context;
         // otherwise a by-pointer callee is handed a by-value argument.
         const saved_name = self.current_func_name;
         self.current_func_name = cname;
@@ -17621,7 +17594,7 @@ pub const CodeGen = struct {
                     var name_buf: [256]u8 = undefined;
                     break :blk self.func_bodies.get(self.mangled_name(c.func.name.ident, &name_buf));
                 } else null;
-                const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .native;
+                const callee_abi: ParamAbi = if (self.expr_names_foreign_func(c.func)) .foreign else .internal;
                 var emitted_args: usize = 0;
                 for (c.args, 0..) |arg, i| {
                     if (i > 0) self.p(", ", .{});
@@ -18569,18 +18542,11 @@ pub const CodeGen = struct {
                         },
                         .idiv => {
                             if (lt.is_integer() and rt.is_integer()) {
-                                // Fast path: direct C division when divisor is a positive literal
-                                if (b.rhs.* == .int_lit and b.rhs.int_lit.val > 0) {
-                                    self.p("((int64_t)(", .{});
-                                    try self.emit_expr(b.lhs);
-                                    self.p(") / {d})", .{b.rhs.int_lit.val});
-                                } else {
-                                    self.p("lua_idiv_i64((int64_t)(", .{});
-                                    try self.emit_expr(b.lhs);
-                                    self.p("), (int64_t)(", .{});
-                                    try self.emit_expr(b.rhs);
-                                    self.p("))", .{});
-                                }
+                                self.p("lua_idiv_i64((int64_t)(", .{});
+                                try self.emit_expr(b.lhs);
+                                self.p("), (int64_t)(", .{});
+                                try self.emit_expr(b.rhs);
+                                self.p("))", .{});
                             } else {
                                 var buf: [128]u8 = undefined;
                                 const t = self.expr_type(expr);
@@ -18593,20 +18559,11 @@ pub const CodeGen = struct {
                         },
                         .mod => {
                             if (lt.is_integer() and rt.is_integer()) {
-                                // Fast path: direct C modulo when divisor is a positive literal
-                                if (self.intModTruncates() or (b.rhs.* == .int_lit and b.rhs.int_lit.val > 0)) {
-                                    self.p("((int64_t)(", .{});
-                                    try self.emit_expr(b.lhs);
-                                    self.p(") % (int64_t)(", .{});
-                                    try self.emit_expr(b.rhs);
-                                    self.p("))", .{});
-                                } else {
-                                    self.p("lua_imod_i64((int64_t)(", .{});
-                                    try self.emit_expr(b.lhs);
-                                    self.p("), (int64_t)(", .{});
-                                    try self.emit_expr(b.rhs);
-                                    self.p("))", .{});
-                                }
+                                self.p("lua_imod_i64((int64_t)(", .{});
+                                try self.emit_expr(b.lhs);
+                                self.p("), (int64_t)(", .{});
+                                try self.emit_expr(b.rhs);
+                                self.p("))", .{});
                             } else {
                                 var buf: [128]u8 = undefined;
                                 const t = self.expr_type(expr);
@@ -24326,22 +24283,8 @@ pub const CodeGen = struct {
     }
 
     fn find_module_path(self: *CodeGen, base_dir: []const u8, mod_name: []const u8) ?[]const u8 {
-        const templates = .{
-            "{s}/{s}" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
-            "{s}/{s}.lua",
-            "{s}/{s}/init" ++ lexer_bridge.CANONICAL_SOURCE_SUFFIX,
-            "{s}/{s}/init.lua",
-        };
-        const cwd = Io.Dir.cwd();
-        inline for (templates) |tmpl| {
-            const path = std.fmt.allocPrint(self.alloc, tmpl, .{ base_dir, mod_name }) catch return null;
-            if (Io.Dir.access(cwd, self.io, path, .{})) |_| {
-                return path;
-            } else |_| {
-                self.alloc.free(path);
-            }
-        }
-        return null;
+        const source = home_resolve.moduleFileUnder(self.alloc, self.io, base_dir, mod_name) orelse return null;
+        return source.path;
     }
 
     fn emit_required_modules(self: *CodeGen, mod: *const ast.Module) E!void {
@@ -25464,7 +25407,7 @@ pub const CodeGen = struct {
 
         self.current_module_cname = resolved.home;
         const subject_type = self.resolve_type(params[0].typ);
-        const subject_by_ptr = self.native_record_param_by_ptr(subject_type);
+        const subject_by_ptr = self.internal_record_param_by_ptr(subject_type);
         self.current_module_cname = saved_cname;
         if (subject_by_ptr) {
             if (call.obj.* == .name and self.expr_is_native_record_ptr_param(call.obj)) {
@@ -25485,7 +25428,7 @@ pub const CodeGen = struct {
             }
             self.current_module_cname = resolved.home;
             const param_type = self.resolve_type(params[i + 1].typ);
-            const param_by_ptr = self.native_record_param_by_ptr(param_type);
+            const param_by_ptr = self.internal_record_param_by_ptr(param_type);
             self.current_module_cname = saved_cname;
             if (param_by_ptr) {
                 if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
@@ -25624,7 +25567,7 @@ pub const CodeGen = struct {
             const pt: RT = if (i < ft.func.params.len) ft.func.params[i] else .any;
             const pass_by_ptr = blk: {
                 self.current_module_cname = mod_cname;
-                const by_ptr = self.native_record_param_by_ptr(pt);
+                const by_ptr = self.internal_record_param_by_ptr(pt);
                 self.current_module_cname = saved_cname;
                 break :blk by_ptr;
             };
@@ -32642,7 +32585,7 @@ const duo_runtime =
 
 const testing = std.testing;
 
-test "native scalar refusal evidence is isolated and reset per codegen" {
+test "native scalar eligibility is source-law independent and resets refusal evidence" {
     var type_map = sema.TypeMap.init(testing.allocator);
     defer type_map.deinit();
 
@@ -32663,9 +32606,110 @@ test "native scalar refusal evidence is isolated and reset per codegen" {
             .stmts = &.{},
         },
     };
-    try testing.expect(!first.can_emit_native_scalar_module(&module));
-    try testing.expectEqualStrings("guard-duo", first.nativeScalarReason(&first_buf).?);
+    try testing.expect(first.can_emit_native_scalar_module(&module));
+    try testing.expect(first.nativeScalarReason(&first_buf) == null);
     try testing.expectEqualStrings("second:2", second.nativeScalarReason(&second_buf).?);
+}
+
+test "source law preserves floored integer relations while facts select the runtime" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const fixtures = [_]struct {
+        path: []const u8,
+        law: lexer_bridge.SourceLaw,
+        source: []const u8,
+        full_native: bool,
+        floor_helpers: bool,
+    }{
+        .{
+            .path = "fixture.lua",
+            .law = .lua,
+            .source =
+            \\local counter: i64 = 0
+            \\
+            \\local function evaluate(): i64
+            \\    counter = counter + 1
+            \\    return (-7 % 2) + (7 % -2) + (-7 // 2) + (7 // -2) + counter
+            \\end
+            \\
+            \\function main(): i64
+            \\    return 0
+            \\end
+            \\
+            \\print(evaluate())
+            ,
+            .full_native = true,
+            .floor_helpers = true,
+        },
+        .{
+            .path = "fixture.id",
+            .law = .idol,
+            .source =
+            \\counter: i64 = 0
+            \\
+            \\evaluate: i64 = ()
+            \\  counter = counter + 1
+            \\  (-7 % 2) + (7 % -2) + (-7 // 2) + (7 // -2) + counter
+            \\
+            \\main: i64 = ()
+            \\  print("{evaluate()}\n")
+            \\  0
+            ,
+            .full_native = true,
+            .floor_helpers = true,
+        },
+        .{
+            .path = "fixture.lua",
+            .law = .lua,
+            .source =
+            \\local counter: i64 = 0
+            \\
+            \\local function bump(value: any): any
+            \\    counter = counter + 1
+            \\    return value
+            \\end
+            \\
+            \\function main(): i64
+            \\    return counter + 1
+            \\end
+            \\
+            \\print(bump(main()))
+            ,
+            .full_native = false,
+            .floor_helpers = false,
+        },
+    };
+
+    for (fixtures) |fixture| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lex = Lexer.initFacts(fixture.source, fixture.path, lexer_bridge.sourceFacts(fixture.path));
+        try testing.expect(routeEmbedThroughDuoLexer(alloc, &lex, fixture.source, fixture.path));
+        try testing.expectEqual(fixture.law, lex.source_law);
+        var parser = Parser.init(&lex, alloc);
+        parser.idol_mode = lex.family == lexer_bridge.family_canon;
+        try testing.expectEqual(fixture.law == .idol, parser.idol_mode);
+        var module = try parser.parse_module();
+        var semantic = sema.Sema.init(alloc);
+        defer semantic.deinit();
+        semantic.lua55_mode = lex.source_law == .lua;
+        semantic.idol_mode = lex.source_law == .idol;
+        try semantic.check_module(&module);
+
+        var aw: std.Io.Writer.Allocating = .init(alloc);
+        defer aw.deinit();
+        var cg = CodeGen.init(alloc, std.testing.io, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+        cg.src_path = fixture.path;
+        cg.idol_mode = lex.source_law == .idol;
+        try cg.emit_module(&module);
+        try testing.expectEqual(fixture.full_native, cg.usesFullNativeLowering());
+        try testing.expectEqual(fixture.full_native, std.mem.indexOf(u8, aw.written(), "lua_Value") == null);
+        if (fixture.floor_helpers) {
+            try testing.expect(std.mem.indexOf(u8, aw.written(), "lua_idiv_i64") != null);
+            try testing.expect(std.mem.indexOf(u8, aw.written(), "lua_imod_i64") != null);
+        }
+    }
 }
 
 test "runtime: temporary artifact path is reserved with its suffix" {
@@ -33384,6 +33428,8 @@ test "codegen: alias derive field projections use native table helpers" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
 
@@ -33829,6 +33875,8 @@ test "codegen: numeric lua locals unbox in mixed native binops" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(int64_t n)") orelse return error.TestExpectedEqual;
@@ -33862,6 +33910,8 @@ test "codegen: unary neg on numeric lua local unboxes" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(int64_t n)") orelse return error.TestExpectedEqual;
@@ -33931,6 +33981,8 @@ test "codegen: typed arbitrary-key table reads use native projection helpers" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "int64_t n = ((int64_t)lua_table_get_key_num(t, lua_val_from_str(nk)))") != null);
@@ -34912,6 +34964,8 @@ test "codegen: dynamic length operator emits native numeric helper" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "lua_len_num(") != null);
@@ -35703,6 +35757,50 @@ test "codegen: @ builtin aliases emit existing intrinsic paths" {
     try testing.expect(std.mem.indexOf(u8, output, "__comptimeif") == null);
 }
 
+test "codegen: internal record ABI is invariant under route and descriptor casing" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, undefined, 0, null, null);
+
+    const fields = try alloc.alloc(types.FieldType, 1);
+    fields[0] = .{ .name = "pos", .typ = .i64 };
+    const record = RT{ .table_type = .{ .fields = fields } };
+    try cg.record_aliases.put(alloc, "lexer", record);
+    try cg.record_aliases.put(alloc, "Lexer", record);
+    try cg.native_scalar_funcs.put(alloc, "next", {});
+
+    const routes = [_]struct {
+        module: []const u8,
+        native: bool,
+        mixed: bool,
+        substrate: bool,
+        function: ?[]const u8,
+    }{
+        .{ .module = "", .native = false, .mixed = false, .substrate = false, .function = null },
+        .{ .module = "", .native = true, .mixed = false, .substrate = false, .function = "next" },
+        .{ .module = "", .native = false, .mixed = true, .substrate = false, .function = "next" },
+        .{ .module = "compiler_lexer", .native = false, .mixed = false, .substrate = false, .function = null },
+        .{ .module = "compiler_lexer", .native = false, .mixed = true, .substrate = true, .function = "next" },
+    };
+
+    for (routes) |route| {
+        cg.current_module_cname = route.module;
+        cg.native_scalar_mode = route.native;
+        cg.mixed_scalar_mode = route.mixed;
+        cg.substrate_native_mode = route.substrate;
+        cg.current_func_name = route.function;
+
+        try testing.expect(cg.internal_record_param_by_ptr(record));
+        try testing.expect(cg.internal_record_param_by_ptr(.{ .@"struct" = .{ .name = "lexer" } }));
+        try testing.expect(cg.internal_record_param_by_ptr(.{ .@"struct" = .{ .name = "Lexer" } }));
+        try testing.expect(!cg.internal_record_param_by_ptr(.i64));
+    }
+}
+
 test "codegen: record literal fields unbox into typed record params" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -35939,6 +36037,8 @@ test "codegen: typed __emit bypasses lua_to_num on return and locals" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
 
@@ -36764,6 +36864,8 @@ test "gcd prelude uses coprime affine divisor iteration with fallback" {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.bench_mode = true;
+    cg.bench_backend = .c_dynamic;
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "duo_gcd_i64(mul_mod, period) == 1") != null);

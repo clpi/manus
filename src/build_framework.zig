@@ -5,34 +5,42 @@ const directives = @import("directives.zig");
 const Sema = @import("sema.zig").Sema;
 const family = @import("lexer_bridge.zig");
 
-const canonical = family.CANONICAL_SOURCE_SUFFIX;
+const entry_dirs = [_][]const u8{ "src/", "" };
+const build_dirs = [_][]const u8{ "", "src/" };
 
-const build_source_candidates = [_][]const u8{
-    "build" ++ canonical,
-    "src/build" ++ canonical,
-    "src/main" ++ canonical,
-    "main" ++ canonical,
-    "src/main.lua",
-    "main.lua",
-    "src/init" ++ canonical,
-    "init" ++ canonical,
-    "src/init.lua",
-    "init.lua",
-};
+fn sourceCandidate(
+    out: []u8,
+    root: []const u8,
+    dir: []const u8,
+    stem: []const u8,
+    suffix: []const u8,
+) ?[]const u8 {
+    if (root.len == 0) return std.fmt.bufPrint(out, "{s}{s}{s}", .{ dir, stem, suffix }) catch null;
+    return std.fmt.bufPrint(out, "{s}{c}{s}{s}{s}", .{ root, std.fs.path.sep, dir, stem, suffix }) catch null;
+}
 
-const entrypoint_candidates = [_][]const u8{
-    "src/main" ++ canonical,
-    "main" ++ canonical,
-    "src/main.lua",
-    "main.lua",
-    "src/init" ++ canonical,
-    "init" ++ canonical,
-    "src/init.lua",
-    "init.lua",
-};
+fn findSource(
+    io: std.Io,
+    root: []const u8,
+    stem: []const u8,
+    canonical_only: bool,
+    dirs: []const []const u8,
+    out: []u8,
+) ?[]const u8 {
+    var forms = family.sourceForms();
+    while (forms.next()) |form| {
+        if (canonical_only and !form.canonical) continue;
+        for (dirs) |dir| {
+            const path = sourceCandidate(out, root, dir, stem, form.suffix) orelse return null;
+            if (pathExists(io, path)) return path;
+        }
+    }
+    return null;
+}
 
-pub fn buildSourceCandidates() []const []const u8 {
-    return &build_source_candidates;
+fn entrypointIn(io: std.Io, root: []const u8, canonical_only: bool, out: []u8) ?[]const u8 {
+    if (findSource(io, root, "main", canonical_only, &entry_dirs, out)) |path| return path;
+    return findSource(io, root, "init", canonical_only, &entry_dirs, out);
 }
 
 pub const TargetKind = enum {
@@ -481,8 +489,15 @@ fn pathExists(io: std.Io, path: []const u8) bool {
 }
 
 fn isEntrypointPath(path: []const u8) bool {
-    for (entrypoint_candidates) |candidate| {
-        if (std.mem.eql(u8, path, candidate)) return true;
+    inline for ([_][]const u8{ "main", "init" }) |stem| {
+        var forms = family.sourceForms();
+        while (forms.next()) |form| {
+            for (entry_dirs) |dir| {
+                var buf: [64]u8 = undefined;
+                const candidate = sourceCandidate(&buf, "", dir, stem, form.suffix) orelse continue;
+                if (std.mem.eql(u8, path, candidate)) return true;
+            }
+        }
     }
     return false;
 }
@@ -575,22 +590,26 @@ pub fn loadFromSema(alloc: std.mem.Allocator, build_source: []const u8, sem: *co
     };
 }
 
-pub fn findBuildSource(io: std.Io, requested: ?[]const u8) []const u8 {
-    if (requested) |r| {
-        if (family.sourceFacts(r).law != .unknown) return r;
-    }
-    for (build_source_candidates) |c| {
-        if (!pathExists(io, c)) continue;
-        return c;
-    }
-    return "build" ++ canonical;
+pub fn findBuildSource(alloc: std.mem.Allocator, io: std.Io) !?[]u8 {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    if (findSource(io, "", "build", true, &build_dirs, &buf)) |path| return try alloc.dupe(u8, path);
+    if (entrypointIn(io, "", false, &buf)) |path| return try alloc.dupe(u8, path);
+    return null;
 }
 
-pub fn findEntrypoint(io: std.Io) ?[]const u8 {
-    for (entrypoint_candidates) |c| {
-        if (pathExists(io, c)) return c;
-    }
-    return null;
+pub fn findEntrypoint(alloc: std.mem.Allocator, io: std.Io) !?[]u8 {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = entrypointIn(io, "", false, &buf) orelse return null;
+    return try alloc.dupe(u8, path);
+}
+
+/// Workspace topology is build/main only and canonical-source only. Physical
+/// suffixes come from the executed source-form owner; this consumer owns only
+/// where a workspace marker may live.
+pub fn hasWorkspaceMarker(io: std.Io, root: []const u8) bool {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    if (findSource(io, root, "build", true, &build_dirs, &buf) != null) return true;
+    return findSource(io, root, "main", true, &entry_dirs, &buf) != null;
 }
 
 pub fn stageLabel(project: *const Project, target: Target) ?[]const u8 {
@@ -878,11 +897,26 @@ test "build_framework: implicit entrypoint target" {
     try std.testing.expectEqualStrings("src/main.id", project.targets[0].src.?);
 }
 
-test "build_framework: canonical entry candidates" {
-    try std.testing.expectEqualStrings("build.id", build_source_candidates[0]);
-    try std.testing.expectEqualStrings("src/build.id", build_source_candidates[1]);
-    try std.testing.expectEqualStrings("src/main.id", build_source_candidates[2]);
-    try std.testing.expectEqualStrings("src/main.id", entrypoint_candidates[0]);
+test "build_framework: source-form authority owns entry suffixes" {
     try std.testing.expect(isEntrypointPath("src/main.id"));
+    try std.testing.expect(isEntrypointPath("main.lua"));
     try std.testing.expect(!isEntrypointPath("src/main.duo"));
+    try std.testing.expect(!isEntrypointPath("src/main.bin"));
+}
+
+test "build_framework: root build source precedes src build source" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "src");
+    try tmp.dir.writeFile(io, .{ .sub_path = "build.id", .data = "" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/build.id", .data = "" });
+
+    var root_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const root = root_buf[0..try tmp.dir.realPath(io, &root_buf)];
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const path = findSource(io, root, "build", true, &build_dirs, &path_buf) orelse
+        return error.TestExpectedBuildSource;
+    try std.testing.expect(std.mem.endsWith(u8, path, "build.id"));
+    try std.testing.expect(std.mem.indexOf(u8, path, "src/build.id") == null);
 }

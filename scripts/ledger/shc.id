@@ -78,8 +78,18 @@ shc: i64 = ()
     fail = 1
   if !bridge:seen("pending: ?SourceLaw") and bridge:seen("sourceformcount") and producer:seen("sourceformcount")
     print("  ok   source forms projected by executed producer")
-  print("  admit(law, path) remains host corpus-family producer")
-  print("  sourceFacts residual = corpus home or projected discover")
+  if bridge:seen("const homes") or bridge:seen("HomeClass") or bridge:seen("homeFacts(")
+    print("  FAIL host corpus admission roster restored")
+    fail = 1
+  if !bridge:seen("sourcefactlaw") or !bridge:seen("sourcefactprovenance")
+    print("  FAIL sourceFacts does not consume executed producer facts")
+    fail = 1
+  if !producer:seen("sourceentrycount") or !producer:seen("sourcefactlaw") or !producer:seen("sourcefactprovenance")
+    print("  FAIL executed source admission producer missing")
+    fail = 1
+  if !bridge:seen("const homes") and !bridge:seen("HomeClass") and !bridge:seen("homeFacts(") and bridge:seen("sourcefactlaw") and producer:seen("sourceentrycount")
+    print("  ok   source law/provenance admission executes in Idol")
+  print("  sourceFacts host residual = filesystem normalization + ABI name binding")
   print("  Lexer.init test convenience; TokenKind host enum still parallel")
   print("  TokenKind host enum still parallel to producer kindname")
   print("  parser SHC not started; one headerSignal; BinOp map remains")

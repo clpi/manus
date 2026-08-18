@@ -42,7 +42,7 @@ Canonical lexical identity is not closed (`GAP-145` OPEN): producer identities
 for text/bytes/compat/long, `#` comment, shebang, dash comments, and reserved
 backtick now cross `tokenize()`. Producer `KIND_STRING_LIT` and host
 `TokenKind.string_lit` and AST `.string_lit` are deleted without renumbering
-live producer slots; Tree-sitter and suffix `sourceFacts` remain. The historical
+live producer slots; Tree-sitter and quote/source-law consumers remain. The historical
 `lib/` distribution path is retired filesystem
 provenance (GAP-157), not semantic ownership.
 
@@ -57,11 +57,12 @@ embed or optimization path; deleting those higher-level fallbacks requires the
 corresponding realization owner to distinguish physical refusal from semantic
 failure.
 
-Source ingress remains the earliest host-owned entry seam. The executed Idol
-producer now owns the physical source-form roster through `sourceform*()` and
-home discovery consumes it, so Zig no longer enumerates `.id` and `.lua`
-there. Zig still owns corpus-home admission and the unlisted-path
-`sourceFacts` fallback, so this is not full source-family authority.
+Source ingress classification is now executed Idol authority. The producer owns
+physical forms, corpus roles, longest-match admission, unlisted fallback, law,
+and provenance through `sourceform*`, `sourceentry*`, and `sourcefact*`. Zig
+normalizes a physical file to one repo-relative provenance spelling, calls the
+producer once, and binds returned names to the temporary host ABI; it owns no
+role roster or role→law mapping.
 Production lexing now goes through the Idol lexer
 (`tokenize()`); host `tokenizeHost()` is differential-only. The identity
 blocker is `GAP-145` remaining consumers (Tree-sitter and source-law collapse)
@@ -84,11 +85,11 @@ sentinel, or query-then-mutate helpers as Idol semantic architecture.
 
 | Boundary | Current state | Exact remaining authority |
 | --- | --- | --- |
-| Source ingress | HOST OWNED, FORM ROSTER IDOL-OWNED | `lib/compiler/lexer.id` projects admitted physical form count, law name, suffix provenance, and canonical status through `sourceform*()`; home resolution consumes it and owns no suffix roster. `admit(law, path)` and corpus homes remain host-owned; unlisted paths use projected-form `discover` (`law.bridge.death`). |
+| Source ingress | IDOL OWNED, HOST FS/ABI BRIDGE | `lib/compiler/lexer.id` executes physical-form and corpus-role admission and returns exact law/provenance. `src/lexer_bridge.zig` only resolves physical provenance to the producer's repo-relative spelling and binds producer names to temporary host enums. The roster is a deletion bridge until launch/provider ingress supplies explicit law facts. |
 | Lexer producer | IDOL OWNED | `lib/compiler/lexer.id` owns token-kind, content, and span production and fails closed. Canonical lexical-law closure remains `GAP-145`. |
-| Canonical `.id` lex route | IDOL OWNED | `src/lexer_dispatch.zig` `route()` calls `tokenize()` for every source. Host `tokenizeHost()` is differential-only (legacy-equivalent subset; must not veto intentional Idol divergence; `law.bridge.death`). Generated `src/lexer_tokenize.c` is from current `lib/compiler/lexer.id` via `dump-c --lib`. Every lexer export takes `family` as an operand (`law.family.one`); `new()` does not read suffix bytes. Production compile, fmt, and embed classify once via `sourceFacts` then `Lexer.initFacts`. `route()`, parse, sema, and token-view consume `lex.family`. `Lexer.init` is a test convenience. Host `sourceFacts` remains the one ingress. CLI file filter uses the same `sourceFacts.law`. |
+| Canonical `.id` lex route | IDOL OWNED | `src/lexer_dispatch.zig` `route()` calls `tokenize()` for every source. Host `tokenizeHost()` is differential-only (legacy-equivalent subset; must not veto intentional Idol divergence; `law.bridge.death`). Generated `src/lexer_tokenize.c` is from current `lib/compiler/lexer.id` via `dump-c --lib`. Every lexer export takes family as an operand (`law.family.one`); `new()` does not read suffix bytes. Production compile, fmt, and embed call the `sourceFacts` bridge once, then `Lexer.initFacts`; the law/provenance answer is executed Idol output. `route()`, parse, sema, and token-view consume `lex.family`. `Lexer.init` is a test convenience. |
 | Lexer ABI schema | HOST OWNED (bridge) | `RECORD_SLOTS` / `lexErrorFromCode` / `tokenKindFromOrdinal` deleted. Consumer queries `recordslots()` / `field*()` / `rejectionname()` / `kindname()` / `kindcount()`; `bindKindSchema` binds ordinals once. `bindKindSchema` is a deletion-gated bridge (`law.bridge.death`): endpoint is token-role-id, not producer-name → runtime bind → host enum. Remaining: host `TokenKind` enum, `duo_lexer_*` / `useDuoTokens` names (`law.schema.one`, `law.magic.zero`, GAP-107). |
-| Lexical identity | IDOL OWNED, GAP-145 OPEN | Text/bytes/compat/long, `#` comment, shebang, `--` / `--[[` comments, and reserved backtick cross `tokenize()`. Long-text delimiter level is `int_val`; parser no longer scans `[[`. Producer, host-token, and AST `string_lit` identities are deleted; physical slot 3 is unpublished. AST `.quoted` retains exact quote provenance without a text/bytes taxonomy. Tree-sitter and suffix `sourceFacts` remain. Do not start parser SHC. |
+| Lexical identity | IDOL OWNED, GAP-145 OPEN | Text/bytes/compat/long, `#` comment, shebang, `--` / `--[[` comments, and reserved backtick cross `tokenize()`. Long-text delimiter level is `int_val`; parser no longer scans `[[`. Producer, host-token, and AST `string_lit` identities are deleted; physical slot 3 is unpublished. AST `.quoted` retains exact quote provenance without a text/bytes taxonomy. Tree-sitter and semantic quote/source-law consumers remain. Do not start parser SHC. |
 | Token/span | IDOL OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. |
 | Grammar projection | HOST OWNED, GAP-134 OPEN | `src/grammar_roles.zig` is the **current transitional** role table (host executable). Destination: one Idol grammar-fact owner → generated Zig/C tables + `grammar.md` + Tree-sitter. `grammar_roles.zig` and `lib/token/grammarrole.id` are bridges (`law.bridge.death`). Pratt consumes roles; parser `BinOp` map remains reconstruction debt. Do not add `grammar.id` until it *replaces* the Zig table as the one executable owner. |
 | Parser recognition | HOST OWNED | `src/parser.zig` still decides expressions, bindings, and source structure. `parse_module` installs the producer pack when missing (`route()`); header recognition is one `headerSignal` over that pack. Host save/scan/restore snapshot walk is deleted. Not parser SHC. |
@@ -108,15 +109,15 @@ For the fail-closed lexer transfer:
   token pack, so the next parser read silently resumed the host scanner.
 - **AFTER:** the same failure propagates, partial route storage is released, and
   no host token stream is accepted by that route.
-- **NEXT:** `GAP-145` remaining is Tree-sitter `grammar.json`, semantic
-  consumers that collapse quote/source-law distinctions, and host corpus-home
-  admission in `sourceFacts`. The physical suffix roster is already producer-
-  projected. Do not start parser SHC. `GAP-134` remaining is closing
+- **NEXT:** `GAP-145` remaining is Tree-sitter `grammar.json` and semantic
+  consumers that collapse quote/source-law distinctions. Source-form and
+  corpus-home admission now execute in Idol; filesystem normalization and host
+  enum binding remain explicit bootstrap bridges. Do not start parser SHC. `GAP-134` remaining is closing
   grammar.md as the generatable owner. Header recognition is one
   `headerSignal` over the producer pack (snapshot walk deleted); Pratt
   left/right come from roles; BinOp map remains.
-  Replace suffix ingress with an Idol source-family fact before compiler-B
-  source ingress can be called fully Idol-owned.
+  Replace the temporary host enum/name ABI only after compiler B consumes the
+  same source-law contract directly.
 
 Canonical source ingress recognizes `.id` as Idol. New canonical `.id` is
 admitted. Retired `.duo` / `.duon` / `.idsem` are not source suffixes.
@@ -124,15 +125,12 @@ admitted. Retired `.duo` / `.duon` / `.idsem` are not source suffixes.
 content remains SOURCE-ZERO debt and must reach zero; the `.id` extension
 itself is not debt. Compatibility testing must move to generated, structured,
 or external material rather than an in-tree stale source library.
-`src/lexer_bridge.zig` is one bootstrap helper, not the constitutional
-source-family authority: it still decides from suffix text and maps every
-`.id` to the same law/provenance pair even though the corpus distinguishes
-compatibility, historical, generated, and current migration inputs. Build
-entry, embedded module discovery, and direct-native module metadata discovery
-prefer `.id`. The native metadata path consumes the source-family constants
-rather than maintaining its own suffix spelling. Tooling and corpus gates
-that still enumerate `.id` independently remain migration bridges, not
-bootstrap evidence.
+`src/lexer_bridge.zig` is one bootstrap helper, not source-family authority. It
+normalizes filesystem provenance and consumes the executed producer's exact
+law/provenance answer. Build entry, embedded module discovery, and direct-native
+module metadata discovery consume that fact. Tooling and corpus gates that
+still enumerate `.id` independently remain migration bridges, not bootstrap
+evidence.
 
 Suffix-independent semantic identity is not closed by the existing differential.
 Byte-identical object output demonstrates only one realization result; it does
@@ -268,8 +266,8 @@ machine selects the cheapest concrete execution. Rich meaning does not justify
 a large runtime, boxed compiler state, or a fully materialized realization
 program.
 
-The source-family projection in this stage is a constant-time ingress fact with
-no allocation. It selects one language law and records provenance. It does not
+The source-family projection in this stage is one bounded ingress query with no
+allocation. It selects one language law and records provenance. It does not
 select machine realization. Equivalent canonical `.id` and temporary
 compatibility input must normalize to identical semantic entities and facts
 apart from admitted source provenance; focused byte equality alone does not

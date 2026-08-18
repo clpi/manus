@@ -5,11 +5,10 @@ const std = @import("std");
 const lexer = @import("lexer.zig");
 const keyword_bridge = @import("keyword_bridge.zig");
 
-pub const CANONICAL_SOURCE_SUFFIX = ".id";
-
 /// Integer operand into production `tokenize()`. 1 = canonical Idol, 2 = compat.
-/// Unknown retired suffixes are not a third law; they keep the historical
-/// non-`.id` default until ingress classifies them.
+/// Unknown is not a lexical family. `familyCode` retains the historical value
+/// for allocator-free test helpers; production ingress must reject unknown
+/// before constructing a lexer.
 pub const family_canon: i64 = 1;
 pub const family_compat: i64 = 2;
 
@@ -63,9 +62,20 @@ extern fn sourceformcount() i64;
 extern fn sourceformlaw(i: i64) [*:0]const u8;
 extern fn sourceformsuffix(i: i64) [*:0]const u8;
 extern fn sourceformcanonical(i: i64) bool;
+extern fn sourceentrycount() i64;
+extern fn sourceentryrole(i: i64) [*:0]const u8;
+extern fn sourceentrypattern(i: i64) [*:0]const u8;
+extern fn sourcepathrole(path: [*:0]const u8) [*:0]const u8;
+extern fn sourcepathformlaw(path: [*:0]const u8) [*:0]const u8;
+extern fn sourcefactlaw(path: [*:0]const u8, role: [*:0]const u8) [*:0]const u8;
+extern fn sourcefactprovenance(path: [*:0]const u8, role: [*:0]const u8) [*:0]const u8;
 
 fn sourceLawFromName(name: [*:0]const u8) ?SourceLaw {
     return std.meta.stringToEnum(SourceLaw, std.mem.span(name));
+}
+
+fn sourceProvenanceFromName(name: [*:0]const u8) ?SourceProvenance {
+    return std.meta.stringToEnum(SourceProvenance, std.mem.span(name));
 }
 
 pub fn sourceForms() SourceFormIterator {
@@ -73,152 +83,20 @@ pub fn sourceForms() SourceFormIterator {
     return .{ .count = if (count > 0 and count <= 64) count else 0 };
 }
 
-/// Path discovery for CLI/file filters. Suffix is provenance, not tokenize
-/// family (`law.family.one`). Remaining host ingress until an Idol source-family
-/// fact exists.
-pub fn discover(path: []const u8) SourceLaw {
-    var forms = sourceForms();
-    while (forms.next()) |form| {
-        if (std.mem.endsWith(u8, path, form.suffix)) return form.law;
-    }
-    return .unknown;
-}
-
-pub fn provenanceOf(path: []const u8) SourceProvenance {
-    var forms = sourceForms();
-    while (forms.next()) |form| {
-        if (!std.mem.endsWith(u8, path, form.suffix)) continue;
-        return if (form.canonical) .canonical else .foreign;
-    }
-    return .unknown;
-}
-
-/// Family producer (`law.family.one`). Law is an operand; path supplies
-/// provenance only and must not change the admitted law.
-pub fn admit(law: SourceLaw, path: []const u8) SourceFacts {
-    return .{ .law = law, .provenance = provenanceOf(path) };
-}
-
-const HomeClass = enum { canonical, generated, compatibility, foreign, negative };
-
-/// Bridge projection of `docs/spec/corpus.md` machine rules (`law.bridge.death`).
-/// Corpus.md remains the admission owner; this table is not a second suffix helper.
-const homes = [_]struct { class: HomeClass, pattern: []const u8 }{
-    .{ .class = .negative, .pattern = "examples/compile_fail/" },
-    .{ .class = .negative, .pattern = "examples/native_differential/unsupported/" },
-    .{ .class = .negative, .pattern = "error_test.id" },
-    .{ .class = .foreign, .pattern = "examples/native_differential/" },
-    .{ .class = .generated, .pattern = "lib/token/classify.id" },
-    .{ .class = .generated, .pattern = "lib/wasm/opcode_lookup.id" },
-    .{ .class = .generated, .pattern = "lib/wasm/ward_mvp_opcodes.id" },
-    .{ .class = .foreign, .pattern = "examples/wasm/" },
-    .{ .class = .compatibility, .pattern = "examples/lua" },
-    .{ .class = .compatibility, .pattern = "examples/test_lua" },
-    .{ .class = .canonical, .pattern = "examples/json/" },
-    .{ .class = .canonical, .pattern = "examples/conversion/" },
-    .{ .class = .canonical, .pattern = "examples/projection/" },
-    .{ .class = .canonical, .pattern = "examples/infer/" },
-    .{ .class = .canonical, .pattern = "examples/demand/" },
-    .{ .class = .canonical, .pattern = "examples/hash/" },
-    .{ .class = .canonical, .pattern = "examples/native/" },
-    .{ .class = .canonical, .pattern = "examples/control/" },
-    .{ .class = .canonical, .pattern = "examples/nominal/" },
-    .{ .class = .canonical, .pattern = "examples/layout/" },
-    .{ .class = .canonical, .pattern = "examples/pack/" },
-    .{ .class = .canonical, .pattern = "examples/anchor/" },
-    .{ .class = .canonical, .pattern = "examples/case/" },
-    .{ .class = .canonical, .pattern = "examples/read/" },
-    .{ .class = .canonical, .pattern = "examples/boring/" },
-    .{ .class = .canonical, .pattern = "examples/table/" },
-    .{ .class = .compatibility, .pattern = "examples/luahost/" },
-    .{ .class = .foreign, .pattern = "examples/parity/" },
-    .{ .class = .foreign, .pattern = "examples/host/" },
-    .{ .class = .foreign, .pattern = "examples/world/" },
-    .{ .class = .foreign, .pattern = "examples/tailslot/" },
-    .{ .class = .foreign, .pattern = "examples/shc/" },
-    .{ .class = .foreign, .pattern = "examples/cfloor/" },
-    .{ .class = .foreign, .pattern = "examples/benchmark.id" },
-    .{ .class = .foreign, .pattern = "examples/mandelbrot.id" },
-    .{ .class = .foreign, .pattern = "vendor/" },
-    .{ .class = .foreign, .pattern = "test.id" },
-    .{ .class = .foreign, .pattern = "test2.id" },
-    .{ .class = .foreign, .pattern = "examples/" },
-};
-
-/// Corpus home admission. Longest prefix wins, over a path already resolved to
-/// the spelling corpus.md is written in (see `corpusRelative`). Compatibility
-/// homes are lua law; canonical and generated homes are Idol law; MIXED homes —
-/// `.foreign` and `.negative` — state a role and take law from the suffix.
-/// Unlisted paths do not reconstruct family here.
-fn homeFacts(path: []const u8) ?SourceFacts {
-    var best_len: usize = 0;
-    var best: ?HomeClass = null;
-    for (homes) |home| {
-        if (!pathMatches(path, home.pattern)) continue;
-        if (home.pattern.len >= best_len) {
-            best_len = home.pattern.len;
-            best = home.class;
-        }
-    }
-    const class = best orelse return null;
-    return switch (class) {
-        .canonical, .generated => .{ .law = .idol, .provenance = .canonical },
-        .compatibility => .{ .law = .lua, .provenance = .foreign },
-        // A NEGATIVE home is a corpus ROLE — "every file here must be refused
-        // for its own stated reason" — and corpus.md states the role only. It
-        // says nothing about which language the files are written in, and
-        // `examples/compile_fail/` holds both `.id` rows and `.lua`. The `.lua`
-        // half is the TWIN corpus: byte-identical files that must still
-        // COMPILE, because that pair is the only thing that can tell "Idol
-        // refuses it" apart from "the compiler lost the construct". Handing
-        // them Idol law because of the DIRECTORY is the bridge answering a
-        // question corpus.md never asked, and it killed the twin it was meant
-        // to protect: `sema.zig`'s `check_infix_at` guards on `idol_mode` and
-        // names `anchor_infix_at.lua` as "the positive control that fails if
-        // that guard is ever dropped" — the guard was never dropped, the file
-        // was carried across the language boundary underneath it, and the
-        // control reported an `.id` diagnostic about a `.lua` file. So a mixed
-        // negative home resolves law the same way `.foreign` does.
-        .negative => switch (discover(path)) {
-            .lua => .{ .law = .lua, .provenance = .foreign },
-            .idol, .unknown => .{ .law = .idol, .provenance = .canonical },
-        },
-        // Foreign homes mix Idol `.id` and Lua fixtures. Layout admits the
-        // home; discovery supplies only which law that file was handed as.
-        .foreign => switch (discover(path)) {
-            .lua => .{ .law = .lua, .provenance = .foreign },
-            .idol, .unknown => .{ .law = .idol, .provenance = .foreign },
-        },
-    };
-}
-
-fn pathMatches(path: []const u8, pattern: []const u8) bool {
-    if (std.mem.eql(u8, path, pattern)) return true;
-    if (std.mem.startsWith(u8, path, pattern)) {
-        if (pattern[pattern.len - 1] == '/') return true;
-        if (path.len > pattern.len and path[pattern.len] == '/') return true;
-    }
-    if (path.len > pattern.len and path[path.len - pattern.len - 1] == '/' and
-        std.mem.endsWith(u8, path, pattern))
-        return true;
-    return false;
-}
-
-/// `docs/spec/corpus.md` IS the admission owner (`law.bridge.death`), and its
-/// rules are written repo-relative. So the tree a file is admitted by is the
-/// tree that CARRIES those rules, and this file is the anchor that finds it.
-/// Any other anchor (`.git`, a hardcoded root, the cwd) would be a second
-/// authority for a fact corpus.md already owns.
+/// Physical anchor for the repo-relative provenance spelling consumed by the
+/// executed source producer. This file contains no admission roster; it merely
+/// identifies the source tree, like a filesystem witness. Law/provenance come
+/// only from `sourcefact*()`.
 const CORPUS_RULES = "docs/spec/corpus.md";
 
 /// The spelling the corpus rules are written in: the file's real location,
 /// relative to the root of the tree that carries `CORPUS_RULES`.
 ///
-/// WHY THIS EXISTS. `homeFacts` compares the characters it was handed. Handed
+/// WHY THIS EXISTS. The executed producer compares the characters it was handed. Handed
 /// `examples/compile_fail/x.lua` it found the negative home; handed
 /// `./examples/compile_fail/x.lua`, the absolute path, or the bare name from a
-/// cwd inside that directory, it found nothing and `sourceFacts` fell through
-/// to suffix `discover` — a DIFFERENT policy for the same bytes, silently
+/// cwd inside that directory, it found nothing and the former host classifier
+/// fell through to suffix discovery — a DIFFERENT policy for the same bytes, silently
 /// substituted. Measured on `examples/compile_fail/implicit_global_read.lua`:
 /// one spelling checked clean, three refused `use of undeclared global 'x'`.
 /// That is the shape `law.fallback.zero` forbids — the owner is uncertain, the
@@ -228,11 +106,11 @@ const CORPUS_RULES = "docs/spec/corpus.md";
 /// directory at all and a symlink carries the wrong one. Identity of the FILE
 /// is the only thing all four spellings share.
 ///
-/// Returns null at the two boundaries where corpus.md genuinely has nothing to
+/// Returns null at the two boundaries where the physical tree genuinely has nothing to
 /// say: the path does not resolve to anything on disk, or no ancestor of it
 /// carries the rules. Those are the owner REPORTING an unsupported boundary,
 /// which is the one fallback shape `law.fallback.zero` admits.
-fn corpusRelative(path: []const u8, out: []u8) ?[]const u8 {
+fn corpusRelative(path: []const u8, out: []u8) ?[:0]const u8 {
     var in_z: [std.fs.max_path_bytes]u8 = undefined;
     if (path.len == 0 or path.len >= in_z.len) return null;
     @memcpy(in_z[0..path.len], path);
@@ -257,9 +135,10 @@ fn corpusRelative(path: []const u8, out: []u8) ?[]const u8 {
             const cut = if (dir.len == 1 and dir[0] == '/') dir.len else dir.len + 1;
             if (real.len <= cut) return null;
             const rel = real[cut..];
-            if (rel.len > out.len) return null;
+            if (rel.len >= out.len) return null;
             @memcpy(out[0..rel.len], rel);
-            return out[0..rel.len];
+            out[rel.len] = 0;
+            return out[0..rel.len :0];
         }
         const parent = std.fs.path.dirname(dir) orelse return null;
         if (parent.len == dir.len) return null;
@@ -267,16 +146,40 @@ fn corpusRelative(path: []const u8, out: []u8) ?[]const u8 {
     }
 }
 
-/// Corpus home first, asked in the ONE spelling corpus.md is written in.
-/// Suffix `discover` is only the unlisted-path fallback (`law.bridge.death`),
-/// and "unlisted" now means the corpus does not cover the file — never that the
-/// path happened to be spelled with a leading `./`. Later stages consume facts
-/// / `lex.family`.
+fn producerPath(path: []const u8, out: []u8) ?[:0]const u8 {
+    if (path.len >= out.len) return null;
+    @memcpy(out[0..path.len], path);
+    out[path.len] = 0;
+    return out[0..path.len :0];
+}
+
+/// Normalize physical provenance once, then ask the executed Idol producer for
+/// law and provenance. Zig owns no corpus roster, role→law mapping, or suffix
+/// fallback. Later stages consume this returned fact / `lex.family`; they never
+/// inspect the path again to select source meaning.
 pub fn sourceFacts(path: []const u8) SourceFacts {
-    var rel_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const canon = corpusRelative(path, &rel_buf) orelse path;
-    if (homeFacts(canon)) |facts| return facts;
-    return admit(discover(canon), canon);
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const producer_path = corpusRelative(path, &path_buf) orelse
+        producerPath(path, &path_buf) orelse
+        return .{ .law = .unknown, .provenance = .unknown };
+
+    // A corpus role qualifies an admitted source; it cannot invent a source
+    // law for bytes whose physical form the producer does not admit. Ask the
+    // executed producer twice: the form projection must be present and must
+    // agree with the same fact query absent a corpus role. Only then may the
+    // role-qualified query select the exact law/provenance pair. This keeps
+    // compatibility homes lawful while making foreign/negative `.bin`, stdin,
+    // and every other unadmitted form fail closed before tokenization.
+    const form_law = sourceLawFromName(sourcepathformlaw(producer_path.ptr)) orelse
+        return .{ .law = .unknown, .provenance = .unknown };
+    const discovered_law = sourceLawFromName(sourcefactlaw(producer_path.ptr, "")) orelse
+        return .{ .law = .unknown, .provenance = .unknown };
+    if (form_law != discovered_law) return .{ .law = .unknown, .provenance = .unknown };
+
+    const role = sourcepathrole(producer_path.ptr);
+    const law = sourceLawFromName(sourcefactlaw(producer_path.ptr, role)) orelse return .{ .law = .unknown, .provenance = .unknown };
+    const provenance = sourceProvenanceFromName(sourcefactprovenance(producer_path.ptr, role)) orelse return .{ .law = .unknown, .provenance = .unknown };
+    return .{ .law = law, .provenance = provenance };
 }
 
 pub fn familyCode(facts: SourceFacts) i64 {
@@ -307,21 +210,17 @@ test "lexer bridge: production split" {
     try std.testing.expectEqual(@as(?lexer.TokenKind, null), lookupKeyword("notkw"));
 }
 
-test "lexer bridge: admit law is the operand" {
-    const canonical = admit(.idol, "compiler.id");
+test "lexer bridge: executed ingress produces unlisted law and provenance" {
+    const canonical = sourceFacts("compiler.id");
     try std.testing.expectEqual(SourceLaw.idol, canonical.law);
     try std.testing.expectEqual(SourceProvenance.canonical, canonical.provenance);
     try std.testing.expectEqual(family_canon, familyCode(canonical));
-    const lua = admit(.lua, "compiler.lua");
+    const lua = sourceFacts("compiler.lua");
     try std.testing.expectEqual(SourceLaw.lua, lua.law);
+    try std.testing.expectEqual(SourceProvenance.foreign, lua.provenance);
     try std.testing.expectEqual(family_compat, familyCode(lua));
-}
-
-test "lexer bridge: discover is path provenance not family authority" {
-    try std.testing.expectEqual(SourceLaw.idol, discover("compiler.id"));
-    try std.testing.expectEqual(SourceLaw.lua, discover("compiler.lua"));
-    try std.testing.expectEqual(SourceLaw.unknown, discover("compiler.duo"));
-    try std.testing.expectEqual(SourceLaw.unknown, discover("compiler.txt"));
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("compiler.duo").law);
+    try std.testing.expectEqual(SourceProvenance.unknown, sourceFacts("compiler.txt").provenance);
 }
 
 test "lexer bridge: one source-law producer owns physical form order" {
@@ -331,22 +230,45 @@ test "lexer bridge: one source-law producer owns physical form order" {
     var forms = sourceForms();
     const idol = forms.next().?;
     try std.testing.expectEqual(SourceLaw.idol, idol.law);
-    try std.testing.expectEqualStrings(CANONICAL_SOURCE_SUFFIX, idol.suffix);
+    try std.testing.expectEqualStrings(".id", idol.suffix);
     try std.testing.expect(idol.canonical);
     const lua = forms.next().?;
     try std.testing.expectEqual(SourceLaw.lua, lua.law);
     try std.testing.expectEqualStrings(".lua", lua.suffix);
     try std.testing.expect(!lua.canonical);
-    try std.testing.expectEqual(SourceLaw.unknown, discover("compiler.txt"));
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("compiler.txt").law);
     try std.testing.expect(forms.next() == null);
     try std.testing.expect(sourceLawFromName("bash") == null);
 }
 
-test "lexer bridge: admit law is not path-derived" {
-    const facts = admit(.idol, "compiler.lua");
-    try std.testing.expectEqual(SourceLaw.idol, facts.law);
-    try std.testing.expectEqual(SourceProvenance.foreign, facts.provenance);
-    try std.testing.expectEqual(family_canon, familyCode(facts));
+test "lexer bridge: corpus document is only a checked producer projection" {
+    var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(
+        threaded.io(),
+        CORPUS_RULES,
+        std.testing.allocator,
+        .unlimited,
+    );
+    defer std.testing.allocator.free(bytes);
+
+    const opening = "```text\n";
+    const start = (std.mem.indexOf(u8, bytes, opening) orelse return error.CorpusProjectionMissing) + opening.len;
+    const rest = bytes[start..];
+    const end = std.mem.indexOf(u8, rest, "```") orelse return error.CorpusProjectionUnterminated;
+    var lines = std.mem.splitScalar(u8, rest[0..end], '\n');
+    var index: i64 = 1;
+    while (lines.next()) |line| {
+        var fields = std.mem.tokenizeAny(u8, line, " \t\r");
+        const role = fields.next() orelse continue;
+        const pattern = fields.next() orelse return error.CorpusProjectionMalformed;
+        try std.testing.expect(fields.next() == null);
+        try std.testing.expect(index <= sourceentrycount());
+        try std.testing.expectEqualStrings(std.mem.span(sourceentryrole(index)), role);
+        try std.testing.expectEqualStrings(std.mem.span(sourceentrypattern(index)), pattern);
+        index += 1;
+    }
+    try std.testing.expectEqual(sourceentrycount() + 1, index);
 }
 
 test "lexer bridge: corpus home admits family not suffix" {
@@ -364,6 +286,26 @@ test "lexer bridge: corpus home admits family not suffix" {
     const foreign_id = sourceFacts("examples/shc/path.id");
     try std.testing.expectEqual(SourceLaw.idol, foreign_id.law);
     try std.testing.expectEqual(SourceProvenance.foreign, foreign_id.provenance);
+
+    const generated = sourceFacts("lib/token/classify.id");
+    try std.testing.expectEqual(SourceLaw.idol, generated.law);
+    try std.testing.expectEqual(SourceProvenance.canonical, generated.provenance);
+
+    const foreign_unknown = sourceFacts("vendor/opaque.bin");
+    try std.testing.expectEqual(SourceLaw.unknown, foreign_unknown.law);
+    try std.testing.expectEqual(SourceProvenance.unknown, foreign_unknown.provenance);
+
+    const negative_unknown = sourceFacts("examples/compile_fail/opaque.bin");
+    try std.testing.expectEqual(SourceLaw.unknown, negative_unknown.law);
+    try std.testing.expectEqual(SourceProvenance.unknown, negative_unknown.provenance);
+
+    const stdin = sourceFacts("/dev/stdin");
+    try std.testing.expectEqual(SourceLaw.unknown, stdin.law);
+    try std.testing.expectEqual(SourceProvenance.unknown, stdin.provenance);
+
+    const exact_foreign = sourceFacts("test.id");
+    try std.testing.expectEqual(SourceLaw.idol, exact_foreign.law);
+    try std.testing.expectEqual(SourceProvenance.foreign, exact_foreign.provenance);
 }
 
 test "lexer bridge: a negative home is a corpus role, not a language" {

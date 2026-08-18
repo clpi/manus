@@ -68,7 +68,7 @@ test "token view: peek is observation without cursor mutation" {
     const view = fromTokens(toks[0..i]);
     try std.testing.expectEqual(.text_lit, view.kind(0));
     try std.testing.expect(view.canBeginExpression(0));
-    try std.testing.expect(!view.role(0).?.compat_only);
+    try std.testing.expect(!view.role(0).?.roles.compat_only);
 }
 
 test "token view: identity change affects role not spelling" {
