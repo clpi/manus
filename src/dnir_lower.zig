@@ -1835,8 +1835,6 @@ pub const LowerCtx = struct {
     /// function. The identity and contents stay graph-owned; this map only
     /// avoids emitting a second address materialization for another access.
     aggregate_bases: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
-    /// Descriptor-ordered incoming subject members. The ABI slot is the dense
-    /// ordinal, so a hash table would add work and state while erasing order.
     subject_members: []const semantic_graph.id = &.{},
     /// Static element count of a positional table, keyed by its `.len` slot, so
     /// `t[i]` with a non-constant `i` knows how many slots to select over.
@@ -6423,7 +6421,6 @@ fn publishedDescriptor(
 }
 
 const CheckedScalarOperand = struct {
-    value: semantic_graph.id,
     expression: ?*Expr,
     descriptor: types.ResolvedType,
 };
@@ -6533,7 +6530,7 @@ fn checkedScalarOperand(
     }
     if (ctx.function) |relation| {
         if (ctx.graph.relationSubject(relation) == value) {
-            return .{ .value = value, .expression = null, .descriptor = descriptor };
+            return .{ .expression = null, .descriptor = descriptor };
         }
     }
     const raw = node.ast_ref orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
@@ -6542,7 +6539,6 @@ fn checkedScalarOperand(
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
     }
     return .{
-        .value = value,
         .expression = expression,
         .descriptor = descriptor,
     };
@@ -6629,21 +6625,21 @@ fn evaluateCheckedScalarOperands(
     var fp_count: usize = 0;
     var count: usize = 0;
     for (operands) |operand| {
-        if (ctx.function) |relation| {
-            if (ctx.graph.relationSubject(relation) == operand.value) {
-                const shape = ctx.graph.relationSubjectShape(relation) orelse
-                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                const rec = recordForSemanticShape(ctx.records, shape) orelse
-                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                if (ctx.subject_members.len != rec.fields.len or
-                    count + ctx.subject_members.len > max_reg_record_fields)
-                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                for (ctx.subject_members, 0..) |_, slot| {
-                    values[count] = .{ .local = @intCast(slot) };
-                    count += 1;
-                }
-                continue;
+        if (operand.expression == null) {
+            const relation = ctx.function orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+            const shape = ctx.graph.relationSubjectShape(relation) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+            const rec = recordForSemanticShape(ctx.records, shape) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+            if (ctx.subject_members.len != rec.fields.len or
+                count + ctx.subject_members.len > max_reg_record_fields)
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+            for (ctx.subject_members, 0..) |_, slot| {
+                values[count] = .{ .local = @intCast(slot) };
+                count += 1;
             }
+            continue;
         }
         const expression = operand.expression orelse
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
