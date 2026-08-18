@@ -651,7 +651,7 @@ or algorithm family.
 
 ## Learned Workspace Facts
 
-- Production lexical authority is `lib/compiler/lexer.id` and `lib/compiler/token.id`; `src/lexer_tokenize.c` is generated from `lib/compiler/host.id` — regenerate, never hand-edit; `src/lexer.zig` / `tokenizeHost()` are differential oracles only — not live production work.
+- Production lexical authority is `lib/compiler/lexer.id` and `lib/compiler/token.id`; `src/lexer_tokenize.c` is generated directly from `lib/compiler/lexer.id` with `dump-c --lib` — regenerate, never hand-edit; `src/lexer.zig` / `tokenizeHost()` are differential oracles only — not live production work. The obsolete `lib/compiler/host.id` wrapper and its unconsumed `duo_lexer_host_*` ABI are deleted.
 - Executed SHC frontier is **S0** (lexer/token/span only); compiler B does not exist; next frontier is GAP-145 lexical identity → GAP-134 grammar roles.
 - Blind-start constitution: read `docs/spec/canonical.md` before repository code; do not infer language law from Git frequency.
 - Harness boot payload and dev tooling: `docs/spec/harness-projection.md` → `.agents/HARNESS.md` via `tools/node/dev/generate-harness`/`orient`; coordination under `tools/node/dev/`; canonical Devin/Codex skill sources at `.pi/skills/idol-dev/SKILL.md` (dev loop) and `.pi/skills/idol/SKILL.md` (authority projection), installed by `tools/node/dev/install-skills`.
