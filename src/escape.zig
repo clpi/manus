@@ -191,7 +191,7 @@ fn walkExpr(expr: *const ast.Expr, name: []const u8, e: *Walk) void {
 fn walkInner(expr: *const ast.Expr, name: []const u8, e: *Walk) void {
     switch (expr.*) {
         // Leaves that cannot mention a name.
-        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => {},
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => {},
         .name => {},
 
         // EXEMPTION 1 — `t(k)` / `t[k]`. The object may be the table; the key

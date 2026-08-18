@@ -1189,7 +1189,7 @@ fn keyDeterminesSuccessor(
 /// FAILS CLOSED — an expression form not enumerated answers TRUE.
 fn mentionsSlot(e: *const ast.Expr, name: []const u8) bool {
     return switch (e.*) {
-        .int_lit, .float_lit, .string_lit, .nil, .true_lit, .false_lit => false,
+        .int_lit, .float_lit, .quoted, .nil, .true_lit, .false_lit => false,
         .name => |n| std.mem.eql(u8, n.ident, name),
         .unop => |u| mentionsSlot(u.operand, name),
         .binop => |b| mentionsSlot(b.lhs, name) or mentionsSlot(b.rhs, name),
@@ -1494,7 +1494,7 @@ fn entryValueIsDead(body: *const ast.Block, name: []const u8) bool {
 /// depends on this erring toward "live".
 fn exprMentions(expr: *const ast.Expr, name: []const u8) bool {
     return switch (expr.*) {
-        .int_lit, .float_lit, .string_lit, .nil, .true_lit, .false_lit => false,
+        .int_lit, .float_lit, .quoted, .nil, .true_lit, .false_lit => false,
         .name => |n| std.mem.eql(u8, n.ident, name),
         .unop => |u| exprMentions(u.operand, name),
         .binop => |b| exprMentions(b.lhs, name) or exprMentions(b.rhs, name),

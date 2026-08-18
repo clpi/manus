@@ -1508,7 +1508,7 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
         .float_lit => {
             for (ctx.prog.ev.items) |*ev| ev.float_produced = true;
         },
-        .int_lit, .string_lit, .nil, .true_lit, .false_lit, .vararg => {},
+        .int_lit, .quoted, .nil, .true_lit, .false_lit, .vararg => {},
         // Anything else is a shape this walk does not see through.
         else => refuseRegion(ctx),
     }

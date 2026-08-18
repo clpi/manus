@@ -1785,7 +1785,7 @@ fn observedClosure(m: *Machine, tail: *const ast.Expr, h: Projection) void {
 /// bound.
 fn mentions(env: ?*quotient_synth.Env, e: *const ast.Expr, name: []const u8) bool {
     return switch (e.*) {
-        .int_lit, .float_lit, .string_lit, .nil, .true_lit, .false_lit => false,
+        .int_lit, .float_lit, .quoted, .nil, .true_lit, .false_lit => false,
         .name => |n| std.mem.eql(u8, n.ident, name),
         .unop => |u| mentions(env, u.operand, name),
         .binop => |b| mentions(env, b.lhs, name) or mentions(env, b.rhs, name),

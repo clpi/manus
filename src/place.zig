@@ -1251,7 +1251,7 @@ fn readExpr(ctx: *Ctx, e: *const ast.Expr) anyerror!void {
         // same N2 rule the statement walk already follows: an unadmitted shape
         // is a defect in the WALK, and the walk lowers every fact rather than
         // assuming the shape was inert.
-        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => {},
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => {},
         else => try markAllUnknown(ctx),
     }
 }

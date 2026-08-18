@@ -101,7 +101,7 @@ fn req_decl_is_sole_assignment(mod: *const ast.Module, name: []const u8) bool {
             if (c.func.* != .name) return false;
             const fname = c.func.name.ident;
             if (!std.mem.eql(u8, fname, "req") and !std.mem.eql(u8, fname, "require")) return false;
-            if (c.args.len != 1 or c.args[0].* != .string_lit) return false;
+            if (c.args.len != 1 or c.args[0].* != .quoted) return false;
             saw_decl = true;
         }
     }
@@ -755,7 +755,7 @@ pub const CodeGen = struct {
         const vt = self.expr_type(val);
         if (vt == .str or vt == .bool) return true;
         return switch (val.*) {
-            .string_lit, .true_lit, .false_lit, .nil, .table, .func_expr => true,
+            .quoted, .true_lit, .false_lit, .nil, .table, .func_expr => true,
             else => false,
         };
     }
@@ -816,7 +816,7 @@ pub const CodeGen = struct {
 
     fn comptimeSatisfiesHook(ctx: ?*anyopaque, type_expr: *const ast.Expr, concept_name: []const u8) ?bool {
         const self: *CodeGen = @ptrCast(@alignCast(ctx orelse return null));
-        var concept_lit = ast.Expr{ .string_lit = .{ .loc = type_expr.loc(), .val = concept_name } };
+        var concept_lit = ast.Expr{ .quoted = .{ .loc = type_expr.loc(), .val = concept_name } };
         var args = [_]*ast.Expr{ @constCast(type_expr), &concept_lit };
         return self.eval_satisfies(&args);
     }
@@ -944,7 +944,7 @@ pub const CodeGen = struct {
             .nil => return false,
             .int_lit => |v| return v.val != 0,
             .float_lit => |v| return v.val != 0.0,
-            .string_lit => return true, // non-nil, non-false = truthy
+            .quoted => return true, // non-nil, non-false = truthy
             .name => |n| {
                 // Check if name resolves to a comptime-known value
                 if (self.comptime_bindings().get(n.ident)) |val| {
@@ -1445,7 +1445,7 @@ pub const CodeGen = struct {
             return true;
         }
         const obj_ty = self.expr_type(call.obj);
-        if (obj_ty == .str or call.obj.* == .string_lit or call.obj.* == .name) {
+        if (obj_ty == .str or call.obj.* == .quoted or call.obj.* == .name) {
             self.p("duo_io_read_path(", .{});
             try self.emit_expr(call.obj);
             self.p(")", .{});
@@ -1460,7 +1460,7 @@ pub const CodeGen = struct {
         if (!std.mem.eql(u8, method, "read") or args.len != 0) return null;
         if (obj.* == .name and std.mem.eql(u8, obj.name.ident, "stdin")) return .str;
         const obj_ty = self.expr_type(obj);
-        if (obj_ty == .str or obj.* == .string_lit or obj.* == .name) return .str;
+        if (obj_ty == .str or obj.* == .quoted or obj.* == .name) return .str;
         return null;
     }
 
@@ -2535,14 +2535,14 @@ pub const CodeGen = struct {
             if (self.jit_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.builtin_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (e.call.func.* == .name and std.mem.eql(u8, e.call.func.name.ident, "__as") and
-                e.call.args.len == 2 and e.call.args[0].* == .string_lit)
+                e.call.args.len == 2 and e.call.args[0].* == .quoted)
             {
-                if (self.type_from_c_name(e.call.args[0].string_lit.val)) |target| return target;
+                if (self.type_from_c_name(e.call.args[0].quoted.val)) |target| return target;
             }
             if (e.call.func.* == .name and std.mem.eql(u8, e.call.func.name.ident, "__as_type") and
-                e.call.args.len == 2 and e.call.args[1].* == .string_lit)
+                e.call.args.len == 2 and e.call.args[1].* == .quoted)
             {
-                if (self.type_from_c_name(e.call.args[1].string_lit.val)) |target| return target;
+                if (self.type_from_c_name(e.call.args[1].quoted.val)) |target| return target;
             }
             const callee_type = self.expr_type(e.call.func);
             if (e.call.func.* == .name) {
@@ -2583,7 +2583,7 @@ pub const CodeGen = struct {
             .true_lit, .false_lit => .bool,
             .int_lit => .i64,
             .float_lit => .f64,
-            .string_lit => .str,
+            .quoted => .str,
             .func_expr => |fb| self.func_expr_type(fb),
             .if_expr => |ie| blk: {
                 const then_t = self.expr_type(ie.then_expr);
@@ -2677,7 +2677,7 @@ pub const CodeGen = struct {
             },
             // `t["k"] = v` — string key, likewise not positional.
             .index => |ix| {
-                if (ix.obj.* == .name and ix.key.* == .string_lit) {
+                if (ix.obj.* == .name and ix.key.* == .quoted) {
                     try self.disqualify_str_list(ix.obj.name.ident);
                 }
             },
@@ -2952,7 +2952,7 @@ pub const CodeGen = struct {
             return .bool;
         if (std.mem.eql(u8, fname, "match") and args.len == 1) return .str;
         if (std.mem.eql(u8, fname, "byte")) {
-            if (args.len >= 2 and args[0].* == .string_lit and args[1].* == .int_lit) return .i64;
+            if (args.len >= 2 and args[0].* == .quoted and args[1].* == .int_lit) return .i64;
             // A `str` receiver with an integer index lowers to a raw
             // `(int64_t)(unsigned char)s[i - 1]` byte read (see the emit in
             // try_emit_native_string_call). Typing that .any made `print` wrap
@@ -2974,7 +2974,7 @@ pub const CodeGen = struct {
 
     fn string_method_result_type(self: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
         const obj_ty = self.expr_type(obj);
-        const strish = obj_ty == .str or obj.* == .string_lit or obj.* == .name;
+        const strish = obj_ty == .str or obj.* == .quoted or obj.* == .name;
         if (!strish) return null;
         if (std.mem.eql(u8, method, "len")) return .i64;
         if (std.mem.eql(u8, method, "trim") and args.len == 0) return .str;
@@ -3186,15 +3186,15 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "xpcall"))
             return .bool;
         if (std.mem.eql(u8, name, "select")) {
-            if (args.len > 0 and args[0].* == .string_lit and
-                std.mem.eql(u8, args[0].string_lit.val, "#"))
+            if (args.len > 0 and args[0].* == .quoted and
+                std.mem.eql(u8, args[0].quoted.val, "#"))
                 return .i64;
             return null;
         }
         if (std.mem.eql(u8, name, "collectgarbage")) {
             if (args.len == 0) return .f64;
-            if (args[0].* != .string_lit) return null;
-            const opt = args[0].string_lit.val;
+            if (args[0].* != .quoted) return null;
+            const opt = args[0].quoted.val;
             if (std.mem.eql(u8, opt, "count") or
                 std.mem.eql(u8, opt, "collect"))
                 return .f64;
@@ -3292,8 +3292,8 @@ pub const CodeGen = struct {
         // graveyarded spelling, still accepted so existing sources build while
         // they migrate.
         if (args[index].* == .name) return self.mem_type_from_name(args[index].name.ident);
-        if (args[index].* != .string_lit) return null;
-        return self.mem_type_from_name(args[index].string_lit.val);
+        if (args[index].* != .quoted) return null;
+        return self.mem_type_from_name(args[index].quoted.val);
     }
 
     fn type_from_c_name(self: *CodeGen, name: []const u8) ?RT {
@@ -3411,8 +3411,8 @@ pub const CodeGen = struct {
     }
 
     fn atomic_order_literal(args: []const *ast.Expr, index: usize, default_order: []const u8) []const u8 {
-        if (index >= args.len or args[index].* != .string_lit) return default_order;
-        const order = args[index].string_lit.val;
+        if (index >= args.len or args[index].* != .quoted) return default_order;
+        const order = args[index].quoted.val;
         if (std.mem.eql(u8, order, "relaxed")) return "__ATOMIC_RELAXED";
         if (std.mem.eql(u8, order, "consume")) return "__ATOMIC_CONSUME";
         if (std.mem.eql(u8, order, "acquire")) return "__ATOMIC_ACQUIRE";
@@ -3423,9 +3423,9 @@ pub const CodeGen = struct {
     }
 
     fn atomic_compare_failure_order(args: []const *ast.Expr) []const u8 {
-        if (args.len > 5 and args[5].* == .string_lit) return atomic_order_literal(args, 5, "__ATOMIC_SEQ_CST");
-        if (args.len > 4 and args[4].* == .string_lit) {
-            const success = args[4].string_lit.val;
+        if (args.len > 5 and args[5].* == .quoted) return atomic_order_literal(args, 5, "__ATOMIC_SEQ_CST");
+        if (args.len > 4 and args[4].* == .quoted) {
+            const success = args[4].quoted.val;
             if (std.mem.eql(u8, success, "release") or std.mem.eql(u8, success, "acq_rel"))
                 return "__ATOMIC_ACQUIRE";
             return atomic_order_literal(args, 4, "__ATOMIC_SEQ_CST");
@@ -3760,7 +3760,7 @@ pub const CodeGen = struct {
                         if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, name)) return true;
                     },
                     .index => |ix| {
-                        if (ix.obj.* == .name and ix.key.* == .string_lit and
+                        if (ix.obj.* == .name and ix.key.* == .quoted and
                             std.mem.eql(u8, ix.obj.name.ident, name)) return true;
                     },
                     else => {},
@@ -5310,7 +5310,7 @@ pub const CodeGen = struct {
         }
         return switch (e.*) {
             .int_lit => .i64,
-            .string_lit => .str,
+            .quoted => .str,
             // A name already proven in THIS body. One pass, no fixpoint: a name
             // read before it is written answers `.any`, and `.any` is the
             // refusing answer, so the order can only cost coverage.
@@ -5438,7 +5438,7 @@ pub const CodeGen = struct {
 
     fn expr_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
         return switch (expr.*) {
-            .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => true,
+            .true_lit, .false_lit, .int_lit, .float_lit, .quoted => true,
             .nil => true,
             // A name the program BOUND is an ordinary local — asked first, so
             // neither world test below can take it away from the author.
@@ -10703,7 +10703,7 @@ pub const CodeGen = struct {
         return switch (expr.*) {
             .int_lit => .i64,
             .float_lit => .f64,
-            .string_lit => .str,
+            .quoted => .str,
             .unop => |u| switch (u.op) {
                 .neg => switch (u.operand.*) {
                     .int_lit => .i64,
@@ -10720,7 +10720,7 @@ pub const CodeGen = struct {
         switch (expr.*) {
             .int_lit => self.p("{d}", .{expr.int_lit.val}),
             .float_lit => self.p("{e}", .{expr.float_lit.val}),
-            .string_lit => try self.emit_c_string_literal(expr.string_lit.val),
+            .quoted => try self.emit_c_string_literal(expr.quoted.val),
             .unop => |u| switch (u.op) {
                 .neg => switch (u.operand.*) {
                     .int_lit => self.p("{d}", .{-u.operand.int_lit.val}),
@@ -10948,7 +10948,7 @@ pub const CodeGen = struct {
     /// it would silently keep a whole descriptor on the boxed path.
     fn is_descriptor_literal(e: *const ast.Expr) bool {
         return switch (e.*) {
-            .int_lit, .float_lit, .true_lit, .false_lit, .string_lit => true,
+            .int_lit, .float_lit, .true_lit, .false_lit, .quoted => true,
             .unop => |u| u.op == .neg and switch (u.operand.*) {
                 .int_lit, .float_lit => true,
                 else => false,
@@ -11013,7 +11013,7 @@ pub const CodeGen = struct {
     /// leaves the descriptor on the path it is on today.
     fn exprUsesNameBare(e: *const ast.Expr, name: []const u8) bool {
         return switch (e.*) {
-            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .semantic, .semantic_scope => false,
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg, .semantic, .semantic_scope => false,
             .name => |n| std.mem.eql(u8, n.ident, name),
             // The whole point: `Kind.ident` reads a field and never the binding.
             .field => |f| if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, name))
@@ -13046,7 +13046,7 @@ pub const CodeGen = struct {
     fn lv_scan_expr(self: *CodeGen, e: *const ast.Expr, st: *LvScan) E!void {
         if (!st.ok) return;
         switch (e.*) {
-            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => {},
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted => {},
             .name => |n| {
                 // A dense table named outside an index position would escape the
                 // proof — and sema already refuses to make such a table dense,
@@ -15362,7 +15362,7 @@ pub const CodeGen = struct {
                 self.p("lua_to_display_str(", .{});
                 try self.emit_expr(arg);
                 self.p(")", .{});
-            } else if (t == .str or arg.* == .string_lit) {
+            } else if (t == .str or arg.* == .quoted) {
                 if (self.expr_emits_lua_value(arg)) {
                     self.p("lua_to_str(", .{});
                     try self.emit_expr(arg);
@@ -16237,11 +16237,11 @@ pub const CodeGen = struct {
                 }
             }
         }
-        if (expr.* == .string_lit) {
-            const hash = calc_lua_hash(expr.string_lit.val);
+        if (expr.* == .quoted) {
+            const hash = calc_lua_hash(expr.quoted.val);
             self.p("lua_val_from_literal(\"", .{});
-            try self.emit_string_escaped(expr.string_lit.val);
-            self.p("\", {d}, {d})", .{ hash, expr.string_lit.val.len });
+            try self.emit_string_escaped(expr.quoted.val);
+            self.p("\", {d}, {d})", .{ hash, expr.quoted.val.len });
             return;
         }
         const t = self.expr_type(expr);
@@ -16508,7 +16508,7 @@ pub const CodeGen = struct {
             .false_lit => self.p("false", .{}),
             .int_lit => |v| self.p("{d}", .{v.val}),
             .float_lit => |v| self.p("{e}", .{v.val}),
-            .string_lit => |v| {
+            .quoted => |v| {
                 self.p("\"", .{});
                 try self.emit_string_escaped(v.val);
                 self.p("\"", .{});
@@ -16869,8 +16869,8 @@ pub const CodeGen = struct {
                 }
                 // __bitcast(expr, "type") — emit reinterpret cast
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__bitcast") and c.args.len == 2) {
-                    if (c.args[1].* == .string_lit) {
-                        self.p("(*({s}*)&(", .{c.args[1].string_lit.val});
+                    if (c.args[1].* == .quoted) {
+                        self.p("(*({s}*)&(", .{c.args[1].quoted.val});
                         try self.emit_expr(c.args[0]);
                         self.p("))", .{});
                         return;
@@ -16887,8 +16887,8 @@ pub const CodeGen = struct {
                 }
                 // __sizeof("type") or __sizeof(expr) — emit sizeof
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__sizeof") and c.args.len == 1) {
-                    if (c.args[0].* == .string_lit) {
-                        self.p("((int64_t)sizeof({s}))", .{c.args[0].string_lit.val});
+                    if (c.args[0].* == .quoted) {
+                        self.p("((int64_t)sizeof({s}))", .{c.args[0].quoted.val});
                     } else {
                         self.p("((int64_t)sizeof(", .{});
                         try self.emit_expr(c.args[0]);
@@ -16898,8 +16898,8 @@ pub const CodeGen = struct {
                 }
                 // __alignof("type") — emit _Alignof
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__alignof") and c.args.len == 1) {
-                    if (c.args[0].* == .string_lit) {
-                        self.p("((int64_t)_Alignof({s}))", .{c.args[0].string_lit.val});
+                    if (c.args[0].* == .quoted) {
+                        self.p("((int64_t)_Alignof({s}))", .{c.args[0].quoted.val});
                     } else {
                         self.p("((int64_t)_Alignof(typeof(", .{});
                         try self.emit_expr(c.args[0]);
@@ -16909,8 +16909,8 @@ pub const CodeGen = struct {
                 }
                 // __offsetof("struct_type", "field") — emit offsetof
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__offsetof") and c.args.len == 2) {
-                    if (c.args[0].* == .string_lit and c.args[1].* == .string_lit) {
-                        self.p("((int64_t)__builtin_offsetof({s}, {s}))", .{ c.args[0].string_lit.val, c.args[1].string_lit.val });
+                    if (c.args[0].* == .quoted and c.args[1].* == .quoted) {
+                        self.p("((int64_t)__builtin_offsetof({s}, {s}))", .{ c.args[0].quoted.val, c.args[1].quoted.val });
                         return;
                     }
                 }
@@ -16922,8 +16922,8 @@ pub const CodeGen = struct {
                         self.p("{s}", .{folded});
                         return;
                     }
-                    if (c.args[0].* == .string_lit) {
-                        self.p("{s}", .{c.args[0].string_lit.val});
+                    if (c.args[0].* == .quoted) {
+                        self.p("{s}", .{c.args[0].quoted.val});
                     } else {
                         // Try comptime eval to get the string
                         const val = comptime_eval.evalWithBindings(c.args[0], self.comptime_bindings(), self.comptime_eval_options()) catch {
@@ -16940,11 +16940,11 @@ pub const CodeGen = struct {
                 }
                 // __c_call("name", args...) — direct raw C function call.
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__c_call") and c.args.len >= 1) {
-                    if (c.args[0].* != .string_lit) {
+                    if (c.args[0].* != .quoted) {
                         self.p("/* __c_call: first arg must be function name */0", .{});
                         return;
                     }
-                    self.p("{s}(", .{c.args[0].string_lit.val});
+                    self.p("{s}(", .{c.args[0].quoted.val});
                     for (c.args[1..], 0..) |arg, i| {
                         if (i > 0) self.p(", ", .{});
                         try self.emit_expr(arg);
@@ -16954,11 +16954,11 @@ pub const CodeGen = struct {
                 }
                 // __as("ctype", expr) — explicit typed coercion from @as(T, expr).
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__as") and c.args.len == 2) {
-                    if (c.args[0].* != .string_lit) {
+                    if (c.args[0].* != .quoted) {
                         self.p("/* __as: first arg must be type name */0", .{});
                         return;
                     }
-                    const target_name = c.args[0].string_lit.val;
+                    const target_name = c.args[0].quoted.val;
                     if (self.type_from_c_name(target_name)) |target| {
                         try self.emit_arg_for_param(c.args[1], target, true);
                     } else {
@@ -16970,11 +16970,11 @@ pub const CodeGen = struct {
                 }
                 // __as_type(expr, "ctype") — explicit typed coercion (reversed arg order from __as)
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__as_type") and c.args.len == 2) {
-                    if (c.args[1].* != .string_lit) {
+                    if (c.args[1].* != .quoted) {
                         self.p("/* __as_type: second arg must be type name */0", .{});
                         return;
                     }
-                    const target_name = c.args[1].string_lit.val;
+                    const target_name = c.args[1].quoted.val;
                     if (self.type_from_c_name(target_name)) |target| {
                         try self.emit_arg_for_param(c.args[0], target, true);
                     } else {
@@ -17006,9 +17006,9 @@ pub const CodeGen = struct {
                 }
                 // __static_assert(cond_string, msg_string) — compile-time assertion
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__static_assert")) {
-                    if (c.args.len >= 1 and c.args[0].* == .string_lit) {
-                        const msg = if (c.args.len >= 2 and c.args[1].* == .string_lit) c.args[1].string_lit.val else "static assertion failed";
-                        self.p("_Static_assert({s}, \"{s}\")", .{ c.args[0].string_lit.val, msg });
+                    if (c.args.len >= 1 and c.args[0].* == .quoted) {
+                        const msg = if (c.args.len >= 2 and c.args[1].* == .quoted) c.args[1].quoted.val else "static assertion failed";
+                        self.p("_Static_assert({s}, \"{s}\")", .{ c.args[0].quoted.val, msg });
                     } else if (c.args.len >= 1) {
                         // Try comptime eval for the condition
                         if (self.try_eval_const_condition(c.args[0])) |known| {
@@ -17020,7 +17020,7 @@ pub const CodeGen = struct {
                         } else {
                             self.p("_Static_assert(", .{});
                             try self.emit_expr(c.args[0]);
-                            const msg2 = if (c.args.len >= 2 and c.args[1].* == .string_lit) c.args[1].string_lit.val else "assertion failed";
+                            const msg2 = if (c.args.len >= 2 and c.args[1].* == .quoted) c.args[1].quoted.val else "assertion failed";
                             self.p(", \"{s}\")", .{msg2});
                         }
                     }
@@ -17028,9 +17028,9 @@ pub const CodeGen = struct {
                 }
                 // __typeof(expr) — emit typeof(expr) for type-generic C programming
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__typeof") and c.args.len == 1) {
-                    if (c.args[0].* == .string_lit) {
+                    if (c.args[0].* == .quoted) {
                         // String literal → use as raw type name
-                        self.p("{s}", .{c.args[0].string_lit.val});
+                        self.p("{s}", .{c.args[0].quoted.val});
                     } else {
                         self.p("typeof(", .{});
                         try self.emit_expr(c.args[0]);
@@ -17956,8 +17956,8 @@ pub const CodeGen = struct {
                     // String method calls: s:sub(), s:find(), s:byte(), etc.
                     // Map to lua_str_* functions.
                     if (std.mem.eql(u8, mc.method, "len")) {
-                        if (mc.obj.* == .string_lit) {
-                            self.p("{d}", .{mc.obj.string_lit.val.len});
+                        if (mc.obj.* == .quoted) {
+                            self.p("{d}", .{mc.obj.quoted.val.len});
                         } else {
                             const result_rt = self.expr_type(expr);
                             if (result_rt.is_numeric()) {
@@ -17981,7 +17981,7 @@ pub const CodeGen = struct {
                     // differential all stayed green. Emits what the namespace
                     // form already emits: 1-based index, unsigned byte.
                     if (std.mem.eql(u8, mc.method, "byte") and mc.args.len == 1 and
-                        self.expr_type(mc.obj) == .str and mc.obj.* != .string_lit)
+                        self.expr_type(mc.obj) == .str and mc.obj.* != .quoted)
                     {
                         self.p("((int64_t)(unsigned char)(", .{});
                         try self.emit_expr(mc.obj);
@@ -17991,11 +17991,11 @@ pub const CodeGen = struct {
                         return;
                     }
                     if (std.mem.eql(u8, mc.method, "byte") and
-                        mc.obj.* == .string_lit and
+                        mc.obj.* == .quoted and
                         mc.args.len >= 1 and
                         mc.args[0].* == .int_lit)
                     {
-                        const s = mc.obj.string_lit.val;
+                        const s = mc.obj.quoted.val;
                         const idx = mc.args[0].int_lit.val;
                         if (idx >= 1 and idx <= @as(i64, @intCast(s.len)))
                             self.p("{d}", .{@as(i64, s[@intCast(idx - 1)])})
@@ -19123,7 +19123,7 @@ pub const CodeGen = struct {
 
     fn fold_meta_string_expr(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
         return switch (expr.*) {
-            .string_lit => |s| s.val,
+            .quoted => |s| s.val,
             .name => |n| blk: {
                 const value = self.comptime_bindings().get(n.ident) orelse break :blk null;
                 break :blk if (value == .string) value.string else null;
@@ -19157,7 +19157,7 @@ pub const CodeGen = struct {
         const c = expr.call;
         if (c.func.* != .name or c.args.len == 0) return null;
         if (!std.mem.eql(u8, c.func.name.ident, "__emit")) return null;
-        if (c.args[0].* == .string_lit) return c.args[0].string_lit.val;
+        if (c.args[0].* == .quoted) return c.args[0].quoted.val;
         return self.fold_meta_string_expr(c.args[0]);
     }
 
@@ -19232,9 +19232,9 @@ pub const CodeGen = struct {
                 return true;
             }
         }
-        if (std.mem.eql(u8, name, "__concept_count") and args.len == 1 and args[0].* == .string_lit) {
+        if (std.mem.eql(u8, name, "__concept_count") and args.len == 1 and args[0].* == .quoted) {
             const concepts = self.concepts orelse return false;
-            const concept = concepts.get(args[0].string_lit.val) orelse return false;
+            const concept = concepts.get(args[0].quoted.val) orelse return false;
             self.p("{d}", .{@as(i64, @intCast(concept.required_methods.len + concept.required_fields.len))});
             return true;
         }
@@ -19242,16 +19242,16 @@ pub const CodeGen = struct {
     }
 
     fn maybe_emit_meta_bool_call(self: *CodeGen, name: []const u8, args: []const *ast.Expr) E!bool {
-        if (std.mem.eql(u8, name, "__strcontains") and args.len == 2 and args[1].* == .string_lit) {
+        if (std.mem.eql(u8, name, "__strcontains") and args.len == 2 and args[1].* == .quoted) {
             if (self.fold_meta_string_expr(args[0])) |source| {
-                self.p("{s}", .{if (std.mem.indexOf(u8, source, args[1].string_lit.val) != null) "true" else "false"});
+                self.p("{s}", .{if (std.mem.indexOf(u8, source, args[1].quoted.val) != null) "true" else "false"});
                 return true;
             }
             if (self.expr_is_native_cstr(args[0])) {
                 self.p("({{ const char* _duo_s = ", .{});
                 try self.emit_expr(args[0]);
                 self.p("; strstr(_duo_s, \"", .{});
-                try self.emit_string_escaped(args[1].string_lit.val);
+                try self.emit_string_escaped(args[1].quoted.val);
                 self.p("\") != NULL; }})", .{});
                 return true;
             }
@@ -19345,7 +19345,7 @@ pub const CodeGen = struct {
         }
         if (std.mem.eql(u8, name, "__metacatalog") or std.mem.eql(u8, name, "__metaagentcatalog")) {
             if (args.len > 1) return false;
-            const filter = if (args.len == 1 and args[0].* == .string_lit) args[0].string_lit.val else null;
+            const filter = if (args.len == 1 and args[0].* == .quoted) args[0].quoted.val else null;
             const catalog = if (std.mem.eql(u8, name, "__metaagentcatalog") and filter == null)
                 try meta_module.formatAgentCatalog(self.alloc)
             else
@@ -19365,8 +19365,8 @@ pub const CodeGen = struct {
                 try self.emit_c_string_literal(meta_module.agentMultiplierText());
                 return true;
             }
-            if (args.len == 1 and args[0].* == .string_lit) {
-                const hint = meta_module.agentMultiplierFor(args[0].string_lit.val);
+            if (args.len == 1 and args[0].* == .quoted) {
+                const hint = meta_module.agentMultiplierFor(args[0].quoted.val);
                 try self.emit_c_string_literal(hint);
                 return true;
             }
@@ -19390,8 +19390,8 @@ pub const CodeGen = struct {
             try self.emit_c_string_literal(value.string);
             return true;
         }
-        if (std.mem.eql(u8, name, "__concepttypenames") and args.len == 1 and args[0].* == .string_lit) {
-            const value = meta_codegen.conceptTypeNamesHook(self.meta_host(), args[0].string_lit.val, self.alloc) orelse return false;
+        if (std.mem.eql(u8, name, "__concepttypenames") and args.len == 1 and args[0].* == .quoted) {
+            const value = meta_codegen.conceptTypeNamesHook(self.meta_host(), args[0].quoted.val, self.alloc) orelse return false;
             if (value != .string) return false;
             try self.emit_c_string_literal(value.string);
             return true;
@@ -19482,27 +19482,27 @@ pub const CodeGen = struct {
     /// Example: __asm("mov %0, %1", "=r(result)", "r(input)", "memory")
     fn emit_inline_asm(self: *CodeGen, args: []const *ast.Expr) E!void {
         if (args.len == 0) return;
-        if (args[0].* != .string_lit) {
+        if (args[0].* != .quoted) {
             self.p("/* __asm: first arg must be string literal */", .{});
             return;
         }
-        const template = args[0].string_lit.val;
+        const template = args[0].quoted.val;
         self.p("__asm__ volatile(\"{s}\"", .{template});
         // Output constraints
-        if (args.len >= 2 and args[1].* == .string_lit) {
-            self.p(" : \"{s}\"", .{args[1].string_lit.val});
+        if (args.len >= 2 and args[1].* == .quoted) {
+            self.p(" : \"{s}\"", .{args[1].quoted.val});
         } else {
             self.p(" :", .{});
         }
         // Input constraints
-        if (args.len >= 3 and args[2].* == .string_lit) {
-            self.p(" : \"{s}\"", .{args[2].string_lit.val});
+        if (args.len >= 3 and args[2].* == .quoted) {
+            self.p(" : \"{s}\"", .{args[2].quoted.val});
         } else {
             self.p(" :", .{});
         }
         // Clobbers
-        if (args.len >= 4 and args[3].* == .string_lit) {
-            self.p(" : \"{s}\"", .{args[3].string_lit.val});
+        if (args.len >= 4 and args[3].* == .quoted) {
+            self.p(" : \"{s}\"", .{args[3].quoted.val});
         }
         self.p(")", .{});
     }
@@ -19533,12 +19533,12 @@ pub const CodeGen = struct {
             self.p("/* __comptimefold: bounds must be integers */0", .{});
             return;
         }
-        if (args[3].* != .string_lit or args[4].* != .string_lit) {
+        if (args[3].* != .quoted or args[4].* != .quoted) {
             self.p("/* __comptimefold: init and body must be string literals */0", .{});
             return;
         }
-        const init_str = args[3].string_lit.val;
-        const body_tmpl = args[4].string_lit.val;
+        const init_str = args[3].quoted.val;
+        const body_tmpl = args[4].quoted.val;
         const start = start_val.int;
         const stop = stop_val.int;
         const step = step_val.int;
@@ -19586,11 +19586,11 @@ pub const CodeGen = struct {
             self.p("/* __comptimefor: bounds must be integers */0", .{});
             return;
         }
-        if (args[2].* != .string_lit) {
+        if (args[2].* != .quoted) {
             self.p("/* __comptimefor: body must be string literal */0", .{});
             return;
         }
-        const body_tmpl = args[2].string_lit.val;
+        const body_tmpl = args[2].quoted.val;
         const start = start_val.int;
         const stop = stop_val.int;
         if (start >= stop) {
@@ -19876,11 +19876,11 @@ pub const CodeGen = struct {
     }
 
     fn emit_concept_members_table(self: *CodeGen, args: []const *ast.Expr, set: ConceptMemberSet) E!void {
-        if (args.len < 1 or args[0].* != .string_lit) {
+        if (args.len < 1 or args[0].* != .quoted) {
             self.p("lua_val_nil()", .{});
             return;
         }
-        const concept_name = args[0].string_lit.val;
+        const concept_name = args[0].quoted.val;
         const concepts = self.concepts orelse {
             self.p("lua_val_nil()", .{});
             return;
@@ -19936,7 +19936,7 @@ pub const CodeGen = struct {
         const type_name: ?[]const u8 = switch (rt) {
             .@"struct" => |s| s.name,
             .enum_type => |et| et.name,
-            else => if (args[0].* == .string_lit) args[0].string_lit.val else if (args[0].* == .name) args[0].name.ident else null,
+            else => if (args[0].* == .quoted) args[0].quoted.val else if (args[0].* == .name) args[0].name.ident else null,
         };
         if (type_name) |tname| {
             if (self.table_methods) |tm| {
@@ -20026,7 +20026,7 @@ pub const CodeGen = struct {
     /// __has_field(T, "name") — compile-time check if type has a named field
     fn emit_has_field_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         const rt = self.expr_type(args[0]);
-        const field_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+        const field_name = if (args[1].* == .quoted) args[1].quoted.val else {
             self.p("false", .{});
             return;
         };
@@ -20045,7 +20045,7 @@ pub const CodeGen = struct {
     /// __has_method(T, "name") — compile-time check if type has a named method
     fn emit_has_method_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         const rt = self.expr_type(args[0]);
-        const method_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+        const method_name = if (args[1].* == .quoted) args[1].quoted.val else {
             self.p("false", .{});
             return;
         };
@@ -20069,8 +20069,8 @@ pub const CodeGen = struct {
     fn emit_has_metamethod_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         // At compile time we can check if the type is known to have a metatable
         // For now, this is a runtime check emitted as C
-        if (args[1].* == .string_lit) {
-            const raw = args[1].string_lit.val;
+        if (args[1].* == .quoted) {
+            const raw = args[1].quoted.val;
             const mm_name = if (lua_metamethod.parse(raw)) |known| known.text() else raw;
             const mm_hash = calc_lua_hash(mm_name);
             self.p("(lua_get_metafield_lit(", .{});
@@ -20092,7 +20092,7 @@ pub const CodeGen = struct {
 
     fn eval_satisfies(self: *CodeGen, args: []const *ast.Expr) ?bool {
         if (args.len != 2) return null;
-        const concept_name = if (args[1].* == .string_lit) args[1].string_lit.val else return null;
+        const concept_name = if (args[1].* == .quoted) args[1].quoted.val else return null;
         const concepts = self.concepts orelse return null;
         const concept = concepts.get(concept_name) orelse return null;
 
@@ -20140,7 +20140,7 @@ pub const CodeGen = struct {
     /// __field_type(T, "name") — returns C type name of a field as string literal
     fn emit_field_type_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         const rt = self.expr_type(args[0]);
-        const field_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+        const field_name = if (args[1].* == .quoted) args[1].quoted.val else {
             self.p("\"unknown\"", .{});
             return;
         };
@@ -20298,7 +20298,7 @@ pub const CodeGen = struct {
     fn metaStringFromExpr(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
         if (self.meta_combinator_fold_depth > 0) {
             return switch (expr.*) {
-                .string_lit => |s| s.val,
+                .quoted => |s| s.val,
                 .name => |n| blk: {
                     const value = self.comptime_bindings().get(n.ident) orelse break :blk null;
                     break :blk if (value == .string) value.string else null;
@@ -20307,7 +20307,7 @@ pub const CodeGen = struct {
             };
         }
         return switch (expr.*) {
-            .string_lit => |s| s.val,
+            .quoted => |s| s.val,
             else => self.fold_meta_string_expr(expr),
         };
     }
@@ -20323,7 +20323,7 @@ pub const CodeGen = struct {
     fn deriveNameValueFromExpr(expr: *const ast.Expr) ?comptime_eval.Value {
         return switch (expr.*) {
             .name => |n| .{ .string = n.ident },
-            .string_lit => |s| .{ .string = s.val },
+            .quoted => |s| .{ .string = s.val },
             else => null,
         };
     }
@@ -20565,7 +20565,7 @@ pub const CodeGen = struct {
         }
         if (std.mem.eql(u8, internal, "__comptimefixpoint") and args.len == 3) {
             storage[0] = switch (args[0].*) {
-                .string_lit => |s| .{ .string = s.val },
+                .quoted => |s| .{ .string = s.val },
                 else => .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null },
             };
             const fp = fixpointCallFromArgs(args) orelse return null;
@@ -20607,7 +20607,7 @@ pub const CodeGen = struct {
         callback: *ast.Expr,
         max_iter: usize,
     } {
-        if (args.len != 3 or args[0].* != .string_lit) return null;
+        if (args.len != 3 or args[0].* != .quoted) return null;
         if (args[1].* == .int_lit and args[2].* == .func_expr) {
             return .{ .callback = args[2], .max_iter = @intCast(args[1].int_lit.val) };
         }
@@ -20656,7 +20656,7 @@ pub const CodeGen = struct {
     /// __is_type(expr, "type_name") — compile-time type identity check
     fn emit_is_type_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         const rt = self.expr_type(args[0]);
-        const expected = if (args[1].* == .string_lit) args[1].string_lit.val else {
+        const expected = if (args[1].* == .quoted) args[1].quoted.val else {
             self.p("false", .{});
             return;
         };
@@ -20678,8 +20678,8 @@ pub const CodeGen = struct {
     fn emit_comptime_message(self: *CodeGen, args: []const *ast.Expr, level: MessageLevel) E!void {
         // Evaluate message at compile time
         const val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), self.comptime_eval_options()) catch {
-            if (args[0].* == .string_lit) {
-                const msg = args[0].string_lit.val;
+            if (args[0].* == .quoted) {
+                const msg = args[0].quoted.val;
                 switch (level) {
                     .info => std.debug.print("[comptime] {s}\n", .{msg}),
                     .warning => std.debug.print("[comptime warning] {s}\n", .{msg}),
@@ -20711,11 +20711,11 @@ pub const CodeGen = struct {
 
     /// __embed_str("path") — embed file contents as a C string literal
     fn emit_embed_str(self: *CodeGen, arg: *const ast.Expr) E!void {
-        if (arg.* == .string_lit) {
+        if (arg.* == .quoted) {
             // Use C23 #embed or fall back to xxd-style inclusion
             // For maximum portability, emit as a char literal via _Pragma or include
             self.p("((const char[]){{", .{});
-            self.p("#embed \"{s}\"", .{arg.string_lit.val});
+            self.p("#embed \"{s}\"", .{arg.quoted.val});
             self.p(", 0}})", .{});
         } else {
             self.p("\"\"", .{});
@@ -20724,14 +20724,14 @@ pub const CodeGen = struct {
 
     /// __embed_file("path") — embed file as static byte array
     fn emit_embed_file(self: *CodeGen, arg: *const ast.Expr) E!void {
-        if (arg.* == .string_lit) {
+        if (arg.* == .quoted) {
             // Emit as a compound literal with the embedded data
             self.p("({{\n", .{});
             self.indent += 1;
             self.ind();
             self.p("static const unsigned char __embed_data[] = {{\n", .{});
             self.ind();
-            self.p("    #embed \"{s}\"\n", .{arg.string_lit.val});
+            self.p("    #embed \"{s}\"\n", .{arg.quoted.val});
             self.ind();
             self.p("}};\n", .{});
             self.ind();
@@ -20753,7 +20753,7 @@ pub const CodeGen = struct {
     /// __field_offset(T, "field") — emit offsetof for a record field
     fn emit_field_offset_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         const rt = self.expr_type(args[0]);
-        const field_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+        const field_name = if (args[1].* == .quoted) args[1].quoted.val else {
             self.p("0", .{});
             return;
         };
@@ -20773,8 +20773,8 @@ pub const CodeGen = struct {
             else => {},
         }
         // Fall back to __builtin_offsetof if struct name is known
-        if (args[0].* == .string_lit) {
-            self.p("((int64_t)__builtin_offsetof({s}, {s}))", .{ args[0].string_lit.val, field_name });
+        if (args[0].* == .quoted) {
+            self.p("((int64_t)__builtin_offsetof({s}, {s}))", .{ args[0].quoted.val, field_name });
         } else {
             self.p("0", .{});
         }
@@ -20783,7 +20783,7 @@ pub const CodeGen = struct {
     /// __field_size(T, "field") — emit sizeof for a specific field's type
     fn emit_field_size_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         const rt = self.expr_type(args[0]);
-        const field_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+        const field_name = if (args[1].* == .quoted) args[1].quoted.val else {
             self.p("0", .{});
             return;
         };
@@ -20817,11 +20817,11 @@ pub const CodeGen = struct {
 
     /// __bitfield("name", ...) — define a packed bitfield struct
     fn emit_bitfield_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
-        if (args.len < 1 or args[0].* != .string_lit) {
+        if (args.len < 1 or args[0].* != .quoted) {
             self.p("lua_val_from_int(0)", .{});
             return;
         }
-        const struct_name = args[0].string_lit.val;
+        const struct_name = args[0].quoted.val;
         // Emit a packed struct typedef with bitfield members
         // Args after first: alternating "field_name" and bit_width (int literal)
         self.p("({{\n", .{});
@@ -20830,9 +20830,9 @@ pub const CodeGen = struct {
         self.p("typedef struct __attribute__((packed)) {{\n", .{});
         var i: usize = 1;
         while (i + 1 < args.len) : (i += 2) {
-            if (args[i].* == .string_lit and args[i + 1].* == .int_lit) {
+            if (args[i].* == .quoted and args[i + 1].* == .int_lit) {
                 self.ind();
-                self.p("    uint64_t {s} : {d};\n", .{ args[i].string_lit.val, args[i + 1].int_lit.val });
+                self.p("    uint64_t {s} : {d};\n", .{ args[i].quoted.val, args[i + 1].int_lit.val });
             }
         }
         self.ind();
@@ -20846,11 +20846,11 @@ pub const CodeGen = struct {
 
     /// __union("name", ...) — define a C union type
     fn emit_union_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
-        if (args.len < 1 or args[0].* != .string_lit) {
+        if (args.len < 1 or args[0].* != .quoted) {
             self.p("lua_val_from_int(0)", .{});
             return;
         }
-        const union_name = args[0].string_lit.val;
+        const union_name = args[0].quoted.val;
         // Args after first: alternating "field_name" and "c_type"
         self.p("({{\n", .{});
         self.indent += 1;
@@ -20858,9 +20858,9 @@ pub const CodeGen = struct {
         self.p("typedef union {{\n", .{});
         var i: usize = 1;
         while (i + 1 < args.len) : (i += 2) {
-            if (args[i].* == .string_lit and args[i + 1].* == .string_lit) {
+            if (args[i].* == .quoted and args[i + 1].* == .quoted) {
                 self.ind();
-                self.p("    {s} {s};\n", .{ args[i + 1].string_lit.val, args[i].string_lit.val });
+                self.p("    {s} {s};\n", .{ args[i + 1].quoted.val, args[i].quoted.val });
             }
         }
         self.ind();
@@ -20875,20 +20875,20 @@ pub const CodeGen = struct {
     /// __make_type("name", "field1", "type1", "field2", "type2", ...) — define a struct type
     /// Returns sizeof(type) as an integer. The typedef is emitted inline.
     fn emit_make_type_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
-        if (args.len < 1 or args[0].* != .string_lit) {
+        if (args.len < 1 or args[0].* != .quoted) {
             self.p("lua_val_from_int(0)", .{});
             return;
         }
-        const type_name = args[0].string_lit.val;
+        const type_name = args[0].quoted.val;
         self.p("({{\n", .{});
         self.indent += 1;
         self.ind();
         self.p("typedef struct {{\n", .{});
         var i: usize = 1;
         while (i + 1 < args.len) : (i += 2) {
-            if (args[i].* == .string_lit and args[i + 1].* == .string_lit) {
+            if (args[i].* == .quoted and args[i + 1].* == .quoted) {
                 self.ind();
-                self.p("    {s} {s};\n", .{ args[i + 1].string_lit.val, args[i].string_lit.val });
+                self.p("    {s} {s};\n", .{ args[i + 1].quoted.val, args[i].quoted.val });
             }
         }
         self.ind();
@@ -21555,8 +21555,8 @@ pub const CodeGen = struct {
             return true;
         } else if (std.mem.eql(u8, name, "select")) {
             const n = if (args.len > 1) args.len - 1 else 0;
-            if (result_rt.is_integer() and args.len > 0 and args[0].* == .string_lit and
-                std.mem.eql(u8, args[0].string_lit.val, "#") and !self.args_contain_vararg(args[1..]))
+            if (result_rt.is_integer() and args.len > 0 and args[0].* == .quoted and
+                std.mem.eql(u8, args[0].quoted.val, "#") and !self.args_contain_vararg(args[1..]))
             {
                 self.p("{d}", .{n});
                 return true;
@@ -21662,8 +21662,8 @@ pub const CodeGen = struct {
             return true;
         } else if (std.mem.eql(u8, name, "rawlen")) {
             if (result_rt.is_integer()) {
-                if (args.len > 0 and args[0].* == .string_lit) {
-                    self.p("{d}", .{args[0].string_lit.val.len});
+                if (args.len > 0 and args[0].* == .quoted) {
+                    self.p("{d}", .{args[0].quoted.val.len});
                     return true;
                 }
                 if (args.len > 0 and self.expr_type(args[0]) == .str) {
@@ -21706,8 +21706,8 @@ pub const CodeGen = struct {
                 self.p("({{ duo_run_gc_finalizers(); 0.0; }})", .{});
                 return true;
             }
-            if (args.len > 0 and args[0].* == .string_lit) {
-                const opt = args[0].string_lit.val;
+            if (args.len > 0 and args[0].* == .quoted) {
+                const opt = args[0].quoted.val;
                 if ((result_rt == .f64 or result_rt == .f32) and std.mem.eql(u8, opt, "count")) {
                     self.p("((double)duo_gc_kbytes)", .{});
                     return true;
@@ -21893,7 +21893,7 @@ pub const CodeGen = struct {
             .nil => "nil",
             .true_lit, .false_lit => "boolean",
             .int_lit, .float_lit => "number",
-            .string_lit => "string",
+            .quoted => "string",
             .name => |name| blk: {
                 if (is_runtime_global(name.ident)) break :blk null;
                 const rt = self.expr_type(expr);
@@ -21915,7 +21915,7 @@ pub const CodeGen = struct {
 
     fn expr_is_native_cstr(self: *CodeGen, e: *const ast.Expr) bool {
         return switch (e.*) {
-            .string_lit => true,
+            .quoted => true,
             .name => self.expr_type(e) == .str,
             // `env(k)` lowers to `getenv(k)`, which IS a `const char*`. Without
             // this arm every consumer wrapped it in `lua_to_str(...)` — a
@@ -22062,7 +22062,7 @@ pub const CodeGen = struct {
             if (args.len < 2 or args.len > 3) return false;
             const pat_t = self.expr_type(args[0]);
             const cnt_t = self.expr_type(args[1]);
-            return (pat_t == .str or args[0].* == .string_lit) and cnt_t.is_integer();
+            return (pat_t == .str or args[0].* == .quoted) and cnt_t.is_integer();
         }
         if (std.mem.eql(u8, f.field, "lower") or std.mem.eql(u8, f.field, "upper") or
             std.mem.eql(u8, f.field, "reverse")) return args.len == 1;
@@ -22982,8 +22982,8 @@ pub const CodeGen = struct {
     fn try_emit_native_string_call(self: *CodeGen, fname: []const u8, args: []*ast.Expr, result_rt: RT) E!bool {
         if (std.mem.eql(u8, fname, "len")) {
             if (args.len == 0) return false;
-            if (args[0].* == .string_lit) {
-                self.p("{d}", .{args[0].string_lit.val.len});
+            if (args[0].* == .quoted) {
+                self.p("{d}", .{args[0].quoted.val.len});
                 return true;
             }
             // A length KNOWN AT COMPILE TIME is emitted as that number, and NUL
@@ -23024,8 +23024,8 @@ pub const CodeGen = struct {
         }
         if (std.mem.eql(u8, fname, "byte")) {
             if (args.len < 2) return false;
-            if (args[0].* == .string_lit and args[1].* == .int_lit) {
-                const s = args[0].string_lit.val;
+            if (args[0].* == .quoted and args[1].* == .int_lit) {
+                const s = args[0].quoted.val;
                 const idx = args[1].int_lit.val;
                 if (idx >= 1 and idx <= @as(i64, @intCast(s.len)))
                     self.p("{d}", .{@as(i64, s[@intCast(idx - 1)])})
@@ -23107,7 +23107,7 @@ pub const CodeGen = struct {
             if (args.len < 2 or args.len > 3) return false;
             const pat_t = self.expr_type(args[0]);
             const cnt_t = self.expr_type(args[1]);
-            if ((pat_t == .str or args[0].* == .string_lit) and cnt_t.is_integer()) {
+            if ((pat_t == .str or args[0].* == .quoted) and cnt_t.is_integer()) {
                 self.p("duo_str_rep(", .{});
                 try self.emit_expr(args[0]);
                 self.p(", ", .{});
@@ -23133,8 +23133,8 @@ pub const CodeGen = struct {
 
     fn try_emit_native_utf8_len(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
         if (!result_rt.is_integer() or args.len != 1) return false;
-        if (args[0].* == .string_lit) {
-            self.p("{d}", .{utf8_literal_len(args[0].string_lit.val)});
+        if (args[0].* == .quoted) {
+            self.p("{d}", .{utf8_literal_len(args[0].quoted.val)});
             return true;
         }
         if (self.expr_type(args[0]) == .str) {
@@ -23283,8 +23283,8 @@ pub const CodeGen = struct {
         self.p("), ", .{});
         try self.emit_expr(args[1]);
         self.p(", ", .{});
-        if (args[1].* == .string_lit) {
-            self.p("{d}", .{args[1].string_lit.val.len});
+        if (args[1].* == .quoted) {
+            self.p("{d}", .{args[1].quoted.val.len});
         } else {
             self.p("strlen(", .{});
             try self.emit_expr(args[1]);
@@ -23316,8 +23316,8 @@ pub const CodeGen = struct {
         self.p("), ", .{});
         try self.emit_expr(args[1]);
         self.p(", ", .{});
-        if (args[1].* == .string_lit) {
-            self.p("{d}", .{args[1].string_lit.val.len});
+        if (args[1].* == .quoted) {
+            self.p("{d}", .{args[1].quoted.val.len});
         } else {
             self.p("strlen(", .{});
             try self.emit_expr(args[1]);
@@ -24201,9 +24201,9 @@ pub const CodeGen = struct {
             .call => |c| {
                 if (c.func.* == .name and
                     (std.mem.eql(u8, c.func.name.ident, "require") or std.mem.eql(u8, c.func.name.ident, "req")) and
-                    c.args.len == 1 and c.args[0].* == .string_lit)
+                    c.args.len == 1 and c.args[0].* == .quoted)
                 {
-                    try names.append(self.alloc, c.args[0].string_lit.val);
+                    try names.append(self.alloc, c.args[0].quoted.val);
                 }
                 if (self.ml_intrinsic_name(c.func) != null) {
                     return;
@@ -24556,8 +24556,8 @@ pub const CodeGen = struct {
         if (c.func.* != .name) return null;
         const fn_name = c.func.name.ident;
         if (!std.mem.eql(u8, fn_name, "req") and !std.mem.eql(u8, fn_name, "require")) return null;
-        if (c.args.len != 1 or c.args[0].* != .string_lit) return null;
-        return c.args[0].string_lit.val;
+        if (c.args.len != 1 or c.args[0].* != .quoted) return null;
+        return c.args[0].quoted.val;
     }
 
     /// True when `req("path")` / `require("path")` resolves to an embeddable native module.
@@ -25090,7 +25090,7 @@ pub const CodeGen = struct {
             };
             if (as.targets.len != 1 or as.values.len != 1 or as.targets[0].* != .name) continue;
             if (!std.mem.eql(u8, as.targets[0].name.ident, name)) continue;
-            return if (as.values[0].* == .string_lit) as.values[0] else null;
+            return if (as.values[0].* == .quoted) as.values[0] else null;
         }
         return null;
     }
@@ -36519,7 +36519,7 @@ test "expr_type: structural fallback recovers literal and function expression ty
     var bool_expr = ast.Expr{ .true_lit = loc };
     var int_expr = ast.Expr{ .int_lit = .{ .loc = loc, .val = 42 } };
     var float_expr = ast.Expr{ .float_lit = .{ .loc = loc, .val = 3.14 } };
-    var str_expr = ast.Expr{ .string_lit = .{ .loc = loc, .val = "duo" } };
+    var str_expr = ast.Expr{ .quoted = .{ .loc = loc, .val = "duo" } };
     try testing.expectEqual(RT.nil, cg.expr_type(&nil_expr));
     try testing.expectEqual(RT.bool, cg.expr_type(&bool_expr));
     try testing.expectEqual(RT.i64, cg.expr_type(&int_expr));

@@ -506,7 +506,7 @@ pub const Expr = union(enum) {
     float_lit: struct { loc: Loc, val: f64 },
     /// Quoted source or a host-fabricated byte sequence. `quote` is the
     /// producer identity (GAP-145); `.host` is not a source quote.
-    string_lit: struct { loc: Loc, val: []const u8, quote: Quote = .host },
+    quoted: struct { loc: Loc, val: []const u8, quote: Quote = .host },
     vararg: Loc,
     name: struct { loc: Loc, ident: []const u8 },
     index: struct { loc: Loc, obj: *Expr, key: *Expr },
@@ -553,7 +553,7 @@ pub const Expr = union(enum) {
             .vararg => |l| l,
             .int_lit => |x| x.loc,
             .float_lit => |x| x.loc,
-            .string_lit => |x| x.loc,
+            .quoted => |x| x.loc,
             .name => |x| x.loc,
             .index => |x| x.loc,
             .field => |x| x.loc,
@@ -940,7 +940,7 @@ test "Expr.loc returns correct location for all variants" {
         .{ .false_lit = loc },
         .{ .int_lit = .{ .loc = loc, .val = 42 } },
         .{ .float_lit = .{ .loc = loc, .val = 3.14 } },
-        .{ .string_lit = .{ .loc = loc, .val = "hello" } },
+        .{ .quoted = .{ .loc = loc, .val = "hello" } },
         .{ .vararg = loc },
         .{ .name = .{ .loc = loc, .ident = "foo" } },
         .{ .index = .{ .loc = loc, .obj = &dummy_expr, .key = &dummy_expr } },
@@ -962,4 +962,15 @@ test "Expr.loc returns correct location for all variants" {
     for (exprs) |expr| {
         try testing.expectEqual(loc, expr.loc());
     }
+}
+
+test "Expr has no collapsed string literal identity" {
+    try testing.expect(!@hasField(Expr, "string_lit"));
+    try testing.expect(@hasField(Expr, "quoted"));
+
+    const loc = Loc{ .line = 1, .col = 1, .file = "quote.id" };
+    const text = Expr{ .quoted = .{ .loc = loc, .val = "x", .quote = .text } };
+    const bytes = Expr{ .quoted = .{ .loc = loc, .val = "x", .quote = .bytes } };
+    try testing.expectEqual(Quote.text, text.quoted.quote);
+    try testing.expectEqual(Quote.bytes, bytes.quoted.quote);
 }

@@ -55,7 +55,7 @@ const Expr = ast.Expr;
 
 pub fn receiverLooksStrish(obj: *const Expr) bool {
     return switch (obj.*) {
-        .string_lit => true,
+        .quoted => true,
         .method_call => true,
         .name => true,
         // A RECORD FIELD IS AS STRISH AS A LOCAL, and leaving it out cost the

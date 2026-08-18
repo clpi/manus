@@ -169,7 +169,7 @@ fn refuseMissingApplication(
 /// `ints`, and a union would make each of them re-check a tag they can't act on.
 ///
 /// String VALUES are not duped: they point into the AST, exactly like the
-/// `.string_lit` arm's `s.val`, and the AST outlives lowering. Keys are duped
+/// `.quoted` arm's `s.val`, and the AST outlives lowering. Keys are duped
 /// because the `Name.field` spelling is formatted, not borrowed.
 const ModuleConsts = struct {
     ints: std.StringHashMapUnmanaged(i64) = .empty,
@@ -367,7 +367,7 @@ fn typeOfGlobal(t: ast.TypeExpr, init: ?*const Expr) RT {
     if (declared != .any) return declared;
     const e = init orelse return .i64;
     return switch (e.*) {
-        .string_lit => .str,
+        .quoted => .str,
         .float_lit => .f64,
         else => .i64,
     };
@@ -497,8 +497,8 @@ fn collectModuleConsts(
             try map.put(alloc, try alloc.dupe(u8, n), iv);
             continue;
         }
-        if (v.* == .string_lit) {
-            try out.strs.put(alloc, try alloc.dupe(u8, n), v.string_lit.val);
+        if (v.* == .quoted) {
+            try out.strs.put(alloc, try alloc.dupe(u8, n), v.quoted.val);
             continue;
         }
         // `@{ ... }` is the canonical descriptor spelling and parses as a
@@ -518,9 +518,9 @@ fn collectModuleConsts(
                 try map.put(alloc, key, fv);
                 continue;
             }
-            if (nf.val.* == .string_lit) {
+            if (nf.val.* == .quoted) {
                 const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ n, nf.key });
-                try out.strs.put(alloc, key, nf.val.string_lit.val);
+                try out.strs.put(alloc, key, nf.val.quoted.val);
             }
         }
     }
@@ -2767,7 +2767,7 @@ fn isReqCall(expr: *const ast.Expr) bool {
     if (expr.* != .call) return false;
     const c = expr.call;
     if (c.func.* != .name or !std.mem.eql(u8, c.func.name.ident, "req")) return false;
-    return c.args.len == 1 and c.args[0].* == .string_lit;
+    return c.args.len == 1 and c.args[0].* == .quoted;
 }
 
 fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []const u8, value: *const ast.Expr) Error!void {
@@ -4205,7 +4205,7 @@ fn sameIndex(a: *const ast.Expr, b: *const ast.Expr) bool {
 fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     if (applicationResultIs(ctx, expr, .str)) return true;
     return switch (expr.*) {
-        .string_lit => true,
+        .quoted => true,
         // `..` ALWAYS produces text, including where one side is a number —
         // which is the shape `"{a} {b}"` desugars to. Requiring both sides to
         // be str was what made every interpolation of an integer answer "not a
@@ -4701,7 +4701,7 @@ fn constIndexOf(key: *const ast.Expr) ?i64 {
 
 fn tableUseInExpr(expr: *const ast.Expr, name: []const u8) TableUse {
     return switch (expr.*) {
-        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => .none,
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => .none,
         .semantic, .semantic_scope => .none,
         .name => |n| if (std.mem.eql(u8, n.ident, name)) .opaque_use else .none,
         .index => |ix| blk: {
@@ -6072,7 +6072,7 @@ fn lowerExprCons(
         .float_lit => |fl| .{ .f64 = fl.val },
         .true_lit => .{ .i64 = 1 },
         .false_lit => .{ .i64 = 0 },
-        .string_lit => |s| .{ .str = s.val },
+        .quoted => |s| .{ .str = s.val },
         // AN INJECTED WORLD ADDS REACH; IT NEVER TAKES A NAME.
         //
         // The world test used to run BEFORE `ctx.locals`, so any program that
@@ -7596,13 +7596,13 @@ fn planConcat(ctx: *LowerCtx, parts: []const *const ast.Expr, newline: bool) Err
     var plan: ConcatPlan = .{ .fmt = "", .literal = "", .holes = undefined, .count = 0 };
 
     for (parts) |p| {
-        if (p.* == .string_lit) {
-            try literal.appendSlice(ctx.alloc, p.string_lit.val);
+        if (p.* == .quoted) {
+            try literal.appendSlice(ctx.alloc, p.quoted.val);
             // A `%` in the program's own text is TEXT. Left alone it reads the
             // following byte as a conversion and prints an argument that was
             // never passed — a wrong answer produced by a correct-looking
             // literal.
-            for (p.string_lit.val) |ch| {
+            for (p.quoted.val) |ch| {
                 if (ch == '%') try fmt.append(ctx.alloc, '%');
                 try fmt.append(ctx.alloc, ch);
             }

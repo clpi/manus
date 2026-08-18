@@ -247,7 +247,7 @@ pub const Expander = struct {
         const req_name = try self.alloc.create(ast.Expr);
         req_name.* = .{ .name = .{ .loc = loc, .ident = "req" } };
         const path_lit = try self.alloc.create(ast.Expr);
-        path_lit.* = .{ .string_lit = .{ .loc = loc, .val = path_owned } };
+        path_lit.* = .{ .quoted = .{ .loc = loc, .val = path_owned } };
         const args_slice = try self.alloc.alloc(*ast.Expr, 1);
         args_slice[0] = path_lit;
         const out = try self.alloc.create(ast.Expr);
@@ -300,7 +300,7 @@ pub const Expander = struct {
             return self.expandMacroCall(expr.macro_call, ctx);
         }
         const cloned: ast.Expr = switch (expr.*) {
-            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => expr.*,
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => expr.*,
             .name => |x| .{ .name = .{ .loc = x.loc, .ident = try ctx.reference(x.ident) } },
             .index => |x| .{ .index = .{
                 .loc = x.loc,
@@ -391,7 +391,7 @@ pub const Expander = struct {
         const arg = call.args[0];
         const ident = switch (arg.*) {
             .name => |x| x.ident,
-            .string_lit => |x| x.val,
+            .quoted => |x| x.val,
             else => return Error.CaptureExpectedIdentifier,
         };
         const out = try self.alloc.create(ast.Expr);
@@ -748,7 +748,7 @@ pub const Expander = struct {
         _ = self;
         return switch (expr.*) {
             .name => |name| caller_ctx.type_bindings.get(name.ident) orelse .{ .named = name.ident },
-            .string_lit => |lit| .{ .named = lit.val },
+            .quoted => |lit| .{ .named = lit.val },
             else => null,
         };
     }
@@ -1067,8 +1067,8 @@ test "macro expansion: @grad desugars to autodiff grad call" {
     try std.testing.expect(mod_expr.call.func.* == .name);
     try std.testing.expectEqualStrings("req", mod_expr.call.func.name.ident);
     try std.testing.expectEqual(@as(usize, 1), mod_expr.call.args.len);
-    try std.testing.expect(mod_expr.call.args[0].* == .string_lit);
-    try std.testing.expectEqualStrings("std.ml.autodiff", mod_expr.call.args[0].string_lit.val);
+    try std.testing.expect(mod_expr.call.args[0].* == .quoted);
+    try std.testing.expectEqualStrings("std.ml.autodiff", mod_expr.call.args[0].quoted.val);
 
     try std.testing.expect(init.method_call.args[0].* == .name);
     try std.testing.expectEqualStrings("loss_fn", init.method_call.args[0].name.ident);

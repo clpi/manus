@@ -1005,7 +1005,7 @@ pub const Parser = struct {
     /// Re-reading this costs nothing and can observe nothing.
     fn expr_is_settled(e: *const ast.Expr) bool {
         return switch (e.*) {
-            .name, .int_lit, .float_lit, .string_lit, .nil, .true_lit, .false_lit => true,
+            .name, .int_lit, .float_lit, .quoted, .nil, .true_lit, .false_lit => true,
             else => false,
         };
     }
@@ -1039,7 +1039,7 @@ pub const Parser = struct {
     /// what produced the wrong answer.
     fn expr_reads_name(e: *const ast.Expr, name: []const u8) bool {
         return switch (e.*) {
-            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => false,
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => false,
             .name => |n| std.mem.eql(u8, n.ident, name),
             .index => |ix| expr_reads_name(ix.obj, name) or expr_reads_name(ix.key, name),
             .field => |f| expr_reads_name(f.obj, name),
@@ -4297,7 +4297,7 @@ pub const Parser = struct {
     }
 
     /// Parse match scrutinee — a restricted expression that does not consume
-    /// `{`, `[`, or string_lit as call/index suffixes (those start pattern arms).
+    /// `{`, `[`, or quoted as call/index suffixes (those start pattern arms).
     fn parse_match_scrutinee(self: *Parser) ParseError!*ast.Expr {
         return self.parse_match_scrutinee_prec(0);
     }
@@ -4353,7 +4353,7 @@ pub const Parser = struct {
         return lhs;
     }
 
-    /// Like parse_suffixed_expr but does NOT consume `{`, `[`, or string_lit
+    /// Like parse_suffixed_expr but does NOT consume `{`, `[`, or quoted
     /// as call/index suffixes (those tokens start match arm patterns).
     fn parse_match_scrutinee_suffixed(self: *Parser) ParseError!*ast.Expr {
         var e = try self.parse_simple_expr();
@@ -4394,7 +4394,7 @@ pub const Parser = struct {
                         e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs } });
                     }
                 },
-                // Do NOT consume {, [, string_lit as suffixes in match scrutinee
+                // Do NOT consume {, [, quoted as suffixes in match scrutinee
                 else => break,
             }
         }
@@ -6069,14 +6069,14 @@ pub const Parser = struct {
         // backslash and every protected brace, decoded in all other respects.
         // `PrettyPrinter.lit_form` names the two forms; this is `.source`.
         if (self.formatting) {
-            return self.new_expr(.{ .string_lit = .{
+            return self.new_expr(.{ .quoted = .{
                 .loc = loc,
                 .val = try respellForReprint(self.alloc, s, protected),
                 .quote = quote,
             } });
         }
         if (self.directive_arg_depth > 0 or !self.idol_mode or std.mem.indexOfScalar(u8, s, '{') == null) {
-            return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = s, .quote = quote } });
+            return self.new_expr(.{ .quoted = .{ .loc = loc, .val = s, .quote = quote } });
         }
         var parts: std.ArrayList(*ast.Expr) = .empty;
         var lit: std.ArrayList(u8) = .empty;
@@ -6114,7 +6114,7 @@ pub const Parser = struct {
             if (try self.parseInterpolationHole(hole_loc, hole_text)) |hole| {
                 if (lit.items.len > 0) {
                     const seg = try self.alloc.dupe(u8, lit.items);
-                    try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = seg, .quote = quote } }));
+                    try parts.append(self.alloc, try self.new_expr(.{ .quoted = .{ .loc = loc, .val = seg, .quote = quote } }));
                     lit.clearRetainingCapacity();
                 }
                 try parts.append(self.alloc, hole);
@@ -6131,11 +6131,11 @@ pub const Parser = struct {
             i = close + 1;
         }
         if (holes == 0) {
-            return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = s, .quote = quote } });
+            return self.new_expr(.{ .quoted = .{ .loc = loc, .val = s, .quote = quote } });
         }
         if (lit.items.len > 0) {
             const seg = try self.alloc.dupe(u8, lit.items);
-            try parts.append(self.alloc, try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = seg, .quote = quote } }));
+            try parts.append(self.alloc, try self.new_expr(.{ .quoted = .{ .loc = loc, .val = seg, .quote = quote } }));
         }
         // gap[094]. A string with EXACTLY ONE part and no literal text — `"{i}"`
         // — used to fall straight out of the loop below as its own hole, so the
@@ -6152,8 +6152,8 @@ pub const Parser = struct {
         // conversion the multi-part path does not use. An all-literal string
         // never reaches here (`parts.items.len == 0` returns above), so this
         // cannot wrap a plain literal.
-        if (parts.items[0].* != .string_lit) {
-            const empty = try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = "", .quote = quote } });
+        if (parts.items[0].* != .quoted) {
+            const empty = try self.new_expr(.{ .quoted = .{ .loc = loc, .val = "", .quote = quote } });
             try parts.insert(self.alloc, 0, empty);
         }
         var expr = parts.items[0];
@@ -6206,7 +6206,7 @@ pub const Parser = struct {
             },
             .bytes_lit => blk: {
                 _ = try self.adv();
-                break :blk self.new_expr(.{ .string_lit = .{
+                break :blk self.new_expr(.{ .quoted = .{
                     .loc = tok.loc,
                     .val = try self.alloc.dupe(u8, tok.text),
                     .quote = .bytes,
@@ -6214,7 +6214,7 @@ pub const Parser = struct {
             },
             .compat_long_text_lit => blk: {
                 _ = try self.adv();
-                break :blk self.new_expr(.{ .string_lit = .{
+                break :blk self.new_expr(.{ .quoted = .{
                     .loc = tok.loc,
                     .val = try self.alloc.dupe(u8, tok.text),
                     .quote = .compat_long,
@@ -7368,7 +7368,7 @@ pub const Parser = struct {
         _ = try self.expect(.rparen);
 
         const type_name = try self.type_expr_c_name(typ);
-        const type_arg = try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = type_name } });
+        const type_arg = try self.new_expr(.{ .quoted = .{ .loc = loc, .val = type_name } });
         const func = try self.new_expr(.{ .name = .{ .loc = loc, .ident = "__as" } });
         const args = try self.alloc.alloc(*ast.Expr, 2);
         args[0] = type_arg;
@@ -7411,7 +7411,7 @@ pub const Parser = struct {
         const typ = try self.parse_type();
         if ((try self.pk()).kind != .rparen) return null;
         _ = try self.adv();
-        return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = try self.type_expr_c_name(typ) } });
+        return self.new_expr(.{ .quoted = .{ .loc = loc, .val = try self.type_expr_c_name(typ) } });
     }
 
     fn layout_arg_can_start_type(tok: Token) bool {
@@ -7848,7 +7848,7 @@ pub const Parser = struct {
 
     fn make_req_module(self: *Parser, loc: ast.Loc, path: []const u8) ParseError!*ast.Expr {
         const req_fn = try self.new_expr(.{ .name = .{ .loc = loc, .ident = "req" } });
-        const path_lit = try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = path } });
+        const path_lit = try self.new_expr(.{ .quoted = .{ .loc = loc, .val = path } });
         const req_args = try self.alloc.alloc(*ast.Expr, 1);
         req_args[0] = path_lit;
         return try self.new_expr(.{ .call = .{
@@ -7939,7 +7939,7 @@ pub const Parser = struct {
                 if (try self.check(.assign)) {
                     _ = try self.adv(); // consume `=`
                     const key = try self.new_expr(if (grammar_roles.isQuotedKind(tok.kind))
-                        ast.Expr{ .string_lit = .{ .loc = tok.loc, .val = tok.text, .quote = quoteOf(tok.kind) } }
+                        ast.Expr{ .quoted = .{ .loc = tok.loc, .val = tok.text, .quote = quoteOf(tok.kind) } }
                     else
                         ast.Expr{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });
                     const val = try self.parse_expr();
@@ -8101,13 +8101,13 @@ test "parse: quoted producer identities stay distinct" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const text = try parseDuoSource("x = \"hi\"", &arena);
-    try testing.expectEqual(ast.Quote.text, text.body.stmts[0].assign.values[0].string_lit.quote);
+    try testing.expectEqual(ast.Quote.text, text.body.stmts[0].assign.values[0].quoted.quote);
     const bytes = try parseDuoSource("x = 'hi'", &arena);
-    try testing.expectEqual(ast.Quote.bytes, bytes.body.stmts[0].assign.values[0].string_lit.quote);
+    try testing.expectEqual(ast.Quote.bytes, bytes.body.stmts[0].assign.values[0].quoted.quote);
     var lex = Lexer.initFamily("x = 'hi'", "x.lua", 2);
     var p = Parser.init(&lex, arena.allocator());
     const compat = try p.parse_module();
-    try testing.expectEqual(ast.Quote.compat_text, compat.body.stmts[0].assign.values[0].string_lit.quote);
+    try testing.expectEqual(ast.Quote.compat_text, compat.body.stmts[0].assign.values[0].quoted.quote);
 }
 
 test "parse: postfix generic type annotation" {
@@ -8171,13 +8171,13 @@ test "parse: @sizeof and @alignof lower type arguments to layout intrinsics" {
 
     const sz = mod.body.stmts[0].local_decl.inits[0];
     try testing.expect(sz.* == .call);
-    try testing.expect(sz.call.args[0].* == .string_lit);
-    try testing.expectEqualStrings("int64_t", sz.call.args[0].string_lit.val);
+    try testing.expect(sz.call.args[0].* == .quoted);
+    try testing.expectEqualStrings("int64_t", sz.call.args[0].quoted.val);
 
     const align_expr = mod.body.stmts[1].local_decl.inits[0];
     try testing.expect(align_expr.* == .call);
-    try testing.expect(align_expr.call.args[0].* == .string_lit);
-    try testing.expectEqualStrings("uint8_t*", align_expr.call.args[0].string_lit.val);
+    try testing.expect(align_expr.call.args[0].* == .quoted);
+    try testing.expectEqualStrings("uint8_t*", align_expr.call.args[0].quoted.val);
 
     const expr_sz = mod.body.stmts[2].local_decl.inits[0];
     try testing.expect(expr_sz.* == .call);
@@ -8197,8 +8197,8 @@ test "parse: @as lowers a type argument to an internal typed coercion" {
     try testing.expect(init.call.func.* == .name);
     try testing.expectEqualStrings("__as", init.call.func.name.ident);
     try testing.expectEqual(@as(usize, 2), init.call.args.len);
-    try testing.expect(init.call.args[0].* == .string_lit);
-    try testing.expectEqualStrings("int64_t", init.call.args[0].string_lit.val);
+    try testing.expect(init.call.args[0].* == .quoted);
+    try testing.expectEqualStrings("int64_t", init.call.args[0].quoted.val);
     try testing.expect(init.call.args[1].* == .field);
 }
 
@@ -9448,7 +9448,7 @@ test "parse: match with string literal pattern" {
     try testing.expect(stmt == .match_stmt);
     try testing.expectEqual(@as(usize, 3), stmt.match_stmt.arms.len);
     try testing.expect(stmt.match_stmt.arms[0].pattern == .literal);
-    try testing.expect(stmt.match_stmt.arms[0].pattern.literal.* == .string_lit);
+    try testing.expect(stmt.match_stmt.arms[0].pattern.literal.* == .quoted);
 }
 
 test "parse: match with nil and boolean patterns" {
@@ -9579,8 +9579,8 @@ test "parse: @c.call desugars to raw C call intrinsic" {
     try testing.expect(init.call.func.* == .name);
     try testing.expectEqualStrings("__c_call", init.call.func.name.ident);
     try testing.expectEqual(@as(usize, 2), init.call.args.len);
-    try testing.expect(init.call.args[0].* == .string_lit);
-    try testing.expectEqualStrings("llabs", init.call.args[0].string_lit.val);
+    try testing.expect(init.call.args[0].* == .quoted);
+    try testing.expectEqualStrings("llabs", init.call.args[0].quoted.val);
 }
 
 test "parse: @c.import is an imported C header directive" {
@@ -10413,8 +10413,8 @@ test "parse: stmt then implicit concat tail (F-13813-1)" {
     const tail = fb.body.tail_expr.?;
     try testing.expect(tail.* == .binop);
     try testing.expect(tail.binop.op == .concat);
-    try testing.expect(tail.binop.lhs.* == .string_lit);
-    try testing.expectEqualStrings("ok: ", tail.binop.lhs.string_lit.val);
+    try testing.expect(tail.binop.lhs.* == .quoted);
+    try testing.expectEqualStrings("ok: ", tail.binop.lhs.quoted.val);
 }
 
 test "parse: same-line void call then concat (F-13813-1)" {
@@ -10430,8 +10430,8 @@ test "parse: same-line void call then concat (F-13813-1)" {
     const tail = fb.body.tail_expr.?;
     try testing.expect(tail.* == .binop);
     try testing.expect(tail.binop.op == .concat);
-    try testing.expect(tail.binop.lhs.* == .string_lit);
-    try testing.expectEqualStrings("ok: ", tail.binop.lhs.string_lit.val);
+    try testing.expect(tail.binop.lhs.* == .quoted);
+    try testing.expectEqualStrings("ok: ", tail.binop.lhs.quoted.val);
 }
 
 // `#` IS RETIRED AS A LENGTH OPERATOR, and this is the fixture that says so in
@@ -10535,8 +10535,8 @@ test "parse: string interpolation indexed holes" {
     const a = mod.body.stmts[0].assign.values[0];
     try testing.expect(a.* == .binop);
     try testing.expect(a.binop.op == .concat);
-    try testing.expect(a.binop.lhs.* == .string_lit);
-    try testing.expectEqualStrings("", a.binop.lhs.string_lit.val);
+    try testing.expect(a.binop.lhs.* == .quoted);
+    try testing.expectEqualStrings("", a.binop.lhs.quoted.val);
     const a_hole = a.binop.rhs;
     try testing.expect(a_hole.* == .index);
     try testing.expectEqualStrings("found", a_hole.index.obj.name.ident);
@@ -10545,8 +10545,8 @@ test "parse: string interpolation indexed holes" {
     const b = mod.body.stmts[1].assign.values[0];
     try testing.expect(b.* == .binop);
     try testing.expect(b.binop.op == .concat);
-    try testing.expect(b.binop.lhs.* == .string_lit);
-    try testing.expectEqualStrings("", b.binop.lhs.string_lit.val);
+    try testing.expect(b.binop.lhs.* == .quoted);
+    try testing.expectEqualStrings("", b.binop.lhs.quoted.val);
     const b_hole = b.binop.rhs;
     try testing.expect(b_hole.* == .index);
     try testing.expectEqualStrings("r", b_hole.index.obj.name.ident);
@@ -10555,8 +10555,8 @@ test "parse: string interpolation indexed holes" {
     const c = mod.body.stmts[2].assign.values[0];
     try testing.expect(c.* == .binop);
     try testing.expect(c.binop.op == .concat);
-    try testing.expect(c.binop.lhs.* == .string_lit);
-    try testing.expectEqualStrings("", c.binop.lhs.string_lit.val);
+    try testing.expect(c.binop.lhs.* == .quoted);
+    try testing.expectEqualStrings("", c.binop.lhs.quoted.val);
     const c_hole = c.binop.rhs;
     try testing.expect(c_hole.* == .field);
     try testing.expectEqualStrings("name", c_hole.field.field);
@@ -10580,25 +10580,25 @@ test "parse: an escaped brace is TEXT and an unescaped one still opens a hole" {
 
     // (a) ALL text: no hole was opened, so the whole literal is one string.
     const a = mod.body.stmts[0].assign.values[0];
-    try testing.expect(a.* == .string_lit);
-    try testing.expectEqualStrings("v={x}", a.string_lit.val);
+    try testing.expect(a.* == .quoted);
+    try testing.expectEqualStrings("v={x}", a.quoted.val);
 
     // (b) THE CONTROL AGAINST AN OVER-BROAD FIX. A patch that made `\{`
     // literal by making the literal non-interpolating passes (a) and fails
     // here: the first hole must still be a live `x`.
     const b = mod.body.stmts[1].assign.values[0];
     try testing.expect(b.* == .binop and b.binop.op == .concat);
-    try testing.expectEqualStrings("both ", b.binop.lhs.binop.lhs.string_lit.val);
+    try testing.expectEqualStrings("both ", b.binop.lhs.binop.lhs.quoted.val);
     try testing.expectEqualStrings("x", b.binop.lhs.binop.rhs.name.ident);
-    try testing.expectEqualStrings(" and {x}", b.binop.rhs.string_lit.val);
+    try testing.expectEqualStrings(" and {x}", b.binop.rhs.quoted.val);
 
     // (c) THE FACT BELONGS TO THE DECODER, NOT TO THE SPELLING. `\x7B` is the
     // byte `{` and opened a hole before the ruling — `print("A[\x7Bx}]")`
     // printed `A[7]`. Protecting only the two characters `\{` would leave it
     // wrong; the map is per DECODED BYTE for exactly this reason.
     const c = mod.body.stmts[2].assign.values[0];
-    try testing.expect(c.* == .string_lit);
-    try testing.expectEqualStrings("hex {x}", c.string_lit.val);
+    try testing.expect(c.* == .quoted);
+    try testing.expectEqualStrings("hex {x}", c.quoted.val);
 }
 
 test "parse: an escaped brace cannot close or deepen a hole" {
@@ -10616,14 +10616,14 @@ test "parse: an escaped brace cannot close or deepen a hole" {
     // already emitted its own source text before the ruling (with an STR-1
     // warning). The ruling must not change it, only make it sayable.
     const a = mod.body.stmts[0].assign.values[0];
-    try testing.expect(a.* == .string_lit);
-    try testing.expectEqualStrings("pair={\"k\": 1}", a.string_lit.val);
+    try testing.expect(a.* == .quoted);
+    try testing.expectEqualStrings("pair={\"k\": 1}", a.quoted.val);
 
     // (b) A pack inside a live hole — `law.brace` — beside protected braces in
     // the same literal. The depth counting must still find the RIGHT `}`.
     const b = mod.body.stmts[1].assign.values[0];
     try testing.expect(b.* == .binop and b.binop.op == .concat);
-    try testing.expectEqualStrings(" {end}", b.binop.rhs.string_lit.val);
+    try testing.expectEqualStrings(" {end}", b.binop.rhs.quoted.val);
 }
 
 test "parse: an ESCAPED QUOTE inside a hole is still a quote, not a protected byte" {
@@ -10650,7 +10650,7 @@ test "parse: an ESCAPED QUOTE inside a hole is still a quote, not a protected by
     try testing.expect(hole.* == .call);
     try testing.expectEqualStrings("f", hole.call.func.name.ident);
     try testing.expectEqual(@as(usize, 1), hole.call.args.len);
-    try testing.expectEqualStrings("}", hole.call.args[0].string_lit.val);
+    try testing.expectEqualStrings("}", hole.call.args[0].quoted.val);
 }
 
 test "parse: `{{` is a hole opening with a PACK, which is why it cannot be the escape" {
@@ -10678,7 +10678,7 @@ test "parse: `{{` is a hole opening with a PACK, which is why it cannot be the e
     // `"n=" .. <hole>` — two parts, so the hole was taken as ONE expression and
     // the second `{` was NOT read as an escaped brace.
     try testing.expect(a.* == .binop and a.binop.op == .concat);
-    try testing.expectEqualStrings("n=", a.binop.lhs.string_lit.val);
+    try testing.expectEqualStrings("n=", a.binop.lhs.quoted.val);
     // And the hole is a subject-first application whose SUBJECT is a pack.
     const hole = a.binop.rhs;
     try testing.expect(hole.* == .method_call);

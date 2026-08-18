@@ -1086,8 +1086,8 @@ pub const Sema = struct {
         if (c.func.* != .name) return null;
         const fn_name = c.func.name.ident;
         if (!std.mem.eql(u8, fn_name, "req") and !std.mem.eql(u8, fn_name, "require")) return null;
-        if (c.args.len != 1 or c.args[0].* != .string_lit) return null;
-        return c.args[0].string_lit.val;
+        if (c.args.len != 1 or c.args[0].* != .quoted) return null;
+        return c.args[0].quoted.val;
     }
 
     fn markModuleSealed(self: *Sema, name: []const u8) !void {
@@ -1213,7 +1213,7 @@ pub const Sema = struct {
         return switch (e.*) {
             .int_lit => .i64,
             .float_lit => .f64,
-            .string_lit => .str,
+            .quoted => .str,
             .true_lit, .false_lit => .bool,
             .nil => .any,
             // Simple binops on integer literals: 0x01 << 4 → i64
@@ -1334,7 +1334,7 @@ pub const Sema = struct {
         return switch (e.*) {
             .int_lit => repr.is_numeric(),
             .float_lit => repr.is_float(),
-            .string_lit => repr == .str,
+            .quoted => repr == .str,
             .true_lit, .false_lit => repr == .bool,
             // `-3.0` is one literal wearing a sign, not an operation on a value
             // that already has a descriptor.
@@ -1631,8 +1631,8 @@ pub const Sema = struct {
 
     fn mem_type_arg(self: *Sema, args: []const *ast.Expr, index: usize) SemaError!?RT {
         if (index >= args.len) return null;
-        if (args[index].* != .string_lit) return null;
-        return try self.mem_type_from_name(args[index].string_lit.val);
+        if (args[index].* != .quoted) return null;
+        return try self.mem_type_from_name(args[index].quoted.val);
     }
 
     fn mem_pointer_to(self: *Sema, pointee: RT) SemaError!RT {
@@ -1715,13 +1715,13 @@ pub const Sema = struct {
             }
             return;
         }
-        if (arg.* != .string_lit) {
+        if (arg.* != .quoted) {
             self.err(arg.*.loc(), "mem.{s} argument {d} must be a type name", .{ fname, index + 1 });
             return;
         }
-        const name = arg.string_lit.val;
+        const name = arg.quoted.val;
         if ((try self.mem_type_from_name(name)) == null) {
-            self.err(arg.string_lit.loc, "mem.{s} does not support memory type '{s}'", .{ fname, name });
+            self.err(arg.quoted.loc, "mem.{s} does not support memory type '{s}'", .{ fname, name });
         }
     }
 
@@ -1943,8 +1943,8 @@ pub const Sema = struct {
 
     fn atomic_type_arg(self: *Sema, args: []const *ast.Expr, index: usize) SemaError!?RT {
         if (index >= args.len) return null;
-        if (args[index].* != .string_lit) return null;
-        return try self.mem_type_from_name(args[index].string_lit.val);
+        if (args[index].* != .quoted) return null;
+        return try self.mem_type_from_name(args[index].quoted.val);
     }
 
     fn atomic_type_supported(t: RT) bool {
@@ -1982,21 +1982,21 @@ pub const Sema = struct {
     fn atomic_validate_type_arg(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize, fetch_only: bool) SemaError!?RT {
         if (index >= args.len) return null;
         const arg = args[index];
-        if (arg.* != .string_lit) {
+        if (arg.* != .quoted) {
             self.err(arg.*.loc(), "atomic.{s} argument {d} must be a string type name", .{ fname, index + 1 });
             return null;
         }
-        const name = arg.string_lit.val;
+        const name = arg.quoted.val;
         const rt = (try self.mem_type_from_name(name)) orelse {
-            self.err(arg.string_lit.loc, "atomic.{s} does not support memory type '{s}'", .{ fname, name });
+            self.err(arg.quoted.loc, "atomic.{s} does not support memory type '{s}'", .{ fname, name });
             return null;
         };
         if (!atomic_type_supported(rt)) {
-            self.err(arg.string_lit.loc, "atomic.{s} type '{s}' is not an atomic scalar or pointer type", .{ fname, name });
+            self.err(arg.quoted.loc, "atomic.{s} type '{s}' is not an atomic scalar or pointer type", .{ fname, name });
             return null;
         }
         if (fetch_only and !rt.is_integer()) {
-            self.err(arg.string_lit.loc, "atomic.{s} type '{s}' must be an integer type", .{ fname, name });
+            self.err(arg.quoted.loc, "atomic.{s} type '{s}' must be an integer type", .{ fname, name });
             return null;
         }
         return rt;
@@ -2073,17 +2073,17 @@ pub const Sema = struct {
     fn atomic_validate_order_arg(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize, kind: []const u8) void {
         if (index >= args.len) return;
         const arg = args[index];
-        if (arg.* != .string_lit) {
+        if (arg.* != .quoted) {
             self.err(arg.*.loc(), "atomic.{s} memory order argument {d} must be a string literal", .{ fname, index + 1 });
             return;
         }
-        const order = arg.string_lit.val;
+        const order = arg.quoted.val;
         if (!atomic_order_known(order)) {
-            self.err(arg.string_lit.loc, "atomic.{s} memory order '{s}' is not recognized", .{ fname, order });
+            self.err(arg.quoted.loc, "atomic.{s} memory order '{s}' is not recognized", .{ fname, order });
             return;
         }
         if (!atomic_order_valid_for(kind, order)) {
-            self.err(arg.string_lit.loc, "atomic.{s} memory order '{s}' is invalid for {s}", .{ fname, order, kind });
+            self.err(arg.quoted.loc, "atomic.{s} memory order '{s}' is invalid for {s}", .{ fname, order, kind });
         }
     }
 
@@ -3211,9 +3211,9 @@ pub const Sema = struct {
                     self.track_table_field(table_name, nmd.key, val_t);
                 },
                 .indexed => |idx| {
-                    if (idx.key.* == .string_lit) {
+                    if (idx.key.* == .quoted) {
                         const val_t = self.type_map.get(idx.val) orelse .any;
-                        self.track_table_field(table_name, idx.key.string_lit.val, val_t);
+                        self.track_table_field(table_name, idx.key.quoted.val, val_t);
                     } else if (idx.key.* == .int_lit) {
                         var key_buf: [32]u8 = undefined;
                         const key = std.fmt.bufPrint(&key_buf, "{d}", .{idx.key.int_lit.val}) catch return;
@@ -3915,7 +3915,7 @@ pub const Sema = struct {
             .true_lit, .false_lit => .bool,
             .int_lit => .i64,
             .float_lit => .f64,
-            .string_lit => .str,
+            .quoted => .str,
             .vararg => .any,
             .quote, .unquote, .macro_call => {
                 self.err(expr.loc(), "unexpanded macro expression reached semantic analysis", .{});
@@ -6272,8 +6272,8 @@ pub const Sema = struct {
         const call = expr.call;
         if (!is_meta_make_concept_call(call.func)) return;
         if (call.args.len < 2) return;
-        if (call.args[0].* != .string_lit) return;
-        const descriptor_name = call.args[0].string_lit.val;
+        if (call.args[0].* != .quoted) return;
+        const descriptor_name = call.args[0].quoted.val;
         const spec = call.args[1];
         if (spec.* != .table) return;
 
@@ -6311,11 +6311,11 @@ pub const Sema = struct {
     }
 
     fn concept_member_name_expr(member: *const ast.Expr) ?[]const u8 {
-        if (member.* == .string_lit) return member.string_lit.val;
+        if (member.* == .quoted) return member.quoted.val;
         if (member.* != .table) return null;
         const name_expr = find_named_table_field(member, &.{"name"}) orelse return null;
-        if (name_expr.* != .string_lit) return null;
-        return name_expr.string_lit.val;
+        if (name_expr.* != .quoted) return null;
+        return name_expr.quoted.val;
     }
 
     fn collect_meta_concept_fields(self: *Sema, maybe_expr: ?*const ast.Expr) SemaError![]ConceptInfo.FieldRequirement {
@@ -6355,8 +6355,8 @@ pub const Sema = struct {
                 // G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept params.
                 .spread, .semantic => continue,
             };
-            const pt: RT = if (elem.* == .string_lit)
-                try self.meta_concept_type_from_string(elem.string_lit.val)
+            const pt: RT = if (elem.* == .quoted)
+                try self.meta_concept_type_from_string(elem.quoted.val)
             else
                 .any;
             try param_types.append(self.alloc, pt);
@@ -6380,8 +6380,8 @@ pub const Sema = struct {
                 const param_types = try self.collect_meta_concept_method_params(member_expr);
                 var ret_type: RT = .any;
                 if (find_named_table_field(member_expr, &.{ "ret", "return" })) |ret_expr| {
-                    if (ret_expr.* == .string_lit) {
-                        ret_type = try self.meta_concept_type_from_string(ret_expr.string_lit.val);
+                    if (ret_expr.* == .quoted) {
+                        ret_type = try self.meta_concept_type_from_string(ret_expr.quoted.val);
                     }
                 }
                 try methods.append(self.alloc, .{
@@ -6663,7 +6663,7 @@ pub const Sema = struct {
 
     fn eval_satisfies_expr(self: *Sema, args: []const *ast.Expr) ?bool {
         if (args.len != 2) return null;
-        const concept_name = if (args[1].* == .string_lit) args[1].string_lit.val else return null;
+        const concept_name = if (args[1].* == .quoted) args[1].quoted.val else return null;
         if (self.concepts.get(concept_name) == null) return null;
 
         if (args[0].* == .name) {
@@ -6737,8 +6737,8 @@ pub const Sema = struct {
         if (args.len == 0) return;
         if (self.try_eval_const_condition(args[0])) |known| {
             if (!known) {
-                const msg = if (args.len >= 2 and args[1].* == .string_lit)
-                    args[1].string_lit.val
+                const msg = if (args.len >= 2 and args[1].* == .quoted)
+                    args[1].quoted.val
                 else
                     "static assertion failed";
                 self.err(loc, "{s}", .{msg});
@@ -7403,8 +7403,8 @@ pub const Sema = struct {
                     const f = init_expr.call.func.field;
                     if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string") and
                         std.mem.eql(u8, f.field, "rep") and init_expr.call.args.len >= 2 and
-                        init_expr.call.args[0].* == .string_lit and
-                        std.mem.eql(u8, init_expr.call.args[0].string_lit.val, "a"))
+                        init_expr.call.args[0].* == .quoted and
+                        std.mem.eql(u8, init_expr.call.args[0].quoted.val, "a"))
                     {
                         has_rep_a = true;
                     }
@@ -7427,7 +7427,7 @@ pub const Sema = struct {
             const f = expr.call.func.field;
             if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string") and
                 std.mem.eql(u8, f.field, "rep") and expr.call.args.len >= 1 and
-                expr.call.args[0].* == .string_lit and std.mem.eql(u8, expr.call.args[0].string_lit.val, "b"))
+                expr.call.args[0].* == .quoted and std.mem.eql(u8, expr.call.args[0].quoted.val, "b"))
             {
                 return true;
             }
@@ -8238,8 +8238,8 @@ pub const Sema = struct {
     /// `string.rep(<string literal>, <count>)` — returns the literal.
     fn kx_rep_lit(e: *const ast.Expr) ?[]const u8 {
         const args = kx_call(e, "string", "rep") orelse return null;
-        if (args.len != 2 or args[0].* != .string_lit) return null;
-        return args[0].string_lit.val;
+        if (args.len != 2 or args[0].* != .quoted) return null;
+        return args[0].quoted.val;
     }
 
     /// `string.len(<name>)` over the named binding.
@@ -8798,8 +8798,8 @@ pub const Sema = struct {
         if (b.len < 4 or b[3] != .while_loop) return false;
         const sv = kx_set(&b[0]) orelse return false;
         const outer_args = kx_call(sv.value, "string", "rep") orelse return false;
-        if (outer_args.len != 2 or outer_args[0].* != .string_lit) return false;
-        if (outer_args[0].string_lit.val.len != 1 or !kx_int(outer_args[1], 1000)) return false;
+        if (outer_args.len != 2 or outer_args[0].* != .quoted) return false;
+        if (outer_args[0].quoted.val.len != 1 or !kx_int(outer_args[1], 1000)) return false;
         const acc = kx_set(&b[1]) orelse return false;
         if (!kx_int(acc.value, 0)) return false;
         const iv = kx_set(&b[2]) orelse return false;
@@ -8818,8 +8818,8 @@ pub const Sema = struct {
         const inner_len = kx_call(sum2.rhs, "string", "len") orelse return false;
         if (inner_len.len != 1) return false;
         const inner_rep = kx_call(inner_len[0], "string", "rep") orelse return false;
-        if (inner_rep.len != 2 or inner_rep[0].* != .string_lit) return false;
-        if (inner_rep[0].string_lit.val.len != 1) return false;
+        if (inner_rep.len != 2 or inner_rep[0].* != .quoted) return false;
+        if (inner_rep[0].quoted.val.len != 1) return false;
         const plus1 = kx_bin(inner_rep[1], .add) orelse return false;
         if (!kx_int(plus1.rhs, 1)) return false;
         const md = kx_bin(plus1.lhs, .mod) orelse return false;
@@ -10427,8 +10427,8 @@ pub const Sema = struct {
         const f = &c.func.field;
         if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "string")) return null;
         if (!std.mem.eql(u8, f.field, "rep")) return null;
-        if (c.args.len == 0 or c.args[0].* != .string_lit) return null;
-        return c.args[0].string_lit.val;
+        if (c.args.len == 0 or c.args[0].* != .quoted) return null;
+        return c.args[0].quoted.val;
     }
 
     fn detect_string_scan_loops(fb: *ast.FuncBody) SemaError!void {
@@ -11098,7 +11098,7 @@ pub const Sema = struct {
     fn dense_check_non_numeric(fb: *const ast.FuncBody, expr: *const ast.Expr, non_numeric_out: *bool) void {
         if (non_numeric_out.*) return;
         switch (expr.*) {
-            .string_lit => non_numeric_out.* = true,
+            .quoted => non_numeric_out.* = true,
             .table => non_numeric_out.* = true,
             .true_lit => non_numeric_out.* = true,
             .false_lit => non_numeric_out.* = true,
@@ -12685,7 +12685,7 @@ pub const Sema = struct {
                 .true_lit, .false_lit => .bool,
                 .int_lit => .i64,
                 .float_lit => .f64,
-                .string_lit => .str,
+                .quoted => .str,
                 .name => |n| blk: {
                     if (self.param_index(n.ident)) |pi| {
                         self.unify_param(pi, hint);
