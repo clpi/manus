@@ -110,8 +110,8 @@ appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
   # graph-conformant application record (sim-v0 applications[] shape):
   # relation + operand refs + typed results + provenance + demand. The
   # demand card is the performance lever (FTCFTW rungs 1-2).
-  head: str = '{"application":' .. n:num() .. ',"relation":"'
-  tail: str = ',"origin":"wasm","demand":"single"}'
+  head: str = '{"application":' .. n:num() .. ',"caller":' .. fi:num() .. ',"relation":"'
+  tail: str = ',"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"unknown"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}'
   if op == 32
     stdout:write(head .. 'read","operand":{"kind":"local","index":' .. src:ulebval(ip):num() .. '},"results":[{"width":32}]' .. tail .. "\n")
   if op == 65
@@ -123,9 +123,9 @@ appfact: i64 = (src: str, fi: i64, n: i64, op: i64, ip: i64, a: i64, b: i64)
   if op >= 103 and op <= 118 or op >= 70 and op <= 78 or op >= 167 and op <= 181 or op >= 81 and op <= 89 or op >= 134 and op <= 136
     stdout:write(head .. op:binname() .. '","operands":[' .. a:num() .. ',' .. b:num() .. '],"width":32,"overflow":"wrap","results":[{"width":32}]' .. tail .. "\n")
   if op >= 40 and op <= 53
-    stdout:write(head .. 'memory","world":{"home":"memory","reach":"address"},"operands":[' .. a:num() .. '],"width":32,"origin":"wasm","demand":"single"}' .. "\n")
+    stdout:write(head .. 'memory","world":{"home":"memory","reach":"address"},"operands":[' .. a:num() .. '],"width":32,"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"unknown"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}' .. "\n")
   if op == 16
-    stdout:write(head .. 'call","target":{"card":"exact","index":' .. src:ulebval(ip):num() .. '},"origin":"wasm","demand":"single"}' .. "\n")
+    stdout:write(head .. 'call","target":{"card":"exact","index":' .. src:ulebval(ip):num() .. '},"origin":"wasm","demand":"single","provenance":{"source":"wasm","byte":' .. ip:num() .. '},"applied":{"card":"one"},"effect":{"card":"unknown"},"authority":{"card":"unknown"},"witness":{"card":"unknown"},"realization":{"card":"unknown"}}' .. "\n")
   0
 
 binname: str = (op: i64)
