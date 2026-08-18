@@ -1,0 +1,3 @@
+# F3a negative control: same global, never written — refuses with missing: g
+global g: str = ""
+g:len()

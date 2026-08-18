@@ -1,0 +1,20 @@
+unit	check_exit	first_diag	compile_exit
+application.id	0	  > compile (lib/compiler/application.id) … ✓ checked — no errors 	1
+arm64.id	0	  > compile (lib/compiler/arm64.id) … lib/compiler/arm64.id:318:8: warning: warning: 'no	1
+arm64check.id	0	  > compile (lib/compiler/arm64check.id) … lib/compiler/arm64check.id:48:6: warning: war	1
+bind.id	0	  > compile (lib/compiler/bind.id) … lib/compiler/bind.id:144:8: warning: warning: 'not'	1
+comptime.id	0	  > compile (lib/compiler/comptime.id) … lib/compiler/comptime.id:97:6: warning: warning	1
+emit_c.id	0	  > compile (lib/compiler/emit_c.id) … lib/compiler/emit_c.id:89:16: warning: STR-1: thi	1
+fmt.id	0	  > compile (lib/compiler/fmt.id) … ✓ checked — no errors 	1
+graph.id	0	  > compile (lib/compiler/graph.id) … lib/compiler/graph.id:92:10: warning: warning: 'no	1
+host.id	0	  > compile (lib/compiler/host.id) … ✓ checked — no errors 	1
+lexer.id	0	  > compile (lib/compiler/lexer.id) … ✓ checked — no errors 	1
+macho.id	0	  > compile (lib/compiler/macho.id) … ✓ checked — no errors 	1
+parser.id	0	  > compile (lib/compiler/parser.id) … ✓ checked — no errors 	1
+profile.id	0	  > compile (lib/compiler/profile.id) … lib/compiler/profile.id:51:21: warning: STR-1: t	1
+reader.id	0	  > compile (lib/compiler/reader.id) … ✓ checked — no errors 	1
+record.id	0	  > compile (lib/compiler/record.id) … lib/compiler/record.id:61:19: warning: STR-1: thi	1
+rewrite.id	0	  > compile (lib/compiler/rewrite.id) … lib/compiler/rewrite.id:133:10: warning: warning	1
+symbol.id	0	  > compile (lib/compiler/symbol.id) … ✓ checked — no errors 	1
+token.id	0	  > compile (lib/compiler/token.id) … ✓ checked — no errors 	0
+token_view.id	0	  > compile (lib/compiler/token_view.id) … ✓ checked — no errors 	1

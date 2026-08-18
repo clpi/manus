@@ -1,0 +1,52 @@
+# MOP-C mask analysis — which refusal, if removed, actually unlocks what
+# Method: shadow compiler copy under /tmp/idol-mop/mask; exactly one refusal
+# bypassed per round (patch -> rebuild -> re-measure all 19 units -> restore);
+# tree verified byte-identical to production after each restore.
+# Base: idol @ ecc5a3ff (worktree src as of measurement), compiler rebuilt per round.
+
+version: 1
+rounds:
+
+  - family: F1
+    missing_fact: unresolved-application-facts
+    bypass_site: native_backend.zig emitArm64ModuleWithGraph firstUnresolvedApplicationExcludingBootstrap check
+    headline_units: 3      # lexer, emit_c, arm64check
+    genuinely_advanced: 0
+    next_blocker:
+      distribution: { missing-application-id: 3 }
+    verdict: >
+      Fixing F1 alone unlocks ZERO units. All three immediately expose
+      missing-application-id at the same applications — the graph never
+      publishes an application id for those call sites. The first causal
+      blocker is application-id publication, not the refusal guard.
+
+  - family: F3b
+    missing_fact: "global-init-not-constant:<name>"
+    bypass_site: dnir_lower.zig lowerModuleFromGraph constGlobalInit orelse-bail -> continue
+    headline_units: 2      # comptime, arm64
+    genuinely_advanced: 0
+    next_blocker:
+      distribution: { "missing: unspecified": 2 }
+    verdict: >
+      Fixing F3b alone unlocks ZERO units. Both immediately expose an
+      unnamed-entity hole. Global entity facts (name, init, storage) must
+      be published together or the lowerer meets an unspecified subject.
+
+not_measured:
+  - family: F2
+    reason: bypass requires restructuring a value-returning switch prong
+      (checkedScalarOperand .@"struct"/.table_type); method recorded here.
+  - family: F5
+    reason: bypass requires fabricating an applicationResultShape default;
+      the 27-line reproducer (f5_parser_reduced.id) is the better input.
+  - family: F4
+    reason: bail site emits a computed name; single unit (token_view).
+
+conclusion: >
+  Both measured families are 100% masked: headline counts (3 and 2 units)
+  correspond to ZERO genuinely unlocked units. The causal chain begins in
+  fact PUBLICATION (application ids, global entity facts), not in the
+  refusal guards that report their absence. Priority for the graph lane:
+  publish application-id and global-entity facts first; the refusal guards
+  will then have something to check and the existing labels become real
+  signal.
