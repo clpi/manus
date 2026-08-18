@@ -1,8 +1,8 @@
 //! SH-03 production dispatch — the host consuming the Idol lexer's token stream.
 //!
 //! This is the seam `lexer_bridge.tokenizeAuthority()` switches on. It binds
-//! `duo_lexer_tokenize_full` from the artifact built out of
-//! `lib/compiler/host.id` and rebuilds host `Token`s from the flat record
+//! `duo_lexer_tokenize_full` from the generated projection of
+//! `lib/compiler/lexer.id` and rebuilds host `Token`s from the flat record
 //! buffer, so the compiler can tokenize through Idol instead of `src/lexer.zig`.
 //!
 //! WHY `tokenize_full` AND NOT `tokenize_text`: `tokenize_text` writes six i64
@@ -11,10 +11,9 @@
 //! not hypothetical, it is exactly how GAP-021 hid for the whole life of  the Idol
 //! lexer. The full entry carries all seven fields the host `Token` holds.
 //!
-//! WHY THE ARTIFACT IS BUILT FROM `host.id` AND NOT `lexer.id`: `--lib` never
-//! initializes the primary module, so a lexer.id artifact's exports dereference
-//! NULL. See gaps/GAP-020.md. `host.id` demotes the lexer to a dependency,
-//! which is the path that initializes correctly.
+//! The generated-C bridge is produced directly from `lexer.id` with
+//! `dump-c --lib`. GAP-020's former primary-module initialization workaround
+//! is deleted; keeping that wrapper would leave an uncalled second ABI surface.
 const std = @import("std");
 const lexer = @import("lexer.zig");
 const lexer_bridge = @import("lexer_bridge.zig");

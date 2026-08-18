@@ -10,12 +10,19 @@ the old noncanonical file. Obsolete behavior deletes. Compatibility cases
 become generated or external conformance material — not in-tree stale source
 libraries.
 
-Machine rules are legacy input tokens for `scripts/audit100.id`. They
-authorize audit actions only; no token permits a file to remain. The rule
-block disappears when the reader deletes and tracked noncanonical `.id` debt
-reaches zero.
+The executable transition rows are owned by `lib/compiler/lexer.id` through
+`sourceentrycount`, `sourceentryrole`, and `sourceentrypattern`. Production
+`sourcefactlaw` / `sourcefactprovenance` consume those rows. This document does
+not repeat the roster: a copied list would be a second admission authority.
+`src/lexer_bridge.zig` only normalizes physical provenance relative to the tree
+carrying this marker and binds producer-returned names to the temporary host
+ABI.
 
-## Machine rules
+## Executed owner
+
+The following block is the generated/audited projection consumed by the
+existing corpus tools. `lexer_bridge` mechanically compares every row with the
+executed producer, so drift fails a test instead of creating a second opinion.
 
 ```text
 negative       examples/compile_fail/
@@ -25,10 +32,6 @@ foreign        examples/native_differential/
 generated      lib/token/classify.id
 generated      lib/wasm/opcode_lookup.id
 generated      lib/wasm/ward_mvp_opcodes.id
-foreign        examples/bash_
-foreign        examples/c_emit
-foreign        examples/c_interop
-foreign        examples/ffi
 foreign        examples/wasm/
 compatibility  examples/lua
 compatibility  examples/test_lua
@@ -63,8 +66,14 @@ foreign        test2.id
 foreign        examples/
 ```
 
-Unclassified root-level `examples/*.id` files are **foreign** until migrated into a
-canonical teaching home (`examples/boring/`, `examples/layout/`, …) or deleted.
-Negative fixtures stay under `examples/compile_fail/` only.
+Roles mean only transition policy: canonical/generated rows use Idol law and
+canonical provenance; compatibility rows use Lua law and foreign provenance;
+negative and foreign rows retain their corpus role while source form selects
+the admitted law. Unlisted source uses the producer's physical-form projection.
+No role grants a world, authority, runtime, or realization.
+
+The roster remains a deletion bridge. It disappears as project-controlled
+compatibility and unclassified corpus debt reaches zero and source ingress can
+receive an explicit law fact directly from its launcher/provider.
 
 Blockers: `GAP-145`, `GAP-134`, `docs/bootstrap.md`.

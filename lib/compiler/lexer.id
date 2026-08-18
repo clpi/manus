@@ -13,7 +13,13 @@ loc: {
 token: {
     kind: i64,
     loc: loc,
+    # Compatibility projection for the historical Idol parser. `next_tok`
+    # publishes exact source coordinates and leaves this empty unless a local
+    # semantic consumer already required text. `next` materializes it only for
+    # the old parser boundary; production dispatch consumes `off` / `len`.
     text: str,
+    off: i64,
+    len: i64,
     int_val: i64,
     float_val: f64
 }
@@ -29,6 +35,11 @@ state: {
 
 lexer: {
     src: str,
+    # Bootstrap bridge: `str` is still a pointer-only physical view, so `:len()`
+    # walks the source bytes. Carry the exact extent beside that borrowed view.
+    # law.bridge.death: delete this field when `str` realizes as pointer + extent
+    # and `:len()` consumes the view fact in constant time.
+    extent: i64,
     pos: i64,
     start: i64,
     line: i64,
@@ -39,24 +50,16 @@ lexer: {
     peeked_token: token,
     has_error: bool,
     error_loc: loc,
-    error_code: i64,
-    hint_count: i64,
-    hint_0: str,
-    hint_1: str,
-    hint_2: str,
-    hint_3: str,
-    hint_4: str,
-    hint_5: str,
-    hint_6: str,
-    hint_7: str
+    error_code: i64
 }
 
 new: lexer = (src: str, file: str, family: i64)
     dummy_loc: loc = { file = "", line = 0, col = 0 }
-    dummy_tok: token = { kind = 0, loc = dummy_loc, text = "", int_val = 0, float_val = 0.0 }
+    dummy_tok: token = { kind = 0, loc = dummy_loc, text = "", off = 0, len = 0, int_val = 0, float_val = 0.0 }
     # Family is an operand (`law.family.one`). Path is provenance only.
     return {
         src = src,
+        extent = src:len(),
         pos = 1,
         start = 1,
         line = 1,
@@ -68,33 +71,21 @@ new: lexer = (src: str, file: str, family: i64)
         has_error = false,
         error_loc = dummy_loc,
         error_code = 0,
-        hint_count = 0,
-        hint_0 = "",
-        hint_1 = "",
-        hint_2 = "",
-        hint_3 = "",
-        hint_4 = "",
-        hint_5 = "",
-        hint_6 = "",
-        hint_7 = "",
     }
 
 cur_loc: loc = (self: lexer)
     return { file = self.file, line = self.line, col = self.col }
 
-has_pending_hints: bool = (self: lexer)
-    self.hint_count > 0
-
 peek_char: i64 = (self: lexer)
-    if self.pos > self.src:len() return 0
+    if self.pos > self.extent return 0
     self.src:byte(self.pos)
 
 peek_char2: i64 = (self: lexer)
-    if self.pos + 1 > self.src:len() return 0
+    if self.pos + 1 > self.extent return 0
     self.src:byte(self.pos + 1)
 
 adv(self: lexer)
-    if self.pos > self.src:len() return
+    if self.pos > self.extent return
     c = self.src:byte(self.pos)
     self.pos = self.pos + 1
     if c == 10
@@ -116,117 +107,81 @@ is_hex: bool = (c: i64)
     is_digit(c) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102)
 
 
+# Compare one already-bounded source span with a fixed word. `lookup` derives
+# the extent once from the token and contracts the candidate set by extent, so
+# this hot edge neither materializes text nor measures any string repeatedly.
+word: bool = (self: lexer, start: i64, n: i64, pattern: str)
+    i: i64 = 1
+    while i <= n
+        if self.src:byte(start + i - 1) != pattern:byte(i) return false
+        i += 1
+    true
+
 # Keyword ordinals are token's. Spelling → ordinal here so generated C
 # does not walk a `std` table or call a missing home.
-lookup: i64 = (w: str)
-    if w == "and"
-        return 4
-    if w == "break"
-        return 5
-    if w == "continue"
-        return 6
-    if w == "do"
-        return 7
-    if w == "else"
-        return 8
-    if w == "elseif"
-        return 9
-    if w == "end"
-        return 10
-    if w == "false"
-        return 11
-    if w == "for"
-        return 12
-    if w == "function"
-        return 13
-    if w == "fun"
-        return 14
-    if w == "global"
-        return 15
-    if w == "goto"
-        return 16
-    if w == "if"
-        return 17
-    if w == "in"
-        return 18
-    if w == "local"
-        return 19
-    if w == "nil"
-        return 20
-    if w == "not"
-        return 21
-    if w == "or"
-        return 22
-    if w == "repeat"
-        return 23
-    if w == "return"
-        return 24
-    if w == "then"
-        return 25
-    if w == "true"
-        return 26
-    if w == "until"
-        return 27
-    if w == "while"
-        return 28
-    if w == "const"
-        return 29
-    if w == "enum"
-        return 30
-    if w == "i8"
-        return 31
-    if w == "i16"
-        return 32
-    if w == "i32"
-        return 33
-    if w == "i64"
-        return 34
-    if w == "u8"
-        return 35
-    if w == "u16"
-        return 36
-    if w == "u32"
-        return 37
-    if w == "u64"
-        return 38
-    if w == "f32"
-        return 39
-    if w == "f64"
-        return 40
-    if w == "bool"
-        return 41
-    if w == "void"
-        return 42
-    if w == "str"
-        return 43
-    if w == "match"
-        return 44
-    if w == "try"
-        return 45
-    if w == "catch"
-        return 46
-    if w == "defer"
-        return 47
-    if w == "async"
-        return 48
-    if w == "await"
-        return 49
-    if w == "concept"
-        return 50
-    if w == "alias"
-        return 51
-    if w == "private"
-        return 52
-    if w == "extends"
-        return 53
-    if w == "macro"
-        return 54
-    if w == "comptime"
-        return 55
-    if w == "by"
-        return 56
-    if w == "let"
-        return 57
+lookup: i64 = (self: lexer, start: i64, stop: i64)
+    n: i64 = stop - start + 1
+    if n == 2
+        if self:word(start, n, "by") return 56
+        if self:word(start, n, "do") return 7
+        if self:word(start, n, "i8") return 31
+        if self:word(start, n, "if") return 17
+        if self:word(start, n, "in") return 18
+        if self:word(start, n, "or") return 22
+        if self:word(start, n, "u8") return 35
+    elseif n == 3
+        if self:word(start, n, "and") return 4
+        if self:word(start, n, "end") return 10
+        if self:word(start, n, "f32") return 39
+        if self:word(start, n, "f64") return 40
+        if self:word(start, n, "for") return 12
+        if self:word(start, n, "fun") return 14
+        if self:word(start, n, "i16") return 32
+        if self:word(start, n, "i32") return 33
+        if self:word(start, n, "i64") return 34
+        if self:word(start, n, "let") return 57
+        if self:word(start, n, "nil") return 20
+        if self:word(start, n, "not") return 21
+        if self:word(start, n, "str") return 43
+        if self:word(start, n, "try") return 45
+        if self:word(start, n, "u16") return 36
+        if self:word(start, n, "u32") return 37
+        if self:word(start, n, "u64") return 38
+    elseif n == 4
+        if self:word(start, n, "bool") return 41
+        if self:word(start, n, "else") return 8
+        if self:word(start, n, "enum") return 30
+        if self:word(start, n, "goto") return 16
+        if self:word(start, n, "then") return 25
+        if self:word(start, n, "true") return 26
+        if self:word(start, n, "void") return 42
+    elseif n == 5
+        if self:word(start, n, "alias") return 51
+        if self:word(start, n, "async") return 48
+        if self:word(start, n, "await") return 49
+        if self:word(start, n, "break") return 5
+        if self:word(start, n, "catch") return 46
+        if self:word(start, n, "const") return 29
+        if self:word(start, n, "defer") return 47
+        if self:word(start, n, "false") return 11
+        if self:word(start, n, "local") return 19
+        if self:word(start, n, "macro") return 54
+        if self:word(start, n, "match") return 44
+        if self:word(start, n, "until") return 27
+        if self:word(start, n, "while") return 28
+    elseif n == 6
+        if self:word(start, n, "elseif") return 9
+        if self:word(start, n, "global") return 15
+        if self:word(start, n, "repeat") return 23
+        if self:word(start, n, "return") return 24
+    elseif n == 7
+        if self:word(start, n, "concept") return 50
+        if self:word(start, n, "extends") return 53
+        if self:word(start, n, "private") return 52
+    elseif n == 8
+        if self:word(start, n, "comptime") return 55
+        if self:word(start, n, "continue") return 6
+        if self:word(start, n, "function") return 13
     0
 
 # GAP-145: distinct literal identities keyed by quote and source-family fact,
@@ -242,13 +197,13 @@ classify_quote: i64 = (family: i64, quote: i64)
 
 long_bracket_level: i64 = (self: lexer)
     i = self.pos
-    if i > self.src:len() or self.src:byte(i) != 91 return -1
+    if i > self.extent or self.src:byte(i) != 91 return -1
     i += 1
     lvl = 0
-    while i <= self.src:len() and self.src:byte(i) == 61
+    while i <= self.extent and self.src:byte(i) == 61
         lvl += 1
         i += 1
-    if i > self.src:len() or self.src:byte(i) != 91 return -1
+    if i > self.extent or self.src:byte(i) != 91 return -1
     lvl
 
 # GAP-017: a lexer error is a REJECTION the caller can count, not a process
@@ -275,7 +230,7 @@ skip_long(self: lexer, level: i64)
         self:adv()
         i += 1
     self:adv()
-    while self.pos <= self.src:len()
+    while self.pos <= self.extent
         if self:peek_char() == 93
             eq = 0
             self:adv()
@@ -290,14 +245,14 @@ skip_long(self: lexer, level: i64)
     self:_fail(2)
 
 skip_ws(self: lexer)
-    while self.pos <= self.src:len()
+    while self.pos <= self.extent
         c = self:peek_char()
         if c == 32 or c == 9 or c == 13 or c == 10
             self:adv()
         else
             break
 
-read_long_str: str = (self: lexer, level: i64)
+read_long_str(self: lexer, level: i64)
     self:adv()
     i = 0
     while i < level
@@ -310,72 +265,66 @@ read_long_str: str = (self: lexer, level: i64)
         self:adv()
         if self:peek_char() == 10
             self:adv()
-    start = self.pos
-    self.start = start
-    while self.pos <= self.src:len()
+    self.start = self.pos
+    while self.pos <= self.extent
         if self:peek_char() == 93
-            close_start = self.pos
             self:adv()
             eq = 0
             while self:peek_char() == 61
                 self:adv()
                 eq += 1
             if eq == level and self:peek_char() == 93
-                content = self.src:sub( start, close_start - 1)
                 self:adv()
-                return content
+                return
         else
             self:adv()
     self:_fail(2)
-    ""
 
-read_str: str = (self: lexer, quote: i64)
+read_str(self: lexer, quote: i64)
     self:adv()
-    start = self.pos
-    self.start = start
-    while self.pos <= self.src:len()
+    self.start = self.pos
+    while self.pos <= self.extent
         c = self:peek_char()
         if c == quote
-            s = self.src:sub( start, self.pos - 1)
             self:adv()
-            return s
+            return
         if c == 10 or c == 13
             self:_fail(1)
-            return ""
+            return
         if c == 92
             self:adv()
-            if self.pos > self.src:len()
+            if self.pos > self.extent
                 self:_fail(1)
-                return ""
+                return
             esc = self:peek_char()
             if esc == 120
                 self:adv()
-                if self.pos > self.src:len() or !is_hex(self:peek_char())
+                if self.pos > self.extent or !is_hex(self:peek_char())
                     self:_fail(3)
-                    return ""
+                    return
                 self:adv()
-                if self.pos <= self.src:len() and is_hex(self:peek_char())
+                if self.pos <= self.extent and is_hex(self:peek_char())
                     self:adv()
             elseif esc == 117
                 self:adv()
                 if self:peek_char() != 123
                     self:_fail(3)
-                    return ""
+                    return
                 self:adv()
                 has_digit = false
-                while self.pos <= self.src:len() and self:peek_char() != 125
+                while self.pos <= self.extent and self:peek_char() != 125
                     if !is_hex(self:peek_char())
                         self:_fail(3)
-                        return ""
+                        return
                     has_digit = true
                     self:adv()
-                if !has_digit or self.pos > self.src:len() or self:peek_char() != 125
+                if !has_digit or self.pos > self.extent or self:peek_char() != 125
                     self:_fail(3)
-                    return ""
+                    return
                 self:adv()
             elseif esc == 122
                 self:adv()
-                while self.pos <= self.src:len()
+                while self.pos <= self.extent
                     ws = self:peek_char()
                     if ws == 32 or ws == 9 or ws == 13 or ws == 10
                         self:adv()
@@ -383,14 +332,20 @@ read_str: str = (self: lexer, quote: i64)
                         break
             elseif esc == 13
                 self:adv()
-                if self.pos <= self.src:len() and self:peek_char() == 10
+                if self.pos <= self.extent and self:peek_char() == 10
                     self:adv()
             else
                 self:adv()
         else
             self:adv()
     self:_fail(1)
-    ""
+
+# One token identity with two physical projections. `off` / `len` are exact
+# source facts consumed by production. `text` is a temporary compatibility
+# view retained only for the historical Idol parser until it consumes spans.
+span: token = (kind: i64, loc: loc, text: str, off: i64, len: i64, integer: i64, decimal: f64)
+    at: loc = { file = loc.file, line = loc.line, col = loc.col }
+    { kind = kind, loc = at, text = text, off = off, len = len, int_val = integer, float_val = decimal }
 
 # GAP-023/024: exact decimal and hex to i64, never through f64.
 #
@@ -404,9 +359,9 @@ read_str: str = (self: lexer, quote: i64)
 # Digits accumulate in i64 directly. Values beyond i64 wrap rather than
 # rejecting; that is the same shape the rest of the compiler carries today and
 # is recorded in GAP-024 rather than fixed here.
-_int_of: i64 = (text: str)
-    n: i64 = text:len()
-    if n > 2 and text:byte(1) == 48 and (text:byte(2) == 120 or text:byte(2) == 88)
+_int_of: i64 = (self: lexer, start: i64, stop: i64)
+    n: i64 = stop - start + 1
+    if n > 2 and self.src:byte(start) == 48 and (self.src:byte(start + 1) == 120 or self.src:byte(start + 1) == 88)
         # gap[042]: ACCUMULATE UNSIGNED, for the same reason the decimal path
         # below does. gap[024] fixed only the decimal accumulator; this one
         # stayed `i64`, so `v * 16` on any hex literal at or above 2^63 was
@@ -422,9 +377,9 @@ _int_of: i64 = (text: str)
         # and bitcasts — so accumulating unsigned here is what makes the two
         # lexers agree rather than a new convention.
         v: u64 = 0
-        i: i64 = 3
-        while i <= n
-            c: i64 = text:byte(i)
+        i: i64 = start + 2
+        while i <= stop
+            c: i64 = self.src:byte(i)
             d: i64 = 0
             if c >= 48 and c <= 57
                 d = c - 48
@@ -451,9 +406,9 @@ _int_of: i64 = (text: str)
     # carries the full 64-bit range and the value lands in int_val with the
     # same bits the host lexer's parseInt(u64) produces.
     v: u64 = 0
-    i: i64 = 1
-    while i <= n
-        c: i64 = text:byte(i)
+    i: i64 = start
+    while i <= stop
+        c: i64 = self.src:byte(i)
         if c < 48 or c > 57 return v
         v = v * 10 + (c - 48)
         i += 1
@@ -507,7 +462,6 @@ read_num: token = (self: lexer)
             while is_digit(self:peek_char())
                 self:adv()
     
-    text = self.src:sub( start, self.pos - 1)
     # `to(f64)`/`to(i64)`, NOT `tonumber(text) or 0.0`. The `or` truncated the
     # float: `tonumber("1.5")` is 1.5, and `tonumber("1.5") or 0.0` is **1**.
     # Measured 2026-08-07, filed as GAP-021.
@@ -522,22 +476,24 @@ read_num: token = (self: lexer)
     # after read_number has already scanned a well-formed literal, so `or 0.0`
     # was defending an unreachable case while corrupting the reachable one.
     if is_float
-        return { kind = 2, loc = l, text = text, int_val = 0, float_val = to(f64)(text) }
-    else
-        return { kind = 1, loc = l, text = text, int_val = _int_of(text), float_val = 0.0 }
+        # The current numeric conversion boundary consumes terminated text.
+        # Keep this one local materialization until conversion consumes a span.
+        text = self.src:sub(start, self.pos - 1)
+        return span(2, l, text, start - 1, self.pos - start, 0, to(f64)(text))
+    span(1, l, "", start - 1, self.pos - start, self:_int_of(start, self.pos - 1), 0.0)
 
 next_tok: token = (self: lexer)
     if self.pos == 1 and self:peek_char() == 35 and self:peek_char2() == 33
         l = self:cur_loc()
         start = self.pos
-        while self.pos <= self.src:len() and self:peek_char() != 10
+        while self.pos <= self.extent and self:peek_char() != 10
             self:adv()
-        text = self.src:sub(start, self.pos - 1)
-        return { kind = 110, loc = l, text = text, int_val = 0, float_val = 0.0 }
+        return span(110, l, "", start - 1, self.pos - start, 0, 0.0)
     self:skip_ws()
     self.start = self.pos
-    if self.pos > self.src:len()
-        return { kind = 109, loc = self:cur_loc(), text = "", int_val = 0, float_val = 0.0 }
+    if self.pos > self.extent
+        eof = self:cur_loc()
+        return span(109, eof, "", self.pos - 1, 0, 0, 0.0)
     
     l = self:cur_loc()
     c = self:peek_char()
@@ -547,35 +503,37 @@ next_tok: token = (self: lexer)
     
     if is_alpha(c) or c == 95
         start = self.pos
-        while self.pos <= self.src:len()
+        while self.pos <= self.extent
             p = self:peek_char()
             if is_alnum(p) or p == 95
                 self:adv()
             else
                 break
-        text = self.src:sub( start, self.pos - 1)
-        kind = lookup(text)
+        kind = self:lookup(start, self.pos - 1)
         if kind == 0
             kind = 0
-        return { kind = kind, loc = l, text = text, int_val = 0, float_val = 0.0 }
+        return span(kind, l, "", start - 1, self.pos - start, 0, 0.0)
     
     if c == 39 or c == 34
         lit_kind = classify_quote(self.family, c)
-        s = self:read_str(c)
-        return { kind = lit_kind, loc = l, text = s, int_val = 0, float_val = 0.0 }
+        self:read_str(c)
+        if self.has_error
+            return span(lit_kind, l, "", self.start - 1, 0, 0, 0.0)
+        return span(lit_kind, l, "", self.start - 1, self.pos - self.start - 1, 0, 0.0)
     
     if c == 91
         lvl = self:long_bracket_level()
         if lvl >= 0
-            s = self:read_long_str(lvl)
-            return { kind = 108, loc = l, text = s, int_val = lvl, float_val = 0.0 }
+            self:read_long_str(lvl)
+            if self.has_error
+                return span(108, l, "", self.start - 1, 0, lvl, 0.0)
+            return span(108, l, "", self.start - 1, self.pos - self.start - 2 - lvl, lvl, 0.0)
     
     if c == 35 and self.family == 1
         start = self.pos
-        while self.pos <= self.src:len() and self:peek_char() != 10
+        while self.pos <= self.extent and self:peek_char() != 10
             self:adv()
-        text = self.src:sub(start, self.pos - 1)
-        return { kind = 111, loc = l, text = text, int_val = 0, float_val = 0.0 }
+        return span(111, l, "", start - 1, self.pos - start, 0, 0.0)
 
     if c == 45 and self:peek_char2() == 45
         start = self.pos
@@ -584,28 +542,13 @@ next_tok: token = (self: lexer)
         lvl = self:long_bracket_level()
         if lvl >= 0
             self:skip_long(lvl)
-            text = self.src:sub(start, self.pos - 1)
-            return { kind = 113, loc = l, text = text, int_val = 0, float_val = 0.0 }
-        is_triple = (self.pos <= self.src:len() and self:peek_char() == 45)
+            return span(113, l, "", start - 1, self.pos - start, 0, 0.0)
+        is_triple = (self.pos <= self.extent and self:peek_char() == 45)
         if is_triple
             self:adv()
-        body = self.pos
-        while self.pos <= self.src:len() and self:peek_char() != 10
+        while self.pos <= self.extent and self:peek_char() != 10
             self:adv()
-        if is_triple and self.hint_count < 8
-            if body <= self.src:len() and self.src:byte(body) == 64
-                h = self.src:sub(body + 1, self.pos - 1)
-                if self.hint_count == 0 self.hint_0 = h
-                elseif self.hint_count == 1 self.hint_1 = h
-                elseif self.hint_count == 2 self.hint_2 = h
-                elseif self.hint_count == 3 self.hint_3 = h
-                elseif self.hint_count == 4 self.hint_4 = h
-                elseif self.hint_count == 5 self.hint_5 = h
-                elseif self.hint_count == 6 self.hint_6 = h
-                elseif self.hint_count == 7 self.hint_7 = h
-                self.hint_count = self.hint_count + 1
-        text = self.src:sub(start, self.pos - 1)
-        return { kind = 112, loc = l, text = text, int_val = 0, float_val = 0.0 }
+        return span(112, l, "", start - 1, self.pos - start, 0, 0.0)
     
     self:adv()
     p = self.pos
@@ -613,83 +556,83 @@ next_tok: token = (self: lexer)
     if c == 43
         if self:peek_char() == 61
             self:adv()
-            return { kind = 99, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 64, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(99, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(64, l, "", p - 2, 1, 0, 0.0)
     elseif c == 42
         if self:peek_char() == 61
             self:adv()
-            return { kind = 101, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 66, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(101, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(66, l, "", p - 2, 1, 0, 0.0)
     elseif c == 37
         if self:peek_char() == 61
             self:adv()
-            return { kind = 103, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 68, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(103, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(68, l, "", p - 2, 1, 0, 0.0)
     elseif c == 94
         if self:peek_char() == 61
             self:adv()
-            return { kind = 104, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 69, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(104, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(69, l, "", p - 2, 1, 0, 0.0)
     elseif c == 35
         if self:peek_char() == 35
             self:adv()
-            return { kind = 87, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 70, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(87, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(70, l, "", p - 2, 1, 0, 0.0)
     elseif c == 38
-        return { kind = 71, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(71, l, "", p - 2, 1, 0, 0.0)
     elseif c == 124
-        if self.pos <= self.src:len() and self.src:byte(self.pos) == 62
+        if self.pos <= self.extent and self.src:byte(self.pos) == 62
             self.pos = self.pos + 1
-            return { kind = 97, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 72, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(97, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(72, l, "", p - 2, 1, 0, 0.0)
     elseif c == 40
-        return { kind = 58, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(58, l, "", p - 2, 1, 0, 0.0)
     elseif c == 41
-        return { kind = 59, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(59, l, "", p - 2, 1, 0, 0.0)
     elseif c == 91
-        return { kind = 60, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(60, l, "", p - 2, 1, 0, 0.0)
     elseif c == 93
-        return { kind = 61, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(61, l, "", p - 2, 1, 0, 0.0)
     elseif c == 123
-        return { kind = 62, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(62, l, "", p - 2, 1, 0, 0.0)
     elseif c == 125
-        return { kind = 63, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(63, l, "", p - 2, 1, 0, 0.0)
     elseif c == 59
-        return { kind = 77, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(77, l, "", p - 2, 1, 0, 0.0)
     elseif c == 44
-        return { kind = 79, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(79, l, "", p - 2, 1, 0, 0.0)
     elseif c == 45
         if self:peek_char() == 61
             self:adv()
-            return { kind = 100, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return span(100, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 62
             self:adv()
-            return { kind = 96, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 65, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(96, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(65, l, "", p - 2, 1, 0, 0.0)
     elseif c == 47
         if self:peek_char() == 61
             self:adv()
-            return { kind = 102, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return span(102, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 47
             self:adv()
-            return { kind = 94, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 67, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(94, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(67, l, "", p - 2, 1, 0, 0.0)
     elseif c == 46
         if self:peek_char() == 46
             self:adv()
             if self:peek_char() == 46
                 self:adv()
-                return { kind = 86, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-            return { kind = 85, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 80, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+                return span(86, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+            return span(85, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(80, l, "", p - 2, 1, 0, 0.0)
     elseif c == 61
         if self:peek_char() == 61
             self:adv()
-            return { kind = 88, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return span(88, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 62
             self:adv()
-            return { kind = 98, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 75, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(98, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(75, l, "", p - 2, 1, 0, 0.0)
     elseif c == 126
         # `~` is XOR and nothing else. It used to swallow a following `=` and
         # report inequality (kind 89), which is Lua's spelling, not this
@@ -698,56 +641,59 @@ next_tok: token = (self: lexer)
         # was meant. Emitting the bare tilde lets the grammar's adjacency rule
         # form `~=` as a compound assignment, exactly as it already forms
         # `>>=`, `<<=`, `|=` and `&=`.
-        return { kind = 76, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(76, l, "", p - 2, 1, 0, 0.0)
     elseif c == 60
         if self:peek_char() == 61
             self:adv()
-            return { kind = 90, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return span(90, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 60
             self:adv()
-            return { kind = 92, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 73, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(92, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(73, l, "", p - 2, 1, 0, 0.0)
     elseif c == 62
         if self:peek_char() == 61
             self:adv()
-            return { kind = 91, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return span(91, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 62
             self:adv()
-            return { kind = 93, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 74, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(93, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(74, l, "", p - 2, 1, 0, 0.0)
     elseif c == 58
         if self:peek_char() == 58
             self:adv()
-            return { kind = 95, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 78, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(95, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(78, l, "", p - 2, 1, 0, 0.0)
     elseif c == 64
-        return { kind = 81, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(81, l, "", p - 2, 1, 0, 0.0)
     elseif c == 63
-        return { kind = 82, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return span(82, l, "", p - 2, 1, 0, 0.0)
     elseif c == 33
         if self:peek_char() == 61
             self:adv()
-            return { kind = 89, loc = l, text = self.src:sub( p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
-        return { kind = 83, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(89, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return span(83, l, "", p - 2, 1, 0, 0.0)
     elseif c == 96
         if self.family == 1
             self:_fail(4)
-            return { kind = 109, loc = l, text = "", int_val = 0, float_val = 0.0 }
-        return { kind = 84, loc = l, text = self.src:sub( p - 1, p - 1), int_val = 0, float_val = 0.0 }
+            return span(109, l, "", p - 2, 0, 0, 0.0)
+        return span(84, l, "", p - 2, 1, 0, 0.0)
     else
         self:_fail(4)
-        return { kind = 109, loc = l, text = "", int_val = 0, float_val = 0.0 }
+        return span(109, l, "", p - 2, 0, 0, 0.0)
 
 next: token = (self: lexer)
     if self.has_peeked
         tok = self.peeked_token
         self.has_peeked = false
         return tok
-    return self:next_tok()
+    tok = self:next_tok()
+    if tok.len > 0 and tok.text:len() == 0
+        tok.text = self.src:sub(tok.off + 1, tok.off + tok.len)
+    tok
 
 peek: token = (self: lexer)
     if !self.has_peeked
-        self.peeked_token = self:next_tok()
+        self.peeked_token = self:next()
         self.has_peeked = true
     self.peeked_token
 
@@ -771,81 +717,18 @@ restore_state(self: lexer, state: state)
 
 # ── sovereign tokenize surface ───────────────────────────────────────────────
 #
-# Two entries, because two is all the power needs: a streaming primitive the host
-# tokenizer loop consumes, and the differential that proves this lexer agrees with
-# the production one token-for- Everything else (counts, kinds at an index,
-# spans) derives from `step` in the caller, and deriving it there is also the only
-# way to keep it O(n) — a `kind_at(index)` entry must re-lex per call.
-#
-# Both lower through DNIR to native machine code: no C backend, no runtime helper.
-# The native symbol is the function name.
-
-# Lex one token at 1-based byte offset `pos`; return `kind * 2^40 + next_pos`.
-# Feed `next_pos` back to walk the stream in O(n). Packing keeps this a single
-# scalar, so no aggregate crosses the boundary.
-#
-# `kind` is at most 105 and `next_pos` is a byte offset, so the product cannot
-# overflow i64 for any source a compiler will see.
 # Whole-file tokenize in ONE call, writing into a host-provided buffer.
 #
 # This is the shape production dispatch needs, and `duo_lexer_step` is not it.
 # Step rebuilds a `lexer` at a byte offset, which discards `has_peeked` /
-# `peeked_token` and the hint state the type carries, so a step-driven walk
+# `peeked_token`, so a step-driven walk
 # silently mis-lexes context-sensitive shapes (bisected to the `=` in
 # `fun add(a: i64): i64 =`). Here a single `lexer` runs the whole file, so the
 # stream is state-faithful by construction, and it is O(n) with no cursor ABI.
 #
-# `out` is a host address (see `mem.addr` / `mem.ptr_from_addr`); tokens are
-# written as four i64 fields — kind, line, col, int_val — and the return is the
-# token count including the terminating EOF, or -1 if `cap` is too small.
-# Whole-file tokenize carrying TEXT as well, into two host-provided buffers.
-#
-# `duo_lexer_tokenize_all` is enough to fingerprint a stream but not to DRIVE a
-# parser: the host also needs each token's text, and text is not a slice of the
-# source once escapes are processed, so start/end offsets cannot recover it.
-# Here the caller supplies a second arena; each token records (offset, length)
-# into it. The arena belongs to the HOST, which keeps the no-writable-__DATA
-# constraint in this file's header intact — nothing is allocated on the Duo
-# side beyond what std.str already does.
-#
-# Six i64 per token: kind, line, col, int_val, text_off, text_len.
-# Returns the token count including EOF, or -1 if either buffer is too small.
-duo_lexer_tokenize_text: i64 = (src: str, file: str, family: i64, out: i64, cap: i64, txt: i64, txtcap: i64)
-    lex = new(src, file, family)
-    buf = mem.ptr_from_addr(i64, out)
-    tbuf = mem.ptr_from_addr(i64, txt)
-    n: i64 = 0
-    toff: i64 = 0
-    while n < cap
-        tok = next_tok(lex)
-        tlen: i64 = lex.pos - lex.start
-        if tok.kind == 105 or tok.kind == 106 or tok.kind == 107
-            tlen = tlen - 1
-        if tok.kind == 108
-            tlen = tlen - 2 - tok.int_val
-        if tlen < 0
-            tlen = 0
-        if toff + tlen > txtcap return -1
-        k: i64 = 0
-        while k < tlen
-            mem.write_byte(tbuf, toff + k, tok.text:byte(k + 1))
-            k += 1
-        mem.write_i64(buf, (n * 6) * 8, tok.kind)
-        mem.write_i64(buf, (n * 6 + 1) * 8, tok.loc.line)
-        mem.write_i64(buf, (n * 6 + 2) * 8, tok.loc.col)
-        mem.write_i64(buf, (n * 6 + 3) * 8, tok.int_val)
-        mem.write_i64(buf, (n * 6 + 4) * 8, toff)
-        mem.write_i64(buf, (n * 6 + 5) * 8, tlen)
-        toff += tlen
-        n += 1
-        if tok.kind == 109 return n
-    -1
-
 # The PRODUCTION DISPATCH entry: everything the host `Token` carries, in one
-# pass. `tokenize_text` is one field short of that — it drops `float_val`, so a
-# host driven by it would silently mis-read every float literal while every
-# kind-based differential stayed green. That is the same shape as the token-TEXT
-# gap this file already records, so the field is carried rather than recomputed.
+# pass. Exact source coordinates are token facts, not cursor state reconstructed
+# here. The host projects its temporary text view from those coordinates.
 #
 # Positional seven-i64 records are SCHEMA-ONE debt. Host RECORD_SLOTS and
 # slot decode are a second copy of this law. Deletion: producer-projected
@@ -872,27 +755,14 @@ duo_lexer_tokenize_full: i64 = (src: str, file: str, family: i64, out: i64, cap:
     lex = new(src, file, family)
     buf = mem.ptr_from_addr(i64, out)
     n: i64 = 0
-    toff: i64 = 0
     while n < cap
         tok = next_tok(lex)
-        # Cursor span, not tok.text:len(). dump-c lowers :len() to strlen
-        # on the native char* field — a full walk of every token on the
-        # compile hot path. start/pos already bound the published bytes:
-        # quoted content excludes the closer still sitting in pos.
-        toff = lex.start - 1
-        tlen: i64 = lex.pos - lex.start
-        if tok.kind == 105 or tok.kind == 106 or tok.kind == 107
-            tlen = tlen - 1
-        if tok.kind == 108
-            tlen = tlen - 2 - tok.int_val
-        if tlen < 0
-            tlen = 0
         mem.write_i64(buf, (n * 7) * 8, tok.kind)
         mem.write_i64(buf, (n * 7 + 1) * 8, tok.loc.line)
         mem.write_i64(buf, (n * 7 + 2) * 8, tok.loc.col)
         mem.write_i64(buf, (n * 7 + 3) * 8, tok.int_val)
-        mem.write_i64(buf, (n * 7 + 4) * 8, toff)
-        mem.write_i64(buf, (n * 7 + 5) * 8, tlen)
+        mem.write_i64(buf, (n * 7 + 4) * 8, tok.off)
+        mem.write_i64(buf, (n * 7 + 5) * 8, tok.len)
         mem.write_f64(buf, (n * 7 + 6) * 8, tok.float_val)
         n += 1
         # GAP-017: a rejection is returned, not raised. Negative codes offset
@@ -944,11 +814,10 @@ duo_lexer_text_fingerprint: u64 = (src: str, file: str, family: i64)
     h: u64 = 0
     while true
         tok = next_tok(lex)
-        tl: i64 = tok.text:len()
-        h = h * 31 + tl
-        bi: i64 = 1
-        while bi <= tl
-            h = h * 31 + tok.text:byte(bi)
+        h = h * 31 + tok.len
+        bi: i64 = 0
+        while bi < tok.len
+            h = h * 31 + src:byte(tok.off + bi + 1)
             bi += 1
         if tok.kind == 109 return h
     h
@@ -986,6 +855,145 @@ sourceformsuffix: str = (i: i64)
 
 sourceformcanonical: bool = (i: i64)
     i == 1
+
+# Corpus/home admission is source ingress, not lexer meaning. It lives beside
+# the source-form projection only for the current executable bootstrap: this
+# producer now answers the complete law + provenance question and the host
+# supplies only a filesystem-normalized provenance path. The roles are corpus
+# roles, not language/world/runtime identities.
+sourceentrycount: i64 = ()
+    39
+
+sourceentryrole: str = (i: i64)
+    if i >= 1 and i <= 3 return "negative"
+    if i == 5 or i == 6 or i == 7 return "generated"
+    if i == 9 or i == 10 or i == 27 return "compatibility"
+    if i >= 11 and i <= 26 return "canonical"
+    if i >= 1 and i <= 39 return "foreign"
+    ""
+
+sourceentrypattern: str = (i: i64)
+    if i == 1 return "examples/compile_fail/"
+    if i == 2 return "examples/native_differential/unsupported/"
+    if i == 3 return "error_test.id"
+    if i == 4 return "examples/native_differential/"
+    if i == 5 return "lib/token/classify.id"
+    if i == 6 return "lib/wasm/opcode_lookup.id"
+    if i == 7 return "lib/wasm/ward_mvp_opcodes.id"
+    if i == 8 return "examples/wasm/"
+    if i == 9 return "examples/lua"
+    if i == 10 return "examples/test_lua"
+    if i == 11 return "examples/json/"
+    if i == 12 return "examples/conversion/"
+    if i == 13 return "examples/projection/"
+    if i == 14 return "examples/infer/"
+    if i == 15 return "examples/demand/"
+    if i == 16 return "examples/hash/"
+    if i == 17 return "examples/native/"
+    if i == 18 return "examples/control/"
+    if i == 19 return "examples/nominal/"
+    if i == 20 return "examples/layout/"
+    if i == 21 return "examples/pack/"
+    if i == 22 return "examples/anchor/"
+    if i == 23 return "examples/case/"
+    if i == 24 return "examples/read/"
+    if i == 25 return "examples/boring/"
+    if i == 26 return "examples/table/"
+    if i == 27 return "examples/luahost/"
+    if i == 28 return "examples/parity/"
+    if i == 29 return "examples/host/"
+    if i == 30 return "examples/world/"
+    if i == 31 return "examples/tailslot/"
+    if i == 32 return "examples/shc/"
+    if i == 33 return "examples/cfloor/"
+    if i == 34 return "examples/benchmark.id"
+    if i == 35 return "examples/mandelbrot.id"
+    if i == 36 return "vendor/"
+    if i == 37 return "test.id"
+    if i == 38 return "test2.id"
+    if i == 39 return "examples/"
+    ""
+
+sourceequal: bool = (left: str, right: str)
+    n: i64 = left:len()
+    if n != right:len() return false
+    i: i64 = 1
+    while i <= n
+        if left:byte(i) != right:byte(i) return false
+        i += 1
+    true
+
+sourcerangeequal: bool = (text: str, start: i64, pattern: str)
+    n: i64 = pattern:len()
+    if start < 1 or start + n - 1 > text:len() return false
+    i: i64 = 1
+    while i <= n
+        if text:byte(start + i - 1) != pattern:byte(i) return false
+        i += 1
+    true
+
+sourceends: bool = (text: str, suffix: str)
+    n: i64 = text:len()
+    m: i64 = suffix:len()
+    if m > n return false
+    sourcerangeequal(text, n - m + 1, suffix)
+
+sourcepathmatches: bool = (path: str, pattern: str)
+    n: i64 = path:len()
+    m: i64 = pattern:len()
+    if sourceequal(path, pattern) return true
+    if n >= m and sourcerangeequal(path, 1, pattern)
+        if pattern:byte(m) == 47 return true
+        if n > m and path:byte(m + 1) == 47 return true
+    if n > m and path:byte(n - m) == 47
+        return sourcerangeequal(path, n - m + 1, pattern)
+    false
+
+sourcepathrole: str = (path: str)
+    best: str = ""
+    bestlen: i64 = 0
+    i: i64 = 1
+    while i <= sourceentrycount()
+        pattern = sourceentrypattern(i)
+        n: i64 = pattern:len()
+        if n >= bestlen and sourcepathmatches(path, pattern)
+            best = sourceentryrole(i)
+            bestlen = n
+        i += 1
+    best
+
+sourcepathformlaw: str = (path: str)
+    i: i64 = 1
+    while i <= sourceformcount()
+        if sourceends(path, sourceformsuffix(i)) return sourceformlaw(i)
+        i += 1
+    ""
+
+sourcepathformprovenance: str = (path: str)
+    i: i64 = 1
+    while i <= sourceformcount()
+        if sourceends(path, sourceformsuffix(i))
+            if sourceformcanonical(i) return "canonical"
+            return "foreign"
+        i += 1
+    "unknown"
+
+sourcefactlaw: str = (path: str, role: str)
+    if sourceequal(role, "canonical") or sourceequal(role, "generated") return "idol"
+    if sourceequal(role, "compatibility") return "lua"
+    discovered = sourcepathformlaw(path)
+    if sourceequal(role, "negative") or sourceequal(role, "foreign")
+        if sourceequal(discovered, "lua") return "lua"
+        return "idol"
+    discovered
+
+sourcefactprovenance: str = (path: str, role: str)
+    if sourceequal(role, "canonical") or sourceequal(role, "generated") return "canonical"
+    if sourceequal(role, "compatibility") or sourceequal(role, "foreign") return "foreign"
+    if sourceequal(role, "negative")
+        if sourceequal(sourcepathformlaw(path), "lua") return "foreign"
+        return "canonical"
+    sourcepathformprovenance(path)
 
 recordslots: i64 = ()
     7

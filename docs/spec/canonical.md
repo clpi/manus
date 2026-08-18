@@ -443,10 +443,11 @@ Every lexer export takes family as an operand. `new()` does not read suffix
 bytes. Production compile, fmt, and embed classify once via `sourceFacts` then
 `Lexer.initFacts`; they must not call `Lexer.init` or `is_canonical_source`.
 `route()`, parse, sema, and token-view consume `lex.family` / the family
-operand. Family is produced by `admit(law, path)` — law is the operand,
-path is provenance. Corpus homes admit in-tree family; `discover` is only
-the unlisted-path fallback (`law.bridge.death`). `Lexer.init` remains a
-test convenience.
+operand. The executed Idol producer owns physical source forms, corpus-role
+admission, unlisted fallback, law, and provenance. The host may normalize a
+filesystem path into provenance and bind producer-returned names to its
+bootstrap ABI; it may not own a roster or role→law mapping. `Lexer.init`
+remains a test convenience.
 
 ---
 

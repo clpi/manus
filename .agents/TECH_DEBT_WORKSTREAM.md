@@ -37,11 +37,12 @@ Still true (do not reopen as "maybe fixed by alignment commits"):
 
 - Source-family: family is a tokenize operand; `suffix(file)` is deleted.
   Production compile/fmt/embed classify once via `sourceFacts` then
-  `initFacts`. `isIdolSourcePath` is deleted. Host `sourceFacts` remains the
-  one suffix ingress until corpus classification replaces it.
-- GAP-145 not closed: comment/shebang/backtick identities and
-  `KIND_STRING_LIT=3` remain. Text/bytes/compat/long now cross production
-  via `classify_quote(family, quote)`.
+  `initFacts`. `isIdolSourcePath` is deleted. Executed `sourceform*`,
+  `sourceentry*`, and `sourcefact*` now own source admission; the host residual
+  is filesystem normalization plus ABI name binding.
+- GAP-145 not closed: distinct producer identities and source admission now
+  cross production, but remaining semantic quote/source-law consumers and the
+  Tree-sitter lexical projection have not converged.
 - GAP-134 grammar roles still blocked. Parser onward remain host-owned.
 - No compiler B. FTCFTW complete proof still near zero.
 - Path/corpus cleanup ≠ source closure.
@@ -185,8 +186,7 @@ Updated ranking: P0 authority (1–9) → P1 cost collapse (10–26) → P2 tool
 Closed: production `tokenize()`; `tokenizeHost()` differential-only
 (`law.oracle.bound`); `lib/semantic/*` gone (`29f62035`).
 
-Open, in path order: remaining suffix ingress (`Lexer.new` + host
-`sourceFacts`); GAP-145 identities; parallel host `TokenKind` / `duo_*`
+Open, in path order: GAP-145 remaining lexical consumers; parallel host `TokenKind` / `duo_*`
 bridge names (schema queries landed `9b475670`); GAP-134; parser; graph
 (unowned — Codex stale); demand; realization; B/C.
 
