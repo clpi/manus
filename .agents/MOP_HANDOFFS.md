@@ -277,3 +277,20 @@ standing configuration.
   not pull the callee's object into the link. host.id's "ambient
   reference" comment was the workaround attempt. Owner: lane 4.
   Reducer note: predicate exit 0 means failure PRESENT (no negation).
+
+
+## Update 7 — Mission B verdict; matrix remeasured
+
+- Metamorphic generator (Pickle B) is BLOCKED ON AUTHORITY, correctly:
+  the only ruled equivalence pairs live in idol-native's gate/subject.id,
+  which is already self-executing there ("the agreement count IS the exit
+  code"). A generator beside it would duplicate the authority the
+  operating model forbids duplicating. Unblocked when the main repo
+  gains its own pair authority (e.g. the graph-backed canonicalizer's
+  equivalence table).
+- Self-host matrix remeasured at 98e643cd per the no-carry-forward
+  discipline: all 19 units, exit statuses byte-identical (10 clean,
+  9 blocked, same families). evidence/mop/matrix.tsv stamped.
+- Codex landed 'Retire duplicate language server authority' on the
+  parallel ref reconcile/idol-canonical-all-work-20260817; not in this
+  branch's history.
