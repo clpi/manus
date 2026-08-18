@@ -2443,7 +2443,7 @@ pub fn typeDiffHook(host: Host, old_name: []const u8, new_name: []const u8, allo
 pub fn fieldsMapString(host: Host, args: []const *ast.Expr, fieldsMapFields: *const fn (Host, *const ast.Expr) ?[]const types.FieldType) ?[]const u8 {
     if (args.len < 2) return null;
     const fields = fieldsMapFields(host, args[0]) orelse return null;
-    const tmpl = if (args[1].* == .string_lit) args[1].string_lit.val else return null;
+    const tmpl = if (args[1].* == .quoted) args[1].quoted.val else return null;
 
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     errdefer buf.deinit(host.alloc);

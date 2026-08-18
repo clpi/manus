@@ -211,7 +211,7 @@ fn isReqBinding(expr: *const ast.Expr) bool {
     if (expr.* != .call) return false;
     const c = expr.call;
     if (c.func.* != .name or !std.mem.eql(u8, c.func.name.ident, "req")) return false;
-    return c.args.len == 1 and c.args[0].* == .string_lit;
+    return c.args.len == 1 and c.args[0].* == .quoted;
 }
 
 fn resolveTailAssign(targets: []*ast.Expr, values: []*ast.Expr) ?Resolution {

@@ -363,7 +363,7 @@ pub const Evaluator = struct {
             .false_lit => .{ .bool = false },
             .int_lit => |lit| .{ .int = lit.val },
             .float_lit => |lit| .{ .float = lit.val },
-            .string_lit => |lit| .{ .string = lit.val },
+            .quoted => |lit| .{ .string = lit.val },
             .name => |name| blk: {
                 const value = self.lookup(name.ident) orelse return error.UnsupportedExpression;
                 if (value == .unavailable) return error.UnsupportedExpression;
@@ -625,8 +625,8 @@ pub const Evaluator = struct {
                 const start_v = try self.eval(args[0]);
                 const stop_v = try self.eval(args[1]);
                 if (start_v != .int or stop_v != .int) return error.UnsupportedExpression;
-                if (args[2].* != .string_lit) return error.UnsupportedExpression;
-                const tmpl = args[2].string_lit.val;
+                if (args[2].* != .quoted) return error.UnsupportedExpression;
+                const tmpl = args[2].quoted.val;
                 if (std.mem.eql(u8, tmpl, "%i")) {
                     var sum: i64 = 0;
                     var i = start_v.int;
@@ -1699,7 +1699,7 @@ fn exprHasNoApplication(e: *const ast.Expr) bool {
             exprHasNoApplication(ie.then_expr) and exprHasNoApplication(ie.else_expr),
         .index => |ix| exprHasNoApplication(ix.obj) and exprHasNoApplication(ix.key),
         .field => |f| exprHasNoApplication(f.obj),
-        .name, .int_lit, .float_lit, .true_lit, .false_lit, .string_lit, .nil => true,
+        .name, .int_lit, .float_lit, .true_lit, .false_lit, .quoted, .nil => true,
         else => false,
     };
 }
@@ -2270,7 +2270,7 @@ test "comptime eval: pure table literals" {
     const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
     var one = ast.Expr{ .int_lit = .{ .loc = loc, .val = 1 } };
     var two = ast.Expr{ .int_lit = .{ .loc = loc, .val = 2 } };
-    var key = ast.Expr{ .string_lit = .{ .loc = loc, .val = "answer" } };
+    var key = ast.Expr{ .quoted = .{ .loc = loc, .val = "answer" } };
     var forty_two = ast.Expr{ .int_lit = .{ .loc = loc, .val = 42 } };
     const fields = try alloc.alloc(ast.TableField, 3);
     fields[0] = .{ .positional = &one };
@@ -2295,8 +2295,8 @@ test "comptime eval: table field and index lookups" {
     const alloc = arena.allocator();
     const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
     var one = ast.Expr{ .int_lit = .{ .loc = loc, .val = 1 } };
-    var name_value = ast.Expr{ .string_lit = .{ .loc = loc, .val = "duo" } };
-    var key = ast.Expr{ .string_lit = .{ .loc = loc, .val = "answer" } };
+    var name_value = ast.Expr{ .quoted = .{ .loc = loc, .val = "duo" } };
+    var key = ast.Expr{ .quoted = .{ .loc = loc, .val = "answer" } };
     var forty_two = ast.Expr{ .int_lit = .{ .loc = loc, .val = 42 } };
     const fields = try alloc.alloc(ast.TableField, 3);
     fields[0] = .{ .positional = &one };
@@ -2307,7 +2307,7 @@ test "comptime eval: table field and index lookups" {
     var field = ast.Expr{ .field = .{ .loc = loc, .obj = &table, .field = "name" } };
     var index_key = ast.Expr{ .int_lit = .{ .loc = loc, .val = 1 } };
     var index = ast.Expr{ .index = .{ .loc = loc, .obj = &table, .key = &index_key } };
-    var named_index_key = ast.Expr{ .string_lit = .{ .loc = loc, .val = "answer" } };
+    var named_index_key = ast.Expr{ .quoted = .{ .loc = loc, .val = "answer" } };
     var named_index = ast.Expr{ .index = .{ .loc = loc, .obj = &table, .key = &named_index_key } };
     var missing = ast.Expr{ .field = .{ .loc = loc, .obj = &table, .field = "missing" } };
 
@@ -2322,8 +2322,8 @@ test "comptime eval: string concat allocates deterministic literals" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
-    var left = ast.Expr{ .string_lit = .{ .loc = loc, .val = "du" } };
-    var right = ast.Expr{ .string_lit = .{ .loc = loc, .val = "o" } };
+    var left = ast.Expr{ .quoted = .{ .loc = loc, .val = "du" } };
+    var right = ast.Expr{ .quoted = .{ .loc = loc, .val = "o" } };
     var concat = ast.Expr{ .binop = .{ .loc = loc, .op = .concat, .lhs = &left, .rhs = &right } };
     const value = try evalWithBindings(&concat, .{}, .{ .alloc = alloc });
     try std.testing.expect(value == .string);
@@ -2338,7 +2338,7 @@ test "comptime eval: match expression with literal and guarded binding arms" {
 
     var scrutinee = ast.Expr{ .int_lit = .{ .loc = loc, .val = 4 } };
     var one = ast.Expr{ .int_lit = .{ .loc = loc, .val = 1 } };
-    var one_result = ast.Expr{ .string_lit = .{ .loc = loc, .val = "one" } };
+    var one_result = ast.Expr{ .quoted = .{ .loc = loc, .val = "one" } };
     var binding_name = ast.Expr{ .name = .{ .loc = loc, .ident = "n" } };
     var guard_min = ast.Expr{ .int_lit = .{ .loc = loc, .val = 2 } };
     var guard = ast.Expr{ .binop = .{ .loc = loc, .op = .gt, .lhs = &binding_name, .rhs = &guard_min } };
@@ -2373,8 +2373,8 @@ test "comptime eval: match expression with table and array destructuring" {
     const alloc = arena.allocator();
     const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
 
-    var kind_key = ast.Expr{ .string_lit = .{ .loc = loc, .val = "kind" } };
-    var kind_val = ast.Expr{ .string_lit = .{ .loc = loc, .val = "pair" } };
+    var kind_key = ast.Expr{ .quoted = .{ .loc = loc, .val = "kind" } };
+    var kind_val = ast.Expr{ .quoted = .{ .loc = loc, .val = "pair" } };
     var left_val = ast.Expr{ .int_lit = .{ .loc = loc, .val = 2 } };
     var right_val = ast.Expr{ .int_lit = .{ .loc = loc, .val = 3 } };
     const table_fields = try alloc.alloc(ast.TableField, 3);
@@ -2383,7 +2383,7 @@ test "comptime eval: match expression with table and array destructuring" {
     table_fields[2] = .{ .named = .{ .key = "right", .val = &right_val } };
     var table = ast.Expr{ .table = .{ .loc = loc, .fields = table_fields } };
 
-    var literal_pair = ast.Expr{ .string_lit = .{ .loc = loc, .val = "pair" } };
+    var literal_pair = ast.Expr{ .quoted = .{ .loc = loc, .val = "pair" } };
     const table_entries = try alloc.alloc(ast.Pattern.TableDestrEntry, 3);
     table_entries[0] = .{ .key = "kind", .pat = .{ .literal = &literal_pair } };
     table_entries[1] = .{ .key = "left", .pat = .{ .binding = .{ .name = "a", .typ = null } } };
@@ -2533,7 +2533,7 @@ test "comptime eval: comptimefor sum template" {
     const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
     var zero = ast.Expr{ .int_lit = .{ .loc = loc, .val = 0 } };
     var five = ast.Expr{ .int_lit = .{ .loc = loc, .val = 5 } };
-    var tmpl = ast.Expr{ .string_lit = .{ .loc = loc, .val = "%i" } };
+    var tmpl = ast.Expr{ .quoted = .{ .loc = loc, .val = "%i" } };
     var func = ast.Expr{ .name = .{ .loc = loc, .ident = "__comptimefor" } };
     var args = [_]*ast.Expr{ &zero, &five, &tmpl };
     var call = ast.Expr{ .call = .{ .loc = loc, .func = &func, .args = &args } };

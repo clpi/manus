@@ -393,7 +393,7 @@ const Live = struct {
 /// and both are only sound over operations that cannot be observed at all.
 pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
     return switch (e.*) {
-        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => null,
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted => null,
 
         // Reading a name produces no effect and cannot fault. Whether the name
         // is one this walk may KILL is a separate question, answered by O1.
@@ -488,7 +488,7 @@ fn applicationOf(
 /// module does not model is added, which keeps its producer alive.
 fn readsOf(live: *Live, e: *const ast.Expr) std.mem.Allocator.Error!void {
     switch (e.*) {
-        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .semantic, .semantic_scope => {},
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg, .semantic, .semantic_scope => {},
         .name => |n| try live.add(n.ident),
         .index => |x| {
             try readsOf(live, x.obj);
@@ -800,7 +800,7 @@ fn deferredMentionsStmt(out: *Live, s: *const ast.Stmt) std.mem.Allocator.Error!
 /// rather than a silently uncollected closure.
 fn deferredMentionsExpr(out: *Live, e: *const ast.Expr) std.mem.Allocator.Error!bool {
     switch (e.*) {
-        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name, .semantic, .semantic_scope => {},
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg, .name, .semantic, .semantic_scope => {},
         // The one that matters: everything a closure mentions is deferred.
         .func_expr => |f| try blockReads(out, &f.body),
         .index => |x| {

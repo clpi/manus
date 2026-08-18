@@ -327,7 +327,7 @@ fn intLiteral(e: *const ast.Expr) ?i64 {
 pub fn projectionOfName(h: Projection, e: *const ast.Expr, n: []const u8) Projection {
     if (h == .none) return .none;
     switch (e.*) {
-        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => return .none,
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => return .none,
 
         .name => |x| return if (std.mem.eql(u8, x.ident, n)) h else .none,
 
@@ -481,7 +481,7 @@ pub fn projectionOfName(h: Projection, e: *const ast.Expr, n: []const u8) Projec
 /// place this module claims not to reach.
 fn mentions(e: *const ast.Expr, n: []const u8) bool {
     return switch (e.*) {
-        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => false,
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => false,
         .name => |x| std.mem.eql(u8, x.ident, n),
         .binop => |b| mentions(b.lhs, n) or mentions(b.rhs, n),
         .unop => |u| mentions(u.operand, n),

@@ -223,7 +223,7 @@ pub const AsyncLower = struct {
                 if (r.step) |s| try self.discoverExpr(s, enclosing_name);
             },
             .quote, .unquote, .macro_call => unreachable,
-            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg, .name => {},
             // G1/G2: semantic identity and world are leaf nodes with no
             // async body to discover.
             .semantic, .semantic_scope => {},
@@ -428,7 +428,7 @@ pub const AsyncLower = struct {
             },
             .quote, .unquote, .macro_call => unreachable,
             .semantic, .semantic_scope => {}, // semantic identity / world: no child exprs
-            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg, .name => {},
             .sequence => |seq| {
                 for (seq.exprs) |e| try self.scanExpr(e, ctx);
             },

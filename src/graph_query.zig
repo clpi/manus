@@ -495,7 +495,7 @@ const ApplicationWalk = struct {
                 }
                 return true;
             },
-            .name, .int_lit, .float_lit, .true_lit, .false_lit, .string_lit, .nil => return true,
+            .name, .int_lit, .float_lit, .true_lit, .false_lit, .quoted, .nil => return true,
             else => return false,
         }
     }
