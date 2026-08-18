@@ -128,6 +128,7 @@ extern "c" fn fopen(path: [*:0]const u8, mode: [*:0]const u8) ?*anyopaque;
 extern "c" fn fseek(f: *anyopaque, off: c_long, whence: c_int) c_int;
 extern "c" fn ftell(f: *anyopaque) c_long;
 extern "c" fn fread(p: [*]u8, sz: usize, n: usize, f: *anyopaque) usize;
+extern "c" fn fwrite(p: [*]const u8, sz: usize, n: usize, f: *anyopaque) usize;
 extern "c" fn fclose(f: *anyopaque) c_int;
 extern "c" fn fileno(f: *anyopaque) c_int;
 extern "c" fn getchar() c_int;
@@ -297,6 +298,29 @@ export fn idol_io_read_path(path: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
     _ = fclose(f);
     buf[n] = 0;
     return @ptrCast(buf);
+}
+
+/// Replace the file at `path` with the exact bytes in `body`.
+///
+/// This is a PHYSICAL realization only. The semantic relation, path subject,
+/// body operand, filesystem effect, authority, witness and selected target are
+/// graph facts before this symbol can be linked. Keeping the entry point to two
+/// pointers and one truth result means the statically witnessed world costs no
+/// runtime context, capability object, lookup or dispatch.
+export fn idol_io_write_path(
+    path: ?[*:0]const u8,
+    body: ?[*:0]const u8,
+) callconv(.c) i64 {
+    const p = path orelse return 0;
+    const bytes = body orelse return 0;
+    if (p[0] == 0) return 0;
+
+    const f = fopen(p, "wb") orelse return 0;
+    var len: usize = 0;
+    while (bytes[len] != 0) len += 1;
+    const written = fwrite(bytes, 1, len, f);
+    const closed = fclose(f);
+    return @intFromBool(written == len and closed == 0);
 }
 
 /// 1-based. A missing index is UNKNOWN (null), not "" — the two are different
