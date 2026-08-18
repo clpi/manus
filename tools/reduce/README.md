@@ -66,3 +66,12 @@ lib/compiler/parser.id (438 inert lines of 1792) the F5 crash reduction
 went 12m54s -> 3m54s and landed a strictly smaller theorem (1792 -> 11
 lines, recursive relation + nested application as argument). Predicate
 call counts are emitted in the closing report line.
+
+## Negative result: parallel chunk sweeps (2026-08-17)
+
+Batch-testing ddmin round candidates 8-wide produced the identical
+reduction but ran SLOWER (5m06s vs 3m54s on parser.id) with system time
+exploding (1m44s -> 5m38s): `idol compile` serializes on the compiler's
+own cache/lock, so parallel candidates contend instead of overlapping.
+Candidate-level parallelism is structurally pointless until compiles run
+lock-free; the guarded inert pre-pass remains the throughput lever.

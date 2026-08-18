@@ -108,15 +108,14 @@ ddmin() {
       end=$((start + chunk_size - 1))
       if [ "$end" -gt "$total" ]; then end=$total; fi
       if [ "$start" -le "$end" ]; then
-        cp "$work/cur.id" "$work/prev.id"
         # emit all lines except start..end (explicit ranges; 1,0p is a
         # degenerate no-op range on some seds and would fake a deletion)
         : >"$work/cand.id"
         if [ "$start" -gt 1 ]; then
-          sed -n "1,$((start - 1))p" "$work/prev.id" >>"$work/cand.id"
+          sed -n "1,$((start - 1))p" "$work/cur.id" >>"$work/cand.id"
         fi
         if [ "$end" -lt "$total" ]; then
-          sed -n "$((end + 1)),\$p" "$work/prev.id" >>"$work/cand.id"
+          sed -n "$((end + 1)),\$p" "$work/cur.id" >>"$work/cand.id"
         fi
         if [ -s "$work/cand.id" ] && pred_cached "$work/cand.id"; then
           nt=$(grep -c "" "$work/cand.id")
