@@ -849,6 +849,17 @@ pub const Draw = struct {
     world: Card,
 };
 
+/// Physical linkage selected by the graph for an exact application. Consumers
+/// receive graph ids plus this payload; they never inspect source spelling or
+/// an AST node to decide which operation is being realized.
+pub const External = struct {
+    relation: id,
+    target: id,
+    realization: id,
+    world: id,
+    symbol: []const u8,
+};
+
 /// The place one application VALUE reads, keyed by the exact value entity.
 ///
 /// `p:add(q)` and `q:add(p)` published BYTE-IDENTICAL normalised graphs: both
@@ -924,6 +935,10 @@ pub const SemanticGraph = struct {
     /// lowering O(applications x edges).
     out_edges: std.AutoHashMapUnmanaged(id, std.ArrayListUnmanaged(u32)) = .empty,
     application_facts: std.ArrayListUnmanaged(ApplicationFact) = .empty,
+    /// Acceleration index from ingress relation identity to its graph entity.
+    /// Every query revalidates the entity and application facts; the index
+    /// never establishes meaning on its own.
+    provided_relations: [@typeInfo(subject_home.Relation).@"enum".field_names.len]?id = @splat(null),
     /// Relations for which Sema published an incoming subject. The subject
     /// identity itself is the exact `.projection` edge, never this bit.
     subject_relations: std.DynamicBitSetUnmanaged = .{},
@@ -3069,6 +3084,77 @@ pub const SemanticGraph = struct {
         return .unknown;
     }
 
+    /// Exact external realization selected for a graph-owned application.
+    /// Every semantic coordinate is revalidated from ids before the physical
+    /// symbol is released. Missing or contradictory knowledge returns null;
+    /// callers must fail closed rather than reconstructing it from source.
+    pub fn externalApplication(self: *const SemanticGraph, occurrence: id) ?External {
+        const stored = self.application(occurrence) orelse return null;
+        const relation = self.applicationRelation(occurrence) orelse return null;
+        const provided = self.providedRelation(relation) orelse return null;
+        const contract = subject_home.edge(provided);
+        const applied = self.applicationApplied(occurrence) orelse return null;
+        const target = self.applicationTarget(occurrence) orelse return null;
+        if (applied != relation or target != relation) return null;
+
+        const realization = switch (stored.realization) {
+            .one => |entity| entity,
+            .unknown, .none => return null,
+        };
+        if (self.providedRealization(relation) != realization) return null;
+        const realization_node = self.get(realization) orelse return null;
+        if (realization_node.scope != relation) return null;
+        const symbol = realization_node.name orelse return null;
+
+        const effect = switch (stored.effect) {
+            .one => |entity| entity,
+            .unknown, .none => return null,
+        };
+        if (effect != relation) return null;
+        const world = switch (self.applicationWorld(occurrence)) {
+            .one => |entity| entity,
+            .unknown, .none => return null,
+        };
+        const authority = switch (stored.authority) {
+            .one => |entity| entity,
+            .unknown, .none => return null,
+        };
+        const witness = switch (stored.witness) {
+            .one => |entity| entity,
+            .unknown, .none => return null,
+        };
+        if (authority != world or witness != world) return null;
+        var world_exact = false;
+        for (self.worlds.items) |fact| {
+            if (fact.world == world and fact.home == contract.world) {
+                world_exact = true;
+                break;
+            }
+        }
+        if (!world_exact) return null;
+
+        const subject = self.applicationSubject(occurrence) orelse return null;
+        const subject_node = self.get(subject) orelse return null;
+        const subject_descriptor = subject_node.descriptor orelse return null;
+        if (subject_home.conformanceOf(subject_descriptor) != contract.subject) return null;
+        const arguments = self.applicationArguments(occurrence) orelse return null;
+        if (arguments.len != 1) return null;
+        const operand = self.get(arguments[0]) orelse return null;
+        if (operand.descriptor == null or !operand.descriptor.?.eql(contract.operand)) return null;
+        const results = self.applicationResults(occurrence) orelse return null;
+        if (results.len != 1) return null;
+        const result = self.get(results[0]) orelse return null;
+        if (result.descriptor == null or !result.descriptor.?.eql(contract.result)) return null;
+
+        return .{
+            .relation = relation,
+            .target = target,
+            .realization = realization,
+            .world = world,
+            .symbol = symbol,
+        };
+    }
+
     /// The members of one world this module reaches.
     pub fn worldMembers(self: *const SemanticGraph, fact: WorldFact) []const id {
         const end = std.math.add(u32, fact.members.start, fact.members.len) catch return &.{};
@@ -3743,7 +3829,10 @@ pub const SemanticGraph = struct {
         file: []const u8,
     ) !id {
         const home = fact.home orelse return error.MissingSemanticDeclaration;
-        const fd = fact.target;
+        const fd = switch (fact.target) {
+            .declaration => |declaration| declaration,
+            .relation => return error.MissingSemanticDeclaration,
+        };
         if (fd.path.len != 1) return error.MissingSemanticDeclaration;
         const foreign = try self.liftForeignHome(module, checked, home);
         const func_id = try self.addChild(foreign, .{
@@ -3765,6 +3854,98 @@ pub const SemanticGraph = struct {
         return func_id;
     }
 
+    fn realizationSymbol(relation: subject_home.Relation) []const u8 {
+        return switch (relation) {
+            .write => "idol_io_write_path",
+        };
+    }
+
+    /// Lift one protocol-supplied relation exactly once. The enum is consumed
+    /// here at semantic ingress; downstream code receives only graph ids.
+    fn liftProvidedRelation(
+        self: *SemanticGraph,
+        module: id,
+        relation: subject_home.Relation,
+        file: []const u8,
+    ) !id {
+        const slot = @intFromEnum(relation);
+        if (self.provided_relations[slot]) |entity| {
+            const node = self.get(entity) orelse return error.MissingSemanticDeclaration;
+            const contract = subject_home.edge(relation);
+            if (node.scope != module or !self.callable(entity) or
+                node.result_descriptor == null or !node.result_descriptor.?.eql(contract.result))
+            {
+                return error.MissingSemanticDeclaration;
+            }
+            return entity;
+        }
+        const contract = subject_home.edge(relation);
+        const entity = try self.addChild(module, .{
+            .kind = .relation,
+            .span = .{ .file = file, .start = 0, .end = 0 },
+            .name = contract.name,
+            .result_descriptor = contract.result,
+            .knowledge = .stable,
+            .stage = .sema,
+        });
+        _ = try self.addChild(entity, .{
+            .kind = .value,
+            .span = .{ .file = file, .start = 0, .end = 0 },
+            .name = realizationSymbol(relation),
+            .knowledge = .stable,
+            .stage = .sema,
+        });
+        try self.addDescriptorShapeEdge(entity, 0, module, contract.result);
+        self.provided_relations[slot] = entity;
+        return entity;
+    }
+
+    fn providedRelation(self: *const SemanticGraph, entity: id) ?subject_home.Relation {
+        for (self.provided_relations, 0..) |candidate, i| {
+            if (candidate == null or candidate.? != entity) continue;
+            _ = self.get(entity) orelse return null;
+            if (!self.callable(entity)) return null;
+            return @enumFromInt(i);
+        }
+        return null;
+    }
+
+    fn providedRealization(self: *const SemanticGraph, relation: id) ?id {
+        _ = self.providedRelation(relation) orelse return null;
+        var found: ?id = null;
+        for (self.nested.of(relation)) |child| {
+            const node = self.get(child) orelse continue;
+            if (node.scope != relation or node.kind != .value or node.name == null) continue;
+            if (found != null) return null;
+            found = child;
+        }
+        return found;
+    }
+
+    fn callableEntity(
+        self: *SemanticGraph,
+        module: id,
+        checked: *const sema.Sema,
+        selected: sema.Callable,
+        home: ?[]const u8,
+        file: []const u8,
+    ) !id {
+        return switch (selected) {
+            .declaration => |declaration| self.findFuncDecl(declaration) orelse blk: {
+                const fact = sema.ApplicationFact{
+                    .applied = selected,
+                    .target = selected,
+                    .subject = null,
+                    .arguments = &.{},
+                    .result = try types.resolve(declaration.func.ret_type, null, self.alloc),
+                    .home = home,
+                };
+                break :blk try self.liftForeignRelation(module, checked, fact, file);
+            },
+            .relation => |relation| self.liftProvidedRelation(module, relation, file),
+        };
+    }
+
     /// Copy the checked callable's principal result pack into graph-owned
     /// descriptors. A tuple annotation is syntax provenance for a semantic
     /// pack, never a tuple value or mandatory aggregate representation.
@@ -3773,7 +3954,15 @@ pub const SemanticGraph = struct {
         checked: *const sema.Sema,
         fact: sema.ApplicationFact,
     ) ![]types.ResolvedType {
-        switch (fact.target.func.ret_type) {
+        const target = switch (fact.target) {
+            .declaration => |declaration| declaration,
+            .relation => {
+                const results = try self.alloc.alloc(types.ResolvedType, 1);
+                results[0] = fact.result;
+                return results;
+            },
+        };
+        switch (target.func.ret_type) {
             .tuple => |items| {
                 const results = try self.alloc.alloc(types.ResolvedType, items.len);
                 errdefer self.alloc.free(results);
@@ -4019,12 +4208,9 @@ pub const SemanticGraph = struct {
             const raw = self.nodes.items[call_id].ast_ref orelse continue;
             const expr: *const Expr = @ptrCast(@alignCast(raw));
             const fact = checked.applicationFact(expr) orelse continue;
-            const relation = self.findFuncDecl(fact.target) orelse
-                try self.liftForeignRelation(module, checked, fact, file);
-            const applied = self.findFuncDecl(fact.applied) orelse
-                return error.MissingApplicationApplied;
-            const target = self.findFuncDecl(fact.target) orelse
-                return error.MissingApplicationTarget;
+            const relation = try self.callableEntity(module, checked, fact.target, fact.home, file);
+            const applied = try self.callableEntity(module, checked, fact.applied, fact.home, file);
+            const target = try self.callableEntity(module, checked, fact.target, fact.home, file);
             const caller = self.nodes.items[call_id].scope orelse return error.MissingApplicationCaller;
             const caller_node = self.get(caller) orelse return error.MissingApplicationCaller;
             if (!self.callable(caller) and caller_node.scope != null) return error.MissingApplicationCaller;
@@ -4073,6 +4259,14 @@ pub const SemanticGraph = struct {
                 arguments,
                 results,
             );
+            if (self.providedRelation(relation) != null) {
+                const realization = self.providedRealization(relation) orelse
+                    return error.MissingApplicationTarget;
+                const row = self.application_rows.items[call_id];
+                if (row >= self.application_facts.items.len) return error.InvalidApplicationFact;
+                self.application_facts.items[row].effect = .{ .one = relation };
+                self.application_facts.items[row].realization = .{ .one = realization };
+            }
             try self.publishApplicationProjections(call_id);
         }
         try self.publishBindingAdjustmentsInBlock(checked, file, &mod.body);
@@ -4183,6 +4377,31 @@ pub const SemanticGraph = struct {
             } else .none;
             try self.draws.append(self.alloc, .{ .application = row.application, .world = card });
         }
+
+        // A protocol-supplied effect requires the exact world entity and the
+        // exact draw of that entity as its witness. Both cards remain unknown
+        // if either fact is missing; no downstream consumer may substitute a
+        // home name or ambient default.
+        for (self.application_facts.items) |*stored| {
+            const relation = self.applicationRelation(stored.application) orelse continue;
+            const provided = self.providedRelation(relation) orelse continue;
+            const contract = subject_home.edge(provided);
+            const draw = self.applicationWorld(stored.application);
+            const world = switch (draw) {
+                .one => |entity| entity,
+                .unknown, .none => continue,
+            };
+            var exact = false;
+            for (self.worlds.items) |fact| {
+                if (fact.world == world and fact.home == contract.world) {
+                    exact = true;
+                    break;
+                }
+            }
+            if (!exact) continue;
+            stored.authority = .{ .one = world };
+            stored.witness = .{ .one = world };
+        }
     }
 
     fn worldMemberNamed(self: *const SemanticGraph, start: usize, name: []const u8) bool {
@@ -4228,7 +4447,11 @@ pub const SemanticGraph = struct {
         // world fact that changes when a declaration moves house is a home
         // leaking into a world.
         if (self.application(site)) |fact| {
-            if (self.applicationRelation(fact.application) != null) {
+            if (self.applicationRelation(fact.application)) |relation| {
+                if (self.providedRelation(relation)) |provided| {
+                    const contract = subject_home.edge(provided);
+                    return .{ .home = contract.world, .member = contract.name };
+                }
                 return .{ .home = null, .member = "" };
             }
         }

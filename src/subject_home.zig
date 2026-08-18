@@ -72,6 +72,57 @@ pub const Conformance = enum {
 /// value conforms to them, they are reached because the subject IS the world.
 pub const Home = enum { string, math, table, io, testing, os, c };
 
+/// A relation whose semantic contract is supplied by a protocol/world rather
+/// than by an authored declaration in the current module. This is an identity,
+/// not a spelling: sema resolves source text to this value once and every
+/// downstream consumer receives only the graph entity created for it.
+pub const Relation = enum { write };
+
+/// The complete semantic contract for one protocol-supplied relation.
+///
+/// This is deliberately the sole row for path writing. The text roster,
+/// semantic result, world/effect requirement, and graph relation identity all
+/// project from it; none is reconstructed from `"write"` after resolution.
+pub const Edge = struct {
+    relation: Relation,
+    name: []const u8,
+    subject: Conformance,
+    operand: RT,
+    home: Home,
+    result: RT,
+    world: Home,
+};
+
+pub const edges = [_]Edge{
+    .{
+        .relation = .write,
+        .name = "write",
+        .subject = .text,
+        .operand = .str,
+        .home = .io,
+        .result = .bool,
+        .world = .io,
+    },
+};
+
+/// Exact protocol relation selected at semantic ingress. `unknown` never
+/// guesses: compatibility reach may still admit an untyped stream below, but
+/// it cannot publish a path-write fact without the text descriptor witness.
+pub fn edgeFor(protocol: Conformance, name: []const u8) ?*const Edge {
+    if (protocol == .unknown) return null;
+    for (&edges) |*candidate| {
+        if (candidate.subject == protocol and std.mem.eql(u8, candidate.name, name)) return candidate;
+    }
+    return null;
+}
+
+pub fn edge(relation: Relation) *const Edge {
+    for (&edges) |*candidate| {
+        if (candidate.relation == relation) return candidate;
+    }
+    unreachable;
+}
+
 /// THE `c` WORLD'S ROSTER — the one place it is written down.
 ///
 /// NAMED `c` BY RULING. `docs/foreign-world.md` §8.1 argued the world's identity
@@ -646,10 +697,9 @@ fn str_(name: []const u8) Provided {
 /// `law.world.grant`'s own canon is `file = path:open()` and `path:read` "retains
 /// the required world fact even when elided in source". `"data.txt":read()`
 /// lowers today (`dnir_lower.lowerSubjectRead`, guarded by `exprIsStr`), so it
-/// is a real edge and not an aspiration. It sat in an `ot == .str or .any`
-/// arity list in sema beside `write` and `close`, which is how `"hi":write(x)`
-/// and `"hi":close()` came to type-check clean and die at emit with
-/// `DNB001 method-unresolved` — a string is a PATH, and a path is not a stream.
+/// is a real edge and not an aspiration. Path `write` is supplied by the
+/// semantic `edges` authority above rather than duplicated in this legacy
+/// roster; `close` remains stream-only because a path is not an open handle.
 const text_relations = [_]Provided{
     str_("sub"),    str_("match"), str_("byte"),                     str_("len"),
     str_("rep"),    str_("lower"), str_("upper"),                    str_("reverse"),
@@ -787,6 +837,7 @@ fn protocolRoster(c: Conformance) []const Provided {
 
 /// The home that realizes `method` for `protocol`, or null.
 fn protocolProvides(protocol: Conformance, method: []const u8) ?Home {
+    if (edgeFor(protocol, method)) |provided| return provided.home;
     return realizedBy(protocolRoster(protocol), method);
 }
 
@@ -1391,7 +1442,7 @@ test "a binding carries the conformance of the value that created it" {
     // spelling already reached, which is the whole point: two spellings of one
     // program stop disagreeing.
     const s = conformanceOfBinding(.str, false);
-    try std.testing.expect(homeForConformance(s, "write") == null); // s = "text" ; s:write(x)
+    try std.testing.expectEqual(Home.io, homeForConformance(s, "write").?); // path:write(body)
     try std.testing.expect(homeForConformance(s, "close") == null); // s = "text" ; s:close()
     try std.testing.expect(homeForConformance(s, "floor") == null); // s = "text" ; s:floor()
     try std.testing.expectEqual(Home.string, homeForConformance(s, "len").?); // still resolves
@@ -1449,13 +1500,15 @@ test "an ordinary relation belongs to no builtin home" {
 }
 
 test "a string is a PATH, not a stream" {
-    // `path:read()` is `law.world.grant`'s own canon and it lowers today.
+    // Path I/O is oriented on the possessed path; the world supplies authority
+    // and never becomes the receiver.
     try std.testing.expectEqual(Home.io, homeForConformance(.text, "read").?);
-    // `write` and `close` on a string do NOT resolve. Both used to, through an
-    // `ot == .str or .any` arity list in sema, and both then died at emit with
-    // `DNB001 method-unresolved` — `idol check` said the program was fine and
-    // it could not be built.
-    try std.testing.expect(homeForConformance(.text, "write") == null);
+    try std.testing.expectEqual(Home.io, homeForConformance(.text, "write").?);
+    const write = edgeFor(.text, "write") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(Relation.write, write.relation);
+    try std.testing.expectEqual(RT.bool, write.result);
+    try std.testing.expectEqual(Home.io, write.world);
+    // `close` remains a stream edge: a path has no open handle to close.
     try std.testing.expect(homeForConformance(.text, "close") == null);
     // The `string` WORLD does not gain the path edge: `read` is realized by
     // `io`, and `homeProvides` asks which home realizes it rather than whether

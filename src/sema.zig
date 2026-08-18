@@ -387,15 +387,22 @@ pub const FuncSignature = struct {
     is_vararg: bool,
 };
 
+/// Exact callable selected at semantic ingress. A protocol-supplied relation
+/// is an ordinary semantic identity, not a fabricated source declaration.
+pub const Callable = union(enum) {
+    declaration: *const ast.FuncDecl,
+    relation: subject_home.Relation,
+};
+
 /// Checked identity of one callable application. AST pointers are provenance
-/// keys only; `target` is the declaration selected by semantic analysis.
+/// keys only; `target` is the exact callable selected by semantic analysis.
 pub const ApplicationFact = struct {
     /// Exact semantic value occupying the applied role. Resolved declaration
     /// applications currently apply their selected declaration directly; this
     /// remains a separate field because applied value, relation, and selected
     /// target are independent application dimensions.
-    applied: *const ast.FuncDecl,
-    target: *const ast.FuncDecl,
+    applied: Callable,
+    target: Callable,
     subject: ?*const Expr,
     arguments: []const *Expr,
     result: RT,
@@ -1108,12 +1115,29 @@ pub const Sema = struct {
         callee_home: ?[]const u8,
     ) SemaError!void {
         try self.applications.put(self.alloc, expr, .{
-            .applied = target,
-            .target = target,
+            .applied = .{ .declaration = target },
+            .target = .{ .declaration = target },
             .subject = subject,
             .arguments = arguments,
             .result = result,
             .home = callee_home,
+        });
+    }
+
+    fn recordRelation(
+        self: *Sema,
+        expr: *const Expr,
+        relation: subject_home.Relation,
+        subject: *const Expr,
+        arguments: []const *Expr,
+        result: RT,
+    ) SemaError!void {
+        try self.applications.put(self.alloc, expr, .{
+            .applied = .{ .relation = relation },
+            .target = .{ .relation = relation },
+            .subject = subject,
+            .arguments = arguments,
+            .result = result,
         });
     }
 
@@ -4687,6 +4711,34 @@ pub const Sema = struct {
                                 }
                             }
                         }
+                        // A declaration (including a forward declaration) owns
+                        // this edge. Ambient protocol reach never takes its
+                        // name, even when the declaration is not yet callable.
+                        return .any;
+                    }
+                    const conformance = self.subjectConformance(mc.obj, ot);
+                    if (subject_home.edgeFor(conformance, mc.method)) |edge| {
+                        if (mc.args.len != 1) {
+                            self.err(mc.loc, "relation '{s}' takes one operand", .{edge.name});
+                            return .any;
+                        }
+                        const operand = self.exprDescriptor(mc.args[0]) orelse .any;
+                        if (!operand.eql(edge.operand)) {
+                            self.err(
+                                mc.args[0].loc(),
+                                "relation '{s}' requires operand descriptor '{s}', found '{s}'",
+                                .{ edge.name, @tagName(edge.operand), @tagName(operand) },
+                            );
+                            return .any;
+                        }
+                        try self.recordRelation(
+                            expr,
+                            edge.relation,
+                            mc.obj,
+                            mc.args,
+                            edge.result,
+                        );
+                        return edge.result;
                     }
                     return .any;
                 }
@@ -15731,7 +15783,7 @@ test "sema: bare `write` stays refused, and the message says WHY" {
     try testing.expect(std.mem.indexOf(u8, msg, "law.inject.algebra") != null);
 }
 
-test "sema: a string is a PATH — `read` resolves on it, `write` and `close` do not" {
+test "sema: a string is a PATH — path I/O resolves and stream close does not" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -15740,11 +15792,10 @@ test "sema: a string is a PATH — `read` resolves on it, `write` and `close` do
     const ok = try checkSource(alloc, "s: str = \"f.txt\"\nx = s:read()", "probe.id");
     try testing.expectEqual(@as(u32, 0), ok.errors);
 
-    // `write` and `close` on a string used to type-check through an
-    // `ot == .str or .any` arity list and die at emit with
-    // `DNB001 method-unresolved`. A string is a path; a path is not a stream.
+    // Path write is one graph relation with an exact string operand and bool
+    // result. Close remains stream-only: a path owns no open handle.
     const w = try checkSource(alloc, "s: str = \"f.txt\"\ns:write(\"x\")", "probe.id");
-    try testing.expect(w.errors > 0);
+    try testing.expectEqual(@as(u32, 0), w.errors);
     const c = try checkSource(alloc, "s: str = \"f.txt\"\ns:close()", "probe.id");
     try testing.expect(c.errors > 0);
 }
