@@ -185,3 +185,23 @@ state the relation, publish the facts, let specialization choose.
   selftests per the brief. Unblocks F2/F4/F5 minimization.
 - Verifier rotation on demand (V-A/V-B).
 - Agent-integration and work-order tooling (my established lane).
+
+## H7 — grammar projection drift on the GAP-134 chain (parity measured)
+
+`tools/parity/grammar` (report-only) measured:
+
+- canonical `TokenKind` = **114** ordinals (src/lexer.zig)
+- live projection `lib/token/grammarrole.id` = **114** — count-correct,
+  emitted by `idol token-tables emit` (main.zig:901), consumed by
+  `lib/compiler/token_view.id`; carries the old dialect (`--` comments,
+  `req("std.compiler.token")`) and a retired regen banner
+- `lib/token/grammar_role.id` = **110** — STALE by four ordinals and no
+  emitter writes it (dead artifact or stale rename target)
+- `tools/emit_grammar_role.zig` writes a third, dead
+  `lib/std/token/grammar_role.id` path (forbidden namespace)
+- BEGIN_EXPR vectors diverge at ordinal 3 between the two .id projections
+
+Owner: lane 1–2 (GAP-134 generated grammar roles / immutable token view).
+The parity checker must stay report-only; reconciling the three emitters
+is a ruled decision for that lane. `scripts/grammarconvergence.id` already
+exists as the declared convergence script for this surface.
